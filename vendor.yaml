@@ -3,6 +3,18 @@
 # Two halves. `trees:` is what we do NOT translate. `ours:` is foreign-COPYRIGHT code we
 # DO — the verdicts that used to have nowhere to live. See the header above `ours:`.
 #
+# KNOWN GAP: THIS FILE DOES NOT SEE RUST CRATES. C/C++ only, and that is a scoping
+# accident rather than a decision. The question above — "is this ours to translate?" —
+# is meaningless for a crates.io dependency, because crates are the translation
+# DESTINATION; but this registry's OTHER job, provenance and licensing for what we
+# ship, applies to them in full. 58 external crates are in sdk/lib/rust/Cargo.lock and
+# none is recorded here or in THIRD-PARTY-NOTICES.md, including smoltcp (0BSD), which
+# IS the TCP/IP stack. `--suspects` cannot find them either: it walks directories for
+# foreign copyright headers, and crates live in ~/.cargo/registry, outside the repo.
+# All 58 are permissive, so this is a recording gap, not a licence problem. The plan —
+# a GENERATED `crates:` half fed from `cargo metadata` — is in
+# docs/product/vibeos-roadmap.md under "Known bugs & flakes". Found 2026-09-20.
+#
 # WHY THIS EXISTS
 # ---------------
 # The project's goal is Rust, so the only number that matters is "how much of the C
@@ -1340,57 +1352,98 @@ trees:
 
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
-    staleness: >
-      AUDITED 2026-09-20: ours 2.16.11, current 3.6.7 (LTS) and 4.2.0. THE WORST TREE IN
-      THIS REGISTRY. The 2.16 LTS branch reached END OF LIFE at the end of 2021, so this has
-      received no upstream security fixes for about five years — in a TLS library. 2.x ->
-      3.x is a breaking API change, so this is a port rather than a drop-in bump, which is
-      presumably why it was never done. SIZED, so the next person does not have to: two
-      consumers, dll/win32/bcrypt and dll/win32/schannel (bcrypt_main.c, schannel_mbedtls.c
-      and its lazyload header), using 77 distinct mbedtls_* symbols between them. Bounded,
-      but not small — expect the usual 3.x migration work: the *_ret hash suffixes are gone,
-      struct fields moved behind MBEDTLS_PRIVATE, and several ssl_conf entry points changed
-      shape. Note schannel lazy-loads, so a missed rename can fail at RUNTIME rather than at
-      link time; that is the trap to plan around, and there is no TLS test in this tree to
-      catch it.
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0 OR GPL-2.0-or-later
-    license_ref: dll/3rdparty/mbedtls/aes.c
-    review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: v2.16.11 tarball from GitHub,
-      version confirmed from the tarball's own version.h. 79 .c files compared,
-      EXACTLY ONE differs — timing.c — and the change is a portability widening:
-      upstream gates its QueryPerformanceCounter hardclock on `_MSC_VER`, ours adds an
-      equivalent branch for any `_WIN32`, covering MinGW. Same API, same logic, broader
-      guard.
-
-      Checked rather than waved past, because this is a TLS library: hardclock feeds
-      entropy_poll.c and havege.c. It does not change entropy policy or quality — it
-      makes an already-used Windows counter available where the narrower guard would
-      have fallen through. Nothing in crypto, RNG, certificate validation or protocol
-      handling differs anywhere in the drop.      LICENCE CORRECTED 2026-09-19: recorded as `Apache-2.0` for as long as this entry
-      has existed, but all 79 files say `SPDX-License-Identifier: Apache-2.0 OR
-      GPL-2.0-or-later`. Dual, so the GPL half is an OPTION rather than an obligation —
-      but stating only one arm of a dual grant misrepresents it. It survived the licence
-      ratchet's first day because `_SPDX` captured `([^\s*/]+)`, which truncates a
-      compound expression at the first space; fixed, and that fix is what surfaced this.
-
-      MIXED UNTIL 2026-09-19, now clean: _reactos_strsafe_wrapper.c was a ReactOS-authored
-      LGPL-2.1-or-later adapter (StringCchVPrintfEx -> _vsnprintf_s, Copyright 2015 Ismael
-      Ferreras Morezuelas) sitting inside this Apache-2.0 drop. Moved out to
-      sdk/lib/mbedtls_reactos/strsafe_wrapper.c, so the tree is now a pure upstream copy
-      and a re-vendor is a copy rather than a merge. It was found BY HAND, not by
-      `--licences`: it declares its licence in prose with no SPDX tag, which is that
-      scan's blind spot. A re-vendor must not reintroduce it.
-    modified: yes  # 1 of 79 .c files vs pristine 2.16.11
+    license_file: dll/3rdparty/mbedtls/LICENSE
+    modified: no
+    version:
+      # build_info.h, upstream's own. 3.x moved the string out of version.h (which
+      # still exists and no longer carries it).
+      file: sdk/include/reactos/libs/mbedtls/build_info.h
+      pattern: '#define MBEDTLS_VERSION_STRING\s+"([^"]+)"'
     headers:
       - sdk/include/reactos/libs/mbedtls
-    version:
-      file: sdk/include/reactos/libs/mbedtls/version.h
-      pattern: '#define MBEDTLS_VERSION_STRING\s+"([^"]+)"'
-    reason: >
-      TLS implementation. The largest omission from the old hardcoded tuple — 78
-      headers, none of them excluded from the convention-alias scan.
+      - sdk/include/reactos/libs/psa
+    review: >
+      BUMPED 2.16.11 -> 3.6.7 (LTS) ON 2026-09-20, closing the worst entry in this
+      registry: the 2.16 branch stopped receiving security fixes at the end of 2021, so
+      the TLS library behind schannel and bcrypt had been unmaintained for five years.
+      The tree is now `modified: no` — a pure upstream drop, every file byte-identical,
+      no patch at all. All three arches build; the TLS harness is green.
+
+      IT WAS DONE IN THREE PHASES, and the first two are why the third was tractable.
+      Phase 1 built sdk/lib/rust/schannel-tls-difftest, a real TLS 1.2 handshake through
+      the genuine backend on the host, green against 2.16.11 first so it was an oracle
+      rather than a hope. Phase 2 removed the glue's dependency on mbedtls/md_internal.h
+      and mbedtls/ssl_internal.h — headers 3.x deletes and stops installing, and the
+      actual blocker behind the "77 symbols" framing. Only then was this a version
+      change.
+
+      WHAT THE HARNESS SAID, and it is the whole return on building it: across a
+      five-year major-version jump the negotiated connection is IDENTICAL — TLS 1.2,
+      CALG_AES_256 at 256, CALG_SHA_384 at 384, CALG_ECDH_EPHEM at 256, block size 16,
+      max message 16384. Exactly ONE value moved: schan_imp_enabled_protocols went
+      0xfc0 -> 0xc00, because 3.0 DELETED SSL 3.0, TLS 1.0 and TLS 1.1 outright. That
+      narrowing is the single behavioural change in the port, and it is pinned in the
+      harness so it had to be looked at rather than discovered later by a client that
+      stopped connecting.
+
+      THREE THINGS THE PORT HAD TO SOLVE THAT THE OLD SIZING DID NOT MENTION:
+
+      1. ENTROPY WAS A DEPENDENCY CYCLE. 3.x's built-in Windows entropy source calls
+      BCryptGenRandom, and bcrypt.dll already imports mbedtls.dll — importing back
+      would close the loop. 2.16 used CryptGenRandom from advapi32 and had no such
+      problem. Fixed with MBEDTLS_NO_PLATFORM_ENTROPY plus MBEDTLS_ENTROPY_HARDWARE_ALT
+      and a new adapter, sdk/lib/mbedtls_reactos/entropy_hardware_poll.c, going straight
+      to RtlGenRandom (advapi32's SystemFunction036, already linked) — the generator
+      CryptGenRandom is itself built over, so a shorter path to the same bytes.
+
+      2. AES-NI IS OFF NOW, and that is a performance loss rather than a security one.
+      2.16's aesni.c was inline assembly; 3.x rewrote it to intrinsics, and on 32-bit
+      x86 that is the only implementation upstream offers. Our x86 baseline is
+      -march=pentium and enabling -maes -mpclmul for that one file did not make clang's
+      immintrin.h declare the intrinsics under our -nostdinc include set — the flags do
+      reach the command line and __AES__/__PCLMUL__ are defined, yet the intrinsics stay
+      undeclared, while the same file compiles standalone with the same flags. Left
+      unresolved and written down rather than papered over; AES falls back to portable C.
+
+      3. platform.c CALLS vsnprintf_s NOW, not _vsnprintf_s, and msvcrt exports only the
+      underscored spelling. sdk/lib/mbedtls_reactos/strsafe_wrapper.c supplies both names
+      over one body.
+
+      RETIRED BY THE BUMP: timing_hardclock.c, a ReactOS adapter that existed only to
+      supply mbedtls_timing_hardclock behind -DHAVE_HARDCLOCK. 3.x deleted hardclock from
+      timing.c, so both the adapter and the define are gone.
+
+      THE SOURCE LIST IS NOW EVERY .c UPSTREAM SHIPS (109 of them). 2.16's was
+      hand-curated with 32 entries commented out, which made every bump a three-way merge
+      between upstream's file set, our comments, and whatever the config actually
+      enabled. A source whose feature is off compiles to an empty translation unit, so
+      listing all of them costs nothing and moves the decision into one place:
+      sdk/include/reactos/libs/mbedtls/mbedtls_config.h.
+
+      WHAT IS DELIBERATELY OFF IN THAT CONFIG: PSA Crypto and TLS 1.3, both default-on
+      in 3.6. This bump preserves capability (TLS 1.2) and buys five years of fixes;
+      turning on TLS 1.3 is a real improvement and a separate, reviewable change, not
+      something to smuggle into a catch-up. The switches are named in the config.
+
+      TWO PROPERTIES OF THIS TLS STACK, unchanged by the bump and worth knowing because
+      neither is obvious: schannel_mbedtls.c sets MBEDTLS_SSL_VERIFY_NONE, so mbedTLS
+      does not validate the peer certificate (schannel's contract puts that on the
+      caller, and Wine does the same); and MBEDTLS_HAVE_TIME is off, so there is no
+      certificate expiry checking anywhere.
+
+      ALSO STILL TRUE: schannel's server path is dead twice over. MBEDTLS_SSL_SRV_C is
+      off, and nothing in the glue ever calls mbedtls_ssl_conf_ca_chain, so the
+      SECPKG_CRED_INBOUND arm would have no CA chain even if the library had a server in
+      it.
+
+      HISTORY. Before this bump the tree was 2.16.11 with exactly one modified file
+      (timing.c, a portability widening of a QueryPerformanceCounter guard) and a
+      ReactOS-authored LGPL adapter that had been moved out to sdk/lib/mbedtls_reactos/
+      on 2026-09-19 so the drop would be a pure copy. That move is what makes this bump
+      a delete-and-replace rather than a merge.
+    reason: TLS/crypto for schannel and bcrypt; upstream-tracked.
 
   - path: dll/3rdparty/libjpeg
     name: libjpeg

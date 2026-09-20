@@ -597,6 +597,32 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `LpcpMoveMessageChecked` / `LpcpVerifyMessageDataInfoChecked` show the
   checked-variant-alongside-original shape, and the handler taxonomy (returns /
   goto-cleanup / falls-through / swallows) is in the field manual.
+- **The vendor registry does not see Rust crates at all — 58 of them, including the
+  TCP/IP stack. UNOWNED** (2026-09-20, found by the owner asking whether smoltcp was on
+  the vendor list; it is not). `vendor.yaml` models vendored **C trees**, and its
+  question — "is this C ours to translate?" — is meaningless for a crate, because crates
+  are the translation DESTINATION. But the registry's other job, provenance and
+  licensing for what we ship, applies to `smoltcp` exactly as much as to zlib, and that
+  job quietly went unscoped. `THIRD-PARTY-NOTICES.md` is a shipped legal artifact with
+  58 crates' worth of nothing in it.
+  **`--suspects` cannot find this either**: it walks directories for foreign copyright
+  headers, and crates.io dependencies live in `~/.cargo/registry`, outside the repo. So
+  both halves of the registry are blind to the same category, which is why nothing
+  surfaced it.
+  Shipped and unrecorded, from `cargo metadata`: **smoltcp 0.13.1 (0BSD)** behind
+  `netstack.sys`, **virtio-drivers 0.13.0 (MIT)**, **iced-x86 1.21.0 (MIT)**,
+  **zlib-rs + libz-rs-sys 0.6.3 (Zlib)**, `managed` (0BSD), plus heapless / defmt /
+  zerocopy / safe-mmio and the rest. All 58 are permissive — 33 `MIT OR Apache-2.0`, 11
+  `MIT`, 3 `Unlicense OR MIT`, 3 `MIT/Apache-2.0`, 2 `Zlib`, 2 `0BSD`, 2 `BSD-2-Clause
+  OR Apache-2.0 OR MIT`, 1 `Apache-2.0 OR MIT`, 1 `(MIT OR Apache-2.0) AND Unicode-3.0`
+  — so this is a recording gap, not a licence problem.
+  THE FIX: a `crates:` half for `vendored.py`, GENERATED from `cargo metadata` rather
+  than hand-maintained, feeding the same notices file and the same `--licences`
+  accounting. It needs a shipped-vs-tooling split (`cc`, `syn`, `quote`, `loom`,
+  `regex-*`, `tracing-subscriber` are build-time only), derived from what the `*-cargo`
+  link targets actually reach. Sized at about an hour.
+  ALSO SURFACED BY THIS: we now ship **two zlibs** — the vendored C one (1.3.2) and
+  `zlib-rs` 0.6.3 via `libz-rs-sys`. Possibly deliberate, never recorded.
 - **Mbed TLS is five years past end-of-life, and three other vendored trees are stale.
   UNOWNED** (2026-09-20). `tools/vendored.py --emit` prints the full BEHIND UPSTREAM
   section; read that, not this line, because it is generated from `vendor.yaml` and this
@@ -604,9 +630,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   upstream security fixes at the end of 2021** — in the library behind `bcrypt` and
   `schannel`. Sized so it is not a vague someday: two consumers, 77 distinct `mbedtls_*`
   symbols, and a 2.x -> 3.x migration (the `*_ret` hash suffixes are gone, fields moved
-  behind `MBEDTLS_PRIVATE`, several `ssl_conf` entry points changed shape). **The trap:
-  schannel LAZY-LOADS mbedtls, so a missed rename fails at RUNTIME, not at link time, and
-  there is no TLS test in this tree to catch it** — build that test first, not last.
+  behind `MBEDTLS_PRIVATE`, several `ssl_conf` entry points changed shape). ~~**The trap:
+  schannel LAZY-LOADS mbedtls, so a missed rename fails at RUNTIME, not at link time**~~
+  — DISPROVEN 2026-09-20. That lazy-load header is inside `#ifndef __REACTOS__`; our
+  CMakeLists does `add_importlibs(schannel mbedtls ...)` and `objdump -x` on the built
+  DLL shows `mbedtls.dll` in the import table, so every symbol break is a LINK error.
+  The real cost driver is different: the glue includes `mbedtls/md_internal.h` and
+  `mbedtls/ssl_internal.h` and reads ten struct fields that 3.x puts behind
+  `MBEDTLS_PRIVATE`. **"There is no TLS test in this tree" WAS true and is now fixed**
+  — `sdk/lib/rust/schannel-tls-difftest` drives a real TLS 1.2 handshake through the
+  genuine backend and runs in the `vibeos-cli difftest` gate.
   Also open: **libtirpc 0.1.11 -> 1.3.8** (largest version gap in the registry) and
   **FreeType 2.10.0 -> 2.14.3**. FreeType is NOT exposed to the famous one
   (CVE-2020-15999, the sbix embedded-PNG overflow exploited in the wild) — checked in the

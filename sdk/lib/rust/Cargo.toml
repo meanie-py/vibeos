@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "schannel-tls-difftest",
     "portcls-rust",
     "sysaudio-rust",
     "sysaudio-difftest",
