@@ -1001,6 +1001,32 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
     return no_grant, dangling
 
 
+#: Grant findings this tree knowingly carries, and why. The key is `dir:<path>`
+#: for a directory with no grant and `ptr:<name>` for a licence text that is
+#: pointed at but not shipped. Both of these want a DECISION about licensing,
+#: not a change to the scanner -- which is exactly why they are written down
+#: here instead of being tuned out of `grant_gaps`.
+_GRANTS_ACCEPTED = {
+    "dir:drivers/storage/ide/uniata": (
+        "36,368 lines whose header says the skeleton came from the NT4 DDK's "
+        "ATAPI.SYS and parts from FreeBSD's ATA driver, carrying the BSD warranty "
+        "DISCLAIMER without the 'Redistribution and use ... are permitted' clause "
+        "that would be the actual grant. Same shape as the atapi C deleted on "
+        "2026-09-20, and likewise already cohab-flipped in full: all 9 .cpp are "
+        "commented out of CMakeLists and uniata.sys links from uniata-rust. So the "
+        "C is inert source on disk and deleting it costs nothing but the owner's "
+        "call, which is pending."
+    ),
+    "ptr:copying.bsd": (
+        "sdk/tools/kbdtool, 5 files: `LICENSE: BSD - See COPYING.BSD in the top "
+        "level directory`. ReactOS has never shipped a COPYING.BSD -- it is absent "
+        "from our history and from upstream master -- and no file in this tree "
+        "carries a ReactOS-authored BSD grant to copy the wording from, so the "
+        "variant is unknown. Writing one on the ReactOS Foundation's behalf would "
+        "be inventing a grant, which is the thing this scan exists to catch."
+    ),
+}
+
 #: The generated notices document, at the repo root where a distributor looks for it.
 NOTICES_PATH = "THIRD-PARTY-NOTICES.md"
 
@@ -1301,6 +1327,36 @@ def check(reg: Registry) -> list[str]:
                 f"    recorded but no longer in the lockfile: {gone}\n"
                 f"    Regenerate: tools/vendored.py --write-crates"
             )
+
+    # The grant ratchet gates, and it gates BOTH WAYS. Until now `--grants` was
+    # advisory, which meant a licence gap in this tree survived exactly as long
+    # as somebody remembered to run it by hand -- and a rule with no command
+    # behind it is a rule you will break. Every finding must be listed below
+    # with the argument for tolerating it; a NEW one fails, and so does an
+    # accepted one that has since been FIXED, because a stale acceptance is how
+    # a list like this turns into a list of things nobody has re-read.
+    no_grant, dangling = grant_gaps(reg)
+    found = {f"dir:{d}" for d, _n, _e in no_grant} | {f"ptr:{n}" for n in dangling}
+    # The acceptance list is a statement about THIS tree, so it is only
+    # reconciled against this tree. `check()` is also run against synthetic
+    # repos by the tests, where every accepted key is trivially absent and
+    # would report as stale -- noise that would drown the finding the test is
+    # actually about.
+    accepted = set(_GRANTS_ACCEPTED) if reg.repo.resolve() == REPO else set()
+    for key in sorted(found - accepted):
+        problems.append(
+            f"NEW licence-grant finding `{key}` — code that claims a copyright and "
+            f"never says what you may do with it, or a licence text it points at "
+            f"that does not ship. Establish the terms (see tools/vendored.py "
+            f"--grants), then either fix it or add it to _GRANTS_ACCEPTED with the "
+            f"argument for tolerating it."
+        )
+    for key in sorted(accepted - found):
+        problems.append(
+            f"`{key}` is listed in _GRANTS_ACCEPTED but --grants no longer reports "
+            f"it. If it was resolved, delete the entry; a tolerated finding that "
+            f"has quietly gone away is one nobody will re-read."
+        )
 
     notices_file = reg.repo / NOTICES_PATH
     if notices_file.is_file() and not any("--notices to quote" in p for p in problems):

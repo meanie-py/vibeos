@@ -1002,3 +1002,30 @@ def test_the_real_tree_still_reports_the_two_findings_that_need_a_decision(tmp_p
     no_grant, dangling = vendored.grant_gaps(vendored.load(REPO))
     assert "drivers/storage/ide/uniata" in [d for d, _n, _e in no_grant]
     assert "copying.bsd" in dangling
+
+
+def test_a_new_grant_finding_fails_the_gate(tmp_path):
+    """`--grants` was advisory for its whole life, which made every licence gap in
+    the tree conditional on somebody remembering to run it."""
+    repo = _grant_repo(tmp_path)
+    _claim(repo / "drivers" / "mystery", "m", "Notes: THIS SOFTWARE IS PROVIDED AS IS")
+    problems = vendored.check(vendored.load(repo))
+    assert any("NEW licence-grant finding `dir:drivers/mystery`" in p for p in problems), problems
+
+
+def test_the_real_tree_passes_its_own_grant_gate():
+    """...and the two findings it does carry are accepted BY NAME, with the
+    argument written down beside them."""
+    assert not [p for p in vendored.check(vendored.load(REPO)) if "licence-grant" in p]
+    assert set(vendored._GRANTS_ACCEPTED) == {
+        "dir:drivers/storage/ide/uniata",
+        "ptr:copying.bsd",
+    }
+
+
+def test_an_accepted_finding_that_got_fixed_fails_too(monkeypatch):
+    """A tolerated finding that has quietly gone away is one nobody will re-read,
+    so the gate runs in both directions."""
+    monkeypatch.setitem(vendored._GRANTS_ACCEPTED, "dir:drivers/does/not/exist", "invented")
+    problems = vendored.check(vendored.load(REPO))
+    assert any("no longer reports it" in p for p in problems), problems
