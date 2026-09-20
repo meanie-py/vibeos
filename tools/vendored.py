@@ -152,10 +152,20 @@ class OurTree:
     def __init__(self, raw: dict, index: int):
         if not isinstance(raw, dict):
             raise RegistryError(f"ours[{index}] is not a mapping")
-        for field in ("path", "name", "reason"):
+        for field in ("name", "reason"):
             if not raw.get(field):
                 raise RegistryError(f"ours[{index}] is missing required field `{field}`")
-        self.path: str = raw["path"]
+        #: `path` for one directory, `paths` for ONE DECISION spanning many. The second
+        #: exists because Wine is a single judgement — "this project translates
+        #: Wine-derived code" — that happens to cover 24 shipped modules. Writing it out
+        #: 24 times would make one settled argument look like 24 independent findings,
+        #: and the payload of an `ours:` entry is the argument. It is NOT a licence to
+        #: group unrelated directories: every path under one entry must be covered by
+        #: that entry's single reason.
+        self.paths: list[str] = [raw["path"]] if raw.get("path") else list(raw.get("paths") or [])
+        if not self.paths:
+            raise RegistryError(f"ours[{index}] needs `path` or `paths`")
+        self.path: str = self.paths[0]
         self.name: str = raw["name"]
         self.reason: str = raw["reason"]
         self.origin: str = raw.get("origin", "unknown")
@@ -164,7 +174,7 @@ class OurTree:
 
     @property
     def prefixes(self) -> list[str]:
-        return [self.path]
+        return list(self.paths)
 
 
 class Registry:
@@ -232,7 +242,11 @@ class Registry:
 
     def loc(self, tree: Tree | OurTree, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
         """Source lines carried by a tree, for the --emit table only."""
-        root = self.repo / tree.path
+        return sum(self.loc_path(p, suffixes) for p in tree.prefixes[:1])
+
+    def loc_path(self, rel: str, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
+        """Source lines under one repo-relative directory."""
+        root = self.repo / rel
         if not root.is_dir():
             return 0
         total = 0
@@ -308,7 +322,11 @@ def is_vendored(rel: str, repo: Path = REPO) -> bool:
 #: written. That is a decision, not a scan tweak.
 _FOREIGN_HOLDER = re.compile(
     r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
-    r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)",
+    r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)"
+    # Wine does not spell it with a `(c)`: its files say
+    # `Copyright 2005 Jacek Caban for CodeWeavers`, so the form above cannot see it.
+    r"|Copyright[^\n]{0,60}?\bfor (CodeWeavers)"
+    r"|Copyright[^\n]{0,60}?\b(The Wine Project)",
     re.I,
 )
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
@@ -484,8 +502,9 @@ def check(reg: Registry) -> list[str]:
                 )
 
     for o in reg.ours:
-        if not (reg.repo / o.path).is_dir():
-            problems.append(f"{o.name}: `ours:` path does not exist: {o.path}")
+        for op in o.paths:
+            if not (reg.repo / op).is_dir():
+                problems.append(f"{o.name}: `ours:` path does not exist: {op}")
 
     # The second ratchet, and the reason `ours:` exists. The container ratchet above only
     # watches three directories; foreign code imported anywhere else (WDF under sdk/lib,
@@ -545,7 +564,15 @@ def emit(reg: Registry) -> int:
     print(f"  {' ' * w}  {'':<22} {'TOTAL':<22} {total:>9,}")
 
     if reg.ours:
-        orows = [(o.path, o.tier or "-", reg.loc(o, _BODY_SUFFIXES), reg.loc(o)) for o in reg.ours]
+        orows = [
+            (
+                o.path if len(o.paths) == 1 else f"{o.path} (+{len(o.paths) - 1} more)",
+                o.tier or "-",
+                sum(reg.loc_path(p, _BODY_SUFFIXES) for p in o.paths),
+                sum(reg.loc_path(p) for p in o.paths),
+            )
+            for o in reg.ours
+        ]
         ow = max(len(r[0]) for r in orows)
         print(f"\n{len(orows)} foreign-copyright trees classified as OURS to translate")
         print("  (the complement of the table above; `bodies` is what enters the denominator)\n")
