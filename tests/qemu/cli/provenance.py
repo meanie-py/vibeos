@@ -34,23 +34,39 @@ class ProvenanceError(RuntimeError):
     cargo-link staleness net silently switched off). Neither logged anything."""
 
 
-def _run(cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,)) -> str:
-    """Run `cmd`, or raise ProvenanceError naming the command, rc and stderr.
+def _run_bytes(cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,)) -> bytes:
+    """Run `cmd` and return its stdout as RAW BYTES, or raise ProvenanceError
+    naming the command, rc and stderr.
+
+    Bytes, not text, because the repo tracks files that are not UTF-8 and git
+    echoes their content verbatim: `git diff HEAD` over a latin-1 file emitted
+    0xe9 and a strict decode took down the whole CLI with a UnicodeDecodeError
+    from inside stamp-making, so every build and land failed for as long as
+    that file was dirty. Decoding is the caller's problem, and a fingerprint
+    should not decode at all.
 
     `ok_codes` widens the accepted set for commands whose non-zero exit is
     meaningful rather than a failure — `git grep` exits 1 for "no matches",
     which is a legitimate empty result, not a broken oracle."""
     try:
-        cp = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120)
+        cp = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as e:
         raise ProvenanceError(f"{' '.join(cmd)} (cwd={cwd}): {type(e).__name__}: {e}") from e
     if cp.returncode not in ok_codes:
-        err = (cp.stderr or "").strip().splitlines()
+        err = cp.stderr.decode("utf-8", "replace").strip().splitlines()
         raise ProvenanceError(
             f"{' '.join(cmd)} (cwd={cwd}) exited {cp.returncode}: "
             + (err[0][:200] if err else "<no stderr>")
         )
     return cp.stdout
+
+
+def _run(cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,)) -> str:
+    """`_run_bytes`, decoded leniently. Undecodable bytes become U+FFFD rather
+    than an exception: every text caller here parses git's own framing (paths,
+    porcelain status, ref names), which is ASCII, and a mangled character
+    inside a payload line must not be able to abort a build."""
+    return _run_bytes(cmd, cwd, ok_codes=ok_codes).decode("utf-8", "replace")
 
 
 def git_head(repo: Path) -> str:
@@ -68,14 +84,17 @@ def git_fingerprint(repo: Path, paths: list[str] | None = None) -> str:
     Raises ProvenanceError if any of its three git calls fails — see _run."""
     scope = paths or []
     head = git_head(repo)
-    diff = _run(["git", "diff", "HEAD", "--", *scope], repo)
-    untracked = _run(["git", "status", "--porcelain", "--", *scope], repo)
+    # Hash the RAW bytes: a lossy decode would map distinct non-UTF-8 contents
+    # onto the same U+FFFD run, i.e. two different working trees onto one
+    # fingerprint — a false GREEN in the staleness net.
+    diff = _run_bytes(["git", "diff", "HEAD", "--", *scope], repo)
+    untracked = _run_bytes(["git", "status", "--porcelain", "--", *scope], repo)
     h = hashlib.sha256()
     h.update(head.encode())
     h.update(b"\0")
-    h.update(diff.encode())
+    h.update(diff)
     h.update(b"\0")
-    h.update(untracked.encode())
+    h.update(untracked)
     return h.hexdigest()
 
 
