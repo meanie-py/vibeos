@@ -41,7 +41,14 @@ static mut UserPdeFault: BOOLEAN = 0;
 /// plausible-looking address, which is worse than none: it cost this probe its
 /// first set of results, where 2 of 4 reported "PCs" were garbage and one was
 /// page-aligned across three samples.
-const MI_TRAP_INFO_UNLOCKED: usize = 0xBADBADA3BADBADA3;
+///
+/// Spelled as a u64 cast to usize, exactly as the CALLERS spell it
+/// (`0xBADBADA3BADBADA3u64 as PVOID`), so the value truncates the same way they
+/// do and the comparison holds on both widths. Writing the literal directly as
+/// a `usize` does not merely mismatch on i386 -- it does not COMPILE there
+/// ("literal out of range for usize"), which is how the merge queue caught it
+/// after a green `check`: `check` does not build.
+const MI_TRAP_INFO_UNLOCKED: usize = 0xBADBADA3BADBADA3u64 as usize;
 
 #[inline]
 unsafe fn MiFaultingPc(TrapInformation: PVOID) -> ULONG_PTR {
@@ -60,6 +67,25 @@ unsafe fn MiFaultingPc(TrapInformation: PVOID) -> ULONG_PTR {
     #[cfg(target_arch = "x86")]
     {
         (*tf).Eip as ULONG_PTR
+    }
+}
+
+/// Code selector out of a trap frame, or 0. A sane amd64 value is 0x33 (user)
+/// or 0x10 (kernel); anything else convicts the offsets rather than the PC.
+#[inline]
+unsafe fn MiFaultingCs(TrapInformation: PVOID) -> u16 {
+    if TrapInformation.is_null() || TrapInformation as usize == MI_TRAP_INFO_UNLOCKED {
+        return 0;
+    }
+    let tf = TrapInformation as PKTRAP_FRAME;
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*tf).SegCs
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = tf;
+        0
     }
 }
 
@@ -195,12 +221,21 @@ unsafe fn MiCheckForUserStackOverflow(
             if base > dealloc {
                 let midpoint = dealloc + (base - dealloc) / 2;
                 if limit <= midpoint && limit + PAGE_SIZE as ULONG_PTR > midpoint {
+                    // TrapInformation is printed beside the PC on purpose: a
+                    // trap frame lives on the KERNEL STACK, so if the "PC"
+                    // tracks the frame pointer then MiFaultingPc is reading
+                    // the wrong displacement and the address is furniture, not
+                    // a call site. Two of the values this probe reported look
+                    // exactly like that -- page-aligned and repeated -- and
+                    // there is no way to tell from the PC alone.
                     crate::dbg_print!(
-                        b"[MM] stack runaway: thread ate half its stack (base=%p limit=%p dealloc=%p pc=%p)\n\0",
+                        b"[MM] stack runaway: thread ate half its stack (base=%p limit=%p dealloc=%p pc=%p tf=%p cs=%lx)\n\0",
                         base,
                         limit,
                         dealloc,
                         MiFaultingPc(TrapInformation),
+                        TrapInformation as usize,
+                        MiFaultingCs(TrapInformation) as u32,
                     );
                 }
             }
