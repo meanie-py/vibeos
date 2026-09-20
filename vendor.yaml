@@ -45,11 +45,6 @@ trees:
   # ── ACPI ────────────────────────────────────────────────────────────────
   - path: drivers/bus/acpi/acpica
     name: ACPICA
-    staleness: >
-      AUDITED 2026-09-20: ours 20221020, current 20260408. Parses ACPI tables supplied by
-      firmware. Unusually cheap to bump for its size — only 7 files carry real changes, all
-      host-port shims — but re-vendor from the LINUXIZED form or you will re-create a
-      phantom 219-file diff; see the review.
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
     license_ref: drivers/bus/acpi/acpica/include/acpi.h
@@ -59,6 +54,36 @@ trees:
       file: drivers/bus/acpi/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
     review: >
+      BUMPED 20221020 -> 20260408 ON 2026-09-20, three and a half years, and the patch
+      now ROUND-TRIPS BYTE-FOR-BYTE for the first time — the previous one was
+      deliberately incomplete. All three arches build AND BOOT TO THE DESKTOP MARKER,
+      which for a tree on the boot path is the gate that matters.
+
+      SEVEN SHIMS BECAME SIX. hardware/hwgpe.c carried the only unguarded non-header
+      code edit in the tree — a `(UINT64)` cast on RegisterBit inside ACPI_CLEAR_BIT
+      that could not change the low 8 bits of the UINT8 EnableMask. The previous review
+      called it "worth dropping or marking next time someone is in there"; this was that
+      time. Dropped, and all three arches compile the file with no warning at all, so
+      the truncation it was silencing does not exist under our flags.
+
+      THE LICENCE-FORM PROBLEM IS NOW SOLVED RATHER THAN WARNED ABOUT. Our files carry
+      the pre-SPDX Linux-format header, upstream's tarball ships the long form, and that
+      difference alone accounts for 35,271 of the 35,271-line naive diff. Instead of
+      leaving a "re-vendor from the linuxized form" instruction that nobody can execute,
+      the patch header states the substitution exactly: in each file there is exactly
+      one leading comment block containing both "Intel Corp" and a NO WARRANTY
+      disclaimer — verified 226 of 226, same block index in both forms — and it is
+      replaced by a single canonical 36-line block, identical in all 226 files after
+      year-normalisation, with start year always 2000 and end year taken from upstream's
+      own line. Pristine + that substitution + the patch reproduces the tree exactly.
+
+      AND THE PROBLEM IS GOING AWAY BY ITSELF. Upstream converted to a one-line
+      `SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only` on master AFTER the
+      20260408 release. The next bump past a release carrying that conversion sheds the
+      substitution entirely — and gains a machine-readable tag that
+      `vendored.py --licences` reads directly. Taking the long form now instead would
+      have cost +1.49 MB of boilerplate that upstream has already deleted.
+
       DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (open-acpica/acpica tag R10_20_22 — the
       acpica/acpica org redirects there, and tags are date-encoded MM_DD_YY so 20221020 is
       R10_20_22; sha256 1aa17eb1779cd171110074ce271a65c06046eacbba7be7ce5ee71df1b31c3b86).
@@ -113,6 +138,7 @@ trees:
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
     license_file: sdk/lib/drivers/wdf/LICENSE
     modified: "lightly"  # ~35 marker files + mechanical portability; see review
+    patch: vendor-patches/wdf.patch
     headers:
       - sdk/include/wdf
     version:
@@ -171,14 +197,56 @@ trees:
       Framework interop commented out behind it while containing no literal "reactos" text
       at all, so a grep-only survey misses it completely.
 
-      Scale: 517 files compared across both halves, 83 byte-identical, 222 identical after
-      normalization, 295 differing. That number is misleading alone — most of it is
-      mechanical portability: #include case-normalization for a case-sensitive filesystem,
-      NTAPI/WDFAPI calling-convention annotations added for clang/GCC, WPP .tmh includes
-      commented out in 84 files, backslash include paths fixed, and a few casts. Not
-      vendored: src/publicinc/wdf/kmdf/1.15 and both UMDF public header sets. Vendored but
-      NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91 files) — about 101 files of dead
-      weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM only.
+      SCALE, REMEASURED 2026-09-20 during patch-ification, and the file-set question is
+      now settled: we vendor src/framework/ ENTIRELY — all 475 files, none skipped, none
+      added, mapping 1:1 with no case-only or ambiguous names. src/publicinc/ is not
+      vendored AT ALL (156 files), which corrects the earlier note that only kmdf/1.15
+      and the UMDF header sets were left out.
+
+      Of those 475: 80 byte-identical, 395 differing, 34,224 changed lines. THAT NUMBER
+      IS 85% NOISE. Our copy has zero trailing whitespace in 477 files — the repo's
+      .editorconfig sets trim_trailing_whitespace for [*] — while upstream has it
+      everywhere. Strip it from upstream first and the delta becomes 263 files and 5,411
+      lines, with 132 files that differed by NOTHING ELSE collapsing to identical. Diff
+      this tree with `-w` or you will read churn as a port.
+
+      The 5,411 real lines: 1,252 #include path/case (backslashes, and case for a
+      case-sensitive filesystem), 1,197 comments, 1,049 NTAPI/WDFAPI/__declspec
+      annotations for clang and GCC, 401 blank lines, 178 WPP .tmh includes commented
+      out, 142 preprocessor, 122 `__super::` rewritten to the explicit base, 62 marked
+      reactos blocks, 19 ROSWDFNOTIMPLEMENTED, and 989 everything-else concentrated in
+      four files: poxinterface.cpp (228), fxpkgpnp.cpp (166), fxpkgpnpkm.cpp (92),
+      fxpkgfdokm.cpp (62).
+
+      Vendored but NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91) — about 101 files
+      of dead weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM
+      only. They are in the patch because they are in the tree, but nothing compiles
+      them, so their delta has never been exercised.
+
+      PATCH-IFIED 2026-09-20. `vendor-patches/wdf.patch` (420 KB, 263 files) reproduces
+      this tree byte-for-byte from a pristine win-10.0.10586.0 src/framework AFTER the
+      one-line trailing-whitespace normalization, which the patch header spells out.
+      Verified by doing exactly that on a fresh extraction: 0 differences, 0 fuzz, 0
+      rejects.
+
+      NO UNMARKED FUNCTIONAL REMOVALS REMAIN, and that is checked rather than assumed.
+      The delta was scanned for files that net out to removed or commented-out
+      executable code while carrying no `reactos` and no ROSWDFNOTIMPLEMENTED anywhere.
+      Six matched; all six are benign, and two are outright FIXES: fxpkgio.cpp casts
+      DispatchContext through ULONG_PTR before UCHAR in two ASSERTs (casting a pointer
+      straight to UCHAR is ill-formed on 64-bit clang), and fxtelemetry.cpp repairs a
+      comment ending in a bare backslash, which is a line continuation that would have
+      swallowed the next line. The rest are declare-at-top merged into declare-at-use and
+      an RtlZeroMemory rewritten as `*p = {}`. The one real unmarked removal this tree
+      DID carry — powerstatemachinekm.cpp skipping the DMA-enabler PowerUp()/PowerDown()
+      loops — was restored earlier the same day, so it is deliberately absent here.
+
+      THE TARBALL HASH IS NOT A PROVENANCE ANCHOR, and the entry below should not be read
+      as one. Refetching tag win-10.0.10586.0 on 2026-09-20 produced sha256
+      d252fc80175bb249a278ea284a887ec201220f709bf04b110f1afc3fdb6a4b31, not the
+      6289cf8b5284ab27a801f7a04d9bb35c893159e82c04055df079e3ab3dcb3304 recorded earlier:
+      GitHub's auto-generated archives are not byte-stable. The tag is the identifier and
+      the round-trip is the check.
 
       *** ONE UNMARKED FUNCTIONAL REMOVAL, and it is the finding worth acting on. ***
       shared/irphandlers/pnp/km/powerstatemachinekm.cpp comments out the DMA-enabler
@@ -480,6 +548,13 @@ trees:
     upstream: https://github.com/FEX-Emu/FEX
     license: MIT
     license_extra:
+      BSL-1.0: >
+        External/range-v3 — 586 files under the Boost Software License 1.0, the largest
+        single unrecorded licence this registry has found. It is ericniebler's range-v3,
+        which FEX vendors as a dependency, so this is a vendored tree inside a vendored
+        tree; its own grant is at External/range-v3/LICENSE.txt. 0% ours, and permissive,
+        but 586 files stating a licence the entry did not name is exactly the gap the
+        prose half of `--licences` was added to close (2026-09-20).
       LGPL-2.1-or-later: >
         Wine-derived headers FEX carries for its Windows build:
         Source/Windows/include/{winternl.h,winnt.h} and
@@ -521,6 +596,7 @@ trees:
         a symbol-mangling header, but a copyleft licence sitting inside a permissive
         drop is exactly the shape this registry exists to make visible.
     modified: yes  # 5 files after the systemic include-commenting; see review
+    patch: vendor-patches/glu32.patch
     version:
       # LITERAL: recovered 2026-09-20 by file-set fingerprint + minimal content
       # diff, not by an in-tree stamp (there is none). Evidence in the review.
@@ -563,8 +639,7 @@ trees:
       note was reacting to.
 
       THE 122-FILE "DIFF" IS A DISTRIBUTION FORM, NOT MODIFICATION. Every `#include "x.h"`
-      across libnurbs/libtess/libutil/gluos.h is commented out, because the CMake build
-      force-includes everything through precomp.h (add_pch(glu32 precomp.h ...)). Same shape
+      across libnurbs/libtess/libutil/gluos.h is commented out. Same shape
       as ACPICA's licence-header phantom: count it naively and 127 of 194 files look
       modified. Allow that one substitution and only FIVE differ.
 
@@ -600,6 +675,27 @@ trees:
       unlike adns's getopt.c this is not something we stripped and not ours to delete. No
       upstream directory was skipped: libnurbs, libtess and libutil are all fully vendored,
       and the file lists match exactly in both directions.
+
+      PATCH-IFIED 2026-09-20. `vendor-patches/glu32.patch` now carries all 127 differing
+      files — 729 changed lines — and reproduces this tree BYTE-FOR-BYTE from a pristine
+      glu-9.0.1 extraction, verified by applying it to a fresh copy and diffing recursively:
+      zero differences, zero fuzz, zero rejects. dll/opengl/glu32/include/ is not in the
+      patch because it is byte-identical to upstream; note that `path:` here covers only
+      src/, while `headers:` records include/ separately.
+
+      CORRECTION, AND IT CHANGES THE ADVICE FOR A RE-VENDOR: this entry used to say the
+      122-file include-commenting was safe because the build force-includes everything
+      through precomp.h via `add_pch(glu32 precomp.h ...)`. IT DOES NOT. add_pch is
+      `if(PCH) target_precompile_headers(...) else() <nothing> endif()` and PCH is OFF by
+      default (PCH:BOOL=OFF in every build dir here), so precomp.h is force-included
+      nowhere; and even with PCH on it would not reach the C files, since glu32's
+      CMakeLists puts all of ${SOURCE} into PCH_SKIP_SOURCE. What is actually observable is
+      that glu32.dll builds and links with PCH off, so those headers arrive transitively
+      through the includes left alive. The transform therefore buys NOTHING in the default
+      configuration: on a bump, drop it and take upstream's includes verbatim rather than
+      reapplying it. (Same false mechanism was recorded on libtiff and libsamplerate; both
+      corrected in the same pass, and on libsamplerate it was not merely cosmetic — the
+      0.2.2 bump broke on exactly this assumption.)
 
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
@@ -694,14 +790,19 @@ trees:
 
   - path: sdk/lib/3rdparty/zlib
     name: zlib
-    staleness: >
-      AUDITED 2026-09-20: ours 1.2.13 (2022-10), current 1.3.2. 1.2.13 does carry the
-      CVE-2022-37434 fix, so this is aging rather than known-vulnerable, and zlib bumps are
-      historically painless.
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: yes  # 3 files under contrib/minizip only; zlib proper is pristine
+    license_extra:
+      Info-ZIP: >-
+        contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c)
+        1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x
+        upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP
+        licence, 2009-Jan-02 version), now vendored. The code was always licensed this way
+        — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a
+        licence file and this registry recorded only Zlib. The obligation is live: minizip
+        is built into rapps and zipfldr.
+    modified: yes  # 10 lines across 3 files under contrib/minizip; zlib proper is pristine
     patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
@@ -709,61 +810,127 @@ trees:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (zlib-1.2.13.tar.gz from madler/zlib,
-      sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30). This entry
-      previously said `modified: yes` with NO patch and NO review — a bare unexplained
-      claim, the last one of its kind in the registry. Now measured.
+      BUMPED 1.2.13 -> 1.3.2 ON 2026-09-20, and the delta SHRANK: 14 patched lines down to
+      10, and the CMakeLists lost both of its warning suppressions. Nothing was traded away
+      to get that — upstream fixed all three independently. Builds clean on i386, amd64 and
+      arm64.
 
-      ZLIB PROPER IS PRISTINE. adler32, crc32, deflate, inflate, inftrees, trees, zutil, the
-      gz* family, compress, uncompr, infback and both public headers are byte-identical to
-      1.2.13. Nothing we carry touches bounds checking, allocation, or the inflate/deflate
-      state machines. The whole delta is three files under contrib/minizip, the ZIP-archive
-      helper that ships alongside zlib — so the scary-sounding `modified` was never about
-      the compressor.
+      PROVENANCE IS CRYPTOGRAPHIC. zlib-1.3.2.tar.gz, sha256
+      bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16, ships a detached
+      .asc that verifies as a Good signature from "Mark Adler
+      <madler@alumni.caltech.edu>", DSA key 5ED46A6721D365587791E2AA783FCD8E58BCAFBA —
+      zlib's own author. Second tree in this registry with a verified signature, after
+      libsamplerate. As there, no independent trust path to the key: corroboration, not a
+      root of trust.
 
-      What it is: minizip has a stdio FILE* backend and a win32-HANDLE backend, and ReactOS
-      uses only the latter, so the stdio half and the zipOpen2/unzOpen2 entry points that
-      depend on it are compiled out behind __REACTOS__. unzip.c additionally stops NOUNCRYPT
-      being force-defined, which ENABLES minizip's traditional-PKWARE decryption rather than
-      disabling it — read that direction carefully. These cannot become a build flag:
-      __REACTOS__ already is one, and what will not move into the build is WHICH REGIONS it
-      guards, since upstream has no such conditionals to switch on.
+      ZLIB PROPER IS PRISTINE, before and after. adler32, crc32, deflate, inflate,
+      inftrees, trees, zutil, the gz* family, compress, uncompr, infback and both public
+      headers are byte-identical to 1.3.2. Nothing we carry touches bounds checking,
+      allocation, or the inflate/deflate state machines. The whole delta is ten lines in
+      three files under contrib/minizip, the ZIP-archive helper — the scary-sounding
+      `modified` was never about the compressor.
 
-      DE-PATCHED in the same pass, five files down to three. iowin32.c was restored to
-      pristine: its only delta was four `mode_fopen` declarations commented out to silence
-      -Wunused-variable, which is a warning rather than a portability need, so it moved into
-      the build as target_compile_options(minizip PRIVATE -Wno-unused-variable) — scoped to
-      minizip so it cannot hide an unused variable in zlib proper. zip.c's cosmetic hunk
-      (braces around a `for` body) is reverted too. Both were noise that would have had to
-      be re-applied at every bump. Verified: patch -p1 applies clean to a fresh 1.2.13
-      extraction and the result is byte-identical to our tree for all three files.
+      WHAT THE TEN LINES DO, and the REASON IS SHARPER THAN THE OLD NOTE SAID. minizip has
+      a stdio FILE* backend (ioapi.c) and a win32-HANDLE backend (iowin32.c); we compile
+      out the stdio half and the zipOpen2/unzOpen2 entry points that depend on it. The old
+      review said this was because "ReactOS uses only the win32 one", which reads as
+      preference. It is not: ioapi.c's fopen64_file_func calls FOPEN_FUNC, which resolves
+      to fopen64, and fopen64/ftello64/fseeko64 do not exist in our CRT. Removing the guard
+      during this bump produced "call to undeclared function 'fopen64'". Measured, not
+      inherited.
+
+      WHAT UPSTREAM RETIRED FOR US:
+
+      1. THE NOUNCRYPT HUNK IS GONE. 1.2.13's unzip.c force-defined NOUNCRYPT, which
+      DISABLES traditional-PKWARE decryption, and our patch wrapped that in __REACTOS__ to
+      get decryption back. 1.3.x dropped the force-define, so decryption is on by default
+      for everyone. Behaviour is unchanged — NOUNCRYPT is still undefined in our build, so
+      crypt.h is still included — but the hunk has nothing left to do.
+
+      2. -Wno-deprecated-non-prototype is gone from the CMakeLists. It existed for 1.2.13's
+      K&R-style definitions; 1.3.0 converted the library to prototypes.
+
+      3. -Wno-unused-variable on minizip is gone. It existed for four `mode_fopen` locals
+      in iowin32.c that only the stdio backend used; 1.3.x no longer leaves them unused.
+      Note that flag was itself only added on 2026-09-19, to de-patch iowin32.c — so this
+      tree went comment-out-the-source, then build-flag, then nothing, in two days.
+
+      THREE NEW UPSTREAM FILES were vendored for minizip to build: ints.h (fixed-width
+      integer typedefs from <limits.h>), skipset.h (a skiplist set, used by zip.c for
+      duplicate-name detection) and LICENSE.Info-Zip, which is a licence fact rather than a
+      build input — see license_extra.
+
+      HISTORY: before 2026-09-20 this entry said `modified: yes` with no patch and no
+      review, the last bare unexplained claim in the registry. It was then measured and
+      de-patched from five files to three, and bumped the same day.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
     name: libxml2
     staleness: >
-      AUDITED 2026-09-20: ours 2.12.8, current 2.15.x. Bumping is now a routine rebase of
-      one 2-line hunk — see the review above for why that hunk has to stay.
+      AUDITED 2026-09-20, BUMPED 2.12.8 -> 2.13.9 the same day. Current upstream is
+      2.15.4 and we are deliberately one minor line behind it, for one identified
+      reason: 2.14.0 made threads.c call InitOnceExecuteOnce, our kernel32.spec gates
+      that export behind `-version=0x600+`, and spec2def defaults to 0x502 with nothing
+      in the tree overriding it. Going further needs
+      `spec2def(kernel32.dll kernel32.spec ADD_IMPORTLIB VERSION 600)` — a project
+      policy decision about which Windows version our import libraries advertise, not a
+      missing feature, since our kernel32 does export the function. Everything else
+      about 2.15.4 was already made to build during this bump (see review), so that one
+      line is the whole remaining cost.
     upstream: https://gitlab.gnome.org/GNOME/libxml2
     license: MIT
-    license_file: sdk/lib/3rdparty/libxml2/COPYING
-    modified: yes  # 3 substantive files vs pristine 2.12.8
+    license_file: sdk/lib/3rdparty/libxml2/Copyright
+    modified: yes  # ONE file, two lines; see review
     patch: vendor-patches/libxml2.patch
     version:
+      # READS BACK OUR OWN SUBSTITUTION, and there is no better source in the vendored
+      # set: xmlversion.h is generated from xmlversion.h.in, and 2.13.9 ships no plain
+      # VERSION file (2.15 added one). Treat it as a label we maintain, not evidence.
       file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
       pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxml2-2.12.8.tar.xz from
-      download.gnome.org, sha256 verified against GNOME's published sum. 27 files exist
-      in both trees; 27 differ, but 21 of those differ ONLY by a stripped trailing blank
-      line — a tree-wide whitespace pass, not editing. THREE are substantive:
+      BUMPED 2.12.8 -> 2.13.9 ON 2026-09-20, and the delta went from three files to ONE
+      FILE AND TWO LINES. Builds clean on i386, amd64 and arm64, as do both consumers
+      (libxslt and msxml3). Patch round-trips byte-for-byte from
+      libxml2-2.13.9.tar.xz, sha256
+      a2c9ae7b770da34860050c309f903221c67830c86e4a7e760692b803df95143a.
 
-        libxml.h          swaps `#include "config.h"` for "win32config.h" and hoists
-                          XML_HIDDEN above it. Build-config shim.
-        win32config.h     adds <io.h> and <direct.h>. Portability.
-        xmlschemas.c      BEHAVIOURAL. Wraps the content-model determinism check in
-                          `#if 0  /* disabled in Wine */`, so schemas upstream rejects
-                          as non-deterministic now validate silently.
+      THE TWO BUILD SHIMS ARE RETIRED, not carried. libxml.h and include/win32config.h
+      were patched for years so libxml.h included "win32config.h" in place of the
+      "config.h" the build system was supposed to produce, and so win32config.h pulled
+      in <io.h> and <direct.h>. Both are now PRISTINE. In their place is a config.h of
+      ours at the tree root doing what upstream's OWN CMakeLists does on Windows —
+      `configure_file(include/win32config.h config.h COPYONLY)` — plus those two
+      includes. The old entry justified the shim by saying `config.h` was "a dangerously
+      generic name to put on this tree's include path"; that was true and also beside
+      the point, because libxml.h's include is QUOTED and resolves against its own
+      directory before any -I path. The file never had to go on an include path at all.
+
+      WHY 2.13.9 AND NOT 2.15.4, measured rather than assumed. 2.15.4 was taken all the
+      way to a clean compile of libxml2, libxslt and msxml3 before being backed out, and
+      it fails at ONE symbol: 2.14.0 changed threads.c to call InitOnceExecuteOnce for
+      its one-time parser init. kernel32.spec marks that export `-version=0x600+`;
+      spec2def's default is 0x502 (guOsVersion, sdk/tools/spec2def/spec2def.c) and no
+      CMakeLists in the tree passes `spec2def(... VERSION ...)`, so the export is in no
+      import library. Raising a MODULE's _WIN32_WINNT does not help — the import library
+      is one global artifact built from the spec, not a per-consumer one. The fix is one
+      line in dll/win32/kernel32/CMakeLists.txt and it is a policy change, so it is
+      recorded in `staleness:` for a human rather than taken here.
+
+      Everything else 2.15.4 needs is already done and would survive the jump: SAX.c and
+      xmlunicode.c are gone upstream and drop out of the source list, win32config.h is
+      deleted upstream (our root config.h stops depending on it), the codegen/*.inc
+      tables have to be vendored, ICU/MODULES/HTTP must be off, and XML_SYSCONFDIR has
+      to be defined because catalog.c pastes it into a string unconditionally.
+
+      BCryptGenRandom, AND AN SDK GAP IT EXPOSED. 2.13 seeds its hash RNG with
+      BCryptGenRandom on Windows. Our bcrypt.dll exports it, but sdk/include/psdk/
+      bcrypt.h was missing BCRYPT_SUCCESS — the Windows SDK's own success test for the
+      NTSTATUS every BCrypt function returns. So the header declared the functions and
+      offered no way to check one, and documented usage did not compile. Added to that
+      header rather than worked around in the vendored tree; libxslt and msxml3 gained
+      `bcrypt` in add_importlibs.
 
       That last one is the one that matters for a re-vendor, and note its provenance:
       the comment says WINE, not ReactOS. It arrived already-patched in the bulk import
@@ -805,6 +972,14 @@ trees:
     upstream: https://www.chiark.greenend.org.uk/~ian/adns/
     license: GPL-2.0-or-later
     license_file: sdk/lib/3rdparty/adns/COPYING
+    license_extra:
+      LGPL-2.0-or-later: >
+        src/adns.h and adns_win32/adns_win32.h, and DELIBERATELY so — this is upstream's
+        own carve-out, not drift. Both headers say the public header alone ("but only the
+        public header file adns.h and not any other part of adns") may also be taken under
+        the GNU Library GPL v2-or-later, so that a program can include it without the
+        whole work becoming GPL. The library itself stays GPL-2.0-or-later. Found by the
+        prose half of `--licences` on 2026-09-20; neither file carries an SPDX tag.
     modified: yes  # a third-party Windows port, not our work; see review
     patch: vendor-patches/adns.patch
     version:
@@ -852,120 +1027,191 @@ trees:
 
   - path: sdk/lib/3rdparty/libmpg123
     name: libmpg123
-    staleness: >
-      AUDITED 2026-09-20: ours 1.26.2 (2020), current 1.33.7. The probe previously reported
-      `45`, the API number, which is why this drop read as versioned when it was not. BUMP
-      CHECKLIST — one item, do not lose it: src/compat/compat.c in this tree is NOT 1.26.2,
-      it is 1.24.0-1.25.13 vintage (see the review). Do not carry it forward across the
-      bump; take upstream's, which also brings the wpathconv.h split our older copy inlines
-      and defines the unintr_fwrite that compat.h already declares. Fixing that file
-      standalone was considered and rejected: the bump redoes the same work, and the current
-      inconsistency is inert because nothing calls unintr_fwrite.
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
-    license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
-    modified: yes  # MIXED VINTAGE — compat.c is older than the rest; see review
+    license_file: sdk/lib/3rdparty/libmpg123/COPYING
+    modified: yes  # 5 lines across 2 files; see review
     patch: vendor-patches/libmpg123.patch
     headers:
-      - sdk/include/reactos/libs/libmpg123
+      - sdk/lib/3rdparty/libmpg123/include
     version:
-      # PACKAGE_VERSION is the RELEASE. The probe used to read MPG123_API_VERSION
-      # from mpg123.h, which is 45 for a whole span of releases and cannot tell
-      # 1.26.2 from 1.33.7 — the same defect libjpeg's probe had (JPEG_LIB_VERSION
-      # 90). An API number is not a version for CVE-matching purposes.
-      file: sdk/include/reactos/libs/libmpg123/config.h
-      pattern: '#define PACKAGE_VERSION "([^"]+)"'
+      # UPSTREAM'S OWN version.h, which 1.33.7 added and which the tree now vendors.
+      # This is strictly better than the two things this probe has pointed at before:
+      # MPG123_API_VERSION in mpg123.h (45 across a whole span of releases, so it could
+      # not tell 1.26.2 from 1.33.7 — the same defect libjpeg's JPEG_LIB_VERSION 90 had),
+      # and PACKAGE_VERSION in our hand-maintained config.h, which reads back a value WE
+      # write. version.h is upstream's and cannot be laundered by us.
+      file: sdk/lib/3rdparty/libmpg123/version.h
+      patterns:
+        - '#define MPG123_MAJOR (\d+)'
+        - '#define MPG123_MINOR (\d+)'
+        - '#define MPG123_PATCH (\d+)'
+      join: '.'
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (mpg123-1.26.2.tar.bz2, sha256
-      00f7bf7ea64fcec2c9d07751d6ad8849343ee09c282ea3b0d5dd486e886e2ff3).
+      BUMPED 1.26.2 -> 1.33.7 ON 2026-09-20, five years and a stack of decoder fixes. The
+      delta went from four patched files (2,477 meaningful lines) to TWO FILES AND FIVE
+      LINES, and the mixed-vintage compat.c problem this entry used to carry is discharged.
+      Builds clean on i386, amd64 and arm64.
 
-      THIS IS A MIXED-VINTAGE DROP. Everything is 1.26.2 EXCEPT compat/compat.c, which is a
-      verbatim OLDER upstream file. Normalized against each release: 469 lines from 1.23.8,
-      ZERO from 1.24.0 / 1.25.10 / 1.25.13, and 219 from every 1.26.x. Its banner reads
-      "copyright 2007-2016" where 1.26.2 reads "2007-2020". So the 219-line compat.c hunk in
-      the patch is NOT a ReactOS edit — it is upstream's own 1.25->1.26 change, missing
-      because the file was never refreshed. Anyone re-vendoring must not "revert" it
-      thinking they are removing a local patch.
+      SECURITY IS THE REASON. Our one consumer, winemp3.acm, feeds attacker-supplied MP3
+      bytes straight into this decoder. Fixed upstream between 1.26.2 and 1.33.7, in
+      libmpg123 specifically: use of uninitialized values in layer III dequantization
+      (III_dequantize_sample); a double free when deleting a handle after a failed
+      mpg123_decoder(); a double free in the mpg123_set_index() 32-bit wrapper called with
+      index size 0; realloc calls hardened against size_t multiplication overflow; and
+      ID3v2 UTF16 texts not being terminated when they overwrite previous frames.
 
-      The consequence is a latent inconsistency, currently harmless: compat.h IS 1.26.2 and
-      declares `size_t unintr_fwrite(...)`, intsym.h mangles it to INT123_unintr_fwrite, and
-      the stale compat.c never defines it. Nothing calls it — verified by grepping both
-      halves — so it is a dead declaration, not a link error. Re-syncing compat.c to 1.26.2
-      fixes both at once, and also needs upstream's wpathconv.h, whose content our older
-      compat.c carries INLINE rather than #included. FLAGGED, NOT DONE: this pass records
-      state rather than changing a shipping library.
+      THE TREE WAS RESTRUCTURED, and that is what shrank the patch. Its root now mirrors
+      upstream's src/ exactly — libmpg123/, common/, compat/, include/, version.h — so the
+      sources' own relative includes ("../common/debug.h", "../version.h") resolve with no
+      edits. The old layout hoisted every header flat into
+      sdk/include/reactos/libs/libmpg123/, which is precisely what forced include-line
+      patching; that directory is deleted and winemp3.acm now points at the tree's own
+      include/. DO NOT FLATTEN IT AGAIN. The file-set rule is written at the top of the
+      patch so a re-vendor is a copy.
 
-      Everything else is small. parse.c is 6 lines, a pure __REACTOS__ guard that only moves
-      `#include "getbits.h"`. mpg123.h is 16: the expected @PACKAGE_VERSION@/@API_VERSION@
-      substitution from mpg123.h.in (1.26.2 / 45, which is where the old bogus "45" version
-      probe came from) plus a __REACTOS__-guarded `typedef long ssize_t`. compat.h is 6: the
-      same ssize_t guard and two dead msdn.microsoft.com URLs updated. optimize.h is 4:
-      __declspec(align) vs __attribute__((aligned)). A further 37 files differ only by
-      trailing-whitespace stripping and are excluded from the patch, so pristine+patch does
-      NOT reproduce the tree byte-for-byte; the header says so.
+      THE CHECKLIST ITEM IS DISCHARGED. compat.c was NOT 1.26.2 — it was 1.24.0-1.25.13
+      vintage, 215 lines adrift, and this entry carried a standing warning not to carry it
+      across a bump. It was not carried. The tree takes 1.33.7's compat.c verbatim, which
+      also brings the wpathconv.h split our older copy inlined and defines the
+      unintr_fwrite that compat.h had been declaring with nothing behind it.
 
-      SECURITY: the decoder is untouched. layer1/2/3.c, id3.c, huffman.h, newhuffman.h,
-      frame.c, format.c, readers.c and parse.c's body are byte-identical or whitespace-only
-      against pristine. No bounds check, allocation, buffer size or Huffman/ID3 logic
-      differs. The only functional-content difference in the compiled set is compat.c's
-      EINTR retry plumbing, which is I/O rather than parsing. config.h selects the generic-C
-      OPT_I386 path with REAL_IS_FLOAT (no asm, no MMX/SSE/AltiVec), all three layers,
-      ID3v2, ICY, gapless, new Huffman tables, and — unlike libsamplerate — carries NO
-      kernel-mode shim; this is usermode only.
+      WHAT IS LEFT, FIVE LINES:
 
-      MEASUREMENT NOTE: match files by their FULL upstream path, not basename. mpg123 ships
-      both src/equalizer.c (the frontend's) and src/libmpg123/equalizer.c; a basename match
-      picks the wrong one and reports 56 phantom changed lines. Against the correct file
-      ours is identical.
+      include/mpg123.h extends upstream's own "little hack to help MSVC not having
+      ssize_t" to cover us, because our CRT does not declare ssize_t either — not in
+      <sys/types.h>, not in <corecrt.h>. Worth sending upstream: the real condition is
+      "Windows CRT", not "MSVC". libmpg123/optimize.h gives ALIGNED() an MSVC spelling,
+      since config.h defines CCALIGN unconditionally and upstream expands it to
+      __attribute__((aligned(a))). Kept rather than dropped because ReactOS supports MSVC
+      builds and we cannot test one here.
 
+      RETIRED BY UPSTREAM, not given up: parse.c's __REACTOS__ reordering of `#include
+      "getbits.h"` (1.33.7 needs none) and compat.h's ssize_t guard (1.33.7's compat.h does
+      not mention ssize_t at all). Also gone: the 37 files that differed only by
+      trailing-whitespace stripping, so unlike the old patch this one DOES reproduce the
+      tree byte-for-byte from pristine.
+
+      TWO LATENT 64-BIT BUGS DIED WITH THE OLD config.h, both from a 32-bit autoconf output
+      being applied to all three arches. SIZEOF_SIZE_T and SIZEOF_SSIZE_T were hardcoded to
+      4, and compat.h used them to pick the printf conversion for size_t — so on amd64 and
+      arm64 it chose %lu for an 8-byte value (diagnostic paths only). And `#define ssize_t
+      long` gave 4 bytes where 8 were needed. 1.33.7 uses neither macro, and ptrdiff_t is
+      correct on all three targets. The new config.h is regenerated from 1.33.7's
+      config.h.in with our 51 previous choices carried across and the 26 new switches left
+      undefined; KEEP IT IN STEP WITH THAT TEMPLATE on every bump.
+
+      THE API IS COMPATIBLE. winemp3.acm uses twelve entry points (mpg123_init/exit/new/
+      delete/open_feed/close/feed/read/feedseek/getformat/param + mpg123_handle); all
+      twelve survive with compatible signatures. mpg123_read's buffer parameter widened
+      from `unsigned char*` to `void*`, source-compatible for callers. lfs_wrap.c is now
+      BUILT and must stay built — it supplies mpg123_feedseek and the INT123_wrap_*
+      helpers libmpg123.c calls; lfs_alias.c, which 1.26.2 shipped and we never built, no
+      longer exists upstream.
+
+      LICENCE: upstream's COPYING and AUTHORS are now vendored, so the LGPL-2.1 grant is
+      reproducible from the tree instead of pointing at the repo's own COPYING.LIB.
+
+      MEASUREMENT NOTE, still true and still a trap: match files by their FULL upstream
+      path, not basename. mpg123 ships both src/equalizer.c (the frontend's) and
+      src/libmpg123/equalizer.c; a basename match picks the wrong one and reports 56
+      phantom changed lines.
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate
     name: libsamplerate
-    staleness: >
-      AUDITED 2026-09-20: ours 0.1.9 (2016), current 0.2.2. Audio resampler reachable from
-      untrusted sample data, and it is linked into kmixer.sys, a KERNEL driver — so a bug
-      here is a ring-0 bug. Now that the tree is de-patched down to two files the bump
-      should be cheap; mind the kernel-mode exit()/printf shim in config.h.
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
     license_file: sdk/lib/3rdparty/libsamplerate/COPYING
-    modified: yes  # 2 upstream files (float_cast.h, config.h); see patch
-    patch: vendor-patches/libsamplerate.patch
+    modified: no
     version:
-      # LITERAL, not a probe: config.h says PACKAGE_VERSION "0.1.8" but so does upstream
-      # 0.1.9's own hand-maintained Win32/config.h, so a probe reports upstream's error.
-      # 0.1.9 is established in the review from the LGPL->BSD relicense boundary.
-      literal: 0.1.9  # established 2026-09-20; no probe-able source exists
+      # LITERAL, and it has to be. Upstream ships no version macro in any file we
+      # vendor: the string lives in NEWS and in the CMake project() call, neither of
+      # which is source. Our own config.h says VERSION "0.2.2", but that file is OURS,
+      # so probing it would just read back what we wrote. Established instead from the
+      # tarball, whose sha256 is recorded in the review and whose GPG signature verifies.
+      literal: 0.2.2
     review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 and VERSION RECOVERED. The entry said
-      `modified: yes` with no patch, no review and version `unknown` — one of five trees in
-      that state. Now measured.
+      BUMPED 0.1.9 -> 0.2.2 ON 2026-09-20, AND THE TREE IS NOW UNMODIFIED. Every
+      upstream-derived file — common.h, the three coefficient tables, samplerate.c,
+      src_linear.c, src_sinc.c, src_zoh.c and the public samplerate.h — is byte-identical
+      to pristine 0.2.2, so `vendor-patches/libsamplerate.patch` is DELETED rather than
+      rebased. What remains is three files with no upstream counterpart: config.h (our
+      stand-in for a generated header, see below), precomp.h and CMakeLists.txt.
 
-      The version is 0.1.9, and there is NO honest probe for it. config.h says
-      PACKAGE_VERSION "0.1.8" — but so does upstream 0.1.9's own Win32/config.h, which is
-      hand-maintained rather than a configure output and whose version string upstream never
-      bumped. A probe reading it would launder upstream's error into our registry, so
-      `version:` is deliberately left absent. Established instead from the LICENCE BOUNDARY:
-      every source header carries the 2-clause BSD notice and "Copyright (c) ...-2016",
-      whereas 0.1.8 is LGPL-2.1 — libsamplerate relicensed AT 0.1.9. Diffing against 0.1.9
-      rather than 0.1.8 collapses the delta from all 13 files to three, which confirms it.
-      Our COPYING is already the BSD text, so the recorded licence was right all along.
+      PROVENANCE IS CRYPTOGRAPHIC, a first for this registry. libsamplerate-0.2.2.tar.xz,
+      sha256 3258da280511d24b49d6b08615bbe824d0cacc9842b0e4caf11c52cf2b043893, carries a
+      detached GPG signature that verifies against key B8D5315DA00072C0A860889FCE36E117202E3842,
+      "David Seifert <soap@gentoo.org>" — a maintainer named in upstream's own AUTHORS.
+      Read that as strong corroboration, not a root of trust: the key was fetched from a
+      public keyserver with no independent trust path, and it has since expired. (The
+      0.1.9 tarball the old patch cited also re-hashes correctly, so the base was sound.)
 
-      Two upstream files are edited. float_cast.h narrows upstream's inline lrint/lrintf
-      from `#if defined(WIN32)` to `#ifdef _MSC_VER`, because under clang/mingw they collide
-      with the real libm ones; that cannot be a -D since it guards a DEFINITION. config.h
-      carries two portability bits and — the one that matters — a KERNEL-MODE shim, `#define
-      exit(n) __debugbreak()` and `#define printf DbgPrint`, because libsamplerate is linked
-      into kmixer.sys where neither symbol exists. A re-vendor that drops that will not
-      link.
+      WHY THE BUMP WAS WORTH DOING: 0.2.0 fixed "a buffer out-of-bounds read error in
+      src/src_sinc.c" plus two undefined behaviours, and src_sinc.c is the hot path both
+      consumers select (SRC_SINC_FASTEST). libsamplerate is linked into kmixer.sys, so
+      that OOB read was a RING-0 read driven by audio sample data. 0.2.x also added
+      bounds assertions throughout those paths; they are linked into kmixer.sys on all
+      three arches (verified by string-matching the assert text in the .sys).
 
-      DE-PATCHED in the same pass, five files down to two: samplerate.c, src_linear.c,
-      src_sinc.c and src_zoh.c had their include blocks replaced by `#include "precomp.h"`,
-      which is the manual half of `add_pch(libsamplerate precomp.h SOURCE)` — the same
-      leftover pattern found in libtiff. All four restored to pristine; clean rebuild, zero
-      warnings, and wdmaud.drv + kmixer.sys still build. Verified the patch applies to a
-      fresh 0.1.9 extraction and reproduces our tree byte-for-byte.
+      THE PUBLIC API IS STRICTLY ADDITIVE ACROSS THE BUMP, which is why a five-year jump
+      was cheap: samplerate.h gains only src_clone() and two comment changes. All seven
+      entry points kmixer.sys and wdmaud.drv use are unchanged. Internally it is a large
+      refactor (SRC_PRIVATE became SRC_STATE with a vtable), but none of that is visible.
+
+      FOUR THINGS UPSTREAM CHANGED THAT THE PORT HAD TO ABSORB, all recorded because each
+      was invisible until something failed:
+
+      1. float_cast.h WAS DELETED UPSTREAM in 0.2.0 — one of the two files the old patch
+      existed to carry. 0.2.x relies on C99 <math.h> for lrint/lrintf instead. Our two
+      consumers were including that PRIVATE vendored header for their own lrintf() and now
+      include <math.h>; that also stops libsamplerate's config.h leaking into them, which
+      it had been doing, kernel-mode shim and all, into user-mode wdmaud.drv.
+
+      2. Win32/config.h WAS ALSO DELETED, so the other patched file has no upstream
+      counterpart either. Ours is now a hand-maintained stand-in for config.h.cmake,
+      mirroring that template's switch list in its order — the same arrangement as
+      libtiff's tiffconf.h. KEEP IT IN STEP ON EVERY BUMP.
+
+      3. THE SINC CONVERTERS ARE OPTIONAL SINCE 0.2.0 and the switches are SILENT:
+      leave ENABLE_SINC_FAST_CONVERTER undefined and src_new(SRC_SINC_FASTEST) simply
+      returns an error at runtime with nothing failing at build time. All three are
+      defined in config.h, which is what keeps this drop behaviour-identical to 0.1.9,
+      where the converters were unconditional.
+
+      4. 0.2.x GUARDS ITS OWN `#include "config.h"` behind HAVE_CONFIG_H, which the
+      CMakeLists now defines. Nothing else supplies it — see the add_pch finding below.
+
+      THE KERNEL-MODE SHIM IS GONE. config.h no longer defines exit() or printf(): in
+      0.2.2 every call to both is dead code (src_linear.c guards its pair with
+      `#define SRC_DEBUG 0`; samplerate.c's three printf()s are commented out). Confirmed
+      by linking kmixer.sys without it on all three arches. config.h records the one-line
+      grep to re-check this on the next bump, and the ordering trap if it ever comes back.
+
+      TWO SYMBOLS kmixer.sys HAD TO GROW, beside the calloc/free it already supplied:
+      malloc (0.2.x uses it in the src_*_copy paths behind src_clone — we never call
+      src_clone, but the converter vtables name the copy functions so the symbol must
+      resolve) and _assert. The asserts are routed at RtlAssert rather than compiled out
+      with NDEBUG, deliberately: several of them ARE the bounds checks added alongside
+      the src_sinc.c OOB fix, and in ring 0 a loud stop beats the overrun.
+
+      DELETED: unistd.h, an empty placeholder 0.1.9 shipped under Win32/ that 0.2.2 does
+      not, referenced by nothing and sitting on kmixer.sys's include path.
+
+      CORRECTION TO THE PREVIOUS REVIEW, which said the 2026-09-19 de-patch was safe
+      because `add_pch(libsamplerate precomp.h SOURCE)` force-includes precomp.h. IT DOES
+      NOT. add_pch is `if(PCH) target_precompile_headers(...) else() <nothing> endif()`
+      and PCH is OFF by default (PCH:BOOL=OFF in every build dir here), so precomp.h is
+      force-included nowhere and is inert in an ordinary build. The de-patch was safe for
+      a different reason: upstream 0.1.9's own sources include config.h unconditionally.
+      This surfaced the moment 0.2.x put that include behind HAVE_CONFIG_H and the
+      supposed force-include did not save it. The same wrong mechanism was written into
+      libtiff's entry; corrected there too.
+
+      HISTORY. Ours was 0.1.9, established from the LICENCE BOUNDARY rather than from any
+      version string: libsamplerate relicensed LGPL-2.1 -> BSD-2-Clause AT 0.1.9, and
+      0.1.9's own hand-maintained Win32/config.h still said PACKAGE_VERSION "0.1.8",
+      which is why the registry read `unknown` for years.
     reason: Sample-rate conversion; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libwin-iconv
@@ -1186,10 +1432,6 @@ trees:
 
   - path: dll/3rdparty/libjpeg
     name: libjpeg
-    staleness: >
-      AUDITED 2026-09-20: ours 9d (2020-01), current 9f. Note the IJG 9.x line is a
-      different lineage from libjpeg-turbo, which is what most distributions actually ship
-      and where most CVE traffic is; match advisories against IJG releases, not turbo ones.
     upstream: https://ijg.org/
     license: IJG
     license_file: dll/3rdparty/libjpeg/README
@@ -1204,6 +1446,28 @@ trees:
       file: sdk/include/reactos/libs/libjpeg/jversion.h
       pattern: '#define JVERSION\s+"([^ "]+)'
     review: >
+      BUMPED 9d -> 9f ON 2026-09-20, and it was the cheapest bump in this registry: the
+      one patched hunk applied to 9f with no fuzz and no rejects, every source file is
+      byte-identical to pristine 9f, and libjpeg.dll plus windowscodecs build unchanged
+      on i386, amd64 and arm64. Tarball jpegsrc.v9f.tar.gz, sha256
+      04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b. That is what a
+      tree kept at "pristine apart from one header" is worth.
+
+      jconfig.h is ours and needed no change: upstream's jconfig.txt is byte-identical
+      between 9d and 9f, and the macros ours omits (BMP_SUPPORTED, GIF_SUPPORTED,
+      TARGA_SUPPORTED, TWO_FILE_COMMANDLINE and the rest) are cjpeg/djpeg application
+      switches the library never reads.
+
+      DELETED IN THE SAME PASS: sdk/include/reactos/libs/libjpeg/rosdiff.patch, an
+      in-tree copy of the same hunk with repo-root-relative paths. It predates
+      vendor-patches/ and was the precedent this directory followed; keeping both means
+      two records of one fact, and it was already stale at 9d's line offsets. Nothing
+      referenced it.
+
+      LINEAGE WARNING, unchanged: the IJG 9.x line is NOT libjpeg-turbo, which is what
+      most distributions ship and where most CVE traffic is reported. Match advisories
+      against IJG releases, not turbo ones.
+
       PARTIALLY DE-PATCHED 2026-09-19. jpeglib.h and jdct.h differed by trailing
       whitespace only and are restored; the header directory is 10 of 11 identical.
 
@@ -1279,13 +1543,18 @@ trees:
     review: >
       DE-PATCHED 2026-09-19 — all 43 shared .c files are byte-identical to pristine
       4.1.0 and NOTHING replaced the edit, because the build was already doing it.
-      `add_pch(libtiff precomp.h SOURCE)` calls CMake's target_precompile_headers,
-      which force-includes precomp.h on clang, so the 35 hand-edited
-      `#include <precomp.h>` lines were the manual half of a convention the build had
-      automated. Reverted to upstream's own `#include "tiffiop.h"`: correct with PCH on
-      (force-include plus a guarded redundant include) and with PCH off (resolves via
-      the existing include_directories). libtiff.dll builds and links unchanged. The
-      largest block of "modification" in this registry was leftovers, not a port.
+      The 35 hand-edited `#include <precomp.h>` lines were reverted to upstream's own
+      `#include "tiffiop.h"`, which resolves through the existing include_directories.
+      libtiff.dll builds and links unchanged. The largest block of "modification" in
+      this registry was leftovers, not a port.
+
+      CORRECTED 2026-09-20: this entry used to say the de-patch was safe because
+      `add_pch(libtiff precomp.h SOURCE)` force-includes precomp.h on clang. IT DOES
+      NOT. add_pch is `if(PCH) target_precompile_headers(...) else() <nothing> endif()`
+      and PCH is OFF by default (PCH:BOOL=OFF in every build dir here), so precomp.h is
+      force-included nowhere. The revert was safe on its own terms — the include path
+      finds tiffiop.h either way — and the false mechanism was caught during the
+      libsamplerate bump, where the equivalent claim did NOT hold and the build broke.
 
       THE SECURITY FACT (now RESOLVED, kept for the record): this was stock 4.1.0
       (Nov 2019) with NO backported fixes, so it was exactly as vulnerable as unpatched
@@ -1381,6 +1650,18 @@ trees:
     upstream: https://sourceforge.net/projects/libtirpc/
     license: BSD-3-Clause
     license_file: dll/3rdparty/libtirpc/COPYING
+    license_extra:
+      LGPL-2.1-or-later: >
+        THE WINDOWS PORT HALF OF THIS TREE IS COPYLEFT, and the entry said BSD-3-Clause
+        flat until 2026-09-20. Sixteen files carry "Copyright (c) 2012 The Regents of the
+        University of Michigan" and the LGPL-2.1-or-later notice: src/{auth_none,auth_sspi,
+        auth_unix,authsspi_prot,clnt_generic,clnt_vc,rpc_prot,wintirpc,xdr_rec}.c and
+        tirpc/{wintirpc.h,rpc/{auth,auth_gss,auth_sspi,clnt,rpc_msg,types}.h}. They are the
+        ms-nfs41-client Windows/SSPI port this tree's review already describes as having
+        no surviving upstream artifact — so now we know what licence that port is under.
+        This is the most consequential finding the prose scan has made: a weak-copyleft
+        obligation inside a tree recorded as permissive, in files that ARE built. The
+        Sun/upstream libtirpc half remains BSD-3-Clause.
     modified: yes  # a Windows/SSPI port over 0.2.1; see review
     patch: vendor-patches/libtirpc.patch
     version:
@@ -1399,8 +1680,8 @@ trees:
       upstream never bumped it — so ours is byte-identical to theirs and the probe was
       faithfully laundering upstream's error. Third instance of this shape here, after
       libjpeg's JPEG_LIB_VERSION 90 and libmpg123's MPG123_API_VERSION 45; an API or
-      packaging number is not a release. (libsamplerate has exactly the same defect, also
-      from an upstream-shipped stale config.)
+      packaging number is not a release. (libsamplerate had exactly the same defect until
+      the 0.2.2 bump, also from an upstream-shipped stale config.)
 
       0.2.1 established two independent ways. First, licence headers: our sources carry the
       BSD-3-Clause "Copyright (c) 2009, Sun Microsystems, Inc." notice, while 0.1.11 still

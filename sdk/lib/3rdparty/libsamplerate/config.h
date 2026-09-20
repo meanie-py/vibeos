@@ -1,41 +1,37 @@
 /*
-** Copyright (c) 2002-2016, Erik de Castro Lopo <erikd@mega-nerd.com>
+** Copyright (c) 2002-2021, Erik de Castro Lopo <erikd@mega-nerd.com>
 ** All rights reserved.
 **
 ** This code is released under 2-clause BSD license. Please see the
-** file at : https://github.com/erikd/libsamplerate/blob/master/COPYING
+** file at : https://github.com/libsndfile/libsamplerate/blob/master/COPYING
 */
 
 /*
-** This is the Win32 specific config.h header file.
-**
-** On Unix (including MacOSX), this header file is automatically generated
-** during the configure process while on Win32 this has to be hand edited
-** to keep it up to date.
-**
-** This is also a good file to add Win32 specific things.
+** ReactOS: this is the hand-maintained stand-in for the file libsamplerate's own
+** build generates from config.h.cmake. Upstream deleted the hand-edited
+** Win32/config.h during 0.2.0, so there is no longer an upstream file for this one
+** to be a patch against -- keep it in step with config.h.cmake on every version bump.
+** Everything below mirrors that template's switch list, in its order.
 */
 
+#ifndef LIBSAMPLERATE_CONFIG_H
+#define LIBSAMPLERATE_CONFIG_H
+
 /*
-** MSVC++ assumes that all floating point constants without a trailing
-** letter 'f' are double precision.
-**
-** If this assumption is incorrect and one of these floating point constants
-** is assigned to a float variable MSVC++ generates a warning.
-**
-** Since there are currently about 25000 of these warnings generated in
-** src/src_sinc.c this slows down compile times considerably. The
-** following #pragma disables the warning.
+** MSVC++ assumes that all floating point constants without a trailing letter 'f'
+** are double precision, and src_sinc.c has about 25000 of them. The pragma below
+** stops that warning from dominating compile time.
 */
 #ifdef _MSC_VER
 #pragma warning(disable: 4305)
+#pragma warning(disable: 4244)
 #endif
-/*----------------------------------------------------------------------------
-** Normal #defines follow.
-*/
 
-/* Set to 1 if the compile is GNU GCC. */
-#define COMPILER_IS_GCC 0
+/* Name of package */
+#define PACKAGE "libsamplerate"
+
+/* Version number of package */
+#define VERSION "0.2.2"
 
 /* Target processor clips on negative float to int conversion. */
 #define CPU_CLIPS_NEGATIVE 0
@@ -46,44 +42,18 @@
 /* Target processor is big endian. */
 #define CPU_IS_BIG_ENDIAN 0
 
-/* Target processor is little endian. */
+/* Target processor is little endian. All three of our targets (i386, amd64,
+** arm64) are little-endian; revisit if a big-endian port ever appears. */
 #define CPU_IS_LITTLE_ENDIAN 1
 
-/* Set to 1 to enable debugging. */
-#define ENABLE_DEBUG 0
-
-/* Major version of GCC or 3 otherwise. */
-/* #undef GCC_MAJOR_VERSION */
-
 /* Define to 1 if you have the `alarm' function. */
-/* #undef HAVE_ALARM */
+#define HAVE_ALARM 0
 
-/* Define to 1 if you have the `calloc' function. */
-#define HAVE_CALLOC 1
-
-/* Define to 1 if you have the `ceil' function. */
-#define HAVE_CEIL 1
-
-/* Define to 1 if you have the <dlfcn.h> header file. */
-/* #undef HAVE_DLFCN_H */
+/* Define to 1 if you have the <alsa/asoundlib.h> header file. */
+#define HAVE_ALSA 0
 
 /* Set to 1 if you have libfftw3. */
-/* #undef HAVE_FFTW3 */
-
-/* Define to 1 if you have the `floor' function. */
-#define HAVE_FLOOR 1
-
-/* Define to 1 if you have the `fmod' function. */
-#define HAVE_FMOD 1
-
-/* Define to 1 if you have the `free' function. */
-#define HAVE_FREE 1
-
-/* Define to 1 if you have the <inttypes.h> header file. */
-/* #undef HAVE_INTTYPES_H */
-
-/* Define to 1 if you have the `m' library (-lm). */
-/* #undef HAVE_LIBM */
+#define HAVE_FFTW3 0
 
 /* Define if you have C99's lrint function. */
 #define HAVE_LRINT 1
@@ -91,119 +61,67 @@
 /* Define if you have C99's lrintf function. */
 #define HAVE_LRINTF 1
 
-/* Define to 1 if you have the `malloc' function. */
-#define HAVE_MALLOC 1
-
-/* Define to 1 if you have the `memcpy' function. */
-#define HAVE_MEMCPY 1
-
-/* Define to 1 if you have the `memmove' function. */
-#define HAVE_MEMMOVE 1
-
-/* Define to 1 if you have the <memory.h> header file. */
-#define HAVE_MEMORY_H 1
-
 /* Define if you have signal SIGALRM. */
-/* #undef HAVE_SIGALRM */
+#define HAVE_SIGALRM 0
 
 /* Define to 1 if you have the `signal' function. */
-/* #undef HAVE_SIGNAL */
+#define HAVE_SIGNAL 0
 
 /* Set to 1 if you have libsndfile. */
-#define HAVE_SNDFILE 1
+#define HAVE_SNDFILE 0
+
+/* Define to 1 if you have the <stdbool.h> header file. */
+#define HAVE_STDBOOL_H
 
 /* Define to 1 if you have the <stdint.h> header file. */
-/* #undef HAVE_STDINT_H */
-
-/* Define to 1 if you have the <stdlib.h> header file. */
-#define HAVE_STDLIB_H 1
-
-/* Define to 1 if you have the <strings.h> header file. */
-#define HAVE_STRINGS_H 1
-
-/* Define to 1 if you have the <string.h> header file. */
-#define HAVE_STRING_H 1
-
-/* Define to 1 if you have the <sys/stat.h> header file. */
-#define HAVE_SYS_STAT_H 1
+#define HAVE_STDINT_H 1
 
 /* Define to 1 if you have the <sys/times.h> header file. */
-/* #undef HAVE_SYS_TIMES_H */
-
-/* Define to 1 if you have the <sys/types.h> header file. */
-#define HAVE_SYS_TYPES_H 1
+#define HAVE_SYS_TIMES_H 0
 
 /* Define to 1 if you have the <unistd.h> header file. */
-#define HAVE_UNISTD_H 1
+/* #undef HAVE_UNISTD_H */
 
-/* Define to the sub-directory in which libtool stores uninstalled libraries.
-   */
-#define LT_OBJDIR ".libs/"
+/* Define to 1 if the compiler supports simple visibility declarations.
+** Left off deliberately: this is ELF visibility, and we build PE-COFF. */
+/* #undef HAVE_VISIBILITY */
 
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-/* #undef NO_MINUS_C_MINUS_O */
-
-/* Set to 1 if compiling for Win32 */
-#define OS_IS_WIN32 1
-
-/* Name of package */
-#define PACKAGE "libsamplerate"
-
-/* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "erikd@mega-nerd.com"
-
-/* Define to the full name of this package. */
-#define PACKAGE_NAME "libsamplerate"
-
-/* Define to the full name and version of this package. */
-#define PACKAGE_STRING "libsamplerate 0.1.8"
-
-/* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "libsamplerate"
-
-/* Define to the home page for this package. */
-#define PACKAGE_URL "http://www.mega-nerd.com/libsamplerate/"
-
-/* Define to the version of this package. */
-#define PACKAGE_VERSION "0.1.8"
-
-/* The size of `double', as computed by sizeof. */
-#define SIZEOF_DOUBLE 8
-
-/* The size of `float', as computed by sizeof. */
-#define SIZEOF_FLOAT 4
+/*
+** define fast / balanced / best samplerate convertors.
+**
+** ALL THREE MUST STAY DEFINED. 0.2.0 made the sinc converters optional and the
+** #ifdefs are silent: undefine one and src_new() just returns SRC_ERR_BAD_CONVERTER
+** for it at runtime, with nothing failing at build time. kmixer.sys and wdmaud.drv
+** both ask for SRC_SINC_FASTEST. 0.1.9 had no such switches, so defining all three
+** is what keeps this drop behaviour-identical to the one it replaces.
+*/
+#define ENABLE_SINC_FAST_CONVERTER
+#define ENABLE_SINC_MEDIUM_CONVERTER
+#define ENABLE_SINC_BEST_CONVERTER
 
 /* The size of `int', as computed by sizeof. */
 #define SIZEOF_INT 4
 
-/* The size of `long', as computed by sizeof. */
+/* The size of `long', as computed by sizeof. Windows is LLP64, so `long' is 4
+** bytes on amd64 and arm64 as well as i386. */
 #define SIZEOF_LONG 4
 
-/* Define to 1 if you have the ANSI C header files. */
-#define STDC_HEADERS 1
-
-/* Version number of package */
-#define VERSION "0.1.8"
-
-
-
-/* Extra Win32 hacks. */
-
 /*
-**	Microsoft's compiler still does not support the 1999 ISO C Standard
-**	which includes 'inline'.
+** THE KERNEL-MODE exit()/printf() SHIM IS GONE, and stays gone unless the check
+** below says otherwise. libsamplerate is linked into kmixer.sys, where neither
+** function exists, so 0.1.9 carried `#define exit(n) __debugbreak()` and
+** `#define printf DbgPrint` here. In 0.2.2 every call to both is dead: src_linear.c
+** guards its "Whoops!!!!" pair with `#define SRC_DEBUG 0`, and samplerate.c's three
+** printf()s are themselves commented out. Verified by linking kmixer.sys without the
+** shim on all three arches.
+**
+** ON EVERY BUMP, re-check with:  grep -n 'printf\|exit *(' *.c
+** and confirm each hit is still dead. If upstream ever un-guards one, the shim has to
+** come back -- and it must then be defined AFTER <stdio.h> and <stdlib.h> are included,
+** or it rewrites the CRT's own declarations instead of the call sites: `int printf
+** (const char*, ...)` becomes a second, conflicting declaration of DbgPrint (which
+** returns ULONG), and `void exit (int)` becomes `void __debugbreak ()`. 0.1.9 got that
+** order right by accident because it included config.h last; 0.2.x includes it first.
 */
 
-#define inline __inline
-
-/* ReactOS hacks */
-#ifndef __debugbreak
-void __cdecl __debugbreak(void);
-#endif
-unsigned long __cdecl DbgPrint(const char *Format, ...);
-#define exit(n) __debugbreak()
-#define printf DbgPrint
-
-# ifdef _MSC_VER
-#  pragma warning(disable:4244)
-# endif /* _MSC_VER */
+#endif /* LIBSAMPLERATE_CONFIG_H */

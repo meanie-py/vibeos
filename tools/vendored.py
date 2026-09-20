@@ -416,6 +416,58 @@ _SPDX = re.compile(r"SPDX-License-Identifier:[ \t]*([^\n]+)")
 _ROS_LICENSE_HDR = re.compile(r"^\s*[*#/]*\s*LICENSE:\s*([^(\n]+)", re.M)
 
 
+#: Licences a file states by NAME in prose, with no SPDX tag. The blind spot this closes
+#: was found the hard way, twice: glu32 carries 73 files under "SGI Free Software License
+#: B, Version 1.1" inside a tree recorded SGI-B-2.0, and zlib's contrib/minizip is
+#: Info-ZIP inside a tree recorded Zlib. Both sat there while `--licences` printed
+#: "every declared licence accounted for".
+#:
+#: THIS MATCHES LICENCE NAMES, NOT LICENCE TEXT, and the distinction is the whole reason
+#: it can exist. Grepping for notice BODIES was rejected when this check was first
+#: written, correctly: every ACPICA file reproduces a BSD notice, so a text grep reports
+#: 226 hits that are all the recorded licence. A name is a much narrower thing — a file
+#: says "GNU General Public License" when that is what governs it.
+#:
+#: FAMILY GRANULARITY, DELIBERATELY. These map to a family (GPL, LGPL, Apache) rather
+#: than a version, because version detection from prose is guesswork — "either version 2
+#: of the License, or (at your option) any later version" is three plausible answers —
+#: and the drift that matters legally is a COPYLEFT FILE INSIDE A PERMISSIVE TREE, which
+#: is a family-level fact. The two named-variant entries are exceptions: SGI-B and
+#: Info-ZIP have no SPDX-shaped spelling in the wild, so the name IS the identifier.
+#:
+#: Order matters. Lesser/Library GPL must be tried before plain GPL or every LGPL notice
+#: reports as GPL.
+_PROSE_LICENCES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"SGI\s+Free\s+Software\s+License\s+B,?\s*Version\s*1\.1", re.I), "SGI-B-1.1"),
+    (re.compile(r"SGI\s+Free\s+Software\s+License\s+B,?\s*Version\s*2\.0", re.I), "SGI-B-2.0"),
+    (re.compile(r"\bInfo-ZIP\s+licen[cs]e\b", re.I), "Info-ZIP"),
+    (re.compile(r"GNU\s+(?:Lesser|Library)\s+General\s+Public\s+Licen[cs]e", re.I), "LGPL"),
+    (re.compile(r"GNU\s+General\s+Public\s+Licen[cs]e", re.I), "GPL"),
+    (re.compile(r"Apache\s+Licen[cs]e", re.I), "Apache"),
+    (re.compile(r"Mozilla\s+Public\s+Licen[cs]e", re.I), "MPL"),
+    (re.compile(r"Common\s+Development\s+and\s+Distribution\s+Licen[cs]e", re.I), "CDDL"),
+    (re.compile(r"Boost\s+Software\s+Licen[cs]e", re.I), "BSL"),
+    (re.compile(r"Eclipse\s+Public\s+Licen[cs]e", re.I), "EPL"),
+)
+
+#: How a registry entry SATISFIES a prose family. Substring matching cannot do this job:
+#: "LGPL-2.1" contains "GPL", so a tree recorded LGPL would silently absorb a real GPL
+#: file — the exact copyleft-escalation this check is for. The GPL pattern therefore
+#: requires a GPL not preceded by an L.
+_PROSE_ACCOUNTED: dict[str, re.Pattern[str]] = {
+    "SGI-B-1.1": re.compile(r"SGI-B-1\.1", re.I),
+    "SGI-B-2.0": re.compile(r"SGI-B-2\.0", re.I),
+    "Info-ZIP": re.compile(r"Info-ZIP", re.I),
+    "LGPL": re.compile(r"LGPL|Lesser|Library General", re.I),
+    "GPL": re.compile(r"(?<![A-Za-z])GPL", re.I),
+    "Apache": re.compile(r"Apache", re.I),
+    "MPL": re.compile(r"MPL|Mozilla", re.I),
+    "CDDL": re.compile(r"CDDL", re.I),
+    "BSL": re.compile(r"BSL|Boost", re.I),
+    "EPL": re.compile(r"EPL|Eclipse", re.I),
+}
+
+
 def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
     """Licences a tree's own files declare that its registry entry does not account for.
 
@@ -427,19 +479,38 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
     recorded as Microsoft's terms and carries 5 files stamped `SPDX MIT`. Generating a
     notices file from the headline licence alone would misstate all three.
 
-    Only SELF-DECLARED licences count — an SPDX tag or a ReactOS `LICENSE:` header. A
-    prose grep would fire on every BSD notice in every ACPICA file and drown the signal,
-    which is the same reason `_FOREIGN_HOLDER` sticks to corporate holders.
+    TWO PASSES, and the second one was added on 2026-09-20 to close a blind spot that
+    had already cost two findings. An SPDX tag or a ReactOS `LICENSE:` header is a
+    machine-readable statement and is read first. Where a file makes none, its header is
+    matched against `_PROSE_LICENCES` — a list of licence NAMES, not licence TEXT. That
+    distinction is what makes the second pass possible at all: grepping for notice bodies
+    was rejected when this was first written, correctly, because every ACPICA file
+    reproduces a BSD notice and a text grep drowns in 226 true-but-useless hits. A file
+    that NAMES the GNU General Public License is saying something much narrower.
+
+    The prose pass reports a FAMILY (GPL, LGPL, Apache) rather than a version, because
+    version detection from prose is guesswork — "either version 2 of the License, or (at
+    your option) any later version" admits three answers — while the drift that matters
+    legally is a copyleft file inside a permissive tree, which is a family-level fact.
+
+    The first run of it found three unrecorded licences that this function had been
+    printing all-clear over: 586 BSL-1.0 files in `external/fex` (it vendors range-v3),
+    adns's deliberate GPL/LGPL carve-out on its public header, and — the one that
+    matters — sixteen LGPL-2.1-or-later files in `dll/3rdparty/libtirpc`, the University
+    of Michigan Windows/SSPI port, inside a tree recorded flat BSD-3-Clause.
 
     A hit is a QUESTION, as everywhere else here: the answer may be "record it in
     `license_extra`" or "those files are ours and the tree boundary is wrong".
 
-    KNOWN BLIND SPOT, stated because a green run reads like an all-clear and is not one:
-    this sees only SELF-DECLARED licences. A file that states its licence in PROSE with
-    no SPDX tag is invisible to it — `dll/3rdparty/mbedtls/_reactos_strsafe_wrapper.c` is
-    a ReactOS-authored LGPL-2.1-or-later file inside an Apache-2.0 tree and was found by
-    hand, after this scan had already passed. So: green means no tree DECLARES an
-    unrecorded licence, not that no tree HAS one.
+    WHAT IS STILL INVISIBLE, stated because a green run reads like an all-clear and is
+    not one. Permissive families — MIT, BSD, ISC, Zlib, public-domain dedications — are
+    deliberately NOT in `_PROSE_LICENCES`: their notices get reproduced verbatim inside
+    files governed by something else (a GPL file quoting the MIT terms of a snippet it
+    embeds), so they are exactly where a name match stops being evidence. The omission is
+    also the low-risk direction, since the finding this check exists for is copyleft
+    turning up where the entry claims permissive, not the reverse. And a file that states
+    its terms without ever naming a licence — bespoke prose, "all rights reserved", a
+    grant written out longhand — is still invisible to both passes.
     """
     out = []
     for t in reg.trees:
@@ -447,6 +518,7 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
         if not d.is_dir():
             continue
         found: dict[str, int] = {}
+        prose: dict[str, int] = {}
         for p in d.rglob("*"):
             if not p.is_file() or p.suffix.lower() not in _SRC_SUFFIXES:
                 continue
@@ -454,18 +526,39 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
                 head = p.read_text(errors="replace")[:3000]
             except OSError:
                 continue
+            declared = False
             for pat in (_SPDX, _ROS_LICENSE_HDR):
                 m = pat.search(head)
                 if m:
                     lic = m.group(1).strip().rstrip("*/").strip().rstrip(".").strip()
                     if lic:
                         found[lic] = found.get(lic, 0) + 1
+                        declared = True
+            # Prose names are the FALLBACK, not a second opinion. A file that already
+            # carries an SPDX tag has answered the question authoritatively; reading its
+            # prose too would double-report every dual-licensed ACPICA header, once as
+            # the tag and once as the family named in the notice below it.
+            if declared:
+                continue
+            for pat, family in _PROSE_LICENCES:
+                if pat.search(head):
+                    key = f"{family} (prose)"
+                    prose[key] = prose.get(key, 0) + 1
+                    break
         # Accounted for = it IS the headline licence, or it is recorded in license_extra.
+        recorded = t.license + " " + " ".join(t.license_extra)
         unaccounted = {
             lic: n
             for lic, n in found.items()
             if lic.lower() not in t.license.lower() and lic not in t.license_extra
         }
+        unaccounted.update(
+            {
+                lic: n
+                for lic, n in prose.items()
+                if not _PROSE_ACCOUNTED[lic[: -len(" (prose)")]].search(recorded)
+            }
+        )
         if unaccounted:
             out.append((t.path, t.license, unaccounted))
     return out

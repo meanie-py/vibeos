@@ -1,9 +1,7 @@
 {
   "active": {
     "dynamic": [
-      "dll/win32/shell32/CEnumIDListBase.cpp",
-      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
-      "dll/win32/shell32/CFolderItemVerbs.cpp"
+      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp"
     ],
     "hybrid": [
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp"
@@ -28,7 +26,9 @@
       "dll/win32/shell32/CDefViewBckgrndMenu.cpp",
       "dll/win32/shell32/CDefViewDual.cpp",
       "dll/win32/shell32/CDefaultContextMenu.cpp",
+      "dll/win32/shell32/CEnumIDListBase.cpp",
       "dll/win32/shell32/CFolder.cpp",
+      "dll/win32/shell32/CFolderItemVerbs.cpp",
       "dll/win32/shell32/CFolderItems.cpp",
       "dll/win32/shell32/CIDLDataObj.cpp",
       "dll/win32/shell32/COpenWithMenu.cpp",
@@ -94,7 +94,6 @@
       "dll/win32/shell32/rust_stubwindow32_stub.cpp"
     ],
     "cpp_only_companion_bridge": [
-      "dll/win32/shell32/rust_folderitemverbs_bridge.cpp",
       "dll/win32/shell32/rust_recyclebin_bridges_stub.cpp"
     ],
     "phantom_inline_linkage": [

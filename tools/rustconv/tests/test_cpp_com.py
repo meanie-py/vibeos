@@ -3603,6 +3603,55 @@ def test_IDispatchImpl_inner_interface_need_not_be_I_prefixed():
         assert "CComPtr<ITypeInfo> m_pTypeInfo" in cls.state_fields, name
 
 
+def test_CComBSTR_state_keeps_its_type_so_the_destructor_survives():
+    """`CComBSTR m_name` must NOT flatten to a bare `BSTR`.
+
+    ATL's `~CComBSTR` calls `SysFreeString`. Lowering the field to a raw pointer compiles and
+    silently leaks every string the object ever held — the exact class of loss the RAII
+    container path exists to prevent, so it rides that path even though it is neither a
+    container nor a template.
+    """
+    field = _parse_plain_state_field("CComBSTR m_name")
+    assert field.raii_container == "CComBSTR"
+    assert field.rust_type == "CComBSTR"
+    assert field.owns_resource is True
+    assert field.init_expression == "CComBSTR::new()"
+
+
+def test_new_CComObject_is_a_third_internal_activation_shape():
+    """`new CComObject<T>()` — no factory at all; the caller allocates, then drives
+    Init/AddRef itself. CFolderItemVerbs.cpp does that for CFolderItemVerb. It is still
+    "no CLSID, constructed inside the DLL", which is the only question the flag answers."""
+    cls = analyze_class(
+        SHELL32 / "CFolderItemVerbs.cpp",
+        "CFolderItemVerb",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert cls.internal_shell_object_creator is True
+    cls.require_supported(allow_internal=True)
+
+
+def test_activation_in_another_TU_is_named_not_searched():
+    """CFolderItemVerbs is constructed by `CFolderItem::Verbs` in CFolderItems.cpp, a
+    DIFFERENT file. Scanning only its own TU reports the activation as unmapped for a class
+    whose activation is perfectly ordinary and simply lives next door — so the caller is
+    supplied explicitly, the way `object_map_source` is, rather than found by sweeping."""
+    args = dict(object_map_source=SHELL32 / "shell32.cpp")
+    alone = analyze_class(SHELL32 / "CFolderItemVerbs.cpp", "CFolderItemVerbs", **args)
+    assert alone.internal_shell_object_creator is False
+    with pytest.raises(CppComError):
+        alone.require_supported(allow_internal=True)
+
+    named = analyze_class(
+        SHELL32 / "CFolderItemVerbs.cpp",
+        "CFolderItemVerbs",
+        activation_source=SHELL32 / "CFolderItems.cpp",
+        **args,
+    )
+    assert named.internal_shell_object_creator is True
+    named.require_supported(allow_internal=True)
+
+
 def test_sibling_class_activation_resolves_to_its_generated_creator():
     """`ShellObjectCreatorInit<T>` for a class OTHER than the one being translated.
 

@@ -581,3 +581,126 @@ def test_license_ref_extraction_handles_line_comments(tmp_path):
     _source, text = vendored.license_text(reg, reg.trees[0])
     assert "Redistribution is permitted." in text
     assert "int main" not in text
+
+
+# ── the prose half of the licence scan (added 2026-09-20) ───────────────────
+
+
+def _tree_with_file(tmp: Path, recorded: str, body: str, extra: str = "") -> object:
+    """A one-tree registry whose single source file says `body` about itself."""
+    _write(
+        tmp,
+        f"""
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: {recorded}
+            license_note: test
+{extra}            reason: test
+    """,
+    )
+    d = tmp / "libs" / "thing"
+    d.mkdir(parents=True)
+    (d / "thing.c").write_text(body)
+    return vendored.load(tmp)
+
+
+def test_a_prose_licence_name_with_no_spdx_tag_is_caught(tmp_path):
+    """The gap that motivated this: glu32's 73 SGI-B-1.1 files and zlib's Info-ZIP
+    minizip both sat in the tree while --licences printed all-clear, because neither
+    states its licence in a machine-readable form."""
+    reg = _tree_with_file(
+        tmp_path,
+        "MIT",
+        "/* This library is free software under the terms of the\n"
+        " * GNU Lesser General Public License as published by the FSF. */\n",
+    )
+    drift = vendored.license_drift(reg)
+    assert drift, "an LGPL file inside an MIT tree must be reported"
+    assert "LGPL (prose)" in drift[0][2]
+
+
+def test_an_lgpl_tree_does_not_absorb_a_real_gpl_file(tmp_path):
+    """Substring matching cannot do this job: "LGPL-2.1" contains "GPL". If the
+    accounting test were `in`, a tree recorded LGPL would silently swallow a GPL file,
+    which is the copyleft escalation this whole check exists to surface."""
+    reg = _tree_with_file(
+        tmp_path,
+        "LGPL-2.1",
+        "/* Licensed under the GNU General Public License, version 2. */\n",
+    )
+    drift = vendored.license_drift(reg)
+    assert drift, "a GPL file inside an LGPL tree must be reported"
+    assert "GPL (prose)" in drift[0][2]
+
+
+def test_an_lgpl_file_in_an_lgpl_tree_is_quiet(tmp_path):
+    reg = _tree_with_file(
+        tmp_path,
+        "LGPL-2.1",
+        "/* GNU Lesser General Public License, version 2.1 or later. */\n",
+    )
+    assert vendored.license_drift(reg) == []
+
+
+def test_lesser_is_tried_before_plain_gpl(tmp_path):
+    """Order in _PROSE_LICENCES is load-bearing: the LGPL notice contains the words
+    "General Public License", so a plain-GPL pattern tried first reports every LGPL
+    file as GPL and the real escalation becomes indistinguishable from noise."""
+    reg = _tree_with_file(
+        tmp_path,
+        "MIT",
+        "/* GNU Lesser General Public License */\n",
+    )
+    found = vendored.license_drift(reg)[0][2]
+    assert "LGPL (prose)" in found and "GPL (prose)" not in found
+
+
+def test_a_permissive_notice_body_does_not_fire(tmp_path):
+    """Why prose matching is restricted to NAMES and to copyleft/named families: every
+    ACPICA file reproduces a BSD notice, and reporting those would be 226 true hits that
+    are all the recorded licence. Redistribution boilerplate must stay silent."""
+    reg = _tree_with_file(
+        tmp_path,
+        "MIT",
+        "/* Redistribution and use in source and binary forms, with or without\n"
+        " * modification, are permitted provided that the following conditions\n"
+        " * are met: ... THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AS IS */\n",
+    )
+    assert vendored.license_drift(reg) == []
+
+
+def test_an_spdx_tag_suppresses_the_prose_pass_for_that_file(tmp_path):
+    """A file that has already answered machine-readably is not asked again: otherwise
+    every dual-licensed header reports twice, once as its tag and once as the family
+    named in the notice underneath it."""
+    reg = _tree_with_file(
+        tmp_path,
+        "MIT",
+        "/* SPDX-License-Identifier: MIT\n"
+        " * Portions derived from code under the GNU General Public License. */\n",
+    )
+    assert vendored.license_drift(reg) == []
+
+
+def test_license_extra_settles_a_prose_finding(tmp_path):
+    reg = _tree_with_file(
+        tmp_path,
+        "MIT",
+        "/* GNU Lesser General Public License v2.1 */\n",
+        extra="            license_extra:\n"
+        "              LGPL-2.1-or-later: the one vendored dependency\n",
+    )
+    assert vendored.license_drift(reg) == []
+
+
+def test_the_three_trees_the_prose_pass_actually_found_stay_recorded():
+    """Regression guard on the real registry. These were found by the prose pass on
+    2026-09-20 after the SPDX-only version had passed over them for weeks; dropping any
+    of them from license_extra would make the notices file wrong again."""
+    reg = vendored.load(REPO)
+    by_path = {t.path: t for t in reg.trees}
+    assert "BSL-1.0" in by_path["external/fex"].license_extra
+    assert "LGPL-2.0-or-later" in by_path["sdk/lib/3rdparty/adns"].license_extra
+    assert "LGPL-2.1-or-later" in by_path["dll/3rdparty/libtirpc"].license_extra
