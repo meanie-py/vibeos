@@ -488,6 +488,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Mbed TLS is five years past end-of-life, and three other vendored trees are stale.
+  UNOWNED** (2026-09-20). `tools/vendored.py --emit` prints the full BEHIND UPSTREAM
+  section; read that, not this line, because it is generated from `vendor.yaml` and this
+  is not. The headline: **ours is 2.16.11, and the 2.16 LTS branch stopped receiving
+  upstream security fixes at the end of 2021** — in the library behind `bcrypt` and
+  `schannel`. Sized so it is not a vague someday: two consumers, 77 distinct `mbedtls_*`
+  symbols, and a 2.x -> 3.x migration (the `*_ret` hash suffixes are gone, fields moved
+  behind `MBEDTLS_PRIVATE`, several `ssl_conf` entry points changed shape). **The trap:
+  schannel LAZY-LOADS mbedtls, so a missed rename fails at RUNTIME, not at link time, and
+  there is no TLS test in this tree to catch it** — build that test first, not last.
+  Also open: **libtirpc 0.1.11 -> 1.3.8** (largest version gap in the registry) and
+  **FreeType 2.10.0 -> 2.14.3**. FreeType is NOT exposed to the famous one
+  (CVE-2020-15999, the sbix embedded-PNG overflow exploited in the wild) — checked in the
+  tree, not inferred: `FT_CONFIG_OPTION_USE_PNG` is undefined, so `pngshim.c` compiles to
+  `typedef int _pngshim_dummy;`. The remaining CVEs are in the sfnt/cff/type1 parsers we
+  DO build, so it is wanted but not urgent. libtiff (4.1.0 -> 4.7.0), libpng
+  (1.6.39 -> 1.6.58) and the zlib audit are DONE.
+
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
   more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
 
