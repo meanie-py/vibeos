@@ -5380,6 +5380,46 @@ runs other agents' builds and QEMUs).
 
 ## SEH, PSEH & exception handling
 
+### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
+
+**Symptom:** a syscall that worked starts returning `STATUS_DATATYPE_MISALIGNMENT`, or an
+OUT parameter comes back zeroed on a failure path where it used to keep its value. Both
+appear *after* a validate-first conversion that was supposed to be a pure safety fix.
+
+**Cause:** the replacement probe is stricter than the C it replaced. Two ways in.
+
+  * **Alignment invented from the type.** `probe_read_user::<T>` / `probe_write_user::<T>`
+    derive alignment from `align_of::<T>()`. The C almost never asks for that.
+    `ProbeForRead(msg, sizeof(*msg), sizeof(ULONG))` wants **4** where
+    `align_of::<PORT_MESSAGE>()` is **8**; and the TYPED macros —
+    `ProbeForWriteHandle`, `ProbeForWritePointer`, `ProbeForWriteUlong`,
+    `ProbeForReadLargeInteger`, `ProbeForReadUnicodeString` — expand to
+    `ProbeFor{Read,Write}GenericType`, which is a **range check only, with no alignment
+    check whatsoever** (`sdk/include/reactos/probe.h`). Read the macro before picking a
+    number; `probe.h:20` says outright "Alignment of the pointers is not verified".
+  * **A read probe standing in for a write probe.** Only a write touch proves the page is
+    writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
+    than just comparing. Substituting a read probe passes a read-only user page and moves
+    the fault to the later store.
+
+  And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
+  `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
+  a caller's OUT variable on every failure path is observable.
+
+**Fix:** `ntkrnl_sys::probe::probe_read_generic` / `probe_write_generic` take alignment as
+an **explicit parameter** for exactly this reason, and `probe_write_generic` does the
+read-modify-write-back the C macro does. Copy the C's literal argument per site and do not
+assume it is uniform within a file — `reply.c:796` asks for `sizeof(PVOID)` where its
+neighbours at `:211` and `:394` ask for `sizeof(ULONG)`.
+
+**Why this is worth a section.** Tightening a probe *looks* like hardening, so it survives
+review. It is a behaviour change that converts working calls into failures, and it is the
+same defect in both directions: the original LPC translation shipped it by passing
+`align_of::<UNICODE_STRING>()` where `ProbeForReadUnicodeString` is range-only, and the
+conversion that FIXED that bug then reintroduced it at five more sites. Both times the
+answer was one line of `probe.h`.
+
+
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
 under DUMMY_PSEH the `__try` evaporates and the copy is naked → several unrelated syscalls

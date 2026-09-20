@@ -396,13 +396,54 @@ pub unsafe extern "system" fn NtRequestPort(
     let Message: PLPCP_MESSAGE;
 
     if PreviousMode != 0i8 {
-        ProbeForRead(LpcRequest as PVOID, core::mem::size_of::<PORT_MESSAGE>(), core::mem::size_of::<ULONG>() as ULONG);
-        CapturedLpcRequest = core::ptr::read_volatile(LpcRequest);
+        // VALIDATE-FIRST. The C wraps the probe AND the capture in one
+        // `_SEH2_TRY` returning `_SEH2_GetExceptionCode()` (send.c:456-466); the
+        // translation kept both and dropped the handler, so under DUMMY_PSEH a
+        // bad LpcRequest to this syscall bugchecked the box. A range check says
+        // where a buffer IS, not that it stays mapped, so the capture is
+        // fault-protected too.
+        //
+        // NOT `probe_read_user`, deliberately: that derives alignment from
+        // `align_of::<PORT_MESSAGE>()`, which is 8 on 64-bit, where the C asks
+        // for `sizeof(ULONG)` = 4. Tightening a probe is not a safe default --
+        // it rejects addresses upstream accepts, which is a bug the translation
+        // already introduced once elsewhere in this crate. Spell the C's
+        // alignment out.
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
+        // Staged through MaybeUninit rather than written straight into
+        // CapturedLpcRequest: a raw-pointer write does not initialise the
+        // binding as far as the borrow checker is concerned (rustc rejected the
+        // direct version), and only a COMPLETE copy initialises a PORT_MESSAGE
+        // -- a fault may have copied a prefix, which must never be read as a
+        // value. Zeroing first would also work and would cost a memset on the
+        // hottest syscall in the system.
+        let mut Staging = core::mem::MaybeUninit::<PORT_MESSAGE>::uninit();
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            Staging.as_mut_ptr() as *mut core::ffi::c_void,
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+        ) {
+            return st;
+        }
+        CapturedLpcRequest = Staging.assume_init();
     } else {
         CapturedLpcRequest = *LpcRequest;
     }
 
-    MessageType = (*LpcRequest).u2.s2.Type as ULONG | LPC_DATAGRAM;
+    // From the CAPTURED copy, as the C does (send.c:481). This used to read
+    // `(*LpcRequest).u2.s2.Type` -- a SECOND dereference of the raw user
+    // pointer, and two bugs rather than one: a hostile caller can change Type
+    // between the capture and this read (the capture exists precisely to stop
+    // that), and it faults on the SUCCESS path, outside the `PreviousMode`
+    // guard, so it was reachable by kernel callers too.
+    MessageType = CapturedLpcRequest.u2.s2.Type as ULONG | LPC_DATAGRAM;
 
     if CapturedLpcRequest.u2.s2.DataInfoOffset != 0 {
         return STATUS_INVALID_PARAMETER;
@@ -598,11 +639,65 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
     }
 
     if PreviousMode != 0i8 {
-        ProbeForRead(LpcRequest as PVOID, core::mem::size_of::<PORT_MESSAGE>(), core::mem::size_of::<ULONG>() as ULONG);
-        CapturedLpcRequest = core::ptr::read_volatile(LpcRequest);
+        // VALIDATE-FIRST. One `_SEH2_TRY` in the C (send.c:721-743) covers the
+        // read probe, the capture, the write probe and the
+        // LpcpVerifyMessageDataInfo call, with `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())` as its handler. The translation kept all
+        // four and dropped the handler, so under DUMMY_PSEH a bad LpcRequest or
+        // LpcReply to this syscall -- the one every CSR/LPC call in the system
+        // goes through -- bugchecked the box.
+        //
+        // Alignment is spelled out rather than taken from `align_of`: the C asks
+        // for `sizeof(ULONG)` = 4, and `align_of::<PORT_MESSAGE>()` is 8 on
+        // 64-bit. A tighter probe rejects addresses upstream accepts, which is a
+        // defect, not a hardening.
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
+        // Staged through MaybeUninit rather than written straight into
+        // CapturedLpcRequest: a raw-pointer write does not initialise the
+        // binding as far as the borrow checker is concerned (rustc rejected the
+        // direct version), and only a COMPLETE copy initialises a PORT_MESSAGE
+        // -- a fault may have copied a prefix, which must never be read as a
+        // value. Zeroing first would also work and would cost a memset on the
+        // hottest syscall in the system.
+        let mut Staging = core::mem::MaybeUninit::<PORT_MESSAGE>::uninit();
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            Staging.as_mut_ptr() as *mut core::ffi::c_void,
+            LpcRequest as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+        ) {
+            return st;
+        }
+        CapturedLpcRequest = Staging.assume_init();
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            LpcReply as *const core::ffi::c_void,
+            core::mem::size_of::<PORT_MESSAGE>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
 
-        ProbeForWrite(LpcReply as PVOID, core::mem::size_of::<PORT_MESSAGE>(), core::mem::size_of::<ULONG>() as ULONG);
-
+        // STILL UNPROTECTED, and deliberately left so rather than half-fixed.
+        // LpcpVerifyMessageDataInfo walks `Message + DataInfoOffset`, which is
+        // BEYOND the sizeof(PORT_MESSAGE) probed above; in the C it is safe only
+        // because it sits inside the TRY. Making it safe means giving the
+        // function its own validation, and it is `#[no_mangle]` and also called
+        // from the KernelMode branch below, where the C deliberately does NOT
+        // protect it -- so the signature change belongs with the other
+        // cleanup-semantics conversions, not bolted on here. Probing the whole
+        // TotalLength extent instead would be the easy wrong answer: the
+        // function's own header checks can reject a malformed message with
+        // STATUS_INVALID_PARAMETER before touching the tail, and a blanket probe
+        // would turn those into STATUS_ACCESS_VIOLATION -- a different answer
+        // than upstream gives, for hostile input, which is how a "hardening"
+        // becomes a divergence.
         Status = LpcpVerifyMessageDataInfo(LpcRequest, core::ptr::addr_of_mut!(NumberOfDataEntries));
         if Status < 0 {
             return Status;
