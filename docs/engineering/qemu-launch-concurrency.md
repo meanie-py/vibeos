@@ -101,8 +101,9 @@ It is retained as a failed validation attempt, not a boot-time comparison.
 
 ## Remaining work
 
-- The content cache still serializes fills/pinning/pruning with its own lock.
-  Measure that separately before attempting concurrent cache fills.
+- Content-cache fill serialization is addressed by the subsequent
+  [concurrent media-cache change](qemu-media-cache-concurrency.md). Publication,
+  pinning and pruning still share the original lock for compatibility.
 - The separate detached `debug start` implementation in `gdbengine.py` still
   prepares media under the launch lock. Migrating it needs ownership protection
   for its detached staging and a verified bind handshake; it does not use the
