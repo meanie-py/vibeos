@@ -27,8 +27,8 @@
  *
  * Core Directory Tag Support.
  */
-#include <precomp.h>
-//#include <stdlib.h>
+#include "tiffiop.h"
+#include <stdlib.h>
 
 /*
  * NOTE: THIS ARRAY IS ASSUMED TO BE SORTED BY TAG.

@@ -27,7 +27,7 @@
  *
  * XXX We assume short = 16-bits and long = 32-bits XXX
  */
-#include <precomp.h>
+#include "tiffiop.h"
 
 #if defined(DISABLE_CHECK_TIFFSWABMACROS) || !defined(TIFFSwabShort)
 void

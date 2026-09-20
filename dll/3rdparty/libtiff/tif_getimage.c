@@ -27,8 +27,8 @@
  *
  * Read and return a packed RGBA image.
  */
-#include <precomp.h>
-//#include <stdio.h>
+#include "tiffiop.h"
+#include <stdio.h>
 
 static int gtTileContig(TIFFRGBAImage*, uint32*, uint32, uint32);
 static int gtTileSeparate(TIFFRGBAImage*, uint32*, uint32, uint32);

@@ -11,7 +11,12 @@ add_definitions(
     -D_MBCS
     -DHAVE_WIN32_THREADS
     -D_REENTRANT
-    -DLIBXML_STATIC)
+    -DLIBXML_STATIC
+    # This tree supplies its own CRT, so security.c's HAVE__STAT->stat()->_stat()
+    # remap (see win32config.h, meant for a stock MSVC CRT) must not fire.
+    # Pre-defining HAVE_STAT here makes security.c's `#ifndef HAVE_STAT` guard
+    # skip that remap unconditionally, regardless of win32config.h's HAVE__STAT.
+    -DHAVE_STAT)
 
 list(APPEND SOURCE
     attributes.c

@@ -476,3 +476,4 @@ xsltCheckRead(xsltSecurityPrefsPtr sec,
     xmlFreeURI(uri);
     return(1);
 }
+

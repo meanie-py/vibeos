@@ -601,6 +601,18 @@ trees:
       file: sdk/include/reactos/libs/libjpeg/jpeglib.h
       pattern: '#define JPEG_LIB_VERSION\s+(\d+)'
     review: >
+      PARTIALLY DE-PATCHED 2026-09-19. jpeglib.h and jdct.h differed by trailing
+      whitespace only and are restored; the header directory is 10 of 11 identical.
+
+      jmorecfg.h CANNOT be de-patched with a -D, and the attempt was refused rather
+      than forced. Upstream defines the macros UNGUARDED — `#define GLOBAL(type) type`
+      at jmorecfg.h:246, `#define EXTERN(type) extern type` at :248 — so a command-line
+      -D is overridden the moment the header is processed. Our patch rewrites the macro
+      BODIES to inject JPEG_API/JPEG_IMPEXP, tokens absent from vanilla 9d, and adds the
+      `#ifndef EXTERN` guard that would be required to make a -D stick at all. Forcing
+      it would either silently not apply or need the file edited anyway, and getting it
+      wrong breaks every DLL export. This one belongs in the patch series.
+
       DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: jpegsrc.v9d.tar.gz from ijg.org.
       All 73 shared files byte-identical — including the historically fragile ones,
       jdhuff.c, jmemmgr.c, jquant2.c. Nothing in bounds checking, allocation or
@@ -641,12 +653,32 @@ trees:
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
     license_ref: dll/3rdparty/libtiff/tif_open.c
-    modified: mechanically  # PCH include swap only; see review
+    modified: no  # de-patched 2026-09-19; byte-identical to 4.1.0
     headers:
       - sdk/include/reactos/libs/libtiff
     version:
       file: sdk/include/reactos/libs/libtiff/tiffvers.h
       pattern: 'LIBTIFF, Version ([0-9.]+)'
+    review: >
+      DE-PATCHED 2026-09-19 — all 43 shared .c files are byte-identical to pristine
+      4.1.0 and NOTHING replaced the edit, because the build was already doing it.
+      `add_pch(libtiff precomp.h SOURCE)` calls CMake's target_precompile_headers,
+      which force-includes precomp.h on clang, so the 35 hand-edited
+      `#include <precomp.h>` lines were the manual half of a convention the build had
+      automated. Reverted to upstream's own `#include "tiffiop.h"`: correct with PCH on
+      (force-include plus a guarded redundant include) and with PCH off (resolves via
+      the existing include_directories). libtiff.dll builds and links unchanged. The
+      largest block of "modification" in this registry was leftovers, not a port.
+
+      THE SECURITY FACT REMAINS AND IS THE ITEM TO ACT ON: this is stock 4.1.0
+      (Nov 2019) with NO backported fixes, so it is exactly as vulnerable as unpatched
+      4.1.0 — which predates fixes for known OOB-read/write and directory-parsing CVEs.
+      De-patching makes the version bump trivial; it does not perform it.
+
+      (This paragraph was written once before and SILENTLY LOST: the editing helper
+      did nothing when an entry had no `review:` block, and reported success. It is
+      here now because the helper was made to fail loudly instead.)
+
     reason: TIFF codec; upstream-tracked.
 
   - path: dll/3rdparty/libxslt
@@ -654,13 +686,20 @@ trees:
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
     license_file: dll/3rdparty/libxslt/Copyright
-    modified: yes  # 1 behavioural line vs pristine 1.1.42
+    modified: no  # de-patched 2026-09-19; one -D replaces the edit
     headers:
       - sdk/include/reactos/libs/libxslt
     version:
       file: sdk/include/reactos/libs/libxslt/xsltconfig.h
       pattern: '#define LIBXSLT_DOTTED_VERSION "([^"]+)"'
     review: >
+      DE-PATCHED 2026-09-19 — all 28 shared files byte-identical to pristine 1.1.42.
+      The one behavioural line moved into the build: CMakeLists.txt passes
+      `-DHAVE_STAT` and win32config.h is upstream's again. security.c's outer gate is
+      `#ifndef HAVE_STAT`, so defining it before any header is read makes the whole
+      block inert and the stat()->_stat() remap never happens — exactly what the
+      in-source edit achieved. Upstream's HAVE__STAT is defined again and unreachable.
+
       DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxslt-1.1.42.tar.xz from
       download.gnome.org, version confirmed from NEWS. 21 of 27 shared files are
       byte-identical, 5 differ only by a stripped trailing blank line, and ONE line is

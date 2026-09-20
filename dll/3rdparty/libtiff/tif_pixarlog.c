@@ -22,7 +22,7 @@
  * OF THIS SOFTWARE.
  */
 
-#include <precomp.h>
+#include "tiffiop.h"
 #ifdef PIXARLOG_SUPPORT
 
 /*
