@@ -179,20 +179,16 @@ def scan() -> dict:
         hint_crate: str | None = None
         hint_rs: str | None = None
         hint_line: str | None = None
-        in_comment_run = False
 
         for lineno, line in enumerate(lines, start=1):
             stripped = line.strip()
             if not stripped:
                 hint_crate = hint_rs = hint_line = None
-                in_comment_run = False
                 continue
             if not stripped.startswith("#"):
                 hint_crate = hint_rs = hint_line = None
-                in_comment_run = False
                 continue
 
-            in_comment_run = True
             m = PATH_RE.match(stripped)
             # A real disabled-source line is BARE (nothing after the path) or is followed
             # immediately by annotation punctuation (`(...)`, `— ...`, `-> ...`, `→ ...`).
