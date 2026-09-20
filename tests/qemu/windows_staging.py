@@ -1,7 +1,9 @@
 """Reclaim abandoned Windows QEMU staging while retaining live runs.
 
 Callers hold portlease.launch_lock from inspection through deletion, the same
-lock every harness launcher holds while preparing media and starting QEMU.
+lock every harness launcher holds while registering PID-owned staging and
+starting QEMU. Media copies may run outside it: live Linux owners protect their
+staging directories even before the Windows QEMU process exists.
 """
 
 from __future__ import annotations
