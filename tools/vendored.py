@@ -75,8 +75,10 @@ Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendo
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -614,6 +616,161 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
 #: The generated notices document, at the repo root where a distributor looks for it.
 NOTICES_PATH = "THIRD-PARTY-NOTICES.md"
 
+#: The generated Rust-crate half of the registry. Committed, and gated for freshness
+#: against Cargo.lock the same way THIRD-PARTY-NOTICES.md is gated against vendor.yaml.
+CRATES_PATH = "tools/rust-crates.yaml"
+
+#: sdk/lib/rust/Cargo.lock — the authority on WHICH external crates exist at WHICH
+#: version. Licences and the shipped/host split need `cargo metadata`, which needs a
+#: populated registry cache; the lockfile needs nothing. So the snapshot carries the
+#: licences and `check` verifies only the (name, version) set, which is the drift that
+#: actually matters and the only part that can be checked without cargo.
+CARGO_LOCK = "sdk/lib/rust/Cargo.lock"
+
+#: Workspace members that exist to build or test the tree, never to ship in it.
+#: Anything reachable ONLY from these is host-only. Kept short and explicit because
+#: it cannot be derived: see crates_snapshot() for why cargo's graph cannot answer
+#: this question here.
+_HOST_ONLY_MEMBERS = (
+    "reactos-link",  # the cargo->PE link helper; pulls `cc` as a normal dependency
+    "slist-loom",  # a loom model-checking harness; pulls the whole tracing stack
+)
+
+
+def cargo_lock_crates(repo: Path) -> dict[tuple[str, str], None]:
+    """External (name, version) pairs from Cargo.lock. No cargo invocation."""
+    text = (repo / CARGO_LOCK).read_text(encoding="utf-8", errors="replace")
+    out: dict[tuple[str, str], None] = {}
+    for block in text.split("[[package]]")[1:]:
+        name = re.search(r'^name = "(.+)"', block, re.M)
+        ver = re.search(r'^version = "(.+)"', block, re.M)
+        src = re.search(r'^source = "(.+)"', block, re.M)
+        if name and ver and src:  # `source` present == not one of ours
+            out[(name.group(1), ver.group(1))] = None
+    return out
+
+
+def crates_snapshot(repo: Path) -> str:
+    """Regenerate the crate snapshot from `cargo metadata`. Needs cargo and the cache.
+
+    WHY A SNAPSHOT AND NOT A LIVE QUERY: `vibeos-cli check` must work without a
+    populated ~/.cargo registry, and licences only come from cargo metadata. So the
+    licences are frozen here and `check` verifies the cheap half — that the set of
+    (name, version) still matches Cargo.lock.
+
+    THE SHIPPED/HOST SPLIT IS BEST-EFFORT AND SAYS SO. Cargo's dependency graph cannot
+    answer it in this tree: `netstack-cargo` does not depend on `netstack-rust` in
+    cargo terms at all — it pulls only panic-common and the link helper, and CMake
+    links the real crate in afterwards. So walking edges from the 34 crates that
+    `add_cargo_module` builds reaches zero external crates, which is obviously wrong.
+    What CAN be established mechanically is the negative: a proc-macro crate runs in
+    the compiler and never ships, and a crate reachable only from a `-difftest`
+    harness or from _HOST_ONLY_MEMBERS is host-only too. Everything else is listed as
+    shipping, which is the safe direction for a notices file — over-listing costs a
+    line, under-listing is the thing that matters.
+    """
+    meta = json.loads(
+        subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--offline"],
+            cwd=repo / "sdk/lib/rust",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    pkgs = {p["id"]: p for p in meta["packages"]}
+    nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
+    members = set(meta["workspace_members"])
+
+    def nm(i: str) -> str:
+        return pkgs[i]["name"]
+
+    proc_macro = {
+        i for i in pkgs if any(k == "proc-macro" for t in pkgs[i]["targets"] for k in t["kind"])
+    }
+    roots = [
+        i for i in members if not nm(i).endswith("-difftest") and nm(i) not in _HOST_ONLY_MEMBERS
+    ]
+    seen: set[str] = set()
+    stack = list(roots)
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        if cur in proc_macro or nm(cur) in _HOST_ONLY_MEMBERS:
+            # A proc-macro's dependencies are the compiler's, not the product's; a
+            # host-only member's are the build's. Skipping them as ROOTS is not enough
+            # — reactos-link is also a plain dependency of other members, and
+            # descending through it dragged cc, shlex and find-msvc-tools in.
+            continue
+        for d in nodes[cur]["deps"]:
+            if any(k.get("kind") is None for k in d["dep_kinds"]):
+                stack.append(d["pkg"])
+
+    rows = []
+    for i, p in pkgs.items():
+        if not p.get("source"):
+            continue
+        ships = i in seen and i not in proc_macro
+        why = "" if ships else ("proc-macro" if i in proc_macro else "build/test only")
+        rows.append((p["name"], p["version"], p.get("license") or "SEE LICENSE FILE", ships, why))
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    out = [
+        "# GENERATED by tools/vendored.py --write-crates. Do not hand-edit.",
+        "#",
+        "# The Rust half of the vendor registry: every crates.io dependency that enters",
+        "# this tree, with the licence cargo reports for it. vendor.yaml covers vendored",
+        "# C; this covers what `cargo` brings in, which nothing tracked until 2026-09-20",
+        "# — smoltcp, the TCP/IP stack, among them.",
+        "#",
+        "# `ships:` is BEST-EFFORT and errs toward true. Cargo's graph cannot settle it",
+        "# here (see crates_snapshot() in tools/vendored.py): a crate is marked false only",
+        "# when it is provably host-only — a proc-macro, or reachable only from a",
+        "# -difftest harness or a build helper. Treat false as certain and true as",
+        "# 'assume it ships'.",
+        "#",
+        f"# Regenerate with: tools/vendored.py --write-crates   ({len(rows)} crates)",
+        "crates:",
+    ]
+    for name, ver, lic, ships, why in rows:
+        out.append(f"  - name: {name}")
+        out.append(f"    version: {ver}")
+        out.append(f"    license: {lic!r}" if "'" in lic or '"' in lic else f"    license: {lic}")
+        out.append(f"    ships: {'true' if ships else 'false'}")
+        if why:
+            out.append(f"    host_only_because: {why}")
+    return "\n".join(out) + "\n"
+
+
+def crates_rows(repo: Path) -> list[tuple[str, str, str, bool]]:
+    """(name, version, licence, ships) from the committed snapshot."""
+    path = repo / CRATES_PATH
+    if not path.exists():
+        return []
+    rows, cur = [], {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("- name:"):
+            if cur:
+                rows.append(cur)
+            cur = {"name": line.split(":", 1)[1].strip()}
+        elif ":" in line and cur and not line.startswith("#"):
+            k, v = line.split(":", 1)
+            cur[k.strip()] = v.strip()
+    if cur:
+        rows.append(cur)
+    return [
+        (
+            r["name"],
+            r.get("version", "?"),
+            r.get("license", "?").strip("'\""),
+            r.get("ships") == "true",
+        )
+        for r in rows
+    ]
+
 
 def check(reg: Registry) -> list[str]:
     """Every way the registry can disagree with the tree. Returns problem strings."""
@@ -721,6 +878,30 @@ def check(reg: Registry) -> list[str]:
     # synthetic fixture trees by the scanner controls; demanding a generated legal
     # document from each of those would be a false alarm about the fixture. That the
     # committed repo ships one is asserted directly in test_vendored.py.
+    # The FOURTH ratchet, and the newest. vendor.yaml sees C; nothing saw the crates
+    # cargo pulls in, which is how smoltcp — the TCP/IP stack — shipped unrecorded.
+    # Checked against Cargo.lock rather than against live `cargo metadata`, so this
+    # gate needs no cargo and no populated registry cache: the (name, version) set is
+    # the drift that matters, and it is the half a lockfile can answer.
+    lock_path = reg.repo / CARGO_LOCK
+    if lock_path.exists():
+        want = set(cargo_lock_crates(reg.repo))
+        have = {(n, v) for n, v, _lic, _s in crates_rows(reg.repo)}
+        if not (reg.repo / CRATES_PATH).exists():
+            problems.append(
+                f"{CRATES_PATH} is MISSING — the Rust half of the registry is not "
+                f"recorded. Generate: tools/vendored.py --write-crates"
+            )
+        elif want != have:
+            added = ", ".join(f"{n} {v}" for n, v in sorted(want - have)) or "none"
+            gone = ", ".join(f"{n} {v}" for n, v in sorted(have - want)) or "none"
+            problems.append(
+                f"{CRATES_PATH} is STALE against {CARGO_LOCK}.\n"
+                f"    in the lockfile but not recorded: {added}\n"
+                f"    recorded but no longer in the lockfile: {gone}\n"
+                f"    Regenerate: tools/vendored.py --write-crates"
+            )
+
     notices_file = reg.repo / NOTICES_PATH
     if notices_file.is_file() and not any("--notices to quote" in p for p in problems):
         # Only meaningful once every tree has a quotable grant; otherwise the real
@@ -859,7 +1040,7 @@ def notices(reg: Registry) -> str:
         "file. Each entry reproduces the licence grant as it appears in the tree."
     )
     out.append("")
-    out.append(f"{len(reg.trees)} third-party components:")
+    out.append(f"{len(reg.trees)} vendored C/C++ components:")
     out.append("")
     for t in sorted(reg.trees, key=lambda x: x.name.lower()):
         version, err = reg.resolve_version(t)
@@ -892,6 +1073,28 @@ def notices(reg: Registry) -> str:
         out.append(text)
         out.append("```")
     out.append("")
+
+    # The Rust half. Licence TEXT is not reproduced here the way it is for the C
+    # trees: a crate's grant lives in ~/.cargo, not in this repo, so there is nothing
+    # in the tree to quote and quoting a remote file would be inventing provenance.
+    # The SPDX expression cargo reports is what we can state truthfully.
+    rows = crates_rows(reg.repo)
+    if rows:
+        ships = [r for r in rows if r[3]]
+        out.append("## Rust crates")
+        out.append("")
+        out.append(
+            f"This product also links {len(ships)} third-party Rust crates, out of "
+            f"{len(rows)} that enter the build. Generated from `cargo metadata` into "
+            f"`{CRATES_PATH}`; see that file for the ones used only to build or test, "
+            "and for why the shipped/host split errs toward listing more."
+        )
+        out.append("")
+        out.append("| crate | version | licence |")
+        out.append("| --- | --- | --- |")
+        for name, ver, lic, _ in ships:
+            out.append(f"| {name} | {ver} | {lic} |")
+        out.append("")
     return "\n".join(out)
 
 
@@ -985,6 +1188,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--emit", action="store_true", help="print the registry table")
     ap.add_argument("--write-stamps", action="store_true", help="regenerate VENDORED markers")
     ap.add_argument(
+        "--write-crates",
+        action="store_true",
+        help="regenerate the Rust-crate snapshot from cargo metadata (needs cargo)",
+    )
+    ap.add_argument(
         "--suspects",
         action="store_true",
         help="unregistered dirs full of foreign-copyright source (a question, not a verdict)",
@@ -1029,6 +1237,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.emit:
         return emit(reg)
+    if args.write_crates:
+        path = args.repo / CRATES_PATH
+        path.write_text(crates_snapshot(args.repo), encoding="utf-8")
+        rows = crates_rows(args.repo)
+        shipping = sum(1 for r in rows if r[3])
+        print(f"  wrote {path} ({len(rows)} crates, {shipping} of them shipping)")
+        return 0
     if args.write_stamps:
         for p in write_stamps(reg):
             print(f"  wrote {p}")
