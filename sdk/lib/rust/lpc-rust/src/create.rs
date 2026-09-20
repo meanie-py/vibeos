@@ -99,13 +99,73 @@ pub unsafe extern "system" fn LpcpCreatePort(
     RtlInitEmptyUnicodeString(&mut CapturedObjectName, core::ptr::null_mut(), 0);
 
     if PreviousMode != KernelMode {
-        ProbeForRead(PortHandle as PVOID, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>() as ULONG);
-        ProbeForRead(ObjectAttributes as PVOID, core::mem::size_of::<_OBJECT_ATTRIBUTES>(), core::mem::size_of::<ULONG>() as ULONG);
+        // VALIDATE-FIRST, same shape as port.rs's NtImpersonateClientOfPort. The C
+        // wraps ProbeForWriteHandle(PortHandle) + ProbeForRead(ObjectAttributes) +
+        // ProbeForReadUnicodeString(ObjectName) (create.c:66-81) in ONE
+        // `_SEH2_TRY` whose handler is `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())`. The translation kept the probes/captures and
+        // dropped the handler, so under DUMMY_PSEH a hostile PortHandle,
+        // ObjectAttributes, or ObjectName reaching NtCreatePort /
+        // NtCreateWaitablePort from an unprivileged caller bugchecked the kernel.
+        //
+        // (a) WRONG-DIRECTION PROBE, fixed here: the C probes PortHandle with
+        // ProbeForWriteHandle (create.c:68) -- a range check PLUS a real
+        // read-modify-write touch, because `*PortHandle = Handle` is stored at the
+        // end of this function (create.rs:255, deliberately left untouched -- see
+        // that site's own comment). The translation substituted a read-only
+        // ProbeForRead, so a read-only-but-valid user page sailed past this probe
+        // and only faulted later at the store, far from any diagnostic.
+        // `probe_write_handle` performs the real write-probe the C did.
+        if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<HANDLE>(
+            PortHandle as *mut HANDLE,
+            // ProbeForWriteHandle is range-only and PRESERVES the caller's
+            // value (`*p = *p`). probe_write_handle writes NULL, which is
+            // ProbeAndZeroHandle's contract -- a different macro, and it would
+            // clobber the caller's OUT variable on every failure path.
+            1,
+            PreviousMode,
+        ) {
+            return st;
+        }
+
+        if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            ObjectAttributes as *const core::ffi::c_void,
+            core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return st;
+        }
 
         ObjectName = (*ObjectAttributes).ObjectName;
         if !ObjectName.is_null() {
-            ProbeForRead(ObjectName as PVOID, core::mem::size_of::<_UNICODE_STRING>(), core::mem::align_of::<_UNICODE_STRING>() as ULONG);
-            CapturedObjectName = *ObjectName;
+            // (b) SPURIOUS ALIGNMENT CHECK, fixed here: the C's
+            // ProbeForReadUnicodeString (probe.h) is a RANGE check only -- its own
+            // comment says "Alignment of the pointers is not verified". The
+            // translation instead ran a real ProbeForRead with
+            // align_of::<UNICODE_STRING>(), which rejects a misaligned-but-valid
+            // ObjectName with STATUS_DATATYPE_MISALIGNMENT where upstream would
+            // have accepted it -- a behaviour change the translation introduced,
+            // not one the C ever had. Alignment 1 here reproduces the C's
+            // range-only check; the capture below is a separate fault-protected
+            // copy, matching create.c:75's `*(const volatile UNICODE_STRING*)` read
+            // (volatile dropped deliberately -- the copy is already fault-protected
+            // and nothing here re-reads the source after this point).
+            if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+                ObjectName as *const core::ffi::c_void,
+                core::mem::size_of::<_UNICODE_STRING>(),
+                1,
+                PreviousMode,
+            ) {
+                return st;
+            }
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                &mut CapturedObjectName as *mut _ as *mut core::ffi::c_void,
+                ObjectName as *const core::ffi::c_void,
+                core::mem::size_of::<_UNICODE_STRING>(),
+            ) {
+                return st;
+            }
         }
     } else {
         ObjectName = (*ObjectAttributes).ObjectName;

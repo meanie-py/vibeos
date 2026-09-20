@@ -244,56 +244,142 @@ pub unsafe extern "system" fn NtSecureConnectPort(
     let token_user_info: PTOKEN_USER;
 
     if previous_mode != KernelMode {
-        ProbeForWriteHandle(port_handle);
-        ProbeForRead(
-            security_qos as PVOID,
-            core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
-        captured_qos = *(security_qos as *const SECURITY_QUALITY_OF_SERVICE);
+        // VALIDATE-FIRST. connect.c wraps this ENTIRE multi-stage capture in a
+        // SINGLE `_SEH2_TRY` (connect.c:116-190) returning
+        // `_SEH2_GetExceptionCode()` -- all seven probes, all four captures, the
+        // two STATUS_INVALID_PARAMETER early exits and the SepCaptureSid call.
+        // The translation kept every probe and capture and dropped the handler,
+        // so under DUMMY_PSEH a bad pointer to NtSecureConnectPort bugchecked
+        // the box from user mode.
+        //
+        // Every alignment below is the C's literal argument, never
+        // `align_of::<T>()`: the typed macros (ProbeForWriteHandle,
+        // ProbeForWriteUlong) check NO alignment, and the explicit ProbeFor*
+        // calls ask for sizeof(ULONG) = 4 where align_of would say 8. A probe
+        // that is stricter than upstream rejects addresses that work, which is
+        // a defect and not a hardening.
+        if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<HANDLE>(
+            port_handle as *mut HANDLE,
+            1, // ProbeForWriteHandle: range-only, and preserves *p
+            previous_mode,
+        ) {
+            return st;
+        }
+        // C reads this as `*(volatile SECURITY_QUALITY_OF_SERVICE*)`; the
+        // volatile was dropped. One fault-protected fetch restores the
+        // single-read the volatile guaranteed.
+        captured_qos = match ntkrnl_sys::probe::probe_read_generic::<SECURITY_QUALITY_OF_SERVICE>(
+            security_qos as *const SECURITY_QUALITY_OF_SERVICE,
+            core::mem::size_of::<ULONG>(),
+            previous_mode,
+        ) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
 
         if !client_view.is_null() {
-            ProbeForWrite(
-                client_view as PVOID,
-                core::mem::size_of::<PORT_VIEW>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
-            captured_client_view = *(client_view as *const PORT_VIEW);
+            // Probed for WRITE in the C -- a read probe is not a substitute,
+            // because only a write touch proves the page is writable, which the
+            // later write-back of this view depends on.
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<PORT_VIEW>(
+                client_view as *mut PORT_VIEW,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                return st;
+            }
+            captured_client_view = match ntkrnl_sys::probe::probe_read_generic::<PORT_VIEW>(
+                client_view as *const PORT_VIEW,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
 
+            // Ordinary early return, exactly as in the C: this exit is INSIDE
+            // the C's TRY via _SEH2_YIELD, so it is a normal result, not a
+            // fault path.
             if captured_client_view.Length != core::mem::size_of::<PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
         }
 
         if !server_view.is_null() {
-            ProbeForWrite(
-                server_view as PVOID,
-                core::mem::size_of::<REMOTE_PORT_VIEW>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<REMOTE_PORT_VIEW>(
+                server_view as *mut REMOTE_PORT_VIEW,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                return st;
+            }
+            // Captured rather than dereferenced raw: the C reads it through a
+            // `volatile` pointer, and the raw deref here was a second,
+            // unprotected read of user memory.
+            let captured_server_view =
+                match ntkrnl_sys::probe::probe_read_generic::<REMOTE_PORT_VIEW>(
+                    server_view as *const REMOTE_PORT_VIEW,
+                    core::mem::size_of::<ULONG>(),
+                    previous_mode,
+                ) {
+                    Ok(v) => v,
+                    Err(st) => return st,
+                };
 
-            if (*(server_view as *const REMOTE_PORT_VIEW)).Length
-                != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG
-            {
+            if captured_server_view.Length != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
         }
 
         if !max_message_length.is_null() {
-            ProbeForWriteUlong(max_message_length);
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<ULONG>(
+                max_message_length,
+                1, // ProbeForWriteUlong: range-only
+                previous_mode,
+            ) {
+                return st;
+            }
         }
 
         if !connection_information_length.is_null() {
-            ProbeForWriteUlong(connection_information_length);
-            connection_info_length = *(connection_information_length as *const ULONG);
+            if let Err(st) = ntkrnl_sys::probe::probe_write_generic::<ULONG>(
+                connection_information_length,
+                1,
+                previous_mode,
+            ) {
+                return st;
+            }
+            // DOUBLE-FETCH. This length is used twice more -- as the probe
+            // length just below, and as the copy length when the connection
+            // info is moved (connect.rs, the ConnectMessage copy). The C reads
+            // it through a `volatile` pointer so the compiler may not reload
+            // it; the plain deref here could be re-read after validation, which
+            // is a TOCTOU independent of the missing handler. Read it ONCE,
+            // into a local, and use only that.
+            connection_info_length = match ntkrnl_sys::probe::probe_read_generic::<ULONG>(
+                connection_information_length as *const ULONG,
+                1,
+                previous_mode,
+            ) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
         }
 
         if !connection_information.is_null() {
-            ProbeForWrite(
-                connection_information,
-                connection_info_length as SIZE_T,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            // Range check only. The C's ProbeForWrite touches the buffer to
+            // prove it is writable, and there is no typed helper for a
+            // variable-length span; the writes into it are all fault-protected
+            // copies in the second conversion pass, which is where that gap
+            // closes. Noted rather than silently dropped.
+            if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+                connection_information as *const core::ffi::c_void,
+                connection_info_length as usize,
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                return st;
+            }
         }
 
         captured_server_sid = server_sid;

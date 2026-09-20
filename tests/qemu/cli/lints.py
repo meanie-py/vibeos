@@ -701,6 +701,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The COHAB-FLIP half of the dropped-handler class, which scan_dropped_probes above
+    # structurally cannot see. That one reads the commented-out C rustconv leaves inline in
+    # the same .rs, so it needs both sides in one file. A cohab flip puts them in two: the
+    # .c stays on disk, gets commented out of the CMake source list, and a separate .rs
+    # takes over under #[no_mangle]. lpc-rust was the proof -- zero inline C, zero _SEH2
+    # text, and six files in which every ProbeForRead/Write had lost its _SEH2_EXCEPT, so
+    # any unprivileged process passing a bad pointer to NtReplyPort/NtRequestPort/
+    # NtSecureConnectPort/NtAcceptConnectPort bugchecked the kernel.
+    #
+    # Gated at ZERO rather than against a baseline, because the class was driven to zero
+    # when it was found; a baseline here would be a place for the next one to hide. The
+    # lower-confidence pairs (basename-only, or C still compiled) are printed to stderr and
+    # deliberately NOT gated -- basename matching pairs fastfat/create.c with
+    # lpc-rust/create.rs, and a human has to read those.
+    sdsp = repo / "tools" / "scan_dropped_seh_pairs.py"
+    specs.append(
+        (
+            "scan_dropped_seh_pairs",
+            [py, str(sdsp), "--lint"] if sdsp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.

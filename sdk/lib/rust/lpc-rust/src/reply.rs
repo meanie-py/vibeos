@@ -247,12 +247,30 @@ pub unsafe extern "system" fn NtReplyPort(
     let mut wakeup_thread: PETHREAD = core::ptr::null_mut();
 
     if previous_mode != 0i8 {
-        ProbeForRead(
-            ReplyMessage as PVOID,
-            core::mem::size_of::<PORT_MESSAGE>(),
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
-        captured_reply_message = *(ReplyMessage as *const PORT_MESSAGE);
+        // VALIDATE-FIRST. The C wraps this probe AND the capture read in one
+        // `_SEH2_TRY` whose handler is `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())` (reply.c:209-217). The translation kept
+        // the probe and the read and dropped the handler, so under
+        // DUMMY_PSEH an unprivileged caller passing a bad ReplyMessage to
+        // this syscall bugchecked the box. A range check proves where a
+        // buffer IS, never that it stays mapped, so the CAPTURE has to be
+        // fault-protected too -- converting only the probe just moves the
+        // same bugcheck one frame along into the raw dereference below.
+        //
+        // The C reads via `*(volatile PORT_MESSAGE*)`, which was dropped by
+        // the translation; probe_read_user's single fetch restores that
+        // once-only semantics (no TOCTOU window for the caller to mutate the
+        // message between separate field reads).
+        captured_reply_message =
+            match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+                ReplyMessage as *const PORT_MESSAGE,
+                // reply.c uses sizeof(ULONG); align_of::<PORT_MESSAGE>() is 8.
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
     } else {
         captured_reply_message = *ReplyMessage;
     }
@@ -388,22 +406,55 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
     let mut connection_info_length: ULONG;
 
     if previous_mode != 0i8 {
+        // VALIDATE-FIRST, all three probes. The C wraps PortContext's probe,
+        // ReplyMessage's probe+capture, AND Timeout's probe+capture in ONE
+        // `_SEH2_TRY` (reply.c:387-408) whose handler is
+        // `_SEH2_YIELD(return _SEH2_GetExceptionCode())`. The translation kept
+        // the probes and reads and dropped the handler, so under DUMMY_PSEH a
+        // bad PortContext/ReplyMessage/Timeout from an unprivileged caller
+        // bugchecked the box. A range check proves where a buffer IS, never
+        // that it stays mapped, so the CAPTURE reads must be fault-protected
+        // too -- converting only the probes just moves the same bugcheck one
+        // frame along into the raw dereferences below. Each site returns the
+        // same way the shared C handler did: propagate the status, no cleanup.
         if !PortContext.is_null() {
-            ProbeForWritePointer(PortContext);
+            if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+                PortContext as *const core::ffi::c_void,
+                core::mem::size_of::<PVOID>(),
+                core::mem::align_of::<PVOID>(),
+                previous_mode,
+            ) {
+                return st;
+            }
         }
 
         if !ReplyMessage.is_null() {
-            ProbeForRead(
-                ReplyMessage as PVOID,
-                core::mem::size_of::<PORT_MESSAGE>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
-            captured_reply_message = *(ReplyMessage as *const PORT_MESSAGE);
+            // C reads via `*(volatile PORT_MESSAGE*)`, dropped by the
+            // translation; probe_read_user's single fetch restores that
+            // once-only semantics.
+            captured_reply_message =
+                match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+                ReplyMessage as *const PORT_MESSAGE,
+                // reply.c uses sizeof(ULONG); align_of::<PORT_MESSAGE>() is 8.
+                core::mem::size_of::<ULONG>(),
+                previous_mode,
+            ) {
+                    Ok(v) => v,
+                    Err(st) => return st,
+                };
         }
 
         if !Timeout.is_null() {
-            ProbeForReadLargeInteger(Timeout);
-            captured_timeout = *(Timeout as *const LARGE_INTEGER);
+            captured_timeout =
+                match ntkrnl_sys::probe::probe_read_generic::<LARGE_INTEGER>(
+                Timeout as *const LARGE_INTEGER,
+                // ProbeForReadLargeInteger is a RANGE CHECK ONLY.
+                1,
+                previous_mode,
+            ) {
+                    Ok(v) => v,
+                    Err(st) => return st,
+                };
         }
     } else {
         if (*thread).__bindgen_anon_7.__bindgen_anon_1.SystemThread() != 0 {
@@ -707,12 +758,31 @@ pub unsafe extern "system" fn LpcpCopyRequestData(
     let mut data_info_base_address: PVOID;
 
     if previous_mode != 0i8 {
-        ProbeForRead(
-            Message as PVOID,
-            core::mem::size_of::<PORT_MESSAGE>(),
-            core::mem::size_of::<PVOID>() as ULONG,
-        );
-        captured_message = *(Message as *const PORT_MESSAGE);
+        // VALIDATE-FIRST. The C wraps this probe AND the capture read in one
+        // `_SEH2_TRY` whose handler is `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())` (reply.c:794-801). The translation kept
+        // the probe and the read and dropped the handler, so under
+        // DUMMY_PSEH an unprivileged caller passing a bad Message to
+        // NtReadRequestData/NtWriteRequestData (which funnel through this
+        // helper) bugchecked the box. A range check proves where a buffer IS,
+        // never that it stays mapped, so the CAPTURE has to be
+        // fault-protected too -- converting only the probe just moves the
+        // same bugcheck one frame along into the raw dereference below.
+        //
+        // The C reads via `*(volatile PORT_MESSAGE*)`, dropped by the
+        // translation; probe_read_user's single fetch restores that
+        // once-only semantics.
+        captured_message =
+            match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+                Message as *const PORT_MESSAGE,
+                // reply.c:796 uses sizeof(PVOID) here, unlike the sizeof(ULONG)
+                // sites above -- copied from the C, not assumed uniform.
+                core::mem::size_of::<PVOID>(),
+                previous_mode,
+            ) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
     } else {
         captured_message = *Message;
     }
