@@ -20,11 +20,16 @@ list(APPEND SOURCE
     # that same member is `state field type is not proven C scalar/pointer state:
     # CDirectoryList m_dir_list`. Breaking the cycle needs the deterministic layer to model
     # a translated SIBLING CLASS as by-value state; until then both stay C++ and the paid
-    # CDirectoryList.rs sits wired-but-unused, which is harmless because the Rust publishes
-    # unmangled `#[no_mangle]` names and the live C++ defines mangled ones — no collision,
-    # so this is NOT a partial cohab flip.
+    # CDirectoryList.rs sits wired-but-unused. That is harmless, but NOT for the reason an
+    # earlier comment here gave: it claimed the Rust publishes unmangled `#[no_mangle]`
+    # names. It does not — CDirectoryList.rs and CDirectoryItem.rs contain ZERO
+    # `#[no_mangle]`, only plain `pub unsafe fn`, so the symbols are RUST-mangled and
+    # nothing is exported at all. The conclusion survives (there is no collision for the
+    # linker to resolve silently, so this is not a partial cohab flip) and is in fact
+    # stronger than claimed, but the stated mechanism was wrong.
     CDirectoryList.cpp
-    dde.cpp)
+    # dde.cpp — replaced by shell32-rust/src/shelldesktop/dde.rs
+    )
 
 add_library(shelldesktop OBJECT ${SOURCE})
 target_link_libraries(shelldesktop PRIVATE atl_classes)

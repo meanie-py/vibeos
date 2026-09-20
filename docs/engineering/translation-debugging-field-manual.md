@@ -739,6 +739,30 @@ for aliases and containers — `LPTHREAD_START_ROUTINE` is only an alias of
 unblocking the pointee alone changes nothing. `tools/rustconv/collapse_abi_twins.py --apply`
 folds existing pairs, refusing any whose bodies differ by more than cast decoration.
 
+**The twins are no longer EMITTED, for crates whose substrate is system-spelled (2026-09-20).**
+Folding pairs after the fact left the generator still producing them. The premise had quietly
+expired: `abi_enforce` emits the dual for every `static` + system fn because "our COM bindgen
+spells vtbl slots concretely (`extern "stdcall"` on i386)" — but after `normalize_island_abi.py`,
+`shell32-rust/src/island_i386.rs` and `com-sys/src/bindgen_i386.rs` contain **zero**
+`extern "stdcall"` between them. So the dual satisfied nothing and cost the usual half-compiled
+bug factory.
+
+Worse than wasteful where the consuming type is one the SAME generator emits: `dde.cpp`'s
+`pfnCommandHandler` handler table is rendered `extern "system"`, and the non-x86 twin is
+`extern "C"`, which Rust types DISTINCTLY even on amd64 where the ABI coincides — E0308 at every
+table entry, on the two arches where the convention does not even matter.
+
+`Target.concrete_stdcall_slots` now drives it, detected by `_detect_concrete_stdcall_slots()`
+from the island/bindgen files ONLY. Two traps that detector had to survive, both real:
+- **Never scan translated output.** A previous run's twins are themselves `extern "stdcall"`,
+  so a whole-crate scan reports True forever and the flag can never turn off.
+- **Mask comments first.** `island_extra.rs` names `unsafe extern "stdcall"` in one PROSE
+  sentence, explaining that `lstrcpynW` is now bound from the real header. That single comment
+  flipped the answer for all of shell32. A name in prose is not a use — the same reason
+  `crate_integrate` masks before its import scan.
+
+Absent any island the answer stays the conservative True: the dual is wasteful, never incorrect.
+
 **And a convention twin is NOT an arch gate — it just looks like one.** msvcrt's except.c came
 back with `#[cfg(target_arch = "x86")] extern "stdcall"` / `#[cfg(not)] extern "C"` pairs on its
 callbacks, which is correct and says nothing about the fact that the file's ENTIRE 64-bit frame

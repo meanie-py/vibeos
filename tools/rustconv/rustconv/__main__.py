@@ -1443,6 +1443,7 @@ def cmd_submit(args):
             sys_umbrella=target.sys_umbrella,
             c_source_path=path,
             com_method_macro=target.com_method_macro,
+            concrete_stdcall_slots=target.concrete_stdcall_slots,
             crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         print(code)
@@ -4288,6 +4289,7 @@ def cmd_translate(args):
             sys_umbrella=rustconv_target.sys_umbrella,
             c_source_path=None if cpp_com_mode else c_file,
             com_method_macro=rustconv_target.com_method_macro,
+            concrete_stdcall_slots=rustconv_target.concrete_stdcall_slots,
             crate_module=(
                 getattr(rustconv_target, "crate_module", "")
                 if rustconv_target.crate_bindgen_files

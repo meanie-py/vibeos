@@ -12,7 +12,6 @@
       "dll/win32/shell32/shelldesktop/CDesktopBrowser.cpp",
       "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
       "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
-      "dll/win32/shell32/shelldesktop/dde.cpp",
       "dll/win32/shell32/shellmenu/CMenuToolbars.cpp"
     ]
   },
@@ -54,6 +53,7 @@
       "dll/win32/shell32/folders.cpp",
       "dll/win32/shell32/iconcache.cpp",
       "dll/win32/shell32/propsheet.cpp",
+      "dll/win32/shell32/shelldesktop/dde.cpp",
       "dll/win32/shell32/shldataobject.cpp",
       "dll/win32/shell32/shlexec.cpp",
       "dll/win32/shell32/shlfileop.cpp",
