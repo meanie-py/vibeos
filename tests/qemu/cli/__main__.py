@@ -12,7 +12,17 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, checkpoint, debugcmd, diskspace, host_clock, hostlock, maintenance, tooling
+from . import (
+    cargoswap,
+    checkpoint,
+    debugcmd,
+    diskspace,
+    host_clock,
+    hostlock,
+    maintenance,
+    symbolize,
+    tooling,
+)
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -671,6 +681,23 @@ def build_parser() -> argparse.ArgumentParser:
     kl.add_argument("--all", action="store_true", help="every running VM (explicit, loud)")
     kl.add_argument("--dry-run", action="store_true", help="print what would be killed")
     kl.set_defaults(fn=kill_mod.cmd_kill)
+
+    sy = sub.add_parser(
+        "sym",
+        help="resolve an address to module!symbol+off (USER-MODE PEs, which the "
+        "kernel symbol index does not cover)",
+    )
+    sy.add_argument("--arch", required=True, choices=["i386", "amd64", "arm64"])
+    sy.add_argument("addr", nargs="+", help="hex addresses, e.g. 7ffb70078fd")
+    sy.add_argument(
+        "--module",
+        help="force a module by name (needed when several share an image base, "
+        "e.g. drivers on the linker default)",
+    )
+    sy.add_argument(
+        "--rebuild", action="store_true", help="reindex even if the index looks current"
+    )
+    sy.set_defaults(fn=symbolize.run)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")

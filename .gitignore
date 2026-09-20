@@ -3,6 +3,7 @@ build-*/
 build-fex-*
 qemu/runs/
 qemu/symbols-*.tsv
+qemu/modules-*.tsv
 output-*
 modules/optional
 modules/bootcd_extras
