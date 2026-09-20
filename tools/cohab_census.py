@@ -47,6 +47,7 @@ records a decision somebody made on purpose.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from collections import Counter
@@ -64,14 +65,23 @@ SKIP_DIRS = {".git", "build", "output", "target", "__pycache__"}
 
 
 def cmake_files(root: Path = REPO) -> list[Path]:
+    """Walk the SOURCE tree, PRUNING build dirs instead of filtering them afterwards.
+
+    This used `rglob("*")` and filtered the results, which is wrong in a way that
+    only shows up under load: rglob must DESCEND into a directory to yield
+    anything from it, so it walked `build-*/` in full and raised FileNotFoundError
+    when a cargo temp dir vanished mid-walk. The gate builds while check-tooling
+    runs, so that race is routine there and never happens on a quiet desktop tree
+    -- it cost two merge-queue rejections to see. `os.walk` with in-place pruning
+    never enters those directories at all (and is much faster); `onerror` is
+    ignored so a directory disappearing underneath us can never fail the scan.
+    """
     out = []
-    for p in root.rglob("*"):
-        if p.name != "CMakeLists.txt" and p.suffix != ".cmake":
-            continue
-        if any(part in SKIP_DIRS or part.startswith("build-") for part in p.parts):
-            continue
-        if p.is_file():
-            out.append(p)
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith("build-")]
+        for name in filenames:
+            if name == "CMakeLists.txt" or name.endswith(".cmake"):
+                out.append(Path(dirpath) / name)
     return sorted(out)
 
 
