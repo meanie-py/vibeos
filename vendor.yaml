@@ -604,6 +604,78 @@ trees:
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
 ours:
+
+  # ── Wine-derived code: OURS, and on the translation path ────────────────
+  - paths:
+      - dll/win32/comctl32
+      - dll/win32/crypt32
+      - dll/win32/hhctrl.ocx
+      - dll/win32/hlink
+      - dll/win32/hnetcfg
+      - dll/win32/ieframe
+      - dll/win32/inetcomm
+      - dll/win32/jscript
+      - dll/win32/mshtml
+      - dll/win32/msi
+      - dll/win32/msvcrt
+      - dll/win32/msxml3
+      - dll/win32/ole32
+      - dll/win32/oleacc
+      - dll/win32/rpcrt4
+      - dll/win32/setupapi
+      - dll/win32/urlmon
+      - dll/win32/vbscript
+      - dll/win32/wbemprox
+      - dll/win32/windowscodecs
+      - dll/win32/winhttp
+      - dll/win32/wininet
+      - dll/directx/wine/d3dcompiler_43
+      - dll/directx/wine/wined3d
+    name: Wine-derived shipped modules
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      ONE DECISION, 24 paths, owner-confirmed 2026-09-19: Wine-derived code is OURS and
+      is on the translation path. These are forked Wine modules this project ships,
+      maintains and translates — not a vendored drop tracked against upstream. The
+      proof is in the tree: dll/win32/msvcrt is on this list and is already ~fully
+      translated, graded against the genuine C by msvcrt-difftest.
+
+      They are listed here rather than left silent because `--suspects` learned to see
+      Wine on 2026-09-19 (it matches `Copyright ... for CodeWeavers`, since Wine does
+      not use the `(c)` form the other holders do) and would otherwise re-ask about 24
+      directories forever. Being in `ours:` is a claim about SCOPE, not authorship: the
+      code is foreign, the responsibility is ours, and the lines stay in the
+      translation denominator.
+
+  - paths:
+      - modules/rostests/winetests/comctl32
+      - modules/rostests/winetests/kernel32
+      - modules/rostests/winetests/mshtml
+      - modules/rostests/winetests/msi
+      - modules/rostests/winetests/shell32
+      - modules/rostests/winetests/ucrtbase
+      - modules/rostests/winetests/urlmon
+      - modules/rostests/winetests/windowscodecs
+    name: Wine conformance tests
+    origin: Wine's own test suite (LGPL-2.1-or-later)
+    reason: >
+      A DIFFERENT argument from the shipped modules above, which is why it is a separate
+      entry. These are Wine's conformance tests: they are the ORACLE we grade against,
+      not code we are porting. Translating them would be translating the ruler. They are
+      `ours:` in the only sense that matters to this registry — a deliberate decision,
+      not an unclassified import — and they should NOT be read as translation debt.
+
+  - paths:
+      - sdk/include/wine
+    name: Wine headers
+    origin: Wine (LGPL-2.1-or-later)
+    reason: >
+      The Wine compatibility headers the modules above compile against. Headers, not
+      bodies, so they carry no translation debt either way (the `ours:` table measures
+      bodies) — but they are foreign-copyright and unclassified code sits in neither
+      list, so the ratchet is owed an answer. This is it.
+
   # ── Microsoft DDK storage class drivers ─────────────────────────────────
   # All three share one argument, written out here and cross-referenced below.
   - path: drivers/storage/class/classpnp

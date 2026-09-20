@@ -225,8 +225,18 @@ def test_the_two_halves_disagree_about_nothing():
     # The storage class drivers are ours: MS-PL, already diverged, no ABI contract.
     assert reg.is_declared_ours("drivers/storage/class/classpnp/class.c")
     assert not reg.is_vendored("drivers/storage/class/classpnp/class.c")
-    # Neither list is a claim about the rest of the repo.
-    assert not reg.is_classified("dll/win32/msvcrt/cpp.c")
+    # Neither list is a claim about the rest of the repo. The example used to be
+    # dll/win32/msvcrt/cpp.c, which stopped being one on 2026-09-19: msvcrt is
+    # Wine-derived, `--suspects` learned to see Wine, and the owner classified the whole
+    # Wine bucket as `ours:`. So the example has to be code that is ReactOS-authored
+    # rather than merely ours-by-decision.
+    assert not reg.is_classified("ntoskrnl/ke/dpc.c")
+    assert not reg.is_classified("base/shell/explorer/explorer.cpp")
+    # And the Wine bucket really is the other thing: foreign copyright, ours by SCOPE,
+    # deliberately IN the translation denominator rather than excluded from it.
+    assert reg.is_declared_ours("dll/win32/msvcrt/cpp.c")
+    assert not reg.is_vendored("dll/win32/msvcrt/cpp.c")
+    assert reg.is_declared_ours("dll/win32/mshtml/htmldoc.c")
 
 
 def test_an_undecided_foreign_tree_fails_the_check(tmp_path):
