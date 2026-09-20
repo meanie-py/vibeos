@@ -1459,6 +1459,57 @@ def _detect_com_method_macro(crate: Path) -> str | None:
     return None
 
 
+def _detect_concrete_stdcall_slots(crate: Path) -> bool:
+    """Does this crate's SUBSTRATE spell fn-pointer slots `extern "stdcall"` on i386?
+
+    This decides whether a translated `static` + system function has to be emitted as a
+    per-arch `#[cfg]` twin pair. The dual exists because Rust compares fn-pointer ABIs
+    NOMINALLY -- `extern "system" fn` unifies with neither `extern "stdcall"` nor
+    `extern "C"` -- so a callback could only be stored in a concretely-spelled bindgen slot
+    if it carried that arch's literal convention.
+
+    `normalize_island_abi.py` has since respelled the islands `extern "system"` on all three
+    arches, which retires the premise: shell32-rust's `island_i386.rs` and com-sys's
+    `bindgen_i386.rs` both contain ZERO `extern "stdcall"`. Where that holds the dual is pure
+    cost, and not only line count -- only half of it is ever compiled, so a fix to one twin is
+    invisible until someone builds the other arch, and it defeats crate-repair's cross-target
+    agreement outright (`collapse_abi_twins.py` exists to fold the leftovers).
+
+    DETECTED from the island/bindgen files ONLY, never from translated output: a previous
+    run's twins are themselves `extern "stdcall"`, so scanning the whole crate would make this
+    self-perpetuating. Absent any island, the answer is the conservative True -- the dual is
+    always ABI-correct, merely wasteful.
+    """
+    src = crate / "src"
+    if not src.is_dir():
+        return True
+    # A NON-recursive glob on the two stems, not a tree walk: every island in the tree sits
+    # directly in `<crate>/src`, and this runs at import for every target.
+    islands = sorted(src.glob("island_*.rs")) + sorted(src.glob("bindgen_*.rs"))
+    if not islands:
+        return True
+    from ...crate_integrate import _without_comments
+
+    for f in islands:
+        try:
+            # Comments masked first. `island_extra.rs` mentions `unsafe extern "stdcall"` in a
+            # PROSE note explaining that lstrcpynW is now bound from the real header -- one
+            # sentence, no code, and it flipped this answer for the whole crate. A name in
+            # prose is not a use (same reason `crate_integrate` masks before its import scan).
+            if 'extern "stdcall"' in _without_comments(f.read_text(errors="replace")):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+# The TARGETS above are dict literals, evaluated at import before the detector exists, so they
+# cannot call it at their own definition point. Fill it in once here instead of hardcoding a
+# per-target answer that would rot the moment an island is respelled.
+for _target in TARGETS.values():
+    _target.concrete_stdcall_slots = _detect_concrete_stdcall_slots(_target.output_crate)
+
+
 def _find_dll_spec(name: str, source_dir: Path) -> Path | None:
     """The DLL's own .spec — the ground truth for which fns must be exported.
 
@@ -1666,6 +1717,7 @@ def make_user_dll_target(
         sys_umbrella=umbrella,
         system_prompt_addendum=_user_prompt_addendum(name),
         com_method_macro=_detect_com_method_macro(crate),
+        concrete_stdcall_slots=_detect_concrete_stdcall_slots(crate),
         # com_object_map stays None: a module outside shell32 has no OBJECT_ENTRY class-object
         # map, its COM classes being created by plain `*_Constructor` free functions.
         com_island_files=_derive_com_islands(crate),

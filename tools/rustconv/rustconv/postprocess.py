@@ -2350,6 +2350,7 @@ def postprocess(
     sys_umbrella: str | None = None,
     c_source_path: Path | None = None,
     com_method_macro: str | None = None,
+    concrete_stdcall_slots: bool = True,
     crate_module: str = "",
 ) -> str:
     """Apply all post-processing transforms to LLM-generated Rust code.
@@ -2430,7 +2431,12 @@ def postprocess(
         # printing to stderr is how ~130 ole32 vtbl methods shipped with the Rust
         # ABI — clean links on amd64/arm64, a corrupted stack on i386 at the first
         # call. Fail loud (AGENTS.md) and let the caller decide.
-        code = enforce_abi_from_c(code, c_source_path, com_method_macro=com_method_macro)
+        code = enforce_abi_from_c(
+            code,
+            c_source_path,
+            com_method_macro=com_method_macro,
+            concrete_stdcall_slots=concrete_stdcall_slots,
+        )
     # The .spec is ground truth for EXPORTS, so it overrides the C-source-derived
     # convention for any spec-exported name — a DLL-local `#define EXPORT WINAPI` defeats
     # the C-macro read (falls back to cdecl → `extern "C"` on a stdcall export → i386 link

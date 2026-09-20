@@ -13,3 +13,7 @@ pub mod CDirectoryList;
 /// The TU's SECOND plain class — `CDirectoryList.cpp` holds both, and CDirectoryList's bodies
 /// call `CDirectoryItem_EqualPath_body`, so the pair only compiles together.
 pub mod CDirectoryItem;
+
+/// `dde.cpp`, the shell's DDE server — 13 free functions, no classes, and the first
+/// shelldesktop TU to pass `cpp-tu` preflight outright.
+pub mod dde;
