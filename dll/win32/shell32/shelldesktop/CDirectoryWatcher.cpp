@@ -399,3 +399,42 @@ BOOL CDirectoryWatcher::IsDead()
     }
     return m_fDead;
 }
+
+/* ------------------------------------------------------------------------------------------
+ * Bridges for the Rust translation of CChangeNotifyServer.
+ *
+ * CChangeNotifyServer.cpp is Rust now (shell32-rust/src/shelldesktop/CChangeNotifyServer.rs)
+ * and still drives the watcher, but CDirectoryWatcher is a plain C++ class whose methods are
+ * NON-VIRTUAL — there is no vtable for Rust to dispatch through, so each call needs a real
+ * C++ shim. These disappear into Rust the moment this .cpp is itself translated, exactly as
+ * CMenuFocusManager's did.
+ *
+ * `_delete` is the one that is not merely a name: `delete p` runs ~CDirectoryWatcher() and
+ * THEN frees. Lowering it as a bare free() in Rust would skip the destructor, which closes
+ * m_hDirectory and unlinks the watcher from the global list.
+ * ------------------------------------------------------------------------------------------ */
+extern "C" CDirectoryWatcher *
+CDirectoryWatcher_Create_RustBridge(HWND hNotifyWnd, LPCWSTR pszDirectoryPath, BOOL fSubTree)
+{
+    return CDirectoryWatcher::Create(hNotifyWnd, pszDirectoryPath, fSubTree);
+}
+
+extern "C" BOOL CDirectoryWatcher_RequestAddWatcher_RustBridge(CDirectoryWatcher *p)
+{
+    return p->RequestAddWatcher();
+}
+
+extern "C" BOOL CDirectoryWatcher_RequestTermination_RustBridge(CDirectoryWatcher *p)
+{
+    return p->RequestTermination();
+}
+
+extern "C" void CDirectoryWatcher_delete_RustBridge(CDirectoryWatcher *p)
+{
+    delete p;
+}
+
+extern "C" void CDirectoryWatcher_RequestAllWatchersTermination_RustBridge(void)
+{
+    CDirectoryWatcher::RequestAllWatchersTermination();
+}

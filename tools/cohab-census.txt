@@ -785,6 +785,7 @@ dll/win32/shell32/CMakeLists.txt	1	# wine/shellstring.c — replaced by Rust (sh
 dll/win32/shell32/CMakeLists.txt	1	# wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp — replaced by shell32-rust/src/shelldesktop/. Three modules
 dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but
 dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# dde.cpp — replaced by shell32-rust/src/shelldesktop/dde.rs
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuBand.cpp — replaced by Rust (sdk/lib/rust/menuband-rust). Unlike the shell32-

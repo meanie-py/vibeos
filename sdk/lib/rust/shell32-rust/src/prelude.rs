@@ -809,6 +809,11 @@ extern "system" {
 extern "C" {
     /// msvcrt.
     pub fn free(block: *mut core::ffi::c_void);
+    /// Beside `free`, and for the same reason a translation needs it: in this tree C++
+    /// `operator new` IS malloc and `operator delete` IS free
+    /// (sdk/lib/cpprt/.../cpprt.cpp), so a faithful `new T`/`delete p` pair lowers to
+    /// these two — and must, wherever the other half of the pair is still C++.
+    pub fn malloc(size: usize) -> *mut core::ffi::c_void;
     /// `precomp.h:291`, defined in `utils.cpp`. Plain __cdecl — NOT WINAPI — so it belongs in
     /// the `extern "C"` block; `extern "system"` mangles it to `_SHELL_GetIDListTarget@8` on
     /// i386, which is the only arch that catches the mismatch.

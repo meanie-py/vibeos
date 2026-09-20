@@ -6,7 +6,13 @@ add_definitions(
 
 
 list(APPEND SOURCE
-    CChangeNotifyServer.cpp
+    # CChangeNotifyServer.cpp — replaced by shell32-rust/src/shelldesktop/. Three modules
+    # for one TU: CChangeNotifyServer.rs (the COM class), CChangeNotifyServer_window.rs
+    # (its ATL half — BEGIN_MSG_MAP and the AtlWindow impl, which the COM scaffold does
+    # not model) and CChangeNotifyServer_free.rs (the one file-scope symbol).
+    #   It needed the state-field parser to learn a container of RAW POINTERS
+    # (`CSimpleArray<CWatchItem*> m_items`) and the message-map strip that stopped
+    # `END_MSG_MAP()` from swallowing `UINT m_nNextRegID`.
     CDesktopBrowser.cpp
     CDirectoryWatcher.cpp
     # CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but

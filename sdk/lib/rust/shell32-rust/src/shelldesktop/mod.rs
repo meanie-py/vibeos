@@ -17,3 +17,14 @@ pub mod CDirectoryItem;
 /// `dde.cpp`, the shell's DDE server — 13 free functions, no classes, and the first
 /// shelldesktop TU to pass `cpp-tu` preflight outright.
 pub mod dde;
+
+/// `CChangeNotifyServer.cpp` — the shell change-notification server window. A COM class with
+/// an internal activation shape (no OBJECT_ENTRY), unblocked once the state-field parser
+/// learned to read a container of RAW POINTERS (`CSimpleArray<CWatchItem*> m_items`).
+/// Shims for reaching the still-C++ `CDirectoryWatcher`; see the module docs.
+pub mod CDirectoryWatcher_bridge;
+pub mod CChangeNotifyServer;
+/// Its ATL-window half — message map and `AtlWindow` impl. See the module docs.
+pub mod CChangeNotifyServer_window;
+/// Its one file-scope function, which is only a symbol — see the module docs.
+pub mod CChangeNotifyServer_free;

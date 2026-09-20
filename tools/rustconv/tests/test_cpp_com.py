@@ -3771,3 +3771,149 @@ def test_module_lock_symbol_follows_the_output_crate(tmp_path: Path):
     assert "MenuBandRustModuleLock();" in rust
     assert "MenuBandRustModuleUnlock();" in rust
     assert "Shell32RustObject" not in rust
+
+
+def test_container_of_raw_pointers_is_a_proven_state_field():
+    """`CSimpleArray<CWatchItem*>` — a container whose ELEMENT is a pointer.
+
+    This is the third safe element family, and it is safer than the other two rather than a
+    relaxation of them: the array stores raw pointers, so ATL's per-element `DestructItem` is
+    a no-op and so is Rust's `drop_in_place::<*mut T>`. The container's `Drop` therefore
+    reproduces the C++ one whatever the POINTEE looks like — the element's layout is simply
+    not the container's business, it only has to be nameable.
+
+    It blocked CChangeNotifyServer.cpp (the whole TU read as UNSUPPORTED) because BOTH the
+    state-field parser and `_discover_pod_state_types` spelled the element `[A-Za-z_]\\w*`
+    with no `*`, in two identical copies of one regex. Discovery could not see `CWatchItem`
+    inside the template, so the parser then rejected it as "not a proven layout".
+    """
+    field = _parse_plain_state_field(
+        "CSimpleArray<CWatchItem*> m_items", allowed_pod_types={"CWatchItem"}
+    )
+    assert field.name == "m_items"
+    assert field.c_type == "CSimpleArray<CWatchItem*>"
+    # The RUST spelling is what lands in the struct, so the star has to move inside.
+    assert field.raii_container == "CSimpleArray<*mut CWatchItem>"
+    assert field.rust_type == "CSimpleArray<*mut CWatchItem>"
+
+    # By-value elements are untouched by the change.
+    byval = _parse_plain_state_field(
+        "CAtlList<DynamicShellEntry> m_entries", allowed_pod_types={"DynamicShellEntry"}
+    )
+    assert byval.raii_container == "CAtlList<DynamicShellEntry>"
+
+    # An element the module neither defines nor proves is still refused, pointer or not.
+    with pytest.raises(CppComError, match="not a proven layout"):
+        _parse_plain_state_field("CSimpleArray<MysteryThing*> m_x", allowed_pod_types=set())
+
+
+def test_a_registered_container_does_not_advertise_itself_as_missing():
+    """The old message sent the reader to a registry entry that was already there.
+
+    `CSimpleArray` was registered in `_RAII_CONTAINER_LOWERINGS` AND implemented in atl.rs,
+    and the fall-through still said "no Rust lowering for `CSimpleArray`; implement it in
+    shell32-rust/src/atl.rs and list it in _RAII_CONTAINER_LOWERINGS" — which costs a round
+    of hunting for a missing thing that exists. If the template is registered, the SHAPE is
+    what could not be spelled, and the message has to say so.
+    """
+    with pytest.raises(CppComError, match="has a Rust lowering, but this declaration's shape"):
+        _parse_plain_state_field("CSimpleArray<int, MyComparer> m_weird")
+
+    with pytest.raises(CppComError, match="no Rust lowering for `CUnheardOf`"):
+        _parse_plain_state_field("CUnheardOf<int> m_x")
+
+
+def test_a_body_local_macro_is_not_a_dropped_constant():
+    """`#undef RETURN` is a directive, not a use of a constant named RETURN.
+
+    CChangeNotifyServer::ShouldNotify opens with `#define RETURN(x) do { TRACE(...); return
+    (x); } while (0)` and closes with `#undef RETURN`. Every CALL site is `RETURN(FALSE)`,
+    which the callable-token rule already skips — but the bare name in the `#undef` is not
+    followed by `(`, so it read as a symbolic constant the Rust had dropped, and rejected a
+    body that had expanded the macro exactly as the preprocessor does.
+    """
+    c_body = """BOOL C::ShouldNotify(int a)
+{
+#define RETURN(x) do { \\
+    TRACE("ShouldNotify return %d\\n", (x)); \\
+    return (x); \\
+} while (0)
+    if (a & SHCNE_INTERRUPT)
+        RETURN(FALSE);
+    RETURN(TRUE);
+#undef RETURN
+}"""
+    rust = (
+        "pub unsafe fn C_ShouldNotify_body(this: *mut C, a: i32) -> BOOL {\n"
+        "    if (a & SHCNE_INTERRUPT) != 0 {\n        return FALSE;\n    }\n"
+        "    TRUE\n}\n"
+    )
+    assert audit_worker_body(c_body, rust, "C_ShouldNotify_body") == []
+
+
+def test_cpp_delete_licenses_free_and_never_Box():
+    """C++ `delete p` is a source deallocator — and what it licenses is `free`.
+
+    In THIS tree `operator new` is `malloc` and `operator delete` is `free`
+    (sdk/lib/cpprt/.../cpprt.cpp), so `free` is the faithful lowering and the only one that
+    agrees with the C++ side across a boundary: a CDirectoryWatcher is `new`ed in
+    CDirectoryWatcher.cpp, still C++, and `delete`d from Rust in CChangeNotifyServer.
+
+    `Box::from_raw` stays refused. It frees through Rust's global allocator, not malloc, and
+    shell32-rust is no_std with no `alloc` crate — a body reaching for it does not even build.
+    The original rule was right to refuse it; its stated reason was just too narrow.
+    """
+    c_delete = "void C::DestroyItem(CWatchItem *p)\n{\n    SHFree(p->pRegEntry);\n    delete p;\n}"
+    rust_free = (
+        "pub unsafe fn C_DestroyItem_body(this: *mut C, p: *mut CWatchItem) -> () {\n"
+        "    SHFree((*p).pRegEntry);\n"
+        "    free(p as *mut core::ffi::c_void);\n}\n"
+    )
+    assert audit_worker_body(c_delete, rust_free, "C_DestroyItem_body") == []
+
+    # Box is refused even though the C++ does `delete`.
+    rust_box = (
+        "pub unsafe fn C_DestroyItem_body(this: *mut C, p: *mut CWatchItem) -> () {\n"
+        "    SHFree((*p).pRegEntry);\n"
+        "    let _ = core::boxed::Box::from_raw(p);\n}\n"
+    )
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_delete, rust_box, "C_DestroyItem_body")
+    )
+
+    # The allocating half is symmetric: `new T{...}` licenses `malloc`, and placement new
+    # (which allocates nothing) does not.
+    c_new = "void C::Add()\n{\n    CWatchItem *p = new CWatchItem;\n    AddItem(p);\n}"
+    rust_malloc = (
+        "pub unsafe fn C_Add_body(this: *mut C) -> () {\n"
+        "    let p = malloc(core::mem::size_of::<CWatchItem>()) as *mut CWatchItem;\n"
+        "    C_AddItem_body(this, p);\n}\n"
+    )
+    assert audit_worker_body(c_new, rust_malloc, "C_Add_body") == []
+
+    c_placement = "void C::Add(void *mem)\n{\n    CWatchItem *p = new (mem) CWatchItem;\n}"
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_placement, rust_malloc, "C_Add_body")
+    )
+
+    # `delete this` is NOT a license: that is the COM instance, which the scaffold HeapAllocs,
+    # so `free` on it would be a cross-heap free. `<Class>_delete` is its only correct free.
+    c_delete_this = "{ delete this; return S_OK; }"
+    rust_free_this = (
+        "pub unsafe fn C_f_body(this: *mut C) -> HRESULT {\n"
+        "    free(this as *mut core::ffi::c_void);\n    S_OK\n}\n"
+    )
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_delete_this, rust_free_this, "C_f_body")
+    )
+
+    # And with no `delete` in the C at all, a bare `free` is still invented.
+    c_plain = "void C::Quiet(CWatchItem *p)\n{\n    SHFree(p->pRegEntry);\n}"
+    rust_free_invented = (
+        "pub unsafe fn C_Quiet_body(this: *mut C, p: *mut CWatchItem) -> () {\n"
+        "    SHFree((*p).pRegEntry);\n"
+        "    free(p as *mut core::ffi::c_void);\n}\n"
+    )
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_plain, rust_free_invented, "C_Quiet_body")
+    )
