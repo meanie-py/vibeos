@@ -351,7 +351,8 @@ trees:
   - path: sdk/lib/3rdparty/freetype
     name: FreeType
     upstream: https://freetype.org/
-    license: FTL OR GPL-2.0
+    license: GPL-2.0-only  # ELECTED from FreeType's FTL-or-GPL dual grant
+    license_file: COPYING  # the repo's own GPL-2.0 text; see review
     modified: unknown
     version:
       file: sdk/lib/3rdparty/freetype/include/freetype/freetype.h
@@ -361,6 +362,18 @@ trees:
         - '#define FREETYPE_PATCH\s+(\d+)'
       join: "."
     review: >
+      ARM ELECTED 2026-09-19: GPL-2.0, owner's decision. FreeType 2.10.0 is offered
+      under FTL *or* GPL-2.0 and the licensee chooses; this project is itself GPL-2.0
+      (repo-root COPYING), so electing the GPL arm makes FreeType's terms the same as
+      the tree it ships in, and no separate FTL attribution obligation applies.
+
+      `license_file` points at the repo-root COPYING rather than a file inside the
+      tree, and that is deliberate: it is the GPL-2.0 text verbatim, and the reason
+      this entry had no pointer is that FreeType's own licence document was never
+      vendored — README:16 says "see the file `docs/LICENSE.TXT'" and there is no
+      docs/ directory here. So the tree still lacks upstream's dual-grant statement.
+      What it now has is an unambiguous record of which arm WE take and the text of
+      that arm. If FreeType is ever re-vendored, bring docs/ with it.
       LICENCE TEXT IS NOT IN THE TREE. README:16 says "see the file `docs/LICENSE.TXT'
       for the available licenses", and there is no docs/ directory here — the licence
       file was left behind when this was vendored. FTL-vs-GPL is a CHOICE that file
@@ -410,6 +423,7 @@ trees:
     name: libmpg123
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
+    license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
     modified: unknown
     headers:
       - sdk/include/reactos/libs/libmpg123
@@ -417,6 +431,12 @@ trees:
       file: sdk/include/reactos/libs/libmpg123/mpg123.h
       pattern: '#define MPG123_API_VERSION\s+(\d+)'
     review: >
+      POINTER ADDED 2026-09-19 and it is NOT upstream's file. mpg123's own COPYING was
+      never vendored — its headers say "see COPYING and AUTHORS files in distribution"
+      and neither is here — so this points at the repo-root COPYING.LIB, which is the
+      LGPL-2.1 text verbatim and is the licence the sources name. That gives the grant
+      an authoritative text in-tree; it does NOT recover mpg123's own AUTHORS file,
+      which the same sentence asks for. Bring both if this is re-vendored.
       LICENCE TEXT IS NOT IN THE TREE, and the sources say so themselves: every file
       header reads "free software under the terms of the LGPL... see COPYING and AUTHORS
       files in distribution", and neither COPYING nor AUTHORS was vendored. Same defect
