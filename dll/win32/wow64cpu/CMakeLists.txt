@@ -124,6 +124,16 @@ if(_wow64_guest_ok)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
                  ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                  ${REACTOS_SOURCE_DIR}/media/inf/nettcpip.inf)
+    # Same hazard, other input: every optional guest is admitted by an
+    # `if(EXISTS)` evaluated at CONFIGURE time, so BUILDING one (sqlite32,
+    # lua32, doom) does not make the next `vibeos-cli build` stage it -- the
+    # cached configure still says it was absent. Measured 2026-09-20: built
+    # all three, rebuilt amd64 green, and none of them reached the livecd.
+    # That silence is the expensive part, because the guest then reports no
+    # verdict and reads as "did not run" rather than "was never staged".
+    # Depending on the paths makes their CREATION re-run configure.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                 ${_wow64_extras})
     execute_process(
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386
