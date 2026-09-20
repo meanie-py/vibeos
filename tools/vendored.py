@@ -49,6 +49,25 @@ USAGE
     vendored.py --emit           # the table: path, version, licence, LOC — both halves
     vendored.py --write-stamps   # (re)generate the VENDORED marker in each tree
     vendored.py --suspects       # foreign-copyright dirs in NEITHER half (i.e. undecided)
+    vendored.py --notices [PATH] # generate THIRD-PARTY-NOTICES.md (default: stdout)
+
+THE NOTICES FILE IS GENERATED, AND CHECKED IN ANYWAY
+----------------------------------------------------
+Distribution needs licence TEXT, not licence names, and a hand-maintained notices file
+is one that goes stale the first time a tree is added. So it is derived from the
+registry — which already knows every tree, its upstream, its version probe, its extra
+licences and where its grant lives. It is *also* committed at the repo root, because a
+distributor should not have to run our tooling to get it; `check()` therefore
+regenerates and compares, so a checked-in generated file cannot rot.
+
+Two shapes of grant, both handled: a standalone `license_file`, quoted whole, and a
+`license_ref` — a source file whose HEADER COMMENT is the only copy of the grant, which
+is the case for 8 of the trees (ACPICA, mbedtls, libtiff and friends carry no separate
+licence file at all). Where neither exists the tree must carry a `license_note` saying
+why, and that note is what the notices reproduce: the two Microsoft drops (WDF, ucrt)
+are in that shape, and ucrt's is the honest admission that it carries no grant at all.
+An entry that claims a licence it cannot point at is a check failure, because the
+alternative is a notices file with a silent hole in it.
 
 Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendored`.
 """
@@ -56,8 +75,10 @@ Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendo
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -122,18 +143,53 @@ class Tree:
         #: nowhere else — so without this the registry can record a licence NAME it
         #: cannot point at, and a generated notices file would have nothing to quote.
         self.license_ref: str | None = raw.get("license_ref")
+        #: Our delta from pristine upstream, as a patch file under vendor-patches/.
+        #: Present ONLY where the edit cannot be expressed as a build flag — the
+        #: preferred fix is always to make the source pristine and move the change into
+        #: the build (libtiff needed no flag at all, libxslt one -D, mbedtls a -D plus
+        #: a file of our own). A `patch:` here is an admission that was not possible,
+        #: and it says why in its own header.
+        self.patch: str | None = raw.get("patch")
         #: Licences present in the tree BESIDES `license`, as {spdx or name: why}. A
         #: single `license:` field on a mixed tree is not a rounding error: wdf is
         #: recorded MIT and carries 11 ReactOS-authored GPL-2.0-or-later files, and FEX
         #: is recorded MIT and carries LGPL-2.1-or-later and GPL-2.0-only. A notices
         #: file built from the headline licence alone would be wrong about all three.
         self.license_extra: dict = dict(raw.get("license_extra") or {})
+        #: Why this tree's licence grant CANNOT be quoted from the tree itself. Required
+        #: when there is neither a `license_file` nor a `license_ref`, because the
+        #: alternative is a notices file with a silent hole in it — and a hole is
+        #: indistinguishable from "we checked and it is fine". Both current users are
+        #: Microsoft drops that arrived with a copyright line and no grant, which is
+        #: precisely the case you want stated in the shipped notices rather than
+        #: rounded off. `--notices` prints it verbatim in place of licence text and
+        #: `check()` fails if it is missing.
+        self.license_note: str | None = raw.get("license_note")
         self.modified: str = str(raw.get("modified", "unknown"))
         self.headers: list[str] = list(raw.get("headers", []))
         self.version: dict | None = raw.get("version")
         #: Free text marking a classification the author was NOT confident about.
         #: Surfaced by --emit so an open question cannot go quiet inside a data file.
         self.review: str | None = raw.get("review")
+        #: WE WANT THIS GONE. Distinct from `review`, which is uncertainty about what a
+        #: tree IS: this is a settled judgement that the tree should not be here, plus
+        #: the exit. A registry that only records what we carry cannot express intent,
+        #: so an entry everyone quietly dislikes looks identical to one nobody minds —
+        #: and the dislike is exactly the thing that gets lost between sessions. It is
+        #: deliberately NOT a check failure: shipping something unwelcome is a decision,
+        #: not a defect, and a gate that went red would only teach people to delete the
+        #: field.
+        self.unwelcome: str | None = raw.get("unwelcome")
+        #: How far behind upstream this drop is, as of a DATED audit. Distinct from
+        #: `version`, which is probed live from the tree and so is always current about
+        #: OURS while saying nothing about theirs. The gap is the security-relevant
+        #: number and nothing computed it: the libtiff entry carried "stock 4.1.0 with
+        #: no backported fixes" as prose for a day before anyone acted on it, and three
+        #: other trees turned out to be further behind than that. Deliberately not
+        #: checked against the network by any gate — a lint that needs the internet is
+        #: a lint that fails on a train — so it is a dated human finding, and the date
+        #: is what tells you whether to re-run the audit.
+        self.staleness: str | None = raw.get("staleness")
 
     @property
     def prefixes(self) -> list[str]:
@@ -152,10 +208,20 @@ class OurTree:
     def __init__(self, raw: dict, index: int):
         if not isinstance(raw, dict):
             raise RegistryError(f"ours[{index}] is not a mapping")
-        for field in ("path", "name", "reason"):
+        for field in ("name", "reason"):
             if not raw.get(field):
                 raise RegistryError(f"ours[{index}] is missing required field `{field}`")
-        self.path: str = raw["path"]
+        #: `path` for one directory, `paths` for ONE DECISION spanning many. The second
+        #: exists because Wine is a single judgement — "this project translates
+        #: Wine-derived code" — that happens to cover 24 shipped modules. Writing it out
+        #: 24 times would make one settled argument look like 24 independent findings,
+        #: and the payload of an `ours:` entry is the argument. It is NOT a licence to
+        #: group unrelated directories: every path under one entry must be covered by
+        #: that entry's single reason.
+        self.paths: list[str] = [raw["path"]] if raw.get("path") else list(raw.get("paths") or [])
+        if not self.paths:
+            raise RegistryError(f"ours[{index}] needs `path` or `paths`")
+        self.path: str = self.paths[0]
         self.name: str = raw["name"]
         self.reason: str = raw["reason"]
         self.origin: str = raw.get("origin", "unknown")
@@ -164,7 +230,7 @@ class OurTree:
 
     @property
     def prefixes(self) -> list[str]:
-        return [self.path]
+        return list(self.paths)
 
 
 class Registry:
@@ -232,7 +298,11 @@ class Registry:
 
     def loc(self, tree: Tree | OurTree, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
         """Source lines carried by a tree, for the --emit table only."""
-        root = self.repo / tree.path
+        return sum(self.loc_path(p, suffixes) for p in tree.prefixes[:1])
+
+    def loc_path(self, rel: str, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
+        """Source lines under one repo-relative directory."""
+        root = self.repo / rel
         if not root.is_dir():
             return 0
         total = 0
@@ -308,7 +378,11 @@ def is_vendored(rel: str, repo: Path = REPO) -> bool:
 #: written. That is a decision, not a scan tweak.
 _FOREIGN_HOLDER = re.compile(
     r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
-    r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)",
+    r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)"
+    # Wine does not spell it with a `(c)`: its files say
+    # `Copyright 2005 Jacek Caban for CodeWeavers`, so the form above cannot see it.
+    r"|Copyright[^\n]{0,60}?\bfor (CodeWeavers)"
+    r"|Copyright[^\n]{0,60}?\b(The Wine Project)",
     re.I,
 )
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
@@ -335,8 +409,65 @@ def _is_nested_checkout(d: str) -> bool:
 #: An SPDX tag, or a ReactOS file header's `LICENSE:` line. Both are machine-readable
 #: statements by the FILE about itself, which is the only licence evidence that does not
 #: require reading prose.
-_SPDX = re.compile(r"SPDX-License-Identifier:\s*([^\s*/]+)")
+#: The WHOLE expression, not the first token. `([^\s*/]+)` was the first cut and it
+#: truncated `Apache-2.0 OR GPL-2.0-or-later` to `Apache-2.0` — which then matched
+#: mbedtls's recorded licence and passed, hiding the GPL half of a dual licence in all
+#: 79 of its files. A compound expression is exactly the case this check exists for, so
+#: it reads to end of line and strips the comment tail.
+_SPDX = re.compile(r"SPDX-License-Identifier:[ \t]*([^\n]+)")
 _ROS_LICENSE_HDR = re.compile(r"^\s*[*#/]*\s*LICENSE:\s*([^(\n]+)", re.M)
+
+
+#: Licences a file states by NAME in prose, with no SPDX tag. The blind spot this closes
+#: was found the hard way, twice: glu32 carries 73 files under "SGI Free Software License
+#: B, Version 1.1" inside a tree recorded SGI-B-2.0, and zlib's contrib/minizip is
+#: Info-ZIP inside a tree recorded Zlib. Both sat there while `--licences` printed
+#: "every declared licence accounted for".
+#:
+#: THIS MATCHES LICENCE NAMES, NOT LICENCE TEXT, and the distinction is the whole reason
+#: it can exist. Grepping for notice BODIES was rejected when this check was first
+#: written, correctly: every ACPICA file reproduces a BSD notice, so a text grep reports
+#: 226 hits that are all the recorded licence. A name is a much narrower thing — a file
+#: says "GNU General Public License" when that is what governs it.
+#:
+#: FAMILY GRANULARITY, DELIBERATELY. These map to a family (GPL, LGPL, Apache) rather
+#: than a version, because version detection from prose is guesswork — "either version 2
+#: of the License, or (at your option) any later version" is three plausible answers —
+#: and the drift that matters legally is a COPYLEFT FILE INSIDE A PERMISSIVE TREE, which
+#: is a family-level fact. The two named-variant entries are exceptions: SGI-B and
+#: Info-ZIP have no SPDX-shaped spelling in the wild, so the name IS the identifier.
+#:
+#: Order matters. Lesser/Library GPL must be tried before plain GPL or every LGPL notice
+#: reports as GPL.
+_PROSE_LICENCES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"SGI\s+Free\s+Software\s+License\s+B,?\s*Version\s*1\.1", re.I), "SGI-B-1.1"),
+    (re.compile(r"SGI\s+Free\s+Software\s+License\s+B,?\s*Version\s*2\.0", re.I), "SGI-B-2.0"),
+    (re.compile(r"\bInfo-ZIP\s+licen[cs]e\b", re.I), "Info-ZIP"),
+    (re.compile(r"GNU\s+(?:Lesser|Library)\s+General\s+Public\s+Licen[cs]e", re.I), "LGPL"),
+    (re.compile(r"GNU\s+General\s+Public\s+Licen[cs]e", re.I), "GPL"),
+    (re.compile(r"Apache\s+Licen[cs]e", re.I), "Apache"),
+    (re.compile(r"Mozilla\s+Public\s+Licen[cs]e", re.I), "MPL"),
+    (re.compile(r"Common\s+Development\s+and\s+Distribution\s+Licen[cs]e", re.I), "CDDL"),
+    (re.compile(r"Boost\s+Software\s+Licen[cs]e", re.I), "BSL"),
+    (re.compile(r"Eclipse\s+Public\s+Licen[cs]e", re.I), "EPL"),
+)
+
+#: How a registry entry SATISFIES a prose family. Substring matching cannot do this job:
+#: "LGPL-2.1" contains "GPL", so a tree recorded LGPL would silently absorb a real GPL
+#: file — the exact copyleft-escalation this check is for. The GPL pattern therefore
+#: requires a GPL not preceded by an L.
+_PROSE_ACCOUNTED: dict[str, re.Pattern[str]] = {
+    "SGI-B-1.1": re.compile(r"SGI-B-1\.1", re.I),
+    "SGI-B-2.0": re.compile(r"SGI-B-2\.0", re.I),
+    "Info-ZIP": re.compile(r"Info-ZIP", re.I),
+    "LGPL": re.compile(r"LGPL|Lesser|Library General", re.I),
+    "GPL": re.compile(r"(?<![A-Za-z])GPL", re.I),
+    "Apache": re.compile(r"Apache", re.I),
+    "MPL": re.compile(r"MPL|Mozilla", re.I),
+    "CDDL": re.compile(r"CDDL", re.I),
+    "BSL": re.compile(r"BSL|Boost", re.I),
+    "EPL": re.compile(r"EPL|Eclipse", re.I),
+}
 
 
 def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
@@ -350,19 +481,38 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
     recorded as Microsoft's terms and carries 5 files stamped `SPDX MIT`. Generating a
     notices file from the headline licence alone would misstate all three.
 
-    Only SELF-DECLARED licences count — an SPDX tag or a ReactOS `LICENSE:` header. A
-    prose grep would fire on every BSD notice in every ACPICA file and drown the signal,
-    which is the same reason `_FOREIGN_HOLDER` sticks to corporate holders.
+    TWO PASSES, and the second one was added on 2026-09-20 to close a blind spot that
+    had already cost two findings. An SPDX tag or a ReactOS `LICENSE:` header is a
+    machine-readable statement and is read first. Where a file makes none, its header is
+    matched against `_PROSE_LICENCES` — a list of licence NAMES, not licence TEXT. That
+    distinction is what makes the second pass possible at all: grepping for notice bodies
+    was rejected when this was first written, correctly, because every ACPICA file
+    reproduces a BSD notice and a text grep drowns in 226 true-but-useless hits. A file
+    that NAMES the GNU General Public License is saying something much narrower.
+
+    The prose pass reports a FAMILY (GPL, LGPL, Apache) rather than a version, because
+    version detection from prose is guesswork — "either version 2 of the License, or (at
+    your option) any later version" admits three answers — while the drift that matters
+    legally is a copyleft file inside a permissive tree, which is a family-level fact.
+
+    The first run of it found three unrecorded licences that this function had been
+    printing all-clear over: 586 BSL-1.0 files in `external/fex` (it vendors range-v3),
+    adns's deliberate GPL/LGPL carve-out on its public header, and — the one that
+    matters — sixteen LGPL-2.1-or-later files in `dll/3rdparty/libtirpc`, the University
+    of Michigan Windows/SSPI port, inside a tree recorded flat BSD-3-Clause.
 
     A hit is a QUESTION, as everywhere else here: the answer may be "record it in
     `license_extra`" or "those files are ours and the tree boundary is wrong".
 
-    KNOWN BLIND SPOT, stated because a green run reads like an all-clear and is not one:
-    this sees only SELF-DECLARED licences. A file that states its licence in PROSE with
-    no SPDX tag is invisible to it — `dll/3rdparty/mbedtls/_reactos_strsafe_wrapper.c` is
-    a ReactOS-authored LGPL-2.1-or-later file inside an Apache-2.0 tree and was found by
-    hand, after this scan had already passed. So: green means no tree DECLARES an
-    unrecorded licence, not that no tree HAS one.
+    WHAT IS STILL INVISIBLE, stated because a green run reads like an all-clear and is
+    not one. Permissive families — MIT, BSD, ISC, Zlib, public-domain dedications — are
+    deliberately NOT in `_PROSE_LICENCES`: their notices get reproduced verbatim inside
+    files governed by something else (a GPL file quoting the MIT terms of a snippet it
+    embeds), so they are exactly where a name match stops being evidence. The omission is
+    also the low-risk direction, since the finding this check exists for is copyleft
+    turning up where the entry claims permissive, not the reverse. And a file that states
+    its terms without ever naming a licence — bespoke prose, "all rights reserved", a
+    grant written out longhand — is still invisible to both passes.
     """
     out = []
     for t in reg.trees:
@@ -370,6 +520,7 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
         if not d.is_dir():
             continue
         found: dict[str, int] = {}
+        prose: dict[str, int] = {}
         for p in d.rglob("*"):
             if not p.is_file() or p.suffix.lower() not in _SRC_SUFFIXES:
                 continue
@@ -377,16 +528,39 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
                 head = p.read_text(errors="replace")[:3000]
             except OSError:
                 continue
+            declared = False
             for pat in (_SPDX, _ROS_LICENSE_HDR):
                 m = pat.search(head)
                 if m:
-                    found[m.group(1).strip()] = found.get(m.group(1).strip(), 0) + 1
+                    lic = m.group(1).strip().rstrip("*/").strip().rstrip(".").strip()
+                    if lic:
+                        found[lic] = found.get(lic, 0) + 1
+                        declared = True
+            # Prose names are the FALLBACK, not a second opinion. A file that already
+            # carries an SPDX tag has answered the question authoritatively; reading its
+            # prose too would double-report every dual-licensed ACPICA header, once as
+            # the tag and once as the family named in the notice below it.
+            if declared:
+                continue
+            for pat, family in _PROSE_LICENCES:
+                if pat.search(head):
+                    key = f"{family} (prose)"
+                    prose[key] = prose.get(key, 0) + 1
+                    break
         # Accounted for = it IS the headline licence, or it is recorded in license_extra.
+        recorded = t.license + " " + " ".join(t.license_extra)
         unaccounted = {
             lic: n
             for lic, n in found.items()
             if lic.lower() not in t.license.lower() and lic not in t.license_extra
         }
+        unaccounted.update(
+            {
+                lic: n
+                for lic, n in prose.items()
+                if not _PROSE_ACCOUNTED[lic[: -len(" (prose)")]].search(recorded)
+            }
+        )
         if unaccounted:
             out.append((t.path, t.license, unaccounted))
     return out
@@ -439,6 +613,165 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     return sorted(((d, n) for d, n in hits.items() if n >= min_files), key=lambda x: -x[1])
 
 
+#: The generated notices document, at the repo root where a distributor looks for it.
+NOTICES_PATH = "THIRD-PARTY-NOTICES.md"
+
+#: The generated Rust-crate half of the registry. Committed, and gated for freshness
+#: against Cargo.lock the same way THIRD-PARTY-NOTICES.md is gated against vendor.yaml.
+CRATES_PATH = "tools/rust-crates.yaml"
+
+#: sdk/lib/rust/Cargo.lock — the authority on WHICH external crates exist at WHICH
+#: version. Licences and the shipped/host split need `cargo metadata`, which needs a
+#: populated registry cache; the lockfile needs nothing. So the snapshot carries the
+#: licences and `check` verifies only the (name, version) set, which is the drift that
+#: actually matters and the only part that can be checked without cargo.
+CARGO_LOCK = "sdk/lib/rust/Cargo.lock"
+
+#: Workspace members that exist to build or test the tree, never to ship in it.
+#: Anything reachable ONLY from these is host-only. Kept short and explicit because
+#: it cannot be derived: see crates_snapshot() for why cargo's graph cannot answer
+#: this question here.
+_HOST_ONLY_MEMBERS = (
+    "reactos-link",  # the cargo->PE link helper; pulls `cc` as a normal dependency
+    "slist-loom",  # a loom model-checking harness; pulls the whole tracing stack
+)
+
+
+def cargo_lock_crates(repo: Path) -> dict[tuple[str, str], None]:
+    """External (name, version) pairs from Cargo.lock. No cargo invocation."""
+    text = (repo / CARGO_LOCK).read_text(encoding="utf-8", errors="replace")
+    out: dict[tuple[str, str], None] = {}
+    for block in text.split("[[package]]")[1:]:
+        name = re.search(r'^name = "(.+)"', block, re.M)
+        ver = re.search(r'^version = "(.+)"', block, re.M)
+        src = re.search(r'^source = "(.+)"', block, re.M)
+        if name and ver and src:  # `source` present == not one of ours
+            out[(name.group(1), ver.group(1))] = None
+    return out
+
+
+def crates_snapshot(repo: Path) -> str:
+    """Regenerate the crate snapshot from `cargo metadata`. Needs cargo and the cache.
+
+    WHY A SNAPSHOT AND NOT A LIVE QUERY: `vibeos-cli check` must work without a
+    populated ~/.cargo registry, and licences only come from cargo metadata. So the
+    licences are frozen here and `check` verifies the cheap half — that the set of
+    (name, version) still matches Cargo.lock.
+
+    THE SHIPPED/HOST SPLIT IS BEST-EFFORT AND SAYS SO. Cargo's dependency graph cannot
+    answer it in this tree: `netstack-cargo` does not depend on `netstack-rust` in
+    cargo terms at all — it pulls only panic-common and the link helper, and CMake
+    links the real crate in afterwards. So walking edges from the 34 crates that
+    `add_cargo_module` builds reaches zero external crates, which is obviously wrong.
+    What CAN be established mechanically is the negative: a proc-macro crate runs in
+    the compiler and never ships, and a crate reachable only from a `-difftest`
+    harness or from _HOST_ONLY_MEMBERS is host-only too. Everything else is listed as
+    shipping, which is the safe direction for a notices file — over-listing costs a
+    line, under-listing is the thing that matters.
+    """
+    meta = json.loads(
+        subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--offline"],
+            cwd=repo / "sdk/lib/rust",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    pkgs = {p["id"]: p for p in meta["packages"]}
+    nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
+    members = set(meta["workspace_members"])
+
+    def nm(i: str) -> str:
+        return pkgs[i]["name"]
+
+    proc_macro = {
+        i for i in pkgs if any(k == "proc-macro" for t in pkgs[i]["targets"] for k in t["kind"])
+    }
+    roots = [
+        i for i in members if not nm(i).endswith("-difftest") and nm(i) not in _HOST_ONLY_MEMBERS
+    ]
+    seen: set[str] = set()
+    stack = list(roots)
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        if cur in proc_macro or nm(cur) in _HOST_ONLY_MEMBERS:
+            # A proc-macro's dependencies are the compiler's, not the product's; a
+            # host-only member's are the build's. Skipping them as ROOTS is not enough
+            # — reactos-link is also a plain dependency of other members, and
+            # descending through it dragged cc, shlex and find-msvc-tools in.
+            continue
+        for d in nodes[cur]["deps"]:
+            if any(k.get("kind") is None for k in d["dep_kinds"]):
+                stack.append(d["pkg"])
+
+    rows = []
+    for i, p in pkgs.items():
+        if not p.get("source"):
+            continue
+        ships = i in seen and i not in proc_macro
+        why = "" if ships else ("proc-macro" if i in proc_macro else "build/test only")
+        rows.append((p["name"], p["version"], p.get("license") or "SEE LICENSE FILE", ships, why))
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    out = [
+        "# GENERATED by tools/vendored.py --write-crates. Do not hand-edit.",
+        "#",
+        "# The Rust half of the vendor registry: every crates.io dependency that enters",
+        "# this tree, with the licence cargo reports for it. vendor.yaml covers vendored",
+        "# C; this covers what `cargo` brings in, which nothing tracked until 2026-09-20",
+        "# — smoltcp, the TCP/IP stack, among them.",
+        "#",
+        "# `ships:` is BEST-EFFORT and errs toward true. Cargo's graph cannot settle it",
+        "# here (see crates_snapshot() in tools/vendored.py): a crate is marked false only",
+        "# when it is provably host-only — a proc-macro, or reachable only from a",
+        "# -difftest harness or a build helper. Treat false as certain and true as",
+        "# 'assume it ships'.",
+        "#",
+        f"# Regenerate with: tools/vendored.py --write-crates   ({len(rows)} crates)",
+        "crates:",
+    ]
+    for name, ver, lic, ships, why in rows:
+        out.append(f"  - name: {name}")
+        out.append(f"    version: {ver}")
+        out.append(f"    license: {lic!r}" if "'" in lic or '"' in lic else f"    license: {lic}")
+        out.append(f"    ships: {'true' if ships else 'false'}")
+        if why:
+            out.append(f"    host_only_because: {why}")
+    return "\n".join(out) + "\n"
+
+
+def crates_rows(repo: Path) -> list[tuple[str, str, str, bool]]:
+    """(name, version, licence, ships) from the committed snapshot."""
+    path = repo / CRATES_PATH
+    if not path.exists():
+        return []
+    rows, cur = [], {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("- name:"):
+            if cur:
+                rows.append(cur)
+            cur = {"name": line.split(":", 1)[1].strip()}
+        elif ":" in line and cur and not line.startswith("#"):
+            k, v = line.split(":", 1)
+            cur[k.strip()] = v.strip()
+    if cur:
+        rows.append(cur)
+    return [
+        (
+            r["name"],
+            r.get("version", "?"),
+            r.get("license", "?").strip("'\""),
+            r.get("ships") == "true",
+        )
+        for r in rows
+    ]
+
+
 def check(reg: Registry) -> list[str]:
     """Every way the registry can disagree with the tree. Returns problem strings."""
     problems: list[str] = []
@@ -451,6 +784,25 @@ def check(reg: Registry) -> list[str]:
             problems.append(f"{t.name}: license_file does not exist: {t.license_file}")
         if t.license_ref and not (reg.repo / t.license_ref).is_file():
             problems.append(f"{t.name}: license_ref does not exist: {t.license_ref}")
+        # A recorded licence NAME we cannot point at is the gap that makes a generated
+        # notices file quietly wrong. Either the grant is quotable from the tree, or we
+        # say in writing why it is not. Scoped to trees that actually CLAIM a licence:
+        # for one still recorded `unknown` the honest complaint is the unknown licence,
+        # not a missing copy of it, and demanding the text first would just invite a
+        # placeholder. Every tree in the committed registry names a licence.
+        if t.license != "unknown" and not (t.license_file or t.license_ref or t.license_note):
+            problems.append(
+                f"{t.name}: records licence `{t.license}` but has no `license_file`, no "
+                f"`license_ref` and no `license_note` — nothing for --notices to quote. "
+                f"Point at the grant, or state in `license_note` why the tree does not "
+                f"carry one."
+            )
+        if t.patch:
+            pf = reg.repo / t.patch
+            if not pf.is_file():
+                problems.append(f"{t.name}: patch does not exist: {t.patch}")
+            elif not pf.read_text(errors="replace").strip():
+                problems.append(f"{t.name}: patch is empty: {t.patch}")
         for h in t.headers:
             if not (reg.repo / h).is_dir():
                 problems.append(f"{t.name}: header dir does not exist: {h}")
@@ -484,8 +836,9 @@ def check(reg: Registry) -> list[str]:
                 )
 
     for o in reg.ours:
-        if not (reg.repo / o.path).is_dir():
-            problems.append(f"{o.name}: `ours:` path does not exist: {o.path}")
+        for op in o.paths:
+            if not (reg.repo / op).is_dir():
+                problems.append(f"{o.name}: `ours:` path does not exist: {op}")
 
     # The second ratchet, and the reason `ours:` exists. The container ratchet above only
     # watches three directories; foreign code imported anywhere else (WDF under sdk/lib,
@@ -504,6 +857,8 @@ def check(reg: Registry) -> list[str]:
     # The THIRD ratchet. Same argument as the two above, one level down: it is not enough
     # that a tree is classified, its recorded LICENCE has to survive contact with what the
     # files say about themselves. Three trees failed this the day it was written.
+    problems.extend(structural_problems(reg.repo / "vendor.yaml"))
+
     for path, recorded, unaccounted in license_drift(reg):
         listed = ", ".join(f"{lic} x{n}" for lic, n in sorted(unaccounted.items()))
         problems.append(
@@ -513,7 +868,239 @@ def check(reg: Registry) -> list[str]:
             f"    of the tree if they are ours. A notices file built from the headline\n"
             f"    licence alone would be wrong about this tree."
         )
+
+    # The notices document is a DERIVED artifact that is also a shipped legal one, so
+    # it is checked in (a distributor needs it without running our tooling) AND gated
+    # (a checked-in generated file with no freshness check is one that silently rots —
+    # the registry gains a tree, the notices keep claiming the old list).
+    # Staleness only, and only if the file is there. Whether a given repo OUGHT to ship
+    # notices is repo policy, not registry-vs-tree agreement, and `--repo` is pointed at
+    # synthetic fixture trees by the scanner controls; demanding a generated legal
+    # document from each of those would be a false alarm about the fixture. That the
+    # committed repo ships one is asserted directly in test_vendored.py.
+    # The FOURTH ratchet, and the newest. vendor.yaml sees C; nothing saw the crates
+    # cargo pulls in, which is how smoltcp — the TCP/IP stack — shipped unrecorded.
+    # Checked against Cargo.lock rather than against live `cargo metadata`, so this
+    # gate needs no cargo and no populated registry cache: the (name, version) set is
+    # the drift that matters, and it is the half a lockfile can answer.
+    lock_path = reg.repo / CARGO_LOCK
+    if lock_path.exists():
+        want = set(cargo_lock_crates(reg.repo))
+        have = {(n, v) for n, v, _lic, _s in crates_rows(reg.repo)}
+        if not (reg.repo / CRATES_PATH).exists():
+            problems.append(
+                f"{CRATES_PATH} is MISSING — the Rust half of the registry is not "
+                f"recorded. Generate: tools/vendored.py --write-crates"
+            )
+        elif want != have:
+            added = ", ".join(f"{n} {v}" for n, v in sorted(want - have)) or "none"
+            gone = ", ".join(f"{n} {v}" for n, v in sorted(have - want)) or "none"
+            problems.append(
+                f"{CRATES_PATH} is STALE against {CARGO_LOCK}.\n"
+                f"    in the lockfile but not recorded: {added}\n"
+                f"    recorded but no longer in the lockfile: {gone}\n"
+                f"    Regenerate: tools/vendored.py --write-crates"
+            )
+
+    notices_file = reg.repo / NOTICES_PATH
+    if notices_file.is_file() and not any("--notices to quote" in p for p in problems):
+        # Only meaningful once every tree has a quotable grant; otherwise the real
+        # complaint is the missing grant, and a stale-notices line on top is noise.
+        current = notices_file.read_text(encoding="utf-8")
+        if current != notices(reg):
+            problems.append(
+                f"{NOTICES_PATH} is STALE — vendor.yaml or a licence file changed since it "
+                f"was generated. Regenerate: tools/vendored.py --notices {NOTICES_PATH}"
+            )
     return problems
+
+
+#: Every field name an entry may carry. A key can only begin a line; if one appears
+#: mid-line it was absorbed into the previous value.
+_FIELD_NAMES = (
+    "path|paths|name|upstream|license|license_file|license_ref|license_extra|"
+    "modified|headers|version|reason|review|unwelcome|origin|tier|license_note|"
+    "staleness"
+)
+_JOINED_FIELD = re.compile(rf"\S[ \t]{{2,}}((?:{_FIELD_NAMES}):)")
+
+
+def structural_problems(path: Path) -> list[str]:
+    """Fields silently swallowed into the previous value by a bad hand-edit.
+
+    This exists because I broke vendor.yaml this way THREE TIMES in one session while
+    editing it programmatically. The failure mode is nasty precisely because it is not
+    a syntax error: `    license: MIT    modified: yes` still PARSES — `modified` just
+    quietly stops being a field and becomes part of the licence string, and a block
+    scalar will happily swallow a whole `reason:` the same way. The registry then
+    reports clean while carrying less than it appears to.
+
+    Two of the three were caught only by re-measuring afterwards and one by the loader
+    complaining about a missing required field, which is luck rather than a check. So
+    it is a check now.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        return [f"cannot read {path}: {e}"]
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        m = _JOINED_FIELD.search(line)
+        if m:
+            out.append(
+                f"vendor.yaml:{n}: `{m.group(1).strip()}` is not at the start of a line "
+                f"— it was absorbed into the value above it, and has stopped being a "
+                f"field. Line: {line.strip()[:90]}"
+            )
+    return out
+
+
+#: How much of a `license_ref` file to scan for the grant. The grant is a header
+#: comment; 200 lines is far past the longest one in this tree (mbedtls's Apache-2.0
+#: notice) and stops us pasting an entire 6000-line source file into the notices.
+_REF_SCAN_LINES = 200
+
+#: A comment line's leading decoration. Every `license_ref` in this registry points at
+#: a C or C++ file, so `#` and `;` are deliberately NOT comment leads here: treating
+#: `#` as one made the ACPICA extraction run straight past the end of the licence and
+#: start emitting the header's `#ifndef`/`#include` lines with their hashes stripped.
+_COMMENT_LEAD = re.compile(r"^\s*(/\*+|\*+/|\*+|//+)\s?")
+
+
+def license_text(reg: Registry, t: Tree) -> tuple[str, str]:
+    """The licence grant to reproduce for `t`, as (source_description, text).
+
+    Prefers a standalone `license_file`, quoted whole. Falls back to `license_ref`,
+    where the grant is a comment header on a source file and has to be lifted out of
+    it — 15 of the trees are in that shape, so this is the common path, not the
+    exception. Returns the `license_note` verbatim when the tree carries no grant.
+    """
+    if t.license_file:
+        path = reg.repo / t.license_file
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        # Per-line rstrip: several upstream licence files carry trailing spaces, which
+        # would land in a committed generated file and trip the whitespace lint. Not
+        # legally meaningful, and doing it here keeps `--notices` output byte-equal to
+        # what is checked in.
+        return t.license_file, "\n".join(line.rstrip() for line in raw.splitlines()).strip()
+
+    if t.license_ref:
+        path = reg.repo / t.license_ref
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[:_REF_SCAN_LINES]
+        out: list[str] = []
+        in_block = False
+        for line in lines:
+            stripped = line.strip()
+            if in_block:
+                out.append(_COMMENT_LEAD.sub("", line).rstrip())
+                if "*/" in stripped:
+                    in_block = False
+                continue
+            if not stripped:
+                # A blank line BETWEEN comment blocks is a paragraph break; a blank line
+                # after the last one is just leading whitespace on the code below, and
+                # .strip() at the end removes it either way.
+                out.append("")
+                continue
+            if stripped.startswith("/*"):
+                out.append(_COMMENT_LEAD.sub("", line).rstrip())
+                if "*/" not in stripped[2:]:
+                    in_block = True
+                continue
+            if stripped.startswith("//"):
+                out.append(_COMMENT_LEAD.sub("", line).rstrip())
+                continue
+            # First line of actual code — the header is over.
+            break
+        text = "\n".join(out).strip()
+        return f"{t.license_ref} (header comment)", text
+
+    # check() guarantees this exists; guard anyway so a hand-edited registry cannot
+    # produce a notices file with an empty section rather than an error.
+    if not t.license_note:
+        raise RegistryError(f"{t.name}: no license_file, license_ref or license_note")
+    return "NO GRANT IN TREE", t.license_note.strip()
+
+
+def notices(reg: Registry) -> str:
+    """The THIRD-PARTY-NOTICES document, generated from the registry.
+
+    Distribution needs the licence TEXT, not a licence name, and hand-maintaining that
+    list is how it goes stale — the registry already knows every tree, its upstream,
+    its version probe and where its grant lives, so the document is derived rather
+    than written. Trees with additional licences beyond the headline one list them:
+    a notices file built from `license:` alone would be wrong about FEX and GLU.
+    """
+    out: list[str] = []
+    out.append("# Third-party notices")
+    out.append("")
+    out.append(
+        "This product includes third-party software. **This file is GENERATED** from "
+        "`vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this "
+        "file. Each entry reproduces the licence grant as it appears in the tree."
+    )
+    out.append("")
+    out.append(f"{len(reg.trees)} vendored C/C++ components:")
+    out.append("")
+    for t in sorted(reg.trees, key=lambda x: x.name.lower()):
+        version, err = reg.resolve_version(t)
+        out.append(
+            f"- [{t.name}](#{_anchor(t.name)}) — {version if not err else 'unknown'} — {t.license}"
+        )
+    out.append("")
+
+    for t in sorted(reg.trees, key=lambda x: x.name.lower()):
+        version, err = reg.resolve_version(t)
+        source, text = license_text(reg, t)
+        out.append("")
+        out.append(f"## {t.name}")
+        out.append("")
+        out.append(f"- Upstream: {t.upstream}")
+        out.append(f"- Version: {version if not err else 'unknown'}")
+        out.append(f"- In this tree: `{'`, `'.join(t.prefixes)}`")
+        out.append(f"- Licence: {t.license}")
+        for lic, why in sorted(t.license_extra.items()):
+            out.append(f"- Also contains: {lic} — {why}")
+        if t.patch:
+            out.append(f"- Modified by us: yes, see `{t.patch}`")
+        out.append(
+            f"- Grant reproduced from: `{source}`"
+            if source != "NO GRANT IN TREE"
+            else "- Grant reproduced from: **the tree carries no licence grant**"
+        )
+        out.append("")
+        out.append("```")
+        out.append(text)
+        out.append("```")
+    out.append("")
+
+    # The Rust half. Licence TEXT is not reproduced here the way it is for the C
+    # trees: a crate's grant lives in ~/.cargo, not in this repo, so there is nothing
+    # in the tree to quote and quoting a remote file would be inventing provenance.
+    # The SPDX expression cargo reports is what we can state truthfully.
+    rows = crates_rows(reg.repo)
+    if rows:
+        ships = [r for r in rows if r[3]]
+        out.append("## Rust crates")
+        out.append("")
+        out.append(
+            f"This product also links {len(ships)} third-party Rust crates, out of "
+            f"{len(rows)} that enter the build. Generated from `cargo metadata` into "
+            f"`{CRATES_PATH}`; see that file for the ones used only to build or test, "
+            "and for why the shipped/host split errs toward listing more."
+        )
+        out.append("")
+        out.append("| crate | version | licence |")
+        out.append("| --- | --- | --- |")
+        for name, ver, lic, _ in ships:
+            out.append(f"| {name} | {ver} | {lic} |")
+        out.append("")
+    return "\n".join(out)
+
+
+def _anchor(name: str) -> str:
+    """GitHub-flavoured markdown heading anchor."""
+    return re.sub(r"[^a-z0-9_\- ]", "", name.lower()).replace(" ", "-")
 
 
 def write_stamps(reg: Registry) -> list[str]:
@@ -544,8 +1131,24 @@ def emit(reg: Registry) -> int:
         print(f"  {path.ljust(w)}  {version[:22]:<22} {lic[:22]:<22} {loc:>9,}")
     print(f"  {' ' * w}  {'':<22} {'TOTAL':<22} {total:>9,}")
 
+    unwanted = [t for t in reg.trees if t.unwelcome]
+    if unwanted:
+        print(f"\n{len(unwanted)} tree(s) flagged UNWELCOME — carried, but we want them gone:")
+        for t in unwanted:
+            print(f"  {t.name} ({t.path})")
+            for line in t.unwelcome.strip().splitlines():
+                print(f"      {line.strip()}")
+
     if reg.ours:
-        orows = [(o.path, o.tier or "-", reg.loc(o, _BODY_SUFFIXES), reg.loc(o)) for o in reg.ours]
+        orows = [
+            (
+                o.path if len(o.paths) == 1 else f"{o.path} (+{len(o.paths) - 1} more)",
+                o.tier or "-",
+                sum(reg.loc_path(p, _BODY_SUFFIXES) for p in o.paths),
+                sum(reg.loc_path(p) for p in o.paths),
+            )
+            for o in reg.ours
+        ]
         ow = max(len(r[0]) for r in orows)
         print(f"\n{len(orows)} foreign-copyright trees classified as OURS to translate")
         print("  (the complement of the table above; `bodies` is what enters the denominator)\n")
@@ -561,6 +1164,15 @@ def emit(reg: Registry) -> int:
     unknown = [t.name for t in reg.trees if not t.version]
     if unknown:
         print(f"\n  no version probe ({len(unknown)}): {', '.join(unknown)}")
+    stale = [t for t in reg.trees if t.staleness]
+    if stale:
+        print(f"\n{len(stale)} tree(s) recorded as BEHIND UPSTREAM (dated audit, not live):")
+        for t in stale:
+            version, err = reg.resolve_version(t)
+            print(f"    {t.name} — ours {version if not err else '?'}")
+            for line in t.staleness.strip().splitlines():
+                print(f"        {line.strip()}")
+
     flagged = [t for t in reg.trees if t.review]
     if flagged:
         print(f"\n  NEEDS REVIEW ({len(flagged)}) — classification not settled:")
@@ -576,6 +1188,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--emit", action="store_true", help="print the registry table")
     ap.add_argument("--write-stamps", action="store_true", help="regenerate VENDORED markers")
     ap.add_argument(
+        "--write-crates",
+        action="store_true",
+        help="regenerate the Rust-crate snapshot from cargo metadata (needs cargo)",
+    )
+    ap.add_argument(
         "--suspects",
         action="store_true",
         help="unregistered dirs full of foreign-copyright source (a question, not a verdict)",
@@ -584,6 +1201,13 @@ def main(argv: list[str] | None = None) -> int:
         "--licences",
         action="store_true",
         help="licences a tree's own files declare that its registry entry does not record",
+    )
+    ap.add_argument(
+        "--notices",
+        nargs="?",
+        const="-",
+        metavar="PATH",
+        help="generate THIRD-PARTY-NOTICES.md from the registry (default: stdout)",
     )
     ap.add_argument("--repo", type=Path, default=REPO)
     args = ap.parse_args(argv)
@@ -594,8 +1218,32 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[vendored] REGISTRY ERROR: {e}", file=sys.stderr)
         return 2
 
+    if args.notices:
+        # A registry that cannot name a grant cannot produce honest notices, so this
+        # refuses rather than emitting a document with a hole in it.
+        blocking = [p for p in check(reg) if "--notices to quote" in p]
+        if blocking:
+            print("[vendored] cannot generate notices:", file=sys.stderr)
+            for b in blocking:
+                print(f"  - {b}", file=sys.stderr)
+            return 1
+        text = notices(reg)
+        if args.notices == "-":
+            print(text)
+        else:
+            dest = Path(args.notices)
+            dest.write_text(text, encoding="utf-8")
+            print(f"  wrote {dest} ({len(text.splitlines())} lines, {len(reg.trees)} components)")
+        return 0
     if args.emit:
         return emit(reg)
+    if args.write_crates:
+        path = args.repo / CRATES_PATH
+        path.write_text(crates_snapshot(args.repo), encoding="utf-8")
+        rows = crates_rows(args.repo)
+        shipping = sum(1 for r in rows if r[3])
+        print(f"  wrote {path} ({len(rows)} crates, {shipping} of them shipping)")
+        return 0
     if args.write_stamps:
         for p in write_stamps(reg):
             print(f"  wrote {p}")

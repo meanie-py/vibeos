@@ -746,3 +746,55 @@ def test_the_staged_line_counts_what_is_actually_staged(tmp_path):
     extra, staged, why = ladder.gate_decision(repo, "amd64")
     assert extra == ["--ladder"] and staged
     assert f"{len(ladder.LADDER)} parity + {len(ladder.DIAGNOSTIC)} diagnostic" in why
+
+
+def test_drain_floor_is_zero_and_inert_when_unset(monkeypatch):
+    monkeypatch.delenv(ladder.DRAIN_FLOOR_ENV, raising=False)
+    assert ladder.drain_floor() == 0.0
+    vm = _FakeVM([])
+    assert ladder.watch(vm, seconds=5, seen=_all_pass()) == ""
+    assert vm.serial.reads == 0, "unset floor must not change the old fast path"
+
+
+def test_drain_floor_keeps_draining_past_the_graded_set(monkeypatch):
+    """The stock applets (winmine/notepad/mspaint/wordpad) run AFTER the parity
+    set and are not graded, so the drain's "every guest reported" exit throws
+    their phase away. The floor is what makes it observable."""
+    monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, "0.5")
+    vm = _FakeVM([_all_pass()])
+    started = time.monotonic()
+    ladder.watch(vm, seconds=0.05, seen="")
+    waited = time.monotonic() - started
+    assert waited >= 0.5, (
+        f"drained {waited:.2f}s — a floor must hold the drain open past the "
+        "graded set, which is the whole point of setting it"
+    )
+
+
+def test_drain_floor_applies_even_when_nothing_is_outstanding(monkeypatch):
+    """`seen` already carrying every verdict is exactly the investigation case:
+    the graded set finished in the settle read and the applets are still to
+    come. The early return must not skip the floor."""
+    monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, "0.4")
+    vm = _FakeVM([])
+    started = time.monotonic()
+    ladder.watch(vm, seconds=0.01, seen=_all_pass())
+    assert time.monotonic() - started >= 0.4
+
+
+def test_drain_floor_never_shortens_the_budget(monkeypatch):
+    """It may only EXTEND: a floor below the ceiling must leave a silent guest
+    still using the full ceiling, or it would manufacture fake failures."""
+    monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, "0.01")
+    vm = _FakeVM([_serial(hello32=0x600D)])
+    out = ladder.watch(vm, seconds=1.0, seen="")
+    assert _red(out)["classification"] == "LADDER_FAIL"
+
+
+@pytest.mark.parametrize("bad", ["abc", "-5", "1,5"])
+def test_a_malformed_drain_floor_is_loud(monkeypatch, bad):
+    """Silently reading a typo as 0 hands back a run that looks like it watched
+    the applet phase and did not."""
+    monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, bad)
+    with pytest.raises(ValueError):
+        ladder.drain_floor()

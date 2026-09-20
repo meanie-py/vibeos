@@ -310,7 +310,36 @@ unsafe fn IntGetImeHotKeyLanguageScoreImpl(hKL: HKL, HotKeyLangId: LANGID) -> u3
         return 3;
     }
 
-    lcid = (*(NtCurrentTeb() as *mut _TEB)).CurrentLocale;
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+    // C (win32ss/user/ntuser/ime.c, IntGetImeHotKeyLanguageScore):
+    //   _SEH2_TRY {
+    //       lcid = NtCurrentTeb()->CurrentLocale;
+    //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+    //       ERR(...);
+    //       lcid = MAKELCID(LANGID_NEUTRAL, SORT_DEFAULT);
+    //   } _SEH2_END;
+    //
+    // Shape: SENTINEL-VALUE SWALLOW, not a status. A faulting TEB read does not
+    // abort the function — it substitutes MAKELCID(LANGID_NEUTRAL, SORT_DEFAULT)
+    // and falls straight through into the same comparisons below. No probe in
+    // the C (NtCurrentTeb() is not a user pointer to validate), so none is added
+    // here either — only the read itself must survive a fault, via
+    // safe_copy_raw's fault-tolerant copy rather than a bare dereference.
+    let mut captured_lcid: LCID = 0;
+    lcid = match ntkrnl_sys::probe::safe_copy_raw(
+        core::ptr::addr_of_mut!(captured_lcid) as *mut core::ffi::c_void,
+        core::ptr::addr_of!((*(NtCurrentTeb() as *mut _TEB)).CurrentLocale) as *const core::ffi::c_void,
+        core::mem::size_of::<LCID>(),
+    ) {
+        Ok(()) => captured_lcid,
+        Err(_) => {
+            // MAKELCID(LANGID_NEUTRAL, SORT_DEFAULT): LANGID_NEUTRAL == 0,
+            // SORT_DEFAULT == 0, so MAKELCID(lgid, srtid) == (srtid << 16) | lgid
+            // == 0. No MAKELCID helper exists in this crate; the C macro's
+            // literal result for these two constants is 0.
+            0
+        }
+    };
 
     if HotKeyLangId as u32 == LANGIDFROMLCID(lcid) {
         return 2;
@@ -792,10 +821,60 @@ pub unsafe extern "system" fn NtUserGetImeHotKey(
             break 'block;
         }
 
-        core::ptr::write_volatile(lpuModifiers, (*pNode).uModifiers);
-        core::ptr::write_volatile(lpuVirtualKey, (*pNode).uVirtualKey);
-        if !lphKL.is_null() {
-            core::ptr::write_volatile(lphKL, (*pNode).hKL);
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (win32ss/user/ntuser/ime.c, NtUserGetImeHotKey):
+        //   _SEH2_TRY {
+        //       *lpuModifiers = pNode->uModifiers;
+        //       *lpuVirtualKey = pNode->uVirtualKey;
+        //       if (lphKL) *lphKL = pNode->hKL;
+        //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+        //       ERR(...);
+        //       pNode = NULL;
+        //   } _SEH2_END;
+        //
+        // Shape: SENTINEL-VALUE SWALLOW. A fault on ANY of the three writes
+        // aborts the _SEH2_TRY block immediately (no partial-write fall-through
+        // inside the C: an exception unwinds straight to the handler) and sets
+        // pNode = NULL, which is what the return value `!!pNode` below reports
+        // to the caller as FALSE. The addresses were already range/alignment
+        // probed above via SafeProbeForWrite (matching the C's earlier
+        // SafeProbeForWrite calls) — this only has to survive a page going away
+        // between the probe and the write, via safe_copy_raw's fault-tolerant
+        // copy rather than a bare write_volatile.
+        let uModifiers = (*pNode).uModifiers;
+        let uVirtualKey = (*pNode).uVirtualKey;
+        let hKL = (*pNode).hKL;
+        'seh: {
+            if ntkrnl_sys::probe::safe_copy_raw(
+                lpuModifiers as *mut core::ffi::c_void,
+                core::ptr::addr_of!(uModifiers) as *const core::ffi::c_void,
+                core::mem::size_of::<UINT>(),
+            )
+            .is_err()
+            {
+                pNode = core::ptr::null_mut();
+                break 'seh;
+            }
+            if ntkrnl_sys::probe::safe_copy_raw(
+                lpuVirtualKey as *mut core::ffi::c_void,
+                core::ptr::addr_of!(uVirtualKey) as *const core::ffi::c_void,
+                core::mem::size_of::<UINT>(),
+            )
+            .is_err()
+            {
+                pNode = core::ptr::null_mut();
+                break 'seh;
+            }
+            if !lphKL.is_null()
+                && ntkrnl_sys::probe::safe_copy_raw(
+                    lphKL as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(hKL) as *const core::ffi::c_void,
+                    core::mem::size_of::<HKL>(),
+                )
+                .is_err()
+            {
+                pNode = core::ptr::null_mut();
+            }
         }
     }
 
@@ -926,29 +1005,29 @@ pub unsafe extern "system" fn NtUserSetThreadLayoutHandles(
     0
 }
 
-#[cfg(target_pointer_width = "64")]
-unsafe extern "C" fn UserBuildHimcList(
+// Plain Rust fn, not `extern "C"`/`extern "fastcall"` like the other internal
+// helpers in this file: those calling conventions are for FFI-boundary shape
+// parity with the recovered C, but `Result<DWORD, NTSTATUS>` (added here to
+// propagate a fault out of the write loop below) is not FFI-safe, and nothing
+// outside this file calls UserBuildHimcList.
+unsafe fn UserBuildHimcList(
     pti: PTHREADINFO,
     dwCount: DWORD,
     phList: *mut HIMC,
-) -> DWORD {
+) -> Result<DWORD, NTSTATUS> {
     UserBuildHimcList_impl(pti, dwCount, phList)
 }
 
-#[cfg(not(target_pointer_width = "64"))]
-unsafe extern "fastcall" fn UserBuildHimcList(
-    pti: PTHREADINFO,
-    dwCount: DWORD,
-    phList: *mut HIMC,
-) -> DWORD {
-    UserBuildHimcList_impl(pti, dwCount, phList)
-}
-
+// Returns Ok(dwRealCount) on success, or Err(status) if a write into phList
+// faulted — see the dropped-_SEH2 recovery comment at the NtUserBuildHimcList
+// call site below. This helper writes phList directly (as the C does, inside
+// the _SEH2_TRY at the call site), so the fault-tolerant copy has to live here
+// where the raw stores happen.
 unsafe fn UserBuildHimcList_impl(
     mut pti: PTHREADINFO,
     dwCount: DWORD,
     phList: *mut HIMC,
-) -> DWORD {
+) -> Result<DWORD, NTSTATUS> {
     let mut pIMC: PIMC;
     let mut dwRealCount: DWORD = 0;
 
@@ -956,7 +1035,12 @@ unsafe fn UserBuildHimcList_impl(
         pIMC = (*pti).spDefaultImc;
         while !pIMC.is_null() {
             if dwRealCount < dwCount {
-                *phList.add(dwRealCount as usize) = UserHMGetHandle(pIMC) as _;
+                let handle: HIMC = UserHMGetHandle(pIMC) as _;
+                ntkrnl_sys::probe::safe_copy_raw(
+                    phList.add(dwRealCount as usize) as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(handle) as *const core::ffi::c_void,
+                    core::mem::size_of::<HIMC>(),
+                )?;
             }
             dwRealCount += 1;
             pIMC = (*pIMC).pImcNext;
@@ -967,7 +1051,12 @@ unsafe fn UserBuildHimcList_impl(
             pIMC = (*pti).spDefaultImc;
             while !pIMC.is_null() {
                 if dwRealCount < dwCount {
-                    *phList.add(dwRealCount as usize) = UserHMGetHandle(pIMC) as _;
+                    let handle: HIMC = UserHMGetHandle(pIMC) as _;
+                    ntkrnl_sys::probe::safe_copy_raw(
+                        phList.add(dwRealCount as usize) as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(handle) as *const core::ffi::c_void,
+                        core::mem::size_of::<HIMC>(),
+                    )?;
                 }
                 dwRealCount += 1;
                 pIMC = (*pIMC).pImcNext;
@@ -976,7 +1065,7 @@ unsafe fn UserBuildHimcList_impl(
         }
     }
 
-    dwRealCount
+    Ok(dwRealCount)
 }
 
 #[cfg(target_arch = "x86")]
@@ -1151,8 +1240,59 @@ pub unsafe extern "system" fn NtUserBuildHimcList(
             }
         }
 
-        dwRealCount = UserBuildHimcList(pti, dwCount, phList);
-        core::ptr::write_volatile(pdwCount, dwRealCount);
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (win32ss/user/ntuser/ime.c, NtUserBuildHimcList):
+        //   _SEH2_TRY {
+        //       ProbeForWrite(phList, dwCount * sizeof(HIMC), 1);
+        //       ProbeForWrite(pdwCount, sizeof(DWORD), 1);
+        //       *pdwCount = dwRealCount = UserBuildHimcList(pti, dwCount, phList);
+        //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+        //       ERR(...);
+        //       _SEH2_YIELD(goto Quit);
+        //   } _SEH2_END;
+        //
+        // Shape: STATUS-returning via the untouched `Quit:` fall-through — `ret`
+        // was initialized to STATUS_UNSUCCESSFUL above and is never reassigned
+        // on this path, so an exception here simply skips straight to
+        // `UserLeave(); return ret;` with that value intact. Literal alignment 1
+        // on both probes, matching the C. UserBuildHimcList() itself writes
+        // phList directly (see its dropped-_SEH2 recovery), so it returns
+        // Result<DWORD, NTSTATUS> here rather than a bare DWORD; a fault mid-list
+        // propagates out through `?` exactly like the C's exception unwinding out
+        // of the same _SEH2_TRY that wrapped the call.
+        let probe_status = SafeProbeForWrite(
+            phList as *mut core::ffi::c_void,
+            (dwCount as usize * core::mem::size_of::<HIMC>()) as _,
+            1,
+        );
+        let probe_status = if NT_SUCCESS(probe_status) {
+            SafeProbeForWrite(
+                pdwCount as *mut core::ffi::c_void,
+                core::mem::size_of::<DWORD>() as _,
+                1,
+            )
+        } else {
+            probe_status
+        };
+        if !NT_SUCCESS(probe_status) {
+            ERR!("Exception in NtUserBuildHimcList: %p, %p\n", phList, pdwCount);
+            break 'quit;
+        }
+
+        match UserBuildHimcList(pti, dwCount, phList).and_then(|count| {
+            dwRealCount = count;
+            ntkrnl_sys::probe::safe_copy_raw(
+                pdwCount as *mut core::ffi::c_void,
+                core::ptr::addr_of!(dwRealCount) as *const core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+            )
+        }) {
+            Ok(()) => {}
+            Err(_) => {
+                ERR!("Exception in NtUserBuildHimcList: %p, %p\n", phList, pdwCount);
+                break 'quit;
+            }
+        }
 
         if dwCount < dwRealCount {
             ret = STATUS_BUFFER_TOO_SMALL as NTSTATUS;

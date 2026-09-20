@@ -628,6 +628,58 @@ def _is_deterministic(stage: str) -> bool:
     return stage.startswith(DETERMINISTIC_STAGES)
 
 
+def inert_only_batch(wt: Path) -> list[str]:
+    """Paths this batch would add to master that something might actually RUN ([] = none).
+
+    A batch whose entire delta is documentation cannot break a build, a boot or a scanner,
+    so gating it spends 3 builds and 4 boots — roughly half an hour of the whole host — to
+    re-prove that Markdown compiles. The pre-push hook has granted the matching exemption
+    since it was written, and both now read the SAME predicate (`tools/docs_only.py`), so
+    skipping the gate here cannot produce a tree the hook then refuses: the two agree by
+    construction rather than by a comment asking them to.
+
+    MEASURED ON THE MERGED TREE, NOT ON ANY LANE. `origin/master..HEAD` in the integration
+    worktree is exactly what the push will add, after every lane in the batch is merged and
+    after `settle_cargo_locks` has had its say. A per-lane test would be wrong in the unsafe
+    direction twice over: three docs lanes plus one code lane is a code batch, and a lockfile
+    the queue settles into the tip appears in no lane's own delta.
+
+    DELIBERATELY NOT RESTRICTED TO A SINGLE SUBMISSION. "Solo docs-only" is the common case,
+    but the property that makes the skip sound is the batch's CONTENT, not its size — four
+    docs lanes are as inert as one, and one code lane poisons a batch of forty. Keying on
+    content rather than count removes the special case instead of adding one.
+
+    Returns the offending paths so the caller can SAY why it gated, and fails closed: any
+    error, or an empty diff, yields a non-empty reason and the batch gates normally.
+    """
+    try:
+        diff = git(wt, "diff", "--name-only", "origin/master", "HEAD")
+    except Exception as exc:
+        return [f"(could not diff against origin/master: {exc})"]
+    paths = [line for line in diff.splitlines() if line.strip()]
+    if not paths:
+        return ["(empty delta against origin/master)"]
+    # Load the predicate BY PATH, from THIS worktree. A `sys.path` insert plus
+    # `from docs_only import ...` would be served from `sys.modules` if anything in the
+    # process had already imported that name -- and land.py has, from the LANE's tools/.
+    # The conductor would then judge the integration tree with a sibling worktree's copy
+    # of the rule, which is the read half of the fleet-isolation law (AGENTS.md worktree
+    # discipline 8) and is silent when the two copies differ.
+    import importlib.util
+
+    module_path = wt / "tools" / "docs_only.py"
+    try:
+        spec = importlib.util.spec_from_file_location("_queue_docs_only", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"no loader for {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        is_inert = module.is_inert
+    except Exception as exc:
+        return [f"(docs_only predicate unavailable: {exc})"]
+    return [p for p in paths if not is_inert(p)]
+
+
 def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
     """Run the FULL gate in the integration tree. This is the only place a batch is judged —
     no batch is ever presumed green.
@@ -851,7 +903,17 @@ def land_subset(
             f"{', '.join(stray[:10])}. The gate would run green and mint no push stamp, so "
             f"the push would be refused. {len(subs)} submission(s) stay QUEUED."
         )
-    verdict = gate_batch(wt, log, retries=retries)
+    live = inert_only_batch(wt)
+    if live:
+        verdict = gate_batch(wt, log, retries=retries)
+    else:
+        # Every path this batch adds is inert. See `inert_only_batch`.
+        log(
+            f"queue: batch of {len(subs)} is DOCUMENTATION ONLY — skipping the gate "
+            "(3 builds + 4 boots) and pushing; the pre-push hook grants the same "
+            "exemption from the same predicate"
+        )
+        verdict = GateVerdict(ok=True, classification="DOCS_ONLY", artifact="", salient="")
     ok, classification = verdict.ok, verdict.classification
     artifact, salient = verdict.artifact, verdict.salient
     if ok:
@@ -868,7 +930,10 @@ def land_subset(
         # git rejection the conductor dies on. Only on evidence: an unparsed summary (empty
         # `stages`) proves nothing, so it falls through to the push as before.
         stamp = verdict.stages.get("stamp", "")
-        if verdict.stages and stamp != "ok":
+        # A DOCS_ONLY batch never ran a gate, so of course it minted no stamp — the hook
+        # will accept it on the docs exemption instead. Exempt it explicitly rather than
+        # leaning on `stages` happening to be empty.
+        if classification != "DOCS_ONLY" and verdict.stages and stamp != "ok":
             raise Inconclusive(
                 f"the gate was GREEN but minted no push stamp (stamp: {stamp or 'absent'}) — "
                 "the pre-push hook refuses a master update whose tree has no fresh stamp, so "

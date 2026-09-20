@@ -95,7 +95,7 @@ OURS_ON_LINK_LINE = {
     "crtmath": Path("sdk/lib/crt/CMakeFiles/crtmath.dir"),
     "vcruntime": Path("sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"),
     "chkstk": Path("sdk/lib/crt/CMakeFiles/chkstk.dir"),
-    "wine": Path("sdk/lib/3rdparty/libwine/CMakeFiles/wine.dir"),
+    "wine": Path("sdk/lib/libwine/CMakeFiles/wine.dir"),
 }
 
 #: ucrtbase's OWN C -- printf.c, stubs.c and the generated ucrtbase_stubs.c. Kept

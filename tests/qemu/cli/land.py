@@ -151,6 +151,51 @@ def _preflight(repo: Path) -> tuple[str, str]:
     return branch, _git(repo, "rev-parse", "HEAD")
 
 
+def _docs_only_vs_master(repo: Path) -> bool:
+    """Does this lane change NOTHING but docs, measured against the merge base with master?
+
+    The pre-push hook has carried this exemption since it was written -- a docs-only delta
+    needs no fresh gate stamp -- but the land preflights did not, so a commit touching one
+    `.md` paid a full `check-tooling` plus both strict source-lint partitions. A docs-only
+    change cannot fail a Python linter or a source scanner, because it contains no Python
+    and no source.
+
+    It bit the change that recorded the orphan inventory: refused at
+    `test_verify_ucrtbase_cohab.py` over a stale `build-i386` in the author's worktree,
+    for a delta of one Markdown file.
+
+    Skipping here is safe in the direction that matters. The CONDUCTOR still runs every
+    check on the merged batch, so this cannot put unlinted code on master -- it only
+    declines to lint a lane that has none. The predicate is `tools/docs_only.py`, shared
+    with the pre-push hook: two spellings of "docs-only" that can disagree is worse than
+    neither, so there is exactly one.
+
+    Uses the three-dot merge base, so a lane that is merely BEHIND master is still judged
+    on what IT changed rather than on what landed while it worked. Fails CLOSED -- any git
+    error returns False and the lane lints normally.
+    """
+    try:
+        diff = _git(repo, "diff", "--name-only", "origin/master...HEAD")
+    except Exception:
+        return False
+    # By PATH, not by name: a `sys.path` insert leaves `docs_only` in `sys.modules`, and a
+    # process that later conducts a drain would then judge the INTEGRATION tree with this
+    # lane's copy of the rule. Same reason queue.py loads it this way.
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_land_docs_only", repo / "tools" / "docs_only.py"
+        )
+        if spec is None or spec.loader is None:
+            return False
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return False
+    return module.docs_only(diff.splitlines())
+
+
 def _lint_preflight(repo: Path, run: Run, args) -> None:
     """Run `check-tooling` HERE, before this lane consumes a batched gate.
 
@@ -176,6 +221,9 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
     """
     if getattr(args, "skip_lint", False):
         run.add(Stage("lint", status="skip", detail="--skip-lint: check-tooling not run"))
+        return
+    if _docs_only_vs_master(repo):
+        run.add(Stage("lint", status="skip", detail="docs-only delta: nothing for it to lint"))
         return
     t0 = time.monotonic()
     try:
@@ -243,6 +291,10 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
     matching the fail-open rule the check-tooling half already follows.
     """
     if getattr(args, "skip_lint", False):
+        return
+    if _docs_only_vs_master(repo):
+        for part in ("source-early", "source-deferred"):
+            run.add(Stage(f"lint:{part}", status="skip", detail="docs-only delta"))
         return
     from .gate import _lint_once
 

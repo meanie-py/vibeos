@@ -87,7 +87,7 @@
       int                  dim;
 #ifdef __REACTOS__
       AF_LatinMetricsRec  *dummy = malloc(sizeof(*dummy));
-      if (dummy) goto Exit;
+      if (!dummy) goto Exit;
       {
 #else
       AF_LatinMetricsRec   dummy[1];

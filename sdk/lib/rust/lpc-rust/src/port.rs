@@ -228,13 +228,27 @@ pub unsafe extern "system" fn NtImpersonateClientOfPort(
     let mut ClientContext: SECURITY_CLIENT_CONTEXT = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        ProbeForRead(
-            ClientMessage as PVOID,
-            core::mem::size_of::<PORT_MESSAGE>(),
-            core::mem::size_of::<PVOID>() as ULONG,
-        );
-        ClientId = (*(ClientMessage as *const PORT_MESSAGE)).__bindgen_anon_1.ClientId;
-        MessageId = (*(ClientMessage as *const PORT_MESSAGE)).MessageId;
+        // VALIDATE-FIRST. The C wraps this probe AND both capture reads in one
+        // `_SEH2_TRY` whose handler is `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())` (port.c:142-152). The translation kept the
+        // probe and the reads and dropped the handler, so under DUMMY_PSEH any
+        // unprivileged caller passing a bad ClientMessage to this syscall
+        // bugchecked the box. A range check proves where a buffer IS, never that
+        // it stays mapped, so the CAPTURE has to be fault-protected too -- the MM
+        // case proved that by moving the same bugcheck one frame along into
+        // memcpy when only the probe was converted.
+        //
+        // Capturing the whole PORT_MESSAGE once is also strictly safer than the
+        // C's two separate volatile field reads: those let a hostile caller
+        // change MessageId after ClientId had been read. The probe covered
+        // sizeof(PORT_MESSAGE) either way, so this reads no more than the C did.
+        let captured: PORT_MESSAGE =
+            match ntkrnl_sys::probe::probe_read_user(ClientMessage as *const PORT_MESSAGE, PreviousMode) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
+        ClientId = captured.__bindgen_anon_1.ClientId;
+        MessageId = captured.MessageId;
     } else {
         ClientId = (*ClientMessage).__bindgen_anon_1.ClientId;
         MessageId = (*ClientMessage).MessageId;

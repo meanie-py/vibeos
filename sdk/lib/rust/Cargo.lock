@@ -219,6 +219,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cardlib-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2134,6 +2141,13 @@ dependencies = [
 [[package]]
 name = "samsrv-sys"
 version = "0.1.0"
+
+[[package]]
+name = "schannel-tls-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "scoped-tls"

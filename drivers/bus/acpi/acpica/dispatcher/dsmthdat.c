@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -249,6 +249,7 @@ AcpiDsMethodDataInitArgs (
 
         Index++;
     }
+    AcpiExTraceArgs(Params, Index);
 
     ACPI_DEBUG_PRINT ((ACPI_DB_EXEC, "%u args passed to method\n", Index));
     return_ACPI_STATUS (AE_OK);

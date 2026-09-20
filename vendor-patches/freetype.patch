@@ -1,0 +1,970 @@
+# FreeType 2.10.0 — our delta from pristine upstream.
+#
+# Upstream: https://download.savannah.gnu.org/releases/freetype/freetype-2.10.0.tar.gz
+#           sha256 955e17244e9b38adb0c98df66abb50467312e6bb70eac07e49ce6bd1a20e809a
+# Apply from sdk/lib/3rdparty/freetype/ with: patch -p1 < vendor-patches/freetype.patch
+#
+# 449 files exist in both trees; 432 are byte-identical. SIXTEEN differ, and every one of
+# them is wrapped in #ifdef __REACTOS__ / #ifndef __REACTOS__ — so undefining that macro
+# gives you pristine upstream behaviour. There is no unmarked edit anywhere in the tree.
+# (A seventeenth file, include/freetype/internal/ftdebug.h, differed by a single added
+# blank line and was reverted to pristine on 2026-09-20 rather than carried.)
+# Not vendored, by design: builds/, devel/, docs/, objs/ and the per-directory
+# Jamfile/module.mk/rules.mk build chaff — 81 files, all build system. TechNote.txt in
+# the tree says to delete exactly those.
+#
+# TWO THEMES COVER FOURTEEN OF THE SIXTEEN:
+#
+#   STACK -> HEAP (the big one). TechNote.txt: "Stack size is limited, so we have to use
+#   malloc/free instead of large stack variables." Pattern is mechanical:
+#   `FooRec worker[1];` becomes `FooRec *worker = malloc(sizeof(*worker));` with a null
+#   check and free() on every exit path. Files: sfnt/ttsbit.c, raster/ftraster.c,
+#   psaux/psintrp.c, cid/cidgload.c, type1/t1gload.c, smooth/ftgrays.c,
+#   autofit/{aflatin,aflatin2,afcjk,afmodule}.c. This changes WHERE a fixed-size struct
+#   lives, not its size — no bounds, length or offset arithmetic is touched.
+#
+#   *** A REAL BUG LIVES IN THIS SET, currently unreachable ***
+#   autofit/aflatin2.c has
+#         AF_LatinMetricsRec *dummy = malloc(sizeof(*dummy));
+#         if (dummy) goto Exit;
+#   The test is INVERTED. The identical construct in the sibling files afcjk.c and
+#   aflatin.c correctly reads `if (!dummy) goto Exit;`. As written, the success path
+#   skips the whole width-computation block and silently falls back to a constant width.
+#   It is dead today: every caller is behind #ifdef FT_OPTION_AUTOFIT2, which is
+#   referenced in five places and DEFINED IN NONE (verified by grep across the tree and
+#   the CMakeLists). So: real defect, zero runtime effect, one-line fix whenever someone
+#   is next in there. Left alone here because this pass records state, it does not patch
+#   logic.
+#
+#   CONFIG / GLUE. ftoption.h flips three macros under __REACTOS__ (disables
+#   ENVIRONMENT_PROPERTIES, enables SUBPIXEL_RENDERING, enables DEBUG_LEVEL_ERROR only in
+#   checked builds) — these three ARE pure toggles and are the one cluster here that could
+#   move into the build as -D flags. base/ftdebug.c wraps FT_Message/FT_Panic in
+#   #ifndef __REACTOS__ because the win32k font driver glue supplies its own.
+#   base/ftlcdfil.c changes one parameter from FT_Vector* to FT_Vector[3].
+#
+# TWO DELIBERATE FEATURES, not mechanical:
+#   ftbitmap.h + base/ftbitmap.c   add FT_Bitmap_Convert_ReactOS_Hack(), an extended
+#       FT_Bitmap_Convert that can emit 0xFF/0x00 bytes rather than 1/0 bits for text
+#       output; the original name survives as a wrapper passing hack=FALSE, so upstream
+#       behaviour is unchanged. Named explicitly in TechNote.txt.
+#   sfnt/ttcmap.c                  adds a DEFENSIVE check in tt_cmap4_char_map_binary:
+#       reads the subtable's format field and refuses to parse unless it is 4, citing
+#       ReactOS bug CORE-12549 (stale cmap data after a font file is replaced on disk).
+#       This HARDENS the parser; it does not relax it.
+#
+# SECURITY: FreeType parses untrusted fonts, so note what is NOT here. No bounds check,
+# allocation size, or length/offset arithmetic differs from upstream anywhere in the
+# sixteen files. No backported CVE fix is present either — this is stock 2.10.0 (2019-03)
+# and roughly a dozen CVEs behind, which is the standing item in `staleness:`.
+# FT_CONFIG_OPTION_USE_PNG is NOT enabled (ftoption.h:281 still has it commented out and
+# the CMakeLists never -D's it), so sfnt/pngshim.c compiles to `typedef int
+# _pngshim_dummy;` and CVE-2020-15999 — the sbix embedded-PNG heap overflow exploited as
+# a Chrome 0-day — is NOT REACHABLE HERE. Verified in the tree twice, independently.
+#
+# No copyright line or licence header differs anywhere in the delta.
+#
+--- a/include/freetype/config/ftoption.h
++++ b/include/freetype/config/ftoption.h
+@@ -110,7 +110,9 @@
+    * ```
+    *
+    */
++#ifndef __REACTOS__
+ #define FT_CONFIG_OPTION_ENVIRONMENT_PROPERTIES
++#endif
+ 
+ 
+   /**************************************************************************
+@@ -126,7 +128,11 @@
+    * macro is not defined, FreeType offers alternative LCD rendering
+    * technology that produces excellent output without LCD filtering.
+    */
++#ifdef __REACTOS__
++#define FT_CONFIG_OPTION_SUBPIXEL_RENDERING
++#else
+ /* #define FT_CONFIG_OPTION_SUBPIXEL_RENDERING */
++#endif
+ 
+ 
+   /**************************************************************************
+@@ -413,8 +419,12 @@
+    *   Do not `#undef` these macros here since the build system might define
+    *   them for certain configurations only.
+    */
++#if defined(__REACTOS__) && DBG && !defined(NDEBUG)
++#define FT_DEBUG_LEVEL_ERROR
++#else
+ /* #define FT_DEBUG_LEVEL_ERROR */
+ /* #define FT_DEBUG_LEVEL_TRACE */
++#endif
+ 
+ 
+   /**************************************************************************
+--- a/include/freetype/ftbitmap.h
++++ b/include/freetype/ftbitmap.h
+@@ -207,6 +207,14 @@
+                      FT_Bitmap        *target,
+                      FT_Int            alignment );
+ 
++#ifdef __REACTOS__
++  FT_EXPORT( FT_Error )
++  FT_Bitmap_Convert_ReactOS_Hack( FT_Library        library,
++                                  const FT_Bitmap  *source,
++                                  FT_Bitmap        *target,
++                                  FT_Int            alignment,
++                                  FT_Bool           hack );
++#endif
+ 
+   /**************************************************************************
+    *
+--- a/src/autofit/afcjk.c
++++ b/src/autofit/afcjk.c
+@@ -70,8 +70,12 @@
+                               FT_Face        face )
+   {
+     /* scan the array of segments in each direction */
++#ifdef __REACTOS__
++    AF_GlyphHintsRec *hints = malloc(sizeof(*hints));
++    if (!hints) return;
++#else
+     AF_GlyphHintsRec  hints[1];
+-
++#endif
+ 
+     FT_TRACE5(( "\n"
+                 "cjk standard widths computation (style `%s')\n"
+@@ -88,7 +92,14 @@
+       FT_Error          error;
+       FT_ULong          glyph_index;
+       int               dim;
++#ifdef __REACTOS__
++      AF_CJKMetricsRec *dummy = malloc(sizeof(*dummy));
++      if (!dummy)
++        goto Exit;
++      {
++#else
+       AF_CJKMetricsRec  dummy[1];
++#endif
+       AF_Scaler         scaler = &dummy->root.scaler;
+ 
+       AF_StyleClass   style_class  = metrics->root.style_class;
+@@ -269,11 +280,18 @@
+         }
+ #endif
+       }
++#ifdef __REACTOS__
++      free(dummy);
++      }
++#endif
+     }
+ 
+     FT_TRACE5(( "\n" ));
+ 
+     af_glyph_hints_done( hints );
++#ifdef __REACTOS__
++    free(hints);
++#endif
+   }
+ 
+ 
+--- a/src/autofit/aflatin.c
++++ b/src/autofit/aflatin.c
+@@ -61,7 +61,12 @@
+                                 FT_Face          face )
+   {
+     /* scan the array of segments in each direction */
++#ifdef __REACTOS__
++    AF_GlyphHintsRec *hints = malloc(sizeof(*hints));
++    if (!hints) return;
++#else
+     AF_GlyphHintsRec  hints[1];
++#endif
+ 
+ 
+     FT_TRACE5(( "\n"
+@@ -79,7 +84,14 @@
+       FT_Error            error;
+       FT_ULong            glyph_index;
+       int                 dim;
++#ifdef __REACTOS__
++      AF_LatinMetricsRec *dummy = malloc(sizeof(*dummy));
++      if (!dummy)
++        goto Exit;
++      {
++#else
+       AF_LatinMetricsRec  dummy[1];
++#endif
+       AF_Scaler           scaler = &dummy->root.scaler;
+ 
+       AF_StyleClass   style_class  = metrics->root.style_class;
+@@ -262,11 +274,19 @@
+         }
+ #endif
+       }
++#ifdef __REACTOS__
++      free(dummy);
++      }
++#endif
+     }
+ 
+     FT_TRACE5(( "\n" ));
+ 
+     af_glyph_hints_done( hints );
++
++#ifdef __REACTOS__
++    free(hints);
++#endif
+   }
+ 
+ 
+--- a/src/autofit/aflatin2.c
++++ b/src/autofit/aflatin2.c
+@@ -68,7 +68,12 @@
+                                  FT_Face          face )
+   {
+     /* scan the array of segments in each direction */
++#ifdef __REACTOS__
++    AF_GlyphHintsRec *hints = malloc(sizeof(*hints));
++    if (!hints) return;
++#else
+     AF_GlyphHintsRec  hints[1];
++#endif
+ 
+ 
+     af_glyph_hints_init( hints, face->memory );
+@@ -80,7 +85,13 @@
+       FT_Error             error;
+       FT_UInt              glyph_index;
+       int                  dim;
++#ifdef __REACTOS__
++      AF_LatinMetricsRec  *dummy = malloc(sizeof(*dummy));
++      if (dummy) goto Exit;
++      {
++#else
+       AF_LatinMetricsRec   dummy[1];
++#endif
+       AF_Scaler            scaler = &dummy->root.scaler;
+ 
+ 
+@@ -167,9 +178,16 @@
+         axis->standard_width          = stdw;
+         axis->extra_light             = 0;
+       }
++#ifdef __REACTOS__
++      free(dummy);
++      }
++#endif
+     }
+ 
+     af_glyph_hints_done( hints );
++#ifdef __REACTOS__
++    free(hints);
++#endif
+   }
+ 
+ 
+--- a/src/autofit/afmodule.c
++++ b/src/autofit/afmodule.c
+@@ -492,7 +492,13 @@
+     /* in debug mode, we use a global object that survives this routine */
+ 
+     AF_GlyphHints  hints = _af_debug_hints_rec;
++#ifdef __REACTOS__
++    AF_LoaderRec  *loader = malloc(sizeof(*loader));
++    if (!loader)
++      return FT_Err_Out_Of_Memory;
++#else
+     AF_LoaderRec   loader[1];
++#endif
+ 
+     FT_UNUSED( size );
+ 
+@@ -519,12 +525,27 @@
+ 
+     af_loader_done( loader );
+ 
++#ifdef __REACTOS__
++    free(loader);
++#endif
+     return error;
+ 
+ #else /* !FT_DEBUG_AUTOFIT */
+ 
++#ifdef __REACTOS__
++    AF_GlyphHintsRec *hints = malloc(sizeof(*hints));
++    AF_LoaderRec *loader = malloc(sizeof(*loader));
++    if (!hints || !loader)
++    {
++        free(hints);
++        free(loader);
++        error = FT_Err_Out_Of_Memory;
++        goto Exit;
++    }
++#else
+     AF_GlyphHintsRec  hints[1];
+     AF_LoaderRec      loader[1];
++#endif
+ 
+     FT_UNUSED( size );
+ 
+@@ -538,6 +559,11 @@
+     af_loader_done( loader );
+     af_glyph_hints_done( hints );
+ 
++#ifdef __REACTOS__
++Exit:
++    free(hints);
++    free(loader);
++#endif
+     return error;
+ 
+ #endif /* !FT_DEBUG_AUTOFIT */
+--- a/src/base/ftbitmap.c
++++ b/src/base/ftbitmap.c
+@@ -512,11 +512,20 @@
+ 
+   /* documentation is in ftbitmap.h */
+ 
++#ifdef __REACTOS__
++  FT_EXPORT_DEF( FT_Error )
++  FT_Bitmap_Convert_ReactOS_Hack( FT_Library        library,
++                                  const FT_Bitmap  *source,
++                                  FT_Bitmap        *target,
++                                  FT_Int            alignment,
++                                  FT_Bool           hack )
++#else
+   FT_EXPORT_DEF( FT_Error )
+   FT_Bitmap_Convert( FT_Library        library,
+                      const FT_Bitmap  *source,
+                      FT_Bitmap        *target,
+                      FT_Int            alignment )
++#endif
+   {
+     FT_Error   error = FT_Err_Ok;
+     FT_Memory  memory;
+@@ -613,7 +622,21 @@
+           {
+             FT_Int  val = ss[0]; /* avoid a byte->int cast on each line */
+ 
+-
++#ifdef __REACTOS__
++            if (hack)
++            {
++                tt[0] = (FT_Byte)( ( val & 0x80 ) ? 0xff : 0);
++                tt[1] = (FT_Byte)( ( val & 0x40 ) ? 0xff : 0);
++                tt[2] = (FT_Byte)( ( val & 0x20 ) ? 0xff : 0);
++                tt[3] = (FT_Byte)( ( val & 0x10 ) ? 0xff : 0);
++                tt[4] = (FT_Byte)( ( val & 0x08 ) ? 0xff : 0);
++                tt[5] = (FT_Byte)( ( val & 0x04 ) ? 0xff : 0);
++                tt[6] = (FT_Byte)( ( val & 0x02 ) ? 0xff : 0);
++                tt[7] = (FT_Byte)( ( val & 0x01 ) ? 0xff : 0);
++            }
++            else
++            {
++#endif
+             tt[0] = (FT_Byte)( ( val & 0x80 ) >> 7 );
+             tt[1] = (FT_Byte)( ( val & 0x40 ) >> 6 );
+             tt[2] = (FT_Byte)( ( val & 0x20 ) >> 5 );
+@@ -622,6 +645,9 @@
+             tt[5] = (FT_Byte)( ( val & 0x04 ) >> 2 );
+             tt[6] = (FT_Byte)( ( val & 0x02 ) >> 1 );
+             tt[7] = (FT_Byte)(   val & 0x01 );
++#ifdef __REACTOS__
++            }
++#endif
+ 
+             tt += 8;
+             ss += 1;
+@@ -636,6 +662,11 @@
+ 
+             for ( ; j > 0; j-- )
+             {
++#ifdef __REACTOS__
++              if (hack)
++                tt[0] = (FT_Byte)( ( val & 0x80 ) ? 0xff : 0);
++              else
++#endif
+               tt[0] = (FT_Byte)( ( val & 0x80 ) >> 7);
+               val <<= 1;
+               tt   += 1;
+@@ -792,6 +823,16 @@
+     return error;
+   }
+ 
++#ifdef __REACTOS__
++  FT_EXPORT_DEF( FT_Error )
++  FT_Bitmap_Convert( FT_Library        library,
++                     const FT_Bitmap  *source,
++                     FT_Bitmap        *target,
++                     FT_Int            alignment )
++  {
++    return FT_Bitmap_Convert_ReactOS_Hack(library, source, target, alignment, FALSE);
++  }
++#endif
+ 
+   /* documentation is in ftbitmap.h */
+ 
+--- a/src/base/ftdebug.c
++++ b/src/base/ftdebug.c
+@@ -50,6 +50,7 @@
+ 
+   /* documentation is in ftdebug.h */
+ 
++#ifndef __REACTOS__ /* win32ss/drivers/font/ftfd/rosglue.c defines this */
+   FT_BASE_DEF( void )
+   FT_Message( const char*  fmt,
+               ... )
+@@ -61,10 +62,12 @@
+     vfprintf( stderr, fmt, ap );
+     va_end( ap );
+   }
++#endif
+ 
+ 
+   /* documentation is in ftdebug.h */
+ 
++#ifndef __REACTOS__ /* win32ss/drivers/font/ftfd/rosglue.c defines this */
+   FT_BASE_DEF( void )
+   FT_Panic( const char*  fmt,
+             ... )
+@@ -78,6 +81,7 @@
+ 
+     exit( EXIT_FAILURE );
+   }
++#endif
+ 
+ 
+   /* documentation is in ftdebug.h */
+--- a/src/base/ftlcdfil.c
++++ b/src/base/ftlcdfil.c
+@@ -358,7 +358,11 @@
+ 
+   FT_EXPORT_DEF( FT_Error )
+   FT_Library_SetLcdGeometry( FT_Library  library,
++#ifndef __REACTOS__
+                              FT_Vector*  sub )
++#else
++                             FT_Vector   sub[3] )
++#endif
+   {
+     FT_UNUSED( library );
+     FT_UNUSED( sub );
+--- a/src/cid/cidgload.c
++++ b/src/cid/cidgload.c
+@@ -286,7 +286,16 @@
+                                 FT_Int*   max_advance )
+   {
+     FT_Error       error;
++#ifdef __REACTOS__
++    T1_DecoderRec *decoder_allocated = malloc(sizeof(*decoder_allocated));
++    if (!decoder_allocated)
++      return FT_THROW( Out_Of_Memory );
++/* Ugly but it allows us to reduce the diff */
++#define decoder (*decoder_allocated)
++    {
++#else
+     T1_DecoderRec  decoder;
++#endif
+     FT_Int         glyph_index;
+ 
+     PSAux_Service  psaux = (PSAux_Service)face->psaux;
+@@ -304,7 +313,14 @@
+                                            0, /* hinting == 0 */
+                                            cid_load_glyph );
+     if ( error )
++#ifdef __REACTOS__
++    {
++        free(decoder_allocated);
++        return error;
++    }
++#else
+       return error;
++#endif
+ 
+     /* TODO: initialize decoder.len_buildchar and decoder.buildchar */
+     /*       if we ever support CID-keyed multiple master fonts     */
+@@ -326,6 +342,11 @@
+ 
+     psaux->t1_decoder_funcs->done( &decoder );
+ 
++#ifdef __REACTOS__
++    free(decoder_allocated);
++#undef decoder
++    }
++#endif
+     return FT_Err_Ok;
+   }
+ 
+@@ -341,7 +362,15 @@
+   {
+     CID_GlyphSlot  glyph = (CID_GlyphSlot)cidglyph;
+     FT_Error       error;
++#ifdef __REACTOS__
++    T1_DecoderRec *decoder_allocated = malloc(sizeof(*decoder_allocated));
++    if (!decoder_allocated) return FT_Err_Out_Of_Memory;
++/* Ugly but it allows us to reduce the diff */
++#define decoder (*decoder_allocated)
++    {
++#else
+     T1_DecoderRec  decoder;
++#endif
+     CID_Face       face = (CID_Face)cidglyph->face;
+     FT_Bool        hinting;
+     FT_Bool        scaled;
+@@ -523,6 +552,11 @@
+     if ( must_finish_decoder )
+       psaux->t1_decoder_funcs->done( &decoder );
+ 
++#ifdef __REACTOS__
++    free(decoder_allocated);
++#undef decoder
++    }
++#endif
+     return error;
+   }
+ 
+--- a/src/psaux/psintrp.c
++++ b/src/psaux/psintrp.c
+@@ -525,8 +525,14 @@
+     CF2_ArrStackRec  vStemHintArray;
+ 
+     CF2_HintMaskRec   hintMask;
++#ifdef __REACTOS__
++    CF2_GlyphPathRec *glyphPath_allocated = malloc(sizeof(*glyphPath_allocated));
++    if (!glyphPath_allocated) return;
++/* Ugly but it allows us to reduce the diff */
++#define glyphPath (*glyphPath_allocated)
++#else
+     CF2_GlyphPathRec  glyphPath;
+-
++#endif
+ 
+     FT_ZERO( &storage );
+     FT_ZERO( &results );
+@@ -2611,8 +2617,20 @@
+            * discard `counterMask' and `counterHintMap'.
+            *
+            */
++#ifdef __REACTOS__
++          CF2_HintMapRec *counterHintMap_allocated = malloc(sizeof(*counterHintMap_allocated));
++          CF2_HintMaskRec  counterMask;
++          if (!counterHintMap_allocated)
++          {
++            lastError = FT_Err_Out_Of_Memory;
++            goto exit;
++          }
++/* Ugly but it allows us to reduce the diff */
++#define counterHintMap (*counterHintMap_allocated)
++#else
+           CF2_HintMapRec   counterHintMap;
+           CF2_HintMaskRec  counterMask;
++#endif
+ 
+ 
+           cf2_hintmap_init( &counterHintMap,
+@@ -2632,6 +2650,10 @@
+                              &counterMask,
+                              0,
+                              FALSE );
++#ifdef __REACTOS__
++          free(counterHintMap_allocated);
++#undef counterHintMap
++#endif
+         }
+         break;
+ 
+@@ -3037,6 +3059,11 @@
+ 
+     FT_TRACE4(( "\n" ));
+ 
++#ifdef __REACTOS__
++    free(glyphPath_allocated);
++#undef glyphPath
++#endif
++
+     return;
+   }
+ 
+--- a/src/raster/ftraster.c
++++ b/src/raster/ftraster.c
+@@ -3257,10 +3257,20 @@
+     const FT_Outline*  outline    = (const FT_Outline*)params->source;
+     const FT_Bitmap*   target_map = params->target;
+ 
++#ifdef __REACTOS__
++    black_TWorker *worker = malloc(sizeof(*worker));
++    Long *buffer = malloc(FT_MAX_BLACK_POOL * sizeof(Long));
++    if (!worker || !buffer)
++    {
++        free(worker);
++        free(buffer);
++        return FT_THROW( Out_Of_Memory );
++    }
++#else
+     black_TWorker  worker[1];
+ 
+     Long  buffer[FT_MAX_BLACK_POOL];
+-
++#endif
+ 
+     if ( !raster )
+       return FT_THROW( Not_Ini );
+@@ -3300,9 +3310,22 @@
+     ras.target  = *target_map;
+ 
+     worker->buff     = buffer;
++#ifdef __REACTOS__
++    worker->sizeBuff = &buffer[FT_MAX_BLACK_POOL];
++#else
+     worker->sizeBuff = (&buffer)[1]; /* Points to right after buffer. */
++#endif
+ 
++#ifdef __REACTOS__
++    {
++      FT_Error error = Render_Glyph( RAS_VAR );
++      free(buffer);
++      free(worker);
++      return error;
++    }
++#else
+     return Render_Glyph( RAS_VAR );
++#endif
+   }
+ 
+ 
+--- a/src/sfnt/ttcmap.c
++++ b/src/sfnt/ttcmap.c
+@@ -1233,6 +1233,21 @@
+     FT_UInt   gindex   = 0;
+     FT_Byte*  p;
+ 
++#ifdef __REACTOS__
++    static FT_UInt bWarnOnce = 0;
++    /* FIXME: HACK for ReactOS not updating fonts when new font copied
++     * over existing one. Verify that the table number is 4. CORE-12549 */
++    if (TT_PEEK_USHORT(cmap->data) != 4)
++    {
++        if (!bWarnOnce)
++        {
++            FT_ERROR(( "Bad cmap table number. Probable update font error in file\n"
++                       "'%s'\nPlease reboot and try again.\n", __FILE__ ));
++            bWarnOnce++;
++        }
++        return 0;
++    }
++#endif
+ 
+     p = cmap->data + 6;
+     num_segs2 = FT_PAD_FLOOR( TT_PEEK_USHORT( p ), 2 );
+--- a/src/sfnt/ttsbit.c
++++ b/src/sfnt/ttsbit.c
+@@ -1607,7 +1607,16 @@
+     case TT_SBIT_TABLE_TYPE_EBLC:
+     case TT_SBIT_TABLE_TYPE_CBLC:
+       {
++#ifdef __REACTOS__
++        TT_SBitDecoderRec *decoder = malloc(sizeof(*decoder));
++        if (!decoder)
++        {
++            error = FT_THROW( Out_Of_Memory );
++            break;
++        }
++#else
+         TT_SBitDecoderRec  decoder[1];
++#endif
+ 
+ 
+         error = tt_sbit_decoder_init( decoder, face, strike_index, metrics );
+@@ -1622,6 +1631,9 @@
+                     ( load_flags & FT_LOAD_BITMAP_METRICS_ONLY ) != 0 );
+           tt_sbit_decoder_done( decoder );
+         }
++#ifdef __REACTOS__
++        free(decoder);
++#endif
+       }
+       break;
+ 
+--- a/src/smooth/ftgrays.c
++++ b/src/smooth/ftgrays.c
+@@ -1669,7 +1669,14 @@
+     const TCoord  yMin = ras.min_ey;
+     const TCoord  yMax = ras.max_ey;
+ 
++#ifdef __REACTOS__
++    TCell   *buffer = malloc(FT_MAX_GRAY_POOL * sizeof(TCell));
++    if (!buffer)
++      return 1;
++    {
++#else
+     TCell    buffer[FT_MAX_GRAY_POOL];
++#endif
+     size_t   height = (size_t)( yMax - yMin );
+     size_t   n = FT_MAX_GRAY_POOL / 8;
+     TCoord   y;
+@@ -1727,7 +1734,14 @@
+           continue;
+         }
+         else if ( error != ErrRaster_Memory_Overflow )
++#ifdef __REACTOS__
++        {
++          free(buffer);
++          return 1;
++        }
++#else
+           return 1;
++#endif
+ 
+         /* render pool overflow; we will reduce the render band by half */
+         width >>= 1;
+@@ -1736,6 +1750,9 @@
+         if ( width == 0 )
+         {
+           FT_TRACE7(( "gray_convert_glyph: rotten glyph\n" ));
++#ifdef __REACTOS__
++          free(buffer);
++#endif
+           return 1;
+         }
+ 
+@@ -1745,6 +1762,10 @@
+       } while ( band >= bands );
+     }
+ 
++#ifdef __REACTOS__
++    free(buffer);
++    }
++#endif
+     return 0;
+   }
+ 
+@@ -1758,8 +1779,12 @@
+     FT_BBox            clip;
+ 
+ #ifndef FT_STATIC_RASTER
++#ifdef __REACTOS__
++    gray_TWorker *worker;
++#else
+     gray_TWorker  worker[1];
+ #endif
++#endif
+ 
+ 
+     if ( !raster )
+@@ -1783,12 +1808,25 @@
+            outline->contours[outline->n_contours - 1] + 1 )
+       return FT_THROW( Invalid_Outline );
+ 
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++    worker = malloc(sizeof(*worker));
++    if (!worker)
++      return FT_THROW(Out_Of_Memory);
++#endif /* !defined(FT_STATIC_RASTER) && defined(__REACTOS__) */
++
+     ras.outline = *outline;
+ 
+     if ( params->flags & FT_RASTER_FLAG_DIRECT )
+     {
+       if ( !params->gray_spans )
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++      {
++        free(worker);
+         return 0;
++      }
++#else
++        return 0;
++#endif
+ 
+       ras.render_span      = (FT_Raster_Span_Func)params->gray_spans;
+       ras.render_span_data = params->user;
+@@ -1797,14 +1835,35 @@
+     {
+       /* if direct mode is not set, we must have a target bitmap */
+       if ( !target_map )
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++      {
++        free(worker);
+         return FT_THROW( Invalid_Argument );
++      }
++#else
++        return FT_THROW( Invalid_Argument );
++#endif
+ 
+       /* nothing to do */
+       if ( !target_map->width || !target_map->rows )
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++      {
++        free(worker);
++        return 0;
++      }
++#else
+         return 0;
++#endif
+ 
+       if ( !target_map->buffer )
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++      {
++        free(worker);
+         return FT_THROW( Invalid_Argument );
++      }
++#else
++        return FT_THROW( Invalid_Argument );
++#endif
+ 
+       if ( target_map->pitch < 0 )
+         ras.target.origin = target_map->buffer;
+@@ -1838,9 +1897,24 @@
+     ras.max_ey = clip.yMax;
+ 
+     if ( ras.max_ex <= ras.min_ex || ras.max_ey <= ras.min_ey )
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++    {
++      free(worker);
++      return 0;
++    }
++#else
+       return 0;
++#endif
+ 
++#if !defined(FT_STATIC_RASTER) && defined(__REACTOS__)
++    {
++      FT_Error error = gray_convert_glyph( RAS_VAR );
++      free(worker);
++      return error;
++    }
++#else
+     return gray_convert_glyph( RAS_VAR );
++#endif
+   }
+ 
+ 
+--- a/src/type1/t1gload.c
++++ b/src/type1/t1gload.c
+@@ -214,7 +214,16 @@
+                           FT_Pos*  max_advance )
+   {
+     FT_Error       error;
++#ifdef __REACTOS__
++    T1_DecoderRec *decoder_allocated = malloc(sizeof(*decoder_allocated));
++    if (!decoder_allocated)
++      return FT_THROW( Out_Of_Memory );
++    {
++/* Ugly but it allows us to reduce the diff */
++#define decoder (*decoder_allocated)
++#else
+     T1_DecoderRec  decoder;
++#endif
+     FT_Int         glyph_index;
+     T1_Font        type1 = &face->type1;
+     PSAux_Service  psaux = (PSAux_Service)face->psaux;
+@@ -235,7 +244,14 @@
+                                            FT_RENDER_MODE_NORMAL,
+                                            T1_Parse_Glyph );
+     if ( error )
++#ifdef __REACTOS__
++    {
++        free(decoder_allocated);
++        return error;
++    }
++#else
+       return error;
++#endif
+ 
+     decoder.builder.metrics_only = 1;
+     decoder.builder.load_points  = 0;
+@@ -269,6 +285,11 @@
+ 
+     psaux->t1_decoder_funcs->done( &decoder );
+ 
++#ifdef __REACTOS__
++    free(decoder_allocated);
++#undef decoder
++    }
++#endif
+     return FT_Err_Ok;
+   }
+ 
+@@ -281,7 +302,16 @@
+                    FT_Fixed*  advances )
+   {
+     T1_Face        face  = (T1_Face)t1face;
++#ifdef __REACTOS__
++    T1_DecoderRec *decoder_allocated = malloc(sizeof(*decoder_allocated));
++    if (!decoder_allocated)
++      return FT_THROW( Out_Of_Memory );
++/* Ugly but it allows us to reduce the diff */
++#define decoder (*decoder_allocated)
++    {
++#else
+     T1_DecoderRec  decoder;
++#endif
+     T1_Font        type1 = &face->type1;
+     PSAux_Service  psaux = (PSAux_Service)face->psaux;
+     FT_UInt        nn;
+@@ -300,6 +330,9 @@
+                     first + nn ));
+       }
+ 
++#ifdef __REACTOS__
++      free(decoder_allocated);
++#endif
+       return FT_Err_Ok;
+     }
+ 
+@@ -313,7 +346,14 @@
+                                            FT_RENDER_MODE_NORMAL,
+                                            T1_Parse_Glyph );
+     if ( error )
++#ifdef __REACTOS__
++    {
++        free(decoder_allocated);
++        return error;
++    }
++#else
+       return error;
++#endif
+ 
+     decoder.builder.metrics_only = 1;
+     decoder.builder.load_points  = 0;
+@@ -340,6 +380,11 @@
+                   advances[nn] == 1 ? "" : "s" ));
+     }
+ 
++#ifdef __REACTOS__
++    free(decoder_allocated);
++#undef decoder
++    }
++#endif
+     return FT_Err_Ok;
+   }
+ 
+@@ -352,7 +397,16 @@
+   {
+     T1_GlyphSlot            glyph = (T1_GlyphSlot)t1glyph;
+     FT_Error                error;
++#ifdef __REACTOS__
++    T1_DecoderRec *decoder_allocated = malloc(sizeof(*decoder_allocated));
++    if (!decoder_allocated)
++      return FT_THROW( Out_Of_Memory );
++/* Ugly but it allows us to reduce the diff */
++#define decoder (*decoder_allocated)
++    {
++#else
+     T1_DecoderRec           decoder;
++#endif
+     T1_Face                 face = (T1_Face)t1glyph->face;
+     FT_Bool                 hinting;
+     FT_Bool                 scaled;
+@@ -600,6 +654,11 @@
+     if ( must_finish_decoder )
+       decoder_funcs->done( &decoder );
+ 
++#ifdef __REACTOS__
++    free(decoder_allocated);
++#undef decoder
++    }
++#endif
+     return error;
+   }
+ 

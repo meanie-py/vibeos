@@ -200,7 +200,7 @@ pub unsafe extern "system" fn GetEnvironmentVariableA(
 pub unsafe extern "system" fn GetEnvironmentVariableW(
     lpName: LPCWSTR,
     lpBuffer: LPWSTR,
-    nSize: DWORD,
+    mut nSize: DWORD,
 ) -> DWORD {
     let mut VarName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
@@ -214,6 +214,15 @@ pub unsafe extern "system" fn GetEnvironmentVariableW(
     };
     let mut Status: NTSTATUS = 0;
     let mut UniSize: USHORT = 0;
+
+    // A caller may legitimately pass lpBuffer = NULL to ask only for the required
+    // size. Without this, UniSize stays nonzero, RtlInitEmptyUnicodeString builds a
+    // UNICODE_STRING with a NULL Buffer and a nonzero MaximumLength, and the query
+    // below writes through it. Reachable from any usermode caller, in a DLL every
+    // process loads. Upstream-Commit: 242937b1229
+    if lpBuffer.is_null() {
+        nSize = 0;
+    }
 
     if nSize <= (UNICODE_STRING_MAX_CHARS - 1) as DWORD {
         if nSize != 0 {

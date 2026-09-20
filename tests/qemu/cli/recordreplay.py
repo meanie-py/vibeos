@@ -441,7 +441,6 @@ def trace_read_position(trace_dir: Path) -> int | None:
     callers treat that as "no information" rather than as a verdict.
     """
     rrfile = (Path(trace_dir) / "replay.bin").resolve()
-    rrname = rrfile.name
     proc = Path("/proc")
     if not proc.is_dir():
         return None
@@ -455,19 +454,10 @@ def trace_read_position(trace_dir: Path) -> int | None:
             continue  # not ours, or exited between listing and opening
         for fd in fds:
             try:
-                # `readlink`, NOT `resolve`. Both answer "what does this fd point at", but
-                # resolve() CANONICALISES the target -- an lstat per path component, on the
-                # target's own filesystem -- and it was doing that for every fd of every
-                # process on the box. One process holding fds on the /mnt/c 9p mount is
-                # enough to make a single sweep take minutes; under load this test blew a
-                # 300s timeout stat-ing `/mnt/c/ProgramData/...`. readlink is one syscall
-                # against /proc and never touches the target filesystem at all.
-                target = os.readlink(fd)
-                if os.path.basename(target) != rrname:
-                    continue
-                # Only a plausible candidate pays for canonicalisation, so a symlinked
-                # trace dir still matches without charging every unrelated fd for it.
-                if Path(target) != rrfile and fd.resolve() != rrfile:
+                # /proc already exposes the kernel's absolute target. Resolving
+                # every target walks unrelated mounts (including Windows media)
+                # and can stall this progress probe on their filesystem I/O.
+                if fd.readlink() != rrfile:
                     continue
                 for line in (pid_dir / "fdinfo" / fd.name).read_text().splitlines():
                     if line.startswith("pos:"):

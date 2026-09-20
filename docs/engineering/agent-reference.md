@@ -115,6 +115,25 @@ toolchain — `.venv/bin/ruff`, `pyright`, and the rustup-selected rustc/cargo p
 does reach the conductor and will invalidate its receipts; a merge, an edit or a
 `check-tooling` in another worktree will not. Save toolchain changes for a quiet queue.
 
+**A COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT EVERYTHING.** A `build-<arch>`
+that predates a new entry in a model the tooling checks is stamped and still lacks the object
+directory, so `check-tooling` refuses a change that has nothing to do with it — including a
+docs-only one. Measured 2026-09-20: `c474d932eb7` added `wine` to
+`verify_ucrtbase_cohab`'s `OURS_ON_LINK_LINE`, and
+`test_every_modelled_target_has_a_real_object_directory` then bounced this lane's land
+**three times in a row** — i386, then amd64, then arm64 — because the assertion reported only
+the FIRST missing target, so each failure read as one stale tree until you fixed it and hit the
+next. The remedy is `./vibeos-cli build --arch <a>` for each, and the assertion now names them
+all at once. Note what the stamp does and does not assert before concluding the model is wrong:
+if the named target was recently added, the tree is stale, not the check.
+
+**A host-only stage that reads build output is not host-only.** Same incident, the general
+form: `check-tooling` is documented as arch-independent, and `_lint_preflight` moves it earlier
+on the stated grounds that it needs no `build-<arch>`. That test reads three of them. The
+aggregate message removes the three-cycle cost, not the category — a stage advertised as
+needing no build can still fail for reasons unrelated to the change. Worth deciding properly
+rather than patching per-incident.
+
 **A green local gate is WARM unless you pass `--clean`, so it is not evidence the tree builds
 cold.** A warm gate once reported OK on a tree whose i386 build failed cold, minted a push
 stamp, and the queue rejected the lane. When a lane touches a shared `-sys` crate, gate with

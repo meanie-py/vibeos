@@ -517,58 +517,145 @@ unsafe fn MsgMemorySizeImpl(
 ) -> UINT {
     let mut Size: UINT = 0;
 
-    if MMS_SIZE_WPARAM as UINT == (*MsgMemoryEntry).Size {
-        Size = wParam as UINT;
-    } else if MMS_SIZE_WPARAMWCHAR as UINT == (*MsgMemoryEntry).Size {
-        Size = (wParam as usize * core::mem::size_of::<u16>()) as UINT;
-    } else if MMS_SIZE_LPARAMSZ as UINT == (*MsgMemoryEntry).Size {
-        if lParam == 0 {
-            Size = 0;
-        } else {
-            Size = ((wcslen(lParam as PWSTR) + 1) * core::mem::size_of::<u16>()) as UINT;
-        }
-    } else if MMS_SIZE_SPECIAL as UINT == (*MsgMemoryEntry).Size {
-        match (*MsgMemoryEntry).Message {
-            x if x == WM_CREATE || x == WM_NCCREATE => {
-                let Cs = lParam as *mut CREATESTRUCTW;
-                let WindowName = (*Cs).lpszName as PLARGE_STRING;
-                let ClassName = (*Cs).lpszClass as PUNICODE_STRING;
-                Size = (core::mem::size_of::<CREATESTRUCTW>() as UINT)
-                    + (*WindowName).Length as UINT
-                    + core::mem::size_of::<u16>() as UINT;
-                if IS_ATOM((*ClassName).Buffer) {
-                    Size += core::mem::size_of::<u16>() as UINT
-                        + core::mem::size_of::<ATOM>() as UINT;
-                } else {
-                    Size += core::mem::size_of::<u16>() as UINT
-                        + (*ClassName).Length as UINT
-                        + core::mem::size_of::<u16>() as UINT;
-                }
-            }
-            x if x == WM_NCCALCSIZE => {
-                Size = if wParam != 0 {
-                    (core::mem::size_of::<NCCALCSIZE_PARAMS>()
-                        + core::mem::size_of::<WINDOWPOS>()) as UINT
-                } else {
-                    core::mem::size_of::<RECT>() as UINT
-                };
-            }
-            x if x == WM_COPYDATA => {
-                let cds = lParam as *mut COPYDATASTRUCT;
-                Size = (core::mem::size_of::<COPYDATASTRUCT>() as UINT) + (*cds).cbData;
-            }
-            x if x == WM_DEVICECHANGE => {
-                if lParam != 0 && (wParam & 0x8000) != 0 {
-                    let header = lParam as *mut DEV_BROADCAST_HDR;
-                    Size = (*header).dbch_size;
-                }
-            }
-            _ => {
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+    // C (win32ss/user/ntuser/message.c, MsgMemorySize): the WHOLE body sat in
+    // _SEH2_TRY; the handler is
+    //   ERR("Exception caught in MsgMemorySize()! ..."); Size = 0;
+    // then the function returns normally -- a SWALLOW WITH A SENTINEL, not a
+    // propagated error/fixed status. This function returns a SIZE and 0 is
+    // the established "could not determine" answer (callers already treat
+    // 0 as "no copy needed"), so any fault anywhere in the guarded body
+    // collapses to the same Size = 0.
+    //
+    // No ProbeFor* call existed in the C at ANY of these sites -- it relied
+    // purely on SEH catching a bad dereference of a caller-supplied lParam
+    // (Cs, WindowName, ClassName, cds, header). Per rule 1, no probe is
+    // added here; the raw reads are instead wrapped in fault-protected
+    // copies (safe_copy_raw) into local kernel storage, which is exactly
+    // what the C's SEH was actually catching -- a page fault mid-read, not
+    // an out-of-range pointer.
+    'seh: {
+        if MMS_SIZE_WPARAM as UINT == (*MsgMemoryEntry).Size {
+            Size = wParam as UINT;
+        } else if MMS_SIZE_WPARAMWCHAR as UINT == (*MsgMemoryEntry).Size {
+            Size = (wParam as usize * core::mem::size_of::<u16>()) as UINT;
+        } else if MMS_SIZE_LPARAMSZ as UINT == (*MsgMemoryEntry).Size {
+            if lParam == 0 {
                 Size = 0;
+            } else {
+                // wcslen walks user memory looking for a NUL -- also inside
+                // the C's _SEH2_TRY, also with no preceding ProbeFor* call.
+                // Unlike the struct-field reads below, it has no fixed
+                // length to hand safe_copy_raw (it scans until NUL), so it
+                // cannot be routed through a fault-protected fixed-size
+                // copy the way the other sites here are. Left AS-IS
+                // (matching pre-existing, non-SEH-related behaviour of this
+                // helper) rather than faked with a no-op wrapper -- a real
+                // fix needs a bounded/probing wcslen variant, which is out
+                // of scope for restoring the dropped SEH shape.
+                Size = ((wcslen(lParam as PWSTR) + 1) * core::mem::size_of::<u16>()) as UINT;
             }
+        } else if MMS_SIZE_SPECIAL as UINT == (*MsgMemoryEntry).Size {
+            match (*MsgMemoryEntry).Message {
+                x if x == WM_CREATE || x == WM_NCCREATE => {
+                    // Cs->lpszName / Cs->lpszClass are read via a
+                    // fault-protected struct copy into kernel-owned local
+                    // storage -- no probe in the C at this site, only SEH.
+                    let mut CapturedCs: CREATESTRUCTW = core::mem::zeroed();
+                    if ntkrnl_sys::probe::safe_copy_raw(
+                        core::ptr::addr_of_mut!(CapturedCs) as *mut c_void,
+                        lParam as *const c_void,
+                        core::mem::size_of::<CREATESTRUCTW>(),
+                    )
+                    .is_err()
+                    {
+                        Size = 0;
+                        break 'seh;
+                    }
+
+                    let mut CapturedWindowName: LARGE_STRING = core::mem::zeroed();
+                    if ntkrnl_sys::probe::safe_copy_raw(
+                        core::ptr::addr_of_mut!(CapturedWindowName) as *mut c_void,
+                        CapturedCs.lpszName as *const c_void,
+                        core::mem::size_of::<LARGE_STRING>(),
+                    )
+                    .is_err()
+                    {
+                        Size = 0;
+                        break 'seh;
+                    }
+
+                    let mut CapturedClassName: UNICODE_STRING = core::mem::zeroed();
+                    if ntkrnl_sys::probe::safe_copy_raw(
+                        core::ptr::addr_of_mut!(CapturedClassName) as *mut c_void,
+                        CapturedCs.lpszClass as *const c_void,
+                        core::mem::size_of::<UNICODE_STRING>(),
+                    )
+                    .is_err()
+                    {
+                        Size = 0;
+                        break 'seh;
+                    }
+
+                    Size = (core::mem::size_of::<CREATESTRUCTW>() as UINT)
+                        + CapturedWindowName.Length as UINT
+                        + core::mem::size_of::<u16>() as UINT;
+                    if IS_ATOM(CapturedClassName.Buffer) {
+                        Size += core::mem::size_of::<u16>() as UINT
+                            + core::mem::size_of::<ATOM>() as UINT;
+                    } else {
+                        Size += core::mem::size_of::<u16>() as UINT
+                            + CapturedClassName.Length as UINT
+                            + core::mem::size_of::<u16>() as UINT;
+                    }
+                }
+                x if x == WM_NCCALCSIZE => {
+                    // No pointer dereference here in the C -- wParam/lParam
+                    // used only as values. No protection needed.
+                    Size = if wParam != 0 {
+                        (core::mem::size_of::<NCCALCSIZE_PARAMS>()
+                            + core::mem::size_of::<WINDOWPOS>()) as UINT
+                    } else {
+                        core::mem::size_of::<RECT>() as UINT
+                    };
+                }
+                x if x == WM_COPYDATA => {
+                    let mut CapturedCds: COPYDATASTRUCT = core::mem::zeroed();
+                    if ntkrnl_sys::probe::safe_copy_raw(
+                        core::ptr::addr_of_mut!(CapturedCds) as *mut c_void,
+                        lParam as *const c_void,
+                        core::mem::size_of::<COPYDATASTRUCT>(),
+                    )
+                    .is_err()
+                    {
+                        Size = 0;
+                        break 'seh;
+                    }
+                    Size = (core::mem::size_of::<COPYDATASTRUCT>() as UINT) + CapturedCds.cbData;
+                }
+                x if x == WM_DEVICECHANGE => {
+                    if lParam != 0 && (wParam & 0x8000) != 0 {
+                        let mut CapturedHeader: DEV_BROADCAST_HDR = core::mem::zeroed();
+                        if ntkrnl_sys::probe::safe_copy_raw(
+                            core::ptr::addr_of_mut!(CapturedHeader) as *mut c_void,
+                            lParam as *const c_void,
+                            core::mem::size_of::<DEV_BROADCAST_HDR>(),
+                        )
+                        .is_err()
+                        {
+                            Size = 0;
+                            break 'seh;
+                        }
+                        Size = CapturedHeader.dbch_size;
+                    }
+                }
+                _ => {
+                    Size = 0;
+                }
+            }
+        } else {
+            Size = (*MsgMemoryEntry).Size;
         }
-    } else {
-        Size = (*MsgMemoryEntry).Size;
     }
 
     Size
@@ -786,11 +873,29 @@ unsafe fn CopyMsgToKernelMem(
             {
                 let mut lParamMsg: [WCHAR; (20 + 1) as usize] = [0; (20 + 1) as usize];
 
-                core::ptr::copy_nonoverlapping(
-                    (*UserModeMsg).lParam as *const WCHAR,
-                    lParamMsg.as_mut_ptr(),
-                    (core::mem::size_of::<[WCHAR; 21]>() / core::mem::size_of::<WCHAR>()) as usize,
-                );
+                // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+                // C (win32ss/user/ntuser/message.c, CopyMsgToKernelMem):
+                //   _SEH2_TRY {
+                //       RtlCopyMemory(lParamMsg, (WCHAR*)UserModeMsg->lParam, sizeof(lParamMsg));
+                //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+                //       _SEH2_YIELD(return STATUS_ACCESS_VIOLATION);
+                //   } _SEH2_END;
+                // Shape: the handler YIELDS a FIXED status -- NOT
+                // `_SEH2_GetExceptionCode()` -- so on a caught fault we
+                // return that same literal STATUS_ACCESS_VIOLATION rather
+                // than whatever safe_copy_raw's Err(..) carries. No
+                // ProbeFor* preceded this in the C (a bare RtlCopyMemory
+                // under SEH), so safe_copy_raw is used rather than a
+                // SafeProbeForRead + copy pair, per rule 1.
+                if ntkrnl_sys::probe::safe_copy_raw(
+                    lParamMsg.as_mut_ptr() as *mut c_void,
+                    (*UserModeMsg).lParam as *const c_void,
+                    core::mem::size_of::<[WCHAR; 21]>(),
+                )
+                .is_err()
+                {
+                    return ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION;
+                }
 
                 lParamMsg[(lParamMsg.len() - 1) as usize] = 0;
 

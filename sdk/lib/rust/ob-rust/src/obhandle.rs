@@ -28,6 +28,7 @@ use ntkrnl_sys::ddk::{
     POBP_SET_HANDLE_ATTRIBUTES_CONTEXT, POBP_LOOKUP_CONTEXT, POB_TEMP_BUFFER,
     PACCESS_STATE, PAUX_ACCESS_DATA, POBJECT_ATTRIBUTES, PUNICODE_STRING,
     ACCESS_MASK, KPROCESSOR_MODE, HANDLE, OB_OPEN_REASON,
+    SeSinglePrivilegeCheck,
     ExAcquireRundownProtection, ExReleaseRundownProtection, ExMapHandleToPointer,
     ExUnlockHandleTableEntry, ExCreateHandle, ExDestroyHandle, ExEnumHandleTable,
     ExChangeHandle, ExSweepHandleTable, ExCreateHandleTable, ExDupHandleTable,
@@ -634,6 +635,9 @@ unsafe fn ObpIncrementHandleCount(
 
     status = ObpChargeQuotaForObject(object_header, object_type, &mut new_object as *mut _);
     if status < 0 {
+        // Returning here with the object lock still held deadlocks every later handle
+        // operation on this object. Upstream-Commit: 1902929c80b
+        ObpReleaseObjectLock(object_header);
         return status;
     }
 
@@ -713,6 +717,18 @@ unsafe fn ObpIncrementHandleCount(
         }
 
         if !access_state.is_null() && (*access_state).RemainingDesiredAccess & ACCESS_SYSTEM_SECURITY != 0 {
+            // This block was translated EMPTY from upstream's `FIXME: TODO` +
+            // "ACCESS_SYSTEM_SECURITY not validated!", so SACL access was handed to any
+            // caller that asked for it. Upstream-Commit: c9780d9095f
+            if SeSinglePrivilegeCheck(SeSecurityPrivilege, probe_mode) == 0 {
+                /* FIXME: an audit alarm belongs here; the security manager must be told */
+                ObpReleaseObjectLock(object_header);
+                return STATUS_PRIVILEGE_NOT_HELD;
+            }
+
+            /* Privilege held — grant it so the access state reflects reality */
+            (*access_state).PreviouslyGrantedAccess |= ACCESS_SYSTEM_SECURITY;
+            (*access_state).RemainingDesiredAccess &= !ACCESS_SYSTEM_SECURITY;
         }
     }
 
@@ -809,6 +825,9 @@ unsafe fn ObpIncrementUnnamedHandleCount(
 
     status = ObpChargeQuotaForObject(object_header, object_type, &mut new_object as *mut _);
     if status < 0 {
+        // Returning here with the object lock still held deadlocks every later handle
+        // operation on this object. Upstream-Commit: 1902929c80b
+        ObpReleaseObjectLock(object_header);
         return status;
     }
 

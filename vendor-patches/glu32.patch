@@ -1,0 +1,2083 @@
+# SGI GLU (Mesa standalone glu) at git tag glu-9.0.1 — our delta from pristine upstream.
+#
+# Upstream: https://gitlab.freedesktop.org/mesa/glu at tag glu-9.0.1
+#           (a GIT TAG, not a release tarball — see WHY 9.0.1 below)
+# Apply from dll/opengl/glu32/src/ with: patch -p1 < vendor-patches/glu32.patch
+#
+# 127 of the 194 vendored files appear here and that number is almost entirely noise.
+# 122 of them differ ONLY by `#include` lines being commented out; allow that one
+# substitution and exactly FIVE files carry real content changes. Read the five first.
+#
+# dll/opengl/glu32/include/ is NOT in this patch because it is byte-identical to
+# upstream. The file sets match exactly in both directions: 194 files, no additions,
+# no omissions, no upstream directory skipped.
+#
+# ----------------------------------------------------------------------------------
+# THE FIVE REAL CHANGES
+# ----------------------------------------------------------------------------------
+#
+#   src/include/gluos.h
+#       Comments out <windows.h> and <malloc.h>, adds <string.h> and
+#       #define WIN32_NO_STATUS. A build shim for this tree's header layout, and not
+#       reducible to a -D: the <string.h> is a real source addition, and you cannot
+#       -D away an #include upstream emits unconditionally.
+#
+#   src/libnurbs/internals/trimregion.h
+#       Adds `~TrimRegion( void ) {}` under `#if defined(__REACTOS__) && defined(__clang__)`
+#       with a /* FIXME: Inspect */ comment. Upstream declares no destructor at all.
+#       Still unexplained; the FIXME is upstream-of-us, i.e. ours, and unresolved.
+#
+#   src/libnurbs/internals/subdivider.cc
+#   src/libnurbs/internals/quilt.cc
+#       Pure reflow, no semantic change — each splits one of upstream's
+#       `if (p) p->deleteMe(pool);  p = 0;` one-liners onto two lines. Note that this
+#       is the C-preprocessor-classic misleading indentation ("the second statement is
+#       not in the if"), and the reflow makes the existing behaviour READ correctly
+#       without altering it. Both are in the compiled set.
+#
+#   src/libutil/mipmap.c
+#       Gives gluScaleImage an explicit `GLAPI` prefix that the other six exported
+#       functions in the same file do not have — in ours OR upstream. A single-symbol,
+#       asymmetric, unexplained dllexport edit. WORTH A MAINTAINER'S SECOND LOOK; not
+#       changed here because nothing in the tree explains why this one symbol needs it.
+#
+# ----------------------------------------------------------------------------------
+# THE OTHER 122 FILES: COMMENTED-OUT INCLUDES, AND WHY THEY ARE SAFE
+# ----------------------------------------------------------------------------------
+#
+# Every one of these differs only by `#include "x.h"` / `#include <x.h>` lines being
+# turned into `//#include ...`. Normalising that substitution away drops the differing
+# count from 127 to 5, which is how the five above were isolated.
+#
+# DO NOT BELIEVE THE OLD EXPLANATION, which this registry carried until 2026-09-20:
+# that the CMake build force-includes everything through precomp.h via
+# `add_pch(glu32 precomp.h ...)`, so the includes are redundant. That is wrong twice
+# over. add_pch is `if(PCH) target_precompile_headers(...) else() <nothing> endif()`
+# and PCH is OFF by default (PCH:BOOL=OFF in every build dir here), so precomp.h is
+# force-included NOWHERE in an ordinary build. And even with PCH on it would not cover
+# the C files, because glu32's CMakeLists puts all of ${SOURCE} into PCH_SKIP_SOURCE.
+#
+# What is actually true, and it is an observation rather than a mechanism: glu32.dll
+# builds and links with PCH off, so in this tree those headers arrive transitively
+# through the includes that were left alive (subdivider.cc keeps subdivider.h, which
+# reaches arc.h, bin.h, mapdesc.h and the rest). The edits were plausibly made for a
+# PCH build and happen to also hold without one.
+#
+# CONSEQUENCE FOR A RE-VENDOR: this transform is pure liability and buys nothing in
+# the default configuration. If you bump GLU, prefer dropping it and taking upstream's
+# includes verbatim over reapplying it — then the tree is unmodified but for the five
+# files above, and three of those are a shim, a FIXME and a reflow.
+#
+# ----------------------------------------------------------------------------------
+# WHY 9.0.1, AND THE LICENCE SPLIT
+# ----------------------------------------------------------------------------------
+#
+# The drop carries no release stamp; include/GL/glu.h states GLU_VERSION_1_3, which is
+# an API level, not a version of this source. 9.0.1 is established by file set and by
+# content: we carry src/libtess/README and src/libtess/alg-outline, which exist only in
+# the git tree and are excluded from `make dist`, and we do NOT carry src/meson.build,
+# which 9.0.2 added. After normalising the include transform, differing files number 13
+# against 9.0.0, FIVE against 9.0.1, 7 against 9.0.2, 8 against 9.0.3 and 18 against
+# master. 9.0.1 is the unambiguous minimum.
+#
+# LICENCE IS NOT UNIFORM: 73 of the 194 files — the .cc under src/libnurbs/{interface,
+# internals,nurbtess} — carry "SGI Free Software License B, Version 1.1", while the
+# other 117 carry Version 2.0. That split is present in pristine glu-9.0.1, so it is
+# inherited from Mesa and 0% ours. Three files carry no licence header at all
+# (src/include/gluos.h, src/libtess/README, src/libtess/alg-outline) and all three are
+# byte-for-byte that way upstream too — unlike adns's getopt.c, this is not something
+# we stripped.
+#
+--- a/include/gluos.h
++++ b/include/gluos.h
+@@ -33,8 +33,9 @@
+ 
+ #include <stdlib.h>	    /* For _MAX_PATH definition */
+ #include <stdio.h>
+-#include <malloc.h>
++//#include <malloc.h>
+ 
++#define WIN32_NO_STATUS
+ #define WIN32_LEAN_AND_MEAN
+ #define NOGDI
+ #define NOIME
+@@ -53,7 +54,8 @@
+   #define STRICT 1
+ #endif
+ 
+-#include <windows.h>
++//#include <windows.h>
++#include <string.h>
+ 
+ /* Disable warnings */
+ #if defined(_MSC_VER)
+--- a/libnurbs/interface/bezierEval.cc
++++ b/libnurbs/interface/bezierEval.cc
+@@ -35,11 +35,11 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <assert.h>
+ #include <math.h>
+-#include "bezierEval.h"
++//#include "bezierEval.h"
+ 
+ #ifdef __WATCOMC__
+ #pragma warning 14  10
+--- a/libnurbs/interface/bezierPatch.cc
++++ b/libnurbs/interface/bezierPatch.cc
+@@ -36,8 +36,8 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <assert.h>
+ #include <GL/glu.h> /*for drawing bzier patch*/
+ #include "bezierPatch.h"
+--- a/libnurbs/interface/bezierPatchMesh.cc
++++ b/libnurbs/interface/bezierPatchMesh.cc
+@@ -36,10 +36,10 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <assert.h>
+-#include <GL/gl.h>
++//#include <GL/gl.h>
+ #include "bezierEval.h"
+ #include "bezierPatchMesh.h"
+ 
+--- a/libnurbs/interface/glcurveval.cc
++++ b/libnurbs/interface/glcurveval.cc
+@@ -40,10 +40,10 @@
+ /* Polynomial Evaluator Interface */
+ 
+ #include "gluos.h"
+-#include "glimports.h"
++//#include "glimports.h"
+ #include "glrenderer.h"
+-#include "glcurveval.h"
+-#include "nurbsconsts.h"
++//#include "glcurveval.h"
++//#include "nurbsconsts.h"
+  
+ OpenGLCurveEvaluator::OpenGLCurveEvaluator(void) 
+ {
+--- a/libnurbs/interface/glinterface.cc
++++ b/libnurbs/interface/glinterface.cc
+@@ -36,12 +36,12 @@
+ */
+ 
+ #include "gluos.h"
+-#include <GL/gl.h>
+-#include <GL/glu.h>
+-#include <stdio.h>
+-#include "glimports.h"
++//#include <GL/gl.h>
++//#include <GL/glu.h>
++//#include <stdio.h>
++//#include "glimports.h"
+ #include "glrenderer.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ 
+ //#define DOWN_LOAD_NURBS
+ #ifdef DOWN_LOAD_NURBS
+--- a/libnurbs/interface/glrenderer.cc
++++ b/libnurbs/interface/glrenderer.cc
+@@ -36,7 +36,7 @@
+ */
+ 
+ #include "gluos.h"
+-#include "glimports.h"
++//#include "glimports.h"
+ #include "glrenderer.h"
+ 
+ GLUnurbs::GLUnurbs()
+--- a/libnurbs/interface/glsurfeval.cc
++++ b/libnurbs/interface/glsurfeval.cc
+@@ -39,12 +39,12 @@
+ 
+ /* Polynomial Evaluator Interface */
+ #include "gluos.h"
+-#include <stdio.h>
+-#include "glimports.h"
++//#include <stdio.h>
++//#include "glimports.h"
+ #include "glrenderer.h"
+-#include "glsurfeval.h"
+-#include "nurbsconsts.h"
+-#include "bezierPatchMesh.h"
++//#include "glsurfeval.h"
++//#include "nurbsconsts.h"
++//#include "bezierPatchMesh.h"
+ 
+ 
+ //extern int surfcount;
+--- a/libnurbs/interface/incurveeval.cc
++++ b/libnurbs/interface/incurveeval.cc
+@@ -35,8 +35,8 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ 
+ #include "glcurveval.h"
+ 
+--- a/libnurbs/interface/insurfeval.cc
++++ b/libnurbs/interface/insurfeval.cc
+@@ -36,9 +36,9 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include <GL/gl.h>
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include <GL/gl.h>
+ #include <math.h>
+ #include <assert.h>
+ 
+--- a/libnurbs/internals/arc.cc
++++ b/libnurbs/internals/arc.cc
+@@ -37,13 +37,13 @@
+  *
+  */
+ 
+-#include <stdio.h>
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include <stdio.h>
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "arc.h"
+-#include "bin.h"
+-#include "pwlarc.h"
++//#include "bin.h"
++//#include "pwlarc.h"
+ #include "simplemath.h"
+ 
+ /* local preprocessor definitions */
+--- a/libnurbs/internals/arc.h
++++ b/libnurbs/internals/arc.h
+@@ -36,10 +36,10 @@
+ #ifndef __gluarc_h_
+ #define __gluarc_h_
+ 
+-#include "myassert.h"
++//#include "myassert.h"
+ #include "bufpool.h"
+ #include "mystdio.h"
+-#include "types.h"
++//#include "types.h"
+ #include "pwlarc.h"
+ #include "trimvertex.h"
+ 
+--- a/libnurbs/internals/arcsorter.cc
++++ b/libnurbs/internals/arcsorter.cc
+@@ -40,8 +40,8 @@
+ #ifndef __gluarcsorter_c_
+ #define __gluarcsorter_c_
+ 
+-#include "glimports.h"
+-#include "arc.h"
++//#include "glimports.h"
++//#include "arc.h"
+ #include "arcsorter.h"
+ #include "subdivider.h"
+ 
+--- a/libnurbs/internals/arctess.cc
++++ b/libnurbs/internals/arctess.cc
+@@ -37,14 +37,14 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "arctess.h"
+-#include "bufpool.h"
++//#include "bufpool.h"
+ #include "simplemath.h"
+ #include "bezierarc.h"
+-#include "trimvertex.h"
++//#include "trimvertex.h"
+ #include "trimvertpool.h"
+ 
+ #define NOELIMINATION
+--- a/libnurbs/internals/arctess.h
++++ b/libnurbs/internals/arctess.h
+@@ -37,7 +37,7 @@
+ #define __gluarctess_h_
+ 
+ #include "defines.h"
+-#include "types.h"
++//#include "types.h"
+ #include "arc.h"
+ 
+ struct BezierArc;
+--- a/libnurbs/internals/backend.cc
++++ b/libnurbs/internals/backend.cc
+@@ -40,9 +40,9 @@
+ /* Bezier surface backend
+ 	- interprets display mode (wireframe,shaded,...)
+ */
+-#include <stdio.h>
+-#include "glimports.h"
+-#include "mystdio.h"
++//#include <stdio.h>
++//#include "glimports.h"
++//#include "mystdio.h"
+ #include "backend.h"
+ #include "basiccrveval.h"
+ #include "basicsurfeval.h"
+--- a/libnurbs/internals/backend.h
++++ b/libnurbs/internals/backend.h
+@@ -36,8 +36,8 @@
+ #ifndef __glubackend_h_
+ #define __glubackend_h_
+ 
+-#include "trimvertex.h"
+-#include "gridvertex.h"
++//#include "trimvertex.h"
++//#include "gridvertex.h"
+ #include "gridtrimvertex.h"
+ 
+ class BasicCurveEvaluator;
+--- a/libnurbs/internals/basiccrveval.cc
++++ b/libnurbs/internals/basiccrveval.cc
+@@ -37,8 +37,8 @@
+  *
+  */
+ 
+-#include "mystdio.h"
+-#include "types.h"
++//#include "mystdio.h"
++//#include "types.h"
+ #include "basiccrveval.h"
+ 
+ void
+--- a/libnurbs/internals/basiccrveval.h
++++ b/libnurbs/internals/basiccrveval.h
+@@ -37,7 +37,7 @@
+ #define __glubasiccrveval_h_
+ 
+ #include "types.h"
+-#include "displaymode.h"
++//#include "displaymode.h"
+ #include "cachingeval.h"
+ 
+ class BasicCurveEvaluator : public CachingEvaluator {
+--- a/libnurbs/internals/basicsurfeval.cc
++++ b/libnurbs/internals/basicsurfeval.cc
+@@ -37,8 +37,8 @@
+  *
+  */
+ 
+-#include "mystdio.h"
+-#include "types.h"
++//#include "mystdio.h"
++//#include "types.h"
+ #include "basicsurfeval.h"
+ 
+ #ifdef __WATCOMC__
+--- a/libnurbs/internals/bezierarc.h
++++ b/libnurbs/internals/bezierarc.h
+@@ -36,7 +36,7 @@
+ #ifndef __glubezierarc_h
+ #define __glubezierarc_h
+ 
+-#include "myassert.h"
++//#include "myassert.h"
+ 
+ class Mapdesc;
+ 
+--- a/libnurbs/internals/bin.cc
++++ b/libnurbs/internals/bin.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "bin.h"
+ 
+ /*----------------------------------------------------------------------------
+--- a/libnurbs/internals/bin.h
++++ b/libnurbs/internals/bin.h
+@@ -36,9 +36,9 @@
+ #ifndef __glubin_h_
+ #define __glubin_h_
+ 
+-#include "myassert.h"
++//#include "myassert.h"
+ #include "arc.h"
+-#include "defines.h"
++//#include "defines.h"
+ 
+ class Bin 
+ { /* a linked list of jordan arcs */
+--- a/libnurbs/internals/bufpool.cc
++++ b/libnurbs/internals/bufpool.cc
+@@ -37,8 +37,8 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
++//#include "glimports.h"
++//#include "myassert.h"
+ #include "bufpool.h"
+ 
+ 
+--- a/libnurbs/internals/bufpool.h
++++ b/libnurbs/internals/bufpool.h
+@@ -38,7 +38,7 @@
+ 
+ #include "gluos.h"
+ #include "myassert.h"
+-#include "mystdlib.h"
++//#include "mystdlib.h"
+ 
+ #define NBLOCKS	32
+ 
+--- a/libnurbs/internals/ccw.cc
++++ b/libnurbs/internals/ccw.cc
+@@ -37,13 +37,13 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "subdivider.h"
+-#include "types.h"
+-#include "arc.h"
+-#include "trimvertex.h"
++//#include "types.h"
++//#include "arc.h"
++//#include "trimvertex.h"
+ #include "simplemath.h"
+ 
+ inline int 
+--- a/libnurbs/internals/coveandtiler.cc
++++ b/libnurbs/internals/coveandtiler.cc
+@@ -37,13 +37,13 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "coveandtiler.h"
+-#include "gridvertex.h"
+-#include "gridtrimvertex.h"
+-#include "uarray.h"
++//#include "gridvertex.h"
++//#include "gridtrimvertex.h"
++//#include "uarray.h"
+ #include "backend.h"
+ 
+ 
+--- a/libnurbs/internals/coveandtiler.h
++++ b/libnurbs/internals/coveandtiler.h
+@@ -37,7 +37,7 @@
+ #define __glucoveandtiler_h
+ 
+ #include "trimregion.h"
+-#include "trimvertex.h"
++//#include "trimvertex.h"
+ #include "gridvertex.h"
+ 
+ class Backend;
+--- a/libnurbs/internals/curve.cc
++++ b/libnurbs/internals/curve.cc
+@@ -37,15 +37,15 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "mymath.h"
+ #include "curve.h"
+ #include "mapdesc.h"
+-#include "types.h"
++//#include "types.h"
+ #include "quilt.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ 
+ /*--------------------------------------------------------------------------
+  * Curve::Curve - copy curve from quilt and transform control points
+--- a/libnurbs/internals/curvelist.cc
++++ b/libnurbs/internals/curvelist.cc
+@@ -37,13 +37,13 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "quilt.h"
+ #include "curvelist.h"
+ #include "curve.h"
+-#include "types.h"
++//#include "types.h"
+ 
+ Curvelist::Curvelist( Quilt *quilts, REAL pta, REAL ptb )
+ {
+--- a/libnurbs/internals/curvelist.h
++++ b/libnurbs/internals/curvelist.h
+@@ -36,8 +36,8 @@
+ #ifndef __glucurvelist_h_
+ #define __glucurvelist_h_
+ 
+-#include "types.h"
+-#include "defines.h"
++//#include "types.h"
++//#include "defines.h"
+ 
+ class Mapdesc;
+ class Quilt;
+--- a/libnurbs/internals/curvesub.cc
++++ b/libnurbs/internals/curvesub.cc
+@@ -45,7 +45,7 @@
+ #include "backend.h"
+ #include "quilt.h"
+ #include "curvelist.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ 
+ /*--------------------------------------------------------------------------
+  * drawCurves - main curve rendering entry point
+--- a/libnurbs/internals/dataTransform.cc
++++ b/libnurbs/internals/dataTransform.cc
+@@ -35,12 +35,12 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "nurbsconsts.h"
+-#include "trimvertex.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "nurbsconsts.h"
++//#include "trimvertex.h"
+ #include "dataTransform.h"
+ 
+ extern directedLine* arcLoopToDLineLoop(Arc_ptr loop);
+--- a/libnurbs/internals/displaylist.cc
++++ b/libnurbs/internals/displaylist.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "nurbstess.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "nurbstess.h"
+ #include "displaylist.h"
+ 
+ 
+--- a/libnurbs/internals/displaylist.h
++++ b/libnurbs/internals/displaylist.h
+@@ -36,9 +36,9 @@
+ #ifndef __gludisplaylist_h_
+ #define __gludisplaylist_h_
+ 
+-#include "glimports.h"
+-#include "mysetjmp.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "mysetjmp.h"
++//#include "mystdio.h"
+ #include "bufpool.h"
+ 
+ class NurbsTessellator;
+--- a/libnurbs/internals/flist.cc
++++ b/libnurbs/internals/flist.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
++//#include "glimports.h"
+ #include "myassert.h"
+-#include "mystdio.h"
++//#include "mystdio.h"
+ #include "flist.h"
+ 
+ /*----------------------------------------------------------------------------
+--- a/libnurbs/internals/flist.h
++++ b/libnurbs/internals/flist.h
+@@ -36,7 +36,7 @@
+ #ifndef __gluflist_h_
+ #define __gluflist_h_
+ 
+-#include "types.h"
++//#include "types.h"
+ #include "flistsorter.h"
+ 
+ class Flist {
+--- a/libnurbs/internals/flistsorter.cc
++++ b/libnurbs/internals/flistsorter.cc
+@@ -37,7 +37,7 @@
+  *
+  */
+ 
+-#include "glimports.h"
++//#include "glimports.h"
+ #include "flistsorter.h"
+ 
+ FlistSorter::FlistSorter( void ) : Sorter( sizeof( REAL ) )
+--- a/libnurbs/internals/gridtrimvertex.h
++++ b/libnurbs/internals/gridtrimvertex.h
+@@ -36,7 +36,7 @@
+ #ifndef __glugridtrimvertex_h_
+ #define __glugridtrimvertex_h_
+ 
+-#include "mystdlib.h"
++//#include "mystdlib.h"
+ #include "bufpool.h"
+ #include "trimvertex.h"
+ #include "gridvertex.h"
+--- a/libnurbs/internals/hull.cc
++++ b/libnurbs/internals/hull.cc
+@@ -37,16 +37,16 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "hull.h"
+-#include "gridvertex.h"
+-#include "gridtrimvertex.h"
+-#include "gridline.h"
+-#include "trimline.h"
+-#include "uarray.h"
+-#include "trimregion.h"
++//#include "gridvertex.h"
++//#include "gridtrimvertex.h"
++//#include "gridline.h"
++//#include "trimline.h"
++//#include "uarray.h"
++//#include "trimregion.h"
+ 
+ Hull::Hull( void )
+ {}
+--- a/libnurbs/internals/hull.h
++++ b/libnurbs/internals/hull.h
+@@ -36,9 +36,9 @@
+ #ifndef __gluhull_h_
+ #define __gluhull_h_
+ 
+-#include "trimline.h"
++//#include "trimline.h"
+ #include "trimregion.h"
+-#include "trimvertex.h"
++//#include "trimvertex.h"
+ #include "gridtrimvertex.h"
+ 
+ struct Gridline;
+--- a/libnurbs/internals/intersect.cc
++++ b/libnurbs/internals/intersect.cc
+@@ -37,14 +37,14 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "subdivider.h"
+-#include "arc.h"
+-#include "bin.h"
++//#include "arc.h"
++//#include "bin.h"
+ #include "backend.h"
+-#include "trimvertpool.h"
++//#include "trimvertpool.h"
+ 
+ /*#define NOTDEF*/
+ 
+--- a/libnurbs/internals/knotvector.cc
++++ b/libnurbs/internals/knotvector.cc
+@@ -37,8 +37,8 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "mystdio.h"
+ #include "myassert.h"
+ #include "knotvector.h"
+ #include "defines.h"
+--- a/libnurbs/internals/mapdesc.cc
++++ b/libnurbs/internals/mapdesc.cc
+@@ -37,14 +37,14 @@
+  *
+  */
+ 
+-#include <stdio.h>
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
+-#include "mystring.h"
++//#include <stdio.h>
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
++//#include "mystring.h"
+ #include "mymath.h"
+ #include "backend.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ #include "mapdesc.h"
+ 
+ Mapdesc::Mapdesc( long _type, int _israt, int _ncoords, Backend& b ) 
+--- a/libnurbs/internals/mapdesc.h
++++ b/libnurbs/internals/mapdesc.h
+@@ -36,7 +36,7 @@
+ #ifndef __glumapdesc_h_
+ #define __glumapdesc_h_
+ 
+-#include "mystdio.h"
++//#include "mystdio.h"
+ #include "types.h"
+ #include "defines.h"
+ #include "bufpool.h"
+--- a/libnurbs/internals/mapdescv.cc
++++ b/libnurbs/internals/mapdescv.cc
+@@ -37,12 +37,12 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
+-#include "mystring.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
++//#include "mystring.h"
+ #include "mymath.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ #include "mapdesc.h"
+ 
+ /*--------------------------------------------------------------------------
+--- a/libnurbs/internals/maplist.cc
++++ b/libnurbs/internals/maplist.cc
+@@ -37,11 +37,11 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
+-#include "mymath.h"
+-#include "nurbsconsts.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
++//#include "mymath.h"
++//#include "nurbsconsts.h"
+ #include "maplist.h"
+ #include "mapdesc.h"
+  
+--- a/libnurbs/internals/maplist.h
++++ b/libnurbs/internals/maplist.h
+@@ -36,8 +36,8 @@
+ #ifndef __glumaplist_h_
+ #define __glumaplist_h_
+ 
+-#include "types.h"
+-#include "defines.h"
++//#include "types.h"
++//#include "defines.h"
+ #include "bufpool.h"
+ 
+ class Backend;
+--- a/libnurbs/internals/mesher.cc
++++ b/libnurbs/internals/mesher.cc
+@@ -37,15 +37,15 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
+-#include "gridvertex.h"
+-#include "gridtrimvertex.h"
+-#include "jarcloc.h"
+-#include "gridline.h"
+-#include "trimline.h"
+-#include "uarray.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
++//#include "gridvertex.h"
++//#include "gridtrimvertex.h"
++//#include "jarcloc.h"
++//#include "gridline.h"
++//#include "trimline.h"
++//#include "uarray.h"
+ #include "backend.h"
+ #include "mesher.h"
+ 
+--- a/libnurbs/internals/monoTriangulationBackend.cc
++++ b/libnurbs/internals/monoTriangulationBackend.cc
+@@ -38,7 +38,7 @@
+ #include "monoTriangulation.h"
+ #include "polyUtil.h"
+ #include "backend.h"
+-#include "arc.h"
++//#include "arc.h"
+ 
+ void reflexChain::outputFan(Real v[2], Backend* backend)
+ {
+--- a/libnurbs/internals/monotonizer.cc
++++ b/libnurbs/internals/monotonizer.cc
+@@ -37,15 +37,15 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "arc.h"
+-#include "arctess.h"
++//#include "arctess.h"
+ #include "bezierarc.h"
+-#include "bin.h"
++//#include "bin.h"
+ #include "mapdesc.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ #include "subdivider.h"
+ 
+ /*-----------------------------------------------------------------------------
+--- a/libnurbs/internals/mycode.cc
++++ b/libnurbs/internals/mycode.cc
+@@ -35,7 +35,7 @@
+ /*
+ */
+ 
+-#include "mymath.h"
++//#include "mymath.h"
+ 
+ #ifdef NEEDCEILF
+ 
+--- a/libnurbs/internals/nurbsinterfac.cc
++++ b/libnurbs/internals/nurbsinterfac.cc
+@@ -37,11 +37,11 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "nurbsconsts.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "nurbsconsts.h"
+ #include "nurbstess.h"
+-#include "bufpool.h"
++//#include "bufpool.h"
+ #include "quilt.h"
+ #include "displaylist.h"
+ #include "knotvector.h"
+--- a/libnurbs/internals/nurbstess.cc
++++ b/libnurbs/internals/nurbstess.cc
+@@ -37,17 +37,17 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mysetjmp.h"
+-#include "mystdio.h"
+-#include "nurbsconsts.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mysetjmp.h"
++//#include "mystdio.h"
++//#include "nurbsconsts.h"
+ #include "nurbstess.h"
+-#include "bufpool.h"
++//#include "bufpool.h"
+ #include "quilt.h"
+ #include "knotvector.h"
+ #include "mapdesc.h"
+-#include "maplist.h"
++//#include "maplist.h"
+ 
+ void 
+ NurbsTessellator::set_domain_distance_u_rate(REAL u_rate)
+--- a/libnurbs/internals/nurbstess.h
++++ b/libnurbs/internals/nurbstess.h
+@@ -36,13 +36,13 @@
+ #ifndef __glunurbstess_h_
+ #define __glunurbstess_h_
+ 
+-#include "mysetjmp.h"
++//#include "mysetjmp.h"
+ #include "subdivider.h"
+ #include "renderhints.h"
+ #include "backend.h"
+ #include "maplist.h"
+ #include "reader.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ 
+ struct Knotvector;
+ class Quilt;
+--- a/libnurbs/internals/patch.cc
++++ b/libnurbs/internals/patch.cc
+@@ -37,16 +37,16 @@
+  *
+  */
+ 
+-#include <stdio.h>
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include <stdio.h>
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "mymath.h"
+-#include "mystring.h"
++//#include "mystring.h"
+ #include "patch.h"
+ #include "mapdesc.h"
+ #include "quilt.h"
+-#include "nurbsconsts.h"
++//#include "nurbsconsts.h"
+ #include "simplemath.h" //for glu_abs function in ::singleStep();
+ 
+ 
+--- a/libnurbs/internals/patchlist.cc
++++ b/libnurbs/internals/patchlist.cc
+@@ -37,13 +37,13 @@
+  *
+  */
+ 
+-#include <stdio.h>
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include <stdio.h>
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "quilt.h"
+ #include "patchlist.h"
+-#include "patch.h"
++//#include "patch.h"
+ 
+ Patchlist::Patchlist( Quilt *quilts, REAL *pta, REAL *ptb )
+ {
+--- a/libnurbs/internals/patchlist.h
++++ b/libnurbs/internals/patchlist.h
+@@ -36,8 +36,8 @@
+ #ifndef __glupatchlist_h_
+ #define __glupatchlist_h_
+ 
+-#include "types.h"
+-#include "defines.h"
++//#include "types.h"
++//#include "defines.h"
+ #include "patch.h"
+ 
+ class Quilt;
+--- a/libnurbs/internals/pwlarc.h
++++ b/libnurbs/internals/pwlarc.h
+@@ -36,7 +36,7 @@
+ #ifndef __glupwlarc_h_
+ #define __glupwlarc_h_
+ 
+-#include "myassert.h"
++//#include "myassert.h"
+ #include "nurbsconsts.h"
+ 
+ class TrimVertex;
+--- a/libnurbs/internals/quilt.cc
++++ b/libnurbs/internals/quilt.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
+ #include "quilt.h"
+ #include "backend.h"
+ #include "mapdesc.h"
+@@ -62,7 +62,8 @@
+ {
+     for( Quiltspec *q=qspec; q != eqspec; q++ ) {
+ #if 1
+-	if( q->breakpoints) delete[] q->breakpoints;  q->breakpoints = 0;
++	if( q->breakpoints) delete[] q->breakpoints;
++    q->breakpoints = 0;
+ #else
+ 	if( q->breakpoints) {
+ 	   delete[] q->breakpoints;  
+--- a/libnurbs/internals/quilt.h
++++ b/libnurbs/internals/quilt.h
+@@ -36,7 +36,7 @@
+ #ifndef __gluquilt_h_
+ #define __gluquilt_h_
+ 
+-#include "defines.h"
++//#include "defines.h"
+ #include "bufpool.h"
+ #include "types.h"
+ 
+--- a/libnurbs/internals/reader.cc
++++ b/libnurbs/internals/reader.cc
+@@ -37,8 +37,8 @@
+  *
+  */
+ 
+-#include <stdio.h>
+-#include "glimports.h"
++//#include <stdio.h>
++//#include "glimports.h"
+ #include "nurbsconsts.h"
+ #include "reader.h"
+ #include "trimvertex.h"
+--- a/libnurbs/internals/renderhints.cc
++++ b/libnurbs/internals/renderhints.cc
+@@ -38,7 +38,7 @@
+  */
+ 
+ #include "glimports.h"
+-#include "mystdio.h"
++//#include "mystdio.h"
+ #include "renderhints.h"
+ #include "nurbsconsts.h"
+ 
+--- a/libnurbs/internals/simplemath.h
++++ b/libnurbs/internals/simplemath.h
+@@ -38,7 +38,7 @@
+ 
+ /* simple inline routines */
+ 
+-#include "types.h"
++//#include "types.h"
+ 
+ inline int 
+ max( int x, int y ) { return ( x < y ) ? y : x; }
+--- a/libnurbs/internals/slicer.cc
++++ b/libnurbs/internals/slicer.cc
+@@ -37,19 +37,19 @@
+  *
+  */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include <math.h>
+-#include "glimports.h"
+-#include "mystdio.h"
+-#include "myassert.h"
+-#include "bufpool.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include <math.h>
++//#include "glimports.h"
++//#include "mystdio.h"
++//#include "myassert.h"
++//#include "bufpool.h"
+ #include "slicer.h"
+ #include "backend.h"
+-#include "arc.h"
+-#include "gridtrimvertex.h"
++//#include "arc.h"
++//#include "gridtrimvertex.h"
+ #include "simplemath.h"
+-#include "trimvertex.h"
++//#include "trimvertex.h"
+ #include "varray.h"
+ 
+ #include "polyUtil.h" //for area()
+--- a/libnurbs/internals/slicer.h
++++ b/libnurbs/internals/slicer.h
+@@ -36,10 +36,10 @@
+ #ifndef __gluslicer_h_
+ #define __gluslicer_h_
+ 
+-#include "trimregion.h"
++//#include "trimregion.h"
+ #include "mesher.h"
+ #include "coveandtiler.h"
+-#include "primitiveStream.h"
++//#include "primitiveStream.h"
+ #include "rectBlock.h"
+ 
+ class Backend;
+--- a/libnurbs/internals/sorter.cc
++++ b/libnurbs/internals/sorter.cc
+@@ -39,7 +39,7 @@
+ 
+ #include "glimports.h"
+ #include "sorter.h"
+-#include "mystdio.h"
++//#include "mystdio.h"
+ 
+ Sorter::Sorter( int _es )
+ {
+--- a/libnurbs/internals/splitarcs.cc
++++ b/libnurbs/internals/splitarcs.cc
+@@ -37,14 +37,14 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mysetjmp.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mysetjmp.h"
++//#include "mystdio.h"
+ #include "subdivider.h"
+ #include "arcsorter.h"
+-#include "arc.h"
+-#include "bin.h"
++//#include "arc.h"
++//#include "bin.h"
+ 
+ /* local preprocessor definitions */
+ #define MAXARCS	10
+--- a/libnurbs/internals/subdivider.cc
++++ b/libnurbs/internals/subdivider.cc
+@@ -37,21 +37,21 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "subdivider.h"
+-#include "arc.h"
++//#include "arc.h"
+ #include "bezierarc.h"
+-#include "bin.h"
++//#include "bin.h"
+ #include "renderhints.h"
+ #include "backend.h"
+-#include "mapdesc.h"
++//#include "mapdesc.h"
+ #include "quilt.h"
+ #include "patchlist.h"
+-#include "patch.h"
+-#include "nurbsconsts.h"
+-#include "trimvertpool.h"
++//#include "patch.h"
++//#include "nurbsconsts.h"
++//#include "trimvertpool.h"
+ #include "simplemath.h"
+ 
+ #include "polyUtil.h" //for function area()
+@@ -849,8 +849,10 @@
+ 
+     Arc_ptr jarc;
+     while( (jarc = bin.removearc()) != NULL ) {
+-	if( jarc->pwlArc ) jarc->pwlArc->deleteMe( pwlarcpool ); jarc->pwlArc = 0;
+-	if( jarc->bezierArc) jarc->bezierArc->deleteMe( bezierarcpool ); jarc->bezierArc = 0;
++	if( jarc->pwlArc ) jarc->pwlArc->deleteMe( pwlarcpool );
++    jarc->pwlArc = 0;
++	if( jarc->bezierArc) jarc->bezierArc->deleteMe( bezierarcpool );
++    jarc->bezierArc = 0;
+ 	jarc->deleteMe( arcpool );
+     }
+ }
+--- a/libnurbs/internals/subdivider.h
++++ b/libnurbs/internals/subdivider.h
+@@ -41,7 +41,7 @@
+ #include "flist.h"
+ #include "slicer.h"
+ #include "arctess.h"
+-#include "trimvertex.h"
++//#include "trimvertex.h"
+ #include "trimvertpool.h"
+ 
+ class Arc;
+--- a/libnurbs/internals/tobezier.cc
++++ b/libnurbs/internals/tobezier.cc
+@@ -38,9 +38,9 @@
+  */
+ 
+ #include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
+-#include "mystring.h"
++//#include "myassert.h"
++//#include "mystdio.h"
++//#include "mystring.h"
+ #include "quilt.h"
+ #include "knotvector.h"
+ 
+--- a/libnurbs/internals/trimline.cc
++++ b/libnurbs/internals/trimline.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "trimline.h"
+ #include "backend.h"
+ 
+--- a/libnurbs/internals/trimline.h
++++ b/libnurbs/internals/trimline.h
+@@ -39,7 +39,7 @@
+ class Arc;
+ class Backend;
+ 
+-#include "trimvertex.h"
++//#include "trimvertex.h"
+ #include "jarcloc.h"
+ 
+ 
+--- a/libnurbs/internals/trimregion.cc
++++ b/libnurbs/internals/trimregion.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "trimregion.h"
+ 
+ TrimRegion::TrimRegion( void )
+--- a/libnurbs/internals/trimregion.h
++++ b/libnurbs/internals/trimregion.h
+@@ -46,6 +46,10 @@
+ class TrimRegion {
+ public:
+ 			TrimRegion();
++#if defined(__REACTOS__) && defined(__clang__)
++    /* FIXME: Inspect */
++    ~TrimRegion( void ) {}
++#endif
+     Trimline		left;
+     Trimline		right;
+     Gridline		top;
+--- a/libnurbs/internals/trimvertpool.cc
++++ b/libnurbs/internals/trimvertpool.cc
+@@ -37,13 +37,13 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
+-#include "mystring.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
++//#include "mystring.h"
+ #include "trimvertex.h"
+ #include "trimvertpool.h"
+-#include "bufpool.h"
++//#include "bufpool.h"
+ 
+ /*----------------------------------------------------------------------------
+  * TrimVertexPool::TrimVertexPool 
+--- a/libnurbs/internals/uarray.cc
++++ b/libnurbs/internals/uarray.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "uarray.h"
+ #include "arc.h"
+ 
+--- a/libnurbs/internals/varray.cc
++++ b/libnurbs/internals/varray.cc
+@@ -37,9 +37,9 @@
+  *
+  */
+ 
+-#include "glimports.h"
+-#include "myassert.h"
+-#include "mystdio.h"
++//#include "glimports.h"
++//#include "myassert.h"
++//#include "mystdio.h"
+ #include "varray.h"
+ #include "arc.h"
+ #include "simplemath.h"         // glu_abs()
+--- a/libnurbs/nurbtess/directedLine.cc
++++ b/libnurbs/nurbtess/directedLine.cc
+@@ -35,14 +35,14 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <math.h>
+-#include "glimports.h"
+-#include "zlassert.h"
++//#include "glimports.h"
++//#include "zlassert.h"
+ 
+ #include "quicksort.h"
+-#include "directedLine.h"
++//#include "directedLine.h"
+ #include "polyDBG.h"
+ 
+ #ifdef __WATCOMC__
+--- a/libnurbs/nurbtess/directedLine.h
++++ b/libnurbs/nurbtess/directedLine.h
+@@ -33,7 +33,7 @@
+ #ifndef _DIRECTEDLINE_H
+ #define _DIRECTEDLINE_H
+ 
+-#include "definitions.h"
++//#include "definitions.h"
+ #include "sampledLine.h"
+ 
+ enum {INCREASING, DECREASING};
+--- a/libnurbs/nurbtess/gridWrap.cc
++++ b/libnurbs/nurbtess/gridWrap.cc
+@@ -36,8 +36,8 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <GL/gl.h>
+ #include "zlassert.h"
+ #include "gridWrap.h"
+--- a/libnurbs/nurbtess/gridWrap.h
++++ b/libnurbs/nurbtess/gridWrap.h
+@@ -33,11 +33,11 @@
+ #ifndef _GRIDWRAP_H
+ #define _GRIDWRAP_H
+ 
+-#include <stdio.h>
+-#include "definitions.h"
++//#include <stdio.h>
++//#include "definitions.h"
+ 
+ #include "primitiveStream.h"
+-#include "zlassert.h"
++//#include "zlassert.h"
+ 
+ class gridWrap{
+   Int n_ulines;
+--- a/libnurbs/nurbtess/monoChain.cc
++++ b/libnurbs/nurbtess/monoChain.cc
+@@ -36,11 +36,11 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include <GL/gl.h>
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include <GL/gl.h>
+ 
+-#include "glimports.h"
++//#include "glimports.h"
+ #include "zlassert.h"
+ 
+ #include "monoChain.h"
+--- a/libnurbs/nurbtess/monoChain.h
++++ b/libnurbs/nurbtess/monoChain.h
+@@ -33,7 +33,7 @@
+ #ifndef _MONO_CHAIN_H
+ #define _MONO_CHAIN_H
+ 
+-#include "directedLine.h"
++//#include "directedLine.h"
+ #include "partitionY.h"
+ 
+ class monoChain;
+--- a/libnurbs/nurbtess/monoPolyPart.cc
++++ b/libnurbs/nurbtess/monoPolyPart.cc
+@@ -46,9 +46,9 @@
+  */
+ 
+ #include <stdlib.h>
+-#include <stdio.h>
++//#include <stdio.h>
+ #include "directedLine.h"
+-#include "monoPolyPart.h"
++//#include "monoPolyPart.h"
+ 
+ /*a vertex is u_maximal if both of its two neightbors are to the left of this 
+  *vertex
+--- a/libnurbs/nurbtess/monoTriangulation.cc
++++ b/libnurbs/nurbtess/monoTriangulation.cc
+@@ -35,11 +35,11 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "gluos.h"
+-#include "glimports.h"
+-#include "zlassert.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include "gluos.h"
++//#include "glimports.h"
++//#include "zlassert.h"
+ 
+ #include "monoTriangulation.h"
+ #include "polyUtil.h" /*for area*/
+--- a/libnurbs/nurbtess/monoTriangulation.h
++++ b/libnurbs/nurbtess/monoTriangulation.h
+@@ -33,7 +33,7 @@
+ #ifndef _MONO_TRIANGULATION_H
+ #define _MONO_TRIANGULATION_H
+ 
+-#include "definitions.h"
++//#include "definitions.h"
+ #include "primitiveStream.h"
+ #include "directedLine.h"
+ #include "arc.h"
+--- a/libnurbs/nurbtess/partitionX.cc
++++ b/libnurbs/nurbtess/partitionX.cc
+@@ -36,7 +36,7 @@
+ */
+ 
+ #include <stdlib.h>
+-#include <stdio.h>
++//#include <stdio.h>
+ 
+ #include "partitionX.h"
+ 
+--- a/libnurbs/nurbtess/partitionY.cc
++++ b/libnurbs/nurbtess/partitionY.cc
+@@ -37,7 +37,7 @@
+ 
+ #include <stdlib.h>
+ #include <stdio.h>
+-#include <time.h>
++//#include <time.h>
+ 
+ #include "zlassert.h"
+ #include "partitionY.h"
+--- a/libnurbs/nurbtess/polyDBG.cc
++++ b/libnurbs/nurbtess/polyDBG.cc
+@@ -35,10 +35,10 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <math.h>
+-#include "zlassert.h"
++//#include "zlassert.h"
+ #include "polyDBG.h"
+ 
+ #ifdef __WATCOMC__
+--- a/libnurbs/nurbtess/polyDBG.h
++++ b/libnurbs/nurbtess/polyDBG.h
+@@ -33,8 +33,8 @@
+ #ifndef _POLYDBG_H
+ #define _POLYDBG_H
+ 
+-#include "definitions.h"
+-#include "directedLine.h"
++//#include "definitions.h"
++//#include "directedLine.h"
+ #include "monoTriangulation.h"
+ 
+ Int DBG_edgesIntersectGen(Real A[2], Real B[2], Real C[2], Real D[2]);
+--- a/libnurbs/nurbtess/polyUtil.cc
++++ b/libnurbs/nurbtess/polyUtil.cc
+@@ -35,8 +35,8 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ 
+ #include "polyUtil.h"
+ 
+--- a/libnurbs/nurbtess/primitiveStream.cc
++++ b/libnurbs/nurbtess/primitiveStream.cc
+@@ -36,8 +36,8 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <assert.h>
+ #include <GL/gl.h> 
+ 
+--- a/libnurbs/nurbtess/quicksort.cc
++++ b/libnurbs/nurbtess/quicksort.cc
+@@ -35,8 +35,8 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ 
+ 
+ static void swap(void *v[], int i, int j)
+--- a/libnurbs/nurbtess/quicksort.h
++++ b/libnurbs/nurbtess/quicksort.h
+@@ -33,8 +33,8 @@
+ #ifndef _QUICKSORT_H
+ #define _QUICKSORT_H
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ 
+ void quicksort(void *v[], int left, int right,
+ 	       int (*comp) (void *, void *));
+--- a/libnurbs/nurbtess/rectBlock.cc
++++ b/libnurbs/nurbtess/rectBlock.cc
+@@ -36,9 +36,9 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "glimports.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include "glimports.h"
+ #include "zlassert.h"
+ #include <GL/gl.h>
+ 
+--- a/libnurbs/nurbtess/rectBlock.h
++++ b/libnurbs/nurbtess/rectBlock.h
+@@ -33,7 +33,7 @@
+ #ifndef _RECTBLOCK_H
+ #define _RECTBLOCK_H
+ 
+-#include "definitions.h"
++//#include "definitions.h"
+ #include "gridWrap.h"
+ 
+ class rectBlock{
+--- a/libnurbs/nurbtess/sampleComp.cc
++++ b/libnurbs/nurbtess/sampleComp.cc
+@@ -35,9 +35,9 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "glimports.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include "glimports.h"
+ #include "sampleComp.h"
+ #include "sampleCompTop.h"
+ #include "sampleCompBot.h"
+--- a/libnurbs/nurbtess/sampleComp.h
++++ b/libnurbs/nurbtess/sampleComp.h
+@@ -34,7 +34,7 @@
+ #define _SAMPLECOMP_H
+ 
+ #include "sampleMonoPoly.h"
+-#include "rectBlock.h"
++//#include "rectBlock.h"
+ 
+ void sampleConnectedComp(Real* topVertex, Real* botVertex,
+ 		    vertexArray* leftChain, 
+--- a/libnurbs/nurbtess/sampleCompBot.cc
++++ b/libnurbs/nurbtess/sampleCompBot.cc
+@@ -35,9 +35,9 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "zlassert.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include "zlassert.h"
+ #include "sampleCompBot.h"
+ #include "sampleCompRight.h"
+ 
+--- a/libnurbs/nurbtess/sampleCompRight.cc
++++ b/libnurbs/nurbtess/sampleCompRight.cc
+@@ -35,11 +35,11 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include "gluos.h"
+-#include "glimports.h"
+-#include "zlassert.h"
++//#include <stdlib.h>
++//#include <stdio.h>
++//#include "gluos.h"
++//#include "glimports.h"
++//#include "zlassert.h"
+ #include "sampleCompRight.h"
+ 
+ #define max(a,b) ((a>b)? a:b)
+--- a/libnurbs/nurbtess/sampleCompTop.cc
++++ b/libnurbs/nurbtess/sampleCompTop.cc
+@@ -35,10 +35,10 @@
+ /*
+ */
+ 
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <math.h>
+-#include "zlassert.h"
++//#include "zlassert.h"
+ #include "sampleCompTop.h"
+ #include "sampleCompRight.h"
+ 
+--- a/libnurbs/nurbtess/sampleMonoPoly.cc
++++ b/libnurbs/nurbtess/sampleMonoPoly.cc
+@@ -36,8 +36,8 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
+-#include <stdio.h>
++//#include <stdlib.h>
++//#include <stdio.h>
+ #include <math.h>
+ 
+ #ifndef max
+--- a/libnurbs/nurbtess/sampleMonoPoly.h
++++ b/libnurbs/nurbtess/sampleMonoPoly.h
+@@ -34,7 +34,7 @@
+ #define _SAMPLEMONOPOLY_H
+ 
+ #include "monoTriangulation.h"
+-#include "gridWrap.h"
++//#include "gridWrap.h"
+ #include "rectBlock.h"
+ 
+ 
+--- a/libnurbs/nurbtess/sampledLine.cc
++++ b/libnurbs/nurbtess/sampledLine.cc
+@@ -38,7 +38,7 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <math.h> //for fabs()
+-#include "glimports.h"
++//#include "glimports.h"
+ #include "zlassert.h"
+ #include "sampledLine.h"
+ 
+--- a/libnurbs/nurbtess/searchTree.cc
++++ b/libnurbs/nurbtess/searchTree.cc
+@@ -36,7 +36,7 @@
+ */
+ 
+ #include <stdlib.h>
+-#include <stdio.h>
++//#include <stdio.h>
+ #include "zlassert.h"
+ 
+ #include "searchTree.h"
+--- a/libtess/dict.c
++++ b/libtess/dict.c
+@@ -32,7 +32,7 @@
+ **
+ */
+ 
+-#include <stddef.h>
++//#include <stddef.h>
+ #include "dict-list.h"
+ #include "memalloc.h"
+ 
+--- a/libtess/geom.c
++++ b/libtess/geom.c
+@@ -34,7 +34,7 @@
+ 
+ #include "gluos.h"
+ #include <assert.h>
+-#include "mesh.h"
++//#include "mesh.h"
+ #include "geom.h"
+ 
+ int __gl_vertLeq( GLUvertex *u, GLUvertex *v )
+--- a/libtess/memalloc.c
++++ b/libtess/memalloc.c
+@@ -33,7 +33,7 @@
+ */
+ 
+ #include "memalloc.h"
+-#include "string.h"
++//#include "string.h"
+ 
+ int __gl_memInit( size_t maxFast )
+ {
+--- a/libtess/mesh.c
++++ b/libtess/mesh.c
+@@ -33,7 +33,7 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stddef.h>
++//#include <stddef.h>
+ #include <assert.h>
+ #include "mesh.h"
+ #include "memalloc.h"
+--- a/libtess/normal.c
++++ b/libtess/normal.c
+@@ -33,11 +33,11 @@
+ */
+ 
+ #include "gluos.h"
+-#include "mesh.h"
++//#include "mesh.h"
+ #include "tess.h"
+-#include "normal.h"
+-#include <math.h>
+-#include <assert.h>
++//#include "normal.h"
++//#include <math.h>
++//#include <assert.h>
+ 
+ #ifndef TRUE
+ #define TRUE 1
+--- a/libtess/normal.h
++++ b/libtess/normal.h
+@@ -35,7 +35,7 @@
+ #ifndef __normal_h_
+ #define __normal_h_
+ 
+-#include "tess.h"
++//#include "tess.h"
+ 
+ /* __gl_projectPolygon( tess ) determines the polygon normal
+  * and project vertices onto the plane of the polygon.
+--- a/libtess/priorityq-heap.c
++++ b/libtess/priorityq-heap.c
+@@ -32,10 +32,10 @@
+ **
+ */
+ 
+-#include <stddef.h>
+-#include <assert.h>
++//#include <stddef.h>
++//#include <assert.h>
+ #include "priorityq-heap.h"
+-#include "memalloc.h"
++//#include "memalloc.h"
+ 
+ #define INIT_SIZE	32
+ 
+--- a/libtess/priorityq-sort.h
++++ b/libtess/priorityq-sort.h
+@@ -35,7 +35,7 @@
+ #ifndef __priorityq_sort_h_
+ #define __priorityq_sort_h_
+ 
+-#include "priorityq-heap.h"
++//#include "priorityq-heap.h"
+ 
+ #undef PQkey
+ #undef PQhandle
+--- a/libtess/priorityq.c
++++ b/libtess/priorityq.c
+@@ -33,9 +33,9 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stddef.h>
++//#include <stddef.h>
+ #include <assert.h>
+-#include <limits.h>		/* LONG_MAX */
++//#include <limits.h>		/* LONG_MAX */
+ #include "memalloc.h"
+ 
+ /* Include all the code for the regular heap-based queue here. */
+--- a/libtess/render.c
++++ b/libtess/render.c
+@@ -34,10 +34,10 @@
+ 
+ #include "gluos.h"
+ #include <assert.h>
+-#include <stddef.h>
+-#include "mesh.h"
++//#include <stddef.h>
++//#include "mesh.h"
+ #include "tess.h"
+-#include "render.h"
++//#include "render.h"
+ 
+ #ifndef TRUE
+ #define TRUE 1
+--- a/libtess/render.h
++++ b/libtess/render.h
+@@ -35,7 +35,7 @@
+ #ifndef __render_h_
+ #define __render_h_
+ 
+-#include "mesh.h"
++//#include "mesh.h"
+ 
+ /* __gl_renderMesh( tess, mesh ) takes a mesh and breaks it into triangle
+  * fans, strips, and separate triangles.  A substantial effort is made
+--- a/libtess/sweep.c
++++ b/libtess/sweep.c
+@@ -34,15 +34,15 @@
+ 
+ #include "gluos.h"
+ #include <assert.h>
+-#include <stddef.h>
+-#include <setjmp.h>		/* longjmp */
+-#include <limits.h>		/* LONG_MAX */
++//#include <stddef.h>
++//#include <setjmp.h>		/* longjmp */
++//#include <limits.h>		/* LONG_MAX */
+ 
+-#include "mesh.h"
++//#include "mesh.h"
+ #include "geom.h"
+ #include "tess.h"
+-#include "dict.h"
+-#include "priorityq.h"
++//#include "dict.h"
++//#include "priorityq.h"
+ #include "memalloc.h"
+ #include "sweep.h"
+ 
+--- a/libtess/sweep.h
++++ b/libtess/sweep.h
+@@ -35,7 +35,7 @@
+ #ifndef __sweep_h_
+ #define __sweep_h_
+ 
+-#include "mesh.h"
++//#include "mesh.h"
+ 
+ /* __gl_computeInterior( tess ) computes the planar arrangement specified
+  * by the given contours, and further subdivides this arrangement
+@@ -48,7 +48,7 @@
+ 
+ /* The following is here *only* for access by debugging routines */
+ 
+-#include "dict.h"
++//#include "dict.h"
+ 
+ /* For each pair of adjacent edges crossing the sweep line, there is
+  * an ActiveRegion to represent the region between them.  The active
+--- a/libtess/tess.c
++++ b/libtess/tess.c
+@@ -33,12 +33,12 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stddef.h>
++//#include <stddef.h>
+ #include <assert.h>
+-#include <setjmp.h>
++//#include <setjmp.h>
+ #include "memalloc.h"
+ #include "tess.h"
+-#include "mesh.h"
++//#include "mesh.h"
+ #include "normal.h"
+ #include "sweep.h"
+ #include "tessmono.h"
+--- a/libtess/tess.h
++++ b/libtess/tess.h
+@@ -35,7 +35,7 @@
+ #ifndef __tess_h_
+ #define __tess_h_
+ 
+-#include <GL/glu.h>
++//#include <GL/glu.h>
+ #include <setjmp.h>
+ #include "mesh.h"
+ #include "dict.h"
+--- a/libtess/tessmono.c
++++ b/libtess/tessmono.c
+@@ -33,10 +33,10 @@
+ */
+ 
+ #include "gluos.h"
+-#include <stdlib.h>
++//#include <stdlib.h>
+ #include "geom.h"
+-#include "mesh.h"
+-#include "tessmono.h"
++//#include "mesh.h"
++//#include "tessmono.h"
+ #include <assert.h>
+ 
+ #define AddWinding(eDst,eSrc)	(eDst->winding += eSrc->winding, \
+--- a/libutil/glue.c
++++ b/libutil/glue.c
+@@ -28,8 +28,8 @@
+  * Silicon Graphics, Inc.
+  */
+ 
+-#include <stdlib.h>
+-#include "gluint.h"
++//#include <stdlib.h>
++//#include "gluint.h"
+ 
+ static unsigned char *__gluNurbsErrors[] = {
+     (unsigned char*) " ",
+--- a/libutil/mipmap.c
++++ b/libutil/mipmap.c
+@@ -31,10 +31,10 @@
+ #include "gluos.h"
+ #include <assert.h>
+ #include <GL/glu.h>
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <string.h>
+-#include <limits.h>		/* UINT_MAX */
++//#include <stdio.h>
++//#include <stdlib.h>
++//#include <string.h>
++//#include <limits.h>		/* UINT_MAX */
+ #include <math.h>
+ 
+ typedef union {
+@@ -3494,7 +3494,7 @@
+    }
+ } /* closestFit() */
+ 
+-GLint GLAPIENTRY
++GLAPI GLint GLAPIENTRY
+ gluScaleImage(GLenum format, GLsizei widthin, GLsizei heightin,
+ 		    GLenum typein, const void *datain,
+ 		    GLsizei widthout, GLsizei heightout, GLenum typeout,
+--- a/libutil/project.c
++++ b/libutil/project.c
+@@ -31,7 +31,7 @@
+ #include "gluos.h"
+ #include <math.h>
+ #include <GL/gl.h>
+-#include <GL/glu.h>
++//#include <GL/glu.h>
+ #include "gluint.h"
+ 
+ /*
+--- a/libutil/quad.c
++++ b/libutil/quad.c
+@@ -30,10 +30,10 @@
+ 
+ #include "gluos.h"
+ #include "gluint.h"
+-#include <stdio.h>
+-#include <stdlib.h>
++//#include <stdio.h>
++//#include <stdlib.h>
+ #include <math.h>
+-#include <GL/gl.h>
++//#include <GL/gl.h>
+ #include <GL/glu.h>
+ 
+ /* Make it not a power of two to avoid cache thrashing on the chip */
+--- a/libutil/registry.c
++++ b/libutil/registry.c
+@@ -30,9 +30,9 @@
+ 
+ #include "gluos.h"
+ #include <GL/glu.h>
+-#include <stdio.h>
+-#include <stdlib.h>
+-#include <string.h>
++//#include <stdio.h>
++//#include <stdlib.h>
++//#include <string.h>
+ 
+ static const GLubyte versionString[] = "1.3";
+ static const GLubyte extensionString[] =

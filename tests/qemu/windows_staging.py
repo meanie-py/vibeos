@@ -1,7 +1,9 @@
 """Reclaim abandoned Windows QEMU staging while retaining live runs.
 
 Callers hold portlease.launch_lock from inspection through deletion, the same
-lock every harness launcher holds while preparing media and starting QEMU.
+lock every harness launcher holds while registering PID-owned staging and
+starting QEMU. Media copies may run outside it: live Linux owners protect their
+staging directories even before the Windows QEMU process exists.
 """
 
 from __future__ import annotations
@@ -104,16 +106,24 @@ def cleanup_locked(root: Path, *, dry_run: bool = False, min_age: float = 3600) 
             result["removed"].append(str(path))
     if not dry_run:
         # Cache pruning uses link counts: a staged run pins its immutable image.
-        locks = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host")) / "media"
-        locks.mkdir(parents=True, exist_ok=True)
-        import fcntl
-
-        with (locks / "cache.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with backend.media_cache_lock():
             cache = root / "media-cache-v1"
             if cache.exists():
-                for path in cache.glob(".fill-*"):
-                    if now - path.stat().st_mtime >= min_age:
+                for path in cache.iterdir():
+                    if path.is_symlink() or not path.is_dir():
+                        continue
+                    owner = re.match(r"^\.populate-v2-(\d+)-", path.name)
+                    if not owner and not path.name.startswith(".fill-"):
+                        continue
+                    if owner and _owner_alive(int(owner[1])):
+                        result["protected"].append(str(path))
+                        continue
+                    # A live fill may finish between enumeration and stat.
+                    try:
+                        old = now - path.stat().st_mtime >= min_age
+                    except FileNotFoundError:
+                        continue
+                    if old:
                         shutil.rmtree(path)
                         result["removed"].append(str(path))
                 backend._prune_media_cache(cache, keep=cache)

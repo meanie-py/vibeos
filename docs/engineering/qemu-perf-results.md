@@ -4,6 +4,8 @@ The default remains Windows-host TCG. Read-only media reuse and Windows staging
 cleanup are automatic for smoke, gate, farm, and debug launches. No environment
 variable or special command is needed to benefit.
 
+Follow-up: [launch concurrency and checkpoint preparation](qemu-launch-concurrency.md).
+
 ## Changes and measurements
 
 Durations below use monotonic timers; filesystem wall-clock timestamps are not

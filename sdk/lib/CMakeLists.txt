@@ -6,6 +6,12 @@ add_subdirectory(inflib)
 if(CMAKE_CROSSCOMPILING)
 
 add_subdirectory(3rdparty)
+add_subdirectory(cardlib)
+# Wine-derived and OURS to translate, so deliberately NOT under 3rdparty/:
+# that directory is a registered vendor CONTAINER where every child must be a
+# vendored tree. See vendor.yaml `ours:` -> "Wine-derived support libraries".
+add_subdirectory(libwine)
+add_subdirectory(strmbase)
 add_subdirectory(apisets)
 add_subdirectory(comsupp)
 add_subdirectory(conutils)

@@ -2,7 +2,7 @@
  * jpeglib.h
  *
  * Copyright (C) 1991-1998, Thomas G. Lane.
- * Modified 2002-2019 by Guido Vollbeding.
+ * Modified 2002-2022 by Guido Vollbeding.
  * This file is part of the Independent JPEG Group's software.
  * For conditions of distribution and use, see the accompanying README file.
  *
@@ -39,7 +39,7 @@ extern "C" {
 
 #define JPEG_LIB_VERSION        90	/* Compatibility version 9.0 */
 #define JPEG_LIB_VERSION_MAJOR  9
-#define JPEG_LIB_VERSION_MINOR  4
+#define JPEG_LIB_VERSION_MINOR  6
 
 
 /* Various constants determining the sizes of things.
@@ -883,7 +883,7 @@ typedef JMETHOD(boolean, jpeg_marker_parser_method, (j_decompress_ptr cinfo));
 /* Short forms of external names for systems with brain-damaged linkers.
  * We shorten external names to be unique in the first six letters, which
  * is good enough for all known systems.
- * (If your compiler itself needs names to be unique in less than 15
+ * (If your compiler itself needs names to be unique in less than 15 
  * characters, you are out of luck.  Get a better compiler.)
  */
 

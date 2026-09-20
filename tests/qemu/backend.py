@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 # A token like `file=/home/.../livecd.iso` inside a -drive arg value.
@@ -69,62 +70,82 @@ def stage_file(src: Path, staging: Path) -> str:
     return win_path(dst)
 
 
-def stage_readonly_file(src: Path, staging: Path) -> str:
-    """Share immutable media by content, never writable firmware vars or scratch.
+@contextmanager
+def media_cache_lock(name: str = "cache.lock"):
+    """Linux flock shared across worktrees; never unlink a lock's inode."""
+    locks = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host")) / "media"
+    locks.mkdir(parents=True, exist_ok=True)
+    with (locks / name).open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
 
-    Hash the actual input on every launch, including equal-size/mtime rebuilds.
-    Populate atomically with the safe small-write copier. A cache lock prevents
-    races between filling, pinning a run's inode, and pruning old entries.
-    Old cache files may be unlinked, but are never rewritten in place.
+
+def stage_readonly_file(src: Path, staging: Path) -> str:
+    """Hash every input; fill different images concurrently, then publish and pin.
+
+    The global lock still coordinates publication, hard links and pruning with
+    older launchers. Slow copies hold only a per-entry lock. A warm hit never
+    waits for that lock, and a second cold caller rechecks after acquiring it.
     """
     before = src.stat()
     digest = hashlib.sha256()
     with src.open("rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
-    after = src.stat()
 
     def identity(st):
         return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
 
-    if identity(before) != identity(after):
+    if identity(before) != identity(src.stat()):
         raise RuntimeError(f"QEMU staging input changed while hashing: {src}")
     cache = staging.parent / "media-cache-v1"
-    key = digest.hexdigest()
-    entry = cache / f"{key}-{src.name}"
-    # flock belongs on the Linux filesystem; DrvFS does not provide the same
-    # lock semantics. Never unlink lock files (a waiter may hold their inode).
-    locks = Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host")) / "media"
-    locks.mkdir(parents=True, exist_ok=True)
-    with (locks / "cache.lock").open("a") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        cache.mkdir(parents=True, exist_ok=True)
+    entry = cache / f"{digest.hexdigest()}-{src.name}"
+    pinned = staging / src.name
+
+    def pin_if_present() -> bool:
+        # Caller holds the global lock through lookup, link and pruning. In
+        # particular an entry cannot disappear between the existence test and pin.
         if not entry.exists():
-            # stage_file owns a private temp and verifies the source remained
-            # unchanged during copying. Use a private directory to retain the
-            # source basename without exposing an incomplete cache entry.
-            with tempfile.TemporaryDirectory(prefix=".fill-", dir=cache) as temporary:
-                private = Path(temporary)
-                stage_file(src, private)
-                if identity(src.stat()) != identity(before):
-                    raise RuntimeError(f"QEMU staging input changed before publication: {src}")
-                os.replace(private / src.name, entry)
+            return False
         if entry.stat().st_size != before.st_size:
             raise RuntimeError(f"QEMU read-only media cache is damaged: {entry}")
         if identity(src.stat()) != identity(before):
             raise RuntimeError(f"QEMU staging input changed before pinning: {src}")
         staging.mkdir(parents=True, exist_ok=True)
-        pinned = staging / src.name
         if pinned.exists():
             if not pinned.samefile(entry):
                 raise RuntimeError(f"Conflicting read-only staging basename: {pinned}")
         else:
             os.link(entry, pinned)
-        # A per-run hard link pins the inode even if retention prunes the cache
-        # name before QEMU opens it. Only explicitly read-only drives use this.
-        # LRU bookkeeping changes metadata only; QEMU opens this media read-only.
         entry.touch()
         _prune_media_cache(cache, keep=entry)
+        return True
+
+    with media_cache_lock():
+        cache.mkdir(parents=True, exist_ok=True)
+        if pin_if_present():
+            return win_path(pinned)
+
+    key = hashlib.sha256(str(entry.resolve()).encode()).hexdigest()
+    with media_cache_lock(f"fill-{key}.lock"):
+        with media_cache_lock():
+            if pin_if_present():
+                return win_path(pinned)
+        # Older cleanup knows .fill-* but does not know that copies now run
+        # outside the global lock. A distinct prefix keeps it from deleting our
+        # in-progress files. New cleanup also checks the Linux owner's lifetime.
+        with tempfile.TemporaryDirectory(prefix=f".populate-v2-{os.getpid()}-", dir=cache) as tmp:
+            private = Path(tmp)
+            stage_file(src, private)
+            with media_cache_lock():
+                if identity(src.stat()) != identity(before):
+                    raise RuntimeError(f"QEMU staging input changed before publication: {src}")
+                # An older launcher may have filled this entry while we copied.
+                # Never replace an existing immutable inode (runs may pin it).
+                if not entry.exists():
+                    os.replace(private / src.name, entry)
+                if not pin_if_present():
+                    raise RuntimeError(f"QEMU cache entry disappeared under lock: {entry}")
     return win_path(pinned)
 
 

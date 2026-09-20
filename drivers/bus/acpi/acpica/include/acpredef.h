@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -414,7 +414,7 @@ const ACPI_PREDEFINED_INFO          AcpiGbl_PredefinedMethods[] =
 
     {{"_CPC",   METHOD_0ARGS,
                 METHOD_RETURNS (ACPI_RTYPE_PACKAGE)}}, /* Variable-length (Ints/Bufs) */
-                    PACKAGE_INFO (ACPI_PTYPE1_VAR, ACPI_RTYPE_INTEGER | ACPI_RTYPE_BUFFER, 0,0,0,0),
+                    PACKAGE_INFO (ACPI_PTYPE1_VAR, ACPI_RTYPE_INTEGER | ACPI_RTYPE_BUFFER | ACPI_RTYPE_PACKAGE, 0,0,0,0),
 
     {{"_CR3",   METHOD_0ARGS,                          /* ACPI 6.0 */
                 METHOD_RETURNS (ACPI_RTYPE_INTEGER)}},
@@ -471,12 +471,15 @@ const ACPI_PREDEFINED_INFO          AcpiGbl_PredefinedMethods[] =
 
     {{"_DOS",   METHOD_1ARGS (ACPI_TYPE_INTEGER),
                 METHOD_NO_RETURN_VALUE}},
+    
+    { {"_DSC",   METHOD_0ARGS,
+                    METHOD_RETURNS (ACPI_RTYPE_INTEGER)}},
 
     {{"_DSD",   METHOD_0ARGS,                          /* ACPI 6.0 */
                 METHOD_RETURNS (ACPI_RTYPE_PACKAGE)}}, /* Variable-length (Pkgs) each: 1 Buf, 1 Pkg */
                     PACKAGE_INFO (ACPI_PTYPE2_UUID_PAIR, ACPI_RTYPE_BUFFER, 1, ACPI_RTYPE_PACKAGE, 1,0),
 
-    {{"_DSM",   METHOD_4ARGS (ACPI_TYPE_BUFFER, ACPI_TYPE_INTEGER, ACPI_TYPE_INTEGER, ACPI_TYPE_PACKAGE),
+    {{"_DSM",   METHOD_4ARGS (ACPI_TYPE_BUFFER, ACPI_TYPE_INTEGER, ACPI_TYPE_INTEGER, ACPI_TYPE_PACKAGE | ACPI_TYPE_ANY) | ARG_COUNT_IS_MINIMUM,
                 METHOD_RETURNS (ACPI_RTYPE_ALL)}}, /* Must return a value, but it can be of any type */
 
     {{"_DSS",   METHOD_1ARGS (ACPI_TYPE_INTEGER),
@@ -609,6 +612,9 @@ const ACPI_PREDEFINED_INFO          AcpiGbl_PredefinedMethods[] =
     {{"_HPX",   METHOD_0ARGS,
                 METHOD_RETURNS (ACPI_RTYPE_PACKAGE)}}, /* Variable-length (Pkgs) each (var Ints) */
                     PACKAGE_INFO (ACPI_PTYPE2_MIN, ACPI_RTYPE_INTEGER, 5,0,0,0),
+
+    {{"_VDM",   METHOD_0ARGS,
+                METHOD_RETURNS (ACPI_RTYPE_INTEGER)}},
 
     {{"_HRV",   METHOD_0ARGS,
                 METHOD_RETURNS (ACPI_RTYPE_INTEGER)}},

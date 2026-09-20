@@ -575,10 +575,24 @@ unsafe fn SpiStoreFont(pwszValue: PCWSTR, plogfont: *mut LOGFONTW) {
 }
 
 unsafe fn SpiMemCopy(pvDst: PVOID, pvSrc: PVOID, cbSize: ULONG, bProtect: BOOL) -> UINT_PTR {
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if bProtect != 0 {
-        core::ptr::copy_nonoverlapping(pvSrc as *const u8, pvDst as *mut u8, cbSize as usize);
+        // sysparams.c's ONE _SEH2_EXCEPT (sysparams.c ~462-470) wraps ONLY
+        // this RtlCopyMemory -- no ProbeForRead/Write at all, since pvDst/
+        // pvSrc are handed to SpiMemCopy already validated or kernel-owned by
+        // the caller (SpiGet/SpiSet pass the raw SPI buffer pointers through).
+        // The handler assigns Status and FALLS THROUGH -- no goto, no return,
+        // no cleanup -- straight into the `if (!NT_SUCCESS(Status))` below,
+        // which is what `Status` already existing in this fn's scope, and the
+        // unconditional fall-out to `NT_SUCCESS(Status) as UINT_PTR`, exist to
+        // serve. The translation kept that shape but replaced the guarded
+        // copy with a bare one, so a hostile SPI pointer bugchecked instead of
+        // returning FALSE with an error set. `safe_copy_raw` is the direct
+        // match for a bare SEH-wrapped RtlCopyMemory with no probe.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(pvDst, pvSrc, cbSize as usize) {
+            Status = st;
+        }
     } else {
         core::ptr::copy_nonoverlapping(pvSrc as *const u8, pvDst as *mut u8, cbSize as usize);
     }

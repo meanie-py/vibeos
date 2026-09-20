@@ -475,6 +475,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_orphan_modules", [py, str(som)] if som.is_file() else ["MISSING"], "stdout")
     )
+    # A cohab flip is held in place by a single `#` in a CMake source list
+    # (`#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c`). Drop it and the dead C goes live
+    # alongside its Rust twin — a partial flip, which is what froze the guest on
+    # 2026-09-19 with SMOKE GREEN ON ALL THREE ARCHES (the hang is after `shell ready`,
+    # so no boot test can see it). The upstream sync makes that reachable by accident:
+    # upstream has touched 400 CMake files, 197 of ours carry a comment-out, and the
+    # 80-file intersection can be disturbed by a CLEAN auto-merge with no conflict
+    # marker to review. This is a DIFFER, not a classifier — the pattern deliberately
+    # also matches prose mentioning a filename, because stable prose is stable in the
+    # snapshot while a false negative costs a frozen guest. Snapshot lives in
+    # tools/cohab-census.txt; re-run `--write` in the SAME commit as a deliberate flip.
+    # Baseline EMPTY = strict.
+    ccen = repo / "tools" / "cohab_census.py"
+    specs.append(("cohab_census", [py, str(ccen)] if ccen.is_file() else ["MISSING"], "stdout"))
     # Cohab stubs that bugcheck on entry AND are declared by a Rust module — i.e.
     # unimplemented and reachable, so they crash whenever their path first runs. The
     # intersection is computable from the tree, and paying a build+boot per entry to
@@ -698,6 +712,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_dropped_probes",
             [py, str(sdpr), "--lint"] if sdpr.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The COHAB-FLIP half of the dropped-handler class, which scan_dropped_probes above
+    # structurally cannot see. That one reads the commented-out C rustconv leaves inline in
+    # the same .rs, so it needs both sides in one file. A cohab flip puts them in two: the
+    # .c stays on disk, gets commented out of the CMake source list, and a separate .rs
+    # takes over under #[no_mangle]. lpc-rust was the proof -- zero inline C, zero _SEH2
+    # text, and six files in which every ProbeForRead/Write had lost its _SEH2_EXCEPT, so
+    # any unprivileged process passing a bad pointer to NtReplyPort/NtRequestPort/
+    # NtSecureConnectPort/NtAcceptConnectPort bugchecked the kernel.
+    #
+    # Gated at ZERO rather than against a baseline, because the class was driven to zero
+    # when it was found; a baseline here would be a place for the next one to hide. The
+    # lower-confidence pairs (basename-only, or C still compiled) are printed to stderr and
+    # deliberately NOT gated -- basename matching pairs fastfat/create.c with
+    # lpc-rust/create.rs, and a human has to read those.
+    sdsp = repo / "tools" / "scan_dropped_seh_pairs.py"
+    specs.append(
+        (
+            "scan_dropped_seh_pairs",
+            [py, str(sdsp), "--lint"] if sdsp.is_file() else ["MISSING"],
             "stdout",
         )
     )

@@ -1012,11 +1012,15 @@ _VENDOR_STAMP = vendored._STAMP_TEMPLATE.format(
 _VENDOR_STAMP_2 = vendored._STAMP_TEMPLATE.format(
     name="Surprise", upstream="http://example.invalid/", license="MIT"
 )
+# `license_note` is present because a tree that CLAIMS a licence must be able to point
+# at the grant (vendored.check). It is not what this control tests — it just keeps the
+# fixture a valid registry, so a failure here means the scanner, not the fixture.
 _VENDOR_TREE = """\
   - path: libs/known
     name: Known
     upstream: http://example.invalid/
     license: MIT
+    license_note: fixture tree; no grant shipped
     reason: a registered vendored tree
 """
 _VENDOR_BAD_YAML = "containers: [libs]\ntrees:\n" + _VENDOR_TREE
@@ -1027,9 +1031,66 @@ _VENDOR_GOOD_YAML = (
     name: Surprise
     upstream: http://example.invalid/
     license: MIT
+    license_note: fixture tree; no grant shipped
     reason: the library that used to arrive unnoticed
 """
 )
+
+# scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
+# (commented in the CMake source list) and a separate .rs took over under
+# #[no_mangle], so the two files are never in the same place and the inline
+# scanner above is structurally blind to it. BAD keeps the probe and loses the
+# handler; GOOD routes the same probe through the validate-first substrate. The
+# GOOD half also pins the filter that matters most: it is the presence of a
+# CATCH idiom that clears a pair, not the absence of a probe.
+_SEHPAIR_CMAKE = """
+list(APPEND SOURCE
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
+)
+"""
+_SEHPAIR_C = """
+NTSTATUS NtReplyPort(HANDLE PortHandle, PPORT_MESSAGE ReplyMessage)
+{
+    if (PreviousMode != KernelMode)
+    {
+        _SEH2_TRY
+        {
+            ProbeForRead(ReplyMessage, sizeof(*ReplyMessage), sizeof(ULONG));
+            Captured = *(volatile PORT_MESSAGE*)ReplyMessage;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    return STATUS_SUCCESS;
+}
+"""
+_SEHPAIR_BAD_RS = """
+#[no_mangle]
+pub unsafe extern "system" fn NtReplyPort(ReplyMessage: PPORT_MESSAGE) -> NTSTATUS {
+    if previous_mode != 0i8 {
+        ProbeForRead(ReplyMessage as PVOID, core::mem::size_of::<PORT_MESSAGE>(), 4);
+        let captured = *(ReplyMessage as *const PORT_MESSAGE);
+    }
+    STATUS_SUCCESS
+}
+"""
+_SEHPAIR_GOOD_RS = """
+#[no_mangle]
+pub unsafe extern "system" fn NtReplyPort(ReplyMessage: PPORT_MESSAGE) -> NTSTATUS {
+    if previous_mode != 0i8 {
+        let captured = match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+            ReplyMessage as *const PORT_MESSAGE, 4, previous_mode,
+        ) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
+    }
+    STATUS_SUCCESS
+}
+"""
 
 # scan_dropped_probes. The NtSetValueKey shape (#79): the C probes Data inside one
 # _SEH2_TRY and copies it inside a second, both regions dropped, leaving a bare
@@ -1266,6 +1327,21 @@ CONTROLS: list[Control] = [
         pass_files=True,
     ),
     Control(
+        name="scan_dropped_seh_pairs",
+        script="tools/scan_dropped_seh_pairs.py",
+        argv=["--lint"],
+        bad={
+            "ntos.cmake": _SEHPAIR_CMAKE,
+            "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
+            "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_BAD_RS,
+        },
+        good={
+            "ntos.cmake": _SEHPAIR_CMAKE,
+            "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
+            "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_GOOD_RS,
+        },
+    ),
+    Control(
         name="scan_dropped_probes",
         script="tools/scan_dropped_probes.py",
         argv=["--lint"],
@@ -1493,6 +1569,18 @@ UNCOVERED: dict[str, str] = {
     # It also self-checks for the dead-matcher failure this file exists to prevent: an
     # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
     "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
+    # Diffs the WHOLE tree against a checked-in snapshot (tools/cohab-census.txt); it
+    # takes no path argument and has no notion of a root, so the fixture-dir driver
+    # above cannot express it. The control it needs is the same one in spirit, and it
+    # lives in its own suite: remove the single `#` from ntos.cmake's
+    # `#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c` -- the exact edit a bad merge
+    # resolution makes -- and assert the scanner reports CENSUS-REMOVED and exits 1,
+    # then restores the file and asserts clean. That is the 2026-09-19 partial-flip
+    # shape, which every boot test passed while the guest was dead.
+    "cohab_census": (
+        "covered by tools/test_cohab_census.py (3 tests) -- positive control is "
+        "uncommenting a real flipped source line in ntoskrnl/ntos.cmake"
+    ),
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",

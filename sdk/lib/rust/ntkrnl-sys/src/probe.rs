@@ -222,6 +222,88 @@ pub unsafe fn probe_write_handle(
     probe_write_user::<PVOID>(ptr, core::ptr::null_mut(), previous_mode)
 }
 
+/// Faithful replacement for `ProbeForReadGenericType(Ptr, T, Default)`.
+///
+/// **The caller states the alignment the C states** — pass 1 for the typed
+/// macros (`ProbeForReadLargeInteger`, …), which check none, and the C's
+/// literal argument (usually `sizeof(ULONG)` = 4) when replacing an explicit
+/// `ProbeForRead(p, len, align)`. It is a parameter rather than `align_of::<T>()`
+/// precisely because those two differ: `align_of::<LARGE_INTEGER>()` is 8.
+///
+/// The typed C macro has no alignment check at all:
+///
+/// ```c
+/// #define ProbeForReadGenericType(Ptr, Type, Default)                        \
+///     (((ULONG_PTR)(Ptr) + sizeof(Type) - 1 < (ULONG_PTR)(Ptr) ||            \
+///      (ULONG_PTR)(Ptr) + sizeof(Type) - 1 >= (ULONG_PTR)MmUserProbeAddress) \
+///          ? ExRaiseAccessViolation(), Default                               \
+///          : *(const volatile Type *)(Ptr))
+/// ```
+///
+/// Use this, not `probe_read_user`, when replacing one of the typed macros
+/// (`ProbeForReadLargeInteger`, …). `probe_read_user` derives alignment from
+/// `align_of::<T>()`, which is 8 for `LARGE_INTEGER` and `PVOID` on 64-bit, so
+/// it REJECTS addresses upstream accepts. Tightening a probe is a behaviour
+/// change, not a hardening: it turns a working call into
+/// `STATUS_DATATYPE_MISALIGNMENT`. The LPC translation already shipped that bug
+/// once by passing `align_of::<UNICODE_STRING>()` where
+/// `ProbeForReadUnicodeString` is documented range-only.
+#[inline]
+pub unsafe fn probe_read_generic<T: Copy>(
+    ptr: *const T,
+    alignment: usize,
+    previous_mode: KPROCESSOR_MODE,
+) -> Result<T, NTSTATUS> {
+    let mut value = core::mem::MaybeUninit::<T>::uninit();
+    safe_copy_from_user(
+        value.as_mut_ptr().cast(),
+        ptr.cast(),
+        core::mem::size_of::<T>(),
+        alignment,
+        previous_mode,
+    )?;
+    Ok(value.assume_init())
+}
+
+/// Faithful replacement for `ProbeForWriteGenericType(Ptr, T)` —
+/// `ProbeForWriteHandle`, `ProbeForWritePointer`, `ProbeForWriteUlong`, …
+///
+/// Two things it gets right that `probe_write_handle` and friends above do not:
+///
+/// 1. **It PRESERVES the caller's value.** The C macro's touch-test is
+///    `*(volatile Type *)(Ptr) = *(volatile Type *)(Ptr)` — a read-modify-
+///    write-back. `probe_write_handle` writes `NULL` instead, which is
+///    `ProbeAndZeroHandle`'s contract, a DIFFERENT macro. Zeroing an OUT
+///    parameter that the C leaves intact is observable to any caller that
+///    fails later and reads its own variable back.
+/// 2. **Range check only, no alignment check** — see `probe_read_generic`.
+///
+/// The write-back is what proves the page is WRITABLE; a range check alone
+/// cannot, which is the whole reason the C macro stores rather than just
+/// comparing.
+#[inline]
+pub unsafe fn probe_write_generic<T: Copy>(
+    ptr: *mut T,
+    alignment: usize,
+    previous_mode: KPROCESSOR_MODE,
+) -> Result<(), NTSTATUS> {
+    let mut value = core::mem::MaybeUninit::<T>::uninit();
+    safe_copy_from_user(
+        value.as_mut_ptr().cast(),
+        ptr.cast(),
+        core::mem::size_of::<T>(),
+        alignment,
+        previous_mode,
+    )?;
+    safe_copy_to_user(
+        ptr.cast(),
+        value.as_ptr().cast(),
+        core::mem::size_of::<T>(),
+        alignment,
+        previous_mode,
+    )
+}
+
 /// Probe and write a BOOLEAN value to user-mode.
 /// Replaces `ProbeForWriteBoolean(ptr)`.
 #[inline]

@@ -1064,6 +1064,18 @@ is not merely a lost message, it is also **an optimiser hint that erases the evi
 expect this class when you turn one on, and read the trap as a pre-existing latent fold rather
 than as damage the change did.
 
+**DELETING code is the same trigger, from the other direction.** Reverting upstream's
+`TIF_MOVESIZETRACKING` hack out of `ENTRY_ReferenceEntryByHandle` (win32k `gdiobj.rs`) put one
+`ud2` in `win32k.sys` at `EBRUSHOBJ_bRealizeBrush` that the previous build did not have. Nothing
+about that function changed; the removal simply made `ENTRY_ReferenceEntryByHandle` small enough
+to inline, which made `GDIOBJ_ShareLockObj` transparent at its call site, and
+`engbrush.rs`'s `psurfPattern = GDIOBJ_ShareLockObj(...)` is dereferenced with no NULL check --
+*which is what the C does*, since `engbrush.c` carries only `ASSERT(psurfPattern)` and ASSERT is
+nothing in retail. So: **any edit that changes a function's INLINING COST can uncloak this row,
+including one that only removes lines.** Read the instruction before the trap
+(`call GDIOBJ_vDereferenceObject`, an ordinary function with no panic symbol = middle row), fix
+with `#[inline(never)]` on the NULL-returning callee, and do not add the null check.
+
 **Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
 null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
 divergence in a differential port; out-of-line, the caller gets an opaque pointer, emits the
@@ -5512,6 +5524,46 @@ runs other agents' builds and QEMUs).
 
 ## SEH, PSEH & exception handling
 
+### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
+
+**Symptom:** a syscall that worked starts returning `STATUS_DATATYPE_MISALIGNMENT`, or an
+OUT parameter comes back zeroed on a failure path where it used to keep its value. Both
+appear *after* a validate-first conversion that was supposed to be a pure safety fix.
+
+**Cause:** the replacement probe is stricter than the C it replaced. Two ways in.
+
+  * **Alignment invented from the type.** `probe_read_user::<T>` / `probe_write_user::<T>`
+    derive alignment from `align_of::<T>()`. The C almost never asks for that.
+    `ProbeForRead(msg, sizeof(*msg), sizeof(ULONG))` wants **4** where
+    `align_of::<PORT_MESSAGE>()` is **8**; and the TYPED macros —
+    `ProbeForWriteHandle`, `ProbeForWritePointer`, `ProbeForWriteUlong`,
+    `ProbeForReadLargeInteger`, `ProbeForReadUnicodeString` — expand to
+    `ProbeFor{Read,Write}GenericType`, which is a **range check only, with no alignment
+    check whatsoever** (`sdk/include/reactos/probe.h`). Read the macro before picking a
+    number; `probe.h:20` says outright "Alignment of the pointers is not verified".
+  * **A read probe standing in for a write probe.** Only a write touch proves the page is
+    writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
+    than just comparing. Substituting a read probe passes a read-only user page and moves
+    the fault to the later store.
+
+  And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
+  `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
+  a caller's OUT variable on every failure path is observable.
+
+**Fix:** `ntkrnl_sys::probe::probe_read_generic` / `probe_write_generic` take alignment as
+an **explicit parameter** for exactly this reason, and `probe_write_generic` does the
+read-modify-write-back the C macro does. Copy the C's literal argument per site and do not
+assume it is uniform within a file — `reply.c:796` asks for `sizeof(PVOID)` where its
+neighbours at `:211` and `:394` ask for `sizeof(ULONG)`.
+
+**Why this is worth a section.** Tightening a probe *looks* like hardening, so it survives
+review. It is a behaviour change that converts working calls into failures, and it is the
+same defect in both directions: the original LPC translation shipped it by passing
+`align_of::<UNICODE_STRING>()` where `ProbeForReadUnicodeString` is range-only, and the
+conversion that FIXED that bug then reintroduced it at five more sites. Both times the
+answer was one line of `probe.h`.
+
+
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
 under DUMMY_PSEH the `__try` evaporates and the copy is naked → several unrelated syscalls
@@ -6473,6 +6525,36 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
+
+**Symptom:** a guest/harness rung that passed for months starts failing, on one arch
+only, with a status that looks like a defect — here `selfmod32` rung 7 returning
+`STATUS_PARTIAL_COPY` with zero bytes written, where the other arch passes the
+identical rung.
+
+**Cause:** the rung was written while the code under it was broken, so it asserted
+the BROKEN behaviour. `MiDoPoolCopy` had dropped its `_SEH2_EXCEPT` in translation
+and therefore could not observe its own copy faulting; it returned
+`STATUS_SUCCESS` with a byte count for a write that never touched memory (task
+#76). Rung 7 encoded that as `st < 0` means failure. When the validate-first probe
+conversion made the faults observable, the kernel started telling the truth —
+refusing a write to a page FEX had write-protected for SMC detection — and the
+test that had been built around the lie went red.
+
+**Fix:** treat the refusal as a legitimate outcome, but do NOT accept it blindly,
+which is just the opposite error. Verify the reason: `VirtualQuery` must show the
+page is genuinely unwritable (`PAGE_EXECUTE_READ`, 0x20) before a refusal counts as
+correct. Keep the rung's real assertion — the out-cell canary — running on BOTH
+paths, since a refused write must not scribble 8 bytes into a 4-byte count cell
+either.
+
+**The tell, and it was in the same boot the whole time:** rung 6 passes and rung 6
+is `WriteProcessMemory`, which wraps its write in `NtProtectVirtualMemory`. Rung 7
+calls the syscall raw precisely to avoid that wrapper. When two adjacent rungs
+differ only by "does it ask permission first", and the one that does NOT is the one
+failing, the refusal is the system working. **Before filing a newly-red test as a
+regression, ask what changed in the thing it measures — a fix is a change too.**
+
 ### The oracle is the C, and the C is WRONG — a faithful port that ships a real defect
 
 **Symptom.** A translated body is bit-exact against its C, the difftest is green, and the
@@ -6842,6 +6924,31 @@ does not even contain the text: `"[IO] IopInitializeBootDrivers"` was **0** occu
 the fix and **2** after. Two consequences worth generalizing:
 - **Grep for `_s: &[u8]) {}` / empty-bodied trace shims before concluding "the probe never
   fired."** Absence of a trace is only evidence if the trace exists on that arch.
+- **The same trap catches diagnostics you add yourself, via `#[cfg]` DUPLICATE bodies.**
+  `message.rs` defines `NtUserGetMessage` and `NtUserPeekMessage` TWICE each, under
+  `cfg(target_arch = "x86")` and `cfg(not(...))`. A scripted insert that anchored on the
+  function body and replaced the first match landed the probe in the **i386** copy, so it was
+  never compiled into the amd64 build being debugged — and the run came back "probe never
+  fired, 61 guest faults", which reads exactly like a refuted hypothesis instead of an
+  uninstrumented binary. **After adding a probe, prove it is IN the artifact before believing
+  a negative result**: check the `#[cfg]` directly above the body you patched, or grep the
+  built image for the format string. A duplicated definition makes "first match" the wrong
+  anchor, and every arch-forked file in this tree has them.
+- **A negative from an unexercised call site is the same failure with a different cause.**
+  Hooking only `NtUserPeekMessage` would have missed an app whose pump uses `GetMessage`;
+  hook every entry point the workload could take, or confirm from serial that yours is hit.
+- **A one-shot latch SHARED across the cases you are comparing reports only whichever
+  happens first — systematically the uninteresting one.** Asking "is this GDI batch flush
+  ever taken for a WoW64 guest?" with a single `static mut REPORTED` printed
+  `flush taken: count=1 wow64=0` and then went silent forever: native processes start first
+  and always win the latch, so the run said nothing at all about guests. One latch PER arm
+  of the comparison (`SEEN_NATIVE` / `SEEN_WOW64`). Same family as the two above — the probe
+  is quiet for a reason that has nothing to do with the hypothesis — and the tell is that
+  the thing you are comparing against is also the thing that fires first.
+- **Sample on the right SIDE of the transition.** A probe at syscall ENTRY cannot see
+  corruption that happens on the return-to-user path (the trap handler's batch flush runs
+  after the service returns). Two probes reported "no divergence" across a window where the
+  value demonstrably changed, purely because entry was the wrong side of it.
 - **An arch-gated tolerate-and-continue path needs LOUDER reporting than the arch that
   bugchecks, not quieter.** Where x86 stops dead, the tolerant arch keeps running with the
   damage — and if its report is a no-op, that hatch can never signal anything, so it becomes
@@ -9888,6 +9995,17 @@ win32k is the largest single flip surface and its failures are stereotyped:
   start-menu labels, CLIENTINFO corruption, a user32 `ValidateHandle` AV). Detector:
   `scan_magic_offsets` shape `TYPED_PTR_HEX_ARITH`. **Use a typed read**
   (`(*(teb as *const _TEB)).GdiBatchCount`), never pointer arithmetic on a hex literal.
+  **It recurred in 2026-09 for WoW64 guests, through the wrong TEB instead of the wrong
+  offset — so the detector above could not see it.** A guest's gdi32 bumps
+  `TEB32->GdiBatchCount`; every arch's trap path tested TEB64's; the flush therefore never
+  ran for a guest and nothing reset `Offset`. gdi32 calls `NtGdiFlush()` when it believes
+  the buffer is full and then writes at `Buffer + Offset` **without re-checking**
+  (`gdi32p.h:498-515`), so `Offset` climbed past the 0x4D8 buffer end and hit 0x508 from
+  the buffer base — `CLIENTINFO.pDeskInfo` exactly. Identical downstream symptoms to the
+  original, which is the tell. **Generalise: "which TEB" is as much a layout question as
+  "which offset", and a WoW64 guest writes the one the kernel does not read by default.**
+  Any kernel path that reads a TEB field a 32-bit guest also writes needs the same
+  treatment; `wow64_teb32()` (amd64) and `KiWow64GdiBatchCount()` (arm64) are the shape.
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**
@@ -10180,6 +10298,25 @@ touching the loader** — the El Torito entry folds in `uefildr`.
 **Before declaring any smoke red, check whether the host was busy** (`./vibeos-cli ps`,
 `./vibeos-cli host-status`). A lone red while another arch is mid-gate is a prime contention
 suspect; re-run host-quiet to decide.
+
+**And check it with a CONTROL, not with the load average.** Measured 2026-09-19 on a
+24-thread 7950X3D: the arm64 WoW64 ladder drained in **87.1s** and again in **87.5s**
+host-quiet, and **timed out at 420s twice** while the conductor gated a three-arch
+batch — same tree, same commit, no code change between them. Load average alone did
+NOT justify that: ~24 on 24 logical cores is 1.0/core, which sounds fine and is not,
+because TCG is CPU-bound and single-threaded per VM, SMT siblings share a physical
+core, and a parallel clang/sccache storm evicts the cache a 3D V-Cache part depends
+on. **The number that decides it is `vibeos-cli ps` showing someone else's
+`queue-batch` boots, not `/proc/loadavg`.**
+
+The diagnostic that separates "slow" from "broken" costs one command: count the work,
+not the wall clock. A guest that is merely starved does the SAME work more slowly —
+`thread32` started exactly **5** threads in both the 87s pass and the 420s timeout,
+and the timeout simply stopped partway through an identical line sequence. A guest
+that is actually broken does DIFFERENT work: more iterations, a new error, a
+different stopping point. Two greps settle which, and skipping them cost this lane
+two wrong diagnoses in a row — first "contention" asserted with no control, then a
+"master regressed it" theory that the thread count refuted immediately.
 
 ### New builds pass an older CPU-lease waiter
 

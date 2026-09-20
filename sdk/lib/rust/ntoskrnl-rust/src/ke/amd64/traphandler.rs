@@ -60,6 +60,25 @@ enum KWAIT_REASON {
     _KWAIT_REASON_WrDispatchInt = 31,
 }
 
+
+/// TEB32 of the current thread when this is a WoW64 process, else None.
+///
+/// The 32-bit TEB sits at TEB64 + 0x2000 in the combined WoW64 TEB region;
+/// the allocator that lays the region out is `ntoskrnl-rust`'s
+/// `ARM3/procsup.rs` (`WOW64_TEB32_OFFSET`) and win32k's projection
+/// (`win32k-rust/src/wow64.rs`) uses the same constant.
+#[inline]
+pub(crate) unsafe fn wow64_teb32(
+    teb: *const ntkrnl_sys::ddk::_TEB,
+) -> Option<*const ntkrnl_sys::ddk::_TEB32> {
+    const WOW64_TEB32_OFFSET: usize = 0x2000;
+    let p = ntkrnl_sys::ps::PsGetCurrentProcess();
+    if p.is_null() || (*(p as *const ntkrnl_sys::ddk::_EPROCESS)).Wow64Process.is_null() {
+        return None;
+    }
+    Some((teb as *const u8).add(WOW64_TEB32_OFFSET) as *const ntkrnl_sys::ddk::_TEB32) // nolint: magic-offset (WoW64 combined-region layout, TEB32 at TEB64+0x2000 by design — same annotation as ARM3/procsup.rs:732, which allocates the region)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KiDpcInterruptHandler() {
     let Prcb = KeGetCurrentPrcb();
@@ -207,12 +226,32 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         // fired and the gdi32 TEB batch overflowed GdiTebBatch.Buffer
         // (0x300..0x7d8) into the GDI TEB fields and CLIENTINFO at 0x800+
         // (field manual §9.41: explorer's Ctrl+Esc death + blank menu labels).
+        //
+        // A WoW64 guest's gdi32 batches into its OWN TEB -- the TEB32 -- and
+        // increments TEB32->GdiBatchCount (win32ss/gdi/gdi32/include/gdi32p.h).
+        // Reading TEB64's counter here therefore NEVER sees a guest's batch, so
+        // the flush never ran for one, so neither Offset nor GdiBatchCount was
+        // ever reset. gdi32 calls NtGdiFlush() when it thinks the buffer is
+        // full and then writes at Buffer+Offset WITHOUT re-checking, trusting
+        // the kernel to have zeroed Offset -- so Offset climbed without bound
+        // and walked straight out of GdiTebBatch.Buffer into the TEB32 fields
+        // above it. MEASURED: Offset reached 0x508 from the buffer base, which
+        // is exactly CLIENTINFO.pDeskInfo, and user32's ValidateHandleNoErr
+        // then dereferenced a batch record byte as a pointer.
+        //
+        // This is field manual §9.41 ("the GDI TEB batch was never flushed")
+        // a second time: same bug, same symptoms, reached through the wrong
+        // TEB rather than the wrong offset -- which is why scan_magic_offsets,
+        // the detector added for §9.41, cannot see it.
+        //
         let GdiBatchCount: ULONG = {
             let teb = NtCurrentTeb() as *const ntkrnl_sys::ddk::_TEB;
-            if !teb.is_null() {
-                (*teb).GdiBatchCount
-            } else {
+            if teb.is_null() {
                 0
+            } else if let Some(teb32) = crate::ke::amd64::traphandler::wow64_teb32(teb) {
+                (*teb32).GdiBatchCount
+            } else {
+                (*teb).GdiBatchCount
             }
         };
 

@@ -21,7 +21,6 @@ enum E_MODULE
     userenv,
     syssetup,
     mmsys,
-    explorer_old,
 };
 
 enum E_STRING
@@ -38,7 +37,6 @@ enum E_STRING
     SYSS_PROGRAMFILES,
     SYSS_COMMONFILES,
     MMSY_STARTMENU,
-    EOLD_PROGRAMS,
 };
 
 typedef struct PART_TEST
@@ -89,7 +87,6 @@ static void InitParts(void)
         { SYSS_PROGRAMFILES, { syssetup, 3600 /* IDS_PROGRAMFILES "%SystemDrive%\Program Files" */, 2 } },
         { SYSS_COMMONFILES, { syssetup, 3601 /* IDS_COMMONFILES "Common Files" */, 1 } },
         { MMSY_STARTMENU, { mmsys, 5851 /* IDS_STARTMENU "Start Menu" */, 1 } },
-        { EOLD_PROGRAMS, { explorer_old, 10 /* IDS_PROGRAMS "Programs" */, 1 } },
     };
     for (auto& pair : s_pairs)
     {
@@ -112,7 +109,6 @@ static PART_MATCH PartMatches[] =
     { { SH32_PROGRAMS, 1 }, { SH32_ADMINTOOLS, 1 } },
     { { SH32_PROGRAMS, 1 }, { UENV_PROGRAMS, 1 } },
     { { SH32_PROGRAMS, 1 }, { UENV_STARTUP, 1 } },
-    { { SH32_PROGRAMS, 1 }, { EOLD_PROGRAMS, 0 } },
     // StartUp
     { { SH32_STARTUP, 2 }, { UENV_STARTUP, 2 } },
     // Program Files
@@ -314,7 +310,6 @@ static void TEST_LocaleTests(void)
         ADD_LIB(userenv, L"dll\\win32\\userenv\\userenv.dll");
         ADD_LIB(syssetup, L"dll\\win32\\syssetup\\syssetup.dll");
         ADD_LIB(mmsys, L"dll\\cpl\\mmsys\\mmsys.cpl");
-        ADD_LIB(explorer_old, L"modules\\rosapps\\applications\\explorer-old\\explorer_old.exe");
     }
     else
     {
@@ -322,7 +317,6 @@ static void TEST_LocaleTests(void)
         ADD_LIB(userenv, L"userenv.dll");
         ADD_LIB(syssetup, L"syssetup.dll");
         ADD_LIB(mmsys, L"mmsys.cpl");
-        ADD_LIB(explorer_old, L"explorer_old.exe");
     }
 #undef ADD_LIB
 

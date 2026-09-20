@@ -488,6 +488,173 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`ExPools` on arm64 intermittently drops one assertion under load, and it can eat a
+  whole merge-queue submission. UNOWNED** (2026-09-20). Signature:
+  `ExPools: pass 14 -> 13 (dropped)`, the extra failure being `assert ExPools.c:181` —
+  the check that a `ExAllocatePoolWithQuotaTag(PagedPool|...)` allocation comes back
+  `PagedPool` rather than promoted to `NonPagedPoolMustSucceed`. The test's own comment
+  says "Vista+ promotes the memory allocation", i.e. **the assertion is memory-pressure
+  sensitive by construction**, and the conductor runs three arches building and booting
+  at once. Frequency across saved artifacts: **8 runs at pass=13 vs 101 at pass=14** (~7%).
+  It is NOT new and NOT caused by whatever lane it rejects — the same signature appears in
+  four earlier batches (2026-09-19 11:57, 12:06, 19:20 and 2026-09-20 00:29) that all
+  **landed green**, having been retried away.
+  **THE HEURISTIC IN THE ENTRY ABOVE HAS A FAILURE MODE, and this is it.** That entry says
+  a failure whose signature is IDENTICAL across attempts is by definition not a flake.
+  Here all three retries produced byte-identical `pass=13 fail=5`, which reads as
+  deterministic — but the load condition *persisted across the whole batch*, so the retries
+  never sampled a different environment. Retry-vs-retry cannot discriminate a
+  load-sensitive assertion. **The discriminators that do work** are cheap and were what
+  settled it: re-run the identical merged tree somewhere quiet (gave pass=14, ratchet
+  holds), and grep the artifact history for the same signature
+  (`grep -rl '^ExPools OK pass=13' /tmp/vibeos-cli/*/kmtest-results.txt`) to see whether it
+  predates the change. Do both before either resubmitting *or* believing a lane is at
+  fault.
+  RESOLVED 2026-09-20 — and it was never pool promotion. The test reads the pool header
+  through its own `POOL_HEADER` in `kmtests/include/kmt_test_kernel.h`, which gated the
+  64-bit layout on `_M_AMD64` while ntoskrnl's own copy (`mm/ARM3/miarm.h`) gates on
+  `_WIN64`. **On ARM64 the kernel wrote the 64-bit header and the test read the 32-bit
+  one** — wrong field widths, wrong offsets, wrong union member — so
+  `KmtGetPoolTag`/`KmtGetPoolType` returned garbage that moved with heap layout (`PoolType`
+  was 2 on a quiet box and 0x54 under load; neither is a valid POOL_TYPE). Fixed by gating
+  on `_WIN64` to match the kernel. ExPools went **14/4 -> 17/1** on arm64, now identical to
+  the amd64 baseline, and IoDeviceObject 180/9 -> 184/5 and ExCallback 12/1 -> 13/0 came
+  with it — those three are exactly the kmtests that call the pool helpers. Baseline
+  hand-edited for those three rows only; a `--write-baseline` reseed was tried first and
+  REVERTED because it deletes this file's provenance comments and banks unrelated bistable
+  rows from one sweep, which the baseline's own header warns about.
+
+- **Two more load-sensitive tests that impersonate lane failures. UNOWNED** (2026-09-20).
+  Same class as the entry above, logged so the next person does not re-diagnose them.
+  `tests/qemu/cli/test_cli_units.py::test_hostlock_announce_pair_on_queued_acquire` drives a
+  real `threading.Timer(0.8, ...)` release mid-wait and asserts WAIT+ACQUIRED both print; run
+  inside a gate that is itself saturating the host, the announce never happens and it fails.
+  Seen in 3 gate runs (2026-09-19 11:22, 2026-09-20 01:23 and 12:32), i.e. it predates any
+  one lane. `tests/qemu/cli/test_recordreplay.py::test_trace_position_finds_the_process_reading_the_trace`
+  is the other: ~4 minutes of process scanning, fine standalone, times out under parallel
+  load. **Both pass standalone**, which is the cheap discriminator — run the single test
+  before believing a lane broke it.
+
+- **win32k: 32 dropped `_SEH2_EXCEPT` handlers across 11 files, in `NtUser*` syscall
+  paths — FIXED 2026-09-20** (`d89e8bd99ee`, `c5877c15d97`, `b6c0dde1ca3`).
+  All 32 restored with `SafeProbeForRead`/`SafeProbeForWrite` + `safe_copy_raw`
+  rather than the `MmUserProbeAddress`-dependent helpers (a plain `extern static`
+  for that DATA export is unsatisfiable from a separate driver, and arm64 LINK_FAILs
+  on it). The scanner that found them now reports **0 files, 0 handlers**:
+
+        python3 tools/scan_dropped_seh_pairs.py --deleted win32k-rust:win32ss/user/ntuser
+
+  Two caveats kept deliberately. `UserGetClassName` is NOT a literal restoration:
+  it writes into the caller's buffer from inside opaque RTL calls, and real SEH
+  catches a fault raised inside a *callee* while `safe_copy_raw` only protects a
+  copy we perform — there is no protected-CALL primitive, so it queries into a
+  kernel temp and copies out. And the restored `NtUserEnumDisplaySettings` body is
+  **unvalidated**: the boot never calls it (`grep -ci EnumDisplaySettings serial.log`
+  → 0), so green means "nothing regressed", not "this works".
+  Still open, registered here rather than silently dropped: the `lpDevMode`
+  zero-length probe in `NtUserEnumDisplaySettings`, and 14 lower-confidence
+  scanner pairs the tool prints as "confirm by hand".
+
+  Original survey kept below, because the two findings in it generalise: Same class as the LPC bug closed today and
+  larger. Reproduce with:
+
+        python3 tools/scan_dropped_seh_pairs.py --deleted win32k-rust:win32ss/user/ntuser
+
+  | file | handlers in the deleted C |
+  |---|---|
+  | `class.rs` | 10 |
+  | `display.rs` | 6 |
+  | `ime.rs`, `kbdlayout.rs` | 3 each |
+  | `cursoricon.rs`, `menu.rs`, `message.rs` | 2 each |
+  | `accelerator.rs`, `console.rs`, `desktop.rs`, `sysparams.rs` | 1 each |
+
+  **Why no scanner found this before.** The ordinary pairing needs the C on disk.
+  These flips DELETED `win32ss/user/ntuser/*.c` (commit `8d3c33ee41e`), so basename
+  matching silently fell through to `win32ss/user/user32/...` — a different
+  component — and reported nothing about the kernel side. The oracle was never
+  gone, only out of the working tree: `git log --diff-filter=D` finds the deletion
+  and `git show <sha>^:<path>` prints the C back. That recovery is now the
+  scanner's `--deleted` mode, opt-in because it shells out to git per file.
+
+  **`class.rs` is the worst and is a DIFFERENT defect, not just a missing handler.**
+  It defines its own local `probe_read_generic<T>(ptr, default) -> T` that
+  range-checks and, on failure, **returns `default`** — where the C macro RAISES.
+  So an out-of-range user pointer yields a zeroed `UNICODE_STRING` that the caller
+  consumes as real data: a silent wrong answer rather than an error. And when the
+  range check passes it does a bare `read_volatile`, which still faults on an
+  in-range-but-unmapped page. Both halves are wrong, in opposite directions.
+
+  That local helper also **defeats name-based detection**: it collides exactly with
+  `ntkrnl_sys::probe::probe_read_generic`, which has different semantics, so any
+  scan keyed on the bare name scores the file as protected. It hid the highest-count
+  file in the tree from this very survey until the collision was noticed. Match
+  QUALIFIED paths only.
+
+  *Was, when surveyed:* "32 sites across the kernel's user-facing surface is not
+  unsupervised overnight work." It was done overnight after all, by four
+  concurrent agents writing one file each with the owner's explicit go-ahead,
+  batched and gated centrally. The LPC pass was the worked template —
+  `LpcpMoveMessageChecked` / `LpcpVerifyMessageDataInfoChecked` show the
+  checked-variant-alongside-original shape, and the handler taxonomy (returns /
+  goto-cleanup / falls-through / swallows) is in the field manual.
+- **The vendor registry did not see Rust crates — 58 of them, including the TCP/IP
+  stack. DONE** (found and fixed 2026-09-20, the finding prompted by the owner asking
+  whether smoltcp was on the vendor list; it was not). `vendor.yaml` models vendored **C trees**, and its
+  question — "is this C ours to translate?" — is meaningless for a crate, because crates
+  are the translation DESTINATION. But the registry's other job, provenance and
+  licensing for what we ship, applies to `smoltcp` exactly as much as to zlib, and that
+  job quietly went unscoped. `THIRD-PARTY-NOTICES.md` is a shipped legal artifact with
+  58 crates' worth of nothing in it.
+  **`--suspects` cannot find this either**: it walks directories for foreign copyright
+  headers, and crates.io dependencies live in `~/.cargo/registry`, outside the repo. So
+  both halves of the registry are blind to the same category, which is why nothing
+  surfaced it.
+  Shipped and unrecorded, from `cargo metadata`: **smoltcp 0.13.1 (0BSD)** behind
+  `netstack.sys`, **virtio-drivers 0.13.0 (MIT)**, **iced-x86 1.21.0 (MIT)**,
+  **zlib-rs + libz-rs-sys 0.6.3 (Zlib)**, `managed` (0BSD), plus heapless / defmt /
+  zerocopy / safe-mmio and the rest. All 58 are permissive — 33 `MIT OR Apache-2.0`, 11
+  `MIT`, 3 `Unlicense OR MIT`, 3 `MIT/Apache-2.0`, 2 `Zlib`, 2 `0BSD`, 2 `BSD-2-Clause
+  OR Apache-2.0 OR MIT`, 1 `Apache-2.0 OR MIT`, 1 `(MIT OR Apache-2.0) AND Unicode-3.0`
+  — so this is a recording gap, not a licence problem.
+  FIXED: `tools/rust-crates.yaml`, generated by `tools/vendored.py --write-crates` and
+  gated by `check` against `sdk/lib/rust/Cargo.lock` — against the lockfile and not
+  live `cargo metadata`, so `check` still needs no cargo and no registry cache.
+  18 of the 58 ship; the notices file gained a Rust crates table.
+  **The shipped/host split is best-effort and the file says so**, because cargo's graph
+  cannot settle it here: `netstack-cargo` does not depend on `netstack-rust` in cargo
+  terms at all — it pulls only panic-common and the link helper, and CMake links the
+  real crate in afterwards, so walking edges from the 34 crates `add_cargo_module`
+  builds reaches ZERO external crates. Only the negative is provable (proc-macros and
+  crates reachable solely from harnesses or build helpers), so `ships` is false only
+  when certain and true otherwise — over-listing costs a line, under-listing is the
+  failure that matters.
+  ALSO SURFACED BY THIS: we now ship **two zlibs** — the vendored C one (1.3.2) and
+  `zlib-rs` 0.6.3 via `libz-rs-sys`. Possibly deliberate, never recorded.
+- **Mbed TLS is five years past end-of-life, and three other vendored trees are stale.
+  UNOWNED** (2026-09-20). `tools/vendored.py --emit` prints the full BEHIND UPSTREAM
+  section; read that, not this line, because it is generated from `vendor.yaml` and this
+  is not. The headline: **ours is 2.16.11, and the 2.16 LTS branch stopped receiving
+  upstream security fixes at the end of 2021** — in the library behind `bcrypt` and
+  `schannel`. Sized so it is not a vague someday: two consumers, 77 distinct `mbedtls_*`
+  symbols, and a 2.x -> 3.x migration (the `*_ret` hash suffixes are gone, fields moved
+  behind `MBEDTLS_PRIVATE`, several `ssl_conf` entry points changed shape). ~~**The trap:
+  schannel LAZY-LOADS mbedtls, so a missed rename fails at RUNTIME, not at link time**~~
+  — DISPROVEN 2026-09-20. That lazy-load header is inside `#ifndef __REACTOS__`; our
+  CMakeLists does `add_importlibs(schannel mbedtls ...)` and `objdump -x` on the built
+  DLL shows `mbedtls.dll` in the import table, so every symbol break is a LINK error.
+  The real cost driver is different: the glue includes `mbedtls/md_internal.h` and
+  `mbedtls/ssl_internal.h` and reads ten struct fields that 3.x puts behind
+  `MBEDTLS_PRIVATE`. **"There is no TLS test in this tree" WAS true and is now fixed**
+  — `sdk/lib/rust/schannel-tls-difftest` drives a real TLS 1.2 handshake through the
+  genuine backend and runs in the `vibeos-cli difftest` gate.
+  Also open: **libtirpc 0.1.11 -> 1.3.8** (largest version gap in the registry) and
+  **FreeType 2.10.0 -> 2.14.3**. FreeType is NOT exposed to the famous one
+  (CVE-2020-15999, the sbix embedded-PNG overflow exploited in the wild) — checked in the
+  tree, not inferred: `FT_CONFIG_OPTION_USE_PNG` is undefined, so `pngshim.c` compiles to
+  `typedef int _pngshim_dummy;`. The remaining CVEs are in the sfnt/cff/type1 parsers we
+  DO build, so it is wanted but not urgent. libtiff (4.1.0 -> 4.7.0), libpng
+  (1.6.39 -> 1.6.58) and the zlib audit are DONE.
+
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
   more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
 
@@ -592,8 +759,31 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   in smoke, or whether conformance's `launched` count is the intended guard and simply needs
   to be a louder verdict than "0 tests ran, in baseline (OK)".
 
-- **Dropped `_SEH2_EXCEPT` is NOT confined to MM — `NtReplyPort` bugchecks on a bad
-  user pointer. UNOWNED, VERIFIED** (2026-09-19). Found by generalising the research
+- **Dropped `_SEH2_EXCEPT` in LPC — FIXED 2026-09-20 across all six files; a partial
+  second pass remains.** Every `ProbeFor*` + capture site in `lpc-rust` whose C handler
+  was plainly `return _SEH2_GetExceptionCode()` now goes through the validate-first
+  substrate: `port.rs`, `reply.rs` (R1/R3/R4/R5/R8), `create.rs`, `complete.rs`,
+  `connect.rs`, `send.rs`. Both arches boot 11/11 on the WoW64 ladder, which is a real
+  test of this code rather than an adjacent one — every CSR call in the system goes
+  through `NtRequestWaitReplyPort` and `NtSecureConnectPort`.
+
+  **`tools/scan_dropped_seh_pairs.py` now gates the class at ZERO**, with a control in
+  `test_scanner_controls.py`. It is the cohab-flip half that `scan_dropped_probes`
+  structurally cannot see: that one reads the commented-out C rustconv leaves inline in
+  the same `.rs`, and a cohab flip puts the two sides in different files. It caught its
+  author's own omission — `connect.rs` was audited and then never converted, and the
+  scanner is what noticed.
+
+  **STILL OWED (second pass): the sites whose C handler does CLEANUP or falls through.**
+  `reply.rs` R2/R6/R7/R9, `create.rs` C5, `connect.rs` #8/#9/#10, `complete.rs`'s copy and
+  write-back, `send.rs` :522/:843/:1000. These are not mechanical: `reply.c:644`'s handler
+  assigns `Status` and falls through to a pool-free and an `LpcpLock` release, so a naive
+  `return Err` leaks the message AND leaves the lock held. Also owed:
+  `LpcpVerifyMessageDataInfo` walks past the probed region and is documented in-place as
+  unprotected, with a note on why blanket-probing `TotalLength` is the wrong fix.
+
+  *Original filing, kept because it is why the entry existed:* **UNOWNED, VERIFIED**
+  (2026-09-19). Found by generalising the research
   lane's `MiDoPoolCopy` discovery (below) into a tree sweep. `ntoskrnl/lpc/*.c` is
   commented out in `ntos.cmake:211-217`, `lpc-rust` is linked into `kernel-rust`, so the
   Rust IS the shipping LPC. Side-by-side at the same site:
@@ -905,29 +1095,311 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   because the machine was gone. `sqlite32` is now LAST among the optional guests
   (`winlogon.rs`); keep it there while this bug is open.
 
-- **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
-  (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
-  run, so it is NOT on the probe-guest ladder and does not fail it.
-  **CORRECTION (same night): do not read this as amd64-only.** `sqlite32.exe` took the same
-  signature once on arm64 -- `eip=00000000` with `rw=8` (instruction fetch), crashing before
-  its first print -- and did NOT reproduce on an immediate re-run, where it printed normally
-  and got all the way into file I/O. So the arch split is unestablished and the arm64
-  instance is a single non-reproducing sample; the reason arm64 does not show the *stock-app*
-  cascade is simply that it never launches notepad/mspaint/wordpad. `notepad.exe`,
-  `mspaint.exe` and `wordpad.exe` (each logged as `STOCK i386 app`) take **58 faults apiece**;
-  every other image in the same boot takes 0 or 1, and `fault32.exe`'s single fault at
-  `eip=00401012` is the deliberate one its own test raises. So this is specific to the stock
-  GUI apps, not general WoW64 breakage — the CSR/LPC ladder is green in the same boot and
-  `[WOW64CB] WINDOWPROC` callbacks dispatch into the guest and return correctly.
-  The shape: one fault executing from a STACK address (`eip=001ff49b`, `addr=2c850157`),
-  then 57 at `eip=00000000` with `rw=8` (instruction fetch, not a data deref) and every GPR
-  zeroed, each dispatched to 32-bit SEH at a deeper `esp` (`001fec98`, `001fe878`, ...) — a
-  re-faulting cascade that consumes stack rather than a single bad call. An indirect call
-  through a NULL or unrelocated function pointer is the obvious candidate (an unfilled import
-  thunk or callback-table slot), but WHICH pointer is unmeasured: nothing here identifies the
-  call site, and the cascade destroys the registers that would name it. Next step is a
-  tripwire or a GDB break on the first fault, not more log reading — by the second fault the
-  evidence is gone.
+- **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — ROOT-CAUSED
+  AND FIXED 2026-09-20.** It was the GDI TEB batch, never flushed for a guest, overrunning
+  `GdiTebBatch.Buffer` into `CLIENTINFO.pDeskInfo`. **This is field manual §9.41 a second
+  time** — same bug, and two of that entry's four recorded symptoms are literally
+  "CLIENTINFO corruption" and "a user32 `ValidateHandle` AV" — reached through the wrong
+  **TEB** instead of the wrong **offset**, which is why `scan_magic_offsets`, the detector
+  added for §9.41, cannot see it.
+
+  Every link measured rather than argued:
+
+  1. A guest's gdi32 bumps `TEB32->GdiBatchCount` (`win32ss/gdi/gdi32/include/gdi32p.h:517`).
+  2. Every arch's trap path tested **TEB64**'s, so the flush never fired for a guest.
+     Measured with per-case latches across a full boot: only ever `wow64=0`.
+  3. So nothing reset the batch. Measured: count ran past `GDI_BatchLimit` (20) to 0x2d and
+     `Offset` climbed monotonically to 0x628.
+  4. Over the limit, gdi32 calls `NtGdiFlush()` on EVERY append and then writes at
+     `Buffer + Offset` **without re-checking** (`gdi32p.h:498-515`), trusting the kernel to
+     have zeroed `Offset` — true for a native process, never for a guest.
+  5. `Buffer` spans TEB32+0x1DC..0x6B4 (`GDIBATCHBUFSIZE` 0x4D8); `Win32ClientInfo` is
+     0x6CC and `pDeskInfo` 0x6E4, i.e. **0x508 from the buffer base**. Measured: `Offset`
+     passed 0x4D8 and hit exactly 0x508.
+  6. `user32!ValidateHandleNoErr` reads it by absolute displacement
+     (`mov %fs:0x18,%eax; mov 0x6e4(%eax),%edx`), null-checks it, PASSES (a batch record
+     byte is not NULL), dereferences, AVs.
+
+  **Fix:** read the TEB the guest actually writes — `wow64_teb32()` in
+  `ntoskrnl-rust/src/ke/amd64/traphandler.rs`, and `KiWow64GdiBatchCount()` in
+  `ntoskrnl/ke/arm64/trap.c` shared with `ke/arm64/usercall.c` so the syscall and
+  user-callback return paths cannot disagree — plus `Wow64ResetGuestGdiBatch()` from
+  `NtGdiFlushUserBatch`.
+
+  **Verified:** notepad faulted 58 times in every one of six boots; with the fix it is
+  **0** and reports `still running = PASS`. Whole-boot guest faults 177+ -> 2, both
+  survivors being `fault32`/`thread32`'s own deliberate test faults. Zero faults remain
+  anywhere in user32's range.
+
+  **Owed, logged loudly rather than silently:** the batched commands are RESET, not
+  executed. Executing them needs the 32-bit record layouts, which differ only by four
+  HANDLE widths (`GDIBSPATBLT.hbrush`, `GDIBSTEXTOUT.hlfntNew`, `GDIBSOBJECT.hgdiobj`,
+  `PATRECT.hBrush` in `GDIBSPPATBLT`; the other three record types are already identical).
+  Costs no drawing that was not already dropped, since the flush never ran for a guest at
+  all. A `[GDIBATCH] ... cmds DISCARDED` line fires once per guest.
+
+  **Why `--ladder` could not see any of this for a week**, which is the reusable part:
+  `ladder.watch()` stops draining once every GRADED guest reports, and the stock applets
+  run after the parity set and are not graded. So the flag whose job is watching the ladder
+  ended at 86.8s with the applet phase unobserved. Fixed with
+  `VIBEOS_LADDER_DRAIN_FLOOR=<seconds>` (`tests/qemu/cli/ladder.py`), which only ever
+  extends the drain; set it above `LADDER_TIMEOUT_SECONDS` (420) or it does nothing.
+
+- **The stock-applet ladder exists ONLY on amd64, which biases every WoW64 finding toward
+  "amd64-only" — OPEN** (2026-09-20). `wow64cpu/CMakeLists.txt` stages notepad, mspaint,
+  charmap, taskmgr, winver, regedit and the rest onto the amd64 **livecd**; arm64 stages via
+  `qemu/mkramdisk.sh`, whose syswow64 set is the purpose-built probe guests plus
+  testgui/doom/lua/sqlite and **no stock applets at all** (measured: a FEX-staged arm64
+  ladder boot logs `STOCK i386 app` zero times). So the entire applet robustness surface is
+  unobservable on arm64.
+
+  **Why this matters beyond coverage:** this registry has now mis-filed WoW64 findings as
+  amd64-specific three times, and the x64-primary plan flags the same habit in itself. Part
+  of that is not bias in the reader — it is *structural*: the only place that runs stock
+  32-bit GUI apps is amd64, so any bug in that class can only ever be seen there, and
+  "observed on amd64, not on arm64" is guaranteed regardless of whether the bug is
+  arch-specific. The GDI-batch fix above is the live example: its arm64 half is written and
+  compiles, and arm64 CANNOT confirm or deny it — a FEX-staged arm64 boot never reaches the
+  batch-full path, so `Wow64ResetGuestGdiBatch` logged nothing. Not a green and not a red.
+  Staging even two or three applets into the arm64 ramdisk would turn the largest remaining
+  WoW64 blind spot into a measurable one.
+
+  **The arm64 run itself: `ladder: 11/11 guests PASS` (+2 non-parity), boot PASS, 0
+  bugchecks — so the fix's arm64 half causes no regression, which is the strongest claim
+  the media supports.**
+
+  *(Noticed while trying to validate the GDI-batch fix on arm64 rather than assuming
+  parity.)* Observed in the same boot and NOT investigated: **`testgui.exe EXITED =
+  0xc0000005`** while the ladder reported 11/11, with 61 guest faults in the boot. testgui
+  is a STOCK unmodified i386 GUI binary and arm64 already stages it — so it is a better
+  arm64 hook for the applet class than adding notepad would be, and the
+  "green ladder next to an unhealthy stock-app surface" shape is exactly what started the
+  amd64 investigation.
+
+- **`WOW64_TEB32_OFFSET` is hand-rolled in FOUR places — OPEN cleanup** (2026-09-20).
+  `ntoskrnl-rust/src/ARM3/procsup.rs:675` (the allocator that defines the layout),
+  `ke/amd64/thrdini.rs:235`, `ke/amd64/traphandler.rs` (added by the GDI-batch fix) and
+  `win32k-rust/src/wow64.rs`. Each is `const WOW64_TEB32_OFFSET: usize = 0x2000` plus its
+  own `(p as *const u8).add(..)`, and each needs its own `// nolint: magic-offset`
+  annotation to get past `scan_magic_offsets` — which is the smell: the scanner is being
+  told four times that the same thing is fine. It wants ONE typed accessor in `ntkrnl-sys`
+  (reachable from both crates) so the layout has a single definition and a single
+  annotation. Noticed because the strict deferred lint rejected the fourth copy at
+  land preflight; the annotation is the convention the other three already use, so this is
+  consistency, not a new exception.
+
+- **A guest fault is AMPLIFIED into process death by a NULL SEH handler — FIXED
+  2026-09-20** (`617e235048a`). charmap went 55 guest faults -> 1; whole-boot guest faults
+  115 -> 5 (two of which are fault32/thread32's deliberate ones).
+  `RtlDispatchException` validated the registration RECORD's stack bounds and alignment but
+  never the handler — there was an explicit `RtlIsValidHandler`/SafeSEH TODO at that exact
+  line — so a null handler was CALLED, faulted at address 0, re-entered the dispatcher,
+  which re-walked the same chain and called it again one frame deeper.
+  `rtl-except/src/i386/except.rs` now rejects a handler in the low 64K or inside
+  `[StackLow, StackHigh]` (a handler pointing into the thread's own stack is never code —
+  that was the cascade's first frame, executing at `001ff49b`). Full SafeSEH still needs
+  the image's handler table and remains the TODO.
+
+  **The exit code is what shows it is a fix rather than a suppression:** charmap went from
+  `EXITED = 0x80` — csrss terminating after the cascade reached second chance, which
+  laundered the real cause — to `EXITED = 0xc0000005`, the actual AV propagating cleanly.
+  Measured chains, healthy vs broken, are in the commit. Lands in the i386 ntdll, so it
+  protects native i386 too.
+  *(Superseded text below.)*
+  (2026-09-20). Separate from the entry above and now the more important of the two: it
+  turns ANY single guest fault into ~55 and a dead process.
+  `ntdll32!RtlpExecuteHandler2`'s `mov 0x18(%ebp),%ecx; call *%ecx` runs with `ecx == 0`,
+  once per nesting level at descending `esp`, with `edx` pinned at
+  `ntdll32!RtlpExceptionProtector` (ntdll32+0x32d0) throughout — which is how the frames
+  are identified. Fixing the CLIENTINFO corruption removed one TRIGGER and left the
+  amplifier: `charmap.exe` still shows the same 55-fault cascade from a different first
+  fault. Start from the guest-SEH frame the WoW64 layer builds
+  (`Wow64pBuildGuestExceptionFrame`) and the handler chain handed to the guest dispatcher.
+  The `EXITED = 0x80` verdict on a stock applet is this: csrss terminating the process
+  after an exception reached second chance.
+
+- **The initial WoW64 guest stack was a hardcoded 64K instead of the image's
+  SizeOfStackReserve — FIXED 2026-09-20.** `dll/win32/wow64/wow64.c` allocated
+  `Wow64pAllocBelow2G(0x10000, ...)` for the guest run stack while every stock applet
+  declares `SizeOfStackReserve = 0x100000`. Any guest with frames deeper than 64K walked
+  off the bottom of its own stack, and the compiler's stack-probe helper found it first:
+  charmap died at `__alloca+0x12` — `test %ecx,(%ecx)`, the page probe — reading `001efd84`
+  with the stack mapped `001f0000..00200000`, one page BELOW the allocation.
+
+  **It also explains the "corrupt SEH chain" filed separately: same bug, other end.**
+  `Wow64pThreadInit` publishes those bounds as TEB32 `NtTib.StackBase/StackLimit`, and i386
+  `RtlDispatchException` validates `fs:[0]` registration records against them — so once
+  `esp` left the region the chain was out of bounds and read as zeros. The all-zero record
+  0x44 below `esp` was a symptom, not a second defect.
+
+  Now reads `SizeOfStackReserve` from the guest's own `IMAGE_NT_HEADERS32` (floor 64K, cap
+  16MB, rounded to 64K). Verified: `stack=001f0000..002f0000` (1MB) and **charmap goes
+  55 faults -> 1 -> 0 and PASSES**. Whole boot: 13 PASS / 1 EXITED, 4 guest faults (two
+  deliberate), 0 bugchecks.
+
+  **Known simplification:** `Wow64pAllocBelow2G` is `MEM_RESERVE|MEM_COMMIT`, so this
+  commits the whole reserve where Windows reserves it and commits one page plus a
+  `PAGE_GUARD` that grows on demand. ~1MB per guest, no guard-page growth path needed, and
+  it cannot fault where the real thing would have grown. On-demand growth is the
+  refinement, not the fix.
+
+- **A WoW64 guest's thread stacks CANNOT GROW — the guard-page fault reaches the guest and
+  kills it. ROOT-CAUSED, NOT FIXED** (2026-09-20). This is the "a random applet dies each
+  boot" behaviour, and it was never several app bugs.
+
+  Every applet death is `EXITED = 0x80`, and the fault before it is **`80000001` =
+  STATUS_GUARD_PAGE_VIOLATION**, not an access violation:
+
+        guest fault 80000001 eip=7e017b4c -> 32-bit SEH dispatch (esp=01d8ec38)
+
+  A guard-page hit is how a thread stack GROWS: the kernel should commit the next page,
+  move the guard down and resume, so the guest never sees it. Instead it is dispatched into
+  guest SEH, nothing handles it, it reaches second chance, and csrss terminates the process.
+  MEASURED: exactly **3 guard-page faults per ladder boot**, 1-2 dead applets, and a
+  DIFFERENT victim each boot (eventvwr / taskmgr / wordpad) — whichever thread happened to
+  need more stack. That rotation is why it looked like unrelated app bugs; the uniform 0x80
+  was the tell that they all die the same way.
+
+  Same class as the GDI batch bugs above, a THIRD time:
+  `MiCheckForUserStackOverflow` (`ntoskrnl-rust/src/ARM3/pagfault.rs`) reads `Tcb.Teb` — the
+  **64-bit** TEB — and tests the faulting address against its
+  `NtTib.StackBase`/`DeallocationStack`, i.e. the HOST stack. A guest address is never in
+  that range, so the test rejects it and returns `STATUS_GUARD_PAGE_VIOLATION`.
+
+  **A direct fix was tried and REVERTED; why it failed IS the remaining blocker.** Pointing
+  the bounds test at TEB32 gave **0 PASS / 16 EXITED** — every applet, including winmine
+  which had never failed — against a 12-13 PASS baseline. Cause: **nothing ever populates
+  TEB32's `DeallocationStack`.** `Wow64pThreadInit` (`dll/win32/wow64/wow64.c`) writes only
+  `NtTib.StackBase` (+0x04) and `NtTib.StackLimit` (+0x08); `grep -c DeallocationStack` over
+  wow64.c and wow64_manual.c is **0**. The test degenerated to `Address < 0`, the lower
+  bound vanished, and `(NextStackAddress - PAGE_SIZE) <= DeallocationStack(0)` never
+  tripped — so the handler committed a fresh guard page below ANY guest guard-page fault,
+  walking down the address space with no floor. Stashed as `research: BROKEN
+  MiCheckForUserStackOverflow TEB32 attempt 2026-09-20`.
+
+  **So this needs a complete TEB32 stack descriptor, not a kernel one-liner.**
+  `Wow64pThreadInit` must publish `DeallocationStack`, and the guest stack wants a real
+  reserve plus guard page rather than the fully-committed block the initial stack now gets,
+  BEFORE the kernel can trust those bounds. Sequence it in that order.
+
+- **`taskmgr.exe` EXITED = 0xc0000005 on one boot — OPEN, likely a flake or a distinct
+  bug** (2026-09-20). Seen on the stack-fix boot while charmap (the applet that fix
+  targeted) passed; the PREVIOUS boot was the exact reverse — taskmgr PASS, charmap dead.
+  The applet population has been race-dependent throughout this investigation, so this is
+  **not** filed as a regression from the stack change, but it is also not yet shown to be
+  unrelated. Needs a repeat boot before anyone theorises.
+
+- **`charmap.exe` faults in its OWN code under WoW64 — FIXED 2026-09-20** by the guest
+  stack sizing above; it was never charmap's bug. Original text kept because the
+  misattribution is instructive: the fault WAS in charmap's own image, which made it look
+  app-specific, but the faulting function was the compiler-inserted `__alloca` probe and
+  the real defect was the stack it was probing. (2026-09-20). Previously
+  masked by the CLIENTINFO cascade, visible now that it is fixed. First fault is
+  `eip=0040335a` — charmap's own image at base 0x400000, NOT user32 — reading `001efd84`
+  while `esp=001fea38`, i.e. ~0xCB4 BELOW the stack pointer: a stack-guard shape rather
+  than a bad pointer. **Now the LAST failing applet** (8 PASS / 1 EXITED) and, since the
+  amplifier fix, it reports its real cause: `EXITED = 0xc0000005` instead of `0x80`, and
+  takes 1 fault instead of 55. Its SEH chain is genuinely corrupt at that point —
+  `fs:[0]` points 0x44 bytes below its own `esp` at an all-zero record — so "why is
+  charmap's registration chain abandoned" is the question, and the stack-guard read
+  suggests looking at stack depth first.
+
+- **`NtGdiFlushUserBatch` reads and writes the 64-bit TEB for a 32-bit guest — FIXED
+  2026-09-20**, as part of the GDI-batch root cause above; it was not latent after all, it
+  was the bug. Kept because the reasoning below is how it was found, including the wrong
+  turn.
+  (2026-09-20). `win32k-rust/src/gdibatch.rs:625` does
+  `let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB` — the **64-bit** TEB — then reads
+  `GdiBatchCount`, `GdiTebBatch.HDC` and `GdiTebBatch.Buffer` from it and walks the batch
+  records. A WoW64 guest's gdi32 batches into **TEB32** (`GdiTebBatch` at 0x1D4, 32-bit
+  layout), which is a different structure at a different address, so for a guest this reads
+  one TEB and the writer used the other.
+
+  **It is REACHABLE, and it is the leading suspect for the `pDeskInfo` corruption above.**
+  Being commented out of `win32ss/win32u/win32u.spec:158` only removes the user-mode syscall
+  export; `win32k-rust/src/main.rs:890` registers the same function as the `BatchFlushRoutine`
+  callout, and every arch's trap path calls it through `KeGdiFlushUserBatch` — amd64 at
+  `ntoskrnl-rust/src/ke/amd64/traphandler.rs:210`, i386 at `ke/i386/traphdlr.c:1854`, arm64 at
+  `ke/arm64/trap.c:200`. None of that logs.
+
+  The two halves that make this a WoW64 bug are both checked in the tree: the guest's gdi32
+  does `pTeb->GdiBatchCount++` on ITS TEB (`win32ss/gdi/gdi32/include/gdi32p.h:517`), i.e.
+  TEB32, and the kernel tests `TEB64->GdiBatchCount` before flushing. So **a 32-bit guest's
+  GDI batch can never be flushed**, and "the GDI TEB batch was never flushed" is the exact
+  title of field manual **§9.41**, whose four recorded symptoms include *CLIENTINFO
+  corruption* and *a user32 `ValidateHandle` AV* — which is the entry above, precisely. The
+  adjacency that made §9.41 corrupt CLIENTINFO exists on TEB32 too: `GdiTebBatch.Buffer` runs
+  0x1D4..0x6B4 and `Win32ClientInfo` starts at 0x6CC.
+
+  **Not proven, and the missing step is named:** each append gdi32 makes is bounded by
+  `Offset + cjSize <= GDIBATCHBUFSIZE`, so an unflushed batch should stop batching rather
+  than overflow. Either some path skips that check, or the corruption arrives another way.
+  §9.41 was a wrong OFFSET (0x74 vs 0x1740) and is gated by `scan_magic_offsets`; this would
+  be the same class through a wrong TEB, which that scanner cannot see.
+
+- **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — OPEN**
+  (2026-09-20). Found by the drain floor above: with the applet phase actually observed, a
+  `--ladder` boot does not merely storm with first-chance faults, it **dies**.
+
+        [WOW64>] NtGdiGetCharABCWidthsW(0x109f) enter arg0=4d010381 arg1=00000013 arg2=00000001
+        *** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff88004ea0204, ...)
+        ***   P2 = win32k.sys+0x79204
+
+  The syscall logs `enter` and never returns. `win32k.sys+0x79204` symbolicates to
+  **`NtGdiGetCharABCWidthsW+0x1a4`**, which is the store in an inlined exclusive-unlock
+  sequence:
+
+        cmpw $0x0,0xc(%r12)
+        movl $0x0,0x8(%r12)      ; <-- faults (write)
+        lock xadd $-1,0x10(%r12)
+
+  **REPRODUCED 2/2, and the second sample names the pointer.** The other boot died in the
+  same function at `win32k.sys+0x79254` = `NtGdiGetCharABCWidthsW+0x1f4`:
+
+        test %r15,%r15 / je      ; FontGDI null-checked, and it passes
+        mov  0x50(%r15),%rax     ; rax = FontGDI->SharedFace   -- loads fine
+        mov  (%rax),%r12         ; <-- faults: SharedFace->Face
+
+  which is the source line `face = (*(*FontGDI).SharedFace).Face;`. So **`SharedFace` is
+  invalid** — `FontGDI` itself is null-checked and survives, and nothing checks `SharedFace`
+  (upstream does not either). That also explains the FIRST sample rather than competing with
+  it: at `+0x1a4` the faulting store is an inlined exclusive unlock through `r12`, and `r12`
+  is exactly what this instruction loads. One boot faults loading the bad `Face`, the other
+  gets a garbage `Face` and dies later unlocking through it. Same root.
+
+  *(Supersedes a lead recorded here earlier the same day. From sample 1 alone I argued the
+  page must be readable-but-not-writable — the `cmpw` at `0xc(%r12)` completes and the
+  `movl` at `0x8(%r12)` faults — and reasoned toward a user-side-view/delta mix-up. The
+  read/write asymmetry is still a correct reading of sample 1, but a garbage `Face` explains
+  both samples and needs no read-only mapping, so the delta theory is dropped. Note the
+  BUGCHECK's P3/P4 cannot settle read-vs-write directly: P3 is a kernel address, not the
+  0/1/8 an AV's ExceptionInformation[0] would carry.)*
+
+  **The class is 24 more derefs, and the file is already inconsistent about it.** Surveyed
+  by walking `freetype.rs` for `(*(*FontGDI).SharedFace)` / `(*SharedFace)` uses with no
+  `SharedFace.is_null()` within the preceding 25 lines:
+
+        guarded = 2   unguarded = 24
+
+  One of the two guarded sites (`IntGetOutlineTextMetrics`, ~line 1013) predates this work,
+  which is the point: somebody already knew `SharedFace` can be NULL and guarded exactly one
+  place. The other 24 are the same latent BUGCHECK, reachable from guest GDI calls
+  (`NtGdiGetGlyphIndicesW`, `NtGdiGetTextMetricsW`, the ExtTextOut paths, ...). Only the
+  measured one is fixed — each needs its own unlock/free cleanup path, so this is a real
+  batch of work rather than a sed. Worth a scanner before hand-editing 24 sites.
+
+  **Do not record this as WoW64-specific either.** It was observed twice from 32-bit guests
+  and not natively — but no native app in these boots calls `GetCharABCWidths` at all, so
+  that is an absence of a trigger, not evidence of an arch split. `RealizeFontInit()`
+  returning a TEXTOBJ whose FONTGDI has no realized `SharedFace` is the thing to check
+  first, and it is not obviously a 32-bit question. Preceded by a long, healthy run of guest GDI text calls
+  (`NtGdiGetOutlineTextMetricsInternalW`, `NtGdiGetGlyphIndicesW`) that all return correctly,
+  so this is one syscall's unlock path, not general GDI breakage. Reproduce with
+  `VIBEOS_LADDER_DRAIN_FLOOR=700 ./vibeos-cli smoke --arch amd64 --ladder`; it lands in the
+  last applet launched (wordpad, PID 852 in that run), which is consistent with wordpad being
+  the text-metrics-heaviest guest. **Not yet root-caused**, and the arch split is untested —
+  do not record it as amd64-only, which is the mistake this registry has already made three
+  times on WoW64 findings.
 
 - **Nothing caps `/tmp/vibeos-cli` retention — OPEN tooling gap** (2026-09-06). A long soak
   writes one artifact dir per round with a ~7MB `serial.log` in it, forever; `pytest`'s

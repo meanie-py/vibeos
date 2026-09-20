@@ -162,6 +162,15 @@ typedef struct _BCRYPT_PKCS1_PADDING_INFO
 #define BCRYPT_KEY_DATA_BLOB_MAGIC    0x4d42444b
 #define BCRYPT_KEY_DATA_BLOB_VERSION1 1
 
+/* The Windows SDK's own success test for the BCrypt NTSTATUS returns. We were
+ * missing it: our bcrypt.h declared every function that returns NTSTATUS and no way
+ * to test one, so real-world code that calls BCryptGenRandom the way Microsoft
+ * documents it did not compile (caught by libxml2 2.15, whose dict.c seeds its hash
+ * RNG this way on Windows). Same definition as the SDK's. */
+#ifndef BCRYPT_SUCCESS
+#define BCRYPT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
+
 typedef PVOID BCRYPT_ALG_HANDLE;
 typedef PVOID BCRYPT_KEY_HANDLE;
 typedef PVOID BCRYPT_HANDLE;

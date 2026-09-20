@@ -2454,6 +2454,63 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   - **`sdk/include/psdk` → ours**, and not a target either way: 5 of its ~700 headers are
     verbatim SDK headers, and the directory contains no C bodies at all.
 
+## Orphan audit, 2026-09-20 — 18 items sorted, ZERO rescuable
+
+The `research` lane's half of the fleet orphan sweep, re-derived from evidence
+rather than inherited. Complements the `ORPHAN-BY-DESIGN` inventory; where the
+two disagree this one carries the re-derivation.
+
+**The headline is that nothing was abandoned-but-valuable.** Of 18 items — 4
+orphan modules, 6 candidate orphan crates, 8 inherited "upstream-dead" — not one
+came back RESCUABLE. The bank is cleaner than the survey feared.
+
+| item | verdict | basis |
+|---|---|---|
+| `classpnp/class_gap3.rs`, `class_gap4.rs` | SUPERSEDED — **trashed** | all 11 exports live in `class_part_d.rs` |
+| `ntoskrnl/global_barrier.rs` | not a translation — **trashed** | `gen_global_barrier.py` output; technique `nm`-verified dead, root cause toolchain-fixed on LLVM ≥ 21 |
+| `explorer/appbar.rs` | SUPERSEDED — **trashed** | ~16 of 29 exports have an `ab_*` counterpart in `traywnd.rs`; the other 13 do not, so trashed on cost not certainty (see below) |
+| `rtlk-rust/path.rs` | SUPERSEDED — **trashed** | all 31 exports live in `rtl-strings/src/cabi/mod.rs`; overturns its "upstream-dead" prior |
+| `afd/event.rs`, `bootvid/vga.rs`, `bootvid/bootdata.rs`, `dhcpcsvc/tree.rs`, `freeldr/directui.rs`, `win32k/bitblt_new.rs`, `win32k/drvdbg.rs` | DEAD-UPSTREAM — keep | confirmed against the C, not the banner |
+| 6 candidate crates | **5 SHIP**, `slist-loom` is scaffolding | see `tools/survey_unlinked_crates.py` |
+
+**Three findings worth more than the sort itself.**
+
+1. **`bootvid/vga.rs` and `bitblt_new.rs` must NEVER be wired.** They export the
+   same symbols as the live `bootvid.rs` / `bitblt.rs`+`copybits.rs`. These are
+   mutually-exclusive platform backends (INT10h BIOS vs GOP framebuffer;
+   `USE_DIBLIB` on vs off) implementing one spec surface. Wiring one is a
+   duplicate-symbol LINK FAILURE, not a feature — unwired is the only legal
+   state, and "orphan" undersells it.
+2. **`dhcpcsvc/dhcp/tree.rs` is genuinely unrecoverable**, and it is the only
+   one. It references `struct tree`, `struct dns_host_entry` and
+   `do_host_lookup`, none of which exist anywhere in the tree — an unfinished
+   ISC import that cannot compile even standalone. Reviving it is a new
+   translation, not a rescue.
+3. **A banner was factually WRONG, and banners are this audit's whole evidence
+   base.** `win32k-rust/lib.rs` claimed enabling `drvdbg` requires "defining
+   `DbgLookupDHPDEV`"; it is defined at `pdevobj.rs:182` and `drvdbg.rs` calls
+   it nine times. The C only forward-declares it (`drvdbg.c:14`) and defines it
+   nowhere, so that Rust body has **no C original** and is unverified against
+   any oracle. Corrected in place. **An orphan with a wrong banner is worse than
+   one with none**, because it is sorted confidently and wrongly — which is the
+   argument for making a banner mandatory when a module is unwired.
+
+**The last two were trashed on a COST argument, not a certainty one, and the
+argument was checked.** Neither was SUPERSEDED-certain — `appbar.rs` had 13 of
+29 exports with no named counterpart, and `rtlk/path.rs` overturned a prior
+classification rather than confirming it. What makes being wrong survivable is
+that both C originals are still on disk (`base/shell/explorer/appbar.cpp`, 612
+lines; `sdk/lib/rtl/path.c`, 3,052), so rustconv can retranslate either for
+roughly a dollar. **Retranslatable output is cheap to be wrong about; output
+whose C is gone is not** — which is exactly why `dhcpcsvc/tree.rs` stays,
+despite also shipping nothing: its types exist nowhere, so there is no redo.
+Verify the source still exists before reusing this reasoning.
+
+Trashed files are moved to `tools/rustconv/.responses/trash/`, which is
+GITIGNORED and therefore a local convenience only. **Git history is the
+preservation mechanism**: `git log --diff-filter=D -- <path>` finds the removal
+and `git show <commit>^:<path>` prints the content back.
+
 ## Open items / flagged regressions
 
 - ✅ **arm64 kernel stack-size bump — FIXED/re-landed** (`7e9d4644e53`, 12KB→48KB;
@@ -2465,6 +2522,62 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   basesrv-population race, the win32k `DialogBoxParamW` race, and the amd64 start-menu
   render residue. (The old `triage.py` flake catalog was largely retired as its entries
   were root-caused — see the field manual.)
+
+## Paid Rust that does not ship — the ORPHAN-BY-DESIGN inventory
+
+Surveyed fleet-wide 2026-09-19 by the shell32 lane. **17 modules across 9 crates hold
+translated Rust that no build compiles.** Recorded here because an inventory that lives only
+in a chat log is the thing this file exists to prevent; nothing below is a task list.
+
+**Sixteen of the seventeen are dead on purpose.** Only `shell32/utils.rs` is unfinished work.
+The distinction is not visible from "is it wired?" — it is written in each file's banner, and
+the banner has to be read.
+
+| category | modules | what it means |
+|---|---|---|
+| **Genuinely blocked (0)** | ~~`shell32-rust/src/shell32/utils.rs`~~ — **COHAB-FLIPPED 2026-09-20** (`fb07f381d99a`), `launched=91 ok=91` on all three arches | It was the only one of the seventeen that was unfinished work, and it is done. Kept in the table because the *reason* it was stuck is the reusable part: 58 live C++ symbols would have been captured, and 16 `*_RustBridge` wrappers plus the `CStubWindow32` pair had to be rehomed first. See the shell32 entry above. |
+| **Superseded / gap artifacts (8)** | `recyclebin-rust`: `recyclebin_generic{,_enumerator}.rs`, `recyclebin_v5{,_enumerator}.rs` · `classpnp-rust`: `class_gap3.rs`, `class_gap4.rs` · `explorer-rust`: `appbar.rs` · `ntoskrnl-rust`: `global_barrier.rs` (**generated**, see below) | Dead weight, superseded by class-atomic modules, rustconv file-split gaps whose exports are all defined live elsewhere, or retired code. **Deletion candidates — owner's call, since they are paid artifacts; the bodies replay from `.responses/` for $0.** |
+| **Translations of upstream-dead source (8)** | `afd-rust` `event.rs` · `bootvid-rust` `vga.rs`, `bootdata.rs` (legacy INT10h) · `dhcpcsvc-rust` `dhcp/tree.rs` · `freeldr-rust` `directui.rs` (`#if 0` upstream) · `win32k-rust` `bitblt_new.rs` (`USE_DIBLIB FALSE`), `drvdbg.rs` (in no CMake list) · `rtlk-rust` `path.rs` | Correctly orphan and kept deliberately under the never-delete rule. Nothing owed. |
+
+**An orphan ROTS, in every category, because nothing compiles it.** `recyclebin-rust` carried a
+`Cargo.toml` note reading "PARKED at 25 errors/arch (from 256)"; when the lane picked it up it
+was at **204**. Drift with no diagnostic, because a crate outside `workspace.members` is never
+built. CDefView reached **799** the same way before it was flipped. The fix is membership, not
+vigilance: `recyclebin-rust` is now at 0 on i686/amd64/arm64 and has joined the workspace
+(`1fc79782b4f4`), which puts it in every lane's `cargo check`. **Nothing links it, so no boot
+can regress** — that asymmetry is what makes joining-on-green safe and is the general rule for
+a parked crate.
+
+**`global_barrier.rs` is not a translation** — `tools/gen_global_barrier.py` generates it. The
+never-delete-paid-artifact rule does not attach to it the way it does to the other seven, and
+it is trivially regenerable; it is `nm`-verified dead-stripped and its root cause is fixed in
+the toolchain on LLVM ≥ 21. Worth stating because "orphan `.rs` in a crate" looks identical on
+disk whether it cost money or not, and the deletion rule turns on which.
+
+**AN ORPHAN ALSO ROTS BECAUSE THINGS DELIBERATELY DO NOT LOOK AT IT.** Four source checks —
+`scan_extern_arity`, `scan_cc_mismatch`, `scan_silent_failures` and `verify_lost_exports` —
+skip a file on sight of the `ORPHAN-BY-DESIGN:` token. That is correct while the file is
+orphan and wrong the instant it is wired, so **the banner must come off in the SAME commit
+that wires the module**, or four scanners go quiet on live code (4,949 lines of it, in the
+`utils.rs` case). `scan_doc_sections` catches the stale banner, but only once the file is
+reachable. So the rot has two independent sources: nothing compiles it, and several things
+refuse to read it.
+
+**The crate-level version of this question is closed, and smaller than it looked.** A
+reachability closure over both workspaces (315 packages) found **zero phantom members**,
+exactly **one** genuinely parked crate — `recyclebin-rust`, already rejoined — and **zero**
+member-but-unlinked crates. An earlier pass reported 13, then 6, then 1: each cut came from
+modelling a build mechanism the tool had missed, first difftest's directory-suffix discovery
+and then `reactos-link`'s `build.rs` linker-flag path, which links a crate with no Cargo
+dependency edge and no CMake string. The general lesson is worth more than the number: **a
+build mechanism the tool does not model reads as absence of a build**, so "unreached" is a
+claim about the tool's coverage at least as much as about the crate. `slist-loom` is the one
+remaining unlinked member and is deliberate — a Loom concurrency model run as
+`cargo test -p slist-loom`.
+
+One question is parked for the owner, and it is now the only one: whether the eight
+superseded/gap files should be deleted. The join-on-green survey that used to sit beside it is
+answered — the surface was one crate, and it is closed.
 
 ## Scale
 

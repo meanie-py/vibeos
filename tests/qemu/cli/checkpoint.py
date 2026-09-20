@@ -361,6 +361,12 @@ class RestoredVM(QemuVM):
         path = be.win_path(self.debugcon_path) if windows else str(self.debugcon_path)
         return ["-debugcon", f"file:{path}"]
 
+    def _prepare_launch(self) -> None:
+        windows = self._backend == "windows-host"
+        staging = self._prepare_staging() if windows else self.work_dir
+        self._prepared_guest_args = self._guest_args(staging, windows)
+        self._prepared_debugcon_args = self._debugcon_args(staging, windows)
+
     def _build_native_cmd(self) -> list[str]:
         self.serial.listen(str(self.serial_path))
         self._set_live_tee()
@@ -376,18 +382,11 @@ class RestoredVM(QemuVM):
             "-monitor",
             "none",
             *self._gdb_args(win_stack=False),
-            *self._debugcon_args(self.work_dir, False),
-            *self._guest_args(self.work_dir, False),
+            *self._prepared_debugcon_args,
+            *self._prepared_guest_args,
         ]
 
     def _build_windows_cmd(self) -> list[str]:
-        from ..windows_staging import auto_cleanup_locked
-
-        root = Path(self._win["staging_dir"])
-        auto_cleanup_locked(root)
-        staging = root / f"{os.getpid()}-{self.work_dir.parent.name}-{self.work_dir.name}"
-        self._win_staging = staging
-        staging.mkdir(parents=True, exist_ok=True)
         ser = self.serial.listen_tcp("0.0.0.0", 0)
         qmp = self.qmp.listen_tcp("0.0.0.0", 0)
         self._set_live_tee()
@@ -409,8 +408,8 @@ class RestoredVM(QemuVM):
             "-monitor",
             "none",
             *self._gdb_args(win_stack=True),
-            *self._debugcon_args(staging, True),
-            *self._guest_args(staging, True),
+            *self._prepared_debugcon_args,
+            *self._prepared_guest_args,
         ]
 
 

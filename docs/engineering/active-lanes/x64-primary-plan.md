@@ -684,10 +684,17 @@ child open until the parent has collected rung 7.
    assumed to be this lane's; `mkramdisk.sh` and `build-fex.sh` are the fex
    lane's files and that lane is auditing them right now.
 
-   What is known, so it can be decided without re-deriving it: FEX source is **vendored
-   in-tree** (`external/fex`, 58M), so this is not a fetch, licensing or availability problem —
-   it is a per-worktree *build* cost. Exactly **one** worktree carries a `build-fex-arm64`
-   today. The recurring cost once staged is the ~85s ladder drain per arm64 gate, already
+   **Both unmeasured numbers are now measured (2026-09-19), and they settle it:
+   `tools/fex/build-fex.sh` takes 68 seconds and `build-fex-arm64` occupies 25M.**
+   This paragraph asked for them rather than guessing, and the guess would have been
+   high — the staging debate was conducted against a cost that turns out to be one
+   minute and a rounding error of disk, per worktree, once.
+
+   What was already known: FEX source is **vendored in-tree** (`external/fex`, 58M),
+   so this is not a fetch, licensing or availability problem — it is a per-worktree
+   *build* cost. **Correction:** this said "exactly one worktree carries a
+   `build-fex-arm64` today", meaning the fex lane's. Measured across the fleet
+   2026-09-19: `vibeos-research` is the only one, and `vibeos-fex` has none. The recurring cost once staged is the ~85s ladder drain per arm64 gate, already
    measured. **Unmeasured, and deliberately not guessed here:** how long `tools/fex/build-fex.sh`
    takes and how much disk `build-fex-arm64` occupies — the only tree that has one belongs to
    another lane, and reading a sibling's generated artifacts is exactly what the fleet-isolation

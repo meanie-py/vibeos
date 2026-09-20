@@ -420,3 +420,4 @@ xsltFindTemplate(xsltTransformContextPtr ctxt, const xmlChar *name,
     }
     return(NULL);
 }
+
