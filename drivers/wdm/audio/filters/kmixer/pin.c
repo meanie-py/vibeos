@@ -736,3 +736,20 @@ void free(PVOID Block)
 {
     ExFreePool(Block);
 }
+
+/* libsamplerate 0.2.x calls malloc() from the src_*_copy() paths that back
+ * src_clone(). We do not call src_clone(), but the converter vtables name the
+ * copy functions, so the symbol has to resolve. */
+void * malloc(size_t Size)
+{
+    return ExAllocatePool(NonPagedPool, Size);
+}
+
+/* And 0.2.x sprinkles assert() through the sinc/linear/zoh hot paths -- several of
+ * them are the bounds checks added alongside the src_sinc.c out-of-bounds read fix.
+ * Route them at the kernel assert rather than compiling them out with NDEBUG: a
+ * violated bound here is a ring-0 buffer overrun, so a loud stop beats the access. */
+void __cdecl _assert(const char *Message, const char *File, unsigned Line)
+{
+    RtlAssert((PVOID)Message, (PVOID)File, Line, NULL);
+}

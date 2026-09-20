@@ -15,7 +15,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libjpeg](#libjpeg) — 9d — IJG
 - [libmpg123](#libmpg123) — 1.26.2 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
-- [libsamplerate](#libsamplerate) — 0.1.9 — BSD-2-Clause
+- [libsamplerate](#libsamplerate) — 0.2.2 — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.12.8 — MIT
@@ -1991,10 +1991,9 @@ be appreciated.
 ## libsamplerate
 
 - Upstream: https://libsndfile.github.io/libsamplerate/
-- Version: 0.1.9
+- Version: 0.2.2
 - In this tree: `sdk/lib/3rdparty/libsamplerate`
 - Licence: BSD-2-Clause
-- Modified by us: yes, see `vendor-patches/libsamplerate.patch`
 - Grant reproduced from: `sdk/lib/3rdparty/libsamplerate/COPYING`
 
 ```
@@ -2644,6 +2643,7 @@ This is the largest unresolved provenance question in the tree (~78K lines) and 
 - Also contains: LGPL-2.0-or-later — include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998 Brian Paul, under the GNU Library General Public License v2 or later. One file, a symbol-mangling header, but a copyleft licence sitting inside a permissive drop is exactly the shape this registry exists to make visible.
 
 - Also contains: SGI-B-1.1 — The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
+- Modified by us: yes, see `vendor-patches/glu32.patch`
 - Grant reproduced from: `dll/opengl/glu32/include/GL/glu.h (header comment)`
 
 ```
@@ -2775,6 +2775,7 @@ for WC_NO_BEST_FIT_CHARS */
 - Version: 1.17.7600
 - In this tree: `sdk/lib/drivers/wdf`, `sdk/include/wdf`
 - Licence: MIT
+- Modified by us: yes, see `vendor-patches/wdf.patch`
 - Grant reproduced from: `sdk/lib/drivers/wdf/LICENSE`
 
 ```
