@@ -13,7 +13,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
 - [FreeType](#freetype) — 2.10.0 — GPL-2.0-only
 - [libjpeg](#libjpeg) — 9d — IJG
-- [libmpg123](#libmpg123) — 45 — LGPL-2.1
+- [libmpg123](#libmpg123) — 1.26.2 — LGPL-2.1
 - [libpng](#libpng) — 1.6.39 — libpng-2.0
 - [libsamplerate](#libsamplerate) — unknown — BSD-2-Clause
 - [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
@@ -1328,7 +1328,7 @@ Please send bug reports, offers of help, etc. to jpeg-info@jpegclub.org.
 ## libmpg123
 
 - Upstream: https://www.mpg123.de/
-- Version: 45
+- Version: 1.26.2
 - In this tree: `sdk/lib/3rdparty/libmpg123`, `sdk/include/reactos/libs/libmpg123`
 - Licence: LGPL-2.1
 - Grant reproduced from: `COPYING.LIB`

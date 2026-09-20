@@ -178,6 +178,16 @@ class Tree:
         #: not a defect, and a gate that went red would only teach people to delete the
         #: field.
         self.unwelcome: str | None = raw.get("unwelcome")
+        #: How far behind upstream this drop is, as of a DATED audit. Distinct from
+        #: `version`, which is probed live from the tree and so is always current about
+        #: OURS while saying nothing about theirs. The gap is the security-relevant
+        #: number and nothing computed it: the libtiff entry carried "stock 4.1.0 with
+        #: no backported fixes" as prose for a day before anyone acted on it, and three
+        #: other trees turned out to be further behind than that. Deliberately not
+        #: checked against the network by any gate — a lint that needs the internet is
+        #: a lint that fails on a train — so it is a dated human finding, and the date
+        #: is what tells you whether to re-run the audit.
+        self.staleness: str | None = raw.get("staleness")
 
     @property
     def prefixes(self) -> list[str]:
@@ -635,7 +645,8 @@ def check(reg: Registry) -> list[str]:
 #: mid-line it was absorbed into the previous value.
 _FIELD_NAMES = (
     "path|paths|name|upstream|license|license_file|license_ref|license_extra|"
-    "modified|headers|version|reason|review|unwelcome|origin|tier|license_note"
+    "modified|headers|version|reason|review|unwelcome|origin|tier|license_note|"
+    "staleness"
 )
 _JOINED_FIELD = re.compile(rf"\S[ \t]{{2,}}((?:{_FIELD_NAMES}):)")
 
@@ -857,6 +868,15 @@ def emit(reg: Registry) -> int:
     unknown = [t.name for t in reg.trees if not t.version]
     if unknown:
         print(f"\n  no version probe ({len(unknown)}): {', '.join(unknown)}")
+    stale = [t for t in reg.trees if t.staleness]
+    if stale:
+        print(f"\n{len(stale)} tree(s) recorded as BEHIND UPSTREAM (dated audit, not live):")
+        for t in stale:
+            version, err = reg.resolve_version(t)
+            print(f"    {t.name} — ours {version if not err else '?'}")
+            for line in t.staleness.strip().splitlines():
+                print(f"        {line.strip()}")
+
     flagged = [t for t in reg.trees if t.review]
     if flagged:
         print(f"\n  NEEDS REVIEW ({len(flagged)}) — classification not settled:")
