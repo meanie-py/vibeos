@@ -1105,6 +1105,37 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `VIBEOS_LADDER_DRAIN_FLOOR=<seconds>` (`tests/qemu/cli/ladder.py`), which only ever
   extends the drain; set it above `LADDER_TIMEOUT_SECONDS` (420) or it does nothing.
 
+- **The stock-applet ladder exists ONLY on amd64, which biases every WoW64 finding toward
+  "amd64-only" — OPEN** (2026-09-20). `wow64cpu/CMakeLists.txt` stages notepad, mspaint,
+  charmap, taskmgr, winver, regedit and the rest onto the amd64 **livecd**; arm64 stages via
+  `qemu/mkramdisk.sh`, whose syswow64 set is the purpose-built probe guests plus
+  testgui/doom/lua/sqlite and **no stock applets at all** (measured: a FEX-staged arm64
+  ladder boot logs `STOCK i386 app` zero times). So the entire applet robustness surface is
+  unobservable on arm64.
+
+  **Why this matters beyond coverage:** this registry has now mis-filed WoW64 findings as
+  amd64-specific three times, and the x64-primary plan flags the same habit in itself. Part
+  of that is not bias in the reader — it is *structural*: the only place that runs stock
+  32-bit GUI apps is amd64, so any bug in that class can only ever be seen there, and
+  "observed on amd64, not on arm64" is guaranteed regardless of whether the bug is
+  arch-specific. The GDI-batch fix above is the live example: its arm64 half is written and
+  compiles, and arm64 CANNOT confirm or deny it — a FEX-staged arm64 boot never reaches the
+  batch-full path, so `Wow64ResetGuestGdiBatch` logged nothing. Not a green and not a red.
+  Staging even two or three applets into the arm64 ramdisk would turn the largest remaining
+  WoW64 blind spot into a measurable one.
+
+  **The arm64 run itself: `ladder: 11/11 guests PASS` (+2 non-parity), boot PASS, 0
+  bugchecks — so the fix's arm64 half causes no regression, which is the strongest claim
+  the media supports.**
+
+  *(Noticed while trying to validate the GDI-batch fix on arm64 rather than assuming
+  parity.)* Observed in the same boot and NOT investigated: **`testgui.exe EXITED =
+  0xc0000005`** while the ladder reported 11/11, with 61 guest faults in the boot. testgui
+  is a STOCK unmodified i386 GUI binary and arm64 already stages it — so it is a better
+  arm64 hook for the applet class than adding notepad would be, and the
+  "green ladder next to an unhealthy stock-app surface" shape is exactly what started the
+  amd64 investigation.
+
 - **`WOW64_TEB32_OFFSET` is hand-rolled in FOUR places — OPEN cleanup** (2026-09-20).
   `ntoskrnl-rust/src/ARM3/procsup.rs:675` (the allocator that defines the layout),
   `ke/amd64/thrdini.rs:235`, `ke/amd64/traphandler.rs` (added by the GDI-batch fix) and
