@@ -488,9 +488,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/cohab-census.txt; re-run `--write` in the SAME commit as a deliberate flip.
     # Baseline EMPTY = strict.
     ccen = repo / "tools" / "cohab_census.py"
-    specs.append(
-        ("cohab_census", [py, str(ccen)] if ccen.is_file() else ["MISSING"], "stdout")
-    )
+    specs.append(("cohab_census", [py, str(ccen)] if ccen.is_file() else ["MISSING"], "stdout"))
     # Cohab stubs that bugcheck on entry AND are declared by a Rust module — i.e.
     # unimplemented and reachable, so they crash whenever their path first runs. The
     # intersection is computable from the tree, and paying a build+boot per entry to
