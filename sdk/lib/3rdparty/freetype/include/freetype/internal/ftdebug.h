@@ -253,7 +253,6 @@ FT_BEGIN_HEADER
 
 #include "stdio.h"  /* for vfprintf() */
 
-
   /* print a message */
   FT_BASE( void )
   FT_Message( const char*  fmt,

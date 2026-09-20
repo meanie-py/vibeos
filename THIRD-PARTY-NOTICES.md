@@ -444,6 +444,7 @@ Public License instead of this License.
 - Version: git commit 6121d02
 - In this tree: `sdk/lib/crt/math/libm_sse2`
 - Licence: MIT
+- Modified by us: yes, see `vendor-patches/amd-libm.patch`
 - Grant reproduced from: `sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c (header comment)`
 
 ```
@@ -525,7 +526,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## FDLIBM (Sun Microsystems freely-distributable libm)
 
-- Upstream: https://www.netlib.org/fdlibm/
+- Upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
 - Version: 1.8
 - In this tree: `sdk/lib/crt/math/ieee754`
 - Licence: FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
@@ -591,6 +592,7 @@ SOFTWARE.
 - Version: 2.10.0
 - In this tree: `sdk/lib/3rdparty/freetype`
 - Licence: GPL-2.0-only
+- Modified by us: yes, see `vendor-patches/freetype.patch`
 - Grant reproduced from: `COPYING`
 
 ```

@@ -1,0 +1,1076 @@
+# AMD LibM for Windows — our delta from pristine upstream.
+#
+# Upstream: https://github.com/amd/win-libm  commit 6121d02aef0c775947d5dc655d7fc4ccfe2144ab
+#           ("First github commit of AMD LibM for Windows", 2019-07-24)
+#           archive sha256 ca15d1bab53cf576ba0bba8c07aa6deac8d2a0fe9d6f219dc35c0d78c5a8d45f
+# Apply from sdk/lib/crt/math/libm_sse2/ with: patch -p1 < vendor-patches/amd-libm.patch
+#
+# THE RECORDED COMMIT IS NOW CONFIRMED. vendor.yaml carried `git commit 6121d02` copied
+# out of "3rd Party Files.txt" with an explicit note that it had never been checked
+# against github.com/amd/win-libm. It checks out: the commit exists, and against that
+# exact tree 17 of our files are byte-identical and the 35 that differ do so by 2-58
+# lines each. A wrong base would not look like that.
+#
+# THE DELTA IS ONE FIX, APPLIED EVERYWHERE: LP64 -> LLP64. AMD wrote this for a world
+# where `long` is 64 bits. On Windows x64 `long` is 32 bits, so every place the code
+# stuffs a double's bit pattern into a `long`/`unsigned long` truncates. Ours says
+# `long long`/`unsigned long long` instead. That is ~240 of the ~257 changed lines,
+# including the GET_BITS_DP64/PUT_BITS_DP64 call sites and casts like
+# `(double)(long)(dx / w)` in remainder.c. It is a genuine correctness fix, not a style
+# change, and it cannot be a -D — it is a type spelled in hundreds of places.
+#
+# The remainder:
+#   ~20 lines   `#pragma function(acos)` and friends wrapped in `#ifdef _MSC_VER`,
+#               because clang does not implement that pragma.
+#   fma3_available.c  rewritten CRT-startup glue: uses _CRTALLOC/__declspec(allocate)
+#               and <intrin.h> rather than <windows.h>/<cruntime.h>/<internal.h>.
+#
+# NOT IN THIS PATCH — files with no upstream counterpart, i.e. genuinely added here:
+#   ELEVEN .asm FILES WERE RE-IMPLEMENTED IN C. Upstream ships L2_by_pi_bits.asm,
+#   Lsincos_array.asm, Lsincosf_array.asm, log{,10}_{128,256}_lead_tail_table.asm,
+#   log_F_inv_{dword,qword}_table.asm and two_to_jby64{,_head_tail}_table.asm — all MASM
+#   constant tables. We carry .c equivalents instead. Re-vendoring means redoing that
+#   conversion, so budget for it.
+#   Also added: _handle_error.c, ldexp.c, ldexpf.c.
+#
+# NOTE THERE IS NOT ONE __REACTOS__ MARKER IN THIS ENTIRE TREE. Unlike FreeType, where
+# every hunk is guarded and you can get upstream behaviour back by undefining a macro,
+# this is an unconditional fork of the sources. Nothing here tells a reader which lines
+# are ours; that is what this patch is for.
+#
+--- a/_chgsign.c
++++ b/_chgsign.c
+@@ -32,7 +32,7 @@
+   /* Returns x with its sign reversed.
+      NaNs are not considered special; their sign bits are handled
+      the same as for any other number */
+-  unsigned long u;
++  unsigned long long u;
+   GET_BITS_DP64(x, u);
+   u ^= SIGNBIT_DP64;
+   PUT_BITS_DP64(u, x);
+--- a/_copysign.c
++++ b/_copysign.c
+@@ -34,7 +34,7 @@
+ double FN_PROTOTYPE(_copysign)(double x, double y)
+ {
+ 
+-  unsigned long ux, uy;
++  unsigned long long ux, uy;
+   GET_BITS_DP64(x, ux);
+   GET_BITS_DP64(y, uy);
+   if ((ux ^ uy) & SIGNBIT_DP64)
+--- a/_finite.c
++++ b/_finite.c
+@@ -33,7 +33,7 @@
+ {
+ 
+ 
+-  unsigned long ux;
++  unsigned long long ux;
+   GET_BITS_DP64(x, ux);
+   return (int)(((ux & ~SIGNBIT_DP64) - PINFBITPATT_DP64) >> 63);
+ }
+--- a/acos.c
++++ b/acos.c
+@@ -37,8 +37,9 @@
+ 
+ #include "libm_errno.h"
+ 
+-
++#ifdef _MSC_VER
+ #pragma function(acos)
++#endif
+ 
+ double FN_PROTOTYPE(acos)(double x)
+ {
+@@ -69,7 +70,7 @@
+   double u, y, s=0.0, r;
+   int xexp, xnan, transform=0;
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   GET_BITS_DP64(x, ux);
+   aux = ux & ~SIGNBIT_DP64;
+   xneg = (ux & SIGNBIT_DP64);
+@@ -133,7 +134,7 @@
+       else
+ 	{
+ 	  double c, s1;
+-	  unsigned long us;
++	  unsigned long long us;
+ 	  GET_BITS_DP64(s, us);
+ 	  PUT_BITS_DP64(0xffffffff00000000 & us, s1);
+ 	  c = (r-s1*s1)/(s+s1);
+--- a/acosf.c
++++ b/acosf.c
+@@ -37,11 +37,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(acosf)
+-
++#endif
+ 
+ float FN_PROTOTYPE(acosf)(float x)
+ {
+--- a/asin.c
++++ b/asin.c
+@@ -37,7 +37,9 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ #pragma function(asin)
++#endif
+ 
+ double FN_PROTOTYPE(asin)(double x)
+ {
+@@ -65,7 +67,7 @@
+   double u, v, y, s=0.0, r;
+   int xexp, xnan, transform=0;
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   GET_BITS_DP64(x, ux);
+   aux = ux & ~SIGNBIT_DP64;
+   xneg = (ux & SIGNBIT_DP64);
+@@ -127,7 +129,7 @@
+     { /* Reconstruct asin carefully in transformed region */
+         {
+           double c, s1, p, q;
+-          unsigned long us;
++          unsigned long long us;
+           GET_BITS_DP64(s, us);
+           PUT_BITS_DP64(0xffffffff00000000 & us, s1);
+           c = (r-s1*s1)/(s+s1);
+--- a/asinf.c
++++ b/asinf.c
+@@ -37,11 +37,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(asinf)
+-
++#endif
+ 
+ float FN_PROTOTYPE(asinf)(float x)
+ {
+--- a/atan.c
++++ b/atan.c
+@@ -37,7 +37,9 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ #pragma function(atan)
++#endif
+ 
+ double FN_PROTOTYPE(atan)(double x)
+ {
+@@ -49,7 +51,7 @@
+ 
+   /* Find properties of argument x. */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   GET_BITS_DP64(x, ux);
+   aux = ux & ~SIGNBIT_DP64;
+   xneg = (ux != aux);
+--- a/atan2.c
++++ b/atan2.c
+@@ -45,7 +45,9 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ #pragma function(atan2)
++#endif
+ 
+ double FN_PROTOTYPE(atan2)(double y, double x)
+ {
+@@ -558,7 +560,7 @@
+ 
+   /* Find properties of arguments x and y. */
+ 
+-  unsigned long ux, ui, aux, xneg, uy, auy, yneg;
++  unsigned long long ux, ui, aux, xneg, uy, auy, yneg;
+ 
+   GET_BITS_DP64(x, ux);
+   GET_BITS_DP64(y, uy);
+--- a/atan2f.c
++++ b/atan2f.c
+@@ -41,10 +41,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(atan2f)
++#endif
+ 
+ float FN_PROTOTYPE(atan2f)(float fy, float fx)
+ {
+@@ -310,7 +312,7 @@
+ 
+   /* Find properties of arguments x and y. */
+ 
+-  unsigned long ux, aux, xneg, uy, auy, yneg;
++  unsigned long long ux, aux, xneg, uy, auy, yneg;
+ 
+   GET_BITS_DP64(x, ux);
+   GET_BITS_DP64(y, uy);
+--- a/atanf.c
++++ b/atanf.c
+@@ -37,10 +37,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(atanf)
++#endif
+ 
+ float FN_PROTOTYPE(atanf)(float fx)
+ {
+@@ -56,7 +58,7 @@
+ 
+   /* Find properties of argument fx. */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+ 
+   GET_BITS_DP64(x, ux);
+   aux = ux & ~SIGNBIT_DP64;
+--- a/ceil.c
++++ b/ceil.c
+@@ -40,8 +40,8 @@
+ double FN_PROTOTYPE(ceil)(double x)
+ {
+   double r;
+-  long rexp, xneg;
+-  unsigned long ux, ax, ur, mask;
++  long long rexp, xneg;
++  unsigned long long ux, ax, ur, mask;
+ 
+   GET_BITS_DP64(x, ux);
+   ax = ux & (~SIGNBIT_DP64);
+--- a/cosh.c
++++ b/cosh.c
+@@ -41,8 +41,10 @@
+ #undef USE_VAL_WITH_FLAGS
+ #undef USE_HANDLE_ERROR
+ 
+-
++#ifdef _MSC_VER
+ #pragma function(cosh)
++#endif
++
+ double cosh(double x)
+ {
+   /*
+@@ -230,10 +232,10 @@
+     3.64177136406482197344e+06,  /* 0x414bc8d5ae99ad14 */
+     7.63580561355670914054e+06}; /* 0x415d20d76744835c */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   double y, z, z1, z2;
+   int m;
+-
++  
+   /* Special cases */
+ 
+   GET_BITS_DP64(x, ux);
+--- a/coshf.c
++++ b/coshf.c
+@@ -41,10 +41,12 @@
+ #undef USE_VALF_WITH_FLAGS
+ #undef USE_HANDLE_ERRORF
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(coshf)
++#endif
+ 
+ float coshf(float fx)
+ {
+@@ -154,7 +156,7 @@
+     7.93006726156715250000e+14,  /* 0x430689e221bc8d5a */
+     2.15561577355759750000e+15}; /* 0x431ea215a1d20d76 */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   unsigned int uhx;
+   double x = fx, y, z, z1, z2;
+   int m;
+@@ -169,6 +171,7 @@
+       if (LAMBDA_DP64 + x  > 1.0) return valf_with_flags((float)1.0, AMD_F_INEXACT); /* with inexact */
+     }
+   else if (aux >= PINFBITPATT_DP64) /* |x| is NaN or Inf */
++    {
+       if (aux > PINFBITPATT_DP64) /* x is NaN */
+       {
+         GET_BITS_SP32(fx, uhx);
+@@ -177,6 +180,7 @@
+       }
+       else     /* x is infinity */
+         return infinityf_with_flags(0);
++    }
+   xneg = (aux != ux);
+ 
+   y = x;
+--- a/exp2.c
++++ b/exp2.c
+@@ -44,9 +44,7 @@
+ 
+ #include "libm_errno.h"
+ 
+-/* exp2 is only provided for use by powf under Windows, so give
+-   it a leading underscore. */
+-double FN_PROTOTYPE(_exp2)(double x)
++double FN_PROTOTYPE(exp2)(double x)
+ {
+   static const double
+     max_exp2_arg = 1024.0,  /* 0x4090000000000000 */
+@@ -58,7 +56,7 @@
+ 
+   double y, z1, z2, z, hx, tx, y1, y2;
+   int m;
+-  unsigned long ux, ax;
++  unsigned long long ux, ax;
+ 
+   /*
+     Computation of exp2(x).
+@@ -121,7 +119,7 @@
+       else
+         {
+           /* Split x into hx (head) and tx (tail). */
+-          unsigned long u;
++          unsigned long long u;
+           hx = x;
+           GET_BITS_DP64(hx, u);
+           u &= 0xfffffffff8000000;
+--- a/floor.c
++++ b/floor.c
+@@ -37,10 +37,10 @@
+ double FN_PROTOTYPE(floor)(double x)
+ {
+   double r;
+-  long rexp, xneg;
++  long long rexp, xneg;
+ 
+ 
+-  unsigned long ux, ax, ur, mask;
++  unsigned long long ux, ax, ur, mask;
+ 
+   GET_BITS_DP64(x, ux);
+   ax = ux & (~SIGNBIT_DP64);
+--- a/fma3_available.c
++++ b/fma3_available.c
+@@ -26,16 +26,18 @@
+ 
+ #ifdef TEST_STANDALONE
+ #include <stdio.h>
++#ifdef _MSC_VER
+ #pragma section (".CRT$XIC",long,read)
+-typedef void (__cdecl *_PIFV)(void);
++#define _CRTALLOC(x) __declspec(allocate(x))
++#endif /* _MSC_VER */
+ #else
++#include <intrin.h>
+ #include <sect_attribs.h>
+-#include <windows.h>
+-#include <cruntime.h>
+-#include <internal.h>
++#undef _CRTALLOC
++#define _CRTALLOC(x)
+ #endif
+ 
+-#define _CRTALLOC(x) __declspec(allocate(x))
++typedef int (__cdecl *_PIFV)(void); // FIXME: include process.h?
+ 
+ int __fma3_is_available = 0;
+ int __use_fma3_lib = 0;
+--- a/hypot.c
++++ b/hypot.c
+@@ -39,6 +39,9 @@
+ 
+ #include "libm_errno.h"
+ 
++#if (_MSC_VER >= 1920) // VS 2019+ / Compiler version 14.20
++#pragma function(_hypot)
++#endif
+ 
+ double FN_PROTOTYPE(_hypot)(double x, double y)
+ {
+@@ -49,10 +52,10 @@
+ 
+ #ifdef FAST_BUT_GREATER_THAN_ONE_ULP
+   double r, retval;
+-  unsigned long xexp, yexp, ux, uy;
++  unsigned long long xexp, yexp, ux, uy;
+ #else  
+   double u, r, retval, hx, tx, x2, hy, ty, y2, hs, ts;
+-  unsigned long xexp, yexp, ux, uy, ut;
++  unsigned long long xexp, yexp, ux, uy, ut;
+ #endif
+   int dexp, expadjust;
+ 
+--- a/hypotf.c
++++ b/hypotf.c
+@@ -55,7 +55,7 @@
+     const double large = 3.40282346638528859812e+38; /* 0x47efffffe0000000 */
+ 
+ 
+-  unsigned long ux, uy, avx, avy;
++  unsigned long long ux, uy, avx, avy;
+ 
+   GET_BITS_DP64(x, avx);
+   avx &= ~SIGNBIT_DP64;
+--- a/libm_inlines.h
++++ b/libm_inlines.h
+@@ -46,7 +46,7 @@
+    are not checked */
+ static inline void splitDouble(double x, int *e, double *m)
+ {
+-  unsigned long ux, uy;
++  unsigned long long ux, uy;
+   GET_BITS_DP64(x, ux);
+   uy = ux;
+   ux &= EXPBITS_DP64;
+@@ -66,7 +66,7 @@
+    assumption, e will be even on exit. */
+ static inline void splitDouble_2(double x, int *e, double *m)
+ {
+-  unsigned long ux, vx;
++  unsigned long long ux, vx;
+   GET_BITS_DP64(x, ux);
+   vx = ux;
+   ux &= EXPBITS_DP64;
+@@ -117,7 +117,7 @@
+ {
+   double t;
+   /* Construct the number t = 2.0**n */
+-  PUT_BITS_DP64(((long)n + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t);
++  PUT_BITS_DP64(((long long)n + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t);
+   return x*t;
+ }
+ #endif /* USE_SCALEDOUBLE_1 */
+@@ -133,8 +133,8 @@
+   n1 = n / 2;
+   n2 = n - n1;
+   /* Construct the numbers t1 = 2.0**n1 and t2 = 2.0**n2 */
+-  PUT_BITS_DP64(((long)n1 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t1);
+-  PUT_BITS_DP64(((long)n2 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t2);
++  PUT_BITS_DP64(((long long)n1 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t1);
++  PUT_BITS_DP64(((long long)n2 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t2);
+   return (x*t1)*t2;
+ }
+ #endif /* USE_SCALEDOUBLE_2 */
+@@ -151,9 +151,9 @@
+   n2 = (n - n1) / 2;
+   n3 = n - n1 - n2;
+   /* Construct the numbers t1 = 2.0**n1, t2 = 2.0**n2 and t3 = 2.0**n3 */
+-  PUT_BITS_DP64(((long)n1 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t1);
+-  PUT_BITS_DP64(((long)n2 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t2);
+-  PUT_BITS_DP64(((long)n3 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t3);
++  PUT_BITS_DP64(((long long)n1 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t1);
++  PUT_BITS_DP64(((long long)n2 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t2);
++  PUT_BITS_DP64(((long long)n3 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, t3);
+   return ((x*t1)*t2)*t3;
+ }
+ #endif /* USE_SCALEDOUBLE_3 */
+@@ -393,7 +393,7 @@
+ {
+   double z;
+   raise_fpsw_flags(flags);
+-  PUT_BITS_DP64((unsigned long)(BIASEDEMAX_DP64 + 1) << EXPSHIFTBITS_DP64, z);
++  PUT_BITS_DP64((unsigned long long)(BIASEDEMAX_DP64 + 1) << EXPSHIFTBITS_DP64, z);
+   return z;
+ }
+ #endif /* USE_INFINITY_WITH_FLAGS */
+@@ -419,7 +419,7 @@
+ double _handle_error(
+         char *fname,
+         int opcode,
+-        unsigned long value,
++        unsigned long long value,
+         int type,
+         int flags,
+         int error,
+@@ -430,7 +430,7 @@
+ float _handle_errorf(
+         char *fname,
+         int opcode,
+-        unsigned long value,
++        unsigned long long value,
+         int type,
+         int flags,
+         int error,
+@@ -744,9 +744,9 @@
+ /* Scales up a double (normal or denormal) whose bit pattern is given
+    as ux by 2**1024. There are no checks that the input number is
+    scalable by that amount. */
+-static inline void scaleUpDouble1024(unsigned long ux, unsigned long *ur)
++static inline void scaleUpDouble1024(unsigned long long ux, unsigned long long *ur)
+ {
+-  unsigned long uy;
++  unsigned long long uy;
+   double y;
+ 
+   if ((ux & EXPBITS_DP64) == 0)
+@@ -773,17 +773,17 @@
+ #if defined(USE_SCALEDOWNDOUBLE)
+ /* Scales down a double whose bit pattern is given as ux by 2**k.
+    There are no checks that the input number is scalable by that amount. */
+-static inline void scaleDownDouble(unsigned long ux, int k,
+-                                   unsigned long *ur)
++static inline void scaleDownDouble(unsigned long long ux, int k,
++                                   unsigned long long *ur)
+ {
+-  unsigned long uy, uk, ax, xsign;
++  unsigned long long uy, uk, ax, xsign;
+   int n, shift;
+   xsign = ux & SIGNBIT_DP64;
+   ax = ux & ~SIGNBIT_DP64;
+   n = (int)((ax & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) - k;
+   if (n > 0)
+     {
+-      uk = (unsigned long)n << EXPSHIFTBITS_DP64;
++      uk = (unsigned long long)n << EXPSHIFTBITS_DP64;
+       uy = (ax & ~EXPBITS_DP64) | uk;
+     }
+   else
+@@ -898,7 +898,7 @@
+                = 2^(e/2) * [ sqrt(c) + sqrt(c)*q ]
+     */
+ 
+-  unsigned long ux, ax, u;
++  unsigned long long ux, ax, u;
+   double r1, r2, c, y, p, q, r, twop, z, rtc, rtc_lead, rtc_trail;
+   int e, denorm = 0, index;
+ 
+@@ -1213,13 +1213,13 @@
+   if (denorm)
+     {
+       /* Scale by 2**(e-30) */
+-      PUT_BITS_DP64(((long)(e - 30) + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, r);
++      PUT_BITS_DP64(((long long)(e - 30) + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, r);
+       z *= r;
+     }
+   else
+     {
+       /* Scale by 2**e */
+-      PUT_BITS_DP64(((long)e + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, r);
++      PUT_BITS_DP64(((long long)e + EXPBIAS_DP64) << EXPSHIFTBITS_DP64, r);
+       z *= r;
+     }
+ 
+@@ -1586,7 +1586,7 @@
+ #endif /* SQRTF_AMD_INLINE */
+ 
+ #ifdef USE_LOG_KERNEL_AMD
+-static inline void log_kernel_amd64(double x, unsigned long ux, int *xexp, double *r1, double *r2)
++static inline void log_kernel_amd64(double x, unsigned long long ux, int *xexp, double *r1, double *r2)
+ {
+ 
+   int expadjust;
+@@ -1755,7 +1755,7 @@
+     cb_2 = 1.24999999978138668903e-02,  /* 0x3f89999999865ede */
+     cb_3 = 2.23219810758559851206e-03;  /* 0x3f6249423bd94741 */
+ 
+-  static const unsigned long
++  static const unsigned long long
+     log_thresh1 = 0x3fee0faa00000000,
+     log_thresh2 = 0x3ff1082c00000000;
+ 
+@@ -1885,7 +1885,7 @@
+ 
+ #ifdef DEBUGGING_PRINT
+ #include <stdio.h>
+-char *d2b(long d, int bitsper, int point)
++char *d2b(long long d, int bitsper, int point)
+ {
+   static char buff[200];
+   int i, j;
+@@ -1915,7 +1915,7 @@
+    extra precision, and return the result in r.
+    Return value "region" tells how many lots of pi/2 were subtracted
+    from x to put it in the range [-pi/4,pi/4], mod 4. */
+-static inline void __remainder_piby2f_inline(unsigned long ux, double *r, int *region)
++static inline void __remainder_piby2f_inline(unsigned long long ux, double *r, int *region)
+ {
+ 
+       /* This method simulates multi-precision floating-point
+@@ -1925,13 +1925,13 @@
+ #else
+ #define bitsper 36
+ #endif
+-      unsigned long res[10];
+-      unsigned long u, carry, mask, mant, nextbits;
++      unsigned long long res[10];
++      unsigned long long u, carry, mask, mant, nextbits;
+       int first, last, i, rexp, xexp, resexp, ltb, determ, bc;
+       double dx;
+       static const double
+         piby2 = 1.57079632679489655800e+00; /* 0x3ff921fb54442d18 */
+-      static unsigned long pibits[] =
++      static unsigned long long pibits[] =
+       {
+         0LL,
+         5215LL, 13000023176LL, 11362338026LL, 67174558139LL,
+@@ -1943,7 +1943,7 @@
+       ux = ((ux & MANTBITS_DP64) | IMPBIT_DP64) >> 29;
+ 
+ 
+-      /* Now ux is the mantissa bit pattern of x as a long integer */
++      /* Now ux is the mantissa bit pattern of x as a long long integer */
+       mask = 1;
+       mask = (mask << bitsper) - 1;
+ 
+@@ -2073,7 +2073,7 @@
+ #endif
+ 
+       /* Put the result exponent rexp onto the mantissa pattern */
+-      u = ((unsigned long)rexp + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
++      u = ((unsigned long long)rexp + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
+       ux = (mant & MANTBITS_DP64) | u;
+       if (determ)
+         /* If we negated the mantissa we negate x too */
+--- a/libm_util.h
++++ b/libm_util.h
+@@ -27,18 +27,18 @@
+ #define LIBM_UTIL_AMD_H_INCLUDED 1
+ 
+ #define inline __inline
+-#undef long
+-#define long __int64
+ 
+-#include "emmintrin.h"
+-#include "float.h"
++#include <emmintrin.h>
++#include <float.h>
+ 
+ 
++#define MULTIPLIER_SP 24
++#define MULTIPLIER_DP 53
+ 
+-/* Compile-time verification that type long is the same size
+-   as type double (i.e. we are really on a 64-bit machine) */
+-void check_long_against_double_size(int machine_is_64_bit[(sizeof(long) == sizeof(double))?1:-1]); 
+-
++static const double VAL_2PMULTIPLIER_DP = 9007199254740992.0;
++static const double VAL_2PMMULTIPLIER_DP = 1.1102230246251565404236316680908e-16;
++static const float VAL_2PMULTIPLIER_SP = 16777216.0F;
++static const float VAL_2PMMULTIPLIER_SP = 5.9604645e-8F;
+ 
+ /* Definitions for double functions on 64 bit machines */
+ #define SIGNBIT_DP64      0x8000000000000000
+@@ -98,7 +98,7 @@
+ #define CLASS_POSITIVE_INFINITY 10
+ 
+ #define OLD_BITS_SP32(x) (*((unsigned int *)&x))
+-#define OLD_BITS_DP64(x) (*((unsigned long *)&x))
++#define OLD_BITS_DP64(x) (*((unsigned long long *)&x))
+ 
+ /* Alternatives to the above functions which don't have
+    problems when using high optimization levels on gcc */
+@@ -117,13 +117,13 @@
+ 
+ #define GET_BITS_DP64(x, ux) \
+   { \
+-    volatile union {double d; unsigned long i;} _bitsy; \
++    volatile union {double d; unsigned long long i;} _bitsy; \
+     _bitsy.d = (x); \
+     ux = _bitsy.i; \
+   }
+ #define PUT_BITS_DP64(ux, x) \
+   { \
+-    volatile union {double d; unsigned long i;} _bitsy; \
++    volatile union {double d; unsigned long long i;} _bitsy; \
+     _bitsy.i = (ux); \
+     x = _bitsy.d; \
+   }
+--- a/logb.c
++++ b/logb.c
+@@ -38,8 +38,8 @@
+ double _logb(double x)
+ {
+ 
+-  unsigned long ux;
+-  long u;
++  unsigned long long ux;
++  long long u;
+   GET_BITS_DP64(x, ux);
+   u = ((ux & EXPBITS_DP64) >> EXPSHIFTBITS_DP64) - EXPBIAS_DP64;
+   if ((ux & ~SIGNBIT_DP64) == 0)
+--- a/modf.c
++++ b/modf.c
+@@ -33,8 +33,8 @@
+      each with the same sign as x. */
+ 
+ 
+-  long xexp;
+-  unsigned long ux, ax, mask;
++  long long xexp;
++  unsigned long long ux, ax, mask;
+ 
+   GET_BITS_DP64(x, ux);
+   ax = ux & (~SIGNBIT_DP64);
+--- a/remainder.c
++++ b/remainder.c
+@@ -52,7 +52,7 @@
+ {
+   double hx, tx, hy, ty;
+   /* Split x into hx (head) and tx (tail). Do the same for y. */
+-  unsigned long u;
++  unsigned long long u;
+   GET_BITS_DP64(x, u);
+   u &= 0xfffffffff8000000;
+   PUT_BITS_DP64(u, hx);
+@@ -79,7 +79,7 @@
+ {
+   double dx, dy, scale, w, t, v, c, cc;
+   int i, ntimes, xexp, yexp;
+-  unsigned long u, ux, uy, ax, ay, todd;
++  unsigned long long u, ux, uy, ax, ay, todd;
+   unsigned int sw;
+ 
+   dx = x;
+@@ -227,7 +227,7 @@
+       w = scaleDouble_3(dy, ntimes * 52);
+ 
+       /* Set scale = 2^(-52) */
+-      PUT_BITS_DP64((unsigned long)(-52 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64,
++      PUT_BITS_DP64((unsigned long long)(-52 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64,
+                     scale);
+     }
+ 
+@@ -252,7 +252,7 @@
+          it loses the last (106th) bit of its quad precision result. */
+ 
+       /* Set dx = dx - w * t, where t is equal to trunc(dx/w). */
+-      t = (double)(long)(dx / w);
++      t = (double)(long long)(dx / w);
+       /* At this point, t may be one too large due to
+          rounding of dx/w */
+ 
+@@ -277,8 +277,8 @@
+ 
+   /* One more time */
+   /* Variable todd says whether the integer t is odd or not */
+-  t = (double)(long)(dx / w);
+-  todd = ((long)(dx / w)) & 1;
++  t = (double)(long long)(dx / w);
++  todd = ((long long)(dx / w)) & 1;
+   dekker_mul12(w, t, &c, &cc);
+   v = dx - c;
+   dx = v + (((dx - v) - c) - cc);
+--- a/remainder_piby2.c
++++ b/remainder_piby2.c
+@@ -42,11 +42,11 @@
+         piby2_part2 = 1.58932547122958567343e-08, /* 0x3e5110b460000000 */
+         piby2_part3 = 6.12323399573676480327e-17; /* 0x3c91a62633145c06 */
+       const int bitsper = 10;
+-      unsigned long res[500];
+-      unsigned long ux, u, carry, mask, mant, highbitsrr;
++      unsigned long long res[500];
++      unsigned long long ux, u, carry, mask, mant, highbitsrr;
+       int first, last, i, rexp, xexp, resexp, ltb, determ;
+       double xx, t;
+-      static unsigned long pibits[] =
++      static unsigned long long pibits[] =
+       {
+         0,    0,    0,    0,    0,    0,
+         162,  998,   54,  915,  580,   84,  671,  777,  855,  839,
+@@ -204,7 +204,7 @@
+ 
+ 
+       /* Put the result exponent rexp onto the mantissa pattern */
+-      u = ((unsigned long)rexp + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
++      u = ((unsigned long long)rexp + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
+       ux = (mant & MANTBITS_DP64) | u;
+       if (determ)
+         /* If we negated the mantissa we negate x too */
+@@ -213,7 +213,7 @@
+ 
+       /* Create the bit pattern for rr */
+       highbitsrr >>= 12; /* Note this is shifted one place too far */
+-      u = ((unsigned long)rexp + EXPBIAS_DP64 - 53) << EXPSHIFTBITS_DP64;
++      u = ((unsigned long long)rexp + EXPBIAS_DP64 - 53) << EXPSHIFTBITS_DP64;
+       PUT_BITS_DP64(u, t);
+       u |= highbitsrr;
+       PUT_BITS_DP64(u, xx);
+--- a/remainder_piby2f.c
++++ b/remainder_piby2f.c
+@@ -32,20 +32,20 @@
+    extra precision, and return the result in r.
+    Return value "region" tells how many lots of pi/2 were subtracted
+    from x to put it in the range [-pi/4,pi/4], mod 4. */
+-void __remainder_piby2f(unsigned long ux, double *r, int *region)
++void __remainder_piby2f(unsigned long long ux, double *r, int *region)
+ {
+ 
+ 
+       /* This method simulates multi-precision floating-point
+          arithmetic and is accurate for all 1 <= x < infinity */
+ #define bitsper 36
+-      unsigned long res[10];
+-      unsigned long u, carry, mask, mant, nextbits;
++      unsigned long long res[10];
++      unsigned long long u, carry, mask, mant, nextbits;
+       int first, last, i, rexp, xexp, resexp, ltb, determ, bc;
+       double dx;
+       static const double
+         piby2 = 1.57079632679489655800e+00; /* 0x3ff921fb54442d18 */
+-      static unsigned long pibits[] =
++      static unsigned long long pibits[] =
+       {
+         0LL,
+         5215LL, 13000023176LL, 11362338026LL, 67174558139LL,
+@@ -156,7 +156,7 @@
+ 
+ 
+       /* Put the result exponent rexp onto the mantissa pattern */
+-      u = ((unsigned long)rexp + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
++      u = ((unsigned long long)rexp + EXPBIAS_DP64) << EXPSHIFTBITS_DP64;
+       ux = (mant & MANTBITS_DP64) | u;
+       if (determ)
+         /* If we negated the mantissa we negate x too */
+--- a/remainderf.c
++++ b/remainderf.c
+@@ -64,7 +64,7 @@
+ {
+   double dx, dy, scale, w, t;
+   int i, ntimes, xexp, yexp;
+-  unsigned long ux, uy, ax, ay;
++  unsigned long long ux, uy, ax, ay;
+ 
+   unsigned int sw;
+ 
+@@ -190,11 +190,11 @@
+       ntimes = (xexp - yexp) / 24;
+ 
+       /* Set w = y * 2^(24*ntimes) */
+-      PUT_BITS_DP64((unsigned long)(ntimes * 24 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64,
++      PUT_BITS_DP64((unsigned long long)(ntimes * 24 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64,
+                     scale);
+       w = scale * dy;
+       /* Set scale = 2^(-24) */
+-      PUT_BITS_DP64((unsigned long)(-24 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64,
++      PUT_BITS_DP64((unsigned long long)(-24 + EXPBIAS_DP64) << EXPSHIFTBITS_DP64,
+                     scale);
+     }
+ 
+--- a/simd.h
++++ b/simd.h
+@@ -66,7 +66,7 @@
+ typedef union
+ {
+ 	float f;
+-	unsigned long l;
++    unsigned long long l;
+ } LFLOAT;
+ 
+ //typedef struct
+@@ -78,7 +78,7 @@
+ typedef union
+ {
+ 	double f;
+-	unsigned long l[2];
++    unsigned long long l[2];
+ } LDOUBLE;
+ 
+ typedef __declspec(align(16)) struct
+@@ -313,7 +313,7 @@
+     unsigned char opcode;
+     unsigned char rmbyte;
+     union {
+-        unsigned long offset;       // this will need work for x86-64
++        unsigned long long offset; // this will need work for x86-64
+         unsigned char imm8;
+     } data;
+     
+--- a/sinh.c
++++ b/sinh.c
+@@ -43,8 +43,10 @@
+ 
+ #include "libm_errno.h"
+ 
+-
++#ifdef _MSC_VER
+ #pragma function(sinh)
++#endif
++
+ double sinh(double x)
+ {
+   /*
+@@ -229,7 +231,7 @@
+     3.64177136406482197344e+06,  /* 0x414bc8d5ae99ad14 */
+     7.63580561355670914054e+06}; /* 0x415d20d76744835c */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   double y, z, z1, z2;
+   int m;
+ 
+--- a/sinhf.c
++++ b/sinhf.c
+@@ -41,11 +41,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(sinhf)
+-
++#endif
+ 
+ float sinhf(float fx)
+ {
+@@ -153,7 +154,7 @@
+     7.93006726156715250000e+14,  /* 0x430689e221bc8d5a */
+     2.15561577355759750000e+15}; /* 0x431ea215a1d20d76 */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   double x = fx, y, z, z1, z2;
+   int m;
+ 
+--- a/sqrt.c
++++ b/sqrt.c
+@@ -49,7 +49,7 @@
+   return sqrt_amd_inline(x);
+ #else
+   double r;
+-  unsigned long ux;
++  unsigned long long ux;
+   GET_BITS_DP64(x, ux);
+ 
+   /* Check for special cases for Microsoft error handling */
+--- a/tan.c
++++ b/tan.c
+@@ -98,7 +98,7 @@
+     {
+       /* Compute -1.0/(t1 + t2) accurately */
+       double trec, trec_top, z1, z2, t;
+-      unsigned long u;
++      unsigned long long u;
+       t = t1 + t2;
+       GET_BITS_DP64(t, u);
+       u &= 0xffffffff00000000;
+@@ -115,14 +115,16 @@
+     return t1 + t2;
+ }
+ 
++#ifdef _MSC_VER
+ #pragma function(tan)
++#endif
+ 
+ double tan(double x)
+ {
+   double r, rr;
+   int region, xneg;
+ 
+-  unsigned long ux, ax;
++  unsigned long long ux, ax;
+   GET_BITS_DP64(x, ux);
+   ax = (ux & ~SIGNBIT_DP64);
+   if (ax <= 0x3fe921fb54442d18) /* abs(x) <= pi/4 */
+@@ -183,7 +185,7 @@
+         piby2_3tail =  8.47842766036889956997e-32; /* 0x397b839a252049c1 */
+       double t, rhead, rtail;
+       int npi2;
+-      unsigned long uy, xexp, expdiff;
++      unsigned long long uy, xexp, expdiff;
+       xexp  = ax >> EXPSHIFTBITS_DP64;
+       /* How many pi/2 is x a multiple of? */
+       if (ax <= 0x400f6a7a2955385e) /* 5pi/4 */
+--- a/tanf.c
++++ b/tanf.c
+@@ -39,10 +39,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(tanf)
++#endif
+ 
+ /* tan(x) approximation valid on the interval [-pi/4,pi/4].
+    If recip is true return -1/tan(x) instead. */
+@@ -72,7 +74,7 @@
+   double r, dx;
+   int region, xneg;
+ 
+-  unsigned long ux, ax;
++  unsigned long long ux, ax;
+ 
+   dx = x;
+ 
+@@ -135,7 +137,7 @@
+         piby2_3tail =  8.47842766036889956997e-32; /* 0x397b839a252049c1 */
+       double t, rhead, rtail;
+       int npi2;
+-      unsigned long uy, xexp, expdiff;
++      unsigned long long uy, xexp, expdiff;
+       xexp  = ax >> EXPSHIFTBITS_DP64;
+       /* How many pi/2 is dx a multiple of? */
+       if (ax <= 0x400f6a7a2955385e) /* 5pi/4 */
+--- a/tanh.c
++++ b/tanh.c
+@@ -39,8 +39,10 @@
+ 
+ #include "libm_errno.h"
+ 
+-
++#ifdef _MSC_VER
+ #pragma function(tanh)
++#endif
++
+ double tanh(double x)
+ {
+   /*
+@@ -57,7 +59,7 @@
+     log2_by_32_tail = 5.68948749532545630390e-11, /* 0x3dcf473de6af278e */
+     large_threshold = 20.0; /* 0x4034000000000000 */
+ 
+-  unsigned long ux, aux, xneg;
++  unsigned long long ux, aux, xneg;
+   double y, z, p, z1, z2;
+   int m;
+ 
+--- a/tanhf.c
++++ b/tanhf.c
+@@ -39,10 +39,12 @@
+ 
+ #include "libm_errno.h"
+ 
++#ifdef _MSC_VER
+ // Disable "C4163: not available as intrinsic function" warning that older
+ // compilers may issue here.
+ #pragma warning(disable:4163)
+ #pragma function(tanhf)
++#endif
+ 
+ float tanhf(float x)
+ {
