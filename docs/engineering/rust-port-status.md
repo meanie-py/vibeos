@@ -2372,6 +2372,35 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   render residue. (The old `triage.py` flake catalog was largely retired as its entries
   were root-caused — see the field manual.)
 
+## Paid Rust that does not ship — the ORPHAN-BY-DESIGN inventory
+
+Surveyed fleet-wide 2026-09-19 by the shell32 lane. **17 modules across 9 crates hold
+translated Rust that no build compiles.** Recorded here because an inventory that lives only
+in a chat log is the thing this file exists to prevent; nothing below is a task list.
+
+**Sixteen of the seventeen are dead on purpose.** Only `shell32/utils.rs` is unfinished work.
+The distinction is not visible from "is it wired?" — it is written in each file's banner, and
+the banner has to be read.
+
+| category | modules | what it means |
+|---|---|---|
+| **Genuinely blocked (1)** | `shell32-rust/src/shell32/utils.rs` — 4,948 lines, 81 `#[no_mangle]` | Compiles clean on all three arches. Blocked on the cohab flip: 58 live C++ symbols would be captured, and 16 `*_RustBridge` wrappers plus the `CStubWindow32` pair need rehoming first. See the shell32 entry above for the measured freeze. |
+| **Superseded / gap artifacts (8)** | `recyclebin-rust`: `recyclebin_generic{,_enumerator}.rs`, `recyclebin_v5{,_enumerator}.rs` · `classpnp-rust`: `class_gap3.rs`, `class_gap4.rs` · `explorer-rust`: `appbar.rs` · `ntoskrnl-rust`: `global_barrier.rs` | Dead weight, superseded by class-atomic modules, rustconv file-split gaps whose exports are all defined live elsewhere, or retired code. **Deletion candidates — owner's call, since they are paid artifacts; the bodies replay from `.responses/` for $0.** |
+| **Translations of upstream-dead source (8)** | `afd-rust` `event.rs` · `bootvid-rust` `vga.rs`, `bootdata.rs` (legacy INT10h) · `dhcpcsvc-rust` `dhcp/tree.rs` · `freeldr-rust` `directui.rs` (`#if 0` upstream) · `win32k-rust` `bitblt_new.rs` (`USE_DIBLIB FALSE`), `drvdbg.rs` (in no CMake list) · `rtlk-rust` `path.rs` | Correctly orphan and kept deliberately under the never-delete rule. Nothing owed. |
+
+**An orphan ROTS, in every category, because nothing compiles it.** `recyclebin-rust` carried a
+`Cargo.toml` note reading "PARKED at 25 errors/arch (from 256)"; when the lane picked it up it
+was at **204**. Drift with no diagnostic, because a crate outside `workspace.members` is never
+built. CDefView reached **799** the same way before it was flipped. The fix is membership, not
+vigilance: `recyclebin-rust` is now at 0 on i686/amd64/arm64 and has joined the workspace
+(`1fc79782b4f4`), which puts it in every lane's `cargo check`. **Nothing links it, so no boot
+can regress** — that asymmetry is what makes joining-on-green safe and is the general rule for
+a parked crate.
+
+Two questions are parked for the owner, neither of them a lane's to settle: whether the eight
+superseded/gap files should be deleted, and whether anything else parked out of a build should
+join it on green.
+
 ## Scale
 
 ~3.58M LOC of translated Rust across kernel + drivers + usermode chain, + ~1.43M LOC of
