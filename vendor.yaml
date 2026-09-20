@@ -719,7 +719,8 @@ trees:
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
     license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
-    modified: yes  # ReactOS markers in 1 source file(s): parse.c
+    modified: yes  # MIXED VINTAGE — compat.c is older than the rest; see review
+    patch: vendor-patches/libmpg123.patch
     headers:
       - sdk/include/reactos/libs/libmpg123
     version:
@@ -730,16 +731,48 @@ trees:
       file: sdk/include/reactos/libs/libmpg123/config.h
       pattern: '#define PACKAGE_VERSION "([^"]+)"'
     review: >
-      POINTER ADDED 2026-09-19 and it is NOT upstream's file. mpg123's own COPYING was
-      never vendored — its headers say "see COPYING and AUTHORS files in distribution"
-      and neither is here — so this points at the repo-root COPYING.LIB, which is the
-      LGPL-2.1 text verbatim and is the licence the sources name. That gives the grant
-      an authoritative text in-tree; it does NOT recover mpg123's own AUTHORS file,
-      which the same sentence asks for. Bring both if this is re-vendored.
-      LICENCE TEXT IS NOT IN THE TREE, and the sources say so themselves: every file
-      header reads "free software under the terms of the LGPL... see COPYING and AUTHORS
-      files in distribution", and neither COPYING nor AUTHORS was vendored. Same defect
-      as freetype — the drop kept the code and left behind the document it points at.
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (mpg123-1.26.2.tar.bz2, sha256
+      00f7bf7ea64fcec2c9d07751d6ad8849343ee09c282ea3b0d5dd486e886e2ff3).
+
+      THIS IS A MIXED-VINTAGE DROP. Everything is 1.26.2 EXCEPT compat/compat.c, which is a
+      verbatim OLDER upstream file. Normalized against each release: 469 lines from 1.23.8,
+      ZERO from 1.24.0 / 1.25.10 / 1.25.13, and 219 from every 1.26.x. Its banner reads
+      "copyright 2007-2016" where 1.26.2 reads "2007-2020". So the 219-line compat.c hunk in
+      the patch is NOT a ReactOS edit — it is upstream's own 1.25->1.26 change, missing
+      because the file was never refreshed. Anyone re-vendoring must not "revert" it
+      thinking they are removing a local patch.
+
+      The consequence is a latent inconsistency, currently harmless: compat.h IS 1.26.2 and
+      declares `size_t unintr_fwrite(...)`, intsym.h mangles it to INT123_unintr_fwrite, and
+      the stale compat.c never defines it. Nothing calls it — verified by grepping both
+      halves — so it is a dead declaration, not a link error. Re-syncing compat.c to 1.26.2
+      fixes both at once, and also needs upstream's wpathconv.h, whose content our older
+      compat.c carries INLINE rather than #included. FLAGGED, NOT DONE: this pass records
+      state rather than changing a shipping library.
+
+      Everything else is small. parse.c is 6 lines, a pure __REACTOS__ guard that only moves
+      `#include "getbits.h"`. mpg123.h is 16: the expected @PACKAGE_VERSION@/@API_VERSION@
+      substitution from mpg123.h.in (1.26.2 / 45, which is where the old bogus "45" version
+      probe came from) plus a __REACTOS__-guarded `typedef long ssize_t`. compat.h is 6: the
+      same ssize_t guard and two dead msdn.microsoft.com URLs updated. optimize.h is 4:
+      __declspec(align) vs __attribute__((aligned)). A further 37 files differ only by
+      trailing-whitespace stripping and are excluded from the patch, so pristine+patch does
+      NOT reproduce the tree byte-for-byte; the header says so.
+
+      SECURITY: the decoder is untouched. layer1/2/3.c, id3.c, huffman.h, newhuffman.h,
+      frame.c, format.c, readers.c and parse.c's body are byte-identical or whitespace-only
+      against pristine. No bounds check, allocation, buffer size or Huffman/ID3 logic
+      differs. The only functional-content difference in the compiled set is compat.c's
+      EINTR retry plumbing, which is I/O rather than parsing. config.h selects the generic-C
+      OPT_I386 path with REAL_IS_FLOAT (no asm, no MMX/SSE/AltiVec), all three layers,
+      ID3v2, ICY, gapless, new Huffman tables, and — unlike libsamplerate — carries NO
+      kernel-mode shim; this is usermode only.
+
+      MEASUREMENT NOTE: match files by their FULL upstream path, not basename. mpg123 ships
+      both src/equalizer.c (the frontend's) and src/libmpg123/equalizer.c; a basename match
+      picks the wrong one and reports 56 phantom changed lines. Against the correct file
+      ours is identical.
+
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate

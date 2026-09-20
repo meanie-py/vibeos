@@ -1335,6 +1335,7 @@ Please send bug reports, offers of help, etc. to jpeg-info@jpegclub.org.
 - Version: 1.26.2
 - In this tree: `sdk/lib/3rdparty/libmpg123`, `sdk/include/reactos/libs/libmpg123`
 - Licence: LGPL-2.1
+- Modified by us: yes, see `vendor-patches/libmpg123.patch`
 - Grant reproduced from: `COPYING.LIB`
 
 ```
