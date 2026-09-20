@@ -718,20 +718,43 @@ unsafe fn CmpDoOpen(
             // cache data, not a KCB pointer.
             if ((**CachedKcb).__bindgen_anon_1.ExtFlags() & CM_KCB_SYM_LINK_FOUND) != 0 {
                 Kcb = (**CachedKcb).ValueCache.__bindgen_anon_1.RealKcb;
+
+                // Three bugs lived here, all on the path that resolves a registry
+                // symlink -- most prominently CurrentControlSet, i.e. essentially every
+                // boot-time driver and service lookup. Upstream-Commit: a45832a8ae4
+                //
+                //   1. `Delete` on the REAL kcb was read while only the SYMLINK's hash
+                //      bucket was locked, so the flag could change under us (TOCTOU).
+                //   2. the relock below took GET_HASH_INDEX of the SYMLINK's ConvKey,
+                //      not the real KCB's, so the KCB actually being used was never the
+                //      one locked.
+                //   3. all locks were dropped before the real KCB was ever referenced,
+                //      so nothing pinned it in existence across the gap.
+                //
+                // Reference first, then move the lock to the REAL KCB, and only then
+                // look at Delete.
+                if CmpReferenceKeyControlBlock(Kcb) == 0 {
+                    crate::dbg_print!(b"Failed to reference the real KCB, attempt a reparse\n\0");
+                    return 0x00000104u32 as i32; // STATUS_REPARSE
+                }
+
+                CmpUnLockKcbArray(KcbsLocked);
+                *KcbsLocked.offset(0) = 1;
+                *KcbsLocked.offset(1) = GET_HASH_INDEX((*Kcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey);
+                CmpAcquireKcbLockExclusiveByIndex(*KcbsLocked.offset(1));
+                // Back to exclusive, or EnlistKeyBodyWithKCB unlocks and relocks later.
+                IsLockShared = 0u8;
+
                 if (*Kcb).__bindgen_anon_1.Delete() != 0 {
                     crate::dbg_print!(b"The real KCB is deleted, attempt a reparse\n\0");
                     CmpUnLockKcbArray(KcbsLocked);
+                    CmpDereferenceKeyControlBlock(Kcb);
                     CmpAcquireKcbLockExclusiveByIndex(GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey));
                     CmpCleanUpKcbValueCache(*CachedKcb);
                     *KcbsLocked.offset(0) = 1;
                     *KcbsLocked.offset(1) = GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey);
                     return 0x00000104u32 as i32; // STATUS_REPARSE
                 }
-
-                CmpUnLockKcbArray(KcbsLocked);
-                CmpAcquireKcbLockExclusiveByIndex(GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey));
-                *KcbsLocked.offset(0) = 1;
-                *KcbsLocked.offset(1) = GET_HASH_INDEX((**CachedKcb).__bindgen_anon_2.__bindgen_anon_1.ConvKey);
             } else {
                 return 0x00000104u32 as i32; // STATUS_REPARSE
             }
@@ -1388,20 +1411,33 @@ unsafe fn CmpLookInCache(
     *MatchRemainSubkeyLevel = (RemainingSubkeys + 1) as u32;
 
     if KeyFoundInCache != 0 {
-        CmpDereferenceKeyControlBlock(*Kcb);
-        *Kcb = CurrentKcb;
-
-        if CmpReferenceKeyControlBlock(*Kcb) == 0 {
+        /* Reference the new KCB BEFORE dropping the locks, and before switching
+         * *Kcb to it. The old order dereferenced the caller's KCB and pointed *Kcb
+         * at CurrentKcb first, so a failed reference handed the caller a KCB that
+         * was never referenced while the one it did hold had already been released.
+         * CmpLookInCache is on the registry-lookup fast path -- every boot-time key
+         * resolution runs it. Upstream-Commit: e40c4d89cfb */
+        if CmpReferenceKeyControlBlock(CurrentKcb) == 0 {
             crate::dbg_print!(
                 b"Could not reference the KCB, too many references (KCB 0x%p)\n\0",
-                Kcb
+                CurrentKcb
             );
+            /* Unlock and release the reference taken at entry, so the caller sees a
+             * clean state rather than a half-switched one. */
             CmpUnLockKcbArray(LockedKcbs);
+            CmpDereferenceKeyControlBlock(*Kcb);
             return STATUS_UNSUCCESSFUL;
         }
 
+        /* Drop the locks before dereferencing: CmpDereferenceKeyControlBlock must
+         * never run with a KCB lock held. */
+        CmpUnLockKcbArray(LockedKcbs);
+        CmpDereferenceKeyControlBlock(*Kcb);
+        *Kcb = CurrentKcb;
+
         *Hive = (*CurrentKcb).__bindgen_anon_2.__bindgen_anon_1.KeyHive;
         *Cell = (*CurrentKcb).__bindgen_anon_2.__bindgen_anon_1.KeyCell;
+        return STATUS_SUCCESS;
     }
 
     CmpUnLockKcbArray(LockedKcbs);
