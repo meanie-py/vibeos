@@ -45,13 +45,61 @@ trees:
   # ── ACPI ────────────────────────────────────────────────────────────────
   - path: drivers/bus/acpi/acpica
     name: ACPICA
+    staleness: >
+      AUDITED 2026-09-20: ours 20221020, current 20260408. Parses ACPI tables supplied by
+      firmware. Unusually cheap to bump for its size — only 7 files carry real changes, all
+      host-port shims — but re-vendor from the LINUXIZED form or you will re-create a
+      phantom 219-file diff; see the review.
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
     license_ref: drivers/bus/acpi/acpica/include/acpi.h
-    modified: yes  # ReactOS markers in 6 source file(s): acpi.h, acenv.h, acgcc.h
+    modified: yes  # 7 host-port files; the other 219 differ only by licence FORM
+    patch: vendor-patches/acpica.patch
     version:
       file: drivers/bus/acpi/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (open-acpica/acpica tag R10_20_22 — the
+      acpica/acpica org redirects there, and tags are date-encoded MM_DD_YY so 20221020 is
+      R10_20_22; sha256 1aa17eb1779cd171110074ce271a65c06046eacbba7be7ce5ee71df1b31c3b86).
+      The entry said `modified: yes` with no patch and no review. Version confirmed exactly:
+      upstream acpixf.h carries ACPI_CA_VERSION 0x20221020, matching our probe.
+
+      THE HEADLINE IS A TRAP FOR THE NEXT PERSON. Diffed naively, ALL 226 vendored files
+      differ — and 219 of them differ ONLY inside the top-of-file licence comment. That is a
+      DISTRIBUTION FORM, not a modification: our tree carries the pre-SPDX "Linux-format"
+      ACPICA header (short BSD-3-Clause conditions, the "Alternatively ... GPL version 2"
+      arm, and NO WARRANTY), which Intel generates itself via ACPICA's generate/linux
+      tooling and which Linux shipped verbatim through v4.x — verified character-for-
+      character against torvalds/linux v4.4 drivers/acpi/acpica/tbutils.c, only the
+      copyright year differing. The raw GitHub tree carries Intel's long form with numbered
+      sections 1-4 (patent grant, 3.1-3.5 redistribution conditions, export compliance). So
+      the recorded licence `BSD-3-Clause OR GPL-2.0` describes OUR files correctly; re-
+      vendor from the linuxized form or you will re-create this 219-file phantom.
+
+      Only 7 files carry real changes, all host-port shims and 5 of them cleanly
+      __REACTOS__-guarded: acpi.h pulls in ntddk.h and #undefs ACPI_BIOS_ERROR; acenv.h
+      picks ACPI_OSL_MUTEX and (UNGUARDED) widens the compiler-select #if for __clang__ and
+      to exclude WIN64 so a clang/mingw PE64 build lands on acwin64.h; acgcc.h / acmsvc.h /
+      acwin.h suppress upstream's inline-asm cache-flush and Global Lock macros; acwin64.h
+      reimplements them with __wbinvd() and Interlocked* (standard ACPICA port practice).
+      The seventh, hardware/hwgpe.c, is the ONLY unguarded non-header code edit in the whole
+      tree: a (UINT64) cast on RegisterBit inside ACPI_CLEAR_BIT that cannot change the low
+      8 bits of the UINT8 EnableMask — inert, almost certainly a truncation-warning
+      silencer, worth dropping or marking next time someone is in there.
+
+      SECURITY: nothing in the vendored tree touches ACPI table/AML parsing, bounds checking
+      or allocation. All 9 tables/*.c and all 14 resources/*.c differ only in the header —
+      re-checked independently by measuring the highest upstream line any hunk reaches
+      (upstream's licence block ends around line 150), not taken on faith from the first
+      pass.
+
+      NOTE THE PATCH IS DELIBERATELY INCOMPLETE and so does NOT reproduce the tree byte-for-
+      byte, unlike the others in vendor-patches/: it carries the 7 real files only, because
+      the alternative is ~30k lines of licence boilerplate that says nothing. The patch
+      header explains how to re-verify the 219 claim in one command. 187 upstream files are
+      not vendored at all — ASL compiler, disassembler, debugger, tools, OS service layers —
+      none of which a runtime kernel driver needs.
     reason: >
       Intel's ACPI Component Architecture, the reference implementation every OS
       vendors rather than reimplements. Tracking upstream is worth more than owning
@@ -529,13 +577,54 @@ trees:
 
   - path: sdk/lib/3rdparty/adns
     name: adns
+    staleness: >
+      AUDITED 2026-09-20: ours 1.0, current 1.7.0 — a DNS parser handling untrusted network
+      input, roughly 25 years behind. Bumping is NOT a copy: our tree is GNU adns 1.0 plus a
+      third-party Windows port whose own distribution (adns.jgaa.com) no longer exists, so
+      the port would have to be redone against a modern adns.
     upstream: https://www.chiark.greenend.org.uk/~ian/adns/
     license: GPL-2.0-or-later
     license_file: sdk/lib/3rdparty/adns/COPYING
-    modified: yes  # ReactOS markers in 2 source file(s): adns.h, setup.c
+    modified: yes  # a third-party Windows port, not our work; see review
+    patch: vendor-patches/adns.patch
     version:
       file: sdk/lib/3rdparty/adns/client/client.h
       pattern: '#define ADNS_VERSION_STRING "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (adns-1.0.tar.gz from chiark, sha256
+      bed27a4ec5b71acc08333368e842a1248e83328018b582caf644985539967c5d). The entry said
+      `modified: yes` with no patch and no review; now measured, and the headline is that
+      THE DELTA IS NOT OURS.
+
+      It is a third-party Windows port that arrived already applied — "the ADNS resolver
+      library for Windows, ported by Jarle (jgaa) Aase" per adns_win32/README.TXT, built
+      with -DADNS_JGAA_WIN32. Exactly ONE file in the tree carries a __REACTOS__ marker
+      (src/setup.c), so reading this diff as ReactOS's work would be wrong.
+
+      Version 1.0 is certain: all twelve top-level files (COPYING, GPL-vs-LGPL, README,
+      INSTALL, TODO, changelog, configure.in, acconfig.h, aclocal.m4, Makefile.in,
+      settings.make.in, install-sh) are byte-identical to pristine 1.0, and the changelog's
+      newest entry is "adns (1.0)".
+
+      THE PORT'S OWN UPSTREAM IS GONE — adns.jgaa.com does not resolve (jgaa.com still does)
+      and the Wayback API has no snapshot, the same dead-distribution problem as dxtn. So
+      the patch is taken against GNU adns 1.0, the only surviving reference point, and it
+      necessarily conflates jgaa's port with any later local change. Don't read a hunk as a
+      ReactOS decision without checking for a marker first.
+
+      Scope: src/ is 11 files and ~570 normalized lines and IS compiled; client/ is 8 files
+      and ~123 lines and is NOT (the adnshost/adnslogres tools are absent from our CMake
+      list), included in the patch only so pristine+patch reproduces the tree. Verified all
+      20 files reproduce byte-for-byte. Normalize before counting anything here — the tree
+      is CRLF in places and raw diffs overstate badly (src/adns.h 150 raw vs 92 real).
+
+      FLAGGED, NOT FIXED: adns_win32/getopt.c and getopt.h carry NO licence. The header says
+      verbatim "jgaa oct 9th 2000: Found this on www. No copyright information given.
+      Slightly modified." with a winsite.com origin URL. They are not in the CMake source
+      list and nothing references them, so this is dead code of unknown provenance — it
+      should probably just be deleted, which is a decision rather than an audit finding. The
+      rest of adns_win32 (adns_unix_calls.c, adns_win32.h) is properly GPL-2.0-or-later,
+      jgaa plus Ian Jackson, and adns_unix_calls.c IS compiled.
     reason: Asynchronous DNS resolver; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libmpg123
@@ -571,10 +660,50 @@ trees:
 
   - path: sdk/lib/3rdparty/libsamplerate
     name: libsamplerate
+    staleness: >
+      AUDITED 2026-09-20: ours 0.1.9 (2016), current 0.2.2. Audio resampler reachable from
+      untrusted sample data, and it is linked into kmixer.sys, a KERNEL driver — so a bug
+      here is a ring-0 bug. Now that the tree is de-patched down to two files the bump
+      should be cheap; mind the kernel-mode exit()/printf shim in config.h.
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
     license_file: sdk/lib/3rdparty/libsamplerate/COPYING
-    modified: yes  # ReactOS markers in 1 source file(s): config.h
+    modified: yes  # 2 upstream files (float_cast.h, config.h); see patch
+    patch: vendor-patches/libsamplerate.patch
+    version:
+      # LITERAL, not a probe: config.h says PACKAGE_VERSION "0.1.8" but so does upstream
+      # 0.1.9's own hand-maintained Win32/config.h, so a probe reports upstream's error.
+      # 0.1.9 is established in the review from the LGPL->BSD relicense boundary.
+      literal: 0.1.9  # established 2026-09-20; no probe-able source exists
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 and VERSION RECOVERED. The entry said
+      `modified: yes` with no patch, no review and version `unknown` — one of five trees in
+      that state. Now measured.
+
+      The version is 0.1.9, and there is NO honest probe for it. config.h says
+      PACKAGE_VERSION "0.1.8" — but so does upstream 0.1.9's own Win32/config.h, which is
+      hand-maintained rather than a configure output and whose version string upstream never
+      bumped. A probe reading it would launder upstream's error into our registry, so
+      `version:` is deliberately left absent. Established instead from the LICENCE BOUNDARY:
+      every source header carries the 2-clause BSD notice and "Copyright (c) ...-2016",
+      whereas 0.1.8 is LGPL-2.1 — libsamplerate relicensed AT 0.1.9. Diffing against 0.1.9
+      rather than 0.1.8 collapses the delta from all 13 files to three, which confirms it.
+      Our COPYING is already the BSD text, so the recorded licence was right all along.
+
+      Two upstream files are edited. float_cast.h narrows upstream's inline lrint/lrintf
+      from `#if defined(WIN32)` to `#ifdef _MSC_VER`, because under clang/mingw they collide
+      with the real libm ones; that cannot be a -D since it guards a DEFINITION. config.h
+      carries two portability bits and — the one that matters — a KERNEL-MODE shim, `#define
+      exit(n) __debugbreak()` and `#define printf DbgPrint`, because libsamplerate is linked
+      into kmixer.sys where neither symbol exists. A re-vendor that drops that will not
+      link.
+
+      DE-PATCHED in the same pass, five files down to two: samplerate.c, src_linear.c,
+      src_sinc.c and src_zoh.c had their include blocks replaced by `#include "precomp.h"`,
+      which is the manual half of `add_pch(libsamplerate precomp.h SOURCE)` — the same
+      leftover pattern found in libtiff. All four restored to pristine; clean rebuild, zero
+      warnings, and wdmaud.drv + kmixer.sys still build. Verified the patch applies to a
+      fresh 0.1.9 extraction and reproduces our tree byte-for-byte.
     reason: Sample-rate conversion; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libwin-iconv
@@ -915,19 +1044,58 @@ trees:
   - path: dll/3rdparty/libtirpc
     name: libtirpc
     staleness: >
-      AUDITED 2026-09-20: ours 0.1.11, current 1.3.8 — this is the largest version gap in
-      the registry by a wide margin.
+      AUDITED 2026-09-20: ours is 0.2.1 (2011), not the 0.1.11 the registry used to claim —
+      see the review for why the VERSION file lies. Current upstream is 1.3.8, so this is
+      still the largest version gap in the registry by a wide margin, and it is an RPC wire-
+      format parser. The catch: our tree is a Windows/SSPI port with ~3650 lines of delta
+      and no surviving upstream artifact for the port itself, so a bump is a re-port, not a
+      copy.
     upstream: https://sourceforge.net/projects/libtirpc/
     license: BSD-3-Clause
     license_file: dll/3rdparty/libtirpc/COPYING
-    modified: yes  # ReactOS markers in 23 source file(s): asprintf.c, auth_sspi.c, auth_time.c
+    modified: yes  # a Windows/SSPI port over 0.2.1; see review
+    patch: vendor-patches/libtirpc.patch
     version:
-      file: dll/3rdparty/libtirpc/VERSION
-      patterns:
-        - 'PKG_MAJOR=(\d+)'
-        - 'PKG_MINOR=(\d+)'
-        - 'PKG_REVISION=(\d+)'
-      join: "."
+      # LITERAL, not a probe, and deliberately so: the only in-tree version string is
+      # VERSION's PKG_REVISION=11, and upstream 0.2.1 ships that exact same stale file,
+      # so probing it reports 0.1.11 and launders upstream's error. 0.2.1 is established
+      # in the review from the Sun BSD relicense boundary plus whole-tree best fit.
+      literal: 0.2.1  # established 2026-09-20; no probe-able source exists
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 and THE RECORDED VERSION WAS WRONG. The
+      entry said `modified: yes` with no patch and no review, and probed 0.1.11 out of the
+      VERSION file. It is really 0.2.1.
+
+      The probe is now REMOVED rather than repointed, because there is no honest in-tree
+      source for this version: upstream 0.2.1's own VERSION file ALSO says PKG_REVISION=11 —
+      upstream never bumped it — so ours is byte-identical to theirs and the probe was
+      faithfully laundering upstream's error. Third instance of this shape here, after
+      libjpeg's JPEG_LIB_VERSION 90 and libmpg123's MPG123_API_VERSION 45; an API or
+      packaging number is not a release. (libsamplerate has exactly the same defect, also
+      from an upstream-shipped stale config.)
+
+      0.2.1 established two independent ways. First, licence headers: our sources carry the
+      BSD-3-Clause "Copyright (c) 2009, Sun Microsystems, Inc." notice, while 0.1.11 still
+      carries the old restrictive Sun RPC legend ("not authorized to license or distribute
+      it to anyone else"). Sun relicensed after 0.1.11, so this tree cannot be 0.1.11 —
+      which also means the recorded BSD-3-Clause licence was right all along while the
+      version was not. Second, best fit: whole-tree normalized diff is 8106 lines against
+      0.1.11, 3652 against 0.2.1 and 4442 against 0.2.2.
+
+      The delta is a WINDOWS PORT, not ReactOS logic. The added files give it away:
+      src/wintirpc.c, src/winstubs.c, src/auth_sspi.c, src/authsspi_prot.c, tirpc/wintirpc.h
+      and tirpc/rpc/auth_sspi.h — SSPI standing in for GSS-API (src/auth_gss.c and
+      src/authgss_prot.c are commented out of the CMake source list) plus a Win32 syscall
+      shim; src/asprintf.c and src/gettimeofday.c are POSIX fill-ins. 92 files differ, ~3652
+      normalized lines, 17 byte-identical, 10 ours-only. The patch reproduces the tree byte-
+      for-byte from pristine 0.2.1 (109 files compared, 0 mismatches). It cannot separate
+      third-party porting from later local edits: the port has no separately published
+      artifact, the same dead-upstream problem as adns and dxtn.
+
+      MEASUREMENT TRAP worth inheriting: several files here are ISO-8859 rather than UTF-8,
+      and `grep -c` silently produced NO OUTPUT on twelve of them under this shell, so they
+      read as unmeasured rather than as errors. Count with awk and LC_ALL=C. Normalize
+      CRLF/trailing whitespace too, or the totals inflate.
     reason: Transport-independent RPC; upstream-tracked.
 
   - path: dll/3rdparty/dxtn
