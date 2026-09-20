@@ -1307,7 +1307,7 @@ pub unsafe extern "system" fn NtUserConvertMemHandle(
     cbData: DWORD,
 ) -> HANDLE {
     let mut hMem: HANDLE = core::ptr::null_mut();
-    let mut pMemObj: PCLIPBOARDDATA;
+    let pMemObj: PCLIPBOARDDATA;
     let Status: NTSTATUS;
 
     UserEnterExclusive();
@@ -1329,10 +1329,12 @@ pub unsafe extern "system" fn NtUserConvertMemHandle(
         (*pMemObj).cbData = cbData;
 
         /* Copy data */
+        // Signal the failure through Status, NOT by nulling pMemObj: the
+        // UserDereferenceObject below runs unconditionally and dereferenced the null
+        // we had just written -- a BSOD any user-mode caller could trigger with a bad
+        // pData. Upstream feb9febaae3 (#7878) made the same split.
         Status = SafeProbeForRead(pData, cbData as _, 1);
-        if !NT_SUCCESS(Status) {
-            pMemObj = core::ptr::null_mut();
-        } else {
+        if NT_SUCCESS(Status) {
             memcpy(
                 core::ptr::addr_of_mut!((*pMemObj).Data) as *mut _,
                 pData,
@@ -1344,7 +1346,7 @@ pub unsafe extern "system" fn NtUserConvertMemHandle(
         UserDereferenceObject(pMemObj as _);
 
         /* If we failed to copy data, remove handle */
-        if pMemObj.is_null() {
+        if !NT_SUCCESS(Status) {
             UserDeleteObject(hMem, TYPE_CLIPDATA);
             hMem = core::ptr::null_mut();
         }

@@ -281,7 +281,14 @@ pub unsafe extern "system" fn NtUserCreateAcceleratorTable(
     UserEnterExclusive();
 
     'exit: {
-        if Entries.is_null() || EntriesCount == 0 {
+        // The byte size below is `EntriesCount as usize * size_of::<ACCEL>()`. On i386
+        // usize is 32 bits, so a large EntriesCount WRAPS, we allocate a short buffer
+        // and then copy EntriesCount entries into it -- heap corruption from user mode.
+        // Upstream c65740eeb3a (#7888) added the same bound as MAXULONG_PTR/sizeof.
+        if Entries.is_null()
+            || EntriesCount == 0
+            || EntriesCount as usize > usize::MAX / core::mem::size_of::<ACCEL>()
+        {
             SetLastNtError(STATUS_INVALID_PARAMETER);
             break 'exit;
         }
