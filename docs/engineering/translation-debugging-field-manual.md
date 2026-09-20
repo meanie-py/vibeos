@@ -6811,6 +6811,18 @@ the fix and **2** after. Two consequences worth generalizing:
 - **A negative from an unexercised call site is the same failure with a different cause.**
   Hooking only `NtUserPeekMessage` would have missed an app whose pump uses `GetMessage`;
   hook every entry point the workload could take, or confirm from serial that yours is hit.
+- **A one-shot latch SHARED across the cases you are comparing reports only whichever
+  happens first — systematically the uninteresting one.** Asking "is this GDI batch flush
+  ever taken for a WoW64 guest?" with a single `static mut REPORTED` printed
+  `flush taken: count=1 wow64=0` and then went silent forever: native processes start first
+  and always win the latch, so the run said nothing at all about guests. One latch PER arm
+  of the comparison (`SEEN_NATIVE` / `SEEN_WOW64`). Same family as the two above — the probe
+  is quiet for a reason that has nothing to do with the hypothesis — and the tell is that
+  the thing you are comparing against is also the thing that fires first.
+- **Sample on the right SIDE of the transition.** A probe at syscall ENTRY cannot see
+  corruption that happens on the return-to-user path (the trap handler's batch flush runs
+  after the service returns). Two probes reported "no divergence" across a window where the
+  value demonstrably changed, purely because entry was the wrong side of it.
 - **An arch-gated tolerate-and-continue path needs LOUDER reporting than the arch that
   bugchecks, not quieter.** Where x86 stops dead, the tolerant arch keeps running with the
   damage — and if its report is a no-op, that hatch can never signal anything, so it becomes
@@ -9857,6 +9869,17 @@ win32k is the largest single flip surface and its failures are stereotyped:
   start-menu labels, CLIENTINFO corruption, a user32 `ValidateHandle` AV). Detector:
   `scan_magic_offsets` shape `TYPED_PTR_HEX_ARITH`. **Use a typed read**
   (`(*(teb as *const _TEB)).GdiBatchCount`), never pointer arithmetic on a hex literal.
+  **It recurred in 2026-09 for WoW64 guests, through the wrong TEB instead of the wrong
+  offset — so the detector above could not see it.** A guest's gdi32 bumps
+  `TEB32->GdiBatchCount`; every arch's trap path tested TEB64's; the flush therefore never
+  ran for a guest and nothing reset `Offset`. gdi32 calls `NtGdiFlush()` when it believes
+  the buffer is full and then writes at `Buffer + Offset` **without re-checking**
+  (`gdi32p.h:498-515`), so `Offset` climbed past the 0x4D8 buffer end and hit 0x508 from
+  the buffer base — `CLIENTINFO.pDeskInfo` exactly. Identical downstream symptoms to the
+  original, which is the tell. **Generalise: "which TEB" is as much a layout question as
+  "which offset", and a WoW64 guest writes the one the kernel does not read by default.**
+  Any kernel path that reads a TEB field a 32-bit guest also writes needs the same
+  treatment; `wow64_teb32()` (amd64) and `KiWow64GdiBatchCount()` (arm64) are the shape.
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**

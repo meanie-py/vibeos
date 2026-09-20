@@ -11,6 +11,30 @@
 #define NDEBUG
 #include <debug.h>
 
+/*
+ * The GdiBatchCount the CURRENT process's gdi32 actually increments.
+ *
+ * For a native process that is TEB64's field. For a WoW64 guest it is
+ * TEB32's, because the guest runs the 32-bit gdi32 against its own TEB; the
+ * 32-bit TEB sits at TEB64 + 0x2000 in the combined WoW64 TEB region (see
+ * ARM3/procsup.rs WOW64_TEB32_OFFSET and win32k-rust/src/wow64.rs, which use
+ * the same constant).
+ */
+#define WOW64_TEB32_OFFSET 0x2000
+
+PULONG KiWow64GdiBatchCount(PTEB Teb)
+{
+    PEPROCESS Process = PsGetCurrentProcess();
+
+    if (Process != NULL && PsGetProcessWow64Process(Process) != NULL)
+    {
+        PTEB32 Teb32 = (PTEB32)((PUCHAR)Teb + WOW64_TEB32_OFFSET);
+        return &Teb32->GdiBatchCount;
+    }
+
+    return &Teb->GdiBatchCount;
+}
+
 /* Verify KTRAP_FRAME offsets match assembly constants in trap.S */
 _Static_assert(__builtin_offsetof(KTRAP_FRAME, ExceptionActive) == 0x00,  "TfExceptionActive");
 _Static_assert(__builtin_offsetof(KTRAP_FRAME, PreviousMode)    == 0x03,  "TfPreviousMode");
@@ -197,8 +221,16 @@ DispatchCall:
     if (TableIndex == 1 && (TrapFrame->Spsr & 0xF) == 0)
     {
         PTEB Teb = KeGetCurrentThread()->Teb;
-        if (Teb && MmIsAddressValid(&Teb->GdiBatchCount) &&
-            Teb->GdiBatchCount != 0 && KeGdiFlushUserBatch)
+        /* A WoW64 guest's gdi32 batches into its TEB32 and bumps
+         * TEB32->GdiBatchCount, so testing TEB64's here never sees a guest's
+         * batch -- the flush never runs, nothing resets Offset, and gdi32
+         * (which writes at Buffer+Offset without re-checking after its own
+         * NtGdiFlush) walks out of the buffer into CLIENTINFO. Field manual
+         * §9.41, second occurrence; measured on amd64 with Offset reaching
+         * 0x508 from the buffer base, which is pDeskInfo exactly. */
+        PULONG pGdiBatchCount = Teb ? KiWow64GdiBatchCount(Teb) : NULL;
+        if (pGdiBatchCount && MmIsAddressValid(pGdiBatchCount) &&
+            *pGdiBatchCount != 0 && KeGdiFlushUserBatch)
         {
             KeGdiFlushUserBatch();
         }

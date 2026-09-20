@@ -623,6 +623,29 @@ pub unsafe extern "system" fn NtGdiFlush() -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiFlushUserBatch() -> NTSTATUS {
     let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB;
+
+    // A WoW64 guest batches into its TEB32, never this one, so the loop below
+    // would read a batch it did not write. Worse, leaving TEB32's Offset and
+    // GdiBatchCount un-reset is what lets gdi32 walk its writes out of
+    // GdiTebBatch.Buffer and onto CLIENTINFO.pDeskInfo (field manual §9.41,
+    // second occurrence; MEASURED Offset=0x508 from the buffer base, which is
+    // pDeskInfo exactly).
+    //
+    // Reset the guest's batch so the overflow cannot happen. The batched
+    // commands are NOT executed -- interpreting them needs the 32-bit record
+    // layouts, which differ from these by the width of their HANDLE fields
+    // (GDIBSPATBLT.hbrush, GDIBSTEXTOUT.hlfntNew, GDIBSOBJECT.hgdiobj,
+    // PATRECT.hBrush inside GDIBSPPATBLT; the other three record types are
+    // already layout-identical). That is the follow-up, tracked in the
+    // roadmap. This changes NO drawing behaviour versus today, because today
+    // the flush never runs for a guest at all and those commands are dropped
+    // anyway -- it only stops the memory corruption. It is LOUD rather than
+    // silent so the dropped work cannot be forgotten.
+    if crate::wow64::IsWow64Process() {
+        crate::wow64::Wow64ResetGuestGdiBatch();
+        return STATUS_SUCCESS;
+    }
+
     let GdiBatchCount = (*pTeb).GdiBatchCount;
 
     if GdiBatchCount > 0 && GdiBatchCount <= (GDIBATCHBUFSIZE / 4) {

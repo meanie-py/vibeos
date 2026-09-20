@@ -1008,136 +1008,91 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   because the machine was gone. `sqlite32` is now LAST among the optional guests
   (`winlogon.rs`); keep it there while this bug is open.
 
-- **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — OPEN**
-  (2026-09-13). Found while attributing a guest-fault count in a `smoke --arch amd64 --ladder`
-  run, so it is NOT on the probe-guest ladder and does not fail it.
-  **CORRECTION (same night): do not read this as amd64-only.** `sqlite32.exe` took the same
-  signature once on arm64 -- `eip=00000000` with `rw=8` (instruction fetch), crashing before
-  its first print -- and did NOT reproduce on an immediate re-run, where it printed normally
-  and got all the way into file I/O. So the arch split is unestablished and the arm64
-  instance is a single non-reproducing sample; the reason arm64 does not show the *stock-app*
-  cascade is simply that it never launches notepad/mspaint/wordpad. `notepad.exe`,
-  `mspaint.exe` and `wordpad.exe` (each logged as `STOCK i386 app`) take **58 faults apiece**;
-  every other image in the same boot takes 0 or 1, and `fault32.exe`'s single fault at
-  `eip=00401012` is the deliberate one its own test raises. So this is specific to the stock
-  GUI apps, not general WoW64 breakage — the CSR/LPC ladder is green in the same boot and
-  `[WOW64CB] WINDOWPROC` callbacks dispatch into the guest and return correctly.
-  The shape: one fault executing from a STACK address (`eip=001ff49b`, `addr=2c850157`),
-  then 57 at `eip=00000000` with `rw=8` (instruction fetch, not a data deref) and every GPR
-  zeroed, each dispatched to 32-bit SEH at a deeper `esp` (`001fec98`, `001fe878`, ...) — a
-  re-faulting cascade that consumes stack rather than a single bad call. An indirect call
-  through a NULL or unrelocated function pointer is the obvious candidate (an unfilled import
-  thunk or callback-table slot), but WHICH pointer is unmeasured: nothing here identifies the
-  call site, and the cascade destroys the registers that would name it. Next step is a
-  tripwire or a GDB break on the first fault, not more log reading — by the second fault the
-  evidence is gone.
+- **Stock 32-bit GUI apps cascade into an execute-at-NULL fault under WoW64 — ROOT-CAUSED
+  AND FIXED 2026-09-20.** It was the GDI TEB batch, never flushed for a guest, overrunning
+  `GdiTebBatch.Buffer` into `CLIENTINFO.pDeskInfo`. **This is field manual §9.41 a second
+  time** — same bug, and two of that entry's four recorded symptoms are literally
+  "CLIENTINFO corruption" and "a user32 `ValidateHandle` AV" — reached through the wrong
+  **TEB** instead of the wrong **offset**, which is why `scan_magic_offsets`, the detector
+  added for §9.41, cannot see it.
 
-  **THE FIRST FAULT IS NOW MEASURED (2026-09-20), and it is a fourth fault this entry never
-  saw — the head of the chain, not the stack one.** No GDB was needed; the fault path already
-  prints the GPRs. What the entry above describes as "one fault executing from a STACK
-  address, then 57 at NULL" is faults 2..58. Fault 1 is:
+  Every link measured rather than argued:
 
-        guest fault c0000005 eip=77a64e84 (esp=001ff4a8)
-        AV rw=0 addr=00000040 | eax=7ffee000 edx=00000040 ...
+  1. A guest's gdi32 bumps `TEB32->GdiBatchCount` (`win32ss/gdi/gdi32/include/gdi32p.h:517`).
+  2. Every arch's trap path tested **TEB64**'s, so the flush never fired for a guest.
+     Measured with per-case latches across a full boot: only ever `wow64=0`.
+  3. So nothing reset the batch. Measured: count ran past `GDI_BatchLimit` (20) to 0x2d and
+     `Offset` climbed monotonically to 0x628.
+  4. Over the limit, gdi32 calls `NtGdiFlush()` on EVERY append and then writes at
+     `Buffer + Offset` **without re-checking** (`gdi32p.h:498-515`), trusting the kernel to
+     have zeroed `Offset` — true for a native process, never for a guest.
+  5. `Buffer` spans TEB32+0x1DC..0x6B4 (`GDIBATCHBUFSIZE` 0x4D8); `Win32ClientInfo` is
+     0x6CC and `pDeskInfo` 0x6E4, i.e. **0x508 from the buffer base**. Measured: `Offset`
+     passed 0x4D8 and hit exactly 0x508.
+  6. `user32!ValidateHandleNoErr` reads it by absolute displacement
+     (`mov %fs:0x18,%eax; mov 0x6e4(%eax),%edx`), null-checks it, PASSES (a batch record
+     byte is not NULL), dereferences, AVs.
 
-  `77A20000` is **user32** (unrelocated ImageBase), so this is
-  `user32!ValidateHandleNoErr+0x124`, which disassembles to
+  **Fix:** read the TEB the guest actually writes — `wow64_teb32()` in
+  `ntoskrnl-rust/src/ke/amd64/traphandler.rs`, and `KiWow64GdiBatchCount()` in
+  `ntoskrnl/ke/arm64/trap.c` shared with `ke/arm64/usercall.c` so the syscall and
+  user-callback return paths cannot disagree — plus `Wow64ResetGuestGdiBatch()` from
+  `NtGdiFlushUserBatch`.
 
-        mov %fs:0x18,%eax        ; the 32-bit TEB      -> 7ffee000
-        mov 0x6e4(%eax),%edx     ; TEB+0x6E4           -> 00000040
-        test %edx,%edx / je      ; non-NULL, so it proceeds
-        mov (%edx),%esi          ; <-- faults
+  **Verified:** notepad faulted 58 times in every one of six boots; with the fix it is
+  **0** and reports `still running = PASS`. Whole-boot guest faults 177+ -> 2, both
+  survivors being `fault32`/`thread32`'s own deliberate test faults. Zero faults remain
+  anywhere in user32's range.
 
-  TEB32+0x6CC is `Win32ClientInfo`, so +0x6E4 is **`CLIENTINFO.pDeskInfo`** (offset 0x18 in
-  the i386 layout). user32 null-checks it and it is NOT null — it holds a non-pointer. So
-  this was never "an unfilled import thunk or callback-table slot": it is a **bad
-  `pDeskInfo` in the guest's TEB32**, which makes `DesktopPtrToUser()` dereference garbage.
-  The value DIFFERS per process — notepad `00000040`, mspaint `00490090`, winver `00100000`
-  — i.e. a wrong value, not an unset one.
+  **Owed, logged loudly rather than silently:** the batched commands are RESET, not
+  executed. Executing them needs the 32-bit record layouts, which differ only by four
+  HANDLE widths (`GDIBSPATBLT.hbrush`, `GDIBSTEXTOUT.hlfntNew`, `GDIBSOBJECT.hgdiobj`,
+  `PATRECT.hBrush` in `GDIBSPPATBLT`; the other three record types are already identical).
+  Costs no drawing that was not already dropped, since the flush never ran for a guest at
+  all. A `[GDIBATCH] ... cmds DISCARDED` line fires once per guest.
 
-  The cascade after it is now explained too, and it is not 57 independent bugs. The constant
-  `edx=7e0032d0` in every NULL fault is `ntdll32!RtlpExceptionProtector` (ntdll32 loads at
-  its ImageBase 7E000000), and the instruction stream just above it is
-  `RtlpExecuteHandler2`'s `mov 0x18(%ebp),%ecx; call *%ecx`. So the 56 `eip=00000000`
-  `rw=8` faults are **`RtlpExecuteHandler2` calling a NULL SEH handler**, each nesting one
-  frame deeper — a broken handler chain, which is why `esp` descends.
+  **Why `--ladder` could not see any of this for a week**, which is the reusable part:
+  `ladder.watch()` stops draining once every GRADED guest reports, and the stock applets
+  run after the parity set and are not graded. So the flag whose job is watching the ladder
+  ended at 86.8s with the applet phase unobserved. Fixed with
+  `VIBEOS_LADDER_DRAIN_FLOOR=<seconds>` (`tests/qemu/cli/ladder.py`), which only ever
+  extends the drain; set it above `LADDER_TIMEOUT_SECONDS` (420) or it does nothing.
 
-  **The value is written AFTER a correct publish, and is non-deterministic.** Instrumenting
-  `Wow64PublishClientInfo` shows notepad's own thread (`pti=fffffa8000fe6cb0`, confirmed to
-  be the faulting thread because the fault's `edi=00fe6cb0` is that pti truncated) publishes
-  exactly twice before the fault: `pDeskInfo=00000000` at thread init, then
-  `pDeskInfo=00720dd0 delta=ddbb0000` at desktop assignment — correct. The third publish,
-  back to 0, is at thread EXIT and is after the fault. ~2500 serial lines later user32 reads
-  `0000000f` from that slot; the previous boot of the SAME app read `00000040`. So the
-  projection is right and something scribbles the slot afterwards.
+- **`WOW64_TEB32_OFFSET` is hand-rolled in FOUR places — OPEN cleanup** (2026-09-20).
+  `ntoskrnl-rust/src/ARM3/procsup.rs:675` (the allocator that defines the layout),
+  `ke/amd64/thrdini.rs:235`, `ke/amd64/traphandler.rs` (added by the GDI-batch fix) and
+  `win32k-rust/src/wow64.rs`. Each is `const WOW64_TEB32_OFFSET: usize = 0x2000` plus its
+  own `(p as *const u8).add(..)`, and each needs its own `// nolint: magic-offset`
+  annotation to get past `scan_magic_offsets` — which is the smell: the scanner is being
+  told four times that the same thing is fine. It wants ONE typed accessor in `ntkrnl-sys`
+  (reachable from both crates) so the layout has a single definition and a single
+  annotation. Noticed because the strict deferred lint rejected the fourth copy at
+  land preflight; the annotation is the convention the other three already use, so this is
+  consistency, not a new exception.
 
-  Eliminated, so nobody re-derives them: the TEB32 offset is right (`Win32ClientInfo` is at
-  0x6CC — now a `const _: () = assert!` in `win32k-rust/src/wow64.rs`, since a wrong one
-  would NOT fail to build and NOT fault, it would silently publish a correct CLIENTINFO32 at
-  the wrong address); the targeting is right (`[MM] MmCreateTeb: WoW64 TEB32 at 7ffee000`
-  matches both the publish and the guest's `fs:[0x18]`); user32 never writes `pDeskInfo`;
-  and each append the guest's gdi32 makes is bounded (`GDIBATCHBUFSIZE` is `0x136*4` against
-  `Buffer[0x136]` — consistent, so a single append cannot run past the buffer).
+- **A guest fault is AMPLIFIED into process death by a NULL SEH handler — OPEN**
+  (2026-09-20). Separate from the entry above and now the more important of the two: it
+  turns ANY single guest fault into ~55 and a dead process.
+  `ntdll32!RtlpExecuteHandler2`'s `mov 0x18(%ebp),%ecx; call *%ecx` runs with `ecx == 0`,
+  once per nesting level at descending `esp`, with `edx` pinned at
+  `ntdll32!RtlpExceptionProtector` (ntdll32+0x32d0) throughout — which is how the frames
+  are identified. Fixing the CLIENTINFO corruption removed one TRIGGER and left the
+  amplifier: `charmap.exe` still shows the same 55-fault cascade from a different first
+  fault. Start from the guest-SEH frame the WoW64 layer builds
+  (`Wow64pBuildGuestExceptionFrame`) and the handler chain handed to the guest dispatcher.
+  The `EXITED = 0x80` verdict on a stock applet is this: csrss terminating the process
+  after an exception reached second chance.
 
-  **RETRACTED, same day: I listed `NtGdiFlushUserBatch` as eliminated and it is not.** The
-  reasoning was "commented out of `win32u.spec`, zero occurrences in the boot" — but
-  `win32k-rust/src/main.rs:890` registers it as the kernel's `BatchFlushRoutine` callout, so
-  it is reached through `KeGdiFlushUserBatch` from the trap path and never prints. I read
-  the absence of a log line from a function that does not log. The spec entry only governs
-  the user-mode syscall export. It is now the leading suspect, below.
+- **`charmap.exe` faults in its OWN code under WoW64 — OPEN** (2026-09-20). Previously
+  masked by the CLIENTINFO cascade, visible now that it is fixed. First fault is
+  `eip=0040335a` — charmap's own image at base 0x400000, NOT user32 — reading `001efd84`
+  while `esp=001fea38`, i.e. ~0xCB4 BELOW the stack pointer: a stack-guard shape rather
+  than a bad pointer. It then dies through the amplifier above.
 
-  One red herring, recorded because it was
-  convincing: the last `NtGdiFlush` before the fault logs `arg0=0000000f`, matching the bad
-  value exactly — but `NtGdiFlush` takes NO arguments, those "args" are stale registers, and
-  the earlier boot has the identical `arg0=0000000f` while faulting on `00000040`. Coincidence.
-
-  **MEASURED 2026-09-20: the corruption window is INSIDE one message dispatch, not across
-  the pump.** A probe in win32k compared `pci->pDeskInfo` (win32k's own CLIENTINFO, in TEB64)
-  against the published `ci32->pDeskInfo` (TEB32) on every `NtUserGetMessage` /
-  `NtUserPeekMessage`, and reported **zero** mismatches on a boot where notepad took its
-  usual 58 faults and then DIED (`EXITED = 0x80`). The probe is proven live, not merely
-  compiled: it also logs one unconditional sample, which came back
-
-        [WOW64CI-ALIVE] first WoW64 sample: want=007e0dd0 got=007e0dd0
-                        TEB32 cnt=00000000 off=00000000 | TEB64 cnt=00000000
-
-  So the two copies agree at every pump boundary. The faults happen between those boundaries
-  — inside a single dispatch, on the paint path — which is exactly where a `GetMessage`-entry
-  probe cannot see. **The sampling point was the flaw, not the hypothesis.** Next experiment,
-  specified so it is not re-derived: sample on a PAINT-path syscall (`NtUserBeginPaint`,
-  `NtUserGetDC`, a hot `NtGdi*`) rather than the pump, and compare against the AUTHORITATIVE
-  kernel value `(*pti).pDeskInfo - ulClientDelta` rather than against `pci->pDeskInfo` —
-  comparing the projection to its own source cannot detect the case where BOTH are wrong.
-
-  That first sample also shows `TEB32 GdiBatchCount = 0` at that instant, which is one early
-  sample from a different guest and does **not** settle the GDI-batch question below; it is
-  recorded only so the number is not re-measured.
-
-  **Population corrected.** It is notepad, mspaint and **winver** at 58 each, plus
-  Two full-drain boots of the same media, minutes apart:
-
-  | boot | 58 faults | other |
-  |---|---|---|
-  | A | notepad, mspaint, winver | regedit 32 |
-  | B | notepad, calc, taskmgr | charmap 55 |
-
-  Only notepad is in both. So the original entry's "specific to the stock GUI apps, not
-  general WoW64 breakage" is half right — it IS confined to the applet phase, but WHICH
-  applets is not a property of the applets, and neither the comdlg32 nor the drag-and-drop
-  split that the app list suggests survives contact with boot B. Any theory keyed to what a
-  particular app does is looking at the wrong thing; the count being ~58 whatever the app
-  is, and the value in `pDeskInfo` differing per boot, both point the same way. wordpad,
-  named in the original entry, faulted in neither and was cut off by the ceiling in A, so it
-  is unobserved rather than clean.
-
-  **Why this went unmeasured for a week, which is the reusable part.** `--ladder` *cannot*
-  see it. `ladder.watch()` stops draining the moment every GRADED guest has reported, and the
-  stock applets run AFTER the parity set and are not graded at all — so the flag whose whole
-  job is to watch the ladder ended at 86.8s with the applet phase never observed. Fixed with
-  `VIBEOS_LADDER_DRAIN_FLOOR=<seconds>` (`tests/qemu/cli/ladder.py`), which only ever extends
-  the drain. Set it above `LADDER_TIMEOUT_SECONDS` (420) or it does nothing.
-
-- **`NtGdiFlushUserBatch` reads and writes the 64-bit TEB for a 32-bit guest — LATENT, OPEN**
+- **`NtGdiFlushUserBatch` reads and writes the 64-bit TEB for a 32-bit guest — FIXED
+  2026-09-20**, as part of the GDI-batch root cause above; it was not latent after all, it
+  was the bug. Kept because the reasoning below is how it was found, including the wrong
+  turn.
   (2026-09-20). `win32k-rust/src/gdibatch.rs:625` does
   `let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB` — the **64-bit** TEB — then reads
   `GdiBatchCount`, `GdiTebBatch.HDC` and `GdiTebBatch.Buffer` from it and walks the batch
