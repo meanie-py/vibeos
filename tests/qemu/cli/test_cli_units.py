@@ -60,6 +60,38 @@ def test_git_fingerprint_stable_then_changes(tiny_repo: Path):
     assert fp3 != fp1, "working-tree edit must change the fingerprint"
 
 
+def test_git_fingerprint_survives_a_non_utf8_file(tiny_repo: Path):
+    """A latin-1 file in the diff must not take the CLI down.
+
+    The Microsoft DDK EULA under drivers/storage/ide/atapi carried a
+    French-Canadian warranty clause in latin-1. Deleting it put 0xe9 into
+    `git diff HEAD`, and the strict decode in `_run` raised UnicodeDecodeError
+    from inside make_stamp — so `vibeos-cli build` and every `land` behind it
+    died, with a traceback pointing at the CLI rather than at the file."""
+    latin1 = tiny_repo / "eula.txt"
+    latin1.write_bytes("garantie limit\xe9e\n".encode("latin-1"))
+    fp_untracked = provenance.git_fingerprint(tiny_repo)
+    assert len(fp_untracked) == 64
+
+    subprocess.run(["git", "add", "eula.txt"], cwd=tiny_repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "eula"],
+        cwd=tiny_repo,
+        check=True,
+        capture_output=True,
+    )
+    latin1.unlink()
+    fp_deleted = provenance.git_fingerprint(tiny_repo)
+    assert len(fp_deleted) == 64
+
+    # And byte-true, not lossily decoded: two distinct undecodable contents
+    # must not collapse onto one U+FFFD run and thus one fingerprint.
+    latin1.write_bytes(b"\xe9\xe9")
+    fp_a = provenance.git_fingerprint(tiny_repo)
+    latin1.write_bytes(b"\xe9\xea")
+    assert provenance.git_fingerprint(tiny_repo) != fp_a
+
+
 def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
     fp1 = provenance.git_fingerprint(tiny_repo)
     # touch bumps mtime but not content

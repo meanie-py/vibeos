@@ -1065,8 +1065,8 @@ drivers/storage/class/classpnp/CMakeLists.txt	1	# dummy.c + ntoskrnl-vista-rust 
 drivers/storage/class/disk/CMakeLists.txt	1	# data.c disk.c diskwmi.c geometry.c pnp.c # all replaced by Rust (disk-rust); kept on disk
 drivers/storage/class/ramdisk/CMakeLists.txt	1	# no ISR / no DPC / no HW register I/O. ramdisk.c kept on disk (never-delete). Bar: link-clean x3.
 drivers/storage/class/ramdisk/CMakeLists.txt	1	# ramdisk.c replaced by Rust (ramdisk-rust). Pure WDM RAM-disk class driver -- no miniport /
-drivers/storage/ide/atapi/CMakeLists.txt	1	# C body replaced by Rust (atapi.c) — kept on disk per the never-delete rule.
-drivers/storage/ide/atapi/CMakeLists.txt	1	# The NT4-DDK ATAPI IDE miniport (atapi.c, single TU) is translated to Rust
+drivers/storage/ide/atapi/CMakeLists.txt	1	# C body replaced by Rust; atapi.c/.h DELETED 2026-09-20 (Microsoft NT4 DDK EULA,
+drivers/storage/ide/atapi/CMakeLists.txt	1	# The NT4-DDK ATAPI IDE miniport (atapi.c, single TU, since deleted) was translated to Rust
 drivers/storage/ide/atapi/CMakeLists.txt	1	# atapi.sys — Rust cohabitation flip (atapi.c -> atapi-rust)
 drivers/storage/ide/pciide/CMakeLists.txt	1	# pciide.c is translated to Rust (sdk/lib/rust/pciide-rust, kept on disk per the
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
