@@ -618,13 +618,16 @@ trees:
       20 files reproduce byte-for-byte. Normalize before counting anything here — the tree
       is CRLF in places and raw diffs overstate badly (src/adns.h 150 raw vs 92 real).
 
-      FLAGGED, NOT FIXED: adns_win32/getopt.c and getopt.h carry NO licence. The header says
-      verbatim "jgaa oct 9th 2000: Found this on www. No copyright information given.
-      Slightly modified." with a winsite.com origin URL. They are not in the CMake source
-      list and nothing references them, so this is dead code of unknown provenance — it
-      should probably just be deleted, which is a decision rather than an audit finding. The
-      rest of adns_win32 (adns_unix_calls.c, adns_win32.h) is properly GPL-2.0-or-later,
-      jgaa plus Ian Jackson, and adns_unix_calls.c IS compiled.
+      DELETED 2026-09-20: adns_win32/getopt.c and getopt.h carried NO licence — the header
+      read verbatim "jgaa oct 9th 2000: Found this on www. No copyright information given.
+      Slightly modified." with a winsite.com origin URL. Neither was in the CMake source
+      list. Correcting this entry's earlier wording, which said "nothing references them"
+      and was too broad: client/adnslogres.c does #include "getopt.h" under ADNS_JGAA_WIN32
+      — but client/ appears NOWHERE in our CMakeLists, so the adnshost/adnslogres tool set
+      is itself unbuilt vendored source and that reference is dead too. adns and its
+      consumer dnsapi.dll both rebuild clean after the removal. The rest of adns_win32
+      (adns_unix_calls.c, adns_win32.h) is properly GPL-2.0-or-later, jgaa plus Ian Jackson,
+      and adns_unix_calls.c IS compiled.
     reason: Asynchronous DNS resolver; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libmpg123

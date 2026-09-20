@@ -35,13 +35,16 @@
 #   adns_win32/adns_unix_calls.c, adns_win32.h   GPL-2.0-or-later, jgaa + Ian Jackson.
 #                                                adns_unix_calls.c IS compiled.
 #   adns_win32/timercmp.h
-#   adns_win32/getopt.c, getopt.h   *** UNKNOWN PROVENANCE AND UNUSED ***
-#       getopt.c's header says verbatim: "jgaa oct 9th 2000: Found this on www. No
+#   adns_win32/getopt.c, getopt.h   *** DELETED 2026-09-20 — unlicensed dead code ***
+#       getopt.c's header said verbatim: "jgaa oct 9th 2000: Found this on www. No
 #       copyright information given. Slightly modified." with an origin URL on
-#       winsite.com. It is NOT in the CMake source list and nothing in src/ or
-#       adns_win32/ references it, so it is dead code carrying no licence. It should
-#       probably just be deleted; flagged rather than removed here because deleting
-#       source is not this pass's job.
+#       winsite.com. Carrying a file whose licence is "none stated" is exactly the
+#       provenance hole this registry exists to close, so both files are gone.
+#       They were never in the CMake source list. NOTE the one referrer, so nobody is
+#       surprised later: client/adnslogres.c does `#include "getopt.h"` under
+#       ADNS_JGAA_WIN32 — but client/ appears NOWHERE in our CMakeLists, so the whole
+#       adnshost/adnslogres tool set is already unbuilt vendored source. Reviving those
+#       tools now needs a getopt from somewhere with a licence; that is a feature.
 #
 --- a/src/adns.h
 +++ b/src/adns.h
