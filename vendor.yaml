@@ -433,12 +433,42 @@ trees:
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: yes  # ReactOS markers in 3 source file(s): ioapi.c, unzip.c, zip.c
+    modified: yes  # 3 files under contrib/minizip only; zlib proper is pristine
+    patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
     version:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (zlib-1.2.13.tar.gz from madler/zlib,
+      sha256 b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30). This entry
+      previously said `modified: yes` with NO patch and NO review — a bare unexplained
+      claim, the last one of its kind in the registry. Now measured.
+
+      ZLIB PROPER IS PRISTINE. adler32, crc32, deflate, inflate, inftrees, trees, zutil, the
+      gz* family, compress, uncompr, infback and both public headers are byte-identical to
+      1.2.13. Nothing we carry touches bounds checking, allocation, or the inflate/deflate
+      state machines. The whole delta is three files under contrib/minizip, the ZIP-archive
+      helper that ships alongside zlib — so the scary-sounding `modified` was never about
+      the compressor.
+
+      What it is: minizip has a stdio FILE* backend and a win32-HANDLE backend, and ReactOS
+      uses only the latter, so the stdio half and the zipOpen2/unzOpen2 entry points that
+      depend on it are compiled out behind __REACTOS__. unzip.c additionally stops NOUNCRYPT
+      being force-defined, which ENABLES minizip's traditional-PKWARE decryption rather than
+      disabling it — read that direction carefully. These cannot become a build flag:
+      __REACTOS__ already is one, and what will not move into the build is WHICH REGIONS it
+      guards, since upstream has no such conditionals to switch on.
+
+      DE-PATCHED in the same pass, five files down to three. iowin32.c was restored to
+      pristine: its only delta was four `mode_fopen` declarations commented out to silence
+      -Wunused-variable, which is a warning rather than a portability need, so it moved into
+      the build as target_compile_options(minizip PRIVATE -Wno-unused-variable) — scoped to
+      minizip so it cannot hide an unused variable in zlib proper. zip.c's cosmetic hunk
+      (braces around a `for` body) is reverted too. Both were noise that would have had to
+      be re-applied at every bump. Verified: patch -p1 applies clean to a fresh 1.2.13
+      extraction and the result is byte-identical to our tree for all three files.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
@@ -646,10 +676,18 @@ trees:
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     staleness: >
-      AUDITED 2026-09-20: ours 2.16.11, current 3.6.7 (LTS) and 4.2.0. The 2.16 LTS branch
-      reached END OF LIFE at the end of 2021, so this has received no upstream security
-      fixes for about five years — in a TLS library. 2.x -> 3.x is a breaking API change, so
-      this is a port rather than a drop-in bump, which is presumably why it was never done.
+      AUDITED 2026-09-20: ours 2.16.11, current 3.6.7 (LTS) and 4.2.0. THE WORST TREE IN
+      THIS REGISTRY. The 2.16 LTS branch reached END OF LIFE at the end of 2021, so this has
+      received no upstream security fixes for about five years — in a TLS library. 2.x ->
+      3.x is a breaking API change, so this is a port rather than a drop-in bump, which is
+      presumably why it was never done. SIZED, so the next person does not have to: two
+      consumers, dll/win32/bcrypt and dll/win32/schannel (bcrypt_main.c, schannel_mbedtls.c
+      and its lazyload header), using 77 distinct mbedtls_* symbols between them. Bounded,
+      but not small — expect the usual 3.x migration work: the *_ret hash suffixes are gone,
+      struct fields moved behind MBEDTLS_PRIVATE, and several ssl_conf entry points changed
+      shape. Note schannel lazy-loads, so a missed rename can fail at RUNTIME rather than at
+      link time; that is the trap to plan around, and there is no TLS test in this tree to
+      catch it.
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0 OR GPL-2.0-or-later
     license_ref: dll/3rdparty/mbedtls/aes.c
@@ -739,8 +777,19 @@ trees:
   - path: dll/3rdparty/libpng
     name: libpng
     staleness: >
-      AUDITED 2026-09-20: ours 1.6.39 (2022-11), current 1.6.58 — nineteen patch releases
-      behind on an image parser that is reachable from untrusted input.
+      AUDITED 2026-09-20: was 1.6.39 (2022-11), nineteen patch releases behind on an image
+      parser reachable from untrusted input. BUMPED to 1.6.58 the same day.
+      libpng-1.6.58.tar.xz from sourceforge, sha256
+      28eb403f51f0f7405249132cecfe82ea5c0ef97f1b32c5a65828814ae0d34775 (computed here;
+      cross-check it before treating this drop as provenance-clean). Cheap for the same
+      reason libtiff was — the tree was already a verified clean drop, so there was nothing
+      of ours to re-apply, and 1.6.x is ABI-stable so no consumer changed. All 15 sources,
+      the four private headers, png.h and pngconf.h are byte-identical to pristine 1.6.58;
+      pnglibconf.h is upstream's own scripts/pnglibconf.h.prebuilt, which is what the 1.6.39
+      one already was. docs/LICENSE refreshed from upstream LICENSE. SIMD stays out (the
+      arm/intel/mips/powerpc/loongarch dirs were never vendored and -DPNG_ARM_NEON_OPT=0
+      remains). Unlike libtiff this one IS covered: user32 links libpng, so the smoke suite
+      exercises it on every boot.
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
     license_file: dll/3rdparty/libpng/docs/LICENSE
