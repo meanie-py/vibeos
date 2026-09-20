@@ -488,6 +488,48 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **win32k: 32 dropped `_SEH2_EXCEPT` handlers across 11 files, in `NtUser*` syscall
+  paths. UNOWNED, SURVEYED 2026-09-20.** Same class as the LPC bug closed today and
+  larger. Reproduce with:
+
+        python3 tools/scan_dropped_seh_pairs.py --deleted win32k-rust:win32ss/user/ntuser
+
+  | file | handlers in the deleted C |
+  |---|---|
+  | `class.rs` | 10 |
+  | `display.rs` | 6 |
+  | `ime.rs`, `kbdlayout.rs` | 3 each |
+  | `cursoricon.rs`, `menu.rs`, `message.rs` | 2 each |
+  | `accelerator.rs`, `console.rs`, `desktop.rs`, `sysparams.rs` | 1 each |
+
+  **Why no scanner found this before.** The ordinary pairing needs the C on disk.
+  These flips DELETED `win32ss/user/ntuser/*.c` (commit `8d3c33ee41e`), so basename
+  matching silently fell through to `win32ss/user/user32/...` — a different
+  component — and reported nothing about the kernel side. The oracle was never
+  gone, only out of the working tree: `git log --diff-filter=D` finds the deletion
+  and `git show <sha>^:<path>` prints the C back. That recovery is now the
+  scanner's `--deleted` mode, opt-in because it shells out to git per file.
+
+  **`class.rs` is the worst and is a DIFFERENT defect, not just a missing handler.**
+  It defines its own local `probe_read_generic<T>(ptr, default) -> T` that
+  range-checks and, on failure, **returns `default`** — where the C macro RAISES.
+  So an out-of-range user pointer yields a zeroed `UNICODE_STRING` that the caller
+  consumes as real data: a silent wrong answer rather than an error. And when the
+  range check passes it does a bare `read_volatile`, which still faults on an
+  in-range-but-unmapped page. Both halves are wrong, in opposite directions.
+
+  That local helper also **defeats name-based detection**: it collides exactly with
+  `ntkrnl_sys::probe::probe_read_generic`, which has different semantics, so any
+  scan keyed on the bare name scores the file as protected. It hid the highest-count
+  file in the tree from this very survey until the collision was noticed. Match
+  QUALIFIED paths only.
+
+  Not fixed: 32 sites across the kernel's user-facing surface is not unsupervised
+  overnight work. The LPC pass is the worked template — `LpcpMoveMessageChecked` /
+  `LpcpVerifyMessageDataInfoChecked` show the checked-variant-alongside-original
+  shape, and the handler taxonomy (returns / goto-cleanup / falls-through /
+  swallows) is in the field manual.
+
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
   more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
 

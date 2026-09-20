@@ -87,6 +87,12 @@ CATCHERS = (
     "try_probe",
 )
 
+# A cohab flip sometimes DELETES the .c instead of commenting it out, and then
+# the oracle is gone from the working tree entirely -- `--deleted` recovers it
+# from git history instead. That case is invisible to the pairing above and is
+# where the biggest find so far came from: win32k's ntuser/*.c were deleted on
+# flip, so basename pairing silently matched user32's unrelated same-named
+# files and reported nothing about the kernel side.
 _CMAKE_COMMENTED_C = re.compile(r"^\s*#.*?([A-Za-z0-9_./-]+\.c)\s*$", re.M)
 _CMAKE_LIVE_C = re.compile(r"^\s*(?!#)\S*?([A-Za-z0-9_./-]+\.c)\s*$", re.M)
 
@@ -120,6 +126,13 @@ def main() -> int:
     # that can only run on the real tree cannot have a control, and the control
     # is what proves it still MATCHES -- silent blindness is the failure mode
     # these tools exist to prevent, and they are not exempt from it.
+    ap.add_argument(
+        "--deleted",
+        metavar="CRATE:CDIR",
+        help="also check Rust whose C was DELETED by a cohab flip, recovering it "
+        "from git history. e.g. --deleted win32k-rust:win32ss/user/ntuser . Opt-in "
+        "because it shells out to git once per file; the gate stays fast without it.",
+    )
     ap.add_argument("root", nargs="?", default=None)
     args = ap.parse_args()
 
@@ -198,6 +211,50 @@ def main() -> int:
         print(f"\n-- {len(unpaired)} lower-confidence pair(s), not gated --", file=sys.stderr)
         for u in sorted(unpaired):
             print(f"   {u}", file=sys.stderr)
+
+    if args.deleted:
+        import subprocess
+
+        crate, cdir = args.deleted.split(":", 1)
+        src = REPO / "sdk" / "lib" / "rust" / crate / "src"
+        # QUALIFIED paths only. A bare helper name is not evidence of protection:
+        # win32k-rust/class.rs defines its OWN `probe_read_generic` with different
+        # semantics (range-check then return a DEFAULT, where the C macro raises),
+        # and matching the bare name hid the file with the most dropped handlers
+        # in the tree.
+        qualified = ("ntkrnl_sys::probe::", "probe::probe_", "safe_copy_", "catch_unwind", "_SEH2")
+        found = []
+        # source_files(), not rglob(): a crate's target/ holds generated copies
+        # of its own modules, so an unpruned walk answers from build artifacts.
+        for rs in sorted(source_files(src, "*.rs")) if src.is_dir() else []:
+            t = rs.read_text(errors="ignore")
+            if not any(r in t for r in RAISERS):
+                continue
+            if any(q in t for q in qualified):
+                continue
+            rel_c = f"{cdir}/{rs.stem}.c"
+            sha = subprocess.run(
+                ["git", "log", "--diff-filter=D", "--format=%H", "-1", "--", rel_c],
+                capture_output=True,
+                text=True,
+                cwd=REPO,
+            ).stdout.strip()
+            if not sha:
+                continue
+            old = subprocess.run(
+                ["git", "show", f"{sha}^:{rel_c}"], capture_output=True, text=True, cwd=REPO
+            ).stdout
+            n = old.count("_SEH2_EXCEPT")
+            if n:
+                found.append((n, rs.relative_to(REPO), rel_c, sha[:11]))
+        for n, r, c, sha in sorted(found, reverse=True):
+            print(f"{r}: raises with no catch — DELETED C {c} had {n} _SEH2_EXCEPT (in {sha})")
+        print(
+            f"\n{len(found)} file(s), {sum(f[0] for f in found)} handlers present in the "
+            f"deleted C with no counterpart in the Rust",
+            file=sys.stderr,
+        )
+        return 1 if found else 0
 
     if args.lint:
         base = REPO / args.baseline
