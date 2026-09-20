@@ -1,0 +1,59 @@
+# ucrt-rust — our Rust bodies for ucrtbase.dll's OWN surface.
+#
+# ── WHY THIS CRATE EXISTS, AND WHY IT IS NOT crt-shared-rust ──────────────────
+#
+# `crt-shared-rust` is the Rust twin of cmake's `msvcrt_shared`: the handful of
+# TUs compiled into BOTH msvcrt.dll and ucrtbase.dll. It is deliberately walled
+# off — no dependency edge to `msvcrt-crt-rust`, and `verify_ucrtbase_cohab.py`
+# asserts its archive is a SUBSET of what our C on ucrtbase's link line defines.
+# That wall stops the 856-body accident: linking msvcrt's archive into ucrtbase
+# would silently replace genuine UCRT bodies with ones graded at `_MSVCR_VER=0`,
+# and `--allow-multiple-definition` means no diagnostic would ever fire.
+#
+# This crate is the OTHER thing — the thing that wall was never meant to stop.
+# `sdk/lib/ucrt` is 455 files and 64,353 lines of vendored Microsoft Windows SDK
+# source, and it is still the LIVE implementation behind 1,032 of ucrtbase's
+# exports. We are replacing it, family by family, and deleting it as we go. Each
+# body here therefore DOES displace a genuine UCRT body — on purpose.
+#
+# The difference between that and the accident is not technical, it is whether
+# somebody declared it and graded it. So every symbol this crate defines must be
+# listed in `tools/ucrt-takeover.yaml` with the family's argument and its oracle,
+# and the gate fails BOTH ways: an undeclared symbol here, or a declaration that
+# no longer matches a symbol. `tools/ucrt_burndown.py` reads the same list, so
+# "how much Microsoft C is left" and "what have we claimed" cannot drift apart.
+#
+# ── THE RULE THAT KEEPS THE WALL STANDING ────────────────────────────────────
+#
+# This crate must NEVER depend on `msvcrt-crt-rust`. It reaches ucrtbase through
+# `crt-shared-cargo`, whose whole guarantee is that no path in the dependency
+# graph reaches that crate; adding one here would launder msvcrt's entire floor
+# into ucrtbase through the back door and defeat `check_structure`.
+#
+# 809 of the owed exports DO already have a body in `msvcrt-crt-rust`, and the
+# way to reuse one is NOT to depend on it. It is the `cnt-rust` pattern already
+# used for the math wave: lift the implementation into a neutral core crate that
+# both sides depend on, and give each side its own `#[no_mangle]` shim passing
+# its own version contract. That keeps "the algorithm" shared and "the
+# `_MSVCR_VER=0` vs `140` behaviour" explicit and per-caller, which is exactly
+# the distinction that gets lost when a body is simply relinked.
+[package]
+name = "ucrt-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# A plain rlib for the same reason as crt-shared-rust: the difftest harnesses
+# link this code to grade it, and a staticlib crate-type would demand a
+# `#[panic_handler]` in the same invocation, which is then a duplicate lang item
+# in a host harness's std test binary.
+path = "src/lib.rs"
+
+[features]
+default = []
+
+# stdlib/rotl.cpp, stdlib/rotr.cpp, stdlib/byteswap.cpp and the clang-hacks.s
+# alias shim that existed only to work around them. See src/bits.rs.
+bits = []
+
+[dependencies]

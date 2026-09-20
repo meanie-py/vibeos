@@ -1718,7 +1718,7 @@ sdk/lib/skiplist/CMakeLists.txt	1	# add_library(skiplist16 skiplist.c) # body re
 sdk/lib/skiplist/CMakeLists.txt	1	# skiplist.c → Rust (sdk/lib/rust/skiplist-rust, kept on disk per the never-delete
 sdk/lib/smlib/CMakeLists.txt	1	# smclient.c — replaced by Rust (smss-csrss-rust/src/smlib/smclient.rs)
 sdk/lib/smlib/CMakeLists.txt	1	# stays on disk (never delete the C); smlib_rust_stub.c keeps this
-sdk/lib/ucrt/stdlib/stdlib.cmake	1	# clang-hacks.s uses x86 jmp instruction - only include for x86/x64
+sdk/lib/ucrt/stdlib/stdlib.cmake	1	# rotl.cpp / rotr.cpp / byteswap.cpp and the clang-hacks.s alias shim were
 sdk/lib/uuid/CMakeLists.txt	1	# bthguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# cluscfgguids.c
 sdk/lib/uuid/CMakeLists.txt	1	# ctfspui_g.c

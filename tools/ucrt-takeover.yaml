@@ -1,0 +1,58 @@
+# Declared takeovers of genuine Microsoft UCRT bodies.
+#
+# ucrtbase.dll is still implemented, for 1,032 of its exports, by vendored
+# Windows SDK source in `sdk/lib/ucrt` (455 files, 64,353 lines). We are
+# replacing it family by family with Rust in `sdk/lib/rust/ucrt-rust` and
+# deleting the C as each file's last export moves.
+#
+# Every one of those Rust bodies DISPLACES a Microsoft body — which is the exact
+# shape of the accident `verify_ucrtbase_cohab.py` exists to prevent, and is
+# invisible at link time because ucrtbase links with --allow-multiple-definition.
+# The only thing separating the intended case from the accident is that somebody
+# declared it and named the oracle that grades it. This file is that declaration.
+#
+# The gate reads it BOTH ways:
+#   * a symbol in libcrt_shared_cargo.a that ucrtbase exports, that none of our
+#     C on the link line defines, and that is NOT listed here -> failure
+#   * a symbol listed here that the archive does not define -> failure, because a
+#     stale declaration is how a list like this stops being read
+#
+# `tools/ucrt_burndown.py` reads the same file, so "how much Microsoft C is
+# left" and "what have we claimed" cannot drift apart.
+#
+# Adding a family: implement it in ucrt-rust behind a cargo feature, enable that
+# feature in crt-shared-cargo, add the block here with its oracle, and delete the
+# Microsoft source files once they own no remaining export
+# (`tools/ucrt_burndown.py --arch i386 --file <src>` says).
+
+families:
+  bits:
+    replaces:
+      - sdk/lib/ucrt/stdlib/rotl.cpp
+      - sdk/lib/ucrt/stdlib/rotr.cpp
+      - sdk/lib/ucrt/stdlib/byteswap.cpp
+      - sdk/lib/ucrt/stdlib/clang-hacks.s
+    oracle: sdk/lib/rust/ucrt-rust/src/bits.rs (unit tests; total functions, no host state)
+    note: >
+      The pilot family, chosen because it has no semantic delta to argue about:
+      total functions of their arguments, no locale, no errno, no stream state,
+      no _MSVCR_VER history. It exists to prove the pipeline end to end — crate,
+      archive, link, gate, burn-down — before the families that need real
+      grading arrive.
+
+      It removes more C than it adds. clang treats _rotl and friends as
+      builtins, so the Microsoft C could not define them under our toolchain:
+      the ucrt CMakeLists renamed each (-D_rotl=___rotl) and clang-hacks.s
+      recreated the real symbol as an assembly jmp to the renamed body. Rust has
+      no builtin to collide with, so the three .cpp and the whole .s workaround
+      go together.
+    exports:
+      - _byteswap_uint64
+      - _byteswap_ulong
+      - _byteswap_ushort
+      - _lrotl
+      - _lrotr
+      - _rotl
+      - _rotl64
+      - _rotr
+      - _rotr64
