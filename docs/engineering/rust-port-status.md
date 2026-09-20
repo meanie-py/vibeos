@@ -2154,7 +2154,25 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   literal: `IDataObject` got QueryInterface/AddRef/Release/QueryGetData typed, and
   `IFolderViewVtbl`, which stopped dead at `GetFolder`, got the remaining eleven from
   shobjidl.idl:866.
-  **`CDefView.cpp` is COHAB-FLIPPED (2026-09-19); `utils.rs` remains ORPHAN-BY-DESIGN.**
+  **shell32 has NO orphan modules left (2026-09-20).** `utils.cpp` was cohab-flipped, which
+  was the last one. What the flip actually needed was far smaller than the guard on that module
+  predicted: measured against the LIVE CMake source list plus libshell32_rust.a, 36 symbols
+  leave the TU and utils.rs publishes 32. The guard said all 16 `*_RustBridge` wrappers needed
+  rehoming; 14 were already published by utils.rs itself, and only the CStubWindow32 pair moved
+  (to `rust_stubwindow32_stub.cpp`) because only that pair reaches a C++ ATL class propsheet.cpp
+  and CDrivesFolder.cpp still construct. Two mangled helpers took EXTERN_C in utils.h instead.
+  Conformance: launched=91 ok=91 on all three arches, and the `[EXPLORER] taskbar: OnCreate
+  begin` -> `child controls created` gap it used to freeze in is traversed.
+  **A stale ORPHAN banner is not cosmetic**: `scan_extern_arity`, `scan_cc_mismatch`,
+  `scan_silent_failures` and `verify_lost_exports` all SKIP a file on sight of
+  `ORPHAN-BY-DESIGN:`, so it must come off in the same commit that wires the module or four
+  checks go quiet on it.
+  The paragraph below is kept for the CDefView half of the story and for the measurement
+  recipe, which grew a third clause: an intra-DLL undefined-symbol sweep does not see `.spec`
+  exports, because those are consumed by other modules entirely.
+
+  **`CDefView.cpp` is COHAB-FLIPPED (2026-09-19); `utils.rs` was the last orphan and is now
+  flipped too.**
   `shell32/CDefView.rs` (11.9K lines) is wired and owns the shipping implementation. What
   unblocked it was a measurement: the TU is a link LEAF — `llvm-nm --undefined-only` over every
   object in shell32.dll (shell32.dir, dialogs/, folders/, shelldesktop, shellmenu, recyclebin)
