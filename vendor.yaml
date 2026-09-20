@@ -63,6 +63,17 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
+    license_note: >
+      The MIT grant is upstream's and is NOT reproducible from this tree: the drop
+      arrived without the repository's LICENSE.md, and the WDF sources carry no
+      per-file licence header (unlike ACPICA or mbedtls, whose grant is in every
+      file). So the licence is correct by provenance — microsoft/Windows-Driver-
+      Frameworks has been MIT since the 2017 open-sourcing — but nothing here states
+      it, which is a defect in OUR drop rather than an ambiguity about the terms.
+
+      Fix when convenient by copying upstream's LICENSE.md into sdk/lib/drivers/wdf
+      and pointing `license_file` at it; until then this note is what generated
+      notices reproduce, so the gap is visible rather than silent.
     modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
     headers:
       - sdk/include/wdf
@@ -219,6 +230,21 @@ trees:
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
+    license_note: >
+      THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only
+      "Copyright (c) Microsoft Corporation. All rights reserved." with no permission
+      statement of any kind, and there is no LICENSE, COPYING or README in either
+      sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER
+      to the Windows SDK licence terms under which Microsoft distributes the ucrt
+      sources, not something reproducible from this repository — and those terms are
+      an SDK EULA, not an open-source licence.
+
+      This is the largest unresolved provenance question in the tree (~78K lines) and
+      the reason the entry says the SDK version is unknown: without the version we
+      cannot even name which EULA applies. It is recorded here rather than rounded
+      off so that generated notices state the gap instead of hiding it. Resolving it
+      means establishing the SDK version and its terms, or replacing the tree — see
+      the ucrtbase work item in the roadmap.
     modified: yes
     headers:
       - sdk/include/ucrt
@@ -640,8 +666,11 @@ trees:
     headers:
       - sdk/include/reactos/libs/libjpeg
     version:
-      file: sdk/include/reactos/libs/libjpeg/jpeglib.h
-      pattern: '#define JPEG_LIB_VERSION\s+(\d+)'
+      # jversion.h carries the real IJG release ("9d  12-Jan-2020"). The old
+      # extractor read JPEG_LIB_VERSION from jpeglib.h, which is 90 for every
+      # 9.x release and so cannot tell 9a from 9d — useless for CVE matching.
+      file: sdk/include/reactos/libs/libjpeg/jversion.h
+      pattern: '#define JVERSION\s+"([^ "]+)'
     review: >
       PARTIALLY DE-PATCHED 2026-09-19. jpeglib.h and jdct.h differed by trailing
       whitespace only and are restored; the header directory is 10 of 11 identical.

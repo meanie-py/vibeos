@@ -49,6 +49,25 @@ USAGE
     vendored.py --emit           # the table: path, version, licence, LOC — both halves
     vendored.py --write-stamps   # (re)generate the VENDORED marker in each tree
     vendored.py --suspects       # foreign-copyright dirs in NEITHER half (i.e. undecided)
+    vendored.py --notices [PATH] # generate THIRD-PARTY-NOTICES.md (default: stdout)
+
+THE NOTICES FILE IS GENERATED, AND CHECKED IN ANYWAY
+----------------------------------------------------
+Distribution needs licence TEXT, not licence names, and a hand-maintained notices file
+is one that goes stale the first time a tree is added. So it is derived from the
+registry — which already knows every tree, its upstream, its version probe, its extra
+licences and where its grant lives. It is *also* committed at the repo root, because a
+distributor should not have to run our tooling to get it; `check()` therefore
+regenerates and compares, so a checked-in generated file cannot rot.
+
+Two shapes of grant, both handled: a standalone `license_file`, quoted whole, and a
+`license_ref` — a source file whose HEADER COMMENT is the only copy of the grant, which
+is the case for 8 of the trees (ACPICA, mbedtls, libtiff and friends carry no separate
+licence file at all). Where neither exists the tree must carry a `license_note` saying
+why, and that note is what the notices reproduce: the two Microsoft drops (WDF, ucrt)
+are in that shape, and ucrt's is the honest admission that it carries no grant at all.
+An entry that claims a licence it cannot point at is a check failure, because the
+alternative is a notices file with a silent hole in it.
 
 Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendored`.
 """
@@ -135,6 +154,15 @@ class Tree:
         #: is recorded MIT and carries LGPL-2.1-or-later and GPL-2.0-only. A notices
         #: file built from the headline licence alone would be wrong about all three.
         self.license_extra: dict = dict(raw.get("license_extra") or {})
+        #: Why this tree's licence grant CANNOT be quoted from the tree itself. Required
+        #: when there is neither a `license_file` nor a `license_ref`, because the
+        #: alternative is a notices file with a silent hole in it — and a hole is
+        #: indistinguishable from "we checked and it is fine". Both current users are
+        #: Microsoft drops that arrived with a copyright line and no grant, which is
+        #: precisely the case you want stated in the shipped notices rather than
+        #: rounded off. `--notices` prints it verbatim in place of licence text and
+        #: `check()` fails if it is missing.
+        self.license_note: str | None = raw.get("license_note")
         self.modified: str = str(raw.get("modified", "unknown"))
         self.headers: list[str] = list(raw.get("headers", []))
         self.version: dict | None = raw.get("version")
@@ -480,6 +508,10 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     return sorted(((d, n) for d, n in hits.items() if n >= min_files), key=lambda x: -x[1])
 
 
+#: The generated notices document, at the repo root where a distributor looks for it.
+NOTICES_PATH = "THIRD-PARTY-NOTICES.md"
+
+
 def check(reg: Registry) -> list[str]:
     """Every way the registry can disagree with the tree. Returns problem strings."""
     problems: list[str] = []
@@ -492,6 +524,19 @@ def check(reg: Registry) -> list[str]:
             problems.append(f"{t.name}: license_file does not exist: {t.license_file}")
         if t.license_ref and not (reg.repo / t.license_ref).is_file():
             problems.append(f"{t.name}: license_ref does not exist: {t.license_ref}")
+        # A recorded licence NAME we cannot point at is the gap that makes a generated
+        # notices file quietly wrong. Either the grant is quotable from the tree, or we
+        # say in writing why it is not. Scoped to trees that actually CLAIM a licence:
+        # for one still recorded `unknown` the honest complaint is the unknown licence,
+        # not a missing copy of it, and demanding the text first would just invite a
+        # placeholder. Every tree in the committed registry names a licence.
+        if t.license != "unknown" and not (t.license_file or t.license_ref or t.license_note):
+            problems.append(
+                f"{t.name}: records licence `{t.license}` but has no `license_file`, no "
+                f"`license_ref` and no `license_note` — nothing for --notices to quote. "
+                f"Point at the grant, or state in `license_note` why the tree does not "
+                f"carry one."
+            )
         if t.patch:
             pf = reg.repo / t.patch
             if not pf.is_file():
@@ -563,6 +608,26 @@ def check(reg: Registry) -> list[str]:
             f"    of the tree if they are ours. A notices file built from the headline\n"
             f"    licence alone would be wrong about this tree."
         )
+
+    # The notices document is a DERIVED artifact that is also a shipped legal one, so
+    # it is checked in (a distributor needs it without running our tooling) AND gated
+    # (a checked-in generated file with no freshness check is one that silently rots —
+    # the registry gains a tree, the notices keep claiming the old list).
+    # Staleness only, and only if the file is there. Whether a given repo OUGHT to ship
+    # notices is repo policy, not registry-vs-tree agreement, and `--repo` is pointed at
+    # synthetic fixture trees by the scanner controls; demanding a generated legal
+    # document from each of those would be a false alarm about the fixture. That the
+    # committed repo ships one is asserted directly in test_vendored.py.
+    notices_file = reg.repo / NOTICES_PATH
+    if notices_file.is_file() and not any("--notices to quote" in p for p in problems):
+        # Only meaningful once every tree has a quotable grant; otherwise the real
+        # complaint is the missing grant, and a stale-notices line on top is noise.
+        current = notices_file.read_text(encoding="utf-8")
+        if current != notices(reg):
+            problems.append(
+                f"{NOTICES_PATH} is STALE — vendor.yaml or a licence file changed since it "
+                f"was generated. Regenerate: tools/vendored.py --notices {NOTICES_PATH}"
+            )
     return problems
 
 
@@ -570,7 +635,7 @@ def check(reg: Registry) -> list[str]:
 #: mid-line it was absorbed into the previous value.
 _FIELD_NAMES = (
     "path|paths|name|upstream|license|license_file|license_ref|license_extra|"
-    "modified|headers|version|reason|review|unwelcome|origin|tier"
+    "modified|headers|version|reason|review|unwelcome|origin|tier|license_note"
 )
 _JOINED_FIELD = re.compile(rf"\S[ \t]{{2,}}((?:{_FIELD_NAMES}):)")
 
@@ -603,6 +668,132 @@ def structural_problems(path: Path) -> list[str]:
                 f"field. Line: {line.strip()[:90]}"
             )
     return out
+
+
+#: How much of a `license_ref` file to scan for the grant. The grant is a header
+#: comment; 200 lines is far past the longest one in this tree (mbedtls's Apache-2.0
+#: notice) and stops us pasting an entire 6000-line source file into the notices.
+_REF_SCAN_LINES = 200
+
+#: A comment line's leading decoration. Every `license_ref` in this registry points at
+#: a C or C++ file, so `#` and `;` are deliberately NOT comment leads here: treating
+#: `#` as one made the ACPICA extraction run straight past the end of the licence and
+#: start emitting the header's `#ifndef`/`#include` lines with their hashes stripped.
+_COMMENT_LEAD = re.compile(r"^\s*(/\*+|\*+/|\*+|//+)\s?")
+
+
+def license_text(reg: Registry, t: Tree) -> tuple[str, str]:
+    """The licence grant to reproduce for `t`, as (source_description, text).
+
+    Prefers a standalone `license_file`, quoted whole. Falls back to `license_ref`,
+    where the grant is a comment header on a source file and has to be lifted out of
+    it — 15 of the trees are in that shape, so this is the common path, not the
+    exception. Returns the `license_note` verbatim when the tree carries no grant.
+    """
+    if t.license_file:
+        path = reg.repo / t.license_file
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        # Per-line rstrip: several upstream licence files carry trailing spaces, which
+        # would land in a committed generated file and trip the whitespace lint. Not
+        # legally meaningful, and doing it here keeps `--notices` output byte-equal to
+        # what is checked in.
+        return t.license_file, "\n".join(line.rstrip() for line in raw.splitlines()).strip()
+
+    if t.license_ref:
+        path = reg.repo / t.license_ref
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[:_REF_SCAN_LINES]
+        out: list[str] = []
+        in_block = False
+        for line in lines:
+            stripped = line.strip()
+            if in_block:
+                out.append(_COMMENT_LEAD.sub("", line).rstrip())
+                if "*/" in stripped:
+                    in_block = False
+                continue
+            if not stripped:
+                # A blank line BETWEEN comment blocks is a paragraph break; a blank line
+                # after the last one is just leading whitespace on the code below, and
+                # .strip() at the end removes it either way.
+                out.append("")
+                continue
+            if stripped.startswith("/*"):
+                out.append(_COMMENT_LEAD.sub("", line).rstrip())
+                if "*/" not in stripped[2:]:
+                    in_block = True
+                continue
+            if stripped.startswith("//"):
+                out.append(_COMMENT_LEAD.sub("", line).rstrip())
+                continue
+            # First line of actual code — the header is over.
+            break
+        text = "\n".join(out).strip()
+        return f"{t.license_ref} (header comment)", text
+
+    # check() guarantees this exists; guard anyway so a hand-edited registry cannot
+    # produce a notices file with an empty section rather than an error.
+    if not t.license_note:
+        raise RegistryError(f"{t.name}: no license_file, license_ref or license_note")
+    return "NO GRANT IN TREE", t.license_note.strip()
+
+
+def notices(reg: Registry) -> str:
+    """The THIRD-PARTY-NOTICES document, generated from the registry.
+
+    Distribution needs the licence TEXT, not a licence name, and hand-maintaining that
+    list is how it goes stale — the registry already knows every tree, its upstream,
+    its version probe and where its grant lives, so the document is derived rather
+    than written. Trees with additional licences beyond the headline one list them:
+    a notices file built from `license:` alone would be wrong about FEX and GLU.
+    """
+    out: list[str] = []
+    out.append("# Third-party notices")
+    out.append("")
+    out.append(
+        "This product includes third-party software. **This file is GENERATED** from "
+        "`vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this "
+        "file. Each entry reproduces the licence grant as it appears in the tree."
+    )
+    out.append("")
+    out.append(f"{len(reg.trees)} third-party components:")
+    out.append("")
+    for t in sorted(reg.trees, key=lambda x: x.name.lower()):
+        version, err = reg.resolve_version(t)
+        out.append(
+            f"- [{t.name}](#{_anchor(t.name)}) — {version if not err else 'unknown'} — {t.license}"
+        )
+    out.append("")
+
+    for t in sorted(reg.trees, key=lambda x: x.name.lower()):
+        version, err = reg.resolve_version(t)
+        source, text = license_text(reg, t)
+        out.append("")
+        out.append(f"## {t.name}")
+        out.append("")
+        out.append(f"- Upstream: {t.upstream}")
+        out.append(f"- Version: {version if not err else 'unknown'}")
+        out.append(f"- In this tree: `{'`, `'.join(t.prefixes)}`")
+        out.append(f"- Licence: {t.license}")
+        for lic, why in sorted(t.license_extra.items()):
+            out.append(f"- Also contains: {lic} — {why}")
+        if t.patch:
+            out.append(f"- Modified by us: yes, see `{t.patch}`")
+        out.append(
+            f"- Grant reproduced from: `{source}`"
+            if source != "NO GRANT IN TREE"
+            else "- Grant reproduced from: **the tree carries no licence grant**"
+        )
+        out.append("")
+        out.append("```")
+        out.append(text)
+        out.append("```")
+    out.append("")
+    return "\n".join(out)
+
+
+def _anchor(name: str) -> str:
+    """GitHub-flavoured markdown heading anchor."""
+    return re.sub(r"[^a-z0-9_\- ]", "", name.lower()).replace(" ", "-")
 
 
 def write_stamps(reg: Registry) -> list[str]:
@@ -690,6 +881,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="licences a tree's own files declare that its registry entry does not record",
     )
+    ap.add_argument(
+        "--notices",
+        nargs="?",
+        const="-",
+        metavar="PATH",
+        help="generate THIRD-PARTY-NOTICES.md from the registry (default: stdout)",
+    )
     ap.add_argument("--repo", type=Path, default=REPO)
     args = ap.parse_args(argv)
 
@@ -699,6 +897,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[vendored] REGISTRY ERROR: {e}", file=sys.stderr)
         return 2
 
+    if args.notices:
+        # A registry that cannot name a grant cannot produce honest notices, so this
+        # refuses rather than emitting a document with a hole in it.
+        blocking = [p for p in check(reg) if "--notices to quote" in p]
+        if blocking:
+            print("[vendored] cannot generate notices:", file=sys.stderr)
+            for b in blocking:
+                print(f"  - {b}", file=sys.stderr)
+            return 1
+        text = notices(reg)
+        if args.notices == "-":
+            print(text)
+        else:
+            dest = Path(args.notices)
+            dest.write_text(text, encoding="utf-8")
+            print(f"  wrote {dest} ({len(text.splitlines())} lines, {len(reg.trees)} components)")
+        return 0
     if args.emit:
         return emit(reg)
     if args.write_stamps:

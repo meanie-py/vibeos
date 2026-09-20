@@ -1012,11 +1012,15 @@ _VENDOR_STAMP = vendored._STAMP_TEMPLATE.format(
 _VENDOR_STAMP_2 = vendored._STAMP_TEMPLATE.format(
     name="Surprise", upstream="http://example.invalid/", license="MIT"
 )
+# `license_note` is present because a tree that CLAIMS a licence must be able to point
+# at the grant (vendored.check). It is not what this control tests — it just keeps the
+# fixture a valid registry, so a failure here means the scanner, not the fixture.
 _VENDOR_TREE = """\
   - path: libs/known
     name: Known
     upstream: http://example.invalid/
     license: MIT
+    license_note: fixture tree; no grant shipped
     reason: a registered vendored tree
 """
 _VENDOR_BAD_YAML = "containers: [libs]\ntrees:\n" + _VENDOR_TREE
@@ -1027,6 +1031,7 @@ _VENDOR_GOOD_YAML = (
     name: Surprise
     upstream: http://example.invalid/
     license: MIT
+    license_note: fixture tree; no grant shipped
     reason: the library that used to arrive unnoticed
 """
 )

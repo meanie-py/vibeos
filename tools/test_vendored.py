@@ -431,3 +431,153 @@ def test_structural_check_does_not_fire_on_ordinary_prose(tmp_path):
 
 def test_the_committed_registry_has_no_swallowed_fields():
     assert vendored.structural_problems(REPO / "vendor.yaml") == []
+
+
+# ── generated notices ───────────────────────────────────────────────────────
+
+
+def test_the_committed_notices_file_is_current():
+    """The shipped THIRD-PARTY-NOTICES.md matches what the registry generates now.
+
+    It is checked in so a distributor gets it without running our tooling, which means
+    it can drift; this is the check that stops it.
+    """
+    reg = vendored.load(REPO)
+    path = REPO / vendored.NOTICES_PATH
+    # Existence is asserted HERE rather than in check(), which is pointed at synthetic
+    # fixture repos that have no business shipping a legal document.
+    assert path.is_file(), (
+        f"{vendored.NOTICES_PATH} is missing — "
+        f"generate with: tools/vendored.py --notices {vendored.NOTICES_PATH}"
+    )
+    committed = path.read_text(encoding="utf-8")
+    assert committed == vendored.notices(reg), (
+        f"{vendored.NOTICES_PATH} is stale — "
+        f"regenerate with: tools/vendored.py --notices {vendored.NOTICES_PATH}"
+    )
+
+
+def test_every_tree_has_a_reproducible_grant_or_says_why_not():
+    reg = vendored.load(REPO)
+    for t in reg.trees:
+        source, text = vendored.license_text(reg, t)
+        assert text.strip(), f"{t.name}: empty licence text from {source}"
+
+
+def test_notices_name_every_registered_tree():
+    reg = vendored.load(REPO)
+    doc = vendored.notices(reg)
+    for t in reg.trees:
+        assert f"## {t.name}" in doc, f"{t.name} has no section in the notices"
+
+
+def test_notices_carry_the_extra_licences_not_just_the_headline():
+    """FEX is recorded MIT and also carries LGPL/GPL; a notices file built from
+    `license:` alone would be wrong about it."""
+    reg = vendored.load(REPO)
+    doc = vendored.notices(reg)
+    fex = next(t for t in reg.trees if t.name == "FEX-Emu")
+    assert fex.license_extra, "FEX should still record extra licences"
+    for lic in fex.license_extra:
+        assert f"Also contains: {lic}" in doc
+
+
+def test_a_tree_with_no_grant_and_no_note_fails(tmp_path):
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: MIT
+            reason: test
+    """,
+    )
+    (tmp_path / "libs" / "thing").mkdir(parents=True)
+    problems = vendored.check(vendored.load(tmp_path))
+    assert any("--notices to quote" in p for p in problems)
+
+
+def test_a_license_note_satisfies_the_grant_requirement(tmp_path):
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: MIT
+            license_note: upstream is MIT but the drop shipped no LICENSE file
+            reason: test
+    """,
+    )
+    (tmp_path / "libs" / "thing").mkdir(parents=True)
+    problems = vendored.check(vendored.load(tmp_path))
+    assert not any("--notices to quote" in p for p in problems)
+    reg = vendored.load(tmp_path)
+    source, text = vendored.license_text(reg, reg.trees[0])
+    assert source == "NO GRANT IN TREE"
+    assert "shipped no LICENSE file" in text
+
+
+def test_license_ref_extraction_stops_at_the_end_of_the_header_comment(tmp_path):
+    """Regression: `#` was treated as a comment lead, so extraction ran past the
+    licence and emitted the file's `#ifndef`/`#include` lines with hashes stripped."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: MIT
+            license_ref: libs/thing/thing.h
+            reason: test
+    """,
+    )
+    d = tmp_path / "libs" / "thing"
+    d.mkdir(parents=True)
+    (d / "thing.h").write_text(
+        "/*\n"
+        " * Copyright (c) 1999 Somebody\n"
+        " * Permission is hereby granted, free of charge.\n"
+        " */\n"
+        "\n"
+        "#ifndef THING_H\n"
+        "#define THING_H\n"
+        "#include <stdio.h>\n"
+        "#endif\n"
+    )
+    reg = vendored.load(tmp_path)
+    _source, text = vendored.license_text(reg, reg.trees[0])
+    assert "Permission is hereby granted" in text
+    assert "ifndef" not in text
+    assert "include" not in text
+
+
+def test_license_ref_extraction_handles_line_comments(tmp_path):
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: MIT
+            license_ref: libs/thing/thing.c
+            reason: test
+    """,
+    )
+    d = tmp_path / "libs" / "thing"
+    d.mkdir(parents=True)
+    (d / "thing.c").write_text(
+        "// Copyright (c) 2001 Somebody\n"
+        "// Redistribution is permitted.\n"
+        "\n"
+        "int main(void) { return 0; }\n"
+    )
+    reg = vendored.load(tmp_path)
+    _source, text = vendored.license_text(reg, reg.trees[0])
+    assert "Redistribution is permitted." in text
+    assert "int main" not in text
