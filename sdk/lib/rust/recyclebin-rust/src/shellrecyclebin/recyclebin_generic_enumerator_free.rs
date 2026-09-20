@@ -19,7 +19,9 @@ pub struct RecycleBinGenericEnum {
 }
 pub type PRecycleBinGenericEnum = *mut RecycleBinGenericEnum;
 
-pub unsafe extern "C" fn RecycleBinGenericEnum_Constructor(pprbel: *mut *mut IRecycleBinEnumList) -> HRESULT;
+// The C FORWARD DECLARATION of this function, which has no Rust equivalent: a prototype in
+// the same TU as its definition is not an `extern`, it is nothing. Emitting it as a bodiless
+// `fn` made the name defined twice AND produced "free function without a body".
 
 #[no_mangle]
 pub unsafe extern "C" fn RecycleBinGenericEnum_Constructor(
