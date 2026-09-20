@@ -530,10 +530,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   one boot whether the probe or the copy returns `Err`, which splits the two
   hypotheses immediately.
 
-  **Fleet impact, stated plainly:** with the staging fixed, an arm64 gate in a tree
-  that has `build-fex-arm64` now RUNS this guest and goes red on it. Trees without
-  a FEX build are unaffected (the ladder declines). That red is a real bug rather
-  than a harness artefact, so it is left visible.
+  **Fleet impact, measured rather than estimated — it is smaller than it sounds,
+  and it is not a NEW red.** Staging this guest introduces no failure anywhere:
+
+  - Trees with no FEX build are untouched. The new `mcopy` lines live inside
+    `mkramdisk.sh`'s `VIBEOS_FEX=1` block, which such a tree never enters, and
+    the ladder declines the arch outright (*"no WoW64 CPU layer on this arch's
+    media"*). **Nine of the ten worktrees are in this state**, including
+    `vibeos-integration` where the conductor gates, and — checked, not assumed —
+    including `vibeos-fex`.
+  - The one tree that does stage FEX was **already failing**. Both arm64 runs
+    recorded `verdict: FAIL`; the difference is that the partial ramdisk failed
+    after a 420.2s drain and blamed a timeout, and the complete one fails in
+    87.1s and names the guest.
+
+  So this converts an uninformative 420s failure into a diagnosed 87s one and
+  recovers reg32's arm64 coverage. The red is a real bug that the staging gap was
+  HIDING behind a timeout, which is the argument for leaving it visible.
+
+  (This also corrects `x64-primary-plan.md`'s *"exactly one worktree carries a
+  `build-fex-arm64` today"*, which meant the fex lane's. Measured 2026-09-19:
+  `vibeos-research` is the only one, and `vibeos-fex` has none.)
 
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
   more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
