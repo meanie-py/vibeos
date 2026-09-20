@@ -448,7 +448,7 @@ def test_object_map_adapter_redirects_atl_creation():
     assert "class CDropTargetHelperRustEntry : public CDropTargetHelper" in cpp
     assert "return CDropTargetHelper_CreateInstance(" in cpp
     assert "OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)" in cpp
-    assert "#ifndef SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED" in cpp
+    assert "#ifndef SHELL32RUSTOBJECTLOCK_BRIDGE_DEFINED" in cpp
     assert "Shell32RustObjectLock() { gModule.Lock(); }" in cpp
 
 
@@ -3736,3 +3736,38 @@ def test_a_genuine_stateful_cpp_base_is_still_a_loud_failure():
     assert not pat.fullmatch("IDispatchImpl<Folder2, &IID_Folder3>")
     # A stateful C++ base is not this template at all.
     assert not pat.fullmatch("CSomeStatefulBase<Folder2>")
+
+
+def test_module_lock_symbol_follows_the_output_crate(tmp_path: Path):
+    """menuband-rust must not emit shell32's private module-lock name.
+
+    `libmenuband_rust.a` links into shell32.dll AND rshell.dll. `Shell32RustObjectLock` is
+    defined only by the former, so emitting it there links shell32 cleanly and leaves rshell
+    with an undefined symbol -- and not immediately, but at whatever later cohab flip first
+    makes an rshell-reachable object pull the module out of the archive. Both DLLs define
+    `MenuBandRustModuleLock` precisely so the shared crate has a name to agree on.
+    """
+    from rustconv.projects.reactos.targets import module_lock_for_crate
+
+    assert module_lock_for_crate("menuband-rust") == (
+        "MenuBandRustModuleLock",
+        "MenuBandRustModuleUnlock",
+    )
+    assert module_lock_for_crate("shell32-rust") == (
+        "Shell32RustObjectLock",
+        "Shell32RustObjectUnlock",
+    )
+    assert module_lock_for_crate(None) == ("Shell32RustObjectLock", "Shell32RustObjectUnlock")
+
+    cls = analyze_class(
+        SHELL32 / "CDropTargetHelper.cpp",
+        "CDropTargetHelper",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    interfaces = [parse_widl_interface(_widl(tmp_path), entry.interface) for entry in cls.com_map]
+    rust = render_class_scaffold(
+        cls, interfaces, module_lock=module_lock_for_crate("menuband-rust")
+    )
+    assert "MenuBandRustModuleLock();" in rust
+    assert "MenuBandRustModuleUnlock();" in rust
+    assert "Shell32RustObject" not in rust

@@ -1600,10 +1600,15 @@ def _derive_sys_substrate(
 def _detect_sys_umbrella(sys_dir: Path, sys_name: str) -> str:
     """The module path the substrate re-exports its bindgen under.
 
-    Two shapes exist in-tree and both must work:
+    THREE shapes exist in-tree and all must work:
       * `ntdll-sys`  — `pub mod nt { … }`, so imports collapse to `ntdll_sys::nt::*`.
       * `msvcrt-sys` — flat `pub use bindgen_<arch>::*;` at the crate root, so they
         collapse to `msvcrt_sys::*`.
+      * `com-sys`    — `include!("bindgen_<arch>.rs")` at the crate root, which splices
+        the items in TEXTUALLY. That is flat too — the items really are crate-root
+        items, there is no module to name — but it looks nothing like a `pub use` glob,
+        so it used to fail as "cannot tell how com-sys re-exports its bindgen" and took
+        the whole `menuband` target down with it.
 
     Returns "" for the flat shape (see `collapse_sys_crate`: "" means *no umbrella
     segment*, and is distinct from None, which means "not a user-mode target at all").
@@ -1612,7 +1617,9 @@ def _detect_sys_umbrella(sys_dir: Path, sys_name: str) -> str:
     if not lib.is_file():
         raise TargetResolveError(f"--target: substrate crate `{sys_name}` has no src/lib.rs")
     src = lib.read_text(errors="replace")
-    flat = bool(re.search(r"^pub use (?:self::)?bindgen_\w+::\*\s*;", src, re.M))
+    flat = bool(re.search(r"^pub use (?:self::)?bindgen_\w+::\*\s*;", src, re.M)) or bool(
+        re.search(r'^\s*include!\("bindgen_\w+\.rs"\)\s*;', src, re.M)
+    )
     umbrellas = re.findall(r"^pub mod (\w+)\s*\{", src, re.M)
     if flat and not umbrellas:
         return ""
@@ -1748,3 +1755,25 @@ def hal_cmake_for_c(c_path: Path) -> Path | None:
 # Switching the default re-bills nothing — the resume-cache key (preparation_namespace) is
 # built from mode + seal flags and does NOT include the model, so every banked unit still
 # replays for $0 regardless of which model bought it.
+
+
+#: The COM module-lock symbol pair each output crate calls, keyed by crate name.
+#:
+#: This is a property of the CRATE and not of the --target, because the host DLL is what
+#: defines the pair. `menuband-rust` builds a staticlib that links into BOTH shell32.dll and
+#: rshell.dll, so it needs a name the two of them agree on: shell32.cpp and
+#: base/shell/rshell/misc.cpp each define `MenuBandRustModule{Lock,Unlock}` forwarding to their
+#: own `gModule`. Emitting shell32's private `Shell32RustObject*` spelling into that crate links
+#: shell32.dll perfectly and breaks rshell.dll -- and not at once, but whenever a later cohab
+#: flip first makes an rshell-reachable object pull the offending module out of the archive.
+_MODULE_LOCK_BY_CRATE = {
+    "menuband-rust": ("MenuBandRustModuleLock", "MenuBandRustModuleUnlock"),
+}
+
+#: What a crate with no entry above gets: shell32.dll's own pair.
+_DEFAULT_MODULE_LOCK = ("Shell32RustObjectLock", "Shell32RustObjectUnlock")
+
+
+def module_lock_for_crate(crate: str | None) -> tuple[str, str]:
+    """The (lock, unlock) symbol pair the COM scaffold should call in `crate`."""
+    return _MODULE_LOCK_BY_CRATE.get(crate or "", _DEFAULT_MODULE_LOCK)
