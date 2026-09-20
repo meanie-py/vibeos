@@ -358,7 +358,16 @@ pub unsafe extern "system" fn KeUserModeCallback(
             OldStack = *UserStackPointer as ULONG_PTR;
         }
 
-        GdiBatchCount = (*Teb).GdiBatchCount;
+        // A WoW64 guest's gdi32 bumps TEB32->GdiBatchCount, not this one. The
+        // SYSCALL return path (traphandler.rs) was fixed for that; this is the
+        // user-CALLBACK return path and had the same bug -- both arm64 paths
+        // (trap.c + usercall.c) were fixed together and amd64's callback path
+        // was missed. Found by sweeping every kernel read of a guest-written
+        // TEB field rather than by another symptom.
+        GdiBatchCount = match crate::ke::amd64::traphandler::wow64_teb32(Teb) {
+            Some(teb32) => (*teb32).GdiBatchCount,
+            None => (*Teb).GdiBatchCount,
+        };
         STATUS_SUCCESS
     };
 
