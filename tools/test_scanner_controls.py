@@ -1569,6 +1569,18 @@ UNCOVERED: dict[str, str] = {
     # It also self-checks for the dead-matcher failure this file exists to prevent: an
     # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
     "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
+    # Diffs the WHOLE tree against a checked-in snapshot (tools/cohab-census.txt); it
+    # takes no path argument and has no notion of a root, so the fixture-dir driver
+    # above cannot express it. The control it needs is the same one in spirit, and it
+    # lives in its own suite: remove the single `#` from ntos.cmake's
+    # `#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c` -- the exact edit a bad merge
+    # resolution makes -- and assert the scanner reports CENSUS-REMOVED and exits 1,
+    # then restores the file and asserts clean. That is the 2026-09-19 partial-flip
+    # shape, which every boot test passed while the guest was dead.
+    "cohab_census": (
+        "covered by tools/test_cohab_census.py (3 tests) -- positive control is "
+        "uncommenting a real flipped source line in ntoskrnl/ntos.cmake"
+    ),
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",
