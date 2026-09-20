@@ -168,7 +168,7 @@ pub fn register_class() -> bool {
 }
 
 fn wnd_from_hwnd(hwnd: HWND) -> *mut CardWindow {
-    unsafe { sys::GetWindowLongPtrW(hwnd, sys::GWLP_USERDATA) as *mut CardWindow }
+    unsafe { sys::GetWindowPtr(hwnd, sys::GWLP_USERDATA) as *mut CardWindow }
 }
 
 // ===========================================================================
@@ -940,7 +940,7 @@ pub extern "C" fn CardWindow_Create(
             all[slot].in_use = false;
             return core::ptr::null_mut();
         }
-        sys::SetWindowLongPtrW(hwnd, sys::GWLP_USERDATA, pw as isize);
+        sys::SetWindowPtr(hwnd, sys::GWLP_USERDATA, pw as isize);
         all[slot].hwnd = hwnd;
         pw
     }

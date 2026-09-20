@@ -180,8 +180,6 @@ extern "system" {
     ) -> HWND;
     pub fn DestroyWindow(hwnd: HWND) -> c_int;
     pub fn DefWindowProcW(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT;
-    pub fn SetWindowLongPtrW(hwnd: HWND, index: c_int, new: isize) -> isize;
-    pub fn GetWindowLongPtrW(hwnd: HWND, index: c_int) -> isize;
     pub fn BeginPaint(hwnd: HWND, ps: *mut PAINTSTRUCT) -> HDC;
     pub fn EndPaint(hwnd: HWND, ps: *const PAINTSTRUCT) -> c_int;
     pub fn InvalidateRect(hwnd: HWND, rect: *const RECT, erase: c_int) -> c_int;
@@ -229,4 +227,52 @@ extern "system" {
     pub fn IntersectClipRect(hdc: HDC, l: c_int, t: c_int, r: c_int, b: c_int) -> c_int;
     pub fn SelectClipRgn(hdc: HDC, rgn: HGDIOBJ) -> c_int;
     pub fn ExcludeClipRect(hdc: HDC, l: c_int, t: c_int, r: c_int, b: c_int) -> c_int;
+}
+
+// ---- window user data ----------------------------------------------------
+//
+// `SetWindowLongPtrW` / `GetWindowLongPtrW` are real user32 exports only on
+// 64-bit Windows. On 32-bit they are MACROS for the non-Ptr versions, so
+// declaring them as functions links on amd64 and arm64 and then fails on i386
+// with `undefined symbol: _SetWindowLongPtrW@12`. Pick the right export per
+// pointer width and hand callers one signature.
+
+#[cfg(target_pointer_width = "32")]
+extern "system" {
+    fn SetWindowLongW(hwnd: HWND, index: c_int, new: i32) -> i32;
+    fn GetWindowLongW(hwnd: HWND, index: c_int) -> i32;
+}
+
+#[cfg(target_pointer_width = "64")]
+extern "system" {
+    fn SetWindowLongPtrW(hwnd: HWND, index: c_int, new: isize) -> isize;
+    fn GetWindowLongPtrW(hwnd: HWND, index: c_int) -> isize;
+}
+
+/// # Safety
+/// `hwnd` must be a valid window handle.
+#[cfg(target_pointer_width = "32")]
+pub unsafe fn SetWindowPtr(hwnd: HWND, index: c_int, new: isize) -> isize {
+    SetWindowLongW(hwnd, index, new as i32) as isize
+}
+
+/// # Safety
+/// `hwnd` must be a valid window handle.
+#[cfg(target_pointer_width = "32")]
+pub unsafe fn GetWindowPtr(hwnd: HWND, index: c_int) -> isize {
+    GetWindowLongW(hwnd, index) as isize
+}
+
+/// # Safety
+/// `hwnd` must be a valid window handle.
+#[cfg(target_pointer_width = "64")]
+pub unsafe fn SetWindowPtr(hwnd: HWND, index: c_int, new: isize) -> isize {
+    SetWindowLongPtrW(hwnd, index, new)
+}
+
+/// # Safety
+/// `hwnd` must be a valid window handle.
+#[cfg(target_pointer_width = "64")]
+pub unsafe fn GetWindowPtr(hwnd: HWND, index: c_int) -> isize {
+    GetWindowLongPtrW(hwnd, index)
 }

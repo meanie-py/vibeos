@@ -2,12 +2,11 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-24 third-party components:
+23 third-party components:
 
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
 - [AMD LibM for Windows](#amd-libm-for-windows) — git commit 6121d02 — MIT
-- [cardlib](#cardlib) — unknown — Public Domain (relayed author permission) — see review
 - [dxtn (S3TC)](#dxtn-s3tc) — unknown — MIT
 - [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
@@ -476,22 +475,6 @@ THE SOFTWARE.
 
 Defines __L_2_by_pi_bits array
 Used in trigonometric argument reduction
-```
-
-## cardlib
-
-- Upstream: unknown
-- Version: unknown
-- In this tree: `sdk/lib/3rdparty/cardlib`
-- Licence: Public Domain (relayed author permission) — see review
-- Grant reproduced from: `sdk/lib/3rdparty/cardlib/ReadMe.txt`
-
-```
-The author has given permission to use these sources
-under Public Domain. Do what thou will but please give
-credit where credit is due.
-
--sedwards
 ```
 
 ## dxtn (S3TC)
