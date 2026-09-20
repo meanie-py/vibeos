@@ -220,10 +220,15 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
     ExReleasePushLockExclusive(core::ptr::addr_of_mut!((*KeyedEvent).HashTable[HashIndex].Lock));
     KeLeaveCriticalRegion();
 
+    // Waiting in KernelMode cannot be interrupted for APC-based termination, so a
+    // user-mode thread blocked on a keyed event could not be killed until the event
+    // signalled or the timeout expired. Wait in the CALLER's mode.
+    // Upstream-Commit: d1c281c95e0
+    let PreviousMode = KeGetPreviousMode();
     let mut Status = KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*CurrentThread).__bindgen_anon_4.KeyedWaitSemaphore) as PVOID,
         7u32,
-        0i8,
+        PreviousMode,
         Alertable,
         Timeout,
     );
