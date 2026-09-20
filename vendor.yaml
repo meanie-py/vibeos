@@ -1350,6 +1350,67 @@ trees:
       is still a foreign STL implementation rather than ReactOS code; translating an
       STL to Rust is not a goal of this project.
 
+  - path: base/applications/games/solitaire
+    name: Solitaire (CardLib sample application)
+    upstream: unknown
+    license: Freeware (relayed Public Domain claim) — see review
+    license_file: base/applications/games/solitaire/ReadMe.txt
+    license_extra:
+      "See COPYING in top level directory": >-
+        GPL-2.0-or-later (ReactOS's top-level COPYING). solundo.cpp IS NOT J BROWN'S. It says "LICENSE: See COPYING in top level
+        directory / PROGRAMMER: Tibor Lajos Füzi" — ReactOS's own GPL code, a 171-line
+        undo module added long after 2001. It is the only file in this directory that
+        states a licence at all, which is why the freeware nature of the other four was
+        invisible until someone grepped for the author's name.
+
+        Practical consequence for the planned reimplementation: solundo.cpp is CLEAN and
+        does not need rewriting. The affected files are solitaire.cpp, solgame.cpp,
+        solcreate.cpp and solitaire.h.
+    modified: yes  # 20 years of ReactOS work on top: undo, Vegas/standard scoring,
+                   # status bar, card-back picker, ~30 translations, and the 2026
+                   # conversion to the reimplemented cardlib C API.
+    reason: >
+      The Solitaire application, shipped by J Brown in 2001 as the worked example for
+      his CardLib. Registered 2026-09-20 as a GAP, not an acceptance.
+    unwelcome: >
+      SAME PROBLEM AS CARDLIB, AND IT WAS MISSED. When cardlib was replaced and deleted
+      (2026-09-20) the application next to it was left behind, because nothing recorded
+      it: the four .cpp carry no copyright header at all, so neither `--suspects` nor a
+      header grep finds anything, and the only statement of provenance is ReadMe.txt —
+      "A complete working example of the CardLib card-game library. Freeware. Copyright
+      J Brown 2001", followed by the same second-hand `-sedwards` public-domain note that
+      was the whole grant for cardlib.
+
+      So the weakest grant in the registry outlived the tree it was attached to. It
+      surfaced only from grepping master for "J Brown" AFTER the cardlib replacement
+      landed. Worth remembering as the general shape: a licence recorded per-DIRECTORY
+      does not travel with the code that directory was an example for.
+
+      Spider is NOT affected and is the contrast — spigame.cpp says "LICENSE: See COPYING
+      in top level directory / PROGRAMMER: Gregor Schneider", i.e. ReactOS's own GPL code.
+
+      Also still shipping: the About box string IDS_SOL_ABOUT, "Solitaire by J Brown\nCardLib
+      version 1.0". The CardLib half of that is now false — the library is ours.
+    review: >
+      1,291 affected lines across solitaire.cpp, solgame.cpp, solcreate.cpp and
+      solitaire.h (solundo.cpp's 171 are ReactOS's, see license_extra), plus
+      resource.h / rsrc.rc / 30 lang files. Authorship is MIXED and this fork cannot
+      apportion it: history was squashed at the import, so `git log --follow` shows two
+      commits and names no ReactOS contributor. By content, much of what is there now
+      postdates 2001 (undo, both scoring modes, the status bar, the card-back dialog,
+      card-height-derived layout), but the skeleton and the game logic are his.
+
+      EXIT: reimplement, as cardlib was — the rules of Klondike are not copyrightable and
+      the Win32 plumbing is dictated by the API, so what has to be re-expressed is small.
+      The complication is that the agent who replaced cardlib read all four of these files
+      in full and rewrote them onto the new API, so it is CONTAMINATED for this tree and
+      cannot produce a clean-room result; the writing has to come from someone who has not
+      read them.
+
+      ASKING THE AUTHOR IS STILL UNTRIED and would be cheaper than any rewrite: J Brown is
+      strobejb on GitHub and still active. A grant from him would also retroactively cover
+      the 20 years of ReactOS modification, which a rewrite does not.
+
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
