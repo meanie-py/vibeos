@@ -776,3 +776,71 @@ def test_the_notices_file_lists_the_shipped_crates():
         assert f"| {name} |" in doc, f"{name} is missing from the notices table"
     # ...and does NOT list the host-only ones, or the document overstates what ships.
     assert "| zerocopy-derive |" not in doc
+
+
+# ── the declared-licence ratchet (added 2026-09-20) ────────────────────────
+
+
+def test_no_file_declares_a_non_floss_licence():
+    """The ratchet that would have caught drivers/storage/ide/atapi on day one: a
+    shipped driver carrying the Windows NT DDK END-USER LICENSE AGREEMENT, invisible
+    to every other scan here because atapi.c and atapi.h contain no copyright line at
+    all and the directory does ship a licence file — it is just a EULA."""
+    reg = vendored.load(REPO)
+    rows = vendored.declared_licences(reg)
+    assert rows == [], "\n".join(f"{n} file(s) declare `{v}` — e.g. {ex}" for v, ex, n, _d in rows)
+
+
+def test_a_pointer_is_not_a_licence(tmp_path):
+    """The first cut of this scan found NOTHING, because the FLOSS allowlist carried
+    `LICENSE.TXT` — and atapi's header reads "DDK - see license.txt in the root dir".
+    An allowance for the pointer excused the one file the scan exists to find."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: libs/thing
+            name: Thing
+            license: MIT
+            license_note: test
+            reason: test
+    """,
+    )
+    (tmp_path / "libs" / "thing").mkdir(parents=True)
+    (tmp_path / "drivers").mkdir()
+    (tmp_path / "drivers" / "d.c").write_text(
+        "/*\n * LICENSE:  DDK - see license.txt in the root dir\n */\n"
+    )
+    rows = vendored.declared_licences(vendored.load(tmp_path))
+    assert any("DDK" in v for v, _e, _n, _d in rows), rows
+
+
+def test_a_registered_tree_is_not_re_reported(tmp_path):
+    """Recording the terms in vendor.yaml is one of the three ways to settle a hit,
+    so a registered tree must stop firing or the ratchet cannot be satisfied."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: drivers/weird
+            name: Weird
+            license: Some-Proprietary-EULA
+            license_note: recorded on purpose
+            reason: test
+    """,
+    )
+    d = tmp_path / "drivers" / "weird"
+    d.mkdir(parents=True)
+    (d / "d.c").write_text("/*\n * LICENSE:  DDK - see license.txt\n */\n")
+    assert vendored.declared_licences(vendored.load(tmp_path)) == []
+
+
+def test_reactos_own_gpl_headers_do_not_fire():
+    """`See COPYING in the top level directory` is ReactOS's own GPL and the file is
+    actually at the repo root — ~20 files say it, and a ratchet that fired on all of
+    them on day one would have been turned off on day two."""
+    assert (REPO / "COPYING").exists()
+    reg = vendored.load(REPO)
+    assert not any("COPYING" in v for v, _e, _n, _d in vendored.declared_licences(reg))

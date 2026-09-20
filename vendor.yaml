@@ -1349,6 +1349,73 @@ trees:
       is still a foreign STL implementation rather than ReactOS code; translating an
       STL to Rust is not a goal of this project.
 
+  - path: drivers/storage/ide/atapi
+    name: ATAPI IDE miniport (NT4 DDK sample)
+    upstream: Microsoft Windows NT 4.0 DDK, storage sample
+    license: LicenseRef-Microsoft-NT4-DDK-EULA
+    license_file: drivers/storage/ide/atapi/license.txt
+    license_extra:
+      "DDK - see license.txt in the root dir": >-
+        What the two source files declare in their own ReactOS `LICENSE:` header. It is
+        the same grant as the headline `LicenseRef-Microsoft-NT4-DDK-EULA`, spelled the
+        way the code spells it, and it is recorded here so `--licences` can account for
+        it rather than report drift between two names for one EULA. Note the header
+        says "in the root dir" and the file is in fact beside the sources; the
+        `--grants` pointer resolver was taught to look at the referring file's own
+        directory and its ancestors after an earlier pass wrongly reported it missing.
+    unwelcome: >
+      THIS IS THE ONLY NON-FLOSS GRANT IN THE TREE AND IT SHOULD BE DELETED, not
+      carried. license.txt is the Windows NT Device Driver Kit END-USER LICENSE
+      AGREEMENT. It is not an open-source licence in any sense: it permits
+      redistribution of Sample Code "only in conjunction with and as a part of your
+      Software Product", requires that you "indemnify, hold harmless, and defend
+      Microsoft", forbids reverse-engineering, and says to "Contact Microsoft for the
+      applicable royalties due and other licensing terms for all other uses". There is
+      no sublicensing grant, so it is not clear that publishing the SOURCE — which we
+      do — is covered at all.
+
+      EXIT IS CHEAP, WHICH IS THE POINT. uniata is the IDE/AHCI driver actually in
+      service: every CriticalDeviceDatabase entry in hivesys.inf and every PCI binding
+      in txtsetup.sif names `uniata`, and `atapi` appears ZERO times in txtsetup.sif,
+      zero times in hivesys.inf and zero times anywhere under boot/bootdata. atapi.sys
+      is built and copied to the CD by `add_cd_file(... FOR all)` and then bound by
+      nothing.
+
+      THE ONE COMPLICATION: atapi.c has been translated to Rust. sdk/lib/rust/atapi-rust
+      is a 12-file crate and atapi.sys links libatapi_rust.a, so the C body is already
+      cohab-flipped and inert. A translation of EULA'd code is a derivative work of
+      EULA'd code, so deleting the C while keeping the Rust would not fix the licence
+      problem — it would move it into a language where nothing scans for it. Deleting
+      paid translation output needs the owner's explicit call, which is why this entry
+      exists instead of a deletion.
+    modified: yes  # cohab-flipped to atapi-rust; the C body is inert
+    version:
+      literal: NT4 DDK sample (no version stamp in the source)
+    reason: >
+      Recorded, not endorsed. Registering it is what makes the terms visible in
+      THIRD-PARTY-NOTICES.md and stops `--declared` reporting it as an unsettled
+      finding; it is NOT a decision to keep it.
+    review: >
+      FOUND 2026-09-20. The DDK EULA was spotted by the cardlib lane while auditing
+      licence pointers; what this entry adds is that the tree SHIPS, is bound by
+      nothing, and was in neither half of the registry.
+
+      WHY ALL FIVE SCANS MISSED IT, because the answer is structural rather than a
+      pattern that needed widening. `suspects()` and `grant_gaps()` both key on a
+      copyright line, and atapi.c and atapi.h contain NONE — zero copyright notices in
+      either file, so no amount of widening `_FOREIGN_HOLDER` could ever have reached
+      them. `grant_gaps()` would have been satisfied regardless, because the directory
+      does ship a licence file; the file is just a EULA. `license_drift()` only walks
+      trees already in the registry, which this was not. And `--licences` reads SPDX
+      ids and prose licence NAMES, neither of which "DDK" is.
+
+      The one machine-readable signal was the file's own ReactOS header,
+      `LICENSE: DDK - see license.txt in the root dir`. The parser for that
+      (`_ROS_LICENSE_HDR`) already existed and had only ever been pointed at registered
+      trees. `declared_licences()` points it at the whole tree, and the first run found
+      exactly these two files and nothing else: 3,034 files across the tree declare a
+      `LICENSE:` header in 50 distinct values, and atapi's is the only non-FLOSS one.
+
   - path: drivers/wdm/audio/drivers/ac97
     name: AC'97 audio sample driver
     upstream: Microsoft Windows-driver-samples
@@ -1374,29 +1441,34 @@ trees:
     name: EDK2 / TianoCore headers
     upstream: TianoCore EDK II
     license: BSD-2-Clause
-    license_ref: sdk/include/reactos/edk2/UefiSpec.h
-    license_note: >
-      NO GRANT TEXT IS SHIPPED WITH THIS TREE. Each header states the licence by
-      REFERENCE -- "This program and the accompanying materials are licensed and
-      made available under the terms and conditions of the BSD License which
-      accompanies this distribution. The full text of the license may be found at
-      http://opensource.org/licenses/bsd-license.php" -- but no such file
-      accompanies the distribution here, so the only copy of the terms we hand a
-      recipient is a URL. BSD-2-Clause is not in doubt; vendoring the text is
-      owed, and is the same fix WDF needed.
+    license_file: sdk/include/reactos/edk2/License.txt
     modified: unknown
     reason: >
       UEFI interface headers from EDK II, Intel-copyright, consumed by the UEFI
       boot path. Headers only, no bodies, so nothing here is translatable.
     review: >
-      FOUND 2026-09-20, same widened pattern. THE LICENCE TEXT IS NOT IN THE TREE:
-      the files say "This program and the accompanying materials are licensed and
-      made available under the terms and conditions of the BSD License which
-      accompanies this distribution. The full text of the license may be found at
-      http://opensource.org/licenses/bsd-license.php" -- a URL, not an
-      accompanying file, and the URL is the only copy we ship. BSD-2-Clause is
-      not in doubt; having no text to hand a recipient is still a gap, and it is
-      the same shape as the dangling pointers `--grants` reports.
+      FOUND 2026-09-20 by the widened `_FOREIGN_HOLDER`; the missing grant was
+      CLOSED the same day. The headers say "This program and the accompanying
+      materials are licensed and made available under the terms and conditions of
+      the BSD License which accompanies this distribution. The full text of the
+      license may be found at http://opensource.org/licenses/bsd-license.php" --
+      a URL, and no such file accompanied the distribution here, so the only copy
+      of the terms we handed a recipient was a link. Same shape as the dangling
+      pointers `--grants` reports.
+
+      FIXED by vendoring EDK II's own License.txt, taken verbatim from
+      tianocore/edk2 at tag edk2-stable201811 (sha256
+      90c196d6845efcdd..., identical at vUDK2018 and edk2-stable201903 -- three
+      tags, one file, so this is not a snapshot of something in flux). Upstream's
+      text, not BSD-2-Clause typed from memory: a licence reconstructed from
+      recollection is the same failure as an invented constant, and it is worse
+      here because nobody would check it.
+
+      NOTE THE HOLDERS ARE BROADER THAN OUR SUBSET. Upstream's file covers Intel,
+      Apple, ARM, Linaro and Red Hat; the 18 headers we actually carry name only
+      Intel and Apple. Vendoring the file whole is still right -- it is upstream's
+      licence for the work these headers come from -- but do not read the extra
+      holders as evidence that we carry their code.
 
   - path: sdk/lib/drivers/virtio
     name: VirtIO driver library
