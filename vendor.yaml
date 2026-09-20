@@ -646,10 +646,18 @@ trees:
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     staleness: >
-      AUDITED 2026-09-20: ours 2.16.11, current 3.6.7 (LTS) and 4.2.0. The 2.16 LTS branch
-      reached END OF LIFE at the end of 2021, so this has received no upstream security
-      fixes for about five years — in a TLS library. 2.x -> 3.x is a breaking API change, so
-      this is a port rather than a drop-in bump, which is presumably why it was never done.
+      AUDITED 2026-09-20: ours 2.16.11, current 3.6.7 (LTS) and 4.2.0. THE WORST TREE IN
+      THIS REGISTRY. The 2.16 LTS branch reached END OF LIFE at the end of 2021, so this has
+      received no upstream security fixes for about five years — in a TLS library. 2.x ->
+      3.x is a breaking API change, so this is a port rather than a drop-in bump, which is
+      presumably why it was never done. SIZED, so the next person does not have to: two
+      consumers, dll/win32/bcrypt and dll/win32/schannel (bcrypt_main.c, schannel_mbedtls.c
+      and its lazyload header), using 77 distinct mbedtls_* symbols between them. Bounded,
+      but not small — expect the usual 3.x migration work: the *_ret hash suffixes are gone,
+      struct fields moved behind MBEDTLS_PRIVATE, and several ssl_conf entry points changed
+      shape. Note schannel lazy-loads, so a missed rename can fail at RUNTIME rather than at
+      link time; that is the trap to plan around, and there is no TLS test in this tree to
+      catch it.
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0 OR GPL-2.0-or-later
     license_ref: dll/3rdparty/mbedtls/aes.c
