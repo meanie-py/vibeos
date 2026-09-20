@@ -600,6 +600,84 @@ pub unsafe extern "system" fn NtRequestPort(
     return Status;
 }
 
+/// `LpcpVerifyMessageDataInfo` with every user read FAULT-PROTECTED.
+///
+/// The plain version below walks `Message + DataInfoOffset`, which is BEYOND
+/// the `sizeof(PORT_MESSAGE)` its callers probe. In the C that is safe only
+/// because the user-mode call sits inside `_SEH2_TRY` (send.c:721-743); the
+/// KernelMode call at send.c:748 is deliberately unprotected. So this exists
+/// alongside the original rather than replacing it, exactly as
+/// `LpcpMoveMessageChecked` does — protecting the kernel-mode path would
+/// convert a loud crash into a silent wrong answer.
+///
+/// THE CHECK ORDER IS LOAD-BEARING and is copied from the C. The header
+/// bounds tests run BEFORE anything past the header is touched, so a malformed
+/// message still returns `STATUS_INVALID_PARAMETER` rather than
+/// `STATUS_ACCESS_VIOLATION`. Probing the whole `TotalLength` extent up front
+/// would be simpler and WRONG: it changes the answer upstream gives for
+/// hostile input, which is a divergence dressed as hardening.
+#[no_mangle]
+pub unsafe extern "system" fn LpcpVerifyMessageDataInfoChecked(
+    Message: PPORT_MESSAGE,
+    NumberOfDataEntries: *mut ULONG,
+    PreviousMode: KPROCESSOR_MODE,
+) -> NTSTATUS {
+    let NumberOfDataEntries = opaque_ptr(NumberOfDataEntries);
+
+    // One protected capture of the header. The C re-reads DataInfoOffset from
+    // user memory here deliberately (send.c:846) as a re-validation rather
+    // than trusting the earlier capture, so this re-reads too — just safely.
+    let hdr = match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+        Message as *const PORT_MESSAGE,
+        core::mem::size_of::<ULONG>(),
+        PreviousMode,
+    ) {
+        Ok(v) => v,
+        Err(st) => return st,
+    };
+
+    if hdr.u2.s2.DataInfoOffset == 0 {
+        *NumberOfDataEntries = 0;
+        return STATUS_SUCCESS;
+    }
+
+    let total = hdr.u1.s1.TotalLength as ULONG;
+    let off = hdr.u2.s2.DataInfoOffset as ULONG;
+    let hdr_size = core::mem::size_of::<PORT_MESSAGE>() as ULONG;
+    let di_size = core::mem::size_of::<ntkrnl_sys::ddk::_LPCP_DATA_INFO>() as ULONG;
+
+    if (total < hdr_size + di_size) || (off < hdr_size) || (off > total - di_size) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Only now is anything past the header touched, and it is bounded by the
+    // tests above: off is >= sizeof(PORT_MESSAGE) and <= total - sizeof(DATA_INFO).
+    let data_info = (Message as *mut u8).add(off as usize) as PLPCP_DATA_INFO;
+    let di = match ntkrnl_sys::probe::probe_read_generic::<ntkrnl_sys::ddk::_LPCP_DATA_INFO>(
+        data_info as *const ntkrnl_sys::ddk::_LPCP_DATA_INFO,
+        core::mem::size_of::<ULONG>(),
+        PreviousMode,
+    ) {
+        Ok(v) => v,
+        Err(st) => return st,
+    };
+
+    let end_of_entries = (core::ptr::addr_of!((*data_info).Entries) as *mut UCHAR).add(
+        di.NumberOfEntries as usize
+            * core::mem::size_of::<ntkrnl_sys::ddk::_LPCP_DATA_INFO__bindgen_ty_1>(),
+    );
+    if (end_of_entries > (Message as *mut UCHAR).add(total as usize))
+        || (end_of_entries < (Message as *mut UCHAR))
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *NumberOfDataEntries = di.NumberOfEntries;
+    STATUS_SUCCESS
+}
+
+/// UNPROTECTED by design — the KernelMode path. See
+/// `LpcpVerifyMessageDataInfoChecked` above; keep the two in step.
 #[no_mangle]
 pub unsafe extern "system" fn LpcpVerifyMessageDataInfo(
     Message: PPORT_MESSAGE,
@@ -709,21 +787,18 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
             return st;
         }
 
-        // STILL UNPROTECTED, and deliberately left so rather than half-fixed.
-        // LpcpVerifyMessageDataInfo walks `Message + DataInfoOffset`, which is
-        // BEYOND the sizeof(PORT_MESSAGE) probed above; in the C it is safe only
-        // because it sits inside the TRY. Making it safe means giving the
-        // function its own validation, and it is `#[no_mangle]` and also called
-        // from the KernelMode branch below, where the C deliberately does NOT
-        // protect it -- so the signature change belongs with the other
-        // cleanup-semantics conversions, not bolted on here. Probing the whole
-        // TotalLength extent instead would be the easy wrong answer: the
-        // function's own header checks can reject a malformed message with
-        // STATUS_INVALID_PARAMETER before touching the tail, and a blanket probe
-        // would turn those into STATUS_ACCESS_VIOLATION -- a different answer
-        // than upstream gives, for hostile input, which is how a "hardening"
-        // becomes a divergence.
-        Status = LpcpVerifyMessageDataInfo(LpcRequest, core::ptr::addr_of_mut!(NumberOfDataEntries));
+        // NOW PROTECTED. This walks `Message + DataInfoOffset`, beyond the
+        // sizeof(PORT_MESSAGE) probed above, and in the C is safe only because
+        // it sits inside this TRY (send.c:731). The Checked variant does the
+        // same work with every user read fault-protected, in the C's check
+        // ORDER so a malformed message still answers STATUS_INVALID_PARAMETER
+        // rather than STATUS_ACCESS_VIOLATION. The KernelMode call below keeps
+        // the unprotected version, because the C leaves that one bare too.
+        Status = LpcpVerifyMessageDataInfoChecked(
+            LpcRequest,
+            core::ptr::addr_of_mut!(NumberOfDataEntries),
+            PreviousMode,
+        );
         if Status < 0 {
             return Status;
         }
