@@ -199,7 +199,8 @@ trees:
     upstream: https://github.com/amd/win-libm
     license: MIT
     license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
-    modified: yes  # ReactOS markers in 1 source file(s): _handle_error.c
+    modified: yes  # unconditional LP64->LLP64 fork, no markers; see patch
+    patch: vendor-patches/amd-libm.patch
     version:
       literal: git commit 6121d02
     reason: >
@@ -220,22 +221,47 @@ trees:
       failure the msvcrt percentage had three times — a true fact living only in prose,
       where nothing checks it.
     review: >
-      The version is a LITERAL, not a probe, and that is a weakness worth stating: there is
-      no version macro, stamp or manifest anywhere in the tree, so `git commit 6121d02` is
-      copied from 3rd Party Files.txt and cannot be verified against the source here. It is
-      recorded so a future re-vendor has a starting point, not because it is checkable.
-      Confirming it against github.com/amd/win-libm is owed.
+      DIFFED 2026-09-20, AND THE COMMIT IS NOW CONFIRMED. This entry previously said the
+      version was a literal copied from "3rd Party Files.txt" that could not be checked, and
+      that confirming it against github.com/amd/win-libm was owed. Done: commit
+      6121d02aef0c775947d5dc655d7fc4ccfe2144ab exists ("First github commit of AMD LibM for
+      Windows", 2019-07-24, archive sha256
+      ca15d1bab53cf576ba0bba8c07aa6deac8d2a0fe9d6f219dc35c0d78c5a8d45f), and against that
+      exact tree 17 of our files are byte-identical while the 35 that differ do so by 2-58
+      lines each. A wrong base would not look like that.
 
-      NOTE the tree is NOT wholly foreign in effect: `crtmath` also compiles OUR C beside it
-      (stubs.c, fdivbug.c, machfpcw.c, the sdk/lib/crt/float control-word set), and those
-      remain translation targets. The vendored boundary is this directory, not the library.
-      The `ieee754/` Bessel set was named here as ours when this entry was written; it is
-      not, it is Sun FDLIBM, and it now has its own entry below.
+      THE DELTA IS ESSENTIALLY ONE FIX APPLIED EVERYWHERE: LP64 -> LLP64. AMD wrote this
+      assuming `long` is 64 bits. On Windows x64 it is 32, so every place the code packs a
+      double's bit pattern into a `long`/`unsigned long` would truncate; ours uses `long
+      long` throughout. That accounts for roughly 240 of the ~257 changed lines — the
+      GET_BITS_DP64/PUT_BITS_DP64 sites and casts like `(double)(long)(dx / w)` in
+      remainder.c. A genuine correctness fix, and not expressible as a -D because it is a
+      type spelled in hundreds of places. The rest: ~20 lines guarding `#pragma
+      function(...)` behind #ifdef _MSC_VER because clang lacks that pragma, plus
+      fma3_available.c's CRT-startup glue rewritten around _CRTALLOC/<intrin.h> instead of
+      <windows.h>/<cruntime.h>/<internal.h>.
 
-  # ── Sun FDLIBM's Bessel functions, also under crtmath ───────────────────
+      ELEVEN UPSTREAM .asm FILES WERE RE-IMPLEMENTED IN C and so are additions rather than
+      edits: L2_by_pi_bits, Lsincos_array, Lsincosf_array,
+      log{,10}_{128,256}_lead_tail_table, log_F_inv_{dword,qword}_table and
+      two_to_jby64{,_head_tail}_table — all MASM constant tables. Re-vendoring means redoing
+      that conversion, so budget for it rather than assuming a copy. Also added:
+      _handle_error.c, ldexp.c, ldexpf.c.
+
+      THERE IS NOT ONE __REACTOS__ MARKER IN THIS TREE. Unlike FreeType, where every hunk is
+      guarded and undefining the macro restores upstream behaviour, this is an unconditional
+      fork — nothing in the source tells a reader which lines are ours. That is precisely
+      what the patch file is for, and why it matters more here than elsewhere. Verified it
+      applies to a fresh extraction of that commit and reproduces our tree byte-for-byte
+      across all 52 shared files.
+
+      Still true from the earlier pass: the vendored boundary is this DIRECTORY, not the
+      library. `crtmath` also compiles our own C beside it (stubs.c, fdivbug.c, machfpcw.c
+      and the sdk/lib/crt/float control-word set), and those remain translation targets.
+
   - path: sdk/lib/crt/math/ieee754
     name: FDLIBM (Sun Microsystems freely-distributable libm)
-    upstream: https://www.netlib.org/fdlibm/
+    upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
     license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
     license_ref: sdk/lib/crt/math/ieee754/j0_y0.c
     modified: yes
@@ -259,21 +285,41 @@ trees:
       one level up ARE ours -- 102 lines that set `errno = EDOM` on a non-finite argument
       and then call the `__ieee754_*` body -- and they stay translation targets.
     review: >
-      `modified: yes` is deliberate and is the weakness here. j0_y0.c and j1_y1.c carry a
-      1997 performance patch by Naohiko Shimizu (Tokai University) on top of Sun's text, so
-      this is a patched drop rather than a clean one, and a re-vendor from netlib would have
-      to re-apply or re-evaluate it. jn_yn.c appears unpatched.
+      DIFFED 2026-09-20, AND THE RECORDED UPSTREAM WAS WRONG. This entry pointed at
+      netlib.org/fdlibm, but that is the ancestor, not our base. netlib FDLIBM 5.3 ships
+      e_jn.c marked "@(#)e_jn.c 1.4 95/01/18" and "Developed at SunSoft"; ours says "5.1
+      93/09/24" and "Developed at SunPro", which is what NetBSD's lib/libm/src carries. The
+      real base is NETBSD's libm, itself FDLIBM-derived. `upstream:` now says so.
 
-      The version probe reads the NetBSD RCS id rather than a release number, because FDLIBM
-      5.3 ships no version macro. That makes it a real probe -- it breaks loudly if the file
-      is replaced -- but it identifies NetBSD's revision of the file, not an FDLIBM release.
+      Confirmed by content, not just by the banner: our files use NetBSD libm conventions
+      that netlib FDLIBM does not have — int32_t rather than int, the GET_HIGH_WORD macro
+      rather than __HI, and calls to __sincos and __ieee754_sqrt.
 
-      `math/s_modf.c` (194 lines) and `math/modf.c` carry the SAME Sun header while sitting
-      outside this directory. They are deliberately NOT covered by this entry: a path-based
-      registry should not claim files it does not name, and whether to move them under
-      `ieee754/` or give them their own entry is a question for whoever next touches modf.
+      THE EXACT BASE REVISION IS IDENTIFIED BUT NOT RETRIEVABLE. The files name it
+      themselves in their RCS ids: e_j0.c 1.8 and e_j1.c 1.8 (both 1995/05/10), e_jn.c 1.9.
+      cvsweb.netbsd.org answers HTTP 503 from here, so those 1995 revisions could not be
+      fetched and there is therefore NO patch file — an honest dead end, like dxtn, not an
+      oversight. Anyone who can reach NetBSD CVS can finish this in ten minutes.
 
-  # ── the Microsoft CRT under ucrtbase.dll ────────────────────────────────
+      What the delta consists of, measured against the two retrievable candidates (neither
+      is the true base, so treat these as bounds): vs netlib FDLIBM 5.3, normalized 159 /
+      137 / 71 lines for j0_y0.c / j1_y1.c / jn_yn.c; vs NetBSD trunk, 266 / 246 / 71. The
+      trunk numbers are LARGER because trunk is thirty years newer — its jn_yn.c delta is
+      almost entirely NetBSD's own modernization (dropping the K&R `#ifdef __STDC__` arms,
+      adding __sincos), which our 1995-era copy predates. Read that as evidence our copy is
+      close to pristine-for-its-revision, not as evidence of local editing.
+
+      Three things are ours. (1) The 1997 Naohiko Shimizu (Tokai University) performance
+      patch, which turns the R0x/S0x scalar coefficients into R[]/S[] arrays and adds
+      r1/r2/s1/s2/z2/z4 temporaries for pipelined processors. VERIFIED present in j0_y0.c
+      and j1_y1.c and ABSENT from jn_yn.c — the earlier review claimed this and the marker
+      count (1/1/0) confirms it. (2) Include retargeting: `#include "fdlibm.h"` becomes
+      `#include "math.h"` plus `"ieee754.h"`. (3) Nothing else — there is no __REACTOS__
+      marker anywhere in the directory.
+
+      Still true and still owed from the earlier pass: math/s_modf.c and math/modf.c carry
+      the same Sun header while sitting outside this directory, and are deliberately not
+      claimed by this path-based entry.
   - path: sdk/lib/ucrt
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
@@ -352,7 +398,31 @@ trees:
       records for its 1997 Shimizu patch, and the reason `modified` is worth getting
       right rather than leaving at `unknown`.
 
+      RE-AUDITED 2026-09-20 and this entry is now AT ITS ACHIEVABLE MAXIMUM — the remaining
+      gap is not work anyone skipped. There is no patch file because there is no upstream
+      artifact to diff against: Microsoft ships ucrt source only inside the Windows SDK, so
+      without a real SDK drop no diff and therefore no patch is possible. A dead end like
+      FDLIBM's unreachable NetBSD revisions and dxtn's vanished distribution, not an
+      oversight.
+
+      CORRECTING THE COUNT ABOVE: the "23 clang/GCC adaptation sites across 8 files" figure
+      covered only sdk/lib/ucrt. Including sdk/include/ucrt — which is half of this
+      registered tree — it is 33 SITES ACROSS 12 FILES: the eight already named plus
+      corecrt.h (7 sites), corecrt_stdio_config.h, malloc.h and stddef.h (1 each). Same
+      shape as the STLport finding from the same pass: a split tree where only the source
+      half got measured.
+
+      Independently re-verified rather than inherited: `#pragma GCC target(...)` really is
+      in strnlen-sse2.cpp and strnlen-avx2.cpp (MSVC has no such pragma); strnlen.cpp really
+      does turn common_strnlen_simd from a DEFINITION into a bare DECLARATION under
+      `(__GNUC__ || __clang__) && !_UCRT_BUILD_SSE2 && !_UCRT_BUILD_AVX2`, which is
+      behavioural rather than cosmetic; and _M_ARM64EC really does appear in exactly 7
+      files, holding the 10.0.22000 dating floor. `grep -rli reactos` over both halves
+      matches only CMakeLists.txt, math.cmake and locale.cmake — no source file — which is
+      exactly why the marker-absence lesson above is worth keeping.
+
   # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
+
   - path: external/fex
     name: FEX-Emu
     upstream: https://github.com/FEX-Emu/FEX
@@ -441,7 +511,8 @@ trees:
     upstream: https://freetype.org/
     license: GPL-2.0-only  # ELECTED from FreeType's FTL-or-GPL dual grant
     license_file: COPYING  # the repo's own GPL-2.0 text; see review
-    modified: yes  # ReactOS markers in 16 source file(s): ftoption.h, ftbitmap.h, afcjk.c
+    modified: yes  # 16 files, ALL __REACTOS__-guarded; see patch
+    patch: vendor-patches/freetype.patch
     version:
       file: sdk/lib/3rdparty/freetype/include/freetype/freetype.h
       patterns:
@@ -450,24 +521,58 @@ trees:
         - '#define FREETYPE_PATCH\s+(\d+)'
       join: "."
     review: >
-      ARM ELECTED 2026-09-19: GPL-2.0, owner's decision. FreeType 2.10.0 is offered
-      under FTL *or* GPL-2.0 and the licensee chooses; this project is itself GPL-2.0
-      (repo-root COPYING), so electing the GPL arm makes FreeType's terms the same as
-      the tree it ships in, and no separate FTL attribution obligation applies.
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (freetype-2.10.0.tar.gz from savannah,
+      sha256 955e17244e9b38adb0c98df66abb50467312e6bb70eac07e49ce6bd1a20e809a). 449 files
+      exist in both trees, 432 byte-identical. SIXTEEN differ and EVERY ONE is wrapped in
+      #ifdef/#ifndef __REACTOS__, so undefining that macro yields pristine upstream
+      behaviour — there is no unmarked edit in the tree. A seventeenth file,
+      include/freetype/internal/ftdebug.h, differed by one added blank line and was reverted
+      to pristine rather than carried, which is what makes "16, all marked" exactly true.
+      Not vendored by design: builds/, devel/, docs/, objs/ and the
+      Jamfile/module.mk/rules.mk chaff — 81 files, all build system, and the tree's own
+      TechNote.txt says to drop them.
 
-      `license_file` points at the repo-root COPYING rather than a file inside the
-      tree, and that is deliberate: it is the GPL-2.0 text verbatim, and the reason
-      this entry had no pointer is that FreeType's own licence document was never
-      vendored — README:16 says "see the file `docs/LICENSE.TXT'" and there is no
-      docs/ directory here. So the tree still lacks upstream's dual-grant statement.
-      What it now has is an unambiguous record of which arm WE take and the text of
-      that arm. If FreeType is ever re-vendored, bring docs/ with it.
-      LICENCE TEXT IS NOT IN THE TREE. README:16 says "see the file `docs/LICENSE.TXT'
-      for the available licenses", and there is no docs/ directory here — the licence
-      file was left behind when this was vendored. FTL-vs-GPL is a CHOICE that file
-      governs, so the missing document is the one that would say which arm applies. No
-      license_file/license_ref for that reason: a pointer to something that does not
-      state the grant is worse than no pointer.
+      Fourteen of the sixteen are two mechanical themes. STACK -> HEAP: `FooRec worker[1];`
+      becomes a malloc with a null check and free() on each exit path, because kernel stack
+      is scarce (TechNote.txt says so outright) — ttsbit.c, ftraster.c, psintrp.c,
+      cidgload.c, t1gload.c, ftgrays.c and four autofit files. That changes WHERE a fixed-
+      size struct lives, not its size. CONFIG/GLUE: ftoption.h flips three macros, ftdebug.c
+      defers FT_Message/FT_Panic to the win32k font glue, ftlcdfil.c changes one parameter
+      from FT_Vector* to FT_Vector[3].
+
+      A REAL BUG LIVES IN THAT SET AND IS CURRENTLY UNREACHABLE. autofit/aflatin2.c has
+      `AF_LatinMetricsRec *dummy = malloc(...); if (dummy) goto Exit;` — the test is
+      INVERTED; the identical construct in sibling files afcjk.c and aflatin.c correctly
+      reads `if (!dummy)`. As written the SUCCESS path skips the whole width-computation
+      block and falls back to a constant width. It is dead today: every caller sits behind
+      #ifdef FT_OPTION_AUTOFIT2, which is referenced in five places and DEFINED IN NONE —
+      verified by grep across the tree and the CMakeLists. Real defect, zero runtime effect,
+      one-line fix. Left alone because this pass records state rather than patching logic.
+
+      Two deliberate features, not mechanical: ftbitmap.{h,c} add
+      FT_Bitmap_Convert_ReactOS_Hack(), an extended FT_Bitmap_Convert emitting 0xFF/0x00
+      bytes instead of 1/0 bits for text output, with the original name kept as a wrapper
+      passing hack=FALSE so upstream behaviour is unchanged; and sfnt/ttcmap.c adds a
+      DEFENSIVE check in tt_cmap4_char_map_binary that refuses to parse unless the
+      subtable's format field really is 4, citing ReactOS bug CORE-12549 (stale cmap data
+      after a font file is replaced on disk). That one hardens the parser rather than
+      relaxing it.
+
+      SECURITY, stated as what is NOT here: no bounds check, allocation size, or
+      length/offset arithmetic differs from upstream anywhere in the sixteen files, and no
+      backported CVE fix is present either — this is stock 2.10.0, which is the standing
+      `staleness:` item. FT_CONFIG_OPTION_USE_PNG remains NOT enabled, so pngshim.c compiles
+      to `typedef int _pngshim_dummy;` and CVE-2020-15999 is not reachable; verified twice,
+      independently. No copyright line or licence header differs anywhere in the delta.
+
+      Verified: the patch applies to a fresh 2.10.0 extraction and reproduces our tree byte-
+      for-byte across all 443 shared source files.
+
+      COUNTING NOTE, because it is easy to get wrong and one audit did: 17 files DIFFER, 16
+      carry a __REACTOS__ marker. A bare `grep -rl __REACTOS__` returns 17 paths but one of
+      them is TechNote.txt, which is prose. The earlier "16 source files" figure in this
+      entry was right.
+
     reason: >
       Font rasteriser, ~208K lines and the single largest vendored tree. win32k
       consumes it through a stable C API; upstream tracking beats ownership.
@@ -618,13 +723,16 @@ trees:
       20 files reproduce byte-for-byte. Normalize before counting anything here — the tree
       is CRLF in places and raw diffs overstate badly (src/adns.h 150 raw vs 92 real).
 
-      FLAGGED, NOT FIXED: adns_win32/getopt.c and getopt.h carry NO licence. The header says
-      verbatim "jgaa oct 9th 2000: Found this on www. No copyright information given.
-      Slightly modified." with a winsite.com origin URL. They are not in the CMake source
-      list and nothing references them, so this is dead code of unknown provenance — it
-      should probably just be deleted, which is a decision rather than an audit finding. The
-      rest of adns_win32 (adns_unix_calls.c, adns_win32.h) is properly GPL-2.0-or-later,
-      jgaa plus Ian Jackson, and adns_unix_calls.c IS compiled.
+      DELETED 2026-09-20: adns_win32/getopt.c and getopt.h carried NO licence — the header
+      read verbatim "jgaa oct 9th 2000: Found this on www. No copyright information given.
+      Slightly modified." with a winsite.com origin URL. Neither was in the CMake source
+      list. Correcting this entry's earlier wording, which said "nothing references them"
+      and was too broad: client/adnslogres.c does #include "getopt.h" under ADNS_JGAA_WIN32
+      — but client/ appears NOWHERE in our CMakeLists, so the adnshost/adnslogres tool set
+      is itself unbuilt vendored source and that reference is dead too. adns and its
+      consumer dnsapi.dll both rebuild clean after the removal. The rest of adns_win32
+      (adns_unix_calls.c, adns_win32.h) is properly GPL-2.0-or-later, jgaa plus Ian Jackson,
+      and adns_unix_calls.c IS compiled.
     reason: Asynchronous DNS resolver; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libmpg123
@@ -635,7 +743,8 @@ trees:
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
     license_file: COPYING.LIB  # the repo's own LGPL-2.1 text; see review
-    modified: yes  # ReactOS markers in 1 source file(s): parse.c
+    modified: yes  # MIXED VINTAGE — compat.c is older than the rest; see review
+    patch: vendor-patches/libmpg123.patch
     headers:
       - sdk/include/reactos/libs/libmpg123
     version:
@@ -646,16 +755,48 @@ trees:
       file: sdk/include/reactos/libs/libmpg123/config.h
       pattern: '#define PACKAGE_VERSION "([^"]+)"'
     review: >
-      POINTER ADDED 2026-09-19 and it is NOT upstream's file. mpg123's own COPYING was
-      never vendored — its headers say "see COPYING and AUTHORS files in distribution"
-      and neither is here — so this points at the repo-root COPYING.LIB, which is the
-      LGPL-2.1 text verbatim and is the licence the sources name. That gives the grant
-      an authoritative text in-tree; it does NOT recover mpg123's own AUTHORS file,
-      which the same sentence asks for. Bring both if this is re-vendored.
-      LICENCE TEXT IS NOT IN THE TREE, and the sources say so themselves: every file
-      header reads "free software under the terms of the LGPL... see COPYING and AUTHORS
-      files in distribution", and neither COPYING nor AUTHORS was vendored. Same defect
-      as freetype — the drop kept the code and left behind the document it points at.
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (mpg123-1.26.2.tar.bz2, sha256
+      00f7bf7ea64fcec2c9d07751d6ad8849343ee09c282ea3b0d5dd486e886e2ff3).
+
+      THIS IS A MIXED-VINTAGE DROP. Everything is 1.26.2 EXCEPT compat/compat.c, which is a
+      verbatim OLDER upstream file. Normalized against each release: 469 lines from 1.23.8,
+      ZERO from 1.24.0 / 1.25.10 / 1.25.13, and 219 from every 1.26.x. Its banner reads
+      "copyright 2007-2016" where 1.26.2 reads "2007-2020". So the 219-line compat.c hunk in
+      the patch is NOT a ReactOS edit — it is upstream's own 1.25->1.26 change, missing
+      because the file was never refreshed. Anyone re-vendoring must not "revert" it
+      thinking they are removing a local patch.
+
+      The consequence is a latent inconsistency, currently harmless: compat.h IS 1.26.2 and
+      declares `size_t unintr_fwrite(...)`, intsym.h mangles it to INT123_unintr_fwrite, and
+      the stale compat.c never defines it. Nothing calls it — verified by grepping both
+      halves — so it is a dead declaration, not a link error. Re-syncing compat.c to 1.26.2
+      fixes both at once, and also needs upstream's wpathconv.h, whose content our older
+      compat.c carries INLINE rather than #included. FLAGGED, NOT DONE: this pass records
+      state rather than changing a shipping library.
+
+      Everything else is small. parse.c is 6 lines, a pure __REACTOS__ guard that only moves
+      `#include "getbits.h"`. mpg123.h is 16: the expected @PACKAGE_VERSION@/@API_VERSION@
+      substitution from mpg123.h.in (1.26.2 / 45, which is where the old bogus "45" version
+      probe came from) plus a __REACTOS__-guarded `typedef long ssize_t`. compat.h is 6: the
+      same ssize_t guard and two dead msdn.microsoft.com URLs updated. optimize.h is 4:
+      __declspec(align) vs __attribute__((aligned)). A further 37 files differ only by
+      trailing-whitespace stripping and are excluded from the patch, so pristine+patch does
+      NOT reproduce the tree byte-for-byte; the header says so.
+
+      SECURITY: the decoder is untouched. layer1/2/3.c, id3.c, huffman.h, newhuffman.h,
+      frame.c, format.c, readers.c and parse.c's body are byte-identical or whitespace-only
+      against pristine. No bounds check, allocation, buffer size or Huffman/ID3 logic
+      differs. The only functional-content difference in the compiled set is compat.c's
+      EINTR retry plumbing, which is I/O rather than parsing. config.h selects the generic-C
+      OPT_I386 path with REAL_IS_FLOAT (no asm, no MMX/SSE/AltiVec), all three layers,
+      ID3v2, ICY, gapless, new Huffman tables, and — unlike libsamplerate — carries NO
+      kernel-mode shim; this is usermode only.
+
+      MEASUREMENT NOTE: match files by their FULL upstream path, not basename. mpg123 ships
+      both src/equalizer.c (the frontend's) and src/libmpg123/equalizer.c; a basename match
+      picks the wrong one and reports 56 phantom changed lines. Against the correct file
+      ours is identical.
+
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate
@@ -1183,6 +1324,14 @@ trees:
       reimplementation and does not ship the two .c files, so 1,086 of our 1,137 lines
       have nothing to compare against. `modified` stays unknown, now for a stated
       reason rather than for want of looking.
+
+      RE-CHECKED 2026-09-20: still unresolvable, with one more avenue eliminated. Beyond the
+      dead people.freedesktop.org/~mareko distribution point already recorded, the plausible
+      GitHub mirrors (mesa3d/libtxc_dxtn, freedreno/libtxc_dxtn and similar) return nothing
+      and sources.debian.org has no libtxc-dxtn source package. So `modified: unknown`
+      stands and there is no patch for the same reason there is no diff. This entry is at
+      its achievable maximum too — the gap is the world's, not ours.
+
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
   # ── headers with no source in this tree ─────────────────────────────────
