@@ -488,6 +488,32 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`ExPools` on arm64 intermittently drops one assertion under load, and it can eat a
+  whole merge-queue submission. UNOWNED** (2026-09-20). Signature:
+  `ExPools: pass 14 -> 13 (dropped)`, the extra failure being `assert ExPools.c:181` —
+  the check that a `ExAllocatePoolWithQuotaTag(PagedPool|...)` allocation comes back
+  `PagedPool` rather than promoted to `NonPagedPoolMustSucceed`. The test's own comment
+  says "Vista+ promotes the memory allocation", i.e. **the assertion is memory-pressure
+  sensitive by construction**, and the conductor runs three arches building and booting
+  at once. Frequency across saved artifacts: **8 runs at pass=13 vs 101 at pass=14** (~7%).
+  It is NOT new and NOT caused by whatever lane it rejects — the same signature appears in
+  four earlier batches (2026-09-19 11:57, 12:06, 19:20 and 2026-09-20 00:29) that all
+  **landed green**, having been retried away.
+  **THE HEURISTIC IN THE ENTRY ABOVE HAS A FAILURE MODE, and this is it.** That entry says
+  a failure whose signature is IDENTICAL across attempts is by definition not a flake.
+  Here all three retries produced byte-identical `pass=13 fail=5`, which reads as
+  deterministic — but the load condition *persisted across the whole batch*, so the retries
+  never sampled a different environment. Retry-vs-retry cannot discriminate a
+  load-sensitive assertion. **The discriminators that do work** are cheap and were what
+  settled it: re-run the identical merged tree somewhere quiet (gave pass=14, ratchet
+  holds), and grep the artifact history for the same signature
+  (`grep -rl '^ExPools OK pass=13' /tmp/vibeos-cli/*/kmtest-results.txt`) to see whether it
+  predates the change. Do both before either resubmitting *or* believing a lane is at
+  fault.
+  Real fix is to make the assertion tolerate promotion (it already accepts two pool types;
+  the third, promoted case under pressure is what it misses) or to run kmtest with a
+  memory floor — not to raise the retry count, which is the symptom.
+
 - **win32k: 32 dropped `_SEH2_EXCEPT` handlers across 11 files, in `NtUser*` syscall
   paths. UNOWNED, SURVEYED 2026-09-20.** Same class as the LPC bug closed today and
   larger. Reproduce with:
