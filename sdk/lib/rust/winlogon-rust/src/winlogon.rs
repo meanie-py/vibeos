@@ -1938,23 +1938,35 @@ unsafe fn TryStartWinetest(
     Si.hStdInput = null_mut();
     Si.hStdOutput = Wr;
     Si.hStdError = Wr;
-    /* DETACHED_PROCESS. A winetest is a CUI image, so without this csrss
-     * allocates it a console -- and console creation from a WoW64 guest fails
-     * here (`co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message
-     * failed`), after which the guest spins forever without reaching main and
-     * writes not one byte. Measured: 60s timeout, 0 bytes, 5036 "Sending to
-     * Suspended Thread" lines. It needs no console anyway -- its stdout is the
-     * pipe above. The console failure is a real bug and is registered
-     * separately; this is not a workaround for it, the process genuinely
-     * should not have a console. */
-    const DETACHED_PROCESS: DWORD = 0x0000_0008;
+    /* DETACHED_PROCESS, on BOTH sides.
+     *
+     * A winetest is a CUI image, so without this csrss allocates it a console
+     * -- and console creation HANGS the process before it reaches main:
+     * `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`,
+     * then an unbounded `Sending to Suspended Thread` spin. Measured at a 180s
+     * timeout with ZERO bytes of output, 9075 spin lines.
+     *
+     * It was first seen on a WoW64 guest, and the native control settled where
+     * it lives: bare i386, no WoW64 anywhere, same two subtests, SAME failure
+     * and same zero bytes. So it is a plain console bug of ours, not a 32<->64
+     * one, and detaching is the right call on both sides rather than a WoW64
+     * workaround. The test needs no console: its stdout is the pipe above.
+     *
+     * It also explains the child-process hang the native control runs into
+     * later. class.c spawns fifteen children of its own; a CUI child of a
+     * console-less parent gets a NEW console from csrss, which is this same
+     * hang, so each one burns the full 30s of winetest_wait_child_process.
+     * That is 7.5 minutes, and it is why the control has never reached the
+     * wndproc block it exists to adjudicate. One bug, three symptoms; fixing
+     * console creation unblocks the attribution. */
+    const WT_CREATE_FLAGS: DWORD = 0x0000_0008; /* DETACHED_PROCESS */
     if CreateProcessW(
         Path.as_ptr(),
         Line.as_mut_ptr(),
         null_mut(),
         null_mut(),
         1, /* bInheritHandles: required for the child to get Wr */
-        DETACHED_PROCESS,
+        WT_CREATE_FLAGS,
         null_mut(),
         null(),
         &mut Si,
