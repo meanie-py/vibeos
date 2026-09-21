@@ -550,6 +550,15 @@ Two separate discoveries, the same shape, found while porting rangelist:
    `NtGetCurrentProcessorNumberEx` tests one of the two functions we found have no
    implementation anywhere.
 
+   **Job objects make the case concretely.** `ntoskrnl/ps/job.c` is 2,593 lines after the
+   merge; `ps-rust/src/job.rs` is 795, translated from the pre-merge stub-heavy version. Six
+   helpers have no Rust at all — `PspCloseJob`, `PspSetJobLimitsBasicOrExtended`,
+   `PspAssociateCompletionPortWithJob`, `PspQueryJobBasicAccountingInfo`,
+   `PspQueryJobLimitInformation`, `PspQueryJobProcessIdList`. The `Nt*` entry points are real
+   implementations rather than stubs, so nothing fails loudly; they are just the old, smaller
+   behaviour. That port needs a grader, and the merge shipped one: `JobObject.c`. Porting 1,800
+   lines of job-object semantics with no way to run its test is the expensive way to do it.
+
    **The tool to build is a `tools/payloads/apitest/` payload modelled on the kmtest one** —
    same one-process-per-suite isolation, same serial protocol, same ratchet baseline. The
    kmtest payload already proves every piece of the design. The one thing to do differently is

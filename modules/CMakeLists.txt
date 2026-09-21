@@ -10,13 +10,21 @@ option(ENABLE_ROSTESTS "Enable building the ReactOS test suite" OFF)
 # no library for). Build them with `vibeos-cli build --arch i386 --rostests`,
 # which is reconciled OFF again by the next plain build.
 option(ENABLE_ROSTESTS_KMTESTS "Enable building only kmtests from the ReactOS test suite" OFF)
+# Same bargain for the USER-MODE suites, and for the same reason: the apitests
+# are the oracle the upstream-sync lane needs (the 2026-09 merge alone shipped
+# 43 new ones, JobObject among them), and all 63 of them build clean, while the
+# full ENABLE_ROSTESTS switch also drags in winetests/unittests/win32 -- where 4
+# targets do NOT build, one of them an llvm-rc gap in an ACCELERATORS block that
+# is a toolchain limitation rather than anything we can patch. Without this
+# option the apitest conformance payload could never produce media.
+option(ENABLE_ROSTESTS_APITESTS "Enable building only apitests from the ReactOS test suite" OFF)
 option(ENABLE_WALLPAPERS "Integrate wallpapers into the built ISOs" OFF)
 
 if(ENABLE_ROSAPPS)
     add_subdirectory(rosapps)
 endif()
 
-if(ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS)
+if(ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS OR ENABLE_ROSTESTS_APITESTS)
     add_subdirectory(rostests)
 endif()
 

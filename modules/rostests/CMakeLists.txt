@@ -23,8 +23,16 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     add_compile_options("-Wno-misleading-indentation") # Cause by todo_wine, etc.
 endif()
 
-if(ENABLE_ROSTESTS)
+# apitests is outside the ENABLE_ROSTESTS guard for the same reason kmtests is:
+# ENABLE_ROSTESTS_APITESTS builds it alone, so the apitest conformance payload
+# does not depend on the winetests linking. winetestlib comes with it -- it is a
+# one-file static lib (winetestlib.c), and the acpi and crtdll apitests link it.
+if(ENABLE_ROSTESTS OR ENABLE_ROSTESTS_APITESTS)
+add_subdirectory(winetestlib)
 add_subdirectory(apitests)
+endif()
+
+if(ENABLE_ROSTESTS)
 #add_subdirectory(dibtests)
 add_subdirectory(drivers)
 #add_subdirectory(dxtest)
@@ -33,7 +41,6 @@ add_subdirectory(rosautotest)
 add_subdirectory(tests)
 add_subdirectory(unittests)
 add_subdirectory(win32)
-add_subdirectory(winetestlib)
 add_subdirectory(winetests)
 endif()
 

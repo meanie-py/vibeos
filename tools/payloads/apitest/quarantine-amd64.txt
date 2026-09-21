@@ -1,0 +1,8 @@
+# apitest quarantine — amd64.
+# One suite name per line; gen_suites.py subtracts these from what the build
+# produced. A name here that matches nothing is reported, not ignored.
+#
+# 2026-09-21, first ever apitest sweep: the bare-invocation enumeration pass
+# wedged the guest here and the run never reached [APITEST-SWEEP] done.
+# Needs triage; until then it must not cost the other 62 suites.
+opengl32_apitest.exe
