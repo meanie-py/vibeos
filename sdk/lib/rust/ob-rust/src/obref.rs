@@ -375,7 +375,11 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
             };
 
             (*HandleInformation).GrantedAccess = granted_access;
-            (*HandleInformation).HandleAttributes = 0;
+            // Was hardcoded 0 (upstream's `FIXME: Get handle attributes`). The correct
+            // expression is already in this file at the other HandleInformation fill
+            // site below -- another sibling that got it right. Upstream-Commit: 8e865cb39d7
+            (*HandleInformation).HandleAttributes =
+                (*handle_entry).__bindgen_anon_1.ObAttributes as u32 & OBJ_HANDLE_ATTRIBUTES;
 
             if (granted_access & desired_access) != 0 {
                 InterlockedIncrementSizeT(

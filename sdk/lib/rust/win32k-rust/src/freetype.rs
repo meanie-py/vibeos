@@ -5944,6 +5944,9 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         return 0;
     }
 
+    /* Lock FreeType for face lookup (upstream e1bf662d9a) */
+    IntLockFreeType();
+
     if (*(*face).charmap).encoding == FT_ENCODING_UNICODE {
         let mut glyph_code: FT_UInt = 0;
         let mut char_code: FT_ULong;
@@ -5953,6 +5956,7 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         char_code_prev = char_code;
 
         if glyph_code == 0 {
+            IntUnLockFreeType();
             return 0;
         }
 
@@ -5965,6 +5969,7 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         num_ranges = 1;
         while glyph_code != 0 {
             if char_code < char_code_prev {
+                IntUnLockFreeType();
                 return 0;
             }
             if char_code - char_code_prev > 1 {
@@ -5990,6 +5995,10 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         (*glyphset).cRanges = num_ranges;
         (*glyphset).flAccel = 0;
     }
+
+    /* Unlock FreeType */
+    IntUnLockFreeType();
+
     size
 }
 

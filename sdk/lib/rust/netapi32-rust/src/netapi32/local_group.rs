@@ -528,7 +528,13 @@ pub unsafe extern "system" fn NetLocalGroupAddMembers(
                 MemberList = buf as PLOCALGROUP_MEMBERS_INFO_0;
             }
             3u32 => {
-                Status = BuildSidListFromDomainAndName(
+                // BuildSidListFromDomainAndName returns a Win32 NET_API_STATUS, not an
+                // NTSTATUS. Casting it and testing NT_SUCCESS reads every positive
+                // Win32 error (ERROR_NOT_ENOUGH_MEMORY = 8, ...) as SUCCESS, so the
+                // failure path was skipped and the caller went on to use MemberList.
+                // Take it as an ApiStatus and compare against NERR_Success (0).
+                // Upstream-Commit: f2ef434107e (#9113)
+                ApiStatus = BuildSidListFromDomainAndName(
                     if !servername.is_null() {
                         &raw mut ServerName
                     } else {
@@ -537,8 +543,8 @@ pub unsafe extern "system" fn NetLocalGroupAddMembers(
                     buf as PLOCALGROUP_MEMBERS_INFO_3,
                     totalentries as u32,
                     &raw mut MemberList,
-                ) as NTSTATUS;
-                if !NT_SUCCESS(Status) {
+                );
+                if ApiStatus != NERR_Success {
                     if ((*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_ERR as i32))
                         != 0
                     {
@@ -552,10 +558,9 @@ pub unsafe extern "system" fn NetLocalGroupAddMembers(
                             558i32,
                             b"BuildSidListFromDomainAndName failed (Status %08lx)\n\0" as *const u8
                                 as *const i8,
-                            Status,
+                            ApiStatus,
                         );
                     }
-                    ApiStatus = NetpNtStatusToApiStatus(Status);
                     break 'outer;
                 }
             }
@@ -1026,7 +1031,13 @@ pub unsafe extern "system" fn NetLocalGroupDelMembers(
                 MemberList = buf as PLOCALGROUP_MEMBERS_INFO_0;
             }
             3 => {
-                Status = BuildSidListFromDomainAndName(
+                // BuildSidListFromDomainAndName returns a Win32 NET_API_STATUS, not an
+                // NTSTATUS. Casting it and testing NT_SUCCESS reads every positive
+                // Win32 error (ERROR_NOT_ENOUGH_MEMORY = 8, ...) as SUCCESS, so the
+                // failure path was skipped and the caller went on to use MemberList.
+                // Take it as an ApiStatus and compare against NERR_Success (0).
+                // Upstream-Commit: f2ef434107e (#9113)
+                ApiStatus = BuildSidListFromDomainAndName(
                     if !servername.is_null() {
                         &raw mut ServerName
                     } else {
@@ -1035,8 +1046,8 @@ pub unsafe extern "system" fn NetLocalGroupDelMembers(
                     buf as PLOCALGROUP_MEMBERS_INFO_3,
                     totalentries as ULONG,
                     &raw mut MemberList,
-                ) as NTSTATUS;
-                if !(Status >= 0) {
+                );
+                if ApiStatus != NERR_Success {
                     if (*__wine_dbch___default).flags as u32 & (1u32 << (__WINE_DBCL_ERR as u32)) != 0 {
                         ros_dbg_log(
                             __WINE_DBCL_ERR,
@@ -1047,10 +1058,9 @@ pub unsafe extern "system" fn NetLocalGroupDelMembers(
                             855,
                             b"BuildSidListFromDomainAndName failed (Status %08lx)\n\0" as *const u8
                                 as *const i8,
-                            Status,
+                            ApiStatus,
                         );
                     }
-                    ApiStatus = NetpNtStatusToApiStatus(Status);
                     break 'main;
                 }
             }

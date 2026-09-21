@@ -739,6 +739,30 @@ for aliases and containers — `LPTHREAD_START_ROUTINE` is only an alias of
 unblocking the pointee alone changes nothing. `tools/rustconv/collapse_abi_twins.py --apply`
 folds existing pairs, refusing any whose bodies differ by more than cast decoration.
 
+**The twins are no longer EMITTED, for crates whose substrate is system-spelled (2026-09-20).**
+Folding pairs after the fact left the generator still producing them. The premise had quietly
+expired: `abi_enforce` emits the dual for every `static` + system fn because "our COM bindgen
+spells vtbl slots concretely (`extern "stdcall"` on i386)" — but after `normalize_island_abi.py`,
+`shell32-rust/src/island_i386.rs` and `com-sys/src/bindgen_i386.rs` contain **zero**
+`extern "stdcall"` between them. So the dual satisfied nothing and cost the usual half-compiled
+bug factory.
+
+Worse than wasteful where the consuming type is one the SAME generator emits: `dde.cpp`'s
+`pfnCommandHandler` handler table is rendered `extern "system"`, and the non-x86 twin is
+`extern "C"`, which Rust types DISTINCTLY even on amd64 where the ABI coincides — E0308 at every
+table entry, on the two arches where the convention does not even matter.
+
+`Target.concrete_stdcall_slots` now drives it, detected by `_detect_concrete_stdcall_slots()`
+from the island/bindgen files ONLY. Two traps that detector had to survive, both real:
+- **Never scan translated output.** A previous run's twins are themselves `extern "stdcall"`,
+  so a whole-crate scan reports True forever and the flag can never turn off.
+- **Mask comments first.** `island_extra.rs` names `unsafe extern "stdcall"` in one PROSE
+  sentence, explaining that `lstrcpynW` is now bound from the real header. That single comment
+  flipped the answer for all of shell32. A name in prose is not a use — the same reason
+  `crate_integrate` masks before its import scan.
+
+Absent any island the answer stays the conservative True: the dual is wasteful, never incorrect.
+
 **And a convention twin is NOT an arch gate — it just looks like one.** msvcrt's except.c came
 back with `#[cfg(target_arch = "x86")] extern "stdcall"` / `#[cfg(not)] extern "C"` pairs on its
 callbacks, which is correct and says nothing about the fact that the file's ENTIRE 64-bit frame
@@ -1063,6 +1087,18 @@ and the tail folds. Same fix, same reasoning as below. The general point: an emp
 is not merely a lost message, it is also **an optimiser hint that erases the evidence** — so
 expect this class when you turn one on, and read the trap as a pre-existing latent fold rather
 than as damage the change did.
+
+**DELETING code is the same trigger, from the other direction.** Reverting upstream's
+`TIF_MOVESIZETRACKING` hack out of `ENTRY_ReferenceEntryByHandle` (win32k `gdiobj.rs`) put one
+`ud2` in `win32k.sys` at `EBRUSHOBJ_bRealizeBrush` that the previous build did not have. Nothing
+about that function changed; the removal simply made `ENTRY_ReferenceEntryByHandle` small enough
+to inline, which made `GDIOBJ_ShareLockObj` transparent at its call site, and
+`engbrush.rs`'s `psurfPattern = GDIOBJ_ShareLockObj(...)` is dereferenced with no NULL check --
+*which is what the C does*, since `engbrush.c` carries only `ASSERT(psurfPattern)` and ASSERT is
+nothing in retail. So: **any edit that changes a function's INLINING COST can uncloak this row,
+including one that only removes lines.** Read the instruction before the trap
+(`call GDIOBJ_vDereferenceObject`, an ordinary function with no panic symbol = middle row), fix
+with `#[inline(never)]` on the NULL-returning callee, and do not add the null check.
 
 **Fix by restoring the C's codegen shape — `#[inline(never)]` on the callee — not by adding the
 null check.** Adding it is a behaviour change on the path the C would fault on, i.e. a
@@ -3751,6 +3787,19 @@ resolve a shape, and each one recurs on every C++ COM module.
   another. Bind them as locals at the top of the body rather than substituting the
   identifiers — substitution also rewrites the name inside the `"IDispatchImpl: plibid is
   CLSID_NULL!"` string literal.
+* **The `IDispatchImpl` one RECURS, and should be mechanized.** It has now been hand-repaired
+  on six classes (CFolder, CFolderItem, CFolderItems, CFolderItemVerb, CFolderItemVerbs, and
+  CShellDispatch before them) with an identical four-line binding each time — which is the
+  detection event for a missing mechanism, not a thing to remember. The bounded fix: the ONLY
+  ATL method that reads those template parameters is `EnsureTILoaded`, so the assembler can
+  emit the binding when it assembles a `*_EnsureTILoaded_body` for a class with an
+  `IDispatchImpl` base. Three of the four values are already derivable there — `piid` from the
+  template argument the recognizer already parses, `wMajor`/`wMinor` from ATL's defaults — and
+  only `plibid` needs new input, a per-target module libid (`LIBID_Shell32` for shell32)
+  alongside `com_object_map` in the Target config. Until that exists, expect to write the
+  binding by hand on every dual-interface class, and bind rather than SUBSTITUTE: replacing
+  the identifiers textually also rewrites the name inside ATL's own debug string
+  `"IDispatchImpl: plibid is CLSID_NULL!"`.
 * `no method named as_ptr/Attach found for raw pointer` — **ATL operators on storage the
   scaffold flattened.** `operator T*()` is the pointer VALUE (`p.as_ptr()` → `p`),
   `operator&()` is the ADDRESS OF THE SLOT (`p.as_mut_ptr()` → `&raw mut p`), `Attach(v)` is
@@ -4797,6 +4846,35 @@ no arch took the arm, and the RTTI walk on 64-bit would have resolved every type
 base 0. Note what a nonexistent feature does here: `#[cfg(feature = "…")]` for an undeclared
 feature is not an error, it is simply never satisfied — so an invented feature name is a
 silent, permanent `#[cfg(false)]`.
+
+**Variant: the model RESOLVED the conditional, and picked the dead arm — and the seals cannot
+object, by construction.** The two variants above are about a condition that survived into the
+Rust wrongly. This one is about a condition that did not survive at all. CStartMenu's
+`GetMergedFolder` is written `#if MERGE_FOLDERS <second SHGetSpecialFolderLocation> #else <bare
+else on the first> #endif`, and `shellmenu.h:69` says `#define MERGE_FOLDERS 1`. The
+translation rendered the `#else`. The result compiles, links and boots: every success path
+returns the USER start menu unmerged, COMMON is never added, and the entire merge tail of the
+function — `CMergedFolder_CreateInstance`, both `AddNameSpace` calls — is unreachable code that
+no longer runs.
+
+**Why the call seal did not catch the dropped `SHGetSpecialFolderLocation` occurrence**, which
+is the part worth internalising: `dead_regions.preprocessor_conditional_spans` collapses a whole
+`#if`/`#else`/`#endif` into ONE dead span, deliberately and lexically, because deciding an arm
+needs macro state. Tokens in a dead span are *optional* rather than demanded — so the live arm's
+extra call was optional too, and omitting it was accepted. The mechanism that exists to make a
+dropped call loud is switched off precisely where the arms differ.
+
+**Tell.** `warning: unreachable statement` from rustc, pointing at the first line after the
+conditional. It arrives a build and a link after the money is spent, and it is the ONLY thing
+that objected. Treat an unreachable-statement warning in generated output as a wrong-arm
+suspicion until you have read the C.
+
+**Fix.** `rustconv translate` now emits a `PREPROCESSOR ARMS (verify the body took the live
+one)` audit finding for every body spanning a conditional, naming the live arm when it can tell.
+`dead_regions.sibling_header_int_macros()` pins `#define NAME <int>` from headers beside the TU
+— `pinned_int_macros` only ever read the module's `-D` list, which is why a macro one directory
+away read as undecidable. Report-only for now: a finding a reviewer settles by reading two lines
+beats a rejection that bills a retry to re-learn the same thing.
 
 The second was subtler and worth internalising: `msvcrt_init_exception` guarded the *same*
 `#ifdef RTTI_USE_RVA` with `#[cfg(target_pointer_width = "64")]`, which selects exactly the

@@ -41,7 +41,7 @@ unsafe fn _arm3_trace(s: &[u8]) {
     }
     let u = uart_base as *mut ULONG;
     for &byte in s {
-        core::ptr::write_volatile(u, byte as ULONG);
+        crate::arm64_dbg::uart_putc(u as *mut u32, byte);
     }
 }
 

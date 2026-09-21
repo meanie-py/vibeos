@@ -1,6 +1,6 @@
 /*
  * PROJECT:     Solitaire
- * LICENSE:     Freeware, permission to use under Public Domain
+ * LICENSE:     See COPYING in top level directory
  * FILE:        base/applications/games/solitaire/lang/eu-ES.rc
  * PURPOSE:     Basque Language File for Solitaire
  * PROGRAMMERS: Daniel "EmuandCo" Reimer (reimer.daniel@freenet.de)
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitarioa"
-    IDS_SOL_ABOUT "Solitarioa J Brown\nCardLib-k egina 1.0 bertsioa"
+    IDS_SOL_ABOUT "Solitarioa"
     IDS_SOL_QUIT "Uneko jokoa amaitu?"
     IDS_SOL_WIN "Zorionak, irabazi duzu!!"
     IDS_SOL_DEAL "Deal again?"

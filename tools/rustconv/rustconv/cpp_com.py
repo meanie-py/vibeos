@@ -98,6 +98,18 @@ _KNOWN_POINTER_TYPEDEFS = frozenset(
 # `usage` is handed to every worker whose body touches the field. C++ container spellings
 # do not survive translation on their own — `m_Storage[n]` has no Rust meaning, and a
 # model asked to guess produced `.0`-style wrapper artifacts before now.
+#: `Tmpl<Elem> name` or `Tmpl<Elem*> name` as an object state field.
+#:
+#: ONE definition, used by both the state-field parser and `_discover_pod_state_types`. They
+#: carried identical copies, which is a standing invitation to teach one of them a shape the
+#: other still rejects -- exactly what a pointer element did: discovery could not see
+#: `CWatchItem` inside `CSimpleArray<CWatchItem*>`, so the parser then refused the element as
+#: "not a proven layout" and the whole TU read as untranslatable.
+_RAII_CONTAINER_FIELD_RE = re.compile(
+    r"\s*(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*(?P<ptr>\*?)\s*>"
+    r"\s+(?P<name>[A-Za-z_]\w*)\s*"
+)
+
 _RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
     "CSimpleArray": (
         "CSimpleArray::new()",
@@ -113,6 +125,21 @@ _RAII_CONTAINER_LOWERINGS: dict[str, tuple[str, str]] = {
         "`GetNext(&mut POSITION) -> *mut T` (returns the CURRENT element and advances "
         "the position, exactly like ATL), `FindIndex(i32) -> POSITION`, "
         "`GetAt(POSITION) -> *mut T`. A `POSITION` is null at the end of the list.",
+    ),
+    # Not a container and not a template — ATL's owning BSTR wrapper (atlbase.h), which is
+    # one `m_str: BSTR` member plus a destructor that calls SysFreeString. It rides this
+    # table because what it needs is exactly what a container needs: keep the field's TYPE
+    # so `Drop` can reproduce the member destructor the translation would otherwise lose.
+    # The bindgen island already renders it as `ATL_CComBSTR { m_str: BSTR }`, so the Rust
+    # type in atl.rs has the C++ layout for free.
+    "CComBSTR": (
+        "CComBSTR::new()",
+        "ONE public field, `m_str: BSTR`, and a `Drop` that calls `SysFreeString`. "
+        "C++ `m_name.m_str = p` is an ADOPT of an already-allocated BSTR — lower it as "
+        "the same single store `(*this).m_name.m_str = p;`, never as a copy, or the "
+        "ownership transfer changes and the string is leaked or freed twice. C++ reads "
+        "that pass the object where a `BSTR` is expected (ATL's `operator BSTR`) are "
+        "`(*this).m_name.m_str`.",
     ),
 }
 
@@ -430,6 +457,11 @@ class CppComClass:
     # a private, non-aggregating 0-ref allocation followed by AddRef/QI/Release.
     # It proves internal activation but never authorizes an OBJECT_ENTRY adapter.
     internal_shell_object_creator: bool = False
+    # Derives ATL's `CComObjectRootEx<>`, which carries `m_dwRef` and the
+    # InternalAddRef/InternalRelease pair — so the object IS refcounted even when it exposes no
+    # COM interface at all. CMenuFocusManager is exactly that: no BEGIN_COM_MAP, but
+    # `obj->AddRef()` / `if (!obj->Release())` in AcquireManager/ReleaseManager.
+    atl_refcounted: bool = False
     # ShellObjectCreatorInit<T>(args..., riid, ppv) must initialize before QI.
     # None is the ordinary creator; a tuple is the proved Initialize surface.
     internal_initializer_params: tuple[tuple[str, str], ...] | None = None
@@ -754,8 +786,34 @@ def _state_fields(body: str) -> list[str]:
     # Comments are not syntax.  Leaving them in previously made trailing prose such
     # as ``// CControlPanelFolder does it for us`` look like an object field.
     stripped = re.sub(r"/\*.*?\*/|//[^\n]*", " ", body, flags=re.S)
+    # A PREPROCESSOR DIRECTIVE ENDS AT THE NEWLINE, NOT AT A SEMICOLON. The split below is on
+    # `;`, so a directive with no semicolon of its own merges with the declaration that FOLLOWS
+    # it into one statement, which then starts with `#` and is skipped -- silently taking a real
+    # data member with it. CMenuFocusManager.h does exactly that:
+    #
+    #     #define MAX_RECURSE 20
+    #     StackEntry m_bandStack[MAX_RECURSE];
+    #
+    # and `m_bandStack` vanished from the generated struct while its siblings `m_bandCount` and
+    # `m_menuDepth` stayed -- a struct whose layout silently disagrees with the C++. This is the
+    # same swallow-the-next-declaration shape the `static` and `~dtor` comments below describe;
+    # it is the third one, so directives are removed LINE-WISE here rather than skipped later.
+    #
+    # Only `#define`/`#undef`, which never guard code. Conditionals are left to the existing
+    # `#`-statement skip: dropping an `#if` line would expose whatever it guards as live fields.
     stripped = re.sub(r"^\s*#\s*include[^\n]*$", "", stripped, flags=re.M)
+    stripped = re.sub(
+        r"^[ \t]*#[ \t]*(?:define|undef)[^\n]*(?:\\\n[^\n]*)*$", "", stripped, flags=re.M
+    )
     stripped = re.sub(r"BEGIN_COM_MAP\b.*?END_COM_MAP\s*\(\s*\)", "", stripped, flags=re.S)
+    # ...and the MESSAGE map, for the SAME reason and by the same swallow. This is the third
+    # instance of the shape described above: `END_MSG_MAP()` carries parentheses, the split
+    # below is on `;`, and two of CChangeNotifyServer's MESSAGE_HANDLER lines end in a stray
+    # `;` -- so the final fragment is `END_MSG_MAP() private: UINT m_nNextRegID`, which looks
+    # like a method declaration and is skipped, taking a real data member with it. The struct
+    # then silently disagrees with the C++ about its own layout, which is exactly what
+    # `m_bandStack` did.
+    stripped = re.sub(r"BEGIN_MSG_MAP\b.*?END_MSG_MAP\s*\(\s*\)", "", stripped, flags=re.S)
 
     # Remove in-class method definitions before splitting declarations at ';'.
     # A body can itself contain semicolons, and treating those fragments as class
@@ -853,7 +911,20 @@ def _state_fields(body: str) -> list[str]:
 
 
 _POD_LEAF_TYPES = frozenset(
-    {"CLSID", "FILETIME", "GUID", "IID", "LARGE_INTEGER", "STGMEDIUM", "ULARGE_INTEGER"}
+    {
+        "CLSID",
+        "FILETIME",
+        "GUID",
+        "IID",
+        "LARGE_INTEGER",
+        "STGMEDIUM",
+        "ULARGE_INTEGER",
+        # Not a Windows type: `crate::atlwin::AtlWindowState`, the Rust stand-in for what
+        # a C++ CWindowImpl class inherits. It is a proven local layout for the same
+        # reason the others are -- we define it -- and the CWindowImpl branch above
+        # synthesises a field of it.
+        "AtlWindowState",
+    }
 )
 
 # Rust spellings bindgen emits for an integer primitive on the right of a type alias.
@@ -1371,10 +1442,19 @@ def _parse_plain_state_field(
             name=cstring.group(1),
             owned_cstring=True,
         )
-    container = re.fullmatch(
-        r"(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+(?P<name>[A-Za-z_]\w*)",
-        text,
-    )
+    # `CComBSTR m_name` — ATL's owning BSTR. Matched on its own rather than through the
+    # `Tmpl<Elem>` branch below because it takes no type parameter; it still keeps its TYPE
+    # so atl.rs's `Drop` reproduces `~CComBSTR`'s SysFreeString. Lowering it to a bare
+    # `BSTR` instead would compile and silently leak every string the object ever held.
+    ccombstr = re.fullmatch(r"CComBSTR\s+([A-Za-z_]\w*)", text)
+    if ccombstr is not None:
+        return PlainStateField(
+            declaration=text,
+            c_type="CComBSTR",
+            name=ccombstr.group(1),
+            raii_container="CComBSTR",
+        )
+    container = _RAII_CONTAINER_FIELD_RE.fullmatch(text)
     if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
         # The element type has to be one the scaffold can already spell, or the container
         # would be generic over a type the module never defines. Two families qualify, and
@@ -1388,6 +1468,7 @@ def _parse_plain_state_field(
         # nothing red anywhere; `CAtlList<DynamicShellEntry>` (a `CComPtr<IContextMenu>`
         # per entry) is the shape that makes the difference visible.
         element = container.group("element")
+        is_pointer_element = bool(container.group("ptr"))
         known = (
             set(allowed_pod_types)
             | set(island_scalar_types)
@@ -1395,16 +1476,29 @@ def _parse_plain_state_field(
             | set(_POD_LEAF_TYPES)
             | set(_RUST_SCALARS)
         )
+        # A container of RAW POINTERS is the third safe family, and it is safer than either
+        # of the two above rather than a relaxation of them. `CSimpleArray<CWatchItem*>`
+        # stores pointers: ATL's per-element `DestructItem` on a pointer is a no-op, and so
+        # is Rust's `drop_in_place::<*mut T>`, so the container's `Drop` reproduces the C++
+        # one no matter what the POINTEE looks like. The element's layout is simply not the
+        # container's business — it only has to be NAMEABLE for `CSimpleArray<*mut T>` to
+        # spell, which a source-discovered POD is.
         if element not in known:
-            raise CppComError(
-                f"container element type is not a proven layout: {declaration} "
-                f"(`{element}` is neither a source-discovered POD nor a proven scalar)"
+            hint = (
+                f"`{element}` is not a type this module defines or proves"
+                if is_pointer_element
+                else f"`{element}` is neither a source-discovered POD nor a proven scalar"
             )
+            raise CppComError(
+                f"container element type is not a proven layout: {declaration} ({hint})"
+            )
+        rust_element = f"*mut {element}" if is_pointer_element else element
+        c_element = f"{element}*" if is_pointer_element else element
         return PlainStateField(
             declaration=text,
-            c_type=f"{container.group('template')}<{element}>",
+            c_type=f"{container.group('template')}<{c_element}>",
             name=container.group("name"),
-            raii_container=f"{container.group('template')}<{element}>",
+            raii_container=f"{container.group('template')}<{rust_element}>",
         )
     ptr_array = re.fullmatch(
         r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s*\*\s*"
@@ -1475,10 +1569,21 @@ def _parse_plain_state_field(
             # missing Rust lowering, and the fix is bounded: implement it in atl.rs and
             # add it to _RAII_CONTAINER_LOWERINGS. Saying so here is what stops the next
             # reader from concluding the TU is untranslatable.
+            registered = template.group(1) in _RAII_CONTAINER_LOWERINGS
+            why = (
+                # Do NOT send the reader to the registry when the entry is already there --
+                # `CSimpleArray` was registered AND implemented in atl.rs, and the old
+                # message still said to go add it, which cost a round of looking for a
+                # missing thing that existed. If it is registered, the template matched
+                # nothing here, so the SHAPE is what this parser cannot spell.
+                f"`{template.group(1)}` has a Rust lowering, but this declaration's shape is "
+                f"not one the state-field parser can spell"
+                if registered
+                else f"no Rust lowering for `{template.group(1)}`; implement it in "
+                f"shell32-rust/src/atl.rs and list it in _RAII_CONTAINER_LOWERINGS"
+            )
             raise CppComError(
-                f"state field needs an explicit C++ layout/lifetime mapping: {declaration} "
-                f"(no Rust lowering for `{template.group(1)}`; implement it in "
-                f"shell32-rust/src/atl.rs and list it in _RAII_CONTAINER_LOWERINGS)"
+                f"state field needs an explicit C++ layout/lifetime mapping: {declaration} ({why})"
             )
         raise CppComError(
             f"state field needs an explicit C++ layout/lifetime mapping: {declaration}"
@@ -1577,10 +1682,7 @@ def _discover_pod_state_types(
         # not fail loud: the container preflight then rejects the element as "not a proven
         # layout" and the whole TU reads as untranslatable, when the real answer is that
         # nobody looked. `CAtlList<DynamicShellEntry>` is the shape.
-        container = re.fullmatch(
-            r"\s*(?P<template>[A-Za-z_]\w*)\s*<\s*(?P<element>[A-Za-z_]\w*)\s*>\s+[A-Za-z_]\w*\s*",
-            declaration,
-        )
+        container = _RAII_CONTAINER_FIELD_RE.fullmatch(declaration)
         if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
             candidates.append(container.group("element"))
             continue
@@ -1925,6 +2027,7 @@ def analyze_class(
     class_name: str,
     *,
     object_map_source: Path | None = None,
+    activation_source: Path | None = None,
     method_names: list[str] | None = None,
     island_files: Sequence[Path] = (),
 ) -> CppComClass:
@@ -1993,7 +2096,14 @@ def analyze_class(
             base,
         )
         if window_impl is not None:
-            state_fields = ["HWND m_hWnd", *state_fields]
+            # BOTH fields, not just m_hWnd. `AtlWindowState` is what C++ inherits from
+            # CWindowImplRoot/CWindowImplBaseT -- the displaced superclass procedure, the
+            # window state flags and the dispatch depth -- and `crate::atlwin` needs it to
+            # exist on every ATL window class. CDefView carried it as a HAND EDIT inside a
+            # GENERATED file, so regenerating CDefView would have silently dropped it and
+            # taken the use-after-free guard in `atl_window_proc` with it. Emitting it here
+            # makes that class regenerable and every later one correct by default.
+            state_fields = ["HWND m_hWnd", "AtlWindowState m_atl", *state_fields]
             continue
         # A real COM interface base that the class implements but does not QI-expose
         # (absent from the COM map) is materialized in the layout, not QueryInterface.
@@ -2039,6 +2149,9 @@ def analyze_class(
     array_constants = _numeric_array_constants(source, state_fields)
     resource = re.search(r"\bDECLARE_REGISTRY_RESOURCEID\s*\(\s*([^)\s]+)\s*\)", body)
     not_agg = bool(re.search(r"\bDECLARE_(?:CENTRAL_INSTANCE_)?NOT_AGGREGATABLE\s*\(", body))
+    atl_refcounted = any(
+        b.replace("public ", "").strip().startswith("CComObjectRootEx<") for b in bases
+    )
     clsid = None
     activation_re = re.compile(
         rf"\bShellObjectCreator(?P<init>Init)?\s*<\s*{re.escape(class_name)}\s*>\s*\("
@@ -2067,7 +2180,46 @@ def analyze_class(
         rf"\b{re.escape(class_name)}\s*::\s*_CreatorClass\s*::\s*CreateInstance\s*\("
     )
     creator_class_hits = list(creator_class_re.finditer(masked_source))
-    internal_shell_object_creator = bool(activation_hits) or bool(creator_class_hits)
+    # ATL's raw `new CComObject<T>()` — the THIRD internal-activation shape, and the most
+    # literal one: no factory at all, the caller allocates and then drives `Init`/`AddRef`
+    # itself. `CFolderItem::Verbs` does exactly that with CFolderItemVerbs.
+    #
+    # It is still "this class has no CLSID and is constructed inside the DLL", which is the
+    # only question this flag answers, so it joins the other two rather than needing its own
+    # concept. What differs is the CALLER's shape, not the class's: a `ShellObjectCreatorInit`
+    # caller is one expression while this one is a statement sequence, and that difference
+    # lives at the call site, not here.
+    # Two spellings, both ATL's CComObject: the raw `new CComObject<T>()` expression and the
+    # static factory `CComObject<T>::CreateInstance(&p)`. They differ only in who allocates —
+    # BOTH hand the caller an object at refcount 0 and leave it to AddRef, which CStartMenu.cpp
+    # states outright next to its call ("CreateInstance returns object with 0 ref count").
+    com_object_new_re = re.compile(
+        rf"\bnew\s+CComObject\s*<\s*{re.escape(class_name)}\s*>\s*\("
+        rf"|\bCComObject\s*<\s*{re.escape(class_name)}\s*>\s*::\s*CreateInstance\s*\("
+    )
+    # A class is often constructed by a DIFFERENT TU than the one that defines it —
+    # `CFolderItem::Verbs` (CFolderItems.cpp) does the `new CComObject<CFolderItemVerbs>()`
+    # for a class defined in CFolderItemVerbs.cpp. Scanning only the class's own file then
+    # reports "internal COM-object construction is not mapped" for a class whose activation
+    # is perfectly ordinary and simply lives next door.
+    #
+    # NAMED, not searched: the caller is supplied with `--activation-source` rather than
+    # inferred by sweeping the directory, for the same reason `object_map_source` is named.
+    # It contributes to DETECTION only — the initializer-argument extraction below stays on
+    # the class's own file, so a foreign file can never silently redefine the ctor shape.
+    activation_scan = masked_source
+    if activation_source is not None and activation_source.is_file():
+        activation_scan += "\n" + _masked_cpp(
+            activation_source.read_text(encoding="utf-8", errors="replace")
+        )
+    com_object_new_hits = list(com_object_new_re.finditer(activation_scan))
+    internal_shell_object_creator = (
+        bool(activation_hits)
+        or bool(creator_class_hits)
+        or bool(com_object_new_hits)
+        or bool(activation_re.search(activation_scan))
+        or bool(creator_class_re.search(activation_scan))
+    )
     internal_initializer_params = None
     if activation_hits and activation_hits[0].group("init"):
         activation_arg_lists = []
@@ -2167,6 +2319,7 @@ def analyze_class(
         not_aggregatable=not_agg,
         object_map_clsid=clsid,
         internal_shell_object_creator=internal_shell_object_creator,
+        atl_refcounted=atl_refcounted,
         internal_initializer_params=internal_initializer_params,
         stgmedium_lifecycle_fields=tuple(stgmedium_lifecycle_fields),
         final_construct=final_construct,
@@ -3991,8 +4144,12 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # backreference forces the macro name and the first argument to be the same interface, so
     # a coincidental `IID_X!(Y, …)` is left alone. Rewriting to the sanctioned spelling (not
     # straight to the expansion) keeps ONE implementation of the two-argument expansion below.
+    # The second argument routinely CONTAINS parens — `&mut (*this).m_contextmenu` — so it
+    # cannot be `[^(),]+`; that spelling silently skipped every out-param that was a member
+    # access. One level of nesting is enough for an address-of expression and keeps the
+    # pattern from running past the closing paren.
     rust = re.sub(
-        r"\bIID_([A-Za-z_]\w*)\s*!\s*\(\s*\1\s*,\s*([^(),]+?)\s*\)",
+        r"\bIID_([A-Za-z_]\w*)\s*!\s*\(\s*\1\s*,\s*((?:[^(),]|\([^()]*\))+?)\s*\)",
         r"IID_PPV_ARG(\1, \2)",
         rust,
     )
@@ -4300,6 +4457,20 @@ def _guid_extern_decl(name: str) -> str:
     return f"{prefix}    static {name}: GUID;"
 
 
+def _rust_numeric_literal(value: str) -> str:
+    """A C numeric literal respelled so Rust accepts it, with the VALUE untouched.
+
+    C does not care about the case of a base prefix and shlobj.h writes `0X0017`; Rust rejects
+    it outright ("invalid base prefix for number literal"), and a parse error there cascades
+    into a wall of unrelated-looking resolution failures across the whole crate.
+
+    Only the PREFIX is lowered — the digits are left exactly as the header wrote them, because
+    the fact seal compares them and normalising digits too would be changing a constant rather
+    than respelling it.
+    """
+    return re.sub(r"\b0([XBO])", lambda m: "0" + m.group(1).lower(), value.strip())
+
+
 def _render_cmverbmap(source: str) -> str:
     match = re.search(
         r"static\s+const\s+CMVERBMAP\s+([A-Za-z_]\w*)\s*\[\s*\]\s*=\s*\{(?P<body>.*?)\}\s*;",
@@ -4539,9 +4710,7 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
         representation = "#[repr(C, packed)]" if packed else "#[repr(C)]"
         lines = [representation, f"pub struct {base} {{"]
         for state_field in fields:
-            field_name = (
-                f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
-            )
+            field_name = _rust_safe_field(state_field.name)
             # Identical to `rust_type` for a C SDK record, which cannot hold an ATL member;
             # spelled this way so every POD renderer states the same ownership invariant.
             lines.append(f"    pub {field_name}: {state_field.owned_rust_type},")
@@ -4732,9 +4901,7 @@ def render_cpp_support(
         representation = "#[repr(C, packed)]" if packed else "#[repr(C)]"
         lines = [representation, f"pub struct {name} {{"]
         for state_field in fields:
-            field_name = (
-                f"r#{state_field.name}" if state_field.name in _RUST_KEYWORDS else state_field.name
-            )
+            field_name = _rust_safe_field(state_field.name)
             # `owned_rust_type`, not `rust_type`: a free-function module has no generated
             # Release to run lifetimes for it, so the struct's drop glue is its ONLY
             # destructor and an ATL member flattened to a raw pointer leaks silently.
@@ -4743,14 +4910,14 @@ def render_cpp_support(
         lines.append("}")
         chunks.append("\n".join(lines))
     for name in sorted((used_words & definitions.keys()) - shared_values):
-        chunks.append(f"pub const {name}: UINT = {definitions[name]};")
+        chunks.append(f"pub const {name}: UINT = {_rust_numeric_literal(definitions[name])};")
     for name in sorted((used_words & _CPP_SUPPORT_CONSTANTS.keys()) - shared_values):
         rust_type, value = _CPP_SUPPORT_CONSTANTS[name]
         chunks.append(f"pub const {name}: {rust_type} = {value};")
     owned_constants = definitions.keys() | _CPP_SUPPORT_CONSTANTS.keys() | shared_values
     for name, value in sorted(_sdk_numeric_definitions(source_path, used_words).items()):
         if name not in owned_constants:
-            chunks.append(f"pub const {name}: DWORD = {value};")
+            chunks.append(f"pub const {name}: DWORD = {_rust_numeric_literal(value)};")
     sdk_pods = _sdk_pod_support(source_path, used_words)
     if sdk_pods:
         chunks.append(sdk_pods)
@@ -4788,7 +4955,7 @@ def render_cpp_support(
             chunks.append(interface_pods)
         for name, value in sorted(_sdk_numeric_definitions(source_path, interface_words).items()):
             if name not in owned_constants:
-                chunks.append(f"pub const {name}: DWORD = {value};")
+                chunks.append(f"pub const {name}: DWORD = {_rust_numeric_literal(value)};")
 
     if "INVALID_FILETITLE_CHARACTERSW" in used_words:
         chunks.append(
@@ -5286,6 +5453,20 @@ static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];"""
 # `r#` makes a keyword usable as an identifier, but the language forbids it for these
 # four -- there is no spelling of a parameter named `self`, so the name must change.
 _RUST_UNRAWABLE = frozenset({"crate", "self", "super", "Self"})
+
+
+def _rust_safe_field(name: str) -> str:
+    """Spell a C struct FIELD whose name is a Rust keyword, on bindgen's `keyword_` convention.
+
+    NOT `r#keyword`, even though that is legal. `postprocess.fix_keyword_field_names` rewrites
+    every field ACCESS (`.type`, `.r#type`, `.type_0`) onto `.type_`, matching the bindgen
+    output this tree ships (`pub type_: DWORD`). Emitting the DECLARATION as `r#type` therefore
+    disagreed with every use of it: CMenuFocusManager's `StackEntry` declared `pub r#type` while
+    all 34 accesses read `.type_`, and the two passes have to agree on one spelling.
+
+    Parameters are different and keep `rust_safe_parameter`'s `r#` — nothing rewrites those.
+    """
+    return f"{name}_" if name in _RUST_KEYWORDS else name
 
 
 def rust_safe_parameter(name: str) -> str:
@@ -6052,6 +6233,20 @@ def _rust_local_struct_fields(rust: str) -> dict[str, tuple[str, ...]]:
 
 _DEALLOCATOR_CALL = re.compile(r"\b(Box::from_raw|__rustconv_\w*|free|malloc|calloc|realloc)\s*\(")
 
+#: C++ `delete p` / `delete[] p` on something that is NOT the COM instance.
+#:
+#: `delete this` is excluded deliberately, and it is the whole distinction: the scaffold
+#: allocates the COM object with HeapAlloc(GetProcessHeap()), so its only correct free is the
+#: generated `<Class>_delete` -- `free` there is a cross-heap free. Any OTHER `delete` is a
+#: plain C++ object, which this tree allocates with malloc (`operator new` calls malloc,
+#: `operator delete` calls free), so `free` is its faithful lowering.
+_CPP_DELETE = re.compile(r"\bdelete\s*(?:\[\s*\])?\s*(?!this\b)[A-Za-z_(*]")
+
+#: C++ `new T{...}` / `new T[n]` — the allocating half, which licenses `malloc` for the same
+#: reason `delete` licenses `free`: `operator new` IS malloc here. PLACEMENT new (`new (p) T`)
+#: is excluded, since it allocates nothing.
+_CPP_NEW = re.compile(r"\bnew\s+(?!\()[A-Za-z_]")
+
 
 def _stray_deallocators(c_body: str, rust: str) -> list[str]:
     """Deallocators the RUST calls that the C source never did.
@@ -6062,12 +6257,25 @@ def _stray_deallocators(c_body: str, rust: str) -> list[str]:
     of freeing. `Box::from_raw`/`__rustconv_*` have no C spelling at all, so they are
     always invented.
     """
-    in_source = {
-        match.group(1)
-        for match in _DEALLOCATOR_CALL.finditer(
-            re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", c_body, flags=re.S)
-        )
-    }
+    masked = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", c_body, flags=re.S)
+    in_source = {match.group(1) for match in _DEALLOCATOR_CALL.finditer(masked)}
+    # C++ `delete p` IS a source deallocator, and the C++ half of this pipeline is full of it:
+    # CChangeNotifyServer `new`s a CWatchItem and `delete`s it two functions later, and three
+    # correct bodies were rejected for reproducing that. What it licenses is `free`, because in
+    # THIS tree `operator delete` IS `free` (sdk/lib/cpprt/.../cpprt.cpp: `operator new` calls
+    # malloc, `operator delete` calls free). That distinction is the whole point: a
+    # CDirectoryWatcher is `new`ed in CDirectoryWatcher.cpp, still C++, and `delete`d here in
+    # Rust, so the two halves must agree on the ALLOCATOR and only malloc/free does.
+    #
+    # `Box::from_raw` therefore stays forbidden and is NOT what `delete` licenses. Rust's Box
+    # frees through Rust's global allocator, which is not malloc -- and shell32-rust is no_std
+    # with no `alloc` crate at all, so a body reaching for it does not even build. The original
+    # rule was right to refuse it; only its stated reason (the COM instance's HeapAlloc) was
+    # too narrow to explain why.
+    if _CPP_DELETE.search(masked):
+        in_source.add("free")
+    if _CPP_NEW.search(masked):
+        in_source.add("malloc")
     return sorted(
         {
             match.group(1)
@@ -6250,6 +6458,14 @@ def audit_worker_body(
         else audited_c_body
     )
     source = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', " ", source_body, flags=re.S)
+    # Preprocessor DIRECTIVES are not constant uses, and a body-local macro is the case that
+    # bites. `CChangeNotifyServer::ShouldNotify` opens with `#define RETURN(x) do { ... }` and
+    # closes with `#undef RETURN`: every CALL site is `RETURN(FALSE)`, correctly skipped as a
+    # callable token, but the bare `RETURN` in the `#undef` is not followed by `(` -- so it
+    # read as a dropped symbolic constant and rejected a body that had expanded the macro
+    # exactly as the preprocessor does. The continuation form matters too: the definition
+    # spans four lines with trailing backslashes, and it is a definition, not a use.
+    source = re.sub(r"^[ \t]*#[^\n]*(?:\\\n[^\n]*)*$", "", source, flags=re.M)
     symbolic = set()
     ignored_words = _CPP_COM_DEBUG_MACROS | _CPP_COM_LITERAL_WORDS | _CPP_COM_TYPE_WORDS
     # A C++ named cast's `<...>` is a TYPE, and Rust either spells it differently or drops
@@ -6375,6 +6591,16 @@ def render_interface(spec: InterfaceSpec, island_slots: tuple[str, ...] | None =
     return "\n".join(lines)
 
 
+#: The COM module-lock symbol pair the scaffold calls around each instance's birth and
+#: death. It is a property of the OUTPUT CRATE, not of the --target: the host DLL defines it,
+#: and a staticlib linked into two DLLs needs a name BOTH of them define. menuband-rust is
+#: linked into shell32.dll AND rshell.dll, so emitting shell32's private spelling there links
+#: shell32 fine and leaves rshell with an undefined symbol -- which only surfaces when some
+#: rshell-reachable object first pulls the module in, i.e. a cohab flip several TUs later.
+#: `reactos.targets.module_lock_for_crate()` maps the crate to its pair.
+_DEFAULT_MODULE_LOCK = ("Shell32RustObjectLock", "Shell32RustObjectUnlock")
+
+
 def render_class_scaffold(
     cls: CppComClass,
     interfaces: list[InterfaceSpec],
@@ -6382,6 +6608,7 @@ def render_class_scaffold(
     allow_internal: bool = False,
     allow_plain: bool = False,
     island_slots: Mapping[str, tuple[str, ...]] | None = None,
+    module_lock: tuple[str, str] | None = None,
 ) -> str:
     """Render the ABI-owned portion. Method worker bodies remain separate LLM output.
 
@@ -6391,6 +6618,7 @@ def render_class_scaffold(
     then the scaffold rejected the class that had just been translated.
     """
     cls.require_supported(allow_internal=allow_internal, allow_plain=allow_plain)
+    lock_sym, unlock_sym = module_lock or _DEFAULT_MODULE_LOCK
     by_name = {item.name: item for item in interfaces}
     missing = [entry.interface for entry in cls.com_map if entry.interface not in by_name]
     if missing:
@@ -6447,7 +6675,7 @@ def render_class_scaffold(
         representation = "#[repr(C, packed)]" if pod.packed else "#[repr(C)]"
         lines.extend([representation, f"pub struct {pod.name} {{"])
         for state in pod.fields:
-            field_name = f"r#{state.name}" if state.name in _RUST_KEYWORDS else state.name
+            field_name = _rust_safe_field(state.name)
             lines.append(f"    pub {field_name}: {state.owned_rust_type},")
         lines.extend(["}", ""])
 
@@ -6463,8 +6691,8 @@ def render_class_scaffold(
             '    #[link_name = "HeapFree"]',
             "    fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, "
             "memory: *mut core::ffi::c_void) -> BOOL;",
-            "    fn Shell32RustObjectLock();",
-            "    fn Shell32RustObjectUnlock();",
+            f"    fn {lock_sym}();",
+            f"    fn {unlock_sym}();",
             "}",
             "trait CppComSize { fn cpp_com_size(self) -> usize; }",
             "impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }",
@@ -6490,9 +6718,15 @@ def render_class_scaffold(
     )
     for entry in layout_entries:
         lines.append(f"    pub {entry.interface}_iface: {entry.interface},")
-    if cls.com_map:
+    if cls.com_map or cls.atl_refcounted:
         # A plain helper has no COM lifetime: its owner `new`s and `delete`s it directly, so
         # a refcount field would be dead weight the C++ layout never had.
+        #
+        # But "no COM map" does NOT mean "not refcounted". A class deriving ATL's
+        # `CComObjectRootEx<>` inherits `m_dwRef` and the InternalAddRef/InternalRelease pair
+        # whether or not it exposes an interface — CMenuFocusManager has no BEGIN_COM_MAP and
+        # still does `obj->AddRef()` / `if (!obj->Release())`. Omitting the field there is not
+        # a layout saving, it is a missing member the bodies then cannot express.
         lines.append("    pub ref_count: core::sync::atomic::AtomicI32,")
     for state in cls.plain_state_fields():
         lines.append(f"    pub {state.name}: {state.rust_type},")
@@ -6721,7 +6955,7 @@ def render_class_scaffold(
                 )
     lines.extend(
         [
-            "        Shell32RustObjectUnlock();",
+            f"        {unlock_sym}();",
             "        HeapFree(GetProcessHeap(), 0, this as *mut core::ffi::c_void);",
             "    }",
             "    refs as ULONG",
@@ -6793,7 +7027,7 @@ def render_class_scaffold(
     lines.extend(
         [
             "    });",
-            "    Shell32RustObjectLock();",
+            f"    {lock_sym}();",
             f"    {cls.name}_ctor_body(this);",
         ]
     )
@@ -6833,9 +7067,12 @@ def render_class_scaffold(
     return "\n".join(lines)
 
 
-def render_object_map_adapter(cls: CppComClass) -> str:
+def render_object_map_adapter(
+    cls: CppComClass, *, module_lock: tuple[str, str] | None = None
+) -> str:
     """C++ glue that keeps ATL registration but delegates object creation to Rust."""
     cls.require_supported()
+    lock_sym, unlock_sym = module_lock or _DEFAULT_MODULE_LOCK
     # require_supported already proves both the activation entry and the
     # non-aggregatable lifetime contract used by the generated factory.
     adapter = f"{cls.name}RustEntry"
@@ -6859,10 +7096,10 @@ def render_object_map_adapter(cls: CppComClass) -> str:
         "",
         f"// ObjectMap replacement: OBJECT_ENTRY({cls.object_map_clsid}, {adapter})",
         "// One-time bridge functions (place after gModule is defined):",
-        "#ifndef SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED",
-        "#define SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED",
-        'extern "C" void WINAPI Shell32RustObjectLock() { gModule.Lock(); }',
-        'extern "C" void WINAPI Shell32RustObjectUnlock() { gModule.Unlock(); }',
+        f"#ifndef {lock_sym.upper()}_BRIDGE_DEFINED",
+        f"#define {lock_sym.upper()}_BRIDGE_DEFINED",
+        f'extern "C" void WINAPI {lock_sym}() {{ gModule.Lock(); }}',
+        f'extern "C" void WINAPI {unlock_sym}() {{ gModule.Unlock(); }}',
         "#endif",
     ]
     source = cls.source.read_text(encoding="utf-8", errors="replace")

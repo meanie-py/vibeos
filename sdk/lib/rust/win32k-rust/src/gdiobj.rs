@@ -695,13 +695,13 @@ unsafe fn ENTRY_ReferenceEntryByHandle(hobj: HGDIOBJ, fl: FLONG) -> PENTRY {
     let mut cNewRefs: u32;
     let mut cOldRefs: u32;
     let pentry: PENTRY;
-    let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread();
-    let mut fl = fl;
 
-    if !pti.is_null() && ((*pti).TIF_flags & TIF_MOVESIZETRACKING) != 0 {
-        fl = GDIOBJFLAG_IGNOREPID;
-    }
-
+    // The TIF_MOVESIZETRACKING hack that used to force GDIOBJFLAG_IGNOREPID here
+    // was REVERTED upstream (640e39c72e, reverting #8402) because it crashes the
+    // kernel: DceUpdateVisRgn locks a region not owned by the current process,
+    // REGION_LockRgn wrongly succeeds, and REGION_vSyncRegion then reads a user-mode
+    // region attribute living in a DIFFERENT process. CORE-20720 / CORE-5601. We
+    // translated the C between the hack and its revert, so we inherited the crash.
     ulIndex = GDI_HANDLE_GET_INDEX(hobj);
 
     pentry = gpentHmgr.offset(ulIndex as isize);
@@ -1448,6 +1448,15 @@ pub unsafe extern "system" fn NtGdiDeleteClientObj(hobj: HANDLE) -> BOOL {
     return GreDeleteObject(hobj);
 }
 #[no_mangle]
+// #[inline(never)] restores the C's CODEGEN SHAPE, and is load-bearing (§9.99, middle
+// row). This returns NULL on a bad handle and engbrush.rs's EBRUSHOBJ_bRealizeBrush
+// derefs the result unchecked -- which is exactly what the C does: engbrush.c has only
+// `ASSERT(psurfPattern)`, and ASSERT compiles to nothing in retail. Inlined, LLVM sees
+// NULL reach a deref, calls it UB, and folds the tail to `unreachable` -> ud2. Kept
+// out of line, the caller gets an opaque pointer, emits the ordinary load, and faults
+// where C faults. Do NOT "fix" this with a null check here: that is a behaviour
+// divergence on the path the C would fault on.
+#[inline(never)]
 pub unsafe extern "system" fn GDIOBJ_ShareLockObj(
     hObj: HGDIOBJ,
     ExpectedType: u32,

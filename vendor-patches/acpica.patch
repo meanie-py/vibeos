@@ -1,222 +1,86 @@
-# ACPICA 20221020 — our FUNCTIONAL delta from pristine upstream.
+# ACPICA 20260408 — our delta from pristine upstream.
 #
-# Upstream: https://github.com/open-acpica/acpica/archive/refs/tags/R10_20_22.tar.gz
-#           sha256 1aa17eb1779cd171110074ce271a65c06046eacbba7be7ce5ee71df1b31c3b86
-#           (the acpica/acpica org 301-redirects to open-acpica/acpica; the tag is
-#            date-encoded MM_DD_YY, so 20221020 is R10_20_22, not "version-20221020")
+# Upstream: https://github.com/open-acpica/acpica release 20260408 (the acpica/acpica
+#           org redirects there). Archive sha256
+#           ddc5d3e0f54030e2348484fff681861a161efb4e388e20631209574e7884ad39 — but see
+#           the note on GitHub archive stability under wdf.patch: the release tag is the
+#           identifier, the round-trip below is the check.
 # Apply from drivers/bus/acpi/acpica/ with: patch -p1 < vendor-patches/acpica.patch
 #
-# *** THIS PATCH IS DELIBERATELY NOT COMPLETE — READ WHY BEFORE USING IT ***
+# SIX FILES, 173 LINES, all host-port shims. That is the entire ReactOS delta across a
+# 226-file, 120K-line tree. Nothing here touches ACPI table or AML parsing, bounds
+# checking or allocation.
 #
-# Diffed naively, ALL 226 vendored files differ from that tarball. 219 of them differ
-# ONLY inside the top-of-file licence comment, and that is a DISTRIBUTION FORM, not a
-# modification: our tree carries the pre-SPDX "Linux-format" ACPICA header (short
-# BSD-3-Clause conditions + "Alternatively ... GNU General Public License version 2" +
-# NO WARRANTY), which Intel generates itself via ACPICA's generate/linux tooling and
-# which Linux shipped verbatim through v4.x. Verified character-for-character against
-# torvalds/linux v4.4 drivers/acpi/acpica/tbutils.c (only the copyright year differs).
-# The raw GitHub tree instead carries Intel's long-form licence with the numbered
-# sections 1-4 (patent grant, 3.1-3.5 redistribution conditions, export compliance).
+# ----------------------------------------------------------------------------------
+# READ THIS FIRST: THE LICENCE BLOCK IS SUBSTITUTED, NOT PATCHED
+# ----------------------------------------------------------------------------------
 #
-# So a patch covering all 226 files would be ~30k lines of licence boilerplate that
-# says nothing. This patch carries ONLY the 7 files with real changes. Consequence:
-# pristine + this patch does NOT reproduce our tree byte-for-byte, unlike every other
-# patch in vendor-patches/. To re-vendor, take the LINUXIZED ACPICA (or re-run
-# generate/linux) as the base, then apply this.
+# Every one of the 226 files carries the pre-SPDX "Linux-format" ACPICA licence header
+# — short BSD-3-Clause conditions, the "Alternatively ... GPL version 2" arm, and a NO
+# WARRANTY disclaimer — which Intel generates itself via ACPICA's generate/linux
+# tooling and which Linux shipped verbatim through v4.x. Upstream's own tarball ships
+# the long form instead: numbered sections 1-4, patent grant, 3.1-3.5 redistribution
+# conditions, export compliance. Same dual licence, ~120 more lines per file.
 #
-# HOW TO RE-VERIFY THE 219 CLAIM CHEAPLY: for each file, find the highest UPSTREAM line
-# number any hunk touches; upstream's licence block ends at line ~150. Everything except
-# the files below caps out inside it.
-#     diff upstream/f ours/f | grep -oP '^[0-9]+(,[0-9]+)?(?=[acd])' | tr , '\n' | sort -n | tail -1
+# So a naive diff against the tarball reports ALL 226 files differing and 35,271
+# changed lines. Strip the licence block from both sides and it is 95 files and 4,070
+# lines; apply the six shims below and it is ZERO. Verified that way on 2026-09-20.
 #
-# THE 7 REAL CHANGES — all host-port shims, 5 of them cleanly __REACTOS__-guarded:
-#   include/acpi.h              pulls in <ntddk.h> and #undefs ACPI_BIOS_ERROR (it is
-#                               redefined in acoutput.h). Guarded.
-#   include/platform/acenv.h    picks ACPI_OSL_MUTEX over ACPI_BINARY_SEMAPHORE (guarded),
-#                               AND — unguarded — widens the compiler-select #if to accept
-#                               __clang__ and to exclude WIN64 so a clang/mingw PE64 build
-#                               lands on acwin64.h instead of the POSIX acgcc.h.
-#   include/platform/acgcc.h    suppresses upstream's GAS inline-asm FLUSH_CPU_CACHE and
-#   include/platform/acmsvc.h   GLOBAL_LOCK macros under __REACTOS__ (MSVC __asm variants
-#   include/platform/acwin.h    likewise), because we supply our own. Guarded.
-#   include/platform/acwin64.h  reimplements FLUSH_CPU_CACHE via __wbinvd() and the FACS
-#                               Global Lock via InterlockedCompareExchange/InterlockedAnd
-#                               instead of MASM. Guarded. Standard ACPICA port practice.
-#   hardware/hwgpe.c            *** THE ONLY UNGUARDED, NON-HEADER CODE EDIT IN THE TREE ***
-#                               ACPI_CLEAR_BIT (EnableMask, (UINT64)RegisterBit) where
-#                               upstream has no cast. EnableMask is UINT8 and RegisterBit
-#                               UINT32, so widening before the ~ cannot change the low 8
-#                               bits that survive the AND — inert, almost certainly a
-#                               truncation-warning silencer. Worth either dropping or
-#                               marking __REACTOS__ next time someone is in here.
+# THE SUBSTITUTION IS MECHANICAL AND EXACTLY STATABLE. In every file there is exactly
+# one leading comment block containing both "Intel Corp" and a NO WARRANTY disclaimer
+# — checked, 226 of 226, and at the same block index in both forms. Replace that one
+# block with the Linux-format block, whose text after year-normalisation is IDENTICAL
+# in all 226 files (one 36-line form, no variants). Its START year is always 2000 —
+# that is the Linux form, regardless of the 1999 upstream writes in most files — and
+# its END year is whatever upstream uses in that same file (2026 in 225 of them, 2023
+# in one). That is the whole transform.
 #
-# SECURITY: NOTHING in the vendored tree touches ACPI table/AML parsing, bounds checking
-# or allocation. All 9 tables/*.c and all 14 resources/*.c differ only in the header
-# (independently re-checked by the line-number method above, not taken on faith).
-# hwgpe.c is a GPE hardware-register bit toggle, not untrusted-input parsing.
+# IT NOW ROUND-TRIPS EXACTLY, which the previous ACPICA patch deliberately did not:
+# pristine 20260408 + that substitution + this patch reproduces all 226 files
+# BYTE-FOR-BYTE, verified 2026-09-20 with zero rejects and zero fuzz. Getting the start
+# year wrong is the one way to fail it, and it fails loudly — all 226 files differ.
 #
-# NOT VENDORED (and correctly so): 187 upstream files — the ASL compiler, disassembler,
-# debugger, acpiexec/acpidump/etc tools, and the OS service layers. None is part of the
-# runtime interpreter a kernel driver needs.
+# WHY NOT JUST TAKE UPSTREAM'S FORM: it costs +1.49 MB of licence boilerplate across
+# the tree, and upstream has ALREADY DELETED it — master converted to a one-line
+# `SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only` after the 20260408 release.
+# So the next bump past a release carrying that conversion sheds this whole problem,
+# and the short SPDX tag is machine-readable by `vendored.py --licences` into the
+# bargain. Until then, keep substituting.
+#
+# ----------------------------------------------------------------------------------
+# WHAT CHANGED IN THIS BUMP (20221020 -> 20260408, 2026-09-20)
+# ----------------------------------------------------------------------------------
+#
+# THE SEVENTH SHIM IS GONE. hardware/hwgpe.c used to carry the only unguarded
+# non-header code edit in the tree: a `(UINT64)` cast on RegisterBit inside
+# ACPI_CLEAR_BIT, which could not change the low 8 bits of the UINT8 EnableMask and was
+# almost certainly a truncation-warning silencer. The previous review said it was
+# "worth dropping or marking next time someone is in there". Dropped: the file is now
+# pristine and all three arches compile it with no warning at all.
+#
+# All three arches build and BOOT TO THE DESKTOP MARKER with this drop. ACPICA is on
+# the boot path, so that is the gate that matters, not the compile.
+#
+# The six remaining shims, unchanged in substance:
+#   acpi.h      pulls in <ntddk.h> and #undefs ACPI_BIOS_ERROR, which acoutput.h
+#               redefines.
+#   acenv.h     picks ACPI_OSL_MUTEX, and (the one UNGUARDED edit left) widens the
+#               compiler-select #if to accept __clang__ and to exclude WIN64, so a
+#               clang/mingw PE64 build lands on acwin64.h rather than acgcc.h.
+#   acgcc.h     supplies the x86 inline-asm cache flush and Global Lock that upstream
+#               leaves to the host.
+#   acmsvc.h    the same pair in MSVC __asm form, for _M_IX86.
+#   acwin.h     suppresses upstream's MSVC versions of both, since ours live in
+#               acmsvc.h.
+#   acwin64.h   reimplements them with __wbinvd() and Interlocked*, which is standard
+#               ACPICA port practice for 64-bit Windows.
+#
+# 187 upstream files are not vendored at all — ASL compiler, disassembler, debugger,
+# tools, OS service layers — none of which a runtime kernel driver needs.
 #
 --- a/include/acpi.h
 +++ b/include/acpi.h
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,27 +23,35 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
+@@ -8,6 +8,14 @@
  #ifndef __ACPI_H__
  #define __ACPI_H__
  
@@ -233,165 +97,7 @@
   *
 --- a/include/platform/acenv.h
 +++ b/include/platform/acenv.h
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,23 +23,23 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
- #ifndef __ACENV_H__
- #define __ACENV_H__
-@@ -294,7 +186,7 @@
+@@ -150,7 +150,7 @@
   *
   *****************************************************************************/
  
@@ -400,7 +106,7 @@
  #include "acgcc.h"
  
  #elif defined(_MSC_VER)
-@@ -388,7 +280,11 @@
+@@ -246,7 +246,11 @@
  /* Type of mutex supported by host. Default is binary semaphores. */
  
  #ifndef ACPI_MUTEX_TYPE
@@ -414,166 +120,8 @@
  /* Global Lock acquire/release */
 --- a/include/platform/acgcc.h
 +++ b/include/platform/acgcc.h
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,23 +23,23 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
- #ifndef __ACGCC_H__
- #define __ACGCC_H__
-@@ -211,4 +103,55 @@
- #define ACPI_FALLTHROUGH __attribute__((__fallthrough__))
+@@ -88,4 +88,55 @@
+ #define ACPI_NONSTRING __attribute__((__nonstring__))
  #endif
  
 +#ifdef __REACTOS__
@@ -630,165 +178,7 @@
  #endif /* __ACGCC_H__ */
 --- a/include/platform/acmsvc.h
 +++ b/include/platform/acmsvc.h
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,23 +23,23 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
- #ifndef __ACMSVC_H__
- #define __ACMSVC_H__
-@@ -256,6 +148,69 @@
+@@ -112,6 +112,69 @@
  #endif
  #endif
  
@@ -860,165 +250,7 @@
  #pragma warning(disable:4001)
 --- a/include/platform/acwin.h
 +++ b/include/platform/acwin.h
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,23 +23,23 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
- #ifndef __ACWIN_H__
- #define __ACWIN_H__
-@@ -236,11 +128,13 @@
+@@ -102,11 +102,13 @@
  
  /*! [Begin] no source code translation  */
  
@@ -1032,7 +264,7 @@
  
  #ifdef _DEBUG
  #define ACPI_SIMPLE_RETURN_MACROS
-@@ -248,6 +142,7 @@
+@@ -114,6 +116,7 @@
  
  /*! [End] no source code translation !*/
  
@@ -1040,7 +272,7 @@
  /*
   * Global Lock acquire/release code
   *
-@@ -298,5 +193,6 @@
+@@ -164,5 +167,6 @@
          __asm exit_rel:                             \
          __asm mov           Pnd, al                 \
  }
@@ -1049,165 +281,7 @@
  #endif /* __ACWIN_H__ */
 --- a/include/platform/acwin64.h
 +++ b/include/platform/acwin64.h
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,23 +23,23 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
- #ifndef __ACWIN64_H__
- #define __ACWIN64_H__
-@@ -213,6 +105,7 @@
+@@ -69,6 +69,7 @@
  
  /*! [Begin] no source code translation  */
  
@@ -1215,7 +289,7 @@
  #define ACPI_FLUSH_CPU_CACHE()
  
  /*
-@@ -229,6 +122,46 @@
+@@ -85,6 +86,46 @@
  
  #endif
  
@@ -1262,172 +336,3 @@
  /*! [End] no source code translation !*/
  
  #endif /* __ACWIN_H__ */
---- a/hardware/hwgpe.c
-+++ b/hardware/hwgpe.c
-@@ -4,118 +4,10 @@
-  *
-  *****************************************************************************/
- 
--/******************************************************************************
-- *
-- * 1. Copyright Notice
-- *
-- * Some or all of this work - Copyright (c) 1999 - 2022, Intel Corp.
-+/*
-+ * Copyright (C) 2000 - 2022, Intel Corp.
-  * All rights reserved.
-  *
-- * 2. License
-- *
-- * 2.1. This is your license from Intel Corp. under its intellectual property
-- * rights. You may have additional license terms from the party that provided
-- * you this software, covering your right to use that party's intellectual
-- * property rights.
-- *
-- * 2.2. Intel grants, free of charge, to any person ("Licensee") obtaining a
-- * copy of the source code appearing in this file ("Covered Code") an
-- * irrevocable, perpetual, worldwide license under Intel's copyrights in the
-- * base code distributed originally by Intel ("Original Intel Code") to copy,
-- * make derivatives, distribute, use and display any portion of the Covered
-- * Code in any form, with the right to sublicense such rights; and
-- *
-- * 2.3. Intel grants Licensee a non-exclusive and non-transferable patent
-- * license (with the right to sublicense), under only those claims of Intel
-- * patents that are infringed by the Original Intel Code, to make, use, sell,
-- * offer to sell, and import the Covered Code and derivative works thereof
-- * solely to the minimum extent necessary to exercise the above copyright
-- * license, and in no event shall the patent license extend to any additions
-- * to or modifications of the Original Intel Code. No other license or right
-- * is granted directly or by implication, estoppel or otherwise;
-- *
-- * The above copyright and patent license is granted only if the following
-- * conditions are met:
-- *
-- * 3. Conditions
-- *
-- * 3.1. Redistribution of Source with Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification with rights to further distribute source must include
-- * the above Copyright Notice, the above License, this list of Conditions,
-- * and the following Disclaimer and Export Compliance provision. In addition,
-- * Licensee must cause all Covered Code to which Licensee contributes to
-- * contain a file documenting the changes Licensee made to create that Covered
-- * Code and the date of any change. Licensee must include in that file the
-- * documentation of any changes made by any predecessor Licensee. Licensee
-- * must include a prominent statement that the modification is derived,
-- * directly or indirectly, from Original Intel Code.
-- *
-- * 3.2. Redistribution of Source with no Rights to Further Distribute Source.
-- * Redistribution of source code of any substantial portion of the Covered
-- * Code or modification without rights to further distribute source must
-- * include the following Disclaimer and Export Compliance provision in the
-- * documentation and/or other materials provided with distribution. In
-- * addition, Licensee may not authorize further sublicense of source of any
-- * portion of the Covered Code, and must include terms to the effect that the
-- * license from Licensee to its licensee is limited to the intellectual
-- * property embodied in the software Licensee provides to its licensee, and
-- * not to intellectual property embodied in modifications its licensee may
-- * make.
-- *
-- * 3.3. Redistribution of Executable. Redistribution in executable form of any
-- * substantial portion of the Covered Code or modification must reproduce the
-- * above Copyright Notice, and the following Disclaimer and Export Compliance
-- * provision in the documentation and/or other materials provided with the
-- * distribution.
-- *
-- * 3.4. Intel retains all right, title, and interest in and to the Original
-- * Intel Code.
-- *
-- * 3.5. Neither the name Intel nor any other trademark owned or controlled by
-- * Intel shall be used in advertising or otherwise to promote the sale, use or
-- * other dealings in products derived from or relating to the Covered Code
-- * without prior written authorization from Intel.
-- *
-- * 4. Disclaimer and Export Compliance
-- *
-- * 4.1. INTEL MAKES NO WARRANTY OF ANY KIND REGARDING ANY SOFTWARE PROVIDED
-- * HERE. ANY SOFTWARE ORIGINATING FROM INTEL OR DERIVED FROM INTEL SOFTWARE
-- * IS PROVIDED "AS IS," AND INTEL WILL NOT PROVIDE ANY SUPPORT, ASSISTANCE,
-- * INSTALLATION, TRAINING OR OTHER SERVICES. INTEL WILL NOT PROVIDE ANY
-- * UPDATES, ENHANCEMENTS OR EXTENSIONS. INTEL SPECIFICALLY DISCLAIMS ANY
-- * IMPLIED WARRANTIES OF MERCHANTABILITY, NONINFRINGEMENT AND FITNESS FOR A
-- * PARTICULAR PURPOSE.
-- *
-- * 4.2. IN NO EVENT SHALL INTEL HAVE ANY LIABILITY TO LICENSEE, ITS LICENSEES
-- * OR ANY OTHER THIRD PARTY, FOR ANY LOST PROFITS, LOST DATA, LOSS OF USE OR
-- * COSTS OF PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR FOR ANY INDIRECT,
-- * SPECIAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THIS AGREEMENT, UNDER ANY
-- * CAUSE OF ACTION OR THEORY OF LIABILITY, AND IRRESPECTIVE OF WHETHER INTEL
-- * HAS ADVANCE NOTICE OF THE POSSIBILITY OF SUCH DAMAGES. THESE LIMITATIONS
-- * SHALL APPLY NOTWITHSTANDING THE FAILURE OF THE ESSENTIAL PURPOSE OF ANY
-- * LIMITED REMEDY.
-- *
-- * 4.3. Licensee shall not export, either directly or indirectly, any of this
-- * software or system incorporating such software without first obtaining any
-- * required license or other approval from the U. S. Department of Commerce or
-- * any other agency or department of the United States Government. In the
-- * event Licensee exports any such software from the United States or
-- * re-exports any such software from a foreign destination, Licensee shall
-- * ensure that the distribution and export/re-export of the software is in
-- * compliance with all laws, regulations, orders, or other restrictions of the
-- * U.S. Export Administration Regulations. Licensee agrees that neither it nor
-- * any of its subsidiaries will export/re-export any technical data, process,
-- * software, or service, directly or indirectly, to any country for which the
-- * United States government or any agency thereof requires an export license,
-- * other governmental approval, or letter of assurance, without first obtaining
-- * such license, approval or letter.
-- *
-- *****************************************************************************
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * following license:
-- *
-  * Redistribution and use in source and binary forms, with or without
-  * modification, are permitted provided that the following conditions
-  * are met:
-@@ -131,23 +23,23 @@
-  *    of any contributors may be used to endorse or promote products derived
-  *    from this software without specific prior written permission.
-  *
-+ * Alternatively, this software may be distributed under the terms of the
-+ * GNU General Public License ("GPL") version 2 as published by the Free
-+ * Software Foundation.
-+ *
-+ * NO WARRANTY
-  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-- *
-- * Alternatively, you may choose to be licensed under the terms of the
-- * GNU General Public License ("GPL") version 2 as published by the Free
-- * Software Foundation.
-- *
-- *****************************************************************************/
-+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
-+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-+ * POSSIBILITY OF SUCH DAMAGES.
-+ */
- 
- #include "acpi.h"
- #include "accommon.h"
-@@ -263,7 +155,7 @@
- 
-     case ACPI_GPE_DISABLE:
- 
--        ACPI_CLEAR_BIT (EnableMask, RegisterBit);
-+        ACPI_CLEAR_BIT (EnableMask, (UINT64)RegisterBit);
-         break;
- 
-     default:

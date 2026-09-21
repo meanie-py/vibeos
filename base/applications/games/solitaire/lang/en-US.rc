@@ -1,6 +1,6 @@
 /*
  * PROJECT:     Solitaire
- * LICENSE:     Freeware, permission to use under Public Domain
+ * LICENSE:     See COPYING in top level directory
  * FILE:        base/applications/games/solitaire/lang/en-US.rc
  * PURPOSE:     English Language File for Solitaire
  * PROGRAMMERS: Daniel "EmuandCo" Reimer (reimer.daniel@freenet.de)
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitaire"
-    IDS_SOL_ABOUT "Solitaire by J Brown\nCardLib version 1.0"
+    IDS_SOL_ABOUT "Solitaire"
     IDS_SOL_QUIT "Quit the current game?"
     IDS_SOL_WIN "Congratulations, you win!"
     IDS_SOL_DEAL "Deal again?"

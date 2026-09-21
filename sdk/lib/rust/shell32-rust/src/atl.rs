@@ -51,7 +51,7 @@ use core::marker::PhantomData;
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc,
     MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, BSTR, CP_THREAD_ACP, HKEY, HLOCAL,
-    INT, LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, WCHAR,
+    HRESULT, INT, LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, VARIANT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -1114,6 +1114,47 @@ impl Drop for CStringW {
             if !self.m_pszData.is_null() {
                 <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
             }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CComVariant
+// -------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// oleaut32 `VariantClear` — releases whatever the variant owns and sets it VT_EMPTY.
+    fn VariantClear(pvarg: *mut VARIANT) -> HRESULT;
+}
+
+/// ATL's owning VARIANT (atlcomcli.h). ATL DERIVES it from `VARIANT` and adds a destructor,
+/// so it IS a VARIANT at the ABI — hence `repr(transparent)`, which is what makes the
+/// `&mut var as *mut CComVariant as *mut VARIANT` casts the translation emits sound.
+///
+/// The default ctor leaves it `VT_EMPTY`, and VT_EMPTY is 0, so an all-zero variant is the
+/// correct starting state — `core::mem::zeroed()` in a translated body is right, not lazy.
+#[repr(transparent)]
+pub struct CComVariant(pub VARIANT);
+
+impl CComVariant {
+    /// `CComVariant()` — VT_EMPTY.
+    pub unsafe fn new() -> Self {
+        Self(core::mem::zeroed())
+    }
+
+    /// The `VARIANT*` every oleaut32 entry point wants.
+    pub fn as_mut_ptr(&mut self) -> *mut VARIANT {
+        core::ptr::addr_of_mut!(self.0)
+    }
+}
+
+impl Drop for CComVariant {
+    /// `~CComVariant()` — `VariantClear`. Dropping this is what releases a BSTR or an
+    /// interface the variant is holding; lowering the local to a bare `VARIANT` instead
+    /// compiles and leaks whatever it owned.
+    fn drop(&mut self) {
+        unsafe {
+            VariantClear(core::ptr::addr_of_mut!(self.0));
         }
     }
 }

@@ -2323,6 +2323,30 @@ unsafe fn co_WinPosSetWindowPos(
         (*Window).state |= WNDS_SENDNCPAINT;
     }
 
+    /*
+     * Request a full non-client repaint when the frame geometry changes.
+     * Otherwise, copied bits can retain parts of the old frame. CORE-20769.
+     *
+     * NOTE ON ORDER: painting.rs already CONSUMES WNDS2_FORCEFULLNCPAINTCLIPRGN
+     * (at ~539) and inherited that consumer from before our fork, but nothing in
+     * our tree ever SET the flag -- so that path has been dead the whole time.
+     * This is the setter. Upstream added it to fix a regression from b38db9dd238,
+     * which we have NOT applied; but it also closes CORE-5877 and CORE-16672,
+     * which predate that commit and which we DO carry. Taking it first is also
+     * the safe order: if b38db9dd238 is ported later, its regression is already
+     * prevented. Upstream-Commit: d09a3600606 (#9495)
+     */
+    if ((*Window).style & WS_VISIBLE) != 0
+        && ((WinPos.flags & SWP_FRAMECHANGED) != 0
+            || (OldWindowRect.right - OldWindowRect.left)
+                != (NewWindowRect.right - NewWindowRect.left)
+            || (OldWindowRect.bottom - OldWindowRect.top)
+                != (NewWindowRect.bottom - NewWindowRect.top))
+    {
+        (*Window).state |= WNDS_SENDNCPAINT;
+        (*Window).state2 |= WNDS2_FORCEFULLNCPAINTCLIPRGN;
+    }
+
     if ((WinPos.flags & SWP_NOREDRAW) == 0
         && ((WinPos.flags & SWP_AGG_STATUSFLAGS) != SWP_AGG_NOPOSCHANGE))
         || ((WinPos.flags & SWP_NOZORDER) != 0 && (WinPos.flags & SWP_NOOWNERZORDER) != 0)

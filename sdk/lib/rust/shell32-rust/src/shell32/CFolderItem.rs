@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use crate::shell32::CFolderItemVerbs::CFolderItemVerbs_CreateInstance;
+use crate::shell32::CFolderItemVerbs::CFolderItemVerbs_Init_body;
 use crate::cfs_folder::DATE;
 use crate::def_view_support::IsEqualCLSID;
 use crate::shell_link::LCID;
@@ -784,13 +786,33 @@ pub unsafe fn CFolderItem_Verbs_body(this: *mut CFolderItem, ppfic: *mut *mut Fo
     if ppfic.is_null() {
         return E_POINTER;
     }
-    let verbs = CFolderItemVerbs_new();
-    let hr = CFolderItemVerbs_Init_body(verbs, (*this).m_idlist.cast());
+    // C++: `new CComObject<CFolderItemVerbs>()`, then Init, then AddRef, then publish.
+    // CFolderItemVerbs is Rust now, so this goes through its generated creator and the
+    // rust_folderitemverbs_bridge.cpp shim that used to stand in for it is gone.
+    //
+    // REFCOUNTS MATCH, and that is the part worth checking: ATL's `new CComObject<T>()`
+    // yields refcount 0 and the C++ then AddRefs to 1 before publishing. The generated
+    // CreateInstance already returns its interface at 1 (it allocates at 1, QueryInterface
+    // AddRefs to 2, then Releases back to 1), so publishing it directly is the same net 1 —
+    // adding an AddRef here would leak the object forever.
+    let mut verbs: *mut FolderItemVerbs = core::ptr::null_mut();
+    let hr = CFolderItemVerbs_CreateInstance(
+        core::ptr::null_mut(),
+        core::ptr::addr_of!(IID_FolderItemVerbs).cast(),
+        core::ptr::addr_of_mut!(verbs).cast(),
+    );
     if ((hr) < 0) {
-        CFolderItemVerbs_delete(verbs);
         return hr;
     }
-    CFolderItemVerbs_AddRef_body(verbs);
+    // `FolderItemVerbs_iface` is the FIRST field of the generated CFolderItemVerbs, so the
+    // interface pointer and the object pointer are the same address.
+    let hr = CFolderItemVerbs_Init_body(verbs.cast(), (*this).m_idlist.cast());
+    if ((hr) < 0) {
+        // The C++ `delete verbs` on the failure path; here the object is already
+        // refcounted, so releasing it is what frees it.
+        ((*(*verbs).lpVtbl).Release)(verbs);
+        return hr;
+    }
     *ppfic = verbs.cast();
     return S_OK;
 }

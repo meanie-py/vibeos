@@ -22,18 +22,16 @@ list(APPEND SOURCE
 
 list(APPEND MINIZIP_SOURCE
     contrib/minizip/crypt.h
+    contrib/minizip/ints.h
     contrib/minizip/ioapi.c
     contrib/minizip/ioapi.h
     contrib/minizip/iowin32.c
     contrib/minizip/iowin32.h
+    contrib/minizip/skipset.h
     contrib/minizip/unzip.c
     contrib/minizip/unzip.h
     contrib/minizip/zip.c
     contrib/minizip/zip.h)
-
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_compile_options(-Wno-deprecated-non-prototype)
-endif()
 
 if(CMAKE_CROSSCOMPILING)
     add_library(zlib ${SOURCE} ${SOLO_SOURCE})
@@ -43,12 +41,6 @@ if(CMAKE_CROSSCOMPILING)
     target_compile_definitions(zlib_solo PRIVATE Z_SOLO)
     target_include_directories(zlib_solo PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
     add_library(minizip ${MINIZIP_SOURCE})
-    # iowin32.c keeps four `mode_fopen` locals that only the stdio backend uses, so
-    # they are unused in a win32-handle build. We used to comment them out in the
-    # source; the flag keeps contrib/minizip byte-identical to upstream instead, which
-    # is what makes a zlib bump a straight copy. Scoped to this target so it cannot
-    # hide an unused variable in zlib proper.
-    target_compile_options(minizip PRIVATE -Wno-unused-variable)
     add_dependencies(minizip psdk)
     target_include_directories(minizip PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
 else()

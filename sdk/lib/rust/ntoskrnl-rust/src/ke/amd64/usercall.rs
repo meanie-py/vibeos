@@ -197,8 +197,12 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     (*TrapFrame).SegGs = KGDT64_R3_DATA | RPL_MASK;
     (*TrapFrame).SegSs = KGDT64_R3_DATA | RPL_MASK;
 
-    (*TrapFrame).EFlags &= EFLAGS_USER_SANITIZE;
-    (*TrapFrame).EFlags |= EFLAGS_INTERRUPT_MASK;
+    // SET EFlags, do not "sanitize" it. EFLAGS_USER_SANITIZE (0x003F4DD7) PRESERVES
+    // bit 8 (TF) and bit 10 (DF) -- verified bit by bit -- so whatever those bits
+    // held in the freshly seeded trap frame survived into the new user thread. TF
+    // means an immediate single-step #DB on its first user instruction, which is
+    // the crash upstream describes. Upstream-Commit: 6bc61687e6ed
+    (*TrapFrame).EFlags = EFLAGS_INTERRUPT_MASK;
 }
 
 #[cfg(not(target_arch = "x86"))]

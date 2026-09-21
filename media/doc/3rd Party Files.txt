@@ -206,12 +206,6 @@ Used Version: 1.0 REV 5
 License: GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later.html)
 URL: http://www.gnu.org/software/adns/, http://adns.jgaa.com
 
-Title: CardLib
-Path: sdk/lib/3rdparty/cardlib
-Used Version: 2005-07-14
-License: "Public Domain"
-URL: https://www.catch22.net/tuts/cards/cardlib/
-
 Title: lwIP - A Lightweight TCP/IP stack
 Path: drivers/network/tcpip/lwip
 Used Version: 2.2.0
