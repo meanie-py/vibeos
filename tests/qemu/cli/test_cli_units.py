@@ -2082,6 +2082,38 @@ def test_launch_qemu_retries_gdb_bind_race(monkeypatch, tmp_path):
     assert discarded == [procs[0]]  # first (raced) torn down
 
 
+def test_launch_qemu_retries_chardev_connect_failure(monkeypatch, tmp_path):
+    # The WSL2 localhost relay can refuse a `server=off` chardev's dial to a listener
+    # we bound moments earlier. QEMU dies before any guest code and the whole net suite
+    # reports 15 errors from that one dead launch, so it must be retried on a fresh
+    # port like the two bind races either side of it.
+    v = _launch_vm("windows-host", tmp_path)
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
+    procs = [_FakeProc(), _FakeProc()]
+    launched: list = []
+
+    def fake_popen(cmd, **kw):
+        p = procs[len(launched)]
+        launched.append(p)
+        return p
+
+    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
+    seq = iter(
+        [
+            "-chardev socket,id=gf2,host=127.0.0.1,port=58627,server=off: "
+            "Failed to connect to '127.0.0.1:58627': Unknown error",
+            None,
+        ]
+    )
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
+    discarded: list = []
+    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
+
+    v._launch_qemu()
+    assert v._proc is procs[1]
+    assert discarded == [procs[0]]
+
+
 def _gdb_vm(gdb: bool = False, wait: bool = False, backend: str = "native"):
     v = vm.QemuVM.__new__(vm.QemuVM)
     v._backend = backend

@@ -488,6 +488,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
+  in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not
+  the 1 MB reserve: `BTCpuSimulate` stashes the 64-bit dispatcher RSP at `CpuArea+8`, a
+  user callback runs the guest through a nested `BTCpuSimulate` that overwrites it, and the
+  callback exits by `NtCallbackReturn` rather than returning through the asm, so the outer
+  value was never restored. Every callback then cost ~4 KB permanently; taskmgr exhausted
+  its 1 MB at ~950 callbacks. Fixed by saving/restoring the slot around the nesting in
+  `Wow64pUserCallbackCommon`. Measured after: `exit_status=0x80` 3 -> **0** per boot, user
+  stack pre-faults 2 -> **0**, `STACK EXHAUSTED` 1 -> **0**, and taskmgr reaching 4915
+  callbacks with its dispatcher RSP flat. Two earlier fixes were prerequisites for even
+  seeing it — guest stacks could not grow at all (TEB32 `DeallocationStack` was never
+  published), and a genuine overflow could not be REPORTED (the exception record went below
+  the faulting Rsp, which on overflow is already the floor), which is what laundered every
+  stack bug into an anonymous `0x80`. Field manual: "A nested BTCpuSimulate clobbers the
+  saved dispatcher RSP".
+
 - **`ExPools` on arm64 intermittently drops one assertion under load, and it can eat a
   whole merge-queue submission. UNOWNED** (2026-09-20). Signature:
   `ExPools: pass 14 -> 13 (dropped)`, the extra failure being `assert ExPools.c:181` —
