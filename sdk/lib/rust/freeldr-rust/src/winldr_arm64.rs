@@ -95,6 +95,63 @@ static mut Arm64Pgd: PARM64_PTE = core::ptr::null_mut();
 /* Shared user data page frame number — file-scope global. */
 static mut SharedUserDataPfn: PFN_NUMBER = 0;
 
+// Minimal EL1 exception vectors for the loader.
+//
+// Dropping to EL1 costs us the firmware's handler: its vectors are EL2's, so
+// after the drop a fault at EL1 lands on whatever VBAR_EL1 happens to hold and
+// the board simply stops - the "Synchronous Exception at 0x..." line that
+// located every earlier bug disappears. Installing these keeps faults legible
+// until the kernel installs KiArm64VectorTable.
+//
+// 16 entries of 128 bytes at a 2048-byte alignment, as the architecture
+// requires; every one funnels to the same reporter because the loader has
+// nothing to recover to.
+core::arch::global_asm!(
+    ".balign 2048",
+    ".globl Arm64LoaderVectorTable",
+    "Arm64LoaderVectorTable:",
+    ".rept 16",
+    ".balign 128",
+    "b Arm64LoaderFaultEntry",
+    ".endr",
+);
+
+extern "C" {
+    static Arm64LoaderVectorTable: u8;
+}
+
+/// Report an EL1 fault and stop. No recovery is possible here, so this does not
+/// preserve registers - it exists so a fault says what and where.
+#[no_mangle]
+pub unsafe extern "C" fn Arm64LoaderFaultEntry() -> ! {
+    let (esr, far, elr, spsr): (ULONG64, ULONG64, ULONG64, ULONG64);
+    core::arch::asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, nostack));
+    core::arch::asm!("mrs {}, far_el1", out(reg) far, options(nomem, nostack));
+    core::arch::asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, nostack));
+    core::arch::asm!("mrs {}, spsr_el1", out(reg) spsr, options(nomem, nostack));
+    crate::frldr::dbgcon_str(b"\r\n!!FLDR-EL1-FAULT esr=0x");
+    crate::frldr::dbgcon_hex64(esr);
+    crate::frldr::dbgcon_str(b" far=0x");
+    crate::frldr::dbgcon_hex64(far);
+    crate::frldr::dbgcon_str(b" elr=0x");
+    crate::frldr::dbgcon_hex64(elr);
+    crate::frldr::dbgcon_str(b" spsr=0x");
+    crate::frldr::dbgcon_hex64(spsr);
+    // EC is the top 6 bits of ESR: 0x25 data abort, 0x21 instruction abort.
+    crate::frldr::dbgcon_str(b" ec=0x");
+    crate::frldr::dbgcon_hex8(((esr >> 26) & 0x3F) as u32);
+    crate::frldr::dbgcon_str(b"\r\n");
+    loop {
+        core::arch::asm!("wfi", options(nomem, nostack));
+    }
+}
+
+/// Point VBAR_EL1 at the loader's vectors.
+pub unsafe fn Arm64InstallEl1Vectors() {
+    let base = core::ptr::addr_of!(Arm64LoaderVectorTable) as ULONG64;
+    core::arch::asm!("msr vbar_el1, {}", "isb", in(reg) base, options(nostack));
+}
+
 /// Drop from EL2 to EL1 so the EL1 translation regime the loader programs (and
 /// the kernel requires) is the one that actually translates.
 ///
@@ -449,6 +506,8 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
             core::arch::asm!("mrs {}, hcr_el2", out(reg) hcr, options(nomem, nostack));
             if hcr & (1 << 34) == 0 {
                 Arm64DropToEl1();
+                // Before anything else can fault at EL1 without a handler.
+                Arm64InstallEl1Vectors();
                 Arm64ReportExceptionLevel(b"[FLDR] ctx-el1");
             }
         }

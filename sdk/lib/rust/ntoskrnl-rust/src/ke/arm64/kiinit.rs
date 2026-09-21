@@ -236,7 +236,7 @@ pub unsafe extern "system" fn KiSystemStartup(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] KiSystemStartup entered!\r\n";
         for &b in msg {
-            core::ptr::write_volatile(uart, b as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, b);
         }
     }
 
@@ -302,7 +302,7 @@ pub unsafe extern "system" fn KiSystemStartup(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] VBAR_EL1 installed\r\n";
         for &b in msg {
-            core::ptr::write_volatile(uart, b as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, b);
         }
     }
 
@@ -318,7 +318,7 @@ pub unsafe extern "system" fn KiSystemStartup(
     {
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] pre-HAL\r\n";
-        for &b in msg { core::ptr::write_volatile(uart, b as ULONG); }
+        for &b in msg { crate::arm64_dbg::uart_putc(uart as *mut u32, b); }
     }
     ap_stage(Cpu != 0, 3);
 
@@ -411,18 +411,18 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] Entering KiIdleLoop\r\n";
         for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, ch);
         }
         // Dump KiIdleLoop function address for symbolication
         let fn_addr = KiIdleLoop as *const () as u64;
         let msg2 = b"[KERNEL] KiIdleLoop@0x";
-        for &ch in msg2.iter() { core::ptr::write_volatile(uart, ch as ULONG); }
+        for &ch in msg2.iter() { crate::arm64_dbg::uart_putc(uart as *mut u32, ch); }
         for i in (0..16).rev() {
             let nibble = ((fn_addr >> (i * 4)) & 0xF) as u8;
             let c = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
-            core::ptr::write_volatile(uart, c as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, c);
         }
-        for &ch in b"\r\n" { core::ptr::write_volatile(uart, ch as ULONG); }
+        for &ch in b"\r\n" { crate::arm64_dbg::uart_putc(uart as *mut u32, ch); }
     }
 
     KiIdleLoop();
@@ -520,7 +520,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] Calling ExpInitializeExecutive\r\n";
         for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, ch);
         }
     }
 
@@ -534,7 +534,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] ExpInitializeExecutive returned!\r\n";
         for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, ch);
         }
     }
 }

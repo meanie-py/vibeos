@@ -1341,10 +1341,12 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
         crate::frldr::dbgcon_str(b" mapfail=0x");
         crate::frldr::dbgcon_hex32(crate::winldr_arm64::Arm64MapFailures);
         crate::frldr::dbgcon_str(b"\r\n");
-        // Walk both views of the same block: the identity mapping the loader
-        // has been using, and the PaToVa kernel VA the store below goes through.
-        crate::winldr_arm64::Arm64ReportMapping(b"[FLDR] ext-ident", LoaderBlock as u64);
-        crate::winldr_arm64::Arm64ReportMapping(b"[FLDR] ext-kseg0", (*LoaderBlock).Extension as u64);
+        // NOT a page-table walk here any more. Arm64ReportMapping reads the
+        // tables through their physical addresses, which the firmware's identity
+        // map made safe; once the loader's own tables are live only what we
+        // mapped is reachable, and walking them from here faulted on a table
+        // page that is not itself mapped. mapfail above is the cheap check that
+        // survives; walk before WinLdrSetProcessorContext if a walk is needed.
     }
 
     // LoaderPagesSpanned is ULONG_PTR (u32 on i386, u64 on amd64); the local
