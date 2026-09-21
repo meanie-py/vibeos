@@ -559,7 +559,32 @@ Two separate discoveries, the same shape, found while porting rangelist:
    behaviour. That port needs a grader, and the merge shipped one: `JobObject.c`. Porting 1,800
    lines of job-object semantics with no way to run its test is the expensive way to do it.
 
-   **The tool to build is a `tools/payloads/apitest/` payload modelled on the kmtest one** —
-   same one-process-per-suite isolation, same serial protocol, same ratchet baseline. The
-   kmtest payload already proves every piece of the design. The one thing to do differently is
-   derive the suite list rather than commit it, so finding (1) cannot recur on the new harness.
+   **BUILT** (2026-09-21), as `tools/payloads/apitest/` + `tools/conformance/parse_apitest_serial.py`:
+
+   - `sweep.c` pipes each child's stdout (apitests report through
+     `winetest_vprintf` → `fprintf(stdout)`, not the debug serial like kmtest) and re-emits it
+     as `[APITEST:<suite> <subtest>]`. Two-phase: a wine binary run with no arguments prints
+     usage and exits 1, so phase 1 parses its `Valid test names:` block and phase 2 runs one
+     process per subtest.
+   - The suite list is **derived** by `gen_suites.py`, not committed — which is the direct
+     lesson of (1). Quarantines are committed, at suite OR subtest granularity, and a
+     quarantine matching nothing is reported rather than silently ignored.
+   - `ENABLE_ROSTESTS_APITESTS` / `vibeos-cli build --apitests`, mirroring the kmtests switch,
+     because the full `ENABLE_ROSTESTS` has 4 non-apitest targets that do not build and a
+     failed build produces no ISO.
+   - Three build fixes got 63/63 apitests linking: `rtl_unittest` had not linked since the
+     ntdll cohab flip (`rtl_um` is an empty stub, its `libsupp.c` being Rust inside
+     `libntdll_rust.a`, which only ntdll links — nine undefined symbols nobody saw because
+     nothing builds rostests); `shlwapi_apitest` gained C++ suites in the merge without
+     gaining `cpprt`; and `winetestlib` had to come out of the `ENABLE_ROSTESTS` guard.
+   - The parser shares `ratchet.py` with the kmtest one, so the floor semantics cannot drift.
+
+   **Three real bugs in the first four boots**, all in the roadmap's live registry:
+   `afd_apitest send` → BUGCHECK 0x1E (`FCB->ReceiveIrp.InFlightRequest != Irp`; the
+   translation is faithful to `read.c:279`, so the broken thing is the invariant),
+   `advapi32_apitest RtlEncryptMemory` crash-looping `services.exe`, and `opengl32_apitest`
+   wedging during enumeration.
+
+   **Still owed**: a banked baseline (needs one boot that reaches
+   `[APITEST-SWEEP] done`, which means quarantining crashers until it does), and i386/arm64,
+   which will each surface their own. amd64 is the characterisation arch for now.
