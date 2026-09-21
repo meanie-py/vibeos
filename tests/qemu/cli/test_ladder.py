@@ -857,3 +857,26 @@ def test_a_crashed_subtest_counts_as_having_reported():
 def test_a_crash_reaches_the_summary_as_a_crash():
     line = ladder.summary(_all_pass() + _WT_CRASH_LINE)
     assert "user32:class=CRASH(0xc0000005)" in line
+
+
+def test_the_native_control_label_is_parsed_alongside_the_wow64_one():
+    """`native/user32:class` is the SAME binary on bare i386. Losing it to a
+    regex that forbids `/` would silently delete the control half of the A/B
+    and leave every WoW64 failure unattributable."""
+    text = (
+        _all_pass()
+        + "[WT] user32:class: CRASHED, exit = 0xc0000005, 100 bytes of output\n"
+        + "[WT] native/user32:class: exit = 3 failure(s), 200 bytes of output\n"
+    )
+    assert ladder.winetests(text) == {"native/user32:class": 3}
+    assert ladder.winetests_crashed(text) == {"user32:class": "0xc0000005"}
+    assert ladder.winetests_lost(text) == []
+
+
+def test_a_timeout_is_its_own_outcome():
+    """We killed it with 0xDEAD, so "57005 failure(s)" is our number wearing the
+    oracle's clothes."""
+    text = _all_pass() + "[WT] native/user32:class: TIMED OUT, 635 bytes of output\n"
+    assert ladder.winetests(text) == {}
+    assert ladder.winetests_timed_out(text) == ["native/user32:class"]
+    assert "native/user32:class=TIMEOUT" in ladder.summary(text)

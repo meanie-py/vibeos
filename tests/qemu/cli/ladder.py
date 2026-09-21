@@ -668,10 +668,14 @@ def verdicts(text: str) -> dict[str, int]:
 
 
 # [WT] user32:class: started (PID 123)  /  [WT] user32:class: exit = 4 failure(s), ...
-# The label is <suite>:<subtest>, written by winlogon's TryStartWow64Winetest.
-_WT_STARTED = re.compile(r"\[WT\] ([A-Za-z0-9_]+:[A-Za-z0-9_]+): started ")
-_WT_VERDICT = re.compile(r"\[WT\] ([A-Za-z0-9_]+:[A-Za-z0-9_]+): exit = (\d+) failure")
-_WT_CRASH = re.compile(r"\[WT\] ([A-Za-z0-9_]+:[A-Za-z0-9_]+): CRASHED, exit = (0x[0-9a-fA-F]+)")
+# The label is <suite>:<subtest>, written by winlogon's TryStartWinetest, and
+# carries a `native/` prefix for the bare-i386 control run of the same binary --
+# the pair is what makes a red assertion attributable to the WoW64 seam rather
+# than to user32.
+_WT_STARTED = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): started ")
+_WT_VERDICT = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): exit = (\d+) failure")
+_WT_CRASH = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): CRASHED, exit = (0x[0-9a-fA-F]+)")
+_WT_TIMEOUT = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): TIMED OUT,")
 
 
 def winetests(text: str) -> dict[str, int]:
@@ -691,6 +695,13 @@ def winetests_crashed(text: str) -> dict[str, str]:
     return dict(_WT_CRASH.findall(text))
 
 
+def winetests_timed_out(text: str) -> list[str]:
+    """Subtests we killed. A third outcome, kept apart from the other two for
+    the same reason: the exit code is OURS (0xDEAD), so counting it as failures
+    reports 57005 of them."""
+    return _WT_TIMEOUT.findall(text)
+
+
 def winetests_lost(text: str) -> list[str]:
     """Subtests that STARTED and never reported.
 
@@ -700,7 +711,7 @@ def winetests_lost(text: str) -> list[str]:
     red and teach everyone to ignore it. A subtest that vanishes mid-run has
     crashed or hung the guest, which is a regression in OUR code and is the
     same signal every other rung here carries."""
-    done = set(winetests(text)) | set(winetests_crashed(text))
+    done = set(winetests(text)) | set(winetests_crashed(text)) | set(winetests_timed_out(text))
     return [label for label in _WT_STARTED.findall(text) if label not in done]
 
 
@@ -764,6 +775,7 @@ def summary(text: str) -> str:
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
     wt = {f"{k}={v}" for k, v in winetests(text).items()}
     wt |= {f"{k}=CRASH({v})" for k, v in winetests_crashed(text).items()}
+    wt |= {f"{k}=TIMEOUT" for k in winetests_timed_out(text)}
     wt_tail = ""
     if wt:
         # Reported, never gated — see winetests_lost() for why the failure
