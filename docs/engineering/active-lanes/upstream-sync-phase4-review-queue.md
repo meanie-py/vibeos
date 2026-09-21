@@ -479,12 +479,78 @@ mismatch per call. Caught instantly by the decoration checker once the callee wa
 `undefined symbol: _RtlFindRange@48` — which is the field manual's "stdcall decoration is a
 free ABI width checker" earning its keep.
 
-**Still owed on this file**, deliberately deferred out of the merge land so it does not grow:
+### The port itself — DONE, by hand
 
-- Our `RtlAddRange` has **no conflict detection at all** — the reference C checks for
-  overlapping ranges and honours `RTL_RANGE_LIST_ADD_IF_CONFLICT` (`rangelist.c:152,207`). Our
-  561-line Rust is a translation of the pre-merge ~800-line C; the merged C is 1,012 lines.
-- `RtlGetLastRange` and `RtlInvertRangeListEx` are new upstream exports with no implementation
-  anywhere in our tree. The merge added both spec lines and conflict resolution reverted them.
-  They come back with the port, not before — an export with no implementation is the failure
-  mode this lane already hit ~230 times.
+Hand-ported rather than paid: `rustconv translate` would have re-bought a file that already
+has output (which needs approval anyway), and this is plain list-walking C with a
+240-assertion oracle sitting next to it. What changed:
+
+- **Three new private helpers.** `RtlpOverlaps`, `RtlpWindowIsAvailable` (the shared
+  availability walk now behind both `RtlIsRangeAvailable` and `RtlFindRange`, reporting the
+  *lowest* conflicting Start so a top-down search can jump past it) and `RtlpConflictsOnAdd`.
+- **`RtlAddRange` had no conflict detection at all** — every add succeeded. It now rejects an
+  overlapping incompatible entry with `STATUS_RANGE_LIST_CONFLICT` unless the caller passed
+  `RTL_RANGE_LIST_ADD_IF_CONFLICT`. Its insertion point also compared the new entry's **End**
+  against the cursor's Start; the list is sorted by **Start**.
+- **`RtlFindRange` is a different algorithm.** It was a single-shot "round down from the
+  highest entry and hope"; it is now a top-down search that re-probes, jumping the window
+  below the lowest conflicting entry each round (which strictly decreases the candidate, so it
+  terminates).
+- **`RtlInvertRangeList` was only correct for a non-overlapping list.** It walked adjacent
+  pairs and emitted the gap between them — but `RTL_RANGE_LIST_ADD_IF_CONFLICT` permits
+  overlaps, and an absorbed entry then produced a bogus inverted range. It now delegates to the
+  new `RtlInvertRangeListEx`, which walks the covered space upward, absorbing every range that
+  covers the cursor before looking for the next gap.
+- **`RtlGetLastRange` and `RtlInvertRangeListEx`** are implemented, and their `ntoskrnl.spec`
+  lines (reverted during conflict resolution) restored with them — implementation first, spec
+  second, which is the order this lane learned the hard way ~230 times.
+- **One deliberate divergence from the merged C: no `Start > End` guard in
+  `RtlIsRangeAvailable`.** Upstream added `if (Start > End) return STATUS_INVALID_PARAMETER;`
+  in the same commit as the test — and the test asserts `STATUS_SUCCESS` for seven inverted
+  windows (`RtlRangeList.c:349,357,358,365,373,374,381`), with no `is_reactos()` or `todo`
+  guard, so upstream's C fails upstream's own new test. Our pre-merge Rust had no guard, those
+  seven are **banked passing** in all three conformance baselines, and the walk with an
+  inverted window produces exactly the expected answers (`Current->Range.Start > End` breaks
+  out immediately for the TRUE cases; `RtlpOverlaps` catches the FALSE ones). Adding the guard
+  regressed seven banked assertions to match a C the oracle says is wrong, so the guard stays
+  out. `RtlAddRange`'s `Start > End` guard is untouched — upstream did not change it and no
+  assertion covers it. Worth reporting upstream.
+- **Deleted the crate's `ROUND_DOWN` helper.** It rounded through `usize`, modelling a
+  `ULONG_PTR` cast the C expression does not have, so on i386 it truncated a 64-bit candidate
+  to 32 bits. `RtlFindRange` was its only caller and now does the arithmetic in `ULONGLONG`.
+
+## The oracle we are not reading: 43 new apitests, and no harness for any of them
+
+Two separate discoveries, the same shape, found while porting rangelist:
+
+1. **`ExPushLock` had never run once.** Upstream's new 1385-line `ntos_ex/ExPushLock.c` is in
+   `kmtests/CMakeLists.txt` and registered in `kmtest_drv/testlist.c`, so it builds and the
+   driver knows about it. The sweep does **not** enumerate the driver's testlist — it reads a
+   COMMITTED file, `tools/payloads/kmtest/kmtest-tests-<arch>.txt`, staged as
+   `%SystemRoot%\bin\kmtest-tests.txt`. A name missing from that file is never launched, and
+   the sweep still reports `launched=91 ok=91 bad=0`, which reads as a clean run. Fixed for
+   all three arches. **"Wired into the build" and "in the sweep" are two separate acts here**,
+   and only the first is enforced by anything.
+
+2. **The apitests have no harness at all.** `modules/rostests/apitests/` is 68 directories,
+   `add_subdirectory(apitests)` is in `modules/rostests/CMakeLists.txt` — and `build-amd64`
+   contains zero `*_apitest.exe`. Nothing builds them, nothing stages them, nothing runs them.
+   The merge added **43 new apitest files**, every one of them a Microsoft-behaviour oracle for
+   code we have translated, and not one has ever been executed:
+
+   `JobObject` `Pipes` `ReadFile` `WriteFile` `GetEnvironmentVariable` `EnumSystemCodePages`
+   `SetSearchPathMode` · `RtlQueryEnvironmentVariable{,_U}` `RtlIsNameInExpression`
+   `RtlInitializeContext` `RtlGetProductInfo` `RtlMemIoResource` `NtNotifyChangeMultipleKeys`
+   `NtGetCurrentProcessorNumberEx` `RtlVirtualUnwind` `rtlinit` · six shell32/shlwapi COM
+   suites · three `win32u/ntuser` suites · gdi32, user32, version, setupapi, appshim.
+
+   Note how directly these hit this lane's open items: `JobObject` is the oracle for
+   `ntoskrnl/ps/job.c` (+2198/-536, the merge's largest single-file rewrite);
+   `SetSearchPathMode` is the security-relevant item already in this queue;
+   `NtGetCurrentProcessorNumberEx` tests one of the two functions we found have no
+   implementation anywhere.
+
+   **The tool to build is a `tools/payloads/apitest/` payload modelled on the kmtest one** —
+   same one-process-per-suite isolation, same serial protocol, same ratchet baseline. The
+   kmtest payload already proves every piece of the design. The one thing to do differently is
+   derive the suite list rather than commit it, so finding (1) cannot recur on the new harness.
