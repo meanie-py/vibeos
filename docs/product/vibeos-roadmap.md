@@ -488,6 +488,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
+  never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
+  Signature: the kernel prints `[EXIT-THR] image=marshal32.exe exit_status=0x600d` — the
+  guest PASSED — but winlogon's own `[WINLOGON] marshal32.exe exit = 0x600d` never
+  appears, no later guest is launched, and `ladder.check` then reports the eight
+  remaining guests as "never reported a verdict". Measured over a 956-second boot: the
+  machine stays ALIVE the whole time (the netstack self-tests keep running and logging
+  afterwards), so this is winlogon wedged, not the VM dead or starved.
+  **The load-bearing detail is the timeout.** `TryStartWow64Marshal` waits
+  `WaitForSingleObject(Pi.hProcess, 60_000)`; more than 500 seconds elapsed after the
+  guest exited and it never returned, so the anomaly is not "the process did not signal"
+  — it is a bounded wait that does not time out. Alongside it, something sends
+  `WM_ENTERIDLE` to a thread `IsThreadSuspended` calls suspended, about 2.4 times a
+  second forever (1202 sends in the tail); if that thread is winlogon's, "suspended" is
+  the truth and the question becomes who suspended it.
+  Same predicate as the console hang above, which is either a coincidence or the link.
+  Diagnosis notes so the next attempt does not re-walk this: it is NOT host starvation
+  (three earlier boots were misread that way — by rate all boots run 27-39 serial
+  lines/s, and doubling the drain from 470s to 956s bought 670 more lines, not more
+  progress), and it is NOT a tight spin (1202 sends in ~500s is idle, not CPU-bound).
+  A boot at 2026-09-21 00:45 ran the same guests 11/11, so it is recent; the amd64 media
+  changed only by winlogon.exe between the two, which is suspicious but unproven —
+  nothing in that diff runs before marshal32.
+
 - **Wine's conformance suites now run under WoW64, and the first two subtests found
   four separate bugs. OPEN** (2026-09-21). `user32:wsprintf` passes clean (46 tests, 0
   failures). `user32:class` is the interesting one, and the native i386 A/B run of the
