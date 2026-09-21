@@ -10012,6 +10012,15 @@ subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of U
 (SERVERINFO, SHAREDINFO handle entries, DESKTOPINFO). The first instinct — a win32k-maintained
 32-bit *shadow* — was rejected in favour of `user32-rust/src/wow64.rs` building the view
 client-side. The (a) half was a cursor/icon align-8 UNICODE_STRING probe → 0x1E `[§9.58a]`.
+**The normalized object is a COPY, and VARIABLE-LENGTH tails do not come with it.** `WND` and
+`CLS` are snapshotted into a heap `Snap`, so `pWnd + 1` / `pCls + 1` — which natively addresses
+the window/class extra bytes in the desktop heap — indexes whatever the process heap put after
+the snapshot. Both halves are the same bug found years apart: the WND half surfaced as user32's
+EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
+until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
+with what a syscall had just set. Address the tail off the snapped kernel object
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
+fixed struct is in the same position and has not been audited.
 
 ### Loader ordering and process bring-up `[§9.47]`
 A CUI process hangs in kernel32 `ConDllInitialize` with exit code **0x103 = STILL_ACTIVE**
