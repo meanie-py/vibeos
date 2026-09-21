@@ -7,6 +7,15 @@ add_definitions(
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 
+# upstream dropped these, relying on the vendored libs publishing their headers through
+# their own targets. Our libpng/libjpeg/libtiff are at different versions (we declined the
+# libjpeg v10 API break and are AHEAD on libpng) and do not, so the paths stay spelled out.
+include_directories(
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libjpeg
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libpng
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libtiff)
+
 spec2def(windowscodecs.dll windowscodecs.spec ADD_IMPORTLIB)
 add_rpcproxy_files(windowscodecs_wincodec.idl)
 

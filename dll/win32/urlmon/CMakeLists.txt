@@ -62,9 +62,9 @@ add_pch(urlmon precomp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET urlmon DESTINATION reactos/system32 FOR all)
 set_wine_module_FIXME(urlmon) # CORE-5743: No ARRAY_SIZE macro
 
-# Hack for CMake not being able to properly escape command line GUID definition on some Unix hosts.
-if (CMAKE_HOST_WIN32)
-    add_compile_definitions(PROXY_CLSID_IS={0x79EAC9F1,0xBAF9,0x11CE,{0x8C,0x82,0x00,0xAA,0x00,0x4B,0xA9,0x0B}})
-else()
-    target_compile_options(urlmon PRIVATE -include ${CMAKE_SOURCE_DIR}/dll/win32/urlmon/clsid.h)
-endif()
+# Upstream solves the "CMake cannot escape a GUID on the command line" problem with a
+# second `-include clsid.h`. We already solve it by GENERATING proxy_clsid.h above and
+# -include'ing that, and a second -include is actively harmful here: CMake de-duplicates
+# repeated COMPILE_OPTIONS, so the second `-include` flag is dropped and its path becomes
+# a second INPUT file — "clang: error: cannot specify -o when generating multiple output
+# files", on every TU in this module. Upstream's branch is therefore dropped, not merged.

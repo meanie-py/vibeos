@@ -23,6 +23,9 @@
  */
 
 #include <stdarg.h>
+#include <stdlib.h>   /* upstream's wine sync moved these TUs from HeapAlloc to plain
+                         malloc/free but relies on <stdlib.h> arriving via another
+                         header; that happens on i386/amd64 here but not on arm64. */
 #include <stdio.h>
 #include "windef.h"
 #include "winbase.h"

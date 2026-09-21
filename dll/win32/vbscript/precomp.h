@@ -10,7 +10,6 @@
 
 #include "vbscript.h"
 
-#include <winnls.h>
 #include <objsafe.h>
 
 #include <wine/debug.h>

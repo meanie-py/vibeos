@@ -84,7 +84,11 @@
 #define CCITT_SUPPORT 1
 
 /* Support JPEG compression (requires IJG JPEG library) */
-#define JPEG_SUPPORT
+/* vibeos (upstream-sync 2026-09-20): upstream's libtiff 4.7.1 drop turns JPEG-in-TIFF
+   on. We stayed on libjpeg 9f — upstream moved to v10, an API break the research lane
+   owns — and our libjpeg.spec exports only the subset the rest of the tree uses, not
+   the jpeg_* surface tif_jpeg.c needs. Off until libjpeg is bumped deliberately. */
+/* #undef JPEG_SUPPORT */
 
 /* Support JBIG compression (requires JBIG-KIT library) */
 /* #undef JBIG_SUPPORT */

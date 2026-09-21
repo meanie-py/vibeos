@@ -18,6 +18,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config.h"
+#include "wine/port.h"
+
 #include <stdarg.h>
 #include <string.h>
 
@@ -26,6 +29,7 @@
 #include "winuser.h"
 #include "winreg.h"
 #include "shlwapi.h"
+#include "wine/unicode.h"
 #include "wine/debug.h"
 #include "resource.h"
 
@@ -57,7 +61,7 @@ static INT_PTR CALLBACK SHDlgProcEx(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM 
 {
   DLGDATAEX *d = (DLGDATAEX *)GetWindowLongPtrW(hDlg, DWLP_USER);
 
-  TRACE("(%p,%u,%Id,%Id) data %p\n", hDlg, uMsg, wParam, lParam, d);
+  TRACE("(%p,%u,%ld,%ld) data %p\n", hDlg, uMsg, wParam, lParam, d);
 
   switch (uMsg)
   {
@@ -181,14 +185,14 @@ typedef struct tagDLGDATA
 /* Dialogue procedure for shlwapi message boxes */
 static INT_PTR CALLBACK SHDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-  TRACE("(%p,%u,%Id,%Id)\n", hDlg, uMsg, wParam, lParam);
+  TRACE("(%p,%u,%ld,%ld)\n", hDlg, uMsg, wParam, lParam);
 
   switch (uMsg)
   {
   case WM_INITDIALOG:
   {
     DLGDATA *d = (DLGDATA *)lParam;
-    TRACE("WM_INITDIALOG: %p, %s,%s,%ld\n", hDlg, debugstr_w(d->lpszTitle),
+    TRACE("WM_INITDIALOG: %p, %s,%s,%d\n", hDlg, debugstr_w(d->lpszTitle),
           debugstr_w(d->lpszText), d->dwType);
 
     SetWindowTextW(hDlg, d->lpszTitle);
@@ -258,7 +262,7 @@ INT_PTR WINAPI SHMessageBoxCheckA(HWND hWnd, LPCSTR lpszText, LPCSTR lpszTitle,
   if (lpszText)
   {
     iLen = MultiByteToWideChar(CP_ACP, 0, lpszText, -1, NULL, 0);
-    szTextBuff = malloc(iLen * sizeof(WCHAR));
+    szTextBuff = HeapAlloc(GetProcessHeap(), 0, iLen * sizeof(WCHAR));
     MultiByteToWideChar(CP_ACP, 0, lpszText, -1, szTextBuff, iLen);
   }
 
@@ -266,7 +270,7 @@ INT_PTR WINAPI SHMessageBoxCheckA(HWND hWnd, LPCSTR lpszText, LPCSTR lpszTitle,
 
   iRetVal = SHMessageBoxCheckW(hWnd, szTextBuff, lpszTitle ? szTitleBuff : NULL,
                                dwType, iRet, szIdBuff);
-  free(szTextBuff);
+  HeapFree(GetProcessHeap(), 0, szTextBuff);
   return iRetVal;
 }
 

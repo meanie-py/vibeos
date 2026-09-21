@@ -1,7 +1,10 @@
 
 start_module_group(rostests)
 
-if(NOT MSVC)
+# upstream added a linker script here to give the tests their own section. Our
+# llvm-mingw lld rejects it outright ("lld: error: unknown argument: -T") on every
+# rostests link, so it is off for Clang. Nothing depends on the section today.
+if(NOT MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_link_options("-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/test-section.lds")
 endif()
 

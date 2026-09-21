@@ -27,7 +27,7 @@ list(APPEND SOURCE
     tif_getimage.c
     tif_hash_set.c
     #tif_jbig.c
-    tif_jpeg.c
+    #tif_jpeg.c   # off with JPEG_SUPPORT — see tiffconf.h
     tif_luv.c
     #tif_lzma.c
     tif_lzw.c

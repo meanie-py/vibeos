@@ -191,10 +191,3 @@ inet_ntop6(const u_char *src, char *dst, size_t size)
 }
 #endif
 
-/******************************************************************
- *              DllCanUnloadNow (winhttp.@)
- */
-HRESULT WINAPI DllCanUnloadNow(void)
-{
-    return S_FALSE;
-}

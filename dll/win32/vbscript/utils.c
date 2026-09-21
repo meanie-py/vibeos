@@ -28,7 +28,6 @@ typedef struct {
     LONG ref;
 
     SAFEARRAY *sa;
-    BOOL owned;
     ULONG i, size;
 } safearray_iter;
 
@@ -63,7 +62,7 @@ static ULONG WINAPI safearray_iter_IEnumVARIANT_AddRef(IEnumVARIANT *iface)
     safearray_iter *This = impl_from_IEnumVARIANT(iface);
     LONG ref = InterlockedIncrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", This, ref);
+    TRACE("(%p) ref=%d\n", This, ref);
 
     return ref;
 }
@@ -73,15 +72,12 @@ static ULONG WINAPI safearray_iter_IEnumVARIANT_Release(IEnumVARIANT *iface)
     safearray_iter *This = impl_from_IEnumVARIANT(iface);
     LONG ref = InterlockedDecrement(&This->ref);
 
-    TRACE("(%p) ref=%ld\n", iface, ref);
+    TRACE("(%p) ref=%d\n", iface, ref);
 
     if(!ref) {
-        if(This->sa) {
+        if(This->sa)
             SafeArrayUnlock(This->sa);
-            if(This->owned)
-                SafeArrayDestroy(This->sa);
-	}
-        free(This);
+        heap_free(This);
     }
 
     return ref;
@@ -94,7 +90,7 @@ static HRESULT WINAPI safearray_iter_IEnumVARIANT_Next(IEnumVARIANT *iface,
     HRESULT hres;
     VARIANT *v;
 
-    TRACE("(%p)->(%lu %p %p)\n", This, celt, rgVar, pCeltFetched);
+    TRACE("(%p)->(%u %p %p)\n", This, celt, rgVar, pCeltFetched);
 
     if(celt != 1) {
         FIXME("celt != 1\n");
@@ -164,7 +160,7 @@ static ULONG get_safearray_size(SAFEARRAY *sa)
     return ret;
 }
 
-HRESULT create_safearray_iter(SAFEARRAY *sa, BOOL owned, IEnumVARIANT **ev)
+HRESULT create_safearray_iter(SAFEARRAY *sa, IEnumVARIANT **ev)
 {
     safearray_iter *iter;
     HRESULT hres;
@@ -174,14 +170,14 @@ HRESULT create_safearray_iter(SAFEARRAY *sa, BOOL owned, IEnumVARIANT **ev)
         return E_NOTIMPL;
     }
 
-    iter = malloc(sizeof(*iter));
+    iter = heap_alloc(sizeof(*iter));
     if(!iter)
         return E_OUTOFMEMORY;
 
     if(sa) {
         hres = SafeArrayLock(sa);
         if(FAILED(hres)) {
-            free(iter);
+            heap_free(iter);
             return hres;
         }
     }
@@ -189,7 +185,6 @@ HRESULT create_safearray_iter(SAFEARRAY *sa, BOOL owned, IEnumVARIANT **ev)
     iter->IEnumVARIANT_iface.lpVtbl = &safearray_iter_EnumVARIANTVtbl;
     iter->ref = 1;
     iter->sa = sa;
-    iter->owned = owned;
     iter->i = 0;
     iter->size = get_safearray_size(sa);
 

@@ -1,5 +1,10 @@
 
-include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/libwin-iconv)
+include_directories(
+    ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/libwin-iconv
+    # our include/libxml/xmlversion.h still defines LIBXML_ZLIB_ENABLED, so tree.c
+    # includes <zlib.h>; upstream dropped this line in the same commit that made the
+    # library STATIC. Keep it until the zlib switch is turned off deliberately.
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
 
 add_definitions(
     -D__MINGW32__

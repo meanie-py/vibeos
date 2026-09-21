@@ -23,11 +23,19 @@ add_subdirectory(cabinet)
 add_subdirectory(cards)
 add_subdirectory(cfgmgr32)
 add_subdirectory(clusapi)
-add_subdirectory(combase)
+# upstream's COM/shell restructure (combase + coml2 + shcore, with uiautomationcore
+# on top of them) is DECLINED for now, and declined consistently: ole32 stays
+# monolithic here, kernelbase stays our minimal Vista shim, and shlwapi keeps its own
+# exports instead of forwarding to kernelbase_ros. combase.c externs
+# Ole32DllGetClassObject and DestroyRunningObjectTable from ole32 — names that only
+# exist once ole32 has been split — and our ole32 moniker/oleproxy are Rust, which
+# does not export them. Half-adopting the split is how you get a tree that links and
+# then misbehaves. Sources are on disk; see upstream-sync-merge-decisions.md.
+#add_subdirectory(combase)
 add_subdirectory(comcat)
 add_subdirectory(comctl32)
 add_subdirectory(comdlg32)
-add_subdirectory(coml2)
+#add_subdirectory(coml2)
 add_subdirectory(compstui)
 add_subdirectory(credui)
 if(ARCH STREQUAL "i386")
@@ -193,7 +201,7 @@ add_subdirectory(setupapi)
 add_subdirectory(sfc)
 add_subdirectory(sfc_os)
 add_subdirectory(sfcfiles)
-add_subdirectory(shcore)
+#add_subdirectory(shcore)
 add_subdirectory(shdoclc)
 add_subdirectory(shdocvw)
 add_subdirectory(shell32)
@@ -223,7 +231,7 @@ add_subdirectory(ucdfs)
 add_subdirectory(ucrtbase)
 add_subdirectory(ufat)
 add_subdirectory(ufatx)
-add_subdirectory(uiautomationcore)
+#add_subdirectory(uiautomationcore)
 # untfs — declined: NTFS filesystem tooling (links ntfslib), and the pruned
 # ntfs filesystem tree means dll/win32/untfs isn't even checked out here.
 add_subdirectory(updspapi)

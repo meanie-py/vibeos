@@ -205,6 +205,86 @@ its own `__readx18`/`__writex18` family.
 
 ---
 
+---
+
+## Making it build: twenty rounds, nine shapes
+
+The merge committing is not the merge working. Every failure below was the same shape —
+**upstream restructured something, half of it auto-merged, and the other half was ours.**
+Recorded because the next sync will produce the same nine.
+
+| # | Shape | Instances |
+|---|---|---|
+| 1 | **A macro changed signature, we kept the caller.** | `add_link(NAME … PATH …)` became `add_link(name path …)`; only one call site, in `boot/bootdata`, and cmake reported it as a duplicate custom rule on `NAME.lnk`. |
+| 2 | **A source list took theirs while the sources stayed ours.** | `sdk/lib/crt/CMakeLists.txt` merged to upstream's, dropping `include()` of conio, direct, mbstring, process, stdio, time, wine and `crt.cmake` — after I had restored all 281 source files. Restoring the tree wholesale was the only coherent state. Same for `minihal`, which lost `add_asm_files(... systimer.S)` and left a target with no compilable source at all (*"CMake can not determine linker language"*). |
+| 3 | **A tree-wide define disappeared.** | Upstream's "Stop using non-conforming swprintf / vswprintf" removed `-D_CRT_NON_CONFORMING_SWPRINTFS` from the top-level `CMakeLists.txt` and fixed every call site. **The same commit also dropped the `__cplusplus` arm of the guard in `<stdio.h>`**, so the 2-arg `swprintf` vanished for C++ too — which is what broke hdaudbus. Resolution: take the change, and scope the old declaration to the two TUs that *implement* the count-less form (`printf/swprintf.c`, `printf/vswprintf.c`) with `set_source_files_properties`. |
+| 4 | **A header moved to `target_include_directories(INTERFACE)`.** | `evtlib.h`, `arbiter.h`, `infros.h`, `skiplist.h`, `concfg.h`. Upstream deleted each consumer's own `include_directories` line in the same commit. The consumers merged; the publishers did not, because ours are Rust-cohab rewrites. Five separate "file not found" failures with one cause. |
+| 5 | **A declined restructure had a piece we actually needed.** | `crtheap` (six heap shims that upstream's new shcore and the auto-merged shlwapi link) and `vcstartup` (`ucrtbase` links it, and cmake fails at *configure* without it). Both live inside the CRT restructure I declined; both are wired up, with the reason written at the point of decision. |
+| 6 | **CMake de-duplicated a repeated flag.** | Upstream added a second `-include clsid.h` to urlmon. CMake collapses repeated `COMPILE_OPTIONS`, so the flag was dropped and its path became a second *input* file: `clang: error: cannot specify -o when generating multiple output files`, on **every TU in the module**. |
+| 7 | **Vendored trees went Frankenstein.** | Conflicts resolved to ours, clean hunks took theirs. libjpeg ended up with v10 sources against 9f headers (`JPEG_DATA_PRECISION` undeclared); mbedTLS got 2.x files in a 3.6.7 tree; libtiff 4.7.1 turned `JPEG_SUPPORT` on against a libjpeg whose `.spec` exports none of the `jpeg_*` surface. **A vendored tree has to be coherent or it is neither version.** |
+| 8 | **A flipped module's `.spec` gained exports the Rust does not implement.** | ~230 of them. The `.spec` drives the `.def`, so the export goes live the moment the merge lands and the link fails with `<root>: undefined symbol`. A pre-flight for this is in the next section. |
+| 9 | **A declined restructure arrived anyway through a third door.** | `combase` came in via `dll/win32/CMakeLists.txt` even though I had declined the COM split at ole32, kernelbase and shlwapi. It externs `Ole32DllGetClassObject` and `DestroyRunningObjectTable` from ole32 — names that only exist *after* the split — and our ole32 moniker/oleproxy are Rust, which does not export them. **I nearly papered over it by adding two lines to `ole32.spec`: it would have linked and then misbehaved.** Declined consistently instead: combase, coml2, shcore and uiautomationcore are all commented out in `dll/win32/CMakeLists.txt`. |
+
+Two more, arch-specific, both worth knowing:
+
+- **i386 only.** `@ stub NAME` does not carry an argument size, so on i386 it produces an
+  undecorated export and every stdcall caller misses `_NAME@n`. Stubbing an export is not a
+  neutral act there. That is what forced `NhGetGuidFromInterfaceName` to be *implemented*.
+- **arm64 only.** `advpack/reg.c`, `bluetoothapis/main.c` and `wintrust/{softpub,crypt}.c`
+  call `malloc`/`free` with no `<stdlib.h>`; it arrives through another header on i386 and
+  amd64 but not on aarch64. Four files, one `#include` each.
+
+### What we implemented rather than deferred
+
+Three functions, all cases of upstream adding something to a file we had translated:
+
+- **`MprConfigServerConnect`** (`mprapi-rust`) — arrived as a *link error*, not a diff: the
+  spec drives the `.def`, so the export went live the instant the merge landed.
+- **`GetThreadDescription`** (`kernel32-vista-rust`) — upstream moved `SetThreadDescription`
+  into a new `ThreadDescription.c` and added its counterpart. Building their C would have
+  silently taken their `Set` over our Rust one, so it is ported instead. The retry loop is
+  load-bearing: a concurrent `SetThreadDescription` can grow the name between the sizing
+  query and the fetch.
+- **`CompareStringOrdinal`** (`kernel32-vista-rust`) — upstream calls
+  `RtlCompareUnicodeStrings`, which is `-version=0x600+` in `ntdll.spec` while we build ntdll
+  at 0x502, so the importlib does not carry it. Comparison inlined rather than widening
+  ntdll's export surface.
+- **`NhGetGuidFromInterfaceName`** (`iphlpapi-rust`) — see the i386 note above. Upstream's
+  `netsh interface ip` build-out (`ifmon/ip.c`, +2409 lines) depends on it.
+
+### Pre-flights worth keeping
+
+Both are cheap and both found real things:
+
+```bash
+# 1. sources a CMakeLists still names that the merge deleted or renamed away
+git diff HEAD^1 HEAD --name-status --diff-filter=DR | awk '{print $2}' | sort -u > /tmp/gone
+#    ...resolve every .c/.cpp/.S in every CMakeLists/*.cmake against it. Also .rc resources.
+#    Came back clean at commit time: the rename hazard never fired.
+
+# 2. added .spec exports with no implementation on our side
+#    for each changed *.spec: parse '+@ stdcall|cdecl|...' lines that are NOT `stub` and NOT
+#    forwarded, then grep the module's own sources and its *-rust crate for each name.
+```
+
+The second one is the higher-value of the two and wants to become a real tool — it predicted
+the netcfgx, ole32, shlwapi, advapi32 and ntdll_vista link failures before they happened.
+Note its two false-positive classes: `@ stub` entries (no implementation is the point) and
+forwarded entries (`... ) otherdll.Name`).
+
+### One process note
+
+`tools/cohab_census.py --write` was run **mid-merge**, before the build was fixed, which
+recorded upstream's transient state as the baseline. Two entries then read as REMOVED
+(`#float/fpecode.c`, `#string/is_wctype.c`) purely because restoring `sdk/lib/crt` put them
+back to their pre-merge configuration. Verified against `HEAD^1:tools/cohab-census.txt`,
+which has neither. **Only `--write` a state someone has decided on.**
+
+Unrelated observation while checking those two: `__fpecode` has a Rust twin in
+`msvcrt-crt-rust/src/msvcrt/math.rs` *and* `float/fpecode.c` is live in our crt. That is the
+pre-merge status quo, not something this merge changed, and I have not verified which one
+actually wins at link — recorded as something to look at, not as a finding.
+
 ## Owed, in rough priority order
 
 1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation

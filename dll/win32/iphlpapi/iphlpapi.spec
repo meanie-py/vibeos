@@ -133,6 +133,8 @@
 @ stub IsLocalAddress
 @ stub NTPTimeToNTFileTime
 @ stub NTTimeToNTPTime
+# Ported to iphlpapi-rust by the 2026-09-20 upstream sync (see iphlpapi_main.rs).
+# Upstream implemented it after our fork and their new netsh/ifmon call it.
 @ stdcall NhGetGuidFromInterfaceName(wstr ptr long long)
 @ stdcall NhGetInterfaceNameFromDeviceGuid(ptr ptr ptr long long)
 @ stdcall NhGetInterfaceNameFromGuid(ptr ptr ptr long long)

@@ -92,11 +92,7 @@ typedef struct _DHCPAPI_PARAMS
     ULONG  Flags;
     ULONG  OptionId;
     BOOL   IsVendor;
-#if defined(__midl) || defined(__WIDL__)
-    [size_is(nBytesData), unique] LPBYTE Data;
-#else
-    LPBYTE Data;
-#endif
+    BYTE   *Data;
     DWORD  nBytesData;
 } DHCPAPI_PARAMS, *PDHCPAPI_PARAMS, *LPDHCPAPI_PARAMS;
 
@@ -105,25 +101,15 @@ typedef struct _DHCPAPI_PARAMS DHCPCAPI_PARAMS, *PDHCPCAPI_PARAMS, *LPDHCPCAPI_P
 typedef struct _DHCPCAPI_PARAMS_ARARAY
 {
     ULONG             nParams;
-#if defined(__midl) || defined(__WIDL__)
-    [size_is(nParams), unique] LPDHCPCAPI_PARAMS Params;
-#else
     LPDHCPCAPI_PARAMS Params;
-#endif
 } DHCPCAPI_PARAMS_ARRAY, *PDHCPCAPI_PARAMS_ARRAY, *LPDHCPCAPI_PARAMS_ARRAY;
 
 typedef struct _DHCPCAPI_CLASSID
 {
     ULONG  Flags;
-#if defined(__midl) || defined(__WIDL__)
-    [size_is(nBytesData), unique] LPBYTE Data;
-#else
-    LPBYTE Data;
-#endif
+    BYTE   *Data;
     ULONG  nBytesData;
 } DHCPCAPI_CLASSID, *PDHCPCAPI_CLASSID, *LPDHCPCAPI_CLASSID;
-
-#define DHCPCAPI_REGISTER_HANDLE_EVENT 0x1
 
 #define DHCPCAPI_REQUEST_PERSISTENT   0x1
 #define DHCPCAPI_REQUEST_SYNCHRONOUS  0x2
@@ -131,7 +117,6 @@ typedef struct _DHCPCAPI_CLASSID
 #define DHCPCAPI_REQUEST_CANCEL       0x8
 #define DHCPCAPI_REQUEST_MASK         0xf
 
-#if !defined(__midl) && !defined(__WIDL__)
 void WINAPI DhcpCApiCleanup(void);
 DWORD WINAPI DhcpCApiInitialize(DWORD *);
 DWORD WINAPI DhcpDeRegisterParamChange(DWORD, void *, void *);
@@ -140,6 +125,5 @@ DWORD WINAPI DhcpRemoveDNSRegistrations(VOID);
 DWORD WINAPI DhcpRequestParams(DWORD, void *, WCHAR *, DHCPCAPI_CLASSID *, DHCPCAPI_PARAMS_ARRAY,
                                DHCPCAPI_PARAMS_ARRAY, BYTE *, DWORD *, WCHAR *);
 DWORD WINAPI DhcpUndoRequestParams(DWORD, LPVOID, LPWSTR, LPWSTR);
-#endif
 
 #endif

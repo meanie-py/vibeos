@@ -8,6 +8,9 @@ if(CMAKE_CROSSCOMPILING)
     # ── kernel: drop evtlib.c, link libevtlib_rust.a ────────────────────────
     add_library(evtlib evtlib_rust_stub.c)
     add_dependencies(evtlib xdk)
+    # upstream publishes evtlib.h through the target (its consumers dropped their
+    # own include_directories line in the same commit). Mirror that on both branches.
+    target_include_directories(evtlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
     set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
     rust_storage_target(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/evtlib-rust-target" evtlib-rust)
@@ -49,4 +52,5 @@ else()
     # ── host-tools (non-cross): keep the C build ────────────────────────────
     add_library(evtlib evtlib.c)
     add_dependencies(evtlib xdk)
+    target_include_directories(evtlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()

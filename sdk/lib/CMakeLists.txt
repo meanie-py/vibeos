@@ -15,11 +15,16 @@ add_subdirectory(strmbase)
 # upstream's CRT restructure ("[CRT] Remove obsolete CRT files") deleted our
 # live sdk/lib/crt/ (281 files - libcntpr, every driver, and our Rust-backed
 # msvcrt link against it) and replaced it with crtheap/llvm-compat/
-# ansi_sync_hacks. Declined: our crt below stays authoritative. Those three
-# trees DID land on disk in this merge but are deliberately NOT wired up here
-# (building them beside our crt is a duplicate-symbol hazard) - don't "fix"
-# this by adding them back. (vcstartup is UNRELATED to this restructure -
-# upstream split it out of vcruntime, see below - and IS wired up.)
+# ansi_sync_hacks. Declined: our crt below stays authoritative. llvm-compat and
+# ansi_sync_hacks DID land on disk in this merge but are deliberately NOT wired
+# up here (building them beside our crt is a duplicate-symbol hazard) - don't
+# "fix" this by adding them back.
+#
+# TWO exceptions, both wired up because a target here actually links them:
+#   * crtheap - six heap shims (malloc/free/calloc/realloc/_msize/_recalloc).
+#     Upstream's new shcore.dll links it, and the auto-merged shlwapi does too.
+#   * vcstartup - UNRELATED to the restructure; upstream split it out of
+#     vcruntime and dll/win32/ucrtbase links it. See below.
 add_subdirectory(apisets)
 add_subdirectory(comsupp)
 add_subdirectory(conutils)
@@ -27,6 +32,7 @@ add_subdirectory(cportlib)
 add_subdirectory(crt)
 add_subdirectory(cryptlib)
 add_subdirectory(cpprt)
+add_subdirectory(crtheap)
 
 if(MSVC)
     add_subdirectory(RunTmChk)

@@ -48,6 +48,9 @@ list(APPEND SOURCE
     precomp.h)
 
 add_library(concfg ${SOURCE})
+# upstream publishes concfg.h through the target; its consumers dropped their own
+# include_directories line in the same commit, so this has to be here now.
+target_include_directories(concfg INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 # The Rust-cohab stub is self-contained — keep the PCH out of it.
 set_source_files_properties(concfg_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 add_dependencies(concfg concfg_rust_lib xdk)

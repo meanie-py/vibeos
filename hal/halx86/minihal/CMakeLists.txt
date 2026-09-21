@@ -30,7 +30,11 @@ list(APPEND MINI_HAL_SOURCE
 # libhal_rust_mini.a — the only C contribution to mini_hal is the
 # ../generic/systimer.S assembly file.
 
-add_library(mini_hal ${MINI_HAL_SOURCE})
+# systimer.S is the ONLY C-side contribution left to mini_hal; without it the target
+# has no compilable source and cmake cannot even pick a linker language. Upstream
+# restructured minihal and dropped this line in the merge.
+add_asm_files(mini_hal_asm ../generic/systimer.S)
+add_library(mini_hal ${MINI_HAL_SOURCE} ${mini_hal_asm})
 add_pch(mini_hal ../include/hal.h MINI_HAL_SOURCE)
 target_compile_definitions(mini_hal PRIVATE _BLDR_ _NTSYSTEM_)
 add_dependencies(mini_hal psdk bugcodes asm)

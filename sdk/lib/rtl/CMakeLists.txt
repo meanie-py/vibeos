@@ -62,7 +62,11 @@ list(APPEND SOURCE
     # helpers for the arbiter/pcix drivers): RtlCmDecodeMemIoResource,
     # RtlIoDecodeMemIoResource, RtlCmEncodeMemIoResource, RtlIoEncodeMemIoResource,
     # RtlFindClosestEncodableLength. No collision with any Rust twin (grepped) —
-    # taken active below.
+    # taken active below. NOTE: this only reaches consumers that link the cmake
+    # `rtl` target. ntoskrnl does NOT — it dropped librtl.a in 2026-06-20 and gets
+    # the whole sdk/lib/rtl/*.c surface from rtl-rust — so ntoskrnl.spec does not
+    # export the Rtl{Cm,Io}{En,De}codeMemIoResource family. Porting memres.c to
+    # rtl-rust is what would close that; tracked in upstream-sync-merge-decisions.md.
     memres.c
     # memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
     # message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c

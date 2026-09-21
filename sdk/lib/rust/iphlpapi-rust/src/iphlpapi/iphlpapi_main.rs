@@ -3186,6 +3186,233 @@ pub unsafe extern "system" fn NhGetInterfaceNameFromGuid(
 
     result
 }
+// ---- NhGetGuidFromInterfaceName (added by the 2026-09-20 upstream sync) ----
+//
+// Upstream implemented this after our fork (iphlpapi_main.c) and exported it from
+// iphlpapi.spec; their new `netsh interface ip` build-out (ifmon/ip.c, +2409 lines) and
+// netsh.exe both call it, so on i386 the merge landed two modules that could not link.
+// It is the inverse of NhGetInterfaceNameFromGuid above: walk the network-adapter class
+// key, read each adapter's Connection\Name, and return the adapter GUID whose friendly
+// name matches.
+//
+// Deliberately hand-parses the `{8-4-4-4-12}` subkey name instead of calling
+// RtlGUIDFromString: that would pull UNICODE_STRING plumbing into this crate for one
+// call site, and the subkey format here is fixed by the registry layout.
+const NETWORK_CLASS_KEY: &[u16] = &[
+    b'S' as u16, b'Y' as u16, b'S' as u16, b'T' as u16, b'E' as u16, b'M' as u16, b'\\' as u16,
+    b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16,
+    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+    b'S' as u16, b'e' as u16, b't' as u16, b'\\' as u16,
+    b'C' as u16, b'o' as u16, b'n' as u16, b't' as u16, b'r' as u16, b'o' as u16, b'l' as u16,
+    b'\\' as u16,
+    b'N' as u16, b'e' as u16, b't' as u16, b'w' as u16, b'o' as u16, b'r' as u16, b'k' as u16,
+    b'\\' as u16,
+    b'{' as u16, b'4' as u16, b'D' as u16, b'3' as u16, b'6' as u16, b'E' as u16, b'9' as u16,
+    b'7' as u16, b'2' as u16, b'-' as u16, b'E' as u16, b'3' as u16, b'2' as u16, b'5' as u16,
+    b'-' as u16, b'1' as u16, b'1' as u16, b'C' as u16, b'E' as u16, b'-' as u16,
+    b'B' as u16, b'F' as u16, b'C' as u16, b'1' as u16, b'-' as u16,
+    b'0' as u16, b'8' as u16, b'0' as u16, b'0' as u16, b'2' as u16, b'B' as u16,
+    b'E' as u16, b'1' as u16, b'0' as u16, b'3' as u16, b'1' as u16, b'8' as u16,
+    b'}' as u16, 0,
+];
+const CONNECTION_SUBKEY: &[u16] = &[
+    b'C' as u16, b'o' as u16, b'n' as u16, b'n' as u16, b'e' as u16, b'c' as u16,
+    b't' as u16, b'i' as u16, b'o' as u16, b'n' as u16, 0,
+];
+const NAME_VALUE: &[u16] = &[b'N' as u16, b'a' as u16, b'm' as u16, b'e' as u16, 0];
+
+#[inline]
+fn ascii_upper_u16(c: u16) -> u16 {
+    if (b'a' as u16..=b'z' as u16).contains(&c) { c - 32 } else { c }
+}
+
+/// Case-insensitive compare of the first `n` code units. ASCII folding only, which is what
+/// an adapter friendly name comparison needs and what keeps this free of NLS dependencies.
+unsafe fn wcsnicmp_ascii(a: *const u16, b: *const u16, n: usize) -> bool {
+    for i in 0..n {
+        let (ca, cb) = (*a.add(i), *b.add(i));
+        if ca == 0 || cb == 0 {
+            return ca == cb;
+        }
+        if ascii_upper_u16(ca) != ascii_upper_u16(cb) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Parse one hex digit; None on anything else.
+#[inline]
+fn hex_val(c: u16) -> Option<u32> {
+    match c {
+        c if (b'0' as u16..=b'9' as u16).contains(&c) => Some((c - b'0' as u16) as u32),
+        c if (b'a' as u16..=b'f' as u16).contains(&c) => Some((c - b'a' as u16 + 10) as u32),
+        c if (b'A' as u16..=b'F' as u16).contains(&c) => Some((c - b'A' as u16 + 10) as u32),
+        _ => None,
+    }
+}
+
+/// `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}` -> GUID. The braces are required, as they are
+/// how the subkey names are actually written.
+unsafe fn guid_from_braced(s: *const u16, out: *mut GUID) -> bool {
+    let mut hex = [0u32; 32];
+    let layout: [usize; 5] = [8, 4, 4, 4, 12];
+    let mut i = 0usize; // index into s
+    let mut h = 0usize; // index into hex
+    if *s.add(i) != b'{' as u16 {
+        return false;
+    }
+    i += 1;
+    for (g, &len) in layout.iter().enumerate() {
+        for _ in 0..len {
+            match hex_val(*s.add(i)) {
+                Some(v) => { hex[h] = v; h += 1; i += 1; }
+                None => return false,
+            }
+        }
+        if g < 4 {
+            if *s.add(i) != b'-' as u16 { return false; }
+            i += 1;
+        }
+    }
+    if *s.add(i) != b'}' as u16 || *s.add(i + 1) != 0 {
+        return false;
+    }
+    let nib = |from: usize, count: usize| -> u32 {
+        let mut v = 0u32;
+        for k in 0..count { v = (v << 4) | hex[from + k]; }
+        v
+    };
+    (*out).Data1 = nib(0, 8);
+    (*out).Data2 = nib(8, 4) as u16;
+    (*out).Data3 = nib(12, 4) as u16;
+    for b in 0..8usize {
+        (*out).Data4[b] = nib(16 + b * 2, 2) as u8;
+    }
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NhGetGuidFromInterfaceName(
+    pInterfaceName: PWSTR,
+    pInterfaceGUID: *mut GUID,
+    _dwUnknown3: u32,
+    _dwUnknown4: u32,
+) -> u32 {
+    const HKEY_LOCAL_MACHINE_L: HKEY = 0x80000002u32 as HKEY;
+
+    if pInterfaceName.is_null() || pInterfaceGUID.is_null() {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    let mut h_adapters: HKEY = core::ptr::null_mut();
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE_L,
+        NETWORK_CLASS_KEY.as_ptr(),
+        0,
+        KEY_READ,
+        core::ptr::addr_of_mut!(h_adapters),
+    ) as u32
+        != ERROR_SUCCESS
+    {
+        return ERROR_NOT_FOUND;
+    }
+
+    let mut found = false;
+    let mut index: u32 = 0;
+    let mut guid_buf: [u16; 45] = [0; 45];
+
+    loop {
+        let mut name_size: u32 = guid_buf.len() as u32;
+        if RegEnumKeyExW(
+            h_adapters,
+            index,
+            guid_buf.as_mut_ptr(),
+            core::ptr::addr_of_mut!(name_size),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) as u32
+            != ERROR_SUCCESS
+        {
+            break;
+        }
+        index += 1;
+
+        let mut h_adapter: HKEY = core::ptr::null_mut();
+        if RegOpenKeyExW(
+            h_adapters,
+            guid_buf.as_ptr(),
+            0,
+            KEY_READ,
+            core::ptr::addr_of_mut!(h_adapter),
+        ) as u32
+            != ERROR_SUCCESS
+        {
+            continue;
+        }
+
+        let mut h_conn: HKEY = core::ptr::null_mut();
+        if RegOpenKeyExW(
+            h_adapter,
+            CONNECTION_SUBKEY.as_ptr(),
+            0,
+            KEY_READ,
+            core::ptr::addr_of_mut!(h_conn),
+        ) as u32
+            == ERROR_SUCCESS
+        {
+            let mut value_size: u32 = 0;
+            if RegQueryValueExW(
+                h_conn,
+                NAME_VALUE.as_ptr(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::addr_of_mut!(value_size),
+            ) as u32
+                == ERROR_SUCCESS
+                && value_size >= core::mem::size_of::<u16>() as u32
+            {
+                let buf = HeapAlloc(GetProcessHeap(), 0, value_size as _) as *mut u16;
+                if !buf.is_null() {
+                    if RegQueryValueExW(
+                        h_conn,
+                        NAME_VALUE.as_ptr(),
+                        core::ptr::null_mut(),
+                        core::ptr::null_mut(),
+                        buf as *mut u8,
+                        core::ptr::addr_of_mut!(value_size),
+                    ) as u32
+                        == ERROR_SUCCESS
+                    {
+                        // NUL-terminate defensively: REG_SZ is not guaranteed to be.
+                        let last = (value_size as usize / core::mem::size_of::<u16>())
+                            .saturating_sub(1);
+                        *buf.add(last) = 0;
+                        let n = wcslen(buf);
+                        if n != 0 && wcsnicmp_ascii(pInterfaceName, buf, n) {
+                            found = guid_from_braced(guid_buf.as_ptr(), pInterfaceGUID);
+                        }
+                    }
+                    HeapFree(GetProcessHeap(), 0, buf as *mut c_void);
+                }
+            }
+            RegCloseKey(h_conn);
+        }
+        RegCloseKey(h_adapter);
+
+        if found {
+            break;
+        }
+    }
+
+    RegCloseKey(h_adapters);
+
+    if found { ERROR_SUCCESS } else { ERROR_NOT_FOUND }
+}
+
 // ---- 79_AllocateAndGetTcpTableFromStack.rs ----
 #[no_mangle]
 pub unsafe extern "system" fn AllocateAndGetTcpTableFromStack(

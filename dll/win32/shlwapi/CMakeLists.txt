@@ -1,14 +1,9 @@
 
 project(SHELL)
 
-remove_definitions(-D_WIN32_WINNT=0x502)
-add_definitions(-D_WIN32_WINNT=0x600)
-
 add_definitions(
     -D__WINESRC__
-    -D_SHLWAPI_
-    -Dwcsicmp=strcmpiW
-)
+    -D_SHLWAPI_)
 
 spec2def(shlwapi.dll shlwapi.spec ADD_IMPORTLIB)
 
@@ -16,7 +11,6 @@ list(APPEND SOURCE
     appcompat.c
     clist.c
     istream.c
-    kernelbase.c
     msgbox.c
     ordinal.c
     path.c
@@ -29,14 +23,20 @@ list(APPEND SOURCE
     thread.c
     url.c)
 
+# New upstream TUs taken with this merge: zonechk.c implements ZoneCheckUrlEx* for real
+# (our ordinal.c only had a guessed-prototype FIXME stub), and policy.cpp / querysrc.cpp
+# supply SKGetValueW/SKSetValueW/SHWindowsPolicyEx/QuerySourceCreateFromKey, which the
+# merged browseui, shdocvw, shellbars and shelldesktop now call. The rest of upstream's
+# shlwapi change — forwarding ~60 exports to the declined wine-kernelbase/shcore split —
+# is NOT taken, so kernelbase.c stays out and the .spec stays ours.
 list(APPEND PCH_SKIP_SOURCE
-    assoc.c
     policy.cpp
-    propbag.cpp
     querysrc.cpp
+    zonechk.c
+    assoc.c
+    propbag.cpp
     utils.cpp
     wsprintf.c
-    zonechk.c
     ${CMAKE_CURRENT_BINARY_DIR}/shlwapi_stubs.c)
 
 add_library(shlwapi MODULE
@@ -45,15 +45,6 @@ add_library(shlwapi MODULE
     $<TARGET_OBJECTS:shlwapi_autocomp>
     shlwapi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/shlwapi.def)
-
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    # FIXME: This is some nonsense that triggers GCC 13+ warnings
-    target_compile_options(shlwapi PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-overloaded-virtual>")
-endif()
-
-if(MSVC)
-    target_compile_options(shlwapi PRIVATE /wd4267) # warning C4267: 'function': conversion from 'size_t' to 'DWORD', possible loss of data
-endif()
 
 # our C++ atlbase.h conflicts with the one from wine, so only use wine includes for C
 # Unfortunately, we can't use different includes for C & C++ in VS generator, so use an object library to achieve this
@@ -68,11 +59,8 @@ target_compile_options(shlwapi_autocomp PRIVATE $<TARGET_PROPERTY:shlwapi,COMPIL
 add_dependencies(shlwapi_autocomp psdk)
 
 set_module_type(shlwapi win32dll UNICODE)
-target_link_libraries(shlwapi uuid wine crtheap cppstl)
-if(DLL_EXPORT_VERSION LESS 0x600)
-    target_link_libraries(shlwapi evalcmd)
-endif()
+target_link_libraries(shlwapi uuid wine cpprt)
 add_delay_importlibs(shlwapi userenv oleaut32 ole32 comctl32 comdlg32 mpr mlang urlmon shell32 winmm version)
-add_importlibs(shlwapi shcore user32 gdi32 advapi32 wininet msvcrt kernelbase kernel32 kernel32_vista ntdll)
-#add_pch(shlwapi precomp.h "${PCH_SKIP_SOURCE}")
+add_importlibs(shlwapi user32 gdi32 advapi32 wininet msvcrt kernel32 ntdll)
+add_pch(shlwapi precomp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET shlwapi DESTINATION reactos/system32 FOR all)

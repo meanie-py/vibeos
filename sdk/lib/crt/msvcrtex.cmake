@@ -8,9 +8,12 @@ list(APPEND MSVCRTEX_SOURCE
     misc/isblank.c
     misc/iswblank.c
     misc/ofmt_stub.c
-    stdio/acrt_iob_func.c
+    # recalloc.c is NEW upstream (CORE-20596): it defines recalloc AND the
+    # __imp__recalloc / _imp___recalloc thunk variable, which is what satisfies the
+    # `__declspec(dllimport) _recalloc` that <malloc.h> gives every caller. urlmon's
+    # sec_mgr.c started calling it in this merge.
     recalloc.c
-    wcscpy_s.c)
+    stdio/acrt_iob_func.c)
 
 if(DLL_EXPORT_VERSION LESS 0x600)
     list(APPEND MSVCRTEX_SOURCE
