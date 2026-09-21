@@ -81,10 +81,7 @@ add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/livecd/unattend.inf DESTINATION rea
 
 # LiveCD shortcuts
 macro(add_livecd_shortcut name app dest)
-    # add_link() changed signature upstream (name/path are positional now, CMD_LINE_ARGS
-    # became CMDLINE_ARGS, and WORKDIR/ICON_INDEX were added). We kept our boot-media
-    # layout but took the new macro, so the call site is converted here.
-    add_link(${name} livecd_start.cmd CMDLINE_ARGS ${app} ICON ${app} GUID "{450D8FBA-AD25-11D0-98A8-0800361B1103}" MINIMIZE)
+    add_link(NAME ${name} CMD_LINE_ARGS ${app} ICON ${app} PATH livecd_start.cmd GUID "{450D8FBA-AD25-11D0-98A8-0800361B1103}" MINIMIZE)
     list(APPEND LIVECD_SHORTCUTS "${CMAKE_CURRENT_BINARY_DIR}/${name}.lnk")
     add_cd_file(FILE "${CMAKE_CURRENT_BINARY_DIR}/${name}.lnk"
                 TARGET livecd_links

@@ -477,6 +477,117 @@ manager's new race guard looked obviously guilty for the i386 hang (also innocen
 faithful port).
 
 
+## The committed artifacts, the difftest harness, and one oracle I broke myself
+
+Three more classes surfaced after the boot was green. The last one is the most instructive and
+it is my own mistake.
+
+### Every "correct by construction" artifact went stale at once
+
+The cmake-off cargo build keeps generated inputs committed so it needs no cmake configure. The
+merge invalidated all of them simultaneously: the `cflags/*.flags` templates (upstream removed
+the tree-wide `-D_CRT_NON_CONFORMING_SWPRINTFS`), all four `.rc.res` blobs per arch, and
+`committed-headers/bugcodes.h` (upstream added `DRIVER_POWER_STATE_FAILURE 0x9f`). Regenerated;
+`check_committed_drift.py` now reports 14 OK / 0 DRIFT on all three arches.
+
+It also rejected my first swprintf fix, correctly. Scoping the define with
+`set_source_files_properties` gave `libcntpr` **two distinct flag sets**, and the cmake-off
+build replays exactly one per target. The define moved into the two `.c` files instead, where
+the build system never sees it.
+
+**A latent gap found on the way:** `gen_cflags.py` and `gen_committed_res.py` both defaulted to
+`i386 amd64` while `check_committed_drift.py` has always checked **arm64**. Regenerating after
+any input change therefore left arm64 stale, discoverable only one gate later. Both now default
+to all three arches.
+
+### `rtl-difftest` broke four ways, all because it compiles the genuine C
+
+The harness builds `sdk/lib/rtl/*.c` as `ref_*` and diffs it against our Rust — so refreshing
+that C is refreshing the oracle:
+
+- `env.c` gained `UNICODE_STRING_MAX_CHARS` / `STATUS_UNSUCCESSFUL` guards and a `_wcsnicmp` call
+- `unicode.c` / `sid.c` renamed their `swprintf` call sites to `_swprintf`
+- `RtlCompareUnicodeStrings` **moved** from `unicode.c` to `unicode_vista.c`, which the harness
+  did not compile, so the test's `ref_` symbol vanished
+
+### ...and then I broke the oracle and read its output as truth
+
+For `_wcsnicmp` I wrote `#define _wcsnicmp wcsncasecmp`. **Host `wchar_t` is 32-bit and `WCHAR`
+here is 16-bit** — which is precisely why `refenv_wcschr` already exists a few lines above, a
+convention I walked straight past. Every name comparison in the oracle's
+`RtlQueryEnvironmentVariable` then mismatched, so the C returned `STATUS_VARIABLE_NOT_FOUND` for
+every query.
+
+I reported that as "our Rust is behind upstream". It was not evidence about our Rust at all; it
+was evidence about a shim I had written twenty minutes earlier. The agent doing the port caught
+it with a standalone repro rather than accepting the harness's verdict.
+
+This is the field manual's own rule — *a tool's account of itself is not evidence about that
+tool; re-derive by a route the suspect tool does not mediate* — and the thing that made me miss
+it is that **I had just repaired the harness, so I trusted it more than usual.** Having fixed a
+measuring instrument is not the same as having verified it.
+
+The other divergence was real and independent: upstream's rewritten `_U` wrapper writes
+`Destination->Length` **only on success**, where ours wrote it unconditionally. That one is now
+ported, along with the new raw-buffer cores `RtlExpandEnvironmentStrings` /
+`RtlQueryEnvironmentVariable` (both in `ntdll.spec` at `-version=0x600+`), the strictly-less-than
+capacity test for the query path, and the no-partial-copy-on-too-small behaviour. All 87
+rtl-difftest cases pass, and the full difftest suite is green.
+
+
+## The all-in-one BootCD commit reached four files, not two
+
+`b2e33f26eb3` ("Merge our bootcd and livecd into an all-in-one ReactOS BootCD") is the single
+upstream change that cost this merge the most, and it did so by arriving through **four
+different files, on four different days of investigation**:
+
+| file | how it was caught |
+|---|---|
+| `boot/bootdata/**` | by reading, before the merge was committed |
+| `boot/boot_images.cmake` | same |
+| `drivers/storage/ide/uniata/CMakeLists.txt` | by SMOKE — BUGCHECK 0x6B |
+| `sdk/cmake/CMakeMacros.cmake` | by CONFORMANCE — 91 kmtests `launch FAILED err=2` |
+
+The last one is the sharpest. `add_cd_file` took upstream's rewrite, which drops `hybridcd`
+and `NOT_IN_HYBRIDCD`, renames `livecd.iso` → `liveimg.iso`, and rewrites every bootcd
+destination:
+
+```cmake
+string(REGEX REPLACE "^reactos([\\/]+|$)" "${ARCH}\\1" _CD_ARCH_DESTINATION "${_CD_DESTINATION}")
+```
+
+So everything staged for `reactos/bin/` landed in `amd64/bin/`. **The guest still booted** — the
+livecd path is separate — and nothing in build, lint, difftest or smoke could see it. Only the
+conformance sweep, which actually looks for a file by absolute in-guest path, noticed.
+
+`git show --name-only b2e33f26eb3` lists all 30 files and I had that list on the first day. I
+checked it against the CONFLICT set, found 8, and moved on. **`CMakeMacros.cmake` merged
+cleanly, so it never came back into view.** When declining a structural upstream change, the
+unit of work is every file the commit touched, conflicted or not.
+
+### ...and a fifth, from a different commit, in the same investigation
+
+With the CD layout fixed the sweep still reported `launch FAILED err=2` for all 91. Upstream
+had also deleted:
+
+```cmake
+-set_target_properties(kmtest PROPERTIES OUTPUT_NAME "kmtest_")
+```
+
+renaming the binary to `kmtest.exe`. Our conformance harness — `tools/payloads/kmtest/sweep.c`
+and the three **committed prebuilt** `kmtest-sweep-<arch>.exe` built from it — launches
+`%SystemRoot%\bin\kmtest_.exe` by name. Restored the rename rather than rebuilding three
+committed binaries for a cosmetic upstream change.
+
+Result: `launched=91 ok=91 bad=0`, with one ratchet entry to chase
+(`IoReadWrite: NEW failing assertion service.c:191` — a service-state wait timeout, on a test
+whose 16192 passes are unchanged).
+
+**The pattern across all five:** a structural upstream change is not declined by resolving its
+conflicts. It is declined by enumerating its commit and auditing every file, because the
+cleanly-merged ones are exactly the ones nobody looks at again.
+
+
 ## Owed, in rough priority order
 
 1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation

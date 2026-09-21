@@ -354,6 +354,12 @@ target_compile_definitions(kmtest PRIVATE KMT_USER_MODE NTDDI_VERSION=NTDDI_WS03
 # vibeos: tee results + BEGIN/END markers to kernel debug serial (host capture)
 target_compile_definitions(kmtest PRIVATE VIBEOS_KMTEST_SERIAL)
 #add_pch(kmtest include/kmt_test.h)
+# RESTORED 2026-09-21 (upstream-sync). Upstream dropped this rename in the merge, so the
+# binary became kmtest.exe. Our conformance harness — tools/payloads/kmtest/sweep.c, and
+# the three COMMITTED kmtest-sweep-<arch>.exe built from it — launches
+# %SystemRoot%\bin\kmtest_.exe by name, so every one of the 91 tests came back
+# "launch FAILED err=2" (ERROR_FILE_NOT_FOUND) with the sweep itself reporting success.
+set_target_properties(kmtest PROPERTIES OUTPUT_NAME "kmtest_")
 add_rostests_file(TARGET kmtest)
 
 #

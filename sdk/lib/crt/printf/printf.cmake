@@ -59,11 +59,3 @@ list(APPEND CRT_PRINTF_SOURCE
     printf/wprintf.c
     printf/wprintf_s.c
 )
-
-# See the note at the top of this file: these two TUs define the non-conforming
-# (count-less) swprintf/vswprintf that msvcrt and ntdll export. Without the define,
-# <stdio.h> supplies a conflicting C99 `static inline` of the same name.
-set_source_files_properties(
-    printf/swprintf.c
-    printf/vswprintf.c
-    PROPERTIES COMPILE_DEFINITIONS _CRT_NON_CONFORMING_SWPRINTFS)
