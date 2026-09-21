@@ -288,3 +288,143 @@ smokes, net smoke, conformance, difftest, tooling, lint) at
 ACPI parser tests pass, including the captured Pi DBG2 bytes and the new MADT
 cases. The page-walk diagnostic added after that gate passed its own arm64
 build + desktop smoke (`20260920-202711-wkispj1l-smoke-arm64`, marker reached).
+
+## Session 2, part 2 — the kernel runs on the Pi and paints the screen
+
+Four bugs, each one only reachable after the previous was fixed. All four were
+invisible on QEMU for the same underlying reason: QEMU virt's firmware, memory
+layout and UART model differ from this board in ways our code had silently
+baked in as assumptions.
+
+### 1. The loader programmed a translation regime it was not executing in
+
+**Symptom.** A store through a PaToVa KSEG0 VA faulted while a walk of that exact
+VA reported every level MAPPED and `MempMapSinglePage` had never failed.
+
+**Cause.** `WinLdrSetProcessorContext` programs `MAIR_EL1`/`TCR_EL1`/`TTBR0_EL1`/
+`TTBR1_EL1` and `tlbi vmalle1`, and never enables the MMU - correct when firmware
+hands off at EL1 with the MMU already on, which is what QEMU does. Measured on
+this board:
+
+    [FLDR] ctx-pre EL02 SCTLR_EL1=0x30D00800 HCR_EL2=0x08000000 E2H=0   (Pi)
+    [FLDR] ctx-pre EL01 SCTLR_EL1=0x30D0198D                            (QEMU)
+
+EL2 with `HCR_EL2.E2H == 0`: no VHE, so those `_EL1` writes are inert for the
+regime we execute in, and firmware's EL2 identity map stayed live. Tables that
+are correct but unused - identity worked, KSEG0 never could.
+
+Note `TTBR1_EL1` read back equal to our PGD the whole time. **That is not
+evidence**: at EL2 without VHE the register holds what you wrote, it just is not
+what translates. The exception level is the thing to measure.
+
+**Fix.** `eret` to EL1h first, then program EL1 and enable `SCTLR_EL1.M|C|I`.
+EL1 is where the kernel must run regardless. Both steps are conditional on the
+measured state, so the QEMU path is untouched.
+
+### 2. Dropping to EL1 made every later fault silent
+
+Firmware's exception handler is EL2's, so after the drop a fault landed on
+whatever `VBAR_EL1` held and the board simply stopped - the
+`Synchronous Exception at 0x...` line that had located every bug disappeared
+exactly when it started mattering most. The loader now installs minimal EL1
+vectors reporting ESR/FAR/ELR/SPSR/EC until the kernel installs its own.
+
+### 3. The kernel's UART dropped bytes on a real PL011
+
+First kernel output came back as `MiIniti`, `MiBuild` - traces shredded
+mid-word, which reads like a crash at that point rather than a serial fault.
+The kernel wrote the PL011 data register without ever checking `UARTFR.TXFF`;
+QEMU's model drains instantly so nothing was ever lost there, a physical PL011
+at 115200 overruns immediately. `arm64_dbg`, `trap.rs`'s `TrapPutChar` (the
+fault reporter - a shredded fault dump is worse than useless), `kiinit` and
+`mminit` now share one FIFO-aware `uart_putc` with a bounded spin. Fixing this
+was what made the next bug readable at all.
+
+### 4. PFN database init faulted reading a PDE in unbacked address space
+
+    [FAULTLOOP] VA=0xFFFFF6FB7E002FD8 PC=0xFFFFF8000B1A5264
+                ESR=0x96000007 DFSC=0x07   (translation fault, level 3)
+
+`MiInitializePfnDatabase` (the PC decodes to an `lsr #18` + mask + `orr` -
+`MiAddressToPde`, not Pte) reading the PDE for kernel VA `0xFFFFF800BF700000`,
+i.e. physical `0xBF700000` = 3063 MiB.
+
+Reading a PDE needs only the TABLE containing it to exist; an absent entry reads
+as zero, which the kernel copes with. QEMU's RAM fits inside a single 1GB L1
+entry whose L2 table the loader's own allocations had already created, so every
+PDE read landed somewhere valid. The Pi's 3GB spans three L1 entries and the
+loader only allocates in the first (`LoaderPagesSpanned` = 895 MiB against a
+3072 MiB RAM top), so two of the three L2 tables did not exist.
+
+**Fix:** pre-create the L0/L1/L2 chain across `KSEG0 + [0, MmHighestPhysicalPage)`.
+Three pages per GB, rather than the ~2MB per GB that mapping every leaf costs,
+and it does not change which pages the kernel inherits as mapped.
+
+**Worth recording as a reasoning error:** this span gate was the FIRST hypothesis
+for bug 1, and the board's own numbers correctly killed it there (page 0xB13C is
+well inside the span). It was the right mechanism attached to the wrong victim.
+The measurement was sound both times; the conclusion drawn from it was too broad.
+
+### Where it stands now
+
+    [KERNEL] KiSystemStartup entered!
+    [KERNEL] Calling ExpInitializeExecutive
+    [MM] MmArmInitSystem ... returning TRUE
+    [KERNEL] ExpInitializeExecutive returned!
+    [KERNEL] Entering KiIdleLoop
+    [PHASE1] ObInitSystem
+    [MM1] MiCreateMemoryEvent ... MiInitializeMemoryEvents done     <- serial stops
+
+and HDMI (`hdmi-phase1.png`) shows **ReactOS's blue bootvid background**, so the
+kernel is alive past the point serial goes quiet. A capture 60s later is
+byte-identical, so it is wedged, not merely slow. **No desktop. This is not a
+boot.**
+
+### Next, in order
+
+1. **Why serial dies at the Phase-1 UART remap.** Output stops within
+   `MmInitSystem(1)`/the `MmMapIoSpace` remap of the PL011 in `ex-rust/init.rs`,
+   and `[PHASE1] UART remapped to kernel VA` never appears. Cheapest probe: skip
+   the remap on arm64 and keep the identity-mapped physical base (temporary - the
+   identity map dies at SMSS) and see whether Phase-1 output continues. Suspects:
+   `MmNonCached` giving Normal-NC where a PL011 wants Device-nGnRnE, or the new
+   FIFO wait spinning on an `FR` read that no longer reaches the device (a
+   bounded 1,000,000-iteration spin per byte would look like silence).
+2. **bootvid stride.** The blue field is horizontally streaked and occupies a
+   sub-rectangle, so bootvid's assumed resolution/pitch does not match this
+   board's GOP mode. Carry the real framebuffer geometry through like the UART
+   and GIC.
+3. **Then the actual wedge**, once 1 restores visibility.
+
+Do not read the blue screen as "almost booting" - it is one early bootvid paint,
+not the desktop, and the desktop marker remains the only success criterion.
+
+### Loop mechanics (no card swaps)
+
+`tools/pi4-netboot.sh` drives a whole cycle: catch the firmware splash (a ~5s
+window; missing it costs ~90s of PXE/HTTP timeouts and then boots whatever stale
+loader is on the card), enter the UEFI Shell over serial, DHCP, TFTP the fresh
+loader onto the card, launch it from `fs0:`, and pick the menu entry. Only the
+power cycle is manual. `--ramdisk` also pushes the 140MB image, which takes
+~10 minutes; skip it unless kernel-side sources changed, since the loader alone
+is 300KB and lands in seconds.
+
+`tools/pi4-serial-send.sh` paces input by chunk. Sending a command all at once
+silently loses characters - `freeldr.ini fs0:\tftp-test.tmp` arrived as
+`freelt.tmp` and RAN, against the wrong filename. It also writes-then-renames,
+because a partially written `serial-send.bin` is a sharing violation that killed
+the capture listener mid-session; `Capture-RpiSerial.ps1` now retries instead of
+dying.
+
+Serving side: `Serve-Tftp.py` under **Windows** python (WSL2 is NAT'd at
+172.26.x.x and the Pi cannot reach it; the host is 192.168.1.183 on "Ethernet",
+the Pi DHCPs to 192.168.1.216). One narrow firewall rule, program-scoped, remote
+address 192.168.1.0/24 - remove with
+`Get-NetFirewallRule -DisplayName 'VibeOS Pi4 TFTP (bring-up)' | Remove-NetFirewallRule`.
+
+Still worth doing: make the UEFI Shell boot option #1 via `bcfg` and drop a
+`startup.nsh` that does the DHCP/TFTP/launch, so a power cycle alone pulls the
+latest build. And the BCM2711 watchdog (`PM_WDOG`/`PM_RSTC` at 0xFE100024 /
+0xFE10001C, password 0x5A000000) maxes at ~16s, so it can only be armed right
+before a known-risky step and disarmed at kernel entry - long enough to turn
+"halts forever" into "reboots", not long enough to cover a 3-minute ramdisk load.
