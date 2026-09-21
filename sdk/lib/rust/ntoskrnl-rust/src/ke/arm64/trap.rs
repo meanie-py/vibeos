@@ -52,8 +52,10 @@ use crate::ke::procobj::KeServiceDescriptorTable;
 use crate::ke::dpc::KiRetireDeviceDpcs;
 
 unsafe fn TrapPutChar(c: u8) {
-    let pl011_base = Arm64UartKernelBase as *mut ULONG;
-    core::ptr::write_volatile(pl011_base, c as ULONG);
+    // FIFO-aware: a physical PL011 drops bytes written faster than it drains,
+    // and this is the path that reports faults - a shredded fault dump is worse
+    // than useless because it reads like a crash mid-message.
+    crate::arm64_dbg::uart_putc(Arm64UartKernelBase as *mut u32, c);
 }
 
 unsafe fn TrapPuts(s: &[u8]) {

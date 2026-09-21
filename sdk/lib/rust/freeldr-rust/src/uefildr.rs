@@ -80,6 +80,22 @@ pub unsafe extern "C" fn EfiEntry(
     GlobalImageHandle = ImageHandle;
     GlobalSystemTable = SystemTable;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        if !crate::arm64_debug::initialize(SystemTable) {
+            if let Some(output) = (*conout).OutputString {
+                output(
+                    conout,
+                    crate::wide!("[freeldr] No supported PL011 UART in ACPI SPCR/DBG2; cannot continue.\r\n\0") as *mut u16,
+                );
+            }
+            return EFI_UNSUPPORTED;
+        }
+        dbgcon_str(b"[freeldr] ACPI PL011 base=0x");
+        dbgcon_hex64(crate::arm64_debug::uart_base() as u64);
+        dbgcon_str(b"\r\n");
+    }
+
     LoadSettings(CmdLine);
 
     DebugInit(BootMgrInfo.DebugString);

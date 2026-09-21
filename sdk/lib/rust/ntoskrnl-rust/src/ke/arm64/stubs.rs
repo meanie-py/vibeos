@@ -87,8 +87,35 @@ unsafe fn Arm64ReadTtbr0El1() -> ULONG_PTR {
 #[no_mangle]
 pub static mut ProcessCount: ULONG = 0;
 
+/// Physical (then, from Phase 1, kernel-VA) base of the debug PL011.
+///
+/// Zero until KiSystemStartup copies the loader block's discovered address in.
+/// It must NOT default to QEMU virt's 0x09000000: on a physical board that is
+/// ordinary DRAM, so every debug write would silently corrupt memory instead of
+/// failing — which is strictly worse than no output. The loader refuses to boot
+/// when firmware describes no usable UART, so a zero here means a loader/kernel
+/// mismatch, and faulting on it is the honest outcome.
 #[no_mangle]
-pub static mut Arm64UartKernelBase: PVOID = 0x09000000 as PVOID;
+pub static mut Arm64UartKernelBase: PVOID = core::ptr::null_mut();
+
+/// GICv2 physical bases from the loader block, for the early-SMP window that
+/// runs before MmMapIoSpace exists. Zero means firmware described no GICv2.
+#[no_mangle]
+pub static mut Arm64GicDistributorPhysical: u64 = 0;
+#[no_mangle]
+pub static mut Arm64GicCpuInterfacePhysical: u64 = 0;
+
+/// QEMU virt's fw_cfg MMIO block (the Phase-0 tripwire channel), or zero when
+/// this is not QEMU virt. fw_cfg is a QEMU device with no ACPI description, so
+/// it cannot be discovered — it is inferred from the UART the loader found, and
+/// the loader identity-maps the page under exactly the same condition.
+///
+/// The gate is not optional. On arm64 the fw_cfg probe WRITES a selector, and
+/// the x86 comment "real hardware floats the port" does not carry over: on this
+/// board 0x09020000 is DRAM or unmapped, so an ungated probe either corrupts
+/// memory or faults.
+#[no_mangle]
+pub static mut Arm64FwCfgPhysical: u64 = 0;
 
 const _B: u64 = 0x0000000000000402;
 // CacheType = PTE bits[3:2] = AttrIndx into MAIR_EL1. freeldr programs

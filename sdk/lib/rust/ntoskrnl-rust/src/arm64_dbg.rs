@@ -11,6 +11,51 @@ extern "system" {
     static mut Arm64UartKernelBase: usize;
 }
 
+/// PL011 UARTFR (the flag register) as an INDEX into the register block viewed
+/// as 32-bit registers - every PL011 register is 32 bits wide, so indexing a
+/// `*mut u32` is the block's natural unit and needs no byte arithmetic. Byte
+/// offset 0x18 from the base (ARM PrimeCell PL011 TRM table 3-1); the data
+/// register is index 0.
+const PL011_FR_INDEX: usize = 0x18 / 4;
+/// UARTFR.TXFF - set while the transmit FIFO is full.
+const PL011_FR_TXFF: u32 = 1 << 5;
+
+/// Write one byte to the debug PL011, waiting for room in the TX FIFO.
+///
+/// The wait is not optional on real hardware. QEMU's PL011 drains instantly, so
+/// unsynchronised `write_volatile` never lost a byte there; a physical PL011 at
+/// 115200 overruns almost immediately, and the Pi 4B's first kernel output came
+/// back as "MiIniti"/"MiBuild" - traces shredded mid-word, which reads exactly
+/// like a crash at that point rather than a serial problem.
+///
+/// The spin is bounded: a UART that never reports room must not convert missing
+/// output into a hang, which would be a worse failure than the one this fixes.
+#[inline(always)]
+pub unsafe fn uart_putc(base: *mut u32, c: u8) {
+    if base.is_null() {
+        return;
+    }
+    let flags = base.add(PL011_FR_INDEX) as *const u32;
+    let mut spins = 0u32;
+    while core::ptr::read_volatile(flags) & PL011_FR_TXFF != 0 {
+        spins += 1;
+        if spins > 1_000_000 {
+            break;
+        }
+        core::hint::spin_loop();
+    }
+    core::ptr::write_volatile(base, c as u32);
+}
+
+/// `uart_putc` against the kernel's current debug UART base.
+#[inline(always)]
+pub unsafe fn uart_putc_default(c: u8) {
+    #[cfg(target_arch = "aarch64")]
+    uart_putc(Arm64UartKernelBase as *mut u32, c);
+    #[cfg(not(target_arch = "aarch64"))]
+    let _ = c;
+}
+
 #[inline(never)]
 pub unsafe fn kdbg_str(s: &[u8]) {
     #[cfg(target_arch = "aarch64")]
@@ -18,7 +63,7 @@ pub unsafe fn kdbg_str(s: &[u8]) {
         let u = Arm64UartKernelBase as *mut u32;
         if !u.is_null() {
             for &c in s {
-                core::ptr::write_volatile(u, c as u32);
+                uart_putc(u, c);
             }
         }
     }
@@ -34,15 +79,15 @@ pub unsafe fn kdbg_hex(v: u64) {
     {
         let u = Arm64UartKernelBase as *mut u32;
         if !u.is_null() {
-            core::ptr::write_volatile(u, b'0' as u32);
-            core::ptr::write_volatile(u, b'x' as u32);
+            uart_putc(u, b'0');
+            uart_putc(u, b'x');
             for i in (0..16).rev() {
                 let n = ((v >> (i * 4)) & 0xf) as u8;
                 let c = if n < 10 { b'0' + n } else { b'a' + n - 10 };
-                core::ptr::write_volatile(u, c as u32);
+                uart_putc(u, c);
             }
-            core::ptr::write_volatile(u, b'\r' as u32);
-            core::ptr::write_volatile(u, b'\n' as u32);
+            uart_putc(u, b'\r');
+            uart_putc(u, b'\n');
         }
     }
     #[cfg(not(target_arch = "aarch64"))]
@@ -104,11 +149,11 @@ pub unsafe fn kdbg_wstr(buffer: *const u16, len_bytes: u16) {
             while i < n {
                 let w = core::ptr::read_volatile(buffer.offset(i));
                 let c = if w >= 0x20 && w < 0x7f { w as u8 } else { b'?' };
-                core::ptr::write_volatile(u, c as u32);
+                uart_putc(u, c);
                 i += 1;
             }
-            core::ptr::write_volatile(u, b'\r' as u32);
-            core::ptr::write_volatile(u, b'\n' as u32);
+            uart_putc(u, b'\r');
+            uart_putc(u, b'\n');
         }
     }
     #[cfg(not(target_arch = "aarch64"))]
