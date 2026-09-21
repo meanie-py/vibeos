@@ -504,6 +504,53 @@ has output (which needs approval anyway), and this is plain list-walking C with 
 - **`RtlGetLastRange` and `RtlInvertRangeListEx`** are implemented, and their `ntoskrnl.spec`
   lines (reverted during conflict resolution) restored with them — implementation first, spec
   second, which is the order this lane learned the hard way ~230 times.
+- **One deliberate divergence from the merged C: no `Start > End` guard in
+  `RtlIsRangeAvailable`.** Upstream added `if (Start > End) return STATUS_INVALID_PARAMETER;`
+  in the same commit as the test — and the test asserts `STATUS_SUCCESS` for seven inverted
+  windows (`RtlRangeList.c:349,357,358,365,373,374,381`), with no `is_reactos()` or `todo`
+  guard, so upstream's C fails upstream's own new test. Our pre-merge Rust had no guard, those
+  seven are **banked passing** in all three conformance baselines, and the walk with an
+  inverted window produces exactly the expected answers (`Current->Range.Start > End` breaks
+  out immediately for the TRUE cases; `RtlpOverlaps` catches the FALSE ones). Adding the guard
+  regressed seven banked assertions to match a C the oracle says is wrong, so the guard stays
+  out. `RtlAddRange`'s `Start > End` guard is untouched — upstream did not change it and no
+  assertion covers it. Worth reporting upstream.
 - **Deleted the crate's `ROUND_DOWN` helper.** It rounded through `usize`, modelling a
   `ULONG_PTR` cast the C expression does not have, so on i386 it truncated a 64-bit candidate
   to 32 bits. `RtlFindRange` was its only caller and now does the arithmetic in `ULONGLONG`.
+
+## The oracle we are not reading: 43 new apitests, and no harness for any of them
+
+Two separate discoveries, the same shape, found while porting rangelist:
+
+1. **`ExPushLock` had never run once.** Upstream's new 1385-line `ntos_ex/ExPushLock.c` is in
+   `kmtests/CMakeLists.txt` and registered in `kmtest_drv/testlist.c`, so it builds and the
+   driver knows about it. The sweep does **not** enumerate the driver's testlist — it reads a
+   COMMITTED file, `tools/payloads/kmtest/kmtest-tests-<arch>.txt`, staged as
+   `%SystemRoot%\bin\kmtest-tests.txt`. A name missing from that file is never launched, and
+   the sweep still reports `launched=91 ok=91 bad=0`, which reads as a clean run. Fixed for
+   all three arches. **"Wired into the build" and "in the sweep" are two separate acts here**,
+   and only the first is enforced by anything.
+
+2. **The apitests have no harness at all.** `modules/rostests/apitests/` is 68 directories,
+   `add_subdirectory(apitests)` is in `modules/rostests/CMakeLists.txt` — and `build-amd64`
+   contains zero `*_apitest.exe`. Nothing builds them, nothing stages them, nothing runs them.
+   The merge added **43 new apitest files**, every one of them a Microsoft-behaviour oracle for
+   code we have translated, and not one has ever been executed:
+
+   `JobObject` `Pipes` `ReadFile` `WriteFile` `GetEnvironmentVariable` `EnumSystemCodePages`
+   `SetSearchPathMode` · `RtlQueryEnvironmentVariable{,_U}` `RtlIsNameInExpression`
+   `RtlInitializeContext` `RtlGetProductInfo` `RtlMemIoResource` `NtNotifyChangeMultipleKeys`
+   `NtGetCurrentProcessorNumberEx` `RtlVirtualUnwind` `rtlinit` · six shell32/shlwapi COM
+   suites · three `win32u/ntuser` suites · gdi32, user32, version, setupapi, appshim.
+
+   Note how directly these hit this lane's open items: `JobObject` is the oracle for
+   `ntoskrnl/ps/job.c` (+2198/-536, the merge's largest single-file rewrite);
+   `SetSearchPathMode` is the security-relevant item already in this queue;
+   `NtGetCurrentProcessorNumberEx` tests one of the two functions we found have no
+   implementation anywhere.
+
+   **The tool to build is a `tools/payloads/apitest/` payload modelled on the kmtest one** —
+   same one-process-per-suite isolation, same serial protocol, same ratchet baseline. The
+   kmtest payload already proves every piece of the design. The one thing to do differently is
+   derive the suite list rather than commit it, so finding (1) cannot recur on the new harness.

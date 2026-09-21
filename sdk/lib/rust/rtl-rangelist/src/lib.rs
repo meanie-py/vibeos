@@ -625,10 +625,16 @@ pub unsafe extern "system" fn RtlIsRangeAvailable(
     Callback: PRTL_CONFLICT_RANGE_CALLBACK,
     Available: *mut BOOLEAN,
 ) -> NTSTATUS {
-    if Start > End {
-        return STATUS_INVALID_PARAMETER;
-    }
-
+    // DELIBERATE divergence from the merged C, which added
+    // `if (Start > End) return STATUS_INVALID_PARAMETER;` here. Upstream added that guard in
+    // the SAME commit as kmtests/rtl/RtlRangeList.c, and that test asserts STATUS_SUCCESS for
+    // seven inverted windows (:349,357,358,365,373,374,381) with no is_reactos()/todo guard --
+    // so upstream's C fails upstream's own new test. The walk answers those correctly on its
+    // own: `Current->Range.Start > End` breaks out immediately for the TRUE cases and
+    // RtlpOverlaps catches the FALSE ones. All seven are banked passing in every conformance
+    // baseline, so adding the guard would regress the oracle to match a C the oracle rejects.
+    // RtlAddRange's Start > End guard is a different matter and stays: upstream did not touch
+    // it and no assertion covers it.
     *Available = RtlpWindowIsAvailable(
         RangeList,
         Start,
