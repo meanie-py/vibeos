@@ -2509,6 +2509,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucrt-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "msvcrt-crt-rust",
+]
+
+[[package]]
 name = "ucrt-rust"
 version = "0.1.0"
 
