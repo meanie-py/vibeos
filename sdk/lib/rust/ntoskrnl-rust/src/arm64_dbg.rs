@@ -11,6 +11,15 @@ extern "system" {
     static mut Arm64UartKernelBase: usize;
 }
 
+/// PL011 UARTFR (the flag register) as an INDEX into the register block viewed
+/// as 32-bit registers - every PL011 register is 32 bits wide, so indexing a
+/// `*mut u32` is the block's natural unit and needs no byte arithmetic. Byte
+/// offset 0x18 from the base (ARM PrimeCell PL011 TRM table 3-1); the data
+/// register is index 0.
+const PL011_FR_INDEX: usize = 0x18 / 4;
+/// UARTFR.TXFF - set while the transmit FIFO is full.
+const PL011_FR_TXFF: u32 = 1 << 5;
+
 /// Write one byte to the debug PL011, waiting for room in the TX FIFO.
 ///
 /// The wait is not optional on real hardware. QEMU's PL011 drains instantly, so
@@ -26,10 +35,9 @@ pub unsafe fn uart_putc(base: *mut u32, c: u8) {
     if base.is_null() {
         return;
     }
-    // PL011 UARTFR bit 5 (TXFF) is set while the TX FIFO is full.
-    let flags = (base as usize + 0x18) as *const u32;
+    let flags = base.add(PL011_FR_INDEX) as *const u32;
     let mut spins = 0u32;
-    while core::ptr::read_volatile(flags) & (1 << 5) != 0 {
+    while core::ptr::read_volatile(flags) & PL011_FR_TXFF != 0 {
         spins += 1;
         if spins > 1_000_000 {
             break;
