@@ -78,6 +78,15 @@ pub struct CrtLocaleRefcount {
 ///
 /// NOT interchangeable with msvcrt's `threadlocaleinfostruct`. See the module
 /// docs: the shapes differ from the second field onwards.
+impl CrtLocaleData {
+    /// The public head, where `_locale_pctype` lives. A method rather than a
+    /// bare field access so the read site reads like the C's
+    /// `locinfo->_public._locale_pctype`.
+    pub fn public_ref(&self) -> *const CrtLocaleDataPublic {
+        &self.public
+    }
+}
+
 #[repr(C)]
 pub struct CrtLocaleData {
     pub public: CrtLocaleDataPublic,
