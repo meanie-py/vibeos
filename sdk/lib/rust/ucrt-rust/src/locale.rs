@@ -98,6 +98,33 @@ pub struct CrtLocaleData {
     pub locale_name: [*mut u16; 6],
 }
 
+
+/// UCRT's `struct __crt_locale_pointers` (`sdk/include/ucrt/corecrt.h:628`).
+/// **This is what a `_locale_t` actually points at** — the locale data hangs
+/// off `locinfo`, and the multibyte data off `mbcinfo`. Code that treats a
+/// `_locale_t` as a direct pointer to the locale data is off by one level.
+#[repr(C)]
+pub struct CrtLocalePointers {
+    pub locinfo: *mut CrtLocaleData,
+    pub mbcinfo: *mut CrtMultibyteData,
+}
+
+/// UCRT's `struct __crt_multibyte_data` (`sdk/lib/ucrt/inc/corecrt_internal.h`).
+///
+/// `mbctype` is the table the whole `_ismbb*` family indexes, and note it is
+/// **257 bytes, indexed at `1 + byte`** — the leading entry is not padding, so
+/// an implementation that indexes at `byte` is wrong for every input.
+#[repr(C)]
+pub struct CrtMultibyteData {
+    pub refcount: c_long,
+    pub mbcodepage: c_int,
+    pub ismbcodepage: c_int,
+    pub mbulinfo: [c_ushort; 6],
+    pub mbctype: [u8; 257],
+    pub mbcasemap: [u8; 256],
+    pub mblocalename: *const u16,
+}
+
 // ── measured ground truth ────────────────────────────────────────────────────
 //
 // i386 differs from amd64/arm64 only by pointer width; amd64 and arm64 agree
@@ -116,6 +143,17 @@ macro_rules! assert_offset {
 #[cfg(target_pointer_width = "32")]
 mod pinned {
     use super::*;
+    const _: () = assert!(core::mem::offset_of!(CrtLocalePointers, locinfo) == 0);
+    const _: () = assert!(core::mem::offset_of!(CrtLocalePointers, mbcinfo) == 4);
+    const _: () = assert!(core::mem::size_of::<CrtLocalePointers>() == 8);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, refcount) == 0);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbcodepage) == 4);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, ismbcodepage) == 8);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbulinfo) == 12);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbctype) == 24);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbcasemap) == 281);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mblocalename) == 540);
+    const _: () = assert!(core::mem::size_of::<CrtMultibyteData>() == 544);
     assert_offset!(public, 0);
     assert_offset!(refcount, 12);
     assert_offset!(lc_collate_cp, 16);
@@ -138,6 +176,17 @@ mod pinned {
 #[cfg(target_pointer_width = "64")]
 mod pinned {
     use super::*;
+    const _: () = assert!(core::mem::offset_of!(CrtLocalePointers, locinfo) == 0);
+    const _: () = assert!(core::mem::offset_of!(CrtLocalePointers, mbcinfo) == 8);
+    const _: () = assert!(core::mem::size_of::<CrtLocalePointers>() == 16);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, refcount) == 0);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbcodepage) == 4);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, ismbcodepage) == 8);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbulinfo) == 12);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbctype) == 24);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mbcasemap) == 281);
+    const _: () = assert!(core::mem::offset_of!(CrtMultibyteData, mblocalename) == 544);
+    const _: () = assert!(core::mem::size_of::<CrtMultibyteData>() == 552);
     assert_offset!(public, 0);
     assert_offset!(refcount, 16);
     assert_offset!(lc_collate_cp, 20);

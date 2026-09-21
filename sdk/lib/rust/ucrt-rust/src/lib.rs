@@ -17,6 +17,7 @@ pub mod bits;
 // compile-time assertions pinning it. Gating it would mean the pins only hold
 // when some other family happens to be on.
 pub mod locale;
+pub mod ptd;
 
 // Captured ground truth, not yet consumed by any body. Both are DATA ONLY --
 // no `#[no_mangle]`, so they take over nothing and the cohab gate has nothing
