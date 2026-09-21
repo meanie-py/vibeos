@@ -9829,6 +9829,34 @@ caller's CPU area, so answering a cross-thread query would return *the wrong thr
 — confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
 `(HANDLE)-2` pseudo-handle.
 
+### A nested BTCpuSimulate clobbers the saved dispatcher RSP, so every callback LEAKS native stack
+**Symptom.** A WoW64 GUI guest runs normally for a minute, then dies with
+`exit_status=0x80` (or, once exception dispatch could report it,
+`[KI-EXC] STACK EXHAUSTED ... rsp=...60950 limit=...61000 dealloc=...60000`) with the
+faulting PC somewhere innocent — ntdll's `RtlpUnwindInternal` or `RtlVirtualUnwind`,
+whichever function happened to touch the guard page first. taskmgr, magnify and osk died
+about one boot in three; nothing in the trace recursed.
+**Cause.** `wow64cpu.S`'s `BTCpuSimulate` stashes the 64-bit dispatcher RSP at `CpuArea+8`,
+and the 32→64 syscall transition restores it with a bare `mov rsp, [r15 - 8]`. That one word
+is the ONLY record of where the native stack was. A user callback runs the guest through a
+**nested** `BTCpuSimulate`, which overwrites the slot with its own, deeper RSP — and the
+callback never returns through the asm (it exits via `NtCallbackReturn`), so nothing puts the
+outer value back. From then on every guest syscall switches to the stale lower stack, so each
+callback permanently consumes one dispatcher frame (~4 KB). 950 callbacks ate taskmgr's whole
+1 MB native reserve; the kernel's growth and guard-page handling were working perfectly the
+whole time.
+**Fix.** Save `CpuArea+8` into the in-flight `WOW64_CB_FRAME` before entering the guest and
+restore it at the longjmp landing, next to the CONTEXT restore and the resume-flag clear —
+the same place that already owns "put back what the nesting changed".
+**How to see it in one boot.** Print the callback's own `&Frame` and its `Prev`-chain depth
+in the `[WOW64CB] ->` trace. A falling sp that tracks depth is recursion; a falling sp **at
+constant depth** is this leak, and it reads off the log directly. Do not infer depth from the
+`->`/`<-` pairing — the unmarshalled return path prints no `<-`, which is how an earlier pass
+mis-read the same trace as 377-deep recursion. Note also that the exhaustion was reported at
+whatever function next touched the guard page, so the symbolicated PC actively misleads: the
+useful signal was the *trend* in a cheap per-event stack-pointer print, not the crash site.
+
+
 ### On a JIT host, the CPU layer's memory notifications are a CAPABILITY, not a cache hint
 The `BTCpuNotify*` family reads like invalidation bookkeeping you could skip and merely run slow.
 It is not. FEX's decoder **refuses to translate any guest address outside the executable set it
