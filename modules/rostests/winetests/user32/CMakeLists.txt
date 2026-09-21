@@ -34,6 +34,22 @@ list(APPEND SOURCE
 list(APPEND PCH_SKIP_SOURCE
     testlist.c)
 
+# resource.rc gives two CUSTOM_TEST_DIALOG controls trailing creation data
+# (`CONTROL ... ,10,10,100,50 { 1,2,3,4,5 }`), which is what dialog.c's
+# test_extra_data reads back. llvm-rc has never implemented that syntax, so the
+# pinned toolchain's windres cannot build this file -- and resource.rc also
+# carries the accelerators, string tables, menus and every other dialog the
+# suite uses, so one unparseable construct costs all of user32_winetest. It is
+# Wine's oracle, not ours to rewrite, so this directory compiles resources with
+# GNU windres instead. See use_gnu_rc() in sdk/cmake/gcc.cmake.
+use_gnu_rc()
+
+if(NOT GNU_RC_COMPILER)
+    # use_gnu_rc() already said why, loudly. Skip only this target: the other
+    # 127 winetest suites build fine on llvm-rc and must not be collateral.
+    return()
+endif()
+
 add_executable(user32_winetest
     ${SOURCE}
     ${PCH_SKIP_SOURCE}

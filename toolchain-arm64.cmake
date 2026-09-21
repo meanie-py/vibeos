@@ -51,6 +51,33 @@ if(NOT DEFINED CMAKE_MC_COMPILER)
     endif()
 endif()
 set(CMAKE_RC_COMPILER "${TOOLCHAIN_PREFIX}windres")
+
+# GNU windres, kept DISTINCT from llvm-mingw's windres above. llvm-mingw's
+# `windres` is a thin wrapper over llvm-rc, and llvm-rc cannot parse DIALOGEX
+# control creation data at all (`CONTROL "t",-1,"C",style,x,y,w,h { 1,2,3 }` ->
+# "expected identifier, got {", verified on llvm-rc 18 and 19). One file in the
+# tree needs it -- user32_winetest's resource.rc, which is Wine's oracle and not
+# ours to rewrite -- so that ONE directory switches its RC rule to GNU windres
+# via use_gnu_rc() (sdk/cmake/gcc.cmake). Same host dependency as windmc and
+# GNU_AS_COMPILER: mingw-w64 binutils.
+#
+# Found by NAME then PROVEN by --version, because llvm-mingw's bin/ is usually
+# on PATH and its windres answers to the same name -- taking the first hit would
+# silently re-select the compiler we are trying to avoid.
+if(NOT DEFINED GNU_RC_COMPILER)
+    find_program(_gnu_rc_candidate
+        NAMES x86_64-w64-mingw32-windres i686-w64-mingw32-windres windres
+        PATHS /usr/bin /usr/local/bin /opt/homebrew/bin
+        NO_CMAKE_FIND_ROOT_PATH)
+    if(_gnu_rc_candidate)
+        execute_process(COMMAND ${_gnu_rc_candidate} --version
+                        OUTPUT_VARIABLE _gnu_rc_version
+                        ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(_gnu_rc_version MATCHES "GNU windres")
+            set(GNU_RC_COMPILER "${_gnu_rc_candidate}")
+        endif()
+    endif()
+endif()
 set(CMAKE_AR "${TOOLCHAIN_PREFIX}ar")
 set(CMAKE_DLLTOOL "${TOOLCHAIN_PREFIX}dlltool")
 set(CMAKE_OBJCOPY "${TOOLCHAIN_PREFIX}objcopy")
