@@ -479,12 +479,31 @@ mismatch per call. Caught instantly by the decoration checker once the callee wa
 `undefined symbol: _RtlFindRange@48` — which is the field manual's "stdcall decoration is a
 free ABI width checker" earning its keep.
 
-**Still owed on this file**, deliberately deferred out of the merge land so it does not grow:
+### The port itself — DONE, by hand
 
-- Our `RtlAddRange` has **no conflict detection at all** — the reference C checks for
-  overlapping ranges and honours `RTL_RANGE_LIST_ADD_IF_CONFLICT` (`rangelist.c:152,207`). Our
-  561-line Rust is a translation of the pre-merge ~800-line C; the merged C is 1,012 lines.
-- `RtlGetLastRange` and `RtlInvertRangeListEx` are new upstream exports with no implementation
-  anywhere in our tree. The merge added both spec lines and conflict resolution reverted them.
-  They come back with the port, not before — an export with no implementation is the failure
-  mode this lane already hit ~230 times.
+Hand-ported rather than paid: `rustconv translate` would have re-bought a file that already
+has output (which needs approval anyway), and this is plain list-walking C with a
+240-assertion oracle sitting next to it. What changed:
+
+- **Three new private helpers.** `RtlpOverlaps`, `RtlpWindowIsAvailable` (the shared
+  availability walk now behind both `RtlIsRangeAvailable` and `RtlFindRange`, reporting the
+  *lowest* conflicting Start so a top-down search can jump past it) and `RtlpConflictsOnAdd`.
+- **`RtlAddRange` had no conflict detection at all** — every add succeeded. It now rejects an
+  overlapping incompatible entry with `STATUS_RANGE_LIST_CONFLICT` unless the caller passed
+  `RTL_RANGE_LIST_ADD_IF_CONFLICT`. Its insertion point also compared the new entry's **End**
+  against the cursor's Start; the list is sorted by **Start**.
+- **`RtlFindRange` is a different algorithm.** It was a single-shot "round down from the
+  highest entry and hope"; it is now a top-down search that re-probes, jumping the window
+  below the lowest conflicting entry each round (which strictly decreases the candidate, so it
+  terminates).
+- **`RtlInvertRangeList` was only correct for a non-overlapping list.** It walked adjacent
+  pairs and emitted the gap between them — but `RTL_RANGE_LIST_ADD_IF_CONFLICT` permits
+  overlaps, and an absorbed entry then produced a bogus inverted range. It now delegates to the
+  new `RtlInvertRangeListEx`, which walks the covered space upward, absorbing every range that
+  covers the cursor before looking for the next gap.
+- **`RtlGetLastRange` and `RtlInvertRangeListEx`** are implemented, and their `ntoskrnl.spec`
+  lines (reverted during conflict resolution) restored with them — implementation first, spec
+  second, which is the order this lane learned the hard way ~230 times.
+- **Deleted the crate's `ROUND_DOWN` helper.** It rounded through `usize`, modelling a
+  `ULONG_PTR` cast the C expression does not have, so on i386 it truncated a 64-bit candidate
+  to 32 bits. `RtlFindRange` was its only caller and now does the arithmetic in `ULONGLONG`.

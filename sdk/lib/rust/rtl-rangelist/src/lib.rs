@@ -22,17 +22,111 @@ use ntkrnl_sys::rtl::RtlCopyMemory;
 // RTL_RANGE_LIST_ADD_IF_CONFLICT -- so `RtlAddRange` never set RTL_RANGE_SHARED on the stored
 // entry and `RtlIsRangeAvailable` never saw a shared range. Upstream's new RtlRangeList kmtest
 // caught it (`[1] Flags = 0x0, expected 0x1`).
+const RTL_RANGE_LIST_ADD_IF_CONFLICT: ULONG = 0x0000_0001;
 const RTL_RANGE_LIST_ADD_SHARED: ULONG = 0x0000_0002;
 // The RtlIsRangeAvailable `Flags` namespace is a DIFFERENT one that happens to share a value.
 const RTL_RANGE_LIST_SHARED_OK: ULONG = 0x0000_0001;
+const RTL_RANGE_LIST_NULL_CONFLICT_OK: ULONG = 0x0000_0002;
 const RTL_RANGE_SHARED: ULONG = 0x01;
 const STATUS_RANGE_NOT_FOUND: NTSTATUS = 0xC000028C_u32 as i32;
+const STATUS_RANGE_LIST_CONFLICT: NTSTATUS = 0xC0000282_u32 as i32;
 
-/// `ROUND_DOWN(n, align)` — mirror C's `((ULONG_PTR)(n)) & ~((align) - 1)`.
-/// The `ULONG_PTR` cast truncates to pointer width on i386 (faithful per-arch).
+/// Returns whether the closed interval [Start1, End1] intersects [Start2, End2].
 #[inline]
-unsafe fn ROUND_DOWN(n: ULONGLONG, align: ULONGLONG) -> ULONGLONG {
-    ((n as usize) & !((align as usize) - 1)) as ULONGLONG
+fn RtlpOverlaps(Start1: ULONGLONG, End1: ULONGLONG, Start2: ULONGLONG, End2: ULONGLONG) -> bool {
+    Start1 <= End2 && Start2 <= End1
+}
+
+/// Shared availability test behind `RtlIsRangeAvailable` and `RtlFindRange`. Walks every entry
+/// overlapping [Start, End]; an overlapping entry is NOT a conflict when the caller passed
+/// `RTL_RANGE_LIST_SHARED_OK` and it is shared, when it carries an attribute in
+/// `AttributeAvailableMask`, when the caller passed `RTL_RANGE_LIST_NULL_CONFLICT_OK` and it has
+/// a NULL owner, or when `Callback` returns TRUE. When the window is unavailable,
+/// `ConflictStart` receives the LOWEST conflicting Start, so a top-down search can jump past it.
+unsafe fn RtlpWindowIsAvailable(
+    RangeList: PRTL_RANGE_LIST,
+    Start: ULONGLONG,
+    End: ULONGLONG,
+    Flags: ULONG,
+    AttributeAvailableMask: UCHAR,
+    Context: PVOID,
+    Callback: PRTL_CONFLICT_RANGE_CALLBACK,
+    ConflictStart: PULONGLONG,
+) -> bool {
+    let mut Available = true;
+    let mut Lowest: ULONGLONG = 0;
+
+    let mut Entry = (*RangeList).ListHead.Flink;
+    while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
+        let Current = (Entry as *mut u8)
+            .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
+            as PRTL_RANGE_ENTRY;
+
+        if (*Current).Range.Start > End {
+            break;
+        }
+
+        if !RtlpOverlaps(Start, End, (*Current).Range.Start, (*Current).Range.End) {
+            Entry = (*Entry).Flink;
+            continue;
+        }
+
+        let ignored = ((Flags & RTL_RANGE_LIST_SHARED_OK) != 0
+            && ((*Current).Range.Flags & RTL_RANGE_SHARED as UCHAR) != 0)
+            || (AttributeAvailableMask & (*Current).Range.Attributes) != 0
+            || ((Flags & RTL_RANGE_LIST_NULL_CONFLICT_OK) != 0
+                && (*Current).Range.Owner.is_null())
+            || match Callback {
+                Some(cb) => cb(Context, core::ptr::addr_of_mut!((*Current).Range)) != 0,
+                None => false,
+            };
+
+        if !ignored {
+            if Available || (*Current).Range.Start < Lowest {
+                Lowest = (*Current).Range.Start;
+            }
+            Available = false;
+        }
+
+        Entry = (*Entry).Flink;
+    }
+
+    if !ConflictStart.is_null() && !Available {
+        *ConflictStart = Lowest;
+    }
+
+    Available
+}
+
+/// Whether inserting [Start, End] would conflict with an existing entry. Two shared ranges
+/// (`RTL_RANGE_LIST_ADD_SHARED` against an already-shared entry) may coexist.
+unsafe fn RtlpConflictsOnAdd(
+    RangeList: PRTL_RANGE_LIST,
+    Start: ULONGLONG,
+    End: ULONGLONG,
+    Flags: ULONG,
+) -> bool {
+    let mut Entry = (*RangeList).ListHead.Flink;
+    while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
+        let Current = (Entry as *mut u8)
+            .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
+            as PRTL_RANGE_ENTRY;
+
+        if (*Current).Range.Start > End {
+            break;
+        }
+
+        if RtlpOverlaps(Start, End, (*Current).Range.Start, (*Current).Range.End)
+            && !((Flags & RTL_RANGE_LIST_ADD_SHARED) != 0
+                && ((*Current).Range.Flags & RTL_RANGE_SHARED as UCHAR) != 0)
+        {
+            return true;
+        }
+
+        Entry = (*Entry).Flink;
+    }
+
+    false
 }
 
 // Shared user/kernel RTL allocation helpers (rtlp.h; defined in libsupp).
@@ -65,6 +159,15 @@ pub unsafe extern "system" fn RtlAddRange(
 
     if Start > End {
         return STATUS_INVALID_PARAMETER;
+    }
+
+    // Unless the caller explicitly allows adding on top of a conflict, reject a range that
+    // overlaps an incompatible existing entry. The pre-merge translation had no conflict
+    // detection at all, so every RtlAddRange succeeded.
+    if (Flags & RTL_RANGE_LIST_ADD_IF_CONFLICT) == 0
+        && RtlpConflictsOnAdd(RangeList, Start, End, Flags)
+    {
+        return STATUS_RANGE_LIST_CONFLICT;
     }
 
     RangeEntry = RtlpAllocateMemory(
@@ -100,7 +203,7 @@ pub unsafe extern "system" fn RtlAddRange(
             Current = (Entry as *mut u8)
                 .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
                 as PRTL_RANGE_ENTRY;
-            if (*Current).Range.Start > (*RangeEntry).Range.End {
+            if (*Current).Range.Start > (*RangeEntry).Range.Start {
                 InsertTailList(
                     core::ptr::addr_of_mut!((*Current).Entry),
                     core::ptr::addr_of_mut!((*RangeEntry).Entry),
@@ -237,73 +340,61 @@ pub unsafe extern "system" fn RtlFindRange(
     // mismatch on i386 and truncation on the 64-bit targets.
     Length: ULONGLONG,
     Alignment: ULONGLONG,
-    _Flags: ULONG,
-    _AttributeAvailableMask: UCHAR,
-    _Context: PVOID,
-    _Callback: PRTL_CONFLICT_RANGE_CALLBACK,
+    Flags: ULONG,
+    AttributeAvailableMask: UCHAR,
+    Context: PVOID,
+    Callback: PRTL_CONFLICT_RANGE_CALLBACK,
     Start: PULONGLONG,
 ) -> NTSTATUS {
-    let mut CurrentEntry: PRTL_RANGE_ENTRY;
-    let mut NextEntry: PRTL_RANGE_ENTRY;
-    let mut Entry: PLIST_ENTRY;
-    let mut RangeMin: ULONGLONG;
-    let mut RangeMax: ULONGLONG;
+    let mut ConflictStart: ULONGLONG = 0;
 
     if Alignment == 0 || Length == 0 {
         return STATUS_INVALID_PARAMETER;
     }
 
-    if IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) {
-        *Start = ROUND_DOWN(Maximum - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
-        return STATUS_SUCCESS;
+    // A window of Length can only end at Maximum if it also fits below it.
+    if Length - 1 > Maximum {
+        return STATUS_RANGE_NOT_FOUND;
     }
 
-    NextEntry = core::ptr::null_mut();
-    Entry = (*RangeList).ListHead.Blink;
-    while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
-        CurrentEntry = (Entry as *mut u8)
-            .sub(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry)) as PRTL_RANGE_ENTRY;
+    // Pure 64-bit arithmetic. The crate's old ROUND_DOWN helper rounded through `usize`,
+    // modelling a C `ULONG_PTR` cast that this expression does not have -- on i386 that
+    // truncated the candidate to 32 bits. It had no other caller, so it is gone.
+    let mut Candidate: ULONGLONG = (Maximum - (Length - 1)) & !(Alignment - 1);
 
-        RangeMax = if !NextEntry.is_null() {
-            (*NextEntry).Range.Start - 1
-        } else {
-            Maximum
-        };
-        if RangeMax + (Length as ULONGLONG - 1) < Minimum {
+    loop {
+        if Candidate < Minimum {
             return STATUS_RANGE_NOT_FOUND;
         }
 
-        RangeMin = ROUND_DOWN(RangeMax - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
-        if RangeMin < Minimum || (RangeMax - RangeMin) < (Length as ULONGLONG - 1) {
-            return STATUS_RANGE_NOT_FOUND;
-        }
+        let CandidateEnd = Candidate + (Length - 1);
 
-        if RangeMin > (*CurrentEntry).Range.End {
-            *Start = RangeMin;
+        if RtlpWindowIsAvailable(
+            RangeList,
+            Candidate,
+            CandidateEnd,
+            Flags,
+            AttributeAvailableMask,
+            Context,
+            Callback,
+            core::ptr::addr_of_mut!(ConflictStart),
+        ) {
+            *Start = Candidate;
             return STATUS_SUCCESS;
         }
 
-        NextEntry = CurrentEntry;
-        Entry = (*Entry).Blink;
+        // Jump the window entirely below the lowest conflicting entry. That entry overlaps the
+        // current window, so Candidate strictly decreases and the loop always terminates.
+        if ConflictStart == 0 {
+            return STATUS_RANGE_NOT_FOUND;
+        }
+
+        if Length - 1 > ConflictStart - 1 {
+            return STATUS_RANGE_NOT_FOUND;
+        }
+
+        Candidate = ((ConflictStart - 1) - (Length - 1)) & !(Alignment - 1);
     }
-
-    RangeMax = if !NextEntry.is_null() {
-        (*NextEntry).Range.Start - 1
-    } else {
-        Maximum
-    };
-    if RangeMax + (Length as ULONGLONG - 1) < Minimum {
-        return STATUS_RANGE_NOT_FOUND;
-    }
-
-    RangeMin = ROUND_DOWN(RangeMax - (Length as ULONGLONG - 1), Alignment as ULONGLONG);
-    if RangeMin < Minimum || (RangeMax - RangeMin) < (Length as ULONGLONG - 1) {
-        return STATUS_RANGE_NOT_FOUND;
-    }
-
-    *Start = RangeMin;
-
-    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -344,6 +435,34 @@ pub unsafe extern "system" fn RtlGetFirstRange(
         (*Iterator).Current = core::ptr::addr_of_mut!((*RangeEntry).Range) as *mut core::ffi::c_void;
         *Range = core::ptr::addr_of_mut!((*RangeEntry).Range);
     }
+
+    STATUS_SUCCESS
+}
+
+/// New upstream export: the last range, so `RtlGetNextRange(.., MoveForwards = FALSE)` can
+/// walk a list backwards. Identical to `RtlGetFirstRange` but off `Blink`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetLastRange(
+    RangeList: PRTL_RANGE_LIST,
+    Iterator: PRTL_RANGE_LIST_ITERATOR,
+    Range: *mut PRTL_RANGE,
+) -> NTSTATUS {
+    (*Iterator).RangeListHead = core::ptr::addr_of_mut!((*RangeList).ListHead);
+    (*Iterator).MergedHead = core::ptr::null_mut();
+    (*Iterator).Stamp = (*RangeList).Stamp;
+
+    if IsListEmpty(core::ptr::addr_of_mut!((*RangeList).ListHead)) {
+        (*Iterator).Current = core::ptr::null_mut();
+        *Range = core::ptr::null_mut();
+        return STATUS_NO_MORE_ENTRIES;
+    }
+
+    // Iterator.Current is the RANGE pointer, not the entry — matches Windows.
+    let RangeEntry = ((*RangeList).ListHead.Blink as *mut u8)
+        .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
+        as *mut _RTL_RANGE_ENTRY;
+    (*Iterator).Current = core::ptr::addr_of_mut!((*RangeEntry).Range) as *mut core::ffi::c_void;
+    *Range = core::ptr::addr_of_mut!((*RangeEntry).Range);
 
     STATUS_SUCCESS
 }
@@ -397,78 +516,102 @@ pub unsafe extern "system" fn RtlInitializeRangeList(RangeList: PRTL_RANGE_LIST)
     (*RangeList).Stamp = 0;
 }
 
+/// New upstream export. The pre-merge translation walked the sorted list pairwise and emitted
+/// the gap between each adjacent pair, which is only correct when no two entries overlap --
+/// and `RTL_RANGE_LIST_ADD_IF_CONFLICT` lets them. This walks the covered address space upward
+/// instead, absorbing every range that covers the cursor before looking for the next gap.
+#[no_mangle]
+pub unsafe extern "system" fn RtlInvertRangeListEx(
+    InvertedRangeList: PRTL_RANGE_LIST,
+    RangeList: PRTL_RANGE_LIST,
+    Attributes: UCHAR,
+    UserData: PVOID,
+    Owner: PVOID,
+) -> NTSTATUS {
+    let mut GapStart: ULONGLONG = 0;
+
+    loop {
+        // Advance GapStart past every range that covers it (handles overlaps).
+        loop {
+            let mut Absorbed = false;
+            let mut Entry = (*RangeList).ListHead.Flink;
+            while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
+                let Current = (Entry as *mut u8)
+                    .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
+                    as PRTL_RANGE_ENTRY;
+                if (*Current).Range.Start <= GapStart && (*Current).Range.End >= GapStart {
+                    // Covered all the way to the top: no gap remains.
+                    if (*Current).Range.End == ULONGLONG::MAX {
+                        return STATUS_SUCCESS;
+                    }
+                    GapStart = (*Current).Range.End + 1;
+                    Absorbed = true;
+                }
+                Entry = (*Entry).Flink;
+            }
+            if !Absorbed {
+                break;
+            }
+        }
+
+        // GapStart is now uncovered; find the nearest range starting above it.
+        let mut NextStart: ULONGLONG = ULONGLONG::MAX;
+        let mut Found = false;
+        let mut Entry = (*RangeList).ListHead.Flink;
+        while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
+            let Current = (Entry as *mut u8)
+                .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
+                as PRTL_RANGE_ENTRY;
+            if (*Current).Range.Start > GapStart && (*Current).Range.Start <= NextStart {
+                NextStart = (*Current).Range.Start;
+                Found = true;
+            }
+            Entry = (*Entry).Flink;
+        }
+
+        // No further ranges: the gap runs to the top of the address space.
+        if !Found {
+            return RtlAddRange(
+                InvertedRangeList,
+                GapStart,
+                ULONGLONG::MAX,
+                Attributes,
+                RTL_RANGE_LIST_ADD_IF_CONFLICT,
+                UserData,
+                Owner,
+            );
+        }
+
+        let Status = RtlAddRange(
+            InvertedRangeList,
+            GapStart,
+            NextStart - 1,
+            Attributes,
+            RTL_RANGE_LIST_ADD_IF_CONFLICT,
+            UserData,
+            Owner,
+        );
+        if !NT_SUCCESS(Status) {
+            return Status;
+        }
+
+        // Resume from the next covered region.
+        GapStart = NextStart;
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlInvertRangeList(
     InvertedRangeList: PRTL_RANGE_LIST,
     RangeList: PRTL_RANGE_LIST,
 ) -> NTSTATUS {
-    let mut Previous: PRTL_RANGE_ENTRY = core::ptr::null_mut();
-    let mut Current: PRTL_RANGE_ENTRY;
-    let mut Entry: PLIST_ENTRY;
-    let mut Status: NTSTATUS;
-
-    Entry = (*RangeList).ListHead.Flink;
-    while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
-        Current = (Entry as *mut u8)
-            .offset(-(core::mem::offset_of!(RTL_RANGE_ENTRY, Entry) as isize))
-            as PRTL_RANGE_ENTRY;
-
-        if Previous.is_null() {
-            if (*Current).Range.Start != 0u64 {
-                Status = RtlAddRange(
-                    InvertedRangeList,
-                    0u64,
-                    (*Current).Range.Start - 1,
-                    0,
-                    0,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                );
-                if !NT_SUCCESS(Status) {
-                    return Status;
-                }
-            }
-        } else {
-            if (*Previous).Range.End + 1 != (*Current).Range.Start {
-                Status = RtlAddRange(
-                    InvertedRangeList,
-                    (*Previous).Range.End + 1,
-                    (*Current).Range.Start - 1,
-                    0,
-                    0,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                );
-                if !NT_SUCCESS(Status) {
-                    return Status;
-                }
-            }
-        }
-
-        Previous = Current;
-        Entry = (*Entry).Flink;
-    }
-
-    if Previous.is_null() {
-        return STATUS_SUCCESS;
-    }
-
-    if (*Previous).Range.End + 1 != (-1i64) as u64 {
-        Status = RtlAddRange(
-            InvertedRangeList,
-            (*Previous).Range.End + 1,
-            (-1i64) as u64,
-            0,
-            0,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-        );
-        if !NT_SUCCESS(Status) {
-            return Status;
-        }
-    }
-
-    STATUS_SUCCESS
+    RtlInvertRangeListEx(
+        InvertedRangeList,
+        RangeList,
+        0,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    )
 }
 
 #[no_mangle]
@@ -480,39 +623,22 @@ pub unsafe extern "system" fn RtlIsRangeAvailable(
     AttributeAvailableMask: UCHAR,
     Context: PVOID,
     Callback: PRTL_CONFLICT_RANGE_CALLBACK,
-    Available: PBOOLEAN,
+    Available: *mut BOOLEAN,
 ) -> NTSTATUS {
-    let mut Current: PRTL_RANGE_ENTRY;
-    let mut Entry: PLIST_ENTRY;
-
-    *Available = 1u8;
-
-    Entry = (*RangeList).ListHead.Flink;
-    while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
-        Current = (Entry as *mut u8).offset(
-            -(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize),
-        ) as PRTL_RANGE_ENTRY;
-
-        if (*Current).Range.Start > End || (*Current).Range.End < Start {
-            /* No overlap */
-        } else if AttributeAvailableMask != 0
-            && ((*Current).Range.Attributes & AttributeAvailableMask) != 0
-        {
-            /* Attributes match */
-        } else if (Flags & RTL_RANGE_LIST_SHARED_OK) != 0
-            && ((*Current).Range.Flags & RTL_RANGE_SHARED as UCHAR) != 0
-        {
-            /* Both shared */
-        } else {
-            if let Some(cb) = Callback {
-                *Available = cb(Context, core::ptr::addr_of_mut!((*Current).Range));
-            } else {
-                *Available = 0u8;
-            }
-        }
-
-        Entry = (*Entry).Flink;
+    if Start > End {
+        return STATUS_INVALID_PARAMETER;
     }
+
+    *Available = RtlpWindowIsAvailable(
+        RangeList,
+        Start,
+        End,
+        Flags,
+        AttributeAvailableMask,
+        Context,
+        Callback,
+        core::ptr::null_mut(),
+    ) as BOOLEAN;
 
     STATUS_SUCCESS
 }
