@@ -606,6 +606,41 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START + 2 * 1024 * 1024));
 
+    /* Give the KSEG0 window over ALL of physical RAM a complete L0/L1/L2 chain,
+     * even where no individual page is mapped.
+     *
+     * MiInitializePfnDatabase reads the PDE for each page's kernel VA. Reading a
+     * PDE only needs the table that CONTAINS it to exist - an absent entry then
+     * reads as zero, which the kernel copes with; an absent TABLE faults. On
+     * QEMU virt all RAM sits inside one 1GB L1 entry whose L2 table the loader's
+     * own allocations already created, so every PDE read lands somewhere valid
+     * and this was invisible. The Pi 4B has 3GB spanning three L1 entries while
+     * the loader only ever allocates in the first, so PFN init faulted reading
+     * the PDE for physical 0xBF700000 (translation fault at level 3).
+     *
+     * This is deliberately NOT "map all of RAM": the tables cost three pages per
+     * GB instead of ~2MB per GB of leaf PTEs, and mapping pages the loader does
+     * not own would be a much larger change to what the kernel inherits. */
+    let HighestPage = MmHighestPhysicalPage as ULONG64;
+    let mut Va = KSEG0_BASE as ULONG64;
+    let EndVa = KSEG0_BASE as ULONG64 + HighestPage * PAGE_SIZE as ULONG64;
+    while Va < EndVa {
+        let TablePud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(Va));
+        if TablePud.is_null() {
+            ERR(b"Could not create KSEG0 PUD\n\0".as_ptr() as PCHAR);
+            break;
+        }
+        if MempGetOrCreatePageDir(TablePud, ARM64_PUD_INDEX(Va)).is_null() {
+            ERR(b"Could not create KSEG0 PMD\n\0".as_ptr() as PCHAR);
+            break;
+        }
+        /* One L2 table covers 1GB of VA, so step by that. */
+        Va += 1024 * 1024 * 1024;
+    }
+    crate::frldr::dbgcon_str(b"[FLDR] kseg0 tables to 0x");
+    crate::frldr::dbgcon_hex64(EndVa);
+    crate::frldr::dbgcon_str(b"\r\n");
+
     /* Identity-map the device pages the kernel touches before MmMapIoSpace
      * exists (Device attrs; see MempMapDevicePage):
      *   PL011 UART  — Arm64UartKernelBase early serial
