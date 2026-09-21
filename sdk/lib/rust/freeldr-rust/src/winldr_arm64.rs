@@ -95,6 +95,65 @@ static mut Arm64Pgd: PARM64_PTE = core::ptr::null_mut();
 /* Shared user data page frame number — file-scope global. */
 static mut SharedUserDataPfn: PFN_NUMBER = 0;
 
+/// Drop from EL2 to EL1 so the EL1 translation regime the loader programs (and
+/// the kernel requires) is the one that actually translates.
+///
+/// Measured 2026-09-20 on a Pi 4B: pftf/RPi4 UEFI hands off at **EL2 with
+/// HCR_EL2.E2H == 0**, where writes to TTBR0_EL1/TTBR1_EL1/TCR_EL1/MAIR_EL1 are
+/// inert for the current regime - EL2 keeps translating through TTBR0_EL2 under
+/// the firmware's identity map. The loader therefore ran with correct page
+/// tables that nothing consulted: identity addresses worked, the first store
+/// through a PaToVa KSEG0 VA faulted, and no error was reported anywhere.
+/// QEMU hands off at EL1, which is why this was never seen there.
+///
+/// EL1 is also where the kernel must end up regardless - KiSystemStartup writes
+/// CPACR_EL1 and the trap vectors are EL1 - so dropping is the fix, not
+/// programming EL2 translation instead.
+///
+/// Caller must already have taken the system down to a state where firmware
+/// boot services are no longer used, and must enable the EL1 MMU afterwards:
+/// EL1 arrives with SCTLR_EL1.M clear, so the window between `eret` and the
+/// MMU enable runs flat-addressed and is kept as short as possible.
+pub unsafe fn Arm64DropToEl1() {
+    let sp: ULONG64;
+    core::arch::asm!("mov {}, sp", out(reg) sp, options(nomem, nostack));
+    core::arch::asm!(
+        // EL1h takes its stack from SP_EL1, not the EL2 stack we are on.
+        "msr sp_el1, {sp}",
+        // RW: EL1 is AArch64. Writing the whole register also clears TGE, which
+        // must be 0 to execute at EL1 at all.
+        "mov {t}, #(1 << 31)",
+        "msr hcr_el2, {t}",
+        // EL1PCTEN|EL1PCEN: let EL1 read the counter and drive the timer. Without
+        // this the HAL's generic-timer clock traps to EL2 the moment it starts.
+        "mov {t}, #3",
+        "msr cnthctl_el2, {t}",
+        "msr cntvoff_el2, xzr",
+        // No stage-2 translation; report this CPU to EL1 as itself.
+        "msr vttbr_el2, xzr",
+        "mrs {t}, midr_el1",
+        "msr vpidr_el2, {t}",
+        "mrs {t}, mpidr_el1",
+        "msr vmpidr_el2, {t}",
+        // RES1 bits with TFP clear, so EL1 FP/SIMD does not trap to EL2 (the
+        // kernel enables FP via CPACR_EL1 immediately on entry).
+        "mov {t}, #0x33ff",
+        "msr cptr_el2, {t}",
+        // Return to the next instruction, at EL1h, with DAIF masked.
+        "mov {t}, #0x3c5",
+        "msr spsr_el2, {t}",
+        "adr {t}, 99f",
+        "msr elr_el2, {t}",
+        "dsb sy",
+        "isb",
+        "eret",
+        "99:",
+        sp = in(reg) sp,
+        t = out(reg) _,
+        options(nostack)
+    );
+}
+
 /// Report the exception level and the translation control the loader is
 /// actually running under.
 ///
@@ -378,6 +437,23 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     core::arch::asm!("msr daifset, #0xF");
 
+    // Firmware may hand off at EL2 (Pi 4B) or EL1 (QEMU virt). Everything below
+    // programs the EL1 regime, so get to EL1 first when there is no VHE to
+    // redirect those accesses for us; otherwise they configure a regime we are
+    // not executing in and the MMU silently keeps using firmware's tables.
+    {
+        let current_el: ULONG64;
+        core::arch::asm!("mrs {}, currentel", out(reg) current_el, options(nomem, nostack));
+        if (current_el >> 2) & 3 == 2 {
+            let hcr: ULONG64;
+            core::arch::asm!("mrs {}, hcr_el2", out(reg) hcr, options(nomem, nostack));
+            if hcr & (1 << 34) == 0 {
+                Arm64DropToEl1();
+                Arm64ReportExceptionLevel(b"[FLDR] ctx-el1");
+            }
+        }
+    }
+
     mair = 0x00000000004400FFu64;
     core::arch::asm!("msr mair_el1, {}", in(reg) mair);
 
@@ -407,6 +483,30 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     ERR(b"<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n\0".as_ptr() as *const i8,
         Arm64Pgd, tcr, mair);
+    // EL1 arrives from an EL2 handoff with the MMU off, so the tables above are
+    // configured but not yet in use. (When firmware handed off at EL1 the MMU is
+    // already on with firmware's tables and this is a no-op - the TTBR swap
+    // above is what takes effect there, which is the QEMU path.)
+    {
+        let mut sctlr: ULONG64;
+        core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr, options(nomem, nostack));
+        if sctlr & 1 == 0 {
+            // M | C | I. Our mappings are Normal-WB, so caches on is correct;
+            // the loader code and stack are identity-mapped, which is what makes
+            // enabling translation mid-function survivable.
+            sctlr |= (1 << 0) | (1 << 2) | (1 << 12);
+            core::arch::asm!(
+                "dsb sy",
+                "isb",
+                "msr sctlr_el1, {s}",
+                "isb",
+                s = in(reg) sctlr,
+                options(nostack)
+            );
+            crate::frldr::dbgcon_str(b"[FLDR] el1 mmu enabled\r\n");
+        }
+    }
+
     Arm64ReportExceptionLevel(b"[FLDR] ctx-post");
     // Read TTBR1_EL1 back: at EL2 without VHE the register still holds what we
     // wrote, so a matching readback does NOT prove the MMU is using it. The EL
