@@ -12,6 +12,7 @@ universal enough to fix mechanically:
 
 from __future__ import annotations
 
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -1639,6 +1640,42 @@ _EXTERN_FN_NAME_RE = re.compile(r"^[ \t]*(?:pub\s+)?fn\s+([A-Za-z_]\w*)\b")
 _EXTERN_ATTR_RE = re.compile(r"^[ \t]*#\[[^\]]*\][ \t]*$")
 
 
+#: Directories with no hand-written `.spec` in them, pruned BEFORE descending.
+#: `target` is the one that matters: it is cargo's output tree, it is enormous,
+#: and it churns constantly.
+_SPEC_WALK_SKIP = {"target", ".git", "__pycache__", ".responses", "node_modules"}
+
+
+def _walk_specs(root: Path):
+    """Every hand-written `.spec` under `root`, pruning generated trees.
+
+    `Path.rglob` was the obvious spelling and it is unsafe here. It descends
+    into everything and only lets the caller filter what it has already
+    yielded, so a `cargo build` running concurrently -- which the merge queue
+    guarantees, because it gates three arches while other lanes build -- can
+    delete a temp directory out from under the generator. pathlib then raises
+    FileNotFoundError from inside `scandir` and takes the whole walk down
+    mid-iteration. That bounced a lane out of the queue with a TOOLING_FAIL
+    that had nothing to do with its change; the vanished path was
+    `sdk/lib/rust/target/...-rustlib/i686-pc-windows-gnuutcZEh`.
+
+    `os.walk` fixes both halves: pruning `dirnames` in place means the churning
+    directories are never entered at all, and its default `onerror=None`
+    swallows a directory that disappears anyway. Same prune-then-walk shape
+    `tools/vendored.py` uses, and the same defect `rglob_stable` in
+    tests/qemu/cli/provenance.py exists to work around on the other side of the
+    tree -- there the answer was to retry the walk, here it is to not walk the
+    volatile part in the first place.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d for d in dirnames if d not in _SPEC_WALK_SKIP and not d.startswith("build-")
+        ]
+        for fn in filenames:
+            if fn.endswith(".spec"):
+                yield Path(dirpath) / fn
+
+
 @lru_cache(maxsize=1)
 def _import_abi_map() -> dict[str, str]:
     """symbol -> required extern ABI ("C" | "system"), from EVERY .spec in the tree.
@@ -1699,13 +1736,13 @@ def _import_abi_map() -> dict[str, str]:
         r"^@\s+(stdcall|cdecl|varargs|thiscall|fastcall)\s+(?:-\S+\s+)*([A-Za-z_]\w*)\s*\("
     )
     seen: dict[str, set[str]] = {}
-    for spec in REACTOS_ROOT.rglob("*.spec"):
-        sp = str(spec)
-        if "/build-" in sp or "/.git/" in sp:
-            continue
+    for spec in _walk_specs(REACTOS_ROOT):
         try:
             text = spec.read_text(errors="replace")
         except OSError:
+            # Vanished between the walk and the read -- same race as the walk
+            # itself, one step later. Skipping is right: a .spec that a
+            # concurrent build just deleted was never ours to read.
             continue
         for line in text.splitlines():
             m = pat.match(line.strip())
