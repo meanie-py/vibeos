@@ -593,10 +593,79 @@ def check_archive() -> list[str]:
     return findings
 
 
+def check_burndown() -> tuple[list[str], list[str]]:
+    """THE RATCHET: how much of ucrtbase is still answered by vendored Microsoft C.
+
+    `vendor.yaml` flags `sdk/lib/ucrt` UNWELCOME -- ~78K lines carrying no
+    licence grant at all. That records the intent; this is what stops the tree
+    quietly growing while nobody is looking, and what makes the number march
+    down instead of drifting.
+
+    Only an INCREASE fails. A decrease is the entire point of the exercise, and
+    it is routinely caused by ANOTHER lane landing a Rust body that happens to
+    answer a ucrtbase export -- 234 owed exports became 218 that way in a single
+    evening. A gate that failed on "better than recorded" would bounce lanes for
+    improving the tree, which is precisely how a gate ends up switched off. A
+    decrease prints a note asking for the ceiling to be re-recorded.
+
+    Needs a build: which OBJECT defines a body is not answerable from the .spec,
+    and that distinction is the whole point (see check_archive). Arches without
+    a build are skipped rather than guessed at.
+
+    Returns (failures, notes).
+    """
+    if not TAKEOVER.is_file():
+        return [], []
+    import yaml
+
+    doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
+    want = {str(k): int(v) for k, v in (doc.get("burndown") or {}).items()}
+    if not want:
+        return [], []
+
+    try:
+        from ucrt_burndown import classify
+    except ImportError as e:
+        return [f"ucrt burn-down ratchet could not run: {e}"], []
+
+    fails: list[str] = []
+    notes: list[str] = []
+    for arch, ceiling in sorted(want.items()):
+        if not (REPO / f"build-{arch}").is_dir():
+            continue
+        try:
+            buckets, _ = classify(arch)
+        except SystemExit as e:
+            notes.append(f"note: ucrt burn-down: {arch} not measurable ({e})")
+            continue
+        have = len(buckets["MICROSOFT"])
+        if have > ceiling:
+            fails.append(
+                f"ucrt burn-down REGRESSED on {arch}: {have} exports are answered by "
+                f"vendored Microsoft C, up from the recorded {ceiling}. Something "
+                f"re-enabled a sdk/lib/ucrt body or dropped one of ours. Investigate "
+                f"before re-recording: the ceiling in tools/ucrt-takeover.yaml only "
+                f"ever goes DOWN. (python3 tools/ucrt_burndown.py --arch {arch})"
+            )
+        elif have < ceiling:
+            notes.append(
+                f"note: ucrt burn-down {arch}: {ceiling} -> {have}, {ceiling - have} "
+                f"fewer Microsoft-backed exports. Lower the ceiling in "
+                f"tools/ucrt-takeover.yaml to keep the ratchet tight."
+            )
+    return fails, notes
+
+
 def main() -> int:
     findings = check_structure() + check_extern_crates() + check_archive()
+    bd_fails, bd_notes = check_burndown()
+    findings += bd_fails
     for f in findings:
         print(f)
+    # Notes last, so a green run ends on the number going down -- which is the
+    # one line anyone actually wants to see from this tool.
+    for n in bd_notes:
+        print(n)
     return 1 if findings else 0
 
 

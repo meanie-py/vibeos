@@ -25,6 +25,24 @@
 # Microsoft source files once they own no remaining export
 # (`tools/ucrt_burndown.py --arch i386 --file <src>` says).
 
+# The RATCHET. How many of ucrtbase's exports are still answered by vendored
+# Microsoft C, per arch, as last recorded. `check()` fails if a build shows MORE
+# than this — the count may march down, never up.
+#
+# Only an INCREASE fails, deliberately. A decrease is the point of the exercise,
+# and it is regularly caused by ANOTHER lane landing a Rust body that happens to
+# cover a ucrtbase export; failing on "better than recorded" would bounce lanes
+# for improving the tree, which is how a gate gets switched off. A decrease
+# prints a note asking for `tools/vendored.py --write-burndown` instead.
+#
+# arm64 sits below the other two because a few exports are `-arch=!arm64` in the
+# .spec and so are not exports there at all. Per-arch numbers, not one number,
+# for exactly that reason.
+burndown:
+  i386: 999
+  amd64: 999
+  arm64: 996
+
 families:
   bits:
     replaces:
