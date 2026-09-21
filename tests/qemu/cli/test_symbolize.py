@@ -120,3 +120,46 @@ def test_index_is_stale_when_the_media_is_newer(tmp_path):
     assert symbolize.index_is_stale(repo, "amd64") is True
     os.utime(iso, (500_000, 500_000))
     assert symbolize.index_is_stale(repo, "amd64") is False
+
+
+def test_module_override_falls_back_to_live_nm_for_an_unindexed_module(tmp_path, monkeypatch):
+    # Modules on a shared image base carry no rows in the index by design -- an
+    # address cannot identify them. But --module supplies that identity, so the
+    # only thing missing is symbols, and one nm answers it. Before this
+    # fallback, --module returned "no symbol table entry" for exactly the
+    # modules it exists to serve: wow64.dll shares 0x180000000 with 7 others,
+    # and the WoW64 lane's addresses all live in it.
+    repo = _index(
+        tmp_path,
+        [_mod(0x180000000, 0x180040000, "wow64.dll", "shared")],
+        ["other.dll\t0000000000401000\tx\t-"],
+    )
+    called: list[tuple[str, int]] = []
+
+    def fake_live(_repo, _arch, mod, addr):
+        called.append((mod.name, addr))
+        return ("Wow64pUserCallbackCommon", 0x180017BE0, "wow64_callback.c:346")
+
+    monkeypatch.setattr(symbolize, "lookup_symbol_live", fake_live)
+    out = symbolize.resolve(repo, "amd64", 0x180017C18, want_module="wow64.dll")
+    assert called == [("wow64.dll", 0x180017C18)]
+    assert "wow64.dll!Wow64pUserCallbackCommon+0x38" in out
+
+
+def test_live_nm_is_NOT_used_without_an_explicit_module(tmp_path, monkeypatch):
+    # The fallback must not turn an honest "ambiguous" into a guess: without
+    # --module we still do not know which of the sharing modules it is.
+    repo = _index(
+        tmp_path,
+        [
+            _mod(0x180000000, 0x180040000, "wow64.dll", "shared"),
+            _mod(0x180000000, 0x180040000, "other.dll", "shared"),
+        ],
+        [],
+    )
+    monkeypatch.setattr(
+        symbolize,
+        "lookup_symbol_live",
+        lambda *a: (_ for _ in ()).throw(AssertionError("must not nm on an ambiguous address")),
+    )
+    assert "ambiguous" in symbolize.resolve(repo, "amd64", 0x180017C18)
