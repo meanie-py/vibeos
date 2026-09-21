@@ -47,15 +47,27 @@ def discover(build_dir: Path) -> list[str]:
     return sorted(found)
 
 
-def read_quarantine(arch: str) -> tuple[set[str], Path]:
+def read_quarantine(arch: str) -> tuple[set[str], list[str], Path]:
+    """Returns (whole suites, "<suite> <subtest>" entries, path).
+
+    A bare `foo_apitest.exe` line drops the whole suite. A
+    `foo_apitest.exe SomeSubtest` line drops only that subtest, which is the
+    granularity that actually matters: advapi32's RtlEncryptMemory crash-loops
+    services.exe and would otherwise cost the other 18 advapi32 subtests.
+    """
     path = HERE / f"quarantine-{arch}.txt"
-    names: set[str] = set()
+    suites: set[str] = set()
+    subtests: list[str] = []
     if path.is_file():
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.split("#", 1)[0].strip()
-            if line:
-                names.add(line)
-    return names, path
+            if not line:
+                continue
+            if " " in line:
+                subtests.append(" ".join(line.split()))
+            else:
+                suites.add(line)
+    return suites, subtests, path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    quarantined, qpath = read_quarantine(args.arch)
+    quarantined, skipped, qpath = read_quarantine(args.arch)
     stale = sorted(quarantined - set(found))
     if stale:
         # Loud, per the module docstring: a quarantine that matches nothing is
@@ -87,6 +99,24 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"gen_suites: {qpath.name} names {len(stale)} suite(s) this build did not "
             f"produce: {', '.join(stale)}",
+            file=sys.stderr,
+        )
+
+    # The skip file is staged beside the suite list and read by the sweep.
+    skip_out = HERE / f"apitest-skip-{args.arch}.txt"
+    skip_lines = [
+        f"# apitest subtest skips — {args.arch}. GENERATED from {qpath.name}.",
+        "# '<suite.exe> <subtest>' per line; the sweep announces each as SKIP.",
+    ] + skipped
+    skip_out.write_text("\n".join(skip_lines) + "\n", encoding="utf-8")
+
+    stale_subtest_suites = sorted(
+        {e.split(" ", 1)[0] for e in skipped} - set(found)
+    )
+    if stale_subtest_suites:
+        print(
+            f"gen_suites: {qpath.name} has subtest skips for suite(s) this build did "
+            f"not produce: {', '.join(stale_subtest_suites)}",
             file=sys.stderr,
         )
 
@@ -103,7 +133,10 @@ def main(argv: list[str] | None = None) -> int:
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     kept = len([s for s in found if s not in quarantined])
-    print(f"gen_suites: {out.name} — {kept} suite(s) ({len(found)} built, {len(found) - kept} quarantined)")
+    print(
+        f"gen_suites: {out.name} — {kept} suite(s) ({len(found)} built, "
+        f"{len(found) - kept} quarantined), {len(skipped)} subtest skip(s)"
+    )
     return 0
 
 

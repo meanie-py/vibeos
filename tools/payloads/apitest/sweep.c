@@ -51,6 +51,11 @@ struct pump_ctx
     char (*Names)[MAX_SUBTEST_NAME];
     int NameCount;
     int InList;
+    /* First line seen during capture. If enumeration yields no names, this is
+     * the only evidence of WHY -- a loader error, a missing import, a usage
+     * banner in an unexpected shape. Discarding it would make every such suite
+     * look identically and uninformatively empty. */
+    char FirstLine[256];
 };
 
 static void take_line(struct pump_ctx *ctx, const char *line)
@@ -62,6 +67,15 @@ static void take_line(struct pump_ctx *ctx, const char *line)
         else
             DbgPrint("[APITEST:%s] %s\n", ctx->Suite, line);
         return;
+    }
+
+    if (!ctx->FirstLine[0] && line[0])
+    {
+        size_t n = strlen(line);
+        if (n >= sizeof(ctx->FirstLine))
+            n = sizeof(ctx->FirstLine) - 1;
+        memcpy(ctx->FirstLine, line, n);
+        ctx->FirstLine[n] = 0;
     }
 
     if (!ctx->InList)
@@ -217,6 +231,55 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     return (wait == WAIT_TIMEOUT) ? -2 : (int)code;
 }
 
+#define MAX_SKIPS 128
+
+static char SkipList[MAX_SKIPS][MAX_SUBTEST_NAME * 2];
+static int SkipCount;
+
+/*
+ * %SystemRoot%\\bin\\apitest-skip.txt: "<suite.exe> <subtest>" per line.
+ * Subtest granularity matters because a single wedging subtest otherwise costs
+ * its whole suite -- advapi32's RtlEncryptMemory crash-loops services.exe and
+ * would have taken the other 18 advapi32 subtests with it.
+ */
+static void load_skips(const char *bindir)
+{
+    char path[MAX_PATH], line[MAX_SUBTEST_NAME * 2];
+    FILE *f;
+
+    _snprintf(path, sizeof(path), "%s\\apitest-skip.txt", bindir);
+    f = fopen(path, "r");
+    if (!f)
+        return;   /* optional */
+
+    while (fgets(line, sizeof(line), f) && SkipCount < MAX_SKIPS)
+    {
+        char *nl = strpbrk(line, "\r\n");
+        if (nl)
+            *nl = 0;
+        if (!line[0] || line[0] == '#')
+            continue;
+        _snprintf(SkipList[SkipCount], sizeof(SkipList[0]), "%s", line);
+        ++SkipCount;
+    }
+    fclose(f);
+    DbgPrint("[APITEST-SWEEP] skip list: %d entr%s\n", SkipCount, SkipCount == 1 ? "y" : "ies");
+}
+
+static int is_skipped(const char *suite, const char *subtest)
+{
+    char key[MAX_SUBTEST_NAME * 2];
+    int i;
+
+    _snprintf(key, sizeof(key), "%s %s", suite, subtest);
+    for (i = 0; i < SkipCount; ++i)
+    {
+        if (strcmp(SkipList[i], key) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 static void run_suite(const char *bindir, const char *suite,
                       int *subtests, int *launched, int *failstart, int *timeouts)
 {
@@ -247,9 +310,12 @@ static void run_suite(const char *bindir, const char *suite,
     }
     if (count == 0)
     {
-        /* No "Valid test names:" block. Either not a wine/test.h binary or it
-         * printed nothing -- say so rather than silently counting it clean. */
-        DbgPrint("[APITEST-SWEEP] NOSUBTESTS %s (exit %d)\n", suite, rc);
+        /* No "Valid test names:" block. Either not a wine/test.h binary, or it
+         * failed to start at all -- say so, with whatever it did print, rather
+         * than silently counting it clean. An exit 255 with no output at all is
+         * almost always a loader failure (missing import). */
+        DbgPrint("[APITEST-SWEEP] NOSUBTESTS %s (exit %d) first-line=%s\n",
+                 suite, rc, ctx.FirstLine[0] ? ctx.FirstLine : "(no output)");
         return;
     }
 
@@ -260,6 +326,14 @@ static void run_suite(const char *bindir, const char *suite,
      * makes, one level finer because a suite here bundles many tests. */
     for (i = 0; i < count; ++i)
     {
+        if (is_skipped(suite, names[i]))
+        {
+            /* Announced, never silent: a skip nobody can see is how a dead test
+             * stays dead. */
+            DbgPrint("[APITEST-SWEEP] SKIP %s %s\n", suite, names[i]);
+            continue;
+        }
+
         ZeroMemory(&ctx, sizeof(ctx));
         ctx.Suite = suite;
         ctx.Label = names[i];
@@ -340,6 +414,7 @@ int main(void)
         }
     }
 
+    load_skips(bindir);
     DbgPrint("[APITEST-SWEEP] start list=%s\n", listpath);
 
     while (fgets(line, sizeof(line), f))

@@ -35,6 +35,8 @@ binaries:
     dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
   - src: tools/payloads/apitest/apitest-suites-{arch}.txt
     dest: bin/apitest-suites.txt
+  - src: tools/payloads/apitest/apitest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
 
 test:
   # One process per suite, 300s cap each. ~128 suites, so budget generously:

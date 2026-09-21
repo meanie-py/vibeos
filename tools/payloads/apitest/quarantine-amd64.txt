@@ -6,3 +6,18 @@
 # wedged the guest here and the run never reached [APITEST-SWEEP] done.
 # Needs triage; until then it must not cost the other 62 suites.
 opengl32_apitest.exe
+
+# SUBTEST-level skips: "<suite.exe> <subtest>".
+# 2026-09-21, first apitest sweep: RtlEncryptMemory crash-loops services.exe
+# (repeating [EXIT-THR] SERVICES.EXE / eventlog.exe on serial) and the sweep
+# never advances past it. A real finding, owed triage — quarantined at subtest
+# granularity so the other 18 advapi32 subtests still run.
+advapi32_apitest.exe RtlEncryptMemory
+# 2026-09-21: BUGCHECK 0x1E at afd.sys+0x89C6, preceded by
+# `ASSERT FAILED: FCB->ReceiveIrp.InFlightRequest == Irp at read.rs:662`.
+# A REAL BUG, found by this harness's third boot. NOT a translation defect: the
+# C (read.c:279) has the identical ASSERT + unconditional clear, so the broken
+# thing is the invariant, not the shape. Registered in the roadmap's bug list;
+# quarantined so characterization of the other suites can continue, NOT because
+# the test is wrong.
+afd_apitest.exe send
