@@ -99,6 +99,13 @@ set(_wow64_extras
     # tools/stress/lua/build.sh). Same deal as sqlite32 -- built on demand,
     # machine-verdicted (0x600D), graded from ladder.py's OPTIONAL table.
     ${REACTOS_SOURCE_DIR}/tools/stress/lua/lua32.exe
+    # Wine's own conformance suites, i386, run under WoW64 by winlogon's
+    # TryStartWow64Winetest. Present only after an i386 `build --rostests`, so
+    # the EXISTS filter above is the opt-in: a normal tree stages nothing and a
+    # rostests tree stages them automatically, with no third flag to forget.
+    # Also a closure root, like every other guest -- a winetest links more of
+    # the CRT than any applet here does.
+    ${REACTOS_SOURCE_DIR}/build-i386/modules/rostests/winetests/user32/user32_winetest.exe
     )
 
 set(_wow64_guest_ok TRUE)
