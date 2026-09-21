@@ -81,6 +81,17 @@ pub struct AcrtPtd {
     pub beginthread_context: *mut c_void,
 }
 
+impl AcrtPtd {
+    /// Accessors used by `locale_update`; named to make the read sites read
+    /// like the C they mirror rather than like field pokes.
+    pub fn _locale_info_ptr(&self) -> *mut crate::locale::CrtLocaleData {
+        self.locale_info
+    }
+    pub fn _multibyte_info_ptr(&self) -> *mut crate::locale::CrtMultibyteData {
+        self.multibyte_info
+    }
+}
+
 macro_rules! pin {
     ($field:ident, $want:expr) => {
         const _: () = assert!(
