@@ -1423,13 +1423,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         extern "C" {
     static mut Arm64UartKernelBase: PVOID;
 }
-        let mut UartPhys: LARGE_INTEGER = core::mem::zeroed();
-        UartPhys.QuadPart = 0x09000000;
-        let KernelVa = MmMapIoSpace(UartPhys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
-        if !KernelVa.is_null() {
-            uart_trace!("[PHASE1] UART remapped to kernel VA");
-            Arm64UartKernelBase = KernelVa;
-            uart_trace!("[PHASE1] UART now using kernel VA");
+        // Remap the SAME physical UART the loader discovered and the kernel has
+        // been writing to since KiSystemStartup — re-deriving it from a constant
+        // here would point Phase 1 at a different device than Phase 0 used.
+        let UartPhysical = (*LoaderBlock).u.Arm.Arm64UartBase;
+        if UartPhysical != 0 {
+            let mut UartPhys: LARGE_INTEGER = core::mem::zeroed();
+            UartPhys.QuadPart = UartPhysical as i64;
+            let KernelVa = MmMapIoSpace(UartPhys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
+            if !KernelVa.is_null() {
+                uart_trace!("[PHASE1] UART remapped to kernel VA");
+                Arm64UartKernelBase = KernelVa;
+                uart_trace!("[PHASE1] UART now using kernel VA");
+            }
         }
     }
 
@@ -1447,13 +1453,22 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         extern "system" {
             fn HalInitializeClockArm64(GicDistVa: PVOID, GicCpuVa: PVOID);
         }
-        let mut Phys: LARGE_INTEGER = core::mem::zeroed();
-        Phys.QuadPart = 0x08000000; // GICv2 distributor
-        let GicDistVa = MmMapIoSpace(Phys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
-        Phys.QuadPart = 0x08010000; // GICv2 CPU interface
-        let GicCpuVa = MmMapIoSpace(Phys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
-        if !GicDistVa.is_null() && !GicCpuVa.is_null() {
-            HalInitializeClockArm64(GicDistVa, GicCpuVa);
+        // Both bases come from the ACPI MADT via the loader block; a board whose
+        // firmware describes no GICv2 gets no clock rather than a clock pointed
+        // at whatever happens to live at QEMU virt's addresses.
+        let GicdPhysical = (*LoaderBlock).u.Arm.Arm64GicDistributorBase;
+        let GiccPhysical = (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase;
+        if GicdPhysical != 0 && GiccPhysical != 0 {
+            let mut Phys: LARGE_INTEGER = core::mem::zeroed();
+            Phys.QuadPart = GicdPhysical as i64;
+            let GicDistVa = MmMapIoSpace(Phys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
+            Phys.QuadPart = GiccPhysical as i64;
+            let GicCpuVa = MmMapIoSpace(Phys, PAGE_SIZE as ntkrnl_sys::ddk::ULONG_PTR, MmNonCached);
+            if !GicDistVa.is_null() && !GicCpuVa.is_null() {
+                HalInitializeClockArm64(GicDistVa, GicCpuVa);
+            }
+        } else {
+            uart_trace!("[PHASE1] no GICv2 in ACPI MADT - system clock not started");
         }
     }
 

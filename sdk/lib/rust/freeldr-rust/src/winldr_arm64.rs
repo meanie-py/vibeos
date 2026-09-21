@@ -95,6 +95,195 @@ static mut Arm64Pgd: PARM64_PTE = core::ptr::null_mut();
 /* Shared user data page frame number — file-scope global. */
 static mut SharedUserDataPfn: PFN_NUMBER = 0;
 
+// Minimal EL1 exception vectors for the loader.
+//
+// Dropping to EL1 costs us the firmware's handler: its vectors are EL2's, so
+// after the drop a fault at EL1 lands on whatever VBAR_EL1 happens to hold and
+// the board simply stops - the "Synchronous Exception at 0x..." line that
+// located every earlier bug disappears. Installing these keeps faults legible
+// until the kernel installs KiArm64VectorTable.
+//
+// 16 entries of 128 bytes at a 2048-byte alignment, as the architecture
+// requires; every one funnels to the same reporter because the loader has
+// nothing to recover to.
+core::arch::global_asm!(
+    ".balign 2048",
+    ".globl Arm64LoaderVectorTable",
+    "Arm64LoaderVectorTable:",
+    ".rept 16",
+    ".balign 128",
+    "b Arm64LoaderFaultEntry",
+    ".endr",
+);
+
+extern "C" {
+    static Arm64LoaderVectorTable: u8;
+}
+
+/// Report an EL1 fault and stop. No recovery is possible here, so this does not
+/// preserve registers - it exists so a fault says what and where.
+#[no_mangle]
+pub unsafe extern "C" fn Arm64LoaderFaultEntry() -> ! {
+    let (esr, far, elr, spsr): (ULONG64, ULONG64, ULONG64, ULONG64);
+    core::arch::asm!("mrs {}, esr_el1", out(reg) esr, options(nomem, nostack));
+    core::arch::asm!("mrs {}, far_el1", out(reg) far, options(nomem, nostack));
+    core::arch::asm!("mrs {}, elr_el1", out(reg) elr, options(nomem, nostack));
+    core::arch::asm!("mrs {}, spsr_el1", out(reg) spsr, options(nomem, nostack));
+    crate::frldr::dbgcon_str(b"\r\n!!FLDR-EL1-FAULT esr=0x");
+    crate::frldr::dbgcon_hex64(esr);
+    crate::frldr::dbgcon_str(b" far=0x");
+    crate::frldr::dbgcon_hex64(far);
+    crate::frldr::dbgcon_str(b" elr=0x");
+    crate::frldr::dbgcon_hex64(elr);
+    crate::frldr::dbgcon_str(b" spsr=0x");
+    crate::frldr::dbgcon_hex64(spsr);
+    // EC is the top 6 bits of ESR: 0x25 data abort, 0x21 instruction abort.
+    crate::frldr::dbgcon_str(b" ec=0x");
+    crate::frldr::dbgcon_hex8(((esr >> 26) & 0x3F) as u32);
+    crate::frldr::dbgcon_str(b"\r\n");
+    loop {
+        core::arch::asm!("wfi", options(nomem, nostack));
+    }
+}
+
+/// Point VBAR_EL1 at the loader's vectors.
+pub unsafe fn Arm64InstallEl1Vectors() {
+    let base = core::ptr::addr_of!(Arm64LoaderVectorTable) as ULONG64;
+    core::arch::asm!("msr vbar_el1, {}", "isb", in(reg) base, options(nostack));
+}
+
+/// Drop from EL2 to EL1 so the EL1 translation regime the loader programs (and
+/// the kernel requires) is the one that actually translates.
+///
+/// Measured 2026-09-20 on a Pi 4B: pftf/RPi4 UEFI hands off at **EL2 with
+/// HCR_EL2.E2H == 0**, where writes to TTBR0_EL1/TTBR1_EL1/TCR_EL1/MAIR_EL1 are
+/// inert for the current regime - EL2 keeps translating through TTBR0_EL2 under
+/// the firmware's identity map. The loader therefore ran with correct page
+/// tables that nothing consulted: identity addresses worked, the first store
+/// through a PaToVa KSEG0 VA faulted, and no error was reported anywhere.
+/// QEMU hands off at EL1, which is why this was never seen there.
+///
+/// EL1 is also where the kernel must end up regardless - KiSystemStartup writes
+/// CPACR_EL1 and the trap vectors are EL1 - so dropping is the fix, not
+/// programming EL2 translation instead.
+///
+/// Caller must already have taken the system down to a state where firmware
+/// boot services are no longer used, and must enable the EL1 MMU afterwards:
+/// EL1 arrives with SCTLR_EL1.M clear, so the window between `eret` and the
+/// MMU enable runs flat-addressed and is kept as short as possible.
+pub unsafe fn Arm64DropToEl1() {
+    let sp: ULONG64;
+    core::arch::asm!("mov {}, sp", out(reg) sp, options(nomem, nostack));
+    core::arch::asm!(
+        // EL1h takes its stack from SP_EL1, not the EL2 stack we are on.
+        "msr sp_el1, {sp}",
+        // RW: EL1 is AArch64. Writing the whole register also clears TGE, which
+        // must be 0 to execute at EL1 at all.
+        "mov {t}, #(1 << 31)",
+        "msr hcr_el2, {t}",
+        // EL1PCTEN|EL1PCEN: let EL1 read the counter and drive the timer. Without
+        // this the HAL's generic-timer clock traps to EL2 the moment it starts.
+        "mov {t}, #3",
+        "msr cnthctl_el2, {t}",
+        "msr cntvoff_el2, xzr",
+        // No stage-2 translation; report this CPU to EL1 as itself.
+        "msr vttbr_el2, xzr",
+        "mrs {t}, midr_el1",
+        "msr vpidr_el2, {t}",
+        "mrs {t}, mpidr_el1",
+        "msr vmpidr_el2, {t}",
+        // RES1 bits with TFP clear, so EL1 FP/SIMD does not trap to EL2 (the
+        // kernel enables FP via CPACR_EL1 immediately on entry).
+        "mov {t}, #0x33ff",
+        "msr cptr_el2, {t}",
+        // Return to the next instruction, at EL1h, with DAIF masked.
+        "mov {t}, #0x3c5",
+        "msr spsr_el2, {t}",
+        "adr {t}, 99f",
+        "msr elr_el2, {t}",
+        "dsb sy",
+        "isb",
+        "eret",
+        "99:",
+        sp = in(reg) sp,
+        t = out(reg) _,
+        options(nostack)
+    );
+}
+
+/// Report the exception level and the translation control the loader is
+/// actually running under.
+///
+/// WinLdrSetProcessorContext programs MAIR_EL1/TCR_EL1/TTBR0_EL1/TTBR1_EL1 and
+/// invalidates with `tlbi vmalle1`. That is only the EL1 regime. If firmware
+/// hands off at EL2 WITHOUT VHE (HCR_EL2.E2H == 0), every one of those writes is
+/// inert for the regime we execute in: EL2 translates through TTBR0_EL2, the
+/// firmware's own identity map stays live, and the symptom is exactly what this
+/// board shows — identity addresses work, the KSEG0 VA faults, our tables are
+/// correct but unused, and nothing reports an error. With VHE (E2H == 1) the
+/// _EL1 accesses are redirected to the _EL2 registers and the same code works,
+/// which is why QEMU has never caught this.
+pub unsafe fn Arm64ReportExceptionLevel(Label: &[u8]) {
+    let current_el: u64;
+    core::arch::asm!("mrs {}, currentel", out(reg) current_el, options(nomem, nostack));
+    let el = (current_el >> 2) & 3;
+    crate::frldr::dbgcon_str(Label);
+    crate::frldr::dbgcon_str(b" EL");
+    crate::frldr::dbgcon_hex8(el as u32);
+    let sctlr: u64;
+    core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr, options(nomem, nostack));
+    crate::frldr::dbgcon_str(b" SCTLR_EL1=0x");
+    crate::frldr::dbgcon_hex64(sctlr);
+    if el == 2 {
+        // Only readable at EL2; reading it from EL1 would trap.
+        let hcr: u64;
+        core::arch::asm!("mrs {}, hcr_el2", out(reg) hcr, options(nomem, nostack));
+        crate::frldr::dbgcon_str(b" HCR_EL2=0x");
+        crate::frldr::dbgcon_hex64(hcr);
+        crate::frldr::dbgcon_str(if hcr & (1 << 34) != 0 { b" E2H=1" } else { b" E2H=0" });
+    }
+    crate::frldr::dbgcon_str(b"\r\n");
+}
+
+/// Walk the live page tables for one VA and report each level, so an unmapped
+/// address says WHERE translation stopped instead of only that it faulted.
+/// Reads the tables through their physical addresses, which is what the loader
+/// has been doing all along; safe both before and after the TTBR switch.
+pub unsafe fn Arm64ReportMapping(Label: &[u8], VirtualAddress: ULONG64) {
+    crate::frldr::dbgcon_str(Label);
+    crate::frldr::dbgcon_str(b" va=0x");
+    crate::frldr::dbgcon_hex64(VirtualAddress);
+    if Arm64Pgd.is_null() {
+        crate::frldr::dbgcon_str(b" PGD=null\r\n");
+        return;
+    }
+    let mut table = Arm64Pgd;
+    let indices = [
+        ARM64_PGD_INDEX(VirtualAddress),
+        ARM64_PUD_INDEX(VirtualAddress),
+        ARM64_PMD_INDEX(VirtualAddress),
+        ARM64_PTE_INDEX(VirtualAddress),
+    ];
+    for (level, index) in indices.iter().enumerate() {
+        let entry = *table.add(*index as usize);
+        crate::frldr::dbgcon_str(b" L");
+        crate::frldr::dbgcon_hex8(level as u32);
+        crate::frldr::dbgcon_str(b"[");
+        crate::frldr::dbgcon_hex32(*index);
+        crate::frldr::dbgcon_str(b"]=0x");
+        crate::frldr::dbgcon_hex64(entry);
+        if entry & ARM64_PTE_VALID == 0 {
+            crate::frldr::dbgcon_str(b" INVALID\r\n");
+            return;
+        }
+        if level == 3 {
+            break;
+        }
+        table = (entry & !0xFFFu64) as PARM64_PTE;
+    }
+    crate::frldr::dbgcon_str(b" MAPPED\r\n");
+}
+
 unsafe fn MempAllocatePageTables() -> u8 {
     TRACE(b">>> MempAllocatePageTables\n\0".as_ptr() as _);
 
@@ -144,6 +333,12 @@ unsafe fn MempGetOrCreatePageDir(ParentTable: PARM64_PTE, Index: ULONG) -> PARM6
     SubDir
 }
 
+/// Count of page-table allocation failures inside MempMapSinglePage. In a
+/// release build ERR() compiles to nothing, so a mapping that quietly fails
+/// here surfaces only much later as a fault on an unmapped VA. Reported at the
+/// loader/kernel handoff so "some mapping failed" is never invisible again.
+pub static mut Arm64MapFailures: u32 = 0;
+
 unsafe fn MempMapSinglePage(VirtualAddress: ULONG64, PhysicalAddress: ULONG64) -> BOOLEAN {
     let Pud: PARM64_PTE;
     let Pmd: PARM64_PTE;
@@ -152,16 +347,19 @@ unsafe fn MempMapSinglePage(VirtualAddress: ULONG64, PhysicalAddress: ULONG64) -
 
     Pud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(VirtualAddress));
     if Pud.is_null() {
+        Arm64MapFailures += 1;
         return 0u8;
     }
 
     Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(VirtualAddress));
     if Pmd.is_null() {
+        Arm64MapFailures += 1;
         return 0u8;
     }
 
     Pte = MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(VirtualAddress));
     if Pte.is_null() {
+        Arm64MapFailures += 1;
         return 0u8;
     }
 
@@ -292,8 +490,28 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     ERR(b">>> WinLdrSetProcessorContext for ARM64\n\0".as_ptr() as *const i8);
     ERR(b"  PGD at physical %p\n\0".as_ptr() as *const i8, Arm64Pgd);
+    Arm64ReportExceptionLevel(b"[FLDR] ctx-pre");
 
     core::arch::asm!("msr daifset, #0xF");
+
+    // Firmware may hand off at EL2 (Pi 4B) or EL1 (QEMU virt). Everything below
+    // programs the EL1 regime, so get to EL1 first when there is no VHE to
+    // redirect those accesses for us; otherwise they configure a regime we are
+    // not executing in and the MMU silently keeps using firmware's tables.
+    {
+        let current_el: ULONG64;
+        core::arch::asm!("mrs {}, currentel", out(reg) current_el, options(nomem, nostack));
+        if (current_el >> 2) & 3 == 2 {
+            let hcr: ULONG64;
+            core::arch::asm!("mrs {}, hcr_el2", out(reg) hcr, options(nomem, nostack));
+            if hcr & (1 << 34) == 0 {
+                Arm64DropToEl1();
+                // Before anything else can fault at EL1 without a handler.
+                Arm64InstallEl1Vectors();
+                Arm64ReportExceptionLevel(b"[FLDR] ctx-el1");
+            }
+        }
+    }
 
     mair = 0x00000000004400FFu64;
     core::arch::asm!("msr mair_el1, {}", in(reg) mair);
@@ -324,7 +542,55 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     ERR(b"<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n\0".as_ptr() as *const i8,
         Arm64Pgd, tcr, mair);
+    // EL1 arrives from an EL2 handoff with the MMU off, so the tables above are
+    // configured but not yet in use. (When firmware handed off at EL1 the MMU is
+    // already on with firmware's tables and this is a no-op - the TTBR swap
+    // above is what takes effect there, which is the QEMU path.)
+    {
+        let mut sctlr: ULONG64;
+        core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr, options(nomem, nostack));
+        if sctlr & 1 == 0 {
+            // M | C | I. Our mappings are Normal-WB, so caches on is correct;
+            // the loader code and stack are identity-mapped, which is what makes
+            // enabling translation mid-function survivable.
+            sctlr |= (1 << 0) | (1 << 2) | (1 << 12);
+            core::arch::asm!(
+                "dsb sy",
+                "isb",
+                "msr sctlr_el1, {s}",
+                "isb",
+                s = in(reg) sctlr,
+                options(nostack)
+            );
+            crate::frldr::dbgcon_str(b"[FLDR] el1 mmu enabled\r\n");
+        }
+    }
+
+    Arm64ReportExceptionLevel(b"[FLDR] ctx-post");
+    // Read TTBR1_EL1 back: at EL2 without VHE the register still holds what we
+    // wrote, so a matching readback does NOT prove the MMU is using it. The EL
+    // reported above is what decides that.
+    let ttbr1_readback: ULONG64;
+    core::arch::asm!("mrs {}, ttbr1_el1", out(reg) ttbr1_readback, options(nomem, nostack));
+    crate::frldr::dbgcon_str(b"[FLDR] ttbr1_el1=0x");
+    crate::frldr::dbgcon_hex64(ttbr1_readback);
+    crate::frldr::dbgcon_str(b" pgd=0x");
+    crate::frldr::dbgcon_hex64(Arm64Pgd as ULONG64);
+    crate::frldr::dbgcon_str(b"\r\n");
 }
+
+/// GICv2 (distributor, CPU interface) physical bases from the ACPI MADT, or
+/// (0, 0) when firmware describes no GICv2. Filled by WinLdrSetupMachineDependent
+/// before WinLdrMapSpecialPages runs, and handed to the kernel in the loader block.
+static mut Arm64GicBases: (ULONG64, ULONG64) = (0, 0);
+
+/// QEMU virt's fw_cfg MMIO block, which carries the Phase-0 tripwire channel.
+/// It is a QEMU device with no ACPI description, so it cannot be discovered;
+/// it is probed ONLY when the discovered UART is QEMU virt's, which is what
+/// makes it safe — on a physical board this stays zero and nothing touches it.
+const QEMU_VIRT_UART: ULONG64 = 0x0900_0000;
+const QEMU_VIRT_FW_CFG: ULONG64 = 0x0902_0000;
+static mut Arm64FwCfgBase: ULONG64 = 0;
 
 unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     let Pud: PARM64_PTE;
@@ -340,25 +606,68 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START + 2 * 1024 * 1024));
 
-    /* Identity-map the QEMU virt device pages the kernel touches before
-     * MmMapIoSpace exists (Device attrs; see MempMapDevicePage):
-     *   0x09000000 PL011 UART      — Arm64UartKernelBase early serial
-     *   0x09020000 fw_cfg          — Phase-0 tripwire-channel probe
-     *   0x08000000 GICv2 GICD      — early-SMP IPI send (KeStartAllProcessors
-     *   0x08010000 GICv2 GICC        runs before MmInitSystem(1); M5b)
+    /* Give the KSEG0 window over ALL of physical RAM a complete L0/L1/L2 chain,
+     * even where no individual page is mapped.
+     *
+     * MiInitializePfnDatabase reads the PDE for each page's kernel VA. Reading a
+     * PDE only needs the table that CONTAINS it to exist - an absent entry then
+     * reads as zero, which the kernel copes with; an absent TABLE faults. On
+     * QEMU virt all RAM sits inside one 1GB L1 entry whose L2 table the loader's
+     * own allocations already created, so every PDE read lands somewhere valid
+     * and this was invisible. The Pi 4B has 3GB spanning three L1 entries while
+     * the loader only ever allocates in the first, so PFN init faulted reading
+     * the PDE for physical 0xBF700000 (translation fault at level 3).
+     *
+     * This is deliberately NOT "map all of RAM": the tables cost three pages per
+     * GB instead of ~2MB per GB of leaf PTEs, and mapping pages the loader does
+     * not own would be a much larger change to what the kernel inherits. */
+    let HighestPage = MmHighestPhysicalPage as ULONG64;
+    let mut Va = KSEG0_BASE as ULONG64;
+    let EndVa = KSEG0_BASE as ULONG64 + HighestPage * PAGE_SIZE as ULONG64;
+    while Va < EndVa {
+        let TablePud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(Va));
+        if TablePud.is_null() {
+            ERR(b"Could not create KSEG0 PUD\n\0".as_ptr() as PCHAR);
+            break;
+        }
+        if MempGetOrCreatePageDir(TablePud, ARM64_PUD_INDEX(Va)).is_null() {
+            ERR(b"Could not create KSEG0 PMD\n\0".as_ptr() as PCHAR);
+            break;
+        }
+        /* One L2 table covers 1GB of VA, so step by that. */
+        Va += 1024 * 1024 * 1024;
+    }
+    crate::frldr::dbgcon_str(b"[FLDR] kseg0 tables to 0x");
+    crate::frldr::dbgcon_hex64(EndVa);
+    crate::frldr::dbgcon_str(b"\r\n");
+
+    /* Identity-map the device pages the kernel touches before MmMapIoSpace
+     * exists (Device attrs; see MempMapDevicePage):
+     *   PL011 UART  — Arm64UartKernelBase early serial
+     *   GICv2 GICD  — early-SMP IPI send (KeStartAllProcessors runs BEFORE
+     *   GICv2 GICC    MmInitSystem(1); M5b)
+     *   fw_cfg      — Phase-0 tripwire channel, QEMU virt only
+     * Every address comes from firmware (ACPI), never from a constant: on a
+     * physical board a QEMU MMIO address is ordinary RAM, so mapping one as
+     * Device and writing to it corrupts memory with no fault to point at it.
      * Non-fatal on failure, mirroring the C: a UP boot without them loses
      * only the affected feature, and the HAL reports IPI loss loudly. */
-    if MempMapDevicePage(0x09000000u64) == 0u8 {
+    if MempMapDevicePage(crate::arm64_debug::uart_base() as u64) == 0u8 {
         ERR(b"Could not map PL011 UART page\n\0".as_ptr() as PCHAR);
     }
-    if MempMapDevicePage(0x09020000u64) == 0u8 {
+    let (Gicd, Gicc) = Arm64GicBases;
+    if Gicd != 0 && Gicc != 0 {
+        if MempMapDevicePage(Gicd) == 0u8 {
+            ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+        }
+        if MempMapDevicePage(Gicc) == 0u8 {
+            ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+        }
+    } else {
+        ERR(b"No GICv2 in ACPI MADT (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+    }
+    if Arm64FwCfgBase != 0 && MempMapDevicePage(Arm64FwCfgBase) == 0u8 {
         ERR(b"Could not map fw_cfg page (tripwire channel disabled)\n\0".as_ptr() as PCHAR);
-    }
-    if MempMapDevicePage(0x08000000u64) == 0u8 {
-        ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
-    }
-    if MempMapDevicePage(0x08010000u64) == 0u8 {
-        ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
     }
 
     1u8
@@ -371,6 +680,29 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     ERR(b">>> WinLdrSetupMachineDependent for ARM64\n\0".as_ptr() as _);
 
     (*LoaderBlock).u.Arm.MachineType = 0;
+
+    /* Carry the firmware's own description of this board to the kernel, so no
+     * kernel or HAL path has to guess an MMIO address. */
+    let Xsdt = crate::arm64_debug::xsdt_base();
+    let Uart = crate::arm64_debug::uart_base() as ULONG64;
+    Arm64GicBases = match crate::arm64_serial_acpi::gic_from_xsdt(Xsdt) {
+        Some((Gicd, Gicc)) => (Gicd, Gicc),
+        None => (0, 0),
+    };
+    Arm64FwCfgBase = if Uart == QEMU_VIRT_UART { QEMU_VIRT_FW_CFG } else { 0 };
+    (*LoaderBlock).u.Arm.AcpiTablePhysicalAddress = Xsdt;
+    (*LoaderBlock).u.Arm.Arm64UartBase = Uart;
+    (*LoaderBlock).u.Arm.Arm64GicDistributorBase = Arm64GicBases.0;
+    (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase = Arm64GicBases.1;
+    // dbgcon, not ERR: ERR is `#if DBG` and compiles to nothing in the release
+    // build that ships to hardware, which is exactly where this must be legible.
+    crate::frldr::dbgcon_str(b"[FLDR] arm64 platform: UART=0x");
+    crate::frldr::dbgcon_hex64(Uart);
+    crate::frldr::dbgcon_str(b" GICD=0x");
+    crate::frldr::dbgcon_hex64(Arm64GicBases.0);
+    crate::frldr::dbgcon_str(b" GICC=0x");
+    crate::frldr::dbgcon_hex64(Arm64GicBases.1);
+    crate::frldr::dbgcon_str(b"\r\n");
 
     SharedUserDataAddress = MmAllocateMemoryWithType(MM_PAGE_SIZE, LoaderStartupPcrPage);
     if SharedUserDataAddress.is_null() {

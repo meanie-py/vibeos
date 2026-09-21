@@ -667,6 +667,54 @@ def verdicts(text: str) -> dict[str, int]:
     return out
 
 
+# [WT] user32:class: started (PID 123)  /  [WT] user32:class: exit = 4 failure(s), ...
+# The label is <suite>:<subtest>, written by winlogon's TryStartWinetest, and
+# carries a `native/` prefix for the bare-i386 control run of the same binary --
+# the pair is what makes a red assertion attributable to the WoW64 seam rather
+# than to user32.
+_WT_STARTED = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): started ")
+_WT_VERDICT = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): exit = (\d+) failure")
+_WT_CRASH = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): CRASHED, exit = (0x[0-9a-fA-F]+)")
+_WT_TIMEOUT = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): TIMED OUT,")
+
+
+def winetests(text: str) -> dict[str, int]:
+    """Failure count per Wine conformance subtest that reported.
+
+    A winetest's exit code IS its failure count, so 0 means the suite agreed
+    with real Windows on every assertion it made."""
+    return {label: int(n) for label, n in _WT_VERDICT.findall(text)}
+
+
+def winetests_crashed(text: str) -> dict[str, str]:
+    """Subtests that died on an unhandled exception, and the NTSTATUS.
+
+    Distinct from a failure count on purpose: a count is the oracle's verdict
+    on the OS, a crash is the OS taking the oracle down with it and leaving
+    every later assertion unrun. Only the second is a verdict about THIS run."""
+    return dict(_WT_CRASH.findall(text))
+
+
+def winetests_timed_out(text: str) -> list[str]:
+    """Subtests we killed. A third outcome, kept apart from the other two for
+    the same reason: the exit code is OURS (0xDEAD), so counting it as failures
+    reports 57005 of them."""
+    return _WT_TIMEOUT.findall(text)
+
+
+def winetests_lost(text: str) -> list[str]:
+    """Subtests that STARTED and never reported.
+
+    This, and not the failure count, is what the ladder gates on. The counts
+    are the oracle grading US: they start non-zero by construction and go down
+    as the OS improves, so gating on zero would paint the ladder permanently
+    red and teach everyone to ignore it. A subtest that vanishes mid-run has
+    crashed or hung the guest, which is a regression in OUR code and is the
+    same signal every other rung here carries."""
+    done = set(winetests(text)) | set(winetests_crashed(text)) | set(winetests_timed_out(text))
+    return [label for label in _WT_STARTED.findall(text) if label not in done]
+
+
 def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     """None if every ladder guest reported PASS; else a failure dict with the
     same {classification, salient} shape the smoke triage stages use.
@@ -691,10 +739,14 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
             missing.append(g)
     missing += [g for g in _optional_in_flight(text) if g not in missing]
 
-    if not missing and not wrong:
+    lost = winetests_lost(text)
+
+    if not missing and not wrong and not lost:
         return None
 
     salient: list[str] = []
+    for label in lost:
+        salient.append(f"winetest {label} started and never reported — the guest crashed or hung")
     if len(missing) == len(LADDER):
         # Nothing ran at all — almost always staging, not a regression. Say so
         # with the recipe rather than letting it read as "the ladder broke".
@@ -721,7 +773,15 @@ def summary(text: str) -> str:
     ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
     extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
-    return f"{ok}/{len(LADDER)} guests PASS{tail}{_diagnostic_tail(seen)}"
+    wt = {f"{k}={v}" for k, v in winetests(text).items()}
+    wt |= {f"{k}=CRASH({v})" for k, v in winetests_crashed(text).items()}
+    wt |= {f"{k}=TIMEOUT" for k in winetests_timed_out(text)}
+    wt_tail = ""
+    if wt:
+        # Reported, never gated — see winetests_lost() for why the failure
+        # count is information and not a verdict.
+        wt_tail = "; winetests " + ", ".join(sorted(wt))
+    return f"{ok}/{len(LADDER)} guests PASS{tail}{_diagnostic_tail(seen)}{wt_tail}"
 
 
 def _diagnostic_tail(seen: dict[str, int]) -> str:

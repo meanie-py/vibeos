@@ -39,6 +39,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARCH="${1:-}"
 arch_validate "$ARCH"
 
+# --one <path>: dump ONE module's symbols to stdout and exit, in the same
+# 4-column shape. This is what `sym --module` uses to resolve inside a module
+# that shares an image base and therefore has no rows in the main index: the
+# caller has supplied the identity the address could not, so the only thing
+# missing is the symbols, and nm on a single PE costs ~0.1s. Without this,
+# `--module` answered "no symbol table entry" for exactly the modules it exists
+# to serve -- which is how it was found.
+if [ "${2:-}" = "--one" ]; then
+    NM="$(arch_nm "$ARCH")"
+    one="${3:-}"
+    [ -f "$one" ] || die "--one needs a readable module path"
+    "$NM" --defined-only --line-numbers "$one" 2>/dev/null \
+        | awk -v mod="$(basename "$one")" '
+            $1 ~ /^[0-9a-fA-F]+$/ && NF >= 3 {
+                if ($2 == "a" || $2 == "A" || $2 == "U") next
+                print mod "\t" $1 "\t" $3 "\t" (NF >= 4 ? $4 : "-")
+            }
+        '
+    exit 0
+fi
+
 NM="$(arch_nm "$ARCH")"
 OBJDUMP="${NM%nm}objdump"
 BUILD="$VIBEOS_ROOT/build-$ARCH"

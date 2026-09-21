@@ -29,6 +29,7 @@
 #![cfg(target_arch = "aarch64")]
 
 use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use ntkrnl_sys::ddk;
 
 // ---------------------------------------------------------------------------
 // GICv2 register offsets (QEMU `virt`: GICD @ 0x08000000, GICC @ 0x08010000).
@@ -129,15 +130,20 @@ const SGI_INTID_MAX: u32 = 16;
 /// IAR values >= 1020 are special (1023 = spurious); no EOI is required.
 const GIC_SPURIOUS_MIN: u32 = 1020;
 
-/// QEMU virt GICv2 physical bases. Used AS virtual addresses through the boot
-/// identity map during the early-SMP window — KeStartAllProcessors (and its
+/// GICv2 physical bases, published by ntoskrnl from the loader block (which got
+/// them from the ACPI MADT). Used AS virtual addresses through the boot identity
+/// map during the early-SMP window — KeStartAllProcessors (and its
 /// KeIpiGenericCall self-test) runs BEFORE MmInitSystem(1), so MmMapIoSpace is
 /// not available when the APs come up. The loader guarantees these pages are
 /// identity-mapped with Device attributes (winldr_arm64.rs
 /// WinLdrMapSpecialPages); HalInitializeClockArm64 later swaps both bases to
 /// the proper MmMapIoSpace kernel VAs (the identity map dies at SMSS).
-const GICD_PA: usize = 0x0800_0000;
-const GICC_PA: usize = 0x0801_0000;
+///
+/// These were fixed QEMU virt constants until 2026-09-20. They must not be:
+/// this board's GIC is at 0xFF841000/0xFF842000, and 0x08000000 there is plain
+/// DRAM, so programming it would corrupt memory rather than fail. They arrive
+/// through the loader block rather than an ntoskrnl export, because the caller
+/// (HalInitializeProcessor) is already handed it.
 
 // ---------------------------------------------------------------------------
 // Clock rate.
@@ -239,9 +245,19 @@ extern "system" {
 /// Seed the GIC bases with the identity-mapped physical addresses if clock
 /// init hasn't published real kernel VAs yet. Early-SMP only (see GICD_PA);
 /// first writer wins, HalInitializeClockArm64 overwrites unconditionally.
-pub(crate) unsafe fn gic_ensure_early_bases() {
-    let _ = GICD_BASE.compare_exchange(0, GICD_PA, Ordering::SeqCst, Ordering::SeqCst);
-    let _ = GICC_BASE.compare_exchange(0, GICC_PA, Ordering::SeqCst, Ordering::SeqCst);
+pub(crate) unsafe fn gic_ensure_early_bases(loader_block: ddk::PLOADER_PARAMETER_BLOCK) {
+    if loader_block.is_null() {
+        return;
+    }
+    let gicd = (*loader_block).u.Arm.Arm64GicDistributorBase as usize;
+    let gicc = (*loader_block).u.Arm.Arm64GicCpuInterfaceBase as usize;
+    // Zero means firmware described no GICv2; seeding zero would be a no-op
+    // anyway, and every consumer already treats a zero base as "not mapped".
+    if gicd == 0 || gicc == 0 {
+        return;
+    }
+    let _ = GICD_BASE.compare_exchange(0, gicd, Ordering::SeqCst, Ordering::SeqCst);
+    let _ = GICC_BASE.compare_exchange(0, gicc, Ordering::SeqCst, Ordering::SeqCst);
 }
 
 /// Program THIS core's banked GICv2 state so it can receive the NT IPI:

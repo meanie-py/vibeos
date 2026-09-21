@@ -52,8 +52,15 @@ path = "src/lib.rs"
 [features]
 default = []
 
+# NOTE: src/locale.rs is deliberately NOT behind a feature -- it defines no
+# symbols, and its compile-time offset pins must hold on every build.
+
 # stdlib/rotl.cpp, stdlib/rotr.cpp, stdlib/byteswap.cpp and the clang-hacks.s
 # alias shim that existed only to work around them. See src/bits.rs.
 bits = []
+
+# mbstring/ismbbyte.cpp -- the 24-export _ismbb* family. The first
+# LOCALE-AWARE takeover, so it is also the first consumer of locale_update.
+ismbbyte = []
 
 [dependencies]

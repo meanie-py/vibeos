@@ -488,6 +488,106 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
+  never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
+  Signature: the kernel prints `[EXIT-THR] image=marshal32.exe exit_status=0x600d` — the
+  guest PASSED — but winlogon's own `[WINLOGON] marshal32.exe exit = 0x600d` never
+  appears, no later guest is launched, and `ladder.check` then reports the eight
+  remaining guests as "never reported a verdict". Measured over a 956-second boot: the
+  machine stays ALIVE the whole time (the netstack self-tests keep running and logging
+  afterwards), so this is winlogon wedged, not the VM dead or starved.
+  **The load-bearing detail is the timeout.** `TryStartWow64Marshal` waits
+  `WaitForSingleObject(Pi.hProcess, 60_000)`; more than 500 seconds elapsed after the
+  guest exited and it never returned, so the anomaly is not "the process did not signal"
+  — it is a bounded wait that does not time out. Alongside it, something sends
+  `WM_ENTERIDLE` to a thread `IsThreadSuspended` calls suspended, about 2.4 times a
+  second forever (1202 sends in the tail); if that thread is winlogon's, "suspended" is
+  the truth and the question becomes who suspended it.
+  Same predicate as the console hang above, which is either a coincidence or the link.
+  Diagnosis notes so the next attempt does not re-walk this: it is NOT host starvation
+  (three earlier boots were misread that way — by rate all boots run 27-39 serial
+  lines/s, and doubling the drain from 470s to 956s bought 670 more lines, not more
+  progress), and it is NOT a tight spin (1202 sends in ~500s is idle, not CPU-bound).
+  A boot at 2026-09-21 00:45 ran the same guests 11/11, so it is recent; the amd64 media
+  changed only by winlogon.exe between the two, which is suspicious but unproven —
+  nothing in that diff runs before marshal32.
+
+- **Wine's conformance suites now run under WoW64, and the first two subtests found
+  four separate bugs. OPEN** (2026-09-21). `user32:wsprintf` passes clean (46 tests, 0
+  failures). `user32:class` is the interesting one, and the native i386 A/B run of the
+  SAME binary splits its failures three ways:
+  - **Ours, not WoW64** (identical on bare i386, same source lines): `GetModuleFileName
+    failed` (class.c:1286/1299), `IME window proc implemented in` (1290/1303),
+    `CreateDialogParam returned NULL` (919).
+  - **WoW64, FIXED**: all eight `GetClassLongW value doesn't match what was set`
+    (class.c:164) — class extra bytes read off the WoW64 snapshot instead of the class.
+  - **UNATTRIBUTED, and the tempting answer is wrong**: the wndproc-identity cluster
+    (class.c:700-784, `Wrong ANSI wndproc: FFFF02BE vs 77A4A570`, where `FFFF02xx` is a
+    winproc HANDLE where a real address belongs). It does not appear in the native run —
+    but the native run HANGS in the child-process section before reaching line 700, and
+    the WoW64 run CRASHES 0xC0000005 before reaching the child-process section. The two
+    never overlap on that block, so "absent" means "not reached". A first theory that the
+    SERVERINFO `apfnClientA/W` arrays are misread under WoW64 is DISPROVEN by the log:
+    the values are valid *guest* user32 addresses (77A4A570 = the guest's DefWindowProcA),
+    so the widths are fine and the A/W decision is what is wrong.
+  Unblocking it needs the console hang below fixed first — that is what stops the native
+  control from ever reaching line 700.
+
+- **A winetest's child processes each hang for 30s on bare i386. OPEN** (2026-09-21).
+  `class.c:1252` spawns `<exe> class <classname>` fifteen times with
+  `bInheritHandles=FALSE` and waits; every wait times out
+  (`winetest_wait_child_process`, 30s each) and is scored as one failure. Reached only by
+  the NATIVE half of the winetest A/B, so it is not a WoW64 bug. Note the child gets no
+  console and no inherited std handles, and winlogon launches the parent
+  `DETACHED_PROCESS` — so before blaming CreateProcess, re-run the native control WITHOUT
+  DETACHED_PROCESS (a console is legal there; it is only the WoW64 guest that cannot
+  create one). That is a one-line experiment and it also A/Bs the console bug below.
+
+- **Console creation HANGS a CUI process launched by winlogon — on bare i386 as well as
+  under WoW64. OPEN, and it is one bug behind three symptoms** (2026-09-21).
+  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`
+  (`win32k-rust/src/window.rs`), after which the process spins in
+  `Sending to Suspended Thread` and never reaches main: 180s timeout, **0 bytes of
+  output**, 9075 spin lines. First seen on a WoW64 guest; the native i386 control of the
+  same binary reproduced it EXACTLY, so it is ours and not a 32↔64 bug — "WoW64" was
+  where it was seen, not where it lives.
+  The three symptoms: (1) a WoW64 winetest hangs before main; (2) the native one does
+  too; (3) `class.c` spawns fifteen children of its own, and a CUI child of a
+  console-less parent gets a NEW console from csrss, so each burns the full 30s of
+  `winetest_wait_child_process` — 7.5 minutes, and the reason the native control has
+  never reached the wndproc block it exists to adjudicate.
+  Worked around for the winetest runner by launching `DETACHED_PROCESS` (a piped test
+  wants no console), which is why the ladder does not depend on it. **Fixing this is the
+  unblock for the wndproc attribution above**, and it is reachable natively, so no WoW64
+  machinery is needed to debug it.
+  LOCALIZED, not yet root-caused: `co_UserCreateWindowEx` fails at
+  `co_IntSendMessage(hwnd, WM_NCCREATE, …)` returning 0, and the send is refused by
+  `IsThreadSuspended(ptirec)` in `msgqueue.rs` — the receiving thread reads as suspended
+  or frozen. That predicate is `Tcb.SuspendCount == 0 && PsGetThreadFreezeCount() == 0`,
+  both of which are bindgen-anon-union reads that differ per arch
+  (`kt_suspend_count` in msgqueue.rs, `PsGetThreadFreezeCount` in ps-rust/thread.rs), so
+  a wrong union member would make every thread look suspended. Note the ERR fires
+  **3327 times in a HEALTHY amd64 boot**, so it is either badly over-firing already or
+  there really are that many suspended sends; either way the next step is a runtime
+  probe printing SuspendCount and FreezeCount for the receiving thread, not more
+  source reading — the two candidate reads look correct on inspection.
+
+- **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
+  in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not
+  the 1 MB reserve: `BTCpuSimulate` stashes the 64-bit dispatcher RSP at `CpuArea+8`, a
+  user callback runs the guest through a nested `BTCpuSimulate` that overwrites it, and the
+  callback exits by `NtCallbackReturn` rather than returning through the asm, so the outer
+  value was never restored. Every callback then cost ~4 KB permanently; taskmgr exhausted
+  its 1 MB at ~950 callbacks. Fixed by saving/restoring the slot around the nesting in
+  `Wow64pUserCallbackCommon`. Measured after: `exit_status=0x80` 3 -> **0** per boot, user
+  stack pre-faults 2 -> **0**, `STACK EXHAUSTED` 1 -> **0**, and taskmgr reaching 4915
+  callbacks with its dispatcher RSP flat. Two earlier fixes were prerequisites for even
+  seeing it — guest stacks could not grow at all (TEB32 `DeallocationStack` was never
+  published), and a genuine overflow could not be REPORTED (the exception record went below
+  the faulting Rsp, which on overflow is already the floor), which is what laundered every
+  stack bug into an anonymous `0x80`. Field manual: "A nested BTCpuSimulate clobbers the
+  saved dispatcher RSP".
+
 - **`ExPools` on arm64 intermittently drops one assertion under load, and it can eat a
   whole merge-queue submission. UNOWNED** (2026-09-20). Signature:
   `ExPools: pass 14 -> 13 (dropped)`, the extra failure being `assert ExPools.c:181` —

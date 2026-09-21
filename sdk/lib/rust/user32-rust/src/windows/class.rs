@@ -941,7 +941,16 @@ unsafe fn IntGetClassLongA_impl(Wnd: PWND, Class: PCLS, nIndex: i32) -> usize {
         {
             SetLastError(ERROR_INVALID_PARAMETER);
         } else {
-            Ret = *((((Class.add(1)) as usize) + nIndex_u) as PULONG_PTR) as usize;
+            /* NOT `Class.add(1)`: under WoW64 `Class` is a normalized 32-bit
+             * COPY of the real 64-bit CLS and the extra bytes follow the
+             * ORIGINAL. cls_extra_base() resolves both cases -- same shape as
+             * wnd_extra_base() beside it. */
+            let ExtraBase = crate::wow64::cls_extra_base(Class);
+            if ExtraBase.is_null() {
+                SetLastError(ERROR_INVALID_PARAMETER);
+            } else {
+                Ret = *(ExtraBase.add(nIndex_u) as PULONG_PTR) as usize;
+            }
         }
     } else {
         match nIndex {
@@ -1021,7 +1030,16 @@ unsafe fn IntGetClassLongW_impl(Wnd: PWND, Class: PCLS, nIndex: i32) -> usize {
         {
             SetLastError(ERROR_INVALID_PARAMETER);
         } else {
-            Ret = *(((Class.add(1) as usize) + nIndex_u) as PULONG_PTR) as usize;
+            /* NOT `Class.add(1)`: under WoW64 `Class` is a normalized 32-bit
+             * COPY of the real 64-bit CLS and the extra bytes follow the
+             * ORIGINAL. cls_extra_base() resolves both cases -- same shape as
+             * wnd_extra_base() beside it. */
+            let ExtraBase = crate::wow64::cls_extra_base(Class);
+            if ExtraBase.is_null() {
+                SetLastError(ERROR_INVALID_PARAMETER);
+            } else {
+                Ret = *(ExtraBase.add(nIndex_u) as PULONG_PTR) as usize;
+            }
         }
     } else {
         match nIndex {
