@@ -588,6 +588,108 @@ conflicts. It is declined by enumerating its commit and auditing every file, bec
 cleanly-merged ones are exactly the ones nobody looks at again.
 
 
+## The object-callback ABI: three families, three separate discoveries
+
+Upstream moved the whole NT object-callback surface to NT6 form in this merge
+(`sdk/include/ndk/obtypes.h`, `ntoskrnl/include/internal/*.h`). Our Rust carried the
+pre-fork shapes, and the checked-in `ntkrnl-sys` bindgen still describes those. I found the
+three affected families **one at a time, each after the previous fix let the boot get
+further** — which is the real lesson here.
+
+| family | header now | what was wrong | how it showed |
+|---|---|---|---|
+| `OB_SECURITY_METHOD` | 9 params (`+KPROCESSOR_MODE AccessMode`) | callers passed 8 | fixed proactively; then `WmipSecurityMethod` was left at 8 and **i386 bugchecked 0x1E** |
+| `OB_CLOSE_METHOD` | 5 params, handle counts `ULONG`→`ULONG_PTR` | width only | silent on i386 (same size), a garbage high half on 64-bit |
+| `OB_OPEN_METHOD` | 6 params (`+AccessMode`), `GrantedAccess` **by pointer** | callers passed 5, by value | **i386 BUGCHECK 0x1E write-AV** inside kmtest `ObType`, killing 39 of 91 tests |
+
+The open method is the worst of the three because the mismatch is in both the count *and* a
+type: the callee pops one argument too many **and** dereferences what the caller passed as a
+value. amd64 and arm64 "passed" throughout — extra arguments ride in registers there, so they
+were reading garbage for `AccessMode` and nobody noticed.
+
+It is not an accident that kmtest's `ObType` is what caught it. Upstream rewrote that test in
+C++ **specifically to exercise both callback generations**, templating over `NtDdiVersion` with
+`OB_OPEN_METHOD_WS03` (5 params) and `OB_OPEN_METHOD_VISTA` (6) side by side. Their test
+installs a Vista-shaped method; our kernel called it WS03-shaped.
+
+### The sweep that should have been first, not third
+
+```bash
+# every object callback the tree installs, and every implementation's arity
+grep -rn 'SecurityProcedure *= *\|OpenProcedure *= *\|CloseProcedure *= *\|ParseProcedure *= *' \
+     --include='*.rs' --include='*.c' sdk/lib/rust/ ntoskrnl/
+# ...then compare each target against the typedef in sdk/include/ndk/obtypes.h
+```
+
+Run across all seven families it now reports agreement:
+
+```
+OB_OPEN_METHOD 6 · OB_CLOSE_METHOD 5 · OB_DELETE_METHOD 1 · OB_PARSE_METHOD 10
+OB_SECURITY_METHOD 9 · OB_QUERYNAME_METHOD 6 · OB_OKAYTOCLOSE_METHOD 4
+```
+
+**When an indirect-call signature changes, the unit of work is the FAMILY, not the call site
+that happened to fail.** I wrote that down after the second instance and still went looking
+for the third one symptom-first. It belongs in a scanner, so nobody has to remember it.
+
+### ...and a fourth, because arity was only one of the two axes
+
+The sweep above compared *arity*. It reported agreement, and a day later `IoReadWrite` was
+still failing on amd64 — `Service = Kmtest-IoReadWrite, state = 4 RUNNING (!= 1 STOPPED)`,
+five runs out of five, i386 and arm64 clean.
+
+`OB_CLOSE_METHOD` kept its five parameters but upstream widened two of them, `ULONG` →
+`ULONG_PTR` (`obtypes.h`). Every close procedure in the tree is compiled against the new
+header; `ob-rust` called through the checked-in bindgen island, which still carries the old
+one, and so passed 32-bit arguments. The Win64 ABI leaves the high half of an argument
+register undefined, and `IopCloseFile` opens with `if (HandleCount != 1) return;` — so a
+garbage high half silently skipped IRP_MJ_CLEANUP. The file's cache map was never torn down,
+the driver could not unload, and the SCM left the service in RUNNING until the test's 10 s
+timeout expired. i386 is immune because `ULONG_PTR == ULONG` there, which is precisely what
+made a plain ABI mismatch read as an arch-specific mystery.
+
+Fixed the way the other three were: `ObpCallCloseProcedure` in `ob-rust/src/obsecure.rs`
+transmutes past the stale field type. **The full amd64 sweep also dropped 517 s → 359 s** —
+every lingering service had been burning its own 10 s timeout.
+
+So the scanner that section asks for has to check parameter *types*, not just how many there
+are. Of the seven families, `OB_CLOSE_METHOD` is the only one upstream widened; the other six
+agree on both axes now.
+
+### The cache-manager races: a correct fix that was not this bug
+
+Chasing the same symptom I found `ntoskrnl/cc/view.c` refreshed by +122 lines of upstream
+concurrency hardening that `cc-rust/src/view.rs` did not have, and ported four of them:
+`CcRosFlushVacb` now honours the `WasMarked` return of `CcRosUnmarkDirtyVacb` instead of
+re-marking unconditionally; `CcRosMarkDirtyVacb` returns early on an already-dirty VACB
+instead of double-inserting it and leaking a reference; `CcRosDeleteFileCache` moves VACBs to
+a private list under the lock so a concurrent `CcRosLookupVacb` cannot take a reference in the
+window before they are freed. (`CcRosUnmarkDirtyVacb`'s own guard had already been ported
+earlier in the lane — which, on its own, was *half* a five-part fix: it could now return FALSE
+to a caller that ignored the result.)
+
+These are real bugs and the ports stand, but they did not move the symptom: the conformance
+run after them was byte-identical. Worth recording because the mechanism was plausible enough
+that I believed it — a leaked VACB reference also keeps a cache map alive and also blocks
+unload. Plausible and true are different, and only the re-run told them apart.
+
+### Two findings that dissolved on re-measurement
+
+Both looked like regressions and neither was:
+
+- **`NpfsFileInfo.c:57`** — reported as a NEW failing assertion on i386. It did not reproduce:
+  the test came back at exactly its baseline `pass=50 fail=25`. It was collateral from the
+  crashing sweep, not a finding.
+- **`MmMdl: pass 594 -> 593`** — with `fail=0` on both sides. Upstream made one assertion
+  conditional (`if (MmGetMdlByteCount(Mdl) >= (1UL << 31))`, skipping the 2 GB mapping
+  expectation when `MmAllocatePagesForMdl` returns fewer pages) and relaxed another from `==`
+  to `<=`. One fewer assertion *executed*, none failing. Re-seeded that single baseline row,
+  by hand and only that row.
+
+And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSplayTree`,
+`RtlCaptureContextUM`) are byte-identical to the baseline — pre-existing, not new.
+
+
 ## Owed, in rough priority order
 
 1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation

@@ -1241,6 +1241,7 @@ modules/rostests/apitests/win32u/CMakeLists.txt	1	#ntgdi/NtGdiFlushUserBatch.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	#ntgdi/NtGdiGetFontResourceInfoInternalW.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	#osver.c
 modules/rostests/kmtests/CMakeLists.txt	1	# __try region. See kmt_native_seh_shims.c.
+modules/rostests/kmtests/CMakeLists.txt	1	# binary became kmtest.exe. Our conformance harness — tools/payloads/kmtest/sweep.c, and
 modules/rostests/kmtests/CMakeLists.txt	1	# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
 modules/rostests/kmtests/CMakeLists.txt	1	# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
 modules/rostests/kmtests/CMakeLists.txt	1	# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real

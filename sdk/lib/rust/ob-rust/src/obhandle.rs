@@ -547,12 +547,13 @@ unsafe fn ObpDecrementHandleCount(
 
     if (*object_type).TypeInfo.CloseProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        ((*object_type).TypeInfo.CloseProcedure.unwrap())(
+        crate::obsecure::ObpCallCloseProcedure(
+            (*object_type).TypeInfo.CloseProcedure,
             process,
             object_body,
             granted_access,
-            process_handle_count as ULONG,
-            system_handle_count as ULONG,
+            process_handle_count as ULONG_PTR,
+            system_handle_count as ULONG_PTR,
         );
         ObpCalloutEnd(callout_irql, b"Close\0".as_ptr() as PCHAR, object_type, object_body);
     }
@@ -778,15 +779,20 @@ unsafe fn ObpIncrementHandleCount(
     status = STATUS_SUCCESS;
     if (*object_type).TypeInfo.OpenProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        status = ((*object_type).TypeInfo.OpenProcedure.unwrap())(
+        // GrantedAccess is an in/out POINTER since the merge's NT6 callback change, so
+        // it needs a local the callee can write through — exactly as the C does.
+        let mut granted_access: ACCESS_MASK = if !access_state.is_null() {
+            (*access_state).PreviouslyGrantedAccess
+        } else {
+            0
+        };
+        status = crate::obsecure::ObpCallOpenProcedure(
+            (*object_type).TypeInfo.OpenProcedure,
             open_reason,
+            probe_mode,
             process,
             object,
-            if !access_state.is_null() {
-                (*access_state).PreviouslyGrantedAccess
-            } else {
-                0
-            },
+            core::ptr::addr_of_mut!(granted_access),
             process_handle_count as ULONG,
         );
         ObpCalloutEnd(callout_irql, b"Open\0".as_ptr() as PCHAR, object_type, object);
@@ -927,11 +933,13 @@ unsafe fn ObpIncrementUnnamedHandleCount(
     status = STATUS_SUCCESS;
     if (*object_type).TypeInfo.OpenProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        status = ((*object_type).TypeInfo.OpenProcedure.unwrap())(
+        status = crate::obsecure::ObpCallOpenProcedure(
+            (*object_type).TypeInfo.OpenProcedure,
             ObCreateHandle,
+            access_mode,
             process,
             object,
-            *desired_access,
+            desired_access,
             process_handle_count as ULONG,
         );
         ObpCalloutEnd(callout_irql, b"Open\0".as_ptr() as PCHAR, object_type, object);
