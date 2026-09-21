@@ -17,3 +17,14 @@ pub mod bits;
 // compile-time assertions pinning it. Gating it would mean the pins only hold
 // when some other family happens to be on.
 pub mod locale;
+
+// Captured ground truth, not yet consumed by any body. Both are DATA ONLY --
+// no `#[no_mangle]`, so they take over nothing and the cohab gate has nothing
+// to say about them. They are here rather than in staging because they were
+// GENERATED from public fact sources (the Unicode Character Database; published
+// DBCS codepage definitions) and verified against Microsoft's tables while
+// those still exist in `sdk/lib/ucrt`. After those files are deleted there is
+// nothing left in the tree to check them against, so landing them is what makes
+// the verification durable instead of a thing that happened once.
+pub mod ctype_table;
+pub mod mbctype_table;
