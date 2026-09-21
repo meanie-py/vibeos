@@ -1,8 +1,5 @@
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/include/wine
-    ${REACTOS_SOURCE_DIR}/dll/win32/dhcpcsvc/include
-    ${REACTOS_SOURCE_DIR}/sdk/lib/tdilib)
+include_directories(${REACTOS_SOURCE_DIR}/sdk/include/wine)
 
 spec2def(iphlpapi.dll iphlpapi.spec ADD_IMPORTLIB)
 
@@ -73,6 +70,7 @@ add_library(iphlpapi MODULE
     iphlpapi.rc
     iphlpapi.spec
     ${CMAKE_CURRENT_BINARY_DIR}/iphlpapi.def)
+add_pch(iphlpapi iphlpapi_private.h SOURCE)
 
 set_module_type(iphlpapi win32dll UNICODE)
 # libiphlpapi_rust.a FIRST so its #[no_mangle] symbols win; wine provides ros_dbg_log.

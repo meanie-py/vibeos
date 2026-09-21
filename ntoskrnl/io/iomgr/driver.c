@@ -534,18 +534,21 @@ IopInitializeDriverModule(
     }
 
     /* Create the driver object */
-    ULONG ObjectSize = sizeof(DRIVER_OBJECT) + sizeof(EXTENDED_DRIVER_EXTENSION);
-    OBJECT_ATTRIBUTES objAttrs;
-    PDRIVER_OBJECT driverObject;
-    InitializeObjectAttributes(&objAttrs,
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    InitializeObjectAttributes(&ObjectAttributes,
                                &DriverName,
-                               OBJ_PERMANENT | OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                               OBJ_PERMANENT | OBJ_KERNEL_HANDLE,
                                NULL,
                                NULL);
 
+    /* Honor the internal I/O System case (in)sensitivity */
+    if (IopCaseInsensitive) ObjectAttributes.Attributes |= OBJ_CASE_INSENSITIVE;
+
+    PDRIVER_OBJECT driverObject;
+    ULONG ObjectSize = sizeof(DRIVER_OBJECT) + sizeof(EXTENDED_DRIVER_EXTENSION);
     Status = ObCreateObject(KernelMode,
                             IoDriverObjectType,
-                            &objAttrs,
+                            &ObjectAttributes,
                             KernelMode,
                             NULL,
                             ObjectSize,
@@ -1681,9 +1684,9 @@ try_again:
     if (!DriverName)
     {
         /* Create a random name and set up the string */
-        NameLength = (USHORT)swprintf(NameBuffer,
-                                      DRIVER_ROOT_NAME L"%08u",
-                                      KeTickCount.LowPart);
+        NameLength = (USHORT)_swprintf(NameBuffer,
+                                       DRIVER_ROOT_NAME L"%08u",
+                                       KeTickCount.LowPart);
         LocalDriverName.Length = NameLength * sizeof(WCHAR);
         LocalDriverName.MaximumLength = LocalDriverName.Length + sizeof(UNICODE_NULL);
         LocalDriverName.Buffer = NameBuffer;

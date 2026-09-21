@@ -29,6 +29,7 @@
 #include <imm.h>
 #include <immdev.h>
 #include <imm32_undoc.h>
+#include <cjkcode.h> // LANGID_...
 
 #define NTOS_MODE_USER
 #include <ndk/umtypes.h>
@@ -77,10 +78,6 @@
 #define INVALID_HOTKEY_ID       0xFFFFFFFF
 #define MAX_CANDIDATEFORM       4
 #define MAX_IMM_FILENAME        80
-
-#define LANGID_CHINESE_SIMPLIFIED   MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED)
-#define LANGID_CHINESE_TRADITIONAL  MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL)
-#define LANGID_JAPANESE             MAKELANGID(LANG_JAPANESE, SUBLANG_DEFAULT)
 
 #define REGKEY_KEYBOARD_LAYOUTS     L"System\\CurrentControlSet\\Control\\Keyboard Layouts"
 
@@ -190,3 +187,16 @@ LRESULT
 CtfImmSetLangBand(
     _In_ HWND hWnd,
     _In_ BOOL fSet);
+
+DWORD
+WINNLSTranslateMessage(
+    _In_ INT cEntries,
+    _Inout_ PTRANSMSG pEntries,
+    _In_ HIMC hIMC,
+    _In_ BOOL bAnsi,
+    _In_ WORD wLang);
+
+HIMC
+ImmGetSaveContext(
+    _In_opt_ HWND hWnd,
+    _In_ DWORD dwContextFlags);

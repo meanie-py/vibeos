@@ -301,34 +301,32 @@ CreateSymbolicLink(
     IN LPCWSTR ReferenceString,
     IN struct DeviceInfo *devInfo)
 {
-    DWORD Length, Index, Offset;
-    LPWSTR Key;
+    SIZE_T ActualLength, Length;
+    WCHAR GuidString[MAX_GUID_STRING_LEN];
+    LPWSTR SymbolicLink;
 
-    Length = wcslen(devInfo->instanceId) + 4 /* prepend ##?# */ + 41 /* #{GUID} + */ + 1 /* zero byte */;
+    Length = 4 + // "\\\\?\\"
+             wcslen(devInfo->instanceId) +
+             1 + (MAX_GUID_STRING_LEN - 1) + 1 + // "#{GUID}\\"
+             wcslen(ReferenceString) +
+             1; // UNICODE_NULL
 
-    Key = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Length * sizeof(WCHAR));
-    if (!Key)
+    SymbolicLink = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Length * sizeof(WCHAR));
+    if (!SymbolicLink)
         return NULL;
 
-    wcscpy(Key, L"##?#");
-    wcscat(Key, devInfo->instanceId);
+    pSetupStringFromGuid(InterfaceGuid, GuidString, ARRAYSIZE(GuidString));
 
-    for(Index = 4; Index < Length; Index++)
-    {
-        if (Key[Index] == L'\\')
-        {
-            Key[Index] = L'#';
-        }
-    }
+    ActualLength = swprintf(SymbolicLink,
+                            Length,
+                            L"\\\\?\\%s#%s\\%s",
+                            devInfo->instanceId,
+                            GuidString,
+                            ReferenceString);
+    ASSERT(ActualLength == Length - 1);
 
-    wcscat(Key, L"#");
-
-    Offset = wcslen(Key);
-    pSetupStringFromGuid(InterfaceGuid, Key + Offset, Length - Offset);
-
-    return Key;
+    return SymbolicLink;
 }
-
 
 static BOOL
 InstallOneInterface(
@@ -340,7 +338,7 @@ InstallOneInterface(
     IN HDEVINFO DeviceInfoSet,
     IN struct DeviceInfo *devInfo)
 {
-    HKEY hKey, hRefKey;
+    HKEY hKey;
     LPWSTR Path;
     SP_DEVICE_INTERFACE_DATA DeviceInterfaceData;
     struct DeviceInterface *DevItf = NULL;
@@ -371,44 +369,14 @@ InstallOneInterface(
     DeviceInterfaceData.Flags = DevItf->Flags;
     DeviceInterfaceData.Reserved = (ULONG_PTR)DevItf;
 
-    hKey = SetupDiCreateDeviceInterfaceRegKeyW(DeviceInfoSet, &DeviceInterfaceData, 0, KEY_ALL_ACCESS, NULL, 0);
+    hKey = SetupDiCreateDeviceInterfaceRegKeyW(DeviceInfoSet, &DeviceInterfaceData, 0, KEY_ALL_ACCESS, NULL, NULL);
     HeapFree(GetProcessHeap(), 0, DevItf);
     if (hKey == INVALID_HANDLE_VALUE)
     {
         return FALSE;
     }
 
-    if (ReferenceString)
-    {
-        Path = HeapAlloc(GetProcessHeap(), 0, (wcslen(ReferenceString) + 2) * sizeof(WCHAR));
-        if (!Path)
-        {
-            RegCloseKey(hKey);
-            return FALSE;
-        }
-
-        wcscpy(Path, L"#");
-        wcscat(Path, ReferenceString);
-
-        if (RegCreateKeyExW(hKey, Path, 0, NULL, 0, KEY_ALL_ACCESS, NULL, &hRefKey, NULL) != ERROR_SUCCESS)
-        {
-            ERR("failed to create key %s %lx\n", debugstr_w(Path), GetLastError());
-            HeapFree(GetProcessHeap(), 0, Path);
-            return FALSE;
-        }
-
-        RegCloseKey(hKey);
-        hKey = hRefKey;
-        HeapFree(GetProcessHeap(), 0, Path);
-    }
-
-    if (RegCreateKeyExW(hKey, L"Device Parameters", 0, NULL, 0, KEY_ALL_ACCESS, NULL, &hRefKey, NULL) != ERROR_SUCCESS)
-    {
-        RegCloseKey(hKey);
-        return FALSE;
-    }
-
-    return SetupInstallFromInfSectionW(NULL, /* FIXME */ hInf, InterfaceSection, SPINST_REGISTRY, hRefKey, NULL, 0, NULL, NULL, NULL, NULL);
+    return SetupInstallFromInfSectionW(NULL, /* FIXME */ hInf, InterfaceSection, SPINST_REGISTRY, hKey, NULL, 0, NULL, NULL, NULL, NULL);
 }
 
 /***********************************************************************

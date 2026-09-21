@@ -5,7 +5,7 @@
  * PURPOSE:         Logon
  * PROGRAMMERS:     Thomas Weidenmueller (w3seek@users.sourceforge.net)
  *                  Filip Navara
- *                  Herv� Poussineau (hpoussin@reactos.org)
+ *                  Hervé Poussineau (hpoussin@reactos.org)
  */
 
 /* INCLUDES *****************************************************************/
@@ -47,7 +47,7 @@ static
 BOOL
 StartServicesManager(VOID)
 {
-    STARTUPINFOW StartupInfo;
+    STARTUPINFOW StartupInfo = { sizeof(StartupInfo) };
     PROCESS_INFORMATION ProcessInformation;
     LPCWSTR ServiceString = L"services.exe";
     BOOL res;
@@ -96,7 +96,7 @@ static
 BOOL
 StartLsass(VOID)
 {
-    STARTUPINFOW StartupInfo;
+    STARTUPINFOW StartupInfo = { sizeof(StartupInfo) };
     PROCESS_INFORMATION ProcessInformation;
     LPCWSTR ServiceString = L"lsass.exe";
     BOOL res;
@@ -327,7 +327,7 @@ InitKeyboardLayouts(VOID)
         while (TRUE)
         {
             /* Read values with integer names only */
-            swprintf(wszKeyName, L"%d", i++);
+            _swprintf(wszKeyName, L"%d", i++);
             if (RegQueryValueExW(hKey, wszKeyName, NULL, &dwType, (LPBYTE)wszKLID, &dwSize) != ERROR_SUCCESS)
             {
                 /* There is no more entries */

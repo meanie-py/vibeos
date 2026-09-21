@@ -85,7 +85,8 @@ LaunchSecondStageLoader(VOID)
     /* Call the entrypoint */
     printf("Launching rosload.exe...\n");
     EntryPoint = VaToPa(RosloadDTE->EntryPoint);
-    return (*EntryPoint)();
+    (*EntryPoint)();
+    return ESUCCESS;
 }
 
 #if (defined(_M_IX86) || defined(_M_AMD64)) && !defined(UEFIBOOT)

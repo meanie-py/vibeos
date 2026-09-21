@@ -8,7 +8,13 @@
 # entry=DriverEntry@8, no exports), linking pciide-rust with the pciidex +
 # ntoskrnl import libs (PciIdeXInitialize/PciIdeXGetBusData are pciidex exports).
 # The version resource (pciide.rc, and its .rsrc-discardable pefixup) is dropped
-# as in the other cargo cuts.
+# as in the other cargo cuts. Wrapped in ENABLE_UNIATA (upstream addition, since
+# our fork: uniata is the alternative IDE bus driver and the two are mutually
+# exclusive) -- this is a build-option gate, not a code change, so it composes
+# fine with the Rust cohab.
+if(NOT ENABLE_UNIATA)
 add_cargo_module(pciide pciide-cargo pciide.sys KIND kerneldll
     BODY_CRATE pciide-rust DESTINATION reactos/system32/drivers
     EXTRA_DEPENDS pciidex)
+endif()
+add_registry_inf(pciide_reg.inf)

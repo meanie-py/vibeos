@@ -753,6 +753,6 @@ KiXmmExceptionHandler(
         /* Should not happen */
         ASSERT(FALSE);
     }
-    
+
     return ExceptionCode;
 }

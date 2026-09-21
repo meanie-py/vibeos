@@ -46,6 +46,15 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_pciidex DEPENDS ${PCIIDEX_RUST_LIB})
 
+# Upstream (post-fork) rewrote pciidex around a new chipset/ quirks layer
+# (chipset/*.c: ahci_generic/ahci_hw/ahci_io/amd/ati/cmd/intel/pata_generic/
+# pata_hw/pata_io/pata_legacy/pctech/sil680/svw_pata/svw_sata/toshiba/via) plus
+# a new acpi.c, calling back into fdo.c/pciidex.c internals we have translated
+# to Rust. There is no Rust twin and no wiring for the new chipset framework in
+# pciidex-rust, so — mirroring the atapi SATL precedent — this stays UNBUILT
+# dead C on disk as a future translation target rather than being linked in
+# half-integrated. See FLAGS in the merge report.
+
 # C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
 add_library(pciidex MODULE
     rust_cohab_stub.c

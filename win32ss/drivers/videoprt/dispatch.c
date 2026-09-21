@@ -339,10 +339,10 @@ IntVideoPortAddDevice(
     PDEVICE_OBJECT DeviceObject;
     NTSTATUS Status;
 
-    /* Get the initialization data we saved in VideoPortInitialize. */
+    /* Get the initialization data we saved in VideoPortInitialize */
     DriverExtension = IoGetDriverObjectExtension(DriverObject, DriverObject);
 
-    /* Create adapter device object. */
+    /* Create adapter device object */
     Status = IntVideoPortCreateAdapterDeviceObject(DriverObject,
                                                    DriverExtension,
                                                    PhysicalDeviceObject,
@@ -388,7 +388,7 @@ IntVideoPortDispatchOpen(
         Status = IntInitializeInt10();
         if (!NT_SUCCESS(Status))
         {
-            ERR_(VIDEOPRT, "IntInitializeInt10() failed: 0x%lx\n", Status);
+            ERR_(VIDEOPRT, "IntInitializeInt10(CSR) failed: 0x%lx\n", Status);
             ObDereferenceObject(CsrProcess);
             CsrProcess = NULL;
             return Status;
@@ -729,7 +729,7 @@ VideoPortForwardDeviceControl(
 
     INFO_(VIDEOPRT, "- Returned status: %x\n", Irp->IoStatus.Status);
 
-    /* Map from win32 error codes to NT status values. */
+    /* Map from win32 error codes to NT status values */
     switch (Irp->IoStatus.Status)
     {
         case NO_ERROR:
@@ -902,12 +902,12 @@ IntVideoPortPnPStartDevice(
     PVIDEO_PORT_DEVICE_EXTENSION DeviceExtension;
     PCM_RESOURCE_LIST AllocatedResources;
 
-    /* Get the initialization data we saved in VideoPortInitialize.*/
+    /* Get the initialization data we saved in VideoPortInitialize */
     DriverObject = DeviceObject->DriverObject;
     DriverExtension = IoGetDriverObjectExtension(DriverObject, DriverObject);
     DeviceExtension = (PVIDEO_PORT_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 
-    /* Store some resources in the DeviceExtension. */
+    /* Store some resources in the DeviceExtension */
     AllocatedResources = Stack->Parameters.StartDevice.AllocatedResources;
     if (AllocatedResources != NULL)
     {
@@ -935,7 +935,8 @@ IntVideoPortPnPStartDevice(
         FullList = AllocatedResources->List;
         ASSERT(AllocatedResources->Count == 1);
         INFO_(VIDEOPRT, "InterfaceType %u BusNumber List %u Device BusNumber %u Version %u Revision %u\n",
-              FullList->InterfaceType, FullList->BusNumber, DeviceExtension->SystemIoBusNumber, FullList->PartialResourceList.Version, FullList->PartialResourceList.Revision);
+              FullList->InterfaceType, FullList->BusNumber, DeviceExtension->SystemIoBusNumber,
+              FullList->PartialResourceList.Version, FullList->PartialResourceList.Revision);
 
         /* FIXME: Is this ASSERT ok for resources from the PNP manager? */
         ASSERT(FullList->InterfaceType == PCIBus);
@@ -962,10 +963,9 @@ IntVideoPortPnPStartDevice(
           DeviceExtension->InterruptLevel,
           DeviceExtension->InterruptVector);
 
-    /* Create adapter device object. */
-    return IntVideoPortFindAdapter(DriverObject,
-                                   DriverExtension,
-                                   DeviceObject);
+    /* Create adapter device object */
+    return IntVideoPortFindAdapter(DriverObject, DriverExtension,
+                                   DeviceObject, FALSE);
 }
 
 
@@ -998,10 +998,10 @@ IntVideoPortQueryBusRelations(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     if (InterlockedCompareExchange((PLONG)&DeviceExtension->DeviceOpened, 0, 0) == 0)
     {
         /* Device not opened. Don't enumerate children yet */
-        WARN_(VIDEOPRT, "Skipping child enumeration because device is not opened");
+        WARN_(VIDEOPRT, "Skipping child enumeration because device is not opened\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    /* Query children of the device. */
+    /* Query children of the device */
     Status = IntVideoPortEnumerateChildren(DeviceObject, Irp);
     if (!NT_SUCCESS(Status))
         return Status;

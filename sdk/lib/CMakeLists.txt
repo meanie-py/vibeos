@@ -12,6 +12,14 @@ add_subdirectory(cardlib)
 # vendored tree. See vendor.yaml `ours:` -> "Wine-derived support libraries".
 add_subdirectory(libwine)
 add_subdirectory(strmbase)
+# upstream's CRT restructure ("[CRT] Remove obsolete CRT files") deleted our
+# live sdk/lib/crt/ (281 files - libcntpr, every driver, and our Rust-backed
+# msvcrt link against it) and replaced it with crtheap/llvm-compat/
+# ansi_sync_hacks. Declined: our crt below stays authoritative. Those three
+# trees DID land on disk in this merge but are deliberately NOT wired up here
+# (building them beside our crt is a duplicate-symbol hazard) - don't "fix"
+# this by adding them back. (vcstartup is UNRELATED to this restructure -
+# upstream split it out of vcruntime, see below - and IS wired up.)
 add_subdirectory(apisets)
 add_subdirectory(comsupp)
 add_subdirectory(conutils)
@@ -63,6 +71,7 @@ add_subdirectory(ucrt)
 add_subdirectory(udmihelp)
 add_subdirectory(uuid)
 add_subdirectory(vcruntime)
+add_subdirectory(vcstartup)
 add_subdirectory(wine2ros)
 add_subdirectory(wdmguid)
 

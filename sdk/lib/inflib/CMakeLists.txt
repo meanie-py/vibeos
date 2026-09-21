@@ -56,7 +56,7 @@ else()
         infhostrtl.c)
 
     add_definitions(-D__NO_CTYPE_INLINES -DINFLIB_HOST -D_CRT_SECURE_NO_WARNINGS)
-    add_library(inflibhost ${SOURCE})
+    add_library(inflibhost STATIC ${SOURCE})
     target_include_directories(inflibhost INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
     if(NOT MSVC)

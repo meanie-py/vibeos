@@ -58,6 +58,12 @@ list(APPEND SOURCE
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
     # locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
+    # memres.c is upstream-new (2026, memory/port resource descriptor encode/decode
+    # helpers for the arbiter/pcix drivers): RtlCmDecodeMemIoResource,
+    # RtlIoDecodeMemIoResource, RtlCmEncodeMemIoResource, RtlIoEncodeMemIoResource,
+    # RtlFindClosestEncodableLength. No collision with any Rust twin (grepped) —
+    # taken active below.
+    memres.c
     # memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
     # message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
@@ -67,6 +73,14 @@ list(APPEND SOURCE
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
     # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
+    # processor.c is upstream-new (2026) but declined here: it DEFINES
+    # RtlGetCurrentProcessorNumber, which sdk/lib/rust/rtl-strings/src/cabi/mod.rs
+    # already owns (Rust cohab) — compiling it would duplicate that symbol. Its
+    # other two functions, RtlIsProcessorFeaturePresent and
+    # RtlGetCurrentProcessorNumberEx, are genuinely new ntdll/ntdll_vista exports
+    # with NO implementation anywhere in the tree yet (not even pre-merge) — see
+    # FLAGS in the merge report. Needs a split (or a small Rust port of the two
+    # new functions) before it can be taken.
     # propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
     # rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)

@@ -30,8 +30,7 @@ list(APPEND MINI_HAL_SOURCE
 # libhal_rust_mini.a — the only C contribution to mini_hal is the
 # ../generic/systimer.S assembly file.
 
-add_asm_files(mini_hal_asm ../generic/systimer.S)
-add_library(mini_hal ${MINI_HAL_SOURCE} ${mini_hal_asm})
+add_library(mini_hal ${MINI_HAL_SOURCE})
+add_pch(mini_hal ../include/hal.h MINI_HAL_SOURCE)
 target_compile_definitions(mini_hal PRIVATE _BLDR_ _NTSYSTEM_)
 add_dependencies(mini_hal psdk bugcodes asm)
-add_pch(mini_hal ../include/hal.h MINI_HAL_SOURCE)

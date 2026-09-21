@@ -855,6 +855,10 @@ HRESULT CMenuToolbarBase::MenuBarMouseDown(INT iIndex, BOOL isLButton)
 
     GetButton(iIndex, &btn);
 
+    // Ignore disabled items
+    if (!(btn.fsState & TBSTATE_ENABLED))
+        return S_OK;
+
     if ((m_initFlags & SMINIT_VERTICAL)
         || m_popupBar
         || m_cancelingPopup)
@@ -876,6 +880,10 @@ HRESULT CMenuToolbarBase::MenuBarMouseUp(INT iIndex, BOOL isLButton)
         return S_OK;
 
     GetButton(iIndex, &btn);
+
+    // Ignore disabled items
+    if (!(btn.fsState & TBSTATE_ENABLED))
+        return S_OK;
 
     if (isLButton)
         return ProcessClick(btn.idCommand);

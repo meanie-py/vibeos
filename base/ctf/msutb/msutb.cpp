@@ -103,7 +103,7 @@ CicArray<HKL> *g_prghklSkipRedrawing = NULL;
 
 BOOL IsSkipRedrawHKL(HKL hSkipKL)
 {
-    if (LOWORD(hSkipKL) == MAKELANGID(LANG_JAPANESE, SUBLANG_DEFAULT))
+    if (LOWORD(hSkipKL) == LANGID_JAPANESE)
         return FALSE; // Japanese HKL will be skipped
     if (!g_prghklSkipRedrawing)
         return FALSE;
@@ -335,10 +335,10 @@ BOOL IsFELangId(LANGID LangID)
 {
     switch (LangID)
     {
-        case MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED): // Chinese (Simplified)
-        case MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL): // Chinese (Traditional)
-        case MAKELANGID(LANG_JAPANESE, SUBLANG_DEFAULT): // Japanese
-        case MAKELANGID(LANG_KOREAN, SUBLANG_DEFAULT): // Korean
+        case LANGID_CHINESE_SIMPLIFIED: // Chinese (Simplified)
+        case LANGID_CHINESE_TRADITIONAL: // Chinese (Traditional)
+        case LANGID_JAPANESE: // Japanese
+        case LANGID_KOREAN: // Korean
             return TRUE;
         default:
             return FALSE;
@@ -1283,6 +1283,7 @@ public:
     CLBarInatItem(DWORD dwThreadId);
 
     STDMETHOD(InitMenu)(ITfMenu *pMenu) override;
+    using CLBarItemButtonBase::OnMenuSelect;
     STDMETHOD(OnMenuSelect)(INT nCommandId);
     STDMETHOD(GetIcon)(HICON *phIcon) override;
     STDMETHOD(GetText)(BSTR *pbstr) override;

@@ -254,6 +254,7 @@ typedef struct _HALP_ROLLOVER
     ULONG Increment;
 } HALP_ROLLOVER, *PHALP_ROLLOVER;
 
+CODE_SEG("INIT")
 VOID
 NTAPI
 HalpCalibrateStallExecution(VOID);
@@ -609,4 +610,5 @@ extern KAFFINITY HalpDefaultInterruptAffinity;
 
 extern IDTUsageFlags HalpIDTUsageFlags[MAXIMUM_IDTVECTOR+1];
 
+extern BOOLEAN HalBootViaEfi;
 extern const USHORT HalpBuildType;
