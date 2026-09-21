@@ -882,7 +882,7 @@ NtQueryInformationProcess(
                         /* Update pointer */
                         ((PUNICODE_STRING)ProcessInformation)->Buffer =
                             (PWSTR)((PUNICODE_STRING)ProcessInformation + 1);
-                   }
+                    }
                     _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                     {
                         /* Get the exception code */
@@ -912,7 +912,8 @@ NtQueryInformationProcess(
 
             /* Reference the process */
             Status = ObReferenceObjectByHandle(ProcessHandle,
-                                               PROCESS_QUERY_INFORMATION, // FIXME: Use PROCESS_QUERY_LIMITED_INFORMATION if implemented
+            // FIXME: Use PROCESS_QUERY_LIMITED_INFORMATION when implemented
+                                               PROCESS_QUERY_INFORMATION,
                                                PsProcessType,
                                                PreviousMode,
                                                (PVOID*)&Process,
@@ -1270,12 +1271,44 @@ NtQueryInformationProcess(
                                                NULL);
             if (!NT_SUCCESS(Status)) break;
 
-#ifdef _WIN64
+#if defined(_WIN64) && defined(BUILD_WOW64_ENABLED)
             /* Make sure the process isn't dying */
             if (ExAcquireRundownProtection(&Process->RundownProtect))
             {
+                /* FIXME: A two-part hack: delay setting Process->Wow64Process,
+                   so 64-bit NTDLL can use IO to init stuff. */
+                if (IS_WOW64_PROCESS_INITIALIZING(Process))
+                {
+                    PsChargeProcessNonPagedPoolQuota(Process, sizeof(WOW64_PROCESS));
+                    Process->Wow64Process = ExAllocatePoolWithTag(NonPagedPool, sizeof(WOW64_PROCESS), TAG_PS_WOW64);
+                    if (!Process->Wow64Process)
+                    {
+                        PsReturnProcessNonPagedPoolQuota(Process, sizeof(WOW64_PROCESS));
+
+                        Status = STATUS_NO_MEMORY;
+                        Process->Wow64Process = UlongToPtr(1);
+                    }
+                    else
+                    {
+                        Process->Wow64Process->Wow64 = (PVOID)((ULONG_PTR)(Process->Peb) + ROUND_TO_PAGES(sizeof(PEB)));
+                    }
+                }
+
                 /* Get the WOW64 process structure */
-                Wow64 = (ULONG_PTR)Process->Wow64Process;
+                if (Process->Wow64Process == NULL)
+                {
+                    Wow64 = 0;
+                }
+                /* FIXME */
+                else if (IS_WOW64_PROCESS_INITIALIZING(Process))
+                {
+                    Wow64 = TRUE;
+                }
+                else
+                {
+                    Wow64 = (ULONG_PTR)Process->Wow64Process->Wow64;
+                }
+
                 /* Release the lock */
                 ExReleaseRundownProtection(&Process->RundownProtect);
             }
@@ -2274,19 +2307,10 @@ NtSetInformationThread(
     PETHREAD Thread;
     KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
     NTSTATUS Status;
-    HANDLE TokenHandle = NULL;
     KPRIORITY Priority = 0;
-    KAFFINITY Affinity = 0, CombinedAffinity;
-    PVOID Address = NULL;
     PEPROCESS Process;
-    ULONG_PTR DisableBoost = 0;
-    ULONG_PTR IdealProcessor = 0;
-    ULONG_PTR Break = 0;
     PTEB Teb;
-    ULONG_PTR TlsIndex = 0;
-    PVOID *ExpansionSlots;
-    PETHREAD ProcThread;
-    BOOLEAN HasPrivilege;
+
     PAGED_CODE();
 
     /* Validate the information class */
@@ -2310,7 +2334,7 @@ NtSetInformationThread(
     {
         /* Thread priority */
         case ThreadPriority:
-
+        {
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(KPRIORITY))
             {
@@ -2344,6 +2368,7 @@ NtSetInformationThread(
             /* Check for the required privilege */
             if (Priority >= LOW_REALTIME_PRIORITY)
             {
+                BOOLEAN HasPrivilege;
                 HasPrivilege = SeCheckPrivilegedObject(SeIncreaseBasePriorityPrivilege,
                                                        ThreadHandle,
                                                        THREAD_SET_INFORMATION,
@@ -2371,9 +2396,10 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadBasePriority:
-
+        {
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(LONG))
             {
@@ -2430,8 +2456,11 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadAffinityMask:
+        {
+            KAFFINITY Affinity = 0, CombinedAffinity;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(ULONG_PTR))
@@ -2509,8 +2538,11 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadImpersonationToken:
+        {
+            HANDLE TokenHandle;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(HANDLE))
@@ -2549,8 +2581,11 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadQuerySetWin32StartAddress:
+        {
+            PVOID Address;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(ULONG_PTR))
@@ -2589,8 +2624,11 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadIdealProcessor:
+        {
+            ULONG_PTR IdealProcessor;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(ULONG_PTR))
@@ -2637,7 +2675,7 @@ NtSetInformationThread(
 
             /* Get the TEB and protect the thread */
             Teb = Thread->Tcb.Teb;
-            if ((Teb) && (ExAcquireRundownProtection(&Thread->RundownProtect)))
+            if (Teb && ExAcquireRundownProtection(&Thread->RundownProtect))
             {
                 /* Save the ideal processor */
                 Teb->IdealProcessor = Thread->Tcb.IdealProcessor;
@@ -2649,8 +2687,11 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadPriorityBoost:
+        {
+            ULONG_PTR DisableBoost;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(ULONG_PTR))
@@ -2689,8 +2730,12 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadZeroTlsCell:
+        {
+            ULONG_PTR TlsIndex;
+            PETHREAD ProcThread;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(ULONG))
@@ -2753,7 +2798,7 @@ NtSetInformationThread(
                                             TLS_EXPANSION_SLOTS) - 1)
                             {
                                 /* Check if we have expansion slots */
-                                ExpansionSlots = Teb->TlsExpansionSlots;
+                                PVOID* ExpansionSlots = Teb->TlsExpansionSlots;
                                 if (ExpansionSlots)
                                 {
                                     /* Clear the index */
@@ -2779,8 +2824,11 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadBreakOnTermination:
+        {
+            ULONG Break;
 
             /* Check buffer length */
             if (ThreadInformationLength != sizeof(ULONG))
@@ -2834,9 +2882,10 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadHideFromDebugger:
-
+        {
             /* Check buffer length */
             if (ThreadInformationLength != 0)
             {
@@ -2860,6 +2909,93 @@ NtSetInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
+
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS1) || defined(__REACTOS__)
+        case ThreadNameInformation:
+        {
+            UNICODE_STRING CapturedThreadName;
+            PUNICODE_STRING NewThreadName;
+
+            /* Check buffer length */
+            if (ThreadInformationLength != sizeof(UNICODE_STRING))
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+
+            /* Reference the thread.
+             * NOTE: Win10+ uses THREAD_SET_LIMITED_INFORMATION instead;
+             * however some tools misuse thread names to perform suspicious
+             * operations; therefore we try to mess with these by requiring
+             * a bit more of access rights. */
+            Status = ObReferenceObjectByHandle(ThreadHandle,
+                                               THREAD_SET_INFORMATION,
+                                               PsThreadType,
+                                               PreviousMode,
+                                               (PVOID*)&Thread,
+                                               NULL);
+            if (!NT_SUCCESS(Status))
+                break;
+
+            /* Probe and capture the thread name */
+            Status = ProbeAndCaptureUnicodeString(&CapturedThreadName,
+                                                  PreviousMode,
+                                                  (PUNICODE_STRING)ThreadInformation);
+            if (!NT_SUCCESS(Status))
+            {
+                ObDereferenceObject(Thread);
+                break;
+            }
+
+            /* Allocate a new buffer only if the thread name isn't empty
+             * (REMARK: We only consider Length instead of MaximumLength).
+             * If empty, just reset the thread name pointer to NULL instead
+             * of allocating an empty UNICODE_STRING. */
+            NewThreadName = NULL;
+            if (CapturedThreadName.Length > 0)
+            {
+                ULONG Length = sizeof(UNICODE_STRING) + CapturedThreadName.Length;
+                NewThreadName = ExAllocatePoolWithTag(NonPagedPool, // FIXME: NonPagedPoolNx
+                                                      Length, TAG_THREAD_NAME);
+                if (!NewThreadName)
+                {
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                }
+                else
+                {
+                    /* Copy the new thread name */
+                    NewThreadName->Length =
+                    NewThreadName->MaximumLength = CapturedThreadName.Length;
+                    NewThreadName->Buffer = (PWCH)(NewThreadName + 1);
+                    RtlCopyMemory(NewThreadName->Buffer,
+                                  CapturedThreadName.Buffer,
+                                  CapturedThreadName.Length);
+                }
+            }
+
+            /* Free the captured string */
+            ReleaseCapturedUnicodeString(&CapturedThreadName, PreviousMode);
+
+            /* Replace the original thread name with the new one */
+            if (NT_SUCCESS(Status))
+            {
+                PUNICODE_STRING OldThreadName;
+                PspLockThreadSecurityExclusive(Thread);
+                OldThreadName = Thread->ThreadName;
+                Thread->ThreadName = NewThreadName;
+                PspUnlockThreadSecurityExclusive(Thread);
+
+                /* Free the old thread name */
+                if (OldThreadName)
+                    ExFreePoolWithTag(OldThreadName, TAG_THREAD_NAME);
+            }
+
+            /* Dereference the thread */
+            ObDereferenceObject(Thread);
+            break;
+        }
+#endif /* (NTDDI_VERSION >= NTDDI_WIN10_RS1) || defined(__REACTOS__) */
 
         /* Anything else */
         default:
@@ -2891,11 +3027,7 @@ NtQueryInformationThread(
     NTSTATUS Status;
     ULONG Access;
     ULONG Length = 0;
-    PTHREAD_BASIC_INFORMATION ThreadBasicInfo =
-        (PTHREAD_BASIC_INFORMATION)ThreadInformation;
-    PKERNEL_USER_TIMES ThreadTime = (PKERNEL_USER_TIMES)ThreadInformation;
-    KIRQL OldIrql;
-    ULONG ThreadTerminated;
+
     PAGED_CODE();
 
     /* Validate the information class */
@@ -2925,6 +3057,9 @@ NtQueryInformationThread(
     {
         /* Basic thread information */
         case ThreadBasicInformation:
+        {
+            PTHREAD_BASIC_INFORMATION ThreadBasicInfo =
+                (PTHREAD_BASIC_INFORMATION)ThreadInformation;
 
             /* Set the return length */
             Length = sizeof(THREAD_BASIC_INFORMATION);
@@ -2966,9 +3101,12 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         /* Thread time information */
         case ThreadTimes:
+        {
+            PKERNEL_USER_TIMES ThreadTime = (PKERNEL_USER_TIMES)ThreadInformation;
 
             /* Set the return length */
             Length = sizeof(KERNEL_USER_TIMES);
@@ -3017,9 +3155,10 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadQuerySetWin32StartAddress:
-
+        {
             /* Set the return length*/
             Length = sizeof(PVOID);
 
@@ -3055,9 +3194,10 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadPerformanceCount:
-
+        {
             /* Set the return length*/
             Length = sizeof(LARGE_INTEGER);
 
@@ -3093,9 +3233,10 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadAmILastThread:
-
+        {
             /* Set the return length*/
             Length = sizeof(ULONG);
 
@@ -3135,8 +3276,11 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadIsIoPending:
+        {
+            KIRQL OldIrql;
 
             /* Set the return length*/
             Length = sizeof(ULONG);
@@ -3179,10 +3323,11 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         /* LDT and GDT information */
         case ThreadDescriptorTableEntry:
-
+        {
 #if defined(_X86_)
             /* Reference the thread */
             Status = ObReferenceObjectByHandle(ThreadHandle,
@@ -3207,9 +3352,10 @@ NtQueryInformationThread(
             Status = STATUS_NOT_IMPLEMENTED;
 #endif
             break;
+        }
 
         case ThreadPriorityBoost:
-
+        {
             /* Set the return length*/
             Length = sizeof(ULONG);
 
@@ -3242,9 +3388,50 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
+
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+        case ThreadHideFromDebugger:
+        {
+            /* Set the return length */
+            Length = sizeof(BOOLEAN);
+
+            if (ThreadInformationLength != Length)
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+
+            /* Reference the thread */
+            Status = ObReferenceObjectByHandle(ThreadHandle,
+                                               Access,
+                                               PsThreadType,
+                                               PreviousMode,
+                                               (PVOID*)&Thread,
+                                               NULL);
+            if (!NT_SUCCESS(Status))
+                break;
+
+            /* Protect write with SEH */
+            _SEH2_TRY
+            {
+                *(PBOOLEAN)ThreadInformation = Thread->HideFromDebugger;
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                /* Get exception code */
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+
+            /* Dereference the thread */
+            ObDereferenceObject(Thread);
+            break;
+        }
+#endif /* (NTDDI_VERSION >= NTDDI_VISTA) */
 
         case ThreadBreakOnTermination:
-
+        {
             /* Set the return length */
             Length = sizeof(ULONG);
 
@@ -3277,8 +3464,11 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
 
         case ThreadIsTerminated:
+        {
+            ULONG ThreadTerminated;
 
             /* Set the return length*/
             Length = sizeof(ThreadTerminated);
@@ -3314,6 +3504,74 @@ NtQueryInformationThread(
             /* Dereference the thread */
             ObDereferenceObject(Thread);
             break;
+        }
+
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS1) || defined(__REACTOS__)
+        case ThreadNameInformation:
+        {
+            PUNICODE_STRING ThreadName;
+
+            /* Reference the thread */
+            Status = ObReferenceObjectByHandle(ThreadHandle,
+            // FIXME: Use THREAD_QUERY_LIMITED_INFORMATION when implemented
+                                               THREAD_QUERY_INFORMATION,
+                                               PsThreadType,
+                                               PreviousMode,
+                                               (PVOID*)&Thread,
+                                               NULL);
+            if (!NT_SUCCESS(Status))
+                break;
+
+            PspLockThreadSecurityShared(Thread);
+
+            ThreadName = Thread->ThreadName;
+
+            /* Set the return length (REMARK: We only
+             * consider Length instead of MaximumLength) */
+            Length = sizeof(UNICODE_STRING);
+            Length += (ThreadName ? ThreadName->Length : 0);
+            if (ThreadInformationLength < Length)
+            {
+                PspUnlockThreadSecurityShared(Thread);
+                ObDereferenceObject(Thread);
+                Status = STATUS_BUFFER_TOO_SMALL;
+                /* As on Windows, and *not* STATUS_INFO_LENGTH_MISMATCH */
+                break;
+            }
+
+            /* Protect writes with SEH */
+            _SEH2_TRY
+            {
+                PTHREAD_NAME_INFORMATION NameInfo =
+                    (PTHREAD_NAME_INFORMATION)ThreadInformation;
+                if (ThreadName && (ThreadName->Length > 0))
+                {
+                    NameInfo->ThreadName.Length =
+                    NameInfo->ThreadName.MaximumLength = ThreadName->Length;
+                    NameInfo->ThreadName.Buffer = (PWCH)(&NameInfo->ThreadName + 1);
+                    RtlCopyMemory(NameInfo->ThreadName.Buffer,
+                                  ThreadName->Buffer,
+                                  ThreadName->Length);
+                }
+                else
+                {
+                    RtlInitEmptyUnicodeString(&NameInfo->ThreadName, NULL, 0);
+                }
+            }
+            _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            {
+                /* Get exception code */
+                Status = _SEH2_GetExceptionCode();
+            }
+            _SEH2_END;
+
+            PspUnlockThreadSecurityShared(Thread);
+
+            /* Dereference the thread */
+            ObDereferenceObject(Thread);
+            break;
+        }
+#endif /* (NTDDI_VERSION >= NTDDI_WIN10_RS1) || defined(__REACTOS__) */
 
         /* Anything else */
         default:

@@ -132,7 +132,6 @@ else()
 endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    add_compile_options("-Wno-unknown-pragmas")
     add_compile_options(-fno-aggressive-loop-optimizations)
     if (DBG)
         add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wold-style-declaration>")
@@ -206,11 +205,12 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
         add_compile_options(-fno-builtin-erf)
         add_compile_options(-fno-builtin-erff)
+        add_compile_options(-fno-builtin-execv)
+        add_compile_options(-fno-builtin-execve)
+        add_compile_options(-fno-builtin-execvp)
     endif()
 
 elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-microsoft>")
-    add_compile_options(-Wno-pragma-pack)
     add_compile_options(-fno-associative-math)
 
     if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
@@ -248,7 +248,11 @@ endif()
 add_compile_options(-march=${OARCH} -mtune=${TUNE})
 
 # Warnings, errors
-if((NOT CMAKE_BUILD_TYPE STREQUAL "Release") AND (NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo") AND (NOT CMAKE_C_COMPILER_ID STREQUAL Clang))
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+   NOT ARCH STREQUAL "amd64" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "Release" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
     add_compile_options(-Werror)
 endif()
 
@@ -256,7 +260,6 @@ add_compile_options(-Wall -Wpointer-arith)
 
 # Disable some overzealous warnings
 add_compile_options(
-    -Wno-unknown-warning-option
     -Wno-char-subscripts
     -Wno-multichar
     -Wno-unused-value
@@ -266,10 +269,23 @@ add_compile_options(
     -Wno-unused-result # FIXME To be removed when CORE-17637 is resolved
     -Wno-format
     -Wno-maybe-uninitialized
+    -Wno-nonnull-compare
 )
 
 if(FALSE)
     add_compile_options(-Wno-attributes)
+endif()
+
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(
+        -Wno-unknown-pragmas
+    )
+elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-microsoft>")
+    add_compile_options(
+        -Wno-pragma-pack
+        -Wno-unknown-warning-option
+    )
 endif()
 
 # Optimizations
@@ -317,7 +333,6 @@ elseif(ARCH STREQUAL "amd64")
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
         add_compile_options(-mpreferred-stack-boundary=4)
     endif()
-    add_compile_options(-Wno-error)
 endif()
 
 # Other
@@ -1094,7 +1109,7 @@ function(spec2def _dllname _spec_file)
     cmake_parse_arguments(__spec2def "ADD_IMPORTLIB;NO_PRIVATE_WARNINGS;WITH_RELAY;WITH_DBG;NO_DBG" "VERSION" "" ${ARGN})
 
     # Get library basename
-    get_filename_component(_file ${_dllname} NAME_WE)
+    get_filename_component(_file ${_dllname} NAME_WLE)
 
     # Error out on anything else than spec
     if(NOT ${_spec_file} MATCHES ".*\\.spec")
@@ -1131,6 +1146,8 @@ function(spec2def _dllname _spec_file)
         endif()
 
         generate_import_lib(lib${_file} ${_dllname} ${_spec_file} ${_extraflags} "${__version_arg}" "${__dbg_arg}")
+        target_include_directories(lib${_file} INTERFACE $<TARGET_PROPERTY:${_file},INTERFACE_INCLUDE_DIRECTORIES>)
+        target_include_directories(lib${_file}_delayed INTERFACE $<TARGET_PROPERTY:${_file},INTERFACE_INCLUDE_DIRECTORIES>)
     endif()
 endfunction()
 

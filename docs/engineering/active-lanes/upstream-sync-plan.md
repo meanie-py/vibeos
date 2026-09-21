@@ -6,13 +6,26 @@
 We forked ReactOS at `5213cf717cf` (2026-02-11). They have moved 1,263 commits since. This
 lane makes their work reachable without treating it as a patch queue we owe.
 
-> **STATUS 2026-09-20, later the same day.** Phases 0 and 1 are DONE and landed
-> (`1e222cecc52`). Every number below was re-derived and several were wrong; the table is
-> corrected in place and the originals are named where the error is instructive. The first
-> oracle bug is fixed (`4d7ef310adf`, `KeContextToTrapFrame`). Phase 2 is RETIRED — see
-> "Phases". Reports produced: `upstream-sync-absent-files.md`,
-> `upstream-sync-cohab-registry.md`, `upstream-sync-bug-leads.md`,
-> `upstream-sync-build-conflicts.md`.
+> **STATUS 2026-09-20, late. PHASE 3 IS DONE — the merge is IN.** 1,269 upstream commits
+> merged (`28a26f3b664`), 302 conflicts resolved, and the tree BUILDS on i386, amd64 and
+> arm64 (`842b5458588`). 3,769 files, +464,486 / −163,249.
+>
+> Read these three in this order:
+>
+> | doc | what it is |
+> |---|---|
+> | `upstream-sync-merge-decisions.md` | **every decision the merge made**, what was declined and why, the three silent hazard classes, the nine build-failure shapes, and the nine things still owed |
+> | `upstream-sync-phase4-review-queue.md` | **the payoff**: 194 flipped TUs whose dead C the merge refreshed, top 40 ranked with what upstream actually did |
+> | this file | strategy and the phase table below |
+>
+> Phases 0, 1 and 3 are DONE; 2 was retired (measured, not guessed). **Phase 4 is now the
+> whole lane** and it is no longer archaeology: every one of those 194 files is an ordinary
+> `git diff` against Rust sitting beside it.
+>
+> The numbers below were measured on the morning of 2026-09-20 and the merge has since
+> consumed them. They are kept because the *method* still applies to the next sync — in
+> particular "partition by disk existence first", which turned a 302-file wall into 129
+> policy lookups, 65 version comparisons and ~110 files needing a human.
 
 **The framing that matters, and the one thing not to lose:** upstream is not a source of
 patches for us to apply. It is an **oracle that tells us where the bugs are.** When they fix
@@ -190,8 +203,8 @@ merge rather than a trickle.
 | **0** | Real cohab registry — **DONE** | `tools/cohab-registry.json`, 1,091 TUs, regenerate with `tools/gen_cohab_registry.py`. Killed the 668. |
 | **1** | Comment-out census gate — **DONE** | `tools/cohab_census.py` in `vibeos-cli check`. Nothing else was safe without it. |
 | **~~2~~** | ~~Merge `modules/rostests` alone~~ — **RETIRED** | Measured, and it is not the low-risk pipeline proof it looked like. It contributes **1** content conflict, so it proves almost nothing, while upstream's **+172,839 / −45,575 lines** across 461 files there make it a large merge in its own right. And our side is not incidental: 20 commits over 41 files, including the kmtest `-fasync-exceptions` fix and the i386 native-SEH validation — kmtest is our conformance oracle, so a `checkout upstream -- modules/rostests` would silently discard the harness fixes that make the sweep trustworthy. Doing it separately also pays the ~37/day conflict drift twice. Folded into 3. |
-| **3** | Full merge, ~281 conflicts, resolved by the partition above; set all watermarks | One-time. Apply the 126 modify/delete by POLICY first — that is 45% of the list and it is bucket lookup, not judgement. Then 38 vendored, then the ~110 that need a human. |
-| **4** | Burn down the review queue: refreshed C diff vs our Rust | Now a diff, not a port. **Started ahead of the merge** — the B1 set (63 files we DELETED) cannot wait for it, see below. |
+| **3** | Full merge — **DONE** (`28a26f3b664` + `842b5458588`) | 302 conflicts, not 281: the drift was real. Partitioned by disk existence — 129 modify/delete by policy, 65 vendored by MEASURED VERSION (which split both ways), 73 build files, 30 sources. Then twenty rounds to make it build. Full record in `upstream-sync-merge-decisions.md`. |
+| **4** | Burn down the review queue: refreshed C diff vs our Rust — **LIVE, this is the lane now** | 194 files, listed and ranked in `upstream-sync-phase4-review-queue.md`. Headline: upstream IMPLEMENTED job objects (`ps/job.c` +2198/−536) — which is why `PspCloseJob` was missing from `ps-rust` entirely — and built a whole AHCI/SATA stack we have zero coverage of. The B1 set (63 files we DELETED) still cannot be reached by any merge and remains hand-review only. |
 | **5** | `vibeos-cli upstream-sync` — fetch, merge, report the new queue | The owner's ruling: this stays an ONGOING AGENT LANE, not deterministic automation. Don't overinvest in tooling for it. |
 
 **Phase 4 does not depend on phase 3, and the most valuable part of it cannot.** The 63 B1

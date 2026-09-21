@@ -53,10 +53,10 @@ list(APPEND SOURCE
 list(APPEND PCH_SKIP_SOURCE
     libmpg123/optimize.c)
 
-add_library(libmpg123
+add_library(libmpg123 STATIC
     ${SOURCE}
     ${PCH_SKIP_SOURCE})
+add_pch(libmpg123 precomp.h "${PCH_SKIP_SOURCE}")
 
 target_link_libraries(libmpg123 oldnames)
 add_dependencies(libmpg123 psdk)
-add_pch(libmpg123 precomp.h "${PCH_SKIP_SOURCE}")

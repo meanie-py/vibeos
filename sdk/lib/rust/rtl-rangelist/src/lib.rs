@@ -18,7 +18,13 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::rtl::RtlCopyMemory;
 
 // rangelist flag / status constants (fixed ntddk / ntstatus.h values).
-const RTL_RANGE_LIST_ADD_SHARED: ULONG = 0x0000_0001;
+// Values are sdk/include/ndk/rtltypes.h. ADD_SHARED was hand-written as 0x1 here, which is
+// RTL_RANGE_LIST_ADD_IF_CONFLICT -- so `RtlAddRange` never set RTL_RANGE_SHARED on the stored
+// entry and `RtlIsRangeAvailable` never saw a shared range. Upstream's new RtlRangeList kmtest
+// caught it (`[1] Flags = 0x0, expected 0x1`).
+const RTL_RANGE_LIST_ADD_SHARED: ULONG = 0x0000_0002;
+// The RtlIsRangeAvailable `Flags` namespace is a DIFFERENT one that happens to share a value.
+const RTL_RANGE_LIST_SHARED_OK: ULONG = 0x0000_0001;
 const RTL_RANGE_SHARED: ULONG = 0x01;
 const STATUS_RANGE_NOT_FOUND: NTSTATUS = 0xC000028C_u32 as i32;
 
@@ -226,8 +232,11 @@ pub unsafe extern "system" fn RtlFindRange(
     RangeList: PRTL_RANGE_LIST,
     Minimum: ULONGLONG,
     Maximum: ULONGLONG,
-    Length: ULONG,
-    Alignment: ULONG,
+    // Widened ULONG -> ULONGLONG by the upstream merge (sdk/include/ndk/rtlfuncs.h). Every C
+    // caller is compiled against that; leaving these 32-bit here is a stdcall callee-pops
+    // mismatch on i386 and truncation on the 64-bit targets.
+    Length: ULONGLONG,
+    Alignment: ULONGLONG,
     _Flags: ULONG,
     _AttributeAvailableMask: UCHAR,
     _Context: PVOID,
@@ -490,7 +499,7 @@ pub unsafe extern "system" fn RtlIsRangeAvailable(
             && ((*Current).Range.Attributes & AttributeAvailableMask) != 0
         {
             /* Attributes match */
-        } else if (Flags & RTL_RANGE_SHARED) != 0
+        } else if (Flags & RTL_RANGE_LIST_SHARED_OK) != 0
             && ((*Current).Range.Flags & RTL_RANGE_SHARED as UCHAR) != 0
         {
             /* Both shared */

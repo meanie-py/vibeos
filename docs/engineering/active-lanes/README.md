@@ -7,7 +7,7 @@ yet landed-and-closed. When a lane closes, its doc moves **out** of here: to
 closing lane go to `docs/product/vibeos-roadmap.md` (Check-back ledger / Known-bugs
 registry), never left to rot in an archived doc.
 
-**Open lanes as of 2026-07-16** (`git worktree list` is the live source of truth):
+**Open lanes as of 2026-09-20** (`git worktree list` is the live source of truth):
 
 | Lane (worktree/branch) | Doc |
 |---|---|
@@ -19,6 +19,7 @@ registry), never left to rot in an archived doc.
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 | `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |
 | `research` | [x64-primary-plan.md](x64-primary-plan.md) *(survey: promoting amd64 to the primary x86 arch)* |
+| `upstream-sync` | [upstream-sync-plan.md](upstream-sync-plan.md) — strategy · [upstream-sync-merge-decisions.md](upstream-sync-merge-decisions.md) — **what the merge decided, and what it owes** · [upstream-sync-phase4-review-queue.md](upstream-sync-phase4-review-queue.md) — the 194-file review queue *(ONGOING: upstream is a bug oracle, not a patch queue; the big merge landed 2026-09-20, phase 4 is the lane now)* |
 
 *Recently landed & closed:*
 - `i386-apic-hal` (Phase A landed 2026-07-16 — APIC is now the i386 default HAL, legacy

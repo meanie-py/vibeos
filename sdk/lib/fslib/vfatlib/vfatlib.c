@@ -48,13 +48,13 @@ ULONG FsCheckTotalFiles;
 BOOLEAN
 NTAPI
 VfatFormat(
-    IN PUNICODE_STRING DriveRoot,
-    IN PFMIFSCALLBACK Callback,
-    IN BOOLEAN QuickFormat,
-    IN BOOLEAN BackwardCompatible,
-    IN MEDIA_TYPE MediaType,
-    IN PUNICODE_STRING Label,
-    IN ULONG ClusterSize)
+    _In_ PUNICODE_STRING DriveRoot,
+    _In_ PFMIFSCALLBACK Callback,
+    _In_ BOOLEAN QuickFormat,
+    _In_ BOOLEAN BackwardCompatible,
+    _In_ MEDIA_TYPE MediaType,
+    _In_ PUNICODE_STRING Label,
+    _In_ ULONG ClusterSize)
 {
     OBJECT_ATTRIBUTES ObjectAttributes;
     DISK_GEOMETRY DiskGeometry;
@@ -415,23 +415,24 @@ VfatPrint(PCHAR Format, ...)
 BOOLEAN
 NTAPI
 VfatChkdsk(
-    IN PUNICODE_STRING DriveRoot,
-    IN PFMIFSCALLBACK Callback,
-    IN BOOLEAN FixErrors,
-    IN BOOLEAN Verbose,
-    IN BOOLEAN CheckOnlyIfDirty,
-    IN BOOLEAN ScanDrive,
-    IN PVOID pUnknown1,
-    IN PVOID pUnknown2,
-    IN PVOID pUnknown3,
-    IN PVOID pUnknown4,
-    IN PULONG ExitStatus)
+    _In_ PUNICODE_STRING DriveRoot,
+    _In_ PFMIFSCALLBACK Callback,
+    _In_ BOOLEAN FixErrors,
+    _In_ BOOLEAN Verbose,
+    _In_ BOOLEAN CheckOnlyIfDirty,
+    _In_ BOOLEAN ScanDrive,
+    _In_opt_ PVOID pUnknown1,
+    _In_opt_ PVOID pUnknown2,
+    _In_opt_ PVOID pUnknown3,
+    _In_opt_ PVOID pUnknown4,
+    _Out_ PULONG ExitStatus)
 {
     BOOLEAN verify;
     BOOLEAN salvage_files;
     ULONG free_clusters;
     DOS_FS fs;
     NTSTATUS Status;
+    WCHAR DriveLetter[2] = L"0";
 
     UNREFERENCED_PARAMETER(pUnknown1);
     UNREFERENCED_PARAMETER(pUnknown2);
@@ -447,7 +448,7 @@ VfatChkdsk(
     /* Set parameters */
     FsCheckFlags = 0;
     if (Verbose)
-        FsCheckFlags |= FSCHECK_VERBOSE;
+        FsCheckFlags |= FSCHECK_VERBOSE | FSCHECK_LIST_FILES;
     if (FixErrors)
         FsCheckFlags |= FSCHECK_READ_WRITE;
 
@@ -544,8 +545,19 @@ VfatChkdsk(
         }
     }
 
-    VfatPrint("%wZ: %u files, %lu/%lu clusters\n", DriveRoot,
-        FsCheckTotalFiles, fs.data_clusters - free_clusters, fs.data_clusters);
+    if (DriveRoot->Buffer[0] == '\\' && DriveRoot->Buffer[1] == '?' &&
+        DriveRoot->Buffer[2] == '?' && DriveRoot->Buffer[3] == '\\')
+    {
+        DriveLetter[0] = DriveRoot->Buffer[4] & 0x5F; // 0x5f for Uppercase letter
+        VfatPrint("Chkdsk complete for Volume %S.\n", DriveLetter);
+        VfatPrint("%10u files on disk.\n\n", FsCheckTotalFiles);
+        VfatPrint("%10u bytes per cluster.\n", fs.cluster_size);
+        VfatPrint("%10lu total clusters on the disk.\n", fs.data_clusters);
+        VfatPrint("%10lu clusters available on the disk.\n", free_clusters);
+    }
+    else
+        VfatPrint("%wZ: %u files, %lu/%lu clusters\n", DriveRoot,
+            FsCheckTotalFiles, fs.data_clusters - free_clusters, fs.data_clusters);
 
     if (FsCheckFlags & FSCHECK_READ_WRITE)
     {

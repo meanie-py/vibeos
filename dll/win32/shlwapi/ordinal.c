@@ -5534,30 +5534,10 @@ INT WINAPI SHFormatDateTimeA(const FILETIME UNALIGNED *fileTime, DWORD *flags,
     return retval;
 }
 
-/***********************************************************************
- *             ZoneCheckUrlExW [SHLWAPI.231]
- *
- * Checks the details of the security zone for the supplied site. (?)
- *
- * PARAMS
- *
- *  szURL   [I] Pointer to the URL to check
- *
- *  Other parameters currently unknown.
- *
- * RETURNS
- *  unknown
- */
-
-INT WINAPI ZoneCheckUrlExW(LPWSTR szURL, PVOID pUnknown, DWORD dwUnknown2,
-    DWORD dwUnknown3, DWORD dwUnknown4, DWORD dwUnknown5, DWORD dwUnknown6,
-    DWORD dwUnknown7)
-{
-    FIXME("(%s,%p,%x,%x,%x,%x,%x,%x) STUB\n", debugstr_w(szURL), pUnknown, dwUnknown2,
-        dwUnknown3, dwUnknown4, dwUnknown5, dwUnknown6, dwUnknown7);
-
-    return 0;
-}
+/* ZoneCheckUrlExW was a FIXME stub here with a guessed prototype. Upstream has since
+ * implemented it for real in zonechk.c and declared the true signature in
+ * sdk/include/reactos/shlwapi_undoc.h; keeping this stub is a hard "conflicting
+ * types" error. Removed by the 2026-09-20 upstream sync. */
 
 /***********************************************************************
  *             SHVerbExistsNA [SHLWAPI.196]

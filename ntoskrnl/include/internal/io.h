@@ -118,24 +118,23 @@ typedef struct _FILE_OBJECT_EXTENSION
 // Determines if the IRP is Synchronous
 //
 #define IsIrpSynchronous(Irp, FileObject)               \
-    ((Irp->Flags & IRP_SYNCHRONOUS_API)  ||             \
-     (!(FileObject) ?                                   \
-        FALSE :                                         \
-        FileObject->Flags & FO_SYNCHRONOUS_IO))         \
+    (((Irp)->Flags & IRP_SYNCHRONOUS_API) ||            \
+     (!(FileObject) ? FALSE :                           \
+       (FileObject)->Flags & FO_SYNCHRONOUS_IO))
 
 //
 // Returns the internal Device Object Extension
 //
 #define IoGetDevObjExtension(DeviceObject)              \
     ((PEXTENDED_DEVOBJ_EXTENSION)                       \
-     (DeviceObject->DeviceObjectExtension))             \
+     ((DeviceObject)->DeviceObjectExtension))
 
 //
 // Returns the internal Driver Object Extension
 //
 #define IoGetDrvObjExtension(DriverObject)              \
     ((PEXTENDED_DRIVER_EXTENSION)                       \
-     (DriverObject->DriverExtension))                   \
+     ((DriverObject)->DriverExtension))
 
 /*
  * VOID
@@ -415,11 +414,11 @@ typedef struct _DRIVER_INFORMATION
 //
 typedef struct _IO_BUS_TYPE_GUID_LIST
 {
-    ULONG GuidCount;
     FAST_MUTEX Lock;
-    GUID Guids[1];
+    ULONG AllocatedCount;
+    ULONG GuidCount;
+    PGUID Guids;
 } IO_BUS_TYPE_GUID_LIST, *PIO_BUS_TYPE_GUID_LIST;
-extern PIO_BUS_TYPE_GUID_LIST IopBusTypeGuidList;
 
 //
 // Shutdown entry for registed devices
@@ -652,16 +651,6 @@ PDEVICE_NODE
 FASTCALL
 IopGetDeviceNode(
     IN PDEVICE_OBJECT DeviceObject
-);
-
-NTSTATUS
-IoCreateDriverList(
-    VOID
-);
-
-NTSTATUS
-IoDestroyDriverList(
-    VOID
 );
 
 CODE_SEG("INIT")
@@ -1204,7 +1193,8 @@ IopGetSetSecurityObject(
     IN OUT PULONG BufferLength,
     OUT PSECURITY_DESCRIPTOR *OldSecurityDescriptor,
     IN POOL_TYPE PoolType,
-    IN OUT PGENERIC_MAPPING GenericMapping
+    IN OUT PGENERIC_MAPPING GenericMapping,
+    IN KPROCESSOR_MODE AccessMode
 );
 
 NTSTATUS
@@ -1236,8 +1226,8 @@ IopCloseFile(
     IN PEPROCESS Process OPTIONAL,
     IN PVOID Object,
     IN ACCESS_MASK GrantedAccess,
-    IN ULONG ProcessHandleCount,
-    IN ULONG SystemHandleCount
+    IN ULONG_PTR ProcessHandleCount,
+    IN ULONG_PTR SystemHandleCount
 );
 
 NTSTATUS
@@ -1447,6 +1437,7 @@ extern POBJECT_TYPE IoCompletionType;
 extern PDEVICE_NODE IopRootDeviceNode;
 extern KSPIN_LOCK IopDeviceTreeLock;
 extern ULONG IopTraceLevel;
+extern ULONG IopCaseInsensitive;
 extern GENERAL_LOOKASIDE IopMdlLookasideList;
 extern GENERIC_MAPPING IopCompletionMapping;
 extern GENERIC_MAPPING IopFileMapping;
@@ -1456,7 +1447,7 @@ extern LIST_ENTRY IopErrorLogListHead;
 extern ULONG IopAutoReboot;
 extern ULONG IopNumTriageDumpDataBlocks;
 extern PVOID IopTriageDumpDataBlocks[64];
-extern PIO_BUS_TYPE_GUID_LIST PnpBusTypeGuidList;
+extern IO_BUS_TYPE_GUID_LIST PnpBusTypeGuidList;
 extern PDRIVER_OBJECT IopRootDriverObject;
 extern KSPIN_LOCK IopDeviceActionLock;
 extern LIST_ENTRY IopDeviceActionRequestList;

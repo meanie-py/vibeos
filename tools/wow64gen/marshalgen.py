@@ -58,6 +58,8 @@ CLANG = REPO / ".build-tools/llvm-mingw/bin/clang"
 _FLAG_RE = re.compile(r"^(-I|-D|-isystem|--target=|-f|-W|-m)")
 # Flags that only matter for real codegen / would break -fsyntax-only reuse.
 _FLAG_SKIP = re.compile(r"^(-fdiagnostics|-fcolor|-flto|-ffile-prefix|-fdebug)")
+# Flags whose VALUE is a separate argv token.
+_FLAG_TAKES_ARG = {"-I", "-isystem", "-include", "-D", "-U", "-iquote", "-idirafter"}
 
 
 def extract_flags(build_dir: Path, tu_suffix: str) -> list[str]:
@@ -67,9 +69,23 @@ def extract_flags(build_dir: Path, tu_suffix: str) -> list[str]:
     db = json.loads((build_dir / "compile_commands.json").read_text())
     entry = next(e for e in db if e["file"].endswith(tu_suffix))
     flags = []
-    for tok in entry["command"].split():
+    toks = entry["command"].split()
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        # `-isystem <path>` / `-I <path>` are TWO tokens when cmake emits them
+        # separated. Taking only the first drops the path silently, and the probe
+        # then fails on whatever that directory provided -- the 2026-09-20 upstream
+        # merge changed one module's spelling and marshalgen lost
+        # sdk/lib/pseh/include, i.e. <pseh/pseh2.h>, i.e. every layout.
+        if tok in _FLAG_TAKES_ARG and i + 1 < len(toks):
+            flags.append(tok)
+            flags.append(toks[i + 1].replace("/tmp/vibeos", str(REPO)))
+            i += 2
+            continue
         if _FLAG_RE.match(tok) and not _FLAG_SKIP.match(tok):
             flags.append(tok.replace("/tmp/vibeos", str(REPO)))
+        i += 1
     return flags
 
 
@@ -850,7 +866,8 @@ def crosscheck_artifact(computed: dict[str, bool], gen_c: Path, tname: str) -> N
     if not built:
         return
     diffs = [
-        (n, computed[n], built[n]) for n in sorted(computed.keys() & built.keys())
+        (n, computed[n], built[n])
+        for n in sorted(computed.keys() & built.keys())
         if computed[n] != built[n]
     ]
     if not diffs:

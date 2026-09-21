@@ -42,5 +42,8 @@ add_custom_target(rust_arbiter DEPENDS ${ARBITER_RUST_LIB})
 
 # add_library(arbiter arbiter.c)  # body replaced by Rust; kept on disk
 add_library(arbiter rust_cohab_stub.c)
+# upstream publishes arbiter.h through the target (its consumers, e.g. pcix, dropped
+# their own include_directories line in the same commit). Mirror that here.
+target_include_directories(arbiter INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 add_dependencies(arbiter bugcodes xdk rust_arbiter)
 target_link_libraries(arbiter PUBLIC ${ARBITER_RUST_LIB})

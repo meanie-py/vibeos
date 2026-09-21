@@ -5,6 +5,10 @@
 * PURPOSE:         HDA Driver Entry
 * PROGRAMMER:      Johannes Anderwald
 */
+/* upstream-sync 2026-09-20: upstream's "Stop using non-conforming swprintf" also
+ * dropped the C++ arm of the guard in <stdio.h>, so the 2-arg swprintf is no longer
+ * declared for C++ at all. These call sites want the count-less form; name it
+ * explicitly. libcntpr, which this driver links, provides _swprintf. */
 #include "hdaudbus.h"
 
 NTSTATUS
@@ -107,7 +111,7 @@ HDA_PDOQueryId(
     {
 
         /* calculate size */
-        swprintf(DeviceName, L"HDAUDIO\\FUNC_%02X&VEN_%04X&DEV_%04X&SUBSYS_%08X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId, DeviceExtension->Codec->ProductId, DeviceExtension->Codec->VendorId << 16 | DeviceExtension->Codec->ProductId);
+        _swprintf(DeviceName, L"HDAUDIO\\FUNC_%02X&VEN_%04X&DEV_%04X&SUBSYS_%08X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId, DeviceExtension->Codec->ProductId, DeviceExtension->Codec->VendorId << 16 | DeviceExtension->Codec->ProductId);
         Length = wcslen(DeviceName) + 20;
 
         /* allocate result buffer*/
@@ -125,10 +129,10 @@ HDA_PDOQueryId(
     else if (IoStack->Parameters.QueryId.IdType == BusQueryCompatibleIDs)
     {
         RtlZeroMemory(DeviceName, sizeof(DeviceName));
-        Length = swprintf(DeviceName, L"HDAUDIO\\FUNC_%02X&VEN_%04X&DEV_%04X&REV_%04X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId, DeviceExtension->Codec->ProductId, DeviceExtension->Codec->Major << 12 | DeviceExtension->Codec->Minor << 8 | DeviceExtension->Codec->Revision) + 1;
-        Length += swprintf(&DeviceName[Length], L"HDAUDIO\\FUNC_%02X&VEN_%04X&DEV_%04X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId, DeviceExtension->Codec->ProductId) + 1;
-        Length += swprintf(&DeviceName[Length], L"HDAUDIO\\FUNC_%02X&VEN_%04X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId) + 1;
-        Length += swprintf(&DeviceName[Length], L"HDAUDIO\\FUNC_%02X", DeviceExtension->AudioGroup->FunctionGroup) + 2;
+        Length = _swprintf(DeviceName, L"HDAUDIO\\FUNC_%02X&VEN_%04X&DEV_%04X&REV_%04X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId, DeviceExtension->Codec->ProductId, DeviceExtension->Codec->Major << 12 | DeviceExtension->Codec->Minor << 8 | DeviceExtension->Codec->Revision) + 1;
+        Length += _swprintf(&DeviceName[Length], L"HDAUDIO\\FUNC_%02X&VEN_%04X&DEV_%04X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId, DeviceExtension->Codec->ProductId) + 1;
+        Length += _swprintf(&DeviceName[Length], L"HDAUDIO\\FUNC_%02X&VEN_%04X", DeviceExtension->AudioGroup->FunctionGroup, DeviceExtension->Codec->VendorId) + 1;
+        Length += _swprintf(&DeviceName[Length], L"HDAUDIO\\FUNC_%02X", DeviceExtension->AudioGroup->FunctionGroup) + 2;
 
         /* allocate result buffer*/
         Device = (LPWSTR)AllocateItem(PagedPool, Length * sizeof(WCHAR));

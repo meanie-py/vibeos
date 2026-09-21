@@ -130,6 +130,14 @@ KeGetTrapFrameFrameRegister(PKTRAP_FRAME TrapFrame)
     return TrapFrame->Ebp;
 }
 
+FORCEINLINE
+ULONG64
+KxQueryProcessorCycleTime(VOID)
+{
+    /* Read the time stamp counter */
+    return __rdtsc();
+}
+
 //
 // Macro to get trap and exception frame from a thread stack
 //
@@ -197,6 +205,11 @@ typedef union _KTRAP_EXIT_SKIP_BITS
 #define PFX_FLAG_REP               0x00040000
 
 //
+// VDM State Pointer
+//
+extern const PULONG KiNtVdmState;
+
+//
 // VDM Helper Macros
 //
 // All VDM/V8086 opcode emulators have the same FASTCALL function definition.
@@ -218,8 +231,22 @@ typedef union _KTRAP_EXIT_SKIP_BITS
 // more time, this way we don't redefine ALL opcode handlers to have 3 parameters,
 // which would be forcing stack usage in all other scenarios.
 //
-#define KiVdmSetVdmEFlags(x)        InterlockedOr((PLONG)KiNtVdmState, (x));
-#define KiVdmClearVdmEFlags(x)      InterlockedAnd((PLONG)KiNtVdmState, ~(x))
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
+FORCEINLINE ULONG KiVdmSetVdmEFlags(ULONG EFlags)
+{
+    return InterlockedOr((PLONG)KiNtVdmState, EFlags);
+}
+FORCEINLINE ULONG KiVdmClearVdmEFlags(ULONG EFlags)
+{
+    return InterlockedAnd((PLONG)KiNtVdmState, ~EFlags);
+}
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
 #define KiCallVdmHandler(x)         KiVdmOpcode##x(TrapFrame, Flags)
 #define KiCallVdmPrefixHandler(x)   KiVdmOpcodePrefix(TrapFrame, Flags | x)
 #define KiVdmUnhandledOpcode(x)                     \
@@ -713,6 +740,7 @@ extern ULONG KeI386FxsrPresent;
 extern ULONG KiMXCsrMask;
 extern ULONG KeI386CpuType;
 extern ULONG KeI386CpuStep;
+extern ULONG KeI386MachineType;
 extern ULONG KiFastSystemCallDisable;
 extern UCHAR KiDebugRegisterTrapOffsets[9];
 extern UCHAR KiDebugRegisterContextOffsets[9];

@@ -1,10 +1,9 @@
 
 add_definitions(-D_MIDL_USE_GUIDDEF_)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
 list(APPEND SOURCE
 #   access.idl
+    activation.idl
     activaut.idl
     activdbg.idl
     activscp.idl
@@ -52,6 +51,7 @@ list(APPEND SOURCE
     exdisp.idl
     fusion.idl
     hlink.idl
+    hstring.idl
     htiface.idl
     htiframe.idl
     httprequest.idl
@@ -63,6 +63,7 @@ list(APPEND SOURCE
     indexsrv.idl
     inputscope.idl
     inseng.idl
+    inspectable.idl
     mediaobj.idl
     metahost.idl
     mfidl.idl
@@ -71,6 +72,7 @@ list(APPEND SOURCE
     mimeinfo.idl
     mimeole.idl
     mlang.idl
+    mmc.idl
     mmdeviceapi.idl
     msaatext.idl
     mscoree.idl
@@ -89,6 +91,7 @@ list(APPEND SOURCE
     oaidl.idl
     objectarray.idl
     objidl.idl
+    objidlbase.idl
     objsafe.idl
     ocidl.idl
     ocmm.idl
@@ -101,12 +104,15 @@ list(APPEND SOURCE
     propidl.idl
     propsys.idl
     pstore.idl
+    restrictederrorinfo.idl
     richole.idl
+    roparameterizediid.idl
 #   row.idl
 #   rowchg.idl
 #   rstbas.idl
 #   rstinf.idl
 #   rstloc.idl
+    rtworkq.idl
     sensevts.idl
     servprov.idl
 #   sesprp.idl
@@ -125,6 +131,8 @@ list(APPEND SOURCE
     tuner.idl
     txcoord.idl
     txdtc.idl
+    uiautomationclient.idl
+    uiautomationcore.idl
     unknwn.idl
     urlhist.idl
     urlmon.idl
@@ -160,6 +168,7 @@ add_custom_target(stdole2 DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stdole2.tlb)
 add_idl_headers(d3d_idl_headers d3dcommon.idl)
 
 add_iid_library(adsiid iads.idl transact.idl)
+add_iid_library(mmc_uuids mmc.idl)
 add_iid_library(wuguid wuapi.idl)
 add_iid_library(xml_uuids msxml2.idl)
 

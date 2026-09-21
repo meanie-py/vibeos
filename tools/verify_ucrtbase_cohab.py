@@ -118,6 +118,10 @@ OURS_ON_LINK_LINE = {
     "msvcrt_shared": Path("dll/win32/msvcrt/CMakeFiles/msvcrt_shared.dir"),
     "crtmath": Path("sdk/lib/crt/CMakeFiles/crtmath.dir"),
     "vcruntime": Path("sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"),
+    # upstream-sync 2026-09-20: upstream split sdk/lib/vcruntime in two and ucrtbase now
+    # links BOTH halves. vcstartup holds mainCRTStartup/atexit/tlssup/the security cookie
+    # — objects this tree already owned, just under the other target name.
+    "vcstartup": Path("sdk/lib/vcstartup/CMakeFiles/vcstartup.dir"),
     "chkstk": Path("sdk/lib/crt/CMakeFiles/chkstk.dir"),
     "wine": Path("sdk/lib/libwine/CMakeFiles/wine.dir"),
 }

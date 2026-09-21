@@ -518,7 +518,7 @@ def test_the_recorded_ceiling_matches_what_the_tree_actually_measures():
         pytest.skip("no build tree in this worktree; the ratchet needs objects")
 
 
-def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement():
+def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_path: Path):
     """Both directions, because the asymmetry is the design.
 
     Failing on an improvement would bounce lanes for making the tree better —
@@ -537,16 +537,26 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement():
     doc = yaml.safe_load(original)
     arch = next(a for a in doc["burndown"] if (vuc.REPO / f"build-{a}").is_dir())
     real = doc["burndown"][arch]
+
+    # Perturb a COPY, never the tracked file. Writing tools/ucrt-takeover.yaml in place and
+    # restoring it leaves the content clean but moves the mtime, and `vibeos-cli build`'s
+    # artifact-check compares source mtimes against the build stamp -- so a gate running this
+    # test concurrently with its own builds fails one arch at random with
+    # "build source changed since build (C/asm/cmake/spec/rc): tools/ucrt-takeover.yaml".
+    # Cost one arm64 BUILD_INCOMPLETE plus the cascade into every artifact-dependent scanner.
+    original_takeover = vuc.TAKEOVER
+    scratch = tmp_path / "ucrt-takeover.yaml"
+    vuc.TAKEOVER = scratch
     try:
         # Ceiling below reality -> a regression, and it must FAIL.
-        vuc.TAKEOVER.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real - 50}"))
+        scratch.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real - 50}"))
         fails, _ = vuc.check_burndown()
         assert any("REGRESSED" in f and arch in f for f in fails), fails
 
         # Ceiling above reality -> an improvement, and it must only NOTE.
-        vuc.TAKEOVER.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real + 50}"))
+        scratch.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real + 50}"))
         fails, notes = vuc.check_burndown()
         assert not fails, fails
         assert any("fewer Microsoft-backed exports" in n for n in notes), notes
     finally:
-        vuc.TAKEOVER.write_text(original)
+        vuc.TAKEOVER = original_takeover

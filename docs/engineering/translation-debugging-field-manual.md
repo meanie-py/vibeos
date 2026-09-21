@@ -717,6 +717,20 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+**It erases the PARAMETER TYPES too, and a widened integer hides better than a wrong
+convention.** Symptom: a kmtest service will not stop (`state = 4 RUNNING (!= 1 STOPPED)`) on
+amd64 only, i386 and arm64 clean. Cause: the 2026 upstream merge widened `OB_CLOSE_METHOD`'s
+two handle counts `ULONG` → `ULONG_PTR` without changing its arity. Every close procedure was
+recompiled against the new header; `ob-rust` still called through the checked-in bindgen
+island's old typedef and passed 32-bit arguments, and the Win64 ABI leaves the high half of an
+argument register undefined. `IopCloseFile` opens with `if (HandleCount != 1) return;`, so a
+garbage high half silently skipped IRP_MJ_CLEANUP — the cache map survived, the driver could
+not unload, the SCM held the service in RUNNING. Fix: a typed `ObpCall<X>Procedure` helper
+that transmutes past the stale field once, in one place. **When you sweep a callback family
+after a header change, compare parameter TYPES, not just how many there are** — an arity sweep
+passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
+read as an arch-specific mystery.
+
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
 `extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is

@@ -1,6 +1,4 @@
 
-include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/tzlib)
-
 spec2def(syssetup.dll syssetup.spec)
 
 # syssetup.dll — Rust cohabitation flip (FULL: all 8 compiled *.c → syssetup-rust).
@@ -74,6 +72,10 @@ add_custom_target(rust_syssetup DEPENDS ${SYSSETUP_RUST_LIB})
 
 list(APPEND SOURCE
     rust_varargs_shim.c
+    # addons.c — NEW upstream TU since the fork (setup-time addon installation). Not built:
+    # its only caller, install.c, is Rust here (syssetup-rust), so the C would link as dead
+    # weight. Port it to syssetup-rust to pick the feature up.
+    #addons.c
     ${CMAKE_CURRENT_BINARY_DIR}/syssetup_stubs.c)
 
 add_library(syssetup MODULE

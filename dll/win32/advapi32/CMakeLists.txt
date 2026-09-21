@@ -5,7 +5,6 @@ add_definitions(-D_ADVAPI32_)
 include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers/ksecdd
-    ${REACTOS_SOURCE_DIR}/sdk/lib/cryptlib
     ${CMAKE_CURRENT_BINARY_DIR})
 
 add_rpc_files(client
@@ -111,6 +110,7 @@ add_library(advapi32 MODULE
     ${PCH_SKIP_SOURCE}
     advapi32.rc
     ${CMAKE_CURRENT_BINARY_DIR}/advapi32.def)
+add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
 
 set_module_type(advapi32 win32dll UNICODE ENTRYPOINT DllMain 12)
 # ADVAPI32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.

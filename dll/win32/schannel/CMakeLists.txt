@@ -1,7 +1,7 @@
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/mbedtls)
-
+# our schannel is ported to mbedTLS 3.6.7 and includes its headers directly;
+# upstream dropped this line because they are still on 2.16.11 via the importlib.
+include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/mbedtls)
 
 add_definitions(-D_WINE)
 spec2def(schannel.dll schannel.spec)
@@ -21,10 +21,10 @@ add_library(schannel MODULE
     ${SOURCE}
     version.rc
     ${CMAKE_CURRENT_BINARY_DIR}/schannel.def)
+add_pch(schannel precomp.h SOURCE)
 
 set_module_type(schannel win32dll)
 target_link_libraries(schannel wine)
 add_importlibs(schannel mbedtls crypt32 secur32 advapi32 msvcrt kernel32 ntdll)
-add_pch(schannel precomp.h SOURCE)
 add_cd_file(TARGET schannel DESTINATION reactos/system32 FOR all)
 set_wine_module(schannel)

@@ -26,6 +26,11 @@ target_link_libraries(rshell
 # (misc.cpp) over rshell's COM module.
 add_dependencies(rshell rust_menuband)
 
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    # FIXME: GCC 13+ warning, should be fixed properly
+    target_compile_options(rshell PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-overloaded-virtual>")
+endif()
+
 add_importlibs(rshell
     browseui
     uxtheme

@@ -40,6 +40,12 @@ unsafe fn io_trace(s: &[u8]) {
     }
 }
 
+// Crate-local (correct, post-upstream-sync) definitions -- NOT the stale
+// ntkrnl_sys::ddk externs (bindgen predates the merge's io.h AccessMode/
+// ULONG_PTR fixes and was never regenerated).
+use crate::file::IopGetSetSecurityObject;
+use crate::file::IopCloseFile;
+
 use ntkrnl_sys::ddk::{
     ANSI_STRING,
     CONTROLLER_OBJECT,
@@ -70,13 +76,11 @@ use ntkrnl_sys::ddk::{
     ExInitializeResourceLite,
     ExInitializeSystemLookasideList,
     IoAssignDriveLetters,
-    IopCloseFile,
     IopCreateArcNames,
     IopDeleteDevice,
     IopDeleteDriver,
     IopDeleteFile,
     IopDeleteIoCompletion,
-    IopGetSetSecurityObject,
     IopInitializeBootDrivers,
     IopInitializeReserveIrp,
     IopInitializeSystemDrivers,
@@ -477,7 +481,13 @@ unsafe fn IopCreateObjectTypes() -> BOOLEAN {
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = core::mem::size_of::<DEVICE_OBJECT>() as ULONG;
     ObjectTypeInitializer.DeleteProcedure = Some(IopDeleteDevice);
     ObjectTypeInitializer.ParseProcedure = Some(IopParseDevice);
-    ObjectTypeInitializer.SecurityProcedure = Some(IopGetSetSecurityObject);
+    // IopGetSetSecurityObject's real (C-header) signature grew a trailing
+    // KPROCESSOR_MODE AccessMode param the stale bindgen OB_SECURITY_METHOD
+    // typedef does not carry yet; transmute past the field's outdated arity
+    // like fltmgr's CloseProcedure does for the analogous ULONG_PTR drift.
+    ObjectTypeInitializer.SecurityProcedure = Some(core::mem::transmute(
+        IopGetSetSecurityObject as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> NTSTATUS,
+    ));
     ObjectTypeInitializer.CaseInsensitive = 1u8;
     if ObCreateObjectType(
         core::ptr::addr_of_mut!(Name),
@@ -529,9 +539,21 @@ unsafe fn IopCreateObjectTypes() -> BOOLEAN {
     ObjectTypeInitializer.MaintainHandleCount = 1u8;
     ObjectTypeInitializer.ValidAccessMask = FILE_ALL_ACCESS;
     ObjectTypeInitializer.GenericMapping = IopFileMapping;
-    ObjectTypeInitializer.CloseProcedure = Some(IopCloseFile);
+    // IopCloseFile's real (C-header) signature is ULONG_PTR for the two handle
+    // counts; the stale bindgen OB_CLOSE_METHOD typedef (predates the merge's
+    // io.h fix, never regenerated) still says ULONG. Transmute past it, same as
+    // fltmgr's CloseProcedure does for the identical drift.
+    ObjectTypeInitializer.CloseProcedure = Some(core::mem::transmute(
+        IopCloseFile as unsafe extern "system" fn(_, _, _, _, _),
+    ));
     ObjectTypeInitializer.DeleteProcedure = Some(IopDeleteFile);
-    ObjectTypeInitializer.SecurityProcedure = Some(IopGetSetSecurityObject);
+    // IopGetSetSecurityObject's real (C-header) signature grew a trailing
+    // KPROCESSOR_MODE AccessMode param the stale bindgen OB_SECURITY_METHOD
+    // typedef does not carry yet; transmute past the field's outdated arity
+    // like fltmgr's CloseProcedure does for the analogous ULONG_PTR drift.
+    ObjectTypeInitializer.SecurityProcedure = Some(core::mem::transmute(
+        IopGetSetSecurityObject as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> NTSTATUS,
+    ));
     ObjectTypeInitializer.QueryNameProcedure = Some(IopQueryName);
     ObjectTypeInitializer.ParseProcedure = Some(IopParseFile);
     ObjectTypeInitializer.UseDefaultObject = 0u8;

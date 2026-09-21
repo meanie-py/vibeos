@@ -881,7 +881,20 @@ def _state_fields(body: str) -> list[str]:
             if not statement:
                 continue
         # Access labels and macro debris contain no plausible declarator.
-        if re.search(r"\b[A-Za-z_]\w*\s*(?:\[[^]]+\])?$", statement):
+        #
+        # Judge the DECLARATOR, not the in-class initializer. Anchored at the end of the
+        # whole statement, this test passed `LPWSTR m_PathTarget = NULL` (ends in an
+        # identifier) and SILENTLY DROPPED `DWORD m_grfKeyState = 0` (ends in a digit) —
+        # no error, just a field missing from the object layout, which is precisely the
+        # failure this file warns about everywhere else. Found on CExeDropHandler after
+        # the 2026-09-20 upstream merge added exactly such a field.
+        # Only for a brace-free statement: `enum { X = WM_APP }` also contains an `=`, and
+        # splitting on it would leave `enum { X`, which ends in an identifier and would make
+        # a nested enum read as a state field.
+        declarator = statement
+        if "=" in statement and "{" not in statement and "}" not in statement:
+            declarator = statement.split("=", 1)[0].strip()
+        if re.search(r"\b[A-Za-z_]\w*\s*(?:\[[^]]+\])?$", declarator):
             # C permits ``UINT first, second``. There is one base type and two
             # independent scalar fields; expand that proven shape before the
             # single-declarator layout parser. Pointer stars, initializers,
@@ -2193,9 +2206,18 @@ def analyze_class(
     # static factory `CComObject<T>::CreateInstance(&p)`. They differ only in who allocates —
     # BOTH hand the caller an object at refcount 0 and leave it to AddRef, which CStartMenu.cpp
     # states outright next to its call ("CreateInstance returns object with 0 ref count").
+    #
+    # A FOURTH spelling arrived with the 2026-09-20 upstream merge: the class declares its
+    # own `static HRESULT CreateInstance(CComPtr<T>& objref) { return ShellObjectCreator(objref); }`
+    # in its header, and callers write `T::CreateInstance(p)`. CFolderItems.cpp moved from
+    # `new CComObject<CFolderItemVerbs>()` to exactly that. The class-name template argument
+    # the other patterns key on is GONE (the type is deduced from the out-parameter), so
+    # matching the call is the only place the class name still appears. It answers the same
+    # question as the other three — no CLSID, constructed inside the DLL — so it joins them.
     com_object_new_re = re.compile(
         rf"\bnew\s+CComObject\s*<\s*{re.escape(class_name)}\s*>\s*\("
         rf"|\bCComObject\s*<\s*{re.escape(class_name)}\s*>\s*::\s*CreateInstance\s*\("
+        rf"|\b{re.escape(class_name)}\s*::\s*CreateInstance\s*\("
     )
     # A class is often constructed by a DIFFERENT TU than the one that defines it —
     # `CFolderItem::Verbs` (CFolderItems.cpp) does the `new CComObject<CFolderItemVerbs>()`
@@ -2421,6 +2443,13 @@ def _vtbl_declared_slots(body: str) -> int:
 
 def _parse_param(text: str, index: int) -> tuple[str, str]:
     text = " ".join(text.replace("CONST", "const").split())
+    # BOTH SAL families, not just the classic one. `_SAL_ANNOTATION` already exists and is
+    # applied elsewhere in this file; omitting it here let modern SAL survive into the parsed
+    # TYPE, and `render_class_scaffold` then emitted it verbatim into the generated factory
+    # signature -- `pdo: *mut _In_ IDataObject`, which is not Rust. Reproducible on
+    # CShellItemArray::Initialize(_In_ IDataObject *pdo) after the 2026-09-20 upstream merge
+    # split that class out of CShellItem.cpp with modern annotations.
+    text = _SAL_ANNOTATION.sub("", text)
     text = _CLASSIC_SAL.sub("", text).strip()
     if text in ("", "void"):
         return "", ""

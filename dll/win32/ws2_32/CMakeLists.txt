@@ -96,6 +96,9 @@ add_custom_target(rust_ws2_32 DEPENDS ${WS2_32_RUST_LIB})
 #     src/rasdial.c src/recv.c src/rnr.c src/select.c src/send.c src/sockctrl.c
 #     src/socklife.c src/spinstal.c src/sputil.c src/startup.c src/wsautil.c)
 list(APPEND SOURCE
+    # src/wine.c — new upstream file adding one function, inet_addr(), which
+    # duplicates ws2_32-rust's addrconv.rs (already owns inet_addr/ntoa/pton/
+    # ntop). Declined: would collide with a Rust-flipped symbol.
     inc/ws2_32.h)
 
 add_library(ws2_32 MODULE

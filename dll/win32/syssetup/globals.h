@@ -56,7 +56,7 @@ typedef struct _REGISTRATIONNOTIFY
 
 #define PM_ITEM_END   (WM_APP + 3)
 /* End of a new Item
-   wParam = unused
+   wParam = item number
    lParam = Error Code */
 
 #define PM_STEP_START (WM_APP + 4)
@@ -67,6 +67,15 @@ typedef struct _REGISTRATIONNOTIFY
 extern HINSTANCE hDllInstance;
 extern HINF hSysSetupInf;
 extern ADMIN_INFO AdminInfo;
+
+/* addons.c */
+HRESULT
+InstallOptionalComponents(
+    _In_ PITEMSDATA pItemsData);
+
+HRESULT
+RunCommandAndWait(
+    _In_ PWCHAR Command);
 
 /* install */
 
@@ -89,7 +98,14 @@ InstallNetworkComponent(
 
 /* security.c */
 
-VOID InstallSecurity(VOID);
+LONG
+CountSecuritySteps(VOID);
+
+DWORD
+InstallSecurity(
+    _In_ PITEMSDATA pItemsData,
+    _In_ PREGISTRATIONNOTIFY pNotify);
+
 NTSTATUS
 SetAdministratorPassword(LPCWSTR Password);
 
@@ -97,6 +113,10 @@ VOID
 SetAutoAdminLogon(VOID);
 
 /* wizard.c */
-VOID InstallWizard (VOID);
+VOID
+InstallWizard(VOID);
+
+VOID
+GetSetupInfPath(PWSTR szPath, UINT cchMax);
 
 /* EOF */

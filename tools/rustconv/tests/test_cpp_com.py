@@ -518,14 +518,29 @@ def test_atl_creator_class_is_the_other_internal_activation_shape():
 
 @needs_generated_psdk_amd64
 def test_shell_item_array_internal_init_factory_sequence_and_stgmedium_lifecycle():
-    source = SHELL32 / "CShellItem.cpp"
+    # Upstream #8834 ("A big bundle of NT6+ shell32 implementations and stubs") split
+    # CShellItemArray out of CShellItem.cpp into its own CShellItemArray.{h,cpp}, and
+    # rewrote its state: the raw `CIDA *m_pCIDA` + `STGMEDIUM m_Medium` pair is gone,
+    # replaced by a single `CDataObjectHIDA *m_pHIDA` RAII-wrapper pointer whose ctor/dtor
+    # now own the CIDA/STGMEDIUM lifecycle. So `stgmedium_lifecycle_fields` is correctly
+    # empty here -- there is no raw STGMEDIUM member left to manage.
+    #
+    # KNOWN SCANNER BUG (flagged, not worked around here): the new header's `Initialize`
+    # carries modern SAL (`Initialize(_In_ IDataObject *pdo)`, vs. the old file's bare
+    # `Initialize(IDataObject *pdo)`). `_parse_param` (cpp_com.py) only strips the
+    # underscore-free classic SAL family (`_CLASSIC_SAL` -- IN/OUT/INOUT/OPTIONAL) and
+    # never applies the already-existing `_SAL_ANNOTATION` regex to internal-initializer
+    # params, so `_In_` survives into `internal_initializer_params` as part of the TYPE
+    # and is then emitted verbatim into the generated factory signature: invalid Rust
+    # `pdo: *mut _In_ IDataObject`. This assertion encodes the CORRECT (SAL-stripped)
+    # value and will stay red until `_parse_param` also runs `_SAL_ANNOTATION.sub`.
+    source = SHELL32 / "CShellItemArray.cpp"
     cls = analyze_class(source, "CShellItemArray", object_map_source=SHELL32 / "shell32.cpp")
     assert cls.internal_shell_object_creator
     assert cls.internal_initializer_params == (("IDataObject *", "pdo"),)
-    assert cls.stgmedium_lifecycle_fields == ("m_Medium",)
+    assert cls.stgmedium_lifecycle_fields == ()
     assert {field.name: field.rust_type for field in cls.plain_state_fields()} == {
-        "m_pCIDA": "*mut CIDA",
-        "m_Medium": "STGMEDIUM",
+        "m_pHIDA": "*mut CDataObjectHIDA",
     }
     cls.require_supported(allow_internal=True)
     interface = parse_widl_interface(
@@ -608,17 +623,31 @@ def test_worker_signature_moves_reference_punctuation_from_scanner_name():
 
 
 def test_plain_c_state_has_deterministic_layout_and_zero_initialization():
+    # Upstream #9435 ("[SHELL32] Implement bat/cmd drop target menu") rewrote this
+    # class's state: the unused `CLSID *pclsid` field is gone, `sPathTarget` was
+    # renamed `m_PathTarget`, and a new `DWORD m_grfKeyState = 0` field was added.
+    # Both survivors now carry in-class initializers (`= NULL`, `= 0`).
+    #
+    # KNOWN SCANNER BUG (flagged, not worked around here): `_state_fields`'s
+    # "plausible declarator" check requires the STATEMENT to end in an identifier
+    # matching `[A-Za-z_]\\w*$`. `LPWSTR m_PathTarget = NULL` ends in `NULL` (an
+    # identifier) and survives; `DWORD m_grfKeyState = 0` ends in the digit `0`
+    # and is silently dropped -- no CppComError, just a missing field, which is
+    # exactly the "mis-parsed member silently changes the object layout" failure
+    # the surrounding comments in cpp_com.py warn against. This assertion encodes
+    # the CORRECT field list (both members) and will stay red until `_state_fields`
+    # is fixed to not anchor plausibility on the tail of a numeric initializer.
     cls = analyze_class(
         SHELL32 / "droptargets" / "CexeDropHandler.cpp",
         "CExeDropHandler",
         object_map_source=SHELL32 / "shell32.cpp",
     )
-    assert cls.state_fields == ["CLSID *pclsid", "LPWSTR sPathTarget"]
+    assert cls.state_fields == ["LPWSTR m_PathTarget = NULL", "DWORD m_grfKeyState = 0"]
     cls.require_supported()
     fields = cls.plain_state_fields()
     assert [(field.c_type, field.name) for field in fields] == [
-        ("CLSID *", "pclsid"),
-        ("LPWSTR", "sPathTarget"),
+        ("LPWSTR", "m_PathTarget"),
+        ("DWORD", "m_grfKeyState"),
     ]
     interfaces = [
         InterfaceSpec(
@@ -633,10 +662,10 @@ def test_plain_c_state_has_deterministic_layout_and_zero_initialization():
         for entry in cls.com_map
     ]
     rust = render_class_scaffold(cls, interfaces)
-    assert "pub pclsid: *mut CLSID," in rust
-    assert "pub sPathTarget: LPWSTR," in rust
-    assert "pclsid: core::mem::zeroed()," in rust
-    assert "sPathTarget: core::mem::zeroed()," in rust
+    assert "pub m_PathTarget: LPWSTR," in rust
+    assert "pub m_grfKeyState: DWORD," in rust
+    assert "m_PathTarget: core::mem::zeroed()," in rust
+    assert "m_grfKeyState: core::mem::zeroed()," in rust
 
 
 def test_ccomptr_state_has_deterministic_layout_assignment_and_release(tmp_path: Path):

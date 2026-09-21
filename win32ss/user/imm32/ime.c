@@ -6,10 +6,11 @@
  *              Copyright 2002, 2003, 2007 CodeWeavers, Aric Stewart
  *              Copyright 2017 James Tabor <james.tabor@reactos.org>
  *              Copyright 2018 Amine Khaldi <amine.khaldi@reactos.org>
- *              Copyright 2020-2025 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
+ *              Copyright 2020-2026 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>
  */
 
 #include "precomp.h"
+#include <ime.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(imm);
 
@@ -675,7 +676,7 @@ ImmGetDescriptionW(
 
     TRACE("(%p, %p, %d)\n", hKL, lpszDescription, uBufLen);
 
-    if (!ImmGetImeInfoEx(&info, ImeInfoExKeyboardLayout, &hKL))
+    if (!IS_IME_HKL(hKL) || !ImmGetImeInfoEx(&info, ImeInfoExKeyboardLayout, &hKL))
     {
         ERR("\n");
         return 0;
@@ -1163,10 +1164,10 @@ ImmSetCompositionWindow(
     pIC->cfCompForm = *lpCompForm;
     pIC->fdwInit |= INIT_COMPFORM;
 
-    if (pIC->dwUIFlags & 0x8)
-        pIC->dwUIFlags &= ~0x8;
+    if (pIC->dwUIFlags & _IME_UI_NO_COMPFORM)
+        pIC->dwUIFlags &= ~_IME_UI_NO_COMPFORM;
     else
-        pIC->dwUIFlags &= ~0x2;
+        pIC->dwUIFlags &= ~_IME_UI_HIDDEN;
 
     hWnd = pIC->hWnd;
 
@@ -1297,7 +1298,7 @@ ImmSetCompositionFontA(
     {
         LangID = LANGIDFROMLCID(GetSystemDefaultLCID());
         if (PRIMARYLANGID(LangID) == LANG_JAPANESE &&
-            !(pIC->dwUIFlags & 2) &&
+            !(pIC->dwUIFlags & _IME_UI_HIDDEN) &&
             pIC->cfCompForm.dwStyle != CFS_DEFAULT)
         {
             PostMessageA(pIC->hWnd, WM_IME_REPORT, IR_CHANGECONVERT, 0);
@@ -1356,7 +1357,7 @@ ImmSetCompositionFontW(
     {
         LangID = LANGIDFROMLCID(GetSystemDefaultLCID());
         if (PRIMARYLANGID(LangID) == LANG_JAPANESE &&
-            !(pIC->dwUIFlags & 2) &&
+            !(pIC->dwUIFlags & _IME_UI_HIDDEN) &&
             pIC->cfCompForm.dwStyle != CFS_DEFAULT)
         {
             PostMessageW(pIC->hWnd, WM_IME_REPORT, IR_CHANGECONVERT, 0);
@@ -1538,14 +1539,14 @@ ImmSetConversionStatus(
 {
     HKL hKL;
     LPINPUTCONTEXT pIC;
-    DWORD dwOldConversion, dwOldSentence;
+    DWORD dwOldConversion = fdwConversion, dwOldSentence = fdwSentence;
     BOOL fOpen = FALSE, fConversionChange = FALSE, fSentenceChange = FALSE, fUseCicero = FALSE;
     HWND hWnd;
 
     TRACE("(%p, 0x%lX, 0x%lX)\n", hIMC, fdwConversion, fdwSentence);
 
     hKL = GetKeyboardLayout(0);
-    if (!IS_IME_HKL(hKL) && IS_CICERO_MODE() && !IS_16BIT_MODE())
+    if (!IS_IME_HKL(hKL) && IS_CICERO_MODE() && !IS_16BIT_MODE() && !IS_CICERO_COMPAT_DISABLED())
         fUseCicero = TRUE;
 
     if (IS_CROSS_THREAD_HIMC(hIMC))

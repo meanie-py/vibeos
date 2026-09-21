@@ -90,6 +90,14 @@ pub unsafe extern "system" fn WmipSecurityMethod(
     ObjectSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
+    // upstream-sync 2026-09-20: the security-method prototype grew a trailing
+    // KPROCESSOR_MODE AccessMode (ntoskrnl/include/internal/se.h), and ob-rust's
+    // ObpCallSecurityProcedure now passes it to whatever sits in SecurityProcedure.
+    // On i386 `extern "system"` is stdcall and the CALLEE pops, so an 8-parameter
+    // method reached through a 9-argument call leaks four bytes of stack PER CALL --
+    // which is how a boot that got all the way to the system-driver phase died with
+    // BUGCHECK 0x1E on i386 while amd64 and arm64 were unaffected.
+    _AccessMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
     let Object = opaque_ptr(Object);
     let SecurityDescriptor = opaque_ptr(SecurityDescriptor);
