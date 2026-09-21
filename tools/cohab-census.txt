@@ -1202,6 +1202,7 @@ modules/rostests/kmtests/CMakeLists.txt	1	# __try region. See kmt_native_seh_shi
 modules/rostests/kmtests/CMakeLists.txt	1	# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
 modules/rostests/kmtests/CMakeLists.txt	1	# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
 modules/rostests/kmtests/CMakeLists.txt	1	# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real
+modules/rostests/winetests/user32/CMakeLists.txt	1	# (`CONTROL ... ,10,10,100,50 { 1,2,3,4,5 }`), which is what dialog.c's
 ntoskrnl/CMakeLists.txt	1	# define only keeps the dead-mirror C copies (traphandler.c/traphdlr.c,
 ntoskrnl/CMakeLists.txt	1	# guid.c — replaced by Rust (ntoskrnl-rust/src/guid.rs)
 ntoskrnl/CMakeLists.txt	1	# guid.c)
@@ -1734,6 +1735,7 @@ sdk/lib/uuid/CMakeLists.txt	1	# oledbnewiid.c
 sdk/lib/uuid/CMakeLists.txt	1	# qosguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# tapi3iid.c
 sdk/lib/uuid/CMakeLists.txt	1	# vcguids.c
+sdk/lib/vcruntime/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
 subsystems/csr/csrlib/CMakeLists.txt	1	# api.c — replaced by Rust (smss-csrss-rust/src/csrlib/api.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# capture.c — replaced by Rust (smss-csrss-rust/src/csrlib/capture.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# connect.c — replaced by Rust (smss-csrss-rust/src/csrlib/connect.rs)
