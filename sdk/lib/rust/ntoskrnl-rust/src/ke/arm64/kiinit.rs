@@ -37,7 +37,7 @@ use crate::ke::procobj::{
 };
 use crate::ke::krnlinit::KeNodeBlock;
 use crate::ARM3::sysldr::PsLoadedModuleList;
-use super::stubs::Arm64UartKernelBase;
+use super::stubs::{Arm64FwCfgPhysical, Arm64GicCpuInterfacePhysical, Arm64GicDistributorPhysical, Arm64UartKernelBase};
 
 use crate::ke::ssdt::{MainSSDT, MainSSPT};
 extern "system" {
@@ -213,6 +213,23 @@ pub unsafe extern "system" fn KiSystemStartup(
         t = out(reg) _,
         options(nomem, nostack),
     );
+
+    // Publish the firmware-discovered platform addresses BEFORE the first debug
+    // write below — this is the earliest point they can be known, and every
+    // Arm64UartKernelBase consumer in the kernel reads this one global. The
+    // loader identity-maps the UART page, so the physical address is usable
+    // until Phase 1 swaps in an MmMapIoSpace kernel VA.
+    Arm64UartKernelBase = (*LoaderBlock).u.Arm.Arm64UartBase as PVOID;
+    Arm64GicDistributorPhysical = (*LoaderBlock).u.Arm.Arm64GicDistributorBase;
+    Arm64GicCpuInterfacePhysical = (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase;
+    // Same inference the loader makes when deciding whether to map the page.
+    const QEMU_VIRT_UART: u64 = 0x0900_0000;
+    const QEMU_VIRT_FW_CFG: u64 = 0x0902_0000;
+    Arm64FwCfgPhysical = if (*LoaderBlock).u.Arm.Arm64UartBase == QEMU_VIRT_UART {
+        QEMU_VIRT_FW_CFG
+    } else {
+        0
+    };
 
     // Direct PL011 UART write to confirm kernel entry (bypasses KD)
     {

@@ -1,5 +1,12 @@
 # Lane: graviton-spike — our ARM64 on real ARM64
 
+> **2026-09-20: superseded for active work.** The owner chose direct bare-metal
+> boot on their Raspberry Pi 4B. Resume from [Pi 4B bring-up](pi4-bringup.md).
+> The original TCG-only history below is disputed by the owner's report that
+> ARM64 VibeOS already works under Linux KVM. Its ordering claims remain
+> unmeasured; do not repeat them as findings. No AWS resources were created.
+
+
 **Worktree** `/home/curi/Projects/os-playground/vibeos-graviton` · **branch** `graviton-spike`
 · written 2026-09-20 by the control plane · **owner: the user**
 

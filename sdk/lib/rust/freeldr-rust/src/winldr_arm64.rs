@@ -95,6 +95,45 @@ static mut Arm64Pgd: PARM64_PTE = core::ptr::null_mut();
 /* Shared user data page frame number — file-scope global. */
 static mut SharedUserDataPfn: PFN_NUMBER = 0;
 
+/// Walk the live page tables for one VA and report each level, so an unmapped
+/// address says WHERE translation stopped instead of only that it faulted.
+/// Reads the tables through their physical addresses, which is what the loader
+/// has been doing all along; safe both before and after the TTBR switch.
+pub unsafe fn Arm64ReportMapping(Label: &[u8], VirtualAddress: ULONG64) {
+    crate::frldr::dbgcon_str(Label);
+    crate::frldr::dbgcon_str(b" va=0x");
+    crate::frldr::dbgcon_hex64(VirtualAddress);
+    if Arm64Pgd.is_null() {
+        crate::frldr::dbgcon_str(b" PGD=null\r\n");
+        return;
+    }
+    let mut table = Arm64Pgd;
+    let indices = [
+        ARM64_PGD_INDEX(VirtualAddress),
+        ARM64_PUD_INDEX(VirtualAddress),
+        ARM64_PMD_INDEX(VirtualAddress),
+        ARM64_PTE_INDEX(VirtualAddress),
+    ];
+    for (level, index) in indices.iter().enumerate() {
+        let entry = *table.add(*index as usize);
+        crate::frldr::dbgcon_str(b" L");
+        crate::frldr::dbgcon_hex8(level as u32);
+        crate::frldr::dbgcon_str(b"[");
+        crate::frldr::dbgcon_hex32(*index);
+        crate::frldr::dbgcon_str(b"]=0x");
+        crate::frldr::dbgcon_hex64(entry);
+        if entry & ARM64_PTE_VALID == 0 {
+            crate::frldr::dbgcon_str(b" INVALID\r\n");
+            return;
+        }
+        if level == 3 {
+            break;
+        }
+        table = (entry & !0xFFFu64) as PARM64_PTE;
+    }
+    crate::frldr::dbgcon_str(b" MAPPED\r\n");
+}
+
 unsafe fn MempAllocatePageTables() -> u8 {
     TRACE(b">>> MempAllocatePageTables\n\0".as_ptr() as _);
 
@@ -144,6 +183,12 @@ unsafe fn MempGetOrCreatePageDir(ParentTable: PARM64_PTE, Index: ULONG) -> PARM6
     SubDir
 }
 
+/// Count of page-table allocation failures inside MempMapSinglePage. In a
+/// release build ERR() compiles to nothing, so a mapping that quietly fails
+/// here surfaces only much later as a fault on an unmapped VA. Reported at the
+/// loader/kernel handoff so "some mapping failed" is never invisible again.
+pub static mut Arm64MapFailures: u32 = 0;
+
 unsafe fn MempMapSinglePage(VirtualAddress: ULONG64, PhysicalAddress: ULONG64) -> BOOLEAN {
     let Pud: PARM64_PTE;
     let Pmd: PARM64_PTE;
@@ -152,16 +197,19 @@ unsafe fn MempMapSinglePage(VirtualAddress: ULONG64, PhysicalAddress: ULONG64) -
 
     Pud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(VirtualAddress));
     if Pud.is_null() {
+        Arm64MapFailures += 1;
         return 0u8;
     }
 
     Pmd = MempGetOrCreatePageDir(Pud, ARM64_PUD_INDEX(VirtualAddress));
     if Pmd.is_null() {
+        Arm64MapFailures += 1;
         return 0u8;
     }
 
     Pte = MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(VirtualAddress));
     if Pte.is_null() {
+        Arm64MapFailures += 1;
         return 0u8;
     }
 
@@ -326,6 +374,19 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
         Arm64Pgd, tcr, mair);
 }
 
+/// GICv2 (distributor, CPU interface) physical bases from the ACPI MADT, or
+/// (0, 0) when firmware describes no GICv2. Filled by WinLdrSetupMachineDependent
+/// before WinLdrMapSpecialPages runs, and handed to the kernel in the loader block.
+static mut Arm64GicBases: (ULONG64, ULONG64) = (0, 0);
+
+/// QEMU virt's fw_cfg MMIO block, which carries the Phase-0 tripwire channel.
+/// It is a QEMU device with no ACPI description, so it cannot be discovered;
+/// it is probed ONLY when the discovered UART is QEMU virt's, which is what
+/// makes it safe — on a physical board this stays zero and nothing touches it.
+const QEMU_VIRT_UART: ULONG64 = 0x0900_0000;
+const QEMU_VIRT_FW_CFG: ULONG64 = 0x0902_0000;
+static mut Arm64FwCfgBase: ULONG64 = 0;
+
 unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     let Pud: PARM64_PTE;
     let Pmd: PARM64_PTE;
@@ -340,25 +401,33 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START));
     MempGetOrCreatePageDir(Pmd, ARM64_PMD_INDEX(MM_HAL_VA_START + 2 * 1024 * 1024));
 
-    /* Identity-map the QEMU virt device pages the kernel touches before
-     * MmMapIoSpace exists (Device attrs; see MempMapDevicePage):
-     *   0x09000000 PL011 UART      — Arm64UartKernelBase early serial
-     *   0x09020000 fw_cfg          — Phase-0 tripwire-channel probe
-     *   0x08000000 GICv2 GICD      — early-SMP IPI send (KeStartAllProcessors
-     *   0x08010000 GICv2 GICC        runs before MmInitSystem(1); M5b)
+    /* Identity-map the device pages the kernel touches before MmMapIoSpace
+     * exists (Device attrs; see MempMapDevicePage):
+     *   PL011 UART  — Arm64UartKernelBase early serial
+     *   GICv2 GICD  — early-SMP IPI send (KeStartAllProcessors runs BEFORE
+     *   GICv2 GICC    MmInitSystem(1); M5b)
+     *   fw_cfg      — Phase-0 tripwire channel, QEMU virt only
+     * Every address comes from firmware (ACPI), never from a constant: on a
+     * physical board a QEMU MMIO address is ordinary RAM, so mapping one as
+     * Device and writing to it corrupts memory with no fault to point at it.
      * Non-fatal on failure, mirroring the C: a UP boot without them loses
      * only the affected feature, and the HAL reports IPI loss loudly. */
-    if MempMapDevicePage(0x09000000u64) == 0u8 {
+    if MempMapDevicePage(crate::arm64_debug::uart_base() as u64) == 0u8 {
         ERR(b"Could not map PL011 UART page\n\0".as_ptr() as PCHAR);
     }
-    if MempMapDevicePage(0x09020000u64) == 0u8 {
+    let (Gicd, Gicc) = Arm64GicBases;
+    if Gicd != 0 && Gicc != 0 {
+        if MempMapDevicePage(Gicd) == 0u8 {
+            ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+        }
+        if MempMapDevicePage(Gicc) == 0u8 {
+            ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+        }
+    } else {
+        ERR(b"No GICv2 in ACPI MADT (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+    }
+    if Arm64FwCfgBase != 0 && MempMapDevicePage(Arm64FwCfgBase) == 0u8 {
         ERR(b"Could not map fw_cfg page (tripwire channel disabled)\n\0".as_ptr() as PCHAR);
-    }
-    if MempMapDevicePage(0x08000000u64) == 0u8 {
-        ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
-    }
-    if MempMapDevicePage(0x08010000u64) == 0u8 {
-        ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
     }
 
     1u8
@@ -371,6 +440,29 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     ERR(b">>> WinLdrSetupMachineDependent for ARM64\n\0".as_ptr() as _);
 
     (*LoaderBlock).u.Arm.MachineType = 0;
+
+    /* Carry the firmware's own description of this board to the kernel, so no
+     * kernel or HAL path has to guess an MMIO address. */
+    let Xsdt = crate::arm64_debug::xsdt_base();
+    let Uart = crate::arm64_debug::uart_base() as ULONG64;
+    Arm64GicBases = match crate::arm64_serial_acpi::gic_from_xsdt(Xsdt) {
+        Some((Gicd, Gicc)) => (Gicd, Gicc),
+        None => (0, 0),
+    };
+    Arm64FwCfgBase = if Uart == QEMU_VIRT_UART { QEMU_VIRT_FW_CFG } else { 0 };
+    (*LoaderBlock).u.Arm.AcpiTablePhysicalAddress = Xsdt;
+    (*LoaderBlock).u.Arm.Arm64UartBase = Uart;
+    (*LoaderBlock).u.Arm.Arm64GicDistributorBase = Arm64GicBases.0;
+    (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase = Arm64GicBases.1;
+    // dbgcon, not ERR: ERR is `#if DBG` and compiles to nothing in the release
+    // build that ships to hardware, which is exactly where this must be legible.
+    crate::frldr::dbgcon_str(b"[FLDR] arm64 platform: UART=0x");
+    crate::frldr::dbgcon_hex64(Uart);
+    crate::frldr::dbgcon_str(b" GICD=0x");
+    crate::frldr::dbgcon_hex64(Arm64GicBases.0);
+    crate::frldr::dbgcon_str(b" GICC=0x");
+    crate::frldr::dbgcon_hex64(Arm64GicBases.1);
+    crate::frldr::dbgcon_str(b"\r\n");
 
     SharedUserDataAddress = MmAllocateMemoryWithType(MM_PAGE_SIZE, LoaderStartupPcrPage);
     if SharedUserDataAddress.is_null() {

@@ -1,0 +1,290 @@
+# Pi 4B physical bring-up — graviton-spike
+
+The owner changed this lane from a Graviton/KVM experiment to booting VibeOS
+**directly on an existing Raspberry Pi 4B**. No AWS resources were created.
+The immediate hardware milestone is FreeLDR entry and its menu; the eventual
+success criterion remains the graphical desktop, then real SMP workloads.
+
+## Measured firmware baseline (2026-09-20)
+
+- pftf/RPi4 UEFI v1.53 boots from a 4 GiB FAT32 partition, MBR, on the owner's
+  approximately 128 GB SD card. Firmware archive SHA256:
+  `ca9973e2a7a546b3df871cfb7382e656829114b6dfa424f40dc67cc90a217d88`.
+- Firmware serial and serial input work at 115200 8N1, no flow control. The
+  FT232 adapter enumerates as COM5, USB VID 0403 / PID 6001, serial BG02D9GD.
+  Its VCCIO jumper connects to 3V3. With the current cable orientation:
+  black GND -> physical pin 6; yellow RXD -> pin 8 (Pi TX); orange TXD ->
+  pin 10 (Pi RX). Those are consecutive outside-row positions 3, 4, 5,
+  counting from the end away from Ethernet. Adapter VCCIO is unconnected.
+- UEFI Boot Manager -> UEFI Shell works through serial. `map -r` finds FS0,
+  and `ls` reads the installed firmware files from it.
+- `acpiview -s SPCR`: table absent. `acpiview -s DBG2`: PL011 subtype 3,
+  memory address **0xFE201000**, size 0x1000, 32-bit access, valid checksum.
+- `acpiview -s APIC`: four enabled GICC entries, GICv2,
+  distributor **0xFF841000**, CPU interface **0xFF842000**.
+- `memmap`: 2991 MiB total reported, with the firmware's default 3 GiB cap.
+- HDMI capture confirms the completed memory-map output and FS0 shell prompt.
+  A splash screen alone did not prove a hang.
+
+Evidence lives at `D:\home\vibeos-rpi4-setup` (WSL:
+`/mnt/d/home/vibeos-rpi4-setup`): `serial-20260920-190237/serial.bin` is the
+first readable firmware boot; `serial-20260920-190550/serial.bin` contains
+interactive shell and ACPI evidence; `firmware-inventory.txt` is the decoded
+inventory; `hdmi-current.png` is a direct capture-card frame.
+The parser test fixture in `arm64_serial_acpi.rs` is the exact 97-byte DBG2
+captured from this board, not a reconstructed idealized table.
+
+## Loader work and outstanding hardware work
+
+FreeLDR's live Rust serial/debug/panic paths wrote to QEMU's fixed 0x09000000.
+The working change discovers a supported PL011/SBSA UART through ACPI SPCR or
+DBG2 before normal loader initialization, preserves firmware UART configuration,
+and reports failure through UEFI ConOut rather than guessing an MMIO address.
+The loader's special UART mapping uses the discovered address too.
+
+**This does not yet port the kernel to Pi hardware.** Remaining observed source
+assumptions include kernel `Arm64UartKernelBase` initialized to 0x09000000,
+AP bootstrap PL011 accesses, QEMU fw_cfg access, and fixed GIC identity mappings
+in `winldr_arm64.rs`. Carry the platform description through the loader/kernel
+handoff, audit early MM mappings and RAM assumptions, then implement/test the
+physical interrupt/timer and device paths. Do not mistake loader success for
+kernel success or replace the MP kernel with UP to make the result green.
+
+The Pi-specific copy of freeldr.ini will use TimeOut=-1 for the first loader
+inspection; QEMU media and its smoke criteria retain their normal settings.
+Physical FreeLDR entry and menu are now verified. No kernel boot has been verified.
+
+## Bench tools
+
+The setup directory holds `Prepare-Rpi4Card.ps1` (one-time guarded formatting),
+`Deploy-Vibeos.ps1` (guarded payload copy/readback, preserves UEFI), and
+`Capture-RpiSerial.ps1`. `serial-current.json` identifies the capture process
+and directory. A USB disconnect terminates the current capture loudly; reopen
+it before power-on. Put bytes in `serial-send.bin` to send through the existing
+capture process; wait for a shell prompt between commands to avoid firmware
+input-buffer loss. Do not open a second reader on COM5.
+
+The capture card enumerates as DirectShow **USB Video**. Camera holds it
+exclusively; a gdigrab of its window returned black and was NOT HDMI evidence.
+A direct FFmpeg dshow frame worked after gracefully closing Camera; Camera was
+then reopened. FFmpeg is installed under the Windows user's WinGet packages.
+
+Validation and the prepared payload manifest are recorded alongside the images
+when complete. Hardware work resumes by copying the verified payload onto the
+same card, reconnecting serial capture, and booting to the first loader marker.
+
+## Resume here — physical loader menu reached (2026-09-20)
+
+**The Pi is ON and sitting at the FreeLDR operating-system menu.** Direct HDMI
+capture `D:\home\vibeos-rpi4-setup\hdmi-loader.png` shows two entries:
+ReactOS ARM64 and **ReactOS ARM64 SMP kernel** (selected). No kernel entry has
+been launched. Leave the Pi at this menu until the remaining hardware-address
+work below is ready. This achieves the first physical-loader milestone.
+
+Serial confirms `[freeldr] ACPI PL011 base=0x00000000FE201000`, MachInit,
+UI, memory manager, filesystem, module list and boot devices initialized.
+Last serial line is `Switching stack...`; **that is not a hang**: HDMI proves
+the loader subsequently reached its menu. Snapshot of this power-on's serial
+is `first-loader-boot-serial.bin` in the bench directory. Camera was reopened.
+Firmware attempted network boot twice (`Could not detect network connection`)
+before launching FreeLDR; the intervening splash delay was not a loader fault.
+
+The final VibeOS loader payload was deployed and all three files passed SHA256
+readback at 19:34. Evidence: bench `deployment-result.json`. Card is back in Pi;
+H: is no longer an available deployment target. COM5 listener is still the
+PowerShell process recorded below; verify it before use.
+
+The initial deployment
+refused before writing because its full-firmware hash check did not account for
+UEFI saving variables in RPI_EFI.fd. This is resolved in Deploy-Vibeos.ps1:
+validate the release-reference hash and compare every byte outside the documented
+NV region `[0x3b0000, 0x3d0000)`, backing up the live firmware before deployment.
+Observed changed bytes were only `0x3b0064..0x3b4539`, 17,462 bytes, with UEFI
+variable records. The entire executable region matched the release byte-for-byte.
+Source: [RPi4 firmware layout](https://github.com/tianocore/edk2-platforms/blob/master/Platform/RaspberryPi/RPi4/RPi4.fdf).
+
+Card identity guard: Windows disk serial `121220160204`, USB, size 125671833600,
+nonboot/nonsystem, H: FAT32 label `VIBEOS_RPI4`, partition size 4 GiB.
+**Do not run Prepare-Rpi4Card.ps1 again.** Deploy only copies three payload files.
+
+Current serial listener: Windows PowerShell PID 16280, COM5, directory
+`serial-20260920-190550`. Recheck `serial-current.json` AND `Get-Process` before
+assuming it is alive. Existing listener owns COM5; do not open a second reader.
+PowerShell executable from WSL:
+`/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.
+
+### Validation and pending payload refresh
+
+- Clean ARM64 build: `/tmp/vibeos-cli/20260920-191723-3jajq20u-build-arm64/summary.json`.
+- ARM64 desktop smoke: `/tmp/vibeos-cli/20260920-191923-1mveg3_2-smoke-arm64/summary.json`,
+  verdict OK. Durable copy, serial and screenshot in bench `arm64-smoke/`.
+- Full gate: `/tmp/vibeos-cli/20260920-192056-vfzvd4g2-gate-i386+amd64+arm64/summary.json`.
+  All three builds, desktop smokes, conformance, network smoke, tooling and difftest
+  passed. Overall **FAIL LINT_FAIL**, solely a newly added OutputString.unwrap()
+  in the UART-discovery error path. Fixed to `if let Some(output)`; source check
+  `/tmp/vibeos-cli/20260920-193001-ku09bcir-check-all/summary.json` now OK.
+  Do not call that earlier full gate green.
+- Four host ACPI parser tests passed, including the exact Pi DBG2 captured bytes.
+- Final clean ARM64 build after the error-path fix passed:
+  `/tmp/vibeos-cli/20260920-192959-1gtrai2u-build-arm64/summary.json`.
+  Final ARM64 desktop smoke **OK**:
+  `/tmp/vibeos-cli/20260920-193137-bgg2biay-smoke-arm64/summary.json`.
+  Screenshot inspected; durable summary/serial/screenshot in bench `arm64-smoke-final/`.
+- The bench `payload/manifest.json` now describes the final verified payload,
+  status VERIFIED_FOR_LOADER_TEST. Its BOOTAA64.EFI comes from
+  `build-arm64/boot/freeldr/freeldr/uefildr.efi`, ramdisk.img from `qemu/ramdisk.img`.
+  Pi freeldr.ini retains TimeOut=-1. Manifest records file lengths/hashes and provenance.
+- Deployment completed with Deploy-Vibeos.ps1; deployment-result.json records
+  the final hashes. Firmware and its saved variables were preserved. No reformat.
+  The copy helper also now avoids attempting New-Item on an existing drive root.
+- First target achieved: real UART discovery and physical loader menu.
+  Next: kernel hardware-address audit; no kernel boot claimed.
+
+### Working-tree changes and scope
+
+No commit or push. New `arm64_serial_acpi.rs` and modified FreeLDR Rust files
+implement ACPI UART discovery, early logging/panic routing, and loader UART mapping.
+Two Solitaire resource files (`ro-RO.rc`, `sv-SE.rc`) had literal line breaks inside
+quoted strings that broke both x86 builds; replaced those with escaped newline
+characters, preserving the text. There are no kernel changes or paid translations.
+Inspect `git status` and diff before continuing; never discard uncommitted work.
+The bench has `loader-working-tree.patch` and a separate copy of the new parser;
+refresh these when source changes. HEAD alone does not identify this payload.
+
+### Direct capture-card recipe
+
+Windows device is `video=USB Video`, VID534D/PID2109. FFmpeg executable:
+`C:\Users\Lambda\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.1-full_build\bin\ffmpeg.exe`.
+Gracefully close only the ApplicationFrameHost window titled Camera, run FFmpeg
+`-f dshow -i "video=USB Video" -frames:v 1 -update 1 -y
+D:\home\vibeos-rpi4-setup\hdmi-current.png`, view that PNG, then reopen with
+`Start-Process microsoft.windows.camera:`. Do not interpret a black gdigrab as
+HDMI output. The user authorized inspecting this locally attached capture card.
+
+### Physical work still owed
+
+After the loader menu works, carry real platform addresses through the loader/
+kernel handoff; replace early UART/GIC/QEMU fw_cfg assumptions; validate memory
+maps, interrupts, timer and SMP on this board. Graphical desktop remains the goal.
+Weak-ordering litmus work is still unmeasured and deferred until the physical
+execution path is usable. Do not claim TCG cannot exhibit store buffering or
+that this is the first native ARM64 execution merely from the original spike plan.
+
+## Session 2 (2026-09-20 evening) — platform description, and the first real bug
+
+### Firmware discovery now covers the GIC, and it is confirmed on the board
+
+`arm64_serial_acpi.rs` gained MADT ("APIC") parsing for the GICv2 distributor
+and CPU-interface bases, alongside the existing DBG2/SPCR UART discovery. On the
+Pi the loader printed
+
+    [FLDR] arm64 platform: UART=0x00000000FE201000 GICD=0x00000000FF841000 GICC=0x00000000FF842000
+
+which matches acpiview's decode of this board exactly (distributor 0xFF841000,
+CPU interface 0xFF842000). On QEMU the same code independently derives QEMU
+virt's own 0x09000000 / 0x08000000 / 0x08010000 — i.e. it reproduces the values
+that used to be hardcoded, which is the useful cross-check.
+
+### The addresses are carried to the kernel instead of being constants
+
+`ARM_LOADER_BLOCK` (the `_M_ARM64` branch only, so no other arch's layout moves)
+gained `Arm64UartBase`, `Arm64GicDistributorBase`, `Arm64GicCpuInterfaceBase` at
+offsets 56/64/72, size 56 -> 80. Regenerating with `tools/verify_offsets.py` and
+`ntkrnl-sys/verify_sizes.py` reproduced those offsets independently of the
+hand-edited `bindgen_arm64.rs`, which is what validates the hand edit.
+
+Consumers that previously hardcoded QEMU virt:
+
+- `ke/arm64/stubs.rs` — `Arm64UartKernelBase` now starts at **0** rather than
+  0x09000000, and `KiSystemStartup` fills it from the loader block before its
+  first debug write. The old default is not a harmless fallback: 0x09000000 is
+  ordinary DRAM on this board, so every debug write would have silently
+  corrupted memory instead of failing.
+- `ex-rust/init.rs` — the Phase-1 `MmMapIoSpace` remap of the UART, and the GIC
+  mapping feeding `HalInitializeClockArm64`, both use the loader-block values.
+- `hal-rust/arm64/clock.rs` — `gic_ensure_early_bases` takes the loader block
+  (`HalInitializeProcessor` already receives it) instead of `GICD_PA`/`GICC_PA`.
+  Note the HAL cannot simply `extern` an ntoskrnl global: it does not link
+  against one unless it is in the `.spec`, which is what LINK_FAIL reported.
+- `tripwire.rs` — the arm64 fw_cfg probe is now gated. It **writes** a selector,
+  and the x86 comment "real hardware floats the port" does not carry over to
+  ARM MMIO; ungated it would corrupt DRAM or fault. fw_cfg has no ACPI
+  description, so it is inferred from the discovered UART being QEMU virt's, in
+  the loader and the kernel under the same rule.
+
+### Open bug: the loader faults right after the page-table switch
+
+Reached only because everything before it works: FreeLDR read the 140 MB ramdisk
+off the SD card and loaded the entire boot-driver set (ntoskrnl, hal, wdf01000,
+pci, acpi, the USB stack, fastfat, ndis, mup, ...) on real hardware.
+
+    [FLDR] load ramdisk(0)\reactos\AppPatch\drvmain.sdb
+    Synchronous Exception at 0x0000000037F7131C
+
+Symbolicated against `__ImageBase` (printed as `Mmck[ib=...]`; it moves between
+builds, so always re-derive) that is `winldr.rs`'s
+
+    (*(*LoaderBlock).Extension).LoaderPagesSpanned = MmGetLoaderPagesSpanned();
+
+the first store after `WinLdrSetProcessorContext()` switches TTBR0/TTBR1. The
+Extension is reached through a `PaToVa` KSEG0 VA, and that VA is not mapped on
+this board. QEMU's layout happens to get it mapped, so the bug has been latent.
+
+**A hypothesis that the measurement killed:** that
+`MempSetupPagingForRegion`'s `BasePage + PageCount > MmGetLoaderPagesSpanned()`
+bail was skipping the region. The board says otherwise —
+`LB=0x0B13C000 Ext=0xFFFFF8000B13C108 spanned=0x37FF4` — page 0xB13C is well
+inside the span. `LoaderSystemBlock` is also in the kernel-mapped type list. So
+neither the span gate nor the memory type explains it.
+
+**Why this was invisible:** `ERR()`/`TRACE()` are `#if DBG` and compile to
+nothing in the release build that ships to hardware, so a failed
+`MempMapSinglePage` produces no output at all. Only raw `DbgPrint`/`dbgcon`
+reaches the board — anything meant to be legible on hardware must use those.
+
+### Next diagnostic, built and QEMU-verified, waiting on hardware
+
+`Arm64ReportMapping` walks the live tables for one VA and prints every level, and
+`Arm64MapFailures` counts silent `MempMapSinglePage` failures. Both are reported
+just before the faulting store. On QEMU:
+
+    [FLDR] pre-spanned: LB=0x...42138000 Ext=0xFFFFF80042138108 spanned=0x7CB44 mapfail=0x00000000
+    [FLDR] ext-ident va=0x...42138000 L00[00000000]=0x...703 L01[1] L02[10] L03[138] MAPPED
+    [FLDR] ext-kseg0 va=0xFFFFF80042138108 L00[000001F0]=0x...703 L01[1] L02[10] L03[138] MAPPED
+    [FLDR] spanned stored
+
+Run this on the Pi and the level that reports INVALID is the answer.
+
+### Bench changes
+
+- `Serve-Tftp.py` — read-only TFTP server, run with **Windows** python
+  (`C:\Users\Lambda\AppData\Local\Programs\Python\Python313\python.exe`), not
+  WSL's: WSL2 is NAT'd here (172.26.x.x) and the Pi cannot reach it. The host is
+  192.168.1.183 on "Ethernet", the same subnet the Pi DHCPs into.
+- `Add-TftpFirewallRule.ps1` — one narrow inbound rule (UDP, program-scoped to
+  that python.exe, remote address 192.168.1.0/24). Needs elevation; the owner
+  approved it. Remove with `Get-NetFirewallRule -DisplayName 'VibeOS Pi4 TFTP
+  (bring-up)' | Remove-NetFirewallRule`.
+- Ethernet is now connected. The firmware tries PXE v4/v6 then HTTP v4/v6,
+  ~2 minutes of timeouts, before falling through to FreeLDR. Press ESC early to
+  skip it. PXE-booting the loader itself does NOT help: FreeLDR resolves
+  `freeldr.ini` and `RDPATH=\ramdisk.img` on its own boot device, which a network
+  boot does not provide. The intended loop is the UEFI Shell's `tftp` writing
+  onto FS0 so the card never leaves the board — **not yet verified**; whether
+  this firmware's Shell ships `tftp`/`ifconfig` is still unknown.
+- The Pi's `freeldr.ini` now defaults to the **UP** entry. Deliberate, and only
+  on this card: early SMP programs the GIC through the boot identity map before
+  `MmInitSystem(1)`, so it would fail first on a board whose GIC we have only
+  just started discovering, masking whatever the UP kernel hits. SMP here is
+  still the goal; QEMU media keeps MP as its default.
+- Loader-only iterations need just the 300 KB `BOOTAA64.EFI`; the 140 MB
+  ramdisk only changes when kernel-side sources do.
+
+### Validation
+
+Full `vibeos-cli gate` green on i386+amd64+arm64 (builds, all three desktop
+smokes, net smoke, conformance, difftest, tooling, lint) at
+`/tmp/vibeos-cli/20260920-200513-5vt4_h74-gate-i386+amd64+arm64/`. The six host
+ACPI parser tests pass, including the captured Pi DBG2 bytes and the new MADT
+cases. The page-walk diagnostic added after that gate passed its own arm64
+build + desktop smoke (`20260920-202711-wkispj1l-smoke-arm64`, marker reached).

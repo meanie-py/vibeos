@@ -1325,10 +1325,35 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
         ERR(b">>> Writing LoaderPagesSpanned...\n\0".as_ptr() as PCSTR);
     }
 
+    // On real ARM64 hardware this store was the first thing to fault after the
+    // page-table switch (Pi 4B, 2026-09-20): the Extension is reached through a
+    // PaToVa kernel VA, so it needs a TTBR1 mapping that the QEMU virt layout
+    // happens to get and this board did not. dbgcon, not ERR, because ERR is
+    // `#if DBG` and vanishes from the release build that ships to hardware.
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::frldr::dbgcon_str(b"[FLDR] pre-spanned: LB=0x");
+        crate::frldr::dbgcon_hex64(LoaderBlock as u64);
+        crate::frldr::dbgcon_str(b" Ext=0x");
+        crate::frldr::dbgcon_hex64((*LoaderBlock).Extension as u64);
+        crate::frldr::dbgcon_str(b" spanned=0x");
+        crate::frldr::dbgcon_hex64(MmGetLoaderPagesSpanned() as u64);
+        crate::frldr::dbgcon_str(b" mapfail=0x");
+        crate::frldr::dbgcon_hex32(crate::winldr_arm64::Arm64MapFailures);
+        crate::frldr::dbgcon_str(b"\r\n");
+        // Walk both views of the same block: the identity mapping the loader
+        // has been using, and the PaToVa kernel VA the store below goes through.
+        crate::winldr_arm64::Arm64ReportMapping(b"[FLDR] ext-ident", LoaderBlock as u64);
+        crate::winldr_arm64::Arm64ReportMapping(b"[FLDR] ext-kseg0", (*LoaderBlock).Extension as u64);
+    }
+
     // LoaderPagesSpanned is ULONG_PTR (u32 on i386, u64 on amd64); the local
     // MmGetLoaderPagesSpanned() extern is declared -> u32. `as _` coerces to
     // the field's per-arch width (identity on i386, widen on amd64).
     (*(*LoaderBlock).Extension).LoaderPagesSpanned = MmGetLoaderPagesSpanned() as _;
+
+    #[cfg(target_arch = "aarch64")]
+    crate::frldr::dbgcon_str(b"[FLDR] spanned stored\r\n");
 
     #[cfg(target_arch = "aarch64")]
     {
