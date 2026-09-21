@@ -1289,9 +1289,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   reserve plus guard page rather than the fully-committed block the initial stack now gets,
   BEFORE the kernel can trust those bounds. Sequence it in that order.
 
-- **An amd64 boot can lose EVERY 32-bit guest at one address, during 64-bit loader init.
-  OPEN, and it is the confounder behind several of this lane's verdicts. RATE UNKNOWN —
-  the "1 in 3" below is from n=3 and did not hold up**
+- **An amd64 boot could lose EVERY 32-bit guest at one address, during 64-bit loader init.
+  NOT REPRODUCIBLE since 2026-09-20 — 0 in 29 boots. Kept because the mechanism was never
+  proven and it was the confounder behind several of this lane's verdicts**
   (2026-09-20). Symptom: `PASS=0 EXITED=16`, every ladder guest AND every stock applet
   exiting `0x80`, including ones that never otherwise fail (winmine) and the non-GUI parity
   guests (sqlite32). MEASURED 13 / 12 / 0 PASS across three boots of *identical* media
@@ -1341,7 +1341,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that starts at ONE committed page and must grow by guard-page fault the entire way. If
   growth is unreliable, a WoW64 process is the most exposed thing in the system.
 
-  **The rate is not 1 in 3 and I should not have quoted one.** That figure came from a
+  **It stopped happening, and the honest summary is "not reproducible", not "fixed".**
+  Measured across four media: 1/3 before the TEB32 work, then 0/5, 0/4, and a 24-boot
+  `farm` soak at **0/24** — pooled **0 of 29** post-change. Under the 1-in-3 originally
+  quoted that outcome has probability ~1e-5, so the rate really did drop; but the
+  disappearance coincides with `7261000a5110` (GdiBatchCount read from TEB64 on the
+  user-callback path), and coincidence across media is not attribution. A bisect would
+  settle it and has not been run. The mechanism that FITS: a guest's TEB64 GdiBatchCount
+  is a field nobody writes, so a garbage count drives user-mode callbacks to flush a batch
+  that does not exist, and recursive callbacks eating a megabyte of native stack is exactly
+  the observed signature. Plausible, unproven; do not repeat it as the cause.
+
+  A cheap way to detect a recurrence without a ladder run, which is how the 24 boots were
+  scored: a wipeout kills the LADDER guests at startup, long before the desktop marker, so
+  a plain 45s `farm` boot shows it as **zero `[LDR] WoW64 process` lines**. No `--ladder`
+  needed, and n=24 costs half an hour instead of four.
+
+  **The rate was not 1 in 3 and I should not have quoted one.** That figure came from a
   single 3-boot run (13 / 12 / 0). A 5-boot run on current media saw **none**: PASS
   13 / 14 / 11 / 14 / 14, EXITED 1 / 0 / 3 / 0 / 0, every boot reaching the desktop
   (`/tmp/vibeos-cli/20260920-154737-z5kel22e-smoke-amd64`). Pooled that is 1 in 8, and the
