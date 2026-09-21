@@ -473,6 +473,36 @@ trees:
     modified: yes
     headers:
       - sdk/include/ucrt
+    unwelcome: >
+      The largest unlicensed-Microsoft exposure left in the tree, and the only
+      one that is still the LIVE implementation rather than inert source: ~78K
+      lines carrying "Copyright (c) Microsoft Corporation. All rights reserved."
+      with no permission statement anywhere, under Windows SDK EULA terms we
+      cannot even name because the SDK version was never established. The same
+      judgement that deleted the atapi and uniata C applies here; it has not
+      been acted on only because ucrtbase is 999 live exports rather than a
+      file nobody links.
+
+      THE EXIT, and it is already underway. Take the exports over family by
+      family into sdk/lib/rust/ucrt-rust, declaring each in
+      tools/ucrt-takeover.yaml and grading it against the genuine C in
+      sdk/lib/rust/ucrt-difftest BEFORE deleting that C -- the reference is
+      destroyed by its own replacement, so the grading has to happen first.
+      Progress is a command: `python3 tools/ucrt_burndown.py --arch i386`.
+      Done so far: bits (9 exports), ismbbyte (24), three source files gone,
+      1,032 -> 999.
+
+      The headers in sdk/include/ucrt go LAST and that ordering is forced, not
+      chosen: Microsoft's .c include Microsoft's headers, so the headers cannot
+      leave while any body remains. Their replacement is already identified --
+      current mingw-w64, public domain, the same lineage sdk/include/crt
+      already is.
+
+      NOT a gate, by the field's own design: shipping something unwelcome is a
+      decision, not a defect, and a red gate would only teach the next person
+      to delete this text. If pressure is wanted, the honest lever is a
+      burn-down threshold in check() that ratchets the Microsoft export count
+      downward, never a hard fail on the tree existing.
     reason: >
       Microsoft's Universal CRT source as vendored by upstream ReactOS long before
       this fork (oldest commit touching it here is 5213cf717cf, upstream, predating
