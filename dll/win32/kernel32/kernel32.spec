@@ -90,7 +90,14 @@
 @ stdcall -version=0x600+ CompareStringOrdinal(wstr long wstr long long)
 @ stdcall CompareStringW(long long wstr long wstr long)
 @ stdcall ConnectNamedPipe(long ptr)
-@ stdcall -version=0x502-0x600 -arch=x86_64 ConsoleIMERoutine(ptr)
+# Upstream-sync 2026-09: genuinely new upstream export (client/console/init.c), not yet
+# ported. Internal East-Asian-IME startup helper for winsrv.dll on Server2003/XP64/
+# Vista x86_64 only; -arch=x86_64 means no i386 decoration concern from leaving this a
+# bare stub. Depends on GetConsoleIMECommandLine (also unported) plus CreateProcessW /
+# WaitForSingleObject / TerminateProcess, already in kernel32-rust -- porting is real
+# work for a dead legacy code path nothing in this tree calls. Left as a stub rather
+# than silently reverting/hiding it.
+@ stub -version=0x502-0x600 -arch=x86_64 ConsoleIMERoutine
 @ stdcall ConsoleMenuControl(long long long)
 @ stdcall ContinueDebugEvent(long long long)
 @ stdcall -stub -version=0x600+ ConvertCalDateTimeToSystemTime(ptr ptr)

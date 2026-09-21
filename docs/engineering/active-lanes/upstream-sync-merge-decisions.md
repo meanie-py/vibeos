@@ -285,6 +285,107 @@ Unrelated observation while checking those two: `__fpecode` has a Rust twin in
 pre-merge status quo, not something this merge changed, and I have not verified which one
 actually wins at link — recorded as something to look at, not as a finding.
 
+## What the lint sweep added to the record
+
+Four scanners had to be answered after the build went green. Two produced findings worth
+more than the warning they raised.
+
+- **`verify_translation_literals` is an oracle, not a lint.** It compares the literals in a
+  translated `.rs` against the `.c` it came from, so refreshing the dead C beside 194 Rust
+  twins lit up every literal upstream had changed. All 77 traced to a named upstream commit;
+  four of them are behaviour changes our Rust does not have, and are now in the phase-4
+  queue. Baselined (169 total, +77/−0, verified by SET comparison across exactly the seven
+  expected files — no foreign debt).
+- **`marshalgen_audit` was a tool bug, not tree debt.** `extract_flags` matched any token
+  starting `-I`/`-isystem`, but cmake emits `-isystem <path>` as two tokens — so it kept the
+  flag and dropped the path. The merge changed one module's spelling and the audit silently
+  lost `sdk/lib/pseh/include`, i.e. `<pseh/pseh2.h>`, i.e. every layout. Fixed in the tool.
+  A wrong checker that gets baselined is worse than no checker.
+- **`vendored_registry`**: upstream's declined COM/shell modules (combase, coml2, shcore,
+  uiautomationcore) are Wine/CodeWeavers LGPL code, filed under `vendor.yaml`'s `ours:` half
+  rather than `trees:` — **unbuilt is not a reason to shrink the translation denominator.**
+  Their winetests likewise. One genuine upstream misfiling found: `AppleGraphInfo.h` is a new
+  **ReactOS-authored MIT** header (PR #8706, freeldr UEFI Apple graphics) that upstream
+  dropped into the vendored `sdk/include/reactos/edk2/` directory, where a directory-wide
+  vendored classification does not fit it. Recorded in `license_extra:` with the reason;
+  relocating it is a follow-up for whoever owns freeldr's include paths.
+- **`shell32_tail_inventory`**: `CShellLibrary.cpp` and `CUserEventTimer.cpp` are new upstream
+  ATL COM leaf classes with all-stub bodies. Classified in `tools/rustconv/data/shell32_cpp_tail.json`
+  as `active.untranslated_leaf` — a ledger entry, not a baseline suppression.
+
+And one thing confirmed rather than assumed: **the NT4 DDK EULA has not come back.** The only
+hits for it in the merged tree are the comments documenting its deletion.
+
+## The stale-bindgen problem, which the merge turned from theory into a hazard
+
+Upstream fixed several long-standing signature bugs in `ntoskrnl/include/internal/{ps,se,cm,io,lpc,cc}.h`
+during this merge — added missing `KPROCESSOR_MODE AccessMode` parameters, widened handle-count
+parameters from `ULONG` to `ULONG_PTR`, and changed one `VOID` return to `BOOLEAN` so a caller
+can detect a race. Our Rust still carried the old, pre-fix ABI. Those are exactly the bugs this
+lane exists to find, and they were all fixed.
+
+But the checked-in bindgen (`ntkrnl-sys/src/bindgen_{i386,amd64,arm64}.rs`) still describes the
+OLD shapes and has not been regenerated. So fixing a callee without fixing its callers makes
+things WORSE, not better:
+
+> `extern "system"` is **stdcall on i386, where the callee pops the arguments.** A
+> nine-parameter callee invoked through an eight-parameter function pointer pops four bytes
+> more than the caller pushed. Every object-security callout would corrupt the stack. On
+> amd64/arm64 the same mismatch is "only" a garbage register read.
+
+`SeDefaultObjectMethod` hit exactly this: the callee was corrected to nine parameters while all
+seven Rust call sites in `ob-rust` still passed eight through the stale `OB_SECURITY_METHOD`
+typedef. Every call now goes through **one** helper, `ObpCallSecurityProcedure` in
+`ob-rust/src/obsecure.rs`, which transmutes to the real signature and supplies
+`ExGetPreviousMode()` — one place to fix when the typedef catches up. The same
+transmute-at-the-boundary pattern (precedent: fltmgr's `CloseProcedure`) covers
+`OB_CLOSE_METHOD` and netcfgx's `INetCfgComponentPrivate::Unknown1`.
+
+Two more that were caught the same way: `PspRemoveProcessFromJob` and `PspExitProcessFromJob`
+lost a parameter upstream, and `ps-rust`'s `kill.rs` was still resolving them through the stale
+two-parameter bindgen externs — now imported explicitly from the crate so local definitions win
+name resolution.
+
+**Regenerating the bindgen ddk surface is owed debt across the whole tree, not just these
+symbols.** Until then, the rule is: when a callee's signature is corrected, fix every call site
+in the same change, and prefer one shared helper over scattered transmutes.
+
+
+## Five tool bugs, found because the merge moved the ground under the tests
+
+The `check-tooling` suite pins fixtures to real upstream C — line numbers, vtable counts,
+class field lists. The merge moved all of it, and re-deriving the fixtures turned up five
+genuine defects in our own tooling. None of them was upstream's fault and none would have
+been found by reading diffs.
+
+| Tool | Bug | Consequence |
+|---|---|---|
+| `marshalgen.py` | `extract_flags` matched `-isystem` but not the **path token after it** | Lost `sdk/lib/pseh/include`, i.e. `<pseh/pseh2.h>`, i.e. every record layout. Surfaced as `SCANNER_ERROR`. |
+| `verify_lost_exports.py` | commented-vs-live `.c` sets compared by raw captured path text, not basename | An explanatory comment mentioning `dep.c` cancelled the live `client/dep.c`, so three DEP exports read as lost when they are built. |
+| `verify_lost_exports.py` | `_SPEC_ENTRY`'s `$`-anchored optional forwarder could not tolerate a trailing `# comment` | **The whole line failed to match and the symbol vanished from the audit with no diagnostic.** Fixing it immediately surfaced six genuinely-lost shell32 exports. |
+| `spec_parser.py` | no handling of `-import` | spec2def ignores that flag and the LINKER resolves the export from an import library, so no local symbol is needed. Upstream rewrote oleaut32's Get/Set/CreateErrorInfo from `ole32.X` forwarders to `-import` and all three read as MISSING against a tree that links fine. |
+| `cpp_com.py` | `_parse_param` stripped only classic SAL, never `_SAL_ANNOTATION` | Modern SAL survived into the parsed TYPE and `render_class_scaffold` emitted it verbatim: `pdo: *mut _In_ IDataObject`. Not Rust. |
+| `cpp_com.py` | the "plausible declarator" test was anchored at the end of the **whole statement** | `LPWSTR m_PathTarget = NULL` ends in an identifier and survived; `DWORD m_grfKeyState = 0` ends in a digit and was **silently dropped from the object layout**. No error. Exactly the failure that file warns about everywhere else. |
+
+`cpp_com.py` also learned a fourth internal-activation shape: upstream replaced
+`new CComObject<T>()` with a static `T::CreateInstance(CComPtr<T>&)` in the class's own
+header that delegates to `ShellObjectCreator`. The class-name template argument the other
+three patterns key on is gone, so the call is the only place the name still appears.
+
+Two habits did the work here and are worth keeping:
+
+- **Agents were told explicitly that "the scanner is wrong" was an allowed verdict.** Four of
+  the six above came back from agents who took that option instead of re-pinning a fixture.
+- **A test pinned to a value the agent believed was wrong was left RED on purpose**, with the
+  correct expectation in it, rather than pinned to the broken behaviour. Both `cpp_com` bugs
+  arrived that way.
+
+One near-miss worth recording against myself: two `test_cpp_com` failures appeared right
+after my own edit to that file and looked caused by it. They were pre-existing — visible only
+because the earlier `check-tooling` output had been truncated to its last few lines. Reverting
+the edit and re-running took a minute and settled it; guessing would have cost the fix.
+
+
 ## Owed, in rough priority order
 
 1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation

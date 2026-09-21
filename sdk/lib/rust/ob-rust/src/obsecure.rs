@@ -43,6 +43,61 @@ const SetSecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_CODE_
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: ULONG = 7;
 
+// ---------------------------------------------------------------------------
+// Calling a type's SecurityProcedure — the 9th argument
+// ---------------------------------------------------------------------------
+// The 2026-09-20 upstream merge appended `KPROCESSOR_MODE AccessMode` to the security
+// method prototype (ntoskrnl/include/internal/se.h), and every C call site now passes
+// `ExGetPreviousMode()`. Our checked-in bindgen `OB_SECURITY_METHOD` typedef still
+// describes the OLD 8-parameter shape and has not been regenerated.
+//
+// That mismatch is not cosmetic. `extern "system"` is stdcall on i386, where the CALLEE
+// pops the arguments: a 9-parameter callee invoked through an 8-parameter pointer pops
+// four bytes more than the caller pushed, corrupting the stack on every object-security
+// callout. Until the bindgen surface is regenerated, every call goes through this one
+// helper, which transmutes the stored pointer to the real signature and supplies the
+// mode. One place to fix when the typedef catches up.
+use ntkrnl_sys::ddk::OB_SECURITY_METHOD;
+
+pub type ObSecurityMethod9 = unsafe extern "system" fn(
+    PVOID,
+    SECURITY_OPERATION_CODE,
+    PSECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR,
+    *mut ULONG,
+    *mut PSECURITY_DESCRIPTOR,
+    POOL_TYPE,
+    PGENERIC_MAPPING,
+    KPROCESSOR_MODE,
+) -> NTSTATUS;
+
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn ObpCallSecurityProcedure(
+    Procedure: OB_SECURITY_METHOD,
+    Object: PVOID,
+    OperationType: SECURITY_OPERATION_CODE,
+    SecurityInformation: PSECURITY_INFORMATION,
+    SecurityDescriptor: PSECURITY_DESCRIPTOR,
+    ReturnLength: *mut ULONG,
+    OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+    PoolType: POOL_TYPE,
+    GenericMapping: PGENERIC_MAPPING,
+) -> NTSTATUS {
+    let f: ObSecurityMethod9 = core::mem::transmute(Procedure.unwrap());
+    f(
+        Object,
+        OperationType,
+        SecurityInformation,
+        SecurityDescriptor,
+        ReturnLength,
+        OldSecurityDescriptor,
+        PoolType,
+        GenericMapping,
+        ExGetPreviousMode(),
+    )
+}
+
+
 // FILE_WRITE_DATA (from winnt.h — used in SeFastTraverseCheck)
 const FILE_WRITE_DATA: ULONG = 0x0002;
 
@@ -483,7 +538,8 @@ pub unsafe extern "system" fn ObAssignSecurity(
     }
 
     ObpCalloutStart(&mut CalloutIrql);
-    Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         AssignSecurityDescriptor,
         core::ptr::null_mut(),
@@ -517,7 +573,12 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
 
     *MemoryAllocated = 0;
 
-    if (*Type).TypeInfo.SecurityProcedure == Some(SeDefaultObjectMethod) {
+    // The OB_SECURITY_METHOD typedef is still the stale 8-param one (see
+    // ObpCallSecurityProcedure above), so the stored pointer has to be compared
+    // through a transmute of the real 9-param function.
+    if (*Type).TypeInfo.SecurityProcedure
+        == Some(core::mem::transmute::<ObSecurityMethod9, _>(SeDefaultObjectMethod))
+    {
         *SecurityDescriptor = ObpReferenceSecurityDescriptor(Header);
         return STATUS_SUCCESS;
     }
@@ -531,7 +592,8 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
     let mut CalloutIrql: KIRQL = 0;
 
     ObpCalloutStart(&mut CalloutIrql);
-    let mut Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    let mut Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         QuerySecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -554,7 +616,8 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
     *MemoryAllocated = 1;
 
     ObpCalloutStart(&mut CalloutIrql);
-    Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         QuerySecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -602,7 +665,8 @@ pub unsafe extern "system" fn ObSetSecurityObjectByPointer(
     let Header = OBJECT_TO_OBJECT_HEADER(Object);
     let Type = (*Header).Type;
 
-    ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         SetSecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -657,7 +721,8 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
     let Type = (*Header).Type;
 
     let mut CallLength = Length;
-    Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         QuerySecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,

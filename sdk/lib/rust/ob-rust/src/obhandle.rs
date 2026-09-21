@@ -28,6 +28,7 @@ use ntkrnl_sys::ddk::{
     POBP_SET_HANDLE_ATTRIBUTES_CONTEXT, POBP_LOOKUP_CONTEXT, POB_TEMP_BUFFER,
     PACCESS_STATE, PAUX_ACCESS_DATA, POBJECT_ATTRIBUTES, PUNICODE_STRING,
     ACCESS_MASK, KPROCESSOR_MODE, HANDLE, OB_OPEN_REASON,
+    PSECURITY_INFORMATION, SECURITY_OPERATION_CODE,
     SeSinglePrivilegeCheck,
     ExAcquireRundownProtection, ExReleaseRundownProtection, ExMapHandleToPointer,
     ExUnlockHandleTableEntry, ExCreateHandle, ExDestroyHandle, ExEnumHandleTable,
@@ -67,7 +68,6 @@ use ntkrnl_sys::ddk::{
     PsIsThreadTerminating,
     RtlMapGenericMask,
     SeCreateAccessState,
-    SeDefaultObjectMethod,
     SeDeleteAccessState,
     SeDetailedAuditingWithToken,
     SeReleaseSecurityDescriptor,
@@ -89,6 +89,26 @@ use ntkrnl_sys::ddk::{
 type ObAttrType = u64;
 #[cfg(target_pointer_width = "32")]
 type ObAttrType = u32;
+
+// ntkrnl_sys::ddk's bindgen-generated OB_SECURITY_METHOD (and its SeDefaultObjectMethod
+// extern decl) predates the upstream-sync merge's se.h/obtypes.h change that appended a
+// trailing KPROCESSOR_MODE AccessMode param -- the checked-in bindgen_*.rs was never
+// regenerated. Declare the REAL 9-param signature locally (shadowing the stale 8-param
+// import) so the pointer-identity comparison below transmutes from a type that actually
+// matches se-rust's semgr.rs definition, rather than silently truncating the arg list.
+extern "system" {
+    fn SeDefaultObjectMethod(
+        Object: PVOID,
+        OperationType: SECURITY_OPERATION_CODE,
+        SecurityInformation: PSECURITY_INFORMATION,
+        SecurityDescriptor: PSECURITY_DESCRIPTOR,
+        ReturnLength: *mut ULONG,
+        OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+        PoolType: POOL_TYPE,
+        GenericMapping: PGENERIC_MAPPING,
+        AccessMode: KPROCESSOR_MODE,
+    ) -> NTSTATUS;
+}
 
 const ObCreateHandle: OB_OPEN_REASON = _OB_OPEN_REASON_ObCreateHandle;
 const ObOpenHandle: OB_OPEN_REASON = _OB_OPEN_REASON_ObOpenHandle;
@@ -1645,7 +1665,11 @@ pub unsafe extern "system" fn ObDuplicateObject(
     new_handle_entry.__bindgen_anon_2.GrantedAccess = target_access;
 
     if target_access & !source_access != 0 {
-        if (*object_type).TypeInfo.SecurityProcedure == Some(SeDefaultObjectMethod) {
+        if (*object_type).TypeInfo.SecurityProcedure
+            == Some(core::mem::transmute(
+                SeDefaultObjectMethod as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> NTSTATUS,
+            ))
+        {
             passed_access_state = &mut access_state as *mut _;
             status = SeCreateAccessState(
                 &mut access_state as *mut _,

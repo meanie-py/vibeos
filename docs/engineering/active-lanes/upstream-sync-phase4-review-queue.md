@@ -15,6 +15,68 @@ git diff <the merge commit>^ <the merge commit> -- <c_path>
 Ordered by churn within each crate; the churn is a rough proxy for how much upstream
 changed, not for how likely a bug is.
 
+## The merge made two latent stubs REACHABLE — fixed at the point of hazard
+
+Both are the same shape and both are worth internalising: **a stub that was harmless while
+nothing called it becomes a bug the moment the merge brings in a caller.** Neither showed up
+as a conflict, a build failure, or a smoke failure.
+
+**1. `INetCfgComponentPrivate_fnUnknown1` returned success without writing its out-pointer.**
+
+The merge changed `sdk/include/reactos/netcfgx_undoc.h`:
+
+```c
+-    STDMETHOD_(HRESULT,Unknown1)(THIS_ DWORD dwParam1, DWORD dwParam2) PURE;
++    STDMETHOD_(HRESULT,Unknown1)(THIS_ REFIID riid, void **ppv) PURE;
+```
+
+...and brought in `dll/win32/ifmon/ip.c` (+2409 lines of new `netsh interface ip`), which does:
+
+```c
+hr = INetCfgComponentPrivate_Unknown1(p, &IID_ITcpipProperties, (PVOID*)&pTcpipProperties);
+if (hr != S_OK) { DPRINT1("...failed\n"); goto exit; }
+hr = ITcpipProperties_Unknown1(pTcpipProperties, InterfaceGuid, &pInfo);   /* <-- */
+```
+
+Our Rust twin was translated from the pre-merge header, took two `DWORD`s, and **returned
+`S_OK` without touching `ppv`**. The caller's own error check passes, and it dereferences an
+uninitialized stack pointer. Fixed: correct signature, `*ppv = NULL`, `E_NOTIMPL` — so the
+caller takes the failure path it already has. The real body (upstream's `CreateNotifyObject`
++ delegate to `pItem->pControl`) needs `CreateNotifyObject` and the `pItem`/`pControl` fields,
+none of which exist in `netcfgx-rust` yet. **That port is still owed.**
+
+**2. `SetSearchPathMode` is now settable but is not enforced.** `kernel32-rust` gained the
+export (validation and the permanent-flag lock are faithful, and match the apitest), but our
+`BasepComputeProcessPath` was translated from the pre-merge C and does not read the flag —
+upstream's does, including a registry read of the safe-search-mode value. So safe DLL search
+order can be requested and is silently ignored. **Security-relevant; owed.**
+
+
+## Leads the LINT sweep produced for free
+
+`verify_translation_literals` turned out to be an oracle in its own right. It compares the
+literals in a translated `.rs` against the `.c` it came from — so the moment the merge
+refreshed the dead C, every literal upstream had changed lit up. All 77 findings traced to a
+real upstream commit; the four below are the ones where upstream changed *behaviour*, not
+just text, and our Rust still carries the old version.
+
+| Lead | What upstream did | Why it matters |
+|---|---|---|
+| `syssetup/wizard.rs` — keyboard layout | `d482579dff3` "Fix retrieval of the currently active keyboard layout ID and its name (#9420)" | Our Rust still has the **pre-fix** logic. Named as a fix by upstream, so this is the classic oracle shape. |
+| `syssetup/wizard.rs` + `install.rs` — Gecko | `a4b6fe9630e` revamped the Finish page and **removed the Gecko installer**, replacing `appwiz.cpl,,install_gecko` with `RappsDownload` | Our Rust still invokes the old path on an unattended finish. |
+| `syssetup/install.rs` — TCP/IP at setup | New block installs and starts `MS_TCPIP` / `Tcpip` / `Dhcp` / `Dnscache` during `InstallReactOS()` | **We do not do this at all.** A missing setup step, not a wrong one. |
+| `umpnpmgr/umpnpmgr.rs` — MiniNT detection | `b1bd421163b` replaced parsing `SystemStartOptions` for `MININT` with testing for the `SYSTEM\CurrentControlSet\Control\MiniNT` key (`g_IsLiveMedium` → `g_IsMiniNT`) | A redesign, not a fix — worth deciding which detection is actually robust before porting. |
+
+Two more that are new capability rather than bug leads, recorded so nobody re-derives them:
+upstream rewrote the netcfgx TCP/IP notify object (`9b450d9f7f7`, `c04c092a3e6`, `4369126acc8` —
+registry-backed property pages) and implemented `INetCfgComponentControl::ApplyPnpChanges`
+(`bd363a821e9`), which was a `FIXME` no-op at our fork point.
+
+All seven files behind those 77 findings are cohab-flipped, so none of this affects the build.
+That is the point: the C is inert, the diff is free to read, and the Rust beside it is the
+thing to fix.
+
+
 ## Top 40 by churn, with what upstream actually did
 
 Read this table first. The commit subjects are the triage signal; the churn is not.

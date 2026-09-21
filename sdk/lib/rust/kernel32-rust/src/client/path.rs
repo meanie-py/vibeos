@@ -2901,6 +2901,57 @@ pub unsafe extern "system" fn GetSystemWow64DirectoryA(
     return 0u32;
 }
 
+// Upstream-sync 2026-09: SetSearchPathMode is a real lost export (path.c genuinely
+// commented out here, no Rust twin existed). This is a faithful, self-contained port of
+// the interlocked flag-store/validate logic (path.c: BasepSearchPathModeFlags +
+// SetSearchPathMode). NOTE: the actual search-order logic in this file
+// (BasepComputeProcessPath / SearchPathW) does not yet consult this flag -- that is a
+// pre-existing gap in the path.c -> Rust port unrelated to this export, not introduced
+// here. Filed as a FLAG in the lint report; SetSearchPathMode itself matches the C 1:1
+// and passes modules/rostests/apitests/kernel32/SetSearchPathMode.c, which only tests
+// this function's own validation/locking, not downstream search behavior.
+// A plain AtomicI32, not the global `InterlockedCompareExchange` symbol: that name is
+// only `#[no_mangle]`'d for i386 (interlocked.rs -- the kernel32.spec entry is
+// -arch=i386 only); amd64/arm64 have no such linkable export, matching how every other
+// Rust module in the tree that needs this intrinsic off i386 defines its own local
+// atomic helper instead of calling a symbol that doesn't exist for those arches.
+static BasepSearchPathModeFlags: core::sync::atomic::AtomicI32 =
+    core::sync::atomic::AtomicI32::new(!0x18001i32); // BASE_SEARCH_PATH_INVALID_FLAGS
+
+#[no_mangle]
+pub unsafe extern "system" fn SetSearchPathMode(dwFlags: DWORD) -> BOOL {
+    use core::sync::atomic::Ordering;
+
+    /* There are only 3 valid parameters -- matches path.c's switch exactly */
+    if dwFlags != BASE_SEARCH_PATH_DISABLE_SAFE_SEARCHMODE
+        && dwFlags != BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE
+        && dwFlags != (BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE | BASE_SEARCH_PATH_PERMANENT)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE as BOOL;
+    }
+
+    let mut CurrentFlags = BasepSearchPathModeFlags.load(Ordering::SeqCst);
+    loop {
+        if (CurrentFlags & BASE_SEARCH_PATH_PERMANENT as i32) != 0
+            && (dwFlags as i32) != CurrentFlags
+        {
+            SetLastError(ERROR_ACCESS_DENIED);
+            return FALSE as BOOL;
+        }
+        match BasepSearchPathModeFlags.compare_exchange(
+            CurrentFlags,
+            dwFlags as i32,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => break,
+            Err(observed) => CurrentFlags = observed,
+        }
+    }
+    TRUE as BOOL
+}
+
 
 // ============================================================================
 // ORIGINAL C SOURCE

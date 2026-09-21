@@ -12,12 +12,12 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [EDK2 / TianoCore headers](#edk2--tianocore-headers) — unknown — BSD-2-Clause
 - [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
-- [FreeType](#freetype) — 2.10.0 — GPL-2.0-only
+- [FreeType](#freetype) — 2.10.4 — GPL-2.0-only
 - [libjpeg](#libjpeg) — 9f — IJG
 - [libmpg123](#libmpg123) — 1.33.7 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
 - [libsamplerate](#libsamplerate) — 0.2.2 — BSD-2-Clause
-- [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
+- [libtiff](#libtiff) — 4.7.1 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.13.9 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
@@ -550,6 +550,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 - Version: unknown
 - In this tree: `sdk/include/reactos/edk2`
 - Licence: BSD-2-Clause
+- Also contains: MIT — AppleGraphInfo.h, added 2026-09-20 by the upstream merge (freeldr UEFI Apple Graphics Info Protocol support, upstream PR #8706). NOT a TianoCore file that wandered off the headline licence: its own header says `PROJECT: ReactOS UEFI Support`, `COPYRIGHT: Copyright 2026 Sylas Hollander`, `LICENSE: MIT` — it is a ReactOS-authored header that a merge commit dropped into the vendored edk2 directory rather than beside the other freeldr UEFI sources. The MIT declaration is the ReactOS author's own for this file's new text; a second comment separately credits the struct layout as based on macosxbootloader's AppleGraphInfo.h (BSD-3-Clause) for the shape being reimplemented, not a licence on this file. Recorded here rather than moved: moving it out from under sdk/include/reactos/edk2 touches freeldr's include paths, which is outside this pass's scope (see upstream-sync-merge-decisions.md). It is NOT a translation target either way — header only, no body — so leaving it filed under the vendored tree costs nothing but this licence-drift note; a future pass can relocate it to sit with the rest of the ReactOS-authored freeldr UEFI code.
+
 - Grant reproduced from: `sdk/include/reactos/edk2/License.txt`
 
 ```
@@ -651,7 +653,7 @@ SOFTWARE.
 ## FreeType
 
 - Upstream: https://freetype.org/
-- Version: 2.10.0
+- Version: 2.10.4
 - In this tree: `sdk/lib/3rdparty/freetype`
 - Licence: GPL-2.0-only
 - Modified by us: yes, see `vendor-patches/freetype.patch`
@@ -2362,7 +2364,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## libtiff
 
 - Upstream: http://www.libtiff.org/
-- Version: 4.7.0
+- Version: 4.7.1
 - In this tree: `dll/3rdparty/libtiff`, `sdk/include/reactos/libs/libtiff`
 - Licence: libtiff (BSD-like)
 - Grant reproduced from: `dll/3rdparty/libtiff/tif_open.c (header comment)`

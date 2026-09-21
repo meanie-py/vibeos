@@ -1375,6 +1375,23 @@ trees:
     upstream: TianoCore EDK II
     license: BSD-2-Clause
     license_file: sdk/include/reactos/edk2/License.txt
+    license_extra:
+      MIT: >
+        AppleGraphInfo.h, added 2026-09-20 by the upstream merge (freeldr UEFI Apple
+        Graphics Info Protocol support, upstream PR #8706). NOT a TianoCore file that
+        wandered off the headline licence: its own header says `PROJECT: ReactOS UEFI
+        Support`, `COPYRIGHT: Copyright 2026 Sylas Hollander`, `LICENSE: MIT` — it is a
+        ReactOS-authored header that a merge commit dropped into the vendored edk2
+        directory rather than beside the other freeldr UEFI sources. The MIT declaration
+        is the ReactOS author's own for this file's new text; a second comment separately
+        credits the struct layout as based on macosxbootloader's AppleGraphInfo.h
+        (BSD-3-Clause) for the shape being reimplemented, not a licence on this file.
+        Recorded here rather than moved: moving it out from under sdk/include/reactos/edk2
+        touches freeldr's include paths, which is outside this pass's scope (see
+        upstream-sync-merge-decisions.md). It is NOT a translation target either way —
+        header only, no body — so leaving it filed under the vendored tree costs nothing
+        but this licence-drift note; a future pass can relocate it to sit with the rest of
+        the ReactOS-authored freeldr UEFI code.
     modified: unknown
     reason: >
       UEFI interface headers from EDK II, Intel-copyright, consumed by the UEFI
@@ -1932,6 +1949,41 @@ ours:
       code is foreign, the responsibility is ours, and the lines stay in the
       translation denominator.
 
+  # ── Wine-derived code declined at build time: still OURS ────────────────
+  - paths:
+      - dll/win32/combase
+      - dll/win32/coml2
+      - dll/win32/shcore
+      - dll/win32/uiautomationcore
+    name: Wine COM/shell restructure (combase/coml2/shcore/uiautomationcore)
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue) — currently UNBUILT, see reason"
+    reason: >
+      ADDED 2026-09-20 by the 1,269-commit upstream merge, and flagged UNCLASSIFIED by
+      `--suspects` (uiautomationcore: 8 files, combase: 5 files; coml2 and shcore sit
+      below the >=5-file threshold but are the same case and the same decision).
+
+      Same argument as the 24-path "Wine-derived shipped modules" entry above — LGPL-2.1
+      CodeWeavers-style Wine code, forked and shipped by this project, on the
+      translation path in principle — but with one difference worth recording instead of
+      silently inheriting: **none of the four currently build.**
+      `dll/win32/CMakeLists.txt` comments out all four `add_subdirectory()` calls with an
+      explicit decision note: upstream's COM/shell restructure is DECLINED for now
+      because our ole32 stays monolithic, our kernelbase is a minimal Vista shim, and
+      shlwapi keeps its own exports — combase.c externs symbols
+      (`Ole32DllGetClassObject`, `DestroyRunningObjectTable`) that only exist once ole32
+      has been split, and our ole32 moniker/oleproxy code is already Rust and does not
+      export them. Half-adopting the split would link and then misbehave. Full detail:
+      upstream-sync-merge-decisions.md.
+
+      Filed as `ours:` rather than `trees:` for the same reason fastfat/cdfs were:
+      dropping them from the denominator on account of being temporarily unbuilt would
+      be exactly the silent-shrink this half of the registry exists to prevent, and the
+      standing rule is to never hide a translation (or a translation CANDIDATE) from
+      view. If the restructure is ever adopted, this is the tier queue entry to pick up;
+      until then these four are dead-but-present source, same shape as a cohab-flipped
+      `.c` file, just never wired in rather than wired out.
+
   - paths:
       - modules/rostests/winetests/comctl32
       - modules/rostests/winetests/kernel32
@@ -1941,6 +1993,12 @@ ours:
       - modules/rostests/winetests/ucrtbase
       - modules/rostests/winetests/urlmon
       - modules/rostests/winetests/windowscodecs
+      - modules/rostests/winetests/activeds
+      - modules/rostests/winetests/combase
+      - modules/rostests/winetests/rtworkq
+      - modules/rostests/winetests/shcore
+      - modules/rostests/winetests/uiautomationcore
+      - modules/rostests/winetests/vbscript
     name: Wine conformance tests
     origin: Wine's own test suite (LGPL-2.1-or-later)
     reason: >
@@ -1949,6 +2007,18 @@ ours:
       not code we are porting. Translating them would be translating the ruler. They are
       `ours:` in the only sense that matters to this registry — a deliberate decision,
       not an unclassified import — and they should NOT be read as translation debt.
+
+      The last six paths were ADDED 2026-09-20 by the 1,269-commit upstream merge, which
+      also brought the corresponding shipped-module sources (activeds, combase, rtworkq,
+      shcore, uiautomationcore, vbscript). vbscript builds; the other four DLLs under
+      test do not — combase/coml2/shcore/uiautomationcore are commented out of
+      `dll/win32/CMakeLists.txt` (upstream's COM/shell restructure is declined, see the
+      shipped-module entry below) — but `modules/rostests/winetests/CMakeLists.txt`
+      still `add_subdirectory`s all of their test dirs unconditionally. That is Wine's
+      test suite either way, oracle not translation debt, same as the rest of this list;
+      it is filed here rather than left silent because `--suspects`' >=5-file threshold
+      flagged winetests/vbscript (12 files) and winetests/combase (8 files) as
+      unclassified, and the other four sit below that threshold but are the same case.
 
   - paths:
       - sdk/include/wine

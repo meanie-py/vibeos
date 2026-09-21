@@ -705,7 +705,7 @@ pub unsafe extern "C" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
 pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
     vacb: PROS_VACB,
     lock_views: BOOLEAN
-) {
+) -> BOOLEAN {
     let mut old_irql: KIRQL = 0;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
@@ -714,6 +714,20 @@ pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
     if lock_views != 0 {
         old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
         KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    }
+
+    // Upstream-sync merge added this guard (ntoskrnl/cc/view.c) against a real race: a
+    // caller may check Vacb->Dirty lockless before calling in, and a concurrent flush
+    // (e.g. the lazy writer) can unmark the VACB in between. Proceeding here would
+    // underflow CcTotalDirtyPages/DirtyPages, drop an extra refcount via
+    // CcRosVacbDecRefCount, and could free the VACB prematurely. Our pre-merge
+    // translation carried the old, racy behavior with no such check.
+    if (*vacb).Dirty == 0 {
+        if lock_views != 0 {
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
+        }
+        return 0u8;
     }
 
     (*vacb).Dirty = 0u8;
@@ -730,6 +744,8 @@ pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
         KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
         KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
     }
+
+    1u8
 }
 
 #[no_mangle]

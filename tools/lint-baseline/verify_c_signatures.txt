@@ -1,4 +1,5 @@
 cabinet/fdi.rs: FDIDestroy param 0: C `HFDI` vs Rust `isize`
+kdgdb/kdcom.rs: KdpPortInitialize param 0: C `PUCHAR` vs Rust `ULONG`
 lsasrv/registry.rs: LsapRegCreateKey param 3: C `HANDLE` vs Rust `PHANDLE`
 lsasrv/registry.rs: LsapRegOpenKey param 3: C `HANDLE` vs Rust `PHANDLE`
 mscms/stub.rs: ConvertColorNameToIndex param 0: C `HPROFILE` vs Rust `isize`
