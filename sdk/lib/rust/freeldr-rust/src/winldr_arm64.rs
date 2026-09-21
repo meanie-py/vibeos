@@ -95,6 +95,40 @@ static mut Arm64Pgd: PARM64_PTE = core::ptr::null_mut();
 /* Shared user data page frame number — file-scope global. */
 static mut SharedUserDataPfn: PFN_NUMBER = 0;
 
+/// Report the exception level and the translation control the loader is
+/// actually running under.
+///
+/// WinLdrSetProcessorContext programs MAIR_EL1/TCR_EL1/TTBR0_EL1/TTBR1_EL1 and
+/// invalidates with `tlbi vmalle1`. That is only the EL1 regime. If firmware
+/// hands off at EL2 WITHOUT VHE (HCR_EL2.E2H == 0), every one of those writes is
+/// inert for the regime we execute in: EL2 translates through TTBR0_EL2, the
+/// firmware's own identity map stays live, and the symptom is exactly what this
+/// board shows — identity addresses work, the KSEG0 VA faults, our tables are
+/// correct but unused, and nothing reports an error. With VHE (E2H == 1) the
+/// _EL1 accesses are redirected to the _EL2 registers and the same code works,
+/// which is why QEMU has never caught this.
+pub unsafe fn Arm64ReportExceptionLevel(Label: &[u8]) {
+    let current_el: u64;
+    core::arch::asm!("mrs {}, currentel", out(reg) current_el, options(nomem, nostack));
+    let el = (current_el >> 2) & 3;
+    crate::frldr::dbgcon_str(Label);
+    crate::frldr::dbgcon_str(b" EL");
+    crate::frldr::dbgcon_hex8(el as u32);
+    let sctlr: u64;
+    core::arch::asm!("mrs {}, sctlr_el1", out(reg) sctlr, options(nomem, nostack));
+    crate::frldr::dbgcon_str(b" SCTLR_EL1=0x");
+    crate::frldr::dbgcon_hex64(sctlr);
+    if el == 2 {
+        // Only readable at EL2; reading it from EL1 would trap.
+        let hcr: u64;
+        core::arch::asm!("mrs {}, hcr_el2", out(reg) hcr, options(nomem, nostack));
+        crate::frldr::dbgcon_str(b" HCR_EL2=0x");
+        crate::frldr::dbgcon_hex64(hcr);
+        crate::frldr::dbgcon_str(if hcr & (1 << 34) != 0 { b" E2H=1" } else { b" E2H=0" });
+    }
+    crate::frldr::dbgcon_str(b"\r\n");
+}
+
 /// Walk the live page tables for one VA and report each level, so an unmapped
 /// address says WHERE translation stopped instead of only that it faulted.
 /// Reads the tables through their physical addresses, which is what the loader
@@ -340,6 +374,7 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     ERR(b">>> WinLdrSetProcessorContext for ARM64\n\0".as_ptr() as *const i8);
     ERR(b"  PGD at physical %p\n\0".as_ptr() as *const i8, Arm64Pgd);
+    Arm64ReportExceptionLevel(b"[FLDR] ctx-pre");
 
     core::arch::asm!("msr daifset, #0xF");
 
@@ -372,6 +407,17 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     ERR(b"<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n\0".as_ptr() as *const i8,
         Arm64Pgd, tcr, mair);
+    Arm64ReportExceptionLevel(b"[FLDR] ctx-post");
+    // Read TTBR1_EL1 back: at EL2 without VHE the register still holds what we
+    // wrote, so a matching readback does NOT prove the MMU is using it. The EL
+    // reported above is what decides that.
+    let ttbr1_readback: ULONG64;
+    core::arch::asm!("mrs {}, ttbr1_el1", out(reg) ttbr1_readback, options(nomem, nostack));
+    crate::frldr::dbgcon_str(b"[FLDR] ttbr1_el1=0x");
+    crate::frldr::dbgcon_hex64(ttbr1_readback);
+    crate::frldr::dbgcon_str(b" pgd=0x");
+    crate::frldr::dbgcon_hex64(Arm64Pgd as ULONG64);
+    crate::frldr::dbgcon_str(b"\r\n");
 }
 
 /// GICv2 (distributor, CPU interface) physical bases from the ACPI MADT, or
