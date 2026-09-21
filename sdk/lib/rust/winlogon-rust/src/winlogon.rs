@@ -1846,6 +1846,265 @@ unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: D
     CloseHandle(Pi.hProcess);
 }
 
+/* A Wine conformance suite, run as a WoW64 guest.
+ *
+ * Every other guest on this ladder reports in one number -- an exit code, or
+ * "still running after N seconds". A winetest reports in PROSE on stdout and
+ * only summarises in its exit code (= the failure count), so both of those
+ * verdicts throw away the part we actually want: WHICH assertion failed and
+ * where. Nothing inside the guest can reach the serial port, so this hands the
+ * child a pipe for stdout+stderr and re-emits what comes back, line by line,
+ * through DbgPrint -- the one channel the smoke harness already reads.
+ *
+ * `Sub` names ONE subtest. A winetest invoked with no argument runs all of
+ * them, which on a suite like user32 is thousands of lines and ends at the
+ * first crash with everything after it unrun; pass null only when running the
+ * whole suite is the point.
+ *
+ * The read loop peeks rather than blocking, because a blocking ReadFile on a
+ * pipe whose writer is a wedged guest never returns and would hang winlogon
+ * itself -- the ladder would stop dead with no verdict for anything after it.
+ */
+/* x86_64 only for now: the call sites are in the amd64 ladder, and an
+ * arm64-compiled-but-never-called copy is just a dead_code warning. arm64 can
+ * have it the day it stages a winetest. */
+#[cfg(target_arch = "x86_64")]
+unsafe fn TryStartWow64Winetest(
+    Exe: *const u16,
+    Sub: *const u16,
+    Label: *const i8,
+    TimeoutMs: DWORD,
+) {
+    /* Serial is the bottleneck for the whole boot, and a looping suite can
+     * emit without bound. Past this many bytes the output is dropped (the
+     * pipe is still drained, or the child blocks on a full pipe and the
+     * timeout below turns a chatty test into a fake hang). */
+    const WT_MAX_OUTPUT: u32 = 256 * 1024;
+
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\").as_ptr());
+    wcscat(Path.as_mut_ptr(), Exe);
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged -- silent no-op, like every other optional guest
+    }
+
+    let mut Sa: SECURITY_ATTRIBUTES = zeroed();
+    Sa.nLength = size_of::<SECURITY_ATTRIBUTES>() as DWORD;
+    Sa.bInheritHandle = 1;
+    let mut Rd: HANDLE = null_mut();
+    let mut Wr: HANDLE = null_mut();
+    if CreatePipe(&mut Rd, &mut Wr, &mut Sa, 64 * 1024) == 0 {
+        DbgPrint(
+            b"[WT] %s: CreatePipe FAILED (error %lu) - not running\n\0".as_ptr() as *const i8,
+            Label,
+            GetLastError(),
+        );
+        return;
+    }
+    /* The child must NOT inherit the read end: if it did, the last writer
+     * would never close and the drain below would never see EOF. */
+    SetHandleInformation(Rd, HANDLE_FLAG_INHERIT, 0);
+
+    let mut Line: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    wcscat(Line.as_mut_ptr(), Exe);
+    if !Sub.is_null() {
+        wcscat(Line.as_mut_ptr(), wstr!(" ").as_ptr());
+        wcscat(Line.as_mut_ptr(), Sub);
+    }
+
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    Si.dwFlags |= STARTF_USESTDHANDLES;
+    Si.hStdInput = null_mut();
+    Si.hStdOutput = Wr;
+    Si.hStdError = Wr;
+    /* DETACHED_PROCESS. A winetest is a CUI image, so without this csrss
+     * allocates it a console -- and console creation from a WoW64 guest fails
+     * here (`co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message
+     * failed`), after which the guest spins forever without reaching main and
+     * writes not one byte. Measured: 60s timeout, 0 bytes, 5036 "Sending to
+     * Suspended Thread" lines. It needs no console anyway -- its stdout is the
+     * pipe above. The console failure is a real bug and is registered
+     * separately; this is not a workaround for it, the process genuinely
+     * should not have a console. */
+    const DETACHED_PROCESS: DWORD = 0x0000_0008;
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        1, /* bInheritHandles: required for the child to get Wr */
+        DETACHED_PROCESS,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WT] %s: CreateProcessW FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            Label,
+            GetLastError(),
+        );
+        CloseHandle(Rd);
+        CloseHandle(Wr);
+        return;
+    }
+    /* Drop OUR copy of the write end. The child now holds the only one, so
+     * the pipe reports empty-and-closed exactly when the child is gone --
+     * without this the drain below can never distinguish "no output yet"
+     * from "finished". */
+    CloseHandle(Wr);
+
+    DbgPrint(
+        b"[WT] %s: started (PID %lu)\n\0".as_ptr() as *const i8,
+        Label,
+        Pi.dwProcessId,
+    );
+
+    let mut Chunk: [u8; 1024] = [0; 1024];
+    let mut Out: [u8; 512] = [0; 512];
+    let mut OutLen: usize = 0;
+    let mut Total: u32 = 0;
+    let mut Truncated = false;
+    let Start = GetTickCount();
+    const WAIT_TIMEOUT_: DWORD = 0x102;
+    let mut TimedOut = false;
+
+    loop {
+        let mut Avail: DWORD = 0;
+        let Peeked = PeekNamedPipe(
+            Rd,
+            null_mut(),
+            0,
+            null_mut(),
+            &mut Avail,
+            null_mut(),
+        );
+        if Peeked != 0 && Avail > 0 {
+            let Want = if Avail as usize > Chunk.len() {
+                Chunk.len() as DWORD
+            } else {
+                Avail
+            };
+            let mut Got: DWORD = 0;
+            if ReadFile(
+                Rd,
+                Chunk.as_mut_ptr() as *mut _,
+                Want,
+                &mut Got,
+                null_mut(),
+            ) == 0
+                || Got == 0
+            {
+                break;
+            }
+            Total = Total.saturating_add(Got);
+            if Total > WT_MAX_OUTPUT {
+                if !Truncated {
+                    Truncated = true;
+                    DbgPrint(
+                        b"[WT] %s: output past %lu bytes DROPPED (still draining)\n\0".as_ptr()
+                            as *const i8,
+                        Label,
+                        WT_MAX_OUTPUT,
+                    );
+                }
+            } else {
+                for i in 0..Got as usize {
+                    let c = Chunk[i];
+                    if c == b'\n' || OutLen == Out.len() - 1 {
+                        Out[OutLen] = 0;
+                        /* "%s" and not the line itself: a test's own output
+                         * is full of %d/%s from the assertions it prints. */
+                        DbgPrint(
+                            b"[WT] %s| %s\n\0".as_ptr() as *const i8,
+                            Label,
+                            Out.as_ptr(),
+                        );
+                        OutLen = 0;
+                    }
+                    if c != b'\n' && c != b'\r' {
+                        Out[OutLen] = c;
+                        OutLen += 1;
+                    }
+                }
+            }
+            continue; /* drain greedily before re-checking the clock */
+        }
+        /* Nothing buffered: the child is either done or thinking. */
+        if WaitForSingleObject(Pi.hProcess, 0) != WAIT_TIMEOUT_ {
+            /* Exited. One more peek catches whatever it wrote last. */
+            let mut Left: DWORD = 0;
+            if PeekNamedPipe(Rd, null_mut(), 0, null_mut(), &mut Left, null_mut()) == 0
+                || Left == 0
+            {
+                break;
+            }
+            continue;
+        }
+        if GetTickCount().wrapping_sub(Start) > TimeoutMs {
+            TimedOut = true;
+            break;
+        }
+        Sleep(20);
+    }
+
+    if OutLen > 0 {
+        Out[OutLen] = 0;
+        DbgPrint(
+            b"[WT] %s| %s\n\0".as_ptr() as *const i8,
+            Label,
+            Out.as_ptr(),
+        );
+    }
+
+    if TimedOut {
+        DbgPrint(
+            b"[WT] %s: TIMEOUT after %lu ms - terminating\n\0".as_ptr() as *const i8,
+            Label,
+            TimeoutMs,
+        );
+        TerminateProcess(Pi.hProcess, 0xDEAD);
+        WaitForSingleObject(Pi.hProcess, 5_000);
+    }
+    let mut ExitCode: DWORD = 0xDEAD;
+    GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+    /* A winetest's exit code IS its failure count -- but only when it got to
+     * choose it. An unhandled exception exits the process with the NTSTATUS,
+     * and 0xC0000005 read as "3221225477 failures" is a number that looks like
+     * data and is not: the suite died partway and every assertion after the
+     * fault went unrun. Say which of the two this is, because they mean
+     * opposite things about the run. */
+    if ExitCode >= 0xC000_0000 {
+        DbgPrint(
+            b"[WT] %s: CRASHED, exit = 0x%lx, %lu bytes of output\n\0".as_ptr() as *const i8,
+            Label,
+            ExitCode,
+            Total,
+        );
+    } else {
+        DbgPrint(
+            b"[WT] %s: exit = %lu failure(s), %lu bytes of output\n\0".as_ptr() as *const i8,
+            Label,
+            ExitCode,
+            Total,
+        );
+    }
+    CloseHandle(Rd);
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
 /* E4c robustness: winmine.exe — a STOCK i386 OS applet (menus, WM_TIMER,
  * dialog/menu resources, GetSystemMetrics-driven layout) that nobody wrote
  * for the WoW64 harness. Same inverted verdict as testgui: still running
@@ -2766,6 +3025,30 @@ pub unsafe extern "system" fn WinMain(
          * can BUGCHECK must go last. */
         TryStartWow64Lua();
         TryStartWow64Sqlite();
+
+        /* Wine's own conformance suites, under WoW64. Every guest above this
+         * line is one we wrote or one we chose; these are the ORACLE, and they
+         * assert against real Windows behaviour rather than against what our
+         * implementation happens to do. Two subtests to start, picked to
+         * separate the two things that could be wrong:
+         *   wsprintf — almost no win32k surface, so a failure here is the
+         *              runner, the pipe or the CRT, not WoW64
+         *   class    — RegisterClass/GetClassInfo/GetClassLong, i.e. real
+         *              win32k round-trips with 32<->64 handle and LONG_PTR
+         *              width conversion in the middle
+         * Silent no-op unless the i386 rostests build staged them. */
+        TryStartWow64Winetest(
+            wstr!("user32_winetest.exe").as_ptr(),
+            wstr!("wsprintf").as_ptr(),
+            b"user32:wsprintf\0".as_ptr() as *const i8,
+            60_000,
+        );
+        TryStartWow64Winetest(
+            wstr!("user32_winetest.exe").as_ptr(),
+            wstr!("class").as_ptr(),
+            b"user32:class\0".as_ptr() as *const i8,
+            60_000,
+        );
 
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's

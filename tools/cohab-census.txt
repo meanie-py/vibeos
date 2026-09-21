@@ -1202,6 +1202,7 @@ modules/rostests/kmtests/CMakeLists.txt	1	# __try region. See kmt_native_seh_shi
 modules/rostests/kmtests/CMakeLists.txt	1	# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
 modules/rostests/kmtests/CMakeLists.txt	1	# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
 modules/rostests/kmtests/CMakeLists.txt	1	# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real
+modules/rostests/winetests/user32/CMakeLists.txt	1	# (`CONTROL ... ,10,10,100,50 { 1,2,3,4,5 }`), which is what dialog.c's
 ntoskrnl/CMakeLists.txt	1	# define only keeps the dead-mirror C copies (traphandler.c/traphdlr.c,
 ntoskrnl/CMakeLists.txt	1	# guid.c — replaced by Rust (ntoskrnl-rust/src/guid.rs)
 ntoskrnl/CMakeLists.txt	1	# guid.c)

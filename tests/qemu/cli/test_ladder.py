@@ -798,3 +798,62 @@ def test_a_malformed_drain_floor_is_loud(monkeypatch, bad):
     monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, bad)
     with pytest.raises(ValueError):
         ladder.drain_floor()
+
+
+# --- Wine conformance suites ------------------------------------------------
+# The counts are the ORACLE grading us and start non-zero by construction, so
+# they are reported and never gated; a subtest that starts and vanishes is OUR
+# regression and is gated exactly like every other rung.
+
+_WT_OK = "[WT] user32:wsprintf: exit = 0 failure(s), 900 bytes of output\n"
+_WT_RED = "[WT] user32:class: exit = 7 failure(s), 4096 bytes of output\n"
+_WT_START = "[WT] user32:class: started (PID 901)\n"
+
+
+def test_winetest_failure_counts_are_parsed():
+    got = ladder.winetests(_all_pass() + _WT_OK + _WT_RED)
+    assert got == {"user32:wsprintf": 0, "user32:class": 7}
+
+
+def test_winetest_failures_do_not_red_the_ladder():
+    """A failing assertion is Wine telling us about the OS, not about the run.
+    Gating on it would paint the ladder permanently red and get it ignored."""
+    assert ladder.check(_all_pass() + _WT_START + _WT_RED) is None
+
+
+def test_a_winetest_that_started_and_vanished_is_a_failure():
+    """No exit line = the guest crashed or hung, which is ours, not Wine's."""
+    red = _red(_all_pass() + _WT_START)
+    assert red["classification"] == "LADDER_FAIL"
+    assert any("user32:class" in s and "never reported" in s for s in red["salient"])
+
+
+def test_winetest_counts_reach_the_summary():
+    line = ladder.summary(_all_pass() + _WT_OK + _WT_RED)
+    assert "user32:class=7" in line and "user32:wsprintf=0" in line
+
+
+def test_summary_says_nothing_about_winetests_when_none_ran():
+    assert "winetest" not in ladder.summary(_all_pass())
+
+
+_WT_CRASH_LINE = "[WT] user32:class: CRASHED, exit = 0xc0000005, 2043 bytes of output\n"
+
+
+def test_a_crash_is_not_read_as_a_failure_count():
+    """0xC0000005 as "3221225477 failures" is a number that looks like data and
+    is not — the suite died partway and every later assertion went unrun."""
+    text = _all_pass() + _WT_START + _WT_CRASH_LINE
+    assert ladder.winetests(text) == {}
+    assert ladder.winetests_crashed(text) == {"user32:class": "0xc0000005"}
+
+
+def test_a_crashed_subtest_counts_as_having_reported():
+    """It crashed, which is ours — but it is not LOST, and conflating the two
+    would hide a hang behind a crash."""
+    assert ladder.winetests_lost(_all_pass() + _WT_START + _WT_CRASH_LINE) == []
+
+
+def test_a_crash_reaches_the_summary_as_a_crash():
+    line = ladder.summary(_all_pass() + _WT_CRASH_LINE)
+    assert "user32:class=CRASH(0xc0000005)" in line

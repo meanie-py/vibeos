@@ -1121,6 +1121,18 @@ typedef struct _WOW64_RTL_USER_PROCESS_PARAMETERS32 {
 #define UPP64_ENVIRONMENT_OFF    0x80
 #define UPP64_WINDOWTITLE_OFF    0xB0
 #define UPP64_DESKTOPINFO_OFF    0xC0
+/* The scalar block ahead of CurrentDirectory: console + the three std handles.
+ * HANDLEs are 8 bytes here and 4 in the guest; a kernel handle value always
+ * fits in 32 bits, which is what makes a WoW64 process able to share one
+ * handle table across both views at all. */
+#define UPP64_CONSOLEHANDLE_OFF  0x10
+#define UPP64_CONSOLEFLAGS_OFF   0x18
+#define UPP64_STDINPUT_OFF       0x20
+#define UPP64_STDOUTPUT_OFF      0x28
+#define UPP64_STDERROR_OFF       0x30
+/* The window/show block between Environment and WindowTitle. */
+#define UPP64_STARTINGX_OFF      0x88
+#define UPP64_SHOWWINDOWFLAGS_OFF 0xA8
 
 /* A corrupt/unterminated Environment would otherwise make the scan below run
  * off the end of the 64-bit block. Real environments are a few KB. */
@@ -1248,6 +1260,33 @@ static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
      * CurDir.DosPath.Buffer to resolve relative/DLL paths, and a NULL buffer
      * faults at `cmpw $':',0x2(esi)` (esi=0). hello32 imported nothing so never
      * resolved a path; gui32's gdi32/user32 search hits it immediately. */
+    /* The standard handles. Nothing filled these, so every WoW64 guest saw
+     * StandardOutput == NULL and msvcrt built a stdio with no file behind it:
+     * a redirected console guest ran to completion and wrote NOTHING, silently
+     * -- measured with a Wine conformance subtest whose only job is to print
+     * "Fatal: test does not exist" and exit 1. It exited 1 and printed 0 bytes.
+     * Same class as the Environment and CurrentDirectory fields below: the
+     * guest reads a field the marshaller never wrote, and the damage is silence
+     * rather than a fault, so it survives every guest that does not print.
+     *
+     * ConsoleHandle/ConsoleFlags ride along for the same reason: a guest that
+     * inherits a console is entitled to find it. */
+    Upp32->ConsoleHandle = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_CONSOLEHANDLE_OFF);
+    Upp32->ConsoleFlags = *(ULONG *)(Upp64 + UPP64_CONSOLEFLAGS_OFF);
+    Upp32->StandardInput = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_STDINPUT_OFF);
+    Upp32->StandardOutput = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_STDOUTPUT_OFF);
+    Upp32->StandardError = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_STDERROR_OFF);
+    /* StartingX..ShowWindowFlags: nine consecutive ULONGs in BOTH layouts, so
+     * one run copies them. ShowWindowFlags is the one that bites -- it carries
+     * CreateProcess's STARTUPINFO.wShowWindow, and a guest reading zero opens
+     * its first window SW_HIDE. */
+    {
+        ULONG i;
+        const ULONG *Src = (const ULONG *)(Upp64 + UPP64_STARTINGX_OFF);
+        ULONG *Dst = &Upp32->StartingX;
+        for (i = 0; i <= (UPP64_SHOWWINDOWFLAGS_OFF - UPP64_STARTINGX_OFF) / 4; i++)
+            Dst[i] = Src[i];
+    }
     Wow64pCopyUstr32(&Upp32->CurrentDirectoryPath, Upp64 + UPP64_CURDIR_OFF, &Arena);
     Upp32->CurrentDirectoryHandle =
         (ULONG)*(ULONGLONG *)(Upp64 + UPP64_CURDIRHANDLE_OFF);

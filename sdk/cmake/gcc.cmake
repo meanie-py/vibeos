@@ -433,6 +433,37 @@ set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_fl
 
 set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
 
+# use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
+# llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
+# resource scripts that use syntax llvm-rc has never implemented; everything
+# else stays on the pinned toolchain, so this is an escape hatch and not a
+# second resource pipeline.
+#
+# It works by overriding the rule variable rather than CMAKE_RC_COMPILER,
+# because CMake expands <CMAKE_RC_COMPILER> from the global value and would
+# ignore a directory-scoped one. Flags, includes, defines and the depfile
+# plumbing are IDENTICAL to the rule above -- the compiler is the only change --
+# and the preprocessor is still the pinned clang, so the preprocessed text the
+# two compilers see is the same text.
+#
+# Missing GNU windres is reported and the caller decides; it must not silently
+# fall back to llvm-rc, which would "succeed" at configure time and then fail
+# the build with a parse error that names the resource script instead of the
+# missing host tool.
+function(use_gnu_rc)
+    if(NOT GNU_RC_COMPILER)
+        message(WARNING
+            "GNU windres not found: resource scripts in ${CMAKE_CURRENT_SOURCE_DIR} "
+            "cannot be built (llvm-rc does not implement the syntax they use). "
+            "Install mingw-w64 binutils (Debian/Ubuntu: binutils-mingw-w64-x86-64; "
+            "Homebrew: mingw-w64) or pass -DGNU_RC_COMPILER=/path/to/windres.")
+        return()
+    endif()
+    set(CMAKE_RC_COMPILE_OBJECT
+        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        PARENT_SCOPE)
+endfunction()
+
 if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     set(RC_PREPROCESSOR_TARGET "--preprocessor-arg=--target=${CMAKE_C_COMPILER_TARGET}")
 else()
