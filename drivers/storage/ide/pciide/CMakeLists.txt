@@ -17,4 +17,8 @@ add_cargo_module(pciide pciide-cargo pciide.sys KIND kerneldll
     BODY_CRATE pciide-rust DESTINATION reactos/system32/drivers
     EXTRA_DEPENDS pciidex)
 endif()
-add_registry_inf(pciide_reg.inf)
+# pciide_reg.inf is part of upstream's new "pciide is the one registered IDE driver"
+# scheme, which arrives with ENABLE_UNIATA and their rewritten ATA stack. We kept
+# uniata as the registered driver (see uniata/CMakeLists.txt), so registering this
+# one too would put two bus drivers on the same devices.
+# add_registry_inf(pciide_reg.inf)

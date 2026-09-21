@@ -167,7 +167,12 @@
 173 stdcall SHValidateUNC(ptr wstr long)
 174 stdcall SHCreateShellFolderViewEx(ptr ptr)
 175 stdcall -noname SHGetSpecialFolderPath(long long long long) SHGetSpecialFolderPathW
-176 stdcall SHSetInstanceExplorer(long) shcore.SetProcessReference
+# NOT forwarded to shcore: upstream re-pointed these two at shcore.Get/SetProcessReference
+# as part of the COM/shell restructure this merge DECLINED, so shcore.dll does not exist
+# here and the forward is dangling — browseui failed to snap it and bugchecked 0x4C
+# (STATUS_ENTRYPOINT_NOT_FOUND) during csrss startup. shell32-rust implements both
+# (wine/shellord.rs).
+176 stdcall SHSetInstanceExplorer(long)
 177 stdcall -noname DAD_SetDragImageFromListView(ptr long long)
 178 stdcall SHObjectProperties(long long wstr wstr)
 179 stdcall SHGetNewLinkInfoA(str str ptr long long)
@@ -554,7 +559,12 @@
 @ stdcall -version=0x600+ SHGetIDListFromObject(ptr ptr) # Vista:370
 @ stdcall SHGetIconOverlayIndexA(str long) # 2k3:308, Vista:371
 @ stdcall SHGetIconOverlayIndexW(wstr long) # 2k3:309, Vista:372
-@ stdcall SHGetInstanceExplorer(long) shcore.GetProcessReference # 2k3:310, Vista:373
+# NOT forwarded to shcore: upstream re-pointed these two at shcore.Get/SetProcessReference
+# as part of the COM/shell restructure this merge DECLINED, so shcore.dll does not exist
+# here and the forward is dangling — browseui failed to snap it and bugchecked 0x4C
+# (STATUS_ENTRYPOINT_NOT_FOUND) during csrss startup. shell32-rust implements both
+# (wine/shellord.rs).
+@ stdcall SHGetInstanceExplorer(long) # 2k3:310, Vista:373
 @ stub -version=0x600+ SHGetKnownFolderIDList # Vista:374
 @ stub -version=0x600+ SHGetKnownFolderPath # Vista:375
 @ stub -version=0x600+ SHGetLocalizedName # Vista:376

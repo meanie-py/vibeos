@@ -14,4 +14,8 @@ endif()
 
 add_importlibs(legide pciidex ntoskrnl hal)
 add_cd_file(TARGET legide DESTINATION reactos/system32/drivers NO_CAB FOR all)
-add_registry_inf(legide_reg.inf)
+# legide_reg.inf is part of upstream's new "pciide is the one registered IDE driver"
+# scheme, which arrives with ENABLE_UNIATA and their rewritten ATA stack. We kept
+# uniata as the registered driver (see uniata/CMakeLists.txt), so registering this
+# one too would put two bus drivers on the same devices.
+# add_registry_inf(legide_reg.inf)

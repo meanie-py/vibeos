@@ -386,6 +386,97 @@ because the earlier `check-tooling` output had been truncated to its last few li
 the edit and re-running took a minute and settled it; guessing would have cost the fix.
 
 
+## Three boot regressions the build could not see
+
+The merge built clean on all three arches and still did not boot on two of them. Every one of
+these was invisible to the compiler, the linker and all 54 source scanners; only smoke found
+them, and only a bisect located them. **arm64 passed throughout**, which was itself the clue
+in the first case.
+
+### 1. The registered IDE driver was silently swapped (i386 + amd64, BUGCHECK 0x6B)
+
+Upstream is moving to "pciide is the single registered IDE driver", building **uniata AS
+pciide** when `ENABLE_UNIATA` is set. The merge therefore:
+
+```diff
+-add_registry_inf(uniata_reg.inf)
++# add_registry_inf(uniata_reg.inf)
+```
+
+and added `add_registry_inf(pciide_reg.inf)` + `legide_reg.inf` instead. We do not set
+`ENABLE_UNIATA`; pre-merge this tree registered **uniata** and pciide not at all. One commented
+line unregistered the only IDE bus driver we start.
+
+The failure chain is worth reading once, because nothing in it names IDE:
+
+```
+PiEnumerateDevice HTREE\ROOT\0: 1 children      (a good boot has 3)
+[CDARC] matched signature, CdRomCount=0
+[IO] IopCreateArcNames FAILED
+[IO] IopMarkBootPartition FAILED
+...
+[IO] PsLocateSystemDll
+*** BUGCHECK: 0x6B (0xC000003A = STATUS_OBJECT_PATH_NOT_FOUND)
+```
+
+No IDE bus driver → no CD-ROM → no ARC name → no `\SystemRoot` → ntdll not found. **arm64
+boots from a ramdisk and never touches the IDE path**, which is exactly why one arch passed.
+
+The differential that found it was a *passing* amd64 boot from another worktree: same log,
+`3 children` and `CdRomCount=1`. Two log lines settled what an hour of reading diffs would not.
+
+### 2. A `.spec` forwarder pointed at a module we had declined (i386 + amd64, BUGCHECK 0x4C)
+
+Upstream re-pointed two shell32 exports at the COM/shell restructure:
+
+```
+176 stdcall SHSetInstanceExplorer(long) shcore.SetProcessReference
+@   stdcall SHGetInstanceExplorer(long) shcore.GetProcessReference
+```
+
+We declined shcore, so the forwards dangled — `LDR: SNAP FAIL import shcore.GetProcessReference
+from browseui.dll`, BUGCHECK 0x4C during csrss startup. `shell32-rust` implements both
+locally; the forwarders are reverted. **A declined module is not declined until nothing
+forwards to it** — sweep `*.spec` for `<declined>.` after any decline.
+
+### 3. One security method kept the old arity (i386 ONLY, BUGCHECK 0x1E)
+
+This one is mine, and it is the exact hazard described two sections above, walked into from the
+other side. Having made `ObpCallSecurityProcedure` pass upstream's new ninth argument to
+whatever sits in `SecurityProcedure`, I updated three of the **four** security methods in the
+tree. `WmipSecurityMethod` (`wmi-rust/src/guidobj.rs`) still took eight.
+
+`extern "system"` is stdcall on i386 and the **callee** pops: an 8-parameter method reached
+through a 9-argument call leaks four bytes of stack *per call*. The boot got all the way to the
+system-driver phase and then died at the first heavy registry walk. amd64 and arm64 pass extra
+arguments in registers and never noticed.
+
+**The lesson is not "check the callers" — I did that. It is that a function POINTER has no
+single callee.** When an indirect-call signature changes, the unit of work is every
+implementation that can land in that slot, enumerated mechanically:
+
+```bash
+# every security method, with its arity
+grep -rn 'SecurityProcedure *= *' --include='*.rs' --include='*.c' sdk/lib/rust/ ntoskrnl/
+# ...then check each target's parameter count. Same for CloseProcedure / OkToCloseProcedure.
+```
+
+All four are now nine; all close methods are five. That sweep belongs in a scanner.
+
+### What this says about the gate
+
+`check` and `check-tooling` were green for all three of these. The ARC-name one would have been
+caught by nothing short of a boot. **Smoke is the north star, and a merge of this size is not
+landed until it has passed on every arch** — a green build on three arches proved only that the
+symbols resolved.
+
+Also worth recording: bisecting cost four build+smoke cycles and found the answer three times.
+Each time I had a plausible theory first, and each time the theory was wrong — the security
+methods looked obviously guilty for the ARC-name failure (they were innocent), and the cache
+manager's new race guard looked obviously guilty for the i386 hang (also innocent, and a
+faithful port).
+
+
 ## Owed, in rough priority order
 
 1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation

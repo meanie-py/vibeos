@@ -99,7 +99,15 @@ add_importlibs(uniata scsiport ntoskrnl hal)
 add_dependencies(uniata rust_uniata)
 target_link_libraries(uniata ${UNIATA_RUST_LIB})
 add_cd_file(TARGET uniata DESTINATION reactos/system32/drivers NO_CAB FOR all)
-# add_registry_inf(uniata_reg.inf)
+# RESTORED 2026-09-20 (upstream-sync). Upstream commented this out as part of moving to
+# "uniata IS pciide when ENABLE_UNIATA is set" — see the OUTPUT_NAME rename below and
+# their new pciide_reg.inf. We do NOT set ENABLE_UNIATA, and pre-merge this tree
+# registered uniata here and pciide not at all. Losing this line unregistered the only
+# IDE bus driver we actually start: root enumeration went from 3 children to 1, the
+# CD-ROM never appeared, IopCreateArcNames FAILED, \SystemRoot was never created and
+# PsLocateSystemDll bugchecked 0x6B on i386 and amd64. arm64 boots from a ramdisk and
+# was unaffected, which is exactly why two arches failed and one did not.
+add_registry_inf(uniata_reg.inf)
 add_driver_inf(uniata uniata_comm.inf)
 
 if(ENABLE_UNIATA)
