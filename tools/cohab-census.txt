@@ -1221,6 +1221,8 @@ hal/halx86/pic.cmake	1	# pic/halinit.c — replaced by Rust (sdk/lib/rust/hal-ru
 hal/halx86/pic.cmake	1	# pic/irql.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/irql.rs)
 hal/halx86/pic.cmake	1	# pic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic_pic.rs)
 hal/halx86/pic.cmake	1	# pic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
+modules/rostests/CMakeLists.txt	1	# one-file static lib (winetestlib.c), and the acpi and crtdll apitests link it.
+modules/rostests/apitests/rtl/CMakeLists.txt	1	# rtl_um is an empty cohab stub in this tree (its libsupp.c is Rust now,
 modules/rostests/apitests/sdk/CMakeLists.txt	1	#add_executable(sdk_apitest testlist.c)
 modules/rostests/apitests/shell32/CMakeLists.txt	1	#CUserNotification.cpp # Test is broken on Win 2003
 modules/rostests/apitests/shell32/CMakeLists.txt	1	#OpenAs_RunDLL.cpp # Test hangs on Win 2003

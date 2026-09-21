@@ -20,6 +20,7 @@ Quarantines still need to be expressible, so a committed
 subtracting from a derived set is loud: a quarantine naming a suite that no
 longer exists is reported, rather than silently doing nothing.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -107,12 +108,11 @@ def main(argv: list[str] | None = None) -> int:
     skip_lines = [
         f"# apitest subtest skips — {args.arch}. GENERATED from {qpath.name}.",
         "# '<suite.exe> <subtest>' per line; the sweep announces each as SKIP.",
-    ] + skipped
+        *skipped,
+    ]
     skip_out.write_text("\n".join(skip_lines) + "\n", encoding="utf-8")
 
-    stale_subtest_suites = sorted(
-        {e.split(" ", 1)[0] for e in skipped} - set(found)
-    )
+    stale_subtest_suites = sorted({e.split(" ", 1)[0] for e in skipped} - set(found))
     if stale_subtest_suites:
         print(
             f"gen_suites: {qpath.name} has subtest skips for suite(s) this build did "
