@@ -247,7 +247,7 @@ unsafe fn KiDispatchExceptionToUser(
     ExceptionRecord: PEXCEPTION_RECORD,
 ) -> BOOLEAN {
     let mut LocalExceptRecord: EXCEPTION_RECORD = core::mem::zeroed();
-    let UserRsp: u64;
+    let mut UserRsp: u64;
     let UserStack: PKUSER_EXCEPTION_STACK;
     let mut ExceptionRecordPtr = ExceptionRecord;
     
@@ -259,6 +259,50 @@ unsafe fn KiDispatchExceptionToUser(
     }
     
     UserRsp = ((*Context).Rsp - core::mem::size_of::<KUSER_EXCEPTION_STACK>() as u64) & !15u64;
+
+    // A STACK OVERFLOW cannot be reported on the stack that just overflowed,
+    // and until this clamp it structurally never was.
+    //
+    // MiCheckForUserStackOverflow commits the GUARANTEED page at
+    // DeallocationStack + PAGE_SIZE, points NtTib.StackLimit at it and raises
+    // STATUS_STACK_OVERFLOW. The last page, [DeallocationStack, StackLimit),
+    // is the hard floor and is never committed. But the record goes BELOW the
+    // faulting Rsp -- which by definition is already at the bottom -- so it
+    // lands in that uncommitted floor every time. The pre-fault below then
+    // fails with 0xc0000005, dispatch aborts, and csrss terminates the process
+    // with 0x80, laundering the cause. MEASURED: rsp=0x60920, limit=0x61000,
+    // dealloc=0x60000 -- the record wanted 0x60360, one page under the lowest
+    // committed byte.
+    //
+    // So place it at StackLimit when it would fall below: that IS the page the
+    // guarantee exists to provide, the thread has no live data down there (it
+    // faulted trying to get there), and a handler that runs on the guaranteed
+    // page is the entire point of guaranteeing one. Only when even that does
+    // not fit is the exception genuinely undeliverable.
+    {
+        let teb = (*PsGetCurrentThread()).Teb as PTEB;
+        if !teb.is_null() {
+            let limit = (*teb).NtTib.StackLimit as u64;
+            let base = (*teb).NtTib.StackBase as u64;
+            let size = core::mem::size_of::<KUSER_EXCEPTION_STACK>() as u64;
+            // The `limit + size <= Rsp` half is LOAD-BEARING and its absence
+            // was a livelock. Without it the clamp also fires when Rsp is
+            // already AT StackLimit -- there is then no committed room below,
+            // so the frame is placed back at the address that just faulted,
+            // the handler re-overflows and re-raises, forever. Measured at
+            // 273,430 iterations in one boot (rsp=limit=0x61000), which read
+            // as "no failed dispatches" because dispatch never got to fail.
+            // Clamp only where doing so yields real room.
+            if limit != 0
+                && UserRsp < limit
+                && limit.saturating_add(size) <= base
+                && limit.saturating_add(size) <= (*Context).Rsp
+            {
+                UserRsp = (limit + 15) & !15u64;
+            }
+        }
+    }
+
     UserStack = UserRsp as PKUSER_EXCEPTION_STACK;
     
     _enable();
@@ -315,6 +359,20 @@ unsafe fn KiDispatchExceptionToUser(
                             (*teb).DeallocationStack as usize,
                         )
                     };
+                    if (*ExceptionRecordPtr).ExceptionCode == STATUS_STACK_OVERFLOW
+                        || (sb != 0 && (*Context).Rsp <= sl as u64)
+                    {
+                        // Name it. Otherwise this is the anonymous 0x80 that
+                        // made every stack bug in this system unattributable:
+                        // the thread is out of stack AND out of the room the
+                        // guarantee was supposed to leave for reporting it.
+                        crate::dbg_print!(
+                            b"[KI-EXC] STACK EXHAUSTED and undeliverable: no committed room for the exception record (rsp=%p limit=%p dealloc=%p)\n\0",
+                            (*Context).Rsp as usize,
+                            sl,
+                            ds,
+                        );
+                    }
                     crate::dbg_print!(
                         b"[KI-EXC] user dispatch FAILED: pre-fault of stack page %p = 0x%lx (rsp=%p base=%p limit=%p dealloc=%p)\n\0",
                         page,

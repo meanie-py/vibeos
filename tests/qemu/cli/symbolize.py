@@ -115,6 +115,40 @@ def lookup_symbol(repo: Path, arch: str, module: str, addr: int) -> tuple[str, i
     return best
 
 
+def lookup_symbol_live(
+    repo: Path, arch: str, mod: Module, addr: int
+) -> tuple[str, int, str] | None:
+    """nm a single module on demand.
+
+    For a module that shares an image base the main index holds no rows, by
+    design -- an address cannot identify it. But when the caller names the
+    module with --module they have supplied that identity themselves, and the
+    only thing still missing is the symbols. One nm costs ~0.1s.
+    """
+    cp = subprocess.run(
+        ["bash", str(repo / "qemu" / "build-user-index.sh"), arch, "--one", str(repo / mod.path)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if cp.returncode != 0:
+        return None
+    best: tuple[str, int, str] | None = None
+    for line in cp.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 4:
+            continue
+        try:
+            sym_addr = int(parts[1], 16)
+        except ValueError:
+            continue
+        if sym_addr > addr:
+            continue
+        if best is None or sym_addr > best[1]:
+            best = (parts[2], sym_addr, parts[3])
+    return best
+
+
 def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) -> str:
     mods = load_modules(repo, arch)
     if not mods:
@@ -143,6 +177,8 @@ def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) ->
 
     m = uniq[0]
     hit = lookup_symbol(repo, arch, m.name, addr)
+    if hit is None and want_module:
+        hit = lookup_symbol_live(repo, arch, m, addr)
     if hit is None:
         return f"{addr:#x} -> {m.name}+{addr - m.base:#x} (no symbol table entry)"
     name, sym_addr, src = hit
