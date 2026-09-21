@@ -454,3 +454,37 @@ A few headline items:
 | +/- | C file | Rust |
 |---|---|---|
 | +0/−89 | `dll/win32/ws2_32/src/addrconv.c` | `sdk/lib/rust/ws2_32-rust/src/src/addrconv.rs` |
+
+## Next up: `sdk/lib/rtl/rangelist.c` — and the reason it is first
+
+The merge rewrote it (+357/-153) **and shipped a 371-line kmtest for it**
+(`modules/rostests/kmtests/rtl/RtlRangeList.c`). A flipped file with a brand-new upstream test
+is the cheapest possible port: the oracle arrives with the work.
+
+It already caught a live bug on its first run — `RtlRangeList: pass=239 fail=1`,
+`[1] Flags = 0x0, expected 0x1`. `rtl-rangelist/src/lib.rs` hand-wrote
+`RTL_RANGE_LIST_ADD_SHARED` as `0x1`, which is actually `RTL_RANGE_LIST_ADD_IF_CONFLICT`
+(`sdk/include/ndk/rtltypes.h`), so `RtlAddRange` never set `RTL_RANGE_SHARED` on the stored
+entry and `RtlIsRangeAvailable` never saw a shared range. Fixed, along with
+`RtlIsRangeAvailable` testing the entry-flag constant where it meant `RTL_RANGE_LIST_SHARED_OK`
+(same value, wrong namespace — it worked by coincidence). This is the class `--seal-facts`
+exists to prevent, in a crate that predates it.
+
+Also fixed, from the header type sweep: upstream widened `RtlFindRange`'s `Length` and
+`Alignment` `ULONG -> ULONGLONG`, and the merge's `ntoskrnl.spec` update
+(`ptr int64 int64 int64 int64 long long ptr ptr ptr`) had been reverted during conflict
+resolution while the Rust callee stayed 32-bit. The real C caller is the PnP resource arbiter
+(`sdk/lib/drivers/arbiter/range.c:762`), so on i386 that was an 8-byte stdcall callee-pops
+mismatch per call. Caught instantly by the decoration checker once the callee was widened —
+`undefined symbol: _RtlFindRange@48` — which is the field manual's "stdcall decoration is a
+free ABI width checker" earning its keep.
+
+**Still owed on this file**, deliberately deferred out of the merge land so it does not grow:
+
+- Our `RtlAddRange` has **no conflict detection at all** — the reference C checks for
+  overlapping ranges and honours `RTL_RANGE_LIST_ADD_IF_CONFLICT` (`rangelist.c:152,207`). Our
+  561-line Rust is a translation of the pre-merge ~800-line C; the merged C is 1,012 lines.
+- `RtlGetLastRange` and `RtlInvertRangeListEx` are new upstream exports with no implementation
+  anywhere in our tree. The merge added both spec lines and conflict resolution reverted them.
+  They come back with the port, not before — an export with no implementation is the failure
+  mode this lane already hit ~230 times.

@@ -1790,7 +1790,7 @@ sdk/lib/uuid/CMakeLists.txt	1	# oledbnewiid.c
 sdk/lib/uuid/CMakeLists.txt	1	# qosguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# tapi3iid.c
 sdk/lib/uuid/CMakeLists.txt	1	# vcguids.c
-sdk/lib/vcruntime/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
+sdk/lib/vcstartup/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
 subsystems/csr/csrlib/CMakeLists.txt	1	# api.c — replaced by Rust (smss-csrss-rust/src/csrlib/api.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# capture.c — replaced by Rust (smss-csrss-rust/src/csrlib/capture.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# connect.c — replaced by Rust (smss-csrss-rust/src/csrlib/connect.rs)
