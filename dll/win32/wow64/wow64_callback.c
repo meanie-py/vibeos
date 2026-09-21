@@ -76,6 +76,23 @@ static void Wow64pClearCpuResumeFlag(void)
     if (CpuArea)
         *(volatile ULONG *)(CpuArea + 4) = 0;
 }
+
+/* CpuArea+8 is where BTCpuSimulate stashes the 64-bit dispatcher RSP, and it
+ * is the ONLY thing the 32->64 syscall transition has to find its native
+ * stack with (`mov rsp, [r15 - 8]` in wow64cpu.S). A user callback runs the
+ * guest through a NESTED BTCpuSimulate, which overwrites that slot with the
+ * deeper RSP -- and the callback never returns through the asm, so nothing
+ * puts the outer value back. Every subsequent guest syscall then switched to
+ * the stale, lower stack, so each callback permanently consumed one
+ * dispatcher frame of the thread's 1MB native stack: taskmgr died at ~950
+ * callbacks, and the death was a genuine stack exhaustion with no runaway
+ * recursion behind it. Save around the nesting, restore on the way out. */
+static ULONGLONG *Wow64pCpuDispatchRspSlot(void)
+{
+    PBYTE *Tls = (PBYTE *)((PBYTE)NtCurrentTeb() + WOW64_TEB_TLSSLOTS_OFFSET);
+    PBYTE CpuArea = Tls[WOW64_TLS_CPURESERVED_SLOT];
+    return CpuArea ? (ULONGLONG *)(CpuArea + 8) : NULL;
+}
 #endif
 
 /* ---- minimal setjmp/longjmp (ntdll-only DLL: no CRT import) --------------
@@ -216,6 +233,7 @@ typedef struct _WOW64_CB_FRAME {
     PVOID RetBuf;            /* 64-bit result to hand to the real NtCallbackReturn */
     ULONG RetLen;
     WOW64_CB_CONTEXT SavedCtx;
+    ULONGLONG SavedDispatchRsp; /* amd64: CpuArea+8, clobbered by nesting */
     /* 21 slots on arm64, 30 on amd64 (10 nonvol XMMs); size for the larger. */
     unsigned long long Jmp[32];
     UCHAR Buf64[1024];       /* translated 64-bit result storage */
@@ -348,7 +366,19 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
     NTSTATUS St;
 
     if (Wow64TraceSyscalls)
-        DbgPrint("[WOW64CB] -> callback %lu (arg=%p len=%lu)\n", Index, Arg, Len);
+    {
+        /* &Frame is the native 64-bit stack pointer at this nesting level, and
+         * the Prev chain is the nesting depth. Printing both turns "the thread
+         * ran out of its 1MB native stack" into a measurement: a monotonically
+         * falling sp at constant depth is a LEAK, a falling sp tracking depth
+         * is recursion. Inferring depth from the -> / <- trace does not work,
+         * because the unmarshalled return path never prints a <-. */
+        ULONG Depth = 0;
+        const WOW64_CB_FRAME *W = (const WOW64_CB_FRAME *)*Wow64pCbTlsSlot();
+        while (W && Depth < 10000) { Depth++; W = W->Prev; }
+        DbgPrint("[WOW64CB] -> callback %lu (arg=%p len=%lu sp=%p depth=%lu)\n",
+                 Index, Arg, Len, (PVOID)&Frame, Depth);
+    }
 
     if (!Wow64pKiUserCallbackDispatcher32 || !Wow64pBTCpuGetContext ||
         !Wow64pBTCpuSetContext || !Wow64pBTCpuSimulate)
@@ -367,6 +397,14 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
     Frame.SavedCtx.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
     Wow64pBTCpuGetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL,
                           &Frame.SavedCtx);
+    Frame.SavedDispatchRsp = 0;
+#ifdef _M_AMD64
+    {
+        ULONGLONG *Slot = Wow64pCpuDispatchRspSlot();
+        if (Slot)
+            Frame.SavedDispatchRsp = *Slot;
+    }
+#endif
     *Wow64pCbTlsSlot() = &Frame;
 
     if (Wow64pSetJmp(Frame.Jmp) == 0)
@@ -598,6 +636,13 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
         /* Marshalling failed / unimplemented: unwind our frame and tell the
          * kernel the callback failed (loud, non-fatal for optional paths). */
         *Wow64pCbTlsSlot() = Frame.Prev;
+#ifdef _M_AMD64
+        {
+            ULONGLONG *Slot = Wow64pCpuDispatchRspSlot();
+            if (Slot && Frame.SavedDispatchRsp)
+                *Slot = Frame.SavedDispatchRsp;
+        }
+#endif
         return NtCallbackReturn(NULL, 0, WOW64_STATUS_NOT_IMPLEMENTED);
     }
 
@@ -614,6 +659,11 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
      * syscall that this callback interrupted must still do its normal
      * return-to-stub fixup, so clear it before we hand control back. */
     Wow64pClearCpuResumeFlag();
+    {
+        ULONGLONG *Slot = Wow64pCpuDispatchRspSlot();
+        if (Slot && Frame.SavedDispatchRsp)
+            *Slot = Frame.SavedDispatchRsp;
+    }
 #endif
     St = NtCallbackReturn(Frame.RetBuf, Frame.RetLen, Frame.Status);
     DbgPrint("[WOW64CB] FATAL: NtCallbackReturn(%p,%lu) => %08lx fell through\n",
