@@ -752,6 +752,14 @@ typedef struct _ARM_LOADER_BLOCK
     ULONG SecondLevelDcacheFillSize;
     ULONG SecondLevelIcacheSize;
     ULONG SecondLevelIcacheFillSize;
+    /* Physical addresses the loader discovered from firmware (ACPI), so the
+     * kernel never hardcodes a board's MMIO layout. Zero means "firmware did
+     * not describe it" — consumers must treat that as absent, never as a
+     * licence to fall back to a QEMU address, which is ordinary RAM on a
+     * physical board (writing there corrupts memory silently). */
+    ULONG64 Arm64UartBase;
+    ULONG64 Arm64GicDistributorBase;
+    ULONG64 Arm64GicCpuInterfaceBase;
 #else
     ULONG PlaceHolder;
 #endif
