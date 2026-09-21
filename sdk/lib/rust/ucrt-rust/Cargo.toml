@@ -59,4 +59,8 @@ default = []
 # alias shim that existed only to work around them. See src/bits.rs.
 bits = []
 
+# mbstring/ismbbyte.cpp -- the 24-export _ismbb* family. The first
+# LOCALE-AWARE takeover, so it is also the first consumer of locale_update.
+ismbbyte = []
+
 [dependencies]

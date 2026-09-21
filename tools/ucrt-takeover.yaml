@@ -56,3 +56,53 @@ families:
       - _rotl64
       - _rotr
       - _rotr64
+
+  ismbbyte:
+    replaces:
+      - sdk/lib/ucrt/mbstring/ismbbyte.cpp
+    oracle: >
+      No dedicated winetest exists for this family in either suite, which is
+      worth stating plainly rather than leaving implied. What grades it instead
+      is that the whole family is one ~10-line generic over two tables whose
+      CONTENTS are independently verified: the mbctype tables were regenerated
+      from published DBCS codepage definitions and matched Microsoft's
+      byte-for-byte, and the ctype table likewise from the Unicode Character
+      Database (see docs/engineering/active-lanes/{mbctype,ctype}-table.md).
+      So the data is checked even though the predicates are not.
+    note: >
+      The first LOCALE-AWARE takeover, and the reason locale_update had to come
+      first: a NULL _locale_t means "the current thread's", so the 12 non-_l
+      spellings are as dependent on per-thread data as the _l twins.
+
+      Three things here are silent if wrong, all called out in the module: the
+      C returns a LOGICAL or (1 or 0, not the masked bits) with _ismbbblank's
+      literal-tab case the deliberate exception returning _BLANK; mbctype is
+      257 entries indexed at 1 + byte; and the input is truncated to a byte
+      before lookup. The missing null check on mbcinfo is transcribed, not
+      fixed -- only _ismbbkana tests it in the C, and diverging would change
+      behaviour callers were built against.
+    exports:
+      - _ismbbalnum
+      - _ismbbalnum_l
+      - _ismbbalpha
+      - _ismbbalpha_l
+      - _ismbbblank
+      - _ismbbblank_l
+      - _ismbbgraph
+      - _ismbbgraph_l
+      - _ismbbkalnum
+      - _ismbbkalnum_l
+      - _ismbbkana
+      - _ismbbkana_l
+      - _ismbbkprint
+      - _ismbbkprint_l
+      - _ismbbkpunct
+      - _ismbbkpunct_l
+      - _ismbblead
+      - _ismbblead_l
+      - _ismbbprint
+      - _ismbbprint_l
+      - _ismbbpunct
+      - _ismbbpunct_l
+      - _ismbbtrail
+      - _ismbbtrail_l

@@ -13,6 +13,9 @@
 #[cfg(feature = "bits")]
 pub mod bits;
 
+#[cfg(feature = "ismbbyte")]
+pub mod ismbbyte;
+
 // Always compiled: it defines no symbols, only UCRT's locale layout and the
 // compile-time assertions pinning it. Gating it would mean the pins only hold
 // when some other family happens to be on.
