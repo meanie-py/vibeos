@@ -14,7 +14,10 @@ set_module_type(rshell win32dll UNICODE)
 target_link_libraries(rshell
     shellbars
     shellmenu
-    shelldesktop
+    # shelldesktop — the whole object library is Rust now (shell32-rust/src/shelldesktop).
+    # rshell does NOT link libshell32_rust.a, and its .spec exports SHCreateDesktop and
+    # SHDesktopMessageLoop, so it resolves both through shell32's import lib below —
+    # exactly as it already does for ShellDDEInit since dde.cpp flipped.
     uuid
     wine
     cpprt

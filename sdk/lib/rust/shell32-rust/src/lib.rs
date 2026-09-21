@@ -174,6 +174,14 @@ pub mod dialogs_item_prop;
 // The shell's own dialogs: Run, Pick-Icon, Restart/Logoff/Exit-Windows.
 #[path = "dialogs/dialogs.rs"]
 pub mod dialogs_dialogs;
+// dialogs/filetypes.cpp — the Folder Options "File Types" page. Its `_FILE_TYPE_ENTRY` record
+// was unreachable until the array-bound resolver could evaluate the bounds the TU declares
+// beside it: `ASSOC_CCHMAX (32 + 1)` is macro ARITHMETIC, and `TYPENAME_CCHMAX` is
+// `max(100, RTL_FIELD_SIZE(SHFILEINFOA, szTypeName))` — a `max` over a field measured in the
+// real header. Both are now resolved deterministically (33 and 100), because a guessed array
+// bound is not a compile error, it silently mis-lays-out the struct every body here touches.
+#[path = "dialogs/filetypes.rs"]
+pub mod dialogs_filetypes;
 
 // CDefViewDual — the IShellFolderViewDual automation object. Assembled at the C tree's path
 // (shell32/) so re-runs stay stable, but it is a COM class rather than one of that module's
@@ -258,9 +266,9 @@ pub mod drives_folder_tu;
 #[path = "folders/CDrivesFolderEnum.rs"]
 pub mod drives_folder_enum;
 // folders/CRecycleBin.cpp: CRecycleBin itself was already `recycle_bin.rs`. These are its free
-// helpers plus BOTH of its file-local COM classes. The two companions that this TU only *calls*
-// — CRecyclerDropTarget and CRecycleBinFolderViewCB — stay C++; see
-// dll/win32/shell32/rust_recyclebin_bridges_stub.cpp for why neither could come across.
+// helpers plus BOTH of its file-local COM classes. Both companions this TU only *calls* have
+// since come across too: CRecyclerDropTarget got its own .cpp, and CRecycleBinFolderViewCB is
+// `folders/CRecycleBinFolderViewCB.rs` below.
 pub mod def_view_util;
 // folders/CRegFolder.cpp, cohab-flipped. Three modules for one TU: the two COM classes and
 // the file-scope helpers are separate rustconv runs, each overwriting its own file.
@@ -270,6 +278,12 @@ pub mod reg_folder;
 pub mod reg_folder_enum;
 #[path = "folders/regfolder_free.rs"]
 pub mod reg_folder_free;
+// folders/CRecycleBinFolderViewCB.cpp. Recorded as un-buyable ("its scaffold preflight refuses
+// it twice"), which was a detection gap: shellutils.h ALSO overloads
+// `ShellObjectCreator(CComPtr<T> &objref)`, deducing T from the argument — so the class name
+// appears nowhere in the call and every `<ClassName>`-keyed scan saw nothing.
+#[path = "folders/CRecycleBinFolderViewCB.rs"]
+pub mod recycle_bin_folder_view_cb;
 #[path = "folders/CRecycleBin.rs"]
 pub mod recycle_bin_tu;
 #[path = "folders/CRecycleBinEnum.rs"]

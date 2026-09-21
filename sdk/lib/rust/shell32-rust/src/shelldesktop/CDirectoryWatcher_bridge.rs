@@ -1,41 +1,72 @@
-//! Reaching `CDirectoryWatcher` — still C++ — from the translated CChangeNotifyServer.
+//! The five `CDirectoryWatcher_*_RustBridge` symbols, now PUBLISHED from Rust.
 //!
-//! `CDirectoryWatcher` (CDirectoryWatcher.h:14) is a plain C++ class with NON-VIRTUAL methods
-//! and a destructor. Neither of those is callable from Rust: there is no vtable to dispatch
-//! through, and `delete p` is two operations (run `~CDirectoryWatcher()`, then free) that no
-//! Rust expression spells. So CDirectoryWatcher.cpp publishes four `extern "C"` shims and this
-//! module declares them.
+//! This module used to DECLARE these as `extern "C"`, because CDirectoryWatcher.cpp defined
+//! them so the translated CChangeNotifyServer could reach a C++ class with non-virtual
+//! methods. That file is Rust now, so the shims move rather than vanish — the same thing
+//! CMenuFocusManager's eight bridges did, and what this module's previous docs predicted
+//! would happen "when CDirectoryWatcher.cpp is itself translated".
 //!
-//! THE DESTRUCTOR IS THE LOAD-BEARING ONE. `delete pDirWatch` in the C++ runs
-//! `~CDirectoryWatcher()`, which closes `m_hDirectory` and unlinks the watcher from the global
-//! list. Lowering it as the `free()` that C++ `operator delete` reduces to — which IS the
-//! right answer for a POD like `CWatchItem` — would skip all of that and leak a live directory
-//! handle per registration. The two cases look identical in the C and are not.
+//! Callers are unchanged: `CChangeNotifyServer.rs` still calls these names, and so would any
+//! C++ left in the DLL, because the names and the ABI are identical. `extern "C"`, not
+//! `extern "system"` — the C++ declared no WINAPI on them, so they were cdecl.
 //!
-//! Temporary by construction: when CDirectoryWatcher.cpp is itself translated these move into
-//! Rust under the same names, the way CMenuFocusManager's eight bridges did.
+//! HAND-WRITTEN, deliberately. Each body is a one-line forward, which is precisely the shape
+//! that produced a factory calling ITSELF when it was bought for CChangeNotifyServer. The
+//! fully-qualified paths below are what make that impossible to write by accident.
 
 use crate::prelude::*;
 
-/// Opaque: this crate never sees the layout, only passes the pointer back.
-#[repr(C)]
-pub struct CDirectoryWatcher {
-    _unused: [u8; 0],
+pub use crate::shelldesktop::CDirectoryWatcher::CDirectoryWatcher;
+
+/// CDirectoryWatcher.h:20 `static CDirectoryWatcher *Create(HWND, LPCWSTR, BOOL)`.
+///
+/// A C++ STATIC, so it has no receiver — but the translated worker carries one anyway (the
+/// same shape as CMenuFocusManager's Acquire/ReleaseManager), so it gets a null `this`.
+#[no_mangle]
+pub unsafe extern "C" fn CDirectoryWatcher_Create_RustBridge(
+    hNotifyWnd: HWND,
+    pszDirectoryPath: LPCWSTR,
+    fSubTree: BOOL,
+) -> *mut CDirectoryWatcher {
+    crate::shelldesktop::CDirectoryWatcher::CDirectoryWatcher_Create_body(
+        core::ptr::null_mut(),
+        hNotifyWnd,
+        pszDirectoryPath,
+        fSubTree,
+    )
 }
 
-extern "C" {
-    /// CDirectoryWatcher.h:20 `static CDirectoryWatcher *Create(HWND, LPCWSTR, BOOL)`.
-    pub fn CDirectoryWatcher_Create_RustBridge(
-        hNotifyWnd: HWND,
-        pszDirectoryPath: LPCWSTR,
-        fSubTree: BOOL,
-    ) -> *mut CDirectoryWatcher;
-    /// CDirectoryWatcher.h:27 `BOOL RequestAddWatcher()`.
-    pub fn CDirectoryWatcher_RequestAddWatcher_RustBridge(p: *mut CDirectoryWatcher) -> BOOL;
-    /// CDirectoryWatcher.h:28 `BOOL RequestTermination()`.
-    pub fn CDirectoryWatcher_RequestTermination_RustBridge(p: *mut CDirectoryWatcher) -> BOOL;
-    /// CDirectoryWatcher.h:21 `static void RequestAllWatchersTermination()`.
-    pub fn CDirectoryWatcher_RequestAllWatchersTermination_RustBridge();
-    /// `delete p` — destructor THEN free. See the module docs.
-    pub fn CDirectoryWatcher_delete_RustBridge(p: *mut CDirectoryWatcher);
+/// CDirectoryWatcher.h:27 `BOOL RequestAddWatcher()`.
+#[no_mangle]
+pub unsafe extern "C" fn CDirectoryWatcher_RequestAddWatcher_RustBridge(
+    p: *mut CDirectoryWatcher,
+) -> BOOL {
+    crate::shelldesktop::CDirectoryWatcher::CDirectoryWatcher_RequestAddWatcher_body(p)
+}
+
+/// CDirectoryWatcher.h:28 `BOOL RequestTermination()`.
+#[no_mangle]
+pub unsafe extern "C" fn CDirectoryWatcher_RequestTermination_RustBridge(
+    p: *mut CDirectoryWatcher,
+) -> BOOL {
+    crate::shelldesktop::CDirectoryWatcher::CDirectoryWatcher_RequestTermination_body(p)
+}
+
+/// CDirectoryWatcher.h:21 `static void RequestAllWatchersTermination()`. Static, so null `this`.
+#[no_mangle]
+pub unsafe extern "C" fn CDirectoryWatcher_RequestAllWatchersTermination_RustBridge() {
+    crate::shelldesktop::CDirectoryWatcher::CDirectoryWatcher_RequestAllWatchersTermination_body(
+        core::ptr::null_mut(),
+    )
+}
+
+/// `delete p` — destructor THEN free.
+///
+/// STILL the load-bearing one, for the reason the old module docs gave: `~CDirectoryWatcher()`
+/// closes `m_hDirectory`. Lowering this to a bare free — which IS right for a POD like
+/// `CWatchItem` — would leak a live directory handle per registration. `_delete` pairs the
+/// destructor body with the matching deallocation, so that distinction survives the move.
+#[no_mangle]
+pub unsafe extern "C" fn CDirectoryWatcher_delete_RustBridge(p: *mut CDirectoryWatcher) {
+    crate::shelldesktop::CDirectoryWatcher::CDirectoryWatcher_delete(p)
 }

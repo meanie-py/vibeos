@@ -86,6 +86,7 @@ base/shell/explorer/CMakeLists.txt	1	# trayprop.cpp — replaced by Rust (explor
 base/shell/explorer/CMakeLists.txt	1	# traywnd.cpp — replaced by Rust (explorer-rust traywnd.rs) — the taskbar
 base/shell/explorer/CMakeLists.txt	1	# util.cpp — replaced by Rust (sdk/lib/rust/explorer-rust/src/explorer/util.rs);
 base/shell/rshell/CMakeLists.txt	1	# (misc.cpp) over rshell's COM module.
+base/shell/rshell/CMakeLists.txt	1	# exactly as it already does for ShellDDEInit since dde.cpp flipped.
 base/system/lsass/CMakeLists.txt	1	# FULL flip + CARGO-DRIVEN LINK. lsass.c is replaced by Rust (lsass-rust), and
 base/system/lsass/CMakeLists.txt	1	# Keep lsass.c on disk (never delete the C — translation philosophy).
 base/system/sehtest/CMakeLists.txt	1	# ntoskrnl/seh_poc.c. Compiled with REAL clang native SEH (-fms-extensions),
@@ -785,9 +786,16 @@ dll/win32/shell32/CMakeLists.txt	1	# wine/shellstring.c — replaced by Rust (sh
 dll/win32/shell32/CMakeLists.txt	1	# wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
-dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp — replaced by shell32-rust/src/shelldesktop/. Three modules
-dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but
-dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# dde.cpp — replaced by shell32-rust/src/shelldesktop/dde.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp -> shelldesktop/CChangeNotifyServer{,_window,_free}.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDesktopBrowser.cpp -> SHCreateDesktop, SHDesktopMessageLoop, SHIsTempDisplayMode.
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDesktopBrowser.cpp -> shelldesktop/CDesktopBrowser{,_window,_free,_exports}.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp -> only C++-mangled `CDirectoryList::*` methods, whose sole
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp -> shelldesktop/CDirectoryList.rs + CDirectoryItem.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryWatcher.cpp -> shelldesktop/CDirectoryWatcher{,_free,_bridge}.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryWatcher.cpp -> the five `CDirectoryWatcher_*_RustBridge` shims, now published
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# consumer was CDirectoryWatcher.cpp. It leaves with it.
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# dde.cpp -> shelldesktop/dde.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# does for ShellDDEInit (ordinal 188) since dde.cpp flipped. That is why `add_importlibs`
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuBand.cpp — replaced by Rust (sdk/lib/rust/menuband-rust). Unlike the shell32-
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuDeskBar.cpp — replaced by menuband-rust/src/menu_desk_bar.rs
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuFocusManager.cpp — replaced by menuband-rust/src/menu_focus_manager.rs. A PLAIN
