@@ -12,3 +12,8 @@
 
 #[cfg(feature = "bits")]
 pub mod bits;
+
+// Always compiled: it defines no symbols, only UCRT's locale layout and the
+// compile-time assertions pinning it. Gating it would mean the pins only hold
+// when some other family happens to be on.
+pub mod locale;
