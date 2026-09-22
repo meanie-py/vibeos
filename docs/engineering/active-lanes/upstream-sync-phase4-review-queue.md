@@ -639,3 +639,54 @@ One stale comment found on the way: `ntoskrnl/kmsafecopy.c` still says arm64 was
 REJECTED". `probe.rs` records arm64 as PROTECTED since 2026-07-17 after the `.xdata`
 `save_next` decoder fix (§9.69/§9.93). `probe.rs` is the newer of the two; `kmsafecopy.c`'s
 header needs the correction.
+
+## The harness was lying about its own budget, and the driver turned that into false bugs
+
+Between the SetSysColors root-cause and the next round it became clear that the characterisation
+loop had a worse problem than any bug it was finding: **it was manufacturing bugs.**
+
+`launch_drain_secs` is consumed by `test_payload.py`'s drain loop, which was
+`for _ in range(budget)` wrapped around `serial_output(timeout=1.0)`. That call returns the
+instant bytes are already waiting, so one "second" cost a full second only while the guest was
+**silent**, and about 20 ms while it was talking. The budget therefore shrank in proportion to
+how chatty the payload was — precisely inverted, since the payloads that need the longest drain
+are the ones that produce the most output.
+
+The apitest sweep is the chattiest payload after procstorm. Its declared 7200-second drain was
+ending after 12–28 minutes, mid-sweep, every single run:
+
+| round | subtests launched | wall clock | ended on |
+|---|---|---|---|
+| 1 | 60 | 12 min | ordinary output, mid-stream |
+| 2 | 61 | 21 min | ordinary output, mid-stream |
+| 3 | 156 | 3 min | **genuine BUGCHECK** (SetSysColors) |
+| 4 | 174 | 28 min | iphlpapi subtest's own passing summary |
+| 5 | 173 | 23 min | iphlpapi subtest's own passing summary |
+
+The truncation was not the expensive part. `characterize.py` attributes a boot that stopped
+early to whichever subtest was in flight, so **each truncated round minted a "crasher" and
+committed it to the quarantine**. Seven innocent subtests had been quarantined this way: `afd
+windowsize`, `appshim ignorefreelib`, `cmd attrib` / `exit` / `pushd`, and both `iphlpapi
+GetOwnerModuleFrom*Entry`. The tell was in every one of their serials and nobody looked for it —
+the log ends with **the accused subtest's own summary line and its `[EXIT-THR]`**. It had passed
+and exited; the harness just stopped reading. All seven removed.
+
+What stays has *positive* evidence rather than an absence of output: a BUGCHECK banner
+(`afd send`, `gdi32 SetSysColors`) or `services.exe` visibly restart-looping
+(`advapi32 RtlEncryptMemory`). That is the discriminator worth keeping — **"the log stops here"
+is not evidence of anything; "the log shows something going wrong here" is.**
+
+**This footgun was already written down, one directory away.** `procstorm/payload.yaml` carried
+a NOTE explaining the read-iteration semantics — it had been bitten first (2400 "seconds" spent
+in 175 s, its storm cut off at 500/1000) — and worked around it by inflating its own number to
+60000 rather than fixing the loop. The next payload to come along walked straight into it. This
+is the second time in two days the same shape has cost us: the `pytest-current` symlink had its
+fix sitting in `conformance.py` with a comment naming the wedge it lost, and the new tool made
+the identical mistake beside it. **A note that documents a footgun instead of removing it is a
+deferred bug with interest.**
+
+So the fix is the loop, not another note: the drain is wall-clock bounded, procstorm's number
+goes back to a real duration, and `characterize.py`'s pytest timeout moves above the drain budget
+so the driver cannot quietly become the real bound again.
+`tools/test_payload_drain.py` pins it with a **chatty-guest** case, which is the only kind that
+can distinguish the two implementations — a test that feeds an idle guest passes against both.
