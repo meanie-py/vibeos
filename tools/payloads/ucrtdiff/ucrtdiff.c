@@ -364,9 +364,44 @@ static void run_string(void)
  * tools/gen_ucrt_tier2_cases.py; build.sh regenerates it before every link. */
 #include "generated.inc"
 
+/* The Rust side's per-thread state, which msvcrt.dll's DllMain normally sets up.
+ *
+ * `msvcrt_get_thread_data()` does `TlsGetValue(msvcrt_tls_index)`, and msvcrt_tls_index
+ * is a global that DllMain fills from TlsAlloc(). The harness links a PRIVATE copy of
+ * these bodies, for which no DllMain ever runs, so the index is 0 -- and TLS slot 0 is
+ * not empty, it belongs to something else. The garbage that comes back is then used as
+ * a thread_data_t, which is why every locale-aware family took the process down
+ * silently: first the mbc ones, then, as each was excluded, the collation ones.
+ *
+ * Allocating a real slot here is half the fix; msvcrt_init_locale() is the other half,
+ * since thread data is only reachable once MSVCRT_locale exists. Both have to happen
+ * before any graded call. This is the "state isolation in practice" item the design doc
+ * has listed as unverified from the start. */
+extern unsigned long msvcrt_tls_index;
+unsigned char __cdecl msvcrt_init_locale(void);
+
+static int init_rust_thread_state(void)
+{
+    unsigned long idx = TlsAlloc();
+    if (idx == TLS_OUT_OF_INDEXES) {
+        DbgPrint("[UCRTDIFF] FATAL: TlsAlloc failed, the Rust side has no thread data\n");
+        return 0;
+    }
+    msvcrt_tls_index = idx;
+    if (!msvcrt_init_locale()) {
+        DbgPrint("[UCRTDIFF] FATAL: msvcrt_init_locale failed; MSVCRT_locale stays null\n");
+        return 0;
+    }
+    return 1;
+}
+
 int main(void)
 {
     DbgPrint("[UCRTDIFF] start\n");
+    if (!init_rust_thread_state()) {
+        DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
+        return 1;
+    }
     run_generated();
     run_strtox();
     run_ctype();

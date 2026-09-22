@@ -74,7 +74,7 @@ HEADERS = [
 #: Source directories whose exports are pure computation over their arguments.
 #: exec/, lowio/, conio/, stdio/, env/, filesystem/, heap/, startup/ and time/ are all
 #: excluded -- they spawn, block, allocate, touch the filesystem or read the clock.
-PURE_DIRS = ("convert/", "string/", "math/", "stdlib/")
+PURE_DIRS = ("convert/", "string/", "mbstring/", "math/", "stdlib/")
 
 #: mbstring/ is pure by the same standard and is 96 more exports -- but it is EXCLUDED,
 #: and the reason is the harness's real boundary rather than anything about those bodies.
@@ -274,20 +274,6 @@ def select(arch: str, cache: Path | None = None) -> list[tuple[str, str, list[st
         if export not in buckets["MICROSOFT"]:
             continue
         if not src.get(export, "").startswith(PURE_DIRS):
-            continue
-        # The `_l` variants take an explicit _locale_t, and the generator passes NULL
-        # (= the current locale). Our msvcrt Rust resolves that through msvcrt's
-        # PER-THREAD state, which msvcrt.dll's DllMain sets up -- and the harness links a
-        # private copy for which no DllMain runs, so the pointer is null and dereferencing
-        # it takes the process down silently, with no fault on serial.
-        #
-        # This is drawn as a rule rather than a name list because chasing names was
-        # whack-a-mole: `_ismbchira` ended a run at 41 lines, excluding it moved the wall
-        # to `_mbscoll_l` at 167, and excluding all of mbstring/ moved it to `_iswprint_l`
-        # at 3. A body that dies hides every finding after it, so the cut is made wide.
-        # Lifting it means initialising the Rust side's per-thread state in-harness, and
-        # that single change is what unlocks roughly half of this set again.
-        if name.endswith("_l"):
             continue
         chosen.append((export, name, kinds, name in have_rust))
     return chosen
