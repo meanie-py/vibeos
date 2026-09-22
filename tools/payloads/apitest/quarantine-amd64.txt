@@ -54,5 +54,9 @@ afd_apitest.exe send
 # SafeProbeForRead legitimately accepts NULL (it is validate-only, it cannot
 # touch-test under DUMMY_PSEH), and our Rust calls IntSetSysColors outside the
 # guard the C kept it inside. A real crash with a real banner — not truncation.
-# serial: .characterize-amd64/round03-amd64-uefi_serial.log
+# serial: LOST — a later characterize.py run reused the same round numbers in
+# the same --artifact-dir and overwrote it (fixed: runs now nest per-run dirs).
+# The analysis does not depend on it: the faulting instruction, the symbol and
+# the NULL argument are all in commit c4e66b8695e and the lane doc, and the
+# crash reproduces by removing this line.
 gdi32_apitest.exe SetSysColors

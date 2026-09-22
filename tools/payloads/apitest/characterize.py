@@ -86,6 +86,57 @@ def run(cmd: list[str], **kw) -> int:
     return subprocess.run(cmd, cwd=str(REPO), **kw).returncode
 
 
+def run_capture(cmd: list[str], **kw) -> tuple[int, str]:
+    """Run, echo the output live, AND return it.
+
+    The driver has to READ the harness's own account of how the boot ended, not
+    just the guest's serial: a VM the harness killed and a guest that died look
+    identical from inside the serial log, and blaming a subtest for the former
+    is how innocent tests end up quarantined.
+    """
+    print(f"[characterize] $ {' '.join(str(c) for c in cmd)}", flush=True)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(REPO),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        **kw,
+    )
+    chunks: list[str] = []
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        chunks.append(line)
+        print(line, end="", flush=True)
+    return proc.wait(), "".join(chunks)
+
+
+# Signatures that mean THE HARNESS stopped the boot, not the guest. Quarantining
+# on any of these blames a test for the test rig's own timer -- the exact bug
+# that put seven innocent subtests in the amd64 quarantine.
+HARNESS_KILL_SIGNS = (
+    "WATCHDOG:",
+    "exceeded",
+    "QEMU exited with code -15",
+    "Timeout",
+)
+
+
+def should_quarantine(bugcheck: str | None, harness_out: str) -> bool:
+    """Is there POSITIVE evidence that the GUEST faulted?
+
+    "The sweep stopped and subtest X was in flight" is not evidence: it is
+    equally the signature of the rig ending the boot on a timer. Seven innocent
+    subtests were quarantined on exactly that reasoning before anyone checked,
+    and when one bound was fixed the next one down produced four more. A
+    BUGCHECK banner is evidence; a harness kill is counter-evidence and the rig
+    announces it in its own output.
+    """
+    if bugcheck:
+        return True
+    return not any(sign in harness_out for sign in HARNESS_KILL_SIGNS)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", required=True, choices=tuple(PYTEST_ARCH))
@@ -111,7 +162,16 @@ def main(argv: list[str] | None = None) -> int:
     py = str(VENV_PY) if VENV_PY.exists() else sys.executable
     quarantine = HERE / f"quarantine-{args.arch}.txt"
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(args.artifact_dir or f"/tmp/vibeos-cli/{stamp}-characterize-{args.arch}")
+    # ALWAYS a per-run subdirectory, including under an explicit --artifact-dir.
+    # Round numbers restart at 1 every run, so a fixed directory means run N+1
+    # silently overwrites run N's evidence -- and the quarantine comments that
+    # cite `roundNN-...log` then point at a DIFFERENT boot, which is precisely
+    # the failure `archive()` was written to fix. It happened anyway, because
+    # --artifact-dir replaced the timestamped default wholesale: the flag added
+    # for durability was the one that removed run-uniqueness. A real SetSysColors
+    # BUGCHECK serial was overwritten this way before the nesting went in.
+    base = Path(args.artifact_dir) if args.artifact_dir else Path("/tmp/vibeos-cli")
+    run_dir = base / f"characterize-{args.arch}-{stamp}"
     print(f"[characterize] artifacts: {run_dir}", flush=True)
     merged: dict[str, dict] = {}
     culprits: list[str] = []
@@ -127,7 +187,18 @@ def main(argv: list[str] | None = None) -> int:
             print("[characterize] build failed — stopping", file=sys.stderr)
             return 1
 
-        run(
+        # Every bound on the boot has to sit ABOVE the payload's own
+        # launch_drain_secs (7200), or the lowest one silently becomes the real
+        # limit and the sweep is truncated mid-run -- with the truncation then
+        # blamed on whichever subtest was in flight. There are THREE of them,
+        # and each was found the hard way, one after the other:
+        #   * the drain loop itself (was iteration-counted; fixed in
+        #     test_payload.py),
+        #   * pytest's --timeout,
+        #   * the QEMU VM lifetime watchdog, which defaults to 30 MINUTES and
+        #     until recently could not be overridden from the pytest path at all.
+        boot_env = dict(os.environ, VIBEOS_QEMU_MAX_LIFETIME="8400")
+        _rc, harness_out = run_capture(
             [
                 py,
                 "-m",
@@ -138,14 +209,11 @@ def main(argv: list[str] | None = None) -> int:
                 "--payload",
                 "apitest",
                 "--skip-clean-build",
-                # ABOVE the payload's launch_drain_secs (7200), or pytest kills
-                # the boot before the drain budget is spent and every round is
-                # truncated mid-sweep -- with the truncation then blamed on
-                # whichever subtest was in flight.
                 "--timeout",
                 "7800",
                 "-q",
-            ]
+            ],
+            env=boot_env,
         )
 
         serial = newest_serial(args.arch)
@@ -180,6 +248,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         if culprit is None:
             print("[characterize] sweep incomplete but no in-flight subtest — stopping.")
+            break
+
+        # QUARANTINE REQUIRES POSITIVE EVIDENCE OF A GUEST FAULT.
+        #
+        # "The sweep stopped and this subtest was in flight" is not evidence of
+        # anything -- it is equally the signature of the harness ending the boot
+        # on a timer, and that is what it turned out to be seven times running.
+        # A BUGCHECK banner is evidence. A harness kill is counter-evidence, and
+        # it is knowable: the rig says so in its own output.
+        if not should_quarantine(meta["bugcheck"], harness_out):
+            print(
+                f"[characterize] round {rnd}: the HARNESS ended this boot (watchdog "
+                f"or timeout), not the guest. {culprit!r} was merely in flight and "
+                "is NOT being quarantined — raise the boot budget instead. "
+                "Stopping.",
+                file=sys.stderr,
+            )
             break
         if culprit in culprits:
             print(
