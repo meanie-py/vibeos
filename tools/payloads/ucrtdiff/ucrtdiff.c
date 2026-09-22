@@ -119,24 +119,29 @@ void __stdcall __wine_RtlUnwind(void *a, void *b, void *c, void *d)
     unreachable_stub("__wine_RtlUnwind");
 }
 
-/* fwprintf and cprintf are NOT ucrtbase exports -- UCRT makes them header inlines
+/* fwprintf and _cprintf are NOT ucrtbase exports -- UCRT makes them header inlines
  * over __stdio_common_vfwprintf -- so no rename rule covers the msvcrt Rust bodies'
- * references to them, and the import lib has nothing to offer. */
-int __cdecl _cprintf(const char *fmt, ...);
-int __cdecl _cprintf(const char *fmt, ...)
-{
-    (void)fmt;
-    unreachable_stub("_cprintf");
-    return 0;
-}
+ * references to them, and the import lib has nothing to offer.
+ *
+ * They cannot be stubbed as ordinary C: the headers declare fwprintf with a signature
+ * this file would conflict with, and conio.h declares _cprintf STATIC, so a non-static
+ * definition is not merely redundant but illegal.
+ *
+ * An explicit assembler name sidesteps both -- the C identifier is distinct, so nothing
+ * conflicts, while the object defines exactly the symbol the Rust archive asks for.
+ * (lld in PE mode has no --defsym, which was the other way to do this.) The label is
+ * taken LITERALLY, so the i386 cdecl underscore has to be spelled here. */
+#ifdef _M_IX86
+#define UCRTDIFF_SYM(n) "_" n
+#else
+#define UCRTDIFF_SYM(n) n
+#endif
 
-int __cdecl fwprintf(void *stream, const wchar_t *fmt, ...);
-int __cdecl fwprintf(void *stream, const wchar_t *fmt, ...)
-{
-    (void)stream; (void)fmt;
-    unreachable_stub("fwprintf");
-    return 0;
-}
+void ucrtdiff_fwprintf_stub(void) __asm__(UCRTDIFF_SYM("fwprintf"));
+void ucrtdiff_fwprintf_stub(void) { unreachable_stub("fwprintf"); }
+
+void ucrtdiff_cprintf_stub(void) __asm__(UCRTDIFF_SYM("_cprintf"));
+void ucrtdiff_cprintf_stub(void) { unreachable_stub("_cprintf"); }
 
 /* msvcrt's C++ EH helpers, which live in libmsvcrt_static.a. */
 void __cdecl call_copy_ctor(void *a, void *b, void *c, int d);
@@ -151,6 +156,55 @@ void __cdecl call_dtor(void *a, void *b)
 {
     (void)a; (void)b;
     unreachable_stub("call_dtor");
+}
+
+/* ---- generated-case corpora ------------------------------------------- */
+/* One looping scalar argument gets the FULL range plus the edges: the ctype and
+ * mbctype families live here, and 0x80-0xFF is the half where the narrow table and
+ * the codepage actually decide anything. EOF (-1) is included because every ctype
+ * and case-conversion function contracts a specific answer for it. */
+static const int g_int_full[] = {
+    -1, 0, 1, 7, 8, 9, 10, 11, 12, 13, 26, 27, 31, 32, 33, 47, 48, 57, 58, 64, 65, 90,
+    91, 96, 97, 122, 123, 126, 127, 128, 129, 159, 160, 161, 191, 192, 223, 224, 254, 255,
+};
+/* The sweep STOPS at 255. The ctype and mbc families are contracted over EOF and
+ * 0..255, so beyond that there is no contract to grade -- and our Rust stops producing
+ * output at exactly 256, which has the shape of a 256-entry table indexed without a
+ * bounds check (mbcs.rs _ismbcgraph_l -> msvcrt_mbc_to_wc_l). That is worth fixing on
+ * its own, but sweeping into it here bought nothing and cost every finding AFTER the
+ * one export that tripped it: the run ended at _ismbcgraph_l with 180-odd exports
+ * still ungraded. Recorded in the design doc. */
+#define G_INT_FULL_N (sizeof(g_int_full) / sizeof(g_int_full[0]))
+
+/* Anything with more than one looping argument uses these: the product is what
+ * explodes -- a four-argument shape at the full sweep would be billions of cases. */
+static const int g_int_small[] = { -1, 0, 1, 10, 16, 65, 128, 255 };
+#define G_INT_SMALL_N (sizeof(g_int_small) / sizeof(g_int_small[0]))
+
+static const char *const g_narrow[] = { "", "a", "abc", "ABC", "12", "\x80\xff", " x " };
+#define G_NARROW_N (sizeof(g_narrow) / sizeof(g_narrow[0]))
+
+static const wchar_t *const g_wide[] = { L"", L"a", L"abc", L"ABC", L"12", L"\x00e9", L" x " };
+#define G_WIDE_N (sizeof(g_wide) / sizeof(g_wide[0]))
+
+/* mbstring takes unsigned char*; a separate corpus rather than casts, so the
+ * generated calls stay type-correct against the real declarations. */
+static const unsigned char *const g_mbstr[] = {
+    (const unsigned char *)"", (const unsigned char *)"a", (const unsigned char *)"abc",
+    (const unsigned char *)"\x81\x40", (const unsigned char *)"\xa1\xa2",
+    (const unsigned char *)"12", (const unsigned char *)"\xff",
+};
+#define G_MBSTR_N (sizeof(g_mbstr) / sizeof(g_mbstr[0]))
+
+static const char *label_idx(size_t i)
+{
+    static char buf[16];
+    buf[0] = 'i'; buf[1] = '=';
+    buf[2] = (char)('0' + (i / 100) % 10);
+    buf[3] = (char)('0' + (i / 10) % 10);
+    buf[4] = (char)('0' + i % 10);
+    buf[5] = 0;
+    return buf;
 }
 
 static int g_cases;
@@ -172,13 +226,37 @@ static void grade(const char *family, const char *what, long long dll, long long
         g_dll_pass++;
     } else {
         g_dll_fail++;
-        DbgPrint("[UCRTDIFF] DLL-FAIL %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
+        if (g_dll_fail <= 300)
+            DbgPrint("[UCRTDIFF] DLL-FAIL %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
+        else if (g_dll_fail == 301)
+            DbgPrint("[UCRTDIFF] (further DLL-FAIL rows suppressed; see the count)\n");
     }
     if (rust == ref) {
         g_rust_pass++;
     } else {
         g_rust_fail++;
-        DbgPrint("[UCRTDIFF] RUST-FAIL %s %s rust=%lld ref=%lld\n", family, what, rust, ref);
+        /* A regressed family can fail every case; serial is a shared, slow channel and
+         * flooding it would push the [UCRTDIFF] done line out of the drain window. The
+         * COUNT is the verdict -- the first rows are only there to make it actionable. */
+        if (g_rust_fail <= 300)
+            DbgPrint("[UCRTDIFF] RUST-FAIL %s %s rust=%lld ref=%lld\n", family, what, rust, ref);
+        else if (g_rust_fail == 301)
+            DbgPrint("[UCRTDIFF] (further RUST-FAIL rows suppressed; see the count)\n");
+    }
+}
+
+/* An export with no Rust body yet (one of the ~200 that need genuinely new code):
+ * only the shipping DLL can be graded. Counting a nonexistent body as a pass would
+ * inflate the reuse number with exactly the exports the reuse plan does NOT cover. */
+static void grade2(const char *family, const char *what, long long dll, long long ref)
+{
+    g_cases++;
+    if (dll == ref) {
+        g_dll_pass++;
+    } else {
+        g_dll_fail++;
+        if (g_dll_fail <= 300)
+            DbgPrint("[UCRTDIFF] DLL-FAIL %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
     }
 }
 
@@ -281,9 +359,50 @@ static void run_string(void)
     }
 }
 
+/* The generated half: 233 exports on i386, declared with __typeof__ of the real
+ * prototype and swept by the macros above. Generated by
+ * tools/gen_ucrt_tier2_cases.py; build.sh regenerates it before every link. */
+#include "generated.inc"
+
+/* The Rust side's per-thread state, which msvcrt.dll's DllMain normally sets up.
+ *
+ * `msvcrt_get_thread_data()` does `TlsGetValue(msvcrt_tls_index)`, and msvcrt_tls_index
+ * is a global that DllMain fills from TlsAlloc(). The harness links a PRIVATE copy of
+ * these bodies, for which no DllMain ever runs, so the index is 0 -- and TLS slot 0 is
+ * not empty, it belongs to something else. The garbage that comes back is then used as
+ * a thread_data_t, which is why every locale-aware family took the process down
+ * silently: first the mbc ones, then, as each was excluded, the collation ones.
+ *
+ * Allocating a real slot here is half the fix; msvcrt_init_locale() is the other half,
+ * since thread data is only reachable once MSVCRT_locale exists. Both have to happen
+ * before any graded call. This is the "state isolation in practice" item the design doc
+ * has listed as unverified from the start. */
+extern unsigned long msvcrt_tls_index;
+unsigned char __cdecl msvcrt_init_locale(void);
+
+static int init_rust_thread_state(void)
+{
+    unsigned long idx = TlsAlloc();
+    if (idx == TLS_OUT_OF_INDEXES) {
+        DbgPrint("[UCRTDIFF] FATAL: TlsAlloc failed, the Rust side has no thread data\n");
+        return 0;
+    }
+    msvcrt_tls_index = idx;
+    if (!msvcrt_init_locale()) {
+        DbgPrint("[UCRTDIFF] FATAL: msvcrt_init_locale failed; MSVCRT_locale stays null\n");
+        return 0;
+    }
+    return 1;
+}
+
 int main(void)
 {
     DbgPrint("[UCRTDIFF] start\n");
+    if (!init_rust_thread_state()) {
+        DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
+        return 1;
+    }
+    run_generated();
     run_strtox();
     run_ctype();
     run_string();
