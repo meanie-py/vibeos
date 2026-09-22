@@ -377,11 +377,16 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
         out.append("")
 
     out += ["static void run_generated(void)", "{"]
-    for _e, name, kinds, has_rust in rows:
+    # A PROGRESS line per export. Passing rows print nothing, so without this a run that
+    # dies is indistinguishable from a run that is merely slow, and localising the body
+    # that killed it costs one four-minute boot PER GUESS. That is how three rounds of
+    # name-chasing got spent. AT[n] is the last export that started.
+    for i, (_e, name, kinds, has_rust) in enumerate(rows):
         macro = "GRADE_" + ("VOID" if not kinds else "_".join(kinds))
         pred = bool(_PREDICATE.match(name))
         out.append("#undef NORM")
         out.append("#define NORM(x) " + ("(!!(x))" if pred else "(x)"))
+        out.append(f'    DbgPrint("[UCRTDIFF] at {i} {name}\\n");')
         out.append(f"    {macro}{'' if has_rust else '_NORUST'}({name});")
     out += ["#undef NORM", "}", ""]
     return "\n".join(out) + "\n"
