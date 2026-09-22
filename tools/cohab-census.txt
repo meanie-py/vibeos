@@ -772,6 +772,7 @@ dll/win32/shell32/CMakeLists.txt	1	# folders/CMyDocsFolder.cpp — replaced by R
 dll/win32/shell32/CMakeLists.txt	1	# folders/CNetFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
 dll/win32/shell32/CMakeLists.txt	1	# folders/CPrinterFolder.cpp — CPrinterFolder, CPrintersEnum, and retained
 dll/win32/shell32/CMakeLists.txt	1	# folders/CRecycleBin.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+dll/win32/shell32/CMakeLists.txt	1	# folders/CRecycleBinFolderViewCB.cpp — replaced by Rust
 dll/win32/shell32/CMakeLists.txt	1	# folders/CRegFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip
 dll/win32/shell32/CMakeLists.txt	1	# iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# local declaration in folders/CDrivesFolder.cpp is `extern "C"` now, and the
@@ -782,7 +783,8 @@ dll/win32/shell32/CMakeLists.txt	1	# propsheet.cpp — replaced by Rust (shell32
 dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp below.
 dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp below.
 dll/win32/shell32/CMakeLists.txt	1	# rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
-dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
+dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp
+dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp — GONE WITH IT, and it was the last of the five retained
 dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
 dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
 dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic

@@ -1,8 +1,5 @@
 {
   "active": {
-    "dynamic": [
-      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp"
-    ],
     "monolith": [
       "dll/win32/shell32/shell32.cpp"
     ],
@@ -28,6 +25,7 @@
       "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
       "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
+      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
       "dll/win32/shell32/shelldesktop/CChangeNotifyServer.cpp",
       "dll/win32/shell32/shelldesktop/CDesktopBrowser.cpp",
       "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
@@ -94,9 +92,6 @@
       "dll/win32/shell32/rust_changenotify_broker_stub.cpp",
       "dll/win32/shell32/rust_folder_options_stub.cpp",
       "dll/win32/shell32/rust_stubwindow32_stub.cpp"
-    ],
-    "cpp_only_companion_bridge": [
-      "dll/win32/shell32/rust_recyclebin_bridges_stub.cpp"
     ],
     "phantom_inline_linkage": [
       "dll/win32/shell32/rust_strsafe_shim.c"

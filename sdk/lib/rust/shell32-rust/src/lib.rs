@@ -288,6 +288,10 @@ pub mod reg_folder_free;
 // appears nowhere in the call and every `<ClassName>`-keyed scan saw nothing.
 #[path = "folders/CRecycleBinFolderViewCB.rs"]
 pub mod recycle_bin_folder_view_cb;
+// The two `_RustBridge` exports that used to be rust_recyclebin_bridges_stub.cpp. Hand-written
+// and therefore in their own module: a rustconv re-run overwrites the generated one above.
+#[path = "folders/recyclebin_view_cb_bridge.rs"]
+pub mod recyclebin_view_cb_bridge;
 #[path = "folders/CRecycleBin.rs"]
 pub mod recycle_bin_tu;
 #[path = "folders/CRecycleBinEnum.rs"]
