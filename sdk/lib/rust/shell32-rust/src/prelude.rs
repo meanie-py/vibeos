@@ -1228,6 +1228,10 @@ extern "C" {
         -> crate::island::LPWSTR;
     pub fn _wtoi(s: crate::island::LPCWSTR) -> ::core::ffi::c_int;
     pub fn _wcsicmp(a: crate::island::LPCWSTR, b: crate::island::LPCWSTR) -> ::core::ffi::c_int;
+    /// In-place case conversion, returning its own argument. The CRT's locale-independent
+    /// conversion, NOT Win32 `CharUpperW`/`CharLowerW` — that is what the C++ calls.
+    pub fn _wcsupr(s: crate::island::LPWSTR) -> crate::island::LPWSTR;
+    pub fn _wcslwr(s: crate::island::LPWSTR) -> crate::island::LPWSTR;
 }
 
 /// wine's shell32 string shims are `#define`s onto the CRT wide entry points.

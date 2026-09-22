@@ -727,6 +727,7 @@ dll/win32/shell32/CMakeLists.txt	1	# dialogs/drive.cpp — replaced by Rust (she
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/drvdefext.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/filedefext.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/filedefext.cpp) are already flipped, so the only surviving declarations of
+dll/win32/shell32/CMakeLists.txt	1	# dialogs/filetypes.cpp — replaced by Rust (shell32-rust/src/dialogs/filetypes_tu.rs);
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/general.cpp — replaced by Rust (shell32-rust/src/dialogs/general.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/item_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/item_prop.rs); cohab

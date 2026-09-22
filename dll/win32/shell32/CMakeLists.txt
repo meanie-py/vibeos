@@ -64,7 +64,12 @@ list(APPEND SOURCE
     # and SHELL32_GetDllFromRundll32CommandLine are EXTERN_C in precomp.h now, because the
     # C-linkage forwarders that used to reach those C++ functions lived HERE and went away with
     # the file; that is the same fix already documented for the DataObject_GetHIDACount group.
-    dialogs/filetypes.cpp
+    # dialogs/filetypes.cpp — replaced by Rust (shell32-rust/src/dialogs/filetypes_tu.rs);
+    # cohab via libshell32_rust.a. Its whole external closure is ONE symbol,
+    # `_FolderOptionsFileTypesDlg@16`, which the Rust publishes at the same decoration; the
+    # ATL guard variables the object also carried are COMDAT from headers and come from every
+    # other C++ TU. `EditTypeDlg_UpdateEntryIcon` is hand-written in the banked preamble
+    # rather than translated.
     # dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
     # cohab via libshell32_rust.a. Its one ATL CWindowImpl<> could not come along and lives in
     # rust_folder_options_stub.cpp below.

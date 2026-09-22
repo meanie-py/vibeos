@@ -182,6 +182,10 @@ pub mod dialogs_dialogs;
 // bound is not a compile error, it silently mis-lays-out the struct every body here touches.
 #[path = "dialogs/filetypes.rs"]
 pub mod dialogs_filetypes;
+// The TU's file-scope half: 48 of its 49 free functions. One rustconv run owns one output
+// file, so a C++ TU with both a class and file-scope functions is two modules.
+#[path = "dialogs/filetypes_tu.rs"]
+pub mod dialogs_filetypes_tu;
 
 // CDefViewDual — the IShellFolderViewDual automation object. Assembled at the C tree's path
 // (shell32/) so re-runs stay stable, but it is a COM class rather than one of that module's

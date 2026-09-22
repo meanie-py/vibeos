@@ -31,11 +31,11 @@ from .cpp_core import (
     _abi_types_compatible,
     _argument_c_type,
     _cpp_literal_spans,
+    _eval_c_int_constexpr,
     _expand_default_helper_arguments,
     _masked_cpp,
     _matching_paren,
     _named_call_spans,
-    _eval_c_int_constexpr,
     _numeric_array_constants,
     _sdk_numeric_definitions,
     _split_args,
@@ -4742,8 +4742,7 @@ _CPP_SUPPORT_EXTERNS = {
     "CloseClipboard": "    fn CloseClipboard() -> BOOL;",
     "GetLastError": "    fn GetLastError() -> DWORD;",
     "EnumDisplaySettingsW": (
-        "    fn EnumDisplaySettingsW(device: LPCWSTR, mode: DWORD, "
-        "devmode: *mut DEVMODEW) -> BOOL;"
+        "    fn EnumDisplaySettingsW(device: LPCWSTR, mode: DWORD, devmode: *mut DEVMODEW) -> BOOL;"
     ),
     "lstrlenW": "    fn lstrlenW(text: LPCWSTR) -> INT;",
     "CoTaskMemAlloc": "    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;",
@@ -4826,7 +4825,7 @@ _CPP_SUPPORT_C_EXTERNS = {
     # error, it is a corrupted stack on i386 at the first thread start.
     "_beginthreadex": (
         "    fn _beginthreadex(security: *mut core::ffi::c_void, stack_size: UINT, "
-        "start: Option<unsafe extern \"system\" fn(*mut core::ffi::c_void) -> UINT>, "
+        'start: Option<unsafe extern "system" fn(*mut core::ffi::c_void) -> UINT>, '
         "arglist: *mut core::ffi::c_void, initflag: UINT, thrdaddr: *mut UINT) -> usize;"
     ),
     "SHELL_GetUIObjectOfAbsoluteItem": (
@@ -5320,6 +5319,7 @@ def render_cpp_support(
     # File-scope PODs are source authority, not model work. This is shared by C
     # and C++ inputs; only simple, fully parsed layouts are emitted.
     source_pod_names = set(re.findall(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", source))
+
     def _pod_is_referenced(name: str) -> bool:
         # Count the TAG **and its typedef aliases**. A record declared
         # `typedef struct _X { … } X, *PX;` is referred to as `X`/`PX` everywhere and the tag
@@ -5330,9 +5330,7 @@ def render_cpp_support(
         hits = sum(len(re.findall(rf"\b{re.escape(word)}\b", source)) for word in spellings)
         if hits > 1:
             return True
-        return any(
-            re.search(rf"\b{re.escape(word)}\b", additional_source) for word in spellings
-        )
+        return any(re.search(rf"\b{re.escape(word)}\b", additional_source) for word in spellings)
 
     referenced_pods = {name for name in source_pod_names if _pod_is_referenced(name)}
     for name in sorted(referenced_pods - (exclude_types or set())):
@@ -5420,13 +5418,9 @@ def render_cpp_support(
     # is not a fix, it is a conflict. An SDK constant the island lacks is a substrate gap and
     # must stay loud; a macro in the module's own tree has nowhere else to come from.
     unresolved = {
-        word
-        for word in used_words - owned_constants
-        if re.fullmatch(r"[A-Z][A-Z0-9_]*", word)
+        word for word in used_words - owned_constants if re.fullmatch(r"[A-Z][A-Z0-9_]*", word)
     } - set(_sdk_numeric_definitions(source_path, used_words))
-    for name, value in sorted(
-        _module_private_int_macros(source_path, unresolved).items()
-    ):
+    for name, value in sorted(_module_private_int_macros(source_path, unresolved).items()):
         if name not in owned_constants:
             # C's `((DWORD)-1)` is a NEGATIVE integer expression with an unsigned type, and
             # Rust cannot negate a `u32` at all (`pub const X: UINT = -1;` is E0600). Respell
