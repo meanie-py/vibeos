@@ -28,8 +28,10 @@ already says.
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +49,27 @@ def _load(name: str, path: Path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def archive(serial: Path, run_dir: Path, rnd: int) -> Path:
+    """Copy a round's serial somewhere it will still exist tomorrow.
+
+    The obvious thing -- record the path pytest used -- is wrong twice over, and
+    this tool shipped doing it. `/tmp/pytest-of-*/pytest-current` is a symlink
+    that MOVES to the newest run, so by round 2 every earlier round's recorded
+    "evidence" pointed at a different boot; pytest then prunes to the last three
+    runs; and a reboot wipes /tmp entirely, which is how rounds 1-3 of the first
+    real characterisation lost their serials for good. conformance.py already
+    learned this and passes VIBEOS_ARTIFACT_DIR for the same reason.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    dest = run_dir / f"round{rnd:02d}-{serial.name}"
+    try:
+        shutil.copy2(serial, dest)
+    except OSError as exc:  # pragma: no cover - disk full, permissions
+        print(f"[characterize] WARNING: could not archive {serial}: {exc}", file=sys.stderr)
+        return serial.resolve()
+    return dest
 
 
 def newest_serial(arch: str) -> Path | None:
@@ -68,6 +91,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--arch", required=True, choices=tuple(PYTEST_ARCH))
     ap.add_argument("--rounds", type=int, default=12)
     ap.add_argument(
+        "--artifact-dir",
+        default=None,
+        help="where each round's serial is archived (default: a timestamped dir "
+        "under /tmp/vibeos-cli). Point this somewhere persistent if the run "
+        "matters -- /tmp does not survive a reboot",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
         default=None,
@@ -80,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     py = str(VENV_PY) if VENV_PY.exists() else sys.executable
     quarantine = HERE / f"quarantine-{args.arch}.txt"
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = Path(args.artifact_dir or f"/tmp/vibeos-cli/{stamp}-characterize-{args.arch}")
+    print(f"[characterize] artifacts: {run_dir}", flush=True)
     merged: dict[str, dict] = {}
     culprits: list[str] = []
 
@@ -115,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
         if serial is None:
             print("[characterize] no serial log found — stopping", file=sys.stderr)
             return 1
+
+        # Archive BEFORE parsing: everything below records this path as the
+        # round's evidence, and it has to still be readable later.
+        serial = archive(serial, run_dir, rnd)
 
         results, meta = parser.parse(serial.read_text(errors="replace"))
         for r in results:

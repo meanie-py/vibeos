@@ -21,3 +21,24 @@ advapi32_apitest.exe RtlEncryptMemory
 # quarantined so characterization of the other suites can continue, NOT because
 # the test is wrong.
 afd_apitest.exe send
+
+# characterize.py round 1: sweep stopped here — guest wedged (no BUGCHECK).
+# SERIAL LOST. The tool recorded `pytest-current`, a symlink that moves to the
+# newest run, and /tmp was then wiped by a power cut. Fixed since (rounds now
+# archive their serial), but this entry's evidence is gone: re-run it to see the
+# wedge rather than trusting this line.
+afd_apitest.exe windowsize
+
+# characterize.py round 2: sweep stopped here — guest wedged (no BUGCHECK).
+# SERIAL LOST. The tool recorded `pytest-current`, a symlink that moves to the
+# newest run, and /tmp was then wiped by a power cut. Fixed since (rounds now
+# archive their serial), but this entry's evidence is gone: re-run it to see the
+# wedge rather than trusting this line.
+appshim_apitest.exe ignorefreelib
+
+# characterize.py round 3: sweep stopped here — guest wedged (no BUGCHECK).
+# SERIAL LOST. The tool recorded `pytest-current`, a symlink that moves to the
+# newest run, and /tmp was then wiped by a power cut. Fixed since (rounds now
+# archive their serial), but this entry's evidence is gone: re-run it to see the
+# wedge rather than trusting this line.
+cmd_apitest.exe attrib
