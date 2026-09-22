@@ -28,9 +28,16 @@ binaries:
     dest: Profiles/All Users/Start Menu/Programs/StartUp/ucrtdiff.exe
 
 test:
-  # The harness is pure computation over in-memory tables -- no services, no
-  # disk, no network -- so it needs no SCM gate and finishes fast. The drain is
-  # a READ-ITERATION count, not seconds (see procstorm's note); every FAIL row
-  # is one DbgPrint, so a badly-regressed run is the chatty case to budget for.
+  # The drain is a READ-ITERATION count, not seconds (see procstorm's note), and
+  # the loop returns immediately whenever bytes are already waiting -- so a CHATTY
+  # payload burns iterations fast. This one emits a progress line per export plus a
+  # line per failing row, and 224 exports swept over the full corpora is a lot of
+  # both, so 3000 was plainly too low. NOTE it is NOT established that this is what
+  # ends the run: raising it to 60000 did not move the stopping point, which is still
+  # export 39. What IS established is that the harness no longer CRASHES there -- when
+  # a body really dies the system keeps logging after it (17 further lines), and since
+  # the thread-state fix the serial log instead ENDS at the last [UCRTDIFF] line (1),
+  # which is the signature of the boot being cut off rather than the payload faulting.
+  # The remaining suspect is total runtime against the VM lifetime, not this counter.
   launch_marker: "[UCRTDIFF] done"
-  launch_drain_secs: 3000
+  launch_drain_secs: 60000
