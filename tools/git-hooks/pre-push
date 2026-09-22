@@ -106,8 +106,17 @@ for p in stamp_files:
     if s.get("tree"):
         valid_trees.add(s["tree"])
 
-if not valid_trees:
-    fail("no fresh green full-gate stamp found — run ./vibeos-cli gate")
+# NO EARLY BAIL ON AN EMPTY STAMP SET. This used to `fail()` right here, which made the
+# docs-only exemption below UNREACHABLE whenever no fresh gate had run -- and that was
+# latent-but-harmless only for as long as the conductor gated every batch, because a gate
+# mints a stamp. The moment the queue learned to skip the gate for a documentation-only
+# batch (queue.inert_only_batch), a docs-only train had no stamp to show and this line
+# refused the push it was about to be exempted from. Cost: the queue sat with a halted
+# train and one lane blocked for two hours.
+#
+# The remote-master exemption needs NO stamp by construction: every non-docs path in
+# origin/master was gated when IT landed. So the empty-set case is judged by the same loop
+# as everything else, and the failure message below says which situation you are in.
 
 
 # The inert-suffix predicate is SHARED with land.py's lint preflight (tools/docs_only.py),
@@ -156,7 +165,13 @@ for sha, remote_sha in updates:
         continue
     if any(nondocs_delta(t, tree) == [] for t in valid_trees):
         continue
-    base = remote_tree or next(iter(valid_trees))
+    base = remote_tree or (next(iter(valid_trees)) if valid_trees else "")
+    if not valid_trees:
+        fail(
+            f"push tree {tree[:12]} adds non-docs changes vs "
+            f"{base[:12] if base else 'origin/master'} and there is no fresh green "
+            f"full-gate stamp — run ./vibeos-cli gate"
+        )
     fail(
         f"push tree {tree[:12]} adds non-docs changes vs {base[:12]} without a "
         f"matching gate stamp — gate this tree (./vibeos-cli gate)"
