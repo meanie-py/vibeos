@@ -6609,6 +6609,23 @@ describes a footgun rather than removing it is a deferred bug that keeps chargin
 find yourself writing "NOTE: X is not what it says it is", that is the detection event for fixing
 X.
 
+**Raising the budget is a treadmill — fix the ATTRIBUTION instead.** There were THREE bounds
+under one sweep: the iteration-counted drain, pytest's `--timeout`, and a 30-minute QEMU
+lifetime watchdog that `qemu/lib/common.sh` claimed to mirror from `vm.py` but could not actually
+override from the pytest path. Fixing the first promoted the second and third, and the very next
+run quarantined four more innocent subtests — including the same three that had just been
+removed. Each fix is correct and none of them is the fix. **The durable rule: a driver may only
+accuse a test on POSITIVE evidence that the GUEST faulted.** A BUGCHECK banner is evidence; a
+harness kill is counter-evidence, and the rig announces it in its own output, so capture that
+output instead of letting it stream past. Keep the converse too, or the loop goes inert: an
+incomplete run with no harness-kill sign IS still the guest's doing.
+
+**When a tool writes evidence, make the path unique per RUN, not per unit of work inside it.**
+`archive()` was added precisely to stop evidence pointers from rotting, and then collided with
+itself: round numbers restart at 1 each run, `--artifact-dir` replaced the timestamped default
+wholesale, and run N+1 overwrote run N. The flag added FOR durability was the one that removed
+run-uniqueness.
+
 ### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
 
 **Symptom:** a guest/harness rung that passed for months starts failing, on one arch

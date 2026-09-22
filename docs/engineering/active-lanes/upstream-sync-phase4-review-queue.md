@@ -690,3 +690,27 @@ goes back to a real duration, and `characterize.py`'s pytest timeout moves above
 so the driver cannot quietly become the real bound again.
 `tools/test_payload_drain.py` pins it with a **chatty-guest** case, which is the only kind that
 can distinguish the two implementations — a test that feeds an idle guest passes against both.
+
+### …and the fix promoted the next bound down
+
+The drain fix was correct and bought nothing. The next run truncated at **~30 minutes** and
+quarantined four more innocent subtests — `cmd_apitest attrib`/`exit`/`pushd`, the same three
+just removed, plus `iphlpapi GetExtendedUdpTable`, whose serial ends with its own summary and
+`[EXIT-THR] exit_status=0x4`.
+
+The new bound was `tests/qemu/vm.py`'s `MAX_VM_LIFETIME_SECONDS`, a 30-minute hard cap.
+`qemu/lib/common.sh` has always honoured `VIBEOS_QEMU_MAX_LIFETIME` and its comment says it
+mirrors that constant — it did not, so the shell path was tunable and the pytest path was not.
+
+**Three bounds, each hidden behind the one above it.** That is the actual lesson, and it is why
+the fix is not "raise the budget": every raise promotes the next-lowest timer into the same role.
+The rule now is on the accusation, not the clock — a round may quarantine only on positive
+evidence the **guest** faulted, with a harness kill counting as counter-evidence, and the driver
+reads the rig's own output to tell them apart. `tools/test_characterize_attribution.py` pins it,
+including the converse case that stops the loop going inert.
+
+One casualty, and the third instance of one lesson in two days: `archive()` collided across runs
+(round numbers restart at 1; `--artifact-dir` replaced the timestamped default), so the
+SetSysColors BUGCHECK serial was overwritten. The flag added for durability removed
+run-uniqueness. The analysis survives in `c4e66b8695e` and the crash reproduces by unquarantining
+the subtest, so this one is annoying rather than expensive.
