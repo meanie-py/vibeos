@@ -512,6 +512,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
   than one subtest.
 
+- **`CmUnloadKey` removes a hive from the hive-file list AFTER closing its files and
+  unlinking it, reading an already-invalidated `LinkData` node. OPEN** (2026-09-22).
+  `config-rust/src/cmapi.rs` has `CmpUnlockRegistry(); CmpCloseHiveFiles(CmHive);
+  CmpRemoveFromHiveFileList(CmHive);` — the exact pre-fix order upstream corrected in
+  `396019984c9` ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491),
+  which is one of the 7 commits we are currently behind. Upstream's symptom is a hive that stays
+  listed under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after being unloaded, seen in
+  1st-stage setup with `\Registry\Machine\USetup_Software`; the deduced `LinkName` can be read
+  from an invalidated `KeyNode.Flags`, so `KEY_COMP_NAME` is misread and the constructed path is
+  garbage. Note the full upstream fix is NOT just the two-line reorder: it caches the path in a
+  new `CMHIVE::HiveRootPath` member (a struct layout change, Vista+ semantics) and rewrites
+  `cmhvlist.c`. Found by the bug-oracle sweep while measuring how far behind upstream we are —
+  the newest 7 commits already contained a live hit against our Rust.
+
 - **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
   and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
   `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
