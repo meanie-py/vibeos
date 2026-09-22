@@ -81,6 +81,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_lost_exports.py"),
     (".", ".", "tools/test_verify_translation_literals.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
+    (".", ".", "tools/test_ucrt_tier2_refset.py"),
     (".", ".", "tools/test_docs_only.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
