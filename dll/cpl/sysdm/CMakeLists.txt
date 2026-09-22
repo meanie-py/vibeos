@@ -77,6 +77,7 @@ add_library(sysdm MODULE
     ${SOURCE}
     sysdm.rc
     ${CMAKE_CURRENT_BINARY_DIR}/sysdm.def)
+add_pch(sysdm precomp.h SOURCE)
 
 set_module_type(sysdm cpl UNICODE)
 # libsysdm_rust.a FIRST so its #[no_mangle] symbols win.
@@ -86,5 +87,4 @@ target_link_libraries(sysdm ${SYSDM_RUST_LIB} udmihelp uuid)
 target_link_options(sysdm PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(sysdm rust_sysdm)
 add_importlibs(sysdm advapi32 setupapi user32 gdi32 comctl32 comdlg32 msimg32 shell32 shlwapi ole32 powrprof msvcrt kernel32 ntdll)
-add_pch(sysdm precomp.h SOURCE)
 add_cd_file(TARGET sysdm DESTINATION reactos/system32 FOR all)

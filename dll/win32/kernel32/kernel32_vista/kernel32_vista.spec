@@ -60,5 +60,10 @@
 @ stdcall SetThreadPreferredUILanguages(long wstr ptr)
 
 @ stdcall GetNamedPipeClientProcessId(ptr ptr)
+# Added by the 2026-09-20 upstream sync: implemented in kernel32-vista-rust
+# (vista.rs / misc.rs) rather than by building upstream's new C, which would have
+# duplicated symbols the Rust twins already own.
+@ stdcall CompareStringOrdinal(ptr long ptr long long)
+@ stdcall GetThreadDescription(ptr ptr) # Win 10
 @ stdcall SetThreadDescription(ptr wstr) # Win 10
 @ stdcall GetSystemTimePreciseAsFileTime(ptr) kernel32.GetSystemTimeAsFileTime

@@ -140,6 +140,11 @@ HRESULT WINAPI IFileSystemBindData_Constructor(const WIN32_FIND_DATAW *pfd, LPBC
 HRESULT WINAPI CPanel_ExtractIconA(LPITEMIDLIST pidl, LPCSTR pszFile, UINT nIconIndex, HICON *phiconLarge, HICON *phiconSmall, UINT nIconSize) DECLSPEC_HIDDEN;
 HRESULT WINAPI CPanel_ExtractIconW(LPITEMIDLIST pidl, LPCWSTR pszFile, UINT nIconIndex, HICON *phiconLarge, HICON *phiconSmall, UINT nIconSize) DECLSPEC_HIDDEN;
 
+/* CRegFolder_CreateInstance is declared in shfldr.h, which took the PREGFOLDERINITDATA
+ * form when the folder classes moved to Rust. Upstream still declares the older
+ * six-argument version here; keeping both is a hard "conflicting types" error. */
+HRESULT WINAPI CustomDestinationList_Constructor(IUnknown *outer, REFIID riid, void **obj);
+
 /* initialisation for FORMATETC */
 #define InitFormatEtc(fe, cf, med) \
 	{\
@@ -162,10 +167,11 @@ HGLOBAL RenderSHELLIDLIST (LPITEMIDLIST pidlRoot, LPITEMIDLIST * apidl, UINT cid
 HGLOBAL RenderFILENAMEA (LPITEMIDLIST pidlRoot, LPITEMIDLIST * apidl, UINT cidl) DECLSPEC_HIDDEN;
 HGLOBAL RenderFILENAMEW (LPITEMIDLIST pidlRoot, LPITEMIDLIST * apidl, UINT cidl) DECLSPEC_HIDDEN;
 
-HRESULT SHELL_GetShellExtensionRegCLSID(
-    HKEY hKey,
-    LPCWSTR KeyName,
-    CLSID *pClsId);
+EXTERN_C HRESULT
+SHELL_GetShellExtensionRegCLSID(HKEY hKey, LPCWSTR KeyName, CLSID *pClsId);
+EXTERN_C HRESULT
+SHELL_InitializeExtension(REFCLSID clsid, PCIDLIST_ABSOLUTE pidlFolder, IDataObject *pDO,
+                          HKEY hkeyProgID, REFIID riid, void **ppv);
 
 /* Change Notification */
 void InitChangeNotifications(void) DECLSPEC_HIDDEN;
@@ -255,6 +261,14 @@ HRESULT WINAPI DoRegisterServer(void);
 HRESULT WINAPI DoUnregisterServer(void);
 
 /* Property system */
+static inline HRESULT
+SHELL_SysAllocString(PCWSTR in, BSTR *out)
+{
+    if (!out)
+        return E_INVALIDARG;
+    return (*out = SysAllocString(in ? in : L"")) ? S_OK : E_OUTOFMEMORY;
+}
+
 static inline HRESULT
 SHELL_CreateVariantBufferEx(VARIANT *pVar, UINT cb, VARTYPE vt)
 {

@@ -126,11 +126,6 @@ Author:
 #define THREAD_ALERT_INCREMENT          2
 
 //
-// Physical memory offset of KUSER_SHARED_DATA
-//
-#define KI_USER_SHARED_DATA_PHYSICAL    0x41000
-
-//
 // Quantum values and decrements
 //
 #define MAX_QUANTUM                     0x7F
@@ -163,6 +158,11 @@ typedef struct _FIBER                                    /* Field offsets:    */
     struct _ACTIVATION_CONTEXT_STACK *ActivationContextStackPointer;
 #endif
 } FIBER, *PFIBER;
+
+//
+// KUSER_SHARED_DATA location in User Mode
+//
+#define USER_SHARED_DATA                0x7FFE0000
 
 #ifndef NTOS_MODE_USER
 //
@@ -303,11 +303,11 @@ typedef enum _KWAIT_REASON
     WrVirtualMemory,
     WrPageOut,
     WrRendezvous,
-    Spare2,
-    WrGuardedMutex,
-    Spare4,
-    Spare5,
-    Spare6,
+    WrKeyedEvent,
+    WrTerminated,
+    WrProcessInSwap,
+    WrCpuRateControl,
+    WrCalloutStack,
     WrKernel,
     WrResource,
     WrPushLock,
@@ -316,6 +316,25 @@ typedef enum _KWAIT_REASON
     WrDispatchInt,
     WrPreempted,
     WrYieldExecution,
+    WrFastMutex,
+    WrGuardedMutex,
+    WrRundown,
+#if (NTDDI_VERSION >= NTDDI_WIN8)
+    WrAlertByThreadId,
+    WrDeferredPreempt,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN10_RS3)
+    WrPhysicalFault,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN11)
+    WrIoRing,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN11_NI)
+    WrMdlCache,
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN11_GE)
+    WrRcu,
+#endif
     MaximumWaitReason
 } KWAIT_REASON;
 
@@ -2281,6 +2300,27 @@ typedef struct _KSERVICE_TABLE_DESCRIPTOR
 #endif
     PUCHAR Number;
 } KSERVICE_TABLE_DESCRIPTOR, *PKSERVICE_TABLE_DESCRIPTOR;
+
+//
+// Processor affinity (Extended Version)
+//
+#ifdef _M_IX86
+#define MAX_PROC_GROUPS 1
+#elif (NTDDI_VERSION < NTDDI_WIN8)
+#define MAX_PROC_GROUPS 4
+#else
+#define MAX_PROC_GROUPS 20
+#endif
+
+#if (NTDDI_VERSION >= NTDDI_WIN7) || defined(__REACTOS__)
+typedef struct _KAFFINITY_EX
+{
+    USHORT Count;
+    USHORT Size;
+    ULONG Reserved;
+    KAFFINITY Bitmap[MAX_PROC_GROUPS];
+} KAFFINITY_EX, *PKAFFINITY_EX;
+#endif
 
 #if (NTDDI_VERSION >= NTDDI_WIN8)
 //

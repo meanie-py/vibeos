@@ -24,6 +24,7 @@ hours spent debugging the wrong thing.
 | bindgen + libclang | `bindgen --version` | `-sys` crate generation |
 | bison · flex | `--version` | build |
 | **`windmc`** | `x86_64-w64-mingw32-windmc` — **NOT bare `windmc`** | `committed_drift` bugcodes.h check |
+| **GNU `windres`** (binutils-mingw-w64, same package as `windmc`) | `x86_64-w64-mingw32-windres --version` must say **GNU windres** — llvm-mingw ships a `windres` of the same name that is llvm-rc in a trench coat, so the name alone proves nothing | `--rostests` only: `user32_winetest` is skipped with a configure WARNING. Its `resource.rc` uses DIALOGEX control creation data, which llvm-rc has never implemented (`expected identifier, got {`, on 18 and 19), and that one file also carries the suite's accelerators/strings/menus |
 | mtools · dosfstools · xorriso | `mcopy`, `mkfs.fat`, `xorriso` | media staging |
 | shellcheck | `shellcheck -V` | `vibeos-cli check` |
 | **`gcc-mingw-w64-i686`** | `i686-w64-mingw32-gcc` | **silent fallback**: `CreateBootSectorTarget` quietly uses clang instead, surfacing as three `unexpected offset operator` errors against a months-old file |

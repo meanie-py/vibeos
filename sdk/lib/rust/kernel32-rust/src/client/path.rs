@@ -121,7 +121,12 @@ pub const BaseCurrentDirPlacementMax: BASE_CURRENT_DIR_PLACEMENT = 2;
 // kernel32-internal constants not in bindgen.
 const UNICODE_NULL: WCHAR = 0;
 const UNICODE_STRING_MAX_BYTES: USHORT = 0xFFFE;
-const UNICODE_STRING_MAX_CHARS: USHORT = 0x7FFE;
+// UNICODE_STRING_MAX_CHARS = 32767 (0x7FFF), UNICODE_STRING_MAX_BYTES = 65534 (0xFFFE)
+// -- sdk/include/xdk/ntbasedef.h:620-621. This said 0x7FFE (32766): an off-by-one
+// carried in from the translation, which made every guard here fire one character
+// early. Caught 2026-09-21 by scan_const_contradictions, once rtl-strings gained
+// the correct value and the two disagreed. Every bindgen island says 32767.
+const UNICODE_STRING_MAX_CHARS: USHORT = 32767;
 const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFF_FFFF;
 const STATUS_NAME_TOO_LONG: NTSTATUS = 0xC000_0106u32 as NTSTATUS;
 const STATUS_VARIABLE_NOT_FOUND: NTSTATUS = 0xC000_0100u32 as NTSTATUS;
@@ -2899,6 +2904,57 @@ pub unsafe extern "system" fn GetSystemWow64DirectoryA(
     );
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return 0u32;
+}
+
+// Upstream-sync 2026-09: SetSearchPathMode is a real lost export (path.c genuinely
+// commented out here, no Rust twin existed). This is a faithful, self-contained port of
+// the interlocked flag-store/validate logic (path.c: BasepSearchPathModeFlags +
+// SetSearchPathMode). NOTE: the actual search-order logic in this file
+// (BasepComputeProcessPath / SearchPathW) does not yet consult this flag -- that is a
+// pre-existing gap in the path.c -> Rust port unrelated to this export, not introduced
+// here. Filed as a FLAG in the lint report; SetSearchPathMode itself matches the C 1:1
+// and passes modules/rostests/apitests/kernel32/SetSearchPathMode.c, which only tests
+// this function's own validation/locking, not downstream search behavior.
+// A plain AtomicI32, not the global `InterlockedCompareExchange` symbol: that name is
+// only `#[no_mangle]`'d for i386 (interlocked.rs -- the kernel32.spec entry is
+// -arch=i386 only); amd64/arm64 have no such linkable export, matching how every other
+// Rust module in the tree that needs this intrinsic off i386 defines its own local
+// atomic helper instead of calling a symbol that doesn't exist for those arches.
+static BasepSearchPathModeFlags: core::sync::atomic::AtomicI32 =
+    core::sync::atomic::AtomicI32::new(!0x18001i32); // BASE_SEARCH_PATH_INVALID_FLAGS
+
+#[no_mangle]
+pub unsafe extern "system" fn SetSearchPathMode(dwFlags: DWORD) -> BOOL {
+    use core::sync::atomic::Ordering;
+
+    /* There are only 3 valid parameters -- matches path.c's switch exactly */
+    if dwFlags != BASE_SEARCH_PATH_DISABLE_SAFE_SEARCHMODE
+        && dwFlags != BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE
+        && dwFlags != (BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE | BASE_SEARCH_PATH_PERMANENT)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE as BOOL;
+    }
+
+    let mut CurrentFlags = BasepSearchPathModeFlags.load(Ordering::SeqCst);
+    loop {
+        if (CurrentFlags & BASE_SEARCH_PATH_PERMANENT as i32) != 0
+            && (dwFlags as i32) != CurrentFlags
+        {
+            SetLastError(ERROR_ACCESS_DENIED);
+            return FALSE as BOOL;
+        }
+        match BasepSearchPathModeFlags.compare_exchange(
+            CurrentFlags,
+            dwFlags as i32,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => break,
+            Err(observed) => CurrentFlags = observed,
+        }
+    }
+    TRUE as BOOL
 }
 
 

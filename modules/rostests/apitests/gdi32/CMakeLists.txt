@@ -15,6 +15,7 @@ list(APPEND SOURCE
     CreateDIBPatternBrush.c
     CreateFont.c
     CreateFontIndirect.c
+    CreateHalftonePalette.c
     CreateIconIndirect.c
     CreatePen.c
     CreateRectRgn.c
@@ -39,6 +40,7 @@ list(APPEND SOURCE
     GdiGetLocalDC.c
     GdiReleaseLocalDC.c
     GdiSetAttrs.c
+    GetCharWidth.c
     GetClipBox.c
     GetClipRgn.c
     GetCurrentObject.c

@@ -490,3 +490,25 @@ def test_per_arch_twins_do_not_collapse_onto_each_other(tmp_path):
     )
     assert parse_spec(spec_file, arch="arm64")["ExAcquireFastMutex"].forward_target is None
     assert parse_spec(spec_file, arch="i386")["ExAcquireFastMutex"].forward_target is not None
+
+
+def test_import_flagged_entries_need_no_local_symbol(tmp_path):
+    """`-import` means the LINKER resolves the export out of an import library.
+
+    spec2def ignores the flag outright (spec2def.c:1209, "The export is imported from an
+    import library. Ignored."), so the .def carries a plain export and the jump thunk in
+    e.g. libole32.a satisfies it. Nothing has to exist in this module's own object code.
+
+    This rotted in the 2026-09-20 upstream merge: oleaut32's Get/Set/CreateErrorInfo went
+    from `ole32.GetErrorInfo` forwarders to `-import`, and the audit — which correctly
+    skips forwarders — reported all three as MISSING against a tree that links fine.
+    """
+    spec_file = _write(
+        tmp_path,
+        "x.spec",
+        "200 stdcall -import GetErrorInfo(long ptr)\n201 stdcall LocalOne(long)\n",
+    )
+    parsed = parse_spec(spec_file)
+    assert parsed["GetErrorInfo"].needs_implementation is False
+    # ...and an ordinary neighbour on the same spec still does.
+    assert parsed["LocalOne"].needs_implementation is True

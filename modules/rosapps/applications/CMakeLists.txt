@@ -1,5 +1,6 @@
 add_subdirectory(cmdutils)
 add_subdirectory(devutils)
+# fraginator declined — pruned tree (fraginator/explorer-old/nukecamp rosapps).
 add_subdirectory(net)
 add_subdirectory(notevil)
 add_subdirectory(rosinternals)

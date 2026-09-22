@@ -254,8 +254,8 @@ pub unsafe extern "system" fn FltpServerPortClose(
     mut Process: PEPROCESS,
     mut Object: PVOID,
     mut GrantedAccess: ACCESS_MASK,
-    mut ProcessHandleCount: ULONG,
-    mut SystemHandleCount: ULONG,
+    mut ProcessHandleCount: ULONG_PTR,
+    mut SystemHandleCount: ULONG_PTR,
 ) {
 
     let mut PortObject: PFLT_SERVER_PORT_OBJECT;
@@ -289,8 +289,8 @@ pub unsafe extern "system" fn FltpClientPortClose(
     mut Process: PEPROCESS,
     mut Object: PVOID,
     mut GrantedAccess: ACCESS_MASK,
-    mut ProcessHandleCount: ULONG,
-    mut SystemHandleCount: ULONG,
+    mut ProcessHandleCount: ULONG_PTR,
+    mut SystemHandleCount: ULONG_PTR,
 ) {
     let mut PortObject: PFLT_PORT_OBJECT = Object as PFLT_PORT_OBJECT;
     if FltpDisconnectPort(PortObject) != 0 {

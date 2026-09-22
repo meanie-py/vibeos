@@ -313,13 +313,23 @@ pub unsafe extern "C" fn CcRosFlushVacb(
     let mut have_lock = 0u8;
     let shared_cache_map = (*vacb).SharedCacheMap;
 
-    CcRosUnmarkDirtyVacb(vacb, 1u8);
+    // Upstream-sync merge (ntoskrnl/cc/view.c): the return value says whether WE were the
+    // thread that pulled this VACB off the dirty list. If a concurrent flush already did,
+    // we must not re-mark it on failure -- that thread will. Re-marking regardless calls
+    // CcRosMarkDirtyVacb on a VACB that is still linked and still ref-counted, which both
+    // corrupts DirtyVacbListHead and leaks a reference, so the shared cache map is never
+    // torn down and the owning file object is never dereferenced. We still call
+    // MmFlushSegment either way: the caller expects a status that reflects a real write,
+    // and the concurrent flush may have failed.
+    let was_marked = CcRosUnmarkDirtyVacb(vacb, 1u8);
 
     if IoGetTopLevelIrp() as usize != FSRTL_CACHE_TOP_LEVEL_IRP {
         status = FsRtlAcquireFileForCcFlushEx((*(*vacb).SharedCacheMap).FileObject);
         if status < 0 {
             if status < 0 {
-                CcRosMarkDirtyVacb(vacb);
+                if was_marked != 0 {
+                    CcRosMarkDirtyVacb(vacb);
+                }
             } else {
                 if (*shared_cache_map).ValidDataLength.QuadPart < ((*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64) {
                     (*shared_cache_map).ValidDataLength.QuadPart = (*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64;
@@ -342,7 +352,9 @@ pub unsafe extern "C" fn CcRosFlushVacb(
     }
 
     if status < 0 {
-        CcRosMarkDirtyVacb(vacb);
+        if was_marked != 0 {
+            CcRosMarkDirtyVacb(vacb);
+        }
     } else {
         if (*shared_cache_map).ValidDataLength.QuadPart < ((*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64) {
             (*shared_cache_map).ValidDataLength.QuadPart = (*vacb).FileOffset.QuadPart + VACB_MAPPING_GRANULARITY as i64;
@@ -357,11 +369,19 @@ unsafe fn CcRosDeleteFileCache(
     shared_cache_map: PROS_SHARED_CACHE_MAP,
     old_irql: *mut KIRQL
 ) -> NTSTATUS {
+    // Upstream-sync merge (ntoskrnl/cc/view.c): move every VACB onto a PRIVATE list while
+    // still holding the lock. Leaving them on CacheMapVacbListHead lets a concurrent
+    // CcRosLookupVacb -- reached by anyone already holding this SharedCacheMap, e.g.
+    // CcFlushCache -- find one in the window between the lock release below and the second
+    // loop unlinking it, taking a reference that then races our CcRosVacbDecRefCount. The
+    // leaked reference keeps the VACB, and so the cache map and its file object, alive.
+    let mut local_vacb_list: LIST_ENTRY = core::mem::zeroed();
+    InitializeListHead(core::ptr::addr_of_mut!(local_vacb_list));
+
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
-    
-    let mut current_entry = (*shared_cache_map).CacheMapVacbListHead.Flink;
-    while current_entry != core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead) {
-        let vacb = (current_entry as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+
+    while !IsListEmpty(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) {
+        let vacb = ((*shared_cache_map).CacheMapVacbListHead.Flink as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
 
         RemoveEntryList(core::ptr::addr_of_mut!((*vacb).VacbLruListEntry));
         InitializeListHead(core::ptr::addr_of_mut!((*vacb).VacbLruListEntry));
@@ -371,7 +391,11 @@ unsafe fn CcRosDeleteFileCache(
             (*vacb).Dirty = 1u8;
         }
 
-        current_entry = (*current_entry).Flink;
+        RemoveEntryList(core::ptr::addr_of_mut!((*vacb).CacheMapVacbListEntry));
+        InsertTailList(
+            core::ptr::addr_of_mut!(local_vacb_list),
+            core::ptr::addr_of_mut!((*vacb).CacheMapVacbListEntry)
+        );
     }
 
     (*(*file_object).SectionObjectPointer).SharedCacheMap = core::ptr::null_mut();
@@ -380,8 +404,8 @@ unsafe fn CcRosDeleteFileCache(
     KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
     KeReleaseQueuedSpinLock(LockQueueMasterLock as _, *old_irql);
 
-    while !IsListEmpty(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) {
-        let vacb = (RemoveHeadList(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapVacbListHead)) as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
+    while !IsListEmpty(core::ptr::addr_of_mut!(local_vacb_list)) {
+        let vacb = (RemoveHeadList(core::ptr::addr_of_mut!(local_vacb_list)) as *const u8).offset(-(core::mem::offset_of!(ROS_VACB, CacheMapVacbListEntry) as isize)) as PROS_VACB;
         
         InitializeListHead(core::ptr::addr_of_mut!((*vacb).CacheMapVacbListEntry));
 
@@ -676,6 +700,17 @@ pub unsafe extern "C" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
     old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
     KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
 
+    // Upstream-sync merge (ntoskrnl/cc/view.c): another thread may have re-marked the VACB
+    // dirty between a caller's lockless Dirty check and this call (e.g. a concurrent writer
+    // via CcRosReleaseVacb). It is already on the dirty list; inserting again would corrupt
+    // the list and inc-ref a second time with no matching decrement. Upstream turned a bare
+    // ASSERT(!Vacb->Dirty) into this early return.
+    if (*vacb).Dirty != 0 {
+        KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+        KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
+        return;
+    }
+
     InsertTailList(
         core::ptr::addr_of_mut!(DirtyVacbListHead),
         core::ptr::addr_of_mut!((*vacb).DirtyVacbListEntry)
@@ -705,7 +740,7 @@ pub unsafe extern "C" fn CcRosMarkDirtyVacb(vacb: PROS_VACB) {
 pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
     vacb: PROS_VACB,
     lock_views: BOOLEAN
-) {
+) -> BOOLEAN {
     let mut old_irql: KIRQL = 0;
     let shared_cache_map: PROS_SHARED_CACHE_MAP;
 
@@ -714,6 +749,20 @@ pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
     if lock_views != 0 {
         old_irql = KeAcquireQueuedSpinLock(LockQueueMasterLock as _);
         KeAcquireSpinLockAtDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+    }
+
+    // Upstream-sync merge added this guard (ntoskrnl/cc/view.c) against a real race: a
+    // caller may check Vacb->Dirty lockless before calling in, and a concurrent flush
+    // (e.g. the lazy writer) can unmark the VACB in between. Proceeding here would
+    // underflow CcTotalDirtyPages/DirtyPages, drop an extra refcount via
+    // CcRosVacbDecRefCount, and could free the VACB prematurely. Our pre-merge
+    // translation carried the old, racy behavior with no such check.
+    if (*vacb).Dirty == 0 {
+        if lock_views != 0 {
+            KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
+            KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
+        }
+        return 0u8;
     }
 
     (*vacb).Dirty = 0u8;
@@ -730,6 +779,8 @@ pub unsafe extern "C" fn CcRosUnmarkDirtyVacb(
         KeReleaseSpinLockFromDpcLevel(core::ptr::addr_of_mut!((*shared_cache_map).CacheMapLock) as *mut _);
         KeReleaseQueuedSpinLock(LockQueueMasterLock as _, old_irql);
     }
+
+    1u8
 }
 
 #[no_mangle]

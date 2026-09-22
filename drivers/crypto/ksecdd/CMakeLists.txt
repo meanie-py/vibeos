@@ -2,8 +2,7 @@
 spec2def(ksecdd.sys ksecdd.spec)
 
 include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers/ksecdd
-    ${REACTOS_SOURCE_DIR}/sdk/lib/cryptlib)
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers/ksecdd)
 
 # The 5 .c bodies replaced by Rust (ksecdd-rust). Kernel Security Support Provider.
 # .c kept on disk (never-delete). Bar: link-clean x3.

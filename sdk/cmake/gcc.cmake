@@ -132,7 +132,6 @@ else()
 endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    add_compile_options("-Wno-unknown-pragmas")
     add_compile_options(-fno-aggressive-loop-optimizations)
     if (DBG)
         add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wold-style-declaration>")
@@ -206,11 +205,12 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
         add_compile_options(-fno-builtin-erf)
         add_compile_options(-fno-builtin-erff)
+        add_compile_options(-fno-builtin-execv)
+        add_compile_options(-fno-builtin-execve)
+        add_compile_options(-fno-builtin-execvp)
     endif()
 
 elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-microsoft>")
-    add_compile_options(-Wno-pragma-pack)
     add_compile_options(-fno-associative-math)
 
     if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
@@ -248,7 +248,11 @@ endif()
 add_compile_options(-march=${OARCH} -mtune=${TUNE})
 
 # Warnings, errors
-if((NOT CMAKE_BUILD_TYPE STREQUAL "Release") AND (NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo") AND (NOT CMAKE_C_COMPILER_ID STREQUAL Clang))
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+   NOT ARCH STREQUAL "amd64" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "Release" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
     add_compile_options(-Werror)
 endif()
 
@@ -256,7 +260,6 @@ add_compile_options(-Wall -Wpointer-arith)
 
 # Disable some overzealous warnings
 add_compile_options(
-    -Wno-unknown-warning-option
     -Wno-char-subscripts
     -Wno-multichar
     -Wno-unused-value
@@ -266,10 +269,23 @@ add_compile_options(
     -Wno-unused-result # FIXME To be removed when CORE-17637 is resolved
     -Wno-format
     -Wno-maybe-uninitialized
+    -Wno-nonnull-compare
 )
 
 if(FALSE)
     add_compile_options(-Wno-attributes)
+endif()
+
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(
+        -Wno-unknown-pragmas
+    )
+elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-microsoft>")
+    add_compile_options(
+        -Wno-pragma-pack
+        -Wno-unknown-warning-option
+    )
 endif()
 
 # Optimizations
@@ -317,7 +333,6 @@ elseif(ARCH STREQUAL "amd64")
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
         add_compile_options(-mpreferred-stack-boundary=4)
     endif()
-    add_compile_options(-Wno-error)
 endif()
 
 # Other
@@ -432,6 +447,37 @@ set(CMAKE_CXX_COMPILE_OBJECT "<CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS> 
 set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_flag} -x assembler-with-cpp -o <OBJECT> -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm <INCLUDES> <FLAGS> <DEFINES> -D__ASM__ -c <SOURCE>")
 
 set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
+
+# use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
+# llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
+# resource scripts that use syntax llvm-rc has never implemented; everything
+# else stays on the pinned toolchain, so this is an escape hatch and not a
+# second resource pipeline.
+#
+# It works by overriding the rule variable rather than CMAKE_RC_COMPILER,
+# because CMake expands <CMAKE_RC_COMPILER> from the global value and would
+# ignore a directory-scoped one. Flags, includes, defines and the depfile
+# plumbing are IDENTICAL to the rule above -- the compiler is the only change --
+# and the preprocessor is still the pinned clang, so the preprocessed text the
+# two compilers see is the same text.
+#
+# Missing GNU windres is reported and the caller decides; it must not silently
+# fall back to llvm-rc, which would "succeed" at configure time and then fail
+# the build with a parse error that names the resource script instead of the
+# missing host tool.
+function(use_gnu_rc)
+    if(NOT GNU_RC_COMPILER)
+        message(WARNING
+            "GNU windres not found: resource scripts in ${CMAKE_CURRENT_SOURCE_DIR} "
+            "cannot be built (llvm-rc does not implement the syntax they use). "
+            "Install mingw-w64 binutils (Debian/Ubuntu: binutils-mingw-w64-x86-64; "
+            "Homebrew: mingw-w64) or pass -DGNU_RC_COMPILER=/path/to/windres.")
+        return()
+    endif()
+    set(CMAKE_RC_COMPILE_OBJECT
+        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        PARENT_SCOPE)
+endfunction()
 
 if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     set(RC_PREPROCESSOR_TARGET "--preprocessor-arg=--target=${CMAKE_C_COMPILER_TARGET}")
@@ -1063,7 +1109,7 @@ function(spec2def _dllname _spec_file)
     cmake_parse_arguments(__spec2def "ADD_IMPORTLIB;NO_PRIVATE_WARNINGS;WITH_RELAY;WITH_DBG;NO_DBG" "VERSION" "" ${ARGN})
 
     # Get library basename
-    get_filename_component(_file ${_dllname} NAME_WE)
+    get_filename_component(_file ${_dllname} NAME_WLE)
 
     # Error out on anything else than spec
     if(NOT ${_spec_file} MATCHES ".*\\.spec")
@@ -1100,6 +1146,8 @@ function(spec2def _dllname _spec_file)
         endif()
 
         generate_import_lib(lib${_file} ${_dllname} ${_spec_file} ${_extraflags} "${__version_arg}" "${__dbg_arg}")
+        target_include_directories(lib${_file} INTERFACE $<TARGET_PROPERTY:${_file},INTERFACE_INCLUDE_DIRECTORIES>)
+        target_include_directories(lib${_file}_delayed INTERFACE $<TARGET_PROPERTY:${_file},INTERFACE_INCLUDE_DIRECTORIES>)
     endif()
 endfunction()
 

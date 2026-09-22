@@ -208,8 +208,7 @@ RtlMemoryKM OK pass=1081 fail=3 skip=1 exit=0
     assert RtlMemory.c:235
     assert RtlMemory.c:254
     assert RtlMemory.c:277
-RtlRangeList OK pass=239 fail=1 skip=0 exit=0
-    assert RtlRangeList.c:225
+RtlRangeList OK pass=240 fail=0 skip=0 exit=0
 RtlRegistryKM OK pass=210 fail=0 skip=0 exit=0
 RtlSplayTreeKM OK pass=139 fail=0 skip=0 exit=0
 RtlStackKM OK pass=13 fail=27 skip=0 exit=0
@@ -386,3 +385,4 @@ TcpIpTdi OK pass=31 fail=4 skip=0 exit=0
     assert tdi.c:170
     assert tdi.c:246
 RtlCaptureContextUM NO-END pass=0 fail=0 skip=0 exit=1 errors=1
+ExPushLock OK pass=1134 fail=0 skip=0 exit=0

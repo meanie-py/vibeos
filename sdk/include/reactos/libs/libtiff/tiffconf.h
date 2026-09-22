@@ -1,54 +1,61 @@
+/* libtiff/tiffconf.h.  Generated from tiffconf.h.in by configure.  */
 /*
   Configuration defines for installed libtiff.
   This file maintained for backward compatibility. Do not use definitions
   from this file in your programs.
-
-  ReactOS: this is the hand-maintained stand-in for the file libtiff's own build
-  generates from libtiff/tiffconf.h.cmake.in. Keep it in step with that template on
-  every version bump -- the feature switches below are OUR selection and must match
-  the source list in dll/3rdparty/libtiff/CMakeLists.txt, and the fixed-width types
-  come from <stdint.h> since 4.5 rather than being spelled out per compiler.
 */
+
+/* clang-format off */
+/* clang-format disabled because CMake scripts are very sensitive to the
+ * formatting of this file. configure_file variables of type "@VAR@" are
+ * modified by clang-format and won't be substituted.
+ */
 
 #ifndef _TIFFCONF_
 #define _TIFFCONF_
+
 
 #include <stddef.h>
 #include <stdint.h>
 #include <inttypes.h>
 
-/* The size of a `int', as computed by sizeof. */
-#define SIZEOF_INT 4
-
-/* Signed 8-bit type */
-#define TIFF_INT8_T int8_t
-
-/* Unsigned 8-bit type */
-#define TIFF_UINT8_T uint8_t
 
 /* Signed 16-bit type */
-#define TIFF_INT16_T int16_t
-
-/* Unsigned 16-bit type */
-#define TIFF_UINT16_T uint16_t
+/* #undef TIFF_INT16_T */
 
 /* Signed 32-bit type */
-#define TIFF_INT32_T int32_t
-
-/* Unsigned 32-bit type */
-#define TIFF_UINT32_T uint32_t
+/* #undef TIFF_INT32_T */
 
 /* Signed 64-bit type */
-#define TIFF_INT64_T int64_t
+/* #undef TIFF_INT64_T */
+#ifdef __REACTOS__
+#ifdef __GNUC__
+#define TIFF_INT64_T signed long long
+#else
+#define TIFF_INT64_T signed __int64
+#endif
+#endif
+
+/* Signed 8-bit type */
+/* #undef TIFF_INT8_T */
+
+/* Unsigned 16-bit type */
+/* #undef TIFF_UINT16_T */
+
+/* Unsigned 32-bit type */
+/* #undef TIFF_UINT32_T */
 
 /* Unsigned 64-bit type */
-#define TIFF_UINT64_T uint64_t
+/* #undef TIFF_UINT64_T */
+
+/* Unsigned 8-bit type */
+/* #undef TIFF_UINT8_T */
 
 /* Signed size type */
-#if defined(_WIN64)
-#define TIFF_SSIZE_T int64_t
+#if defined(__REACTOS__) && defined(_WIN64)
+#define TIFF_SSIZE_T TIFF_INT64_T
 #else
-#define TIFF_SSIZE_T int32_t
+#define TIFF_SSIZE_T signed int
 #endif
 
 /* Compatibility stuff. */
@@ -58,9 +65,15 @@
 #define HAVE_IEEEFP 1
 
 /* The concept of HOST_FILLORDER is broken. Since libtiff 4.5.1
- * this macro is hardcoded to FILLORDER_LSB2MSB on all architectures, to reflect
- * past long behavior of doing so on x86. It only influences passing the 'H'
- * mode to TIFFOpen(), and must NOT be used to decide CPU endianness. */
+ * this macro will always be hardcoded to FILLORDER_LSB2MSB on all
+ * architectures, to reflect past long behavior of doing so on x86 architecture.
+ * Note however that the default FillOrder used by libtiff is FILLORDER_MSB2LSB,
+ * as mandated per the TIFF specification.
+ * The influence of HOST_FILLORDER is only when passing the 'H' mode in
+ * TIFFOpen().
+ * You should NOT rely on this macro to decide the CPU endianness!
+ * This macro will be removed in libtiff 4.6
+ */
 #define HOST_FILLORDER FILLORDER_LSB2MSB
 
 /* Native cpu byte order: 1 if big-endian (Motorola) or 0 if little-endian
@@ -71,12 +84,16 @@
 #define CCITT_SUPPORT 1
 
 /* Support JPEG compression (requires IJG JPEG library) */
+/* vibeos (upstream-sync 2026-09-20): upstream's libtiff 4.7.1 drop turns JPEG-in-TIFF
+   on. We stayed on libjpeg 9f — upstream moved to v10, an API break the research lane
+   owns — and our libjpeg.spec exports only the subset the rest of the tree uses, not
+   the jpeg_* surface tif_jpeg.c needs. Off until libjpeg is bumped deliberately. */
 /* #undef JPEG_SUPPORT */
 
 /* Support JBIG compression (requires JBIG-KIT library) */
 /* #undef JBIG_SUPPORT */
 
-/* Support LERC compression (requires liblerc) */
+/* Support LERC compression */
 /* #undef LERC_SUPPORT */
 
 /* Support LogLuv high dynamic range encoding */
@@ -88,7 +105,7 @@
 /* Support NeXT 2-bit RLE algorithm */
 #define NEXT_SUPPORT 1
 
-/* Support Old JPEG compresson (read contrib/ojpeg/README first! Compilation
+/* Support Old JPEG compression (read contrib/ojpeg/README first! Compilation
    fails with unpatched IJG JPEG library) */
 /* #undef OJPEG_SUPPORT */
 
@@ -104,7 +121,7 @@
 /* Support Deflate compression */
 #define ZIP_SUPPORT 1
 
-/* Support libdeflate enhanced compression (requires libdeflate) */
+/* Support libdeflate enhanced compression */
 /* #undef LIBDEFLATE_SUPPORT */
 
 /* Support strip chopping (whether or not to convert single-strip uncompressed
@@ -139,3 +156,5 @@
 #define IPTC_SUPPORT
 
 #endif /* _TIFFCONF_ */
+
+/* clang-format on */

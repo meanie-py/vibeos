@@ -717,6 +717,20 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+**It erases the PARAMETER TYPES too, and a widened integer hides better than a wrong
+convention.** Symptom: a kmtest service will not stop (`state = 4 RUNNING (!= 1 STOPPED)`) on
+amd64 only, i386 and arm64 clean. Cause: the 2026 upstream merge widened `OB_CLOSE_METHOD`'s
+two handle counts `ULONG` → `ULONG_PTR` without changing its arity. Every close procedure was
+recompiled against the new header; `ob-rust` still called through the checked-in bindgen
+island's old typedef and passed 32-bit arguments, and the Win64 ABI leaves the high half of an
+argument register undefined. `IopCloseFile` opens with `if (HandleCount != 1) return;`, so a
+garbage high half silently skipped IRP_MJ_CLEANUP — the cache map survived, the driver could
+not unload, the SCM held the service in RUNNING. Fix: a typed `ObpCall<X>Procedure` helper
+that transmutes past the stale field once, in one place. **When you sweep a callback family
+after a header change, compare parameter TYPES, not just how many there are** — an arity sweep
+passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
+read as an arch-specific mystery.
+
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
 `extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is
@@ -10012,6 +10026,15 @@ subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of U
 (SERVERINFO, SHAREDINFO handle entries, DESKTOPINFO). The first instinct — a win32k-maintained
 32-bit *shadow* — was rejected in favour of `user32-rust/src/wow64.rs` building the view
 client-side. The (a) half was a cursor/icon align-8 UNICODE_STRING probe → 0x1E `[§9.58a]`.
+**The normalized object is a COPY, and VARIABLE-LENGTH tails do not come with it.** `WND` and
+`CLS` are snapshotted into a heap `Snap`, so `pWnd + 1` / `pCls + 1` — which natively addresses
+the window/class extra bytes in the desktop heap — indexes whatever the process heap put after
+the snapshot. Both halves are the same bug found years apart: the WND half surfaced as user32's
+EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
+until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
+with what a syscall had just set. Address the tail off the snapped kernel object
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
+fixed struct is in the same position and has not been audited.
 
 ### Loader ordering and process bring-up `[§9.47]`
 A CUI process hangs in kernel32 `ConDllInitialize` with exit code **0x103 = STILL_ACTIVE**

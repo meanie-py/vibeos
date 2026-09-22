@@ -23,7 +23,16 @@ list(APPEND SOURCE
     thread.c
     url.c)
 
+# New upstream TUs taken with this merge: zonechk.c implements ZoneCheckUrlEx* for real
+# (our ordinal.c only had a guessed-prototype FIXME stub), and policy.cpp / querysrc.cpp
+# supply SKGetValueW/SKSetValueW/SHWindowsPolicyEx/QuerySourceCreateFromKey, which the
+# merged browseui, shdocvw, shellbars and shelldesktop now call. The rest of upstream's
+# shlwapi change — forwarding ~60 exports to the declined wine-kernelbase/shcore split —
+# is NOT taken, so kernelbase.c stays out and the .spec stays ours.
 list(APPEND PCH_SKIP_SOURCE
+    policy.cpp
+    querysrc.cpp
+    zonechk.c
     assoc.c
     propbag.cpp
     utils.cpp

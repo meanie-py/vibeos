@@ -1,5 +1,4 @@
 
-include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/tdilib)
 spec2def(wshtcpip.dll wshtcpip.spec)
 
 # wshtcpip.dll — Rust cohabitation flip (both compiled src *.c → wshtcpip-rust). The

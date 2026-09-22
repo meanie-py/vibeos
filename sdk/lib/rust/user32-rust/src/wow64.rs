@@ -558,6 +558,39 @@ pub unsafe fn wnd_extra_base(pWnd: PWND) -> *mut u8 {
     (pWnd as *mut u8).add(core::mem::size_of::<WND>())
 }
 
+/// The class extra bytes (`cbClsExtra`), addressed the same way and broken the
+/// same way as the window ones above.
+///
+/// Native: they sit immediately after the `CLS` in the desktop heap.
+///
+/// WoW64: `pCls` is a normalized 32-bit COPY of the 64-bit `CLS` inside a
+/// heap-allocated `Snap`, and nothing follows it -- so `pCls + 1` indexes into
+/// whatever the process heap put after the Snap. Wine's user32:class subtest
+/// caught this: `SetClassLongW(i*4, i+1)` then `GetClassLongW(i*4)` disagreed
+/// on all eight class words, because the SET went through a syscall to the
+/// real object and the GET read a copy that does not contain them. The window
+/// half of this was found by the EDIT control faulting at 0x2A (M11); the
+/// class half sat behind it until an oracle looked.
+#[cfg(target_arch = "x86")]
+pub unsafe fn cls_extra_base(pCls: PCLS) -> *mut u8 {
+    if IsWow64() {
+        let s = (pCls as *mut u8).sub(core::mem::offset_of!(snap::Snap, obj)) as *mut snap::Snap;
+        // Prove it really is a Snap before trusting the container_of.
+        if core::ptr::addr_of_mut!((*s).obj.cls) as PCLS == pCls {
+            return ((*s).key as *mut u8).add(core::mem::size_of::<Cls64>());
+        }
+        wow64_unsupported("class extra bytes on a non-snapshot CLS");
+        return core::ptr::null_mut();
+    }
+    (pCls as *mut u8).add(core::mem::size_of::<CLS>())
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn cls_extra_base(pCls: PCLS) -> *mut u8 {
+    (pCls as *mut u8).add(core::mem::size_of::<CLS>())
+}
+
 /// `DesktopPtrToUser` — the one true copy. Every per-file duplicate in the
 /// translated user32 sources delegates here, so the WoW64 handling lives in one
 /// place. `Ptr` is a kernel desktop-heap address as stored in the shared

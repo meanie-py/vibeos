@@ -335,8 +335,6 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     ULONG Disposition;
     UNICODE_STRING KeyName;
 
-    /* Set the alternative system architecture information */
-
     /* Setup the key name */
     RtlInitUnicodeString(&KeyName,
                          L"\\Registry\\Machine\\Hardware\\DeviceMap");
@@ -404,6 +402,28 @@ CmpInitializeHardwareConfiguration(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     ARM64_UART_TRACE("\r\n");
     if (LoaderBlock->ConfigurationRoot)
     {
+#ifdef _M_IX86
+        PCONFIGURATION_COMPONENT_DATA ConfigData;
+
+        ConfigData = KeFindConfigurationEntry(LoaderBlock->ConfigurationRoot,
+                                              SystemClass,
+                                              MaximumType,
+                                              NULL);
+        if (ConfigData)
+        {
+            /* Check if the system identifier starts with a known string.
+             * Set kernel flags and initialize variables accordingly. */
+            if (!strncmp(ConfigData->ComponentEntry.Identifier,
+                         "NEC PC-98",
+                         sizeof("NEC PC-98") - 1))
+            {
+                /* Running on a NEC PC-9800 or compatible */
+                KeI386MachineType |= 0x100; /* Should probably be one of MACHINE_TYPE_* consts */
+                SharedUserData->AlternativeArchitecture = NEC98x86;
+            }
+        }
+#endif
+
         /* Setup the configuration tree */
         Status = CmpSetupConfigurationTree(LoaderBlock->ConfigurationRoot,
                                            KeyHandle,

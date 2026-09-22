@@ -64,6 +64,7 @@ base/shell/explorer/CMakeLists.txt	1	# TaskbarSettings::Save/Load method entry p
 base/shell/explorer/CMakeLists.txt	1	# appbar.cpp — replaced by Rust (folded into explorer-rust traywnd.rs);
 base/shell/explorer/CMakeLists.txt	1	# desktop.cpp — replaced by Rust (explorer-rust desktop.rs)
 base/shell/explorer/CMakeLists.txt	1	# explorer.cpp — replaced by Rust (explorer-rust explorer.rs); wWinMain (the
+base/shell/explorer/CMakeLists.txt	1	# mediabtns.cpp — new upstream file (media/mixer buttons backend), no Rust
 base/shell/explorer/CMakeLists.txt	1	# notifyiconscust.cpp — replaced by Rust (explorer-rust notifyiconscust.rs)
 base/shell/explorer/CMakeLists.txt	1	# only the C-variadic FormatMenuString shell stays C++ (util_vararg.cpp).
 base/shell/explorer/CMakeLists.txt	1	# rshell.cpp — replaced by Rust (explorer-rust rshell.rs)
@@ -177,6 +178,7 @@ boot/freeldr/freeldr/rosload.cmake	1	# lib/strsafe_shim.c
 boot/freeldr/freeldr/rosload.cmake	1	# linuxboot.c # replaced by Rust (freeldr-rust/src/linuxboot.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# mini_hal stays a dep (systimer.S asm → libmini_hal.a, still reused). Its
 boot/freeldr/freeldr/rosload.cmake	1	# miscboot.c # replaced by Rust (freeldr-rust/src/miscboot.rs)
+boot/freeldr/freeldr/rosload.cmake	1	# ntldr/advopts.c — the F8 Advanced Boot Options menu, extracted
 boot/freeldr/freeldr/rosload.cmake	1	# ntldr/arch/amd64/winldr.c # replaced by Rust (freeldr-rust/src/winldr_amd64.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# ntldr/arch/i386/winldr.c # replaced by Rust (freeldr-rust/src/winldr_i386.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# ntldr/conversion.c # replaced by Rust (freeldr-rust/src/conversion.rs)
@@ -187,11 +189,13 @@ boot/freeldr/freeldr/rosload.cmake	1	# ntldr/setupldr.c # replaced by Rust (free
 boot/freeldr/freeldr/rosload.cmake	1	# ntldr/winldr.c # replaced by Rust (freeldr-rust/src/winldr.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# ntldr/wlmemory.c # replaced by Rust (freeldr-rust/src/wlmemory.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# ntldr/wlregistry.c # replaced by Rust (freeldr-rust/src/wlregistry.rs)
+boot/freeldr/freeldr/rosload.cmake	1	# ntoskrnl/ke/config.c — upstream factored the kernel/loader shared config
 boot/freeldr/freeldr/rosload.cmake	1	# options.c # replaced by Rust (freeldr-rust/src/options.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# oslist.c # replaced by Rust (freeldr-rust/src/oslist.rs)
 boot/freeldr/freeldr/rosload.cmake	1	# rosload's asm (linux.S/misc.S) is assembled by reactos-link from raw .S now;
 boot/freeldr/freeldr/rosload.cmake	1	# strsafe_shim.c (variadic RtlStringCbPrintfA shim) is now compiled directly
 boot/freeldr/freeldr/rosload.cmake	1	# the per-arch asm (linux.S/misc.S) is now assembled by reactos-link from raw
+boot/freeldr/freeldr/rosload.cmake	1	# upstream from ntldropts.c + options.c, both of which are Rust here
 boot/freeldr/freeldr/uefi.cmake	1	# above), and its only remaining content — the per-arch asm (uefiasm.S +
 boot/freeldr/freeldr/uefi.cmake	1	# arch/uefi/stubs.c # replaced by Rust (freeldr-rust/src/uefi_stubs.rs)
 boot/freeldr/freeldr/uefi.cmake	1	# arch/uefi/ueficon.c # replaced by Rust (freeldr-rust/src/ueficon.rs)
@@ -221,7 +225,7 @@ boot/rtl/blrtl.cmake	1	## message.c
 boot/rtl/blrtl.cmake	1	## res.c ## Optional? Needs SEH
 dll/3rdparty/libtiff/CMakeLists.txt	1	#mkg3states.c
 dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jbig.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jpeg.c
+dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jpeg.c # off with JPEG_SUPPORT — see tiffconf.h
 dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_lzma.c
 dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_ojpeg.c
 dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_stream.cxx
@@ -302,6 +306,7 @@ dll/ntdll/CMakeLists.txt	1	# rtl/uilist.c — replaced by Rust (ntdll-rust/src/r
 dll/ntdll/CMakeLists.txt	1	# rtl/version.c — replaced by Rust (ntdll-rust/src/rtl/version.rs);
 dll/ntdll/nt_0600/CMakeLists.txt	1	# NOTE: ntdll_vista_static (an empty ldrnotify_rust_stub.c holder) + the cmake
 dll/ntdll/nt_0600/CMakeLists.txt	1	# reactos-link. ldrnotify_rust_stub.c / DllMain.c / the .c bodies stay on disk.
+dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c checklist.c misc.c sidcache.c → aclui-rust
@@ -348,7 +353,6 @@ dll/win32/authz/CMakeLists.txt	1	# authz.c clictx.c resman.c → authz-rust
 dll/win32/authz/CMakeLists.txt	1	# clictx.c
 dll/win32/authz/CMakeLists.txt	1	# resman.c
 dll/win32/cabinet/CMakeLists.txt	1	# (reactos-link, ModuleKind::Win32Dll) compiles rust_cohab_stub.c (wine debug
-dll/win32/comdlg32/CMakeLists.txt	1	#itemdlg.c /* Win 7 */
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
 dll/win32/dnsapi/CMakeLists.txt	1	# adns.c
@@ -380,6 +384,7 @@ dll/win32/iphlpapi/CMakeLists.txt	1	# registry.c (→ iphlpapi-rust src/iphlpapi
 dll/win32/iphlpapi/CMakeLists.txt	1	# resinfo_reactos.c (→ iphlpapi-rust src/iphlpapi/resinfo_reactos.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# route_reactos.c (→ iphlpapi-rust src/iphlpapi/route_reactos.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# --allow-multiple-definition needed since every proc.c symbol was removed).
+dll/win32/kernel32/CMakeLists.txt	1	# The *ansi.c files are upstream splitting the ANSI wrappers out of TUs we have
 dll/win32/kernel32/CMakeLists.txt	1	# client/actctx.c — replaced by Rust
 dll/win32/kernel32/CMakeLists.txt	1	# client/appcache.c — replaced by Rust
 dll/win32/kernel32/CMakeLists.txt	1	# client/atom.c — replaced by Rust (kernel32-rust/src/client/atom.rs)
@@ -418,6 +423,7 @@ dll/win32/kernel32/CMakeLists.txt	1	# client/utils.c — replaced by Rust
 dll/win32/kernel32/CMakeLists.txt	1	# client/vdm.c — replaced by Rust
 dll/win32/kernel32/CMakeLists.txt	1	# client/version.c — replaced by Rust (kernel32-rust/src/client/version.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# client/virtmem.c — replaced by Rust
+dll/win32/kernel32/CMakeLists.txt	1	# dep.c is genuinely new code (extracted from proc.c upstream) with no Rust twin;
 dll/win32/kernel32/CMakeLists.txt	1	# kernel32-rust cohab: client/proc.c (the CreateProcessInternalW path) → Rust.
 dll/win32/kernel32/CMakeLists.txt	1	# kernel32_vista/DllMain.c stays C (a #[no_mangle] DllMain here would collide with
 dll/win32/kernel32/CMakeLists.txt	1	# no-SSE rule). The crate's #[no_mangle] symbols are the sole providers of proc.c's
@@ -439,12 +445,28 @@ dll/win32/kernel32/CMakeLists.txt	1	# winnls/string/locale.c — replaced by Rus
 dll/win32/kernel32/CMakeLists.txt	1	# winnls/string/lstring.c — replaced by Rust (kernel32-rust/src/string/lstring.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# winnls/string/nls.c — replaced by Rust (kernel32-rust/src/string/nls.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# winnls/string/sortkey.c — replaced by Rust (kernel32-rust/src/string/sortkey.rs)
+dll/win32/kernel32/CMakeLists.txt	1	#client/atomansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/file/copyansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/file/diransi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/file/fileinfoansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/file/mntpointansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/file/moveansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/file/volumeansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/pathansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/procansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/synchansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/sysinfoansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#client/versionansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#winnls/string/lcformatansi.c
+dll/win32/kernel32/CMakeLists.txt	1	#winnls/string/localeansi.c
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# GetFinalPathNameByHandle.c GetNamedPipeClientProcessId.c GetTickCount64.c
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# GetUserDefaultLocaleName.c InitOnce.c IsValidLocaleName.c LCIDToLocaleName.c
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# LocaleNameToLCID.c SetThreadDescription.c sync.c vista.c
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# NT6 console support (client/console/vista.c) is still C and only compiled when NT6
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# built in the parent CMakeLists). DllMain.c stays C (the module entrypoint).
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# firmware.c EnumSystemLocalesEx.c GetLocaleInfoEx.c GetFileInformationByHandleEx.c
+dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c is a NEW upstream TU (post-fork): the Vista CreateThreadpool* /
+dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c — new upstream file (CreateThreadpool*/TrySubmitThreadpoolCallback
 dll/win32/kernelbase/CMakeLists.txt	1	# Import libs for the local C in dllmain.c (SetLastError -> kernel32;
 dll/win32/kernelbase/CMakeLists.txt	1	# dllmain.c + docs/engineering/fex-bringup-plan.md rung 2.
 dll/win32/kernelbase/wine/CMakeLists.txt	1	# path.c
@@ -612,6 +634,7 @@ dll/win32/ole32/CMakeLists.txt	1	# stg_stream.c — replaced by Rust (ole32-rust
 dll/win32/ole32/CMakeLists.txt	1	# storage32.c — replaced by Rust (ole32-rust ring/storage32.rs — the compound-file implementation: IStorage, the dir-entry tree, block chains, transactions)
 dll/win32/ole32/CMakeLists.txt	1	# stubmanager.c — replaced by Rust (ole32-rust stubmanager.rs — stub/ifstub lifetime)
 dll/win32/ole32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
+dll/win32/oleaut32/CMakeLists.txt	1	# call_double_method trampolines factored out of dispatch.c for
 dll/win32/oleaut32/CMakeLists.txt	1	# connpt.c — replaced by Rust (oleaut32-rust connpt.rs — IConnectionPoint/IEnumConnections + CreateConnectionPoint; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# dispatch.c — replaced by Rust (oleaut32-rust dispatch.rs — CreateStdDispatch/DispInvoke/DispGetIDsOfNames/DispGetParam + StdDispatch vtbl; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# hash.c — replaced by Rust (oleaut32-rust hash.rs — LHashValOfNameSys A/W; full)
@@ -621,6 +644,7 @@ dll/win32/oleaut32/CMakeLists.txt	1	# olepicture.c — replaced by Rust (oleaut3
 dll/win32/oleaut32/CMakeLists.txt	1	# olepropframe.c — replaced by Rust (oleaut32-rust olepropframe.rs — OleCreatePropertyFrame{,Indirect}; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# recinfo.c — replaced by Rust (oleaut32-rust recinfo.rs — IRecordInfo + GetRecordInfoFrom{Guids,TypeInfo}; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# safearray.c — replaced by Rust (oleaut32-rust safearray.rs — SAFEARRAY incl. Create/CreateEx/CreateVector*/CopyData; full)
+dll/win32/oleaut32/CMakeLists.txt	1	# thunks.c — new upstream file (asm call_method/call_float_method/
 dll/win32/oleaut32/CMakeLists.txt	1	# typelib.c — replaced by Rust (oleaut32-rust typelib.rs + typelib/ submodules — LoadTypeLib/RegisterTypeLib/CreateTypeLib*/DispCallFunc/ClearCustData + ITypeInfo/ITypeLib/MSFT/SLTG; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (oleaut32-rust usrmarshal.rs — VARIANT/BSTR/LPSAFEARRAY user-marshal + proxy/stub; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
@@ -707,6 +731,7 @@ dll/win32/shell32/CMakeLists.txt	1	# CRegFolder_CreateInstance — still called 
 dll/win32/shell32/CMakeLists.txt	1	# CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
 dll/win32/shell32/CMakeLists.txt	1	# CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
+dll/win32/shell32/CMakeLists.txt	1	# CShellLibrary.cpp / CUserEventTimer.cpp are NEW upstream COM objects (post-fork)
 dll/win32/shell32/CMakeLists.txt	1	# CShellLink.cpp — removed. The COM class was already Rust-owned
 dll/win32/shell32/CMakeLists.txt	1	# CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
 dll/win32/shell32/CMakeLists.txt	1	# CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
@@ -784,6 +809,7 @@ dll/win32/shell32/CMakeLists.txt	1	# wine/shellreg.c — replaced by Rust (shell
 dll/win32/shell32/CMakeLists.txt	1	# wine/shellstring.c — replaced by Rust (shell32-rust/src/wine/shellstring.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
+dll/win32/shell32/CMakeLists.txt	1	# with no Rust twin yet. shell32.cpp's object map registers them after this merge, so
 dll/win32/shell32/CMakeLists.txt	1	# — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
 dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp — replaced by shell32-rust/src/shelldesktop/. Three modules
 dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but
@@ -800,13 +826,18 @@ dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_generic.cpp -> R
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_generic_enumerator.cpp -> RecycleBinGenericEnum.rs
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_v5.cpp -> RecycleBin5.rs + recyclebin_v5_free.rs
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_v5_enumerator.cpp -> RecycleBin5Enum.rs + RecycleBin5File.rs
+dll/win32/shlwapi/CMakeLists.txt	1	# (our ordinal.c only had a guessed-prototype FIXME stub), and policy.cpp / querysrc.cpp
+dll/win32/shlwapi/CMakeLists.txt	1	# New upstream TUs taken with this merge: zonechk.c implements ZoneCheckUrlEx* for real
+dll/win32/shlwapi/CMakeLists.txt	1	# is NOT taken, so kernelbase.c stays out and the .spec stays ours.
 dll/win32/snmpapi/CMakeLists.txt	1	# (field manual §9.112). main.c is commented out below and kept on disk per the
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c → snmpapi-rust
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c)
+dll/win32/syssetup/CMakeLists.txt	1	# addons.c — NEW upstream TU since the fork (setup-time addon installation). Not built:
 dll/win32/syssetup/CMakeLists.txt	1	# classinst.c
 dll/win32/syssetup/CMakeLists.txt	1	# classinst.c dllmain.c install.c logfile.c netinstall.c proppage.c security.c wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	# dllmain.c
 dll/win32/syssetup/CMakeLists.txt	1	# install.c
+dll/win32/syssetup/CMakeLists.txt	1	# its only caller, install.c, is Rust here (syssetup-rust), so the C would link as dead
 dll/win32/syssetup/CMakeLists.txt	1	# logfile.c
 dll/win32/syssetup/CMakeLists.txt	1	# netcfgx — wizard.c alone is 3.4K lines of property-sheet page procs — and the resemblance
 dll/win32/syssetup/CMakeLists.txt	1	# netinstall.c
@@ -815,6 +846,7 @@ dll/win32/syssetup/CMakeLists.txt	1	# proppage.c
 dll/win32/syssetup/CMakeLists.txt	1	# rust_varargs_shim.c is NOT a translation reverted to C. syssetup has two C-variadics and
 dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
+dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
 dll/win32/userenv/CMakeLists.txt	1	# StringCchPrintfW (strsafe inline / stable-Rust can't define) — see userenv_rust_shims.c.
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
@@ -920,6 +952,7 @@ dll/win32/ws2_32/CMakeLists.txt	1	# src/socklife.c — replaced by Rust (ws2_32-
 dll/win32/ws2_32/CMakeLists.txt	1	# src/spinstal.c — replaced by Rust (ws2_32-rust src/spinstal.rs — WSCInstall/DeinstallProvider)
 dll/win32/ws2_32/CMakeLists.txt	1	# src/sputil.c — replaced by Rust (ws2_32-rust src/sputil.rs — service-provider utility helpers)
 dll/win32/ws2_32/CMakeLists.txt	1	# src/startup.c — replaced by Rust (ws2_32-rust src/startup.rs — WSAStartup/WSACleanup/WSApSetPostRoutine)
+dll/win32/ws2_32/CMakeLists.txt	1	# src/wine.c — new upstream file adding one function, inet_addr(), which
 dll/win32/ws2_32/CMakeLists.txt	1	# src/wsautil.c — replaced by Rust (ws2_32-rust src/wsautil.rs — SetLastError-ish error plumbing + prologs)
 dll/win32/ws2help/CMakeLists.txt	1	# apc.c
 dll/win32/ws2help/CMakeLists.txt	1	# apc.c — replaced by Rust (ws2help-rust src/ws2help/apc.rs — WahOpenApcHelper/WahQueueUserApc)
@@ -1075,6 +1108,7 @@ drivers/storage/ide/atapi/CMakeLists.txt	1	# The NT4-DDK ATAPI IDE miniport (ata
 drivers/storage/ide/atapi/CMakeLists.txt	1	# atapi.sys — Rust cohabitation flip (atapi.c -> atapi-rust)
 drivers/storage/ide/pciide/CMakeLists.txt	1	# pciide.c is translated to Rust (sdk/lib/rust/pciide-rust, kept on disk per the
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# a new acpi.c, calling back into fdo.c/pciidex.c internals we have translated
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# pciidex.sys — Rust cohabitation flip (fdo/miniport/pciidex/pdo/power.c -> Rust)
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# so they are 3-line trampolines in rust_varargs_shim.c that call the fixed-arity `*_v`
 drivers/storage/ide/uniata/CMakeLists.txt	1	# and id_ata.cpp's own header says the skeleton came from the NT4 DDK's
@@ -1179,6 +1213,7 @@ hal/halx86/minihal/CMakeLists.txt	1	# ../legacy/bus/pcibus.c — Rust takeover (
 hal/halx86/minihal/CMakeLists.txt	1	# ../legacy/bussupp.c — Rust takeover (minihal feature)
 hal/halx86/minihal/CMakeLists.txt	1	# ../pic/pic.c — only a forward decl of HalpEndSoftwareInterrupt under MINIHAL
 hal/halx86/minihal/CMakeLists.txt	1	# halinit.c — disabled (kept on disk); the 7 mini-HAL init stubs
+hal/halx86/minihal/CMakeLists.txt	1	# systimer.S is the ONLY C-side contribution left to mini_hal; without it the target
 hal/halx86/pic.cmake	1	# generic/clock.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/clock.rs)
 hal/halx86/pic.cmake	1	# generic/profil.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/profil.rs)
 hal/halx86/pic.cmake	1	# generic/timer.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/timer.rs)
@@ -1186,6 +1221,12 @@ hal/halx86/pic.cmake	1	# pic/halinit.c — replaced by Rust (sdk/lib/rust/hal-ru
 hal/halx86/pic.cmake	1	# pic/irql.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/irql.rs)
 hal/halx86/pic.cmake	1	# pic/pic.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/pic_pic.rs)
 hal/halx86/pic.cmake	1	# pic/processor.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/processor.rs)
+modules/rostests/apitests/sdk/CMakeLists.txt	1	#add_executable(sdk_apitest testlist.c)
+modules/rostests/apitests/shell32/CMakeLists.txt	1	#CUserNotification.cpp # Test is broken on Win 2003
+modules/rostests/apitests/shell32/CMakeLists.txt	1	#OpenAs_RunDLL.cpp # Test hangs on Win 2003
+modules/rostests/apitests/shell32/CMakeLists.txt	1	#ShellExecCmdLine.cpp # Broke on Windows
+modules/rostests/apitests/shell32/CMakeLists.txt	1	#ShellExec_RunDLL.cpp # Broke on Windows
+modules/rostests/apitests/shell32/CMakeLists.txt	1	#ShellExecuteW.cpp # Broke on Windows
 modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserCallHwnd.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserCallHwndLock.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserCallHwndOpt.c
@@ -1195,13 +1236,16 @@ modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserCallNoParam.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserCallOneParam.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserEnumDisplayMonitors.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	# ntuser/NtUserGetIconInfo.c
+modules/rostests/apitests/win32u/CMakeLists.txt	1	#ntdd/NtGdiDdQueryDirectDrawObject.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	#ntgdi/NtGdiFlushUserBatch.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	#ntgdi/NtGdiGetFontResourceInfoInternalW.c
 modules/rostests/apitests/win32u/CMakeLists.txt	1	#osver.c
 modules/rostests/kmtests/CMakeLists.txt	1	# __try region. See kmt_native_seh_shims.c.
+modules/rostests/kmtests/CMakeLists.txt	1	# binary became kmtest.exe. Our conformance harness — tools/payloads/kmtest/sweep.c, and
 modules/rostests/kmtests/CMakeLists.txt	1	# implementation — NOT the dummy.c stub in the same archive; pseh precedes ntoskrnl on
 modules/rostests/kmtests/CMakeLists.txt	1	# one shim (_InterlockedAddLargeStatistic, see kmt_native_seh_shims.c), boots, and
 modules/rostests/kmtests/CMakeLists.txt	1	# the msvc-env retarget. _except_handler3 resolves from libpseh.a (i386/seh.s, a real
+modules/rostests/winetests/user32/CMakeLists.txt	1	# (`CONTROL ... ,10,10,100,50 { 1,2,3,4,5 }`), which is what dialog.c's
 ntoskrnl/CMakeLists.txt	1	# define only keeps the dead-mirror C copies (traphandler.c/traphdlr.c,
 ntoskrnl/CMakeLists.txt	1	# guid.c — replaced by Rust (ntoskrnl-rust/src/guid.rs)
 ntoskrnl/CMakeLists.txt	1	# guid.c)
@@ -1274,11 +1318,13 @@ ntoskrnl/ntos.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obref.c
 ntoskrnl/ntos.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsdcach.c
 ntoskrnl/ntos.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obsecure.c
 ntoskrnl/ntos.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/ob/obwait.c
+ntoskrnl/ntos.cmake	2	# NOT enabled: ke/i386/cpu.c and ke/amd64/cpu.c are Rust here, so a live
 ntoskrnl/ntos.cmake	1	# amd64 still uses i386 kdserial.c — also replaced by Rust (i386/kdserial.rs)
 ntoskrnl/ntos.cmake	1	# arm64_uart.c retired — ARM64_UART_TRACE / _HEX now in shim_exports.rs.
 ntoskrnl/ntos.cmake	1	# cmdata.c kept in C: pure globals, no functions for tree-sitter to extract.
 ntoskrnl/ntos.cmake	1	# config/cm_rust_shims.c — REMOVED 2026-05-07. All 18 wrappers translated
 ntoskrnl/ntos.cmake	2	# config/i386/cmhardwr.c — replaced by Rust (ntoskrnl-rust/src/config/i386/cmhardwr.rs)
+ntoskrnl/ntos.cmake	2	# cpuinfo.c would duplicate symbols the Rust twins already export.
 ntoskrnl/ntos.cmake	1	# ex_rust_shims.c — replaced by Rust (ntkrnl-sys/src/inline/ex.rs + shim_exports.rs)
 ntoskrnl/ntos.cmake	1	# for format-string parsing + emission. See ntprintf_trampoline.c header.
 ntoskrnl/ntos.cmake	1	# io_tables.c retired 2026-05-08, replaced by Rust iomgr/io_tables.rs.
@@ -1291,6 +1337,7 @@ ntoskrnl/ntos.cmake	1	# kdbg/amd64/kdb_help.S — replaced by Rust global_asm! (
 ntoskrnl/ntos.cmake	1	# kdbg/i386/kdb_help.S — replaced by Rust global_asm! (kdbg/kdb_help.rs)
 ntoskrnl/ntos.cmake	1	# kdbg_rust_shims.c provides variadic KdbPrintf/KdbpPrint that
 ntoskrnl/ntos.cmake	1	# ke/arm64/stubs_asm.S + boot.S — REMOVED 2026-05-07. Translated to
+ntoskrnl/ntos.cmake	2	# ke/x86x64/cpuinfo.c — new upstream shared x86/x64 CPU-info TU (post-fork).
 ntoskrnl/ntos.cmake	1	# mm/ARM3/virtual.c — Rust on all 3 arches (ntoskrnl-rust/src/ARM3/virtual.rs).
 ntoskrnl/ntos.cmake	1	# mm/mm_sysldr_shims.c eliminated — fully translated to Rust
 ntoskrnl/ntos.cmake	1	# mm/section_pe.c — replaced by Rust (ntoskrnl-rust/src/mm/section_pe.rs)
@@ -1492,6 +1539,7 @@ ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
+ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
@@ -1555,6 +1603,7 @@ ntoskrnl/ntos.cmake	2	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i3
 ntoskrnl/ntos.cmake	1	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c) # replaced by Rust
 sdk/cmake/baseaddress_dwarf.cmake	1	# cohab grows kernel32 past its old 0x440000 slot — proc.c took it to 0x47f000,
 sdk/cmake/gcc.cmake	1	# declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
+sdk/lib/3rdparty/libxml2/CMakeLists.txt	1	# our include/libxml/xmlversion.h still defines LIBXML_ZLIB_ENABLED, so tree.c
 sdk/lib/cmlib/CMakeLists.txt	1	# Add a placeholder TU (mirrors the HAL lib_hal_*_empty.c pattern); the real
 sdk/lib/conutils/CMakeLists.txt	1	# Rust archive (lsalib-style cohab). instream.c was already not built. 3 arches.
 sdk/lib/conutils/CMakeLists.txt	1	# here (were in outstream.c, no longer built).
@@ -1613,6 +1662,10 @@ sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/ldexpf.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/remainder.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/remainder_piby2f.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/remainderf.c
+sdk/lib/crt/msvcrtex.cmake	1	# recalloc.c is NEW upstream (CORE-20596): it defines recalloc AND the
+sdk/lib/crt/msvcrtex.cmake	1	# sec_mgr.c started calling it in this merge.
+sdk/lib/crt/printf/printf.cmake	1	# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
+sdk/lib/crt/printf/printf.cmake	1	# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
 sdk/lib/dnslib/CMakeLists.txt	1	# debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
 sdk/lib/dnslib/CMakeLists.txt	1	# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU
@@ -1662,6 +1715,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# encode.c — replaced by Rust implementation (sdk
 sdk/lib/rtl/CMakeLists.txt	1	# env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
 sdk/lib/rtl/CMakeLists.txt	1	# error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
 sdk/lib/rtl/CMakeLists.txt	1	# exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
+sdk/lib/rtl/CMakeLists.txt	1	# export the Rtl{Cm,Io}{En,De}codeMemIoResource family. Porting memres.c to
 sdk/lib/rtl/CMakeLists.txt	1	# generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
 sdk/lib/rtl/CMakeLists.txt	1	# handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
 sdk/lib/rtl/CMakeLists.txt	1	# heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
@@ -1678,6 +1732,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# largeint.c — replaced by Rust implementation (s
 sdk/lib/rtl/CMakeLists.txt	1	# locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
 sdk/lib/rtl/CMakeLists.txt	1	# luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
 sdk/lib/rtl/CMakeLists.txt	2	# mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
+sdk/lib/rtl/CMakeLists.txt	1	# memres.c is upstream-new (2026, memory/port resource descriptor encode/decode
 sdk/lib/rtl/CMakeLists.txt	1	# memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
 sdk/lib/rtl/CMakeLists.txt	1	# message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
@@ -1687,6 +1742,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# ppb.c — replaced by Rust implementation (sdk/li
 sdk/lib/rtl/CMakeLists.txt	1	# prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
 sdk/lib/rtl/CMakeLists.txt	1	# priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
 sdk/lib/rtl/CMakeLists.txt	1	# process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
+sdk/lib/rtl/CMakeLists.txt	1	# processor.c is upstream-new (2026) but declined here: it DEFINES
 sdk/lib/rtl/CMakeLists.txt	1	# propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
 sdk/lib/rtl/CMakeLists.txt	1	# random.c — replaced by Rust implementation (sdk/lib/rust/random/)
 sdk/lib/rtl/CMakeLists.txt	1	# rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
@@ -1734,7 +1790,7 @@ sdk/lib/uuid/CMakeLists.txt	1	# oledbnewiid.c
 sdk/lib/uuid/CMakeLists.txt	1	# qosguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# tapi3iid.c
 sdk/lib/uuid/CMakeLists.txt	1	# vcguids.c
-sdk/lib/vcruntime/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
+sdk/lib/vcstartup/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
 subsystems/csr/csrlib/CMakeLists.txt	1	# api.c — replaced by Rust (smss-csrss-rust/src/csrlib/api.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# capture.c — replaced by Rust (smss-csrss-rust/src/csrlib/capture.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# connect.c — replaced by Rust (smss-csrss-rust/src/csrlib/connect.rs)
@@ -1797,6 +1853,7 @@ win32ss/CMakeLists.txt	1	# gdi/ntgdi/arc.c # replaced by Rust (sdk/lib/rust/win3
 win32ss/CMakeLists.txt	1	# gdi/ntgdi/bezier.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/bezier.rs) — cohabitation [Phase 2c geometry wave 1]
 win32ss/CMakeLists.txt	1	# gdi/ntgdi/bitblt.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/ntbitblt.rs) — cohabitation [Phase 2c wave 20: ntgdi bitblt syscalls; bitblt.c + split2 = one TU]
 win32ss/CMakeLists.txt	1	# gdi/ntgdi/bitmaps.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/bitmaps.rs) — cohabitation [Phase 2c wave 8: bitmap/surface object mgmt]
+win32ss/CMakeLists.txt	1	# gdi/ntgdi/brush.cpp (upstream's BRUSH C++ class) declined: already covered by
 win32ss/CMakeLists.txt	1	# gdi/ntgdi/cliprgn.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/cliprgn.rs) — cohabitation [Phase 2c wave 8: clip-region functions]
 win32ss/CMakeLists.txt	1	# gdi/ntgdi/coord.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/coord.rs) — cohabitation [Phase 2c geometry wave 6: coordinate transforms; coord.c + split2 = one TU]
 win32ss/CMakeLists.txt	1	# gdi/ntgdi/d3dkmt.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/d3dkmt.rs) — cohabitation [Phase 2c wave 22: D3DKMT dxgkrnl thunk layer]

@@ -115,11 +115,21 @@ class SpecEntry:
         """True iff a real symbol must exist in THIS module's object code.
 
         False for data exports (`extern`), stubs (spec2def emits the body), entries this
-        build's `-version=` excludes, and DLL-forwarded entries (the .def maps them
-        straight at another DLL).  A bare local target is NOT a forward — see the module
-        docstring.
+        build's `-version=` excludes, DLL-forwarded entries (the .def maps them straight
+        at another DLL), and `-import` entries.  A bare local target is NOT a forward —
+        see the module docstring.
+
+        On `-import`: spec2def IGNORES the flag (spec2def.c:1209, "The export is imported
+        from an import library. Ignored."), so the .def gets a plain export and the LINKER
+        resolves it out of an import library the module already links — the jump thunk in
+        e.g. libole32.a. No symbol is needed in this module's own object code, so requiring
+        a Rust fn for one is a false positive. The 2026-09-20 upstream merge rewrote
+        oleaut32's Get/Set/CreateErrorInfo from `ole32.GetErrorInfo` forwarders into
+        `-import` and this audit reported all three as missing.
         """
         if self.is_variable or self.is_stub or self.is_forwarded or not self.in_version:
+            return False
+        if "-import" in self.flags:
             return False
         return self.name != "@"  # bare "@" = autoname/noname placeholder
 

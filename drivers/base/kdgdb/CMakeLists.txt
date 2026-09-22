@@ -1,5 +1,5 @@
 
-spec2def(kdcom.dll kdgdb.spec ADD_IMPORTLIB)
+spec2def(kdgdb.dll kdgdb.spec)
 
 # ============================================================================
 # kdcom.dll (kdgdb GDB-stub KD transport) — cargo-driven final link

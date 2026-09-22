@@ -940,6 +940,25 @@ pub unsafe extern "system" fn LdrGetProcedureAddress(
     LdrpGetProcedureAddress(BaseAddress, Name, Ordinal, ProcedureAddress, 1u8)
 }
 
+// Upstream-sync 2026-09: LdrGetProcedureAddressEx is genuinely NEW upstream code
+// (ldrapi.c:799-810 in the 1,269-commit merge; not present pre-merge), with no Rust
+// twin of its own. It is the same trivial LdrpGetProcedureAddress wrapper as
+// LdrGetProcedureAddress above, just deriving ExecuteInit from Flags instead of
+// hardcoding it. LDR_GET_PROCEDURE_ADDRESS_DONT_RECORD_FORWARDER is 0x1 (ndk/ldrfuncs.h).
+#[no_mangle]
+pub unsafe extern "system" fn LdrGetProcedureAddressEx(
+    BaseAddress: PVOID,
+    Name: PANSI_STRING,
+    Ordinal: ULONG,
+    ProcedureAddress: *mut PVOID,
+    Flags: ULONG,
+) -> NTSTATUS {
+    const LDR_GET_PROCEDURE_ADDRESS_DONT_RECORD_FORWARDER: ULONG = 0x00000001;
+    let execute_init: u8 =
+        if Flags & LDR_GET_PROCEDURE_ADDRESS_DONT_RECORD_FORWARDER != 0 { 0 } else { 1 };
+    LdrpGetProcedureAddress(BaseAddress, Name, Ordinal, ProcedureAddress, execute_init)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn LdrQueryProcessModuleInformation(
     ModuleInformation: PRTL_PROCESS_MODULES,

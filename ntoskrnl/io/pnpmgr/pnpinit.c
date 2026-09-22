@@ -305,10 +305,12 @@ IopInitializePlugPlayServices(VOID)
     ARM64_UART_TRACE("[PNP] IopDetermineDefaultInterfaceType\r\n");
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();
 
+#if 0 /* FIXME: Dont even try yet! */
     /* Initialize arbiters */
     ARM64_UART_TRACE("[PNP] IopInitializeArbiters\r\n");
     Status = IopInitializeArbiters();
     if (!NT_SUCCESS(Status)) return Status;
+#endif
 
     /* Setup the group cache */
     ARM64_UART_TRACE("[PNP] PiInitCacheGroupInformation\r\n");
@@ -453,9 +455,18 @@ IopInitializePlugPlayServices(VOID)
     if (!NT_SUCCESS(Status)) return Status;
 
     /* Initialize the Bus Type GUID List */
-    PnpBusTypeGuidList = ExAllocatePool(PagedPool, sizeof(IO_BUS_TYPE_GUID_LIST));
-    RtlZeroMemory(PnpBusTypeGuidList, sizeof(IO_BUS_TYPE_GUID_LIST));
-    ExInitializeFastMutex(&PnpBusTypeGuidList->Lock);
+    ExInitializeFastMutex(&PnpBusTypeGuidList.Lock);
+    PnpBusTypeGuidList.AllocatedCount = 8;
+    PnpBusTypeGuidList.GuidCount = 0;
+    PnpBusTypeGuidList.Guids = ExAllocatePoolWithTag(PagedPool,
+                                                     PnpBusTypeGuidList.AllocatedCount * sizeof(GUID),
+                                                     TAG_PNP_GUIDS);
+    if (PnpBusTypeGuidList.Guids == NULL)
+    {
+        DPRINT1("Failed to allocate PnP GUID buffer!\n");
+        KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, STATUS_NO_MEMORY, 0, 0, 0);
+    }
+    RtlZeroMemory(PnpBusTypeGuidList.Guids, PnpBusTypeGuidList.AllocatedCount * sizeof(GUID));
 
     /* Initialize PnP root relations (this is a syncronous operation) */
     ARM64_UART_TRACE("[PNP] PiQueueDeviceAction(1)\r\n");

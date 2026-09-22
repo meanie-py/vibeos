@@ -253,11 +253,18 @@ pub unsafe extern "system" fn ExpDesktopDelete(DeletedObject: PVOID) {
 }
 
 #[no_mangle]
+// upstream-sync 2026-09-20: OB_OPEN_METHOD went NT6 (sdk/include/ndk/obtypes.h) — a new
+// second parameter `KPROCESSOR_MODE AccessMode`, and GrantedAccess by POINTER instead of
+// by value. ntoskrnl/ex/win32k.c's ExpDesktopOpen has both. Keeping the old five-parameter
+// by-value shape here is not a cosmetic lag: on i386 `extern "system"` is stdcall and the
+// callee pops, so a six-argument call into a five-parameter callee corrupts the stack, and
+// the callee reads a pointer as a value.
 pub unsafe extern "system" fn ExpDesktopOpen(
     Reason: OB_OPEN_REASON,
+    _AccessMode: KPROCESSOR_MODE,
     Process: PEPROCESS,
     ObjectBody: PVOID,
-    GrantedAccess: ACCESS_MASK,
+    GrantedAccess: *mut ACCESS_MASK,
     HandleCount: ULONG,
 ) -> NTSTATUS {
     let Process = opaque_ptr(Process);
@@ -267,7 +274,7 @@ pub unsafe extern "system" fn ExpDesktopOpen(
     Parameters.OpenReason = Reason;
     Parameters.Process = Process;
     Parameters.Object = ObjectBody;
-    Parameters.GrantedAccess = GrantedAccess;
+    Parameters.GrantedAccess = if GrantedAccess.is_null() { 0 } else { *GrantedAccess };
     Parameters.HandleCount = HandleCount;
 
     ExpWin32SessionCallout(
