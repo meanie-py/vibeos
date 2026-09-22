@@ -1,16 +1,9 @@
 {
   "active": {
-    "dynamic": [
-      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp"
-    ],
     "monolith": [
-      "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/shell32.cpp"
     ],
     "shared": [
-      "dll/win32/shell32/shelldesktop/CDesktopBrowser.cpp",
-      "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
-      "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
       "dll/win32/shell32/shellmenu/CMenuToolbars.cpp"
     ],
     "untranslated_leaf": [
@@ -32,7 +25,11 @@
       "dll/win32/shell32/CShellLink.cpp",
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
       "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
+      "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
       "dll/win32/shell32/shelldesktop/CChangeNotifyServer.cpp",
+      "dll/win32/shell32/shelldesktop/CDesktopBrowser.cpp",
+      "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
+      "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
       "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp",
       "dll/win32/shell32/shellmenu/CStartMenu.cpp",
@@ -49,6 +46,7 @@
       "dll/win32/shell32/debughlp.cpp",
       "dll/win32/shell32/dialogs/dialogs.cpp",
       "dll/win32/shell32/dialogs/drive.cpp",
+      "dll/win32/shell32/dialogs/filetypes.cpp",
       "dll/win32/shell32/dialogs/folder_options.cpp",
       "dll/win32/shell32/dialogs/general.cpp",
       "dll/win32/shell32/dialogs/item_prop.cpp",
@@ -94,9 +92,6 @@
       "dll/win32/shell32/rust_changenotify_broker_stub.cpp",
       "dll/win32/shell32/rust_folder_options_stub.cpp",
       "dll/win32/shell32/rust_stubwindow32_stub.cpp"
-    ],
-    "cpp_only_companion_bridge": [
-      "dll/win32/shell32/rust_recyclebin_bridges_stub.cpp"
     ],
     "phantom_inline_linkage": [
       "dll/win32/shell32/rust_strsafe_shim.c"

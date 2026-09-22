@@ -680,8 +680,14 @@ def _is_island(rs: Path) -> bool:
 #: `use …::recyclebin_support::len;` for `CStringW::len`. rustfmt puts every top-level item at
 #: column 0, so the column is an exact test and needs no brace matching.
 _TOP_LEVEL_PUB_RE = re.compile(
-    r"^pub\s+(?:unsafe\s+)?(?:extern\s+\"[A-Za-z0-9_-]+\"\s+)?"
-    r"(fn|struct|enum|union|trait|type|const|static)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)",
+    # A leading attribute on the SAME LINE still leaves the item at column 0, and rustconv
+    # emits exactly that shape: `#[no_mangle] pub unsafe extern "system" fn Foo(`. Anchoring
+    # on `^pub` made every one-line `#[no_mangle] pub fn` invisible to the export index, so a
+    # sibling module calling it got `cannot find function` and no import was ever generated --
+    # `CRecycleBin_ParseRecycleBinPath_RustBridge` is defined and public in `recycle_bin.rs`,
+    # and CRecycleBinFolderViewCB still could not see it.
+    r"^(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?(?:extern\s+\"[A-Za-z0-9_-]+\"\s+)?"
+    r"(fn|struct|enum|union|trait|type|const|static\s+mut|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
     re.M,
 )
 
@@ -692,6 +698,15 @@ _TOP_LEVEL_PUB_RE = re.compile(
 #: (`pub static CPP_COM_WSTR_…: [WCHAR; 4] = …`) is invisible to `defined_names`, whose
 #: static/const pattern is `:[^;]*=` and so cannot span the `;` inside an array type, and the
 #: file was importing its own definition from itself.
+#:
+#: `static mut` is deliberately NOT in here, and the distinction is the rationale above rather
+#: than an exception to it. Substrate is immutable: a `const` or a plain `static` crossing a
+#: module boundary means the island is missing something. MUTABLE file-scope state is the
+#: opposite — it is the C translation unit's own state, it has exactly one owner by
+#: construction, and it must be reachable from every module the TU was split across.
+#: `CDirectoryWatcher.cpp` is the shape: its `static HANDLE s_hThreadAPC` is written by the APC
+#: callbacks in the free-functions module and read by the class methods in the other, because
+#: one rustconv run owns one output file. Excluding it made a TU unable to see its own state.
 _NEVER_IMPORTED_KINDS = frozenset({"const", "static"})
 
 
@@ -856,6 +871,12 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
         return code, []
 
     local = defined_names(code)
+    # A name this file EXTERN-DECLARES is already in scope, and importing it too is
+    # `E0255: the name ... is defined multiple times`. `defined_names` deliberately skips
+    # extern blocks (a sibling's same-named `pub fn` must still look like the owner), so the
+    # skip has to be spelled here: filetypes.rs declares `fn ExtractIconExW(...)` in its own
+    # `extern "system"` block AND got `use crate::shell32::iconcache::ExtractIconExW;`.
+    local |= extern_declared(code)
     already = set(re.findall(r"^\s*use\s+[A-Za-z0-9_:]+::([A-Za-z_][A-Za-z0-9_]*)\s*;", code, re.M))
     provided = provided_names(crate) | island_names(crate_src)
     # COMMENTS ARE NOT CODE. Scanning the raw text meant a name that appears only in prose

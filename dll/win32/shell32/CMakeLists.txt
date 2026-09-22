@@ -1,7 +1,7 @@
 PROJECT(SHELL)
 
 add_subdirectory(evalcmd)
-add_subdirectory(shelldesktop)
+# add_subdirectory(shelldesktop) — the whole object library is Rust; see its CMakeLists.
 add_subdirectory(shellmenu)
 # shellrecyclebin/ — the WHOLE object library is Rust now (sdk/lib/rust/recyclebin-rust,
 # linked as ${RECYCLEBIN_RUST_LIB} below). Its six sources were the entire `recyclebin`
@@ -65,7 +65,12 @@ list(APPEND SOURCE
     # and SHELL32_GetDllFromRundll32CommandLine are EXTERN_C in precomp.h now, because the
     # C-linkage forwarders that used to reach those C++ functions lived HERE and went away with
     # the file; that is the same fix already documented for the DataObject_GetHIDACount group.
-    dialogs/filetypes.cpp
+    # dialogs/filetypes.cpp — replaced by Rust (shell32-rust/src/dialogs/filetypes_tu.rs);
+    # cohab via libshell32_rust.a. Its whole external closure is ONE symbol,
+    # `_FolderOptionsFileTypesDlg@16`, which the Rust publishes at the same decoration; the
+    # ATL guard variables the object also carried are COMDAT from headers and come from every
+    # other C++ TU. `EditTypeDlg_UpdateEntryIcon` is hand-written in the banked preamble
+    # rather than translated.
     # dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
     # cohab via libshell32_rust.a. Its one ATL CWindowImpl<> could not come along and lives in
     # rust_folder_options_stub.cpp below.
@@ -178,15 +183,22 @@ list(APPEND SOURCE
     # shell32-rust/src/folders/CRecycleBin.rs, and BOTH file-local COM classes came across too —
     # CRecycleBinEnum.rs and CRecycleBinItemContextMenu.rs, each an internal ShellObjectCreator
     # object with no OBJECT_ENTRY, so both needed `--cpp-com --internal`.
-    # TWO of its five retained bridges still could not come across, both for CRecycleBinFolderViewCB,
-    # which cannot be bought at all — its scaffold preflight refuses it twice. They are now
-    # rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
-    # move exposed in that class. (The third, CRecyclerDropTarget_CreateInstance, has since
-    # gone Rust with its own .cpp.)
     # SHQueryRecycleBin{A,W} are hand-written in the Rust slice: bindgen renders IRecycleBin,
     # IRecycleBinEnumList and IRecycleBinFile as opaque, so there was no slot to translate into.
-    folders/CRecycleBinFolderViewCB.cpp
-    rust_recyclebin_bridges_stub.cpp
+    # folders/CRecycleBinFolderViewCB.cpp — replaced by Rust
+    # (shell32-rust/src/folders/CRecycleBinFolderViewCB.rs); cohab via libshell32_rust.a. The
+    # class was recorded as un-buyable because the scaffold preflight refused it twice; that
+    # was a DETECTION GAP, not a property of the class — shellutils.h also overloads
+    # `ShellObjectCreator(CComPtr<T> &objref)`, deducing T from the argument, so the class name
+    # appears nowhere in the call and every `<ClassName>`-keyed scan saw nothing.
+    #
+    # rust_recyclebin_bridges_stub.cpp — GONE WITH IT, and it was the last of the five retained
+    # CRecycleBin bridges. Its two entry points are now
+    # shell32-rust/src/folders/recyclebin_view_cb_bridge.rs, publishing the same two C-ABI
+    # symbols so `recycle_bin.rs` keeps linking against the names it was translated against.
+    # This also retires the last consumer of the C++ CRecycleBinFolderViewCB: its object's only
+    # non-COMDAT externals were its own mangled methods, which nothing else referenced.
+    # rust_recyclebin_bridges_stub.cpp
     # folders/CRegFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip
     # across THREE modules, because one C++ TU holds two COM classes plus file-scope helpers
     # and each rustconv run owns its own output file: folders/CRegFolder.rs (CRegFolder, 40
@@ -401,7 +413,7 @@ add_typelib(shell32_shldisp.idl)
 set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shell32_shldisp.tlb)
 
 set_module_type(shell32 win32dll UNICODE)
-target_link_libraries(shell32 shellmenu shelldesktop wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
+target_link_libraries(shell32 shellmenu wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
 add_dependencies(shell32 rust_menuband rust_recyclebin)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)

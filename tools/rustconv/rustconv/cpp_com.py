@@ -31,6 +31,7 @@ from .cpp_core import (
     _abi_types_compatible,
     _argument_c_type,
     _cpp_literal_spans,
+    _eval_c_int_constexpr,
     _expand_default_helper_arguments,
     _masked_cpp,
     _matching_paren,
@@ -466,6 +467,15 @@ class CppComClass:
     # None is the ordinary creator; a tuple is the proved Initialize surface.
     internal_initializer_params: tuple[tuple[str, str], ...] | None = None
     stgmedium_lifecycle_fields: tuple[str, ...] = ()
+    # C++ `virtual` methods the class declares itself. A COM class has these by definition
+    # and they are handled by the WIDL vtable machinery; the field exists for the --plain
+    # path, where a vtable is exactly what is being asserted NOT to exist.
+    virtual_methods: tuple[str, ...] = ()
+    # Parameters of the PRIMARY constructor -- the one the scaffold names `<Class>_ctor_body`.
+    # Empty for the ordinary default-constructed class. A plain helper whose ONLY constructor
+    # takes arguments (`CDirectoryWatcher(HWND, LPCWSTR, BOOL)`) needs them on `_new`, which
+    # otherwise emits a call passing one argument to a four-argument body.
+    ctor_params: tuple[tuple[str, str], ...] = ()
     final_construct: bool = False
     method_names: list[str] = field(default_factory=list)
     base_classes: list[str] = field(default_factory=list)
@@ -546,6 +556,35 @@ class CppComClass:
                     f"--plain was passed but {self.name} has BEGIN_COM_MAP entries "
                     f"({', '.join(entry.interface for entry in self.com_map)}); it is a COM "
                     "class — drop --plain so its vtable and activation are generated"
+                )
+            # A COM map is not the only thing that makes a vtable, and `--plain` does not
+            # actually mean "no vtable" -- a HAND-ROLLED COM class (interfaces, no
+            # BEGIN_COM_MAP) uses this path, and the scaffold renders its WIDL vtables and
+            # stores the vptr. What has no model at all is a BESPOKE C++ virtual hierarchy:
+            # virtuals belonging to no interface, so there is no WIDL declaration to derive
+            # a slot order from. The scaffold then emits a struct with no vptr, every field
+            # lands at the wrong offset, and overrides silently bind to the base -- none of
+            # which is a compile error in either language.
+            #
+            # The discriminator is therefore an INTERFACE behind the virtuals, not the
+            # presence of virtuals: `RecycleBinGeneric` derives `IRecycleBin` (a WIDL
+            # interface, recorded in `layout_bases`) and is correctly translatable, while
+            # `CMenuToolbarBase` derives only `CWindowImplBaseT` and declares 24 virtuals of
+            # its own -- six PURE, with two concrete subclasses overriding them.
+            #
+            # A virtual DESTRUCTOR alone never trips this: it adds no callable slot the
+            # scaffold must name, and it rides whatever vtable the interfaces already give.
+            bespoke_virtuals = sorted(
+                {name for name in self.virtual_methods if not name.startswith("~")}
+            )
+            if bespoke_virtuals and not self.com_map and not self.layout_bases:
+                shown = ", ".join(bespoke_virtuals[:6])
+                problems.append(
+                    f"--plain was passed but {self.name} declares virtual method(s) "
+                    f"({shown}) belonging to no interface; it HAS a vtable, and a plain "
+                    "struct would place every field at the wrong offset and drop virtual "
+                    "dispatch. A non-COM C++ virtual hierarchy needs a deterministic "
+                    "vtable mapping"
                 )
         else:
             if not self.com_map:
@@ -937,6 +976,11 @@ _POD_LEAF_TYPES = frozenset(
         # reason the others are -- we define it -- and the CWindowImpl branch above
         # synthesises a field of it.
         "AtlWindowState",
+        # Likewise `crate::atlwin::AtlContainedWindow` -- the Rust stand-in for ATL's
+        # `CContainedWindow` (`CContainedWindowT<CWindow>`), an embedded window that
+        # SUBCLASSES an existing HWND and routes its messages back into the owner's
+        # message map under an alt-map id. `CMenuToolbarBase::m_pager` is the shape.
+        "AtlContainedWindow",
     }
 )
 
@@ -1459,6 +1503,19 @@ def _parse_plain_state_field(
     # `Tmpl<Elem>` branch below because it takes no type parameter; it still keeps its TYPE
     # so atl.rs's `Drop` reproduces `~CComBSTR`'s SysFreeString. Lowering it to a bare
     # `BSTR` instead would compile and silently leak every string the object ever held.
+    # ATL's `CContainedWindow` is a TYPEDEF (`CContainedWindowT<CWindow>`), so it reaches
+    # the parser as a plain `Type name` and would otherwise be rejected as unproven state.
+    # Named here rather than left to the generic path because the Rust side is a
+    # DIFFERENT layout by design, exactly as `AtlWindowState` is: ATL's version carries a
+    # machine-code thunk and a current-message pointer that `crate::atlwin` does not
+    # reproduce.
+    contained = re.fullmatch(r"CContainedWindow\s+([A-Za-z_]\w*)", text)
+    if contained is not None:
+        return PlainStateField(
+            declaration=text,
+            c_type="AtlContainedWindow",
+            name=contained.group(1),
+        )
     ccombstr = re.fullmatch(r"CComBSTR\s+([A-Za-z_]\w*)", text)
     if ccombstr is not None:
         return PlainStateField(
@@ -1642,6 +1699,15 @@ def _pod_definition(text: str, name: str) -> tuple[str, bool] | None:
             re.S,
         ),
         re.compile(rf"\bstruct\s+{re.escape(name)}\s*\{{(?P<body>[^{{}}]*)\}}\s*;", re.S),
+        # `typedef struct TAG { … } ALIAS, *PALIAS;` asked for by its TAG. The first pattern
+        # finds this record by one of its ALIASES and the second wants a plain
+        # `struct NAME { … };` with nothing between `}` and `;`, so a tag-named typedef
+        # matched neither — and `source_pod_names` collects exactly those tags, so every such
+        # record was discovered and then immediately failed to define.
+        re.compile(
+            rf"typedef\s+struct\s+{re.escape(name)}\s*\{{(?P<body>[^{{}}]*)\}}\s*[^;]*;",
+            re.S,
+        ),
     )
     for pattern in patterns:
         match = pattern.search(text)
@@ -1680,6 +1746,250 @@ def _plain_member_class_definition(text: str, name: str) -> tuple[str, bool] | N
 _ELABORATED_TYPE_RE = re.compile(r"\b(?:struct|union|enum|class)\s+")
 
 
+def _class_head_bases(header: Path, class_name: str) -> list[str]:
+    """The base-specifier list of a class, as written."""
+    text = header.read_text(encoding="utf-8", errors="replace")
+    for match in _CLASS_HEAD.finditer(text):
+        if match.group("name") == class_name:
+            raw = (match.group("bases") or "").lstrip(":").strip()
+            return [
+                re.sub(r"^(?:public|protected|private)\s+", "", item.strip())
+                for item in _split_args(raw)
+                if item.strip()
+            ]
+    return []
+
+
+def _window_base_adds_no_state(source: Path, base_name: str) -> bool:
+    """True if an ATL window wrapper contributes NO storage beyond `CWindow::m_hWnd`.
+
+    `CWindowImpl<T, CWindow, Traits>` is admitted below with a fixed two-field layout
+    (`m_hWnd` + `AtlWindowState`). `CMenuToolbarBase` derives instead from
+    `CWindowImplBaseT<CToolbar<DWORD_PTR>, CControlWinTraits>` -- the very same ATL
+    shape with a different wrapper in the TBase slot -- so the only question that
+    separates the two is whether that wrapper adds fields of its own.
+
+    MEASURED, not assumed. The wrapper's body is read out of the tree and must declare
+    no state fields, and the same is then required of ITS bases, so storage cannot
+    simply hide one level down. `CToolbar<T>` passes because it is methods only over
+    the inherited `m_hWnd`, terminating at `CWindow`. A wrapper that declares even one
+    field fails and stays a loud preflight error -- silently admitting it would shift
+    every field of the derived class by that wrapper's size, which is not a compile
+    error anywhere, just wrong bytes.
+    """
+    seen: set[str] = set()
+    queue = [base_name]
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        # `CWindow` is the terminator: its one field IS the `m_hWnd` the caller emits.
+        # `CMessageMap` is ATL's pure-virtual dispatch interface and declares no data.
+        if name in {"CWindow", "CMessageMap"}:
+            continue
+        # Strip a template argument list -- `CToolbar<DWORD_PTR>` is declared as
+        # `template<class T> class CToolbar`, so the definition is under the bare name.
+        bare = re.sub(r"\s*<.*", "", name).strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", bare):
+            return False
+        try:
+            header = find_class_header(source, bare)
+            body = _find_class_text(header, bare)
+        except (CppComError, OSError):
+            return False
+        if _state_fields(body):
+            return False
+        queue.extend(_class_head_bases(header, bare))
+    return True
+
+
+def _sdk_wide_string_macros(source_path: Path, used_words: set[str]) -> dict[str, tuple[int, ...]]:
+    """Referenced SDK `#define NAME L"..."` macros, as UTF-16 unit tuples.
+
+    The TCHAR-neutral spelling is what C++ writes (`WC_LISTVIEW`), and under UNICODE it is
+    the `...W` macro. The ISLAND cannot supply these: it is generated without `-DUNICODE`,
+    so `WC_LISTVIEWW` comes out as `&[u8; 14] = b"SysListView32\0"` -- the ANSI bytes, under
+    the wide name. Handing that to `FindWindowExW` makes it read UTF-16 out of ASCII bytes,
+    which is not a type error in C and not a compile error here either; `rosctrls.rs` already
+    writes `WC_LISTVIEW` out by hand for exactly this reason.
+
+    Only a fully literal definition is admitted, and the `...W` spelling is the authority.
+    """
+    repo_root = next(
+        (parent for parent in source_path.parents if (parent / "sdk" / "include").is_dir()), None
+    )
+    if repo_root is None or not used_words:
+        return {}
+    found: dict[str, tuple[int, ...]] = {}
+    for name in sorted(used_words):
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            continue
+        pattern = re.compile(
+            rf'^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}W?[ \t]+(L"(?:\\.|[^"\\])*")[ \t]*$',
+            re.M,
+        )
+        values = set()
+        for header in _header_files(repo_root / "sdk" / "include", "*.[hi]"):
+            text = header.read_text(encoding="utf-8", errors="replace")
+            if name not in text:
+                continue
+            for token in pattern.findall(text):
+                values.add(_wide_literal_units(token))
+        # Every spelling must agree, exactly as for a numeric bound.
+        if len(values) == 1:
+            found[name] = values.pop()
+    return found
+
+
+def _expand_declarators(declaration: str) -> list[str]:
+    """`INT8 SortCol, SortReverse` -> two declarations, one per declarator.
+
+    C lets one statement declare several members, and a struct that uses it was being
+    DROPPED ENTIRELY: the field parser raised on the comma, and the POD renderers swallow
+    that with `except CppComError: continue`, so `_FILE_TYPE_GLOBALS` (whose only sin is
+    `INT8 SortCol, SortReverse;`) silently never reached the output. The failure surfaced
+    far away as `cannot find type PFILE_TYPE_GLOBALS` in an unrelated struct's field.
+
+    Commas INSIDE `<...>`, `(...)` or `[...]` are not declarator separators
+    (`CSimpleArray<A, B> m_x`, `WCHAR name[A, B]`), so nesting is tracked rather than the
+    string split. A declarator may carry its own `*` or `[N]`, both of which bind to the
+    NAME and not the type, so each one keeps them: `T *a, b[4]` is a pointer and an array.
+    """
+    depth = 0
+    parts: list[str] = []
+    current: list[str] = []
+    for ch in declaration:
+        if ch in "<([":
+            depth += 1
+        elif ch in ">)]":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    parts.append("".join(current))
+    if len(parts) == 1:
+        return [declaration]
+    head = parts[0].strip()
+    # The type is everything before the first declarator's name/`*`/`[`.
+    match = re.match(r"(?P<type>.*?)(?P<decl>\**\s*[A-Za-z_]\w*\s*(?:\[[^\]]*\])?)\s*$", head)
+    if match is None:
+        return [declaration]
+    base_type = match.group("type").strip()
+    if not base_type:
+        return [declaration]
+    out = [head]
+    for extra in parts[1:]:
+        extra = extra.strip()
+        if not extra:
+            continue
+        out.append(f"{base_type} {extra}")
+    return out
+
+
+def _module_private_int_macros(source_path: Path, names: set[str]) -> dict[str, int]:
+    """Integer macros defined in the MODULE's own headers, not in `sdk/include`.
+
+    shell32's `RECYCLEBINMAXDRIVECOUNT ('Z' - 'A' + 1)` lives in
+    `shellrecyclebin/recyclebin.h`: it is compiler-facing, arch-independent, and reachable
+    from nowhere else, so the bodies that size an array by it need it emitted here. Every
+    spelling must agree and the expression must evaluate, exactly as for an array bound.
+    """
+    if not names:
+        return {}
+    module_root = next(
+        (
+            parent
+            for parent in source_path.parents
+            if parent.parent is not None and parent.parent.name in {"win32", "win32ss"}
+        ),
+        None,
+    )
+    if module_root is None or not module_root.is_dir():
+        return {}
+    values: dict[str, int] = {}
+    for name in sorted(names):
+        pattern = re.compile(
+            rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}[ \t]+(.+?)[ \t]*$", re.M
+        )
+        found: set[int] = set()
+        for header in module_root.rglob("*.[hi]"):
+            text = header.read_text(encoding="utf-8", errors="replace")
+            for replacement in pattern.findall(text):
+                replacement = re.sub(r"//.*$|/\*.*?\*/", "", replacement).strip()
+                value = _eval_c_int_constexpr(replacement)
+                if value is not None:
+                    found.add(value)
+        if len(found) == 1:
+            values[name] = found.pop()
+    return values
+
+
+def _typedef_aliases(source: Path, tag: str) -> list[tuple[str, bool]]:
+    """`(name, is_pointer)` for each alias a `typedef struct TAG { … } A, *PA;` declares."""
+    try:
+        text = source.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    # BALANCED, not `[^{}]*`: a C++ struct body routinely contains braces of its own.
+    # `_FILE_TYPE_ENTRY` declares six inline methods, so a non-nesting body pattern matched
+    # nothing at all and the aliases were silently not emitted.
+    head = re.search(rf"typedef\s+struct\s+{re.escape(tag)}\s*\{{", text)
+    if head is None:
+        return []
+    _body, end = _balanced_block(text, head.end() - 1)
+    tail = text[end:]
+    semi = tail.find(";")
+    if semi < 0:
+        return []
+    aliases = []
+    for raw in tail[1:semi].split(","):
+        item = raw.strip()
+        pointer = item.startswith("*")
+        name = item.lstrip("*").strip()
+        if re.fullmatch(r"[A-Za-z_]\w*", name):
+            aliases.append((name, pointer))
+    return aliases
+
+
+def _local_include_closure(source: Path, header: Path) -> list[Path]:
+    """The TU's own `#include "..."` closure, restricted to its sibling directories.
+
+    A by-value member of a class the TU does NOT declare itself is the common shape
+    (`CDirectoryWatcher` holds a `CDirectoryList m_dir_list`, declared in the sibling
+    `CDirectoryList.h`). Reading only the .cpp and its matching .h left that class
+    invisible, and the state-field parser then rejected the member as "not proven C
+    scalar/pointer state" -- reading as an untranslatable TU when the real answer was
+    that nobody had opened the header next door.
+
+    Deliberately QUOTED includes only, and only files that resolve inside a directory
+    the TU already occupies. System/SDK headers are the `_pod_definition` scan's job
+    further down; letting this walk into `sdk/include` would pull a large, mostly
+    irrelevant closure into every layout decision.
+    """
+    roots = {path.parent for path in (source, header)}
+    seen: dict[Path, None] = {}
+    queue = [path for path in dict.fromkeys((source, header)) if path.is_file()]
+    while queue:
+        current = queue.pop(0)
+        current = current.resolve()
+        if current in seen:
+            continue
+        seen[current] = None
+        text = current.read_text(encoding="utf-8", errors="replace")
+        for quoted in re.findall(r'^\s*#\s*include\s*"([^"]+)"', text, re.M):
+            for root in roots | {current.parent}:
+                candidate = (root / quoted).resolve()
+                if candidate.is_file() and any(
+                    parent in {item.resolve() for item in roots} for parent in candidate.parents
+                ):
+                    queue.append(candidate)
+                    break
+    return list(seen)
+
+
 def _discover_pod_state_types(
     source: Path, header: Path, declarations: list[str]
 ) -> tuple[list[PodStateType], list[EnumStateType]]:
@@ -1688,39 +1998,56 @@ def _discover_pod_state_types(
     Pointer-owned records matter too: translated workers dereference them even
     though they do not contribute inline bytes to the COM owner.
     """
-    candidates = []
-    for declaration in declarations:
-        # An ATL container's ELEMENT type is state too, and it hides inside the template
-        # argument where the plain `Type name` pattern below cannot see it. Missing it does
-        # not fail loud: the container preflight then rejects the element as "not a proven
-        # layout" and the whole TU reads as untranslatable, when the real answer is that
-        # nobody looked. `CAtlList<DynamicShellEntry>` is the shape.
-        container = _RAII_CONTAINER_FIELD_RE.fullmatch(declaration)
-        if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
-            candidates.append(container.group("element"))
-            continue
-        declaration = _ELABORATED_TYPE_RE.sub("", declaration)
-        match = re.fullmatch(r"\s*(?P<type>[A-Za-z_]\w*)\s*(?:\*+\s*)?[A-Za-z_]\w*\s*", declaration)
-        if match:
-            c_type = match.group("type")
-            pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", c_type))
-            if (
-                c_type not in _RUST_SCALARS
-                and c_type not in _POD_LEAF_TYPES
-                and not pointer_typedef
-            ):
-                candidates.append(c_type)
+
+    def named_types(declarations: Sequence[str]) -> list[str]:
+        """Type names a set of member declarations refers to."""
+        found = []
+        for declaration in declarations:
+            # An ATL container's ELEMENT type is state too, and it hides inside the template
+            # argument where the plain `Type name` pattern below cannot see it. Missing it does
+            # not fail loud: the container preflight then rejects the element as "not a proven
+            # layout" and the whole TU reads as untranslatable, when the real answer is that
+            # nobody looked. `CAtlList<DynamicShellEntry>` is the shape.
+            container = _RAII_CONTAINER_FIELD_RE.fullmatch(declaration)
+            if container is not None and container.group("template") in _RAII_CONTAINER_LOWERINGS:
+                found.append(container.group("element"))
+                continue
+            declaration = _ELABORATED_TYPE_RE.sub("", declaration)
+            match = re.fullmatch(
+                r"\s*(?P<type>[A-Za-z_]\w*)\s*(?:\*+\s*)?[A-Za-z_]\w*\s*", declaration
+            )
+            if match:
+                c_type = match.group("type")
+                pointer_typedef = bool(re.fullmatch(r"(?:L?P(?:C)?|H)[A-Z][A-Z0-9_]*", c_type))
+                if (
+                    c_type not in _RUST_SCALARS
+                    and c_type not in _POD_LEAF_TYPES
+                    and not pointer_typedef
+                ):
+                    found.append(c_type)
+        return found
+
+    candidates = named_types(declarations)
     if not candidates:
         return [], []
     local_texts = [
         path.read_text(encoding="utf-8", errors="replace")
-        for path in dict.fromkeys((source, header))
+        for path in _local_include_closure(source, header)
     ]
     repo_root = next(
         (parent for parent in source.parents if (parent / "sdk" / "include").is_dir()), None
     )
     definitions: dict[str, tuple[str, bool]] = {}
-    for name in dict.fromkeys(candidates):
+    # A worklist, not a flat pass: a discovered class's own fields name further types, and
+    # they are just as load-bearing. `CDirectoryList` holds `CSimpleArray<CDirectoryItem>`,
+    # so stopping at depth one proves the outer class and then rejects its element.
+    pending = list(dict.fromkeys(candidates))
+    visited: set[str] = set()
+    while pending:
+        name = pending.pop(0)
+        if name in visited:
+            continue
+        visited.add(name)
         definition = next(
             (
                 found
@@ -1744,6 +2071,10 @@ def _discover_pod_state_types(
         if definition is None:
             continue
         definitions[name] = definition
+        body = re.sub(r"/\*.*?\*/|//[^\n]*|#\s*include[^\n]*", " ", definition[0], flags=re.S)
+        pending.extend(
+            named_types([" ".join(raw.split()) for raw in body.split(";") if raw.strip()])
+        )
 
     enum_names: set[str] = set()
     for body, _ in definitions.values():
@@ -1785,18 +2116,22 @@ def _discover_pod_state_types(
         fields = []
         valid = True
         for raw in body.split(";"):
-            declaration = " ".join(raw.split())
-            if not declaration:
+            statement = " ".join(raw.split())
+            if not statement:
                 continue
-            try:
-                fields.append(
-                    _parse_plain_state_field(
-                        declaration,
-                        allowed_pod_types=_POD_LEAF_TYPES | allowed_local,
+            # One C statement can declare several members; each becomes its own field.
+            for declaration in _expand_declarators(statement):
+                try:
+                    fields.append(
+                        _parse_plain_state_field(
+                            declaration,
+                            allowed_pod_types=_POD_LEAF_TYPES | allowed_local,
+                        )
                     )
-                )
-            except CppComError:
-                valid = False
+                except CppComError:
+                    valid = False
+                    break
+            if not valid:
                 break
         if valid and fields:
             specs.append(PodStateType(name=name, fields=tuple(fields), packed=packed))
@@ -2108,6 +2443,23 @@ def analyze_class(
             r"([A-Za-z_]\w*)\s*>",
             base,
         )
+        # `CWindowImplBaseT<TBase, Traits>` is what `CWindowImpl` derives from, and a
+        # class may name it directly: `CMenuToolbarBase : CWindowImplBaseT<
+        # CToolbar<DWORD_PTR>, CControlWinTraits >`. Same ATL layout, same Rust model --
+        # the derived-class parameter is absent because it only ever fed CRTP dispatch,
+        # which `crate::atlwin` does through the window's own `AtlWindow` impl instead.
+        #
+        # Admitted only once the wrapper in the TBase slot is PROVEN stateless, so this
+        # widens the spelling, not the layout claim.
+        if window_impl is None:
+            impl_base = re.fullmatch(
+                r"CWindowImplBaseT\s*<\s*(?P<wrapper>.+?)\s*,\s*[A-Za-z_]\w*\s*>",
+                base,
+            )
+            if impl_base is not None and _window_base_adds_no_state(
+                source, impl_base.group("wrapper")
+            ):
+                window_impl = impl_base
         if window_impl is not None:
             # BOTH fields, not just m_hWnd. `AtlWindowState` is what C++ inherits from
             # CWindowImplRoot/CWindowImplBaseT -- the displaced superclass procedure, the
@@ -2166,8 +2518,20 @@ def analyze_class(
         b.replace("public ", "").strip().startswith("CComObjectRootEx<") for b in bases
     )
     clsid = None
+    # `ShellObjectCreatorInit<T, T1, ...>` — shellutils.h overloads the template on the
+    # INIT-ARGUMENT types as well as the class, and a caller that spells them explicitly
+    # (`ShellObjectCreatorInit<CDesktopBrowser, IShellDesktopTray*>(Tray, riid, ppv)`) put
+    # the class name in a template list that did not end after it. Keying on `<T>` alone
+    # read that as no internal activation at all, so a class constructed one line below its
+    # own declaration reported "internal COM-object construction is not mapped".
+    #
+    # The trailing arguments are deliberately NOT captured: they are the Initialize
+    # parameter types, and the arity check below already proves them against the real
+    # `Initialize` signature. `[^<>]*` refuses a nested template rather than mis-splitting
+    # one, which fails loudly and correctly.
     activation_re = re.compile(
-        rf"\bShellObjectCreator(?P<init>Init)?\s*<\s*{re.escape(class_name)}\s*>\s*\("
+        rf"\bShellObjectCreator(?P<init>Init)?\s*<\s*{re.escape(class_name)}\s*"
+        rf"(?:,[^<>]*)?>\s*\("
     )
     masked_source = _masked_cpp(source_text)
     activation_hits = list(activation_re.finditer(masked_source))
@@ -2235,10 +2599,38 @@ def analyze_class(
             activation_source.read_text(encoding="utf-8", errors="replace")
         )
     com_object_new_hits = list(com_object_new_re.finditer(activation_scan))
+
+    # The FOURTH shape, and the only one that never spells the class in the call:
+    # shellutils.h also overloads `ShellObjectCreator(CComPtr<T> &objref)`, deducing T
+    # from the argument. `CRecycleBinFolderViewCB_CreateInstance_RustBridge` uses it, so
+    # every regex above -- all of which key on `<ClassName>` -- saw nothing, and a class
+    # constructed by name two lines from its own declaration reported "internal
+    # COM-object construction is not mapped".
+    #
+    # Detection ONLY, like the two shapes above it: this overload takes no init args
+    # (it hands back a bare object at refcount 1 and the caller drives everything else),
+    # so it deliberately stays out of `activation_hits` and cannot affect the
+    # Init-vs-plain mode or the initializer-arity proof.
+    #
+    # The variable must be declared `CComPtr<ClassName>` in the SAME scanned text, so
+    # this cannot match a creator call for some other class that happens to be nearby.
+    deduced_creator_vars = set(
+        re.findall(
+            rf"\bCComPtr\s*<\s*{re.escape(class_name)}\s*>\s*([A-Za-z_]\w*)\s*[;,=]",
+            activation_scan,
+        )
+    )
+    deduced_creator_hits = [
+        name
+        for name in deduced_creator_vars
+        if re.search(rf"\bShellObjectCreator\s*\(\s*{re.escape(name)}\s*\)", activation_scan)
+    ]
+
     internal_shell_object_creator = (
         bool(activation_hits)
         or bool(creator_class_hits)
         or bool(com_object_new_hits)
+        or bool(deduced_creator_hits)
         or bool(activation_re.search(activation_scan))
         or bool(creator_class_re.search(activation_scan))
     )
@@ -2317,6 +2709,22 @@ def analyze_class(
             )
             if ctor_proven and dtor_proven:
                 stgmedium_lifecycle_fields.append(field_name)
+    # The primary constructor's parameters, for `_new`. Read from the scanner rather than
+    # re-parsed here so the names and types match the worker signature the model was given.
+    ctor_params: tuple[tuple[str, str], ...] = ()
+    try:
+        from .scanner import scan_file as _scan_file
+
+        _ctors = [
+            worker
+            for worker in _scan_file(source).functions
+            if worker.cpp_class == class_name and worker.is_ctor
+        ]
+        if _ctors:
+            ctor_params = tuple(_ctors[0].params)
+    except (OSError, ValueError):
+        ctor_params = ()
+
     activation_sources = [source]
     if header != source:
         activation_sources.append(header)
@@ -2351,6 +2759,11 @@ def analyze_class(
         pod_state_types=pod_state_types,
         enum_state_types=enum_state_types,
         array_constants=array_constants,
+        ctor_params=ctor_params,
+        virtual_methods=tuple(
+            match.group("name")
+            for match in re.finditer(r"\bvirtual\b[^;{()]*?(?P<name>~?[A-Za-z_]\w*)\s*\(", body)
+        ),
         unsupported=unsupported,
         layout_bases=layout_bases,
         local_base_classes=local_base_classes,
@@ -2582,6 +2995,10 @@ _WINDOWS_SCALAR_TYPEDEFS = frozenset(
         "CHAR",
         "DWORD",
         "DWORD64",
+        # `DWORD_PTR` == `ULONG_PTR` (basetsd.h). Its absence next to the four other
+        # `*_PTR` aliases already here was an omission, not a policy: it is exactly as
+        # pointer-width-dependent as `ULONG_PTR`, and no more inferred.
+        "DWORD_PTR",
         "HRESULT",
         "INT",
         "INT8",
@@ -4142,8 +4559,12 @@ def normalize_worker_semantics(source: str, rust: str) -> str:
     # Blanket, not sibling-only: for the class being translated the rewrite lands on that
     # same generated `<Class>_CreateInstance`, so one rule covers both and there is no
     # "is it me or a sibling" test to get wrong.
+    # Explicit init-argument types in the template list are dropped for the same reason
+    # the detection above ignores them: `<T, T1>` names the class plus the types of the
+    # args already present at the call site, and `<Class>_CreateInstance` takes those args
+    # positionally. Keeping them would spell a turbofish on a plain function.
     rust = re.sub(
-        r"\bShellObjectCreator(?:Init)?\s*::?\s*<\s*([A-Za-z_]\w*)\s*>\s*\(",
+        r"\bShellObjectCreator(?:Init)?\s*::?\s*<\s*([A-Za-z_]\w*)\s*(?:,[^<>]*)?>\s*\(",
         r"\1_CreateInstance(",
         rust,
     )
@@ -4349,6 +4770,9 @@ _CPP_SUPPORT_EXTERNS = {
     "SetClipboardData": "    fn SetClipboardData(format: UINT, memory: HANDLE) -> HANDLE;",
     "CloseClipboard": "    fn CloseClipboard() -> BOOL;",
     "GetLastError": "    fn GetLastError() -> DWORD;",
+    "EnumDisplaySettingsW": (
+        "    fn EnumDisplaySettingsW(device: LPCWSTR, mode: DWORD, devmode: *mut DEVMODEW) -> BOOL;"
+    ),
     "lstrlenW": "    fn lstrlenW(text: LPCWSTR) -> INT;",
     "CoTaskMemAlloc": "    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;",
     "LoadStringW": (
@@ -4423,6 +4847,16 @@ _CPP_SUPPORT_EXTERNS = {
 }
 
 _CPP_SUPPORT_C_EXTERNS = {
+    # msvcrt's thread starter. cdecl (no WINAPI), and it returns `uintptr_t` — spelled
+    # `usize` so the width follows the target rather than baking one arch's pointer size.
+    # The START ROUTINE is `__stdcall`, not cdecl, which is why it is `extern "system"`
+    # inside an `extern "C"` declaration: getting that inner ABI wrong is not a compile
+    # error, it is a corrupted stack on i386 at the first thread start.
+    "_beginthreadex": (
+        "    fn _beginthreadex(security: *mut core::ffi::c_void, stack_size: UINT, "
+        'start: Option<unsafe extern "system" fn(*mut core::ffi::c_void) -> UINT>, '
+        "arglist: *mut core::ffi::c_void, initflag: UINT, thrdaddr: *mut UINT) -> usize;"
+    ),
     "SHELL_GetUIObjectOfAbsoluteItem": (
         "    fn SHELL_GetUIObjectOfAbsoluteItem(owner: HWND, pidl: PCIDLIST_ABSOLUTE, "
         "riid: REFIID, out: *mut LPVOID) -> HRESULT;"
@@ -4571,6 +5005,14 @@ def _render_shvheader_tables(source: str, used_words: set[str]) -> str:
 _CPP_SUPPORT_CONSTANTS = {
     "CSIDL_BITBUCKET": ("INT", "0x000a"),
     "CSIDL_PERSONAL": ("INT", "0x0005"),
+    "ENUM_CURRENT_SETTINGS": ("DWORD", "0xFFFF_FFFF"),
+    # fileapi.h `#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)`. Absent from the island, and
+    # declared here rather than evaluated because the CAST is the type: written as a bare
+    # `-1` it is an `int`, and every `GetFileAttributesW(...) == INVALID_FILE_ATTRIBUTES`
+    # comparison would be a mismatch against the DWORD the API returns.
+    "INVALID_FILE_ATTRIBUTES": ("DWORD", "0xFFFF_FFFF"),
+    # winuser.h:180 `#define ENUM_REGISTRY_SETTINGS ((DWORD)-2)`; :179 is -1.
+    "ENUM_REGISTRY_SETTINGS": ("DWORD", "0xFFFF_FFFE"),
     "EVCCBF_LASTNOTIFICATION": ("DWORD", "0x0001"),
     "E_UNEXPECTED": ("HRESULT", "0x8000_FFFFu32 as HRESULT"),
     "EVCF_HASSETTINGS": ("DWORD", "0x0001"),
@@ -4720,9 +5162,13 @@ def _sdk_pod_support(source_path: Path, used_words: set[str]) -> str:
     for base in sorted(selected):
         body, aliases, packed = records[base]
         declarations = [
-            re.sub(r"\b_[A-Za-z0-9_]+_\b(?:\s*\([^)]*\))?\s*", "", " ".join(item.split()))
+            declaration
             for item in body.split(";")
             if item.strip()
+            # One C statement, several members: `INT8 SortCol, SortReverse;`.
+            for declaration in _expand_declarators(
+                re.sub(r"\b_[A-Za-z0-9_]+_\b(?:\s*\([^)]*\))?\s*", "", " ".join(item.split()))
+            )
         ]
         fields = []
         try:
@@ -4902,18 +5348,32 @@ def render_cpp_support(
     # File-scope PODs are source authority, not model work. This is shared by C
     # and C++ inputs; only simple, fully parsed layouts are emitted.
     source_pod_names = set(re.findall(r"\bstruct\s+([A-Za-z_]\w*)\s*\{", source))
-    referenced_pods = {
-        name
-        for name in source_pod_names
-        if len(re.findall(rf"\b{re.escape(name)}\b", source)) > 1
-        or re.search(rf"\b{re.escape(name)}\b", additional_source)
-    }
+
+    def _pod_is_referenced(name: str) -> bool:
+        # Count the TAG **and its typedef aliases**. A record declared
+        # `typedef struct _X { … } X, *PX;` is referred to as `X`/`PX` everywhere and the tag
+        # `_X` appears exactly once — in its own declaration — so a tag-only test read the
+        # struct as unused and dropped it. `_FILE_TYPE_GLOBALS` is that shape, and the miss
+        # surfaced as `cannot find type PFILE_TYPE_GLOBALS` in a DIFFERENT struct's field.
+        spellings = [name, *(alias for alias, _pointer in _typedef_aliases(source_path, name))]
+        hits = sum(len(re.findall(rf"\b{re.escape(word)}\b", source)) for word in spellings)
+        if hits > 1:
+            return True
+        return any(re.search(rf"\b{re.escape(word)}\b", additional_source) for word in spellings)
+
+    referenced_pods = {name for name in source_pod_names if _pod_is_referenced(name)}
     for name in sorted(referenced_pods - (exclude_types or set())):
         definition = _pod_definition(source, name)
         if definition is None:
             continue
         body, packed = definition
-        declarations = [" ".join(item.split()) for item in body.split(";") if item.strip()]
+        declarations = [
+            declaration
+            for item in body.split(";")
+            if item.strip()
+            # One C statement, several members: `INT8 SortCol, SortReverse;`.
+            for declaration in _expand_declarators(" ".join(item.split()))
+        ]
         constants = _numeric_array_constants(source_path, declarations)
         fields = []
         try:
@@ -4937,16 +5397,67 @@ def render_cpp_support(
             # For a plain C field the two spellings are identical by construction.
             lines.append(f"    pub {field_name}: {state_field.owned_rust_type},")
         lines.append("}")
+        # `typedef struct _X { … } X, *PX;` — emit the aliases, which are how the source
+        # actually spells this record. The SDK-POD renderer already does this; the
+        # SOURCE-POD renderer did not, so the struct landed under a tag nothing refers to.
+        for alias, pointer in _typedef_aliases(source_path, name):
+            if alias == name:
+                continue
+            if alias not in used_words and alias not in shared_values:
+                continue
+            target = f"*mut {name}" if pointer else name
+            lines.append(f"pub type {alias} = {target};")
         chunks.append("\n".join(lines))
     for name in sorted((used_words & definitions.keys()) - shared_values):
         chunks.append(f"pub const {name}: UINT = {_rust_numeric_literal(definitions[name])};")
     for name in sorted((used_words & _CPP_SUPPORT_CONSTANTS.keys()) - shared_values):
         rust_type, value = _CPP_SUPPORT_CONSTANTS[name]
         chunks.append(f"pub const {name}: {rust_type} = {value};")
+    # SDK wide-string macros, written out as real UTF-16 -- see `_sdk_wide_string_macros`
+    # for why the island's version of these is the ANSI bytes wearing the wide name.
+    for name, units in sorted(_sdk_wide_string_macros(source_path, used_words).items()):
+        if name in definitions or name in _CPP_SUPPORT_CONSTANTS or name in shared_values:
+            continue
+        values = ", ".join(f"0x{unit:04X}" for unit in units)
+        chunks.append(
+            f"pub static {name}_WIDE: [WCHAR; {len(units)}] = [{values}];\n"
+            f"pub const {name}: LPCWSTR = {name}_WIDE.as_ptr();"
+        )
     owned_constants = definitions.keys() | _CPP_SUPPORT_CONSTANTS.keys() | shared_values
     for name, value in sorted(_sdk_numeric_definitions(source_path, used_words).items()):
         if name not in owned_constants:
             chunks.append(f"pub const {name}: DWORD = {_rust_numeric_literal(value)};")
+    # MODULE-PRIVATE headers hold compiler-facing constants too, and the two scans above reach
+    # neither kind: the local `#define` sweep reads only the TU's own .cpp and admits only a
+    # bare literal, while `_sdk_numeric_definitions` searches `sdk/include`. shell32's
+    # `RECYCLEBINMAXDRIVECOUNT ('Z' - 'A' + 1)` lives in `shellrecyclebin/recyclebin.h` and is
+    # an EXPRESSION, so it fell through both and left `cannot find value` in every body that
+    # sizes an array by it.
+    #
+    # Resolved through the same agreement-and-evaluate path as an array bound, so a constant
+    # spelled differently in two headers stays unproven rather than being guessed, and only
+    # arch-independent expressions evaluate (`'Z' - 'A' + 1` is 26 everywhere).
+    # MACRO-SHAPED names only. `used_words` is every identifier in the selected bodies, and
+    # the headers define lowercase ones too -- C++'s `true`/`false` among them -- so an
+    # unrestricted sweep emitted `pub const false: UINT = 0;`, which is not even parseable
+    # Rust. Screaming case is the same test the symbolic-constant audit uses.
+    # MODULE-PRIVATE headers only. Widened to `sdk/include` as well, this evaluates SDK
+    # macros the island ALREADY provides and shadows them with a worse type: `LB_ERR` is
+    # `pub const LB_ERR: i32 = -1` in the island, and a second `UINT = 0xFFFFFFFF` beside it
+    # is not a fix, it is a conflict. An SDK constant the island lacks is a substrate gap and
+    # must stay loud; a macro in the module's own tree has nowhere else to come from.
+    unresolved = {
+        word for word in used_words - owned_constants if re.fullmatch(r"[A-Z][A-Z0-9_]*", word)
+    } - set(_sdk_numeric_definitions(source_path, used_words))
+    for name, value in sorted(_module_private_int_macros(source_path, unresolved).items()):
+        if name not in owned_constants:
+            # C's `((DWORD)-1)` is a NEGATIVE integer expression with an unsigned type, and
+            # Rust cannot negate a `u32` at all (`pub const X: UINT = -1;` is E0600). Respell
+            # it as the two's-complement value the C means, which is what the cast does.
+            # `INT`, not `UINT`: a bare arithmetic macro like `('Z' - 'A' + 1)` has type
+            # `int` in C, and typing it unsigned makes every `i32` comparison that uses it
+            # a mismatch.
+            chunks.append(f"pub const {name}: INT = {_rust_numeric_literal(str(value))};")
     sdk_pods = _sdk_pod_support(source_path, used_words)
     if sdk_pods:
         chunks.append(sdk_pods)
@@ -4958,14 +5469,20 @@ def render_cpp_support(
 
     # Header-owned constant UTF-16 arrays are source facts just like literals
     # inside method bodies. Emit only referenced, fully literal definitions.
+    # Deduped by NAME: `selection_source` can present one declaration more than once (the
+    # same header reached twice through the selection closure), and emitting the pair twice
+    # is `E0428: the name ... is defined multiple times` on a file that is otherwise correct.
+    # A second definition is never wanted, so this needs no cleverness about which wins.
+    emitted_wide_arrays: set[str] = set()
     for match in re.finditer(
         r"\b(?:static\s+)?const\s+WCHAR\s+([A-Za-z_]\w*)\s*\[\s*\]\s*=\s*"
         r"(L\"(?:\\.|[^\"\\])*\")\s*;",
         selection_source,
     ):
         name, token = match.groups()
-        if name not in used_words:
+        if name not in used_words or name in emitted_wide_arrays:
             continue
+        emitted_wide_arrays.add(name)
         units = _wide_literal_units(token)
         values = ", ".join(f"0x{unit:04X}" for unit in units)
         chunks.append(
@@ -6314,6 +6831,28 @@ def _stray_deallocators(c_body: str, rust: str) -> list[str]:
     )
 
 
+def _sizeof_operand_spans(text: str) -> list[tuple[int, int]]:
+    """Spans of every `sizeof(...)` operand.
+
+    Inside `sizeof`, a named constant contributes only its TYPE -- `UNICODE_NULL` is
+    `((WCHAR)0)`, so `sizeof(UNICODE_NULL)` is 2 on every target and the faithful Rust
+    is `core::mem::size_of::<u16>()`, which cannot mention the name. Demanding the token
+    back rejects a body that is exactly right; this is the same disagreement the named-cast
+    exemption above resolves, and the audit loses for the same reason.
+
+    Occurrence-scoped, not name-scoped: a constant used for its VALUE anywhere else in the
+    body still enters the audit set from that other occurrence, so this cannot mask a
+    genuinely dropped constant.
+    """
+    spans = []
+    for match in re.finditer(r"\bsizeof\s*\(", text):
+        opening = match.end() - 1
+        closing = _matching_paren(text, opening)
+        if closing > opening:
+            spans.append((opening + 1, closing))
+    return spans
+
+
 def audit_worker_body(
     c_body: str,
     rust: str,
@@ -6503,9 +7042,12 @@ def audit_worker_body(
     # mechanisms disagreeing, and the audit loses. CDefaultContextMenu::Initialize was
     # rejected over `const_cast<PCUITEMID_CHILD_ARRAY>(...)` in a body that was correct.
     cast_type_spans = _named_cast_spans(source)
+    sizeof_spans = _sizeof_operand_spans(source)
     for match in re.finditer(r"\b[A-Z][A-Z0-9_]+\b", source):
         word = match.group(0)
         if any(a <= match.start() < b for a, b in cast_type_spans):
+            continue
+        if any(a <= match.start() < b for a, b in sizeof_spans):
             continue
         # Callable macro/function names (FAILED(...), SUCCEEDED(...),
         # HRESULT_FROM_WIN32(...)) are behavior, not constants. The body audit
@@ -6761,6 +7303,19 @@ def render_class_scaffold(
         lines.append(f"    pub {state.name}: {state.rust_type},")
     lines.extend(["}", ""])
 
+    # A class declared as `typedef struct _X { … } X, *PX;` is REFERRED TO by its aliases,
+    # not by the tag: filetypes.cpp writes `PFILE_TYPE_ENTRY Entry` in every signature and
+    # `_FILE_TYPE_ENTRY` nowhere outside the declaration itself. The SDK-POD renderer already
+    # emits these aliases; the class scaffold did not, so a translated class whose tag differs
+    # from its typedef name compiled to a struct nothing could name.
+    for alias, pointer in _typedef_aliases(cls.source, cls.name):
+        if alias == cls.name:
+            continue
+        target = f"*mut {cls.name}" if pointer else cls.name
+        lines.append(f"pub type {alias} = {target};")
+    if lines and lines[-1] != "":
+        lines.append("")
+
     for state in cls.plain_state_fields():
         if state.com_ptr_interface is None:
             continue
@@ -6882,7 +7437,13 @@ def render_class_scaffold(
         lines.extend(
             [
                 f"/// `new {cls.name}` — operator new, the vptr store, then the constructor body.",
-                f"pub unsafe fn {cls.name}_new() -> *mut {cls.name} {{",
+                (
+                    f"pub unsafe fn {cls.name}_new("
+                    + ", ".join(
+                        f"{name}: {c_type_to_rust(c_type)}" for c_type, name in cls.ctor_params
+                    )
+                    + f") -> *mut {cls.name} {{"
+                ),
                 "    let this = HeapAlloc(",
                 "        GetProcessHeap(),",
                 "        HEAP_ZERO_MEMORY,",
@@ -6890,7 +7451,11 @@ def render_class_scaffold(
                 f"    ) as *mut {cls.name};",
                 "    if this.is_null() { return core::ptr::null_mut(); }",
                 *vptr_stores,
-                f"    {cls.name}_ctor_body(this);",
+                (
+                    f"    {cls.name}_ctor_body(this"
+                    + "".join(f", {name}" for _c_type, name in cls.ctor_params)
+                    + ");"
+                ),
                 "    this",
                 "}",
                 "",

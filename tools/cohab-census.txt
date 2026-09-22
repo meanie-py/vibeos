@@ -87,6 +87,7 @@ base/shell/explorer/CMakeLists.txt	1	# trayprop.cpp — replaced by Rust (explor
 base/shell/explorer/CMakeLists.txt	1	# traywnd.cpp — replaced by Rust (explorer-rust traywnd.rs) — the taskbar
 base/shell/explorer/CMakeLists.txt	1	# util.cpp — replaced by Rust (sdk/lib/rust/explorer-rust/src/explorer/util.rs);
 base/shell/rshell/CMakeLists.txt	1	# (misc.cpp) over rshell's COM module.
+base/shell/rshell/CMakeLists.txt	1	# exactly as it already does for ShellDDEInit since dde.cpp flipped.
 base/system/lsass/CMakeLists.txt	1	# FULL flip + CARGO-DRIVEN LINK. lsass.c is replaced by Rust (lsass-rust), and
 base/system/lsass/CMakeLists.txt	1	# Keep lsass.c on disk (never delete the C — translation philosophy).
 base/system/sehtest/CMakeLists.txt	1	# ntoskrnl/seh_poc.c. Compiled with REAL clang native SEH (-fms-extensions),
@@ -751,6 +752,7 @@ dll/win32/shell32/CMakeLists.txt	1	# dialogs/drive.cpp — replaced by Rust (she
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/drvdefext.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/filedefext.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/filedefext.cpp) are already flipped, so the only surviving declarations of
+dll/win32/shell32/CMakeLists.txt	1	# dialogs/filetypes.cpp — replaced by Rust (shell32-rust/src/dialogs/filetypes_tu.rs);
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/general.cpp — replaced by Rust (shell32-rust/src/dialogs/general.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# dialogs/item_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/item_prop.rs); cohab
@@ -770,6 +772,7 @@ dll/win32/shell32/CMakeLists.txt	1	# folders/CMyDocsFolder.cpp — replaced by R
 dll/win32/shell32/CMakeLists.txt	1	# folders/CNetFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
 dll/win32/shell32/CMakeLists.txt	1	# folders/CPrinterFolder.cpp — CPrinterFolder, CPrintersEnum, and retained
 dll/win32/shell32/CMakeLists.txt	1	# folders/CRecycleBin.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip: the
+dll/win32/shell32/CMakeLists.txt	1	# folders/CRecycleBinFolderViewCB.cpp — replaced by Rust
 dll/win32/shell32/CMakeLists.txt	1	# folders/CRegFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip
 dll/win32/shell32/CMakeLists.txt	1	# iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# local declaration in folders/CDrivesFolder.cpp is `extern "C"` now, and the
@@ -780,7 +783,8 @@ dll/win32/shell32/CMakeLists.txt	1	# propsheet.cpp — replaced by Rust (shell32
 dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp below.
 dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp below.
 dll/win32/shell32/CMakeLists.txt	1	# rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
-dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
+dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp
+dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp — GONE WITH IT, and it was the last of the five retained
 dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
 dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
 dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
@@ -811,9 +815,16 @@ dll/win32/shell32/CMakeLists.txt	1	# wine/shlmenu.c — replaced by Rust (shell3
 dll/win32/shell32/CMakeLists.txt	1	# wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# with no Rust twin yet. shell32.cpp's object map registers them after this merge, so
 dll/win32/shell32/CMakeLists.txt	1	# — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
-dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp — replaced by shell32-rust/src/shelldesktop/. Three modules
-dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but
-dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# dde.cpp — replaced by shell32-rust/src/shelldesktop/dde.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp -> shelldesktop/CChangeNotifyServer{,_window,_free}.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDesktopBrowser.cpp -> SHCreateDesktop, SHDesktopMessageLoop, SHIsTempDisplayMode.
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDesktopBrowser.cpp -> shelldesktop/CDesktopBrowser{,_window,_free,_exports}.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp -> only C++-mangled `CDirectoryList::*` methods, whose sole
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryList.cpp -> shelldesktop/CDirectoryList.rs + CDirectoryItem.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryWatcher.cpp -> shelldesktop/CDirectoryWatcher{,_free,_bridge}.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDirectoryWatcher.cpp -> the five `CDirectoryWatcher_*_RustBridge` shims, now published
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# consumer was CDirectoryWatcher.cpp. It leaves with it.
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# dde.cpp -> shelldesktop/dde.rs
+dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# does for ShellDDEInit (ordinal 188) since dde.cpp flipped. That is why `add_importlibs`
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuBand.cpp — replaced by Rust (sdk/lib/rust/menuband-rust). Unlike the shell32-
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuDeskBar.cpp — replaced by menuband-rust/src/menu_desk_bar.rs
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuFocusManager.cpp — replaced by menuband-rust/src/menu_focus_manager.rs. A PLAIN
