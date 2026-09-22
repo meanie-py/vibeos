@@ -5631,6 +5631,18 @@ different question, racily).
   **Eager filter evaluation** additionally feeds the provable-null-deref ud2 fold.
 - **Do NOT delete `_SEH2_TRY` "dead-code" wrappers** — they are an LLVM optimisation barrier.
 - **DUMMY_PSEH defeats cdfs's raise→catch→post async model** → 0x1E `STATUS_CANT_WAIT`.
+- **A restored probe does NOT re-protect the USE — check what the C's `_SEH2_TRY` actually
+  enclosed.** The C commonly wraps *probe AND use* in one `__try`; a translation that restores
+  the probe but leaves the use outside any guard looks fixed and is not. `SafeProbeFor*` is
+  validate-only by design (it cannot touch-test under DUMMY_PSEH), so a NULL or partially-mapped
+  pointer **passes the probe** and faults on the first real access. `NtUserSetSysColors` shipped
+  this: probe both user arrays, then call `IntSetSysColors` outside the guard →
+  `movl (%rdi,%r14,4)` on `NULL[0]` → 0x1E. Fix as `win32k-rust/src/copy.rs` already does for
+  `MmCopyFromCaller` — capture through `KmProtectedCopyMemory` — and **chunk** the capture when
+  the element count is caller-controlled, or the fix is an attacker-sized allocation.
+  **Detection route worth copying:** the bug was found by an apitest that passes NULL *on
+  purpose* to assert `ERROR_NOACCESS`. Error-path tests are where this class lives, so a suite
+  that never runs its error paths will never find it.
 
 ### A `__try`/`__except` translated to a BARE BLOCK — the flag survives, the handler doesn't `[§9.133]`
 **The shape to recognise**, and it is worse than an obviously-missing handler because a reviewer

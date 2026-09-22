@@ -588,3 +588,54 @@ Two separate discoveries, the same shape, found while porting rangelist:
    **Still owed**: a banked baseline (needs one boot that reaches
    `[APITEST-SWEEP] done`, which means quarantining crashers until it does), and i386/arm64,
    which will each surface their own. amd64 is the characterisation arch for now.
+
+## The harness's first root-caused crasher: `gdi32_apitest SetSysColors`
+
+Characterisation round 3 died with `BUGCHECK 0x0000001E (0xC0000005, …)` at
+`win32k.sys+0xFADD8`, serial archived at `.characterize-amd64/round03-amd64-uefi_serial.log`.
+Root-caused entirely offline — no QEMU, so it did not contend with the running driver.
+
+**`NtUserSetSysColors` is a new member of the documented probe-then-raw-read cluster**
+(`ntkrnl-sys/src/probe.rs`: "the memcpy+0x40 cluster — ObSymbolicLink /
+ZwWaitForMultipleObjects / IoReadWrite"). This is the first one found in win32k rather than
+ntoskrnl, and the first found by a *test* rather than by a boot crash.
+
+The chain:
+
+- `SetSysColors.c` opens with `SetSysColors(1, NULL, crColors)` and asserts `FALSE` +
+  `ERROR_NOACCESS`. The NULL is deliberate — the test exists to drive the error path.
+- `SafeProbeForRead(NULL, 4, 1)` **legitimately succeeds**. It is validate-only by design
+  (`safe_user_io.rs`): it range/alignment-checks against `MmUserProbeAddress` and does not
+  touch the page, because a touch fault has no handler under `USE_DUMMY_PSEH`. NULL is below
+  the probe boundary, so the range check passes.
+- The C then reads the array *inside* the same `_SEH2_TRY` as the probe, so the access
+  violation is caught and turned into `FALSE` / `ERROR_NOACCESS` — exactly what the test wants.
+- Our Rust probes, then calls `IntSetSysColors` **outside** any guard. The read faults with
+  nothing to catch it → `BUGCHECK 0x1E`.
+
+Disassembly pins it exactly: the faulting instruction is
+`10add8: movl (%rdi,%r14,4), %eax` — `lpaElements[i]` in the inlined `IntSetSysColors` loop,
+with `%r14 = 0`, i.e. the read of `NULL[0]`. The bugcheck's fault-address parameter is `0`.
+
+**The fix is precedented, not novel.** `win32k-rust/src/copy.rs` already closes this exact hole
+for `MmCopyFromCaller`/`MmCopyToCaller`, with a comment naming it (task #68): the probe stays
+validate-only and the *copy* becomes fault-tolerant via `KmProtectedCopyMemory`, which is
+protected on all three arches and carries a per-boot `[KMSAFECOPY] … (PASS)` oracle. So
+`NtUserSetSysColors` should capture the two user arrays through a fault-tolerant copy and run
+`IntSetSysColors` over the kernel copies, mapping a faulted copy to
+`SetLastNtError(STATUS_ACCESS_VIOLATION)` + `FALSE`.
+
+Note `cElements` is caller-controlled up to `0x3FFFFFFF`, so the capture must be **chunked**
+rather than allocated whole — a naive capture is an 8 GB allocation from user mode. Chunking is
+semantically identical, since `IntSetSysColors` applies elements independently and the C's SEH
+likewise aborts mid-loop leaving earlier elements applied.
+
+**Not fixed in this lane yet, and deliberately so**: `characterize.py` rebuilds from the working
+tree every round, so a source edit made while it runs silently enters the characterisation
+media. The fix waits for the driver to finish. The quarantine entry is what keeps the sweep
+moving meanwhile.
+
+One stale comment found on the way: `ntoskrnl/kmsafecopy.c` still says arm64 was "TRIED AND
+REJECTED". `probe.rs` records arm64 as PROTECTED since 2026-07-17 after the `.xdata`
+`save_next` decoder fix (§9.69/§9.93). `probe.rs` is the newer of the two; `kmsafecopy.c`'s
+header needs the correction.

@@ -512,6 +512,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
   than one subtest.
 
+- **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
+  and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
+  `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
+  `movl (%rdi,%r14,4), %eax` reading `lpaElements[0]`; fault address `0`. The test's second
+  call is `SetSysColors(1, NULL, crColors)` and it asserts `FALSE`/`ERROR_NOACCESS`, so the
+  NULL is deliberate. `SafeProbeForRead` is validate-only by design (it cannot touch-test
+  under `USE_DUMMY_PSEH`), so NULL passes the range check; the C reads the array inside the
+  same `_SEH2_TRY` as the probe and catches the AV, while our Rust calls `IntSetSysColors`
+  outside any guard. A new member of the probe-then-raw-read cluster documented in
+  `ntkrnl-sys/src/probe.rs`, and the first found in win32k rather than ntoskrnl. Fix is the
+  one `win32k-rust/src/copy.rs` already uses for `MmCopyFromCaller` — capture through
+  `KmProtectedCopyMemory` — but **chunked**, since `cElements` is caller-controlled to
+  `0x3FFFFFFF`. Write-up: `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
+
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
   Signature: the kernel prints `[EXIT-THR] image=marshal32.exe exit_status=0x600d` — the
