@@ -761,7 +761,18 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         # the whole fix for a fresh worktree building a full media and only
         # finding out at `[KMTEST-SWEEP] launch FAILED`, minutes later and a
         # layer away from the cause.
-        sticky_on=("ENABLE_ROSTESTS_KMTESTS",) if getattr(args, "kmtests", False) else (),
+        sticky_on=tuple(
+            opt
+            for opt, flag in (
+                ("ENABLE_ROSTESTS_KMTESTS", "kmtests"),
+                # Sticky for the same reason as kmtests: the apitest payload
+                # sweeps this corpus, the cmake option defaults OFF, and a fresh
+                # worktree that silently built no apitests only says so minutes
+                # later at `[APITEST-SWEEP] launch FAILED`.
+                ("ENABLE_ROSTESTS_APITESTS", "apitests"),
+            )
+            if getattr(args, flag, False)
+        ),
     )
     if wrapped is None:
         return run.finalize(repo)

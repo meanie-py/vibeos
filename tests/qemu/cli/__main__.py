@@ -122,6 +122,17 @@ def build_parser() -> argparse.ArgumentParser:
         "worktree ahead of time",
     )
     b.add_argument(
+        "--apitests",
+        action="store_true",
+        help="configure the build dir with -DENABLE_ROSTESTS_APITESTS=ON so the "
+        "user-mode apitest corpus (63 suites) is built and staged, WITHOUT the "
+        "winetests. STICKY, like --kmtests, and for the same reason: the apitest "
+        "conformance payload always wants them. Prefer this over --rostests for "
+        "anything that needs media, because 4 of the full corpus's non-apitest "
+        "targets do not build (one is an llvm-rc gap we cannot patch) and a "
+        "failed build produces no ISO",
+    )
+    b.add_argument(
         "--rostests",
         action="store_true",
         help="configure the build dir with -DENABLE_ROSTESTS=ON so the full "

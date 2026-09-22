@@ -2913,8 +2913,13 @@ pub unsafe extern "system" fn GetSystemWow64DirectoryA(
 // (BasepComputeProcessPath / SearchPathW) does not yet consult this flag -- that is a
 // pre-existing gap in the path.c -> Rust port unrelated to this export, not introduced
 // here. Filed as a FLAG in the lint report; SetSearchPathMode itself matches the C 1:1
-// and passes modules/rostests/apitests/kernel32/SetSearchPathMode.c, which only tests
-// this function's own validation/locking, not downstream search behavior.
+// BY READING. An earlier version of this comment said it "passes
+// modules/rostests/apitests/kernel32/SetSearchPathMode.c" -- it has never been run.
+// NOTHING in this tree runs apitests: there is no harness, and build-<arch> contains no
+// *_apitest.exe at all (see docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md).
+// The test does exist, it arrived with the merge, and it covers this function's own
+// validation/locking rather than downstream search behavior -- so it will grade this port
+// the day the harness lands, and not before.
 // A plain AtomicI32, not the global `InterlockedCompareExchange` symbol: that name is
 // only `#[no_mangle]`'d for i386 (interlocked.rs -- the kernel32.spec entry is
 // -arch=i386 only); amd64/arm64 have no such linkable export, matching how every other

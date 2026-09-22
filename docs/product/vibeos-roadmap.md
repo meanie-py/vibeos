@@ -488,6 +488,44 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`afd` BUGCHECK 0x1E on a pending receive: `FCB->ReceiveIrp.InFlightRequest != Irp`.
+  OPEN** (2026-09-21). Found by the new apitest harness on its third boot, running
+  `afd_apitest send`. Signature: `*** ASSERT FAILED: FCB->ReceiveIrp.InFlightRequest == Irp
+  at read.rs:662`, then `BUGCHECK 0x0000001E (0xc0000005, ...)` with
+  `TrapFrame.Rip = afd.sys+0x89C6`. **The translation is FAITHFUL** — `read.c:279` does the
+  same `ASSERT` followed by the same unconditional `InFlightRequest = NULL`, in both
+  `AfdConnectedSocketReadComplete` and its datagram sibling at `:558`. So the defect is not
+  that shape; the defect is that the invariant is FALSE by the time we get here, i.e. the IRP
+  completing is not the one recorded in flight. That is the lead: who sets
+  `ReceiveIrp.InFlightRequest`, and which path completes a receive without going through it.
+  (I first wrote this entry blaming read.rs's structure, having read only our side — the C
+  was one grep away and says the same thing.) Reproduce:
+  `tools/payloads/apitest/quarantine-amd64.txt` currently skips
+  `afd_apitest.exe send`; remove that line and run the apitest payload.
+  Quarantined only so the other 61 suites can be characterised, NOT because the test is wrong.
+
+- **`advapi32_apitest RtlEncryptMemory` crash-loops `services.exe`. OPEN** (2026-09-21).
+  Serial shows `[EXIT-THR] image=SERVICES.EXE` and `eventlog.exe` repeating and the guest
+  never advances. Subtest-level skip in the apitest quarantine.
+
+- **`opengl32_apitest` wedges the guest during subtest enumeration. OPEN** (2026-09-21).
+  It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
+  than one subtest.
+
+- **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
+  and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
+  `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
+  `movl (%rdi,%r14,4), %eax` reading `lpaElements[0]`; fault address `0`. The test's second
+  call is `SetSysColors(1, NULL, crColors)` and it asserts `FALSE`/`ERROR_NOACCESS`, so the
+  NULL is deliberate. `SafeProbeForRead` is validate-only by design (it cannot touch-test
+  under `USE_DUMMY_PSEH`), so NULL passes the range check; the C reads the array inside the
+  same `_SEH2_TRY` as the probe and catches the AV, while our Rust calls `IntSetSysColors`
+  outside any guard. A new member of the probe-then-raw-read cluster documented in
+  `ntkrnl-sys/src/probe.rs`, and the first found in win32k rather than ntoskrnl. Fix is the
+  one `win32k-rust/src/copy.rs` already uses for `MmCopyFromCaller` — capture through
+  `KmProtectedCopyMemory` — but **chunked**, since `cElements` is caller-controlled to
+  `0x3FFFFFFF`. Write-up: `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
+
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
   Signature: the kernel prints `[EXIT-THR] image=marshal32.exe exit_status=0x600d` — the

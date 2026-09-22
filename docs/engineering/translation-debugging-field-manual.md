@@ -5631,6 +5631,18 @@ different question, racily).
   **Eager filter evaluation** additionally feeds the provable-null-deref ud2 fold.
 - **Do NOT delete `_SEH2_TRY` "dead-code" wrappers** — they are an LLVM optimisation barrier.
 - **DUMMY_PSEH defeats cdfs's raise→catch→post async model** → 0x1E `STATUS_CANT_WAIT`.
+- **A restored probe does NOT re-protect the USE — check what the C's `_SEH2_TRY` actually
+  enclosed.** The C commonly wraps *probe AND use* in one `__try`; a translation that restores
+  the probe but leaves the use outside any guard looks fixed and is not. `SafeProbeFor*` is
+  validate-only by design (it cannot touch-test under DUMMY_PSEH), so a NULL or partially-mapped
+  pointer **passes the probe** and faults on the first real access. `NtUserSetSysColors` shipped
+  this: probe both user arrays, then call `IntSetSysColors` outside the guard →
+  `movl (%rdi,%r14,4)` on `NULL[0]` → 0x1E. Fix as `win32k-rust/src/copy.rs` already does for
+  `MmCopyFromCaller` — capture through `KmProtectedCopyMemory` — and **chunk** the capture when
+  the element count is caller-controlled, or the fix is an attacker-sized allocation.
+  **Detection route worth copying:** the bug was found by an apitest that passes NULL *on
+  purpose* to assert `ERROR_NOACCESS`. Error-path tests are where this class lives, so a suite
+  that never runs its error paths will never find it.
 
 ### A `__try`/`__except` translated to a BARE BLOCK — the flag survives, the handler doesn't `[§9.133]`
 **The shape to recognise**, and it is worse than an obviously-missing handler because a reviewer
@@ -6562,6 +6574,40 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A timeout measured in ITERATIONS shrinks as the guest gets chattier — and the driver above blames the test
+
+**Symptom:** a long conformance sweep stops partway through, at a different place each run, with
+no crash and no error. The declared budget is hours; the observed runs are 12-28 minutes. A
+driver that reruns the sweep and quarantines "whatever was in flight" then accumulates a
+quarantine list of tests that are not broken.
+
+**Cause:** the budget was spent by `for _ in range(budget)` around a read that returns as soon as
+bytes are available (`serial_output(timeout=1.0)` -> `read_available`, which polls every 20 ms and
+returns on first data). One "second" costs a full second only while the guest is SILENT. So the
+effective budget is inversely proportional to how much output the payload produces — backwards,
+because the payloads that need the longest drain are the chattiest ones.
+
+**Fix:** bound the loop by `time.monotonic()`, and make any outer timeout (the driver's pytest
+`--timeout`) strictly larger than the drain budget, or the driver silently becomes the real bound
+and the truncation returns wearing a different hat.
+
+Two things generalise beyond the specific loop:
+
+- **"The log stops here" is not evidence; "the log shows something going wrong here" is.** Every
+  false quarantine entry had a serial that ended with the accused subtest's OWN passing summary
+  line and its process-exit line. One `tail` would have refuted it. Prefer a positive fault
+  signature — a BUGCHECK banner, a visible restart loop — before attributing a stop to whatever
+  ran last.
+- **A test for this class must use a CHATTY fixture.** An idle-guest test passes against both the
+  broken and the fixed loop, so it verifies nothing. The bug lives in the busy case only.
+
+**And the meta-lesson, which cost the most:** this footgun was already documented, one directory
+away, by the payload that hit it first — which inflated its own number to compensate and left the
+note behind instead of fixing the loop. The next payload walked straight in. A note that
+describes a footgun rather than removing it is a deferred bug that keeps charging interest; if you
+find yourself writing "NOTE: X is not what it says it is", that is the detection event for fixing
+X.
 
 ### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
 
