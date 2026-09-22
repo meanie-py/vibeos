@@ -144,7 +144,7 @@ def defined_symbols(objs: list[Path]) -> set[str]:
     return out
 
 
-def rename_rules(arch: str, defined: set[str]) -> list[tuple[str, str]]:
+def rename_rules(arch: str, defined: set[str], prefix: str = "ref_") -> list[tuple[str, str]]:
     """(from, to) for every export genuine C actually DEFINES, decoration settled per arch.
 
     An export that genuine C does not define is skipped: it comes from vcruntime, crtmath,
@@ -173,9 +173,9 @@ def rename_rules(arch: str, defined: set[str]) -> list[tuple[str, str]]:
             f"the object set is wrong; refusing to emit an empty reference set"
         )
     underscored = n_under > n_plain
-    prefix = "_" if underscored else ""
+    dec = "_" if underscored else ""
 
-    rules = [(f"{prefix}{e}", f"{prefix}ref_{e}") for e in exports if f"{prefix}{e}" in defined]
+    rules = [(f"{dec}{e}", f"{dec}{prefix}{e}") for e in exports if f"{dec}{e}" in defined]
     # The map is a rename, so two exports must never claim one symbol, and one export must
     # never claim two. objcopy would silently apply whichever rule it read last.
     froms = [a for a, _ in rules]
@@ -229,19 +229,94 @@ def build_refset(arch: str, out: Path) -> tuple[int, int]:
     return len(objs), len(rules)
 
 
+#: The msvcrt Rust archive. 799 of the 999 exports ucrtbase still answers with
+#: Microsoft's C already have a body HERE -- written and graded against MSVCRT --
+#: but it never reaches ucrtbase's link line, deliberately: letting it through
+#: under --allow-multiple-definition would silently replace genuine UCRT bodies
+#: with MSVCRT-semantics ones (ucrtbase is _MSVCR_VER 140, msvcrt is 0).
+#:
+#: Renaming those bodies to rust_* gives the harness a THIRD side, so it can ask
+#: "is our existing Rust body UCRT-correct?" without flipping anything and
+#: without deleting the C that is its only oracle.
+MSVCRT_RUST_ARCHIVE = Path("dll/win32/msvcrt/libmsvcrt_crt_cargo.a")
+
+
+def build_rustset(arch: str, out: Path) -> tuple[int, int]:
+    """Rename the msvcrt Rust archive's ucrtbase exports to rust_*.
+
+    Unlike the ucrt side this renames the ARCHIVE in place rather than object by
+    object -- llvm-objcopy handles an archive directly, and there is no stale-object
+    hazard here because the archive is a single build product.
+    """
+    build = REPO / f"build-{arch}"
+    src = build / MSVCRT_RUST_ARCHIVE
+    if not src.is_file():
+        raise RefsetError(f"{src} not found -- fix: ./vibeos-cli build --arch {arch}")
+    mine = defined_symbols([src])
+    rules = rename_rules(arch, mine, prefix="rust_")
+
+    # The two private sides must share NOTHING. Both archives carry internals that
+    # are not ucrtbase exports, so no export-driven rule covers them -- and where the
+    # names coincide (`__invoke_matherr`, `__p___mb_cur_max`) the link silently keeps
+    # ONE under --allow-multiple-definition. The reference side would then call a Rust
+    # helper and the oracle would be grading our code against itself. Renaming every
+    # collision on the RUST side keeps Microsoft's objects untouched, which is what the
+    # reference must be.
+    ref = out.parent / "libucrt_ref.a"
+    if ref.is_file():
+        claimed = {a for a, _ in rules}
+        collisions = sorted((mine & defined_symbols([ref])) - claimed)
+        # COFF/linker bookkeeping, not code: renaming these breaks the object.
+        collisions = [c for c in collisions if not c.startswith((".refptr.", "@feat."))]
+        rules += [(c, f"rust_collide_{c.lstrip('_')}") for c in collisions]
+
+    objcopy = _tool("llvm-objcopy")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    mapfile = out.parent / f".{out.stem}-redefine.txt"
+    mapfile.write_text("".join(f"{a} {b}\n" for a, b in rules))
+    if out.exists():
+        out.unlink()
+    res = subprocess.run(
+        [objcopy, f"--redefine-syms={mapfile}", str(src), str(out)],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-objcopy failed on {src}: {res.stderr.strip()[:500]}")
+    return 1, len(rules)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--arch", required=True, choices=["i386", "amd64", "arm64"])
-    ap.add_argument("--out", type=Path, help="output archive (default: build-<arch>/libucrt_ref.a)")
+    ap.add_argument(
+        "--side",
+        default="ucrt",
+        choices=["ucrt", "msvcrt-rust"],
+        help="ucrt: genuine Microsoft C -> ref_* (default). "
+        "msvcrt-rust: our existing msvcrt Rust bodies -> rust_*",
+    )
+    ap.add_argument(
+        "--out", type=Path, help="output archive (default: build-<arch>/libucrt_<side>.a)"
+    )
     args = ap.parse_args(argv)
 
-    out = args.out or (REPO / f"build-{args.arch}" / "libucrt_ref.a")
+    default_name = {"ucrt": "libucrt_ref.a", "msvcrt-rust": "libucrt_rust.a"}[args.side]
+    out = args.out or (REPO / f"build-{args.arch}" / default_name)
     try:
-        nobj, nsym = build_refset(args.arch, out)
+        if args.side == "ucrt":
+            nobj, nsym = build_refset(args.arch, out)
+        else:
+            nobj, nsym = build_rustset(args.arch, out)
     except RefsetError as exc:
         print(f"ucrt-tier2-refset: FAIL ({args.arch}): {exc}", file=sys.stderr)
         return 1
-    print(f"ucrt-tier2-refset {args.arch}: {nobj} objects, {nsym} exports renamed ref_* -> {out}")
+    prefix = "ref_" if args.side == "ucrt" else "rust_"
+    print(
+        f"ucrt-tier2-refset {args.arch} [{args.side}]: {nobj} object(s), "
+        f"{nsym} exports renamed {prefix}* -> {out}"
+    )
     return 0
 
 

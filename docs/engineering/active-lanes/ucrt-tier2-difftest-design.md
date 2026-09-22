@@ -1,6 +1,10 @@
 # Tier 2 ucrt difftesting: grade in the guest, rename with objcopy
 
-Status: **reference set BUILT and linking; comparison harness not written.**
+Status: **RUNNING IN THE GUEST, and it found real bugs.** First run 2026-09-22:
+3013 cases, `dll_fail=0` (the positive control), **`rust_fail=14`** — seven
+msvcrt Rust bodies that are NOT UCRT-correct. See "First results" below.
+
+Earlier status: **reference set BUILT and linking; comparison harness not written.**
 `tools/ucrt_tier2_refset.py` emits `build-<arch>/libucrt_ref.a` on all three
 arches, and a probe exe linking it against the shipping ucrtbase import
 resolves both sides correctly (2026-09-22). What remains is the comparison
@@ -127,6 +131,60 @@ Three things the build taught us that the paper design did not have:
 Reference surface: **1013 exports on i386 and amd64, 1010 on arm64** have a
 genuine Microsoft body here to grade against. The rest of the 2,614 come from
 vcruntime, crtmath, ucrtbase's stubs or our Rust.
+
+## Three sides, not two
+
+A two-sided harness cannot answer the reuse question, and the first guest run
+showed exactly why: all 17 families it graded are still MICROSOFT, so `ref_foo`
+and the DLL's `foo` were *the same Microsoft code*. 3013 cases passed and proved
+nothing about us. It is a genuine positive control — the rename does not corrupt
+bodies, across the full 0..255 ctype range and 23x6 strtol cases — but it is not
+a verdict.
+
+So the harness links a THIRD side: `tools/ucrt_tier2_refset.py --side msvcrt-rust`
+renames the msvcrt Rust archive's ucrtbase exports to `rust_*` (935 on i386).
+Each row now grades twice:
+
+* `dll` vs `ref` — what we ship today. The control while a family is vendored C.
+* `rust` vs `ref` — **is our existing Rust body UCRT-correct?** Meaningful
+  whether or not the family has been taken over, and it needs no flip.
+
+llvm-objcopy renames a static archive in place, so this side costs one call.
+
+**The two private sides must share NOTHING.** Both carry internals that are not
+ucrtbase exports, so no export-driven rule covers them, and where the names
+coincide the link silently keeps one under `--allow-multiple-definition` — the
+reference side would then call a Rust helper and grade our code against itself.
+Four collided on i386; two were real (`__invoke_matherr`, `__p___mb_cur_max`)
+and are now renamed on the Rust side, leaving Microsoft's objects untouched.
+
+The Rust archive is also not self-contained: 15 symbols had no provider. Nine
+were Win32 (kernel32_vista, user32, advapi32); six are msvcrt internals
+ucrtbase does not export (`_scprintf`, `_cprintf`, `fwprintf`, `call_dtor`,
+`call_copy_ctor`, `__wine_RtlUnwind`). Those six are stubbed in the harness and
+abort loudly if reached, rather than linking `libmsvcrt_static.a` — that archive
+defines `strtol` and friends too, and would have been allowed to answer a graded
+name silently.
+
+## First results (i386, 2026-09-22)
+
+```
+cases=3013  dll_pass=3013 dll_fail=0  rust_pass=2999 rust_fail=14
+```
+
+Two families, seven bodies, and both are the SEMANTIC gap this quest is about —
+ucrtbase is `_MSVCR_VER` 140, msvcrt is 0:
+
+* **`atoi`/`atol` do not saturate.** UCRT clamps overflow to INT_MAX/INT_MIN;
+  our Rust wraps. `atoi("2147483648")` gives -2147483648 where UCRT gives
+  2147483647; `atoi("999999999999999")` gives -1530494977.
+* **`strtoul` at bases 16 and 36** returns 1 for `"-2147483648"` where UCRT
+  returns 4294967295. Base 10 is correct, so this is base-specific overflow
+  handling, not sign handling.
+
+These bodies may well be right for msvcrt and wrong for ucrt, which is precisely
+the question the harness exists to settle. Reusing them blind would have shipped
+both bugs.
 
 STILL not verified:
 
