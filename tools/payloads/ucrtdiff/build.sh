@@ -62,6 +62,12 @@ for A in $ARCHES; do
         | tail -1 | tr ' ' '\n' | grep -m1 'libclang_rt.builtins' || true)
     [ -n "$BUILTINS" ] || { echo "[ucrtdiff] FAIL($A): no compiler-rt builtins on ucrtbase's link line"; exit 1; }
 
+    # Regenerate the case list every time: it is derived from the burn-down (which moves
+    # as families are taken over) and from the public headers (which move with upstream).
+    # A stale .inc would keep grading exports that are no longer Microsoft's.
+    echo "[ucrtdiff] generating $A cases"
+    python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc"
+
     echo "[ucrtdiff] linking ucrtdiff-$A.exe"
     # -fno-builtin is LOAD-BEARING, not hygiene: clang knows what isdigit, strlen
     # and friends mean and will fold or inline them, so the "ours" side silently
