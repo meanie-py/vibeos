@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -58,6 +58,38 @@ def test_git_fingerprint_stable_then_changes(tiny_repo: Path):
     (tiny_repo / "a.txt").write_text("changed\n")
     fp3 = provenance.git_fingerprint(tiny_repo)
     assert fp3 != fp1, "working-tree edit must change the fingerprint"
+
+
+def test_git_fingerprint_survives_a_non_utf8_file(tiny_repo: Path):
+    """A latin-1 file in the diff must not take the CLI down.
+
+    The Microsoft DDK EULA under drivers/storage/ide/atapi carried a
+    French-Canadian warranty clause in latin-1. Deleting it put 0xe9 into
+    `git diff HEAD`, and the strict decode in `_run` raised UnicodeDecodeError
+    from inside make_stamp — so `vibeos-cli build` and every `land` behind it
+    died, with a traceback pointing at the CLI rather than at the file."""
+    latin1 = tiny_repo / "eula.txt"
+    latin1.write_bytes("garantie limit\xe9e\n".encode("latin-1"))
+    fp_untracked = provenance.git_fingerprint(tiny_repo)
+    assert len(fp_untracked) == 64
+
+    subprocess.run(["git", "add", "eula.txt"], cwd=tiny_repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "eula"],
+        cwd=tiny_repo,
+        check=True,
+        capture_output=True,
+    )
+    latin1.unlink()
+    fp_deleted = provenance.git_fingerprint(tiny_repo)
+    assert len(fp_deleted) == 64
+
+    # And byte-true, not lossily decoded: two distinct undecodable contents
+    # must not collapse onto one U+FFFD run and thus one fingerprint.
+    latin1.write_bytes(b"\xe9\xe9")
+    fp_a = provenance.git_fingerprint(tiny_repo)
+    latin1.write_bytes(b"\xe9\xea")
+    assert provenance.git_fingerprint(tiny_repo) != fp_a
 
 
 def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
@@ -2082,6 +2114,38 @@ def test_launch_qemu_retries_gdb_bind_race(monkeypatch, tmp_path):
     assert discarded == [procs[0]]  # first (raced) torn down
 
 
+def test_launch_qemu_retries_chardev_connect_failure(monkeypatch, tmp_path):
+    # The WSL2 localhost relay can refuse a `server=off` chardev's dial to a listener
+    # we bound moments earlier. QEMU dies before any guest code and the whole net suite
+    # reports 15 errors from that one dead launch, so it must be retried on a fresh
+    # port like the two bind races either side of it.
+    v = _launch_vm("windows-host", tmp_path)
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
+    procs = [_FakeProc(), _FakeProc()]
+    launched: list = []
+
+    def fake_popen(cmd, **kw):
+        p = procs[len(launched)]
+        launched.append(p)
+        return p
+
+    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
+    seq = iter(
+        [
+            "-chardev socket,id=gf2,host=127.0.0.1,port=58627,server=off: "
+            "Failed to connect to '127.0.0.1:58627': Unknown error",
+            None,
+        ]
+    )
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
+    discarded: list = []
+    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
+
+    v._launch_qemu()
+    assert v._proc is procs[1]
+    assert discarded == [procs[0]]
+
+
 def _gdb_vm(gdb: bool = False, wait: bool = False, backend: str = "native"):
     v = vm.QemuVM.__new__(vm.QemuVM)
     v._backend = backend
@@ -3207,16 +3271,53 @@ def test_hostlock_announce_pair_on_queued_acquire(tmp_path, monkeypatch, capsys)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
     holder = hl_mod.acquire_cpu_lease("boot:a", leases=1, timeout=0.0)
     assert holder is not None
-    # timed-out queue → WAIT only
-    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=0.8) is None
+    # timed-out queue → WAIT only. The budget is seconds, not milliseconds, because
+    # WAIT is printed AFTER the first failed attempt and AFTER the deadline check:
+    # a process descheduled past its own deadline before that print returns None
+    # having announced nothing, and the assert below fires on a lane that did
+    # nothing wrong. This test runs during a merge-queue drain -- three builds and
+    # four boots deep -- so "surely 0.8s is enough" is exactly the assumption the
+    # host is busiest disproving.
+    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=3.0) is None
     out = capsys.readouterr().out
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE not in out
     assert hl_mod.looks_starved(out)
-    # queued-then-granted → WAIT + ACQUIRED (holder released mid-wait by a thread)
-    threading.Timer(0.8, hl_mod.release, args=(holder,)).start()
-    fd = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=10.0)
+
+    # queued-then-granted → WAIT + ACQUIRED.
+    #
+    # Release the holder only once the waiter has ACTUALLY announced, instead of
+    # racing it on a timer. The old form was `Timer(0.8, release, holder)` followed
+    # by the acquire, which assumed the acquire would observe the lease as held
+    # within 0.8s. Under drain load it did not: the timer fired first, the very
+    # first attempt succeeded, and the captured output was a lone admission-shadow
+    # line with no WAIT at all -- TOOLING_FAIL, and an innocent lane bounced out of
+    # the merge queue for a full gate cycle (3 builds + 4 boots).
+    #
+    # Note WAIT is not printed until an attempt has already FAILED, so waiting for
+    # the ticket to appear in queue-cpuheavy would not be enough either; the only
+    # sound signal is the announcement itself. redirect_stdout is process-wide
+    # rather than per-thread, which is fine here only because the main thread does
+    # not print inside this window.
+    buf = io.StringIO()
+    got: dict[str, int | None] = {}
+
+    def _queued_acquire() -> None:
+        with contextlib.redirect_stdout(buf):
+            got["fd"] = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=30.0)
+
+    t = threading.Thread(target=_queued_acquire, daemon=True)
+    t.start()
+    deadline = time.monotonic() + 20.0
+    while hl_mod.WAIT_ANNOUNCE not in buf.getvalue():
+        assert time.monotonic() < deadline, f"waiter never announced: {buf.getvalue()!r}"
+        time.sleep(0.01)
+    hl_mod.release(holder)
+    t.join(30.0)
+    assert not t.is_alive(), "queued acquire never returned after the holder released"
+    fd = got["fd"]
     assert fd is not None
-    out = capsys.readouterr().out
+    out = buf.getvalue()
+    capsys.readouterr()
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE in out
     assert not hl_mod.looks_starved(out)
     hl_mod.release(fd)
@@ -4455,6 +4556,49 @@ def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_p
     cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
     build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
     assert cmds == [], "already ON should be a no-op, not a redundant reconfigure"
+
+
+def test_rostests_is_reconciled_off_unlike_kmtests(monkeypatch, tmp_path):
+    # --rostests is the OPPOSITE discipline from --kmtests and the pair is the
+    # point: ENABLE_ROSTESTS adds ~128 executables no default build wants, so a
+    # plain build must deterministically turn it back OFF. Sticky would mean one
+    # opt-in quietly bloats every later i386 build in the worktree.
+    on = "ENABLE_ROSTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": False})
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS=OFF", "."]], cmds
+
+
+def test_rostests_turns_on_when_asked(monkeypatch, tmp_path):
+    off = "ENABLE_ROSTESTS:BOOL=OFF\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=off, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": True})
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS=ON", "."]], cmds
+
+
+def test_rostests_already_on_and_asked_is_a_no_op(monkeypatch, tmp_path):
+    on = "ENABLE_ROSTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": True})
+    assert cmds == [], "already ON and requested should not reconfigure"
+
+
+def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
+    # Guard the WIRING, not just the mechanism. build.py reads the arg through
+    # getattr(args, "rostests", False), which silently yields False for a name
+    # that does not exist -- so a rename on either side disables the flag with
+    # no error anywhere. Parse with the REAL parser and assert both directions.
+    from tests.qemu.cli.__main__ import build_parser
+
+    args = build_parser().parse_args(["build", "--arch", "i386", "--rostests"])
+    assert bool(getattr(args, "rostests", False)) is True
+    plain = build_parser().parse_args(["build", "--arch", "i386"])
+    assert bool(getattr(plain, "rostests", False)) is False
+
+    src = (Path(__file__).parent / "build.py").read_text()
+    assert '"ENABLE_ROSTESTS": bool(getattr(args, "rostests", False))' in src, (
+        "build.py no longer maps the parsed --rostests arg onto ENABLE_ROSTESTS"
+    )
 
 
 # --- conformance verb (quest M4) -------------------------------------------
@@ -8472,3 +8616,107 @@ def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
     _git(tiny_repo, "update-ref", "refs/remotes/origin/master", "HEAD")
     _git(tiny_repo, "checkout", "-q", lane)
     assert land_mod._docs_only_vs_master(tiny_repo) is True
+
+
+# --- launch retry (host-side socket flake, 2026-09-20) ----------------------
+
+
+class _FlakyVM:
+    """Stands in for QemuVM: fails its first `fail_times` starts, then works."""
+
+    def __init__(self, fail_times: int):
+        self._left = fail_times
+        self.launch_timings: dict[str, float] = {}
+        self.starts = 0
+        self.stops = 0
+
+    def start(self):
+        self.starts += 1
+        if self._left > 0:
+            self._left -= 1
+            raise TimeoutError("QEMU did not connect to serial socket within 15.0s")
+
+    def stop(self):
+        self.stops += 1
+
+
+def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
+    """Drive _launch_with_retry against a VM that fails `failures` times."""
+    from tests.qemu.cli import smoke as smoke_mod
+
+    monkeypatch.setattr(smoke_mod, "_LAUNCH_ATTEMPTS", attempts)
+    monkeypatch.setattr(smoke_mod, "_LAUNCH_RETRY_SECONDS", 0)
+    budget = {"n": failures}
+    built: list[_FlakyVM] = []
+    logs: list[str] = []
+
+    def make_vm():
+        fail = 1 if budget["n"] > 0 else 0
+        budget["n"] -= 1
+        v = _FlakyVM(fail)
+        built.append(v)
+        return v
+
+    timings: dict[str, float] = {}
+    # _FlakyVM is a stand-in, not a QemuVM -- the helper only ever touches
+    # start/stop/launch_timings, which is exactly what makes it testable here.
+    vm, n, exc = smoke_mod._launch_with_retry(
+        cast("Any", make_vm), timings, logs.append, "boot 1/5"
+    )
+    return built, logs, timings, vm, n, exc
+
+
+def test_launch_retry_recovers_from_a_host_side_flake(monkeypatch):
+    # The incident: one boot of five died on "QEMU did not connect to serial
+    # socket within 15.0s" before a single guest instruction ran, and landed as
+    # a red flake beside real verdicts.
+    built, logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=1)
+    assert len(built) == 2
+    assert exc is None, "a single host-side flake should not fail the boot"
+    assert n == 2
+    assert timings["launch_attempts"] == 2, "a recovered launch must still be recorded"
+    assert any("host-side flake" in m for m in logs)
+
+
+def test_launch_retry_builds_a_FRESH_vm_each_attempt(monkeypatch):
+    # Load-bearing: the port and serial socket path are chosen in
+    # QemuVM.__init__, so retrying start() on the SAME instance would retry onto
+    # the same bad port and could never recover.
+    built, _logs, _timings, _vm, n, exc = _retry_probe(monkeypatch, failures=2)
+    assert exc is None and n == 3
+    assert len(built) == 3, "each attempt must construct a new VM"
+    assert all(v.starts == 1 for v in built), "no instance may be start()ed twice"
+    assert built[0].stops == 1 and built[1].stops == 1, "failed VMs must be torn down"
+
+
+def test_launch_retry_gives_up_and_reports_the_real_failure(monkeypatch):
+    # The retry must not make a broken launch quieter or slower-to-diagnose.
+    built, _logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=99)
+    assert isinstance(exc, TimeoutError)
+    assert n == 3 and len(built) == 3
+    assert "launch_attempts" not in timings, "never claim success on a failed launch"
+
+
+def test_launch_retry_is_a_no_op_on_a_healthy_launch(monkeypatch):
+    built, logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=0)
+    assert exc is None and n == 1 and len(built) == 1
+    assert logs == [], "a clean launch must stay silent"
+    assert "launch_attempts" not in timings
+
+
+def test_launch_attempts_stays_small_enough_not_to_slow_a_broken_launch():
+    from tests.qemu.cli import smoke as smoke_mod
+
+    assert 2 <= smoke_mod._LAUNCH_ATTEMPTS <= 3
+    assert smoke_mod._LAUNCH_RETRY_SECONDS <= 5
+
+
+def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():
+    import inspect
+
+    from tests.qemu.cli import smoke as smoke_mod
+
+    src = inspect.getsource(smoke_mod._boot_vm)
+    assert '"classification": "LAUNCH_FAIL"' in src
+    assert '"launch_attempts": attempts' in src
+    assert "launch attempts, all failed" in src

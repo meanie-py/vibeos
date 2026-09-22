@@ -13,6 +13,11 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+// The checked-in bindgen still declares the PRE-merge two-parameter forms of these
+// (Process, Job) / (Job, Process); upstream simplified both to take only PEPROCESS
+// (ntoskrnl/include/internal/ps.h). Import the crate-local definitions explicitly so
+// the stale externs from the ddk glob cannot win name resolution here.
+use crate::job::{PspExitProcessFromJob, PspRemoveProcessFromJob};
 
 // Bugcheck codes
 const CRITICAL_PROCESS_DIED: ULONG = 0xEF;
@@ -381,7 +386,7 @@ pub unsafe extern "system" fn PspDeleteProcess(object_body: PVOID) {
     }
 
     if !(*(process as *mut _EPROCESS)).Job.is_null() {
-        PspRemoveProcessFromJob(process, (*(process as *mut _EPROCESS)).Job);
+        PspRemoveProcessFromJob(process);
         ObDereferenceObject((*(process as *mut _EPROCESS)).Job as PVOID);
         (*(process as *mut _EPROCESS)).Job = core::ptr::null_mut();
     }
@@ -814,10 +819,7 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
         }
 
         if !(*(current_process as *mut _EPROCESS)).Job.is_null() {
-            PspExitProcessFromJob(
-                (*(current_process as *mut _EPROCESS)).Job,
-                current_process,
-            );
+            PspExitProcessFromJob(current_process);
         }
     }
 

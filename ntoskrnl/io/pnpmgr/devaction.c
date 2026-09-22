@@ -1465,7 +1465,7 @@ IopSetServiceEnumData(
         }
 
         /* Set the instance path */
-        swprintf(ValueBuffer, L"%lu", NextInstance);
+        _swprintf(ValueBuffer, L"%lu", NextInstance);
         RtlInitUnicodeString(&ValueName, ValueBuffer);
         Status = ZwSetValueKey(ServiceEnumKey,
                                &ValueName,
@@ -1561,7 +1561,7 @@ PiUpdateDeviceState(
         // Query resource rebalance
 
         if (PnPFlags & PNP_DEVICE_FAILED)
-            DeviceNode->Flags &= DNF_NON_STOPPED_REBALANCE;
+            DeviceNode->Flags &= ~DNF_NON_STOPPED_REBALANCE;
         else
             DeviceNode->Flags |= DNF_NON_STOPPED_REBALANCE;
 

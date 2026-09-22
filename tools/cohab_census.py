@@ -75,6 +75,14 @@ def cmake_files(root: Path = REPO) -> list[Path]:
     -- it cost two merge-queue rejections to see. `os.walk` with in-place pruning
     never enters those directories at all (and is much faster); `onerror` is
     ignored so a directory disappearing underneath us can never fail the scan.
+
+    NOT tools/source_walk.py, though scan_unpruned_walk nudges that way and I tried
+    it: that walker excludes only `target` plus caller-supplied prefixes, so it does
+    NOT prune `build-*` -- and build-amd64 alone holds 856 generated `.cmake` files.
+    It also uses onerror=_raise, which is precisely the crash this pruning exists to
+    prevent. It is the right walker for a scan rooted INSIDE sdk/lib/rust; this one
+    is rooted at the repo, where `build-*` is a child. The census came out
+    BYTE-IDENTICAL either way, which is exactly why the swap looked safe and was not.
     """
     out = []
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):

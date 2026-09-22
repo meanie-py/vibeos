@@ -8,6 +8,10 @@
     ],
     "shared": [
       "dll/win32/shell32/shellmenu/CMenuToolbars.cpp"
+    ],
+    "untranslated_leaf": [
+      "dll/win32/shell32/CShellLibrary.cpp",
+      "dll/win32/shell32/CUserEventTimer.cpp"
     ]
   },
   "removed": {

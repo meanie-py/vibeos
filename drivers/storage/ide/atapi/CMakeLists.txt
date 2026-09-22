@@ -2,7 +2,7 @@
 # ============================================================================
 # atapi.sys — Rust cohabitation flip (atapi.c -> atapi-rust)
 # ============================================================================
-# The NT4-DDK ATAPI IDE miniport (atapi.c, single TU) is translated to Rust
+# The NT4-DDK ATAPI IDE miniport (atapi.c, single TU, since deleted) was translated to Rust
 # (sdk/lib/rust/atapi-rust, kept on disk per the never-delete rule; 5-way parallel
 # HAND translation — link-only-verified driver, so hand fidelity beats DeepSeek).
 # DriverEntry comes from libatapi_rust.a; the IDE/IDENTIFY/SCSI-SRB private types
@@ -41,7 +41,8 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_atapi DEPENDS ${ATAPI_RUST_LIB})
 
-# C body replaced by Rust (atapi.c) — kept on disk per the never-delete rule.
+# C body replaced by Rust; atapi.c/.h DELETED 2026-09-20 (Microsoft NT4 DDK EULA,
+# the only non-FLOSS grant in the tree). atapi.sys is built from the Rust alone.
 add_library(atapi MODULE
     rust_cohab_stub.c
     atapi.rc)

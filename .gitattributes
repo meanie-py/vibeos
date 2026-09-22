@@ -123,3 +123,4 @@ vendor-patches/*.patch -text
 # committed file is worse than no hash. Every other vendored licence file is LF
 # upstream and needs no rule; add one here if that ever stops being true.
 sdk/include/reactos/edk2/License.txt -text
+COPYING.DJ -text

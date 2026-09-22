@@ -124,3 +124,31 @@ add_livecd_shortcut("Command Prompt" cmd.exe "Profiles/Default User/Application 
 add_livecd_shortcut("ReactOS Explorer" explorer.exe "Profiles/Default User/Application Data/Microsoft/Internet Explorer/Quick Launch")
 
 add_custom_target(livecd_links DEPENDS ${LIVECD_SHORTCUTS})
+
+# The NATIVE half of the winetest A/B (i386 only).
+#
+# winlogon runs the same i386 user32_winetest.exe twice: once as a WoW64 guest
+# on amd64 media, and once here on bare i386. Subtracting the two is the only
+# thing that makes a red Wine assertion attributable -- a failure present in
+# both is our user32, a failure present only under WoW64 is the 32<->64 seam.
+# Without the control every finding reads equally as either.
+#
+# Staged by `if(EXISTS)` on the build output rather than through
+# add_rostests_file, deliberately: that macro adds the file `FOR all`, which
+# makes the livecd target DEPEND on every other rostests target -- and two of
+# them (rosautotest, interop_unittest) do not build, so the i386 livecd cannot
+# be produced with ENABLE_ROSTESTS at all. This way the opt-in is still just
+# "run an i386 build --rostests once", and the media that carries the control
+# is an ordinary one.
+if(ARCH STREQUAL "i386")
+    set(_native_winetest
+        ${REACTOS_SOURCE_DIR}/build-i386/modules/rostests/winetests/user32/user32_winetest.exe)
+    # Its CREATION must re-run configure, or a tree that builds it after the
+    # last configure keeps the cached "absent" answer and stages nothing --
+    # which reads as "the control did not run" rather than "was never staged".
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_native_winetest})
+    if(EXISTS ${_native_winetest})
+        message(STATUS "winetest A/B: staging the native i386 user32_winetest onto livecd")
+        add_cd_file(FILE ${_native_winetest} DESTINATION reactos/bin FOR livecd)
+    endif()
+endif()

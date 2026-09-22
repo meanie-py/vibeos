@@ -393,6 +393,7 @@ dependencies = [
  "cnt-rust",
  "crt-shared-rust",
  "panic-common",
+ "ucrt-rust",
 ]
 
 [[package]]
@@ -2506,6 +2507,18 @@ dependencies = [
  "tracing-core",
  "tracing-log",
 ]
+
+[[package]]
+name = "ucrt-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "msvcrt-crt-rust",
+]
+
+[[package]]
+name = "ucrt-rust"
+version = "0.1.0"
 
 [[package]]
 name = "uefildr-cargo"

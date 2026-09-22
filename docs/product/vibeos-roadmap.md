@@ -507,6 +507,144 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `case 2:`/`case 7:` arms in `OnShowOptionsDlg` are genuinely live). Fixing it means
   re-deciding all eight sites against the C, so it wants its own pass.
 
+- **`afd` BUGCHECK 0x1E on a pending receive: `FCB->ReceiveIrp.InFlightRequest != Irp`.
+  OPEN** (2026-09-21). Found by the new apitest harness on its third boot, running
+  `afd_apitest send`. Signature: `*** ASSERT FAILED: FCB->ReceiveIrp.InFlightRequest == Irp
+  at read.rs:662`, then `BUGCHECK 0x0000001E (0xc0000005, ...)` with
+  `TrapFrame.Rip = afd.sys+0x89C6`. **The translation is FAITHFUL** — `read.c:279` does the
+  same `ASSERT` followed by the same unconditional `InFlightRequest = NULL`, in both
+  `AfdConnectedSocketReadComplete` and its datagram sibling at `:558`. So the defect is not
+  that shape; the defect is that the invariant is FALSE by the time we get here, i.e. the IRP
+  completing is not the one recorded in flight. That is the lead: who sets
+  `ReceiveIrp.InFlightRequest`, and which path completes a receive without going through it.
+  (I first wrote this entry blaming read.rs's structure, having read only our side — the C
+  was one grep away and says the same thing.) Reproduce:
+  `tools/payloads/apitest/quarantine-amd64.txt` currently skips
+  `afd_apitest.exe send`; remove that line and run the apitest payload.
+  Quarantined only so the other 61 suites can be characterised, NOT because the test is wrong.
+
+- **`advapi32_apitest RtlEncryptMemory` crash-loops `services.exe`. OPEN** (2026-09-21).
+  Serial shows `[EXIT-THR] image=SERVICES.EXE` and `eventlog.exe` repeating and the guest
+  never advances. Subtest-level skip in the apitest quarantine.
+
+- **`opengl32_apitest` wedges the guest during subtest enumeration. OPEN** (2026-09-21).
+  It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
+  than one subtest.
+
+- **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
+  and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
+  `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
+  `movl (%rdi,%r14,4), %eax` reading `lpaElements[0]`; fault address `0`. The test's second
+  call is `SetSysColors(1, NULL, crColors)` and it asserts `FALSE`/`ERROR_NOACCESS`, so the
+  NULL is deliberate. `SafeProbeForRead` is validate-only by design (it cannot touch-test
+  under `USE_DUMMY_PSEH`), so NULL passes the range check; the C reads the array inside the
+  same `_SEH2_TRY` as the probe and catches the AV, while our Rust calls `IntSetSysColors`
+  outside any guard. A new member of the probe-then-raw-read cluster documented in
+  `ntkrnl-sys/src/probe.rs`, and the first found in win32k rather than ntoskrnl. Fix is the
+  one `win32k-rust/src/copy.rs` already uses for `MmCopyFromCaller` — capture through
+  `KmProtectedCopyMemory` — but **chunked**, since `cElements` is caller-controlled to
+  `0x3FFFFFFF`. Write-up: `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
+
+- **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
+  never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
+  Signature: the kernel prints `[EXIT-THR] image=marshal32.exe exit_status=0x600d` — the
+  guest PASSED — but winlogon's own `[WINLOGON] marshal32.exe exit = 0x600d` never
+  appears, no later guest is launched, and `ladder.check` then reports the eight
+  remaining guests as "never reported a verdict". Measured over a 956-second boot: the
+  machine stays ALIVE the whole time (the netstack self-tests keep running and logging
+  afterwards), so this is winlogon wedged, not the VM dead or starved.
+  **The load-bearing detail is the timeout.** `TryStartWow64Marshal` waits
+  `WaitForSingleObject(Pi.hProcess, 60_000)`; more than 500 seconds elapsed after the
+  guest exited and it never returned, so the anomaly is not "the process did not signal"
+  — it is a bounded wait that does not time out. Alongside it, something sends
+  `WM_ENTERIDLE` to a thread `IsThreadSuspended` calls suspended, about 2.4 times a
+  second forever (1202 sends in the tail); if that thread is winlogon's, "suspended" is
+  the truth and the question becomes who suspended it.
+  Same predicate as the console hang above, which is either a coincidence or the link.
+  Diagnosis notes so the next attempt does not re-walk this: it is NOT host starvation
+  (three earlier boots were misread that way — by rate all boots run 27-39 serial
+  lines/s, and doubling the drain from 470s to 956s bought 670 more lines, not more
+  progress), and it is NOT a tight spin (1202 sends in ~500s is idle, not CPU-bound).
+  A boot at 2026-09-21 00:45 ran the same guests 11/11, so it is recent; the amd64 media
+  changed only by winlogon.exe between the two, which is suspicious but unproven —
+  nothing in that diff runs before marshal32.
+
+- **Wine's conformance suites now run under WoW64, and the first two subtests found
+  four separate bugs. OPEN** (2026-09-21). `user32:wsprintf` passes clean (46 tests, 0
+  failures). `user32:class` is the interesting one, and the native i386 A/B run of the
+  SAME binary splits its failures three ways:
+  - **Ours, not WoW64** (identical on bare i386, same source lines): `GetModuleFileName
+    failed` (class.c:1286/1299), `IME window proc implemented in` (1290/1303),
+    `CreateDialogParam returned NULL` (919).
+  - **WoW64, FIXED**: all eight `GetClassLongW value doesn't match what was set`
+    (class.c:164) — class extra bytes read off the WoW64 snapshot instead of the class.
+  - **UNATTRIBUTED, and the tempting answer is wrong**: the wndproc-identity cluster
+    (class.c:700-784, `Wrong ANSI wndproc: FFFF02BE vs 77A4A570`, where `FFFF02xx` is a
+    winproc HANDLE where a real address belongs). It does not appear in the native run —
+    but the native run HANGS in the child-process section before reaching line 700, and
+    the WoW64 run CRASHES 0xC0000005 before reaching the child-process section. The two
+    never overlap on that block, so "absent" means "not reached". A first theory that the
+    SERVERINFO `apfnClientA/W` arrays are misread under WoW64 is DISPROVEN by the log:
+    the values are valid *guest* user32 addresses (77A4A570 = the guest's DefWindowProcA),
+    so the widths are fine and the A/W decision is what is wrong.
+  Unblocking it needs the console hang below fixed first — that is what stops the native
+  control from ever reaching line 700.
+
+- **A winetest's child processes each hang for 30s on bare i386. OPEN** (2026-09-21).
+  `class.c:1252` spawns `<exe> class <classname>` fifteen times with
+  `bInheritHandles=FALSE` and waits; every wait times out
+  (`winetest_wait_child_process`, 30s each) and is scored as one failure. Reached only by
+  the NATIVE half of the winetest A/B, so it is not a WoW64 bug. Note the child gets no
+  console and no inherited std handles, and winlogon launches the parent
+  `DETACHED_PROCESS` — so before blaming CreateProcess, re-run the native control WITHOUT
+  DETACHED_PROCESS (a console is legal there; it is only the WoW64 guest that cannot
+  create one). That is a one-line experiment and it also A/Bs the console bug below.
+
+- **Console creation HANGS a CUI process launched by winlogon — on bare i386 as well as
+  under WoW64. OPEN, and it is one bug behind three symptoms** (2026-09-21).
+  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`
+  (`win32k-rust/src/window.rs`), after which the process spins in
+  `Sending to Suspended Thread` and never reaches main: 180s timeout, **0 bytes of
+  output**, 9075 spin lines. First seen on a WoW64 guest; the native i386 control of the
+  same binary reproduced it EXACTLY, so it is ours and not a 32↔64 bug — "WoW64" was
+  where it was seen, not where it lives.
+  The three symptoms: (1) a WoW64 winetest hangs before main; (2) the native one does
+  too; (3) `class.c` spawns fifteen children of its own, and a CUI child of a
+  console-less parent gets a NEW console from csrss, so each burns the full 30s of
+  `winetest_wait_child_process` — 7.5 minutes, and the reason the native control has
+  never reached the wndproc block it exists to adjudicate.
+  Worked around for the winetest runner by launching `DETACHED_PROCESS` (a piped test
+  wants no console), which is why the ladder does not depend on it. **Fixing this is the
+  unblock for the wndproc attribution above**, and it is reachable natively, so no WoW64
+  machinery is needed to debug it.
+  LOCALIZED, not yet root-caused: `co_UserCreateWindowEx` fails at
+  `co_IntSendMessage(hwnd, WM_NCCREATE, …)` returning 0, and the send is refused by
+  `IsThreadSuspended(ptirec)` in `msgqueue.rs` — the receiving thread reads as suspended
+  or frozen. That predicate is `Tcb.SuspendCount == 0 && PsGetThreadFreezeCount() == 0`,
+  both of which are bindgen-anon-union reads that differ per arch
+  (`kt_suspend_count` in msgqueue.rs, `PsGetThreadFreezeCount` in ps-rust/thread.rs), so
+  a wrong union member would make every thread look suspended. Note the ERR fires
+  **3327 times in a HEALTHY amd64 boot**, so it is either badly over-firing already or
+  there really are that many suspended sends; either way the next step is a runtime
+  probe printing SuspendCount and FreezeCount for the receiving thread, not more
+  source reading — the two candidate reads look correct on inspection.
+
+- **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
+  in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not
+  the 1 MB reserve: `BTCpuSimulate` stashes the 64-bit dispatcher RSP at `CpuArea+8`, a
+  user callback runs the guest through a nested `BTCpuSimulate` that overwrites it, and the
+  callback exits by `NtCallbackReturn` rather than returning through the asm, so the outer
+  value was never restored. Every callback then cost ~4 KB permanently; taskmgr exhausted
+  its 1 MB at ~950 callbacks. Fixed by saving/restoring the slot around the nesting in
+  `Wow64pUserCallbackCommon`. Measured after: `exit_status=0x80` 3 -> **0** per boot, user
+  stack pre-faults 2 -> **0**, `STACK EXHAUSTED` 1 -> **0**, and taskmgr reaching 4915
+  callbacks with its dispatcher RSP flat. Two earlier fixes were prerequisites for even
+  seeing it — guest stacks could not grow at all (TEB32 `DeallocationStack` was never
+  published), and a genuine overflow could not be REPORTED (the exception record went below
+  the faulting Rsp, which on overflow is already the floor), which is what laundered every
+  stack bug into an anonymous `0x80`. Field manual: "A nested BTCpuSimulate clobbers the
+  saved dispatcher RSP".
+
 - **`ExPools` on arm64 intermittently drops one assertion under load, and it can eat a
   whole merge-queue submission. UNOWNED** (2026-09-20). Signature:
   `ExPools: pass 14 -> 13 (dropped)`, the extra failure being `assert ExPools.c:181` —
@@ -1285,9 +1423,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtTib.StackBase`/`DeallocationStack`, i.e. the HOST stack. A guest address is never in
   that range, so the test rejects it and returns `STATUS_GUARD_PAGE_VIOLATION`.
 
-  **A direct fix was tried and REVERTED; why it failed IS the remaining blocker.** Pointing
-  the bounds test at TEB32 gave **0 PASS / 16 EXITED** — every applet, including winmine
-  which had never failed — against a 12-13 PASS baseline. Cause: **nothing ever populates
+  **A direct fix was tried and REVERTED — but the measurement that condemned it was
+  CONFOUNDED, and the revert should not be read as a verdict.** Pointing the bounds test at
+  TEB32 gave **0 PASS / 16 EXITED** on both of its two boots, which I compared against a
+  12-13 PASS baseline and called a severe regression. Three repeat boots on the *unmodified*
+  media then produced 13 / 12 / **0 PASS 16 EXITED** — the total wipeout occurs on stock
+  master roughly one boot in three, for an unrelated reason (see the CPU-layer entry below).
+  Two wipeouts out of two is barely distinguishable from a 1-in-3 base rate; the change was
+  reverted on evidence that could not support the conclusion. Re-measure before judging it.
+  The reasoning below still stands on its own as a static defect, independently of that run.
+  Cause: **nothing ever populates
   TEB32's `DeallocationStack`.** `Wow64pThreadInit` (`dll/win32/wow64/wow64.c`) writes only
   `NtTib.StackBase` (+0x04) and `NtTib.StackLimit` (+0x08); `grep -c DeallocationStack` over
   wow64.c and wow64_manual.c is **0**. The test degenerated to `Address < 0`, the lower
@@ -1300,6 +1445,94 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `Wow64pThreadInit` must publish `DeallocationStack`, and the guest stack wants a real
   reserve plus guard page rather than the fully-committed block the initial stack now gets,
   BEFORE the kernel can trust those bounds. Sequence it in that order.
+
+- **An amd64 boot could lose EVERY 32-bit guest at one address, during 64-bit loader init.
+  NOT REPRODUCIBLE since 2026-09-20 — 0 in 29 boots. Kept because the mechanism was never
+  proven and it was the confounder behind several of this lane's verdicts**
+  (2026-09-20). Symptom: `PASS=0 EXITED=16`, every ladder guest AND every stock applet
+  exiting `0x80`, including ones that never otherwise fail (winmine) and the non-GUI parity
+  guests (sqlite32). MEASURED 13 / 12 / 0 PASS across three boots of *identical* media
+  (`/tmp/vibeos-cli/20260920-144018-b4b1xg22-smoke-amd64`).
+
+  It is not sixteen application failures, it is one boot-level failure. The tells:
+
+  - A wipeout boot's serial log is **~14k lines against ~180-250k for a healthy one** — the
+    applets die instantly, they do not run and then crash.
+  - **Not one `[FEX-WOW64C]` line is printed all boot.** `BTCpuProcessInit`,
+    `Wow64LdrpInitialize`, `entering guest` — the entire CPU-layer bring-up is absent, so
+    no guest ever begins executing i386 code.
+  - But the CPU layer is not where it breaks. `ldrinit.rs` prints `[LDR] WoW64 process:
+    init routines done, loading wow64.dll` immediately before it loads wow64.dll, and a
+    wipeout boot prints that **0 times against 30 in a healthy one**. So every guest dies
+    during ordinary 64-bit loader init — the import walk and the dependencies' DllMain —
+    *before* WoW64 enters the picture at all. The missing `[FEX-WOW64C]` output is the
+    consequence, not the cause. (Checked the Rust: `dll/ntdll/ldr/ldrinit.c` is
+    cohab-flipped and inert, so its `DPRINT1`s never fire and their absence means nothing.)
+  - Every victim faults at the **same address in the same instruction**:
+    `rip=addr=000007ffb7030093`, which is ntdll.dll (64-bit, based 0x7ffb7000000) at
+    `RtlpUnwindInternal+0x13` — `movq %r9, 0x70(%rsp)`, the first store into the 0xA88-byte
+    frame that the immediately preceding `subq $0xa88, %rsp` just allocated. So the 64-bit
+    loader is already unwinding an earlier exception, and runs out of stack doing it.
+  - `pci.pDeskInfo=0000000000000000` on every one, against real per-process values in a
+    healthy boot.
+  - The kernel then prints `user dispatch FAILED: pre-fault of stack page ... = 0xc0000005`
+    and the process is terminated `0x80`, which is why the original cause never surfaces.
+
+  Distinct from the guard-page entry above in WHERE it lands: those are **guest** faults
+  (`80000001`, 3 per boot, rotating victim, late, after real GUI work); this is a **host**
+  64-bit fault at process startup, identical across every guest, with `guardpage=0` all boot.
+
+  **But symbolicating both sides says they are one bug, not two.** The healthy-boot applet
+  deaths land at `rip=7e018191`, which is i386 `ntdll.dll` (based 0x7e000000) at
+  `RtlpAllocateMemory@8+0x11` — `pushl $0x0`, a stack store. The wipeout deaths land at
+  64-bit `RtlpUnwindInternal+0x13` — `movq %r9,0x70(%rsp)`, also a stack store, the first
+  into a frame `sub rsp,0xA88` just opened. Same shape on both sides of the 32/64 boundary:
+  a store just past the stack limit that the kernel declines to grow, `0xc0000005`, then
+  `user dispatch FAILED: pre-fault of stack page`. Both therefore point at
+  `MiCheckForUserStackOverflow` — which is the function the reverted change was aimed at,
+  and is a second reason to re-derive that verdict rather than leave it standing.
+
+  Note also how much stack growth a WoW64 process needs before it can do anything: the guest
+  image (winmine.exe) declares `SizeOfStackReserve=0x100000` with `SizeOfStackCommit=0x1000`,
+  so the 64-bit loader runs its whole import walk and every dependency's DllMain on a stack
+  that starts at ONE committed page and must grow by guard-page fault the entire way. If
+  growth is unreliable, a WoW64 process is the most exposed thing in the system.
+
+  **It stopped happening, and the honest summary is "not reproducible", not "fixed".**
+  Measured across four media: 1/3 before the TEB32 work, then 0/5, 0/4, and a 24-boot
+  `farm` soak at **0/24** — pooled **0 of 29** post-change. Under the 1-in-3 originally
+  quoted that outcome has probability ~1e-5, so the rate really did drop; but the
+  disappearance coincides with `7261000a5110` (GdiBatchCount read from TEB64 on the
+  user-callback path), and coincidence across media is not attribution. A bisect would
+  settle it and has not been run. The mechanism that FITS: a guest's TEB64 GdiBatchCount
+  is a field nobody writes, so a garbage count drives user-mode callbacks to flush a batch
+  that does not exist, and recursive callbacks eating a megabyte of native stack is exactly
+  the observed signature. Plausible, unproven; do not repeat it as the cause.
+
+  A cheap way to detect a recurrence without a ladder run, which is how the 24 boots were
+  scored: a wipeout kills the LADDER guests at startup, long before the desktop marker, so
+  a plain 45s `farm` boot shows it as **zero `[LDR] WoW64 process` lines**. No `--ladder`
+  needed, and n=24 costs half an hour instead of four.
+
+  **The rate was not 1 in 3 and I should not have quoted one.** That figure came from a
+  single 3-boot run (13 / 12 / 0). A 5-boot run on current media saw **none**: PASS
+  13 / 14 / 11 / 14 / 14, EXITED 1 / 0 / 3 / 0 / 0, every boot reaching the desktop
+  (`/tmp/vibeos-cli/20260920-154737-z5kel22e-smoke-amd64`). Pooled that is 1 in 8, and the
+  two runs are not even the same media — `7261000a5110` (the TEB32 GDI-batch fix on the
+  user-callback path) landed in between and is a live candidate for having reduced it.
+  Nothing here is yet enough to claim a fix; it IS enough to say the number was soft, and
+  it is the third estimate of mine today that needed softening once n grew.
+
+  **Why it matters beyond itself:** a bug that wipes the entire applet population, in
+  exactly the units this lane measures, will confirm whatever you were hoping to see. It
+  already did once — see the corrected postmortem above. Until it is understood, no
+  single-boot amd64 applet comparison means anything; use `--repeat` and report the
+  distribution, not a boot.
+
+  **Usable baseline as of 2026-09-20**, for whoever grades the stack-growth fix: 5 boots,
+  PASS 13 / 14 / 11 / 14 / 14, and `pre-fault of stack page` failures 4 / 4 / 6 / 4 / 4 —
+  present in EVERY boot, which makes that count the sharper before/after signal than the
+  PASS count, since it does not depend on which applet happened to be unlucky.
 
 - **`taskmgr.exe` EXITED = 0xc0000005 on one boot — OPEN, likely a flake or a distinct
   bug** (2026-09-20). Seen on the stack-fix boot while charmap (the applet that fix

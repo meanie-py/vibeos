@@ -26,6 +26,7 @@ use ntkrnl_sys::ddk::{
 };
 
 use ntkrnl_sys::opaque_ptr;
+use ntkrnl_sys::ddk::KPROCESSOR_MODE;
 // SECURITY_SYSTEM bugcheck code (bugcodes.mc: 0x29)
 const SECURITY_SYSTEM: u32 = 0x29;
 
@@ -614,6 +615,7 @@ pub unsafe extern "system" fn CmpSecurityMethod(
     OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
+    _AccessMode: KPROCESSOR_MODE,
 ) -> i32 {
     let ObjectBody = opaque_ptr(ObjectBody);
     let SecurityInformation = opaque_ptr(SecurityInformation);

@@ -684,6 +684,58 @@ pub unsafe extern "system" fn SetThreadAffinityMask(
     return ThreadBasic.AffinityMask;
 }
 
+// Upstream-sync 2026-09: GetThreadGroupAffinity/SetThreadGroupAffinity are genuinely NEW
+// upstream code (thread.c, added in the 1,269-commit merge; no pre-merge C or Rust form
+// existed). Both are UP-only fakes in the C original too -- `STUB; // FIXME: Real group
+// support` -- so this is a faithful, not a lesser, port: there is only ever one group
+// (THEONLYGROUP == 0) until real processor-group support lands.
+const THEONLYGROUP: WORD = 0;
+
+#[no_mangle]
+pub unsafe extern "system" fn GetThreadGroupAffinity(
+    hThread: HANDLE,
+    GroupAffinity: PGROUP_AFFINITY,
+) -> BOOL {
+    let mut ThreadBasic: THREAD_BASIC_INFORMATION = core::mem::zeroed();
+
+    let Status = NtQueryInformationThread(
+        hThread,
+        ThreadBasicInformation,
+        &mut ThreadBasic as *mut _ as *mut core::ffi::c_void,
+        core::mem::size_of::<THREAD_BASIC_INFORMATION>() as u32,
+        core::ptr::null_mut(),
+    );
+    if !NT_SUCCESS(Status) {
+        BaseSetLastNTError(Status);
+        return 0;
+    }
+
+    *GroupAffinity = core::mem::zeroed(); // For Reserved
+    (*GroupAffinity).Mask = ThreadBasic.AffinityMask as KAFFINITY;
+    (*GroupAffinity).Group = THEONLYGROUP;
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SetThreadGroupAffinity(
+    hThread: HANDLE,
+    GroupAffinity: *const GROUP_AFFINITY,
+    PreviousGroupAffinity: PGROUP_AFFINITY,
+) -> BOOL {
+    if GroupAffinity.is_null() || (*GroupAffinity).Group != THEONLYGROUP {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    let OldMask = SetThreadAffinityMask(hThread, (*GroupAffinity).Mask as DWORD_PTR);
+    if OldMask != 0 && !PreviousGroupAffinity.is_null() {
+        *PreviousGroupAffinity = core::mem::zeroed(); // For Reserved
+        (*PreviousGroupAffinity).Mask = OldMask as KAFFINITY;
+        (*PreviousGroupAffinity).Group = THEONLYGROUP;
+    }
+    (OldMask != 0) as BOOL
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn SetThreadPriority(
     hThread: HANDLE,

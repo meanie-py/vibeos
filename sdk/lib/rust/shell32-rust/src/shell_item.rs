@@ -792,3 +792,276 @@ pub unsafe fn CShellItem_GetIDList_body(
         E_OUTOFMEMORY
     }
 }
+
+// Upstream-sync 2026-09: SHCreateItemFromIDList and SHGetItemFromObject are lost
+// exports out of CShellItem.cpp (fully commented out; this Rust twin already covers
+// CShellItem/CShellItemArray/SHCreateShellItem/SHCreateShellItemArrayFromDataObject but
+// not these two). SHGetItemFromObject was the only one the scanner flagged;
+// SHCreateItemFromIDList slipped past it (a separate scanner bug -- its spec line has a
+// trailing `# Vista:330` comment that the entry regex doesn't tolerate, so it's never
+// counted as an export at all -- flagged for the coordinator, not fixed here since it's
+// outside the assigned 16). Implementing SHGetItemFromObject calls SHCreateItemFromIDList
+// (comdlg32's itemdlg.c is a real caller of SHGetItemFromObject), so both are ported
+// together here rather than leaving a dangling undefined-symbol dependency. Both are
+// 1:1 with the C, built on SHCreateShellItem which already exists in this file.
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateItemFromIDList(
+    pidl: PCIDLIST_ABSOLUTE,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+
+    if pidl.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let mut item: *mut IShellItem = core::ptr::null_mut();
+    let hr = SHCreateShellItem(core::ptr::null(), core::ptr::null_mut(), pidl, &mut item);
+    if hr < 0 {
+        return hr;
+    }
+
+    let hr2 = ((*(*item).lpVtbl).QueryInterface)(item, riid, ppv);
+    ((*(*item).lpVtbl).Release)(item);
+    hr2
+}
+
+extern "system" {
+    // wine/pidl.rs
+    fn SHGetIDListFromObject(punk: *mut IUnknown, ppidl: *mut LPITEMIDLIST) -> HRESULT;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHGetItemFromObject(
+    punk: *mut IUnknown,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    let mut pidl: LPITEMIDLIST = core::ptr::null_mut();
+    let hr = SHGetIDListFromObject(punk, &mut pidl);
+    let hr = if hr >= 0 {
+        SHCreateItemFromIDList(pidl, riid, ppv)
+    } else {
+        hr
+    };
+    if !pidl.is_null() {
+        ILFree(pidl);
+    }
+    hr
+}
+
+// Upstream-sync 2026-09 (round 2, after the scanner's tail-comment fix surfaced these):
+// SHCreateItemFromParsingName / SHCreateItemFromRelativeName / SHCreateItemInKnownFolder /
+// SHGetPropertyStoreFromParsingName. All four are 1:1 with CShellItem.cpp, built on the
+// SHCreateItemFromIDList twin above.
+struct PidlGuard {
+    slot: *mut LPITEMIDLIST,
+}
+impl PidlGuard {
+    const fn new(slot: *mut LPITEMIDLIST) -> Self {
+        Self { slot }
+    }
+}
+impl Drop for PidlGuard {
+    fn drop(&mut self) {
+        unsafe {
+            let value = *self.slot;
+            if !value.is_null() {
+                ILFree(value);
+                *self.slot = core::ptr::null_mut();
+            }
+        }
+    }
+}
+
+extern "system" {
+    // shlwapi/shell32 SDK import; already relied on by client/path.c-derived Rust and
+    // the C original here (dll/win32/shell32/CShellItem.cpp:379).
+    fn SHParseDisplayName(
+        pszName: PCWSTR,
+        pbc: *mut c_void,
+        ppidl: *mut LPITEMIDLIST,
+        sfgaoIn: DWORD,
+        psfgaoOut: *mut DWORD,
+    ) -> HRESULT;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateItemFromParsingName(
+    pszPath: PCWSTR,
+    pbc: *mut IBindCtx,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+
+    let mut pidl: LPITEMIDLIST = core::ptr::null_mut();
+    let _pidl_guard = PidlGuard::new(core::ptr::addr_of_mut!(pidl));
+
+    let hr = SHParseDisplayName(
+        pszPath,
+        pbc.cast(),
+        &mut pidl,
+        0,
+        core::ptr::null_mut(),
+    );
+    if hr >= 0 {
+        SHCreateItemFromIDList(pidl, riid, ppv)
+    } else {
+        hr
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateItemFromRelativeName(
+    parent: *mut IShellItem,
+    pszName: PCWSTR,
+    pbc: *mut IBindCtx,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+
+    if pszName.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let mut pidl_folder: LPITEMIDLIST = core::ptr::null_mut();
+    let _pidl_folder_guard = PidlGuard::new(core::ptr::addr_of_mut!(pidl_folder));
+    let hr = SHGetIDListFromObject(parent as *mut IUnknown, &mut pidl_folder);
+    if hr != S_OK {
+        return hr;
+    }
+
+    let mut desktop: *mut IShellFolder = core::ptr::null_mut();
+    let _desktop_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(desktop));
+    let hr = SHGetDesktopFolder(&mut desktop);
+    if hr < 0 {
+        return hr;
+    }
+
+    let mut folder: *mut IShellFolder = core::ptr::null_mut();
+    let _folder_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(folder));
+    if _ILIsDesktop(pidl_folder) == 0 {
+        let hr = ((*(*desktop).lpVtbl).BindToObject)(
+            desktop,
+            pidl_folder,
+            core::ptr::null_mut(),
+            core::ptr::addr_of!(IID_IShellFolder),
+            core::ptr::addr_of_mut!(folder).cast(),
+        );
+        if hr < 0 {
+            return hr;
+        }
+    }
+
+    let psf_bind = if !folder.is_null() { folder } else { desktop };
+    let mut pidl_child: LPITEMIDLIST = core::ptr::null_mut();
+    let _pidl_child_guard = PidlGuard::new(core::ptr::addr_of_mut!(pidl_child));
+    let hr = ((*(*psf_bind).lpVtbl).ParseDisplayName)(
+        psf_bind,
+        core::ptr::null_mut(),
+        pbc,
+        pszName as LPWSTR,
+        core::ptr::null_mut(),
+        &mut pidl_child,
+        core::ptr::null_mut(),
+    );
+    if hr < 0 {
+        return hr;
+    }
+
+    SHCreateItemFromIDList(pidl_child, riid, ppv)
+}
+
+// Upstream ships a plain `return E_NOTIMPL;` here -- the real body sits behind `#if 0`
+// with `//TODO: Import SHGetKnownFolderIDList from wine`, i.e. upstream itself hasn't
+// wired this up (SHGetKnownFolderIDList doesn't exist in this tree, C or Rust). Porting
+// what upstream ACTUALLY ships, not the dead #if-0'd body, per the coordinator's note.
+#[no_mangle]
+pub unsafe extern "system" fn SHCreateItemInKnownFolder(
+    _kfid: REFGUID,
+    _dwFlags: DWORD,
+    _pszFileName: PCWSTR,
+    _riid: REFIID,
+    _ppv: *mut *mut c_void,
+) -> HRESULT {
+    E_NOTIMPL
+}
+
+// Minimal `IShellItem2 : IShellItem` vtable -- just enough to reach GetPropertyStore,
+// the only method this TU calls. IID_IShellItem2 = {7E9FB0D3-919F-4307-AB2E-9B1860310C93}
+// (shobjidl.idl), a real linkable symbol from sdk/lib/uuid (widl-generated
+// shobjidl_i.c), same pattern as every other IID_* extern in this file.
+#[repr(C)]
+struct IShellItem2 {
+    lpVtbl: *const IShellItem2Vtbl,
+}
+#[repr(C)]
+struct IShellItem2Vtbl {
+    QueryInterface:
+        unsafe extern "system" fn(*mut IShellItem2, REFIID, *mut *mut c_void) -> HRESULT,
+    AddRef: unsafe extern "system" fn(*mut IShellItem2) -> ULONG,
+    Release: unsafe extern "system" fn(*mut IShellItem2) -> ULONG,
+    BindToHandler: unsafe extern "system" fn(
+        *mut IShellItem2,
+        *mut IBindCtx,
+        REFGUID,
+        REFIID,
+        *mut *mut c_void,
+    ) -> HRESULT,
+    GetParent: unsafe extern "system" fn(*mut IShellItem2, *mut *mut IShellItem) -> HRESULT,
+    GetDisplayName:
+        unsafe extern "system" fn(*mut IShellItem2, SIGDN, *mut LPWSTR) -> HRESULT,
+    GetAttributes:
+        unsafe extern "system" fn(*mut IShellItem2, SFGAOF, *mut SFGAOF) -> HRESULT,
+    Compare: unsafe extern "system" fn(*mut IShellItem2, *mut IShellItem, SICHINTF, *mut i32) -> HRESULT,
+    GetPropertyStore: unsafe extern "system" fn(
+        *mut IShellItem2,
+        crate::shellcom::GETPROPERTYSTOREFLAGS,
+        REFIID,
+        *mut *mut c_void,
+    ) -> HRESULT,
+}
+
+extern "C" {
+    static IID_IShellItem2: GUID;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SHGetPropertyStoreFromParsingName(
+    pszPath: PCWSTR,
+    pbc: *mut IBindCtx,
+    flags: crate::shellcom::GETPROPERTYSTOREFLAGS,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+
+    let mut item: *mut IShellItem2 = core::ptr::null_mut();
+    let _item_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(item));
+    let hr = SHCreateItemFromParsingName(
+        pszPath,
+        pbc,
+        core::ptr::addr_of!(IID_IShellItem2),
+        core::ptr::addr_of_mut!(item).cast(),
+    );
+    if hr >= 0 {
+        ((*(*item).lpVtbl).GetPropertyStore)(item, flags, riid, ppv)
+    } else {
+        hr
+    }
+}

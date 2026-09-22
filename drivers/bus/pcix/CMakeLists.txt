@@ -1,7 +1,5 @@
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/arbiter
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
+include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 
 # ============================================================================
 # pcix.sys — Rust cohabitation flip (28 of 34 .c -> pcix-rust)
@@ -73,6 +71,7 @@ add_library(pcix MODULE
     ${SOURCE}
     ${PCH_SKIP_SOURCE}
     pci.rc)
+add_pch(pcix pci.h "${PCH_SKIP_SOURCE}")
 
 set_module_type(pcix kernelmodedriver)
 target_link_libraries(pcix arbiter)

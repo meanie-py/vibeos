@@ -2,23 +2,22 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-27 vendored C/C++ components:
+26 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
 - [AMD LibM for Windows](#amd-libm-for-windows) — git commit 6121d02 — MIT
-- [ATAPI IDE miniport (NT4 DDK sample)](#atapi-ide-miniport-nt4-ddk-sample) — NT4 DDK sample (no version stamp in the source) — LicenseRef-Microsoft-NT4-DDK-EULA
 - [dxtn (S3TC)](#dxtn-s3tc) — unknown — MIT
 - [EDK2 / TianoCore headers](#edk2--tianocore-headers) — unknown — BSD-2-Clause
 - [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
-- [FreeType](#freetype) — 2.10.0 — GPL-2.0-only
+- [FreeType](#freetype) — 2.10.4 — GPL-2.0-only
 - [libjpeg](#libjpeg) — 9f — IJG
 - [libmpg123](#libmpg123) — 1.33.7 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
 - [libsamplerate](#libsamplerate) — 0.2.2 — BSD-2-Clause
-- [libtiff](#libtiff) — 4.7.0 — libtiff (BSD-like)
+- [libtiff](#libtiff) — 4.7.1 — libtiff (BSD-like)
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.13.9 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
@@ -513,70 +512,6 @@ Defines __L_2_by_pi_bits array
 Used in trigonometric argument reduction
 ```
 
-## ATAPI IDE miniport (NT4 DDK sample)
-
-- Upstream: Microsoft Windows NT 4.0 DDK, storage sample
-- Version: NT4 DDK sample (no version stamp in the source)
-- In this tree: `drivers/storage/ide/atapi`
-- Licence: LicenseRef-Microsoft-NT4-DDK-EULA
-- Also contains: DDK - see license.txt in the root dir — What the two source files declare in their own ReactOS `LICENSE:` header. It is the same grant as the headline `LicenseRef-Microsoft-NT4-DDK-EULA`, spelled the way the code spells it, and it is recorded here so `--licences` can account for it rather than report drift between two names for one EULA. Note the header says "in the root dir" and the file is in fact beside the sources; the `--grants` pointer resolver was taught to look at the referring file's own directory and its ancestors after an earlier pass wrongly reported it missing.
-- Grant reproduced from: `drivers/storage/ide/atapi/license.txt`
-
-```
-Windows NT Device Driver Kit
-END-USER LICENSE AGREEMENT FOR MICROSOFT SOFTWARE
-
-IMPORTANT-READ CAREFULLY: This Microsoft End-User License Agreement ("EULA") is a legal agreement between you (either an individual or a single entity) and Microsoft Corporation for the Microsoft software product identified above, which includes computer software and associated media and printed materials, and may include "online" or electronic documentation ("SOFTWARE PRODUCT" or "SOFTWARE").  By installing, copying, or otherwise using the SOFTWARE PRODUCT, you agree to be bound by the terms of this EULA.  If you do not agree to the terms of this EULA, promptly return the unused SOFTWARE PRODUCT to the place from which you obtained it for a full refund, or if you received the SOFTWARE PRODUCT as part of a subscription or other service from Microsoft, you may cancel the subscription and receive a refund of a prorata portion of the subscription price.
-
-SOFTWARE PRODUCT LICENSE
-The SOFTWARE PRODUCT is protected by copyright laws and international copyright treaties, as well as other intellectual property laws and treaties.  The SOFTWARE PRODUCT is licensed, not sold. To develop Windows NT(tm) device drivers, you will need to utilize two computers, one for development and one for debugging.
-
-1.	GRANT OF LICENSE.  This EULA grants you the following limited, non-exclusive rights:
-* SOFTWARE PRODUCT.  (a) You may make two (2) copies of the SOFTWARE PRODUCT for installation and use on two (2) computers, one for use in development and one for use in debugging to design, develop, and test your software product(s), including but not limited to device driver(s) and other software products, for use with Microsoft(r) Windows(r) or Windows NT ("Software Product").   You may make an additional copy of the Windows NT Workstation operating system (licensed and provided separately) for use on a single computer used for debugging purposes.
-* Microsoft Developer Network Subscriber. If you acquired the SOFTWARE PRODUCT through a subscription to the Microsoft Developer Network, and you are either an individual developer or an individual designated within a single entity, you are granted the following additional rights with respect to the SOFTWARE PRODUCT:  (a) you may make and use copies of the SOFTWARE PRODUCT on up to ten (10) separate computers, provided that you are the only individual using the SOFTWARE PRODUCT on each such computer, and (b) if you are a single entity, you may designate one individual within your organization to have the right to use the SOFTWARE PRODUCT in the manner described herein.
-* SAMPLE CODE.  You may modify the sample source code ("Sample Code") to design, develop and test your Software Product, and reproduce and distribute the Sample Code with such modifications in source and  object code forms, provided that you comply with the Distribution Requirements described below.
-* DISTRIBUTION REQUIREMENTS. You may copy and redistribute the Sample Code as described above, provided that (a) you distribute the Sample Code only in conjunction with and as a part of your Software Product; (b) you do not make any statements to the effect or which imply that your Software Product is "certified" by Microsoft or that its performance is guaranteed by Microsoft; (c) you do not use Microsoft's name, logo, or trademarks to market your Software Product; (d) you include a valid copyright notice on your Software Product; and (e) you indemnify, hold harmless, and defend Microsoft from and against any claims or lawsuits, including attorneys' fees, that arise or result from the use or distribution of your Software Product.  Contact Microsoft for the applicable royalties due and other licensing terms for all other uses and/or distribution of the Sample Code
-* Microsoft reserves all rights not expressly granted to you.
-
-2.	COPYRIGHT.  All right, title, and copyrights in and to the SOFTWARE PRODUCT (including but not limited to any images, photographs, animations, video, audio, music, text, and "applets" incorporated into the SOFTWARE PRODUCT), and any copies of the SOFTWARE PRODUCT, are owned by Microsoft or its suppliers.  The SOFTWARE PRODUCT is protected by copyright laws and international treaty provisions. Therefore, you must treat the SOFTWARE PRODUCT like any other copyrighted material except that you may either (a) make one copy of the SOFTWARE PRODUCT solely for backup or archival purposes, or (b) install the SOFTWARE PRODUCT on a single computer, provided you keep the original solely for backup or archival purposes.  You may not copy the printed materials accompanying the SOFTWARE PRODUCT.
-
-3.	PRERELEASE CODE. The SOFTWARE PRODUCT may contain PRERELEASE CODE that is not at the level of performance and compatibility of the final, generally available, product offering. These portions of the SOFTWARE PRODUCT may not operate correctly and may be substantially modified prior to first commercial shipment. Microsoft is not obligated to make this or any later version of the SOFTWARE PRODUCT commercially available.  Microsoft grants you the right to distribute test versions of your Application created using the PRERELEASE CODE provided you comply with the Distribution Requirements described in Section 1 and the following additional provisions: (a)  you must mark the test version of your Application "BETA" and (b) you are solely responsible for updating your customers with versions of your Application that operate satisfactorily with the final commercial release of the PRERELEASE CODE.
-
-4. DESCRIPTION OF OTHER RIGHTS AND LIMITATIONS.
-(	Limitations on Reverse Engineering, Decompilation, and Disassembly.  You may not reverse-engineer, decompile, or disassemble the SOFTWARE PRODUCT, except and only to the extent that such activity is expressly permitted by applicable law notwithstanding this limitation.
-(	Rental.  You may not rent or lease the SOFTWARE PRODUCT.
-(	Software Transfer.  You may permanently transfer all of your rights under this EULA, provided you retain no copies, you transfer all of the SOFTWARE PRODUCT (including all component parts, the media and printed materials, any upgrades, this EULA, and, if applicable, the Certificate of Authenticity), and the recipient agrees to the terms of this EULA.  If the SOFTWARE PRODUCT is an upgrade, any transfer must include all prior versions of the SOFTWARE PRODUCT.
-(	Termination.  Without prejudice to any other rights, Microsoft may terminate this EULA if you fail to comply with the terms and conditions of this EULA.  In such event, you must destroy all copies of the SOFTWARE PRODUCT and all of its component parts.
-
-5.	EXPORT RESTRICTIONS.  You agree that neither you nor your customers intend to or will, directly or indirectly, export or transmit (a) the SOFTWARE PRODUCT or related documentation and technical data or (b) your Application as described in Section 1 of this Agreement (or any part thereof), or process, or service that is the direct product of the SOFTWARE PRODUCT to any country to which such export or transmission is restricted by any applicable U.S. regulation or statute, without the prior written consent, if required, of the Bureau of Export Administration of the U.S. Department of Commerce, or such other governmental entity as may have jurisdiction over such export or transmission.
-
-NO WARRANTIES.  To the maximum extent permitted by applicable law, Microsoft expressly disclaims any warranty for the SOFTWARE PRODUCT.  The SOFTWARE PRODUCT and any related documentation are provided "as is" without warranty of any kind, either express or implied, including, without limitation, the implied warranties of merchantability or fitness for a particular purpose.  The entire risk arising out of use or performance of the SOFTWARE PRODUCT remains with you.
-
-LIMITATION OF LIABILITY.  Microsoft's entire liability and your exclusive remedy under this EULA shall not exceed one hundred dollars (US$100.00).
-
-NO LIABILITY FOR CONSEQUENTIAL DAMAGES.  To the maximum extent permitted by applicable law, in no event shall Microsoft or its suppliers be liable for any damages whatsoever (including, without limitation, damages for loss of business profit, business interruption, loss of business information, or any other pecuniary loss) arising out of the use or inability to use this Microsoft product, even if Microsoft has been advised of the possibility of such damages.  Because some states/jurisdictions do not allow the exclusion or limitation of liability for consequential or incidental damages, the above limitation may not apply to you.
-
-U.S. GOVERNMENT RESTRICTED RIGHTS.The SOFTWARE and documentation are provided with RESTRICTED RIGHTS.  Use, duplication, or disclosure by the Government is subject to restrictions as set forth in subparagraph (c)(1)(ii) of The Rights in Technical Data and Computer Software clause at DFARS 252.227-7013 or subparagraphs (c)(1) and (2) of the Commercial Computer Software -- Restricted Rights at 48 CFR 52.227-19, as applicable.  Manufacturer is Microsoft Corporation/One Microsoft Way/Redmond, WA 98052-6399.
-
-If you acquired this product in the United States, this Agreement is governed by the laws of the State of Washington.  If you acquired this product outside the United States, local law may apply.
-
-Should you have any questions concerning this Agreement, if you desire rights to use the product beyond what is listed here, or if you desire to contact Microsoft for any reason, please contact your local Microsoft subsidiary or sales office or write to:  Microsoft Sales and Service, One Microsoft Way, Redmond, WA  98052-6399.
-
-Si vous avez acquis votre produit Microsoft au CANADA, la garantie limit�e suivante vous concerne :
-
-GARANTIE LIMIT�E
-
-EXCLUSION DE GARANTIES.  Microsoft renonce enti�rement � toute garantie pour le LOGICIEL.  Le LOGICIEL et toute autre documentation s'y rapportant sont fournis �comme tels� sans aucune garantie quelle qu'elle soit, expresse ou implicite, y compris, mais ne se limitant pas, aux garanties implicites de la qualit� marchande ou un usage particulier.  Le risque total d�coulant de l'utilisation ou de la performance du LOGICIEL est entre vos mains.
-
-RESPONSABILIT� LIMIT�E.  La seule obligation de Microsoft et votre recours exclusif concernant ce contrat n'exc�deront pas cent dollars (US$100.00).
-
-ABSENCE DE RESPONSABILIT� POUR LES DOMMAGES INDIRECTS.  Microsoft ou ses fournisseurs ne pourront �tre tenus responsables en aucune circonstance de tout dommage quel qu'il soit (y compris mais non de fa�on limitative aux dommages directs ou indirects caus�s par la perte de b�n�fices commerciaux, l'interruption des affaires, la perte d'information commerciale ou toute autre perte p�cuniaire) r�sultant de l'utilisation ou de l'impossibilit� d'utilisation de ce produit, et ce, m�me si la soci�t� Microsoft a �t� avis�e de l'�ventualit� de tels dommages.  Certains �tats/juridictions ne permettent pas l'exclusion ou la limitation de responsabilit� relative aux dommages indirects ou cons�cutifs, et la limitation ci-dessus peut ne pas s'appliquer � votre �gard.
-
-La pr�sente Convention est r�gie par les lois de la province d'Ontario, Canada. Chacune des parties � la pr�sente reconna�t irr�vocablement la comp�tence des tribunaux de la province d'Ontario et consent � instituer tout litige qui pourrait d�couler de la pr�sente aupr�s des tribunaux situ�s dans le district judiciaire de York, province d'Ontario.
-
-Au cas o� vous auriez des questions concernant cette licence ou que vous d�siriez vous mettre en rapport avec Microsoft pour quelque raison que ce soit, veuillez contacter la succursale Microsoft desservant votre pays, dont l'adresse est fournie dans ce produit, ou �crire � : Microsoft Customer Sales and Service, One Microsoft Way, Redmond, Washington 98052-6399.
-```
-
 ## dxtn (S3TC)
 
 - Upstream: unknown
@@ -615,6 +550,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 - Version: unknown
 - In this tree: `sdk/include/reactos/edk2`
 - Licence: BSD-2-Clause
+- Also contains: MIT — AppleGraphInfo.h, added 2026-09-20 by the upstream merge (freeldr UEFI Apple Graphics Info Protocol support, upstream PR #8706). NOT a TianoCore file that wandered off the headline licence: its own header says `PROJECT: ReactOS UEFI Support`, `COPYRIGHT: Copyright 2026 Sylas Hollander`, `LICENSE: MIT` — it is a ReactOS-authored header that a merge commit dropped into the vendored edk2 directory rather than beside the other freeldr UEFI sources. The MIT declaration is the ReactOS author's own for this file's new text; a second comment separately credits the struct layout as based on macosxbootloader's AppleGraphInfo.h (BSD-3-Clause) for the shape being reimplemented, not a licence on this file. Recorded here rather than moved: moving it out from under sdk/include/reactos/edk2 touches freeldr's include paths, which is outside this pass's scope (see upstream-sync-merge-decisions.md). It is NOT a translation target either way — header only, no body — so leaving it filed under the vendored tree costs nothing but this licence-drift note; a future pass can relocate it to sit with the rest of the ReactOS-authored freeldr UEFI code.
+
 - Grant reproduced from: `sdk/include/reactos/edk2/License.txt`
 
 ```
@@ -716,7 +653,7 @@ SOFTWARE.
 ## FreeType
 
 - Upstream: https://freetype.org/
-- Version: 2.10.0
+- Version: 2.10.4
 - In this tree: `sdk/lib/3rdparty/freetype`
 - Licence: GPL-2.0-only
 - Modified by us: yes, see `vendor-patches/freetype.patch`
@@ -2427,7 +2364,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## libtiff
 
 - Upstream: http://www.libtiff.org/
-- Version: 4.7.0
+- Version: 4.7.1
 - In this tree: `dll/3rdparty/libtiff`, `sdk/include/reactos/libs/libtiff`
 - Licence: libtiff (BSD-like)
 - Grant reproduced from: `dll/3rdparty/libtiff/tif_open.c (header comment)`

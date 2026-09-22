@@ -54,9 +54,17 @@ add_library(urlmon MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/urlmon.def)
 
 set_module_type(urlmon win32dll)
-target_link_libraries(urlmon uuid wine ${PSEH_LIB} oldnames)
+add_idl_reg_scripts(urlmon registry urlmon_urlmon.idl)
+target_link_libraries(urlmon msvcrtex uuid wine oldnames)
 add_delay_importlibs(urlmon advpack)
-add_importlibs(urlmon rpcrt4 propsys ole32 oleaut32 shlwapi shell32 wininet user32 advapi32 kernel32_vista msvcrt kernel32 ntdll)
+add_importlibs(urlmon rpcrt4 propsys ole32 oleaut32 shlwapi shell32 wininet normaliz user32 advapi32 kernel32_vista msvcrt kernel32 ntdll)
 add_pch(urlmon precomp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET urlmon DESTINATION reactos/system32 FOR all)
 set_wine_module_FIXME(urlmon) # CORE-5743: No ARRAY_SIZE macro
+
+# Upstream solves the "CMake cannot escape a GUID on the command line" problem with a
+# second `-include clsid.h`. We already solve it by GENERATING proxy_clsid.h above and
+# -include'ing that, and a second -include is actively harmful here: CMake de-duplicates
+# repeated COMPILE_OPTIONS, so the second `-include` flag is dropped and its path becomes
+# a second INPUT file — "clang: error: cannot specify -o when generating multiple output
+# files", on every TU in this module. Upstream's branch is therefore dropped, not merged.

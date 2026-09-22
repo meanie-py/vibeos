@@ -3,8 +3,12 @@
  * The NT4-DDK ATAPI IDE miniport (atapi.c — DriverEntry, the SCSIPORT miniport
  * callbacks AtapiHwInitialize/AtapiStartIo/AtapiInterrupt/AtapiFindController +
  * the IDE/ATAPI command machinery) is translated to Rust
- * (sdk/lib/rust/atapi-rust, linked as libatapi_rust.a). atapi.c is removed from
- * the add_library SOURCES and kept on disk per the never-delete rule.
+ * (sdk/lib/rust/atapi-rust, linked as libatapi_rust.a). atapi.c is GONE from the
+ * tree as of 2026-09-20 — not merely dropped from the SOURCES. It was a Microsoft
+ * NT4 DDK sample under the DDK EULA, which is not a FLOSS licence, and it was the
+ * only such grant in the repository. The never-delete rule protects translated
+ * Rust from being reverted to C; it does not require keeping C we may not
+ * redistribute. See sdk/lib/rust/atapi-rust/src/lib.rs for the provenance note.
  *
  * atapi.sys is a SCSIPORT miniport: it imports ScsiPort* (now scsiport-rust) and
  * registers via ScsiPortInitialize. It is NOT in txtsetup.sif (the live IDE path

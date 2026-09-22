@@ -3904,77 +3904,6 @@ map_string_exit:
 }
 
 /*************************************************************************
- *           FoldStringA    (KERNEL32.@)
- *
- * Map characters in a string.
- *
- * PARAMS
- *  dwFlags [I] Flags controlling chars to map (MAP_ constants from "winnls.h")
- *  src     [I] String to map
- *  srclen  [I] Length of src, or -1 if src is NUL terminated
- *  dst     [O] Destination for mapped string
- *  dstlen  [I] Length of dst, or 0 to find the required length for the mapped string
- *
- * RETURNS
- *  Success: The length of the string written to dst, including the terminating NUL. If
- *           dstlen is 0, the value returned is the same, but nothing is written to dst,
- *           and dst may be NULL.
- *  Failure: 0. Use GetLastError() to determine the cause.
- */
-INT WINAPI FoldStringA(DWORD dwFlags, LPCSTR src, INT srclen,
-                       LPSTR dst, INT dstlen)
-{
-    INT ret = 0, srclenW = 0;
-    WCHAR *srcW = NULL, *dstW = NULL;
-
-    if (!src || !srclen || dstlen < 0 || (dstlen && !dst) || src == dst)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-
-    srclenW = MultiByteToWideChar(CP_ACP, dwFlags & MAP_COMPOSITE ? MB_COMPOSITE : 0,
-                                  src, srclen, NULL, 0);
-    srcW = HeapAlloc(GetProcessHeap(), 0, srclenW * sizeof(WCHAR));
-
-    if (!srcW)
-    {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        goto FoldStringA_exit;
-    }
-
-    MultiByteToWideChar(CP_ACP, dwFlags & MAP_COMPOSITE ? MB_COMPOSITE : 0,
-                        src, srclen, srcW, srclenW);
-
-    dwFlags = (dwFlags & ~MAP_PRECOMPOSED) | MAP_FOLDCZONE;
-
-    ret = FoldStringW(dwFlags, srcW, srclenW, NULL, 0);
-    if (ret && dstlen)
-    {
-        dstW = HeapAlloc(GetProcessHeap(), 0, ret * sizeof(WCHAR));
-
-        if (!dstW)
-        {
-            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-            goto FoldStringA_exit;
-        }
-
-        ret = FoldStringW(dwFlags, srcW, srclenW, dstW, ret);
-        if (!WideCharToMultiByte(CP_ACP, 0, dstW, ret, dst, dstlen, NULL, NULL))
-        {
-            ret = 0;
-            SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        }
-    }
-
-    HeapFree(GetProcessHeap(), 0, dstW);
-
-FoldStringA_exit:
-    HeapFree(GetProcessHeap(), 0, srcW);
-    return ret;
-}
-
-/*************************************************************************
  *           FoldStringW    (KERNEL32.@)
  *
  * See FoldStringA.
@@ -4155,29 +4084,6 @@ INT WINAPI CompareStringA(LCID lcid, DWORD flags,
     if (str2W != buf2W) HeapFree(GetProcessHeap(), 0, str2W);
     return ret;
 }
-
-#if (WINVER >= 0x0600)
-/******************************************************************************
- *           CompareStringOrdinal    (KERNEL32.@)
- */
-INT WINAPI CompareStringOrdinal(const WCHAR *str1, INT len1, const WCHAR *str2, INT len2, BOOL ignore_case)
-{
-    int ret;
-
-    if (!str1 || !str2)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-    if (len1 < 0) len1 = strlenW(str1);
-    if (len2 < 0) len2 = strlenW(str2);
-
-    ret = RtlCompareUnicodeStrings( str1, len1, str2, len2, ignore_case );
-    if (ret < 0) return CSTR_LESS_THAN;
-    if (ret > 0) return CSTR_GREATER_THAN;
-    return CSTR_EQUAL;
-}
-#endif // (WINVER >= 0x0600)
 
 #ifndef __REACTOS__
 /*************************************************************************

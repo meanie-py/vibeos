@@ -119,8 +119,8 @@ class TestFindVtblTables:
         ]
 
     def test_forward_declarations_are_not_counted_twice(self):
-        """storage32.c forward-declares StorageInternalImpl_Vtbl (L86) and
-        TransactedSnapshotImpl_Vtbl (L155) before defining them. A forward decl has
+        """storage32.c forward-declares StorageInternalImpl_Vtbl (L84) and
+        TransactedSnapshotImpl_Vtbl (L153) before defining them. A forward decl has
         no initializer, so it contributes no table — the naive grep that says
         '12 tables' is counting these."""
         tables = find_vtbl_tables(STORAGE32_C)
@@ -128,8 +128,8 @@ class TestFindVtblTables:
         assert len(names) == len(set(names)) == 10
         by_name = {t.name: t for t in tables}
         # The DEFINITION line is recorded, not the forward-declaration line.
-        assert by_name["StorageInternalImpl_Vtbl"].line == 5524
-        assert by_name["TransactedSnapshotImpl_Vtbl"].line == 6434
+        assert by_name["StorageInternalImpl_Vtbl"].line == 5487
+        assert by_name["TransactedSnapshotImpl_Vtbl"].line == 6397
 
     def test_internal_non_com_vtbl_resolves_from_the_c_header(self):
         """StorageBaseImplVtbl is ole32-internal (storage32.h), not a COM interface,
@@ -158,7 +158,7 @@ class TestFindVtblTables:
         assert len(tables[0].slots) == 7
 
     def test_type_and_name_split_across_lines_is_found(self):
-        """oleaut32/olefont.c:1865 puts the type on one line and the table name on
+        """oleaut32/olefont.c:1807 puts the type on one line and the table name on
         the next."""
         names = [t.name for t in find_vtbl_tables(OLEAUT32 / "olefont.c")]
         assert "OLEFontImpl_IConnectionPointContainer_VTable" in names
@@ -171,7 +171,7 @@ class TestFindVtblTables:
         ("c_file", "count"),
         [
             ("connpt.c", 2),
-            ("olefont.c", 7),
+            ("olefont.c", 6),
             ("olepicture.c", 5),
             ("olepropframe.c", 1),
             ("recinfo.c", 1),
@@ -248,7 +248,7 @@ class TestRender:
         rust = render_vtbl_tables(STORAGE32_C)
         for t in find_vtbl_tables(STORAGE32_C):
             assert f"pub static {t.name}: {t.type_name} = {t.type_name} {{" in rust
-        assert "storage32.c:5246" in rust  # provenance comment
+        assert "storage32.c:5209" in rust  # provenance comment
 
     def test_all_oleaut32_targets_render(self):
         for c in ("connpt.c", "olefont.c", "olepicture.c", "olepropframe.c", "recinfo.c"):

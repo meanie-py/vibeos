@@ -423,6 +423,7 @@ pub unsafe extern "system" fn SeDefaultObjectMethod(
     old_security_descriptor: *mut PSECURITY_DESCRIPTOR,
     pool_type: POOL_TYPE,
     generic_mapping: PGENERIC_MAPPING,
+    _access_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
     let object = opaque_ptr(object);
     let security_descriptor = opaque_ptr(security_descriptor);

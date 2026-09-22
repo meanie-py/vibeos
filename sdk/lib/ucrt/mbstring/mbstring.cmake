@@ -2,7 +2,6 @@
 list(APPEND UCRT_MBSTRING_SOURCES
     mbstring/ismbalnm.cpp
     mbstring/ismbalph.cpp
-    mbstring/ismbbyte.cpp
     mbstring/ismbdgt.cpp
     mbstring/ismbgrph.cpp
     mbstring/ismbknj.cpp

@@ -717,6 +717,20 @@ winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42)
 scsiport (15). Normalizing the islands tree-wide is a separate batch: it surfaced 86 E0308s in
 ntoskrnl alone, every one a real convention-spelling mismatch that was previously invisible.
 
+**It erases the PARAMETER TYPES too, and a widened integer hides better than a wrong
+convention.** Symptom: a kmtest service will not stop (`state = 4 RUNNING (!= 1 STOPPED)`) on
+amd64 only, i386 and arm64 clean. Cause: the 2026 upstream merge widened `OB_CLOSE_METHOD`'s
+two handle counts `ULONG` → `ULONG_PTR` without changing its arity. Every close procedure was
+recompiled against the new header; `ob-rust` still called through the checked-in bindgen
+island's old typedef and passed 32-bit arguments, and the Win64 ABI leaves the high half of an
+argument register undefined. `IopCloseFile` opens with `if (HandleCount != 1) return;`, so a
+garbage high half silently skipped IRP_MJ_CLEANUP — the cache map survived, the driver could
+not unload, the SCM held the service in RUNNING. Fix: a typed `ObpCall<X>Procedure` helper
+that transmutes past the stale field once, in one place. **When you sweep a callback family
+after a header change, compare parameter TYPES, not just how many there are** — an arity sweep
+passes clean on exactly this bug, and `ULONG_PTR == ULONG` on i386 makes a plain ABI mismatch
+read as an arch-specific mystery.
+
 ### Per-arch `#[cfg]` twins: the OTHER nominal-ABI workaround, and what it hides
 Same root cause as the transmute above — `extern "system" fn` unifies with neither
 `extern "stdcall"` (i386) nor `extern "C"` (64-bit) in a fn-POINTER type — but the workaround is
@@ -5617,6 +5631,18 @@ different question, racily).
   **Eager filter evaluation** additionally feeds the provable-null-deref ud2 fold.
 - **Do NOT delete `_SEH2_TRY` "dead-code" wrappers** — they are an LLVM optimisation barrier.
 - **DUMMY_PSEH defeats cdfs's raise→catch→post async model** → 0x1E `STATUS_CANT_WAIT`.
+- **A restored probe does NOT re-protect the USE — check what the C's `_SEH2_TRY` actually
+  enclosed.** The C commonly wraps *probe AND use* in one `__try`; a translation that restores
+  the probe but leaves the use outside any guard looks fixed and is not. `SafeProbeFor*` is
+  validate-only by design (it cannot touch-test under DUMMY_PSEH), so a NULL or partially-mapped
+  pointer **passes the probe** and faults on the first real access. `NtUserSetSysColors` shipped
+  this: probe both user arrays, then call `IntSetSysColors` outside the guard →
+  `movl (%rdi,%r14,4)` on `NULL[0]` → 0x1E. Fix as `win32k-rust/src/copy.rs` already does for
+  `MmCopyFromCaller` — capture through `KmProtectedCopyMemory` — and **chunk** the capture when
+  the element count is caller-controlled, or the fix is an attacker-sized allocation.
+  **Detection route worth copying:** the bug was found by an apitest that passes NULL *on
+  purpose* to assert `ERROR_NOACCESS`. Error-path tests are where this class lives, so a suite
+  that never runs its error paths will never find it.
 
 ### A `__try`/`__except` translated to a BARE BLOCK — the flag survives, the handler doesn't `[§9.133]`
 **The shape to recognise**, and it is worse than an obviously-missing handler because a reviewer
@@ -6549,6 +6575,40 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A timeout measured in ITERATIONS shrinks as the guest gets chattier — and the driver above blames the test
+
+**Symptom:** a long conformance sweep stops partway through, at a different place each run, with
+no crash and no error. The declared budget is hours; the observed runs are 12-28 minutes. A
+driver that reruns the sweep and quarantines "whatever was in flight" then accumulates a
+quarantine list of tests that are not broken.
+
+**Cause:** the budget was spent by `for _ in range(budget)` around a read that returns as soon as
+bytes are available (`serial_output(timeout=1.0)` -> `read_available`, which polls every 20 ms and
+returns on first data). One "second" costs a full second only while the guest is SILENT. So the
+effective budget is inversely proportional to how much output the payload produces — backwards,
+because the payloads that need the longest drain are the chattiest ones.
+
+**Fix:** bound the loop by `time.monotonic()`, and make any outer timeout (the driver's pytest
+`--timeout`) strictly larger than the drain budget, or the driver silently becomes the real bound
+and the truncation returns wearing a different hat.
+
+Two things generalise beyond the specific loop:
+
+- **"The log stops here" is not evidence; "the log shows something going wrong here" is.** Every
+  false quarantine entry had a serial that ended with the accused subtest's OWN passing summary
+  line and its process-exit line. One `tail` would have refuted it. Prefer a positive fault
+  signature — a BUGCHECK banner, a visible restart loop — before attributing a stop to whatever
+  ran last.
+- **A test for this class must use a CHATTY fixture.** An idle-guest test passes against both the
+  broken and the fixed loop, so it verifies nothing. The bug lives in the busy case only.
+
+**And the meta-lesson, which cost the most:** this footgun was already documented, one directory
+away, by the payload that hit it first — which inflated its own number to compensate and left the
+note behind instead of fixing the loop. The next payload walked straight in. A note that
+describes a footgun rather than removing it is a deferred bug that keeps charging interest; if you
+find yourself writing "NOTE: X is not what it says it is", that is the detection event for fixing
+X.
+
 ### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
 
 **Symptom:** a guest/harness rung that passed for months starts failing, on one arch
@@ -7172,6 +7232,33 @@ compiler. That asymmetry is why the assertion count (2,120) and the never-compil
 **Wider rule:** any `cfg` never enabled in a shipping configuration is an unverified region, and
 how many you have is a measurable debt. The same argument covers any feature flag CI never
 builds. A `cfg` you never compile is a `cfg` you cannot claim works.
+
+### A flake that wipes the WHOLE population confirms whatever you hoped to see
+
+> **Symptom.** An A/B on boot counts. The change gives 0 PASS / 16 EXITED on both its boots
+> against a 12-13 PASS baseline; it is called a severe regression and reverted. Three repeat
+> boots of the *unmodified* media then give 13 / 12 / **0**.
+
+> **Cause.** The baseline is bimodal, not noisy. Something unrelated erases the entire
+> measured population on about one boot in three — here the WoW64 CPU layer failing to
+> initialise, which kills every guest at once. Two draws from a 1-in-3 urn is p≈1/9: the
+> experiment never had the power to separate "my change broke it" from "I drew the bad mode
+> twice." A quieter flake that moves one unit would have been obvious as noise; one that moves
+> ALL of them looks exactly like a catastrophic regression, which is the mode most likely to
+> be believed without a repeat.
+
+> **Fix.** Before an A/B on a population count, boot the baseline media ≥3× and write the
+> DISTRIBUTION down, not a number. If the baseline is bimodal, no two-boot comparison decides
+> anything; fix the confounder or gate on the non-wipeout boots explicitly. And separate the
+> two claims when reverting — "the measurement condemned it" and "the code is wrong on
+> inspection" are different, and only the second survived here.
+
+The generalisation, and why it is worth its own entry next to the rule below: the usual advice
+is to distrust a *small* difference. This is the opposite shape — the more total the effect,
+the more it resembles the failure you were already worried about, and the less likely anyone is
+to ask for a repeat. **Totality is not significance.** Cheapest guard: whatever tool reports
+the count should also report how many units EXISTED, so a run where the population itself
+vanished cannot be read as a run where the population failed.
 
 ### The governing rule: a harness only falsifies what it varies
 > **A harness proves parity only across the axes it actually VARIES. Every axis it holds
@@ -8090,6 +8177,20 @@ A reader who arrives at the wrong one of these two is pointed at a remedy that c
 
 Both would have shipped a confident wrong conclusion, and the same one-line move — get a
 control that emits it, diff — kills both.
+
+**A third, specific to a cohab tree: after a flip, the C file's `DPRINT`s are INERT, so
+their absence means nothing at all.** Hunting why every 32-bit guest died in one boot, the
+obvious move was `grep LdrpInitializeProcess` — `dll/ntdll/ldr/ldrinit.c` prints ENTER, heap
+created, opening KnownDlls, walking imports, a dozen more, which would have bracketed the
+death precisely. Zero hits, in the healthy boot too. That file is commented out of
+`dll/ntdll/CMakeLists.txt` and `ntdll-rust/src/ldr/ldrinit.rs` is what runs; the Rust keeps
+its own, differently-worded prints. Reading the C's silence as "the loader never got that
+far" would have been a fabricated timeline. **Grep `sdk/lib/rust/` for the symbol before you
+believe a `.c` file's trace, or its absence** — the same rule as "debug the Rust, not the C",
+arriving through the log rather than through the source. The control-diff move still works
+and is what caught it: the *Rust* print (`[LDR] WoW64 process: init routines done`) appears
+30 times in a healthy boot and 0 times in a bad one, which is a real finding, and it took
+knowing which print was live to get it.
 
 **The two directions are asymmetric and need different vigilance, which is why the pair is
 worth more than either instance.** The second is a false RED that would have been a
@@ -9788,6 +9889,34 @@ caller's CPU area, so answering a cross-thread query would return *the wrong thr
 — confidently. Identify "is this me" by comparing `TebBaseAddress`, not just by spotting the
 `(HANDLE)-2` pseudo-handle.
 
+### A nested BTCpuSimulate clobbers the saved dispatcher RSP, so every callback LEAKS native stack
+**Symptom.** A WoW64 GUI guest runs normally for a minute, then dies with
+`exit_status=0x80` (or, once exception dispatch could report it,
+`[KI-EXC] STACK EXHAUSTED ... rsp=...60950 limit=...61000 dealloc=...60000`) with the
+faulting PC somewhere innocent — ntdll's `RtlpUnwindInternal` or `RtlVirtualUnwind`,
+whichever function happened to touch the guard page first. taskmgr, magnify and osk died
+about one boot in three; nothing in the trace recursed.
+**Cause.** `wow64cpu.S`'s `BTCpuSimulate` stashes the 64-bit dispatcher RSP at `CpuArea+8`,
+and the 32→64 syscall transition restores it with a bare `mov rsp, [r15 - 8]`. That one word
+is the ONLY record of where the native stack was. A user callback runs the guest through a
+**nested** `BTCpuSimulate`, which overwrites the slot with its own, deeper RSP — and the
+callback never returns through the asm (it exits via `NtCallbackReturn`), so nothing puts the
+outer value back. From then on every guest syscall switches to the stale lower stack, so each
+callback permanently consumes one dispatcher frame (~4 KB). 950 callbacks ate taskmgr's whole
+1 MB native reserve; the kernel's growth and guard-page handling were working perfectly the
+whole time.
+**Fix.** Save `CpuArea+8` into the in-flight `WOW64_CB_FRAME` before entering the guest and
+restore it at the longjmp landing, next to the CONTEXT restore and the resume-flag clear —
+the same place that already owns "put back what the nesting changed".
+**How to see it in one boot.** Print the callback's own `&Frame` and its `Prev`-chain depth
+in the `[WOW64CB] ->` trace. A falling sp that tracks depth is recursion; a falling sp **at
+constant depth** is this leak, and it reads off the log directly. Do not infer depth from the
+`->`/`<-` pairing — the unmarshalled return path prints no `<-`, which is how an earlier pass
+mis-read the same trace as 377-deep recursion. Note also that the exhaustion was reported at
+whatever function next touched the guard page, so the symbolicated PC actively misleads: the
+useful signal was the *trend* in a cheap per-event stack-pointer print, not the crash site.
+
+
 ### On a JIT host, the CPU layer's memory notifications are a CAPABILITY, not a cache hint
 The `BTCpuNotify*` family reads like invalidation bookkeeping you could skip and merely run slow.
 It is not. FEX's decoder **refuses to translate any guest address outside the executable set it
@@ -9943,6 +10072,15 @@ subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of U
 (SERVERINFO, SHAREDINFO handle entries, DESKTOPINFO). The first instinct — a win32k-maintained
 32-bit *shadow* — was rejected in favour of `user32-rust/src/wow64.rs` building the view
 client-side. The (a) half was a cursor/icon align-8 UNICODE_STRING probe → 0x1E `[§9.58a]`.
+**The normalized object is a COPY, and VARIABLE-LENGTH tails do not come with it.** `WND` and
+`CLS` are snapshotted into a heap `Snap`, so `pWnd + 1` / `pCls + 1` — which natively addresses
+the window/class extra bytes in the desktop heap — indexes whatever the process heap put after
+the snapshot. Both halves are the same bug found years apart: the WND half surfaced as user32's
+EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
+until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
+with what a syscall had just set. Address the tail off the snapped kernel object
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
+fixed struct is in the same position and has not been audited.
 
 ### Loader ordering and process bring-up `[§9.47]`
 A CUI process hangs in kernel32 `ConDllInitialize` with exit code **0x103 = STILL_ACTIVE**

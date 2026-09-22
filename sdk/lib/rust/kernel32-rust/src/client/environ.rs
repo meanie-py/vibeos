@@ -29,8 +29,12 @@ extern "C" {
 
 const UNICODE_NULL: WCHAR = 0;
 const ANSI_NULL: CHAR = 0;
-// UNICODE_STRING_MAX_CHARS = 0x7FFE, UNICODE_STRING_MAX_BYTES = 0xFFFE (ntdef.h)
-const UNICODE_STRING_MAX_CHARS: USHORT = 0x7FFE;
+// UNICODE_STRING_MAX_CHARS = 32767 (0x7FFF), UNICODE_STRING_MAX_BYTES = 65534 (0xFFFE)
+// -- sdk/include/xdk/ntbasedef.h:620-621. This said 0x7FFE (32766): an off-by-one
+// carried in from the translation, which made every guard here fire one character
+// early. Caught 2026-09-21 by scan_const_contradictions, once rtl-strings gained
+// the correct value and the two disagreed. Every bindgen island says 32767.
+const UNICODE_STRING_MAX_CHARS: USHORT = 32767;
 const UNICODE_STRING_MAX_BYTES: USHORT = 0xFFFE;
 const ERROR_CALL_NOT_IMPLEMENTED: DWORD = 120;
 

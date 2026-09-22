@@ -74,7 +74,9 @@ list(APPEND SOURCE
 if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE dispatch/i386/dispatch.S)
 elseif(ARCH STREQUAL "amd64")
-    list(APPEND ASM_SOURCE dispatch/amd64/dispatch.S)
+    list(APPEND ASM_SOURCE
+        dispatch/amd64/dispatch.S
+        compat/amd64/msys2.S)
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE dispatch/arm64/dispatch.S)
     # dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,

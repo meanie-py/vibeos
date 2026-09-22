@@ -25,6 +25,7 @@ ExFastMutex
 ExHardError
 ExInterlocked
 ExPools
+ExPushLock
 ExResource
 ExSequencedList
 ExSingleList

@@ -1645,6 +1645,7 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
     OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
     PoolType: u32,
     GenericMapping: PGENERIC_MAPPING,
+    _AccessMode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
     let ObjectBody = opaque_ptr(ObjectBody);
     let SecurityInformation = opaque_ptr(SecurityInformation);
@@ -2019,8 +2020,8 @@ pub unsafe extern "system" fn IopCloseFile(
     Process: PEPROCESS,
     ObjectBody: PVOID,
     GrantedAccess: ACCESS_MASK,
-    HandleCount: ULONG,
-    SystemHandleCount: ULONG,
+    HandleCount: ULONG_PTR,
+    SystemHandleCount: ULONG_PTR,
 ) {
     let Process = opaque_ptr(Process);
     let ObjectBody = opaque_ptr(ObjectBody);

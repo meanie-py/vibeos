@@ -58,7 +58,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # so forwarders can be excluded; without this the checker reports them as missing (it did).
 _SPEC_ENTRY = re.compile(
     r"^\s*(?:@|\d+)\s+(?:stdcall|cdecl|varargs|thiscall|fastcall)\s+"
-    r"(?:-\S+[ \t]+)*([A-Za-z_]\w*)[ \t]*\([^)]*\)[ \t]*(\S+)?[ \t]*$",
+    # The tail is: optional forwarder, then an optional trailing `# comment`. Both
+    # optional parts must be spelled out. A `$`-anchored bare `(\S+)?` cannot
+    # tolerate `... (ptr ptr ptr) # Vista:330` — the line fails to match ENTIRELY and
+    # the symbol vanishes from the audit with no diagnostic. SHCreateItemFromIDList
+    # was a genuine lost export hiding behind exactly that (found 2026-09-20).
+    r"(?:-\S+[ \t]+)*([A-Za-z_]\w*)[ \t]*\([^)]*\)[ \t]*(?:(?!#)(\S+))?[ \t]*(?:#.*)?$",
     re.M,
 )
 # Plenty of exports are implemented in ASSEMBLY, not C or Rust (ntdll's KiUserExceptionDispatcher
@@ -166,7 +171,16 @@ def audit(name: str, ddir: Path, crate: Path) -> tuple[list[tuple[str, str]], in
 
     cml = ddir / "CMakeLists.txt"
     cml_text = cml.read_text(errors="replace") if cml.is_file() else ""
-    commented = set(_CMAKE_COMMENTED_C.findall(cml_text)) - set(_CMAKE_LIVE_C.findall(cml_text))
+    # Compare by BASENAME, not the raw captured path text. A "commented" hit can come from
+    # ordinary prose in an explanatory comment above a live entry -- kernel32's dep.c is a
+    # real example: "# dep.c is genuinely new code (extracted from proc.c upstream) ..."
+    # sits directly above the live `client/dep.c` line. The prose captures the bare
+    # basename "dep.c" while the live regex captures the full "client/dep.c" path, so a
+    # raw string set-difference fails to cancel them and the file is wrongly flipped to
+    # "commented out". `flipped` below already matches by basename, so do the same here.
+    commented_names = {Path(f).name for f in _CMAKE_COMMENTED_C.findall(cml_text)}
+    live_names = {Path(f).name for f in _CMAKE_LIVE_C.findall(cml_text)}
+    commented = commented_names - live_names
     # `.cpp` too: shell32 and devmgr are C++ modules, and reading only `.c` made every export
     # they define in a .cpp look undefined — three of shell32's reported LOST were really
     # "the file this tool cannot see".

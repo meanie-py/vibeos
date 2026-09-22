@@ -143,6 +143,12 @@ members = [
     "msvcrt-sys",
     "crt-shared-rust",
     "crt-shared-cargo",
+    # ucrtbase.dll's own surface, replacing vendored Microsoft UCRT family by
+    # family. Every symbol is declared in tools/ucrt-takeover.yaml.
+    "ucrt-rust",
+    # Grades Rust against the GENUINE vendored UCRT C, while that C still
+    # exists to be graded against. See its Cargo.toml.
+    "ucrt-difftest",
     "msvcrt-crt-rust",
     "msvcrt-crt-cargo",
     "msvcrt-difftest",
