@@ -34,6 +34,15 @@ for A in $ARCHES; do
     REF="$B/libucrt_ref.a"
     [ -s "$REF" ] || { echo "[ucrtdiff] FAIL($A): $REF missing"; exit 1; }
 
+    # The THIRD side: our existing msvcrt Rust bodies, renamed rust_*. This is what
+    # makes the harness an oracle rather than a control -- while a family is still
+    # answered by the vendored C, ref_ and the DLL are the SAME code and agreeing
+    # proves nothing about us.
+    echo "[ucrtdiff] building the $A msvcrt-rust set"
+    python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side msvcrt-rust
+    RUST="$B/libucrt_rust.a"
+    [ -s "$RUST" ] || { echo "[ucrtdiff] FAIL($A): $RUST missing"; exit 1; }
+
     # The ucrtbase IMPORT LIB is what makes the bare side resolve to our shipping
     # DLL. It is a normal build target, but only gets built when something links
     # it -- on arm64 nothing does (ucrtbase_winetest is an i386/amd64 rostest),
@@ -61,6 +70,7 @@ for A in $ARCHES; do
     "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" \
         -Wl,--start-group \
         "$REF" \
+        "$RUST" \
         "$IMPLIB" \
         "$B/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" \
         "$B/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a" \
@@ -69,6 +79,10 @@ for A in $ARCHES; do
         "$B/sdk/lib/crt/libcrtmath.a" \
         "$B/sdk/lib/crt/libchkstk.a" \
         "$B/sdk/lib/pseh/libpseh.a" \
+        "$B/sdk/lib/libwine/libwine.a" \
+        "$B/dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a" \
+        "$B/dll/win32/kernel32/kernel32_vista/CMakeFiles/libkernel32_vista.dir/libkernel32_vista.a" \
+        "$B/win32ss/user/user32/CMakeFiles/libuser32.dir/libuser32.a" \
         "$BUILTINS" \
         -Wl,--end-group \
         -Wl,--allow-multiple-definition \
