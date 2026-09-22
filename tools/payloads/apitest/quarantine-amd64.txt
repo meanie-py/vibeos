@@ -2,17 +2,42 @@
 # One suite name per line; gen_suites.py subtracts these from what the build
 # produced. A name here that matches nothing is reported, not ignored.
 #
+# 2026-09-22: SEVEN entries were REMOVED from this file, all of them added by
+# characterize.py with the note "sweep stopped here — guest wedged (no
+# BUGCHECK)". None of them had wedged anything. test_payload.py's drain loop
+# counted READ ITERATIONS while calling it `launch_drain_secs`, and
+# serial_output(timeout=1.0) returns the instant bytes are already waiting — so
+# the chattier the payload, the shorter the real budget. This sweep's declared
+# 7200s drain was ending after 12-28 minutes, every time, mid-sweep. The driver
+# then blamed whichever subtest was in flight when the harness stopped reading
+# and quarantined it.
+#
+# The tell, once looked for, was plain: those serials END WITH THE ACCUSED
+# SUBTEST'S OWN SUMMARY LINE and its [EXIT-THR] — it had passed and exited. A
+# genuine crasher looks like the two below, which are still here.
+#
+# Removed (re-derive them, do not trust the old lines): afd_apitest windowsize,
+# appshim_apitest ignorefreelib, cmd_apitest attrib, cmd_apitest exit,
+# cmd_apitest pushd, iphlpapi_apitest GetOwnerModuleFromUdpEntry,
+# iphlpapi_apitest GetOwnerModuleFromTcpEntry.
+#
 # 2026-09-21, first ever apitest sweep: the bare-invocation enumeration pass
 # wedged the guest here and the run never reached [APITEST-SWEEP] done.
 # Needs triage; until then it must not cost the other 62 suites.
+# NOTE this one predates the drain fix and was hand-attributed to the
+# ENUMERATION pass specifically, not to a subtest, so it is not the truncation
+# artifact above — but it has not been re-derived since the fix either.
 opengl32_apitest.exe
 
 # SUBTEST-level skips: "<suite.exe> <subtest>".
 # 2026-09-21, first apitest sweep: RtlEncryptMemory crash-loops services.exe
 # (repeating [EXIT-THR] SERVICES.EXE / eventlog.exe on serial) and the sweep
 # never advances past it. A real finding, owed triage — quarantined at subtest
-# granularity so the other 18 advapi32 subtests still run.
+# granularity so the other 18 advapi32 subtests still run. The repeating
+# restart burst is a positive signature, not an absence of output, so the
+# truncation bug does not explain it.
 advapi32_apitest.exe RtlEncryptMemory
+
 # 2026-09-21: BUGCHECK 0x1E at afd.sys+0x89C6, preceded by
 # `ASSERT FAILED: FCB->ReceiveIrp.InFlightRequest == Irp at read.rs:662`.
 # A REAL BUG, found by this harness's third boot. NOT a translation defect: the
@@ -22,23 +47,12 @@ advapi32_apitest.exe RtlEncryptMemory
 # the test is wrong.
 afd_apitest.exe send
 
-# characterize.py round 1: sweep stopped here — guest wedged (no BUGCHECK).
-# SERIAL LOST. The tool recorded `pytest-current`, a symlink that moves to the
-# newest run, and /tmp was then wiped by a power cut. Fixed since (rounds now
-# archive their serial), but this entry's evidence is gone: re-run it to see the
-# wedge rather than trusting this line.
-afd_apitest.exe windowsize
-
-# characterize.py round 2: sweep stopped here — guest wedged (no BUGCHECK).
-# SERIAL LOST. The tool recorded `pytest-current`, a symlink that moves to the
-# newest run, and /tmp was then wiped by a power cut. Fixed since (rounds now
-# archive their serial), but this entry's evidence is gone: re-run it to see the
-# wedge rather than trusting this line.
-appshim_apitest.exe ignorefreelib
-
-# characterize.py round 3: sweep stopped here — guest wedged (no BUGCHECK).
-# SERIAL LOST. The tool recorded `pytest-current`, a symlink that moves to the
-# newest run, and /tmp was then wiped by a power cut. Fixed since (rounds now
-# archive their serial), but this entry's evidence is gone: re-run it to see the
-# wedge rather than trusting this line.
-cmd_apitest.exe attrib
+# 2026-09-22, characterize.py round 3: BUGCHECK 0x0000001E (0xC0000005) at
+# win32k.sys+0xFADD8 = NtUserSetSysColors+0xE8, the instruction
+# `movl (%rdi,%r14,4), %eax` reading lpaElements[0]; fault address 0.
+# ROOT-CAUSED: SetSysColors.c passes NULL on purpose to assert ERROR_NOACCESS,
+# SafeProbeForRead legitimately accepts NULL (it is validate-only, it cannot
+# touch-test under DUMMY_PSEH), and our Rust calls IntSetSysColors outside the
+# guard the C kept it inside. A real crash with a real banner — not truncation.
+# serial: .characterize-amd64/round03-amd64-uefi_serial.log
+gdi32_apitest.exe SetSysColors

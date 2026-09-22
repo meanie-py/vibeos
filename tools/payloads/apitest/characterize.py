@@ -138,8 +138,12 @@ def main(argv: list[str] | None = None) -> int:
                 "--payload",
                 "apitest",
                 "--skip-clean-build",
+                # ABOVE the payload's launch_drain_secs (7200), or pytest kills
+                # the boot before the drain budget is spent and every round is
+                # truncated mid-sweep -- with the truncation then blamed on
+                # whichever subtest was in flight.
                 "--timeout",
-                "7000",
+                "7800",
                 "-q",
             ]
         )

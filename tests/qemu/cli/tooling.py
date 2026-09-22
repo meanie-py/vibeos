@@ -59,6 +59,13 @@ _PYTEST_SUITES = [
     # the kernel down. A parser that cannot tell a crash from a pass turns the
     # whole harness into decoration, so it gets its own oracle.
     (".", ".", "tools/test_parse_apitest_serial.py"),
+    # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
+    # being named and documented as seconds, so a chatty payload spent a declared
+    # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
+    # just stopped early, and the driver above turned that into false quarantine
+    # entries blaming whichever subtest was in flight. Only a chatty-guest test
+    # distinguishes the two implementations.
+    (".", ".", "tools/test_payload_drain.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.

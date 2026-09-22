@@ -40,6 +40,10 @@ binaries:
 
 test:
   # One process per suite, 300s cap each. ~128 suites, so budget generously:
-  # SCM gate + N suites.
+  # SCM gate + N suites. WALL-CLOCK SECONDS -- and that is load-bearing here:
+  # while the drain was an iteration count this sweep, the chattiest payload
+  # after procstorm, got 12-28 minutes out of a declared 7200 and was truncated
+  # mid-run every single time. Keep any driver's own timeout ABOVE this number,
+  # or the driver becomes the real bound and the truncation comes back.
   launch_marker: "[APITEST-SWEEP] done"
   launch_drain_secs: 7200
