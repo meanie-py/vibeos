@@ -183,6 +183,10 @@ pub mod IDefClFImpl;
 // DllGetClassObject, DllCanUnloadNow and the module lock count. Hand-written; its header
 // states the ATL semantics it reproduces.
 pub mod com_server;
+// shell32.cpp, Phase 3: registration, DllMain and the last trampolines — the file is gone.
+pub mod statreg;
+pub mod registration;
+pub mod dllmain;
 pub mod CFolderItem;
 pub mod CFolderItems;
 /// `CFolder.cpp`'s free half: one `extern "C"` factory, hand-written because the

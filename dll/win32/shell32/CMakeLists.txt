@@ -100,7 +100,16 @@ list(APPEND SOURCE
     # iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
     # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
     #   CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
-    shell32.cpp
+    # Replaced by Rust: the shell32 monolith TU below, the LAST C++ TU of shell32 that was not sanctioned glue.
+    # Retired in three phases: its plain logic (shell32-rust/src/shell32/shell32_free.rs,
+    # IDefClFImpl.rs), its COM server (shell32/com_server.rs: class-object table, cached class
+    # factories, DllGetClassObject/DllCanUnloadNow, the module lock count), and its registration
+    # + DllMain (shell32/registration.rs, shell32/dllmain.rs). With it go CShell32Module, the
+    # OBJECT_MAP and the 36 CXxxRustEntry shims that only existed to feed ATL's map, and the
+    # three Shell32Rust* stdcall->cdecl trampolines (now Rust, same symbols). Registration now
+    # hands the .rgs scripts to atl100.dll's registrar (AtlCreateRegistrar, as Wine's DLLs do)
+    # instead of ATL's statically-linked one; see registration.rs for how that was checked.
+    # shell32.cpp
     # utils.cpp — replaced by Rust (shell32-rust/src/shell32/utils.rs, all 95 free functions);
     # cohab via libshell32_rust.a. Whole-TU flip, gated together with the wiring because doing
     # either alone is a PARTIAL cohab flip: utils.rs publishes names the live C++ objects also
