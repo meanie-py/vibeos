@@ -332,7 +332,13 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
                 args.append("(_locale_t)0")
                 continue
             arr, cnt = (big if use_big else small)[k]
-            lines.append("    " * (depth + 1) + f"for (size_t i{i} = 0; i{i} < {cnt}; i{i}++) \\")
+            # !g_fault_flag in EVERY loop condition: the handler can only skip the one
+            # faulting instruction, so without this the body keeps being re-entered and
+            # the export never ends. This is what turns a fault into a FAULT row.
+            lines.append(
+                "    " * (depth + 1)
+                + f"for (size_t i{i} = 0; i{i} < {cnt} && !g_fault_flag; i{i}++) \\"
+            )
             args.append(f"{arr}[i{i}]")
             depth += 1
         # The label names the FIRST looping argument's index, which is what identifies a
@@ -362,18 +368,19 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
         out.append("    " * (depth + 2) + ref_c)
         out.append("")
 
-    out += ["static void run_generated(void)", "{"]
-    # A PROGRESS line per export. Passing rows print nothing, so without this a run that
-    # dies is indistinguishable from a run that is merely slow, and localising the body
-    # that killed it costs one four-minute boot PER GUESS. That is how three rounds of
-    # name-chasing got spent. AT[n] is the last export that started.
-    for i, (_e, name, kinds, has_rust) in enumerate(rows):
+    out += ["static void run_generated(void)", "{", "    int faulted;", ""]
+    # Each export is its own GUARDED block with its own verdict line. The guard is what
+    # makes this scale: without it one faulting body ends the run and hides every export
+    # after it, so blockers are found one per boot, strictly in order.
+    for _e, name, kinds, has_rust in rows:
         macro = "GRADE_" + ("VOID" if not kinds else "_".join(kinds))
         pred = bool(_PREDICATE.match(name))
         out.append("#undef NORM")
         out.append("#define NORM(x) " + ("(!!(x))" if pred else "(x)"))
-        out.append(f'    DbgPrint("[UCRTDIFF] at {i} {name}\\n");')
-        out.append(f"    {macro}{'' if has_rust else '_NORUST'}({name});")
+        out.append(f'    export_begin("{name}");')
+        out.append(f"    UCRTDIFF_GUARD(faulted, {macro}{'' if has_rust else '_NORUST'}({name}));")
+        out.append(f"    export_end(faulted, {1 if has_rust else 0});")
+        out.append("")
     out += ["#undef NORM", "}", ""]
     return "\n".join(out) + "\n"
 
