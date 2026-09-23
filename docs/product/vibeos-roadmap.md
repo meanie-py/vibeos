@@ -511,6 +511,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   NOTE when reproducing: grep the payload STAGE STATUS, not `boot0/serial.log` — the
   launch gate asserts against the drained serial buffer and that file is a partial
   capture, so a passing payload can leave no marker in it.
+  **LEADING HYPOTHESIS, with the arch difference measured but the causal link NOT yet
+  proved.** arm64 `ucrtbase.dll` imports `kernel32, ntdll, msvcrt` — i386's imports only
+  `kernel32, ntdll`. The six extra symbols are `_clearfp`, `_control87`, `_controlfp`,
+  `_statusfp`, `strnlen`, `wcsnlen`; msvcrt.dll does export all six, so they resolve,
+  and the dependency is not circular (msvcrt does not import ucrtbase). The reason they
+  fall through is local: `crtmath` supplies the four FP-control functions on i386 and
+  supplies NONE of them on arm64, so the linker takes msvcrt's import lib instead.
+  That makes loading ucrtbase drag in msvcrt and its own chain (kernel32_vista, user32,
+  advapi32) as a *process* dependency, which is the shape that fails silently in a
+  loader — but note kmtest's arm64 payload imports msvcrt directly and starts fine, so
+  the chain alone is not obviously sufficient and this is a lead, not a diagnosis.
+  Obvious first fix to try, and it makes arm64 match i386 regardless: implement the four
+  FP-control functions for arm64 in `crtmath` so ucrtbase stops importing msvcrt at all.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
