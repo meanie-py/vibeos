@@ -488,6 +488,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **No arm64 user-mode process can start if it imports ucrtbase.dll. OPEN** (2026-09-22).
+  Signature: the exe never runs, and there is NOTHING on serial — no fault, no loader
+  message, no first instruction. The boot itself is fine and reaches `shell ready`.
+  Minimal reproducer, 20 lines: a bare-entry exe (`-nostdlib`, `-e bare_entry`, no CRT
+  startup at all) that links only ntdll+kernel32 RUNS and prints; adding a SINGLE
+  ucrtbase import (`strlen`) to the byte-identical exe makes it fail silently. So it is
+  not CRT startup, not the entry point, not image size, and not the Startup-folder
+  launcher — the one variable that tracks the failure is the ucrtbase import itself.
+  Ruled out: staging, GUI subsystem, DLL availability on the media (ucrtbase,
+  kernel32_vista, advapi32 and user32 are all `add_cd_file(... FOR all)`), and the
+  import table — every name resolves, and the 16 kernel32 imports that first looked
+  missing are forwarders to ntdll that the objdump parse could not see.
+  Corroboration that this is long-standing rather than new: kmtest's arm64 payload
+  deliberately links classic `msvcrt.dll` with a comment about "loader death with zero
+  serial evidence", and `ucrtbase_winetest` is an i386/amd64 rostest. Nothing else in
+  the tree asks arm64 to start a process on ucrtbase, which is why it has stayed hidden.
+  **Blocks Tier-2 ucrt difftesting**, which must run on arm64 because VEH first-chance
+  dispatch is wired only there (`rtl-except/src/{i386,amd64}/except.rs` omit it as
+  `#ifndef _NTOSKRNL_` dead code). Design:
+  `docs/engineering/active-lanes/ucrt-tier2-difftest-design.md`.
+  NOTE when reproducing: grep the payload STAGE STATUS, not `boot0/serial.log` — the
+  launch gate asserts against the drained serial buffer and that file is a partial
+  capture, so a passing payload can leave no marker in it.
+
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
   Signature: the kernel prints `[EXIT-THR] image=marshal32.exe exit_status=0x600d` — the
