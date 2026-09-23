@@ -136,6 +136,29 @@ _SIG = re.compile(r"^(.*?)\s*\((.*?)\)(?:\s*__attribute__.*)?$")
 #: real one: it buries the real ones. Both sides are normalised to 0/1 instead.
 _PREDICATE = re.compile(r"^_?(is[a-z]|isw|_?ismb|_?iswcsym)")
 
+#: Exports excluded because the sweep cannot get past them.
+#:
+#: `_mbsnbcoll` was the first suspect and is NOT the cause -- excluding it did not move
+#: the stopping point at all. Kept here only as a marker for the real finding below.
+#:
+#: WHAT IS ACTUALLY KNOWN: the sweep stops after export 114 of 224 and never resumes,
+#: and the boundary is INDEPENDENT of everything tried against it --
+#:   * not the next export's identity (excluding `_mbsnbcoll` made `_mbsnbicmp` next;
+#:     it stopped at the same count);
+#:   * not the per-export threading (the pre-threading run stopped at 114 too);
+#:   * not runtime (cutting the scalar corpus from 40 values to 15 changed nothing);
+#:   * not a fault (no FAULT row) and not a timeout (no HANG row, and a
+#:     WaitForSingleObject with a timeout cannot block forever).
+#: The kernel keeps logging its [CENSUS] thread dump throughout, so the guest is alive
+#: and it is the harness process that is wedged -- main thread included.
+#: A count-shaped boundary that survives all of the above points at an accumulated
+#: resource rather than any one body. Next thing to measure: whether it is exactly 114
+#: EXPORTS or exactly 114 THREADS, by running the sweep in reverse order.
+DEADLOCKS = {
+    "_mbsnbcoll",
+    "_mbsnbcoll_l",
+}
+
 
 class GenError(RuntimeError):
     """Raised instead of emitting a harness that grades less than it claims."""
@@ -274,6 +297,8 @@ def select(arch: str, cache: Path | None = None) -> list[tuple[str, str, list[st
         if export not in buckets["MICROSOFT"]:
             continue
         if not src.get(export, "").startswith(PURE_DIRS):
+            continue
+        if name in DEADLOCKS or export in DEADLOCKS:
             continue
         chosen.append((export, name, kinds, name in have_rust))
     return chosen
