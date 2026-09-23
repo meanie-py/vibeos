@@ -136,6 +136,36 @@ _SIG = re.compile(r"^(.*?)\s*\((.*?)\)(?:\s*__attribute__.*)?$")
 #: real one: it buries the real ones. Both sides are normalised to 0/1 instead.
 _PREDICATE = re.compile(r"^_?(is[a-z]|isw|_?ismb|_?iswcsym)")
 
+#: Exports excluded because the sweep cannot get past them.
+#:
+#: `_mbsnbcoll` was the first suspect and is NOT the cause -- excluding it (verified in
+#: the generated file) did not move the stopping point at all. Kept only as a marker.
+#:
+#: WHAT THE WALL IS, AS FAR AS MEASURED. The sweep stops partway and never resumes, and
+#: `--reverse` finally separated the explanations: FORWARD it stops after 114 exports,
+#: REVERSED after 53. So it is
+#:   * NOT a fixed count (114 != 53), and
+#:   * NOT a single bad body -- one would sit at reverse index ~106, not 53.
+#: It is also not a fault (no FAULT row) and not a timeout (no HANG row; and a
+#: WaitForSingleObject with a timeout cannot block forever, so the main thread never
+#: reached it). The kernel keeps logging throughout, so the guest is alive and the
+#: HARNESS is wedged, main thread included.
+#:
+#: A boundary that moves with ORDER is consistent with cumulative work -- the two orders
+#: front-load exports of very different cost. The reverse run reached 53 exports for
+#: 2,568 graded cases; the forward figure was not captured before the log rotated, and
+#: that comparison is the next thing to make.
+#:
+#: TREAT THE EARLIER "it is not runtime" RESULT AS UNPROVEN. Shrinking the scalar corpus
+#: 40 -> 15 appeared to change nothing, but that test was never verified to have taken
+#: effect -- and a sibling patch in this very file turned out to be a silent no-op
+#: (a str.replace against an anchor that had already been deleted). Re-run it and CHECK
+#: the emitted case count before believing either answer.
+DEADLOCKS = {
+    "_mbsnbcoll",
+    "_mbsnbcoll_l",
+}
+
 
 class GenError(RuntimeError):
     """Raised instead of emitting a harness that grades less than it claims."""
@@ -275,6 +305,8 @@ def select(arch: str, cache: Path | None = None) -> list[tuple[str, str, list[st
             continue
         if not src.get(export, "").startswith(PURE_DIRS):
             continue
+        if name in DEADLOCKS or export in DEADLOCKS:
+            continue
         chosen.append((export, name, kinds, name in have_rust))
     return chosen
 
@@ -401,10 +433,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help="generated .inc (default: beside the harness)")
     ap.add_argument("--cache", type=Path, help="cache the parsed header AST here")
     ap.add_argument("--stats", action="store_true", help="print the shape histogram and stop")
+    ap.add_argument(
+        "--reverse",
+        action="store_true",
+        help="emit the exports in reverse order. A DIAGNOSTIC: the sweep stops after a "
+        "fixed COUNT (114 of 224) that survives excluding the next export, dropping the "
+        "threading and shrinking the corpus. Reversing separates the three explanations "
+        "-- stopping at the same COUNT means an accumulated resource, stopping at the "
+        "same NAME means that body, and stopping at neither means position in the list.",
+    )
     args = ap.parse_args(argv)
 
     try:
         rows = select(args.arch, args.cache)
+        if args.reverse:
+            rows = list(reversed(rows))
     except GenError as exc:
         print(f"gen-ucrt-tier2-cases: FAIL ({args.arch}): {exc}", file=sys.stderr)
         return 1
