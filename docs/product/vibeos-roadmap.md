@@ -488,6 +488,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
+  (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
+  instruction and printed NOTHING on serial, while the boot itself reached
+  `shell ready`. `LoadLibraryA("ucrtbase.dll")` from a bare-entry exe returned
+  **err=126 ERROR_MOD_NOT_FOUND** (msvcrt.dll loaded fine in the same probe), which was
+  the first error code this failure ever produced -- a static import fails before any
+  code runs, which is why it was silent.
+  Cause: `qemu/mkramdisk.sh` staged ucrtbase.dll only under `VIBEOS_FEX=1`. The DLL is
+  built, and it IS in the livecd graft list -- but arm64 boots `boot.img` from the
+  ramdisk script and never the livecd, so nothing noticed. Fixed by staging it
+  unconditionally beside msvcrt.dll.
+  Worth remembering as a shape: the i386 and arm64 media are assembled by DIFFERENT
+  pipelines, so "it is in the CD file list" proves nothing about arm64. Check the media
+  the arch actually boots (`arm64_launch.json` names it).
+  This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
+  first-chance dispatch is wired only there.
 - **arm64 fails `test_start_menu_opens` on master: after Ctrl+Esc the screen is bare
   wallpaper — no taskbar AND no desktop icons. UNOWNED** (2026-09-22). Deterministic, 4/4:
   twice on the shell32-com lane, once on its previous commit, once on plain `origin/master`
