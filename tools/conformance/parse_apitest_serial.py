@@ -46,11 +46,29 @@ import re
 import sys
 from pathlib import Path
 
+# Statuses the sweep itself already resolved: it moved on, so the subtest was
+# not in flight when a later BUGCHECK landed.
+RESOLVED = frozenset({"SKIP", "TIMEOUT", "ENUM-TIMEOUT", "FAILSTART"})
+
 SUITE = re.compile(r"\[APITEST-SWEEP\] suite (\S+) subtests=(\d+)")
 LAUNCH = re.compile(r"\[APITEST-SWEEP\] launch (?!FAILED)(\S+) (\S+)")
 FAILSTART = re.compile(r"\[APITEST-SWEEP\] launch FAILED (\S+)")
 EXIT = re.compile(r"\[APITEST-SWEEP\] exit (\S+) (\S+) code=(-?\d+)")
-TIMEOUT = re.compile(r"\[APITEST-SWEEP\] TIMEOUT (\S+) (\S+)")
+# The ENUMERATION timeout has to be matched FIRST and separately, because the
+# sweep writes it as "TIMEOUT <suite> during enumeration (60s)" -- prose, not a
+# subtest. A bare `TIMEOUT (\S+) (\S+)` happily read that as the suite plus a
+# subtest literally named "during", and the invented identity
+# `msgina_apitest.exe during TIMEOUT` reached the banked table. That is worse
+# than a miscount: the conformance floor IS a set of assertion identities, so a
+# phantom one can never be satisfied by any future run.
+# Accepts the newer unambiguous ENUM-TIMEOUT spelling too, since the archived
+# serials still carry the old prose form.
+ENUM_TIMEOUT = re.compile(
+    r"\[APITEST-SWEEP\] (?:ENUM-TIMEOUT (\S+)|TIMEOUT (\S+) during enumeration)"
+)
+# Per-subtest: anchored on the trailing "(Ns) - terminated" the subtest form
+# always carries and the enumeration form never does.
+TIMEOUT = re.compile(r"\[APITEST-SWEEP\] TIMEOUT (\S+) (\S+) \(\d+s\) - terminated")
 SKIP = re.compile(r"\[APITEST-SWEEP\] SKIP (\S+) (\S+)")
 NOSUBTESTS = re.compile(r"\[APITEST-SWEEP\] NOSUBTESTS (\S+) \(exit (-?\d+)\)(.*)")
 DONE = re.compile(r"\[APITEST-SWEEP\] done (.*)")
@@ -115,6 +133,15 @@ def parse(log_text: str):
             row(m.group(1))["status"] = "FAILSTART"
             continue
 
+        m = ENUM_TIMEOUT.search(line)
+        if m:
+            # Suite-level: nothing was enumerated, so there is no subtest to
+            # name. Recorded against the suite alone so it still shows up as
+            # bad, without inventing an identity.
+            suite = m.group(1) or m.group(2)
+            row(f"{suite} <enumeration>")["status"] = "ENUM-TIMEOUT"
+            continue
+
         m = TIMEOUT.search(line)
         if m:
             row(f"{m.group(1)} {m.group(2)}")["status"] = "TIMEOUT"
@@ -169,8 +196,17 @@ def parse(log_text: str):
             # down on teardown, and reading that as OK is a false green -- the
             # first draft of this parser scored `afd_apitest send` OK on the
             # very boot whose BUGCHECK it caused.
+            # ...but only a row still IN FLIGHT can own it. A status the sweep
+            # already resolved -- it skipped it, timed it out and terminated it,
+            # or failed to enumerate it and moved to the next suite -- means the
+            # sweep was past that subtest when the machine died. Overwriting
+            # those is the same "blame whatever was last" error this harness has
+            # made at every other layer: it handed a BUGCHECK to msgina's
+            # enumeration timeout, a suite that never ran a single subtest.
+            # If nothing is in flight the crash stays unattributed, which is the
+            # honest answer.
             for name in reversed(order):
-                if results[name]["exit"] is None and results[name]["status"] != "SKIP":
+                if results[name]["exit"] is None and results[name]["status"] not in RESOLVED:
                     results[name]["status"] = "CRASH"
                     break
 

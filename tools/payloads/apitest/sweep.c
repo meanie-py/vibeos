@@ -303,7 +303,11 @@ static void run_suite(const char *bindir, const char *suite,
     }
     if (rc == -2)
     {
-        DbgPrint("[APITEST-SWEEP] TIMEOUT %s during enumeration (%us)\n",
+        /* Deliberately NOT "TIMEOUT <suite> during enumeration": that reads as
+         * "<suite> <subtest>" to any reasonable parser, and ours duly invented a
+         * subtest named "during" and banked it as a conformance identity. A
+         * distinct verb costs nothing and cannot be misread. */
+        DbgPrint("[APITEST-SWEEP] ENUM-TIMEOUT %s (%us)\n",
                  suite, ENUMERATE_TIMEOUT_MS / 1000u);
         ++*timeouts;
         return;

@@ -158,3 +158,24 @@ msvcrt_apitest.exe system
 # thread creation/teardown. NtCreateThread being among the victims is a pointed
 # hint, and ntdll is a suite we very much want back.
 ntdll_apitest.exe
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-115841/round01-amd64-uefi_serial.log
+msvcrt_apitest.exe log10
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-115841/round02-amd64-uefi_serial.log
+msgina_apitest.exe during
+
+# 2026-09-23: SUITE-level. msgina_apitest never enumerates its subtests — it
+# hits the sweep's 60s ENUMERATION timeout, so nothing in it ever runs. Same
+# category as opengl32_apitest above, and nothing to do with the process-wedge
+# cluster.
+#
+# This is the suite that exposed a parser bug worth more than the quarantine:
+# the old message was "TIMEOUT <suite> during enumeration (60s)", which the
+# parser read as suite + a subtest named "during", and `msgina_apitest.exe
+# during TIMEOUT` reached the banked table. A phantom assertion identity in a
+# floor made of assertion identities can never be satisfied. sweep.c now says
+# ENUM-TIMEOUT and the parser records the suite alone.
+msgina_apitest.exe
