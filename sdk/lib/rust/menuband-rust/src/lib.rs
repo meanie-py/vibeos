@@ -69,6 +69,11 @@ pub mod enum_merged_folder;
 /// Activated by ATL's static `CComObject<T>::CreateInstance(&p)`, at refcount 0.
 pub mod shell_menu_callback;
 pub mod start_menu;
+/// `CMenuToolbars.cpp` — CMenuToolbarBase and its two derived toolbars, hand-translated:
+/// the bespoke (non-COM) vtable and the constructors on BOTH base and derived put it outside
+/// what the deterministic scaffold can hold. Publishes the 29 `*_RustBridge` entry points
+/// `menu_band.rs` declares, under the same names and signatures the C++ exported them with.
+pub mod menu_toolbars;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

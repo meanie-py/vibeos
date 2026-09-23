@@ -732,9 +732,11 @@ dll/win32/shell32/CMakeLists.txt	1	# CRegFolder_CreateInstance — still called 
 dll/win32/shell32/CMakeLists.txt	1	# CSendToMenu.cpp — replaced by Rust (shell32-rust/src/send_to_menu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
 dll/win32/shell32/CMakeLists.txt	1	# CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
-dll/win32/shell32/CMakeLists.txt	1	# CShellLibrary.cpp / CUserEventTimer.cpp are NEW upstream COM objects (post-fork)
+dll/win32/shell32/CMakeLists.txt	1	# CShellLibrary.cpp
+dll/win32/shell32/CMakeLists.txt	1	# CShellLibrary.cpp / CUserEventTimer.cpp — NEW upstream COM objects (post-fork), now
 dll/win32/shell32/CMakeLists.txt	1	# CShellLink.cpp — removed. The COM class was already Rust-owned
 dll/win32/shell32/CMakeLists.txt	1	# CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
+dll/win32/shell32/CMakeLists.txt	1	# CUserEventTimer.cpp
 dll/win32/shell32/CMakeLists.txt	1	# CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
 dll/win32/shell32/CMakeLists.txt	1	# Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
@@ -789,6 +791,7 @@ dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c — linkage, not langua
 dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
 dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp names the unmangled symbols Rust emits.
+dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp's object map reaches them through CShellLibraryRustEntry /
 dll/win32/shell32/CMakeLists.txt	1	# shellmenu + recyclebin) references NOTHING defined in CDefView.cpp.obj — 0 symbols. Its
 dll/win32/shell32/CMakeLists.txt	1	# shldataobject.cpp — replaced by Rust (shell32-rust/src/shell32/shldataobject.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# shlexec.cpp — replaced by Rust (shell32-rust/src/shell32/shlexec.rs); cohab via libshell32_rust.a
@@ -813,7 +816,6 @@ dll/win32/shell32/CMakeLists.txt	1	# wine/shellreg.c — replaced by Rust (shell
 dll/win32/shell32/CMakeLists.txt	1	# wine/shellstring.c — replaced by Rust (shell32-rust/src/wine/shellstring.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shlmenu.c — replaced by Rust (shell32-rust/src/wine/shlmenu.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
-dll/win32/shell32/CMakeLists.txt	1	# with no Rust twin yet. shell32.cpp's object map registers them after this merge, so
 dll/win32/shell32/CMakeLists.txt	1	# — including the SH_FormatByteSize forwarder that moved here when drvdefext.cpp flipped, which
 dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CChangeNotifyServer.cpp -> shelldesktop/CChangeNotifyServer{,_window,_free}.rs
 dll/win32/shell32/shelldesktop/CMakeLists.txt	1	# CDesktopBrowser.cpp -> SHCreateDesktop, SHDesktopMessageLoop, SHIsTempDisplayMode.
@@ -829,6 +831,7 @@ dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuBand.cpp — replaced by Rus
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuDeskBar.cpp — replaced by menuband-rust/src/menu_desk_bar.rs
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuFocusManager.cpp — replaced by menuband-rust/src/menu_focus_manager.rs. A PLAIN
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuSite.cpp — replaced by menuband-rust/src/menu_site.rs
+dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuToolbars.cpp — replaced by menuband-rust/src/menu_toolbars.rs, HAND-translated: its
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMergedFolder.cpp — replaced by menuband-rust/src/merged_folder.rs (CMergedFolder)
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CStartMenu.cpp — replaced by menuband-rust/src/shell_menu_callback.rs (the TU's one
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# add_library(recyclebin ${SOURCE} guid.c) # guid.c -> recyclebin-rust: shellrecyclebin/guid.rs

@@ -13,7 +13,8 @@ set_module_type(rshell win32dll UNICODE)
 
 target_link_libraries(rshell
     shellbars
-    shellmenu
+    # shellmenu — the whole object library is Rust now (menuband-rust), and rshell already
+    # links ${MENUBAND_RUST_LIB} below, so the toolbar bridges arrive from there.
     # shelldesktop — the whole object library is Rust now (shell32-rust/src/shelldesktop).
     # rshell does NOT link libshell32_rust.a, and its .spec exports SHCreateDesktop and
     # SHDesktopMessageLoop, so it resolves both through shell32's import lib below —

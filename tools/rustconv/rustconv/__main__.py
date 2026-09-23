@@ -2345,7 +2345,12 @@ def cmd_translate(args):
             )
         print(
             f"  [cpp-com] preflight: {len(cpp_com_cls.com_map)} interface(s), "
-            f"{sum(len(i.methods) for i in cpp_com_interfaces)} vtable slot(s), "
+            # Only the class's OWN interfaces: `cpp_com_interfaces` also holds every interface
+            # the TU merely mentions (IShellItem as a parameter type, ...), and summing those
+            # printed 84 slots for IShellLibrary's 20 — a number that reads like a broken
+            # scaffold and sends you auditing one that is fine.
+            f"{sum(len(i.methods) for i in cpp_com_interfaces if i.name in class_interface_names)}"
+            " vtable slot(s), "
             f"{len(implemented)} method body/bodies",
             file=sys.stderr,
         )

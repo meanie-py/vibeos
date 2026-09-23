@@ -2,7 +2,7 @@ PROJECT(SHELL)
 
 add_subdirectory(evalcmd)
 # add_subdirectory(shelldesktop) — the whole object library is Rust; see its CMakeLists.
-add_subdirectory(shellmenu)
+# add_subdirectory(shellmenu) — the whole object library is Rust (menuband-rust); see its CMakeLists.
 # shellrecyclebin/ — the WHOLE object library is Rust now (sdk/lib/rust/recyclebin-rust,
 # linked as ${RECYCLEBIN_RUST_LIB} below). Its six sources were the entire `recyclebin`
 # static library, so the target goes away rather than being emptied; the .c/.cpp stay on
@@ -342,12 +342,13 @@ list(APPEND PCH_SKIP_SOURCE
     # shell32-rust build on plain stable rustc — no bootstrap escape hatch on the cargo
     # env line below, no nightly feature gate in the crate root.
     # Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
-    # CShellLibrary.cpp / CUserEventTimer.cpp are NEW upstream COM objects (post-fork)
-    # with no Rust twin yet. shell32.cpp's object map registers them after this merge, so
-    # they have to be compiled or the ATL creators have no class to construct. Handed to
-    # the shell32 lane for eventual translation (see shell32-upstream-oracle-handoff.md).
-    CShellLibrary.cpp
-    CUserEventTimer.cpp
+    # CShellLibrary.cpp / CUserEventTimer.cpp — NEW upstream COM objects (post-fork), now
+    # shell32-rust/src/shell32/{CShellLibrary,CUserEventTimer}.rs; cohab via libshell32_rust.a.
+    # shell32.cpp's object map reaches them through CShellLibraryRustEntry /
+    # CUserEventTimerRustEntry, whose _CreatorClass calls the Rust *_CreateInstance export —
+    # the header stays included only for the registry statics the entry inherits.
+    # CShellLibrary.cpp
+    # CUserEventTimer.cpp
     rust_varargs_shim.c
     #
     # rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
@@ -413,7 +414,7 @@ add_typelib(shell32_shldisp.idl)
 set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shell32_shldisp.tlb)
 
 set_module_type(shell32 win32dll UNICODE)
-target_link_libraries(shell32 shellmenu wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
+target_link_libraries(shell32 wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
 add_dependencies(shell32 rust_menuband rust_recyclebin)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)

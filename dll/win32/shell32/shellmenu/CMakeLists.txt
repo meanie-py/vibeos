@@ -20,7 +20,10 @@ list(APPEND SOURCE
     # live in menu_focus_manager_support.rs, because neither can be owned by a worker body
     # (an ABI declaration in a body is refused, and three functions must share the TLS slot).
     # CMenuSite.cpp — replaced by menuband-rust/src/menu_site.rs
-    CMenuToolbars.cpp
+    # CMenuToolbars.cpp — replaced by menuband-rust/src/menu_toolbars.rs, HAND-translated: its
+    # bespoke (non-COM) virtuals and the constructors on both base and derived put it outside
+    # what the deterministic scaffold can hold. It publishes the same 29 *_RustBridge entry
+    # points menu_band.rs was already calling. It was the LAST source in this library.
     # CMergedFolder.cpp — replaced by menuband-rust/src/merged_folder.rs (CMergedFolder)
     # plus enum_merged_folder.rs (CEnumMergedFolder). The six
     # CEnumMergedFolder_*_RustBridge entry points the .cpp used to define for
@@ -33,9 +36,14 @@ list(APPEND SOURCE
     # five free functions). Two modules for one TU, the usual class/free split.
     )
 
-add_library(shellmenu OBJECT ${SOURCE})
-target_link_libraries(shellmenu PRIVATE atl_classes)
-add_dependencies(shellmenu xdk psdk reactos_idls)
+# The WHOLE shellmenu object library is Rust now, so the target goes away rather than being
+# emptied (CMake refuses an OBJECT library with no sources) — the same whole-library swap as
+# shellrecyclebin and shelldesktop. Both of its consumers, shell32 and rshell, already link
+# ${MENUBAND_RUST_LIB}, whose build is hoisted to the top-level CMakeLists.txt, so nothing
+# about reaching the Rust changes. The .cpp files stay on disk, inert.
+# add_library(shellmenu OBJECT ${SOURCE})
+# target_link_libraries(shellmenu PRIVATE atl_classes)
+# add_dependencies(shellmenu xdk psdk reactos_idls)
 
 # The libmenuband_rust.a build (CMenuBand's Rust replacement) is hoisted to the top-level
 # CMakeLists.txt (before add_subdirectory(base)) because BOTH shell32 and rshell link it and

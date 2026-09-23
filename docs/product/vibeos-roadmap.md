@@ -488,6 +488,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 fails `test_start_menu_opens` on master: after Ctrl+Esc the screen is bare
+  wallpaper — no taskbar AND no desktop icons. UNOWNED** (2026-09-22). Deterministic, 4/4:
+  twice on the shell32-com lane, once on its previous commit, once on plain `origin/master`
+  (`91faf984cd5`) built fresh in a scratch worktree, so it predates and is independent of that
+  lane. i386 passes the same gate on the same trees. The default `vibeos-cli smoke` does NOT
+  catch it: it stops at the `shell ready` marker and does not run this test — reproduce with
+  `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k test_start_menu_opens -s`.
+  Serial shows explorer reaching `taskbar: child controls created` and running its startup
+  items, with no user-mode exception in explorer. What is DIFFERENT about the arm64 image is
+  that it bakes in the kmtest sweep (`opt:kmtest_all`; `KMTEST~1.EXE` in All Users\Startup),
+  which is still running 91 kernel tests when the gate fires. That is an inference, not a
+  finding: the missing desktop icons say explorer's UI is not painting at all, which fits a
+  starved or blocked UI thread better than a start-menu bug, but nobody has yet run the gate
+  on arm64 media without the sweep. The last known-good arm64 start-menu screenshot in the
+  fleet is from 2026-09-13, before the upstream sync.
+
 - **`shell_link.rs` compiles in eight `#if (NTDDI_VERSION < NTDDI_LONGHORN)` blocks the C
   build EXCLUDES. UNOWNED** (2026-09-22). `sdk/lib/rust/shell32-rust/src/shell_link.rs:1567`
   hoists `NTDDI_VERSION = 0x05020000` with a comment asserting "the tree builds with

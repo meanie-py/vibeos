@@ -719,6 +719,45 @@ public:
     };
 };
 
+/* CShellLibrary.cpp and CUserEventTimer.cpp arrived with the post-fork upstream sync and are
+ * now shell32-rust/src/shell32/{CShellLibrary,CUserEventTimer}.rs. Same shape as every entry
+ * above: the class is inherited ONLY for the registry/metadata statics its header declares
+ * (DECLARE_REGISTRY_RESOURCEID, DECLARE_NOT_AGGREGATABLE) and is never constructed, because
+ * _CreatorClass is replaced by the Rust factory. */
+extern "C" HRESULT WINAPI CShellLibrary_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CShellLibraryRustEntry : public CShellLibrary
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CShellLibrary_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CUserEventTimer_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CUserEventTimerRustEntry : public CUserEventTimer
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CUserEventTimer_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 extern "C" HRESULT WINAPI CShellLink_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
@@ -937,7 +976,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLinkRustEntry)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatchRustEntry)
-    OBJECT_ENTRY(CLSID_ShellLibrary, CShellLibrary)
+    OBJECT_ENTRY(CLSID_ShellLibrary, CShellLibraryRustEntry)
     OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
     OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolderRustEntry)
     OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
@@ -963,7 +1002,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
     OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociationsRustEntry)
     OBJECT_ENTRY(CLSID_UserNotification, CUserNotificationRustEntry)
-    OBJECT_ENTRY(CLSID_UserEventTimer, CUserEventTimer)
+    OBJECT_ENTRY(CLSID_UserEventTimer, CUserEventTimerRustEntry)
 END_OBJECT_MAP()
 
 CShell32Module  gModule;
