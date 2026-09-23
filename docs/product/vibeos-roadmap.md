@@ -3063,8 +3063,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     conclusion — but hand symbolication stays exposed afterwards. Break on something you know
     executes before believing any silence, and pass the MP binary by name.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
-    in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
-    `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
+    in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
+    `20260913-022245-fw6sw4_g-conformance-arm64`.
+    **RECURRED 2026-09-23, and the second occurrence carries the lead the first could not:
+    it looks LOAD-CORRELATED, not merely rare.** Identical signature, in
+    `queue-batch-01790201087033273531/20260923-180447-8li01qbu-gate-i386+amd64+arm64`
+    (`conf-arm64-a1/conformance.log`). It failed **3 of 3 gate attempts** while the gate was
+    running 3 builds + 4 boots, *and* while a characterisation sweep was booting concurrently
+    in another worktree — then passed **2 of 2** on the same tree on a quiet host, including
+    the exact merge the gate tested. 3/3 under load vs 0/2 quiet is not the profile of a rare
+    intermittent; it is the profile of a race that needs contention to lose. Next step is to
+    reproduce it deliberately under load (`farm` alongside a full gate) rather than wait for
+    another sweep to catch it.
+    **Cost of NOT knowing this:** the conductor rejected an innocent 17-commit batch and
+    concluded "the BASE is GREEN — the submission really is the culprit" from a **single**
+    base sample against three lane samples, for a failure its own classifier had already
+    named `CONFORMANCE_FLAKE`. That attribution is the same shape as the harness bugs this
+    lane spent the day fixing: blame what was in flight rather than what was proven. `NpfsConnect` is **679/0 on all three
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
     from a regression on any single sweep.
