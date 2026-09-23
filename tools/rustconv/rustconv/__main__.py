@@ -96,6 +96,7 @@ from .cpp_com import (
     render_cpp_support,
     render_interface,
     render_object_map_adapter,
+    render_rewrite_support,
     render_wide_literal_statics,
     require_supported_worker_raii,
     rewrite_wide_literals,
@@ -3034,8 +3035,18 @@ def cmd_translate(args):
             # The same $0 pass the real run does, so the plan says what you will actually
             # PAY for rather than how many functions the file has. Free on mbcs.c is 76 of
             # 192 — a dry-run that hid that would misprice the file by 40%.
+            # Mirror the REAL run's branch exactly — it lowers on `cpp_com_mode`, not on the
+            # target name. Keying this on `target != "shell32"` meant every shell32 C++ run
+            # previewed its free trivial workers as PAID: filetypes' one-line DoExtractIcon
+            # forwarder showed as "1 to buy" on a reassembly that has always cost $0.00, which
+            # is exactly the number you read before deciding whether to spend.
             preview: dict[str, str] = {}
-            if rustconv_target.name != "shell32":
+            if cpp_com_mode:
+                for dep in sorted_deps:
+                    sig = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+                    if lower_trivial_worker(dep.body_text, sig) is not None:
+                        preview[dep.name] = "trivial worker"
+            else:
                 preview = {
                     name: low.shape
                     for name, low in trivial_c.lower_trivial_c_functions(
@@ -4219,6 +4230,13 @@ def cmd_translate(args):
             # call into the RAII lowering, so both have to be in the module or every
             # reference dangles.
             prelude = []
+            # The definitions the REWRITES introduced (`LOWORD!`, `StringCbPrintfW!`). The
+            # rewrites fire on both paths but only --cpp-com ever emitted the definitions, so
+            # free-functions TUs hand-wrote them — filetypes.cpp reinvented LOWORD and a printf
+            # helper that way. See render_rewrite_support for why this is not the whole closure.
+            support = render_rewrite_support(stitched, preamble_rust)
+            if support.strip():
+                prelude.append(support)
             if cpp_com_wide_statics:
                 prelude.append(cpp_com_wide_statics)
             for raii_name, raii_rust in local_raii_impls.items():

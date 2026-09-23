@@ -1093,12 +1093,24 @@ unsafe fn cpp_com_interlocked_increment(value: *mut LONG) -> LONG {
 unsafe fn cpp_com_string_cb_printf_w(
     dest: LPWSTR, bytes: usize, format: LPCWSTR, args: &[LPCWSTR],
 ) -> HRESULT {
+    // strsafe.h StringCbPrintfW, for the conversions translated call sites use: `%s` and `%%`.
+    // Anything else is REFUSED (STRSAFE_E_INVALID_PARAMETER, empty result). This used to copy
+    // an unknown conversion through literally and leave its argument unconsumed — and it did
+    // not know `%%` either, so COpenWithList's `"%s" "%%1"` registered `"app.exe" "%%1"` as an
+    // Open-With command line instead of `"app.exe" "%1"`, with nothing red anywhere.
     let capacity = bytes / core::mem::size_of::<WCHAR>();
     if dest.is_null() || format.is_null() || capacity == 0 { return E_FAIL; }
     let (mut out, mut input, mut arg_index) = (0usize, 0usize, 0usize);
     while *format.add(input) != 0 {
         let unit = *format.add(input);
-        if unit == b'%' as WCHAR && *format.add(input + 1) == b's' as WCHAR {
+        if unit == b'%' as WCHAR {
+            let spec = *format.add(input + 1);
+            if spec == b'%' as WCHAR {
+                if out + 1 >= capacity { *dest.add(capacity - 1) = 0; return 0x8007007Au32 as HRESULT; }
+                *dest.add(out) = b'%' as WCHAR; out += 1; input += 2;
+                continue;
+            }
+            if spec != b's' as WCHAR { *dest = 0; return 0x80070057u32 as HRESULT; }
             if arg_index >= args.len() { return E_FAIL; }
             let arg = args[arg_index]; arg_index += 1; input += 2;
             if arg.is_null() { continue; }
