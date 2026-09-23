@@ -512,6 +512,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
   than one subtest.
 
+- **`cmd_apitest` wedges the guest — three of its six subtests, reproducibly. OPEN**
+  (2026-09-23). `attrib`, `exit` and `pushd` each stop the apitest sweep dead; one boot sat
+  silent for 77 minutes after `[APITEST-SWEEP] launch cmd_apitest.exe attrib` with QEMU alive
+  and the serial not growing. For `pushd` the sweep's own 120s per-subtest timeout DID fire and
+  terminated the child (`[EXIT-THR] image=CMD_APITEST.EXE exit_status=0xdead`, which is
+  sweep.c's `TerminateProcess(.., 0xDEAD)`), and then the sweep still never printed its
+  `TIMEOUT`/`exit` line — so at least that one wedges the sweep PARENT, not only the child.
+  Plausible shared cause with the two quarantined `iphlpapi GetOwnerModuleFrom*Entry` stalls:
+  a grandchild inheriting the pipe's write end, so the pump never sees EOF (`cmd_apitest`
+  spawns `cmd.exe`; the iphlpapi tests talk to services). That is an inference from the shape,
+  not observed. All five are quarantined at subtest granularity so the other ~60 suites can be
+  characterised.
+
 - **`CmUnloadKey` removes a hive from the hive-file list AFTER closing its files and
   unlinking it, reading an already-invalidated `LinkData` node. OPEN** (2026-09-22).
   `config-rust/src/cmapi.rs` has `CmpUnlockRegistry(); CmpCloseHiveFiles(CmHive);
