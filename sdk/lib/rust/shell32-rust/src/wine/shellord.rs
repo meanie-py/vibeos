@@ -105,6 +105,11 @@ const SSF_STRUCTONLY: DWORD = SSF_NOCONFIRMRECYCLE
     | SSF_WIN95CLASSIC
     | SSF_SORTCOLUMNS
     | SSF_STARTPANELON;
+// SSF_ALL / SSF_IMPLEMENTED (shellord.c, upstream 4fecc908e7d). SERVERADMINUI is
+// written by Explorer and read by IsOS(), never through this struct.
+const SSF_SERVERADMINUI: DWORD = 0x00000004;
+const SSF_ALL: DWORD = 0x07FF_FFFF & !0x40;
+const SSF_IMPLEMENTED: DWORD = SSF_ALL & !SSF_SERVERADMINUI;
 
 // SHELLSTATE w0 bit indices (gcc bitfield packing of the first 17 :1 fields)
 const SS_SHOWALLOBJECTS: u32 = 0;
@@ -1205,9 +1210,15 @@ pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD
 
     if bSet != 0 {
         let mut changed: DWORD = 0;
-        if (dwMask & !g_CachedSSF) != 0 {
+        // The whole struct is about to be written to the registry, so every member
+        // not yet cached must be read back first, except the ones being set. The
+        // pre-fix test was `dwMask & ~g_CachedSSF`, which skipped the backfill
+        // whenever the flag being set was already cached and wrote whatever gpss
+        // held for everything else (upstream 4fecc908e7d, CORE-20585).
+        let notcached: DWORD = !g_CachedSSF & SSF_IMPLEMENTED;
+        if (notcached & !dwMask) != 0 {
             let mut tempstate: SHELLSTATE = core::mem::zeroed();
-            SHGetSetSettings(&mut tempstate, dwMask, FALSE); // read entries not in g_CachedSSF
+            SHGetSetSettings(&mut tempstate, notcached & !dwMask, FALSE); // read entries not in gpss/g_CachedSSF
         }
 
         // SHGSS_WriteAdv helper
@@ -1395,8 +1406,12 @@ pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD
                 cache_bit!(1, SS_STARTPANELON, SSF_STARTPANELON);
             } else {
                 SHELL32_GetDefaultShellState(gpss);
-                read = 0;
+                read = 0; // the advanced items we read are no longer valid in gpss
                 g_CachedSSF = SSF_STRUCTONLY;
+                // HACKFIX (upstream 39ad1b6824f, CORE-20585): persist the defaults
+                // when no ShellState value exists yet.
+                rss.ss = *gpss;
+                SHELL32_WriteRegShellState(&mut rss);
             }
         }
         // SHGSS_GetSetStruct(SHGSS_GetField): gpss -> lpss
@@ -1988,6 +2003,11 @@ pub unsafe extern "system" fn SHRunControlPanel(commandLine: LPCWSTR, parent: HW
     // initialize with L"shell32.dll,Control_RunDLL "
     let init_len = wcslen(W_CONTROL_RUNDLL.as_ptr());
     core::ptr::copy_nonoverlapping(W_CONTROL_RUNDLL.as_ptr(), parameters.as_mut_ptr(), init_len + 1);
+    // IShellDispatch::ControlPanelItem passes a script-supplied BSTR straight through,
+    // and a null one would crash wcscat (upstream a83411cfefe).
+    if commandLine.is_null() {
+        return FALSE;
+    }
     wcscat(parameters.as_mut_ptr(), commandLine);
 
     (ShellExecuteW(
@@ -2846,7 +2866,31 @@ pub unsafe extern "system" fn SHSetLocalizedName(
 /// LinkWindow_RegisterClass [SHELL32.258] (stub)
 #[no_mangle]
 pub unsafe extern "system" fn LinkWindow_RegisterClass() -> BOOL {
-    TRUE
+    // Superclass comctl32's SysLink as "Link Window". The pre-fix stub returned TRUE
+    // having registered nothing, so a caller's CreateWindow on the class then failed
+    // (upstream d6cc284435e, which moved it to utils.cpp).
+    use crate::island as i;
+    static W_SYSLINK: [u16; 8] = [
+        b'S' as u16, b'y' as u16, b's' as u16, b'L' as u16, b'i' as u16, b'n' as u16,
+        b'k' as u16, 0,
+    ];
+    static W_LINK_WINDOW: [u16; 12] = [
+        b'L' as u16, b'i' as u16, b'n' as u16, b'k' as u16, b' ' as u16, b'W' as u16,
+        b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, 0,
+    ];
+    let mut iccx: i::INITCOMMONCONTROLSEX = core::mem::zeroed();
+    iccx.dwSize = core::mem::size_of::<i::INITCOMMONCONTROLSEX>() as i::DWORD;
+    iccx.dwICC = i::ICC_LINK_CLASS as i::DWORD;
+    i::InitCommonControlsEx(&mut iccx);
+
+    let mut wcx: i::WNDCLASSEXW = core::mem::zeroed();
+    wcx.cbSize = core::mem::size_of::<i::WNDCLASSEXW>() as i::UINT;
+    if i::GetClassInfoExW(core::ptr::null_mut(), W_SYSLINK.as_ptr(), &mut wcx) == 0 {
+        return FALSE;
+    }
+    wcx.lpszClassName = W_LINK_WINDOW.as_ptr();
+    (i::RegisterClassExW(&wcx) != 0
+        || i::GetLastError() == i::ERROR_CLASS_ALREADY_EXISTS as i::DWORD) as BOOL
 }
 
 /// LinkWindow_UnregisterClass [SHELL32.259] (stub)

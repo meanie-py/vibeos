@@ -6292,6 +6292,30 @@ as it stood before the fix it names `sam` and `security` outright. Scoped to the
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
 
+### An arm64 ramdisk refreshed in place keeps every file it ever held
+**Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
+the same commit. A payload-less build still autostarted `kmtest-sweep.exe`, plus a
+`regdiff.exe` from a different day. A "last known-good" screenshot was cited as dating the
+regression, and bisecting from it found the good endpoint bad too.
+
+**Cause.** `vibeos-cli build` and conftest both call `mkramdisk.sh --refresh` whenever
+`qemu/ramdisk.img` exists. `--refresh` only ever `mcopy -o`s onto the old FAT image, so any
+file staged once stays on every later boot of that tree: payloads, and FEX probe binaries from
+a `VIBEOS_FEX=1` build. The leftovers changed behaviour. Arm64 winlogon runs any probe it
+finds before it spawns `cmd.exe`, and that delay was what hid a csrss console wedge on the old
+images. The same commit failed on a fresh image.
+
+**Fix.** mkramdisk records the payload dests it staged in `qemu/ramdisk.payloads`. The next
+run deletes any recorded dest the current selection omits. A ramdisk with no record is
+recreated rather than refreshed.
+
+**Generalize.**
+- Media that is only ever added to is a function of its whole build history, not of the tree.
+- A "known-good" artifact from a long-lived worktree dates nothing until it is reproduced on
+  freshly built media.
+- Before bisecting, boot the good artifact itself. Here that one boot moved the question
+  from "which commit" to "which file".
+
 ### The two staleness oracles, both were wrong `[§9.81]`
 - **(a) `cohab_staleness_reasons` false-REDs on a codegen-neutral edit** `[§9.81a]` — the rule
   `artifact.mtime >= newest .rs mtime` is a proxy, and a comment-only edit trips it. **A false
