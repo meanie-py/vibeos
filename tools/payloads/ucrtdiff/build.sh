@@ -70,7 +70,11 @@ for A in $ARCHES; do
     # as families are taken over) and from the public headers (which move with upstream).
     # A stale .inc would keep grading exports that are no longer Microsoft's.
     echo "[ucrtdiff] generating $A cases"
-    python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc"
+    # UCRTDIFF_REVERSE=1 emits the exports back-to-front. Diagnostic only: the sweep
+    # stops after a fixed COUNT, and reversing says whether that count follows the
+    # ORDER (an accumulated resource) or a particular body.
+    GENFLAGS=""; [ "${UCRTDIFF_REVERSE:-0}" = "1" ] && GENFLAGS="--reverse"
+    python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc" $GENFLAGS
 
     echo "[ucrtdiff] linking ucrtdiff-$A.exe"
     # -fno-builtin is LOAD-BEARING, not hygiene: clang knows what isdigit, strlen
