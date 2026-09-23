@@ -2,7 +2,7 @@ PROJECT(SHELL)
 
 add_subdirectory(evalcmd)
 # add_subdirectory(shelldesktop) — the whole object library is Rust; see its CMakeLists.
-add_subdirectory(shellmenu)
+# add_subdirectory(shellmenu) — the whole object library is Rust (menuband-rust); see its CMakeLists.
 # shellrecyclebin/ — the WHOLE object library is Rust now (sdk/lib/rust/recyclebin-rust,
 # linked as ${RECYCLEBIN_RUST_LIB} below). Its six sources were the entire `recyclebin`
 # static library, so the target goes away rather than being emptied; the .c/.cpp stay on
@@ -414,7 +414,7 @@ add_typelib(shell32_shldisp.idl)
 set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shell32_shldisp.tlb)
 
 set_module_type(shell32 win32dll UNICODE)
-target_link_libraries(shell32 shellmenu wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
+target_link_libraries(shell32 wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
 add_dependencies(shell32 rust_menuband rust_recyclebin)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)

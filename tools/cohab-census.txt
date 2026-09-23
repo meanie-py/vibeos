@@ -831,6 +831,7 @@ dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuBand.cpp — replaced by Rus
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuDeskBar.cpp — replaced by menuband-rust/src/menu_desk_bar.rs
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuFocusManager.cpp — replaced by menuband-rust/src/menu_focus_manager.rs. A PLAIN
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuSite.cpp — replaced by menuband-rust/src/menu_site.rs
+dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMenuToolbars.cpp — replaced by menuband-rust/src/menu_toolbars.rs, HAND-translated: its
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CMergedFolder.cpp — replaced by menuband-rust/src/merged_folder.rs (CMergedFolder)
 dll/win32/shell32/shellmenu/CMakeLists.txt	1	# CStartMenu.cpp — replaced by menuband-rust/src/shell_menu_callback.rs (the TU's one
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# add_library(recyclebin ${SOURCE} guid.c) # guid.c -> recyclebin-rust: shellrecyclebin/guid.rs

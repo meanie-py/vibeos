@@ -2,9 +2,6 @@
   "active": {
     "monolith": [
       "dll/win32/shell32/shell32.cpp"
-    ],
-    "shared": [
-      "dll/win32/shell32/shellmenu/CMenuToolbars.cpp"
     ]
   },
   "removed": {
@@ -29,6 +26,7 @@
       "dll/win32/shell32/shelldesktop/CDirectoryList.cpp",
       "dll/win32/shell32/shelldesktop/CDirectoryWatcher.cpp",
       "dll/win32/shell32/shellmenu/CMenuFocusManager.cpp",
+      "dll/win32/shell32/shellmenu/CMenuToolbars.cpp",
       "dll/win32/shell32/shellmenu/CMergedFolder.cpp",
       "dll/win32/shell32/shellmenu/CStartMenu.cpp",
       "dll/win32/shell32/shellrecyclebin/guid.c",
