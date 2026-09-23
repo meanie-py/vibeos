@@ -124,9 +124,7 @@ def test_an_enumeration_timeout_does_not_invent_a_subtest_called_during() -> Non
     never be satisfied by any future run, so the ratchet would have been
     permanently unsatisfiable.
     """
-    serial = (
-        "[APITEST-SWEEP] TIMEOUT msgina_apitest.exe during enumeration (60s)\n"
-    )
+    serial = "[APITEST-SWEEP] TIMEOUT msgina_apitest.exe during enumeration (60s)\n"
     results, _meta = PA.parse(serial)
     names = {r["name"] for r in results}
     assert "msgina_apitest.exe during" not in names
@@ -171,10 +169,7 @@ def test_a_bugcheck_is_not_pinned_on_a_subtest_the_sweep_already_finished_with()
 
 def test_an_unattributable_bugcheck_blames_nobody() -> None:
     """If nothing was in flight, the honest answer is no culprit at all."""
-    serial = (
-        "[APITEST-SWEEP] ENUM-TIMEOUT msgina_apitest.exe (60s)\n"
-        "*** BUGCHECK: 0x0000001E\n"
-    )
+    serial = "[APITEST-SWEEP] ENUM-TIMEOUT msgina_apitest.exe (60s)\n*** BUGCHECK: 0x0000001E\n"
     results, meta = PA.parse(serial)
     assert meta["bugcheck"] == "0x0000001E"
     assert not [r for r in results if r["status"] == "CRASH"]

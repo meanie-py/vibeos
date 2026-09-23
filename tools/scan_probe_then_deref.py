@@ -147,8 +147,11 @@ def main(argv: list[str] | None = None) -> int:
             for line, ident, src in scan_text(text, str(p)):
                 print(f"{p}:{line}: probed `{ident}` then dereferenced raw — {src}")
                 findings += 1
-    print(f"\n{findings} lead(s). Each needs reading against the C; the fix is a "
-          f"fault-tolerant COPY, never deleting the probe.", file=sys.stderr)
+    print(
+        f"\n{findings} lead(s). Each needs reading against the C; the fix is a "
+        f"fault-tolerant COPY, never deleting the probe.",
+        file=sys.stderr,
+    )
     return 0
 
 

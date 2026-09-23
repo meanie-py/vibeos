@@ -254,3 +254,11 @@ win32u_apitest.exe NtGdiCreateDIBSection
 # win32k.sys+0x168D48. Not yet root-caused; the fault is in ntoskrnl rather
 # than win32k, so it may be a different cause.
 win32u_apitest.exe NtGdiGetBitmapBits
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-171513/round01-amd64-uefi_serial.log
+win32u_apitest.exe NtGdiPolyPolyDraw
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-171513/round02-amd64-uefi_serial.log
+win32u_apitest.exe NtGdiSetBitmapBits
