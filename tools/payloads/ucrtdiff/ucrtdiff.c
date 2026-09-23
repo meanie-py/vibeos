@@ -207,6 +207,60 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
         (faulted) = g_fault_flag;                                                      \
     } while (0)
 
+/* ---- hang isolation ---------------------------------------------------
+ *
+ * The fault guard handles a body that CRASHES. It cannot help with one that LOOPS,
+ * and that is not hypothetical: `_mbsnbcoll` spins forever and stopped the first
+ * complete arm64 sweep at export 114 of 224, hiding the other 110 exactly the way a
+ * crash used to.
+ *
+ * So each export runs on its own thread and the driver waits with a timeout. On
+ * timeout the thread is ABANDONED, never TerminateThread'd -- terminating a thread
+ * mid-CRT leaks whatever locks it held, and the next export would then deadlock on
+ * them and look like a second hang. A spinning thread that holds nothing costs only
+ * its stack, and there are few of them.
+ *
+ * Two honest limits. If the hung body DOES hold a lock a later export needs, that
+ * export hangs too and is reported HANG -- correctly, but the cause is upstream. And
+ * an abandoned thread can still set g_fault_flag afterwards; the flag is cleared at
+ * the start of every export, so the worst case is one spurious FAULT, never a silent
+ * wrong verdict.
+ */
+#define UCRTDIFF_EXPORT_TIMEOUT_MS 8000
+
+#define UCRTDIFF_OK 0
+#define UCRTDIFF_FAULT 1
+#define UCRTDIFF_HANG 2
+
+static DWORD WINAPI ucrtdiff_job(LPVOID p)
+{
+    void (*fn)(void) = (void (*)(void))p;
+    g_fault_flag = 0;
+    g_fault_hits = 0;
+    g_fault_armed = 1;
+    fn();
+    g_fault_armed = 0;
+    return 0;
+}
+
+static int run_guarded(void (*fn)(void))
+{
+    HANDLE h;
+    DWORD r;
+    g_fault_flag = 0;
+    g_fault_hits = 0;
+    h = CreateThread(NULL, 0, ucrtdiff_job, (LPVOID)fn, 0, NULL);
+    if (!h) {
+        DbgPrint("[UCRTDIFF] FATAL: CreateThread failed err=%lu\n", GetLastError());
+        return UCRTDIFF_FAULT;
+    }
+    r = WaitForSingleObject(h, UCRTDIFF_EXPORT_TIMEOUT_MS);
+    CloseHandle(h);
+    if (r == WAIT_TIMEOUT)
+        return UCRTDIFF_HANG;
+    return g_fault_flag ? UCRTDIFF_FAULT : UCRTDIFF_OK;
+}
+
 /* ---- per-export accounting -------------------------------------------
  *
  * The verdict is reported PER EXPORT, because that is the unit the burn-down and
@@ -226,9 +280,14 @@ static void export_begin(const char *name)
     g_ex_first[0] = 0;
 }
 
-static void export_end(int faulted, int has_rust)
+static void export_end(int outcome, int has_rust)
 {
-    if (faulted) {
+    if (outcome == UCRTDIFF_HANG) {
+        DbgPrint("[UCRTDIFF] EXPORT %s HANG after=%d (%dms)\n",
+                 g_ex_name, g_ex_cases, UCRTDIFF_EXPORT_TIMEOUT_MS);
+        return;
+    }
+    if (outcome == UCRTDIFF_FAULT) {
         DbgPrint("[UCRTDIFF] EXPORT %s FAULT code=0x%08lx after=%d\n",
                  g_ex_name, g_fault_code, g_ex_cases);
         return;
