@@ -462,7 +462,59 @@ static int guard_selftest(void)
     return faulted;
 }
 
-int main(void)
+/* ---- entry -------------------------------------------------------------
+ *
+ * NOT mainCRTStartup. An arm64 exe that takes its CRT from ucrtbase.dll dies before
+ * main with nothing on serial -- proved with two probes: a bare-entry exe linking only
+ * ntdll+kernel32 RUNS, while the same harness through mainCRTStartup does not, and so
+ * does a hello-world with ucrtbase+vcstartup and NO reference set. So it is CRT startup
+ * itself, not this harness and not the renamed objects. It is consistent with the rest
+ * of the tree: kmtest's arm64 payload deliberately links classic msvcrt.dll and starts
+ * fine, and ucrtbase_winetest is an i386/amd64 rostest.
+ *
+ * So we enter bare and run the one part of CRT init the graded bodies actually need:
+ * the C initializer table between __xi_a and __xi_z (vcstartup supplies the section
+ * bounds). The index is printed as we go, so if one of THOSE is what breaks arm64
+ * startup, this run names it instead of dying silently -- which is a bug report the
+ * tree wants regardless of Tier 2.
+ */
+typedef int(__cdecl *ucrtdiff_pifv)(void);
+extern ucrtdiff_pifv __xi_a[], __xi_z[];
+
+static int run_c_initializers(void)
+{
+    ucrtdiff_pifv *p;
+    int n = 0;
+    for (p = __xi_a; p < __xi_z; p++) {
+        if (!*p)
+            continue;
+        DbgPrint("[UCRTDIFF] init %d\n", n);
+        if ((*p)() != 0) {
+            DbgPrint("[UCRTDIFF] FATAL: C initializer %d failed\n", n);
+            return 0;
+        }
+        n++;
+    }
+    DbgPrint("[UCRTDIFF] init ok (%d ran)\n", n);
+    return 1;
+}
+
+static int ucrtdiff_main(void);
+
+void ucrtdiff_entry(void);
+void ucrtdiff_entry(void)
+{
+    int rc;
+    DbgPrint("[UCRTDIFF] entry\n");
+    if (!run_c_initializers()) {
+        DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
+        ExitProcess(1);
+    }
+    rc = ucrtdiff_main();
+    ExitProcess((UINT)rc);
+}
+
+static int ucrtdiff_main(void)
 {
     DbgPrint("[UCRTDIFF] start\n");
     if (!AddVectoredExceptionHandler(1, ucrtdiff_veh)) {

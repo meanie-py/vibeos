@@ -96,7 +96,7 @@ for A in $ARCHES; do
         "$BUILTINS" \
         -Wl,--end-group \
         -Wl,--allow-multiple-definition \
-        -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
+        -Wl,--subsystem,windows -Wl,-e,ucrtdiff_entry
 
     objd="$TC/$(echo "${CC[$A]}" | sed 's/-clang$//')-objdump"
     # GUI subsystem: a console exe launched from explorer's startup walk gets no
