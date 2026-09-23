@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING
 from .lex_mask import mask_code
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
+
     from .callgraph import FunctionDep
 
 
@@ -60,16 +62,44 @@ def _split_args(text: str) -> list[str]:
     return out
 
 
-def _eval_c_int_constexpr(text: str) -> int | None:
+def _eval_c_int_constexpr(
+    text: str,
+    names: Mapping[str, int] | None = None,
+    field_size: Callable[[str, str], int | None] | None = None,
+) -> int | None:
     """Evaluate an arch-independent integer constant expression (array bounds).
 
     Accepts integer literals, character literals, parentheses, and the integer
     operators ``+ - * << >> | & ^ ~`` (and unary +/-). Returns None for anything
-    outside that whitelist — names, calls, floats, division — so the caller fails
-    loud instead of guessing a bound. Char literals become their code point, so a
-    portable bound like ``('Z' - 'A' + 1)`` resolves to 26 without depending on
-    any architecture.
+    outside that whitelist — unknown names, arbitrary calls, floats, division — so
+    the caller fails loud instead of guessing a bound. Char literals become their
+    code point, so a portable bound like ``('Z' - 'A' + 1)`` resolves to 26 without
+    depending on any architecture.
+
+    Three widenings, each admitting only what can be PROVEN from the tree, because a
+    wrong array bound is not a compile error — it silently mis-lays-out a struct and
+    every body that touches it is wrong with nothing red anywhere:
+
+    * ``names`` resolves bounds written in terms of other macros
+      (``ICONLOCATION_CCHMAX (MAX_PATH + 1 + 11)``). Only macros already proven by
+      the same agreement rule are in there; an unknown name still returns None.
+    * ``max``/``min`` of proven operands. These are the SDK's own integer macros,
+      and ``TYPENAME_CCHMAX max(100, ...)`` is unevaluatable without them.
+    * ``RTL_FIELD_SIZE(TYPE, field)`` through ``field_size``, which measures the
+      real field in the real header. Restricted to fixed-width scalar arrays, so a
+      pointer or width-dependent field refuses rather than baking one arch's answer.
     """
+    if field_size is not None:
+
+        def _expand(match: re.Match[str]) -> str:
+            size = field_size(match.group(1), match.group(2))
+            return match.group(0) if size is None else str(size)
+
+        text = re.sub(
+            r"\bRTL_FIELD_SIZE\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)",
+            _expand,
+            text,
+        )
 
     def _char_ord(match: re.Match[str]) -> str:
         inner = match.group(1)
@@ -87,6 +117,8 @@ def _eval_c_int_constexpr(text: str) -> int | None:
         return None
     allowed = (
         ast.Expression,
+        ast.Call,
+        ast.Name,
         ast.BinOp,
         ast.UnaryOp,
         ast.Constant,
@@ -103,6 +135,8 @@ def _eval_c_int_constexpr(text: str) -> int | None:
         ast.USub,
         ast.Invert,
     )
+    env: dict[str, object] = {"max": max, "min": min}
+    env.update(names or {})
     for node in ast.walk(tree):
         if not isinstance(node, allowed):
             return None
@@ -110,11 +144,116 @@ def _eval_c_int_constexpr(text: str) -> int | None:
             isinstance(node.value, int) and not isinstance(node.value, bool)
         ):
             return None
+        # A call is admitted only as `max(...)`/`min(...)`; a Name only when the
+        # caller proved it. Everything else -- an unexpanded macro, a sizeof, a
+        # helper -- is exactly the case that must stay unevaluatable.
+        if isinstance(node, ast.Call) and not (
+            isinstance(node.func, ast.Name) and node.func.id in {"max", "min"} and not node.keywords
+        ):
+            return None
+        if isinstance(node, ast.Name) and node.id not in env:
+            return None
     try:
-        result = eval(compile(tree, "<c-constexpr>", "eval"), {"__builtins__": {}}, {})
+        result = eval(compile(tree, "<c-constexpr>", "eval"), {"__builtins__": {}}, env)
     except (ValueError, TypeError, ZeroDivisionError):
         return None
     return result if isinstance(result, int) else None
+
+
+# Widths that are the same on i386, amd64 and arm64. Deliberately NOT a general sizeof
+# table: anything pointer-sized or otherwise arch-dependent is absent, so measuring a
+# field that contains one fails instead of baking whichever arch ran the generator.
+_FIXED_WIDTH_SCALARS = {
+    "char": 1,
+    "signed char": 1,
+    "unsigned char": 1,
+    "CHAR": 1,
+    "UCHAR": 1,
+    "BYTE": 1,
+    "BOOLEAN": 1,
+    "short": 2,
+    "unsigned short": 2,
+    "SHORT": 2,
+    "USHORT": 2,
+    "WORD": 2,
+    "WCHAR": 2,
+    "int": 4,
+    "unsigned int": 4,
+    "long": 4,
+    "unsigned long": 4,
+    "INT": 4,
+    "UINT": 4,
+    "LONG": 4,
+    "ULONG": 4,
+    "DWORD": 4,
+    "BOOL": 4,
+    "HRESULT": 4,
+    "LONGLONG": 8,
+    "ULONGLONG": 8,
+    "DWORD64": 8,
+    "INT64": 8,
+    "UINT64": 8,
+}
+
+
+def _c_field_size(
+    search_roots: Sequence[Path], type_name: str, field: str, names: Mapping[str, int]
+) -> int | None:
+    """Byte size of one field of a C struct, measured in the real header.
+
+    Backs `RTL_FIELD_SIZE(TYPE, field)` in an array bound. Only a fixed-width scalar
+    or an array of one is measurable: those have the same size on all three targets,
+    so the answer is a property of the source rather than of whichever arch happened
+    to generate. A pointer, a nested struct or an unresolvable bound returns None and
+    the bound stays a loud failure.
+    """
+    body = None
+    patterns = (
+        re.compile(
+            rf"typedef\s+struct\s+(?:[A-Za-z_]\w*)?\s*\{{(?P<body>[^{{}}]*)\}}\s*"
+            rf"[^;]*\b{re.escape(type_name)}\b[^;]*;",
+            re.S,
+        ),
+        re.compile(rf"\bstruct\s+{re.escape(type_name)}\s*\{{(?P<body>[^{{}}]*)\}}\s*;", re.S),
+    )
+    for root in search_roots:
+        paths = [root] if root.is_file() else sorted(root.rglob("*.[hi]"))
+        for path in paths:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if not re.search(rf"\b{re.escape(type_name)}\b", text):
+                continue
+            for pattern in patterns:
+                match = pattern.search(text)
+                if match is not None:
+                    body = match.group("body")
+                    break
+            if body is not None:
+                break
+        if body is not None:
+            break
+    if body is None:
+        return None
+    body = re.sub(r"/\*.*?\*/|//[^\n]*", " ", body, flags=re.S)
+    for raw in body.split(";"):
+        declaration = " ".join(raw.split())
+        if not declaration:
+            continue
+        member = re.fullmatch(
+            r"(?P<type>[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*)\s+(?P<name>[A-Za-z_]\w*)"
+            r"(?:\s*\[\s*(?P<count>[^\]]+)\s*\])?",
+            declaration,
+        )
+        if member is None or member.group("name") != field:
+            continue
+        width = _FIXED_WIDTH_SCALARS.get(" ".join(member.group("type").split()))
+        if width is None:
+            return None
+        count_text = member.group("count")
+        if count_text is None:
+            return width
+        count = _eval_c_int_constexpr(count_text, names)
+        return None if count is None else width * count
+    return None
 
 
 def _numeric_array_constants(source: Path, declarations: list[str]) -> dict[str, int]:
@@ -150,22 +289,49 @@ def _numeric_array_constants(source: Path, declarations: list[str]) -> dict[str,
     )
     if module_root is not None and module_root.is_dir():
         search_roots.append(module_root)
+    # The TU ITSELF defines bounds too. `filetypes.cpp` declares `ASSOC_CCHMAX` and
+    # `TYPENAME_CCHMAX` beside the struct that uses them, so a header-only search found
+    # neither and the struct's layout stayed unproven -- reported as an untranslatable TU
+    # when the definition was twelve lines above the field.
+    define_roots = [source, *search_roots]
+
+    def measure(type_name: str, field: str, known: Mapping[str, int]) -> int | None:
+        return _c_field_size(search_roots, type_name, field, known)
+
+    # A fixpoint, because bounds are written in terms of each other: `ICONLOCATION_CCHMAX`
+    # is `(MAX_PATH + 1 + 11)`, and `MAX_PATH` has to be resolved before it can be. Each
+    # pass can only ADD names, so this terminates; a name that never resolves is simply
+    # never added, which keeps it a loud failure downstream.
     values: dict[str, int] = {}
-    for name in names:
-        found: set[int] = set()
-        pattern = re.compile(
-            rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}[ \t]+(.+?)[ \t]*$", re.M
-        )
-        for root in search_roots:
-            for header in root.rglob("*.[hi]"):
-                text = header.read_text(encoding="utf-8", errors="replace")
-                for replacement in pattern.findall(text):
-                    replacement = re.sub(r"//.*$|/\*.*?\*/", "", replacement).strip()
-                    value = _eval_c_int_constexpr(replacement)
-                    if value is not None:
-                        found.add(value)
-        if len(found) == 1:
-            values[name] = found.pop()
+    pending = set(names)
+    while True:
+        resolved_this_pass = False
+        for name in sorted(pending):
+            found: set[int] = set()
+            pattern = re.compile(
+                rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}[ \t]+(.+?)[ \t]*$", re.M
+            )
+            for root in define_roots:
+                paths = [root] if root.is_file() else root.rglob("*.[hi]")
+                for header in paths:
+                    text = header.read_text(encoding="utf-8", errors="replace")
+                    for replacement in pattern.findall(text):
+                        replacement = re.sub(r"//.*$|/\*.*?\*/", "", replacement).strip()
+                        value = _eval_c_int_constexpr(
+                            replacement,
+                            values,
+                            lambda t, f: measure(t, f, values),
+                        )
+                        if value is not None:
+                            found.add(value)
+            # Every discovered spelling must still AGREE. A name defined differently in two
+            # headers is ambiguous, not resolved-twice, and stays unproven.
+            if len(found) == 1:
+                values[name] = found.pop()
+                resolved_this_pass = True
+        pending -= values.keys()
+        if not resolved_this_pass or not pending:
+            break
     return values
 
 

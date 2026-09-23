@@ -170,6 +170,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/dll/win32/ole32/ole32.dll"
     "$BUILD_DIR/dll/win32/oleaut32/oleaut32.dll"
     "$BUILD_DIR/dll/win32/shell32/shell32.dll"
+    "$BUILD_DIR/dll/branding/rosbrand/rosbrand.dll"
     "$BUILD_DIR/dll/win32/browseui/browseui.dll"
     "$BUILD_DIR/base/shell/rshell/rshell.dll"
     "$BUILD_DIR/dll/win32/shlwapi/shlwapi.dll"
@@ -411,6 +412,7 @@ RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system
 RMC "$BUILD_DIR/dll/win32/ole32/ole32.dll"                     ::/reactos/system32/ole32.dll
 RMC "$BUILD_DIR/dll/win32/oleaut32/oleaut32.dll"               ::/reactos/system32/oleaut32.dll
 RMC "$BUILD_DIR/dll/win32/shell32/shell32.dll"                 ::/reactos/system32/shell32.dll
+RMC "$BUILD_DIR/dll/branding/rosbrand/rosbrand.dll"            ::/reactos/system32/rosbrand.dll
 RMC "$BUILD_DIR/dll/win32/browseui/browseui.dll"               ::/reactos/system32/browseui.dll
 RMC "$BUILD_DIR/base/shell/rshell/rshell.dll"                  ::/reactos/system32/rshell.dll
 RMC "$BUILD_DIR/dll/win32/shlwapi/shlwapi.dll"                 ::/reactos/system32/shlwapi.dll

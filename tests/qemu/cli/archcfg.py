@@ -124,6 +124,10 @@ _CFGS = {
             # mkramdisk.sh already copies it (line 272).
             "rust_shell32",
             "dll/win32/shell32/shell32.dll",
+            # rosbrand.dll holds the About banner since upstream's "[SHELL32] Use new branding
+            # library" moved IDB_BRAND_BANNER / _BANNERLINE out of shell32's own resources;
+            # shell32 LoadLibraryEx's it as a datafile. Not built → not staged → no banner.
+            "dll/branding/rosbrand/rosbrand.dll",
             # explorer.exe is the boot marker's own process and its body is Rust
             # (explorer-rust cohab staticlib). Same stale trap as the DLLs above:
             # NOT in this set → a merge touching explorer-rust/*.rs leaves

@@ -38,6 +38,11 @@ pub mod types;
 pub mod island;
 #[path = "../../shell32-rust/src/shellcom.rs"]
 pub mod shellcom;
+// The shared island blocklists every function SHELL32 defines (it is generated for that
+// crate), and for THIS crate those are exactly the ones it imports from shell32.dll — e.g.
+// SHGetDesktopFolder. The derived declarations put them back, with the header's convention.
+#[path = "../../shell32-rust/src/own_exports_decls.rs"]
+pub mod own_exports_decls;
 // The ONE import surface for translated modules here — island glob plus the few hand-written
 // names that have no island equivalent. See its header for why nothing scalar or PIDL-shaped
 // crosses over from `shellcom`.
@@ -69,6 +74,11 @@ pub mod enum_merged_folder;
 /// Activated by ATL's static `CComObject<T>::CreateInstance(&p)`, at refcount 0.
 pub mod shell_menu_callback;
 pub mod start_menu;
+/// `CMenuToolbars.cpp` — CMenuToolbarBase and its two derived toolbars, hand-translated:
+/// the bespoke (non-COM) vtable and the constructors on BOTH base and derived put it outside
+/// what the deterministic scaffold can hold. Publishes the 29 `*_RustBridge` entry points
+/// `menu_band.rs` declares, under the same names and signatures the C++ exported them with.
+pub mod menu_toolbars;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

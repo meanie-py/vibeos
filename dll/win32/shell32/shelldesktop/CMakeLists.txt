@@ -1,42 +1,54 @@
 project(SHELL)
 
-add_definitions(
-    -DUNICODE
-    -D_UNICODE)
-
-
-list(APPEND SOURCE
-    # CChangeNotifyServer.cpp — replaced by shell32-rust/src/shelldesktop/. Three modules
-    # for one TU: CChangeNotifyServer.rs (the COM class), CChangeNotifyServer_window.rs
-    # (its ATL half — BEGIN_MSG_MAP and the AtlWindow impl, which the COM scaffold does
-    # not model) and CChangeNotifyServer_free.rs (the one file-scope symbol).
-    #   It needed the state-field parser to learn a container of RAW POINTERS
-    # (`CSimpleArray<CWatchItem*> m_items`) and the message-map strip that stopped
-    # `END_MSG_MAP()` from swallowing `UINT m_nNextRegID`.
-    CDesktopBrowser.cpp
-    CDirectoryWatcher.cpp
-    # CDirectoryList.cpp — TRANSLATED (shell32-rust/src/shelldesktop/CDirectoryList.rs) but
-    # NOT YET FLIPPED, and it cannot be flipped alone. CDirectoryWatcher holds a
-    # `CDirectoryList m_dir_list` BY VALUE (CDirectoryWatcher.h:35) and calls its methods
-    # through CDirectoryList.h's inline constructor, so commenting this out leaves four
-    # C++-MANGLED undefined symbols (CDirectoryList::AddPathsFromDirectory(wchar_t const*)
-    # and friends). A bridge cannot help: a by-value member needs the real class layout,
-    # not an extern shim.
-    #   And the pair is circular — CDirectoryWatcher will not translate either, because
-    # that same member is `state field type is not proven C scalar/pointer state:
-    # CDirectoryList m_dir_list`. Breaking the cycle needs the deterministic layer to model
-    # a translated SIBLING CLASS as by-value state; until then both stay C++ and the paid
-    # CDirectoryList.rs sits wired-but-unused. That is harmless, but NOT for the reason an
-    # earlier comment here gave: it claimed the Rust publishes unmangled `#[no_mangle]`
-    # names. It does not — CDirectoryList.rs and CDirectoryItem.rs contain ZERO
-    # `#[no_mangle]`, only plain `pub unsafe fn`, so the symbols are RUST-mangled and
-    # nothing is exported at all. The conclusion survives (there is no collision for the
-    # linker to resolve silently, so this is not a partial cohab flip) and is in fact
-    # stronger than claimed, but the stated mechanism was wrong.
-    CDirectoryList.cpp
-    # dde.cpp — replaced by shell32-rust/src/shelldesktop/dde.rs
-    )
-
-add_library(shelldesktop OBJECT ${SOURCE})
-target_link_libraries(shelldesktop PRIVATE atl_classes)
-add_dependencies(shelldesktop xdk psdk)
+# THE WHOLE `shelldesktop` OBJECT LIBRARY IS RUST NOW — shell32-rust/src/shelldesktop/.
+#
+# The SECOND whole-target swap after shellrecyclebin, and the first for a SHARED object
+# library: shelldesktop was compiled into shell32.dll AND rshell.dll, so both parents drop it
+# (see the notes in each). The target itself goes away, `add_subdirectory(shelldesktop)` in the
+# parent is commented out, so nothing below is processed; the list is kept, commented, as the
+# record of what the library contained, and the .cpp stay on disk inert like every cohab flip.
+#
+# Capture set measured per TU with `llvm-nm --defined-only` on the object files, intersected
+# with what the rest of the build leaves undefined:
+#
+#   CDesktopBrowser.cpp    -> SHCreateDesktop, SHDesktopMessageLoop, SHIsTempDisplayMode.
+#       All three are shell32.dll EXPORTS (shell32.spec ordinals 200/201/724) and Rust
+#       publishes all three. `CDesktopBrowser_CreateInstance` was C++-MANGLED in the object
+#       (`__Z30CDesktopBrowser_CreateInstance...`), i.e. never externally callable, and a
+#       tree-wide search finds no caller outside its own TU — so it needs no export.
+#   CDirectoryWatcher.cpp  -> the five `CDirectoryWatcher_*_RustBridge` shims, now published
+#       from shell32-rust/src/shelldesktop/CDirectoryWatcher_bridge.rs under identical names
+#       and cdecl ABI. The shims MOVED, they did not vanish.
+#   CDirectoryList.cpp     -> only C++-mangled `CDirectoryList::*` methods, whose sole
+#       consumer was CDirectoryWatcher.cpp. It leaves with it.
+#
+# WHY THE PAIR HAD TO GO TOGETHER. CDirectoryWatcher holds a `CDirectoryList m_dir_list` BY
+# VALUE, so flipping the list alone left four C++-mangled undefined symbols, and the watcher
+# would not translate because that same member read as "not proven C scalar/pointer state".
+# Breaking the cycle needed the state-field parser to look for a sibling class in the TU's own
+# include closure (CDirectoryList.h is next door) and to recurse into what IT names, so
+# `CSimpleArray<CDirectoryItem>` resolves too. Both modules now carry layout-identical
+# `#[repr(C)]` copies of the list and its item, the same bridging CDirectoryList.rs already
+# did for CDirectoryItem.
+#
+# RSHELL. rshell.dll links this library and does NOT link libshell32_rust.a, and its .spec
+# exports SHCreateDesktop and SHDesktopMessageLoop — so after the flip it has no local
+# definition of either. It resolves them through shell32's import lib, exactly as it already
+# does for ShellDDEInit (ordinal 188) since dde.cpp flipped. That is why `add_importlibs`
+# there already lists shell32 and why no new export was needed for this flip.
+#
+# add_definitions(
+#     -DUNICODE
+#     -D_UNICODE)
+#
+# list(APPEND SOURCE
+#     CChangeNotifyServer.cpp  -> shelldesktop/CChangeNotifyServer{,_window,_free}.rs
+#     CDesktopBrowser.cpp      -> shelldesktop/CDesktopBrowser{,_window,_free,_exports}.rs
+#     CDirectoryWatcher.cpp    -> shelldesktop/CDirectoryWatcher{,_free,_bridge}.rs
+#     CDirectoryList.cpp       -> shelldesktop/CDirectoryList.rs + CDirectoryItem.rs
+#     dde.cpp                  -> shelldesktop/dde.rs
+#     )
+#
+# add_library(shelldesktop OBJECT ${SOURCE})
+# target_link_libraries(shelldesktop PRIVATE atl_classes)
+# add_dependencies(shelldesktop xdk psdk)

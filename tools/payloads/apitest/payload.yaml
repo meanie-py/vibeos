@@ -1,0 +1,49 @@
+# apitest conformance payload — the user-mode sibling of ../kmtest.
+#
+# The apitest binaries themselves (*_apitest.exe + their testdata) are staged to
+# reactos/bin by add_rostests_file when the build dir has ENABLE_ROSTESTS=ON
+# (`./vibeos-cli build --arch X --rostests`; note this is the FULL rostests
+# switch, ~128 executables, not the cheap ENABLE_ROSTESTS_KMTESTS the kmtest
+# payload rides on). This payload grafts:
+#   * apitest-sweep.exe into the All Users Startup folder — a native
+#     GUI-subsystem exe, because a .cmd there dies silently: explorer's
+#     AutoStartupApplications walk uses ShellExecuteExW, which never spawns
+#     cmd.exe for a script.
+#   * apitest-suites-{arch}.txt staged in-guest as bin/apitest-suites.txt.
+#     GENERATED, not committed — `python3 tools/payloads/apitest/gen_suites.py
+#     --arch X` derives it from the binaries the build produced. The kmtest
+#     list is committed and that is how upstream's ExPushLock kmtest went a
+#     whole merge without ever being launched, against a sweep reporting
+#     `launched=91 ok=91 bad=0`.
+#
+# Unlike kmtest, the child processes report through wine/test.h's
+# winetest_vprintf -> fprintf(stdout), not through the debug serial, so the
+# sweep pipes each suite's stdout+stderr and re-emits it as
+# [APITEST:<suite>] lines. See sweep.c for why that is the whole reason this
+# is a separate runner.
+#
+# Booting a rostests-less build with this payload fails loudly on serial
+# ([APITEST-SWEEP] launch FAILED / FATAL: cannot open ...) — no silent pass.
+name: apitest
+description: user-mode NT/Win32 API conformance tests (apitests) — piped-stdout sweep autostart
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && python3 tools/payloads/apitest/gen_suites.py --arch {arch}"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/apitest/apitest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/apitest/apitest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+
+test:
+  # One process per suite, 300s cap each. ~128 suites, so budget generously:
+  # SCM gate + N suites. WALL-CLOCK SECONDS -- and that is load-bearing here:
+  # while the drain was an iteration count this sweep, the chattiest payload
+  # after procstorm, got 12-28 minutes out of a declared 7200 and was truncated
+  # mid-run every single time. Keep any driver's own timeout ABOVE this number,
+  # or the driver becomes the real bound and the truncation comes back.
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 7200

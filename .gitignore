@@ -100,3 +100,6 @@ qemu/snapshots/
 /build-policy.lock
 /build-policy.paused
 /build-policy.*.tmp
+
+# characterize.py serial archives (durable, but never committed)
+/.characterize-*/

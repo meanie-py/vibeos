@@ -504,6 +504,59 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
+- **arm64 fails `test_start_menu_opens` on master: after Ctrl+Esc the screen is bare
+  wallpaper — no taskbar AND no desktop icons. UNOWNED** (2026-09-22). Deterministic, 4/4:
+  twice on the shell32-com lane, once on its previous commit, once on plain `origin/master`
+  (`91faf984cd5`) built fresh in a scratch worktree, so it predates and is independent of that
+  lane. i386 passes the same gate on the same trees. The default `vibeos-cli smoke` does NOT
+  catch it: it stops at the `shell ready` marker and does not run this test — reproduce with
+  `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k test_start_menu_opens -s`.
+  Serial shows explorer reaching `taskbar: child controls created` and running its startup
+  items, with no user-mode exception in explorer. What is DIFFERENT about the arm64 image is
+  that it bakes in the kmtest sweep (`opt:kmtest_all`; `KMTEST~1.EXE` in All Users\Startup),
+  which is still running 91 kernel tests when the gate fires. That is an inference, not a
+  finding: the missing desktop icons say explorer's UI is not painting at all, which fits a
+  starved or blocked UI thread better than a start-menu bug, but nobody has yet run the gate
+  on arm64 media without the sweep. The last known-good arm64 start-menu screenshot in the
+  fleet is from 2026-09-13, before the upstream sync.
+
+- **`afd` BUGCHECK 0x1E on a pending receive: `FCB->ReceiveIrp.InFlightRequest != Irp`.
+  OPEN** (2026-09-21). Found by the new apitest harness on its third boot, running
+  `afd_apitest send`. Signature: `*** ASSERT FAILED: FCB->ReceiveIrp.InFlightRequest == Irp
+  at read.rs:662`, then `BUGCHECK 0x0000001E (0xc0000005, ...)` with
+  `TrapFrame.Rip = afd.sys+0x89C6`. **The translation is FAITHFUL** — `read.c:279` does the
+  same `ASSERT` followed by the same unconditional `InFlightRequest = NULL`, in both
+  `AfdConnectedSocketReadComplete` and its datagram sibling at `:558`. So the defect is not
+  that shape; the defect is that the invariant is FALSE by the time we get here, i.e. the IRP
+  completing is not the one recorded in flight. That is the lead: who sets
+  `ReceiveIrp.InFlightRequest`, and which path completes a receive without going through it.
+  (I first wrote this entry blaming read.rs's structure, having read only our side — the C
+  was one grep away and says the same thing.) Reproduce:
+  `tools/payloads/apitest/quarantine-amd64.txt` currently skips
+  `afd_apitest.exe send`; remove that line and run the apitest payload.
+  Quarantined only so the other 61 suites can be characterised, NOT because the test is wrong.
+
+- **`advapi32_apitest RtlEncryptMemory` crash-loops `services.exe`. OPEN** (2026-09-21).
+  Serial shows `[EXIT-THR] image=SERVICES.EXE` and `eventlog.exe` repeating and the guest
+  never advances. Subtest-level skip in the apitest quarantine.
+
+- **`opengl32_apitest` wedges the guest during subtest enumeration. OPEN** (2026-09-21).
+  It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
+  than one subtest.
+
+- **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
+  and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
+  `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
+  `movl (%rdi,%r14,4), %eax` reading `lpaElements[0]`; fault address `0`. The test's second
+  call is `SetSysColors(1, NULL, crColors)` and it asserts `FALSE`/`ERROR_NOACCESS`, so the
+  NULL is deliberate. `SafeProbeForRead` is validate-only by design (it cannot touch-test
+  under `USE_DUMMY_PSEH`), so NULL passes the range check; the C reads the array inside the
+  same `_SEH2_TRY` as the probe and catches the AV, while our Rust calls `IntSetSysColors`
+  outside any guard. A new member of the probe-then-raw-read cluster documented in
+  `ntkrnl-sys/src/probe.rs`, and the first found in win32k rather than ntoskrnl. Fix is the
+  one `win32k-rust/src/copy.rs` already uses for `MmCopyFromCaller` — capture through
+  `KmProtectedCopyMemory` — but **chunked**, since `cElements` is caller-controlled to
+  `0x3FFFFFFF`. Write-up: `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).

@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Derive the apitest sweep's suite list from the binaries a build actually produced.
+
+    python3 tools/payloads/apitest/gen_suites.py --arch amd64
+
+Writes tools/payloads/apitest/apitest-suites-<arch>.txt (gitignored), which
+payload.yaml stages in-guest as %SystemRoot%\\bin\\apitest-suites.txt.
+
+WHY THIS IS DERIVED AND THE KMTEST LIST IS NOT
+----------------------------------------------
+The kmtest sweep reads a COMMITTED list, and upstream's 1385-line ExPushLock
+kmtest sat in the build, registered in the driver's testlist, never launched
+once, for the length of a whole merge -- while the sweep reported
+`launched=91 ok=91 bad=0`, which reads as a clean run. Nothing reconciled the
+committed list against the tests that exist. So this list is generated from the
+staged binaries every time, and a suite can only go missing by not building.
+
+Quarantines still need to be expressible, so a committed
+`quarantine-<arch>.txt` (one name per line, '#' comments) is subtracted -- but
+subtracting from a derived set is loud: a quarantine naming a suite that no
+longer exists is reported, rather than silently doing nothing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[2]
+
+
+# Two naming conventions, both under apitests/: most suites are <mod>_apitest.exe,
+# but the statically-linked RTL suite is rtl_unittest.exe ("so it won't run in
+# rosautotest", per its CMakeLists). Match both rather than silently miss one.
+SUITE_GLOBS = ("*_apitest.exe", "*_unittest.exe")
+
+
+def discover(build_dir: Path) -> list[str]:
+    """Every apitest binary the build produced, by basename, sorted."""
+    root = build_dir / "modules" / "rostests" / "apitests"
+    if not root.is_dir():
+        return []
+    found: set[str] = set()
+    for pat in SUITE_GLOBS:
+        found.update(p.name for p in root.rglob(pat))
+    return sorted(found)
+
+
+def read_quarantine(arch: str) -> tuple[set[str], list[str], Path]:
+    """Returns (whole suites, "<suite> <subtest>" entries, path).
+
+    A bare `foo_apitest.exe` line drops the whole suite. A
+    `foo_apitest.exe SomeSubtest` line drops only that subtest, which is the
+    granularity that actually matters: advapi32's RtlEncryptMemory crash-loops
+    services.exe and would otherwise cost the other 18 advapi32 subtests.
+    """
+    path = HERE / f"quarantine-{arch}.txt"
+    suites: set[str] = set()
+    subtests: list[str] = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if " " in line:
+                subtests.append(" ".join(line.split()))
+            else:
+                suites.add(line)
+    return suites, subtests, path
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--arch", required=True, choices=("i386", "amd64", "arm64"))
+    ap.add_argument(
+        "--build-dir",
+        type=Path,
+        default=None,
+        help="defaults to <repo>/build-<arch>",
+    )
+    args = ap.parse_args(argv)
+
+    build_dir = args.build_dir or (REPO / f"build-{args.arch}")
+    found = discover(build_dir)
+    if not found:
+        print(
+            f"gen_suites: no apitest binaries under {build_dir}/modules/rostests/apitests.\n"
+            f"  fix: ./vibeos-cli build --arch {args.arch} --rostests --keep-going",
+            file=sys.stderr,
+        )
+        return 1
+
+    quarantined, skipped, qpath = read_quarantine(args.arch)
+    stale = sorted(quarantined - set(found))
+    if stale:
+        # Loud, per the module docstring: a quarantine that matches nothing is
+        # either a typo or a suite that was renamed away under it.
+        print(
+            f"gen_suites: {qpath.name} names {len(stale)} suite(s) this build did not "
+            f"produce: {', '.join(stale)}",
+            file=sys.stderr,
+        )
+
+    # The skip file is staged beside the suite list and read by the sweep.
+    skip_out = HERE / f"apitest-skip-{args.arch}.txt"
+    skip_lines = [
+        f"# apitest subtest skips — {args.arch}. GENERATED from {qpath.name}.",
+        "# '<suite.exe> <subtest>' per line; the sweep announces each as SKIP.",
+        *skipped,
+    ]
+    skip_out.write_text("\n".join(skip_lines) + "\n", encoding="utf-8")
+
+    stale_subtest_suites = sorted({e.split(" ", 1)[0] for e in skipped} - set(found))
+    if stale_subtest_suites:
+        print(
+            f"gen_suites: {qpath.name} has subtest skips for suite(s) this build did "
+            f"not produce: {', '.join(stale_subtest_suites)}",
+            file=sys.stderr,
+        )
+
+    out = HERE / f"apitest-suites-{args.arch}.txt"
+    lines = [
+        f"# apitest conformance sweep list — {args.arch}. GENERATED by",
+        "# tools/payloads/apitest/gen_suites.py from the binaries in",
+        f"# {build_dir.name}/modules/rostests/apitests. Do not edit; to drop a suite,",
+        f"# add it to {qpath.name} instead.",
+    ]
+    if quarantined:
+        lines.append(f"# {len(quarantined & set(found))} suite(s) quarantined via {qpath.name}.")
+    lines += [s for s in found if s not in quarantined]
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    kept = len([s for s in found if s not in quarantined])
+    print(
+        f"gen_suites: {out.name} — {kept} suite(s) ({len(found)} built, "
+        f"{len(found) - kept} quarantined), {len(skipped)} subtest skip(s)"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

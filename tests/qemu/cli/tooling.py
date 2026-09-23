@@ -53,6 +53,19 @@ _PYTEST_SUITES = [
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
+    # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
+    # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
+    # subtest caused, because the subtest printed a clean summary before taking
+    # the kernel down. A parser that cannot tell a crash from a pass turns the
+    # whole harness into decoration, so it gets its own oracle.
+    (".", ".", "tools/test_parse_apitest_serial.py"),
+    # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
+    # being named and documented as seconds, so a chatty payload spent a declared
+    # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
+    # just stopped early, and the driver above turned that into false quarantine
+    # entries blaming whichever subtest was in flight. Only a chatty-guest test
+    # distinguishes the two implementations.
+    (".", ".", "tools/test_payload_drain.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
