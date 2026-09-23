@@ -41,6 +41,29 @@
 
 // The header-derived authority: struct layouts, constants, and the Win32/shell fn surface.
 pub use crate::island::*;
+// Functions the crate defines itself are blocklisted out of the island; this is where callers
+// in other modules get their declaration. A defining module that globs the prelude still sees
+// its own definition, because a local item always shadows a glob import.
+pub use crate::own_exports_decls::*;
+// SHBindToObject is the one crate-defined function whose contract DIVERGED from the header:
+// the 2026-09 upstream sync made it `SHSTDAPI SHBindToObject(psf, pidl, pbc, riid, ppv)` —
+// stdcall, 5 args, a Vista export — while shell32-rust still defines the pre-sync internal
+// `extern "C"` (psf, pidl, riid, ppv) that every Rust caller was written against. Nothing
+// else reaches it today: it is in no arch's shell32.def (spec2def runs at 0x502 and the export
+// is -version=0x600+) and no compiled C/C++ TU calls it. So callers use the DEFINITION, and
+// adopting the new contract is owed work, not a declaration to paper over.
+// DECLARED rather than `pub use`d, like the rest of the OWN-exports block: utils.rs types it
+// against com_sys's GUID and every caller holds the island's, which is the same record under
+// two Rust names. This declaration states the DEFINITION's contract — cdecl, 4 args — which is
+// also what the pre-sync header (`EXTERN_C HRESULT SHBindToObject(psf, pidl, riid, ppv)`) said.
+extern "C" {
+    pub fn SHBindToObject(
+        psf: *mut crate::island::IShellFolder,
+        pidl: crate::island::LPCITEMIDLIST,
+        riid: *const crate::island::IID,
+        ppvObj: *mut *mut core::ffi::c_void,
+    ) -> crate::island::HRESULT;
+}
 
 // NOTHING scalar or PIDL-shaped is re-exported from `shellcom` here, and that is deliberate.
 // Cherry-picking an alias out of the hand-written substrate into an island-first module
@@ -64,6 +87,12 @@ pub use crate::shellcom::{
     IBindCtx, IBindCtxVtbl, IDataObject, IDataObjectVtbl, IEnumIDList, IEnumIDListVtbl,
     IPersistFolder, IPersistFolder3, IPersistFolder3Vtbl, IPersistFolderVtbl, IShellFolder,
     IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
+};
+// IShellLibrary's parameter types; see their declaration in shellcom.rs for why the island
+// does not have them.
+pub use crate::shellcom::{
+    DEFAULTSAVEFOLDERTYPE, LIBRARYFOLDERFILTER, LIBRARYOPTIONFLAGS, LIBRARYSAVEFLAGS,
+    REFFOLDERTYPEID, REFKNOWNFOLDERID,
 };
 
 // ATL's smart pointers and containers. The translated TUs use these by their C++ names, and
@@ -449,6 +478,29 @@ extern "C" {
         format: *const crate::island::WCHAR,
         ...
     ) -> ::core::ffi::c_int;
+    /// msvcrt's own export of that same non-conforming form (no `count`).
+    pub fn _swprintf(
+        buffer: *mut crate::island::WCHAR,
+        format: *const crate::island::WCHAR,
+        ...
+    ) -> ::core::ffi::c_int;
+}
+
+/// winnt.h `InterlockedIncrement` / `InterlockedDecrement`: full-barrier atomic ±1 returning
+/// the NEW value. These are compiler intrinsics on amd64 and arm64 — kernel32 exports them only
+/// on i386 — so an `extern` declaration would link on one arch in three. `SeqCst` is the full
+/// barrier the Interlocked* family guarantees.
+#[inline]
+pub unsafe fn InterlockedIncrement(addend: *mut crate::island::LONG) -> crate::island::LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_add(1)
+}
+#[inline]
+pub unsafe fn InterlockedDecrement(addend: *mut crate::island::LONG) -> crate::island::LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_sub(1)
 }
 
 // ===========================================================================================
@@ -1228,6 +1280,10 @@ extern "C" {
         -> crate::island::LPWSTR;
     pub fn _wtoi(s: crate::island::LPCWSTR) -> ::core::ffi::c_int;
     pub fn _wcsicmp(a: crate::island::LPCWSTR, b: crate::island::LPCWSTR) -> ::core::ffi::c_int;
+    /// In-place case conversion, returning its own argument. The CRT's locale-independent
+    /// conversion, NOT Win32 `CharUpperW`/`CharLowerW` — that is what the C++ calls.
+    pub fn _wcsupr(s: crate::island::LPWSTR) -> crate::island::LPWSTR;
+    pub fn _wcslwr(s: crate::island::LPWSTR) -> crate::island::LPWSTR;
 }
 
 /// wine's shell32 string shims are `#define`s onto the CRT wide entry points.

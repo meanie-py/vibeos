@@ -1960,7 +1960,15 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 activatable COM surface — 33 of 33 classes Rust-owned; compiled C++ tail is next.**
+- **shell32 — every translatable TU is Rust (2026-09-23).** `shell32.cpp`, the last one, went in
+  three phases: its free functions, the COM server (class-object table, cached factories,
+  `DllGetClassObject`/`DllCanUnloadNow`), then `DllMain` and registration — which carries a Rust
+  port of ATL's static registrar (`shell32/statreg.rs`), proven byte-identical to the C++ build's
+  DllRegisterServer/DllUnregisterServer output on all three arches by `tools/payloads/regdiff`.
+  What still compiles as C/C++ is the SANCTIONED glue in `rustconv shell32-tail-inventory`:
+  three ATL window-class stubs (272 lines) and two C shims (95 lines). The paragraphs below are
+  the history of getting here.
+- **shell32 activatable COM surface — 33 of 33 classes Rust-owned.**
   Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
   `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
   `CAdminToolsFolder`, `CMyDocsFolder`, `CNewMenu`, `CSendToMenu`, `CPrinterFolder`,

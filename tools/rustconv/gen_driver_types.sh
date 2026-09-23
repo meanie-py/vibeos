@@ -2439,6 +2439,13 @@ esac
 
 # Output crate dir defaults to main repo; override with OUT_CRATE_DIR for a worktree.
 OUT_CRATE="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/${DRIVER}-rust/src}"
+# What the crate CONTAINS, as opposed to where this run WRITES. They are the same directory
+# unless OUT_CRATE_DIR is set — which exists to regenerate into scratch and diff against the
+# committed island before touching the tree. Anything that reads the crate (its #[no_mangle]
+# set, its hand-written <stem>_extra.rs) must read CRATE_SRC: reading OUT_CRATE found an empty
+# scratch dir, and silently produced an island that blocklisted nothing and dropped the extra
+# re-export — 1,300+ unresolved S_OK/E_FAIL/HKEY_* in the crate that consumed it.
+CRATE_SRC="${SRC}/sdk/lib/rust/${DRIVER}-rust/src"
 mkdir -p "$OUT_CRATE"
 # TYPES_STEM: emit the island as <stem>_<arch>.rs + <stem>.rs instead of types_<arch>.rs.
 # A crate needs MORE THAN ONE island when its C translation units have mutually
@@ -2540,10 +2547,24 @@ run_arch() {
   # crate defines 552 functions — only 271 in common. Filtering by the spec would miss 281
   # internal cross-TU helpers (a clash each) and suppress 167 declarations the crate genuinely
   # imports (an unresolved name each).
-  if [ "${BLOCKLIST_FUNCS_FROM_CRATE:-0}" = 1 ]; then
+  # KEEP_CRATE_FUNCS=1 (env) skips the filter for one run — ONLY into an OUT_CRATE_DIR
+  # scratch dir, to read off bindgen's header-exact declaration of functions the crate now
+  # defines itself, for the prelude's hand-kept "shell32's OWN exports" block. Writing such an
+  # island into the crate would reintroduce every definition/declaration collision.
+  if [ "${KEEP_CRATE_FUNCS:-0}" = 1 ] && [ "$OUT_CRATE" = "$CRATE_SRC" ]; then
+    echo "KEEP_CRATE_FUNCS=1 refuses to write into the crate itself; set OUT_CRATE_DIR" >&2
+    exit 2
+  fi
+  if [ "${BLOCKLIST_FUNCS_FROM_CRATE:-0}" = 1 ] && [ "${KEEP_CRATE_FUNCS:-0}" != 1 ]; then
     local CRATE_DEFS="/tmp/${DRIVER}_${STEM}_cratedefs.txt"
-    grep -rhA3 '#\[no_mangle\]' "${OUT_CRATE}" --include=*.rs 2>/dev/null \
-      | grep -oE '\bfn [A-Za-z_][A-Za-z0-9_]*' | sed 's/^fn //' | sort -u > "$CRATE_DEFS"
+    # Scan the CRATE, not the output directory. They are the same path by default, but
+    # OUT_CRATE_DIR exists precisely to generate somewhere else — to diff a regenerated island
+    # against the committed one before touching the tree — and scanning an empty scratch dir
+    # found no definitions, so the grep exited 1 and `pipefail` killed the whole run with
+    # nothing on stdout but the arch banner. `|| true`: a crate with no #[no_mangle] yet is a
+    # legitimate empty list, not a failure.
+    { grep -rhA3 '#\[no_mangle\]' "${CRATE_SRC}" --include=*.rs 2>/dev/null || true; } \
+      | grep -oE '\bfn [A-Za-z_][A-Za-z0-9_]*' | sed 's/^fn //' | sort -u > "$CRATE_DEFS" || true
     while IFS= read -r _fn; do [ -n "$_fn" ] && FN_BL+=( --blocklist-function "$_fn" ); done < "$CRATE_DEFS"
     echo "  (blocklisting $(wc -l <"$CRATE_DEFS") functions the crate defines itself)"
   fi
@@ -2679,7 +2700,13 @@ PYEOF
 }
 
 run_arch i386  i686-pc-windows-gnu    '-D_M_IX86 -D__i386__ -D_X86_'
-run_arch amd64 x86_64-pc-windows-gnu  '-D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_'
+# -mcx16 mirrors sdk/cmake/gcc.cmake:340 (every amd64 TU is compiled with it). Without it
+# the island is parsed against DIFFERENT feature flags than the code it describes, and that
+# is not cosmetic: intrin_x86.h guards its own _InterlockedCompareExchange128 with
+# `!HAS_BUILTIN(...)`, which is `__has_builtin`, which answers 0 for that target builtin
+# unless cx16 is enabled — so the header defines the function, and libclang then rejects
+# the definition as redefining a builtin. amd64 island generation hard-failed on exactly that.
+run_arch amd64 x86_64-pc-windows-gnu  '-D_WIN64 -D_M_AMD64 -D__x86_64__ -D_AMD64_ -mcx16'
 run_arch arm64 aarch64-pc-windows-gnu '-D_WIN64 -D_M_ARM64 -D__aarch64__ -D__arm64__ -D_ARM64_'
 
 # Spell ABI-identical callback slots `extern "system"` across all three islands, projecting
@@ -2712,7 +2739,7 @@ RS
 # HKEY_CLASSES_ROOT) and cast-expression constants (`((HRESULT)0x80004001L)`) are macro
 # TEXT, not C declarations, so there is nothing in the header for bindgen to bind.
 # Regenerating does not touch <stem>_extra.rs; crates without one are unaffected.
-if [ -f "${OUT_CRATE}/${STEM}_extra.rs" ]; then
+if [ -f "${CRATE_SRC}/${STEM}_extra.rs" ]; then
   cat >> "${OUT_CRATE}/${STEM}.rs" <<RS
 #[path = "${STEM}_extra.rs"] mod types_extra;
 pub use types_extra::*;

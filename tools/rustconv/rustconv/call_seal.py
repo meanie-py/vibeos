@@ -643,6 +643,16 @@ def _arity_disagreements(exec_mask: str, sealed: SealedCalls) -> list[str]:
             if (counted := _argument_count(exec_mask, match.end())) is not None
         ]
         hi = call.argc_max if call.argc_max is not None else call.argc
+        # An OVERLOADED callee can make the range empty, and an empty range rejects every
+        # possible body forever. `argc` is counted at the C CALL SITE; `argc_max` comes from
+        # looking the NAME up among the declarations, which for an overload set can land on a
+        # different overload than the one being called. filetypes.cpp has both
+        # `DoExtractIcon(LPCWSTR, INT, UINT, UINT)` and
+        # `DoExtractIcon(LPCWSTR, INT = 0, BOOL = FALSE)`, so a four-argument site was checked
+        # against the three-argument declaration and reported the giveaway "wants 4, got 4".
+        # The default-argument tolerance can only ever WIDEN the accepted range, so a maximum
+        # below the minimum is not a tighter rule, it is a lookup that missed.
+        hi = max(hi, call.argc)
         if not counts or any(call.argc <= count <= hi for count, _ in counts):
             continue
         got = "/".join(str(count) for count, _ in counts)

@@ -537,6 +537,7 @@ pub unsafe fn InitFonts(
         &mut FontData,
     );
     if hFont == core::ptr::null_mut() {
+        DPRINT1!("InitFonts: CreateConsoleFontEx('%S') failed\n", NewFaceName.as_ptr());
         return 0;
     }
 
@@ -548,6 +549,7 @@ pub unsafe fn InitFonts(
         &mut (*GuiData).CharWidth,
     ) == 0
     {
+        DPRINT1!("InitFonts: GetFontCellSize failed\n");
         ReleaseDC((*GuiData).hWindow, hDC);
         DeleteObject(hFont as *mut core::ffi::c_void);
         return 0;
@@ -601,7 +603,7 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
     let GuiData = (*Create).lpCreateParams as PGUI_CONSOLE_DATA;
 
     if GuiData.is_null() {
-        // DPRINT removed
+        DPRINT1!("GuiConsoleNcCreate: No GUI data\n");
         return 0;
     }
 
@@ -627,7 +629,8 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
             AltCodePage = CP_USA;
         }
 
-        // DPRINT removed
+        DPRINT1!("Could not initialize font '%S' for code page %d - Resetting CP to %d\n",
+                 (*GuiData).GuiInfo.FaceName.as_ptr(), (*Console).OutputCodePage, AltCodePage);
 
         CON_SET_OUTPUT_CP(Console, AltCodePage);
 
@@ -641,9 +644,10 @@ unsafe fn OnNcCreate(hWnd: HWND, Create: LPCREATESTRUCTW) -> BOOL {
             1,
         ) == 0
         {
-            // DPRINT removed
+            DPRINT1!("Failed to initialize font '%S' for code page %d\n",
+                     (*GuiData).GuiInfo.FaceName.as_ptr(), (*Console).OutputCodePage);
 
-            // DPRINT removed
+            DPRINT1!("GuiConsoleNcCreate: InitFonts failed\n");
             (*GuiData).hWindow = core::ptr::null_mut();
             NtSetEvent((*GuiData).hGuiInitEvent, core::ptr::null_mut());
             return 0;

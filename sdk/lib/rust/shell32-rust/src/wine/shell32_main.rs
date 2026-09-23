@@ -177,8 +177,17 @@ const IDI_WINLOGO: WORD = 32517; // winuser.h MAKEINTRESOURCE(32517)
 // SHELL resource IDs (shresdef.h)
 const IDI_SHELL_FOLDER: INT = 4;
 const IDI_SHELL_PRINTERS_FOLDER: INT = 38;
-const IDB_REACTOS: WORD = 131;
-const IDB_LINEBAR: WORD = 138;
+// The About banner lives in rosbrand.dll now, not in shell32's own resources: upstream's
+// "[SHELL32] Use new branding library" (afd1ef71031) deleted reactos.bmp (131) and line.bmp
+// (138) from bitmap_res.rc along with their IDB_REACTOS/IDB_LINEBAR defines. This port kept
+// loading 131/138 from shell32_hInstance after that merge — resources that no longer exist, so
+// both LoadImageW calls failed and the dialog lost its logo, with nothing red anywhere. The
+// stale-island audit is what surfaced it (both names vanished from the regenerated island).
+// reactos/rosbrand.h:8-9.
+const IDB_BRAND_BANNER: WORD = 100;
+const IDB_BRAND_BANNERLINE: WORD = 101;
+static W_ROSBRAND_DLL: [WCHAR; 13] = wsz("rosbrand.dll");
+const LOAD_LIBRARY_AS_DATAFILE: DWORD = 0x0000_0002; // winbase.h
 const IDD_ABOUT: WORD = 2;
 const IDD_ABOUT_AUTHORS: WORD = 3;
 const IDC_ABOUT_ICON: INT = 0x3009;
@@ -760,6 +769,7 @@ extern "system" {
         fuLoad: UINT,
     ) -> HANDLE; // @24
     fn LoadStringW(hInstance: HINSTANCE, uID: UINT, lpBuffer: LPWSTR, cchBufferMax: INT) -> INT; // @16
+    fn LoadLibraryExW(lpLibFileName: LPCWSTR, hFile: HANDLE, dwFlags: DWORD) -> HINSTANCE; // @12
     fn PrivateExtractIconsW(
         szFileName: LPCWSTR,
         nIconIndex: INT,
@@ -2003,23 +2013,30 @@ unsafe extern "system" fn AboutDlgProc(
                 let mut szAppTitleTemplate: [WCHAR; 512] = [0; 512];
                 let mut szAuthorsText: [WCHAR; 20] = [0; 20];
 
-                // Preload the ROS bitmaps
-                ABOUT_hLogoBmp = LoadImageW(
-                    shell32_hInstance,
-                    makeintresourcew(IDB_REACTOS),
-                    IMAGE_BITMAP,
-                    0,
-                    0,
-                    LR_DEFAULTCOLOR,
-                ) as HBITMAP;
-                ABOUT_hLineBmp = LoadImageW(
-                    shell32_hInstance,
-                    makeintresourcew(IDB_LINEBAR),
-                    IMAGE_BITMAP,
-                    0,
-                    0,
-                    LR_DEFAULTCOLOR,
-                ) as HBITMAP;
+                // Preload the ROS bitmaps — from rosbrand.dll, mapped as a data file, exactly as
+                // shell32_main.c:1093 does. Like the C, the module is never freed: the HBITMAPs
+                // LoadImage returns are independent GDI objects, and the C leaves the mapping
+                // for the life of the process. If rosbrand.dll is missing the bitmaps stay NULL,
+                // which the `!is_null()` test below already treats as "no banner".
+                let hBrand = LoadLibraryExW(W_ROSBRAND_DLL.as_ptr(), null_mut(), LOAD_LIBRARY_AS_DATAFILE);
+                if !hBrand.is_null() {
+                    ABOUT_hLogoBmp = LoadImageW(
+                        hBrand,
+                        makeintresourcew(IDB_BRAND_BANNER),
+                        IMAGE_BITMAP,
+                        0,
+                        0,
+                        LR_DEFAULTCOLOR,
+                    ) as HBITMAP;
+                    ABOUT_hLineBmp = LoadImageW(
+                        hBrand,
+                        makeintresourcew(IDB_BRAND_BANNERLINE),
+                        IMAGE_BITMAP,
+                        0,
+                        0,
+                        LR_DEFAULTCOLOR,
+                    ) as HBITMAP;
+                }
 
                 if !ABOUT_hLogoBmp.is_null() && !ABOUT_hLineBmp.is_null() {
                     let mut bmpLogo: BITMAP = core::mem::zeroed();

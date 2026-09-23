@@ -170,6 +170,23 @@ pub mod folderitemverbs_support;
 pub mod CFolderItemVerb;
 pub mod CFolderItemVerbs;
 pub mod CFolder;
+// CShellLibrary.cpp / CUserEventTimer.cpp — post-fork upstream COM objects, both still pure
+// UNIMPLEMENTED stubs upstream, so every body lowered deterministically ($0). Activated from
+// shell32.cpp's object map through `*RustEntry` shims like the classes above.
+pub mod CShellLibrary;
+pub mod CUserEventTimer;
+// shell32.cpp, Phase 1: its plain logic. The COM server half (the object map, the class
+// factory table, DllMain/DllGetClassObject/DllRegisterServer) is still C++ in that file.
+pub mod shell32_free;
+pub mod IDefClFImpl;
+// shell32.cpp, Phase 2: the COM server — class-object table, cached class factories,
+// DllGetClassObject, DllCanUnloadNow and the module lock count. Hand-written; its header
+// states the ATL semantics it reproduces.
+pub mod com_server;
+// shell32.cpp, Phase 3: registration, DllMain and the last trampolines — the file is gone.
+pub mod statreg;
+pub mod registration;
+pub mod dllmain;
 pub mod CFolderItem;
 pub mod CFolderItems;
 /// `CFolder.cpp`'s free half: one `extern "C"` factory, hand-written because the

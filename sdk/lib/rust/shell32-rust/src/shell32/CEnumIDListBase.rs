@@ -223,7 +223,11 @@ pub unsafe fn CEnumIDListBase_AppendItemsFromEnumerator_body(this: *mut CEnumIDL
         == ((*(*pEnum).lpVtbl).Next)(pEnum, 1, &mut pidl, &mut dwFetched)
         && dwFetched != 0
     {
-        CEnumIDListBase_AddToEnumList_body(this, pidl);
+        // On OOM the pidl was leaked and the item silently dropped (upstream a5f51269c88).
+        if CEnumIDListBase_AddToEnumList_body(this, pidl) == 0 {
+            ILFree(pidl);
+            return E_OUTOFMEMORY;
+        }
     }
     S_OK
 }
