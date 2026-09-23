@@ -186,6 +186,54 @@ These bodies may well be right for msvcrt and wrong for ucrt, which is precisely
 the question the harness exists to settle. Reusing them blind would have shipped
 both bugs.
 
+## Fault isolation, and why Tier 2 must run on arm64
+
+Without it, ONE faulting body ends the run and hides every export after it, so
+blockers cost one four-minute boot each and arrive strictly in order. Six boots
+were spent that way learning six names. The guard turns a fault into a FAULT row
+and carries on, so one run reports every fault, DIFF and MATCH together.
+
+**VEH, not `__try`.** clang's `__try` does not catch a HARDWARE fault under mingw
+at all -- it never emits async-exception handler liveness. `dll/ntdll/seh_poc_user.c`
+records this having proved it, and reading that file first would have saved
+building the `__try` path. Its 32-bit x86 SEH codegen is broken here besides
+(undefined `L__ehtable$` / `$parent_frame_offset`).
+
+**And VEH only fires on arm64.** `RtlDispatchException`'s
+`RtlCallVectoredExceptionHandlers` block is `#ifndef _NTOSKRNL_`, and librtl always
+builds with `-D_NTOSKRNL_`, so first-chance VEH dispatch is DEAD CODE on i386 and
+amd64 -- `rtl-except/src/{i386,amd64}/except.rs` say so outright. arm64 has it wired
+and proved: `[SEH-POC-U] VEH on hardware AV: fired=1 resumed=1 (PASS)`. arm64 also
+boots in ~40s against i386's ~80s.
+
+**No `setjmp`/`longjmp`.** On arm64 `setjmp` resolves to the SEH-based
+`__intrinsic_setjmpex`, which collides with the renamed reference set and would need
+valid unwind data to return into from a context we redirected -- the very machinery
+being graded. The handler instead advances the PC past the faulting instruction
+(arm64 is a fixed 4 bytes, so that is exact) and raises a flag every generated loop
+tests, so a faulting body limps at most to the next case boundary.
+
+The guard has a **positive control** that earned its place on the first run: a
+synthetic body faults on purpose, was NOT caught on i386, and the harness refused to
+grade rather than produce a table that silently stopped partway.
+
+## Where this stands (2026-09-22, end of session)
+
+**The arm64 payload does not launch, and the cause is not yet known.** Ruled out:
+the exe is staged (`ucrtdiff-arm64.exe -> .../StartUp/ucrtdiff.exe`), the boot
+reaches `shell ready`, the payload gate reports `boot ok / payload fail` with ZERO
+`[UCRTDIFF]` output, the subsystem is GUI, and every imported symbol across all six
+DLLs resolves (the 16 kernel32 names that first looked missing are forwarders to
+ntdll, which the objdump parse could not see). kmtest's payload demonstrably runs
+from the same Startup folder on arm64.
+
+Next experiment, one boot: stage a MINIMAL arm64 payload that only DbgPrints its
+marker, to separate "the exe never loads" from "the harness dies before its first
+print". Note that concurrent arm64 builds from the merge queue repeatedly invalidated
+the media between build and smoke (`staleness: fail`), so check the VERDICT before
+reading any serial log -- three conclusions were drawn tonight from runs that had
+never executed.
+
 STILL not verified:
 
 * state isolation in practice. Each side has its own locale and ptd, so a row
