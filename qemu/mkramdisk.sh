@@ -556,6 +556,23 @@ fi
 # reverting the payload set (the 2026-07-07 doom-clobber incident).
 PAYLOAD_MANIFEST=$(python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
     --arch arm64 --payloads-auto "$BUILD_DIR")
+
+# PURGE every dest ANY payload could own, BEFORE staging the selected ones. The
+# ramdisk is built incrementally, so a payload staged by an earlier build survives
+# into a later one that did not select it -- nothing ever removed it. A
+# kmtest-sweep.exe left from a 2026-09-22 run sat in the All Users StartUp folder
+# beside ucrtdiff.exe; explorer autostarted BOTH, so the Tier 2 sweep spent the boot
+# competing with a full kernel test corpus for the shared serial channel and never
+# emitted a single line. Nothing looked wrong: the payload the build was ASKED to
+# stage was staged correctly, and the stale one was invisible to every check.
+# Purging first makes the staged set exactly the selected set. Safe because every
+# payload dest is payload-exclusive (checked: no payload grafts a system file).
+python3 "$PROJECT_DIR/tools/payloads/compile.py" all-dests --arch arm64 \
+    | while IFS= read -r STALE; do
+        [ -n "$STALE" ] || continue
+        mdel -i "$RAMDISK_IMG" "::/$STALE" >/dev/null 2>&1 || true
+    done
+
 if [ -n "$PAYLOAD_MANIFEST" ]; then
     echo "[*] staging payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM})"
     printf '%s\n' "$PAYLOAD_MANIFEST" | while IFS='=' read -r DEST SRC; do

@@ -658,6 +658,32 @@ static int run_c_initializers(void)
     return 1;
 }
 
+/* The three hand-written runners predate the generator, and they were the last code in
+ * the harness still calling grade() UNGUARDED on the main thread: no fault guard, no
+ * hang timeout, no shard gate and no deadline check. That gap is not theoretical --
+ * shard 0/8 graded all 25 of its generated exports cleanly and then the GUEST died in
+ * here, with no row naming what did it and no `done` line to say the run was cut short.
+ *
+ * Routing them through export_begin/run_guarded/export_end gives them exactly what every
+ * generated export gets, and gates them by shard too, so they run in ONE shard instead
+ * of being repeated in all of them. */
+static void run_legacy(void)
+{
+    static const struct {
+        const char *name;
+        void (*fn)(void);
+    } legacy[] = {
+        { "legacy:strtox", run_strtox },
+        { "legacy:ctype", run_ctype },
+        { "legacy:string", run_string },
+    };
+    size_t i;
+    for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
+        if (export_begin(legacy[i].name))
+            export_end(run_guarded(legacy[i].fn), 1);
+    }
+}
+
 static int ucrtdiff_main(void);
 
 void ucrtdiff_entry(void);
@@ -709,9 +735,7 @@ static int ucrtdiff_main(void)
         return 1;
     }
     run_generated();
-    run_strtox();
-    run_ctype();
-    run_string();
+    run_legacy();
     /* A ZERO-case run is a vacuous pass and must read as a failure, the same
      * rule tests/qemu/cli/difftest.py's graded() enforces for the host tier. */
     if (g_cases == 0) {

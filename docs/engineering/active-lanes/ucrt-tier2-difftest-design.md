@@ -267,18 +267,49 @@ run and a wedged one were the same observation -- a log that stopped. A shard th
 not finish is now reported INCOMPLETE and its exports listed as ungraded, because the
 failure this whole lane must never have is a short run reading as a clean one.
 
-### Still blocked (2026-09-23)
+### What actually ended the runs (2026-09-23) -- two independent faults
 
-The sharded harness builds clean on all three arches and links, but **has not yet
-produced a graded table**: on arm64 the boot reaches `shell ready` and
-`[EXPLORER] _tWinMain entered`, then serial goes silent during the kmtest `ExPools`
-subtest at ~2,840 lines and stays silent for the whole drain, with ZERO `[UCRTDIFF]`
-output. Staging is confirmed correct (`ucrtdiff-arm64.exe` into All Users Startup, and
-`ucrtbase.dll` into system32 per `mkramdisk.sh`), and the exe imports all four new
-kernel32 symbols, which our kernel32 exports. So this is not the payload failing to
-load. It reproduces across runs. Next: establish whether kmtest running concurrently is
-what ends the boot -- it contributes thousands of `[PS]` lines to a shared serial
-channel and is unrelated to Tier 2.
+**1. Stale payload staging.** The ramdisk is built INCREMENTALLY and nothing ever
+removed a payload that a later build did not select. A `kmtest-sweep.exe` staged on
+2026-09-22 was still sitting in `Profiles/All Users/Start Menu/Programs/StartUp/`
+beside `ucrtdiff.exe`. Explorer autostarts everything in that folder, so every Tier 2
+run shared its boot -- and the serial channel -- with a full kernel test corpus sweep.
+Nothing could see it: the build log said `staging payloads (VIBEOS_PAYLOAD=ucrtdiff)`
+and staged ucrtdiff correctly, and the stale file was invisible to every check.
+
+That also fits the wall's shape better than anything else: contention with a concurrent
+sweep is wall-clock dependent, which is why the stopping point tracked emission ORDER
+while matching neither the export count nor the case count.
+
+Fixed in `qemu/mkramdisk.sh`: `compile.py all-dests` enumerates every dest ANY payload
+could own for the arch, and they are all purged BEFORE the selected set is staged, so
+the staged set is exactly the selected set. Safe because every payload dest is
+payload-exclusive (all 11 checked against system files).
+
+*Method note*: the first attempt to test this deleted the file from `qemu/ramdisk.img`
+and re-booted -- kmtest still ran, because the boot media is `qemu/boot.img`. Editing
+an artifact by hand means inheriting the real pipeline's checks; that test proved
+nothing and nearly produced a wrong conclusion.
+
+**2. The collation family wedges the ENTIRE GUEST.** With clean media, shard 0/8 ran 16
+exports and died on entering `_mbsnicoll`. It is not a hung thread: ALL serial output
+stops, kernel `[PS]` spam included. So `run_guarded`'s 8s `WaitForSingleObject` never
+returns -- nothing in the guest runs again -- and the harness's own deadline cannot fire
+either, being cooperative and checked only between exports. The two exports already
+known to deadlock (`_mbsnbcoll`, `_mbsnbcoll_l`) are members of this same family.
+
+All 28 `*coll*` exports are therefore QUARANTINED (`is_quarantined` in
+`gen_ucrt_tier2_cases.py`), leaving 194 graded. The generator announces the held-out
+list on stderr every run -- a sweep that quietly grades less than the burn-down thinks
+it does is the same false-completeness failure the `partial=` field exists to prevent.
+
+**This is owed work, not a verdict that those 28 are fine.** Something in our locale
+collation path takes the whole system down, which is a real bug worth more than the
+difftest that found it.
+
+Note this also corrects an earlier claim in the generator's own comments -- that the
+guest "keeps logging, so the HARNESS is wedged, main thread included". That was read
+from a log which had stopped for reason (1), and is false.
 
 ## Where this stands (2026-09-22, end of session, SUPERSEDED above)
 

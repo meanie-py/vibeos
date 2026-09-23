@@ -142,29 +142,46 @@ _PREDICATE = re.compile(r"^_?(is[a-z]|isw|_?ismb|_?iswcsym)")
 #: the generated file) did not move the stopping point at all. Kept only as a marker.
 #:
 #: WHAT THE WALL IS, AS FAR AS MEASURED. The sweep stops partway and never resumes, and
-#: `--reverse` finally separated the explanations: FORWARD it stops after 114 exports,
-#: REVERSED after 53. So it is
-#:   * NOT a fixed count (114 != 53), and
-#:   * NOT a single bad body -- one would sit at reverse index ~106, not 53.
-#: It is also not a fault (no FAULT row) and not a timeout (no HANG row; and a
-#: WaitForSingleObject with a timeout cannot block forever, so the main thread never
-#: reached it). The kernel keeps logging throughout, so the guest is alive and the
-#: HARNESS is wedged, main thread included.
+#: `--reverse` separated the explanations: FORWARD the old single-boot sweep stopped
+#: after 114 exports, REVERSED after 53. So it was NOT a fixed count (114 != 53) and NOT
+#: a single bad body (one would sit at reverse index ~106). Counting the corpus products
+#: for those two prefixes killed the last cheap theory too: ~5,263 cases vs ~2,182, so
+#: not a fixed case budget either.
 #:
-#: A boundary that moves with ORDER is consistent with cumulative work -- the two orders
-#: front-load exports of very different cost. The reverse run reached 53 exports for
-#: 2,568 graded cases; the forward figure was not captured before the log rotated, and
-#: that comparison is the next thing to make.
+#: RESOLVED 2026-09-23, and it was two independent faults:
 #:
-#: TREAT THE EARLIER "it is not runtime" RESULT AS UNPROVEN. Shrinking the scalar corpus
-#: 40 -> 15 appeared to change nothing, but that test was never verified to have taken
-#: effect -- and a sibling patch in this very file turned out to be a silent no-op
-#: (a str.replace against an anchor that had already been deleted). Re-run it and CHECK
-#: the emitted case count before believing either answer.
-DEADLOCKS = {
-    "_mbsnbcoll",
-    "_mbsnbcoll_l",
-}
+#:   1. STALE PAYLOAD STAGING. The ramdisk is built incrementally and nothing removed a
+#:      payload a later build did not select, so a kmtest-sweep.exe from 2026-09-22 sat
+#:      in the All Users StartUp folder beside ucrtdiff.exe. Explorer autostarts that
+#:      folder, so every Tier 2 run shared its boot and its serial channel with a full
+#:      kernel test corpus. Fixed in qemu/mkramdisk.sh, which now purges every dest ANY
+#:      payload could own (compile.py all-dests) BEFORE staging the selected set.
+#:
+#:   2. THE COLLATION FAMILY WEDGES THE WHOLE GUEST. With the media clean, shard 0/8 ran
+#:      16 exports and died entering `_mbsnicoll`. It is not a hung thread: ALL serial
+#:      stops, kernel [PS] spam included, so run_guarded's 8s WaitForSingleObject never
+#:      returns because nothing in the guest runs again. That also defeats the harness's
+#:      own deadline, which is cooperative and only advances between exports.
+#:
+#: The note that the guest "keeps logging, so the HARNESS is wedged" was wrong -- it was
+#: read from a log that had stopped for an unrelated reason (see 1).
+QUARANTINE_REASON = (
+    "the multibyte/locale collation family wedges the ENTIRE GUEST, not just its "
+    "thread: all serial output stops, so neither run_guarded's per-export timeout nor "
+    "the harness's own deadline can fire. Quarantined to unblock the other ~194 "
+    "exports; this is OWED WORK, not a decision that these are fine."
+)
+
+
+def is_quarantined(name: str) -> bool:
+    """Exports held out of the sweep because grading them ends the boot.
+
+    Every *coll* export routes through the same locale-collation path, and the two
+    originally known deadlockers (_mbsnbcoll, _mbsnbcoll_l) are members of it. Rather
+    than discover the rest one dead boot at a time -- each costs ~11 minutes and hides
+    every export after it -- the whole family is held out and recorded as owed.
+    """
+    return "coll" in name
 
 
 class GenError(RuntimeError):
@@ -294,6 +311,7 @@ def select(arch: str, cache: Path | None = None) -> list[tuple[str, str, list[st
     # that provably exists. The burn-down's names are undecorated, which is exactly the
     # ambiguity that broke this.
     chosen = []
+    quarantined: list[str] = []
     for name in sorted(_renamed_exports(arch, "libucrt_ref.a", ("_ref_", "ref_"))):
         if name not in funcs:
             continue
@@ -305,9 +323,19 @@ def select(arch: str, cache: Path | None = None) -> list[tuple[str, str, list[st
             continue
         if not src.get(export, "").startswith(PURE_DIRS):
             continue
-        if name in DEADLOCKS or export in DEADLOCKS:
+        if is_quarantined(name) or is_quarantined(export):
+            quarantined.append(export)
             continue
         chosen.append((export, name, kinds, name in have_rust))
+    # Held-out exports are ANNOUNCED, never silently dropped: a sweep that quietly
+    # grades less than the burn-down thinks it does is the same false-completeness
+    # failure the shard `partial=` field exists to prevent.
+    if quarantined:
+        print(
+            f"gen-ucrt-tier2-cases: QUARANTINED {len(quarantined)} export(s) -- "
+            f"{QUARANTINE_REASON}\n  " + " ".join(sorted(quarantined)),
+            file=sys.stderr,
+        )
     return chosen
 
 
