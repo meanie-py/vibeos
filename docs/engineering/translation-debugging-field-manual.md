@@ -6632,11 +6632,20 @@ and the truncation returns wearing a different hat.
 
 Two things generalise beyond the specific loop:
 
-- **"The log stops here" is not evidence; "the log shows something going wrong here" is.** Every
-  false quarantine entry had a serial that ended with the accused subtest's OWN passing summary
-  line and its process-exit line. One `tail` would have refuted it. Prefer a positive fault
-  signature — a BUGCHECK banner, a visible restart loop — before attributing a stop to whatever
-  ran last.
+- **"The log stops here" is not evidence — but neither is it evidence of INNOCENCE.** Both
+  halves matter, and using only the first half is how four real hangs got retracted. A serial
+  ending with the accused subtest's own PASSING summary proves the child finished; it says
+  nothing about whether the harness recovered, and in those cases the sweep had printed
+  `launch <subtest>` and never the matching `exit`. **Find the signal that records PROGRESS —
+  here a launch/exit pairing — and ask whether it advanced.** That is checkable, and it is
+  agnostic about why.
+- **The runtime form of that signal is SILENCE, and it is the only one the rig cannot forge.**
+  A harness running out of time produces a stop; it cannot produce a guest that has gone quiet
+  while the rig is still reading. So drain until the marker, a fault, the total budget, OR a
+  no-output idle cutoff — and let only the last two of those four outcomes differ in blame.
+  Sizing it is easy when the payload has a natural cadence (one line per unit of work, with a
+  per-unit cap): anything well past that cap is a wedge. This is also a large speedup, since a
+  wedge otherwise costs the ENTIRE budget — two hours of reading nothing, three rounds running.
 - **A test for this class must use a CHATTY fixture.** An idle-guest test passes against both the
   broken and the fixed loop, so it verifies nothing. The bug lives in the busy case only.
 
@@ -6646,6 +6655,23 @@ note behind instead of fixing the loop. The next payload walked straight in. A n
 describes a footgun rather than removing it is a deferred bug that keeps charging interest; if you
 find yourself writing "NOTE: X is not what it says it is", that is the detection event for fixing
 X.
+
+**Raising the budget is a treadmill — fix the ATTRIBUTION instead.** There were THREE bounds
+under one sweep: the iteration-counted drain, pytest's `--timeout`, and a 30-minute QEMU
+lifetime watchdog that `qemu/lib/common.sh` claimed to mirror from `vm.py` but could not actually
+override from the pytest path. Fixing the first promoted the second and third, and the very next
+run quarantined four more innocent subtests — including the same three that had just been
+removed. Each fix is correct and none of them is the fix. **The durable rule: a driver may only
+accuse a test on POSITIVE evidence that the GUEST faulted.** A BUGCHECK banner is evidence; a
+harness kill is counter-evidence, and the rig announces it in its own output, so capture that
+output instead of letting it stream past. Keep the converse too, or the loop goes inert: an
+incomplete run with no harness-kill sign IS still the guest's doing.
+
+**When a tool writes evidence, make the path unique per RUN, not per unit of work inside it.**
+`archive()` was added precisely to stop evidence pointers from rotting, and then collided with
+itself: round numbers restart at 1 each run, `--artifact-dir` replaced the timestamped default
+wholesale, and run N+1 overwrote run N. The flag added FOR durability was the one that removed
+run-uniqueness.
 
 ### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
 

@@ -86,6 +86,65 @@ def run(cmd: list[str], **kw) -> int:
     return subprocess.run(cmd, cwd=str(REPO), **kw).returncode
 
 
+def run_capture(cmd: list[str], **kw) -> tuple[int, str]:
+    """Run, echo the output live, AND return it.
+
+    The driver has to READ the harness's own account of how the boot ended, not
+    just the guest's serial: a VM the harness killed and a guest that died look
+    identical from inside the serial log, and blaming a subtest for the former
+    is how innocent tests end up quarantined.
+    """
+    print(f"[characterize] $ {' '.join(str(c) for c in cmd)}", flush=True)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(REPO),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        **kw,
+    )
+    chunks: list[str] = []
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        chunks.append(line)
+        print(line, end="", flush=True)
+    return proc.wait(), "".join(chunks)
+
+
+# The ONE line that positively implicates the guest. test_payload.py prints
+# `[payload] drain-end: <reason>` when it stops draining; "idle" means the
+# payload went silent while the rig was still reading, which is a wedge. Every
+# other reason -- "budget", or no line at all because a watchdog killed the VM
+# mid-drain -- is the RIG running out of time and implicates nobody.
+GUEST_WENT_SILENT = "[payload] drain-end: idle"
+
+# How many consecutive accusations against ONE suite before we stop believing
+# they are separate bugs. Three is enough to distinguish "this suite has a
+# flaky subtest" from "this suite is one problem wearing N names".
+SAME_SUITE_LIMIT = 3
+
+
+def should_quarantine(bugcheck: str | None, harness_out: str) -> bool:
+    """Is there POSITIVE evidence that the GUEST is what stopped?
+
+    The polarity here is the whole lesson. The original rule was "the sweep
+    stopped and subtest X was in flight, so blame X", which is not evidence at
+    all -- it is equally the signature of the rig ending the boot on a timer,
+    and that is what it was seven times running. Then fixing one timer merely
+    promoted the next one down and produced four more.
+
+    So the default is INNOCENT, and an accusation needs one of exactly two
+    positive signals: a BUGCHECK banner, or the guest going silent while the rig
+    was still reading it. Both say something happened to the guest; neither can
+    be produced by the harness losing patience.
+
+    Note this also has to stay capable of accusing, or the loop goes inert: a
+    genuine wedge DOES produce the idle signal, which is how cmd_apitest's three
+    real hangs were correctly caught.
+    """
+    return bool(bugcheck) or GUEST_WENT_SILENT in harness_out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", required=True, choices=tuple(PYTEST_ARCH))
@@ -111,7 +170,16 @@ def main(argv: list[str] | None = None) -> int:
     py = str(VENV_PY) if VENV_PY.exists() else sys.executable
     quarantine = HERE / f"quarantine-{args.arch}.txt"
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(args.artifact_dir or f"/tmp/vibeos-cli/{stamp}-characterize-{args.arch}")
+    # ALWAYS a per-run subdirectory, including under an explicit --artifact-dir.
+    # Round numbers restart at 1 every run, so a fixed directory means run N+1
+    # silently overwrites run N's evidence -- and the quarantine comments that
+    # cite `roundNN-...log` then point at a DIFFERENT boot, which is precisely
+    # the failure `archive()` was written to fix. It happened anyway, because
+    # --artifact-dir replaced the timestamped default wholesale: the flag added
+    # for durability was the one that removed run-uniqueness. A real SetSysColors
+    # BUGCHECK serial was overwritten this way before the nesting went in.
+    base = Path(args.artifact_dir) if args.artifact_dir else Path("/tmp/vibeos-cli")
+    run_dir = base / f"characterize-{args.arch}-{stamp}"
     print(f"[characterize] artifacts: {run_dir}", flush=True)
     merged: dict[str, dict] = {}
     culprits: list[str] = []
@@ -127,7 +195,18 @@ def main(argv: list[str] | None = None) -> int:
             print("[characterize] build failed — stopping", file=sys.stderr)
             return 1
 
-        run(
+        # Every bound on the boot has to sit ABOVE the payload's own
+        # launch_drain_secs (7200), or the lowest one silently becomes the real
+        # limit and the sweep is truncated mid-run -- with the truncation then
+        # blamed on whichever subtest was in flight. There are THREE of them,
+        # and each was found the hard way, one after the other:
+        #   * the drain loop itself (was iteration-counted; fixed in
+        #     test_payload.py),
+        #   * pytest's --timeout,
+        #   * the QEMU VM lifetime watchdog, which defaults to 30 MINUTES and
+        #     until recently could not be overridden from the pytest path at all.
+        boot_env = dict(os.environ, VIBEOS_QEMU_MAX_LIFETIME="8400")
+        _rc, harness_out = run_capture(
             [
                 py,
                 "-m",
@@ -138,14 +217,11 @@ def main(argv: list[str] | None = None) -> int:
                 "--payload",
                 "apitest",
                 "--skip-clean-build",
-                # ABOVE the payload's launch_drain_secs (7200), or pytest kills
-                # the boot before the drain budget is spent and every round is
-                # truncated mid-sweep -- with the truncation then blamed on
-                # whichever subtest was in flight.
                 "--timeout",
                 "7800",
                 "-q",
-            ]
+            ],
+            env=boot_env,
         )
 
         serial = newest_serial(args.arch)
@@ -181,6 +257,23 @@ def main(argv: list[str] | None = None) -> int:
         if culprit is None:
             print("[characterize] sweep incomplete but no in-flight subtest — stopping.")
             break
+
+        # QUARANTINE REQUIRES POSITIVE EVIDENCE OF A GUEST FAULT.
+        #
+        # "The sweep stopped and this subtest was in flight" is not evidence of
+        # anything -- it is equally the signature of the harness ending the boot
+        # on a timer, and that is what it turned out to be seven times running.
+        # A BUGCHECK banner is evidence. A harness kill is counter-evidence, and
+        # it is knowable: the rig says so in its own output.
+        if not should_quarantine(meta["bugcheck"], harness_out):
+            print(
+                f"[characterize] round {rnd}: nothing positively implicates the guest "
+                f"— no BUGCHECK, and the serial never went silent. The RIG ran out of "
+                f"time. {culprit!r} was merely in flight and is NOT being quarantined; "
+                "raise the boot budget instead. Stopping.",
+                file=sys.stderr,
+            )
+            break
         if culprit in culprits:
             print(
                 f"[characterize] {culprit} was already quarantined and the sweep died "
@@ -190,8 +283,45 @@ def main(argv: list[str] | None = None) -> int:
             )
             break
 
+        # CONVERGENCE GUARD. Quarantining the in-flight subtest assumes the
+        # subtests are independent. When round after round accuses a different
+        # subtest of the SAME suite, that assumption is dead: either the suite
+        # shares one cause, or the damage is done by a PREDECESSOR and the
+        # accused merely ran next. Both happened here — eight rounds spent eight
+        # different kernel32_apitest subtests, and in six of them the last
+        # successful exit was the same one (SystemFirmware), so the "culprit"
+        # was just whoever followed it once the earlier victims were skipped.
+        # Burning one boot per victim never converges; stop and say so.
+        # CUMULATIVE, not consecutive. The first version of this guard required
+        # SAME_SUITE_LIMIT accusations in a ROW, and a single unrelated round in
+        # the middle reset it — msvcrt_apitest took four of five rounds without
+        # ever tripping it, because one iphlpapi round sat in the middle. What
+        # matters is that one suite keeps producing victims, not that it does so
+        # without interruption.
+        suite = culprit.split()[0]
+        if sum(1 for c in culprits if c.split()[0] == suite) >= SAME_SUITE_LIMIT - 1:
+            print(
+                f"[characterize] {SAME_SUITE_LIMIT} rounds have now accused subtests of "
+                f"{suite}. They are not independent: quarantine the SUITE and triage it as "
+                f"one thing, or check whether the real culprit is the subtest that runs "
+                f"BEFORE each victim. Stopping rather than spending a boot per subtest.",
+                file=sys.stderr,
+            )
+            break
+
+        # An `<enumeration>` culprit is not a subtest and must not be written
+        # as one: the suite never got far enough to HAVE subtests, so the right
+        # quarantine is the whole suite (gen_suites would report a subtest skip
+        # matching nothing anyway).
+        if culprit.endswith(" <enumeration>"):
+            culprit = culprit.split()[0]
+
         culprits.append(culprit)
-        why = f"BUGCHECK {meta['bugcheck']}" if meta["bugcheck"] else "guest wedged (no BUGCHECK)"
+        why = (
+            f"BUGCHECK {meta['bugcheck']}"
+            if meta["bugcheck"]
+            else "guest went SILENT here (idle cutoff) — a wedge, not a rig timeout"
+        )
         with quarantine.open("a", encoding="utf-8") as fh:
             fh.write(
                 f"\n# characterize.py round {rnd}: sweep stopped here — {why}.\n"

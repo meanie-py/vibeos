@@ -690,3 +690,57 @@ goes back to a real duration, and `characterize.py`'s pytest timeout moves above
 so the driver cannot quietly become the real bound again.
 `tools/test_payload_drain.py` pins it with a **chatty-guest** case, which is the only kind that
 can distinguish the two implementations — a test that feeds an idle guest passes against both.
+
+### …and the fix promoted the next bound down
+
+The drain fix was correct and bought nothing. The next run truncated at **~30 minutes** and
+quarantined four more innocent subtests — `cmd_apitest attrib`/`exit`/`pushd`, the same three
+just removed, plus `iphlpapi GetExtendedUdpTable`, whose serial ends with its own summary and
+`[EXIT-THR] exit_status=0x4`.
+
+The new bound was `tests/qemu/vm.py`'s `MAX_VM_LIFETIME_SECONDS`, a 30-minute hard cap.
+`qemu/lib/common.sh` has always honoured `VIBEOS_QEMU_MAX_LIFETIME` and its comment says it
+mirrors that constant — it did not, so the shell path was tunable and the pytest path was not.
+
+**Three bounds, each hidden behind the one above it.** That is the actual lesson, and it is why
+the fix is not "raise the budget": every raise promotes the next-lowest timer into the same role.
+The rule now is on the accusation, not the clock — a round may quarantine only on positive
+evidence the **guest** faulted, with a harness kill counting as counter-evidence, and the driver
+reads the rig's own output to tell them apart. `tools/test_characterize_attribution.py` pins it,
+including the converse case that stops the loop going inert.
+
+One casualty, and the third instance of one lesson in two days: `archive()` collided across runs
+(round numbers restart at 1; `--artifact-dir` replaced the timestamped default), so the
+SetSysColors BUGCHECK serial was overwritten. The flag added for durability removed
+run-uniqueness. The analysis survives in `c4e66b8695e` and the crash reproduces by unquarantining
+the subtest, so this one is annoying rather than expensive.
+
+### Correction: four of the seven retractions were wrong
+
+Running the sweep with all three bounds lifted settled it, and it went against me. Each of the
+three rounds wedged inside `cmd_apitest` and the driver re-derived `attrib`, `exit` and `pushd`
+on its own — the same entries I had removed the day before. One boot sat **silent for 77
+minutes** after `launch cmd_apitest.exe attrib`, with QEMU alive and the serial not growing.
+That is a hang, not a truncation.
+
+The reasoning error is the useful part. For the iphlpapi pair the evidence was real: their
+serials end with the subtest's own passing summary and `[EXIT-THR]`, so the child had genuinely
+finished. I extended that verdict to three `cmd_apitest` entries **whose last-launch lines I
+never looked at** — they show no completion at all. And even for iphlpapi the conclusion did not
+follow, because a child completing says nothing about whether the *sweep* recovered: in both
+rounds the sweep printed `launch` and never the matching `exit`. All five had stopped the sweep;
+only the reason differed.
+
+So "the log stops here is not evidence" was right, and I used it to conclude innocence, which is
+the same error mirrored. The discriminator that actually works is **the launch/exit pairing —
+did the sweep advance** — and its runtime form is **silence**, which is the one signal the rig
+cannot manufacture while it is still reading.
+
+Both iphlpapi entries are restored. `launch_idle_secs: 600` now ends a drain on ten minutes of
+quiet, `drain_for_marker` reports *why* it stopped, and `should_quarantine` accuses only on a
+BUGCHECK or an idle stop — innocent by default, which is the polarity the original rule had
+backwards. Side benefit: a wedge costs ten minutes instead of the full two-hour budget.
+
+**Still open on `cmd_apitest`:** three of its six subtests wedge the guest. Not yet root-caused,
+and the suite is a plausible candidate for a single shared cause (it spawns `cmd.exe` children,
+which is also the grandchild-inherits-the-pipe shape suspected behind the iphlpapi stalls).

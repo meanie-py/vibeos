@@ -576,6 +576,81 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
   than one subtest.
 
+- **Process SPAWN and CRT TEARDOWN can wedge the whole guest. OPEN, and it probably subsumes
+  several existing apitest quarantine entries** (2026-09-23). Nine quarantined subtests across
+  three suites cluster on one theme rather than nine defects: `msvcrt_apitest` `system` /
+  `_wsystem` (which spawn `cmd.exe`), `atexit` / `static_construct` (CRT teardown at process
+  exit), and `cmd_apitest` `attrib` / `exit` / `pushd` (`cmd.exe` spawning children).
+  **The discriminator that makes this a GUEST bug and not a harness one:** the sweep's own
+  120-second per-subtest timeout never fires at these wedges — verified in four separate
+  rounds. The sweep is an ordinary user-mode process, so if it cannot even time out and
+  terminate its child, it is not running either; the box is dead, not the harness waiting.
+  A few `services.exe` restarts follow the wedge and then the serial goes silent for good, and
+  the wedged child emits no test output at all. Unlike the `kernel32_apitest` cluster, the
+  PREDECESSOR differs every time (`_wcsupr`, `atan`, `sqrt`, `strtoul`), so this is not the
+  blame-the-next-one artifact. Worth chasing as ONE investigation into process
+  creation/teardown rather than as per-subtest quarantine entries — note `msvcrt` is fully
+  translated, so our Rust CRT is in the frame alongside the kernel's process paths.
+
+- **`cmd_apitest` wedges the guest — three of its six subtests, reproducibly. OPEN**
+  (2026-09-23). `attrib`, `exit` and `pushd` each stop the apitest sweep dead; one boot sat
+  silent for 77 minutes after `[APITEST-SWEEP] launch cmd_apitest.exe attrib` with QEMU alive
+  and the serial not growing. For `pushd` the sweep's own 120s per-subtest timeout DID fire and
+  terminated the child (`[EXIT-THR] image=CMD_APITEST.EXE exit_status=0xdead`, which is
+  sweep.c's `TerminateProcess(.., 0xDEAD)`), and then the sweep still never printed its
+  `TIMEOUT`/`exit` line — so at least that one wedges the sweep PARENT, not only the child.
+  Plausible shared cause with the two quarantined `iphlpapi GetOwnerModuleFrom*Entry` stalls:
+  a grandchild inheriting the pipe's write end, so the pump never sees EOF (`cmd_apitest`
+  spawns `cmd.exe`; the iphlpapi tests talk to services). That is an inference from the shape,
+  not observed. All five are quarantined at subtest granularity so the other ~60 suites can be
+  characterised.
+
+- **`CmUnloadKey` removes a hive from the hive-file list AFTER closing its files and
+  unlinking it, reading an already-invalidated `LinkData` node. OPEN** (2026-09-22).
+  `config-rust/src/cmapi.rs` has `CmpUnlockRegistry(); CmpCloseHiveFiles(CmHive);
+  CmpRemoveFromHiveFileList(CmHive);` — the exact pre-fix order upstream corrected in
+  `396019984c9` ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491),
+  which is one of the 7 commits we are currently behind. Upstream's symptom is a hive that stays
+  listed under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after being unloaded, seen in
+  1st-stage setup with `\Registry\Machine\USetup_Software`; the deduced `LinkName` can be read
+  from an invalidated `KeyNode.Flags`, so `KEY_COMP_NAME` is misread and the constructed path is
+  garbage. Note the full upstream fix is NOT just the two-line reorder: it caches the path in a
+  new `CMHIVE::HiveRootPath` member (a struct layout change, Vista+ semantics) and rewrites
+  `cmhvlist.c`. Found by the bug-oracle sweep while measuring how far behind upstream we are —
+  the newest 7 commits already contained a live hit against our Rust.
+
+- **`NtUserScrollDC` probes three user RECTs and then dereferences them raw — BUGCHECK 0x1E.
+  FIXED 2026-09-23**, verified by boot: `user32_apitest ScrollDC` now exits **code=0**, a clean
+  pass, where it previously took the machine down. Took THREE attempts, and why is the lesson:
+  the first captured only the reads, the second patched the write-back of the SIBLING
+  (`NtUserScrollWindowEx`) because that block matched the search text uniquely, and only the
+  third reached `NtUserScrollDC`'s own store at `scrollex.rs:709`. Each time a `count == 1`
+  assertion passed and I read that as "the crashing instruction changed"; the BUGCHECK PC never
+  moving was the falsifying evidence. The check that settles it is about the FAULT, not the
+  edit: 0 raw 16-byte stores and 3 `KmProtectedCopyMemory` calls between `NtUserScrollDC` and
+  its sibling. Originally (2026-09-23). `win32k.sys+0xF8970` = `NtUserScrollDC+0x180`,
+  `win32k-rust/src/scrollex.rs`; found by `user32_apitest ScrollDC`, whose name corroborates
+  the symbol. Identical shape to `NtUserSetSysColors` below: `SafeProbeForRead` validates the
+  RANGE and not the MAPPING (it cannot touch-test under DUMMY_PSEH), the C wraps probe AND
+  copy in one `_SEH2_TRY`, and our Rust does `rcScroll = *(prcUnsafeScroll as *const RECTL)`
+  outside any guard. Same fix: capture through `KmProtectedCopyMemory`
+  (`win32k-rust/src/copy.rs`). **Third instance of this class, which makes it systematic
+  rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
+  the probed pointer" would enumerate the rest for free, and is owed.
+
+- **`user32_apitest GetUserObjectInformation` triggers BUGCHECK 0xF4
+  (CRITICAL_OBJECT_TERMINATION). OPEN** (2026-09-23). `P4 = ntoskrnl.exe+0x198FF0`. A
+  critical process died; distinct from the ScrollDC crash above in both bugcheck class and
+  faulting module, so `user32_apitest`'s failures are genuinely independent bugs rather than
+  one suite-wide cause — which is why it is quarantined per-subtest and NOT as a suite.
+
+- **`NtGdiCreateDIBSection` read `(*bmi).bmiHeader.biSize` raw after probing it — BUGCHECK
+  0x1E. FIXED 2026-09-23**, verified by boot: `win32u_apitest NtGdiCreateDIBSection` now runs to
+  completion (`code=29`, real test failures, no crash). The faulting instruction was
+  `win32k.sys+0xFAD1A` = `+0x4A`, `movl (%r9), %r10d`, now a `KmProtectedCopyMemory` call. The
+  size is also captured into a local, which stops it being re-read from user memory after
+  validation. `tools/scan_probe_then_deref.py` finds this site statically at `dibobj.rs:1822`.
+
 - **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
   and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
   `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction

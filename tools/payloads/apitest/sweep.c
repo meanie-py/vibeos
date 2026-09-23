@@ -293,6 +293,10 @@ static void run_suite(const char *bindir, const char *suite,
     ctx.Label = "";
     ctx.Capture = 1;
     ctx.Names = names;
+    /* Announce BEFORE running the enumeration child: a crash in here used to
+     * have nothing in flight to attribute it to, so the whole sweep was a blind
+     * spot between suites. */
+    DbgPrint("[APITEST-SWEEP] enumerate %s\n", suite);
     rc = run_child(bindir, suite, NULL, &ctx, ENUMERATE_TIMEOUT_MS);
     count = ctx.NameCount;
 
@@ -303,7 +307,11 @@ static void run_suite(const char *bindir, const char *suite,
     }
     if (rc == -2)
     {
-        DbgPrint("[APITEST-SWEEP] TIMEOUT %s during enumeration (%us)\n",
+        /* Deliberately NOT "TIMEOUT <suite> during enumeration": that reads as
+         * "<suite> <subtest>" to any reasonable parser, and ours duly invented a
+         * subtest named "during" and banked it as a conformance identity. A
+         * distinct verb costs nothing and cannot be misread. */
+        DbgPrint("[APITEST-SWEEP] ENUM-TIMEOUT %s (%us)\n",
                  suite, ENUMERATE_TIMEOUT_MS / 1000u);
         ++*timeouts;
         return;

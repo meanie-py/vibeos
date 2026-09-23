@@ -47,3 +47,11 @@ test:
   # or the driver becomes the real bound and the truncation comes back.
   launch_marker: "[APITEST-SWEEP] done"
   launch_drain_secs: 7200
+  # Stop after this much TOTAL SILENCE. A healthy sweep prints a launch/exit
+  # pair per subtest and caps each child at 120s, so it is never quiet for long;
+  # ten minutes of nothing means the guest or the sweep parent is wedged.
+  # Without this a wedge cost the whole 7200s budget -- three rounds in a row
+  # sat reading nothing from 19:01 to 21:01. It is also the only signal that
+  # positively implicates the GUEST rather than the rig, so the driver's
+  # quarantine rule is built on it.
+  launch_idle_secs: 600
