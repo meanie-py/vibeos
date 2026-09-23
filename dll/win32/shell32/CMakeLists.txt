@@ -342,12 +342,13 @@ list(APPEND PCH_SKIP_SOURCE
     # shell32-rust build on plain stable rustc — no bootstrap escape hatch on the cargo
     # env line below, no nightly feature gate in the crate root.
     # Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
-    # CShellLibrary.cpp / CUserEventTimer.cpp are NEW upstream COM objects (post-fork)
-    # with no Rust twin yet. shell32.cpp's object map registers them after this merge, so
-    # they have to be compiled or the ATL creators have no class to construct. Handed to
-    # the shell32 lane for eventual translation (see shell32-upstream-oracle-handoff.md).
-    CShellLibrary.cpp
-    CUserEventTimer.cpp
+    # CShellLibrary.cpp / CUserEventTimer.cpp — NEW upstream COM objects (post-fork), now
+    # shell32-rust/src/shell32/{CShellLibrary,CUserEventTimer}.rs; cohab via libshell32_rust.a.
+    # shell32.cpp's object map reaches them through CShellLibraryRustEntry /
+    # CUserEventTimerRustEntry, whose _CreatorClass calls the Rust *_CreateInstance export —
+    # the header stays included only for the registry statics the entry inherits.
+    # CShellLibrary.cpp
+    # CUserEventTimer.cpp
     rust_varargs_shim.c
     #
     # rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static

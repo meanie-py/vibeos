@@ -170,6 +170,11 @@ pub mod folderitemverbs_support;
 pub mod CFolderItemVerb;
 pub mod CFolderItemVerbs;
 pub mod CFolder;
+// CShellLibrary.cpp / CUserEventTimer.cpp — post-fork upstream COM objects, both still pure
+// UNIMPLEMENTED stubs upstream, so every body lowered deterministically ($0). Activated from
+// shell32.cpp's object map through `*RustEntry` shims like the classes above.
+pub mod CShellLibrary;
+pub mod CUserEventTimer;
 pub mod CFolderItem;
 pub mod CFolderItems;
 /// `CFolder.cpp`'s free half: one `extern "C"` factory, hand-written because the

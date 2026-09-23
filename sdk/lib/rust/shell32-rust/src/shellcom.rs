@@ -39,6 +39,21 @@ pub type SIZE_T = usize; // basetsd.h (ULONG_PTR)
 pub type LPARAM = LONG_PTR; // windef.h
 pub type SIGDN = u32; // shobjidl (v1_enum)
 pub const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
+// shobjidl.idl:4864-4892 — IShellLibrary's parameter enums, all `[v1_enum]` (32-bit), so `u32`
+// like SIGDN. They arrived with the post-fork upstream sync ("[SDK][SHELL32] A big bundle of
+// NT6+ shell32 implementations and stubs"); the island was last generated on 2026-08-08,
+// BEFORE that sync, so it does not carry them. Declared here rather than by regenerating
+// the island mid-flip — see the roadmap entry on the stale shell32 island.
+pub type LIBRARYFOLDERFILTER = u32;
+pub type LIBRARYOPTIONFLAGS = u32;
+pub type DEFAULTSAVEFOLDERTYPE = u32;
+pub type LIBRARYSAVEFLAGS = u32;
+// shtypes.h:129-140 — `#define REFKNOWNFOLDERID const KNOWNFOLDERID &` under C++ and
+// `const KNOWNFOLDERID *` under C: a reference is a pointer on the ABI, and because these are
+// `#define`d TYPE MACROS rather than typedefs, bindgen never emits them at all — which is why
+// these two are missing independently of the island's staleness.
+pub type REFKNOWNFOLDERID = *const crate::island::KNOWNFOLDERID;
+pub type REFFOLDERTYPEID = *const crate::island::FOLDERTYPEID;
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
 

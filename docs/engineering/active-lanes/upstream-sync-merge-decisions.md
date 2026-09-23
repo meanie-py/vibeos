@@ -350,6 +350,18 @@ name resolution.
 symbols.** Until then, the rule is: when a callee's signature is corrected, fix every call site
 in the same change, and prefer one shared helper over scattered transmutes.
 
+The user-mode islands are in the same position, not just the ddk surface. shell32-rust's
+`island_{i386,amd64,arm64}.rs` was last generated on 2026-08-08, before this merge, so it lacks
+everything the merge added to shell32's include closure — found when the translated
+`CShellLibrary` would not build: `LIBRARYFOLDERFILTER`, `LIBRARYOPTIONFLAGS`,
+`DEFAULTSAVEFOLDERTYPE` and `LIBRARYSAVEFLAGS` exist in the regenerated `shobjidl.h` and in no
+island (declared by hand in `shellcom.rs` for now, with that reason beside them). A MISSING type
+fails the build, which is the benign case. The one to go looking for is a struct whose LAYOUT the
+merge changed and the island still describes the old way: that compiles, links, and scribbles.
+The merge touched 177 headers across psdk/reactos/xdk/atl with ~210 changed struct/typedef lines;
+nobody has yet sorted those into additions (harmless) versus in-place layout changes in types a
+Rust crate actually uses.
+
 
 ## Five tool bugs, found because the merge moved the ground under the tests
 

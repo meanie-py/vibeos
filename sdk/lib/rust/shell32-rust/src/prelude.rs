@@ -65,6 +65,12 @@ pub use crate::shellcom::{
     IPersistFolder, IPersistFolder3, IPersistFolder3Vtbl, IPersistFolderVtbl, IShellFolder,
     IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
 };
+// IShellLibrary's parameter types; see their declaration in shellcom.rs for why the island
+// does not have them.
+pub use crate::shellcom::{
+    DEFAULTSAVEFOLDERTYPE, LIBRARYFOLDERFILTER, LIBRARYOPTIONFLAGS, LIBRARYSAVEFLAGS,
+    REFFOLDERTYPEID, REFKNOWNFOLDERID,
+};
 
 // ATL's smart pointers and containers. The translated TUs use these by their C++ names, and
 // `atl.rs` documents the three invariants those call sites lean on (zeroable, transparent,

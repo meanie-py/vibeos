@@ -5,10 +5,6 @@
     ],
     "shared": [
       "dll/win32/shell32/shellmenu/CMenuToolbars.cpp"
-    ],
-    "untranslated_leaf": [
-      "dll/win32/shell32/CShellLibrary.cpp",
-      "dll/win32/shell32/CUserEventTimer.cpp"
     ]
   },
   "removed": {
@@ -22,7 +18,9 @@
       "dll/win32/shell32/CFolderItems.cpp",
       "dll/win32/shell32/CIDLDataObj.cpp",
       "dll/win32/shell32/COpenWithMenu.cpp",
+      "dll/win32/shell32/CShellLibrary.cpp",
       "dll/win32/shell32/CShellLink.cpp",
+      "dll/win32/shell32/CUserEventTimer.cpp",
       "dll/win32/shell32/droptargets/CFSDropTarget.cpp",
       "dll/win32/shell32/droptargets/CRecyclerDropTarget.cpp",
       "dll/win32/shell32/folders/CRecycleBinFolderViewCB.cpp",
