@@ -368,20 +368,30 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
         out.append("    " * (depth + 2) + ref_c)
         out.append("")
 
-    out += ["static void run_generated(void)", "{", "    int faulted;", ""]
-    # Each export is its own GUARDED block with its own verdict line. The guard is what
-    # makes this scale: without it one faulting body ends the run and hides every export
-    # after it, so blockers are found one per boot, strictly in order.
+    # ONE FUNCTION PER EXPORT, so each can be run on its own thread and timed out.
+    # A hang is otherwise unrecoverable: the fault guard handles a body that crashes,
+    # but `_mbsnbcoll` LOOPS, and it stopped the first complete arm64 sweep at export
+    # 114 of 224 -- hiding the other 110 exactly the way a crash used to.
     for _e, name, kinds, has_rust in rows:
         macro = "GRADE_" + ("VOID" if not kinds else "_".join(kinds))
         pred = bool(_PREDICATE.match(name))
         out.append("#undef NORM")
         out.append("#define NORM(x) " + ("(!!(x))" if pred else "(x)"))
-        out.append(f'    export_begin("{name}");')
-        out.append(f"    UCRTDIFF_GUARD(faulted, {macro}{'' if has_rust else '_NORUST'}({name}));")
-        out.append(f"    export_end(faulted, {1 if has_rust else 0});")
+        out.append(f"static void ucrtdiff_run_{name}(void)")
+        out.append("{")
+        out.append(f"    {macro}{'' if has_rust else '_NORUST'}({name});")
+        out.append("}")
         out.append("")
-    out += ["#undef NORM", "}", ""]
+    out.append("#undef NORM")
+    out.append("")
+
+    out += ["static void run_generated(void)", "{", "    int outcome;", ""]
+    for _e, name, _kinds, has_rust in rows:
+        out.append(f'    export_begin("{name}");')
+        out.append(f"    outcome = run_guarded(ucrtdiff_run_{name});")
+        out.append(f"    export_end(outcome, {1 if has_rust else 0});")
+        out.append("")
+    out += ["}", ""]
     return "\n".join(out) + "\n"
 
 
