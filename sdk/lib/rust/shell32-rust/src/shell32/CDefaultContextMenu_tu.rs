@@ -40,11 +40,12 @@ pub struct _StaticInvokeCommandMap_ {
 // strings are this file's own byte literals, immutable for the life of the process.
 unsafe impl Sync for _StaticInvokeCommandMap_ {}
 
-pub static g_StaticInvokeCmdMap: [_StaticInvokeCommandMap_; 14] = [
-    _StaticInvokeCommandMap_ { szStringVerb: b"runas\0".as_ptr() as LPCSTR, IntVerb: 0, DfmCmd: 0 },
-    _StaticInvokeCommandMap_ { szStringVerb: b"print\0".as_ptr() as LPCSTR, IntVerb: 0, DfmCmd: 0 },
-    _StaticInvokeCommandMap_ { szStringVerb: b"preview\0".as_ptr() as LPCSTR, IntVerb: 0, DfmCmd: 0 },
-    _StaticInvokeCommandMap_ { szStringVerb: b"open\0".as_ptr() as LPCSTR, IntVerb: FCIDM_SHVIEW_OPEN as u16, DfmCmd: 0 },
+// Verbs from the registry must not be listed here: "open" mapped to the never-implemented
+// DoOpenOrExplore (always E_FAIL), and "runas"/"print"/"preview" to IntVerb 0, so none of
+// them could reach the file type's registered verb (upstream 16bb138e325, CORE-20690).
+// "copyto"/"moveto" stay: upstream dropped them in the same commit only alongside moving
+// Copy To/Move To into CCopyMoveToMenu, which this tree has not taken.
+pub static g_StaticInvokeCmdMap: [_StaticInvokeCommandMap_; 10] = [
     _StaticInvokeCommandMap_ { szStringVerb: CMDSTR_NEWFOLDERA.as_ptr() as LPCSTR, IntVerb: FCIDM_SHVIEW_NEWFOLDER as u16, DfmCmd: DFM_CMD_NEWFOLDER as SHORT },
     _StaticInvokeCommandMap_ { szStringVerb: b"cut\0".as_ptr() as LPCSTR, IntVerb: FCIDM_SHVIEW_CUT as u16, DfmCmd: 0 },
     _StaticInvokeCommandMap_ { szStringVerb: b"copy\0".as_ptr() as LPCSTR, IntVerb: FCIDM_SHVIEW_COPY as u16, DfmCmd: DFM_CMD_COPY as SHORT },

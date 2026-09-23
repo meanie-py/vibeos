@@ -807,9 +807,9 @@ pub unsafe fn CQueryAssociations_GetString_body(this: *mut CQueryAssociations, f
                     }
                     HeapFree(GetProcessHeap(), 0, icon as *mut core::ffi::c_void);
                 } else {
-                    // C oddity preserved: alloc failure maps ret (== ERROR_SUCCESS here)
-                    // through HRESULT_FROM_WIN32 → S_OK, not E_OUTOFMEMORY (cpp:426-429).
-                    hr = HRESULT_FROM_WIN32(ret);
+                    // The pre-fix C mapped ret (== ERROR_SUCCESS here) through
+                    // HRESULT_FROM_WIN32, reporting S_OK on alloc failure (upstream 7cba1c80a75).
+                    hr = E_OUTOFMEMORY;
                 }
             } else {
                 hr = HRESULT_FROM_WIN32(ret);
