@@ -2565,6 +2565,20 @@ keeps the population alive until one copy is reached.** Constructing with one co
 with another is the failure. When a macro is defined more than once in our tree, the count itself
 is the finding; grep the name before trusting any single definition.
 
+### A `(LONG)` cast in a handle macro means SIGN-extension on 64-bit
+**Symptom:** `RegOverridePredefKey(HKEY_CLASSES_ROOT, h)` returned `ERROR_INVALID_HANDLE` on
+amd64 and arm64 and worked on i386; a sandboxed DllRegisterServer then wrote the real registry
+and a diff of its output came back empty — "no differences". **Cause:** winreg.h defines
+`HKEY_CLASSES_ROOT` as `((HKEY)(ULONG_PTR)((LONG)0x80000000))`; the `LONG` makes it
+`0xFFFFFFFF80000000` on 64-bit, and that is what every C and mingw caller passes. advapi32-rust
+had `0x8000_0000u32 as usize as HKEY` — zero-extended — so every `hKey == HKEY_X` in the
+RECEIVER missed a real caller (RegOverridePredefKey, the HKCU cache-disable check in
+MapDefaultKey, eight HKEY_PERFORMANCE_DATA paths). Nothing else noticed because the common
+path masks the low 32 bits (`IsPredefKey`, `GetPredefKeyIndex`). **Fix:** `as i32 as isize`
+for the constant; compare with `SamePredefKey` (low 32 bits) in the receiver, since ~9 other
+crates still carry their own zero-extended copies and pass them in. Any macro of the shape
+`(HANDLE)(ULONG_PTR)(LONG)0x8…` has this trap; `(LONG_PTR)-1`-style handles do not.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching

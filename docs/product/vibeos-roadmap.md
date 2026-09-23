@@ -519,6 +519,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   starved or blocked UI thread better than a start-menu bug, but nobody has yet run the gate
   on arm64 media without the sweep. The last known-good arm64 start-menu screenshot in the
   fleet is from 2026-09-13, before the upstream sync.
+- **shell32's DllRegisterServer returns 0x80070002 (ERROR_FILE_NOT_FOUND) on the livecd, all
+  three arches. UNOWNED** (2026-09-23). Measured by `tools/payloads/regdiff`, identically for
+  the C++ build (`bf5c0d1573f`) and the Rust one, so it predates retiring shell32.cpp. Every
+  object-map script and the typelib registered (the dump holds `HKCR\TypeLib\{50A7E9B0-…}`),
+  and registration stops at the first failure, so the failing step is one of the three extra
+  scripts (IDR_FOLDEROPTIONS / IDR_EXPLORER / IDR_SYSTEMFILEASSOC) or
+  `SHELL_RegisterShellFolders` — the latter is the likelier, on a read-only system drive. No
+  boot notices: the media's hives are prebuilt. Narrow it by printing the HRESULT after each
+  step of `DllRegisterServer` in `shell32/registration.rs` under the regdiff payload.
+- **amd64 payload gate misses a launch marker that IS in its own serial log. UNOWNED**
+  (2026-09-23). `smoke --arch amd64 --payload regdiff` failed twice with "'[REGDIFF] done'
+  never appeared" after draining its full budget, while `payload/amd64-uefi_serial.log` from
+  the SAME run holds that line (line 1820, after the last `shell ready` at 1285). So the
+  bytes reached the log file but not `vm.serial_output()`, which the test reads; i386 and
+  arm64 see the same payload's marker fine. The log also carries three `shell ready` lines —
+  check whether the fixture rebooted and the reader stayed attached to a dead stream.
+  Evidence: `/tmp/vibeos-cli/*-smoke-amd64/payload/{pytest.log,amd64-uefi_serial.log}`.
 
 - **`afd` BUGCHECK 0x1E on a pending receive: `FCB->ReceiveIrp.InFlightRequest != Irp`.
   OPEN** (2026-09-21). Found by the new apitest harness on its third boot, running
