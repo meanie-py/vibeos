@@ -38,6 +38,11 @@ pub mod types;
 pub mod island;
 #[path = "../../shell32-rust/src/shellcom.rs"]
 pub mod shellcom;
+// The shared island blocklists every function SHELL32 defines (it is generated for that
+// crate), and for THIS crate those are exactly the ones it imports from shell32.dll — e.g.
+// SHGetDesktopFolder. The derived declarations put them back, with the header's convention.
+#[path = "../../shell32-rust/src/own_exports_decls.rs"]
+pub mod own_exports_decls;
 // The ONE import surface for translated modules here — island glob plus the few hand-written
 // names that have no island equivalent. See its header for why nothing scalar or PIDL-shaped
 // crosses over from `shellcom`.

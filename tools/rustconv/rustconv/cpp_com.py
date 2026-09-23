@@ -5567,9 +5567,7 @@ def render_cpp_support(
     if "LPTBBUTTONSB" in used_words:
         chunks.append("pub type LPTBBUTTONSB = *mut core::ffi::c_void;")
     if "LOWORD" in used_words:
-        chunks.append(
-            "macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }"
-        )
+        chunks.append(LOWORD_MACRO)
     if "MAKEINTRESOURCE" in used_words:
         chunks.append(
             "#[inline]\nconst fn MAKEINTRESOURCE(value: UINT) -> LPCWSTR {\n"
@@ -5655,42 +5653,7 @@ def render_cpp_support(
     if selected_c:
         chunks.append('extern "C" {\n' + "\n".join(selected_c) + "\n}")
     if "StringCbPrintfW" in used_words:
-        chunks.append(
-            "unsafe fn cpp_com_string_cb_printf_w(\n"
-            "    dest: LPWSTR, bytes: usize, format: LPCWSTR, args: &[LPCWSTR],\n"
-            ") -> HRESULT {\n"
-            "    let capacity = bytes / core::mem::size_of::<WCHAR>();\n"
-            "    if dest.is_null() || format.is_null() || capacity == 0 { return E_FAIL; }\n"
-            "    let (mut out, mut input, mut arg_index) = (0usize, 0usize, 0usize);\n"
-            "    while *format.add(input) != 0 {\n"
-            "        let unit = *format.add(input);\n"
-            "        if unit == b'%' as WCHAR && *format.add(input + 1) == b's' as WCHAR {\n"
-            "            if arg_index >= args.len() { return E_FAIL; }\n"
-            "            let arg = args[arg_index]; arg_index += 1; input += 2;\n"
-            "            if arg.is_null() { continue; }\n"
-            "            let mut index = 0usize;\n"
-            "            while *arg.add(index) != 0 {\n"
-            "                if out + 1 >= capacity { *dest.add(capacity - 1) = 0; "
-            "return 0x8007007Au32 as HRESULT; }\n"
-            "                *dest.add(out) = *arg.add(index); out += 1; index += 1;\n"
-            "            }\n"
-            "            continue;\n"
-            "        }\n"
-            "        if out + 1 >= capacity { *dest.add(capacity - 1) = 0; "
-            "return 0x8007007Au32 as HRESULT; }\n"
-            "        *dest.add(out) = unit; out += 1; input += 1;\n"
-            "    }\n"
-            "    *dest.add(out) = 0; S_OK\n"
-            "}\n"
-            "macro_rules! StringCbPrintfW {\n"
-            "    ($dest:expr, $bytes:expr, $format:expr, $arg1:expr $(,)?) => {\n"
-            "        cpp_com_string_cb_printf_w($dest, $bytes, $format, &[$arg1])\n"
-            "    };\n"
-            "    ($dest:expr, $bytes:expr, $format:expr, $arg1:expr, $arg2:expr $(,)?) => {\n"
-            "        cpp_com_string_cb_printf_w($dest, $bytes, $format, &[$arg1, $arg2])\n"
-            "    };\n"
-            "}"
-        )
+        chunks.append(STRING_CB_PRINTF_W_SUPPORT)
     if "memcpy" in used_words:
         chunks.append(
             "#[inline]\nunsafe fn memcpy<D, S, N: CppComSize>("
@@ -7815,3 +7778,162 @@ def discover_widl_header(
         f"generated SDK header {filename} not found for {arch}; build that arch first or pass "
         "--sdk-header explicitly. Refusing to guess COM slot order."
     )
+
+
+_ITEM_NAME = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"\w+\"\s+)?"
+    r"(?:const|static(?:\s+mut)?|type|struct|union|enum|fn|trait)\s+([A-Za-z_]\w*)"
+)
+_MACRO_NAME = re.compile(r"^\s*macro_rules!\s*([A-Za-z_]\w*)")
+_EXTERN_FN = re.compile(r"^\s*(?:pub\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_]\w*)")
+
+
+def _top_level_items(text: str) -> list[tuple[str | None, bool, list[str]]]:
+    """Split Rust text into top-level items: (name, is_extern_block, lines).
+
+    Attributes, doc comments and blank lines ride with the item that follows them. Depth is
+    tracked over `{}` `[]` `()`, which is enough for generated text (no braces in strings)."""
+    items: list[tuple[str | None, bool, list[str]]] = []
+    pending: list[str] = []
+    current: list[str] | None = None
+    name: str | None = None
+    extern = False
+    depth = 0
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if current is None:
+            if not stripped or stripped.startswith(("//", "#[", "#![")):
+                pending.append(line)
+                continue
+            m = _MACRO_NAME.match(line) or _ITEM_NAME.match(line)
+            name = m.group(1) if m else None
+            extern = bool(re.match(r'^\s*(?:unsafe\s+)?extern\s+"\w+"\s*\{', line))
+            current = [*pending, line]
+            pending = []
+        else:
+            current.append(line)
+        depth += sum(line.count(c) for c in "{[(") - sum(line.count(c) for c in "}])")
+        if depth <= 0 and (stripped.endswith((";", "}")) or stripped == ""):
+            items.append((name, extern, current))
+            current, depth = None, 0
+    if current is not None:
+        items.append((name, extern, current))
+    if pending:
+        items.append((None, False, pending))
+    return items
+
+
+def defined_names(text: str) -> set[str]:
+    """Every top-level item name `text` defines, including functions DECLARED inside its
+    `extern` blocks and `macro_rules!` macros."""
+    names: set[str] = set()
+    for name, extern, lines in _top_level_items(text):
+        if name:
+            names.add(name)
+        if extern:
+            names.update(m.group(1) for ln in lines if (m := _EXTERN_FN.match(ln)))
+    return names
+
+
+def drop_defined_items(text: str, defined: set[str]) -> str:
+    """`text` minus every top-level item — and every declaration inside an `extern` block —
+    whose name is in `defined`. An extern block left with no declarations goes too."""
+    out: list[str] = []
+    for name, extern, lines in _top_level_items(text):
+        if name and name in defined:
+            continue
+        if extern:
+            kept, skipping = [], False
+            for ln in lines:
+                m = _EXTERN_FN.match(ln)
+                if m:
+                    skipping = m.group(1) in defined
+                if not skipping:
+                    kept.append(ln)
+                if skipping and ln.rstrip().endswith(";"):
+                    skipping = False
+            if not any(_EXTERN_FN.match(ln) for ln in kept):
+                continue
+            lines = kept
+        out.extend(lines)
+    return "\n".join(out)
+
+
+# The two definitions a REWRITE introduces rather than the source: `LOWORD(x)` becomes
+# `LOWORD!(x)` and `StringCbPrintfW(...)` becomes `StringCbPrintfW!(...)` on BOTH the --cpp-com
+# and --free-functions paths, so a module that received the rewrite must receive the
+# definition too. One text, shared by both renderers, so the two paths cannot drift.
+LOWORD_MACRO = "macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }"
+STRING_CB_PRINTF_W_SUPPORT = (
+    "unsafe fn cpp_com_string_cb_printf_w(\n"
+    "    dest: LPWSTR, bytes: usize, format: LPCWSTR, args: &[LPCWSTR],\n"
+    ") -> HRESULT {\n"
+    "    // strsafe.h StringCbPrintfW, for the conversions translated call sites use: `%s` "
+    "and `%%`.\n"
+    "    // Anything else is REFUSED (STRSAFE_E_INVALID_PARAMETER, empty result). This "
+    "used to copy\n"
+    "    // an unknown conversion through literally and leave its argument unconsumed — "
+    "and it did\n"
+    '    // not know `%%` either, so COpenWithList\'s `"%s" "%%1"` registered `"app.exe" '
+    '"%%1"` as an\n'
+    '    // Open-With command line instead of `"app.exe" "%1"`, with nothing red anywhere.\n'
+    "    let capacity = bytes / core::mem::size_of::<WCHAR>();\n"
+    "    if dest.is_null() || format.is_null() || capacity == 0 { return E_FAIL; }\n"
+    "    let (mut out, mut input, mut arg_index) = (0usize, 0usize, 0usize);\n"
+    "    while *format.add(input) != 0 {\n"
+    "        let unit = *format.add(input);\n"
+    "        if unit == b'%' as WCHAR {\n"
+    "            let spec = *format.add(input + 1);\n"
+    "            if spec == b'%' as WCHAR {\n"
+    "                if out + 1 >= capacity { *dest.add(capacity - 1) = 0; return "
+    "0x8007007Au32 as HRESULT; }\n"
+    "                *dest.add(out) = b'%' as WCHAR; out += 1; input += 2;\n"
+    "                continue;\n"
+    "            }\n"
+    "            if spec != b's' as WCHAR { *dest = 0; return 0x80070057u32 as HRESULT; }\n"
+    "            if arg_index >= args.len() { return E_FAIL; }\n"
+    "            let arg = args[arg_index]; arg_index += 1; input += 2;\n"
+    "            if arg.is_null() { continue; }\n"
+    "            let mut index = 0usize;\n"
+    "            while *arg.add(index) != 0 {\n"
+    "                if out + 1 >= capacity { *dest.add(capacity - 1) = 0; return "
+    "0x8007007Au32 as HRESULT; }\n"
+    "                *dest.add(out) = *arg.add(index); out += 1; index += 1;\n"
+    "            }\n"
+    "            continue;\n"
+    "        }\n"
+    "        if out + 1 >= capacity { *dest.add(capacity - 1) = 0; return 0x8007007Au32 as "
+    "HRESULT; }\n"
+    "        *dest.add(out) = unit; out += 1; input += 1;\n"
+    "    }\n"
+    "    *dest.add(out) = 0; S_OK\n"
+    "}\n"
+    "macro_rules! StringCbPrintfW {\n"
+    "    ($dest:expr, $bytes:expr, $format:expr, $arg1:expr $(,)?) => {\n"
+    "        cpp_com_string_cb_printf_w($dest, $bytes, $format, &[$arg1])\n"
+    "    };\n"
+    "    ($dest:expr, $bytes:expr, $format:expr, $arg1:expr, $arg2:expr $(,)?) => {\n"
+    "        cpp_com_string_cb_printf_w($dest, $bytes, $format, &[$arg1, $arg2])\n"
+    "    };\n"
+    "}"
+)
+
+
+def render_rewrite_support(rust: str, preamble: str) -> str:
+    """For --free-functions: ONLY the definitions the rewrites introduced into `rust`, minus
+    anything the (hand-written, banked) preamble already defines — the preamble is the
+    authority, so filetypes' extended %d/%06u printf wins over the generic %s/%% one.
+
+    Deliberately NOT render_cpp_support's whole closure. That also emits a large table of Win32
+    constants typed the --cpp-com way (`IDOK: DWORD`, `ERROR_FILE_NOT_FOUND: DWORD`, ...), which
+    would SHADOW the island's definitions a free-functions module was written against and
+    silently change the signedness and width under its comparisons — tried on filetypes.cpp: 491
+    lines, two build breaks, and the LVN_-style signedness trap waiting in the rest."""
+    chunks = []
+    if "LOWORD!(" in rust:
+        chunks.append(LOWORD_MACRO)
+    if "StringCbPrintfW!(" in rust:
+        chunks.append(STRING_CB_PRINTF_W_SUPPORT)
+    if not chunks:
+        return ""
+    return drop_defined_items("\n".join(chunks), defined_names(preamble))

@@ -504,25 +504,6 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   on arm64 media without the sweep. The last known-good arm64 start-menu screenshot in the
   fleet is from 2026-09-13, before the upstream sync.
 
-- **`shell_link.rs` compiles in eight `#if (NTDDI_VERSION < NTDDI_LONGHORN)` blocks the C
-  build EXCLUDES. UNOWNED** (2026-09-22). `sdk/lib/rust/shell32-rust/src/shell_link.rs:1567`
-  hoists `NTDDI_VERSION = 0x05020000` with a comment asserting "the tree builds with
-  NTDDI_VERSION < NTDDI_LONGHORN, so every `#if` block in CShellLink.cpp is COMPILED IN".
-  The preprocessor says otherwise: shell32's CMakeLists does
-  `remove_definitions(-D_WIN32_WINNT=0x502)` then `add_definitions(-D_WIN32_WINNT=0x600)`,
-  and sdkddkver.h derives `NTDDI_VERSION` from it, so the real value is `0x06000000` —
-  equal to `NTDDI_LONGHORN`, and the blocks are excluded. Verified with the build's own
-  compiler, not by reading the header:
-  `i686-w64-mingw32-clang -E -P -D_WIN32_WINNT=0x600 -Isdk/include/{psdk,xdk,crt}` on a
-  probe emits `NTDDI_IS = 0x6000000` / `BLOCK_IS_EXCLUDED`.
-  Effect: the `EXP_LOGO3_ID_SIG` paths are live in Rust and dead in C — `GetAdvertiseInfo`
-  accepts a signature the C++ rejects with `E_INVALIDARG`, and `GetCurFile`/the TRACE path
-  read a LOGO3 advertise block. Legacy advertised-shortcut handling, so no boot impact.
-  Found while flipping `dialogs/filetypes.cpp`: `scan_const_contradictions` paired it
-  against `shelldesktop/CDesktopBrowser.rs`, whose `0x06000000` is the CORRECT one (its
-  `case 2:`/`case 7:` arms in `OnShowOptionsDlg` are genuinely live). Fixing it means
-  re-deciding all eight sites against the C, so it wants its own pass.
-
 - **`afd` BUGCHECK 0x1E on a pending receive: `FCB->ReceiveIrp.InFlightRequest != Irp`.
   OPEN** (2026-09-21). Found by the new apitest harness on its third boot, running
   `afd_apitest send`. Signature: `*** ASSERT FAILED: FCB->ReceiveIrp.InFlightRequest == Irp

@@ -26,6 +26,8 @@ use crate::dialogs_filetypes::_FILE_TYPE_ENTRY_Initialize_body;
 use crate::dialogs_filetypes::_FILE_TYPE_ENTRY_InvalidateDefaultApp_body;
 use crate::dialogs_filetypes::_FILE_TYPE_ENTRY_InvalidateTypeName_body;
 use crate::dialogs_filetypes::_FILE_TYPE_ENTRY_IsExtension_body;
+macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
+
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_073595696440: [WCHAR; 10] = [0x0044, 0x006F, 0x0063, 0x004F, 0x0062, 0x006A, 0x0065, 0x0063, 0x0074, 0x0000];
 pub static CPP_COM_WSTR_07E190C927BB: [WCHAR; 13] = [0x0055, 0x0052, 0x004C, 0x0020, 0x0050, 0x0072, 0x006F, 0x0074, 0x006F, 0x0063, 0x006F, 0x006C, 0x0000];
@@ -151,17 +153,7 @@ pub type LV_ITEM = LVITEMW;
 pub type LV_FINDINFO = LVFINDINFOW;
 pub type _NMLISTVIEW = NMLISTVIEW;
 
-/// `LOWORD` — the local macro the worker bodies are rewritten to call.
-///
-/// rustconv turns a model-written `LOWORD(x)` into `LOWORD!(x)` on EVERY path, but only the
-/// `--cpp-com` path calls `render_cpp_support`, which is what emits this definition — so a
-/// `--free-functions` module got the macro call with no macro. Supplied here, in the preamble,
-/// because `macro_rules!` is textually scoped and must precede its uses.
-///
-/// It must stay a MACRO and not resolve to the prelude's `win32::LOWORD` FUNCTION: the
-/// function returns WORD, this returns UINT, and these call sites `match` against the island's
-/// UINT `IDC_*` arms. (`open_with_menu.rs` defines its own for the same reason.)
-macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
+// `LOWORD!` is emitted by rustconv now (render_rewrite_support), not hand-written here.
 
 // shlwapi.h:959 FILETYPEATTRIBUTEFLAGS values the island does not carry. The class slice of
 // this TU emits its own copies; a `const` is deliberately never cross-imported (see
@@ -345,10 +337,15 @@ unsafe fn cpp_com_string_cb_printf_w(
             width = width * 10 + (*format.add(j) as u8 - b'0') as usize;
             j += 1;
         }
+        // `%%` is a literal percent. Checked before the width scan would have eaten nothing.
+        if *format.add(input + 1) == b'%' as WCHAR { put!(unit); input += 2; continue; }
         let conv = *format.add(j) as u8;
         if conv != b's' && conv != b'd' && conv != b'u' {
-            // Not a conversion this TU uses — emit the '%' literally rather than guess.
-            put!(unit); input += 1; continue;
+            // A conversion this port does not implement: REFUSE (STRSAFE_E_INVALID_PARAMETER,
+            // empty result), matching cpp_com's generated helper. Copying it through literally
+            // — what this did before — produces wrong text with nothing red anywhere.
+            *dest = 0;
+            return 0x80070057u32 as HRESULT;
         }
         if argi >= args.len() { return E_FAIL; }
         let arg = args[argi]; argi += 1; input = j + 1;

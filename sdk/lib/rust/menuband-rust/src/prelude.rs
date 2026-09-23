@@ -23,6 +23,7 @@
 
 // The header-derived authority: struct layouts, constants, and the Win32/shell fn surface.
 pub use crate::island::*;
+pub use crate::own_exports_decls::*;
 
 // Vtable INTERFACE shapes only — see the rule above. The island renders these as opaque
 // bindgen C++ classes with no callable slots, so the hand-written `lpVtbl` forms are the ones

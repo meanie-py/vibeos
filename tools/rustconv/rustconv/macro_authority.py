@@ -229,7 +229,35 @@ def _sibling_target_entry(repo_root: Path, arch: str, source: Path) -> list[str]
         db = json.loads(db_path.read_text())
     except (OSError, ValueError) as error:
         raise MacroAuthorityError(f"unreadable {db_path}: {error}") from error
-    rel_dir = source.parent.relative_to(repo_root)
+    # The module directory first; then the directory of the CMake target that LISTS this file,
+    # which is not always its parent. shell32's CMakeLists lists `dialogs/filetypes.cpp`, so
+    # every dialogs/*.cpp is compiled with shell32's flags — and once the last of them flipped,
+    # dialogs/ had no compiled sibling left, and a bank could no longer be REASSEMBLED after
+    # its TU was flipped (the flip is when you most want to fix a translated body). The owning
+    # target's surviving TUs (shell32.cpp) carry exactly those flags.
+    for rel_dir in _borrow_dirs(repo_root, source):
+        argv = _sibling_in(repo_root, arch, source, db, rel_dir)
+        if argv is not None:
+            return argv
+    return None
+
+
+def _borrow_dirs(repo_root: Path, source: Path) -> list[Path]:
+    """The TU's own directory, then the nearest ancestor whose CMakeLists.txt names it."""
+    dirs = [source.parent.relative_to(repo_root)]
+    for ancestor in source.parent.parents:
+        if ancestor == repo_root or repo_root not in ancestor.parents:
+            break
+        cml = ancestor / "CMakeLists.txt"
+        if cml.is_file() and str(source.relative_to(ancestor)) in cml.read_text(errors="replace"):
+            dirs.append(ancestor.relative_to(repo_root))
+            break
+    return dirs
+
+
+def _sibling_in(
+    repo_root: Path, arch: str, source: Path, db: list[dict], rel_dir: Path
+) -> list[str] | None:
     wanted_dirs = {repo_root / rel_dir, repo_root / f"build-{arch}" / rel_dir}
     want_cxx = _is_cxx(source)
     # Same-language siblings first, then the rest. Within each group, sorted so the choice is
