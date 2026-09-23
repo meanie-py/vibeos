@@ -51,7 +51,11 @@ for A in $ARCHES; do
     IMPLIB="$B/dll/win32/ucrtbase/CMakeFiles/libucrtbase.dir/libucrtbase.a"
     if [ ! -s "$IMPLIB" ]; then
         echo "[ucrtdiff] $A: libucrtbase import lib absent, building it"
-        (cd "$ROOT" && bash tools/canon-run.sh ninja -C "build-$A" libucrtbase) \
+        # Build the OUTPUT PATH, not a target name: `libucrtbase` exists as a named
+        # target only where something links it (i386/amd64, via ucrtbase_winetest).
+        # The path is a target on every arch.
+        (cd "$ROOT" && bash tools/canon-run.sh ninja -C "build-$A" \
+            "dll/win32/ucrtbase/CMakeFiles/libucrtbase.dir/libucrtbase.a") \
             || { echo "[ucrtdiff] FAIL($A): could not build libucrtbase"; exit 1; }
         [ -s "$IMPLIB" ] || { echo "[ucrtdiff] FAIL($A): libucrtbase built but $IMPLIB is missing"; exit 1; }
     fi
@@ -73,7 +77,7 @@ for A in $ARCHES; do
     # and friends mean and will fold or inline them, so the "ours" side silently
     # stops being a call into ucrtbase.dll and the row grades the COMPILER against
     # Microsoft. isdigit vanished from the import table exactly this way.
-    "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" \
+    "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" "$HERE/stubs.c" \
         -Wl,--start-group \
         "$REF" \
         "$RUST" \
