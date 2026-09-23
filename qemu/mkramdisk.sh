@@ -478,10 +478,13 @@ fi
 # Probe first so refresh stays non-interactive under vibeos-cli.
 mdir -i "$RAMDISK_IMG" ::reactos/Fonts >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" ::reactos/Fonts
 mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/FreeSans.ttf"                   ::reactos/Fonts/FreeSans.ttf
-# winlogon explicitly tries to load these names; without them
-# Failed to lock the DC + SYSTEMCUR(ARROW) cascades and the taskbar
-# never paints text/glyphs.
-for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf times.ttf symbol.ttf; do
+# win32k loads every file in this directory at boot. The shell needs the UI
+# faces (without them the taskbar never paints text); consrv needs "VGA"
+# (UniVGA16.ttf), its default face, or no console window can be created, and
+# the failed creation wedges csrss. Lucida Console is the one console TrueType
+# face the hive lists.
+for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf times.ttf symbol.ttf \
+            UniVGA16.ttf lucon.ttf; do
     if [ -f "$SOURCE_DIR/media/fonts/$FONT" ]; then
         mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/$FONT"                  "::reactos/Fonts/$FONT"
     fi

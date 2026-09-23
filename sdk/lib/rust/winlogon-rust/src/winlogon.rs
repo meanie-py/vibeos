@@ -455,62 +455,6 @@ pub unsafe extern "C" fn RemoveStatusMessage(Session: PWLSESSION) -> BOOL {
     (*Session).Gina.Functions.WlxRemoveStatusMessage.unwrap()((*Session).Gina.Context)
 }
 
-// FontLoadThread — WINAPI thread routine (CreateThread's LPTHREAD_START_ROUTINE
-// is `extern "stdcall"` on i386 / `extern "C"` on amd64+arm64). Split into a
-// shared impl + two cfg trampolines (same pattern as shutdown.rs).
-unsafe fn FontLoadThreadImpl(_lpParam: LPVOID) -> DWORD {
-    const FONT_NAMES: [&[u16]; 8] = [
-        wstr!("\\Fonts\\tahoma.ttf"),
-        wstr!("\\Fonts\\tahomabd.ttf"),
-        wstr!("\\Fonts\\Marlett.ttf"),
-        wstr!("\\Fonts\\arial.ttf"),
-        wstr!("\\Fonts\\arialbd.ttf"),
-        wstr!("\\Fonts\\cour.ttf"),
-        wstr!("\\Fonts\\times.ttf"),
-        wstr!("\\Fonts\\symbol.ttf"),
-    ];
-    let mut WinDir: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut FontPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-
-    let Len = GetWindowsDirectoryW(WinDir.as_mut_ptr(), MAX_PATH);
-    DbgPrint(
-        b"[WINLOGON] FontLoadThread: WindowsDirectory=%S len=%lu\n\0".as_ptr() as *const i8,
-        WinDir.as_ptr(),
-        Len,
-    );
-    if Len == 0 || Len >= MAX_PATH - 40 {
-        DbgPrint(
-            b"[WINLOGON] FontLoadThread: GetWindowsDirectoryW failed\n\0".as_ptr() as *const i8,
-        );
-        return 1;
-    }
-    for name in FONT_NAMES.iter() {
-        wcscpy(FontPath.as_mut_ptr(), WinDir.as_ptr());
-        wcscat(FontPath.as_mut_ptr(), name.as_ptr());
-        if AddFontResourceW(FontPath.as_ptr()) != 0 {
-            DbgPrint(
-                b"[WINLOGON] Loaded font: %S\n\0".as_ptr() as *const i8,
-                FontPath.as_ptr(),
-            );
-        } else {
-            DbgPrint(
-                b"[WINLOGON] Failed to load font: %S (err %lu)\n\0".as_ptr() as *const i8,
-                FontPath.as_ptr(),
-                GetLastError(),
-            );
-        }
-    }
-    DbgPrint(
-        b"[WINLOGON] Font loading complete (%d fonts)\n\0".as_ptr() as *const i8,
-        FONT_NAMES.len() as i32,
-    );
-    0
-}
-
-unsafe extern "system" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
-    FontLoadThreadImpl(lpParam)
-}
-
 /* DOOM (opt-in demo, VIBEOS_DOOM=1 at image-build time). doomgeneric's
  * Win32/GDI backend — a genuinely foreign binary — is launched ONLY if
  * doom.exe was staged into the image (GetFileAttributesW succeeds): arm64
@@ -2449,18 +2393,11 @@ pub unsafe extern "system" fn WinMain(
             DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
         }
 
-        /* Load system fonts SYNCHRONOUSLY now — right after the window station and
-         * desktops exist (CreateWindowStationAndDesktops above) and BEFORE any text
-         * is rendered: the GINA status message (DisplayStatusMessage), the desktop
-         * watermark, and explorer's taskbar all need g_FontListHead populated. The
-         * kernel defers system-font loading to user space on x86 (IntLoadSystemFonts
-         * is a no-op there), so until winlogon calls AddFontResourceW the global font
-         * list is empty and every GreExtTextOutW hits IntRealizeFont NOMATCH. The old
-         * code did this on a background thread AFTER spawning explorer, which raced
-         * the shell's first paint and lost on i386 -> permanently blank desktop.
-         * Doing it here, before the first text render, makes it deterministic. */
-        DbgPrint(b"[WINLOGON] Loading system fonts (synchronous, pre-shell)...\n\0".as_ptr() as *const i8);
-        FontLoadThreadImpl(null_mut());
+        /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
+         * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
+         * winlogon used to AddFontResourceW eight fonts by name here because the
+         * kernel skipped that load on x86. The list lacked the console's "VGA" face,
+         * so no console window could be created. */
 
         DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
         if crate::rpcserver::StartRpcServer() == 0 {
@@ -2810,10 +2747,6 @@ pub unsafe extern "system" fn WinMain(
             );
         }
     }
-
-    /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the
-     * shell's first paint already has g_FontListHead populated. The old async
-     * CreateThread(FontLoadThread) here raced the shell and lost on i386. */
 
     /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus.
      * arm64-only: on amd64/i386 notepad hits a separate pre-existing

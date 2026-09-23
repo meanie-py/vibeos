@@ -2207,6 +2207,25 @@ handles like 0x3DC) means a bit-test never matches after a cohab flip.
 
 ---
 
+### A C length macro that stops short of the padding is not `size_of`
+**Symptom.** Threads read as suspended to win32k ("Sending to Suspended Thread"), so every
+`SendMessage` to them was refused. This hung the arm64 console and the i386 desktop thread,
+and 3327 of those ERRs appeared in a healthy amd64 boot. The fields were correct in every
+bindgen island.
+
+**Cause.** `KAPC_STATE_ACTUAL_LENGTH` is `FIELD_OFFSET(KAPC_STATE, UserApcPending) +
+sizeof(BOOLEAN)`: 43 on 64-bit and 23 on i386, deliberately short of the padded
+`sizeof` (48 / 24). KTHREAD overlays `FreezeCount`/`SuspendCount` on `SavedApcState`'s
+padding and `ApcQueueable`/`Priority` on `ApcState`'s. The translation wrote it as
+`size_of::<_KAPC_STATE>()`, so `KiMoveApcState` on every attach/detach copied `ApcState`'s
+tail into the suspend counts.
+
+**Fix.** `offset_of!(_KAPC_STATE, UserApcPending) + size_of::<BOOLEAN>()`.
+
+**Generalize.** A macro spelled `FIELD_OFFSET(..) + sizeof(..)` or `RTL_SIZEOF_THROUGH_FIELD`
+exists precisely because the tail is someone else's storage. Grep for the overlay
+(`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
+
 ## Constants: invented, guessed, and swallowed match arms
 
 **This is the single largest translation bug class in the repo, and the least visible.** rustc

@@ -504,36 +504,52 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
-- **arm64 fails `test_start_menu_opens` on fresh media: after Ctrl+Esc the screen is bare
-  wallpaper, with no taskbar, no desktop icons and no notepad window. UNOWNED** (2026-09-22;
-  root cause narrowed 2026-09-23). This is NOT a shell or start-menu bug.
-  - **Trigger:** arm64 winlogon's demo sequence spawns `cmd.exe`
-    (`winlogon-rust/src/winlogon.rs`, the "cmd.exe INFINITE wait" block) while explorer is
-    starting.
-  - **Mechanism:** cmd's consrv connect (`[CSRSRV] CliCon: ServerId=2`) wedges csrss.
-    cmd's `kernel32 DllMain PROCESS_ATTACH` never returns, and depending on timing either
-    explorer never reaches `_tWinMain` or its windows never paint. There is no further
-    `[DESKPAINT]` after the taskbar is created.
-  - **Measured (same fresh media, gate verdicts):**
-    - `cmd.exe` deleted from the ramdisk: PASS (panel lit 0.68 → 0.90).
-    - With cmd: FAIL 6 times.
-    - After adding unrelated `DbgPrint`s to winsrv: PASS once. It is timing-sensitive.
-    - Giving cmd `lpDesktop = WinSta0\Default`: still FAIL.
-  - **The kmtest sweep is NOT it.** The original inference here was refuted: the failure
-    reproduces with no Startup items at all, and on a kmtests-OFF build at `894e872ede1`
-    (2026-09-12).
-  - **Why it "worked until 09-13":** that media had been refreshed in place for weeks. Old
-    FEX probe binaries (`fexprobe.exe`, `wow64probe.exe`, `syswow64\*`) survived there, and
-    winlogon runs them BEFORE cmd, which moved cmd off explorer's startup window. Booting
-    `vibeos-research`'s 09-20 boot.img passes; a fresh ramdisk from any commit fails.
-    mkramdisk now prunes stale payloads and recreates a ramdisk that has no record, so every
-    fresh arm64 image shows this.
-  - **Next step:** find what the csrss console connect waits on. winsrv's own `DbgPrint`s did
-    not reach serial in any run, so consrv checkpoints are not a usable probe. csrsrv prints
-    only through its non-variadic `dbg_print!`, so route checkpoints that way, or walk the
-    csrss thread stacks under `vibeos-cli debug`.
-  - **Reproduce:** `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k
-    test_start_menu_opens -s`. The default `vibeos-cli smoke` does not run this test.
+- **arm64 `test_start_menu_opens` on fresh media: bare wallpaper, no taskbar. ROOT-CAUSED
+  2026-09-23, fix on the `shell32-com` lane: two bugs, both needed.**
+  Arm64 winlogon spawns `cmd.exe` while explorer starts, and cmd's console connect wedged
+  csrss:
+  1. **No console font could exist.** win32k never enumerated `\SystemRoot\Fonts`. It
+     loaded a hardcoded list instead: 6 fonts on arm64, and nothing on x86 ("deferred to
+     winlogon", which added 8 by name). Neither list held consrv's default face "VGA"
+     (`UniVGA16.ttf`) or its "Terminal" fallback. So `InitFonts` failed, `WM_NCCREATE`
+     failed, and `GuiInitFrontEnd` fell into `GuiDeinitFrontEnd`. That waits forever on
+     `hGuiTermEvent`, because the input thread skips `NtSetEvent` when `hWindow` is NULL.
+     The API thread serving cmd's connect was left parked there for good. Stacks taken
+     via the census:
+     - tid 148: `GuiDeinitFrontEnd` ← `GuiInitFrontEnd` ← `ConSrvConnect` ←
+       `CsrApiRequestThread`.
+     - The input thread: idle in `NtUserGetMessage`.
+     Fix: upstream's directory enumeration is restored in `IntLoadSystemFonts` on all
+     arches (enumerating once and filtering the extension, because our FAT driver ignores
+     the search pattern). winlogon's font list is gone, and arm64 stages `UniVGA16.ttf` and
+     `lucon.ttf`.
+  2. **`KAPC_STATE_ACTUAL_LENGTH` was `size_of` (48/24), not the unpadded 43/23**
+     (`ke/apc.rs`, since the Feb KE translation). Every attach/detach copied `ApcState`'s
+     tail over `SavedApcState`'s, i.e. into `FreezeCount` (and on 64-bit `SuspendCount`).
+     Any thread that ever attached to another process, which includes every thread that
+     created one, then read as suspended. win32k refused all sends to it with "Sending to
+     Suspended Thread". This is the same predicate as the i386 hang behind the desktop-thread
+     cursor-callback hack (Tier 1 above).
+  - **Measured:**
+    - Both fixes: arm64 gate 7/7 with `cmd.exe` present; 0 suspended sends; cmd's
+      `PROCESS_ATTACH` completes.
+    - Fonts only: 2 passes, then 1 boot where explorer never started.
+    - amd64: passes.
+  - **Exposed, OPEN:** with fix 2, i386 `test_start_menu_opens` drops from 4/4 on master
+    to about 1 in 3.
+    - One Esc key-down reaches `co_UserProcessHotKeys` twice. win32k's RIT processes a
+      second read whose buffer still holds the previous record (`[RITPROBE]` read#5
+      `mc=1 flags=0` again, and the real Esc-up is never seen).
+    - `HSHELL_TASKMAN` fires twice, and the tray toggles the menu open, then closed.
+    - Before the fix, the WH_KEYBOARD_LL hook owner read as suspended, so the RIT never
+      blocked in the hook send, keys never queued, and the race never opened.
+    - It moves with instrumentation: a probe on the read path made it pass 3/3.
+    - Next step: the RIT loop in `win32k-rust/src/input.rs` against `NtReadFile`'s deferred
+      completion (`IopPerformSynchronousRequest`).
+  - **Correction:** an earlier version of this entry said winsrv's `DbgPrint`s never reach
+    serial. That was false. It was read from a stale `qemu/arm64_smoke_live.log` dated
+    2026-08-06. In a worktree, pytest's serial lives under `/tmp/pytest-of-*/`. The kmtest
+    and stale-payload inferences above it were refuted as well.
 - **shell32's DllRegisterServer returns 0x80070002 (ERROR_FILE_NOT_FOUND) on the livecd, all
   three arches. UNOWNED** (2026-09-23). Measured by `tools/payloads/regdiff`, identically for
   the C++ build (`bf5c0d1573f`) and the Rust one, so it predates retiring shell32.cpp. Every
@@ -645,34 +661,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   DETACHED_PROCESS (a console is legal there; it is only the WoW64 guest that cannot
   create one). That is a one-line experiment and it also A/Bs the console bug below.
 
-- **Console creation HANGS a CUI process launched by winlogon — on bare i386 as well as
-  under WoW64. OPEN, and it is one bug behind three symptoms** (2026-09-21).
-  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`
-  (`win32k-rust/src/window.rs`), after which the process spins in
-  `Sending to Suspended Thread` and never reaches main: 180s timeout, **0 bytes of
-  output**, 9075 spin lines. First seen on a WoW64 guest; the native i386 control of the
-  same binary reproduced it EXACTLY, so it is ours and not a 32↔64 bug — "WoW64" was
-  where it was seen, not where it lives.
-  The three symptoms: (1) a WoW64 winetest hangs before main; (2) the native one does
-  too; (3) `class.c` spawns fifteen children of its own, and a CUI child of a
-  console-less parent gets a NEW console from csrss, so each burns the full 30s of
-  `winetest_wait_child_process` — 7.5 minutes, and the reason the native control has
-  never reached the wndproc block it exists to adjudicate.
-  Worked around for the winetest runner by launching `DETACHED_PROCESS` (a piped test
-  wants no console), which is why the ladder does not depend on it. **Fixing this is the
-  unblock for the wndproc attribution above**, and it is reachable natively, so no WoW64
-  machinery is needed to debug it.
-  LOCALIZED, not yet root-caused: `co_UserCreateWindowEx` fails at
-  `co_IntSendMessage(hwnd, WM_NCCREATE, …)` returning 0, and the send is refused by
-  `IsThreadSuspended(ptirec)` in `msgqueue.rs` — the receiving thread reads as suspended
-  or frozen. That predicate is `Tcb.SuspendCount == 0 && PsGetThreadFreezeCount() == 0`,
-  both of which are bindgen-anon-union reads that differ per arch
-  (`kt_suspend_count` in msgqueue.rs, `PsGetThreadFreezeCount` in ps-rust/thread.rs), so
-  a wrong union member would make every thread look suspended. Note the ERR fires
-  **3327 times in a HEALTHY amd64 boot**, so it is either badly over-firing already or
-  there really are that many suspended sends; either way the next step is a runtime
-  probe printing SuspendCount and FreezeCount for the receiving thread, not more
-  source reading — the two candidate reads look correct on inspection.
+- **Console creation HANGS a CUI process launched by winlogon — ROOT-CAUSED 2026-09-23.**
+  Same two bugs as the arm64 start-menu entry above:
+  - consrv's "VGA" console font was never loaded, so `WM_NCCREATE` failed in `InitFonts`
+    and the teardown wedged the CSR thread.
+  - `KAPC_STATE_ACTUAL_LENGTH` made attached threads look suspended.
+  The fix is on the `shell32-com` lane. The winetest runner's `DETACHED_PROCESS`
+  workaround can be retried without it once that lands. The console path was only measured
+  on arm64 so far.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not
