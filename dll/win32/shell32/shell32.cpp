@@ -25,6 +25,10 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs + shell32/IDefClFImpl.rs, Phase 1 of retiring this
+      // file): AddCommasW, RegenerateUserEnvironment, SHCreateDefClassObject and the
+      // IDefClFImpl class factory behind it. All are #[no_mangle] there, so these bodies
+      // would collide at link time.)
 /*
  * Implemented
  */
@@ -272,6 +276,7 @@ HRESULT WINAPI SHCreateDefClassObject(
     return S_OK;
 }
 
+#endif
 /**************************************************************************
  *  CStartMenuDummy
  */
@@ -1007,6 +1012,8 @@ END_OBJECT_MAP()
 
 CShell32Module  gModule;
 
+#if 0 // Rust-owned (shell32-rust shell32/com_server.rs, Phase 2): the module lock count
+      // is Rust's now; these forwarded to gModule, which after Phase 1 no C++ COM object used.
 extern "C" void WINAPI Shell32RustObjectLock()
 {
     gModule.Lock();
@@ -1029,6 +1036,7 @@ extern "C" void WINAPI MenuBandRustModuleUnlock()
 {
     gModule.Unlock();
 }
+#endif
 
 extern "C" HRESULT WINAPI Shell32RustCoCreateInitSF(
     LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,
@@ -1066,6 +1074,7 @@ extern "C" HRESULT WINAPI Shell32RustGetCommandStringImpl(
  *     Returns version of a shell32.dll from IE4.01 SP1.
  */
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs)
 STDAPI DllGetVersion(DLLVERSIONINFO *pdvi)
 {
     /* FIXME: shouldn't these values come from the version resource? */
@@ -1097,6 +1106,7 @@ STDAPI DllGetVersion(DLLVERSIONINFO *pdvi)
         return E_INVALIDARG;
     }
 }
+#endif
 
 /*************************************************************************
  * global variables of the shell32.dll
@@ -1147,15 +1157,20 @@ STDAPI_(BOOL) DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID fImpLoad)
 /***********************************************************************
  *              DllCanUnloadNow (SHELL32.@)
  */
+#if 0 // Rust-owned (shell32-rust shell32/com_server.rs, Phase 2)
 STDAPI DllCanUnloadNow()
 {
     return gModule.DllCanUnloadNow();
 }
+#endif
 
 /*************************************************************************
  *              DllGetClassObject     [SHELL32.@]
  *              SHDllGetClassObject   [SHELL32.128]
  */
+#if 0 // Rust-owned (shell32-rust shell32/com_server.rs, Phase 2): same object map, same ATL
+      // semantics (cached per-CLSID factories, CComObjectCached module locking). The OBJECT_MAP
+      // and CShell32Module below stay for DllRegisterServer until Phase 3.
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
 {
     HRESULT                                hResult;
@@ -1166,6 +1181,7 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     TRACE("-- pointer to class factory: %p\n", *ppv);
     return hResult;
 }
+#endif
 
 static HRESULT UpdateRegistryFromResource(BOOL Register)
 {
@@ -1228,8 +1244,10 @@ STDAPI DllUnregisterServer()
  *    LPCWSTR pszCmdLine - command line (unused by shell32?)
  */
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs)
 HRESULT WINAPI DllInstall(BOOL bInstall, LPCWSTR cmdline)
 {
     FIXME("%s %s: stub\n", bInstall ? "TRUE":"FALSE", debugstr_w(cmdline));
     return S_OK;        /* indicate success */
 }
+#endif

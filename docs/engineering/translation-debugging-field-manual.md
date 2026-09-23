@@ -2565,6 +2565,20 @@ keeps the population alive until one copy is reached.** Constructing with one co
 with another is the failure. When a macro is defined more than once in our tree, the count itself
 is the finding; grep the name before trusting any single definition.
 
+### A `(LONG)` cast in a handle macro means SIGN-extension on 64-bit
+**Symptom:** `RegOverridePredefKey(HKEY_CLASSES_ROOT, h)` returned `ERROR_INVALID_HANDLE` on
+amd64 and arm64 and worked on i386; a sandboxed DllRegisterServer then wrote the real registry
+and a diff of its output came back empty — "no differences". **Cause:** winreg.h defines
+`HKEY_CLASSES_ROOT` as `((HKEY)(ULONG_PTR)((LONG)0x80000000))`; the `LONG` makes it
+`0xFFFFFFFF80000000` on 64-bit, and that is what every C and mingw caller passes. advapi32-rust
+had `0x8000_0000u32 as usize as HKEY` — zero-extended — so every `hKey == HKEY_X` in the
+RECEIVER missed a real caller (RegOverridePredefKey, the HKCU cache-disable check in
+MapDefaultKey, eight HKEY_PERFORMANCE_DATA paths). Nothing else noticed because the common
+path masks the low 32 bits (`IsPredefKey`, `GetPredefKeyIndex`). **Fix:** `as i32 as isize`
+for the constant; compare with `SamePredefKey` (low 32 bits) in the receiver, since ~9 other
+crates still carry their own zero-extended copies and pass them in. Any macro of the shape
+`(HANDLE)(ULONG_PTR)(LONG)0x8…` has this trap; `(LONG_PTR)-1`-style handles do not.
+
 ### A hand-typed bit-flag literal that names the wrong member `[§9.86]`
 `DC_vPrepareDCsForBlit` tested `fs & 0x04` (**DC_CANCELED**) where the C tests
 **DC_DIRTY_RAO (0x10)** — so every GDI blit drew through a stale clip, and an app caching
@@ -6277,6 +6291,30 @@ gates the invariant statically: every hive `add_cd_file` stages into `reactos/sy
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
+### An arm64 ramdisk refreshed in place keeps every file it ever held
+**Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
+the same commit. A payload-less build still autostarted `kmtest-sweep.exe`, plus a
+`regdiff.exe` from a different day. A "last known-good" screenshot was cited as dating the
+regression, and bisecting from it found the good endpoint bad too.
+
+**Cause.** `vibeos-cli build` and conftest both call `mkramdisk.sh --refresh` whenever
+`qemu/ramdisk.img` exists. `--refresh` only ever `mcopy -o`s onto the old FAT image, so any
+file staged once stays on every later boot of that tree: payloads, and FEX probe binaries from
+a `VIBEOS_FEX=1` build. The leftovers changed behaviour. Arm64 winlogon runs any probe it
+finds before it spawns `cmd.exe`, and that delay was what hid a csrss console wedge on the old
+images. The same commit failed on a fresh image.
+
+**Fix.** mkramdisk records the payload dests it staged in `qemu/ramdisk.payloads`. The next
+run deletes any recorded dest the current selection omits. A ramdisk with no record is
+recreated rather than refreshed.
+
+**Generalize.**
+- Media that is only ever added to is a function of its whole build history, not of the tree.
+- A "known-good" artifact from a long-lived worktree dates nothing until it is reproduced on
+  freshly built media.
+- Before bisecting, boot the good artifact itself. Here that one boot moved the question
+  from "which commit" to "which file".
 
 ### The two staleness oracles, both were wrong `[§9.81]`
 - **(a) `cohab_staleness_reasons` false-REDs on a codegen-neutral edit** `[§9.81a]` — the rule

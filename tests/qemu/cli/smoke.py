@@ -661,6 +661,12 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     pytest_arch = {"i386": "i386-uefi", "amd64": "amd64-uefi"}.get(arch, arch)
     # Payloads that declare `net: true` (e.g. httpd) need the -net arch variant
     # (NIC + payload hostfwd). Sniff the specs; one net payload upgrades the boot.
+    # The pytest timeout covers the boot AND each payload's launch drain. A fixed 600s let a
+    # payload's declared launch_drain_secs be cut short silently (procstorm declares 1800), and
+    # failed regdiff on amd64 while its VERDICT line was still on its way. Budget the boot
+    # separately and add the longest drain.
+    boot_budget = 600
+    drain = 0.0
     try:
         import yaml as _yaml
 
@@ -668,9 +674,10 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
             _spec_path = repo / "tools" / "payloads" / _name.strip() / "payload.yaml"
             if _spec_path.is_file():
                 _spec = _yaml.safe_load(_spec_path.read_text()) or {}
-                if _spec.get("test", {}).get("net") and not pytest_arch.endswith("-net"):
+                _test = _spec.get("test", {}) or {}
+                drain = max(drain, float(_test.get("launch_drain_secs", 30)))
+                if _test.get("net") and not pytest_arch.endswith("-net"):
                     pytest_arch += "-net"
-                    break
     except ImportError:
         pass  # no pyyaml -> test_payload itself will fail loud on the guard
     cmd = [
@@ -684,23 +691,38 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
         payloads,
         "--skip-clean-build",  # smoke already gated staleness; don't rebuild
         "--timeout",
-        "600",
+        str(int(boot_budget + drain)),
         "-q",
         "-p",
         "no:cacheprovider",
     ]
+    outer_timeout = int(boot_budget + drain) * 2
+    # The payload suite boots its OWN VM. Without an artifact dir its serial landed in a pytest
+    # tmp dir that pytest prunes, so a payload that reports its result over serial (regdiff's
+    # VERDICT line, a sweep's per-test lines) left no record of it anywhere once the run
+    # ended — the stage summary only says whether the launch marker appeared.
+    payload_dir = run.dir / "payload"
+    payload_dir.mkdir(parents=True, exist_ok=True)
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=outer_timeout,
+            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(payload_dir)},
+        )
     except subprocess.TimeoutExpired:
         run.add(
             Stage(
                 "payload",
                 status="fail",
                 detail=f"payload suite ({payloads}) timed out",
-                salient=["tests/qemu/test_payload.py hung > 1200s"],
+                salient=[f"tests/qemu/test_payload.py hung > {outer_timeout}s"],
             )
         )
         return
+    (payload_dir / "pytest.log").write_text((proc.stdout or "") + (proc.stderr or ""))
     tail = (proc.stdout or "").strip().splitlines()
     summary = next(
         (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),
@@ -718,6 +740,7 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
                     summary.strip("= "),
                     f"repro: pytest tests/qemu/test_payload.py --arch {pytest_arch} "
                     f"--payload {payloads}",
+                    f"serial + pytest.log: {payload_dir}",
                 ],
             )
         )

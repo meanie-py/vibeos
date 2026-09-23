@@ -52,15 +52,15 @@ def die(msg: str) -> NoReturn:  # noqa: F821 - py3.8 compat, no typing import ne
 
 
 def available() -> list[str]:
-    return sorted(p.parent.name for p in PAYLOADS_DIR.glob("*/payload.yaml"))
+    return sorted(
+        p.parent.name for p in PAYLOADS_DIR.glob("*/payload.yaml")
+    )
 
 
 def load_spec(name: str) -> dict:
     spec_path = PAYLOADS_DIR / name / "payload.yaml"
     if not spec_path.is_file():
-        die(
-            f"unknown payload {name!r} (no {spec_path}). Available: {', '.join(available()) or '<none>'}"
-        )
+        die(f"unknown payload {name!r} (no {spec_path}). Available: {', '.join(available()) or '<none>'}")
     try:
         spec = yaml.safe_load(spec_path.read_text())
     except yaml.YAMLError as e:
@@ -93,7 +93,10 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         spec = load_spec(name)
         arches = spec.get("arches")
         if arches is not None and arch not in arches:
-            die(f"payload {name!r} does not support arch {arch!r} (spec says arches: {arches})")
+            die(
+                f"payload {name!r} does not support arch {arch!r} "
+                f"(spec says arches: {arches})"
+            )
         hint = spec.get("build_hint", "").format(arch=arch)
         for b in spec["binaries"]:
             src = (REPO / str(b["src"]).format(arch=arch)).resolve()
@@ -114,37 +117,6 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
             entries[dest] = src
             owner[dest] = name
     return entries
-
-
-def all_dests(arch: str) -> list[str]:
-    """Every dest ANY payload could graft for this arch.
-
-    Used to PURGE the media before staging the selected set. Without it a payload
-    staged by an EARLIER build survives into a later one that did not select it:
-    the ramdisk is built incrementally and nothing ever removes a deselected
-    payload. That is not theoretical -- a kmtest-sweep.exe left from a previous
-    run sat in the All Users StartUp folder beside ucrtdiff.exe, explorer
-    autostarted BOTH, and the Tier 2 sweep spent the boot competing with a full
-    kernel test corpus for the shared serial channel. It never emitted a line,
-    and the media looked correct the whole time because the payload it was ASKED
-    to stage was indeed staged.
-
-    Deliberately does NOT check that src exists: a payload being purged is
-    normally one whose binary was never built in this tree.
-    """
-    if arch not in ARCHES:
-        die(f"unknown arch {arch!r} (expected one of {ARCHES})")
-    dests: set[str] = set()
-    for name in available():
-        spec = load_spec(name)
-        arches = spec.get("arches")
-        if arches is not None and arch not in arches:
-            continue
-        for b in spec["binaries"]:
-            prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
-            dest = str(b["dest"]).format(arch=arch).replace("\\", "/").lstrip("/")
-            dests.add(prefix + dest)
-    return sorted(dests)
 
 
 def resolve_env_payloads(environ=os.environ) -> list[str]:
@@ -222,18 +194,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("list", help="print available payload names")
 
-    ad = sub.add_parser(
-        "all-dests",
-        help="print every dest ANY payload could graft (for purging stale ones)",
-    )
-    ad.add_argument("--arch", required=True, choices=ARCHES)
-
     args = ap.parse_args(argv)
-
-    if args.cmd == "all-dests":
-        for d in all_dests(args.arch):
-            print(d)
-        return 0
 
     if args.cmd == "list":
         for n in available():

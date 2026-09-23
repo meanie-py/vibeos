@@ -155,7 +155,8 @@ _PREDICATE = re.compile(r"^_?(is[a-z]|isw|_?ismb|_?iswcsym)")
 #:      in the All Users StartUp folder beside ucrtdiff.exe. Explorer autostarts that
 #:      folder, so every Tier 2 run shared its boot and its serial channel with a full
 #:      kernel test corpus. Fixed in qemu/mkramdisk.sh, which now purges every dest ANY
-#:      payload could own (compile.py all-dests) BEFORE staging the selected set.
+#:      qemu/ramdisk.payloads records what the last stage wrote, and entries absent
+#:      from the current selection are deleted before the new set is staged.
 #:
 #:   2. THE COLLATION FAMILY WEDGES THE WHOLE GUEST. With the media clean, shard 0/8 ran
 #:      16 exports and died entering `_mbsnicoll`. It is not a hung thread: ALL serial

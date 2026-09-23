@@ -100,7 +100,16 @@ list(APPEND SOURCE
     # iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
     # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
     #   CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
-    shell32.cpp
+    # Replaced by Rust: the shell32 monolith TU below, the LAST C++ TU of shell32 that was not sanctioned glue.
+    # Retired in three phases: its plain logic (shell32-rust/src/shell32/shell32_free.rs,
+    # IDefClFImpl.rs), its COM server (shell32/com_server.rs: class-object table, cached class
+    # factories, DllGetClassObject/DllCanUnloadNow, the module lock count), and its registration
+    # + DllMain (shell32/registration.rs, shell32/dllmain.rs). With it go CShell32Module, the
+    # OBJECT_MAP and the 36 CXxxRustEntry shims that only existed to feed ATL's map, and the
+    # three Shell32Rust* stdcall->cdecl trampolines (now Rust, same symbols). Registration now
+    # hands the .rgs scripts to atl100.dll's registrar (AtlCreateRegistrar, as Wine's DLLs do)
+    # instead of ATL's statically-linked one; see registration.rs for how that was checked.
+    # shell32.cpp
     # utils.cpp — replaced by Rust (shell32-rust/src/shell32/utils.rs, all 95 free functions);
     # cohab via libshell32_rust.a. Whole-TU flip, gated together with the wiring because doing
     # either alone is a PARTIAL cohab flip: utils.rs publishes names the live C++ objects also
@@ -416,6 +425,13 @@ set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT
 set_module_type(shell32 win32dll UNICODE)
 target_link_libraries(shell32 wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
 add_dependencies(shell32 rust_menuband rust_recyclebin)
+# precomp.h includes shellmenu/*.h, which include the GENERATED shobjidl_undoc.h. The retired
+# shellmenu OBJECT library carried `add_dependencies(shellmenu xdk psdk reactos_idls)`, and that
+# was the only edge ordering the IDL headers before shell32's PCH; removing the library removed
+# it. Warm build dirs already had the header, so every warm gate stayed green — a FRESH arm64
+# build (whose curated target list does not otherwise build reactos_idls) failed with
+# "'shobjidl_undoc.h' file not found".
+add_dependencies(shell32 xdk psdk reactos_idls)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)
 add_dependencies(shell32 stdole2 rust_shell32) # shell32_shldisp.tlb needs stdole2.tlb; rust_shell32 = cohab staticlib

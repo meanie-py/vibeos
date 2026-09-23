@@ -234,6 +234,18 @@ fi
 
 echo "[*] All build artifacts found."
 
+# Which payload dests are in ramdisk.img right now. --refresh only ever ADDS
+# files, so without this a payload staged once stayed on every later boot of
+# this tree: a payload-less arm64 build still autostarted kmtest-sweep.exe
+# (and a regdiff.exe from a different day), whose 91-test sweep ran through
+# every boot the start-menu gate saw. The payload stage below deletes what
+# this lists and the current selection does not.
+PAYLOAD_RECORD="$QEMU_DIR/ramdisk.payloads"
+if [ -n "$REFRESH" ] && [ -f "$RAMDISK_IMG" ] && [ ! -f "$PAYLOAD_RECORD" ]; then
+    echo "[*] --refresh: no $PAYLOAD_RECORD for the existing ramdisk.img, so its payloads are unknown -- recreating it"
+    REFRESH=""
+fi
+
 # --- Create ramdisk.img (skipped under --refresh: reuse existing FAT image) ---
 if [ -n "$REFRESH" ]; then
     if [ ! -f "$RAMDISK_IMG" ]; then
@@ -244,6 +256,7 @@ if [ -n "$REFRESH" ]; then
 else
     echo "[*] Creating ramdisk.img (${RAMDISK_SIZE_MB}MB FAT32)..."
     rm -f "$RAMDISK_IMG"
+    : > "$PAYLOAD_RECORD"
     # Create empty image
     dd if=/dev/zero of="$RAMDISK_IMG" bs=1M count=$RAMDISK_SIZE_MB 2>/dev/null
     # Format as FAT32
@@ -556,23 +569,17 @@ fi
 # reverting the payload set (the 2026-07-07 doom-clobber incident).
 PAYLOAD_MANIFEST=$(python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
     --arch arm64 --payloads-auto "$BUILD_DIR")
-
-# PURGE every dest ANY payload could own, BEFORE staging the selected ones. The
-# ramdisk is built incrementally, so a payload staged by an earlier build survives
-# into a later one that did not select it -- nothing ever removed it. A
-# kmtest-sweep.exe left from a 2026-09-22 run sat in the All Users StartUp folder
-# beside ucrtdiff.exe; explorer autostarted BOTH, so the Tier 2 sweep spent the boot
-# competing with a full kernel test corpus for the shared serial channel and never
-# emitted a single line. Nothing looked wrong: the payload the build was ASKED to
-# stage was staged correctly, and the stale one was invisible to every check.
-# Purging first makes the staged set exactly the selected set. Safe because every
-# payload dest is payload-exclusive (checked: no payload grafts a system file).
-python3 "$PROJECT_DIR/tools/payloads/compile.py" all-dests --arch arm64 \
-    | while IFS= read -r STALE; do
-        [ -n "$STALE" ] || continue
-        mdel -i "$RAMDISK_IMG" "::/$STALE" >/dev/null 2>&1 || true
-    done
-
+# Drop payloads staged by an earlier run that the current selection omits.
+PAYLOAD_DESTS=$(printf '%s\n' "$PAYLOAD_MANIFEST" | sed -n 's/=.*//p')
+while IFS= read -r OLD; do
+    [ -n "$OLD" ] || continue
+    if ! printf '%s\n' "$PAYLOAD_DESTS" | grep -qxF -- "$OLD"; then
+        echo "[*]   removing stale payload ::/$OLD"
+        mdel -i "$RAMDISK_IMG" "::/$OLD" 2>/dev/null || true
+    fi
+done < "$PAYLOAD_RECORD"
+# Recorded before the copies, so an interrupted stage still lists what it wrote.
+printf '%s\n' "$PAYLOAD_DESTS" | sed '/^$/d' > "$PAYLOAD_RECORD"
 if [ -n "$PAYLOAD_MANIFEST" ]; then
     echo "[*] staging payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM})"
     printf '%s\n' "$PAYLOAD_MANIFEST" | while IFS='=' read -r DEST SRC; do

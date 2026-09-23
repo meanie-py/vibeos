@@ -10,6 +10,44 @@ against `shell32-rust` instead. See `upstream-sync-merge-recipes.md`.
 This document exists so the oracle information survives that gap. It is not a task list for
 upstream-sync; it is raw material for whoever does the semantic-port pass.
 
+## STATUS 2026-09-23: the semantic-port pass has been done
+
+Every CONFIRMED item from both waves has been ported into the Rust. The two `shell32.cpp`
+items were already in the Rust, because Phase 1 translated the post-merge C. Each port cites
+its upstream hash in a comment beside the change.
+
+| upstream | verdict | where |
+|---|---|---|
+| `4fecc908e7d` + `39ad1b6824f` SHELLSTATE backfill, write defaults | ported | `wine/shellord.rs` SHGetSetSettings |
+| `9342ed43d9a` namespace-item hide reads HKCU then HKLM | ported | `folders/CDrivesFolder.rs` |
+| `68a03b2e1ae` SFVM_WINDOWCLOSING before list-view teardown | ported (browseui half came in with the merge) | `shell32/CDefView.rs` DestroyViewWindow |
+| `6730ec5508f` refresh item text on media change | ported | `CDefView.rs` LV_RefreshIcon |
+| `fd683dbba45` AddCommasW LOCALE_SGROUPING | already in the Rust | `shell32/shell32_free.rs` |
+| `02f23141395` LockServer | already in the Rust | `shell32/IDefClFImpl.rs` |
+| `7cba1c80a75` ASSOCSTR_DEFAULTICON OOM → E_OUTOFMEMORY | ported (the translation had kept the bug on purpose) | `query_associations.rs` |
+| `26f920582be` ignore clicks on disabled menu items | already in the Rust | `menuband-rust/src/menu_toolbars.rs` |
+| `a83411cfefe` SHRunControlPanel NULL check | ported | `wine/shellord.rs` |
+| `16bb138e325` named registry verbs in InvokeCommand | ported, with two parts left out (see below) | `CDefaultContextMenu{,_tu}.rs` |
+| `763ce84cf55` CExeDropHandler leak + OOM | ported; the right-drag menu is a feature, not ported | `exe_drop_handler.rs` |
+| `a5f51269c88` FolderItemVerbs::Item S_FALSE; AppendItems OOM | ported | `CFolderItemVerbs.rs`, `CEnumIDListBase.rs` |
+| `b60f66cbbfa` printer folder IQueryAssociations | ported | `printer_folder.rs` |
+| `d6cc284435e` LinkWindow_RegisterClass | ported (superclasses SysLink) | `wine/shellord.rs` |
+| `8d44ccdd5f7` tray balloon removal crash | ported (recursion guard, RemoveInfo node, Close, UpdateButton); NIM_SETFOCUS not ported | `explorer-rust/.../syspager.rs` |
+
+Deliberately left out of `16bb138e325`:
+
+- **The `copyto`/`moveto` rows.** Upstream dropped them together with moving Copy To and
+  Move To into `CCopyMoveToMenu::DoCopyMoveToFolder`. This tree has not taken that refactor,
+  so the rows stay and the old path keeps working.
+- **The `SHELL_execute` early return.** On an invoke-IDList failure, upstream now returns an
+  error instead of falling back to association-based execution. Our Rust keeps the fallback,
+  so a context-menu gap degrades to the classic path instead of failing the launch.
+
+Still open:
+
+- `93f96e592b2`, the CQueryAssociations rewrite, is a new architecture rather than a fix.
+- The `SHBindToObject` ABI item (#3) is unchanged.
+
 ---
 
 ## What "the oracle" means here, and why it is different from your porting work

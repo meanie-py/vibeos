@@ -504,21 +504,53 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
-- **arm64 fails `test_start_menu_opens` on master: after Ctrl+Esc the screen is bare
-  wallpaper — no taskbar AND no desktop icons. UNOWNED** (2026-09-22). Deterministic, 4/4:
-  twice on the shell32-com lane, once on its previous commit, once on plain `origin/master`
-  (`91faf984cd5`) built fresh in a scratch worktree, so it predates and is independent of that
-  lane. i386 passes the same gate on the same trees. The default `vibeos-cli smoke` does NOT
-  catch it: it stops at the `shell ready` marker and does not run this test — reproduce with
-  `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k test_start_menu_opens -s`.
-  Serial shows explorer reaching `taskbar: child controls created` and running its startup
-  items, with no user-mode exception in explorer. What is DIFFERENT about the arm64 image is
-  that it bakes in the kmtest sweep (`opt:kmtest_all`; `KMTEST~1.EXE` in All Users\Startup),
-  which is still running 91 kernel tests when the gate fires. That is an inference, not a
-  finding: the missing desktop icons say explorer's UI is not painting at all, which fits a
-  starved or blocked UI thread better than a start-menu bug, but nobody has yet run the gate
-  on arm64 media without the sweep. The last known-good arm64 start-menu screenshot in the
-  fleet is from 2026-09-13, before the upstream sync.
+- **arm64 fails `test_start_menu_opens` on fresh media: after Ctrl+Esc the screen is bare
+  wallpaper, with no taskbar, no desktop icons and no notepad window. UNOWNED** (2026-09-22;
+  root cause narrowed 2026-09-23). This is NOT a shell or start-menu bug.
+  - **Trigger:** arm64 winlogon's demo sequence spawns `cmd.exe`
+    (`winlogon-rust/src/winlogon.rs`, the "cmd.exe INFINITE wait" block) while explorer is
+    starting.
+  - **Mechanism:** cmd's consrv connect (`[CSRSRV] CliCon: ServerId=2`) wedges csrss.
+    cmd's `kernel32 DllMain PROCESS_ATTACH` never returns, and depending on timing either
+    explorer never reaches `_tWinMain` or its windows never paint. There is no further
+    `[DESKPAINT]` after the taskbar is created.
+  - **Measured (same fresh media, gate verdicts):**
+    - `cmd.exe` deleted from the ramdisk: PASS (panel lit 0.68 → 0.90).
+    - With cmd: FAIL 6 times.
+    - After adding unrelated `DbgPrint`s to winsrv: PASS once. It is timing-sensitive.
+    - Giving cmd `lpDesktop = WinSta0\Default`: still FAIL.
+  - **The kmtest sweep is NOT it.** The original inference here was refuted: the failure
+    reproduces with no Startup items at all, and on a kmtests-OFF build at `894e872ede1`
+    (2026-09-12).
+  - **Why it "worked until 09-13":** that media had been refreshed in place for weeks. Old
+    FEX probe binaries (`fexprobe.exe`, `wow64probe.exe`, `syswow64\*`) survived there, and
+    winlogon runs them BEFORE cmd, which moved cmd off explorer's startup window. Booting
+    `vibeos-research`'s 09-20 boot.img passes; a fresh ramdisk from any commit fails.
+    mkramdisk now prunes stale payloads and recreates a ramdisk that has no record, so every
+    fresh arm64 image shows this.
+  - **Next step:** find what the csrss console connect waits on. winsrv's own `DbgPrint`s did
+    not reach serial in any run, so consrv checkpoints are not a usable probe. csrsrv prints
+    only through its non-variadic `dbg_print!`, so route checkpoints that way, or walk the
+    csrss thread stacks under `vibeos-cli debug`.
+  - **Reproduce:** `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k
+    test_start_menu_opens -s`. The default `vibeos-cli smoke` does not run this test.
+- **shell32's DllRegisterServer returns 0x80070002 (ERROR_FILE_NOT_FOUND) on the livecd, all
+  three arches. UNOWNED** (2026-09-23). Measured by `tools/payloads/regdiff`, identically for
+  the C++ build (`bf5c0d1573f`) and the Rust one, so it predates retiring shell32.cpp. Every
+  object-map script and the typelib registered (the dump holds `HKCR\TypeLib\{50A7E9B0-…}`),
+  and registration stops at the first failure, so the failing step is one of the three extra
+  scripts (IDR_FOLDEROPTIONS / IDR_EXPLORER / IDR_SYSTEMFILEASSOC) or
+  `SHELL_RegisterShellFolders` — the latter is the likelier, on a read-only system drive. No
+  boot notices: the media's hives are prebuilt. Narrow it by printing the HRESULT after each
+  step of `DllRegisterServer` in `shell32/registration.rs` under the regdiff payload.
+- **amd64 payload gate misses a launch marker that IS in its own serial log. UNOWNED**
+  (2026-09-23). `smoke --arch amd64 --payload regdiff` failed twice with "'[REGDIFF] done'
+  never appeared" after draining its full budget, while `payload/amd64-uefi_serial.log` from
+  the SAME run holds that line (line 1820, after the last `shell ready` at 1285). So the
+  bytes reached the log file but not `vm.serial_output()`, which the test reads; i386 and
+  arm64 see the same payload's marker fine. The log also carries three `shell ready` lines —
+  check whether the fixture rebooted and the reader stayed attached to a dead stream.
+  Evidence: `/tmp/vibeos-cli/*-smoke-amd64/payload/{pytest.log,amd64-uefi_serial.log}`.
 
 - **`afd` BUGCHECK 0x1E on a pending receive: `FCB->ReceiveIrp.InFlightRequest != Irp`.
   OPEN** (2026-09-21). Found by the new apitest harness on its third boot, running

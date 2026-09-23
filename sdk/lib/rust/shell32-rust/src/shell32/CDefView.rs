@@ -4076,6 +4076,12 @@ pub unsafe fn CDefView_LV_RefreshIcon_body(this: *mut CDefView, iItem: INT) -> (
     lvItem.iItem = iItem;
     lvItem.iImage = I_IMAGECALLBACK;
     CListView_SetItem_body(&mut (*this).m_ListView, &mut lvItem);
+    // Re-query the text too, or an ejected CD keeps its old volume label
+    // (upstream 6730ec5508f; it renames this LV_RefreshItem).
+    let mut iCol: u32 = 0;
+    while (*this).m_ListView.SetItemText(iItem, iCol as i32, LPSTR_TEXTCALLBACK) != 0 {
+        iCol += 1;
+    }
     CListView_Update_body(&mut (*this).m_ListView, iItem);
 }
 
@@ -6193,10 +6199,9 @@ pub unsafe fn CDefView_DestroyViewWindow_body(this: *mut CDefView) -> HRESULT {
         (*this).m_hMenu = ::core::ptr::null_mut();
     }
 
-    if !(*this).m_ListView.is_null() {
-        DestroyWindow((*this).m_ListView.m_hWnd);
-    }
-
+    // SFVM_WINDOWCLOSING goes out BEFORE the list view dies: a callback that
+    // subclassed DefView (browseui's CFindFolder) must unsubclass while its
+    // children still exist, or teardown crashes (upstream 68a03b2e1ae, CORE-20504).
     if !(*this).m_hWnd.is_null() {
         CDefView__DoFolderViewCB_body(
             this,
@@ -6204,6 +6209,16 @@ pub unsafe fn CDefView_DestroyViewWindow_body(this: *mut CDefView) -> HRESULT {
             (*this).m_hWnd as WPARAM,
             0,
         );
+    }
+
+    if !(*this).m_ListView.is_null() {
+        // ATL CWindow::DestroyWindow clears m_hWnd on success.
+        if DestroyWindow((*this).m_ListView.m_hWnd) != 0 {
+            (*this).m_ListView.m_hWnd = ::core::ptr::null_mut();
+        }
+    }
+
+    if !(*this).m_hWnd.is_null() {
         DestroyWindow((*this).m_hWnd);
     }
 

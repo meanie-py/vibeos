@@ -2006,7 +2006,6 @@ pub unsafe fn CDefaultContextMenu_DoPaste_body(this: *mut CDefaultContextMenu, l
     S_OK
 }
 
-pub unsafe fn CDefaultContextMenu_DoOpenOrExplore_body(this: *mut CDefaultContextMenu, lpcmi: LPCMINVOKECOMMANDINFOEX) -> HRESULT { E_FAIL }
 
 pub unsafe fn CDefaultContextMenu_DoCreateLink_body(this: *mut CDefaultContextMenu, lpcmi: LPCMINVOKECOMMANDINFOEX) -> HRESULT {
     let hr = CDefaultContextMenu__DoInvokeCommandCallback_body(this, lpcmi, DFM_CMD_LINK as WPARAM);
@@ -2420,6 +2419,33 @@ pub unsafe fn CDefaultContextMenu_MapVerbToCmdId_body(this: *mut CDefaultContext
         i += 1;
     }
 
+    // Check the registry verbs (upstream 16bb138e325). Upstream compares against the
+    // scratch buffer in both cases, which for a Unicode verb still holds the last static
+    // verb converted above; compare the caller's Unicode verb itself instead.
+    let mut verb_w: *const WCHAR = Verb as *const WCHAR;
+    if IsUnicode == 0 {
+        // StringCchPrintfW(L"%hs") fails rather than truncate; so does this.
+        verb_w = if lstrlenA(Verb as LPCSTR) < MAX_VERB as i32
+            && SHAnsiToUnicode(Verb as LPCSTR, UnicodeStr.as_mut_ptr(), MAX_VERB as i32) != 0
+        {
+            UnicodeStr.as_ptr()
+        } else {
+            core::ptr::null()
+        };
+    }
+    if !verb_w.is_null() {
+        let mut i: UINT = 0;
+        let mut it: POSITION = (*this).m_StaticEntries.GetHeadPosition();
+        while it != core::ptr::null_mut() {
+            let entry = (*this).m_StaticEntries.GetNext(&mut it);
+            if (*entry).Verb.CompareNoCase(verb_w) == 0 {
+                *idCmd = (*this).m_iIdSCMFirst + i;
+                return TRUE;
+            }
+            i += 1;
+        }
+    }
+
     let mut it: POSITION = (*this).m_DynamicEntries.GetHeadPosition();
     while it != core::ptr::null_mut() {
         let entry: *mut DynamicShellEntry = (*this).m_DynamicEntries.GetNext(&mut it);
@@ -2438,7 +2464,12 @@ pub unsafe fn CDefaultContextMenu_MapVerbToCmdId_body(this: *mut CDefaultContext
             return TRUE;
         }
     }
-    return FALSE;
+    return FALSE; // even for "open": no handler means no command
+}
+
+// Pre-Vista callers get E_INVALIDARG for an unknown verb, Vista+ ERROR_NO_ASSOCIATION.
+unsafe fn CDefaultContextMenu_GetNoAssocError() -> HRESULT {
+    if LOBYTE(GetVersion()) < 6 { E_INVALIDARG } else { HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION as LONG) }
 }
 
 pub unsafe fn CDefaultContextMenu_InvokeShellExt_body(this: *mut CDefaultContextMenu, lpcmi: LPCMINVOKECOMMANDINFOEX) -> HRESULT {
@@ -2621,7 +2652,7 @@ pub unsafe fn CDefaultContextMenu_InvokeRegVerb_body(this: *mut CDefaultContextM
     let it = (*this).m_StaticEntries.FindIndex(iCmd);
 
     if it.is_null() {
-        return E_INVALIDARG;
+        return HRESULT_FROM_WIN32(ERROR_NO_ASSOCIATION as LONG);
     }
 
     let pEntry: PStaticShellEntry = (*this).m_StaticEntries.GetAt(it);
@@ -2814,7 +2845,7 @@ pub unsafe fn CDefaultContextMenu_InvokeCommand_body(this: *mut CDefaultContextM
         {
             LocalInvokeInfo.lpVerb = MAKEINTRESOURCEA(CmdId) as *const i8;
         } else {
-            return E_INVALIDARG;
+            return CDefaultContextMenu_GetNoAssocError();
         }
     }
     CmdId = LOWORD!(LocalInvokeInfo.lpVerb as usize);
@@ -2886,10 +2917,6 @@ pub unsafe fn CDefaultContextMenu_InvokeCommand_body(this: *mut CDefaultContextM
             this,
             &LocalInvokeInfo as *const CMINVOKECOMMANDINFOEX as LPCMINVOKECOMMANDINFOEX,
             TRUE,
-        ),
-        FCIDM_SHVIEW_OPEN | FCIDM_SHVIEW_EXPLORE => CDefaultContextMenu_DoOpenOrExplore_body(
-            this,
-            &LocalInvokeInfo as *const CMINVOKECOMMANDINFOEX as LPCMINVOKECOMMANDINFOEX,
         ),
         FCIDM_SHVIEW_COPY | FCIDM_SHVIEW_CUT => CDefaultContextMenu_DoCopyOrCut_body(
             this,

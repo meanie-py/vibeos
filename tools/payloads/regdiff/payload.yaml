@@ -1,0 +1,29 @@
+# regdiff — does a DLL's replacement register the same thing?
+#
+# Retiring shell32.cpp moved shell32's DllRegisterServer from ATL's static registrar
+# (compiled into the C++) to atl100.dll's registrar parsing the same .rgs scripts. The media's
+# hives are prebuilt, so no boot ever exercises that path; this payload measures it instead.
+# It runs the BASELINE shell32 (staged as system32\regdiff-base.dll) and this tree's
+# shell32.dll each in a child process with HKCR/HKLM/HKCU/HKU overridden into sandbox keys,
+# dumps what DllRegisterServer wrote and what DllUnregisterServer left, and diffs the two.
+#
+#   REGDIFF_BASE=<baseline checkout> tools/payloads/regdiff/build.sh <arch>
+#   VIBEOS_PAYLOAD=regdiff ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload regdiff
+# Verdict line: "[REGDIFF] done VERDICT=SAME|DIFFERENT|ERROR"; each difference is printed
+# above it as "[REGDIFF] <phase> -|+ <line>" (- only in the baseline, + only in the new DLL).
+name: regdiff
+description: diff DllRegisterServer/DllUnregisterServer output of shell32 against a baseline build
+
+build_hint: "REGDIFF_BASE=<baseline checkout> tools/payloads/regdiff/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/regdiff/regdiff-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/regdiff.exe
+  - src: tools/payloads/regdiff/regdiff-base-{arch}.dll
+    dest: system32/regdiff-base.dll
+
+test:
+  launch_marker: "[REGDIFF] done"
+  launch_drain_secs: 600

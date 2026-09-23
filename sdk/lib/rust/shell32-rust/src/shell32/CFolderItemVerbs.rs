@@ -584,8 +584,11 @@ pub unsafe fn CFolderItemVerbs_Item_body(this: *mut CFolderItemVerbs, indexVar: 
 
     let index: i32 = V_I4!((&mut var as *mut CComVariant) as *mut VARIANT);
 
+    // Past the end: S_FALSE with a NULL verb. The pre-fix S_OK reported success while
+    // leaving *ppid unwritten (upstream a5f51269c88).
     if index > (*this).m_count {
-        return S_OK;
+        *ppid = core::ptr::null_mut();
+        return S_FALSE;
     }
 
     let mut name: LPOLESTR = core::ptr::null_mut();

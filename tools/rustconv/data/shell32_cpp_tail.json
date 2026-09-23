@@ -1,9 +1,5 @@
 {
-  "active": {
-    "monolith": [
-      "dll/win32/shell32/shell32.cpp"
-    ]
-  },
+  "active": {},
   "removed": {
     "dead_after_class_flip": [
       "dll/win32/shell32/CDefViewBckgrndMenu.cpp",
@@ -81,6 +77,9 @@
     ],
     "leaf": [
       "dll/win32/shell32/CDefViewUtil.cpp"
+    ],
+    "monolith": [
+      "dll/win32/shell32/shell32.cpp"
     ]
   },
   "sanctioned": {

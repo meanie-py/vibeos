@@ -281,10 +281,14 @@ That also fits the wall's shape better than anything else: contention with a con
 sweep is wall-clock dependent, which is why the stopping point tracked emission ORDER
 while matching neither the export count nor the case count.
 
-Fixed in `qemu/mkramdisk.sh`: `compile.py all-dests` enumerates every dest ANY payload
-could own for the arch, and they are all purged BEFORE the selected set is staged, so
-the staged set is exactly the selected set. Safe because every payload dest is
-payload-exclusive (all 11 checked against system files).
+Fixed in `qemu/mkramdisk.sh` -- though not by this lane. Another lane hit the same
+bug concurrently and landed a record-based fix first: `qemu/ramdisk.payloads` lists
+what the last stage wrote, entries absent from the current selection are deleted, and
+the record is written BEFORE the copies so an interrupted stage still self-describes.
+A missing record under `--refresh` recreates the image outright. This lane's
+spec-based purge (delete every dest any payload could own) was dropped in the merge:
+it is marginally more robust against pre-existing contamination, but two mechanisms
+doing one job is worse than either.
 
 *Method note*: the first attempt to test this deleted the file from `qemu/ramdisk.img`
 and re-booted -- kmtest still ran, because the boot media is `qemu/boot.img`. Editing
