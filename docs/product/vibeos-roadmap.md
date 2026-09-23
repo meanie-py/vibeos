@@ -620,7 +620,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the newest 7 commits already contained a live hit against our Rust.
 
 - **`NtUserScrollDC` probes three user RECTs and then dereferences them raw — BUGCHECK 0x1E.
-  OPEN** (2026-09-23). `win32k.sys+0xF8970` = `NtUserScrollDC+0x180`,
+  FIXED 2026-09-23**, verified by boot: `user32_apitest ScrollDC` now exits **code=0**, a clean
+  pass, where it previously took the machine down. Took THREE attempts, and why is the lesson:
+  the first captured only the reads, the second patched the write-back of the SIBLING
+  (`NtUserScrollWindowEx`) because that block matched the search text uniquely, and only the
+  third reached `NtUserScrollDC`'s own store at `scrollex.rs:709`. Each time a `count == 1`
+  assertion passed and I read that as "the crashing instruction changed"; the BUGCHECK PC never
+  moving was the falsifying evidence. The check that settles it is about the FAULT, not the
+  edit: 0 raw 16-byte stores and 3 `KmProtectedCopyMemory` calls between `NtUserScrollDC` and
+  its sibling. Originally (2026-09-23). `win32k.sys+0xF8970` = `NtUserScrollDC+0x180`,
   `win32k-rust/src/scrollex.rs`; found by `user32_apitest ScrollDC`, whose name corroborates
   the symbol. Identical shape to `NtUserSetSysColors` below: `SafeProbeForRead` validates the
   RANGE and not the MAPPING (it cannot touch-test under DUMMY_PSEH), the C wraps probe AND
@@ -635,6 +643,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   critical process died; distinct from the ScrollDC crash above in both bugcheck class and
   faulting module, so `user32_apitest`'s failures are genuinely independent bugs rather than
   one suite-wide cause — which is why it is quarantined per-subtest and NOT as a suite.
+
+- **`NtGdiCreateDIBSection` read `(*bmi).bmiHeader.biSize` raw after probing it — BUGCHECK
+  0x1E. FIXED 2026-09-23**, verified by boot: `win32u_apitest NtGdiCreateDIBSection` now runs to
+  completion (`code=29`, real test failures, no crash). The faulting instruction was
+  `win32k.sys+0xFAD1A` = `+0x4A`, `movl (%r9), %r10d`, now a `KmProtectedCopyMemory` call. The
+  size is also captured into a local, which stops it being re-read from user memory after
+  validation. `tools/scan_probe_then_deref.py` finds this site statically at `dibobj.rs:1822`.
 
 - **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
   and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).

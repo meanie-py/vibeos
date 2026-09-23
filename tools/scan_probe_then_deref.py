@@ -49,6 +49,10 @@ SAFE_SINKS = (
     "safe_copy_from_user",
     "safe_copy_to_user",
     "safe_copy_raw",
+    # The win32k helpers added when fixing this very class -- without these,
+    # every site already fixed reports itself forever.
+    "capture_from_user",
+    "publish_to_user",
     "probe_read_user",
     "probe_write_user",
 )
@@ -89,8 +93,22 @@ def split_args(text: str) -> list[str]:
 
 
 def is_comment(line: str) -> bool:
+    """A comment line, NOT a line that merely starts with a dereference.
+
+    The naive `t.startswith("*")` -- meant to catch block-comment continuation
+    lines like ` * foo` -- silently swallowed every statement beginning with a
+    store, i.e. `*(p as *mut T) = v;`. That is precisely the shape this scanner
+    exists to find, so the guard against false positives created a false
+    NEGATIVE on the highest-value case: it hid a live BUGCHECK in
+    NtUserScrollDC and reported the file clean.
+
+    A continuation is `*` followed by whitespace or nothing, or `*/`; a
+    dereference is `*` followed immediately by an identifier or `(`.
+    """
     t = line.strip()
-    return t.startswith("//") or t.startswith("/*") or t.startswith("*")
+    if t.startswith("//") or t.startswith("/*") or t.startswith("*/"):
+        return True
+    return t == "*" or (t.startswith("*") and t[1:2].isspace())
 
 
 def derefs_of(ident: str) -> re.Pattern[str]:

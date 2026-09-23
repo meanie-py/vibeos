@@ -78,3 +78,43 @@ pub unsafe extern "system" fn Two(a: *const RECT, b: *const RECT) -> BOOL {
 """
     got = leads(src)
     assert [g[1] for g in got] == ["a"]
+
+
+def test_a_STORE_at_the_start_of_a_line_is_not_a_comment() -> None:
+    """The false negative that hid a live BUGCHECK.
+
+    `is_comment` treated any line starting with `*` as a block-comment
+    continuation, which swallowed every statement of the form
+    `*(p as *mut T) = v;` -- the write-back shape. The scanner reported
+    scrollex.rs clean while NtUserScrollDC was still bugchecking on exactly
+    that line, and I believed it.
+    """
+    src = """
+pub unsafe extern "system" fn W(prc: *mut RECT) -> BOOL {
+    let Status = SafeProbeForWrite(prc as *mut c_void, size_of::<RECT>(), 1);
+    *(prc as *mut RECTL) = rcUpdate;
+}
+"""
+    got = leads(src)
+    assert len(got) == 1, got
+    assert got[0][1] == "prc"
+
+
+def test_a_real_block_comment_continuation_is_still_a_comment() -> None:
+    """The converse the original guard was for -- keep it working."""
+    assert S.is_comment(" * rcScroll = *prc;")
+    assert S.is_comment(" */")
+    assert S.is_comment("*")
+    assert not S.is_comment("*(prc as *mut RECTL) = v;")
+    assert not S.is_comment("*prc = v;")
+
+
+def test_the_fix_helpers_count_as_safe_sinks() -> None:
+    """Or every site already fixed reports itself forever."""
+    src = """
+pub unsafe extern "system" fn Fixed(prc: *mut RECT) -> BOOL {
+    let Status = SafeProbeForWrite(prc as *mut c_void, size_of::<RECT>(), 1);
+    crate::copy::publish_to_user(prc as *mut c_void, x, 16);
+}
+"""
+    assert leads(src) == []

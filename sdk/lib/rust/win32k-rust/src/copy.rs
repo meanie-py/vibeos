@@ -62,3 +62,45 @@ pub unsafe extern "C" fn _MmCopyToCaller(
     }
     Status
 }
+
+/// Fault-tolerant capture of a user buffer that has ALREADY been probed.
+///
+/// The gap this closes: `SafeProbeFor*` is validate-only by design (see the
+/// note above and `safe_user_io.rs`) -- it range/alignment-checks against
+/// `MmUserProbeAddress` and never touches the page, because under
+/// `USE_DUMMY_PSEH` a touch fault has no handler. The C wrapped probe AND the
+/// access in one `_SEH2_TRY`, so a translation that keeps the probe and drops
+/// the handler reads as protected and is not: a NULL or merely-unmapped
+/// pointer passes the probe and faults on the first real load.
+///
+/// Measured, not theorised: `NtUserScrollDC` and `NtGdiCreateDIBSection` both
+/// BUGCHECK 0x1E this way, at the exact load following their own probe.
+///
+/// Keep the probe -- it is what rejects a kernel-range pointer, which no copy
+/// primitive checks -- and route the ACCESS through here. Returns false if the
+/// copy faulted; map that to `STATUS_ACCESS_VIOLATION` and the C's error path.
+#[inline]
+pub unsafe fn capture_from_user(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    bytes: usize,
+) -> bool {
+    bytes == 0 || KmProtectedCopyMemory(dst, src as PVOID, bytes) != 0
+}
+
+/// The WRITE direction of `capture_from_user`, and just as necessary.
+///
+/// `SafeProbeForWrite` has exactly the same limitation as the read probe: it
+/// checks the range, never the mapping. Storing through a probed-but-unmapped
+/// user pointer faults with nothing to catch it, the same as loading from one.
+/// Easy to miss when fixing a function, because the reads are at the top and
+/// the write-back is at the bottom -- `NtUserScrollDC` still BUGCHECKed 0x1E
+/// after both its reads were fixed, moving the fault from +0x180 to +0x1C0.
+#[inline]
+pub unsafe fn publish_to_user(
+    dst: *mut core::ffi::c_void,
+    src: *const core::ffi::c_void,
+    bytes: usize,
+) -> bool {
+    bytes == 0 || KmProtectedCopyMemory(dst, src as PVOID, bytes) != 0
+}
