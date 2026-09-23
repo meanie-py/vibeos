@@ -33,6 +33,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from source_walk import source_files
+
 PROBE = re.compile(r"\bSafeProbeFor(?:Read|Write)\s*\(")
 
 # Accesses that are already fault-tolerant: the pointer is handed to a copy
@@ -140,7 +143,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     findings = 0
     for root in args.roots or ["sdk/lib/rust"]:
-        for p in sorted(Path(root).rglob("*.rs")):
+        # source_files() prunes vendored trees and build dirs; a bare rglob
+        # would scan both (and `check` lints for exactly that).
+        for p in sorted(source_files(Path(root), "*.rs")):
             text = p.read_text(errors="replace")
             if "SafeProbeFor" not in text:
                 continue
