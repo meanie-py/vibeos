@@ -91,3 +91,25 @@ cmd_apitest.exe pushd
 # services). That is an inference from the shape, not something observed.
 iphlpapi_apitest.exe GetOwnerModuleFromTcpEntry
 iphlpapi_apitest.exe GetOwnerModuleFromUdpEntry
+
+# 2026-09-23: SUITE-level, replacing eight subtest entries the driver added one
+# per round (GetModuleFileName, ReadFile, TunnelCache, UEFIFirmware,
+# WideCharToMultiByte, WriteFile, dosdev, interlck).
+#
+# They are not eight bugs. In six of those eight rounds the last SUCCESSFUL
+# subtest was the same one — `SystemFirmware`, exiting code=128 — and the
+# accused was simply whoever ran next once the previous victims were skipped.
+# The accusation was tracking the skip list, not a defect. Eight boots bought
+# eight names for at most a couple of causes, and never got past this suite.
+#
+# What is actually known: the wedged child produces NO output at all (interlck
+# emitted nothing), a few services.exe restarts follow, and then the guest goes
+# quiet. The sweep DOES survive an ordinary child timeout (TerminateProcess hit
+# the 120s cap in round 8 and the sweep carried on), so the wedge is not simply
+# "a slow test".
+#
+# Quarantined whole so the ~40 suites after `kernel32_` alphabetically can be
+# characterised at all — that is the point of the exercise, and this suite was
+# consuming every round. Owed: triage as ONE investigation, starting at
+# SystemFirmware and at what a dying services.exe does to the sweep.
+kernel32_apitest.exe

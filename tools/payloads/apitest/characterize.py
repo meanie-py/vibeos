@@ -118,6 +118,11 @@ def run_capture(cmd: list[str], **kw) -> tuple[int, str]:
 # mid-drain -- is the RIG running out of time and implicates nobody.
 GUEST_WENT_SILENT = "[payload] drain-end: idle"
 
+# How many consecutive accusations against ONE suite before we stop believing
+# they are separate bugs. Three is enough to distinguish "this suite has a
+# flaky subtest" from "this suite is one problem wearing N names".
+SAME_SUITE_LIMIT = 3
+
 
 def should_quarantine(bugcheck: str | None, harness_out: str) -> bool:
     """Is there POSITIVE evidence that the GUEST is what stopped?
@@ -274,6 +279,28 @@ def main(argv: list[str] | None = None) -> int:
                 f"[characterize] {culprit} was already quarantined and the sweep died "
                 "in the same place; the attribution is wrong. Stopping rather than "
                 "looping.",
+                file=sys.stderr,
+            )
+            break
+
+        # CONVERGENCE GUARD. Quarantining the in-flight subtest assumes the
+        # subtests are independent. When round after round accuses a different
+        # subtest of the SAME suite, that assumption is dead: either the suite
+        # shares one cause, or the damage is done by a PREDECESSOR and the
+        # accused merely ran next. Both happened here — eight rounds spent eight
+        # different kernel32_apitest subtests, and in six of them the last
+        # successful exit was the same one (SystemFirmware), so the "culprit"
+        # was just whoever followed it once the earlier victims were skipped.
+        # Burning one boot per victim never converges; stop and say so.
+        suite = culprit.split()[0]
+        recent = culprits[-(SAME_SUITE_LIMIT - 1) :]
+        if len(recent) >= SAME_SUITE_LIMIT - 1 and all(c.split()[0] == suite for c in recent):
+            print(
+                f"[characterize] {SAME_SUITE_LIMIT} rounds in a row have accused a different "
+                f"subtest of {suite}. They are not independent: quarantine the SUITE and "
+                f"triage it as one thing, or check whether the real culprit is the subtest "
+                f"that runs BEFORE each victim. Stopping rather than spending a boot per "
+                f"subtest.",
                 file=sys.stderr,
             )
             break
