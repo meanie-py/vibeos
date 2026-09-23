@@ -72,6 +72,11 @@ _PYTEST_SUITES = [
     # budgets only moves the next-lowest bound into place, so the oracle is on
     # the rule itself: no accusation without guest-side fault evidence.
     (".", ".", "tools/test_characterize_attribution.py"),
+    # The probe-then-raw-deref scanner. It reports leads, so its failure modes
+    # are false positives (which bury the real ones under the commented-out C
+    # these files carry) and false negatives on the shape that actually
+    # bugchecked. Both are pinned.
+    (".", ".", "tools/test_scan_probe_then_deref.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
