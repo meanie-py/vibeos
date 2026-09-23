@@ -221,3 +221,36 @@ user32_apitest.exe LoadImage
 # dereferences them raw, the same DUMMY_PSEH probe-then-read class as
 # NtUserSetSysColors. See the roadmap's bug registry.
 user32_apitest.exe ScrollDC
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x000000F4.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round01-amd64-uefi_serial.log
+user32_apitest.exe SetCursorPos
+
+# characterize.py round 2: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round02-amd64-uefi_serial.log
+user32_apitest.exe desktop
+
+# characterize.py round 3: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round03-amd64-uefi_serial.log
+win32u_apitest.exe NtGdiCreateBitmap
+
+# characterize.py round 4: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round04-amd64-uefi_serial.log
+win32u_apitest.exe NtGdiCreateDIBSection
+
+# 2026-09-23: win32u_apitest, also PER SUBTEST against the convergence guard,
+# for the same reason as user32 above: these are distinct bugs, not one cause.
+# win32u_apitest drives the Nt* syscalls directly, so it is the suite most
+# likely to keep finding the DUMMY_PSEH probe-then-raw-deref class.
+#
+# NtGdiCreateDIBSection is ROOT-CAUSED and was the proof that the class is
+# systematic: BUGCHECK 0x1E at win32k.sys+0xFAD1A = NtGdiCreateDIBSection+0x4A,
+# the instruction `movl (%r9), %r10d` — the read of (*bmi).bmiHeader.biSize
+# immediately after its own probe (dibobj.rs:1822). Found independently by
+# tools/scan_probe_then_deref.py, which now enumerates the rest of the class
+# statically instead of one boot at a time.
+#
+# NtGdiGetBitmapBits: BUGCHECK 0x1E at ntoskrnl.exe+0x2B6B0, called from
+# win32k.sys+0x168D48. Not yet root-caused; the fault is in ntoskrnl rather
+# than win32k, so it may be a different cause.
+win32u_apitest.exe NtGdiGetBitmapBits
