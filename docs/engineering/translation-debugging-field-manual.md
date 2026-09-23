@@ -6594,11 +6594,20 @@ and the truncation returns wearing a different hat.
 
 Two things generalise beyond the specific loop:
 
-- **"The log stops here" is not evidence; "the log shows something going wrong here" is.** Every
-  false quarantine entry had a serial that ended with the accused subtest's OWN passing summary
-  line and its process-exit line. One `tail` would have refuted it. Prefer a positive fault
-  signature — a BUGCHECK banner, a visible restart loop — before attributing a stop to whatever
-  ran last.
+- **"The log stops here" is not evidence — but neither is it evidence of INNOCENCE.** Both
+  halves matter, and using only the first half is how four real hangs got retracted. A serial
+  ending with the accused subtest's own PASSING summary proves the child finished; it says
+  nothing about whether the harness recovered, and in those cases the sweep had printed
+  `launch <subtest>` and never the matching `exit`. **Find the signal that records PROGRESS —
+  here a launch/exit pairing — and ask whether it advanced.** That is checkable, and it is
+  agnostic about why.
+- **The runtime form of that signal is SILENCE, and it is the only one the rig cannot forge.**
+  A harness running out of time produces a stop; it cannot produce a guest that has gone quiet
+  while the rig is still reading. So drain until the marker, a fault, the total budget, OR a
+  no-output idle cutoff — and let only the last two of those four outcomes differ in blame.
+  Sizing it is easy when the payload has a natural cadence (one line per unit of work, with a
+  per-unit cap): anything well past that cap is a wedge. This is also a large speedup, since a
+  wedge otherwise costs the ENTIRE budget — two hours of reading nothing, three rounds running.
 - **A test for this class must use a CHATTY fixture.** An idle-guest test passes against both the
   broken and the fixed loop, so it verifies nothing. The bug lives in the busy case only.
 
