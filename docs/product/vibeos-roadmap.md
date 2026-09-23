@@ -512,6 +512,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
   than one subtest.
 
+- **Process SPAWN and CRT TEARDOWN can wedge the whole guest. OPEN, and it probably subsumes
+  several existing apitest quarantine entries** (2026-09-23). Nine quarantined subtests across
+  three suites cluster on one theme rather than nine defects: `msvcrt_apitest` `system` /
+  `_wsystem` (which spawn `cmd.exe`), `atexit` / `static_construct` (CRT teardown at process
+  exit), and `cmd_apitest` `attrib` / `exit` / `pushd` (`cmd.exe` spawning children).
+  **The discriminator that makes this a GUEST bug and not a harness one:** the sweep's own
+  120-second per-subtest timeout never fires at these wedges — verified in four separate
+  rounds. The sweep is an ordinary user-mode process, so if it cannot even time out and
+  terminate its child, it is not running either; the box is dead, not the harness waiting.
+  A few `services.exe` restarts follow the wedge and then the serial goes silent for good, and
+  the wedged child emits no test output at all. Unlike the `kernel32_apitest` cluster, the
+  PREDECESSOR differs every time (`_wcsupr`, `atan`, `sqrt`, `strtoul`), so this is not the
+  blame-the-next-one artifact. Worth chasing as ONE investigation into process
+  creation/teardown rather than as per-subtest quarantine entries — note `msvcrt` is fully
+  translated, so our Rust CRT is in the frame alongside the kernel's process paths.
+
 - **`cmd_apitest` wedges the guest — three of its six subtests, reproducibly. OPEN**
   (2026-09-23). `attrib`, `exit` and `pushd` each stop the apitest sweep dead; one boot sat
   silent for 77 minutes after `[APITEST-SWEEP] launch cmd_apitest.exe attrib` with QEMU alive

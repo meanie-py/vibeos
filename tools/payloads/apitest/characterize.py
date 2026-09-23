@@ -292,15 +292,19 @@ def main(argv: list[str] | None = None) -> int:
         # successful exit was the same one (SystemFirmware), so the "culprit"
         # was just whoever followed it once the earlier victims were skipped.
         # Burning one boot per victim never converges; stop and say so.
+        # CUMULATIVE, not consecutive. The first version of this guard required
+        # SAME_SUITE_LIMIT accusations in a ROW, and a single unrelated round in
+        # the middle reset it — msvcrt_apitest took four of five rounds without
+        # ever tripping it, because one iphlpapi round sat in the middle. What
+        # matters is that one suite keeps producing victims, not that it does so
+        # without interruption.
         suite = culprit.split()[0]
-        recent = culprits[-(SAME_SUITE_LIMIT - 1) :]
-        if len(recent) >= SAME_SUITE_LIMIT - 1 and all(c.split()[0] == suite for c in recent):
+        if sum(1 for c in culprits if c.split()[0] == suite) >= SAME_SUITE_LIMIT - 1:
             print(
-                f"[characterize] {SAME_SUITE_LIMIT} rounds in a row have accused a different "
-                f"subtest of {suite}. They are not independent: quarantine the SUITE and "
-                f"triage it as one thing, or check whether the real culprit is the subtest "
-                f"that runs BEFORE each victim. Stopping rather than spending a boot per "
-                f"subtest.",
+                f"[characterize] {SAME_SUITE_LIMIT} rounds have now accused subtests of "
+                f"{suite}. They are not independent: quarantine the SUITE and triage it as "
+                f"one thing, or check whether the real culprit is the subtest that runs "
+                f"BEFORE each victim. Stopping rather than spending a boot per subtest.",
                 file=sys.stderr,
             )
             break
