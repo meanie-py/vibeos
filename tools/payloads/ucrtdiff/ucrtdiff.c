@@ -166,6 +166,37 @@ static volatile int g_fault_flag;
 static volatile unsigned long g_fault_code;
 static volatile int g_fault_hits;
 
+/* ---- write fencing for ABANDONED threads ------------------------------
+ *
+ * run_guarded abandons a hung body's thread rather than TerminateThread'ing it
+ * (the hang-isolation note below says why, and that reasoning still holds). What
+ * that note got WRONG was the cost: it claimed the worst case was "one spurious
+ * FAULT, never a silent wrong verdict". In fact an abandoned thread keeps running
+ * its grade loop and keeps writing the SHARED accounting -- g_ex_cases,
+ * g_ex_dll_fail, g_ex_rust_fail, g_ex_first, g_cases and the pass/fail totals --
+ * all of which export_begin resets for the NEXT export. So every row after the
+ * first hang was racing a zombie, and which rows those were moved with emission
+ * order. That is the instability, not a spurious FAULT.
+ *
+ * The fault budget was shared the same way. g_fault_hits is one global counter, so
+ * a zombie faulting in a loop spent the allowance belonging to the export actually
+ * being graded; at 4096 the handler returns CONTINUE_SEARCH, the exception goes
+ * unhandled, and the process dies with the serial log simply STOPPING -- no FAULT
+ * row, no HANG row, no `done`. That is exactly the signature of the wall.
+ *
+ * Fix: exactly one thread OWNS the accounting at a time, and writes from any other
+ * thread are dropped and counted. The abandon design is kept intact (no CRT lock is
+ * ever leaked); a zombie simply loses the ability to corrupt a verdict or end the
+ * run. */
+static volatile DWORD g_owner_tid;
+static volatile int g_zombie_faults;  /* faults taken by abandoned threads */
+static volatile int g_dropped_writes; /* grade() calls dropped from a zombie */
+
+static int ucrtdiff_is_owner(void)
+{
+    return GetCurrentThreadId() == g_owner_tid;
+}
+
 /* NO setjmp/longjmp. On arm64 setjmp resolves to the SEH-based __intrinsic_setjmpex,
  * which collides with the renamed reference set AND would need valid unwind data to
  * return into from a context we redirected -- precisely the machinery we cannot lean
@@ -181,6 +212,17 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
 {
     if (!g_fault_armed)
         return EXCEPTION_CONTINUE_SEARCH;
+    /* An ABANDONED thread must not spend the graded export's fault budget and must
+     * not be able to end the run. Keep it limping, off the shared counters. */
+    if (!ucrtdiff_is_owner()) {
+        g_zombie_faults++;
+#if defined(__aarch64__) || defined(_M_ARM64)
+        ep->ContextRecord->Pc += 4;
+        return EXCEPTION_CONTINUE_EXECUTION;
+#else
+        return EXCEPTION_CONTINUE_SEARCH;
+#endif
+    }
     g_fault_code = ep->ExceptionRecord->ExceptionCode;
     g_fault_flag = 1;
     if (++g_fault_hits > 4096) {
@@ -228,6 +270,35 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
  */
 #define UCRTDIFF_EXPORT_TIMEOUT_MS 8000
 
+/* ---- sharding and the harness's own deadline --------------------------
+ *
+ * One boot used to be one shot at all 220 exports, so anything that stopped the
+ * run cost every export after it -- and because the stopping point moved with
+ * emission order (114 forward, 53 reversed; NOT a fixed export count and, measured
+ * from the corpus products, not a fixed case count either: ~5,263 vs ~2,182), each
+ * table we produced was some PREFIX of the truth and no two prefixes agreed.
+ *
+ * Sharding makes that structural problem go away without first having to name the
+ * cause: shard k of N grades exports k, k+N, k+2N..., so a shard is a small run
+ * that finishes well inside any of the observed walls, and N boots cover the set.
+ * Interleaving rather than blocking is deliberate -- a contiguous block would put
+ * all of one family (and so all of one failure mode) in one shard.
+ *
+ * The deadline is the other half, and it is the FAIL-LOUD half. Whatever ends a
+ * long run today does so by killing the guest, which is indistinguishable on serial
+ * from a wedge: the log just stops, with no `done`. Owning our own deadline means a
+ * truncated sweep prints a `done` line that SAYS it was truncated and how far it
+ * got, so a short run is a parseable partial result instead of silence. */
+#ifndef UCRTDIFF_SHARD_K
+#define UCRTDIFF_SHARD_K 0
+#endif
+#ifndef UCRTDIFF_SHARD_N
+#define UCRTDIFF_SHARD_N 1
+#endif
+#ifndef UCRTDIFF_BUDGET_MS
+#define UCRTDIFF_BUDGET_MS 600000 /* 10 min of grading, well inside the VM's life */
+#endif
+
 #define UCRTDIFF_OK 0
 #define UCRTDIFF_FAULT 1
 #define UCRTDIFF_HANG 2
@@ -235,6 +306,7 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
 static DWORD WINAPI ucrtdiff_job(LPVOID p)
 {
     void (*fn)(void) = (void (*)(void))p;
+    g_owner_tid = GetCurrentThreadId();
     g_fault_flag = 0;
     g_fault_hits = 0;
     g_fault_armed = 1;
@@ -256,6 +328,10 @@ static int run_guarded(void (*fn)(void))
     }
     r = WaitForSingleObject(h, UCRTDIFF_EXPORT_TIMEOUT_MS);
     CloseHandle(h);
+    /* Take the accounting back on the driver thread. If the job TIMED OUT it is
+     * still running and still thinks it owns the counters -- this one store is what
+     * stops it corrupting every export that follows. */
+    g_owner_tid = GetCurrentThreadId();
     if (r == WAIT_TIMEOUT)
         return UCRTDIFF_HANG;
     return g_fault_flag ? UCRTDIFF_FAULT : UCRTDIFF_OK;
@@ -273,11 +349,33 @@ static int g_ex_cases, g_ex_dll_fail, g_ex_rust_fail;
 static const char *g_ex_name = "?";
 static char g_ex_first[96];
 
-static void export_begin(const char *name)
+/* Position in the FULL export list, counted for EVERY export whether this shard
+ * grades it or not -- the shard split must not depend on what ran. */
+static int g_ex_index;
+static int g_ran_exports, g_skip_shard, g_skip_budget;
+static DWORD g_deadline_tick;
+
+/* Returns 0 when this export is not ours to run; the generated driver then skips
+ * straight past it. Both reasons are counted so the `done` line can distinguish a
+ * shard that finished from a run that was cut short. */
+static int export_begin(const char *name)
 {
+    int idx = g_ex_index++;
+    if ((idx % UCRTDIFF_SHARD_N) != UCRTDIFF_SHARD_K) {
+        g_skip_shard++;
+        return 0;
+    }
+    /* GetTickCount, not GetTickCount64: the 49-day wrap cannot be reached inside a
+     * boot, and it is present on every arch's kernel32 here. */
+    if ((long)(GetTickCount() - g_deadline_tick) >= 0) {
+        g_skip_budget++;
+        return 0;
+    }
     g_ex_name = name;
     g_ex_cases = g_ex_dll_fail = g_ex_rust_fail = 0;
     g_ex_first[0] = 0;
+    g_ran_exports++;
+    return 1;
 }
 
 static void export_end(int outcome, int has_rust)
@@ -340,6 +438,7 @@ static void note_first(const char *family, const char *what)
 static void grade(const char *family, const char *what, long long dll, long long rust,
                   long long ref)
 {
+    if (!ucrtdiff_is_owner()) { g_dropped_writes++; return; }
     g_cases++;
     g_ex_cases++;
     if (dll == ref) {
@@ -363,6 +462,7 @@ static void grade(const char *family, const char *what, long long dll, long long
  * inflate the reuse number with exactly the exports the reuse plan does NOT cover. */
 static void grade2(const char *family, const char *what, long long dll, long long ref)
 {
+    if (!ucrtdiff_is_owner()) { g_dropped_writes++; return; }
     g_cases++;
     g_ex_cases++;
     if (dll == ref) {
@@ -558,12 +658,41 @@ static int run_c_initializers(void)
     return 1;
 }
 
+/* The three hand-written runners predate the generator, and they were the last code in
+ * the harness still calling grade() UNGUARDED on the main thread: no fault guard, no
+ * hang timeout, no shard gate and no deadline check. That gap is not theoretical --
+ * shard 0/8 graded all 25 of its generated exports cleanly and then the GUEST died in
+ * here, with no row naming what did it and no `done` line to say the run was cut short.
+ *
+ * Routing them through export_begin/run_guarded/export_end gives them exactly what every
+ * generated export gets, and gates them by shard too, so they run in ONE shard instead
+ * of being repeated in all of them. */
+static void run_legacy(void)
+{
+    static const struct {
+        const char *name;
+        void (*fn)(void);
+    } legacy[] = {
+        { "legacy:strtox", run_strtox },
+        { "legacy:ctype", run_ctype },
+        { "legacy:string", run_string },
+    };
+    size_t i;
+    for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
+        if (export_begin(legacy[i].name))
+            export_end(run_guarded(legacy[i].fn), 1);
+    }
+}
+
 static int ucrtdiff_main(void);
 
 void ucrtdiff_entry(void);
 void ucrtdiff_entry(void)
 {
     int rc;
+    /* The main thread owns the accounting until a job takes it, and the guard
+     * self-test below already needs that to be true. */
+    g_owner_tid = GetCurrentThreadId();
     DbgPrint("[UCRTDIFF] entry\n");
     if (!run_c_initializers()) {
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
@@ -576,6 +705,9 @@ void ucrtdiff_entry(void)
 static int ucrtdiff_main(void)
 {
     DbgPrint("[UCRTDIFF] start\n");
+    g_deadline_tick = GetTickCount() + UCRTDIFF_BUDGET_MS;
+    DbgPrint("[UCRTDIFF] shard=%d/%d budget=%dms\n",
+             (int)UCRTDIFF_SHARD_K, (int)UCRTDIFF_SHARD_N, (int)UCRTDIFF_BUDGET_MS);
     if (!AddVectoredExceptionHandler(1, ucrtdiff_veh)) {
         DbgPrint("[UCRTDIFF] FATAL: AddVectoredExceptionHandler failed\n");
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
@@ -603,9 +735,7 @@ static int ucrtdiff_main(void)
         return 1;
     }
     run_generated();
-    run_strtox();
-    run_ctype();
-    run_string();
+    run_legacy();
     /* A ZERO-case run is a vacuous pass and must read as a failure, the same
      * rule tests/qemu/cli/difftest.py's graded() enforces for the host tier. */
     if (g_cases == 0) {
@@ -613,7 +743,14 @@ static int ucrtdiff_main(void)
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         return 1;
     }
-    DbgPrint("[UCRTDIFF] done cases=%d dll_pass=%d dll_fail=%d rust_pass=%d rust_fail=%d\n",
-             g_cases, g_dll_pass, g_dll_fail, g_rust_pass, g_rust_fail);
+    /* PARTIAL is the important field: it is the difference between "this shard
+     * graded everything it owns" and "the deadline cut it short", which previously
+     * were the same observation -- a serial log that stopped. */
+    DbgPrint("[UCRTDIFF] done cases=%d dll_pass=%d dll_fail=%d rust_pass=%d rust_fail=%d "
+             "shard=%d/%d exports=%d skipped_shard=%d partial=%d "
+             "zombie_faults=%d dropped_writes=%d\n",
+             g_cases, g_dll_pass, g_dll_fail, g_rust_pass, g_rust_fail,
+             (int)UCRTDIFF_SHARD_K, (int)UCRTDIFF_SHARD_N, g_ran_exports,
+             g_skip_shard, g_skip_budget, g_zombie_faults, g_dropped_writes);
     return (g_dll_fail || g_rust_fail) != 0;
 }

@@ -217,7 +217,105 @@ The guard has a **positive control** that earned its place on the first run: a
 synthetic body faults on purpose, was NOT caught on i386, and the harness refused to
 grade rather than produce a table that silently stopped partway.
 
-## Where this stands (2026-09-22, end of session)
+## The wall, and why the sweep is now sharded (2026-09-23)
+
+A single boot used to grade all 220 exports in one process. It never finished, and
+the interesting part is what the stopping point did NOT depend on.
+
+| run | exports graded | cases graded |
+|---|---|---|
+| forward | 114 | ~5,263 |
+| reversed (`UCRTDIFF_REVERSE=1`) | 53 | ~2,182 |
+
+The case figures are computed statically, not measured: `generated.inc` records which
+`GRADE_*` macro each export uses, each macro's loop nest is a product of known corpus
+sizes, so the cumulative case count at any prefix is arithmetic. That killed the last
+cheap theory. The wall is **not a fixed export count** (114 vs 53), **not one bad body**
+(it would sit at reverse index ~106, not 53), and **not a fixed case budget** either.
+
+Two real defects were found in the harness while chasing it, both in the same place --
+`run_guarded` abandons a hung body's thread rather than terminating it, which is the
+right call (terminating mid-CRT leaks locks), but nothing stopped the abandoned thread
+from continuing to act:
+
+* **it kept writing the shared accounting.** `g_ex_cases`, `g_ex_dll_fail`,
+  `g_ex_rust_fail`, `g_ex_first`, `g_cases` and the pass/fail totals are global and
+  `export_begin` resets them for the *next* export. So every row after the first HANG
+  was racing a zombie. The old comment claimed the worst case was "one spurious FAULT,
+  never a silent wrong verdict"; that was wrong, and it is the instability that made
+  successive tables disagree.
+* **it shared the fault budget.** `g_fault_hits` is one global counter. A zombie
+  faulting in a loop spent the allowance of the export actually being graded, and at
+  4096 the handler returns `CONTINUE_SEARCH` -- unhandled exception, process dies, and
+  the serial log simply STOPS. No FAULT row, no HANG row, no `done`. That is exactly
+  the signature of the wall, though it has not been confirmed as its cause.
+
+Fix: one thread OWNS the accounting at a time (`g_owner_tid`), and writes from any
+other thread are dropped and counted (`dropped_writes`, `zombie_faults` on the `done`
+line). The abandon design is untouched; a zombie simply loses the ability to corrupt a
+verdict or end the run.
+
+**Sharding makes the remaining question moot rather than answering it.**
+`UCRTDIFF_SHARD=k/N` builds a harness that grades exports `k, k+N, k+2N...`, so a shard
+finishes well inside any observed wall and N boots cover the set. The interleave is
+deliberate: a contiguous block would put a whole family, and so a whole failure mode, in
+one shard. `tools/ucrt_tier2_sweep.py` drives the shards and merges the tables.
+
+The other half is **fail-loud**: the harness now owns a deadline (`UCRTDIFF_BUDGET_MS`)
+and prints a `done` line carrying `partial=<n>` when it runs out. Previously a truncated
+run and a wedged one were the same observation -- a log that stopped. A shard that did
+not finish is now reported INCOMPLETE and its exports listed as ungraded, because the
+failure this whole lane must never have is a short run reading as a clean one.
+
+### What actually ended the runs (2026-09-23) -- two independent faults
+
+**1. Stale payload staging.** The ramdisk is built INCREMENTALLY and nothing ever
+removed a payload that a later build did not select. A `kmtest-sweep.exe` staged on
+2026-09-22 was still sitting in `Profiles/All Users/Start Menu/Programs/StartUp/`
+beside `ucrtdiff.exe`. Explorer autostarts everything in that folder, so every Tier 2
+run shared its boot -- and the serial channel -- with a full kernel test corpus sweep.
+Nothing could see it: the build log said `staging payloads (VIBEOS_PAYLOAD=ucrtdiff)`
+and staged ucrtdiff correctly, and the stale file was invisible to every check.
+
+That also fits the wall's shape better than anything else: contention with a concurrent
+sweep is wall-clock dependent, which is why the stopping point tracked emission ORDER
+while matching neither the export count nor the case count.
+
+Fixed in `qemu/mkramdisk.sh` -- though not by this lane. Another lane hit the same
+bug concurrently and landed a record-based fix first: `qemu/ramdisk.payloads` lists
+what the last stage wrote, entries absent from the current selection are deleted, and
+the record is written BEFORE the copies so an interrupted stage still self-describes.
+A missing record under `--refresh` recreates the image outright. This lane's
+spec-based purge (delete every dest any payload could own) was dropped in the merge:
+it is marginally more robust against pre-existing contamination, but two mechanisms
+doing one job is worse than either.
+
+*Method note*: the first attempt to test this deleted the file from `qemu/ramdisk.img`
+and re-booted -- kmtest still ran, because the boot media is `qemu/boot.img`. Editing
+an artifact by hand means inheriting the real pipeline's checks; that test proved
+nothing and nearly produced a wrong conclusion.
+
+**2. The collation family wedges the ENTIRE GUEST.** With clean media, shard 0/8 ran 16
+exports and died on entering `_mbsnicoll`. It is not a hung thread: ALL serial output
+stops, kernel `[PS]` spam included. So `run_guarded`'s 8s `WaitForSingleObject` never
+returns -- nothing in the guest runs again -- and the harness's own deadline cannot fire
+either, being cooperative and checked only between exports. The two exports already
+known to deadlock (`_mbsnbcoll`, `_mbsnbcoll_l`) are members of this same family.
+
+All 28 `*coll*` exports are therefore QUARANTINED (`is_quarantined` in
+`gen_ucrt_tier2_cases.py`), leaving 194 graded. The generator announces the held-out
+list on stderr every run -- a sweep that quietly grades less than the burn-down thinks
+it does is the same false-completeness failure the `partial=` field exists to prevent.
+
+**This is owed work, not a verdict that those 28 are fine.** Something in our locale
+collation path takes the whole system down, which is a real bug worth more than the
+difftest that found it.
+
+Note this also corrects an earlier claim in the generator's own comments -- that the
+guest "keeps logging, so the HARNESS is wedged, main thread included". That was read
+from a log which had stopped for reason (1), and is false.
+
+## Where this stands (2026-09-22, end of session, SUPERSEDED above)
 
 **The arm64 payload does not launch, and the cause is not yet known.** Ruled out:
 the exe is staged (`ucrtdiff-arm64.exe -> .../StartUp/ucrtdiff.exe`), the boot
