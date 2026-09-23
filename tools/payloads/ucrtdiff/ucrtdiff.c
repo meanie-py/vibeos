@@ -87,77 +87,6 @@ int __cdecl rust_strncmp(const char *, const char *, size_t);
 size_t __cdecl rust_strspn(const char *, const char *);
 size_t __cdecl rust_strcspn(const char *, const char *);
 
-/* The msvcrt Rust archive is not self-contained: a few of its bodies reach msvcrt
- * internals that ucrtbase does not export, so no rename rule covers them and nothing
- * on this link line defines them. Rust codegen units bundle many functions, so the
- * objects come in whether or not we grade what pulls them.
- *
- * They are satisfied HERE, loudly, rather than by linking libmsvcrt_static.a: that
- * archive defines strtol and friends too, and --allow-multiple-definition would let
- * it answer a graded name silently -- the harness would then grade msvcrt against
- * Microsoft while reporting it as the shipping DLL. Nothing below is reachable from
- * any graded family; if that ever changes, the run says so instead of lying. */
-static void unreachable_stub(const char *who)
-{
-    DbgPrint("[UCRTDIFF] FATAL: a graded body reached %s, which this harness stubs\n", who);
-    DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
-    ExitProcess(2);
-}
-
-int __cdecl _scprintf(const char *fmt, ...);
-int __cdecl _scprintf(const char *fmt, ...)
-{
-    (void)fmt;
-    unreachable_stub("_scprintf");
-    return 0;
-}
-
-void __stdcall __wine_RtlUnwind(void *a, void *b, void *c, void *d);
-void __stdcall __wine_RtlUnwind(void *a, void *b, void *c, void *d)
-{
-    (void)a; (void)b; (void)c; (void)d;
-    unreachable_stub("__wine_RtlUnwind");
-}
-
-/* fwprintf and _cprintf are NOT ucrtbase exports -- UCRT makes them header inlines
- * over __stdio_common_vfwprintf -- so no rename rule covers the msvcrt Rust bodies'
- * references to them, and the import lib has nothing to offer.
- *
- * They cannot be stubbed as ordinary C: the headers declare fwprintf with a signature
- * this file would conflict with, and conio.h declares _cprintf STATIC, so a non-static
- * definition is not merely redundant but illegal.
- *
- * An explicit assembler name sidesteps both -- the C identifier is distinct, so nothing
- * conflicts, while the object defines exactly the symbol the Rust archive asks for.
- * (lld in PE mode has no --defsym, which was the other way to do this.) The label is
- * taken LITERALLY, so the i386 cdecl underscore has to be spelled here. */
-#ifdef _M_IX86
-#define UCRTDIFF_SYM(n) "_" n
-#else
-#define UCRTDIFF_SYM(n) n
-#endif
-
-void ucrtdiff_fwprintf_stub(void) __asm__(UCRTDIFF_SYM("fwprintf"));
-void ucrtdiff_fwprintf_stub(void) { unreachable_stub("fwprintf"); }
-
-void ucrtdiff_cprintf_stub(void) __asm__(UCRTDIFF_SYM("_cprintf"));
-void ucrtdiff_cprintf_stub(void) { unreachable_stub("_cprintf"); }
-
-/* msvcrt's C++ EH helpers, which live in libmsvcrt_static.a. */
-void __cdecl call_copy_ctor(void *a, void *b, void *c, int d);
-void __cdecl call_copy_ctor(void *a, void *b, void *c, int d)
-{
-    (void)a; (void)b; (void)c; (void)d;
-    unreachable_stub("call_copy_ctor");
-}
-
-void __cdecl call_dtor(void *a, void *b);
-void __cdecl call_dtor(void *a, void *b)
-{
-    (void)a; (void)b;
-    unreachable_stub("call_dtor");
-}
-
 /* ---- generated-case corpora ------------------------------------------- */
 /* One looping scalar argument gets the FULL range plus the edges: the ctype and
  * mbctype families live here, and 0x80-0xFF is the half where the narrow table and
@@ -207,6 +136,121 @@ static const char *label_idx(size_t i)
     return buf;
 }
 
+/* ---- fault isolation --------------------------------------------------
+ *
+ * WHY THIS IS THE WHOLE POINT. Without it, ONE faulting body ends the run and hides
+ * every export after it, so each blocker costs a separate four-minute boot and they
+ * are discovered strictly in order. That is how six boots were spent learning six
+ * names. Guarded, a faulting body becomes a FAULT row and the sweep carries on, so a
+ * single run reports every fault, every DIFF and every MATCH at once.
+ *
+ * VEH, NOT `__try`. clang's __try does not catch a HARDWARE fault under mingw at all
+ * -- it never emits async-exception handler liveness -- which dll/ntdll/seh_poc_user.c
+ * records after proving it, and its 32-bit x86 SEH codegen is broken here besides
+ * (undefined `L__ehtable$` / `$parent_frame_offset` labels). A vectored handler that
+ * redirects the faulting context is the only mechanism that works, and it is plain
+ * Win32 on all three arches.
+ *
+ * IT ONLY FIRES ON arm64, WHICH IS WHY TIER 2 RUNS THERE. RtlDispatchException's
+ * RtlCallVectoredExceptionHandlers block is `#ifndef _NTOSKRNL_` and librtl always
+ * builds with -D_NTOSKRNL_, so first-chance VEH dispatch is dead code on i386 and
+ * amd64 -- rtl-except/src/{i386,amd64}/except.rs say so outright. arm64 has it wired
+ * and proved: "[SEH-POC-U] VEH on hardware AV: fired=1 resumed=1 (PASS)".
+ *
+ * The guard has a POSITIVE CONTROL: a synthetic body that always faults runs first,
+ * and the run refuses to grade if it is not caught. A guard that has never fired is a
+ * guard nobody knows is connected -- and on the arches above it genuinely is not.
+ */
+static volatile int g_fault_armed;
+static volatile int g_fault_flag;
+static volatile unsigned long g_fault_code;
+static volatile int g_fault_hits;
+
+/* NO setjmp/longjmp. On arm64 setjmp resolves to the SEH-based __intrinsic_setjmpex,
+ * which collides with the renamed reference set AND would need valid unwind data to
+ * return into from a context we redirected -- precisely the machinery we cannot lean
+ * on while grading it. Instead the handler does what seh_poc_user.c proved works here:
+ * ADVANCE THE PC PAST THE FAULTING INSTRUCTION and resume. arm64 instructions are a
+ * fixed 4 bytes, so that is exact (it is also why this is arm64-only; x86's
+ * variable-length encoding has no such step, and VEH does not fire there anyway).
+ *
+ * Skipping one instruction does not by itself end the sweep, so the handler also raises
+ * g_fault_flag, and every generated loop tests it. The body limps at most to the next
+ * case boundary, the export is recorded FAULT, and the run carries on to the next one. */
+static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
+{
+    if (!g_fault_armed)
+        return EXCEPTION_CONTINUE_SEARCH;
+    g_fault_code = ep->ExceptionRecord->ExceptionCode;
+    g_fault_flag = 1;
+    if (++g_fault_hits > 4096) {
+        /* A body faulting without making progress would spin here forever and cost the
+         * whole run. Bail loudly rather than hang the boot. */
+        DbgPrint("[UCRTDIFF] FATAL: %d faults without progress; aborting\n", g_fault_hits);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+#if defined(__aarch64__) || defined(_M_ARM64)
+    ep->ContextRecord->Pc += 4;
+    return EXCEPTION_CONTINUE_EXECUTION;
+#else
+    return EXCEPTION_CONTINUE_SEARCH;
+#endif
+}
+
+#define UCRTDIFF_GUARD(faulted, stmt)                                                  \
+    do {                                                                               \
+        g_fault_flag = 0;                                                              \
+        g_fault_hits = 0;                                                              \
+        g_fault_armed = 1;                                                             \
+        stmt;                                                                          \
+        g_fault_armed = 0;                                                             \
+        (faulted) = g_fault_flag;                                                      \
+    } while (0)
+
+/* ---- per-export accounting -------------------------------------------
+ *
+ * The verdict is reported PER EXPORT, because that is the unit the burn-down and
+ * tools/ucrt-takeover.yaml speak in, and the unit a reader acts on. A log of failing
+ * cases cannot be joined to either; a table of
+ *     EXPORT <name> <MATCH|DIFF n/total|FAULT|NORUST>
+ * is a worklist -- MATCH is a body we can take over with evidence behind it, DIFF
+ * carries its first failing case, FAULT names something to investigate. */
+static int g_ex_cases, g_ex_dll_fail, g_ex_rust_fail;
+static const char *g_ex_name = "?";
+static char g_ex_first[96];
+
+static void export_begin(const char *name)
+{
+    g_ex_name = name;
+    g_ex_cases = g_ex_dll_fail = g_ex_rust_fail = 0;
+    g_ex_first[0] = 0;
+}
+
+static void export_end(int faulted, int has_rust)
+{
+    if (faulted) {
+        DbgPrint("[UCRTDIFF] EXPORT %s FAULT code=0x%08lx after=%d\n",
+                 g_ex_name, g_fault_code, g_ex_cases);
+        return;
+    }
+    if (g_ex_cases == 0) {
+        /* Vacuous: an export that graded nothing must not read as a pass. */
+        DbgPrint("[UCRTDIFF] EXPORT %s NOCASES\n", g_ex_name);
+        return;
+    }
+    if (!has_rust) {
+        DbgPrint("[UCRTDIFF] EXPORT %s NORUST dll=%s n=%d\n", g_ex_name,
+                 g_ex_dll_fail ? "DIFF" : "MATCH", g_ex_cases);
+        return;
+    }
+    if (g_ex_rust_fail == 0 && g_ex_dll_fail == 0) {
+        DbgPrint("[UCRTDIFF] EXPORT %s MATCH n=%d\n", g_ex_name, g_ex_cases);
+    } else {
+        DbgPrint("[UCRTDIFF] EXPORT %s DIFF rust=%d dll=%d of %d first=%s\n",
+                 g_ex_name, g_ex_rust_fail, g_ex_dll_fail, g_ex_cases, g_ex_first);
+    }
+}
+
 static int g_cases;
 /* DLL: what ucrtbase.dll ships today. While a family is still answered by the
  * vendored Microsoft C, this compares that C against a private copy of itself --
@@ -218,30 +262,40 @@ static int g_rust_pass, g_rust_fail;
 
 /* A comparison reports the FAMILY, because that is the unit the burn-down and
  * tools/ucrt-takeover.yaml speak in -- a per-case count would not join to it. */
+/* The FIRST failing case for this export, kept so a DIFF row is actionable without
+ * printing every case. Serial is shared and slow; a regressed family can fail
+ * thousands of times and flooding it would push the summary out of the drain. */
+static void note_first(const char *family, const char *what)
+{
+    int i = 0, j;
+    if (g_ex_first[0])
+        return;
+    for (j = 0; family[j] && i < (int)sizeof(g_ex_first) - 2; j++)
+        g_ex_first[i++] = family[j];
+    g_ex_first[i++] = ':';
+    for (j = 0; what[j] && i < (int)sizeof(g_ex_first) - 1; j++)
+        g_ex_first[i++] = what[j];
+    g_ex_first[i] = 0;
+}
+
 static void grade(const char *family, const char *what, long long dll, long long rust,
                   long long ref)
 {
     g_cases++;
+    g_ex_cases++;
     if (dll == ref) {
         g_dll_pass++;
     } else {
         g_dll_fail++;
-        if (g_dll_fail <= 300)
-            DbgPrint("[UCRTDIFF] DLL-FAIL %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
-        else if (g_dll_fail == 301)
-            DbgPrint("[UCRTDIFF] (further DLL-FAIL rows suppressed; see the count)\n");
+        g_ex_dll_fail++;
+        note_first(family, what);
     }
     if (rust == ref) {
         g_rust_pass++;
     } else {
         g_rust_fail++;
-        /* A regressed family can fail every case; serial is a shared, slow channel and
-         * flooding it would push the [UCRTDIFF] done line out of the drain window. The
-         * COUNT is the verdict -- the first rows are only there to make it actionable. */
-        if (g_rust_fail <= 300)
-            DbgPrint("[UCRTDIFF] RUST-FAIL %s %s rust=%lld ref=%lld\n", family, what, rust, ref);
-        else if (g_rust_fail == 301)
-            DbgPrint("[UCRTDIFF] (further RUST-FAIL rows suppressed; see the count)\n");
+        g_ex_rust_fail++;
+        note_first(family, what);
     }
 }
 
@@ -251,12 +305,13 @@ static void grade(const char *family, const char *what, long long dll, long long
 static void grade2(const char *family, const char *what, long long dll, long long ref)
 {
     g_cases++;
+    g_ex_cases++;
     if (dll == ref) {
         g_dll_pass++;
     } else {
         g_dll_fail++;
-        if (g_dll_fail <= 300)
-            DbgPrint("[UCRTDIFF] DLL-FAIL %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
+        g_ex_dll_fail++;
+        note_first(family, what);
     }
 }
 
@@ -395,9 +450,43 @@ static int init_rust_thread_state(void)
     return 1;
 }
 
+/* POSITIVE CONTROL for the guard. A guard that has never fired is a guard nobody
+ * knows is connected -- and a disconnected one turns every FAULT into a dead run
+ * again, silently. This faults on purpose; if it is NOT caught the run cannot be
+ * trusted and says so instead of grading anything. */
+static int guard_selftest(void)
+{
+    int faulted;
+    volatile int *nowhere = (volatile int *)0;
+    UCRTDIFF_GUARD(faulted, (void)*nowhere);
+    return faulted;
+}
+
 int main(void)
 {
     DbgPrint("[UCRTDIFF] start\n");
+    if (!AddVectoredExceptionHandler(1, ucrtdiff_veh)) {
+        DbgPrint("[UCRTDIFF] FATAL: AddVectoredExceptionHandler failed\n");
+        DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
+        return 1;
+    }
+    if (!guard_selftest()) {
+        /* On i386 and amd64 this is EXPECTED and is why Tier 2 runs on arm64.
+         * RtlDispatchException's RtlCallVectoredExceptionHandlers block is
+         * `#ifndef _NTOSKRNL_`, and librtl always builds with -D_NTOSKRNL_, so the
+         * first-chance VEH dispatch is dead code in the only variant ever built --
+         * see sdk/lib/rust/rtl-except/src/{i386,amd64}/except.rs, which say so
+         * outright. Only arm64 has it wired (proved by dll/ntdll/seh_poc_user.c:
+         * "VEH on hardware AV: fired=1 resumed=1"). Without it one faulting body
+         * ends the run and hides every export after it, so refuse to grade rather
+         * than produce a table that silently stops partway. */
+        DbgPrint("[UCRTDIFF] FATAL: the fault guard did not catch a deliberate fault. "
+                 "VEH first-chance dispatch is only wired on arm64 (rtl-except); "
+                 "run this payload with --arch arm64\n");
+        DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
+        return 1;
+    }
+    DbgPrint("[UCRTDIFF] guard ok (caught 0x%08lx)\n", g_fault_code);
     if (!init_rust_thread_state()) {
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         return 1;
