@@ -178,3 +178,38 @@ def test_an_unattributable_bugcheck_blames_nobody() -> None:
     results, meta = PA.parse(serial)
     assert meta["bugcheck"] == "0x0000001E"
     assert not [r for r in results if r["status"] == "CRASH"]
+
+
+def test_a_crash_while_ENUMERATING_is_attributed_to_that_suite() -> None:
+    """The blind spot between suites, which stopped the driver outright.
+
+    The sweep said nothing when it began enumerating, so a BUGCHECK there had
+    no in-flight row and characterize.py gave up with "sweep incomplete but no
+    in-flight subtest". Now the suite under enumeration owns it.
+    """
+    serial = (
+        "[APITEST-SWEEP] enumerate pefile_apitest.exe\n"
+        "[APITEST-SWEEP] NOSUBTESTS pefile_apitest.exe (exit 0) first-line=x\n"
+        "[APITEST-SWEEP] enumerate powrprof_apitest.exe\n"
+        "*** BUGCHECK: 0x0000001E\n"
+    )
+    results, meta = PA.parse(serial)
+    by = {r["name"]: r["status"] for r in results}
+    assert meta["bugcheck"] == "0x0000001E"
+    assert by["powrprof_apitest.exe <enumeration>"] == "CRASH"
+
+
+def test_a_suite_that_enumerated_FINE_leaves_no_row_behind() -> None:
+    """Enumeration rows are scaffolding, not identities.
+
+    Keeping one per suite would add ~60 permanently-OK rows to a floor whose
+    entries are supposed to assert something about the OS.
+    """
+    serial = (
+        "[APITEST-SWEEP] enumerate acpi_apitest.exe\n"
+        "[APITEST-SWEEP] suite acpi_apitest.exe subtests=2\n"
+        "[APITEST-SWEEP] enumerate netapi32_apitest.exe\n"
+        "[APITEST-SWEEP] NOSUBTESTS netapi32_apitest.exe (exit 0) first-line=y\n"
+    )
+    results, _meta = PA.parse(serial)
+    assert not [r for r in results if r["name"].endswith("<enumeration>")]

@@ -51,6 +51,11 @@ from pathlib import Path
 RESOLVED = frozenset({"SKIP", "TIMEOUT", "ENUM-TIMEOUT", "FAILSTART"})
 
 SUITE = re.compile(r"\[APITEST-SWEEP\] suite (\S+) subtests=(\d+)")
+# Emitted BEFORE the enumeration child runs, so a crash while enumerating has
+# something to be attributed to. Without it the sweep is invisible between
+# suites: a BUGCHECK there had no in-flight row at all, which stopped the
+# characterisation driver dead ("sweep incomplete but no in-flight subtest").
+ENUMERATE = re.compile(r"\[APITEST-SWEEP\] enumerate (\S+)")
 LAUNCH = re.compile(r"\[APITEST-SWEEP\] launch (?!FAILED)(\S+) (\S+)")
 FAILSTART = re.compile(r"\[APITEST-SWEEP\] launch FAILED (\S+)")
 EXIT = re.compile(r"\[APITEST-SWEEP\] exit (\S+) (\S+) code=(-?\d+)")
@@ -107,15 +112,32 @@ def parse(log_text: str):
             order.append(name)
         return results[name]
 
+    def drop(name: str) -> None:
+        """Forget a row entirely (used for enumeration rows that succeeded)."""
+        if name in results:
+            del results[name]
+            order.remove(name)
+
     for line in log_text.splitlines():
+        m = ENUMERATE.search(line)
+        if m:
+            # In flight until the suite enumerates, reports NOSUBTESTS, or times
+            # out. Deliberately NOT kept once it resolves: a per-suite row that
+            # always says OK would add ~60 identities to the floor that assert
+            # nothing about the OS.
+            row(f"{m.group(1)} <enumeration>")
+            continue
+
         m = SUITE.search(line)
         if m:
             meta["suites"][m.group(1)] = int(m.group(2))
+            drop(f"{m.group(1)} <enumeration>")
             continue
 
         m = NOSUBTESTS.search(line)
         if m:
             meta["nosubtests"][m.group(1)] = (int(m.group(2)), m.group(3).strip())
+            drop(f"{m.group(1)} <enumeration>")
             continue
 
         m = SKIP.search(line)

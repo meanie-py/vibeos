@@ -293,6 +293,10 @@ static void run_suite(const char *bindir, const char *suite,
     ctx.Label = "";
     ctx.Capture = 1;
     ctx.Names = names;
+    /* Announce BEFORE running the enumeration child: a crash in here used to
+     * have nothing in flight to attribute it to, so the whole sweep was a blind
+     * spot between suites. */
+    DbgPrint("[APITEST-SWEEP] enumerate %s\n", suite);
     rc = run_child(bindir, suite, NULL, &ctx, ENUMERATE_TIMEOUT_MS);
     count = ctx.NameCount;
 

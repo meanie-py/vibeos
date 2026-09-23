@@ -309,6 +309,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             break
 
+        # An `<enumeration>` culprit is not a subtest and must not be written
+        # as one: the suite never got far enough to HAVE subtests, so the right
+        # quarantine is the whole suite (gen_suites would report a subtest skip
+        # matching nothing anyway).
+        if culprit.endswith(" <enumeration>"):
+            culprit = culprit.split()[0]
+
         culprits.append(culprit)
         why = (
             f"BUGCHECK {meta['bugcheck']}"
