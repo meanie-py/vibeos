@@ -555,6 +555,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `cmhvlist.c`. Found by the bug-oracle sweep while measuring how far behind upstream we are —
   the newest 7 commits already contained a live hit against our Rust.
 
+- **`NtUserScrollDC` probes three user RECTs and then dereferences them raw — BUGCHECK 0x1E.
+  OPEN** (2026-09-23). `win32k.sys+0xF8970` = `NtUserScrollDC+0x180`,
+  `win32k-rust/src/scrollex.rs`; found by `user32_apitest ScrollDC`, whose name corroborates
+  the symbol. Identical shape to `NtUserSetSysColors` below: `SafeProbeForRead` validates the
+  RANGE and not the MAPPING (it cannot touch-test under DUMMY_PSEH), the C wraps probe AND
+  copy in one `_SEH2_TRY`, and our Rust does `rcScroll = *(prcUnsafeScroll as *const RECTL)`
+  outside any guard. Same fix: capture through `KmProtectedCopyMemory`
+  (`win32k-rust/src/copy.rs`). **Third instance of this class, which makes it systematic
+  rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
+  the probed pointer" would enumerate the rest for free, and is owed.
+
+- **`user32_apitest GetUserObjectInformation` triggers BUGCHECK 0xF4
+  (CRITICAL_OBJECT_TERMINATION). OPEN** (2026-09-23). `P4 = ntoskrnl.exe+0x198FF0`. A
+  critical process died; distinct from the ScrollDC crash above in both bugcheck class and
+  faulting module, so `user32_apitest`'s failures are genuinely independent bugs rather than
+  one suite-wide cause — which is why it is quarantined per-subtest and NOT as a suite.
+
 - **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
   and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
   `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction

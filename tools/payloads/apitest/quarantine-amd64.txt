@@ -179,3 +179,45 @@ msgina_apitest.exe during
 # floor made of assertion identities can never be satisfied. sweep.c now says
 # ENUM-TIMEOUT and the parser records the suite alone.
 msgina_apitest.exe
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round01-amd64-uefi_serial.log
+iphlpapi_apitest.exe GetExtendedUdpTable
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round02-amd64-uefi_serial.log
+appshim_apitest.exe ignorefreelib
+
+# characterize.py round 3: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round03-amd64-uefi_serial.log
+afd_apitest.exe windowsize
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round01-amd64-uefi_serial.log
+powrprof_apitest.exe
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round02-amd64-uefi_serial.log
+umkm_apitest.exe SystemCall
+
+# characterize.py round 3: sweep stopped here — BUGCHECK 0x000000F4.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round03-amd64-uefi_serial.log
+user32_apitest.exe GetUserObjectInformation
+
+# characterize.py round 4: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round04-amd64-uefi_serial.log
+user32_apitest.exe LoadImage
+
+# 2026-09-23: user32_apitest is quarantined PER SUBTEST, deliberately against
+# the convergence guard's advice to take the whole suite. The guard's premise
+# is that repeated accusations against one suite are not independent; here they
+# demonstrably are. GetUserObjectInformation gives BUGCHECK 0xF4
+# (CRITICAL_OBJECT_TERMINATION, P4=ntoskrnl.exe+0x198FF0) and ScrollDC gives
+# BUGCHECK 0x1E in win32k.sys+0xF8970 = NtUserScrollDC+0x180 — different stop
+# codes, different modules, different faulting functions. These are real,
+# separate kernel bugs and user32 is too valuable a suite to blanket.
+#
+# ScrollDC is ROOT-CAUSED: NtUserScrollDC probes three user RECTs and then
+# dereferences them raw, the same DUMMY_PSEH probe-then-read class as
+# NtUserSetSysColors. See the roadmap's bug registry.
+user32_apitest.exe ScrollDC
