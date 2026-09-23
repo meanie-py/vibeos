@@ -488,42 +488,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **No arm64 user-mode process can start if it imports ucrtbase.dll. OPEN** (2026-09-22).
-  Signature: the exe never runs, and there is NOTHING on serial — no fault, no loader
-  message, no first instruction. The boot itself is fine and reaches `shell ready`.
-  Minimal reproducer, 20 lines: a bare-entry exe (`-nostdlib`, `-e bare_entry`, no CRT
-  startup at all) that links only ntdll+kernel32 RUNS and prints; adding a SINGLE
-  ucrtbase import (`strlen`) to the byte-identical exe makes it fail silently. So it is
-  not CRT startup, not the entry point, not image size, and not the Startup-folder
-  launcher — the one variable that tracks the failure is the ucrtbase import itself.
-  Ruled out: staging, GUI subsystem, DLL availability on the media (ucrtbase,
-  kernel32_vista, advapi32 and user32 are all `add_cd_file(... FOR all)`), and the
-  import table — every name resolves, and the 16 kernel32 imports that first looked
-  missing are forwarders to ntdll that the objdump parse could not see.
-  Corroboration that this is long-standing rather than new: kmtest's arm64 payload
-  deliberately links classic `msvcrt.dll` with a comment about "loader death with zero
-  serial evidence", and `ucrtbase_winetest` is an i386/amd64 rostest. Nothing else in
-  the tree asks arm64 to start a process on ucrtbase, which is why it has stayed hidden.
-  **Blocks Tier-2 ucrt difftesting**, which must run on arm64 because VEH first-chance
-  dispatch is wired only there (`rtl-except/src/{i386,amd64}/except.rs` omit it as
-  `#ifndef _NTOSKRNL_` dead code). Design:
-  `docs/engineering/active-lanes/ucrt-tier2-difftest-design.md`.
-  NOTE when reproducing: grep the payload STAGE STATUS, not `boot0/serial.log` — the
-  launch gate asserts against the drained serial buffer and that file is a partial
-  capture, so a passing payload can leave no marker in it.
-  **LEADING HYPOTHESIS, with the arch difference measured but the causal link NOT yet
-  proved.** arm64 `ucrtbase.dll` imports `kernel32, ntdll, msvcrt` — i386's imports only
-  `kernel32, ntdll`. The six extra symbols are `_clearfp`, `_control87`, `_controlfp`,
-  `_statusfp`, `strnlen`, `wcsnlen`; msvcrt.dll does export all six, so they resolve,
-  and the dependency is not circular (msvcrt does not import ucrtbase). The reason they
-  fall through is local: `crtmath` supplies the four FP-control functions on i386 and
-  supplies NONE of them on arm64, so the linker takes msvcrt's import lib instead.
-  That makes loading ucrtbase drag in msvcrt and its own chain (kernel32_vista, user32,
-  advapi32) as a *process* dependency, which is the shape that fails silently in a
-  loader — but note kmtest's arm64 payload imports msvcrt directly and starts fine, so
-  the chain alone is not obviously sufficient and this is a lead, not a diagnosis.
-  Obvious first fix to try, and it makes arm64 match i386 regardless: implement the four
-  FP-control functions for arm64 in `crtmath` so ucrtbase stops importing msvcrt at all.
+- **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
+  (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
+  instruction and printed NOTHING on serial, while the boot itself reached
+  `shell ready`. `LoadLibraryA("ucrtbase.dll")` from a bare-entry exe returned
+  **err=126 ERROR_MOD_NOT_FOUND** (msvcrt.dll loaded fine in the same probe), which was
+  the first error code this failure ever produced -- a static import fails before any
+  code runs, which is why it was silent.
+  Cause: `qemu/mkramdisk.sh` staged ucrtbase.dll only under `VIBEOS_FEX=1`. The DLL is
+  built, and it IS in the livecd graft list -- but arm64 boots `boot.img` from the
+  ramdisk script and never the livecd, so nothing noticed. Fixed by staging it
+  unconditionally beside msvcrt.dll.
+  Worth remembering as a shape: the i386 and arm64 media are assembled by DIFFERENT
+  pipelines, so "it is in the CD file list" proves nothing about arm64. Check the media
+  the arch actually boots (`arm64_launch.json` names it).
+  This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
+  first-chance dispatch is wired only there.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).

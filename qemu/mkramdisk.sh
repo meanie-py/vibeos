@@ -350,6 +350,14 @@ RMC "$BUILD_DIR/dll/win32/msafd/msafd.dll"                    ::/reactos/system3
 RMC "$BUILD_DIR/dll/win32/mswsock/mswsock.dll"                ::/reactos/system32/mswsock.dll
 RMC "$BUILD_DIR/base/applications/network/nettest/nettest.exe" ::/reactos/system32/nettest.exe
 RMC "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"                  ::/reactos/system32/msvcrt.dll
+# ucrtbase.dll — staged UNCONDITIONALLY, same as msvcrt.dll above. It used to be
+# staged only under VIBEOS_FEX=1, which meant a normal arm64 boot had no ucrtbase on
+# the media at all: the DLL is built and IS in the livecd graft list, but arm64 boots
+# boot.img and never the livecd, so nothing noticed. Any exe importing it then failed
+# to start with NOTHING on serial -- the loader's ERROR_MOD_NOT_FOUND arrives before
+# the first instruction. Cost a night to find; the reproducer is a bare-entry exe that
+# runs with no ucrtbase import and dies silently with one.
+RMC "$BUILD_DIR/dll/win32/ucrtbase/ucrtbase.dll"              ::/reactos/system32/ucrtbase.dll
 RMC "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"  ::/reactos/system32/kernel32_vista.dll
 RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system32/kernelbase.dll
 # wow64.dll — WOW64 host-layer skeleton (docs/engineering/wow64-plan.md);
