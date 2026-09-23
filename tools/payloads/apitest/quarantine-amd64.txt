@@ -60,3 +60,34 @@ afd_apitest.exe send
 # the NULL argument are all in commit c4e66b8695e and the lane doc, and the
 # crash reproduces by removing this line.
 gdi32_apitest.exe SetSysColors
+
+# characterize.py round 1: sweep stopped here — guest wedged (no BUGCHECK).
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round01-amd64-uefi_serial.log
+cmd_apitest.exe attrib
+
+# characterize.py round 2: sweep stopped here — guest wedged (no BUGCHECK).
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round02-amd64-uefi_serial.log
+cmd_apitest.exe exit
+
+# characterize.py round 3: sweep stopped here — guest wedged (no BUGCHECK).
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round03-amd64-uefi_serial.log
+cmd_apitest.exe pushd
+
+# 2026-09-23: RESTORED, having been wrongly retracted on 2026-09-22.
+#
+# These two were removed as "truncation artifacts" because their serials end
+# with the accused subtest's own PASSING summary and its [EXIT-THR] — it had
+# finished and exited. That observation was correct and the conclusion drawn
+# from it was not: the subtest completing does not mean the SWEEP recovered.
+# In both rounds, across two independent runs, the sweep printed
+# `[APITEST-SWEEP] launch <this subtest>` and never printed the matching
+# `exit` line. It did not advance.
+#
+# So the discriminator is not "did the child crash" but "did the SWEEP move
+# on", which the launch/exit pairing records directly. Shape of the failure:
+# the child completes, the parent never returns from collecting it — most
+# likely sweep.c's pipe pump, since a grandchild inheriting the write end keeps
+# the pipe from ever reaching EOF (these subtests open sockets and talk to
+# services). That is an inference from the shape, not something observed.
+iphlpapi_apitest.exe GetOwnerModuleFromTcpEntry
+iphlpapi_apitest.exe GetOwnerModuleFromUdpEntry

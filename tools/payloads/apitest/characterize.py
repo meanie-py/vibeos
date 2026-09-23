@@ -111,30 +111,33 @@ def run_capture(cmd: list[str], **kw) -> tuple[int, str]:
     return proc.wait(), "".join(chunks)
 
 
-# Signatures that mean THE HARNESS stopped the boot, not the guest. Quarantining
-# on any of these blames a test for the test rig's own timer -- the exact bug
-# that put seven innocent subtests in the amd64 quarantine.
-HARNESS_KILL_SIGNS = (
-    "WATCHDOG:",
-    "exceeded",
-    "QEMU exited with code -15",
-    "Timeout",
-)
+# The ONE line that positively implicates the guest. test_payload.py prints
+# `[payload] drain-end: <reason>` when it stops draining; "idle" means the
+# payload went silent while the rig was still reading, which is a wedge. Every
+# other reason -- "budget", or no line at all because a watchdog killed the VM
+# mid-drain -- is the RIG running out of time and implicates nobody.
+GUEST_WENT_SILENT = "[payload] drain-end: idle"
 
 
 def should_quarantine(bugcheck: str | None, harness_out: str) -> bool:
-    """Is there POSITIVE evidence that the GUEST faulted?
+    """Is there POSITIVE evidence that the GUEST is what stopped?
 
-    "The sweep stopped and subtest X was in flight" is not evidence: it is
-    equally the signature of the rig ending the boot on a timer. Seven innocent
-    subtests were quarantined on exactly that reasoning before anyone checked,
-    and when one bound was fixed the next one down produced four more. A
-    BUGCHECK banner is evidence; a harness kill is counter-evidence and the rig
-    announces it in its own output.
+    The polarity here is the whole lesson. The original rule was "the sweep
+    stopped and subtest X was in flight, so blame X", which is not evidence at
+    all -- it is equally the signature of the rig ending the boot on a timer,
+    and that is what it was seven times running. Then fixing one timer merely
+    promoted the next one down and produced four more.
+
+    So the default is INNOCENT, and an accusation needs one of exactly two
+    positive signals: a BUGCHECK banner, or the guest going silent while the rig
+    was still reading it. Both say something happened to the guest; neither can
+    be produced by the harness losing patience.
+
+    Note this also has to stay capable of accusing, or the loop goes inert: a
+    genuine wedge DOES produce the idle signal, which is how cmd_apitest's three
+    real hangs were correctly caught.
     """
-    if bugcheck:
-        return True
-    return not any(sign in harness_out for sign in HARNESS_KILL_SIGNS)
+    return bool(bugcheck) or GUEST_WENT_SILENT in harness_out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -259,10 +262,10 @@ def main(argv: list[str] | None = None) -> int:
         # it is knowable: the rig says so in its own output.
         if not should_quarantine(meta["bugcheck"], harness_out):
             print(
-                f"[characterize] round {rnd}: the HARNESS ended this boot (watchdog "
-                f"or timeout), not the guest. {culprit!r} was merely in flight and "
-                "is NOT being quarantined — raise the boot budget instead. "
-                "Stopping.",
+                f"[characterize] round {rnd}: nothing positively implicates the guest "
+                f"— no BUGCHECK, and the serial never went silent. The RIG ran out of "
+                f"time. {culprit!r} was merely in flight and is NOT being quarantined; "
+                "raise the boot budget instead. Stopping.",
                 file=sys.stderr,
             )
             break
@@ -276,7 +279,11 @@ def main(argv: list[str] | None = None) -> int:
             break
 
         culprits.append(culprit)
-        why = f"BUGCHECK {meta['bugcheck']}" if meta["bugcheck"] else "guest wedged (no BUGCHECK)"
+        why = (
+            f"BUGCHECK {meta['bugcheck']}"
+            if meta["bugcheck"]
+            else "guest went SILENT here (idle cutoff) — a wedge, not a rig timeout"
+        )
         with quarantine.open("a", encoding="utf-8") as fh:
             fh.write(
                 f"\n# characterize.py round {rnd}: sweep stopped here — {why}.\n"

@@ -182,8 +182,9 @@ def drain_for_marker(
     marker: str,
     fail_marker: str,
     budget_secs: float,
+    idle_secs: float = 0.0,
     now: Any = time.monotonic,
-) -> str:
+) -> tuple[str, str]:
     """Drain serial until `marker` appears, `fail_marker` appears, or
     `budget_secs` of WALL CLOCK elapse.
 
@@ -202,11 +203,20 @@ def drain_for_marker(
     the harness stopped reading, and quarantined innocent tests as crashers.
     """
     deadline = now() + budget_secs
-    while marker not in output and not (fail_marker and fail_marker in output):
+    last_progress = now()
+    while True:
+        if marker in output:
+            return output, "marker"
+        if fail_marker and fail_marker in output:
+            return output, "fail"
         if now() >= deadline:
-            break
-        output += read(timeout=1.0)
-    return output
+            return output, "budget"
+        if idle_secs and now() - last_progress >= idle_secs:
+            return output, "idle"
+        chunk = read(timeout=1.0)
+        if chunk:
+            output += chunk
+            last_progress = now()
 
 
 def test_payload_launched(
@@ -229,13 +239,19 @@ def test_payload_launched(
     if marker not in output:
         # Launcher may fire slightly after the boot marker — drain a little more.
         # WALL-CLOCK bounded; see drain_for_marker for why that is not obvious.
-        output = drain_for_marker(
+        output, reason = drain_for_marker(
             vm.serial_output,
             output,
             marker,
             fail_marker,
             float(t.get("launch_drain_secs", 30)),
+            float(t.get("launch_idle_secs", 0)),
         )
+        # Printed so a DRIVER above can tell WHY the boot stopped. "idle" is the
+        # one reason that positively implicates the guest: the payload went
+        # silent while the rig was still happily reading. "budget" is the rig
+        # running out of time and implicates nobody.
+        print(f"[payload] drain-end: {reason}", flush=True)
     if marker not in output and not (fail_marker and fail_marker in output):
         # Drained the whole budget with no marker and no crash: the guest is
         # wedged with the VM still alive, which is the ONE moment its vCPU PCs

@@ -34,35 +34,43 @@ WATCHDOG = (
     "[QemuVM] WATCHDOG: amd64-uefi VM exceeded 30-min hard cap — killing pid=2103805\n"
     "E           ConnectionError: QEMU exited with code -15\n"
 )
-CLEAN = "1 failed, 3 skipped in 1807.32s (0:30:07)\n"
+BUDGET = "[payload] drain-end: budget\n1 failed, 3 skipped in 7262.33s (2:01:02)\n"
+IDLE = "[payload] drain-end: idle\n1 failed, 3 skipped in 912.11s (0:15:12)\n"
 
 
 def test_a_bugcheck_is_evidence() -> None:
-    assert should_quarantine("0x0000001E", CLEAN) is True
+    assert should_quarantine("0x0000001E", BUDGET) is True
+
+
+def test_a_guest_that_went_silent_is_evidence() -> None:
+    """cmd_apitest's three real hangs were caught exactly this way."""
+    assert should_quarantine(None, IDLE) is True
+
+
+def test_the_rig_running_out_of_time_is_NOT_evidence() -> None:
+    """The original bug: seven innocent subtests quarantined on this shape."""
+    assert should_quarantine(None, BUDGET) is False
 
 
 def test_the_watchdog_killing_the_vm_is_not_the_subtests_fault() -> None:
-    """The regression that recurred: a timer ended the boot, not the guest."""
+    """The recurrence: one timer fixed, the next one down took over."""
     assert should_quarantine(None, WATCHDOG) is False
 
 
-def test_a_bugcheck_still_counts_even_if_the_watchdog_also_fired() -> None:
-    """A guest that crashed AND then got reaped is still a guest that crashed.
-
-    Ordering matters here: the harness output is a whole run's log, so a late
-    watchdog line must not retroactively excuse a real banner.
-    """
+def test_a_bugcheck_still_counts_even_if_the_rig_also_gave_up() -> None:
+    """A guest that crashed AND then got reaped is still a guest that crashed."""
     assert should_quarantine("0x0000001E", WATCHDOG) is True
 
 
-def test_a_boot_that_simply_stopped_is_still_attributable() -> None:
-    """Without a harness-kill sign, an incomplete sweep IS the guest's doing.
+def test_silence_beats_a_later_watchdog_line() -> None:
+    """A wedge detected by the idle cutoff stands even if the VM is reaped after."""
+    assert should_quarantine(None, IDLE + WATCHDOG) is True
 
-    This keeps the fix honest: it must not become "never quarantine anything",
-    which would make the whole characterisation loop inert.
+
+def test_the_default_is_INNOCENT() -> None:
+    """No signal at all must not accuse anyone.
+
+    This is the polarity the original rule had backwards: it accused by default
+    and required nothing to do so.
     """
-    assert should_quarantine(None, CLEAN) is True
-
-
-def test_pytest_timeout_is_also_a_harness_kill() -> None:
-    assert should_quarantine(None, "E   Failed: Timeout >7800.0s\n") is False
+    assert should_quarantine(None, "") is False
