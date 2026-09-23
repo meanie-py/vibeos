@@ -22,6 +22,22 @@ TC="$ROOT/.build-tools/llvm-mingw/bin"
 ARCHES="${1:-all}"
 [ "$ARCHES" = "all" ] && ARCHES="arm64 amd64 i386"
 
+# UCRTDIFF_SHARD=k/N builds a harness that grades only exports k, k+N, k+2N...
+# One boot used to be one shot at all 220 exports, so whatever stopped a long run
+# cost every export after it -- and the stopping point moved with emission order,
+# which made each table a different PREFIX of the truth. A shard finishes well
+# inside any observed wall, and N boots cover the set. Default 0/1 = everything.
+SHARD="${UCRTDIFF_SHARD:-0/1}"
+SHARD_K="${SHARD%%/*}"; SHARD_N="${SHARD##*/}"
+case "$SHARD_K$SHARD_N" in *[!0-9]*|"") echo "[ucrtdiff] FAIL: UCRTDIFF_SHARD=$SHARD is not k/N"; exit 1;; esac
+[ "$SHARD_N" -ge 1 ] && [ "$SHARD_K" -lt "$SHARD_N" ] \
+    || { echo "[ucrtdiff] FAIL: UCRTDIFF_SHARD=$SHARD needs 0 <= k < N"; exit 1; }
+# The harness's own grading deadline. Hitting it prints a `done` line saying
+# partial=<n>, which is what makes a cut-short run a parseable result rather than a
+# serial log that simply stops.
+BUDGET_MS="${UCRTDIFF_BUDGET_MS:-600000}"
+echo "[ucrtdiff] shard=$SHARD_K/$SHARD_N budget=${BUDGET_MS}ms"
+
 declare -A CC=( [arm64]=aarch64-w64-mingw32-clang [amd64]=x86_64-w64-mingw32-clang [i386]=i686-w64-mingw32-clang )
 declare -A RT=( [arm64]=aarch64 [amd64]=x86_64 [i386]=i386 )
 
@@ -70,9 +86,12 @@ for A in $ARCHES; do
     # as families are taken over) and from the public headers (which move with upstream).
     # A stale .inc would keep grading exports that are no longer Microsoft's.
     echo "[ucrtdiff] generating $A cases"
-    # UCRTDIFF_REVERSE=1 emits the exports back-to-front. Diagnostic only: the sweep
-    # stops after a fixed COUNT, and reversing says whether that count follows the
-    # ORDER (an accumulated resource) or a particular body.
+    # UCRTDIFF_REVERSE=1 emits the exports back-to-front. Diagnostic only, and it has
+    # already done its job: FORWARD the old sweep stopped after 114 exports, REVERSED
+    # after 53, so the wall was neither a fixed export count nor one bad body. Counting
+    # the corpus products for those two prefixes then killed the last cheap theory --
+    # ~5,263 cases vs ~2,182, so not a fixed case count either. Sharding makes the
+    # remaining question moot rather than answering it; keep this for when it matters.
     GENFLAGS=""; [ "${UCRTDIFF_REVERSE:-0}" = "1" ] && GENFLAGS="--reverse"
     python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc" $GENFLAGS
 
@@ -82,6 +101,8 @@ for A in $ARCHES; do
     # stops being a call into ucrtbase.dll and the row grades the COMPILER against
     # Microsoft. isdigit vanished from the import table exactly this way.
     "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" "$HERE/stubs.c" \
+        -DUCRTDIFF_SHARD_K="$SHARD_K" -DUCRTDIFF_SHARD_N="$SHARD_N" \
+        -DUCRTDIFF_BUDGET_MS="$BUDGET_MS" \
         -Wl,--start-group \
         "$REF" \
         "$RUST" \

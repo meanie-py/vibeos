@@ -95,6 +95,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_translation_literals.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_ucrt_tier2_refset.py"),
+    # The sharded sweep's completeness oracle. Its failure mode is FALSE
+    # COMPLETENESS -- a run cut short reading as a finished one -- which is the
+    # defect the single-boot harness shipped for weeks without anything noticing.
+    (".", ".", "tools/test_ucrt_tier2_sweep.py"),
     (".", ".", "tools/test_docs_only.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),

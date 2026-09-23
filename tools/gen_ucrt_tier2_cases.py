@@ -417,11 +417,16 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
     out.append("#undef NORM")
     out.append("")
 
+    # export_begin GATES the export: it returns 0 when this shard does not own the
+    # export, or when the harness's own deadline has passed. Emitting the call inside
+    # the `if` is what keeps sharding and the deadline in ONE place -- the driver
+    # stays a flat list and neither concern leaks into the generated bodies.
     out += ["static void run_generated(void)", "{", "    int outcome;", ""]
     for _e, name, _kinds, has_rust in rows:
-        out.append(f'    export_begin("{name}");')
-        out.append(f"    outcome = run_guarded(ucrtdiff_run_{name});")
-        out.append(f"    export_end(outcome, {1 if has_rust else 0});")
+        out.append(f'    if (export_begin("{name}")) {{')
+        out.append(f"        outcome = run_guarded(ucrtdiff_run_{name});")
+        out.append(f"        export_end(outcome, {1 if has_rust else 0});")
+        out.append("    }")
         out.append("")
     out += ["}", ""]
     return "\n".join(out) + "\n"
