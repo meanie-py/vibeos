@@ -5280,8 +5280,13 @@ def render_cpp_support(
     exclude_types: set[str] | None = None,
     provided_types: set[str] | None = None,
     island_types: set[str] | None = None,
+    select_from_source: bool = True,
 ) -> str:
-    """Render the deterministic non-class support closure selected by one C++ file."""
+    """Render the deterministic non-class support closure selected by one C++ file.
+
+    `select_from_source=False` selects by `additional_source` ALONE. The caller passes it for a
+    class declared inside a multi-purpose TU (shell32.cpp's IDefClFImpl), where the whole file
+    names helpers the class never touches; see __main__._class_declaration_scope."""
     source = source_path.read_text(encoding="utf-8", errors="replace")
     chunks = ["// Deterministic C++ support closure selected from source identifiers."]
 
@@ -5312,7 +5317,7 @@ def render_cpp_support(
                 re.M,
             )
         )
-    selection_source = source + "\n" + additional_source
+    selection_source = (source + "\n" if select_from_source else "") + additional_source
     used_words = set(re.findall(r"\b[A-Za-z_]\w*\b", _masked_cpp(selection_source)))
     # A `--local-raii NAME=PATH` lowering IS the definition of NAME for this run, so the
     # substrate must not also emit its own. Both spellings compile; they are simply

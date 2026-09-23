@@ -2154,8 +2154,42 @@ def _already_translated(
     return where, len(hits), len(c_names)
 
 
+def _unmatched_fn_names(fn_arg: str, found: set[str]) -> set[str]:
+    """`--fn` names (comma-separated) that matched in NO translated file."""
+    return {n.strip() for n in fn_arg.split(",") if n.strip()} - found
+
+
+def _class_declaration_scope(cls) -> str:
+    """The text that selects a class's support closure: its HEADER — unless the class is
+    declared inside the translation unit itself, in which case only its own declaration.
+
+    Using the whole .cpp for an in-TU class over-selects: shell32.cpp's IDefClFImpl pulled in
+    extern bridges for three helpers named only by the Shell32Rust* trampolines elsewhere in that
+    1,200-line file — one of which then collided (E0255) with the crate's own Rust definition
+    the import resolver found for the same name."""
+    text = cls.header.read_text(encoding="utf-8", errors="replace")
+    if cls.header.resolve() != cls.source.resolve():
+        return text
+    m = re.search(r"\bclass\s+" + re.escape(cls.name) + r"\b[^;{]*\{", text)
+    if not m:
+        return text
+    depth, i = 0, m.end() - 1
+    while i < len(text):
+        depth += text[i] == "{"
+        depth -= text[i] == "}"
+        i += 1
+        if depth == 0:
+            break
+    return text[m.start() : i]
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
+    # `--fn` names that matched in SOME file. A name missing from one file of a multi-file run is
+    # normal; a name that matched NOWHERE is a failed request, and used to end with rc=0 after an
+    # "Error:" line — which a script checking the exit code reads as success. (It was hit when a
+    # `#if 0` had hidden the bodies from the scanner: nothing was written, and nothing said so.)
+    fn_names_found: set[str] = set()
 
     # The CLI contract says --prompt is inspection-only. Enforce it here before
     # creating a paid archive or resolving a backend so a prompt preview can
@@ -2929,6 +2963,7 @@ def cmd_translate(args):
         if args.fn:
             requested = {name.strip() for name in args.fn.split(",") if name.strip()}
             selected = [d for d in sorted_deps if d.name in requested]
+            fn_names_found.update(d.name for d in selected)
             missing = requested - {d.name for d in selected}
             sorted_deps = selected
             if missing:
@@ -4193,7 +4228,7 @@ def cmd_translate(args):
             )
             support_selection = "\n".join(
                 [
-                    cpp_com_cls.header.read_text(encoding="utf-8", errors="replace"),
+                    _class_declaration_scope(cpp_com_cls),
                     *(dep.body_text for dep in sorted_deps),
                     *deterministic,
                 ]
@@ -4207,6 +4242,9 @@ def cmd_translate(args):
                     {pod.name for pod in cpp_com_cls.pod_state_types},
                     provided_types=set(local_raii_impls),
                     island_types=set(island_slots),
+                    select_from_source=(
+                        cpp_com_cls.header.resolve() != cpp_com_cls.source.resolve()
+                    ),
                 )
             )
             if cpp_com_wide_statics:
@@ -4611,6 +4649,17 @@ def cmd_translate(args):
 
     if not args.dry_run:
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
+
+    if getattr(args, "fn", None):
+        unmatched = _unmatched_fn_names(args.fn, fn_names_found)
+        if unmatched:
+            print(
+                f"\nERROR: --fn named function(s) found in no translated file: "
+                f"{', '.join(sorted(unmatched))}. A body inside `#if 0` is invisible to the "
+                f"scanner — lift the guard to translate it.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
 
 def cmd_estimate(args):

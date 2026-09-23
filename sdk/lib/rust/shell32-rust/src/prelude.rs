@@ -478,6 +478,29 @@ extern "C" {
         format: *const crate::island::WCHAR,
         ...
     ) -> ::core::ffi::c_int;
+    /// msvcrt's own export of that same non-conforming form (no `count`).
+    pub fn _swprintf(
+        buffer: *mut crate::island::WCHAR,
+        format: *const crate::island::WCHAR,
+        ...
+    ) -> ::core::ffi::c_int;
+}
+
+/// winnt.h `InterlockedIncrement` / `InterlockedDecrement`: full-barrier atomic ±1 returning
+/// the NEW value. These are compiler intrinsics on amd64 and arm64 — kernel32 exports them only
+/// on i386 — so an `extern` declaration would link on one arch in three. `SeqCst` is the full
+/// barrier the Interlocked* family guarantees.
+#[inline]
+pub unsafe fn InterlockedIncrement(addend: *mut crate::island::LONG) -> crate::island::LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_add(1)
+}
+#[inline]
+pub unsafe fn InterlockedDecrement(addend: *mut crate::island::LONG) -> crate::island::LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_sub(1)
 }
 
 // ===========================================================================================

@@ -25,6 +25,10 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs + shell32/IDefClFImpl.rs, Phase 1 of retiring this
+      // file): AddCommasW, RegenerateUserEnvironment, SHCreateDefClassObject and the
+      // IDefClFImpl class factory behind it. All are #[no_mangle] there, so these bodies
+      // would collide at link time.)
 /*
  * Implemented
  */
@@ -272,6 +276,7 @@ HRESULT WINAPI SHCreateDefClassObject(
     return S_OK;
 }
 
+#endif
 /**************************************************************************
  *  CStartMenuDummy
  */
@@ -1066,6 +1071,7 @@ extern "C" HRESULT WINAPI Shell32RustGetCommandStringImpl(
  *     Returns version of a shell32.dll from IE4.01 SP1.
  */
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs)
 STDAPI DllGetVersion(DLLVERSIONINFO *pdvi)
 {
     /* FIXME: shouldn't these values come from the version resource? */
@@ -1097,6 +1103,7 @@ STDAPI DllGetVersion(DLLVERSIONINFO *pdvi)
         return E_INVALIDARG;
     }
 }
+#endif
 
 /*************************************************************************
  * global variables of the shell32.dll
@@ -1228,8 +1235,10 @@ STDAPI DllUnregisterServer()
  *    LPCWSTR pszCmdLine - command line (unused by shell32?)
  */
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs)
 HRESULT WINAPI DllInstall(BOOL bInstall, LPCWSTR cmdline)
 {
     FIXME("%s %s: stub\n", bInstall ? "TRUE":"FALSE", debugstr_w(cmdline));
     return S_OK;        /* indicate success */
 }
+#endif
