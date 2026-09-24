@@ -752,9 +752,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   5. The same ABI shape was in msgina's dialog procs and advapi32's crypt callbacks.
   Two new gates, `scan_opaque_ptr_arith` and `scan_fnptr_abi_transmute`, keep 3–5 at zero.
   The i386 native user32 `class` winetest now runs end to end with a real console: winlogon
-  no longer detaches it. It then fails on genuine user32/SxS findings (activation context,
-  exit 0xc0150010), which are OPEN and belong to that test's owner. The WoW64 guest is still
-  detached until an amd64 ladder run shows a guest getting a console.
+  no longer detaches it. The WoW64 guest is still detached until an amd64 ladder run shows a
+  guest getting a console.
+  Follow-ups, 2026-09-23:
+  - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
+    `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
+    bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
+  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
+    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
+    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
+    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
+    not attached on i386. OPEN (harness).
+  - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
+    exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
+    its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
+  - **The 50 ms `KeDelayExecutionThread` in `co_IntInitializeDesktopGraphics` is REMOVED.**
+    It was a March workaround for a race fixed since; 12 boots passed without it.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not

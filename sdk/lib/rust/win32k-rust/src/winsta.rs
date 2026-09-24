@@ -588,12 +588,6 @@ unsafe fn co_IntInitializeDesktopGraphics_impl() -> BOOL {
 
     UserAttachMonitor((*gpmdev).ppdevGlobal as HDEV);
 
-    {
-        let mut Delay: LARGE_INTEGER = core::mem::zeroed();
-        Delay.QuadPart = -500000i64;
-        KeDelayExecutionThread(0i32 as i8, 0u8, core::ptr::addr_of_mut!(Delay) as _);
-    }
-
     // Setup the cursor and icons here, as upstream does (winsta.c, unconditionally).
     // They were skipped from 2026-03 under a comment claiming the C compiled this
     // out under _USE_DUMMY_PSEH. It never did: the guard was ours. The skip was

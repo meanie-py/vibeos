@@ -1066,15 +1066,17 @@ pub unsafe extern "C" fn MountMgrQueryDosVolumePath(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
+        // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
         core::ptr::copy_nonoverlapping(
-            (*AssociatedDevice).String.Buffer as *const u16,
-            DeviceString,
+            (*AssociatedDevice).String.Buffer as *const u8,
+            DeviceString as *mut u8,
             (*AssociatedDevice).String.Length as usize,
         );
         if !OldBuffer.is_null() {
+            // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
             core::ptr::copy_nonoverlapping(
-                OldBuffer as *const u16,
-                DeviceString.add(((*AssociatedDevice).String.Length as usize) / core::mem::size_of::<u16>()) as *mut u16,
+                OldBuffer as *const u8,
+                DeviceString.add(((*AssociatedDevice).String.Length as usize) / core::mem::size_of::<u16>()) as *mut u8,
                 OldLength as usize,
             );
             FreePool(OldBuffer as *mut core::ffi::c_void);
@@ -1103,9 +1105,10 @@ pub unsafe extern "C" fn MountMgrQueryDosVolumePath(
         *DeviceString.offset(0) = *(*SymlinkInformation).Name.Buffer.offset(LETTER_POSITION as isize);
         *DeviceString.offset(1) = ':' as u16;
         if !OldBuffer.is_null() {
+            // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
             core::ptr::copy_nonoverlapping(
-                OldBuffer as *const u16,
-                DeviceString.offset(2) as *mut u16,
+                OldBuffer as *const u8,
+                DeviceString.offset(2) as *mut u8,
                 OldLength as usize,
             );
             FreePool(OldBuffer as *mut core::ffi::c_void);
@@ -1158,9 +1161,10 @@ pub unsafe extern "C" fn MountMgrQueryDosVolumePath(
             if DeviceString.is_null() {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
+            // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
             core::ptr::copy_nonoverlapping(
-                (*SymlinkInformation).Name.Buffer as *const u16,
-                DeviceString,
+                (*SymlinkInformation).Name.Buffer as *const u8,
+                DeviceString as *mut u8,
                 DeviceLength as usize,
             );
             *DeviceString.offset(1) = '\\' as u16;
@@ -1177,9 +1181,10 @@ pub unsafe extern "C" fn MountMgrQueryDosVolumePath(
 
     if (*Irp).IoStatus.Information as u32 <= (*Stack).Parameters.DeviceIoControl.OutputBufferLength {
         if DeviceLength != 0 {
+            // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
             core::ptr::copy_nonoverlapping(
-                DeviceString as *const u16,
-                (&raw mut (*Output).MultiSz) as *mut u16,
+                DeviceString as *const u8,
+                (&raw mut (*Output).MultiSz) as *mut u8,
                 DeviceLength as usize,
             );
         }

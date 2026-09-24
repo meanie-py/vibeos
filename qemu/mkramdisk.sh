@@ -422,6 +422,22 @@ RMC "$BUILD_DIR/base/shell/explorer/explorer.exe"              ::/reactos/system
 # so also place a copy at that location. The system32 copy is kept for any code path that still searches there.
 RMC "$BUILD_DIR/base/shell/explorer/explorer.exe"              ::/reactos/explorer.exe
 RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system32/comctl32.dll
+# Side-by-side store, mirroring comctl32's add_cd_file rules for the livecd. comctl32
+# creates its v5/v6 activation contexts from %windir%\winsxs\manifests, and apps whose
+# manifest asks for Common-Controls 6.0 resolve it here. Without it every
+# CreateActCtxW in comctl32 failed on arm64.
+SXS_CC="microsoft.windows.common-controls_6595b64144ccf1df"
+for d in winsxs winsxs/manifests \
+         "winsxs/arm64_${SXS_CC}_5.82.2600.2982_none_deadbeef" \
+         "winsxs/arm64_${SXS_CC}_6.0.2600.2982_none_deadbeef"; do
+    mdir -i "$RAMDISK_IMG" "::/reactos/$d" >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" "::/reactos/$d"
+done
+for v in 5.82.2600.2982 6.0.2600.2982; do
+    RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll" "::/reactos/winsxs/arm64_${SXS_CC}_${v}_none_deadbeef/comctl32.dll"
+    mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/dll/win32/comctl32/arm64_${SXS_CC}_${v}_none_deadbeef.manifest" \
+        "::/reactos/winsxs/manifests/arm64_${SXS_CC}_${v}_none_deadbeef.manifest"
+done
+mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/systemcompatible.manifest" ::/reactos/winsxs/manifests/systemcompatible.manifest
 RMC "$BUILD_DIR/dll/win32/ole32/ole32.dll"                     ::/reactos/system32/ole32.dll
 RMC "$BUILD_DIR/dll/win32/oleaut32/oleaut32.dll"               ::/reactos/system32/oleaut32.dll
 RMC "$BUILD_DIR/dll/win32/shell32/shell32.dll"                 ::/reactos/system32/shell32.dll

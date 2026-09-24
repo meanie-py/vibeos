@@ -806,10 +806,6 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    # A Rust-ABI fn transmuted into a C callback slot (`transmute(f as *const ())`)
-    # erases the ABI rustc would otherwise check. It works by accident on
-    # amd64/arm64 and breaks on i386: consrv's GuiVtbl (22 of 25 slots) killed
-    # csrss with BUGCHECK 0xF4 on the first i386 GUI console. Baseline EMPTY.
     # Pointer arithmetic on a struct field bindgen typed as an OPAQUE 1-byte stub
     # steps one byte per element whatever the code casts to afterwards. consrv's
     # handle table overlapped its entries this way and crashed csrss on the first
@@ -822,11 +818,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A Rust-ABI fn transmuted into a C callback slot (`transmute(f as *const ())`)
+    # erases the ABI rustc would otherwise check. It works by accident on
+    # amd64/arm64 and breaks on i386: consrv's GuiVtbl (22 of 25 slots) killed
+    # csrss with BUGCHECK 0xF4 on the first i386 GUI console. Baseline EMPTY.
     sfa = repo / "tools" / "scan_fnptr_abi_transmute.py"
     specs.append(
         (
             "scan_fnptr_abi_transmute",
             [py, str(sfa), "--lint"] if sfa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C byte count (RtlCopyMemory) kept as the ELEMENT count of a u16-typed
+    # core::ptr::copy moves twice the bytes. fastfat's FatQueryDirectory copied
+    # every long name at double length and faulted on arm64 once winsxs names
+    # were long enough (BUGCHECK 0x50 at smss); mountmgr and the registry value
+    # cache had the same shape. Baseline EMPTY.
+    swb = repo / "tools" / "scan_wide_byte_copy.py"
+    specs.append(
+        (
+            "scan_wide_byte_copy",
+            [py, str(swb), "--lint"] if swb.is_file() else ["MISSING"],
             "stdout",
         )
     )
