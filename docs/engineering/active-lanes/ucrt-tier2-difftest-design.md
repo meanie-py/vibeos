@@ -344,18 +344,25 @@ STILL not verified:
 
 ## The first full table (2026-09-23)
 
-**179 of 185 exports graded, 96%.**
+**185 of 185 exports graded, 100%.**
 
 | verdict | count |
 |---|---|
-| MATCH | 141 |
-| DIFF | 31 |
+| MATCH | 148 |
+| DIFF | 30 |
 | NORUST | 4 |
 | FAULT | 2 |
 | HANG | 1 |
 
-141 exports now have EVIDENCE they are reusable, against 799 that were guesswork. That
+148 exports now have EVIDENCE they are reusable, against 799 that were guesswork. That
 is the number the whole reuse plan was blocked on.
+
+The last six (`strcmp`, `strcspn`, `tolower`, `toupper`, `towupper`, `wcscspn`, all
+MATCH) took a trick worth remembering: they sort alphabetically LAST, so every forward
+run met the background instability before reaching them. `UCRTDIFF_REVERSE=1` -- built
+as a diagnostic for the wall, to test whether the stall followed ORDER or a BODY -- puts
+the tail first, and they graded in the opening seconds. Coverage is a union across runs,
+keyed by export name, so order does not affect the merge.
 
 ### The DIFF cluster that was not real
 
