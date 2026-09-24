@@ -768,9 +768,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   5. The same ABI shape was in msgina's dialog procs and advapi32's crypt callbacks.
   Two new gates, `scan_opaque_ptr_arith` and `scan_fnptr_abi_transmute`, keep 3–5 at zero.
   The i386 native user32 `class` winetest now runs end to end with a real console: winlogon
-  no longer detaches it. The WoW64 guest is still detached until an amd64 ladder run shows a
-  guest getting a console.
+  no longer detaches it, and since the follow-ups below neither is the WoW64 guest.
   Follow-ups, 2026-09-23:
+  - **WoW64 guest console (WORKS).** On amd64 the guest `user32:wsprintf` runs with a
+    console: 58 tests, 0 failures, the same as the native i386 control. The ladder stays green.
   - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
     `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
     bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
@@ -784,6 +785,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
   - **The 50 ms `KeDelayExecutionThread` in `co_IntInitializeDesktopGraphics` is REMOVED.**
     It was a March workaround for a race fixed since; 12 boots passed without it.
+
+- **WoW64 guest user32 reads the 64-bit `SERVERINFO` with its 32-bit layout — OPEN
+  (2026-09-23).** The first real conformance suite to run under WoW64 found this. The guest
+  `user32:class` dies with an execute AV. Against the native i386 control (same binary),
+  12 failures are shared (our user32), and one cluster is guest-only: window-proc A/W
+  handling, class.c:723–776. Causes:
+  1. `CALLPROCDATA` had no 32-bit view in `user32-rust/src/wow64.rs`, so
+     `CallWindowProcA/W` on a CPD handle called `pfnClientPrevious` read from the wrong
+     offset. FIXED: `normalize_cpd` plus a TYPE_CALLPROC branch in `ValidateHandle`. The
+     suite then got through five more control classes.
+  2. **Still open, and the root of the rest.** `gpsi` is `gSharedInfo.psi`, which is the
+     kernel's 64-bit SERVERINFO, and nothing normalizes it. The guest's
+     `GETPFNCLIENTA/W`/`GETPFNSERVER` therefore read garbage. Separately, win32k stores
+     the 64-bit user32's `apfnClient*` as built-in class procs, because the guest's 32-bit
+     pfn arrays are deliberately not registered (`wow64_manual.c`,
+     `NtUserInitializeClientPfnArrays`). A guest reading a built-in class's proc gets a
+     truncated host address and calls it (`eip=b2041ac0`, Edit).
+  Fix shape: a normalized SERVERINFO view (decide how its dynamic fields are refreshed), and
+  map every 64-bit `apfnClientA/W` entry to the guest's own `pfnClientA/W` slot, keyed by
+  index, wherever a WND/CLS/CPD proc is normalized. Repro: amd64 media with
+  `build-fex-hello` guests and an i386 `--rostests` user32_winetest, then
+  `smoke --arch amd64 --until "[WT] user32:class: exit" --fail-on "user32:class: CRASHED"`.
+  Evidence: `/tmp/vibeos-cli/20260923-230341-b_c8y3fi-smoke-amd64/boot0/serial.log`.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not

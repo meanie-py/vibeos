@@ -55,6 +55,7 @@ fn NT_SUCCESS(status: NTSTATUS) -> bool {
 /// Snapshot kind tags (NOT the USER handle TYPE_* values — CLS has no handle type).
 const SNAP_WND: UINT = 1;
 const SNAP_CLS: UINT = 2;
+const SNAP_CPD: UINT = 3;
 
 /// `GetWin32ClientInfo()` = `NtCurrentTeb()->Win32ClientInfo` (ntuser.h macro).
 #[inline]
@@ -228,6 +229,25 @@ pub struct UserHandleTable64 {
     pub allocated_handles: i32,
 }
 
+/// `CALLPROCDATA` — what a CPD handle (`0xFFFFxxxx` from `GetWindowLongPtr` on a
+/// window of the other charset) resolves to. `CallWindowProcA/W` read
+/// `pfnClientPrevious` out of it and CALL it, so misreading the 64-bit layout here
+/// is an execute fault on a garbage address, not a wrong value.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CallProcData64 {
+    /// PROCDESKHEAD: `HEAD` (h, cLockObj + pad), hTaskWow, rpdesk, pSelf.
+    pub h: u64,
+    pub cLockObj: u32,
+    pub Padding0: u32,
+    pub hTaskWow: u64,
+    pub rpdesk: u64,
+    pub pSelf: u64,
+    pub spcpdNext: u64,
+    pub pfnClientPrevious: u64,
+    pub wType: u32,
+}
+
 // ── the tripwire ─────────────────────────────────────────────────────────────
 //
 // On a native 64-bit build these shapes must BE the real structs. Any drift in
@@ -270,6 +290,12 @@ mod layout_guard {
     const _: () = assert!(offset_of!(DesktopInfo64, spwnd) == offset_of!(DESKTOPINFO, spwnd));
     const _: () = assert!(offset_of!(DesktopInfo64, fsHooks) == offset_of!(DESKTOPINFO, fsHooks));
     const _: () = assert!(offset_of!(DesktopInfo64, hShellWindow) == offset_of!(DESKTOPINFO, hShellWindow));
+
+    const _: () = assert!(size_of::<CallProcData64>() == size_of::<CALLPROCDATA>());
+    const _: () = assert!(offset_of!(CallProcData64, spcpdNext) == offset_of!(CALLPROCDATA, spcpdNext));
+    const _: () =
+        assert!(offset_of!(CallProcData64, pfnClientPrevious) == offset_of!(CALLPROCDATA, pfnClientPrevious));
+    const _: () = assert!(offset_of!(CallProcData64, wType) == offset_of!(CALLPROCDATA, wType));
 
     const _: () = assert!(size_of::<UserHandleEntry64>() == size_of::<USER_HANDLE_ENTRY>());
     const _: () = assert!(size_of::<UserHandleTable64>() == size_of::<USER_HANDLE_TABLE>());
@@ -347,6 +373,7 @@ mod snap {
     pub(super) union SnapObj {
         pub wnd: WND,
         pub cls: CLS,
+        pub cpd: CALLPROCDATA,
     }
 
     pub(super) struct Snap {
@@ -470,6 +497,35 @@ pub unsafe fn normalize_wnd(p64: PVOID) -> PWND {
 
     (*d).pSBInfoex = src.pSBInfoex as usize as _;
     (*d).DialogPointer = src.DialogPointer as usize as PVOID;
+
+    d
+}
+
+/// Normalize the 64-bit `CALLPROCDATA` at client address `p64` into a cached
+/// native one. Only the head's handle and the three payload fields are read by
+/// user32 (`ValidateCallProc`, `CallWindowProcA/W`, `IntGetWndProc`).
+#[cfg(target_arch = "x86")]
+pub unsafe fn normalize_cpd(p64: PVOID) -> PCALLPROCDATA {
+    if p64.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let s = snap::find_or_add(p64, SNAP_CPD);
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let src = &*(p64 as *const CallProcData64);
+    let d = core::ptr::addr_of_mut!((*s).obj.cpd);
+
+    (*(d as *mut _HEAD)).h = src.h as usize as HANDLE;
+    (*(d as *mut _HEAD)).cLockObj = src.cLockObj;
+    (*d).head.hTaskWow = src.hTaskWow as usize as DWORD_PTR;
+    (*d).head.rpdesk = src.rpdesk as usize as *mut _DESKTOP;
+    (*d).head.pSelf = src.pSelf as usize as PVOID;
+    (*d).spcpdNext = src.spcpdNext as usize as PCALLPROCDATA;
+    (*d).pfnClientPrevious = core::mem::transmute::<usize, WNDPROC>(src.pfnClientPrevious as usize);
+    (*d).wType = src.wType;
 
     d
 }
@@ -646,6 +702,20 @@ pub unsafe fn desktop_cls_to_user(kernel_cls: PVOID) -> PCLS {
         return normalize_cls(p);
     }
     p as PCLS
+}
+
+/// Typed `DesktopPtrToUser` for a `CALLPROCDATA`.
+#[inline]
+pub unsafe fn desktop_cpd_to_user(kernel_cpd: PVOID) -> PCALLPROCDATA {
+    if kernel_cpd.is_null() {
+        return core::ptr::null_mut();
+    }
+    let p = desktop_ptr_to_user(kernel_cpd);
+    #[cfg(target_arch = "x86")]
+    if IsWow64() {
+        return normalize_cpd(p);
+    }
+    p as PCALLPROCDATA
 }
 
 /// Read entry `index` of the shared USER handle table, normalized into `out`
