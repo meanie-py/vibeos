@@ -22,6 +22,7 @@ typedef LONG NTSTATUS;
 ULONG WINAPI DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
 #include "wow64_status.h"
+#include "wow64_pfnmap.h"
 
 int Wow64pStrEq(const char *a, const char *b);
 
@@ -2770,6 +2771,7 @@ static NTSTATUS Wow64Manual_NtUserProcessConnect(ULONG *a)
                      "(psi=%I64x ahe=%I64x) — kernel low-map missing?!\n",
                      Uc64.siClient.psi, Uc64.siClient.aheList);
         Uc32->siClient.psi = (ULONG)Uc64.siClient.psi;
+        Wow64pPfnMapSetPsi(Uc64.siClient.psi);
         Uc32->siClient.aheList = (ULONG)Uc64.siClient.aheList;
         Uc32->siClient.pDispInfo = (ULONG)Uc64.siClient.pDispInfo;
         Uc32->siClient.ulSharedDelta = (ULONG)Uc64.siClient.ulSharedDelta;
@@ -2865,6 +2867,125 @@ static NTSTATUS Wow64Manual_NtUserDefSetText(ULONG *a)
     return (NTSTATUS)(ULONG)NtUserDefSetText((PVOID)(ULONG_PTR)a[0], Ls64Ptr);
 }
 
+/*
+ * Window/class procs crossing into the kernel. A guest system proc (Button's,
+ * DefWindowProc, ...) is swapped for the host's proc in the same PFNCLIENT slot
+ * (wow64_pfnmap.c), and a host proc coming back is swapped for the guest's.
+ * The WNDPROC indices go through the *Ptr entry points because the 32-bit ones
+ * narrow the value: the new host proc on the way in (SetClassLong's ULONG),
+ * and the old one on the way out (SetWindowLong returns a LONG). Neither can
+ * be mapped once it has lost its high half.
+ */
+extern LONG NtUserSetWindowLong(PVOID, ULONG, LONG, ULONG);
+extern LONG_PTR NtUserSetWindowLongPtr(PVOID, ULONG, LONG_PTR, ULONG);
+extern ULONG_PTR NtUserSetClassLong(PVOID, INT, ULONG, ULONG);
+extern ULONG_PTR NtUserSetClassLongPtr(PVOID, INT, ULONG_PTR, ULONG);
+extern ULONG_PTR NtUserGetCPD(PVOID, ULONG, ULONG_PTR);
+
+#define WOW64_GWL_WNDPROC (-4)
+#define WOW64_GCL_WNDPROC (-24)
+
+/*
+ * NtUserBuildPropList(hWnd, Buffer, BufferSize, Count). PROPLISTITEM is
+ * {ATOM; HANDLE}: 8 bytes in the guest, 16 on the host. With a NULL buffer the
+ * kernel reports the size NEEDED, in bytes of ITS items; with a buffer it
+ * requires a whole number of items and reports how many it wrote. Flat, the
+ * guest's EnumProps* read a 16-byte-stride array at an 8-byte stride.
+ */
+#define WOW64_PROPLISTITEM32_CB 8
+#define WOW64_PROPLISTITEM64_CB 16
+#define WOW64_PROPLIST_STACK 32
+
+static NTSTATUS Wow64Manual_NtUserBuildPropList(ULONG *a)
+{
+    extern NTSTATUS NtUserBuildPropList(PVOID, PVOID, ULONG, ULONG *);
+    typedef struct { USHORT Atom; ULONG Data; } ITEM32;      /* 8 bytes */
+    typedef struct { USHORT Atom; ULONGLONG Data; } ITEM64;  /* 16 bytes */
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0];
+    ITEM32 *Out32 = (ITEM32 *)(ULONG_PTR)a[1];
+    ULONG Size32 = a[2];
+    ULONG *Count32 = (ULONG *)(ULONG_PTR)a[3];
+    ITEM64 Stack[WOW64_PROPLIST_STACK], *Items = Stack;
+    PVOID Heap = NULL;
+    ULONG Count = 0, n, i;
+    NTSTATUS St;
+
+    C_ASSERT(sizeof(ITEM32) == WOW64_PROPLISTITEM32_CB);
+    C_ASSERT(sizeof(ITEM64) == WOW64_PROPLISTITEM64_CB);
+
+    if (!Out32)
+    {
+        St = NtUserBuildPropList(Wnd, NULL, 0, &Count);
+        if (St >= 0 && Count32)
+            *Count32 = Count / WOW64_PROPLISTITEM64_CB * WOW64_PROPLISTITEM32_CB;
+        return St;
+    }
+    if (Size32 == 0 || Size32 % WOW64_PROPLISTITEM32_CB)
+        return (NTSTATUS)0xC000000DL; /* STATUS_INVALID_PARAMETER, as the kernel says */
+
+    n = Size32 / WOW64_PROPLISTITEM32_CB;
+    if (n > WOW64_PROPLIST_STACK)
+    {
+        SIZE_T Size = (SIZE_T)n * WOW64_PROPLISTITEM64_CB;
+        St = NtAllocateVirtualMemory((HANDLE)(LONG_PTR)-1, &Heap, 0, &Size,
+                                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (St < 0)
+            return St;
+        Items = (ITEM64 *)Heap;
+    }
+
+    St = NtUserBuildPropList(Wnd, Items, n * WOW64_PROPLISTITEM64_CB, &Count);
+    if (St >= 0)
+    {
+        for (i = 0; i < Count && i < n; i++)
+        {
+            Out32[i].Atom = Items[i].Atom;
+            Out32[i].Data = (ULONG)Items[i].Data; /* a handle-sized value */
+        }
+        if (Count32)
+            *Count32 = Count;
+    }
+
+    if (Heap)
+    {
+        SIZE_T Free = 0;
+        NtFreeVirtualMemory((HANDLE)(LONG_PTR)-1, &Heap, &Free, MEM_RELEASE);
+    }
+    return St;
+}
+
+/* NtUserSetWindowLong(hWnd, Index, NewValue, Ansi) */
+static NTSTATUS Wow64Manual_NtUserSetWindowLong(ULONG *a)
+{
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0]; /* handle: sign-extend */
+
+    if ((LONG)a[1] == WOW64_GWL_WNDPROC)
+        return (NTSTATUS)Wow64pMapClientProc((ULONGLONG)NtUserSetWindowLongPtr(
+            Wnd, a[1], (LONG_PTR)Wow64pUnmapClientProc(a[2]), a[3]));
+    return (NTSTATUS)NtUserSetWindowLong(Wnd, a[1], (LONG)a[2], a[3]);
+}
+
+/* NtUserSetClassLong(hWnd, Offset, dwNewLong, Ansi) */
+static NTSTATUS Wow64Manual_NtUserSetClassLong(ULONG *a)
+{
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0];
+
+    if ((LONG)a[1] == WOW64_GCL_WNDPROC)
+        return (NTSTATUS)Wow64pMapClientProc((ULONGLONG)NtUserSetClassLongPtr(
+            Wnd, (INT)a[1], (ULONG_PTR)Wow64pUnmapClientProc(a[2]), a[3]));
+    return (NTSTATUS)NtUserSetClassLong(Wnd, (INT)a[1], a[2], a[3]);
+}
+
+/* NtUserGetCPD(hWnd, Flags, ProcIn): returns a CPD handle (0xFFFFxxxx, which
+ * the map leaves alone) or a proc. */
+static NTSTATUS Wow64Manual_NtUserGetCPD(ULONG *a)
+{
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0];
+
+    return (NTSTATUS)Wow64pMapClientProc(
+        (ULONGLONG)NtUserGetCPD(Wnd, a[1], (ULONG_PTR)Wow64pUnmapClientProc(a[2])));
+}
+
 static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
 {
     extern ULONG NtUserRegisterClassExWOW(PVOID, PVOID, PVOID, PVOID, ULONG, ULONG, PVOID);
@@ -2893,7 +3014,9 @@ static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
         return 0; /* ATOM 0 = fail */
     W64.cbSize = sizeof(W64);      /* kernel probes cbSize == sizeof(WNDCLASSEXW) */
     W64.style = W32->style;
-    W64.lpfnWndProc = W32->lpfnWndProc;
+    /* A guest system proc becomes the host's (wow64_pfnmap.c): win32k picks an
+     * ANSI window's A proc by comparing the class proc against gpsi. */
+    W64.lpfnWndProc = Wow64pUnmapClientProc(W32->lpfnWndProc);
     W64.cbClsExtra = W32->cbClsExtra;
     W64.cbWndExtra = W32->cbWndExtra;
     W64.hInstance = W32->hInstance;
@@ -3145,14 +3268,15 @@ static NTSTATUS Wow64Manual_NtUserGetClassInfo(ULONG *a)
         /* Narrow back. A class whose members came from 64-bit code (a system
          * class wndproc, a >4GB menu-name mapping) cannot be represented for
          * the guest — trace it loudly instead of silently truncating. */
-        if ((W64.lpfnWndProc | W64.lpszMenuName | W64.lpszClassName | MenuName64)
-            >> 32)
+        if ((W64.lpszMenuName | W64.lpszClassName | MenuName64) >> 32 ||
+            (W64.lpfnWndProc >> 32 &&
+             Wow64pMapClientProc(W64.lpfnWndProc) == (ULONG)W64.lpfnWndProc))
             DbgPrint("[WOW64] NtUserGetClassInfo: 64-bit-only members "
                      "(proc=%I64x menu=%I64x cls=%I64x pmenu=%I64x) TRUNCATED\n",
                      W64.lpfnWndProc, W64.lpszMenuName, W64.lpszClassName,
                      MenuName64);
         W32->style = W64.style;
-        W32->lpfnWndProc = (ULONG)W64.lpfnWndProc;
+        W32->lpfnWndProc = Wow64pMapClientProc(W64.lpfnWndProc);
         W32->cbClsExtra = W64.cbClsExtra;
         W32->cbWndExtra = W64.cbWndExtra;
         W32->hInstance = (ULONG)W64.hInstance;
@@ -5936,7 +6060,9 @@ static NTSTATUS Wow64Manual_NtUserInitializeClientPfnArrays(ULONG *a)
 {
     static int Announced;
 
-    (void)a;
+    /* Not installed globally, but remembered: wow64_pfnmap.c maps the host's
+     * built-in class procs onto these slots before they reach the guest. */
+    Wow64pPfnMapSetGuest(a[0], a[1]);
     if (!Announced)
     {
         Announced = 1;
@@ -6892,6 +7018,14 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserMessageCall(Arguments);
     if (WOW64_IS("NtQueryValueKey"))
         return Wow64Manual_NtQueryValueKey(Arguments);
+    if (WOW64_IS("NtUserBuildPropList"))
+        return Wow64Manual_NtUserBuildPropList(Arguments);
+    if (WOW64_IS("NtUserSetWindowLong"))
+        return Wow64Manual_NtUserSetWindowLong(Arguments);
+    if (WOW64_IS("NtUserSetClassLong"))
+        return Wow64Manual_NtUserSetClassLong(Arguments);
+    if (WOW64_IS("NtUserGetCPD"))
+        return Wow64Manual_NtUserGetCPD(Arguments);
     if (WOW64_IS("NtUserRegisterClassExWOW"))
         return Wow64Manual_NtUserRegisterClassExWOW(Arguments);
     if (WOW64_IS("NtUserGetClassInfo"))

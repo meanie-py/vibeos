@@ -10232,6 +10232,14 @@ until Wine's `user32:class` was pointed at it and reported all eight class words
 with what a syscall had just set. Address the tail off the snapped kernel object
 (`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
 fixed struct is in the same position and has not been audited.
+**SERVERINFO was never in the view, and "most things work" hid it.** `dwSRVIFlags` is at
+offset 0 in both layouts, so the flag checks worked while metrics, colours and the class-proc
+tables read garbage. Read `gpsi` only through `wow64::psi`, never as `(*gpsi).field`. The same
+audit found `CALLPROCDATA`, `PROPERTY` and `PROPLISTITEM` without 32-bit shapes. **A proc is
+not a plain pointer here either**: win32k's system procs are the 64-bit user32's
+`apfnClientA/W`, so a proc crossing to the guest must be swapped for the guest's proc in the
+same slot (`wow64_pfnmap.c`). Narrowed instead, the guest executes the host address's low half
+(`eip=b2041ac0`).
 
 ### Loader ordering and process bring-up `[§9.47]`
 A CUI process hangs in kernel32 `ConDllInitialize` with exit code **0x103 = STILL_ACTIVE**

@@ -4839,7 +4839,12 @@ unsafe fn co_IntSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, A
     } else {
         #[cfg(target_pointer_width = "64")]
         {
-            if Size as usize == core::mem::size_of::<LONG>() {
+            // A 4-byte write to a pointer index is 64-bit code using the 32-bit
+            // API, so it is refused. For a WoW64 caller 4 bytes IS a pointer.
+            // Comparing against size_of::<LONG>() refused the guest's
+            // SetWindowLong(GWL_WNDPROC) outright, and through SetWindowLongPtr
+            // too, since that passes UserCallerPtrSize() = 4 for WoW64.
+            if Size < UserCallerPtrSize() {
                 if (Index != GWL_STYLE as DWORD)
                     && (Index != GWL_EXSTYLE as DWORD)
                     && (Index != GWL_ID as DWORD)

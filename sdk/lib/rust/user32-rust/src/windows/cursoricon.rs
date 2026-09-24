@@ -547,7 +547,7 @@ unsafe fn CURSORICON_ConvertPngToBmpIcon(
 }
 
 unsafe fn LoadSystemCursors() {
-    if gpsi.is_null() || (*crate::internal::gpsi_perusr()).hIconSmWindows.is_null() {
+    if gpsi.is_null() || crate::wow64::psi::hicon_sm_windows().is_null() {
         ERR!("Loading System Cursors\n");
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_NORMAL);
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_IBEAM, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_IBEAM);
