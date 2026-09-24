@@ -657,6 +657,111 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
   the probed pointer" would enumerate the rest for free, and is owed.
 
+- **`msvcrt log10(0.0)` returns a large finite negative instead of `-Inf`. OPEN**
+  (2026-09-23, found by the apitest verification sweep). Exact values, from the test's
+  own output: `log10(0.0)` and `log10(-0.0)` both return `0xffe1ccf385ebc8a0`
+  (approximately `-1.0e308`) where the expected bit pattern is `0xfff0000000000000`.
+  Both signed zeros give the identical wrong answer, so the zero case is not being
+  special-cased to infinity at all -- it looks like a finite stand-in for `-HUGE_VAL`
+  rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
+  Separate from, and simpler than, the wedge that follows it (below).
+
+- **`NtGdiCreateBitmap` BUGCHECKed 0x1E in a naked `memcpy`. FIXED 2026-09-24**, verified
+  by boot (`exit win32u_apitest.exe NtGdiCreateBitmap code=2` — real test failures, no
+  crash). Symbolicated stack, top and bottom frames agreeing:
+  `NtGdiCreateBitmap+0x1F9` → `memcpy+0xD` → `cnt_rust::cabi::raw_move+0x5C`, exception
+  0xC0000005. **The site carried a comment correctly diagnosing the bug and a fix that
+  did not address it**: someone restored the dropped `ProbeForRead` and left
+  `UnsafeSetBitmapBits` copying `cjSize` bytes off the caller's pointer with a plain
+  `RtlCopyMemory`. The probe is validate-only, so this is the field manual's "a restored
+  probe does NOT re-protect the USE", written down and walked into anyway. Upstream puts
+  `ProbeForRead` AND `UnsafeSetBitmapBits` in one `_SEH2_TRY` whose handler deletes the
+  surface and returns NULL; both call sites now honour that, using a `-1` sentinel rather
+  than 0 because a legitimate call can copy zero bytes and `NtGdiSetBitmapBits` returns
+  that count to user mode. **First confirmed-live member of the 152-lead bulk-copy
+  class**, and it needed BOTH remaining scanner blind spots at once (bulk copy, one frame
+  down in a callee) — now closed, with a regression test.
+
+- **`NtGdiGetBitmapBits` BUGCHECKs 0x1E and the ntoskrnl address is a RED HERRING.
+  OPEN** (2026-09-24). `0x0000001E (0xffffffffc0000005, ntoskrnl.exe+0x2B6B0, ...)`,
+  reproducing at the identical address across runs days apart. The quarantine recorded
+  this as "the fault is in ntoskrnl rather than win32k, so it may be a different cause".
+  Resolved now: `ntoskrnl.exe+0x2B6B0` = VA `0x42B6B0` (ImageBase 0x400000), which lands
+  inside `NtShutdownSystem` (`0x42B6A0`–`0x42B6C3`) — **but MID-INSTRUCTION**, at the
+  last byte of the `mov $0x4,%edx` at `0x42b6ac`. A PC that is not an instruction
+  boundary is not a legitimate execution point, so this is a WILD CONTROL TRANSFER, not a
+  fault inside `NtShutdownSystem`. The ntoskrnl symbol says where control landed, not
+  where the bug is, and chasing ntoskrnl here would be chasing the landing site.
+  Redirect: find the indirect call on the `NtGdiGetBitmapBits` path (a surface or DIB
+  engine function pointer is the obvious candidate) and check it for NULL/garbage. Needs
+  `vibeos-cli debug start amd64 --gdb`; a bare serial cannot show which call transferred.
+
+- **`umkm_apitest SystemCall` BUGCHECKs 0x1E at PC=0 — the user-mode callback
+  dispatch jumps through a NULL pointer. ROOT-CAUSE LOCATED, fix pending**
+  (2026-09-23, round 2 of the verification sweep).
+  **Observed:** `BUGCHECK 0x0000001E (0xffffffffc0000005, 0x0000000000000000,
+  0xfffff88004613a50, 0x0)`. By this tree's convention the second argument is the
+  faulting PC, so the PC is **zero** — a jump/call through a NULL pointer, not a data
+  access. It fires immediately after the subtest's DLL init, with no output from the
+  test itself. The third argument is a win32k address.
+  **What the test does** (`modules/rostests/apitests/umkm/SystemCall.c`): on amd64 it
+  issues win32k syscall `0x1000` *deliberately without user32.dll loaded*, having
+  installed a vectored exception handler, and expects the resulting
+  `KiUserCallbackDispatcher` attempt to raise an exception in USER mode that the VEH
+  catches (`ok_eq_ulong(g_HandlerCalled, 1UL)`). So an exception here is the test's
+  intent; taking it in KERNEL mode is ours.
+  **The guard that should have caught it, and its hole:**
+  `ntoskrnl-rust/src/ke/amd64/usercall.rs` already has a check added for precisely this
+  scenario, whose comment reads "If user32.dll hasn't loaded yet,
+  PEB->KernelCallbackTable is NULL and KiUserCallbackDispatcher will ACCESS_VIOLATION
+  trying to call through it." It returns `STATUS_UNSUCCESSFUL` when
+  `PEB->KernelCallbackTable` is NULL — but it is wrapped in `if !teb.is_null()`, so a
+  NULL TEB **skips the guard entirely** and proceeds to dispatch. Separately, the
+  pointer actually loaded into the trap frame is a different one:
+  `CallbackTrapFrame.Rip = KeUserCallbackDispatcher`, and that symbol is defined as
+  `static mut KeUserCallbackDispatcher: PVOID = null_mut()`
+  (`ntoskrnl-rust/src/ke/procobj.rs:177`), populated later during init. Nothing checks
+  it before it becomes `Rip`.
+  **Inferred, not yet measured:** which of the two holes fires here. The discriminating
+  measurement is cheap — print `KeUserCallbackDispatcher` and the TEB pointer at that
+  call site on this boot. Do that before fixing, because "check the other pointer too"
+  and "the guard is being skipped" have different fixes and only one of them is real.
+  **Why it matters beyond this test:** a NULL `Rip` handed to `KiUserCallbackExit` is
+  unrecoverable under `USE_DUMMY_PSEH`, and any win32k callback raced against user32
+  load takes the same path.
+
+- **The apitest parser scored 14 real results as broken, because wine/test.h
+  PLURALISES. FIXED 2026-09-23.** `SUMMARY` required `(\d+) failures\)`, so a subtest
+  with exactly one failing assertion prints `1 failure)` and matched nothing. The row
+  then kept its initial `NO-END` status, its pass/fail counts were discarded, and
+  `NO-END` is in the ratchet's BAD set — so an entirely ordinary
+  one-assertion-failed result read as a broken subtest. Measured on the first
+  verification sweep: `NO-END` 31 → 17, `FAIL-EXIT` 76 → 90, and 65,324 passing
+  assertions became visible that had been thrown away. **This one would have poisoned
+  the baseline**: the floor is a SET OF ASSERTION IDENTITIES, so banking it would have
+  omitted 14 subtests' identities permanently and silently. `1 test executed` has the
+  same trap and is covered too. The remaining 17 `NO-END` rows are genuine — they exit
+  0x80 having printed no summary at all — and are a separate open question.
+
+- **`msvcrt_apitest log10` HANGS (120s child timeout) but does not stop the sweep.**
+  On the verification sweep it was launched, hit the sweep's 120s cap, was terminated,
+  and the sweep carried on to 229 completed subtests. So it is a hang plus the wrong
+  `log10(0)` result above, not a crasher.
+
+- **THE SELECTION CRITERION FOR THE 0x1E UN-QUARANTINE BATCH WAS TOO COARSE**
+  (2026-09-23). Commit 25c0c884afa6 un-quarantined 13 entries on the grounds that they
+  were recorded as `BUGCHECK 0x0000001E`, which is what the probe-then-raw-access class
+  produces. Round 1 of the verification sweep re-crashed at `powrprof_apitest.exe`
+  with `0x0000001E (0xffffffffc0000047, ...)` -- stop code 0x1E, but exception code
+  **0xC0000047, not 0xC0000005**. The probe-then-deref class is *always* an access
+  violation (0xC0000005); 0x1E is merely KMODE_EXCEPTION_NOT_HANDLED and says nothing
+  about which exception. So `powrprof` was never a candidate for that fix, and the
+  quarantine file's habit of recording "BUGCHECK 0x0000001E" without the argument list
+  is what made the batch look homogeneous when it is not.
+  **Fix the record, not just this entry:** quarantine comments should carry the full
+  bugcheck argument tuple, because the first argument is the discriminator and the stop
+  code alone is a category containing everything.
+
 - **`user32_apitest GetUserObjectInformation` triggers BUGCHECK 0xF4
   (CRITICAL_OBJECT_TERMINATION). OPEN** (2026-09-23). `P4 = ntoskrnl.exe+0x198FF0`. A
   critical process died; distinct from the ScrollDC crash above in both bugcheck class and

@@ -80,6 +80,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="defaults to <repo>/build-<arch>",
     )
+    ap.add_argument(
+        "--only",
+        action="append",
+        metavar="SUITE.exe",
+        help="restrict the sweep to these suites (repeatable). For reproducing one "
+        "suite's crash without the other 58 running first: a full sweep is ~3 hours "
+        "and mixes every suite's residue into one serial, which is no way to ask "
+        "whether a wedge is self-contained. Quarantines still apply, and a name that "
+        "matches nothing is an error rather than an empty run.",
+    )
     args = ap.parse_args(argv)
 
     build_dir = args.build_dir or (REPO / f"build-{args.arch}")
@@ -92,8 +102,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    # The quarantine staleness checks below must see EVERYTHING the build produced,
+    # not the --only subset: filtering first made them report 9 healthy quarantine
+    # entries as naming suites "this build did not produce". That warning exists to
+    # catch typos, so a filtered run that cries wolf destroys its only job.
+    all_found = list(found)
+
+    if args.only:
+        want = set(args.only)
+        missing = sorted(want - set(all_found))
+        if missing:
+            print(
+                f"gen_suites: --only names {len(missing)} suite(s) this build did not "
+                f"produce: {', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return 1
+        found = [s for s in found if s in want]
+
     quarantined, skipped, qpath = read_quarantine(args.arch)
-    stale = sorted(quarantined - set(found))
+    stale = sorted(quarantined - set(all_found))
     if stale:
         # Loud, per the module docstring: a quarantine that matches nothing is
         # either a typo or a suite that was renamed away under it.
@@ -112,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     skip_out.write_text("\n".join(skip_lines) + "\n", encoding="utf-8")
 
-    stale_subtest_suites = sorted({e.split(" ", 1)[0] for e in skipped} - set(found))
+    stale_subtest_suites = sorted({e.split(" ", 1)[0] for e in skipped} - set(all_found))
     if stale_subtest_suites:
         print(
             f"gen_suites: {qpath.name} has subtest skips for suite(s) this build did "
@@ -127,15 +155,28 @@ def main(argv: list[str] | None = None) -> int:
         f"# {build_dir.name}/modules/rostests/apitests. Do not edit; to drop a suite,",
         f"# add it to {qpath.name} instead.",
     ]
+    if args.only:
+        lines += [
+            "# RESTRICTED by --only to: " + ", ".join(sorted(args.only)),
+            "# This is a REPRODUCTION list, not the full sweep — do not bank a baseline",
+            "# from a run using it; the coverage would silently be one suite's worth.",
+        ]
     if quarantined:
         lines.append(f"# {len(quarantined & set(found))} suite(s) quarantined via {qpath.name}.")
     lines += [s for s in found if s not in quarantined]
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     kept = len([s for s in found if s not in quarantined])
+    # `built` counts what the BUILD produced, not what --only kept, or a restricted
+    # run reports "1 suite(s) (1 built)" and reads like the build lost 62 of them.
+    restricted = f", RESTRICTED to {len(found)} by --only" if args.only else ""
     print(
-        f"gen_suites: {out.name} — {kept} suite(s) ({len(found)} built, "
+        f"gen_suites: {out.name} — {kept} suite(s) ({len(all_found)} built, "
+        f"{len(all_found) - len(found)} filtered{restricted}, "
         f"{len(found) - kept} quarantined), {len(skipped)} subtest skip(s)"
+        if args.only
+        else f"gen_suites: {out.name} — {kept} suite(s) ({len(all_found)} built, "
+        f"{len(all_found) - kept} quarantined), {len(skipped)} subtest skip(s)"
     )
     return 0
 
