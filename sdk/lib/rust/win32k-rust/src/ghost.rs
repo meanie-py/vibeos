@@ -179,7 +179,7 @@ pub unsafe extern "C" fn IntHungWindowFromGhostWindow(pGhostWnd: PWND) -> HWND {
 }
 unsafe fn IntHungWindowFromGhostWindow_impl(pGhostWnd: PWND) -> HWND {
     let UserData: *const GHOST_DATA;
-    let mut hwndTarget: HWND;
+    let mut hwndTarget: HWND = core::ptr::null_mut();
 
     if IntIsGhostWindow(pGhostWnd) == 0 {
         return core::ptr::null_mut();
@@ -194,8 +194,13 @@ unsafe fn IntHungWindowFromGhostWindow_impl(pGhostWnd: PWND) -> HWND {
         );
         if !NT_SUCCESS(Status) {
             hwndTarget = core::ptr::null_mut();
-        } else {
-            hwndTarget = (*UserData).hwndTarget;
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(hwndTarget) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*UserData).hwndTarget) as *const core::ffi::c_void,
+            core::mem::size_of::<HWND>(),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            hwndTarget = core::ptr::null_mut();
         }
     } else {
         hwndTarget = core::ptr::null_mut();

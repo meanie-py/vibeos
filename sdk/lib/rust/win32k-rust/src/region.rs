@@ -3,6 +3,7 @@ use ntkrnl_sys::ddk::PsGetCurrentProcessWin32Process;
 use ntkrnl_sys::driver_ddk::DbgPrint;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 use core::ffi::c_void;
 
 // Sibling Rust modules (same crate) — `use`, do NOT re-extern: re-declaring an
@@ -4253,10 +4254,22 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
 
     Status = SafeProbeForRead(RgnData as *const core::ffi::c_void, Count as usize, 1);
     if NT_SUCCESS(Status) {
-        nCount = (*RgnData).rdh.nCount;
-        iType = (*RgnData).rdh.iType;
-        dwSize = (*RgnData).rdh.dwSize;
-        rects = (*RgnData).Buffer.as_mut_ptr() as *mut RECT;
+        // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND these
+        // loads in one _SEH2_TRY, so the loads must be the fault-tolerant copy.
+        let mut rdh: RGNDATAHEADER = core::mem::zeroed();
+        if crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rdh) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*RgnData).rdh) as *const core::ffi::c_void,
+            core::mem::size_of::<RGNDATAHEADER>(),
+        ) {
+            nCount = rdh.nCount;
+            iType = rdh.iType;
+            dwSize = rdh.dwSize;
+            // address-of only, never a load
+            rects = core::ptr::addr_of_mut!((*RgnData).Buffer) as *mut RECT;
+        } else {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
     }
 
     if !NT_SUCCESS(Status) {
@@ -4344,10 +4357,22 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
 
     Status = SafeProbeForRead(RgnData as *const core::ffi::c_void, Count as usize, 1);
     if NT_SUCCESS(Status) {
-        nCount = (*RgnData).rdh.nCount;
-        iType = (*RgnData).rdh.iType;
-        dwSize = (*RgnData).rdh.dwSize;
-        rects = (*RgnData).Buffer.as_mut_ptr() as *mut RECT;
+        // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND these
+        // loads in one _SEH2_TRY, so the loads must be the fault-tolerant copy.
+        let mut rdh: RGNDATAHEADER = core::mem::zeroed();
+        if crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rdh) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*RgnData).rdh) as *const core::ffi::c_void,
+            core::mem::size_of::<RGNDATAHEADER>(),
+        ) {
+            nCount = rdh.nCount;
+            iType = rdh.iType;
+            dwSize = rdh.dwSize;
+            // address-of only, never a load
+            rects = core::ptr::addr_of_mut!((*RgnData).Buffer) as *mut RECT;
+        } else {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
     }
 
     if !NT_SUCCESS(Status) {
@@ -4437,8 +4462,15 @@ pub unsafe extern "system" fn NtGdiGetRgnBox(
     }
 
     Status = SafeProbeForWrite(pRect as *mut core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-    if NT_SUCCESS(Status) {
-        *pRect = SafeRect;
+    if NT_SUCCESS(Status)
+        // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+        && !crate::copy::publish_to_user(
+            pRect as *mut core::ffi::c_void,
+            core::ptr::addr_of!(SafeRect) as *const core::ffi::c_void,
+            core::mem::size_of::<RECT>(),
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
     if !NT_SUCCESS(Status) {
         return ERROR as _;
@@ -4493,7 +4525,7 @@ pub unsafe extern "system" fn NtGdiRectInRegion(
     hrgn: HRGN,
     prclUnsafe: LPRECT,
 ) -> BOOL {
-    let mut rcTemp: RECTL;
+    let mut rcTemp: RECTL = core::mem::zeroed();
 
     {
         let __SehStatus = SafeProbeForRead(prclUnsafe as *const core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
@@ -4501,7 +4533,14 @@ pub unsafe extern "system" fn NtGdiRectInRegion(
             return 0;
         }
     }
-    rcTemp = *(prclUnsafe as *const RECTL);
+    // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(rcTemp) as *mut core::ffi::c_void,
+        prclUnsafe as *const core::ffi::c_void,
+        core::mem::size_of::<RECTL>(),
+    ) {
+        return 0;
+    }
 
     #[cfg(target_arch = "x86")]
     {
@@ -4563,18 +4602,24 @@ pub unsafe extern "system" fn NtGdiGetRegionData(
                 EngSetLastError(ERROR_INVALID_PARAMETER);
                 cjSize = 0;
             } else {
-                RtlCopyMemory(
+                // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND
+                // these stores in one _SEH2_TRY. Patch the header in KERNEL memory
+                // and publish once, so nothing reads back through the user pointer.
+                let mut rdh: RGNDATAHEADER = *core::ptr::addr_of!((*prgn).rdh);
+                rdh.iType = RDH_RECTANGLES;
+                rdh.nRgnSize = cjRects;
+                if !crate::copy::publish_to_user(
                     lpRgnData as *mut core::ffi::c_void,
-                    core::ptr::addr_of!((*prgn).rdh) as *const core::ffi::c_void,
+                    core::ptr::addr_of!(rdh) as *const core::ffi::c_void,
                     core::mem::size_of::<RGNDATAHEADER>(),
-                );
-                RtlCopyMemory(
-                    (*lpRgnData).Buffer.as_mut_ptr() as *mut core::ffi::c_void,
+                ) || !crate::copy::publish_to_user(
+                    core::ptr::addr_of_mut!((*lpRgnData).Buffer) as *mut core::ffi::c_void,
                     (*prgn).Buffer as *const core::ffi::c_void,
                     cjRects as usize,
-                );
-                (*lpRgnData).rdh.iType = RDH_RECTANGLES;
-                (*lpRgnData).rdh.nRgnSize = cjRects;
+                ) {
+                    EngSetLastError(ERROR_INVALID_PARAMETER);
+                    cjSize = 0;
+                }
             }
         } else {
             EngSetLastError(ERROR_INVALID_PARAMETER);

@@ -104,3 +104,25 @@ pub unsafe fn publish_to_user(
 ) -> bool {
     bytes == 0 || KmProtectedCopyMemory(dst, src as PVOID, bytes) != 0
 }
+
+/// Zero a user buffer fault-tolerantly. `RtlZeroMemory` straight into user memory
+/// is the same hazard as a raw store: it is a plain `memset` with no fault handler,
+/// so a partially-mapped buffer that passed the validate-only probe bugchecks
+/// mid-clear. Chunked from a small kernel zero block, so an unbounded caller-supplied
+/// size needs no matching kernel allocation.
+#[inline]
+pub unsafe fn zero_to_user(dst: *mut core::ffi::c_void, bytes: usize) -> bool {
+    const ZERO_CHUNK: usize = 256;
+    let zeros = [0u8; ZERO_CHUNK];
+    let mut done = 0usize;
+    while done < bytes {
+        let n = core::cmp::min(ZERO_CHUNK, bytes - done);
+        if KmProtectedCopyMemory((dst as *mut u8).add(done) as PVOID, zeros.as_ptr() as PVOID, n)
+            == 0
+        {
+            return false;
+        }
+        done += n;
+    }
+    true
+}

@@ -59,7 +59,7 @@ afd_apitest.exe send
 # The analysis does not depend on it: the faulting instruction, the symbol and
 # the NULL argument are all in commit c4e66b8695e and the lane doc, and the
 # crash reproduces by removing this line.
-gdi32_apitest.exe SetSysColors
+# gdi32_apitest.exe SetSysColors
 
 # characterize.py round 1: sweep stopped here — guest wedged (no BUGCHECK).
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round01-amd64-uefi_serial.log
@@ -161,11 +161,15 @@ ntdll_apitest.exe
 
 # characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-115841/round01-amd64-uefi_serial.log
-msvcrt_apitest.exe log10
+# msvcrt_apitest.exe log10
 
 # characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-115841/round02-amd64-uefi_serial.log
-msgina_apitest.exe during
+# REMOVED 2026-09-23: `during` was never a subtest. It came from the old
+# message "TIMEOUT msgina_apitest.exe during enumeration (60s)" being split
+# on spaces, and reached the banked table as a phantom assertion identity that
+# no run could ever satisfy. sweep.c now says ENUM-TIMEOUT; msgina is
+# suite-quarantined below on its own merits.
 
 # 2026-09-23: SUITE-level. msgina_apitest never enumerates its subtests — it
 # hits the sweep's 60s ENUMERATION timeout, so nothing in it ever runs. Same
@@ -182,23 +186,23 @@ msgina_apitest.exe
 
 # characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round01-amd64-uefi_serial.log
-iphlpapi_apitest.exe GetExtendedUdpTable
+# iphlpapi_apitest.exe GetExtendedUdpTable
 
 # characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round02-amd64-uefi_serial.log
-appshim_apitest.exe ignorefreelib
+# appshim_apitest.exe ignorefreelib
 
 # characterize.py round 3: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round03-amd64-uefi_serial.log
-afd_apitest.exe windowsize
+# afd_apitest.exe windowsize
 
 # characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round01-amd64-uefi_serial.log
-powrprof_apitest.exe
+# powrprof_apitest.exe
 
 # characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round02-amd64-uefi_serial.log
-umkm_apitest.exe SystemCall
+# umkm_apitest.exe SystemCall
 
 # characterize.py round 3: sweep stopped here — BUGCHECK 0x000000F4.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round03-amd64-uefi_serial.log
@@ -233,7 +237,7 @@ user32_apitest.exe desktop
 
 # characterize.py round 3: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round03-amd64-uefi_serial.log
-win32u_apitest.exe NtGdiCreateBitmap
+# win32u_apitest.exe NtGdiCreateBitmap
 
 # characterize.py round 4: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round04-amd64-uefi_serial.log
@@ -255,15 +259,15 @@ win32u_apitest.exe NtGdiCreateBitmap
 # NtGdiGetBitmapBits: BUGCHECK 0x1E at ntoskrnl.exe+0x2B6B0, called from
 # win32k.sys+0x168D48. Not yet root-caused; the fault is in ntoskrnl rather
 # than win32k, so it may be a different cause.
-win32u_apitest.exe NtGdiGetBitmapBits
+# win32u_apitest.exe NtGdiGetBitmapBits
 
 # characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-171513/round01-amd64-uefi_serial.log
-win32u_apitest.exe NtGdiPolyPolyDraw
+# win32u_apitest.exe NtGdiPolyPolyDraw
 
 # characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-171513/round02-amd64-uefi_serial.log
-win32u_apitest.exe NtGdiSetBitmapBits
+# win32u_apitest.exe NtGdiSetBitmapBits
 
 # user32_apitest.exe ScrollDC — re-quarantined by the round that proved my
 # FIRST fix incomplete (reads captured, write-back still raw; the fault moved
@@ -272,7 +276,7 @@ win32u_apitest.exe NtGdiSetBitmapBits
 
 # characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-verify/characterize-amd64-20260923-182511/round01-amd64-uefi_serial.log
-win32u_apitest.exe NtUserConvertMemHandle
+# win32u_apitest.exe NtUserConvertMemHandle
 
 # user32_apitest.exe ScrollDC — un-quarantined for the THIRD verification.
 # The first two "fixes" both landed somewhere other than the faulting store:
@@ -283,4 +287,22 @@ win32u_apitest.exe NtUserConvertMemHandle
 
 # characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
 # serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-verify/characterize-amd64-20260923-190050/round01-amd64-uefi_serial.log
-win32u_apitest.exe NtUserCreateWindowEx
+# win32u_apitest.exe NtUserCreateWindowEx
+
+# 2026-09-23: THIRTEEN entries un-quarantined above (commented, not deleted), all
+# of them recorded as BUGCHECK 0x1E. Commit 5c03fac931c fixed the whole
+# probe-then-raw-access class in win32k -- 108 scanner leads across 31 files, plus
+# ~30 the scanner's own break-at-first-hit had hidden -- and 0x1E (0xC0000005) is
+# exactly what that class produces. Two members of it, NtUserScrollDC and
+# NtGdiCreateDIBSection, were already verified fixed by boot.
+#
+# This is a HYPOTHESIS UNDER TEST, not a claim that they are fixed: nothing here
+# has been re-derived yet. The next characterization run is the test, and anything
+# that crashes again comes straight back with its new serial. Un-quarantining is
+# how the question gets asked -- the positive-evidence rule governs putting an
+# entry BACK, and the evidence for that is the launch/exit pairing.
+#
+# Deliberately still quarantined: the process-wedge cluster (cmd/msvcrt/kernel32/
+# ntdll -- no BUGCHECK at all, so a different cause), the 0xF4s
+# (user32 GetUserObjectInformation, SetCursorPos), afd send (a real ASSERT the C
+# shares), and the two enumeration timeouts (opengl32, msgina).

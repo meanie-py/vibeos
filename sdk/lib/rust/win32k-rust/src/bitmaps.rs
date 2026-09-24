@@ -602,7 +602,15 @@ pub unsafe extern "system" fn NtGdiGetBitmapDimension(
         return 0;
     }
 
-    *psizDim = dim;
+    // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND access
+    // in one _SEH2_TRY, so the access itself must be the fault-tolerant copy.
+    if !crate::copy::publish_to_user(
+        psizDim as *mut core::ffi::c_void,
+        core::ptr::addr_of!(dim) as *const core::ffi::c_void,
+        core::mem::size_of::<SIZE>(),
+    ) {
+        return 0;
+    }
 
     1
 }
@@ -776,8 +784,13 @@ pub unsafe extern "system" fn NtGdiSetBitmapDimension(
         Status = SafeProbeForWrite(Size as *mut core::ffi::c_void, core::mem::size_of::<SIZE>(), 1);
         if !NT_SUCCESS(Status) {
             Ret = 0;
-        } else {
-            *Size = (*psurf).sizlDim;
+        } else if !crate::copy::publish_to_user(
+            Size as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*psurf).sizlDim) as *const core::ffi::c_void,
+            core::mem::size_of::<SIZE>(),
+        ) {
+            // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+            Ret = 0;
         }
     }
 

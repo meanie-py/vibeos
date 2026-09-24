@@ -8,6 +8,7 @@ use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY, STATUS_INSUFFICIENT_RESOURCES, STATUS_NOT_IMPLEMENTED};
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_HANDLE, STATUS_INVALID_PARAMETER, STATUS_NO_MORE_ENTRIES, STATUS_OBJECT_PATH_INVALID, STATUS_OBJECT_TYPE_MISMATCH, STATUS_UNSUCCESSFUL};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -927,7 +928,13 @@ unsafe fn FreeUserModeWindowStationName(
             core::mem::size_of::<_OBJECT_ATTRIBUTES>() as SIZE_T,
             core::mem::size_of::<ULONG>() as ULONG,
         )) {
-            *UserModeObjectAttributes = *LocalObjectAttributes;
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND store
+            // in one _SEH2_TRY, so the store must be the fault-tolerant copy.
+            crate::copy::publish_to_user(
+                UserModeObjectAttributes as *mut core::ffi::c_void,
+                LocalObjectAttributes as *const core::ffi::c_void,
+                core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            );
         }
     }
 
@@ -1047,12 +1054,28 @@ unsafe fn BuildUserModeWindowStationName(
             core::mem::size_of::<u32>() as ULONG,
         );
         if NT_SUCCESS(Status) {
-            *LocalObjectAttributes = *UserModeObjectAttributes;
+            // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe, load and
+            // both stores in one _SEH2_TRY. Mutate in kernel memory, publish once.
+            if crate::copy::capture_from_user(
+                LocalObjectAttributes as *mut core::ffi::c_void,
+                UserModeObjectAttributes as *const core::ffi::c_void,
+                core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            ) {
+                (*LocalObjectAttributes).ObjectName = *WindowStationName;
+                (*LocalObjectAttributes).RootDirectory = core::ptr::null_mut();
 
-            (*UserModeObjectAttributes).ObjectName = *WindowStationName;
-            (*UserModeObjectAttributes).RootDirectory = core::ptr::null_mut();
-
-            Status = STATUS_SUCCESS;
+                if crate::copy::publish_to_user(
+                    UserModeObjectAttributes as *mut core::ffi::c_void,
+                    LocalObjectAttributes as *const core::ffi::c_void,
+                    core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+                ) {
+                    Status = STATUS_SUCCESS;
+                } else {
+                    Status = STATUS_ACCESS_VIOLATION;
+                }
+            } else {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         Status
@@ -1097,7 +1120,15 @@ pub unsafe extern "system" fn NtUserCreateWindowStation(
         if !NT_SUCCESS(Status) {
             break 'CaptureDone;
         }
-        LocalObjectAttributes = *ObjectAttributes;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(LocalObjectAttributes) as *mut core::ffi::c_void,
+            ObjectAttributes as *const core::ffi::c_void,
+            core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+            break 'CaptureDone;
+        }
         if LocalObjectAttributes.Length as usize != core::mem::size_of::<_OBJECT_ATTRIBUTES>() {
             Status = STATUS_INVALID_PARAMETER;
             break 'CaptureDone;
@@ -1183,7 +1214,15 @@ pub unsafe extern "system" fn NtUserOpenWindowStation(
             break 'CaptureDone;
         }
 
-        LocalObjectAttributes = *ObjectAttributes;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(LocalObjectAttributes) as *mut core::ffi::c_void,
+            ObjectAttributes as *const core::ffi::c_void,
+            core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+            break 'CaptureDone;
+        }
         if LocalObjectAttributes.Length as usize != core::mem::size_of::<_OBJECT_ATTRIBUTES>() {
             Status = STATUS_INVALID_PARAMETER;
             break 'CaptureDone;
@@ -1439,18 +1478,31 @@ pub unsafe extern "system" fn NtUserGetObjectInformation(
     }
 
     if Status == STATUS_SUCCESS && nDataSize > 0 {
-        if !pvData.is_null() {
-            RtlCopyMemory(pvInformation, pvData, nDataSize as _);
+        // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND every
+        // one of these stores in one _SEH2_TRY. RtlCopyMemory/RtlZeroMemory into a
+        // user buffer is a plain memcpy/memset with no handler, so route all three
+        // through the fault-tolerant copy.
+        let nul: u16 = 0;
+        let ok = if !pvData.is_null() {
+            crate::copy::publish_to_user(pvInformation, pvData, nDataSize as usize)
         } else if !pStrNameU.is_null() {
-            RtlCopyMemory(
+            crate::copy::publish_to_user(
                 pvInformation,
-                (*pStrNameU).Buffer as PVOID,
-                (*pStrNameU).Length as _,
-            );
-            *(pvInformation as PWCHAR)
-                .add((*pStrNameU).Length as usize / core::mem::size_of::<u16>()) = 0;
+                (*pStrNameU).Buffer as *const core::ffi::c_void,
+                (*pStrNameU).Length as usize,
+            )
+                && crate::copy::publish_to_user(
+                    (pvInformation as PWCHAR)
+                        .add((*pStrNameU).Length as usize / core::mem::size_of::<u16>())
+                        as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(nul) as *const core::ffi::c_void,
+                    core::mem::size_of::<u16>(),
+                )
         } else {
-            RtlZeroMemory(pvInformation, nDataSize as _);
+            crate::copy::zero_to_user(pvInformation, nDataSize as usize)
+        };
+        if !ok {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 
@@ -2095,7 +2147,15 @@ pub unsafe extern "system" fn NtUserSetWindowStationUser(
         if !NT_SUCCESS(Status) {
             break 'leave;
         }
-        luidUser = *pluid;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(luidUser) as *mut core::ffi::c_void,
+            pluid as *const core::ffi::c_void,
+            core::mem::size_of::<LUID>(),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+            break 'leave;
+        }
 
         RtlZeroMemory(
             core::ptr::addr_of_mut!((*WindowStation).luidUser) as *mut _,

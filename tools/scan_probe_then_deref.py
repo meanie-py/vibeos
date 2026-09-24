@@ -38,6 +38,21 @@ from source_walk import source_files
 
 PROBE = re.compile(r"\bSafeProbeFor(?:Read|Write)\s*\(")
 
+# Bulk copies that are PLAIN memcpy/memset -- no fault handler. Handing the probed
+# pointer to one of these is exactly as exposed as `*p`, and it is invisible to a
+# deref-shaped search: `RtlCopyMemory(&mut dsm, pdsm, n)` reads the whole user
+# struct without a single `*` in sight. Found because the interprocedural pass
+# pointed at a line two above one of these.
+UNSAFE_COPIES = (
+    "RtlCopyMemory",
+    "RtlMoveMemory",
+    "RtlZeroMemory",
+    "RtlFillMemory",
+    "copy_nonoverlapping",
+    "write_volatile",
+    "read_volatile",
+)
+
 # Accesses that are already fault-tolerant: the pointer is handed to a copy
 # primitive rather than dereferenced inline.
 SAFE_SINKS = (
@@ -117,7 +132,66 @@ def derefs_of(ident: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![\w.])\*\s*\(?\s*{i}(?![\w])|\(\s*\*\s*{i}\s*\)")
 
 
-def scan_text(text: str, path: str) -> list[tuple[int, str, str]]:
+FN_DEF = re.compile(
+    r'^(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)\s*\(',
+    re.MULTILINE,
+)
+
+
+def deref_params(text: str) -> dict[str, set[int]]:
+    """Map fn name -> the parameter POSITIONS whose pointer it raw-dereferences.
+
+    Why this exists: the probe and the dereference are often in different
+    functions. `NtUserSetSysColors` probes two user arrays and hands them to
+    `IntSetSysColors`, which does `*elem_ptr` in a loop -- a live BUGCHECK 0x1E
+    the single-function scan could not see, and did not see. Purely local
+    analysis is structurally blind to the whole class of "probe at the syscall,
+    deref one level down".
+
+    Deliberately shallow: one call level, positional, same crate. It reports
+    LEADS, and a missed second level is better than a scanner nobody trusts.
+    """
+    out: dict[str, set[int]] = {}
+    defs = list(FN_DEF.finditer(text))
+    for k, m in enumerate(defs):
+        name = m.group(1)
+        params = split_args(text[m.end() :])
+        end = defs[k + 1].start() if k + 1 < len(defs) else len(text)
+        body = text[m.end() : end]
+        hits = set()
+        for pos, param in enumerate(params):
+            pname = param.split(":")[0].strip().lstrip("mut ").strip()
+            if not re.fullmatch(r"\w+", pname or ""):
+                continue
+            pat = derefs_of(pname)
+            for ln in body.splitlines():
+                if any(sink in ln for sink in SAFE_SINKS) or is_comment(ln):
+                    continue
+                if "addr_of!" in ln or "addr_of_mut!" in ln:
+                    continue
+                if pat.search(ln):
+                    hits.add(pos)
+                    break
+        if hits:
+            out.setdefault(name, set()).update(hits)
+    return out
+
+
+CALL = re.compile(r"\b(\w+)\s*\(")
+
+
+def text_of_line_call(lines: list[str], n: int, start: int) -> str:
+    """The argument text of a call beginning on line `n`, which may wrap.
+
+    Multi-line call formatting is the norm here (rustfmt splits anything long),
+    so reading only the one line would miss most arguments.
+    """
+    return "\n".join([lines[n][start:], *lines[n + 1 : n + 12]])
+
+
+def scan_text(
+    text: str, path: str, deref_index: dict[str, set[int]] | None = None
+) -> list[tuple[int, str, str]]:
     lines = text.splitlines()
     out: list[tuple[int, str, str]] = []
     for m in PROBE.finditer(text):
@@ -149,10 +223,69 @@ def scan_text(text: str, path: str) -> list[tuple[int, str, str]]:
             # itself.
             if "addr_of!" in ln or "addr_of_mut!" in ln:
                 continue
+            # Reassigning the probed identifier to an UNRELATED pointer ends the
+            # taint: it now names something else. dibobj's `bmi = pbmiSafe;` swaps a
+            # user pointer for a kernel pool copy, so every later `(*bmi).…` is a
+            # kernel load -- reported as a lead for as long as this was missing.
+            #
+            # Assigning NULL does NOT end it. Error paths null the pointer and the
+            # success path keeps deref'ing the original; treating that as untainted
+            # hid the real `dwHookData` leads two lines further down.
+            reassign = re.match(rf"\s*{re.escape(ident)}\s*=\s*([^=].*)$", ln)
+            if (
+                reassign
+                and not pat.search(ln)
+                # word boundary, not substring: `bmi = pbmiSafe;` has "bmi" inside
+                # "pbmiSafe", which read as self-reference and kept the taint alive.
+                and not re.search(rf"\b{re.escape(ident)}\b", reassign.group(1))
+                and "null" not in reassign.group(1).lower()
+            ):
+                break
+            # The probed pointer handed to a callee that dereferences THAT
+            # parameter -- the NtUserSetSysColors -> IntSetSysColors shape.
+            if deref_index:
+                call = CALL.search(ln)
+                if call and call.group(1) in deref_index:
+                    cargs = split_args(text_of_line_call(lines, n, call.end()))
+                    for pos, a in enumerate(cargs):
+                        # Strip is_null() guards first. The tree's idiom is
+                        # `if !p.is_null() { &SafeLocal } else { null }`, where the
+                        # argument actually passed is a KERNEL local and the probed
+                        # name appears only in the test. Without this, three of the
+                        # first four interprocedural hits were that shape.
+                        a = re.sub(rf"\b{re.escape(ident)}\s*\.is_null\s*\(\)", "", a)
+                        if pos in deref_index[call.group(1)] and re.search(
+                            rf"\b{re.escape(ident)}\b", a
+                        ):
+                            out.append(
+                                (
+                                    n + 1,
+                                    ident,
+                                    f"passed to {call.group(1)}() which dereferences arg {pos} raw",
+                                )
+                            )
+                            break
+            # A bulk copy naming the probed pointer -- see UNSAFE_COPIES. Matched
+            # against the call's OWN arguments, not a line window: a window flagged
+            # stretchblt's three back-to-back copies for each other's pointers.
+            copy = next((c for c in UNSAFE_COPIES if c + "(" in ln.replace(" ", "")), None)
+            if copy:
+                at = ln.find(copy)
+                cargs = split_args(text_of_line_call(lines, n, at + len(copy) + 1))
+                if any(
+                    re.search(rf"\b{re.escape(ident)}\b", a)
+                    and not re.search(rf"\b{re.escape(ident)}\s*\.is_null\s*\(\)", a)
+                    for a in cargs
+                ):
+                    out.append((n + 1, ident, ln.strip()))
             if pat.search(ln):
                 out.append((n + 1, ident, ln.strip()))
-                break
-    return [(ln, i, src) for ln, i, src in out]
+                # NO break: report EVERY unprotected access, not just the first.
+                # Stopping at the first one understated the real count and made the
+                # tool look like it was finding new bugs each time one was fixed --
+                # the same failure as the `is_comment` bug that hid scrollex.rs.
+    # one row per (line, ident); a line can match several patterns
+    return sorted({(ln, i, src) for ln, i, src in out})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,11 +296,19 @@ def main(argv: list[str] | None = None) -> int:
     for root in args.roots or ["sdk/lib/rust"]:
         # source_files() prunes vendored trees and build dirs; a bare rglob
         # would scan both (and `check` lints for exactly that).
-        for p in sorted(source_files(Path(root), "*.rs")):
-            text = p.read_text(errors="replace")
+        files = sorted(source_files(Path(root), "*.rs"))
+        texts = {p: p.read_text(errors="replace") for p in files}
+        # Index EVERY file, not just the probing ones: the callee that does the
+        # raw deref usually lives in a different module from the syscall.
+        deref_index: dict[str, set[int]] = {}
+        for t in texts.values():
+            for name, positions in deref_params(t).items():
+                deref_index.setdefault(name, set()).update(positions)
+        for p in files:
+            text = texts[p]
             if "SafeProbeFor" not in text:
                 continue
-            for line, ident, src in scan_text(text, str(p)):
+            for line, ident, src in scan_text(text, str(p), deref_index):
                 print(f"{p}:{line}: probed `{ident}` then dereferenced raw — {src}")
                 findings += 1
     print(

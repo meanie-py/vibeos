@@ -7,6 +7,7 @@ use ntkrnl_sys::rtl::RtlCopyMemory;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY};
 use ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // SafeProbeForRead/Write are NTAPI (stdcall i386, `_Safe...@12`).
 extern "system" {
@@ -254,10 +255,26 @@ pub unsafe extern "system" fn NtUserCopyAcceleratorTable(
             Ret = 0;
         } else {
             Ret = 0;
+            // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND every
+            // store in one _SEH2_TRY. Publish field by field rather than whole
+            // structs, so ACCEL's padding stays untouched exactly as the C left it.
             while Ret < EntriesCount {
-                (*Entries.add(Ret as usize)).fVirt = (*(*Accel).Table.add(Ret as usize)).fVirt;
-                (*Entries.add(Ret as usize)).key = (*(*Accel).Table.add(Ret as usize)).key;
-                (*Entries.add(Ret as usize)).cmd = (*(*Accel).Table.add(Ret as usize)).cmd;
+                let src = (*Accel).Table.add(Ret as usize);
+                let dst = Entries.add(Ret as usize);
+                macro_rules! put {
+                    ($field:ident) => {
+                        crate::copy::publish_to_user(
+                            core::ptr::addr_of_mut!((*dst).$field) as *mut core::ffi::c_void,
+                            core::ptr::addr_of!((*src).$field) as *const core::ffi::c_void,
+                            core::mem::size_of_val(&(*src).$field),
+                        )
+                    };
+                }
+                if !put!(fVirt) || !put!(key) || !put!(cmd) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    Ret = 0;
+                    break;
+                }
                 Ret += 1;
             }
         }
