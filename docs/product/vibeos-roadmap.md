@@ -647,6 +647,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
 
+- **`umkm_apitest SystemCall` BUGCHECKs 0x1E at PC=0 — the user-mode callback
+  dispatch jumps through a NULL pointer. ROOT-CAUSE LOCATED, fix pending**
+  (2026-09-23, round 2 of the verification sweep).
+  **Observed:** `BUGCHECK 0x0000001E (0xffffffffc0000005, 0x0000000000000000,
+  0xfffff88004613a50, 0x0)`. By this tree's convention the second argument is the
+  faulting PC, so the PC is **zero** — a jump/call through a NULL pointer, not a data
+  access. It fires immediately after the subtest's DLL init, with no output from the
+  test itself. The third argument is a win32k address.
+  **What the test does** (`modules/rostests/apitests/umkm/SystemCall.c`): on amd64 it
+  issues win32k syscall `0x1000` *deliberately without user32.dll loaded*, having
+  installed a vectored exception handler, and expects the resulting
+  `KiUserCallbackDispatcher` attempt to raise an exception in USER mode that the VEH
+  catches (`ok_eq_ulong(g_HandlerCalled, 1UL)`). So an exception here is the test's
+  intent; taking it in KERNEL mode is ours.
+  **The guard that should have caught it, and its hole:**
+  `ntoskrnl-rust/src/ke/amd64/usercall.rs` already has a check added for precisely this
+  scenario, whose comment reads "If user32.dll hasn't loaded yet,
+  PEB->KernelCallbackTable is NULL and KiUserCallbackDispatcher will ACCESS_VIOLATION
+  trying to call through it." It returns `STATUS_UNSUCCESSFUL` when
+  `PEB->KernelCallbackTable` is NULL — but it is wrapped in `if !teb.is_null()`, so a
+  NULL TEB **skips the guard entirely** and proceeds to dispatch. Separately, the
+  pointer actually loaded into the trap frame is a different one:
+  `CallbackTrapFrame.Rip = KeUserCallbackDispatcher`, and that symbol is defined as
+  `static mut KeUserCallbackDispatcher: PVOID = null_mut()`
+  (`ntoskrnl-rust/src/ke/procobj.rs:177`), populated later during init. Nothing checks
+  it before it becomes `Rip`.
+  **Inferred, not yet measured:** which of the two holes fires here. The discriminating
+  measurement is cheap — print `KeUserCallbackDispatcher` and the TEB pointer at that
+  call site on this boot. Do that before fixing, because "check the other pointer too"
+  and "the guard is being skipped" have different fixes and only one of them is real.
+  **Why it matters beyond this test:** a NULL `Rip` handed to `KiUserCallbackExit` is
+  unrecoverable under `USE_DUMMY_PSEH`, and any win32k callback raced against user32
+  load takes the same path.
+
 - **The apitest parser scored 14 real results as broken, because wine/test.h
   PLURALISES. FIXED 2026-09-23.** `SUMMARY` required `(\d+) failures\)`, so a subtest
   with exactly one failing assertion prints `1 failure)` and matched nothing. The row
