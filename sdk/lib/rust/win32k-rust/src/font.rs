@@ -20,6 +20,7 @@ unsafe fn ExInitializePushLock<T>(push_lock: *mut T) {
 }
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // usize-accepting wrappers over ddk/rtl primitives (i386 SIZE_T = u32) — same as path.rs.
 #[inline(always)]
@@ -755,7 +756,14 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
             return core::ptr::null_mut();
         }
     }
-    *pNumFonts = NumFonts;
+    // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+    if !crate::copy::publish_to_user(
+        pNumFonts as *mut core::ffi::c_void,
+        core::ptr::addr_of!(NumFonts) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+    ) {
+        return core::ptr::null_mut();
+    }
     Ret
 }
 
@@ -795,7 +803,14 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
             return core::ptr::null_mut();
         }
     }
-    *pNumFonts = NumFonts;
+    // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+    if !crate::copy::publish_to_user(
+        pNumFonts as *mut core::ffi::c_void,
+        core::ptr::addr_of!(NumFonts) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+    ) {
+        return core::ptr::null_mut();
+    }
     Ret
 }
 #[no_mangle]
@@ -1485,7 +1500,7 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
     dwType: DWORD,
 ) -> BOOL {
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let mut dwBytes: DWORD;
+    let mut dwBytes: DWORD = 0;
     let dwBytesRequested: DWORD;
     let mut SafeFileNames: _UNICODE_STRING = core::mem::zeroed();
     let mut bRet: BOOL = 0;
@@ -1534,14 +1549,23 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
         return 0;
     }
 
-    dwBytes = *pdwBytes;
-    dwBytesRequested = dwBytes;
-
-    RtlCopyMemory(
+    // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped the probes AND both of
+    // these accesses in one _SEH2_TRY. pwszFiles is a user buffer, so the copy out of
+    // it is as exposed as the DWORD load.
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(dwBytes) as *mut core::ffi::c_void,
+        pdwBytes as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+    ) || !crate::copy::capture_from_user(
         SafeFileNames.Buffer as *mut core::ffi::c_void,
         pwszFiles as *const core::ffi::c_void,
         cbStringSize as usize,
-    );
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+        return 0;
+    }
+    dwBytesRequested = dwBytes;
     if dwBytes > 0 {
         Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes as usize, TAG_FINF);
     } else {
@@ -1559,11 +1583,22 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
     /* Check if succeeded */
     if bRet != 0 {
         /* Copy the data back to caller */
+        // Probes are validate-only (USE_DUMMY_PSEH); the C had them AND these stores
+        // inside one _SEH2_TRY. RtlCopyMemory into a user buffer is a plain memcpy.
+        let mut ok = true;
         if !pvBuf.is_null() && dwBytesRequested > 0 {
             let count = if dwBytesRequested < dwBytes { dwBytesRequested } else { dwBytes };
-            RtlCopyMemory(pvBuf, Buffer, count as usize);
+            ok = crate::copy::publish_to_user(pvBuf, Buffer, count as usize);
         }
-        *pdwBytes = dwBytes;
+        if !ok
+            || !crate::copy::publish_to_user(
+                pdwBytes as *mut core::ffi::c_void,
+                core::ptr::addr_of!(dwBytes) as *const core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
 
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);

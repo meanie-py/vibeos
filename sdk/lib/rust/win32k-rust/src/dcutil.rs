@@ -46,6 +46,7 @@ unsafe fn IntDPtoLP(pdc: *mut DC, ppt: LPPOINT, count: i32) -> BOOL {
 
 // ── DC-lifecycle shared preamble (hand-added; macros/consts rustconv can't see) ──
 use ntkrnl_sys::base::STATUS_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as i32;
 // GDITAG_HMGR_LOOKASIDE_DC_TYPE = '1alG' (big-endian multichar)
 // EXLATEOBJ_* real ENGAPI (xlateobj.rs) — declare extern, same-ABI (mirror fillshap).
@@ -996,8 +997,17 @@ pub unsafe extern "system" fn NtGdiGetDCDword(
     if Ret != 0 {
 
         Status = SafeProbeForWrite(Result as *mut core::ffi::c_void, core::mem::size_of::<DWORD>(), 1);
-        if NT_SUCCESS(Status) {
-            *Result = SafeResult;
+        if NT_SUCCESS(Status)
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND
+            // access inside one _SEH2_TRY, so the access must be the
+            // fault-tolerant copy.
+            && !crate::copy::publish_to_user(
+                Result as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeResult) as *const core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -1109,8 +1119,17 @@ pub unsafe extern "system" fn NtGdiGetAndSetDCDword(
 
     if Ret != 0 {
         Status = SafeProbeForWrite(pdwResult as PVOID, core::mem::size_of::<DWORD>() as usize, 1);
-        if NT_SUCCESS(Status) {
-            *pdwResult = SafeResult;
+        if NT_SUCCESS(Status)
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND
+            // access inside one _SEH2_TRY, so the access must be the
+            // fault-tolerant copy.
+            && !crate::copy::publish_to_user(
+                pdwResult as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeResult) as *const core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -1210,8 +1229,15 @@ pub unsafe extern "system" fn NtGdiGetBoundsRect(
     Status = SafeProbeForWrite(prc as *mut core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
     if !NT_SUCCESS(Status) {
         ret = 0;
-    } else {
-        *prc = rc;
+    } else if !crate::copy::publish_to_user(
+        prc as *mut core::ffi::c_void,
+        core::ptr::addr_of!(rc) as *const core::ffi::c_void,
+        core::mem::size_of::<RECT>(),
+    ) {
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND
+            // access inside one _SEH2_TRY, so the access must be the
+            // fault-tolerant copy.
+        ret = 0;
     }
 
     if (flags & DCB_RESET) != 0 {
@@ -1278,7 +1304,17 @@ pub unsafe extern "system" fn NtGdiSetBoundsRect(
                 return 0;
             }
         }
-        rcl = *(prc as *const _RECTL);
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND
+            // access inside one _SEH2_TRY, so the access must be the
+            // fault-tolerant copy.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rcl) as *mut core::ffi::c_void,
+            prc as *const core::ffi::c_void,
+            core::mem::size_of::<_RECTL>(),
+        ) {
+            DC_UnlockDc(pdc);
+            return 0;
+        }
 
         RECTL_vMakeWellOrdered(core::ptr::addr_of_mut!(rcl));
 
@@ -1363,7 +1399,17 @@ pub unsafe extern "system" fn NtGdiSetBoundsRect(
                 return 0;
             }
         }
-        rcl = *(prc as *const _RECTL);
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND
+            // access inside one _SEH2_TRY, so the access must be the
+            // fault-tolerant copy.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rcl) as *mut core::ffi::c_void,
+            prc as *const core::ffi::c_void,
+            core::mem::size_of::<_RECTL>(),
+        ) {
+            DC_UnlockDc(pdc);
+            return 0;
+        }
 
         RECTL_vMakeWellOrdered(core::ptr::addr_of_mut!(rcl));
 

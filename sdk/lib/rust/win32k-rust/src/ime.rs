@@ -1633,7 +1633,15 @@ pub unsafe extern "system" fn NtUserGetImeInfoEx(
                 break 'quit;
             }
         }
-        ImeInfoEx = *pImeInfoEx;
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND load in one
+        // _SEH2_TRY, so the load must be the fault-tolerant copy.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(ImeInfoEx) as *mut core::ffi::c_void,
+            pImeInfoEx as *const core::ffi::c_void,
+            core::mem::size_of::<IMEINFOEX>(),
+        ) {
+            break 'quit;
+        }
 
         pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
         ret = UserGetImeInfoEx(pWinSta, &mut ImeInfoEx, SearchType);
@@ -1644,8 +1652,12 @@ pub unsafe extern "system" fn NtUserGetImeInfoEx(
         Status = SafeProbeForWrite(pImeInfoEx as *mut _, core::mem::size_of::<IMEINFOEX>() as _, 1);
         if !NT_SUCCESS(Status) {
             ret = 0;
-        } else {
-            core::ptr::write_volatile(pImeInfoEx, ImeInfoEx);
+        } else if !crate::copy::publish_to_user(
+            pImeInfoEx as *mut core::ffi::c_void,
+            core::ptr::addr_of!(ImeInfoEx) as *const core::ffi::c_void,
+            core::mem::size_of::<IMEINFOEX>(),
+        ) {
+            ret = 0;
         }
     }
 
@@ -1762,7 +1774,15 @@ pub unsafe extern "system" fn NtUserSetImeInfoEx(pImeInfoEx: *const IMEINFOEX) -
             break 'quit;
         }
 
-        ImeInfoEx = *pImeInfoEx;
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND load in one
+        // _SEH2_TRY, so the load must be the fault-tolerant copy.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(ImeInfoEx) as *mut core::ffi::c_void,
+            pImeInfoEx as *const core::ffi::c_void,
+            core::mem::size_of::<IMEINFOEX>(),
+        ) {
+            break 'quit;
+        }
 
         pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
         ret = UserSetImeInfoEx(pWinSta, core::ptr::addr_of_mut!(ImeInfoEx));
@@ -2740,13 +2760,32 @@ unsafe fn co_IntCreateDefaultImeWindow_impl(pwndTarget: PWND, hInst: HINSTANCE) 
     );
     if !pImeWnd.is_null() {
         pimeui = IntGetImeUIFromWnd(pImeWnd);
-        Status = SafeProbeForWrite(pimeui as *mut _, core::mem::size_of_val(&*pimeui) as _, 1);
+        Status = SafeProbeForWrite(pimeui as *mut _, core::mem::size_of::<IMEUI>() as _, 1);
         if !NT_SUCCESS(Status) {
             ERR!("Exception in co_IntCreateDefaultImeWindow: %p\n", pimeui);
         } else {
-            (*pimeui).__bindgen_anon_1.set_fDefault(1);
-            if IS_WND_CHILD(pwndTarget) != 0 && head_pti((*pwndTarget).spwndParent) != pti {
-                (*pimeui).__bindgen_anon_1.set_fChildThreadDef(1);
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND both
+            // stores in one _SEH2_TRY. Read-modify-write in kernel memory and
+            // publish once, so no bitfield setter runs on the user pointer.
+            let mut SafeImeUI: IMEUI = core::mem::zeroed();
+            if !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(SafeImeUI) as *mut core::ffi::c_void,
+                pimeui as *const core::ffi::c_void,
+                core::mem::size_of::<IMEUI>(),
+            ) {
+                ERR!("Exception in co_IntCreateDefaultImeWindow: %p\n", pimeui);
+            } else {
+                SafeImeUI.__bindgen_anon_1.set_fDefault(1);
+                if IS_WND_CHILD(pwndTarget) != 0 && head_pti((*pwndTarget).spwndParent) != pti {
+                    SafeImeUI.__bindgen_anon_1.set_fChildThreadDef(1);
+                }
+                if !crate::copy::publish_to_user(
+                    pimeui as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(SafeImeUI) as *const core::ffi::c_void,
+                    core::mem::size_of::<IMEUI>(),
+                ) {
+                    ERR!("Exception in co_IntCreateDefaultImeWindow: %p\n", pimeui);
+                }
             }
         }
     }
@@ -2780,7 +2819,7 @@ pub unsafe extern "C" fn IntImeCanDestroyDefIMEforChild(
 unsafe fn IntImeCanDestroyDefIMEforChild_impl(pImeWnd: PWND, pwndTarget: PWND) -> BOOL {
     let mut pwndNode: PWND;
     let pimeui: PIMEUI;
-    let SafeImeUI: IMEUI;
+    let mut SafeImeUI: IMEUI = core::mem::zeroed();
     let Status: NTSTATUS;
 
     pimeui = IntGetImeUIFromWnd(pImeWnd);
@@ -2791,8 +2830,14 @@ unsafe fn IntImeCanDestroyDefIMEforChild_impl(pImeWnd: PWND, pwndTarget: PWND) -
     Status = SafeProbeForRead(pimeui as _, core::mem::size_of::<IMEUI>() as _, 1);
     if !NT_SUCCESS(Status) {
         ERR!("Exception in IntImeCanDestroyDefIMEforChild: %p\n", pimeui);
+    } else if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(SafeImeUI) as *mut core::ffi::c_void,
+        pimeui as *const core::ffi::c_void,
+        core::mem::size_of::<IMEUI>(),
+    ) {
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        ERR!("Exception in IntImeCanDestroyDefIMEforChild: %p\n", pimeui);
     } else {
-        SafeImeUI = *pimeui;
         if SafeImeUI.__bindgen_anon_1.fChildThreadDef() == 0 {
             return FALSE as BOOL;
         }
@@ -2835,7 +2880,7 @@ pub unsafe extern "C" fn IntImeCanDestroyDefIME(pImeWnd: PWND, pwndTarget: PWND)
 unsafe fn IntImeCanDestroyDefIME_impl(pImeWnd: PWND, pwndTarget: PWND) -> BOOL {
     let mut pwndNode: PWND;
     let pimeui: PIMEUI;
-    let SafeImeUI: IMEUI;
+    let mut SafeImeUI: IMEUI = core::mem::zeroed();
     let Status: NTSTATUS;
 
     pimeui = IntGetImeUIFromWnd(pImeWnd);
@@ -2847,8 +2892,14 @@ unsafe fn IntImeCanDestroyDefIME_impl(pImeWnd: PWND, pwndTarget: PWND) -> BOOL {
     Status = SafeProbeForRead(pimeui as *mut core::ffi::c_void, core::mem::size_of::<IMEUI>() as _, 1);
     if !NT_SUCCESS(Status) {
         ERR!("Exception in IntImeCanDestroyDefIME: %p\n", pimeui);
+    } else if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(SafeImeUI) as *mut core::ffi::c_void,
+        pimeui as *const core::ffi::c_void,
+        core::mem::size_of::<IMEUI>(),
+    ) {
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        ERR!("Exception in IntImeCanDestroyDefIME: %p\n", pimeui);
     } else {
-        SafeImeUI = *pimeui;
         if SafeImeUI.__bindgen_anon_1.fDestroy() != 0 {
             return FALSE as BOOL;
         }
@@ -3031,7 +3082,7 @@ unsafe fn IntSendMessageToUI_impl(
 ) -> LRESULT {
     let pwndUI: PWND;
     let mut ret: LRESULT = 0;
-    let SafeImeUI: IMEUI;
+    let mut SafeImeUI: IMEUI = core::mem::zeroed();
     let mut bDifferent: BOOL = 0;
     let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
 
@@ -3041,9 +3092,24 @@ unsafe fn IntSendMessageToUI_impl(
         KeAttachProcess(core::ptr::addr_of_mut!((*(*ppi_w32((*ptiIME).ppi)).peProcess).Pcb) as *mut _);
     }
 
-    // Get the pwndUI
-    SafeImeUI = *pimeui;
-    pwndUI = ValidateHwndNoErr(SafeImeUI.hwndUI);
+    // Get the pwndUI. The C wrapped ProbeForRead + this load in one _SEH2_TRY and
+    // set pwndUI = NULL in the handler; the translation dropped BOTH, so restore the
+    // probe (it is what rejects a kernel-range pointer) and route the load through
+    // the fault-tolerant copy.
+    if NT_SUCCESS(SafeProbeForRead(
+        pimeui as *mut core::ffi::c_void,
+        core::mem::size_of::<IMEUI>() as _,
+        1,
+    )) && crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(SafeImeUI) as *mut core::ffi::c_void,
+        pimeui as *const core::ffi::c_void,
+        core::mem::size_of::<IMEUI>(),
+    ) {
+        pwndUI = ValidateHwndNoErr(SafeImeUI.hwndUI);
+    } else {
+        ERR!("Exception in IntSendMessageToUI: %p\n", pimeui);
+        pwndUI = core::ptr::null_mut();
+    }
 
     'quit: {
         if pwndUI.is_null() {

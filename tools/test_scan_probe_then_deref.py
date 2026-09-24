@@ -118,3 +118,122 @@ pub unsafe extern "system" fn Fixed(prc: *mut RECT) -> BOOL {
 }
 """
     assert leads(src) == []
+
+
+def test_every_deref_is_reported_not_just_the_first() -> None:
+    """The scanner used to `break` at the first hit per probe.
+
+    Effect: fixing one site "revealed" the next, so the tool looked like it kept
+    finding new bugs and its total was always an undercount. Same failure shape as
+    the is_comment bug that hid scrollex.rs -- an honest number or none at all.
+    """
+    src = """
+pub unsafe extern "system" fn Three(pmsg: *mut MSG) -> BOOL {
+    let Status = SafeProbeForWrite(pmsg as *mut c_void, size_of::<MSG>(), 1);
+    (*pmsg).message = 1;
+    (*pmsg).wParam = 2;
+    (*pmsg).lParam = 3;
+}
+"""
+    assert len(leads(src)) == 3
+
+
+def test_reassignment_to_a_kernel_buffer_ends_the_taint() -> None:
+    """dibobj copies the user BITMAPINFO into a pool block and rebinds the name.
+
+    Every later `(*bmi).…` is then a kernel load. Reported as a lead until the
+    scanner learned that an unrelated reassignment ends the tracking.
+    """
+    src = """
+pub unsafe extern "system" fn Copied(bmi: *mut BITMAPINFO) -> BOOL {
+    let Status = SafeProbeForRead(bmi as *const c_void, cj, 1);
+    crate::copy::capture_from_user(pbmiSafe as *mut c_void, bmi as *const c_void, cj);
+    bmi = pbmiSafe;
+    let h = (*bmi).bmiHeader.biHeight;
+}
+"""
+    assert leads(src) == []
+
+
+def test_the_reassigned_name_is_matched_on_a_WORD_boundary() -> None:
+    """`bmi = pbmiSafe;` -- "bmi" is a substring of "pbmiSafe".
+
+    A substring test read that as self-reference and kept the taint alive, so the
+    rule above silently did nothing on the one site it was written for.
+    """
+    src = """
+pub unsafe extern "system" fn Rebound(p: *mut RECT) -> BOOL {
+    let Status = SafeProbeForRead(p as *const c_void, 16, 1);
+    p = pSafe;
+    let v = (*p).left;
+}
+"""
+    assert leads(src) == []
+
+
+def test_nulling_the_pointer_does_NOT_end_the_taint() -> None:
+    """Error paths null the pointer; the success path keeps using the original.
+
+    Treating a NULL assignment as a rebind hid the real dwHookData leads that sat
+    two lines below exactly such an error path.
+    """
+    src = """
+pub unsafe extern "system" fn Nulled(ClientInfo: PCLIENTINFO) -> BOOL {
+    let Status = SafeProbeForWrite(ClientInfo as *mut c_void, 64, 1);
+    if !NT_SUCCESS(Status) {
+        ClientInfo = core::ptr::null_mut();
+    }
+    let v = (*ClientInfo).dwHookData;
+}
+"""
+    assert len(leads(src)) == 1
+
+
+def test_a_bulk_copy_from_the_probed_pointer_is_a_lead() -> None:
+    """`RtlCopyMemory(&mut local, p, n)` has no `*p` in it at all.
+
+    It is still a plain memcpy off a probed-only user pointer, i.e. the same fault.
+    dibobj shipped exactly this, one line above a site this scanner had already
+    (wrongly) written off as a false positive.
+    """
+    src = """
+pub unsafe extern "system" fn Bulk(pdsm: *const DOSENDMESSAGE) -> BOOL {
+    let Status = SafeProbeForRead(pdsm as *const c_void, 32, 1);
+    RtlCopyMemory(&mut dsm as *mut _ as *mut c_void, pdsm as *const c_void, 32);
+}
+"""
+    assert len(leads(src)) == 1
+
+
+def test_a_bulk_copy_is_matched_against_that_calls_OWN_arguments() -> None:
+    """Three back-to-back copies must not each be blamed for the others' pointers.
+
+    A line-window match reported stretchblt's `prclDest` copy as a lead for
+    `prclSrc` and `MaskOrigin` too -- 3x the true count on one of the busiest files.
+    """
+    src = """
+pub unsafe extern "system" fn Three(prclDest: *const RECTL, prclSrc: *const RECTL) -> BOOL {
+    let Status = SafeProbeForRead(prclDest as *const c_void, 16, 1);
+    let Status = SafeProbeForRead(prclSrc as *const c_void, 16, 1);
+    RtlCopyMemory(&mut rclDest as *mut c_void, prclDest as *const c_void, 16);
+    RtlCopyMemory(&mut rclSrc as *mut c_void, prclSrc as *const c_void, 16);
+}
+"""
+    got = leads(src)
+    assert len(got) == 2, got
+
+
+def test_an_is_null_guard_is_not_a_use() -> None:
+    """`if !p.is_null() { &SafeLocal } else { null }` passes a KERNEL local.
+
+    The probed name appears only in the test. Three of the first four
+    interprocedural hits were this shape -- all false.
+    """
+    src = """
+pub unsafe extern "system" fn Guarded(prc: *const RECTL) -> BOOL {
+    let Status = SafeProbeForRead(prc as *const c_void, 16, 1);
+    crate::copy::capture_from_user(&mut Safe as *mut c_void, prc as *const c_void, 16);
+    Result = UserScrollDC(hDC, if !prc.is_null() { &Safe } else { core::ptr::null() });
+}
+"""
+    assert leads(src) == []

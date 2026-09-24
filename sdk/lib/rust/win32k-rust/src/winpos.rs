@@ -2,6 +2,7 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentThreadWin32Thread};
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // LOWORD/HIWORD (minwindef.h).
 #[inline(always)]
@@ -4263,7 +4264,15 @@ pub unsafe extern "system" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut
             break 'exit;
         }
 
-        Safepl = *lpwndpl;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(Safepl) as *mut core::ffi::c_void,
+            lpwndpl as *const core::ffi::c_void,
+            core::mem::size_of::<WINDOWPLACEMENT>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            break 'exit;
+        }
 
         if LOWORD((*gptiCurrent).dwExpWinVer as u32) < WINVER_WINNT4 as u32 {
             Safepl.length = core::mem::size_of::<WINDOWPLACEMENT>() as _;

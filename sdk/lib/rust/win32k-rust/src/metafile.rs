@@ -121,15 +121,33 @@ pub unsafe extern "system" fn NtGdiGetServerMetaFileBits(
                 if !NT_SUCCESS(Status) {
                     cjRet = 0;
                 } else {
-                    *piType = (*pmto).iType;
-                    *pmm = (*pmto).mm;
-                    *pxExt = (*pmto).xExt;
-                    *pyExt = (*pmto).yExt;
-                    RtlCopyMemory(
+                    // Probes are validate-only (USE_DUMMY_PSEH); the C had every
+                    // probe AND every store inside one _SEH2_TRY, so the stores
+                    // must be the fault-tolerant copy.
+                    let ok = crate::copy::publish_to_user(
+                        piType as *mut core::ffi::c_void,
+                        core::ptr::addr_of!((*pmto).iType) as *const core::ffi::c_void,
+                        core::mem::size_of::<DWORD>(),
+                    ) && crate::copy::publish_to_user(
+                        pmm as *mut core::ffi::c_void,
+                        core::ptr::addr_of!((*pmto).mm) as *const core::ffi::c_void,
+                        core::mem::size_of::<DWORD>(),
+                    ) && crate::copy::publish_to_user(
+                        pxExt as *mut core::ffi::c_void,
+                        core::ptr::addr_of!((*pmto).xExt) as *const core::ffi::c_void,
+                        core::mem::size_of::<DWORD>(),
+                    ) && crate::copy::publish_to_user(
+                        pyExt as *mut core::ffi::c_void,
+                        core::ptr::addr_of!((*pmto).yExt) as *const core::ffi::c_void,
+                        core::mem::size_of::<DWORD>(),
+                    ) && crate::copy::publish_to_user(
                         pjData as *mut core::ffi::c_void,
                         (*pmto).pjData.as_ptr() as *const core::ffi::c_void,
                         cjData as usize,
                     );
+                    if !ok {
+                        cjRet = 0;
+                    }
                 }
             } else {
                 cjRet = 0;

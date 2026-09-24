@@ -5657,6 +5657,29 @@ different question, racily).
   **Detection route worth copying:** the bug was found by an apitest that passes NULL *on
   purpose* to assert `ERROR_NOACCESS`. Error-path tests are where this class lives, so a suite
   that never runs its error paths will never find it.
+- **The class is enumerable statically — `tools/scan_probe_then_deref.py` — and every bug in
+  that SCANNER was a false NEGATIVE that read as "clean".** Four of them, each found only by
+  fixing the sites it did report: `is_comment`'s `startswith("*")` swallowed every `*(p as *mut
+  T) = v;`, i.e. the write-back shape (91 → 109 leads); a `break` after the first hit per probe
+  meant each fix "revealed" the next, so the total was always an undercount; the deref-shaped
+  search cannot see `RtlCopyMemory(&mut local, p, n)`, which names no `*p` at all yet is the
+  same plain memcpy off a probed-only pointer (+152 leads, incl. `write_volatile`/
+  `copy_nonoverlapping` as alternate spellings); and purely local analysis is blind to
+  probe-here-deref-one-level-down, which is exactly the `NtUserSetSysColors` →
+  `IntSetSysColors` shape it had been written to catch. **A scanner for a crash class needs its
+  own regression test per spelling, because its failure mode is silence** — and the two
+  precision rules that keep it usable are: match a call against its OWN argument list, never a
+  line window (stretchblt's three adjacent copies blamed each other's pointers), and treat
+  `p.is_null()` as a test rather than a use (the tree's `if !p.is_null() { &SafeLocal } else
+  { null }` passes a *kernel* local, which was 3 of the first 4 interprocedural hits).
+- **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
+  reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
+  `NtUserSetSysColors` and hand the callee kernel memory.
+- **Read-modify-write of user memory has no protected primitive, and `|=` hides it.** A field
+  store is a publish, but `(*pcbi).stateButton |= FLAG` and `set_fDefault(1)` on a user bitfield
+  are a load AND a store; capture the struct, mutate in kernel memory, publish once.
+  `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`) is the one shape the copy
+  primitive cannot cover — it needs a protected atomic, still owed.
 
 ### A `__try`/`__except` translated to a BARE BLOCK — the flag survives, the handler doesn't `[§9.133]`
 **The shape to recognise**, and it is worse than an obviously-missing handler because a reviewer

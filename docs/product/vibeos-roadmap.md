@@ -652,7 +652,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   validation. `tools/scan_probe_then_deref.py` finds this site statically at `dibobj.rs:1822`.
 
 - **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
-  and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
+  and then reads it unguarded. FIXED 2026-09-23** (root-caused 2026-09-22).
   `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
   `movl (%rdi,%r14,4), %eax` reading `lpaElements[0]`; fault address `0`. The test's second
   call is `SetSysColors(1, NULL, crColors)` and it asserts `FALSE`/`ERROR_NOACCESS`, so the
@@ -664,6 +664,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   one `win32k-rust/src/copy.rs` already uses for `MmCopyFromCaller` — capture through
   `KmProtectedCopyMemory` — but **chunked**, since `cElements` is caller-controlled to
   `0x3FFFFFFF`. Write-up: `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
+  Fixed as described: a 256-element chunk loop in `NtUserSetSysColors` feeds `IntSetSysColors`
+  kernel memory. **The capture is in the syscall, not the helper** — `IntSetSysColors` is also
+  reachable with kernel pointers, so protecting it there would have been wrong.
+
+- **The probe-then-raw-access class is CLEARED in win32k as of 2026-09-23** — all 108 leads
+  `tools/scan_probe_then_deref.py` reported are fixed across 31 files, plus ~30 more that the
+  scanner's own `break`-at-first-hit was hiding. Built on all three arches, amd64 boots to
+  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class,
+  which are OPEN:** 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
+  the `write_volatile` / `copy_nonoverlapping` spellings) rather than a syntactic `*p`, and 8
+  genuinely interprocedural. Heaviest: `message.rs` 22, `font.rs` 20, `hook.rs` 11,
+  `stretchblt.rs` 9, `dibobj.rs` 9. Two shapes inside that set need more than a copy call:
+  read-modify-write of user memory (`|=`, bitfield setters) must capture → mutate in kernel
+  memory → publish once, and `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`,
+  where the C had a `_SEH2_TRY` per access) has **no protected primitive at all** — it needs a
+  `KmProtected` atomic in `kmsafecopy.c` on three arches, which is owed and not yet written.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).

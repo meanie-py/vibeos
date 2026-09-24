@@ -25,6 +25,7 @@ unsafe fn IntUnLockFreeType() {
 
 // ---- integration preamble (consts/macros/globals the translation needs) ----
 use ntkrnl_sys::base::NT_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -8736,8 +8737,15 @@ pub unsafe extern "system" fn NtGdiExtTextOutW(
 
     if !UnsafeRect.is_null() {
         Status = SafeProbeForRead(UnsafeRect as PVOID, core::mem::size_of::<RECT>(), 1);
-        if NT_SUCCESS(Status) {
-            SafeRect = *(UnsafeRect as *const RECTL);
+        if NT_SUCCESS(Status)
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(SafeRect) as *mut core::ffi::c_void,
+                UnsafeRect as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
         if !NT_SUCCESS(Status) {
             if Buffer as *mut u8 != LocalBuffer.as_mut_ptr() {

@@ -7118,8 +7118,13 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
         );
         if !NT_SUCCESS(Status) {
             kmbi.cbSize = 0;
-        } else {
-            kmbi.cbSize = (*pmbi).cbSize;
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(kmbi.cbSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*pmbi).cbSize) as *const core::ffi::c_void,
+            core::mem::size_of_val(&kmbi.cbSize),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            kmbi.cbSize = 0;
         }
 
         if kmbi.cbSize as usize != core::mem::size_of::<MENUBARINFO>() {
@@ -7278,8 +7283,13 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
         );
         if !NT_SUCCESS(Status) {
             kmbi.cbSize = 0;
-        } else {
-            kmbi.cbSize = (*pmbi).cbSize;
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(kmbi.cbSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*pmbi).cbSize) as *const core::ffi::c_void,
+            core::mem::size_of_val(&kmbi.cbSize),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            kmbi.cbSize = 0;
         }
 
         if kmbi.cbSize as usize != core::mem::size_of::<MENUBARINFO>() {
@@ -8179,7 +8189,14 @@ pub unsafe extern "system" fn NtUserTrackPopupMenuEx(
                 if !NT_SUCCESS(__SehStatus) {
                     break 'Exit;
                 }
-                tpm = *lptpm;
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(tpm) as *mut core::ffi::c_void,
+                    lptpm as *const core::ffi::c_void,
+                    core::mem::size_of::<TPMPARAMS>(),
+                ) {
+                    break 'Exit;
+                }
             }
 
             UserRefObjectCo((pWnd as *mut core::ffi::c_void as PWND), &mut WndRef);
@@ -8252,7 +8269,14 @@ pub unsafe extern "system" fn NtUserTrackPopupMenuEx(
                 if !NT_SUCCESS(__SehStatus) {
                     break 'Exit;
                 }
-                tpm = *lptpm;
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(tpm) as *mut core::ffi::c_void,
+                    lptpm as *const core::ffi::c_void,
+                    core::mem::size_of::<TPMPARAMS>(),
+                ) {
+                    break 'Exit;
+                }
             }
 
             UserRefObjectCo(pWnd as PWND, &mut WndRef);

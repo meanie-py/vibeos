@@ -557,10 +557,15 @@ pub unsafe extern "system" fn NtGdiCreatePaletteInternal(
         }
     }
 
-    i = 0;
-    while i < cEntries as ULONG {
-        *(*ppal).IndexedColors.offset(i as isize) = *(*plogpalUser).palPalEntry.as_ptr().offset(i as isize);
-        i += 1;
+    // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND this whole
+    // loop in one _SEH2_TRY. One bulk capture replaces cEntries raw loads.
+    if !crate::copy::capture_from_user(
+        (*ppal).IndexedColors as *mut core::ffi::c_void,
+        core::ptr::addr_of!((*plogpalUser).palPalEntry) as *const core::ffi::c_void,
+        cEntries as usize * core::mem::size_of::<PALETTEENTRY>(),
+    ) {
+        GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
+        return core::ptr::null_mut();
     }
 
     PALETTE_ValidateFlags((*ppal).IndexedColors, cEntries as INT);
