@@ -1070,6 +1070,25 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### A C byte count kept as the element count of a `u16` copy moves twice the bytes
+**Symptom.** A string copy that over-reads its source and over-writes its destination by
+exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
+staging `winsxs` made smss enumerate long names and hit BUGCHECK 0x50 in `memcpy`, called
+from `fastfat.sys` (`FatQueryDirectory`).
+
+**Cause.** `RtlCopyMemory(dst, src, Bytes)` counts bytes. `core::ptr::copy_nonoverlapping`
+counts elements of `T`, and `T` is whatever the pointers say. The translation kept
+`BytesConverted` and typed the pointers `u16`. The same shape was in the registry value cache
+(uncompressed value names) and in five mountmgr `DeviceString` copies, plus one uncast
+instance in `IoVolumeDeviceToDosName`.
+
+**Fix.** Copy bytes as the C does (`src as *const u8, dst as *mut u8, Bytes`), or divide the
+count by `size_of::<u16>()`. Keep element-typed pointer arithmetic for the destination
+offset: `&Dst[Len / sizeof(WCHAR)]` is `dst.add(len / 2) as *mut u8`.
+`scan_wide_byte_copy` gates the cast form (baseline empty). It only trusts an explicit cast,
+because both pointers share one `T`, and an uncast `.Buffer` is too often ANSI. An uncast
+`u16` field pair still needs reading against the C.
+
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
 > **2026-07-05 status:** the volatile-blind attribute-deduction root is **fixed in the shipping

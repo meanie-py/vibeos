@@ -386,9 +386,10 @@ pub unsafe extern "system" fn CmpQueryKeyValueData(
                         cell_name_length as ULONG,
                     );
                 } else {
+                    // RtlCopyMemory: Size is a BYTE count (a u16 copy would move 2x).
                     core::ptr::copy_nonoverlapping(
-                        cell_name_ptr as *const u16,
-                        (*Info).__bindgen_anon_1.KeyValueBasicInformation.Name.as_mut_ptr(),
+                        cell_name_ptr as *const u8,
+                        (*Info).__bindgen_anon_1.KeyValueBasicInformation.Name.as_mut_ptr() as *mut u8,
                         Size as usize
                     );
                 }
@@ -454,9 +455,10 @@ pub unsafe extern "system" fn CmpQueryKeyValueData(
                         cell_name_length as ULONG,
                     );
                 } else {
+                    // RtlCopyMemory: Size is a BYTE count (a u16 copy would move 2x).
                     core::ptr::copy_nonoverlapping(
-                        cell_name_ptr as *const u16,
-                        (*Info).__bindgen_anon_1.KeyValueFullInformation.Name.as_mut_ptr(),
+                        cell_name_ptr as *const u8,
+                        (*Info).__bindgen_anon_1.KeyValueFullInformation.Name.as_mut_ptr() as *mut u8,
                         Size as usize
                     );
                 }

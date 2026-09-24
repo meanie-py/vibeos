@@ -372,11 +372,6 @@ pub unsafe fn name_ptr() -> *const u16 {
 }
 """
 
-# scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
-# Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
-# and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
-# directly, plus a foreign decl (body-less, inside an extern block) that must
-# not be mistaken for a Rust-ABI fn.
 # scan_opaque_ptr_arith. Seeded from consrv's handle table (2026-09-23): the
 # field is typed by bindgen as a pointer to an opaque 1-byte stub, so .add(i)
 # strides one byte. The fixture ships its own bindgen stand-in, because the
@@ -400,6 +395,11 @@ pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
 }
 """
 
+# scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
+# Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
+# and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
+# directly, plus a foreign decl (body-less, inside an extern block) that must
+# not be mistaken for a Rust-ABI fn.
 _FNABI_BAD = """\
 pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
@@ -413,6 +413,33 @@ extern "system" {
 }
 pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+"""
+
+# scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
+# C's RtlCopyMemory byte count kept as the element count of a u16 copy. GOOD has
+# the fixed byte copy, a count already in WCHARs (/ size_of), and an ANSI copy
+# whose uncast .Buffer must not be mistaken for a wide one.
+_WIDEBYTE_BAD = """\
+pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) {
+    core::ptr::copy_nonoverlapping(
+        (*name).Buffer,
+        dst as *mut u16,
+        BytesConverted as usize,
+    );
+}
+"""
+_WIDEBYTE_GOOD = """\
+pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) {
+    core::ptr::copy_nonoverlapping((*name).Buffer as *const u8, dst, BytesConverted as usize);
+    core::ptr::copy_nonoverlapping(
+        (*name).Buffer,
+        dst as *mut u16,
+        (*name).Length as usize / core::mem::size_of::<u16>(),
+    );
+}
+pub unsafe fn g(a: *const ANSI_STRING, out: *mut i8) {
+    core::ptr::copy_nonoverlapping((*a).Buffer, out, (*a).Length as usize);
+}
 """
 
 # The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
@@ -1541,6 +1568,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _FNABI_BAD},
         good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_wide_byte_copy",
+        script="tools/scan_wide_byte_copy.py",
+        argv=["--lint"],
+        bad={"bad.rs": _WIDEBYTE_BAD},
+        good={"good.rs": _WIDEBYTE_GOOD},
     ),
     Control(
         name="scan_irql_balance",
