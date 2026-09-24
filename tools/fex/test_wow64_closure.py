@@ -148,3 +148,72 @@ def test_unbuilt_catalog_provider_fails_as_loudly_as_a_missing_import(
     assert rc == 1, "a partial DYNAMIC closure must fail like a partial static one"
     assert "UNRESOLVED import msafd.dll" in cap.err
     assert "PackedCatalogItem" in cap.err  # names the declaration that wanted it
+
+
+# ---- delay imports ---------------------------------------------------------
+# gen-delaylib emits ImgDelayDescr tables as plain .rdata, so `objdump -p` shows
+# no delay imports and the walk lost every one of them the day delay-load was
+# switched on (user32_winetest: ~64 modules -> 29, silently).
+
+
+def _pe_with_delay_descr(name: bytes, attrs: int = 1, exec_section: bool = False) -> bytes:
+    """A minimal PE32: one section at VA 0x1000 / file 0x200 holding an
+    ImgDelayDescr at its start and the DLL name at +0x40."""
+    import struct
+
+    pe_off, opt_size = 0x80, 0xE0
+    img = bytearray(0x300)
+    img[0:2] = b"MZ"
+    struct.pack_into("<I", img, 0x3C, pe_off)
+    img[pe_off : pe_off + 4] = b"PE\0\0"
+    struct.pack_into("<HH12xH", img, pe_off + 4, 0x14C, 1, opt_size)
+    struct.pack_into("<I", img, pe_off + 24 + 56, 0x2000)  # SizeOfImage
+    sh = pe_off + 24 + opt_size
+    img[sh : sh + 8] = b".rdata\0\0"
+    chars = 0x60000020 if exec_section else 0x40000040
+    struct.pack_into("<IIII12xI", img, sh + 8, 0x100, 0x1000, 0x100, 0x200, chars)
+    struct.pack_into("<8I", img, 0x200, attrs, 0x1040, 0x1080, 0x1090, 0x10A0, 0, 0, 0)
+    img[0x240 : 0x240 + len(name) + 1] = name + b"\0"
+    return bytes(img)
+
+
+def test_delay_descriptor_is_found_by_shape(tmp_path):
+    pe = tmp_path / "rpcrt4.dll"
+    pe.write_bytes(_pe_with_delay_descr(b"WinInet.dll"))
+    assert w.delay_imports_of(pe) == ["wininet.dll"]
+
+
+def test_a_lookalike_that_is_not_a_descriptor_is_ignored(tmp_path):
+    pe = tmp_path / "x.dll"
+    pe.write_bytes(_pe_with_delay_descr(b"wininet.dll", attrs=2))  # not the RVA form
+    assert w.delay_imports_of(pe) == []
+    pe.write_bytes(_pe_with_delay_descr(b"wininet.dll", exec_section=True))
+    assert w.delay_imports_of(pe) == []
+    pe.write_bytes(b"not a PE at all")
+    assert w.delay_imports_of(pe) == []
+
+
+def test_delay_imports_are_walked_like_imports(tmp_path, monkeypatch, capsys):
+    """The regression itself: a module reached only through a delay import
+    must be staged, and a missing one must fail as loudly as any import."""
+    build = tmp_path / "build-i386"
+    build.mkdir()
+    root = build / "app.exe"
+    root.write_bytes(b"MZ")
+    rpc = build / "rpcrt4.dll"
+    rpc.write_bytes(_pe_with_delay_descr(b"wininet.dll"))
+    net = build / "wininet.dll"
+    net.write_bytes(b"MZ")
+    index = {"rpcrt4.dll": rpc, "wininet.dll": net}
+    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
+    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
+    monkeypatch.setattr(w, "string_referenced", lambda _pe, _i: set())
+    monkeypatch.setattr(w, "imports_of", lambda _o, pe: ["rpcrt4.dll"] if pe == root else [])
+    monkeypatch.setattr(sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build)])
+    assert w.main() == 0
+    staged = {ln.split("\t")[0] for ln in capsys.readouterr().out.splitlines() if "\t" in ln}
+    assert "wininet.dll" in staged, "a delay-imported module was dropped from the closure"
+
+    del index["wininet.dll"]
+    assert w.main() == 1
+    assert "UNRESOLVED import wininet.dll" in capsys.readouterr().err

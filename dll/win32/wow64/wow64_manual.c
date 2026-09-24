@@ -3551,12 +3551,12 @@ static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
  * non-divergent (no pointers, identical 32/64) so the guest buffer passes
  * straight through and the kernel writes the shared layout. Handle returns
  * narrow to the guest's low 32 bits (all user handles are <4GB).
- * The two members that ALSO carry a divergent struct — NtUserCreateDesktop
- * (OBJECT_ATTRIBUTES) and NtUserGetIconInfo (ICONINFO HBITMAP widen) — are
- * listed in manual-win32k.txt WITHOUT a dispatch entry, so they fall through
- * to the generated table and come back WOW64_AUTOMARSHAL_UNIMPL, which the
+ * NtUserCreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES) and
+ * is listed in manual-win32k.txt WITHOUT a dispatch entry, so it falls through
+ * to the generated table and comes back WOW64_AUTOMARSHAL_UNIMPL, which the
  * caller reports loudly by name (a clean error, NOT a bugcheck) until a guest
- * that needs them arrives with a marshaller to disprove. */
+ * that needs it arrives. NtUserGetIconInfo was the other one; a guest reached
+ * it (user32:class) and it has a marshaller now, further down. */
 static NTSTATUS Wow64Manual_NtUserFindWindowEx(ULONG *a)
 {
     extern HANDLE NtUserFindWindowEx(PVOID, PVOID, PVOID, PVOID, ULONG);
@@ -3897,6 +3897,202 @@ static NTSTATUS Wow64Manual_NtUserSetCursorIconData(ULONG *a)
                                    Wow64pUS32to64(a[1], &Mod64),
                                    Wow64pUS32to64(a[2], &Rsrc64),
                                    C32 ? &C64 : NULL);
+}
+
+/* NtUserGetIconInfo(hCurIcon, IconInfo, lpModule, lpResName, pbpp, bInternal):
+ * ICONINFO carries two HBITMAPs (20 bytes guest, 32 host) and both strings
+ * are IN/OUT: win32k reads MaximumLength/Buffer, then writes Length,
+ * MaximumLength (the size needed, when too small) and, for an integer
+ * resource, Buffer itself (the id). So each string goes up and comes back
+ * down field by field. With no marshaller every guest GetIconInfo and
+ * CopyImage failed, which is how user32:class lost the class small icon
+ * win32k derives through the COPYIMAGE callback. */
+typedef struct { ULONG fIcon, xHotspot, yHotspot, hbmMask, hbmColor; } WOW64_ICONINFO32_M;
+typedef struct { ULONG fIcon, xHotspot, yHotspot, __pad;
+                 ULONGLONG hbmMask, hbmColor; } WOW64_ICONINFO64_M;
+
+static VOID Wow64pUSUp(ULONG U32Ptr, WOW64_UNICODE_STRING64_M *U64)
+{
+    const WOW64_UNICODE_STRING32_M *U32 = (const WOW64_UNICODE_STRING32_M *)(ULONG_PTR)U32Ptr;
+    U64->Length = U32->Length;
+    U64->MaximumLength = U32->MaximumLength;
+    U64->__pad = 0;
+    U64->Buffer = U32->Buffer;
+}
+
+static VOID Wow64pUSDown(const WOW64_UNICODE_STRING64_M *U64, ULONG U32Ptr)
+{
+    WOW64_UNICODE_STRING32_M *U32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)U32Ptr;
+    U32->Length = U64->Length;
+    U32->MaximumLength = U64->MaximumLength;
+    U32->Buffer = (ULONG)U64->Buffer;
+}
+
+static NTSTATUS Wow64Manual_NtUserGetIconInfo(ULONG *a)
+{
+    extern BOOL NtUserGetIconInfo(HANDLE, PVOID, PVOID, PVOID, PVOID, BOOL);
+    WOW64_ICONINFO64_M Ii64;
+    WOW64_UNICODE_STRING64_M Mod64, Res64;
+    BOOL Ret;
+
+    if (a[2]) Wow64pUSUp(a[2], &Mod64);
+    if (a[3]) Wow64pUSUp(a[3], &Res64);
+    Ret = NtUserGetIconInfo((HANDLE)(LONG_PTR)(LONG)a[0],
+                            a[1] ? &Ii64 : NULL,
+                            a[2] ? &Mod64 : NULL,
+                            a[3] ? &Res64 : NULL,
+                            (PVOID)(ULONG_PTR)a[4], (BOOL)a[5]);
+    if (Ret && a[1])
+    {
+        WOW64_ICONINFO32_M *Ii32 = (WOW64_ICONINFO32_M *)(ULONG_PTR)a[1];
+        Ii32->fIcon = Ii64.fIcon;
+        Ii32->xHotspot = Ii64.xHotspot;
+        Ii32->yHotspot = Ii64.yHotspot;
+        Ii32->hbmMask = (ULONG)Ii64.hbmMask;
+        Ii32->hbmColor = (ULONG)Ii64.hbmColor;
+    }
+    /* A too-small string buffer is answered in the string itself (Length 0,
+     * the needed MaximumLength), so the strings come back down whatever Ret
+     * says. */
+    if (a[2]) Wow64pUSDown(&Mod64, a[2]);
+    if (a[3]) Wow64pUSDown(&Res64, a[3]);
+    return (NTSTATUS)Ret;
+}
+
+/* NtGdiExtGetObjectW(h, cj, pvOut): win32k answers in its OWN layouts, and
+ * three of them have a pointer-width field. BITMAP ends in LPVOID bmBits (24
+ * bytes guest, 32 host), DIBSECTION adds a HANDLE (84 / 104), LOGBRUSH ends in
+ * ULONG_PTR lbHatch (12 / 16), and EXTLOGPEN has ULONG_PTR elpHatch before its
+ * style array (24+4n / 28+4n). BITMAP_GetObject refuses a buffer smaller than
+ * its sizeof(BITMAP), so with the flat thunk every guest GetObject on a bitmap
+ * returned 0: CopyImage could not copy an icon (user32:class, class.c:1214).
+ * The rest (LOGPEN, LOGFONTW, a palette's WORD) are width-identical and pass
+ * straight through. */
+#define WOW64_GDI_TYPE_MASK   0x007f0000
+#define WOW64_GDI_TYPE_BITMAP 0x00050000
+#define WOW64_GDI_TYPE_BRUSH  0x00100000
+#define WOW64_GDI_TYPE_PEN    0x00300000
+#define WOW64_GDI_TYPE_EXTPEN 0x00500000
+
+typedef struct { LONG bmType, bmWidth, bmHeight, bmWidthBytes;
+                 USHORT bmPlanes, bmBitsPixel; ULONG bmBits; } WOW64_BITMAP32_M;
+typedef struct { LONG bmType, bmWidth, bmHeight, bmWidthBytes;
+                 USHORT bmPlanes, bmBitsPixel; ULONGLONG bmBits; } WOW64_BITMAP64_M;
+typedef struct { WOW64_BITMAP32_M dsBm; BYTE dsBmih[40]; ULONG dsBitfields[3];
+                 ULONG dshSection; ULONG dsOffset; } WOW64_DIBSECTION32_M;
+typedef struct { WOW64_BITMAP64_M dsBm; BYTE dsBmih[40]; ULONG dsBitfields[3];
+                 ULONGLONG dshSection; ULONG dsOffset; } WOW64_DIBSECTION64_M;
+typedef struct { ULONG lbStyle, lbColor, lbHatch; } WOW64_LOGBRUSH32_M;
+typedef struct { ULONG lbStyle, lbColor; ULONGLONG lbHatch; } WOW64_LOGBRUSH64_M;
+/* EXTLOGPEN: four DWORDs, the hatch, elpNumEntries, then the style array. */
+#define WOW64_EXTPEN32_HEAD 24
+#define WOW64_EXTPEN64_HEAD 28
+C_ASSERT(sizeof(WOW64_BITMAP32_M) == 24);
+C_ASSERT(sizeof(WOW64_BITMAP64_M) == 32);
+C_ASSERT(sizeof(WOW64_DIBSECTION32_M) == 84);
+C_ASSERT(sizeof(WOW64_DIBSECTION64_M) == 104);
+C_ASSERT(sizeof(WOW64_LOGBRUSH32_M) == 12);
+C_ASSERT(sizeof(WOW64_LOGBRUSH64_M) == 16);
+
+static VOID Wow64pBitmapDown(const WOW64_BITMAP64_M *B64, WOW64_BITMAP32_M *B32)
+{
+    B32->bmType = B64->bmType;
+    B32->bmWidth = B64->bmWidth;
+    B32->bmHeight = B64->bmHeight;
+    B32->bmWidthBytes = B64->bmWidthBytes;
+    B32->bmPlanes = B64->bmPlanes;
+    B32->bmBitsPixel = B64->bmBitsPixel;
+    B32->bmBits = (ULONG)B64->bmBits;
+}
+
+static NTSTATUS Wow64Manual_NtGdiExtGetObjectW(ULONG *a)
+{
+    extern INT NtGdiExtGetObjectW(HANDLE, INT, PVOID);
+    HANDLE h = (HANDLE)(LONG_PTR)(LONG)a[0];
+    INT cj = (INT)a[1];
+    BYTE *Out = (BYTE *)(ULONG_PTR)a[2];
+    union {
+        WOW64_DIBSECTION64_M Ds;
+        WOW64_LOGBRUSH64_M Lb;
+        BYTE Pen[WOW64_EXTPEN64_HEAD + 64 * sizeof(ULONG)];
+    } Host;
+    INT r, i;
+
+    switch (a[0] & WOW64_GDI_TYPE_MASK)
+    {
+        case WOW64_GDI_TYPE_BITMAP:
+            if (!Out)
+            {
+                r = NtGdiExtGetObjectW(h, cj, NULL);
+                return r == sizeof(WOW64_BITMAP64_M) ? sizeof(WOW64_BITMAP32_M) : r;
+            }
+            if (cj < (INT)sizeof(WOW64_BITMAP32_M))
+                return 0;
+            r = NtGdiExtGetObjectW(h, cj >= (INT)sizeof(WOW64_DIBSECTION32_M)
+                                           ? sizeof(WOW64_DIBSECTION64_M)
+                                           : sizeof(WOW64_BITMAP64_M), &Host);
+            if (r < (INT)sizeof(WOW64_BITMAP64_M))
+                return 0;
+            Wow64pBitmapDown(&Host.Ds.dsBm, (WOW64_BITMAP32_M *)Out);
+            if (r < (INT)sizeof(WOW64_DIBSECTION64_M))
+                return sizeof(WOW64_BITMAP32_M);
+            {
+                WOW64_DIBSECTION32_M *D32 = (WOW64_DIBSECTION32_M *)Out;
+                for (i = 0; i < 40; i++) D32->dsBmih[i] = Host.Ds.dsBmih[i];
+                for (i = 0; i < 3; i++) D32->dsBitfields[i] = Host.Ds.dsBitfields[i];
+                D32->dshSection = (ULONG)Host.Ds.dshSection;
+                D32->dsOffset = Host.Ds.dsOffset;
+            }
+            return sizeof(WOW64_DIBSECTION32_M);
+
+        case WOW64_GDI_TYPE_BRUSH:
+            if (!Out)
+            {
+                r = NtGdiExtGetObjectW(h, cj, NULL);
+                return r == sizeof(WOW64_LOGBRUSH64_M) ? sizeof(WOW64_LOGBRUSH32_M) : r;
+            }
+            if (cj < (INT)sizeof(WOW64_LOGBRUSH32_M))
+                return 0;
+            r = NtGdiExtGetObjectW(h, sizeof(WOW64_LOGBRUSH64_M), &Host);
+            if (r < (INT)sizeof(WOW64_LOGBRUSH64_M))
+                return 0;
+            ((WOW64_LOGBRUSH32_M *)Out)->lbStyle = Host.Lb.lbStyle;
+            ((WOW64_LOGBRUSH32_M *)Out)->lbColor = Host.Lb.lbColor;
+            ((WOW64_LOGBRUSH32_M *)Out)->lbHatch = (ULONG)Host.Lb.lbHatch;
+            return sizeof(WOW64_LOGBRUSH32_M);
+
+        case WOW64_GDI_TYPE_PEN:
+        case WOW64_GDI_TYPE_EXTPEN:
+        {
+            /* An old-style pen answers with a 16-byte LOGPEN (identical), an
+             * extended one with an EXTLOGPEN 4 bytes longer than the guest's.
+             * PEN_GetObject tells them apart by the size it is given, so the
+             * guest's EXTLOGPEN-sized request is passed up 4 bytes larger. */
+            INT cjHost = cj;
+            if (!Out)
+            {
+                r = NtGdiExtGetObjectW(h, cj, NULL);
+                return r >= WOW64_EXTPEN64_HEAD ? r - 4 : r;
+            }
+            if (cj >= WOW64_EXTPEN32_HEAD)
+                cjHost = cj + 4;
+            if (cjHost > (INT)sizeof(Host.Pen))
+                cjHost = sizeof(Host.Pen);
+            r = NtGdiExtGetObjectW(h, cjHost, Host.Pen);
+            if (r < WOW64_EXTPEN64_HEAD)
+            {
+                for (i = 0; i < r; i++) Out[i] = Host.Pen[i];
+                return r;
+            }
+            for (i = 0; i < 16; i++) Out[i] = Host.Pen[i];               /* 4 DWORDs */
+            *(ULONG *)(Out + 16) = (ULONG)*(ULONGLONG *)(Host.Pen + 16); /* elpHatch */
+            for (i = 24; i < r; i++) Out[i - 4] = Host.Pen[i];           /* count + styles */
+            return r - 4;
+        }
+
+        default:
+            return NtGdiExtGetObjectW(h, cj, Out);
+    }
 }
 
 /* Guest completion of a kernel->user callback (wow64_callback.c). */
@@ -7097,6 +7293,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserFindExistingCursorIcon(Arguments);
     if (WOW64_IS("NtUserSetCursorIconData"))
         return Wow64Manual_NtUserSetCursorIconData(Arguments);
+    if (WOW64_IS("NtUserGetIconInfo"))
+        return Wow64Manual_NtUserGetIconInfo(Arguments);
+    if (WOW64_IS("NtGdiExtGetObjectW"))
+        return Wow64Manual_NtGdiExtGetObjectW(Arguments);
     if (WOW64_IS("NtUserDefSetText"))
         return Wow64Manual_NtUserDefSetText(Arguments);
     if (WOW64_IS("NtCallbackReturn"))

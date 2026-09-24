@@ -10239,7 +10239,17 @@ audit found `CALLPROCDATA`, `PROPERTY` and `PROPLISTITEM` without 32-bit shapes.
 not a plain pointer here either**: win32k's system procs are the 64-bit user32's
 `apfnClientA/W`, so a proc crossing to the guest must be swapped for the guest's proc in the
 same slot (`wow64_pfnmap.c`). Narrowed instead, the guest executes the host address's low half
-(`eip=b2041ac0`).
+(`eip=b2041ac0`). **`aStoCidPfn` is one of those tables**: ReactOS fills it with the 64-bit
+user32's `apfnClientW`, not kernel addresses, so `GETPFNSERVER` has to map the same way. When it
+was truncated it matched nothing, and every server-side window (DefWindowProc classes,
+ScrollBar) read `GWLP_WNDPROC` as 0.
+**A `PVOID` buffer hides its layout from `marshalgen audit`.** `NtGdiExtGetObjectW` answers in
+64-bit `BITMAP`/`DIBSECTION`/`LOGBRUSH`/`EXTLOGPEN` shapes and refuses a `BITMAP` buffer smaller
+than its own, so through the flat thunk every guest `GetObject` on a bitmap returned 0. The icon
+paths built on it (`GetIconInfo` → `CopyImage`, and the COPYIMAGE callback win32k uses to derive
+a class small icon) failed with it. Callbacks have the same gap in the other direction: the
+WINDOWPROC copy-back list has to cover every `MMS_FLAG_WRITE` entry of win32k's `g_MsgMemory`.
+`WM_GETTEXT` was missing, so a server-side window's text came back as kernel scratch.
 
 ### Loader ordering and process bring-up `[§9.47]`
 A CUI process hangs in kernel32 `ConDllInitialize` with exit code **0x103 = STILL_ACTIVE**
@@ -10253,6 +10263,16 @@ from early init. csrss dying 0xF4 when a wow64 process connects was a separate b
 0x4C `0xc0000139`. Confirm by stashing just the `.spec` and rebuilding that one arch. Fix by
 arch-gating the new exports, or pinning **explicit ordinals** on the new lines.
 **Adding a named export is not free in an auto-ordinal spec.**
+
+### Delay imports are invisible to `objdump -p`
+Symptom: with delay-load on, the WoW64 syswow64 closure silently shrank (user32_winetest: 64
+modules → 29), and anything walking import tables stopped seeing rpcrt4 → wininet and friends.
+Cause: `sdk/tools/gen-delaylib.py` emits the `ImgDelayDescr` tables as plain `.rdata`, and the
+MinGW linker never fills the PE delay-import directory, so that directory stays 0. Fix: read the
+descriptors by shape (`wow64-closure.py` `delay_imports_of`: attributes 1, four in-image RVAs,
+three zero DWORDs, a module name at the name RVA). That works on stripped copies too, where the
+`___DELAY_DESC_*` symbols are gone. Also on arm64: the IAT must be 8-aligned, or the stubs'
+`ldr x16, [x16, :lo12:__imp_X]` fails the link with "misaligned ldr/str offset".
 
 ### A DLL "loads fine" then crashes at PC=0xFFBADD11 `[§9.44-poison]`
 Our ntdll loader intentionally **poison-snaps** missing by-name imports instead of failing the

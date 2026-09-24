@@ -140,7 +140,12 @@ add_custom_target(livecd_links DEPENDS ${LIVECD_SHORTCUTS})
 # be produced with ENABLE_ROSTESTS at all. This way the opt-in is still just
 # "run an i386 build --rostests once", and the media that carries the control
 # is an ordinary one.
-if(ARCH STREQUAL "i386")
+# Not while ENABLE_ROSTESTS is on: then that path is also the user32_winetest
+# target's OUTPUT, and naming it here (as a staged file OR as a configure
+# dependency) makes ninja refuse the whole manifest ("multiple rules generate
+# ..."), so the exe could never be rebuilt. The plain build that follows turns
+# rostests back off and stages it.
+if(ARCH STREQUAL "i386" AND NOT ENABLE_ROSTESTS)
     set(_native_winetest
         ${REACTOS_SOURCE_DIR}/build-i386/modules/rostests/winetests/user32/user32_winetest.exe)
     # Its CREATION must re-run configure, or a tree that builds it after the

@@ -71,12 +71,18 @@ NtUserDrawCaptionTemp
 NtUserLoadKeyboardLayoutEx
 NtUserEnumDisplaySettings
 NtUserEnumDisplayDevices
-# These two ALSO carry a divergent struct (CreateDesktop: OBJECT_ATTRIBUTES;
-# GetIconInfo: ICONINFO HBITMAP widen), so they have NO dispatch entry yet and
-# hit the loud WOW64_AUTOMARSHAL_UNIMPL stub (clean error, not a bugcheck) instead of
-# the silent-wrong flat thunk. Add a marshaller when a guest reaches them.
+# CreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES), so it has
+# NO dispatch entry yet and hits the loud WOW64_AUTOMARSHAL_UNIMPL stub (clean
+# error, not a bugcheck) instead of the silent-wrong flat thunk. Add a
+# marshaller when a guest reaches it.
 NtUserCreateDesktop
+# GetIconInfo: ICONINFO's HBITMAPs widen and both strings are IN/OUT. Guest
+# GetIconInfo/CopyImage reached it (user32:class); marshaller in wow64_manual.c.
 NtUserGetIconInfo
+# ExtGetObjectW: the kernel answers in 64-bit BITMAP/DIBSECTION/LOGBRUSH/
+# EXTLOGPEN layouts (each has a pointer-width field), and refuses a BITMAP
+# buffer smaller than its own. Guest GetObject on any bitmap returned 0.
+NtGdiExtGetObjectW
 # E10: found MECHANICALLY by `marshalgen audit` (vibeos-cli check) instead of by
 # the next applet to bugcheck — it diffs every LIVE flat thunk in the generated
 # table against its real header prototype using clang's 32/64 record layouts.

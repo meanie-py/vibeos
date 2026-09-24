@@ -1848,6 +1848,23 @@ unsafe fn TryStartWinetest(
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged -- silent no-op, like every other optional guest
     }
+    /* Not in a kmtest conformance boot. Its sweep grades timing-sensitive
+     * kernel tests (ExFastMutex, ExResource) against a banked baseline, and a
+     * tree built with --rostests staged the winetest into that media too:
+     * user32:class and its 26 child processes then ran alongside the sweep,
+     * and every i386 sweep regressed ExFastMutex, while the conductor's fresh
+     * tree (no winetest) stayed clean. The sweep's test list is the marker. */
+    let mut Kmt: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Kmt.as_mut_ptr(), MAX_PATH - 32) != 0 {
+        wcscat(Kmt.as_mut_ptr(), wstr!("\\bin\\kmtest-tests.txt").as_ptr());
+        if GetFileAttributesW(Kmt.as_ptr()) != 0xFFFF_FFFF {
+            DbgPrint(
+                b"[WT] %s: skipped - kmtest conformance boot\n\0".as_ptr() as *const i8,
+                Label,
+            );
+            return;
+        }
+    }
 
     let mut Sa: SECURITY_ATTRIBUTES = zeroed();
     Sa.nLength = size_of::<SECURITY_ATTRIBUTES>() as DWORD;

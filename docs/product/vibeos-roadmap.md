@@ -407,6 +407,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `SwitchDesktop OK` in 33s, **0 `BAD gate` hits** (§9.13/§9.24 fixed the family). **Now-
   actionable follow-on:** flip `VIBEOS_ENABLE_DELAYLOAD` default ON in `sdk/cmake/gcc.cmake`,
   ×3-gate, delete the arm64 `arm64_*_stubs.c` optional-DLL hacks. *(archive/delay-import-llvm-mingw-roadmap)*
+  **Flipped on i386/amd64, 2026-09-24:** `VIBEOS_ENABLE_DELAYLOAD` is now an option
+  defaulting ON there. The WoW64 `user32:class` found the eager loads, which put comctl32 in
+  every RPC-using process. **arm64 is still OFF, and that is OPEN.** It links (after an
+  8-aligned IAT in `gen-delaylib.py`) and smokes to the desktop. Under matched load (arm64
+  ×3 alongside i386 ×3), though, its kmtest-media boots never launched the sweep: 3/3 hung
+  in user-mode bring-up (TDI self-tests timing out, threads parked), while delay-load OFF
+  swept 3/3. The bugchecks (`0xE3`, `0x1E`) seen in full-gate first passes are NOT evidence
+  either way, because they also hit with delay-load OFF (#43/#39, load-sensitive).
+  Repro: `cmake -DVIBEOS_ENABLE_DELAYLOAD=ON` in build-arm64, then
+  `vibeos-cli conformance --arch arm64 --repeat 3`. The arm64 `arm64_*_stubs.c` deletion
+  waits on it.
 - [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
   wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
   TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a
@@ -892,7 +903,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     It was a March workaround for a race fixed since; 12 boots passed without it.
 
 - **WoW64 guest user32 read 64-bit shared structures with its 32-bit layout — FIXED
-  2026-09-24; 17 guest-only `user32:class` failures remain OPEN.** The first real conformance
+  2026-09-24; 1 guest-only `user32:class` failure remains OPEN.** The first real conformance
   suite under WoW64 found this. The guest `user32:class` used to die with an execute AV
   after ~1.4 KB of output. It now runs to the same ending as the native i386 control (the
   read-only-TEMP 0xc0150010) with no faults. Fixed:
@@ -913,11 +924,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   4. `CALLPROCDATA`, `PROPERTY` (client-side `GetProp`), and `NtUserBuildPropList`'s
      `PROPLISTITEM` had no 32-bit shape. comctl32's IP-address control crashed on the
      NULL `GetProp` returned once subclassing started working.
-  Still OPEN, guest-only against the native control:
-  - class icons (class.c:1190–1219, `hIconSm` / `GetClassLong(GCL_HICONSM)`);
-  - comctl32 already loaded in the guest (1292–1346, 1632/1643);
-  - DefWindowProc A/W identity (719, 731/732);
-  - ScrollBar WM_GETTEXT A/A and W/A (774/778).
+  Second pass, same day. It took the guest-only failures from 17 to 1:
+  5. **`GETPFNSERVER` was truncated.** `aStoCidPfn` holds the 64-bit user32's `apfnClientW`,
+     so `psi::pfn_server` now maps it like any other proc. Server-side windows had read
+     `GWLP_WNDPROC` as 0 (class.c:731/732, ScrollBar 774/778).
+  6. **The WINDOWPROC callback discarded `WM_GETTEXT` output.** It is the one
+     `MMS_FLAG_WRITE` message the copy-back list lacked (719).
+  7. **Icons:** the COPYIMAGE callback, `NtUserGetIconInfo` and `NtGdiExtGetObjectW` had
+     no marshallers. Guest `GetIconInfo`, `CopyImage` and `GetObject` on a bitmap all failed,
+     so win32k could not derive a class small icon (1190–1219).
+  8. **comctl32 was loaded in every guest at startup.** Delay-load had never been on:
+     rpcrt4's delay imports were ordinary ones, loading wininet → shell32 → comctl32. Now
+     ON by default on i386/amd64 (the guest's DLLs are i386); see the ledger for arm64
+     (1292–1346, 1632/1643). The native run's
+     "comctl32 not loaded" failures (1315/1322) are shared now.
+  Still OPEN, guest-only:
+  - `SysAnimate32` window creation (class.c:1357). Animate `LoadLibrary`s `msvfw32.dll` at
+    create time, and the syswow64 closure does not stage it. It is a literal inside a
+    library, and `wow64-closure.py` scans literals in roots only, by design: a library-wide
+    scan admits ~90 more modules (82 → 145 MB unstripped, measured). Choosing between the
+    wider scan and a declared edge is owed.
+  Also fixed with it: amd64 media had staged only amd64 `winsxs` assemblies, so the guest's
+  comctl32 failed `CreateActCtxW` for both of its manifests. The x86 common-controls
+  assemblies are now staged beside syswow64 (`dll/win32/wow64cpu/CMakeLists.txt`).
   Repro: amd64 media with `build-fex-hello` guests and an i386 `--rostests`
   user32_winetest, then
   `smoke --arch amd64 --until "[WT] user32:class: exit" --fail-on "user32:class: CRASHED"`.
