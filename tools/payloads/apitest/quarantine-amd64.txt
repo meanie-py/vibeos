@@ -142,8 +142,19 @@ msvcrt_apitest.exe system
 #
 # Same guest-level wedge as the msvcrt/cmd cluster: the sweep's own 120s
 # per-subtest timeout NEVER fires, and the sweep is an ordinary user-mode
-# process — if it cannot time out its own child, it is not running either. The
-# box is dead, not the harness waiting. The wedged child emits no output at all.
+# process — if it cannot time out its own child, it is not running either.
+#
+# CORRECTED 2026-09-24: the second half of that inference was WRONG. "The box is
+# dead, not the harness waiting" is false — measured in an isolated msvcrt boot,
+# the serial kept growing 779 bytes/25s (eventlog, LSASS) while the sweep sat
+# dead for 240+ seconds. The box is ALIVE; exactly one process is stuck, and it
+# is stuck in `WaitForSingleObject(pi.hProcess, 120000)` — a `spawned` DbgPrint
+# added between CreateProcessA and the wait proves process creation returned.
+# So the missing TIMEOUT line is not evidence of a dead machine; it IS the bug,
+# a bounded wait on a process handle that never expires. Same signature as the
+# winlogon TryStartWow64Marshal hang in the roadmap, which is the same call on
+# the same object type with a 60s timeout — treat them as ONE investigation.
+# Root-cause detail and the next step: roadmap, "THE APITEST WEDGE CLUSTER".
 #
 # Each victim is simply the next unquarantined subtest, so these are positions
 # rather than named defects; quarantining one buys about ten more subtests

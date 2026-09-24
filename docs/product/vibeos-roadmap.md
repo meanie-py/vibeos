@@ -647,6 +647,53 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
 
+- **THE APITEST WEDGE CLUSTER IS A BOUNDED `WaitForSingleObject` THAT NEVER TIMES OUT —
+  and it is almost certainly the SAME BUG as the winlogon hang filed separately below.
+  OPEN, root cause localised** (2026-09-24).
+
+  Measured in ONE isolated boot (`gen_suites.py --only msvcrt_apitest.exe`, all 55
+  subtests), with a `spawned` DbgPrint added to `sweep.c` between `CreateProcessA` and
+  the wait specifically to discriminate the two candidates:
+
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe _wcsupr code=0
+      [APITEST-SWEEP] launch  msvcrt_apitest.exe _wsystem
+      [APITEST-SWEEP] spawned msvcrt_apitest.exe pid=968      <- CreateProcessA RETURNED
+      ... 240+ seconds of nothing from the sweep, no `TIMEOUT ... (120s) - terminated` ...
+
+  `sweep.c` bounds every wait: 120s on the child, +10s after `TerminateProcess`, 15s on
+  the pump join. It must advance within ~145s whatever the child does. It does not, and
+  `CreateProcessA` is excluded by the `spawned` line, so the block is
+  `WaitForSingleObject(pi.hProcess, 120000)` **failing to return after its timeout**.
+
+  Four things this settles, each measured rather than inferred:
+  - **The box is ALIVE.** The serial grew 779 bytes in 25s (eventlog, LSASS) while the
+    sweep sat dead. This OVERTURNS the standing conclusion recorded in
+    `quarantine-amd64.txt` — "if it cannot time out its own child, it is not running
+    either; the box is dead, not the harness waiting". It is one stuck process.
+  - **The wedge is SELF-CONTAINED.** Only 21 msvcrt subtests ran before it, not ~200
+    across 30 suites, so no accumulated residue (leaked handles, desktop heap, leftover
+    `WineTestService` registrations) is required. Reproduction drops from a 3-hour
+    30-suite sweep to a ~12-minute one-suite boot.
+  - **It explains the whole cluster with one mechanism.** Every member shows `launch`
+    then no `exit` AND no `TIMEOUT`: msvcrt system/_wsystem/atexit/static_construct, cmd
+    attrib/exit/pushd, kernel32 (8 victims), ntdll (3), user32 VirtualKey/WndProc,
+    iphlpapi GetOwnerModuleFrom*/GetExtendedTcpTable. The missing TIMEOUT line was
+    always the anomaly; it is now the diagnosis.
+  - **It is the winlogon signature.** That entry records
+    `WaitForSingleObject(Pi.hProcess, 60_000)` not returning after 500+ seconds and says
+    the anomaly "is not 'the process did not signal' — it is a bounded wait that does not
+    time out", and asks whether the shared predicate is "a coincidence or the link". Same
+    call, same object type, same failure. Treat them as ONE investigation.
+
+  **Next, and it is now a kernel question not a harness one:** why a
+  `KeWaitForSingleObject` on a process object with a non-NULL timeout fails to expire.
+  Look at timer insertion/expiry for that wait path. Proximate context, offered as
+  context and NOT as a cause: `_wsystem`'s grandchild (pid 980) fails
+  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE` just before the stall — but that
+  message is AMBIENT (counted 11-16 times in all 42 archived serials including healthy
+  ones), so its position here is suggestive only. The bug to fix is the wait; a child
+  that hangs forever is allowed to, and the timeout exists precisely for that.
+
 - **`NtGdiCreateBitmap` BUGCHECKed 0x1E in a naked `memcpy`. FIXED 2026-09-24**, verified
   by boot (`exit win32u_apitest.exe NtGdiCreateBitmap code=2` — real test failures, no
   crash). Symbolicated stack, top and bottom frames agreeing:

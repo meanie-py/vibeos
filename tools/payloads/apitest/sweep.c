@@ -199,6 +199,29 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
         return -1;
     }
 
+    /*
+     * Which side of CreateProcess did a wedge happen on?
+     *
+     * The wedge cluster (msvcrt system/_wsystem/atexit/static_construct, cmd
+     * attrib/exit/pushd, kernel32, ntdll, user32 VirtualKey/WndProc) shows the
+     * `launch` line and then nothing -- no `exit`, and critically no
+     * `TIMEOUT ... (120s) - terminated` even though EVERY wait below is bounded
+     * (120s child, +10s after the kill, 15s pump join). The sweep should advance
+     * within ~145s whatever the child does, so it is not executing.
+     *
+     * Two candidates, and only one is covered by a timer:
+     *   - CreateProcessA never returns. Nothing bounds it.
+     *   - WaitForSingleObject's timeout never fires, which is the signature the
+     *     roadmap already records for winlogon ("a 60-SECOND WaitForSingleObject
+     *     timeout never fires"). If that is this, the cluster and the winlogon
+     *     hang are ONE kernel bug, currently filed as two.
+     *
+     * This line discriminates them for the cost of one DbgPrint: a wedge that
+     * prints `spawned` was blocked in the wait; one that does not was blocked in
+     * CreateProcess.
+     */
+    DbgPrint("[APITEST-SWEEP] spawned %s pid=%lu\n", suite, (unsigned long)pi.dwProcessId);
+
     /* Drop OUR copy of the write end or the pump blocks forever after the child
      * exits: a pipe stays open as long as any writer handle lives. */
     CloseHandle(wr);
