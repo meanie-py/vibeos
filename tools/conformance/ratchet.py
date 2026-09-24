@@ -74,7 +74,9 @@ def load_baseline(path):
     return base
 
 
-BAD = {"CRASH", "TIMEOUT", "FAILSTART", "NO-END", "INCOMPLETE"}
+# ENUM-TIMEOUT: the suite never enumerated its subtests, so NONE of them ran.
+# It has to be BAD or a suite that reports nothing at all reads as clean.
+BAD = {"CRASH", "TIMEOUT", "FAILSTART", "NO-END", "INCOMPLETE", "ENUM-TIMEOUT"}
 
 
 def compare(results, base):

@@ -52,7 +52,15 @@ _CLK = os.sysconf("SC_CLK_TCK")
 #      smoke session start, every qemu/start.sh) culls a VM past its deadline
 #      even if the owning launcher is still alive but wedged;
 #   3. (qemu/start.sh) a detached watchdog subshell for toolkit-launched VMs.
-MAX_VM_LIFETIME_SECONDS = 30 * 60
+# Overridable via VIBEOS_QEMU_MAX_LIFETIME, the same env var qemu/lib/common.sh
+# has always honoured (its comment says it mirrors THIS constant, and for a long
+# time it silently did not: the shell path was tunable and the pytest path was
+# not). A long conformance sweep legitimately outlives 30 minutes, and without
+# this the cap is a second, lower, invisible bound underneath the payload's own
+# launch_drain_secs -- which is exactly how the apitest sweep kept getting
+# truncated at ~30 min after its drain budget was fixed. Raise it deliberately,
+# per-run, for sweeps; never as a global default.
+MAX_VM_LIFETIME_SECONDS = int(os.environ.get("VIBEOS_QEMU_MAX_LIFETIME", 30 * 60))
 
 # Gap between the two vCPU-state samples save_hang_state() takes. Long enough
 # that a live box is guaranteed several clock ticks and context switches (arm64

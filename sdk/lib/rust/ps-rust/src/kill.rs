@@ -222,14 +222,13 @@ unsafe fn PspCatchCriticalBreak(
     }
 
     if handled == 0 {
-        // Debug: print process name before bugcheck
-        #[cfg(target_arch = "x86_64")]
-        {
-            crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s\n\0",
-                process_or_thread,
-                image_name,
-            );
-        }
+        // Name the critical process before bugchecking. It was amd64-only, and an
+        // i386 0xF4 then left nothing but an EPROCESS address in the log.
+        crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s Message=%s\n\0",
+            process_or_thread,
+            image_name,
+            message,
+        );
         KeBugCheckEx(
             CRITICAL_OBJECT_TERMINATION,
             (*(process_or_thread as *mut _EPROCESS)).Pcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type as ULONG_PTR,

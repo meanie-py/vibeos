@@ -54,5 +54,255 @@ afd_apitest.exe send
 # SafeProbeForRead legitimately accepts NULL (it is validate-only, it cannot
 # touch-test under DUMMY_PSEH), and our Rust calls IntSetSysColors outside the
 # guard the C kept it inside. A real crash with a real banner — not truncation.
-# serial: .characterize-amd64/round03-amd64-uefi_serial.log
-gdi32_apitest.exe SetSysColors
+# serial: LOST — a later characterize.py run reused the same round numbers in
+# the same --artifact-dir and overwrote it (fixed: runs now nest per-run dirs).
+# The analysis does not depend on it: the faulting instruction, the symbol and
+# the NULL argument are all in commit c4e66b8695e and the lane doc, and the
+# crash reproduces by removing this line.
+# gdi32_apitest.exe SetSysColors
+
+# characterize.py round 1: sweep stopped here — guest wedged (no BUGCHECK).
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round01-amd64-uefi_serial.log
+cmd_apitest.exe attrib
+
+# characterize.py round 2: sweep stopped here — guest wedged (no BUGCHECK).
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round02-amd64-uefi_serial.log
+cmd_apitest.exe exit
+
+# characterize.py round 3: sweep stopped here — guest wedged (no BUGCHECK).
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260922-184536/round03-amd64-uefi_serial.log
+cmd_apitest.exe pushd
+
+# 2026-09-23: RESTORED, having been wrongly retracted on 2026-09-22.
+#
+# These two were removed as "truncation artifacts" because their serials end
+# with the accused subtest's own PASSING summary and its [EXIT-THR] — it had
+# finished and exited. That observation was correct and the conclusion drawn
+# from it was not: the subtest completing does not mean the SWEEP recovered.
+# In both rounds, across two independent runs, the sweep printed
+# `[APITEST-SWEEP] launch <this subtest>` and never printed the matching
+# `exit` line. It did not advance.
+#
+# So the discriminator is not "did the child crash" but "did the SWEEP move
+# on", which the launch/exit pairing records directly. Shape of the failure:
+# the child completes, the parent never returns from collecting it — most
+# likely sweep.c's pipe pump, since a grandchild inheriting the write end keeps
+# the pipe from ever reaching EOF (these subtests open sockets and talk to
+# services). That is an inference from the shape, not something observed.
+iphlpapi_apitest.exe GetOwnerModuleFromTcpEntry
+iphlpapi_apitest.exe GetOwnerModuleFromUdpEntry
+
+# 2026-09-23: SUITE-level, replacing eight subtest entries the driver added one
+# per round (GetModuleFileName, ReadFile, TunnelCache, UEFIFirmware,
+# WideCharToMultiByte, WriteFile, dosdev, interlck).
+#
+# They are not eight bugs. In six of those eight rounds the last SUCCESSFUL
+# subtest was the same one — `SystemFirmware`, exiting code=128 — and the
+# accused was simply whoever ran next once the previous victims were skipped.
+# The accusation was tracking the skip list, not a defect. Eight boots bought
+# eight names for at most a couple of causes, and never got past this suite.
+#
+# What is actually known: the wedged child produces NO output at all (interlck
+# emitted nothing), a few services.exe restarts follow, and then the guest goes
+# quiet. The sweep DOES survive an ordinary child timeout (TerminateProcess hit
+# the 120s cap in round 8 and the sweep carried on), so the wedge is not simply
+# "a slow test".
+#
+# Quarantined whole so the ~40 suites after `kernel32_` alphabetically can be
+# characterised at all — that is the point of the exercise, and this suite was
+# consuming every round. Owed: triage as ONE investigation, starting at
+# SystemFirmware and at what a dying services.exe does to the sweep.
+kernel32_apitest.exe
+
+# characterize.py round 1: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-063608/round01-amd64-uefi_serial.log
+msvcrt_apitest.exe _wsystem
+
+# characterize.py round 2: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-063608/round02-amd64-uefi_serial.log
+msvcrt_apitest.exe atexit
+
+# characterize.py round 3: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-063608/round03-amd64-uefi_serial.log
+iphlpapi_apitest.exe GetExtendedTcpTable
+
+# characterize.py round 4: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-063608/round04-amd64-uefi_serial.log
+msvcrt_apitest.exe static_construct
+
+# characterize.py round 5: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-063608/round05-amd64-uefi_serial.log
+msvcrt_apitest.exe system
+
+
+
+# 2026-09-23: SUITE-level, on the convergence guard's own advice after it
+# stopped the run at three ntdll accusations (NtAccessCheckByType,
+# NtCreateThread, NtQueryInformationProcess).
+#
+# Same guest-level wedge as the msvcrt/cmd cluster: the sweep's own 120s
+# per-subtest timeout NEVER fires, and the sweep is an ordinary user-mode
+# process — if it cannot time out its own child, it is not running either. The
+# box is dead, not the harness waiting. The wedged child emits no output at all.
+#
+# Each victim is simply the next unquarantined subtest, so these are positions
+# rather than named defects; quarantining one buys about ten more subtests
+# before the next wedge. That is why this goes in whole: at ~10 subtests per
+# boot, naming them one at a time would cost dozens of rounds and still not
+# reach ole32/shell32/user32/ws2_32 and the rest of the alphabet, which have
+# never been characterised at all.
+#
+# NOT a loss of what we know: results merge across rounds keeping the WORST
+# verdict, so the ntdll subtests that already ran are in the banked table.
+# Owed: triage with msvcrt/cmd/kernel32 as ONE investigation into process and
+# thread creation/teardown. NtCreateThread being among the victims is a pointed
+# hint, and ntdll is a suite we very much want back.
+ntdll_apitest.exe
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-115841/round01-amd64-uefi_serial.log
+# msvcrt_apitest.exe log10
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-115841/round02-amd64-uefi_serial.log
+# REMOVED 2026-09-23: `during` was never a subtest. It came from the old
+# message "TIMEOUT msgina_apitest.exe during enumeration (60s)" being split
+# on spaces, and reached the banked table as a phantom assertion identity that
+# no run could ever satisfy. sweep.c now says ENUM-TIMEOUT; msgina is
+# suite-quarantined below on its own merits.
+
+# 2026-09-23: SUITE-level. msgina_apitest never enumerates its subtests — it
+# hits the sweep's 60s ENUMERATION timeout, so nothing in it ever runs. Same
+# category as opengl32_apitest above, and nothing to do with the process-wedge
+# cluster.
+#
+# This is the suite that exposed a parser bug worth more than the quarantine:
+# the old message was "TIMEOUT <suite> during enumeration (60s)", which the
+# parser read as suite + a subtest named "during", and `msgina_apitest.exe
+# during TIMEOUT` reached the banked table. A phantom assertion identity in a
+# floor made of assertion identities can never be satisfied. sweep.c now says
+# ENUM-TIMEOUT and the parser records the suite alone.
+msgina_apitest.exe
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round01-amd64-uefi_serial.log
+# iphlpapi_apitest.exe GetExtendedUdpTable
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round02-amd64-uefi_serial.log
+# appshim_apitest.exe ignorefreelib
+
+# characterize.py round 3: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-132403/round03-amd64-uefi_serial.log
+# afd_apitest.exe windowsize
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round01-amd64-uefi_serial.log
+# powrprof_apitest.exe
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round02-amd64-uefi_serial.log
+# umkm_apitest.exe SystemCall
+
+# characterize.py round 3: sweep stopped here — BUGCHECK 0x000000F4.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round03-amd64-uefi_serial.log
+user32_apitest.exe GetUserObjectInformation
+
+# characterize.py round 4: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-143716/round04-amd64-uefi_serial.log
+user32_apitest.exe LoadImage
+
+# 2026-09-23: user32_apitest is quarantined PER SUBTEST, deliberately against
+# the convergence guard's advice to take the whole suite. The guard's premise
+# is that repeated accusations against one suite are not independent; here they
+# demonstrably are. GetUserObjectInformation gives BUGCHECK 0xF4
+# (CRITICAL_OBJECT_TERMINATION, P4=ntoskrnl.exe+0x198FF0) and ScrollDC gives
+# BUGCHECK 0x1E in win32k.sys+0xF8970 = NtUserScrollDC+0x180 — different stop
+# codes, different modules, different faulting functions. These are real,
+# separate kernel bugs and user32 is too valuable a suite to blanket.
+#
+# ScrollDC is ROOT-CAUSED: NtUserScrollDC probes three user RECTs and then
+# dereferences them raw, the same DUMMY_PSEH probe-then-read class as
+# NtUserSetSysColors. See the roadmap's bug registry.
+# FIXED 2026-09-23 (capture_from_user); un-quarantined to verify:
+# user32_apitest.exe ScrollDC
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x000000F4.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round01-amd64-uefi_serial.log
+user32_apitest.exe SetCursorPos
+
+# characterize.py round 2: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round02-amd64-uefi_serial.log
+user32_apitest.exe desktop
+
+# characterize.py round 3: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round03-amd64-uefi_serial.log
+# win32u_apitest.exe NtGdiCreateBitmap
+
+# characterize.py round 4: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-154444/round04-amd64-uefi_serial.log
+# FIXED 2026-09-23 (capture_from_user); un-quarantined to verify:
+# win32u_apitest.exe NtGdiCreateDIBSection
+
+# 2026-09-23: win32u_apitest, also PER SUBTEST against the convergence guard,
+# for the same reason as user32 above: these are distinct bugs, not one cause.
+# win32u_apitest drives the Nt* syscalls directly, so it is the suite most
+# likely to keep finding the DUMMY_PSEH probe-then-raw-deref class.
+#
+# NtGdiCreateDIBSection is ROOT-CAUSED and was the proof that the class is
+# systematic: BUGCHECK 0x1E at win32k.sys+0xFAD1A = NtGdiCreateDIBSection+0x4A,
+# the instruction `movl (%r9), %r10d` — the read of (*bmi).bmiHeader.biSize
+# immediately after its own probe (dibobj.rs:1822). Found independently by
+# tools/scan_probe_then_deref.py, which now enumerates the rest of the class
+# statically instead of one boot at a time.
+#
+# NtGdiGetBitmapBits: BUGCHECK 0x1E at ntoskrnl.exe+0x2B6B0, called from
+# win32k.sys+0x168D48. Not yet root-caused; the fault is in ntoskrnl rather
+# than win32k, so it may be a different cause.
+# win32u_apitest.exe NtGdiGetBitmapBits
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-171513/round01-amd64-uefi_serial.log
+# win32u_apitest.exe NtGdiPolyPolyDraw
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-amd64/characterize-amd64-20260923-171513/round02-amd64-uefi_serial.log
+# win32u_apitest.exe NtGdiSetBitmapBits
+
+# user32_apitest.exe ScrollDC — re-quarantined by the round that proved my
+# FIRST fix incomplete (reads captured, write-back still raw; the fault moved
+# +0x180 -> +0x1C0). Write-back now goes through publish_to_user, so it is
+# un-quarantined again to verify.
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-verify/characterize-amd64-20260923-182511/round01-amd64-uefi_serial.log
+# win32u_apitest.exe NtUserConvertMemHandle
+
+# user32_apitest.exe ScrollDC — un-quarantined for the THIRD verification.
+# The first two "fixes" both landed somewhere other than the faulting store:
+# one captured only the reads, and one patched the write-back of the SIBLING
+# (NtUserScrollWindowEx). NtUserScrollDC's own store at scrollex.rs:709 now
+# goes through publish_to_user; verified in the binary as 0 raw 16-byte stores
+# and 3 KmProtectedCopyMemory calls between NtUserScrollDC and its sibling.
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: /home/curi/Projects/os-playground/vibeos-upstream-sync/.characterize-verify/characterize-amd64-20260923-190050/round01-amd64-uefi_serial.log
+# win32u_apitest.exe NtUserCreateWindowEx
+
+# 2026-09-23: THIRTEEN entries un-quarantined above (commented, not deleted), all
+# of them recorded as BUGCHECK 0x1E. Commit 5c03fac931c fixed the whole
+# probe-then-raw-access class in win32k -- 108 scanner leads across 31 files, plus
+# ~30 the scanner's own break-at-first-hit had hidden -- and 0x1E (0xC0000005) is
+# exactly what that class produces. Two members of it, NtUserScrollDC and
+# NtGdiCreateDIBSection, were already verified fixed by boot.
+#
+# This is a HYPOTHESIS UNDER TEST, not a claim that they are fixed: nothing here
+# has been re-derived yet. The next characterization run is the test, and anything
+# that crashes again comes straight back with its new serial. Un-quarantining is
+# how the question gets asked -- the positive-evidence rule governs putting an
+# entry BACK, and the evidence for that is the launch/exit pairing.
+#
+# Deliberately still quarantined: the process-wedge cluster (cmd/msvcrt/kernel32/
+# ntdll -- no BUGCHECK at all, so a different cause), the 0xF4s
+# (user32 GetUserObjectInformation, SetCursorPos), afd send (a real ASSERT the C
+# shares), and the two enumeration timeouts (opengl32, msgina).

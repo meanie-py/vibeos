@@ -30,16 +30,15 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
 - **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
-  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug —
-  that pointer was wrong and was removed 2026-09-06.** The reasoning was that `_USE_DUMMY_PSEH`
-  compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon `KeUserModeCallback`, so
-  resolving DUMMY_PSEH would let it run. It would not. That function is already Rust
-  (`win32k-rust/src/winsta.rs`), where no C `#if` reaches it, and the block is still skipped
-  deliberately: it runs on the **system desktop thread**, whose process has no
-  `KernelCallbackTable`, so the user-mode callback cannot be made there at all — letting it run
-  is what produced the i386 "Sending to Suspended Thread" hang. The constraint is the thread,
-  not the SEH shape, and it survives DUMMY_PSEH resolution untouched. Judge this item on code
-  shape alone.
+  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug.**
+  **Update 2026-09-23:** the cursor/icon block this note defended skipping now runs where
+  upstream runs it (`co_IntInitializeDesktopGraphics`), on all arches. The skip was ours
+  (`5802b15ed60`, 2026-03), not a C `_USE_DUMMY_PSEH` guard, and its stated reason was wrong.
+  The thread does have a user-callback table: all three arches log
+  `cursors/icons loaded at desktop-graphics init`, and the gates passed 9/9. The i386 hang
+  the skip avoided was the padded `KAPC_STATE` copy that made threads read as suspended.
+  `co_IntDeferredCursorsAndIcons()` remains as the fallback for a thread without a callback
+  table.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -504,36 +503,56 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
-- **arm64 fails `test_start_menu_opens` on fresh media: after Ctrl+Esc the screen is bare
-  wallpaper, with no taskbar, no desktop icons and no notepad window. UNOWNED** (2026-09-22;
-  root cause narrowed 2026-09-23). This is NOT a shell or start-menu bug.
-  - **Trigger:** arm64 winlogon's demo sequence spawns `cmd.exe`
-    (`winlogon-rust/src/winlogon.rs`, the "cmd.exe INFINITE wait" block) while explorer is
-    starting.
-  - **Mechanism:** cmd's consrv connect (`[CSRSRV] CliCon: ServerId=2`) wedges csrss.
-    cmd's `kernel32 DllMain PROCESS_ATTACH` never returns, and depending on timing either
-    explorer never reaches `_tWinMain` or its windows never paint. There is no further
-    `[DESKPAINT]` after the taskbar is created.
-  - **Measured (same fresh media, gate verdicts):**
-    - `cmd.exe` deleted from the ramdisk: PASS (panel lit 0.68 → 0.90).
-    - With cmd: FAIL 6 times.
-    - After adding unrelated `DbgPrint`s to winsrv: PASS once. It is timing-sensitive.
-    - Giving cmd `lpDesktop = WinSta0\Default`: still FAIL.
-  - **The kmtest sweep is NOT it.** The original inference here was refuted: the failure
-    reproduces with no Startup items at all, and on a kmtests-OFF build at `894e872ede1`
-    (2026-09-12).
-  - **Why it "worked until 09-13":** that media had been refreshed in place for weeks. Old
-    FEX probe binaries (`fexprobe.exe`, `wow64probe.exe`, `syswow64\*`) survived there, and
-    winlogon runs them BEFORE cmd, which moved cmd off explorer's startup window. Booting
-    `vibeos-research`'s 09-20 boot.img passes; a fresh ramdisk from any commit fails.
-    mkramdisk now prunes stale payloads and recreates a ramdisk that has no record, so every
-    fresh arm64 image shows this.
-  - **Next step:** find what the csrss console connect waits on. winsrv's own `DbgPrint`s did
-    not reach serial in any run, so consrv checkpoints are not a usable probe. csrsrv prints
-    only through its non-variadic `dbg_print!`, so route checkpoints that way, or walk the
-    csrss thread stacks under `vibeos-cli debug`.
-  - **Reproduce:** `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k
-    test_start_menu_opens -s`. The default `vibeos-cli smoke` does not run this test.
+- **arm64 `test_start_menu_opens` on fresh media: bare wallpaper, no taskbar. ROOT-CAUSED
+  2026-09-23, fix on the `shell32-com` lane: two bugs, both needed.**
+  Arm64 winlogon spawns `cmd.exe` while explorer starts, and cmd's console connect wedged
+  csrss:
+  1. **No console font could exist.** win32k never enumerated `\SystemRoot\Fonts`. It
+     loaded a hardcoded list instead: 6 fonts on arm64, and nothing on x86 ("deferred to
+     winlogon", which added 8 by name). Neither list held consrv's default face "VGA"
+     (`UniVGA16.ttf`) or its "Terminal" fallback. So `InitFonts` failed, `WM_NCCREATE`
+     failed, and `GuiInitFrontEnd` fell into `GuiDeinitFrontEnd`. That waits forever on
+     `hGuiTermEvent`, because the input thread skips `NtSetEvent` when `hWindow` is NULL.
+     The API thread serving cmd's connect was left parked there for good. Stacks taken
+     via the census:
+     - tid 148: `GuiDeinitFrontEnd` ← `GuiInitFrontEnd` ← `ConSrvConnect` ←
+       `CsrApiRequestThread`.
+     - The input thread: idle in `NtUserGetMessage`.
+     Fix: upstream's directory enumeration is restored in `IntLoadSystemFonts` on all
+     arches (enumerating once and filtering the extension, because our FAT driver ignores
+     the search pattern). winlogon's font list is gone, and arm64 stages `UniVGA16.ttf` and
+     `lucon.ttf`.
+  2. **`KAPC_STATE_ACTUAL_LENGTH` was `size_of` (48/24), not the unpadded 43/23**
+     (`ke/apc.rs`, since the Feb KE translation). Every attach/detach copied `ApcState`'s
+     tail over `SavedApcState`'s, i.e. into `FreezeCount` (and on 64-bit `SuspendCount`).
+     Any thread that ever attached to another process, which includes every thread that
+     created one, then read as suspended. win32k refused all sends to it with "Sending to
+     Suspended Thread". This is the same predicate as the i386 hang behind the desktop-thread
+     cursor-callback hack (Tier 1 above).
+  - **Measured:**
+    - Both fixes: arm64 gate 7/7 with `cmd.exe` present; 0 suspended sends; cmd's
+      `PROCESS_ATTACH` completes.
+    - Fonts only: 2 passes, then 1 boot where explorer never started.
+    - amd64: passes.
+  - **Exposed, then FIXED (i8042prt):** fix 2 lets win32k's RIT really block in the
+    WH_KEYBOARD_LL hook send, so keystrokes queued up. That exposed an upstream race in
+    `i8042KbdDpcRoutine`:
+    - It hands kbdclass `KeyboardBuffer[0..n]` outside the interrupt lock, then only does
+      `KeysInBuffer -= transferred`.
+    - A key the ISR appended during the callback sits behind a stale slot 0. The next DPC
+      re-delivered the old key and lost the new one: one Esc make twice, its break never
+      delivered.
+    - Ctrl+Esc then toggled the start menu open and shut. i386 went from 4/4 on master to
+      about 1/3 with fix 2.
+    The DPC now compacts the tail as the mouse DPC always did. i386 is 8/8; amd64 3/3.
+  - **Not caused by these fixes:** the arm64 PC/LR/FP=0 fetch fault (`ESR=0x86000007`,
+    during services' `ScmStartUserModeService`), which is the registered smp-bringup flake.
+    A/B under 5-way parallel load: 9/10 boots with fix 2, 9/10 with it reverted, one
+    PC=0 fault in each. That is well above the registered 1.7%.
+  - **Correction:** an earlier version of this entry said winsrv's `DbgPrint`s never reach
+    serial. That was false. It was read from a stale `qemu/arm64_smoke_live.log` dated
+    2026-08-06. In a worktree, pytest's serial lives under `/tmp/pytest-of-*/`. The kmtest
+    and stale-payload inferences above it were refuted as well.
 - **shell32's DllRegisterServer returns 0x80070002 (ERROR_FILE_NOT_FOUND) on the livecd, all
   three arches. UNOWNED** (2026-09-23). Measured by `tools/payloads/regdiff`, identically for
   the C++ build (`bf5c0d1573f`) and the Rust one, so it predates retiring shell32.cpp. Every
@@ -576,8 +595,83 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   It never reaches the `Valid test names:` output, so the whole suite is quarantined rather
   than one subtest.
 
+- **Process SPAWN and CRT TEARDOWN can wedge the whole guest. OPEN, and it probably subsumes
+  several existing apitest quarantine entries** (2026-09-23). Nine quarantined subtests across
+  three suites cluster on one theme rather than nine defects: `msvcrt_apitest` `system` /
+  `_wsystem` (which spawn `cmd.exe`), `atexit` / `static_construct` (CRT teardown at process
+  exit), and `cmd_apitest` `attrib` / `exit` / `pushd` (`cmd.exe` spawning children).
+  **The discriminator that makes this a GUEST bug and not a harness one:** the sweep's own
+  120-second per-subtest timeout never fires at these wedges — verified in four separate
+  rounds. The sweep is an ordinary user-mode process, so if it cannot even time out and
+  terminate its child, it is not running either; the box is dead, not the harness waiting.
+  A few `services.exe` restarts follow the wedge and then the serial goes silent for good, and
+  the wedged child emits no test output at all. Unlike the `kernel32_apitest` cluster, the
+  PREDECESSOR differs every time (`_wcsupr`, `atan`, `sqrt`, `strtoul`), so this is not the
+  blame-the-next-one artifact. Worth chasing as ONE investigation into process
+  creation/teardown rather than as per-subtest quarantine entries — note `msvcrt` is fully
+  translated, so our Rust CRT is in the frame alongside the kernel's process paths.
+
+- **`cmd_apitest` wedges the guest — three of its six subtests, reproducibly. OPEN**
+  (2026-09-23). `attrib`, `exit` and `pushd` each stop the apitest sweep dead; one boot sat
+  silent for 77 minutes after `[APITEST-SWEEP] launch cmd_apitest.exe attrib` with QEMU alive
+  and the serial not growing. For `pushd` the sweep's own 120s per-subtest timeout DID fire and
+  terminated the child (`[EXIT-THR] image=CMD_APITEST.EXE exit_status=0xdead`, which is
+  sweep.c's `TerminateProcess(.., 0xDEAD)`), and then the sweep still never printed its
+  `TIMEOUT`/`exit` line — so at least that one wedges the sweep PARENT, not only the child.
+  Plausible shared cause with the two quarantined `iphlpapi GetOwnerModuleFrom*Entry` stalls:
+  a grandchild inheriting the pipe's write end, so the pump never sees EOF (`cmd_apitest`
+  spawns `cmd.exe`; the iphlpapi tests talk to services). That is an inference from the shape,
+  not observed. All five are quarantined at subtest granularity so the other ~60 suites can be
+  characterised.
+
+- **`CmUnloadKey` removes a hive from the hive-file list AFTER closing its files and
+  unlinking it, reading an already-invalidated `LinkData` node. OPEN** (2026-09-22).
+  `config-rust/src/cmapi.rs` has `CmpUnlockRegistry(); CmpCloseHiveFiles(CmHive);
+  CmpRemoveFromHiveFileList(CmHive);` — the exact pre-fix order upstream corrected in
+  `396019984c9` ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491),
+  which is one of the 7 commits we are currently behind. Upstream's symptom is a hive that stays
+  listed under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after being unloaded, seen in
+  1st-stage setup with `\Registry\Machine\USetup_Software`; the deduced `LinkName` can be read
+  from an invalidated `KeyNode.Flags`, so `KEY_COMP_NAME` is misread and the constructed path is
+  garbage. Note the full upstream fix is NOT just the two-line reorder: it caches the path in a
+  new `CMHIVE::HiveRootPath` member (a struct layout change, Vista+ semantics) and rewrites
+  `cmhvlist.c`. Found by the bug-oracle sweep while measuring how far behind upstream we are —
+  the newest 7 commits already contained a live hit against our Rust.
+
+- **`NtUserScrollDC` probes three user RECTs and then dereferences them raw — BUGCHECK 0x1E.
+  FIXED 2026-09-23**, verified by boot: `user32_apitest ScrollDC` now exits **code=0**, a clean
+  pass, where it previously took the machine down. Took THREE attempts, and why is the lesson:
+  the first captured only the reads, the second patched the write-back of the SIBLING
+  (`NtUserScrollWindowEx`) because that block matched the search text uniquely, and only the
+  third reached `NtUserScrollDC`'s own store at `scrollex.rs:709`. Each time a `count == 1`
+  assertion passed and I read that as "the crashing instruction changed"; the BUGCHECK PC never
+  moving was the falsifying evidence. The check that settles it is about the FAULT, not the
+  edit: 0 raw 16-byte stores and 3 `KmProtectedCopyMemory` calls between `NtUserScrollDC` and
+  its sibling. Originally (2026-09-23). `win32k.sys+0xF8970` = `NtUserScrollDC+0x180`,
+  `win32k-rust/src/scrollex.rs`; found by `user32_apitest ScrollDC`, whose name corroborates
+  the symbol. Identical shape to `NtUserSetSysColors` below: `SafeProbeForRead` validates the
+  RANGE and not the MAPPING (it cannot touch-test under DUMMY_PSEH), the C wraps probe AND
+  copy in one `_SEH2_TRY`, and our Rust does `rcScroll = *(prcUnsafeScroll as *const RECTL)`
+  outside any guard. Same fix: capture through `KmProtectedCopyMemory`
+  (`win32k-rust/src/copy.rs`). **Third instance of this class, which makes it systematic
+  rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
+  the probed pointer" would enumerate the rest for free, and is owed.
+
+- **`user32_apitest GetUserObjectInformation` triggers BUGCHECK 0xF4
+  (CRITICAL_OBJECT_TERMINATION). OPEN** (2026-09-23). `P4 = ntoskrnl.exe+0x198FF0`. A
+  critical process died; distinct from the ScrollDC crash above in both bugcheck class and
+  faulting module, so `user32_apitest`'s failures are genuinely independent bugs rather than
+  one suite-wide cause — which is why it is quarantined per-subtest and NOT as a suite.
+
+- **`NtGdiCreateDIBSection` read `(*bmi).bmiHeader.biSize` raw after probing it — BUGCHECK
+  0x1E. FIXED 2026-09-23**, verified by boot: `win32u_apitest NtGdiCreateDIBSection` now runs to
+  completion (`code=29`, real test failures, no crash). The faulting instruction was
+  `win32k.sys+0xFAD1A` = `+0x4A`, `movl (%r9), %r10d`, now a `KmProtectedCopyMemory` call. The
+  size is also captured into a local, which stops it being re-read from user memory after
+  validation. `tools/scan_probe_then_deref.py` finds this site statically at `dibobj.rs:1822`.
+
 - **`gdi32_apitest SetSysColors` BUGCHECKs 0x1E — `NtUserSetSysColors` probes a user array
-  and then reads it unguarded. ROOT-CAUSED, fix pending** (2026-09-22).
+  and then reads it unguarded. FIXED 2026-09-23** (root-caused 2026-09-22).
   `win32k.sys+0xFADD8` = `NtUserSetSysColors+0xE8`, the instruction
   `movl (%rdi,%r14,4), %eax` reading `lpaElements[0]`; fault address `0`. The test's second
   call is `SetSysColors(1, NULL, crColors)` and it asserts `FALSE`/`ERROR_NOACCESS`, so the
@@ -589,6 +683,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   one `win32k-rust/src/copy.rs` already uses for `MmCopyFromCaller` — capture through
   `KmProtectedCopyMemory` — but **chunked**, since `cElements` is caller-controlled to
   `0x3FFFFFFF`. Write-up: `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
+  Fixed as described: a 256-element chunk loop in `NtUserSetSysColors` feeds `IntSetSysColors`
+  kernel memory. **The capture is in the syscall, not the helper** — `IntSetSysColors` is also
+  reachable with kernel pointers, so protecting it there would have been wrong.
+
+- **The probe-then-raw-access class is CLEARED in win32k as of 2026-09-23** — all 108 leads
+  `tools/scan_probe_then_deref.py` reported are fixed across 31 files, plus ~30 more that the
+  scanner's own `break`-at-first-hit was hiding. Built on all three arches, amd64 boots to
+  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class,
+  which are OPEN:** 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
+  the `write_volatile` / `copy_nonoverlapping` spellings) rather than a syntactic `*p`, and 8
+  genuinely interprocedural. Heaviest: `message.rs` 22, `font.rs` 20, `hook.rs` 11,
+  `stretchblt.rs` 9, `dibobj.rs` 9. Two shapes inside that set need more than a copy call:
+  read-modify-write of user memory (`|=`, bitfield setters) must capture → mutate in kernel
+  memory → publish once, and `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`,
+  where the C had a `_SEH2_TRY` per access) has **no protected primitive at all** — it needs a
+  `KmProtected` atomic in `kmsafecopy.c` on three arches, which is owed and not yet written.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
@@ -645,34 +755,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   DETACHED_PROCESS (a console is legal there; it is only the WoW64 guest that cannot
   create one). That is a one-line experiment and it also A/Bs the console bug below.
 
-- **Console creation HANGS a CUI process launched by winlogon — on bare i386 as well as
-  under WoW64. OPEN, and it is one bug behind three symptoms** (2026-09-21).
-  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`
-  (`win32k-rust/src/window.rs`), after which the process spins in
-  `Sending to Suspended Thread` and never reaches main: 180s timeout, **0 bytes of
-  output**, 9075 spin lines. First seen on a WoW64 guest; the native i386 control of the
-  same binary reproduced it EXACTLY, so it is ours and not a 32↔64 bug — "WoW64" was
-  where it was seen, not where it lives.
-  The three symptoms: (1) a WoW64 winetest hangs before main; (2) the native one does
-  too; (3) `class.c` spawns fifteen children of its own, and a CUI child of a
-  console-less parent gets a NEW console from csrss, so each burns the full 30s of
-  `winetest_wait_child_process` — 7.5 minutes, and the reason the native control has
-  never reached the wndproc block it exists to adjudicate.
-  Worked around for the winetest runner by launching `DETACHED_PROCESS` (a piped test
-  wants no console), which is why the ladder does not depend on it. **Fixing this is the
-  unblock for the wndproc attribution above**, and it is reachable natively, so no WoW64
-  machinery is needed to debug it.
-  LOCALIZED, not yet root-caused: `co_UserCreateWindowEx` fails at
-  `co_IntSendMessage(hwnd, WM_NCCREATE, …)` returning 0, and the send is refused by
-  `IsThreadSuspended(ptirec)` in `msgqueue.rs` — the receiving thread reads as suspended
-  or frozen. That predicate is `Tcb.SuspendCount == 0 && PsGetThreadFreezeCount() == 0`,
-  both of which are bindgen-anon-union reads that differ per arch
-  (`kt_suspend_count` in msgqueue.rs, `PsGetThreadFreezeCount` in ps-rust/thread.rs), so
-  a wrong union member would make every thread look suspended. Note the ERR fires
-  **3327 times in a HEALTHY amd64 boot**, so it is either badly over-firing already or
-  there really are that many suspended sends; either way the next step is a runtime
-  probe printing SuspendCount and FreezeCount for the receiving thread, not more
-  source reading — the two candidate reads look correct on inspection.
+- **Console creation HANGS a CUI process launched by winlogon — FIXED 2026-09-23.** Five
+  bugs, the last three found only once console creation began to work:
+  1. win32k never loaded consrv's "VGA" font.
+  2. `KAPC_STATE_ACTUAL_LENGTH` made attached threads look suspended.
+  3. consrv's handle table was indexed through winsrv-sys's opaque 1-byte
+     `_CONSOLE_IO_HANDLE`, so `.add(i)` stepped one byte and entries overlapped. csrss
+     died on the first console close: AV in `ConSrvCloseHandle`, BUGCHECK 0xF4 on i386.
+  4. 22 of `GuiVtbl`'s 25 slots, plus `GuiConsoleInputThread`, were Rust-ABI fns
+     transmuted into NTAPI slots, under a comment claiming they were `extern "system"`.
+     Six of them returned u8 for C's BOOL.
+  5. The same ABI shape was in msgina's dialog procs and advapi32's crypt callbacks.
+  Two new gates, `scan_opaque_ptr_arith` and `scan_fnptr_abi_transmute`, keep 3–5 at zero.
+  The i386 native user32 `class` winetest now runs end to end with a real console: winlogon
+  no longer detaches it. The WoW64 guest is still detached until an amd64 ladder run shows a
+  guest getting a console.
+  Follow-ups, 2026-09-23:
+  - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
+    `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
+    bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
+  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
+    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
+    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
+    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
+    not attached on i386. OPEN (harness).
+  - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
+    exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
+    its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
+  - **The 50 ms `KeDelayExecutionThread` in `co_IntInitializeDesktopGraphics` is REMOVED.**
+    It was a March workaround for a race fixed since; 12 boots passed without it.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not
@@ -2988,8 +3099,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     conclusion — but hand symbolication stays exposed afterwards. Break on something you know
     executes before believing any silence, and pass the MP binary by name.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
-    in the 9-sweep soak, so it is rarer than the other two. One occurrence, so no rate: `pass 679 -> 678, fail 0 -> 1` on
-    `20260913-022245-fw6sw4_g-conformance-arm64`. `NpfsConnect` is **679/0 on all three
+    in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
+    `20260913-022245-fw6sw4_g-conformance-arm64`.
+    **RECURRED 2026-09-23, and the second occurrence carries the lead the first could not:
+    it looks LOAD-CORRELATED, not merely rare.** Identical signature, in
+    `queue-batch-01790201087033273531/20260923-180447-8li01qbu-gate-i386+amd64+arm64`
+    (`conf-arm64-a1/conformance.log`). It failed **3 of 3 gate attempts** while the gate was
+    running 3 builds + 4 boots, *and* while a characterisation sweep was booting concurrently
+    in another worktree — then passed **2 of 2** on the same tree on a quiet host, including
+    the exact merge the gate tested. 3/3 under load vs 0/2 quiet is not the profile of a rare
+    intermittent; it is the profile of a race that needs contention to lose. Next step is to
+    reproduce it deliberately under load (`farm` alongside a full gate) rather than wait for
+    another sweep to catch it.
+    **Cost of NOT knowing this:** the conductor rejected an innocent 17-commit batch and
+    concluded "the BASE is GREEN — the submission really is the culprit" from a **single**
+    base sample against three lane samples, for a failure its own classifier had already
+    named `CONFORMANCE_FLAKE`. That attribution is the same shape as the harness bugs this
+    lane spent the day fixing: blame what was in flight rather than what was proven. `NpfsConnect` is **679/0 on all three
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
     from a regression on any single sweep.

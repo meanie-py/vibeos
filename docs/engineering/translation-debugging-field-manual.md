@@ -1044,6 +1044,51 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 
 ---
 
+### `transmute(f as *const ())` into a callback slot erases the ABI check
+**Symptom.** Works on amd64/arm64; on i386 the callee reads garbage arguments. In consrv this
+killed csrss (BUGCHECK 0xF4) the first time an i386 GUI console was created. A BOOL slot
+filled by a fn returning `u8` returns garbage upper bits on every arch.
+
+**Cause.** `f as *const ()` discards `f`'s ABI and the transmute re-types it as the slot's
+`extern "system" fn`. rustc cannot compare them. consrv's `GuiVtbl` filled 25 NTAPI slots
+this way under a comment claiming the impls were `extern "system"`; 22 were plain Rust fns
+and six returned `u8` for C's `BOOL`. msgina's dialog procs and advapi32's crypt callbacks
+had the same shape.
+
+**Fix.** Declare the fn with the slot's ABI and pass it directly: `Some(f)`. rustc then
+checks the ABI and the whole signature. `scan_fnptr_abi_transmute` gates it (baseline empty).
+
+### Pointer arithmetic on a field bindgen typed as an opaque stub strides one byte
+**Symptom.** A table that works while only entry 0 is used. Once there are several entries
+they overlap, and a pointer read back from one is garbage. consrv's console handle table
+crashed csrss in `ConSrvCloseHandle` on the first console close.
+
+**Cause.** bindgen emits an unseen type as `struct X { _address: u8 }`. A field `*mut X` makes
+`.add(i)` step one byte, and the cast afterwards (`field.add(i) as PREAL`) comes too late. The
+allocation used the real element size, so nothing looked wrong until index 1.
+
+**Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
+(`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
+
+### A C byte count kept as the element count of a `u16` copy moves twice the bytes
+**Symptom.** A string copy that over-reads its source and over-writes its destination by
+exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
+staging `winsxs` made smss enumerate long names and hit BUGCHECK 0x50 in `memcpy`, called
+from `fastfat.sys` (`FatQueryDirectory`).
+
+**Cause.** `RtlCopyMemory(dst, src, Bytes)` counts bytes. `core::ptr::copy_nonoverlapping`
+counts elements of `T`, and `T` is whatever the pointers say. The translation kept
+`BytesConverted` and typed the pointers `u16`. The same shape was in the registry value cache
+(uncompressed value names) and in five mountmgr `DeviceString` copies, plus one uncast
+instance in `IoVolumeDeviceToDosName`.
+
+**Fix.** Copy bytes as the C does (`src as *const u8, dst as *mut u8, Bytes`), or divide the
+count by `size_of::<u16>()`. Keep element-typed pointer arithmetic for the destination
+offset: `&Dst[Len / sizeof(WCHAR)]` is `dst.add(len / 2) as *mut u8`.
+`scan_wide_byte_copy` gates the cast form (baseline empty). It only trusts an explicit cast,
+because both pointers share one `T`, and an uncast `.Buffer` is too often ANSI. An uncast
+`u16` field pair still needs reading against the C.
+
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
 > **2026-07-05 status:** the volatile-blind attribute-deduction root is **fixed in the shipping
@@ -2206,6 +2251,25 @@ real size-asserted bindgen nested types. Related: a hardcoded SD minimum length 
 handles like 0x3DC) means a bit-test never matches after a cohab flip.
 
 ---
+
+### A C length macro that stops short of the padding is not `size_of`
+**Symptom.** Threads read as suspended to win32k ("Sending to Suspended Thread"), so every
+`SendMessage` to them was refused. This hung the arm64 console and the i386 desktop thread,
+and 3327 of those ERRs appeared in a healthy amd64 boot. The fields were correct in every
+bindgen island.
+
+**Cause.** `KAPC_STATE_ACTUAL_LENGTH` is `FIELD_OFFSET(KAPC_STATE, UserApcPending) +
+sizeof(BOOLEAN)`: 43 on 64-bit and 23 on i386, deliberately short of the padded
+`sizeof` (48 / 24). KTHREAD overlays `FreezeCount`/`SuspendCount` on `SavedApcState`'s
+padding and `ApcQueueable`/`Priority` on `ApcState`'s. The translation wrote it as
+`size_of::<_KAPC_STATE>()`, so `KiMoveApcState` on every attach/detach copied `ApcState`'s
+tail into the suspend counts.
+
+**Fix.** `offset_of!(_KAPC_STATE, UserApcPending) + size_of::<BOOLEAN>()`.
+
+**Generalize.** A macro spelled `FIELD_OFFSET(..) + sizeof(..)` or `RTL_SIZEOF_THROUGH_FIELD`
+exists precisely because the tail is someone else's storage. Grep for the overlay
+(`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
 
 ## Constants: invented, guessed, and swallowed match arms
 
@@ -5657,6 +5721,29 @@ different question, racily).
   **Detection route worth copying:** the bug was found by an apitest that passes NULL *on
   purpose* to assert `ERROR_NOACCESS`. Error-path tests are where this class lives, so a suite
   that never runs its error paths will never find it.
+- **The class is enumerable statically — `tools/scan_probe_then_deref.py` — and every bug in
+  that SCANNER was a false NEGATIVE that read as "clean".** Four of them, each found only by
+  fixing the sites it did report: `is_comment`'s `startswith("*")` swallowed every `*(p as *mut
+  T) = v;`, i.e. the write-back shape (91 → 109 leads); a `break` after the first hit per probe
+  meant each fix "revealed" the next, so the total was always an undercount; the deref-shaped
+  search cannot see `RtlCopyMemory(&mut local, p, n)`, which names no `*p` at all yet is the
+  same plain memcpy off a probed-only pointer (+152 leads, incl. `write_volatile`/
+  `copy_nonoverlapping` as alternate spellings); and purely local analysis is blind to
+  probe-here-deref-one-level-down, which is exactly the `NtUserSetSysColors` →
+  `IntSetSysColors` shape it had been written to catch. **A scanner for a crash class needs its
+  own regression test per spelling, because its failure mode is silence** — and the two
+  precision rules that keep it usable are: match a call against its OWN argument list, never a
+  line window (stretchblt's three adjacent copies blamed each other's pointers), and treat
+  `p.is_null()` as a test rather than a use (the tree's `if !p.is_null() { &SafeLocal } else
+  { null }` passes a *kernel* local, which was 3 of the first 4 interprocedural hits).
+- **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
+  reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
+  `NtUserSetSysColors` and hand the callee kernel memory.
+- **Read-modify-write of user memory has no protected primitive, and `|=` hides it.** A field
+  store is a publish, but `(*pcbi).stateButton |= FLAG` and `set_fDefault(1)` on a user bitfield
+  are a load AND a store; capture the struct, mutate in kernel memory, publish once.
+  `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`) is the one shape the copy
+  primitive cannot cover — it needs a protected atomic, still owed.
 
 ### A `__try`/`__except` translated to a BARE BLOCK — the flag survives, the handler doesn't `[§9.133]`
 **The shape to recognise**, and it is worse than an obviously-missing handler because a reviewer
@@ -6632,11 +6719,20 @@ and the truncation returns wearing a different hat.
 
 Two things generalise beyond the specific loop:
 
-- **"The log stops here" is not evidence; "the log shows something going wrong here" is.** Every
-  false quarantine entry had a serial that ended with the accused subtest's OWN passing summary
-  line and its process-exit line. One `tail` would have refuted it. Prefer a positive fault
-  signature — a BUGCHECK banner, a visible restart loop — before attributing a stop to whatever
-  ran last.
+- **"The log stops here" is not evidence — but neither is it evidence of INNOCENCE.** Both
+  halves matter, and using only the first half is how four real hangs got retracted. A serial
+  ending with the accused subtest's own PASSING summary proves the child finished; it says
+  nothing about whether the harness recovered, and in those cases the sweep had printed
+  `launch <subtest>` and never the matching `exit`. **Find the signal that records PROGRESS —
+  here a launch/exit pairing — and ask whether it advanced.** That is checkable, and it is
+  agnostic about why.
+- **The runtime form of that signal is SILENCE, and it is the only one the rig cannot forge.**
+  A harness running out of time produces a stop; it cannot produce a guest that has gone quiet
+  while the rig is still reading. So drain until the marker, a fault, the total budget, OR a
+  no-output idle cutoff — and let only the last two of those four outcomes differ in blame.
+  Sizing it is easy when the payload has a natural cadence (one line per unit of work, with a
+  per-unit cap): anything well past that cap is a wedge. This is also a large speedup, since a
+  wedge otherwise costs the ENTIRE budget — two hours of reading nothing, three rounds running.
 - **A test for this class must use a CHATTY fixture.** An idle-guest test passes against both the
   broken and the fixed loop, so it verifies nothing. The bug lives in the busy case only.
 
@@ -6646,6 +6742,23 @@ note behind instead of fixing the loop. The next payload walked straight in. A n
 describes a footgun rather than removing it is a deferred bug that keeps charging interest; if you
 find yourself writing "NOTE: X is not what it says it is", that is the detection event for fixing
 X.
+
+**Raising the budget is a treadmill — fix the ATTRIBUTION instead.** There were THREE bounds
+under one sweep: the iteration-counted drain, pytest's `--timeout`, and a 30-minute QEMU
+lifetime watchdog that `qemu/lib/common.sh` claimed to mirror from `vm.py` but could not actually
+override from the pytest path. Fixing the first promoted the second and third, and the very next
+run quarantined four more innocent subtests — including the same three that had just been
+removed. Each fix is correct and none of them is the fix. **The durable rule: a driver may only
+accuse a test on POSITIVE evidence that the GUEST faulted.** A BUGCHECK banner is evidence; a
+harness kill is counter-evidence, and the rig announces it in its own output, so capture that
+output instead of letting it stream past. Keep the converse too, or the loop goes inert: an
+incomplete run with no harness-kill sign IS still the guest's doing.
+
+**When a tool writes evidence, make the path unique per RUN, not per unit of work inside it.**
+`archive()` was added precisely to stop evidence pointers from rotting, and then collided with
+itself: round numbers restart at 1 each run, `--artifact-dir` replaced the timestamped default
+wholesale, and run N+1 overwrote run N. The flag added FOR durability was the one that removed
+run-uniqueness.
 
 ### A test that ENCODES a bug goes red the day the bug is fixed, and reads as a regression
 
@@ -10232,6 +10345,26 @@ detection — uniata's 12 × `AtapiSoftReset` cost **2.85 s/boot**. Recipe: perm
 phase markers at the suspect boundaries, then read the timestamps.
 
 ---
+
+### One keystroke delivered twice: a port DPC that decrements but never compacts
+**Symptom.** Ctrl+Esc opened the start menu and closed it at once, in about 2 of 3 i386
+boots. win32k processed a single Esc make twice and never saw its break (`co_UserProcessHotKeys`
+fired twice). It moved with any instrumentation on the read path.
+
+**Cause.** `i8042KbdDpcRoutine` (upstream too) passes `KeyboardBuffer[0..n]` to kbdclass
+outside the interrupt lock, then only subtracts the transferred count. A key the ISR appended
+meanwhile stays behind the already-sent slot 0, and the next DPC delivers slot 0 again. It
+stayed latent while keys never queued. Once the RIT blocked in a real LL-hook send, they did.
+
+**Fix.** Move the untransferred tail to the buffer start under the interrupt lock, as the mouse
+DPC does.
+
+**How it was found.** Keep the probes quiet until something is wrong. A per-read print made
+the race vanish. What found it:
+- The RIT printed only when a record repeated the previous one.
+- kbdclass recorded its queue operations into a ring buffer, dumped on the final key.
+Each step located a layer: the buffer was right when the read returned, so kbdclass was
+handing out the repeat, and the port appended the repeat.
 
 ## Per-arch quick reference
 

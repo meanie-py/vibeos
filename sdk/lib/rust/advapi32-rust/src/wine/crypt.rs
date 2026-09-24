@@ -154,7 +154,7 @@ unsafe fn CRYPT_ANSIToUnicode(str: LPCSTR, wstr: *mut LPWSTR, wstrsize: i32) -> 
     SetLastError(ERROR_NOT_ENOUGH_MEMORY);
     FALSE
 }
-unsafe fn CRYPT_VerifyImage(lpszImage: LPCSTR, pData: *mut u8) -> i32 {
+unsafe extern "system" fn CRYPT_VerifyImage(lpszImage: LPCSTR, pData: *mut u8) -> i32 {
     if lpszImage.is_null() || pData.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -164,7 +164,7 @@ unsafe fn CRYPT_VerifyImage(lpszImage: LPCSTR, pData: *mut u8) -> i32 {
 
     1
 }
-unsafe fn CRYPT_ReturnhWnd(phWnd: *mut HWND) {
+unsafe extern "system" fn CRYPT_ReturnhWnd(phWnd: *mut HWND) {
     if !phWnd.is_null() {
         *phWnd = crypt_hWindow;
     }
@@ -247,9 +247,9 @@ unsafe fn CRYPT_LoadProvider(pImage: PCWSTR) -> PCRYPTPROV {
 
         (*(*provider).pVTable).Version = 3;
         (*(*provider).pVTable).FuncVerifyImage =
-            core::mem::transmute(CRYPT_VerifyImage as *const ());
+            Some(CRYPT_VerifyImage);
         (*(*provider).pVTable).FuncReturnhWnd =
-            core::mem::transmute(CRYPT_ReturnhWnd as *const ());
+            Some(CRYPT_ReturnhWnd);
         (*(*provider).pVTable).dwProvType = 0;
         (*(*provider).pVTable).pbContextInfo = core::ptr::null_mut();
         (*(*provider).pVTable).cbContextInfo = 0;
