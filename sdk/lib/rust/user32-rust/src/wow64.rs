@@ -1067,15 +1067,20 @@ pub mod psi {
         (*perusr()).ahbrSystem[i]
     }
 
-    /// `GETPFNSERVER(fnid)`: a kernel address, only ever COMPARED with a
-    /// `lpfnWndProc`. The WND/CLS normalizers truncate those the same way, so
-    /// the truncated value still matches.
+    /// `GETPFNSERVER(fnid)`, only ever COMPARED with a `lpfnWndProc`. It is
+    /// not a kernel address: win32k fills `aStoCidPfn` with the 64-bit
+    /// user32's `apfnClientW` (NtUserInitializeClientPfnArrays), so a
+    /// server-side window's proc is a host client proc. The WND normalizer
+    /// maps that to the guest's W proc, so this must map the same way.
+    /// Truncating instead matched nothing, and `GetWindowLongPtr(GWLP_WNDPROC)`
+    /// returned 0 for every server-side window (DefWindowProc classes,
+    /// ScrollBar).
     #[inline]
     pub unsafe fn pfn_server(fnid: usize) -> WNDPROC {
         let i = fnid - FNID_FIRST as usize;
         #[cfg(target_arch = "x86")]
         if IsWow64() {
-            return core::mem::transmute::<usize, WNDPROC>(s64().aStoCidPfn[i] as usize);
+            return map_client_proc(s64().aStoCidPfn[i]);
         }
         (*gpsi).aStoCidPfn[i]
     }

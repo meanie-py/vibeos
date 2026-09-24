@@ -59,6 +59,11 @@ def emit(dll, exports, arch):
     datas = [n for n, d in exports if d]
     desc = f"___DELAY_DESC_{re.sub(r'[^A-Za-z0-9_]','_',dll)}"
     L, ptrdir = [], (".long" if ptr == 4 else ".quad")
+    # The IAT and INT hold pointer-sized slots, so align them to the pointer. On
+    # arm64 this is not cosmetic: the import stub loads a slot with
+    # `ldr x16, [x16, :lo12:__imp_X]`, whose scaled offset must be a multiple of
+    # 8, and a 4-aligned IAT fails the link ("misaligned ldr/str offset").
+    ptralign = "\t.p2align 2" if ptr == 4 else "\t.p2align 3"
 
     # --- .rdata: dll name, hint/name strings, INT ---
     L += ['\t.section .rdata,"dr"', f'__dll_name: .asciz "{dll}"']
@@ -68,14 +73,14 @@ def emit(dll, exports, arch):
         # looks it up by that. The @N stays only on the import symbols (_Name@N/__imp__Name@N).
         und = fn.split("@")[0]
         L += ['\t.p2align 1', f'__hn_{i}: .short 0', f'\t.asciz "{und}"']
-    L += ['\t.p2align 2', '__delay_int:']
+    L += [ptralign, '__delay_int:']
     for i in range(len(fns)):
         # INT entry holds an RVA in low 32 bits; pad to ptr width
         L += [f'\t.rva __hn_{i}'] + (['\t.long 0'] if ptr == 8 else [])
     L += ['\t.long 0'] + (['\t.long 0'] if ptr == 8 else [])    # null terminator (ptr-sized)
 
     # --- .data: IAT (patched at runtime) + hmod cache ---
-    L += ['\t.section .data,"dw"', '\t.p2align 2', '__delay_iat:']
+    L += ['\t.section .data,"dw"', ptralign, '__delay_iat:']
     for i, fn in enumerate(fns):
         L += [f'\t.globl {q(cfg["imp"](fn))}', f'{q(cfg["imp"](fn))}:', f'\t{ptrdir} __thunk_{i}']
     L += [f'\t{ptrdir} 0', '__delay_hmod:', f'\t{ptrdir} 0']

@@ -6,6 +6,26 @@ else()
     set(DLLTOOL_MACHINE_FLAG "")
 endif()
 
+# Real delay-load imports for llvm-mingw (sdk/tools/gen-delaylib.py). OFF
+# links every add_delay_importlibs() library as an ORDINARY import, loaded
+# eagerly: rpcrt4 then pulls wininet -> shell32 -> comctl32 into every process
+# that touches RPC, which is why a plain console winetest found comctl32
+# already loaded (user32:class). It was parked OFF for an i386 0x1E after
+# explorer spawned; that was the pushlock-wait-block bug, fixed 2026-07-05
+# and re-verified with delay-load ON on 2026-07-11. VIBEOS_NO_DELAYLOAD still
+# forces the old behaviour.
+#
+# arm64 stays OFF. With delay-load ON it links (after the 8-aligned IAT fix in
+# gen-delaylib.py) and the plain smoke reaches the desktop, but the kmtest
+# conformance media never launched its sweep: 3 of 3 boots hung in user-mode
+# bring-up, while the same tree with delay-load OFF swept 3 of 3 under the same
+# load (2026-09-24). Turn it on there once that hang is understood.
+if(ARCH STREQUAL "arm64")
+    option(VIBEOS_ENABLE_DELAYLOAD "Generate real delay-import libraries" OFF)
+else()
+    option(VIBEOS_ENABLE_DELAYLOAD "Generate real delay-import libraries" ON)
+endif()
+
 # Show a note about ccache build
 if(ENABLE_CCACHE)
     message("-- Enabling ccache build - done")
@@ -588,9 +608,9 @@ function(add_delay_importlibs _module)
         # llvm-dlltool lacks --output-delaylib; when VIBEOS_ENABLE_DELAYLOAD is set
         # we generate a real delay-import lib ourselves (sdk/tools/gen-delaylib.py,
         # used by generate_import_lib below), so delay-load works on all llvm-mingw
-        # arches. The default remains the old behaviour (empty _delayed.a + regular
-        # imports) until the i386 runtime regression is fixed. See
-        # docs/engineering/delay-import-llvm-mingw-design.md.
+        # arches. That is the default; the old behaviour (empty _delayed.a +
+        # regular imports) is kept behind VIBEOS_NO_DELAYLOAD. See
+        # docs/engineering/archive/delay-import-llvm-mingw-design.md.
         if(CMAKE_DLLTOOL_MACHINE AND (VIBEOS_NO_DELAYLOAD OR NOT VIBEOS_ENABLE_DELAYLOAD))
             target_link_libraries(${_module} lib${_basename})
         else()
@@ -1058,9 +1078,9 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     # delay-import lib ourselves: sdk/tools/gen-delaylib.py emits the descriptor + INT/IAT
     # + per-function thunk from the implib .def and clang-compiles it. The delay-load
     # runtime helper is sdk/lib/delayimp (__delayLoadHelper2). See
-    # docs/engineering/delay-import-llvm-mingw-design.md. VIBEOS_ENABLE_DELAYLOAD opts in
-    # to the generated delay libs; otherwise we keep the empty-archive +
-    # regular-import fallback while the i386 runtime regression is tracked.
+    # docs/engineering/archive/delay-import-llvm-mingw-design.md. VIBEOS_ENABLE_DELAYLOAD
+    # (default ON) selects the generated delay libs; VIBEOS_NO_DELAYLOAD keeps the
+    # empty-archive + regular-import fallback.
     if(CMAKE_DLLTOOL_MACHINE AND VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD)
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
