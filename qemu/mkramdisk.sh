@@ -718,6 +718,8 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         if [ -f "$TESTGUI32" ]; then
             echo "[*] VIBEOS_FEX=1 — staging the SysWOW64 DLL closure (i386)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            # Roots-only literal scan, NOT --library-literals: that adds ~25 MB
+            # (stripped) and this ramdisk is a fixed ${RAMDISK_SIZE_MB} MB image.
             CLOSURE=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" \
                           --build-dir "$PROJECT_DIR/build-i386" "$TESTGUI32") || {
                 echo "[!] VIBEOS_FEX=1: SysWOW64 import closure is INCOMPLETE (see above)."

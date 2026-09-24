@@ -217,3 +217,33 @@ def test_delay_imports_are_walked_like_imports(tmp_path, monkeypatch, capsys):
     del index["wininet.dll"]
     assert w.main() == 1
     assert "UNRESOLVED import wininet.dll" in capsys.readouterr().err
+
+
+def test_library_literals_follows_a_runtime_load_inside_a_library(tmp_path, monkeypatch, capsys):
+    """comctl32 LoadLibrary's msvfw32 by name; only a library-wide literal
+    scan sees it. Off by default (the arm64 ramdisk has no room), on for amd64."""
+    build = tmp_path / "build-i386"
+    build.mkdir()
+    root = build / "app.exe"
+    root.write_bytes(b"MZ")
+    cc = build / "comctl32.dll"
+    cc.write_bytes(b"MZ")
+    vfw = build / "msvfw32.dll"
+    vfw.write_bytes(b"MZ")
+    index = {"comctl32.dll": cc, "msvfw32.dll": vfw}
+    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
+    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
+    monkeypatch.setattr(
+        w, "string_referenced", lambda pe, _i: {"msvfw32.dll"} if pe == cc else set()
+    )
+    monkeypatch.setattr(w, "imports_of", lambda _o, pe: ["comctl32.dll"] if pe == root else [])
+
+    def staged(*flags):
+        monkeypatch.setattr(
+            sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build), *flags]
+        )
+        assert w.main() == 0
+        return {ln.split("\t")[0] for ln in capsys.readouterr().out.splitlines() if "\t" in ln}
+
+    assert "msvfw32.dll" not in staged()
+    assert "msvfw32.dll" in staged("--library-literals")
