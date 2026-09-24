@@ -77,7 +77,15 @@ TIMEOUT = re.compile(r"\[APITEST-SWEEP\] TIMEOUT (\S+) (\S+) \(\d+s\) - terminat
 SKIP = re.compile(r"\[APITEST-SWEEP\] SKIP (\S+) (\S+)")
 NOSUBTESTS = re.compile(r"\[APITEST-SWEEP\] NOSUBTESTS (\S+) \(exit (-?\d+)\)(.*)")
 DONE = re.compile(r"\[APITEST-SWEEP\] done (.*)")
-BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
+# Capture the ARGUMENT TUPLE, not just the stop code. 0x1E is
+# KMODE_EXCEPTION_NOT_HANDLED -- a category, not a diagnosis -- and the first
+# argument is the exception code that actually discriminates. This cost a bad
+# call: 13 quarantine entries were un-quarantined together because all were
+# recorded as "BUGCHECK 0x0000001E", on the theory that the probe-then-raw-access
+# fixes (always 0xC0000005) would clear them. powrprof's was 0xC0000047 and was
+# never a member. The tuple was in the serial the whole time; the parser threw it
+# away, so the quarantine comments could not record it.
+BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+(?:\s*\([^)]*\))?)")
 
 # Child output, already prefixed by the sweep with its suite + subtest.
 CHILD = re.compile(r"\[APITEST:(\S+) (\S+)\] (.*)")

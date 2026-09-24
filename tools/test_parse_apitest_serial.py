@@ -37,7 +37,7 @@ def test_a_subtest_that_printed_its_summary_and_THEN_crashed_is_not_OK():
         ]
     )
     results, meta = PA.parse(log)
-    assert meta["bugcheck"] == "0x0000001E"
+    assert meta["bugcheck"] == "0x0000001E (0xffffffffc0000005, 0x0, 0x0, 0x0)"
     (row,) = results
     assert row["name"] == "afd_apitest.exe send"
     assert row["status"] == "CRASH", row
@@ -208,3 +208,39 @@ def test_a_suite_that_enumerated_FINE_leaves_no_row_behind() -> None:
     )
     results, _meta = PA.parse(serial)
     assert not [r for r in results if r["name"].endswith("<enumeration>")]
+
+
+def test_the_bugcheck_ARGUMENT_TUPLE_is_preserved() -> None:
+    """0x1E is a category; the first argument is the diagnosis.
+
+    Recording only the stop code led to 13 quarantine entries being un-quarantined
+    as one batch, on the theory that they shared a cause the win32k
+    probe-then-raw-access fixes had just removed. That class is always an access
+    violation (0xC0000005). powrprof's was 0xC0000047 and never belonged; the
+    argument tuple was sitting in the serial and the parser discarded it.
+    """
+    _results, meta = PA.parse(
+        "\n".join(
+            [
+                "[APITEST-SWEEP] suite powrprof_apitest.exe subtests=1",
+                "[APITEST-SWEEP] launch powrprof_apitest.exe PowerPolicy",
+                "*** BUGCHECK: 0x0000001E (0xffffffffc0000047, 0xfffff800004c7ef7, 0x0, 0x0)",
+            ]
+        )
+    )
+    assert meta["bugcheck"] is not None
+    assert "0xffffffffc0000047" in meta["bugcheck"], meta["bugcheck"]
+
+
+def test_a_bugcheck_with_no_argument_list_still_parses() -> None:
+    """Older serials (and the truncated tail of a killed capture) have no tuple."""
+    _results, meta = PA.parse(
+        "\n".join(
+            [
+                "[APITEST-SWEEP] suite a_apitest.exe subtests=1",
+                "[APITEST-SWEEP] launch a_apitest.exe one",
+                "*** BUGCHECK: 0x0000001E",
+            ]
+        )
+    )
+    assert meta["bugcheck"] == "0x0000001E"

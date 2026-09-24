@@ -638,6 +638,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
   the probed pointer" would enumerate the rest for free, and is owed.
 
+- **`msvcrt log10(0.0)` returns a large finite negative instead of `-Inf`. OPEN**
+  (2026-09-23, found by the apitest verification sweep). Exact values, from the test's
+  own output: `log10(0.0)` and `log10(-0.0)` both return `0xffe1ccf385ebc8a0`
+  (approximately `-1.0e308`) where the expected bit pattern is `0xfff0000000000000`.
+  Both signed zeros give the identical wrong answer, so the zero case is not being
+  special-cased to infinity at all -- it looks like a finite stand-in for `-HUGE_VAL`
+  rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
+  Separate from, and simpler than, the wedge that follows it (below).
+
+- **`msvcrt_apitest log10` HANGS (120s child timeout) but does not stop the sweep.**
+  On the verification sweep it was launched, hit the sweep's 120s cap, was terminated,
+  and the sweep carried on to 229 completed subtests. So it is a hang plus the wrong
+  `log10(0)` result above, not a crasher.
+
+- **THE SELECTION CRITERION FOR THE 0x1E UN-QUARANTINE BATCH WAS TOO COARSE**
+  (2026-09-23). Commit 25c0c884afa6 un-quarantined 13 entries on the grounds that they
+  were recorded as `BUGCHECK 0x0000001E`, which is what the probe-then-raw-access class
+  produces. Round 1 of the verification sweep re-crashed at `powrprof_apitest.exe`
+  with `0x0000001E (0xffffffffc0000047, ...)` -- stop code 0x1E, but exception code
+  **0xC0000047, not 0xC0000005**. The probe-then-deref class is *always* an access
+  violation (0xC0000005); 0x1E is merely KMODE_EXCEPTION_NOT_HANDLED and says nothing
+  about which exception. So `powrprof` was never a candidate for that fix, and the
+  quarantine file's habit of recording "BUGCHECK 0x0000001E" without the argument list
+  is what made the batch look homogeneous when it is not.
+  **Fix the record, not just this entry:** quarantine comments should carry the full
+  bugcheck argument tuple, because the first argument is the discriminator and the stop
+  code alone is a category containing everything.
+
 - **`user32_apitest GetUserObjectInformation` triggers BUGCHECK 0xF4
   (CRITICAL_OBJECT_TERMINATION). OPEN** (2026-09-23). `P4 = ntoskrnl.exe+0x198FF0`. A
   critical process died; distinct from the ScrollDC crash above in both bugcheck class and
