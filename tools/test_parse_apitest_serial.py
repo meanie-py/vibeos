@@ -244,3 +244,66 @@ def test_a_bugcheck_with_no_argument_list_still_parses() -> None:
         )
     )
     assert meta["bugcheck"] == "0x0000001E"
+
+
+def test_a_SINGULAR_failure_summary_is_parsed() -> None:
+    """wine/test.h pluralises: one failing assertion prints "1 failure)".
+
+    Requiring "failures)" left the row at its initial NO-END, threw away the counts,
+    and NO-END is in the ratchet's BAD set — so a perfectly ordinary
+    one-assertion-failed result was scored as broken. 14 of 31 NO-END rows in the
+    first verification sweep were this, across advapi32/gdi32/msvcrt and others.
+    """
+    _results, _meta = None, None
+    results, _meta = PA.parse(
+        "\n".join(
+            [
+                "[APITEST-SWEEP] suite advapi32_apitest.exe subtests=1",
+                "[APITEST-SWEEP] launch advapi32_apitest.exe RegOpenKeyExW",
+                "[APITEST:advapi32_apitest.exe RegOpenKeyExW] RegOpenKeyExW: 5 tests "
+                "executed (0 marked as todo, 1 failure), 0 skipped.",
+                "[APITEST-SWEEP] exit advapi32_apitest.exe RegOpenKeyExW code=1",
+            ]
+        )
+    )
+    (row,) = results
+    assert row["status"] == "FAIL-EXIT", row
+    assert row["pass"] == 4, row
+    assert row["fail"] == 1, row
+
+
+def test_a_SINGULAR_test_executed_summary_is_parsed() -> None:
+    """Same pluralisation trap on the other count: "1 test executed"."""
+    results, _meta = PA.parse(
+        "\n".join(
+            [
+                "[APITEST-SWEEP] suite a_apitest.exe subtests=1",
+                "[APITEST-SWEEP] launch a_apitest.exe one",
+                "[APITEST:a_apitest.exe one] one: 1 test executed "
+                "(0 marked as todo, 0 failures), 0 skipped.",
+                "[APITEST-SWEEP] exit a_apitest.exe one code=0",
+            ]
+        )
+    )
+    (row,) = results
+    assert row["status"] == "OK", row
+    assert row["pass"] == 1, row
+
+
+def test_no_summary_at_all_is_still_NO_END() -> None:
+    """The 17 rows the pluralisation fix does NOT explain.
+
+    They exit 0x80 having printed no summary line, so the sweep genuinely never saw
+    one. NO-END is the right verdict and must survive the fix above.
+    """
+    results, _meta = PA.parse(
+        "\n".join(
+            [
+                "[APITEST-SWEEP] suite gdi32_apitest.exe subtests=1",
+                "[APITEST-SWEEP] launch gdi32_apitest.exe GetObject",
+                "[APITEST-SWEEP] exit gdi32_apitest.exe GetObject code=128",
+            ]
+        )
+    )
+    (row,) = results
+    assert row["status"] == "NO-END", row

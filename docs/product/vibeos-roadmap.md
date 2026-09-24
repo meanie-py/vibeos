@@ -647,6 +647,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
 
+- **The apitest parser scored 14 real results as broken, because wine/test.h
+  PLURALISES. FIXED 2026-09-23.** `SUMMARY` required `(\d+) failures\)`, so a subtest
+  with exactly one failing assertion prints `1 failure)` and matched nothing. The row
+  then kept its initial `NO-END` status, its pass/fail counts were discarded, and
+  `NO-END` is in the ratchet's BAD set — so an entirely ordinary
+  one-assertion-failed result read as a broken subtest. Measured on the first
+  verification sweep: `NO-END` 31 → 17, `FAIL-EXIT` 76 → 90, and 65,324 passing
+  assertions became visible that had been thrown away. **This one would have poisoned
+  the baseline**: the floor is a SET OF ASSERTION IDENTITIES, so banking it would have
+  omitted 14 subtests' identities permanently and silently. `1 test executed` has the
+  same trap and is covered too. The remaining 17 `NO-END` rows are genuine — they exit
+  0x80 having printed no summary at all — and are a separate open question.
+
 - **`msvcrt_apitest log10` HANGS (120s child timeout) but does not stop the sweep.**
   On the verification sweep it was launched, hit the sweep's 120s cap, was terminated,
   and the sweep carried on to 229 completed subtests. So it is a hang plus the wrong

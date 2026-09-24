@@ -89,8 +89,14 @@ BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+(?:\s*\([^)]*\))?)")
 
 # Child output, already prefixed by the sweep with its suite + subtest.
 CHILD = re.compile(r"\[APITEST:(\S+) (\S+)\] (.*)")
+# wine/test.h PLURALISES its counts, so a subtest with exactly one failing
+# assertion prints "1 failure)" and one with a single case prints "1 test executed".
+# Requiring the plural silently dropped every such summary: the row kept its
+# initial NO-END status, its pass/fail counts were lost, and NO-END is in the
+# ratchet's BAD set -- so 14 of round 1's 31 NO-END rows were real results scored
+# as broken. (The other 17 are genuine: exit 0x80 with no summary line at all.)
 SUMMARY = re.compile(
-    r"^\S+: (\d+) tests executed \((\d+) marked as todo, (\d+) failures\), (\d+) skipped\."
+    r"^\S+: (\d+) tests? executed \((\d+) marked as todo, (\d+) failures?\), (\d+) skipped\."
 )
 ASSERT_FAIL = re.compile(r"^(\S+\.(?:c|cpp|h):\d+): Test failed:")
 
