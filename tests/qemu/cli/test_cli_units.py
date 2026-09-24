@@ -4728,6 +4728,32 @@ def test_soak_does_NOT_abort_on_isolated_no_launch_rounds(monkeypatch):
     assert ran == 8, f"isolated no-launch rounds must not end the soak, ran {ran}"
 
 
+def test_soak_aborts_when_its_build_round_fails(monkeypatch):
+    # Only round 1 builds; later rounds set no_build. A failed build used to
+    # carry on, so rounds 2..N booted the PREVIOUS media and banked its
+    # bugchecks as measurements of a kernel fix that was never built.
+    calls = {"n": 0}
+    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
+
+    def fake_once(args, repo):
+        calls["n"] += 1
+        if not args.no_build:
+            return 1  # build failed: no round recorded
+        conformance_mod._ROUNDS.append({"shape": "A:bugcheck", "launched": 0})
+        return 1
+
+    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
+
+    class A:
+        arch = "arm64"
+        no_build = False
+        repeat = 3
+
+    conformance_mod.conformance(A(), Path("/nonexistent"))
+    assert calls["n"] == 1, "rounds after a failed build boot stale media"
+    assert conformance_mod._ROUNDS == []
+
+
 def test_conformance_parser_detects_crash_regression(tmp_path):
     parser = conformance_mod._load_parser(_conf_repo_root())
     log = (

@@ -407,17 +407,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `SwitchDesktop OK` in 33s, **0 `BAD gate` hits** (§9.13/§9.24 fixed the family). **Now-
   actionable follow-on:** flip `VIBEOS_ENABLE_DELAYLOAD` default ON in `sdk/cmake/gcc.cmake`,
   ×3-gate, delete the arm64 `arm64_*_stubs.c` optional-DLL hacks. *(archive/delay-import-llvm-mingw-roadmap)*
-  **Flipped on i386/amd64, 2026-09-24:** `VIBEOS_ENABLE_DELAYLOAD` is now an option
-  defaulting ON there. The WoW64 `user32:class` found the eager loads, which put comctl32 in
-  every RPC-using process. **arm64 is still OFF, and that is OPEN.** It links (after an
-  8-aligned IAT in `gen-delaylib.py`) and smokes to the desktop. Under matched load (arm64
-  ×3 alongside i386 ×3), though, its kmtest-media boots never launched the sweep: 3/3 hung
-  in user-mode bring-up (TDI self-tests timing out, threads parked), while delay-load OFF
-  swept 3/3. The bugchecks (`0xE3`, `0x1E`) seen in full-gate first passes are NOT evidence
-  either way, because they also hit with delay-load OFF (#43/#39, load-sensitive).
-  Repro: `cmake -DVIBEOS_ENABLE_DELAYLOAD=ON` in build-arm64, then
-  `vibeos-cli conformance --arch arm64 --repeat 3`. The arm64 `arm64_*_stubs.c` deletion
-  waits on it.
+  **Flipped on all three arches, 2026-09-24:** `VIBEOS_ENABLE_DELAYLOAD` is now an option
+  defaulting ON. The WoW64 `user32:class` found the eager loads, which put comctl32 in every
+  RPC-using process. arm64 needed an 8-aligned IAT in `gen-delaylib.py`, then exposed #43
+  (below), which it was held OFF for until that was fixed. The arm64 `arm64_*_stubs.c`
+  optional-DLL deletion is still owed.
 - [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
   wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
   TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a
@@ -2005,8 +1999,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   propose more soak rounds as a precondition for anything here.** Two narrow signatures in
   `triage.KNOWN_FLAKES` make the gate retry these once (~1-in-42 → ~1-in-3200 disruption);
   across all 1375 MP rounds `0x1E` and `0xE3` are the only codes that have ever appeared, so
-  the pair is exhaustive, not merely sufficient. **#39 (arm64 `0x1E`) and #43 (`0xE3`) stay
-  OPEN and owed** — the flake registry is a licence to keep working, not to stop looking, and
+  the pair is exhaustive, not merely sufficient. **#43 (`0xE3`) FIXED 2026-09-24**: fastfat's
+  C shim tested `IRP_CONTEXT_FLAG_DISABLE_DIRTY` (0x1) as the WAIT bit, so FCB acquires ran
+  non-blocking and `FatCommonCleanup` released a page fault's FCB lock; field manual, "0xE3
+  RESOURCE_NOT_OWNED (#43) was a fastfat shim". Measured with delay-load ON (which made it
+  hit 4 in 5 kmtest boots): 10/10 clean after. **#39 (arm64 `0x1E`) stays OPEN**: one
+  capture's stack ran through `ExReleaseResourceForThreadLite` under `NtFlushKey`, so it may
+  be the same corruption; re-measure before assuming. The two stay
+  OPEN and owed until measured — the flake registry is a licence to keep working, not to stop looking, and
   each entry retires when its root fix lands and a re-gate shows the signature gone.
 
 - **No scanner catches a C `ASSERT` that VANISHES in translation — CLOSED (2026-09-06) by
