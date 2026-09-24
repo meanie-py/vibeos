@@ -782,8 +782,28 @@ a single investigation rather than a dozen bugs.
   box freezing inside a debug print. Also ambient: 15 of 20 BUGCHECK rounds end the same way. It
   is how the capture ends when the VM is killed with the serial buffer mid-flush.
 
-Both were checked precisely because they looked conclusive. The generalisable bit: a signature
+- **Leftover `WineTestService` registrations being restarted by services.exe.**
+  `advapi32_apitest ServiceArgs` registers services, and several wedge tails show
+  `ScmStartUserModeService(WineTestServiceNNNNN)` cycling long after advapi32 finished --
+  which reads like a service-restart storm strangling the box. Counted across all 42
+  archived serials as matches in the last 300 lines, split by outcome:
+
+      CRASH: 0 0 0 0 0 0 4 6 7 14 21 21 21 23 27 27 27 27 27 27 30 38 39 41
+      WEDGE: 0 0 0 21 21 21 21 27 27 27 27 27 27 27 30 35 48 48
+
+  Same distribution, zeros in both. No discrimination.
+
+Each was checked precisely because it looked conclusive. The generalisable bit: a signature
 found by staring at failing logs means nothing until it has been counted in the PASSING ones too.
+
+**And there is a structural reason all three failed the same way.** A serial here is 20-45
+minutes of a busy multi-process OS, so nearly any subsystem message appears *somewhere* in
+every one of them. Selecting a signature out of a failing tail selects on PRESENCE, and at
+this log volume presence is close to universal. Only two kinds of signal can discriminate:
+one tied to the specific transition under investigation -- the `launch`/`exit`/`TIMEOUT`
+pairing, which is per-subtest by construction -- or one whose absence from healthy runs is
+guaranteed rather than merely observed. Stop looking for a message; look for a pairing, or
+run the isolated boot.
 
 **What is actually known, and it is the same two facts as before:** the sweep's own 120s
 per-subtest timeout never fires, so the sweep — an ordinary user-mode process — is not running
