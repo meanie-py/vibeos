@@ -695,3 +695,8 @@
 @ stdcall NtUserSetDbgTagCount(long)
 @ stdcall NtUserSetRipFlags(long)
 @ stdcall NtUserSetScrollBarInfo(long long long)
+# Appended, not placed alphabetically: spec2def numbers exports sequentially,
+# so an insertion mid-file would renumber every later ordinal. wow64.dll needs
+# the *Ptr setters to carry a full 64-bit window/class proc (wow64_pfnmap.c).
+@ stdcall -arch=win64 NtUserSetClassLongPtr(ptr long ptr long)
+@ stdcall -arch=win64 NtUserSetWindowLongPtr(ptr long ptr long)

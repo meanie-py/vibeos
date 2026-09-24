@@ -252,15 +252,11 @@ unsafe fn strlenW(mut s: *const WCHAR) -> usize {
 /// `(WNDPROC)(*(((ULONG_PTR *)&gpsi->apfnClientX) + (fnid - FNID_FIRST)))`.
 #[inline]
 unsafe fn GETPFNCLIENTA(fnid: DWORD) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientA) as *const ULONG_PTR;
-    let p = *base.add((fnid - FNID_FIRST) as usize);
-    core::mem::transmute::<ULONG_PTR, WNDPROC>(p)
+    crate::wow64::psi::pfn_client_a(fnid as usize)
 }
 #[inline]
 unsafe fn GETPFNCLIENTW(fnid: DWORD) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientW) as *const ULONG_PTR;
-    let p = *base.add((fnid - FNID_FIRST) as usize);
-    core::mem::transmute::<ULONG_PTR, WNDPROC>(p)
+    crate::wow64::psi::pfn_client_w(fnid as usize)
 }
 /// user_x.h `ISITHOOKED(HookId)` — checks thread + desktop hook bitmasks.
 #[inline]

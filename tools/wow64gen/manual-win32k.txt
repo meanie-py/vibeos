@@ -180,3 +180,21 @@ NtUserSendInput
 # MENUINFO size class is marshalled here; anything larger goes to the kernel on
 # the guest's own pointer, exactly as before, and the kernel decides.
 NtUserThunkedMenuInfo
+
+# Window/class procs crossing into the kernel (wow64_pfnmap.c). win32k keeps
+# the 64-bit user32's apfnClientA/W as the system procs and picks an ANSI
+# window's A proc by comparing against them. So a guest system proc must be
+# swapped for the host's in the same slot going in, and a host proc coming back
+# must be swapped for the guest's, or the guest calls a truncated 64-bit
+# address. GWL_WNDPROC/GCL_WNDPROC go through the *Ptr entry points, since the
+# 32-bit ones narrow the value and an unmapped high half cannot be recovered.
+# Unlisted, the flat thunk returned the host's ButtonWndProcW narrowed to
+# 0xb2057640, and user32:class executed it.
+NtUserSetWindowLong
+NtUserSetClassLong
+NtUserGetCPD
+
+# NtUserBuildPropList — PROPLISTITEM {ATOM; HANDLE} is 8 bytes in the guest and
+# 16 on the host, and the size-only call reports bytes of HOST items. Flat, the
+# guest's EnumProps* walked a 16-byte array at an 8-byte stride.
+NtUserBuildPropList

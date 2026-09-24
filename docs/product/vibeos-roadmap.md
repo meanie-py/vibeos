@@ -786,28 +786,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **The 50 ms `KeDelayExecutionThread` in `co_IntInitializeDesktopGraphics` is REMOVED.**
     It was a March workaround for a race fixed since; 12 boots passed without it.
 
-- **WoW64 guest user32 reads the 64-bit `SERVERINFO` with its 32-bit layout — OPEN
-  (2026-09-23).** The first real conformance suite to run under WoW64 found this. The guest
-  `user32:class` dies with an execute AV. Against the native i386 control (same binary),
-  12 failures are shared (our user32), and one cluster is guest-only: window-proc A/W
-  handling, class.c:723–776. Causes:
-  1. `CALLPROCDATA` had no 32-bit view in `user32-rust/src/wow64.rs`, so
-     `CallWindowProcA/W` on a CPD handle called `pfnClientPrevious` read from the wrong
-     offset. FIXED: `normalize_cpd` plus a TYPE_CALLPROC branch in `ValidateHandle`. The
-     suite then got through five more control classes.
-  2. **Still open, and the root of the rest.** `gpsi` is `gSharedInfo.psi`, which is the
-     kernel's 64-bit SERVERINFO, and nothing normalizes it. The guest's
-     `GETPFNCLIENTA/W`/`GETPFNSERVER` therefore read garbage. Separately, win32k stores
-     the 64-bit user32's `apfnClient*` as built-in class procs, because the guest's 32-bit
-     pfn arrays are deliberately not registered (`wow64_manual.c`,
-     `NtUserInitializeClientPfnArrays`). A guest reading a built-in class's proc gets a
-     truncated host address and calls it (`eip=b2041ac0`, Edit).
-  Fix shape: a normalized SERVERINFO view (decide how its dynamic fields are refreshed), and
-  map every 64-bit `apfnClientA/W` entry to the guest's own `pfnClientA/W` slot, keyed by
-  index, wherever a WND/CLS/CPD proc is normalized. Repro: amd64 media with
-  `build-fex-hello` guests and an i386 `--rostests` user32_winetest, then
+- **WoW64 guest user32 read 64-bit shared structures with its 32-bit layout — FIXED
+  2026-09-24; 17 guest-only `user32:class` failures remain OPEN.** The first real conformance
+  suite under WoW64 found this. The guest `user32:class` used to die with an execute AV
+  after ~1.4 KB of output. It now runs to the same ending as the native i386 control (the
+  read-only-TEMP 0xc0150010) with no faults. Fixed:
+  1. **`gpsi` was never normalized.** Every read after `dwSRVIFlags` (offset 0 in both
+     layouts) was misplaced: system metrics, colours, brushes, icons, event-hook bits, the
+     class-proc tables. `wow64.rs` now has `ServerInfo64` with 64-bit layout guards and a
+     `psi` accessor module that reads it live. There is no snapshot, because several fields
+     change at runtime. Every guest call site goes through it.
+  2. **Host class procs reached the guest.** win32k keeps the 64-bit user32's
+     `apfnClientA/W` as the system procs. Such a proc is now swapped for the guest's proc
+     in the same PFNCLIENT slot wherever one crosses over: the WND/CLS/CPD normalizers, the
+     WINDOWPROC callback, and GetClassInfo. The guest's procs are swapped back going in:
+     RegisterClassExWOW, and new manual SetWindowLong/SetClassLong(WNDPROC) and GetCPD
+     thunks (`dll/win32/wow64/wow64_pfnmap.c`).
+  3. **win32k refused `SetWindowLong(GWL_WNDPROC)` from every WoW64 caller**, even through
+     the Ptr entry point. It compared the op size to `sizeof(LONG)` rather than to the
+     caller's pointer size (`UserCallerPtrSize()`). No 32-bit app could subclass a window.
+  4. `CALLPROCDATA`, `PROPERTY` (client-side `GetProp`), and `NtUserBuildPropList`'s
+     `PROPLISTITEM` had no 32-bit shape. comctl32's IP-address control crashed on the
+     NULL `GetProp` returned once subclassing started working.
+  Still OPEN, guest-only against the native control:
+  - class icons (class.c:1190–1219, `hIconSm` / `GetClassLong(GCL_HICONSM)`);
+  - comctl32 already loaded in the guest (1292–1346, 1632/1643);
+  - DefWindowProc A/W identity (719, 731/732);
+  - ScrollBar WM_GETTEXT A/A and W/A (774/778).
+  Repro: amd64 media with `build-fex-hello` guests and an i386 `--rostests`
+  user32_winetest, then
   `smoke --arch amd64 --until "[WT] user32:class: exit" --fail-on "user32:class: CRASHED"`.
-  Evidence: `/tmp/vibeos-cli/20260923-230341-b_c8y3fi-smoke-amd64/boot0/serial.log`.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not

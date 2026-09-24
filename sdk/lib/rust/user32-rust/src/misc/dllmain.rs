@@ -50,13 +50,6 @@ fn NtCurrentProcess() -> HANDLE {
     -1isize as HANDLE
 }
 
-// `gpsi->PERUSERSERVERINFO` accessor — bindgen flattened the anon-embedded
-// `_PERUSERSERVERINFO` into the tail padding of `tagSERVERINFO` (mirrors
-// internal::gpsi_perusr, but over THIS module's `gpsi`).
-#[inline]
-unsafe fn gpsi_perusr() -> *const _PERUSERSERVERINFO {
-    core::ptr::addr_of!((*gpsi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
-}
 
 // user32 imm dispatch table + helpers owned by misc/imm.rs.
 use crate::misc::imm::{ghImm32, gImmApiEntries, InitializeImmEntryTable};
@@ -770,7 +763,7 @@ pub unsafe extern "system" fn User32CallSetWndIconsFromKernel(
 ) -> NTSTATUS {
     let Common: PSETWNDICONS_CALLBACK_ARGUMENTS = Arguments as PSETWNDICONS_CALLBACK_ARGUMENTS;
 
-    if gpsi.is_null() || (*gpsi_perusr()).hIconSmWindows.is_null() {
+    if gpsi.is_null() || crate::wow64::psi::hicon_sm_windows().is_null() {
         (*Common).hIconSample = LoadImageW(
             0 as HINSTANCE,
             IDI_APPLICATION,

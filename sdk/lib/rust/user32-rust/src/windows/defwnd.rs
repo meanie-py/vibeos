@@ -18,7 +18,7 @@
 //!     ported locally below.
 //!   - `gpsi->argbSystem/ahbrSystem/hbrGray` live in the anonymously-embedded
 //!     PERUSERSERVERINFO, which bindgen flattened into the tail `__bindgen_padding_0` of
-//!     tagSERVERINFO; accessed via `gpsi_perusr()` below.
+//!     tagSERVERINFO; read through `crate::wow64::psi`, which is WoW64-aware.
 
 use crate::internal::{
     guah, BeginIfHookedUserApiHook, EndUserApiHook, LoadUserApiHook, NtCurrentTeb, ValidateHwnd,
@@ -256,12 +256,6 @@ unsafe fn ISITHOOKED(HookId: INT) -> BOOL {
     FALSE
 }
 
-/// gpsi->PERUSERSERVERINFO accessor. The anon-embedded PERUSERSERVERINFO sits at the
-/// tail of tagSERVERINFO where bindgen emitted `__bindgen_padding_0`.
-#[inline]
-unsafe fn gpsi_perusr() -> *const _PERUSERSERVERINFO {
-    core::ptr::addr_of!((*gpsi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
-}
 
 // --- WinAPI message/word helper macros (windef.h / winuser.h) ---
 #[inline]
@@ -334,7 +328,7 @@ const IDI_APPLICATION_ID: WORD = 32512;
 #[no_mangle]
 pub unsafe extern "system" fn GetSysColor(nIndex: INT) -> COLORREF {
     if nIndex >= 0 && nIndex < NUM_SYSCOLORS as INT && !gpsi.is_null() {
-        return (*gpsi_perusr()).argbSystem[nIndex as usize];
+        return crate::wow64::psi::sys_color(nIndex as usize);
     }
     SetLastError(ERROR_INVALID_PARAMETER);
     0
@@ -343,7 +337,7 @@ pub unsafe extern "system" fn GetSysColor(nIndex: INT) -> COLORREF {
 #[no_mangle]
 pub unsafe extern "system" fn GetSysColorBrush(nIndex: INT) -> HBRUSH {
     if nIndex >= 0 && nIndex < NUM_SYSCOLORS as INT && !gpsi.is_null() {
-        return (*gpsi_perusr()).ahbrSystem[nIndex as usize];
+        return crate::wow64::psi::sys_color_brush(nIndex as usize);
     }
     core::ptr::null_mut()
 }
@@ -559,7 +553,7 @@ pub unsafe extern "C" fn DefWndControlColor(hDC: HDC, ctlType: UINT) -> HBRUSH {
 
         if bk == GetSysColor(COLOR_WINDOW as INT) {
             return if !gpsi.is_null() {
-                (*gpsi_perusr()).hbrGray
+                crate::wow64::psi::hbr_gray()
             } else {
                 core::ptr::null_mut()
             };
@@ -635,10 +629,10 @@ unsafe fn DefWndGetIcon_impl(pWnd: PWND, wParam: WPARAM, _lParam: LPARAM) -> LRE
     }
     match wParam {
         x if x == ICON_BIG as WPARAM => {
-            hIconRet = UserGetProp(UserHMGetHandle(pWnd), (*gpsi).atomIconProp, TRUE as BOOLEAN) as HICON;
+            hIconRet = UserGetProp(UserHMGetHandle(pWnd), crate::wow64::psi::atom_icon_prop(), TRUE as BOOLEAN) as HICON;
         }
         x if x == ICON_SMALL as WPARAM || x == ICON_SMALL2 as WPARAM => {
-            hIconRet = UserGetProp(UserHMGetHandle(pWnd), (*gpsi).atomIconSmProp, TRUE as BOOLEAN) as HICON;
+            hIconRet = UserGetProp(UserHMGetHandle(pWnd), crate::wow64::psi::atom_icon_sm_prop(), TRUE as BOOLEAN) as HICON;
         }
         _ => {}
     }

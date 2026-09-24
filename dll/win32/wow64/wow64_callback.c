@@ -263,6 +263,7 @@ typedef struct _WOW64_WINDOWPOS32 {
  * or they are silently dropped (the pre-M11 behaviour — the return path restored
  * the payload from the kernel's original buffer unconditionally). */
 #include "wow64_cb_automarshal.h"   /* M18: generated payload marshallers */
+#include "wow64_pfnmap.h"
 
 #define WOW64_WM_COPYDATA         0x004A
 #define WOW64_WM_GETMINMAXINFO    0x0024
@@ -430,7 +431,7 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                     break;
                 }
                 Frame.Msg = A64->Msg; /* the return path repacks OUT payloads by msg */
-                A32->Proc = (ULONG)A64->Proc;
+                A32->Proc = Wow64pMapClientProc(A64->Proc);
                 A32->IsAnsiProc = A64->IsAnsiProc;
                 A32->Wnd = (ULONG)A64->Wnd;
                 A32->Msg = A64->Msg;
