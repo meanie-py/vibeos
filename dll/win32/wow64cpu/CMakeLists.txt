@@ -145,6 +145,10 @@ if(_wow64_guest_ok)
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386
                 --include-prestaged --no-strip
+                # Follow LoadLibrary targets named inside staged libraries too
+                # (comctl32 -> msvfw32 for the Animate control). The livecd has
+                # room; see string_referenced in the tool for the measurement.
+                --library-literals
                 # Every guest we STAGE is also a closure root. It was not always so:
                 # the roots were the stock applets, and a ladder guest's imports were
                 # covered only because some applet happened to import the same DLLs.

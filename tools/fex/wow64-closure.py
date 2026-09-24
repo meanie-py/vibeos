@@ -219,11 +219,15 @@ def string_referenced(pe: Path, index: dict) -> set:
     returns NULL does not announce itself the way a missing import does, so
     this class is quieter than the one the closure was built for.
 
-    Scanned for ROOTS ONLY, deliberately. Running it over the whole closure
-    admits 69 further modules (measured): shell32 alone names every control
-    panel applet, ieframe and opengl32 it can ever launch, and a string mention
-    inside a library is far weaker evidence than one inside a binary we chose
-    to stage and run. Roots are exactly the guests we elected to boot.
+    By default only ROOTS are scanned: shell32 alone names every control panel
+    applet it can launch, so scanning libraries admits ~90 more modules. But a
+    library's own runtime loads are real too: comctl32's Animate control
+    LoadLibrary's msvfw32.dll at create time, and with msvfw32 unstaged every
+    guest SysAnimate32 window failed to create (user32:class). So
+    --library-literals scans every staged module. It costs ~25 MB STRIPPED
+    (70 vs 45 MB, 180 modules, all resolvable, measured 2026-09-24), which the
+    amd64 livecd takes. The arm64 FEX ramdisk is a fixed 140 MB image and stays
+    roots-only.
 
     Both encodings are scanned because these literals are usually UTF-16. A
     literal can abut its neighbour in the string pool with no separator
@@ -342,6 +346,12 @@ def main() -> int:
         "(for consumers with their own strip step, e.g. the amd64 livecd flow, "
         "where the hashed names would go stale across i386 rebuilds)",
     )
+    ap.add_argument(
+        "--library-literals",
+        action="store_true",
+        help="also follow module names that appear as string literals in every "
+        "staged LIBRARY, not just the roots (see string_referenced)",
+    )
     args = ap.parse_args()
 
     project_dir = Path(__file__).resolve().parent.parent.parent
@@ -411,7 +421,10 @@ def main() -> int:
 
     while stack:
         cur = stack.pop()
-        for dep in imports_of(objdump, cur) + delay_imports_of(cur):
+        deps = imports_of(objdump, cur) + delay_imports_of(cur)
+        if args.library_literals:
+            deps += sorted(string_referenced(cur, index))
+        for dep in deps:
             admit(dep, cur.name)
             # A runtime loader drags in its targets whenever it enters the
             # closure, including when it entered as somebody else's import.

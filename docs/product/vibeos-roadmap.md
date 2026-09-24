@@ -903,7 +903,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     It was a March workaround for a race fixed since; 12 boots passed without it.
 
 - **WoW64 guest user32 read 64-bit shared structures with its 32-bit layout — FIXED
-  2026-09-24; 1 guest-only `user32:class` failure remains OPEN.** The first real conformance
+  2026-09-24; guest `user32:class` now fails exactly what the native control fails.** The first real conformance
   suite under WoW64 found this. The guest `user32:class` used to die with an execute AV
   after ~1.4 KB of output. It now runs to the same ending as the native i386 control (the
   read-only-TEMP 0xc0150010) with no faults. Fixed:
@@ -939,11 +939,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
      (1292–1346, 1632/1643). The native run's
      "comctl32 not loaded" failures (1315/1322) are shared now.
   Still OPEN, guest-only:
-  - `SysAnimate32` window creation (class.c:1357). Animate `LoadLibrary`s `msvfw32.dll` at
-    create time, and the syswow64 closure does not stage it. It is a literal inside a
-    library, and `wow64-closure.py` scans literals in roots only, by design: a library-wide
-    scan admits ~90 more modules (82 → 145 MB unstripped, measured). Choosing between the
-    wider scan and a declared edge is owed.
+  - ~~`SysAnimate32` window creation (class.c:1357)~~ FIXED 2026-09-24. Animate
+    `LoadLibrary`s `msvfw32.dll`, a literal inside comctl32 that the roots-only literal scan
+    missed. The amd64 livecd now passes `wow64-closure.py --library-literals`: 180 modules,
+    +25 MB stripped, ISO 295 → 334 MB. The guest failure list is now IDENTICAL to the native
+    control's. The arm64 FEX ramdisk (fixed 140 MB) stays roots-only.
   Also fixed with it: amd64 media had staged only amd64 `winsxs` assemblies, so the guest's
   comctl32 failed `CreateActCtxW` for both of its manifests. The x86 common-controls
   assemblies are now staged beside syswow64 (`dll/win32/wow64cpu/CMakeLists.txt`).
