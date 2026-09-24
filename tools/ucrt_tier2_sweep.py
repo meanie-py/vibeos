@@ -62,16 +62,46 @@ def run_shard(arch: str, k: int, n: int, budget_ms: int, dry_run: bool) -> str:
     if dry_run:
         print(f"  would run: UCRTDIFF_SHARD={k}/{n} {' '.join(build)}")
         return ""
+    run_dir = None
     for cmd in (build, media, smoke):
         e = dict(env, VIBEOS_PAYLOAD="ucrtdiff") if cmd is media else env
         # The smoke verb exits non-zero on a payload FAIL, which for a sharded
         # sweep is information, not a reason to stop: collect the log either way.
-        subprocess.run(cmd, cwd=ROOT, env=e, check=(cmd is not smoke))
-    runs = sorted(Path("/tmp/vibeos-cli").glob(f"*-smoke-{arch}"), key=lambda p: p.stat().st_mtime)
-    if not runs:
-        raise SystemExit(f"shard {k}/{n}: no artifact dir under /tmp/vibeos-cli")
-    log = runs[-1] / "full.log"
-    return log.read_text(errors="replace") if log.exists() else ""
+        proc = subprocess.run(
+            cmd, cwd=ROOT, env=e, check=(cmd is not smoke), capture_output=True, text=True
+        )
+        # stderr too, always: the generator announces the QUARANTINE list there, and
+        # a failing stage explains itself there.
+        out = (proc.stdout or "") + (proc.stderr or "")
+        print(out, end="")
+        if cmd is smoke:
+            # Take the artifact dir the CLI REPORTS, never the newest one matching a
+            # glob. Other sessions run arm64 smokes concurrently -- three foreign dirs
+            # appeared inside five minutes during one sweep -- and an mtime pick
+            # silently attributes THEIR boot to THIS shard. That is how shard 4 came
+            # back "0 exports graded" from a run it never launched.
+            m = re.search(r"(/tmp/vibeos-cli/\S*-smoke-\S+)/full\.log", out)
+            if m:
+                run_dir = Path(m.group(1))
+    if run_dir is None:
+        raise SystemExit(
+            f"shard {k}/{n}: the smoke verb never reported its artifact dir; refusing "
+            f"to guess one by mtime (a foreign run would be scored as this shard)"
+        )
+    # The harness writes to the kernel debug serial, so its rows are in the SERIAL log,
+    # never in full.log (which holds the CLI's own stage output). Reading full.log here
+    # returned zero rows for every shard and would have reported a clean sweep as an
+    # empty one. `serial.log` is the drained capture the payload gate asserts against;
+    # `boot0/serial.log` is the live tail, which can be partial -- so prefer whichever
+    # actually carries more rows rather than assuming either.
+    best = ""
+    for cand in (run_dir / "serial.log", run_dir / "boot0" / "serial.log"):
+        if not cand.exists():
+            continue
+        text = cand.read_text(errors="replace")
+        if text.count("[UCRTDIFF] EXPORT") >= best.count("[UCRTDIFF] EXPORT"):
+            best = text
+    return best
 
 
 def main(argv: list[str] | None = None) -> int:
