@@ -972,6 +972,44 @@ pub unsafe extern "system" fn KiDispatchException(
             return;
         }
 
+        // 3rd strike, kill the process. This is the C's DPRINT1, which the
+        // translation dropped. Without it an unhandled user exception in csrss
+        // surfaced only as an anonymous BUGCHECK 0xF4 two frames later.
+        {
+            extern "system" {
+                fn PsGetCurrentProcess() -> *mut core::ffi::c_void;
+                fn PsGetProcessImageFileName(p: *mut core::ffi::c_void) -> *const u8;
+                fn PsGetProcessSectionBaseAddress(p: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+            }
+            crate::dbg_print!(
+                b"Kill %.16s, ExceptionCode: %lx, ExceptionAddress: %p, BaseAddress: %p, P0: %lx, P1: %lx\n\0",
+                PsGetProcessImageFileName(PsGetCurrentProcess()),
+                (*ExceptionRecord).ExceptionCode as u32,
+                (*ExceptionRecord).ExceptionAddress,
+                PsGetProcessSectionBaseAddress(PsGetCurrentProcess()),
+                (*ExceptionRecord).ExceptionInformation[0] as u32,
+                (*ExceptionRecord).ExceptionInformation[1] as u32,
+            );
+            // Bounded EBP-chain walk of the faulting user stack (we are in that
+            // process's context), so the report names callers, not just the PC.
+            let mut ebp = (*TrapFrame).Ebp as usize;
+            let mut n = 0;
+            while n < 10
+                && ebp != 0
+                && ebp < 0x7FFF_0000
+                && crate::ARM3::mmsup::MmIsAddressValid(ebp as _) != 0
+                && crate::ARM3::mmsup::MmIsAddressValid((ebp + 4) as _) != 0
+            {
+                let ret = *((ebp + 4) as *const usize);
+                crate::dbg_print!(b"  Kill: caller ret=%p\n\0", ret as *const u8);
+                let next = *(ebp as *const usize);
+                if next <= ebp {
+                    break;
+                }
+                ebp = next;
+                n += 1;
+            }
+        }
         ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode as NTSTATUS);
         KeBugCheckEx(
             KMODE_EXCEPTION_NOT_HANDLED,

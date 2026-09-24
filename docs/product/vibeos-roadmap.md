@@ -30,16 +30,15 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
 - **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
-  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug —
-  that pointer was wrong and was removed 2026-09-06.** The reasoning was that `_USE_DUMMY_PSEH`
-  compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon `KeUserModeCallback`, so
-  resolving DUMMY_PSEH would let it run. It would not. That function is already Rust
-  (`win32k-rust/src/winsta.rs`), where no C `#if` reaches it, and the block is still skipped
-  deliberately: it runs on the **system desktop thread**, whose process has no
-  `KernelCallbackTable`, so the user-mode callback cannot be made there at all — letting it run
-  is what produced the i386 "Sending to Suspended Thread" hang. The constraint is the thread,
-  not the SEH shape, and it survives DUMMY_PSEH resolution untouched. Judge this item on code
-  shape alone.
+  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug.**
+  **Update 2026-09-23:** the cursor/icon block this note defended skipping now runs where
+  upstream runs it (`co_IntInitializeDesktopGraphics`), on all arches. The skip was ours
+  (`5802b15ed60`, 2026-03), not a C `_USE_DUMMY_PSEH` guard, and its stated reason was wrong.
+  The thread does have a user-callback table: all three arches log
+  `cursors/icons loaded at desktop-graphics init`, and the gates passed 9/9. The i386 hang
+  the skip avoided was the padded `KAPC_STATE` copy that made threads read as suspended.
+  `co_IntDeferredCursorsAndIcons()` remains as the fallback for a thread without a callback
+  table.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -740,14 +739,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   DETACHED_PROCESS (a console is legal there; it is only the WoW64 guest that cannot
   create one). That is a one-line experiment and it also A/Bs the console bug below.
 
-- **Console creation HANGS a CUI process launched by winlogon — ROOT-CAUSED 2026-09-23.**
-  Same two bugs as the arm64 start-menu entry above:
-  - consrv's "VGA" console font was never loaded, so `WM_NCCREATE` failed in `InitFonts`
-    and the teardown wedged the CSR thread.
-  - `KAPC_STATE_ACTUAL_LENGTH` made attached threads look suspended.
-  The fix is on the `shell32-com` lane. The winetest runner's `DETACHED_PROCESS`
-  workaround can be retried without it once that lands. The console path was only measured
-  on arm64 so far.
+- **Console creation HANGS a CUI process launched by winlogon — FIXED 2026-09-23.** Five
+  bugs, the last three found only once console creation began to work:
+  1. win32k never loaded consrv's "VGA" font.
+  2. `KAPC_STATE_ACTUAL_LENGTH` made attached threads look suspended.
+  3. consrv's handle table was indexed through winsrv-sys's opaque 1-byte
+     `_CONSOLE_IO_HANDLE`, so `.add(i)` stepped one byte and entries overlapped. csrss
+     died on the first console close: AV in `ConSrvCloseHandle`, BUGCHECK 0xF4 on i386.
+  4. 22 of `GuiVtbl`'s 25 slots, plus `GuiConsoleInputThread`, were Rust-ABI fns
+     transmuted into NTAPI slots, under a comment claiming they were `extern "system"`.
+     Six of them returned u8 for C's BOOL.
+  5. The same ABI shape was in msgina's dialog procs and advapi32's crypt callbacks.
+  Two new gates, `scan_opaque_ptr_arith` and `scan_fnptr_abi_transmute`, keep 3–5 at zero.
+  The i386 native user32 `class` winetest now runs end to end with a real console: winlogon
+  no longer detaches it. It then fails on genuine user32/SxS findings (activation context,
+  exit 0xc0150010), which are OPEN and belong to that test's owner. The WoW64 guest is still
+  detached until an amd64 ladder run shows a guest getting a console.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not

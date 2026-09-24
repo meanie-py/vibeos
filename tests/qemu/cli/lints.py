@@ -806,6 +806,30 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A Rust-ABI fn transmuted into a C callback slot (`transmute(f as *const ())`)
+    # erases the ABI rustc would otherwise check. It works by accident on
+    # amd64/arm64 and breaks on i386: consrv's GuiVtbl (22 of 25 slots) killed
+    # csrss with BUGCHECK 0xF4 on the first i386 GUI console. Baseline EMPTY.
+    # Pointer arithmetic on a struct field bindgen typed as an OPAQUE 1-byte stub
+    # steps one byte per element whatever the code casts to afterwards. consrv's
+    # handle table overlapped its entries this way and crashed csrss on the first
+    # console close (BUGCHECK 0xF4). Baseline EMPTY.
+    sopa = repo / "tools" / "scan_opaque_ptr_arith.py"
+    specs.append(
+        (
+            "scan_opaque_ptr_arith",
+            [py, str(sopa), "--lint"] if sopa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    sfa = repo / "tools" / "scan_fnptr_abi_transmute.py"
+    specs.append(
+        (
+            "scan_fnptr_abi_transmute",
+            [py, str(sfa), "--lint"] if sfa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
     # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
     # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every

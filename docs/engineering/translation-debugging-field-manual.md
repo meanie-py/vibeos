@@ -1044,6 +1044,32 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 
 ---
 
+### `transmute(f as *const ())` into a callback slot erases the ABI check
+**Symptom.** Works on amd64/arm64; on i386 the callee reads garbage arguments. In consrv this
+killed csrss (BUGCHECK 0xF4) the first time an i386 GUI console was created. A BOOL slot
+filled by a fn returning `u8` returns garbage upper bits on every arch.
+
+**Cause.** `f as *const ()` discards `f`'s ABI and the transmute re-types it as the slot's
+`extern "system" fn`. rustc cannot compare them. consrv's `GuiVtbl` filled 25 NTAPI slots
+this way under a comment claiming the impls were `extern "system"`; 22 were plain Rust fns
+and six returned `u8` for C's `BOOL`. msgina's dialog procs and advapi32's crypt callbacks
+had the same shape.
+
+**Fix.** Declare the fn with the slot's ABI and pass it directly: `Some(f)`. rustc then
+checks the ABI and the whole signature. `scan_fnptr_abi_transmute` gates it (baseline empty).
+
+### Pointer arithmetic on a field bindgen typed as an opaque stub strides one byte
+**Symptom.** A table that works while only entry 0 is used. Once there are several entries
+they overlap, and a pointer read back from one is garbage. consrv's console handle table
+crashed csrss in `ConSrvCloseHandle` on the first console close.
+
+**Cause.** bindgen emits an unseen type as `struct X { _address: u8 }`. A field `*mut X` makes
+`.add(i)` step one byte, and the cast afterwards (`field.add(i) as PREAL`) comes too late. The
+allocation used the real element size, so nothing looked wrong until index 1.
+
+**Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
+(`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
+
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
 > **2026-07-05 status:** the volatile-blind attribute-deduction root is **fixed in the shipping

@@ -1218,12 +1218,12 @@ unsafe fn ShutdownOnOk(hDlg: HWND, pgContext: *mut _GINA_CONTEXT) {
         }
     }
 }
-unsafe fn ShutdownDialogProc(
+unsafe extern "system" fn ShutdownDialogProc(
     hDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
     lParam: LPARAM,
-) -> isize {
+) -> INT_PTR {
     let mut pContext = GetWindowLongPtrW(hDlg, GWLP_USERDATA) as *mut SHUTDOWN_DLG_CONTEXT;
 
     match uMsg {
@@ -1231,14 +1231,14 @@ unsafe fn ShutdownDialogProc(
             pContext = lParam as *mut SHUTDOWN_DLG_CONTEXT;
             SetWindowLongPtrW(hDlg, GWLP_USERDATA, pContext as isize);
             ShutdownOnInit(hDlg, pContext);
-            return 1isize;
+            return 1 as INT_PTR;
         }
 
         WM_DESTROY => {
             if (*pContext).bFriendlyUI != 0 {
                 EndFriendlyDialog(hDlg, pContext);
             }
-            return 1isize;
+            return 1 as INT_PTR;
         }
 
         WM_ACTIVATE => {
@@ -1248,13 +1248,13 @@ unsafe fn ShutdownDialogProc(
                     EndDialog(hDlg, IDCANCEL as isize);
                 }
             }
-            return 0isize;
+            return 0 as INT_PTR;
         }
 
         WM_CLOSE => {
             (*pContext).bCloseDlg = 1i32;
             EndDialog(hDlg, IDCANCEL as isize);
-            return 1isize;
+            return 1 as INT_PTR;
         }
 
         WM_COMMAND => {
@@ -1298,7 +1298,7 @@ unsafe fn ShutdownDialogProc(
 
                     if (*pgContext).nShutdownAction == 0 {
                         // break out of inner match; execution continues after inner match,
-                        // which returns 1isize below.
+                        // which returns 1 as INT_PTR below.
                     } else {
                         (*pContext).bCloseDlg = 1i32;
                         EndDialog(hDlg, IDOK as isize);
@@ -1323,7 +1323,7 @@ unsafe fn ShutdownDialogProc(
 
                 _ => {}
             }
-            return 1isize;
+            return 1 as INT_PTR;
         }
 
         WM_CTLCOLORSTATIC => {
@@ -1334,7 +1334,7 @@ unsafe fn ShutdownDialogProc(
                 IDC_TURN_OFF_STATIC => {
                     SetTextColor(hdcStatic, DARK_GREY_COLOR);
                     SetBkMode(hdcStatic, TRANSPARENT);
-                    return GetStockObject(HOLLOW_BRUSH) as isize;
+                    return GetStockObject(HOLLOW_BRUSH) as INT_PTR;
                 }
                 IDC_HIBERNATE_STATIC
                 | IDC_SHUTDOWN_STATIC
@@ -1342,11 +1342,11 @@ unsafe fn ShutdownDialogProc(
                 | IDC_RESTART_STATIC => {
                     SetTextColor(hdcStatic, LIGHT_GREY_COLOR);
                     SetBkMode(hdcStatic, TRANSPARENT);
-                    return (*pContext).hBrush as isize;
+                    return (*pContext).hBrush as INT_PTR;
                 }
                 _ => {}
             }
-            return 0isize;
+            return 0 as INT_PTR;
         }
 
         WM_DRAWITEM => {
@@ -1356,23 +1356,23 @@ unsafe fn ShutdownDialogProc(
                 | IDC_BUTTON_REBOOT
                 | IDC_BUTTON_SLEEP
                 | IDC_BUTTON_HIBERNATE => {
-                    return DrawIconOnOwnerDrawnButtons(pdis, pContext) as isize;
+                    return DrawIconOnOwnerDrawnButtons(pdis, pContext) as INT_PTR;
                 }
                 _ => {}
             }
-            return 1isize;
+            return 1 as INT_PTR;
         }
 
         WM_TIMER => {
             OnTimer(hDlg, pContext);
-            return 1isize;
+            return 1 as INT_PTR;
         }
 
-        _ => return 0isize,
+        _ => return 0 as INT_PTR,
     }
 
     // Fallback return (should be unreachable due to earlier returns)
-    1isize
+    1 as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn ShutdownDialog(
@@ -1419,7 +1419,7 @@ pub unsafe extern "C" fn ShutdownDialog(
             (*pgContext).hDllInstance,
             MAKEINTRESOURCEW!(resource_id),
             hwndDlg,
-            core::mem::transmute::<*const (), DLGPROC>(ShutdownDialogProc as *const ()),
+            Some(ShutdownDialogProc),
             &mut context as *mut _ as LPARAM,
         );
     }
