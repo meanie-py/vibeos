@@ -169,6 +169,17 @@ def deref_params(text: str) -> dict[str, set[int]]:
                     continue
                 if "addr_of!" in ln or "addr_of_mut!" in ln:
                     continue
+                # A parameter handed to a BULK COPY counts as dereferenced. Missing
+                # this is how NtGdiCreateBitmap stayed hidden: the probe is in the
+                # syscall, the access is an RtlCopyMemory one frame down inside
+                # UnsafeSetBitmapBits, and neither the deref-shaped search nor the
+                # interprocedural pass could see it alone. It shipped a live
+                # BUGCHECK 0x1E that an apitest found instead.
+                if any(c in ln for c in UNSAFE_COPIES) and re.search(
+                    rf"\b{re.escape(pname)}\b", ln
+                ):
+                    hits.add(pos)
+                    break
                 if pat.search(ln):
                     hits.add(pos)
                     break

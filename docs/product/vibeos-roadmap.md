@@ -647,6 +647,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
 
+- **`NtGdiCreateBitmap` BUGCHECKed 0x1E in a naked `memcpy`. FIXED 2026-09-24**, verified
+  by boot (`exit win32u_apitest.exe NtGdiCreateBitmap code=2` — real test failures, no
+  crash). Symbolicated stack, top and bottom frames agreeing:
+  `NtGdiCreateBitmap+0x1F9` → `memcpy+0xD` → `cnt_rust::cabi::raw_move+0x5C`, exception
+  0xC0000005. **The site carried a comment correctly diagnosing the bug and a fix that
+  did not address it**: someone restored the dropped `ProbeForRead` and left
+  `UnsafeSetBitmapBits` copying `cjSize` bytes off the caller's pointer with a plain
+  `RtlCopyMemory`. The probe is validate-only, so this is the field manual's "a restored
+  probe does NOT re-protect the USE", written down and walked into anyway. Upstream puts
+  `ProbeForRead` AND `UnsafeSetBitmapBits` in one `_SEH2_TRY` whose handler deletes the
+  surface and returns NULL; both call sites now honour that, using a `-1` sentinel rather
+  than 0 because a legitimate call can copy zero bytes and `NtGdiSetBitmapBits` returns
+  that count to user mode. **First confirmed-live member of the 152-lead bulk-copy
+  class**, and it needed BOTH remaining scanner blind spots at once (bulk copy, one frame
+  down in a callee) — now closed, with a regression test.
+
+- **`NtGdiGetBitmapBits` BUGCHECKs 0x1E and the ntoskrnl address is a RED HERRING.
+  OPEN** (2026-09-24). `0x0000001E (0xffffffffc0000005, ntoskrnl.exe+0x2B6B0, ...)`,
+  reproducing at the identical address across runs days apart. The quarantine recorded
+  this as "the fault is in ntoskrnl rather than win32k, so it may be a different cause".
+  Resolved now: `ntoskrnl.exe+0x2B6B0` = VA `0x42B6B0` (ImageBase 0x400000), which lands
+  inside `NtShutdownSystem` (`0x42B6A0`–`0x42B6C3`) — **but MID-INSTRUCTION**, at the
+  last byte of the `mov $0x4,%edx` at `0x42b6ac`. A PC that is not an instruction
+  boundary is not a legitimate execution point, so this is a WILD CONTROL TRANSFER, not a
+  fault inside `NtShutdownSystem`. The ntoskrnl symbol says where control landed, not
+  where the bug is, and chasing ntoskrnl here would be chasing the landing site.
+  Redirect: find the indirect call on the `NtGdiGetBitmapBits` path (a surface or DIB
+  engine function pointer is the obvious candidate) and check it for NULL/garbage. Needs
+  `vibeos-cli debug start amd64 --gdb`; a bare serial cannot show which call transferred.
+
 - **`umkm_apitest SystemCall` BUGCHECKs 0x1E at PC=0 — the user-mode callback
   dispatch jumps through a NULL pointer. ROOT-CAUSE LOCATED, fix pending**
   (2026-09-23, round 2 of the verification sweep).
