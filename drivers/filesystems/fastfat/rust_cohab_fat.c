@@ -59,6 +59,14 @@ __attribute__((used)) const unsigned int FatVcbDirCreationMutexOffset        = F
 __attribute__((used)) const unsigned int FatDataResourceOffset               = FIELD_OFFSET(FAT_DATA, Resource);
 __attribute__((used)) const unsigned int FatFcbHeaderResourceOffset          = FIELD_OFFSET(FCB, Header.Resource);
 __attribute__((used)) const unsigned int FatIrpContextFlagsOffset            = FIELD_OFFSET(IRP_CONTEXT, Flags);
+/* The flag VALUE goes the same way. rust_cohab_stub.c hard-coded the wait bit
+ * as 0x1, which is IRP_CONTEXT_FLAG_DISABLE_DIRTY; the real WAIT bit is 0x2.
+ * Every global/VCB/FCB acquire through that stub therefore ran NON-blocking.
+ * FatCommonCleanup ignores the result of its FCB acquire (it relies on
+ * blocking), so when another thread held the FCB it went on to release THAT
+ * thread's lock: the arm64 0xE3 RESOURCE_NOT_OWNED (#43), found when a page
+ * fault's FsRtlReleaseFile hit the FCB resource already idle. */
+__attribute__((used)) const unsigned int FatIrpContextFlagWait              = IRP_CONTEXT_FLAG_WAIT;
 
 /* ======================================================================
  * (b) MACRO captures — wrap-then-undef-then-provide

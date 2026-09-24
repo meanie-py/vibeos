@@ -13,18 +13,11 @@ endif()
 # already loaded (user32:class). It was parked OFF for an i386 0x1E after
 # explorer spawned; that was the pushlock-wait-block bug, fixed 2026-07-05
 # and re-verified with delay-load ON on 2026-07-11. VIBEOS_NO_DELAYLOAD still
-# forces the old behaviour.
-#
-# arm64 stays OFF. With delay-load ON it links (after the 8-aligned IAT fix in
-# gen-delaylib.py) and the plain smoke reaches the desktop, but the kmtest
-# conformance media never launched its sweep: 3 of 3 boots hung in user-mode
-# bring-up, while the same tree with delay-load OFF swept 3 of 3 under the same
-# load (2026-09-24). Turn it on there once that hang is understood.
-if(ARCH STREQUAL "arm64")
-    option(VIBEOS_ENABLE_DELAYLOAD "Generate real delay-import libraries" OFF)
-else()
-    option(VIBEOS_ENABLE_DELAYLOAD "Generate real delay-import libraries" ON)
-endif()
+# forces the old behaviour. arm64 was held OFF for a day: with it ON, arm64
+# kmtest boots hit 0xE3 in 4 of 5 rounds. That was not delay-load but a fastfat
+# shim testing the wrong IRP_CONTEXT WAIT bit (the fastfat cohab shim), which
+# delay-load's later DLL page-ins made collide; fixed, 10 of 10 clean.
+option(VIBEOS_ENABLE_DELAYLOAD "Generate real delay-import libraries" ON)
 
 # Show a note about ccache build
 if(ENABLE_CCACHE)

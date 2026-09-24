@@ -9507,6 +9507,32 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**
+  Symptom: arm64 `0xE3 (Resource, Thread, 0, 3)`, a shared release of an ERESOURCE that is
+  completely idle (no owner, `ActiveEntries 0`). Rare normally, 4 in 5 kmtest boots once
+  delay-load moved DLL page-ins to arbitrary later points. Cause: `rust_cohab_stub.c`
+  hard-coded `FAT_IRP_CTX_FLAG_WAIT` as `0x1`, which is `IRP_CONTEXT_FLAG_DISABLE_DIRTY`; the
+  real WAIT bit is `0x2`. Every global/VCB/FCB acquire through that shim therefore ran
+  non-blocking. `FatCommonCleanup` ignores the result of its FCB acquire, because in the C it
+  always blocks. So while a page fault held the FCB exclusively (`MmNotPresentFaultSectionView`
+  → `FsRtlAcquireFileExclusive`), cleanup on another thread "released" it, and the fault's own
+  `FsRtlReleaseFile` then found it idle. Found by making the resource record its LAST releaser
+  (caller PC and thread in `ERESOURCE.Reserved2`/`Address`, arm64 only, printed on the 0xE3
+  and resolved with `KiPcToFileHeader`): four captures, all `prev.caller =
+  fastfat.sys+0x4d068` = `FatCommonCleanup`'s `FatReleaseFcb`, on another thread. Fix: the
+  shim takes the flag from `rust_cohab_fat.c`, which is built against the real `fatstruc.h`,
+  exactly as it already did for the struct offsets. The lesson: a hand-written shim that
+  hard-codes a header constant is the same hazard as one that hard-codes an offset.
+  Nothing checks it, and when it is wrong the code usually still runs.
+- **Nothing saved FP/SIMD state across arm64 traps or context switches.** `kiinit.rs`
+  enables FP on every CPU and the compiler vectorizes kernel code (memcpy, struct zeroing,
+  frame copies), but the vectors saved only x0–x30, and `KiSwapContext`/`KiCallUserMode` only
+  x19–x30. Fixed: `NEON_SAVE`/`NEON_RESTORE` of q0–q31 plus FPCR/FPSR on every returning
+  vector entry (`trap.S`, placed below the frames so the trap frame's position is unchanged),
+  and d8–d15 in the switch and callout frames. This was a real latent bug, but it was NOT the
+  cause of #43: a 10-round soak with it in place still hit 0xE3 four times. Do not re-read
+  the 3/3 clean run that preceded that soak as evidence. Still owed: NtContinue and exception
+  dispatch do not carry the V registers through CONTEXT.
 - **A dropped C `ASSERT` is a machine freeze on arm64, not a lost debug check.** Symptom: a
   boot wedges with a vCPU at EL1, PC parked, DAIF all masked, no bugcheck and no timer; the
   faulting VA is a user address, hardware reports a level-3 translation fault (EC 0x25,
