@@ -138,8 +138,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="configure the build dir with -DENABLE_ROSTESTS=ON so the full "
         "winetest corpus (~128 suites) is built. RECONCILED, not sticky: a "
         "later plain build turns it back OFF, so an opt-in never bloats the "
-        "default build. 126/128 suites compile as of 2026-09-20 (user32 and "
-        "ucrtbase are the two known build breaks)",
+        "default build. NOT all suites build: on 2026-09-23 an i386 "
+        "--keep-going build still failed shell32_apitest, shlwapi_apitest, "
+        "interop_unittest, menuaccels, combase and ole32 (user32 and "
+        "ntdll_apitest were fixed that day), so no livecd is produced. "
+        "Build one target with ninja and stage it as a payload instead",
     )
     b.add_argument(
         "--hal-pic",

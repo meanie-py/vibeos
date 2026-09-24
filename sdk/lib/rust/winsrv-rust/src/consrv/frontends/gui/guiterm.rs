@@ -78,40 +78,40 @@ pub type PGUI_INIT_INFO = *mut GUI_INIT_INFO;
 
 pub static mut ConsInitialized: BOOL = 0;
 
-// SAFETY: FRONTEND_VTBL slots are typed as `Option<unsafe extern "stdcall"
-// fn(...)>` on i386 / `Option<unsafe extern "C" fn(...)>` on amd64/arm64
-// (bindgen mirrors the C TERMINAL_VTBL calling-conv per-arch). Our Rust
-// impls are `extern "system"`, which IS the right ABI in each case
-// (system = stdcall on i386, sysv = C on amd64). LLVM models the two as
-// distinct fn types even though they call-compatibly, so we transmute
-// to bypass the type-system shape check. Mirrors the
-// ConsoleApiRoutineSystem shim in consrv/init.rs.
+// FRONTEND_VTBL slots are NTAPI: stdcall on i386, the C ABI elsewhere. Every
+// implementation must be `extern "system"`, and the slots take them directly so
+// rustc checks the ABI and signature. This table used to fill every slot through
+// `transmute(f as *const ())` under a comment claiming the impls were already
+// `extern "system"`. 22 of 25 were plain Rust-ABI fns and five returned u8 for
+// C's BOOL (six, counting GuiSetScreenInfo). That call-compatibility happened to
+// hold on amd64/arm64 and broke i386: csrss died (BUGCHECK 0xF4) creating its
+// first GUI console.
 pub static mut GuiVtbl: FRONTEND_VTBL = unsafe { FRONTEND_VTBL {
-    InitFrontEnd: Some(core::mem::transmute(GuiInitFrontEnd as *const ())),
-    DeinitFrontEnd: Some(core::mem::transmute(GuiDeinitFrontEnd as *const ())),
-    DrawRegion: Some(core::mem::transmute(GuiDrawRegion as *const ())),
-    WriteStream: Some(core::mem::transmute(GuiWriteStream as *const ())),
-    RingBell: Some(core::mem::transmute(GuiRingBell as *const ())),
-    SetCursorInfo: Some(core::mem::transmute(GuiSetCursorInfo as *const ())),
-    SetScreenInfo: Some(core::mem::transmute(GuiSetScreenInfo as *const ())),
-    ResizeTerminal: Some(core::mem::transmute(GuiResizeTerminal as *const ())),
-    SetActiveScreenBuffer: Some(core::mem::transmute(GuiSetActiveScreenBuffer as *const ())),
-    ReleaseScreenBuffer: Some(core::mem::transmute(GuiReleaseScreenBuffer as *const ())),
-    RefreshInternalInfo: Some(core::mem::transmute(GuiRefreshInternalInfo as *const ())),
-    ChangeTitle: Some(core::mem::transmute(GuiChangeTitle as *const ())),
-    ChangeIcon: Some(core::mem::transmute(GuiChangeIcon as *const ())),
-    GetThreadConsoleDesktop: Some(core::mem::transmute(GuiGetThreadConsoleDesktop as *const ())),
-    GetConsoleWindowHandle: Some(core::mem::transmute(GuiGetConsoleWindowHandle as *const ())),
-    GetLargestConsoleWindowSize: Some(core::mem::transmute(GuiGetLargestConsoleWindowSize as *const ())),
-    GetSelectionInfo: Some(core::mem::transmute(GuiGetSelectionInfo as *const ())),
-    SetPalette: Some(core::mem::transmute(GuiSetPalette as *const ())),
-    SetCodePage: Some(core::mem::transmute(GuiSetCodePage as *const ())),
-    GetDisplayMode: Some(core::mem::transmute(GuiGetDisplayMode as *const ())),
-    SetDisplayMode: Some(core::mem::transmute(GuiSetDisplayMode as *const ())),
-    ShowMouseCursor: Some(core::mem::transmute(GuiShowMouseCursor as *const ())),
-    SetMouseCursor: Some(core::mem::transmute(GuiSetMouseCursor as *const ())),
-    MenuControl: Some(core::mem::transmute(GuiMenuControl as *const ())),
-    SetMenuClose: Some(core::mem::transmute(GuiSetMenuClose as *const ())),
+    InitFrontEnd: Some(GuiInitFrontEnd),
+    DeinitFrontEnd: Some(GuiDeinitFrontEnd),
+    DrawRegion: Some(GuiDrawRegion),
+    WriteStream: Some(GuiWriteStream),
+    RingBell: Some(GuiRingBell),
+    SetCursorInfo: Some(GuiSetCursorInfo),
+    SetScreenInfo: Some(GuiSetScreenInfo),
+    ResizeTerminal: Some(GuiResizeTerminal),
+    SetActiveScreenBuffer: Some(GuiSetActiveScreenBuffer),
+    ReleaseScreenBuffer: Some(GuiReleaseScreenBuffer),
+    RefreshInternalInfo: Some(GuiRefreshInternalInfo),
+    ChangeTitle: Some(GuiChangeTitle),
+    ChangeIcon: Some(GuiChangeIcon),
+    GetThreadConsoleDesktop: Some(GuiGetThreadConsoleDesktop),
+    GetConsoleWindowHandle: Some(GuiGetConsoleWindowHandle),
+    GetLargestConsoleWindowSize: Some(GuiGetLargestConsoleWindowSize),
+    GetSelectionInfo: Some(GuiGetSelectionInfo),
+    SetPalette: Some(GuiSetPalette),
+    SetCodePage: Some(GuiSetCodePage),
+    GetDisplayMode: Some(GuiGetDisplayMode),
+    SetDisplayMode: Some(GuiSetDisplayMode),
+    ShowMouseCursor: Some(GuiShowMouseCursor),
+    SetMouseCursor: Some(GuiSetMouseCursor),
+    MenuControl: Some(GuiMenuControl),
+    SetMenuClose: Some(GuiSetMenuClose),
 } };
 
 pub unsafe fn GuiConsoleMoveWindow(GuiData: PGUI_CONSOLE_DATA) {
@@ -145,7 +145,7 @@ pub unsafe fn InvalidateCell(GuiData: PGUI_CONSOLE_DATA, x: i16, y: i16) {
     DrawRegion(GuiData, &mut CellRect);
 }
 
-pub unsafe fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
+pub unsafe extern "system" fn GuiConsoleInputThread(Param: PVOID) -> ULONG {
     let mut Status: NTSTATUS;
     let mut pcsrt: PCSR_THREAD = core::ptr::null_mut();
     let GuiInitInfo: PGUI_INIT_INFO = Param as PGUI_INIT_INFO;
@@ -459,7 +459,7 @@ pub unsafe fn GuiInit(
         0,
         0,
         0,
-        Some(core::mem::transmute(GuiConsoleInputThread as *const ())),
+        Some(GuiConsoleInputThread),
         GuiInitInfo as PVOID,
         &mut hInputThread,
         &mut ClientId,
@@ -503,7 +503,7 @@ pub unsafe fn GuiInit(
     Success
 }
 
-pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTSTATUS {
+pub unsafe extern "system" fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTSTATUS {
     let GuiInitInfo: PGUI_INIT_INFO;
     let GuiData: PGUI_CONSOLE_DATA;
 
@@ -606,7 +606,7 @@ pub unsafe fn GuiInitFrontEnd(This: PFRONTEND, Console: PCONSRV_CONSOLE) -> NTST
     STATUS_SUCCESS
 }
 
-pub unsafe fn GuiDeinitFrontEnd(This: PFRONTEND) {
+pub unsafe extern "system" fn GuiDeinitFrontEnd(This: PFRONTEND) {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
 
     PostThreadMessageW((*GuiData).InputThreadId as u32, PM_DESTROY_CONSOLE, 0, GuiData as LPARAM);
@@ -629,7 +629,7 @@ pub unsafe fn GuiDeinitFrontEnd(This: PFRONTEND) {
     ConsoleFreeHeap(GuiData as *mut _);
 }
 
-pub unsafe fn GuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT) {
+pub unsafe extern "system" fn GuiDrawRegion(This: PFRONTEND, Region: *mut SMALL_RECT) {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
 
     if (*GuiData).IsWindowVisible == 0 {
@@ -707,21 +707,21 @@ pub unsafe extern "system" fn GuiWriteStream(
     SetTimer((*GuiData).hWindow, CONGUI_UPDATE_TIMER as UINT_PTR, CONGUI_UPDATE_TIME, None);
 }
 
-pub unsafe fn GuiRingBell(This: PFRONTEND) {
+pub unsafe extern "system" fn GuiRingBell(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     
     
     SendNotifyMessageW((*GuiData).hWindow, PM_CONSOLE_BEEP, 0, 0);
 }
 
-pub unsafe fn GuiSetCursorInfo(
+pub unsafe extern "system" fn GuiSetCursorInfo(
     This: PFRONTEND,
     Buff: PCONSOLE_SCREEN_BUFFER,
-) -> u8 {
+) -> BOOL {
     let GuiData: PGUI_CONSOLE_DATA = (*This).Context as PGUI_CONSOLE_DATA;
 
     if (*GuiData).IsWindowVisible == 0u8 {
-        return 1u8;
+        return TRUE as BOOL;
     }
 
     if (*GuiData).ActiveBuffer == Buff {
@@ -732,7 +732,7 @@ pub unsafe fn GuiSetCursorInfo(
         );
     }
 
-    1u8
+    TRUE as BOOL
 }
 
 pub unsafe extern "system" fn GuiSetScreenInfo(
@@ -740,11 +740,11 @@ pub unsafe extern "system" fn GuiSetScreenInfo(
     Buff: PCONSOLE_SCREEN_BUFFER,
     OldCursorX: i16,
     OldCursorY: i16,
-) -> u8 {
+) -> BOOL {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
 
     if (*GuiData).IsWindowVisible == 0 {
-        return 1u8;
+        return TRUE as BOOL;
     }
 
     if (*GuiData).ActiveBuffer == Buff {
@@ -752,16 +752,16 @@ pub unsafe extern "system" fn GuiSetScreenInfo(
         InvalidateCell(GuiData, (*Buff).CursorPosition.X, (*Buff).CursorPosition.Y);
     }
 
-    1u8
+    TRUE as BOOL
 }
 
-pub unsafe fn GuiResizeTerminal(This: PFRONTEND) {
+pub unsafe extern "system" fn GuiResizeTerminal(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
 
     PostMessageW((*GuiData).hWindow, PM_RESIZE_TERMINAL, 0, 0);
 }
 
-pub unsafe fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
+pub unsafe extern "system" fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     let ActiveBuffer: PCONSOLE_SCREEN_BUFFER;
     let hPalette: HPALETTE;
@@ -794,7 +794,7 @@ pub unsafe fn GuiSetActiveScreenBuffer(This: PFRONTEND) {
     GuiResizeTerminal(This);
 }
 
-pub unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCREEN_BUFFER) {
+pub unsafe extern "system" fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCREEN_BUFFER) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
 
     if ScreenBuffer != (*GuiData).ActiveBuffer {
@@ -821,7 +821,7 @@ pub unsafe fn GuiReleaseScreenBuffer(This: PFRONTEND, ScreenBuffer: PCONSOLE_SCR
     }
 }
 
-pub unsafe fn GuiRefreshInternalInfo(This: PFRONTEND) {
+pub unsafe extern "system" fn GuiRefreshInternalInfo(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut _GUI_CONSOLE_DATA;
 
     SetConWndConsoleLeaderCID(GuiData);
@@ -830,15 +830,15 @@ pub unsafe fn GuiRefreshInternalInfo(This: PFRONTEND) {
     GuiSetMouseCursor(This, core::ptr::null_mut());
 }
 
-pub unsafe fn GuiChangeTitle(This: PFRONTEND) {
+pub unsafe extern "system" fn GuiChangeTitle(This: PFRONTEND) {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     PostMessageW((*GuiData).hWindow, PM_CONSOLE_SET_TITLE, 0, 0);
 }
 
-pub unsafe fn GuiChangeIcon(
+pub unsafe extern "system" fn GuiChangeIcon(
     This: PFRONTEND,
     IconHandle: HICON
-) -> u8 {
+) -> BOOL {
 
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
     let hIcon: HICON;
@@ -853,7 +853,7 @@ pub unsafe fn GuiChangeIcon(
     }
 
     if hIcon.is_null() {
-        return 0u8;
+        return FALSE as BOOL;
     }
 
     if hIcon != (*GuiData).hIcon {
@@ -871,15 +871,15 @@ pub unsafe fn GuiChangeIcon(
         PostMessageW((*GuiData).hWindow, WM_SETICON, ICON_SMALL as WPARAM, (*GuiData).hIconSm as LPARAM);
     }
 
-    1u8
+    TRUE as BOOL
 }
 
-pub unsafe fn GuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
+pub unsafe extern "system" fn GuiGetThreadConsoleDesktop(This: PFRONTEND) -> HDESK {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
     (*GuiData).Desktop
 }
 
-pub unsafe fn GuiGetConsoleWindowHandle(This: PFRONTEND) -> HWND {
+pub unsafe extern "system" fn GuiGetConsoleWindowHandle(This: PFRONTEND) -> HWND {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
     (*GuiData).hWindow
 }
@@ -928,14 +928,14 @@ pub unsafe extern "system" fn GuiGetLargestConsoleWindowSize(
     (*pSize).Y = (Height / HeightUnit as i32) as SHORT + 1;
 }
 
-pub unsafe fn GuiGetSelectionInfo(
+pub unsafe extern "system" fn GuiGetSelectionInfo(
     This: PFRONTEND,
     pSelectionInfo: PCONSOLE_SELECTION_INFO,
-) -> u8 {
+) -> BOOL {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
 
     if pSelectionInfo.is_null() {
-        return 0u8;
+        return FALSE as BOOL;
     }
 
     core::ptr::write_bytes(pSelectionInfo, 0, 1);
@@ -947,10 +947,10 @@ pub unsafe fn GuiGetSelectionInfo(
         );
     }
 
-    1u8
+    TRUE as BOOL
 }
 
-pub unsafe fn GuiSetPalette(
+pub unsafe extern "system" fn GuiSetPalette(
     This: PFRONTEND,
     PaletteHandle: HPALETTE,
     PaletteUsage: UINT,
@@ -979,10 +979,10 @@ pub unsafe fn GuiSetPalette(
     1
 }
 
-pub unsafe fn GuiSetCodePage(
+pub unsafe extern "system" fn GuiSetCodePage(
     This: PFRONTEND,
     CodePage: u32,
-) -> u8 {
+) -> BOOL {
     let GuiData = (*This).Context as *mut GUI_CONSOLE_DATA;
 
     if InitFonts(
@@ -995,13 +995,13 @@ pub unsafe fn GuiSetCodePage(
         0,
     ) == 0
     {
-        return 0u8;
+        return FALSE as BOOL;
     }
 
-    1u8
+    TRUE as BOOL
 }
 
-pub unsafe fn GuiGetDisplayMode(This: PFRONTEND) -> ULONG {
+pub unsafe extern "system" fn GuiGetDisplayMode(This: PFRONTEND) -> ULONG {
     let GuiData = (*This).Context as PGUI_CONSOLE_DATA;
     let mut DisplayMode: ULONG = 0;
 
@@ -1014,7 +1014,7 @@ pub unsafe fn GuiGetDisplayMode(This: PFRONTEND) -> ULONG {
     DisplayMode
 }
 
-pub unsafe fn GuiSetDisplayMode(
+pub unsafe extern "system" fn GuiSetDisplayMode(
     This: PFRONTEND,
     NewMode: ULONG,
 ) -> BOOL {
@@ -1038,7 +1038,7 @@ pub unsafe fn GuiSetDisplayMode(
     1
 }
 
-pub unsafe fn GuiShowMouseCursor(
+pub unsafe extern "system" fn GuiShowMouseCursor(
     This: PFRONTEND,
     Show: BOOL,
 ) -> INT {
@@ -1057,14 +1057,14 @@ pub unsafe fn GuiShowMouseCursor(
     (*GuiData).MouseCursorRefCount
 }
 
-pub unsafe fn GuiSetMouseCursor(
+pub unsafe extern "system" fn GuiSetMouseCursor(
     This: PFRONTEND,
     CursorHandle: HCURSOR,
-) -> u8 {
+) -> BOOL {
     let GuiData = (*This).Context as *mut _GUI_CONSOLE_DATA;
 
     if (*GuiData).IsWindowVisible == 0 {
-        return 1u8;
+        return TRUE as BOOL;
     }
 
     (*GuiData).hCursor = if !CursorHandle.is_null() {
@@ -1075,10 +1075,10 @@ pub unsafe fn GuiSetMouseCursor(
 
     PostMessageW((*GuiData).hWindow, WM_SETCURSOR, -1i32 as WPARAM, -1i32 as LPARAM);
 
-    1u8
+    TRUE as BOOL
 }
 
-pub unsafe fn GuiMenuControl(
+pub unsafe extern "system" fn GuiMenuControl(
     This: PFRONTEND,
     CmdIdLow: UINT,
     CmdIdHigh: UINT,
@@ -1091,7 +1091,7 @@ pub unsafe fn GuiMenuControl(
     (*GuiData).hSysMenu
 }
 
-pub unsafe fn GuiSetMenuClose(
+pub unsafe extern "system" fn GuiSetMenuClose(
     This: PFRONTEND,
     Enable: BOOL,
 ) -> BOOL {

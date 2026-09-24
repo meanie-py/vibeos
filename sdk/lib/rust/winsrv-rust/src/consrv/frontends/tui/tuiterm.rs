@@ -414,7 +414,7 @@ pub(crate) unsafe fn TuiCopyRect(mut Dest: PCHAR, Buff: PTEXTMODE_SCREEN_BUFFER,
     }
 }
 
-pub(crate) unsafe fn TuiConsoleWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+pub(crate) unsafe extern "system" fn TuiConsoleWndProc(hWnd: HWND, msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     match msg {
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP => {
             if ConDrvValidateConsoleUnsafe(
@@ -868,7 +868,7 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
     core::ptr::write_bytes(&mut wc as *mut WNDCLASSEXW, 0, 1);
     wc.cbSize = core::mem::size_of::<WNDCLASSEXW>() as u32;
     wc.lpszClassName = w!("TuiConsoleWindowClass").as_ptr() as *const u16;
-    wc.lpfnWndProc = Some(core::mem::transmute(TuiConsoleWndProc as *const ()));
+    wc.lpfnWndProc = Some(TuiConsoleWndProc);
     wc.cbWndExtra = 0;
     wc.hInstance = ConSrvDllInstance;
 
