@@ -10252,6 +10252,26 @@ phase markers at the suspect boundaries, then read the timestamps.
 
 ---
 
+### One keystroke delivered twice: a port DPC that decrements but never compacts
+**Symptom.** Ctrl+Esc opened the start menu and closed it at once, in about 2 of 3 i386
+boots. win32k processed a single Esc make twice and never saw its break (`co_UserProcessHotKeys`
+fired twice). It moved with any instrumentation on the read path.
+
+**Cause.** `i8042KbdDpcRoutine` (upstream too) passes `KeyboardBuffer[0..n]` to kbdclass
+outside the interrupt lock, then only subtracts the transferred count. A key the ISR appended
+meanwhile stays behind the already-sent slot 0, and the next DPC delivers slot 0 again. It
+stayed latent while keys never queued. Once the RIT blocked in a real LL-hook send, they did.
+
+**Fix.** Move the untransferred tail to the buffer start under the interrupt lock, as the mouse
+DPC does.
+
+**How it was found.** Keep the probes quiet until something is wrong. A per-read print made
+the race vanish. What found it:
+- The RIT printed only when a record repeated the previous one.
+- kbdclass recorded its queue operations into a ring buffer, dumped on the final key.
+Each step located a layer: the buffer was right when the read returned, so kbdclass was
+handing out the repeat, and the port appended the repeat.
+
 ## Per-arch quick reference
 
 **The method that matters:** *i386 hides 64-bit bugs (narrower pointers, different layout luck)

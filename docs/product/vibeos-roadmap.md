@@ -535,17 +535,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       `PROCESS_ATTACH` completes.
     - Fonts only: 2 passes, then 1 boot where explorer never started.
     - amd64: passes.
-  - **Exposed, OPEN:** with fix 2, i386 `test_start_menu_opens` drops from 4/4 on master
-    to about 1 in 3.
-    - One Esc key-down reaches `co_UserProcessHotKeys` twice. win32k's RIT processes a
-      second read whose buffer still holds the previous record (`[RITPROBE]` read#5
-      `mc=1 flags=0` again, and the real Esc-up is never seen).
-    - `HSHELL_TASKMAN` fires twice, and the tray toggles the menu open, then closed.
-    - Before the fix, the WH_KEYBOARD_LL hook owner read as suspended, so the RIT never
-      blocked in the hook send, keys never queued, and the race never opened.
-    - It moves with instrumentation: a probe on the read path made it pass 3/3.
-    - Next step: the RIT loop in `win32k-rust/src/input.rs` against `NtReadFile`'s deferred
-      completion (`IopPerformSynchronousRequest`).
+  - **Exposed, then FIXED (i8042prt):** fix 2 lets win32k's RIT really block in the
+    WH_KEYBOARD_LL hook send, so keystrokes queued up. That exposed an upstream race in
+    `i8042KbdDpcRoutine`:
+    - It hands kbdclass `KeyboardBuffer[0..n]` outside the interrupt lock, then only does
+      `KeysInBuffer -= transferred`.
+    - A key the ISR appended during the callback sits behind a stale slot 0. The next DPC
+      re-delivered the old key and lost the new one: one Esc make twice, its break never
+      delivered.
+    - Ctrl+Esc then toggled the start menu open and shut. i386 went from 4/4 on master to
+      about 1/3 with fix 2.
+    The DPC now compacts the tail as the mouse DPC always did. i386 is 8/8; amd64 3/3.
+  - **Not caused by these fixes:** the arm64 PC/LR/FP=0 fetch fault (`ESR=0x86000007`,
+    during services' `ScmStartUserModeService`), which is the registered smp-bringup flake.
+    A/B under 5-way parallel load: 9/10 boots with fix 2, 9/10 with it reverted, one
+    PC=0 fault in each. That is well above the registered 1.7%.
   - **Correction:** an earlier version of this entry said winsrv's `DbgPrint`s never reach
     serial. That was false. It was read from a stale `qemu/arm64_smoke_live.log` dated
     2026-08-06. In a worktree, pytest's serial lives under `/tmp/pytest-of-*/`. The kmtest
