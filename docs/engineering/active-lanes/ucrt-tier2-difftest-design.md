@@ -342,6 +342,76 @@ STILL not verified:
   llvm-mingw ships no libgcc), and nothing in `tests/qemu/cli/` currently runs
   winetests.
 
+## The first full table (2026-09-23)
+
+**179 of 185 exports graded, 96%.**
+
+| verdict | count |
+|---|---|
+| MATCH | 141 |
+| DIFF | 31 |
+| NORUST | 4 |
+| FAULT | 2 |
+| HANG | 1 |
+
+141 exports now have EVIDENCE they are reusable, against 799 that were guesswork. That
+is the number the whole reuse plan was blocked on.
+
+### The DIFF cluster that was not real
+
+The largest apparent cluster -- `strncmp`, `_mbsncmp(_l)`, `_mbsnbcmp(_l)`, all failing
+**292 of 392** with identical counts -- was a HARNESS defect, not a code defect. C
+contracts only the SIGN of a comparator's return; Microsoft's returns the byte
+difference and ours returns -1/0/1, so grading the raw value marks perfect agreement as
+failure. The hand-written runner in `ucrtdiff.c` had always wrapped comparators in
+`sgn()`; the generator did not, and nothing cross-checked the two. Fixed with
+`_COMPARATOR` -> `NORM(x) = sgn(x)`.
+
+It is worth recording how convincing it looked: five exports, identical failure counts,
+a tidy shared root cause, reported as the sweep's headline finding before anyone read
+what the functions return. A cluster that neat is a reason to check the ORACLE first.
+
+### 8 LIVE divergences in the shipping ucrtbase.dll
+
+These have `dll` and `rust` fail counts that are EQUAL, which means ucrtbase.dll already
+answers them with our Rust -- so they are not reuse risks, they are live today:
+
+| export (+`_l`) | fails | first bad value |
+|---|---|---|
+| `_ismbclower` | 4/40 | 223 |
+| `_mbctoupper` | 3/40 | 224 |
+| `_ismbcupper` | 2/40 | 159 |
+| `_mbctolower` | 1/40 | 192 |
+
+The remaining ~21 DIFFs are latent (reuse would introduce them) and cluster on corpus
+values 9, 159, 160, 161 -- the codepage-dependent high range plus TAB, consistent with a
+small number of wrong ctype table entries rather than scattered logic bugs.
+
+### Guest-killers: what reproduces, and what does not
+
+Six exports end the whole guest -- all serial stops, kernel logging included, so neither
+`run_guarded`'s 8s timeout nor the harness's cooperative deadline can fire.
+
+REPRODUCIBLE, each witnessed in its own independent shard: `_strnicmp` (shard 1),
+`_strnicmp_l` (2), `_mbsnicmp` (4), `_mbsnicmp_l` (5), plus `_mbsnbicmp` and
+`_mbstrnlen`. The mechanism is visible in `mbcs.rs` `_mbsnbicmp_l`: a DELIBERATE
+`wrapping_sub` (documented there as reproducing upstream ReactOS/Wine C) underflows when
+`len == 1` meets a 2-byte character, so the loop walks past the buffer until a NUL or a
+mismatch. Benign on the host, lethal in the guest where it reaches unmapped pages. Note
+this is upstream behaviour being faithfully reproduced, NOT a translation bug -- the
+finding is that a difference invisible to Tier 1 is fatal in Tier 2, which is the whole
+argument for this harness.
+
+NOT REPRODUCIBLE, and therefore NOT attributable to the export they stopped at: `rand`
+(a clean HANG row in three runs, a guest kill in a fourth) and `ispunct` (MATCH in three
+runs, a stop in a fourth). **A stopping point names a killer only when it repeats.**
+These two are evidence of a background instability, which is the likeliest explanation
+for the original 114/53 wall moving with emission order.
+
+Do not read the quarantine list as a predicate. `_mbstrnlen` is not a comparator at all,
+and `_mbsnbcmp` is bounded AND multibyte yet grades fine, so an earlier "length-bounded
+narrow/mb case-insensitive compare" rule was over-fitted to the cases then in hand.
+
 ## Why this is worth the wiring
 
 It answers the question the whole reuse plan rests on. 809 of the owed exports
