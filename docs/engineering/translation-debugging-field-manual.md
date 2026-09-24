@@ -2207,6 +2207,25 @@ handles like 0x3DC) means a bit-test never matches after a cohab flip.
 
 ---
 
+### A C length macro that stops short of the padding is not `size_of`
+**Symptom.** Threads read as suspended to win32k ("Sending to Suspended Thread"), so every
+`SendMessage` to them was refused. This hung the arm64 console and the i386 desktop thread,
+and 3327 of those ERRs appeared in a healthy amd64 boot. The fields were correct in every
+bindgen island.
+
+**Cause.** `KAPC_STATE_ACTUAL_LENGTH` is `FIELD_OFFSET(KAPC_STATE, UserApcPending) +
+sizeof(BOOLEAN)`: 43 on 64-bit and 23 on i386, deliberately short of the padded
+`sizeof` (48 / 24). KTHREAD overlays `FreezeCount`/`SuspendCount` on `SavedApcState`'s
+padding and `ApcQueueable`/`Priority` on `ApcState`'s. The translation wrote it as
+`size_of::<_KAPC_STATE>()`, so `KiMoveApcState` on every attach/detach copied `ApcState`'s
+tail into the suspend counts.
+
+**Fix.** `offset_of!(_KAPC_STATE, UserApcPending) + size_of::<BOOLEAN>()`.
+
+**Generalize.** A macro spelled `FIELD_OFFSET(..) + sizeof(..)` or `RTL_SIZEOF_THROUGH_FIELD`
+exists precisely because the tail is someone else's storage. Grep for the overlay
+(`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
+
 ## Constants: invented, guessed, and swallowed match arms
 
 **This is the single largest translation bug class in the repo, and the least visible.** rustc
@@ -10258,6 +10277,26 @@ detection — uniata's 12 × `AtapiSoftReset` cost **2.85 s/boot**. Recipe: perm
 phase markers at the suspect boundaries, then read the timestamps.
 
 ---
+
+### One keystroke delivered twice: a port DPC that decrements but never compacts
+**Symptom.** Ctrl+Esc opened the start menu and closed it at once, in about 2 of 3 i386
+boots. win32k processed a single Esc make twice and never saw its break (`co_UserProcessHotKeys`
+fired twice). It moved with any instrumentation on the read path.
+
+**Cause.** `i8042KbdDpcRoutine` (upstream too) passes `KeyboardBuffer[0..n]` to kbdclass
+outside the interrupt lock, then only subtracts the transferred count. A key the ISR appended
+meanwhile stays behind the already-sent slot 0, and the next DPC delivers slot 0 again. It
+stayed latent while keys never queued. Once the RIT blocked in a real LL-hook send, they did.
+
+**Fix.** Move the untransferred tail to the buffer start under the interrupt lock, as the mouse
+DPC does.
+
+**How it was found.** Keep the probes quiet until something is wrong. A per-read print made
+the race vanish. What found it:
+- The RIT printed only when a record repeated the previous one.
+- kbdclass recorded its queue operations into a ring buffer, dumped on the final key.
+Each step located a layer: the buffer was right when the read returned, so kbdclass was
+handing out the repeat, and the port appended the repeat.
 
 ## Per-arch quick reference
 
