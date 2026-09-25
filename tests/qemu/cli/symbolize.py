@@ -14,6 +14,7 @@ enough to prove the nearest symbol is not the right one — the same discipline
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,6 +150,16 @@ def lookup_symbol_live(
     return best
 
 
+def _all_identical(repo: Path, mods: list[Module]) -> bool:
+    digests = set()
+    for m in mods:
+        try:
+            digests.add(hashlib.sha256((repo / m.path).read_bytes()).hexdigest())
+        except OSError:
+            return False
+    return len(digests) == 1
+
+
 def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) -> str:
     mods = load_modules(repo, arch)
     if not mods:
@@ -164,7 +175,14 @@ def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) ->
     if not cands:
         return f"{addr:#x} -> (no user-mode module covers this address)"
 
-    uniq = [m for m in cands if m.unique] if not want_module else cands
+    # The same DLL staged twice (browseui.dll in dll/win32/browseui AND base/shell/filebrowser)
+    # is two index rows on one base, which read as "ambiguous" even with --module. Byte-identical
+    # copies are one module; only genuinely different images are ambiguous.
+    identical = len(cands) > 1 and _all_identical(repo, cands)
+    if identical:
+        cands = cands[:1]
+
+    uniq = [m for m in cands if m.unique] if not (want_module or identical) else cands
     if not uniq:
         names = ", ".join(sorted({m.name for m in cands})[:6])
         return (
@@ -177,7 +195,7 @@ def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) ->
 
     m = uniq[0]
     hit = lookup_symbol(repo, arch, m.name, addr)
-    if hit is None and want_module:
+    if hit is None and (want_module or identical):
         hit = lookup_symbol_live(repo, arch, m, addr)
     if hit is None:
         return f"{addr:#x} -> {m.name}+{addr - m.base:#x} (no symbol table entry)"
