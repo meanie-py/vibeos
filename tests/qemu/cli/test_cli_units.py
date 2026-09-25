@@ -8762,3 +8762,10 @@ def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():
     assert '"classification": "LAUNCH_FAIL"' in src
     assert '"launch_attempts": attempts' in src
     assert "launch attempts, all failed" in src
+
+
+def test_gdb_engine_names_the_missing_gdb(monkeypatch):
+    """A host without gdb-multiarch must be told so, not handed `[Errno 13]`."""
+    monkeypatch.setattr(ge_mod.shutil, "which", lambda _name: None)
+    with pytest.raises(RuntimeError, match="apt-get install -y gdb-multiarch"):
+        ge_mod._gdb_bin()

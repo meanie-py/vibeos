@@ -40,6 +40,22 @@ RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
 GDB_HELPERS = PROJECT_DIR / "qemu" / "gdb-helpers"
 GDB_BIN = "gdb-multiarch"
 
+
+def _gdb_bin() -> str:
+    """The gdb to drive, or a hard failure that says how to get it.
+
+    Without this, a host lacking gdb-multiarch surfaced as `[Errno 13] Permission denied`
+    (the exec search tripping over an unreadable PATH entry), which reads like a sandbox
+    problem. Host `gdb` is no substitute: it has no aarch64 support.
+    """
+    path = shutil.which(GDB_BIN)
+    if path is None:
+        raise RuntimeError(
+            f"{GDB_BIN} not found; install it: sudo apt-get install -y gdb-multiarch"
+        )
+    return path
+
+
 # Sourced into every gdb batch, in dependency order (preamble first). Same set the
 # bash inspect.sh/run-until.sh source; they're pure gdb-python and transport-agnostic.
 HELPER_FILES = [
@@ -376,7 +392,7 @@ def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float) -> str:
     env = {**os.environ, "VIBEOS_ARCH": run.arch, "VIBEOS_KERNEL": run.kernel_image}
     try:
         cp = subprocess.run(
-            [GDB_BIN, "-batch", "-nx", *ex],
+            [_gdb_bin(), "-batch", "-nx", *ex],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -445,7 +461,7 @@ def probe(run: DebugRun, script: Path, *, timeout: float) -> dict:
         else _gdb_arch(archcfg.base_arch(run.arch))
     )
     command = [
-        GDB_BIN,
+        _gdb_bin(),
         "-q",
         "-nx",
         "-batch",

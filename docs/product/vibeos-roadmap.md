@@ -541,16 +541,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - Folder windows opened from another process never appear (`explorer.exe <path>`, Control
     Panel, `ncpa.cpl`). On amd64 `filebrowser.exe` faults in
     `shell32!CRegFolder::ParseDisplayName+0x26`.
-  - amd64: setup.exe faults (RIP in heap, `0x1b85ac0`) as `RegistrationPhase2` loads its first
-    DLL, so the registration pass does not run there. The return address is
-    `ntdll!LdrpWalkImportDescriptor+0xa2`, the call through `LdrpManifestProberRoutine`, which
-    holds a HEAP pointer by then: only kernel32's init sets it, so something in setup's process
-    overwrites that ntdll global. Neighbours are the shim-engine `g_pfnSE_*` pointers and
-    `LdrpNormalSnap`. Next step: a gdb write-watch on it. Also amd64: dxdiag faults in
-    `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load import that does not resolve;
-    arm64 too).
-  - amd64: registering `msctf.dll` crashed csrss in `winsrv!ConSrvGetConsole` (NULL
-    per-process data), a 0xF4, seen under the regcapture payload.
+  - FIXED: amd64 setup.exe faulted (RIP `0x1b85ac0`) as registration began. A gdb write-watch
+    showed `LdrpManifestProberRoutine` being set by the real setter, from a SECOND kernel32
+    mapped at `0x1b50000`: ucrtbase's api-set load went through a redirect that returns a bare
+    host name while claiming `RedirectedDll`, so the already-loaded check compared it against
+    full paths and never matched. The loader now looks bare redirected names up by base name.
+    Registration then reached the csrss crash below.
+  - FIXED: registration crashed csrss in `winsrv!ConSrvGetConsole` (0xF4):
+    `GetThreadConsoleDesktop` read `ServerData[1]` (basesrv's slot) instead of
+    `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
+  - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
+    import that does not resolve; arm64 too).
+  - amd64 flake, OPEN: 1 of 5 conformance runs bugchecked 0x1E `c000009a` raised by
+    `FsRtlAllocatePoolWithTag` (a raise-on-failure pool allocation from a driver at
+    `fffff80003cbb22b`) during the `ZwAllocateVirtualMemory` kmtest. That run's WOW64 test app
+    was repainting in a loop (6.8K `StretchDIBits`, serial 192K lines). The loop predates the
+    registration fix, and so do its run-to-run swings of 60-3.4K calls. Artifact:
+    `/tmp/vibeos-cli/20260925-182151-b9nppk9s-conformance-amd64`.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
     that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
     it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
