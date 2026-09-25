@@ -179,3 +179,34 @@ def test_queue_gates_when_it_cannot_tell(tmp_path):
     _commit(wt, "docs/a.md")
     (wt / "tools" / "docs_only.py").unlink()
     assert inert_only_batch(wt), "no predicate must mean no exemption"
+
+
+def test_the_hook_exempts_docs_WITHOUT_any_gate_stamp(tmp_path):
+    """The bug that halted the train for two hours, pinned.
+
+    The hook used to `fail("no fresh green full-gate stamp")` before it ever reached the
+    docs-only exemption, which made the exemption unreachable on an empty stamp set. That
+    was harmless only while the conductor gated every batch — a gate mints a stamp. The
+    moment the queue learned to SKIP the gate for a documentation-only batch, the train
+    produced no stamp, the hook refused the push it was about to exempt, and one lane sat
+    queued for 122 minutes.
+
+    The remote-master exemption needs no stamp by construction: every non-docs path in
+    origin/master was gated when it landed. So the ordering is the whole fix, and this
+    test is here to keep the early bail from being reinstated.
+    """
+    src = (REPO / "tools" / "git-hooks" / "pre-push").read_text()
+    # Structural, not textual: every `if not valid_trees:` must be INDENTED, i.e. inside
+    # the per-update loop that has already tried the exemption. A top-level one runs
+    # before the loop and short-circuits it. Asserting on message wording instead would
+    # pass the moment someone rewraps an f-string, which is how the first version of this
+    # test managed to fail against the correct fix.
+    tops = [
+        ln
+        for ln in src.splitlines()
+        if ln.rstrip().endswith("if not valid_trees:") and not ln.startswith((" ", "\t"))
+    ]
+    assert not tops, (
+        "a top-level `if not valid_trees:` bails before the docs-only exemption is "
+        f"reached, so a documentation push with no fresh gate is refused: {tops}"
+    )
