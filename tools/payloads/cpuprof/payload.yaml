@@ -1,0 +1,19 @@
+# cpuprof — what is burning CPU in the minutes after boot?
+#   tools/payloads/cpuprof/build.sh <arch>
+#   VIBEOS_PAYLOAD=cpuprof ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload cpuprof
+# Every 10s for 4 minutes: processes and threads that used >=200ms of CPU in the interval,
+# with each thread's start address (symbolize with `vibeos-cli sym`).
+name: cpuprof
+description: per-interval CPU consumers (process and thread) for 4 minutes after boot
+
+build_hint: "tools/payloads/cpuprof/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/cpuprof/cpuprof-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/cpuprof.exe
+
+test:
+  launch_marker: "[CPUPROF] done"
+  launch_drain_secs: 900

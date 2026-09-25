@@ -8957,7 +8957,13 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
         return 0;
     }
 
-    FontGDI = ObjToGDI!(TextObj, FONT);
+    // freetype.c: `FontGDI = ObjToGDI(TextObj->Font, FONT)`. This read `ObjToGDI(TextObj, ...)`,
+    // the LFONT itself, as if it were the realized FONTGDI (the only such site in win32k), so
+    // SharedFace was whatever lay at that offset in the TEXTOBJ: NULL, and the guard below
+    // refused every call. That is what "an unrealized font reaches this syscall" was, and why
+    // every SS_*ELLIPSIS static (whose fit is measured here) drew ONE glyph: file Properties,
+    // dxdiag's values, Regional Options' samples.
+    FontGDI = ObjToGDI!((*TextObj).Font, FONT);
 
     /* An unrealized font has no SharedFace, and dereferencing it here BUGCHECKs
      * the machine (0x1E, c0000005). Measured twice from 32-bit guests in the

@@ -693,7 +693,7 @@ pub unsafe fn CRegFolderEnum_Initialize_body(this: *mut CRegFolderEnum, pInfo: *
 
     let mut KeyName = [0u16; MAX_PATH as usize];
     let count = KeyName.len();
-    let hr: HRESULT = StringCchPrintfW(
+    let hr: HRESULT = strsafe_rust::StringCchPrintfW!(
         KeyName.as_mut_ptr(),
         count,
         CPP_COM_WSTR_B23CFF6BE226.as_ptr(),

@@ -15,9 +15,10 @@
 //! The recorded constraint this has to respect is NOT the mechanism. utils.cpp, beside
 //! `CStubWindow32_CreateStub_RustBridge`, records it: an ATL `CWindowImpl`'s per-instance
 //! thunk and its REGISTERED WINDOW CLASS must have exactly ONE owner, which is why
-//! `CStubWindow32` is bridged to C++ rather than reimplemented — two C++ TUs still construct
-//! it, and a second Rust implementation would register the same class name and split
-//! `FindStubWindow`. CDefView is not in that position: `SHELLDLL_DefView` is registered in
+//! `CStubWindow32` was bridged to C++ rather than reimplemented while two C++ TUs still
+//! constructed it: a second implementation would have registered the same class name and
+//! split `FindStubWindow`. Once both were Rust, it moved onto this substrate as the ONE owner
+//! (crate::atl_stub_windows, 2026-09-24, with CMSGlobalFolderOptionsStub and CChangeNotifyBroker). CDefView is not in that position: `SHELLDLL_DefView` is registered in
 //! exactly one place (CDefView.cpp:528) and no other TU constructs the class, so a Rust
 //! implementation splits nothing. `CMenuFocusManager`, `CMenuToolbars`, `CChangeNotifyServer`
 //! and `CDirectoryWatcher` inherit this MECHANISM when they are ported, but each still needs

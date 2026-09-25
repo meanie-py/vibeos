@@ -19,7 +19,18 @@ _spec.loader.exec_module(S)
 
 
 def leads(text: str):
+    """Local-only scan, as the single-function tests intend."""
     return S.scan_text(text, "t.rs")
+
+
+def leads_interproc(text: str):
+    """Scan WITH the callee index, the way main() does.
+
+    The interprocedural pass needs `deref_params` over the same text; calling
+    scan_text bare silently skips it, so a test written without this would pass
+    against a scanner that had no interprocedural detection at all.
+    """
+    return S.scan_text(text, "t.rs", S.deref_params(text))
 
 
 def test_the_shape_that_actually_bugchecked_is_reported() -> None:
@@ -237,3 +248,28 @@ pub unsafe extern "system" fn Guarded(prc: *const RECTL) -> BOOL {
 }
 """
     assert leads(src) == []
+
+
+def test_a_param_consumed_by_a_BULK_COPY_in_the_callee_is_a_lead() -> None:
+    """The NtGdiCreateBitmap shape, which shipped a live BUGCHECK 0x1E.
+
+    The probe is in the syscall; the access is an RtlCopyMemory one frame down, inside
+    a helper, on the parameter the syscall handed it. Neither the deref-shaped search
+    (there is no `*p`) nor the interprocedural pass on its own (it only looked for
+    derefs of the parameter) could see it. An apitest found it instead, at
+    NtGdiCreateBitmap+0x1F9 -> memcpy -> raw_move with 0xC0000005.
+    """
+    src = """
+pub unsafe extern "system" fn Helper(dst: PUCHAR, pvBits: *const c_void) -> LONG {
+    RtlCopyMemory(dst as *mut c_void, pvBits as *const c_void, n);
+}
+
+pub unsafe extern "system" fn NtGdiThing(pUnsafeBits: LPBYTE) -> HBITMAP {
+    let Status = SafeProbeForRead(pUnsafeBits as *const c_void, cjSize, 1);
+    Helper(pjDst, pUnsafeBits as *const c_void);
+}
+"""
+    assert leads(src) == [], "no local deref here — only the callee touches it"
+    got = leads_interproc(src)
+    assert got, "the bulk-copy-in-callee shape must be reported"
+    assert any("Helper" in row[2] for row in got), got

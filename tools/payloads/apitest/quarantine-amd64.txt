@@ -306,3 +306,47 @@ user32_apitest.exe desktop
 # ntdll -- no BUGCHECK at all, so a different cause), the 0xF4s
 # (user32 GetUserObjectInformation, SetCursorPos), afd send (a real ASSERT the C
 # shares), and the two enumeration timeouts (opengl32, msgina).
+
+# characterize.py round 1: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: .characterize-verify2/characterize-amd64-20260923-224411/round01-amd64-uefi_serial.log
+#
+# TUPLE (added by hand; this run predates the parser fix that records it):
+#   0x0000001E (0xffffffffc0000047, 0xfffff800004c7ef7, 0xfffff880047b7390, 0x0)
+# Exception code 0xC0000047, NOT 0xC0000005. The probe-then-raw-access class is always
+# an access violation, so powrprof was NEVER a candidate for the fixes that prompted
+# un-quarantining it — 0x1E alone is KMODE_EXCEPTION_NOT_HANDLED, a category containing
+# everything. This is why the parser now keeps the argument list.
+powrprof_apitest.exe
+
+# characterize.py round 2: sweep stopped here — BUGCHECK 0x0000001E.
+# serial: .characterize-verify2/characterize-amd64-20260923-224411/round02-amd64-uefi_serial.log
+#
+# TUPLE (added by hand, as above):
+#   0x0000001E (0xffffffffc0000005, 0x0000000000000000, 0xfffff88004613a50, 0x0)
+# The exception code IS 0xC0000005 here, but the faulting PC is ZERO — a jump through a
+# NULL pointer, not a data access, so also not a member of the probe-then-deref class.
+# The test issues win32k syscall 0x1000 with user32 deliberately absent and expects a
+# USER-mode exception its vectored handler counts; we take it in kernel mode.
+# ROOT-CAUSE LOCATED in the roadmap: usercall.rs guards PEB->KernelCallbackTable but the
+# guard is skipped when TEB is NULL, and the pointer actually loaded into the trap frame
+# is KeUserCallbackDispatcher, which nothing checks. Which of the two fires is unmeasured.
+umkm_apitest.exe SystemCall
+
+# characterize.py round 3: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: .characterize-verify2/characterize-amd64-20260923-224411/round03-amd64-uefi_serial.log
+user32_apitest.exe VirtualKey
+
+# characterize.py round 4: sweep stopped here — guest went SILENT here (idle cutoff) — a wedge, not a rig timeout.
+# serial: .characterize-verify2/characterize-amd64-20260923-224411/round04-amd64-uefi_serial.log
+user32_apitest.exe WndProc
+
+# 2026-09-24: VirtualKey and WndProc above are TWO user32 wedges in consecutive rounds,
+# which is the kernel32 pattern starting over in a 65-subtest suite: at one victim per
+# ~40-minute round, user32 would consume every remaining round and the accusation tracks
+# the skip list rather than a defect. The run was STOPPED here rather than fed six more
+# rounds, and the win32u question it was never going to reach was answered instead by a
+# single `gen_suites.py --only win32u_apitest.exe` boot — which found and fixed a real
+# BUGCHECK (NtGdiCreateBitmap) in 21 minutes.
+#
+# So do NOT simply resume the full sweep to make progress on these two. Boot user32
+# alone and bisect inside it; that is what --only is for.

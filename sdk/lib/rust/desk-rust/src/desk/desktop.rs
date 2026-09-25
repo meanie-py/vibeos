@@ -485,7 +485,7 @@ pub unsafe extern "system" fn DesktopPageProc(
                             _countof!(szPath),
                         );
 
-                        StringCchPrintf(
+                        StringCchPrintf!(
                             ((*pData).LocalIcon[i as usize].szPath.as_mut_ptr()).cast(),
                             (_countof!((*pData).LocalIcon[i as usize].szPath)) as usize,
                             w!("%s,%d"),

@@ -700,6 +700,34 @@ pub unsafe extern "system" fn KeAcquireSpinLockRaiseToDpc(SpinLock: PKSPIN_LOCK)
 const CONTEXT_ARM64: ULONG = 0x00400000;
 const CONTEXT_CONTROL: ULONG = CONTEXT_ARM64 | 0x1;
 const CONTEXT_INTEGER: ULONG = CONTEXT_ARM64 | 0x2;
+const CONTEXT_FLOATING_POINT: ULONG = CONTEXT_ARM64 | 0x4;
+const CONTEXT_FULL: ULONG = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT;
+
+/// trap.S's NEON save area, as NEON_SAVE lays it out (NEON_SAVE_LENGTH bytes).
+#[repr(C)]
+struct NeonArea {
+    V: [ntkrnl_sys::ddk::NEON128; 32],
+    Fpcr: u64,
+    Fpsr: u64,
+    TrapFrame: u64, // the frame that owns it; NEON_RESTORE clears that frame's VfpState
+    _Pad: u64,      // NEON_SAVE_LENGTH keeps sp 16-aligned
+}
+const _: () = assert!(core::mem::size_of::<NeonArea>() == 0x220); // trap.S NEON_SAVE_LENGTH
+
+/// The trap's saved V0-V31/FPCR/FPSR, found through KTRAP_FRAME.VfpState (trap.S
+/// NEON_SAVE: it holds the area's distance below the frame while the area is live).
+/// `None` for a frame that was zeroed (a new thread) or copied away from its area (a
+/// user-callback frame) -- anything but the two distances the entry paths produce.
+unsafe fn neon_area(TrapFrame: PKTRAP_FRAME) -> Option<*mut NeonArea> {
+    const KEXCEPTION_FRAME_LENGTH: usize = 0x60; // trap.S; EXFRAME_SAVE sits between
+    let len = core::mem::size_of::<NeonArea>();
+    let below = (*TrapFrame).VfpState as usize;
+    if below == len || below == len + KEXCEPTION_FRAME_LENGTH {
+        Some((TrapFrame as *mut u8).sub(below) as *mut NeonArea)
+    } else {
+        None
+    }
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn KeTrapFrameToContext(
@@ -735,6 +763,21 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
         (*Context).Sp = (*TrapFrame).Sp;
         (*Context).Pc = (*TrapFrame).Pc;
         (*Context).Cpsr = (*TrapFrame).Spsr;
+    }
+
+    if (ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT {
+        match neon_area(TrapFrame) {
+            Some(area) => {
+                (*Context).V = (*area).V;
+                (*Context).Fpcr = (*area).Fpcr as ULONG;
+                (*Context).Fpsr = (*area).Fpsr as ULONG;
+            }
+            None => {
+                core::ptr::write_bytes(core::ptr::addr_of_mut!((*Context).V), 0, 1);
+                (*Context).Fpcr = 0;
+                (*Context).Fpsr = 0;
+            }
+        }
     }
 }
 
@@ -817,6 +860,20 @@ pub unsafe extern "system" fn KeContextToTrapFrame(
             (*TrapFrame).Spsr = ((*Context).Cpsr & !0xF) | 0x5;
         }
     }
+
+    // Written into the trap's NEON area, which the way out reloads: NEON_RESTORE
+    // for an ordinary return, KiExceptionExit for NtContinue/NtRaiseException. A
+    // frame with no area (a new thread's) has nowhere to put them, and needs none.
+    if (ContextFlags & CONTEXT_FLOATING_POINT) == CONTEXT_FLOATING_POINT {
+        if let Some(area) = neon_area(TrapFrame) {
+            (*area).V = (*Context).V;
+            // Only the architected control/status fields: the rest are RES0.
+            const FPCR_MASK: ULONG = 0x07C8_9F00; // AHP DN FZ RMode FZ16 + trap enables
+            const FPSR_MASK: ULONG = 0xF800_009F; // NZCV QC + cumulative flags
+            (*area).Fpcr = ((*Context).Fpcr & FPCR_MASK) as u64;
+            (*area).Fpsr = ((*Context).Fpsr & FPSR_MASK) as u64;
+        }
+    }
 }
 
 #[no_mangle]
@@ -833,7 +890,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     let SystemArgument2 = opaque_ptr(SystemArgument2);
     let mut Context: _CONTEXT = core::mem::zeroed();
     let context_size = core::mem::size_of::<_CONTEXT>() as u64;
-    Context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    // FULL, as Windows does: the handler sees V0-V31, and the NtContinue that
+    // ends it hands them back instead of resuming with the handler's.
+    Context.ContextFlags = CONTEXT_FULL;
     KeTrapFrameToContext(TrapFrame, ExceptionFrame, core::ptr::addr_of_mut!(Context));
 
     let mut Stack = Context.Sp & !15u64;
@@ -1037,7 +1096,9 @@ pub unsafe extern "system" fn KiDispatchException(
         }
     }
     let mut Context: _CONTEXT = core::mem::zeroed();
-    Context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    // FULL, as Windows does: the handler sees V0-V31, and the NtContinue that
+    // ends it hands them back instead of resuming with the handler's.
+    Context.ContextFlags = CONTEXT_FULL;
     KeTrapFrameToContext(TrapFrame, ExceptionFrame, core::ptr::addr_of_mut!(Context));
 
     if PreviousMode == 0i8 {

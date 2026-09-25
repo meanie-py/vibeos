@@ -620,6 +620,49 @@ trees:
       Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
 
   # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
+  - path: dll/opengl/mesa
+    name: Mesa 3-D graphics library
+    upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
+    license: LGPL-2.0-or-later
+    license_ref: dll/opengl/mesa/context.c
+    modified: yes  # ReactOS carries an i386 asm path and its own GL_VENDOR string
+    version:
+      # ReactOS's own statement of what it imported, which is the only version claim
+      # in the tree that is about the DROP rather than about one file. The per-file
+      # `Version:` headers disagree with each other -- 2.0 (24 files), 2.2 (2), 2.3
+      # (14), 2.4 (27), 2.5 (21), 2.6 (25) -- because upstream never bumped them all,
+      # so probing any single source file would record a version that is true of that
+      # file and false of the tree.
+      file: dll/opengl/Mesa_for_ReactOS.txt
+      pattern: 'based on Mesa ([0-9.]+)'
+    staleness: >
+      DELIBERATELY FROZEN, and this is the one entry where "behind upstream" is not a
+      defect. Mesa 2.6 is from 1997 and current Mesa is 25.x, but `Mesa_for_ReactOS.txt`
+      states the intent: this exists to match what Windows itself ships in software --
+      OpenGL 1.1 with WGL -- and is "not intended to be synchronized with recent
+      versions" (CORE-7499). `glGetString(GL_VERSION)` returns "1.1.0" for that reason.
+      A modern software GL is a separate, optional install via RAPPS (Gallium llvmpipe),
+      not a bump of this tree. So do not audit this against upstream; audit it against
+      whether Windows-1.1 parity still holds.
+    reason: >
+      53,679 lines of Brian Paul's Mesa, carried by upstream ReactOS since forever and
+      never registered. `opengl32.dll` links it as the software rasterizer behind
+      `wglCreateContext` when no hardware ICD claims the pixel format -- the same role
+      Microsoft's own software GL plays -- so it ships, and every line of it was sitting
+      in the "core OS still in C" denominator as work someone might one day be asked to
+      translate. It is third-party graphics code, and there is no reason to spend money
+      turning a 1997 rasterizer into Rust.
+
+      HOW IT WAS FOUND, because the answer is uncomfortable: not by `--suspects`, which
+      reported a clean tree the same afternoon. That scan matches CORPORATE copyright
+      holders by design, and Mesa's headers say `Copyright (C) 1995-1997  Brian Paul` --
+      an individual. `dll/opengl` is also not one of the three registered containers, so
+      neither half of the discovery machinery could see it. It surfaced from
+      `tools/port_audit.py`, whose ratchet fails on a COMPILED directory matching no
+      classification rule: a different question (what does the link contain) that happens
+      to catch what a copyright grep cannot. The blind spot is still there for any
+      individually-authored drop that nothing compiles.
+
   - path: dll/opengl/glu32/src
     name: SGI GLU (OpenGL Utility Library)
     upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed

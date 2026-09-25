@@ -972,10 +972,9 @@ def test_triage_bugcheck_and_known_flake():
     assert r2["classification"] == "BUGCHECK" and r2["bugcheck"] == "0x7E"
 
 
-_E3_SERIAL = (
+_FLAKE_SERIAL = (
     "[EXPLORER] _tWinMain entered\nshell ready\n"
-    "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
-    "0x0000000000000000, 0x0000000000000003)\n"
+    "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x65EE1\n"
 )
 
 
@@ -983,15 +982,15 @@ def test_triage_known_flake_after_boot_marker_is_still_a_known_flake():
     """A documented flake does not stop being one by firing after the marker.
 
     post_boot_check() used to hardcode known_flake=None, so the SAME arm64 ERESOURCE
-    0xE3 was auto-retried before the marker and rejected a green-gated batch out of
-    the merge queue after it. Both paths must agree.
+    0xE3 (since retired) was auto-retried before the marker and rejected a green-gated
+    batch out of the merge queue after it. Both paths must agree.
     """
-    post = triage.post_boot_check(_E3_SERIAL)
+    post = triage.post_boot_check(_FLAKE_SERIAL)
     assert post is not None
     assert post["classification"] == "KNOWN_FLAKE"
-    assert post["known_flake"] == "arm64_eresource_notowned_0xe3"
+    assert post["known_flake"] == "i386_mp_win32k_av_0x1e"
 
-    pre = triage.classify(_E3_SERIAL, reached=False, fail_marker=None, debugcon=None)
+    pre = triage.classify(_FLAKE_SERIAL, reached=False, fail_marker=None, debugcon=None)
     assert pre["classification"] == post["classification"]
     assert pre["known_flake"] == post["known_flake"]
 
@@ -4728,6 +4727,32 @@ def test_soak_does_NOT_abort_on_isolated_no_launch_rounds(monkeypatch):
     assert ran == 8, f"isolated no-launch rounds must not end the soak, ran {ran}"
 
 
+def test_soak_aborts_when_its_build_round_fails(monkeypatch):
+    # Only round 1 builds; later rounds set no_build. A failed build used to
+    # carry on, so rounds 2..N booted the PREVIOUS media and banked its
+    # bugchecks as measurements of a kernel fix that was never built.
+    calls = {"n": 0}
+    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
+
+    def fake_once(args, repo):
+        calls["n"] += 1
+        if not args.no_build:
+            return 1  # build failed: no round recorded
+        conformance_mod._ROUNDS.append({"shape": "A:bugcheck", "launched": 0})
+        return 1
+
+    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
+
+    class A:
+        arch = "arm64"
+        no_build = False
+        repeat = 3
+
+    conformance_mod.conformance(A(), Path("/nonexistent"))
+    assert calls["n"] == 1, "rounds after a failed build boot stale media"
+    assert conformance_mod._ROUNDS == []
+
+
 def test_conformance_parser_detects_crash_regression(tmp_path):
     parser = conformance_mod._load_parser(_conf_repo_root())
     log = (
@@ -7831,6 +7856,33 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
 
 
+def test_kmtest_payload_older_than_sweep_c_is_rebuilt(tmp_path, monkeypatch):
+    """An exe left from an earlier commit must not outlive a change to sweep.c: the merge
+    queue's integration worktree kept one and gated a sweep change with the old binary."""
+    import os
+
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (tmp_path / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+    exe = sh / "kmtest-sweep-i386.exe"
+    exe.write_text("old")
+    os.utime(exe, (1_000_000, 1_000_000))
+    (sh / "sweep.c").write_text("int main(void){return 0;}\n")  # newer than the exe
+    os.utime(sh / "build.sh", (1_000_000, 1_000_000))
+
+    calls = []
+
+    def _fake_run(cmd, **kw):
+        calls.append(cmd)
+        exe.write_text("new")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    assert gate_mod._ensure_kmtest_payload(tmp_path, ["i386"]) == (True, "")
+    assert [c[2] for c in calls] == ["i386"], "a stale exe must be rebuilt"
+
+
 def test_cli_main_prints_the_exit_code_even_when_a_pipeline_swallows_it(capsys):
     """The number a `| tail` hides must still be IN the output it shows."""
     from tests.qemu.cli.__main__ import cli_main
@@ -7950,36 +8002,26 @@ def _flake_names():
 
 
 def test_mp_beta_flake_signatures_are_registered():
-    assert {"arm64_smp39_zero_pc_fetch_abort", "i386_mp_win32k_av_0x1e"} <= _flake_names()
+    assert {"i386_mp_win32k_av_0x1e"} <= _flake_names()
 
 
-def test_smp39_signature_needs_the_WHOLE_shape_not_just_the_esr():
-    """The SEH tests print an ESR on PURPOSE and pass.
-
-    `[UEXC] ESR=0x92000047` is a deliberate, passing user-mode SEH probe, and an
-    earlier draft that keyed on ESR alone would have swallowed unrelated reds.
-    A kernel fault with a NON-zero PC is also not #39.
-    """
+def test_retired_arm64_signatures_now_block():
+    """#43 (0xE3) and #39 (zero-PC 0x1E) were RETIRED 2026-09-25 after 102 clean arm64
+    MP rounds. A recurrence must go red as a plain BUGCHECK, not be auto-retried."""
     from .triage import _match_known_flake
 
-    real = (
+    assert not {"arm64_eresource_notowned_0xe3", "arm64_smp39_zero_pc_fetch_abort"} & _flake_names()
+    zero_pc = (
         "[KEXC] Code=0xFFFFFFFFC0000005[KEXC] PC=0x0000000000000000"
         "[KEXC] Spsr=0x0000000020000345[KEXC] ESR=0x0000000086000007\n"
         "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0x0000000000000000, 0x0, 0x0)\n"
     )
-    hit = _match_known_flake(real, "0x0000001E", "bugcheck")
-    assert hit is not None and hit["name"] == "arm64_smp39_zero_pc_fetch_abort"
-
-    # A passing SEH probe plus an UNRELATED 0x1E must still block.
-    seh_plus_other = (
-        "[UEXC] ESR=0x0000000092000047[SEH-USER] hw-fault: caught=1 (PASS)\n"
-        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042190000, 0x0, 0x0)\n"
+    assert _match_known_flake(zero_pc, "0x0000001E", "bugcheck") is None
+    e3 = (
+        "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
+        "0x0000000000000000, 0x0000000000000003)\n"
     )
-    assert _match_known_flake(seh_plus_other, "0x0000001E", "bugcheck") is None
-
-    # Same fault class, NON-zero PC -> a different bug, must not be masked.
-    nonzero_pc = real.replace("PC=0x0000000000000000", "PC=0xFFFF8000050E08A0")
-    assert _match_known_flake(nonzero_pc, "0x0000001E", "bugcheck") is None
+    assert _match_known_flake(e3, "0x000000E3", "bugcheck") is None
 
 
 def test_win32k_signature_is_pinned_to_one_rva():
@@ -8720,3 +8762,10 @@ def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():
     assert '"classification": "LAUNCH_FAIL"' in src
     assert '"launch_attempts": attempts' in src
     assert "launch attempts, all failed" in src
+
+
+def test_gdb_engine_names_the_missing_gdb(monkeypatch):
+    """A host without gdb-multiarch must be told so, not handed `[Errno 13]`."""
+    monkeypatch.setattr(ge_mod.shutil, "which", lambda _name: None)
+    with pytest.raises(RuntimeError, match="apt-get install -y gdb-multiarch"):
+        ge_mod._gdb_bin()

@@ -263,7 +263,9 @@ typedef struct _WOW64_WINDOWPOS32 {
  * or they are silently dropped (the pre-M11 behaviour — the return path restored
  * the payload from the kernel's original buffer unconditionally). */
 #include "wow64_cb_automarshal.h"   /* M18: generated payload marshallers */
+#include "wow64_pfnmap.h"
 
+#define WOW64_WM_GETTEXT          0x000D
 #define WOW64_WM_COPYDATA         0x004A
 #define WOW64_WM_GETMINMAXINFO    0x0024
 #define WOW64_WM_WINDOWPOSCHANGING 0x0046
@@ -430,7 +432,7 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                     break;
                 }
                 Frame.Msg = A64->Msg; /* the return path repacks OUT payloads by msg */
-                A32->Proc = (ULONG)A64->Proc;
+                A32->Proc = Wow64pMapClientProc(A64->Proc);
                 A32->IsAnsiProc = A64->IsAnsiProc;
                 A32->Wnd = (ULONG)A64->Wnd;
                 A32->Msg = A64->Msg;
@@ -618,6 +620,31 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                 break;
             }
 
+            case 10: /* COPYIMAGE: COPYIMAGE_CALLBACK_ARGUMENTS 24 -> 20 (the
+                      * HANDLE narrows). win32k uses it to derive a class's
+                      * small icon from hIcon; failing it left hIconSm NULL. */
+            {
+                typedef struct { ULONGLONG hImage; ULONG uType; LONG cx, cy;
+                                 ULONG fuFlags; } WOW64_COPYIMAGE64; /* 24 */
+                typedef struct { ULONG hImage; ULONG uType; LONG cx, cy;
+                                 ULONG fuFlags; } WOW64_COPYIMAGE32; /* 20 */
+                const WOW64_COPYIMAGE64 *A64 = (const WOW64_COPYIMAGE64 *)Arg;
+                WOW64_COPYIMAGE32 A32;
+
+                if (!Arg || Len < sizeof(*A64))
+                {
+                    DbgPrint("[WOW64CB] COPYIMAGE arg=%p len=%lu unusable\n", Arg, Len);
+                    break;
+                }
+                A32.hImage = (ULONG)A64->hImage;
+                A32.uType = A64->uType;
+                A32.cx = A64->cx;
+                A32.cy = A64->cy;
+                A32.fuFlags = A64->fuFlags;
+                Wow64pEnterGuestCallback(&Frame, Index, &A32, sizeof(A32));
+                break;
+            }
+
             case 3:  /* LOADDEFAULTCURSORS: arg = BOOL* (flat 4 bytes ok) */
             case 11: /* SETWNDICONS: no meaningful payload divergence */
             case 12: /* DELIVERUSERAPC */
@@ -748,6 +775,11 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                     case WOW64_WM_SIZING:        /* RECT = 16b */
                     case WOW64_WM_MOVING:        /* RECT = 16b */
                     case WOW64_WM_STYLECHANGING: /* STYLESTRUCT = 8b */
+                    case WOW64_WM_GETTEXT:       /* wParam WCHARs, OUT only */
+                        /* WM_GETTEXT is the one MMS_FLAG_WRITE entry of win32k's
+                         * g_MsgMemory that was missing here: a server-side
+                         * window's text came back as the kernel's untouched
+                         * scratch bytes (user32:class, class.c:719). */
                         /* Width-identical, pointer-free OUT payloads: the guest's
                          * edited struct copies back verbatim (Extra == the 64-bit
                          * payload size == the 32-bit payload size for these). */
@@ -842,6 +874,7 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                      * (BOOL bResult declared sizeof(HINSTANCE)); win32k reads
                      * ResultPointer as an 8-byte HMODULE — widen zero-extended
                      * so the high half is never stale scratch. */
+            case 10: /* COPYIMAGE: a 4-byte HANDLE, read by win32k as 8. */
             {
                 ULONGLONG R = (Len32 >= sizeof(ULONG))
                                   ? *(const ULONG *)(ULONG_PTR)Result32 : 0;

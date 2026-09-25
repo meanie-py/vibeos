@@ -1383,23 +1383,8 @@ pub unsafe fn isspaceW(c: crate::island::WCHAR) -> crate::island::INT {
     crate::island::iswspace(c as crate::island::INT)
 }
 
-extern "C" {
-    /// `strsafe.h:515` — the bounded `swprintf`. Rust can CALL a C variadic on stable, but
-    /// there is nothing here to call: `STRSAFEAPI` is `static __inline`, so this is a PHANTOM
-    /// SYMBOL with no export, and the `extern` decl this used to be linked nowhere. It now
-    /// binds to the forwarding trampoline in `dll/win32/shell32/rust_strsafe_shim.c` — its own
-    /// TU, NOT an append to `rust_varargs_shim.c`, which deliberately includes no Windows
-    /// headers so it can hand-declare the variadic it defines —
-    /// which calls the header's own `StringCchVPrintfW` and so keeps strsafe's truncation
-    /// contract rather than reimplementing it.
-    #[link_name = "StringCchPrintfW_RustBridge"]
-    pub fn StringCchPrintfW(
-        pszDest: crate::island::LPWSTR,
-        cchDest: usize,
-        pszFormat: crate::island::LPCWSTR,
-        ...
-    ) -> crate::island::HRESULT;
-}
+// `StringCchPrintfW` is `strsafe_rust::StringCchPrintfW!`, which calls msvcrt's variadic
+// `_snwprintf` directly. It used to bind to a C trampoline, rust_strsafe_shim.c.
 
 // ── dialogs/drive.cpp residue ──────────────────────────────────────────────────────────────
 

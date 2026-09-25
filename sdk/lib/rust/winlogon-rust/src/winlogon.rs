@@ -1848,6 +1848,23 @@ unsafe fn TryStartWinetest(
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged -- silent no-op, like every other optional guest
     }
+    /* Not in a kmtest conformance boot. Its sweep grades timing-sensitive
+     * kernel tests (ExFastMutex, ExResource) against a banked baseline, and a
+     * tree built with --rostests staged the winetest into that media too:
+     * user32:class and its 26 child processes then ran alongside the sweep,
+     * and every i386 sweep regressed ExFastMutex, while the conductor's fresh
+     * tree (no winetest) stayed clean. The sweep's test list is the marker. */
+    let mut Kmt: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Kmt.as_mut_ptr(), MAX_PATH - 32) != 0 {
+        wcscat(Kmt.as_mut_ptr(), wstr!("\\bin\\kmtest-tests.txt").as_ptr());
+        if GetFileAttributesW(Kmt.as_ptr()) != 0xFFFF_FFFF {
+            DbgPrint(
+                b"[WT] %s: skipped - kmtest conformance boot\n\0".as_ptr() as *const i8,
+                Label,
+            );
+            return;
+        }
+    }
 
     let mut Sa: SECURITY_ATTRIBUTES = zeroed();
     Sa.nLength = size_of::<SECURITY_ATTRIBUTES>() as DWORD;
@@ -1882,7 +1899,7 @@ unsafe fn TryStartWinetest(
     Si.hStdInput = null_mut();
     Si.hStdOutput = Wr;
     Si.hStdError = Wr;
-    /* A native winetest gets a real console; a WoW64 guest is still detached.
+    /* Every winetest gets a real console, native and WoW64 guest alike.
      *
      * This ran DETACHED_PROCESS on both sides because console creation hung:
      * `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`,
@@ -1894,11 +1911,10 @@ unsafe fn TryStartWinetest(
      * The native control then ran end to end in ~1 minute. Before, class.c's
      * fifteen CUI children each burned winetest_wait_child_process's 30s.
      *
-     * The WoW64 guest keeps DETACHED_PROCESS. Console creation for a 32-bit
-     * guest process has not been re-measured since those fixes. Drop this only
-     * once an amd64 ladder run shows a guest getting a console. */
-    let is_wow64_guest = crate::preamble::wcscmp(Dir, wstr!("syswow64").as_ptr()) == 0;
-    let WT_CREATE_FLAGS: DWORD = if is_wow64_guest { 0x0000_0008 /* DETACHED_PROCESS */ } else { 0 };
+     * The WoW64 guest was kept DETACHED until it was measured separately. On
+     * amd64 the guest user32:wsprintf now runs with a console, 58 tests and 0
+     * failures, matching the native control. The --ladder rungs stay green. */
+    let WT_CREATE_FLAGS: DWORD = 0;
     if CreateProcessW(
         Path.as_ptr(),
         Line.as_mut_ptr(),

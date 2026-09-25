@@ -145,6 +145,10 @@ if(_wow64_guest_ok)
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386
                 --include-prestaged --no-strip
+                # Follow LoadLibrary targets named inside staged libraries too
+                # (comctl32 -> msvfw32 for the Animate control). The livecd has
+                # room; see string_referenced in the tool for the measurement.
+                --library-literals
                 # Every guest we STAGE is also a closure root. It was not always so:
                 # the roots were the stock applets, and a ladder guest's imports were
                 # covered only because some applet happened to import the same DLLs.
@@ -165,12 +169,29 @@ if(_wow64_guest_ok)
     string(REPLACE "\n" ";" _wow64_lines "${_wow64_closure}")
     list(LENGTH _wow64_lines _wow64_n)
     message(STATUS "WOW64 E4: staging ${_wow64_n} i386 SysWOW64 modules + hello32/gui32 onto livecd")
+    set(_wow64_has_comctl32 FALSE)
     foreach(_line ${_wow64_lines})
         string(REPLACE "\t" ";" _kv "${_line}")
         list(GET _kv 0 _name)
         list(GET _kv 1 _path)
         add_cd_file(FILE ${_path} DESTINATION reactos/syswow64 NAME_ON_CD ${_name} FOR livecd)
+        if(_name STREQUAL "comctl32.dll")
+            set(_wow64_has_comctl32 ${_path})
+        endif()
     endforeach()
+    # The x86 side-by-side assemblies. A 64-bit Windows carries both
+    # architectures in winsxs; with only the amd64 ones, the guest's comctl32
+    # failed CreateActCtxW for both its v5 and v6 contexts, because it looks for
+    # x86_microsoft.windows.common-controls_* manifests.
+    if(_wow64_has_comctl32)
+        foreach(_v 5.82.2600.2982 6.0.2600.2982)
+            set(_asm x86_microsoft.windows.common-controls_6595b64144ccf1df_${_v}_none_deadbeef)
+            add_cd_file(FILE ${_wow64_has_comctl32} DESTINATION reactos/winsxs/${_asm}
+                        NAME_ON_CD comctl32.dll FOR livecd)
+            add_cd_file(FILE ${REACTOS_SOURCE_DIR}/dll/win32/comctl32/${_asm}.manifest
+                        DESTINATION reactos/winsxs/manifests FOR livecd)
+        endforeach()
+    endif()
     # The nine graded guests: the existence gate above already proved every one
     # of them, so these are unconditional.
     foreach(_f ${_wow64_ladder})

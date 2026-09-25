@@ -1,8 +1,8 @@
 #![no_std]
 // ShellMessageBoxA (shellord.rs) is a genuine C-variadic export (forwards a va_list to
-// FormatMessageA). Stable Rust cannot DEFINE a variadic fn, so its variadic entry point
-// is a trampoline in dll/win32/shell32/rust_varargs_shim.c that calls the fixed-arity
-// `ShellMessageBoxA_v` twin — this crate needs no nightly feature gate.
+// FormatMessageA). Stable Rust cannot DEFINE a variadic fn, so it RECEIVES the varargs as
+// fixed slot parameters (va-slots-rust) — this crate needs no nightly feature gate, and
+// since 2026-09-24 no C trampoline either.
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments)]
@@ -44,6 +44,8 @@ pub mod atl;
 // thunk). Shared by every translated ATL window class; see its header for the mechanism
 // decision and the one behavioural difference it carries.
 pub mod atlwin;
+// The three ATL window classes that were the last C++ in shell32.
+pub mod atl_stub_windows;
 
 /// `ui/rosctrls.h`'s CListView + the CWindow methods it inherits — header-only C++ classes, so
 /// the island renders the struct and none of the methods. Any TU driving a list view needs this.
@@ -163,9 +165,8 @@ pub mod dialogs_recycler_prop;
 // its module header, and `gen_driver_types.sh`'s shell32 cell for the two headers it added.
 #[path = "dialogs/drive.rs"]
 pub mod dialogs_drive;
-// Folder Options. Its one ATL `CWindowImpl<>` stays C++ in `rust_folder_options_stub.cpp`
-// behind a create/destroy bridge — the class NAME is what `FindWindow` keys on, so a second
-// implementation would split the already-open lookup rather than replace it.
+// Folder Options. Its one ATL `CWindowImpl<>` (the owner stub `FindWindow` keys on) is in
+// crate::atl_stub_windows since 2026-09-24; there is exactly one implementation.
 #[path = "dialogs/folder_options.rs"]
 pub mod dialogs_folder_options;
 // The filesystem property-sheet entry points. `ShellPropSheetDialog` is a C++ `struct` used as

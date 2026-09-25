@@ -114,6 +114,12 @@ pub unsafe extern "system" fn ImeWndProc_common(hwnd: HWND, msg: UINT, wParam: W
 pub static mut RegisterDefaultClasses: DWORD = 0;
 static mut pfnClientA: PFNCLIENT = unsafe { core::mem::zeroed() };
 static mut pfnClientW: PFNCLIENT = unsafe { core::mem::zeroed() };
+
+/// This user32's own client proc tables (A, W). Under WoW64 they are the only
+/// procs the guest can call: gpsi's copies are the 64-bit user32's.
+pub(crate) unsafe fn guest_pfn_client() -> (*const PFNCLIENT, *const PFNCLIENT) {
+    (core::ptr::addr_of!(pfnClientA), core::ptr::addr_of!(pfnClientW))
+}
 static mut pfnClientWorker: PFNCLIENTWORKER = unsafe { core::mem::zeroed() };
 
 #[repr(C)]

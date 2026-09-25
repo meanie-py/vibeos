@@ -153,9 +153,11 @@ extern BOOLEAN FatAcquireExclusiveVcb_Real(PIRP_CONTEXT, PVCB, BOOLEAN);
 extern VOID    FatCompleteRequest_Real(PIRP_CONTEXT, PIRP, NTSTATUS);
 extern VOID    FatDeleteIrpContext_Real(PIRP_CONTEXT);
 
-/* IRP_CONTEXT_FLAG_WAIT bit -- we define it as a constant to avoid pulling
- * in fatstruc.h. Rust code calls IRP_CONTEXT_FLAG_WAIT() as a fn. */
-#define FAT_IRP_CTX_FLAG_WAIT 0x00000001U
+/* IRP_CONTEXT_FLAG_WAIT, taken from the real fatstruc.h in rust_cohab_fat.c
+ * like the offsets below. It was a hard-coded 0x1 here, which is
+ * IRP_CONTEXT_FLAG_DISABLE_DIRTY: every acquire below ran non-blocking. */
+extern const unsigned int FatIrpContextFlagWait;
+#define FAT_IRP_CTX_FLAG_WAIT FatIrpContextFlagWait
 
 /* Real struct field byte offsets. These are NOT hand-counted (the old
  * hard-coded values 397/404/478/68 were wrong & unaligned → arm64 mount AV in
@@ -233,14 +235,8 @@ BOOLEAN FatAcquireExclusiveVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
     return FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
 }
 
-/* FatAcquireExclusiveFcb — acquires the FCB resource exclusively.
- * Declared in fatprocs.h but not translated into strucsup.rs. */
-BOOLEAN FatAcquireExclusiveFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
-{
-    return (BOOLEAN)ExAcquireResourceExclusiveLite(
-        FCB_RESOURCE(Fcb),
-        !!(IRP_CTX_FLAGS(IrpContext) & FAT_IRP_CTX_FLAG_WAIT));
-}
+/* FatAcquireExclusiveFcb lives in resrcsup.rs (2026-09-25), with the
+ * OutstandingAsyncWrites drain this shim never had. */
 
 VOID FatReleaseVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
 {

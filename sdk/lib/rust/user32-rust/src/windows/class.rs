@@ -176,19 +176,17 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
 // GETPFNSERVER(fnid) := gpsi->aStoCidPfn[fnid - FNID_FIRST]   (ntuser.h)
 #[inline]
 unsafe fn GETPFNSERVER(fnid: i32) -> WNDPROC {
-    (*gpsi).aStoCidPfn[(fnid - FNID_FIRST as i32) as usize]
+    crate::wow64::psi::pfn_server(fnid as usize)
 }
 // GETPFNCLIENTA(fnid) := (WNDPROC)(*(((ULONG_PTR*)&gpsi->apfnClientA) + (fnid - FNID_FIRST)))
 #[inline]
 unsafe fn GETPFNCLIENTA(fnid: i32) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientA) as *const ULONG_PTR;
-    core::mem::transmute::<ULONG_PTR, WNDPROC>(*base.add((fnid - FNID_FIRST as i32) as usize))
+    crate::wow64::psi::pfn_client_a(fnid as usize)
 }
 // GETPFNCLIENTW(fnid) := (WNDPROC)(*(((ULONG_PTR*)&gpsi->apfnClientW) + (fnid - FNID_FIRST)))
 #[inline]
 unsafe fn GETPFNCLIENTW(fnid: i32) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientW) as *const ULONG_PTR;
-    core::mem::transmute::<ULONG_PTR, WNDPROC>(*base.add((fnid - FNID_FIRST as i32) as usize))
+    crate::wow64::psi::pfn_client_w(fnid as usize)
 }
 // UserHMGetHandle(obj) := (obj)->head.h   (ntuser.h)
 // NOTE: bindgen flattens the leading `_HEAD` of THRDESKHEAD into

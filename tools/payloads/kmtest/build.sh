@@ -21,7 +21,7 @@ for A in $ARCHES; do
     # UCRT api-ms-win-crt-* default is NOT shipped by reactos — loader death
     # with zero serial evidence). DbgPrint comes from ntdll.
     "$TC/${CC[$A]}" -O2 -o "$HERE/kmtest-sweep-$A.exe" "$HERE/sweep.c" \
-        -lmsvcrt-os -lntdll -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
+        -lmsvcrt-os -lntdll -ladvapi32 -lkernel32 -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
     objd="$TC/${CC[$A]%-gcc}-objdump"
     ss=$("$objd" -p "$HERE/kmtest-sweep-$A.exe" | awk '$1=="Subsystem" && !p {print $2; p=1}')
     [ "$ss" = "00000002" ] || { echo "[kmtest] FAIL($A): subsystem=$ss (want GUI)"; exit 1; }

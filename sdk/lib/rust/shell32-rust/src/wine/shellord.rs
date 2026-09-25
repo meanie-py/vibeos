@@ -9,10 +9,10 @@
 //!
 //! ⚠ INTEGRATION NOTE: `ShellMessageBoxA` is a genuine C-variadic export (`...` + va_list
 //! forwarded to FormatMessageA). Stable Rust cannot DEFINE a variadic fn (`c_variadic`,
-//! rust-lang#44930), so the variadic entry point is a 3-line trampoline in
-//! `dll/win32/shell32/rust_varargs_shim.c` and the body below is its fixed-arity `_v`
-//! twin (see `sdk/lib/rust/varargs-rust` for the contract). The exported ordinal-183
-//! symbol + its cdecl variadic ABI are unchanged.
+//! rust-lang#44930). It was a 3-line trampoline in `dll/win32/shell32/rust_varargs_shim.c`;
+//! since 2026-09-24 `ShellMessageBoxA` below RECEIVES the varargs as fixed slots
+//! (va-slots-rust) and calls the fixed-arity `_v` body. The exported ordinal-183 symbol + its
+//! cdecl variadic ABI are unchanged.
 //!
 //! ABI: WINAPI -> extern "system" (i386 `_Name@N`); plain cdecl/EXTERN_C -> extern "C"
 //! (i386 `_Name`). Imports declared with the convention matching each obj decoration
@@ -1484,13 +1484,40 @@ pub unsafe extern "system" fn RegisterShellHook(hWnd: HWND, dwType: DWORD) -> BO
     FALSE
 }
 
-/// ShellMessageBoxA [SHELL32.183] — fixed-arity twin of the C-variadic entry point in
-/// `dll/win32/shell32/rust_varargs_shim.c`. The C side exists only to do the `va_start`
-/// that stable Rust cannot (`c_variadic`, rust-lang#44930) and to keep the EXPORTED
-/// ordinal-183 symbol's variadic cdecl (WINAPIV) ABI for external callers; `ap` is a
-/// pointer to its `va_list` — which is exactly what FormatMessageA's `Arguments`
-/// parameter wants, so it forwards unchanged. All the logic stays here.
+/// ShellMessageBoxA [SHELL32.183], the EXPORTED variadic (cdecl, WINAPIV) entry point.
+///
+/// Stable Rust cannot DEFINE a C-variadic (`c_variadic`, rust-lang#44930), so this used to be
+/// a `va_start` trampoline in rust_varargs_shim.c. It RECEIVES the varargs instead, the
+/// va-slots way (`va_slots_rust`, which freeldr's and the kernel's printf family already use):
+/// on all three of our targets a variadic call puts its arguments in the same slots as a
+/// fixed-arity call with that many parameters (i386 cdecl stack; win64 RCX-R9 then stack;
+/// arm64 x0-x7 then stack, where Windows passes varargs in integer registers), and `va_list`
+/// is a plain pointer. So the trailing slots are declared as ordinary parameters and staged
+/// into an array that a `va_list` points at. FormatMessageA takes a `va_list *` for
+/// `Arguments`, which is what `&ap` is.
 #[no_mangle]
+pub unsafe extern "C" fn ShellMessageBoxA(
+    hInstance: HINSTANCE,
+    hWnd: HWND,
+    lpText: LPCSTR,
+    lpCaption: LPCSTR,
+    uType: UINT,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) -> c_int {
+    let mut stage = va_slots_rust::stage(&[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    let mut ap: *mut c_void = stage.as_mut_ptr() as *mut c_void;
+    ShellMessageBoxA_v(
+        hInstance,
+        hWnd,
+        lpText,
+        lpCaption,
+        uType,
+        &mut ap as *mut *mut c_void as *mut c_void,
+    )
+}
+
+/// The body of `ShellMessageBoxA`; `ap` points at the `va_list` FormatMessageA consumes.
 pub unsafe extern "C" fn ShellMessageBoxA_v(
     hInstance: HINSTANCE,
     hWnd: HWND,

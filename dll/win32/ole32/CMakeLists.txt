@@ -130,6 +130,11 @@ if(MSVC)
 endif()
 
 set_module_type(ole32 win32dll)
+# The proxy/stub registration (every Interface\{iid}\ProxyStubClsid32 that CoGetPSClsid reads)
+# is generated from the IDL: upstream 7675017f60d deleted the hand-written .rgs resources from
+# ole32res.rc and added this line, and the upstream sync kept the .rc change but lost the line.
+# DllRegisterServer then wrote nothing and returned S_OK, so no interface could be marshalled.
+add_idl_reg_scripts(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ole32_unknwn.idl)
 # OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
 target_link_options(ole32 PRIVATE LINKER:--allow-multiple-definition)

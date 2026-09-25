@@ -261,7 +261,7 @@ dll/cpl/desk/CMakeLists.txt	1	# misc.c
 dll/cpl/desk/CMakeLists.txt	1	# monslctl.c
 dll/cpl/desk/CMakeLists.txt	1	# muireg.c)
 dll/cpl/desk/CMakeLists.txt	1	# preview.c
-dll/cpl/desk/CMakeLists.txt	1	# rust_varargs_shim.c is NOT a translation reverted to C: it holds the `va_start` for the three
+dll/cpl/desk/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (retired 2026-09-25: the strsafe printf family is strsafe-rust macros that CALL
 dll/cpl/desk/CMakeLists.txt	1	# screensaver.c
 dll/cpl/desk/CMakeLists.txt	1	# settings.c
 dll/cpl/desk/CMakeLists.txt	1	# theme.c
@@ -277,7 +277,6 @@ dll/cpl/intl/CMakeLists.txt	1	# misc.c
 dll/cpl/intl/CMakeLists.txt	1	# numbers.c
 dll/cpl/intl/CMakeLists.txt	1	# sort.c)
 dll/cpl/intl/CMakeLists.txt	1	# time.c
-dll/cpl/sysdm/CMakeLists.txt	1	# ResourceMessageBox (sysdm's own, sysdm.c:27) and for strsafe.h's StringCchPrintfW, neither of
 dll/cpl/sysdm/CMakeLists.txt	1	# advanced.c
 dll/cpl/sysdm/CMakeLists.txt	1	# environment.c
 dll/cpl/sysdm/CMakeLists.txt	1	# general.c
@@ -285,7 +284,7 @@ dll/cpl/sysdm/CMakeLists.txt	1	# hardprof.c
 dll/cpl/sysdm/CMakeLists.txt	1	# hardware.c
 dll/cpl/sysdm/CMakeLists.txt	1	# licence.c
 dll/cpl/sysdm/CMakeLists.txt	1	# performance.c
-dll/cpl/sysdm/CMakeLists.txt	1	# rust_varargs_shim.c is NOT a translation reverted to C: it holds the `va_start` for
+dll/cpl/sysdm/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (retired 2026-09-25; the file stays on disk, inert):
 dll/cpl/sysdm/CMakeLists.txt	1	# smbios.c
 dll/cpl/sysdm/CMakeLists.txt	1	# startrec.c
 dll/cpl/sysdm/CMakeLists.txt	1	# sysdm.c
@@ -317,7 +316,6 @@ dll/win32/aclui/CMakeLists.txt	1	# guid.c stays C ON PURPOSE and is NOT a transl
 dll/win32/aclui/CMakeLists.txt	1	# misc.c
 dll/win32/aclui/CMakeLists.txt	1	# rust_varargs_shim.c is a C-language gap filler, not a translation left in C: misc.c's
 dll/win32/aclui/CMakeLists.txt	1	# sidcache.c)
-dll/win32/advapi32/CMakeLists.txt	1	# LSA logon functions not needed during boot. Stubs in arm64_advapi32_stubs.c.
 dll/win32/advapi32/CMakeLists.txt	1	# misc/dllmain.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/efs.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/evntrace.c — replaced by Rust (advapi32-rust)
@@ -506,12 +504,12 @@ dll/win32/msafd/CMakeLists.txt	1	# misc/helpers.c — replaced by Rust (msafd-ru
 dll/win32/msafd/CMakeLists.txt	1	# misc/sndrcv.c — replaced by Rust (msafd-rust/src/misc/sndrcv.rs); WSPSend/Recv/AsyncSelect
 dll/win32/msafd/CMakeLists.txt	1	# misc/stubs.c — replaced by Rust (msafd-rust/src/misc/stubs.rs); WSPAcceptEx/DisconnectEx/... stubs
 dll/win32/msgina/CMakeLists.txt	1	# (never-delete rule). dimmedwindow.cpp is now Rust too (dimmedwindow.rs); the
-dll/win32/msgina/CMakeLists.txt	1	# NOT a translation reverted to C: rust_varargs_shim.c holds the `va_start` for strsafe.h's
 dll/win32/msgina/CMakeLists.txt	1	# dimmedwindow.cpp — replaced by Rust (sdk/lib/rust/msgina-rust/src/dimmedwindow.rs)
 dll/win32/msgina/CMakeLists.txt	1	# generated msgina_stubs.c is the sole remaining C anchor TU.
 dll/win32/msgina/CMakeLists.txt	1	# gui.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/gui.rs)
 dll/win32/msgina/CMakeLists.txt	1	# lsa.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/lsa.rs)
 dll/win32/msgina/CMakeLists.txt	1	# msgina.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/msgina.rs)
+dll/win32/msgina/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built: strsafe's printf family is strsafe-rust macros
 dll/win32/msgina/CMakeLists.txt	1	# shutdown.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/shutdown.rs)
 dll/win32/msgina/CMakeLists.txt	1	# stubs.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/stubs.rs)
 dll/win32/msgina/CMakeLists.txt	1	# tui.c — replaced by Rust (sdk/lib/rust/msgina-rust/src/tui.rs)
@@ -577,7 +575,7 @@ dll/win32/netapi32/CMakeLists.txt	1	# user.c (→ netapi32-rust src/netapi32/use
 dll/win32/netapi32/CMakeLists.txt	1	# utils.c (→ netapi32-rust src/netapi32/utils.rs)
 dll/win32/netapi32/CMakeLists.txt	1	# wksta.c (→ netapi32-rust src/netapi32/wksta.rs)
 dll/win32/netapi32/CMakeLists.txt	1	# wksta_new.c (→ netapi32-rust src/netapi32/wksta_new.rs — NetWkstaGetInfo/NetWkstaUserEnum)
-dll/win32/netcfgx/CMakeLists.txt	1	# add_pch dropped with the C: the only TUs left are rust_strsafe_shim.c (windef/winbase/strsafe
+dll/win32/netcfgx/CMakeLists.txt	1	# add_pch dropped with the C: the only TU left is the generated netcfgx_stubs.c, which does not
 dll/win32/netcfgx/CMakeLists.txt	1	# classfactory.c
 dll/win32/netcfgx/CMakeLists.txt	1	# inetcfgcomp_iface.c
 dll/win32/netcfgx/CMakeLists.txt	1	# inetcfgcomp_iface.c tcpipconf_notify.c propertypage.c → netcfgx-rust
@@ -590,9 +588,8 @@ dll/win32/netcfgx/CMakeLists.txt	1	# netcfgclass_iface.c
 dll/win32/netcfgx/CMakeLists.txt	1	# netcfgx.c
 dll/win32/netcfgx/CMakeLists.txt	1	# netcfgx.c classfactory.c installer.c netinstall.c netcfg_iface.c
 dll/win32/netcfgx/CMakeLists.txt	1	# netinstall.c
-dll/win32/netcfgx/CMakeLists.txt	1	# only) and the generated netcfgx_stubs.c, neither of which includes precomp.h.
 dll/win32/netcfgx/CMakeLists.txt	1	# propertypage.c
-dll/win32/netcfgx/CMakeLists.txt	1	# rust_strsafe_shim.c is a C-language gap filler, not a translation left in C: strsafe.h's
+dll/win32/netcfgx/CMakeLists.txt	1	# rust_strsafe_shim.c is no longer built (retired 2026-09-25: the strsafe printf family is strsafe-rust macros that CALL
 dll/win32/netcfgx/CMakeLists.txt	1	# tcpipconf_notify.c
 dll/win32/netid/CMakeLists.txt	1	# netid.c → netid-rust
 dll/win32/netid/CMakeLists.txt	1	# netid.c)
@@ -666,7 +663,6 @@ dll/win32/rasdlg/CMakeLists.txt	1	# rasdlg.c)
 dll/win32/rasman/CMakeLists.txt	1	# functions lowered deterministically for $0. rasman.c is commented out below and kept
 dll/win32/rasman/CMakeLists.txt	1	# rasman.c → rasman-rust
 dll/win32/rasman/CMakeLists.txt	1	# rasman.c)
-dll/win32/rpcrt4/CMakeLists.txt	1	# user32 is already loaded separately. Stubs in arm64_rpc_stubs.c.
 dll/win32/samlib/CMakeLists.txt	1	# The RpcExcept(EXCEPTION_EXECUTE_HANDLER) handlers throughout samlib.c are compiled but never
 dll/win32/samlib/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (sam_c.c, samlib_stubs.c)
 dll/win32/samlib/CMakeLists.txt	1	# dllmain.c
@@ -739,7 +735,6 @@ dll/win32/shell32/CMakeLists.txt	1	# CStubWindow32 via CStubWindow32_*_RustBridg
 dll/win32/shell32/CMakeLists.txt	1	# CUserEventTimer.cpp
 dll/win32/shell32/CMakeLists.txt	1	# CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
-dll/win32/shell32/CMakeLists.txt	1	# Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
 dll/win32/shell32/CMakeLists.txt	1	# SH_FormatByteSize forwarder MOVED to dialogs/filedefext.cpp — the TU that owns the
 dll/win32/shell32/CMakeLists.txt	1	# ShellObjectCreator<CExtractIcon> (CExtractIcon.cpp:339), i.e. internal, no CLSID.
 dll/win32/shell32/CMakeLists.txt	1	# `#[no_mangle]` on the Rust side. Their other C++ callers (shlexec.cpp,
@@ -782,14 +777,15 @@ dll/win32/shell32/CMakeLists.txt	1	# matches what CRegFolder.cpp links against. 
 dll/win32/shell32/CMakeLists.txt	1	# no vtable is emitted — shell32.cpp.obj's only undefined CShellLink symbol is
 dll/win32/shell32/CMakeLists.txt	1	# of CFolder.cpp/CFolderItems.cpp's C++ closure.
 dll/win32/shell32/CMakeLists.txt	1	# propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
-dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp below.
-dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp below.
+dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp
+dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp
 dll/win32/shell32/CMakeLists.txt	1	# rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
 dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp
 dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp — GONE WITH IT, and it was the last of the five retained
-dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
+dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c
+dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp
 dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
-dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
+dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp names the unmangled symbols Rust emits.
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp's object map reaches them through CShellLibraryRustEntry /
@@ -801,7 +797,6 @@ dll/win32/shell32/CMakeLists.txt	1	# shlfolder.cpp — replaced by Rust (shell32
 dll/win32/shell32/CMakeLists.txt	1	# stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# that used to live in rust_recyclebin_bridges_stub.cpp is gone with it.
-dll/win32/shell32/CMakeLists.txt	1	# trampoline into the header's own StringCchVPrintfW. Its own TU because rust_varargs_shim.c
 dll/win32/shell32/CMakeLists.txt	1	# utils.cpp — replaced by Rust (shell32-rust/src/shell32/utils.rs, all 95 free functions);
 dll/win32/shell32/CMakeLists.txt	1	# vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# was CDefViewDual_Constructor (CDefView.cpp:3583 is the sole caller), and Rust publishes
@@ -858,12 +853,11 @@ dll/win32/syssetup/CMakeLists.txt	1	# netcfgx — wizard.c alone is 3.4K lines o
 dll/win32/syssetup/CMakeLists.txt	1	# netinstall.c
 dll/win32/syssetup/CMakeLists.txt	1	# property page. syssetup_stubs.c stays C: it is GENERATED by spec2def, a build product.
 dll/win32/syssetup/CMakeLists.txt	1	# proppage.c
-dll/win32/syssetup/CMakeLists.txt	1	# rust_varargs_shim.c is NOT a translation reverted to C. syssetup has two C-variadics and
+dll/win32/syssetup/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (retired 2026-09-25; the file stays on disk, inert).
 dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
-dll/win32/userenv/CMakeLists.txt	1	# StringCchPrintfW (strsafe inline / stable-Rust can't define) — see userenv_rust_shims.c.
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c — replaced by Rust (userenv-rust src/userenv/desktop.rs — GetAllUsers/DefaultUserProfileDirectory)
 dll/win32/userenv/CMakeLists.txt	1	# directory.c
@@ -885,6 +879,7 @@ dll/win32/userenv/CMakeLists.txt	1	# sid.c
 dll/win32/userenv/CMakeLists.txt	1	# sid.c — replaced by Rust (userenv-rust src/userenv/sid.rs — SID → profile-key string helpers)
 dll/win32/userenv/CMakeLists.txt	1	# userenv.c — replaced by Rust (userenv-rust src/userenv/userenv.rs — DllMain + module glue)
 dll/win32/userenv/CMakeLists.txt	1	# userenv.c)
+dll/win32/userenv/CMakeLists.txt	1	# userenv_rust_shims.c is no longer built (retired 2026-09-25; the file stays on disk,
 dll/win32/userenv/CMakeLists.txt	1	# userenv_stubs.c is PCH_SKIP_SOURCE and never used it).
 dll/win32/version/CMakeLists.txt	1	# #[no_mangle] symbols are the sole providers of version.c's functions now that the
 dll/win32/version/CMakeLists.txt	1	# since every version.c symbol was removed).
@@ -2019,7 +2014,6 @@ win32ss/reactx/dxg/CMakeLists.txt	1	# eng.c → dxg-rust/src/eng.rs
 win32ss/reactx/dxg/CMakeLists.txt	1	# historic.c → dxg-rust/src/historic.rs
 win32ss/reactx/dxg/CMakeLists.txt	1	# main.c ddhmg.c d3d.c dd.c ddraw.c ddsurf.c dxgallocator.c eng.c historic.c
 win32ss/reactx/dxg/CMakeLists.txt	1	# main.c → dxg-rust/src/driver_main.rs (+ gaDxgFuncs pdrvfn wiring)
-win32ss/user/user32/CMakeLists.txt	1	# boot; stubs in arm64_user32_stubs.c). Keep usp10 (text shaping, small deps).
 win32ss/user/user32/CMakeLists.txt	1	# controls/appswitch.c — replaced by Rust (user32-rust/src/controls/appswitch.rs); cohab via libuser32_rust.a
 win32ss/user/user32/CMakeLists.txt	1	# controls/button.c — replaced by Rust (user32-rust/src/controls/button.rs); cohab via libuser32_rust.a
 win32ss/user/user32/CMakeLists.txt	1	# controls/combo.c — replaced by Rust (user32-rust/src/controls/combo.rs); cohab via libuser32_rust.a

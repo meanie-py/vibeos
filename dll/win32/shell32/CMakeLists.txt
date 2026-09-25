@@ -36,10 +36,10 @@ list(APPEND SOURCE
     # CQueryAssociations.cpp — class plus association description helpers are Rust-owned
     # (shell32-rust/src/query_associations.rs).
     # changenotify.cpp — replaced by Rust (shell32-rust/src/shell32/changenotify.rs); cohab via
-    # libshell32_rust.a. Its one ATL CWindowImpl<> (CChangeNotifyBroker) could not come along,
-    # and neither could the CreateNotificationBroker that news and subclasses it; both live in
-    # rust_changenotify_broker_stub.cpp below.
-    rust_changenotify_broker_stub.cpp
+    # libshell32_rust.a. Its ATL CWindowImpl<> (CChangeNotifyBroker) and CreateNotificationBroker
+    # followed on 2026-09-24 (shell32-rust/src/atl_stub_windows.rs, on the crate's atlwin
+    # substrate); the stub that held them is gone:
+    # rust_changenotify_broker_stub.cpp
     # debughlp.cpp — replaced by Rust (shell32-rust/src/debughlp.rs); cohab via libshell32_rust.a
     # dialogs/dialogs.cpp — replaced by Rust (shell32-rust/src/dialogs/dialogs.rs); cohab via
     # libshell32_rust.a. Whole-TU flip: of its 145 defined symbols only ExitWindowsDialog and
@@ -72,9 +72,9 @@ list(APPEND SOURCE
     # other C++ TU. `EditTypeDlg_UpdateEntryIcon` is hand-written in the banked preamble
     # rather than translated.
     # dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
-    # cohab via libshell32_rust.a. Its one ATL CWindowImpl<> could not come along and lives in
-    # rust_folder_options_stub.cpp below.
-    rust_folder_options_stub.cpp
+    # cohab via libshell32_rust.a. Its ATL CWindowImpl<> (CMSGlobalFolderOptionsStub) followed
+    # on 2026-09-24 (shell32-rust/src/atl_stub_windows.rs); the stub that held it is gone:
+    # rust_folder_options_stub.cpp
     # dialogs/item_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/item_prop.rs); cohab
     # via libshell32_rust.a. Its ShellPropSheetDialog "class" is a namespace of statics, so the
     # four of them are plain free functions on the Rust side.
@@ -126,7 +126,9 @@ list(APPEND SOURCE
     # shell32.cpp names the unmangled symbols Rust emits.
     # NOTE the earlier plan said all 16 `*_RustBridge` wrappers needed rehoming. They did not:
     # utils.rs publishes 14 of them itself. Only the pair that reaches a C++ ATL class does.
-    rust_stubwindow32_stub.cpp
+    # That class, CStubWindow32, followed on 2026-09-24 once every constructor was Rust
+    # (shell32-rust/src/atl_stub_windows.rs); the stub that held it is gone:
+    # rust_stubwindow32_stub.cpp
     # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
     # SHCreateShellItemArrayFromDataObject are Rust-owned.
     # CShellLink.cpp — removed. The COM class was already Rust-owned
@@ -344,13 +346,9 @@ list(APPEND PCH_SKIP_SOURCE
     # wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
     # vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
     #
-    # rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
-    # ShellMessageBoxA entry point (`va_start`; exported ordinal 183, so the symbol name +
-    # cdecl variadic ABI must be preserved). It trampolines straight into shell32-rust's
-    # fixed-arity ShellMessageBoxA_v, which keeps ALL the logic. This is what lets
-    # shell32-rust build on plain stable rustc — no bootstrap escape hatch on the cargo
-    # env line below, no nightly feature gate in the crate root.
-    # Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
+    # ShellMessageBoxA's variadic entry point was a `va_start` trampoline here. Since
+    # 2026-09-24 shell32-rust RECEIVES the varargs as fixed slot parameters (va-slots-rust,
+    # wine/shellord.rs), so the trampoline file is out of the build:
     # CShellLibrary.cpp / CUserEventTimer.cpp — NEW upstream COM objects (post-fork), now
     # shell32-rust/src/shell32/{CShellLibrary,CUserEventTimer}.rs; cohab via libshell32_rust.a.
     # shell32.cpp's object map reaches them through CShellLibraryRustEntry /
@@ -358,13 +356,13 @@ list(APPEND PCH_SKIP_SOURCE
     # the header stays included only for the registry statics the entry inherits.
     # CShellLibrary.cpp
     # CUserEventTimer.cpp
-    rust_varargs_shim.c
+    # rust_varargs_shim.c
     #
-    # rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
-    # __inline`, so it is a PHANTOM SYMBOL with nothing for Rust to bind to. One forwarding
-    # trampoline into the header's own StringCchVPrintfW. Its own TU because rust_varargs_shim.c
-    # deliberately includes no Windows headers. Also plain C, so also PCH_SKIP_SOURCE.
-    rust_strsafe_shim.c
+    # StringCchPrintfW (a `static __inline` phantom in strsafe.h) was a forwarding trampoline
+    # here. Rust now calls msvcrt's variadic `_snwprintf` directly through
+    # strsafe_rust::StringCchPrintfW!, with the header's truncation contract, so the
+    # trampoline file is out of the build too:
+    # rust_strsafe_shim.c
     ${CMAKE_CURRENT_BINARY_DIR}/shell32_stubs.c)
 
 file(GLOB_RECURSE shell32_rc_deps res/*.*)

@@ -744,3 +744,75 @@ backwards. Side benefit: a wedge costs ten minutes instead of the full two-hour 
 **Still open on `cmd_apitest`:** three of its six subtests wedge the guest. Not yet root-caused,
 and the suite is a plausible candidate for a single shared cause (it spawns `cmd.exe` children,
 which is also the grandchild-inherits-the-pipe shape suspected behind the iphlpapi stalls).
+
+## The process-wedge cluster: two blind alleys eliminated, and the experiment that is actually needed
+
+The cluster is the rounds that end with **no BUGCHECK at all** and one unresolved
+`[APITEST-SWEEP] launch` — as distinct from the ~20 rounds that ended in a clean 0x1E.
+Across all 39 archived serials it is: `cmd_apitest` attrib/exit/pushd, `kernel32_apitest`
+(eight victims, one cause), `msvcrt_apitest` _wsystem/atexit/static_construct/system,
+`iphlpapi_apitest GetExtendedTcpTable`, and `user32_apitest` LoadImage/desktop.
+
+**Attribution checks out.** Re-derived independently over all 39 serials by classifying every
+`launch` as resolved by a matching `exit` *or* a `TIMEOUT … terminated` line: every wedge round
+has **exactly one** unresolved row, and it is the one in the quarantine file. No round has two,
+which is what a misattribution would look like.
+
+A correction to how I first read this: an unpaired `launch` is **not** the discriminator on its
+own. Four subtests (`afd windowsize`, `appshim ignorefreelib`, `iphlpapi GetExtendedUdpTable`,
+`msvcrt log10`) appear in the 063608 serials as `launch` with no `exit` — and each is followed by
+`TIMEOUT … (120s) - terminated`, after which the sweep carries straight on. They are *resolved*
+rows. `parse_apitest_serial.py`'s `RESOLVED` set already encodes this; an ad-hoc grep does not.
+Worth noting for the same four: they were **timeouts** in the 063608 run and **BUGCHECKs** in the
+132403 run. Same subtests, different outcome across runs, so this class is not deterministic.
+
+The msvcrt four are all CRT process/teardown tests — `system`, `_wsystem`, `atexit`,
+`static_construct` — which is one cause wearing four names, and supports treating the cluster as
+a single investigation rather than a dozen bugs.
+
+**Two attractive signatures, both eliminated. Do not re-chase these:**
+
+- **`co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`** (window.rs:3485),
+  followed by threads piling into `UserRequest` waits (`[CENSUS] … 88 thread(s) parked >20s`).
+  This reads exactly like a window-manager deadlock strangling every console-spawning test, and
+  it is ambient: **11–16 occurrences in every single serial**, including rounds that ended in an
+  unrelated BUGCHECK and rounds that reached `[APITEST-SWEEP] done`. It does not discriminate.
+  (It may still be a real bug worth fixing on its own; it is not *this* bug.)
+- **The serial ending mid-line** — most wedge captures end on a bare `[`, which looks like the
+  box freezing inside a debug print. Also ambient: 15 of 20 BUGCHECK rounds end the same way. It
+  is how the capture ends when the VM is killed with the serial buffer mid-flush.
+
+- **Leftover `WineTestService` registrations being restarted by services.exe.**
+  `advapi32_apitest ServiceArgs` registers services, and several wedge tails show
+  `ScmStartUserModeService(WineTestServiceNNNNN)` cycling long after advapi32 finished --
+  which reads like a service-restart storm strangling the box. Counted across all 42
+  archived serials as matches in the last 300 lines, split by outcome:
+
+      CRASH: 0 0 0 0 0 0 4 6 7 14 21 21 21 23 27 27 27 27 27 27 30 38 39 41
+      WEDGE: 0 0 0 21 21 21 21 27 27 27 27 27 27 27 30 35 48 48
+
+  Same distribution, zeros in both. No discrimination.
+
+Each was checked precisely because it looked conclusive. The generalisable bit: a signature
+found by staring at failing logs means nothing until it has been counted in the PASSING ones too.
+
+**And there is a structural reason all three failed the same way.** A serial here is 20-45
+minutes of a busy multi-process OS, so nearly any subsystem message appears *somewhere* in
+every one of them. Selecting a signature out of a failing tail selects on PRESENCE, and at
+this log volume presence is close to universal. Only two kinds of signal can discriminate:
+one tied to the specific transition under investigation -- the `launch`/`exit`/`TIMEOUT`
+pairing, which is per-subtest by construction -- or one whose absence from healthy runs is
+guaranteed rather than merely observed. Stop looking for a message; look for a pairing, or
+run the isolated boot.
+
+**What is actually known, and it is the same two facts as before:** the sweep's own 120s
+per-subtest timeout never fires, so the sweep — an ordinary user-mode process — is not running
+either, which makes this the box dying rather than the harness waiting; and the wedged child
+emits no output whatsoever.
+
+**The next step is not more log archaeology, it is a single-suite boot.** Build media whose suite
+list contains *only* `msvcrt_apitest` with only `system` unskipped, and boot it. If it wedges in
+isolation that is a ~20-minute reproduction instead of a 3-hour sweep, with no other suite's
+residue in the serial — and it also answers whether the wedge needs the preceding 200 subtests
+(leftover `WineTestService` registrations, a leaked handle, exhausted desktop heap) or is
+self-contained. `gen_suites.py` already takes the lists, so this needs no new tooling.

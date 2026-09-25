@@ -1300,12 +1300,13 @@ pub unsafe extern "C" fn PathIsExeW(lpszPath: LPCWSTR) -> BOOL {
         [0x73, 0x63, 0x66, 0],
         [0x73, 0x63, 0x72, 0],
     ];
-    let mut i = 0usize;
-    while EXTS[i][0] != 0 {
-        if wcsicmp(lpsz_extension, EXTS[i].as_ptr()) == 0 {
+    // The C walks to its L"" sentinel row; this table has no sentinel row, so iterate it.
+    // (It did walk to a sentinel: every non-executable path indexed past the end and
+    // panicked -- SHObjectProperties on a folder, found by tools/payloads/shelltail.)
+    for ext in EXTS.iter() {
+        if wcsicmp(lpsz_extension, ext.as_ptr()) == 0 {
             return TRUE;
         }
-        i += 1;
     }
     FALSE
 }

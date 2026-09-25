@@ -66,6 +66,7 @@ _PYTEST_SUITES = [
     # entries blaming whichever subtest was in flight. Only a chatty-guest test
     # distinguishes the two implementations.
     (".", ".", "tools/test_payload_drain.py"),
+    (".", ".", "tools/test_wine_registry_resources.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
     # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
     # for the VM watchdog on the very next run after that was fixed. Raising
@@ -77,6 +78,7 @@ _PYTEST_SUITES = [
     # these files carry) and false negatives on the shape that actually
     # bugchecked. Both are pinned.
     (".", ".", "tools/test_scan_probe_then_deref.py"),
+    (".", ".", "tools/test_gen_suites.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
@@ -111,6 +113,10 @@ _PYTEST_SUITES = [
     # defect the single-boot harness shipped for weeks without anything noticing.
     (".", ".", "tools/test_ucrt_tier2_sweep.py"),
     (".", ".", "tools/test_docs_only.py"),
+    # The port ledger's classification is the whole measurement: one Wine module left in
+    # the core bucket moves the published coverage figure and nothing in the output says
+    # so. Its build-graph cases skip when this worktree has no build-* dirs.
+    (".", ".", "tools/test_port_audit.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
