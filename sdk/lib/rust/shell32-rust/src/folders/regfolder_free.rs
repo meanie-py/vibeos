@@ -108,7 +108,7 @@ pub unsafe extern "C" fn FormatGUIDKey(
 ) -> HRESULT {
     let mut xriid = [0u16; CHARS_IN_GUID as usize];
     StringFromGUID2(riid.cast(), xriid.as_mut_ptr(), xriid.len() as INT);
-    StringCchPrintfW(KeyName, KeySize as usize, RegPath, xriid.as_ptr())
+    strsafe_rust::StringCchPrintfW!(KeyName, KeySize as usize, RegPath, xriid.as_ptr())
 }
 #[cfg(target_arch = "x86")]
 pub unsafe extern "system" fn RegFolderContextMenuCallback(

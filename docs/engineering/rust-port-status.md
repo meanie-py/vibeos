@@ -1965,9 +1965,16 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   `DllGetClassObject`/`DllCanUnloadNow`), then `DllMain` and registration — which carries a Rust
   port of ATL's static registrar (`shell32/statreg.rs`), proven byte-identical to the C++ build's
   DllRegisterServer/DllUnregisterServer output on all three arches by `tools/payloads/regdiff`.
-  What still compiles as C/C++ is the SANCTIONED glue in `rustconv shell32-tail-inventory`:
-  three ATL window-class stubs (272 lines) and two C shims (95 lines). The paragraphs below are
-  the history of getting here.
+  **Since 2026-09-24 shell32 compiles no C or C++ at all** (`rustconv shell32-tail-inventory`:
+  0 cpp, 0 c). The last "sanctioned glue" went too:
+  - the three ATL window classes (`CStubWindow32`, `CMSGlobalFolderOptionsStub`,
+    `CChangeNotifyBroker`) are on the crate's `atlwin` substrate
+    (`shell32-rust/src/atl_stub_windows.rs`), now that every constructor is Rust;
+  - `ShellMessageBoxA` receives its varargs as fixed slots (va-slots-rust);
+  - `StringCchPrintfW` is `strsafe_rust::StringCchPrintfW!`, which calls msvcrt's variadic
+    `_snwprintf` directly.
+  They were A/B-checked against a baseline shell32 in-guest on all three arches by
+  `tools/payloads/shelltail`. The paragraphs below are the history of getting here.
 - **shell32 activatable COM surface — 33 of 33 classes Rust-owned.**
   Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
   `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,

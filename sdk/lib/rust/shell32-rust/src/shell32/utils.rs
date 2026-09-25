@@ -19,7 +19,8 @@
 //! published right here. Only the `CStubWindow32` create/destroy pair moved, to
 //! `dll/win32/shell32/rust_stubwindow32_stub.cpp`, because only that pair reaches a C++ ATL
 //! class that propsheet.cpp and folders/CDrivesFolder.cpp still construct -- and an ATL
-//! `CWindowImpl`'s thunk and registered class must have exactly one owner. The last two,
+//! `CWindowImpl`'s thunk and registered class must have exactly one owner. (Once those two were
+//! Rust too, the class followed: crate::atl_stub_windows, 2026-09-24.) The last two,
 //! `SHELL_GetCommandStringImpl` and `SHELL_MapContextMenuVerbToCmdId`, had their utils.h
 //! declarations made EXTERN_C so shell32.cpp names the unmangled symbols emitted here.
 //!

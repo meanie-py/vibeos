@@ -80,20 +80,17 @@
     ],
     "monolith": [
       "dll/win32/shell32/shell32.cpp"
-    ]
-  },
-  "sanctioned": {
-    "atl_window_class": [
+    ],
+    "atl_window_class_ported": [
       "dll/win32/shell32/rust_changenotify_broker_stub.cpp",
       "dll/win32/shell32/rust_folder_options_stub.cpp",
       "dll/win32/shell32/rust_stubwindow32_stub.cpp"
     ],
-    "phantom_inline_linkage": [
-      "dll/win32/shell32/rust_strsafe_shim.c"
-    ],
-    "variadic_abi": [
+    "c_shim_ported": [
+      "dll/win32/shell32/rust_strsafe_shim.c",
       "dll/win32/shell32/rust_varargs_shim.c"
     ]
   },
+  "sanctioned": {},
   "version": 1
 }

@@ -1870,6 +1870,7 @@ dependencies = [
  "com-sys",
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 
@@ -2235,6 +2236,8 @@ dependencies = [
  "com-sys",
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
+ "va-slots-rust",
 ]
 
 [[package]]

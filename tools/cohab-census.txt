@@ -739,7 +739,6 @@ dll/win32/shell32/CMakeLists.txt	1	# CStubWindow32 via CStubWindow32_*_RustBridg
 dll/win32/shell32/CMakeLists.txt	1	# CUserEventTimer.cpp
 dll/win32/shell32/CMakeLists.txt	1	# CUserNotification.cpp — replaced by Rust (shell32-rust/src/user_notification.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
-dll/win32/shell32/CMakeLists.txt	1	# Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
 dll/win32/shell32/CMakeLists.txt	1	# SH_FormatByteSize forwarder MOVED to dialogs/filedefext.cpp — the TU that owns the
 dll/win32/shell32/CMakeLists.txt	1	# ShellObjectCreator<CExtractIcon> (CExtractIcon.cpp:339), i.e. internal, no CLSID.
 dll/win32/shell32/CMakeLists.txt	1	# `#[no_mangle]` on the Rust side. Their other C++ callers (shlexec.cpp,
@@ -782,14 +781,15 @@ dll/win32/shell32/CMakeLists.txt	1	# matches what CRegFolder.cpp links against. 
 dll/win32/shell32/CMakeLists.txt	1	# no vtable is emitted — shell32.cpp.obj's only undefined CShellLink symbol is
 dll/win32/shell32/CMakeLists.txt	1	# of CFolder.cpp/CFolderItems.cpp's C++ closure.
 dll/win32/shell32/CMakeLists.txt	1	# propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
-dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp below.
-dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp below.
+dll/win32/shell32/CMakeLists.txt	1	# rust_changenotify_broker_stub.cpp
+dll/win32/shell32/CMakeLists.txt	1	# rust_folder_options_stub.cpp
 dll/win32/shell32/CMakeLists.txt	1	# rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
 dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp
 dll/win32/shell32/CMakeLists.txt	1	# rust_recyclebin_bridges_stub.cpp — GONE WITH IT, and it was the last of the five retained
-dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
+dll/win32/shell32/CMakeLists.txt	1	# rust_strsafe_shim.c
+dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp
 dll/win32/shell32/CMakeLists.txt	1	# rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
-dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
+dll/win32/shell32/CMakeLists.txt	1	# rust_varargs_shim.c
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp names the unmangled symbols Rust emits.
 dll/win32/shell32/CMakeLists.txt	1	# shell32.cpp's object map reaches them through CShellLibraryRustEntry /
@@ -801,7 +801,6 @@ dll/win32/shell32/CMakeLists.txt	1	# shlfolder.cpp — replaced by Rust (shell32
 dll/win32/shell32/CMakeLists.txt	1	# stubs.cpp — replaced by Rust (shell32-rust/src/shell32/stubs.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# systray.cpp — replaced by Rust (shell32-rust/src/systray.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# that used to live in rust_recyclebin_bridges_stub.cpp is gone with it.
-dll/win32/shell32/CMakeLists.txt	1	# trampoline into the header's own StringCchVPrintfW. Its own TU because rust_varargs_shim.c
 dll/win32/shell32/CMakeLists.txt	1	# utils.cpp — replaced by Rust (shell32-rust/src/shell32/utils.rs, all 95 free functions);
 dll/win32/shell32/CMakeLists.txt	1	# vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
 dll/win32/shell32/CMakeLists.txt	1	# was CDefViewDual_Constructor (CDefView.cpp:3583 is the sole caller), and Rust publishes

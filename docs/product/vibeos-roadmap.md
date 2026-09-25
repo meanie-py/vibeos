@@ -508,8 +508,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
-- **arm64 `test_start_menu_opens` on fresh media: bare wallpaper, no taskbar. ROOT-CAUSED
-  2026-09-23, fix on the `shell32-com` lane: two bugs, both needed.**
+- **`SHObjectProperties` on a file hangs in ole32 marshalling. OPEN** (2026-09-25). Found by
+  `tools/payloads/shelltail`: opening an executable's properties never shows the sheet, and the
+  serial has `ole32-rust marshal.rs: couldn't get IPSFactory buffer for interface` then
+  `Failed to marshal the interface`. The sheet is opened on another thread with a marshalled
+  data object, and no proxy/stub for that interface is found. Baseline shell32 never got that
+  far (it panicked in `PathIsExeW` first, fixed the same day), so this is newly reachable, not a
+  regression. shelltail reaches `CStubWindow32` through `SHOpenPropSheetW` instead.
+- **Retire the other modules' printf/varargs C shims the way shell32's went. OWED**
+  (2026-09-25). `strsafe_rust::StringCchPrintfW!`/`StringCbPrintfW!` (calling msvcrt's variadic
+  `_snwprintf` directly) and va-slots receivers replaced shell32's last two C files. The same
+  kind of trampoline is the ENTIRE content of desk's and msgina's `rust_varargs_shim.c` and
+  userenv's printf shim, and part of sysdm's (`ResourceMessageBox`), syssetup's (exported
+  `pSetupDebugPrint`, `FatalError`) and netcfgx's `rust_strsafe_shim.c`. Each needs its own
+  runtime check, as shell32's got from shelltail.
+- **arm64 `test_start_menu_opens` on fresh media: bare wallpaper, no taskbar. FIXED
+  2026-09-23 (`5e2fb0703c2`); re-verified 2026-09-24 on fresh arm64 media: the start menu
+  opens over the desktop with the taskbar and tray drawn. Two bugs, both needed.**
   Arm64 winlogon spawns `cmd.exe` while explorer starts, and cmd's console connect wedged
   csrss:
   1. **No console font could exist.** win32k never enumerated `\SystemRoot\Fonts`. It
