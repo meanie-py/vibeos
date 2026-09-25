@@ -646,12 +646,15 @@ python3 tools/port_audit.py                # the generated core ledger (markdown
 python3 tools/port_audit.py --json         # same rows, machine-readable
 python3 tools/port_audit.py --check        # ratchet: every compiled source is classified
 python3 tools/port_audit.py --detail "Win32 DLLs"   # live directories in one surface
+python3 tools/port_audit.py --rust         # lines of Rust: translation / generated / harness
 ```
 
 Answers "where are we at on the core OS" from the **ninja build graph of this worktree's
 three build dirs**, unioned — so a surface's "live C" is what the link actually compiles,
-after every `if(ARCH)` and every commented-out CMake entry. It excludes `vendor.yaml`
-trees, Wine-derived modules, applications and tests, and reports those separately.
+after every `if(ARCH)` and every commented-out CMake entry. Core is everything we own
+that ships in the base OS, **Wine-derived code included** (provenance is a column, not a
+scope); only `vendor.yaml` trees, applications, tests and host tools are reported
+separately. Its lines are C lines — compare Rust progress with `--rust`, which is ~2x.
 
 Two things it will not do. It **hard-fails** on a missing build dir or a graph older than
 a CMakeLists edit, rather than reporting the smaller tree a partial answer produces (fix:
