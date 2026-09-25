@@ -86,6 +86,7 @@ i386/pc arch on a UEFI-only boot.
 | win32k: USER | 22 | 13,642 | 86,094 | 79,489 | 85% |
 | win32k: display drivers | 26 | 11,333 | 1,798 | 1,798 | 14% |
 | AppCompat | 22 | 7,236 | 0 | 0 | 0% |
+| OpenGL (opengl32) | 6 | 3,496 | 0 | 0 | 0% |
 | SDK inline TUs | 13 | 2,704 | 724 | 724 | 21% |
 | NLS codepages | 4 | 2,048 | 23 | 0 | 0% |
 | Boot (freeldr) | 5 | 1,406 | 37,574 | 30,342 | 96% |
@@ -97,14 +98,13 @@ i386/pc arch on a UEFI-only boot.
 | CSR subsystem | 1 | 17 | 12,256 | 11,282 | 100% |
 | Kernel (ntoskrnl.exe) | 0 | 0 | 270,294 | 269,684 | 100% |
 | HAL | 0 | 0 | 17,720 | 15,748 | 100% |
-| **CORE TOTAL** | **2,069** | **900,483** | **1,463,830** | **1,341,653** | **60%** |
+| **CORE TOTAL** | **2,075** | **903,979** | **1,463,830** | **1,341,653** | **60%** |
 
 | Not counted as core | Live C (TUs) | Live C (lines) | Why |
 |---|---:|---:|---|
 | Wine-derived | 703 | 868,130 | Wine import, separate roadmap tier |
-| Vendored (vendor.yaml) | 1,289 | 776,441 | not ours to translate |
+| Vendored (vendor.yaml) | 1,341 | 821,704 | not ours to translate |
 | Applications | 347 | 166,500 | calc/mspaint/regedit/rapps |
-| OpenGL (Mesa) | 58 | 48,759 | unregistered third-party — see below |
 | Tests | 140 | 39,470 | apitests + winetests |
 | Host tools | 1 | 642 | build-time only, never ships |
 | Optional applications | 0 | 0 |  |
@@ -119,7 +119,7 @@ lines out of the build with a Rust crate behind all but 2,582 of them. win32k is
 across USER/GDI/ReactX with 14,227 live lines left, and the CSR subsystem is at 17.
 Nothing in the boot-to-desktop chain is waiting on a translation.
 
-**The remaining core work is 900,483 lines and it is overwhelmingly userland.** Two
+**The remaining core work is 903,979 lines and it is overwhelmingly userland.** Two
 surfaces are 59% of it: the Win32 DLLs (424,078 live) and the support libraries (106,318
 live, of which `sdk/lib/crt` is 479 TUs — the CRT's *static* half, which is a different
 thing from the already-translated `dll/win32/msvcrt`). After those, the fleet's real tail
@@ -130,14 +130,24 @@ is six surfaces that have never been started at all: Setup (55,483), Keyboard la
 **The driver fleet is 83% covered but the last 79,189 lines are concentrated**, mostly in
 `drivers/wdm/audio` and `drivers/network`.
 
-### Two registry gaps this audit found, both needing an owner decision
+### Two registry gaps this audit found
 
-1. **Mesa is unregistered third-party.** `dll/opengl/mesa` is Mesa 2.4 (1995–97, Brian
-   Paul, LGPL — the headers say so), 48,759 live lines, and it is in no half of
-   `vendor.yaml`. It escapes the container ratchet because that covers
-   `sdk/lib/3rdparty`, `dll/3rdparty` and `external/`, and Mesa lives under none of them.
-   Only its GLU (`dll/opengl/glu32/src`) is registered. `port_audit.py` excludes it on the
-   evidence in its own headers, which is a decision a tool should not be making alone.
+1. **Mesa was unregistered third-party — REGISTERED 2026-09-24 (owner approved).**
+   `dll/opengl/mesa` is Brian Paul's Mesa, 53,679 lines under LGPL-2.0-or-later, and it
+   was in neither half of `vendor.yaml`. `opengl32.dll` links it as the software
+   rasterizer behind `wglCreateContext`, which is the same role Microsoft's own software
+   GL plays, so it ships — and every line was sitting in the "core C remaining"
+   denominator as work someone might be asked to translate. Now a `trees:` entry with a
+   version probe reading `Mesa_for_ReactOS.txt` (2.6; the per-file `Version:` headers
+   range 2.0–2.6 because upstream never bumped them all). What remains core under
+   `dll/opengl` is `opengl32` itself, the WGL/ICD layer, at 3,496 live lines.
+
+   **The discovery hole is still open.** `--suspects` reported a clean tree the same
+   afternoon: it matches CORPORATE copyright holders by design and Mesa's headers name an
+   individual, and `dll/opengl` is not one of the three registered containers either, so
+   neither half of the machinery could see it. `port_audit.py --check` caught it by asking
+   a different question — what does the LINK contain — but that only covers code something
+   compiles. An individually-authored drop that nothing builds is still invisible to both.
 2. **~124,000 lines of "core" live C carry a Wine copyright header** but sit outside
    `vendor.yaml`'s 24-path Wine entry — 13% of the core remainder. The clearest cases are
    `usp10` (80% Wine-headered), `imm32` (52%), `winmm` (57%), `base/ctf/msctf` (77%),

@@ -71,7 +71,11 @@ source of truth that is not this file:
 Everything else is core, and `--check` FAILS on a compiled directory that matches no
 rule. That is deliberate: a new top-level area must be classified before it can pass,
 the same ratchet `vendored.py --check` applies to a new vendor drop. A silent default
-is how a 45,000-line third-party graphics stack sat in the core bucket unnoticed.
+is how 53,679 lines of Mesa sat in the core bucket unnoticed: `--suspects` could not see
+it, because that scan matches CORPORATE copyright holders and Mesa's headers name Brian
+Paul, and `dll/opengl` is not one of vendor.yaml's three containers either. This ratchet
+asks a different question -- what does the LINK contain -- and caught what a copyright
+grep structurally cannot. Mesa is registered as of 2026-09-24; the blind spot is not.
 """
 
 from __future__ import annotations
@@ -139,11 +143,9 @@ SURFACES: list[tuple[str, str, str, str]] = [
     ("base/applications", APP, "Applications", "calc/mspaint/regedit/rapps"),
     ("modules/rostests", EXCLUDED, "Tests", "apitests + winetests"),
     ("modules/rosapps", APP, "Optional applications", ""),
-    # Mesa 2.4 (1995-97, Brian Paul, LGPL) and its GLU. Third-party graphics, NOT this
-    # project's code. Only `dll/opengl/glu32/src` is registered in vendor.yaml, because
-    # the container ratchet covers sdk/lib/3rdparty, dll/3rdparty and external/ — and
-    # Mesa lives under none of them. Excluded here on the evidence in its own headers.
-    ("dll/opengl", EXCLUDED, "OpenGL (Mesa)", "unregistered third-party — see below"),
+    # Mesa and its GLU are vendored and fall out above; what is left under dll/opengl is
+    # opengl32 itself -- the WGL/ICD layer ReactOS wrote -- which is ours and core.
+    ("dll/opengl", CORE, "OpenGL (opengl32)", "WGL + ICD dispatch; Mesa is vendored"),
 ]
 
 

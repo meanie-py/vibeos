@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-24 third-party components:
+25 third-party components:
 
 - [ACPICA](#acpica) — 0x20221020 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
@@ -21,6 +21,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libxml2](#libxml2) — 2.12.8 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
 - [Mbed TLS](#mbed-tls) — 2.16.11 — Apache-2.0 OR GPL-2.0-or-later
+- [Mesa 3-D graphics library](#mesa-3-d-graphics-library) — 2.6 — LGPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
 - [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
@@ -2588,6 +2589,217 @@ FIPS-197 compliant AES implementation
 
  http://csrc.nist.gov/encryption/aes/rijndael/Rijndael.pdf
  http://csrc.nist.gov/publications/fips/fips197/fips-197.pdf
+```
+
+## Mesa 3-D graphics library
+
+- Upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
+- Version: 2.6
+- In this tree: `dll/opengl/mesa`
+- Licence: LGPL-2.0-or-later
+- Grant reproduced from: `dll/opengl/mesa/context.c (header comment)`
+
+```
+$Id: context.c,v 1.64 1998/02/05 00:34:56 brianp Exp $ */
+
+
+Mesa 3-D graphics library
+Version:  2.6
+Copyright (C) 1995-1997  Brian Paul
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Library General Public
+License as published by the Free Software Foundation; either
+version 2 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Library General Public License for more details.
+
+You should have received a copy of the GNU Library General Public
+License along with this library; if not, write to the Free
+Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+
+
+
+$Log: context.c,v $
+Revision 1.64  1998/02/05 00:34:56  brianp
+added John Stone's initial thread modifications
+
+Revision 1.63  1998/01/06 02:40:52  brianp
+added DavidB's clipping interpolation optimization
+
+Revision 1.62  1997/12/31 06:10:03  brianp
+added Henk Kok's texture validation optimization (AnyDirty flag)
+
+Revision 1.61  1997/12/08 04:04:52  brianp
+changed gl_copy_context() to not use MEMCPY for PolygonStipple (John Stone)
+
+Revision 1.60  1997/12/06 18:06:50  brianp
+moved several static display list vars into GLcontext
+
+Revision 1.59  1997/11/25 03:37:53  brianp
+simple clean-ups for multi-threading (John Stone)
+
+Revision 1.58  1997/10/29 01:29:09  brianp
+added GL_EXT_point_parameters extension from Daniel Barrero
+
+Revision 1.57  1997/10/16 01:59:08  brianp
+added GL_EXT_shared_texture_palette extension
+
+Revision 1.56  1997/10/15 03:08:50  brianp
+don't clear depth buffer in gl_ResizeBuffersMESA()
+
+Revision 1.55  1997/09/29 22:25:28  brianp
+added const to a few function parameters
+
+Revision 1.54  1997/09/27 00:15:20  brianp
+added ctx->DirectContext flag
+
+Revision 1.53  1997/09/23 00:58:15  brianp
+now using hash table for texture objects
+
+Revision 1.52  1997/09/22 02:33:58  brianp
+display lists now implemented with hash table
+
+Revision 1.51  1997/09/17 01:39:11  brianp
+added update_clipmask() function from Michael Pichler
+
+Revision 1.50  1997/09/10 00:29:19  brianp
+set all NewState flags in gl_ResizeBuffersMESA() (Miklos Fazekas)
+
+Revision 1.49  1997/07/24 01:24:45  brianp
+changed precompiled header symbol from PCH to PC_HEADER
+
+Revision 1.48  1997/06/20 02:19:49  brianp
+replaced Current.IntColor with Current.ByteColor
+
+Revision 1.47  1997/06/20 01:57:28  brianp
+free_shared_state() didn't free display lists
+
+Revision 1.46  1997/05/31 16:57:14  brianp
+added MESA_NO_RASTER env var support
+
+Revision 1.45  1997/05/28 04:06:03  brianp
+implemented projection near/far value stack for Driver.NearFar() function
+
+Revision 1.44  1997/05/28 03:23:48  brianp
+added precompiled header (PCH) support
+
+Revision 1.43  1997/05/26 21:18:54  brianp
+better comments
+
+Revision 1.42  1997/05/26 21:14:13  brianp
+gl_create_visual() now takes red/green/blue/alpha_bits arguments
+
+Revision 1.41  1997/05/24 12:07:07  brianp
+removed unused vars
+
+Revision 1.40  1997/05/14 03:27:24  brianp
+miscellaneous alloc/free clean-ups
+
+Revision 1.39  1997/05/09 22:42:09  brianp
+replaced gl_init_vb() with gl_alloc_vb(), similarly for pb
+
+Revision 1.38  1997/05/01 02:07:35  brianp
+added shared state variable NextFreeTextureName
+
+Revision 1.37  1997/05/01 01:25:33  brianp
+added call to gl_init_math()
+
+Revision 1.36  1997/04/28 02:06:14  brianp
+also check if texturing enabled in the test for NeedNormals
+
+Revision 1.35  1997/04/26 04:34:43  brianp
+fixed problem with Depth/Accum/StencilBits initialization (Mark Kilgard)
+
+Revision 1.34  1997/04/24 01:49:02  brianp
+call gl_set_color_function() instead of directly setting pointers
+
+Revision 1.33  1997/04/24 00:18:10  brianp
+Proxy2D tex object was allocated twice.  reported by Randy Frank.
+
+Revision 1.32  1997/04/16 23:55:06  brianp
+added gl_set_api_table()
+
+Revision 1.31  1997/04/14 02:01:03  brianp
+#include "texstate.h" instead of "texture.h"
+
+Revision 1.30  1997/04/12 17:11:38  brianp
+added gl_get_current_context()
+
+Revision 1.29  1997/04/12 16:54:05  brianp
+new NEW_POLYGON state flag
+
+Revision 1.28  1997/04/12 16:20:51  brianp
+added call to Driver.Dither() in gl_update_state()
+
+Revision 1.27  1997/04/12 12:25:37  brianp
+added Driver.QuadFunc and Driver.RectFunc
+
+Revision 1.26  1997/04/01 04:20:22  brianp
+added new matrix type code
+
+Revision 1.25  1997/03/14 00:24:37  brianp
+only print runtime warnings if MESA_DEBUG env var is set
+
+Revision 1.24  1997/03/13 03:06:14  brianp
+init AlphaRefUbyte to zero
+
+Revision 1.23  1997/03/08 01:59:00  brianp
+if RenderMode != GL_RENDER then don't enable ctx->DirectTriangles
+
+Revision 1.22  1997/02/27 19:57:38  brianp
+added gl_problem() function
+
+Revision 1.21  1997/02/10 19:49:50  brianp
+added gl_ResizeBuffersMESA()
+
+Revision 1.20  1997/02/10 19:22:47  brianp
+added device driver Error() function
+
+Revision 1.19  1997/02/09 18:50:05  brianp
+added GL_EXT_texture3D support
+
+Revision 1.18  1997/01/28 22:15:14  brianp
+now there's separate state for CI and RGBA logic op enabled
+
+Revision 1.17  1997/01/09 19:56:09  brianp
+new error message format in gl_error()
+
+Revision 1.16  1997/01/09 19:47:32  brianp
+better checking and handling of out-of-memory errors
+
+Revision 1.15  1996/12/18 20:00:12  brianp
+added code to initialize ColorMaterialBitmask
+
+Revision 1.14  1996/12/11 20:18:53  brianp
+changed formatting of messages in gl_warning()
+
+Revision 1.13  1996/11/08 02:20:52  brianp
+added check for MESA_NO_RASTER env var
+
+Revision 1.12  1996/11/04 02:18:47  brianp
+multiply Viewport.Sz and .Tz by DEPTH_SCALE
+
+Revision 1.11  1996/10/16 00:52:22  brianp
+gl_initialize_api_function_pointers() now gl_init_api_function_pointers()
+
+Revision 1.10  1996/10/11 03:41:28  brianp
+removed Polygon.OffsetBias initialization
+
+Revision 1.9  1996/10/11 00:26:34  brianp
+initialize Point/Line/PolygonZoffset to 0.0
+
+Revision 1.8  1996/10/01 01:42:31  brianp
+moved device driver initialization into gl_update_state()
+
+Revision 1.7  1996/09/27 01:24:33  brianp
+removed unneeded set_thread_context(), added call to gl_init_vb()
+
+Revision 1.6  1996/09/25 03:22:53  brianp
 ```
 
 ## Microsoft compiler-tests (EH/SEH)
