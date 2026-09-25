@@ -145,10 +145,18 @@ of the box": the **DirectX stack** (268K, all Wine, all live, 0% — wined3d plu
 d3d8/9/ddraw/dsound/dinput/quartz front ends) and the **IE engine** (mshtml + jscript +
 vbscript + ieframe + urlmon + wininet, ~177K). XP shipped both, so both are core here.
 
-**msvcrt is a worked example of why the link is the oracle.** The `msvcrt.dll` symbols
-are Rust, but `msvcrt_static` — the same Wine C — is still compiled and linked into
-`msvcrt20`, `msvcrt40` and `crtdll`. A module-level "done" would miss those 45K lines;
-the compile graph cannot.
+**Compile edges overcount a first-match cohab — msvcrt is the example.** The ledger
+shows 45K live Wine lines under `dll/win32/msvcrt`, and `msvcrt.dll` itself is done:
+`python3 tools/msvcrt_export_coverage.py` reports 1,192 of 1,280 exports Rust-backed, the
+88 left being asm and deliberate (`memmove`), and the C++ runtime (`cpp.c`/`except.c`/
+`undname.c`) is Rust in `crt-shared-rust`. The C is still COMPILED because
+`msvcrt_static` is linked behind the Rust archive as a fallback, and its copies lose
+first-match. The same Wine C also ships as the only implementation in **`msvcrt20`,
+`msvcrt40` and `crtdll`** (1,139 / 1,175 / 520 exports), which link `msvcrt_static` and
+not the Rust archive. So of those 45K lines, the part that really runs is those three
+legacy DLLs. They can be relinked against the existing Rust for no translation cost.
+Anywhere else that cohabs with `--allow-multiple-definition` inflates `Live C` the same
+way; the per-module export tools are the finer measure there.
 
 **The never-started native tail** is unchanged: Setup (56K), keyboard layouts (38K),
 CTF/IME (27K), print spooler (27K), shell extensions (19K), AppCompat (7K) — 0% covered,
