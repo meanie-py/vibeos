@@ -36,6 +36,14 @@
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 
+/* Locale entry points on the two renamed sides, so all three can be put into the same
+ * state before grading. Declared by hand: these are not graded exports, so the
+ * generator does not emit __typeof__ declarations for them. */
+char *__cdecl ref_setlocale(int, const char *);
+char *__cdecl rust_setlocale(int, const char *);
+int __cdecl ref__setmbcp(int);
+int __cdecl rust__setmbcp(int);
+
 /* The renamed genuine-Microsoft bodies. Declared by hand because no header can
  * name them -- which is the point: a `#define foo ref_foo` prelude would rewrite
  * the header declarations too, and collapse the C++ overloads that differ only
@@ -734,6 +742,60 @@ static int ucrtdiff_main(void)
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         return 1;
     }
+    /* STATE ISOLATION, and it is load-bearing for how the DIFF table is read.
+     *
+     * The three sides each carry their OWN locale and mbcinfo: rust_ is initialised by
+     * msvcrt_init_locale() above, the DLL carries the process CRT's state set up by real
+     * startup, and ref_ is a private copy of Microsoft's C linked into this exe that
+     * NOTHING initialises. Measured before this call: dll=0 rust=1252 ref=0, and the
+     * ref_ side's ctype tables were never populated at all.
+     *
+     * That produced a table of fake findings. Eight mbc case/classification exports
+     * showed the DLL and rust_ sides failing identically against ref_, which read as
+     * "the shipping DLL already answers these with our Rust and both are wrong". Both
+     * halves were false: none of those exports are in ucrtbase's cohab archive, so the
+     * DLL answers them with Microsoft's C -- the SAME code as ref_ -- and the only thing
+     * that could differ was state. The uninitialised REFERENCE was the odd one out, and
+     * the product was right.
+     *
+     * So put all three into one explicit, identical state and prove it on serial. A
+     * difftest whose sides disagree about the locale is not grading our code.
+     *
+     * MEASURED RESULT: this does NOT align them. After all six calls below the line
+     * still reads `dll=0 rust=1252 ref=0`, and the eight mbc case/classification rows
+     * diverge exactly as before. Two things follow, and they are different claims:
+     *
+     *   1. Our Rust`s _setmbcp(0) resolves 0 to the ANSI codepage and STORES 1252;
+     *      Microsoft`s stores 0. Same round trip, different readback -- which is what
+     *      the _getmbcp DIFF row (rust=1 dll=0) was reporting all along. That one is a
+     *      genuine divergence in our code and is the root of the rust_ side`s
+     *      high-range mbc answers.
+     *
+     *   2. It does NOT explain the DLL differing from ref_, which are the same
+     *      Microsoft C (neither is in ucrtbase`s cohab archive). Those eight rows are
+     *      therefore UNGRADEABLE as things stand -- not "the product is broken", which
+     *      is what the identical dll/rust fail counts were first read as, and not
+     *      "the product is fine" either. The ref_ side needs real CRT initialisation,
+     *      which _setmbcp cannot supply, before they mean anything. */
+    setlocale(LC_ALL, "C");
+    ref_setlocale(LC_ALL, "C");
+    rust_setlocale(LC_ALL, "C");
+    _setmbcp(0);
+    ref__setmbcp(0);
+    rust__setmbcp(0);
+
+    /* The old diagnostic, kept as the PROOF the alignment took. If these three ever
+     * disagree again, every mbc row below is comparing codepages, not implementations.
+     * The three sides each carry their OWN locale and mbcinfo: rust_ is initialised by
+     * msvcrt_init_locale() above, the DLL carries the process CRT's state, and ref_ is
+     * a private copy of Microsoft's C that nothing here initialises. If their multibyte
+     * codepages differ then every mbc classification and case-mapping row is graded
+     * against a different codepage on each side, and the resulting "divergences" say
+     * nothing about our code. The design doc listed this as NOT VERIFIED; print it, so
+     * the table can never again be read without knowing which case holds. */
+    DbgPrint("[UCRTDIFF] mbcp: dll=%d rust=%d ref=%d\n",
+             _getmbcp(), rust__getmbcp(), ref__getmbcp());
+
     run_generated();
     run_legacy();
     /* A ZERO-case run is a vacuous pass and must read as a failure, the same
