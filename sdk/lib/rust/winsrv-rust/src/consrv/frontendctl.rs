@@ -352,7 +352,7 @@ pub unsafe extern "system" fn GetThreadConsoleDesktop(
 
     let mut Console: PCONSRV_CONSOLE = core::ptr::null_mut();
     let Status = ConSrvGetConsole(
-        (*(*(*CsrThread).Process).ServerData.as_ptr().add(1)) as *mut CONSOLE_PROCESS_DATA,
+        (*(*(*CsrThread).Process).ServerData.as_ptr().add(CONSRV_SERVERDLL_INDEX as usize)) as *mut CONSOLE_PROCESS_DATA,
         &mut Console as *mut PCONSRV_CONSOLE,
         1u8,
     );

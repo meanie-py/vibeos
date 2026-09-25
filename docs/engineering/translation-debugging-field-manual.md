@@ -2727,6 +2727,15 @@ proceed. And `verify_constants`' curated ~25 headers are too narrow for a genera
 `cmdata.h` and `ntoskrnl/include/internal/cm.h` own the registry's own flag families, so a
 repo-wide `#define` index (dropping any name with two *different* values) backs it now.
 
+### A named SLOT index spelled as a literal picks another component's slot
+`GetThreadConsoleDesktop` read `Process->ServerData[1]` for consrv's per-process data; the C
+says `ConsoleGetPerProcessData()`, i.e. `ServerData[CONSRV_SERVERDLL_INDEX]` = **2**. Slot 1
+is basesrv's, which has no per-process data, so every call passed NULL to `ConSrvGetConsole`
+and csrss faulted — a 0xF4 whenever a thread's first GUI connect asked for its console
+desktop (amd64 setup's registration pass). Every other consrv site used the constant, so
+grep a module for `ServerData.as_ptr().add(<digit>)` / `[<digit>]` and friends; a literal
+where the C names a slot is the bug until proven otherwise.
+
 ### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
 
 Check the CASE of the first component before anything else. The registry root object is inserted
@@ -5087,6 +5096,17 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A local deviation that changes WHAT a function returns but not what it CLAIMS.** Our
+  `LdrpApplyFileNameRedirection` emits an api-set's host as a BARE name (`kernel32.dll`,
+  resolved by the search path) where stock ReactOS builds `NtSystemRoot\System32\<host>`, but
+  it still sets `RedirectedDll = TRUE` — and every consumer reads that flag as "this is an
+  absolute path". `LdrpCheckForLoadedDll` compared the bare name against full paths, never
+  matched, and mapped a second copy of an already-loaded host. On amd64 ucrtbase's
+  `LCMapStringEx` thunk loaded `api-ms-win-core-localization-*` this way, so setup.exe got a
+  relocated kernel32 whose DllMain re-pointed `LdrpManifestProberRoutine` into itself; the
+  next DLL load called through it after the copy was gone (RIP in "heap"). A duplicate is
+  visible in the PEB module list as the same path in different case. When you change a
+  function's output, list every consumer of each OUT parameter, not just the one you meant.
 - **A C `#define` ALIAS for an lvalue, translated as its own variable, stops aliasing.**
   kernel32's profile.c has `#define CurProfile (MRUProfile[0])`; the translation made
   `CurProfile` a separate `static mut`. Every `CurProfile = p` in the C writes the head of the
