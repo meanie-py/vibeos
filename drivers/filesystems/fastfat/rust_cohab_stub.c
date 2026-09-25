@@ -235,14 +235,8 @@ BOOLEAN FatAcquireExclusiveVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
     return FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
 }
 
-/* FatAcquireExclusiveFcb — acquires the FCB resource exclusively.
- * Declared in fatprocs.h but not translated into strucsup.rs. */
-BOOLEAN FatAcquireExclusiveFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
-{
-    return (BOOLEAN)ExAcquireResourceExclusiveLite(
-        FCB_RESOURCE(Fcb),
-        !!(IRP_CTX_FLAGS(IrpContext) & FAT_IRP_CTX_FLAG_WAIT));
-}
+/* FatAcquireExclusiveFcb lives in resrcsup.rs (2026-09-25), with the
+ * OutstandingAsyncWrites drain this shim never had. */
 
 VOID FatReleaseVcb(PIRP_CONTEXT IrpContext, PVCB Vcb)
 {

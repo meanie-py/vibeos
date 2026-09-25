@@ -972,10 +972,9 @@ def test_triage_bugcheck_and_known_flake():
     assert r2["classification"] == "BUGCHECK" and r2["bugcheck"] == "0x7E"
 
 
-_E3_SERIAL = (
+_FLAKE_SERIAL = (
     "[EXPLORER] _tWinMain entered\nshell ready\n"
-    "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
-    "0x0000000000000000, 0x0000000000000003)\n"
+    "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x65EE1\n"
 )
 
 
@@ -983,15 +982,15 @@ def test_triage_known_flake_after_boot_marker_is_still_a_known_flake():
     """A documented flake does not stop being one by firing after the marker.
 
     post_boot_check() used to hardcode known_flake=None, so the SAME arm64 ERESOURCE
-    0xE3 was auto-retried before the marker and rejected a green-gated batch out of
-    the merge queue after it. Both paths must agree.
+    0xE3 (since retired) was auto-retried before the marker and rejected a green-gated
+    batch out of the merge queue after it. Both paths must agree.
     """
-    post = triage.post_boot_check(_E3_SERIAL)
+    post = triage.post_boot_check(_FLAKE_SERIAL)
     assert post is not None
     assert post["classification"] == "KNOWN_FLAKE"
-    assert post["known_flake"] == "arm64_eresource_notowned_0xe3"
+    assert post["known_flake"] == "i386_mp_win32k_av_0x1e"
 
-    pre = triage.classify(_E3_SERIAL, reached=False, fail_marker=None, debugcon=None)
+    pre = triage.classify(_FLAKE_SERIAL, reached=False, fail_marker=None, debugcon=None)
     assert pre["classification"] == post["classification"]
     assert pre["known_flake"] == post["known_flake"]
 
@@ -7976,36 +7975,26 @@ def _flake_names():
 
 
 def test_mp_beta_flake_signatures_are_registered():
-    assert {"arm64_smp39_zero_pc_fetch_abort", "i386_mp_win32k_av_0x1e"} <= _flake_names()
+    assert {"i386_mp_win32k_av_0x1e"} <= _flake_names()
 
 
-def test_smp39_signature_needs_the_WHOLE_shape_not_just_the_esr():
-    """The SEH tests print an ESR on PURPOSE and pass.
-
-    `[UEXC] ESR=0x92000047` is a deliberate, passing user-mode SEH probe, and an
-    earlier draft that keyed on ESR alone would have swallowed unrelated reds.
-    A kernel fault with a NON-zero PC is also not #39.
-    """
+def test_retired_arm64_signatures_now_block():
+    """#43 (0xE3) and #39 (zero-PC 0x1E) were RETIRED 2026-09-25 after 102 clean arm64
+    MP rounds. A recurrence must go red as a plain BUGCHECK, not be auto-retried."""
     from .triage import _match_known_flake
 
-    real = (
+    assert not {"arm64_eresource_notowned_0xe3", "arm64_smp39_zero_pc_fetch_abort"} & _flake_names()
+    zero_pc = (
         "[KEXC] Code=0xFFFFFFFFC0000005[KEXC] PC=0x0000000000000000"
         "[KEXC] Spsr=0x0000000020000345[KEXC] ESR=0x0000000086000007\n"
         "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0x0000000000000000, 0x0, 0x0)\n"
     )
-    hit = _match_known_flake(real, "0x0000001E", "bugcheck")
-    assert hit is not None and hit["name"] == "arm64_smp39_zero_pc_fetch_abort"
-
-    # A passing SEH probe plus an UNRELATED 0x1E must still block.
-    seh_plus_other = (
-        "[UEXC] ESR=0x0000000092000047[SEH-USER] hw-fault: caught=1 (PASS)\n"
-        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042190000, 0x0, 0x0)\n"
+    assert _match_known_flake(zero_pc, "0x0000001E", "bugcheck") is None
+    e3 = (
+        "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
+        "0x0000000000000000, 0x0000000000000003)\n"
     )
-    assert _match_known_flake(seh_plus_other, "0x0000001E", "bugcheck") is None
-
-    # Same fault class, NON-zero PC -> a different bug, must not be masked.
-    nonzero_pc = real.replace("PC=0x0000000000000000", "PC=0xFFFF8000050E08A0")
-    assert _match_known_flake(nonzero_pc, "0x0000001E", "bugcheck") is None
+    assert _match_known_flake(e3, "0x000000E3", "bugcheck") is None
 
 
 def test_win32k_signature_is_pinned_to_one_rva():

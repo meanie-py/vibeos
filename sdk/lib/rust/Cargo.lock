@@ -1429,6 +1429,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 
@@ -2337,6 +2338,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strsafe-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "strsafe-rust",
+]
+
+[[package]]
 name = "strsafe-rust"
 version = "0.1.0"
 
@@ -2400,6 +2409,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "va-slots-rust",
  "win32macros-rust",
 ]
 
@@ -2410,6 +2420,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "va-slots-rust",
  "win32macros-rust",
 ]
 
@@ -2674,6 +2685,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
 ]
 
 [[package]]

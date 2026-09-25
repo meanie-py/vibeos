@@ -1091,7 +1091,7 @@ unsafe fn ShutdownOnInit(
         // `_countof(szBuffer2)` in the C. `.as_ptr()` on UserName is C's array-to-pointer decay,
         // which Rust does not do for you — passing the `[WCHAR; 256]` by value put 512 bytes of
         // name text in the varargs area and `%ws` read the first of them as an address.
-        StringCchPrintfW(
+        StringCchPrintfW!(
             szBuffer2.as_mut_ptr(),
             szBuffer2.len(),
             szBuffer.as_ptr(),
