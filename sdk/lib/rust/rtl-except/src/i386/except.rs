@@ -156,6 +156,46 @@ pub unsafe extern "system" fn RtlDispatchException(
         // https://www.optiv.com/blog/old-meets-new-microsoft-windows-safeseh-incompatibility
         // https://msrc-blog.microsoft.com/2012/01/10/more-information-on-the-impact-of-ms12-001/
         //
+        // Full SafeSEH needs the image's registered-handler table and is still
+        // the TODO above. These two cases need none of it, and leaving them
+        // out is what turns ONE guest fault into a process death:
+        //
+        //   * Handler == 0 (or in the reserved low 64K). Calling it executes
+        //     at address 0. The resulting fault re-enters this function, which
+        //     re-walks the SAME chain from fs:[0], finds the SAME null handler
+        //     and calls it again, one frame deeper -- MEASURED at 56 identical
+        //     `eip=00000000 rw=8` faults at descending esp before the process
+        //     died. The bounds check above cannot catch it: the RECORD is
+        //     within the stack, it is the HANDLER that is junk.
+        //   * Handler inside [StackLow, StackHigh]. A handler that points into
+        //     the thread's own stack is never code; that is the shape of a
+        //     popped/overwritten registration record being walked as if live.
+        //     Measured on the first frame of the same cascade: handler was a
+        //     stack address and executing it faulted immediately.
+        //
+        // Measured case that motivated this: a guest whose fs:[0] pointed 0x44
+        // bytes BELOW its own esp -- abandoned stack -- at an all-zero record
+        // (`next=00000000` where a terminated chain must be 0xffffffff).
+        //
+        // Bail out the same way an invalid stack does rather than skipping to
+        // the next frame: once a record is this corrupt its `Next` is not
+        // trustworthy either, and returning FALSE sends the ORIGINAL exception
+        // to second chance, which is diagnosable and kills the process once
+        // instead of 56 times.
+        {
+            /* bindgen models the handler as Option<fn>, so a null slot is
+             * None rather than 0 — take the raw address either way. */
+            let Handler = match (*RegistrationFrame).Handler {
+                Some(f) => f as usize as ULONG_PTR,
+                None => 0,
+            };
+            if Handler < 0x10000
+                || (Handler >= StackLow && Handler < StackHigh)
+            {
+                (*ExceptionRecord).ExceptionFlags |= EXCEPTION_STACK_INVALID;
+                return 0;
+            }
+        }
 
         /* Check if logging is enabled */
         RtlpCheckLogException(

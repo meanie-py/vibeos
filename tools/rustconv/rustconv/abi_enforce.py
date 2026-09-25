@@ -353,6 +353,7 @@ def _canonical_block(
     indent: str,
     is_static: bool,
     com_method_macro: str | None = None,
+    concrete_stdcall_slots: bool = True,
 ) -> str:
     """Render the canonical definition for one function.
 
@@ -390,7 +391,13 @@ def _canonical_block(
         # msvcrt's cpp.c is the first file to reach it — 40-odd `__thiscall` C++ methods
         # that read `this` from ECX on i386 and from the first stack slot everywhere else.
         x86_abi = "thiscall"
-    elif conv == "system" and is_static:
+    elif conv == "system" and is_static and concrete_stdcall_slots:
+        # Only when the crate's substrate still spells slots per-arch. Once the island is
+        # `extern "system"` throughout there is nothing for the twin to satisfy, and the
+        # pair actively breaks assignment into a fn-pointer typedef the SAME generator
+        # emits as `extern "system"` -- dde.cpp's `pfnCommandHandler` handler table, where
+        # it was E0308 on amd64/arm64 (Rust types `extern "C"` distinctly even where the
+        # ABI coincides) and redundant on i386.
         x86_abi = "stdcall"
 
     if x86_abi is not None:
@@ -407,7 +414,13 @@ def _canonical_block(
     return f'{mangle}{indent}{vis}unsafe extern "{extern}" fn {name}{params}{ret_suffix} {body}'
 
 
-def enforce_abi_from_c(code: str, c_path: Path, *, com_method_macro: str | None = None) -> str:
+def enforce_abi_from_c(
+    code: str,
+    c_path: Path,
+    *,
+    com_method_macro: str | None = None,
+    concrete_stdcall_slots: bool = True,
+) -> str:
     """Rewrite every fn in `code` that `c_path` defines to its canonical
     ABI + visibility (see module docstring). Target-agnostic.
 
@@ -421,11 +434,20 @@ def enforce_abi_from_c(code: str, c_path: Path, *, com_method_macro: str | None 
     `None` for targets with no such macro (kernel, HAL, drivers).
     """
     abi = build_abi_map_from_c(c_path)
-    return _rewrite(code, abi, com_method_macro=com_method_macro)
+    return _rewrite(
+        code,
+        abi,
+        com_method_macro=com_method_macro,
+        concrete_stdcall_slots=concrete_stdcall_slots,
+    )
 
 
 def _rewrite(
-    code: str, abi: dict[str, tuple[str, bool]], *, com_method_macro: str | None = None
+    code: str,
+    abi: dict[str, tuple[str, bool]],
+    *,
+    com_method_macro: str | None = None,
+    concrete_stdcall_slots: bool = True,
 ) -> str:
     for name, (conv, is_static) in abi.items():
         defs = list(_find_defs(code, name))
@@ -458,7 +480,15 @@ def _rewrite(
         # Use the first def's params/ret/body/indent as canonical.
         params, ret_suffix, body, indent = defs[0][2], defs[0][3], defs[0][4], defs[0][5]
         block = _canonical_block(
-            name, conv, params, ret_suffix, body, indent, is_static, com_method_macro
+            name,
+            conv,
+            params,
+            ret_suffix,
+            body,
+            indent,
+            is_static,
+            com_method_macro,
+            concrete_stdcall_slots,
         )
 
         # Idempotency: if the contiguous region spanning all this fn's defs

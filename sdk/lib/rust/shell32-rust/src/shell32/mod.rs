@@ -153,7 +153,40 @@ pub mod extracticon_free;
 /// one, so `dll/win32/shell32/rust_folderitemverbs_bridge.cpp` publishes the four symbols
 /// rustconv kept symbolic rather than inventing. That file is deleted when those two classes
 /// translate; see rust-port-status.md, where the debt is recorded as OWED.
+/// `CEnumIDListBase.cpp`, cohab-flipped — the shared PIDL enumerator base every shell folder's
+/// IEnumIDList derives from. 7 of its 9 functions were already banked from an earlier run and
+/// replayed at $0; the other two lowered deterministically, so the whole TU cost nothing.
+pub mod CEnumIDListBase;
+/// `CFolderItemVerbs.cpp`, cohab-flipped — both its classes. These were the two the
+/// deterministic layer could not take last night, and closing them took three recognizer
+/// additions, all free: `CComBSTR` state (kept as a TYPE so atl.rs's Drop reproduces
+/// ~CComBSTR's SysFreeString, rather than flattened to a BSTR that leaks), `new CComObject<T>`
+/// as a third internal-activation shape, and `--activation-source` for a class whose
+/// construction lives in ANOTHER TU (CFolderItem::Verbs, over in CFolderItems.cpp).
+/// `rust_folderitemverbs_bridge.cpp` existed only to stand in for these and is deleted.
+/// Hand-written substrate for the pair below; its header explains the IContextMenu
+/// naming collision it exists to resolve.
+pub mod folderitemverbs_support;
+pub mod CFolderItemVerb;
+pub mod CFolderItemVerbs;
 pub mod CFolder;
+// CShellLibrary.cpp / CUserEventTimer.cpp — post-fork upstream COM objects, both still pure
+// UNIMPLEMENTED stubs upstream, so every body lowered deterministically ($0). Activated from
+// shell32.cpp's object map through `*RustEntry` shims like the classes above.
+pub mod CShellLibrary;
+pub mod CUserEventTimer;
+// shell32.cpp, Phase 1: its plain logic. The COM server half (the object map, the class
+// factory table, DllMain/DllGetClassObject/DllRegisterServer) is still C++ in that file.
+pub mod shell32_free;
+pub mod IDefClFImpl;
+// shell32.cpp, Phase 2: the COM server — class-object table, cached class factories,
+// DllGetClassObject, DllCanUnloadNow and the module lock count. Hand-written; its header
+// states the ATL semantics it reproduces.
+pub mod com_server;
+// shell32.cpp, Phase 3: registration, DllMain and the last trampolines — the file is gone.
+pub mod statreg;
+pub mod registration;
+pub mod dllmain;
 pub mod CFolderItem;
 pub mod CFolderItems;
 /// `CFolder.cpp`'s free half: one `extern "C"` factory, hand-written because the

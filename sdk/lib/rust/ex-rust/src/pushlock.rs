@@ -574,6 +574,12 @@ fastcall_export! {
                 (*WaitBlock).PushLock = PushLock;
             }
 
+            // The CAS OVERWRITES NewValue with the value it found, so after it runs
+            // NewValue no longer holds the list head we just published -- it holds the
+            // previous one. ExpOptimizePushLockList was therefore walking the wrong
+            // chain. Keep the written value aside first. The exclusive twin above
+            // already does this. Upstream-Commit: 4acacdb7e90
+            let TempValue = NewValue;
             NewValue.__bindgen_anon_1.Ptr = InterlockedCompareExchangePointer(
                 core::ptr::addr_of_mut!((*PushLock).__bindgen_anon_1.Ptr),
                 NewValue.__bindgen_anon_1.Ptr,
@@ -584,10 +590,8 @@ fastcall_export! {
                 continue;
             }
 
-            OldValue = NewValue;
-
             if NeedWake != 0 {
-                ExpOptimizePushLockList(PushLock, OldValue);
+                ExpOptimizePushLockList(PushLock, TempValue);
             }
 
             KeInitializeGate(core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.WakeGate));
@@ -735,12 +739,17 @@ fastcall_export! {
                         NewValue.__bindgen_anon_1.Ptr,
                         OldValue.__bindgen_anon_1.Ptr,
                     );
-                    if NewValue.__bindgen_anon_1.Value != OldValue.__bindgen_anon_1.Value {
-                        continue;
+                    if NewValue.__bindgen_anon_1.Value == OldValue.__bindgen_anon_1.Value {
+                        /* The write was successful. The pushlock is Unlocked and Waking */
+                        ExfWakePushLock(PushLock, WakeValue);
+                        return;
                     }
 
-                    ExfWakePushLock(PushLock, WakeValue);
-                    return;
+                    // The CMPXCHG returned the CURRENT lock value. Retrying without adopting it
+                    // re-compares against a stale OldValue every time, so a contended release can
+                    // spin forever. Upstream-Commit: f42ee0e23bb
+                    OldValue = NewValue;
+                    continue;
                 }
             }
         }
@@ -832,12 +841,17 @@ fastcall_export! {
                 NewValue.__bindgen_anon_1.Ptr,
                 OldValue.__bindgen_anon_1.Ptr,
             );
-            if NewValue.__bindgen_anon_1.Value != OldValue.__bindgen_anon_1.Value {
-                continue;
+            if NewValue.__bindgen_anon_1.Value == OldValue.__bindgen_anon_1.Value {
+                /* The write was successful. The pushlock is Unlocked and Waking */
+                ExfWakePushLock(PushLock, WakeValue);
+                return;
             }
 
-            ExfWakePushLock(PushLock, WakeValue);
-            return;
+            // The CMPXCHG returned the CURRENT lock value. Retrying without adopting it
+            // re-compares against a stale OldValue every time, so a contended release can
+            // spin forever. Upstream-Commit: f42ee0e23bb
+            OldValue = NewValue;
+            continue;
         }
     }
     }

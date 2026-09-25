@@ -71,12 +71,18 @@ NtUserDrawCaptionTemp
 NtUserLoadKeyboardLayoutEx
 NtUserEnumDisplaySettings
 NtUserEnumDisplayDevices
-# These two ALSO carry a divergent struct (CreateDesktop: OBJECT_ATTRIBUTES;
-# GetIconInfo: ICONINFO HBITMAP widen), so they have NO dispatch entry yet and
-# hit the loud WOW64_AUTOMARSHAL_UNIMPL stub (clean error, not a bugcheck) instead of
-# the silent-wrong flat thunk. Add a marshaller when a guest reaches them.
+# CreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES), so it has
+# NO dispatch entry yet and hits the loud WOW64_AUTOMARSHAL_UNIMPL stub (clean
+# error, not a bugcheck) instead of the silent-wrong flat thunk. Add a
+# marshaller when a guest reaches it.
 NtUserCreateDesktop
+# GetIconInfo: ICONINFO's HBITMAPs widen and both strings are IN/OUT. Guest
+# GetIconInfo/CopyImage reached it (user32:class); marshaller in wow64_manual.c.
 NtUserGetIconInfo
+# ExtGetObjectW: the kernel answers in 64-bit BITMAP/DIBSECTION/LOGBRUSH/
+# EXTLOGPEN layouts (each has a pointer-width field), and refuses a BITMAP
+# buffer smaller than its own. Guest GetObject on any bitmap returned 0.
+NtGdiExtGetObjectW
 # E10: found MECHANICALLY by `marshalgen audit` (vibeos-cli check) instead of by
 # the next applet to bugcheck — it diffs every LIVE flat thunk in the generated
 # table against its real header prototype using clang's 32/64 record layouts.
@@ -180,3 +186,21 @@ NtUserSendInput
 # MENUINFO size class is marshalled here; anything larger goes to the kernel on
 # the guest's own pointer, exactly as before, and the kernel decides.
 NtUserThunkedMenuInfo
+
+# Window/class procs crossing into the kernel (wow64_pfnmap.c). win32k keeps
+# the 64-bit user32's apfnClientA/W as the system procs and picks an ANSI
+# window's A proc by comparing against them. So a guest system proc must be
+# swapped for the host's in the same slot going in, and a host proc coming back
+# must be swapped for the guest's, or the guest calls a truncated 64-bit
+# address. GWL_WNDPROC/GCL_WNDPROC go through the *Ptr entry points, since the
+# 32-bit ones narrow the value and an unmapped high half cannot be recovered.
+# Unlisted, the flat thunk returned the host's ButtonWndProcW narrowed to
+# 0xb2057640, and user32:class executed it.
+NtUserSetWindowLong
+NtUserSetClassLong
+NtUserGetCPD
+
+# NtUserBuildPropList — PROPLISTITEM {ATOM; HANDLE} is 8 bytes in the guest and
+# 16 on the host, and the size-only call reports bytes of HOST items. Flat, the
+# guest's EnumProps* walked a 16-byte array at an 8-byte stride.
+NtUserBuildPropList

@@ -2950,7 +2950,7 @@ unsafe fn get_manifest_in_pe_file(
     let base: *mut core::ffi::c_void;
     let mut resnameBuf: [u16; 20] = [0; 20];
     let mut resptr: LPCWSTR = resname;
-    let mut info: FILE_END_OF_FILE_INFORMATION = core::mem::zeroed();
+    let mut info: ntkrnl_sys::ddk::_FILE_STANDARD_INFORMATION = core::mem::zeroed();
     let mut io: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut offset: LARGE_INTEGER = core::mem::zeroed();
     let count: usize;
@@ -2969,8 +2969,13 @@ unsafe fn get_manifest_in_pe_file(
         file,
         &mut io,
         &mut info as *mut _ as *mut core::ffi::c_void,
-        core::mem::size_of::<FILE_END_OF_FILE_INFORMATION>() as ULONG,
-        FileEndOfFileInformation,
+        core::mem::size_of::<ntkrnl_sys::ddk::_FILE_STANDARD_INFORMATION>() as ULONG,
+        // FileEndOfFileInformation is SET-only on NT: the query returns
+        // STATUS_INVALID_INFO_CLASS (ERROR_INVALID_PARAMETER), so every manifest-file
+        // activation context failed and comctl32 never got its v5/v6 context. Wine's
+        // ntdll accepts that query, which is why the Wine-derived code (and upstream
+        // ReactOS) uses it. FileStandardInformation carries the same EndOfFile.
+        ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileStandardInformation as _,
     );
     if status != STATUS_SUCCESS {
         return status;
@@ -3025,7 +3030,7 @@ unsafe fn get_manifest_in_manifest_file(
     shared: BOOL,
     file: HANDLE,
 ) -> NTSTATUS {
-    let mut info: FILE_END_OF_FILE_INFORMATION = core::mem::zeroed();
+    let mut info: ntkrnl_sys::ddk::_FILE_STANDARD_INFORMATION = core::mem::zeroed();
     let mut io: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut offset: LARGE_INTEGER = core::mem::zeroed();
     let mut status: NTSTATUS;
@@ -3038,8 +3043,13 @@ unsafe fn get_manifest_in_manifest_file(
         file,
         &mut io,
         &mut info as *mut _ as *mut core::ffi::c_void,
-        core::mem::size_of::<FILE_END_OF_FILE_INFORMATION>() as ULONG,
-        FileEndOfFileInformation,
+        core::mem::size_of::<ntkrnl_sys::ddk::_FILE_STANDARD_INFORMATION>() as ULONG,
+        // FileEndOfFileInformation is SET-only on NT: the query returns
+        // STATUS_INVALID_INFO_CLASS (ERROR_INVALID_PARAMETER), so every manifest-file
+        // activation context failed and comctl32 never got its v5/v6 context. Wine's
+        // ntdll accepts that query, which is why the Wine-derived code (and upstream
+        // ReactOS) uses it. FileStandardInformation carries the same EndOfFile.
+        ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileStandardInformation as _,
     );
     if status != STATUS_SUCCESS {
         return status;

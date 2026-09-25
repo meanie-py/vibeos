@@ -52,7 +52,15 @@ _CLK = os.sysconf("SC_CLK_TCK")
 #      smoke session start, every qemu/start.sh) culls a VM past its deadline
 #      even if the owning launcher is still alive but wedged;
 #   3. (qemu/start.sh) a detached watchdog subshell for toolkit-launched VMs.
-MAX_VM_LIFETIME_SECONDS = 30 * 60
+# Overridable via VIBEOS_QEMU_MAX_LIFETIME, the same env var qemu/lib/common.sh
+# has always honoured (its comment says it mirrors THIS constant, and for a long
+# time it silently did not: the shell path was tunable and the pytest path was
+# not). A long conformance sweep legitimately outlives 30 minutes, and without
+# this the cap is a second, lower, invisible bound underneath the payload's own
+# launch_drain_secs -- which is exactly how the apitest sweep kept getting
+# truncated at ~30 min after its drain budget was fixed. Raise it deliberately,
+# per-run, for sweeps; never as a global default.
+MAX_VM_LIFETIME_SECONDS = int(os.environ.get("VIBEOS_QEMU_MAX_LIFETIME", 30 * 60))
 
 # Gap between the two vCPU-state samples save_hang_state() takes. Long enough
 # that a live box is guaranteed several clock ticks and context switches (arm64
@@ -91,9 +99,19 @@ SLOT_DIR = LOCK_DIR / "slots"
 HOSTFWD_BIND_ERROR = "Could not set up host forwarding rule"
 # QEMU's message when the gdbstub TCP bind loses the Windows-stack port race.
 GDB_BIND_ERROR = "Could not open gdbserver"
-# Any early-exit stderr matching one of these = a pick-then-bind TOCTOU on the
-# Windows stack → relaunch with a freshly-picked port (see _launch_qemu).
-BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR)
+# The mirror-image flake on the OTHER side of the same boundary: every `server=off`
+# chardev (serial, qmp, each guestfwd echo) has the Windows QEMU DIAL a listener we
+# just bound in WSL, and WSL2's localhost relay intermittently has not published the
+# port yet -- QEMU exits before any guest code with
+#   -chardev socket,id=gf2,...,server=off: Failed to connect to '127.0.0.1:58627'
+# We bind every one of those listeners ourselves moments earlier, so a connect refusal
+# is never a misconfiguration; a relaunch on a fresh port is the whole fix. This cost
+# a whole smoke run its net suite (15 errors, all one dead launch) while the three
+# boots it was grading passed.
+CHARDEV_CONNECT_ERROR = "Failed to connect to '"
+# Any early-exit stderr matching one of these = a transient Windows-stack port
+# problem → relaunch with a freshly-picked port (see _launch_qemu).
+BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR, CHARDEV_CONNECT_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
 
 # freeldr's boot-entry selector, as it appears verbatim inside the livecd ISO.

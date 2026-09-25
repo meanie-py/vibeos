@@ -381,7 +381,7 @@ unsafe fn AdjustStatusMessageWindow(hwndDlg: HWND, pDlgData: PDLG_DATA) {
     let yNew = yOld - (cyNew - cyOld) / 2;
     MoveWindow(hwndDlg, xNew, yNew, cxNew, cyNew, 1i32);
 }
-unsafe fn StatusDialogProc(
+unsafe extern "system" fn StatusDialogProc(
     hwndDlg: HWND,
     uMsg: UINT,
     wParam: WPARAM,
@@ -519,7 +519,7 @@ unsafe fn StartupWindowThread(lpParam: LPVOID) -> u32 {
         hDllInstance,
         IDD_STATUS as *const u16,
         GetDesktopWindow(),
-        core::mem::transmute::<*const (), DLGPROC>(StatusDialogProc as *const ()),
+        Some(StatusDialogProc),
         msg as LPARAM,
     );
 

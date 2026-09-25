@@ -219,11 +219,15 @@ def string_referenced(pe: Path, index: dict) -> set:
     returns NULL does not announce itself the way a missing import does, so
     this class is quieter than the one the closure was built for.
 
-    Scanned for ROOTS ONLY, deliberately. Running it over the whole closure
-    admits 69 further modules (measured): shell32 alone names every control
-    panel applet, ieframe and opengl32 it can ever launch, and a string mention
-    inside a library is far weaker evidence than one inside a binary we chose
-    to stage and run. Roots are exactly the guests we elected to boot.
+    By default only ROOTS are scanned: shell32 alone names every control panel
+    applet it can launch, so scanning libraries admits ~90 more modules. But a
+    library's own runtime loads are real too: comctl32's Animate control
+    LoadLibrary's msvfw32.dll at create time, and with msvfw32 unstaged every
+    guest SysAnimate32 window failed to create (user32:class). So
+    --library-literals scans every staged module. It costs ~25 MB STRIPPED
+    (70 vs 45 MB, 180 modules, all resolvable, measured 2026-09-24), which the
+    amd64 livecd takes. The arm64 FEX ramdisk is a fixed 140 MB image and stays
+    roots-only.
 
     Both encodings are scanned because these literals are usually UTF-16. A
     literal can abut its neighbour in the string pool with no separator
@@ -247,6 +251,74 @@ def string_referenced(pe: Path, index: dict) -> set:
     for m in _WIDE_RUN.finditer(data):
         harvest(m.group()[::2].decode("ascii"))
     return found
+
+
+_DELAY_NAME = re.compile(rb"[A-Za-z0-9_.\-]+\.(?:dll|ocx|drv|acm|cpl)\x00", re.I)
+
+
+def delay_imports_of(pe: Path) -> list:
+    """DLL names from `pe`'s delay-import descriptors.
+
+    A delay import is as real an edge as an ordinary one: the first call
+    through it LoadLibrary's the DLL, and if the DLL is absent the call
+    raises, far from here. `objdump -p` does not show them for our images,
+    because sdk/tools/gen-delaylib.py emits the ImgDelayDescr tables as plain
+    .rdata and the linker never fills the PE delay-import directory. When
+    delay-load was switched on (sdk/cmake/gcc.cmake) the import-table walk
+    therefore lost every delay edge at once: the closure for user32_winetest
+    fell from ~64 modules to 29, all of them silently.
+
+    So the descriptors are found by shape, which works on stripped copies too
+    (mkramdisk stages those, so the ___DELAY_DESC_* symbols cannot be relied
+    on): {Attributes 1 (RVA form), DllName, hmod, IAT, INT as in-image RVAs,
+    then three zero DWORDs}, with DllName pointing at a NUL-terminated module
+    name. A standard delay directory has the same layout, so it is covered as
+    well.
+    """
+    import struct
+
+    data = pe.read_bytes()
+    if data[:2] != b"MZ" or len(data) < 0x40:
+        return []
+    pe_off = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[pe_off : pe_off + 4] != b"PE\0\0":
+        return []
+    nsec, opt_size = struct.unpack_from("<H12xH", data, pe_off + 6)
+    opt = pe_off + 24
+    image_size = struct.unpack_from("<I", data, opt + 56)[0]
+    secs = []
+    for i in range(nsec):
+        vsize, va, rsize, rptr, chars = struct.unpack_from(
+            "<IIII12xI", data, opt + opt_size + 40 * i + 8
+        )
+        secs.append((va, max(vsize, rsize), rptr, rsize, chars))
+
+    def file_off(rva: int):
+        for va, span, rptr, rsize, _ in secs:
+            if va <= rva < va + span and rva - va < rsize:
+                return rptr + rva - va
+        return None
+
+    names = []
+    for _va, _, rptr, rsize, chars in secs:
+        if chars & 0x20000000:  # IMAGE_SCN_MEM_EXECUTE: descriptors live in data
+            continue
+        end = rptr + rsize - 32
+        for off in range(rptr, end + 1, 4):
+            if data[off] != 1:
+                continue
+            d = struct.unpack_from("<8I", data, off)
+            if d[0] != 1 or d[5] or d[6] or d[7]:
+                continue
+            if not all(0 < r < image_size for r in d[1:5]):
+                continue
+            n = file_off(d[1])
+            if n is None:
+                continue
+            m = _DELAY_NAME.match(data, n)
+            if m:
+                names.append(m.group()[:-1].decode("ascii").lower())
+    return names
 
 
 def imports_of(objdump: str, pe: Path) -> list:
@@ -273,6 +345,12 @@ def main() -> int:
         help="emit the fat build paths instead of boot/stripped/<hash>- copies "
         "(for consumers with their own strip step, e.g. the amd64 livecd flow, "
         "where the hashed names would go stale across i386 rebuilds)",
+    )
+    ap.add_argument(
+        "--library-literals",
+        action="store_true",
+        help="also follow module names that appear as string literals in every "
+        "staged LIBRARY, not just the roots (see string_referenced)",
     )
     args = ap.parse_args()
 
@@ -343,7 +421,10 @@ def main() -> int:
 
     while stack:
         cur = stack.pop()
-        for dep in imports_of(objdump, cur):
+        deps = imports_of(objdump, cur) + delay_imports_of(cur)
+        if args.library_literals:
+            deps += sorted(string_referenced(cur, index))
+        for dep in deps:
             admit(dep, cur.name)
             # A runtime loader drags in its targets whenever it enters the
             # closure, including when it entered as somebody else's import.

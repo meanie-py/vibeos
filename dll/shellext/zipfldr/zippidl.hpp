@@ -3,9 +3,8 @@
  * LICENSE:     GPL-2.0+ (https://spdx.org/licenses/GPL-2.0+)
  * PURPOSE:     zip pidl handling
  * COPYRIGHT:   Copyright 2017 Mark Jansen (mark.jansen@reactos.org)
- *              Copyright 2023 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
+ *              Copyright 2023-2026 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
  */
-
 
 enum ZipPidlType
 {
@@ -26,9 +25,10 @@ struct ZipPidlEntry
     ULONG DosDate;
 
     WCHAR Name[1];
+
+    bool IsDirectory() const { return ZipType == ZIP_PIDL_DIRECTORY; }
 };
 #include <poppack.h>
 
-
-LPITEMIDLIST _ILCreate(ZipPidlType Type, PCWSTR lpString, unz_file_info64& info);
+LPITEMIDLIST _ILCreateZipItem(ZipPidlType Type, PCWSTR lpString, unz_file_info64& info);
 const ZipPidlEntry* _ZipFromIL(LPCITEMIDLIST pidl);

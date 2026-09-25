@@ -4931,15 +4931,30 @@ fn nt_current_process() -> *mut u8 {
     -1isize as usize as *mut u8
 }
 
-/// `RtlQueryEnvironmentVariable_U(Environment, Name, Value) -> NTSTATUS`.
+/// `RtlQueryEnvironmentVariable(Environment, Name, NameLength, Value,
+/// ValueLength, ReturnLength) -> NTSTATUS`. Raw-buffer core, added
+/// upstream 2026-09 (`sdk/lib/rtl/env.c`) alongside the pre-existing
+/// `_U` wrapper; exported at `ntdll.spec:1094` (`-version=0x600+`).
 ///
-/// If `Environment` is NULL, uses the PEB's process parameters
-/// (faithful to C). The core string-walk is in `core_rs::env`.
+/// If `Environment` is NULL, resolves the PEB's process parameters
+/// (faithful to C — this is where the real fallback lives; the `_U`
+/// wrapper below just passes `Environment` through unchanged).
+///
+/// Upstream semantics (2026-09 rewrite): a hit is a SUCCESS only when
+/// the value's length is *strictly less* than `ValueLength` (there
+/// must be room for the trailing NUL); otherwise it's
+/// `STATUS_BUFFER_TOO_SMALL` and `*ReturnLength` carries
+/// `value_len + 1` (the wrapper subtracts the 1 back out). On
+/// too-small, only `Value[0]` is NUL'd (if there is room) — unlike
+/// the pre-rewrite C, the value is *not* partially copied.
 #[no_mangle]
-pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
+pub unsafe extern "system" fn RtlQueryEnvironmentVariable(
     environment: *mut u16,
-    name: *const UNICODE_STRING,
-    value: *mut UNICODE_STRING,
+    name: *const u16,
+    name_length: usize,
+    value: *mut u16,
+    value_length: usize,
+    return_length: *mut usize,
 ) -> i32 {
     let mut env_ptr = environment;
     let mut sys_env_used = false;
@@ -4957,13 +4972,11 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
         return env::STATUS_VARIABLE_NOT_FOUND;
     }
 
-    // Mirror C: Value->Length = 0 (cleared before search)
-    (*value).Length = 0;
+    *return_length = 0;
 
     let env_chars = env_block_chars(env_ptr);
     let env_slice = core::slice::from_raw_parts(env_ptr, env_chars);
-    let name_chars = ((*name).Length / 2) as usize;
-    let name_slice = core::slice::from_raw_parts((*name).Buffer, name_chars);
+    let name_slice = core::slice::from_raw_parts(name, name_length);
 
     let result = env::find_env_var(env_slice, name_slice);
 
@@ -4973,21 +4986,21 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
             value_start,
             value_len,
         } => {
-            // Faithful: Value->Length = (USHORT)(wcs - val) * sizeof(WCHAR)
-            (*value).Length = (value_len * 2) as u16;
-            if (*value).Length <= (*value).MaximumLength {
-                // memcpy(Buffer, val, min(Length + sizeof(WCHAR), MaximumLength))
-                let bytes_to_copy = core::cmp::min(
-                    ((value_len * 2) + 2) as usize,
-                    (*value).MaximumLength as usize,
-                );
+            if value_len < value_length {
+                // memcpy(Value, val, (ReturnLength + 1) * sizeof(WCHAR))
+                // — copies the value AND its trailing NUL.
                 core::ptr::copy_nonoverlapping(
-                    env_ptr.add(value_start) as *const u8,
-                    (*value).Buffer as *mut u8,
-                    bytes_to_copy,
+                    env_ptr.add(value_start),
+                    value,
+                    value_len + 1,
                 );
+                *return_length = value_len;
                 env::STATUS_SUCCESS
             } else {
+                if value_length > 0 {
+                    *value = 0;
+                }
+                *return_length = value_len + 1;
                 env::STATUS_BUFFER_TOO_SMALL
             }
         }
@@ -4999,13 +5012,104 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
     status
 }
 
+/// `RtlQueryEnvironmentVariable_U(Environment, Name, Value) -> NTSTATUS`.
+///
+/// Thin `UNICODE_STRING` wrapper over the raw-buffer core above,
+/// faithful to the 2026-09 upstream rewrite: it applies the
+/// `UNICODE_STRING_MAX_CHARS` overflow guard, undoes the core's
+/// `+1` on `STATUS_BUFFER_TOO_SMALL`, and sets `Value->Length`
+/// unconditionally (even on `STATUS_VARIABLE_NOT_FOUND`, where it
+/// ends up 0).
+#[no_mangle]
+pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
+    environment: *mut u16,
+    name: *const UNICODE_STRING,
+    value: *mut UNICODE_STRING,
+) -> i32 {
+    let name_chars = ((*name).Length / 2) as usize;
+    let value_max_chars = ((*value).MaximumLength / 2) as usize;
+    let mut return_length: usize = 0;
+
+    let status = RtlQueryEnvironmentVariable(
+        environment,
+        (*name).Buffer,
+        name_chars,
+        (*value).Buffer,
+        value_max_chars,
+        &mut return_length,
+    );
+
+    if return_length > env::UNICODE_STRING_MAX_CHARS {
+        return env::STATUS_UNSUCCESSFUL;
+    }
+
+    if status == env::STATUS_BUFFER_TOO_SMALL {
+        return_length -= 1;
+    }
+
+    (*value).Length = (return_length * 2) as u16;
+    status
+}
+
+/// `RtlExpandEnvironmentStrings(Environment, SourceBuffer, SourceLength,
+/// Destination, DestMax, Length) -> NTSTATUS`. Raw-buffer core, added
+/// upstream 2026-09 alongside the pre-existing `_U` wrapper; exported
+/// at `ntdll.spec:831` (`-version=0x600+`).
+///
+/// Faithful to C: does *not* itself resolve a NULL `Environment` via
+/// the PEB (that fallback lives in `RtlQueryEnvironmentVariable`,
+/// reached per-`%VAR%` through the genuine C's nested
+/// `RtlQueryEnvironmentVariable_U` call). The `_U` wrapper below
+/// keeps our pre-existing up-front PEB substitution instead (see its
+/// doc comment) — equivalent in practice, and this raw export has no
+/// other caller today.
+#[no_mangle]
+pub unsafe extern "system" fn RtlExpandEnvironmentStrings(
+    environment: *mut u16,
+    source_buffer: *const u16,
+    source_length: usize,
+    destination: *mut u16,
+    dest_max: usize,
+    length: *mut usize,
+) -> i32 {
+    let env_slice: &[u16] = if environment.is_null() {
+        &[]
+    } else {
+        let n = env_block_chars(environment);
+        core::slice::from_raw_parts(environment, n)
+    };
+    let src_slice = core::slice::from_raw_parts(source_buffer, source_length);
+    let dst_slice = core::slice::from_raw_parts_mut(destination, dest_max);
+
+    let result = env::expand_env_strings(env_slice, src_slice, dst_slice);
+
+    if !length.is_null() {
+        *length = result.total_chars as usize;
+    }
+    result.status
+}
+
 /// `RtlExpandEnvironmentStrings_U(Env, Source, Destination, Length*)`.
 ///
-/// Walks `Source` substituting `%VAR%` against `Env`. The core
-/// algorithm lives in `core_rs::env::expand_env_strings`. We wrap
-/// the UNICODE_STRING ABI here. Faithful to C: `Environment` may be
-/// non-NULL; the C does *not* fall back to PEB inside this fn
-/// (callers pass `Peb->ProcessParameters->Environment` explicitly).
+/// Thin `UNICODE_STRING` wrapper over the raw-buffer core above,
+/// faithful to the 2026-09 upstream rewrite: applies the
+/// `UNICODE_STRING_MAX_CHARS` overflow guard, and — this is the part
+/// that changed — only writes `Destination->Length` when the core
+/// call *succeeded*. On `STATUS_BUFFER_TOO_SMALL` (or the overflow
+/// guard's `STATUS_UNSUCCESSFUL`) `Destination->Length` is left
+/// untouched, unlike the pre-rewrite C which always set it to the
+/// partial length written. `*ReturnLength` (the out-param), by
+/// contrast, is always written regardless of status.
+///
+/// A NULL `environment` means "use the current process environment" —
+/// the genuine C passes it straight to `RtlQueryEnvironmentVariable_U`
+/// per `%VAR%`, which resolves NULL to
+/// `NtCurrentPeb()->ProcessParameters->Environment`. Our raw core
+/// above only looks up variables in the slice it is given, so we
+/// substitute the PEB environment here up front instead; otherwise
+/// NULL (the form RtlQueryRegistryValues uses for REG_EXPAND_SZ)
+/// yields an empty env and `%SystemRoot%`-style references are left
+/// unexpanded (broke smss KnownDll dir resolution → boot failure).
 #[no_mangle]
 pub unsafe extern "system" fn RtlExpandEnvironmentStrings_U(
     environment: *mut u16,
@@ -5013,38 +5117,40 @@ pub unsafe extern "system" fn RtlExpandEnvironmentStrings_U(
     destination: *mut UNICODE_STRING,
     length: *mut u32,
 ) -> i32 {
+    let env_ptr: *mut u16 = if environment.is_null() {
+        RtlpGetPebEnvironment()
+    } else {
+        environment
+    };
+
     let src_chars = ((*source).Length / 2) as usize;
-    let src_slice = core::slice::from_raw_parts((*source).Buffer, src_chars);
-    let dst_chars = ((*destination).MaximumLength / 2) as usize;
-    let dst_slice = core::slice::from_raw_parts_mut((*destination).Buffer, dst_chars);
+    let dst_max_chars = ((*destination).MaximumLength / 2) as usize;
+    let mut result_length: usize = 0;
 
-    // A NULL `environment` means "use the current process environment" —
-    // the C code passes it straight to RtlQueryEnvironmentVariable_U, which
-    // resolves NULL to NtCurrentPeb()->ProcessParameters->Environment. The
-    // pure `expand_env_strings` only looks up variables in the slice it is
-    // given, so we must substitute the PEB environment here; otherwise NULL
-    // (the form RtlQueryRegistryValues uses for REG_EXPAND_SZ) yields an
-    // empty env and `%SystemRoot%`-style references are left unexpanded
-    // (broke smss KnownDll dir resolution → boot failure).
-    let env_ptr: *const u16 = if environment.is_null() {
-        RtlpGetPebEnvironment() as *const u16
-    } else {
-        environment as *const u16
-    };
-    let env_slice: &[u16] = if env_ptr.is_null() {
-        &[]
-    } else {
-        let n = env_block_chars(env_ptr);
-        core::slice::from_raw_parts(env_ptr, n)
-    };
+    let mut status = RtlExpandEnvironmentStrings(
+        env_ptr,
+        (*source).Buffer,
+        src_chars,
+        (*destination).Buffer,
+        dst_max_chars,
+        &mut result_length,
+    );
 
-    let result = env::expand_env_strings(env_slice, src_slice, dst_slice);
-
-    (*destination).Length = (result.dest_chars_written * 2) as u16;
-    if !length.is_null() {
-        *length = result.total_chars * 2;
+    if result_length > env::UNICODE_STRING_MAX_CHARS {
+        status = env::STATUS_UNSUCCESSFUL;
+        result_length = 0;
     }
-    result.status
+
+    if status == env::STATUS_SUCCESS {
+        // (USHORT)ResultLength * sizeof(WCHAR) - sizeof(UNICODE_NULL)
+        (*destination).Length = ((result_length as u16) * 2) - 2;
+    }
+
+    if !length.is_null() {
+        *length = (result_length as u32) * 2;
+    }
+
+    status
 }
 
 // =====================================================================
@@ -8643,7 +8749,10 @@ mod path_wave {
     const MAX_PATH: u32 = 260;
     const OBJ_CASE_INSENSITIVE: u32 = 0x40;
     const OBJ_INHERIT: u32 = 0x02;
-    const UNICODE_STRING_MAX_CHARS: u32 = 0x7FFE;
+    // 32767, per sdk/include/xdk/ntbasedef.h:621. Was 0x7FFE (32766) — the same
+    // off-by-one the two kernel32-rust copies carried; it made this guard reject a
+    // name one character short of the real limit.
+    const UNICODE_STRING_MAX_CHARS: u32 = 32767;
     const UNICODE_STRING_MAX_BYTES: u32 = 0xFFFE;
     const STATUS_SUCCESS: i32 = 0;
     const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;

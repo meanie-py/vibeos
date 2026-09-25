@@ -13,8 +13,12 @@ set_module_type(rshell win32dll UNICODE)
 
 target_link_libraries(rshell
     shellbars
-    shellmenu
-    shelldesktop
+    # shellmenu — the whole object library is Rust now (menuband-rust), and rshell already
+    # links ${MENUBAND_RUST_LIB} below, so the toolbar bridges arrive from there.
+    # shelldesktop — the whole object library is Rust now (shell32-rust/src/shelldesktop).
+    # rshell does NOT link libshell32_rust.a, and its .spec exports SHCreateDesktop and
+    # SHDesktopMessageLoop, so it resolves both through shell32's import lib below —
+    # exactly as it already does for ShellDDEInit since dde.cpp flipped.
     uuid
     wine
     cpprt
@@ -25,6 +29,11 @@ target_link_libraries(rshell
 # links the shared libmenuband_rust.a and provides its own MenuBandRustModuleLock/Unlock
 # (misc.cpp) over rshell's COM module.
 add_dependencies(rshell rust_menuband)
+
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    # FIXME: GCC 13+ warning, should be fixed properly
+    target_compile_options(rshell PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-Wno-overloaded-virtual>")
+endif()
 
 add_importlibs(rshell
     browseui

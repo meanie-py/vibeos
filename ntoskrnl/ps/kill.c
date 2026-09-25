@@ -282,7 +282,7 @@ PspDeleteProcess(IN PVOID ObjectBody)
     if (Process->Job)
     {
         /* Remove the process from the job */
-        PspRemoveProcessFromJob(Process, Process->Job);
+        PspRemoveProcessFromJob(Process);
 
         /* Dereference it */
         ObDereferenceObject(Process->Job);
@@ -378,6 +378,17 @@ PspDeleteProcess(IN PVOID ObjectBody)
     /* Dereference the Device Map */
     ObDereferenceDeviceMap(Process);
 
+#if defined(_WIN64) && defined(BUILD_WOW64_ENABLED)
+    /* Check if this is a WOW64 process */
+    if (Process->Wow64Process && !IS_WOW64_PROCESS_INITIALIZING(Process))
+    {
+        /* Free WOW64_PROCESS structure */
+        ExFreePoolWithTag(Process->Wow64Process, TAG_PS_WOW64);
+
+        PsReturnProcessNonPagedPoolQuota(Process, sizeof(WOW64_PROCESS));
+    }
+#endif
+
     /*
      * Dereference the quota block, the function
      * will invoke a quota block cleanup if the
@@ -416,11 +427,19 @@ PspDeleteThread(IN PVOID ObjectBody)
         }
     }
 
-    /* Cleanup impersionation information */
+    /* Cleanup impersonation information */
     PspDeleteThreadSecurity(Thread);
 
+    /* Free the thread name if set */
+    if (Thread->ThreadName)
+    {
+        ExFreePoolWithTag(Thread->ThreadName, TAG_THREAD_NAME);
+        Thread->ThreadName = NULL;
+    }
+
     /* Make sure the thread was inserted, before continuing */
-    if (!Process) return;
+    if (!Process)
+        return;
 
     /* Check if the thread list is valid */
     if (Thread->ThreadListEntry.Flink)
@@ -849,7 +868,7 @@ PspExitThread(IN NTSTATUS ExitStatus)
         if (CurrentProcess->Job)
         {
             /* Remove the process from the job */
-            PspExitProcessFromJob(CurrentProcess->Job, CurrentProcess);
+            PspExitProcessFromJob(CurrentProcess);
         }
     }
 
@@ -1120,10 +1139,22 @@ PspExitProcess(IN BOOLEAN LastThread,
             ZwSetTimerResolution(KeMaximumIncrement, 0, &Actual);
         }
 
-        /* Check if we are part of a Job that has a completion port */
-        if ((Process->Job) && (Process->Job->CompletionPort))
+        if (Process->Job)
         {
-            /* FIXME: Check job status code and do I/O completion if needed */
+            ExEnterCriticalRegionAndAcquireResourceExclusive(&Process->Job->JobLock);
+
+            /* Check if we are part of a job that has a completion port
+               and do I/O completion if needed */
+            if (Process->Job->CompletionPort &&
+                !FlagOn(Process->JobStatus, PSP_JOB_NOT_REALLY_ACTIVE))
+            {
+                (VOID)PspSendJobMessageLocked(Process->Job,
+                                              JOB_OBJECT_MSG_EXIT_PROCESS,
+                                              Process->UniqueProcessId,
+                                              FALSE);
+            }
+
+            ExReleaseResourceAndLeaveCriticalRegion(&Process->Job->JobLock);
         }
 
         /* FIXME: Notify the Prefetcher */

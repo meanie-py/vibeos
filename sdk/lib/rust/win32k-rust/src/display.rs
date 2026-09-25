@@ -4,6 +4,7 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, IoGetDevicePrope
 use ntkrnl_sys::rtl::RtlZeroMemory;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMORY};
 use ntkrnl_sys::constants::{STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_PARAMETER_1, STATUS_INVALID_PARAMETER_2, STATUS_UNSUCCESSFUL};
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -826,8 +827,23 @@ pub unsafe extern "system" fn NtUserEnumDisplaySettings(
         return Status;
     }
     if NT_SUCCESS(Status) {
-        cbSize = (*lpDevMode).dmSize as u32;
-        cbExtra = (*lpDevMode).dmDriverExtra as u32;
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND both loads in
+        // one _SEH2_TRY, so they come across through the fault-tolerant copy.
+        let mut dmSize: u16 = 0;
+        let mut dmDriverExtra: u16 = 0;
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(dmSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*lpDevMode).dmSize) as *const core::ffi::c_void,
+            core::mem::size_of::<u16>(),
+        ) || !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(dmDriverExtra) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*lpDevMode).dmDriverExtra) as *const core::ffi::c_void,
+            core::mem::size_of::<u16>(),
+        ) {
+            return STATUS_ACCESS_VIOLATION;
+        }
+        cbSize = dmSize as u32;
+        cbExtra = dmDriverExtra as u32;
     }
 
     if cbSize != core::mem::size_of::<DEVMODEW>() as u32 {

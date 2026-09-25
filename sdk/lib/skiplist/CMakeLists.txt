@@ -35,6 +35,9 @@ add_custom_target(rust_skiplist DEPENDS ${SKIPLIST_RUST_LIB})
 
 # add_library(skiplist16 skiplist.c)  # body replaced by Rust; kept on disk
 add_library(skiplist16 rust_cohab_stub.c)
+# upstream publishes skiplist.h through the target; its consumers dropped their own
+# include_directories line in the same commit, so this has to live here now.
+target_include_directories(skiplist16 INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 add_dependencies(skiplist16 psdk rust_skiplist)
 target_link_libraries(skiplist16 PUBLIC ${SKIPLIST_RUST_LIB})
 

@@ -197,8 +197,12 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     (*TrapFrame).SegGs = KGDT64_R3_DATA | RPL_MASK;
     (*TrapFrame).SegSs = KGDT64_R3_DATA | RPL_MASK;
 
-    (*TrapFrame).EFlags &= EFLAGS_USER_SANITIZE;
-    (*TrapFrame).EFlags |= EFLAGS_INTERRUPT_MASK;
+    // SET EFlags, do not "sanitize" it. EFLAGS_USER_SANITIZE (0x003F4DD7) PRESERVES
+    // bit 8 (TF) and bit 10 (DF) -- verified bit by bit -- so whatever those bits
+    // held in the freshly seeded trap frame survived into the new user thread. TF
+    // means an immediate single-step #DB on its first user instruction, which is
+    // the crash upstream describes. Upstream-Commit: 6bc61687e6ed
+    (*TrapFrame).EFlags = EFLAGS_INTERRUPT_MASK;
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -358,7 +362,16 @@ pub unsafe extern "system" fn KeUserModeCallback(
             OldStack = *UserStackPointer as ULONG_PTR;
         }
 
-        GdiBatchCount = (*Teb).GdiBatchCount;
+        // A WoW64 guest's gdi32 bumps TEB32->GdiBatchCount, not this one. The
+        // SYSCALL return path (traphandler.rs) was fixed for that; this is the
+        // user-CALLBACK return path and had the same bug -- both arm64 paths
+        // (trap.c + usercall.c) were fixed together and amd64's callback path
+        // was missed. Found by sweeping every kernel read of a guest-written
+        // TEB field rather than by another symptom.
+        GdiBatchCount = match crate::ke::amd64::traphandler::wow64_teb32(Teb) {
+            Some(teb32) => (*teb32).GdiBatchCount,
+            None => (*Teb).GdiBatchCount,
+        };
         STATUS_SUCCESS
     };
 

@@ -372,6 +372,76 @@ pub unsafe fn name_ptr() -> *const u16 {
 }
 """
 
+# scan_opaque_ptr_arith. Seeded from consrv's handle table (2026-09-23): the
+# field is typed by bindgen as a pointer to an opaque 1-byte stub, so .add(i)
+# strides one byte. The fixture ships its own bindgen stand-in, because the
+# scanner reads field types from *-sys bindgen files.
+_OPAQUE_BINDGEN = """\
+pub struct _IO_HANDLE {
+    pub _address: u8,
+}
+pub struct _PROCESS_DATA {
+    pub HandleTable: *mut _IO_HANDLE,
+}
+"""
+_OPAQUE_BAD = """\
+pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
+    (*pd).HandleTable.add(i) as *mut RealHandle
+}
+"""
+_OPAQUE_GOOD = """\
+pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
+    ((*pd).HandleTable as *mut RealHandle).add(i)
+}
+"""
+
+# scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
+# Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
+# and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
+# directly, plus a foreign decl (body-less, inside an extern block) that must
+# not be mistaken for a Rust-ABI fn.
+_FNABI_BAD = """\
+pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
+pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
+    unsafe { Some(core::mem::transmute(InitFrontEnd as *const ())) };
+"""
+_FNABI_GOOD = """\
+pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
+pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
+extern "system" {
+    fn Foreign(x: *mut u8) -> i32;
+}
+pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
+    unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+"""
+
+# scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
+# C's RtlCopyMemory byte count kept as the element count of a u16 copy. GOOD has
+# the fixed byte copy, a count already in WCHARs (/ size_of), and an ANSI copy
+# whose uncast .Buffer must not be mistaken for a wide one.
+_WIDEBYTE_BAD = """\
+pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) {
+    core::ptr::copy_nonoverlapping(
+        (*name).Buffer,
+        dst as *mut u16,
+        BytesConverted as usize,
+    );
+}
+"""
+_WIDEBYTE_GOOD = """\
+pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) {
+    core::ptr::copy_nonoverlapping((*name).Buffer as *const u8, dst, BytesConverted as usize);
+    core::ptr::copy_nonoverlapping(
+        (*name).Buffer,
+        dst as *mut u16,
+        (*name).Length as usize / core::mem::size_of::<u16>(),
+    );
+}
+pub unsafe fn g(a: *const ANSI_STRING, out: *mut i8) {
+    core::ptr::copy_nonoverlapping((*a).Buffer, out, (*a).Length as usize);
+}
+"""
+
 # The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
 # the argument list, so counting it as an argument shifts every positional index
 # — the level check reads the comment (not DISPATCH_LEVEL) and the last-arg
@@ -1486,6 +1556,27 @@ CONTROLS: list[Control] = [
         good={"good.rs": _DANGLING_GOOD},
     ),
     Control(
+        name="scan_opaque_ptr_arith",
+        script="tools/scan_opaque_ptr_arith.py",
+        argv=["--lint"],
+        bad={"x-sys/src/opaque_fixture_bindgen.rs": _OPAQUE_BINDGEN, "src/bad.rs": _OPAQUE_BAD},
+        good={"x-sys/src/opaque_fixture_bindgen.rs": _OPAQUE_BINDGEN, "src/good.rs": _OPAQUE_GOOD},
+    ),
+    Control(
+        name="scan_fnptr_abi_transmute",
+        script="tools/scan_fnptr_abi_transmute.py",
+        argv=["--lint"],
+        bad={"bad.rs": _FNABI_BAD},
+        good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_wide_byte_copy",
+        script="tools/scan_wide_byte_copy.py",
+        argv=["--lint"],
+        bad={"bad.rs": _WIDEBYTE_BAD},
+        good={"good.rs": _WIDEBYTE_GOOD},
+    ),
+    Control(
         name="scan_irql_balance",
         script="tools/scan_irql_balance.py",
         argv=["--lint"],
@@ -1569,6 +1660,18 @@ UNCOVERED: dict[str, str] = {
     # It also self-checks for the dead-matcher failure this file exists to prevent: an
     # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
     "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
+    # Diffs the WHOLE tree against a checked-in snapshot (tools/cohab-census.txt); it
+    # takes no path argument and has no notion of a root, so the fixture-dir driver
+    # above cannot express it. The control it needs is the same one in spirit, and it
+    # lives in its own suite: remove the single `#` from ntos.cmake's
+    # `#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c` -- the exact edit a bad merge
+    # resolution makes -- and assert the scanner reports CENSUS-REMOVED and exits 1,
+    # then restores the file and asserts clean. That is the 2026-09-19 partial-flip
+    # shape, which every boot test passed while the guest was dead.
+    "cohab_census": (
+        "covered by tools/test_cohab_census.py (3 tests) -- positive control is "
+        "uncommenting a real flipped source line in ntoskrnl/ntos.cmake"
+    ),
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",

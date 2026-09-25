@@ -47,3 +47,13 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # claim. Every one of the 66 is graded bit-exact against the C sdk/lib/crt/math compiles, in
 # cnt-difftest, per-arch.
 cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math"] }
+
+# ucrtbase's OWN surface, taken over from the vendored Microsoft UCRT one family
+# at a time. Unlike crt-shared-rust these bodies deliberately DISPLACE genuine
+# ucrt bodies, which is why every one of them is declared in
+# tools/ucrt-takeover.yaml and checked both ways by verify_ucrtbase_cohab.
+#
+# It has an EMPTY [dependencies] table, so this edge cannot reach
+# msvcrt-crt-rust -- the one thing this crate exists to keep out. That is
+# asserted by check_structure, not assumed.
+ucrt-rust = { path = "../ucrt-rust", features = ["bits", "ismbbyte"] }

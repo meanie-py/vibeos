@@ -82,6 +82,75 @@
 .endm
 
 /*
+ * NEON_SAVE / NEON_RESTORE — the interrupted context's FP/SIMD state.
+ *
+ * The kernel runs with FP enabled (kiinit.rs sets CPACR_EL1.FPEN) and the
+ * compiler uses the vector registers freely: memcpy/memset, struct zeroing
+ * (`movi v0.2d, #0; stp q0, q0`), and copies of frames and contexts all go
+ * through q0-q31. Nothing saved them, so any trap handed the interrupted
+ * code whatever vector state the handler left: a user thread that took an
+ * IRQ in the middle of a vectorized copy resumed with a different q0, and a
+ * kernel copy in flight could come out zeroed. That is the shape of the
+ * arm64 wild branches (#39: EL1 PC/LR/FP zero; explorer branching to 0x4000
+ * through an import stub), and it got far likelier once delay-load thunks
+ * kept all eight argument q registers live across a LoadLibrary.
+ *
+ * All 32 are saved, not just the AAPCS caller-saved ones: an asynchronous
+ * trap can land where anything is live, and only the LOW halves of v8-v15
+ * are callee-saved. Allocated below the frames so KeGetTrapFrame's
+ * InitialStack - sizeof(KTRAP_FRAME) and the x0/x1 handler arguments are
+ * untouched. Clobbers x2/x3, which are already in the trap frame.
+ */
+.equ NEON_SAVE_LENGTH, 0x210   /* 32 x 16 bytes + FPCR + FPSR */
+.macro NEON_SAVE
+    sub sp, sp, #NEON_SAVE_LENGTH
+    stp q0,  q1,  [sp, #0x000]
+    stp q2,  q3,  [sp, #0x020]
+    stp q4,  q5,  [sp, #0x040]
+    stp q6,  q7,  [sp, #0x060]
+    stp q8,  q9,  [sp, #0x080]
+    stp q10, q11, [sp, #0x0a0]
+    stp q12, q13, [sp, #0x0c0]
+    stp q14, q15, [sp, #0x0e0]
+    stp q16, q17, [sp, #0x100]
+    stp q18, q19, [sp, #0x120]
+    stp q20, q21, [sp, #0x140]
+    stp q22, q23, [sp, #0x160]
+    stp q24, q25, [sp, #0x180]
+    stp q26, q27, [sp, #0x1a0]
+    stp q28, q29, [sp, #0x1c0]
+    stp q30, q31, [sp, #0x1e0]
+    mrs x2, fpcr
+    mrs x3, fpsr
+    str x2, [sp, #0x200]        /* single stores: an x-pair reaches only +504 */
+    str x3, [sp, #0x208]
+.endm
+
+.macro NEON_RESTORE
+    ldr x2, [sp, #0x200]
+    ldr x3, [sp, #0x208]
+    msr fpcr, x2
+    msr fpsr, x3
+    ldp q0,  q1,  [sp, #0x000]
+    ldp q2,  q3,  [sp, #0x020]
+    ldp q4,  q5,  [sp, #0x040]
+    ldp q6,  q7,  [sp, #0x060]
+    ldp q8,  q9,  [sp, #0x080]
+    ldp q10, q11, [sp, #0x0a0]
+    ldp q12, q13, [sp, #0x0c0]
+    ldp q14, q15, [sp, #0x0e0]
+    ldp q16, q17, [sp, #0x100]
+    ldp q18, q19, [sp, #0x120]
+    ldp q20, q21, [sp, #0x140]
+    ldp q22, q23, [sp, #0x160]
+    ldp q24, q25, [sp, #0x180]
+    ldp q26, q27, [sp, #0x1a0]
+    ldp q28, q29, [sp, #0x1c0]
+    ldp q30, q31, [sp, #0x1e0]
+    add sp, sp, #NEON_SAVE_LENGTH
+.endm
+
+/*
  * UNMASK_IRQ_FROM_SPSR — restore the interrupted context's IRQ mask.
  *
  * Taking ANY exception sets PSTATE.DAIF to all-masked in hardware, so without
@@ -400,13 +469,17 @@ KiArm64VectorTable:
 KiSynchronousExceptionEntry:
     TRAP_PROLOG
     EXFRAME_SAVE
+    NEON_SAVE
     bl KiSynchronousExceptionHandler
+    NEON_RESTORE
     EXFRAME_RESTORE
     b KiTrapReturn
 
 KiIrqEntry:
     TRAP_PROLOG
+    NEON_SAVE
     bl KiIrqHandler
+    NEON_RESTORE
     b KiTrapReturn
 
 KiSErrorEntry:
@@ -419,17 +492,21 @@ KiSErrorEntry:
 KiEL0SynchronousEntry:
     TRAP_PROLOG_EL0
     EXFRAME_SAVE
+    NEON_SAVE
     /* Syscalls and user faults arrive from EL0, i.e. from PASSIVE_LEVEL with
      * interrupts on, so this always unmasks. KiTrapReturn re-masks before it
      * touches ELR/SPSR. */
     UNMASK_IRQ_FROM_SPSR
     bl KiSynchronousExceptionHandler
+    NEON_RESTORE
     EXFRAME_RESTORE
     b KiTrapReturn
 
 KiEL0IrqEntry:
     TRAP_PROLOG_EL0
+    NEON_SAVE
     bl KiIrqHandler
+    NEON_RESTORE
     b KiTrapReturn
 
 KiEL0SErrorEntry:

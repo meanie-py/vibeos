@@ -1,841 +1,103 @@
-# libmpg123 1.26.2 — our delta from pristine upstream.
+# libmpg123 1.33.7 — our delta from pristine upstream.
 #
-# Upstream: https://www.mpg123.de/download/mpg123-1.26.2.tar.bz2
-#           sha256 00f7bf7ea64fcec2c9d07751d6ad8849343ee09c282ea3b0d5dd486e886e2ff3
-# Apply from the SPLIT tree (see below): a/<f> paths under sdk/lib/3rdparty/libmpg123/,
-# a/include/<f> paths under sdk/include/reactos/libs/libmpg123/.
+# Upstream: https://www.mpg123.de/download/mpg123-1.33.7.tar.bz2
+#           sha256 31d0e35a4ca567ec9b5ebda6c3062bb4435d6d3eacd6ef0d95cadd7854dc03ee
+# Apply from sdk/lib/3rdparty/libmpg123/ with: patch -p1 < vendor-patches/libmpg123.patch
 #
-# THIS IS A MIXED-VINTAGE DROP, WHICH IS THE HEADLINE FINDING.
-# Everything is 1.26.2 EXCEPT src/compat/compat.c, which is a verbatim OLDER UPSTREAM
-# FILE. Measured against every release in range, normalized:
-#       1.23.8 -> 469 lines    1.24.0 -> 0    1.25.10 -> 0    1.25.13 -> 0
-#       1.26.0 -> 219          1.26.1 -> 219  1.26.2 -> 219
-# Zero against the whole 1.24.0-1.25.13 span, and its banner reads "copyright 2007-2016"
-# where 1.26.2 reads "2007-2020". So the 219-line compat.c hunk below is NOT a ReactOS
-# edit — it is upstream's own 1.25->1.26 change, absent because the file was never
-# refreshed. Do not "revert" it thinking you are removing a local patch.
+# THE VENDORED TREE ROOT MIRRORS UPSTREAM'S src/ EXACTLY. libmpg123/, common/,
+# compat/, include/ and version.h sit where mpg123 puts them, so the sources' own
+# relative includes ("../common/debug.h", "../version.h") resolve with no edits at all.
+# Before the 1.33.7 bump the headers were hoisted flat into
+# sdk/include/reactos/libs/libmpg123/, which is what forced include-line patching.
+# DO NOT FLATTEN IT AGAIN.
 #
-# THE CONSEQUENCE IS A LATENT INCONSISTENCY, currently harmless:
-# compat.h IS 1.26.2 vintage and declares `size_t unintr_fwrite(...)`, and intsym.h
-# mangles it to INT123_unintr_fwrite — but the stale compat.c never defines it. Nothing
-# in the tree calls it (grepped both halves), so it is a dead declaration rather than a
-# link error today. Re-syncing compat.c to 1.26.2 would fix the skew and the declaration
-# in one go; it also needs upstream's wpathconv.h, whose content our older compat.c
-# carries INLINE rather than #included. Flagged, not done: this pass records state.
+# FILE-SET RULE, so a re-vendor is a copy: take every .c and .h from src/libmpg123
+# except calctables.c (a host-side table generator we never build), all of
+# src/common/*.h, src/include/{mpg123,fmt123}.h, src/compat/{compat.c,compat_str.c,
+# compat.h,wpathconv.h}, and src/version.h. No .S — we build no assembly, only the
+# generic-C decoder. out123.h and syn123.h are skipped: they are the public headers of
+# sibling libraries (libout123, libsyn123) that this tree does not contain.
 #
-# EVERYTHING ELSE IS SMALL:
-#   parse.c      6 lines, a pure __REACTOS__ guard that only moves `#include "getbits.h"`.
-#   mpg123.h     16 lines: the expected @PACKAGE_VERSION@/@API_VERSION@ substitution from
-#                mpg123.h.in (1.26.2 / 45), plus a __REACTOS__-guarded `typedef long
-#                ssize_t` replacing the MSVC ptrdiff_t one.
-#   compat.h     6 lines: the same ssize_t guard, plus two dead msdn.microsoft.com doc
-#                URLs updated to learn.microsoft.com.
-#   optimize.h   4 lines: __declspec(align) vs __attribute__((aligned)).
+# OURS, WITH NO UPSTREAM COUNTERPART: config.h (upstream generates it here from
+# config.h.in — keep it in step with that template on every bump), precomp.h and
+# CMakeLists.txt.
 #
-# NOT IN THIS PATCH (no upstream counterpart): precomp.h (our PCH) and config.h (ours;
-# upstream generates it). config.h selects the generic-C OPT_I386 path with
-# REAL_IS_FLOAT — no asm, no MMX/SSE/AltiVec — all three layers, ID3v2, ICY, gapless and
-# the new Huffman tables, WANT_WIN32_UNICODE/SOCKETS on, USE_MODULES off. Usermode only:
-# there is no DbgPrint/kernel shim here, unlike libsamplerate's config.h.
+# ----------------------------------------------------------------------------------
+# THE TWO PATCHED FILES — FIVE LINES
+# ----------------------------------------------------------------------------------
 #
-# 37 further files differ ONLY by trailing-whitespace stripping (24 in the library half,
-# 13 in the include half) and are excluded, so pristine + this patch does NOT reproduce
-# the tree byte-for-byte. Re-check with the normalized diff:
-#   diff -a <(sed -e 's/\r$//' -e 's/[[:space:]]*$//' A) <(sed -e 's/\r$//' -e 's/[[:space:]]*$//' B)
+#   include/mpg123.h    Extends upstream's own "a little hack to help MSVC not having
+#                       ssize_t" to cover us. Our CRT does not declare ssize_t either
+#                       (not in <sys/types.h>, not in <corecrt.h>), so the #else branch
+#                       fails to compile. 1.26.2's generated mpg123.h carried its own
+#                       fallback, `typedef long ssize_t`, which was WRONG ON 64-BIT;
+#                       upstream removed that fallback in the meantime. ptrdiff_t, which
+#                       is what upstream already uses for MSVC, is correct on all three
+#                       of our targets. This one is worth sending upstream: the condition
+#                       is really "Windows CRT", not "MSVC".
 #
-# SECURITY: the decoder is untouched. layer1/2/3.c, id3.c, huffman.h, newhuffman.h,
-# frame.c, format.c, readers.c and the body of parse.c are byte-identical or
-# whitespace-only against pristine 1.26.2. No bounds check, allocation, buffer size or
-# Huffman/ID3 logic differs. The only functional-content difference in the compiled set
-# is compat.c's EINTR retry plumbing, which is I/O, not parsing.
+#   libmpg123/optimize.h  Gives ALIGNED() an MSVC spelling. config.h defines CCALIGN
+#                       unconditionally and upstream expands it to
+#                       __attribute__((aligned(a))), which MSVC does not accept. Kept
+#                       rather than dropped because ReactOS supports MSVC builds and we
+#                       cannot test one here — dropping it would silently remove that
+#                       capability. Not reducible to a -D: it guards a DEFINITION.
 #
---- a/compat/compat.c
-+++ b/compat/compat.c
-@@ -4,7 +4,7 @@
- 	The mpg123 code is determined to keep it's legacy. A legacy of old, old UNIX.
- 	So anything possibly somewhat advanced should be considered to be put here, with proper #ifdef;-)
- 
--	copyright 2007-2020 by the mpg123 project - free software under the terms of the LGPL 2.1
-+	copyright 2007-2016 by the mpg123 project - free software under the terms of the LGPL 2.1
- 	see COPYING and AUTHORS files in distribution or http://mpg123.org
- 	initially written by Thomas Orgis, Windows Unicode stuff by JonY.
- */
-@@ -39,6 +39,12 @@
- #include <shlwapi.h>
- #endif
- 
-+#ifdef USE_MODULES
-+#  ifdef HAVE_DLFCN_H
-+#    include <dlfcn.h>
-+#  endif
-+#endif
-+
- #include "debug.h"
- 
- #ifndef WINDOWS_UWP
-@@ -64,9 +70,112 @@
- 	return ret;
- }
- 
-+#ifdef WANT_WIN32_UNICODE
-+
-+/* Convert unix UTF-8 (or ASCII) paths to Windows wide character paths. */
-+static wchar_t* u2wpath(const char *upath)
-+{
-+	wchar_t* wpath, *p;
-+	if(!upath || win32_utf8_wide(upath, &wpath, NULL) < 1)
-+		return NULL;
-+	for(p=wpath; *p; ++p)
-+		if(*p == L'/')
-+			*p = L'\\';
-+	return wpath;
-+}
-+
-+/* Convert Windows wide character paths to unix UTF-8. */
-+static char* w2upath(const wchar_t *wpath)
-+{
-+	char* upath, *p;
-+	if(!wpath || win32_wide_utf8(wpath, &upath, NULL) < 1)
-+		return NULL;
-+	for(p=upath; *p; ++p)
-+		if(*p == '\\')
-+			*p = '/';
-+	return upath;
-+}
-+
-+/* An absolute path that is too long and not already marked with
-+   \\?\ can be marked as a long one and still work. */
-+static int wpath_need_elongation(wchar_t *wpath)
-+{
-+	if( wpath && !PathIsRelativeW(wpath)
-+	&&	wcslen(wpath) > MAX_PATH-1
-+	&&	wcsncmp(L"\\\\?\\", wpath, 4) )
-+		return 1;
-+	else
-+		return 0;
-+}
-+
-+/* Take any wide windows path and turn it into a path that is allowed
-+   to be longer than MAX_PATH, if it is not already. */
-+static wchar_t* wlongpath(wchar_t *wpath)
-+{
-+	size_t len, plen;
-+	const wchar_t *prefix = L"";
-+	wchar_t *wlpath = NULL;
-+	if(!wpath)
-+		return NULL;
-+
-+	/* Absolute paths that do not start with \\?\ get that prepended
-+	   to allow them being long. */
-+	if(!PathIsRelativeW(wpath) && wcsncmp(L"\\\\?\\", wpath, 4))
-+	{
-+		if(wcslen(wpath) >= 2 && PathIsUNCW(wpath))
-+		{
-+			/* \\server\path -> \\?\UNC\server\path */
-+			prefix = L"\\\\?\\UNC";
-+			++wpath; /* Skip the first \. */
-+		}
-+		else /* c:\some/path -> \\?\c:\some\path */
-+			prefix = L"\\\\?\\";
-+	}
-+	plen = wcslen(prefix);
-+	len = plen + wcslen(wpath);
-+	wlpath = malloc(len+1*sizeof(wchar_t));
-+	if(wlpath)
-+	{
-+		/* Brute force memory copying, swprintf is too dandy. */
-+		memcpy(wlpath, prefix, sizeof(wchar_t)*plen);
-+		memcpy(wlpath+plen, wpath, sizeof(wchar_t)*(len-plen));
-+		wlpath[len] = 0;
-+	}
-+	return wlpath;
-+}
-+
-+/* Convert unix path to wide windows path, optionally marking
-+   it as long path if necessary. */
-+static wchar_t* u2wlongpath(const char *upath)
-+{
-+	wchar_t *wpath  = NULL;
-+	wchar_t *wlpath = NULL;
-+	wpath = u2wpath(upath);
-+	if(wpath_need_elongation(wpath))
-+	{
-+		wlpath = wlongpath(wpath);
-+		free(wpath);
-+		wpath = wlpath;
-+	}
-+	return wpath;
-+}
-+
- #endif
- 
--#include "wpathconv.h"
-+#else
-+
-+static wchar_t* u2wlongpath(const char *upath)
-+{
-+	wchar_t* wpath, *p;
-+	if (!upath || win32_utf8_wide(upath, &wpath, NULL) < 1)
-+		return NULL;
-+	for (p = wpath; *p; ++p)
-+		if (*p == L'/')
-+			*p = L'\\';
-+	return wpath;
-+}
-+
-+#endif
- 
- /* Always add a default permission mask in case of flags|O_CREAT. */
- int compat_open(const char *filename, int flags)
-@@ -453,38 +562,67 @@
- 
- #endif
- 
--// Revisit logic of write():
--// Return -1 if interrupted before any data was written,
--// set errno to EINTR. Any other error value is serious
--// for blocking I/O, which we assume here. EAGAIN should be
--// handed through.
--// Reaction to zero-sized write attempts could also be funky, so avoid that.
--// May return short count for various reasons. I assume that
--// any serious condition will show itself as return value -1
--// eventually.
--
--// These uninterruptible write/read functions shall persist as long as
--// possible to finish the desired operation. A short byte count is short
--// because of a serious reason (maybe EOF, maybe out of disk space). You
--// can inspect errno.
-+#ifdef USE_MODULES
-+/*
-+	This is what I expected the platform-specific dance for dynamic module
-+	support to be. Little did I know about the peculiarities of (long)
-+	paths and directory/file search on Windows.
-+*/
-+
-+void *compat_dlopen(const char *path)
-+{
-+	void *handle = NULL;
-+#ifdef WANT_WIN32_UNICODE
-+	wchar_t *wpath;
-+	wpath = u2wlongpath(path);
-+	if(wpath)
-+		handle = LoadLibraryW(wpath);
-+	free(wpath);
-+#else
-+	handle = dlopen(path, RTLD_NOW);
-+#endif
-+	return handle;
-+}
-+
-+void *compat_dlsym(void *handle, const char *name)
-+{
-+	void *sym = NULL;
-+	if(!handle)
-+		return NULL;
-+#ifdef WANT_WIN32_UNICODE
-+	sym = GetProcAddress(handle, name);
-+#else
-+	sym = dlsym(handle, name);
-+#endif
-+	return sym;
-+}
- 
-+void compat_dlclose(void *handle)
-+{
-+	if(!handle)
-+		return;
-+#ifdef WANT_WIN32_UNICODE
-+	FreeLibrary(handle);
-+#else
-+	dlclose(handle);
-+#endif
-+}
-+
-+#endif /* USE_MODULES */
-+
-+
-+/* This shall survive signals and any return value less than given byte count
-+   is an error */
- size_t unintr_write(int fd, void const *buffer, size_t bytes)
- {
- 	size_t written = 0;
--	errno = 0;
- 	while(bytes)
- 	{
--		errno = 0;
- 		ssize_t part = write(fd, (char*)buffer+written, bytes);
--		// Just on short writes, we do not abort. Only when
--		// there was no successful operation (even zero write) at all.
--		// Any other error than EINTR ends things here.
--		if(part >= 0)
--		{
--			bytes   -= part;
--			written += part;
--		} else if(errno != EINTR)
-+		if(part < 0 && errno != EINTR)
- 			break;
-+		bytes   -= part;
-+		written += part;
- 	}
- 	return written;
- }
-@@ -493,40 +631,17 @@
- size_t unintr_read(int fd, void *buffer, size_t bytes)
- {
- 	size_t got = 0;
--	errno = 0;
- 	while(bytes)
- 	{
--		errno = 0;
- 		ssize_t part = read(fd, (char*)buffer+got, bytes);
--		if(part >= 0)
--		{
--			bytes -= part;
--			got   += part;
--		} else if(errno != EINTR)
-+		if(part < 0 && errno != EINTR)
- 			break;
-+		bytes -= part;
-+		got   += part;
- 	}
- 	return got;
- }
- 
--// and again for streams
--size_t unintr_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
--{
--	size_t written = 0;
--	errno = 0;
--	while(size && nmemb)
--	{
--		errno = 0;
--		size_t part = fwrite((char*)ptr+written*size, size, nmemb, stream);
--		if(part > 0)
--		{
--			nmemb   -= part;
--			written += part;
--		} else if(errno != EINTR)
--			break;
--	}
--	return written;
--}
--
- #ifndef NO_CATCHSIGNAL
- #if (!defined(WIN32) || defined (__CYGWIN__)) && defined(HAVE_SIGNAL_H)
- void (*catchsignal(int signum, void(*handler)()))()
---- a/parse.c
-+++ b/parse.c
-@@ -11,13 +11,19 @@
- #include <sys/stat.h>
- #include <fcntl.h>
- 
-+#ifndef __REACTOS__
- #include "getbits.h"
-+#endif
- 
- #if defined (WANT_WIN32_SOCKETS)
- #include <winsock2.h>
- #include <ws2tcpip.h>
- #endif
- 
-+#ifdef __REACTOS__
-+#include "getbits.h"
-+#endif
-+
- /* a limit for number of frames in a track; beyond that unsigned long may not be enough to hold byte addresses */
- #ifdef HAVE_LIMITS_H
- #include <limits.h>
-@@ -184,7 +190,7 @@
- 
- 	/* we have one of these headers... */
- 	if(VERBOSE2) fprintf(stderr, "Note: Xing/Lame/Info header detected\n");
--	lame_offset += 4; 
-+	lame_offset += 4;
- 	xing_flags = bit_read_long(fr->bsbuf, &lame_offset);
- 	debug1("Xing: flags 0x%08lx", xing_flags);
- 
-@@ -225,7 +231,7 @@
- 		{
- 			/* The Xing bitstream length, at least as interpreted by the Lame
- 			   encoder, encompasses all data from the Xing header frame on,
--			   ignoring leading ID3v2 data. Trailing tags (ID3v1) seem to be 
-+			   ignoring leading ID3v2 data. Trailing tags (ID3v1) seem to be
- 			   included, though. */
- 			if(fr->rdat.filelen < 1)
- 			fr->rdat.filelen = (off_t) long_tmp + fr->audio_start; /* Overflow? */
-@@ -268,7 +274,7 @@
- 			10: lowpass
- 			11-18: ReplayGain
- 			19: encoder flags
--			20: ABR 
-+			20: ABR
- 			21-23: encoder delays
- 	*/
- 	check_bytes_left(24); /* I'm interested in 24 B of extra info. */
-@@ -309,7 +315,7 @@
- 			else if(VERBOSE3) fprintf(stderr
- 			,	"Note: Info: Cannot determine LAME version.\n");
- 		}
--		lame_offset += 9; /* 9 in */ 
-+		lame_offset += 9; /* 9 in */
- 
- 		/* The 4 big bits are tag revision, the small bits vbr method. */
- 		lame_vbr = fr->bsbuf[lame_offset] & 15;
-@@ -371,7 +377,7 @@
- 			/* Apply gain offset for automatic origin. */
- 			if(origin == 3) replay_gain[gt] += gain_offset;
- 		}
--		if(VERBOSE3) 
-+		if(VERBOSE3)
- 		{
- 			fprintf(stderr, "Note: Info: Radio Gain = %03.1fdB\n"
- 			,	replay_gain[0]);
-@@ -398,7 +404,7 @@
- 			,	fr->abr_rate);
- 		}
- 		lame_offset += 1; /* 21 in */
--	
-+
- 		/* Encoder delay and padding, two 12 bit values
- 		   ... lame does write them from int. */
- 		pad_in  = ( (((int) fr->bsbuf[lame_offset])   << 4)
-@@ -454,7 +460,7 @@
- static int halfspeed_do(mpg123_handle *fr)
- {
- 	/* Speed-down hack: Play it again, Sam (the frame, I mean). */
--	if (fr->p.halfspeed) 
-+	if (fr->p.halfspeed)
- 	{
- 		if(fr->halfphase) /* repeat last frame */
- 		{
-@@ -474,9 +480,9 @@
- 	return 0;
- }
- 
--/* 
-+/*
- 	Temporary macro until we got this worked out.
--	Idea is to filter out special return values that shall trigger direct jumps to end / resync / read again. 
-+	Idea is to filter out special return values that shall trigger direct jumps to end / resync / read again.
- 	Particularily, the generic ret==PARSE_BAD==0 and ret==PARSE_GOOD==1 are not affected.
- */
- #define JUMP_CONCLUSION(ret) \
-@@ -631,7 +637,7 @@
- 		fr->mean_framesize = ((fr->mean_frames-1)*fr->mean_framesize+compute_bpf(fr)) / fr->mean_frames ;
- 	}
- 	++fr->num; /* 0 for first frame! */
--	debug4("Frame %"OFF_P" %08lx %i, next filepos=%"OFF_P, 
-+	debug4("Frame %"OFF_P" %08lx %i, next filepos=%"OFF_P,
- 	(off_p)fr->num, newhead, fr->framesize, (off_p)fr->rd->tell(fr));
- 	if(!(fr->state_flags & FRAME_FRANKENSTEIN) && (
- 		(fr->track_frames > 0 && fr->num >= fr->track_frames)
-@@ -641,9 +647,9 @@
- 	))
- 	{
- 		fr->state_flags |= FRAME_FRANKENSTEIN;
--		if(NOQUIET) fprintf(stderr, "\nWarning: Encountered more data after announced end of track (frame %"OFF_P"/%"OFF_P"). Frankenstein!\n", (off_p)fr->num, 
-+		if(NOQUIET) fprintf(stderr, "\nWarning: Encountered more data after announced end of track (frame %"OFF_P"/%"OFF_P"). Frankenstein!\n", (off_p)fr->num,
- #ifdef GAPLESS
--		fr->gapless_frames > 0 ? (off_p)fr->gapless_frames : 
-+		fr->gapless_frames > 0 ? (off_p)fr->gapless_frames :
- #endif
- 		(off_p)fr->track_frames);
- 	}
-@@ -908,9 +914,9 @@
- 				return PARSE_BAD;
- 			}
- 		break;
--#endif 
-+#endif
- 		default:
--			if(NOQUIET) error1("Layer type %i not supported in this build!", fr->lay); 
-+			if(NOQUIET) error1("Layer type %i not supported in this build!", fr->lay);
- 
- 			return PARSE_BAD;
- 	}
-@@ -929,7 +935,7 @@
-      This overwrites side info needed for stage 0.
- 
-   Continuing to read bits after layer 3 side info shall fail unless
--  set_pointer() is called to refresh things. 
-+  set_pointer() is called to refresh things.
- */
- void set_pointer(mpg123_handle *fr, int part2, long backstep)
- {
-@@ -1047,10 +1053,10 @@
- int get_songlen(mpg123_handle *fr,int no)
- {
- 	double tpf;
--	
-+
- 	if(!fr)
- 		return 0;
--	
-+
- 	if(no < 0) {
- 		if(!fr->rd || fr->rdat.filelen < 0)
- 			return 0;
-@@ -1147,7 +1153,7 @@
- 	back_bytes += ret;
- 	if(ret < 28)
- 		goto apetag_bad;
--	
-+
- 	debug1("trying to parse APE header at %"OFF_P, (off_p)fr->rd->tell(fr));
- 	/* Apetags start with "APETAGEX", "APET" is already tested. */
- 	if(strncmp((char *)apebuf,"AGEX",4) != 0)
-@@ -1179,7 +1185,7 @@
- 
- 	return PARSE_AGAIN;
- 
--apetag_bad:	
-+apetag_bad:
- 	debug("no proper APE tag found, seeking back");
- 	if(fr->rd->back_bytes(fr,back_bytes) < 0 && NOQUIET)
- 		error1("Cannot seek %d bytes back!", back_bytes);
-@@ -1187,7 +1193,7 @@
- 	return PARSE_AGAIN; /* Give the resync code a chance to fix things */
- }
- 
--/* Advance a byte in stream to get next possible header and forget 
-+/* Advance a byte in stream to get next possible header and forget
-    buffered data if possible (for feed reader). */
- #define FORGET_INTERVAL 1024 /* Used by callers to set forget flag each <n> bytes. */
- static int forget_head_shift(mpg123_handle *fr, unsigned long *newheadp, int forget)
-@@ -1262,7 +1268,7 @@
- 	do
- 	{
- 		++(*headcount);
--		if(limit >= 0 && *headcount >= limit) break;				
-+		if(limit >= 0 && *headcount >= limit) break;
- 
- 		if(++forgetcount > FORGET_INTERVAL) forgetcount = 0;
- 		if((ret=forget_head_shift(fr, &newhead, !forgetcount))<=0) return ret;
-@@ -1342,7 +1348,7 @@
- 		do /* ... shift the header with additional single bytes until be found something that could be a header. */
- 		{
- 			++try;
--			if(limit >= 0 && try >= limit) break;				
-+			if(limit >= 0 && try >= limit) break;
- 
- 			if(++forgetcount > FORGET_INTERVAL) forgetcount = 0;
- 			if((ret=forget_head_shift(fr,&newhead,!forgetcount)) <= 0)
---- a/include/compat.h
-+++ b/include/compat.h
-@@ -61,7 +61,7 @@
- #ifdef HAVE_LIMITS_H
- #include <limits.h>
- #endif
-- 
-+
- #ifndef SIZE_MAX
- #define SIZE_MAX ((size_t)-1)
- #endif
-@@ -103,11 +103,13 @@
- 
- typedef unsigned char byte;
- 
-+#ifndef __REACTOS__
- #if defined(_MSC_VER) && !defined(MPG123_DEF_SSIZE_T)
- #define MPG123_DEF_SSIZE_T
- #include <stddef.h>
- typedef ptrdiff_t ssize_t;
- #endif
-+#endif /* __REACTOS__ */
- 
- /* A safe realloc also for very old systems where realloc(NULL, size) returns NULL. */
- void *safe_realloc(void *ptr, size_t size);
-@@ -185,7 +187,7 @@
-  * @param[out] buflen Optional parameter for length of allocated buffer.
-  * @return status of WideCharToMultiByte conversion.
-  *
-- * WideCharToMultiByte - http://msdn.microsoft.com/en-us/library/dd374130(VS.85).aspx
-+ * WideCharToMultiByte - https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-widechartomultibyte
-  */
- int win32_wide_utf8(const wchar_t * const wptr, char **mbptr, size_t * buflen);
- 
-@@ -198,7 +200,7 @@
-  * @param[out] buflen Optional parameter for length of allocated buffer.
-  * @return status of WideCharToMultiByte conversion.
-  *
-- * MultiByteToWideChar - http://msdn.microsoft.com/en-us/library/dd319072(VS.85).aspx
-+ * MultiByteToWideChar - https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-multibytetowidechar
-  */
- 
- int win32_utf8_wide(const char *const mbptr, wchar_t **wptr, size_t *buflen);
+# ----------------------------------------------------------------------------------
+# 1.26.2 -> 1.33.7 (2026-09-20): FOUR PATCHES BECAME TWO
+# ----------------------------------------------------------------------------------
+#
+# Retired, all because upstream changed rather than because we gave anything up:
+#
+#   compat.c    THE CHECKLIST ITEM, and it is now discharged. Our compat.c was NOT
+#               1.26.2 — it was 1.24.0-1.25.13 vintage, 215 lines adrift, and the
+#               registry carried a standing warning not to carry it across a bump. It
+#               was not carried; the tree takes 1.33.7's compat.c verbatim, which also
+#               brings the wpathconv.h split.
+#   parse.c     Moved `#include "getbits.h"` below the winsock includes. 1.33.7 needs
+#               no such reordering.
+#   compat.h    Suppressed the MSVC ssize_t typedef. 1.33.7's compat.h does not mention
+#               ssize_t at all.
+#
+# SECURITY: THIS IS WHY THE BUMP MATTERED. 1.26.2 is 2020. Fixed in between, in
+# libmpg123 specifically (from upstream NEWS): use of uninitialized values in layer III
+# dequantization (III_dequantize_sample); a double free when deleting a handle after a
+# failed mpg123_decoder(); a double free in the mpg123_set_index() 32-bit wrapper called
+# with index size 0; realloc calls hardened against size_t multiplication overflow; and
+# ID3v2 UTF16 texts not being terminated when they overwrite previous frames. Our one
+# consumer, winemp3.acm, feeds attacker-supplied MP3 bytes straight into this decoder.
+#
+# THE API IS COMPATIBLE. winemp3.acm uses twelve entry points (mpg123_init/exit/new/
+# delete/open_feed/close/feed/read/feedseek/getformat/param + mpg123_handle); all twelve
+# survive 1.33.7 with compatible signatures. mpg123_read's first buffer parameter widened
+# from `unsigned char*` to `void*`, which is source-compatible for callers.
+#
+# TWO LATENT 64-BIT BUGS DIED WITH THE OLD config.h, both from it being a 32-bit
+# autoconf output applied to all three arches:
+#   SIZEOF_SIZE_T / SIZEOF_SSIZE_T were hardcoded to 4. compat.h used them to choose the
+#   printf conversion for size_t, so on amd64 and arm64 it selected %lu for an 8-byte
+#   value. Diagnostic paths only, and 1.33.7 no longer uses those macros.
+#   `#define ssize_t long` — 4 bytes where 8 was needed. Also gone; see mpg123.h above.
+#
+# lfs_wrap.c IS BUILT NOW and must stay built: it supplies mpg123_feedseek and the
+# INT123_wrap_* helpers that libmpg123.c calls. (lfs_alias.c, which 1.26.2 shipped and we
+# never built, no longer exists upstream.) If you see mpg123_* reported as DUPLICATE
+# symbols while changing this list, suspect a stale liblibmpg123.a from an older file
+# layout before you suspect the source — that is what it was here.
+#
 --- a/include/mpg123.h
 +++ b/include/mpg123.h
-@@ -1,5 +1,5 @@
- /*
--	libmpg123: MPEG Audio Decoder library (version @PACKAGE_VERSION@)
-+	libmpg123: MPEG Audio Decoder library (version 1.26.2)
- 
- 	copyright 1995-2015 by the mpg123 project
- 	free software under the terms of the LGPL 2.1
-@@ -17,15 +17,15 @@
-  * This should be incremented at least each time a new symbol is added
-  * to the header.
-  */
--#define MPG123_API_VERSION @API_VERSION@
-+#define MPG123_API_VERSION 45
- 
- #ifndef MPG123_EXPORT
- /** Defines needed for MS Visual Studio(tm) DLL builds.
-- * Every public function must be prefixed with MPG123_EXPORT. When building 
-+ * Every public function must be prefixed with MPG123_EXPORT. When building
-  * the DLL ensure to define BUILD_MPG123_DLL. This makes the function accessible
-  * for clients and includes it in the import library which is created together
-  * with the DLL. When consuming the DLL ensure to define LINK_MPG123_DLL which
-- * imports the functions from the DLL. 
-+ * imports the functions from the DLL.
-  */
- #ifdef BUILD_MPG123_DLL
- /* The dll exports. */
-@@ -41,16 +41,24 @@
- #endif
- #endif
- 
-+#ifndef __REACTOS__
- /* This is for Visual Studio, so this header works as distributed in the binary downloads */
- #if defined(_MSC_VER) && !defined(MPG123_DEF_SSIZE_T)
- #define MPG123_DEF_SSIZE_T
- #include <stddef.h>
- typedef ptrdiff_t ssize_t;
- #endif
-+#endif /* __REACTOS__ */
- 
- #ifndef MPG123_NO_CONFIGURE /* Enable use of this file without configure. */
--@INCLUDE_STDLIB_H@
--@INCLUDE_SYS_TYPE_H@
-+#include <stdlib.h>
-+#include <sys/types.h>
-+
-+#ifdef __REACTOS__
-+#ifndef ssize_t
-+typedef long ssize_t;
-+#endif
-+#endif /* __REACTOS__ */
- 
- /* Simplified large file handling.
- 	I used to have a check here that prevents building for a library with conflicting large file setup
-@@ -131,7 +139,7 @@
-  */
- typedef struct mpg123_handle_struct mpg123_handle;
- 
--/** Function to initialise the mpg123 library. 
-+/** Function to initialise the mpg123 library.
-  * This should be called once in a non-parallel context. It is not explicitly
-  * thread-safe, but repeated/concurrent calls still _should_ be safe as static
-  * tables are filled with the same values anyway.
-@@ -180,7 +188,7 @@
- 	MPG123_RVA,            /**< one of the RVA choices above (integer) */
- 	MPG123_DOWNSPEED,      /**< play a frame N times (integer) */
- 	MPG123_UPSPEED,        /**< play every Nth frame (integer) */
--	MPG123_START_FRAME,    /**< start with this frame (skip frames before that, integer) */ 
-+	MPG123_START_FRAME,    /**< start with this frame (skip frames before that, integer) */
- 	MPG123_DECODE_FRAMES,  /**< decode only this number of frames (integer) */
- 	MPG123_ICY_INTERVAL,   /**< Stream contains ICY metadata with this interval (integer).
- 	                            Make sure to set this _before_ opening a stream.*/
-@@ -269,7 +277,7 @@
- 	,MPG123_RVA_MAX   = MPG123_RVA_ALBUM /**< The maximum RVA code, may increase in future. */
- };
- 
--/** Set a specific parameter, for a specific mpg123_handle, using a parameter 
-+/** Set a specific parameter, for a specific mpg123_handle, using a parameter
-  *  type key chosen from the mpg123_parms enumeration, to the specified value.
-  *  \param mh handle
-  *  \param type parameter choice
-@@ -280,7 +288,7 @@
- MPG123_EXPORT int mpg123_param( mpg123_handle *mh
- ,	enum mpg123_parms type, long value, double fvalue );
- 
--/** Get a specific parameter, for a specific mpg123_handle. 
-+/** Get a specific parameter, for a specific mpg123_handle.
-  *  See the mpg123_parms enumeration for a list of available parameters.
-  *  \param mh handle
-  *  \param type parameter choice
-@@ -481,7 +489,7 @@
- /*@}*/
- 
- 
--/** \defgroup mpg123_output mpg123 output audio format 
-+/** \defgroup mpg123_output mpg123 output audio format
-  *
-  * Functions to get and select the format of the decoded audio.
-  *
-@@ -530,14 +538,14 @@
-  * \return positive size of encoding in bytes, 0 on invalid encoding. */
- MPG123_EXPORT int mpg123_encsize(int encoding);
- 
--/** Configure a mpg123 handle to accept no output format at all, 
-+/** Configure a mpg123 handle to accept no output format at all,
-  *  use before specifying supported formats with mpg123_format
-  *  \param mh handle
-  *  \return MPG123_OK on success
-  */
- MPG123_EXPORT int mpg123_format_none(mpg123_handle *mh);
- 
--/** Configure mpg123 handle to accept all formats 
-+/** Configure mpg123 handle to accept all formats
-  *  (also any custom rate you may set) -- this is default.
-  *  \param mh handle
-  *  \return MPG123_OK on success
-@@ -566,12 +574,12 @@
- MPG123_EXPORT int mpg123_format2( mpg123_handle *mh
- ,	long rate, int channels, int encodings );
- 
--/** Check to see if a specific format at a specific rate is supported 
-+/** Check to see if a specific format at a specific rate is supported
-  *  by mpg123_handle.
-  *  \param mh handle
-  *  \param rate sampling rate
-  *  \param encoding encoding
-- *  \return 0 for no support (that includes invalid parameters), MPG123_STEREO, 
-+ *  \return 0 for no support (that includes invalid parameters), MPG123_STEREO,
-  *          MPG123_MONO or MPG123_STEREO|MPG123_MONO. */
- MPG123_EXPORT int mpg123_format_support( mpg123_handle *mh
- ,	long rate, int encoding );
-@@ -725,10 +733,10 @@
- MPG123_EXPORT int mpg123_feed( mpg123_handle *mh
- ,	const unsigned char *in, size_t size );
- 
--/** Decode MPEG Audio from inmemory to outmemory. 
-+/** Decode MPEG Audio from inmemory to outmemory.
-  *  This is very close to a drop-in replacement for old mpglib.
-- *  When you give zero-sized output buffer the input will be parsed until 
-- *  decoded data is available. This enables you to get MPG123_NEW_FORMAT (and query it) 
-+ *  When you give zero-sized output buffer the input will be parsed until
-+ *  decoded data is available. This enables you to get MPG123_NEW_FORMAT (and query it)
-  *  without taking decoded data.
-  *  Think of this function being the union of mpg123_read() and mpg123_feed() (which it actually is, sort of;-).
-  *  You can actually always decide if you want those specialized functions in separate steps or one call this one here.
-@@ -815,7 +823,7 @@
-  * The position is measured in decoded audio samples, or MPEG frame offset for the specific functions.
-  * If gapless code is in effect, the positions are adjusted to compensate the skipped padding/delay - meaning, you should not care about that at all and just use the position defined for the samples you get out of the decoder;-)
-  * The general usage is modelled after stdlib's ftell() and fseek().
-- * Especially, the whence parameter for the seek functions has the same meaning as the one for fseek() and needs the same constants from stdlib.h: 
-+ * Especially, the whence parameter for the seek functions has the same meaning as the one for fseek() and needs the same constants from stdlib.h:
-  * - SEEK_SET: set position to (or near to) specified offset
-  * - SEEK_CUR: change position by offset from now
-  * - SEEK_END: set position to offset from end
-@@ -858,12 +866,12 @@
- MPG123_EXPORT off_t mpg123_seek( mpg123_handle *mh
- ,	off_t sampleoff, int whence );
- 
--/** Seek to a desired sample offset in data feeding mode. 
-+/** Seek to a desired sample offset in data feeding mode.
-  *  This just prepares things to be right only if you ensure that the next chunk of input data will be from input_offset byte position.
-  *  \param mh handle
-  *  \param sampleoff offset in PCM samples
-  *  \param whence one of SEEK_SET, SEEK_CUR or SEEK_END
-- *  \param input_offset The position it expects to be at the 
-+ *  \param input_offset The position it expects to be at the
-  *                      next time data is fed to mpg123_decode().
-  *  \return The resulting offset >= 0 or error/message code */
- MPG123_EXPORT off_t mpg123_feedseek( mpg123_handle *mh
-@@ -956,7 +964,7 @@
-  */
- MPG123_EXPORT int mpg123_reset_eq(mpg123_handle *mh);
- 
--/** Set the absolute output volume including the RVA setting, 
-+/** Set the absolute output volume including the RVA setting,
-  *  vol<0 just applies (a possibly changed) RVA setting.
-  *  \param mh handle
-  *  \param vol volume value (linear factor)
-@@ -971,9 +979,9 @@
-  */
- MPG123_EXPORT int mpg123_volume_change(mpg123_handle *mh, double change);
- 
--/** Return current volume setting, the actual value due to RVA, and the RVA 
-- *  adjustment itself. It's all as double float value to abstract the sample 
-- *  format. The volume values are linear factors / amplitudes (not percent) 
-+/** Return current volume setting, the actual value due to RVA, and the RVA
-+ *  adjustment itself. It's all as double float value to abstract the sample
-+ *  format. The volume values are linear factors / amplitudes (not percent)
-  *  and the RVA value is in decibels.
-  *  \param mh handle
-  *  \param base return address for base volume (linear factor)
-@@ -1180,7 +1188,7 @@
- 
- /** Data structure for storing strings in a safer way than a standard C-String.
-  *  Can also hold a number of null-terminated strings. */
--typedef struct 
-+typedef struct
- {
- 	char* p;     /**< pointer to the string data */
- 	size_t size; /**< raw number of bytes allocated */
-@@ -1515,10 +1523,10 @@
-  *    - Influence behaviour of library _during_ initialization of handle (MPG123_VERBOSE).
-  *    - Use one set of parameters for multiple handles.
-  *
-- *	The functions for handling mpg123_pars (mpg123_par() and mpg123_fmt() 
-- *  family) directly return a fully qualified mpg123 error code, the ones 
-- *  operating on full handles normally MPG123_OK or MPG123_ERR, storing the 
-- *  specific error code itseld inside the handle. 
-+ *	The functions for handling mpg123_pars (mpg123_par() and mpg123_fmt()
-+ *  family) directly return a fully qualified mpg123 error code, the ones
-+ *  operating on full handles normally MPG123_OK or MPG123_ERR, storing the
-+ *  specific error code itseld inside the handle.
-  *
-  * @{
-  */
-@@ -1549,15 +1557,15 @@
-  */
- MPG123_EXPORT void mpg123_delete_pars(mpg123_pars* mp);
- 
--/** Configure mpg123 parameters to accept no output format at all, 
-+/** Configure mpg123 parameters to accept no output format at all,
-  *  use before specifying supported formats with mpg123_format
-  *  \param mp parameter handle
-  *  \return MPG123_OK on success
-  */
- MPG123_EXPORT int mpg123_fmt_none(mpg123_pars *mp);
- 
--/** Configure mpg123 parameters to accept all formats 
-- *  (also any custom rate you may set) -- this is default. 
-+/** Configure mpg123 parameters to accept all formats
-+ *  (also any custom rate you may set) -- this is default.
-  *  \param mp parameter handle
-  *  \return MPG123_OK on success
-  */
-@@ -1593,11 +1601,11 @@
-  *  \param mp parameter handle
-  *  \param rate sampling rate
-  *  \param encoding encoding
-- *  \return 0 for no support (that includes invalid parameters), MPG123_STEREO, 
-+ *  \return 0 for no support (that includes invalid parameters), MPG123_STEREO,
-  *          MPG123_MONO or MPG123_STEREO|MPG123_MONO. */
- MPG123_EXPORT int mpg123_fmt_support(mpg123_pars *mp, long rate, int encoding);
- 
--/** Set a specific parameter, for a specific mpg123_pars, using a parameter 
-+/** Set a specific parameter, for a specific mpg123_pars, using a parameter
-  *  type key chosen from the mpg123_parms enumeration, to the specified value.
-  *  \param mp parameter handle
-  *  \param type parameter choice
-@@ -1608,7 +1616,7 @@
- MPG123_EXPORT int mpg123_par( mpg123_pars *mp
- ,	enum mpg123_parms type, long value, double fvalue );
- 
--/** Get a specific parameter, for a specific mpg123_pars. 
-+/** Get a specific parameter, for a specific mpg123_pars.
-  *  See the mpg123_parms enumeration for a list of available parameters.
-  *  \param mp parameter handle
-  *  \param type parameter choice
-@@ -1652,10 +1660,10 @@
- MPG123_EXPORT size_t mpg123_outblock(mpg123_handle *mh);
- 
- /** Replace low-level stream access functions; read and lseek as known in POSIX.
-- *  You can use this to make any fancy file opening/closing yourself, 
-+ *  You can use this to make any fancy file opening/closing yourself,
-  *  using mpg123_open_fd() to set the file descriptor for your read/lseek
-  *  (doesn't need to be a "real" file descriptor...).
-- *  Setting a function to NULL means that the default internal read is 
-+ *  Setting a function to NULL means that the default internal read is
-  *  used (active from next mpg123_open call on).
-  *  Note: As it would be troublesome to mess with this while having a file open,
-  *  this implies mpg123_close().
---- a/include/optimize.h
-+++ b/include/optimize.h
+@@ -98,7 +98,7 @@
+ #ifndef MPG123_PORTABLE_API
+ #include <sys/types.h>
+ /** A little hack to help MSVC not having ssize_t. */
+-#ifdef _MSC_VER
++#if defined(_MSC_VER) || defined(__REACTOS__)
+ typedef ptrdiff_t mpg123_ssize_t;
+ #else
+ typedef ssize_t mpg123_ssize_t;
+--- a/libmpg123/optimize.h
++++ b/libmpg123/optimize.h
 @@ -181,7 +181,11 @@
  
  /* this is included in mpg123.h, which includes config.h */

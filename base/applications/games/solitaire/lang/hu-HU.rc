@@ -1,6 +1,6 @@
 /*
  * PROJECT:     Solitaire
- * LICENSE:     Freeware, permission to use under Public Domain
+ * LICENSE:     See COPYING in top level directory
  * FILE:        base/applications/games/solitaire/lang/hu-HU.rc
  * PURPOSE:     Hungarian Language File for Solitaire
  * PROGRAMMERS: Daniel "EmuandCo" Reimer (reimer.daniel@freenet.de)
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Pasziánsz"
-    IDS_SOL_ABOUT "Pasziánsz, készítette J Brown\nCardLib verzió 1.0"
+    IDS_SOL_ABOUT "Pasziánsz"
     IDS_SOL_QUIT "Kilépés ebből a játékból?"
     IDS_SOL_WIN "Gratulálok, Ön nyert!"
     IDS_SOL_DEAL "Új leosztás?"

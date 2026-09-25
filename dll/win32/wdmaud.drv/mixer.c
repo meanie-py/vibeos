@@ -10,7 +10,12 @@
 #include "wdmaud.h"
 
 #include <samplerate.h>
-#include <float_cast.h>
+/* lrintf() comes straight from C99 <math.h>. This used to be <float_cast.h>, a
+ * PRIVATE header of the vendored libsamplerate tree -- which 0.2.0 deleted, because
+ * upstream now relies on C99 math.h too. Do not reach back into that tree: its
+ * float_cast.h also pulled in libsamplerate's config.h, whose kernel-mode shim
+ * #defines printf to DbgPrint and exit() to __debugbreak() in whoever includes it. */
+#include <math.h>
 
 #define NDEBUG
 #include <debug.h>

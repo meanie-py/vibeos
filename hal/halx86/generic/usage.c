@@ -9,9 +9,6 @@
 
 #include <hal.h>
 
-#define NDEBUG
-#include <debug.h>
-
 /* GLOBALS ********************************************************************/
 
 BOOLEAN HalpGetInfoFromACPI;
@@ -21,7 +18,17 @@ PADDRESS_USAGE HalpAddressUsageList;
 IDTUsageFlags HalpIDTUsageFlags[MAXIMUM_IDTVECTOR+1];
 IDTUsage HalpIDTUsage[MAXIMUM_IDTVECTOR+1];
 
-USHORT HalpComPortIrqMapping[5][2] =
+#if defined(SARCH_XBOX)
+// No COM port IRQ mapping
+#elif defined(SARCH_PC98)
+USHORT HalpComPortIrqMapping[][2] =
+{
+    {0x30,  4},
+    {0x238, 5},
+    {0, 0}
+};
+#else // Standard BIOS-based PC (AT-compatible)
+USHORT HalpComPortIrqMapping[][2] =
 {
     {0x3F8, 4},
     {0x2F8, 3},
@@ -29,13 +36,15 @@ USHORT HalpComPortIrqMapping[5][2] =
     {0x2E8, 3},
     {0, 0}
 };
+#endif
 
 ADDRESS_USAGE HalpComIoSpace =
 {
     NULL, CmResourceTypePort, IDT_INTERNAL,
     {
-        {0x2F8,   0x8},     /* COM 1 */
-        {0,0},
+        /* Default to COM2; changed to KdComPortInUse at runtime */
+        {0x2F8, 0x8},
+        {0, 0}
     }
 };
 
@@ -54,7 +63,7 @@ ADDRESS_USAGE HalpDefaultIoSpace =
         {0x70,  0x2},  /* CMOS  */
         {0xF0,  0x10}, /* x87 Coprocessor */
         {0xCF8, 0x8},  /* PCI 0 */
-        {0,0},
+        {0, 0}
     }
 };
 
@@ -75,7 +84,7 @@ HalpGetResourceSortValue(IN PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
 
             /* Interrupt goes by level */
             *Scale = 0;
-            *Value = RtlConvertUlongToLargeInteger(Descriptor->u.Interrupt.Level);
+            Value->QuadPart = (LONGLONG)Descriptor->u.Interrupt.Level;
             break;
 
         case CmResourceTypePort:
@@ -96,7 +105,7 @@ HalpGetResourceSortValue(IN PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor,
 
             /* Anything else */
             *Scale = 4;
-            *Value = RtlConvertUlongToLargeInteger(0);
+            Value->QuadPart = 0LL;
             break;
     }
 }
@@ -219,10 +228,11 @@ HalpReportResourceUsage(IN PUNICODE_STRING HalName,
     CM_PARTIAL_RESOURCE_DESCRIPTOR RawPartial, TranslatedPartial;
     PCM_PARTIAL_RESOURCE_LIST RawPartialList = NULL, TranslatedPartialList = NULL;
     INTERFACE_TYPE Interface;
-    ULONG i, j, k, ListSize, Count, Port, Element, CurrentScale, SortScale, ReportType, FlagMatch;
+    ULONG i, j, k, ListSize, Count, Element, CurrentScale, SortScale, ReportType, FlagMatch;
     ADDRESS_USAGE *CurrentAddress;
     LARGE_INTEGER CurrentSortValue, SortValue;
-    DbgPrint("%wZ Detected\n", HalName);
+
+    DbgPrint("%wZ detected\n", HalName);
 
     /* Check if KD is using a COM port */
     if (KdComPortInUse)
@@ -239,6 +249,7 @@ HalpReportResourceUsage(IN PUNICODE_STRING HalName,
         if (!HalpGetInfoFromACPI)
         {
             /* No, so use our local table */
+            ULONG_PTR Port;
             for (i = 0, Port = HalpComPortIrqMapping[i][0];
                  Port;
                  i++, Port = HalpComPortIrqMapping[i][0])

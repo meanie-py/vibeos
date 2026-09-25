@@ -77,6 +77,16 @@ BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
 # the message carries run-varying values (addresses, NTSTATUS) and is NOT part of it.
 ASSERT_FAIL = re.compile(r"^(\S+\.c:\d+): Test failed:")
 
+# The floor semantics live in ratchet.py, shared with the apitest parser; only
+# the markers above are kmtest-specific. The sys.path insert is load-bearing:
+# tests/qemu/cli/conformance.py imports THIS file via spec_from_file_location,
+# which does not put its directory on sys.path the way running it as a script
+# does -- so a bare `from ratchet import` works from the shell and raises
+# ModuleNotFoundError from the CLI, which is the worse half of the pair to find
+# out about at runtime.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ratchet import BAD, compare, fmt, load_baseline  # noqa: E402
+
 
 def parse(log_text):
     """Return (results: list[dict], done_line: str|None, bugcheck: str|None)."""
@@ -199,101 +209,6 @@ def parse(log_text):
     results = [best[n] for n in order]
 
     return results, done_line, bugcheck
-
-
-def fmt(r, flaky=()):
-    """One baseline row, plus an indented `assert` line per failing assertion.
-
-    Counts alone cannot express what a run did: fix three assertions, break three
-    others, and pass/fail/skip are unchanged. Measured on 595 archived arm64
-    sweeps, 33 of the 37 count-signatures shared by more than one run cover runs
-    whose FAILING ASSERTIONS differ — the worst is 10 runs with byte-identical
-    counts differing in 6 identities. So the identity set is the floor and the
-    counts are commentary.
-
-    `assert?` marks an identity known to come and go. A bistable row is not a
-    regression when it appears and not an improvement when it does not; without
-    the mark, every soak round would report one or the other forever.
-    """
-    line = f"{r['name']} {r['status']} pass={r['pass']} fail={r['fail']} skip={r['skip']}"
-    if r["exit"] is not None:
-        line += f" exit={r['exit']}"
-    if r["errors"]:
-        line += f" errors={r['errors']}"
-    flaky = set(flaky)
-    for a in sorted(r.get("asserts") or ()):
-        line += f"\n    assert{'?' if a in flaky else ''} {a}"
-    # A known-bistable identity keeps its row on a run where it did NOT fire —
-    # dropping it would re-seed the flake away and hand the next run a false
-    # regression.
-    for a in sorted(flaky - set(r.get("asserts") or ())):
-        line += f"\n    assert? {a}"
-    return line
-
-
-def load_baseline(path):
-    base = {}
-    entry = None
-    for line in Path(path).read_text().splitlines():
-        raw, line = line, line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if raw[:1].isspace() and line.split()[0] in ("assert", "assert?"):
-            if entry is None:
-                continue  # an assert line before any test row: ignore, not crash
-            kind, ident = line.split(None, 1)
-            entry.setdefault("asserts", set()).add(ident.strip())
-            if kind == "assert?":
-                entry.setdefault("flaky", set()).add(ident.strip())
-            continue
-        parts = line.split()
-        entry = {"status": parts[1]}
-        for kv in parts[2:]:
-            k, v = kv.split("=")
-            entry[k] = int(v)
-        base[parts[0]] = entry
-    return base
-
-
-BAD = {"CRASH", "TIMEOUT", "FAILSTART", "NO-END", "INCOMPLETE"}
-
-
-def compare(results, base):
-    """Return list of regression strings (empty = ratchet holds)."""
-    regressions = []
-    for r in results:
-        b = base.get(r["name"])
-        if b is None:
-            continue  # new test: informational, not a regression
-        if r["status"] in BAD and b["status"] not in BAD:
-            regressions.append(f"{r['name']}: {b['status']} -> {r['status']}")
-            continue
-        if r["status"] not in BAD and b["status"] not in BAD:
-            # A dropped pass count is still count-gated, and has to be: kmtest
-            # logs nothing per SUCCEEDING assertion (kmt_test.h disables that
-            # branch), so successes have no identities to compare. A test that
-            # quietly stops asserting shows up here and nowhere else.
-            if r["pass"] < b.get("pass", 0):
-                regressions.append(f"{r['name']}: pass {b['pass']} -> {r['pass']} (dropped)")
-            known = b.get("asserts")
-            if known is None:
-                # Row not seeded with identities yet — gate it the old way rather
-                # than silently not gating it at all. Seeding is per-arch and
-                # incremental; see --write-baseline.
-                if r["fail"] > b.get("fail", 0):
-                    regressions.append(f"{r['name']}: fail {b['fail']} -> {r['fail']} (grew)")
-            else:
-                # The real gate: assertions that fail now and were not failing
-                # before. Offsetting changes cannot hide here, and a fail COUNT
-                # that grew without a new identity is a loop running longer, not
-                # a regression.
-                for a in sorted(set(r.get("asserts") or ()) - known):
-                    regressions.append(f"{r['name']}: NEW failing assertion {a}")
-    ran = {r["name"] for r in results}
-    for name, b in base.items():
-        if name not in ran:
-            regressions.append(f"{name}: in baseline ({b['status']}) but never launched")
-    return regressions
 
 
 def main():

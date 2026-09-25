@@ -2,6 +2,7 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentThreadWin32Thread};
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // LOWORD/HIWORD (minwindef.h).
 #[inline(always)]
@@ -2323,6 +2324,30 @@ unsafe fn co_WinPosSetWindowPos(
         (*Window).state |= WNDS_SENDNCPAINT;
     }
 
+    /*
+     * Request a full non-client repaint when the frame geometry changes.
+     * Otherwise, copied bits can retain parts of the old frame. CORE-20769.
+     *
+     * NOTE ON ORDER: painting.rs already CONSUMES WNDS2_FORCEFULLNCPAINTCLIPRGN
+     * (at ~539) and inherited that consumer from before our fork, but nothing in
+     * our tree ever SET the flag -- so that path has been dead the whole time.
+     * This is the setter. Upstream added it to fix a regression from b38db9dd238,
+     * which we have NOT applied; but it also closes CORE-5877 and CORE-16672,
+     * which predate that commit and which we DO carry. Taking it first is also
+     * the safe order: if b38db9dd238 is ported later, its regression is already
+     * prevented. Upstream-Commit: d09a3600606 (#9495)
+     */
+    if ((*Window).style & WS_VISIBLE) != 0
+        && ((WinPos.flags & SWP_FRAMECHANGED) != 0
+            || (OldWindowRect.right - OldWindowRect.left)
+                != (NewWindowRect.right - NewWindowRect.left)
+            || (OldWindowRect.bottom - OldWindowRect.top)
+                != (NewWindowRect.bottom - NewWindowRect.top))
+    {
+        (*Window).state |= WNDS_SENDNCPAINT;
+        (*Window).state2 |= WNDS2_FORCEFULLNCPAINTCLIPRGN;
+    }
+
     if ((WinPos.flags & SWP_NOREDRAW) == 0
         && ((WinPos.flags & SWP_AGG_STATUSFLAGS) != SWP_AGG_NOPOSCHANGE))
         || ((WinPos.flags & SWP_NOZORDER) != 0 && (WinPos.flags & SWP_NOOWNERZORDER) != 0)
@@ -4239,7 +4264,15 @@ pub unsafe extern "system" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut
             break 'exit;
         }
 
-        Safepl = *lpwndpl;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(Safepl) as *mut core::ffi::c_void,
+            lpwndpl as *const core::ffi::c_void,
+            core::mem::size_of::<WINDOWPLACEMENT>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            break 'exit;
+        }
 
         if LOWORD((*gptiCurrent).dwExpWinVer as u32) < WINVER_WINNT4 as u32 {
             Safepl.length = core::mem::size_of::<WINDOWPLACEMENT>() as _;

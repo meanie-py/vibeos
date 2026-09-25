@@ -1121,6 +1121,18 @@ typedef struct _WOW64_RTL_USER_PROCESS_PARAMETERS32 {
 #define UPP64_ENVIRONMENT_OFF    0x80
 #define UPP64_WINDOWTITLE_OFF    0xB0
 #define UPP64_DESKTOPINFO_OFF    0xC0
+/* The scalar block ahead of CurrentDirectory: console + the three std handles.
+ * HANDLEs are 8 bytes here and 4 in the guest; a kernel handle value always
+ * fits in 32 bits, which is what makes a WoW64 process able to share one
+ * handle table across both views at all. */
+#define UPP64_CONSOLEHANDLE_OFF  0x10
+#define UPP64_CONSOLEFLAGS_OFF   0x18
+#define UPP64_STDINPUT_OFF       0x20
+#define UPP64_STDOUTPUT_OFF      0x28
+#define UPP64_STDERROR_OFF       0x30
+/* The window/show block between Environment and WindowTitle. */
+#define UPP64_STARTINGX_OFF      0x88
+#define UPP64_SHOWWINDOWFLAGS_OFF 0xA8
 
 /* A corrupt/unterminated Environment would otherwise make the scan below run
  * off the end of the 64-bit block. Real environments are a few KB. */
@@ -1248,6 +1260,33 @@ static VOID Wow64pBuildProcessParams32(ULONG_PTR Peb32)
      * CurDir.DosPath.Buffer to resolve relative/DLL paths, and a NULL buffer
      * faults at `cmpw $':',0x2(esi)` (esi=0). hello32 imported nothing so never
      * resolved a path; gui32's gdi32/user32 search hits it immediately. */
+    /* The standard handles. Nothing filled these, so every WoW64 guest saw
+     * StandardOutput == NULL and msvcrt built a stdio with no file behind it:
+     * a redirected console guest ran to completion and wrote NOTHING, silently
+     * -- measured with a Wine conformance subtest whose only job is to print
+     * "Fatal: test does not exist" and exit 1. It exited 1 and printed 0 bytes.
+     * Same class as the Environment and CurrentDirectory fields below: the
+     * guest reads a field the marshaller never wrote, and the damage is silence
+     * rather than a fault, so it survives every guest that does not print.
+     *
+     * ConsoleHandle/ConsoleFlags ride along for the same reason: a guest that
+     * inherits a console is entitled to find it. */
+    Upp32->ConsoleHandle = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_CONSOLEHANDLE_OFF);
+    Upp32->ConsoleFlags = *(ULONG *)(Upp64 + UPP64_CONSOLEFLAGS_OFF);
+    Upp32->StandardInput = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_STDINPUT_OFF);
+    Upp32->StandardOutput = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_STDOUTPUT_OFF);
+    Upp32->StandardError = (ULONG)*(ULONGLONG *)(Upp64 + UPP64_STDERROR_OFF);
+    /* StartingX..ShowWindowFlags: nine consecutive ULONGs in BOTH layouts, so
+     * one run copies them. ShowWindowFlags is the one that bites -- it carries
+     * CreateProcess's STARTUPINFO.wShowWindow, and a guest reading zero opens
+     * its first window SW_HIDE. */
+    {
+        ULONG i;
+        const ULONG *Src = (const ULONG *)(Upp64 + UPP64_STARTINGX_OFF);
+        ULONG *Dst = &Upp32->StartingX;
+        for (i = 0; i <= (UPP64_SHOWWINDOWFLAGS_OFF - UPP64_STARTINGX_OFF) / 4; i++)
+            Dst[i] = Src[i];
+    }
     Wow64pCopyUstr32(&Upp32->CurrentDirectoryPath, Upp64 + UPP64_CURDIR_OFF, &Arena);
     Upp32->CurrentDirectoryHandle =
         (ULONG)*(ULONGLONG *)(Upp64 + UPP64_CURDIRHANDLE_OFF);
@@ -1466,6 +1505,7 @@ static VOID Wow64pInitStartContext(WOW64_CONTEXT *Ctx, ULONG Eip, ULONG Esp)
  */
 static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
                              ULONG StackBase, ULONG StackLimit,
+                             ULONG DeallocationStack,
                              const char *What)
 {
     PBYTE Teb32 = Wow64pCurrentTeb32();
@@ -1489,10 +1529,21 @@ static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
     *(ULONG *)(Teb32 + 0x04) = StackBase;  /* NtTib.StackBase (high) */
     *(ULONG *)(Teb32 + 0x08) = StackLimit; /* NtTib.StackLimit (low) */
 
+    /* And the BOTTOM of the reservation, which is a different fact from
+     * StackLimit: StackLimit is only the COMMITTED floor and walks down as the
+     * stack grows, so it cannot say how far this stack is allowed to grow.
+     * MiCheckForUserStackOverflow needs that bound to extend a guest stack at
+     * all -- with it zero the kernel has no 32-bit descriptor to match a guest
+     * fault against, rejects every guest stack-growth fault, and the guest dies
+     * on its first page of growth (measured: eventvwr's worker needed the page
+     * at 0x1fae000 while TEB64 covered [0x1fb0000, 0x20b0000)). Displacement
+     * asserted against the bindgen _TEB32 in ntkrnl-sys::wow64. */
+    *(ULONG *)(Teb32 + 0xE0C) = DeallocationStack; /* TEB32.DeallocationStack */
+
     Wow64pBTCpuThreadInit();
 
-    DbgPrint("[FEX-WOW64C] %s: entering guest eip=%08lx esp=%08lx stack=%08lx..%08lx\n",
-             What, Ctx->Eip, Ctx->Esp, StackLimit, StackBase);
+    DbgPrint("[FEX-WOW64C] %s: entering guest eip=%08lx esp=%08lx stack=%08lx..%08lx dealloc=%08lx\n",
+             What, Ctx->Eip, Ctx->Esp, StackLimit, StackBase, DeallocationStack);
     Wow64pBTCpuSimulate();
 }
 
@@ -1505,6 +1556,7 @@ typedef struct _WOW64_THREAD_SEED {
     ULONG Ebx;        /* guest thread parameter */
     ULONG StackBase;
     ULONG StackLimit;
+    ULONG DeallocationStack; /* INITIAL_TEB32.AllocatedStackBase */
     /* How to release this block. An in-process seed is heap memory; a seed
      * planted by ANOTHER process (CreateRemoteThread) is its own VirtualAlloc,
      * because a foreign process cannot reach into this one's heap. Freeing the
@@ -1579,7 +1631,8 @@ static ULONG WINAPI Wow64pGuestThreadStart(PVOID Parameter)
     Wow64pInitStartContext(&StartCtx,
                            (ULONG)(ULONG_PTR)Wow64pKiUserApcDispatcher32, ApcEsp);
 
-    Wow64pThreadInit(&StartCtx, Seed.StackBase, Seed.StackLimit, "guest thread");
+    Wow64pThreadInit(&StartCtx, Seed.StackBase, Seed.StackLimit,
+                     Seed.DeallocationStack, "guest thread");
 
     /* Only reached if the entry failed outright — kill this thread, not the
      * process: the rest of the guest is still healthy. */
@@ -1597,6 +1650,7 @@ static ULONG WINAPI Wow64pGuestThreadStart(PVOID Parameter)
  */
 LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                             ULONG StackBase, ULONG StackLimit,
+                            ULONG DeallocationStack,
                             BOOLEAN CreateSuspended,
                             HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId)
 {
@@ -1621,6 +1675,7 @@ LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
     Seed->Ebx = Ebx;
     Seed->StackBase = StackBase;
     Seed->StackLimit = StackLimit;
+    Seed->DeallocationStack = DeallocationStack;
 
     Status = RtlCreateUserThread(WOW64_CURRENT_PROCESS, NULL, CreateSuspended,
                                  0, 0, 0, (PVOID)Wow64pGuestThreadStart, Seed,
@@ -1742,6 +1797,7 @@ static ULONGLONG Wow64pRemoteModuleBase(HANDLE Process, ULONGLONG Peb64,
 LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
                                    ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                                    ULONG StackBase, ULONG StackLimit,
+                                   ULONG DeallocationStack,
                                    BOOLEAN CreateSuspended,
                                    HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId)
 {
@@ -1774,6 +1830,7 @@ LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
     Seed.Ebx = Ebx;
     Seed.StackBase = StackBase;
     Seed.StackLimit = StackLimit;
+    Seed.DeallocationStack = DeallocationStack;
     Seed.Remote = 1;
 
     Status = NtAllocateVirtualMemory(Process, &Remote, 0, &Size,
@@ -1830,6 +1887,7 @@ Wow64LdrpInitialize(PVOID Context)
     PBYTE ImageBase;
     PIMAGE_NT_HEADERS32 Nt32;
     ULONG EntryRva;
+    ULONG GuestStackSize;
     PVOID Ntdll32, InitBlock, Fex, Bop;
     PBYTE ExitStub, GuestStack, ApcStack;
     PVOID KiUserApcDispatcher32, LdrInitThunk32;
@@ -1966,7 +2024,38 @@ Wow64LdrpInitialize(PVOID Context)
      * Allocate every raw guest page first; pages created afterward are not
      * visible until the full memory-notification contract is wired. */
     ExitStub = Wow64pAllocBelow2G(0x1000, PAGE_EXECUTE_READWRITE, "exit stub");
-    GuestStack = Wow64pAllocBelow2G(0x10000, PAGE_READWRITE, "guest run stack");
+
+    /*
+     * The guest's stack must be the size its IMAGE asked for, not a fixed 64K.
+     *
+     * This was `0x10000` hardcoded, while every stock applet declares
+     * SizeOfStackReserve = 0x100000. A guest with frames deeper than 64K then
+     * walks off the bottom of its own stack, and the compiler's stack-probe
+     * helper is what finds it first: charmap died at `__alloca+0x12`
+     * (`test %ecx,(%ecx)`, the page probe) reading 001efd84 with the stack
+     * mapped 001f0000..00200000 -- one page BELOW the allocation.
+     *
+     * It also explains the corrupt SEH chain seen from the same guest.
+     * Wow64pThreadInit publishes these same bounds as TEB32
+     * NtTib.StackBase/StackLimit, and i386 RtlDispatchException validates
+     * fs:[0] registration records against them -- so once esp leaves the
+     * region, the chain is out of bounds and reads as garbage. One root
+     * cause, two symptoms.
+     *
+     * NOTE this COMMITS the whole reserve (Wow64pAllocBelow2G is
+     * MEM_RESERVE|MEM_COMMIT), where Windows reserves it and commits one page
+     * plus a PAGE_GUARD that grows on demand. Committing outright is a
+     * deliberate simplification: it costs ~1MB per guest and needs no
+     * guard-page growth path, and it cannot fault where the real thing would
+     * have grown. Growing on demand is the refinement, not the fix.
+     */
+    GuestStackSize = Nt32->OptionalHeader.SizeOfStackReserve;
+    if (GuestStackSize < 0x10000)
+        GuestStackSize = 0x10000;          /* never smaller than the old fixed size */
+    if (GuestStackSize > 0x1000000)
+        GuestStackSize = 0x1000000;        /* sanity cap: 16MB */
+    GuestStackSize = (GuestStackSize + 0xFFFF) & ~0xFFFFu;
+    GuestStack = Wow64pAllocBelow2G(GuestStackSize, PAGE_READWRITE, "guest run stack");
     ApcStack = Wow64pAllocBelow2G(0x40000, PAGE_READWRITE, "guest loader stack");
     if (!ExitStub || !GuestStack || !ApcStack)
         NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBAD);
@@ -2116,7 +2205,7 @@ Wow64LdrpInitialize(PVOID Context)
         *P++ = 0xC3;                                             /* ret      */
     }
 
-    GuestEsp = (ULONG)(ULONG_PTR)GuestStack + 0x10000 - 64;
+    GuestEsp = (ULONG)(ULONG_PTR)GuestStack + GuestStackSize - 64;
     GuestEsp -= 4;
     *(ULONG *)(ULONG_PTR)GuestEsp = (ULONG)(ULONG_PTR)ExitStub; /* ret addr */
 
@@ -2143,7 +2232,8 @@ Wow64LdrpInitialize(PVOID Context)
         /* The guest image entry runs on GuestStack — those are the bounds
          * i386 RtlDispatchException validates fs:[0] SEH records against. */
         Wow64pThreadInit(&StartCtx,
-                         (ULONG)(ULONG_PTR)GuestStack + 0x10000,
+                         (ULONG)(ULONG_PTR)GuestStack + GuestStackSize,
+                         (ULONG)(ULONG_PTR)GuestStack,
                          (ULONG)(ULONG_PTR)GuestStack,
                          "initial thread");
     }

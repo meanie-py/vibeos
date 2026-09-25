@@ -1,6 +1,6 @@
 /*
  * PROJECT:    Solitaire
- * LICENSE:    Freeware, permission to use under Public Domain
+ * LICENSE:    See COPYING in top level directory
  * FILE:       base/applications/games/solitaire/lang/nl-NL.rc
  * PURPOSE:    Dutch Language Resource File for Solitaire
  * TRANSLATOR: Wouter De Vlieger
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitaire"
-    IDS_SOL_ABOUT "Solitaire door J Brown\nCardLib versie 1.0"
+    IDS_SOL_ABOUT "Solitaire"
     IDS_SOL_QUIT "Het huidige spel afsluiten?"
     IDS_SOL_WIN "Gefeliciteerd, u heeft gewonnen!"
     IDS_SOL_DEAL "Nogmaals spelen?"

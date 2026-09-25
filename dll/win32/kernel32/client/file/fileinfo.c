@@ -394,22 +394,6 @@ GetFileSizeEx(
  * @implemented
  */
 DWORD WINAPI
-GetCompressedFileSizeA(LPCSTR lpFileName,
-		       LPDWORD lpFileSizeHigh)
-{
-   PWCHAR FileNameW;
-
-   if (!(FileNameW = FilenameA2W(lpFileName, FALSE)))
-      return INVALID_FILE_SIZE;
-
-   return GetCompressedFileSizeW(FileNameW, lpFileSizeHigh);
-}
-
-
-/*
- * @implemented
- */
-DWORD WINAPI
 GetCompressedFileSizeW(LPCWSTR lpFileName,
 		       LPDWORD lpFileSizeHigh)
 {
@@ -669,6 +653,7 @@ GetFileAttributesW(LPCWSTR lpFileName)
                                NULL, NULL);
     /* Simply query attributes */
     Status = NtQueryAttributesFile(&ObjectAttributes, &FileInformation);
+    RtlFreeHeap(RtlGetProcessHeap(), 0, FileName.Buffer);
     if (!NT_SUCCESS(Status))
     {
         /* It failed? Is it a DOS device? */

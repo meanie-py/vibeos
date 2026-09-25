@@ -13,6 +13,14 @@ spec2def(kernel32_vista.dll kernel32_vista.spec ADD_IMPORTLIB)
 #   — all replaced by Rust (sdk/lib/rust/kernel32-vista-rust → libkernel32_vista_rust.a,
 #     built in the parent CMakeLists and linked into BOTH kernel32.dll and
 #     kernel32_vista.dll). The .c files stay on disk (never-delete rule).
+# threadpool.c — new upstream file (CreateThreadpool*/TrySubmitThreadpoolCallback
+# family, thin wrappers over ntdll Tp* exports), no Rust twin exists; kept live.
+# threadpool.c is a NEW upstream TU (post-fork): the Vista CreateThreadpool* /
+# TrySubmitThreadpoolCallback wrappers. NOT built, because it is only the thin half —
+# it calls ntdll's TpAllocPool/TpAllocWork/..., and upstream implemented that whole NT
+# threadpool in ntdll_vista after our fork. Our ntdll is Rust (ntdll-cargo) and has no
+# Tp* at all, so building this would just move the undefined symbols one layer down.
+# Porting the NT threadpool is tracked in upstream-sync-merge-decisions.md.
 
 # NT6 console support (client/console/vista.c) is still C and only compiled when NT6
 # exports are enabled; in that case build it as a console-only static lib. (Not reached

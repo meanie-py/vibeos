@@ -254,7 +254,7 @@ pub unsafe extern "system" fn co_IntClientLoadLibrary(
     let mut ArgumentLength: ULONG;
     let pArguments: PCLIENT_LOAD_LIBRARY_ARGUMENTS;
     let mut Status: NTSTATUS;
-    let bResult: BOOL;
+    let mut bResult: BOOL = 0;
     let mut pLibNameBuffer: ULONG_PTR = 0;
     let mut pInitFuncBuffer: ULONG_PTR = 0;
 
@@ -334,8 +334,17 @@ pub unsafe extern "system" fn co_IntClientLoadLibrary(
     if !NT_SUCCESS(Status) {
         bResult = 0;
     } else {
-        /* Probe and copy the usermode result data */
-        bResult = *(ResultPointer as *mut BOOL);
+        /* Probe and copy the usermode result data. The probe is validate-only
+         * (USE_DUMMY_PSEH) and the C had probe AND load in one _SEH2_TRY, so the
+         * load itself has to be the fault-tolerant copy — this buffer is written
+         * by user mode and can be unmapped by the time we read it. */
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(bResult) as *mut core::ffi::c_void,
+            ResultPointer as *const core::ffi::c_void,
+            core::mem::size_of::<BOOL>(),
+        ) {
+            bResult = 0;
+        }
     }
 
     bResult
@@ -354,7 +363,7 @@ pub unsafe extern "system" fn co_IntClientLoadLibrary(
     let mut ArgumentLength: ULONG;
     let pArguments: PCLIENT_LOAD_LIBRARY_ARGUMENTS;
     let mut Status: NTSTATUS;
-    let bResult: BOOL;
+    let mut bResult: BOOL = 0;
     let mut pLibNameBuffer: ULONG_PTR = 0;
     let mut pInitFuncBuffer: ULONG_PTR = 0;
 
@@ -434,8 +443,17 @@ pub unsafe extern "system" fn co_IntClientLoadLibrary(
     if !NT_SUCCESS(Status) {
         bResult = 0;
     } else {
-        /* Probe and copy the usermode result data */
-        bResult = *(ResultPointer as *mut BOOL);
+        /* Probe and copy the usermode result data. The probe is validate-only
+         * (USE_DUMMY_PSEH) and the C had probe AND load in one _SEH2_TRY, so the
+         * load itself has to be the fault-tolerant copy — this buffer is written
+         * by user mode and can be unmapped by the time we read it. */
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(bResult) as *mut core::ffi::c_void,
+            ResultPointer as *const core::ffi::c_void,
+            core::mem::size_of::<BOOL>(),
+        ) {
+            bResult = 0;
+        }
     }
 
     bResult
@@ -620,8 +638,13 @@ pub unsafe extern "system" fn co_IntLoadSysMenuTemplate() -> HMENU {
         Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<LRESULT>() as ULONG, 1);
         if !NT_SUCCESS(Status) {
             Result = 0;
-        } else {
-            Result = *(ResultPointer as *mut LRESULT);
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(Result) as *mut core::ffi::c_void,
+            ResultPointer as *const core::ffi::c_void,
+            core::mem::size_of::<LRESULT>(),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            Result = 0;
         }
     }
 
@@ -655,8 +678,13 @@ pub unsafe extern "system" fn co_IntLoadSysMenuTemplate() -> HMENU {
         Status = SafeProbeForRead(ResultPointer, core::mem::size_of::<LRESULT>() as _, 1);
         if !NT_SUCCESS(Status) {
             Result = 0;
-        } else {
-            Result = *(ResultPointer as *mut LRESULT);
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(Result) as *mut core::ffi::c_void,
+            ResultPointer as *const core::ffi::c_void,
+            core::mem::size_of::<LRESULT>(),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            Result = 0;
         }
     }
 
@@ -1533,7 +1561,7 @@ pub unsafe extern "system" fn co_ClientImmLoadLayout(
     hKL: HKL,
     pImeInfoEx: PIMEINFOEX,
 ) -> i32 {
-    let ret: i32;
+    let mut ret: i32 = 0;
     let mut Status: i32;
     let mut Common: IMMLOADLAYOUT_CALLBACK_ARGUMENTS = core::mem::zeroed();
     Common.hKL = hKL;
@@ -1569,13 +1597,24 @@ pub unsafe extern "system" fn co_ClientImmLoadLayout(
     if !NT_SUCCESS(Status) {
         ret = 0;
     } else {
-        ret = (*ResultPointer).ret;
-        if ret != 0 {
-            RtlCopyMemory(
-                pImeInfoEx as *mut _,
-                core::ptr::addr_of_mut!((*ResultPointer).iiex) as *mut _,
-                core::mem::size_of::<IMEINFOEX>() as SIZE_T,
-            );
+        // Probe is validate-only; the C had probe AND both loads in one _SEH2_TRY.
+        // ResultPointer is a user-mode buffer, so BOTH the flag and the struct it
+        // guards have to come across through the fault-tolerant copy.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(ret) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*ResultPointer).ret) as *const core::ffi::c_void,
+            core::mem::size_of::<i32>(),
+        ) {
+            ret = 0;
+        }
+        if ret != 0
+            && !crate::copy::capture_from_user(
+                pImeInfoEx as *mut core::ffi::c_void,
+                core::ptr::addr_of!((*ResultPointer).iiex) as *const core::ffi::c_void,
+                core::mem::size_of::<IMEINFOEX>(),
+            )
+        {
+            ret = 0;
         }
     }
 

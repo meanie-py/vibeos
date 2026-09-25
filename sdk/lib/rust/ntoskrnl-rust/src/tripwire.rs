@@ -96,17 +96,36 @@ mod fwcfg {
     // (proven live for this 2MB device block by the pre-Phase1 UART writes to
     // phys 0x09000000). Selector is BIG-ENDIAN on the MMIO transport; the data
     // register streams successive bytes on repeated 1-byte reads.
+    /// Zero unless the loader identified this as QEMU virt AND identity-mapped
+    /// the page (ke::arm64::stubs). Never a bare constant: `select` WRITES, and
+    /// on a physical board this address is DRAM or unmapped, so an ungated probe
+    /// corrupts memory or faults. `present()` is the only way in.
     #[cfg(target_arch = "aarch64")]
-    const FW_CFG_MMIO_BASE: usize = 0x0902_0000;
+    unsafe fn fw_cfg_base() -> usize {
+        extern "C" {
+            static mut Arm64FwCfgPhysical: u64;
+        }
+        Arm64FwCfgPhysical as usize
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe fn present() -> bool {
+        fw_cfg_base() != 0
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    unsafe fn present() -> bool {
+        true
+    }
 
     #[cfg(target_arch = "aarch64")]
     unsafe fn select(key: u16) {
-        core::ptr::write_volatile((FW_CFG_MMIO_BASE + 8) as *mut u16, key.to_be());
+        core::ptr::write_volatile((fw_cfg_base() + 8) as *mut u16, key.to_be());
     }
 
     #[cfg(target_arch = "aarch64")]
     unsafe fn read_u8() -> u8 {
-        core::ptr::read_volatile(FW_CFG_MMIO_BASE as *const u8)
+        core::ptr::read_volatile(fw_cfg_base() as *const u8)
     }
 
     unsafe fn read_into(buf: &mut [u8]) {
@@ -130,6 +149,10 @@ mod fwcfg {
     /// Read the named fw_cfg file into `out`; returns the byte count read, or
     /// None if fw_cfg is absent (not QEMU / signature mismatch) or no such file.
     pub unsafe fn read_file(name: &[u8], out: &mut [u8]) -> Option<usize> {
+        // No fw_cfg here — do not touch the MMIO window at all (see fw_cfg_base).
+        if !present() {
+            return None;
+        }
         // Probe the signature: "QEMU". Real hardware floats the port (0xFF).
         select(FW_CFG_SIGNATURE);
         let mut sig = [0u8; 4];

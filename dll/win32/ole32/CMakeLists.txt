@@ -8,9 +8,11 @@ add_definitions(
     -DCOM_NO_WINDOWS_H
     -DENTRY_PREFIX=OLE32_
     -DPROXY_CLSID=CLSID_PSFactoryBuffer
-    -DWINE_REGISTER_DLL)
+    -DWINE_REGISTER_DLL
+    -D_ROAPI_)
 
 spec2def(ole32.dll ole32.spec ADD_IMPORTLIB NO_PRIVATE_WARNINGS)
+
 generate_idl_iids(dcom.idl)
 add_idl_headers(ole32idl dcom.idl irot.idl)
 add_rpc_files(client irot.idl)
@@ -123,7 +125,8 @@ add_library(ole32 MODULE
 if(MSVC)
     # Disable warning C4090: '=': different 'const' qualifiers
     # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    target_compile_options(ole32 PRIVATE /wd4090 /wd4146)
+    # Disable warning C4133: 'function': incompatible types - from 'UINT *' to 'MSIINSTALLCONTEXT *'
+    target_compile_options(ole32 PRIVATE /wd4090 /wd4146 /wd4133)
 endif()
 
 set_module_type(ole32 win32dll)

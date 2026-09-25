@@ -25,6 +25,10 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(shell);
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs + shell32/IDefClFImpl.rs, Phase 1 of retiring this
+      // file): AddCommasW, RegenerateUserEnvironment, SHCreateDefClassObject and the
+      // IDefClFImpl class factory behind it. All are #[no_mangle] there, so these bodies
+      // would collide at link time.)
 /*
  * Implemented
  */
@@ -32,7 +36,7 @@ EXTERN_C LPWSTR
 WINAPI
 AddCommasW(DWORD lValue, LPWSTR lpNumber)
 {
-    WCHAR szValue[MAX_PATH], szSeparator[8 + 1];
+    WCHAR szValue[MAX_PATH], szSeparator[8 + 1], szGrouping[10 + 1];
     NUMBERFMTW numFormat;
 
     GetLocaleInfoW(LOCALE_USER_DEFAULT,
@@ -40,14 +44,34 @@ AddCommasW(DWORD lValue, LPWSTR lpNumber)
                    szSeparator,
                    _countof(szSeparator));
 
-    numFormat.NumDigits     = 0;
-    numFormat.LeadingZero   = 0;
-    numFormat.Grouping      = 3; // FIXME! Use GetLocaleInfoW with LOCALE_SGROUPING and interpret the result.
-    numFormat.lpDecimalSep  = szSeparator;
+    /* Parse LOCALE_SGROUPING into NUMBERFMTW::Grouping.
+     * Accumulate the digit groups left-to-right. If there's no trailing ';0'
+     * the last group repeats, so multiply by 10. */
+    DWORD dwGrouping = 3;
+    if (GetLocaleInfoW(LOCALE_USER_DEFAULT,
+                       LOCALE_SGROUPING,
+                       szGrouping,
+                       _countof(szGrouping)))
+    {
+        PWSTR p = szGrouping;
+        dwGrouping = 0;
+        while (*p)
+        {
+            if (*p >= L'1' && *p <= L'9')
+                dwGrouping = dwGrouping * 10 + (*p - L'0');
+            p++;
+        }
+        if (p > szGrouping && *(p - 1) != L'0')
+            dwGrouping *= 10;
+    }
+    numFormat.NumDigits = 0;
+    numFormat.LeadingZero = 0;
+    numFormat.Grouping = dwGrouping;
+    numFormat.lpDecimalSep = szSeparator;
     numFormat.lpThousandSep = szSeparator;
     numFormat.NegativeOrder = 0;
 
-    swprintf(szValue, L"%lu", lValue);
+    _swprintf(szValue, L"%lu", lValue);
 
     if (GetNumberFormatW(LOCALE_USER_DEFAULT,
                          0,
@@ -189,8 +213,34 @@ HRESULT WINAPI IDefClFImpl::CreateInstance(IUnknown * pUnkOuter, REFIID riid, LP
  */
 HRESULT WINAPI IDefClFImpl::LockServer(BOOL fLock)
 {
-    TRACE("%p->(0x%x), not implemented\n", this, fLock);
-    return E_NOTIMPL;
+    TRACE("%p->(0x%x)\n", this, fLock);
+
+    if (fLock)
+    {
+        if (pcRefDll)
+        {
+            if (*pcRefDll == LONG_MAX)
+                ERR("pcRefDll is pinned, not incrementing\n");
+            else
+                InterlockedIncrement(pcRefDll);
+        }
+        _pAtlModule->Lock();
+    }
+    else
+    {
+        _pAtlModule->Unlock();
+        if (pcRefDll)
+        {
+            if (*pcRefDll == LONG_MAX)
+                ERR("pcRefDll is pinned, not decrementing\n");
+            else if (*pcRefDll > 0)
+                InterlockedDecrement(pcRefDll);
+            else
+                ERR("pcRefDll underflow\n");
+        }
+    }
+
+    return S_OK;
 }
 
 /**************************************************************************
@@ -226,6 +276,7 @@ HRESULT WINAPI SHCreateDefClassObject(
     return S_OK;
 }
 
+#endif
 /**************************************************************************
  *  CStartMenuDummy
  */
@@ -673,6 +724,45 @@ public:
     };
 };
 
+/* CShellLibrary.cpp and CUserEventTimer.cpp arrived with the post-fork upstream sync and are
+ * now shell32-rust/src/shell32/{CShellLibrary,CUserEventTimer}.rs. Same shape as every entry
+ * above: the class is inherited ONLY for the registry/metadata statics its header declares
+ * (DECLARE_REGISTRY_RESOURCEID, DECLARE_NOT_AGGREGATABLE) and is never constructed, because
+ * _CreatorClass is replaced by the Rust factory. */
+extern "C" HRESULT WINAPI CShellLibrary_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CShellLibraryRustEntry : public CShellLibrary
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CShellLibrary_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
+extern "C" HRESULT WINAPI CUserEventTimer_CreateInstance(
+    IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
+
+class CUserEventTimerRustEntry : public CUserEventTimer
+{
+public:
+    class _CreatorClass
+    {
+    public:
+        static HRESULT WINAPI CreateInstance(void *pv, REFIID riid, LPVOID *ppv)
+        {
+            return CUserEventTimer_CreateInstance(
+                static_cast<IUnknown *>(pv), riid, ppv);
+        }
+    };
+};
+
 extern "C" HRESULT WINAPI CShellLink_CreateInstance(
     IUnknown *pUnkOuter, REFIID riid, LPVOID *ppv);
 
@@ -891,6 +981,7 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ShellItem, CShellItemRustEntry)
     OBJECT_ENTRY(CLSID_ShellLink, CShellLinkRustEntry)
     OBJECT_ENTRY(CLSID_Shell, CShellDispatchRustEntry)
+    OBJECT_ENTRY(CLSID_ShellLibrary, CShellLibraryRustEntry)
     OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)
     OBJECT_ENTRY(CLSID_ControlPanel, CControlPanelFolderRustEntry)
     OBJECT_ENTRY(CLSID_OpenControlPanel, COpenControlPanelRustEntry)
@@ -916,10 +1007,13 @@ BEGIN_OBJECT_MAP(ObjectMap)
     OBJECT_ENTRY(CLSID_ExeDropHandler, CExeDropHandlerRustEntry)
     OBJECT_ENTRY(CLSID_QueryAssociations, CQueryAssociationsRustEntry)
     OBJECT_ENTRY(CLSID_UserNotification, CUserNotificationRustEntry)
+    OBJECT_ENTRY(CLSID_UserEventTimer, CUserEventTimerRustEntry)
 END_OBJECT_MAP()
 
 CShell32Module  gModule;
 
+#if 0 // Rust-owned (shell32-rust shell32/com_server.rs, Phase 2): the module lock count
+      // is Rust's now; these forwarded to gModule, which after Phase 1 no C++ COM object used.
 extern "C" void WINAPI Shell32RustObjectLock()
 {
     gModule.Lock();
@@ -942,6 +1036,7 @@ extern "C" void WINAPI MenuBandRustModuleUnlock()
 {
     gModule.Unlock();
 }
+#endif
 
 extern "C" HRESULT WINAPI Shell32RustCoCreateInitSF(
     LPCITEMIDLIST pidlRoot, const GUID *clsid, INT csidl,
@@ -979,6 +1074,7 @@ extern "C" HRESULT WINAPI Shell32RustGetCommandStringImpl(
  *     Returns version of a shell32.dll from IE4.01 SP1.
  */
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs)
 STDAPI DllGetVersion(DLLVERSIONINFO *pdvi)
 {
     /* FIXME: shouldn't these values come from the version resource? */
@@ -1010,6 +1106,7 @@ STDAPI DllGetVersion(DLLVERSIONINFO *pdvi)
         return E_INVALIDARG;
     }
 }
+#endif
 
 /*************************************************************************
  * global variables of the shell32.dll
@@ -1060,15 +1157,20 @@ STDAPI_(BOOL) DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID fImpLoad)
 /***********************************************************************
  *              DllCanUnloadNow (SHELL32.@)
  */
+#if 0 // Rust-owned (shell32-rust shell32/com_server.rs, Phase 2)
 STDAPI DllCanUnloadNow()
 {
     return gModule.DllCanUnloadNow();
 }
+#endif
 
 /*************************************************************************
  *              DllGetClassObject     [SHELL32.@]
  *              SHDllGetClassObject   [SHELL32.128]
  */
+#if 0 // Rust-owned (shell32-rust shell32/com_server.rs, Phase 2): same object map, same ATL
+      // semantics (cached per-CLSID factories, CComObjectCached module locking). The OBJECT_MAP
+      // and CShell32Module below stay for DllRegisterServer until Phase 3.
 STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
 {
     HRESULT                                hResult;
@@ -1079,6 +1181,7 @@ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
     TRACE("-- pointer to class factory: %p\n", *ppv);
     return hResult;
 }
+#endif
 
 static HRESULT UpdateRegistryFromResource(BOOL Register)
 {
@@ -1141,8 +1244,10 @@ STDAPI DllUnregisterServer()
  *    LPCWSTR pszCmdLine - command line (unused by shell32?)
  */
 
+#if 0 // Rust-owned (shell32-rust shell32/shell32_free.rs)
 HRESULT WINAPI DllInstall(BOOL bInstall, LPCWSTR cmdline)
 {
     FIXME("%s %s: stub\n", bInstall ? "TRUE":"FALSE", debugstr_w(cmdline));
     return S_OK;        /* indicate success */
 }
+#endif

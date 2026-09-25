@@ -142,3 +142,111 @@ pub unsafe extern "system" fn InitOnceComplete(
     }
     TRUE as BOOL
 }
+
+// ===========================================================================
+// ThreadDescription.c — GetThreadDescription
+// ===========================================================================
+// Added by the 2026-09-20 upstream sync. Upstream moved SetThreadDescription out of
+// SetThreadDescription.c into a new ThreadDescription.c and added its Get counterpart
+// (`b0f7cb6`-era work by Hermès Bélusca-Maïto), exporting it from kernel32_vista.spec.
+// Ported here rather than building their C, because that TU also redefines
+// SetThreadDescription, which the Rust above already owns — linking it would have
+// silently taken the C over the Rust.
+//
+// The retry loop is upstream's and is load-bearing: a concurrent SetThreadDescription can
+// grow the name between the sizing query and the fetch.
+use core::ffi::c_void;
+
+extern "C" {
+    fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
+}
+
+extern "system" {
+    fn NtQueryInformationThread(
+        ThreadHandle: HANDLE,
+        ThreadInformationClass: THREADINFOCLASS,
+        ThreadInformation: PVOID,
+        ThreadInformationLength: ULONG,
+        ReturnLength: *mut ULONG,
+    ) -> NTSTATUS;
+    fn LocalAlloc(uFlags: UINT, uBytes: usize) -> *mut c_void;
+    fn LocalReAlloc(hMem: *mut c_void, uBytes: usize, uFlags: UINT) -> *mut c_void;
+    fn LocalFree(hMem: *mut c_void) -> *mut c_void;
+}
+
+const LMEM_FIXED: UINT = 0x0000;
+const LMEM_MOVEABLE: UINT = 0x0002;
+
+#[no_mangle]
+pub unsafe extern "system" fn GetThreadDescription(
+    hThread: HANDLE,
+    ppszThreadDescription: *mut PWSTR,
+) -> HRESULT {
+    if ppszThreadDescription.is_null() {
+        return HRESULT_FROM_NT(STATUS_INVALID_PARAMETER);
+    }
+    *ppszThreadDescription = core::ptr::null_mut();
+
+    let mut name_info: *mut THREAD_NAME_INFORMATION = core::ptr::null_mut();
+    let mut length: ULONG = 0;
+
+    let mut status = NtQueryInformationThread(
+        hThread,
+        ThreadNameInformation,
+        core::ptr::null_mut(),
+        0,
+        &mut length,
+    );
+    if status != STATUS_BUFFER_TOO_SMALL {
+        return HRESULT_FROM_NT(status);
+    }
+
+    while status == STATUS_INFO_LENGTH_MISMATCH || status == STATUS_BUFFER_TOO_SMALL {
+        let ptr = if name_info.is_null() {
+            LocalAlloc(LMEM_FIXED, length as usize)
+        } else {
+            LocalReAlloc(name_info as *mut c_void, length as usize, LMEM_MOVEABLE)
+        };
+        if ptr.is_null() {
+            status = STATUS_NO_MEMORY;
+            break;
+        }
+        name_info = ptr as *mut THREAD_NAME_INFORMATION;
+        status = NtQueryInformationThread(
+            hThread,
+            ThreadNameInformation,
+            name_info as PVOID,
+            length,
+            &mut length,
+        );
+    }
+    if !NT_SUCCESS(status) {
+        if !name_info.is_null() {
+            LocalFree(name_info as *mut c_void);
+        }
+        return HRESULT_FROM_NT(status);
+    }
+
+    // The buffer holds a UNICODE_STRING followed by its characters. Slide the characters
+    // to the front and shrink: sizeof(UNICODE_STRING) > sizeof(WCHAR), so the NUL fits.
+    let out = name_info as PWSTR;
+    let chars = (*name_info).ThreadName.Length;
+    if chars != 0 {
+        memmove(
+            out as *mut c_void,
+            (*name_info).ThreadName.Buffer as *const c_void,
+            chars as usize,
+        );
+    }
+    *out.add(chars as usize / core::mem::size_of::<WCHAR>()) = 0;
+
+    // Shrink to fit. On failure the oversized buffer is still perfectly valid.
+    let shrunk = LocalReAlloc(
+        out as *mut c_void,
+        chars as usize + core::mem::size_of::<WCHAR>(),
+        LMEM_FIXED,
+    );
+    *ppszThreadDescription = if shrunk.is_null() { out } else { shrunk as PWSTR };
+
+    HRESULT_FROM_NT(status)
+}

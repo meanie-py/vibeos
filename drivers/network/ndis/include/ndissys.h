@@ -34,6 +34,8 @@
 #define MAX(value1, value2) \
     ((value1 > value2)? value1 : value2)
 
+#define RTL_CONSTANT_LARGE_INTEGER(quad_part) {{(quad_part), (quad_part) >> 32}}
+
 #define ExInterlockedRemoveEntryList(_List,_Lock) \
  { KIRQL OldIrql; \
    KeAcquireSpinLock(_Lock, &OldIrql); \
@@ -53,6 +55,11 @@ VOID
 NTAPI
 ExGetCurrentProcessorCpuUsage(
     PULONG CpuUsage);
+
+
+NTSTATUS
+NdisQueryPciBusInterface(
+    IN PLOGICAL_ADAPTER Adapter);
 
 /* portability fixes */
 #ifdef _M_AMD64

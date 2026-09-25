@@ -176,6 +176,49 @@ def _require_net(spec: dict[str, Any], arch: str, payload: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def drain_for_marker(
+    read: Any,
+    output: str,
+    marker: str,
+    fail_marker: str,
+    budget_secs: float,
+    idle_secs: float = 0.0,
+    now: Any = time.monotonic,
+) -> tuple[str, str]:
+    """Drain serial until `marker` appears, `fail_marker` appears, or
+    `budget_secs` of WALL CLOCK elapse.
+
+    Extracted from test_payload_launched so the budget semantics can be unit
+    tested. They were wrong for a long time and nothing could see it: the loop
+    was `for _ in range(budget)` around a `read(timeout=1.0)` that returns the
+    instant bytes are already waiting, so one "second" cost 1s while the guest
+    was silent and ~20ms while it was talking. The declared budget therefore
+    shrank in proportion to how chatty the payload was — exactly backwards,
+    since the payloads needing the longest drain are the ones producing the most
+    output. procstorm hit it first (2400 "seconds" spent in 175s) and worked
+    around it by inflating its own number to 60000; the apitest sweep then walked
+    into the same trap, a declared 7200s drain ending after 12-28 minutes and
+    truncating every run mid-sweep. The expensive part was not the truncation but
+    the ATTRIBUTION: the driver above blamed whichever subtest was in flight when
+    the harness stopped reading, and quarantined innocent tests as crashers.
+    """
+    deadline = now() + budget_secs
+    last_progress = now()
+    while True:
+        if marker in output:
+            return output, "marker"
+        if fail_marker and fail_marker in output:
+            return output, "fail"
+        if now() >= deadline:
+            return output, "budget"
+        if idle_secs and now() - last_progress >= idle_secs:
+            return output, "idle"
+        chunk = read(timeout=1.0)
+        if chunk:
+            output += chunk
+            last_progress = now()
+
+
 def test_payload_launched(
     vm: QemuVM, arch: str, payload: str, spec: dict[str, Any]
 ) -> None:
@@ -195,12 +238,20 @@ def test_payload_launched(
     output = vm._boot_output or ""
     if marker not in output:
         # Launcher may fire slightly after the boot marker — drain a little more.
-        for _ in range(int(t.get("launch_drain_secs", 30))):
-            output += vm.serial_output(timeout=1.0)
-            if marker in output:
-                break
-            if fail_marker and fail_marker in output:
-                break  # guest crashed — no point draining further
+        # WALL-CLOCK bounded; see drain_for_marker for why that is not obvious.
+        output, reason = drain_for_marker(
+            vm.serial_output,
+            output,
+            marker,
+            fail_marker,
+            float(t.get("launch_drain_secs", 30)),
+            float(t.get("launch_idle_secs", 0)),
+        )
+        # Printed so a DRIVER above can tell WHY the boot stopped. "idle" is the
+        # one reason that positively implicates the guest: the payload went
+        # silent while the rig was still happily reading. "budget" is the rig
+        # running out of time and implicates nobody.
+        print(f"[payload] drain-end: {reason}", flush=True)
     if marker not in output and not (fail_marker and fail_marker in output):
         # Drained the whole budget with no marker and no crash: the guest is
         # wedged with the VM still alive, which is the ONE moment its vCPU PCs

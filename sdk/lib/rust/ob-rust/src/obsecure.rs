@@ -43,6 +43,98 @@ const SetSecurityDescriptor: SECURITY_OPERATION_CODE = _SECURITY_OPERATION_CODE_
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 const MAX_FAST_REFS: ULONG = 7;
 
+// ---------------------------------------------------------------------------
+// Calling a type's SecurityProcedure — the 9th argument
+// ---------------------------------------------------------------------------
+// The 2026-09-20 upstream merge appended `KPROCESSOR_MODE AccessMode` to the security
+// method prototype (ntoskrnl/include/internal/se.h), and every C call site now passes
+// `ExGetPreviousMode()`. Our checked-in bindgen `OB_SECURITY_METHOD` typedef still
+// describes the OLD 8-parameter shape and has not been regenerated.
+//
+// That mismatch is not cosmetic. `extern "system"` is stdcall on i386, where the CALLEE
+// pops the arguments: a 9-parameter callee invoked through an 8-parameter pointer pops
+// four bytes more than the caller pushed, corrupting the stack on every object-security
+// callout. Until the bindgen surface is regenerated, every call goes through this one
+// helper, which transmutes the stored pointer to the real signature and supplies the
+// mode. One place to fix when the typedef catches up.
+use ntkrnl_sys::ddk::{OB_CLOSE_METHOD, OB_OPEN_METHOD, OB_OPEN_REASON, OB_SECURITY_METHOD, PEPROCESS};
+
+pub type ObSecurityMethod9 = unsafe extern "system" fn(
+    PVOID,
+    SECURITY_OPERATION_CODE,
+    PSECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR,
+    *mut ULONG,
+    *mut PSECURITY_DESCRIPTOR,
+    POOL_TYPE,
+    PGENERIC_MAPPING,
+    KPROCESSOR_MODE,
+) -> NTSTATUS;
+
+// ---------------------------------------------------------------------------
+// Calling a type's OpenProcedure — six arguments now, and GrantedAccess by POINTER
+// ---------------------------------------------------------------------------
+// Same shape as ObpCallSecurityProcedure below, same cause: the 2026-09-20 upstream merge
+// moved the object callbacks to NT6 form (sdk/include/ndk/obtypes.h), and OB_OPEN_METHOD
+// gained `_In_ KPROCESSOR_MODE AccessMode` as its SECOND parameter while GrantedAccess
+// went from ACCESS_MASK by value to PACCESS_MASK. The checked-in bindgen still describes
+// the old five-parameter by-value form.
+//
+// This one bites harder than the security method because the mismatch is in BOTH the
+// count and a type: on i386 the callee pops six arguments where five were pushed, and the
+// callee also dereferences what the caller passed as a value. kmtest's ObType — which
+// upstream rewrote in C++ specifically to exercise both the WS03 and Vista callback
+// shapes — bugchecks 0x1E (write AV) partway through the i386 sweep, taking the remaining
+// 39 tests with it. amd64 survives only because extra arguments ride in registers there.
+pub type ObOpenMethod6 = unsafe extern "system" fn(
+    OB_OPEN_REASON,
+    KPROCESSOR_MODE,
+    PEPROCESS,
+    PVOID,
+    *mut ACCESS_MASK,
+    ULONG,
+) -> NTSTATUS;
+
+pub unsafe fn ObpCallOpenProcedure(
+    Procedure: OB_OPEN_METHOD,
+    Reason: OB_OPEN_REASON,
+    AccessMode: KPROCESSOR_MODE,
+    Process: PEPROCESS,
+    ObjectBody: PVOID,
+    GrantedAccess: *mut ACCESS_MASK,
+    HandleCount: ULONG,
+) -> NTSTATUS {
+    let f: ObOpenMethod6 = core::mem::transmute(Procedure.unwrap());
+    f(Reason, AccessMode, Process, ObjectBody, GrantedAccess, HandleCount)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn ObpCallSecurityProcedure(
+    Procedure: OB_SECURITY_METHOD,
+    Object: PVOID,
+    OperationType: SECURITY_OPERATION_CODE,
+    SecurityInformation: PSECURITY_INFORMATION,
+    SecurityDescriptor: PSECURITY_DESCRIPTOR,
+    ReturnLength: *mut ULONG,
+    OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+    PoolType: POOL_TYPE,
+    GenericMapping: PGENERIC_MAPPING,
+) -> NTSTATUS {
+    let f: ObSecurityMethod9 = core::mem::transmute(Procedure.unwrap());
+    f(
+        Object,
+        OperationType,
+        SecurityInformation,
+        SecurityDescriptor,
+        ReturnLength,
+        OldSecurityDescriptor,
+        PoolType,
+        GenericMapping,
+        ExGetPreviousMode(),
+    )
+}
+
+
 // FILE_WRITE_DATA (from winnt.h — used in SeFastTraverseCheck)
 const FILE_WRITE_DATA: ULONG = 0x0002;
 
@@ -483,7 +575,8 @@ pub unsafe extern "system" fn ObAssignSecurity(
     }
 
     ObpCalloutStart(&mut CalloutIrql);
-    Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         AssignSecurityDescriptor,
         core::ptr::null_mut(),
@@ -517,7 +610,12 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
 
     *MemoryAllocated = 0;
 
-    if (*Type).TypeInfo.SecurityProcedure == Some(SeDefaultObjectMethod) {
+    // The OB_SECURITY_METHOD typedef is still the stale 8-param one (see
+    // ObpCallSecurityProcedure above), so the stored pointer has to be compared
+    // through a transmute of the real 9-param function.
+    if (*Type).TypeInfo.SecurityProcedure
+        == Some(core::mem::transmute::<ObSecurityMethod9, _>(SeDefaultObjectMethod))
+    {
         *SecurityDescriptor = ObpReferenceSecurityDescriptor(Header);
         return STATUS_SUCCESS;
     }
@@ -531,7 +629,8 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
     let mut CalloutIrql: KIRQL = 0;
 
     ObpCalloutStart(&mut CalloutIrql);
-    let mut Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    let mut Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         QuerySecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -554,7 +653,8 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
     *MemoryAllocated = 1;
 
     ObpCalloutStart(&mut CalloutIrql);
-    Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         QuerySecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -602,7 +702,8 @@ pub unsafe extern "system" fn ObSetSecurityObjectByPointer(
     let Header = OBJECT_TO_OBJECT_HEADER(Object);
     let Type = (*Header).Type;
 
-    ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         SetSecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -657,7 +758,8 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
     let Type = (*Header).Type;
 
     let mut CallLength = Length;
-    Status = ((*Type).TypeInfo.SecurityProcedure.unwrap())(
+    Status = ObpCallSecurityProcedure(
+        (*Type).TypeInfo.SecurityProcedure,
         Object,
         QuerySecurityDescriptor,
         core::ptr::addr_of!(SecurityInformation) as *mut _,
@@ -1824,3 +1926,34 @@ pub unsafe extern "system" fn ObQueryObjectAuditingByHandle(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+/// NT6 `OB_CLOSE_METHOD`: upstream widened both handle counts from `ULONG` to `ULONG_PTR`
+/// (`sdk/include/ndk/obtypes.h`), and every close procedure in the tree — `IopCloseFile`,
+/// `MmpCloseSection`, `CmpCloseKeyObject`, fltmgr's port closers — is compiled against that.
+/// The checked-in bindgen island still carries the pre-merge `ULONG` typedef, so calling
+/// through `TypeInfo.CloseProcedure` directly passes 32-bit arguments on 64-bit targets and
+/// the callee reads a register whose high half the Win64 ABI leaves undefined. `IopCloseFile`
+/// opens with `if (HandleCount != 1) return;`, so a garbage high half silently skips
+/// IRP_MJ_CLEANUP: the file's cache map is never torn down, the driver cannot unload, and its
+/// service sits in RUNNING forever. i386 is immune because `ULONG_PTR == ULONG` there, which
+/// is exactly what made the failure look arch-specific instead of like an arity bug.
+/// Transmute past the stale field type, same as the security and open callouts above.
+pub type ObCloseMethodPtr = unsafe extern "system" fn(
+    PEPROCESS,
+    PVOID,
+    ACCESS_MASK,
+    ULONG_PTR,
+    ULONG_PTR,
+);
+
+pub unsafe fn ObpCallCloseProcedure(
+    Procedure: OB_CLOSE_METHOD,
+    Process: PEPROCESS,
+    ObjectBody: PVOID,
+    GrantedAccess: ACCESS_MASK,
+    ProcessHandleCount: ULONG_PTR,
+    SystemHandleCount: ULONG_PTR,
+) {
+    let f: ObCloseMethodPtr = core::mem::transmute(Procedure.unwrap());
+    f(Process, ObjectBody, GrantedAccess, ProcessHandleCount, SystemHandleCount)
+}

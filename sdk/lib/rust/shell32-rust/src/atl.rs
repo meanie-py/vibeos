@@ -51,7 +51,7 @@ use core::marker::PhantomData;
 use crate::island::{
     CoTaskMemAlloc, CoTaskMemFree, CoTaskMemRealloc, LocalAlloc, LocalFree, LocalReAlloc,
     MultiByteToWideChar, RegCloseKey, RegOpenKeyExW, BOOL, BSTR, CP_THREAD_ACP, HKEY, HLOCAL,
-    INT, LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, WCHAR,
+    HRESULT, INT, LONG, LPCSTR, LPCWSTR, POSITION, REGSAM, SIZE_T, UINT, VARIANT, WCHAR,
 };
 use crate::shellcom::IUnknown;
 
@@ -420,6 +420,26 @@ impl<T> CSimpleArray<T> {
         1
     }
 
+    /// ATL's `RemoveAt`: drop the element, then shift the tail down. The `drop_in_place`
+    /// matters for an owning element (`CSimpleMap<CStringW, CStringW>`); ATL runs the
+    /// destructor here too, and `copy` alone would leak the removed value's buffer.
+    pub unsafe fn RemoveAt(&mut self, nIndex: i32) -> BOOL {
+        if nIndex < 0 || nIndex >= self.m_nSize {
+            return 0;
+        }
+        core::ptr::drop_in_place(self.m_aT.add(nIndex as usize));
+        let remaining = (self.m_nSize - nIndex - 1) as usize;
+        if remaining > 0 {
+            core::ptr::copy(
+                self.m_aT.add(nIndex as usize + 1),
+                self.m_aT.add(nIndex as usize),
+                remaining,
+            );
+        }
+        self.m_nSize -= 1;
+        1
+    }
+
     pub fn GetSize(&self) -> i32 {
         self.m_nSize
     }
@@ -567,6 +587,44 @@ impl<K: PartialEq, V: Copy + Default> CSimpleMap<K, V> {
     }
 }
 
+/// The OWNING-value half of CSimpleMap. `Lookup`/`SetAt` above require `V: Copy`, which the
+/// integer instantiations satisfy; `CSimpleMap<CStringW, CStringW>` (filetypes.cpp's verb →
+/// command-line map) does not, because CStringW owns a buffer and has a Drop. Splitting the
+/// impl rather than relaxing the original keeps the copy path allocation-free.
+impl<K: PartialEq, V: Clone + Default> CSimpleMap<K, V> {
+    /// `SetAt` for an owning value: overwrite in place when present, append otherwise. The
+    /// overwrite DROPS the old value, which is what `operator=` does in ATL.
+    pub unsafe fn SetAtOwned(&mut self, key: K, val: V) -> BOOL {
+        let existing = self.FindValue(&key);
+        if existing.is_null() {
+            return self.Add(key, val);
+        }
+        *existing = val;
+        1
+    }
+
+    /// `GetValueAt(index)` — ATL returns a value-initialized V when out of range.
+    pub unsafe fn GetValueAt(&self, index: i32) -> V {
+        let pair = self.m_Pairs.GetAt(index);
+        if pair.is_null() { V::default() } else { (*pair).val.clone() }
+    }
+}
+
+impl<K: Clone + Default + PartialEq, V> CSimpleMap<K, V> {
+    /// `GetKeyAt(index)` — ATL returns a value-initialized K when out of range.
+    pub unsafe fn GetKeyAt(&self, index: i32) -> K {
+        let pair = self.m_Pairs.GetAt(index);
+        if pair.is_null() { K::default() } else { (*pair).key.clone() }
+    }
+
+    /// `Remove(key)` — ATL removes the first pair with this key, returning FALSE when absent.
+    pub unsafe fn Remove(&mut self, key: &K) -> BOOL {
+        let index = self.FindKey(key);
+        if index < 0 { return 0; }
+        self.m_Pairs.RemoveAt(index)
+    }
+}
+
 impl<K, V> Default for CSimpleMap<K, V> {
     fn default() -> Self {
         Self::new()
@@ -692,6 +750,24 @@ impl<T> CAtlList<T> {
         core::ptr::addr_of_mut!((*node).element)
     }
 
+    /// `Find(const E& element, POSITION posStartAfter = NULL)` — atlcoll.h. The C++ tests
+    /// the returned `POSITION` for truth (`if (!list.Find(key))`), so this returns `bool`:
+    /// handing back a raw node pointer would invite it to be dereferenced, and no caller
+    /// in the tree wants the position itself.
+    pub unsafe fn Find(&self, element: &T) -> bool
+    where
+        T: PartialEq,
+    {
+        let mut node = self.head;
+        while !node.is_null() {
+            if (*node).element == *element {
+                return true;
+            }
+            node = (*node).next;
+        }
+        false
+    }
+
     /// Null when the index is out of range, matching the `POSITION` the C++ then tests.
     pub unsafe fn FindIndex(&self, iElement: i32) -> POSITION {
         if iElement < 0 {
@@ -788,9 +864,21 @@ impl CStringW {
 
     /// `CStringT(PCXSTR pszSrc)` — cstringt.h:463. A null source yields the empty string,
     /// matching ATL's `StringLength(NULL) == 0`.
+    ///
+    /// THE INTRESOURCE BRANCH IS NOT OPTIONAL. cstringt.h:470 opens with
+    /// `if (IS_INTRESOURCE(pszSrc)) LoadString(LOWORD(pszSrc));`, so this constructor is
+    /// ALSO how ATL loads a string resource — `CStringW str(MAKEINTRESOURCEW(IDS_X))` is
+    /// idiomatic and filetypes.cpp alone does it a dozen times. Without the branch that
+    /// argument is a small integer dereferenced as a pointer: not a compile error, and not a
+    /// clean crash either, since a low address may well be mapped.
     pub unsafe fn from_ptr(pszSrc: *const WCHAR) -> Self {
         let mut s = Self::new();
-        s.SetString(pszSrc, wide_len(pszSrc) as i32);
+        // IS_INTRESOURCE(p): the whole pointer fits in its low word.
+        if (pszSrc as usize) >> 16 == 0 {
+            s.LoadStringW((pszSrc as usize & 0xFFFF) as UINT);
+        } else {
+            s.SetString(pszSrc, wide_len(pszSrc) as i32);
+        }
         s
     }
 
@@ -1071,6 +1159,56 @@ impl CStringW {
         self.FormatStr2(f.as_ptr(), a, b);
     }
 
+    /// `Format(PCXSTR pszFormat, <four %s>)`.
+    pub unsafe fn FormatStr4(
+        &mut self,
+        pszFormat: *const WCHAR,
+        a: *const WCHAR,
+        b: *const WCHAR,
+        c: *const WCHAR,
+        d: *const WCHAR,
+    ) {
+        let need = _scwprintf(pszFormat, a, b, c, d);
+        let buf = self.format_begin(need);
+        if buf.is_null() {
+            return;
+        }
+        crate::prelude::swprintf(buf, pszFormat, a, b, c, d);
+        self.ReleaseBuffer();
+    }
+
+    /// `Format(UINT nFormatID, <four %s>)` — IDS_NEWEXT_ALREADY_ASSOC names its two
+    /// substitutions twice each, which is why a four-argument overload is needed at all.
+    pub unsafe fn FormatResStr4(
+        &mut self,
+        nFormatID: UINT,
+        a: *const WCHAR,
+        b: *const WCHAR,
+        c: *const WCHAR,
+        d: *const WCHAR,
+    ) {
+        let f = Self::from_resource(nFormatID);
+        self.FormatStr4(f.as_ptr(), a, b, c, d);
+    }
+
+    /// `Format(UINT nFormatID, <three %s>)`.
+    pub unsafe fn FormatResStr3(
+        &mut self,
+        nFormatID: UINT,
+        a: *const WCHAR,
+        b: *const WCHAR,
+        c: *const WCHAR,
+    ) {
+        let f = Self::from_resource(nFormatID);
+        let need = _scwprintf(f.as_ptr(), a, b, c);
+        let buf = self.format_begin(need);
+        if buf.is_null() {
+            return;
+        }
+        crate::prelude::swprintf(buf, f.as_ptr(), a, b, c);
+        self.ReleaseBuffer();
+    }
+
     /// `Format(PCXSTR pszFormat, <one %d>)`.
     pub unsafe fn FormatInt(&mut self, pszFormat: *const WCHAR, a: INT) {
         let need = _scwprintf(pszFormat, a);
@@ -1090,6 +1228,71 @@ extern "C" {
     /// msvcrt — case-insensitive wide compare, what ATL's W string traits use for
     /// `CompareNoCase`.
     fn _wcsicmp(left: *const WCHAR, right: *const WCHAR) -> INT;
+}
+
+impl PartialEq for CStringW {
+    /// ATL compares CString by VALUE (`operator==` → `Compare() == 0`), not by buffer
+    /// identity — which is what makes it usable as a CSimpleMap key.
+    fn eq(&self, other: &Self) -> bool {
+        unsafe {
+            let (a, b) = (self.as_ptr(), other.as_ptr());
+            let mut i = 0usize;
+            loop {
+                let (x, y) = (*a.add(i), *b.add(i));
+                if x != y { return false; }
+                if x == 0 { return true; }
+                i += 1;
+            }
+        }
+    }
+}
+
+impl CStringW {
+    /// `MakeLower()` — cstringt.h, in place, returning the string.
+    pub unsafe fn MakeLower(&mut self) {
+        let buf = self.GetBuffer(-1);
+        if !buf.is_null() {
+            let mut i = 0usize;
+            while *buf.add(i) != 0 {
+                let c = *buf.add(i);
+                if (b'A' as WCHAR..=b'Z' as WCHAR).contains(&c) {
+                    *buf.add(i) = c + 32;
+                }
+                i += 1;
+            }
+        }
+        self.ReleaseBuffer();
+    }
+
+    /// `Find(XCHAR ch, int nStart = 0)` — cstringt.h. Index of the first occurrence at or
+    /// after `nStart`, or -1. Rust has no default arguments, so every caller spells the
+    /// start; ATL returns -1 rather than clamping when `nStart` is past the end.
+    pub unsafe fn Find(&self, ch: WCHAR, nStart: i32) -> i32 {
+        if nStart < 0 || nStart > self.GetLength() {
+            return -1;
+        }
+        let p = self.as_ptr();
+        let mut i = nStart as usize;
+        while *p.add(i) != 0 {
+            if *p.add(i) == ch { return i as i32; }
+            i += 1;
+        }
+        -1
+    }
+}
+
+impl core::ops::AddAssign<*mut WCHAR> for CStringW {
+    /// The same `operator+=`, for the `LPWSTR` returns the C++ passes to it unchanged.
+    fn add_assign(&mut self, rhs: *mut WCHAR) {
+        unsafe { self.Append(rhs) }
+    }
+}
+
+impl core::ops::AddAssign<*const WCHAR> for CStringW {
+    /// `CStringT::operator+=(PCXSTR)` — cstringt.h, i.e. `Append`.
+    fn add_assign(&mut self, rhs: *const WCHAR) {
+        unsafe { self.Append(rhs) }
+    }
 }
 
 impl Default for CStringW {
@@ -1114,6 +1317,47 @@ impl Drop for CStringW {
             if !self.m_pszData.is_null() {
                 <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
             }
+        }
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// CComVariant
+// -------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// oleaut32 `VariantClear` — releases whatever the variant owns and sets it VT_EMPTY.
+    fn VariantClear(pvarg: *mut VARIANT) -> HRESULT;
+}
+
+/// ATL's owning VARIANT (atlcomcli.h). ATL DERIVES it from `VARIANT` and adds a destructor,
+/// so it IS a VARIANT at the ABI — hence `repr(transparent)`, which is what makes the
+/// `&mut var as *mut CComVariant as *mut VARIANT` casts the translation emits sound.
+///
+/// The default ctor leaves it `VT_EMPTY`, and VT_EMPTY is 0, so an all-zero variant is the
+/// correct starting state — `core::mem::zeroed()` in a translated body is right, not lazy.
+#[repr(transparent)]
+pub struct CComVariant(pub VARIANT);
+
+impl CComVariant {
+    /// `CComVariant()` — VT_EMPTY.
+    pub unsafe fn new() -> Self {
+        Self(core::mem::zeroed())
+    }
+
+    /// The `VARIANT*` every oleaut32 entry point wants.
+    pub fn as_mut_ptr(&mut self) -> *mut VARIANT {
+        core::ptr::addr_of_mut!(self.0)
+    }
+}
+
+impl Drop for CComVariant {
+    /// `~CComVariant()` — `VariantClear`. Dropping this is what releases a BSTR or an
+    /// interface the variant is holding; lowering the local to a bare `VARIANT` instead
+    /// compiles and leaks whatever it owned.
+    fn drop(&mut self) {
+        unsafe {
+            VariantClear(core::ptr::addr_of_mut!(self.0));
         }
     }
 }
@@ -1245,5 +1489,48 @@ impl Drop for CRegKey {
         unsafe {
             self.Close();
         }
+    }
+}
+
+/// `CPathT<CStringW>` — atlpath.h. Only the members this tree actually uses.
+///
+/// It is a thin wrapper around a `CStringW`, and every mutator follows the same ATL shape:
+/// `GetBuffer(MAX_PATH)`, call the shlwapi `Path*` function on the raw buffer, `ReleaseBuffer`.
+/// The `GetBuffer(MAX_PATH)` is not decoration — `PathAppendW` writes up to MAX_PATH and the
+/// string must already own that much room before it is handed over.
+pub struct CPathW {
+    pub m_strPath: CStringW,
+}
+
+impl CPathW {
+    /// `CPathT(PCXSTR pszPath)` — atlpath.h:104.
+    pub unsafe fn from_ptr(pszPath: *const WCHAR) -> Self {
+        Self { m_strPath: CStringW::from_ptr(pszPath) }
+    }
+
+    /// `CPathT()` — the string initializes itself.
+    pub const fn new() -> Self {
+        Self { m_strPath: CStringW::new() }
+    }
+
+    /// `BOOL Append(PCXSTR pszMore)` — atlpath.h:133.
+    pub unsafe fn Append(&mut self, pszMore: *const WCHAR) -> BOOL {
+        // MAX_PATH is not in this module's scope; atlpath.h's literal is 260.
+        let buf = self.m_strPath.GetBuffer(260);
+        let result = crate::island::PathAppendW(buf, pszMore);
+        self.m_strPath.ReleaseBuffer();
+        result
+    }
+
+    /// `operator const StringType&()` — CPathT converts to its string, which in turn
+    /// converts to PCXSTR. NEVER null, inheriting CStringW's invariant.
+    pub fn as_ptr(&self) -> *const WCHAR {
+        self.m_strPath.as_ptr()
+    }
+}
+
+impl Default for CPathW {
+    fn default() -> Self {
+        Self::new()
     }
 }

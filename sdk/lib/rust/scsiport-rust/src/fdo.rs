@@ -811,7 +811,7 @@ unsafe fn FdoHandleQueryCompatibleId(PwIds: *mut *mut u16) -> NTSTATUS {
     }
 
     if Length != 0 {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy_nonoverlapping(  // nolint: wide-byte-copy (Length counts WCHARs; C copies Length * sizeof(WCHAR))
             Ids as *const u16,
             NewIds as *mut u16,
             Length as usize,

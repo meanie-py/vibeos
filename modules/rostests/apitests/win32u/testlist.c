@@ -48,7 +48,9 @@ extern void func_NtGdiTransformPoints(void);
 //extern void func_NtUserCallHwndParamLock(void);
 //extern void func_NtUserCallNoParam(void);
 //extern void func_NtUserCallOneParam(void);
+extern void func_NtUserConvertMemHandle(void);
 extern void func_NtUserCountClipboardFormats(void);
+extern void func_NtUserCreateAcceleratorTable(void);
 extern void func_NtUserCreateWindowEx(void);
 //extern void func_NtUserEnumDisplayMonitors(void);
 extern void func_NtUserEnumDisplaySettings(void);
@@ -62,6 +64,7 @@ extern void func_NtUserGetThreadState(void);
 extern void func_NtUserGetTitleBarInfo(void);
 extern void func_NtUserProcessConnect(void);
 extern void func_NtUserRedrawWindow(void);
+extern void func_NtUserSBGetParms(void);
 extern void func_NtUserScrollDC(void);
 extern void func_NtUserSelectPalette(void);
 extern void func_NtUserSetTimer(void);
@@ -120,7 +123,9 @@ const struct test winetest_testlist[] =
     //{ "NtUserCallHwndParamLock", func_NtUserCallHwndParamLock },
     //{ "NtUserCallNoParam", func_NtUserCallNoParam },
     //{ "NtUserCallOneParam", func_NtUserCallOneParam },
+    { "NtUserConvertMemHandle", func_NtUserConvertMemHandle },
     { "NtUserCountClipboardFormats", func_NtUserCountClipboardFormats },
+    { "NtUserCreateAcceleratorTable", func_NtUserCreateAcceleratorTable },
     { "NtUserCreateWindowEx", func_NtUserCreateWindowEx },
     //{ "NtUserEnumDisplayMonitors", func_NtUserEnumDisplayMonitors },
     { "NtUserEnumDisplaySettings", func_NtUserEnumDisplaySettings },
@@ -134,6 +139,7 @@ const struct test winetest_testlist[] =
     { "NtUserGetTitleBarInfo", func_NtUserGetTitleBarInfo },
     { "NtUserProcessConnect", func_NtUserProcessConnect },
     { "NtUserRedrawWindow", func_NtUserRedrawWindow },
+    { "NtUserSBGetParms", func_NtUserSBGetParms },
     { "NtUserScrollDC", func_NtUserScrollDC },
     { "NtUserSelectPalette", func_NtUserSelectPalette },
     { "NtUserSetTimer", func_NtUserSetTimer },

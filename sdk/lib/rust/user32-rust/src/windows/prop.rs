@@ -57,6 +57,11 @@ unsafe fn IntGetProp_impl(hWnd: HWND, Atom: ATOM, SystemProp: u8) -> *mut core::
         return core::ptr::null_mut();
     }
 
+    #[cfg(target_arch = "x86")]
+    if crate::wow64::IsWow64() {
+        return crate::wow64::find_prop(pWnd, Atom, SystemFlag) as *mut core::ffi::c_void;
+    }
+
     ListEntry = SharedPtrToUser((*pWnd).PropListHead.Flink as *mut core::ffi::c_void) as PLIST_ENTRY;
     i = 0;
     while i < (*pWnd).PropListItems as i32 {

@@ -17,12 +17,26 @@
 //!
 //! # Contract notes (READ BEFORE EDITING)
 //!
-//! * **`_MSVCR_VER == 0`.** msvcrt.dll builds `-D_MSVCR_VER=0`
-//!   (`dll/win32/msvcrt/CMakeLists.txt`), so the engine's option flags come from
-//!   `_get_output_format()` + hardcoded legacy TRUEs, NOT from the `options`
-//!   word (that's the `>= 140` ucrt arm). Both arms are transcribed and selected
-//!   by the `MSVCR_VER` const so the guard stays structural, like fpnum.rs's
-//!   `_MSVCR_VER` blocks.
+//! * **Two CRT versions, selected PER CALL.** msvcrt.dll builds
+//!   `-D_MSVCR_VER=0` (`dll/win32/msvcrt/CMakeLists.txt`), so its option flags
+//!   come from `_get_output_format()` + hardcoded legacy TRUEs, NOT from the
+//!   `options` word; ucrtbase is `_MSVCR_VER >= 140` and reads the word. Both
+//!   arms are transcribed, and `PRINTF_UCRT_SEMANTICS` in the `options` word
+//!   picks between them.
+//!
+//!   That used to be a compile-time `MSVCR_VER` const, i.e. a property of the
+//!   crate. It could never have served ucrtbase, which is structurally
+//!   forbidden from depending on this crate (see crt-shared-rust's Cargo.toml:
+//!   that wall is what stops 856 genuine UCRT bodies being silently replaced by
+//!   msvcrt-graded ones). A cargo feature would have been worse — unification
+//!   across a build graph could hand msvcrt the 140 behaviour with nothing to
+//!   notice. A runtime bit is also simply what UCRT does: its entry points take
+//!   an options mask so behaviour is per-call. See `PRINTF_UCRT_SEMANTICS`.
+//!
+//!   NOTE this is printf OUTPUT only. `fpnum.rs` still has genuinely ABSENT
+//!   `_MSVCR_VER >= 140` functionality on the input side — hex-float parsing,
+//!   the "infinity"/"nan" words, `strtof` — which is missing code, not a gate,
+//!   and belongs to the convert-family work.
 //! * **Bugs are kept, and marked.** Grep `BUG-KEPT` / `XXX-VERIFY`.
 //! * **i386 no-SSE discipline** (house style, see `fpnum.rs`): no Rust-ABI
 //!   fn returns/receives `f64` — float-bearing fns are `extern "C"`; float
@@ -48,9 +62,6 @@ use crate::bnum::{log10i, Bnum, BNUM_PREC64, LIMB_DIGITS, LIMB_MAX, P10S};
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-/// `-D_MSVCR_VER=0` (dll/win32/msvcrt/CMakeLists.txt). Selects the legacy arms
-/// below exactly as the preprocessor does in the C.
-const MSVCR_VER: u32 = 0;
 
 // bnum.h:22-23 (the float formatter shares these with fpnum.rs)
 const EXP_BITS: i32 = 11;
@@ -61,13 +72,34 @@ pub const MSVCRT_PRINTF_POSITIONAL_PARAMS: u32 = 0x0100;
 pub const MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER: u32 = 0x0200;
 
 // include/corecrt_stdio_config.h:12-17 — the ucrt option bits. Only consulted by
-// the (dead under _MSVCR_VER=0, kept structural) `MSVCR_VER >= 140` arm.
+// the ucrt arm, reached when the caller passes PRINTF_UCRT_SEMANTICS.
 pub const CRT_INTERNAL_PRINTF_LEGACY_VSPRINTF_NULL_TERMINATION: u32 = 0x0001;
 pub const CRT_INTERNAL_PRINTF_STANDARD_SNPRINTF_BEHAVIOR: u32 = 0x0002;
 pub const CRT_INTERNAL_PRINTF_LEGACY_WIDE_SPECIFIERS: u32 = 0x0004;
 pub const CRT_INTERNAL_PRINTF_LEGACY_MSVCRT_COMPATIBILITY: u32 = 0x0008;
 pub const CRT_INTERNAL_PRINTF_LEGACY_THREE_DIGIT_EXPONENTS: u32 = 0x0010;
 pub const CRT_INTERNAL_PRINTF_STANDARD_ROUNDING: u32 = 0x0020;
+
+/// OURS, not Microsoft's — deliberately above their 0x0001..0x0020 block and
+/// above our own 0x0100/0x0200 so it cannot collide with either.
+///
+/// Selects UCRT semantics (`_MSVCR_VER >= 140`) instead of MSVCRT's
+/// (`_MSVCR_VER == 0`). This used to be the compile-time `MSVCR_VER` const,
+/// which made the engine's version a property of the CRATE. ucrtbase cannot
+/// reach this crate at all — `crt-shared-cargo` is structurally forbidden from
+/// depending on msvcrt-crt-rust, which is what stops 856 genuine UCRT bodies
+/// being silently replaced by msvcrt-graded ones — so a per-crate const could
+/// never have served both DLLs, and a cargo feature would have been worse:
+/// feature unification across one build graph could quietly hand msvcrt the
+/// 140 behaviour with nothing to notice.
+///
+/// A runtime bit is also what the real UCRT does. Its public entry points take
+/// an options mask precisely so behaviour is selected per call, so threading
+/// this alongside the other option bits matches the thing we are implementing
+/// rather than working around it. The cost is that msvcrt.dll no longer
+/// dead-code-eliminates the 140 arm; that is a few hundred bytes and no
+/// behaviour change, which is worth paying to delete a build-flag hazard.
+pub const PRINTF_UCRT_SEMANTICS: u32 = 0x0400;
 
 /// include/stdio.h:68 — `_TWO_DIGIT_EXPONENT`, `_get_output_format`'s one flag.
 const TWO_DIGIT_EXPONENT: u32 = 0x1;
@@ -1722,15 +1754,17 @@ unsafe fn pf_printf<C: PfChar>(
     let mut written: i32 = 0;
     let positional_params = options & MSVCRT_PRINTF_POSITIONAL_PARAMS != 0;
     let invoke_invalid_param_handler = options & MSVCRT_PRINTF_INVOKE_INVALID_PARAM_HANDLER != 0;
+    let ucrt_semantics = options & PRINTF_UCRT_SEMANTICS != 0;
 
     // printf.h:994-1003 — the ucrt arm reads the option bits; the msvcrt
     // (_MSVCR_VER == 0) arm hardcodes legacy behaviour + consults the process
-    // exponent-format switch. Both transcribed; MSVCR_VER selects.
+    // exponent-format switch. Both transcribed; PRINTF_UCRT_SEMANTICS selects,
+    // per call rather than per build.
     let legacy_wide: bool;
     let legacy_msvcrt_compat: bool;
     let three_digit_exp: bool;
     let standard_rounding: bool;
-    if MSVCR_VER >= 140 {
+    if ucrt_semantics {
         legacy_wide = options & CRT_INTERNAL_PRINTF_LEGACY_WIDE_SPECIFIERS != 0;
         legacy_msvcrt_compat = options & CRT_INTERNAL_PRINTF_LEGACY_MSVCRT_COMPATIBILITY != 0;
         three_digit_exp = options & CRT_INTERNAL_PRINTF_LEGACY_THREE_DIGIT_EXPONENTS != 0;
@@ -1831,9 +1865,9 @@ unsafe fn pf_printf<C: PfChar>(
             }
         }
 
-        if MSVCR_VER >= 140 {
+        if ucrt_semantics {
             // printf.h:1073-1076 — ucrt resets a '*' width when literal digits
-            // follow; msvcrt (VER=0) ACCUMULATES on top of it. Dead arm, kept.
+            // follow; msvcrt ACCUMULATES on top of it.
             if (*p).u() >= b'0' as u32 && (*p).u() <= b'9' as u32 {
                 flags.field_length = 0;
             }
@@ -1904,19 +1938,19 @@ unsafe fn pf_printf<C: PfChar>(
                 }
             } else if c == b'w' as u32 {
                 flags.wide_string = true;
-            } else if (MSVCR_VER == 0 || MSVCR_VER >= 140)
-                && (c == b'z' as u32 || c == b't' as u32)
+            } else if (c == b'z' as u32 || c == b't' as u32)
                 && {
                     let c1 = (*p.add(1)).u();
                     c1 != 0 && in_set(b"diouxX", c1)
                 }
             {
-                // printf.h:1123-1125 (#if _MSVCR_VER == 0 || >= 140 — PRESENT here)
+                // printf.h:1123-1125 — `#if _MSVCR_VER == 0 || >= 140`, i.e. present
+                // in BOTH versions, so unconditional here.
                 flags.integer_native = true;
-            } else if (MSVCR_VER == 0 || MSVCR_VER >= 140) && c == b'j' as u32 {
+            } else if c == b'j' as u32 {
                 flags.integer_double = true;
-            } else if MSVCR_VER >= 140 && c == b'T' as u32 {
-                // printf.h:1129-1131 — ucrt-only; dead under VER=0, kept structural
+            } else if ucrt_semantics && c == b'T' as u32 {
+                // printf.h:1129-1131 — ucrt-only
                 flags.natural_string = true;
             } else if c != b'L' as u32
                 && ((c != b'F' as u32 && c != b'N' as u32) || !legacy_msvcrt_compat)

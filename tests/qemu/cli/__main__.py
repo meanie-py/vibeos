@@ -12,7 +12,17 @@ import sys
 from pathlib import Path
 
 from . import build as build_mod
-from . import cargoswap, checkpoint, debugcmd, diskspace, host_clock, hostlock, maintenance, tooling
+from . import (
+    cargoswap,
+    checkpoint,
+    debugcmd,
+    diskspace,
+    host_clock,
+    hostlock,
+    maintenance,
+    symbolize,
+    tooling,
+)
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
@@ -110,6 +120,29 @@ def build_parser() -> argparse.ArgumentParser:
         "(unlike --lockdep and friends, which reconcile back OFF). `conformance` "
         "passes this itself; you want it by hand only to provision a fresh "
         "worktree ahead of time",
+    )
+    b.add_argument(
+        "--apitests",
+        action="store_true",
+        help="configure the build dir with -DENABLE_ROSTESTS_APITESTS=ON so the "
+        "user-mode apitest corpus (63 suites) is built and staged, WITHOUT the "
+        "winetests. STICKY, like --kmtests, and for the same reason: the apitest "
+        "conformance payload always wants them. Prefer this over --rostests for "
+        "anything that needs media, because 4 of the full corpus's non-apitest "
+        "targets do not build (one is an llvm-rc gap we cannot patch) and a "
+        "failed build produces no ISO",
+    )
+    b.add_argument(
+        "--rostests",
+        action="store_true",
+        help="configure the build dir with -DENABLE_ROSTESTS=ON so the full "
+        "winetest corpus (~128 suites) is built. RECONCILED, not sticky: a "
+        "later plain build turns it back OFF, so an opt-in never bloats the "
+        "default build. NOT all suites build: on 2026-09-23 an i386 "
+        "--keep-going build still failed shell32_apitest, shlwapi_apitest, "
+        "interop_unittest, menuaccels, combase and ole32 (user32 and "
+        "ntdll_apitest were fixed that day), so no livecd is produced. "
+        "Build one target with ninja and stage it as a payload instead",
     )
     b.add_argument(
         "--hal-pic",
@@ -662,6 +695,23 @@ def build_parser() -> argparse.ArgumentParser:
     kl.add_argument("--all", action="store_true", help="every running VM (explicit, loud)")
     kl.add_argument("--dry-run", action="store_true", help="print what would be killed")
     kl.set_defaults(fn=kill_mod.cmd_kill)
+
+    sy = sub.add_parser(
+        "sym",
+        help="resolve an address to module!symbol+off (USER-MODE PEs, which the "
+        "kernel symbol index does not cover)",
+    )
+    sy.add_argument("--arch", required=True, choices=["i386", "amd64", "arm64"])
+    sy.add_argument("addr", nargs="+", help="hex addresses, e.g. 7ffb70078fd")
+    sy.add_argument(
+        "--module",
+        help="force a module by name (needed when several share an image base, "
+        "e.g. drivers on the linker default)",
+    )
+    sy.add_argument(
+        "--rebuild", action="store_true", help="reindex even if the index looks current"
+    )
+    sy.set_defaults(fn=symbolize.run)
 
     ps = sub.add_parser("ps", help="all running VMs + slots (across worktrees)")
     ps.add_argument("--json", action="store_true")

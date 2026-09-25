@@ -1,5 +1,4 @@
 
-include_directories(${REACTOS_SOURCE_DIR}/sdk/lib/conutils)
 spec2def(netsh.exe netsh.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
@@ -9,10 +8,12 @@ list(APPEND SOURCE
     helper.c
     interpreter.c
     netsh.c
+    wmi.c
     precomp.h
     ${CMAKE_CURRENT_BINARY_DIR}/netsh_stubs.c)
 
 add_executable(netsh ${SOURCE} netsh.rc ${CMAKE_CURRENT_BINARY_DIR}/netsh.def)
+add_pch(netsh precomp.h SOURCE)
 
 set_target_properties(netsh
     PROPERTIES
@@ -20,8 +21,6 @@ set_target_properties(netsh
     DEFINE_SYMBOL "")
 
 set_module_type(netsh win32cui UNICODE)
-target_link_libraries(netsh conutils ${PSEH_LIB})
-add_importlibs(netsh iphlpapi advapi32 msvcrt user32 kernel32 ntdll)
-
-add_pch(netsh precomp.h SOURCE)
+target_link_libraries(netsh conutils)
+add_importlibs(netsh ole32 oleaut32 iphlpapi advapi32 msvcrt kernel32 ntdll)
 add_cd_file(TARGET netsh DESTINATION reactos/system32 FOR all)

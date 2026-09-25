@@ -448,7 +448,7 @@ def test_object_map_adapter_redirects_atl_creation():
     assert "class CDropTargetHelperRustEntry : public CDropTargetHelper" in cpp
     assert "return CDropTargetHelper_CreateInstance(" in cpp
     assert "OBJECT_ENTRY(CLSID_DragDropHelper, CDropTargetHelperRustEntry)" in cpp
-    assert "#ifndef SHELL32_RUST_OBJECT_LOCK_BRIDGE_DEFINED" in cpp
+    assert "#ifndef SHELL32RUSTOBJECTLOCK_BRIDGE_DEFINED" in cpp
     assert "Shell32RustObjectLock() { gModule.Lock(); }" in cpp
 
 
@@ -518,14 +518,29 @@ def test_atl_creator_class_is_the_other_internal_activation_shape():
 
 @needs_generated_psdk_amd64
 def test_shell_item_array_internal_init_factory_sequence_and_stgmedium_lifecycle():
-    source = SHELL32 / "CShellItem.cpp"
+    # Upstream #8834 ("A big bundle of NT6+ shell32 implementations and stubs") split
+    # CShellItemArray out of CShellItem.cpp into its own CShellItemArray.{h,cpp}, and
+    # rewrote its state: the raw `CIDA *m_pCIDA` + `STGMEDIUM m_Medium` pair is gone,
+    # replaced by a single `CDataObjectHIDA *m_pHIDA` RAII-wrapper pointer whose ctor/dtor
+    # now own the CIDA/STGMEDIUM lifecycle. So `stgmedium_lifecycle_fields` is correctly
+    # empty here -- there is no raw STGMEDIUM member left to manage.
+    #
+    # KNOWN SCANNER BUG (flagged, not worked around here): the new header's `Initialize`
+    # carries modern SAL (`Initialize(_In_ IDataObject *pdo)`, vs. the old file's bare
+    # `Initialize(IDataObject *pdo)`). `_parse_param` (cpp_com.py) only strips the
+    # underscore-free classic SAL family (`_CLASSIC_SAL` -- IN/OUT/INOUT/OPTIONAL) and
+    # never applies the already-existing `_SAL_ANNOTATION` regex to internal-initializer
+    # params, so `_In_` survives into `internal_initializer_params` as part of the TYPE
+    # and is then emitted verbatim into the generated factory signature: invalid Rust
+    # `pdo: *mut _In_ IDataObject`. This assertion encodes the CORRECT (SAL-stripped)
+    # value and will stay red until `_parse_param` also runs `_SAL_ANNOTATION.sub`.
+    source = SHELL32 / "CShellItemArray.cpp"
     cls = analyze_class(source, "CShellItemArray", object_map_source=SHELL32 / "shell32.cpp")
     assert cls.internal_shell_object_creator
     assert cls.internal_initializer_params == (("IDataObject *", "pdo"),)
-    assert cls.stgmedium_lifecycle_fields == ("m_Medium",)
+    assert cls.stgmedium_lifecycle_fields == ()
     assert {field.name: field.rust_type for field in cls.plain_state_fields()} == {
-        "m_pCIDA": "*mut CIDA",
-        "m_Medium": "STGMEDIUM",
+        "m_pHIDA": "*mut CDataObjectHIDA",
     }
     cls.require_supported(allow_internal=True)
     interface = parse_widl_interface(
@@ -608,17 +623,31 @@ def test_worker_signature_moves_reference_punctuation_from_scanner_name():
 
 
 def test_plain_c_state_has_deterministic_layout_and_zero_initialization():
+    # Upstream #9435 ("[SHELL32] Implement bat/cmd drop target menu") rewrote this
+    # class's state: the unused `CLSID *pclsid` field is gone, `sPathTarget` was
+    # renamed `m_PathTarget`, and a new `DWORD m_grfKeyState = 0` field was added.
+    # Both survivors now carry in-class initializers (`= NULL`, `= 0`).
+    #
+    # KNOWN SCANNER BUG (flagged, not worked around here): `_state_fields`'s
+    # "plausible declarator" check requires the STATEMENT to end in an identifier
+    # matching `[A-Za-z_]\\w*$`. `LPWSTR m_PathTarget = NULL` ends in `NULL` (an
+    # identifier) and survives; `DWORD m_grfKeyState = 0` ends in the digit `0`
+    # and is silently dropped -- no CppComError, just a missing field, which is
+    # exactly the "mis-parsed member silently changes the object layout" failure
+    # the surrounding comments in cpp_com.py warn against. This assertion encodes
+    # the CORRECT field list (both members) and will stay red until `_state_fields`
+    # is fixed to not anchor plausibility on the tail of a numeric initializer.
     cls = analyze_class(
         SHELL32 / "droptargets" / "CexeDropHandler.cpp",
         "CExeDropHandler",
         object_map_source=SHELL32 / "shell32.cpp",
     )
-    assert cls.state_fields == ["CLSID *pclsid", "LPWSTR sPathTarget"]
+    assert cls.state_fields == ["LPWSTR m_PathTarget = NULL", "DWORD m_grfKeyState = 0"]
     cls.require_supported()
     fields = cls.plain_state_fields()
     assert [(field.c_type, field.name) for field in fields] == [
-        ("CLSID *", "pclsid"),
-        ("LPWSTR", "sPathTarget"),
+        ("LPWSTR", "m_PathTarget"),
+        ("DWORD", "m_grfKeyState"),
     ]
     interfaces = [
         InterfaceSpec(
@@ -633,10 +662,10 @@ def test_plain_c_state_has_deterministic_layout_and_zero_initialization():
         for entry in cls.com_map
     ]
     rust = render_class_scaffold(cls, interfaces)
-    assert "pub pclsid: *mut CLSID," in rust
-    assert "pub sPathTarget: LPWSTR," in rust
-    assert "pclsid: core::mem::zeroed()," in rust
-    assert "sPathTarget: core::mem::zeroed()," in rust
+    assert "pub m_PathTarget: LPWSTR," in rust
+    assert "pub m_grfKeyState: DWORD," in rust
+    assert "m_PathTarget: core::mem::zeroed()," in rust
+    assert "m_grfKeyState: core::mem::zeroed()," in rust
 
 
 def test_ccomptr_state_has_deterministic_layout_assignment_and_release(tmp_path: Path):
@@ -3603,6 +3632,55 @@ def test_IDispatchImpl_inner_interface_need_not_be_I_prefixed():
         assert "CComPtr<ITypeInfo> m_pTypeInfo" in cls.state_fields, name
 
 
+def test_CComBSTR_state_keeps_its_type_so_the_destructor_survives():
+    """`CComBSTR m_name` must NOT flatten to a bare `BSTR`.
+
+    ATL's `~CComBSTR` calls `SysFreeString`. Lowering the field to a raw pointer compiles and
+    silently leaks every string the object ever held — the exact class of loss the RAII
+    container path exists to prevent, so it rides that path even though it is neither a
+    container nor a template.
+    """
+    field = _parse_plain_state_field("CComBSTR m_name")
+    assert field.raii_container == "CComBSTR"
+    assert field.rust_type == "CComBSTR"
+    assert field.owns_resource is True
+    assert field.init_expression == "CComBSTR::new()"
+
+
+def test_new_CComObject_is_a_third_internal_activation_shape():
+    """`new CComObject<T>()` — no factory at all; the caller allocates, then drives
+    Init/AddRef itself. CFolderItemVerbs.cpp does that for CFolderItemVerb. It is still
+    "no CLSID, constructed inside the DLL", which is the only question the flag answers."""
+    cls = analyze_class(
+        SHELL32 / "CFolderItemVerbs.cpp",
+        "CFolderItemVerb",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    assert cls.internal_shell_object_creator is True
+    cls.require_supported(allow_internal=True)
+
+
+def test_activation_in_another_TU_is_named_not_searched():
+    """CFolderItemVerbs is constructed by `CFolderItem::Verbs` in CFolderItems.cpp, a
+    DIFFERENT file. Scanning only its own TU reports the activation as unmapped for a class
+    whose activation is perfectly ordinary and simply lives next door — so the caller is
+    supplied explicitly, the way `object_map_source` is, rather than found by sweeping."""
+    args = dict(object_map_source=SHELL32 / "shell32.cpp")
+    alone = analyze_class(SHELL32 / "CFolderItemVerbs.cpp", "CFolderItemVerbs", **args)
+    assert alone.internal_shell_object_creator is False
+    with pytest.raises(CppComError):
+        alone.require_supported(allow_internal=True)
+
+    named = analyze_class(
+        SHELL32 / "CFolderItemVerbs.cpp",
+        "CFolderItemVerbs",
+        activation_source=SHELL32 / "CFolderItems.cpp",
+        **args,
+    )
+    assert named.internal_shell_object_creator is True
+    named.require_supported(allow_internal=True)
+
+
 def test_sibling_class_activation_resolves_to_its_generated_creator():
     """`ShellObjectCreatorInit<T>` for a class OTHER than the one being translated.
 
@@ -3687,3 +3765,184 @@ def test_a_genuine_stateful_cpp_base_is_still_a_loud_failure():
     assert not pat.fullmatch("IDispatchImpl<Folder2, &IID_Folder3>")
     # A stateful C++ base is not this template at all.
     assert not pat.fullmatch("CSomeStatefulBase<Folder2>")
+
+
+def test_module_lock_symbol_follows_the_output_crate(tmp_path: Path):
+    """menuband-rust must not emit shell32's private module-lock name.
+
+    `libmenuband_rust.a` links into shell32.dll AND rshell.dll. `Shell32RustObjectLock` is
+    defined only by the former, so emitting it there links shell32 cleanly and leaves rshell
+    with an undefined symbol -- and not immediately, but at whatever later cohab flip first
+    makes an rshell-reachable object pull the module out of the archive. Both DLLs define
+    `MenuBandRustModuleLock` precisely so the shared crate has a name to agree on.
+    """
+    from rustconv.projects.reactos.targets import module_lock_for_crate
+
+    assert module_lock_for_crate("menuband-rust") == (
+        "MenuBandRustModuleLock",
+        "MenuBandRustModuleUnlock",
+    )
+    assert module_lock_for_crate("shell32-rust") == (
+        "Shell32RustObjectLock",
+        "Shell32RustObjectUnlock",
+    )
+    assert module_lock_for_crate(None) == ("Shell32RustObjectLock", "Shell32RustObjectUnlock")
+
+    cls = analyze_class(
+        SHELL32 / "CDropTargetHelper.cpp",
+        "CDropTargetHelper",
+        object_map_source=SHELL32 / "shell32.cpp",
+    )
+    interfaces = [parse_widl_interface(_widl(tmp_path), entry.interface) for entry in cls.com_map]
+    rust = render_class_scaffold(
+        cls, interfaces, module_lock=module_lock_for_crate("menuband-rust")
+    )
+    assert "MenuBandRustModuleLock();" in rust
+    assert "MenuBandRustModuleUnlock();" in rust
+    assert "Shell32RustObject" not in rust
+
+
+def test_container_of_raw_pointers_is_a_proven_state_field():
+    """`CSimpleArray<CWatchItem*>` — a container whose ELEMENT is a pointer.
+
+    This is the third safe element family, and it is safer than the other two rather than a
+    relaxation of them: the array stores raw pointers, so ATL's per-element `DestructItem` is
+    a no-op and so is Rust's `drop_in_place::<*mut T>`. The container's `Drop` therefore
+    reproduces the C++ one whatever the POINTEE looks like — the element's layout is simply
+    not the container's business, it only has to be nameable.
+
+    It blocked CChangeNotifyServer.cpp (the whole TU read as UNSUPPORTED) because BOTH the
+    state-field parser and `_discover_pod_state_types` spelled the element `[A-Za-z_]\\w*`
+    with no `*`, in two identical copies of one regex. Discovery could not see `CWatchItem`
+    inside the template, so the parser then rejected it as "not a proven layout".
+    """
+    field = _parse_plain_state_field(
+        "CSimpleArray<CWatchItem*> m_items", allowed_pod_types={"CWatchItem"}
+    )
+    assert field.name == "m_items"
+    assert field.c_type == "CSimpleArray<CWatchItem*>"
+    # The RUST spelling is what lands in the struct, so the star has to move inside.
+    assert field.raii_container == "CSimpleArray<*mut CWatchItem>"
+    assert field.rust_type == "CSimpleArray<*mut CWatchItem>"
+
+    # By-value elements are untouched by the change.
+    byval = _parse_plain_state_field(
+        "CAtlList<DynamicShellEntry> m_entries", allowed_pod_types={"DynamicShellEntry"}
+    )
+    assert byval.raii_container == "CAtlList<DynamicShellEntry>"
+
+    # An element the module neither defines nor proves is still refused, pointer or not.
+    with pytest.raises(CppComError, match="not a proven layout"):
+        _parse_plain_state_field("CSimpleArray<MysteryThing*> m_x", allowed_pod_types=set())
+
+
+def test_a_registered_container_does_not_advertise_itself_as_missing():
+    """The old message sent the reader to a registry entry that was already there.
+
+    `CSimpleArray` was registered in `_RAII_CONTAINER_LOWERINGS` AND implemented in atl.rs,
+    and the fall-through still said "no Rust lowering for `CSimpleArray`; implement it in
+    shell32-rust/src/atl.rs and list it in _RAII_CONTAINER_LOWERINGS" — which costs a round
+    of hunting for a missing thing that exists. If the template is registered, the SHAPE is
+    what could not be spelled, and the message has to say so.
+    """
+    with pytest.raises(CppComError, match="has a Rust lowering, but this declaration's shape"):
+        _parse_plain_state_field("CSimpleArray<int, MyComparer> m_weird")
+
+    with pytest.raises(CppComError, match="no Rust lowering for `CUnheardOf`"):
+        _parse_plain_state_field("CUnheardOf<int> m_x")
+
+
+def test_a_body_local_macro_is_not_a_dropped_constant():
+    """`#undef RETURN` is a directive, not a use of a constant named RETURN.
+
+    CChangeNotifyServer::ShouldNotify opens with `#define RETURN(x) do { TRACE(...); return
+    (x); } while (0)` and closes with `#undef RETURN`. Every CALL site is `RETURN(FALSE)`,
+    which the callable-token rule already skips — but the bare name in the `#undef` is not
+    followed by `(`, so it read as a symbolic constant the Rust had dropped, and rejected a
+    body that had expanded the macro exactly as the preprocessor does.
+    """
+    c_body = """BOOL C::ShouldNotify(int a)
+{
+#define RETURN(x) do { \\
+    TRACE("ShouldNotify return %d\\n", (x)); \\
+    return (x); \\
+} while (0)
+    if (a & SHCNE_INTERRUPT)
+        RETURN(FALSE);
+    RETURN(TRUE);
+#undef RETURN
+}"""
+    rust = (
+        "pub unsafe fn C_ShouldNotify_body(this: *mut C, a: i32) -> BOOL {\n"
+        "    if (a & SHCNE_INTERRUPT) != 0 {\n        return FALSE;\n    }\n"
+        "    TRUE\n}\n"
+    )
+    assert audit_worker_body(c_body, rust, "C_ShouldNotify_body") == []
+
+
+def test_cpp_delete_licenses_free_and_never_Box():
+    """C++ `delete p` is a source deallocator — and what it licenses is `free`.
+
+    In THIS tree `operator new` is `malloc` and `operator delete` is `free`
+    (sdk/lib/cpprt/.../cpprt.cpp), so `free` is the faithful lowering and the only one that
+    agrees with the C++ side across a boundary: a CDirectoryWatcher is `new`ed in
+    CDirectoryWatcher.cpp, still C++, and `delete`d from Rust in CChangeNotifyServer.
+
+    `Box::from_raw` stays refused. It frees through Rust's global allocator, not malloc, and
+    shell32-rust is no_std with no `alloc` crate — a body reaching for it does not even build.
+    The original rule was right to refuse it; its stated reason was just too narrow.
+    """
+    c_delete = "void C::DestroyItem(CWatchItem *p)\n{\n    SHFree(p->pRegEntry);\n    delete p;\n}"
+    rust_free = (
+        "pub unsafe fn C_DestroyItem_body(this: *mut C, p: *mut CWatchItem) -> () {\n"
+        "    SHFree((*p).pRegEntry);\n"
+        "    free(p as *mut core::ffi::c_void);\n}\n"
+    )
+    assert audit_worker_body(c_delete, rust_free, "C_DestroyItem_body") == []
+
+    # Box is refused even though the C++ does `delete`.
+    rust_box = (
+        "pub unsafe fn C_DestroyItem_body(this: *mut C, p: *mut CWatchItem) -> () {\n"
+        "    SHFree((*p).pRegEntry);\n"
+        "    let _ = core::boxed::Box::from_raw(p);\n}\n"
+    )
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_delete, rust_box, "C_DestroyItem_body")
+    )
+
+    # The allocating half is symmetric: `new T{...}` licenses `malloc`, and placement new
+    # (which allocates nothing) does not.
+    c_new = "void C::Add()\n{\n    CWatchItem *p = new CWatchItem;\n    AddItem(p);\n}"
+    rust_malloc = (
+        "pub unsafe fn C_Add_body(this: *mut C) -> () {\n"
+        "    let p = malloc(core::mem::size_of::<CWatchItem>()) as *mut CWatchItem;\n"
+        "    C_AddItem_body(this, p);\n}\n"
+    )
+    assert audit_worker_body(c_new, rust_malloc, "C_Add_body") == []
+
+    c_placement = "void C::Add(void *mem)\n{\n    CWatchItem *p = new (mem) CWatchItem;\n}"
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_placement, rust_malloc, "C_Add_body")
+    )
+
+    # `delete this` is NOT a license: that is the COM instance, which the scaffold HeapAllocs,
+    # so `free` on it would be a cross-heap free. `<Class>_delete` is its only correct free.
+    c_delete_this = "{ delete this; return S_OK; }"
+    rust_free_this = (
+        "pub unsafe fn C_f_body(this: *mut C) -> HRESULT {\n"
+        "    free(this as *mut core::ffi::c_void);\n    S_OK\n}\n"
+    )
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_delete_this, rust_free_this, "C_f_body")
+    )
+
+    # And with no `delete` in the C at all, a bare `free` is still invented.
+    c_plain = "void C::Quiet(CWatchItem *p)\n{\n    SHFree(p->pRegEntry);\n}"
+    rust_free_invented = (
+        "pub unsafe fn C_Quiet_body(this: *mut C, p: *mut CWatchItem) -> () {\n"
+        "    SHFree((*p).pRegEntry);\n"
+        "    free(p as *mut core::ffi::c_void);\n}\n"
+    )
+    assert any(
+        "deallocator" in f for f in audit_worker_body(c_plain, rust_free_invented, "C_Quiet_body")
+    )

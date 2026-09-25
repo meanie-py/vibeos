@@ -1403,7 +1403,7 @@ HRESULT STDMETHODCALLTYPE CShellLink::Extract(PCSTR pszFile, UINT nIconIndex, HI
 
 HRESULT STDMETHODCALLTYPE CShellLink::SetIconLocation(LPCSTR pszIconPath, INT iIcon)
 {
-    TRACE("(%p)->(path=%s iicon=%u)\n", this, pszIconPath, iIcon);
+    TRACE("(%p)->(path=%s iicon=%d)\n", this, pszIconPath, iIcon);
 
     LPWSTR str = NULL;
     if (pszIconPath)
@@ -1522,7 +1522,6 @@ HRESULT STDMETHODCALLTYPE CShellLink::Resolve(HWND hwnd, DWORD fFlags)
             return E_OUTOFMEMORY;
 
         m_Header.nIconIndex = 0;
-
         m_bDirty = TRUE;
     }
 
@@ -1936,7 +1935,7 @@ HRESULT STDMETHODCALLTYPE CShellLink::SetIconLocation(LPCWSTR pszIconPath, INT i
     HRESULT hr = E_FAIL;
     WCHAR szIconPath[MAX_PATH];
 
-    TRACE("(%p)->(path=%s iicon=%u)\n", this, debugstr_w(pszIconPath), iIcon);
+    TRACE("(%p)->(path=%s iicon=%d)\n", this, debugstr_w(pszIconPath), iIcon);
 
     if (pszIconPath)
     {
@@ -2816,7 +2815,9 @@ BOOL CShellLink::OnInitDialog(HWND hwndDlg, HWND hwndFocus, LPARAM lParam)
         SendDlgItemMessageW(hwndDlg, IDC_SHORTCUT_ICON, STM_SETICON, (WPARAM)m_hIcon, 0);
     }
     else
-        ERR("ExtractIconW failed %ls %u\n", m_sIcoPath, m_Header.nIconIndex);
+    {
+        ERR("ExtractIconW failed %ls %d\n", m_sIcoPath, m_Header.nIconIndex);
+    }
 
     if (!SHGetFileInfoW(m_sLinkPath, 0, &fi, sizeof(fi), SHGFI_DISPLAYNAME))
         fi.szDisplayName[0] = UNICODE_NULL;

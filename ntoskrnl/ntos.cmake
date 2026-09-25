@@ -1,12 +1,10 @@
 
 include_directories(
-    ${REACTOS_SOURCE_DIR}
-    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/arbiter
-    ${REACTOS_SOURCE_DIR}/sdk/lib/cmlib
     include
     ${CMAKE_CURRENT_BINARY_DIR}/include
     ${CMAKE_CURRENT_BINARY_DIR}/include/internal
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers
+    ${REACTOS_SOURCE_DIR}/sdk/lib/rtl)
 
 add_definitions(
     -D_NTOSKRNL_
@@ -384,6 +382,10 @@ if(ARCH STREQUAL "i386")
         # vdm/ — replaced by Rust (ntoskrnl-rust/src/vdm/)
         #${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmmain.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/vdm/vdmexec.c
+        # ke/x86x64/cpuinfo.c — new upstream shared x86/x64 CPU-info TU (post-fork).
+        # NOT enabled: ke/i386/cpu.c and ke/amd64/cpu.c are Rust here, so a live
+        # cpuinfo.c would duplicate symbols the Rust twins already export.
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
     )
 elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE
@@ -418,6 +420,10 @@ elseif(ARCH STREQUAL "amd64")
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/traphandler.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall.c
         #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/xstate.c
+        # ke/x86x64/cpuinfo.c — new upstream shared x86/x64 CPU-info TU (post-fork).
+        # NOT enabled: ke/i386/cpu.c and ke/amd64/cpu.c are Rust here, so a live
+        # cpuinfo.c would duplicate symbols the Rust twins already export.
+        #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
         )
 elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE

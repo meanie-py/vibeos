@@ -220,6 +220,19 @@ pub unsafe extern "system" fn inet_addr(cp: *const i8) -> u_long {
         return INADDR_NONE;
     }
 
+    // The in-loop store is bounds-checked; THIS one was not. For an input with five
+    // or more dot-separated groups ("1.2.3.4.5") pp is already parts+4 here, so this
+    // writes a u_long one element past a 4-element STACK array. The `n` match below
+    // then returns INADDR_NONE -- but only after the stack is already corrupted, and
+    // inet_addr is exported from ws2_32 and reachable by any Winsock caller.
+    // Upstream replaced the whole routine with Wine's; the minimal equivalent here is
+    // to reject before storing, which is behaviourally identical (n would be >= 5 and
+    // fall to INADDR_NONE anyway) minus the corruption.
+    // Upstream-Commit: 6679825f21e
+    if pp >= parts.as_mut_ptr().offset(4) {
+        return INADDR_NONE;
+    }
+
     *pp = val;
     pp = pp.offset(1);
 

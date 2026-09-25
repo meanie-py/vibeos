@@ -176,19 +176,17 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
 // GETPFNSERVER(fnid) := gpsi->aStoCidPfn[fnid - FNID_FIRST]   (ntuser.h)
 #[inline]
 unsafe fn GETPFNSERVER(fnid: i32) -> WNDPROC {
-    (*gpsi).aStoCidPfn[(fnid - FNID_FIRST as i32) as usize]
+    crate::wow64::psi::pfn_server(fnid as usize)
 }
 // GETPFNCLIENTA(fnid) := (WNDPROC)(*(((ULONG_PTR*)&gpsi->apfnClientA) + (fnid - FNID_FIRST)))
 #[inline]
 unsafe fn GETPFNCLIENTA(fnid: i32) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientA) as *const ULONG_PTR;
-    core::mem::transmute::<ULONG_PTR, WNDPROC>(*base.add((fnid - FNID_FIRST as i32) as usize))
+    crate::wow64::psi::pfn_client_a(fnid as usize)
 }
 // GETPFNCLIENTW(fnid) := (WNDPROC)(*(((ULONG_PTR*)&gpsi->apfnClientW) + (fnid - FNID_FIRST)))
 #[inline]
 unsafe fn GETPFNCLIENTW(fnid: i32) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientW) as *const ULONG_PTR;
-    core::mem::transmute::<ULONG_PTR, WNDPROC>(*base.add((fnid - FNID_FIRST as i32) as usize))
+    crate::wow64::psi::pfn_client_w(fnid as usize)
 }
 // UserHMGetHandle(obj) := (obj)->head.h   (ntuser.h)
 // NOTE: bindgen flattens the leading `_HEAD` of THRDESKHEAD into
@@ -941,7 +939,16 @@ unsafe fn IntGetClassLongA_impl(Wnd: PWND, Class: PCLS, nIndex: i32) -> usize {
         {
             SetLastError(ERROR_INVALID_PARAMETER);
         } else {
-            Ret = *((((Class.add(1)) as usize) + nIndex_u) as PULONG_PTR) as usize;
+            /* NOT `Class.add(1)`: under WoW64 `Class` is a normalized 32-bit
+             * COPY of the real 64-bit CLS and the extra bytes follow the
+             * ORIGINAL. cls_extra_base() resolves both cases -- same shape as
+             * wnd_extra_base() beside it. */
+            let ExtraBase = crate::wow64::cls_extra_base(Class);
+            if ExtraBase.is_null() {
+                SetLastError(ERROR_INVALID_PARAMETER);
+            } else {
+                Ret = *(ExtraBase.add(nIndex_u) as PULONG_PTR) as usize;
+            }
         }
     } else {
         match nIndex {
@@ -1021,7 +1028,16 @@ unsafe fn IntGetClassLongW_impl(Wnd: PWND, Class: PCLS, nIndex: i32) -> usize {
         {
             SetLastError(ERROR_INVALID_PARAMETER);
         } else {
-            Ret = *(((Class.add(1) as usize) + nIndex_u) as PULONG_PTR) as usize;
+            /* NOT `Class.add(1)`: under WoW64 `Class` is a normalized 32-bit
+             * COPY of the real 64-bit CLS and the extra bytes follow the
+             * ORIGINAL. cls_extra_base() resolves both cases -- same shape as
+             * wnd_extra_base() beside it. */
+            let ExtraBase = crate::wow64::cls_extra_base(Class);
+            if ExtraBase.is_null() {
+                SetLastError(ERROR_INVALID_PARAMETER);
+            } else {
+                Ret = *(ExtraBase.add(nIndex_u) as PULONG_PTR) as usize;
+            }
         }
     } else {
         match nIndex {

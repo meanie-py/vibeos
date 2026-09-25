@@ -75,8 +75,10 @@ Wired into `vibeos-cli check`. Consumed by `verify_conv_macros.py` via `is_vendo
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -275,6 +277,19 @@ class Registry:
                     return True
         return False
 
+    def tree_for(self, rel: str) -> Tree | None:
+        """The registered tree owning this path, if any. Same boundary rule as
+        `is_vendored`; the longest matching prefix wins so a nested entry beats
+        the container it sits in."""
+        rel = rel.replace("\\", "/")
+        best: Tree | None = None
+        best_len = -1
+        for t in self.trees:
+            for pfx in t.prefixes:
+                if (rel == pfx or rel.startswith(pfx + "/")) and len(pfx) > best_len:
+                    best, best_len = t, len(pfx)
+        return best
+
     def is_declared_ours(self, rel: str) -> bool:
         """Is this path inside a tree explicitly classified as OURS to translate?
 
@@ -375,7 +390,15 @@ def is_vendored(rel: str, repo: Path = REPO) -> bool:
 #: adding the holder would fail `--check` fleet-wide until fifty `ours:` entries were
 #: written. That is a decision, not a scan tweak.
 _FOREIGN_HOLDER = re.compile(
-    r"Copyright\s+\(c\)\s+(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
+    # THE YEARS GO IN THE MIDDLE. This used to be `Copyright \(c\) (Microsoft|...)`,
+    # which matches "Copyright (c) Microsoft Corporation" and misses
+    # "Copyright (c) 1998-2000 Microsoft Corporation" — the far commoner form, and
+    # the reason `--suspects` reported "every one is decided" while 24 files of
+    # Microsoft/Intel DDK sample code sat unregistered in drivers/wdm/audio/ac97
+    # (found 2026-09-20, during the audit that followed the Solitaire miss).
+    r"Copyright\s*(?:\(c\)|\xa9|&copy;)?\s*"
+    r"(?:[0-9]{4}\s*(?:[-,/]\s*[0-9]{4})?[\s,]*)*"
+    r"(Microsoft|Intel|Apple|Oracle|IBM|Sun Microsystems|Nvidia|Adobe"
     r"|Silicon Graphics|Hewlett-Packard|Digital Equipment)"
     # Wine does not spell it with a `(c)`: its files say
     # `Copyright 2005 Jacek Caban for CodeWeavers`, so the form above cannot see it.
@@ -383,6 +406,109 @@ _FOREIGN_HOLDER = re.compile(
     r"|Copyright[^\n]{0,60}?\b(The Wine Project)",
     re.I,
 )
+#: The operative clause of a real licence — the bit that actually grants
+#: something. A file that has one needs no further evidence.
+_INLINE_GRANT = re.compile(
+    r"Redistribution and use"
+    r"|Permission is hereby granted"
+    r"|Permission to use, copy"
+    r"|is free software"
+    r"|you (can|may) redistribute"
+    r"|Licensed under the"
+    r"|SPDX-License-Identifier"
+    r"|(placed|released|dedicated).{0,20}public domain"
+    r"|GNU (General|Lesser|Library) Public License",
+    re.I,
+)
+
+#: A `LICENSE:` header naming a licence we recognise. ReactOS's own files carry
+#: these instead of an inline grant, which is fine — the name is checkable.
+_KNOWN_LICENCE_ID = re.compile(
+    r"\b(GPL|LGPL|MIT|BSD|0BSD|Zlib|Apache|ISC|CC0|CC-BY|HPND|Unlicense|X11"
+    r"|libpng|IJG|FDLIBM|SGI-B|MPL|Boost|PSF|Public\s+Domain|SPDX)\b",
+    re.I,
+)
+
+#: A licence declared by POINTING at a file: "See COPYING in the top level
+#: directory", "DDK - see license.txt in the root dir". The pointer is only a
+#: licence if the file it names is actually in the distribution.
+_LICENCE_POINTER = re.compile(
+    # "see the file X" / "see file X" is as much a pointer as "see X", and the
+    # strict form missed schilytools' whole CDDL notice ("See the file
+    # CDDL.Schily.txt in this distribution for details") across 10 files.
+    r"\bsee\s+(?:the\s+)?(?:file\s+)?([A-Za-z0-9._-]*(?:COPYING|LICEN[CS]E|LGPL|GPL)[A-Za-z0-9._-]*"
+    # ...or a plain text file named outright, which is how libjpeg and the
+    # DJGPP-derived CRT bodies point at theirs.
+    r"|[A-Za-z0-9._-]+\.txt)",
+    re.I,
+)
+
+#: Texts the tree SHIPS under a name other than the one its referrers use.
+#: ReactOS's own headers have said "See LGPL.txt in the top level directory"
+#: since before the file was renamed; the LGPL text is right there as
+#: COPYING.LIB, so those 40 references are misspelled, not unfulfilled. An
+#: alias is only honoured when its TARGET resolves, so this can excuse a
+#: pointer but never invent a grant.
+_POINTER_ALIASES = {
+    "lgpl.txt": "copying.lib",
+    "gpl.txt": "copying",
+    # zlib's own contrib/minizip/skipset.h says "See MiniZip_info.txt for the
+    # license"; the file beside it has always been MiniZip64_info.txt. Upstream
+    # typo, vendored verbatim -- correcting it in place would mean a patch
+    # against zlib for one character.
+    "minizip_info.txt": "minizip64_info.txt",
+}
+
+#: The `LICENSE:` line of a ReactOS-style file header.
+_LICENSE_DECL = re.compile(r"LICEN[CS]E:\s*([^\n*]{0,90})", re.I)
+
+#: A file whose NAME is a licence text: COPYING, COPYING.LIB, LICENSE.txt,
+#: License, LICENCE.md. Not `license.c`, and not a header that merely mentions one.
+_LICENCE_BASENAME = re.compile(r"^(copying|licen[cs]e)([0-9]|[._-][a-z0-9._-]+)?$", re.I)
+
+#: Directories whose licence file governs a whole COLLECTION rather than one
+#: component. `modules/rosapps/COPYING` is the GPL, sitting three levels above
+#: Ken Kato's Virtual Floppy Drive the same way the repo-root COPYING sits above
+#: everything -- it says what the collection is licensed as, not what any
+#: particular author granted. Letting it cover a subtree made 33 files of
+#: third-party code with no grant of their own vanish from this report.
+#: `sdk/include/{psdk,vcruntime}` are here for the same reason from the other
+#: direction: each ships ChakraCore's MIT text because four Microsoft SAL
+#: headers point at it ("See LICENSE file in the project root"), and that text
+#: covers those four files -- not the hundreds of unrelated headers beside them,
+#: and emphatically not sdk/include/ndk one level over.
+_COLLECTION_ROOTS = {
+    "",
+    "modules/rosapps",
+    "modules/rostests",
+    "sdk/include/psdk",
+    "sdk/include/vcruntime",
+}
+
+#: Does a POINTER name a licence text? The pointer regex deliberately accepts
+#: any bare `*.txt`, because libjpeg and the NT4 DDK point at theirs that way --
+#: fine for asking "does the named file ship", fatal for asking "is this dir
+#: granted". uniata's id_ata.cpp says "see todo.txt", todo.txt is right there,
+#: and that one line excused 36,368 lines whose only licence content is a
+#: warranty disclaimer. Coverage requires a name that could BE a licence.
+_LICENCE_TEXT_NAME = re.compile(
+    r"copying|licen[cs]e|gpl|cddl|artistic|apache|mozilla|mpl|bsd\b|zlib|\bmit\b", re.I
+)
+
+#: The `COPYRIGHT:` line of a ReactOS-style file header.
+_COPYRIGHT_DECL = re.compile(r"COPYRIGHT:\s*([^\n*]{0,90})", re.I)
+
+
+def _copyright_decl(head: str) -> str:
+    m = _COPYRIGHT_DECL.search(head)
+    return m.group(1) if m else ""
+
+
+#: Any copyright line at all, whoever holds it. Broader than _FOREIGN_HOLDER on
+#: purpose: the question here is not "is this foreign" but "does anyone claim
+#: this, and if so did they say what we may do with it".
+_ANY_COPYRIGHT = re.compile(r"copyright\s+(\(c\)|\xa9|[0-9]{4})", re.I)
+
 _SUSPECT_SUFFIXES = (".c", ".cpp", ".cxx", ".cc", ".h", ".hpp", ".hxx")
 # `.claude` holds the harness's own subagent worktrees (`.claude/worktrees/<name>`):
 # a whole second checkout of the repo, so scanning it reports ANOTHER tree's
@@ -416,6 +542,58 @@ _SPDX = re.compile(r"SPDX-License-Identifier:[ \t]*([^\n]+)")
 _ROS_LICENSE_HDR = re.compile(r"^\s*[*#/]*\s*LICENSE:\s*([^(\n]+)", re.M)
 
 
+#: Licences a file states by NAME in prose, with no SPDX tag. The blind spot this closes
+#: was found the hard way, twice: glu32 carries 73 files under "SGI Free Software License
+#: B, Version 1.1" inside a tree recorded SGI-B-2.0, and zlib's contrib/minizip is
+#: Info-ZIP inside a tree recorded Zlib. Both sat there while `--licences` printed
+#: "every declared licence accounted for".
+#:
+#: THIS MATCHES LICENCE NAMES, NOT LICENCE TEXT, and the distinction is the whole reason
+#: it can exist. Grepping for notice BODIES was rejected when this check was first
+#: written, correctly: every ACPICA file reproduces a BSD notice, so a text grep reports
+#: 226 hits that are all the recorded licence. A name is a much narrower thing — a file
+#: says "GNU General Public License" when that is what governs it.
+#:
+#: FAMILY GRANULARITY, DELIBERATELY. These map to a family (GPL, LGPL, Apache) rather
+#: than a version, because version detection from prose is guesswork — "either version 2
+#: of the License, or (at your option) any later version" is three plausible answers —
+#: and the drift that matters legally is a COPYLEFT FILE INSIDE A PERMISSIVE TREE, which
+#: is a family-level fact. The two named-variant entries are exceptions: SGI-B and
+#: Info-ZIP have no SPDX-shaped spelling in the wild, so the name IS the identifier.
+#:
+#: Order matters. Lesser/Library GPL must be tried before plain GPL or every LGPL notice
+#: reports as GPL.
+_PROSE_LICENCES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"SGI\s+Free\s+Software\s+License\s+B,?\s*Version\s*1\.1", re.I), "SGI-B-1.1"),
+    (re.compile(r"SGI\s+Free\s+Software\s+License\s+B,?\s*Version\s*2\.0", re.I), "SGI-B-2.0"),
+    (re.compile(r"\bInfo-ZIP\s+licen[cs]e\b", re.I), "Info-ZIP"),
+    (re.compile(r"GNU\s+(?:Lesser|Library)\s+General\s+Public\s+Licen[cs]e", re.I), "LGPL"),
+    (re.compile(r"GNU\s+General\s+Public\s+Licen[cs]e", re.I), "GPL"),
+    (re.compile(r"Apache\s+Licen[cs]e", re.I), "Apache"),
+    (re.compile(r"Mozilla\s+Public\s+Licen[cs]e", re.I), "MPL"),
+    (re.compile(r"Common\s+Development\s+and\s+Distribution\s+Licen[cs]e", re.I), "CDDL"),
+    (re.compile(r"Boost\s+Software\s+Licen[cs]e", re.I), "BSL"),
+    (re.compile(r"Eclipse\s+Public\s+Licen[cs]e", re.I), "EPL"),
+)
+
+#: How a registry entry SATISFIES a prose family. Substring matching cannot do this job:
+#: "LGPL-2.1" contains "GPL", so a tree recorded LGPL would silently absorb a real GPL
+#: file — the exact copyleft-escalation this check is for. The GPL pattern therefore
+#: requires a GPL not preceded by an L.
+_PROSE_ACCOUNTED: dict[str, re.Pattern[str]] = {
+    "SGI-B-1.1": re.compile(r"SGI-B-1\.1", re.I),
+    "SGI-B-2.0": re.compile(r"SGI-B-2\.0", re.I),
+    "Info-ZIP": re.compile(r"Info-ZIP", re.I),
+    "LGPL": re.compile(r"LGPL|Lesser|Library General", re.I),
+    "GPL": re.compile(r"(?<![A-Za-z])GPL", re.I),
+    "Apache": re.compile(r"Apache", re.I),
+    "MPL": re.compile(r"MPL|Mozilla", re.I),
+    "CDDL": re.compile(r"CDDL", re.I),
+    "BSL": re.compile(r"BSL|Boost", re.I),
+    "EPL": re.compile(r"EPL|Eclipse", re.I),
+}
+
+
 def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
     """Licences a tree's own files declare that its registry entry does not account for.
 
@@ -427,19 +605,38 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
     recorded as Microsoft's terms and carries 5 files stamped `SPDX MIT`. Generating a
     notices file from the headline licence alone would misstate all three.
 
-    Only SELF-DECLARED licences count — an SPDX tag or a ReactOS `LICENSE:` header. A
-    prose grep would fire on every BSD notice in every ACPICA file and drown the signal,
-    which is the same reason `_FOREIGN_HOLDER` sticks to corporate holders.
+    TWO PASSES, and the second one was added on 2026-09-20 to close a blind spot that
+    had already cost two findings. An SPDX tag or a ReactOS `LICENSE:` header is a
+    machine-readable statement and is read first. Where a file makes none, its header is
+    matched against `_PROSE_LICENCES` — a list of licence NAMES, not licence TEXT. That
+    distinction is what makes the second pass possible at all: grepping for notice bodies
+    was rejected when this was first written, correctly, because every ACPICA file
+    reproduces a BSD notice and a text grep drowns in 226 true-but-useless hits. A file
+    that NAMES the GNU General Public License is saying something much narrower.
+
+    The prose pass reports a FAMILY (GPL, LGPL, Apache) rather than a version, because
+    version detection from prose is guesswork — "either version 2 of the License, or (at
+    your option) any later version" admits three answers — while the drift that matters
+    legally is a copyleft file inside a permissive tree, which is a family-level fact.
+
+    The first run of it found three unrecorded licences that this function had been
+    printing all-clear over: 586 BSL-1.0 files in `external/fex` (it vendors range-v3),
+    adns's deliberate GPL/LGPL carve-out on its public header, and — the one that
+    matters — sixteen LGPL-2.1-or-later files in `dll/3rdparty/libtirpc`, the University
+    of Michigan Windows/SSPI port, inside a tree recorded flat BSD-3-Clause.
 
     A hit is a QUESTION, as everywhere else here: the answer may be "record it in
     `license_extra`" or "those files are ours and the tree boundary is wrong".
 
-    KNOWN BLIND SPOT, stated because a green run reads like an all-clear and is not one:
-    this sees only SELF-DECLARED licences. A file that states its licence in PROSE with
-    no SPDX tag is invisible to it — `dll/3rdparty/mbedtls/_reactos_strsafe_wrapper.c` is
-    a ReactOS-authored LGPL-2.1-or-later file inside an Apache-2.0 tree and was found by
-    hand, after this scan had already passed. So: green means no tree DECLARES an
-    unrecorded licence, not that no tree HAS one.
+    WHAT IS STILL INVISIBLE, stated because a green run reads like an all-clear and is
+    not one. Permissive families — MIT, BSD, ISC, Zlib, public-domain dedications — are
+    deliberately NOT in `_PROSE_LICENCES`: their notices get reproduced verbatim inside
+    files governed by something else (a GPL file quoting the MIT terms of a snippet it
+    embeds), so they are exactly where a name match stops being evidence. The omission is
+    also the low-risk direction, since the finding this check exists for is copyleft
+    turning up where the entry claims permissive, not the reverse. And a file that states
+    its terms without ever naming a licence — bespoke prose, "all rights reserved", a
+    grant written out longhand — is still invisible to both passes.
     """
     out = []
     for t in reg.trees:
@@ -447,6 +644,7 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
         if not d.is_dir():
             continue
         found: dict[str, int] = {}
+        prose: dict[str, int] = {}
         for p in d.rglob("*"):
             if not p.is_file() or p.suffix.lower() not in _SRC_SUFFIXES:
                 continue
@@ -454,18 +652,39 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
                 head = p.read_text(errors="replace")[:3000]
             except OSError:
                 continue
+            declared = False
             for pat in (_SPDX, _ROS_LICENSE_HDR):
                 m = pat.search(head)
                 if m:
                     lic = m.group(1).strip().rstrip("*/").strip().rstrip(".").strip()
                     if lic:
                         found[lic] = found.get(lic, 0) + 1
+                        declared = True
+            # Prose names are the FALLBACK, not a second opinion. A file that already
+            # carries an SPDX tag has answered the question authoritatively; reading its
+            # prose too would double-report every dual-licensed ACPICA header, once as
+            # the tag and once as the family named in the notice below it.
+            if declared:
+                continue
+            for pat, family in _PROSE_LICENCES:
+                if pat.search(head):
+                    key = f"{family} (prose)"
+                    prose[key] = prose.get(key, 0) + 1
+                    break
         # Accounted for = it IS the headline licence, or it is recorded in license_extra.
+        recorded = t.license + " " + " ".join(t.license_extra)
         unaccounted = {
             lic: n
             for lic, n in found.items()
             if lic.lower() not in t.license.lower() and lic not in t.license_extra
         }
+        unaccounted.update(
+            {
+                lic: n
+                for lic, n in prose.items()
+                if not _PROSE_ACCOUNTED[lic[: -len(" (prose)")]].search(recorded)
+            }
+        )
         if unaccounted:
             out.append((t.path, t.license, unaccounted))
     return out
@@ -518,8 +737,443 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     return sorted(((d, n) for d, n in hits.items() if n >= min_files), key=lambda x: -x[1])
 
 
+#: A ReactOS `LICENSE:` header value that names a FLOSS licence. Deliberately loose:
+#: the job is not to classify precisely, it is to notice when a file declares terms
+#: that are NOT one of these — "DDK", "Proprietary", "See the EULA".
+_FLOSS_DECLARATION = re.compile(
+    r"GPL|General Public|Lesser|MIT|BSD|Apache|Zlib|zlib|ISC|Public\s*Domain|CC0|CC-BY"
+    r"|MPL|Mozilla|Unlicense|WTFPL|X11|Boost|SGI|Info-ZIP|IJG|FDLIBM|STLport"
+    # "see COPYING" resolves to the repo-root GPL, which is ReactOS's own licence and
+    # is actually there. A pointer to any OTHER file is NOT on this list, and that is
+    # deliberate: atapi's header reads "DDK - see license.txt in the root dir", so an
+    # allowance for `LICENSE.TXT` silently excused the one file this scan exists to
+    # find. A pointer is not a licence — the same rule `--grants` is built on.
+    r"|see COPYING|Dual-licensed",
+    re.I,
+)
+
+
+def declared_licences(reg: Registry) -> list[tuple[str, str, int, str]]:
+    """Files whose own `LICENSE:` header names terms that are not FLOSS.
+
+    THE FIFTH RATCHET, and the one that would have caught `drivers/storage/ide/atapi`
+    on day one. That driver ships, is bound by nothing, and carries the Windows NT DDK
+    END-USER LICENSE AGREEMENT — indemnify-Microsoft, no-reverse-engineering, "contact
+    Microsoft for the applicable royalties due". Not FLOSS, in a tree we publish.
+
+    EVERY OTHER SCAN HERE IS STRUCTURALLY BLIND TO IT, which is the point of adding a
+    fifth. `suspects()` and `grant_gaps()` both key on a COPYRIGHT line, and atapi.c
+    and atapi.h contain none at all — zero, so no widening of `_FOREIGN_HOLDER` can
+    ever reach them. `grant_gaps()` would be satisfied anyway, because the directory
+    DOES ship a licence file; the file is just a EULA. And `license_drift()` only walks
+    trees already in the registry, which atapi is not.
+
+    What atapi does have is the one machine-readable thing in the file: ReactOS's own
+    header convention, `LICENSE: DDK - see license.txt in the root dir`. The parser for
+    that already existed (`_ROS_LICENSE_HDR`) and had only ever been pointed at
+    registered trees. This points it at everything.
+
+    Scoped tree-wide on purpose: a file that declares non-FLOSS terms matters most
+    exactly where the registry is NOT looking. A hit is settled either by deleting the
+    code, by correcting a wrong header, or by registering the tree in vendor.yaml with
+    the terms recorded — the registry entry is what turns it from a finding into a
+    decision someone made.
+    """
+    registered = tuple(t.path for t in reg.trees) + tuple(o.path for o in reg.ours)
+    out: list[tuple[str, str, int, str]] = []
+    seen: dict[str, tuple[str, int, str]] = {}
+    root = str(reg.repo)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if not d.startswith(".")
+            and not d.startswith("build-")
+            and not _is_nested_checkout(os.path.join(dirpath, d))
+        ]
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        if rel_dir.startswith(registered):
+            continue  # its terms are recorded and reviewed in vendor.yaml
+        for fn in filenames:
+            if not fn.endswith(_SRC_SUFFIXES):
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    head = fh.read(2000)
+            except OSError:
+                continue
+            m = _ROS_LICENSE_HDR.search(head)
+            if not m:
+                continue
+            value = m.group(1).strip().rstrip("*/").strip()
+            if _FLOSS_DECLARATION.search(value):
+                continue
+            key = value.lower()
+            rel = os.path.relpath(path, root).replace(os.sep, "/")
+            if key in seen:
+                v, n, ex = seen[key]
+                seen[key] = (v, n + 1, ex)
+            else:
+                seen[key] = (value, 1, rel)
+    for value, n, example in seen.values():
+        out.append((value, example, n, os.path.dirname(example)))
+    return sorted(out, key=lambda r: -r[2])
+
+
+def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, str]], dict]:
+    """Code that claims a copyright but never says what you may do with it.
+
+    THE FOURTH RATCHET, and it exists because the other three could not see the
+    two worst things in this tree. `suspects()` keys on `Copyright (c) <KnownCorp>`
+    in a `.c`/`.h`, so it is blind to exactly the shape that bit us:
+
+      * Solitaire (2026-09-20) — J Brown freeware, 1,291 lines. The sources carried
+        NO copyright line at all; the grant lived in a stray ReadMe.txt, and 26
+        lang/*.rc declared `LICENSE: Freeware...` with no copyright to match. Found
+        by grepping master for the author's name AFTER the library it belonged to
+        had already been replaced.
+      * uniata — 36,368 lines, one individual's copyright, and the BSD warranty
+        disclaimer pasted in WITHOUT the "Redistribution and use ... are permitted"
+        clause that is the actual licence. A disclaimer is not a grant.
+
+    Two findings, deliberately separate because the fixes differ:
+
+    NO GRANT — a directory the registry does not classify, whose files claim a
+    copyright, where nothing in the directory carries an inline grant, names a
+    licence we recognise, or points at a licence file that exists. The fix is to
+    establish the licence, not to guess it.
+
+    DANGLING POINTER — a file that declares its licence by reference to a text
+    that is not in the distribution ("see license.txt in the root dir", when there
+    is no such file). Whatever the grant is, a recipient cannot read it, which is
+    the one thing nearly every licence requires of a redistributor.
+
+    Returns (no_grant, dangling) so callers can report them apart.
+    """
+    root = str(reg.repo)
+
+    # Which licence-ish basenames exist in WHICH directory. Resolution is then
+    # against the referring file's own directory and its ancestors up to the repo
+    # root, which is what "in the top level directory" and "in the root dir"
+    # actually mean. Matching a basename ANYWHERE was the first version and it was
+    # wrong: atapi's "see license.txt in the root dir" was satisfied by an
+    # unrelated base/shell/cmd/license.txt, hiding the very finding that motivated
+    # this scan.
+    by_dir: dict[str, set[str]] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
+        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        rd = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        by_dir[("" if rd == "." else rd)] = {f.lower() for f in filenames}
+
+    def _resolves(name: str, from_dir: str) -> bool:
+        """Is `name` reachable from `from_dir` by walking up to the repo root?"""
+        name = name.lower()
+        # A reference WITHOUT an extension may be satisfied by any extension --
+        # "see LICENSE" where the file is LICENSE.TXT is a naming quibble. One
+        # WITH an extension must match exactly: COPYING.DJ is the DJGPP licence
+        # and COPYING is the GPL, so letting the first resolve to the second
+        # would hide a genuinely absent grant.
+        loose = "." not in name
+        d = from_dir
+        alias = _POINTER_ALIASES.get(name)
+        if alias and _resolves(alias, from_dir):
+            return True
+        while True:
+            here = by_dir.get(d, ())
+            if name in here or (loose and any(f.startswith(name + ".") for f in here)):
+                return True
+            if not d:
+                return False
+            d = d.rsplit("/", 1)[0] if "/" in d else ""
+
+    def _component_licence(from_dir: str) -> str:
+        """The nearest NON-ROOT ancestor directory shipping a licence text."""
+        d = from_dir
+        while d:
+            if d not in _COLLECTION_ROOTS and any(
+                _LICENCE_BASENAME.match(f) for f in by_dir.get(d, ())
+            ):
+                return d
+            d = d.rsplit("/", 1)[0] if "/" in d else ""
+        return ""
+
+    per_dir: dict[str, dict] = {}
+    dangling: dict[str, dict] = {}
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+        if rel_dir == ".":
+            rel_dir = ""
+            dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
+        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        for fn_ in filenames:
+            if os.path.splitext(fn_)[1].lower() not in _SUSPECT_SUFFIXES:
+                continue
+            rel = f"{rel_dir}/{fn_}" if rel_dir else fn_
+            try:
+                with open(os.path.join(dirpath, fn_), errors="replace") as fh:
+                    head = fh.read(4000)
+            except OSError:
+                continue
+
+            # A pointer to a licence text that is not here is a finding wherever it
+            # sits — including inside a registered tree, since registration records
+            # what the licence IS and this is about whether it SHIPS.
+            for m in _LICENCE_POINTER.finditer(head):
+                # "see the file COPYING. If not, write to ..." -- the FSF's own
+                # boilerplate ends the sentence, and the greedy name class ate
+                # the full stop, turning a resolvable COPYING into a dangling
+                # `copying.` across 40 files. No licence file ends in a dot.
+                name = m.group(1).rstrip(".")
+                # A pointer has to look like a FILE. Bare prose ("see license
+                # terms") captured the word `license` 80 times before this, all
+                # of them noise; a real reference either carries an extension or
+                # uses the ALL-CAPS COPYING/LICENSE convention.
+                if "." not in name and not name.isupper():
+                    continue
+                name = name.lower()
+                if _resolves(name, rel_dir):
+                    continue
+                # A vendored tree's licence text often does not sit beside the
+                # copy of its headers we install elsewhere: libpng's png.h says
+                # "see LICENSE" from sdk/include/reactos/libs/libpng, while the
+                # text ships with the sources in dll/3rdparty/libpng/docs. The
+                # registry already records that path, and the question this
+                # check asks -- can a recipient read the terms -- is answered
+                # yes by a `license_file` that exists.
+                owner = reg.tree_for(rel)
+                if owner and owner.license_file and (reg.repo / owner.license_file).is_file():
+                    continue
+                d = dangling.setdefault(name, {"count": 0, "example": rel})
+                d["count"] += 1
+
+            if reg.is_classified(rel):
+                continue
+            st = per_dir.setdefault(rel_dir, {"claimed": 0, "covered": False, "example": rel})
+            if _ANY_COPYRIGHT.search(head):
+                st["claimed"] += 1
+            if _INLINE_GRANT.search(head):
+                st["covered"] = True
+                continue
+            decl = _LICENSE_DECL.search(head)
+            if decl and _KNOWN_LICENCE_ID.search(decl.group(1)):
+                st["covered"] = True
+                continue
+            # The pointer may sit on EITHER header line. ReactOS's own files
+            # conventionally put it on COPYRIGHT: ("COPYRIGHT: See COPYING in
+            # the top level directory") and say nothing under LICENSE: at all,
+            # which is how hdaudbus read as ungranted while its grant was the
+            # GPL sitting at the repo root exactly where it pointed.
+            # ...and it may not sit on a header line at all: schilytools spells
+            # its CDDL notice as free prose ("See the file CDDL.Schily.txt in
+            # this distribution for details"), with no ReactOS-style header to
+            # hang it on. A pointer that RESOLVES is a grant wherever it sits;
+            # the whole point of the check is whether a recipient can read the
+            # terms, not which line told them where.
+            for m in _LICENCE_POINTER.finditer(head):
+                nm = m.group(1).rstrip(".")
+                if not _LICENCE_TEXT_NAME.search(nm):
+                    continue
+                if ("." in nm or nm.isupper()) and _resolves(nm, rel_dir):
+                    st["covered"] = True
+                    break
+            if st["covered"]:
+                continue
+            # A licence text placed at a NON-ROOT ancestor covers the subtree
+            # under it: someone put it there for this component, which is what
+            # ncftp's LICENSE.txt (the Clarified Artistic License, one level up
+            # from libncftp) is. The repo root is excluded on purpose -- letting
+            # the project's own COPYING cover any directory would excuse every
+            # piece of foreign code in the tree, which is the whole finding.
+            if _component_licence(rel_dir):
+                st["covered"] = True
+
+    no_grant = sorted(
+        (
+            (d, st["claimed"], st["example"])
+            for d, st in per_dir.items()
+            if st["claimed"] >= min_files and not st["covered"]
+        ),
+        key=lambda x: -x[1],
+    )
+    return no_grant, dangling
+
+
+#: Grant findings this tree knowingly carries, and why. The key is `dir:<path>`
+#: for a directory with no grant and `ptr:<name>` for a licence text that is
+#: pointed at but not shipped. Both of these want a DECISION about licensing,
+#: not a change to the scanner -- which is exactly why they are written down
+#: here instead of being tuned out of `grant_gaps`.
+_GRANTS_ACCEPTED = {
+    "ptr:copying.bsd": (
+        "sdk/tools/kbdtool, 5 files: `LICENSE: BSD - See COPYING.BSD in the top "
+        "level directory`. ReactOS has never shipped a COPYING.BSD -- it is absent "
+        "from our history and from upstream master -- and no file in this tree "
+        "carries a ReactOS-authored BSD grant to copy the wording from, so the "
+        "variant is unknown. Writing one on the ReactOS Foundation's behalf would "
+        "be inventing a grant, which is the thing this scan exists to catch."
+    ),
+}
+
 #: The generated notices document, at the repo root where a distributor looks for it.
 NOTICES_PATH = "THIRD-PARTY-NOTICES.md"
+
+#: The generated Rust-crate half of the registry. Committed, and gated for freshness
+#: against Cargo.lock the same way THIRD-PARTY-NOTICES.md is gated against vendor.yaml.
+CRATES_PATH = "tools/rust-crates.yaml"
+
+#: sdk/lib/rust/Cargo.lock — the authority on WHICH external crates exist at WHICH
+#: version. Licences and the shipped/host split need `cargo metadata`, which needs a
+#: populated registry cache; the lockfile needs nothing. So the snapshot carries the
+#: licences and `check` verifies only the (name, version) set, which is the drift that
+#: actually matters and the only part that can be checked without cargo.
+CARGO_LOCK = "sdk/lib/rust/Cargo.lock"
+
+#: Workspace members that exist to build or test the tree, never to ship in it.
+#: Anything reachable ONLY from these is host-only. Kept short and explicit because
+#: it cannot be derived: see crates_snapshot() for why cargo's graph cannot answer
+#: this question here.
+_HOST_ONLY_MEMBERS = (
+    "reactos-link",  # the cargo->PE link helper; pulls `cc` as a normal dependency
+    "slist-loom",  # a loom model-checking harness; pulls the whole tracing stack
+)
+
+
+def cargo_lock_crates(repo: Path) -> dict[tuple[str, str], None]:
+    """External (name, version) pairs from Cargo.lock. No cargo invocation."""
+    text = (repo / CARGO_LOCK).read_text(encoding="utf-8", errors="replace")
+    out: dict[tuple[str, str], None] = {}
+    for block in text.split("[[package]]")[1:]:
+        name = re.search(r'^name = "(.+)"', block, re.M)
+        ver = re.search(r'^version = "(.+)"', block, re.M)
+        src = re.search(r'^source = "(.+)"', block, re.M)
+        if name and ver and src:  # `source` present == not one of ours
+            out[(name.group(1), ver.group(1))] = None
+    return out
+
+
+def crates_snapshot(repo: Path) -> str:
+    """Regenerate the crate snapshot from `cargo metadata`. Needs cargo and the cache.
+
+    WHY A SNAPSHOT AND NOT A LIVE QUERY: `vibeos-cli check` must work without a
+    populated ~/.cargo registry, and licences only come from cargo metadata. So the
+    licences are frozen here and `check` verifies the cheap half — that the set of
+    (name, version) still matches Cargo.lock.
+
+    THE SHIPPED/HOST SPLIT IS BEST-EFFORT AND SAYS SO. Cargo's dependency graph cannot
+    answer it in this tree: `netstack-cargo` does not depend on `netstack-rust` in
+    cargo terms at all — it pulls only panic-common and the link helper, and CMake
+    links the real crate in afterwards. So walking edges from the 34 crates that
+    `add_cargo_module` builds reaches zero external crates, which is obviously wrong.
+    What CAN be established mechanically is the negative: a proc-macro crate runs in
+    the compiler and never ships, and a crate reachable only from a `-difftest`
+    harness or from _HOST_ONLY_MEMBERS is host-only too. Everything else is listed as
+    shipping, which is the safe direction for a notices file — over-listing costs a
+    line, under-listing is the thing that matters.
+    """
+    meta = json.loads(
+        subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--offline"],
+            cwd=repo / "sdk/lib/rust",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    pkgs = {p["id"]: p for p in meta["packages"]}
+    nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
+    members = set(meta["workspace_members"])
+
+    def nm(i: str) -> str:
+        return pkgs[i]["name"]
+
+    proc_macro = {
+        i for i in pkgs if any(k == "proc-macro" for t in pkgs[i]["targets"] for k in t["kind"])
+    }
+    roots = [
+        i for i in members if not nm(i).endswith("-difftest") and nm(i) not in _HOST_ONLY_MEMBERS
+    ]
+    seen: set[str] = set()
+    stack = list(roots)
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        if cur in proc_macro or nm(cur) in _HOST_ONLY_MEMBERS:
+            # A proc-macro's dependencies are the compiler's, not the product's; a
+            # host-only member's are the build's. Skipping them as ROOTS is not enough
+            # — reactos-link is also a plain dependency of other members, and
+            # descending through it dragged cc, shlex and find-msvc-tools in.
+            continue
+        for d in nodes[cur]["deps"]:
+            if any(k.get("kind") is None for k in d["dep_kinds"]):
+                stack.append(d["pkg"])
+
+    rows = []
+    for i, p in pkgs.items():
+        if not p.get("source"):
+            continue
+        ships = i in seen and i not in proc_macro
+        why = "" if ships else ("proc-macro" if i in proc_macro else "build/test only")
+        rows.append((p["name"], p["version"], p.get("license") or "SEE LICENSE FILE", ships, why))
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    out = [
+        "# GENERATED by tools/vendored.py --write-crates. Do not hand-edit.",
+        "#",
+        "# The Rust half of the vendor registry: every crates.io dependency that enters",
+        "# this tree, with the licence cargo reports for it. vendor.yaml covers vendored",
+        "# C; this covers what `cargo` brings in, which nothing tracked until 2026-09-20",
+        "# — smoltcp, the TCP/IP stack, among them.",
+        "#",
+        "# `ships:` is BEST-EFFORT and errs toward true. Cargo's graph cannot settle it",
+        "# here (see crates_snapshot() in tools/vendored.py): a crate is marked false only",
+        "# when it is provably host-only — a proc-macro, or reachable only from a",
+        "# -difftest harness or a build helper. Treat false as certain and true as",
+        "# 'assume it ships'.",
+        "#",
+        f"# Regenerate with: tools/vendored.py --write-crates   ({len(rows)} crates)",
+        "crates:",
+    ]
+    for name, ver, lic, ships, why in rows:
+        out.append(f"  - name: {name}")
+        out.append(f"    version: {ver}")
+        out.append(f"    license: {lic!r}" if "'" in lic or '"' in lic else f"    license: {lic}")
+        out.append(f"    ships: {'true' if ships else 'false'}")
+        if why:
+            out.append(f"    host_only_because: {why}")
+    return "\n".join(out) + "\n"
+
+
+def crates_rows(repo: Path) -> list[tuple[str, str, str, bool]]:
+    """(name, version, licence, ships) from the committed snapshot."""
+    path = repo / CRATES_PATH
+    if not path.exists():
+        return []
+    rows, cur = [], {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("- name:"):
+            if cur:
+                rows.append(cur)
+            cur = {"name": line.split(":", 1)[1].strip()}
+        elif ":" in line and cur and not line.startswith("#"):
+            k, v = line.split(":", 1)
+            cur[k.strip()] = v.strip()
+    if cur:
+        rows.append(cur)
+    return [
+        (
+            r["name"],
+            r.get("version", "?"),
+            r.get("license", "?").strip("'\""),
+            r.get("ships") == "true",
+        )
+        for r in rows
+    ]
 
 
 def check(reg: Registry) -> list[str]:
@@ -628,6 +1282,72 @@ def check(reg: Registry) -> list[str]:
     # synthetic fixture trees by the scanner controls; demanding a generated legal
     # document from each of those would be a false alarm about the fixture. That the
     # committed repo ships one is asserted directly in test_vendored.py.
+    # THE FIFTH RATCHET. A file that names its own terms and names something that is
+    # not FLOSS is the one thing none of the other four can see: they all key on a
+    # copyright line or on a tree already in the registry, and atapi has neither.
+    for value, example, n, _dir in declared_licences(reg):
+        problems.append(
+            f"NON-FLOSS LICENCE DECLARED by {n} file(s): `{value}`\n"
+            f"    e.g. {example}\n"
+            f"    A ReactOS `LICENSE:` header naming terms that are not a FLOSS licence.\n"
+            f"    Settle it: delete the code, correct the header if it is wrong, or add a\n"
+            f"    vendor.yaml entry recording what the terms actually are and why we ship it."
+        )
+
+    # The FOURTH ratchet, and the newest. vendor.yaml sees C; nothing saw the crates
+    # cargo pulls in, which is how smoltcp — the TCP/IP stack — shipped unrecorded.
+    # Checked against Cargo.lock rather than against live `cargo metadata`, so this
+    # gate needs no cargo and no populated registry cache: the (name, version) set is
+    # the drift that matters, and it is the half a lockfile can answer.
+    lock_path = reg.repo / CARGO_LOCK
+    if lock_path.exists():
+        want = set(cargo_lock_crates(reg.repo))
+        have = {(n, v) for n, v, _lic, _s in crates_rows(reg.repo)}
+        if not (reg.repo / CRATES_PATH).exists():
+            problems.append(
+                f"{CRATES_PATH} is MISSING — the Rust half of the registry is not "
+                f"recorded. Generate: tools/vendored.py --write-crates"
+            )
+        elif want != have:
+            added = ", ".join(f"{n} {v}" for n, v in sorted(want - have)) or "none"
+            gone = ", ".join(f"{n} {v}" for n, v in sorted(have - want)) or "none"
+            problems.append(
+                f"{CRATES_PATH} is STALE against {CARGO_LOCK}.\n"
+                f"    in the lockfile but not recorded: {added}\n"
+                f"    recorded but no longer in the lockfile: {gone}\n"
+                f"    Regenerate: tools/vendored.py --write-crates"
+            )
+
+    # The grant ratchet gates, and it gates BOTH WAYS. Until now `--grants` was
+    # advisory, which meant a licence gap in this tree survived exactly as long
+    # as somebody remembered to run it by hand -- and a rule with no command
+    # behind it is a rule you will break. Every finding must be listed below
+    # with the argument for tolerating it; a NEW one fails, and so does an
+    # accepted one that has since been FIXED, because a stale acceptance is how
+    # a list like this turns into a list of things nobody has re-read.
+    no_grant, dangling = grant_gaps(reg)
+    found = {f"dir:{d}" for d, _n, _e in no_grant} | {f"ptr:{n}" for n in dangling}
+    # The acceptance list is a statement about THIS tree, so it is only
+    # reconciled against this tree. `check()` is also run against synthetic
+    # repos by the tests, where every accepted key is trivially absent and
+    # would report as stale -- noise that would drown the finding the test is
+    # actually about.
+    accepted = set(_GRANTS_ACCEPTED) if reg.repo.resolve() == REPO else set()
+    for key in sorted(found - accepted):
+        problems.append(
+            f"NEW licence-grant finding `{key}` — code that claims a copyright and "
+            f"never says what you may do with it, or a licence text it points at "
+            f"that does not ship. Establish the terms (see tools/vendored.py "
+            f"--grants), then either fix it or add it to _GRANTS_ACCEPTED with the "
+            f"argument for tolerating it."
+        )
+    for key in sorted(accepted - found):
+        problems.append(
+            f"`{key}` is listed in _GRANTS_ACCEPTED but --grants no longer reports "
+            f"it. If it was resolved, delete the entry; a tolerated finding that "
+            f"has quietly gone away is one nobody will re-read."
+        )
+
     notices_file = reg.repo / NOTICES_PATH
     if notices_file.is_file() and not any("--notices to quote" in p for p in problems):
         # Only meaningful once every tree has a quotable grant; otherwise the real
@@ -766,7 +1486,7 @@ def notices(reg: Registry) -> str:
         "file. Each entry reproduces the licence grant as it appears in the tree."
     )
     out.append("")
-    out.append(f"{len(reg.trees)} third-party components:")
+    out.append(f"{len(reg.trees)} vendored C/C++ components:")
     out.append("")
     for t in sorted(reg.trees, key=lambda x: x.name.lower()):
         version, err = reg.resolve_version(t)
@@ -799,6 +1519,28 @@ def notices(reg: Registry) -> str:
         out.append(text)
         out.append("```")
     out.append("")
+
+    # The Rust half. Licence TEXT is not reproduced here the way it is for the C
+    # trees: a crate's grant lives in ~/.cargo, not in this repo, so there is nothing
+    # in the tree to quote and quoting a remote file would be inventing provenance.
+    # The SPDX expression cargo reports is what we can state truthfully.
+    rows = crates_rows(reg.repo)
+    if rows:
+        ships = [r for r in rows if r[3]]
+        out.append("## Rust crates")
+        out.append("")
+        out.append(
+            f"This product also links {len(ships)} third-party Rust crates, out of "
+            f"{len(rows)} that enter the build. Generated from `cargo metadata` into "
+            f"`{CRATES_PATH}`; see that file for the ones used only to build or test, "
+            "and for why the shipped/host split errs toward listing more."
+        )
+        out.append("")
+        out.append("| crate | version | licence |")
+        out.append("| --- | --- | --- |")
+        for name, ver, lic, _ in ships:
+            out.append(f"| {name} | {ver} | {lic} |")
+        out.append("")
     return "\n".join(out)
 
 
@@ -892,6 +1634,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--emit", action="store_true", help="print the registry table")
     ap.add_argument("--write-stamps", action="store_true", help="regenerate VENDORED markers")
     ap.add_argument(
+        "--declared",
+        action="store_true",
+        help="files whose own LICENSE: header names terms that are not FLOSS",
+    )
+    ap.add_argument(
+        "--write-crates",
+        action="store_true",
+        help="regenerate the Rust-crate snapshot from cargo metadata (needs cargo)",
+    )
+    ap.add_argument(
+        "--grants",
+        action="store_true",
+        help="code that claims a copyright but never says what you may do with it, "
+        "plus licence pointers naming a text that is not in the distribution",
+    )
+    ap.add_argument(
         "--suspects",
         action="store_true",
         help="unregistered dirs full of foreign-copyright source (a question, not a verdict)",
@@ -936,6 +1694,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.emit:
         return emit(reg)
+    if args.write_crates:
+        path = args.repo / CRATES_PATH
+        path.write_text(crates_snapshot(args.repo), encoding="utf-8")
+        rows = crates_rows(args.repo)
+        shipping = sum(1 for r in rows if r[3])
+        print(f"  wrote {path} ({len(rows)} crates, {shipping} of them shipping)")
+        return 0
     if args.write_stamps:
         for p in write_stamps(reg):
             print(f"  wrote {p}")
@@ -952,6 +1717,42 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "\nRecord each in `license_extra:` with a reason, or move the files out if they\n"
             "are ours. `--check` fails until then."
+        )
+        return 1
+
+    if args.grants:
+        no_grant, dangling = grant_gaps(reg)
+        if not no_grant and not dangling:
+            print("no grant gaps — every claimed body says what you may do with it")
+            return 0
+        if dangling:
+            print(f"{len(dangling)} DANGLING licence pointer(s) — the text is not shipped:\n")
+            for name, info in sorted(dangling.items(), key=lambda x: -x[1]["count"]):
+                print(f"  {info['count']:>4} refs -> {name:24} e.g. {info['example']}")
+            print()
+        if no_grant:
+            print(f"{len(no_grant)} dir(s) claiming copyright with NO grant anywhere:\n")
+            w = max(len(d) for d, _, _ in no_grant)
+            for d, n, ex in no_grant:
+                print(f"  {d.ljust(w)}  {n:>4} files  e.g. {ex}")
+        print(
+            "\nA disclaimer is not a grant and a pointer is not a licence. Each of these\n"
+            "is either owed a licence text in the tree, a corrected reference, or a\n"
+            "vendor.yaml entry recording what the terms actually are."
+        )
+        return 1
+
+    if args.declared:
+        rows = declared_licences(reg)
+        if not rows:
+            print("no file declares a non-FLOSS licence outside the registry")
+            return 0
+        print(f"{len(rows)} non-FLOSS licence declaration(s):\n")
+        for value, example, n, _d in rows:
+            print(f"  {n:4} file(s)  `{value}`\n           e.g. {example}")
+        print(
+            "\nA ReactOS `LICENSE:` header is the code naming its own terms. Delete it,"
+            "\ncorrect it, or record it in vendor.yaml. `--check` fails until then."
         )
         return 1
 

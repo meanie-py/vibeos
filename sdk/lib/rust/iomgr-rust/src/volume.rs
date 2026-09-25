@@ -1315,9 +1315,10 @@ pub unsafe extern "system" fn IoVolumeDeviceToDosName(
     (*DosName).Length = (*VolumePathPtr).MultiSzLength as u16 - 2 * core::mem::size_of::<u16>() as u16;
     (*DosName).MaximumLength = (*DosName).Length + core::mem::size_of::<u16>() as u16;
     (*DosName).Buffer = VolumePathPtr as *mut u16;
+    // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
     core::ptr::copy(
-        (*VolumePathPtr).MultiSz.as_ptr(),
-        (*DosName).Buffer,
+        (*VolumePathPtr).MultiSz.as_ptr() as *const u8,
+        (*DosName).Buffer as *mut u8,
         (*DosName).Length as usize,
     );
     *((*DosName).Buffer.add((*DosName).Length as usize / core::mem::size_of::<u16>())) = 0;

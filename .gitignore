@@ -3,19 +3,21 @@ build-*/
 build-fex-*
 qemu/runs/
 qemu/symbols-*.tsv
+qemu/modules-*.tsv
 output-*
 modules/optional
 modules/bootcd_extras
 modules/livecd_extras
-modules/hybridcd_extras
 modules/3rdparty
 modules/[Aa][Hh][Kk]_[Tt]ests
 .cache
 .cproject
 .DS_Store
 tests/host/build/
+.idea
 .project
 .settings
+.vs
 .vscode
 sdk/tools/winesync/winesync.cfg
 .venv/
@@ -49,6 +51,7 @@ build-i386/
 
 # QEMU binary images (tracked scripts are fine)
 qemu/*.img
+qemu/ramdisk.payloads
 qemu/*.qcow2
 qemu/*.fd
 # ...but DO track the canonical UEFI firmware blobs so every worktree boots
@@ -98,3 +101,6 @@ qemu/snapshots/
 /build-policy.lock
 /build-policy.paused
 /build-policy.*.tmp
+
+# characterize.py serial archives (durable, but never committed)
+/.characterize-*/

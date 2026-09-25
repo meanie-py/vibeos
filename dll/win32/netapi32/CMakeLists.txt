@@ -63,6 +63,8 @@ add_custom_target(rust_netapi32 DEPENDS ${NETAPI32_RUST_LIB})
 #   apibuf.c dfs.c display.c group_new.c local_group.c nbcmdqueue.c nbnamecache.c
 #   nbt.c netapi32.c netbios.c obsolete.c user.c utils.c wksta.c  → netapi32-rust
 # The 7 files below stay C (cannot c2rust-anchor; owe a pure-LLM pass).
+add_definitions(-DWIN32_LEAN_AND_MEAN=)
+
 list(APPEND SOURCE
     # apibuf.c        (→ netapi32-rust src/netapi32/apibuf.rs)
     # browser.c       (→ netapi32-rust src/netapi32/browser.rs — I_Browserr* (own island: browser_c.h))

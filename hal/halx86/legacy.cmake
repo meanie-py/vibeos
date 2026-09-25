@@ -22,5 +22,5 @@ file(WRITE ${HAL_LEGACY_STUB} "/* placeholder: HAL legacy sources are in hal-rus
 list(APPEND HAL_LEGACY_SOURCE ${HAL_LEGACY_STUB})
 
 add_library(lib_hal_legacy OBJECT ${HAL_LEGACY_SOURCE})
-add_dependencies(lib_hal_legacy bugcodes xdk)
 #add_pch(lib_hal_legacy include/hal.h)
+add_dependencies(lib_hal_legacy bugcodes xdk)

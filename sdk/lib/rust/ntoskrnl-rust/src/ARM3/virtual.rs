@@ -2942,7 +2942,16 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
         fail_path!(STATUS_UNABLE_TO_DELETE_SECTION);
     }
 
-    // ASSERT(NoChange == 0)
+    /* Don't allow freeing of protected VADs (PEB/TEB/shared user page).
+     * Upstream's pre-fix C guarded this with a debug-only ASSERT, which our
+     * translation correctly rendered as a comment -- so in a release build there
+     * was no guard at all on either side, and any usermode caller could hand
+     * NtFreeVirtualMemory its own PEB, TEB or the shared user data page and fall
+     * straight into the MEM_RELEASE path below. Upstream replaced the ASSERT with
+     * a real runtime check. Upstream-Commit: fca332046ed4 */
+    if (*Vad).u.VadFlags.NoChange() != 0 {
+        fail_path!(STATUS_INVALID_PAGE_PROTECTION);
+    }
 
     if (FreeType & MEM_RELEASE) != 0 {
         // ASSERT(VadType == VadNone)

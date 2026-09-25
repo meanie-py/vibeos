@@ -161,12 +161,12 @@ unsafe fn PspTerminateJobObject(job: PEJOB, access_mode: KPROCESSOR_MODE, exit_s
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PspRemoveProcessFromJob(process: PEPROCESS, job: PEJOB) {
+pub unsafe extern "system" fn PspRemoveProcessFromJob(process: PEPROCESS) {
     let process = opaque_ptr(process);
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PspExitProcessFromJob(job: PEJOB, process: PEPROCESS) {
+pub unsafe extern "system" fn PspExitProcessFromJob(process: PEPROCESS) {
     let process = opaque_ptr(process);
 }
 

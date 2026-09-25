@@ -322,3 +322,43 @@ pub unsafe fn AtlRegisterWndClass(wc: &mut ATL_CWndClassInfo, hInstance: HINSTAN
     }
     wc.m_atom
 }
+
+/// `CWindowImplBaseT::SubclassWindow` (atlwin.h:1585) — adopt an EXISTING window.
+///
+/// The sibling of [`AtlStartWindowProc`]: that one takes `this` out of the `CREATESTRUCT` of a
+/// window we are creating, this one attaches to a window somebody else already made. Both end
+/// in the same three writes — park `this` on the window, install the procedure, record the
+/// `HWND` — and the only addition here is saving the procedure being displaced, because a
+/// subclassed window's `DefWindowProc` must chain to it rather than to `DefWindowProcW`.
+///
+/// ATL does this through `m_thunk.Init(GetWindowProc(), this)`; we use `GWLP_USERDATA`, for the
+/// reason in the module header (no machine-code emission, one indirection either way).
+///
+/// `CChangeNotifyServer::Initialize` is the first caller: it creates a worker window with
+/// `SHCreateDefaultWorkerWindow()` and then subclasses it.
+pub unsafe fn AtlSubclassWindow<T: AtlWindow>(this: *mut T, hWnd: HWND) -> BOOL {
+    // ATL asserts both of these. An assert is a no-op in a shipping build, so check: a failed
+    // subclass has to be reported, not walked past — the caller's next act is to use m_hWnd.
+    if this.is_null() || hWnd.is_null() || IsWindow(hWnd) == 0 {
+        return FALSE;
+    }
+    if !(*T::atl_hwnd(this)).is_null() {
+        return FALSE; // ATLASSERT(m_hWnd == NULL) — already attached to a window.
+    }
+
+    SetWindowLongPtr(hWnd, GWLP_USERDATA as INT, this as LONG_PTR);
+    // The VIRTUAL `GetWindowProc`, exactly as in the create path — see `atl_window_proc`.
+    let wndproc = T::atl_window_proc().unwrap_or(AtlWindowProc::<T>);
+    let previous = SetWindowLongPtr(hWnd, GWLP_WNDPROC as INT, wndproc as LONG_PTR);
+    if previous == 0 {
+        // ATL returns FALSE here. Undo the USERDATA write so a failed attach leaves no
+        // half-attached window pointing at an object that does not own it.
+        SetWindowLongPtr(hWnd, GWLP_USERDATA as INT, 0);
+        return FALSE;
+    }
+
+    (*T::atl_state(this)).m_pfnSuperWindowProc =
+        core::mem::transmute::<LONG_PTR, WNDPROC>(previous);
+    *T::atl_hwnd(this) = hWnd;
+    TRUE
+}

@@ -2076,7 +2076,15 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   (~50%+, `lsasrv-rust` 20 `.rs`) are the active server-side frontier.
 - **kernel32/advapi32 tails.** kernel32 NLS `locale.c` + resources; advapi32 `wine/
   security.c` + generated RPC.
-- **shell32 activatable COM surface — 33 of 33 classes Rust-owned; compiled C++ tail is next.**
+- **shell32 — every translatable TU is Rust (2026-09-23).** `shell32.cpp`, the last one, went in
+  three phases: its free functions, the COM server (class-object table, cached factories,
+  `DllGetClassObject`/`DllCanUnloadNow`), then `DllMain` and registration — which carries a Rust
+  port of ATL's static registrar (`shell32/statreg.rs`), proven byte-identical to the C++ build's
+  DllRegisterServer/DllUnregisterServer output on all three arches by `tools/payloads/regdiff`.
+  What still compiles as C/C++ is the SANCTIONED glue in `rustconv shell32-tail-inventory`:
+  three ATL window-class stubs (272 lines) and two C shims (95 lines). The paragraphs below are
+  the history of getting here.
+- **shell32 activatable COM surface — 33 of 33 classes Rust-owned.**
   Rust-owned activated classes now span `CDropTargetHelper`, `CActiveDesktop`,
   `COpenControlPanel`, `CExeDropHandler`, `CCopyAsPathMenu`, `CShellItem`, `CFontsFolder`,
   `CAdminToolsFolder`, `CMyDocsFolder`, `CNewMenu`, `CSendToMenu`, `CPrinterFolder`,
@@ -2092,6 +2100,28 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   history + the reusable integration playbook live in
   `docs/engineering/active-lanes/shell32-com-plan.md`. `CMenuBand` + `CMergedFolder` are
   shared-infrastructure (the `menuband-rust` staticlib linked by both shell32 and rshell).
+
+  **The `shellmenu/` cluster is DONE except `CMenuToolbars.cpp` (2026-09-20).**
+  `CMenuFocusManager.cpp`, `CStartMenu.cpp` and `CMergedFolder.cpp` all left CMake together;
+  `CMenuToolbars.cpp` is the only shellmenu source the build still compiles, blocked on gap (2)
+  below (`CWindowImplBaseT<CToolbar<DWORD_PTR>>`, plus a derived and a base class that both
+  define a non-trivial constructor, which flattening cannot sequence). Two things in that flip
+  generalise beyond shellmenu:
+
+  * **A `*_RustBridge` shim does not disappear when its class is translated — it MOVES.** Each
+    flipped .cpp had been publishing shims that already-Rust modules call, so the symbols were
+    re-published from Rust under identical names and ABI (`menu_focus_manager_support.rs`,
+    `enum_merged_folder_support.rs`, `merged_folder_support.rs`). Only one needed thought:
+    `CEnumMergedFolder_CreateInstance_RustBridge` was `new CComObject<T>()`, which starts at
+    refcount **0** and is AddRef'd to 1 by the assign helper, whereas the generated
+    `_CreateInstance` follows the COM activation contract and returns **1**. Forwarding naively
+    leaks the enumerator for the life of the process.
+  * **The module-lock symbol belongs to the output CRATE, not to `--target`.** `menuband-rust`
+    links into shell32.dll AND rshell.dll, so it must call `MenuBandRustModuleLock` (both DLLs
+    define it) and not shell32's private `Shell32RustObjectLock`. A `--target shell32` run
+    emitted the latter, which linked shell32 perfectly and broke rshell — and only at the flip
+    that first made an rshell-reachable object pull the module out of the archive, several TUs
+    later. Now derived per-crate by `reactos.targets.module_lock_for_crate()`.
   The final five (`CFileDefExt`, `CShellDispatch`, `CMenuSite`, `CMenuDeskBar`, and the inline
   `CStartMenuDummy`) landed on 2026-07-18. The activatable object map now has zero C++ entries.
   `CCopyAsPathMenu` was the first out-of-sample cheap-model
@@ -2298,6 +2328,25 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   gap is NOT the number that matters.
   Verified: builds and links on all three arches; conformance kmtest amd64
   launched=91 ok=91 bad=0, ratchet holds.
+
+  **CDirectoryList + CDirectoryWatcher are a CIRCULAR pair — translated, cannot flip.**
+  `shelldesktop/CDirectoryList.cpp` (both its plain classes, CDirectoryList and
+  CDirectoryItem) IS translated and wired at
+  `shell32-rust/src/shelldesktop/CDirectoryList.rs` + `CDirectoryItem.rs`, compiling on all
+  three arches. It stays in CMake anyway, and the cycle is why:
+  `CDirectoryWatcher` holds `CDirectoryList m_dir_list` BY VALUE (CDirectoryWatcher.h:35) and
+  calls its methods through CDirectoryList.h's inline constructor, so flipping CDirectoryList
+  alone leaves four C++-MANGLED undefined symbols — and a bridge cannot stand in for a
+  by-value member, which needs the real class layout. Flipping the consumer first does not
+  work either: `CDirectoryWatcher` fails preflight on exactly that member
+  (`state field type is not proven C scalar/pointer state: CDirectoryList m_dir_list`).
+  **Breaking it needs the deterministic layer to model a translated SIBLING CLASS as
+  by-value state.** Wiring the Rust without flipping is safe here and is NOT a partial cohab
+  flip: the Rust publishes unmangled `#[no_mangle]` names while the live C++ defines mangled
+  ones, so there is nothing for the linker to silently choose between.
+  Note for whoever flips it: `CSimpleArray<CDirectoryItem>` in C++ frees each element through
+  `~CDirectoryItem` (`free(m_pszPath)`); confirm the Rust side frees it too before trusting
+  the flip, because the module is dead code today and no test would notice a leak.
 
   **CFolderItemVerb / CFolderItemVerbs are still C++ — OWED, not done, and one hand-written
   bridge stands in for them.** `CFolder.cpp` and `CFolderItems.cpp` are Rust (CFolder 24 fns,

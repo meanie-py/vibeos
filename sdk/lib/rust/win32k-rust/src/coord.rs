@@ -9,6 +9,7 @@ use crate::floatobj::*;
 // disambiguates (same underlying engine symbol).
 use win32k_sys::win32k::EngMulDiv;
 use ntkrnl_sys::base::STATUS_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::rtl::RtlCopyMemory;
 
@@ -723,10 +724,21 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     if !UnsafePoint.is_null() {
         Status = SafeProbeForWrite(UnsafePoint as *mut _, core::mem::size_of::<POINT>() as u32, 1);
         if NT_SUCCESS(Status) {
-            (*UnsafePoint).x = (*pdcattr).ptlViewportOrg.x;
-            (*UnsafePoint).y = (*pdcattr).ptlViewportOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlViewportOrg.x;
+            SafePoint.y = (*pdcattr).ptlViewportOrg.y;
             if (*pdcattr).dwLayout & LAYOUT_RTL != 0 {
-                (*UnsafePoint).x = -(*UnsafePoint).x;
+                SafePoint.x = -SafePoint.x;
+            }
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                UnsafePoint as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
             }
         }
 
@@ -771,10 +783,21 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     if !UnsafePoint.is_null() {
         Status = SafeProbeForWrite(UnsafePoint as *mut _, core::mem::size_of::<POINT>() as _, 1);
         if NT_SUCCESS(Status) {
-            (*UnsafePoint).x = (*pdcattr).ptlViewportOrg.x;
-            (*UnsafePoint).y = (*pdcattr).ptlViewportOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlViewportOrg.x;
+            SafePoint.y = (*pdcattr).ptlViewportOrg.y;
             if (*pdcattr).dwLayout & LAYOUT_RTL != 0 {
-                (*UnsafePoint).x = -(*UnsafePoint).x;
+                SafePoint.x = -SafePoint.x;
+            }
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                UnsafePoint as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
             }
         }
 
@@ -813,14 +836,25 @@ pub unsafe extern "system" fn NtGdiOffsetWindowOrgEx(
     let pdcattr: PDC_ATTR = (*dc).pdcattr;
 
     if !Point.is_null() {
-        let Status: i32 = SafeProbeForWrite(
+        let mut Status: i32 = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
             core::mem::size_of::<POINT>() as u32,
             1,
         );
         if NT_SUCCESS(Status) {
-            (*Point).x = (*pdcattr).ptlWindowOrg.x;
-            (*Point).y = (*pdcattr).ptlWindowOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlWindowOrg.x;
+            SafePoint.y = (*pdcattr).ptlWindowOrg.y;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                Point as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -856,14 +890,25 @@ pub unsafe extern "system" fn NtGdiOffsetWindowOrgEx(
     let pdcattr: PDC_ATTR = (*dc).pdcattr;
 
     if !Point.is_null() {
-        let Status: i32 = SafeProbeForWrite(
+        let mut Status: i32 = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
             core::mem::size_of::<POINT>() as _,
             1,
         );
         if NT_SUCCESS(Status) {
-            (*Point).x = (*pdcattr).ptlWindowOrg.x;
-            (*Point).y = (*pdcattr).ptlWindowOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlWindowOrg.x;
+            SafePoint.y = (*pdcattr).ptlWindowOrg.y;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                Point as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -946,8 +991,20 @@ pub unsafe extern "system" fn NtGdiScaleViewportExtEx(
             SetLastNtError(Status);
             Ret = 0;
         } else {
-            (*pSize).cx = (*pdcattr).szlViewportExt.cx;
-            (*pSize).cy = (*pdcattr).szlViewportExt.cy;
+            let mut SafeSize: SIZE = core::mem::zeroed();
+            SafeSize.cx = (*pdcattr).szlViewportExt.cx;
+            SafeSize.cy = (*pdcattr).szlViewportExt.cy;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                pSize as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeSize) as *const core::ffi::c_void,
+                core::mem::size_of::<SIZE>(),
+            ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Ret = 0;
+            }
         }
     }
 
@@ -1020,8 +1077,20 @@ pub unsafe extern "system" fn NtGdiScaleViewportExtEx(
             SetLastNtError(Status);
             Ret = 0;
         } else {
-            (*pSize).cx = (*pdcattr).szlViewportExt.cx;
-            (*pSize).cy = (*pdcattr).szlViewportExt.cy;
+            let mut SafeSize: SIZE = core::mem::zeroed();
+            SafeSize.cx = (*pdcattr).szlViewportExt.cx;
+            SafeSize.cy = (*pdcattr).szlViewportExt.cy;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                pSize as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeSize) as *const core::ffi::c_void,
+                core::mem::size_of::<SIZE>(),
+            ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Ret = 0;
+            }
         }
     }
 
@@ -1052,18 +1121,26 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
     pdcattr = (*pDC).pdcattr;
 
     if !pSize.is_null() {
-        let Status: i32 = STATUS_SUCCESS;
-
-        // SafeProbeForWrite is unavailable; treat as success path (DUMMY/elided).
-        // Original: Status = SafeProbeForWrite(pSize, sizeof(SIZE), 1);
-        let Status = SafeProbeForWrite(pSize as *mut core::ffi::c_void, core::mem::size_of::<SIZE>() as u32, 1);
+        let mut Status =
+            SafeProbeForWrite(pSize as *mut core::ffi::c_void, core::mem::size_of::<SIZE>() as u32, 1);
         if NT_SUCCESS(Status) {
             X = (*pdcattr).szlWindowExt.cx;
             if ((*pdcattr).dwLayout & LAYOUT_RTL) != 0 {
                 X = -X;
             }
-            (*pSize).cx = X;
-            (*pSize).cy = (*pdcattr).szlWindowExt.cy;
+            let mut SafeSize: SIZE = core::mem::zeroed();
+            SafeSize.cx = X;
+            SafeSize.cy = (*pdcattr).szlWindowExt.cy;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                pSize as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeSize) as *const core::ffi::c_void,
+                core::mem::size_of::<SIZE>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -1125,18 +1202,26 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
     pdcattr = (*pDC).pdcattr;
 
     if !pSize.is_null() {
-        let Status: i32 = STATUS_SUCCESS;
-
-        // SafeProbeForWrite is unavailable; treat as success path (DUMMY/elided).
-        // Original: Status = SafeProbeForWrite(pSize, sizeof(SIZE), 1);
-        let Status = SafeProbeForWrite(pSize as *mut core::ffi::c_void, core::mem::size_of::<SIZE>() as _, 1);
+        let mut Status =
+            SafeProbeForWrite(pSize as *mut core::ffi::c_void, core::mem::size_of::<SIZE>() as _, 1);
         if NT_SUCCESS(Status) {
             X = (*pdcattr).szlWindowExt.cx;
             if ((*pdcattr).dwLayout & LAYOUT_RTL) != 0 {
                 X = -X;
             }
-            (*pSize).cx = X;
-            (*pSize).cy = (*pdcattr).szlWindowExt.cy;
+            let mut SafeSize: SIZE = core::mem::zeroed();
+            SafeSize.cx = X;
+            SafeSize.cy = (*pdcattr).szlWindowExt.cy;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                pSize as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeSize) as *const core::ffi::c_void,
+                core::mem::size_of::<SIZE>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -1321,8 +1406,19 @@ pub unsafe extern "system" fn NtGdiSetViewportOrgEx(
             1,
         );
         if NT_SUCCESS(Status) {
-            (*Point).x = (*pdcattr).ptlViewportOrg.x;
-            (*Point).y = (*pdcattr).ptlViewportOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlViewportOrg.x;
+            SafePoint.y = (*pdcattr).ptlViewportOrg.y;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                Point as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -1366,8 +1462,19 @@ pub unsafe extern "system" fn NtGdiSetViewportOrgEx(
             1,
         );
         if NT_SUCCESS(Status) {
-            (*Point).x = (*pdcattr).ptlViewportOrg.x;
-            (*Point).y = (*pdcattr).ptlViewportOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlViewportOrg.x;
+            SafePoint.y = (*pdcattr).ptlViewportOrg.y;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                Point as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -1402,14 +1509,25 @@ pub unsafe extern "system" fn NtGdiSetWindowOrgEx(
     let pdcattr: PDC_ATTR = (*dc).pdcattr;
 
     if !Point.is_null() {
-        let Status: i32 = SafeProbeForWrite(
+        let mut Status: i32 = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
             core::mem::size_of::<POINT>() as u32,
             1,
         );
         if NT_SUCCESS(Status) {
-            (*Point).x = (*pdcattr).ptlWindowOrg.x;
-            (*Point).y = (*pdcattr).ptlWindowOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlWindowOrg.x;
+            SafePoint.y = (*pdcattr).ptlWindowOrg.y;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                Point as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -1445,14 +1563,25 @@ pub unsafe extern "system" fn NtGdiSetWindowOrgEx(
     let pdcattr: PDC_ATTR = (*dc).pdcattr;
 
     if !Point.is_null() {
-        let Status: i32 = SafeProbeForWrite(
+        let mut Status: i32 = SafeProbeForWrite(
             Point as *mut core::ffi::c_void,
             core::mem::size_of::<POINT>() as _,
             1,
         );
         if NT_SUCCESS(Status) {
-            (*Point).x = (*pdcattr).ptlWindowOrg.x;
-            (*Point).y = (*pdcattr).ptlWindowOrg.y;
+            let mut SafePoint: POINT = core::mem::zeroed();
+            SafePoint.x = (*pdcattr).ptlWindowOrg.x;
+            SafePoint.y = (*pdcattr).ptlWindowOrg.y;
+            // The probe only range-checks (validate-only by design under
+            // USE_DUMMY_PSEH); the C wrapped probe AND store in one _SEH2_TRY, so
+            // the store itself must be the fault-tolerant copy.
+            if !crate::copy::publish_to_user(
+                Point as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if !NT_SUCCESS(Status) {
@@ -1800,8 +1929,13 @@ pub unsafe extern "system" fn NtGdiGetDCPoint(
         Status = SafeProbeForWrite(Point as *mut _, core::mem::size_of::<POINT>() as u32, 1);
         if !NT_SUCCESS(Status) {
             Ret = 0;
-        } else {
-            *Point = SafePoint;
+        } else if !crate::copy::publish_to_user(
+            Point as *mut core::ffi::c_void,
+            core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+            core::mem::size_of::<POINT>(),
+        ) {
+            // Probe is validate-only; the C had probe+store inside one _SEH2_TRY.
+            Ret = 0;
         }
     }
 
@@ -1829,8 +1963,13 @@ pub unsafe extern "system" fn NtGdiGetDCPoint(
         Status = SafeProbeForWrite(Point as *mut _, core::mem::size_of::<POINT>() as _, 1);
         if !NT_SUCCESS(Status) {
             Ret = 0;
-        } else {
-            *Point = SafePoint;
+        } else if !crate::copy::publish_to_user(
+            Point as *mut core::ffi::c_void,
+            core::ptr::addr_of!(SafePoint) as *const core::ffi::c_void,
+            core::mem::size_of::<POINT>(),
+        ) {
+            // Probe is validate-only; the C had probe+store inside one _SEH2_TRY.
+            Ret = 0;
         }
     }
 
