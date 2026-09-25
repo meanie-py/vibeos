@@ -7856,6 +7856,33 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
 
 
+def test_kmtest_payload_older_than_sweep_c_is_rebuilt(tmp_path, monkeypatch):
+    """An exe left from an earlier commit must not outlive a change to sweep.c: the merge
+    queue's integration worktree kept one and gated a sweep change with the old binary."""
+    import os
+
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (tmp_path / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+    exe = sh / "kmtest-sweep-i386.exe"
+    exe.write_text("old")
+    os.utime(exe, (1_000_000, 1_000_000))
+    (sh / "sweep.c").write_text("int main(void){return 0;}\n")  # newer than the exe
+    os.utime(sh / "build.sh", (1_000_000, 1_000_000))
+
+    calls = []
+
+    def _fake_run(cmd, **kw):
+        calls.append(cmd)
+        exe.write_text("new")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    assert gate_mod._ensure_kmtest_payload(tmp_path, ["i386"]) == (True, "")
+    assert [c[2] for c in calls] == ["i386"], "a stale exe must be rebuilt"
+
+
 def test_cli_main_prints_the_exit_code_even_when_a_pipeline_swallows_it(capsys):
     """The number a `| tail` hides must still be IN the output it shows."""
     from tests.qemu.cli.__main__ import cli_main
