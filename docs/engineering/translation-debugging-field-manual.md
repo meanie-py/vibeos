@@ -5022,6 +5022,18 @@ linking, silently wrong. `_WIN32_WINNT=0x502` instead of the module's real `0x60
 not a hand re-preprocess:** `strings -el <the pre-flip .c.obj>` shows exactly which literals
 the real build compiled in. A bare `clang -E` with guessed `-D`s is how the bug arose.
 
+### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
+Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
+input that is NOT in the table. Cause: the C table ends in a terminator row (`L""`, `NULL`,
+`{0}`) and the loop is `while (tbl[i][0])`; the translation turned the table into a fixed-size
+Rust array and dropped the terminator (it looks like padding), but kept the terminator-driven
+loop. Every hit returns early and hides it; the first miss reads past the end. shell32's
+`PathIsExeW` did this: any path that was not an executable panicked, which is every folder
+passed to `SHObjectProperties` (found 2026-09-24 by `tools/payloads/shelltail`). Fix: iterate
+the array (`for e in TABLE.iter()`), rather than restoring the terminator and the index loop.
+Review hint: when a translated `static` table's length is one less than the C initializer's,
+check how it is walked.
+
 ### Never-executed translation code accumulates bugs, and the first execution finds them ALL
 Bringing up a path nothing had exercised is not "fix the bug" — it is **fix the stack of bugs**.
 WHPX x86 was shelved because the AHCI boot CD was dead end-to-end; it took **six stacked

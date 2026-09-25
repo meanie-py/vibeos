@@ -3222,10 +3222,10 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
     let cSelectedItems = (*this).m_ListView.GetSelectedCount();
     if cSelectedItems != 0 {
         LoadStringW(shell32_hInstance, IDS_OBJECTS_SELECTED, szFormat.as_mut_ptr(), szFormat.len() as INT);
-        StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), cSelectedItems);
+        strsafe_rust::StringCchPrintfW!(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), cSelectedItems);
     } else {
         LoadStringW(shell32_hInstance, IDS_OBJECTS, szFormat.as_mut_ptr(), szFormat.len() as INT);
-        StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
+        strsafe_rust::StringCchPrintfW!(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
     }
 
     let mut lResult: LRESULT = 0;

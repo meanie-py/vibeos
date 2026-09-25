@@ -136,9 +136,12 @@ def test_coverage_never_counts_untwinned_dead_c_as_translated():
 
 
 def test_the_tool_runs_against_this_worktree_and_classifies_everything():
-    """The ratchet, end to end. Skips rather than fails when the build dirs are absent:
-    a fresh worktree has none (they are gitignored), and that is not a defect in the
-    tree being measured."""
+    """The ratchet, end to end. Skips rather than fails when the build graph is absent
+    OR stale: a fresh worktree has none (they are gitignored), and the merge queue's
+    integration worktree runs this concurrently with the builds, so any batch touching a
+    CMakeLists sees build.ninja older than the edit until configure reruns. Neither is a
+    defect in the tree being measured -- the tool itself still refuses to report from
+    such a graph, which is the guard that matters."""
     proc = subprocess.run(
         [sys.executable, "tools/port_audit.py", "--check"],
         cwd=REPO,
@@ -147,5 +150,7 @@ def test_the_tool_runs_against_this_worktree_and_classifies_everything():
     )
     if proc.returncode == 2 and "no build graph" in proc.stderr:
         pytest.skip("no build dirs in this worktree: ./vibeos-cli build --arch i386")
+    if proc.returncode == 2 and "predates a CMakeLists edit" in proc.stderr:
+        pytest.skip("build graph older than a CMakeLists edit: reconfigure, then rerun")
     assert proc.returncode == 0, proc.stderr
     assert "every compiled source is classified" in proc.stdout

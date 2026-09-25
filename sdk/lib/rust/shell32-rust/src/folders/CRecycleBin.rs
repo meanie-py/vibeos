@@ -798,7 +798,7 @@ pub unsafe extern "system" fn SHEmptyRecycleBinW(hwnd: HWND, pszRootPath: LPCWST
                 }
             }
             _ => {
-                StringCchPrintfW(szBuffer.as_mut_ptr(), _countof!(szBuffer) as usize, CPP_COM_WSTR_69A283E639E4.as_ptr(), count);
+                strsafe_rust::StringCchPrintfW!(szBuffer.as_mut_ptr(), _countof!(szBuffer) as usize, CPP_COM_WSTR_69A283E639E4.as_ptr(), count);
                 if ShellMessageBoxWrapW(shell32_hInstance, hwnd, MAKEINTRESOURCEW(IDS_DELETEMULTIPLE_TEXT), MAKEINTRESOURCEW(IDS_EMPTY_BITBUCKET),
                                    MB_ICONEXCLAMATION | MB_YESNO | MB_DEFBUTTON2, szBuffer.as_ptr()) == IDNO as i32 {
                     return S_OK;

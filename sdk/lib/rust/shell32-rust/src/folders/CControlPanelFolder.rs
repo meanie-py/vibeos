@@ -287,7 +287,7 @@ unsafe extern "C" fn CreateCplAbsoluteParsingPath(
     );
     if hr >= 0 {
         // L"%s\\%s%s"
-        hr = StringCchPrintfW(
+        hr = strsafe_rust::StringCchPrintfW!(
             Buf,
             cchBuf as usize,
             CPP_COM_WSTR_7CBCF6E893AD.as_ptr(),
