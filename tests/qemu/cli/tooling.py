@@ -82,6 +82,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_translation_literals.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_docs_only.py"),
+    # The port ledger's classification is the whole measurement: one Wine module left in
+    # the core bucket moves the published coverage figure and nothing in the output says
+    # so. Its build-graph cases skip when this worktree has no build-* dirs.
+    (".", ".", "tools/test_port_audit.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
