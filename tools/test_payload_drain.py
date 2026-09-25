@@ -154,3 +154,31 @@ def test_a_slow_but_PROGRESSING_sweep_is_not_mistaken_for_a_wedge() -> None:
         read, "", "[DONE]", "*** BUGCHECK", 3600.0, idle_secs=600.0, now=clock
     )
     assert reason == "budget", "a progressing sweep must not read as idle"
+
+
+def test_shot_taker_shoots_each_complete_request_once(tmp_path):
+    """A payload asks for a screenshot by printing `<shot_prefix><name>`; a request split
+    across two serial reads must not be shot until its line is complete, and a re-scan of the
+    same output must not shoot it again."""
+    from tests.qemu.test_payload import ShotTaker
+
+    shots = []
+
+    class FakeVM:
+        artifact_dir = tmp_path
+        work_dir = tmp_path
+
+        def screendump(self, path):
+            shots.append(path.stem)
+            path.write_bytes(b"P6\n1 1\n255\n\x00\x00\x00")  # a real 1x1 PPM
+
+    take = ShotTaker(FakeVM(), "[APPSTORM] shot ")
+    take("boot...\n[APPSTORM] shot note")  # incomplete line
+    assert shots == []
+    out = "boot...\n[APPSTORM] shot notepad\r\n[APPSTORM] shot calc\n"
+    take(out)
+    take(out)  # same output again
+    assert shots == ["shot-01-notepad", "shot-02-calc"]
+    assert (tmp_path / "shot-01-notepad.png").exists()  # converted, as smoke does
+    ShotTaker(FakeVM(), None)(out)  # no prefix: no shots
+    assert len(shots) == 2

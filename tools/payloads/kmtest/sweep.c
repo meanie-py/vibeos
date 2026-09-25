@@ -13,12 +13,70 @@
  * matching [KMTEST:END] attributes a guest crash/hang to the exact test.
  */
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <string.h>
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 
 #define PER_TEST_TIMEOUT_MS (180u * 1000u)
+
+static int setup_running(void)
+{
+    PROCESSENTRY32 pe = { sizeof pe };
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    int found = 0;
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+    if (Process32First(snap, &pe))
+        do {
+            if (!_stricmp(pe.szExeFile, "setup.exe"))
+                found = 1;
+        } while (!found && Process32Next(snap, &pe));
+    CloseHandle(snap);
+    return found;
+}
+
+static DWORD plugplay_state(void)
+{
+    SERVICE_STATUS st = { 0 };
+    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    SC_HANDLE svc = scm ? OpenServiceA(scm, "PlugPlay", SERVICE_QUERY_STATUS) : NULL;
+    if (svc) { QueryServiceStatus(svc, &st); CloseServiceHandle(svc); }
+    if (scm) CloseServiceHandle(scm);
+    return st.dwCurrentState;
+}
+
+/* The livecd's `setup -mini` (syssetup InstallLiveCD) starts PlugPlay, and umpnpmgr then installs
+ * every device: ~30s of heavy user-mode work and interrupt traffic (measured with
+ * tools/payloads/cpuprof). A sweep that starts inside that burst fails the load-sensitive tests
+ * (ExFastMutex, ExResource, KeEvent) on every attempt, where they are otherwise only rarely
+ * flaky. So wait it out, the way a test run on Windows would wait for setup to finish. Checking
+ * "no pending installs" is not enough on its own: before setup has started PlugPlay, that is
+ * trivially true, and the burst then lands mid-sweep. */
+static void wait_for_pnp_quiet(void)
+{
+    DWORD (WINAPI *wait_pnp)(DWORD) = (void *)GetProcAddress(LoadLibraryA("setupapi.dll"),
+                                                              "CMP_WaitNoPendingInstallEvents");
+    DWORD t0 = GetTickCount();
+    while (plugplay_state() != SERVICE_RUNNING && setup_running() && GetTickCount() - t0 < 180000)
+        Sleep(2000);
+    if (plugplay_state() != SERVICE_RUNNING)
+    {
+        DbgPrint("[KMTEST-SWEEP] PlugPlay not running (setup %s) - no PnP gate\n",
+                 setup_running() ? "still running" : "not running");
+        return;
+    }
+    if (!wait_pnp)
+    {
+        DbgPrint("[KMTEST-SWEEP] WARN: CMP_WaitNoPendingInstallEvents unavailable - no PnP gate\n");
+        return;
+    }
+    DWORD w = wait_pnp(180000);
+    DbgPrint("[KMTEST-SWEEP] PnP installs %s (waited ~%lus)\n",
+             w == WAIT_OBJECT_0 ? "quiet" : "STILL PENDING, proceeding",
+             (GetTickCount() - t0) / 1000);
+}
 
 int main(void)
 {
@@ -86,6 +144,8 @@ int main(void)
                 DbgPrint("[KMTEST-SWEEP] SCM auto-start complete (waited ~%ds)\n", waited);
         }
     }
+
+    wait_for_pnp_quiet();
 
     DbgPrint("[KMTEST-SWEEP] start list=%s\n", listpath);
 

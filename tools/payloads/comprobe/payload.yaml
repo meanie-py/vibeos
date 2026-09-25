@@ -1,0 +1,20 @@
+# comprobe — where does cross-thread COM marshalling break, and does SHObjectProperties hang?
+#   tools/payloads/comprobe/build.sh <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload comprobe
+# Per-interface proxy/stub lookups, an IDataObject marshalled to a second STA and called through
+# the proxy, then SHObjectProperties on a file with a 20s window dump.
+# Verdict: "[COMPROBE] done VERDICT=PASS|FAIL".
+name: comprobe
+description: COM proxy/stub lookup, cross-apartment IDataObject, and SHObjectProperties
+
+build_hint: "tools/payloads/comprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/comprobe/comprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/comprobe.exe
+
+test:
+  launch_marker: "[COMPROBE] done"
+  shot_prefix: "[COMPROBE] shot "
+  launch_drain_secs: 900

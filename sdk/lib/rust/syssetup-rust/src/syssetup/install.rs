@@ -1455,6 +1455,7 @@ unsafe extern "C" fn CommonInstall() -> BOOL {
             FatalError(b"EnableUserModePnpManager() failed!\n\0".as_ptr() as *mut i8);
             break 'Exit;
         }
+        DPRINT1!("[SYSSETUP] CommonInstall: PlugPlay running, waiting for pending installs\n");
 
         if CMP_WaitNoPendingInstallEvents((INFINITE) as u32) != (WAIT_OBJECT_0) as u32 {
             FatalError(b"CMP_WaitNoPendingInstallEvents() failed!\n\0".as_ptr() as *mut i8);
@@ -1481,11 +1482,31 @@ unsafe extern "C" fn CommonInstall() -> BOOL {
 
     bResult
 }
+/// Logs each DLL `RegistrationPhase2` registers, and its result. The LiveCD path passed no
+/// callback (upstream shows no progress there), which left a registration that crashes setup
+/// with nothing to say which DLL did it.
+unsafe extern "system" fn LiveCdRegistrationProgress(
+    _Context: PVOID,
+    Notification: UINT,
+    Param1: UINT_PTR,
+    _Param2: UINT_PTR,
+) -> UINT {
+    let st = Param1 as *const SP_REGISTER_CONTROL_STATUSW;
+    if Notification == SPFILENOTIFY_STARTREGISTRATION && !st.is_null() {
+        DPRINT1!("[SYSSETUP] registering %ls\n", (*st).FileName);
+    } else if Notification == SPFILENOTIFY_ENDREGISTRATION && !st.is_null() && (*st).FailureCode != 0 {
+        DPRINT1!("[SYSSETUP]   %ls failed: code=%lu err=0x%lx\n", (*st).FileName, (*st).FailureCode,
+                 (*st).Win32Error);
+    }
+    FILEOP_DOIT as UINT
+}
+
 unsafe extern "C" fn InstallLiveCD() -> u32 {
     let mut StartupInfo: STARTUPINFOW = core::mem::zeroed();
     let mut ProcessInformation: PROCESS_INFORMATION = core::mem::zeroed();
     let bRes: i32;
 
+    DPRINT1!("[SYSSETUP] InstallLiveCD: start\n");
     PreprocessUnattend((FALSE) as i32);
     if CommonInstall() == 0 {
         MessageBoxW(
@@ -1497,6 +1518,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         return 0;
     }
 
+    DPRINT1!("[SYSSETUP] InstallLiveCD: CommonInstall done\n");
     let mut bRes = InstallNetworkComponent(w!("MS_TCPIP") as PWSTR);
     if bRes == 0 && GetLastError() != ERROR_FILE_NOT_FOUND {
         // DPRINT removed
@@ -1505,6 +1527,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         SetupStartService(w!("Dhcp") as LPCWSTR, (FALSE) as i32);
         SetupStartService(w!("Dnscache") as LPCWSTR, (FALSE) as i32);
     }
+    DPRINT1!("[SYSSETUP] InstallLiveCD: network started, registering components\n");
 
     {
         if SetupInstallFromInfSectionW(
@@ -1515,7 +1538,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
             core::ptr::null_mut(),
             core::ptr::null(),
             0,
-            None,
+            Some(LiveCdRegistrationProgress),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -1532,7 +1555,16 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         );
     }
 
+    DPRINT1!("[SYSSETUP] InstallLiveCD: registration done\n");
     SetupCloseInfFile(hSysSetupInf);
+
+    // userinit is how the LiveCD reaches its shell upstream (the language page, then
+    // explorer). vibeos's winlogon starts the shell itself and runs this setup alongside it,
+    // so by now a shell is usually up: launching userinit then would start a second one.
+    if !GetShellWindow().is_null() {
+        DPRINT1!("[SYSSETUP] InstallLiveCD: shell already running, not starting userinit\n");
+        return 0;
+    }
 
     ZeroMemory!(
         &mut StartupInfo as *mut STARTUPINFOW as LPVOID,
