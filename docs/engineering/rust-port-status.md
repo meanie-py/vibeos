@@ -54,7 +54,7 @@ written" overstates the port by more than half.
 
 ## Core OS ledger — GENERATED, 2026-09-24 (`tools/port_audit.py`)
 
-Measured at commit `69ffc9e9471` against this worktree's three build graphs. **The oracle
+Measured at commit `9e31b199895` against this worktree's three build graphs. **The oracle
 is the link, not the source tree**: a surface's "live C" is the translation units some
 arch actually compiles, after every `if(ARCH)` and every commented-out CMake entry, taken
 as the union across i386/amd64/arm64. Wine-derived modules, `vendor.yaml` trees,
@@ -65,79 +65,88 @@ the part that makes it Windows.
 zero.** `Out of build` counts every `.c` the link does not contain, which includes
 upstream C this port never compiled; `Rust twin` narrows that to files whose module has a
 crate in `sdk/lib/rust/`, and `Covered` is built from that column, never from
-`Out of build`. The 122,177-line gap between them is mostly genuinely-unbuilt upstream
-code: `drivers/bus/acpi_new/uacpi` (22,929), the unbuilt DirectX cluster, and freeldr's
+`Out of build`. The 132,371-line gap between them is mostly genuinely-unbuilt upstream
+code: `drivers/bus/acpi_new/uacpi` (22,929 lines), the unbuilt DirectX cluster, and freeldr's
 i386/pc arch on a UEFI-only boot.
 
 | Surface | Live C (TUs) | Live C (lines) | Out of build | Rust twin | Covered |
 |---|---:|---:|---:|---:|---:|
-| Win32 DLLs | 570 | 424,078 | 351,371 | 338,683 | 44% |
-| Support libraries | 662 | 106,318 | 87,377 | 77,717 | 42% |
-| Driver fleet | 202 | 79,189 | 428,840 | 396,516 | 83% |
-| Setup | 46 | 55,483 | 132 | 0 | 0% |
+| Win32 DLLs | 566 | 432,549 | 371,145 | 354,025 | 45% |
+| Support libraries | 667 | 104,376 | 92,743 | 82,528 | 44% |
+| Driver fleet | 191 | 68,944 | 425,597 | 388,912 | 85% |
+| Setup | 46 | 56,454 | 132 | 0 | 0% |
 | Keyboard layouts | 86 | 37,899 | 0 | 0 | 0% |
-| Control Panel applets | 74 | 28,286 | 24,667 | 24,557 | 46% |
-| Text services (CTF/IME) | 31 | 27,099 | 0 | 0 | 0% |
+| Control Panel applets | 74 | 28,331 | 24,709 | 24,599 | 46% |
+| Shell | 69 | 27,189 | 14,826 | 14,513 | 35% |
+| Text services (CTF/IME) | 31 | 27,175 | 0 | 0 | 0% |
 | Print spooler | 66 | 27,069 | 0 | 0 | 0% |
-| Shell | 68 | 26,760 | 14,727 | 14,414 | 35% |
-| Shell extensions | 56 | 18,059 | 9 | 0 | 0% |
-| Services | 41 | 15,970 | 20,380 | 20,380 | 56% |
-| System spine | 60 | 14,965 | 28,484 | 28,463 | 66% |
-| win32k: USER | 22 | 13,642 | 86,094 | 79,489 | 85% |
-| win32k: display drivers | 26 | 11,333 | 1,798 | 1,798 | 14% |
-| AppCompat | 22 | 7,236 | 0 | 0 | 0% |
+| Shell extensions | 57 | 18,940 | 9 | 0 | 0% |
+| System spine | 61 | 18,176 | 28,526 | 28,505 | 61% |
+| win32k: USER | 23 | 16,525 | 87,009 | 79,550 | 83% |
+| Services | 41 | 16,169 | 21,495 | 21,495 | 57% |
+| win32k: display drivers | 26 | 11,322 | 1,798 | 1,798 | 14% |
+| AppCompat | 24 | 7,339 | 0 | 0 | 0% |
+| OpenGL (opengl32) | 6 | 3,496 | 0 | 0 | 0% |
 | SDK inline TUs | 13 | 2,704 | 724 | 724 | 21% |
 | NLS codepages | 4 | 2,048 | 23 | 0 | 0% |
-| Boot (freeldr) | 5 | 1,406 | 37,574 | 30,342 | 96% |
+| Boot (freeldr) | 5 | 1,407 | 38,552 | 31,356 | 96% |
 | win32k: ReactX | 3 | 362 | 5,077 | 1,884 | 84% |
 | DirectX | 1 | 268 | 40,884 | 0 | 0% |
-| win32k: GDI | 7 | 223 | 23,310 | 17,883 | 99% |
-| ntdll.dll | 2 | 38 | 12,089 | 12,089 | 100% |
+| win32k: GDI | 7 | 223 | 23,422 | 17,995 | 99% |
+| ntdll.dll | 2 | 38 | 12,115 | 12,115 | 100% |
 | win32k: syscall stubs | 1 | 31 | 0 | 0 | 0% |
-| CSR subsystem | 1 | 17 | 12,256 | 11,282 | 100% |
-| Kernel (ntoskrnl.exe) | 0 | 0 | 270,294 | 269,684 | 100% |
-| HAL | 0 | 0 | 17,720 | 15,748 | 100% |
-| **CORE TOTAL** | **2,069** | **900,483** | **1,463,830** | **1,341,653** | **60%** |
+| CSR subsystem | 1 | 17 | 12,258 | 11,284 | 100% |
+| Kernel (ntoskrnl.exe) | 0 | 0 | 273,724 | 273,107 | 100% |
+| HAL | 0 | 0 | 17,766 | 15,773 | 100% |
+| **CORE TOTAL** | **2,071** | **909,051** | **1,492,534** | **1,360,163** | **60%** |
 
 | Not counted as core | Live C (TUs) | Live C (lines) | Why |
 |---|---:|---:|---|
-| Wine-derived | 703 | 868,130 | Wine import, separate roadmap tier |
-| Vendored (vendor.yaml) | 1,289 | 776,441 | not ours to translate |
-| Applications | 347 | 166,500 | calc/mspaint/regedit/rapps |
-| OpenGL (Mesa) | 58 | 48,759 | unregistered third-party — see below |
-| Tests | 140 | 39,470 | apitests + winetests |
+| Vendored (vendor.yaml) | 1,408 | 901,872 | not ours to translate |
+| Wine-derived | 710 | 876,484 | Wine import, separate roadmap tier |
+| Applications | 357 | 168,848 | calc/mspaint/regedit/rapps |
+| Tests | 141 | 41,008 | apitests + winetests |
 | Host tools | 1 | 642 | build-time only, never ships |
 | Optional applications | 0 | 0 |  |
 
-*Compile edges per arch: i386 4,447, amd64 4,528, arm64 4,502; the table is their union.*
+*Compile edges per arch: i386 4,526, amd64 4,608, arm64 4,581; the table is their union.*
 
 ### What the table says
 
 **The boot path is done and the number is now checkable.** ntoskrnl and HAL compile
-**zero** lines of C; ntdll compiles 38 (2 TUs of glue). Between the three that is 300,103
-lines out of the build with a Rust crate behind all but 2,582 of them. win32k is 84–99%
-across USER/GDI/ReactX with 14,227 live lines left, and the CSR subsystem is at 17.
+**zero** lines of C; ntdll compiles 38 (2 TUs of glue). Between the three that is 303,605 lines out of the build with a Rust crate behind all but 2,610 of them. win32k is 83–99%
+across USER/GDI/ReactX with 17,110 live lines left, and the CSR subsystem is at 17.
 Nothing in the boot-to-desktop chain is waiting on a translation.
 
-**The remaining core work is 900,483 lines and it is overwhelmingly userland.** Two
-surfaces are 59% of it: the Win32 DLLs (424,078 live) and the support libraries (106,318
-live, of which `sdk/lib/crt` is 479 TUs — the CRT's *static* half, which is a different
+**The remaining core work is 909,051 lines and it is overwhelmingly userland.** Two
+surfaces are 59% of it: the Win32 DLLs (432,549 live) and the support libraries (104,376
+live, of which `sdk/lib/crt` is ~480 TUs — the CRT's *static* half, which is a different
 thing from the already-translated `dll/win32/msvcrt`). After those, the fleet's real tail
-is six surfaces that have never been started at all: Setup (55,483), Keyboard layouts
-(37,899), Text services/CTF (27,099), the Print spooler (27,069), Shell extensions
-(18,059) and AppCompat (7,236) — all at 0% covered, none with a Rust crate to its name.
+is six surfaces that have never been started at all: Setup (56,454), keyboard layouts
+(37,899), text services/CTF (27,175), the print spooler (27,069), shell extensions
+(18,940) and AppCompat (7,339) — all at 0% covered, none with a Rust crate to its name.
 
-**The driver fleet is 83% covered but the last 79,189 lines are concentrated**, mostly in
+**The driver fleet is 85% covered but the last 68,944 lines are concentrated**, mostly in
 `drivers/wdm/audio` and `drivers/network`.
 
-### Two registry gaps this audit found, both needing an owner decision
+### Two registry gaps this audit found
 
-1. **Mesa is unregistered third-party.** `dll/opengl/mesa` is Mesa 2.4 (1995–97, Brian
-   Paul, LGPL — the headers say so), 48,759 live lines, and it is in no half of
-   `vendor.yaml`. It escapes the container ratchet because that covers
-   `sdk/lib/3rdparty`, `dll/3rdparty` and `external/`, and Mesa lives under none of them.
-   Only its GLU (`dll/opengl/glu32/src`) is registered. `port_audit.py` excludes it on the
-   evidence in its own headers, which is a decision a tool should not be making alone.
+1. **Mesa was unregistered third-party — REGISTERED 2026-09-24 (owner approved).**
+   `dll/opengl/mesa` is Brian Paul's Mesa, 53,679 lines under LGPL-2.0-or-later, and it
+   was in neither half of `vendor.yaml`. `opengl32.dll` links it as the software
+   rasterizer behind `wglCreateContext`, which is the same role Microsoft's own software
+   GL plays, so it ships — and every line was sitting in the "core C remaining"
+   denominator as work someone might be asked to translate. Now a `trees:` entry with a
+   version probe reading `Mesa_for_ReactOS.txt` (2.6; the per-file `Version:` headers
+   range 2.0–2.6 because upstream never bumped them all). What remains core under
+   `dll/opengl` is `opengl32` itself, the WGL/ICD layer, at 3,496 live lines.
+
+   **The discovery hole is still open.** `--suspects` reported a clean tree the same
+   afternoon: it matches CORPORATE copyright holders by design and Mesa's headers name an
+   individual, and `dll/opengl` is not one of the three registered containers either, so
+   neither half of the machinery could see it. `port_audit.py --check` caught it by asking
+   a different question — what does the LINK contain — but that only covers code something
+   compiles. An individually-authored drop that nothing builds is still invisible to both.
 2. **~124,000 lines of "core" live C carry a Wine copyright header** but sit outside
    `vendor.yaml`'s 24-path Wine entry — 13% of the core remainder. The clearest cases are
    `usp10` (80% Wine-headered), `imm32` (52%), `winmm` (57%), `base/ctf/msctf` (77%),
