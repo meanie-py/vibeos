@@ -538,9 +538,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   process names read `svchost.e`). The kmtest sweep now waits for setup's PnP device-install
   burst (~25-35s, measured) before its first test: started inside it, the load-sensitive tests
   failed on every attempt. Still open:
-  - Folder windows opened from another process never appear (`explorer.exe <path>`, Control
-    Panel, `ncpa.cpl`). On amd64 `filebrowser.exe` faults in
-    `shell32!CRegFolder::ParseDisplayName+0x26`.
+  - FIXED: folder windows opened from another process never appeared (`explorer.exe <path>`,
+    Control Panel, `ncpa.cpl`). Two bugs. (1) `gen-delaylib.py` bound browseui's `NONAME` export
+    `SHOnCWMCommandLine` by name, so explorer's `CWM_COMMANDLINE` handler raised `0xc06d007f`
+    (all arches). (2) CControlPanelFolder handed its IShellFolder2 pointer to the view as the
+    IShellFolderViewCB, so the view's first `MessageSFVCB` ran `ParseDisplayName` and faulted in
+    CRegFolder. appstorm on amd64: explorer-folder, Control Panel (18 applets drawn) and
+    Network Connections all PASS.
+  - OPEN, amd64: closing a folder window faults at RIP 0 in
+    `browseui!CShellBrowser::OnDestroy+0x352`, `fCurrentShellFolder.Release()` through a
+    zeroed vtable. The folder was released once too often, probably by the Rust CDefView, which
+    every folder type shares.
+  - OPEN, i386: Control Panel's frame opens, but its view never fills and the window is HUNG (2
+    of 2 runs); `ncpa.cpl` opened on 1 of 2. explorer-folder PASSES on i386 too.
   - FIXED: amd64 setup.exe faulted (RIP `0x1b85ac0`) as registration began. A gdb write-watch
     showed `LdrpManifestProberRoutine` being set by the real setter, from a SECOND kernel32
     mapped at `0x1b50000`: ucrtbase's api-set load went through a redirect that returns a bare

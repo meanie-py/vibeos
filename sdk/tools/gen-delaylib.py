@@ -44,7 +44,16 @@ def parse_def(path):
                 continue
             seen.add(name)
             is_data = "DATA" in parts[1:]
-            exports.append((name, is_data))
+            # `Name @127 NONAME`: the DLL exports NO name, only the ordinal, so a by-name import
+            # can never resolve. Binding it by name made every call raise 0xc06d007f —
+            # browseui's SHOnCWMCommandLine, i.e. every folder window opened from another process.
+            ordinal = None
+            if "NONAME" in parts[1:]:
+                ords = [t for t in parts[1:] if re.fullmatch(r"@\d+", t)]
+                if not ords:
+                    sys.exit(f"{path}: NONAME export {name} has no @ordinal")
+                ordinal = int(ords[0][1:])
+            exports.append((name, is_data, ordinal))
     if not dll:
         sys.exit(f"{path}: no NAME/LIBRARY line")
     return dll, exports
@@ -55,8 +64,9 @@ def q(sym):  # quote symbols containing '@' for the assembler
 def emit(dll, exports, arch):
     cfg = ARCH[arch]
     ptr = cfg["ptr"]; helper = cfg["helper"]
-    fns = [n for n, d in exports if not d]
-    datas = [n for n, d in exports if d]
+    fns = [n for n, d, _o in exports if not d]
+    ords = {n: o for n, d, o in exports if not d}
+    datas = [n for n, d, _o in exports if d]
     desc = f"___DELAY_DESC_{re.sub(r'[^A-Za-z0-9_]','_',dll)}"
     L, ptrdir = [], (".long" if ptr == 4 else ".quad")
     # The IAT and INT hold pointer-sized slots, so align them to the pointer. On
@@ -68,13 +78,20 @@ def emit(dll, exports, arch):
     # --- .rdata: dll name, hint/name strings, INT ---
     L += ['\t.section .rdata,"dr"', f'__dll_name: .asciz "{dll}"']
     for i, fn in enumerate(fns):
+        if ords[fn] is not None:
+            continue
         # IMAGE_IMPORT_BY_NAME { WORD Hint; char Name[]; }. The Name is the *undecorated*
         # export name (DLLs export `ScriptBreak`, not `ScriptBreak@16`) — GetProcAddress
         # looks it up by that. The @N stays only on the import symbols (_Name@N/__imp__Name@N).
         und = fn.split("@")[0]
         L += ['\t.p2align 1', f'__hn_{i}: .short 0', f'\t.asciz "{und}"']
     L += [ptralign, '__delay_int:']
-    for i in range(len(fns)):
+    for i, fn in enumerate(fns):
+        if ords[fn] is not None:
+            # IMAGE_ORDINAL_FLAG (the top bit of the pointer-sized slot) | ordinal
+            L += ([f'\t.long {0x80000000 | ords[fn]:#x}'] if ptr == 4
+                  else [f'\t.long {ords[fn]:#x}', '\t.long 0x80000000'])
+            continue
         # INT entry holds an RVA in low 32 bits; pad to ptr width
         L += [f'\t.rva __hn_{i}'] + (['\t.long 0'] if ptr == 8 else [])
     L += ['\t.long 0'] + (['\t.long 0'] if ptr == 8 else [])    # null terminator (ptr-sized)

@@ -3879,6 +3879,17 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### C++ `this` passed where an INTERFACE is expected converts; the raw Rust `this` does not
+`SFV_CREATE sfvparams = { sizeof(SFV_CREATE), this, NULL, this };` in CControlPanelFolder converts
+`this` to `IShellFolder*` for one field and to `IShellFolderViewCB*` for the other: two different
+addresses under multiple inheritance. The translation wrote `psfvcb: this`, the object's start,
+which is its FIRST vtable (IShellFolder2). The view's `MessageSFVCB` (slot 3) then ran
+`ParseDisplayName` with four arguments instead of seven, and the stack-garbage `ppidl` faulted
+inside CRegFolder, two frames from the bug. Fix: `addr_of_mut!((*this).IShellFolderViewCB_iface)`.
+The tell is a callee that is a real method of the right OBJECT but the wrong INTERFACE. Grep the
+C++ for `this` in an initializer or argument whose declared type is an interface other than the
+class's first base.
+
 ### Wiring a `--cpp-com` class: five deterministic-layer gaps, all fixed FREE and RETROACTIVELY
 
 **Symptom.** The class translates clean — every worker accepted, no audit findings — and then
@@ -10424,6 +10435,15 @@ descriptors by shape (`wow64-closure.py` `delay_imports_of`: attributes 1, four 
 three zero DWORDs, a module name at the name RVA). That works on stripped copies too, where the
 `___DELAY_DESC_*` symbols are gone. Also on arm64: the IAT must be 8-aligned, or the stubs'
 `ldr x16, [x16, :lo12:__imp_X]` fails the link with "misaligned ldr/str offset".
+
+### A delay import of a `NONAME` export raises 0xc06d007f at its first call
+Symptom: explorer raised `0xc06d007f` from `__delayLoadHelper2`, and every folder window opened
+from another process (`explorer.exe <path>`, Control Panel, `ncpa.cpl`) never appeared, on all
+arches. Cause: `gen-delaylib.py` skipped only `.def` lines whose FIRST token is `@N`; a line
+`SHOnCWMCommandLine @127 NONAME` (browseui) was bound BY NAME, and the DLL exports no name for
+it, so `GetProcAddress` failed. Fix: a `NONAME` export gets an ordinal INT entry
+(`IMAGE_ORDINAL_FLAG | ordinal`); `tools/test_gen_delaylib.py` pins it. To check a DLL, look for
+the function's name as a string in the importer: a NONAME import must not have one.
 
 ### A DLL "loads fine" then crashes at PC=0xFFBADD11 `[§9.44-poison]`
 Our ntdll loader intentionally **poison-snaps** missing by-name imports instead of failing the
