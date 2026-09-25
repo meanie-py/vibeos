@@ -551,9 +551,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     arm64 too).
   - amd64: registering `msctf.dll` crashed csrss in `winsrv!ConSrvGetConsole` (NULL
     per-process data), a 0xF4, seen under the regcapture payload.
-  - `SystemProcessorPerformanceInformation` reports no idle time (a quiet system reads 100%
-    kernel), so Task Manager's CPU graph cannot fall. Measured with `tools/payloads/cpuprof`,
-    against a control with setup stalled.
+  - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
+    that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
+    it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
   - Small: Date/Time's analog clock is not drawn; Add/Remove Programs' info pane draws text as
     a column; the Properties size line loses its closing parenthesis; comprobe hangs after
     closing the sheet (not yet shown to be a product bug).

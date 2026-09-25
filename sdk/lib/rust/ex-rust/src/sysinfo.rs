@@ -416,17 +416,18 @@ unsafe fn ldr_entry_from_links(links: *mut LIST_ENTRY) -> PLDR_DATA_TABLE_ENTRY 
     links as PLDR_DATA_TABLE_ENTRY
 }
 
-// IdleThread KernelTime/UserTime accessors — bindgen union layouts differ per arch.
-// Returning 0 keeps task manager's CPU usage column honest-but-uninformative; this is
-// a known approximation, matched by Sci->PageFaultCount and friends in SystemPerformanceInformation.
+// IdleThread KernelTime/UserTime. KeUpdateRunTime charges every clock tick the idle loop
+// takes to the idle thread's KernelTime, so this is the only record of idle time: reading 0
+// here made a quiet system report 100% busy (Task Manager's graph could never fall).
+// The KTHREAD is the first member of ETHREAD, so the ETHREAD accessors below apply.
 #[inline(always)]
-unsafe fn idle_thread_kernel_time(_prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
-    0
+unsafe fn idle_thread_kernel_time(prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
+    kthread_kernel_time((*prcb).IdleThread as *mut _ETHREAD)
 }
 
 #[inline(always)]
-unsafe fn idle_thread_user_time(_prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
-    0
+unsafe fn idle_thread_user_time(prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
+    kthread_user_time((*prcb).IdleThread as *mut _ETHREAD)
 }
 
 // KTHREAD field accessors — fields buried in WaitBlock/SuspendApc overlay unions on
