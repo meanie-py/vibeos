@@ -137,10 +137,15 @@ pub type THREADENTRY32 = tagTHREADENTRY32;
 pub type PTHREADENTRY32 = *mut tagTHREADENTRY32;
 pub type LPTHREADENTRY32 = *mut tagTHREADENTRY32;
 
-// C macro: #define OffsetToPtr(Snapshot, Offset) ((LPVOID)((LPBYTE)(Snapshot) + (Offset)))
-#[inline]
-unsafe fn OffsetToPtr<T>(snapshot: *const T, offset: ULONG_PTR) -> PVOID {
-    (snapshot as *const u8).add(offset as usize) as PVOID
+// toolhelp.c: `#define OffsetToPtr(Snapshot, Offset) ((ULONG_PTR)((Snapshot) + 1) + (ULONG_PTR)(Offset))`.
+// `Snapshot + 1` is pointer arithmetic on PTH32SNAPSHOT: the lists start AFTER the header.
+// This used to be `base + offset` (reading the header as entry 0), while the writers below
+// computed `base + 1 BYTE + offset` (writing the entries over the header) — so every snapshot
+// came back with its counts clobbered and Process32First failed with ERROR_NO_MORE_FILES.
+// Typed on purpose: `Snapshot + 1` must step over a whole TH32SNAPSHOT, and a generic or
+// `c_void` parameter makes `.add(1)` step one byte instead (it did, in Process32NextW).
+unsafe fn OffsetToPtr(snapshot: PTH32SNAPSHOT, offset: ULONG_PTR) -> PVOID {
+    (snapshot.add(1) as *const u8).add(offset as usize) as PVOID
 }
 
 // intra-DLL kernel32 exports (resolved to #[no_mangle] symbols in sibling modules at link)
@@ -438,8 +443,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
     if dwFlags & TH32CS_SNAPHEAPLIST != 0 {
         (*Snapshot).HeapListCount = nHeaps;
         (*Snapshot).HeapListOffset = DataOffset;
-        HeapListEntry = ((Snapshot as ULONG_PTR).wrapping_add(1) as ULONG_PTR)
-            .wrapping_add(DataOffset) as LPHEAPLIST32;
+        HeapListEntry = OffsetToPtr(Snapshot, DataOffset) as LPHEAPLIST32;
         i = 0;
         while i < nHeaps {
             (*HeapListEntry).dwSize = core::mem::size_of::<HEAPLIST32>() as DWORD;
@@ -463,8 +467,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
     if dwFlags & TH32CS_SNAPMODULE != 0 {
         (*Snapshot).ModuleListCount = nModules;
         (*Snapshot).ModuleListOffset = DataOffset;
-        ModuleListEntry = ((Snapshot as ULONG_PTR).wrapping_add(1) as ULONG_PTR)
-            .wrapping_add(DataOffset) as LPMODULEENTRY32W;
+        ModuleListEntry = OffsetToPtr(Snapshot, DataOffset) as LPMODULEENTRY32W;
         i = 0;
         while i < nModules {
             (*ModuleListEntry).dwSize = core::mem::size_of::<MODULEENTRY32W>() as DWORD;
@@ -508,8 +511,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
 
         (*Snapshot).ProcessListCount = nProcesses;
         (*Snapshot).ProcessListOffset = DataOffset;
-        ProcessListEntry = ((Snapshot as ULONG_PTR).wrapping_add(1) as ULONG_PTR)
-            .wrapping_add(DataOffset) as LPPROCESSENTRY32W;
+        ProcessListEntry = OffsetToPtr(Snapshot, DataOffset) as LPPROCESSENTRY32W;
         ProcessInfo = ProcThrdInfo as PSYSTEM_PROCESS_INFORMATION;
         loop {
             ProcessInfo = (ProcessInfo as ULONG_PTR).wrapping_add(ProcOffset as ULONG_PTR)
@@ -561,8 +563,7 @@ unsafe fn TH32CreateSnapshotSectionInitialize(
 
         (*Snapshot).ThreadListCount = nThreads;
         (*Snapshot).ThreadListOffset = DataOffset;
-        ThreadListEntry = ((Snapshot as ULONG_PTR).wrapping_add(1) as ULONG_PTR)
-            .wrapping_add(DataOffset) as LPTHREADENTRY32;
+        ThreadListEntry = OffsetToPtr(Snapshot, DataOffset) as LPTHREADENTRY32;
         ProcessInfo = ProcThrdInfo as PSYSTEM_PROCESS_INFORMATION;
         loop {
             let mut ThreadInfo: PSYSTEM_THREAD_INFORMATION;
@@ -877,7 +878,7 @@ pub unsafe extern "system" fn Heap32ListNext(
             && (*Snapshot).HeapListIndex < (*Snapshot).HeapListCount
         {
             let Entries: LPHEAPLIST32 = OffsetToPtr(
-                Snapshot as *mut core::ffi::c_void,
+                Snapshot,
                 (*Snapshot).HeapListOffset,
             ) as LPHEAPLIST32;
 
@@ -1304,7 +1305,7 @@ pub unsafe extern "system" fn Process32NextW(
             && (*Snapshot).ProcessListIndex < (*Snapshot).ProcessListCount
         {
             let Entries: LPPROCESSENTRY32W = OffsetToPtr(
-                Snapshot as *const ::core::ffi::c_void,
+                Snapshot,
                 (*Snapshot).ProcessListOffset,
             ) as LPPROCESSENTRY32W;
             let idx = (*Snapshot).ProcessListIndex;
@@ -1421,7 +1422,7 @@ pub unsafe extern "system" fn Thread32Next(
             && (*Snapshot).ThreadListIndex < (*Snapshot).ThreadListCount
         {
             let Entries: LPTHREADENTRY32 = OffsetToPtr(
-                Snapshot as *mut core::ffi::c_void,
+                Snapshot,
                 (*Snapshot).ThreadListOffset,
             ) as LPTHREADENTRY32;
 

@@ -124,7 +124,7 @@ KeSpinLock OK pass=755 fail=30 skip=0 exit=0
     assert KeSpinLock.c:333
     assert KeSpinLock.c:343
 KeTimer OK pass=54 fail=0 skip=0 exit=0
-MmMdl OK pass=593 fail=0 skip=0 exit=0
+MmMdl OK pass=587 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003

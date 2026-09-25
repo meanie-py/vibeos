@@ -559,10 +559,15 @@ unsafe fn kcb_delete(Kcb: PCM_KEY_CONTROL_BLOCK) -> u32 {
     (*Kcb).__bindgen_anon_1.Delete()
 }
 
+// cm_x.h: `CmpAcquireKcbLockSharedByKey(k)` is `...ByIndex(GET_HASH_INDEX(k))`. This local copy
+// passed the raw ConvKey hash as the INDEX, so CmpQueryKeyName (NtQueryObject for a key's
+// name) did a `lock cmpxchg` at CmpCacheTable[hash]: a 0x1E when that was unmapped, a silent
+// write into unrelated kernel memory when it was not, and then released the REAL bucket
+// through the shared CmpReleaseKcbLock, which it had never acquired.
 #[inline(always)]
 unsafe fn CmpAcquireKcbLockShared(Kcb: PCM_KEY_CONTROL_BLOCK) {
     if !Kcb.is_null() {
-        CmpAcquireKcbLockSharedByIndex(kcb_conv_key(Kcb));
+        CmpAcquireKcbLockSharedByIndex(GET_HASH_INDEX(kcb_conv_key(Kcb)));
     }
 }
 

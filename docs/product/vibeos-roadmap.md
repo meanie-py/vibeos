@@ -511,13 +511,54 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
-- **`SHObjectProperties` on a file hangs in ole32 marshalling. OPEN** (2026-09-25). Found by
-  `tools/payloads/shelltail`: opening an executable's properties never shows the sheet, and the
-  serial has `ole32-rust marshal.rs: couldn't get IPSFactory buffer for interface` then
-  `Failed to marshal the interface`. The sheet is opened on another thread with a marshalled
-  data object, and no proxy/stub for that interface is found. Baseline shell32 never got that
-  far (it panicked in `PathIsExeW` first, fixed the same day), so this is newly reachable, not a
-  regression. shelltail reaches `CStubWindow32` through `SHOpenPropSheetW` instead.
+- **`SHObjectProperties` on a file hangs in ole32 marshalling. FIXED 2026-09-25**, and it was
+  five bugs deep. Right-click > Properties now opens a correct sheet (name, type, location, size,
+  dates, attributes) on i386; `tools/payloads/comprobe` checks it end to end with a screenshot.
+  1. No interface had a proxy/stub registration: `CoGetPSClsid` gave `REGDB_E_IIDNOTREG` for
+     IDataObject, IStream, IUnknown... The livecd registers COM from `setup -mini`
+     (syssetup `InstallLiveCD`), which never got that far: kernel32's INI parser computed every
+     length in BYTES (`PROFILE_Load`), so `GetPrivateProfileStringW` on `unattend.inf` never
+     returned. Same file: `CurProfile` was its own static instead of `MRUProfile[0]`, and a
+     `return TRUE` was dropped.
+  2. Even with setup unstuck, ole32's `DllRegisterServer` wrote nothing: the upstream sync kept
+     `7675017f60d`'s `.rc` change but lost its `add_idl_reg_scripts` line
+     (`tools/test_wine_registry_resources.py` guards it now).
+  3. Every value on the sheet drew as one glyph: `NtGdiGetCharABCWidthsW` read the LFONT as
+     the realized FONTGDI, so its SharedFace guard refused every call and every
+     `SS_*ELLIPSIS` static truncated. Same fix repairs dxdiag's values and Regional Options.
+  With setup's LiveCD phase now running, PlugPlay starts too, which is what devmgmt and dxdiag
+  were failing on (`RPC_S_SERVER_UNAVAILABLE`). setup no longer launches userinit when a shell
+  is already up (vibeos's winlogon starts it directly).
+- **App sweep findings, 2026-09-25 (`tools/payloads/appstorm`). OPEN.** 38 stock apps and
+  applets launched, checked and screenshotted per arch. Fixed on the way: an i386 0x1E in
+  `ExAcquirePushLockShared` from `CmpQueryKeyName` (a local lock helper skipped the KCB hash);
+  `GetClassNameW/A` dropping the terminator; user-mode `DbgPrint` returning failure; Toolhelp
+  snapshots with their counts overwritten; every kernel-built file-object name two characters
+  short (`IopQueryNameInternal` used 8 for `FIELD_OFFSET(FILE_NAME_INFORMATION, FileName)`, so
+  process names read `svchost.e`). The kmtest sweep now waits for setup's PnP device-install
+  burst (~25-35s, measured) before its first test: started inside it, the load-sensitive tests
+  failed on every attempt. Still open:
+  - Folder windows opened from another process never appear (`explorer.exe <path>`, Control
+    Panel, `ncpa.cpl`). On amd64 `filebrowser.exe` faults in
+    `shell32!CRegFolder::ParseDisplayName+0x26`.
+  - amd64: setup.exe faults (RIP in heap, `0x1b85ac0`) as `RegistrationPhase2` loads its first
+    DLL, so the registration pass does not run there. The return address is
+    `ntdll!LdrpWalkImportDescriptor+0xa2`, the call through `LdrpManifestProberRoutine`, which
+    holds a HEAP pointer by then: only kernel32's init sets it, so something in setup's process
+    overwrites that ntdll global. Neighbours are the shim-engine `g_pfnSE_*` pointers and
+    `LdrpNormalSnap`. Next step: a gdb write-watch on it. Also amd64: dxdiag faults in
+    `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load import that does not resolve;
+    arm64 too).
+  - amd64: registering `msctf.dll` crashed csrss in `winsrv!ConSrvGetConsole` (NULL
+    per-process data), a 0xF4, seen under the regcapture payload.
+  - `SystemProcessorPerformanceInformation` reports no idle time (a quiet system reads 100%
+    kernel), so Task Manager's CPU graph cannot fall. Measured with `tools/payloads/cpuprof`,
+    against a control with setup stalled.
+  - Small: Date/Time's analog clock is not drawn; Add/Remove Programs' info pane draws text as
+    a column; the Properties size line loses its closing parenthesis; comprobe hangs after
+    closing the sheet (not yet shown to be a product bug).
+  - Kernel `ASSERT FAILED: (*WaitBlock).Signaled != 0` at `ex-rust/src/pushlock.rs:643`,
+    seen once during an i386 sweep.
 - **Retire the other modules' printf/varargs C shims the way shell32's went. USER-MODE SIX
   DONE 2026-09-25; the rest OWED.** desk, msgina, sysdm, netcfgx, userenv and syssetup compile no
   shim now. The strsafe printf family is `strsafe_rust::StringCchPrintfW!`/`StringCbPrintfW!`/
@@ -1931,7 +1972,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   §9.41 was a wrong OFFSET (0x74 vs 0x1740) and is gated by `scan_magic_offsets`; this would
   be the same class through a wrong TEB, which that scanner cannot see.
 
-- **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — OPEN**
+- **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — ROOT-CAUSED 2026-09-25**: it took `FontGDI` from the LFONT instead of `TextObj->Font` (see the SHObjectProperties entry); the guard below stays as defense. Original report:
   (2026-09-20). Found by the drain floor above: with the applet phase actually observed, a
   `--ladder` boot does not merely storm with first-chance faults, it **dies**.
 

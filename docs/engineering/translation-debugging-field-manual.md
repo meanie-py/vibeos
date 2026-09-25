@@ -1010,6 +1010,12 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   `git add` ("will not add file alias"). Rename the module.
 
 ### Assorted ABI-adjacent traps
+- **A trap handler that never sets the return register returns the caller's own argument.**
+  User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and
+  `KdpStub` (the no-debugger path) handled `BREAKPOINT_PRINT` without calling
+  `KeSetContextReturnRegister`, so the caller got its service code back (1). Every `DPRINT1` in
+  user mode then read "failed" and printed a second `(file:line) DbgPrint() failed!` line,
+  doubling serial debug output. `KdpTrap` always set it; with no debugger a print succeeded.
 - **LLM appends `as u64` to every SIZE_T/ULONG_PTR** → ~50 i386-only E0308s. Use `as _` or
   `usize`; never hardcode a width for an arch-width field.
 - **amd64 `cpuid` 32-bit `xchg ebx` dance zero-extends and wipes the upper 32 bits of rbx**,
@@ -3673,6 +3679,23 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
+**Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
+that meant no `Interface\{iid}\ProxyStubClsid32` anywhere, so `CoGetPSClsid` failed with
+`REGDB_E_IIDNOTREG`, no interface could cross an apartment, and right-click > Properties
+showed an error box.
+
+**Cause.** Upstream `7675017f60d` moved ole32's registration from hand-written `.rgs`
+resources to `add_idl_reg_scripts(...)`. Our ole32 CMakeLists is heavily cohab-edited, and the
+sync kept the `.rc` deletion but lost the one CMake line. With `-DWINE_REGISTER_DLL`,
+`DllRegisterServer` is `__wine_register_resources(hProxyDll)`, which is happy to replay zero
+resources.
+
+**Fix.** Restore the line. `tools/test_wine_registry_resources.py` now fails any
+`-DWINE_REGISTER_DLL` module with neither an `add_idl_reg_scripts` line nor a `WINE_REGISTRY`
+`.rc` entry. `tools/payloads/regcapture` shows what each registration writes in the guest:
+`lines=0` beside `hr=0` is this bug.
+
 ### Re-translating an integrated module silently reverts every post-integration repair
 
 **Symptom.** A module that has been flipped, ground green and booted for weeks is
@@ -5064,6 +5087,23 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A C `#define` ALIAS for an lvalue, translated as its own variable, stops aliasing.**
+  kernel32's profile.c has `#define CurProfile (MRUProfile[0])`; the translation made
+  `CurProfile` a separate `static mut`. Every `CurProfile = p` in the C writes the head of the
+  MRU array, so after the port the rotation code left `MRUProfile[0]` stale and duplicated,
+  and the "current" profile was one nothing in the cache pointed to. Nothing faults: the
+  cache just silently keeps the wrong entries. Grep the C for `#define NAME (x[...])` and
+  `#define NAME (s->field)` and make sure the Rust spells the lvalue, not a copy of it.
+  **The same file dropped a `return TRUE`** from the "already cached, not yet on disk" branch
+  of `PROFILE_Open`, so it fell through and re-created the profile, losing unsaved writes.
+- **A local copy of a SHARED helper drops the step the shared one does.** config-rust's
+  `inlines.rs` has `CmpAcquireKcbLockShared(kcb)` = `ByIndex(GET_HASH_INDEX(kcb->ConvKey))`.
+  `cmsysini.rs` carried its own `#[inline]` copy that passed the raw `ConvKey` as the index, so
+  `CmpQueryKeyName` (NtQueryObject for a key's name) did a `lock cmpxchg` at
+  `CmpCacheTable[hash]`: an i386 `0x1E` in `ExAcquirePushLockShared` when that was unmapped,
+  and a silent write into unrelated kernel memory when it was not, followed by a release of the
+  real bucket it had never acquired. Found by launching `rapps.exe`. Before trusting a
+  file-local helper with a shared helper's name, diff the two.
 - **A `CComPtr` local lowered to a RAW pointer plus an RAII guard must not ALSO keep the
   explicit `Release()` calls — that is a double release.** `CDefView::FillList` declares
   `CComPtr<IEnumIDList> pEnumIDList` and releases it NOWHERE: the destructor does it once, on
@@ -5593,6 +5633,26 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   `CBaseUnknown` as `CBaseUnknow`, in the shipping DLL, on every C++ symbol. The shape to
   distrust is any `a - K - b` where `a` and `b` are pointers: the `K` belongs to ONE of the two
   operands, and once `a - b` becomes a method call the reader can no longer see which.
+- **C pointer arithmetic lowered to INTEGER arithmetic counts BYTES.** `ptr - ptr` on a
+  `WCHAR*` is a count of characters; `(a as isize).wrapping_sub(b as isize)` is a count of
+  bytes. kernel32's INI parser (`profile.rs` `PROFILE_Load`) had all nine of its differences in
+  that shape, so every `memchrW` scanned twice the line, off the end of the file buffer, and
+  `GetPrivateProfileStringW` on the livecd's `unattend.inf` never returned. That stalled
+  setup's LiveCD phase, which is what registers COM and starts Plug and Play, so devmgmt,
+  dxdiag and right-click > Properties all failed with it. The `+ 1` form is the same bug:
+  toolhelp's `OffsetToPtr(Snapshot, off)` is `(ULONG_PTR)(Snapshot + 1) + off`, which skips
+  the whole header, and the writers had it as `Snapshot as usize + 1`, one BYTE, so the entries
+  overwrote the header's counts (`Process32First` always said no more files). Fix with
+  `offset_from`/`.add()` on the TYPED pointer. And if you factor it into a helper, type the
+  parameter: a generic `<T>` helper handed `Snapshot as *const c_void` steps one byte again,
+  which the first fix did in three readers until the signature was narrowed to
+  `PTH32SNAPSHOT` and the compiler named them.
+- **`sizeof` of a variable-length struct where the C says `FIELD_OFFSET(..., Array)`.**
+  `FILE_NAME_INFORMATION` is `{ULONG FileNameLength; WCHAR FileName[1]}`: `sizeof` is 8 after
+  padding, the name starts at 4. iomgr's `IopQueryNameInternal` had a literal `8` in all five
+  places the C uses the field offset, so every name `ObQueryNameString` built for a file
+  object was two characters short. Process image names read `svchost.e`, which also blinded a
+  harness looking for `setup.exe`. Spell it `offset_of!(T, Field)`, never a number.
 - **Cast-before-offset**: `(ptr as *T).offset(1)` overshoots by the size delta → heap overrun.
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-
@@ -5691,6 +5751,20 @@ same defect in both directions: the original LPC translation shipped it by passi
 conversion that FIXED that bug then reintroduced it at five more sites. Both times the
 answer was one line of `probe.h`.
 
+
+### Redirecting an opaque callee through a kernel TEMP buffer drops what it wrote past the count
+**Symptom.** `GetClassNameW` returns the right length but the buffer holds the class name
+followed by whatever the caller had there before (`#32770` plus garbage on amd64; a zeroed
+buffer hides it on i386/arm64). `GetClassNameA` the same.
+
+**Cause.** To make a user-buffer write fault-tolerant, win32k's `UserGetClassName` calls
+`RtlQueryAtomInAtomTable` (and `RtlUnicodeStringToAnsiString`) on a KERNEL temp buffer, then
+`safe_copy_raw`s the result out. It copied `BufLen` bytes, and `BufLen` counts the name only;
+the C let the callee write straight into the caller's buffer, terminator included.
+
+**Fix.** Copy the terminator too when the capacity allows (write it into the temp first). Any
+"query into a temp, then copy out" redirect must copy everything the callee would have
+written, not just the count it returned.
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;

@@ -342,6 +342,13 @@ pub unsafe extern "system" fn KdpStub(
             }
         }
 
+        // DbgPrint returns what this leaves in the return register, and nothing set it: the
+        // caller got its own service code back (BREAKPOINT_PRINT == 1), so every user-mode
+        // DPRINT1 read "failed" and printed a second "DbgPrint() failed!" line. KdpTrap sets
+        // it; with no debugger attached a print succeeded, which is what Windows reports.
+        if exception_command == BREAKPOINT_PRINT {
+            KeSetContextReturnRegister(ContextRecord, STATUS_SUCCESS as ULONG_PTR);
+        }
         KeSetContextPc(
             ContextRecord,
             KeGetContextPc(ContextRecord) + KD_BREAKPOINT_SIZE as ULONG_PTR,

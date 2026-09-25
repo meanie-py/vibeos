@@ -1830,6 +1830,12 @@ pub unsafe extern "system" fn IopQueryName(
     IopQueryNameInternal(ObjectBody, HasName, 0u8, ObjectNameInfo, Length, ReturnLength, PreviousMode)
 }
 
+// FIELD_OFFSET(FILE_NAME_INFORMATION, FileName): 4 on every arch. This function had it as a
+// literal 8 (sizeof the padded struct), so every name built here came out 4 bytes, two
+// characters, short: process image names read "svchost.e" and "setup.e" in Toolhelp and
+// Task Manager.
+const FNI_NAME_OFFSET: u32 = core::mem::offset_of!(_FILE_NAME_INFORMATION, FileName) as u32;
+
 unsafe fn IopQueryNameInternal(
     ObjectBody: PVOID,
     HasName: BOOLEAN,
@@ -1944,7 +1950,7 @@ unsafe fn IopQueryNameInternal(
     }
 
     let LocalFileInfo = LocalInfo as PFILE_NAME_INFORMATION;
-    let FileLength = Length - LocalReturnLength + 8;
+    let FileLength = Length - LocalReturnLength + FNI_NAME_OFFSET;
 
     if PreviousMode == 0i8 && ((*FileObject).Flags & FO_SYNCHRONOUS_IO != 0) {
         Status = IopGetFileInformation(
@@ -1973,12 +1979,12 @@ unsafe fn IopQueryNameInternal(
             ExFreePoolWithTag(LocalInfo as PVOID, TAG_IO);
             return Status;
         }
-        LocalReturnLength = 8;
+        LocalReturnLength = FNI_NAME_OFFSET;
         (*LocalFileInfo).FileNameLength = 0;
         (*LocalFileInfo).FileName[0] = OBJ_NAME_PATH_SEPARATOR;
         Status = STATUS_SUCCESS;
-    } else if LocalReturnLength < 8 {
-        LocalReturnLength = 8;
+    } else if LocalReturnLength < FNI_NAME_OFFSET {
+        LocalReturnLength = FNI_NAME_OFFSET;
     }
 
     if LengthMismatch != 0 {
@@ -1987,7 +1993,7 @@ unsafe fn IopQueryNameInternal(
         return STATUS_BUFFER_OVERFLOW;
     }
 
-    let FileLength = LocalReturnLength - 8;
+    let FileLength = LocalReturnLength - FNI_NAME_OFFSET;
     LocalReturnLength = (p as ULONG_PTR - ObjectNameInfo as ULONG_PTR) as u32
         + (*LocalFileInfo).FileNameLength;
 
