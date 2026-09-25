@@ -108,6 +108,49 @@ pub unsafe extern "system" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb:
     0
 }
 
+/// resrcsup.c `FatAcquireExclusiveFcb`. This one was dropped in translation and a C
+/// shim in rust_cohab_stub.c stood in for it: a bare ExAcquireResourceExclusiveLite,
+/// with no OutstandingAsyncWrites drain and no FatVerifyOperationIsLegal. Without the
+/// drain an exclusive acquirer (truncate, set-EOF, cleanup, flush) can run while a
+/// non-cached async write it cannot see is still landing in the same file.
+#[no_mangle]
+pub unsafe extern "system" fn FatAcquireExclusiveFcb(
+    IrpContext: *mut IRP_CONTEXT,
+    Fcb: *mut FCB,
+) -> u8 {
+    loop {
+        if ExAcquireResourceExclusiveLite(
+            ((*Fcb).Header.Resource).cast(),
+            BooleanFlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u8,
+        ) != 0
+        {
+            // Anything other than a non-cached write must wait out the async writes
+            // (and so must that write, if others are queued on the resource); then
+            // drop the resource and take it again.
+            if (*(*Fcb).NonPaged).OutstandingAsyncWrites != 0
+                && ((*IrpContext).MajorFunction != IRP_MJ_WRITE
+                    || FlagOn((*(*IrpContext).OriginatingIrp).Flags, IRP_NOCACHE) == 0
+                    || ExGetSharedWaiterCount((*Fcb).Header.Resource) != 0
+                    || ExGetExclusiveWaiterCount((*Fcb).Header.Resource) != 0)
+            {
+                KeWaitForSingleObject(
+                    (*(*Fcb).NonPaged).OutstandingAsyncEvent as *mut c_void,
+                    _KWAIT_REASON_Executive,
+                    0i8,
+                    0,
+                    core::ptr::null_mut(),
+                );
+                FatReleaseFcb(IrpContext, Fcb);
+                continue;
+            }
+            FatVerifyOperationIsLegal(IrpContext);
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FatAcquireSharedFcb(
     IrpContext: *mut IRP_CONTEXT,

@@ -12,6 +12,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
+va-slots-rust = { path = "../va-slots-rust" }
 ntdll-sys = { path = "../ntdll-sys" }
 # strsafe.h ported ONCE (see that crate); sysdm calls StringCchCopyW/CatW/PrintfW/VPrintfW.
 strsafe-rust = { path = "../strsafe-rust" }

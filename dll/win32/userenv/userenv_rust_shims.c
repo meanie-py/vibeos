@@ -1,3 +1,6 @@
+/* INERT since 2026-09-25: no longer in the build. Its varargs moved to Rust (strsafe-rust's
+ * StringC*PrintfW! macros call msvcrt's variadic _snwprintf; the module's own variadics RECEIVE
+ * their arguments the va-slots way). Kept on disk as the reference the Rust was checked against. */
 /*
  * userenv_rust_shims.c — C shims for the userenv Rust cohabitation flip.
  *

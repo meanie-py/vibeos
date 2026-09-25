@@ -112,6 +112,7 @@ members = [
     # defines them, so every flipped module used to port the header again — four divergent
     # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
     "strsafe-rust",
+    "strsafe-difftest",
     # Receiving C varargs on stable Rust (the slot-capture technique + its measured
     # bounds), ported ONCE. Three crates need it -- freeldr-rust, kd-rust and
     # drvtrace-shim -- and the bounds are only safe because they were measured, so a

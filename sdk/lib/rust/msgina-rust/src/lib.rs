@@ -102,28 +102,11 @@ macro_rules! IS_PWR_SUSPEND_ALLOWED { ($caps:expr) => {{ let _ = &$caps; 0i32 }}
 // `[WCHAR; 256]` and was passed to the variadic BY VALUE, so `%ws` read the first pointer-width
 // bytes of the name text as an address. C's array-to-pointer decay does not exist in Rust.)
 //
-// Now the real thing: the bodies live in the shared `strsafe-rust` crate, and the `...` entry
-// points are trampolines in dll/win32/msgina/rust_varargs_shim.c that do the `va_start` stable
-// Rust cannot and call the fixed-arity `*_v` twins. Sanctioned trampoline pattern, NOT a
-// translation reverted to C.
-//
-// `extern "C"` and not `extern "system"` even though strsafe.h spells them WINAPI: no ABI on any
-// of our three targets has a VARIADIC stdcall, so a variadic WINAPI function IS cdecl, and Rust
-// rejects the mismatch outright.
-extern "C" {
-    pub fn StringCchPrintfW(
-        pszDest: *mut u16,
-        cchDest: usize,
-        pszFormat: *const u16,
-        ...
-    ) -> prelude::HRESULT;
-    pub fn StringCbPrintfW(
-        pszDest: *mut u16,
-        cbDest: usize,
-        pszFormat: *const u16,
-        ...
-    ) -> prelude::HRESULT;
-}
+// strsafe.h's printf entry points are VARIADIC, and stable Rust can CALL a C-variadic though
+// it cannot define one; so these are strsafe-rust macros that call msvcrt's `_snwprintf` in
+// place, with strsafe's bounds and HRESULTs. The C trampoline that used to define them
+// (rust_varargs_shim.c) retired 2026-09-25. Call sites say `StringCchPrintfW!(...)`.
+pub use strsafe_rust::{StringCbPrintfW, StringCchPrintfW};
 
 // Foundation: cross-DLL Win32/LSA out-call decls, GINA-specific types, and the
 // universal prelude the per-file translations expect in scope.

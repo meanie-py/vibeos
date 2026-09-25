@@ -1749,7 +1749,7 @@ unsafe extern "C" fn SetUserLocaleName(hwnd: HWND) {
     GetGeoInfoW(GetUserGeoID(GEOCLASS_NATION), GEO_FRIENDLYNAME, CurGeo.as_mut_ptr(), (ARRAYSIZE!(CurGeo)) as i32, (GetThreadLocale()) as u16);
 
     LoadStringW(hDllInstance, (IDS_LOCALETEXT) as u32, ResText.as_mut_ptr(), (ARRAYSIZE!(ResText)) as i32);
-    StringCchPrintfW(LocaleText.as_mut_ptr(), (ARRAYSIZE!(LocaleText)) as usize, ResText.as_ptr(), CurLocale.as_ptr(), CurGeo.as_ptr());
+    StringCchPrintfW!(LocaleText.as_mut_ptr(), (ARRAYSIZE!(LocaleText)) as usize, ResText.as_ptr(), CurLocale.as_ptr(), CurGeo.as_ptr());
 
     SetWindowTextW(hwnd, LocaleText.as_ptr());
 }
@@ -1772,13 +1772,13 @@ unsafe extern "C" fn SetKeyboardLayoutName(hwnd: HWND) {
     }
 
     if (HIWORD!(hkl as u32) & 0xF000) == 0xF000 {
-        StringCchPrintfW(SpecialId.as_mut_ptr(), (ARRAYSIZE!(SpecialId)) as usize, w!("%04x") as PCWSTR, ((HIWORD!(hkl as u32) & 0x0FFF) as c_uint));
+        StringCchPrintfW!(SpecialId.as_mut_ptr(), (ARRAYSIZE!(SpecialId)) as usize, w!("%04x") as PCWSTR, ((HIWORD!(hkl as u32) & 0x0FFF) as c_uint));
         LayoutSpecial = (TRUE) as i32;
     }
 
     i = 0;
     while i < (if LayoutSpecial != 0 { MAX_LAYOUTS_PER_LANGID } else { 1 }) {
-        StringCchPrintfW(LocaleName.as_mut_ptr(), (ARRAYSIZE!(LocaleName)) as usize, w!("%08lx") as PCWSTR, (i << 16) | LOWORD!(hkl as u32) as u32);
+        StringCchPrintfW!(LocaleName.as_mut_ptr(), (ARRAYSIZE!(LocaleName)) as usize, w!("%08lx") as PCWSTR, (i << 16) | LOWORD!(hkl as u32) as u32);
 
         StringCchCopyW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, w!("SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\") as PCWSTR);
         StringCchCatW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, LocaleName.as_ptr());
@@ -1800,7 +1800,7 @@ unsafe extern "C" fn SetKeyboardLayoutName(hwnd: HWND) {
     }
 
     LoadStringW(hDllInstance, (IDS_LAYOUTTEXT) as u32, ResText.as_mut_ptr(), (ARRAYSIZE!(ResText)) as i32);
-    StringCchPrintfW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, ResText.as_ptr(), LocaleName.as_ptr());
+    StringCchPrintfW!(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, ResText.as_ptr(), LocaleName.as_ptr());
 
     SetWindowTextW(hwnd, LayoutPath.as_ptr());
 }
@@ -1925,7 +1925,7 @@ pub unsafe extern "C" fn EnableVisualTheme(hwndParent: HWND, ThemeFile: PCWSTR) 
         let mut wszParams: [u16; 1024] = [0; 1024];
         let format = w!("desk.cpl,,2 /Action:ActivateMSTheme /file:\"%s\"") as PCWSTR;
 
-        StringCchPrintfW(wszParams.as_mut_ptr(), (_countof!(wszParams)) as usize, format, ThemeFile);
+        StringCchPrintfW!(wszParams.as_mut_ptr(), (_countof!(wszParams)) as usize, format, ThemeFile);
         RunControlPanelApplet(hwndParent, wszParams.as_ptr());
     } else {
         RunControlPanelApplet(hwndParent, w!("desk.cpl,,2 /Action:ActivateMSTheme") as PCWSTR);

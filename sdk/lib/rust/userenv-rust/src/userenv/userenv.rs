@@ -3,11 +3,11 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-// hInstance (userenv.c:32 `HINSTANCE hInstance = NULL;`) is provided as C storage by
-// userenv_rust_shims.c so the bindgen `extern` import (read across ALL modules + written by
-// DllMain below) has exactly ONE definition. A `#[no_mangle]` static here would be a same-symbol
-// second definition, and a *non*-#[no_mangle] one (the c2rust default) would be a THIRD, private
-// hInstance that DllMain writes but no other module ever sees. DllMain writes it via the import.
+// userenv.c:32 `HINSTANCE hInstance = NULL;`. `#[no_mangle]` so the bindgen `extern` import every
+// other module reads resolves to THIS storage (a c2rust-default private static would be a twin
+// DllMain writes and nobody else sees). It was C storage in userenv_rust_shims.c until 2026-09-25.
+#[no_mangle]
+pub static mut hInstance: HINSTANCE = core::ptr::null_mut();
 
 extern {
     fn InitializeGPNotifications();

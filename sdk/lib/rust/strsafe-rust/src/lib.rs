@@ -248,8 +248,27 @@ unsafe fn StringVPrintfExWorkerW(
     ppszDestEnd: *mut *mut WCHAR,
     pcchRemaining: *mut usize,
     dwFlags: DWORD,
-    mut pszFormat: *const WCHAR,
+    pszFormat: *const WCHAR,
     ap: *mut c_void,
+) -> HRESULT {
+    printf_ex_worker(pszDest, cchDest, cbDest, ppszDestEnd, pcchRemaining, dwFlags, pszFormat,
+        |d, n, f| _vsnwprintf(d, n, f, ap))
+}
+
+/// `StringVPrintfExWorkerW` with its one `_vsnwprintf` call handed in as `print(dest, cchMax,
+/// format)`, so the variadic macro (`StringCbPrintfExW!`, which calls `_snwprintf` with the
+/// arguments in place) and the `va_list` entry points share every flag and bound rule.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn printf_ex_worker(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    cbDest: usize,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+    mut pszFormat: *const WCHAR,
+    print: impl FnOnce(*mut WCHAR, usize, *const WCHAR) -> c_int,
 ) -> HRESULT {
     let mut hr: HRESULT = S_OK;
     let mut pszDestEnd: *mut WCHAR = pszDest;
@@ -278,7 +297,7 @@ unsafe fn StringVPrintfExWorkerW(
                 }
             } else {
                 let cchMax = cchDest - 1;
-                let iRet = _vsnwprintf(pszDest, cchMax, pszFormat, ap);
+                let iRet = print(pszDest, cchMax, pszFormat);
                 if iRet < 0 || (iRet as usize) > cchMax {
                     pszDestEnd = pszDest.add(cchMax);
                     cchRemaining = 1;
@@ -521,6 +540,34 @@ macro_rules! StringCbPrintfW {
             $(, $arg)*
         )
     };
+}
+
+/// strsafe.h `StringCbPrintfExW(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags,
+/// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCbPrintfExW {
+    ($pszDest:expr, $cbDest:expr, $ppszDestEnd:expr, $pcbRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cbDest: usize = $cbDest as usize;
+        let pcbRemaining: *mut usize = $pcbRemaining as _;
+        let cchDest = cbDest / core::mem::size_of::<$crate::WCHAR>();
+        let mut cchRemaining: usize = 0;
+        let hr = if cchDest > $crate::STRSAFE_MAX_CCH {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            $crate::printf_ex_worker(
+                pszDest, cchDest, cbDest, $ppszDestEnd as _, &mut cchRemaining,
+                $dwFlags as _, $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        };
+        if (hr >= 0 || hr == $crate::STRSAFE_E_INSUFFICIENT_BUFFER) && !pcbRemaining.is_null() {
+            *pcbRemaining = cchRemaining * core::mem::size_of::<$crate::WCHAR>()
+                + (cbDest % core::mem::size_of::<$crate::WCHAR>());
+        }
+        hr
+    }};
 }
 
 // ---- the printf family: fixed-arity twins of the variadic entry points ----

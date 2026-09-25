@@ -410,8 +410,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   **Flipped on all three arches, 2026-09-24:** `VIBEOS_ENABLE_DELAYLOAD` is now an option
   defaulting ON. The WoW64 `user32:class` found the eager loads, which put comctl32 in every
   RPC-using process. arm64 needed an 8-aligned IAT in `gen-delaylib.py`, then exposed #43
-  (below), which it was held OFF for until that was fixed. The arm64 `arm64_*_stubs.c`
-  optional-DLL deletion is still owed.
+  (below), which it was held OFF for until that was fixed. The four arm64 `arm64_*_stubs.c`
+  optional-DLL hacks were deleted 2026-09-25 (advapi32 LSA logon, rpcrt4, user32 libpng,
+  consrv ole32/shell32), and every arch now uses the same delay-import lists. rpcrt4's stubs
+  had included `VARIANT_UserMarshal` and `BSTR_UserMarshal` returning nothing, which silently
+  broke OLE automation marshalling on arm64 alone.
 - [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
   wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
   TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a
@@ -515,13 +518,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   data object, and no proxy/stub for that interface is found. Baseline shell32 never got that
   far (it panicked in `PathIsExeW` first, fixed the same day), so this is newly reachable, not a
   regression. shelltail reaches `CStubWindow32` through `SHOpenPropSheetW` instead.
-- **Retire the other modules' printf/varargs C shims the way shell32's went. OWED**
-  (2026-09-25). `strsafe_rust::StringCchPrintfW!`/`StringCbPrintfW!` (calling msvcrt's variadic
-  `_snwprintf` directly) and va-slots receivers replaced shell32's last two C files. The same
-  kind of trampoline is the ENTIRE content of desk's and msgina's `rust_varargs_shim.c` and
-  userenv's printf shim, and part of sysdm's (`ResourceMessageBox`), syssetup's (exported
-  `pSetupDebugPrint`, `FatalError`) and netcfgx's `rust_strsafe_shim.c`. Each needs its own
-  runtime check, as shell32's got from shelltail.
+- **Retire the other modules' printf/varargs C shims the way shell32's went. USER-MODE SIX
+  DONE 2026-09-25; the rest OWED.** desk, msgina, sysdm, netcfgx, userenv and syssetup compile no
+  shim now. The strsafe printf family is `strsafe_rust::StringCchPrintfW!`/`StringCbPrintfW!`/
+  `StringCbPrintfExW!`, which CALL msvcrt's variadic `_snwprintf`. The modules' own variadics
+  (sysdm `ResourceMessageBox`, syssetup's exported `pSetupDebugPrint` and `FatalError`) RECEIVE
+  their arguments the va-slots way. userenv's two data globals are `#[no_mangle]` Rust statics
+  now; its shim's `StringCchPrintfW` also passed `cchDest` where strsafe passes `cchDest - 1`.
+  Graded by `strsafe-difftest` against the genuine strsafe.h: 59,853 cases over every size, flag
+  and NULL out-param, and it catches a planted off-by-one in either the bound or the remaining
+  count. **Still owed**, each its own class:
+  - variadic RECEIVERS: aclui `LoadAndFormatString`, wldap32 `ber_printf`/`ber_scanf`, dhcpcsvc,
+    msvcrt's 30 CRT shells;
+  - the kernel drivers' debug-print shims (pcix, pciidex, uniata, scsiport, storport, usbhub,
+    usbport, usbstor, acpi). These cannot call msvcrt, so they would be va-slots receivers;
+  - usersrv's `usersrv_rust_strsafe_shim.c`.
 - **arm64 `test_start_menu_opens` on fresh media: bare wallpaper, no taskbar. FIXED
   2026-09-23 (`5e2fb0703c2`); re-verified 2026-09-24 on fresh arm64 media: the start menu
   opens over the desktop with the taskbar and tray drawn. Two bugs, both needed.**
@@ -2012,17 +2023,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   explicitly to stop measuring and get more eyes on it: a thousand identical soak rounds
   sample one condition a thousand times, while fleet usage samples many for free. **Do not
   propose more soak rounds as a precondition for anything here.** Two narrow signatures in
-  `triage.KNOWN_FLAKES` make the gate retry these once (~1-in-42 → ~1-in-3200 disruption);
+  `triage.KNOWN_FLAKES` made the gate retry these once (~1-in-42 → ~1-in-3200 disruption;
+  both retired 2026-09-25, below);
   across all 1375 MP rounds `0x1E` and `0xE3` are the only codes that have ever appeared, so
   the pair is exhaustive, not merely sufficient. **#43 (`0xE3`) FIXED 2026-09-24**: fastfat's
   C shim tested `IRP_CONTEXT_FLAG_DISABLE_DIRTY` (0x1) as the WAIT bit, so FCB acquires ran
   non-blocking and `FatCommonCleanup` released a page fault's FCB lock; field manual, "0xE3
   RESOURCE_NOT_OWNED (#43) was a fastfat shim". Measured with delay-load ON (which made it
-  hit 4 in 5 kmtest boots): 10/10 clean after. **#39 (arm64 `0x1E`) stays OPEN**: one
-  capture's stack ran through `ExReleaseResourceForThreadLite` under `NtFlushKey`, so it may
-  be the same corruption; re-measure before assuming. The two stay
-  OPEN and owed until measured — the flake registry is a licence to keep working, not to stop looking, and
-  each entry retires when its root fix lands and a re-gate shows the signature gone.
+  hit 4 in 5 kmtest boots): 10/10 clean after. **Re-measured 2026-09-25: 102 arm64 MP kmtest
+  rounds at `e2928af9a3c`, ZERO bugchecks of any code**, against 0xE3 in 18/336 and 0x1E in
+  10/336 in the same corpus before the fix. Chance of 0/102 at those rates: 0.4% (0xE3) and
+  4.5% (0x1E). At #39's long-run fleet rate of 1.3% it is 26%, so #39 is UNREPRODUCED, not
+  proven fixed. One capture's stack ran through `ExReleaseResourceForThreadLite` under
+  `NtFlushKey`, which fits the same corruption. **Both KNOWN_FLAKES entries are RETIRED**
+  (the 0xF4 precedent), so a recurrence now BLOCKS as a fresh `BUGCHECK 0x1E`/`0xE3` with its
+  capture preserved. That is how the next lead arrives, and the signatures are kept in
+  triage.py's retirement note for a re-add.
 
 - **No scanner catches a C `ASSERT` that VANISHES in translation — CLOSED (2026-09-06) by
   `tools/scan_dropped_asserts.py`.** 89 findings baselined; gated at 0 NEW. It pairs each C
@@ -2342,7 +2358,9 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the callee's arity is invisible to a cdecl/win64 caller. Field manual: "Which of the four is
   silent is a property of the HEADER" (whose freeldr row this corrects) and "A printf-style
   callee can take varargs on stable Rust".
-- **PARTLY FIXED (task #39): the arm64 `--smp 1` wedge reaches an EL1 user PC;
+- **UNREPRODUCED since #43's fix (task #39), 2026-09-25: 0 in 102 arm64 MP rounds; flake
+  entry retired, see the #43 entry above. History follows. PARTLY FIXED: the arm64 `--smp 1`
+  wedge reaches an EL1 user PC;
   exception handling hid the first fault, and the jumper is not yet found.** A 300-round
   soak on fixed media hit it 5 times (1.7%), and every capture showed the same shape: a vCPU at
   **EL1h with `PC=0x10000`**, register file byte-identical across samples, every timed wait

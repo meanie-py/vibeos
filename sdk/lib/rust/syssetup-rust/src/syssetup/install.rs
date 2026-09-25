@@ -23,13 +23,30 @@ pub struct DLG_DATA {
 }
 
 pub type PDLG_DATA = *mut DLG_DATA;
-// install.c:53 is C-VARIADIC, which stable Rust can declare but not DEFINE (`va_start` is only
-// legal inside one — c_variadic, rust-lang/rust#44930). So the entry point lives in
-// rust_varargs_shim.c, which does the va_start and tail-calls this fixed-arity twin. `ap` comes
-// through as a `void*`: on all three targets va_list is a single `char*`.
+// install.c:53 `FatalError(char *pszFmt, ...)`. The callers below reach it through this variadic
+// declaration; the definition after it receives the arguments.
 extern "C" {
     fn FatalError(pszFmt: *mut i8, ...);
 }
+
+// Stable Rust cannot DEFINE a C-variadic (`c_variadic`, rust-lang#44930), so this RECEIVES
+// the varargs the va-slots way (`va_slots_rust`, as shell32's ShellMessageBoxA and the kernel's
+// printf family do): on all three targets a variadic call puts its arguments in the same slots
+// as a fixed-arity call with that many parameters (i386 cdecl stack; win64 RCX-R9 then stack;
+// arm64 x0-x7 then stack, where Windows passes varargs in integer registers), and a `va_list` is
+// a plain pointer. The trailing slots are ordinary parameters, staged into an array a `va_list`
+// points at. This replaced the `va_start` trampoline in rust_varargs_shim.c (2026-09-25).
+#[export_name = "FatalError"]
+unsafe extern "C" fn FatalError_slots(
+    pszFmt: *mut i8,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
+    let mut stage = va_slots_rust::stage(&[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    FatalError_v(pszFmt, stage.as_mut_ptr() as *mut core::ffi::c_void)
+}
+
+// The body; `ap` is the va_list itself (a single `char*` on all three targets).
 
 #[no_mangle]
 pub unsafe extern "C" fn FatalError_v(pszFmt: *mut i8, ap: *mut core::ffi::c_void) {

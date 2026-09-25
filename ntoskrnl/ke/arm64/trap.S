@@ -12,6 +12,7 @@
 .equ TfPreviousMode,       0x03
 .equ TfPreviousIrql,       0x04
 .equ TfFaultAddress,       0x10
+.equ TfVfpState,           0x20   /* offset_check_arm64.rs: KTRAP_FRAME.VfpState == 32 */
 .equ TfSpsr,               0xA0
 .equ TfEsr,                0xA4
 .equ TfSp,                 0xA8
@@ -100,8 +101,20 @@
  * are callee-saved. Allocated below the frames so KeGetTrapFrame's
  * InitialStack - sizeof(KTRAP_FRAME) and the x0/x1 handler arguments are
  * untouched. Clobbers x2/x3, which are already in the trap frame.
+ *
+ * The area is FOUND from the trap frame through KTRAP_FRAME.VfpState, which
+ * holds (TrapFrame - area) while the area is live and 0 otherwise. That is
+ * what lets KeTrapFrameToContext/KeContextToTrapFrame carry V0-V31, FPCR and
+ * FPSR through a CONTEXT, and what lets KiExceptionExit — the NtContinue /
+ * NtRaiseException exit, which leaves by `mov sp, TrapFrame` and so never
+ * reaches NEON_RESTORE — reload them. Before that, a thread resumed by
+ * NtContinue got whatever vector state the kernel last left in the registers.
+ * The distance is always one of the two NEON_AREA_BELOW_* values; a frame
+ * that was zeroed (a new thread) or copied elsewhere (the user-callback frame
+ * clears it) reads as "no area". NEON_RESTORE clears it again, using the
+ * frame pointer the save parked at +0x210.
  */
-.equ NEON_SAVE_LENGTH, 0x210   /* 32 x 16 bytes + FPCR + FPSR */
+.equ NEON_SAVE_LENGTH, 0x220   /* 32 x 16 bytes + FPCR + FPSR + owning TrapFrame */
 .macro NEON_SAVE
     sub sp, sp, #NEON_SAVE_LENGTH
     stp q0,  q1,  [sp, #0x000]
@@ -124,9 +137,15 @@
     mrs x3, fpsr
     str x2, [sp, #0x200]        /* single stores: an x-pair reaches only +504 */
     str x3, [sp, #0x208]
+    str x0, [sp, #0x210]        /* x0 == the trap frame (TRAP_PROLOG) */
+    mov x3, sp                  /* sp is not a legal second source of sub */
+    sub x2, x0, x3
+    str w2, [x0, #TfVfpState]
 .endm
 
 .macro NEON_RESTORE
+    ldr x2, [sp, #0x210]
+    str wzr, [x2, #TfVfpState]
     ldr x2, [sp, #0x200]
     ldr x3, [sp, #0x208]
     msr fpcr, x2
@@ -546,6 +565,38 @@ KiExceptionExit:
     /* Fp and Lr come from TrapFrame, not ExceptionFrame */
 
 .Lno_exframe:
+    /* Reload the vector state from the frame's NEON area, if it has one (see
+     * NEON_SAVE). KeContextToTrapFrame may have written a CONTEXT's V0-V31
+     * into it; otherwise it still holds what the trap saved. */
+    ldr     w2, [x0, #TfVfpState]
+    cmp     w2, #NEON_SAVE_LENGTH                            /* IRQ entry */
+    b.eq    1f
+    cmp     w2, #(NEON_SAVE_LENGTH + KEXCEPTION_FRAME_LENGTH) /* sync entry */
+    b.ne    .Lno_neon           /* 0, or any value no entry path writes */
+1:  sub     x3, x0, x2
+    str     wzr, [x0, #TfVfpState]
+    ldr     x2, [x3, #0x200]
+    msr     fpcr, x2
+    ldr     x2, [x3, #0x208]
+    msr     fpsr, x2
+    ldp     q0,  q1,  [x3, #0x000]
+    ldp     q2,  q3,  [x3, #0x020]
+    ldp     q4,  q5,  [x3, #0x040]
+    ldp     q6,  q7,  [x3, #0x060]
+    ldp     q8,  q9,  [x3, #0x080]
+    ldp     q10, q11, [x3, #0x0a0]
+    ldp     q12, q13, [x3, #0x0c0]
+    ldp     q14, q15, [x3, #0x0e0]
+    ldp     q16, q17, [x3, #0x100]
+    ldp     q18, q19, [x3, #0x120]
+    ldp     q20, q21, [x3, #0x140]
+    ldp     q22, q23, [x3, #0x160]
+    ldp     q24, q25, [x3, #0x180]
+    ldp     q26, q27, [x3, #0x1a0]
+    ldp     q28, q29, [x3, #0x1c0]
+    ldp     q30, q31, [x3, #0x1e0]
+
+.Lno_neon:
     /* Set SP to trap frame and return */
     mov     sp, x0
     b       KiTrapReturn

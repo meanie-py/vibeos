@@ -63,10 +63,10 @@ add_custom_target(rust_userenv DEPENDS ${USERENV_RUST_LIB})
 #     userenv.c)
 
 list(APPEND PCH_SKIP_SOURCE
-    ${CMAKE_CURRENT_BINARY_DIR}/userenv_stubs.c
-    # C shims for the Rust cohab: the hInstance/LocalSystemAuthority data globals + the variadic
-    # StringCchPrintfW (strsafe inline / stable-Rust can't define) — see userenv_rust_shims.c.
-    userenv_rust_shims.c)
+    ${CMAKE_CURRENT_BINARY_DIR}/userenv_stubs.c)
+    # userenv_rust_shims.c is no longer built (retired 2026-09-25; the file stays on disk,
+    # inert): hInstance and LocalSystemAuthority are #[no_mangle] Rust statics, and
+    # StringCchPrintfW is a strsafe-rust macro that CALLS msvcrt's variadic _snwprintf.
 
 add_library(userenv MODULE
     ${PCH_SKIP_SOURCE}

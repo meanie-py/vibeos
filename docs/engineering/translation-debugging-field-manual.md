@@ -9536,6 +9536,12 @@ whole class collapsed to the one case that is *supposed* to happen.
   exactly as it already did for the struct offsets. The lesson: a hand-written shim that
   hard-codes a header constant is the same hazard as one that hard-codes an offset.
   Nothing checks it, and when it is wrong the code usually still runs.
+  The same shim's `FatAcquireExclusiveFcb` stood in for a function the translation had
+  dropped, and dropped half of it again: no `OutstandingAsyncWrites` drain and no
+  `FatVerifyOperationIsLegal`, so an exclusive acquirer (truncate, set-EOF, cleanup, flush)
+  could run under a non-cached async write still landing. It is ported into `resrcsup.rs` next
+  to its shared siblings, which always had the drain (2026-09-25). When a shim stands in for a
+  dropped function, diff it against the C BODY, not just the signature.
 - **Nothing saved FP/SIMD state across arm64 traps or context switches.** `kiinit.rs`
   enables FP on every CPU and the compiler vectorizes kernel code (memcpy, struct zeroing,
   frame copies), but the vectors saved only x0–x30, and `KiSwapContext`/`KiCallUserMode` only
@@ -9543,8 +9549,21 @@ whole class collapsed to the one case that is *supposed* to happen.
   vector entry (`trap.S`, placed below the frames so the trap frame's position is unchanged),
   and d8–d15 in the switch and callout frames. This was a real latent bug, but it was NOT the
   cause of #43: a 10-round soak with it in place still hit 0xE3 four times. Do not re-read
-  the 3/3 clean run that preceded that soak as evidence. Still owed: NtContinue and exception
-  dispatch do not carry the V registers through CONTEXT.
+  the 3/3 clean run that preceded that soak as evidence.
+  The same gap had a second exit, closed 2026-09-25. `NtContinue` and `NtRaiseException` leave
+  through `KiExceptionExit`, which does `mov sp, TrapFrame; b KiTrapReturn` and so never reaches
+  `NEON_RESTORE`: a thread resumed after an exception got whatever V registers the kernel last
+  used, not its own. `KiDispatchException` and `KiInitializeUserApc` also asked for
+  CONTROL|INTEGER only, where Windows asks for `CONTEXT_FULL`, so V never reached a handler
+  either. Fix: `NEON_SAVE` records the area's distance below its trap frame in
+  `KTRAP_FRAME.VfpState` (0 = no area, cleared again by `NEON_RESTORE`).
+  `KeTrapFrameToContext`/`KeContextToTrapFrame` convert V0–V31/FPCR/FPSR through that area,
+  and `KiExceptionExit` reloads from it. The user-callback frame is a byte COPY of the trap
+  frame, so it copied the distance too, which is wrong measured from the copy; it clears it.
+  The general rule: a frame field that locates something by OFFSET is wrong in every copy of
+  that frame. Regression check: `tools/payloads/neonctx` (arm64), which faults with a pattern in
+  v0–v31 and resumes from a vectored handler. It passes 20/20 with the fix; with the fix
+  disabled it fails every round, showing exactly the handler's scribbled registers.
 - **A dropped C `ASSERT` is a machine freeze on arm64, not a lost debug check.** Symptom: a
   boot wedges with a vCPU at EL1, PC parked, DAIF all masked, no bugcheck and no timer; the
   faulting VA is a user address, hardware reports a level-3 translation fault (EC 0x25,

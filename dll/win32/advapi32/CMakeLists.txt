@@ -54,10 +54,6 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/svcctl_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_c.c)
 
-if(ARCH STREQUAL "arm64")
-    list(APPEND PCH_SKIP_SOURCE arm64_advapi32_stubs.c)
-endif()
-
 # service/eventlog_seh.c — native-SEH wrappers restoring the RpcTryExcept the
 # advapi32-rust cohab dropped around the EventLog RPC client stubs (see the file
 # header). PCH-skipped so it carries its own include set + per-file define.
@@ -119,13 +115,7 @@ target_link_options(advapi32 PRIVATE LINKER:--allow-multiple-definition)
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     target_link_libraries(advapi32 etwtrace)
 endif()
-if(ARCH STREQUAL "arm64")
-    # ARM64: llvm-dlltool converts delay-imports to regular imports.
-    # secur32 → netapi32 → iphlpapi → dhcpcsvc chain overflows csrss stack.
-    # LSA logon functions not needed during boot. Stubs in arm64_advapi32_stubs.c.
-else()
-    add_delay_importlibs(advapi32 secur32)
-endif()
+add_delay_importlibs(advapi32 secur32)
 add_importlibs(advapi32 advapi32_vista rpcrt4 kernel32 ntdll)
 add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
 add_dependencies(advapi32 rust_advapi32)
