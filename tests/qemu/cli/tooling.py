@@ -118,6 +118,10 @@ _PYTEST_SUITES = [
     # the core bucket moves the published coverage figure and nothing in the output says
     # so. Its build-graph cases skip when this worktree has no build-* dirs.
     (".", ".", "tools/test_port_audit.py"),
+    # Upstream triage decides which unmerged commits are BUG ORACLES. Its first draft
+    # called 31 of 65 commits oracle hits by counting winetests sources the build does not
+    # compile by configuration; the wrong number reads exactly like the right one.
+    (".", ".", "tools/test_upstream_triage.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),

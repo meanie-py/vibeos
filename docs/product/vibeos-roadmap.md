@@ -265,6 +265,35 @@ AI watches `reactos/reactos` commits, understands intent, ports patches to the R
 
 **Risks:** Semantic drift — upstream commits may rely on subtle invariants the Rust rewrite no longer obeys. Pipeline must track subsystem contracts, not just syntax.
 
+**The triage half of this is now a TOOL, not a reading habit: `tools/upstream_triage.py`**
+(2026-09-26). It answers the one question that repeats per commit — *does this touch C that
+no arch compiles any more?* — because that is what separates a bug we inherited from an
+ordinary merge. It imports `port_audit.compiled_sources()` for the live set and
+`vendored.load()` for third-party rather than re-deriving either, so it cannot drift from
+the published coverage ledger.
+
+Buckets, and a verdict is a READING ORDER not a work order: **ORACLE** (uncompiled C we
+still have on disk → read against our Rust), **HEADER** (never a compile edge, but a struct
+member added upstream moves every field after it and our Rust binds those), **MERGE**
+(C we still compile), **VENDORED**, **TESTS** (`rostests`/`rosapps` — absent from the build
+graph by CONFIGURATION, not because anyone translated them), **OTHER**.
+
+That TESTS bucket is the whole reason to distrust a first number here: without it the tool
+called **31 of 65** commits oracle hits, and 18 were driven entirely by
+`modules/rostests/winetests/**`, so every Wine-sync commit looked like an inherited bug.
+The real figure is **13 of 65**, and of those, three are comment/formatting-only
+(`4ab7fb63af7` is literally "Initailize" → "Initialize"). Absence from the build graph is
+evidence of translation only for code the build is SUPPOSED to compile.
+
+Current queue (65 unmerged, `merge-base..upstream/master`): 13 ORACLE, 26 HEADER, 8 MERGE,
+5 TESTS, 13 OTHER. Ported so far: `091855fc4f9` (i386 NPX ownership flush). The live one
+worth doing next is `396019984c9` (`CmpRemoveFromHiveFileList` ordering + a cached
+`CMHIVE::HiveRootPath`), which is also the owed `CmUnloadKey` item — it touches
+`cmapi.rs`, `cmhvlist.rs`, `cminit.rs` AND changes `CMHIVE` layout in `sdk/lib/cmlib/cmlib.h`,
+so it is a header-layout change as well as a logic port. Then the two HIDCLASS fixes, then
+`[MSAFD][AFD] AcceptEx` and the HALX86 Legacy PC Arbiter as features, and the four
+Wine-10.0 syncs that land on DLLs we have translated (large, and each needs its own read).
+
 ### 7b. Wine DLL Re-implementation in Rust — Size: XXL
 
 ReactOS currently ships ported Wine code (user32, kernel32, gdi32, shell32, advapi32, msvcrt, comctl32, ole32, etc.) — hundreds of DLLs, millions of lines. This code is:
@@ -814,8 +843,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`KeWaitForSingleObject`, `KxSetTimerForThreadWait`, `KiComputeDueTime`,
   `KiInsertTimerTable`, `KiComputeTimerTableIndex`, `KiCheckForTimerExpiration`,
   `KiTimerExpiration`, `KiTimerListExpire`) was read against the C it was translated from
-  and is faithful, and upstream has made **zero** commits to `ntoskrnl/ke/` or
-  `ntoskrnl/ob/` since the fork, so the bug oracle is silent here too. One known latent
+  and is faithful, and upstream had made **zero** commits to `ntoskrnl/ke/` or
+  `ntoskrnl/ob/` **as of its 2026-09-22 tip `9dc3ca87209`**, so the bug oracle was silent
+  on the wait path. That measurement went stale the same night: upstream `091855fc4f9`
+  (2026-09-25, `ke/i386/thrdini.c`, NPX ownership flush) arrived in a later fetch and has
+  since been ported. It does not touch the wait path, so the conclusion here stands — but
+  re-run the range check rather than trusting this sentence, which is a timestamp and not
+  a property. One known latent
   quirk, shared with upstream and therefore not our regression: `TIMER_TABLE_SIZE` is 512
   while `DISPATCHER_HEADER.Hand` is a `UCHAR`, so hands 256-511 truncate on store and
   `KiRemoveEntryTimer` does its bucket-empty bookkeeping against the wrong slot.
