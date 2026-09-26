@@ -230,7 +230,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--no-gdb", action="store_true")
     s.add_argument("--attach-on-fail", action="store_true")
-    s.add_argument("--repeat", type=int, default=1, help="N independent boots (flake rate)")
+    s.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="N independent boots (flake rate); with --payload, N payload runs too",
+    )
     s.add_argument("--until", default="", help="success marker (default: arch boot marker)")
     s.add_argument("--fail-on", default=None, help="regex; abort at first match")
     s.add_argument(

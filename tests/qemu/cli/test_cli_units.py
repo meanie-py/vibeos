@@ -1446,6 +1446,36 @@ def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
     assert "UNKNOWN" in body and "FROZEN" not in body
 
 
+def test_the_drain_finishes_the_marker_line_before_returning():
+    # The marker is a prefix of the verdict line. A read that ended mid-line
+    # returned "[APPSTORM] done VER" and failed a 38/38 sweep's pass check.
+    from tests.qemu import test_payload as payload_mod
+
+    chunks = iter(["noise\n[APPSTORM] done VER", "DICT=PASS pass=38\n", "never read\n"])
+    clock = iter(range(0, 1000))
+    out, why = payload_mod.drain_for_marker(
+        lambda timeout: next(chunks, ""), "", "[APPSTORM] done", "", 600, now=lambda: next(clock)
+    )
+    assert why == "marker"
+    assert "[APPSTORM] done VERDICT=PASS pass=38\n" in out
+    assert "never read" not in out
+
+
+def test_the_drain_does_not_wait_forever_for_a_line_that_never_ends():
+    from tests.qemu import test_payload as payload_mod
+
+    clock = iter(range(0, 1000))
+    out, why = payload_mod.drain_for_marker(
+        lambda timeout: "",
+        "[APPSTORM] done VER",
+        "[APPSTORM] done",
+        "",
+        600,
+        now=lambda: next(clock),
+    )
+    assert why == "marker" and out == "[APPSTORM] done VER"
+
+
 def test_a_drained_out_payload_captures_the_hang_before_it_fails():
     # The gap this closes: a sweep that BOOTS and then wedges never enters
     # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
