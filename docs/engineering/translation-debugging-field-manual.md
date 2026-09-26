@@ -6014,12 +6014,13 @@ different question, racily).
   other: when a scanner reaches it, the useful next question is which shapes it cannot express,
   not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
   accessing intrinsic before taking it.
-- **An atomic on user memory has no protected form yet.** `capture_from_user`/`publish_to_user`
-  cannot express a read-modify-write: capture -> mutate -> publish loses the atomicity, and
-  silently weakening a concurrency guarantee to buy fault-tolerance is the wrong trade. The
-  primitive needed is a `KmProtected` atomic beside `KmProtectedCopyMemory` -- a native-SEH
-  shim on amd64/arm64, an exception-table entry for the `lock` instruction on i386 (§9.123) --
-  with a self-test twin, because an unproven protection is worse than a documented gap.
+- **An atomic on user memory needs its own protected primitive.** `capture_from_user`/
+  `publish_to_user` cannot express a read-modify-write: capture -> mutate -> publish loses the
+  atomicity, and silently weakening a concurrency guarantee to buy fault-tolerance is the wrong
+  trade. Use `copy::interlocked_add_user` (ntoskrnl's `KmProtectedInterlockedAdd`: a native-SEH
+  shim on amd64/arm64, a second extable key for the `lock xadd` on i386 (§9.123)). Its self-test
+  asserts the add LANDED in memory as well as returned, because a primitive that returns the
+  right sum without storing it would pass a return-value-only check.
 
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in

@@ -132,6 +132,40 @@ int KmProtectedCopyMemory(void *Dst, const void *Src, KMSIZE Len)
 }
 
 /*
+ * KmProtectedInterlockedAdd — the atomic twin of KmProtectedCopyMemory.
+ *
+ * A read-modify-write on USER memory (win32k's IMEUI.nCntInIMEProc) cannot go
+ * through the copy: capture -> mutate -> publish is three accesses, not one, and
+ * silently trading the atomicity for fault-tolerance is the wrong bargain. So the
+ * RMW itself is the protected access. Same calls-only rule as KmCopyRaw: the
+ * faulting `lock xadd` sits in a noinline callee of the __try body.
+ *
+ * `int` rather than `long`: this file is headerless, and the contract is a
+ * Windows LONG (32-bit) on every arch.
+ *
+ * Returns 1 and stores the NEW value in *Result on success, 0 if the add faulted
+ * (nothing is stored).
+ */
+__attribute__((noinline))
+static int KmXaddRaw(volatile int *Addend, int Value)
+{
+    return __atomic_fetch_add(Addend, Value, __ATOMIC_SEQ_CST);
+}
+
+int KmProtectedInterlockedAdd(volatile int *Addend, int Value, int *Result)
+{
+    __try
+    {
+        *Result = KmXaddRaw(Addend, Value) + Value;
+        return 1;
+    }
+    __except (1 /* EXCEPTION_EXECUTE_HANDLER */)
+    {
+        return 0;
+    }
+}
+
+/*
  * KmSafeCopySelfTest — a per-boot tripwire proving the HARDWARE-fault path works.
  *
  * Why this exists: seh_poc.c only ever proved that a *software* raise
@@ -168,6 +202,28 @@ extern unsigned long DbgPrint(const char *Format, ...);
 #define KMSAFECOPY_BAD_SRC ((const void *)0x1)
 #endif
 
+/*
+ * The same two assertions for the atomic, plus the one a copy does not need: the
+ * add must have landed IN MEMORY, not merely returned the right sum.
+ */
+static int KmSafeAtomicSelfTest(void)
+{
+    volatile int counter = 41;
+    int result = 0, junk = 0;
+    int good, bad, landed, ok;
+
+    good   = KmProtectedInterlockedAdd(&counter, 1, &result);
+    landed = (counter == 42 && result == 42);
+    bad    = KmProtectedInterlockedAdd((volatile int *)KMSAFECOPY_BAD_SRC, 1, &junk);
+
+    ok = (good == 1 && landed && bad == 0);
+
+    DbgPrint("[KMSAFECOPY] fault-tolerant interlocked add: valid=%d landed=%d invalid_caught=%d (%s)\n",
+             good, landed, (bad == 0), ok ? "PASS" : "FAIL");
+
+    return ok;
+}
+
 int KmSafeCopySelfTest(void)
 {
     volatile char dst[8];
@@ -182,5 +238,5 @@ int KmSafeCopySelfTest(void)
     DbgPrint("[KMSAFECOPY] fault-tolerant copy: valid=%d invalid_caught=%d (%s)\n",
              good, (bad == 0), ok ? "PASS" : "FAIL");
 
-    return ok;
+    return ok && KmSafeAtomicSelfTest();
 }

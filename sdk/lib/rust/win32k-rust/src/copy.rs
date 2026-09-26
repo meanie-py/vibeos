@@ -14,6 +14,8 @@ extern "system" {
 // carry the per-boot `[KMSAFECOPY] … (PASS)` oracle proving it actually catches.
 extern "C" {
     fn KmProtectedCopyMemory(Dst: PVOID, Src: PVOID, Len: usize) -> i32;
+    // Its atomic twin: 1 and the NEW value in *Result, or 0 if the add faulted.
+    fn KmProtectedInterlockedAdd(Addend: *mut i32, Value: i32, Result: *mut i32) -> i32;
 }
 
 const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as NTSTATUS;
@@ -86,6 +88,19 @@ pub unsafe fn capture_from_user(
     bytes: usize,
 ) -> bool {
     bytes == 0 || KmProtectedCopyMemory(dst, src as PVOID, bytes) != 0
+}
+
+/// `InterlockedAdd` on a user LONG that cannot bugcheck: `Some(new value)`, or
+/// `None` if the address faulted.
+///
+/// Neither copy direction can express this. capture -> mutate -> publish is three
+/// accesses, and a counter another thread bumps in between would lose an update,
+/// so the read-modify-write itself is the protected access. Probe first, as with
+/// the copies: the probe is what rejects a KERNEL address, which would not fault.
+#[inline]
+pub unsafe fn interlocked_add_user(addend: *mut i32, value: i32) -> Option<i32> {
+    let mut result = 0;
+    (KmProtectedInterlockedAdd(addend, value, &mut result) != 0).then_some(result)
 }
 
 /// The WRITE direction of `capture_from_user`, and just as necessary.

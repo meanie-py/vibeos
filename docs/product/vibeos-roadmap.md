@@ -1374,15 +1374,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   measurement. All three arches build and boot to the desktop (`_tWinMain entered` +
   `shell ready`).
 
-  **Still OPEN, and now actually FLAGGED by the scanner** (it used to miss them):
-  `InterlockedIncrement`/`Decrement` on a user counter — ime's `nCntInIMEProc` at
-  `ime.rs:3120` and `:3137`, where the C had a `_SEH2_TRY` per access. There is **no
-  protected primitive for this at all**: an atomic RMW cannot be routed through
-  `KmProtectedCopyMemory`, because the read-modify-write has to fault as one unit rather than
-  copy in and out. Closing them means writing a `KmProtected` atomic next to
-  `KmProtectedCopyMemory` — a native-SEH shim on amd64/arm64, an exception-table entry for the
-  `lock` instruction on i386 — plus a self-test twin so the per-boot oracle covers it.
-  Restoring a probe there would look like a fix and would not be one.
+  **The last two, the ime atomics, are FIXED (2026-09-26).** ime's `nCntInIMEProc`
+  `InterlockedIncrement`/`Decrement` on a user counter had a `_SEH2_TRY` per access in the C,
+  and no protected primitive could express them: an atomic RMW routed through
+  `KmProtectedCopyMemory` stops being atomic. `KmProtectedInterlockedAdd` now sits beside it —
+  native SEH in `ntoskrnl/kmsafecopy.c` on amd64/arm64, and on i386 a second extable key (the
+  `lock xadd`) in `ke/i386/safecopy.rs`. Its self-test twin prints
+  `[KMSAFECOPY] fault-tolerant interlocked add: valid=1 landed=1 invalid_caught=1 (PASS)` on
+  all three arches, and `scan_probe_then_deref` reports 0 leads.
 
   Two of the scanner's own numbers along the way were wrong in the direction that reads as more
   work, not less, and both are pinned by tests now: `RtlCopyMemory` was reported by both the
