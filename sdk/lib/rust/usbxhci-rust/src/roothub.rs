@@ -147,9 +147,10 @@ pub unsafe extern "system" fn XHCI_RH_SetFeaturePortEnable(_xhciExtension: PVOID
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XHCI_RH_SetFeaturePortSuspend(xhciExtension: PVOID, Port: USHORT) -> MPSTATUS {
-    // PLS = U3 with the Link Write Strobe.
-    portsc_write(ext_of(xhciExtension), Port, PORTSC_LWS | (3 << PORTSC_PLS_SHIFT))
+pub unsafe extern "system" fn XHCI_RH_SetFeaturePortSuspend(_xhciExtension: PVOID, _Port: USHORT) -> MPSTATUS {
+    // USB2 resume requires a timed Resume -> U0 transition. Until the paired
+    // power-management path exists, don't put a working keyboard into U3.
+    MP_STATUS_NOT_SUPPORTED
 }
 
 #[no_mangle]
@@ -172,17 +173,8 @@ pub unsafe extern "system" fn XHCI_RH_ClearFeaturePortPower(xhciExtension: PVOID
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XHCI_RH_ClearFeaturePortSuspend(xhciExtension: PVOID, Port: USHORT) -> MPSTATUS {
-    // PLS = U0 (resume) with the Link Write Strobe.
-    let x = ext_of(xhciExtension);
-    match portsc(x, Port) {
-        Some(off) => {
-            let v = rd32(x.op, off);
-            wr32(x.op, off, (v & PORTSC_PRESERVE & !PORTSC_PLS_MASK) | PORTSC_LWS);
-            MP_STATUS_SUCCESS
-        }
-        None => MP_STATUS_FAILURE,
-    }
+pub unsafe extern "system" fn XHCI_RH_ClearFeaturePortSuspend(_xhciExtension: PVOID, _Port: USHORT) -> MPSTATUS {
+    MP_STATUS_NOT_SUPPORTED
 }
 
 #[no_mangle]

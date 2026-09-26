@@ -44,6 +44,10 @@ const USBD_STATUS_INTERNAL_HC_ERROR: USBD_STATUS = 0x8000_0800u32 as USBD_STATUS
 const MAX_TDS: usize = 32;
 /// Data-stage TRBs per transfer (one per scatter/gather element).
 const MAX_DATA_TRBS: usize = 24;
+/// Private DMA pages: never share a cache line with a caller's pool allocation.
+/// The bitmap permits up to 16 small requests, or one 64 KiB request, per pipe.
+const PAYLOAD_PAGES: u32 = 16;
+const PAYLOAD_BYTES: usize = PAYLOAD_PAGES as usize * PAGE;
 /// Usable TRBs per ring: the last one is the Link TRB.
 const RING_USABLE: u32 = RING_TRBS as u32 - 1;
 
@@ -84,6 +88,9 @@ pub struct XhciEndpoint {
     pub pending: [*mut XhciTransfer; MAX_TDS],
     pub head: u32,
     pub count: u32,
+    pub payload_va: *mut u8,
+    pub payload_pa: u64,
+    pub payload_used: u32,
 }
 
 /// usbport's per-transfer miniport area (MiniPortTransferSize).
@@ -104,6 +111,63 @@ pub struct XhciTransfer {
     pub ndata: u32,
     pub data_pa: [u64; MAX_DATA_TRBS],
     pub data_len: [u32; MAX_DATA_TRBS],
+    pub caller_va: *mut u8,
+    pub inbound: bool,
+    pub payload_first: u32,
+    pub payload_pages: u32,
+}
+
+/// MiniportSpinLock serializes allocation/release; event handling never touches
+/// the payload arena. Each allocation owns whole pages, including edge lines.
+unsafe fn prepare_payload(ep: &mut XhciEndpoint, td: &mut XhciTransfer, caller: PVOID, inbound: bool) -> bool {
+    td.inbound = inbound;
+    td.caller_va = caller as *mut u8;
+    if td.requested == 0 { return true; }
+    if td.requested as usize > PAYLOAD_BYTES || caller.is_null() || ep.payload_va.is_null() {
+        return false;
+    }
+    let pages = (td.requested + PAGE as u32 - 1) / PAGE as u32;
+    let mask = (1u32 << pages) - 1;
+    let Some(first) = (0..=PAYLOAD_PAGES - pages).find(|&i| ep.payload_used & (mask << i) == 0) else {
+        return false;
+    };
+    ep.payload_used |= mask << first;
+    td.payload_first = first;
+    td.payload_pages = pages;
+    let va = ep.payload_va.add(first as usize * PAGE);
+    if !inbound {
+        core::ptr::copy_nonoverlapping(td.caller_va, va, td.requested as usize);
+    }
+    // For IN, this also evicts any dirty old content before device ownership.
+    // No CPU writes touch these private pages until completion or a proven stop.
+    dma_clean(va, pages as usize * PAGE);
+    true
+}
+
+unsafe fn finish_payload(ep: &mut XhciEndpoint, td: &mut XhciTransfer) {
+    if td.payload_pages == 0 { return; }
+    let va = ep.payload_va.add(td.payload_first as usize * PAGE);
+    if td.inbound {
+        dma_invalidate(va, td.payload_pages as usize * PAGE);
+        core::ptr::copy_nonoverlapping(va, td.caller_va, td.transferred.min(td.requested) as usize);
+    }
+    ep.payload_used &= !(((1u32 << td.payload_pages) - 1) << td.payload_first);
+    td.payload_pages = 0;
+}
+
+/// Called only after HCHalted is observed, under the event consumer's lock.
+pub unsafe fn controller_failed(ep: &mut XhciEndpoint) {
+    let mut irql: KIRQL = 0;
+    KeAcquireSpinLock(&mut ep.lock, &mut irql);
+    ep.halted = true;
+    for i in 0..ep.count {
+        let td = &mut *ep.pending[((ep.head + i) as usize) % MAX_TDS];
+        if !td.done.load(Ordering::Acquire) {
+            td.cc = 0;
+            td.done.store(true, Ordering::Release);
+        }
+    }
+    KeReleaseSpinLock(&mut ep.lock, irql);
 }
 
 // ---- contexts ----
@@ -182,10 +246,16 @@ unsafe fn enable_slot(x: &mut XhciExtension) -> Option<u32> {
 
 unsafe fn disable_slot(x: &mut XhciExtension, slot: u32) {
     let r = command(x, 0, 0, (TRB_DISABLE_SLOT << TRB_TYPE_SHIFT) | (slot << 24));
+    if r.code != CC_SUCCESS && !x.failed.load(Ordering::Acquire) {
+        fail_controller(x);
+    }
     core::ptr::write_volatile(x.dcbaa.add(slot as usize), 0);
     dma_clean(x.dcbaa.add(slot as usize) as *const u8, 8);
     x.slots[slot as usize].in_use = false;
+    let mut irql: KIRQL = 0;
+    KeAcquireSpinLock(&mut x.evt_lock, &mut irql);
     x.eps[slot as usize] = [core::ptr::null_mut(); 32];
+    KeReleaseSpinLock(&mut x.evt_lock, irql);
     xlog!("slot %u disabled (cc %u)", slot, r.code);
 }
 
@@ -234,6 +304,7 @@ fn xhci_interval(period_ms: u32) -> u32 {
 unsafe fn configure_endpoint(x: &mut XhciExtension, ep: &XhciEndpoint, add: bool) -> u32 {
     let slot = ep.slot;
     let irql = lock_commands(x);
+    let old_max_dci = x.slots[slot as usize].max_dci;
     input_clear(x);
     let icc = in_ctx(x, 0);
     if add {
@@ -280,6 +351,9 @@ unsafe fn configure_endpoint(x: &mut XhciExtension, ep: &XhciEndpoint, add: bool
     }
     input_publish(x);
     let r = command_locked(x, x.input_ctx_pa, 0, (TRB_CONFIGURE_ENDPOINT << TRB_TYPE_SHIFT) | (slot << 24));
+    if r.code != CC_SUCCESS {
+        x.slots[slot as usize].max_dci = old_max_dci;
+    }
     unlock_commands(x, irql);
     r.code
 }
@@ -308,15 +382,27 @@ unsafe fn resume_point(ep: &XhciEndpoint) -> (u32, u32) {
 
 /// Recover a halted endpoint (4.6.8): Reset Endpoint, then move the dequeue
 /// pointer past the transfer that failed.
-unsafe fn recover(x: &mut XhciExtension, ep: &mut XhciEndpoint) {
+unsafe fn recover(x: &mut XhciExtension, ep: &mut XhciEndpoint) -> bool {
     let cc = ep_command(x, ep, TRB_RESET_ENDPOINT);
+    if cc != CC_SUCCESS {
+        xlog!("slot %u ep %u: Reset Endpoint failed, cc %u", ep.slot, ep.dci, cc);
+        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+        return false;
+    }
     let mut irql: KIRQL = 0;
     KeAcquireSpinLock(&mut ep.lock, &mut irql);
     let (idx, cyc) = resume_point(ep);
     KeReleaseSpinLock(&mut ep.lock, irql);
     let cc2 = set_dequeue(x, ep, idx, cyc);
+    if cc2 != CC_SUCCESS {
+        xlog!("slot %u ep %u: Set TR Dequeue failed, cc %u", ep.slot, ep.dci, cc2);
+        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+        return false;
+    }
     ep.halted = false;
     xlog!("slot %u ep %u: halt cleared (reset cc %u, dequeue cc %u)", ep.slot, ep.dci, cc, cc2);
+    ring_doorbell(x, ep.slot, ep.dci);
+    true
 }
 
 // ---- transfer bookkeeping ----
@@ -372,8 +458,33 @@ pub unsafe fn on_transfer_event(x: &mut XhciExtension, trb_pa: u64, status: u32,
         }
         let data_hit = (0..td.ndata as usize).find(|&k| td.data_pa[k] == trb_pa);
         let last_hit = trb_pa == td.last_pa;
-        if data_hit.is_none() && !last_hit {
+        // Errors (and Stop Endpoint events) may point at Setup or a Link TRB,
+        // neither of which appears in data_pa/last_pa.
+        let ring = &*ep.ring;
+        let offset = trb_pa.wrapping_sub(ring.pa);
+        let index = (offset / TRB_SIZE as u64) as u32;
+        let in_td = offset < PAGE as u64 && offset % TRB_SIZE as u64 == 0 &&
+            if index == RING_USABLE {
+                td.first + td.ntrbs >= RING_USABLE && td.ntrbs != 0
+            } else {
+                (index + RING_USABLE - td.first) % RING_USABLE < td.ntrbs
+            };
+        if !in_td {
             continue;
+        }
+        // Stopping a ring is not completion of its current request. In
+        // particular, aborting a later queued request must not fail the head.
+        if matches!(cc, CC_STOPPED | CC_STOPPED_LENGTH_INVALID | CC_STOPPED_SHORT_PACKET) {
+            if cc == CC_STOPPED_SHORT_PACKET {
+                td.transferred = residual.min(td.requested);
+                td.short_seen = true;
+            } else if let Some(k) = data_hit {
+                let before: u32 = td.data_len[..k].iter().sum();
+                td.transferred = before + if cc == CC_STOPPED {
+                    td.data_len[k] - residual.min(td.data_len[k])
+                } else { 0 };
+            }
+            break;
         }
         if let Some(k) = data_hit {
             if cc == CC_SHORT_PACKET || cc == CC_SUCCESS {
@@ -408,6 +519,15 @@ pub unsafe fn on_transfer_event(x: &mut XhciExtension, trb_pa: u64, status: u32,
 
 // ---- miniport callbacks ----
 
+/// Pair lookup publication/removal with the event consumer's lock. usbport's
+/// CloseEndpoint caller frees the endpoint immediately after we return.
+unsafe fn set_event_endpoint(x: &mut XhciExtension, slot: usize, dci: usize, ep: *mut XhciEndpoint) {
+    let mut irql: KIRQL = 0;
+    KeAcquireSpinLock(&mut x.evt_lock, &mut irql);
+    x.eps[slot][dci] = ep;
+    KeReleaseSpinLock(&mut x.evt_lock, irql);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_QueryEndpointRequirements(
     _xhciExtension: PVOID,
@@ -417,8 +537,9 @@ pub unsafe extern "system" fn XHCI_QueryEndpointRequirements(
     let p = &*endpointParameters;
     let req = &mut *EndpointRequirements;
     let ep0 = p.TransferType == USBPORT_TRANSFER_TYPE_CONTROL && p.EndpointAddress & 0x0F == 0;
-    // EP0's ring lives with its slot; every other endpoint gets one ring page.
-    req.HeaderBufferSize = if ep0 { 0 } else { PAGE as u32 };
+    // EP0's ring lives with its slot; every endpoint also gets an isolated
+    // payload arena from usbport's physically contiguous common-buffer allocator.
+    req.HeaderBufferSize = (PAYLOAD_BYTES + if ep0 { 0 } else { PAGE }) as u32;
     req.MaxTransferSize = match p.TransferType {
         USBPORT_TRANSFER_TYPE_INTERRUPT => 0x1000,
         _ => 0x10000,
@@ -432,6 +553,7 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
     xhciEndpoint: PVOID,
 ) -> MPSTATUS {
     let x = ext_of(xhciExtension);
+    if x.failed.load(Ordering::Acquire) { return MP_STATUS_HW_ERROR; }
     let ep = &mut *(xhciEndpoint as *mut XhciEndpoint);
     core::ptr::write_bytes(ep as *mut XhciEndpoint as *mut u8, 0, core::mem::size_of::<XhciEndpoint>());
     core::ptr::copy_nonoverlapping(endpointParameters, &mut ep.props, 1);
@@ -440,6 +562,12 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
     ep.is_control = p.TransferType == USBPORT_TRANSFER_TYPE_CONTROL;
     ep.dci = if ep.is_control { dci(p.EndpointAddress as u32 & 0x0F) } else { dci(p.EndpointAddress as u32) };
     ep.state = USBPORT_ENDPOINT_PAUSED;
+    let ring_bytes = if ep.dci == 1 { 0 } else { PAGE };
+    if p.BufferVA == 0 || p.BufferLength < (ring_bytes + PAYLOAD_BYTES) as u32 {
+        return MP_STATUS_NO_RESOURCES;
+    }
+    ep.payload_va = (p.BufferVA as *mut u8).add(ring_bytes);
+    ep.payload_pa = p.BufferPA as u64 + ring_bytes as u64;
 
     if p.TransferType == USBPORT_TRANSFER_TYPE_ISOCHRONOUS {
         xlog!("isochronous endpoints are not supported yet (dev %u ep %x)", addr, p.EndpointAddress as u32);
@@ -495,8 +623,11 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
             let mps = if p.TotalMaxPacketSize != 0 { p.TotalMaxPacketSize as u32 } else { p.MaxPacketSize };
             if mps != x.slots[slot as usize].ep0_mps {
                 let cc = evaluate_ep0(x, slot, mps);
-                x.slots[slot as usize].ep0_mps = mps;
                 xlog!("slot %u: EP0 max packet %u (cc %u)", slot, mps, cc);
+                if cc != CC_SUCCESS {
+                    return MP_STATUS_ERROR;
+                }
+                x.slots[slot as usize].ep0_mps = mps;
             }
         }
         ep.slot = slot;
@@ -504,7 +635,7 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
         let r = &*ep.ring;
         ep.deq = r.enqueue;
         x.slots[slot as usize].ep0_open = true;
-        x.eps[slot as usize][1] = ep;
+        set_event_endpoint(x, slot as usize, 1, ep);
         return MP_STATUS_SUCCESS;
     }
 
@@ -528,7 +659,7 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
         xlog!("slot %u: Configure Endpoint (add ep %x) failed, cc %u", slot, p.EndpointAddress as u32, cc);
         return MP_STATUS_ERROR;
     }
-    x.eps[slot as usize][ep.dci as usize] = ep;
+    set_event_endpoint(x, slot as usize, ep.dci as usize, ep);
     xlog!("slot %u: ep %x open (dci %u, type %u, mps %u, period %u)", slot, p.EndpointAddress as u32, ep.dci, p.TransferType, p.MaxPacketSize, p.Period as u32);
     MP_STATUS_SUCCESS
 }
@@ -548,7 +679,9 @@ pub unsafe extern "system" fn XHCI_ReopenEndpoint(
     if ep.dci == 1 && ep.slot != 0 {
         let mps = p.TotalMaxPacketSize as u32;
         if mps != 0 && mps != x.slots[ep.slot as usize].ep0_mps {
-            evaluate_ep0(x, ep.slot, mps);
+            if evaluate_ep0(x, ep.slot, mps) != CC_SUCCESS {
+                return MP_STATUS_ERROR;
+            }
             x.slots[ep.slot as usize].ep0_mps = mps;
         }
     }
@@ -566,13 +699,14 @@ pub unsafe extern "system" fn XHCI_CloseEndpoint(xhciExtension: PVOID, xhciEndpo
     if ep.dci == 1 {
         // Keep the slot: usbport closes EP0 to re-open it at the new address.
         x.slots[slot].ep0_open = false;
-        x.eps[slot][1] = core::ptr::null_mut();
+        set_event_endpoint(x, slot, 1, core::ptr::null_mut());
         return;
     }
-    x.eps[slot][ep.dci as usize] = core::ptr::null_mut();
+    set_event_endpoint(x, slot, ep.dci as usize, core::ptr::null_mut());
     let cc = configure_endpoint(x, ep, false);
     if cc != CC_SUCCESS {
         xlog!("slot %u: Configure Endpoint (drop dci %u) failed, cc %u", slot as u32, ep.dci, cc);
+        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
     }
 }
 
@@ -597,23 +731,52 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
     if ep.slot == 0 || ep.ring.is_null() {
         return MP_STATUS_FAILURE;
     }
+    // usbport serializes Submit/Poll/Abort with MiniportSpinLock. The event
+    // consumer only marks TDs done; it cannot consume this reserved capacity.
+    // Reject BEFORE changing the ring or issuing SET_ADDRESS.
+    if ep.count as usize == MAX_TDS {
+        return MP_STATUS_FAILURE;
+    }
+    if x.failed.load(Ordering::Acquire) {
+        // Returning FAILURE would have usbport retry forever without submitting
+        // (and hence without starting its request timeout). Complete it instead.
+        td.cc = 0;
+        td.end = (*ep.ring).enqueue;
+        td.done.store(true, Ordering::Release);
+        queue_td(ep, td_ptr);
+        x.pending_transfer.store(true, Ordering::Release);
+        return MP_STATUS_SUCCESS;
+    }
     if ep.halted && ep.is_control {
         // A STALL on a control pipe is a per-request answer, not a broken pipe:
         // clear it before the next request, as EHCI hardware does by itself.
-        recover(x, ep);
+        if !recover(x, ep) {
+            return MP_STATUS_FAILURE;
+        }
     }
 
     let sg = &*SgList;
-    let n_sg = sg.SgElementCount as usize;
-    if n_sg > MAX_DATA_TRBS {
-        xlog!("transfer with %u S/G elements exceeds %u", n_sg as u32, MAX_DATA_TRBS as u32);
+    if td.requested as usize > PAYLOAD_BYTES {
         return MP_STATUS_FAILURE;
     }
-    let elems = core::slice::from_raw_parts(sg.SgElement.as_ptr(), n_sg);
+    let n_sg = (td.requested as usize + PAGE - 1) / PAGE;
+    let needed = if ep.is_control { 2 + n_sg as u32 } else { n_sg.max(1) as u32 };
+    if (*ep.ring).space(ep.deq) < needed { return MP_STATUS_FAILURE; }
+    let setup = core::ptr::read_unaligned(&params.SetupPacket as *const _ as *const [u8; 8]);
+    let inbound = if ep.is_control { setup[0] & 0x80 != 0 } else { ep.props.EndpointAddress & 0x80 != 0 };
+    if !prepare_payload(ep, td, sg.MappedSystemVa, inbound) { return MP_STATUS_FAILURE; }
+    // MappedSystemVa already includes the sub-request offset for usbport's split
+    // transfers. Rebuild S/G against our private pages, not the caller's physical
+    // addresses. Page-sized TRBs cannot cross xHCI's 64 KiB buffer boundary.
+    let mut local_sg: [USBPORT_SCATTER_GATHER_ELEMENT; MAX_DATA_TRBS] = core::mem::zeroed();
+    for (i, e) in local_sg[..n_sg].iter_mut().enumerate() {
+        e.SgPhysicalAddress.QuadPart = (ep.payload_pa + (td.payload_first as usize * PAGE + i * PAGE) as u64) as i64;
+        e.SgTransferLength = (td.requested - (i * PAGE) as u32).min(PAGE as u32);
+    }
+    let elems = &local_sg[..n_sg];
     let mps = (ep.props.MaxPacketSize & 0x7FF).max(1);
 
     if ep.is_control {
-        let setup = core::ptr::read_unaligned(&params.SetupPacket as *const _ as *const [u8; 8]);
         let request_type = setup[0];
         let request = setup[1];
         let w_value = u16::from_le_bytes([setup[2], setup[3]]) as u32;
@@ -650,6 +813,7 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
         let needed = 2 + n_sg as u32;
         let ring = &mut *ep.ring;
         if ring.space(ep.deq) < needed {
+            finish_payload(ep, td);
             return MP_STATUS_FAILURE;
         }
         let data_len = params.TransferBufferLength;
@@ -657,7 +821,7 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
         td.first = ring.enqueue;
         td.first_cycle = ring.cycle;
         let trt = if data_len == 0 { TRT_NO_DATA } else if data_in { TRT_IN } else { TRT_OUT };
-        ring.push(u64::from_le_bytes(setup), 8, (TRB_SETUP << TRB_TYPE_SHIFT) | TRB_IDT | trt);
+        ring.push_hidden(u64::from_le_bytes(setup), 8, (TRB_SETUP << TRB_TYPE_SHIFT) | TRB_IDT | trt);
         let mut remaining = data_len;
         for (i, e) in elems.iter().enumerate() {
             let len = e.SgTransferLength;
@@ -685,13 +849,14 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
         let count = n_sg.max(1) as u32;
         let ring = &mut *ep.ring;
         if ring.space(ep.deq) < count {
+            finish_payload(ep, td);
             return MP_STATUS_FAILURE;
         }
         td.first = ring.enqueue;
         td.first_cycle = ring.cycle;
         let mut remaining = params.TransferBufferLength;
         if n_sg == 0 {
-            td.last_pa = ring.push(0, 0, (TRB_NORMAL << TRB_TYPE_SHIFT) | TRB_IOC);
+            td.last_pa = ring.push_hidden(0, 0, (TRB_NORMAL << TRB_TYPE_SHIFT) | TRB_IOC);
             td.data_pa[0] = td.last_pa;
             td.ndata = 1;
         } else {
@@ -703,7 +868,11 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
                 let mut ctl = (TRB_NORMAL << TRB_TYPE_SHIFT) | TRB_ISP;
                 ctl |= if last { TRB_IOC } else { TRB_CH };
                 let pa = e.SgPhysicalAddress.QuadPart as u64;
-                td.data_pa[i] = ring.push(pa, len | (td_size << 17), ctl);
+                td.data_pa[i] = if i == 0 {
+                    ring.push_hidden(pa, len | (td_size << 17), ctl)
+                } else {
+                    ring.push(pa, len | (td_size << 17), ctl)
+                };
                 td.data_len[i] = len;
                 if last {
                     td.last_pa = td.data_pa[i];
@@ -716,9 +885,11 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
     }
 
     if !queue_td(ep, td_ptr) {
+        finish_payload(ep, td);
         xlog!("slot %u ep %u: transfer queue full", ep.slot, ep.dci);
         return MP_STATUS_FAILURE;
     }
+    (*ep.ring).publish(td.first, td.first_cycle);
     ring_doorbell(x, ep.slot, ep.dci);
     MP_STATUS_SUCCESS
 }
@@ -756,6 +927,7 @@ pub unsafe extern "system" fn XHCI_PollEndpoint(xhciExtension: PVOID, xhciEndpoi
         ep.deq = td.end;
         KeReleaseSpinLock(&mut ep.lock, irql);
 
+        finish_payload(ep, td);
         let status = usbd_status(td.cc);
         if status != USBD_STATUS_SUCCESS {
             xlog!("slot %u ep %u: transfer failed, cc %u", ep.slot, ep.dci, td.cc);
@@ -779,14 +951,19 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
     let x = ext_of(xhciExtension);
     let ep = &mut *(xhciEndpoint as *mut XhciEndpoint);
     let target = xhciTransfer as *mut XhciTransfer;
-    let was_done = (*target).done.load(Ordering::SeqCst);
+    let mut was_done = (*target).done.load(Ordering::SeqCst);
 
     if !was_done && !ep.halted {
-        ep_command(x, ep, TRB_STOP_ENDPOINT);
+        if ep_command(x, ep, TRB_STOP_ENDPOINT) != CC_SUCCESS && !x.failed.load(Ordering::Acquire) {
+            fail_controller(x);
+        }
     }
 
     let mut irql: KIRQL = 0;
     KeAcquireSpinLock(&mut ep.lock, &mut irql);
+    // The command wait also consumes events: a real completion may have won
+    // the race with Stop Endpoint. Never rewrite that completed TD's TRBs.
+    was_done = (*target).done.load(Ordering::SeqCst);
     let mut pos = None;
     for i in 0..ep.count {
         if ep.pending[((ep.head + i) as usize) % MAX_TDS] == target {
@@ -796,6 +973,12 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
     }
     let mut move_dequeue = false;
     if let Some(i) = pos {
+        // Completed entries can still precede the hardware's current request
+        // until PollEndpoint retires them. Queue index zero is not necessarily
+        // the controller's next TD.
+        move_dequeue = !was_done && (0..i).all(|j| {
+            (*ep.pending[((ep.head + j) as usize) % MAX_TDS]).done.load(Ordering::Acquire)
+        });
         for j in i..ep.count - 1 {
             ep.pending[((ep.head + j) as usize) % MAX_TDS] = ep.pending[((ep.head + j + 1) as usize) % MAX_TDS];
         }
@@ -807,11 +990,13 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
             for _ in 0..td.ntrbs {
                 let trb = ring.va.add(idx as usize);
                 let c = core::ptr::read_volatile(&(*trb).control);
+                core::ptr::write_volatile(&mut (*trb).param_lo, 0);
+                core::ptr::write_volatile(&mut (*trb).param_hi, 0);
+                core::ptr::write_volatile(&mut (*trb).status, 0);
                 core::ptr::write_volatile(&mut (*trb).control, (c & TRB_CYCLE) | (8 << TRB_TYPE_SHIFT));
                 dma_clean(trb as *const u8, TRB_SIZE);
                 idx = (idx + 1) % RING_USABLE;
             }
-            move_dequeue = i == 0;
         }
         if i == 0 {
             ep.deq = td.end;
@@ -822,8 +1007,11 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
     KeReleaseSpinLock(&mut ep.lock, irql);
 
     if move_dequeue && !ep.halted {
-        set_dequeue(x, ep, idx, cyc);
+        if set_dequeue(x, ep, idx, cyc) != CC_SUCCESS && !x.failed.load(Ordering::Acquire) {
+            fail_controller(x);
+        }
     }
+    finish_payload(ep, &mut *target);
     if !CompletedLength.is_null() {
         *CompletedLength = (*target).transferred;
     }

@@ -135,6 +135,9 @@ pub const CC_USB_TRANSACTION: u32 = 4;
 pub const CC_TRB: u32 = 5;
 pub const CC_STALL: u32 = 6;
 pub const CC_SHORT_PACKET: u32 = 13;
+pub const CC_STOPPED: u32 = 26;
+pub const CC_STOPPED_LENGTH_INVALID: u32 = 27;
+pub const CC_STOPPED_SHORT_PACKET: u32 = 28;
 
 #[inline]
 pub const fn trb_type(control: u32) -> u32 {
@@ -239,9 +242,9 @@ pub unsafe fn dma_clean(va: *const u8, len: usize) {
     }
 }
 
-/// Clean and invalidate [va, va+len) so the CPU's next read fetches what the
-/// device wrote. Clean+invalidate rather than a bare invalidate: a bare one would
-/// discard any CPU write sharing the line.
+/// Invalidate device-owned, cache-line-isolated memory before reading it.
+/// The caller must clean it BEFORE handing it to hardware and must not write it
+/// until ownership returns. Cleaning here could overwrite newly DMA'd bytes.
 #[inline]
 pub unsafe fn dma_invalidate(va: *const u8, len: usize) {
     #[cfg(target_arch = "aarch64")]
@@ -249,7 +252,7 @@ pub unsafe fn dma_invalidate(va: *const u8, len: usize) {
         let mut p = (va as usize) & !(DCACHE_LINE - 1);
         let end = va as usize + len;
         while p < end {
-            core::arch::asm!("dc civac, {0}", in(reg) p, options(nostack, preserves_flags));
+            core::arch::asm!("dc ivac, {0}", in(reg) p, options(nostack, preserves_flags));
             p += DCACHE_LINE;
         }
         core::arch::asm!("dsb sy", options(nostack, preserves_flags));

@@ -110,9 +110,10 @@ sees a USB2 root hub.
 ### Not yet (tracked, in rough order)
 
 1. **M4, the Pi**: publish XHC0's MMIO/IRQ from the loader; `_INI`'s command-register
-   write; the VL805 firmware question. Non-coherent DMA is already coded: every ring
-   and context write is cleaned and every event read invalidated (`hw.rs`); QEMU
-   cannot test it.
+   write; the VL805 firmware question. Rings/contexts use explicit cache
+   maintenance (`hw.rs`); payloads now DMA through private page-isolated common
+   buffers, cleaned before handoff and invalidated before copying IN bytes back.
+   Physical non-coherent DMA still needs Pi validation. See `usbxhci-review.md`.
 2. **Devices behind hubs.** The slot context always says "root port, route string 0";
    usbport's endpoint properties do not carry the parent hub, so this needs usbport to
    hand the miniport the topology.

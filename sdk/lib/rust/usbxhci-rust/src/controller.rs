@@ -73,13 +73,31 @@ impl Ring {
     /// control word, which carries the cycle bit, goes last behind a barrier.
     /// `control` must not include the cycle bit. Returns the TRB's bus address.
     pub unsafe fn push(&mut self, param: u64, status: u32, control: u32) -> u64 {
+        self.push_inner(param, status, control, false)
+    }
+
+    /// Keep the first TRB of a TD CPU-owned until all its TRBs and software
+    /// bookkeeping exist. An already-running ring can fetch without a doorbell.
+    pub unsafe fn push_hidden(&mut self, param: u64, status: u32, control: u32) -> u64 {
+        self.push_inner(param, status, control, true)
+    }
+
+    pub unsafe fn publish(&self, index: u32, cycle: u32) {
+        let trb = self.va.add(index as usize);
+        let control = core::ptr::read_volatile(&(*trb).control);
+        wmb();
+        core::ptr::write_volatile(&mut (*trb).control, (control & !TRB_CYCLE) | cycle);
+        dma_clean(trb as *const u8, TRB_SIZE);
+    }
+
+    unsafe fn push_inner(&mut self, param: u64, status: u32, control: u32, hidden: bool) -> u64 {
         let idx = self.enqueue;
         let trb = self.va.add(idx as usize);
         core::ptr::write_volatile(&mut (*trb).param_lo, param as u32);
         core::ptr::write_volatile(&mut (*trb).param_hi, (param >> 32) as u32);
         core::ptr::write_volatile(&mut (*trb).status, status);
         wmb();
-        core::ptr::write_volatile(&mut (*trb).control, control | self.cycle);
+        core::ptr::write_volatile(&mut (*trb).control, control | (self.cycle ^ hidden as u32));
         dma_clean(trb as *const u8, TRB_SIZE);
         let pa = self.pa_of(idx);
 
@@ -154,6 +172,11 @@ pub struct XhciExtension {
     pub cmd_trb: u64,
     pub cmd_done: AtomicBool,
     pub cmd_result: CommandResult,
+    pub pending_port_change: AtomicBool,
+    pub pending_transfer: AtomicBool,
+    /// Permanent failure until PnP restarts the controller. No new DMA allowed.
+    pub failed: AtomicBool,
+    pub hardware_error: AtomicBool,
 
     /// Indexed by slot ID; entry 0 is unused.
     pub slots: [crate::endpoint::Slot; MAX_SLOTS + 1],
@@ -171,7 +194,8 @@ pub unsafe fn ext_of(p: PVOID) -> &'static mut XhciExtension {
     &mut *(p as *mut XhciExtension)
 }
 
-unsafe fn wait_for(mut cond: impl FnMut() -> bool, micros: u32) -> bool {
+/// Bounded register polling at DISPATCH_LEVEL; never parks the thread.
+unsafe fn poll_until(mut cond: impl FnMut() -> bool, micros: u32) -> bool {
     let mut waited = 0;
     while !cond() {
         if waited >= micros {
@@ -197,7 +221,7 @@ unsafe fn walk_extended_caps(x: &mut XhciExtension) {
                 if v & LEGACY_BIOS_OWNED != 0 {
                     wr32(x.cap, off, v | LEGACY_OS_OWNED);
                     let cap = x.cap;
-                    let ok = wait_for(|| rd32(cap, off) & LEGACY_BIOS_OWNED == 0, 1_000_000);
+                    let ok = poll_until(|| rd32(cap, off) & LEGACY_BIOS_OWNED == 0, 1_000_000);
                     xlog!("firmware handoff %s", if ok { b"done\0".as_ptr() } else { b"TIMED OUT, taking it anyway\0".as_ptr() });
                     if !ok {
                         wr32(x.cap, off, (rd32(x.cap, off) & !LEGACY_BIOS_OWNED) | LEGACY_OS_OWNED);
@@ -298,20 +322,24 @@ pub unsafe extern "system" fn XHCI_StartController(
     // even when HCCPARAMS1.AC64 is clear.
     x.va = r.StartVA as *mut u8;
     x.pa = r.StartPA as u64;
-    core::ptr::write_bytes(x.va, 0, COMMON_BUFFER_SIZE);
 
     // Halt (5.4.1: R/S=0, wait for HCHalted), then reset.
     let op = x.op;
     wr32(op, USBCMD, rd32(op, USBCMD) & !USBCMD_RS);
-    if !wait_for(|| rd32(op, USBSTS) & USBSTS_HCH != 0, 20_000) {
+    if !poll_until(|| rd32(op, USBSTS) & USBSTS_HCH != 0, 20_000) {
         xlog!("start: controller did not halt (USBSTS %x)", rd32(op, USBSTS));
         return MP_STATUS_HW_ERROR;
     }
     wr32(op, USBCMD, USBCMD_HCRST);
-    if !wait_for(|| rd32(op, USBCMD) & USBCMD_HCRST == 0 && rd32(op, USBSTS) & USBSTS_CNR == 0, 1_000_000) {
+    if !poll_until(|| rd32(op, USBCMD) & USBCMD_HCRST == 0 && rd32(op, USBSTS) & USBSTS_CNR == 0, 1_000_000) {
         xlog!("start: reset did not complete (USBCMD %x USBSTS %x)", rd32(op, USBCMD), rd32(op, USBSTS));
         return MP_STATUS_HW_ERROR;
     }
+    core::ptr::write_bytes(x.va, 0, COMMON_BUFFER_SIZE);
+    core::ptr::write_bytes(x.slots.as_mut_ptr(), 0, x.slots.len());
+    x.eps = [[core::ptr::null_mut(); 32]; MAX_SLOTS + 1];
+    x.failed.store(false, Ordering::Release);
+    x.hardware_error.store(false, Ordering::Release);
 
     // The reset left the controller quiet (USBCMD.INTE and IMAN clear), so its
     // INTx can be unmasked: pci.sys masks it at enumeration because firmware may
@@ -359,7 +387,7 @@ pub unsafe extern "system" fn XHCI_StartController(
     // (the NoOp below would raise one) is declined by the gate, and a declined
     // level-triggered line fires forever. Until then everything polls.
     wr32(op, USBCMD, USBCMD_RS | USBCMD_HSEE);
-    if !wait_for(|| rd32(op, USBSTS) & USBSTS_HCH == 0, 20_000) {
+    if !poll_until(|| rd32(op, USBSTS) & USBSTS_HCH == 0, 20_000) {
         xlog!("start: controller did not run (USBSTS %x)", rd32(op, USBSTS));
         return MP_STATUS_HW_ERROR;
     }
@@ -394,6 +422,7 @@ pub unsafe extern "system" fn XHCI_StartController(
         r.code,
     );
     if r.code != CC_SUCCESS {
+        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
         return MP_STATUS_HW_ERROR;
     }
     MP_STATUS_SUCCESS
@@ -405,19 +434,45 @@ pub unsafe extern "system" fn XHCI_StopController(xhciExtension: PVOID, _Disable
     if x.op.is_null() {
         return;
     }
-    let op = x.op;
-    wr32(op, USBCMD, rd32(op, USBCMD) & !(USBCMD_RS | USBCMD_INTE));
-    wait_for(|| rd32(op, USBSTS) & USBSTS_HCH != 0, 20_000);
-    x.started = false;
+    fail_controller(x);
     xlog!("controller stopped");
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn XHCI_SuspendController(_xhciExtension: PVOID) {}
+pub unsafe extern "system" fn XHCI_SuspendController(xhciExtension: PVOID) {
+    XHCI_StopController(xhciExtension, 1);
+}
 
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_ResumeController(_xhciExtension: PVOID) -> MPSTATUS {
-    MP_STATUS_SUCCESS
+    MP_STATUS_NOT_SUPPORTED
+}
+
+/// Fail closed before any DMA memory can be reused. usbport's reset/remove
+/// invalidation callbacks are unimplemented, so don't pretend they will recover
+/// ownership for us. The controller remains unavailable until a PnP restart.
+pub unsafe fn fail_controller(x: &mut XhciExtension) {
+    x.failed.store(true, Ordering::Release);
+    let mut irql: KIRQL = 0;
+    KeAcquireSpinLock(&mut x.evt_lock, &mut irql);
+    wr32(x.op, USBCMD, rd32(x.op, USBCMD) & !(USBCMD_RS | USBCMD_INTE));
+    if !poll_until(|| rd32(x.op, USBSTS) & USBSTS_HCH != 0, 100_000) {
+        // Abort/Close cannot return an error to stop usbport freeing the buffer.
+        // Bugcheck through panic-common instead of returning live DMA memory.
+        panic!("xHCI failed to halt; refusing to release DMA-owned memory");
+    }
+    x.started = false;
+    x.interrupts_on = false;
+    for slot in 1..=MAX_SLOTS {
+        for dci in 1..32 {
+            let ep = x.eps[slot][dci];
+            if ep.is_null() { continue; }
+            crate::endpoint::controller_failed(&mut *ep);
+        }
+    }
+    x.pending_transfer.store(true, Ordering::Release);
+    KeReleaseSpinLock(&mut x.evt_lock, irql);
+    xlog!("controller halted; outstanding transfers failed, PnP restart required");
 }
 
 /// Issue one command and wait for its completion event. Commands are rare
@@ -444,8 +499,19 @@ pub unsafe fn unlock_commands(x: &mut XhciExtension, irql: KIRQL) {
 }
 
 pub unsafe fn command_locked(x: &mut XhciExtension, param: u64, status: u32, control: u32) -> CommandResult {
+    if x.failed.load(Ordering::Acquire) {
+        return CommandResult { code: 0, slot: 0 };
+    }
+    // The event consumer runs under a different usbport lock on another CPU.
+    // Install the waiter before publishing a command to the running ring.
+    let mut event_irql: KIRQL = 0;
+    KeAcquireSpinLock(&mut x.evt_lock, &mut event_irql);
     x.cmd_done.store(false, Ordering::SeqCst);
-    x.cmd_trb = x.cmd.push(param, status, control);
+    let index = x.cmd.enqueue;
+    let cycle = x.cmd.cycle;
+    x.cmd_trb = x.cmd.push_hidden(param, status, control);
+    x.cmd.publish(index, cycle);
+    KeReleaseSpinLock(&mut x.evt_lock, event_irql);
     wmb();
     wr32(x.db, 0, 0);
 
@@ -459,6 +525,7 @@ pub unsafe fn command_locked(x: &mut XhciExtension, param: u64, status: u32, con
         }
         if waited >= 500_000 {
             xlog!("command type %u timed out (USBSTS %x CRCR %x)", trb_type(control), rd32(x.op, USBSTS), rd32(x.op, CRCR));
+            fail_controller(x);
             break;
         }
         KeStallExecutionProcessor(10);
@@ -469,6 +536,7 @@ pub unsafe fn command_locked(x: &mut XhciExtension, param: u64, status: u32, con
 
 /// Ring an endpoint's doorbell (5.6): target = DCI.
 pub unsafe fn ring_doorbell(x: &XhciExtension, slot: u32, dci: u32) {
+    if x.failed.load(Ordering::Acquire) { return; }
     wmb();
     wr32(x.db, slot as usize * 4, dci);
 }
@@ -489,7 +557,10 @@ pub unsafe fn process_events(x: &mut XhciExtension) -> EventSummary {
     }
     let mut irql: KIRQL = 0;
     KeAcquireSpinLock(&mut x.evt_lock, &mut irql);
-    let mut consumed = false;
+    if x.failed.load(Ordering::Acquire) {
+        KeReleaseSpinLock(&mut x.evt_lock, irql);
+        return s;
+    }
     loop {
         let trb = x.evt_va.add(x.evt_dequeue as usize);
         dma_invalidate(trb as *const u8, TRB_SIZE);
@@ -517,32 +588,38 @@ pub unsafe fn process_events(x: &mut XhciExtension) -> EventSummary {
             }
             TRB_EV_HOST_CONTROLLER => {
                 xlog!("host controller event, cc %u", status >> 24);
+                x.hardware_error.store(true, Ordering::Release);
             }
             _ => {}
         }
-        consumed = true;
         x.evt_dequeue += 1;
         if x.evt_dequeue as usize == RING_TRBS {
             x.evt_dequeue = 0;
             x.evt_cycle ^= 1;
         }
     }
-    if consumed {
-        let erdp = x.evt_pa + x.evt_dequeue as u64 * TRB_SIZE as u64;
-        wr64(x.rt.add(IR0), ERDP, erdp | ERDP_EHB as u64);
+    // Command waits consume events too, but cannot call into usbport while its
+    // miniport lock is held. Latch notifications for the next DPC/timer poll.
+    if s.port_change {
+        x.pending_port_change.store(true, Ordering::Release);
     }
+    if s.transfer {
+        x.pending_transfer.store(true, Ordering::Release);
+    }
+    let erdp = x.evt_pa + x.evt_dequeue as u64 * TRB_SIZE as u64;
+    wr64(x.rt.add(IR0), ERDP, erdp | ERDP_EHB as u64);
     KeReleaseSpinLock(&mut x.evt_lock, irql);
     s
 }
 
-unsafe fn notify(x: &mut XhciExtension, s: EventSummary) {
+unsafe fn notify(x: &mut XhciExtension, _s: EventSummary) {
     let p = &*core::ptr::addr_of!(crate::RegPacket);
-    if s.port_change {
+    if x.pending_port_change.swap(false, Ordering::AcqRel) {
         if let Some(f) = p.UsbPortInvalidateRootHub {
             f(x as *mut _ as PVOID);
         }
     }
-    if s.transfer {
+    if x.pending_transfer.swap(false, Ordering::AcqRel) {
         if let Some(f) = p.UsbPortInvalidateEndpoint {
             f(x as *mut _ as PVOID, core::ptr::null_mut());
         }
@@ -565,6 +642,9 @@ pub unsafe extern "system" fn XHCI_InterruptService(xhciExtension: PVOID) -> BOO
     let ir = x.rt.add(IR0);
     wr32(ir, IMAN, rd32(ir, IMAN) | IMAN_IP);
     if sts & USBSTS_HSE != 0 {
+        // USBSTS.HSE was just acknowledged. Preserve it for CheckController,
+        // which runs under usbport's MiniportSpinLock and may safely quiesce DMA.
+        x.hardware_error.store(true, Ordering::Release);
         xlog!("host system error (USBSTS %x)", sts);
     }
     1
@@ -583,7 +663,7 @@ pub unsafe extern "system" fn XHCI_InterruptDpc(xhciExtension: PVOID, EnableInte
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_EnableInterrupts(xhciExtension: PVOID) {
     let x = ext_of(xhciExtension);
-    if x.op.is_null() {
+    if x.op.is_null() || x.failed.load(Ordering::Acquire) {
         return;
     }
     let ir = x.rt.add(IR0);
@@ -606,6 +686,9 @@ pub unsafe extern "system" fn XHCI_DisableInterrupts(xhciExtension: PVOID) {
 pub unsafe extern "system" fn XHCI_PollController(xhciExtension: PVOID) {
     let x = ext_of(xhciExtension);
     if !x.started {
+        if x.failed.load(Ordering::Acquire) {
+            notify(x, EventSummary::default());
+        }
         return;
     }
     let s = process_events(x);
@@ -620,12 +703,14 @@ pub unsafe extern "system" fn XHCI_CheckController(xhciExtension: PVOID) {
     }
     let sts = rd32(x.op, USBSTS);
     if sts == 0xFFFF_FFFF {
+        fail_controller(x);
         let p = &*core::ptr::addr_of!(crate::RegPacket);
         if let Some(f) = p.UsbPortInvalidateController {
             f(xhciExtension, USBPORT_INVALIDATE_CONTROLLER_SURPRISE_REMOVE);
         }
-    } else if sts & (USBSTS_HCE | USBSTS_HSE) != 0 {
+    } else if sts & (USBSTS_HCE | USBSTS_HSE) != 0 || x.hardware_error.load(Ordering::Acquire) {
         xlog!("controller error (USBSTS %x)", sts);
+        fail_controller(x);
     }
 }
 
