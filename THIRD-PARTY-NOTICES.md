@@ -1775,9 +1775,9 @@ the said software).
 
 - Upstream: https://github.com/microsoft/libdxg
 - Version: git commit 045831e
-- In this tree: `sdk/include/ddk/d3dkmthk.h`
+- In this tree: `vendor/libdxg`
 - Licence: MIT
-- Grant reproduced from: `sdk/include/ddk/d3dkmthk.h (header comment)`
+- Grant reproduced from: `vendor/libdxg/include/d3dkmthk.h (header comment)`
 
 ```
 Module*Header**********************************\
@@ -4500,13 +4500,13 @@ This is the largest unresolved provenance question in the tree (~78K lines) and 
 
 - Upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
 - Version: 7.6
-- In this tree: `sdk/include/GL`
+- In this tree: `vendor/opengl-headers`
 - Licence: MIT
 - Also contains: Khronos — glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos MIT-style Materials licence.
 
 - Also contains: SGI-B-1.1 — glu.h, SGI Free Software License B version 1.1 -- the same text as the libnurbs half of dll/opengl/glu32.
 
-- Grant reproduced from: `sdk/include/GL/gl.h (header comment)`
+- Grant reproduced from: `vendor/opengl-headers/include/GL/gl.h (header comment)`
 
 ```
 Mesa 3-D graphics library
@@ -5022,7 +5022,7 @@ Silicon Graphics, Inc.
 
 - Upstream: http://www.stlport.org/
 - Version: 5.2.1
-- In this tree: `vendor/stlport`, `sdk/include/c++/stlport`
+- In this tree: `vendor/stlport`
 - Licence: STLport licence (permissive)
 - Modified by us: yes, see `vendor-patches/stlport.patch`
 - Grant reproduced from: `vendor/stlport/README`

@@ -1355,13 +1355,11 @@ trees:
     license_file: vendor/stlport/README
     modified: yes  # 30 semantic files across BOTH halves; see patch
     patch: vendor-patches/stlport.patch
-    headers:
-      # The other half of the same drop: upstream's top-level stlport/ include tree,
-      # 326 files. It was missing from this entry entirely until 2026-09-20, so every
-      # earlier audit of STLport silently covered only the library sources.
-      - sdk/include/c++/stlport
+    # Both halves of the drop now live here in upstream's own layout: the library
+    # sources at the top and the 326-file include tree at vendor/stlport/stlport
+    # (was vendor/stlport/stlport, and missing from this entry until 2026-09-20).
     version:
-      file: sdk/include/c++/stlport/stl/_stlport_version.h
+      file: vendor/stlport/stlport/stl/_stlport_version.h
       patterns:
         - '#define _STLPORT_MAJOR\s+(\d+)'
         - '#define _STLPORT_MINOR\s+(\d+)'
@@ -1372,14 +1370,14 @@ trees:
       sha256 755b007b982c4545086c43affc8ed32c0acd577ee206eb1f6967e250c3546fc9). The entry
       said `modified: yes` with no patch, no review and no version.
 
-      VERSION IS 5.2.1 and now probed, from sdk/include/c++/stlport/stl/_stlport_version.h
+      VERSION IS 5.2.1 and now probed, from vendor/stlport/stlport/stl/_stlport_version.h
       (_STLPORT_VERSION 0x521), corroborated by etc/ChangeLog's final entry "2008-12-10 ...
       STLport release 5.2.1". The README says "STLport 5.0" and is simply stale — don't
       believe it. 5.2.1 is the FINAL STLport release ever made, so there is no upstream left
       to track and no bump to owe.
 
       THE TREE IS SPLIT AND HALF OF IT WAS UNREGISTERED. vendor/stlport holds the
-      library sources; sdk/include/c++/stlport holds 326 files that are upstream's top-level
+      library sources; vendor/stlport/stlport holds 326 files that are upstream's top-level
       stlport/ include tree. The second directory was not in this entry at all, so every
       earlier pass over STLport silently covered only half the drop. Now recorded under
       `headers:`. Same class of gap as libjpeg's split tree.
@@ -2017,11 +2015,11 @@ trees:
       directory, so this is a single-file entry with no VENDORED stamp; it is the
       clearest case for the planned move of vendored code into its own directory.
 
-  - path: sdk/include/ddk/d3dkmthk.h
+  - path: vendor/libdxg
     name: libdxg D3DKMT thunk header
     upstream: https://github.com/microsoft/libdxg
     license: MIT
-    license_ref: sdk/include/ddk/d3dkmthk.h
+    license_ref: vendor/libdxg/include/d3dkmthk.h
     modified: unknown
     version:
       file: media/doc/3rd Party Files.txt
@@ -2030,11 +2028,11 @@ trees:
       Microsoft's MIT-licensed WDDM kernel-thunk header, one file in the ReactOS-authored
       DDK directory. Header only, nothing to translate; registered for the licence record.
 
-  - path: sdk/include/GL
+  - path: vendor/opengl-headers
     name: OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
     upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
     license: MIT
-    license_ref: sdk/include/GL/gl.h
+    license_ref: vendor/opengl-headers/include/GL/gl.h
     license_extra:
       Khronos: >
         glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos
@@ -2044,7 +2042,7 @@ trees:
         half of dll/opengl/glu32.
     modified: unknown
     version:
-      file: sdk/include/GL/gl.h
+      file: vendor/opengl-headers/include/GL/gl.h
       pattern: 'Version:\s+([0-9.]+)'
     reason: >
       The public GL headers every OpenGL consumer includes, 14,345 lines. NOT headers of
