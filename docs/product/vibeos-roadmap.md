@@ -589,12 +589,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the list and then released a mutex inside it on allocation failure, which upstream's
   shape removes.
 
-  **That points at a much larger owed queue:** `upstream_triage.py` flags **465 ORACLE
-  commits inside the already-merged range** (`28a26f3b664^1..^2`), and the oracle work so
-  far read only the unmerged tail. Each is an upstream change that landed as dead C next to
-  a Rust translation nobody re-read. Not all 465 are bugs we carry -- the tool still
-  conflates fix vs. feature and not-compiled vs. translated -- but `a7f658e3221` was in it,
-  and it cost a day.
+  **That points at a much larger owed queue:** `upstream_triage.py` flags **428 ORACLE
+  commits inside the already-merged range** (`28a26f3b664^1..^2`) -- upstream changes to C a
+  CMake comment has switched off, i.e. files we translated -- and the oracle work so far
+  read only the unmerged tail. Each landed as dead C next to Rust nobody re-read. (A first
+  count said 465; the tool then learned to separate cohab-flipped files from modules this
+  port never builds, which moved 25 to UNBUILT. It cannot tell a fix from a feature, so 428
+  is a reading list, not a bug count -- in the unmerged tail 3 of 13 hits were real
+  correctness bugs, and `a7f658e3221` was one of these 428.)
 
   Ruled out along the way, by tool: no extern arity mismatch in any kernel crate on i386
   (`verify_signatures`, after fixing its HIGH false positives from comments inside param
