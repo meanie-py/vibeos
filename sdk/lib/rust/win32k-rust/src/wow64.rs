@@ -106,6 +106,17 @@ pub(crate) unsafe fn IsWow64Process() -> bool {
     !p.is_null() && !(*p).Wow64Process.is_null()
 }
 
+/// `true` when `Process` -- not necessarily the current one -- is a WoW64 guest.
+///
+/// The question to ask whenever win32k reads a structure a USER-MODE module
+/// laid out: the layout is the bitness of whoever WROTE it, and that is the
+/// window's owner, which a cross-process query attaches to rather than runs as.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub(crate) unsafe fn IsWow64Eprocess(p: PEPROCESS) -> bool {
+    !p.is_null() && !(*p).Wow64Process.is_null()
+}
+
 /// Project a thread's 64-bit CLIENTINFO into its TEB32 as a 32-bit CLIENTINFO.
 ///
 /// No-op for native processes and for threads with no TEB (system threads).
@@ -208,5 +219,11 @@ pub(crate) unsafe fn Wow64PublishClientInfo(_pti: PTHREADINFO) {}
 #[cfg(target_arch = "x86")]
 #[inline]
 pub(crate) unsafe fn IsWow64Process() -> bool {
+    false
+}
+
+#[cfg(target_arch = "x86")]
+#[inline]
+pub(crate) unsafe fn IsWow64Eprocess(_p: PEPROCESS) -> bool {
     false
 }

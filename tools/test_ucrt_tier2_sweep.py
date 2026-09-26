@@ -101,3 +101,21 @@ def test_a_dead_harness_says_how_it_died() -> None:
     assert sweep.harness_exit_status(line) == "0xC0000194"
     clean = line.replace("0xFFFFFFFFC0000194", "0x0000000000000000")
     assert sweep.harness_exit_status(clean) is None
+
+
+def test_takeover_check_freezes_inputs_after_the_first_shard(monkeypatch) -> None:
+    # Only the first shard of a takeover check sees the pre-deletion tree; every later
+    # one must reuse its reference set and case list, or it grades less, silently.
+    seen: list[tuple[int, bool]] = []
+
+    def fake_run_shard(arch, k, n, budget_ms, dry_run, takeover_check=False, reuse_inputs=False):
+        seen.append((k, reuse_inputs))
+        return ""
+
+    monkeypatch.setattr(sweep, "run_shard", fake_run_shard)
+    argv = ["--arch", "arm64", "--shards", "4", "--dry-run", "--takeover-check"]
+    sweep.main([*argv, "--only", "2", "--only", "1", "--only", "3"])
+    assert seen == [(2, False), (1, True), (3, True)]
+    seen.clear()
+    sweep.main(["--arch", "arm64", "--shards", "3", "--dry-run"])
+    assert seen == [(0, False), (1, False), (2, False)]

@@ -22,11 +22,8 @@ for A in $ARCHES; do
     # the UCRT default dies in the loader with zero serial evidence).
     "$TC/${CC[$A]}" -O2 -o "$HERE/apitest-sweep-$A.exe" "$HERE/sweep.c" \
         -lmsvcrt-os -lntdll -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-    objd="$TC/${CC[$A]%-gcc}-objdump"
-    ss=$("$objd" -p "$HERE/apitest-sweep-$A.exe" | awk '$1=="Subsystem" && !p {print $2; p=1}')
-    [ "$ss" = "00000002" ] || { echo "[apitest] FAIL($A): subsystem=$ss (want GUI)"; exit 1; }
-    "$objd" -p "$HERE/apitest-sweep-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[apitest] FAIL($A): links UCRT api-sets (want classic msvcrt.dll)"; exit 1; } \
-        || true
+    # Headers + import table read directly (tools/payloads/pecheck.py): the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/apitest-sweep-$A.exe" --tag apitest --gui --forbid-dll api-ms-win-crt
 done
 echo "[apitest] OK"

@@ -92,7 +92,7 @@ pub unsafe extern "system" fn MakeShellURLFromPathW(
     lpPath: PCWSTR,
     lpUrl: PWSTR,
     cchMax: c_int,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("MakeShellURLFromPathW() stub\n");
     0
 }
@@ -101,7 +101,7 @@ pub unsafe extern "system" fn MakeShellURLFromPathA(
     lpPath: PCHAR,
     lpUrl: PCHAR,
     cchMax: c_int,
-) -> BOOLEAN {
+) -> BOOL {
     let mut szPath = [0u16; MAX_PATH as usize];
     let mut szURL = [0u16; MAX_PATH as usize];
     let ret;
@@ -203,7 +203,7 @@ pub unsafe extern "system" fn ShellHookProc(
 pub unsafe extern "system" fn SheShortenPathW(
     lpPath: PWSTR,
     bShorten: BOOLEAN,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("SheShortenPathW() stub\n");
     0
 }
@@ -211,7 +211,7 @@ pub unsafe extern "system" fn SheShortenPathW(
 pub unsafe extern "system" fn SheShortenPathA(
     lpPath: PCHAR,
     bShorten: BOOLEAN,
-) -> BOOLEAN {
+) -> BOOL {
     let mut szPath = [0u16; MAX_PATH as usize];
     MultiByteToWideChar(CP_ACP, 0, lpPath, -1, szPath.as_mut_ptr(), (szPath.len() - 1) as c_int);
     let ret = SheShortenPathW(szPath.as_mut_ptr(), bShorten);
@@ -233,7 +233,7 @@ pub unsafe extern "system" fn SheGetDirExW(
     lpDrive: PWSTR,
     lpCurDirLen: *mut DWORD,
     lpCurDir: PWSTR,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("SheGetDirExW() stub\n");
     0
 }
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn SheConvertPathW(
     lpCmd: PWSTR,
     lpFileName: PWSTR,
     uCmdLen: UINT,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("SheConvertPathW() stub\n");
     0
 }
@@ -286,7 +286,7 @@ pub unsafe extern "system" fn SHInvokePrinterCommandW(
     lpBuf1: PCWSTR,
     lpBuf2: PCWSTR,
     fModal: BOOLEAN,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("SHInvokePrinterCommandW() stub\n");
     0
 }
@@ -297,14 +297,14 @@ pub unsafe extern "system" fn SHInvokePrinterCommandA(
     lpBuf1: PCHAR,
     lpBuf2: PCHAR,
     fModal: BOOLEAN,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("SHInvokePrinterCommandA() stub\n");
     0
 }
 #[no_mangle]
 pub unsafe extern "system" fn SHCreateProcessAsUserW(
     pscpi: *mut SHCREATEPROCESSINFOW,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("SHCreateProcessAsUserW() stub\n");
     0
 }
@@ -412,7 +412,7 @@ pub unsafe extern "system" fn DAD_DragEnterEx2(
     hwndTarget: HWND,
     ptStart: POINT,
     pdtObject: *mut IDataObject,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("DAD_DragEnterEx2() stub\n");
     0
 }
@@ -430,7 +430,7 @@ pub unsafe extern "system" fn SHGetNetResource(
 pub unsafe extern "system" fn DragQueryInfo(
     hDrop: HDROP,
     pDragInfo: *mut DRAGINFO,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("DragQueryInfo() stub\n");
     0
 }
@@ -482,7 +482,7 @@ pub unsafe extern "system" fn SHNetConnectionDialog(
 pub unsafe extern "system" fn DAD_SetDragImageFromListView(
     hwnd: HWND,
     pt: POINT,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("DAD_SetDragImageFromListView() stub\n");
     0
 }
@@ -499,7 +499,7 @@ pub unsafe extern "system" fn ILGetPseudoNameW(
     pidl2: LPCITEMIDLIST,
     szStr: PWSTR,
     iUnknown: c_int,
-) -> BOOLEAN {
+) -> BOOL {
     TRACE!("ILGetPseudoNameW() stub\n");
     *szStr = 0;
     0
@@ -613,7 +613,7 @@ pub unsafe extern "system" fn SHSetUserPicturePathW(
 pub unsafe extern "system" fn PathIsSlowW(
     pszFile: PCWSTR,
     dwAttr: DWORD,
-) -> BOOLEAN {
+) -> BOOL {
     FIXME!("PathIsSlowW() stub\n");
     0
 }

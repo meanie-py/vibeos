@@ -2119,6 +2119,18 @@ unsafe fn TryStartWinetest(
     CloseHandle(Pi.hProcess);
 }
 
+/* The harness's end-of-program marker. Printed once, after the last GRADED
+ * guest or winetest on this arch and before the ungraded stock-applet / demo
+ * phase. Without it the harness could only infer "done" from the absence of
+ * anything in flight, and every launch leaves a gap where nothing is: the
+ * drain stopped between spawn32's verdict and lua32's launch line, then again
+ * between sqlite32's and the sweep's -- each time failing, or silently not
+ * grading, a guest that was about to run. One line closes the whole class.
+ * `tests/qemu/cli/ladder.py` PROGRAM_DONE must match this text. */
+unsafe fn LadderProgramComplete() {
+    DbgPrint(b"[WINLOGON] graded program complete\n\0".as_ptr() as *const i8);
+}
+
 /* Run EVERY subtest of one suite, enumerated from the binary itself.
  *
  * The subtest list comes from `<exe> --list`, not from a table here and not
@@ -2175,6 +2187,7 @@ unsafe fn TryStartWinetestSuite(
     let mut Found = 0u32;
     let mut Launched = 0u32;
     let mut Skipped = 0u32;
+    let mut Unselected = 0u32;
     let mut QuarantineLabel: [u8; 128] = [0; 128];
     while i < List.len() && List[i] != 0 {
         /* one line: [i, e) */
@@ -2197,7 +2210,12 @@ unsafe fn TryStartWinetestSuite(
             }
         } else if b > a {
             let len = b - a;
-            if WinetestSkipped(Skips, &List[a..b]) {
+            if !WinetestSelected(Skips, &List[a..b]) {
+                /* Not QUARANTINED -- nothing is wrong with it, it simply was
+                 * not asked for -- and counted apart so the completion line
+                 * cannot pass a narrowed sweep off as a whole one. */
+                Unselected += 1;
+            } else if WinetestSkipped(Skips, &List[a..b]) {
                 Skipped += 1;
                 DbgPrint(
                     b"[WT] %s: QUARANTINED, not launched\n\0".as_ptr() as *const i8,
@@ -2265,10 +2283,12 @@ unsafe fn TryStartWinetestSuite(
         );
     } else {
         DbgPrint(
-            b"[WT] %s: sweep complete, %lu subtests, %lu quarantined\n\0".as_ptr() as *const i8,
+            b"[WT] %s: sweep complete, %lu subtests, %lu quarantined, %lu not selected\n\0".as_ptr()
+                as *const i8,
             Prefix,
             Launched,
             Skipped,
+            Unselected,
         );
     }
 }
@@ -2368,9 +2388,28 @@ unsafe fn WinetestSweepRequested(Skips: *mut u8, SkipsMax: usize) -> bool {
 /* Is `name` (len bytes at `name`) on a `skip <name>` line of the marker? */
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn WinetestSkipped(Skips: *const u8, name: &[u8]) -> bool {
+    WinetestMarkerLine(Skips, b"skip", Some(name))
+}
+
+/* Does the marker SELECT subtests, and is `name` one of them?
+ *
+ * `only <name>` lines narrow a sweep to the named subtests -- the repro loop for
+ * one guest-only crash is a 3-second subtest, and without this it costs a whole
+ * 40-minute WoW64 sweep. No `only` line means everything is selected, so every
+ * existing marker keeps its meaning. */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn WinetestSelected(Skips: *const u8, name: &[u8]) -> bool {
+    !WinetestMarkerLine(Skips, b"only", None) || WinetestMarkerLine(Skips, b"only", Some(name))
+}
+
+/* Is there a `<keyword> <name>` line in the marker? With `name` None, is there a
+ * `<keyword> <anything>` line at all? */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn WinetestMarkerLine(Skips: *const u8, keyword: &[u8], name: Option<&[u8]>) -> bool {
     if Skips.is_null() {
         return false;
     }
+    let kl = keyword.len();
     let mut i = 0usize;
     loop {
         /* start of a line */
@@ -2382,15 +2421,15 @@ unsafe fn WinetestSkipped(Skips: *const u8, name: &[u8]) -> bool {
         while a < e && (*Skips.add(a) == b' ' || *Skips.add(a) == b'\t') {
             a += 1;
         }
-        /* "skip" + whitespace + name */
-        if e - a > 5
-            && *Skips.add(a) == b's'
-            && *Skips.add(a + 1) == b'k'
-            && *Skips.add(a + 2) == b'i'
-            && *Skips.add(a + 3) == b'p'
-            && (*Skips.add(a + 4) == b' ' || *Skips.add(a + 4) == b'\t')
-        {
-            let mut w = a + 5;
+        /* keyword + whitespace + name */
+        let mut kw = e - a > kl + 1;
+        for k in 0..kl {
+            if kw && *Skips.add(a + k) != keyword[k] {
+                kw = false;
+            }
+        }
+        if kw && (*Skips.add(a + kl) == b' ' || *Skips.add(a + kl) == b'\t') {
+            let mut w = a + kl + 1;
             while w < e && (*Skips.add(w) == b' ' || *Skips.add(w) == b'\t') {
                 w += 1;
             }
@@ -2398,16 +2437,25 @@ unsafe fn WinetestSkipped(Skips: *const u8, name: &[u8]) -> bool {
             while z > w && (*Skips.add(z - 1) == b' ' || *Skips.add(z - 1) == b'\t' || *Skips.add(z - 1) == b'\r') {
                 z -= 1;
             }
-            if z - w == name.len() {
-                let mut same = true;
-                for k in 0..name.len() {
-                    if *Skips.add(w + k) != name[k] {
-                        same = false;
-                        break;
+            match name {
+                None => {
+                    if z > w {
+                        return true;
                     }
                 }
-                if same {
-                    return true;
+                Some(name) => {
+                    if z - w == name.len() {
+                        let mut same = true;
+                        for k in 0..name.len() {
+                            if *Skips.add(w + k) != name[k] {
+                                same = false;
+                                break;
+                            }
+                        }
+                        if same {
+                            return true;
+                        }
+                    }
                 }
             }
         }
@@ -3211,6 +3259,7 @@ pub unsafe extern "system" fn WinMain(
         TryStartWow64Lua();
 
         TryStartWow64Sqlite();
+        LadderProgramComplete();
 
 
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
@@ -3368,6 +3417,7 @@ pub unsafe extern "system" fn WinMain(
                 0,
             );
         }
+        LadderProgramComplete();
 
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
@@ -3539,6 +3589,7 @@ pub unsafe extern "system" fn WinMain(
                 0,
             );
         }
+        LadderProgramComplete();
     }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned

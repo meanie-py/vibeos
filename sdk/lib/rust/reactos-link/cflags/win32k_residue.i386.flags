@@ -36,8 +36,10 @@
 -I{REPO}/sdk/include/winrt
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
+-I{REPO}/vendor/opengl-headers/include
+-I{REPO}/vendor/libdxg/include
 -I{REPO}/win32ss/include
--I{REPO}/sdk/lib/3rdparty/freetype/include
+-I{REPO}/vendor/freetype/include
 -I{REPO}/sdk/include/reactos/subsys
 -I{REPO}/sdk/include/reactos/drivers
 -std=gnu23

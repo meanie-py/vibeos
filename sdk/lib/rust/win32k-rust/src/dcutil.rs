@@ -547,7 +547,7 @@ pub unsafe extern "fastcall" fn GreSetBrushOrg(
     x: i32,
     y: i32,
     pptOut: LPPOINT,
-) -> u8 {
+) -> BOOL {
     let pdc: PDC = DC_LockDc(hdc);
     if pdc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
@@ -574,7 +574,7 @@ pub unsafe extern "C" fn GreSetBrushOrg(
     x: i32,
     y: i32,
     pptOut: LPPOINT,
-) -> u8 {
+) -> BOOL {
     let pdc: PDC = DC_LockDc(hdc);
     if pdc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);

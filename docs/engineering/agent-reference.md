@@ -460,8 +460,8 @@ named trap. Contract format, examples and limits: `tools/rustconv/data/difftest/
 It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, which takes
 `--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
 
-Each bug class it finds becomes a gated `check` scanner over every body. The first three
-(all with EMPTY baselines, all run by `./vibeos-cli check`):
+Each bug class it finds becomes a gated `check` scanner over every body. The first four, plus
+`scan_bool_width` (all with EMPTY baselines, all run by `./vibeos-cli check`):
 
 - `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
   `a - b` counted ELEMENTS. The fix is `a.offset_from(b)`.
@@ -470,8 +470,18 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   246-site review queue.
 - `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
   it unconditionally.
+- `scan_store_on_failure`: the C writes an out-param only after its last failure `return`
+  (compress.c's `out:` label), and the Rust writes it and then returns a status that can
+  fail. A store dominated by a success test, and a `*pp = NULL` (COM's rule), stay quiet.
+  Its oracle holds on ~670 of the tree's ~8,100 pointer-param stores, so a clean run means
+  something.
+- `scan_bool_width` (older, gated the same day): a u8/BOOLEAN return where the other side
+  reads a BOOL — only AL is defined, so `!= 0` reads garbage (broke fastfat and mountmgr).
+  Two directions: a Rust extern DECL wider than the Rust definition, and an exported Rust
+  DEFINITION narrower than its C twin (every C caller) or than its own per-arch cfg twin.
+  Its 202 findings were 25 wrong definitions, not 202 wrong decls; 56 in all.
 
-The first and third read the C twin by function NAME through `tools/c_twin.py`. Its index
+The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
 of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
 cold build, then only changed files are re-read. Each scanner honours
 `// nolint: <tag>` on a reviewed line, with the reason written beside it.
@@ -818,10 +828,6 @@ VIBEOS_EMIT_LLVM_IR=1 ./vibeos-cli build --arch amd64   # emit per-CGU .ll
 queue, not a gate, and a finding is "look here", not "this is wrong":
 
 ```bash
-python3 tools/scan_bool_width.py       # extern decl widens a BOOLEAN/u8 return to i32/u32:
-                                       # on x86 only AL is defined, so `!= 0` reads garbage.
-                                       # Broke fastfat reads + mountmgr. 202 findings on
-                                       # 2026-09-26, UNTRIAGED (owed: rustconv-speedrun lane).
 python3 tools/scan_sibling_drift.py    # paired twins (Acquire/Release, Nt/Zw, X/XEx, per-arch
                                        # cfg twins) whose bodies differ on one line
 python3 tools/scan_arch_cfg.py         # ~2.4K per-arch #[cfg] sites that gate LOGIC, out of

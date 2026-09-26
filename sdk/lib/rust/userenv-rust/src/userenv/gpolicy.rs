@@ -13,9 +13,9 @@ extern "system" {
     fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn LocalFree(hMem: HLOCAL) -> HLOCAL;
     fn SetEvent(hEvent: HANDLE) -> i32;
-    fn OpenEventW(dwDesiredAccess: u32, bInheritHandle: u8, lpName: LPCWSTR) -> HANDLE;
-    fn CloseHandle(hObject: HANDLE) -> u8;
-    fn CreateMutexW( lpMutexAttributes: *mut SECURITY_ATTRIBUTES, bInitialOwner: u8, lpName: LPCWSTR, ) -> HANDLE;
+    fn OpenEventW(dwDesiredAccess: u32, bInheritHandle: BOOL, lpName: LPCWSTR) -> HANDLE;
+    fn CloseHandle(hObject: HANDLE) -> BOOL;
+    fn CreateMutexW( lpMutexAttributes: *mut SECURITY_ATTRIBUTES, bInitialOwner: BOOL, lpName: LPCWSTR, ) -> HANDLE;
     fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: u32) -> u32;
     fn SetLastError(dwErrCode: u32);
     fn ReleaseMutex(hMutex: HANDLE) -> BOOL;
@@ -423,12 +423,12 @@ pub unsafe extern "system" fn UnregisterGPNotification(hEvent: HANDLE) -> i32 {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RefreshPolicy(mut bMachine: u8) -> u8 {
+pub unsafe extern "system" fn RefreshPolicy(mut bMachine: BOOL) -> BOOL {
     let mut hEvent: HANDLE = core::ptr::null_mut::<core::ffi::c_void>();
-    let mut Ret: u8 = 1u8;
+    let mut Ret: BOOL = 1;
     hEvent = OpenEventW(
         EVENT_MODIFY_STATE,
-        0u8,
+        FALSE,
         if bMachine != 0 {
             &raw const szMachineGPRefreshEvent as LPCWSTR
         } else {
@@ -436,28 +436,28 @@ pub unsafe extern "system" fn RefreshPolicy(mut bMachine: u8) -> u8 {
         },
     );
     if !hEvent.is_null() {
-        Ret = SetEvent(hEvent) as u8;
+        Ret = SetEvent(hEvent) as BOOL;
         CloseHandle(hEvent);
     }
     return Ret;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RefreshPolicyEx(bMachine: u8, dwOptions: u32) -> u8 {
+pub unsafe extern "system" fn RefreshPolicyEx(bMachine: BOOL, dwOptions: u32) -> BOOL {
     const RP_FORCE: u32 = 1;
 
     if dwOptions & !RP_FORCE != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return 0u8;
+        return 0;
     }
 
     if dwOptions & RP_FORCE != 0 {
         let mut hEvent: HANDLE;
-        let mut Ret: u8 = 1u8;
+        let mut Ret: BOOL = 1;
 
         hEvent = OpenEventW(
             EVENT_MODIFY_STATE,
-            0u8,
+            FALSE,
             if bMachine != 0 {
                 core::ptr::addr_of!(szMachineGPForceRefreshEvent) as LPCWSTR
             } else {
@@ -465,7 +465,7 @@ pub unsafe extern "system" fn RefreshPolicyEx(bMachine: u8, dwOptions: u32) -> u
             },
         );
         if !hEvent.is_null() {
-            Ret = SetEvent(hEvent) as u8;
+            Ret = SetEvent(hEvent) as BOOL;
             CloseHandle(hEvent);
         }
 
@@ -491,7 +491,7 @@ pub unsafe extern "system" fn EnterCriticalPolicySection(bMachine: u8) -> HANDLE
         
         let hSection: HANDLE = CreateMutexW(
             &mut SecurityAttributes,
-            0u8,
+            FALSE,
             if bMachine != 0 {
                 szMachineGPMutex.as_ptr()
             } else {
@@ -526,13 +526,13 @@ pub unsafe extern "system" fn LeaveCriticalPolicySection(hSection: HANDLE) -> BO
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn WaitForUserPolicyForegroundProcessing() -> u8 {
+pub unsafe extern "system" fn WaitForUserPolicyForegroundProcessing() -> BOOL {
     let mut hEvent: HANDLE = core::ptr::null_mut();
-    let mut Ret: u8 = 0u8;
+    let mut Ret: BOOL = 0;
 
-    hEvent = OpenEventW(SYNCHRONIZE, 0u8, szLocalGPDoneEvent.as_ptr());
+    hEvent = OpenEventW(SYNCHRONIZE, FALSE, szLocalGPDoneEvent.as_ptr());
     if !hEvent.is_null() {
-        Ret = (WaitForSingleObject(hEvent, INFINITE) != 0xFFFFFFFF) as u8;
+        Ret = (WaitForSingleObject(hEvent, INFINITE) != 0xFFFFFFFF) as BOOL;
         CloseHandle(hEvent);
     }
 
@@ -540,17 +540,17 @@ pub unsafe extern "system" fn WaitForUserPolicyForegroundProcessing() -> u8 {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn WaitForMachinePolicyForegroundProcessing() -> u8 {
+pub unsafe extern "system" fn WaitForMachinePolicyForegroundProcessing() -> BOOL {
     let mut hEvent: HANDLE = core::ptr::null_mut();
-    let mut Ret: u8 = 0u8;
+    let mut Ret: BOOL = 0;
     
     hEvent = OpenEventW(
         SYNCHRONIZE,
-        0u8,
+        FALSE,
         szMachineGPDoneEvent.as_ptr()
     );
     if !hEvent.is_null() {
-        Ret = (WaitForSingleObject(hEvent, INFINITE) != 0xffffffff) as u8;
+        Ret = (WaitForSingleObject(hEvent, INFINITE) != 0xffffffff) as BOOL;
         CloseHandle(hEvent);
     }
     

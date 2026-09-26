@@ -20,12 +20,12 @@ import time
 from pathlib import Path
 
 ROOT = Path.cwd()
-SOURCE = ROOT / "dll/3rdparty/mbedtls/base64.c"
+SOURCE = ROOT / "vendor/mbedtls/base64.c"
 SOURCE_SHA256 = "42fb3f63678521d4ba877dc7227337b5534813aa3b8e7beda87335e598bbab6c"
 INCLUDES = [
-    ROOT / "sdk/include/reactos/libs",
-    ROOT / "sdk/include/reactos/libs/mbedtls",
-    ROOT / "dll/3rdparty/mbedtls",
+    ROOT / "vendor/mbedtls/include",
+    ROOT / "vendor/mbedtls/include/mbedtls",
+    ROOT / "vendor/mbedtls",
 ]
 MANIFEST = Path(__file__).parent.parent / "data/pilots/base64.json"
 BYTE = ctypes.c_ubyte
@@ -240,11 +240,11 @@ def main() -> int:
     if args.random_cases < 0 or args.max_length < 0:
         parser.error("case count and maximum length must be nonnegative")
     ROOT = args.repo.resolve()
-    SOURCE = ROOT / "dll/3rdparty/mbedtls/base64.c"
+    SOURCE = ROOT / "vendor/mbedtls/base64.c"
     INCLUDES = [
-        ROOT / "sdk/include/reactos/libs",
-        ROOT / "sdk/include/reactos/libs/mbedtls",
-        ROOT / "dll/3rdparty/mbedtls",
+        ROOT / "vendor/mbedtls/include",
+        ROOT / "vendor/mbedtls/include/mbedtls",
+        ROOT / "vendor/mbedtls",
     ]
     manifest = json.loads(MANIFEST.read_text())
     for relative, expected_hash in manifest["dependencies_sha256"].items():

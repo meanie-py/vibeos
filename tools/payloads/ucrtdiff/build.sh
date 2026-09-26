@@ -45,9 +45,23 @@ for A in $ARCHES; do
     B="$ROOT/build-$A"
     [ -d "$B" ] || { echo "[ucrtdiff] FAIL($A): no build-$A — fix: ./vibeos-cli build --arch $A"; exit 1; }
 
+    REF="$B/libucrt_ref.a"
+    RUST="$B/libucrt_rust.a"
+    # UCRTDIFF_REUSE_INPUTS=1 keeps the reference set, the rust set and the case list
+    # from the previous run instead of rebuilding them. None of the three depends on
+    # the shard (only the -D flags below do), and a TAKEOVER CHECK needs them frozen:
+    # all three are derived from the live build, so once the first shard's media build
+    # has dropped a deleted family's objects, rebuilding them would remove Microsoft's
+    # bodies from ref_ AND (the burn-down now calling those exports ours) drop the
+    # exports from the case list -- every later shard grading less, with no error.
+    if [ "${UCRTDIFF_REUSE_INPUTS:-0}" = "1" ]; then
+        for f in "$REF" "$RUST" "$HERE/generated.inc" "$HERE/generated-refs.h"; do
+            [ -s "$f" ] || { echo "[ucrtdiff] FAIL($A): UCRTDIFF_REUSE_INPUTS=1 but $f is missing"; exit 1; }
+        done
+        echo "[ucrtdiff] $A: REUSING the reference set, rust set and case list (frozen)"
+    else
     echo "[ucrtdiff] building the $A reference set"
     python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A"
-    REF="$B/libucrt_ref.a"
     [ -s "$REF" ] || { echo "[ucrtdiff] FAIL($A): $REF missing"; exit 1; }
 
     # The THIRD side: our existing msvcrt Rust bodies, renamed rust_*. This is what
@@ -56,8 +70,8 @@ for A in $ARCHES; do
     # proves nothing about us.
     echo "[ucrtdiff] building the $A msvcrt-rust set"
     python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side msvcrt-rust
-    RUST="$B/libucrt_rust.a"
     [ -s "$RUST" ] || { echo "[ucrtdiff] FAIL($A): $RUST missing"; exit 1; }
+    fi
 
     # The ucrtbase IMPORT LIB is what makes the bare side resolve to our shipping
     # DLL. It is a normal build target, but only gets built when something links
@@ -85,7 +99,6 @@ for A in $ARCHES; do
     # Regenerate the case list every time: it is derived from the burn-down (which moves
     # as families are taken over) and from the public headers (which move with upstream).
     # A stale .inc would keep grading exports that are no longer Microsoft's.
-    echo "[ucrtdiff] generating $A cases"
     # UCRTDIFF_REVERSE=1 emits the exports back-to-front. Diagnostic only, and it has
     # already done its job: FORWARD the old sweep stopped after 114 exports, REVERSED
     # after 53, so the wall was neither a fixed export count nor one bad body. Counting
@@ -93,7 +106,10 @@ for A in $ARCHES; do
     # ~5,263 cases vs ~2,182, so not a fixed case count either. Sharding makes the
     # remaining question moot rather than answering it; keep this for when it matters.
     GENFLAGS=""; [ "${UCRTDIFF_REVERSE:-0}" = "1" ] && GENFLAGS="--reverse"
-    python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc" $GENFLAGS
+    if [ "${UCRTDIFF_REUSE_INPUTS:-0}" != "1" ]; then
+        echo "[ucrtdiff] generating $A cases"
+        python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc" $GENFLAGS
+    fi
 
     echo "[ucrtdiff] linking ucrtdiff-$A.exe"
     # -fno-builtin is LOAD-BEARING, not hygiene: clang knows what isdigit, strlen
@@ -123,38 +139,19 @@ for A in $ARCHES; do
         -Wl,--allow-multiple-definition \
         -Wl,--subsystem,windows -Wl,-e,ucrtdiff_entry
 
-    objd="$TC/$(echo "${CC[$A]}" | sed 's/-clang$//')-objdump"
-    # GUI subsystem: a console exe launched from explorer's startup walk gets no
-    # CSRSS console attach and dies without a word on serial (kmtest's lesson).
-    ss=$("$objd" -p "$HERE/ucrtdiff-$A.exe" | awk '$1=="Subsystem" && !p {print $2; p=1}')
-    [ "$ss" = "00000002" ] || { echo "[ucrtdiff] FAIL($A): subsystem=$ss (want GUI)"; exit 1; }
-    # It must import ucrtbase.dll directly. If it ever links the api-ms-win-crt-*
-    # sets instead, the bare side stops being OUR DLL and the harness silently
-    # grades Microsoft's C against Microsoft's C.
-    "$objd" -p "$HERE/ucrtdiff-$A.exe" | grep -qi "ucrtbase.dll" \
-        || { echo "[ucrtdiff] FAIL($A): does not import ucrtbase.dll"; exit 1; }
-    "$objd" -p "$HERE/ucrtdiff-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[ucrtdiff] FAIL($A): links UCRT api-sets (want ucrtbase.dll direct)"; exit 1; } \
-        || true
-    # EVERY graded function must appear in the ucrtbase import table. A row whose
-    # "ours" side got inlined or constant-folded still PASSES -- it just compares
-    # Microsoft's body against the compiler's idea instead of against our DLL, and
-    # nothing in the output says so. This caught isdigit before -fno-builtin.
-    imports=$("$objd" -p "$HERE/ucrtdiff-$A.exe" | sed -n '/ucrtbase.dll/,/^$/p')
-    missing=""
-    # Only real DECLARATIONS: `__cdecl ref_name(...);`. Matching ref_ anywhere would
-    # also pick up the prose in this file's comments.
-    for fn in $(grep -oE '__cdecl[[:space:]]+\*?ref_[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' \
-                "$HERE/ucrtdiff.c" | sed 's/.*ref_//; s/[[:space:]]*($//; s/(//' | sort -u); do
-        # A hand-graded export whose reference a takeover removed is compiled OUT
-        # (generated-refs.h says 0), so it is not graded and need not be imported.
-        grep -qE "^#define UCRTDIFF_REF_HAS_$fn 0\$" "$HERE/generated-refs.h" 2>/dev/null && continue
-        echo "$imports" | grep -qE "[[:space:]]$fn\$" || missing="$missing $fn"
-    done
-    [ -z "$missing" ] || {
-        echo "[ucrtdiff] FAIL($A): graded but NOT imported from ucrtbase.dll:$missing"
-        echo "[ucrtdiff]   those rows would grade the compiler, not our DLL (see -fno-builtin)"
-        exit 1
-    }
-    echo "[ucrtdiff] ok($A): $(stat -c%s "$HERE/ucrtdiff-$A.exe") bytes, $(echo "$missing" | wc -w) ungraded"
+    # Three checks, read straight from the PE by tools/payloads/pecheck.py (the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE):
+    #  * GUI subsystem: a console exe launched from explorer's startup walk gets no
+    #    CSRSS console attach and dies without a word on serial (kmtest's lesson).
+    #  * ucrtbase.dll imported directly, no api-ms-win-crt-* sets: otherwise the bare
+    #    side stops being OUR DLL and the harness grades Microsoft's C against itself.
+    #  * EVERY graded function imported from ucrtbase.dll. A row whose "ours" side got
+    #    inlined or constant-folded still PASSES -- it compares Microsoft's body against
+    #    the compiler's idea instead of our DLL. This caught isdigit before -fno-builtin.
+    #    A reference a takeover removed (generated-refs.h says 0) is compiled out.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/ucrtdiff-$A.exe" --tag ucrtdiff \
+        --gui --require-dll ucrtbase.dll --forbid-dll api-ms-win-crt \
+        --graded-from ucrtbase.dll --graded-decls "$HERE/ucrtdiff.c" \
+        --refs-header "$HERE/generated-refs.h"
+    echo "[ucrtdiff] ok($A): $(stat -c%s "$HERE/ucrtdiff-$A.exe") bytes, 0 ungraded"
 done

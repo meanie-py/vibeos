@@ -1,9 +1,9 @@
 //! Builds the genuine schannel mbedTLS backend as a host translation unit.
 //!
 //! Three inputs, all taken from the tree rather than copied into the harness:
-//!   * the 46 mbedTLS sources `dll/3rdparty/mbedtls/CMakeLists.txt` actually lists,
+//!   * the 46 mbedTLS sources `vendor/mbedtls/CMakeLists.txt` actually lists,
 //!     parsed from that file so a source added or dropped there reaches this harness;
-//!   * `sdk/include/reactos/libs/mbedtls/config.h`, the same configuration the
+//!   * `vendor/mbedtls/include/mbedtls/config.h`, the same configuration the
 //!     shipping mbedtls.dll is built with — not upstream's defaults, because the
 //!     backend's behaviour depends on which ciphersuites and TLS versions are on;
 //!   * `dll/win32/schannel/schannel_mbedtls.c` itself, compiled with `__REACTOS__`
@@ -13,9 +13,9 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../../..");
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let mbedtls_dir = root.join("dll/3rdparty/mbedtls");
+    let mbedtls_dir = root.join("vendor/mbedtls");
     let schannel_dir = root.join("dll/win32/schannel");
-    let libs_inc = root.join("sdk/include/reactos/libs");
+    let mbedtls_inc = mbedtls_dir.join("include");
 
     // The backend contract, sliced out of the real header so it cannot drift. Taking
     // a copy instead is how a fixture ends up grading a shape the tree no longer has.
@@ -86,7 +86,7 @@ fn main() {
     );
 
     let mut mb = cc::Build::new();
-    mb.include(&libs_inc).opt_level(1).warnings(false);
+    mb.include(&mbedtls_inc).opt_level(1).warnings(false);
     for f in &mbedtls_sources {
         mb.file(f);
         println!("cargo:rerun-if-changed={}", f.display());
@@ -131,8 +131,8 @@ fn main() {
         .define("MBEDTLS_SSL_SRV_C", None)
         .include("fixtures")
         .include(&out)
-        .include(&libs_inc)
-        .include(libs_inc.join("mbedtls"))
+        .include(&mbedtls_inc)
+        .include(mbedtls_inc.join("mbedtls"))
         .opt_level(1)
         .warnings(false)
         .compile("schan_backend");
@@ -141,7 +141,7 @@ fn main() {
         schannel_dir.join("schannel_mbedtls.c"),
         schannel_dir.join("schannel_priv.h"),
         mbedtls_dir.join("CMakeLists.txt"),
-        libs_inc.join("mbedtls/config.h"),
+        mbedtls_inc.join("mbedtls/config.h"),
         root.join("sdk/include/psdk/wincrypt.h"),
     ] {
         println!("cargo:rerun-if-changed={}", p.display());

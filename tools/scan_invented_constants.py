@@ -289,9 +289,15 @@ _HEADER_CACHE: list[Path] | None = None
 
 
 def sdk_headers() -> list[Path]:
+    """The public header surface: sdk/include plus every vendored library's public
+    root. The vendor/ relocation moved WDF, GL, mbedtls, zlib & co. out of sdk/include
+    into `vendor/<lib>/include`; walking sdk/include alone silently dropped them, and
+    cdrom-rust's WDF_REMOVE_LOCK_OPTION_ACQUIRE_FOR_IO went UNRESOLVED. Globbing the
+    convention rather than listing trees keeps the next move from repeating that."""
     global _HEADER_CACHE
     if _HEADER_CACHE is None:
-        _HEADER_CACHE = sorted(source_files(REPO / "sdk" / "include", "*.h"))
+        roots = [REPO / "sdk" / "include", *sorted((REPO / "vendor").glob("*/include"))]
+        _HEADER_CACHE = sorted(h for root in roots for h in source_files(root, "*.h"))
     return _HEADER_CACHE
 
 

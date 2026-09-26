@@ -202,7 +202,7 @@ def get_include_flags(arch_name: str) -> list[str]:
         "-I",
         str(R / "sdk/include/dxsdk"),
         "-I",
-        str(R / "sdk/lib/3rdparty/freetype/include"),
+        str(R / "vendor/freetype/include"),
         "-I",
         str(R / "sdk/lib/pseh/include"),
         "-isystem",

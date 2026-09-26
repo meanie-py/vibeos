@@ -314,6 +314,106 @@ pub unsafe extern "system" fn RtlDecompressFragment(
 }
 """
 
+# scan_store_on_failure. compress before the fix: lznt1_decompress writes *final_size only
+# at its `out:` label, after every `return STATUS_BAD_COMPRESSION_BUFFER`; the Rust wrote it
+# and then returned whatever status came back. The pairing needs a `rust/<crate>/` path.
+_STORE_ON_FAILURE_BAD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> u32 {
+    let result = decompress(uncompressed, compressed, offset);
+    if !final_size.is_null() {
+        *final_size = result.bytes_written as u32;
+    }
+    result.status
+}
+"""
+# The GOOD fixture also carries the idioms that must stay quiet: a store dominated by a
+# success test, and COM's `*pp = NULL` before a failure return.
+_STORE_ON_FAILURE_GOOD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> u32 {
+    let result = decompress(uncompressed, compressed, offset);
+    if result.status == STATUS_SUCCESS && !final_size.is_null() {
+        *final_size = result.bytes_written as u32;
+    }
+    result.status
+}
+pub unsafe extern "system" fn RtlCompressBuffer(
+    format: u16, src: *const u8, src_size: u32, dst: *mut u8, dst_size: u32,
+    chunk: u32, final_size: *mut u32, workspace: *mut u8,
+) -> u32 {
+    if format == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    match compress(dst, src) {
+        Ok(n) => {
+            *final_size = n as u32;
+            STATUS_SUCCESS
+        }
+        Err(st) => st,
+    }
+}
+"""
+
+# scan_bool_width, narrow-definition half. userenv before the fix: RefreshPolicy exported
+# `-> u8` where gpolicy.c returns BOOL, so every C caller tested all of EAX against a
+# callee that set AL. The DECL half: a Rust extern declaring the u8 definition `-> BOOL`.
+_BOOL_WIDTH_BAD = {
+    "rust/userenv-rust/src/gpolicy.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RefreshPolicy(bMachine: BOOL) -> u8 {
+    1u8
+}
+#[no_mangle]
+pub unsafe extern "system" fn MyNarrowHelper() -> u8 {
+    1u8
+}
+""",
+    "rust/caller-rust/src/lib.rs": """\
+extern "system" {
+    fn MyNarrowHelper() -> i32;
+}
+""",
+    # Per-arch cfg twins of one export, only one of them widened.
+    "rust/win32k-rust/src/region.rs": """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> u8 { 1 }
+""",
+}
+_BOOL_WIDTH_GOOD = {
+    "rust/userenv-rust/src/gpolicy.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RefreshPolicy(bMachine: BOOL) -> BOOL {
+    1
+}
+#[no_mangle]
+pub unsafe extern "system" fn MyNarrowHelper() -> u8 {
+    1u8
+}
+""",
+    "rust/caller-rust/src/lib.rs": """\
+extern "system" {
+    fn MyNarrowHelper() -> u8;
+}
+""",
+    "rust/win32k-rust/src/region.rs": """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
+""",
+}
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -1601,6 +1701,20 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"compress/src/lib.rs": _NULL_GUARD_BAD},
         good={"compress/src/lib.rs": _NULL_GUARD_GOOD},
+    ),
+    Control(
+        name="scan_store_on_failure",
+        script="tools/scan_store_on_failure.py",
+        argv=["--lint"],
+        bad={"rust/compress/src/lib.rs": _STORE_ON_FAILURE_BAD},
+        good={"rust/compress/src/lib.rs": _STORE_ON_FAILURE_GOOD},
+    ),
+    Control(
+        name="scan_bool_width",
+        script="tools/scan_bool_width.py",
+        argv=["--lint"],
+        bad=_BOOL_WIDTH_BAD,
+        good=_BOOL_WIDTH_GOOD,
     ),
     Control(
         name="scan_bitwise_not_bool",

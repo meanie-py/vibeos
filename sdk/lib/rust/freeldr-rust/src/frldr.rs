@@ -1065,7 +1065,7 @@ macro_rules! RTL_SIZEOF_THROUGH_FIELD {
 
 // ===========================================================================
 // EDK2 / UEFI surface — shared by all arch/uefi/* translation units.
-// Mirrors sdk/include/reactos/edk2/*.h exactly. EFIAPI == cdecl on i386,
+// Mirrors vendor/edk2/*.h exactly. EFIAPI == cdecl on i386,
 // so every EFI function pointer is `Option<unsafe extern "C" fn ...>`.
 // Service-table slots not called by freeldr are kept as pointer-sized
 // opaque `*mut c_void` so the struct field offsets remain C-exact (the
@@ -1548,7 +1548,7 @@ pub struct EFI_SYSTEM_TABLE {
     pub ConfigurationTable: *mut EFI_CONFIGURATION_TABLE,
 }
 
-// Protocol GUID constants (sdk/include/reactos/edk2/*.h).
+// Protocol GUID constants (vendor/edk2/*.h).
 pub const EFI_BLOCK_IO_PROTOCOL_GUID: EFI_GUID = EFI_GUID {
     Data1: 0x964e5b21, Data2: 0x6459, Data3: 0x11d2,
     Data4: [0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b],
