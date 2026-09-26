@@ -5239,10 +5239,10 @@ for WC_NO_BEST_FIT_CHARS */
 
 - Upstream: https://github.com/microsoft/Windows-Driver-Frameworks
 - Version: 1.17.7600
-- In this tree: `sdk/lib/drivers/wdf`, `sdk/include/wdf`
+- In this tree: `vendor/wdf`
 - Licence: MIT
 - Modified by us: yes, see `vendor-patches/wdf.patch`
-- Grant reproduced from: `sdk/lib/drivers/wdf/LICENSE`
+- Grant reproduced from: `vendor/wdf/LICENSE`
 
 ```
 The MIT License (MIT)

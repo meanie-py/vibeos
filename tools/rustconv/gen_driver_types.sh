@@ -197,7 +197,7 @@ case "$DRIVER" in
     UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DWDF_DEVICE_NO_WDMSEC_H -DDEBUG_USE_KDPRINT -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
-    EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
+    EXTRA_INC=( -I"${SRC}/vendor/wdf/include/kmdf/1.17" -I"${SRC}/vendor/wdf/include/shared" -I"${SRC}/vendor/wdf/include" )
     # WDF types (WDFDEVICE/WDFREQUEST/WDF_REQUEST_PARAMETERS/...) get a SINGLE identity on
     # the kmdf-sys substrate — blocklist them here + re-export from kmdf_sys, so cdrom's
     # private structs (CDROM_DEVICE_EXTENSION.Device: WDFDEVICE) and kmdf-sys's dispatch
@@ -357,12 +357,12 @@ case "$DRIVER" in
     # single ntkrnl-sys ddk identity. Output → kmdf-sys/src (OUT_CRATE_DIR override);
     # gen_kmdf_dispatch.py then turns the PFN typedefs + indices into src/dispatch.rs.
     # KMDF 1.17 / NTDDI Win8.1 — matches cdrom's CMakeLists.
-    DRIVER_DIR="${SRC}/sdk/include/wdf/kmdf/1.17"
+    DRIVER_DIR="${SRC}/vendor/wdf/include/kmdf/1.17"
     WRAPPER_INC=$'#include <ntddk.h>\n#include <wdf.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]wdf[/\\].*' )
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DWDF_DEVICE_NO_WDMSEC_H -DKMDF_MAJOR_VERSION_STRING=01 -DKMDF_MINOR_VERSION_STRING=017 )
-    EXTRA_INC=( -I"${SRC}/sdk/include/wdf/kmdf/1.17" -I"${SRC}/sdk/include/wdf/shared" -I"${SRC}/sdk/include/wdf" )
+    EXTRA_INC=( -I"${SRC}/vendor/wdf/include/kmdf/1.17" -I"${SRC}/vendor/wdf/include/shared" -I"${SRC}/vendor/wdf/include" )
     ;;
   fastfat)
     # fastfat.sys — the FAT filesystem (drivers/filesystems/fastfat, MS-architecture,
