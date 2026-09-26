@@ -338,6 +338,44 @@ def stale_guests(repo: Path) -> list[str]:
     return out
 
 
+# What the guest builder links against. Every graded guest imports kernel32, and
+# the builder skips a guest (it does not fail) when its importlib is missing -- so
+# without this probe a tree with no build-i386 would "refresh" into a partial set,
+# which is the all-or-nothing hole `gate_decision` reports.
+GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+
+
+def guests_to_refresh(repo: Path) -> list[str]:
+    """Graded guests the builder must (re)make: absent, or older than a source.
+
+    Only the set the builder owns -- LADDER + DIAGNOSTIC in build-fex-hello/.
+    The OPTIONAL stress guests come from their own fetching build.sh and are
+    deliberately NOT built on anyone's behalf.
+    """
+    out: list[str] = []
+    stale = stale_guests(repo)
+    for guest in [*LADDER, *DIAGNOSTIC]:
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if guest in LADDER and not exe.is_file():
+            out.append(f"{guest} (absent)")
+        else:
+            out.extend(s for s in stale if s.startswith(f"{guest} ("))
+    return out
+
+
+def refresh_blocker(repo: Path) -> str | None:
+    """Why the guests cannot be built in this tree, or None if they can."""
+    if not (repo / GUEST_TOOLCHAIN).is_file():
+        return f"no i386 toolchain at {GUEST_TOOLCHAIN}"
+    if not (repo / GUEST_PREREQ).is_file():
+        return (
+            "no build-i386 importlibs to link the guests against — "
+            "build i386 first: ./vibeos-cli build --arch i386"
+        )
+    return None
+
+
 def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[str]:
     """Which of `sources` postdates `exe`. A source that does not exist is
     reported, not skipped: the map naming a file the tree does not have is a
@@ -606,13 +644,19 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
             False,
             f"{len(built)}/{len(staged_guests())} ladder guests built — {absent} missing, and "
             f"staging is all-or-nothing, so NOTHING is staged; build the guests with: "
-            f"tools/fex/build-hello-compute.sh",
+            + (
+                f"{GUEST_BUILDER}"
+                if uses_ramdisk(arch)
+                else f"./vibeos-cli build --arch {arch} (it runs {GUEST_BUILDER})"
+            ),
         )
     if built:
         fix = (
             "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
             if uses_ramdisk(arch)
-            else f"touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch {arch}"
+            # The build restages by itself now: the guests are configure
+            # dependencies, so the next build reconfigures on their creation.
+            else f"./vibeos-cli build --arch {arch}"
         )
         return (
             [],
@@ -625,7 +669,8 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
         [],
         False,
         f"no staged {STAGED_DIR}/ guest in this arch's media manifest — "
-        f"WoW64 guests NOT checked by this gate",
+        f"WoW64 guests NOT checked by this gate"
+        + ("" if uses_ramdisk(arch) else " (the amd64 build's wow64-guests stage says why)"),
     )
 
 

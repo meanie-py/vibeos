@@ -6580,6 +6580,24 @@ output path; CMake's OLD CMP0116 policy passes it through without normalization.
 output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
 fixture proves a nested-header-only constant/layout edit then stays stale.
 
+### A configure dependency on a file that does not exist yet is silently dropped
+
+**Symptom:** a file admitted by `if(EXISTS)` at configure time (a WoW64 guest, a stress
+binary) is built later, the next build is green, and the file is still not on the media.
+`CMAKE_CONFIGURE_DEPENDS` names it, and the dependency was meant to re-run configure the
+moment it appeared.
+
+**Cause:** CMake (3.28, measured) omits a configure dependency whose path does not exist
+from `build.ninja` entirely, so nothing ever watches for its creation. The dependency only
+works for files that were already there, which is exactly the case that does not need it.
+The merge queue's integration tree was configured before it had any guests and never
+graded the WoW64 ladder in consequence.
+
+**Fix:** depend on the file if it exists, otherwise on its nearest EXISTING ancestor
+directory. Creating an entry bumps that directory's mtime, which ninja sees, and an
+unchanged directory costs no spurious reconfigure (`dll/win32/wow64cpu/CMakeLists.txt`).
+Verify with `grep <path> build-<arch>/build.ninja` — a missing path means CMake dropped it.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for

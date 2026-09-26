@@ -9833,3 +9833,45 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
     vm.save_snapshot("ready")
     vm.restore_snapshot("ready")  # the autouse fixture, before the first test
     assert "[UCRTDIFF] done" in vm._boot_output
+
+
+def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):
+    """The banner said win32k.sys+0x1234 and triage resolved 0x400000+0x1234 in
+    the NTOSKRNL index -- some kernel symbol always sorts below any address, so
+    that named a real-looking, wrong function. A driver RVA goes to the driver's
+    own symbols, and an unindexed driver says so instead of guessing."""
+    serial = (
+        "*** BUGCHECK: 0x0000003B (0xc0000005, 0xfffff96000011234, 0x0, 0x0)\n"
+        "***   P2 = win32k.sys+0x1234\n"
+    )
+    called = []
+    monkeypatch.setattr(triage, "_resolve_addr", lambda *a, **k: called.append(a) or "KERNEL")
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert called == []
+    assert out is not None and "win32k.sys+0x1234" in out and "not in the amd64 user index" in out
+
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / "qemu" / "modules-amd64.tsv").write_text(
+        "0000000000010000\t0000000000672000\twin32k.sys\tbuild-amd64/win32ss/win32k.sys\tshared\n"
+    )
+    seen = {}
+
+    def _resolve(repo, arch, addr, want_module=None):
+        seen.update(addr=addr, want=want_module)
+        return "win32k.sys!Foo+0x4"
+
+    from tests.qemu.cli import symbolize
+
+    monkeypatch.setattr(symbolize, "resolve", _resolve)
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert seen == {"addr": 0x10000 + 0x1234, "want": "win32k.sys"}
+    assert out is not None and out.endswith("win32k.sys!Foo+0x4")
+
+
+def test_the_kernel_flavor_comes_from_the_banner_module(tmp_path, monkeypatch):
+    serial = "***   P2 = ntkrnlmp.exe+0x3788\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
+    got = {}
+    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0xfffff80042193788")
+    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
+    triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x3788)
