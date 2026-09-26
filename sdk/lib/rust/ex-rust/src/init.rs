@@ -1363,6 +1363,25 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
                 );
                 KeBugCheckEx(ntkrnl_sys::bugcodes::HAL_INITIALIZATION_FAILED, 0x4743, ran as usize, active as usize, 0); // 0x4743 = 'GC'
             }
+
+            // NT (Phase1InitializationDiscard, right after KeStartAllProcessors):
+            // give the System process and all its threads every processor. It
+            // was created in Phase 0 with KeActiveProcessors == the boot CPU,
+            // and everything it spawns inherits that, so without this every
+            // system thread (and smss) stays pinned to CPU 0 for the life of the
+            // boot. A no-op on one CPU. The wait above guarantees `active` is
+            // the full set.
+            unsafe extern "system" {
+                fn KeSetAffinityProcess(
+                    Process: ntkrnl_sys::ddk::PKPROCESS,
+                    Affinity: ntkrnl_sys::ddk::KAFFINITY,
+                ) -> ntkrnl_sys::ddk::KAFFINITY;
+            }
+            // EPROCESS begins with its KPROCESS (Pcb), so the pointer is both.
+            let system = ntkrnl_sys::mm::PsInitialSystemProcess as ntkrnl_sys::ddk::PKPROCESS;
+            if !system.is_null() {
+                KeSetAffinityProcess(system, active as ntkrnl_sys::ddk::KAFFINITY);
+            }
         }
     }
 
