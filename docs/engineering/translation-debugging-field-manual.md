@@ -6014,12 +6014,13 @@ different question, racily).
   other: when a scanner reaches it, the useful next question is which shapes it cannot express,
   not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
   accessing intrinsic before taking it.
-- **An atomic on user memory has no protected form yet.** `capture_from_user`/`publish_to_user`
-  cannot express a read-modify-write: capture -> mutate -> publish loses the atomicity, and
-  silently weakening a concurrency guarantee to buy fault-tolerance is the wrong trade. The
-  primitive needed is a `KmProtected` atomic beside `KmProtectedCopyMemory` -- a native-SEH
-  shim on amd64/arm64, an exception-table entry for the `lock` instruction on i386 (§9.123) --
-  with a self-test twin, because an unproven protection is worse than a documented gap.
+- **An atomic on user memory needs its own protected primitive.** `capture_from_user`/
+  `publish_to_user` cannot express a read-modify-write: capture -> mutate -> publish loses the
+  atomicity, and silently weakening a concurrency guarantee to buy fault-tolerance is the wrong
+  trade. Use `copy::interlocked_add_user` (ntoskrnl's `KmProtectedInterlockedAdd`: a native-SEH
+  shim on amd64/arm64, a second extable key for the `lock xadd` on i386 (§9.123)). Its self-test
+  asserts the add LANDED in memory as well as returned, because a primitive that returns the
+  right sum without storing it would pass a return-value-only check.
 
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
@@ -6579,6 +6580,24 @@ output path; CMake's OLD CMP0116 policy passes it through without normalization.
 **Fix:** Use CMP0116 NEW, or retarget the depfile to Ninja's build-root-relative
 output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
 fixture proves a nested-header-only constant/layout edit then stays stale.
+
+### A configure dependency on a file that does not exist yet is silently dropped
+
+**Symptom:** a file admitted by `if(EXISTS)` at configure time (a WoW64 guest, a stress
+binary) is built later, the next build is green, and the file is still not on the media.
+`CMAKE_CONFIGURE_DEPENDS` names it, and the dependency was meant to re-run configure the
+moment it appeared.
+
+**Cause:** CMake (3.28, measured) omits a configure dependency whose path does not exist
+from `build.ninja` entirely, so nothing ever watches for its creation. The dependency only
+works for files that were already there, which is exactly the case that does not need it.
+The merge queue's integration tree was configured before it had any guests and never
+graded the WoW64 ladder in consequence.
+
+**Fix:** depend on the file if it exists, otherwise on its nearest EXISTING ancestor
+directory. Creating an entry bumps that directory's mtime, which ninja sees, and an
+unchanged directory costs no spurious reconfigure (`dll/win32/wow64cpu/CMakeLists.txt`).
+Verify with `grep <path> build-<arch>/build.ninja` — a missing path means CMake dropped it.
 
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
@@ -11402,6 +11421,37 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
+- **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
+  N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
+  INTID in a register. Seen 2026-09-26 bringing up `usbxhci` (INTID 35, the xHCI INTx).
+- **Cause:** a **level-triggered line that no ISR claims fires forever.** The HAL EOIs it,
+  the line is still asserted, it re-fires at once, and the CPU never runs anything else. The
+  message does not mean "no ISR connected": it also prints when the connected ISR returned
+  FALSE. Two ways to get there, both hit the same day:
+  1. **The device was already asserting when its vector was enabled.** Firmware can hand
+     over a controller mid-flight (UEFI's own USB stack ran the xHCI and left it with
+     interrupts on), and the driver cannot quiet hardware it has not mapped yet.
+  2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
+     connects the interrupt, calls the miniport's StartController, and only *then* sets
+     the flags its ISR wrapper checks. A StartController that enables controller
+     interrupts and issues a command gets its completion interrupt declined.
+- **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
+  COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
+  the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
+  IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
+  device family, ask "can this line be asserted before my ISR says yes?"
+
+### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
+- **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
+  immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
+  starts.
+- **Cause:** the arm64 boot disk is `virtio-blk-pci` (`if=virtio` on `virt`), and the
+  efivars shipped with the harness save Boot0001 as `PciRoot(0x0)/Pci(0x2,0x0)`. A new PCI
+  device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
+  now names the new device. UEFI skips it silently and falls through to network boot.
+- **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op

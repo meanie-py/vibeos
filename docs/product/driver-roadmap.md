@@ -134,12 +134,12 @@ HD Audio is the standard on all modern PCs. ReactOS has a basic HDA driver. Impr
 | OHCI (USB 1.x) | Working | Host controller driver | — |
 | UHCI (USB 1.x) | Working | Host controller driver | — |
 | EHCI (USB 2.0) | Working | Host controller driver | — |
-| xHCI (USB 3.0) | Missing | Host controller driver | **Critical** |
+| xHCI (USB 3.0) | Working in QEMU (USB2-protocol ports: keyboard/mouse) | SuperSpeed ports, devices behind hubs, bulk/isoch, the Pi 4 VL805 | **Critical** |
 | HID | Basic | Keyboard/mouse work | — |
 | Mass Storage | Working | USB sticks, external drives | — |
 | Hub support | Working | Basic hub driver | — |
 
-**xHCI is critical.** Modern PCs often have ONLY USB 3.0 ports (xHCI controller). Without xHCI, keyboard/mouse might not work on modern hardware. The xHCI spec is public (~650 pages) and the Microsoft xHCI driver is KMDF-based — another reason KMDF porting is high priority.
+**xHCI is critical.** Modern PCs often have ONLY USB 3.0 ports (xHCI controller), and the Raspberry Pi 4's only host ports are xHCI. `usbxhci.sys` (2026-09-26) is a usbport miniport written in Rust, not a port of Microsoft's KMDF USBXHCI + UCX stack, so it does not wait on KMDF: keyboards and mice enumerate and type through it in QEMU on arm64 (`VIBEOS_QEMU_XHCI=1`). Design, milestones and what is still missing: `docs/engineering/usbxhci-design.md`.
 
 ### Input
 

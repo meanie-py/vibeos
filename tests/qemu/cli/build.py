@@ -23,6 +23,7 @@ from . import (
     hostdisk,
     hostjobs,
     hostlock,
+    ladder,
     lints,
     provenance,
     warmth,
@@ -752,6 +753,50 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
     return ok
 
 
+def _refresh_wow64_guests(run, repo: Path) -> bool:
+    """Make the graded WoW64 guests current. False = hard failure (stage added)."""
+    todo = ladder.guests_to_refresh(repo)
+    if not todo:
+        run.add(Stage("wow64-guests", status="ok", detail="current"))
+        return True
+    blocker = ladder.refresh_blocker(repo)
+    if blocker:
+        # Not a failure of THIS build: the amd64 media is complete without them,
+        # and gate_decision reports the ladder it then cannot grade. Said here too,
+        # so the cause is on the stage that could have fixed it.
+        run.add(
+            Stage(
+                "wow64-guests",
+                status="skip",
+                detail=f"{len(todo)} guest(s) need building but {blocker}",
+            )
+        )
+        return True
+    cp = run.run(
+        ["bash", str(repo / ladder.GUEST_BUILDER)],
+        cwd=repo,
+        stage="wow64-guests",
+        timeout=900,
+    )
+    left = ladder.guests_to_refresh(repo)
+    if cp.returncode != 0 or left:
+        run.classification = "GUEST_BUILD_FAIL"
+        run.add(
+            Stage(
+                "wow64-guests",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"{ladder.GUEST_BUILDER} left: "
+                + (", ".join(left) or "nothing (script failed)"),
+                salient=[ln for ln in cp.stdout.splitlines() if ln.startswith("[!]")][-8:]
+                or ["see full log"],
+            )
+        )
+        return False
+    run.add(Stage("wow64-guests", status="ok", detail=f"built: {', '.join(todo)}"))
+    return True
+
+
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
@@ -795,6 +840,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # every later boot in the worktree into one. It only stages a
             # marker file, so toggling costs a media rebuild and nothing else.
             "VIBEOS_WINETEST_SWEEP": bool(getattr(args, "winetest_sweep", False)),
+            # WoW64 staging deferred (`--no-wow64-stage`): reconciled so the
+            # restage pass that follows it -- a plain build -- turns it back on.
+            "VIBEOS_WOW64_NO_STAGE": bool(getattr(args, "no_wow64_stage", False)),
         },
         # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
         # sweeps, and both cmake options gating it default OFF, so a build dir
@@ -925,6 +973,23 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     build_env = hostjobs.environment(
         repo, build_env, canonical=canon.is_canonical(build_dir), run_dir=run.dir
     )
+
+    # --- WoW64 guests (amd64): build what the livecd stages from build-fex-hello/ ---
+    # The guests are not in git and no ninja edge makes them, so a tree that never
+    # ran tools/fex/build-hello-compute.sh by hand staged NOTHING and every gate
+    # there skipped the ladder "not staged" -- the merge queue's integration tree
+    # was exactly that tree, so no batch was ever graded on the guests at all.
+    # Their CREATION re-runs configure (CONFIGURE_DEPENDS in wow64cpu's
+    # CMakeLists), so building them here, before the first ninja, is enough to
+    # stage them. Only when needed: a rebuilt guest re-runs configure.
+    # Deferred staging must not build guests either: they link build-i386's
+    # importlibs, which is the tree a deferring caller is rebuilding right now.
+    if (
+        arch == "amd64"
+        and not getattr(args, "no_wow64_stage", False)
+        and not _refresh_wow64_guests(run, repo)
+    ):
+        return run.finalize(repo)
 
     # --- generated-header barrier ---
     # On a FRESH tree (canonize/provision) some RC + cc-rs compiles race ahead of

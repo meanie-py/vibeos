@@ -150,12 +150,13 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/input/arm64input/arm64input.sys"
     "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"
     # PCI + USB + HID input stack (input-unification: EHCI-on-PCIe -> usbport ->
-    # usbhub -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass). The
+    # usbhub -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass; xHCI via usbxhci). The
     # PCI root devnode is seeded by hivesys_arm64.inf (Root\*PNP0A03).
     "$BUILD_DIR/drivers/bus/pci/pci.sys"
     "$BUILD_DIR/drivers/usb/usbd/usbd.sys"
     "$BUILD_DIR/drivers/usb/usbport/usbport.sys"
     "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"
+    "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"
     "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
     "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
     "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
@@ -412,6 +413,7 @@ RMC "$BUILD_DIR/drivers/bus/pci/pci.sys"                   ::/reactos/system32/d
 RMC "$BUILD_DIR/drivers/usb/usbd/usbd.sys"                 ::/reactos/system32/drivers/usbd.sys
 RMC "$BUILD_DIR/drivers/usb/usbport/usbport.sys"           ::/reactos/system32/drivers/usbport.sys
 RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/drivers/usbehci.sys
+RMC "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"           ::/reactos/system32/drivers/usbxhci.sys
 RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
 RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
 RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys

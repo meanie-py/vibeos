@@ -441,18 +441,28 @@ def _net_once(repo: Path, root: Path) -> dict:
     }
 
 
-def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
+def _build_once(
+    repo: Path, run: Run, arch: str, args, *, defer_wow64: bool = False, restage: bool = False
+) -> dict:
     """Build one arch as its own gate lane.
 
     All architectures submit together; hostlock admits them against the shared
     CPU pool and the per-build-directory lock protects each output tree.
     Source lint runs in the gate partitions, independently of compilation.
+
+    `defer_wow64` / `restage`: amd64's media stages the i386 SysWOW64 set out of
+    build-i386 at CONFIGURE time, so building it BESIDE i386 snapshots a tree that
+    is mid-rebuild (a cold one has no kernel32.dll at all). The concurrent build
+    defers the staging; the restage is a warm amd64 build, never --clean, run
+    once i386 has finished.
     """
     cmd = [str(repo / "vibeos-cli"), "build", "--arch", arch]
     if not getattr(args, "no_lint", False):
         cmd.append("--no-check")
-    if getattr(args, "clean", False):
+    if getattr(args, "clean", False) and not restage:
         cmd.append("--clean")
+    if defer_wow64:
+        cmd.append("--no-wow64-stage")
     if getattr(args, "keep_going", False):
         cmd.append("--keep-going")
     env = None
@@ -469,7 +479,7 @@ def _build_once(repo: Path, run: Run, arch: str, args) -> dict:
         cmd.append("--kmtests")
         env = dict(os.environ, VIBEOS_PAYLOAD="kmtest")
     t0 = time.monotonic()
-    cp = run.run(cmd, cwd=repo, stage=f"build:{arch}", env=env)
+    cp = run.run(cmd, cwd=repo, stage=f"build:{arch}{':restage' if restage else ''}", env=env)
     return {
         "arch": arch,
         "ok": cp.returncode == 0,
@@ -1002,9 +1012,33 @@ def gate(args, repo: Path) -> int:
             # Submit every arch's build at once and let the host broker decide how many
             # run (see _build_once). amd64 is submitted FIRST so FIFO admission gives it
             # the earliest permit — it feeds two lanes (own smoke + net, the longest).
-            bfut = {ex.submit(_build_once, repo, run, a, args): a for a in build_order}
+            # amd64 stages out of build-i386, so beside an i386 build it defers
+            # that and restages once i386 is done (see _build_once). Its lanes wait
+            # for the restage; the other arches' lanes do not wait for anything.
+            defer = {"amd64", "i386"} <= set(build_order)
+            bfut = {
+                ex.submit(_build_once, repo, run, a, args, defer_wow64=defer and a == "amd64"): a
+                for a in build_order
+            }
+            amd64_built: dict | None = None
+            i386_result: dict | None = None
+            restage_fut = None
+
+            def _maybe_restage() -> None:
+                nonlocal restage_fut
+                if restage_fut is not None or amd64_built is None or i386_result is None:
+                    return
+                if i386_result["ok"]:
+                    restage_fut = ex.submit(_build_once, repo, run, "amd64", args, restage=True)
+                else:
+                    # No i386 set to stage. amd64 is still built and still smokes;
+                    # its ladder then declines loudly as "not staged".
+                    _launch_lanes("amd64")
+
             for f in cf.as_completed(bfut):
                 r = f.result()
+                if defer and r["arch"] == "i386":
+                    i386_result = r
                 if not r["ok"]:
                     kind = r.get("classification") or ""
                     run.add(
@@ -1030,6 +1064,8 @@ def gate(args, repo: Path) -> int:
                         run.classification = kind
                     # a build failure is fatal for that arch; the others still build
                     # and smoke so the matrix stays complete.
+                elif defer and r["arch"] == "amd64":
+                    amd64_built = r  # recorded once the restage settles
                 else:
                     run.add(
                         Stage(
@@ -1040,6 +1076,43 @@ def gate(args, repo: Path) -> int:
                         )
                     )
                     _launch_lanes(r["arch"])  # pipeline: smoke this arch while others build
+                if defer:
+                    _maybe_restage()
+            if amd64_built is not None:
+                rs = restage_fut.result() if restage_fut is not None else None
+                if rs is None or rs["ok"]:
+                    run.add(
+                        Stage(
+                            "build:amd64",
+                            seconds=amd64_built["seconds"] + (rs["seconds"] if rs else 0),
+                            status="ok",
+                            detail=(
+                                "built + WoW64 restaged"
+                                if rs
+                                else "built (WoW64 NOT staged: i386 failed)"
+                            ),
+                        )
+                    )
+                    if rs is not None:
+                        _launch_lanes("amd64")
+                else:
+                    kind = rs.get("classification") or ""
+                    run.add(
+                        Stage(
+                            "build:amd64",
+                            exit=rs["exit"],
+                            seconds=amd64_built["seconds"] + rs["seconds"],
+                            status="fail",
+                            detail=(
+                                f"WoW64 restage failed ({kind})" if kind else "WoW64 restage failed"
+                            ),
+                            salient=[
+                                f"vibeos-cli build --arch amd64 (restage) exited {rs['exit']}"
+                            ],
+                        )
+                    )
+                    if kind and not run.classification:
+                        run.classification = kind
             built = {
                 s.name.split(":", 1)[1]
                 for s in run.stages

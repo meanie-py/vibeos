@@ -572,7 +572,7 @@ killing a `debug start` VM when the tool call that launched it exited (pass
 - ~~Sanboot firewall rule~~ done 2026-09-26 morning; sanboot is now the default loop, measured
   at ~100 s power-on to desktop (was ~23 min).
 - bootvid geometry (splash streaked and undersized; the desktop is fine).
-- Input: xHCI behind PCIe; nothing drives it yet.
+- Input: xHCI behind PCIe; nothing drives it yet (superseded: see session 5).
 - MP on the board: the AP trampoline (`hal-rust/src/arm64/mpboot.rs`) still
   writes `0x09000000`, which is RAM on a Pi.
 
@@ -598,9 +598,30 @@ sends at DISPATCH (it fired on every generic call, QEMU included); now `>=
 DISPATCH`. Each CPU prints a `[GIC] CPUn percpu` readback, and a stuck
 `KeIpiGenericCall` prints every processor's IPI state instead of spinning.
 
+### Then: all four cores actually working (landed `c141e7f6f8de`)
+
+"Four processors online" still left CPUs 2 and 3 idle, and QEMU `smoke --smp 4`
+had failed that way on master all along:
+
+4. **Every thread preferred CPU 0.** A hand-written `KNODE` stand-in in
+   `kiinit.rs` put `ProcessorMask` at offset 0; the real field is at 32. The node
+   mask stayed 0, so each thread's ideal processor was CPU 0. Now the real
+   `ntkrnl_sys::ddk::_KNODE`.
+5. **The System process stayed pinned.** Its affinity was captured in phase 0,
+   before the APs started. NT widens it with `KeSetAffinityProcess` afterwards;
+   we now do the same after the SMP self-test.
+6. **Spinlocks were never taken.** With real concurrency, `0x4E
+   PFN_LIST_CORRUPT` on QEMU and the Pi. arm64 `KeAcquireSpinLockRaiseToDpc`
+   raised IRQL and returned: enough on one CPU, nothing on four. It now takes the
+   lock (`KxAcquireSpinLock`).
+
+Multi-CPU DbgPrint/UART output is now serialised per line (it was interleaved
+byte by byte). Results: arm64 `smoke --smp 4` 3/3 with every core scheduling,
+amd64 `--smp 4` and the default gate green, and the Pi reboots to the desktop on
+four cores.
+
 ### Open
 
-- CPUs 2 and 3 never report `scheduling live` (and on the Pi not `clock tick
-  live` either) before the desktop marker. QEMU `smoke --smp 4` fails the same
-  way on unchanged master (3/3 before this work), so it predates it; next up.
 - A long MP soak on the board (the UP desktop has run for hours).
+- Input: `usbxhci.sys` now types in QEMU (`docs/engineering/usbxhci-design.md`);
+  the Pi's VL805 is its milestone M4.

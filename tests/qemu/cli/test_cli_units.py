@@ -4092,7 +4092,7 @@ def test_gate_cohab_gap_blocks_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gate_mod,
         "_build_once",
-        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+        lambda repo, run, arch, args, **kw: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
     )
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
@@ -4124,7 +4124,7 @@ def test_gate_cohab_needs_both_a_build_and_the_lint_opt_in(tmp_path, monkeypatch
     monkeypatch.setattr(
         gate_mod,
         "_build_once",
-        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+        lambda repo, run, arch, args, **kw: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
     )
     ran: list = []
     monkeypatch.setattr(gate_mod, "_cohab_once", lambda *a, **k: ran.append(1))
@@ -4359,7 +4359,7 @@ def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     early_started = threading.Event()
     builds_done = threading.Event()
 
-    def build(repo, run, arch, args):
+    def build(repo, run, arch, args, **kw):
         assert early_started.wait(5), "early source checks must not wait for builds"
         built.add(arch)
         if len(built) == 3:
@@ -5530,8 +5530,12 @@ def test_gate_builds_are_submitted_concurrently(tmp_path, monkeypatch):
     lock = threading.Lock()
     barrier = threading.Barrier(3, timeout=10)
 
-    def fake_build(repo, run, arch, args):
+    def fake_build(repo, run, arch, args, **kw):
         nonlocal live, peak
+        if kw.get("restage"):
+            # The amd64 WoW64 restage runs AFTER i386 by design, so it is not
+            # part of the concurrent phase this test measures.
+            return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
         with lock:
             live += 1
             peak = max(peak, live)
@@ -5570,7 +5574,7 @@ def test_gate_failed_build_skips_that_arch_but_others_still_smoke(tmp_path, monk
     monkeypatch.setattr(
         gate_mod,
         "_build_once",
-        lambda repo, run, arch, args: {
+        lambda repo, run, arch, args, **kw: {
             "arch": arch,
             "ok": arch != "arm64",
             "exit": 0 if arch != "arm64" else 1,
@@ -9912,3 +9916,83 @@ def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatc
     monkeypatch.setattr(pc, "REPO", tmp_path)
     assert pc.stale_binaries("demo", "amd64") == []
     assert pc.ensure_built(["demo"], "amd64") == []
+def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):
+    """The banner said win32k.sys+0x1234 and triage resolved 0x400000+0x1234 in
+    the NTOSKRNL index -- some kernel symbol always sorts below any address, so
+    that named a real-looking, wrong function. A driver RVA goes to the driver's
+    own symbols, and an unindexed driver says so instead of guessing."""
+    serial = (
+        "*** BUGCHECK: 0x0000003B (0xc0000005, 0xfffff96000011234, 0x0, 0x0)\n"
+        "***   P2 = win32k.sys+0x1234\n"
+    )
+    called = []
+    monkeypatch.setattr(triage, "_resolve_addr", lambda *a, **k: called.append(a) or "KERNEL")
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert called == []
+    assert out is not None and "win32k.sys+0x1234" in out and "not in the amd64 user index" in out
+
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / "qemu" / "modules-amd64.tsv").write_text(
+        "0000000000010000\t0000000000672000\twin32k.sys\tbuild-amd64/win32ss/win32k.sys\tshared\n"
+    )
+    seen = {}
+
+    def _resolve(repo, arch, addr, want_module=None):
+        seen.update(addr=addr, want=want_module)
+        return "win32k.sys!Foo+0x4"
+
+    from tests.qemu.cli import symbolize
+
+    monkeypatch.setattr(symbolize, "resolve", _resolve)
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert seen == {"addr": 0x10000 + 0x1234, "want": "win32k.sys"}
+    assert out is not None and out.endswith("win32k.sys!Foo+0x4")
+
+
+def test_the_kernel_flavor_comes_from_the_banner_module(tmp_path, monkeypatch):
+    serial = "***   P2 = ntkrnlmp.exe+0x3788\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
+    got = {}
+    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0xfffff80042193788")
+    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
+    triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x3788)
+
+
+def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatch):
+    """amd64 stages build-i386's SysWOW64 set at configure time. Built BESIDE a
+    cold i386 build it read a tree with no kernel32.dll and failed its closure
+    (merge queue, 2026-09-26). So the concurrent amd64 build defers the staging,
+    a warm restage runs after i386, and amd64 smokes only on the restaged media."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    order: list = []
+    lock = threading.Lock()
+
+    def build(repo, run, arch, args, defer_wow64=False, restage=False):
+        with lock:
+            order.append((arch, defer_wow64, restage))
+        if arch == "i386":
+            time.sleep(0.2)  # i386 finishes LAST: the restage must still wait for it
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    smoked: list = []
+    base_smoke = _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+
+    def smoke(repo, arch, root, extra):
+        with lock:
+            smoked.append((arch, [o for o in order if o[2]]))
+        return base_smoke(repo, arch, root, extra)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_smoke_once", smoke)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(ok=True))
+    gate_mod.gate(_gate_args(no_build=False, no_net=True), tmp_path)
+
+    assert ("amd64", True, False) in order, "the concurrent amd64 build must defer staging"
+    restages = [o for o in order if o[2]]
+    assert restages == [("amd64", False, True)]
+    assert order.index(restages[0]) > order.index(("i386", False, False))
+    amd64_smoke = [s for s in smoked if s[0] == "amd64"]
+    assert amd64_smoke and amd64_smoke[0][1] == restages, "amd64 smoked before its restage"
