@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -2357,6 +2357,22 @@ case "$DRIVER" in
     ALLOW_FILES=( --allowlist-file ".*${DRIVER}[/\\\\].*\\.h"
                   --allowlist-file '.*[/\\]usb\.h'
                   --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usbdi\.h'
+                  --allowlist-file '.*[/\\]usbdlib\.h'
+                  --allowlist-file '.*[/\\]hubbusif\.h'
+                  --allowlist-file '.*[/\\]usbbusif\.h'
+                  --allowlist-file '.*[/\\]usbmport\.h' )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 )
+    ;;
+  usbxhci)
+    # USB 3 xHCI miniport, written in Rust from the start (no C body). usbxhci.h only
+    # includes the SDK surface, so the island is the usbmport.h miniport interface + USB
+    # descriptor layouts; the xHCI hardware structs live in the crate's hw.rs.
+    DRIVER_DIR="${SRC}/drivers/usb/usbxhci"
+    WRAPPER_INC=$'#include "usbxhci.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]usb\.h'
+                  --allowlist-file '.*[/\\]usb100\.h'
+                  --allowlist-file '.*[/\\]usb200\.h'
                   --allowlist-file '.*[/\\]usbdi\.h'
                   --allowlist-file '.*[/\\]usbdlib\.h'
                   --allowlist-file '.*[/\\]hubbusif\.h'
