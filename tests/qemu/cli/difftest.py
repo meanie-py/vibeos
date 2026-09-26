@@ -227,7 +227,14 @@ def check_generated(repo: Path, run: Run) -> bool:
     return all_ok
 
 
-def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool:
+def run_difftests(
+    repo: Path,
+    run: Run,
+    crates: list[str] | None = None,
+    *,
+    cases: list[str] | None = None,
+    test_target: str = "diff",
+) -> bool:
     """Run each harness in its own cargo invocation. Returns True iff all green."""
     ws = repo.joinpath(*RUST_WS)
     names = crates if crates is not None else discover(repo)
@@ -246,13 +253,17 @@ def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool
         target = crate_target(repo, name)
         if target:
             argv += ["--target", target]
+        if cases:
+            argv += ["--test", test_target, "--", "--exact", *cases]
         cp = run.run(argv, cwd=ws, env=dict(os.environ), stage=name)
         out = (cp.stdout or "") + (cp.stderr or "")
         n = graded(out)
-        ok = cp.returncode == 0 and n > 0
+        ok = cp.returncode == 0 and n > 0 and (not cases or n == len(cases))
         all_ok &= ok
         if cp.returncode != 0:
             detail = f"exit {cp.returncode}"
+        elif cases and n != len(cases):
+            detail = f"graded {n} cases, requested exactly {len(cases)}"
         elif n == 0:
             detail = "graded NOTHING"
         else:
@@ -263,7 +274,7 @@ def run_difftests(repo: Path, run: Run, crates: list[str] | None = None) -> bool
                 exit=cp.returncode,
                 status="ok" if ok else "fail",
                 detail=detail,
-                salient=[] if ok else _salient(out) or [f"{name}: exit 0 but 0 cases compared"],
+                salient=[] if ok else _salient(out) or [f"{name}: {detail}"],
             )
         )
     return all_ok
@@ -284,12 +295,21 @@ def difftest(args, repo: Path) -> int:
             print(f"known: {', '.join(known) or '(none)'}")
             return 2
 
+    cases = getattr(args, "case", None)
+    if cases and (only is None or len(only) != 1 or len(set(cases)) != len(cases)):
+        print("--case requires exactly one --only crate and distinct exact case names")
+        return 2
     run = Run("difftest", "host")
     # The oracle's own inputs first — see check_generated. A stale generated header
     # makes every row over its TU suspect, and the harnesses still run afterwards so
     # one command reports both facts rather than hiding the second behind the first.
     fresh = check_generated(repo, run)
-    ok = run_difftests(repo, run, only)
+    if cases:
+        ok = run_difftests(
+            repo, run, only, cases=cases, test_target=getattr(args, "test_target", "diff")
+        )
+    else:
+        ok = run_difftests(repo, run, only)
     if not fresh:
         run.classification = "DIFFTEST_STALE_ORACLE"
     elif not ok:

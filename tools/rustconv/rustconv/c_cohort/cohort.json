@@ -1,0 +1,90 @@
+{
+  "split_frozen_by": "source_file",
+  "source_files": [
+    {
+      "split": "development",
+      "source": "sdk/lib/crt/mem/memmove.c",
+      "sha256": "97d0ab3751047578bdd5558700c1abf77122d18eae0a8d22afcc1e0f49b9970c",
+      "oracle": "cnt-difftest",
+      "test_symbols": [
+        "diff_memmove"
+      ],
+      "rust_provider": "sdk/lib/rust/cnt-rust/src/cabi/generated.rs"
+    },
+    {
+      "split": "development",
+      "source": "sdk/lib/crt/string/strtoi64.c",
+      "sha256": "02a992889d2d2f2d40c22d083f6217da6cbc7839974acb8ebee3a47c44038079",
+      "oracle": "cnt-difftest",
+      "test_symbols": [
+        "diff_strtoi64_strtoul"
+      ],
+      "rust_provider": "sdk/lib/rust/cnt-rust/src/cabi/generated.rs"
+    },
+    {
+      "split": "development",
+      "source": "sdk/lib/crt/math/arm64/fmod.c",
+      "sha256": "64cffd9398214d65af856b3e8cfa8ecaf9c4ed85c1553876041eda5fa83fc577",
+      "oracle": "cnt-difftest",
+      "test_symbols": [
+        "diff_math_fmod"
+      ],
+      "rust_provider": "sdk/lib/rust/cnt-rust/src/cabi/math.rs"
+    },
+    {
+      "split": "development",
+      "source": "dll/win32/jscript/decode.c",
+      "sha256": "3443a8d012990725000e8b3e190bce24369927c7c03a7f0161bbb4d2093ff166",
+      "oracle": "cohort-c/grade_decode.py",
+      "test_symbols": [
+        "decode_source"
+      ],
+      "rust_provider": "new shipping cutover; no prior Rust output found"
+    },
+    {
+      "split": "held_out",
+      "source": "sdk/lib/crt/stdlib/qsort.c",
+      "sha256": "db75d57da8539dfea79fe8cda103fc8efc15f9576150296499093dcefad598d5",
+      "oracle": "cnt-difftest",
+      "test_symbols": [
+        "diff_qsort"
+      ],
+      "rust_provider": "sdk/lib/rust/cnt-rust/src/cabi/generated.rs"
+    },
+    {
+      "split": "held_out",
+      "source": "sdk/lib/rtl/utf8.c",
+      "sha256": "15979c8c6b0cdd0738a36a38f883da98edb757b1347665186d395ccdd60883a6",
+      "oracle": "rtl-difftest",
+      "test_symbols": [
+        "diff_rtl_unicode_to_utf8",
+        "diff_rtl_utf8_to_unicode"
+      ],
+      "rust_provider": "sdk/lib/rust/rtl-strings/src/cabi/mod.rs"
+    },
+    {
+      "split": "held_out",
+      "source": "sdk/lib/rtl/dos8dot3.c",
+      "sha256": "057b23b80523ec6420e36f395a160037afe8b7ead5888ae7aa0a3da722eb5830",
+      "oracle": "rtl-difftest",
+      "test_symbols": [
+        "diff_rtl_generate_8dot3_name",
+        "diff_rtl_is_name_legal_dos8dot3"
+      ],
+      "rust_provider": "sdk/lib/rust/rtl-strings/src/cabi/mod.rs"
+    },
+    {
+      "split": "held_out",
+      "source": "sdk/lib/cryptlib/rc4.c",
+      "sha256": "62fbc8b3dd9951544d3452dd9f0aff6081e10074cd8c892a37a0a25a5c1d9acd",
+      "oracle": "cohort-c/grade_rc4.py",
+      "test_symbols": [
+        "rc4_init",
+        "rc4_crypt"
+      ],
+      "rust_provider": "sdk/lib/rust/cryptlib-rust/src/rc4.rs"
+    }
+  ],
+  "source_host": "/home/curi/Projects/os-playground/vibeos-rustconv-speedrun",
+  "source_status": "no prior JScript decode output in four accessible local response banks; existing Rust for seven other entries reused; no paid calls"
+}

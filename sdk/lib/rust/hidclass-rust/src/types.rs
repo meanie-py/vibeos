@@ -191,3 +191,48 @@ pub struct HIDCLASS_IRP_CONTEXT {
     pub CompletionWorkItem: PIO_WORKITEM,
 }
 pub type PHIDCLASS_IRP_CONTEXT = *mut HIDCLASS_IRP_CONTEXT;
+
+// ===========================================================================
+// hidclass.h — the QUERY_INTERFACE interfaces a HID PDO can hand out.
+// Not bindgen'd (hidclass.h is not in the -sys island), so defined locally.
+// The C expands INTERFACE inline for the non-C++ build ("GCC doesn't support
+// including unnamed structs"), so the first five fields are that expansion and
+// their order/width IS the ABI the caller allocated.
+// ===========================================================================
+
+// typedef NTSTATUS (NTAPI *PHIDP_GETCAPS)(PHIDP_PREPARSED_DATA, PHIDP_CAPS);
+pub type PHIDP_GETCAPS = Option<
+    unsafe extern "system" fn(
+        PreparsedData: hid_sys::PHIDP_PREPARSED_DATA,
+        Capabilities: hid_sys::PHIDP_CAPS,
+    ) -> ntkrnl_sys::base::NTSTATUS,
+>;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct HID_INTERFACE_HIDPARSE {
+    pub Size: USHORT,
+    pub Version: USHORT,
+    pub Context: PVOID,
+    pub InterfaceReference: ntkrnl_sys::ddk::PINTERFACE_REFERENCE,
+    pub InterfaceDereference: ntkrnl_sys::ddk::PINTERFACE_DEREFERENCE,
+    pub HidpGetCaps: PHIDP_GETCAPS,
+}
+pub type PHID_INTERFACE_HIDPARSE = *mut HID_INTERFACE_HIDPARSE;
+
+// enum DeviceObjectState — hidclass.h, used only through PHID_STATUS_CHANGE.
+pub type PHID_STATUS_CHANGE =
+    Option<unsafe extern "system" fn(Context: PVOID, State: ntkrnl_sys::base::ULONG)>;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct HID_INTERFACE_NOTIFY_PNP {
+    pub Size: USHORT,
+    pub Version: USHORT,
+    pub Context: PVOID,
+    pub InterfaceReference: ntkrnl_sys::ddk::PINTERFACE_REFERENCE,
+    pub InterfaceDereference: ntkrnl_sys::ddk::PINTERFACE_DEREFERENCE,
+    pub StatusChangeFn: PHID_STATUS_CHANGE,
+    pub CallbackContext: PVOID,
+}
+pub type PHID_INTERFACE_NOTIFY_PNP = *mut HID_INTERFACE_NOTIFY_PNP;

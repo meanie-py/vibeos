@@ -617,6 +617,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Three bug CLASSES that rustconv difftest-contract found in shipping Rust on
+    # 2026-09-26, each now a $0 check over every translated body. None was visible to
+    # smoke; all compile, link and boot. The two C-oracle scanners pair a Rust function
+    # with its C twin by NAME (tools/c_twin.py, index cached in tools/.cache/).
+    #   ptr_byte_diff: C's `p - q` on typed pointers counts ELEMENTS; the translation
+    #     subtracted addresses (version.dll, kernel32 vdm/move, shell32 wildcard_to_file).
+    #   misaligned_cast: a `[u8; N]` cast to *mut u32 and dereferenced (cryptlib sha1 +18).
+    #   dropped_null_guard: the C null-tests an out-param, the Rust stores through it
+    #     unconditionally (rtl compress, ole32, mlang, msvcrt, fastfat).
+    # All three were driven to zero before wiring; baselines are EMPTY.
+    for lint_name in ("scan_ptr_byte_diff", "scan_misaligned_cast", "scan_dropped_null_guard"):
+        script = repo / "tools" / f"{lint_name}.py"
+        specs.append(
+            (lint_name, [py, str(script), "--lint"] if script.is_file() else ["MISSING"], "stdout")
+        )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs

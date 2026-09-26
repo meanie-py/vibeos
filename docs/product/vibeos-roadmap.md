@@ -265,6 +265,35 @@ AI watches `reactos/reactos` commits, understands intent, ports patches to the R
 
 **Risks:** Semantic drift — upstream commits may rely on subtle invariants the Rust rewrite no longer obeys. Pipeline must track subsystem contracts, not just syntax.
 
+**The triage half of this is now a TOOL, not a reading habit: `tools/upstream_triage.py`**
+(2026-09-26). It answers the one question that repeats per commit — *does this touch C that
+no arch compiles any more?* — because that is what separates a bug we inherited from an
+ordinary merge. It imports `port_audit.compiled_sources()` for the live set and
+`vendored.load()` for third-party rather than re-deriving either, so it cannot drift from
+the published coverage ledger.
+
+Buckets, and a verdict is a READING ORDER not a work order: **ORACLE** (uncompiled C we
+still have on disk → read against our Rust), **HEADER** (never a compile edge, but a struct
+member added upstream moves every field after it and our Rust binds those), **MERGE**
+(C we still compile), **VENDORED**, **TESTS** (`rostests`/`rosapps` — absent from the build
+graph by CONFIGURATION, not because anyone translated them), **OTHER**.
+
+That TESTS bucket is the whole reason to distrust a first number here: without it the tool
+called **31 of 65** commits oracle hits, and 18 were driven entirely by
+`modules/rostests/winetests/**`, so every Wine-sync commit looked like an inherited bug.
+The real figure is **13 of 65**, and of those, three are comment/formatting-only
+(`4ab7fb63af7` is literally "Initailize" → "Initialize"). Absence from the build graph is
+evidence of translation only for code the build is SUPPOSED to compile.
+
+Current queue (65 unmerged, `merge-base..upstream/master`): 13 ORACLE, 26 HEADER, 8 MERGE,
+5 TESTS, 13 OTHER. Ported so far: `091855fc4f9` (i386 NPX ownership flush). The live one
+worth doing next is `396019984c9` (`CmpRemoveFromHiveFileList` ordering + a cached
+`CMHIVE::HiveRootPath`), which is also the owed `CmUnloadKey` item — it touches
+`cmapi.rs`, `cmhvlist.rs`, `cminit.rs` AND changes `CMHIVE` layout in `sdk/lib/cmlib/cmlib.h`,
+so it is a header-layout change as well as a logic port. Then the two HIDCLASS fixes, then
+`[MSAFD][AFD] AcceptEx` and the HALX86 Legacy PC Arbiter as features, and the four
+Wine-10.0 syncs that land on DLLs we have translated (large, and each needs its own read).
+
 ### 7b. Wine DLL Re-implementation in Rust — Size: XXL
 
 ReactOS currently ships ported Wine code (user32, kernel32, gdi32, shell32, advapi32, msvcrt, comctl32, ole32, etc.) — hundreds of DLLs, millions of lines. This code is:
@@ -389,6 +418,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | ready to start |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | parked; 10c landing opened the arm64 path |
+| 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 
 Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
 arches) and the PL011 UART (a real ARM peripheral).
@@ -495,6 +525,54 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
+  would have caught it were broken by one cause and both exited 0. OPEN, owed**
+  (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs
+  1016; also `EJOB`, `KIPCR`, `ARBITER_ALTERNATIVE`, `IO_BUS_TYPE_GUID_LIST`,
+  `PS_JOB_TOKEN_FILTER`, `RTL_BSD_DATA`, `STACK_TRACE_DATABASE` -- ~10-11 structs per arch.
+  Root cause is ONE line in two places: the bindgen wrapper and `verify_sizes.py` both
+  define `__wfi()`/`__yield()` as zero-arg function-like macros, and since
+  `intrin_arm64.h` landed (`28a26f3b664`, 2026-09-20) `intrin.h`'s `void __yield(void);`
+  prototype parses as a one-argument invocation of that macro. So `bindgen` ABORTS on arm64
+  (no arm64 regeneration has been possible since 2026-09-20) and `verify_sizes.py` emitted
+  ZERO arm64 assertions -- and, because the error is in a header rather than in the
+  generated file, its retry loop that blanks offending type lines could never clear it.
+  Both scripts reported success. `verify_sizes.py` is FIXED (real diagnostics + stubs
+  dropped; a real clang handles the asm bodies that libclang could not). `generate_bindings.sh`
+  is NOT: dropping the stub there is proven to make arm64 bindgen succeed (rc=0, 88608
+  lines) but applying it means regenerating the substrate, which touches every crate naming
+  those structs. Owed: that regeneration, on a quiet host, as its own change. Note the
+  `_INTRIN_H_`/`_INTRIN_X86_H_` defines beside the stubs are inert -- `intrin.h` is
+  `#pragma once` + an unconditional `#define __INTRIN_H_` with no `#ifndef`, and
+  `_INTRIN_X86_H_` matches nothing in the tree.
+
+  **`tools/verify_offsets.py` has the SAME bug** (same `intrin.h:1029` failure, same rc=0,
+  same silent arm64 skip -- and it ignores `--arch` and runs all three anyway), and its
+  regenerated amd64/i386 files moved 80 of 132 lines, which is independent corroboration
+  from a second implementation. It also makes the drift FIELD-LEVEL, not just trailing
+  size: 43 `offset_of!` assertions fail on amd64 across 7 structs. Earliest drifted field
+  per struct, which is what decides severity:
+  `_IO_BUS_TYPE_GUID_LIST.Lock @ 0` (a field inserted at the FRONT -- every field after it
+  is displaced), `_PS_JOB_TOKEN_FILTER.CapturedSids @ 8`, `_ARBITER_ALTERNATIVE.Alignment
+  @ 24`, `_RTL_BSD_DATA.ErrorInfo @ 68`, `_EJOB.UIRestrictionsClass @ 248`, and -- benignly
+  -- `_KPRCB.FeatureBitsHigh @ 11416` and `_KIPCR.ContextSwitches @ 11808`, both new tail
+  fields on structs of 11824 bytes. So the reason the OS still boots is that the two
+  boot-critical structs (KPRCB/KIPCR) drifted only at the TAIL; the front-loaded drift is in
+  structs the boot path does not reach. That is luck, not safety. (I first wrote that all
+  the drift was tail padding. That was wrong, and I had not yet run the offset verifier
+  when I wrote it.)
+
+  **Sizing the owed regen: it is probably SMALL, because severity and blast radius are
+  inversely correlated here.** Consumer files outside the generated files themselves --
+  `KPRCB` 22, `KIPCR` 16, `RTL_BSD_DATA` 15, `EJOB` 6, `PS_JOB_TOKEN_FILTER` 5,
+  `IO_BUS_TYPE_GUID_LIST` 2, `ARBITER_ALTERNATIVE` 0 (66 references total). The two with the
+  most consumers are exactly the two that drifted only at the tail, so regenerating them
+  APPENDS fields and leaves every existing access at its current offset; the one with
+  offset-0 drift has 2 references. So "touches every crate that names those structs"
+  overstates it: the mechanical risk concentrates in a handful of files. Do it as its own
+  change anyway -- with all three arches regenerable, which needs the
+  `generate_bindings.sh` stub removed first.
+
 - **`test_payload_launched` misses a launch marker that IS in its own serial log.
   ROOT-CAUSED + FIXED 2026-09-26: `restore_snapshot`'s flush ate it.** A fast payload
   finishes inside the settle window; a CHATTY one never lets serial go idle, so the settle
@@ -530,7 +608,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   submission of whichever lane happens to hit it.
 
 - **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
-  probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
+  probe-then-raw-access leads the entry below already lists as OPEN. FIXED** (2026-09-26,
+  `d295a7227d3` + `79b1a131ad7`). All 24 user32 subtests now sweep to completion with zero
+  quarantined and zero BUGCHECKs. Four distinct faults, not three -- fixing `win`'s
+  `NtUserFlashWindowEx` merely uncovered a second one behind it at `win32k.sys+0x91F6E`,
+  which disassembles to an INLINED ProbeForWrite followed by `movl %eax, (%edi)`:
+  `ONEPARAM_ROUTINE_GETPROCDEFLAYOUT`'s `*pdwLayout = ppi->dwLayout` in
+  `NtUserCallOneParam`. `scan_probe_then_deref.py` had reported that file clean because the
+  probe is on `Param` and the store goes through `pdwLayout = Param as PDWORD` -- an ALIAS.
+  One assignment hid a live unprivileged kernel crash from the tool written to enumerate
+  this exact class; the scanner now propagates taint across such casts (+8 leads elsewhere).
+  `input` was correctly filed as a different shape and is a different shape: there is no raw
+  dereference in the function at all. It hands a UNICODE_STRING whose `Buffer` is a user
+  pointer to `RtlIntegerToUnicodeString` / `RtlAppendUnicodeToString`, which write through it
+  with a bare `RtlCopyMemory`, so the fault lands INSIDE ntoskrnl with our frame as the
+  caller. Fixed by building into a kernel buffer and publishing, the way
+  `NtUserLoadKeyboardLayoutEx` in the same file already does for the read direction.
+  The original diagnosis, kept because the reasoning was sound and one part of it was wrong:
   The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
   anywhere) found all three; each one blinds every subtest after it, so they had to be
   quarantined one at a time to see the next:
@@ -693,8 +787,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - FIXED: amd64 app sweeps were starved, not failing. `Wow64TraceSyscalls` was still 1, and
     every amd64 boot runs user32_winetest under WoW64, so the serial reached ~40MB and apps
     missed their window timeouts (then the run was reaped). Off: serial 2.2MB, 17 min, 36/38.
-  - OPEN, amd64: `sysdm.cpl` and `powercfg.cpl` open but do not close (appstorm
-    close=TIMEOUT).
+  - NOT REPRODUCING (2026-09-26), amd64: `sysdm.cpl` and `powercfg.cpl` open but did not close
+    (appstorm close=TIMEOUT). Both closed in three sweeps after the WoW64 trace went off and master
+    was merged. appstorm now dumps every thread of a process that ignores WM_CLOSE, so a return
+    brings its stacks.
+  - FIXED: the amd64 print spooler never started. localspl failed `_OpenEnvironment` with 1805,
+    because the `Windows x64` environment is in `[AddReg.NTamd64]`, which mkhive (the livecd hive
+    builder) never applied. Under dummy PSEH, every winspool RPC to the dead spooler then ended in
+    `RpcRaiseException` → `ExitProcess(1)`, so wordpad died before its window and winver died on
+    close. mkhive now takes `-a:<arch>`, like setup. arm64 got a `Windows ARM64` environment and a
+    winprint destination as well, but its ramdisk does not ship spoolsv yet.
+    amd64 appstorm: 38/38.
+  - OPEN, amd64, intermittent (1 in 4 sweeps): during `explorer-folder`, win32k logged
+    `failed to free. pvAlloc=0` ~8,100 times (`GdiPoolFree(NULL)`), then BUGCHECK 0x1E in
+    `REGION_bOffsetRgn` on a NULL region created in `co_WinPosSetWindowPos`. That call site is
+    unchecked in the C as well, so exhaustion is the root, and a NULL free is a caller bug the C
+    asserts against. `GdiPoolFree` now prints `[GDIPOOL] NULL free from <pc>` backtraces for the
+    first three: symbolize them with `vibeos-cli sym --module win32k.sys`. Run
+    `/tmp/vibeos-cli/20260926-024703-5punrico-smoke-amd64`. The same run had `osk` with no window.
   - FIXED: dxdiag's heap corruption (`RtlpRemoveFreeBlock`, amd64). kernel32-rust `GlobalSize`
     ran its translated `_SEH2_EXCEPT` arm unconditionally, so GlobalSize/LocalSize returned 0
     for EVERY block on every arch. The edit control sizes its undo buffer from
@@ -959,8 +1069,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`KeWaitForSingleObject`, `KxSetTimerForThreadWait`, `KiComputeDueTime`,
   `KiInsertTimerTable`, `KiComputeTimerTableIndex`, `KiCheckForTimerExpiration`,
   `KiTimerExpiration`, `KiTimerListExpire`) was read against the C it was translated from
-  and is faithful, and upstream has made **zero** commits to `ntoskrnl/ke/` or
-  `ntoskrnl/ob/` since the fork, so the bug oracle is silent here too. One known latent
+  and is faithful, and upstream had made **zero** commits to `ntoskrnl/ke/` or
+  `ntoskrnl/ob/` **as of its 2026-09-22 tip `9dc3ca87209`**, so the bug oracle was silent
+  on the wait path. That measurement went stale the same night: upstream `091855fc4f9`
+  (2026-09-25, `ke/i386/thrdini.c`, NPX ownership flush) arrived in a later fetch and has
+  since been ported. It does not touch the wait path, so the conclusion here stands — but
+  re-run the range check rather than trusting this sentence, which is a timestamp and not
+  a property. One known latent
   quirk, shared with upstream and therefore not our regression: `TIMER_TABLE_SIZE` is 512
   while `DISPATCHER_HEADER.Hand` is a `UCHAR`, so hands 256-511 truncate on store and
   `KiRemoveEntryTimer` does its bucket-empty bookkeeping against the wrong slot.
@@ -1105,18 +1220,72 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernel memory. **The capture is in the syscall, not the helper** — `IntSetSysColors` is also
   reachable with kernel pointers, so protecting it there would have been wrong.
 
-- **The probe-then-raw-access class is CLEARED in win32k as of 2026-09-23** — all 108 leads
-  `tools/scan_probe_then_deref.py` reported are fixed across 31 files, plus ~30 more that the
-  scanner's own `break`-at-first-hit was hiding. Built on all three arches, amd64 boots to
-  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class,
-  which are OPEN:** 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
-  the `write_volatile` / `copy_nonoverlapping` spellings) rather than a syntactic `*p`, and 8
-  genuinely interprocedural. Heaviest: `message.rs` 22, `font.rs` 20, `hook.rs` 11,
-  `stretchblt.rs` 9, `dibobj.rs` 9. Two shapes inside that set need more than a copy call:
-  read-modify-write of user memory (`|=`, bitfield setters) must capture → mutate in kernel
-  memory → publish once, and `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`,
-  where the C had a `_SEH2_TRY` per access) has **no protected primitive at all** — it needs a
-  `KmProtected` atomic in `kmsafecopy.c` on three arches, which is owed and not yet written.
+- **The probe-then-raw-access class in win32k is CLOSED except two sites:
+  `scan_probe_then_deref.py` reports 2 leads, both the same defect** (2026-09-26, measured on
+  the merged tree). Two lanes worked this class in parallel and their counts have to be read
+  together: 108 syntactic-`*p` leads were cleared across 31 files on 2026-09-23; fixing the
+  scanner's blind spots then opened the bulk-copy and interprocedural half (165 leads, a
+  further 26 files); the auto-fixer took its share down to 69 refusals and the hand sweep took
+  the rest to 0 on its own scanner. Re-running the merged scanner over the merged tree gives
+  the real number: **2**, and they are the ime atomics below. Earlier "0 leads" and
+  "69 remaining" in this registry were each true of one lane's tree and are superseded by that
+  measurement. All three arches build and boot to the desktop (`_tWinMain entered` +
+  `shell ready`).
+
+  **Still OPEN, and now actually FLAGGED by the scanner** (it used to miss them):
+  `InterlockedIncrement`/`Decrement` on a user counter — ime's `nCntInIMEProc` at
+  `ime.rs:3120` and `:3137`, where the C had a `_SEH2_TRY` per access. There is **no
+  protected primitive for this at all**: an atomic RMW cannot be routed through
+  `KmProtectedCopyMemory`, because the read-modify-write has to fault as one unit rather than
+  copy in and out. Closing them means writing a `KmProtected` atomic next to
+  `KmProtectedCopyMemory` — a native-SEH shim on amd64/arm64, an exception-table entry for the
+  `lock` instruction on i386 — plus a self-test twin so the per-boot oracle covers it.
+  Restoring a probe there would look like a fix and would not be one.
+
+  Two of the scanner's own numbers along the way were wrong in the direction that reads as more
+  work, not less, and both are pinned by tests now: `RtlCopyMemory` was reported by both the
+  direct and the interprocedural rule (281 rows for 165 defects, and 281 got quoted as the
+  workload), and the `addr_of_mut!` skip ran before the taint-end check, so sites fixed with the
+  standard `p = addr_of_mut!(local)` idiom kept reporting — including an already-correct
+  `NtUserClipCursor`. Details and the batching hazard (`RtlCopyMemory` is safe to rewrite
+  mechanically, `copy_nonoverlapping` is NOT — reversed arguments and element counts) are in the
+  field manual under the probe-then-raw entry.
+
+  Three sites were double fetches rather than merely unprotected, and are the part worth
+  re-reading: `NtGdiCreateDIBSection` validated user memory with a length obtained by WALKING
+  that same user memory (`DIB_BitmapInfoSize`); `NtGdiSetDIBitsToDeviceInternal` handed raw
+  pixel bits to `IntGdiCreateMaskFromRLE`, which walks an RLE stream; and
+  `NtGdiCreateDIBitmapInternal` forwarded a raw `pbmi` to a callee that dereferences it outside
+  the probe — a hole **upstream has too**, so not a translation divergence.
+
+  This class got worked down by TWO lanes independently, in the same week, without either
+  knowing: upstream-sync's `21b349ccb63` ("70 more probe-then-raw-copy sites") and the other
+  lane's `66fa9466bbc` (62 sites) overlapped heavily and collided as a merge conflict in
+  `message.rs`/`stretchblt.rs`/`winpos.rs`, where both had written the same `capture_from_user`
+  call with different line wrapping. Resolved in master's favour at every conflicting site,
+  then re-scanned to prove nothing unique was dropped. **The duplicated effort is the lesson,
+  not the merge:** a scanner that prints a lead list is an invitation for two lanes to work
+  it at once, and nothing in the list says who holds it. The three BUGCHECKs above were NOT
+  duplicated -- `NtUserFlashWindowEx`, `NtUserGetKeyboardLayoutName` and the two
+  `NtUserCallOneParam` aliases were untouched on master -- which is the useful signal: the
+  reproducer-driven sites and the list-driven sites barely intersect.
+  The mechanization (`tools/fix_probe_then_deref.py`):
+  `tools/fix_probe_then_deref.py` is the counterpart to the scanner. It never invents an
+  error path -- it replays the probe's OWN failure block, which is the only reason a rewrite
+  of 62 kernel syscall entry points is safe to automate at all: no new semantics are
+  introduced anywhere. What it REFUSES is the part worth reading, and each guard is a wrong
+  rewrite it emitted first (three of the four BUILD CLEANLY and are silently wrong on the
+  error path):
+  the positive form `if NT_SUCCESS(s) { <copy> }` has no failure block -- its body IS the
+  copy; a failure block belonging to an EARLIER probe is the wrong error path, not a smaller
+  one; a block whose transfer predates work the site now depends on (the tell is a reassigned
+  status or an acquired resource, NOT line distance -- distance refused one out-parameter of
+  `NtUserGetLayeredWindowAttributes` while fixing the two above it); and a multi-line probe
+  inside the condition, where the brace scan scoops the probe's arguments up as the error
+  body. Pinned in `tools/test_fix_probe_then_deref.py`, one test per wrong rewrite.
+  Leads the fixer refuses are listed rather than silently dropped; each needs a human to
+  decide what its cleanup does, and at most of them the answer is
+  `Status = STATUS_ACCESS_VIOLATION` plus fall-through.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
@@ -2467,7 +2636,57 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   assertions**, so the ratchet does not trip on a failure here at all; it trips only when the
   *pass count* moves (399 → 398), which is what a wedge mid-sweep does. Under load a third
   assertion flips and the sweep stops producing. Still OPEN, still not owned by the wow64 lane,
-  and still do not weaken the assertion.- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
+  and still do not weaken the assertion.
+  **Update 2026-09-26 — it reaches i386 now, and it LIVELOCKED the merge queue.** The
+  2026-09-06 entry recorded "i386/amd64 conformance PASSED in the same gate — only arm64";
+  that is no longer true. Four consecutive batches went red on `conf:i386` between 00:02
+  and 00:30, and **nothing landed for the 45 minutes from 23:45:28 to 00:30:18** — from the
+  green gate `20260925-234529-6v80rtj1` that landed `05c6ab03b3c1` to `46f777f0d5a`.
+  **It then broke on its own, and the first version of this entry claimed otherwise.** That
+  version said "nothing landed between 23:45 and at least 00:33"; it was written at 00:34:15,
+  four minutes AFTER `46f777f0d5a` landed at 00:30:18. The error was checking whether MY
+  submission had landed (it had not, and still had not) and generalising that to "nothing
+  landed" without looking at master's tip for other lanes. The stall is therefore
+  LOAD-CORRELATED AND SELF-LIMITING, not a true livelock: as lanes drained, load fell 27.3 →
+  6.07 (1-min) and the queue started moving again without anyone touching the ratchet. That
+  is a materially better conclusion than the one it replaces, and it changes the advice —
+  wait it out rather than reaching for a lever. The i386 counts
+  wander exactly as the mechanism above predicts, across four runs of essentially the same
+  tree: `pass=879 fail=2` (the baseline-accepted state), then `878/3`, `876/5`, `878/3`.
+  The reported "regressions" wander with them — `ExResource.c:432`, `:469`, `:570` and
+  `NpfsFileInfo.c:57` in varying combinations, 1 to 4 per batch. A deterministic regression
+  does not vary its own identity set between runs on the same tree.
+  **The trigger is measured, not guessed: host load average 27.3 (15-min 22.5) with six
+  lanes queued and a conductor gating.** That is the load-sensitivity the entry already
+  names, arriving on the second-slowest target once the host is busy enough.
+  **The queue shape makes it self-sustaining, which is the new part.** A red batch is
+  bounced, the next conductor immediately starts another 3-build + 4-boot batch, that load
+  re-trips the race, and so on — a batch every ~10 minutes, none landing. The retry logic is
+  not wrong (it classifies correctly as `CONFORMANCE_FLAKE`) and the ratchet is not wrong
+  (the assertion is asserting something true); they are simply both correct while the queue
+  makes no progress.
+  **What NOT to do: do not weaken the ratchet or quarantine the assertion to drain the
+  queue.** The cheap correct lever is LOAD — an agent that stops adding builds and boots
+  while the queue is stalled is doing more for it than one that keeps working — and the
+  queue recovers by itself once load falls, so waiting is a real option.
+  **Root-caused 2026-09-26 by the msvcrt-homebrew lane, and it is the TEST, not ERESOURCE:**
+  each of `:432`, `:469`, `:570` starts a thread with a 10 ms timeout, treats
+  `STATUS_TIMEOUT` as proof it blocked, and checks the waiter count immediately — on TCG at
+  load 22-27 the new thread has not been scheduled yet, so the count is legitimately 0. Fix
+  is a bounded `WaitForWaiters()` that waits for the asserted counts and then asserts them
+  UNCHANGED, so never counting a waiter still fails. Assertions not weakened.
+  Two corrections to this entry's older text, both verified independently here: ERESOURCE
+  **is** Rust (`ex-rust/src/resource.rs`, 27 `#[no_mangle]`; `ntoskrnl/ex/resource.c` is
+  commented out of `ntos.cmake`), so the line claiming "no Rust port has taken ERESOURCE
+  over" was stale and pointed readers away from the live code. And `:409`/`:455` are NOT part
+  of this race: they read `Res->ActiveCount = 1, expected 2`, fire 129 times each on all
+  three arches, and are the baseline's two accepted failures — the test asks for the WS03
+  bookkeeping model (`ActiveCount == 2`) while the implementation is NT6-style
+  (`ActiveCount == 1`, `ActiveEntries++`) in BOTH the C (`resource.c:958-971`) and our Rust
+  (`resource.rs:651-655`). An upstream version/semantics mismatch, not a translation bug, and
+  the allowance is correct rather than masking something. I first attributed it to our
+  translation and relayed that; the refutation was one `grep -a` away (see the field manual's
+  binary-grep entry — plain grep prints NOTHING for `resource.c`).- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
   then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).

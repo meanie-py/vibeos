@@ -2159,7 +2159,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             SCSI_ADSENSE_FAILURE_PREDICTION_THRESHOLD_EXCEEDED => {
                                 let mut wmiEventData: [UCHAR; 8] = [0; 8];
 
-                                *(wmiEventData.as_mut_ptr() as PULONG) = core::mem::size_of::<UCHAR>() as ULONG;
+                                (wmiEventData.as_mut_ptr() as PULONG).write_unaligned(core::mem::size_of::<UCHAR>() as ULONG);
                                 wmiEventData[core::mem::size_of::<ULONG>()] = addlSenseCodeQual;
 
                                 logError = 0;
@@ -2756,7 +2756,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             SCSI_ADSENSE_FAILURE_PREDICTION_THRESHOLD_EXCEEDED => {
                                 let mut wmiEventData: [UCHAR; 8] = [0; 8];
 
-                                *(wmiEventData.as_mut_ptr() as PULONG) = core::mem::size_of::<UCHAR>() as ULONG;
+                                (wmiEventData.as_mut_ptr() as PULONG).write_unaligned(core::mem::size_of::<UCHAR>() as ULONG);
                                 wmiEventData[core::mem::size_of::<ULONG>()] = addlSenseCodeQual;
 
                                 logError = 0;

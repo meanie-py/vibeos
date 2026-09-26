@@ -54,10 +54,12 @@
 
 void usage(void)
 {
-    printf("Usage: mkhive [-?] -h:hive1[,hiveN...] [-u] -d:<dstdir> <inffiles>\n\n"
+    printf("Usage: mkhive [-?] -h:hive1[,hiveN...] [-u] [-a:<arch>] -d:<dstdir> <inffiles>\n\n"
            "  -h:hiveN  - Comma-separated list of hives to create. Possible values are:\n"
            "              SETUPREG, SYSTEM, SOFTWARE, DEFAULT, SAM, SECURITY, BCD.\n"
            "  -u        - Generate file names in uppercase (default: lowercase) (TEMPORARY FLAG!).\n"
+           "  -a:arch   - Also apply [DelReg.NT<arch>] and [AddReg.NT<arch>] (x86, amd64, arm64...),\n"
+           "              as setup does on an installed system.\n"
            "  -d:dstdir - The binary hive files are created in this directory.\n"
            "  inffiles  - List of INF files with full path.\n"
            "  -?        - Displays this help screen.\n");
@@ -126,6 +128,10 @@ int main(int argc, char *argv[])
         if (argv[i][1] == 'h' && (argv[i][2] == ':' || argv[i][2] == '='))
         {
             HiveList = argv[i] + 3;
+        }
+        else if (argv[i][1] == 'a' && (argv[i][2] == ':' || argv[i][2] == '='))
+        {
+            InfArch = argv[i] + 3;
         }
         else if (argv[i][1] == 'd' && (argv[i][2] == ':' || argv[i][2] == '='))
         {

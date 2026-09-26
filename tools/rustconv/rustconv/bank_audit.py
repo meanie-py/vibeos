@@ -545,6 +545,7 @@ def bank_module(dir_name: str) -> str:
     on the timestamped side is the mirror-image error: `utils.cpp` and `utils` then read
     as different modules and real duplicate pairs are discarded as collisions.
     """
+    dir_name = re.sub(r"-run-[0-9a-f]{12}$", "", dir_name)
     m = re.match(r"^\d{8}-\d{6}-(.+?)(?:\.\w+)?$", dir_name)
     if m:
         return m.group(1)

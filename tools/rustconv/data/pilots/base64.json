@@ -1,0 +1,33 @@
+{
+  "target": "Mbed TLS base64",
+  "source": "dll/3rdparty/mbedtls/base64.c",
+  "source_sha256": "42fb3f63678521d4ba877dc7227337b5534813aa3b8e7beda87335e598bbab6c",
+  "dependencies_sha256": {
+    "dll/3rdparty/mbedtls/base64.c": "42fb3f63678521d4ba877dc7227337b5534813aa3b8e7beda87335e598bbab6c",
+    "dll/3rdparty/mbedtls/common.h": "adfd493f8ecb11f87f7e75f270a97cbd05d1902345ef32db51d39c076e4f8fde",
+    "sdk/include/reactos/libs/mbedtls/build_info.h": "4bb715278f3199298220b930514ace4f461ed0e9ff27b656d6e2616a1ca3287f",
+    "sdk/include/reactos/libs/mbedtls/mbedtls_config.h": "9b7c00fcea0270951df6df8dde403c47a642b6ba0e13e040e54db621025f9c18",
+    "sdk/include/reactos/libs/mbedtls/config_adjust_legacy_crypto.h": "f404960e2878c21c22a5d67caba6cd1d29f382b3d913a56ce856931dd15b2886",
+    "sdk/include/reactos/libs/mbedtls/config_adjust_x509.h": "92909d91c59340f13eb2b447cf44e0075a0ee742a18f22fb7843f6a18c5af5dc",
+    "sdk/include/reactos/libs/mbedtls/config_adjust_ssl.h": "2d37a7552566e9fbd8a5a8b3e6cf6d4e21125a5e48a7e24ca30f3c683d141871",
+    "sdk/include/reactos/libs/mbedtls/check_config.h": "66696df9cc3f7cbbe84786046937242b18140963b94c34347404f7827c428efa",
+    "dll/3rdparty/mbedtls/alignment.h": "e97b8844abfadc4cc2fecce5b040d58cd53f549c42712205a267e00e372efd3d",
+    "sdk/include/reactos/libs/mbedtls/base64.h": "30f5bfb1b8af6ecc035d005126f25395ecc5164b810b3d8c6ade74b1acf46848",
+    "dll/3rdparty/mbedtls/base64_internal.h": "a6d1c16c6e57eaf9a20266c28e57a4ac55db69179e34f355fa2aed5196344587",
+    "dll/3rdparty/mbedtls/constant_time_internal.h": "cb5acff773c6129b5dcc29052dc927d9aa474a2e6b7f7e27e5fac0e7d7023463",
+    "sdk/include/reactos/libs/mbedtls/bignum.h": "f4167d7a91c3431f37341d0d32c72280fd912dfaf360d6fccb1cd9c5fa9da92c",
+    "sdk/include/reactos/libs/mbedtls/private_access.h": "c897213b3e534e8d5db83629177f9c01d90461ed6fea57906836262dba87056d",
+    "sdk/include/reactos/libs/mbedtls/platform_util.h": "1237d849e96bc15b479e8086160e4568c1de86563bb51c60eead45b99ad1b4ac",
+    "dll/3rdparty/mbedtls/constant_time_impl.h": "5afbdaa93eaa2c750c4f3f2d0338409d8e15845823f870a39744d1cc197b4e60",
+    "sdk/include/reactos/libs/mbedtls/error.h": "ddcb14c1bf9d6fd2f2f1d2eb62117ce9bf05a0f9430c6931d7555b23f9ed3ddb"
+  },
+  "exports": {
+    "mbedtls_base64_encode": "int (unsigned char *dst, size_t dlen, size_t *olen, const unsigned char *src, size_t slen)",
+    "mbedtls_base64_decode": "int (unsigned char *dst, size_t dlen, size_t *olen, const unsigned char *src, size_t slen)"
+  },
+  "grade_scope": "Native x86_64 Linux host C ABI; exact return, olen and destination bytes including guard sentinel. No Windows PE ABI, ARM64/i386, constant-time, side-channel or sanitizer proof.",
+  "configuration": {
+    "MBEDTLS_BASE64_C": true,
+    "shipping_default": false
+  }
+}

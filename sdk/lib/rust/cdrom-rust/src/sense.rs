@@ -1011,7 +1011,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             let mut wmi_event_data: [u8; core::mem::size_of::<u32>() + core::mem::size_of::<u8>()] =
                 [0u8; core::mem::size_of::<u32>() + core::mem::size_of::<u8>()];
 
-            *(wmi_event_data.as_mut_ptr() as *mut u32) = core::mem::size_of::<u8>() as u32;
+            (wmi_event_data.as_mut_ptr() as *mut u32).write_unaligned(core::mem::size_of::<u8>() as u32);
             wmi_event_data[core::mem::size_of::<u32>()] = additional_sense_code_qual;
 
             *status = STATUS_SUCCESS as i32;
