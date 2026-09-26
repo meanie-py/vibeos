@@ -244,9 +244,7 @@ def find_probe_block(lines: list[str], site: int) -> tuple[str, str, str | None]
     m = re.search(r"NT_SUCCESS\s*\(\s*([A-Za-z_]\w*)\s*\)", lines[j])
     status_var = m.group(1) if m else None
     between = lines[k + 1 : site]
-    if status_var and any(
-        re.search(rf"\b{re.escape(status_var)}\s*=[^=]", ln) for ln in between
-    ):
+    if status_var and any(re.search(rf"\b{re.escape(status_var)}\s*=[^=]", ln) for ln in between):
         return None
     if any(ACQUIRES.search(ln) for ln in between):
         return None
@@ -262,8 +260,12 @@ def rewrite_site(lines: list[str], site: int, probed: str) -> tuple[int, str] | 
     raw = lines[site]
     indent = raw[: len(raw) - len(raw.lstrip())]
     stmt = raw.strip()
-    for name in ("RtlCopyMemory", "RtlMoveMemory", "core::ptr::copy_nonoverlapping",
-                 "core::ptr::write_volatile"):
+    for name in (
+        "RtlCopyMemory",
+        "RtlMoveMemory",
+        "core::ptr::copy_nonoverlapping",
+        "core::ptr::write_volatile",
+    ):
         if stmt.startswith(name + "("):
             kind = name
             break
@@ -321,9 +323,7 @@ def rewrite_site(lines: list[str], site: int, probed: str) -> tuple[int, str] | 
             return None
         call = f"{indent}if !crate::copy::write_user({dst}, {val}) {{\n"
 
-    body_txt = "\n".join(
-        (indent + "    " + ln) if ln else "" for ln in body.splitlines()
-    )
+    body_txt = "\n".join((indent + "    " + ln) if ln else "" for ln in body.splitlines())
     return end, call + body_txt + f"\n{indent}}}\n"
 
 
@@ -335,7 +335,9 @@ def main() -> int:
 
     out = subprocess.run(
         [sys.executable, str(HERE / "scan_probe_then_deref.py")],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout
     sites: dict[str, dict[int, str]] = {}
     for line in out.splitlines():

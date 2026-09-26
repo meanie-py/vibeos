@@ -262,9 +262,7 @@ def scan_text(
             al = alias_of(idents).match(ln)
             if al and al.group(1) not in idents:
                 idents.add(al.group(1))
-                pat = re.compile(
-                    "|".join(derefs_of(i).pattern for i in sorted(idents))
-                )
+                pat = re.compile("|".join(derefs_of(i).pattern for i in sorted(idents)))
                 continue
             reassign = re.match(rf"\s*{re.escape(ident)}\s*=\s*([^=].*)$", ln)
             if (
