@@ -61,6 +61,14 @@ fn main() {
     let mut present: Vec<&str> = Vec::new();
     let mut renames: Vec<&str> = Vec::new();
     for (rel, syms) in REFS {
+        // Watch EVERY reference path, present or not. Watching only the present ones
+        // poisoned the land queue for a night: a batch that deleted string/strcat.c
+        // re-ran this script and cached a reference without ref_strcpy; the NEXT
+        // batch had the file back, but nothing watched its path any more, so cargo
+        // kept the cached archive and every following batch -- lanes that never
+        // touched ucrt -- failed to link. Cargo re-runs a script whose watched path
+        // is missing, and notices when it comes back.
+        println!("cargo:rerun-if-changed={}", ucrt.join(rel).display());
         if ucrt.join(rel).is_file() {
             if *rel == "string/strcat.c" {
                 println!("cargo:rustc-cfg=ucrt_ref_strcat");
@@ -109,9 +117,7 @@ fn main() {
         .flag(format!("-include{}", prelude.display()));
 
     for rel in &present {
-        let src = ucrt.join(rel);
-        println!("cargo:rerun-if-changed={}", src.display());
-        build.file(&src);
+        build.file(ucrt.join(rel));
     }
     build.compile("ucrt_ref");
 }

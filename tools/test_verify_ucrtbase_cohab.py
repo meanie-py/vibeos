@@ -606,3 +606,17 @@ def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) 
     assert fails == []
     if any((vuc.REPO / f"build-{a}").is_dir() for a in ("i386", "amd64", "arm64")):
         assert any("not measured" in n for n in notes), notes
+
+
+def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monkeypatch) -> None:
+    """The land queue reuses one integration build dir across batches, so an archive
+    can be NEWER than this tree's commits and still be another tree's. Content decides:
+    a declared takeover the archive does not define means it was not built from here."""
+    monkeypatch.setattr(vuc, "_ucrt_archive", lambda build, triple: tmp_path / "lib.a")
+    monkeypatch.setattr(vuc, "_stale_against_sources", lambda a: None)  # clock says fresh
+    monkeypatch.setattr(vuc, "declared_takeovers", lambda: {"strlen": "string", "isalpha": "ctype"})
+    monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "memcpy"})
+    why = vuc.burndown_stale("arm64")
+    assert why and "isalpha" in why and "different tree" in why
+    monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "isalpha"})
+    assert vuc.burndown_stale("arm64") is None

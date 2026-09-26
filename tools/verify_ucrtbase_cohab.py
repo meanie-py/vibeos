@@ -419,7 +419,28 @@ def burndown_stale(arch: str) -> str | None:
     archive = _ucrt_archive(REPO / f"build-{arch}", ARCHES[arch])
     if archive is None:
         return "no libcrt_shared_cargo.a in the build"
-    return _stale_against_sources(archive)
+    stale = _stale_against_sources(archive)
+    if stale:
+        return stale
+    # CONTENT, not the clock. The land queue's integration worktree is shared by
+    # consecutive batches with DIFFERENT content, so the archive a previous batch
+    # built is newer than this tree's commits and passes every mtime test -- while
+    # lacking this tree's takeovers. That measured 999 against a recorded 991 and
+    # bounced the lane that earned the drop, gate after gate, after the mtime guard
+    # above was already in place. An archive that does not define every export this
+    # tree DECLARES taken over was built from some other tree.
+    defined = _nm_defined(archive)
+    if defined is None:
+        return "nm cannot read the archive"
+    if arch == "i386":
+        defined = {d[1:] if d.startswith("_") else d for d in defined}
+    missing = sorted(set(declared_takeovers()) - defined)
+    if missing:
+        return (
+            f"the archive lacks {len(missing)} export(s) this tree declares taken over "
+            f"(e.g. {', '.join(missing[:3])}) -- it was built from a different tree"
+        )
+    return None
 
 
 def _stale_against_sources(archive: Path) -> str | None:
