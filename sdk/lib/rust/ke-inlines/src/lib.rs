@@ -178,8 +178,10 @@ extern "fastcall" {
 
 /// SYNCH_LEVEL (matches `ntkrnl_sys::inline::ke::SYNCH_LEVEL`; replicated
 /// locally to avoid pulling the whole `inline::ke` module into this crate).
-/// UP kernel: DISPATCH_LEVEL = 2. SMP kernel: IPI_LEVEL - 2 on x86/amd64
-/// (ndk asm.h/ketypes.h), unchanged on arm64 (no SMP variant in ndk).
+/// UP kernel: DISPATCH_LEVEL = 2. SMP kernel: IPI_LEVEL - 2 on all three arches
+/// (ndk asm.h/ketypes.h — arm64's ketypes.h:27-31 carries the same CONFIG_SMP pair).
+/// arm64 was 2 here after the 2026-07-25 fix moved the other three copies to 12
+/// (smp-bringup-quest.md); unused under smp today, which is how it survived.
 #[cfg(not(feature = "smp"))]
 const SYNCH_LEVEL: KIRQL = 2;
 #[cfg(all(feature = "smp", target_arch = "x86"))]
@@ -187,7 +189,7 @@ const SYNCH_LEVEL: KIRQL = 0x1D - 2; // 27
 #[cfg(all(feature = "smp", target_arch = "x86_64"))]
 const SYNCH_LEVEL: KIRQL = 14 - 2; // 12
 #[cfg(all(feature = "smp", target_arch = "aarch64"))]
-const SYNCH_LEVEL: KIRQL = 2;
+const SYNCH_LEVEL: KIRQL = 14 - 2; // 12
 
 // ============================================================================
 // SMP (feature = "smp") support: constants + externs for the ke_x.h
