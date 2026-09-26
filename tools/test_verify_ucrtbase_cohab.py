@@ -569,3 +569,19 @@ def test_archive_source_crates_are_walked_not_listed() -> None:
     assert "ucrt-rust" in crates
     assert "crt-shared-rust" in crates
     assert "msvcrt-crt-rust" not in crates
+
+
+def test_rebuild_lists_match_the_crate_closure() -> None:
+    assert vuc.check_rebuild_lists() == []
+
+
+def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
+    """Control: a list that drops a closure crate must be reported -- a gate nobody
+    has watched fail is a gate nobody knows works."""
+    for cmake, var, _root in vuc.REBUILD_LISTS:
+        src = (vuc.REPO / cmake).read_text()
+        dst = tmp_path / cmake
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(src.replace(" crt-portable-rust", "", 1))
+    found = vuc.check_rebuild_lists(repo=tmp_path)
+    assert any("omits `crt-portable-rust`" in f for f in found), found

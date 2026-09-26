@@ -246,13 +246,21 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_cargo.a")
-file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS
-    ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/src/*.rs
-    ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/src/*.rs
-    ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/core_rs/*.rs
-    # cabi/math.rs is IN the DLL since the math wave (cabi-math feature).
-    ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/src/cabi/*.rs
-)
+# Every crate whose code lands in libmsvcrt_crt_cargo.a -- the path-dependency
+# closure of msvcrt-crt-cargo. A crate missing here compiles into the archive but
+# never triggers its rebuild (a stale archive, no error); crt-portable-rust was
+# missing the day the string family moved into it. verify_ucrtbase_cohab.py
+# derives the closure from the manifests and fails if this list and it disagree.
+set(MSVCRT_CRT_RUST_CRATES
+    msvcrt-crt-cargo cnt-rust crt-portable-rust crt-shared-rust msvcrt-crt-rust
+    msvcrt-sys panic-common)
+set(MSVCRT_CRT_RUST_GLOBS)
+set(MSVCRT_CRT_RUST_MANIFESTS)
+foreach(crate ${MSVCRT_CRT_RUST_CRATES})
+    list(APPEND MSVCRT_CRT_RUST_GLOBS ${MSVCRT_RUST_WORKSPACE_DIR}/${crate}/src/*.rs)
+    list(APPEND MSVCRT_CRT_RUST_MANIFESTS ${MSVCRT_RUST_WORKSPACE_DIR}/${crate}/Cargo.toml)
+endforeach()
+file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS ${MSVCRT_CRT_RUST_GLOBS})
 add_custom_command(
     OUTPUT ${MSVCRT_CRT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -265,9 +273,7 @@ add_custom_command(
         ${MSVCRT_CRT_RUST_LIB}
     DEPENDS
             ${MSVCRT_CRT_RUST_SOURCES}
-            ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-rust/Cargo.toml
-            ${MSVCRT_RUST_WORKSPACE_DIR}/msvcrt-crt-cargo/Cargo.toml
-            ${MSVCRT_RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
+            ${MSVCRT_CRT_RUST_MANIFESTS}
             ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust msvcrt CRT-body cohab (${MSVCRT_RUST_TARGET})"
 )

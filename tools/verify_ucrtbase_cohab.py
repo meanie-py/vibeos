@@ -287,6 +287,57 @@ def _archive_source_crates(ws: Path | None = None) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def _closure(root: str, ws: Path | None = None) -> set[str]:
+    """Path-dependency closure of one crate, root included."""
+    ws = WS if ws is None else ws
+    seen = [root]
+    for cur in seen:
+        for dep in sorted(_deps_of(ws / cur)):
+            if dep not in seen:
+                seen.append(dep)
+    return set(seen)
+
+
+#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the `set(...)` naming the
+#: crates whose sources trigger its rebuild, the crate cargo builds).
+REBUILD_LISTS = (
+    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_CRATES", "crt-shared-cargo"),
+    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_CRATES", "msvcrt-crt-cargo"),
+)
+
+
+def check_rebuild_lists(repo: Path | None = None, ws: Path | None = None) -> list[str]:
+    """Each archive's CMake rebuild list must name its whole crate closure.
+
+    A crate compiled INTO an archive but missing from the custom command's DEPENDS
+    never triggers a rebuild: edit it and the build ships the stale archive, green,
+    with no error anywhere. ucrtbase's list named two of its seven crates -- the
+    ucrt-rust takeover families and cnt-rust's math were invisible to it -- and
+    msvcrt's lacked crt-portable-rust the day the string family moved there.
+    """
+    repo = REPO if repo is None else repo
+    findings = []
+    for cmake, var, root in REBUILD_LISTS:
+        text = (repo / cmake).read_text(errors="replace")
+        m = re.search(rf"set\(\s*{var}\s+([^)]*)\)", text)
+        if not m:
+            findings.append(f"{cmake}: no `set({var} ...)` -- the rebuild list is missing")
+            continue
+        listed = set(m.group(1).split())
+        want = _closure(root, ws)
+        for crate in sorted(want - listed):
+            findings.append(
+                f"{cmake}: {var} omits `{crate}`, which is compiled into {root}'s archive -- "
+                f"an edit to it would ship a STALE archive. fix: add it to {var}"
+            )
+        for crate in sorted(listed - want):
+            findings.append(
+                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. "
+                f"fix: remove it"
+            )
+    return findings
+
+
 def _content_changed_at() -> tuple[float, str] | None:
     """`(timestamp, what)` of the last CONTENT change to the archive's sources.
 
@@ -666,7 +717,9 @@ def check_burndown() -> tuple[list[str], list[str]]:
 
 
 def main() -> int:
-    findings = check_structure() + check_extern_crates() + check_archive()
+    findings = (
+        check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
+    )
     bd_fails, bd_notes = check_burndown()
     findings += bd_fails
     for f in findings:
