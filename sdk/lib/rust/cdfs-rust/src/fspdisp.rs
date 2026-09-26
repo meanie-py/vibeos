@@ -9,6 +9,7 @@ use crate::types::{IRP_CONTEXT, THREAD_CONTEXT, VOLUME_DEVICE_OBJECT};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 use crate::glue::{CDFS_BUG_CHECK_FSPDISP};
+use crate::cddata::{CdExceptionFilter, CdProcessException};
 
 extern "C" {
     fn CdCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: PIRP);
@@ -64,9 +65,10 @@ extern "C" {
 extern "system" {
     static IRP_CONTEXT_FSP_FLAGS: u32;
 }
-extern "system" {
-    static IRP_CONTEXT_FLAG_MORE_PROCESSING: u32;
-}
+// cdstruc.h constant. It was declared here as an extern SYMBOL that nothing defines,
+// which linked only while the FSP retry below was provably dead (under DUMMY_PSEH its
+// status could never become STATUS_CANT_WAIT, so LLVM dropped the reference).
+use crate::types::IRP_CONTEXT_FLAG_MORE_PROCESSING;
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_FSPDISP;
@@ -111,39 +113,52 @@ pub unsafe extern "system" fn CdFspDispatch(
             (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
             (*irp).IoStatus.Information = 0;
 
-            // Case on the major IRP code.
-            match (*irp_context).MajorFunction {
-                IRP_MJ_CREATE => CdCommonCreate(irp_context, irp),
+            // Case on the major IRP code, under the C's try/except: a raise below lands
+            // in CdExceptionFilter/CdProcessException (ntkrnl_sys::seh), which can
+            // retry (STATUS_CANT_WAIT), verify, or complete the IRP.
+            let caught = ntkrnl_sys::seh::try_except(
+                &mut status,
+                |status| {
+                    match (*irp_context).MajorFunction {
+                        IRP_MJ_CREATE => CdCommonCreate(irp_context, irp),
 
-                IRP_MJ_CLOSE => NT_ASSERT(0 /* FALSE */),
+                        IRP_MJ_CLOSE => NT_ASSERT(0 /* FALSE */),
 
-                IRP_MJ_READ => CdCommonRead(irp_context, irp),
+                        IRP_MJ_READ => CdCommonRead(irp_context, irp),
 
-                IRP_MJ_QUERY_INFORMATION => CdCommonQueryInfo(irp_context, irp),
+                        IRP_MJ_QUERY_INFORMATION => CdCommonQueryInfo(irp_context, irp),
 
-                IRP_MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, irp),
+                        IRP_MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, irp),
 
-                IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
+                        IRP_MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, irp),
 
-                IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
+                        IRP_MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, irp),
 
-                IRP_MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, irp),
+                        IRP_MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, irp),
 
-                IRP_MJ_DEVICE_CONTROL => CdCommonDevControl(irp_context, irp),
+                        IRP_MJ_DEVICE_CONTROL => CdCommonDevControl(irp_context, irp),
 
-                IRP_MJ_LOCK_CONTROL => CdCommonLockControl(irp_context, irp),
+                        IRP_MJ_LOCK_CONTROL => CdCommonLockControl(irp_context, irp),
 
-                IRP_MJ_CLEANUP => CdCommonCleanup(irp_context, irp),
+                        IRP_MJ_CLEANUP => CdCommonCleanup(irp_context, irp),
 
-                IRP_MJ_PNP => {
-                    NT_ASSERT(0 /* FALSE */);
-                    CdCommonPnp(irp_context, irp);
-                }
+                        IRP_MJ_PNP => {
+                            NT_ASSERT(0 /* FALSE */);
+                            CdCommonPnp(irp_context, irp);
+                        }
 
-                _ => {
-                    status = STATUS_INVALID_DEVICE_REQUEST;
-                    CdCompleteRequest(irp_context, irp, status);
-                }
+                        _ => {
+                            *status = STATUS_INVALID_DEVICE_REQUEST;
+                            CdCompleteRequest(irp_context, irp, *status);
+                        }
+                    }
+                },
+                |_, pointers| {
+                    CdExceptionFilter(irp_context, pointers as ntkrnl_sys::ddk::PEXCEPTION_POINTERS)
+                },
+            );
+            if let Err(code) = caught {
+                status = CdProcessException(irp_context, irp, code);
             }
 
             // Break out of the loop if we didn't get STATUS_CANT_WAIT.

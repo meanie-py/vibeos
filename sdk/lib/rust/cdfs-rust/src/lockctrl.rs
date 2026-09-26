@@ -163,39 +163,48 @@ pub unsafe extern "system" fn CdFastLock(
 
     FsRtlEnterFileSystem();
 
-    'try_block: {
-        if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
-            break 'try_block;
-        }
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'try_block: {
+                if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
+                    break 'try_block;
+                }
 
-        if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
-            break 'try_block;
-        }
+                if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
+                    break 'try_block;
+                }
 
-        Results = FsRtlFastLock(
-            fcb_file_lock(Fcb),
-            FileObject,
-            FileOffset,
-            Length,
-            ProcessId,
-            Key,
-            FailImmediately,
-            ExclusiveLock,
-            IoStatus,
-            core::ptr::null_mut(),
-            0,
-        );
+                Results = FsRtlFastLock(
+                    fcb_file_lock(Fcb),
+                    FileObject,
+                    FileOffset,
+                    Length,
+                    ProcessId,
+                    Key,
+                    FailImmediately,
+                    ExclusiveLock,
+                    IoStatus,
+                    core::ptr::null_mut(),
+                    0,
+                );
 
-        if Results != 0 {
-            if (*Fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible == FastIoIsPossible {
-                CdLockFcb(core::ptr::null_mut(), Fcb);
-                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
-                CdUnlockFcb(core::ptr::null_mut(), Fcb);
+                if Results != 0 {
+                    if (*Fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible == FastIoIsPossible {
+                        CdLockFcb(core::ptr::null_mut(), Fcb);
+                        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                        CdUnlockFcb(core::ptr::null_mut(), Fcb);
+                    }
+                }
             }
-        }
-    }
+        },
+        |_, _| {
+            FsRtlExitFileSystem();
+        },
+    );
 
-    FsRtlExitFileSystem();
 
     Results
 }
@@ -242,46 +251,54 @@ pub unsafe extern "system" fn CdFastUnlockSingle(
     FsRtlEnterFileSystem();
 
     // _SEH2_TRY block emulated with a loop
-    'sehtry: loop {
-        // Check oplock state
-        let oplock = CdGetFcbOplock(fcb);
-        if FsRtlOplockIsFastIoPossible(oplock) == 0 {
-            break 'sehtry; // try_return NOTHING
-        }
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'sehtry: loop {
+                // Check oplock state
+                let oplock = CdGetFcbOplock(fcb);
+                if FsRtlOplockIsFastIoPossible(oplock) == 0 {
+                    break 'sehtry; // try_return NOTHING
+                }
 
-        // Create file lock if it doesn't exist
-        if fcb_file_lock(fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), fcb, 0) == 0 {
-            break 'sehtry; // try_return NOTHING
-        }
+                // Create file lock if it doesn't exist
+                if fcb_file_lock(fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), fcb, 0) == 0 {
+                    break 'sehtry; // try_return NOTHING
+                }
 
-        // Success path
-        results = 1; // TRUE
-        (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
-            fcb_file_lock(fcb),
-            FileObject,
-            FileOffset,
-            Length,
-            ProcessId,
-            Key,
-            core::ptr::null_mut(), // Context = NULL
-            0,                   // AlreadySynchronized = FALSE
-        );
+                // Success path
+                results = 1; // TRUE
+                (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockSingle(
+                    fcb_file_lock(fcb),
+                    FileObject,
+                    FileOffset,
+                    Length,
+                    ProcessId,
+                    Key,
+                    core::ptr::null_mut(), // Context = NULL
+                    0,                   // AlreadySynchronized = FALSE
+                );
 
-        // Update FastIoPossible if no locks remain and it's not already set
-        if FsRtlAreThereCurrentFileLocks(fcb_file_lock(fcb)) == 0
-            && (*fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible != FastIoIsPossible
-        {
-            CdLockFcb(core::ptr::null_mut(), fcb);
-            (*fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(fcb);
-            CdUnlockFcb(core::ptr::null_mut(), fcb);
-        }
+                // Update FastIoPossible if no locks remain and it's not already set
+                if FsRtlAreThereCurrentFileLocks(fcb_file_lock(fcb)) == 0
+                    && (*fcb).__bindgen_anon_1.Header.as_ref().IsFastIoPossible != FastIoIsPossible
+                {
+                    CdLockFcb(core::ptr::null_mut(), fcb);
+                    (*fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(fcb);
+                    CdUnlockFcb(core::ptr::null_mut(), fcb);
+                }
 
-        // try_exit: NOTHING -- fall through to finally
-        break 'sehtry;
-    }
+                // try_exit: NOTHING -- fall through to finally
+                break 'sehtry;
+            }
+        },
+        |_, _| {
+            FsRtlExitFileSystem();
+        },
+    );
 
-    // _SEH2_FINALLY: always exit the file system
-    FsRtlExitFileSystem();
 
     results
 }
@@ -321,35 +338,44 @@ pub unsafe extern "system" fn CdFastUnlockAll(
 
     let final_result = {
         let mut results: BOOLEAN = 0;
-        loop {
-            // _SEH2_TRY start
-            if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
-                break; // try_return( NOTHING )
-            }
+        // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+        // inside the body still runs the cleanup on its way to the handler.
+        ntkrnl_sys::seh::try_finally(
+            &mut (),
+            |_| {
+                loop {
+                    // _SEH2_TRY start
+                    if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
+                        break; // try_return( NOTHING )
+                    }
 
-            if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
-                break; // try_return( NOTHING )
-            }
+                    if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
+                        break; // try_return( NOTHING )
+                    }
 
-            results = 1; // TRUE
+                    results = 1; // TRUE
 
-            (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAll(
-                fcb_file_lock(Fcb),
-                FileObject,
-                ProcessId,
-                core::ptr::null_mut(),
-            );
+                    (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAll(
+                        fcb_file_lock(Fcb),
+                        FileObject,
+                        ProcessId,
+                        core::ptr::null_mut(),
+                    );
 
-            // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
-            CdLockFcb(core::ptr::null_mut(), Fcb);
-            (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
-            CdUnlockFcb(core::ptr::null_mut(), Fcb);
+                    // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
+                    CdLockFcb(core::ptr::null_mut(), Fcb);
+                    (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                    CdUnlockFcb(core::ptr::null_mut(), Fcb);
 
-            // try_exit: NOTHING; -- fall through to loop exit
-            break; // normal exit from try block
-        }
-        // _SEH2_FINALLY
-        FsRtlExitFileSystem();
+                    // try_exit: NOTHING; -- fall through to loop exit
+                    break; // normal exit from try block
+                }
+            },
+            |_, _| {
+                FsRtlExitFileSystem();
+            },
+        );
+
         results
     };
 
@@ -385,32 +411,42 @@ pub unsafe extern "system" fn CdFastUnlockAllByKey(
     FsRtlEnterFileSystem();
     let mut Results: BOOLEAN = 0;
 
-    loop {
-        // _SEH2_TRY begins
-        if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
-            break; // try_return
-        }
-        if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
-            break;
-        }
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            loop {
+                // _SEH2_TRY begins
+                if FsRtlOplockIsFastIoPossible(CdGetFcbOplock(Fcb)) == 0 {
+                    break; // try_return
+                }
+                if fcb_file_lock(Fcb).is_null() && CdCreateFileLock(core::ptr::null_mut(), Fcb, 0) == 0 {
+                    break;
+                }
 
-        Results = 1;
-        (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
-            fcb_file_lock(Fcb),
-            FileObject,
-            ProcessId as PEPROCESS,
-            Key,
-            core::ptr::null_mut(),
-        );
+                Results = 1;
+                (*IoStatus).__bindgen_anon_1.Status = FsRtlFastUnlockAllByKey(
+                    fcb_file_lock(Fcb),
+                    FileObject,
+                    ProcessId as PEPROCESS,
+                    Key,
+                    core::ptr::null_mut(),
+                );
 
-        // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
-        CdLockFcb(core::ptr::null_mut(), Fcb);
-        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
-        CdUnlockFcb(core::ptr::null_mut(), Fcb);
+                // CdLockFcb/CdUnlockFcb macros ignore the IrpContext argument; pass NULL.
+                CdLockFcb(core::ptr::null_mut(), Fcb);
+                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                CdUnlockFcb(core::ptr::null_mut(), Fcb);
 
-        break;
-    }
-    FsRtlExitFileSystem();
+                break;
+            }
+        },
+        |_, _| {
+            FsRtlExitFileSystem();
+        },
+    );
+
     Results
 }
 

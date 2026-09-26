@@ -905,7 +905,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     trace) without matching. The file shows `shell ready` three times for one payload run, so the
     `ready` snapshot restore is the first suspect: the reader may be following a timeline the
     marker is not in. Read the serial for the verdict until this is fixed.
-  - OPEN, amd64, 1 sighting (2026-09-26): BUGCHECK 0x1E `0xC00000D8` (`STATUS_CANT_WAIT`) during
+  - ADDRESSED, pending recurrence (2026-09-26): cdfs now has real exception handling
+    (`ntkrnl_sys::seh`), so a `STATUS_CANT_WAIT` raise reaches `CdProcessException` and is
+    retried or posted instead of bugchecking. Original report: BUGCHECK 0x1E `0xC00000D8` (`STATUS_CANT_WAIT`) during
     boot, in the WoW64 `async32` guest's overlapped `ReadFile` right after
     `[async32] start`, before appstorm launched. `RtlRaiseStatus(0xC00000D8)`, which is the
     field manual's "DUMMY_PSEH defeats cdfs's raise->catch->post async model" class: a
