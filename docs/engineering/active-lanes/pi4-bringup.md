@@ -511,13 +511,13 @@ for arm64.
 ### Netboot speed, measured
 
 The ramdisk takes ~13.5 minutes whatever the TFTP framing: 825 s lockstep,
-805 s with a 32-block window, 804 s with 8 KB blocks. The limit is Ethernet
-frames, about one per 8 ms, which fits EDK2's managed network layer polling
-the NIC on a ~10 ms timer and taking one packet per poll. Next experiment:
-iPXE, which calls the NIC driver in its own loop, and can hand the chained
-loader a virtual filesystem of downloaded files so nothing touches the SD card.
+805 s with a 32-block window, 804 s with 8 KB blocks. The explanation first
+written here (EDK2 polling the NIC once per ~10 ms) was WRONG: session 4
+measured iPXE pulling the same file into RAM in 18.9 s, and copying it from
+RAM to the card taking as long as the TFTP did. The limit is SD card writes
+through this firmware. See `docs/engineering/pi4-bench.md`.
 
-### Next
+### Next (superseded by session 4 below)
 
 - Re-verify on the board with the item-3 sweeps (not yet run on hardware).
 - bootvid geometry: the boot splash is streaked and undersized, but the desktop
@@ -525,3 +525,53 @@ loader a virtual filesystem of downloaded files so nothing touches the SD card.
 - Input: USB on the Pi 4 is xHCI behind PCIe, which we have no driver for.
 - MP: the AP trampoline in `hal-rust/src/arm64/mpboot.rs` still writes to
   `0x09000000`, which is RAM on a Pi.
+
+## Session 4 (2026-09-26 overnight) — the ~70 s freeze was the idle loop's WFE
+
+**Fixed and verified on the board.** The desktop froze about a minute after it
+appeared, on every boot: tray clock stopped, serial silent, no bugcheck. With
+the fix the clock advances (12:02 -> 12:05 AM captured over HDMI) and the tick
+ran past 35000 (~6 min) with the CPU in the Idle thread.
+
+**Cause.** The idle loop masks IRQs and, with nothing ready, ran `wfe`. A masked
+IRQ is not a WFE wake-up event (it is one for WFI), and nothing in the kernel
+issues `SEV` or enables the timer event stream, so the core slept forever with
+the tick pending. QEMU's TCG treats WFE as a yield, so smoke could never see
+it. It struck at ~70 s because the zero-page thread keeps the CPU busy until
+all free RAM (~3 GB here) is zeroed: the first truly idle moment was fatal.
+Fix: `wfi` (`ke/arm64/thrdini.rs`). Field manual: "Real hardware: what QEMU's
+TCG does not model".
+
+**How it was found, since the obvious suspects were all wrong.** Every death
+followed an lsass worker's exit, and a switch-narration probe showed that
+switch completing fine. A post-swap trap trace found explorer busy in
+`RtlDosSearchPath_U` (gdi32 retrying the missing `lpk.dll` on every text draw:
+real, fixed separately, not the hang). A raw-UART tick heartbeat in
+`KeUpdateSystemTime` stopped at tick 7000 every time. A tick-health check sampled
+from IRQ entry, user-mode traps and the idle loop reported nothing: the CPU was
+in none of those places, which left a sleeping core. The probe set is kept
+outside the tree as a reusable patch:
+`<bench>/probes/pi-idle-hang-probes-20260926.diff`.
+
+Wrong turns worth not repeating: a "reproduced in QEMU" that was the reaper
+killing a `debug start` VM when the tool call that launched it exited (pass
+`VIBEOS_QEMU_OWNER_PID`), and reading a `DbgPrint` heartbeat's silence as
+"interrupts died" (DbgPrint can go quiet on its own; use raw UART).
+
+### Also this session
+
+- `vibeos-cli build --up-kernel` failed at mkramdisk since the CRLF
+  `freeldr.ini`; fixed. The Pi boots the UP kernel, which nothing else tests.
+- `lpk.dll` is now staged in the arm64 ramdisk.
+- Netboot: the card write is the limit (above). `netboot.sh --sanboot` (iPXE +
+  `serve_http.py`) boots with no card writes; proven in QEMU, needs one TCP
+  firewall rule on the bench host (`pi4-bench.md`).
+
+### Next
+
+- ~~Sanboot firewall rule~~ done 2026-09-26 morning; sanboot is now the default loop, measured
+  at ~100 s power-on to desktop (was ~23 min).
+- bootvid geometry (splash streaked and undersized; the desktop is fine).
+- Input: xHCI behind PCIe; nothing drives it yet.
+- MP on the board: the AP trampoline (`hal-rust/src/arm64/mpboot.rs`) still
+  writes `0x09000000`, which is RAM on a Pi.

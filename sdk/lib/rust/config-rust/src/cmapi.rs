@@ -1920,9 +1920,13 @@ pub unsafe extern "system" fn CmUnloadKey(
 
     CmpUnlockRegistry();
 
-    CmpCloseHiveFiles(CmHive);
-
+    // Remove the hive from the hive file list BEFORE closing the file handles.
+    // Upstream 396019984c9 swapped these two: CmpRemoveFromHiveFileList() now reads the
+    // path captured at add time rather than re-deriving it, and the ordering matches the
+    // symmetry of the linking process (Win2003 RTM order).
     CmpRemoveFromHiveFileList(CmHive);
+
+    CmpCloseHiveFiles(CmHive);
 
     CmpDestroySecurityCache(CmHive);
 

@@ -245,6 +245,75 @@ pub unsafe extern "system" fn Boom() {
 }
 """
 
+# scan_ptr_byte_diff. The version.dll bug verbatim: C's `lpNextSlash - lpSubBlock` on LPCWSTR
+# counts WCHARs, the translation subtracted addresses. The oracle is the REAL
+# dll/win32/version/version.c (the scanner pairs by function name against tracked C), so
+# the fixture keeps the real function name. GOOD holds the fix and the byte-offset shape
+# that must stay silent: both operands byte pointers, which is address arithmetic.
+_PTR_BYTE_DIFF_BAD = """\
+unsafe fn VersionInfo32_QueryValue(info: *const u8, mut lpSubBlock: LPCWSTR) -> i32 {
+    let mut lpNextSlash: LPCWSTR = lpSubBlock;
+    let len = (lpNextSlash as isize - lpSubBlock as isize) as UINT;
+    len as i32
+}
+"""
+_PTR_BYTE_DIFF_GOOD = """\
+unsafe fn VersionInfo32_QueryValue(info: *const u8, mut lpSubBlock: LPCWSTR) -> i32 {
+    let mut lpNextSlash: LPCWSTR = lpSubBlock;
+    let len = lpNextSlash.offset_from(lpSubBlock) as UINT;
+    let base: *const u8 = info;
+    let end: *const u8 = info;
+    let bytes = (end as usize - base as usize) as UINT;
+    (len + bytes) as i32
+}
+"""
+
+# scan_misaligned_cast. cryptlib A_SHAFinal before the fix: the length words stored through
+# `Buffer + Pad` cast to *mut u32 over a [u8; 72]. GOOD is the fix, plus a cast that is only
+# PASSED on (never dereferenced here), which must stay silent.
+_MISALIGNED_CAST_BAD = """\
+pub unsafe fn A_SHAFinal(Pad: u32, LengthHi: u32) {
+    let mut Buffer: [u8; 72] = [0; 72];
+    let Count: *mut u32;
+    Count = Buffer.as_mut_ptr().add(Pad as usize) as *mut u32;
+    *Count.offset(0) = LengthHi;
+}
+"""
+_MISALIGNED_CAST_GOOD = """\
+pub unsafe fn A_SHAFinal(Pad: u32, LengthHi: u32) {
+    let mut Buffer: [u8; 72] = [0; 72];
+    let Count: *mut u32;
+    Count = Buffer.as_mut_ptr().add(Pad as usize) as *mut u32;
+    Count.offset(0).write_unaligned(LengthHi);
+    consume(Buffer.as_mut_ptr() as *mut u32);
+}
+"""
+
+# scan_dropped_null_guard. compress before the fix: compress.c forwards final_size to
+# lznt1_decompress, whose `if (final_size)` is the guard — so this also pins the one-level
+# call-through. The fixture path shares `compress` with sdk/lib/rtl/compress.c, which is
+# what makes that the twin; GOOD is the guarded store.
+_NULL_GUARD_BAD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> i32 {
+    *final_size = 0;
+    0
+}
+"""
+_NULL_GUARD_GOOD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> i32 {
+    if !final_size.is_null() {
+        *final_size = 0;
+    }
+    0
+}
+"""
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -1511,6 +1580,27 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _ASSERT_UB_BAD},
         good={"good.rs": _ASSERT_UB_GOOD},
+    ),
+    Control(
+        name="scan_ptr_byte_diff",
+        script="tools/scan_ptr_byte_diff.py",
+        argv=["--lint"],
+        bad={"version-rust/src/lib.rs": _PTR_BYTE_DIFF_BAD},
+        good={"version-rust/src/lib.rs": _PTR_BYTE_DIFF_GOOD},
+    ),
+    Control(
+        name="scan_misaligned_cast",
+        script="tools/scan_misaligned_cast.py",
+        argv=["--lint"],
+        bad={"sha1.rs": _MISALIGNED_CAST_BAD},
+        good={"sha1.rs": _MISALIGNED_CAST_GOOD},
+    ),
+    Control(
+        name="scan_dropped_null_guard",
+        script="tools/scan_dropped_null_guard.py",
+        argv=["--lint"],
+        bad={"compress/src/lib.rs": _NULL_GUARD_BAD},
+        good={"compress/src/lib.rs": _NULL_GUARD_GOOD},
     ),
     Control(
         name="scan_bitwise_not_bool",

@@ -438,6 +438,44 @@ cargo kani -p slist
 cargo test -p slist-loom
 ```
 
+### Differential grading against the genuine C — `rustconv difftest-contract`
+
+For logic-heavy code (parsers, string/codec/crypto routines, anything smoke never calls),
+grade the SHIPPING Rust against the GENUINE C on the host: a reviewed JSON contract
+generates typed wrappers and a corpus, runs both sides twice in isolated processes (C
+under UBSan), and requires every graded function to have a caught sensitivity mutant.
+No API calls; ~5 s per contract. It has found shipping bugs on 4 of its first 10 new
+targets (compress, cryptlib sha1, version.dll ×3; see `git log --grep difftest-contract`).
+
+```bash
+PYTHONPATH=tools/rustconv .venv/bin/python -m rustconv difftest-contract \
+    tools/rustconv/data/difftest/version.json --out ~/vibeos-rust-staging/<fresh-dir>
+```
+
+`report.json` is the verdict (`pass` / `mismatch` + `counterexample.json` / `invalid`).
+Whole Wine/ReactOS TUs compile against the tree's own headers with
+`"c_host_profile": "reactos-amd64"` (needs this worktree's `build-amd64`); what the C calls
+out to goes in a reviewed `c_env` shared by both sides, and every other external becomes a
+named trap. Contract format, examples and limits: `tools/rustconv/data/difftest/README.md`.
+It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, which takes
+`--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
+
+Each bug class it finds becomes a gated `check` scanner over every body. The first three
+(all with EMPTY baselines, all run by `./vibeos-cli check`):
+
+- `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
+  `a - b` counted ELEMENTS. The fix is `a.offset_from(b)`.
+- `scan_misaligned_cast`: a `[u8; N]` cast to a wider pointer and dereferenced. The fix is
+  `read_unaligned` / `write_unaligned`. `--pointers` also reports byte-POINTER bases, as a
+  246-site review queue.
+- `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
+  it unconditionally.
+
+The first and third read the C twin by function NAME through `tools/c_twin.py`. Its index
+of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
+cold build, then only changed files are re-read. Each scanner honours
+`// nolint: <tag>` on a reviewed line, with the reason written beside it.
+
 ### QEMU Kernel Tests (28 tests via serial dispatch loop)
 
 ```bash
@@ -596,6 +634,10 @@ python -m rustconv crate-repair foo-rust --arches i386 amd64 arm64  # $0 determi
 python -m rustconv.profile_derive dll/win32/foo --emit report       # Derive bindgen island
 python -m rustconv bank-audit [--verbose]               # Paid .responses output NOT in the tree
 python -m rustconv.export_audit --module dll/ntdll dll/ntdll/def/ntdll.spec  # Does the DLL still export what it promised?
+python -m rustconv difftest-contract C.json --out DIR   # Grade shipping Rust vs genuine C (see Test Suite)
+python -m rustconv objdiff a.obj b.obj                  # C vs Rust object ABI differences
+python -m rustconv seh-classify file.c                  # Classify a C file's SEH blocks by pattern
+python -m rustconv seh-inventory                        # win32k SEH triage (sites a–e + sidecars)
 ```
 
 `export_audit` asks whether every implementable `.spec` entry is a `#[no_mangle]` fn with the
@@ -770,6 +812,26 @@ VIBEOS_EMIT_LLVM_IR=1 ./vibeos-cli build --arch amd64   # emit per-CGU .ll
 .venv/bin/python tools/scan_captures.py sdk/lib/rust/target/ntoskrnl-cargo-*-rustlib
 # Related: VIBEOS_LINK_MAP=1 (lld -Map per cargo module — layout ground truth);
 # VIBEOS_LAYOUT_CANARY=1 (deliberately perturbed kernel link — boot tripwire)
+```
+
+**Triage scanners that are NOT wired into `check`** — run them by hand; each is a work
+queue, not a gate, and a finding is "look here", not "this is wrong":
+
+```bash
+python3 tools/scan_bool_width.py       # extern decl widens a BOOLEAN/u8 return to i32/u32:
+                                       # on x86 only AL is defined, so `!= 0` reads garbage.
+                                       # Broke fastfat reads + mountmgr. 202 findings on
+                                       # 2026-09-26, UNTRIAGED (owed: rustconv-speedrun lane).
+python3 tools/scan_sibling_drift.py    # paired twins (Acquire/Release, Nt/Zw, X/XEx, per-arch
+                                       # cfg twins) whose bodies differ on one line
+python3 tools/scan_arch_cfg.py         # ~2.4K per-arch #[cfg] sites that gate LOGIC, out of
+                                       # ~8.4K; the input list for a per-arch drift audit
+python3 tools/lint_wide_strings.py     # hand-encoded UTF-16 b"..." literals: C-octal confusion
+                                       # and odd lengths (currently clean)
+python3 tools/find_dead_tus.py         # linked TUs whose symbols nothing references — dead
+                                       # C still counted as untranslated work
+.venv/bin/python -m rustconv.hybrid_closure   # which symbols a half-translated TU still
+                                              # exports to the link (CFSFolder: 2,283 lines, 21 symbols)
 ```
 
 `scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (on LLVM ≥ 21 almost always an ABI mismatch; the captures(none) volatile-blind root is toolchain-fixed, see rust-kernel-patterns.md "RESOLVED AT THE TOOLCHAIN"); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)

@@ -204,6 +204,14 @@ and **first-chance VEH is compiled out** (shared librtl is built as
 `rtl-except/src/amd64/except.rs:28`). Known TODO: nested-exception
 disposition `debugbreak()`s (`amd64/unwind.rs:689,844`).
 
+**Consequence for RPC clients: a failed call kills the caller with exit code 1.** The `RpcExcept`
+arm around every stub never runs, the dispatcher resumes the `RPC_S_*` raise (it is `< 0xC0000000`),
+`RaiseException` returns, and `RpcRaiseException` then does its "handler continued execution" `ERR`
+and `ExitProcess(1)`. Nothing crashes, so no second chance is logged; the only trace is that `ERR`
+line. On amd64, wordpad and winver died this way for as long as the spooler was down, because
+winspool's printer calls went to a server that was not listening. Until the class-2 `try_` work
+reaches rpcrt4, a dead RPC server means every one of its clients dies.
+
 ## The program — Tier 1: convert raise contracts to `Result` (do this)
 
 Mechanical, incremental, each step independently smoke-gateable:

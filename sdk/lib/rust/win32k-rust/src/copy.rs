@@ -126,3 +126,36 @@ pub unsafe fn zero_to_user(dst: *mut core::ffi::c_void, bytes: usize) -> bool {
     }
     true
 }
+
+// ---------------------------------------------------------------------------
+// A TYPED wrapper, for the one shape a byte-oriented helper cannot express.
+//
+// `capture_from_user`/`publish_to_user` take `*mut c_void` + a byte count, which
+// fits `RtlCopyMemory` exactly. `core::ptr::write_volatile(p, v)` has no length
+// at all -- it carries its size in the pointee type, so the wrapper has to be
+// generic to get it. Being generic also means the call sites need no casts,
+// which is what makes the rewrite mechanical: the `as *mut _` a cast-taking
+// helper would force has no type to infer from.
+//
+// There were element-counting `capture_n`/`publish_n` here too, for
+// `copy_nonoverlapping`'s ELEMENT count. They are gone: every site that had one
+// now spells the byte count itself and calls `capture_from_user`, and one way to
+// say a thing beats two.
+//
+// Same contract as the byte helpers: the probe stays (it is what rejects a
+// kernel-range pointer), the ACCESS becomes fault-tolerant, and `false` means
+// the copy faulted -- map it to STATUS_ACCESS_VIOLATION and the C's error path.
+
+/// `core::ptr::write_volatile(dst, val)` into user memory, protected.
+///
+/// The store is the whole hazard: a probed-but-unmapped out-parameter is the
+/// single commonest write-direction instance of this class, because it looks
+/// so much smaller than a struct copy that it reads as safe.
+#[inline]
+pub unsafe fn write_user<T>(dst: *mut T, val: T) -> bool {
+    KmProtectedCopyMemory(
+        dst as PVOID,
+        core::ptr::addr_of!(val) as *mut T as PVOID,
+        core::mem::size_of::<T>(),
+    ) != 0
+}

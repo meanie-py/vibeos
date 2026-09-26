@@ -1,0 +1,11 @@
+[package]
+name = "jscript-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "jscript_rust"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

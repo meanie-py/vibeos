@@ -228,6 +228,19 @@ pub unsafe extern "system" fn GdiPoolFree(pPool: PGDI_POOL, pvAlloc: PVOID) {
     let mut cjOffset: ULONG_PTR;
     let mut ulIndex: ULONG;
 
+    /* Freeing NULL is a caller bug (the C asserts every attr it frees is non-NULL), and it came in
+     * floods of thousands just before a NULL-region bugcheck. Name the first few callers. */
+    if pvAlloc.is_null() {
+        static NULL_FREES: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        if NULL_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 3 {
+            let mut frames: [PVOID; 8] = [core::ptr::null_mut(); 8];
+            let n = crate::gdidbg::DbgCaptureStackBackTace(frames.as_mut_ptr(), 0, 8);
+            for f in &frames[..n as usize] {
+                DbgPrint(b"[GDIPOOL] NULL free from %p\n\0".as_ptr() as *const i8, *f);
+            }
+        }
+    }
+
     /* Disable APCs and acquire the pool lock */
     KeEnterCriticalRegion();
     ExAcquirePushLockExclusive(core::ptr::addr_of_mut!((*pPool).pushlock) as *mut _);

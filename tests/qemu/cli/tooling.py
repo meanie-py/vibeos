@@ -79,6 +79,7 @@ _PYTEST_SUITES = [
     # these files carry) and false negatives on the shape that actually
     # bugchecked. Both are pinned.
     (".", ".", "tools/test_scan_probe_then_deref.py"),
+    (".", ".", "tools/test_fix_probe_then_deref.py"),
     (".", ".", "tools/test_gen_suites.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
@@ -119,6 +120,10 @@ _PYTEST_SUITES = [
     # the core bucket moves the published coverage figure and nothing in the output says
     # so. Its build-graph cases skip when this worktree has no build-* dirs.
     (".", ".", "tools/test_port_audit.py"),
+    # Upstream triage decides which unmerged commits are BUG ORACLES. Its first draft
+    # called 31 of 65 commits oracle hits by counting winetests sources the build does not
+    # compile by configuration; the wrong number reads exactly like the right one.
+    (".", ".", "tools/test_upstream_triage.py"),
     # The vendored-code move plan is a reference list: a missed spelling (relative
     # add_subdirectory, a .cmake fragment, a ${VAR}-built path, an include root) is a
     # build that breaks after the move. Hermetic fixtures, no build dirs needed.
