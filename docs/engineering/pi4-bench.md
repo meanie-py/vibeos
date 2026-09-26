@@ -184,11 +184,26 @@ read it. The Pico is powered by the Pi, so it reboots with every power cycle
 and is on Wi-Fi ~12.5 s after power-on: too late for the UEFI F1 window, which
 stays on serial.
 
-Baseline, 2026-09-26 (build `f5abd8cee6a4`, before usbxhci runs on the Pi):
-UEFI configures the Pico by ~17 s and polls its keyboard endpoint; at hand-over
-to the loader (~57 s) a bus reset unmounts it, and under VibeOS it stays
-unmounted. usbxhci on the Pi is working when `usb` shows `mounted=True` with
-growing completions at the desktop.
+The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
+- **Configuration:** VibeOS configures it, and `usb` then shows `mounted=True`,
+  `set_config=2` and growing completions.
+- **Typing:** `type` lands in the focused window.
+- **Pointer:** `pointer click x y` goes where aimed. The pointer spans the whole
+  1920x1080 screen, so pixel = value × 1920 / 32768 (and × 1080 / 32768 for y).
+  Notepad's text area is around `pointer click 8000 12000`.
+- **Chords:** modifiers come first, e.g. `key CTRL ESC`.
+
+What proves each layer, on serial:
+
+| Layer | Serial line |
+|---|---|
+| Controller | `[XHCI] controller running` |
+| Hub | `slot 1: hub, 4 ports`, the board's VIA hub |
+| Pico | `port 1 route 3: new device ... tt slot 1 port 3` |
+| Desktop | `[WIN32K] RIT first keyboard input` |
+
+Before this (build `f5abd8cee6a4`), UEFI configured the Pico and a bus reset at
+hand-over unmounted it for good.
 
 ## Firmware facts worth knowing
 

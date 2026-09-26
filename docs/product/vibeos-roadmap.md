@@ -491,8 +491,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 ### Owed work (moved from closed docs)
 - [ ] **Input unification migration** *(input-architecture, roadmap §10a)*: USB HID as the
   default smoke input transport ×3 arches; retire `arm64input` + `i8042prt` (or demote to
-  explicit fallback). The usbxhci gap is closing: the driver exists and types in QEMU
-  (2026-09-26, `docs/engineering/usbxhci-design.md`); the Pi 4 is its next milestone.
+  explicit fallback). The usbxhci gap is closed: USB HID is the Pi 4's keyboard and mouse
+  (2026-09-26, `docs/engineering/usbxhci-design.md`), and arm64input now yields
+  `KeyboardClass0`/`PointerClass0` to kbdclass/mouclass wherever it finds no virtio-input.
 - [ ] **Warm-build driver-relink infra bug** *(input lane)*: warm `vibeos-cli build` doesn't
   relink driver `.sys` after an `ntkrnl-sys` edit — false-fresh family; cost 3 debug rounds.
 - [ ] **KD continuation** *(windbg handoff)*: amd64 same-CPL `int 2Dh` machine-frame

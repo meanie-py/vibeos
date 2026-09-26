@@ -1958,7 +1958,8 @@ options rather than failing.
 ### Driver fleet detail
 Essentially the entire boot/smoke driver fleet is Rust. **Two drivers are from-scratch
 Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack) and `usbxhci.sys`
-(the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26;
+(the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26; it
+drives the Raspberry Pi 4's VL805;
 `docs/engineering/usbxhci-design.md`).**
 Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —
 `guid.c`/data-TU/stub — so ~90–100% each): all storage class/port/ide

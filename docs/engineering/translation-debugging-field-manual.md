@@ -2353,6 +2353,17 @@ just a label.
   — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
   unchecked literal for another.
 
+### An invented term in a length computation
+usbccgp's `USBCCGP_PDOSelectConfiguration` came out of translation as `Hdr.Length -
+offset_of!(Interface) - 16`; the C is `Hdr.Length - FIELD_OFFSET(..., Interface.Length)`, with
+no 16. The remaining length never reached 0, so the loop read an interface record past the end
+of the URB, and every composite-device function after the first failed to start with
+`STATUS_INVALID_PARAMETER` ("interface 0 is not in this function"). The first function passed
+or failed depending on what memory followed the URB. Found on the Pi 4 with a composite HID
+device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not have is an
+invented value, the same class as an invented constant; diff the expression, not just the
+names.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -6702,6 +6713,15 @@ gates the invariant statically: every hive `add_cd_file` stages into `reactos/sy
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
+**The loader has the same blind spot for boot drivers** (2026-09-26). A Start=0 service whose
+`.sys` is not on the ramdisk (usbccgp was never staged on arm64) is dropped from the boot driver
+list with only a trace-channel `ERR` nobody sees on UEFI, so the kernel never hears of it. The
+symptom is two steps away: a composite USB device matched `USB#COMPOSITE` in the
+CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The loader now prints
+`[FLDR] boot driver not loaded, dropped from the boot driver list: <path>`. On arm64 that list
+is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
+carries; read it when a device binds to nothing.
 
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
@@ -11114,6 +11134,15 @@ win32k is the largest single flip surface and its failures are stereotyped:
   filled, suspect the transfer-mode flag.**
 - **The first keystroke BUGCHECKs 0x1E** `[§9.38]` if the i8042prt DPC calls kbdclass
   `ClassService` as `extern "C"` — it is NTAPI stdcall on i386.
+- **arm64 USB input reached kbdclass and stopped there** (2026-09-26, first seen on the Pi 4).
+  `[KBDCLASS] first key delivered` printed, the desktop saw nothing. win32k's RIT opens exactly
+  `\Device\KeyboardClass0` and `\Device\PointerClass0`, and arm64input created both names
+  unconditionally for its virtio-input devices, so kbdclass/mouclass fell back to `...Class1`,
+  which nobody reads. The QEMU xHCI gate had only ever checked the kbdclass marker. Fix:
+  arm64input claims the names only when it finds virtio-input; the RIT now prints which driver
+  owns each device it opens and `[WIN32K] RIT first keyboard input`, the marker that proves the
+  desktop got a key. **A delivery marker proves delivery to the layer that prints it, and no
+  further.**
 - **winlogon 0xF4 on the first FAILING user-mode callback** `[§9.39]` — i386
   `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the
   user-ESP restore. The `'seh` block must yield `Result<NTSTATUS, NTSTATUS>` so the two are
@@ -11402,6 +11431,17 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### `ASSERT FAILED: MDL_MAPPED_TO_SYSTEM_VA == 0 at iomgr-rust/src/iomdl.rs` on every USB transfer
+- **Symptom:** the assert prints repeatedly once USB devices enumerate (seen on QEMU xHCI
+  boots, some amd64 smokes and the Pi 4); nothing fails outright.
+- **Cause:** `ntkrnl-sys`'s `driver_ddk::MmGetSystemAddressForMdlSafe` mapped the MDL on
+  every call. The WDK inline returns `MappedSystemVa` when the MDL is already mapped or
+  describes nonpaged pool. So every call leaked a system mapping, overwrote
+  `MappedSystemVa`, and the MDL was freed still mapped. usbport calls it per transfer, and
+  kbdclass, mouclass, hidclass, fastfat, afd and others use the same copy.
+- **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
+  crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
 
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing

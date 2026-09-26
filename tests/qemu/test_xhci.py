@@ -48,10 +48,13 @@ def test_xhci_keyboard_delivery(vm: QemuVM) -> None:
             assert "error" not in response, response
             serial += vm.serial_output(timeout=0.2)
         assert not any(marker in serial for marker in _FATAL_MARKERS), serial[-4000:]
-        if "[KBDHID] read completion" in serial and "[KBDCLASS] first key delivered" in serial:
+        # kbdclass accepting the key is not enough: win32k must be reading that
+        # class device. On arm64 it once was not (arm64input owned KeyboardClass0).
+        if ("[KBDHID] read completion" in serial and "[KBDCLASS] first key delivered" in serial
+                and "[WIN32K] RIT first keyboard input" in serial):
             break
     else:
-        pytest.fail(f"xHCI did not deliver a keyboard report:\n{serial[-6000:]}")
+        pytest.fail(f"xHCI did not deliver a keyboard report to the desktop:\n{serial[-6000:]}")
     assert "shell ready" in serial
     assert vm.qmp.execute("query-status")["return"]["status"] == "running"
     vm.screendump(vm.work_dir / "xhci-keyboard.ppm")
