@@ -1631,6 +1631,134 @@ def test_run_summary_json(tmp_path, monkeypatch):
     assert summary["arch"] == "i386"
 
 
+def test_a_run_dir_claims_INCOMPLETE_before_the_work_starts():
+    """A killed run must not read as a pass.
+
+    Nothing here reaches finalize(), which is the whole point: this is the state a
+    SIGKILL leaves behind. Before the marker the dir held a full.log of green stage
+    lines and no summary.json at all, and a caller whose exit status was not the
+    work's (a pipeline's last stage, a backgrounded shell's `echo`) read that as a
+    pass.
+    """
+    run = Run("build", "arm64", ts=1700000000)
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["verdict"] == "INCOMPLETE"
+    assert summary["classification"] == "RUN_INTERRUPTED"
+    assert summary["arch"] == "arm64"
+    assert summary["command"] == "build"
+    assert summary["pid"] == os.getpid()
+
+
+def test_finalize_REPLACES_the_marker_rather_than_leaving_it():
+    """Otherwise the marker would be the bug it exists to prevent, inverted:
+    a finished green run permanently claiming it never finished."""
+    run = Run("smoke", "amd64", ts=1700000000)
+    run.add(Stage("boot", status="ok"))
+    assert run.finalize() == 0
+    summary = json.loads((run.dir / "summary.json").read_text())
+    assert summary["verdict"] == "OK"
+    assert "incomplete" not in summary
+    assert summary["classification"] == ""
+
+
+def test_a_marker_is_INCONCLUSIVE_so_a_reaped_lane_is_not_rejected():
+    """RUN_INTERRUPTED says the lane's code was never graded, not that it is bad.
+
+    These runs previously reached the queue as "" (no summary to read), which is
+    already inconclusive — so gaining a positive marker must not silently move them
+    OUT of that set and start rejecting lanes for being reaped by the host.
+    """
+    from .queue import INCONCLUSIVE
+
+    assert "RUN_INTERRUPTED" in INCONCLUSIVE
+
+
+def test_gate_routes_a_marker_into_its_no_verdict_path_not_an_ordinary_red(tmp_path):
+    """The marker says strictly LESS than gate's existing no-summary branch, which
+    keeps the child's exit code and its last console words. So gate must fall
+    through to that branch, not treat INCOMPLETE as a graded failure."""
+    from .artifacts import is_incomplete
+    from .gate import _read_summary
+
+    d = tmp_path / "20260913-000000-x-smoke-arm64"
+    d.mkdir()
+    marker = {"verdict": "INCOMPLETE", "classification": "RUN_INTERRUPTED", "incomplete": True}
+    (d / "summary.json").write_text(json.dumps(marker))
+    assert is_incomplete(marker)
+    assert _read_summary(tmp_path) == {}, "a marker must read as 'no verdict'"
+
+    # ...and a real verdict in the same shape still comes back whole, so the check
+    # above cannot be passing because _read_summary is broken for everything.
+    (d / "summary.json").write_text(json.dumps({"verdict": "FAIL", "classification": "BUGCHECK"}))
+    assert _read_summary(tmp_path)["classification"] == "BUGCHECK"
+
+
+def test_ledger_append_is_reachable_without_a_Run(tmp_path, monkeypatch):
+    """The gap that cost a 201-run census: `conformance` builds its summary by hand
+    rather than through `Run`, so for the project's whole history it wrote ZERO rows
+    to the durable ledger — 19,711 rows across build/smoke/check/gate/farm/land and
+    not one conformance verdict. Its own records went to `~/vibeos-flake-farm/`,
+    which is outside the tree the backups cover, and did not survive the rebuild.
+
+    So the ledger writer must be callable by a command that does not use `Run`.
+    """
+    from . import artifacts
+
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    repo = tmp_path / "lane"
+    repo.mkdir()
+    artifacts.ledger_append(
+        repo,
+        cmd="conformance",
+        arch="arm64",
+        verdict="FAIL",
+        classification="A:bugcheck 0x0000001E",
+        duration_ms=1234,
+        extra={"launched": 0, "ok": 0, "bad": 0, "regressions": []},
+    )
+    rows = [
+        json.loads(ln)
+        for ln in (tmp_path / "vibeos-ledger.jsonl").read_text().splitlines()
+        if ln.strip()
+    ]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["cmd"] == "conformance" and row["arch"] == "arm64"
+    # The census needs the MODE, not just pass/fail: a lost boot and a flaky
+    # assertion are two populations and pooling them corrupts the rate.
+    assert row["classification"] == "A:bugcheck 0x0000001E"
+    assert row["launched"] == 0 and row["regressions"] == []
+
+
+def test_ledger_append_never_raises_and_never_blocks_a_run(tmp_path, monkeypatch):
+    """Telemetry must never break a build. Point it at a root that does not exist
+    and at a repo that is not a git checkout — both must be silent no-ops."""
+    from . import artifacts
+
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "nope"))
+    artifacts.ledger_append(tmp_path, cmd="conformance", arch="arm64", verdict="OK")
+    assert not (tmp_path / "nope").exists()
+    artifacts.ledger_append(None, cmd="conformance", arch="arm64", verdict="OK")
+
+
+def test_Run_finalize_still_writes_its_ledger_row(tmp_path, monkeypatch):
+    """The control for the refactor: extracting the writer to module level must not
+    stop `Run` from using it, or the fix for one command would silence six."""
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    repo = tmp_path / "lane"
+    repo.mkdir()
+    run = Run("smoke", "amd64", ts=1700000000)
+    run.add(Stage("boot", status="ok"))
+    run.finalize(repo)
+    rows = [
+        json.loads(ln)
+        for ln in (tmp_path / "vibeos-ledger.jsonl").read_text().splitlines()
+        if ln.strip()
+    ]
+    assert [r["cmd"] for r in rows] == ["smoke"]
+    assert rows[0]["verdict"] == "OK"
+
+
 # --- command timing and shipping Cargo target coverage ------------------
 
 
@@ -7156,6 +7284,153 @@ def test_queue_submit_keeps_a_DIVERGENT_tip_from_the_same_lane(queue_repo):
     assert {s.seq for s in q_mod.pending(repo)} == {first.seq, second.seq}
 
 
+def test_land_status_tip_distinguishes_SUPERSEDED_from_lost(queue_repo, capsys):
+    """The question an agent actually has is "is my work lost", and `land` cannot answer it:
+    it is honest in all four failure shapes. Supersession and genuine loss both present as
+    "my tip is not in the queue", and they need opposite responses."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    old_tip = _commit(repo, "one.txt")
+    q_mod.submit(repo, lane="lane-s")
+    new_tip = _commit(repo, "two.txt")
+    q_mod.submit(repo, lane="lane-s")
+
+    assert l_mod._explain_tip(repo, old_tip) == 0
+    out = capsys.readouterr().out
+    assert "SUPERSEDED" in out and new_tip[:12] in out
+    assert "Nothing is wrong" in out
+
+    # The queued descendant itself is a different answer, not the same one.
+    assert l_mod._explain_tip(repo, new_tip) == 0
+    assert "QUEUED" in capsys.readouterr().out
+
+
+def test_land_status_tip_reports_a_genuinely_unsubmitted_commit_as_LOST(queue_repo, capsys):
+    """...and this is the case that must NOT be reported as fine. A commit that is not on
+    master, not queued, not contained in anything queued, and carries no record at all was
+    either never submitted or did not persist — the exit code is nonzero so a script can
+    branch on it."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    orphan = _commit(repo, "orphan.txt")
+    assert l_mod._explain_tip(repo, orphan) == 1
+    assert "LOST" in capsys.readouterr().out
+
+
+def test_land_status_tip_answers_about_THIS_commit_not_this_lane(queue_repo, capsys):
+    """`research`'s corollary: never "did this lane land anything recently" — that is the
+    question BOTH failure modes answer yes to. A lane with a landed tip and a separate lost
+    tip must get two different answers."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    _commit(repo, "shipped.txt")
+    subprocess.run(["git", "push", "-q", "origin", "HEAD:master"], cwd=repo, check=True)
+    shipped = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    lost = _commit(repo, "lost.txt")
+
+    assert l_mod._explain_tip(repo, shipped) == 0
+    assert "LANDED" in capsys.readouterr().out
+    assert l_mod._explain_tip(repo, lost) == 1
+    assert "LOST" in capsys.readouterr().out
+
+
+def test_a_SUPERSEDED_tip_is_not_reported_as_merely_TRAVELLING(queue_repo, capsys):
+    """Both statements are true of a superseded tip — it IS contained in the descendant that
+    superseded it — and only one of them explains why it is not listed on its own. The first
+    spelling of this answered TRAVELLING and buried the supersession, which is the reading
+    that sent a lane hunting for lost work that was never lost."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    old_tip = _commit(repo, "a.txt")
+    q_mod.submit(repo, lane="lane-u")
+    _commit(repo, "b.txt")
+    q_mod.submit(repo, lane="lane-u")
+    assert l_mod._explain_tip(repo, old_tip) == 0
+    out = capsys.readouterr().out
+    assert "SUPERSEDED" in out
+    assert "Carried by lane-u" in out, "the containment fact is still worth printing"
+
+
+def test_land_submit_verifies_the_queue_actually_holds_it(lane_repo, tmp_path, monkeypatch):
+    """Ask 1: `queue.submit` returning a Submission means its writes did not raise. That is
+    NOT the same claim as "a later reader will find this record", and the two diverge on a
+    full disk, a partial write, or a concurrent resolve — after which an agent reports a
+    landing on the strength of an OK line. So the stage re-reads the queue from disk.
+
+    Driven through `land()` rather than asserting on the fixture, because the thing under
+    test is the STAGE's behaviour: it must produce a FAIL verdict, not a position.
+    """
+    lane, _ = lane_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path / "locks")
+    monkeypatch.setattr(q_mod, "try_become_conductor", lambda *a, **k: False)
+
+    real_submit = q_mod.submit
+
+    def vanishing(repo, **kw):
+        sub = real_submit(repo, **kw)
+        q_mod.resolve(repo, sub, outcome="rejected", reason="simulated non-persistence")
+        return sub
+
+    # Identify each run by SET DIFFERENCE, never by sorting the names. Run dirs are
+    # `<ts>-<random>-land-queue` and both of these land in the same second, so the random
+    # suffix decides the lexicographic order — `sorted(...)[-1]` is a handle standing in for
+    # "the newer run", and it picked the wrong dir the moment the suffixes landed the other
+    # way. (Same class as the entry this commit adds to the field manual; caught by the real
+    # check-tooling preflight after passing locally.)
+    art = tmp_path / "art"
+
+    def _only_new(before: set[Path]) -> dict:
+        new_dirs = set(art.glob("*-land-queue")) - before
+        assert len(new_dirs) == 1, f"expected exactly one new run dir, got {new_dirs}"
+        return json.loads((new_dirs.pop() / "summary.json").read_text())
+
+    monkeypatch.setattr(land_mod.queue, "submit", vanishing)
+    before = set(art.glob("*-land-queue")) if art.exists() else set()
+    rc = land_mod.land(_Args(direct=False, foreground=True), lane)
+    assert rc == 1, "a submission that did not persist must not exit 0"
+
+    summary = _only_new(before)
+    assert summary["verdict"] == "FAIL"
+    assert summary["classification"] == "LAND_ABORT"
+    detail = " ".join(s.get("detail", "") for s in summary["stages"])
+    assert "did NOT persist" in detail
+
+    # The control: with submit left alone the SAME path reports a verified position, so the
+    # assertion above cannot be passing because land() fails in this fixture regardless.
+    monkeypatch.setattr(land_mod.queue, "submit", real_submit)
+    before = set(art.glob("*-land-queue"))
+    assert land_mod.land(_Args(direct=False, foreground=True), lane) == 0
+    ok_summary = _only_new(before)
+    # WARN, not OK: this fixture has no `vibeos-cli` on disk so the lint stage warns, and the
+    # prior stage reports the rejection the first half simulated. Neither is the submit.
+    assert ok_summary["verdict"] == "WARN" and not ok_summary["classification"]
+    submit = next(s for s in ok_summary["stages"] if s["name"] == "submit")
+    assert submit["status"] == "ok" and "verified" in submit["detail"]
+
+
+def test_land_status_tip_calls_a_contained_commit_TRAVELLING_not_lost(queue_repo, capsys):
+    """A commit can be neither on master nor queued BY ITSELF and still be perfectly fine,
+    because a queued descendant carries it. Reporting that as lost would send an agent to
+    re-submit work already in the train — which is how the ancestor/descendant pair that
+    supersession exists to prevent gets recreated by hand."""
+    from . import land as l_mod
+
+    repo, _ = queue_repo
+    parent = _commit(repo, "parent.txt")
+    _commit(repo, "child.txt")
+    q_mod.submit(repo, lane="lane-t")
+    assert l_mod._explain_tip(repo, parent) == 0
+    out = capsys.readouterr().out
+    assert "TRAVELLING" in out and "lane-t" in out
+
+
 def test_queue_conductor_can_wait_for_its_turn(queue_repo, monkeypatch):
     """The orphan window: a conductor that gives up instantly leaves a submission with nobody
     to drain it (seen within minutes of shipping — a pre-queue lane held the lock via the direct
@@ -9307,11 +9582,11 @@ class _FlakyVM:
 
 
 def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
-    """Drive _launch_with_retry against a VM that fails `failures` times."""
-    from tests.qemu.cli import smoke as smoke_mod
+    """Drive launch_with_retry against a VM that fails `failures` times."""
+    from tests.qemu import vm as vm_mod
 
-    monkeypatch.setattr(smoke_mod, "_LAUNCH_ATTEMPTS", attempts)
-    monkeypatch.setattr(smoke_mod, "_LAUNCH_RETRY_SECONDS", 0)
+    monkeypatch.setattr(vm_mod, "LAUNCH_ATTEMPTS", attempts)
+    monkeypatch.setattr(vm_mod, "LAUNCH_RETRY_SECONDS", 0)
     budget = {"n": failures}
     built: list[_FlakyVM] = []
     logs: list[str] = []
@@ -9326,9 +9601,7 @@ def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
     timings: dict[str, float] = {}
     # _FlakyVM is a stand-in, not a QemuVM -- the helper only ever touches
     # start/stop/launch_timings, which is exactly what makes it testable here.
-    vm, n, exc = smoke_mod._launch_with_retry(
-        cast("Any", make_vm), timings, logs.append, "boot 1/5"
-    )
+    vm, n, exc = vm_mod.launch_with_retry(cast("Any", make_vm), timings, logs.append, "boot 1/5")
     return built, logs, timings, vm, n, exc
 
 
@@ -9371,10 +9644,10 @@ def test_launch_retry_is_a_no_op_on_a_healthy_launch(monkeypatch):
 
 
 def test_launch_attempts_stays_small_enough_not_to_slow_a_broken_launch():
-    from tests.qemu.cli import smoke as smoke_mod
+    from tests.qemu import vm as vm_mod
 
-    assert 2 <= smoke_mod._LAUNCH_ATTEMPTS <= 3
-    assert smoke_mod._LAUNCH_RETRY_SECONDS <= 5
+    assert 2 <= vm_mod.LAUNCH_ATTEMPTS <= 3
+    assert vm_mod.LAUNCH_RETRY_SECONDS <= 5
 
 
 def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():

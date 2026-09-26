@@ -8738,6 +8738,163 @@ published something wrong" gets you half of it, and misses the half where you pu
 because everything appeared fine. *(First case found in the wow64 lane, second by
 conformance-ratchet; the published/investigated line is the control-plane lane's.)*
 
+**The structural remedy, where the absence is OUR OWN artifact: make the claim POSITIVELY, up
+front.** The two cases above are absences in someone else's output and can only be met with a
+control. But a missing `summary.json` in a `vibeos-cli` run dir was our absence, and it was
+overloaded three ways: the run is still going, the run was killed, or the directory was never
+a run at all. A SIGKILL -- the host's memory reaper, a broad-kill, the machine going away --
+left an artifact dir holding a `full.log` of green stage lines and no verdict, and a caller
+whose exit status is not the work's (a pipeline's last stage, a backgrounded shell's `echo`;
+see the `$?`/`PIPESTATUS` rule) read that as a pass. **A reaped process must not look
+successful to its caller.** Fix: `artifacts.create_run_dir` -- the one choke point every run
+dir passes through -- now seeds `summary.json` with `verdict: INCOMPLETE`,
+`classification: RUN_INTERRUPTED` BEFORE the work starts, and `finalize()` overwrites it. What
+is on disk is then always a true statement: incomplete until a verdict exists, a verdict once
+one does. This is `.vibeos-build-stamp.json` (written at the END, so presence means finished)
+turned inside out -- there the positive claim is completion, here it is incompletion, and both
+exist so no consumer has to infer a run's state from an exit code it may not have. **Two
+things this must not break, both of which are the general shape of adding a positive marker
+to a system that has been reading an absence.** `RUN_INTERRUPTED` had to be added to
+`queue.INCONCLUSIVE`: these runs previously arrived as `""` (nothing to read), which is
+already inconclusive, so gaining a marker would otherwise have silently moved them OUT of the
+set and started REJECTING lanes for being reaped by the host. And `gate._read_summary` routes
+a marker back to its existing no-summary branch, which keeps the child's exit code and last
+console words -- the marker says strictly less than that path already knows. So: when you
+replace an absence with a marker, find every consumer that was reading the absence and check
+whether the marker lands them somewhere worse.
+**Validated in production within the hour, on the fix's own author.** A full
+`vibeos-cli gate` was reaped mid-run at **33 GiB MemAvailable with zero `oom` in `dmesg`** --
+the harness's background-task reaper, reading `MemFree`, which is near-zero on any warm
+machine. The run dir it left behind held `lint-*`, `cohab-*`, `smoke-*` and `conf-*`
+subdirectories full of apparently-complete work; before the marker its `summary.json` would
+simply have been missing. It now reads `verdict: INCOMPLETE`, `classification:
+RUN_INTERRUPTED`. Note which way the evidence ran: the reaper's own message named memory
+pressure, and the disconfirming check -- `MemAvailable` and `dmesg`, not the killer's
+account -- is the sibling rule one entry down.
+
+### The reading is true of the HANDLE, not of the thing — a different oracle, not a fresher one
+
+**Lead with the repair, because the symptom actively suggests the wrong one.** Every instance
+below looks like staleness from the inside, so the instinct is *check it again*. Checking it
+again cannot work: the reading is correct, current, and stable, and it is about the handle you
+used rather than about the thing you asked about. The fix is always a DIFFERENT oracle.
+
+    os.kill(pid, 0) on a zombie        pid        vs  process   -> /proc/<pid>/status State: Z
+    $? after a pipeline                last stage vs  the work  -> PIPESTATUS[0]
+    sccache -s on a 148G cache dir     its server vs  that dir  -> /proc/<pid>/environ
+    MemFree                            free ctr   vs  reclaimable -> MemAvailable
+    merge-base vs a moving origin/master  ref     vs  commit    -> land-status --tip
+    df / inside WSL                    VHDX ceiling vs the host volume under it
+                                                              -> VIBEOS_DISK_BACKING_MOUNTS
+
+The zombie is the clearest member and the one to reason from. `os.kill(pid, 0)` succeeding on
+a zombie is not a stale answer: the pid genuinely is in the table until the parent reaps it,
+no signal will ever change that, and repeating the call returns the same true thing forever.
+`vibeos-cli kill` reported `STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)` for a
+QEMU that had died promptly on the SIGTERM. *(Found and fixed by smp-bringup, `3ee8e7f16df`.)*
+
+**The most expensive member, and the one that shows the class is not a curiosity.** `df /`
+inside WSL reports the ext4 VHDX's own ceiling. The volume that can actually run out is the
+Windows one underneath it, which the guest cannot see at all. Seven lanes built concurrently
+after a build-time cut from ~45min to under 5; the VHDX grew to 990 GB against a 1 TiB ceiling
+on a host `C:` with 620 GiB free, and the HOST ran out while `df /` in the guest still reported
+room. The disk stopped attaching (HCS 0x80070570) and never mounted again -- WSL had to be
+rebuilt on a new 2 TB NVMe and everything restored from backup. Disk admission had been asking
+an honest question of the wrong subject the whole time. Fixed by
+`VIBEOS_DISK_BACKING_MOUNTS=/mnt/g`, which enters the backing mount into admission as a real
+filesystem so a build is refused on HOST headroom the same way it is on guest headroom. Note
+this one could not be caught by retrying either: `df /` would have returned the same reassuring
+number every time, right up to the failure.
+
+**The borderline member is the on-ramp, so concede it rather than defend it.**
+`git merge-base --is-ancestor <tip> origin/master` against a moving ref is BOTH a handle
+standing in for a commit AND genuinely stale, and it is the only member where "check it again
+later" does work — which makes it the one a reader will use to argue the class is just
+staleness. It is also where agents meet the class first, because queue forensics is where they
+land. So state the test outright: **if retrying helps, you are not yet in this class.**
+
+**What this class is NOT, and the two must stay separate.** A tool's own account of ITSELF —
+the low-memory killer naming its own cause while `dmesg` holds zero `oom` and 33 GiB is
+available — has no handle standing in for a thing. The reporter is the suspect, and the repair
+is a different WITNESS, not a different handle. The two sit side by side in AGENTS.md's
+"claim ABOUT a measurement" paragraph as siblings, and this entry carves that paragraph at the
+joint rather than spanning it. Tested against its six recorded instances: the handle rule
+covers five and fails exactly on the self-report one. *(Scope established by smp-bringup
+testing the formulation against the instance list rather than against the cases that suggested
+it — the same discipline that killed an earlier two-property generalisation here, which
+explained two of ten.)*
+
+**And it caught this entry's own author, in the test written to demonstrate it.** The
+regression test for `land`'s submit verification identified its two run dirs with
+`sorted(glob("*-land-queue"))[-1]`. Run dirs are `<ts>-<random>-land-queue`; both runs land in
+the same second, so the RANDOM SUFFIX decides lexicographic order, and the sort is a handle
+standing in for "the newer run". It passed locally and failed in the real `check-tooling`
+preflight, having picked the wrong dir. Sorting by name is the cheapest instance of this class
+there is, and knowing the class an hour earlier did not prevent writing it. Use set difference
+against the dirs that existed before the call, not an ordering over their names.
+
+**Corollary, from the same incident: fixing a SILENT failure by making it LOUD converts a cost
+you were not paying into one you pay immediately.** Both halves lived in the same function, and
+the loud half was introduced while fixing the silent one. `kill` had been reporting
+success-without-killing for hours at no observed cost; the "unkillable" message produced a
+wrong decision within a minute — a second replay started against media the caller believed was
+still held. Loud is still the right direction, but the new message is now load-bearing on the
+first read, so it needs the same scrutiny the silent one never got.
+
+### A per-item tally over run artifacts manufactures N findings from ONE event
+
+**Symptom.** A tally shows N items each failing across many unrelated batches, spanning lanes
+and commits. It reads as N independent, corroborated findings — and the batch spread looks like
+exactly the evidence that rules out "one lane broke it".
+
+**Cause.** One RUN-level failure that reports per-ITEM. A conformance lost boot
+(`BUGCHECK 0x1E`, `ok` and `bad` both 0) lists the ENTIRE baseline as *"in baseline (OK) but
+never launched"*, so 8 lost boots added +8 batches to every test in the baseline at once. That
+manufactured nine "flaky tests" — `CmSecurity`, `ExCallback`, `ExDoubleList`, `ExUuid`,
+`IoFilesystem`, `ZwMapViewOfSection`, `HalSystemInfo`, `FsRtlTunnel`, `RtlCaptureContextKM` —
+**none of which had ever been observed regressing in an ordinary sweep, not once.** The genuine
+set was three: `ExPools`, `NpfsConnect`, and marginally `KeEvent`/`IoInterrupt`.
+
+**Fix.** Before believing any per-item tally drawn from run-level artifacts, check for a SHARED
+CONSTANT across unrelated items. Nine tests all showing precisely 8 was the tell, sitting in
+plain sight in the table. Partition by failure MODE first and give each mode its own
+denominator — pooling them also corrupts the rate (27% pooled, 23.3% over mode-1 runs only).
+
+**Two things that make this worth its own entry rather than a footnote to the census.**
+
+*Each ghost arrives carrying its own count*, which is what makes one event read as N
+corroborations instead of one. A finding that shows up with a number attached defeats the
+instinct to ask "how do we know?", because the number looks like the answer.
+
+*Batch spread proves less than it appears to.* It rules out "one lane broke it" and nothing
+more. `ExPools` had 30 batches of perfect spread and was a HARNESS bug — a `_M_AMD64`/`_WIN64`
+arch gate making the test read half a `POOL_HEADER` — reproducible on every single boot, on one
+arch. Spread does not distinguish "flaky" from "the test is wrong on this arch", and that
+distinction is the entire six-week ExPools misfile.
+
+**Related, and it kills the obvious next move:** *"regressed in SOME runs of a batch" is not
+"nondeterministic cause".* Before the fix ExPools misread the header on every boot; what varied
+was which of `ProcessBilled`'s bits happened to be set. **A deterministic fault with a variable
+observable is indistinguishable from a flake in a pass/fail tally**, so an ALL-runs vs
+SOME-runs split cannot establish determinism no matter how clean the corpus is. And determinism
+was mostly undecidable here anyway: 151 of 170 batches held a single run, so there was nothing
+to compare within them.
+
+**The mirror error: a run that never REACHED the check is not evidence the check passed.** Grading
+"flaky" as *present in some runs at a commit, absent in others* graded `NpfsFileInfo.c:57` a FLAKE
+at 17 commits — it is deterministic (`Information = 158`, expected 154, every time). Of the 60
+rounds that "lacked" it at those commits, 6 died before the test ran and 54 completed with the line
+unparsed — a raw WCHAR swallowed the newline (`2f9bdcee30d`). The grader can fix the first kind, and
+nothing but the source data can fix the second. Absence counts only from a run that could have seen
+the failure: a completed round for an assertion; any round for a run-level event (lost boot,
+bugcheck); a green boot for a smoke signature — never a run that failed some OTHER way first. And
+one run-level event must collapse only on a VERBATIM shared constant: normalizing numbers first
+merged three tests each dropping a *different* count into one fake "mass" event. Both rules are code
+now, with the mutation-verified tests beside them: `vibeos-cli flake-report`
+(`tests/qemu/cli/flakes.py`). Read its grade, not a tally — and note that history it cannot re-parse
+stays wrong: those rounds' results files were in `/tmp`, which is why failing rounds are now
+preserved to `~/vibeos-flake-farm/fails/auto/` with their `*-results.txt`.
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
@@ -9276,6 +9433,27 @@ language rules) over loosening what it reports.
   which with `expool.rs`'s coalescer (`PoolType() == 0` is its absorb-this-neighbour test)
   would have been reported as a memory-corruption vector in a kernel that is writing a
   perfectly correct header.
+  **FIXED (2026-09-13):** the three `#ifdef _M_AMD64` in `kmt_test_kernel.h`'s `POOL_HEADER`
+  are now `#ifdef _WIN64`, matching the kernel's. Real Windows' `POOL_HEADER` is 16 bytes on
+  every 64-bit target -- the union's `ProcessBilled` pointer forces it -- so `_WIN64` was
+  always the correct predicate and `_M_AMD64` was an amd64-shaped assumption that held only
+  while amd64 was our sole 64-bit arch. arm64 ExPools went `pass=14 fail=4`
+  (`{119,135,178,210}`) -> `pass=17 fail=1` (`{210}`), stable across four boots, which is
+  **exactly amd64's baseline row** -- the two 64-bit arches agreeing is the confirmation, not
+  merely fewer failures. `:210` is the shared 64-bit 2GB-quota case and is not this bug.
+  The three stale `assert?`/`assert` marks at `:176`/`:178`/`:181` came out of the ratchet
+  with it: they described the misread, so leaving them would have kept the floor tolerating a
+  failure that can no longer happen. **The guard is what keeps this fixed**, not the edit --
+  `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now sits under the struct, wired to
+  the same invariant the kernel asserts, so the two copies cannot drift apart silently again.
+  Verified as a discriminator, not assumed: restoring `_M_AMD64` fails that assert at compile
+  time on arm64 (`'c_assert' declared as an array with a negative size`).
+  **And note which rule this turned out NOT to need.** "Never change the conformance tests"
+  had held this for six weeks as an owner decision. The owner's scoping: a build-flag or
+  arch-gate correction that makes a test read a structure the same width the kernel writes it
+  is not a semantic change and needs no approval. What needs approval is changing what a test
+  MEANS in a direction that favours us -- anything that would pass here and fail on real
+  Windows. Fix the OS, baseline the test; never the reverse.
 - **A genuine kernel fault does not fail an assertion STABLY, so determinism is evidence
   AGAINST a kernel bug.** The inversion is worth having explicitly, because the instinct runs
   the other way — a reliably failing assertion feels like the solid one to chase and the

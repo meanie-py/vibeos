@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import fcntl
 import json
 import os
@@ -1202,6 +1203,60 @@ def get_arch_config(arch: str) -> ArchConfig:
     if cls is None:
         raise ValueError(f"Unknown architecture: {arch!r}. Choose from: {list(ARCH_CONFIGS)}")
     return cls()
+
+
+def launch_with_retry(
+    make_vm: Callable[[], QemuVM],
+    timings: dict[str, float],
+    log: Callable[[str], None],
+    label: str,
+) -> tuple[QemuVM | None, int, Exception | None]:
+    """Start a VM, retrying a host-side launch failure.
+
+    EVERY gated boot path must launch through this. It lived in cli/smoke.py, so the
+    pytest `vm` fixture -- which carries conformance, the payload suites and the net
+    suite -- kept a bare `vm.start()`: 16 conformance rounds in two weeks died on
+    "QEMU did not connect to serial socket within 15.0s", before a guest instruction
+    ran, and were graded as LOST BOOTS beside real kernel failures.
+
+    Returns (vm, attempts, last_exc); `last_exc` is None on success. A fresh VM
+    is built per attempt because the port and serial socket path are chosen in
+    QemuVM.__init__ -- retrying start() on the same instance would retry onto
+    the same bad port and could never recover.
+    """
+    last_exc: Exception | None = None
+    vm: QemuVM | None = None
+    attempts = 0
+    while attempts < LAUNCH_ATTEMPTS:
+        attempts += 1
+        vm = make_vm()
+        started = time.monotonic()
+        try:
+            vm.start()
+            timings["start_seconds"] = round(time.monotonic() - started, 3)
+            timings.update(vm.launch_timings)
+            if attempts > 1:
+                # Loud on the way through: a retried launch is still an incident.
+                timings["launch_attempts"] = attempts
+                log(f"{label}: launched on attempt {attempts} (host-side flake)")
+            return vm, attempts, None
+        except Exception as e:
+            last_exc = e
+            first = str(e).splitlines()[0][:140]
+            log(f"{label}: start failed (attempt {attempts}/{LAUNCH_ATTEMPTS}): {first}")
+            with contextlib.suppress(Exception):
+                vm.stop()
+            if attempts < LAUNCH_ATTEMPTS:
+                time.sleep(LAUNCH_RETRY_SECONDS)
+    return vm, attempts, last_exc
+
+
+# Host-side launch retries. Small on purpose: the failure mode this exists for
+# resolves on the next attempt (a lost socket / port), so a third attempt buys
+# almost nothing and a large number would turn a genuinely broken launch into a
+# slow one. Overridable for tests.
+LAUNCH_ATTEMPTS = 3
+LAUNCH_RETRY_SECONDS = 2.0
 
 
 class QemuVM:

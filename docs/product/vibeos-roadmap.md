@@ -3746,6 +3746,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     affecting three call sites (ExPools.c:175, IoDeviceObject_drv.c:198/206), but it is a
     CONFORMANCE TEST change that will move many arm64 assertions at once and wants a
     deliberate arm64 re-seed — owner's call, not a drive-by.
+    **CLOSED 2026-09-13 — fixed, re-seeded, and confirmed.** Owner approved and scoped the
+    rule that had been holding it: a build-flag / arch-gate correction is not a semantic
+    change to a conformance test and needs no approval; approval is for changes to what a test
+    MEANS in a direction that favours us, i.e. that would pass here and fail on real Windows.
+    The three `#ifdef _M_AMD64` in `kmt_test_kernel.h`'s `POOL_HEADER` are now `#ifdef _WIN64`
+    (real Windows' header is 16 bytes on every 64-bit target; the union's `ProcessBilled`
+    pointer forces it). arm64 ExPools: `pass=14 fail=4` `{119,135,178,210}` ->
+    `pass=17 fail=1` `{210}`, stable across four boots — **identical to amd64's baseline row**,
+    which is the real confirmation: the two 64-bit arches now agree. `:210` is the shared
+    64-bit 2GB-quota case, not this bug. Baseline re-seeded with `--only ExPools`, and the
+    stale `:176`/`:178`/`:181` marks removed — they described the misread, so keeping them
+    would have left the floor tolerating a failure that can no longer occur. A
+    `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now guards the struct; restoring
+    `_M_AMD64` fails it at compile time on arm64, so this was verified as a discriminator
+    rather than assumed. Six weeks of "arm64 kernel lead" was a one-word arch gate.
+    **A PREDICTION, recorded before it can be confirmed.** The fleet-wide census
+    (`5255a32d74e4`, 196 real gate runs) counts ExPools as the LARGEST single contributor to
+    arm64 conformance redness at 30 distinct batches. That census predates this fix, so the
+    next one must show ExPools dropping out of the top of that list. If it does not, the fix
+    is not what closed it and this entry is wrong -- which is the point of writing the
+    prediction down while it is still falsifiable rather than noting the agreement afterwards.
     **Confirmed against the toolchain, not just read out of the headers.** `_WIN64` IS a
     clang builtin: `.build-tools/llvm-mingw/bin/clang -target <t> -dM -E </dev/null` gives it
     for both `aarch64-w64-mingw32` and `x86_64-w64-mingw32` and not for `i686-w64-mingw32`.
@@ -3967,6 +3988,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
     from a regression on any single sweep.
+    **DIAGNOSED 2026-09-13, from source, at zero machine cost — and it is a TIMING DEADLINE,
+    not an npfs defect.** Now 2 hits in 8 arm64 rounds the same day (~25%, so not rare after
+    all — the "did not recur in 9 sweeps" above was luck). Both hits are the identical
+    identity, `assert NpfsConnect.c:109`, and that line is
+    `ok_bool_true(Okay, "CheckConnectPipe returned")` for the SECOND client connect.
+    `CheckConnectPipe(..., 100)` -> `TriggerWork` -> `WaitForWork` (`NpfsHelpers.c:692-707`)
+    is a **relative 100 ms** `KeWaitForSingleObject`, and it returns FALSE *only* on
+    `STATUS_TIMEOUT`. **The discriminator is the neighbour, and it is the ExPools lesson
+    inverted:** `:110` (`ok_eq_hex(Status, STATUS_PIPE_NOT_AVAILABLE)`) PASSES on the same
+    run, and `Status` held `STATUS_SUCCESS` going in from the `:97` connect — so the worker
+    thread did signal, wrote the CORRECT status, and merely did it later than 100 ms. There an
+    assertion that passed on garbage hid a defect; here an assertion that passed on good data
+    proves the work was right. **Deliberately NOT baselined and NOT widened.** Widening a
+    timeout is the classic weaken-the-test move, and baselining it would bury the one thing
+    that might be real: 100 ms for a thread wake plus a pipe connect is generous even under
+    TCG, so exceeding it may be genuine scheduler latency in our kernel rather than an
+    over-tight suite deadline. **Those two are not separable by more sweeps** — the pass/fail
+    bit saturates at "over 100 ms" either way. The discriminator is the ACTUAL delay, which
+    needs an instrument (record the wait's elapsed time on the timeout path), not more boots.
+    That is the next step whenever this is picked up; do not re-soak it.
     **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
     (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate ASKS for the
     WoW64 ladder (`gate_argv=['--ladder']`, previously silently empty), so `LADDER_FAIL` is a

@@ -1042,6 +1042,15 @@ INCONCLUSIVE = {
     "DISK_ADMISSION_FAIL",
     "BUILD_POLICY_REFUSED",
     "SCANNER_ERROR",
+    # RUN_INTERRUPTED: the child was killed before it could finalize -- the host's
+    # memory reaper, a broad-kill, the machine going away. It is the marker
+    # `artifacts.write_interrupted_marker` seeds at run-dir creation, and it reaches
+    # here only because the child never overwrote it. Purest environment: the lane's
+    # code was never graded at all. Note this NARROWS nothing -- these runs previously
+    # arrived as "" (no summary to read), which is already in this set. The entry
+    # exists so that gaining a positive marker does not silently move them OUT of it
+    # and start rejecting lanes for being reaped.
+    "RUN_INTERRUPTED",
 }
 
 

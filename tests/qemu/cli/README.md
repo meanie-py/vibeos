@@ -215,6 +215,19 @@ a 1-in-50 flake becomes overnight statistics instead of lore. Canonical
 overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
 "SPECIALPOOL=*"`. Staleness-gated like smoke.
 
+### `flake-report [--days N] [--arch A] [--source smoke|conformance] [--min K] [--json]`
+**Which fleet failures are flakes.** `farm-report` reads only `farm` soaks; the fleet
+runs `smoke`/`gate`/`conformance`, so this reads the durable ledger (every run) plus the
+preserved evidence under `~/vibeos-flake-farm/` (history from before ledger rows carried
+signatures). Each failure is reduced to a signature (`BUGCHECK 0x1E post-marker @ fn`,
+`HANG_TIMEOUT wedged | <last serial>`, `assert File.c:N`, the payload/ladder that failed),
+then graded at the commit it was seen on: **FLAKE** = present in one run and observed
+*absent* in another at the same commit; **DETERMINISTIC** = present in every observing run
+(n≥2); **UNGRADED** otherwise. A run only counts as absence if it could have seen the
+failure (a lost boot says nothing about an assertion it never reached). Dirty-tree runs
+are listed separately and never graded, because their commit does not name the code. The
+evidence pointer says so when it pointed into `/tmp` and is gone.
+
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
 The source-scanner suite runs **once in two disjoint partitions**. Five audited

@@ -26,6 +26,7 @@ from . import (
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
+from . import flakes as flakes_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
 from . import health as health_mod
@@ -430,6 +431,15 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--json", action="store_true")
     ls.add_argument("--mine", action="store_true", help="only this lane's verdicts")
     ls.add_argument("--limit", type=int, default=8, help="recent verdicts to show (default 8)")
+    ls.add_argument(
+        "--tip",
+        metavar="COMMIT",
+        help="answer about ONE commit instead of the queue: landed / queued / travelling "
+        "inside a queued descendant / superseded / rejected / never queued / LOST. Use "
+        "this to check a submission rather than reading a `land` OK line — `land` is "
+        "honest in every failure shape, so its output cannot tell you (see "
+        "land-verification-asks.md)",
+    )
     ls.set_defaults(fn=land_mod.cmd_land_status)
 
     f = sub.add_parser(
@@ -476,6 +486,19 @@ def build_parser() -> argparse.ArgumentParser:
     fr.add_argument("--since", default="", help="only records with ts >= YYYYMMDD[-HHMMSS]")
     fr.add_argument("--sha", default="", help="only records from this short sha")
     fr.set_defaults(fn=farm_mod.farm_report)
+
+    fl = sub.add_parser(
+        "flake-report",
+        help="the FLEET's failures (smoke + conformance, from the durable ledger and "
+        "preserved evidence) clustered by signature and graded FLAKE / DETERMINISTIC / "
+        "UNGRADED at the commit they were seen on",
+    )
+    fl.add_argument("--days", type=float, default=14, help="window (default 14)")
+    fl.add_argument("--arch", choices=["i386", "amd64", "arm64"], default=None)
+    fl.add_argument("--source", choices=["all", "smoke", "conformance"], default="all")
+    fl.add_argument("--min", type=int, default=2, help="hide signatures seen fewer times")
+    fl.add_argument("--json", action="store_true")
+    fl.set_defaults(fn=flakes_mod.flake_report)
 
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")
     arch_arg(bo)

@@ -660,12 +660,30 @@ def _land_queued(args, repo: Path) -> int:
             _source_lint_preflight(repo, run, args)
             _difftest_preflight(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
-            depth = len(queue.pending(repo))
+            # VERIFY the submission persisted, by RE-READING the queue from disk rather
+            # than trusting the return value. `queue.submit` returning a Submission means
+            # its writes did not raise; it is not the same claim as "a later reader will
+            # find this record". The two diverge on a full disk, a partial write, a
+            # concurrent resolve -- and every one of those ends with an agent reporting a
+            # landing on the strength of an `OK` line. This is Ask 1 of
+            # land-verification-asks.md, and it closes shape (a) ONLY: a process killed
+            # before reaching here still cannot report, which is why the
+            # RUN_INTERRUPTED marker (artifacts.write_interrupted_marker) has to exist
+            # separately. Do not read this stage as closing both.
+            landed = queue.pending(repo)
+            if not any(s.seq == sub.seq and s.tip == head for s in landed):
+                raise LandAbort(
+                    f"submit did NOT persist: {lane} @ {head[:12]} (seq {sub.seq[-24:]}) is "
+                    f"not in the queue when re-read, though queue.submit returned it. "
+                    f"{len(landed)} other submission(s) are queued, so the queue itself is "
+                    f"readable. You are NOT in the queue -- do not report this as landed. "
+                    f"Re-run `./vibeos-cli land`, and check `df -h /` first."
+                )
             run.add(
                 Stage(
                     "submit",
                     status="ok",
-                    detail=f"{lane} @ {head[:12]} queued (position {depth})",
+                    detail=f"{lane} @ {head[:12]} queued (position {len(landed)}, verified)",
                 )
             )
         held = queue.effective_hold(repo)
@@ -964,6 +982,91 @@ def _land_direct(args, repo: Path) -> int:
         return run.finalize(repo)
 
 
+def _explain_tip(repo: Path, tip: str) -> int:
+    """`land-status --tip <sha>` — where did THIS commit get to?
+
+    Ask 1's other half. `land` is honest in all four failure shapes (see
+    land-verification-asks.md), so the question an agent actually has -- "is the work I
+    just submitted lost?" -- was answerable only by remembering a two-test ancestry
+    recipe and knowing that supersessions render in a third list. A rule with no command
+    behind it is a rule that gets skipped, and this one was skipped into a wrong report
+    to a user, which is the only failure here that cannot be fixed after the fact.
+
+    Answers about a SPECIFIC commit, never "did this lane land anything recently" -- that
+    is the question both failure modes answer yes to. And it does not depend on a record
+    being inside `results()`'s recent window: on a busy morning a lane's own superseded
+    row scrolls off behind other lanes' landings, which is exactly how "my tip vanished"
+    was read as work-loss when nothing had been lost.
+    """
+    try:
+        tip = queue.git(repo, "rev-parse", tip)
+    except subprocess.SubprocessError:
+        print(f"  UNKNOWN COMMIT: {tip} does not resolve in this worktree.")
+        return 2
+    short = tip[:12]
+    queue.git(repo, "fetch", "origin")
+    if queue.git_ok(repo, "merge-base", "--is-ancestor", tip, "origin/master"):
+        print(f"  LANDED: {short} is an ancestor of origin/master. The work is on mainline.")
+        return 0
+    pend = queue.pending(repo)
+    for s in pend:
+        if s.tip == tip:
+            waited = max(0, int(time.time() - s.submitted_at))
+            print(
+                f"  QUEUED: {short} is pending as {s.lane} "
+                f"({waited // 60}m{waited % 60:02d}s). Not lost, not landed yet."
+            )
+            return 0
+    # A RECORDED outcome outranks the containment inference below, because a superseded tip
+    # is ALSO contained in the descendant that superseded it -- both statements are true and
+    # only one of them explains why the tip is not listed on its own. Carrier named anyway.
+    carrier = next(
+        (s for s in pend if queue.git_ok(repo, "merge-base", "--is-ancestor", tip, s.tip)),
+        None,
+    )
+    for rec in queue.results(repo, limit=500):
+        if rec.get("tip") != tip:
+            continue
+        outcome = rec.get("outcome") or "?"
+        if outcome == "superseded":
+            print(f"  SUPERSEDED: {short} — {rec.get('reason', '')}")
+            print("    Nothing is wrong: your newer tip contains this one. Follow that tip.")
+            if carrier:
+                print(f"    Carried by {carrier.lane} @ {carrier.tip[:12]}, still queued.")
+        elif outcome == "landed":
+            # Reachable when origin/master is behind what the queue recorded.
+            print(
+                f"  LANDED as {str(rec.get('landed_as', ''))[:12]}, but {short} is not yet "
+                f"an ancestor of THIS worktree's origin/master — run `git fetch`."
+            )
+        else:
+            print(
+                f"  {outcome.upper()}: {short} ({rec.get('classification') or '?'}) "
+                f"{str(rec.get('reason', ''))[:120]}"
+            )
+            print(f"    artifact: {rec.get('artifact') or '(none)'}")
+        return 0
+    if carrier:
+        print(
+            f"  TRAVELLING: {short} is not queued itself, but is contained in "
+            f"{carrier.lane} @ {carrier.tip[:12]}, which IS queued. Landing that lands this."
+        )
+        return 0
+    for rec in queue.abandoned_attempts(repo):
+        if rec.get("tip") == tip:
+            print(
+                f"  NEVER QUEUED: a `land` for {short} died before enqueueing anything "
+                f"(pid {rec.get('pid')} is gone). Re-run `./vibeos-cli land`."
+            )
+            return 1
+    print(
+        f"  LOST: {short} is not on origin/master, not queued, not contained in anything "
+        f"queued, and has no verdict or abandoned attempt on record. It was never "
+        f"submitted, or its submission did not persist. Re-run `./vibeos-cli land`."
+    )
+    return 1
+
+
 def _check_hold_for_direct(repo: Path) -> None:
     """`--direct` is how a held line gets its fix in, so it is the one path a hold does not
     simply close -- but only for the lane that holds it (or anyone, under an AUTO hold on a
@@ -1173,7 +1276,12 @@ def _evict(args, repo: Path) -> int:
 
 def cmd_land_status(args, repo: Path) -> int:
     """`vibeos-cli land-status` — the merge queue at a glance: who is training, what is
-    queued behind them, and recent verdicts (a rejected lane's triage pointer lives here)."""
+    queued behind them, and recent verdicts (a rejected lane's triage pointer lives here).
+
+    With `--tip <sha>`, answers about ONE commit instead (see `_explain_tip`)."""
+    tip = getattr(args, "tip", None)
+    if tip:
+        return _explain_tip(repo, tip)
     holder = hostlock.land_holder()
     subs = queue.pending(repo)
     hold = queue.effective_hold(repo)

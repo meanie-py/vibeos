@@ -32,6 +32,8 @@ import sys
 import time
 from pathlib import Path
 
+from . import artifacts, flakes
+
 SUITE = "kmtest"
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
@@ -851,16 +853,7 @@ def _conformance_once(args, repo: Path) -> int:
         serial_text = Path(summary["serial_log"]).read_text(errors="replace")
     except Exception:
         pass
-    if bugcheck:
-        shape = f"A:bugcheck {bugcheck}"
-    elif not results:
-        shape = "B:no-launch"
-    elif not done_line:
-        shape = "stalled/DID-NOT-FINISH"
-    elif regressions:
-        shape = "clean-but-ratchet-regression"
-    else:
-        shape = "clean"
+    shape = round_shape(bugcheck, results, done_line, regressions, serial_text)
     try:
         from . import triage as _triage
 
@@ -886,7 +879,56 @@ def _conformance_once(args, repo: Path) -> int:
             "rust_panics": serial_text.count("*** RUST PANIC"),
         }
     )
+    # Out of /tmp before anything reads it: reboots wipe the artifact root, and a
+    # red round's serial + results are the only way to re-grade it later.
+    if shape != "clean":
+        kept = artifacts.preserve_failure(run_dir, base, shape, repo)
+        if kept:
+            rec["preserved"] = kept
     _append_round(rec)
+
+    # ...and to the SHARED ledger under vibeos_root, which is what every other
+    # command writes and what `vibeos-cli health` reads. `_append_round` above is
+    # not a substitute: it writes `~/vibeos-flake-farm/`, OUTSIDE the tree the
+    # backups cover. On 2026-09-14 the box was rebuilt, the shared ledger came
+    # back with 19,711 rows, and the flake farm did not come back at all -- taking
+    # a 201-run arm64 census with it, along with every summary.json it had been
+    # reconstructed from. The census had to scrape /tmp in the first place because
+    # conformance verdicts were absent from the durable ledger: build 6152,
+    # smoke 4741, check 3543, gate 1265, farm 1194, land 1087, conformance ZERO.
+    #
+    # The fields below are exactly what a census needs, so the next one is a query
+    # over a durable file rather than an archaeology dig across volatile run dirs:
+    # `shape` separates a lost boot from a flaky assertion (they are two
+    # populations and pooling them corrupts the rate), and `regressions` names the
+    # tests. Keep this a SUMMARY -- the bulky per-run evidence (census_lines,
+    # serial excerpts) stays in the flake farm; this is the part that must survive.
+    artifacts.ledger_append(
+        repo,
+        cmd="conformance",
+        arch=base,
+        verdict="OK" if shape == "clean" else "FAIL",
+        classification=shape,
+        duration_ms=int(elapsed * 1000),
+        extra={
+            "suite": SUITE,
+            "smp": smp,
+            "mp_kernel": summary["mp_kernel"],
+            "launched": len(results),
+            "ok": ok,
+            "bad": bad,
+            "bugcheck": bugcheck,
+            "have_baseline": have_baseline,
+            "regressions": regressions,
+            "new_passes": new_passes,
+            # What `flake-report` grades: the round's failure signatures, whether the
+            # commit names the code that ran, and where the evidence survives.
+            "sigs": flakes.conformance_signatures(rec),
+            "dirty": artifacts._is_dirty(repo),
+            "run_id": run_dir.name,
+            "preserved": rec.get("preserved"),
+        },
+    )
 
     # --- 7. report + exit code -----------------------------------------------
     verdict = "done" if done_line else "DID NOT FINISH"
@@ -917,3 +959,27 @@ def _conformance_once(args, repo: Path) -> int:
         return 0
     print("  ratchet holds: no regressions vs baseline.")
     return 0
+
+
+def round_shape(bugcheck, results: list, done_line, regressions: list, serial_text: str) -> str:
+    """The failure MODE of one round -- the partition every flake rate is taken within.
+
+    A round whose serial holds NOTHING but the harness's own `#` header never ran a
+    guest instruction. 16 rounds in two weeks failed that way in under a minute, with no
+    kernel on serial; the one whose run dir survived shows why -- handshake_seconds
+    15.001, QEMU never connected the serial socket. Filed as B:no-launch they sat in the
+    same bucket as kernels that died before the sweep, which is a different bug on a
+    different side of the machine. Named for what is OBSERVED, not for a cause.
+    """
+    guest_serial = any(ln.strip() and not ln.startswith("#") for ln in serial_text.splitlines())
+    if bugcheck:
+        return f"A:bugcheck {bugcheck}"
+    if not guest_serial:
+        return "L:no-guest-serial"
+    if not results:
+        return "B:no-launch"
+    if not done_line:
+        return "stalled/DID-NOT-FINISH"
+    if regressions:
+        return "clean-but-ratchet-regression"
+    return "clean"
