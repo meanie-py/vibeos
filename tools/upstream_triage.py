@@ -46,6 +46,7 @@ import posixpath
 import re
 import subprocess
 import sys
+from collections.abc import Container
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -96,7 +97,7 @@ TEST_TREES = ("modules/rostests/", "modules/rosapps/")
 
 
 def classify_file(
-    rel: str, live: set[str], registry, on_disk: bool, disabled: frozenset[str] = frozenset()
+    rel: str, live: set[str], registry, on_disk: bool, disabled: Container[str] = frozenset()
 ) -> str:
     """One file -> one bucket. See the module docstring for why headers are separate."""
     if registry.is_vendored(rel):
@@ -152,22 +153,63 @@ def resolve_comment_sources(cmake_rel: str, line: str, exists) -> set[str]:
     return out
 
 
-def disabled_sources(root: Path = REPO) -> frozenset[str]:
-    """Every existing source a commented-out CMake line names, across the tree. Uses
-    cohab_census's walker and comment pattern, so the two tools agree on what a
-    disabling comment is."""
+class DisabledIndex:
+    """Answers `rel in index`: was this dead source deliberately switched off?
+
+    Two rules, either suffices:
+      * a commented CMake line anywhere names it exactly (resolve_comment_sources) --
+        needed for disables that live far from the file, like ntos.cmake's; or
+      * the NEAREST CMakeLists.txt above it carries a comment mentioning Rust, i.e.
+        the module is cohab-flipped. Comments describe flips in prose no resolver
+        keeps up with -- usbport's is `(debug/device/endpoint/.../roothub/...` and
+        pcix's is `arb/{ar_busno,ar_memio,...}.c` -- and the first version, exact
+        names only, filed a real usbport fix as UNBUILT.
+    The module rule errs toward ORACLE on purpose: a wrong ORACLE costs one read,
+    a wrong UNBUILT hides a translated bug, which is what this tool exists to find."""
+
+    def __init__(self, exact: set[str], cmake_dirs: set[str], rust_dirs: set[str]) -> None:
+        self.exact = exact
+        self.cmake_dirs = cmake_dirs
+        self.rust_dirs = rust_dirs
+
+    def __contains__(self, rel: object) -> bool:
+        if not isinstance(rel, str):
+            return False
+        if rel in self.exact:
+            return True
+        d = posixpath.dirname(rel)
+        while d:
+            if d in self.cmake_dirs:
+                return d in self.rust_dirs
+            d = posixpath.dirname(d)
+        return False
+
+
+_MENTIONS_RUST = re.compile(r"^\s*#.*\brust\b", re.IGNORECASE)
+
+
+def disabled_sources(root: Path = REPO) -> DisabledIndex:
+    """Index every deliberately disabled source in the tree. Uses cohab_census's walker
+    and comment pattern, so the two tools agree on what a disabling comment is."""
     cc = _load("cohab_census", HERE / "cohab_census.py")
-    out: set[str] = set()
+    exact: set[str] = set()
+    cmake_dirs: set[str] = set()
+    rust_dirs: set[str] = set()
     for p in cc.cmake_files(root):
         rel = p.relative_to(root).as_posix()
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        here = posixpath.dirname(rel)
+        if p.name == "CMakeLists.txt" and here:
+            cmake_dirs.add(here)
+            if any(_MENTIONS_RUST.match(line) for line in text.splitlines()):
+                rust_dirs.add(here)
         for line in text.splitlines():
             if cc.SRC_IN_COMMENT.match(line):
-                out |= resolve_comment_sources(rel, line, lambda r: (root / r).is_file())
-    return frozenset(out)
+                exact |= resolve_comment_sources(rel, line, lambda r: (root / r).is_file())
+    return DisabledIndex(exact, cmake_dirs, rust_dirs)
 
 
 def triage(
@@ -175,7 +217,7 @@ def triage(
     live: set[str],
     registry,
     repo: Path = REPO,
-    disabled: frozenset[str] = frozenset(),
+    disabled: Container[str] = frozenset(),
 ):
     """Yield (sha, subject, verdict, {bucket: [files]}) oldest-first."""
     log = git("log", "--reverse", "--format=%H%x1f%s", rev_range, repo=repo)

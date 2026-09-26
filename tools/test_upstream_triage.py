@@ -120,3 +120,27 @@ def test_vendored_beats_everything() -> None:
 def test_non_source_files_are_other() -> None:
     assert cls("sdk/cmake/gcc.cmake", set()) == T.OTHER
     assert cls("boot/bootdata/hivesys.inf", set()) == T.OTHER
+
+
+def test_module_level_flip_catches_prose_comments() -> None:
+    """usbport's CMakeLists describes its flip as `(debug/device/.../roothub/...` -- no
+    resolvable file name -- and the exact-name rule filed a real usbport fix (roothub.c,
+    da13f3ca820) as UNBUILT. The nearest CMakeLists mentioning Rust must be enough."""
+    idx = T.DisabledIndex(
+        exact=set(),
+        cmake_dirs={"drivers/usb/usbport", "drivers/bus/newthing", "drivers"},
+        rust_dirs={"drivers/usb/usbport", "drivers"},
+    )
+    assert "drivers/usb/usbport/roothub.c" in idx
+    # the NEAREST CMakeLists decides: a module with its own non-Rust CMakeLists is not
+    # flipped just because a parent directory's CMakeLists mentions Rust somewhere
+    assert "drivers/bus/newthing/x.c" not in idx
+    assert cls("drivers/usb/usbport/roothub.c", set(), disabled=idx) == T.ORACLE
+    assert cls("drivers/bus/newthing/x.c", set(), disabled=idx) == T.UNBUILT
+
+
+def test_exact_disable_wins_even_without_a_rust_comment_nearby() -> None:
+    """pnpmgr.c has no CMakeLists of its own; ntos.cmake disables it by path."""
+    f = "ntoskrnl/io/pnpmgr/pnpmgr.c"
+    idx = T.DisabledIndex(exact={f}, cmake_dirs={"ntoskrnl"}, rust_dirs=set())
+    assert f in idx
