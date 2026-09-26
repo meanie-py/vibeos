@@ -2739,6 +2739,18 @@ desktop (amd64 setup's registration pass). Every other consrv site used the cons
 grep a module for `ServerData.as_ptr().add(<digit>)` / `[<digit>]` and friends; a literal
 where the C names a slot is the bug until proven otherwise.
 
+### A key the INF plainly declares is missing from the livecd hive
+
+**Symptom:** a service or DLL fails on one arch only, with "not found"-style errors for a key that
+`boot/bootdata/*.inf` clearly adds. On amd64, localspl's `_OpenEnvironment` failed with 1805
+(`ERROR_INVALID_ENVIRONMENT`), `DllMain` returned FALSE, and the spooler never started.
+**Cause:** the key lives in an arch-decorated section such as `[AddReg.NTamd64]`. Setup applies
+`AddReg` and then `AddReg.NT<INF_ARCH>` (`base/setup/lib/registry.c`), but mkhive, which builds the
+livecd hives, used to read only the undecorated sections. **Fix:** mkhive takes `-a:<arch>`, which
+`create_registry_hives` passes (`x86`/`amd64`/`arm64`). To check a key directly, search the built
+hive for its name: `grep -c "Windows x64" build-amd64/boot/bootdata/system`. Key names are stored
+as ASCII, so a plain grep finds them.
+
 ### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
 
 Check the CASE of the first component before anything else. The registry root object is inserted

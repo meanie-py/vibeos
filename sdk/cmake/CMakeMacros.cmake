@@ -245,6 +245,8 @@ macro(dir_to_num dir var)
         set(${var} 79)
     elseif(${dir} STREQUAL reactos/winsxs/arm64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef)
         set(${var} 81)
+    elseif(${dir} STREQUAL reactos/system32/spool/prtprocs/arm64)
+        set(${var} 82)
 
 
     else()
@@ -823,10 +825,18 @@ function(create_registry_hives)
                 NO_CAB
                 FOR bootcd regtest)
 
+    # The INF decoration setup applies after [AddReg] ([AddReg.NT<arch>], INF_ARCH in
+    # base/setup/lib/spapisup/spapisup.h); mkhive applies it too, or the livecd hive lacks it.
+    if(ARCH STREQUAL "i386")
+        set(_inf_arch x86)
+    else()
+        set(_inf_arch ${ARCH})
+    endif()
+
     # BootCD setup system hive
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/boot/bootdata/SETUPREG.HIV
-        COMMAND native-mkhive -h:SETUPREG -u -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_registry_inf} ${CMAKE_SOURCE_DIR}/boot/bootdata/setupreg.inf
+        COMMAND native-mkhive -h:SETUPREG -u -a:${_inf_arch} -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_registry_inf} ${CMAKE_SOURCE_DIR}/boot/bootdata/setupreg.inf
         DEPENDS native-mkhive ${_registry_inf})
 
     add_custom_target(bootcd_hives
@@ -852,7 +862,7 @@ function(create_registry_hives)
                ${CMAKE_BINARY_DIR}/boot/bootdata/default
                ${CMAKE_BINARY_DIR}/boot/bootdata/sam
                ${CMAKE_BINARY_DIR}/boot/bootdata/security
-        COMMAND native-mkhive -h:SYSTEM,SOFTWARE,DEFAULT,SAM,SECURITY -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_livecd_inf_files}
+        COMMAND native-mkhive -h:SYSTEM,SOFTWARE,DEFAULT,SAM,SECURITY -a:${_inf_arch} -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_livecd_inf_files}
         DEPENDS native-mkhive ${_livecd_inf_files})
 
     add_custom_target(livecd_hives

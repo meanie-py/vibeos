@@ -127,6 +127,18 @@ static void dump_hung_thread(HWND h)
     dump_thread(pid, tid);
 }
 
+/* A process that ignores WM_CLOSE is stuck somewhere no single window's thread tells us:
+ * the UI thread may be fine while a worker holds up ExitProcess. Dump every thread. */
+static void dump_process(DWORD pid)
+{
+    THREADENTRY32 te = { sizeof te };
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (s == INVALID_HANDLE_VALUE) return;
+    for (BOOL k = Thread32First(s, &te); k; k = Thread32Next(s, &te))
+        if (te.th32OwnerProcessID == pid) dump_thread(pid, te.th32ThreadID);
+    CloseHandle(s);
+}
+
 /* Boot-time `setup -mini` installs devices and registers components for minutes after the
  * desktop appears, with its own "Please wait" dialog. Apps launched meanwhile compete with it
  * (a window takes past any sane timeout to answer) and its dialog sits among theirs, so wait. */
@@ -282,7 +294,12 @@ int main(void)
             HANDLE h = j ? OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION,
                                        FALSE, pids[j]) : pi.hProcess;
             if (!h) continue;
-            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) { TerminateProcess(h, 1); close = "TIMEOUT"; }
+            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) {
+                SAY("  close timeout pid=%lu, threads:\n", pids[j]);
+                dump_process(pids[j]);
+                TerminateProcess(h, 1);
+                close = "TIMEOUT";
+            }
             if (!j) GetExitCodeProcess(h, &rc);
             if (j) CloseHandle(h);
         }

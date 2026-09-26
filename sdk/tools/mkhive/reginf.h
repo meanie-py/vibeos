@@ -26,6 +26,8 @@
 
 #pragma once
 
+extern PCSTR InfArch;
+
 BOOL
 ImportRegistryFile(PCHAR Filename);
 
