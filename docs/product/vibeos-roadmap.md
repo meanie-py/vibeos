@@ -658,7 +658,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 4 OPEN** (2026-09-25; `combo` and `winstation` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
+  REFERENCE + 2 OPEN** (2026-09-25; `combo`, `winstation` and `scroll`'s guest-only failures
+  FIXED and `monitor` no longer diverging, 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
@@ -667,9 +668,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
   | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
   | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
-  | `monitor` | 20 failures | **23** | +3 guest-only |
+  | `monitor` | 20 failures | ~~23~~ **20** | **NO LONGER DIVERGES 2026-09-26** — cause unattributed, see below |
   | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
-  | `scroll` | 140 failures | **17** | fewer under WoW64 — NOT yet a win, see below |
+  | `scroll` | 140 failures | ~~17~~ **14** | guest-only `GetScrollPos` FIXED 2026-09-26; the 140 is native's CHILD, see below |
   | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
   **`combo` was win32k reading guest user32's private `HEADCOMBO` at the amd64 layout.**
   `NtUserGetComboBoxInfo` does not ask the control; it follows the pointer in the window's
@@ -695,6 +696,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`WM_NCHITTEST` on an invisible desktop), which native never reaches because its child
   launch fails first with `CreateProcessA` error 2 on `argv[0]`. That makes the NATIVE
   control's gap the thing to fix before 1054 can be judged.
+  **`monitor` re-measured 2026-09-26: 20 and 20**, and the assertion lists match line for line
+  except one native-only `WaitForSingleObject returned 102` (3181), a native timing miss.
+  The +3 does not reproduce, and WHICH three assertions they were was never recorded (the
+  09-25 log died with `/tmp`), so the fix cannot be attributed: that day's `NtQueryObject`
+  marshaller and the upstream merges since are both candidates, and neither is proven.
+  Record per-assertion diffs, not counts, or a disappearing divergence cannot be explained.
   `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
   owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
@@ -705,8 +712,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   says executing them needs four 32-bit record layouts and names `GDIBSPATBLT.hbrush`
   first; this is that record. It also says the discard "costs no drawing that was not
   already dropped" — true, and now known to cost a conformance assertion as well.
-  **`scroll` 140 -> 17 must not be read as an improvement until someone diffs the
-  assertions.** A conformance suite reporting fewer failures usually means it stopped
+  **`scroll` diffed 2026-09-26, and the 140 -> 17 was neither a win nor a loss.** The whole
+  gap is the `write_process` child: native's reports "128 failures in child process" with
+  its output invisible, the guest's runs 12 tests with 2 failures (905/911). The parents
+  differ by exactly three guest-only failures, 161/170/179 (`GetScrollPos(SB_CTL)` wrong
+  after a `SetScrollPos` that worked). FIXED: guest user32 read the control's `SBCALC` as
+  `pwnd as PSBWND`, i.e. off the end of its 32-bit WND SNAPSHOT instead of the window's real
+  extra bytes. It now goes through `wnd_extra_base` (scrollbar.rs `SBCalcOf`), the fix M11
+  made for EDIT. Guest now 14. Still OPEN, and NATIVE-side: winetest reports a child's EXIT
+  CODE as its failure count, and 128 is `0x80`, which this tree has seen as a death status
+  before, so native's child may be dying rather than failing. Until its output is visible
+  the guest's 905/911 cannot be attributed. Also fixed: i386 `wow64_unsupported` fired in
+  NATIVE processes ("SBINFO ... results will be garbage" on bare i386), a false alarm now
+  gated on `IsWow64()`.
+  **The original caution stands as method:** a conformance suite reporting fewer failures
+  usually means it stopped asking. A conformance suite reporting fewer failures usually means it stopped
   asking, not that we got better, and the byte counts (896 native vs 1271 guest) do not
   settle it either way.
   Cost, for budgeting a wider sweep: most subtests are under 3s natively; the outliers are
