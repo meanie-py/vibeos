@@ -553,6 +553,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   80s, `clipboard` 73s — so a 21-subtest guest sweep needs a drain floor near 2400s.
   Repro: `build --arch <a> --winetest-sweep --winetest-skip "input msg win"` on both
   arches, then `smoke --arch amd64 --ladder` and `smoke --arch i386 --ladder`.
+  **Stated because it would otherwise read as a green run: the amd64 sweep boot FAILED.**
+  `BUGCHECK 0x19 (BAD_POOL_HEADER, param1 0xa)` at serial line 996885 — 348k lines AFTER
+  `sweep complete` at 648787 — during the stock-applet phase with doom running, with a
+  free-list dump whose entries mostly carry `tag=00000000`. The A/B numbers above all
+  predate it and are unaffected, but the boot is not green and this is NOT attributed:
+  whether 21 extra guest processes provoked it or it is the pre-existing amd64 pool flake
+  is unmeasured, and a plain non-sweep ladder boot is the cheap discriminator nobody has
+  run yet. Artifact: `/tmp/vibeos-cli/20260925-222408-xlois8r6-smoke-amd64`.
 
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
