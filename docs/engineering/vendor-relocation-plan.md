@@ -97,7 +97,14 @@ number: `ucrt`'s 17 `rust` hits are mostly doc comments in `ucrt-rust`.
    `dosfsck.h` was ReactOS glue filed inside the vendored dir; it moved back beside
    vfatlib. `vendor_move_plan.py` did not flag this one, because the spelling was
    relative to an include ROOT outside `sdk/include` — only the build caught it.
-7. **Registry follow-through.** After each move: update `path`/`headers`/`license_*`/
+7. **Generators that SCAN a header directory lose a moved header silently.**
+   `tools/rustconv/gen_enum_constants.py` walks `sdk/include/ddk` for the CamelCase enum
+   constants fact-sealing protects; moving `d3dkmthk.h` out dropped its D3DKMT_*
+   constants from the sealed set, and only the `generated:ddk_enum_constants` drift
+   check caught it. The fix is to scan the header where it now lives (it is in that
+   script's `HEADER_ROOTS`). Before moving a header tree, grep tools/ for scripts
+   that glob its current directory, not just ones that name the file.
+8. **Registry follow-through.** After each move: update `path`/`headers`/`license_*`/
    `version.file` in vendor.yaml, `--write-stamps`, `--notices`, and make the new
    directory a `containers:` entry. Once everything has moved, the three containers
    collapse into one and the container ratchet covers every vendored tree structurally,

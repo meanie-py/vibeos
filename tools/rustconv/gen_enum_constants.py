@@ -47,7 +47,17 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-HEADER_ROOTS = ("sdk/include/ddk", "sdk/include/ndk", "sdk/include/xdk", "sdk/include/psdk")
+# vendor/libdxg/include holds d3dkmthk.h, a DDK header until the vendored-code move put it
+# under vendor/. Its D3DKMT_* CamelCase constants are still values the model must not be
+# trusted to copy, so the header is scanned where it now lives rather than dropping out
+# of the sealed set -- which is what the move did first, and this check caught.
+HEADER_ROOTS = (
+    "sdk/include/ddk",
+    "sdk/include/ndk",
+    "sdk/include/xdk",
+    "sdk/include/psdk",
+    "vendor/libdxg/include",
+)
 OUTPUT = Path(__file__).resolve().parent / "rustconv" / "ddk_enum_constants.py"
 
 _ENUM_BODY_RE = re.compile(r"\btypedef\s+enum\b[^{]*\{(.*?)\}", re.S)
