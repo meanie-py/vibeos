@@ -70,6 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument(
+        "--extra-target",
+        action="append",
+        default=[],
+        metavar="TARGET",
+        help="also build this Ninja target; preserves the full boot build and guards (repeatable)",
+    )
+    b.add_argument(
         "--rust-storage-shards",
         type=int,
         choices=range(17),
@@ -757,6 +764,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--only",
         metavar="NAME[,NAME]",
         help="restrict to named *-difftest crates (default: every workspace member)",
+    )
+    dt.add_argument(
+        "--case",
+        action="append",
+        help="exact case (repeatable); needs one --only crate honouring --exact (cnt-difftest)",
+    )
+    dt.add_argument(
+        "--test-target", default="diff", help="Cargo test target for --case (default: diff)"
     )
     dt.set_defaults(fn=difftest_mod.difftest)
 

@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 250926,
+  "random_cases": 192,
+  "validity": "Genuine sdk/lib/cryptlib/md4.c against the shipping cryptlib-rust md4.rs module (whole module, with its types.rs). Each entry point is graded from an arbitrary sampled MD4_CTX state, including bit counts no real message produces; the C indexes ctx->in only through (i[0] >> 3) & 0x3f, so every sampled state is in-bounds. Host little-endian, so util.h's byteReverse is the no-op the Rust also uses. cryptlib_include/ntdef.h supplies only VOID/NTAPI/UCHAR/ULONG. No i386 stdcall or big-endian claim.",
+  "c_source": "../../../../sdk/lib/cryptlib/md4.c",
+  "c_include_dirs": [
+    "cryptlib_include"
+  ],
+  "rust_source": "../../../../sdk/lib/rust/cryptlib-rust/src/md4.rs",
+  "rust_support": {
+    "types": "../../../../sdk/lib/rust/cryptlib-rust/src/types.rs"
+  },
+  "functions": [
+    {
+      "c": "MD4Init",
+      "rust": "candidate::MD4Init",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "ctx",
+          "type": "bytes",
+          "c_type": "MD4_CTX *",
+          "rust_type": "*mut types::MD4_CTX",
+          "record": {
+            "layout": "MD4_CTX",
+            "base_size": 104,
+            "fields": [
+              {
+                "name": "i",
+                "offset": 16,
+                "type": "u32",
+                "count": 2,
+                "values": [
+                  0,
+                  8,
+                  432,
+                  440,
+                  448,
+                  504,
+                  512,
+                  4294966784,
+                  4294967288
+                ]
+              },
+              {
+                "name": "buf",
+                "offset": 0,
+                "type": "u32",
+                "count": 4,
+                "values": [
+                  0,
+                  1732584193,
+                  4294967295,
+                  271733878
+                ]
+              },
+              {
+                "name": "in",
+                "offset": 24,
+                "type": "u8",
+                "count": 64,
+                "values": [
+                  0,
+                  128,
+                  255,
+                  90
+                ]
+              },
+              {
+                "name": "digest",
+                "offset": 88,
+                "type": "u8",
+                "count": 16,
+                "values": [
+                  0,
+                  255
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "c": "MD4Update",
+      "rust": "candidate::MD4Update",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "ctx",
+          "type": "bytes",
+          "c_type": "MD4_CTX *",
+          "rust_type": "*mut types::MD4_CTX",
+          "record": {
+            "layout": "MD4_CTX",
+            "base_size": 104,
+            "fields": [
+              {
+                "name": "i",
+                "offset": 16,
+                "type": "u32",
+                "count": 2,
+                "values": [
+                  0,
+                  8,
+                  432,
+                  440,
+                  448,
+                  504,
+                  512,
+                  4294966784,
+                  4294967288
+                ]
+              },
+              {
+                "name": "buf",
+                "offset": 0,
+                "type": "u32",
+                "count": 4,
+                "values": [
+                  0,
+                  1732584193,
+                  4294967295,
+                  271733878
+                ]
+              },
+              {
+                "name": "in",
+                "offset": 24,
+                "type": "u8",
+                "count": 64,
+                "values": [
+                  0,
+                  128,
+                  255,
+                  90
+                ]
+              },
+              {
+                "name": "digest",
+                "offset": 88,
+                "type": "u8",
+                "count": 16,
+                "values": [
+                  0,
+                  255
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "data",
+          "type": "const_bytes",
+          "c_type": "const unsigned char *",
+          "length": "len"
+        },
+        {
+          "name": "len",
+          "type": "u32",
+          "values": [
+            0,
+            1,
+            7,
+            55,
+            56,
+            63,
+            64,
+            65,
+            127,
+            128,
+            200
+          ],
+          "random_range": [
+            0,
+            300
+          ]
+        }
+      ]
+    },
+    {
+      "c": "MD4Final",
+      "rust": "candidate::MD4Final",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "ctx",
+          "type": "bytes",
+          "c_type": "MD4_CTX *",
+          "rust_type": "*mut types::MD4_CTX",
+          "record": {
+            "layout": "MD4_CTX",
+            "base_size": 104,
+            "fields": [
+              {
+                "name": "i",
+                "offset": 16,
+                "type": "u32",
+                "count": 2,
+                "values": [
+                  0,
+                  8,
+                  432,
+                  440,
+                  448,
+                  504,
+                  512,
+                  4294966784,
+                  4294967288
+                ]
+              },
+              {
+                "name": "buf",
+                "offset": 0,
+                "type": "u32",
+                "count": 4,
+                "values": [
+                  0,
+                  1732584193,
+                  4294967295,
+                  271733878
+                ]
+              },
+              {
+                "name": "in",
+                "offset": 24,
+                "type": "u8",
+                "count": 64,
+                "values": [
+                  0,
+                  128,
+                  255,
+                  90
+                ]
+              },
+              {
+                "name": "digest",
+                "offset": 88,
+                "type": "u8",
+                "count": 16,
+                "values": [
+                  0,
+                  255
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "init_constant",
+      "find": "(*ctx).buf[2] = 0x98badcfeu32;",
+      "replace": "(*ctx).buf[2] = 0x98badcffu32;"
+    },
+    {
+      "name": "update_carry",
+      "find": "(*ctx).i[1 as usize] = (*ctx).i[1 as usize].wrapping_add(1);",
+      "replace": "(*ctx).i[1 as usize] = (*ctx).i[1 as usize].wrapping_add(0);"
+    },
+    {
+      "name": "update_partial_boundary",
+      "find": "if len < t {",
+      "replace": "if len <= t {"
+    },
+    {
+      "name": "final_pad_boundary",
+      "find": "if count < 8 {",
+      "replace": "if count <= 8 {"
+    },
+    {
+      "name": "final_length_word",
+      "find": ".add(15) = (*ctx).i[1];",
+      "replace": ".add(15) = (*ctx).i[0];"
+    }
+  ]
+}

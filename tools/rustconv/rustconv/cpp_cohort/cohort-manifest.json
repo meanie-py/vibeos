@@ -1,0 +1,53 @@
+{
+  "frozen_at": "2026-09-23",
+  "path_roots": {"source": "--repo", "banked_shell32_rust": "--bank"},
+  "selection_rule": "Existing banked Rust only; no translations bought or regenerated. Mechanism development uses development units; held-out units are evaluated afterward without body-specific fixes.",
+  "development": [
+    {
+      "unit": "txt2nls host parser and serializer",
+      "source": "sdk/tools/txt2nls/main.cpp",
+      "source_sha256": "74053f42959ab949e58ab27587672740f954b2ffba5e3a931223fe8f9d6c1355",
+      "banked_rust": "tools/rustconv/.responses/host-pilots/txt2nls/nonthinking/candidate-d4c8ac3a0b93b84e.rs",
+      "banked_rust_sha256": "d4c8ac3a0b93b84e3f3efc9e185a5c03528f255d08265311c3be17150e152b8b",
+      "behavior": "std::stol(base=0), std::string::substr, object-like numeric macro"
+    },
+    {
+      "unit": "shell32 SheRemoveQuotesA/W",
+      "source": "dll/win32/shell32/utils.cpp",
+      "source_sha256": "c276b919e03ae8f7945c96faf329a0f64c843829adf8d7c56994bc02f4253feb",
+      "banked_rust": [
+        "20260913-012131-utils.cpp/30_SheRemoveQuotesA.rs",
+        "20260913-034905-utils.cpp/31_SheRemoveQuotesW.rs"
+      ],
+      "banked_rust_sha256": [
+        "39459f87315f029ca801cc043bb9a8b66c3a24935aedbd6b4d0291872fadd840",
+        "1df553d17a231044949615b7686759b63d98e7031d74740bb40687571b9d32b7"
+      ],
+      "behavior": "in-place ANSI and UTF-16 C strings, terminator and untouched-tail effects"
+    }
+  ],
+  "held_out": [
+    {
+      "unit": "shell32 CEnumIDListBase collection/ownership methods",
+      "source": "dll/win32/shell32/CEnumIDListBase.cpp",
+      "source_sha256": "910963d2c5685f375e5ebd6af903b8022a3dc1806fff969e10c4684eb5b1c013",
+      "bank_dir": "20260718-205701-CEnumIDListBase.cpp",
+      "banked_functions_sha256": {
+        "04_CEnumIDListBase_DeleteList.rs": "fc915af24c5d613b21c9cc9c15dff5ec487697e15d07f0a767eb51096f65c4d6",
+        "05_CEnumIDListBase_AppendItemsFromEnumerator.rs": "d7c07da12a72cf513c467c4dece59327de52890d17a6e0fc3932087bc7446b7b",
+        "06_CEnumIDListBase_Next.rs": "0c7592cd4e982c48c1c51e78c10312c23b86bbbc9e9145b466c4c970d353c9b2",
+        "07_CEnumIDListBase_Skip.rs": "ce1935328000b824b5dd54a2d20708886844dcbfe1c276dfdef53e5d0f11fb5f",
+        "08_CEnumIDListBase_Reset.rs": "bff6be42f7617e11925a8fc6f9f9bc5a137c0094cb23299ea234874a1f8a6b4f"
+      },
+      "behavior": "owned PIDLs, virtual Reset/Next, allocation failure, partial fetch"
+    },
+    {
+      "unit": "shell32 CCopyAsPathMenu::DoCopyAsPath",
+      "source": "dll/win32/shell32/CCopyAsPathMenu.cpp",
+      "source_sha256": "d6117162c172d0519db80f9d6faced9269aa4e37c013c61a0dabfac4eac9b1a6",
+      "banked_rust": "20260716-183948-CCopyAsPathMenu.cpp/01_CCopyAsPathMenu_DoCopyAsPath.rs",
+      "banked_rust_sha256": "d0a5e1e9d270ef7e8db18fe76562e51ddbab95d571d874bd2a6f44b9ea2ff38e",
+      "behavior": "COM item-array calls, path allocation cleanup, clipboard transfer"
+    }
+  ]
+}

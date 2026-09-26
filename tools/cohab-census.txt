@@ -383,6 +383,7 @@ dll/win32/iphlpapi/CMakeLists.txt	1	# media.c (→ iphlpapi-rust src/iphlpapi/me
 dll/win32/iphlpapi/CMakeLists.txt	1	# registry.c (→ iphlpapi-rust src/iphlpapi/registry.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# resinfo_reactos.c (→ iphlpapi-rust src/iphlpapi/resinfo_reactos.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# route_reactos.c (→ iphlpapi-rust src/iphlpapi/route_reactos.rs)
+dll/win32/jscript/CMakeLists.txt	1	# decode.c (compiler-translated into jscript-rust/src/decode.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# --allow-multiple-definition needed since every proc.c symbol was removed).
 dll/win32/kernel32/CMakeLists.txt	1	# The *ansi.c files are upstream splitting the ANSI wrappers out of TUs we have
 dll/win32/kernel32/CMakeLists.txt	1	# client/actctx.c — replaced by Rust

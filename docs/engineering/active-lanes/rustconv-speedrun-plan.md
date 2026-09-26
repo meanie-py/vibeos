@@ -1,5 +1,9 @@
 # Lane: rustconv-speedrun — make the next 100 translations cheap, fast and trustworthy
 
+**2026-09-22 investigation:** see [measurement and scaling proposal](rustconv-speedrun-scale.md).
+It re-derives the claims below; seal defaults and namespace refusal already exist in this
+checkout, and historical retry/stage timing evidence is incomplete.
+
 **Worktree** `/home/curi/Projects/os-playground/vibeos-rustconv-speedrun` · **branch**
 `rustconv-speedrun` · written 2026-09-22 by the control plane · **owner: the user**
 
@@ -15,6 +19,29 @@ plus a full software AHCI implementation, all on disk, none of it built) and job
 multiplied by those.**
 
 ---
+
+**2026-09-23 implementation:** [offline cohort and JScript cutover](rustconv-speedrun-cohort.md)
+records the 12-source benchmark, compiler/ABI replay mechanism, scoped quality results,
+and three-architecture integration evidence. No additional model spend.
+
+**2026-09-23 grading automation:** `rustconv difftest-contract` adds generated,
+compiler-checked stateless scalar/byte-buffer harnesses; see the
+[contract guide](../../../tools/rustconv/data/difftest/README.md). Genuine C versus
+existing Rust: `tolower` core 270 inputs, `_swab` 326 inputs, zero mismatches;
+all five sensitivity mutants detected. Artifacts:
+`~/vibeos-rust-staging/rustconv-speedrun/difftest-contract-verified-{tolower,swab}/report.json`.
+These are sampled host results, not whole-crate/guest correctness claims. No model spend.
+
+**2026-09-23 buffer grading expansion:** explicit shared-arena layouts, normalized pointer
+results, and Linux protected-page placements now work through the same contract command.
+Fresh four-pilot reports at
+`~/vibeos-rust-staging/rustconv-speedrun/difftest-buffers-final-{tolower,swab,memmove,memchr}/report.json`
+record 3,352 executions with zero mismatches and all ten mutation controls detected.
+The new `memmove` pilot contributes 1,428 executions across six layouts; `memchr` contributes
+1,328, including both allocation-edge placements. Guarded cases count left and right
+placements separately. Baseline crashes invalidate grading; only explicit memory-fault
+controls may count a reproducible SIGSEGV/SIGBUS during the native call. Scope remains
+stateless host grading, not parser/stateful/guest coverage. No model spend.
 
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 
