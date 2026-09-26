@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 991
-  amd64: 991
-  arm64: 988
+  i386: 928
+  amd64: 928
+  arm64: 925
 
 families:
   bits:
@@ -170,3 +170,97 @@ families:
       - strncpy
       - strpbrk
       - strspn
+
+  ctype:
+    replaces:
+      - sdk/lib/ucrt/convert/_ctype.cpp
+      - sdk/lib/ucrt/convert/_wctype.cpp
+      - sdk/lib/ucrt/convert/isctype.cpp
+      - sdk/lib/ucrt/convert/iswctype.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the shipping ucrtbase (these
+      bodies) against the genuine Microsoft objects for the four deleted files, over
+      the full 0..255 corpus plus edges that every single-argument ctype export gets
+      (docs/engineering/active-lanes/ucrt-tier2-table.tsv). 59 of the 63 were
+      graded that way, dll_fail=0 across all 12,121 cases of the run. The other
+      four were NOT graded directly, and that is recorded rather than implied:
+      iswctype and _iswctype_l (a wctype_t argument the generator had no kind for
+      -- added since) are the single core every one of the 26 graded isw* exports
+      runs through; _isblank_l and _iswblank_l are macros in the headers the
+      generator reads, and share fast_check / iswctype with the graded forms.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: those are Wine's
+      contract, and on the multibyte path it differs from UCRT's in substance --
+      Wine also requires c > 0 and classifies through GetStringTypeExA by LCID,
+      UCRT through __acrt_GetStringTypeA by codepage. Every export is a one-line
+      wrapper, so the port is smaller than an adapter would have been.
+
+      Silent-if-wrong details, each transcribed: isblank/iswblank answer _BLANK for
+      a literal tab first but _isblank_l does not; __iscsym casts to unsigned char
+      and __iscsymf does not; every wide _l form ignores its locale; UCRT's wint_t
+      is 16 bits. _pwctype and the __acrt_GetStringType* internals are still
+      Microsoft's and are called, not replaced.
+    exports:
+      - __isascii
+      - __iscsym
+      - __iscsymf
+      - __iswcsym
+      - __iswcsymf
+      - __toascii
+      - _isalnum_l
+      - _isalpha_l
+      - _isblank_l
+      - _iscntrl_l
+      - _isctype
+      - _isctype_l
+      - _isdigit_l
+      - _isgraph_l
+      - _isleadbyte_l
+      - _islower_l
+      - _isprint_l
+      - _ispunct_l
+      - _isspace_l
+      - _isupper_l
+      - _iswalnum_l
+      - _iswalpha_l
+      - _iswblank_l
+      - _iswcntrl_l
+      - _iswcsym_l
+      - _iswcsymf_l
+      - _iswctype_l
+      - _iswdigit_l
+      - _iswgraph_l
+      - _iswlower_l
+      - _iswprint_l
+      - _iswpunct_l
+      - _iswspace_l
+      - _iswupper_l
+      - _iswxdigit_l
+      - _isxdigit_l
+      - isalnum
+      - isalpha
+      - isblank
+      - iscntrl
+      - isdigit
+      - isgraph
+      - isleadbyte
+      - islower
+      - isprint
+      - ispunct
+      - isspace
+      - isupper
+      - iswalnum
+      - iswalpha
+      - iswascii
+      - iswblank
+      - iswcntrl
+      - iswctype
+      - iswdigit
+      - iswgraph
+      - iswlower
+      - iswprint
+      - iswpunct
+      - iswspace
+      - iswupper
+      - iswxdigit
+      - isxdigit

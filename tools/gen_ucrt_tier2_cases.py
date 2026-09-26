@@ -123,6 +123,10 @@ _PARAM_KIND = {
     # need a hand-written row with a real buffer.
     "const wchar_t *": "SW",
     "const unsigned char *": "SU",
+    # iswctype's mask. Unknown here, so iswctype/_iswctype_l -- the core every isw*
+    # export runs through -- were never generated; the ctype takeover had to record
+    # them as covered by construction instead of graded.
+    "wctype_t": "I",
 }
 for _t in _INT_RET:
     _PARAM_KIND.setdefault(_t, "I")

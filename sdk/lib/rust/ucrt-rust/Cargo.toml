@@ -70,5 +70,10 @@ ismbbyte = []
 # msvcrt-crt-rust; see that crate's Cargo.toml.
 portable-string = ["dep:crt-portable-rust", "crt-portable-rust/string"]
 
+# convert/{_ctype,_wctype,isctype,iswctype}.cpp -- the 63-export ctype family, a
+# one-for-one port over LocaleUpdate. See src/ctype.rs for why a port and not
+# msvcrt's bodies (the multibyte path differs in contract, not just plumbing).
+ctype = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
