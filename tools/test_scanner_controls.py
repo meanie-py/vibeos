@@ -414,6 +414,24 @@ pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
 """,
 }
 
+# scan_win64_cfg. user32 before the fix: class.c's `#ifdef _WIN64` index check was
+# translated as amd64-only, so arm64 returned a truncated pointer for GCLP_* indices.
+_WIN64_CFG_BAD = """\
+pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
+    let mut Ret: usize = 0;
+    #[cfg(target_arch = "x86_64")]
+    {
+        Ret = 1;
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        Ret = 2;
+    }
+    Ret as u32
+}
+"""
+_WIN64_CFG_GOOD = _WIN64_CFG_BAD.replace('target_arch = "x86_64"', 'target_pointer_width = "64"')
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -1715,6 +1733,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad=_BOOL_WIDTH_BAD,
         good=_BOOL_WIDTH_GOOD,
+    ),
+    Control(
+        name="scan_win64_cfg",
+        script="tools/scan_win64_cfg.py",
+        argv=["--lint"],
+        bad={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD},
+        good={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD},
     ),
     Control(
         name="scan_bitwise_not_bool",

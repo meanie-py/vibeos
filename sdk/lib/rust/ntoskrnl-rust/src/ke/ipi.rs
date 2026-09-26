@@ -309,7 +309,11 @@ pub unsafe extern "system" fn KiIpiSendPacket(
 ) {
     #[cfg(feature = "smp")]
     {
-        ntkrnl_sys::ASSERT!(KeGetCurrentIrql() == SYNCH_LEVEL);
+        // KeIpiGenericCall sends at DISPATCH_LEVEL (as the C does: raise to
+        // DPC level, take KiReverseStallIpiLock at DPC level, send), so the
+        // contract is >= DISPATCH, not == SYNCH - which fired on every generic
+        // call and trained everyone to ignore it.
+        ntkrnl_sys::ASSERT!(KeGetCurrentIrql() >= DISPATCH_LEVEL);
 
         let CurrentPrcb = KeGetCurrentPrcb();
 
@@ -624,6 +628,37 @@ pub unsafe extern "system" fn KiIpiServiceRoutine(
 // KiIpiGenericCallTarget once it finishes calling Function) clears its own
 // bit. Waiting for TargetSet to reach 0 is therefore the correct completion
 // signal.
+/// Fail loud when a KeIpiGenericCall wait goes on far too long: print every
+/// processor's IPI state instead of spinning silently forever. This is what
+/// located the lost arrival decrement on a Raspberry Pi 4 (non-shareable PTEs).
+#[cfg(not(target_arch = "x86_64"))]
+#[cfg(feature = "smp")]
+unsafe fn ipi_wait_report(which: &[u8], count: u32) {
+    let me = KeGetCurrentPrcb();
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[IPI] KeIpiGenericCall stuck in %s: Count=%u TargetSet=%llx\n\0".as_ptr() as _,
+        which.as_ptr(),
+        count,
+        core::ptr::read_volatile(core::ptr::addr_of!((*me).TargetSet)) as u64,
+    );
+    for i in 0..(KeNumberProcessors as usize) {
+        let p = ki_processor_block(i);
+        if p.is_null() {
+            ntkrnl_sys::driver_ddk::DbgPrint(b"[IPI]   block[%u] = NULL\n\0".as_ptr() as _, i as u32);
+            continue;
+        }
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[IPI]   block[%u] = %p Number=%u SetMember=%llx SignalDone=%p IpiFrozen=%x\n\0".as_ptr() as _,
+            i as u32,
+            p,
+            (*p).Number as u32,
+            (*p).SetMember as u64,
+            core::ptr::read_volatile(core::ptr::addr_of!((*p).SignalDone)),
+            core::ptr::read_volatile(core::ptr::addr_of!((*p).IpiFrozen)) as u32,
+        );
+    }
+}
+
 #[cfg(not(target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeIpiGenericCall(
@@ -665,9 +700,14 @@ pub unsafe extern "system" fn KeIpiGenericCall(
                 core::ptr::addr_of_mut!(Count),
             );
 
-            while Count != 1 {
+            let mut probe: u64 = 0;
+            while core::ptr::read_volatile(core::ptr::addr_of!(Count)) != 1 {
                 core::hint::spin_loop();
                 core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+                probe += 1;
+                if probe == 1 << 28 {
+                    ipi_wait_report(b"arrival\0", core::ptr::read_volatile(core::ptr::addr_of!(Count)));
+                }
             }
         }
     }
@@ -693,6 +733,7 @@ pub unsafe extern "system" fn KeIpiGenericCall(
             // Wait for every target to signal done via KiIpiSignalPacketDone,
             // which clears its bit in Prcb->TargetSet (published by
             // KiIpiSendPacket above as the full `Affinity` target set).
+            let mut probe: u64 = 0;
             while core::sync::atomic::AtomicUsize::from_ptr(
                 core::ptr::addr_of_mut!((*Prcb).TargetSet) as *mut usize,
             )
@@ -701,6 +742,10 @@ pub unsafe extern "system" fn KeIpiGenericCall(
             {
                 core::hint::spin_loop();
                 core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+                probe += 1;
+                if probe == 1 << 28 {
+                    ipi_wait_report(b"completion\0", 0);
+                }
             }
         }
     }

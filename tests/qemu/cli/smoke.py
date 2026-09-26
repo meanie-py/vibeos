@@ -660,7 +660,9 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
-def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
+def _payload_stage(
+    run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
+) -> None:
     """Opt-in payload gate (--payload <names> / legacy --doom): run
     tests/qemu/test_payload.py (launch marker + frame-delta render gate +
     input-drive playable gate, per payload YAML) and fold the verdict in.
@@ -711,7 +713,8 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     # tmp dir that pytest prunes, so a payload that reports its result over serial (regdiff's
     # VERDICT line, a sweep's per-test lines) left no record of it anywhere once the run
     # ended — the stage summary only says whether the launch marker appeared.
-    payload_dir = run.dir / "payload"
+    payload_dir = run.dir / ("payload" if idx == 0 else f"payload{idx + 1}")
+    stage = "payload" if total == 1 else f"payload{idx + 1}"
     payload_dir.mkdir(parents=True, exist_ok=True)
     try:
         proc = subprocess.run(
@@ -725,7 +728,7 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     except subprocess.TimeoutExpired:
         run.add(
             Stage(
-                "payload",
+                stage,
                 status="fail",
                 detail=f"payload suite ({payloads}) timed out",
                 salient=[f"tests/qemu/test_payload.py hung > {outer_timeout}s"],
@@ -739,11 +742,11 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
         tail[-1] if tail else "",
     )
     if proc.returncode == 0:
-        run.add(Stage("payload", status="ok", detail=summary.strip("= ")))
+        run.add(Stage(stage, status="ok", detail=summary.strip("= ")))
     else:
         run.add(
             Stage(
-                "payload",
+                stage,
                 status="fail",
                 detail=f"payload suite ({payloads}) FAILED",
                 salient=[
@@ -928,8 +931,11 @@ def smoke(args, repo: Path) -> int:
     payloads = getattr(args, "payload", "") or ""
     if getattr(args, "doom", False) and "doom" not in payloads.split(","):
         payloads = f"{payloads},doom".strip(",")
+    # --repeat N soaks the payload too: a payload flake (the app sweep's intermittent crash) is
+    # exactly what N runs are for, and one payload boot after N plain boots cannot see it.
     if payloads and npass == total:
-        _payload_stage(run, repo, arch, payloads)
+        for i in range(total):
+            _payload_stage(run, repo, arch, payloads, idx=i, total=total)
 
     if total > 1:
         run.extra["flake_rate"] = f"{npass}/{total}"
