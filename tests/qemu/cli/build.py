@@ -367,6 +367,21 @@ def _flag_in_cache(build_dir: Path, flag: str) -> bool:
     return False
 
 
+def _value_in_cache(build_dir: Path, var: str) -> str:
+    """The cached STRING value of `var`, or "" when absent. Mirrors
+    _flag_in_cache; separate because an empty string and OFF are different
+    answers and conflating them would make "clear the quarantine" a no-op."""
+    cache = build_dir / "CMakeCache.txt"
+    try:
+        text = cache.read_text(errors="ignore")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        if line.startswith(f"{var}:"):
+            return line.split("=", 1)[1].strip() if "=" in line else ""
+    return ""
+
+
 def _maybe_canonize(
     run,
     repo: Path,
@@ -374,6 +389,7 @@ def _maybe_canonize(
     arch: str,
     instr_flags: dict[str, bool],
     sticky_on: tuple[str, ...] = (),
+    instr_values: dict[str, str] | None = None,
 ) -> bool | None:
     """Ensure the build dir is configured at the CANONICAL path (see canon.py) so
     caches share across worktrees. Returns True → wrap build cmds in canon-run,
@@ -404,9 +420,18 @@ def _maybe_canonize(
         # which is cached and harmless, and that is worth more than teaching this
         # generic mechanism which cmake options imply which others.
         stale.update({f: True for f in sticky_on if not _flag_in_cache(build_dir, f)})
+        # STRING-valued instrumentation reconciles on the same pass, and has to
+        # take part in the "is anything stale" decision or it never applies: the
+        # bools were already at their target, so nothing reconfigured and the
+        # new value sat unused. That is how a quarantine list silently does
+        # nothing while the build reports success.
+        stale_values = {
+            k: v for k, v in (instr_values or {}).items() if v != _value_in_cache(build_dir, k)
+        }
         incomplete = not (build_dir / "build.ninja").is_file()
-        if stale or incomplete:
+        if stale or stale_values or incomplete:
             defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
+            defs += [f"-D{k}={v}" for k, v in stale_values.items()]
             cp = run.run(
                 canon.wrap(repo, ["cmake", *defs, "."]),
                 cwd=build_dir,
@@ -465,6 +490,14 @@ def _maybe_canonize(
         return None
     carried = canon.carried_options(build_dir)
     carried = [*carried, *(f"-D{flag}=ON" for flag, on in instr_flags.items() if on)]
+    # STRING-valued instrumentation cannot ride instr_flags (bools only). These
+    # reconcile for free: canon._CARRY does not list them, so a build that omits
+    # the flag reconfigures without it. For the winetest quarantine that is the
+    # safe direction — a stale skip list would silently subtract subtests from a
+    # sweep whose whole job is to run them all.
+    for _k, _v in (instr_values or {}).items():
+        if _v:
+            carried = [*carried, f"-D{_k}={_v}"]
     # A dir that does not exist yet carries nothing, so a sticky opt-in has to be
     # named on the FRESH configure too — otherwise the caller's request is silently
     # dropped exactly once, on the one run that cannot detect it.
@@ -754,6 +787,12 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build.ninja, so the objects survive and turning it back ON is an
             # up-to-date ninja pass.
             "ENABLE_ROSTESTS": bool(getattr(args, "rostests", False)),
+            # The winetest SWEEP marker (`--winetest-sweep`). Reconciled for
+            # the same reason as ENABLE_ROSTESTS and then some: a sweep is
+            # minutes of boot, and leaving it latched on would quietly turn
+            # every later boot in the worktree into one. It only stages a
+            # marker file, so toggling costs a media rebuild and nothing else.
+            "VIBEOS_WINETEST_SWEEP": bool(getattr(args, "winetest_sweep", False)),
         },
         # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
         # sweeps, and both cmake options gating it default OFF, so a build dir
@@ -773,6 +812,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             )
             if getattr(args, flag, False)
         ),
+        instr_values={
+            "VIBEOS_WINETEST_SKIP": (getattr(args, "winetest_skip", "") or "").strip(),
+        },
     )
     if wrapped is None:
         return run.finalize(repo)

@@ -495,6 +495,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`user32_winetest input` BUGCHECKs i386 0x1E, and it is the first find of the winetest
+  SWEEP. OPEN** (2026-09-25). `*** BUGCHECK: 0x0000001E (0xc0000005, 0x805349b9, ...)` with
+  `win32k.sys+0x9DF48` = `NtUserGetKeyboardLayoutName+0x158` on the stack, preceded by a run
+  of `(win32k-rust/src/keyboard.rs:1689) err: Cannot copy key state` — the
+  `capture_from_user` of the 256-byte key-state array failing over and over. Native i386, no
+  WoW64 involved, so it is ours outright.
+  It is also why the sweep needs a quarantine at all: a subtest that takes the machine down
+  blinds every subtest after it, and `input` sits twelfth of user32's twenty-four. Run it with
+  `build --arch i386 --winetest-sweep` and no skip list to reproduce; the sweep gets past it
+  with `--winetest-skip input`.
+
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
   instruction and printed NOTHING on serial, while the boot itself reached
