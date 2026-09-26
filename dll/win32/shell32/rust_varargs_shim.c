@@ -1,3 +1,7 @@
+/* INERT since 2026-09-24: not in CMake. Replaced by Rust: ShellMessageBoxA receives its
+ * varargs via va-slots-rust (shell32-rust/src/wine/shellord.rs), and StringCchPrintfW is
+ * strsafe_rust::StringCchPrintfW!. Kept on disk as the reference. */
+
 /* rust_varargs_shim.c — the ONLY two things stable Rust cannot express.
  *
  *   1. DEFINING a C-variadic function (`va_start` is legal only inside one), and

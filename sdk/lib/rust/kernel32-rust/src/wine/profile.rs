@@ -26,7 +26,6 @@ extern "system" {
 }
 
 // ---- cohab glue: profile.c statics / function-like macros ----
-static mut CurProfile: *mut PROFILE = core::ptr::null_mut();
 #[inline]
 unsafe fn IS_ENTRY_COMMENT(s: *const WCHAR) -> c_int {
     (*s == ';' as WCHAR) as c_int          // #define IS_ENTRY_COMMENT(str) ((str)[0] == ';')
@@ -48,6 +47,9 @@ static mut bom_utf8: [::core::ffi::c_char; 3] = [
     0xbf as ::core::ffi::c_int as ::core::ffi::c_char,
 ];
 
+// profile.c: `#define CurProfile (MRUProfile[0])`. The translation made CurProfile a
+// SEPARATE static, so the MRU rotation (which assigns CurProfile to mean MRUProfile[0]) left
+// the cache holding the old head twice and a profile nothing pointed at.
 static mut MRUProfile: [*mut PROFILE; 10] = [
     ::core::ptr::null::<PROFILE>() as *mut PROFILE,
     ::core::ptr::null::<PROFILE>() as *mut PROFILE,
@@ -617,18 +619,23 @@ unsafe fn PROFILE_Load(
     prev_key = core::ptr::null_mut();
     next_line = szFile;
 
+    // Every length below is a count of WCHARs, as the C's `ptr - ptr` is. The translation had
+    // them as `(a as isize).wrapping_sub(b as isize)`, i.e. BYTES: every memchrW scanned twice
+    // the line (past the end of the file buffer) and every section/key/value name was copied
+    // at twice its length. GetPrivateProfileStringW on the livecd's unattend.inf then never
+    // returned, which stalled setup's InstallLiveCD before it registered anything.
     while next_line < szEnd {
         szLineStart = next_line;
         next_line = memchrW(
             szLineStart,
             '\n' as i32 as WCHAR,
-            (szEnd as isize).wrapping_sub(szLineStart as isize) as usize,
+            szEnd.offset_from(szLineStart) as usize,
         );
         if next_line.is_null() {
             next_line = memchrW(
                 szLineStart,
                 '\r' as i32 as WCHAR,
-                (szEnd as isize).wrapping_sub(szLineStart as isize) as usize,
+                szEnd.offset_from(szLineStart) as usize,
             );
         }
         if next_line.is_null() {
@@ -656,7 +663,7 @@ unsafe fn PROFILE_Load(
             szSectionEnd = memrchrW(
                 szLineStart,
                 ']' as i32 as WCHAR,
-                (szLineEnd as isize).wrapping_sub(szLineStart as isize) as usize,
+                szLineEnd.offset_from(szLineStart) as usize,
             );
             if szSectionEnd.is_null() {
                 WARN!(
@@ -665,12 +672,12 @@ unsafe fn PROFILE_Load(
                     line,
                     debugstr_wn(
                         szLineStart,
-                        (szLineEnd as isize).wrapping_sub(szLineStart as isize) as ::core::ffi::c_int,
+                        szLineEnd.offset_from(szLineStart) as ::core::ffi::c_int,
                     ),
                 );
             } else {
                 szLineStart = szLineStart.offset(1);
-                len = (szSectionEnd as isize).wrapping_sub(szLineStart as isize) as ::core::ffi::c_int;
+                len = szSectionEnd.offset_from(szLineStart) as ::core::ffi::c_int;
                 section = HeapAlloc(
                     GetProcessHeap(),
                     0,
@@ -702,18 +709,18 @@ unsafe fn PROFILE_Load(
             }
         }
 
-        len = (szLineEnd as isize).wrapping_sub(szLineStart as isize) as ::core::ffi::c_int;
+        len = szLineEnd.offset_from(szLineStart) as ::core::ffi::c_int;
         szValueStart = memchrW(
             szLineStart,
             '=' as i32 as WCHAR,
-            (szLineEnd as isize).wrapping_sub(szLineStart as isize) as usize,
+            szLineEnd.offset_from(szLineStart) as usize,
         );
         if !szValueStart.is_null() {
             let mut szNameEnd: *const WCHAR = szValueStart;
             while szNameEnd > szLineStart && PROFILE_isspaceW(*szNameEnd.offset(-1)) != 0 {
                 szNameEnd = szNameEnd.offset(-1);
             }
-            len = (szNameEnd as isize).wrapping_sub(szLineStart as isize) as ::core::ffi::c_int;
+            len = szNameEnd.offset_from(szLineStart) as ::core::ffi::c_int;
             szValueStart = szValueStart.offset(1);
             while szValueStart < szLineEnd && PROFILE_isspaceW(*szValueStart) != 0 {
                 szValueStart = szValueStart.offset(1);
@@ -740,7 +747,7 @@ unsafe fn PROFILE_Load(
             );
             *((*key).name.as_mut_ptr()).offset(len as isize) = '\0' as i32 as WCHAR;
             if !szValueStart.is_null() {
-                len = (szLineEnd as isize).wrapping_sub(szValueStart as isize) as ::core::ffi::c_int;
+                len = szLineEnd.offset_from(szValueStart) as ::core::ffi::c_int;
                 (*key).value = HeapAlloc(
                     GetProcessHeap(),
                     0,
@@ -819,7 +826,7 @@ unsafe fn PROFILE_DeleteKey(
     0
 }
 unsafe fn PROFILE_DeleteAllKeys(section_name: LPCWSTR) {
-    let mut section: *mut *mut PROFILESECTION = &raw mut (*CurProfile).section;
+    let mut section: *mut *mut PROFILESECTION = &raw mut (*MRUProfile[0]).section;
     while !(*section).is_null() {
         if strcmpiW((*(*section)).name.as_ptr(), section_name) == 0 {
             let mut key: *mut *mut PROFILEKEY = &raw mut (*(*section)).key;
@@ -828,7 +835,7 @@ unsafe fn PROFILE_DeleteAllKeys(section_name: LPCWSTR) {
                 *key = (*to_del).next;
                 HeapFree(GetProcessHeap(), 0, (*to_del).value as LPVOID);
                 HeapFree(GetProcessHeap(), 0, to_del as LPVOID);
-                (*CurProfile).changed = 1i32;
+                (*MRUProfile[0]).changed = 1i32;
             }
         }
         section = &raw mut (*(*section)).next as *mut *mut PROFILESECTION;
@@ -935,19 +942,19 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
     let mut hFile: HANDLE = core::ptr::null_mut();
     let mut LastWriteTime: FILETIME = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
 
-    if CurProfile.is_null()
+    if MRUProfile[0].is_null()
     {
         WARN!(b"No current profile!\n\0" as *const u8 as LPCSTR);
         return FALSE;
     }
 
-    if (*CurProfile).changed == 0
+    if (*MRUProfile[0]).changed == 0
     {
         return TRUE;
     }
 
     hFile = CreateFileW(
-        (*CurProfile).filename,
+        (*MRUProfile[0]).filename,
         GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE,
         core::ptr::null_mut(),
@@ -960,7 +967,7 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
     {
         WARN!(
             b"could not save profile file %s (error was %d)\n\0" as *const u8 as LPCSTR,
-            debugstr_w((*CurProfile).filename),
+            debugstr_w((*MRUProfile[0]).filename),
             GetLastError(),
         );
         return FALSE;
@@ -968,10 +975,10 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
 
     TRACE!(
         b"Saving %s\n\0" as *const u8 as LPCSTR,
-        debugstr_w((*CurProfile).filename),
+        debugstr_w((*MRUProfile[0]).filename),
     );
 
-    PROFILE_Save(hFile, (*CurProfile).section, (*CurProfile).encoding);
+    PROFILE_Save(hFile, (*MRUProfile[0]).section, (*MRUProfile[0]).encoding);
 
     if GetFileTime(
         hFile,
@@ -980,27 +987,27 @@ unsafe fn PROFILE_FlushFile() -> BOOL {
         &mut LastWriteTime,
     ) != 0
     {
-        (*CurProfile).LastWriteTime = LastWriteTime;
+        (*MRUProfile[0]).LastWriteTime = LastWriteTime;
     }
 
     CloseHandle(hFile);
-    (*CurProfile).changed = FALSE;
+    (*MRUProfile[0]).changed = FALSE;
     return TRUE;
 }
 unsafe fn PROFILE_ReleaseFile() {
     PROFILE_FlushFile();
-    PROFILE_Free((*CurProfile).section);
+    PROFILE_Free((*MRUProfile[0]).section);
     HeapFree(
         GetProcessHeap(),
         0,
-        (*CurProfile).filename as LPVOID,
+        (*MRUProfile[0]).filename as LPVOID,
     );
-    (*CurProfile).changed = 0;
-    (*CurProfile).section = core::ptr::null_mut();
-    (*CurProfile).filename = core::ptr::null_mut();
-    (*CurProfile).encoding = ENCODING_ANSI;
+    (*MRUProfile[0]).changed = 0;
+    (*MRUProfile[0]).section = core::ptr::null_mut();
+    (*MRUProfile[0]).filename = core::ptr::null_mut();
+    (*MRUProfile[0]).encoding = ENCODING_ANSI;
     ZeroMemory(
-        &raw mut (*CurProfile).LastWriteTime as *mut ::core::ffi::c_void,
+        &raw mut (*MRUProfile[0]).LastWriteTime as *mut ::core::ffi::c_void,
         core::mem::size_of::<FILETIME>(),
     );
 }
@@ -1040,7 +1047,7 @@ unsafe fn PROFILE_Open(
         core::mem::size_of::<FILETIME>(),
     );
 
-    if CurProfile.is_null() {
+    if MRUProfile[0].is_null() {
         i = 0;
         while i < N_CACHED_PROFILES {
             MRUProfile[i as usize] = HeapAlloc(
@@ -1135,7 +1142,7 @@ unsafe fn PROFILE_Open(
                     MRUProfile[j as usize] = MRUProfile[(j - 1) as usize];
                     j -= 1;
                 }
-                CurProfile = tempProfile;
+                MRUProfile[0] = tempProfile;
             }
 
             if hFile != INVALID_HANDLE_VALUE {
@@ -1146,7 +1153,7 @@ unsafe fn PROFILE_Open(
                     &mut LastWriteTime,
                 );
                 if memcmp(
-                    &(*CurProfile).LastWriteTime as *const FILETIME as *const core::ffi::c_void,
+                    &(*MRUProfile[0]).LastWriteTime as *const FILETIME as *const core::ffi::c_void,
                     &LastWriteTime as *const FILETIME as *const core::ffi::c_void,
                     core::mem::size_of::<FILETIME>(),
                 ) == 0
@@ -1163,9 +1170,9 @@ unsafe fn PROFILE_Open(
                         debugstr_w(buffer.as_mut_ptr()),
                         i,
                     );
-                    PROFILE_Free((*CurProfile).section);
-                    (*CurProfile).section = PROFILE_Load(hFile, &mut (*CurProfile).encoding);
-                    (*CurProfile).LastWriteTime = LastWriteTime;
+                    PROFILE_Free((*MRUProfile[0]).section);
+                    (*MRUProfile[0]).section = PROFILE_Load(hFile, &mut (*MRUProfile[0]).encoding);
+                    (*MRUProfile[0]).LastWriteTime = LastWriteTime;
                 }
                 CloseHandle(hFile);
                 return 1;
@@ -1176,6 +1183,9 @@ unsafe fn PROFILE_Open(
                     i,
                 );
             }
+            // profile.c returns TRUE here too: the profile is cached, just not on disk yet.
+            // Falling through re-created it and dropped every unsaved key written so far.
+            return 1;
         }
         i += 1;
     }
@@ -1189,27 +1199,28 @@ unsafe fn PROFILE_Open(
             MRUProfile[i as usize] = MRUProfile[(i - 1) as usize];
             i -= 1;
         }
-        CurProfile = tempProfile;
+        MRUProfile[0] = tempProfile;
     }
 
-    if !(*CurProfile).filename.is_null() {
+
+    if !(*MRUProfile[0]).filename.is_null() {
         PROFILE_ReleaseFile();
     }
 
-    (*CurProfile).filename = HeapAlloc(
+    (*MRUProfile[0]).filename = HeapAlloc(
         GetProcessHeap(),
         0,
         ((strlenW(buffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as usize,
     ) as *mut WCHAR;
-    strcpyW((*CurProfile).filename, buffer.as_mut_ptr());
+    strcpyW((*MRUProfile[0]).filename, buffer.as_mut_ptr());
 
     if hFile != INVALID_HANDLE_VALUE {
-        (*CurProfile).section = PROFILE_Load(hFile, &mut (*CurProfile).encoding);
+        (*MRUProfile[0]).section = PROFILE_Load(hFile, &mut (*MRUProfile[0]).encoding);
         GetFileTime(
             hFile,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            &mut (*CurProfile).LastWriteTime,
+            &mut (*MRUProfile[0]).LastWriteTime,
         );
         CloseHandle(hFile);
     } else {
@@ -1302,7 +1313,7 @@ unsafe fn PROFILE_GetSectionNames(mut buffer: LPWSTR, mut len: UINT) -> INT {
 
     buflen = len.wrapping_sub(1);
     buf = buffer;
-    section = (*CurProfile).section;
+    section = (*MRUProfile[0]).section;
     while !section.is_null() {
         if (*section).name[0] != 0 {
             tmplen = strlenW((*section).name.as_ptr()).wrapping_add(1) as UINT;
@@ -1354,7 +1365,7 @@ unsafe extern "C" fn PROFILE_GetString(
     }
     if !key_name.is_null() {
         key = PROFILE_Find(
-            &mut (*CurProfile).section,
+            &mut (*MRUProfile[0]).section,
             section,
             key_name,
             0,
@@ -1382,7 +1393,7 @@ unsafe extern "C" fn PROFILE_GetString(
     /* no "else" here ! */
     if !section.is_null() {
         let mut ret: INT = PROFILE_GetSection(
-            (*CurProfile).section,
+            (*MRUProfile[0]).section,
             section,
             buffer,
             len,
@@ -1406,8 +1417,8 @@ unsafe fn PROFILE_SetString(
 ) -> BOOL {
     if key_name.is_null() {
         TRACE!(b"(%s)\n\0" as *const u8 as LPCSTR, debugstr_w(section_name));
-        (*CurProfile).changed |= PROFILE_DeleteSection(
-            &raw mut (*CurProfile).section,
+        (*MRUProfile[0]).changed |= PROFILE_DeleteSection(
+            &raw mut (*MRUProfile[0]).section,
             section_name,
         );
         return TRUE;
@@ -1417,15 +1428,15 @@ unsafe fn PROFILE_SetString(
             debugstr_w(section_name),
             debugstr_w(key_name),
         );
-        (*CurProfile).changed |= PROFILE_DeleteKey(
-            &raw mut (*CurProfile).section,
+        (*MRUProfile[0]).changed |= PROFILE_DeleteKey(
+            &raw mut (*MRUProfile[0]).section,
             section_name,
             key_name,
         );
         return TRUE;
     } else {
         let key: *mut PROFILEKEY = PROFILE_Find(
-            &raw mut (*CurProfile).section,
+            &raw mut (*MRUProfile[0]).section,
             section_name,
             key_name,
             TRUE,
@@ -1462,7 +1473,7 @@ unsafe fn PROFILE_SetString(
             ((strlenW(value) + 1) * core::mem::size_of::<WCHAR>()) as usize,
         ) as LPWSTR;
         strcpyW((*key).value, value);
-        (*CurProfile).changed = TRUE;
+        (*MRUProfile[0]).changed = TRUE;
     }
     return TRUE;
 }
@@ -1621,7 +1632,7 @@ pub unsafe extern "system" fn GetPrivateProfileSectionW(
 
     if PROFILE_Open(filename, 0) != 0 {
         ret = PROFILE_GetSection(
-            (*CurProfile).section,
+            (*MRUProfile[0]).section,
             section,
             buffer,
             len,
@@ -1883,7 +1894,7 @@ pub unsafe extern "system" fn WritePrivateProfileStringW(
 
     if section.is_null() && entry.is_null() && string.is_null() {
         if filename.is_null() || PROFILE_Open(filename, 1) != 0 {
-            if !CurProfile.is_null() {
+            if !MRUProfile[0].is_null() {
                 PROFILE_ReleaseFile();
             }
         }
@@ -1979,7 +1990,7 @@ pub unsafe extern "system" fn WritePrivateProfileSectionW(
 
     if section.is_null() && string.is_null() {
         if filename.is_null() || PROFILE_Open(filename, 1) != 0 {
-            if !CurProfile.is_null() {
+            if !MRUProfile[0].is_null() {
                 PROFILE_ReleaseFile();
             }
         }
@@ -2198,7 +2209,7 @@ pub unsafe extern "system" fn GetPrivateProfileStructW(
 
     if PROFILE_Open(filename, FALSE) != 0 {
         let mut k: *mut PROFILEKEY = PROFILE_Find(
-            &raw mut (*CurProfile).section,
+            &raw mut (*MRUProfile[0]).section,
             section,
             key,
             FALSE,
@@ -2567,7 +2578,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 // /* Cached profile files */
 // static PROFILE *MRUProfile[N_CACHED_PROFILES]={NULL};
 //
-// #define CurProfile (MRUProfile[0])
+// #define MRUProfile[0] (MRUProfile[0])
 //
 // /* Check for comments in profile */
 // #define IS_ENTRY_COMMENT(str)  ((str)[0] == ';')
@@ -3065,7 +3076,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //  */
 // static void PROFILE_DeleteAllKeys( LPCWSTR section_name)
 // {
-//     PROFILESECTION **section= &CurProfile->section;
+//     PROFILESECTION **section= &MRUProfile[0]->section;
 //     while (*section)
 //     {
 //         if (!strcmpiW( (*section)->name, section_name ))
@@ -3077,7 +3088,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 // 		*key = to_del->next;
 //                 HeapFree( GetProcessHeap(), 0, to_del->value);
 // 		HeapFree( GetProcessHeap(), 0, to_del );
-// 		CurProfile->changed =TRUE;
+// 		MRUProfile[0]->changed =TRUE;
 //             }
 //         }
 //         section = &(*section)->next;
@@ -3172,29 +3183,29 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     HANDLE hFile = NULL;
 //     FILETIME LastWriteTime;
 //
-//     if(!CurProfile)
+//     if(!MRUProfile[0])
 //     {
 //         WARN!("No current profile!\n");
 //         return FALSE;
 //     }
 //
-//     if (!CurProfile->changed) return TRUE;
+//     if (!MRUProfile[0]->changed) return TRUE;
 //
-//     hFile = CreateFileW(CurProfile->filename, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+//     hFile = CreateFileW(MRUProfile[0]->filename, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 //                         NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 //
 //     if (hFile == INVALID_HANDLE_VALUE)
 //     {
-//         WARN!("could not save profile file %s (error was %d)\n", debugstr_w(CurProfile->filename), GetLastError());
+//         WARN!("could not save profile file %s (error was %d)\n", debugstr_w(MRUProfile[0]->filename), GetLastError());
 //         return FALSE;
 //     }
 //
-//     TRACE!("Saving %s\n", debugstr_w(CurProfile->filename));
-//     PROFILE_Save( hFile, CurProfile->section, CurProfile->encoding );
+//     TRACE!("Saving %s\n", debugstr_w(MRUProfile[0]->filename));
+//     PROFILE_Save( hFile, MRUProfile[0]->section, MRUProfile[0]->encoding );
 //     if(GetFileTime(hFile, NULL, NULL, &LastWriteTime))
-//        CurProfile->LastWriteTime=LastWriteTime;
+//        MRUProfile[0]->LastWriteTime=LastWriteTime;
 //     CloseHandle( hFile );
-//     CurProfile->changed = FALSE;
+//     MRUProfile[0]->changed = FALSE;
 //     return TRUE;
 // }
 //
@@ -3207,13 +3218,13 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 // static void PROFILE_ReleaseFile(void)
 // {
 //     PROFILE_FlushFile();
-//     PROFILE_Free( CurProfile->section );
-//     HeapFree( GetProcessHeap(), 0, CurProfile->filename );
-//     CurProfile->changed = FALSE;
-//     CurProfile->section = NULL;
-//     CurProfile->filename  = NULL;
-//     CurProfile->encoding = ENCODING_ANSI;
-//     ZeroMemory(&CurProfile->LastWriteTime, sizeof(CurProfile->LastWriteTime));
+//     PROFILE_Free( MRUProfile[0]->section );
+//     HeapFree( GetProcessHeap(), 0, MRUProfile[0]->filename );
+//     MRUProfile[0]->changed = FALSE;
+//     MRUProfile[0]->section = NULL;
+//     MRUProfile[0]->filename  = NULL;
+//     MRUProfile[0]->encoding = ENCODING_ANSI;
+//     ZeroMemory(&MRUProfile[0]->LastWriteTime, sizeof(MRUProfile[0]->LastWriteTime));
 // }
 //
 // /***********************************************************************
@@ -3253,7 +3264,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     /* First time around */
 //
-//     if(!CurProfile)
+//     if(!MRUProfile[0])
 //        for(i=0;i<N_CACHED_PROFILES;i++)
 //        {
 //           MRUProfile[i]=HeapAlloc( GetProcessHeap(), 0, sizeof(PROFILE) );
@@ -3311,13 +3322,13 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //                 tempProfile=MRUProfile[i];
 //                 for(j=i;j>0;j--)
 //                     MRUProfile[j]=MRUProfile[j-1];
-//                 CurProfile=tempProfile;
+//                 MRUProfile[0]=tempProfile;
 //             }
 //
 //             if (hFile != INVALID_HANDLE_VALUE)
 //             {
 //                 GetFileTime(hFile, NULL, NULL, &LastWriteTime);
-//                 if (!memcmp( &CurProfile->LastWriteTime, &LastWriteTime, sizeof(FILETIME) ) &&
+//                 if (!memcmp( &MRUProfile[0]->LastWriteTime, &LastWriteTime, sizeof(FILETIME) ) &&
 //                     is_not_current(&LastWriteTime))
 //                     TRACE!("(%s): already opened (mru=%d)\n",
 //                           debugstr_w(buffer), i);
@@ -3325,9 +3336,9 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //                 {
 //                     TRACE!("(%s): already opened, needs refreshing (mru=%d)\n",
 //                           debugstr_w(buffer), i);
-//                     PROFILE_Free(CurProfile->section);
-//                     CurProfile->section = PROFILE_Load(hFile, &CurProfile->encoding);
-//                     CurProfile->LastWriteTime = LastWriteTime;
+//                     PROFILE_Free(MRUProfile[0]->section);
+//                     MRUProfile[0]->section = PROFILE_Load(hFile, &MRUProfile[0]->encoding);
+//                     MRUProfile[0]->LastWriteTime = LastWriteTime;
 //                 }
 //                 CloseHandle(hFile);
 //                 return TRUE;
@@ -3346,18 +3357,18 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //        tempProfile=MRUProfile[N_CACHED_PROFILES-1];
 //        for(i=N_CACHED_PROFILES-1;i>0;i--)
 //           MRUProfile[i]=MRUProfile[i-1];
-//        CurProfile=tempProfile;
+//        MRUProfile[0]=tempProfile;
 //       }
-//     if(CurProfile->filename) PROFILE_ReleaseFile();
+//     if(MRUProfile[0]->filename) PROFILE_ReleaseFile();
 //
-//     /* OK, now that CurProfile is definitely free we assign it our new file */
-//     CurProfile->filename  = HeapAlloc( GetProcessHeap(), 0, (strlenW(buffer)+1) * sizeof(WCHAR) );
-//     strcpyW( CurProfile->filename, buffer );
+//     /* OK, now that MRUProfile[0] is definitely free we assign it our new file */
+//     MRUProfile[0]->filename  = HeapAlloc( GetProcessHeap(), 0, (strlenW(buffer)+1) * sizeof(WCHAR) );
+//     strcpyW( MRUProfile[0]->filename, buffer );
 //
 //     if (hFile != INVALID_HANDLE_VALUE)
 //     {
-//         CurProfile->section = PROFILE_Load(hFile, &CurProfile->encoding);
-//         GetFileTime(hFile, NULL, NULL, &CurProfile->LastWriteTime);
+//         MRUProfile[0]->section = PROFILE_Load(hFile, &MRUProfile[0]->encoding);
+//         GetFileTime(hFile, NULL, NULL, &MRUProfile[0]->LastWriteTime);
 //         CloseHandle(hFile);
 //     }
 //     else
@@ -3452,7 +3463,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //
 //     buflen=len-1;
 //     buf=buffer;
-//     section = CurProfile->section;
+//     section = MRUProfile[0]->section;
 //     while ((section!=NULL)) {
 //         if (section->name[0]) {
 //             tmplen = strlenW(section->name)+1;
@@ -3513,7 +3524,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     if (!def_val) def_val = empty_strW;
 //     if (key_name)
 //     {
-//         key = PROFILE_Find( &CurProfile->section, section, key_name, FALSE, FALSE);
+//         key = PROFILE_Find( &MRUProfile[0]->section, section, key_name, FALSE, FALSE);
 //         PROFILE_CopyEntry( buffer, (key && key->value) ? key->value : def_val,
 //                            len, TRUE );
 //         TRACE!("(%s,%s,%s): returning %s\n",
@@ -3524,7 +3535,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     /* no "else" here ! */
 //     if (section)
 //     {
-//         INT ret = PROFILE_GetSection(CurProfile->section, section, buffer, len, FALSE);
+//         INT ret = PROFILE_GetSection(MRUProfile[0]->section, section, buffer, len, FALSE);
 //         if (!buffer[0]) /* no luck -> def_val */
 //         {
 //             PROFILE_CopyEntry(buffer, def_val, len, TRUE);
@@ -3548,7 +3559,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     if (!key_name)  /* Delete a whole section */
 //     {
 //         TRACE!("(%s)\n", debugstr_w(section_name));
-//         CurProfile->changed |= PROFILE_DeleteSection( &CurProfile->section,
+//         MRUProfile[0]->changed |= PROFILE_DeleteSection( &MRUProfile[0]->section,
 //                                                       section_name );
 //         return TRUE;         /* Even if PROFILE_DeleteSection() has failed,
 //                                 this is not an error on application's level.*/
@@ -3556,13 +3567,13 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     else if (!value)  /* Delete a key */
 //     {
 //         TRACE!("(%s,%s)\n", debugstr_w(section_name), debugstr_w(key_name) );
-//         CurProfile->changed |= PROFILE_DeleteKey( &CurProfile->section,
+//         MRUProfile[0]->changed |= PROFILE_DeleteKey( &MRUProfile[0]->section,
 //                                                   section_name, key_name );
 //         return TRUE;          /* same error handling as above */
 //     }
 //     else  /* Set the key value */
 //     {
-//         PROFILEKEY *key = PROFILE_Find(&CurProfile->section, section_name,
+//         PROFILEKEY *key = PROFILE_Find(&MRUProfile[0]->section, section_name,
 //                                         key_name, TRUE, create_always );
 //         TRACE!("(%s,%s,%s):\n",
 //               debugstr_w(section_name), debugstr_w(key_name), debugstr_w(value) );
@@ -3585,7 +3596,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //         else TRACE!("  creating key\n" );
 //         key->value = HeapAlloc( GetProcessHeap(), 0, (strlenW(value)+1) * sizeof(WCHAR) );
 //         strcpyW( key->value, value );
-//         CurProfile->changed = TRUE;
+//         MRUProfile[0]->changed = TRUE;
 //     }
 //     return TRUE;
 // }
@@ -3844,7 +3855,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     RtlEnterCriticalSection( &PROFILE_CritSect );
 //
 //     if (PROFILE_Open( filename, FALSE ))
-//         ret = PROFILE_GetSection(CurProfile->section, section, buffer, len, TRUE);
+//         ret = PROFILE_GetSection(MRUProfile[0]->section, section, buffer, len, TRUE);
 //
 //     RtlLeaveCriticalSection( &PROFILE_CritSect );
 //
@@ -3940,7 +3951,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     {
 //         if (!filename || PROFILE_Open( filename, TRUE ))
 //         {
-//             if (CurProfile) PROFILE_ReleaseFile();  /* always return FALSE in this case */
+//             if (MRUProfile[0]) PROFILE_ReleaseFile();  /* always return FALSE in this case */
 //         }
 //     }
 //     else if (PROFILE_Open( filename, TRUE ))
@@ -3999,7 +4010,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     {
 //         if (!filename || PROFILE_Open( filename, TRUE ))
 //         {
-//             if (CurProfile) PROFILE_ReleaseFile();  /* always return FALSE in this case */
+//             if (MRUProfile[0]) PROFILE_ReleaseFile();  /* always return FALSE in this case */
 //         }
 //     }
 //     else if (PROFILE_Open( filename, TRUE )) {
@@ -4180,7 +4191,7 @@ pub unsafe extern "system" fn CloseProfileUserMapping() -> BOOL {
 //     RtlEnterCriticalSection( &PROFILE_CritSect );
 //
 //     if (PROFILE_Open( filename, FALSE )) {
-//         PROFILEKEY *k = PROFILE_Find ( &CurProfile->section, section, key, FALSE, FALSE);
+//         PROFILEKEY *k = PROFILE_Find ( &MRUProfile[0]->section, section, key, FALSE, FALSE);
 // 	if (k) {
 // 	    TRACE!("value (at %p): %s\n", k->value, debugstr_w(k->value));
 // 	    if (((strlenW(k->value) - 2) / 2) == len)

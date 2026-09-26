@@ -1,6 +1,7 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::base::NT_SUCCESS;
 use ntkrnl_sys::ddk::{RtlAppendUnicodeToString, RtlInitUnicodeString, ZwClose, ZwCreateFile, ZwCreateSection, ZwMapViewOfSection, ZwUnmapViewOfSection};
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 extern "system" {
     // safe_user_io.h — NTAPI probe (Length = SIZE_T), see console.rs/copy.rs.
@@ -201,20 +202,34 @@ pub unsafe extern "system" fn UserLoadImage(pwszName: PCWSTR) -> HBITMAP {
             core::mem::size_of::<DWORD>() as SIZE_T,
             1,
         );
+        // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped the probes AND every
+        // header field read in one _SEH2_TRY. pbmfh points into a section mapped into
+        // the caller's address space, which another thread can unmap under us, so the
+        // header is captured ONCE into kernel memory and read from there below.
+        let mut SafeHdr: BITMAPFILEHEADER = core::mem::zeroed();
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(SafeHdr) as *mut core::ffi::c_void,
+                pbmfh as *const core::ffi::c_void,
+                core::mem::size_of::<BITMAPFILEHEADER>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
         if NT_SUCCESS(Status) {
-            Status = SafeProbeForRead(pbmfh as PVOID, (*pbmfh).bfSize as SIZE_T, 1);
+            Status = SafeProbeForRead(pbmfh as PVOID, SafeHdr.bfSize as SIZE_T, 1);
         }
 
         if !NT_SUCCESS(Status) {
             break 'leave;
         }
 
-        if (*pbmfh).bfType == 0x4D42 /* 'BM' */ {
+        if SafeHdr.bfType == 0x4D42 /* 'BM' */ {
             /* Could be BITMAPCOREINFO */
             let pConvertedInfo: *mut BITMAPINFO;
             let hdc: HDC;
 
-            pvBits = (pbmfh as PCHAR).add((*pbmfh).bfOffBits as usize) as PVOID;
+            pvBits = (pbmfh as PCHAR).add(SafeHdr.bfOffBits as usize) as PVOID;
 
             pConvertedInfo = DIB_ConvertBitmapInfo(pbmi, DIB_RGB_COLORS) as *mut BITMAPINFO;
             if pConvertedInfo.is_null() {
@@ -238,7 +253,7 @@ pub unsafe extern "system" fn UserLoadImage(pwszName: PCWSTR) -> HBITMAP {
                 pConvertedInfo as PBITMAPINFO,
                 DIB_RGB_COLORS,
                 0,
-                (*pbmfh).bfSize - (*pbmfh).bfOffBits,
+                SafeHdr.bfSize - SafeHdr.bfOffBits,
                 core::ptr::null_mut(),
             );
 

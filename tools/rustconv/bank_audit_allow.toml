@@ -15,3 +15,137 @@ what oleaut32-rust/src/usrmarshal.rs ships. The two differ in signature as well 
 (the ReactOS arm takes Start and returns `Start + size`), so this is a genuine twin, not
 a rename. No function by the banked name has ever existed in a ReactOS build.
 """
+
+_wopen = """
+msvcrt's file.c: a C-variadic entry point (`int WINAPIV _wopen(const wchar_t*, int, ...)`)
+that stable Rust cannot define at all. It ships as a va_start trampoline in
+dll/win32/msvcrt/rust_file_varargs_shim.c, and reaches Rust in TWO hops — `_wopen` calls
+`_wsopen` (also in the shim, deliberately same-TU) which calls the Rust
+`_wsopen_dispatch`. The `varargs_twin` rule derives ONE hop, and widening it to chase a
+second would be the containment-style looseness its docstring exists to forbid. file.rs
+declares `_wopen` in an `extern` block, which `_has_body` correctly refuses to count.
+Nothing is missing: the banked fixed-arity body has nowhere legal to go.
+"""
+
+_open = """
+Exactly `_wopen`'s case, narrow-char: `_open` -> `_sopen` (both in
+rust_file_varargs_shim.c) -> the Rust `_sopen_dispatch`. Banked only as a `.partial`,
+from a run whose envelope check was itself wrong (it sealed `va_arg` as a runtime callee
+with argc=2 because mingw's stdarg.h spells it as an object-like alias; fixed in
+4c611bdf611). Re-buying it would be re-buying a body that cannot ship: the variadic half
+is C by language limit, permanently.
+"""
+
+# ---------------------------------------------------------------------------
+# shell32. Six classes of banked work that is correctly absent, each verified
+# against the tree and the CMake source list on 2026-09-19. None of these is a
+# rename an alias rule could derive — every one is a body that was SUPERSEDED,
+# which no name comparison can see.
+# ---------------------------------------------------------------------------
+
+[groups.exe_drop_handler]
+reason = """
+CExeDropHandler ships, and not under these names. `droptargets/CexeDropHandler.cpp` is
+commented out of dll/win32/shell32/CMakeLists.txt ("replaced by Rust") and the object is
+shell32-rust/src/exe_drop_handler.rs, wired at lib.rs:90. That module is a hand-written
+COM object whose vtable entries are snake_case (`persist_file_load`, `drop_drag_enter`,
+`persist_file_save_completed`), so the per-method C++ labels have no counterpart to match.
+The banked bodies were the input to that rewrite, not its output. Keep the dirs: they are
+the only record of what the rewrite was checked against.
+"""
+functions = [
+  "CExeDropHandler_ctor",
+  "CExeDropHandler_DragEnter",
+  "CExeDropHandler_DragOver",
+  "CExeDropHandler_DragLeave",
+  "CExeDropHandler_Drop",
+  "CExeDropHandler_GetClassID",
+  "CExeDropHandler_GetCurFile",
+  "CExeDropHandler_IsDirty",
+  "CExeDropHandler_Load",
+  "CExeDropHandler_Save",
+  "CExeDropHandler_SaveCompleted",
+]
+
+[groups.folder_options]
+reason = """
+Same shape as exe_drop_handler, one step further along: CFolderOptions.cpp is not in
+shell32's CMakeLists at all. The object is shell32-rust/src/folder_options.rs (wired at
+lib.rs:92), which reaches C++ callers through `CFolderOptions_*_RustBridge` entry points
+re-exported from win32.rs, and spells its internals `assign_site` / `add_ref` / `release`
+rather than `CFolderOptions_SetSite`. The three free functions are in the same TU and the
+same rewrite. Its one ATL `CWindowImpl<>` stays C++ in rust_folder_options_stub.cpp.
+"""
+functions = [
+  "CFolderOptions_ctor",
+  "CFolderOptions_AddPages",
+  "CFolderOptions_ApplyDefFolderSettings",
+  "CFolderOptions_CanSetDefFolderSettings",
+  "CFolderOptions_GetSite",
+  "CFolderOptions_SetSite",
+  "CFolderOptions_HandleDefFolderSettings",
+  "CFolderOptions_ResetGlobalAndDefViewFolderSettings",
+  "ExecResetDefViewFolderSettings",
+  "ResetDefViewFolderSettings",
+  "ResetGlobalFolderSettings",
+]
+
+[groups.enum_id_list_base]
+reason = """
+A C++ BASE CLASS that Rust flattened into each derived class instead of porting once.
+file_sys_enum.rs says so in its own header ("`CEnumIDListBase` list methods are FLATTENED
+into the class here"), and the tree carries one copy per enum —
+`CDrivesFolderEnum_AddToEnumList_body`, `CControlPanelEnum_DeleteList_body`,
+`CRecycleBinEnum_CEnumIDListBase_base_dtor_body` and so on. There is deliberately no
+generic `CEnumIDListBase_*`, and there must not be one: CEnumIDListBase.cpp is still live
+in CMakeLists (line 76) because EIGHT C++ classes still derive from it (CNetFolder,
+CDrivesFolder, CPrinterFolder, CControlPanelFolder, CFSFolder, CRegFolder, CRecycleBin,
+CDesktopFolder). Defining these names in Rust would capture the live C++ base — the same
+silent-capture failure that froze explorer's taskbar on 2026-09-19.
+"""
+functions = [
+  "CEnumIDListBase_dtor",
+  "CEnumIDListBase_Next",
+  "CEnumIDListBase_Skip",
+  "CEnumIDListBase_Reset",
+  "CEnumIDListBase_AddToEnumList",
+  "CEnumIDListBase_DeleteList",
+  "CEnumIDListBase_AppendItemsFromEnumerator",
+]
+
+[groups.recyclebin_view_bridge]
+reason = """
+Integrated, as an `extern` DECLARATION rather than a definition, which `_has_body`
+correctly refuses to count. These two are the C++ side of a bridge: recycle_bin.rs:1500
+declares them and calls them at 1919/1932 so that Rust never needs CRecycleBinFolderViewCB
+itself. A Rust definition would be the wrong artifact, not a missing one.
+"""
+functions = [
+  "CRecycleBinFolderViewCB_CreateInstance_RustBridge",
+  "CRecycleBinFolderViewCB_Initialize_RustBridge",
+]
+
+[groups.stub_window32_bridge]
+reason = """
+Bought, then REMOVED from the assembled module on purpose — utils.rs:77 records the
+removal and utils.rs:2963 the reasoning. CStubWindow32 is an ATL `CWindowImpl<>`, whose
+per-instance thunk and registered window class must have exactly one owner, and
+CDrivesFolder.cpp still uses the class, so utils.cpp stays a hybrid TU. The tell that the
+translation could never have worked: the bindgen island renders CStubWindow32 as a
+layout-only struct (bindgen cannot emit C++ methods), so the model reached for a
+`CStubWindow32_new()` and a `core::boxed::CStubWindow32_delete()` that exist nowhere.
+"""
+functions = [
+  "CStubWindow32_CreateStub_RustBridge",
+  "CStubWindow32_DestroyStub_RustBridge",
+]
+
+[groups.co_create_init_sf_overload]
+functions = ["SHELL32_CoCreateInitSF_2"]
+reason = """
+A RENAME forced by C++ overloading, documented at shlfolder.rs:462. The C++ declares two
+overloads of `SHELL32_CoCreateInitSF`; `EXTERN_C` maps one name to one symbol, so the
+second ships as `SHELL32_CoCreateInitSFWithCsidl` (shlfolder.rs:466) and its six C++ call
+sites were renamed with it. The `_2` in the banked label is the translator's disambiguator
+for the overload pair, never a name that existed in C or in Rust.
+"""

@@ -143,6 +143,13 @@ pub unsafe extern "system" fn WSHGetSockaddrType(
 
     NO_ERROR as INT
 }
+// tcpioctl.h: #define TCP_SOCKET_KEEPALIVE 2 -- added to the header alongside this
+// change (upstream 248aa75023a). The checked-in bindgen types predate it and
+// gen_driver_types.sh cannot currently regenerate them (unrelated clang error in
+// intrin_x86.h on the amd64 target), so it is declared here rather than left as a
+// bare 2. Remove when types_*.rs are next regenerated.
+const TCP_SOCKET_KEEPALIVE: ULONG = 2;
+
 unsafe extern "C" fn GetTdiTypeId(
     Level: INT,
     OptionName: INT,
@@ -151,17 +158,15 @@ unsafe extern "C" fn GetTdiTypeId(
 ) {
     match Level as u32 {
         SOL_SOCKET => {
-            *TdiType = INFO_TYPE_ADDRESS_OBJECT as ULONG;
+            // SO_KEEPALIVE is a CONNECTION-level TDI option, not an address-object
+            // one, and this arm used to ASSERT rather than name its id -- so
+            // setsockopt(SO_KEEPALIVE) reported success and did nothing at all.
+            // Upstream-Commit: 248aa75023a
+            *TdiType = INFO_TYPE_CONNECTION as ULONG;
             match OptionName as u32 {
                 SO_KEEPALIVE => {
-                    if 0 as ::core::ffi::c_int == 0 {
-                        RtlAssert(
-                            b"FALSE\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                            b"dll/win32/wshtcpip/wshtcpip.c\0".as_ptr() as *const ::core::ffi::c_char as PVOID,
-                            175 as ULONG,
-                            core::ptr::null_mut::<CHAR>(),
-                        );
-                    }
+                    *TdiId = TCP_SOCKET_KEEPALIVE;
+                    return;
                 }
                 _ => {}
             }
@@ -649,7 +654,12 @@ pub unsafe extern "system" fn WSHSetSocketInformation(
                 return 0;
             }
             SO_KEEPALIVE => {
-                return 0;
+                // Was `return 0` -- a silent no-op that told the caller keepalive
+                // was enabled. Validate and fall through to the TDI request path
+                // below, the same one TCP_NODELAY uses. Upstream-Commit: 248aa75023a
+                if (OptionLength as usize) < core::mem::size_of::<DWORD>() {
+                    return WSAEFAULT as INT;
+                }
             }
             _ => {
                 return WSAENOPROTOOPT as INT;

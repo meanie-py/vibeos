@@ -476,7 +476,12 @@ unsafe fn ExpFindEntryForThread(
 unsafe fn ExpBoostOwnerThread(Thread: PKTHREAD, OwnerThread: PKTHREAD) {
     if (OwnerThread as ULONG_PTR) & 0x3 == 0 {
         if ((*OwnerThread).Priority as i32) < ((*Thread).Priority as i32) && ((*OwnerThread).Priority as i32) < 14 {
-            KiAcquireThreadLock(Thread);
+            // The WAITER's lock does not protect the OWNER's dispatcher state, and
+            // everything below mutates OwnerThread -- PriorityDecrement, Quantum,
+            // KiSetPriorityThread. Live on every contended ERESOURCE acquisition
+            // where the owner runs at lower priority than a waiter.
+            // Upstream-Commit: e6d2efe90708
+            KiAcquireThreadLock(OwnerThread);
 
             (*OwnerThread).PriorityDecrement += (14 - (*OwnerThread).Priority as i32) as i8;
             // Quantum and QuantumReset are at different __bindgen_anon_N per arch
@@ -488,7 +493,7 @@ unsafe fn ExpBoostOwnerThread(Thread: PKTHREAD, OwnerThread: PKTHREAD) {
             { (*OwnerThread).__bindgen_anon_9.__bindgen_anon_1.Quantum = qr as i8; }
             KiSetPriorityThread(OwnerThread, 14);
 
-            KiReleaseThreadLock(Thread);
+            KiReleaseThreadLock(OwnerThread);
         }
     }
 }
@@ -1066,6 +1071,12 @@ pub unsafe extern "system" fn ExReinitializeResourceLite(Resource: PERESOURCE) -
     (*Resource).ContentionCount = 0;
     (*Resource).NumberOfSharedWaiters = 0;
     (*Resource).NumberOfExclusiveWaiters = 0;
+    // The arm64 last-releaser slots (ExReleaseResourceForThreadLite).
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*Resource).Reserved2 = core::ptr::null_mut();
+        (*Resource).__bindgen_anon_1.Address = core::ptr::null_mut();
+    }
 
     STATUS_SUCCESS
 }
@@ -1087,11 +1098,34 @@ pub unsafe extern "system" fn ExReleaseResourceForThreadLite(
     Resource: PERESOURCE,
     Thread: ERESOURCE_THREAD,
 ) {
+    // Captured FIRST, like ExSetResourceOwnerPointer's: the 0xE3 below names
+    // the resource and thread but never the releaser, and #43's captures all
+    // come from here. LR is the direct caller (often ExReleaseResourceLite),
+    // and the frame record chain gives the ones above it.
+    #[cfg(target_arch = "aarch64")]
+    let (CallerPc, CallerFp): (usize, usize) = {
+        let lr: usize;
+        let fp: usize;
+        core::arch::asm!("mov {}, x30", "mov {}, x29", out(reg) lr, out(reg) fp,
+                         options(nomem, nostack, preserves_flags));
+        (lr, fp)
+    };
     let mut LockHandle: KLOCK_QUEUE_HANDLE = core::mem::zeroed();
     ExAcquireResourceLock(Resource, &mut LockHandle);
 
     ExpVerifyResource(Resource);
     ExpCheckForApcsDisabled(LockHandle.OldIrql, Resource, ExpGetCurrentKThread());
+
+    // Who released it LAST (#43 hunt): an 0xE3 finds the resource already idle,
+    // so the evidence is the release BEFORE it. Reserved2 and Address are debug
+    // slots nothing else here uses. Read before being overwritten below.
+    #[cfg(target_arch = "aarch64")]
+    let (PrevPc, PrevThr) = ((*Resource).Reserved2 as usize, (*Resource).__bindgen_anon_1.Address as usize);
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*Resource).Reserved2 = CallerPc as PVOID;
+        (*Resource).__bindgen_anon_1.Address = Thread as PVOID;
+    }
 
     if IsOwnedExclusive(Resource) {
         owner_set_count(core::ptr::addr_of_mut!((*Resource).OwnerEntry), owner_get_count(core::ptr::addr_of!((*Resource).OwnerEntry)) - 1);
@@ -1149,6 +1183,57 @@ pub unsafe extern "system" fn ExReleaseResourceForThreadLite(
 
                 loop {
                     if entry >= Limit {
+                        #[cfg(target_arch = "aarch64")]
+                        {
+                            let mut up = [0usize; 3];
+                            let mut fp = CallerFp;
+                            for slot in up.iter_mut() {
+                                if fp < 0xFFFF_0000_0000_0000 || fp & 7 != 0 {
+                                    break;
+                                }
+                                *slot = *((fp + 8) as *const usize);
+                                fp = *(fp as *const usize);
+                            }
+                            {
+                                extern "system" {
+                                    fn KiPcToFileHeader(
+                                        Pc: PVOID,
+                                        LdrEntry: *mut ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY,
+                                        DriversOnly: BOOLEAN,
+                                        InKernel: *mut BOOLEAN,
+                                    ) -> PVOID;
+                                }
+                                let mut le: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                                let mut ink: BOOLEAN = 0;
+                                let base = KiPcToFileHeader(PrevPc as PVOID, &mut le, 0, &mut ink);
+                                if !le.is_null() {
+                                    ntkrnl_sys::driver_ddk::DbgPrint(
+                                        c"[ERESOURCE] prev.caller = %wZ+0x%p\n".as_ptr(),
+                                        core::ptr::addr_of!((*le).BaseDllName),
+                                        (PrevPc - base as usize) as *const core::ffi::c_void,
+                                    );
+                                }
+                            }
+                            ntkrnl_sys::driver_ddk::DbgPrint(
+                                c"[ERESOURCE] 0xE3 release caller=%p up=%p %p %p prev.caller=%p prev.thr=%p res=%p thr=%p cur=%p inline.thr=%p inline.cnt=%lu active=%d entries=%lu flag=%04lx shw=%lu exw=%lu\n".as_ptr(),
+                                CallerPc as *const core::ffi::c_void,
+                                up[0] as *const core::ffi::c_void,
+                                up[1] as *const core::ffi::c_void,
+                                up[2] as *const core::ffi::c_void,
+                                PrevPc as *const core::ffi::c_void,
+                                PrevThr as *const core::ffi::c_void,
+                                Resource as *const core::ffi::c_void,
+                                Thread as *const core::ffi::c_void,
+                                ExGetCurrentResourceThread() as *const core::ffi::c_void,
+                                (*Resource).OwnerEntry.OwnerThread as *const core::ffi::c_void,
+                                owner_get_count(core::ptr::addr_of!((*Resource).OwnerEntry)),
+                                (*Resource).ActiveCount as i32,
+                                (*Resource).ActiveEntries as u32,
+                                (*Resource).Flag as u32,
+                                (*Resource).NumberOfSharedWaiters as u32,
+                                (*Resource).NumberOfExclusiveWaiters as u32,
+                            );
+                        }
                         KeBugCheckEx(
                             ntkrnl_sys::bugcodes::RESOURCE_NOT_OWNED,
                             Resource as ULONG_PTR,

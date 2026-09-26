@@ -72,7 +72,7 @@ def test_staging_avoids_sendfile_and_publishes_complete_media(tmp_path, monkeypa
     monkeypatch.setattr(backend, "win_path", str)
     monkeypatch.setattr(backend.os, "sendfile", lambda *a: pytest.fail("bulk sendfile used"))
     source = tmp_path / "boot.img"
-    source.write_bytes(bytes(range(256)) * 1024)
+    source.write_bytes(bytes(range(256)) * 4096 + b"partial final block")
     staging = tmp_path / "staging"
     destination = backend.stage_file(source, staging)
     assert (staging / "boot.img").read_bytes() == source.read_bytes()

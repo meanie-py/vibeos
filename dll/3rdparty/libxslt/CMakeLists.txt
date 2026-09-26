@@ -1,6 +1,7 @@
 
 spec2def(libxslt.dll libxslt.spec ADD_IMPORTLIB)
 
+
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libxslt
                     ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/libwin-iconv)
 
@@ -11,7 +12,12 @@ add_definitions(
     -D_MBCS
     -DHAVE_WIN32_THREADS
     -D_REENTRANT
-    -DLIBXML_STATIC)
+    -DLIBXML_STATIC
+    # This tree supplies its own CRT, so security.c's HAVE__STAT->stat()->_stat()
+    # remap (see win32config.h, meant for a stock MSVC CRT) must not fire.
+    # Pre-defining HAVE_STAT here makes security.c's `#ifndef HAVE_STAT` guard
+    # skip that remap unconditionally, regardless of win32config.h's HAVE__STAT.
+    -DHAVE_STAT)
 
 list(APPEND SOURCE
     attributes.c
@@ -38,7 +44,7 @@ list(APPEND SOURCE
 add_library(libxslt MODULE ${SOURCE})
 set_module_type(libxslt win32dll)
 target_link_libraries(libxslt libxml2 iconv-static zlib)
-add_importlibs(libxslt msvcrt ws2_32 kernel32)
+add_importlibs(libxslt msvcrt ws2_32 bcrypt kernel32)
 
 if(MSVC)
     add_importlibs(libxslt ntdll)

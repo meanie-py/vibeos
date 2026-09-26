@@ -20,6 +20,7 @@ unsafe fn ExInitializePushLock<T>(push_lock: *mut T) {
 }
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // usize-accepting wrappers over ddk/rtl primitives (i386 SIZE_T = u32) — same as path.rs.
 #[inline(always)]
@@ -562,20 +563,29 @@ pub unsafe extern "system" fn NtGdiAddFontResourceW(
         return 0;
     }
 
-    if IntCheckFontPathNames(pwcFiles, cFiles, cwc) == 0 {
+    // CAPTURE first, then validate the KERNEL copy. Upstream has the probe,
+    // IntCheckFontPathNames and the copy in ONE _SEH2_TRY; our probe above is
+    // validate-only, so the walk and the copy both had to stop touching user
+    // memory. Validating the captured bytes also closes a double fetch the C
+    // has: it walks the caller's buffer to approve the path, then copies that
+    // buffer again, so another thread can swap the path in between.
+    if !crate::copy::capture_from_user(
+        SafeFileName.Buffer as *mut c_void,
+        pwcFiles as *const c_void,
+        SafeFileName.Length as usize,
+    ) {
         ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
         return 0;
     }
 
-    RtlCopyMemory(
-        SafeFileName.Buffer as PVOID,
-        pwcFiles as PVOID,
-        (SafeFileName.Length as SIZE_T as _),
-    );
-
     *SafeFileName
         .Buffer
         .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+
+    if IntCheckFontPathNames(SafeFileName.Buffer as PCWCH, cFiles, cwc) == 0 {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+        return 0;
+    }
     Ret = IntGdiAddFontResourceEx(&mut SafeFileName, cFiles, fl, 0);
     ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
     Ret
@@ -635,20 +645,29 @@ pub unsafe extern "system" fn NtGdiAddFontResourceW(
         return 0;
     }
 
-    if IntCheckFontPathNames(pwcFiles, cFiles, cwc) == 0 {
+    // CAPTURE first, then validate the KERNEL copy. Upstream has the probe,
+    // IntCheckFontPathNames and the copy in ONE _SEH2_TRY; our probe above is
+    // validate-only, so the walk and the copy both had to stop touching user
+    // memory. Validating the captured bytes also closes a double fetch the C
+    // has: it walks the caller's buffer to approve the path, then copies that
+    // buffer again, so another thread can swap the path in between.
+    if !crate::copy::capture_from_user(
+        SafeFileName.Buffer as *mut c_void,
+        pwcFiles as *const c_void,
+        SafeFileName.Length as usize,
+    ) {
         ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
         return 0;
     }
 
-    RtlCopyMemory(
-        SafeFileName.Buffer as PVOID,
-        pwcFiles as PVOID,
-        SafeFileName.Length as SIZE_T as _ ,
-    );
-
     *SafeFileName
         .Buffer
         .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+
+    if IntCheckFontPathNames(SafeFileName.Buffer as PCWCH, cFiles, cwc) == 0 {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+        return 0;
+    }
     Ret = IntGdiAddFontResourceEx(&mut SafeFileName, cFiles, fl, 0);
     ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
     Ret
@@ -698,20 +717,29 @@ pub unsafe extern "system" fn NtGdiRemoveFontResourceW(
         return 0;
     }
 
-    if IntCheckFontPathNames(pwszFiles, cFiles, cwc) == 0 {
+    // CAPTURE first, then validate the KERNEL copy. Upstream has the probe,
+    // IntCheckFontPathNames and the copy in ONE _SEH2_TRY; our probe above is
+    // validate-only, so the walk and the copy both had to stop touching user
+    // memory. Validating the captured bytes also closes a double fetch the C
+    // has: it walks the caller's buffer to approve the path, then copies that
+    // buffer again, so another thread can swap the path in between.
+    if !crate::copy::capture_from_user(
+        SafeFileName.Buffer as *mut c_void,
+        pwszFiles as *const c_void,
+        SafeFileName.Length as usize,
+    ) {
         ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
         return 0;
     }
 
-    RtlCopyMemory(
-        SafeFileName.Buffer as PVOID,
-        pwszFiles as PVOID,
-        SafeFileName.Length as usize,
-    );
-
     *SafeFileName
         .Buffer
         .add((SafeFileName.Length as usize) / core::mem::size_of::<u16>()) = UNICODE_NULL as u16;
+
+    if IntCheckFontPathNames(SafeFileName.Buffer as PCWCH, cFiles, cwc) == 0 {
+        ExFreePoolWithTag(SafeFileName.Buffer as PVOID, TAG_STRING);
+        return 0;
+    }
 
     Ret = IntGdiRemoveFontResource(&mut SafeFileName, cFiles, fl);
 
@@ -755,7 +783,14 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
             return core::ptr::null_mut();
         }
     }
-    *pNumFonts = NumFonts;
+    // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+    if !crate::copy::publish_to_user(
+        pNumFonts as *mut core::ffi::c_void,
+        core::ptr::addr_of!(NumFonts) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+    ) {
+        return core::ptr::null_mut();
+    }
     Ret
 }
 
@@ -795,7 +830,14 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
             return core::ptr::null_mut();
         }
     }
-    *pNumFonts = NumFonts;
+    // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+    if !crate::copy::publish_to_user(
+        pNumFonts as *mut core::ffi::c_void,
+        core::ptr::addr_of!(NumFonts) as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+    ) {
+        return core::ptr::null_mut();
+    }
     Ret
 }
 #[no_mangle]
@@ -956,8 +998,12 @@ pub unsafe extern "system" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSE
 
             if Size != 0 {
                 Status = SafeProbeForWrite(pgs as *mut core::ffi::c_void, (Size as _), 1);
-                if NT_SUCCESS(Status) {
-                    RtlCopyMemory(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize);
+                // Validate-only probe; the copy is the access. A copy fault lands in Status,
+                // which is read below -- upstream's handler does exactly this.
+                if NT_SUCCESS(Status)
+                    && !crate::copy::publish_to_user(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize)
+                {
+                    Status = STATUS_ACCESS_VIOLATION;
                 }
 
                 if !NT_SUCCESS(Status) {
@@ -1017,8 +1063,12 @@ pub unsafe extern "system" fn NtGdiGetFontUnicodeRanges(hdc: HDC, pgs: LPGLYPHSE
 
             if Size != 0 {
                 Status = SafeProbeForWrite(pgs as *mut core::ffi::c_void, Size as _ , 1);
-                if NT_SUCCESS(Status) {
-                    RtlCopyMemory(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize);
+                // Validate-only probe; the copy is the access. A copy fault lands in Status,
+                // which is read below -- upstream's handler does exactly this.
+                if NT_SUCCESS(Status)
+                    && !crate::copy::publish_to_user(pgs as *mut core::ffi::c_void, pgsSafe as *mut core::ffi::c_void, Size as usize)
+                {
+                    Status = STATUS_ACCESS_VIOLATION;
                 }
 
                 if !NT_SUCCESS(Status) {
@@ -1085,8 +1135,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphOutline(
 
         if !pvBuf.is_null() {
             Status = SafeProbeForWrite(UnsafeBuf, (cjBuf as _), 1);
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf as usize);
+            // Validate-only probe; the copy is the access. A copy fault lands in Status,
+            // which is read below -- upstream's handler does exactly this.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(UnsafeBuf, pvBuf, cjBuf as usize)
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             ExFreePoolWithTag(pvBuf, GDITAG_TEXT);
@@ -1098,12 +1152,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphOutline(
                 (core::mem::size_of::<GLYPHMETRICS>() as u32 as _),
                 1,
             );
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
-                    pgm as *mut core::ffi::c_void,
-                    core::ptr::addr_of!(gm) as *const core::ffi::c_void,
-                    core::mem::size_of::<GLYPHMETRICS>(),
-                );
+            // Validate-only probe; the copy is the access. A copy fault lands in Status,
+            // which is read below -- upstream's handler does exactly this.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(pgm as *mut core::ffi::c_void, core::ptr::addr_of!(gm) as *const core::ffi::c_void, core::mem::size_of::<GLYPHMETRICS>())
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
         }
 
@@ -1169,8 +1223,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphOutline(
 
         if !pvBuf.is_null() {
             Status = SafeProbeForWrite(UnsafeBuf, cjBuf as _ , 1);
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(UnsafeBuf, pvBuf, cjBuf as usize);
+            // Validate-only probe; the copy is the access. A copy fault lands in Status,
+            // which is read below -- upstream's handler does exactly this.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(UnsafeBuf, pvBuf, cjBuf as usize)
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             ExFreePoolWithTag(pvBuf, GDITAG_TEXT);
@@ -1182,12 +1240,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphOutline(
                 core::mem::size_of::<GLYPHMETRICS>() as u32 as _ ,
                 1,
             );
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
-                    pgm as *mut core::ffi::c_void,
-                    core::ptr::addr_of!(gm) as *const core::ffi::c_void,
-                    core::mem::size_of::<GLYPHMETRICS>(),
-                );
+            // Validate-only probe; the copy is the access. A copy fault lands in Status,
+            // which is read below -- upstream's handler does exactly this.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(pgm as *mut core::ffi::c_void, core::ptr::addr_of!(gm) as *const core::ffi::c_void, core::mem::size_of::<GLYPHMETRICS>())
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
         }
 
@@ -1255,12 +1313,12 @@ pub unsafe extern "system" fn NtGdiGetKerningPairs(
             (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                krnpair as *mut core::ffi::c_void,
-                pKP as *const core::ffi::c_void,
-                (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
-            );
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is read below -- upstream's handler does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::publish_to_user(krnpair as *mut core::ffi::c_void, pKP as *const core::ffi::c_void, (Count as usize) * core::mem::size_of::<KERNINGPAIR>())
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
         if !NT_SUCCESS(Status) {
             EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -1326,12 +1384,12 @@ pub unsafe extern "system" fn NtGdiGetKerningPairs(
             (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                krnpair as *mut core::ffi::c_void,
-                pKP as *const core::ffi::c_void,
-                (Count as usize) * core::mem::size_of::<KERNINGPAIR>(),
-            );
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is read below -- upstream's handler does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::publish_to_user(krnpair as *mut core::ffi::c_void, pKP as *const core::ffi::c_void, (Count as usize) * core::mem::size_of::<KERNINGPAIR>())
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
         if !NT_SUCCESS(Status) {
             EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -1395,8 +1453,12 @@ pub unsafe extern "system" fn NtGdiGetOutlineTextMetricsInternalW(
     IntGetOutlineTextMetrics(FontGDI, Size, potm, (0u8 as _));
 
     Status = SafeProbeForWrite(otm as *mut _, Size as usize, 1);
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(otm as *mut _, potm as *const _, Size as usize);
+    // Validate-only probe; the copy is the access. A copy fault lands in Status,
+    // which is read below -- upstream's handler does exactly this.
+    if NT_SUCCESS(Status)
+        && !crate::copy::publish_to_user(otm as *mut _, potm as *const _, Size as usize)
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
@@ -1462,8 +1524,12 @@ pub unsafe extern "system" fn NtGdiGetOutlineTextMetricsInternalW(
     IntGetOutlineTextMetrics(FontGDI, Size, potm, 0u8 as _ );
 
     Status = SafeProbeForWrite(otm as *mut _, Size as usize, 1);
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(otm as *mut _, potm as *const _, Size as usize);
+    // Validate-only probe; the copy is the access. A copy fault lands in Status,
+    // which is read below -- upstream's handler does exactly this.
+    if NT_SUCCESS(Status)
+        && !crate::copy::publish_to_user(otm as *mut _, potm as *const _, Size as usize)
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
@@ -1485,7 +1551,7 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
     dwType: DWORD,
 ) -> BOOL {
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
-    let mut dwBytes: DWORD;
+    let mut dwBytes: DWORD = 0;
     let dwBytesRequested: DWORD;
     let mut SafeFileNames: _UNICODE_STRING = core::mem::zeroed();
     let mut bRet: BOOL = 0;
@@ -1534,14 +1600,23 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
         return 0;
     }
 
-    dwBytes = *pdwBytes;
-    dwBytesRequested = dwBytes;
-
-    RtlCopyMemory(
+    // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped the probes AND both of
+    // these accesses in one _SEH2_TRY. pwszFiles is a user buffer, so the copy out of
+    // it is as exposed as the DWORD load.
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(dwBytes) as *mut core::ffi::c_void,
+        pdwBytes as *const core::ffi::c_void,
+        core::mem::size_of::<DWORD>(),
+    ) || !crate::copy::capture_from_user(
         SafeFileNames.Buffer as *mut core::ffi::c_void,
         pwszFiles as *const core::ffi::c_void,
         cbStringSize as usize,
-    );
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        ExFreePoolWithTag(SafeFileNames.Buffer as LPVOID, TAG_USTR);
+        return 0;
+    }
+    dwBytesRequested = dwBytes;
     if dwBytes > 0 {
         Buffer = ExAllocatePoolWithTag(PagedPool, dwBytes as usize, TAG_FINF);
     } else {
@@ -1559,11 +1634,22 @@ pub unsafe extern "system" fn NtGdiGetFontResourceInfoInternalW(
     /* Check if succeeded */
     if bRet != 0 {
         /* Copy the data back to caller */
+        // Probes are validate-only (USE_DUMMY_PSEH); the C had them AND these stores
+        // inside one _SEH2_TRY. RtlCopyMemory into a user buffer is a plain memcpy.
+        let mut ok = true;
         if !pvBuf.is_null() && dwBytesRequested > 0 {
             let count = if dwBytesRequested < dwBytes { dwBytesRequested } else { dwBytes };
-            RtlCopyMemory(pvBuf, Buffer, count as usize);
+            ok = crate::copy::publish_to_user(pvBuf, Buffer, count as usize);
         }
-        *pdwBytes = dwBytes;
+        if !ok
+            || !crate::copy::publish_to_user(
+                pdwBytes as *mut core::ffi::c_void,
+                core::ptr::addr_of!(dwBytes) as *const core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
 
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
@@ -1613,17 +1699,17 @@ pub unsafe extern "system" fn NtGdiGetRealizationInfo(
     Ret = ftGdiRealizationInfo(pFontGdi, &mut ri);
     if Ret != 0 {
         if !pri.is_null() {
-            let Status: NTSTATUS = SafeProbeForWrite(
+            let mut Status: NTSTATUS = SafeProbeForWrite(
                 pri as *mut core::ffi::c_void,
                 (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
                 1,
             );
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
-                    pri as *mut core::ffi::c_void,
-                    &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void,
-                    (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _),
-                );
+            // Validate-only probe; the copy is the access. A copy fault lands in Status,
+            // which is read below -- upstream's handler does exactly this.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(pri as *mut core::ffi::c_void, &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void, (core::mem::size_of::<REALIZATION_INFO>() as ULONG as _))
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             if !NT_SUCCESS(Status) {
@@ -1683,17 +1769,17 @@ pub unsafe extern "system" fn NtGdiGetRealizationInfo(
     Ret = ftGdiRealizationInfo(pFontGdi, &mut ri);
     if Ret != 0 {
         if !pri.is_null() {
-            let Status: NTSTATUS = SafeProbeForWrite(
+            let mut Status: NTSTATUS = SafeProbeForWrite(
                 pri as *mut core::ffi::c_void,
                 core::mem::size_of::<REALIZATION_INFO>() as ULONG as _ ,
                 1,
             );
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
-                    pri as *mut core::ffi::c_void,
-                    &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void,
-                    core::mem::size_of::<REALIZATION_INFO>() as ULONG as _ ,
-                );
+            // Validate-only probe; the copy is the access. A copy fault lands in Status,
+            // which is read below -- upstream's handler does exactly this.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(pri as *mut core::ffi::c_void, &mut ri as *mut REALIZATION_INFO as *mut core::ffi::c_void, core::mem::size_of::<REALIZATION_INFO>() as ULONG as _)
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             if !NT_SUCCESS(Status) {
@@ -1793,12 +1879,12 @@ pub unsafe extern "system" fn NtGdiHfontCreate(
         (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
         1,
     );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(SafeLogfont) as PVOID,
-            pelfw as PVOID,
-            (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _),
-        );
+    // Validate-only probe; the copy is the access. A copy fault lands in Status,
+    // which is read below -- upstream's handler does exactly this.
+    if NT_SUCCESS(Status)
+        && !crate::copy::publish_to_user(core::ptr::addr_of_mut!(SafeLogfont) as PVOID, pelfw as PVOID, (core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _))
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
@@ -1838,12 +1924,12 @@ pub unsafe extern "system" fn NtGdiHfontCreate(
         core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _ ,
         1,
     );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(SafeLogfont) as PVOID,
-            pelfw as PVOID,
-            core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _ ,
-        );
+    // Validate-only probe; the copy is the access. A copy fault lands in Status,
+    // which is read below -- upstream's handler does exactly this.
+    if NT_SUCCESS(Status)
+        && !crate::copy::publish_to_user(core::ptr::addr_of_mut!(SafeLogfont) as PVOID, pelfw as PVOID, core::mem::size_of::<ENUMLOGFONTEXDVW>() as ULONG as _)
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {

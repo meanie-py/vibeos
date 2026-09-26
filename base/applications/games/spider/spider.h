@@ -21,7 +21,7 @@
 #define NUM_STACKS         10
 
 extern HWND hwndMain;
-extern CardWindow SpiderWnd;
+extern CARDWINDOW *SpiderWnd;
 extern TCHAR szAppName[];
 extern bool fGameStarted;
 extern int yRowStackCardOffset;
@@ -32,14 +32,14 @@ extern TCHAR MsgWin[];
 void CreateSpider(void);
 void NewGame(void);
 
-bool CARDLIBPROC RowStackDragProc(CardRegion &stackobj, int iNumCards);
-bool CARDLIBPROC RowStackDropProc(CardRegion &stackobj,  const CardStack &dragcards);
+BOOL CARDLIBPROC RowStackDragProc(CARDREGION *stackobj, int iNumCards);
+BOOL CARDLIBPROC RowStackDropProc(CARDREGION *stackobj,  const CARDSTACK *dragcards);
 
-void CARDLIBPROC RowStackClickProc(CardRegion &stackobj, int iNumClicked);
+void CARDLIBPROC RowStackClickProc(CARDREGION *stackobj, int iNumClicked);
 
-void CARDLIBPROC DeckClickProc(CardRegion &stackobj, int iNumClicked);
-void CARDLIBPROC PileDblClickProc(CardRegion &stackobj, int iNumClicked);
+void CARDLIBPROC DeckClickProc(CARDREGION *stackobj, int iNumClicked);
+void CARDLIBPROC PileDblClickProc(CARDREGION *stackobj, int iNumClicked);
 
-void CARDLIBPROC PileRemoveProc(CardRegion &stackobj, int iRemoved);
+void CARDLIBPROC PileRemoveProc(CARDREGION *stackobj, int iRemoved);
 
 #endif /* _SPIDER_PCH_ */

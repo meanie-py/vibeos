@@ -18,6 +18,7 @@ ExFastMutex
 ExHardError
 ExInterlocked
 ExPools
+ExPushLock
 # QUARANTINED 2026-07-12 (i386 sweep 2): BUGCHECK 0x1E (0xc0000005) at
 # ntoskrnl.exe+0x8A7EB (0x8054d7eb). Passes on amd64. i386-only — real-bug-vs-
 # DUMMY_PSEH triage owed (needs live GDB; offline i386 index is symbol-poor).

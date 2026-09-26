@@ -10,7 +10,7 @@
  */
 
 #include "precomp.h"
-#include <jpnvkeys.h>
+#include <ime.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(imm);
 
@@ -403,7 +403,7 @@ Imm32ProcessRequest(HIMC hIMC, PWND pWnd, DWORD dwCommand, LPVOID pData, BOOL bA
         return 0; /* Out of range */
     }
 
-    dwSize = acbData[bAnsiAPI * 7 + dwCommand - 1];
+    dwSize = (DWORD)acbData[bAnsiAPI * 7 + dwCommand - 1];
     if (pData && IsBadWritePtr(pData, dwSize))
     {
         ERR("\n");
@@ -721,18 +721,15 @@ ImmGetVirtualKey(_In_ HWND hWnd)
 DWORD WINAPI
 ImmGetAppCompatFlags(_In_ HIMC hIMC)
 {
-    PCLIENTIMC pClientIMC;
-    DWORD dwFlags;
-
     TRACE("(%p)\n", hIMC);
 
-    pClientIMC = ImmLockClientImc(hIMC);
+    PCLIENTIMC pClientIMC = ImmLockClientImc(hIMC);
     if (IS_NULL_UNEXPECTEDLY(pClientIMC))
         return 0;
 
-    dwFlags = pClientIMC->dwCompatFlags;
+    DWORD dwCompatFlags = pClientIMC->dwCompatFlags;
     ImmUnlockClientImc(pClientIMC);
-    return (dwFlags | g_aimm_compat_flags);
+    return (dwCompatFlags | g_aimm_compat_flags);
 }
 
 /***********************************************************************
@@ -817,7 +814,7 @@ ImmProcessKey(
     if (bHotKeyDone && ((vKey != VK_KANJI) || (dwHotKeyID != IME_JHOTKEY_CLOSE_OPEN)))
         ret |= IPHK_HOTKEY;
 
-    if ((ret & IPHK_PROCESSBYIME) && (ImmGetAppCompatFlags(hIMC) & 0x10000))
+    if ((ret & IPHK_PROCESSBYIME) && (ImmGetAppCompatFlags(hIMC) & _IME_APP_COMPAT_PROCESS_BY_IME))
     {
         /* The key has been processed by IME's ImeProcessKey */
         LANGID wLangID = LANGIDFROMLCID(GetSystemDefaultLCID());
@@ -879,7 +876,7 @@ ImmGenerateMessage(_In_ HIMC hIMC)
 {
     PCLIENTIMC pClientImc;
     LPINPUTCONTEXT pIC;
-    LPTRANSMSG pMsgs, pTrans = NULL, pItem;
+    LPTRANSMSG pMsgs = NULL, pTrans = NULL, pItem;
     HWND hWnd;
     DWORD dwIndex, dwCount, cbTrans;
     HIMCC hMsgBuf = NULL;
@@ -937,15 +934,14 @@ ImmGenerateMessage(_In_ HIMC hIMC)
     pItem = pTrans;
     for (dwIndex = 0; dwIndex < dwCount; ++dwIndex, ++pItem)
     {
-        if (bAnsi)
-            SendMessageA(hWnd, pItem->message, pItem->wParam, pItem->lParam);
-        else
-            SendMessageW(hWnd, pItem->message, pItem->wParam, pItem->lParam);
+        SendMessageW(hWnd, pItem->message, pItem->wParam, pItem->lParam);
     }
+
+    UNREFERENCED_PARAMETER(bAnsi);
 
 Quit:
     ImmLocalFree(pTrans);
-    if (hMsgBuf)
+    if (hMsgBuf && pMsgs)
         ImmUnlockIMCC(hMsgBuf);
     pIC->dwNumMsgBuf = 0; /* done */
     ImmUnlockIMC(hIMC);
@@ -1106,14 +1102,9 @@ ImmTranslateMessage(
             if (kret > 0)
             {
                 if ((BYTE)vk == VK_PACKET)
-                {
-                    vk &= 0xFF;
                     vk |= (wChar << 8);
-                }
                 else
-                {
                     vk = MAKEWORD(vk, wChar);
-                }
             }
         }
     }
@@ -1246,7 +1237,7 @@ ImmCallImeConsoleIME(
         case VK_DBE_CODEINPUT:
         case VK_DBE_NOCODEINPUT:
         case VK_DBE_ENTERWORDREGISTERMODE:
-        case VK_DBE_ENTERCONFIGMODE:
+        case VK_DBE_ENTERIMECONFIGMODE:
             break;
 
         default:

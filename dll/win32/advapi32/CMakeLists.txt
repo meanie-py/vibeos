@@ -5,7 +5,6 @@ add_definitions(-D_ADVAPI32_)
 include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers/ksecdd
-    ${REACTOS_SOURCE_DIR}/sdk/lib/cryptlib
     ${CMAKE_CURRENT_BINARY_DIR})
 
 add_rpc_files(client
@@ -54,10 +53,6 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/seclogon_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/svcctl_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/winreg_c.c)
-
-if(ARCH STREQUAL "arm64")
-    list(APPEND PCH_SKIP_SOURCE arm64_advapi32_stubs.c)
-endif()
 
 # service/eventlog_seh.c — native-SEH wrappers restoring the RpcTryExcept the
 # advapi32-rust cohab dropped around the EventLog RPC client stubs (see the file
@@ -111,6 +106,7 @@ add_library(advapi32 MODULE
     ${PCH_SKIP_SOURCE}
     advapi32.rc
     ${CMAKE_CURRENT_BINARY_DIR}/advapi32.def)
+add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
 
 set_module_type(advapi32 win32dll UNICODE ENTRYPOINT DllMain 12)
 # ADVAPI32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
@@ -119,13 +115,7 @@ target_link_options(advapi32 PRIVATE LINKER:--allow-multiple-definition)
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     target_link_libraries(advapi32 etwtrace)
 endif()
-if(ARCH STREQUAL "arm64")
-    # ARM64: llvm-dlltool converts delay-imports to regular imports.
-    # secur32 → netapi32 → iphlpapi → dhcpcsvc chain overflows csrss stack.
-    # LSA logon functions not needed during boot. Stubs in arm64_advapi32_stubs.c.
-else()
-    add_delay_importlibs(advapi32 secur32)
-endif()
+add_delay_importlibs(advapi32 secur32)
 add_importlibs(advapi32 advapi32_vista rpcrt4 kernel32 ntdll)
 add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
 add_dependencies(advapi32 rust_advapi32)

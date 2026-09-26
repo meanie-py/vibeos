@@ -28,6 +28,8 @@ use ntkrnl_sys::ddk::{
     POBP_SET_HANDLE_ATTRIBUTES_CONTEXT, POBP_LOOKUP_CONTEXT, POB_TEMP_BUFFER,
     PACCESS_STATE, PAUX_ACCESS_DATA, POBJECT_ATTRIBUTES, PUNICODE_STRING,
     ACCESS_MASK, KPROCESSOR_MODE, HANDLE, OB_OPEN_REASON,
+    PSECURITY_INFORMATION, SECURITY_OPERATION_CODE,
+    SeSinglePrivilegeCheck,
     ExAcquireRundownProtection, ExReleaseRundownProtection, ExMapHandleToPointer,
     ExUnlockHandleTableEntry, ExCreateHandle, ExDestroyHandle, ExEnumHandleTable,
     ExChangeHandle, ExSweepHandleTable, ExCreateHandleTable, ExDupHandleTable,
@@ -66,7 +68,6 @@ use ntkrnl_sys::ddk::{
     PsIsThreadTerminating,
     RtlMapGenericMask,
     SeCreateAccessState,
-    SeDefaultObjectMethod,
     SeDeleteAccessState,
     SeDetailedAuditingWithToken,
     SeReleaseSecurityDescriptor,
@@ -88,6 +89,26 @@ use ntkrnl_sys::ddk::{
 type ObAttrType = u64;
 #[cfg(target_pointer_width = "32")]
 type ObAttrType = u32;
+
+// ntkrnl_sys::ddk's bindgen-generated OB_SECURITY_METHOD (and its SeDefaultObjectMethod
+// extern decl) predates the upstream-sync merge's se.h/obtypes.h change that appended a
+// trailing KPROCESSOR_MODE AccessMode param -- the checked-in bindgen_*.rs was never
+// regenerated. Declare the REAL 9-param signature locally (shadowing the stale 8-param
+// import) so the pointer-identity comparison below transmutes from a type that actually
+// matches se-rust's semgr.rs definition, rather than silently truncating the arg list.
+extern "system" {
+    fn SeDefaultObjectMethod(
+        Object: PVOID,
+        OperationType: SECURITY_OPERATION_CODE,
+        SecurityInformation: PSECURITY_INFORMATION,
+        SecurityDescriptor: PSECURITY_DESCRIPTOR,
+        ReturnLength: *mut ULONG,
+        OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+        PoolType: POOL_TYPE,
+        GenericMapping: PGENERIC_MAPPING,
+        AccessMode: KPROCESSOR_MODE,
+    ) -> NTSTATUS;
+}
 
 const ObCreateHandle: OB_OPEN_REASON = _OB_OPEN_REASON_ObCreateHandle;
 const ObOpenHandle: OB_OPEN_REASON = _OB_OPEN_REASON_ObOpenHandle;
@@ -526,12 +547,13 @@ unsafe fn ObpDecrementHandleCount(
 
     if (*object_type).TypeInfo.CloseProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        ((*object_type).TypeInfo.CloseProcedure.unwrap())(
+        crate::obsecure::ObpCallCloseProcedure(
+            (*object_type).TypeInfo.CloseProcedure,
             process,
             object_body,
             granted_access,
-            process_handle_count as ULONG,
-            system_handle_count as ULONG,
+            process_handle_count as ULONG_PTR,
+            system_handle_count as ULONG_PTR,
         );
         ObpCalloutEnd(callout_irql, b"Close\0".as_ptr() as PCHAR, object_type, object_body);
     }
@@ -634,6 +656,9 @@ unsafe fn ObpIncrementHandleCount(
 
     status = ObpChargeQuotaForObject(object_header, object_type, &mut new_object as *mut _);
     if status < 0 {
+        // Returning here with the object lock still held deadlocks every later handle
+        // operation on this object. Upstream-Commit: 1902929c80b
+        ObpReleaseObjectLock(object_header);
         return status;
     }
 
@@ -713,6 +738,18 @@ unsafe fn ObpIncrementHandleCount(
         }
 
         if !access_state.is_null() && (*access_state).RemainingDesiredAccess & ACCESS_SYSTEM_SECURITY != 0 {
+            // This block was translated EMPTY from upstream's `FIXME: TODO` +
+            // "ACCESS_SYSTEM_SECURITY not validated!", so SACL access was handed to any
+            // caller that asked for it. Upstream-Commit: c9780d9095f
+            if SeSinglePrivilegeCheck(SeSecurityPrivilege, probe_mode) == 0 {
+                /* FIXME: an audit alarm belongs here; the security manager must be told */
+                ObpReleaseObjectLock(object_header);
+                return STATUS_PRIVILEGE_NOT_HELD;
+            }
+
+            /* Privilege held — grant it so the access state reflects reality */
+            (*access_state).PreviouslyGrantedAccess |= ACCESS_SYSTEM_SECURITY;
+            (*access_state).RemainingDesiredAccess &= !ACCESS_SYSTEM_SECURITY;
         }
     }
 
@@ -742,15 +779,20 @@ unsafe fn ObpIncrementHandleCount(
     status = STATUS_SUCCESS;
     if (*object_type).TypeInfo.OpenProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        status = ((*object_type).TypeInfo.OpenProcedure.unwrap())(
+        // GrantedAccess is an in/out POINTER since the merge's NT6 callback change, so
+        // it needs a local the callee can write through — exactly as the C does.
+        let mut granted_access: ACCESS_MASK = if !access_state.is_null() {
+            (*access_state).PreviouslyGrantedAccess
+        } else {
+            0
+        };
+        status = crate::obsecure::ObpCallOpenProcedure(
+            (*object_type).TypeInfo.OpenProcedure,
             open_reason,
+            probe_mode,
             process,
             object,
-            if !access_state.is_null() {
-                (*access_state).PreviouslyGrantedAccess
-            } else {
-                0
-            },
+            core::ptr::addr_of_mut!(granted_access),
             process_handle_count as ULONG,
         );
         ObpCalloutEnd(callout_irql, b"Open\0".as_ptr() as PCHAR, object_type, object);
@@ -809,6 +851,9 @@ unsafe fn ObpIncrementUnnamedHandleCount(
 
     status = ObpChargeQuotaForObject(object_header, object_type, &mut new_object as *mut _);
     if status < 0 {
+        // Returning here with the object lock still held deadlocks every later handle
+        // operation on this object. Upstream-Commit: 1902929c80b
+        ObpReleaseObjectLock(object_header);
         return status;
     }
 
@@ -888,11 +933,13 @@ unsafe fn ObpIncrementUnnamedHandleCount(
     status = STATUS_SUCCESS;
     if (*object_type).TypeInfo.OpenProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
-        status = ((*object_type).TypeInfo.OpenProcedure.unwrap())(
+        status = crate::obsecure::ObpCallOpenProcedure(
+            (*object_type).TypeInfo.OpenProcedure,
             ObCreateHandle,
+            access_mode,
             process,
             object,
-            *desired_access,
+            desired_access,
             process_handle_count as ULONG,
         );
         ObpCalloutEnd(callout_irql, b"Open\0".as_ptr() as PCHAR, object_type, object);
@@ -1626,7 +1673,11 @@ pub unsafe extern "system" fn ObDuplicateObject(
     new_handle_entry.__bindgen_anon_2.GrantedAccess = target_access;
 
     if target_access & !source_access != 0 {
-        if (*object_type).TypeInfo.SecurityProcedure == Some(SeDefaultObjectMethod) {
+        if (*object_type).TypeInfo.SecurityProcedure
+            == Some(core::mem::transmute(
+                SeDefaultObjectMethod as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> NTSTATUS,
+            ))
+        {
             passed_access_state = &mut access_state as *mut _;
             status = SeCreateAccessState(
                 &mut access_state as *mut _,

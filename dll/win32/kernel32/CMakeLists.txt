@@ -125,6 +125,28 @@ list(APPEND SOURCE
     # winnls/string/lstring.c    — replaced by Rust (kernel32-rust/src/string/lstring.rs)
     # winnls/string/nls.c      — replaced by Rust (kernel32-rust/src/string/nls.rs)
     # winnls/string/sortkey.c    — replaced by Rust (kernel32-rust/src/string/sortkey.rs)
+    # --- new upstream TUs since the fork -------------------------------------
+    # The *ansi.c files are upstream splitting the ANSI wrappers out of TUs we have
+    # already flipped to Rust; kernel32-rust exports both the A and W entry points,
+    # so building them would duplicate symbols the Rust twins own.
+    #client/atomansi.c
+    #client/file/copyansi.c
+    #client/file/diransi.c
+    #client/file/fileinfoansi.c
+    #client/file/mntpointansi.c
+    #client/file/moveansi.c
+    #client/file/volumeansi.c
+    #client/pathansi.c
+    #client/procansi.c
+    #client/synchansi.c
+    #client/sysinfoansi.c
+    #client/versionansi.c
+    #winnls/string/lcformatansi.c
+    #winnls/string/localeansi.c
+    # dep.c is genuinely new code (extracted from proc.c upstream) with no Rust twin;
+    # kernel32.spec already exports Get/SetProcessDEPPolicy and GetSystemDEPPolicy
+    # with nothing implementing them, so this fills a real gap.
+    client/dep.c
     k32.h)
 
 if(MSVC)

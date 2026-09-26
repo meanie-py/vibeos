@@ -475,6 +475,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_orphan_modules", [py, str(som)] if som.is_file() else ["MISSING"], "stdout")
     )
+    # A cohab flip is held in place by a single `#` in a CMake source list
+    # (`#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c`). Drop it and the dead C goes live
+    # alongside its Rust twin — a partial flip, which is what froze the guest on
+    # 2026-09-19 with SMOKE GREEN ON ALL THREE ARCHES (the hang is after `shell ready`,
+    # so no boot test can see it). The upstream sync makes that reachable by accident:
+    # upstream has touched 400 CMake files, 197 of ours carry a comment-out, and the
+    # 80-file intersection can be disturbed by a CLEAN auto-merge with no conflict
+    # marker to review. This is a DIFFER, not a classifier — the pattern deliberately
+    # also matches prose mentioning a filename, because stable prose is stable in the
+    # snapshot while a false negative costs a frozen guest. Snapshot lives in
+    # tools/cohab-census.txt; re-run `--write` in the SAME commit as a deliberate flip.
+    # Baseline EMPTY = strict.
+    ccen = repo / "tools" / "cohab_census.py"
+    specs.append(("cohab_census", [py, str(ccen)] if ccen.is_file() else ["MISSING"], "stdout"))
     # Cohab stubs that bugcheck on entry AND are declared by a Rust module — i.e.
     # unimplemented and reachable, so they crash whenever their path first runs. The
     # intersection is computable from the tree, and paying a build+boot per entry to
@@ -701,6 +715,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The COHAB-FLIP half of the dropped-handler class, which scan_dropped_probes above
+    # structurally cannot see. That one reads the commented-out C rustconv leaves inline in
+    # the same .rs, so it needs both sides in one file. A cohab flip puts them in two: the
+    # .c stays on disk, gets commented out of the CMake source list, and a separate .rs
+    # takes over under #[no_mangle]. lpc-rust was the proof -- zero inline C, zero _SEH2
+    # text, and six files in which every ProbeForRead/Write had lost its _SEH2_EXCEPT, so
+    # any unprivileged process passing a bad pointer to NtReplyPort/NtRequestPort/
+    # NtSecureConnectPort/NtAcceptConnectPort bugchecked the kernel.
+    #
+    # Gated at ZERO rather than against a baseline, because the class was driven to zero
+    # when it was found; a baseline here would be a place for the next one to hide. The
+    # lower-confidence pairs (basename-only, or C still compiled) are printed to stderr and
+    # deliberately NOT gated -- basename matching pairs fastfat/create.c with
+    # lpc-rust/create.rs, and a human has to read those.
+    sdsp = repo / "tools" / "scan_dropped_seh_pairs.py"
+    specs.append(
+        (
+            "scan_dropped_seh_pairs",
+            [py, str(sdsp), "--lint"] if sdsp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.
@@ -767,6 +803,43 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_dangling_transmute",
             [py, str(sdt), "--lint"] if sdt.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Pointer arithmetic on a struct field bindgen typed as an OPAQUE 1-byte stub
+    # steps one byte per element whatever the code casts to afterwards. consrv's
+    # handle table overlapped its entries this way and crashed csrss on the first
+    # console close (BUGCHECK 0xF4). Baseline EMPTY.
+    sopa = repo / "tools" / "scan_opaque_ptr_arith.py"
+    specs.append(
+        (
+            "scan_opaque_ptr_arith",
+            [py, str(sopa), "--lint"] if sopa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A Rust-ABI fn transmuted into a C callback slot (`transmute(f as *const ())`)
+    # erases the ABI rustc would otherwise check. It works by accident on
+    # amd64/arm64 and breaks on i386: consrv's GuiVtbl (22 of 25 slots) killed
+    # csrss with BUGCHECK 0xF4 on the first i386 GUI console. Baseline EMPTY.
+    sfa = repo / "tools" / "scan_fnptr_abi_transmute.py"
+    specs.append(
+        (
+            "scan_fnptr_abi_transmute",
+            [py, str(sfa), "--lint"] if sfa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C byte count (RtlCopyMemory) kept as the ELEMENT count of a u16-typed
+    # core::ptr::copy moves twice the bytes. fastfat's FatQueryDirectory copied
+    # every long name at double length and faulted on arm64 once winsxs names
+    # were long enough (BUGCHECK 0x50 at smss); mountmgr and the registry value
+    # cache had the same shape. Baseline EMPTY.
+    swb = repo / "tools" / "scan_wide_byte_copy.py"
+    specs.append(
+        (
+            "scan_wide_byte_copy",
+            [py, str(swb), "--lint"] if swb.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -941,6 +1014,23 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_ob_refcount",
             [py, str(sob), "--lint"] if sob.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # COM double-release: a C++ `CComPtr` local lowered to a raw pointer plus a
+    # `CppComPtrGuard` whose explicit `Release()` calls were ALSO kept. The guard
+    # IS the destructor, so the second release frees a live object and the guard
+    # then calls through a dangling vtable. CDefView's FillList shipped this on
+    # three exit paths: arm64 died at once, while amd64 and i386 ran the same code
+    # and passed the 91-test conformance sweep three times running. A defect two of
+    # three arches certify as green needs a scanner, not a reviewer. The 2026-09-19
+    # sweep found 3 in CDefView (fixed) and 15 in the still-orphan utils.rs (fixed
+    # before the utils flip could ship them); baseline is empty.
+    scdr = repo / "tools" / "scan_com_double_release.py"
+    specs.append(
+        (
+            "scan_com_double_release",
+            [py, str(scdr), "--lint"] if scdr.is_file() else ["MISSING"],
             "stdout",
         )
     )

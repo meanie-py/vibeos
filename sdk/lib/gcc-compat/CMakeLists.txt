@@ -13,6 +13,11 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
     list(APPEND SOURCE __throw_out_of_range_fmt.cpp)
 endif()
 
+if(DLL_EXPORT_VERSION LESS 0x600)
+    list(APPEND SOURCE
+        rand_s.c)
+endif()
+
 add_library(stdc++compat ${SOURCE})
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
     set_target_cpp_properties(stdc++compat WITH_EXCEPTIONS)

@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -10,15 +11,27 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("watch_nested", [True, False])
 @pytest.mark.parametrize("crate_types", ['["staticlib"]', '["staticlib", "rlib"]'])
-def test_nested_inputs_rebuild_consumers_only(tmp_path, crate_types):
+def test_nested_inputs_rebuild_consumers_only(tmp_path, crate_types, watch_nested):
     root = tmp_path / "with spaces"
     root.mkdir()
+    compiled = False
+    initial_mtime_ns = time.time_ns() - 3_600_000_000_000
 
     def write(path, text):
         p = root / path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
+        # Exercise dependency propagation with a definite edit ordering. Host
+        # timestamps can put a just-written input behind a prior Cargo output
+        # (the sibling BuildFixture already handles this). Do not sleep/retry
+        # or alter dependency edges: the executable must still change correctly.
+        stamp = initial_mtime_ns
+        if compiled:
+            stamp = max(time.time_ns(), max(f.stat().st_mtime_ns for f in root.rglob("*")))
+            stamp += 1_000_000
+        os.utime(p, ns=(stamp, stamp))
 
     write(
         "Cargo.toml",
@@ -54,6 +67,7 @@ def test_nested_inputs_rebuild_consumers_only(tmp_path, crate_types):
         "outer/src/main.rs",
         'extern "C" { fn value() -> u32; } fn main() { println!("{}", unsafe { value() }); }',
     )
+    watch = 'cargo_deps::watch(&lib.with_extension("d"), &lib, &root);' if watch_nested else ""
     write(
         "outer/build.rs",
         f'''#[path = "{REPO}/sdk/lib/rust/reactos-link/src/cargo_deps.rs"] mod cargo_deps;
@@ -69,7 +83,7 @@ def test_nested_inputs_rebuild_consumers_only(tmp_path, crate_types):
         compiler_env::scrub_outer_compiler(&mut command);
         assert!(command.status().unwrap().success());
         let lib = target.join("debug/libbody.a");
-        cargo_deps::watch(&lib.with_extension("d"), &lib, &root);
+        {watch}
         println!("cargo:rerun-if-changed=build.rs");
         println!("cargo:rustc-link-search=native={{}}", target.join("debug").display());
         println!("cargo:rustc-link-lib=static=body");
@@ -132,12 +146,18 @@ sys.exit(subprocess.call(sys.argv[1:]))
         assert run(str(root / "build/app")).strip() == str(expected)
 
     build(6)
+    compiled = True
     assert "--crate-name shared" in (root / "wrapper.log").read_text()
     count = (root / "invocations").read_text()
     write("unrelated/src/lib.rs", "pub fn unrelated() -> u32 { 999 }")
     build(6)
     assert (root / "invocations").read_text() == count
     write("shared/src/lib.rs", "pub fn value() -> u32 { 10 }")
+    if not watch_nested:
+        # Negative control: newer input timestamps cannot repair missing edges.
+        build(6)
+        assert (root / "invocations").read_text() == count
+        return
     build(15)
     write("body/asset.txt", "20")
     build(33)
@@ -145,12 +165,12 @@ sys.exit(subprocess.call(sys.argv[1:]))
     build(60)
     # A manifest-only edit must reach nested Cargo too.
     p = root / "shared/Cargo.toml"
-    p.write_text(p.read_text() + '\n[features]\ndefault = ["extra"]\nextra = []\n')
+    write("shared/Cargo.toml", p.read_text() + '\n[features]\ndefault = ["extra"]\nextra = []\n')
     write(
         "shared/src/lib.rs",
         '#[cfg(feature="extra")] pub fn value() -> u32 { 100 }\n'
         '#[cfg(not(feature="extra"))] pub fn value() -> u32 { 10 }',
     )
     build(150)
-    p.write_text(p.read_text().replace('default = ["extra"]', "default = []"))
+    write("shared/Cargo.toml", p.read_text().replace('default = ["extra"]', "default = []"))
     build(60)

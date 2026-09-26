@@ -23,6 +23,7 @@
 
 UNICODE_STRING Restricted = RTL_CONSTANT_STRING(L"Restricted");
 BOOL bIsFileApiAnsi = TRUE; // set the file api to ansi or oem
+
 PRTL_CONVERT_STRING Basep8BitStringToUnicodeString = RtlAnsiStringToUnicodeString;
 PRTL_CONVERT_STRINGA BasepUnicodeStringTo8BitString = RtlUnicodeStringToAnsiString;
 PRTL_COUNT_STRING BasepUnicodeStringTo8BitSize = BasepUnicodeStringToAnsiSize;
@@ -587,7 +588,7 @@ BaseInitializeContext(IN PCONTEXT Context,
     /* Setup the Initial Win32 Thread Context */
     Context->Rcx = (ULONG_PTR)StartAddress;
     Context->Rdx = (ULONG_PTR)Parameter;
-    Context->Rsp = (ULONG_PTR)StackAddress - 5 * sizeof(PVOID);
+    Context->Rsp = (ULONG_PTR)StackAddress;
 
     /* Setup the Segments */
     Context->SegGs = KGDT64_R3_DATA | RPL_MASK;
@@ -713,7 +714,7 @@ NTSTATUS
 WINAPI
 BasepMapFile(IN LPCWSTR lpApplicationName,
              OUT PHANDLE hSection,
-             IN PUNICODE_STRING ApplicationName)
+             OUT PUNICODE_STRING ApplicationName)
 {
     RTL_RELATIVE_NAME_U RelativeName;
     OBJECT_ATTRIBUTES ObjectAttributes;
@@ -758,6 +759,7 @@ BasepMapFile(IN LPCWSTR lpApplicationName,
                         &IoStatusBlock,
                         FILE_SHARE_DELETE | FILE_SHARE_READ,
                         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE);
+    RtlReleaseRelativeName(&RelativeName);
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("Failed to open file\n");

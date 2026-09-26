@@ -117,7 +117,7 @@ pub unsafe fn RecycleBin5File_new() -> *mut RecycleBin5File {
         core::mem::size_of::<RecycleBin5File>(),
     ) as *mut RecycleBin5File;
     if this.is_null() { return core::ptr::null_mut(); }
-    (*this).IRecycleBinFile_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBIN5FILE_IRECYCLEBINFILE_VTBL);
+    (*this).IRecycleBinFile_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBIN5FILE_IRECYCLEBINFILE_VTBL).cast_mut();
     RecycleBin5File_ctor_body(this);
     this
 }
@@ -157,12 +157,22 @@ pub const INVALID_FILE_SIZE: DWORD = 0xFFFFFFFF;
 
 pub const OPEN_EXISTING: DWORD = 3;
 
-#[repr(C)]
-pub struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
+// NOTE: no local `ULARGE_INTEGER` here -- the real bindgen union (ntdll_sys::nt::_ULARGE_INTEGER,
+// glob-imported via `crate::prelude::*` -> `crate::types::*` -> `types_arch::*`) is what
+// IRecycleBinFileVtbl::GetFileSize/GetPhysicalFileSize actually declare. A same-named local
+// struct here would silently SHADOW it and make every body a distinct, incompatible nominal
+// type from the vtable's fn-pointer signature (this is what broke the build originally).
 
 // Deterministic from shldisp.h
+// FolderItems/FolderItem are forward-declared COM interfaces in shldisp.h with no member of
+// this file ever calling through them (`Folder` here is dead deterministic scaffold -- the
+// `Folder` *parameter* of RecycleBin5File_Init_body below is an unrelated LPCWSTR, just a
+// same-named value). Opaque stubs match a C forward declaration used only as a pointer target.
+#[repr(C)]
+pub struct FolderItems { _unused: [u8; 0] }
+#[repr(C)]
+pub struct FolderItem { _unused: [u8; 0] }
+
 #[repr(C)]
 pub struct Folder {
     pub lpVtbl: *const FolderVtbl,
@@ -358,8 +368,10 @@ use core::ffi::c_void;
 
 pub unsafe fn RecycleBin5File_IsEqualIdentity_body(this: *mut RecycleBin5File, pFI: *const RECYCLEBINFILEIDENTITY) -> HRESULT {
     let self_value = RECYCLEBINFILEIDENTITY {
+        // recyclebin_v5_enumerator.cpp:33 -- aggregate-inits { DeletionTime, m_FullName },
+        // and the struct's 2nd member is `RecycledFullPath` (there is no `FullName` field).
         DeletionTime: (*this).m_deletedFile.DeletionTime,
-        FullName: (*this).m_FullName,
+        RecycledFullPath: (*this).m_FullName,
     };
     let is_equal = RecycleBinGeneric_IsEqualFileIdentity(pFI, &self_value);
     if is_equal != 0 {
@@ -388,11 +400,14 @@ pub unsafe fn RecycleBin5File_QueryInterface_body(this: *mut RecycleBin5File, ri
 }
 
 pub unsafe fn RecycleBin5File_AddRef_body(this: *mut RecycleBin5File) -> ULONG {
-    InterlockedIncrement(&raw mut (*this).m_ref)
+    // InterlockedIncrement returns LONG (i32); recyclebin_v5_enumerator.cpp:78 returns it
+    // straight out of an `ULONG AddRef()` -- same reinterpretation C performs implicitly.
+    InterlockedIncrement(&raw mut (*this).m_ref) as ULONG
 }
 
 pub unsafe fn RecycleBin5File_dtor_body(this: *mut RecycleBin5File) -> () {
-    (*(*(*this).m_recycleBin).lpVtbl).Release((*this).m_recycleBin);
+    // recyclebin_v5_enumerator.cpp:84 -- m_recycleBin->Release(); vtable slots are Option<fn>.
+    ((*(*(*this).m_recycleBin).lpVtbl).Release.unwrap_unchecked())((*this).m_recycleBin);
     SHFree(((*this).m_FullName) as LPVOID);
 }
 
@@ -407,7 +422,9 @@ pub unsafe fn RecycleBin5File_Release_body(this: *mut RecycleBin5File) -> ULONG 
 
 pub unsafe fn RecycleBin5File_GetInfo_body(this: *mut RecycleBin5File, pInfo: PDELETED_FILE_INFO) -> HRESULT {
     let mut hr: HRESULT = S_OK;
-    let mut uli: ULARGE_INTEGER = ULARGE_INTEGER::default();
+    // recyclebin_v5_enumerator.cpp:100 -- `ULARGE_INTEGER uli;` is left uninitialized in C++
+    // (only read after GetFileSize succeeds and fills it); zeroing is a safe superset.
+    let mut uli: ULARGE_INTEGER = core::mem::zeroed();
 
     let last_mod_hr = RecycleBin5File_GetLastModificationTime_body(this, &mut (*pInfo).LastModification);
     if last_mod_hr < 0 {
@@ -416,13 +433,16 @@ pub unsafe fn RecycleBin5File_GetInfo_body(this: *mut RecycleBin5File, pInfo: PD
 
     (*pInfo).DeletionTime = (*this).m_deletedFile.DeletionTime;
 
-    C_ASSERT(core::mem::size_of_val(&(*pInfo).FileSize) <= core::mem::size_of::<u32>());
+    // recyclebin_v5_enumerator.cpp:104 -- C_ASSERT is a compile-time-only macro (no runtime
+    // code); pInfo->FileSize is RECYCLEBINFILESIZETYPE (== UINT), so this is the Rust
+    // equivalent static check, not a lowered/no-op body.
+    const _: () = assert!(core::mem::size_of::<RECYCLEBINFILESIZETYPE>() <= core::mem::size_of::<u32>());
 
     let file_size_hr = RecycleBin5File_GetFileSize_body(this, &mut uli);
     (*pInfo).FileSize = if file_size_hr < 0 {
         INVALID_FILE_SIZE
     } else {
-        uli.__bindgen_anon_1.LowPart
+        uli.u.LowPart
     };
 
     hr = RecycleBin5File_GetAttributes_body(this, &mut (*pInfo).Attributes);
@@ -430,7 +450,7 @@ pub unsafe fn RecycleBin5File_GetInfo_body(this: *mut RecycleBin5File, pInfo: PD
         (*pInfo).Attributes = 0;
     }
 
-    InitializeRecycleBinStringRef(&mut (*pInfo).OriginalFullPath, (*this).m_deletedFile.FileNameW);
+    InitializeRecycleBinStringRef(&mut (*pInfo).OriginalFullPath, core::ptr::addr_of!((*this).m_deletedFile.FileNameW).cast::<u16>());
     InitializeRecycleBinStringRef(&mut (*pInfo).RecycledFullPath, (*this).m_FullName);
 
     hr
@@ -505,12 +525,15 @@ pub unsafe fn RecycleBin5File_GetFileSize_body(this: *mut RecycleBin5File, pFile
     if hFile == INVALID_HANDLE_VALUE {
         return HRESULT_FROM_WIN32(GetLastError());
     }
-    (*pFileSize).u.__bindgen_anon_1.LowPart = GetFileSize(this,
+    // recyclebin_v5_enumerator.cpp:165 -- `::GetFileSize(hFile, &pFileSize->u.HighPart)`, the
+    // Win32 function (2 args: HANDLE, PDWORD); no `this`. The real ULARGE_INTEGER union names
+    // this member `u` directly (winnt.h uses `u`/`DUMMYSTRUCTNAME`, not `__bindgen_anon_1`).
+    (*pFileSize).u.LowPart = GetFileSize(
         hFile,
-        core::ptr::addr_of_mut!((*pFileSize).u.__bindgen_anon_1.HighPart),
+        core::ptr::addr_of_mut!((*pFileSize).u.HighPart),
     );
     let hr;
-    if (*pFileSize).u.__bindgen_anon_1.LowPart != INVALID_FILE_SIZE {
+    if (*pFileSize).u.LowPart != INVALID_FILE_SIZE {
         hr = S_OK;
     } else {
         hr = HRESULT_FROM_WIN32(GetLastError());
@@ -520,13 +543,16 @@ pub unsafe fn RecycleBin5File_GetFileSize_body(this: *mut RecycleBin5File, pFile
 }
 
 pub unsafe fn RecycleBin5File_GetPhysicalFileSize_body(this: *mut RecycleBin5File, pPhysicalFileSize: *mut ULARGE_INTEGER) -> HRESULT {
-    (*pPhysicalFileSize).u.__bindgen_anon_1.HighPart = 0;
-    (*pPhysicalFileSize).u.__bindgen_anon_1.LowPart = (*this).m_deletedFile.dwPhysicalFileSize;
+    (*pPhysicalFileSize).u.HighPart = 0;
+    (*pPhysicalFileSize).u.LowPart = (*this).m_deletedFile.dwPhysicalFileSize;
     S_OK
 }
 
 pub unsafe fn RecycleBin5File_GetAttributes_body(this: *mut RecycleBin5File, pAttributes: *mut DWORD) -> HRESULT {
-    let dwAttributes: u32 = GetFileAttributesW((*this).m_FullName.as_ptr());
+    // recyclebin_v5_enumerator.cpp:191 -- `GetFileAttributesW(m_FullName)`; m_FullName is
+    // already LPWSTR, which coerces to LPCWSTR on its own -- `.as_ptr()` doesn't exist on a
+    // raw pointer and isn't needed.
+    let dwAttributes: u32 = GetFileAttributesW((*this).m_FullName);
     if dwAttributes == INVALID_FILE_ATTRIBUTES {
         return HResultFromWin32(GetLastError());
     }
@@ -535,25 +561,30 @@ pub unsafe fn RecycleBin5File_GetAttributes_body(this: *mut RecycleBin5File, pAt
 }
 
 pub unsafe fn RecycleBin5File_GetFileName_body(this: *mut RecycleBin5File, BufferSize: SIZE_T, Buffer: LPWSTR, RequiredSize: *mut SIZE_T) -> HRESULT {
+    // recyclebin_v5_enumerator.cpp:205: `dwRequired = (DWORD)(wcslen(m_deletedFile.FileNameW) + 1) * sizeof(WCHAR);`
+    // FileNameW is a [WCHAR;260] field of a #[repr(C, packed)] struct: copy it out first
+    // (a value copy is not a reference, so no unaligned-field UB), THEN take .as_ptr() on the
+    // now-ordinary local array. dwRequired is DWORD in the C++, and the (DWORD) cast happens
+    // BEFORE the *sizeof(WCHAR) multiply -- preserved here, not folded into a wider type.
     let file_name_ptr = (*this).m_deletedFile.FileNameW;
-    let len = wcslen(file_name_ptr) + 1;
-    let dw_required = len.wrapping_mul(core::mem::size_of::<u16>());
+    let len = wcslen(file_name_ptr.as_ptr());
+    let dw_required: DWORD = ((len + 1) as DWORD).wrapping_mul(core::mem::size_of::<u16>() as DWORD);
 
     if !RequiredSize.is_null() {
-        *RequiredSize = dw_required;
+        *RequiredSize = dw_required as SIZE_T;
     }
 
     if BufferSize == 0 && Buffer.is_null() {
         return S_OK;
     }
 
-    if BufferSize < dw_required {
+    if BufferSize < dw_required as SIZE_T {
         return E_OUTOFMEMORY;
     }
 
     CopyMemory(
         Buffer as *mut core::ffi::c_void,
-        file_name_ptr as *const core::ffi::c_void,
+        file_name_ptr.as_ptr() as *const core::ffi::c_void,
         dw_required,
     );
 
@@ -561,27 +592,29 @@ pub unsafe fn RecycleBin5File_GetFileName_body(this: *mut RecycleBin5File, Buffe
 }
 
 pub unsafe fn RecycleBin5File_Delete_body(this: *mut RecycleBin5File) -> HRESULT {
-    ((*(*(*this).m_recycleBin).lpVtbl).Delete)(
+    // recyclebin_v5_enumerator.cpp:221 -- vtable slots are Option<fn>, need .unwrap_unchecked(); the
+    // callee's declared 3rd param is `*mut DELETED_FILE_RECORD` (non-const), matching `&m_deletedFile`.
+    ((*(*(*this).m_recycleBin).lpVtbl).Delete.unwrap_unchecked())(
         (*this).m_recycleBin,
         (*this).m_FullName,
-        &(*this).m_deletedFile,
+        &mut (*this).m_deletedFile,
     )
 }
 
 pub unsafe fn RecycleBin5File_Restore_body(this: *mut RecycleBin5File) -> HRESULT {
-    ((*(*(*this).m_recycleBin).lpVtbl).Restore)(
+    ((*(*(*this).m_recycleBin).lpVtbl).Restore.unwrap_unchecked())(
         (*this).m_recycleBin,
         (*this).m_FullName,
-        &raw const (*this).m_deletedFile,
+        &mut (*this).m_deletedFile,
     )
 }
 
 pub unsafe fn RecycleBin5File_RemoveFromDatabase_body(this: *mut RecycleBin5File) -> HRESULT {
     let p_recycleBin = (*this).m_recycleBin;
-    ((*(*p_recycleBin).lpVtbl).RemoveFromDatabase)(
+    ((*(*p_recycleBin).lpVtbl).RemoveFromDatabase.unwrap_unchecked())(
         p_recycleBin,
         (*this).m_FullName,
-        &raw const (*this).m_deletedFile as *mut DELETED_FILE_RECORD,
+        &mut (*this).m_deletedFile,
     )
 }
 
@@ -593,10 +626,13 @@ pub unsafe fn RecycleBin5File_ctor_body(this: *mut RecycleBin5File) -> () {
     ZeroMemory((&raw mut (*this).m_deletedFile) as *mut _, size);
 }
 
+// StringCchPrintfW is strsafe_rust::StringCchPrintfW!, which calls msvcrt's variadic
+// `_snwprintf` directly. It used to bind to shell32's C trampoline (rust_strsafe_shim.c).
+
 pub unsafe fn RecycleBin5File_Init_body(this: *mut RecycleBin5File, prb: *mut IRecycleBin5, Folder: LPCWSTR, pDeletedFile: PDELETED_FILE_RECORD) -> HRESULT {
     // 1. set recycle bin pointer and addref
     (*this).m_recycleBin = prb;
-    (*(*prb).lpVtbl).AddRef(prb);
+    ((*(*prb).lpVtbl).AddRef.unwrap_unchecked())(prb);
 
     // 2. copy the deleted file record
     let deleted: DELETED_FILE_RECORD = *pDeletedFile;
@@ -604,7 +640,7 @@ pub unsafe fn RecycleBin5File_Init_body(this: *mut RecycleBin5File, prb: *mut IR
 
     // 3. build unique id string
     let mut szUniqueId: [WCHAR; 32] = [0u16; 32];
-    StringCchPrintfW(
+    strsafe_rust::StringCchPrintfW!(
         szUniqueId.as_mut_ptr(),
         szUniqueId.len(),
         CPP_COM_WSTR_F3C6A8F2AC47.as_ptr(),
@@ -616,7 +652,9 @@ pub unsafe fn RecycleBin5File_Init_body(this: *mut RecycleBin5File, prb: *mut IR
     strFullName.append_str(CPP_COM_WSTR_8CC2401ABCDF.as_ptr());
     strFullName.append_char((0x0061u16 + deleted.dwDriveNumber as u16) as u16);
     strFullName.append_str(szUniqueId.as_ptr());
-    let ext_ptr = PathFindExtensionW(deleted.FileNameW);
+    // deleted.FileNameW is [WCHAR;260] on a #[repr(C, packed)] type; addr_of! avoids forming
+    // a reference to a possibly-unaligned field (recyclebin_v5_enumerator.cpp:261).
+    let ext_ptr = PathFindExtensionW(core::ptr::addr_of!(deleted.FileNameW).cast::<u16>());
     strFullName.append_str(ext_ptr);
 
     // 5. check if the file exists (attribute check)

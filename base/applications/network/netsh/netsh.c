@@ -14,7 +14,7 @@
 
 /* GLOBALS ********************************************************************/
 
-HMODULE hModule = NULL;
+HMODULE g_hModule = NULL;
 
 /* FUNCTIONS ******************************************************************/
 
@@ -52,10 +52,11 @@ RunScript(
 LPWSTR
 MergeStrings(
     _In_ LPWSTR pszStringArray[],
-    _In_ INT nCount)
+    _In_ UINT nCount)
 {
     LPWSTR pszOutString = NULL;
-    INT i, nLength;
+    size_t nLength;
+    UINT i;
 
     if ((pszStringArray == NULL) || (nCount == 0))
         return NULL;
@@ -100,7 +101,9 @@ wmain(
 
     DPRINT("wmain(%S)\n", GetCommandLineW());
 
-    hModule = GetModuleHandle(NULL);
+    GetWmiVersionInfo();
+
+    g_hModule = GetModuleHandle(NULL);
 
     /* Initialize the Console Standard Streams */
     ConInitStdStreams();
@@ -179,15 +182,15 @@ wmain(
             if ((index + 1) < argc)
             {
                 index++;
-                pszMachine = HeapAlloc(GetProcessHeap(), 0, (wcslen(argv[index]) + 1) * sizeof(WCHAR));
-                if (pszMachine == NULL)
+                g_pszMachine = HeapAlloc(GetProcessHeap(), 0, (wcslen(argv[index]) + 1) * sizeof(WCHAR));
+                if (g_pszMachine == NULL)
                 {
                     dwError = ERROR_NOT_ENOUGH_MEMORY;
-                    PrintError(hModule, dwError);
+                    PrintError(g_hModule, dwError);
                     goto done;
                 }
 
-                wcscpy(pszMachine, argv[index]);
+                wcscpy(g_pszMachine, argv[index]);
             }
             else
             {
@@ -210,7 +213,7 @@ wmain(
                 if (pszCommand == NULL)
                 {
                     dwError = ERROR_NOT_ENOUGH_MEMORY;
-                    PrintError(hModule, dwError);
+                    PrintError(g_hModule, dwError);
                     goto done;
                 }
 
@@ -251,8 +254,8 @@ wmain(
 
 done:
     /* FIXME: Cleanup code goes here */
-    if (pszMachine != NULL)
-        HeapFree(GetProcessHeap(), 0, pszMachine);
+    if (g_pszMachine != NULL)
+        HeapFree(GetProcessHeap(), 0, g_pszMachine);
 
     if (pszCommand != NULL)
         HeapFree(GetProcessHeap(), 0, pszCommand);
@@ -295,7 +298,7 @@ MakeQuotedString(
     if (pszQuotedString == NULL)
         return NULL;
 
-    swprintf(pszQuotedString, L"\"%s\"", pszString);
+    _swprintf(pszQuotedString, L"\"%s\"", pszString);
 
     return pszQuotedString;
 }
@@ -307,22 +310,25 @@ MakeString(
     _In_ DWORD dwMsgId,
     ...)
 {
+    LPCWSTR pszStr;
     LPWSTR pszInBuffer, pszOutBuffer = NULL;
     DWORD dwLength;
     va_list ap;
 
     DPRINT("MakeString(%p %lu ...)\n", hModule, dwMsgId);
 
-    va_start(ap, dwMsgId);
-
-    pszInBuffer = HeapAlloc(GetProcessHeap(), 0, HUGE_BUFFER_SIZE * sizeof(WCHAR));
-    if (pszInBuffer == NULL)
+    dwLength = LoadStringW(hModule, dwMsgId, (LPWSTR)&pszStr, 0);
+    if (dwLength == 0)
         return NULL;
 
-    dwLength = LoadStringW(hModule, dwMsgId, pszInBuffer, HUGE_BUFFER_SIZE);
-    if (dwLength > 0)
-        goto done;
+    /* Allocate and copy the resource string, NUL-terminated */
+    pszInBuffer = HeapAlloc(GetProcessHeap(), 0, (dwLength + 1) * sizeof(WCHAR));
+    if (pszInBuffer == NULL)
+        return NULL;
+    CopyMemory(pszInBuffer, pszStr, dwLength * sizeof(WCHAR));
+    pszInBuffer[dwLength] = UNICODE_NULL;
 
+    va_start(ap, dwMsgId);
     FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING,
                    pszInBuffer,
                    0,
@@ -330,10 +336,9 @@ MakeString(
                    (LPWSTR)&pszOutBuffer,
                    0,
                    &ap);
+    va_end(ap);
 
-done:
-    if (pszInBuffer)
-        HeapFree(GetProcessHeap(), 0, pszInBuffer);
+    HeapFree(GetProcessHeap(), 0, pszInBuffer);
 
     return pszOutBuffer;
 }
@@ -356,6 +361,7 @@ MatchEnumTag(
 
     for (i = 0; i < dwNumArg; i++)
     {
+        DPRINT("%S -- %S\n", pwcArg, pEnumTable[i].pwszToken);
         if (MatchToken(pwcArg, pEnumTable[i].pwszToken))
         {
             *pdwValue = pEnumTable[i].dwValue;
@@ -364,6 +370,79 @@ MatchEnumTag(
     }
 
     return ERROR_NOT_FOUND;
+}
+
+DWORD
+WINAPI
+MatchTagsInCmdLine(
+    _In_ HANDLE hModule,
+    _Inout_ LPWSTR *ppwcArguments,
+    _In_ DWORD dwCurrentIndex,
+    _In_ DWORD dwArgCount,
+    _Inout_ TAG_TYPE *pttTags,
+    _In_ DWORD dwTagCount,
+    _Out_ DWORD *pdwTagType)
+{
+    PWSTR pszEqual;
+    DWORD i, j, dwTagLength;
+
+    DPRINT1("MatchTagsInCmdLine(%p %p %lu %lu %p %lu %p)\n",
+            hModule, ppwcArguments, dwCurrentIndex, dwArgCount,
+            pttTags, dwTagCount, pdwTagType);
+
+    /* Identify tagged arguments (tag=value) */
+    for (i = dwCurrentIndex; i < dwArgCount; i++)
+    {
+        DPRINT("Argument %lu: %S\n", i, ppwcArguments[i]);
+        pdwTagType[i - dwCurrentIndex] = (DWORD)-1;
+
+        /* Skip arguments that do not have a tag */
+        pszEqual = wcschr(ppwcArguments[i], L'=');
+        if (pszEqual == NULL)
+            continue;
+
+        dwTagLength = pszEqual - ppwcArguments[i];
+        DPRINT("Tag length %lu\n", dwTagLength);
+        DPRINT("Value length %lu\n", wcslen(pszEqual + 1));
+
+        pdwTagType[i - dwCurrentIndex] = (DWORD)-1;
+        for (j = 0; j < dwTagCount; j++)
+        {
+            DPRINT("Test tag %S -- %S\n", pttTags[j].pwszTag, ppwcArguments[i]);
+            if ((wcslen(pttTags[j].pwszTag) == dwTagLength) &&
+                (_wcsnicmp(ppwcArguments[i], pttTags[j].pwszTag, dwTagLength) == 0))
+            {
+                DPRINT("Found tag %S\n", pttTags[j].pwszTag);
+                pttTags[j].bPresent = TRUE;
+                pdwTagType[i - dwCurrentIndex] = j;
+
+                /* Remove the tag name from the argument */
+                wcscpy(ppwcArguments[i], pszEqual + 1);
+                break;
+            }
+        }
+    }
+
+    /* Identify un-tagged arguments (value) */
+    for (i = dwCurrentIndex; i < dwArgCount; i++)
+    {
+        if (pdwTagType[i - dwCurrentIndex] != (DWORD)-1)
+            continue;
+
+        for (j = 0; j < dwTagCount; j++)
+        {
+            DPRINT("Test tag %S\n", pttTags[j].pwszTag);
+            if (pttTags[j].bPresent == FALSE)
+            {
+                DPRINT("Found tag %S\n", pttTags[j].pwszTag);
+                pttTags[j].bPresent = TRUE;
+                pdwTagType[i - dwCurrentIndex] = j;
+                break;
+            }
+        }
+    }
+
+    return ERROR_SUCCESS;
 }
 
 BOOL
@@ -419,18 +498,100 @@ NsGetFriendlyNameFromIfName(
 
 DWORD
 WINAPI
+NsGetIfNameFromFriendlyName(
+    _In_ DWORD dwUnknown1,
+    _In_ PWSTR pszFriendlyName, 
+    _Inout_ PWSTR pszIfName,
+    _Inout_ PDWORD pdwIfName)
+{
+    UNICODE_STRING UnicodeIfName;
+    GUID InterfaceGuid;
+    NTSTATUS Status;
+    DWORD ret;
+
+    DPRINT("NsGetIfNameFromFriendlyName(%lx %S %p %p)\n",
+           dwUnknown1, pszFriendlyName, pszIfName, pdwIfName);
+
+    ret = NhGetGuidFromInterfaceName(pszFriendlyName,
+                                     &InterfaceGuid,
+                                     0, 0);
+    if (ret != ERROR_SUCCESS)
+    {
+        DPRINT1("NhGetGuidFromInterfaceName failed %lu\n", ret);
+        return ret;
+    }
+
+    RtlInitUnicodeString(&UnicodeIfName, NULL);
+    Status = RtlStringFromGUID(&InterfaceGuid,
+                               &UnicodeIfName);
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("RtlStringFromGUID failed 0x%08lx\n", Status);
+        ret = RtlNtStatusToDosError(Status);
+    }
+
+    if (*pdwIfName >= UnicodeIfName.MaximumLength)
+    {
+        CopyMemory(pszIfName, UnicodeIfName.Buffer, UnicodeIfName.MaximumLength);
+        *pdwIfName = UnicodeIfName.MaximumLength;
+    }
+
+    RtlFreeUnicodeString(&UnicodeIfName);
+
+    return ret;
+}
+
+DWORD
+WINAPI
 PreprocessCommand(
     _In_ HANDLE hModule,
     _Inout_ LPWSTR *ppwcArguments,
     _In_ DWORD dwCurrentIndex,
     _In_ DWORD dwArgCount,
-    _In_ TAG_TYPE *pttTags,
+    _Inout_ TAG_TYPE *pttTags,
     _In_ DWORD dwTagCount,
     _In_ DWORD dwMinArgs,
     _In_ DWORD dwMaxArgs,
     _Out_ DWORD *pdwTagType)
 {
-    DPRINT1("PreprocessCommand()\n");
+    DWORD i;
+    DWORD dwError = ERROR_SUCCESS;
+
+    DPRINT("PreprocessCommand()\n");
+
+    if ((ppwcArguments == NULL) || (pttTags == NULL) || (pdwTagType == NULL))
+        return ERROR_INVALID_PARAMETER;
+
+    if (((dwArgCount - dwCurrentIndex) < dwMinArgs) || ((dwArgCount - dwCurrentIndex) > dwMaxArgs))
+        return ERROR_INVALID_SYNTAX;
+
+    for (i = 0; i < dwTagCount; i++)
+    {
+        pttTags[i].bPresent = FALSE;
+    }
+
+    if ((dwArgCount - dwCurrentIndex) > 0)
+    {
+        dwError = MatchTagsInCmdLine(hModule,
+                                     ppwcArguments,
+                                     dwCurrentIndex,
+                                     dwArgCount,
+                                     pttTags,
+                                     dwTagCount,
+                                     pdwTagType);
+        if (dwError != ERROR_SUCCESS)
+        {
+            return dwError;
+        }
+    }
+
+    /* Fail, if a required tag is missing */
+    for (i = 0; i < dwTagCount; i++)
+    {
+        if ((pttTags[i].dwRequired & NS_REQ_PRESENT) && (pttTags[i].bPresent == FALSE))
+            return ERROR_INVALID_SYNTAX;
+    }
+
     return 0;
 }
 
@@ -441,81 +602,34 @@ PrintError(
     _In_ DWORD dwErrId,
     ...)
 {
-    PWSTR pszInBuffer = NULL, pszOutBuffer = NULL;
-    DWORD dwLength = 0;
+    INT Length;
     va_list ap;
-
-    DPRINT("PrintError(%p %lu ...)\n", hModule, dwErrId);
 
     va_start(ap, dwErrId);
 
-    pszOutBuffer = HeapAlloc(GetProcessHeap(), 0, HUGE_BUFFER_SIZE * sizeof(WCHAR));
-    if (pszOutBuffer == NULL)
-        goto done;
-
     if (hModule)
     {
-        pszInBuffer = HeapAlloc(GetProcessHeap(), 0, HUGE_BUFFER_SIZE * sizeof(WCHAR));
-        if (pszInBuffer == NULL)
-            goto done;
-
-        dwLength = LoadStringW(hModule, dwErrId, pszInBuffer, HUGE_BUFFER_SIZE);
-        if (dwLength == 0)
-            goto done;
-
-        dwLength = FormatMessageW(FORMAT_MESSAGE_FROM_STRING,
-                                  pszInBuffer,
-                                  0,
-                                  0,
-                                  pszOutBuffer,
-                                  HUGE_BUFFER_SIZE,
-                                  &ap);
+        Length = ConResMsgPrintfExV(StdErr, hModule, 0, dwErrId,
+                                    LANG_USER_DEFAULT, &ap);
     }
     else
     {
         if ((dwErrId > NETSH_ERROR_BASE) && (dwErrId < NETSH_ERROR_END))
         {
-            pszInBuffer = HeapAlloc(GetProcessHeap(), 0, HUGE_BUFFER_SIZE * sizeof(WCHAR));
-            if (pszInBuffer == NULL)
-                goto done;
-
-            dwLength = LoadStringW(GetModuleHandle(NULL), dwErrId, pszInBuffer, HUGE_BUFFER_SIZE);
-            if (dwLength == 0)
-                goto done;
-
-            dwLength = FormatMessageW(FORMAT_MESSAGE_FROM_STRING,
-                                      pszInBuffer,
-                                      0,
-                                      0L,
-                                      pszOutBuffer,
-                                      HUGE_BUFFER_SIZE,
-                                      &ap);
+            Length = ConResMsgPrintfExV(StdErr, g_hModule, 0, dwErrId,
+                                        LANG_USER_DEFAULT, &ap);
         }
         else
         {
-            dwLength = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM,
-                                      NULL,
-                                      dwErrId,
-                                      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                                      pszOutBuffer,
-                                      HUGE_BUFFER_SIZE,
-                                      &ap);
+            Length = ConMsgPrintfV(StdErr, FORMAT_MESSAGE_FROM_SYSTEM,
+                                   NULL, dwErrId,
+                                   LANG_USER_DEFAULT, &ap);
         }
     }
 
     va_end(ap);
 
-    if (dwLength > 0)
-        ConPuts(StdOut, pszOutBuffer);
-
-done:
-    if (pszOutBuffer)
-        HeapFree(GetProcessHeap(), 0, pszOutBuffer);
-
-    if (pszInBuffer)
-        HeapFree(GetProcessHeap(), 0, pszInBuffer);
-
-    return dwLength;
+    return (DWORD)Length;
 }
 
 DWORD
@@ -529,12 +643,11 @@ PrintMessageFromModule(
     va_list ap;
 
     va_start(ap, dwMsgId);
-    Length = ConResPrintfExV(StdOut, hModule, dwMsgId,
-                             MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
-                             ap);
+    Length = ConResMsgPrintfExV(StdOut, hModule, 0, dwMsgId,
+                                LANG_USER_DEFAULT, &ap);
     va_end(ap);
 
-    return Length;
+    return (DWORD)Length;
 }
 
 DWORD
@@ -550,5 +663,5 @@ PrintMessage(
     Length = ConPrintfV(StdOut, pwszFormat, ap);
     va_end(ap);
 
-    return Length;
+    return (DWORD)Length;
 }

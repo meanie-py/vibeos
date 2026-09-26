@@ -54,7 +54,7 @@ macro_rules! ConSrvReleaseScreenBuffer {
 // All functions reference types already imported from ntkrnl_sys (PCONSOLE, PTEXTMODE_SCREEN_BUFFER, etc.)
 // and contain no static data, typedefs, enums, or constant definitions at file scope.
 
-pub(crate) unsafe fn WriteConsoleThread(
+pub(crate) unsafe extern "system" fn WriteConsoleThread(
     _WaitList: PLIST_ENTRY,
     WaitThread: PCSR_THREAD,
     WaitApiMessage: PCSR_API_MESSAGE,
@@ -136,7 +136,7 @@ pub(crate) unsafe fn DoWriteConsole(
 
             if CsrCreateWait(
                 core::ptr::addr_of_mut!((*Console).WriteWaitQueue),
-                Some(core::mem::transmute(WriteConsoleThread as *const ())),
+                Some(WriteConsoleThread),
                 ClientThread,
                 ApiMessage,
                 core::ptr::null_mut(),

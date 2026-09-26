@@ -1,9 +1,10 @@
 #![allow(non_snake_case, non_upper_case_globals, unused_unsafe)]
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, ExRaiseStatus, IoGetDeviceProperty, RtlCompareMemory, RtlCopyUnicodeString, RtlInitUnicodeString, ZwClose};
-use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
+use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, IoGetDeviceProperty, RtlCompareMemory, RtlInitUnicodeString, ZwClose};
+use ntkrnl_sys::rtl::RtlZeroMemory;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMORY};
 use ntkrnl_sys::constants::{STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_PARAMETER_1, STATUS_INVALID_PARAMETER_2, STATUS_UNSUCCESSFUL};
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -33,6 +34,11 @@ const GDITAG_DEVMODE: u32 = u32::from_le_bytes(*b"Gdev");
 // winuser.h: #define HWND_BROADCAST ((HWND)0xffff)
 const HWND_BROADCAST: HWND = 0xffff as HWND;
 
+// winuser.h: #define ENUM_CURRENT_SETTINGS ((DWORD)-1), ENUM_REGISTRY_SETTINGS ((DWORD)-2)
+// (not bindgen'd -- they're #define, not enum/const decls the header scanner sees).
+const ENUM_CURRENT_SETTINGS: DWORD = 0xFFFFFFFFu32;
+const ENUM_REGISTRY_SETTINGS: DWORD = 0xFFFFFFFEu32;
+
 // Registry helpers — now Rust (misc/registry.c flipped to registry.rs);
 // exported `extern "system"` (NTAPI = stdcall i386 / cdecl else). Engp*/Init*
 // helpers are NTAPI/cdecl C in win32ss; SetLastNtError is fastcall.
@@ -51,6 +57,18 @@ extern "system" {
 
 extern "system" {
     fn InitMetrics() -> u32;
+}
+
+// FASTCALL win32k export (win32k already imports it elsewhere per
+// accelerator.rs's convention: stdcall-name-mangled fastcall on i386, C ABI
+// otherwise).
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn SetLastNtError(Status: NTSTATUS);
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn SetLastNtError(Status: NTSTATUS);
 }
 
 extern "C" {
@@ -73,6 +91,71 @@ unsafe fn rtl_init_empty_unicode_string(s: *mut _UNICODE_STRING, buf: *mut u16, 
 #[inline(always)]
 unsafe fn ProbeForReadUnicodeString(SourceString: PUNICODE_STRING) -> _UNICODE_STRING {
     *(SourceString as *const _UNICODE_STRING)
+}
+
+// Fault-protected replacement for the shape repeated at three _SEH2_TRY sites
+// in display.c (NtUserEnumDisplayDevices ~400-414, NtUserEnumDisplaySettings
+// ~636-655, NtUserChangeDisplaySettings ~988-1003): probe the UNICODE_STRING
+// header, capture it, (optionally) reject an empty/NULL buffer the way
+// NtUserEnumDisplaySettings's `if (!ustrDeviceUser.Length || !ustrDeviceUser.Buffer)
+// ExRaiseStatus(STATUS_NO_MEMORY)` does, probe the string buffer, then do what
+// RtlCopyUnicodeString does (copy min(dst.MaximumLength, src.Length) bytes,
+// set dst.Length, NUL-terminate if room) -- but with the byte copy itself
+// fault-protected via safe_copy_raw instead of calling RtlCopyUnicodeString
+// directly on the raw (unprotected between check and read) user pointer.
+//
+// SafeProbeForRead/safe_copy_raw, not ntkrnl_sys::probe::probe_user_buffer or
+// write_user: those read MmUserProbeAddress, a DATA export this driver can't
+// link against (see the accelerator.rs comment on the same trap).
+//
+// Returns the real NTSTATUS on failure so a caller that needs it (site 5,
+// NtUserChangeDisplaySettings, which does `SetLastNtError(_SEH2_GetExceptionCode())`)
+// can use it; callers that always return a fixed status/bool on any failure
+// (sites 1 and 3) just check `.is_err()`.
+unsafe fn seh_probe_and_copy_unicode_string(
+    dst: &mut _UNICODE_STRING,
+    src: PUNICODE_STRING,
+    require_nonempty: bool,
+) -> Result<(), NTSTATUS> {
+    let st = SafeProbeForRead(
+        src as *mut core::ffi::c_void,
+        core::mem::size_of::<_UNICODE_STRING>(),
+        1,
+    );
+    if st < 0 {
+        return Err(st);
+    }
+
+    let mut hdr: _UNICODE_STRING = core::mem::zeroed();
+    ntkrnl_sys::probe::safe_copy_raw(
+        core::ptr::addr_of_mut!(hdr) as *mut core::ffi::c_void,
+        src as *const core::ffi::c_void,
+        core::mem::size_of::<_UNICODE_STRING>(),
+    )?;
+
+    if require_nonempty && (hdr.Length == 0 || hdr.Buffer.is_null()) {
+        // display.c's ExRaiseStatus(STATUS_NO_MEMORY), caught by the same
+        // _SEH2_EXCEPT as a real probe fault.
+        return Err(STATUS_NO_MEMORY);
+    }
+
+    let st2 = SafeProbeForRead(hdr.Buffer as *mut core::ffi::c_void, hdr.Length as usize, 1);
+    if st2 < 0 {
+        return Err(st2);
+    }
+
+    let copy_len = core::cmp::min(dst.MaximumLength, hdr.Length) as usize;
+    ntkrnl_sys::probe::safe_copy_raw(
+        dst.Buffer as *mut core::ffi::c_void,
+        hdr.Buffer as *const core::ffi::c_void,
+        copy_len,
+    )?;
+    dst.Length = copy_len as USHORT;
+    if (dst.Length as usize) < dst.MaximumLength as usize {
+        *dst.Buffer.add(copy_len / 2) = 0;
+    }
+
+    Ok(())
 }
 
 // strsafe.h RtlStringCbCopyW/RtlStringCbCatW are inline (no kernel symbol).
@@ -518,7 +601,20 @@ pub unsafe extern "system" fn NtUserEnumDisplayDevices(
             core::mem::size_of_val(&awcDevice) as USHORT,
         );
 
-        RtlCopyUnicodeString(&mut ustrDevice as *mut _ as _, pustrDevice as _);
+        // display.c ~400-414 (_SEH2_TRY/_SEH2_EXCEPT, DROPPED by the cohab
+        // flip): probes pustrDevice, pustrDevice->Buffer, then
+        // RtlCopyUnicodeString, all under one guard. The handler is the
+        // UNUSUAL shape flagged for this file: the plain
+        // `return _SEH2_GetExceptionCode()` is commented out in the C in
+        // favor of `_SEH2_YIELD(return NT_SUCCESS(_SEH2_GetExceptionCode()))`.
+        // NtUserEnumDisplayDevices returns BOOL, and an exception code always
+        // carries the error-facility bits, so NT_SUCCESS() of it is
+        // unconditionally FALSE -- the handler is "return FALSE", just
+        // spelled through NT_SUCCESS. Reproduced as a plain boolean
+        // early-return (not "fixed" into propagating a status).
+        if seh_probe_and_copy_unicode_string(&mut ustrDevice, pustrDevice, false).is_err() {
+            return FALSE as BOOL;
+        }
 
         if ustrDevice.Length > 0 {
             pustrDevice = &mut ustrDevice;
@@ -534,17 +630,65 @@ pub unsafe extern "system" fn NtUserEnumDisplayDevices(
     UserLeave();
 
     if NT_SUCCESS(Status) {
-        if (*pDisplayDevice).cb != 0 {
-            (*pDisplayDevice).cb = core::cmp::min(
-                (*pDisplayDevice).cb,
-                core::mem::size_of::<DISPLAY_DEVICEW>() as DWORD,
+        // display.c ~435-455 (_SEH2_TRY/_SEH2_EXCEPT, DROPPED): probe-write
+        // &pDisplayDevice->cb, read it, clamp+probe-write the whole output
+        // buffer, RtlCopyMemory dispdev into it -- all one guard. Ordinary
+        // assign-and-fall-through shape: `Status = _SEH2_GetExceptionCode();`
+        // then execution falls out of the SEH block to the TRACE + return
+        // below, unlike sites 1/2 (this file's other two are early-returns).
+        'seh_out: {
+            let wst = SafeProbeForWrite(
+                core::ptr::addr_of_mut!((*pDisplayDevice).cb) as *mut core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+                1,
             );
+            if wst < 0 {
+                Status = wst;
+                break 'seh_out;
+            }
 
-            RtlCopyMemory(
-                pDisplayDevice as *mut _,
-                &dispdev as *const _ as *const _,
-                (*pDisplayDevice).cb as usize,
-            );
+            // Bare read of pDisplayDevice->cb in the C -- it sits inside the
+            // same _SEH2_TRY as the probe above, so a fault here (not just an
+            // out-of-range pointer) has to be caught too.
+            let mut cb: DWORD = 0;
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                core::ptr::addr_of_mut!(cb) as *mut core::ffi::c_void,
+                core::ptr::addr_of!((*pDisplayDevice).cb) as *const core::ffi::c_void,
+                core::mem::size_of::<DWORD>(),
+            ) {
+                Status = st;
+                break 'seh_out;
+            }
+
+            if cb != 0 {
+                cb = core::cmp::min(cb, core::mem::size_of::<DISPLAY_DEVICEW>() as DWORD);
+
+                // pDisplayDevice->cb = min(...) in the C -- also a bare store
+                // under the guard.
+                if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                    core::ptr::addr_of_mut!((*pDisplayDevice).cb) as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(cb) as *const core::ffi::c_void,
+                    core::mem::size_of::<DWORD>(),
+                ) {
+                    Status = st;
+                    break 'seh_out;
+                }
+
+                let wst2 = SafeProbeForWrite(pDisplayDevice as *mut core::ffi::c_void, cb as usize, 1);
+                if wst2 < 0 {
+                    Status = wst2;
+                    break 'seh_out;
+                }
+
+                if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                    pDisplayDevice as *mut core::ffi::c_void,
+                    &dispdev as *const _ as *const core::ffi::c_void,
+                    cb as usize,
+                ) {
+                    Status = st;
+                    break 'seh_out;
+                }
+            }
         }
     }
 
@@ -658,13 +802,14 @@ pub unsafe extern "system" fn NtUserEnumDisplaySettings(
     lpDevMode: LPDEVMODEW,
     dwFlags: u32,
 ) -> i32 {
-    let mut ustrDeviceUser: _UNICODE_STRING = core::mem::zeroed();
     let mut ustrDevice: _UNICODE_STRING = core::mem::zeroed();
     let mut awcDevice: [u16; CCHDEVICENAME as usize] = [0; CCHDEVICENAME as usize];
     let mut Status: i32;
     let mut cbSize: u32 = 0;
     let mut cbExtra: u32 = 0;
     let mut pustrDevice = pustrDevice;
+    let mut dmReg: DEVMODEW = core::mem::zeroed();
+    let mut pdm: LPDEVMODEW = core::ptr::null_mut();
 
     Status = SafeProbeForRead(
         lpDevMode as *mut core::ffi::c_void,
@@ -682,8 +827,23 @@ pub unsafe extern "system" fn NtUserEnumDisplaySettings(
         return Status;
     }
     if NT_SUCCESS(Status) {
-        cbSize = (*lpDevMode).dmSize as u32;
-        cbExtra = (*lpDevMode).dmDriverExtra as u32;
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND both loads in
+        // one _SEH2_TRY, so they come across through the fault-tolerant copy.
+        let mut dmSize: u16 = 0;
+        let mut dmDriverExtra: u16 = 0;
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(dmSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*lpDevMode).dmSize) as *const core::ffi::c_void,
+            core::mem::size_of::<u16>(),
+        ) || !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(dmDriverExtra) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*lpDevMode).dmDriverExtra) as *const core::ffi::c_void,
+            core::mem::size_of::<u16>(),
+        ) {
+            return STATUS_ACCESS_VIOLATION;
+        }
+        cbSize = dmSize as u32;
+        cbExtra = dmDriverExtra as u32;
     }
 
     if cbSize != core::mem::size_of::<DEVMODEW>() as u32 {
@@ -697,20 +857,76 @@ pub unsafe extern "system" fn NtUserEnumDisplaySettings(
             core::mem::size_of_val(&awcDevice) as u16,
         );
 
-        ustrDeviceUser = ProbeForReadUnicodeString(pustrDevice);
-
-        if ustrDeviceUser.Length == 0 || ustrDeviceUser.Buffer.is_null() {
-            ExRaiseStatus(STATUS_NO_MEMORY);
+        // display.c ~636-655 (_SEH2_TRY/_SEH2_EXCEPT, DROPPED by the cohab
+        // flip): ProbeForReadUnicodeString (probe + capture the header),
+        // `if (!ustrDeviceUser.Length || !ustrDeviceUser.Buffer)
+        // ExRaiseStatus(STATUS_NO_MEMORY)`, ProbeForRead the buffer, then
+        // RtlCopyUnicodeString -- all one guard. Fixed status-return shape:
+        // ANY failure in the guarded region (a real probe fault OR the
+        // explicit ExRaiseStatus) returns the same STATUS_INVALID_PARAMETER_1,
+        // not the actual raised/faulting code.
+        if seh_probe_and_copy_unicode_string(&mut ustrDevice, pustrDevice, true).is_err() {
+            return STATUS_INVALID_PARAMETER_1;
         }
-
-        let _ = ustrDeviceUser.Length;
-
-        RtlCopyUnicodeString(&mut ustrDevice as *mut _ as _, &mut ustrDeviceUser as *mut _ as _);
 
         pustrDevice = &mut ustrDevice;
     }
 
-    return Status;
+    /* Acquire global USER lock */
+    UserEnterShared();
+
+    if iModeNum == ENUM_REGISTRY_SETTINGS {
+        /* Get the registry settings */
+        Status = UserEnumRegistryDisplaySettings(pustrDevice, &mut dmReg);
+        pdm = &mut dmReg;
+        (*pdm).dmSize = core::mem::size_of::<DEVMODEW>() as u16;
+    } else if iModeNum == ENUM_CURRENT_SETTINGS {
+        /* Get the current settings */
+        Status = UserEnumCurrentDisplaySettings(pustrDevice, &mut pdm);
+    } else {
+        /* Get specified settings */
+        Status = UserEnumDisplaySettings(pustrDevice, iModeNum, &mut pdm, dwFlags);
+    }
+
+    /* Release lock */
+    UserLeave();
+
+    /* Did we succeed? */
+    if NT_SUCCESS(Status) {
+        // display.c ~688-705 (_SEH2_TRY/_SEH2_EXCEPT, DROPPED): RtlCopyMemory
+        // of the (kernel-owned) pdm into the caller's lpDevMode, plus the
+        // driver-extra tail -- both bare stores with no ProbeFor* at all (the
+        // top-of-function SafeProbeForRead/SafeProbeForWrite already vetted
+        // lpDevMode/cbSize+cbExtra), so safe_copy_raw is the right tool, not
+        // an extra probe upstream never had. Ordinary assign-and-fall-through
+        // shape: `Status = _SEH2_GetExceptionCode();`, then execution falls
+        // out of the SEH block to the `return Status;` below.
+        'seh_out: {
+            let copy_len = core::cmp::min(cbSize, (*pdm).dmSize as u32) as usize;
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                lpDevMode as *mut core::ffi::c_void,
+                pdm as *const core::ffi::c_void,
+                copy_len,
+            ) {
+                Status = st;
+                break 'seh_out;
+            }
+
+            if cbExtra > 0 && (*pdm).dmDriverExtra > 0 {
+                let extra_len = core::cmp::min(cbExtra, (*pdm).dmDriverExtra as u32) as usize;
+                if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                    (lpDevMode as *mut u8).add(cbSize as usize) as *mut core::ffi::c_void,
+                    (pdm as *const u8).add((*pdm).dmSize as usize) as *const core::ffi::c_void,
+                    extra_len,
+                ) {
+                    Status = st;
+                    break 'seh_out;
+                }
+            }
+        }
+    }
+
+    Status
 }
 
 #[no_mangle]
@@ -954,28 +1170,73 @@ pub unsafe extern "system" fn NtUserChangeDisplaySettings(
             core::mem::size_of_val(&awcDevice) as u16,
         );
 
-        /* Copy the string */
-        RtlCopyUnicodeString(&mut ustrDevice as *mut _ as _, pustrDevice as _);
+        // display.c ~988-1003 (_SEH2_TRY/_SEH2_EXCEPT, DROPPED by the cohab
+        // flip): probes pustrDevice + pustrDevice->Buffer, then
+        // RtlCopyUnicodeString, all under one guard. Early-return-with-side-
+        // effect shape: `SetLastNtError(_SEH2_GetExceptionCode());
+        // _SEH2_YIELD(return DISP_CHANGE_BADPARAM);` -- unlike display.rs's
+        // fixed-status sites, this one DOES propagate the real exception
+        // code, just to SetLastNtError rather than as the return value.
+        match seh_probe_and_copy_unicode_string(&mut ustrDevice, pustrDevice, false) {
+            Ok(()) => {}
+            Err(st) => {
+                SetLastNtError(st);
+                return DISP_CHANGE_BADPARAM;
+            }
+        }
 
         pustrDevice = &mut ustrDevice;
     }
 
     /* Copy devmode */
     if lpDevMode != core::ptr::null_mut() {
-        /* Calculate usable size */
+        // display.c ~1011-1029 (_SEH2_TRY/_SEH2_EXCEPT, DROPPED): probe
+        // sizeof(dmLocal.dmSize), read lpDevMode->dmSize (bare, under the
+        // same guard), clamp, probe the full clamped size, then
+        // RtlCopyMemory -- all one guard. Same early-return-with-side-effect
+        // shape as the pustrDevice site just above.
         let sizeOfLocal = core::mem::size_of::<DEVMODEW>() as u16;
-        dmLocal.dmSize = if sizeOfLocal < (*lpDevMode).dmSize {
-            sizeOfLocal
-        } else {
-            (*lpDevMode).dmSize
-        };
 
-        /* Probe and copy the full DEVMODE */
-        core::ptr::copy_nonoverlapping(
-            lpDevMode as *const u8,
-            &mut dmLocal as *mut DEVMODEW as *mut u8,
-            dmLocal.dmSize as usize,
+        let st = SafeProbeForRead(
+            lpDevMode as *mut core::ffi::c_void,
+            core::mem::size_of_val(&dmLocal.dmSize),
+            1,
         );
+        if st < 0 {
+            SetLastNtError(st);
+            return DISP_CHANGE_BADPARAM;
+        }
+
+        let mut dmSizeField: u16 = 0;
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!(dmSizeField) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*lpDevMode).dmSize) as *const core::ffi::c_void,
+            core::mem::size_of::<u16>(),
+        ) {
+            SetLastNtError(st);
+            return DISP_CHANGE_BADPARAM;
+        }
+
+        dmLocal.dmSize = core::cmp::min(sizeOfLocal, dmSizeField);
+
+        let st2 = SafeProbeForRead(
+            lpDevMode as *mut core::ffi::c_void,
+            dmLocal.dmSize as usize,
+            1,
+        );
+        if st2 < 0 {
+            SetLastNtError(st2);
+            return DISP_CHANGE_BADPARAM;
+        }
+
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            &mut dmLocal as *mut DEVMODEW as *mut core::ffi::c_void,
+            lpDevMode as *const core::ffi::c_void,
+            dmLocal.dmSize as usize,
+        ) {
+            SetLastNtError(st);
+            return DISP_CHANGE_BADPARAM;
+        }
 
         /* Check for extra parameters */
         if dmLocal.dmDriverExtra > 0 {

@@ -15,9 +15,10 @@
 //! The recorded constraint this has to respect is NOT the mechanism. utils.cpp, beside
 //! `CStubWindow32_CreateStub_RustBridge`, records it: an ATL `CWindowImpl`'s per-instance
 //! thunk and its REGISTERED WINDOW CLASS must have exactly ONE owner, which is why
-//! `CStubWindow32` is bridged to C++ rather than reimplemented — two C++ TUs still construct
-//! it, and a second Rust implementation would register the same class name and split
-//! `FindStubWindow`. CDefView is not in that position: `SHELLDLL_DefView` is registered in
+//! `CStubWindow32` was bridged to C++ rather than reimplemented while two C++ TUs still
+//! constructed it: a second implementation would have registered the same class name and
+//! split `FindStubWindow`. Once both were Rust, it moved onto this substrate as the ONE owner
+//! (crate::atl_stub_windows, 2026-09-24, with CMSGlobalFolderOptionsStub and CChangeNotifyBroker). CDefView is not in that position: `SHELLDLL_DefView` is registered in
 //! exactly one place (CDefView.cpp:528) and no other TU constructs the class, so a Rust
 //! implementation splits nothing. `CMenuFocusManager`, `CMenuToolbars`, `CChangeNotifyServer`
 //! and `CDirectoryWatcher` inherit this MECHANISM when they are ported, but each still needs
@@ -124,6 +125,25 @@ pub unsafe trait AtlWindow: Sized {
     /// `CWindowImplBaseT::OnFinalMessage` — runs after the last message, with `m_hWnd` already
     /// cleared. ATL's default is empty.
     unsafe fn atl_on_final_message(_this: *mut Self, _hWnd: HWND) {}
+
+    /// `CWindowImplBaseT::GetWindowProc` — the procedure [`AtlStartWindowProc`] installs on the
+    /// window once `this` is known. **ATL calls the VIRTUAL**, so a derived class that overrides
+    /// `GetWindowProc` gets ITS procedure installed and the base one is never reached directly.
+    ///
+    /// This hook exists because hardcoding `AtlWindowProc::<T>` here drops that override
+    /// silently, and the override is not decoration: `CDefView::GetWindowProc` returns a
+    /// procedure whose only job is to `AddRef` around the dispatch, because a handler can
+    /// release the view's last reference and ATL's base would then keep touching freed memory.
+    /// Skipping it shipped a use-after-free — explorer's desktop died with
+    /// STATUS_ILLEGAL_INSTRUCTION at a stable heap address (the freed block's free-list link,
+    /// reached through a dangling vtable), taking the kmtest sweep from 91 launched to 0. It
+    /// reproduced byte-identically across boots and VANISHED under any added tracing, which is
+    /// what a use-after-free looks like from the outside.
+    ///
+    /// The default is the base procedure, which is right for a class that does not override.
+    unsafe fn atl_window_proc() -> WNDPROC {
+        Some(AtlWindowProc::<Self>)
+    }
 }
 
 /// `CWindowImplBaseT::DefWindowProc` — forward to the superclass procedure.
@@ -167,10 +187,15 @@ pub unsafe extern "system" fn AtlStartWindowProc<T: AtlWindow>(
     }
 
     SetWindowLongPtr(hWnd, GWLP_USERDATA as INT, this as LONG_PTR);
-    SetWindowLongPtr(hWnd, GWLP_WNDPROC as INT, AtlWindowProc::<T> as LONG_PTR);
+    // ATL installs `pThis->GetWindowProc()` (the virtual), not its own base procedure, and
+    // then FORWARDS this message through the same pointer it installed. Both halves matter:
+    // installing the base proc skips a derived override for every later message, and calling
+    // the base proc here skips it for WM_NCCREATE specifically.
+    let wndproc = T::atl_window_proc().unwrap_or(AtlWindowProc::<T>);
+    SetWindowLongPtr(hWnd, GWLP_WNDPROC as INT, wndproc as LONG_PTR);
     *T::atl_hwnd(this) = hWnd;
 
-    AtlWindowProc::<T>(hWnd, uMsg, wParam, lParam)
+    wndproc(hWnd, uMsg, wParam, lParam)
 }
 
 /// `CWindowImplBaseT::WindowProc`, line for line, with `this` read from `GWLP_USERDATA`
@@ -297,4 +322,44 @@ pub unsafe fn AtlRegisterWndClass(wc: &mut ATL_CWndClassInfo, hInstance: HINSTAN
         wc.m_atom = RegisterClassExW(core::ptr::addr_of!(wc.m_wc).cast());
     }
     wc.m_atom
+}
+
+/// `CWindowImplBaseT::SubclassWindow` (atlwin.h:1585) — adopt an EXISTING window.
+///
+/// The sibling of [`AtlStartWindowProc`]: that one takes `this` out of the `CREATESTRUCT` of a
+/// window we are creating, this one attaches to a window somebody else already made. Both end
+/// in the same three writes — park `this` on the window, install the procedure, record the
+/// `HWND` — and the only addition here is saving the procedure being displaced, because a
+/// subclassed window's `DefWindowProc` must chain to it rather than to `DefWindowProcW`.
+///
+/// ATL does this through `m_thunk.Init(GetWindowProc(), this)`; we use `GWLP_USERDATA`, for the
+/// reason in the module header (no machine-code emission, one indirection either way).
+///
+/// `CChangeNotifyServer::Initialize` is the first caller: it creates a worker window with
+/// `SHCreateDefaultWorkerWindow()` and then subclasses it.
+pub unsafe fn AtlSubclassWindow<T: AtlWindow>(this: *mut T, hWnd: HWND) -> BOOL {
+    // ATL asserts both of these. An assert is a no-op in a shipping build, so check: a failed
+    // subclass has to be reported, not walked past — the caller's next act is to use m_hWnd.
+    if this.is_null() || hWnd.is_null() || IsWindow(hWnd) == 0 {
+        return FALSE;
+    }
+    if !(*T::atl_hwnd(this)).is_null() {
+        return FALSE; // ATLASSERT(m_hWnd == NULL) — already attached to a window.
+    }
+
+    SetWindowLongPtr(hWnd, GWLP_USERDATA as INT, this as LONG_PTR);
+    // The VIRTUAL `GetWindowProc`, exactly as in the create path — see `atl_window_proc`.
+    let wndproc = T::atl_window_proc().unwrap_or(AtlWindowProc::<T>);
+    let previous = SetWindowLongPtr(hWnd, GWLP_WNDPROC as INT, wndproc as LONG_PTR);
+    if previous == 0 {
+        // ATL returns FALSE here. Undo the USERDATA write so a failed attach leaves no
+        // half-attached window pointing at an object that does not own it.
+        SetWindowLongPtr(hWnd, GWLP_USERDATA as INT, 0);
+        return FALSE;
+    }
+
+    (*T::atl_state(this)).m_pfnSuperWindowProc =
+        core::mem::transmute::<LONG_PTR, WNDPROC>(previous);
+    *T::atl_hwnd(this) = hWnd;
+    TRUE
 }

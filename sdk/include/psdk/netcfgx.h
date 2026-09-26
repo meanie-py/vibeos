@@ -228,7 +228,7 @@ DECLARE_INTERFACE_(INetCfgComponentBindings, IUnknown)
 #define INetCfgComponentBindings_Release(p)                      (p)->lpVtbl->Release(p)
 #define INetCfgComponentBindings_BindTo(p,a)                     (p)->lpVtbl->BindTo(p,a)
 #define INetCfgComponentBindings_UnbindFrom(p,a)                 (p)->lpVtbl->UnbindFrom(p,a)
-#define INetCfgComponentBindings_SupportsBindingInterface(p,a,b) (p)->lpVtbl->UnbindFrom(p,a,b)
+#define INetCfgComponentBindings_SupportsBindingInterface(p,a,b) (p)->lpVtbl->SupportsBindingInterface(p,a,b)
 #define INetCfgComponentBindings_IsBoundTo(p,a)                  (p)->lpVtbl->IsBoundTo(p,a)
 #define INetCfgComponentBindings_IsBindableTo(p,a)               (p)->lpVtbl->IsBindableTo(p,a)
 #define INetCfgComponentBindings_EnumBindingPaths(p,a,b)         (p)->lpVtbl->EnumBindingPaths(p,a,b)
@@ -382,6 +382,33 @@ DECLARE_INTERFACE_(INetCfgClassSetup, IUnknown)
 #define INetCfgClassSetup_SelectAndInstall(p,a,b,c)  (p)->lpVtbl->SelectAndInstall(p,a,b,c)
 #define INetCfgClassSetup_Install(p,a,b,c,d,e,f,g)   (p)->lpVtbl->Install(p,a,b,c,d,e,f,g)
 #define INetCfgClassSetup_DeInstall(p,a,b,c)         (p)->lpVtbl->DeInstall(p,a,b,c)
+#endif
+
+EXTERN_C const IID IID_INetCfgSysPrep;
+
+#undef  INTERFACE
+#define INTERFACE   INetCfgSysPrep
+DECLARE_INTERFACE_(INetCfgSysPrep, IUnknown)
+{
+    STDMETHOD_(HRESULT,QueryInterface)(THIS_ REFIID riid, void **ppv) PURE;
+    STDMETHOD_(ULONG,AddRef)(THIS)  PURE;
+    STDMETHOD_(ULONG,Release) (THIS) PURE;
+    STDMETHOD_(HRESULT,HrSetupSetFirstDword)(THIS_ LPCWSTR pwszSection, LPCWSTR pwszKey, DWORD dwValue) PURE;
+    STDMETHOD_(HRESULT,HrSetupSetFirstString)(THIS_ LPCWSTR pwszSection, LPCWSTR pwszKey, LPCWSTR pwszValue) PURE;
+    STDMETHOD_(HRESULT,HrSetupSetFirstStringAsBool)(THIS_ LPCWSTR pwszSection, LPCWSTR pwszKey, BOOL fValue) PURE;
+    STDMETHOD_(HRESULT,HrSetupSetFirstMultiSzField)(THIS_ LPCWSTR pwszSection, LPCWSTR pwszKey, LPCWSTR pmszValue) PURE;
+};
+#undef INTERFACE
+
+#if !defined(__cplusplus) || defined(CINTERFACE)
+/*** IUnknown methods ***/
+#define INetCfgSysPrep_QueryInterface(p,a,b)                (p)->lpVtbl->QueryInterface(p,a,b)
+#define INetCfgSysPrep_AddRef(p)                            (p)->lpVtbl->AddRef(p)
+#define INetCfgSysPrep_Release(p)                           (p)->lpVtbl->Release(p)
+#define INetCfgSysPrep_HrSetupSetFirstDword(p,a,b,c)        (p)->lpVtbl->HrSetupSetFirstDword(p,a,b,c)
+#define INetCfgSysPrep_HrSetupSetFirstString(p,a,b,c)       (p)->lpVtbl->HrSetupSetFirstString(p,a,b,c)
+#define INetCfgSysPrep_HrSetupSetFirstStringAsBool(p,a,b,c) (p)->lpVtbl->HrSetupSetFirstStringAsBool(p,a,b,c)
+#define INetCfgSysPrep_HrSetupSetFirstMultiSzField(p,a,b,c) (p)->lpVtbl->HrSetupSetFirstMultiSzField(p,a,b,c)
 #endif
 
 #endif

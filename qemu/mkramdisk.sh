@@ -170,6 +170,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/dll/win32/ole32/ole32.dll"
     "$BUILD_DIR/dll/win32/oleaut32/oleaut32.dll"
     "$BUILD_DIR/dll/win32/shell32/shell32.dll"
+    "$BUILD_DIR/dll/branding/rosbrand/rosbrand.dll"
     "$BUILD_DIR/dll/win32/browseui/browseui.dll"
     "$BUILD_DIR/base/shell/rshell/rshell.dll"
     "$BUILD_DIR/dll/win32/shlwapi/shlwapi.dll"
@@ -233,6 +234,18 @@ fi
 
 echo "[*] All build artifacts found."
 
+# Which payload dests are in ramdisk.img right now. --refresh only ever ADDS
+# files, so without this a payload staged once stayed on every later boot of
+# this tree: a payload-less arm64 build still autostarted kmtest-sweep.exe
+# (and a regdiff.exe from a different day), whose 91-test sweep ran through
+# every boot the start-menu gate saw. The payload stage below deletes what
+# this lists and the current selection does not.
+PAYLOAD_RECORD="$QEMU_DIR/ramdisk.payloads"
+if [ -n "$REFRESH" ] && [ -f "$RAMDISK_IMG" ] && [ ! -f "$PAYLOAD_RECORD" ]; then
+    echo "[*] --refresh: no $PAYLOAD_RECORD for the existing ramdisk.img, so its payloads are unknown -- recreating it"
+    REFRESH=""
+fi
+
 # --- Create ramdisk.img (skipped under --refresh: reuse existing FAT image) ---
 if [ -n "$REFRESH" ]; then
     if [ ! -f "$RAMDISK_IMG" ]; then
@@ -243,6 +256,7 @@ if [ -n "$REFRESH" ]; then
 else
     echo "[*] Creating ramdisk.img (${RAMDISK_SIZE_MB}MB FAT32)..."
     rm -f "$RAMDISK_IMG"
+    : > "$PAYLOAD_RECORD"
     # Create empty image
     dd if=/dev/zero of="$RAMDISK_IMG" bs=1M count=$RAMDISK_SIZE_MB 2>/dev/null
     # Format as FAT32
@@ -350,6 +364,14 @@ RMC "$BUILD_DIR/dll/win32/msafd/msafd.dll"                    ::/reactos/system3
 RMC "$BUILD_DIR/dll/win32/mswsock/mswsock.dll"                ::/reactos/system32/mswsock.dll
 RMC "$BUILD_DIR/base/applications/network/nettest/nettest.exe" ::/reactos/system32/nettest.exe
 RMC "$BUILD_DIR/dll/win32/msvcrt/msvcrt.dll"                  ::/reactos/system32/msvcrt.dll
+# ucrtbase.dll — staged UNCONDITIONALLY, same as msvcrt.dll above. It used to be
+# staged only under VIBEOS_FEX=1, which meant a normal arm64 boot had no ucrtbase on
+# the media at all: the DLL is built and IS in the livecd graft list, but arm64 boots
+# boot.img and never the livecd, so nothing noticed. Any exe importing it then failed
+# to start with NOTHING on serial -- the loader's ERROR_MOD_NOT_FOUND arrives before
+# the first instruction. Cost a night to find; the reproducer is a bare-entry exe that
+# runs with no ucrtbase import and dies silently with one.
+RMC "$BUILD_DIR/dll/win32/ucrtbase/ucrtbase.dll"              ::/reactos/system32/ucrtbase.dll
 RMC "$BUILD_DIR/dll/win32/kernel32/kernel32_vista/kernel32_vista.dll"  ::/reactos/system32/kernel32_vista.dll
 RMC "$BUILD_DIR/dll/win32/kernelbase/kernelbase.dll"          ::/reactos/system32/kernelbase.dll
 # wow64.dll — WOW64 host-layer skeleton (docs/engineering/wow64-plan.md);
@@ -400,9 +422,26 @@ RMC "$BUILD_DIR/base/shell/explorer/explorer.exe"              ::/reactos/system
 # so also place a copy at that location. The system32 copy is kept for any code path that still searches there.
 RMC "$BUILD_DIR/base/shell/explorer/explorer.exe"              ::/reactos/explorer.exe
 RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system32/comctl32.dll
+# Side-by-side store, mirroring comctl32's add_cd_file rules for the livecd. comctl32
+# creates its v5/v6 activation contexts from %windir%\winsxs\manifests, and apps whose
+# manifest asks for Common-Controls 6.0 resolve it here. Without it every
+# CreateActCtxW in comctl32 failed on arm64.
+SXS_CC="microsoft.windows.common-controls_6595b64144ccf1df"
+for d in winsxs winsxs/manifests \
+         "winsxs/arm64_${SXS_CC}_5.82.2600.2982_none_deadbeef" \
+         "winsxs/arm64_${SXS_CC}_6.0.2600.2982_none_deadbeef"; do
+    mdir -i "$RAMDISK_IMG" "::/reactos/$d" >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" "::/reactos/$d"
+done
+for v in 5.82.2600.2982 6.0.2600.2982; do
+    RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll" "::/reactos/winsxs/arm64_${SXS_CC}_${v}_none_deadbeef/comctl32.dll"
+    mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/dll/win32/comctl32/arm64_${SXS_CC}_${v}_none_deadbeef.manifest" \
+        "::/reactos/winsxs/manifests/arm64_${SXS_CC}_${v}_none_deadbeef.manifest"
+done
+mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/systemcompatible.manifest" ::/reactos/winsxs/manifests/systemcompatible.manifest
 RMC "$BUILD_DIR/dll/win32/ole32/ole32.dll"                     ::/reactos/system32/ole32.dll
 RMC "$BUILD_DIR/dll/win32/oleaut32/oleaut32.dll"               ::/reactos/system32/oleaut32.dll
 RMC "$BUILD_DIR/dll/win32/shell32/shell32.dll"                 ::/reactos/system32/shell32.dll
+RMC "$BUILD_DIR/dll/branding/rosbrand/rosbrand.dll"            ::/reactos/system32/rosbrand.dll
 RMC "$BUILD_DIR/dll/win32/browseui/browseui.dll"               ::/reactos/system32/browseui.dll
 RMC "$BUILD_DIR/base/shell/rshell/rshell.dll"                  ::/reactos/system32/rshell.dll
 RMC "$BUILD_DIR/dll/win32/shlwapi/shlwapi.dll"                 ::/reactos/system32/shlwapi.dll
@@ -455,10 +494,13 @@ fi
 # Probe first so refresh stays non-interactive under vibeos-cli.
 mdir -i "$RAMDISK_IMG" ::reactos/Fonts >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" ::reactos/Fonts
 mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/FreeSans.ttf"                   ::reactos/Fonts/FreeSans.ttf
-# winlogon explicitly tries to load these names; without them
-# Failed to lock the DC + SYSTEMCUR(ARROW) cascades and the taskbar
-# never paints text/glyphs.
-for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf times.ttf symbol.ttf; do
+# win32k loads every file in this directory at boot. The shell needs the UI
+# faces (without them the taskbar never paints text); consrv needs "VGA"
+# (UniVGA16.ttf), its default face, or no console window can be created, and
+# the failed creation wedges csrss. Lucida Console is the one console TrueType
+# face the hive lists.
+for FONT in tahoma.ttf tahomabd.ttf Marlett.ttf arial.ttf arialbd.ttf cour.ttf times.ttf symbol.ttf \
+            UniVGA16.ttf lucon.ttf; do
     if [ -f "$SOURCE_DIR/media/fonts/$FONT" ]; then
         mcopy -o -i "$RAMDISK_IMG" "$SOURCE_DIR/media/fonts/$FONT"                  "::reactos/Fonts/$FONT"
     fi
@@ -546,6 +588,17 @@ fi
 # reverting the payload set (the 2026-07-07 doom-clobber incident).
 PAYLOAD_MANIFEST=$(python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
     --arch arm64 --payloads-auto "$BUILD_DIR")
+# Drop payloads staged by an earlier run that the current selection omits.
+PAYLOAD_DESTS=$(printf '%s\n' "$PAYLOAD_MANIFEST" | sed -n 's/=.*//p')
+while IFS= read -r OLD; do
+    [ -n "$OLD" ] || continue
+    if ! printf '%s\n' "$PAYLOAD_DESTS" | grep -qxF -- "$OLD"; then
+        echo "[*]   removing stale payload ::/$OLD"
+        mdel -i "$RAMDISK_IMG" "::/$OLD" 2>/dev/null || true
+    fi
+done < "$PAYLOAD_RECORD"
+# Recorded before the copies, so an interrupted stage still lists what it wrote.
+printf '%s\n' "$PAYLOAD_DESTS" | sed '/^$/d' > "$PAYLOAD_RECORD"
 if [ -n "$PAYLOAD_MANIFEST" ]; then
     echo "[*] staging payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM})"
     printf '%s\n' "$PAYLOAD_MANIFEST" | while IFS='=' read -r DEST SRC; do
@@ -665,6 +718,8 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         if [ -f "$TESTGUI32" ]; then
             echo "[*] VIBEOS_FEX=1 — staging the SysWOW64 DLL closure (i386)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            # Roots-only literal scan, NOT --library-literals: that adds ~25 MB
+            # (stripped) and this ramdisk is a fixed ${RAMDISK_SIZE_MB} MB image.
             CLOSURE=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" \
                           --build-dir "$PROJECT_DIR/build-i386" "$TESTGUI32") || {
                 echo "[!] VIBEOS_FEX=1: SysWOW64 import closure is INCOMPLETE (see above)."
@@ -784,6 +839,33 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/selfmod32.exe (E17 codegen guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$SELFMOD32" ::/reactos/syswow64/selfmod32.exe
+        fi
+        # reg32.exe and spawn32.exe — the last two PARITY guests, MISSING here
+        # until 2026-09-19 while the x86 livecd staged them, so reg32 had NO
+        # arm64 coverage from the day it landed and spawn32 would have had none.
+        #
+        # KEEP THIS LIST IN STEP WITH ladder.LADDER. The livecd cannot drift like
+        # this because CMake's _wow64_ladder is all-or-nothing; here every mcopy
+        # stands alone, so a guest is added to the parity set by editing two
+        # files and forgetting one of them is silent.
+        #
+        # What the drift cost, measured: ladder.media_has_guests asks whether ANY
+        # guest is aboard (deliberately -- a partial stage must opt IN so the gap
+        # cannot pass quietly), so the gate ran the ladder and then waited out its
+        # entire 420s drain for two verdicts that could never arrive. It failed as
+        # a TIMEOUT rather than naming the two files. With them staged the same
+        # boot drains in 87.1s.
+        REG32="${VIBEOS_REG32_EXE:-$PROJECT_DIR/build-fex-hello/reg32.exe}"
+        if [ -f "$REG32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/reg32.exe (registry-view guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$REG32" ::/reactos/syswow64/reg32.exe
+        fi
+        SPAWN32="${VIBEOS_SPAWN32_EXE:-$PROJECT_DIR/build-fex-hello/spawn32.exe}"
+        if [ -f "$SPAWN32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/spawn32.exe (process-creation guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$SPAWN32" ::/reactos/syswow64/spawn32.exe
         fi
         # sqlite32.exe — a THIRD-PARTY stress guest (tools/stress/sqlite). The
         # other guests each probe one mechanism on purpose; this one is a large

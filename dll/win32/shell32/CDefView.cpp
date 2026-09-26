@@ -341,8 +341,8 @@ public:
     BOOLEAN LV_RenameItem(PCUITEMID_CHILD pidlOld, PCUITEMID_CHILD pidlNew);
     BOOL LV_UpdateItem(INT nItem, PCUITEMID_CHILD pidl);
     BOOL LV_UpdateItem(PCUITEMID_CHILD pidl);
-    void LV_RefreshIcon(INT iItem);
-    void LV_RefreshIcons();
+    void LV_RefreshItem(INT iItem);
+    void LV_RefreshItems();
     static INT CALLBACK fill_list(LPVOID ptr, LPVOID arg);
     HRESULT FillList(BOOL IsRefreshCommand = TRUE);
     HRESULT FillFileMenu();
@@ -1498,7 +1498,7 @@ BOOL CDefView::LV_UpdateItem(PCUITEMID_CHILD pidl)
     return nItem >= 0 ? LV_UpdateItem(nItem, pidl) : FALSE;
 }
 
-void CDefView::LV_RefreshIcon(INT iItem)
+void CDefView::LV_RefreshItem(INT iItem)
 {
     ASSERT(m_ListView);
 
@@ -1506,10 +1506,11 @@ void CDefView::LV_RefreshIcon(INT iItem)
     lvItem.iItem = iItem;
     lvItem.iImage = I_IMAGECALLBACK;
     m_ListView.SetItem(&lvItem);
+    for (UINT iCol = 0; m_ListView.SetItemText(iItem, iCol, LPSTR_TEXTCALLBACK); ++iCol) {}
     m_ListView.Update(iItem);
 }
 
-void CDefView::LV_RefreshIcons()
+void CDefView::LV_RefreshItems()
 {
     ASSERT(m_ListView);
 
@@ -1519,7 +1520,7 @@ void CDefView::LV_RefreshIcons()
         if (iItem == -1)
             break;
 
-        LV_RefreshIcon(iItem);
+        LV_RefreshItem(iItem);
     }
 }
 
@@ -2501,25 +2502,9 @@ void CDefView::DoActivate(UINT uState)
 
 void CDefView::_DoCopyToMoveToFolder(BOOL bCopy)
 {
-    if (!GetSelections())
-        return;
-
-    SFGAOF rfg = SFGAO_CANCOPY | SFGAO_CANMOVE | SFGAO_FILESYSTEM;
-    HRESULT hr = m_pSFParent->GetAttributesOf(m_cidl, m_apidl, &rfg);
-    if (FAILED_UNEXPECTEDLY(hr))
-        return;
-
-    if (!bCopy && !(rfg & SFGAO_CANMOVE))
-        return;
-    if (bCopy && !(rfg & SFGAO_CANCOPY))
-        return;
-
-    CComPtr<IContextMenu> pCM;
-    hr = m_pSFParent->GetUIObjectOf(m_hWnd, m_cidl, m_apidl, IID_IContextMenu, 0, (void **)&pCM);
-    if (FAILED_UNEXPECTEDLY(hr))
-        return;
-
-    InvokeContextMenuCommand(pCM, (bCopy ? "copyto" : "moveto"), NULL);
+    if (GetSelections())
+        CCopyMoveToMenu::DoCopyMoveToFolder(bCopy, m_hWnd, static_cast<IDropTarget*>(this),
+                                            m_pSFParent, m_cidl, m_apidl);
 }
 
 LRESULT CDefView::OnActivate(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &bHandled)
@@ -3018,7 +3003,7 @@ LRESULT CDefView::OnChangeNotify(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL &
         case SHCNE_MEDIAINSERTED:
         case SHCNE_MEDIAREMOVED:
         case SHCNE_ASSOCCHANGED:
-            LV_RefreshIcons();
+            LV_RefreshItems();
             break;
         case SHCNE_UPDATEDIR:
         case SHCNE_ATTRIBUTES:
@@ -3268,16 +3253,14 @@ HRESULT WINAPI CDefView::DestroyViewWindow()
         m_hMenu = NULL;
     }
 
+    if (m_hWnd)
+        _DoFolderViewCB(SFVM_WINDOWCLOSING, (WPARAM)m_hWnd, 0);
+
     if (m_ListView)
-    {
         m_ListView.DestroyWindow();
-    }
 
     if (m_hWnd)
-    {
-        _DoFolderViewCB(SFVM_WINDOWCLOSING, (WPARAM)m_hWnd, 0);
         DestroyWindow();
-    }
 
     m_pShellBrowser.Release();
     m_pCommDlgBrowser.Release();

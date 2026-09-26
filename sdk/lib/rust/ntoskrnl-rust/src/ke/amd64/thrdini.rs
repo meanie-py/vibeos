@@ -232,9 +232,9 @@ pub unsafe extern "system" fn KiSwapContextResume(
         // 32-bit-data/ring-3 type flags (Flags1/Flags2) stay intact.
         let eproc = NewProcess as *mut ntkrnl_sys::ddk::_EPROCESS;
         if !(*eproc).Wow64Process.is_null() {
-            const WOW64_TEB32_OFFSET: usize = 0x2000;
             const KGDT64_R3_CMTEB: usize = 0x50; // selector == GDT byte offset
-            let teb32 = (*NewThread).Teb as usize + WOW64_TEB32_OFFSET;
+            let teb32 =
+                (*NewThread).Teb as usize + ntkrnl_sys::wow64::WOW64_TEB32_OFFSET;
             let gdt = (*Pcr).__bindgen_anon_1.__bindgen_anon_1.GdtBase as usize;
             let cmteb = (gdt + KGDT64_R3_CMTEB) as *mut ntkrnl_sys::ddk::_KGDTENTRY64;
             (*cmteb).__bindgen_anon_1.BaseLow = (teb32 & 0xFFFF) as u16;

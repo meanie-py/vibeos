@@ -2,6 +2,9 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::PsGetCurrentThreadWin32Thread;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
+
+// File-local, matching copy.rs / safe_user_io.rs in this crate.
+const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as NTSTATUS;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 
@@ -644,13 +647,29 @@ pub unsafe extern "system" fn NtUserScrollDC(
         );
     }
     if NT_SUCCESS(Status) {
-        if !prcUnsafeScroll.is_null() {
-            rcScroll = *(prcUnsafeScroll as *const RECTL);
+        // The probe above validated the RANGE, not the MAPPING -- it cannot
+        // touch-test under DUMMY_PSEH. The C captures these inside the same
+        // _SEH2_TRY as the probe; loading them raw here is what made
+        // `user32_apitest ScrollDC` BUGCHECK 0x1E at NtUserScrollDC+0x180.
+        if !prcUnsafeScroll.is_null()
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(rcScroll) as *mut core::ffi::c_void,
+                prcUnsafeScroll as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
-        if !prcUnsafeClip.is_null() {
-            rcClip = *(prcUnsafeClip as *const RECTL);
+        if NT_SUCCESS(Status)
+            && !prcUnsafeClip.is_null()
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(rcClip) as *mut core::ffi::c_void,
+                prcUnsafeClip as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
-        if !prcUnsafeUpdate.is_null() {}
     }
 
     'exit: {
@@ -687,7 +706,18 @@ pub unsafe extern "system" fn NtUserScrollDC(
         }
 
         if !prcUnsafeUpdate.is_null() {
-            *(prcUnsafeUpdate as *mut RECTL) = rcUpdate;
+            // Fault-tolerant write-back. This is NtUserScrollDC's own store;
+            // the identical fix applied earlier landed in the SIBLING
+            // (NtUserScrollWindowEx, below), which is why ScrollDC kept
+            // bugchecking at the same PC after it was "fixed" twice.
+            if !crate::copy::publish_to_user(
+                prcUnsafeUpdate as *mut core::ffi::c_void,
+                core::ptr::addr_of!(rcUpdate) as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+                SetLastNtError(Status);
+            }
 
             if !NT_SUCCESS(Status) {
                 break 'exit;
@@ -741,13 +771,29 @@ pub unsafe extern "system" fn NtUserScrollWindowEx(
                 1,
             );
         }
-        if NT_SUCCESS(Status) {
-            if !prcUnsafeScroll.is_null() {
-                rcScroll = *(prcUnsafeScroll as *const RECTL);
-            }
-            if !prcUnsafeClip.is_null() {
-                rcClip = *(prcUnsafeClip as *const RECTL);
-            }
+        // Same capture as NtUserScrollDC above. The sibling having the bug
+        // after the first one is fixed is the asymmetry worth acting on: both
+        // were translated from the same C shape, so a fix to one is a bug
+        // report against the other.
+        if NT_SUCCESS(Status)
+            && !prcUnsafeScroll.is_null()
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(rcScroll) as *mut core::ffi::c_void,
+                prcUnsafeScroll as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
+        if NT_SUCCESS(Status)
+            && !prcUnsafeClip.is_null()
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(rcClip) as *mut core::ffi::c_void,
+                prcUnsafeClip as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -784,8 +830,14 @@ pub unsafe extern "system" fn NtUserScrollWindowEx(
                 core::mem::size_of::<RECT>(),
                 1,
             );
-            if NT_SUCCESS(Status) {
-                *(prcUnsafeUpdate as *mut RECTL) = rcUpdate;
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(
+                    prcUnsafeUpdate as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(rcUpdate) as *const core::ffi::c_void,
+                    core::mem::size_of::<RECTL>(),
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             if !NT_SUCCESS(Status) {

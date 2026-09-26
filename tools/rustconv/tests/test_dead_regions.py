@@ -5,6 +5,7 @@ rejected 10 of 56 functions -- each one a CORRECT translation -- and would have 
 retry for every one of them.
 """
 
+from pathlib import Path
 import pytest
 from rustconv.call_seal import CallSealError, seal_calls, unseal_calls
 from rustconv.dead_regions import (
@@ -320,3 +321,46 @@ def test_a_disjunction_with_an_unknown_term_stays_live():
 def test_pinned_int_macros_reads_values_not_just_names():
     got = pinned_int_macros(["-D_MSVCR_VER=0", "-DWINVER=0x601", "-DN=100L", "-DBARE", "-DX=str"])
     assert got == {"_MSVCR_VER": 0, "WINVER": 0x601, "N": 100}
+
+
+def test_sibling_header_pins_a_bare_if_macro():
+    """The MERGE_FOLDERS case: a decidable conditional whose macro lives in a header.
+
+    `pinned_int_macros` reads the module's `-D` list and so called this undecidable, which
+    made the whole `#if/#else` one dead span, made the live arm's tokens optional, and let a
+    body that translated the `#else` pass the seal. The shipped result returned the USER
+    start menu unmerged.
+    """
+    from rustconv.dead_regions import conditional_arm_notes, sibling_header_int_macros
+
+    root = Path(__file__).resolve().parents[3]
+    start_menu = root / "dll/win32/shell32/shellmenu/CStartMenu.cpp"
+    if not start_menu.is_file():  # pragma: no cover - tree layout guard
+        pytest.skip("shellmenu sources not present")
+
+    pinned = sibling_header_int_macros(start_menu)
+    assert pinned["MERGE_FOLDERS"] == 1
+
+    body = start_menu.read_text(encoding="utf-8", errors="replace")
+    start = body.index("static HRESULT GetMergedFolder")
+    notes = conditional_arm_notes(body[start : body.index("\n}", start)], pinned)
+    assert any("MERGE_FOLDERS" in n and "#if arm is LIVE" in n for n in notes)
+
+    # Undecidable stays undecidable rather than guessing an arm.
+    unknown = conditional_arm_notes("#if NOT_A_PINNED_MACRO\nx\n#endif\n", pinned)
+    assert unknown and "undecidable" in unknown[0]
+
+
+def test_sibling_header_macros_drop_conflicting_definitions():
+    """Two headers, two values, no answer -- a guess here would mark live code dead."""
+    from rustconv.dead_regions import sibling_header_int_macros
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        (folder / "a.h").write_text("#define WOBBLE 1\n#define STEADY 7\n")
+        (folder / "b.h").write_text("#define WOBBLE 2\n")
+        pinned = sibling_header_int_macros(folder / "x.cpp")
+    assert "WOBBLE" not in pinned
+    assert pinned["STEADY"] == 7

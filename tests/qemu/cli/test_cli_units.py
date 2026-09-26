@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import pytest
 
@@ -58,6 +58,38 @@ def test_git_fingerprint_stable_then_changes(tiny_repo: Path):
     (tiny_repo / "a.txt").write_text("changed\n")
     fp3 = provenance.git_fingerprint(tiny_repo)
     assert fp3 != fp1, "working-tree edit must change the fingerprint"
+
+
+def test_git_fingerprint_survives_a_non_utf8_file(tiny_repo: Path):
+    """A latin-1 file in the diff must not take the CLI down.
+
+    The Microsoft DDK EULA under drivers/storage/ide/atapi carried a
+    French-Canadian warranty clause in latin-1. Deleting it put 0xe9 into
+    `git diff HEAD`, and the strict decode in `_run` raised UnicodeDecodeError
+    from inside make_stamp — so `vibeos-cli build` and every `land` behind it
+    died, with a traceback pointing at the CLI rather than at the file."""
+    latin1 = tiny_repo / "eula.txt"
+    latin1.write_bytes("garantie limit\xe9e\n".encode("latin-1"))
+    fp_untracked = provenance.git_fingerprint(tiny_repo)
+    assert len(fp_untracked) == 64
+
+    subprocess.run(["git", "add", "eula.txt"], cwd=tiny_repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "eula"],
+        cwd=tiny_repo,
+        check=True,
+        capture_output=True,
+    )
+    latin1.unlink()
+    fp_deleted = provenance.git_fingerprint(tiny_repo)
+    assert len(fp_deleted) == 64
+
+    # And byte-true, not lossily decoded: two distinct undecodable contents
+    # must not collapse onto one U+FFFD run and thus one fingerprint.
+    latin1.write_bytes(b"\xe9\xe9")
+    fp_a = provenance.git_fingerprint(tiny_repo)
+    latin1.write_bytes(b"\xe9\xea")
+    assert provenance.git_fingerprint(tiny_repo) != fp_a
 
 
 def test_git_fingerprint_immune_to_mtime(tiny_repo: Path):
@@ -940,10 +972,9 @@ def test_triage_bugcheck_and_known_flake():
     assert r2["classification"] == "BUGCHECK" and r2["bugcheck"] == "0x7E"
 
 
-_E3_SERIAL = (
+_FLAKE_SERIAL = (
     "[EXPLORER] _tWinMain entered\nshell ready\n"
-    "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
-    "0x0000000000000000, 0x0000000000000003)\n"
+    "*** BUGCHECK: 0x0000001E (0xc0000005, ...)\n***   P2 = win32k.sys+0x65EE1\n"
 )
 
 
@@ -951,15 +982,15 @@ def test_triage_known_flake_after_boot_marker_is_still_a_known_flake():
     """A documented flake does not stop being one by firing after the marker.
 
     post_boot_check() used to hardcode known_flake=None, so the SAME arm64 ERESOURCE
-    0xE3 was auto-retried before the marker and rejected a green-gated batch out of
-    the merge queue after it. Both paths must agree.
+    0xE3 (since retired) was auto-retried before the marker and rejected a green-gated
+    batch out of the merge queue after it. Both paths must agree.
     """
-    post = triage.post_boot_check(_E3_SERIAL)
+    post = triage.post_boot_check(_FLAKE_SERIAL)
     assert post is not None
     assert post["classification"] == "KNOWN_FLAKE"
-    assert post["known_flake"] == "arm64_eresource_notowned_0xe3"
+    assert post["known_flake"] == "i386_mp_win32k_av_0x1e"
 
-    pre = triage.classify(_E3_SERIAL, reached=False, fail_marker=None, debugcon=None)
+    pre = triage.classify(_FLAKE_SERIAL, reached=False, fail_marker=None, debugcon=None)
     assert pre["classification"] == post["classification"]
     assert pre["known_flake"] == post["known_flake"]
 
@@ -1979,7 +2010,7 @@ def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
     assert first._arch_slot_fd is not None  # holds the single i386 slot
 
     # A second i386 boot can't get the cap-1 slot → queues → times out.
-    second = _bare_vm("i386")
+    second = _bare_vm("i386-uefi-net")
     with pytest.raises(TimeoutError):
         second._acquire_arch_slot()
     assert second._arch_slot_fd is None
@@ -2087,18 +2118,20 @@ class _FakeProc:
         self.stderr = _Reader(stderr)
 
 
-def _launch_vm(backend: str = "windows-host"):
+def _launch_vm(backend: str, tmp_path: Path):
     """A bare QemuVM carrying only what _launch_qemu touches."""
     v = vm.QemuVM.__new__(vm.QemuVM)
     v._backend = backend
+    v.live_log_path = tmp_path / "serial.log"
+    v.config = vm_mod.get_arch_config("amd64-uefi")
     v._proc = None
     v._early_stderr = ""
     v._gdb = False
     return v
 
 
-def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch):
-    v = _launch_vm("windows-host")
+def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch, tmp_path):
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(
         v,
         "_build_windows_cmd",
@@ -2126,8 +2159,8 @@ def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch):
     assert len(launched) == 3
 
 
-def test_launch_qemu_healthy_first_try_no_retry(monkeypatch):
-    v = _launch_vm("windows-host")
+def test_launch_qemu_healthy_first_try_no_retry(monkeypatch, tmp_path):
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(
         v, "_build_windows_cmd", lambda: ["qemu", "-netdev", "user,hostfwd=tcp:0.0.0.0:9-:9"]
     )
@@ -2143,9 +2176,9 @@ def test_launch_qemu_healthy_first_try_no_retry(monkeypatch):
     assert len(launched) == 1
 
 
-def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch):
+def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch, tmp_path):
     # native (or any non-hostfwd) config: launch once, never poll for the bind race.
-    v = _launch_vm("native")
+    v = _launch_vm("native", tmp_path)
     monkeypatch.setattr(v, "_build_native_cmd", lambda: ["qemu", "-M", "pc"])
     proc = _FakeProc()
     monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
@@ -2157,10 +2190,10 @@ def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch):
     assert cmd == ["qemu", "-M", "pc"]
 
 
-def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch):
+def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch, tmp_path):
     # QEMU dies early for some OTHER reason → not the flake: keep the proc (the normal
     # start path surfaces it), stash stderr, do NOT retry.
-    v = _launch_vm("windows-host")
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
     proc = _FakeProc()
     monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
@@ -2171,9 +2204,9 @@ def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch):
     assert v._early_stderr == "bad -drive: No such file"
 
 
-def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
+def test_launch_qemu_raises_after_exhausting_retries(monkeypatch, tmp_path):
     monkeypatch.setattr(vm, "HOSTFWD_LAUNCH_RETRIES", 2)
-    v = _launch_vm("windows-host")
+    v = _launch_vm("windows-host", tmp_path)
     monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
     monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
     monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: vm.HOSTFWD_BIND_ERROR)
@@ -2182,10 +2215,10 @@ def test_launch_qemu_raises_after_exhausting_retries(monkeypatch):
         v._launch_qemu()
 
 
-def test_launch_qemu_retries_gdb_bind_race(monkeypatch):
+def test_launch_qemu_retries_gdb_bind_race(monkeypatch, tmp_path):
     # A windows-host gdbstub binds a Windows-stack port with the same pick-then-bind
     # TOCTOU as a hostfwd → must be retried with a fresh port (no hostfwd present).
-    v = _launch_vm("windows-host")
+    v = _launch_vm("windows-host", tmp_path)
     v._gdb = True
     monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "-gdb", "tcp:0.0.0.0:1234"])
     procs = [_FakeProc(), _FakeProc()]
@@ -2206,6 +2239,38 @@ def test_launch_qemu_retries_gdb_bind_race(monkeypatch):
     assert "-gdb" in cmd
     assert v._proc is procs[1]  # healthy 2nd attempt
     assert discarded == [procs[0]]  # first (raced) torn down
+
+
+def test_launch_qemu_retries_chardev_connect_failure(monkeypatch, tmp_path):
+    # The WSL2 localhost relay can refuse a `server=off` chardev's dial to a listener
+    # we bound moments earlier. QEMU dies before any guest code and the whole net suite
+    # reports 15 errors from that one dead launch, so it must be retried on a fresh
+    # port like the two bind races either side of it.
+    v = _launch_vm("windows-host", tmp_path)
+    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
+    procs = [_FakeProc(), _FakeProc()]
+    launched: list = []
+
+    def fake_popen(cmd, **kw):
+        p = procs[len(launched)]
+        launched.append(p)
+        return p
+
+    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
+    seq = iter(
+        [
+            "-chardev socket,id=gf2,host=127.0.0.1,port=58627,server=off: "
+            "Failed to connect to '127.0.0.1:58627': Unknown error",
+            None,
+        ]
+    )
+    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
+    discarded: list = []
+    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
+
+    v._launch_qemu()
+    assert v._proc is procs[1]
+    assert discarded == [procs[0]]
 
 
 def _gdb_vm(gdb: bool = False, wait: bool = False, backend: str = "native"):
@@ -2284,12 +2349,15 @@ def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, 
     assert selected == [int(smp) if smp else None]
     if smp is None:
         assert "-smp" not in cmd
-        assert ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
     else:
         assert cmd[cmd.index("-smp") + 1] == smp
-        assert (
-            ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
-        )
+    # The media boots the MP kernel either way, so symbols come from it whenever it is built.
+    up = tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
+    mp = tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+    assert ge_mod._kernel_image("arm64") == up
+    mp.parent.mkdir(parents=True)
+    mp.write_bytes(b"MZ")
+    assert ge_mod._kernel_image("arm64") == mp
 
 
 def test_gdbengine_expand_verb():
@@ -2479,8 +2547,10 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
     assert out == "BREAKPOINT HIT"
 
 
-def test_early_exit_stderr_reports_exit_vs_healthy():
+def test_early_exit_stderr_reports_exit_vs_healthy(tmp_path):
     v = vm.QemuVM.__new__(vm.QemuVM)
+    v._stderr_path = tmp_path / "stderr.log"
+    (tmp_path / "stderr.log").write_text("Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
 
     class Exited:
         stderr = _Reader(b"Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
@@ -2928,6 +2998,19 @@ def test_backend_rewrite_accel_would_break_arm64():
 from . import hostlock as hl_mod  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolate_host_policy(tmp_path_factory, monkeypatch):
+    """No unit test may read THIS BOX's real build policy.
+
+    POLICY_DIR is durable and host-global by design, so unlike the old /tmp lock tree
+    it is always present -- which means a test that patches only HOSTLOCK_DIR silently
+    asserts against whatever capacity the machine happens to be running. That is how
+    test_ninja_jobs_caps_and_reserves broke when the trial went active. Autouse so the
+    whole class is closed, not just the 49 sites that exist today.
+    """
+    monkeypatch.setattr(hl_mod, "POLICY_DIR", tmp_path_factory.mktemp("host-policy"))
+
+
 def test_hostlock_cpu_lease_serializes(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
@@ -3318,16 +3401,53 @@ def test_hostlock_announce_pair_on_queued_acquire(tmp_path, monkeypatch, capsys)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
     holder = hl_mod.acquire_cpu_lease("boot:a", leases=1, timeout=0.0)
     assert holder is not None
-    # timed-out queue → WAIT only
-    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=0.8) is None
+    # timed-out queue → WAIT only. The budget is seconds, not milliseconds, because
+    # WAIT is printed AFTER the first failed attempt and AFTER the deadline check:
+    # a process descheduled past its own deadline before that print returns None
+    # having announced nothing, and the assert below fires on a lane that did
+    # nothing wrong. This test runs during a merge-queue drain -- three builds and
+    # four boots deep -- so "surely 0.8s is enough" is exactly the assumption the
+    # host is busiest disproving.
+    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=3.0) is None
     out = capsys.readouterr().out
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE not in out
     assert hl_mod.looks_starved(out)
-    # queued-then-granted → WAIT + ACQUIRED (holder released mid-wait by a thread)
-    threading.Timer(0.8, hl_mod.release, args=(holder,)).start()
-    fd = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=10.0)
+
+    # queued-then-granted → WAIT + ACQUIRED.
+    #
+    # Release the holder only once the waiter has ACTUALLY announced, instead of
+    # racing it on a timer. The old form was `Timer(0.8, release, holder)` followed
+    # by the acquire, which assumed the acquire would observe the lease as held
+    # within 0.8s. Under drain load it did not: the timer fired first, the very
+    # first attempt succeeded, and the captured output was a lone admission-shadow
+    # line with no WAIT at all -- TOOLING_FAIL, and an innocent lane bounced out of
+    # the merge queue for a full gate cycle (3 builds + 4 boots).
+    #
+    # Note WAIT is not printed until an attempt has already FAILED, so waiting for
+    # the ticket to appear in queue-cpuheavy would not be enough either; the only
+    # sound signal is the announcement itself. redirect_stdout is process-wide
+    # rather than per-thread, which is fine here only because the main thread does
+    # not print inside this window.
+    buf = io.StringIO()
+    got: dict[str, int | None] = {}
+
+    def _queued_acquire() -> None:
+        with contextlib.redirect_stdout(buf):
+            got["fd"] = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=30.0)
+
+    t = threading.Thread(target=_queued_acquire, daemon=True)
+    t.start()
+    deadline = time.monotonic() + 20.0
+    while hl_mod.WAIT_ANNOUNCE not in buf.getvalue():
+        assert time.monotonic() < deadline, f"waiter never announced: {buf.getvalue()!r}"
+        time.sleep(0.01)
+    hl_mod.release(holder)
+    t.join(30.0)
+    assert not t.is_alive(), "queued acquire never returned after the holder released"
+    fd = got["fd"]
     assert fd is not None
-    out = capsys.readouterr().out
+    out = buf.getvalue()
+    capsys.readouterr()
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE in out
     assert not hl_mod.looks_starved(out)
     hl_mod.release(fd)
@@ -3461,6 +3581,40 @@ def test_canon_ensure_toolchain_fresh_worktree(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBEOS_ROOT", str(parent))
     assert canon_mod.ensure_toolchain(repo) is True
     assert (repo / ".build-tools" / "llvm-mingw").resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_heals_archiver_materialised_dir(tmp_path, monkeypatch):
+    """A restore can leave a real EMPTY dir where the symlink was; heal it.
+
+    Rebuilding this box on 2026-09-14 from a 7-Zip extraction of the WSL image
+    produced exactly that in all 8 worktrees — the archiver materialised each
+    symlink as an empty directory. `readlink()` then raised EINVAL, so the one
+    function whose job is provisioning the toolchain died on the state it most
+    needed to repair, and every build would have failed pointing at an empty dir.
+    """
+    parent = tmp_path
+    repo = parent / "vibeos"
+    link = repo / ".build-tools" / "llvm-mingw"
+    link.mkdir(parents=True)  # the archiver's artifact: a real, empty directory
+    tc = parent / "llvm-mingw-20250114"
+    tc.mkdir()
+    monkeypatch.setenv("VIBEOS_ROOT", str(parent))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert link.is_symlink()
+    assert link.resolve() == tc.resolve()
+
+
+def test_canon_ensure_toolchain_keeps_a_populated_real_directory(tmp_path, monkeypatch):
+    """Only an EMPTY dir is the archiver artifact. A populated one is somebody's
+    real machine-local toolchain — report it usable, never replace it."""
+    repo = tmp_path / "vibeos"
+    link = repo / ".build-tools" / "llvm-mingw"
+    (link / "bin").mkdir(parents=True)
+    (link / "bin" / "clang").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path))
+    assert canon_mod.ensure_toolchain(repo) is True
+    assert not link.is_symlink()
+    assert (link / "bin" / "clang").exists()
 
 
 def test_canon_ensure_toolchain_missing(tmp_path, monkeypatch):
@@ -4374,7 +4528,14 @@ def test_hostlock_status_reports_both_pools(tmp_path, monkeypatch):
     assert "legacy/native(cpuheavy)" in body and "boot(windows-host)" in body
 
 
-def test_ninja_jobs_caps_and_reserves(monkeypatch):
+def test_ninja_jobs_caps_and_reserves(monkeypatch, tmp_path):
+    # Point HOSTLOCK_DIR at an empty dir so `_ninja_jobs` sees NO host build policy.
+    # Without this the test reads the real one and asserts against whatever capacity
+    # the box happens to be running -- it passed only while no policy was installed,
+    # then failed the moment the three-build trial went active (`-j 6`, not `-j 24`).
+    # The VIBEOS_BUILD_CORE_RESERVE path below is the no-policy fallback, so that is
+    # the state it has to be exercised in.
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setattr(build_mod.os, "cpu_count", lambda: 32)
     monkeypatch.setenv("VIBEOS_BUILD_CORE_RESERVE", "8")
     assert build_mod._ninja_jobs() == ["-j", "24"]
@@ -4527,6 +4688,49 @@ def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_p
     assert cmds == [], "already ON should be a no-op, not a redundant reconfigure"
 
 
+def test_rostests_is_reconciled_off_unlike_kmtests(monkeypatch, tmp_path):
+    # --rostests is the OPPOSITE discipline from --kmtests and the pair is the
+    # point: ENABLE_ROSTESTS adds ~128 executables no default build wants, so a
+    # plain build must deterministically turn it back OFF. Sticky would mean one
+    # opt-in quietly bloats every later i386 build in the worktree.
+    on = "ENABLE_ROSTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": False})
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS=OFF", "."]], cmds
+
+
+def test_rostests_turns_on_when_asked(monkeypatch, tmp_path):
+    off = "ENABLE_ROSTESTS:BOOL=OFF\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=off, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": True})
+    assert cmds == [["cmake", "-DENABLE_ROSTESTS=ON", "."]], cmds
+
+
+def test_rostests_already_on_and_asked_is_a_no_op(monkeypatch, tmp_path):
+    on = "ENABLE_ROSTESTS:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=on, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "i386", {"ENABLE_ROSTESTS": True})
+    assert cmds == [], "already ON and requested should not reconfigure"
+
+
+def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
+    # Guard the WIRING, not just the mechanism. build.py reads the arg through
+    # getattr(args, "rostests", False), which silently yields False for a name
+    # that does not exist -- so a rename on either side disables the flag with
+    # no error anywhere. Parse with the REAL parser and assert both directions.
+    from tests.qemu.cli.__main__ import build_parser
+
+    args = build_parser().parse_args(["build", "--arch", "i386", "--rostests"])
+    assert bool(getattr(args, "rostests", False)) is True
+    plain = build_parser().parse_args(["build", "--arch", "i386"])
+    assert bool(getattr(plain, "rostests", False)) is False
+
+    src = (Path(__file__).parent / "build.py").read_text()
+    assert '"ENABLE_ROSTESTS": bool(getattr(args, "rostests", False))' in src, (
+        "build.py no longer maps the parsed --rostests arg onto ENABLE_ROSTESTS"
+    )
+
+
 # --- conformance verb (quest M4) -------------------------------------------
 def _conf_repo_root() -> Path:
     # tests/qemu/cli/test_cli_units.py -> repo root is parents[3]
@@ -4652,6 +4856,32 @@ def test_soak_does_NOT_abort_on_isolated_no_launch_rounds(monkeypatch):
     # consecutive run means the media itself is broken.
     ran = _drive_soak(monkeypatch, [0, 91, 0, 91, 0, 91, 91, 91], repeat=8)
     assert ran == 8, f"isolated no-launch rounds must not end the soak, ran {ran}"
+
+
+def test_soak_aborts_when_its_build_round_fails(monkeypatch):
+    # Only round 1 builds; later rounds set no_build. A failed build used to
+    # carry on, so rounds 2..N booted the PREVIOUS media and banked its
+    # bugchecks as measurements of a kernel fix that was never built.
+    calls = {"n": 0}
+    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
+
+    def fake_once(args, repo):
+        calls["n"] += 1
+        if not args.no_build:
+            return 1  # build failed: no round recorded
+        conformance_mod._ROUNDS.append({"shape": "A:bugcheck", "launched": 0})
+        return 1
+
+    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
+
+    class A:
+        arch = "arm64"
+        no_build = False
+        repeat = 3
+
+    conformance_mod.conformance(A(), Path("/nonexistent"))
+    assert calls["n"] == 1, "rounds after a failed build boot stale media"
+    assert conformance_mod._ROUNDS == []
 
 
 def test_conformance_parser_detects_crash_regression(tmp_path):
@@ -7904,6 +8134,33 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
 
 
+def test_kmtest_payload_older_than_sweep_c_is_rebuilt(tmp_path, monkeypatch):
+    """An exe left from an earlier commit must not outlive a change to sweep.c: the merge
+    queue's integration worktree kept one and gated a sweep change with the old binary."""
+    import os
+
+    sh = tmp_path / "tools" / "payloads" / "kmtest"
+    sh.mkdir(parents=True)
+    (sh / "build.sh").write_text("#!/bin/bash\n")
+    (tmp_path / ".build-tools" / "llvm-mingw").mkdir(parents=True)
+    exe = sh / "kmtest-sweep-i386.exe"
+    exe.write_text("old")
+    os.utime(exe, (1_000_000, 1_000_000))
+    (sh / "sweep.c").write_text("int main(void){return 0;}\n")  # newer than the exe
+    os.utime(sh / "build.sh", (1_000_000, 1_000_000))
+
+    calls = []
+
+    def _fake_run(cmd, **kw):
+        calls.append(cmd)
+        exe.write_text("new")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    assert gate_mod._ensure_kmtest_payload(tmp_path, ["i386"]) == (True, "")
+    assert [c[2] for c in calls] == ["i386"], "a stale exe must be rebuilt"
+
+
 def test_cli_main_prints_the_exit_code_even_when_a_pipeline_swallows_it(capsys):
     """The number a `| tail` hides must still be IN the output it shows."""
     from tests.qemu.cli.__main__ import cli_main
@@ -8023,36 +8280,26 @@ def _flake_names():
 
 
 def test_mp_beta_flake_signatures_are_registered():
-    assert {"arm64_smp39_zero_pc_fetch_abort", "i386_mp_win32k_av_0x1e"} <= _flake_names()
+    assert {"i386_mp_win32k_av_0x1e"} <= _flake_names()
 
 
-def test_smp39_signature_needs_the_WHOLE_shape_not_just_the_esr():
-    """The SEH tests print an ESR on PURPOSE and pass.
-
-    `[UEXC] ESR=0x92000047` is a deliberate, passing user-mode SEH probe, and an
-    earlier draft that keyed on ESR alone would have swallowed unrelated reds.
-    A kernel fault with a NON-zero PC is also not #39.
-    """
+def test_retired_arm64_signatures_now_block():
+    """#43 (0xE3) and #39 (zero-PC 0x1E) were RETIRED 2026-09-25 after 102 clean arm64
+    MP rounds. A recurrence must go red as a plain BUGCHECK, not be auto-retried."""
     from .triage import _match_known_flake
 
-    real = (
+    assert not {"arm64_eresource_notowned_0xe3", "arm64_smp39_zero_pc_fetch_abort"} & _flake_names()
+    zero_pc = (
         "[KEXC] Code=0xFFFFFFFFC0000005[KEXC] PC=0x0000000000000000"
         "[KEXC] Spsr=0x0000000020000345[KEXC] ESR=0x0000000086000007\n"
         "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0x0000000000000000, 0x0, 0x0)\n"
     )
-    hit = _match_known_flake(real, "0x0000001E", "bugcheck")
-    assert hit is not None and hit["name"] == "arm64_smp39_zero_pc_fetch_abort"
-
-    # A passing SEH probe plus an UNRELATED 0x1E must still block.
-    seh_plus_other = (
-        "[UEXC] ESR=0x0000000092000047[SEH-USER] hw-fault: caught=1 (PASS)\n"
-        "*** BUGCHECK: 0x0000001E (0xffffffffc0000005, 0xfffff80042190000, 0x0, 0x0)\n"
+    assert _match_known_flake(zero_pc, "0x0000001E", "bugcheck") is None
+    e3 = (
+        "*** BUGCHECK: 0x000000E3 (0xfffffa0006344870, 0xfffffa00061fcc00, "
+        "0x0000000000000000, 0x0000000000000003)\n"
     )
-    assert _match_known_flake(seh_plus_other, "0x0000001E", "bugcheck") is None
-
-    # Same fault class, NON-zero PC -> a different bug, must not be masked.
-    nonzero_pc = real.replace("PC=0x0000000000000000", "PC=0xFFFF8000050E08A0")
-    assert _match_known_flake(nonzero_pc, "0x0000001E", "bugcheck") is None
+    assert _match_known_flake(e3, "0x000000E3", "bugcheck") is None
 
 
 def test_win32k_signature_is_pinned_to_one_rva():
@@ -8375,3 +8622,428 @@ def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):
 
     monkeypatch.setattr(killvm, "Path", lambda p="": tmp_path / "nope")
     assert not killvm._pid_is_zombie(1)
+
+
+def test_qmp_client_keeps_events_instead_of_discarding_them():
+    """_recv_json must skip events to find a reply, and used to drop them on the
+    way past. That threw away STOP, which is the only notification QEMU sends when
+    a replay-break fires — leaving a paused replay indistinguishable from a wedged
+    one, since both show a frozen serial log and a busy CPU."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [
+        {"event": "RESUME"},
+        {"return": {}},
+        {"event": "STOP", "timestamp": {"seconds": 7}},
+        {"return": {"icount": 42}},
+    ]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+
+    assert c._recv_json() == {"return": {}}
+    assert c._recv_json() == {"return": {"icount": 42}}
+    assert [e["event"] for e in c.events] == ["RESUME", "STOP"]
+    assert c.saw_event("STOP") == {"event": "STOP", "timestamp": {"seconds": 7}}
+    assert c.saw_event("SHUTDOWN") is None
+
+
+def test_qmp_event_retention_is_bounded():
+    """A long boot emits plenty; this is a diagnostic tail, not a log."""
+    from tests.qemu.qmp_client import QmpClient
+
+    c = QmpClient()
+    feed = [{"event": f"E{i}"} for i in range(300)] + [{"return": {}}]
+    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
+    c._recv_json()
+    assert len(c.events) == 256
+    assert c.saw_event("E299") is not None
+    assert c.saw_event("E0") is None  # fell off the tail
+
+
+@pytest.mark.parametrize("arch", ["amd64-uefi-net", "i386-uefi-net", "amd64-test"])
+def test_per_arch_cap_includes_variants(arch, monkeypatch):
+    monkeypatch.setenv("VIBEOS_QEMU_PER_ARCH_CAP", "2")
+    monkeypatch.delenv("VIBEOS_QEMU_CAP_AMD64", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_CAP_I386", raising=False)
+    assert vm_mod.per_arch_cap(arch) == 2
+
+
+@pytest.mark.parametrize(
+    "arch,available,expected",
+    [
+        ("amd64-uefi", True, "whpx"),
+        ("amd64-uefi", False, "tcg"),
+        ("arm64", True, "tcg"),
+    ],
+)
+def test_start_resolves_accel_before_admission(arch, available, expected, monkeypatch):
+    v = _bare_vm(arch)
+    v._backend = "windows-host"
+    v._win = {"accel": "whpx"}
+    v._win_accel = "tcg"
+    monkeypatch.setattr(be_mod, "whpx_available", lambda: available)
+    observations = []
+    monkeypatch.setattr(v, "_acquire_slot", lambda: observations.append(v._win_accel))
+    monkeypatch.setattr(v, "_acquire_cpu_lease", lambda: observations.append(v._boot_is_tcg()))
+    monkeypatch.setattr(vm_mod, "launch_lock", contextlib.nullcontext)
+    monkeypatch.setattr(v, "_prepare_launch", lambda: None)
+    monkeypatch.setattr(v, "_start_with_ports", lambda: None)
+    v.start()
+    assert observations == [expected, expected == "tcg"]
+
+
+def test_boot_eof_preserves_serial_and_reports_process_exit(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    v = _bare_vm("amd64")
+    v.config = vm_mod.get_arch_config("amd64-uefi")
+
+    def eof(*args, **kwargs):
+        raise ConnectionError("Serial socket closed")
+
+    monkeypatch.setattr(
+        v,
+        "serial",
+        SimpleNamespace(read_until=eof, partial_output="firmware breadcrumb"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        v,
+        "_proc",
+        SimpleNamespace(poll=lambda: 1, wait=lambda **_: 1, returncode=1),
+        raising=False,
+    )
+    v._stderr_path = tmp_path / "stderr.log"
+    (tmp_path / "stderr.log").write_text("WHPX fatal error")
+    v._early_stderr = ""
+    with pytest.raises(RuntimeError, match="QEMU exited with code 1") as error:
+        v.wait_for_boot()
+    assert "WHPX fatal error" in str(error.value)
+    assert v._boot_output == "firmware breadcrumb"
+
+
+def test_qemu_stderr_cannot_fill_a_pipe_and_stall(tmp_path, monkeypatch):
+    import sys
+
+    v = _launch_vm("native", tmp_path)
+    monkeypatch.setattr(
+        v,
+        "_build_native_cmd",
+        lambda: [sys.executable, "-c", "import sys; sys.stderr.write('x' * 131072)"],
+    )
+    v._launch_qemu()
+    assert v._proc is not None
+    try:
+        assert v._proc.wait(timeout=5) == 0
+        assert (tmp_path / "amd64-uefi_qemu.stderr.log").stat().st_size == 131072
+        assert v._read_qemu_stderr() == "x" * 65536
+    finally:
+        if v._proc.poll() is None:
+            v._proc.kill()
+            v._proc.wait()
+
+
+def test_serial_eof_retains_partial_output():
+    client = serial_client.SerialClient()
+    client._buf = "firmware reached the loader"
+    client._sock_dead = True
+    with pytest.raises(ConnectionError):
+        client.read_until("shell ready", timeout=0.1)
+    assert client.partial_output == "firmware reached the loader"
+
+
+# --- land: the SOURCE-lint preflight ---------------------------------------
+#
+# Added 2026-09-19 after one lane ate two LINT_FAIL rejections for a one-line
+# `scan_unpruned_walk` fix. `_lint_preflight` is named "lint" but only ever ran
+# check-tooling; the conductor also runs `check --strict --scope source-early|
+# source-deferred`, and plain `./vibeos-cli check` does NOT run those in strict mode, so
+# a lane can be green locally and rejected after the full queue wait. These are pure
+# source checks — no build, no boot — so they belong before the cost, not after it.
+
+
+def _src_lint_run(tmp_path: Path):
+    """A real `Run` with its artifact dir redirected — the preflight takes a Run, and a
+    stand-in class would only prove the stand-in's interface."""
+    run = Run("land", "host")
+    run.dir = tmp_path
+    run.stages = []
+    return run
+
+
+class _SrcLintArgs:
+    skip_lint = False
+
+
+def _stub_src_lint_once(land_mod_, monkeypatch, results: dict):
+    import tests.qemu.cli.gate as gate_mod
+
+    monkeypatch.setattr(gate_mod, "_lint_once", lambda repo, part, root: results[part])
+
+
+def _src_lint_result(ok: bool, classification: str = "", salient: str = "", exit_code: int = 0):
+    return {
+        "arch": "source-deferred",
+        "ok": ok,
+        "seconds": 1.0,
+        "salient": salient,
+        "exit": exit_code,
+        "classification": classification,
+    }
+
+
+def test_source_lint_preflight_passes_when_both_partitions_are_clean(tmp_path, monkeypatch):
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {"source-early": _src_lint_result(True), "source-deferred": _src_lint_result(True)},
+    )
+    land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())
+    assert [s.status for s in run.stages] == ["ok", "ok"]
+
+
+def test_source_lint_preflight_blocks_on_real_new_findings(tmp_path, monkeypatch):
+    """The case that cost two rejections: a genuine NEW finding must stop the submission."""
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {
+            "source-early": _src_lint_result(True),
+            "source-deferred": _src_lint_result(
+                False,
+                classification="LINT_FAIL",
+                salient="✗ scan_unpruned_walk(2 new)",
+                exit_code=1,
+            ),
+        },
+    )
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())
+    msg = str(ei.value)
+    assert "scan_unpruned_walk" in msg
+    # It must name the reproduction, because a green plain `check` is the trap here.
+    assert "--strict --scope source-deferred" in msg
+
+
+def test_source_lint_preflight_fails_OPEN_on_a_scanner_error(tmp_path, monkeypatch):
+    """NEVER MORE STRICT THAN THE GATE. source-deferred holds verify_signatures and
+    gen_ctype_tables, which hard-fail without this worktree's build-<arch> — a fresh
+    lane legitimately has none, and the conductor's tree does. A partition that could
+    not RUN here must warn, not block, or this preflight wedges landing."""
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {
+            "source-early": _src_lint_result(True),
+            "source-deferred": _src_lint_result(
+                False, classification="SCANNER_ERROR", salient="no build-amd64", exit_code=1
+            ),
+        },
+    )
+    land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())  # must NOT raise
+    assert [s.status for s in run.stages] == ["ok", "warn"]
+
+
+def test_source_lint_preflight_honours_skip_lint(tmp_path, monkeypatch):
+    run = _src_lint_run(tmp_path)
+
+    def _boom(*a, **kw):
+        raise AssertionError("must not run under --skip-lint")
+
+    import tests.qemu.cli.gate as gate_mod
+
+    monkeypatch.setattr(gate_mod, "_lint_once", _boom)
+    args = _SrcLintArgs()
+    args.skip_lint = True
+    land_mod._source_lint_preflight(tmp_path, run, args)
+    assert run.stages == []
+
+
+def _with_origin_master(repo: Path, *paths: str) -> None:
+    """Give `repo` an origin/master and a commit on top touching exactly `paths`.
+
+    The shared predicate is installed into the BASE, because `_docs_only_vs_master` loads
+    it from `<repo>/tools/docs_only.py` by path. In the base, not the delta: a predicate
+    committed alongside the change would itself be a non-inert path.
+    """
+    tools = repo / "tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    real = Path(__file__).resolve().parents[3] / "tools" / "docs_only.py"
+    (tools / "docs_only.py").write_text(real.read_text())
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "install the shared docs-only predicate")
+    _git(repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    for rel in paths:
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("content\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "lane work")
+
+
+def test_lint_preflight_SKIPS_a_docs_only_delta(tiny_repo: Path, tmp_path, monkeypatch):
+    """A Markdown-only change cannot fail a Python linter, so it must not pay for one.
+
+    This is not a style preference: the commit that recorded the orphan inventory was
+    refused by `test_verify_ucrtbase_cohab.py` over a stale `build-i386`, for a delta of
+    one `.md` file. The pre-push hook has had this exemption since it was written; the
+    preflight did not. Safe because the CONDUCTOR still lints the merged batch — this
+    declines to lint a lane that has no source, it does not let source through unlinted.
+    """
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _with_origin_master(tiny_repo, "docs/engineering/note.md", "README.md")
+    _fake_cli(tiny_repo, rc=1, out="✗ everything")  # red, and must still not block
+    run = Run("land", "t")
+    land_mod._lint_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
+
+
+def test_lint_preflight_does_NOT_skip_when_one_source_file_rides_along(
+    tiny_repo: Path, tmp_path, monkeypatch
+):
+    """The dangerous direction. A delta that is *mostly* docs is not docs-only, and one
+    `.py` beside forty `.md` must still be linted — otherwise the exemption becomes a way
+    to smuggle source past the cheap check."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _with_origin_master(tiny_repo, "docs/a.md", "docs/b.md", "tools/thing.py")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ ruff:tools/thing.py\n\nFAIL — 1/15 checks failed:")
+    with pytest.raises(land_mod.LandAbort):
+        land_mod._lint_preflight(tiny_repo, Run("land", "t"), _Args())
+
+
+def test_docs_only_predicate_fails_CLOSED_without_origin_master(tiny_repo: Path):
+    """No origin/master (a fresh clone, a renamed remote) must mean "lint normally", never
+    "skip". A predicate that cannot answer has to say False."""
+    assert land_mod._docs_only_vs_master(tiny_repo) is False
+
+
+def test_docs_only_predicate_ignores_what_master_did_meanwhile(tiny_repo: Path):
+    """Three-dot, so a lane merely BEHIND master is judged on what IT changed. Two-dot
+    would drag every landed source file into this lane's delta and never skip."""
+    _with_origin_master(tiny_repo, "docs/mine.md")
+    # the module-level `_git` helper returns None; capture the sha ourselves
+    lane = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tiny_repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    _git(tiny_repo, "checkout", "-q", "refs/remotes/origin/master")
+    (tiny_repo / "tools" / "other.py").parent.mkdir(parents=True, exist_ok=True)
+    (tiny_repo / "tools" / "other.py").write_text("x = 1\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "someone else's source landed")
+    _git(tiny_repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+    _git(tiny_repo, "checkout", "-q", lane)
+    assert land_mod._docs_only_vs_master(tiny_repo) is True
+
+
+# --- launch retry (host-side socket flake, 2026-09-20) ----------------------
+
+
+class _FlakyVM:
+    """Stands in for QemuVM: fails its first `fail_times` starts, then works."""
+
+    def __init__(self, fail_times: int):
+        self._left = fail_times
+        self.launch_timings: dict[str, float] = {}
+        self.starts = 0
+        self.stops = 0
+
+    def start(self):
+        self.starts += 1
+        if self._left > 0:
+            self._left -= 1
+            raise TimeoutError("QEMU did not connect to serial socket within 15.0s")
+
+    def stop(self):
+        self.stops += 1
+
+
+def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
+    """Drive _launch_with_retry against a VM that fails `failures` times."""
+    from tests.qemu.cli import smoke as smoke_mod
+
+    monkeypatch.setattr(smoke_mod, "_LAUNCH_ATTEMPTS", attempts)
+    monkeypatch.setattr(smoke_mod, "_LAUNCH_RETRY_SECONDS", 0)
+    budget = {"n": failures}
+    built: list[_FlakyVM] = []
+    logs: list[str] = []
+
+    def make_vm():
+        fail = 1 if budget["n"] > 0 else 0
+        budget["n"] -= 1
+        v = _FlakyVM(fail)
+        built.append(v)
+        return v
+
+    timings: dict[str, float] = {}
+    # _FlakyVM is a stand-in, not a QemuVM -- the helper only ever touches
+    # start/stop/launch_timings, which is exactly what makes it testable here.
+    vm, n, exc = smoke_mod._launch_with_retry(
+        cast("Any", make_vm), timings, logs.append, "boot 1/5"
+    )
+    return built, logs, timings, vm, n, exc
+
+
+def test_launch_retry_recovers_from_a_host_side_flake(monkeypatch):
+    # The incident: one boot of five died on "QEMU did not connect to serial
+    # socket within 15.0s" before a single guest instruction ran, and landed as
+    # a red flake beside real verdicts.
+    built, logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=1)
+    assert len(built) == 2
+    assert exc is None, "a single host-side flake should not fail the boot"
+    assert n == 2
+    assert timings["launch_attempts"] == 2, "a recovered launch must still be recorded"
+    assert any("host-side flake" in m for m in logs)
+
+
+def test_launch_retry_builds_a_FRESH_vm_each_attempt(monkeypatch):
+    # Load-bearing: the port and serial socket path are chosen in
+    # QemuVM.__init__, so retrying start() on the SAME instance would retry onto
+    # the same bad port and could never recover.
+    built, _logs, _timings, _vm, n, exc = _retry_probe(monkeypatch, failures=2)
+    assert exc is None and n == 3
+    assert len(built) == 3, "each attempt must construct a new VM"
+    assert all(v.starts == 1 for v in built), "no instance may be start()ed twice"
+    assert built[0].stops == 1 and built[1].stops == 1, "failed VMs must be torn down"
+
+
+def test_launch_retry_gives_up_and_reports_the_real_failure(monkeypatch):
+    # The retry must not make a broken launch quieter or slower-to-diagnose.
+    built, _logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=99)
+    assert isinstance(exc, TimeoutError)
+    assert n == 3 and len(built) == 3
+    assert "launch_attempts" not in timings, "never claim success on a failed launch"
+
+
+def test_launch_retry_is_a_no_op_on_a_healthy_launch(monkeypatch):
+    built, logs, timings, _vm, n, exc = _retry_probe(monkeypatch, failures=0)
+    assert exc is None and n == 1 and len(built) == 1
+    assert logs == [], "a clean launch must stay silent"
+    assert "launch_attempts" not in timings
+
+
+def test_launch_attempts_stays_small_enough_not_to_slow_a_broken_launch():
+    from tests.qemu.cli import smoke as smoke_mod
+
+    assert 2 <= smoke_mod._LAUNCH_ATTEMPTS <= 3
+    assert smoke_mod._LAUNCH_RETRY_SECONDS <= 5
+
+
+def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():
+    import inspect
+
+    from tests.qemu.cli import smoke as smoke_mod
+
+    src = inspect.getsource(smoke_mod._boot_vm)
+    assert '"classification": "LAUNCH_FAIL"' in src
+    assert '"launch_attempts": attempts' in src
+    assert "launch attempts, all failed" in src
+
+
+def test_gdb_engine_names_the_missing_gdb(monkeypatch):
+    """A host without gdb-multiarch must be told so, not handed `[Errno 13]`."""
+    monkeypatch.setattr(ge_mod.shutil, "which", lambda _name: None)
+    with pytest.raises(RuntimeError, match="apt-get install -y gdb-multiarch"):
+        ge_mod._gdb_bin()

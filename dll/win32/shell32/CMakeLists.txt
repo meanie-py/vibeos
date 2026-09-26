@@ -1,8 +1,13 @@
 PROJECT(SHELL)
 
-add_subdirectory(shelldesktop)
-add_subdirectory(shellmenu)
-add_subdirectory(shellrecyclebin)
+add_subdirectory(evalcmd)
+# add_subdirectory(shelldesktop) — the whole object library is Rust; see its CMakeLists.
+# add_subdirectory(shellmenu) — the whole object library is Rust (menuband-rust); see its CMakeLists.
+# shellrecyclebin/ — the WHOLE object library is Rust now (sdk/lib/rust/recyclebin-rust,
+# linked as ${RECYCLEBIN_RUST_LIB} below). Its six sources were the entire `recyclebin`
+# static library, so the target goes away rather than being emptied; the .c/.cpp stay on
+# disk, inert, like every other cohab flip.
+# add_subdirectory(shellrecyclebin)
 
 spec2def(shell32.dll shell32.spec ADD_IMPORTLIB)
 
@@ -31,10 +36,10 @@ list(APPEND SOURCE
     # CQueryAssociations.cpp — class plus association description helpers are Rust-owned
     # (shell32-rust/src/query_associations.rs).
     # changenotify.cpp — replaced by Rust (shell32-rust/src/shell32/changenotify.rs); cohab via
-    # libshell32_rust.a. Its one ATL CWindowImpl<> (CChangeNotifyBroker) could not come along,
-    # and neither could the CreateNotificationBroker that news and subclasses it; both live in
-    # rust_changenotify_broker_stub.cpp below.
-    rust_changenotify_broker_stub.cpp
+    # libshell32_rust.a. Its ATL CWindowImpl<> (CChangeNotifyBroker) and CreateNotificationBroker
+    # followed on 2026-09-24 (shell32-rust/src/atl_stub_windows.rs, on the crate's atlwin
+    # substrate); the stub that held them is gone:
+    # rust_changenotify_broker_stub.cpp
     # debughlp.cpp — replaced by Rust (shell32-rust/src/debughlp.rs); cohab via libshell32_rust.a
     # dialogs/dialogs.cpp — replaced by Rust (shell32-rust/src/dialogs/dialogs.rs); cohab via
     # libshell32_rust.a. Whole-TU flip: of its 145 defined symbols only ExitWindowsDialog and
@@ -60,11 +65,16 @@ list(APPEND SOURCE
     # and SHELL32_GetDllFromRundll32CommandLine are EXTERN_C in precomp.h now, because the
     # C-linkage forwarders that used to reach those C++ functions lived HERE and went away with
     # the file; that is the same fix already documented for the DataObject_GetHIDACount group.
-    dialogs/filetypes.cpp
+    # dialogs/filetypes.cpp — replaced by Rust (shell32-rust/src/dialogs/filetypes_tu.rs);
+    # cohab via libshell32_rust.a. Its whole external closure is ONE symbol,
+    # `_FolderOptionsFileTypesDlg@16`, which the Rust publishes at the same decoration; the
+    # ATL guard variables the object also carried are COMDAT from headers and come from every
+    # other C++ TU. `EditTypeDlg_UpdateEntryIcon` is hand-written in the banked preamble
+    # rather than translated.
     # dialogs/folder_options.cpp — replaced by Rust (shell32-rust/src/dialogs/folder_options.rs);
-    # cohab via libshell32_rust.a. Its one ATL CWindowImpl<> could not come along and lives in
-    # rust_folder_options_stub.cpp below.
-    rust_folder_options_stub.cpp
+    # cohab via libshell32_rust.a. Its ATL CWindowImpl<> (CMSGlobalFolderOptionsStub) followed
+    # on 2026-09-24 (shell32-rust/src/atl_stub_windows.rs); the stub that held it is gone:
+    # rust_folder_options_stub.cpp
     # dialogs/item_prop.cpp — replaced by Rust (shell32-rust/src/dialogs/item_prop.rs); cohab
     # via libshell32_rust.a. Its ShellPropSheetDialog "class" is a namespace of statics, so the
     # four of them are plain free functions on the Rust side.
@@ -73,14 +83,52 @@ list(APPEND SOURCE
     # dialogs/view.cpp — replaced by Rust (shell32-rust/src/dialogs/view.rs); cohab via libshell32_rust.a
     # CDropTargetHelper.cpp — COM class plus SHSimulateDropOnClsid ordinal closure
     # are Rust-owned (shell32-rust/src/drop_target_helper.rs).
-    CEnumIDListBase.cpp
-    CExtractIcon.cpp
+    # CEnumIDListBase.cpp — replaced by Rust (shell32-rust/src/shell32/CEnumIDListBase.rs);
+    # cohab via libshell32_rust.a. The shared PIDL-enumerator base every shell folder's
+    # IEnumIDList derives from. Cost $0: 7 of its 9 functions were already banked from an
+    # earlier run and the other two lowered deterministically.
+    # CExtractIcon.cpp — replaced by Rust (shell32-rust/src/shell32/CExtractIcon.rs for the
+    # COM class, shell32/extracticon_free.rs for DuplicateString + the two SHCreate*ExtractIcon
+    # entry points); cohab via libshell32_rust.a. Whole-TU flip. Activation is shellutils.h's
+    # ShellObjectCreator<CExtractIcon> (CExtractIcon.cpp:339), i.e. internal, no CLSID.
+    # Capture set: the only symbol the rest of the DLL takes from this TU is
+    # SHCreateDefaultExtractIcon, which Rust publishes; SHCreateFileExtractIconW is a spec
+    # export and Rust publishes that too.
+    # NOTE this file is ISO-8859, not UTF-8, so a bare `grep` finds NOTHING in it — see
+    # agent-reference.md §"Searching the tree".
     # folders.cpp — replaced by Rust (shell32-rust/src/folders.rs); cohab via libshell32_rust.a
     # iconcache.cpp — replaced by Rust (shell32-rust/src/shell32/iconcache.rs); cohab via libshell32_rust.a
     # propsheet.cpp — replaced by Rust (shell32-rust/src/propsheet.rs); reaches
     #   CStubWindow32 via CStubWindow32_*_RustBridge in utils.cpp
-    shell32.cpp
-    utils.cpp
+    # Replaced by Rust: the shell32 monolith TU below, the LAST C++ TU of shell32 that was not sanctioned glue.
+    # Retired in three phases: its plain logic (shell32-rust/src/shell32/shell32_free.rs,
+    # IDefClFImpl.rs), its COM server (shell32/com_server.rs: class-object table, cached class
+    # factories, DllGetClassObject/DllCanUnloadNow, the module lock count), and its registration
+    # + DllMain (shell32/registration.rs, shell32/dllmain.rs). With it go CShell32Module, the
+    # OBJECT_MAP and the 36 CXxxRustEntry shims that only existed to feed ATL's map, and the
+    # three Shell32Rust* stdcall->cdecl trampolines (now Rust, same symbols). Registration now
+    # hands the .rgs scripts to atl100.dll's registrar (AtlCreateRegistrar, as Wine's DLLs do)
+    # instead of ATL's statically-linked one; see registration.rs for how that was checked.
+    # shell32.cpp
+    # utils.cpp — replaced by Rust (shell32-rust/src/shell32/utils.rs, all 95 free functions);
+    # cohab via libshell32_rust.a. Whole-TU flip, gated together with the wiring because doing
+    # either alone is a PARTIAL cohab flip: utils.rs publishes names the live C++ objects also
+    # defined, the linker picks one without a duplicate-symbol error, and live entry points
+    # reroute into Rust that never ran. Measured 2026-09-19 when it was wired alone: the guest
+    # booted, passed smoke on all three arches, then froze between
+    # `[EXPLORER] taskbar: OnCreate begin` and `child controls created`, launching 0 of 91
+    # kmtest tests. Smoke cannot see that; `vibeos-cli conformance` can.
+    # Capture set at flip time, measured against the LIVE CMake source list plus
+    # libshell32_rust.a: 36 symbols leave this TU, and utils.rs publishes 32 of them. The other
+    # four are the CStubWindow32 create/destroy bridges, rehomed to
+    # rust_stubwindow32_stub.cpp below, and SHELL_GetCommandStringImpl /
+    # SHELL_MapContextMenuVerbToCmdId, whose utils.h declarations became EXTERN_C so
+    # shell32.cpp names the unmangled symbols Rust emits.
+    # NOTE the earlier plan said all 16 `*_RustBridge` wrappers needed rehoming. They did not:
+    # utils.rs publishes 14 of them itself. Only the pair that reaches a C++ ATL class does.
+    # That class, CStubWindow32, followed on 2026-09-24 once every constructor was Rust
+    # (shell32-rust/src/atl_stub_windows.rs); the stub that held it is gone:
+    # rust_stubwindow32_stub.cpp
     # CShellItem.cpp — CShellItem, CShellItemArray, SHCreateShellItem, and
     # SHCreateShellItemArrayFromDataObject are Rust-owned.
     # CShellLink.cpp — removed. The COM class was already Rust-owned
@@ -146,16 +194,31 @@ list(APPEND SOURCE
     # shell32-rust/src/folders/CRecycleBin.rs, and BOTH file-local COM classes came across too —
     # CRecycleBinEnum.rs and CRecycleBinItemContextMenu.rs, each an internal ShellObjectCreator
     # object with no OBJECT_ENTRY, so both needed `--cpp-com --internal`.
-    # TWO of its five retained bridges still could not come across, both for CRecycleBinFolderViewCB,
-    # which cannot be bought at all — its scaffold preflight refuses it twice. They are now
-    # rust_recyclebin_bridges_stub.cpp (below), which also documents the layout bug that the
-    # move exposed in that class. (The third, CRecyclerDropTarget_CreateInstance, has since
-    # gone Rust with its own .cpp.)
     # SHQueryRecycleBin{A,W} are hand-written in the Rust slice: bindgen renders IRecycleBin,
     # IRecycleBinEnumList and IRecycleBinFile as opaque, so there was no slot to translate into.
-    folders/CRecycleBinFolderViewCB.cpp
-    rust_recyclebin_bridges_stub.cpp
-    folders/CRegFolder.cpp
+    # folders/CRecycleBinFolderViewCB.cpp — replaced by Rust
+    # (shell32-rust/src/folders/CRecycleBinFolderViewCB.rs); cohab via libshell32_rust.a. The
+    # class was recorded as un-buyable because the scaffold preflight refused it twice; that
+    # was a DETECTION GAP, not a property of the class — shellutils.h also overloads
+    # `ShellObjectCreator(CComPtr<T> &objref)`, deducing T from the argument, so the class name
+    # appears nowhere in the call and every `<ClassName>`-keyed scan saw nothing.
+    #
+    # rust_recyclebin_bridges_stub.cpp — GONE WITH IT, and it was the last of the five retained
+    # CRecycleBin bridges. Its two entry points are now
+    # shell32-rust/src/folders/recyclebin_view_cb_bridge.rs, publishing the same two C-ABI
+    # symbols so `recycle_bin.rs` keeps linking against the names it was translated against.
+    # This also retires the last consumer of the C++ CRecycleBinFolderViewCB: its object's only
+    # non-COMDAT externals were its own mangled methods, which nothing else referenced.
+    # rust_recyclebin_bridges_stub.cpp
+    # folders/CRegFolder.cpp — replaced by Rust; cohab via libshell32_rust.a. Whole-TU flip
+    # across THREE modules, because one C++ TU holds two COM classes plus file-scope helpers
+    # and each rustconv run owns its own output file: folders/CRegFolder.rs (CRegFolder, 40
+    # fns), folders/CRegFolderEnum.rs (CRegFolderEnum, 26), folders/regfolder_free.rs (the
+    # file-scope functions).
+    # Capture set: the only symbol the rest of the DLL takes from this TU is
+    # CRegFolder_CreateInstance — still called from the live C++ folders/CDesktopFolder.cpp:287
+    # — and the cpp-com scaffold publishes it `#[no_mangle]`. Measured against the C++ objects
+    # AND libshell32_rust.a; the archive has to be in that sweep or it reports a false 0.
     # droptargets/CexeDropHandler.cpp — replaced by Rust
     # (shell32-rust/src/exe_drop_handler.rs).
     # droptargets/CFSDropTarget.cpp — replaced by Rust
@@ -175,8 +238,26 @@ list(APPEND SOURCE
     # shlexec.cpp — replaced by Rust (shell32-rust/src/shell32/shlexec.rs); cohab via libshell32_rust.a
     # shlfileop.cpp — replaced by Rust (shell32-rust/src/shell32/shlfileop.rs); cohab via libshell32_rust.a
     # shlfolder.cpp — replaced by Rust (shell32-rust/src/shell32/shlfolder.rs); cohab via libshell32_rust.a
-    CFileSysBindData.cpp
-    CDefView.cpp
+    # CFileSysBindData.cpp — replaced by Rust (shell32-rust/src/shell32/CFileSysBindData.rs
+    # for the COM class, shell32/filesysbinddata_free.rs for the three file-scope bind-context
+    # helpers); cohab via libshell32_rust.a. Whole-TU flip. The class has NO CLSID — ATL's own
+    # `_CreatorClass::CreateInstance` builds it — which is the activation shape rustconv's
+    # cpp-com preflight refused until it was mapped.
+    # Capture set measured as EMPTY: the only symbol anything else takes from this TU is
+    # `IFileSystemBindData_Constructor`, and its caller is libshell32_rust.a (wine/pidl.rs),
+    # not a C++ object — so the llvm-nm sweep has to include the staticlib's undefined set or
+    # it reports a false 0. Rust publishes that name `#[no_mangle]`.
+    # CDefView.cpp — replaced by Rust (shell32-rust/src/shell32/CDefView.rs); cohab via
+    # libshell32_rust.a. Whole-TU flip. This one was held ORPHAN-BY-DESIGN for a while because
+    # WIRING it while the .cpp was still compiled is a partial cohab flip: the Rust
+    # `#[no_mangle]` names shadow the live C++ ones with no duplicate-symbol error, and live
+    # entry points reroute into Rust that never ran (measured 2026-09-19 — booted, passed smoke
+    # on all three arches, then froze after `[EXPLORER] startup: shell window ready`).
+    # The flip is safe because the TU is a LEAF: `llvm-nm --undefined-only` over every other
+    # object linked into shell32.dll (shell32.dir + dialogs + folders + shelldesktop +
+    # shellmenu + recyclebin) references NOTHING defined in CDefView.cpp.obj — 0 symbols. Its
+    # only outward surface is the spec export SHCreateShellFolderView (ordinal 256), which Rust
+    # publishes; CDefView_CreateInstance was C++-mangled and had no caller outside this TU.
     # CDefViewUtil.cpp — replaced by Rust (shell32-rust/src/def_view_util.rs); cohab via
     # libshell32_rust.a. Whole-TU flip: CShellFolderViewCBWrapper is referenced by nothing
     # outside this TU, so the class moved wholesale. The two view-mode helpers are still
@@ -229,9 +310,25 @@ list(APPEND SOURCE
     # CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
     # CShellDispatch.cpp — replaced by Rust (shell32-rust/src/shell_dispatch.rs);
     # CShellDispatch_Constructor remains exported by the Rust module for CFolder/CDefViewDual.
-    CFolder.cpp
-    CFolderItems.cpp
-    CFolderItemVerbs.cpp)
+    # CFolder.cpp — replaced by Rust (shell32-rust/src/shell32/CFolder.rs); cohab via
+    # libshell32_rust.a. The Shell.Application `Folder2` object.
+    # CFolderItems.cpp — replaced by Rust; its TWO classes are one file each,
+    # shell32/CFolderItem.rs and shell32/CFolderItems.rs, because rustconv names its output
+    # after the .cpp and a second class would overwrite the first.
+    #   CFolderItemVerbs.cpp stays C++ below: `new CComObject<T>` activation and CComBSTR state
+    # are both unmapped. The Rust CFolderItem::Verbs still constructs it, through the four
+    # EXTERN_C symbols in rust_folderitemverbs_bridge.cpp — which is deleted the moment those
+    # two classes translate.
+    # CFolderItemVerbs.cpp — replaced by Rust (shell32-rust/src/shell32/CFolderItemVerb.rs and
+    # CFolderItemVerbs.rs); cohab via libshell32_rust.a. Both classes, and with them the last
+    # of CFolder.cpp/CFolderItems.cpp's C++ closure.
+    #   rust_folderitemverbs_bridge.cpp is DELETED with this flip: it existed only because the
+    # deterministic layer could not map `new CComObject<T>` activation or `CComBSTR` state, so
+    # the Rust CFolderItem::Verbs had to build a C++ object. All three gaps are closed now
+    # (the third being that this class is constructed by a DIFFERENT TU, which needs
+    # `--activation-source dll/win32/shell32/CFolderItems.cpp`), and CFolderItem::Verbs calls
+    # the generated CFolderItemVerbs_CreateInstance directly.
+    )
 
 list(APPEND PCH_SKIP_SOURCE
     # appbar.c — replaced by Rust (shell32-rust/src/appbar.rs); cohab via libshell32_rust.a
@@ -249,20 +346,23 @@ list(APPEND PCH_SKIP_SOURCE
     # wine/shpolicy.c — replaced by Rust (shell32-rust/src/wine/shpolicy.rs); cohab via libshell32_rust.a
     # vista.c — replaced by Rust (shell32-rust/src/vista.rs); cohab via libshell32_rust.a
     #
-    # rust_varargs_shim.c — the ONE thing stable Rust cannot do: DEFINE the C-variadic
-    # ShellMessageBoxA entry point (`va_start`; exported ordinal 183, so the symbol name +
-    # cdecl variadic ABI must be preserved). It trampolines straight into shell32-rust's
-    # fixed-arity ShellMessageBoxA_v, which keeps ALL the logic. This is what lets
-    # shell32-rust build on plain stable rustc — no bootstrap escape hatch on the cargo
-    # env line below, no nightly feature gate in the crate root.
-    # Plain C: belongs in PCH_SKIP_SOURCE (precomp.h is the C++ PCH), like shell32_stubs.c.
-    rust_varargs_shim.c
+    # ShellMessageBoxA's variadic entry point was a `va_start` trampoline here. Since
+    # 2026-09-24 shell32-rust RECEIVES the varargs as fixed slot parameters (va-slots-rust,
+    # wine/shellord.rs), so the trampoline file is out of the build:
+    # CShellLibrary.cpp / CUserEventTimer.cpp — NEW upstream COM objects (post-fork), now
+    # shell32-rust/src/shell32/{CShellLibrary,CUserEventTimer}.rs; cohab via libshell32_rust.a.
+    # shell32.cpp's object map reaches them through CShellLibraryRustEntry /
+    # CUserEventTimerRustEntry, whose _CreatorClass calls the Rust *_CreateInstance export —
+    # the header stays included only for the registry statics the entry inherits.
+    # CShellLibrary.cpp
+    # CUserEventTimer.cpp
+    # rust_varargs_shim.c
     #
-    # rust_strsafe_shim.c — linkage, not language: strsafe.h's StringCchPrintfW is a `static
-    # __inline`, so it is a PHANTOM SYMBOL with nothing for Rust to bind to. One forwarding
-    # trampoline into the header's own StringCchVPrintfW. Its own TU because rust_varargs_shim.c
-    # deliberately includes no Windows headers. Also plain C, so also PCH_SKIP_SOURCE.
-    rust_strsafe_shim.c
+    # StringCchPrintfW (a `static __inline` phantom in strsafe.h) was a forwarding trampoline
+    # here. Rust now calls msvcrt's variadic `_snwprintf` directly through
+    # strsafe_rust::StringCchPrintfW!, with the header's truncation contract, so the
+    # trampoline file is out of the build too:
+    # rust_strsafe_shim.c
     ${CMAKE_CURRENT_BINARY_DIR}/shell32_stubs.c)
 
 file(GLOB_RECURSE shell32_rc_deps res/*.*)
@@ -321,10 +421,21 @@ add_typelib(shell32_shldisp.idl)
 set_source_files_properties(shell32.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shell32_shldisp.tlb)
 
 set_module_type(shell32 win32dll UNICODE)
-target_link_libraries(shell32 shellmenu shelldesktop wine uuid recyclebin cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB})
-add_dependencies(shell32 rust_menuband)
+target_link_libraries(shell32 wine uuid cpprt atl_classes oldnames ${SHELL32_RUST_LIB} ${MENUBAND_RUST_LIB} ${RECYCLEBIN_RUST_LIB})
+add_dependencies(shell32 rust_menuband rust_recyclebin)
+# precomp.h includes shellmenu/*.h, which include the GENERATED shobjidl_undoc.h. The retired
+# shellmenu OBJECT library carried `add_dependencies(shellmenu xdk psdk reactos_idls)`, and that
+# was the only edge ordering the IDL headers before shell32's PCH; removing the library removed
+# it. Warm build dirs already had the header, so every warm gate stayed green — a FRESH arm64
+# build (whose curated target list does not otherwise build reactos_idls) failed with
+# "'shobjidl_undoc.h' file not found".
+add_dependencies(shell32 xdk psdk reactos_idls)
 add_delay_importlibs(shell32 powrprof shdocvw devmgr winspool.drv winmm mpr uxtheme ole32 oleaut32 userenv browseui version fmifs netapi32 secur32)
 add_importlibs(shell32 advapi32 gdi32 user32 comctl32 comdlg32 shlwapi msvcrt kernel32 ntdll)
 add_dependencies(shell32 stdole2 rust_shell32) # shell32_shldisp.tlb needs stdole2.tlb; rust_shell32 = cohab staticlib
+# NOTE (upstream-sync 2026-09-20): upstream now links shell32 against a new
+# `evalcmd` static lib when DLL_EXPORT_VERSION >= 0x600; its source landed at
+# dll/win32/shell32/evalcmd/ in this merge but is NOT wired up here, because
+# shell32 is mid-translation to Rust. Handed to the shell32 lane.
 add_pch(shell32 precomp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET shell32 DESTINATION reactos/system32 FOR all)

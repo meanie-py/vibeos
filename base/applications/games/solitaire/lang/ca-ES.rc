@@ -1,6 +1,6 @@
 /*
  * PROJECT:     Solitaire
- * LICENSE:     Freeware, permission to use under Public Domain
+ * LICENSE:     See COPYING in top level directory
  * FILE:        base/applications/games/solitaire/lang/ca-ES.rc
  * PURPOSE:     Catalan Language File for Solitaire
  * PROGRAMMERS: Daniel "EmuandCo" Reimer (reimer.daniel@freenet.de)
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitari"
-    IDS_SOL_ABOUT "Solitari per J Brown\nCardLib versio 1.0"
+    IDS_SOL_ABOUT "Solitari"
     IDS_SOL_QUIT "Voleu sortir del joc actual?"
     IDS_SOL_WIN "Felicitats, heu guanyat!!"
     IDS_SOL_DEAL "Deal again?"

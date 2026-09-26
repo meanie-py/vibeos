@@ -497,17 +497,13 @@ _InterlockedAdd64(
 #if defined(__clang__) && __has_builtin(_InterlockedAdd64)
 /* Declare the builtin so C code doesn't get implicit-function-declaration errors */
 LONG64 _InterlockedAdd64(_Interlocked_operand_ volatile LONG64 *Target, LONG64 Value);
-#else
-FORCEINLINE
-LONG64
-_InterlockedAdd64(
-    _Inout_ _Interlocked_operand_ volatile LONG64 *Target,
-    _In_ LONG64 Value)
-
-{
-    return _InterlockedExchangeAdd64(Target, Value) + Value;
-}
 #endif /* __clang__ && __has_builtin(_InterlockedAdd64) */
+/* No fallback DEFINITION here. This file is spliced into winnt.h only, AFTER winnt.h has
+ * included <intrin.h>, and intrin_arm64.h already defines _InterlockedAdd64 under the same
+ * condition (!HAS_BUILTIN). A second body here was a redefinition on any compiler without the
+ * builtin — "redefinition of a 'extern inline' function is not supported in C++" — which is
+ * libclang-18 (bindgen) today and GCC always, since HAS_BUILTIN is hard-wired to 0 there.
+ * clang 19, which builds the tree, has the builtin and never reached this branch. */
 
 #endif /* _M_ARM64 */
 

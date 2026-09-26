@@ -372,6 +372,76 @@ pub unsafe fn name_ptr() -> *const u16 {
 }
 """
 
+# scan_opaque_ptr_arith. Seeded from consrv's handle table (2026-09-23): the
+# field is typed by bindgen as a pointer to an opaque 1-byte stub, so .add(i)
+# strides one byte. The fixture ships its own bindgen stand-in, because the
+# scanner reads field types from *-sys bindgen files.
+_OPAQUE_BINDGEN = """\
+pub struct _IO_HANDLE {
+    pub _address: u8,
+}
+pub struct _PROCESS_DATA {
+    pub HandleTable: *mut _IO_HANDLE,
+}
+"""
+_OPAQUE_BAD = """\
+pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
+    (*pd).HandleTable.add(i) as *mut RealHandle
+}
+"""
+_OPAQUE_GOOD = """\
+pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
+    ((*pd).HandleTable as *mut RealHandle).add(i)
+}
+"""
+
+# scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
+# Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
+# and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
+# directly, plus a foreign decl (body-less, inside an extern block) that must
+# not be mistaken for a Rust-ABI fn.
+_FNABI_BAD = """\
+pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
+pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
+    unsafe { Some(core::mem::transmute(InitFrontEnd as *const ())) };
+"""
+_FNABI_GOOD = """\
+pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
+pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
+extern "system" {
+    fn Foreign(x: *mut u8) -> i32;
+}
+pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
+    unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+"""
+
+# scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
+# C's RtlCopyMemory byte count kept as the element count of a u16 copy. GOOD has
+# the fixed byte copy, a count already in WCHARs (/ size_of), and an ANSI copy
+# whose uncast .Buffer must not be mistaken for a wide one.
+_WIDEBYTE_BAD = """\
+pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) {
+    core::ptr::copy_nonoverlapping(
+        (*name).Buffer,
+        dst as *mut u16,
+        BytesConverted as usize,
+    );
+}
+"""
+_WIDEBYTE_GOOD = """\
+pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) {
+    core::ptr::copy_nonoverlapping((*name).Buffer as *const u8, dst, BytesConverted as usize);
+    core::ptr::copy_nonoverlapping(
+        (*name).Buffer,
+        dst as *mut u16,
+        (*name).Length as usize / core::mem::size_of::<u16>(),
+    );
+}
+pub unsafe fn g(a: *const ANSI_STRING, out: *mut i8) {
+    core::ptr::copy_nonoverlapping((*a).Buffer, out, (*a).Length as usize);
+}
+"""
+
 # The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
 # the argument list, so counting it as an argument shifts every positional index
 # — the level check reads the comment (not DISPATCH_LEVEL) and the last-arg
@@ -1012,11 +1082,15 @@ _VENDOR_STAMP = vendored._STAMP_TEMPLATE.format(
 _VENDOR_STAMP_2 = vendored._STAMP_TEMPLATE.format(
     name="Surprise", upstream="http://example.invalid/", license="MIT"
 )
+# `license_note` is present because a tree that CLAIMS a licence must be able to point
+# at the grant (vendored.check). It is not what this control tests — it just keeps the
+# fixture a valid registry, so a failure here means the scanner, not the fixture.
 _VENDOR_TREE = """\
   - path: libs/known
     name: Known
     upstream: http://example.invalid/
     license: MIT
+    license_note: fixture tree; no grant shipped
     reason: a registered vendored tree
 """
 _VENDOR_BAD_YAML = "containers: [libs]\ntrees:\n" + _VENDOR_TREE
@@ -1027,9 +1101,66 @@ _VENDOR_GOOD_YAML = (
     name: Surprise
     upstream: http://example.invalid/
     license: MIT
+    license_note: fixture tree; no grant shipped
     reason: the library that used to arrive unnoticed
 """
 )
+
+# scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
+# (commented in the CMake source list) and a separate .rs took over under
+# #[no_mangle], so the two files are never in the same place and the inline
+# scanner above is structurally blind to it. BAD keeps the probe and loses the
+# handler; GOOD routes the same probe through the validate-first substrate. The
+# GOOD half also pins the filter that matters most: it is the presence of a
+# CATCH idiom that clears a pair, not the absence of a probe.
+_SEHPAIR_CMAKE = """
+list(APPEND SOURCE
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c
+)
+"""
+_SEHPAIR_C = """
+NTSTATUS NtReplyPort(HANDLE PortHandle, PPORT_MESSAGE ReplyMessage)
+{
+    if (PreviousMode != KernelMode)
+    {
+        _SEH2_TRY
+        {
+            ProbeForRead(ReplyMessage, sizeof(*ReplyMessage), sizeof(ULONG));
+            Captured = *(volatile PORT_MESSAGE*)ReplyMessage;
+        }
+        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        {
+            _SEH2_YIELD(return _SEH2_GetExceptionCode());
+        }
+        _SEH2_END;
+    }
+    return STATUS_SUCCESS;
+}
+"""
+_SEHPAIR_BAD_RS = """
+#[no_mangle]
+pub unsafe extern "system" fn NtReplyPort(ReplyMessage: PPORT_MESSAGE) -> NTSTATUS {
+    if previous_mode != 0i8 {
+        ProbeForRead(ReplyMessage as PVOID, core::mem::size_of::<PORT_MESSAGE>(), 4);
+        let captured = *(ReplyMessage as *const PORT_MESSAGE);
+    }
+    STATUS_SUCCESS
+}
+"""
+_SEHPAIR_GOOD_RS = """
+#[no_mangle]
+pub unsafe extern "system" fn NtReplyPort(ReplyMessage: PPORT_MESSAGE) -> NTSTATUS {
+    if previous_mode != 0i8 {
+        let captured = match ntkrnl_sys::probe::probe_read_generic::<PORT_MESSAGE>(
+            ReplyMessage as *const PORT_MESSAGE, 4, previous_mode,
+        ) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
+    }
+    STATUS_SUCCESS
+}
+"""
 
 # scan_dropped_probes. The NtSetValueKey shape (#79): the C probes Data inside one
 # _SEH2_TRY and copies it inside a second, both regions dropped, leaving a bare
@@ -1177,6 +1308,53 @@ def find_lib(build: Path, want: str):
 def deliberate_control(root: Path):
     return root.rglob("*.rs")  # unpruned-walk: intentional
 """
+
+# scan_com_double_release. Seeded from CDefView 2026-09-19: `CComPtr<IEnumIDList>`
+# lowered to a raw pointer plus a CppComPtrGuard, with the explicit Release() calls
+# ALSO kept, so every FillList released twice and the guard then called through a
+# dangling vtable. arm64 died on it at once; amd64 and i386 ran the same code and
+# passed the 91-test conformance sweep three times. The GOOD case pins the three
+# spellings that are correct and must not be reported: release-then-null,
+# release-then-reassign (a hand-over-hand walk), and a release with no guard at all.
+_COMREL_BAD = """
+pub unsafe fn FillList_body(this: *mut T) -> HRESULT {
+    let mut pEnum: *mut IEnumIDList = core::ptr::null_mut();
+    let _pEnum_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pEnum));
+    if !pEnum.is_null() {
+        ((*(*pEnum).lpVtbl).Release)(pEnum);
+    }
+    return S_OK;
+}
+"""
+
+_COMREL_GOOD = """
+pub unsafe fn Exec_body(this: *mut T) -> HRESULT {
+    let mut pStream: *mut IStream = core::ptr::null_mut();
+    let _pStream_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pStream));
+    if !pStream.is_null() {
+        ((*(*pStream).lpVtbl).Release)(pStream);
+        pStream = core::ptr::null_mut();
+    }
+    return S_OK;
+}
+
+pub unsafe fn IsSubMenuParent_body(hwnd: HWND) -> BOOL {
+    let _popup_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(popup));
+    while !popup.is_null() {
+        ((*(*popup).lpVtbl).Release)(popup);
+        popup = next;
+    }
+    FALSE
+}
+
+pub unsafe fn SaveViewState_body(this: *mut T) -> HRESULT {
+    let mut pPB: *mut IPropertyBag = core::ptr::null_mut();
+    ((*(*pPB).lpVtbl).Release)(pPB);
+    return S_OK;
+}
+"""
+
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_dropped_asserts",
@@ -1217,6 +1395,21 @@ CONTROLS: list[Control] = [
         bad={"cmsysini.rs": _DROPPEDPRINT_BAD},
         good={"cmsysini.rs": _DROPPEDPRINT_GOOD},
         pass_files=True,
+    ),
+    Control(
+        name="scan_dropped_seh_pairs",
+        script="tools/scan_dropped_seh_pairs.py",
+        argv=["--lint"],
+        bad={
+            "ntos.cmake": _SEHPAIR_CMAKE,
+            "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
+            "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_BAD_RS,
+        },
+        good={
+            "ntos.cmake": _SEHPAIR_CMAKE,
+            "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
+            "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_GOOD_RS,
+        },
     ),
     Control(
         name="scan_dropped_probes",
@@ -1363,6 +1556,27 @@ CONTROLS: list[Control] = [
         good={"good.rs": _DANGLING_GOOD},
     ),
     Control(
+        name="scan_opaque_ptr_arith",
+        script="tools/scan_opaque_ptr_arith.py",
+        argv=["--lint"],
+        bad={"x-sys/src/opaque_fixture_bindgen.rs": _OPAQUE_BINDGEN, "src/bad.rs": _OPAQUE_BAD},
+        good={"x-sys/src/opaque_fixture_bindgen.rs": _OPAQUE_BINDGEN, "src/good.rs": _OPAQUE_GOOD},
+    ),
+    Control(
+        name="scan_fnptr_abi_transmute",
+        script="tools/scan_fnptr_abi_transmute.py",
+        argv=["--lint"],
+        bad={"bad.rs": _FNABI_BAD},
+        good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_wide_byte_copy",
+        script="tools/scan_wide_byte_copy.py",
+        argv=["--lint"],
+        bad={"bad.rs": _WIDEBYTE_BAD},
+        good={"good.rs": _WIDEBYTE_GOOD},
+    ),
+    Control(
         name="scan_irql_balance",
         script="tools/scan_irql_balance.py",
         argv=["--lint"],
@@ -1376,6 +1590,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"src/a.rs": _DECL_DRIFT_BAD_A, "src/b.rs": _DECL_DRIFT_BAD_B},
         good={"src/a.rs": _DECL_DRIFT_GOOD_A, "src/b.rs": _DECL_DRIFT_GOOD_B},
+    ),
+    Control(
+        name="scan_com_double_release",
+        script="tools/scan_com_double_release.py",
+        argv=["--lint"],
+        bad={"src/bad.rs": _COMREL_BAD},
+        good={"src/good.rs": _COMREL_GOOD},
     ),
     Control(
         name="scan_ob_refcount",
@@ -1439,6 +1660,18 @@ UNCOVERED: dict[str, str] = {
     # It also self-checks for the dead-matcher failure this file exists to prevent: an
     # empty reference set is NO_REFERENCE and a hard failure, never a silent green.
     "scan_boot_media_drift": "covered by tests/qemu/cli/test_cli_units.py (5 tests)",
+    # Diffs the WHOLE tree against a checked-in snapshot (tools/cohab-census.txt); it
+    # takes no path argument and has no notion of a root, so the fixture-dir driver
+    # above cannot express it. The control it needs is the same one in spirit, and it
+    # lives in its own suite: remove the single `#` from ntos.cmake's
+    # `#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c` -- the exact edit a bad merge
+    # resolution makes -- and assert the scanner reports CENSUS-REMOVED and exits 1,
+    # then restores the file and asserts clean. That is the 2026-09-19 partial-flip
+    # shape, which every boot test passed while the guest was dead.
+    "cohab_census": (
+        "covered by tools/test_cohab_census.py (3 tests) -- positive control is "
+        "uncommenting a real flipped source line in ntoskrnl/ntos.cmake"
+    ),
     # Need a real build tree / toolchain, not a fixture dir.
     "shellcheck": "third-party binary; upstream-tested",
     "py-syntax": "stdlib compileall; liveness is not in question",

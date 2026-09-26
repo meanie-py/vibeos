@@ -1,6 +1,9 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum;
+use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum_Init_body;
 use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum_delete;
 use crate::shellrecyclebin::RecycleBin5Enum::RecycleBin5Enum_new;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_Init_body;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_delete;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_new;
 // --local-raii CZZWStr: owned by crate::shellrecyclebin::recyclebin_support in this crate; imported, not copied (workers received this API as a sealed contract either way)
@@ -11,27 +14,16 @@ use crate::shellrecyclebin::recyclebin_support::CStringW;
 
 use core::ffi::c_void;
 
-// ---- file-scope preamble (translated) ----
-#[repr(C)]
-pub struct RecycleBin5File {
-    pub lpVtbl: *const _IRecycleBinFileVtbl,
-    pub m_ref: i32,
-    pub m_recycleBin: *mut IRecycleBin5,
-    pub m_deletedFile: DELETED_FILE_RECORD,
-    pub m_FullName: *mut u16,
-}
+// NOTE: no local `RecycleBin5File`/`RecycleBin5Enum` preamble struct redeclarations here --
+// they would be distinct nominal types from the real ones in RecycleBin5File.rs/RecycleBin5Enum.rs
+// (which RecycleBin5File_new()/RecycleBin5Enum_new() below actually return), which is exactly
+// what made `pThis` fail to typecheck against RecycleBin5Enum_delete originally.
 
-#[repr(C)]
-pub struct RecycleBin5Enum {
-    pub lpVtbl: *const _IRecycleBinEnumListVtbl,
-    pub m_ref: i32,
-    pub m_recycleBin: *mut IRecycleBin5,
-    pub m_hInfo: HANDLE,
-    pub m_pInfo: *mut INFO2_HEADER,
-    pub m_dwCurrent: u32,
-    pub m_pszPrefix: *mut u16,
-}
-unsafe extern "C" fn RecycleBin5File_Constructor(
+// recyclebin_v5_enumerator.cpp:268-293 -- file-static constructor, not exported in the C++
+// either (no EXTERN_C). Kept private; `Init` was renamed `..._Init_body` in the class-atomic
+// split, so the call below is retargeted to that, not deleted/stubbed.
+#[allow(dead_code)]
+unsafe fn RecycleBin5File_Constructor(
     prb: *mut IRecycleBin5,
     Folder: LPCWSTR,
     pDeletedFile: *mut DELETED_FILE_RECORD,
@@ -47,7 +39,7 @@ unsafe extern "C" fn RecycleBin5File_Constructor(
         return E_OUTOFMEMORY;
     }
 
-    let hr = RecycleBin5File_Init(pThis, prb, Folder, pDeletedFile);
+    let hr = RecycleBin5File_Init_body(pThis, prb, Folder, pDeletedFile);
     if ((hr) < 0) {
         RecycleBin5File_delete(pThis);
         return hr;
@@ -75,7 +67,7 @@ pub unsafe extern "C" fn RecycleBin5Enum_Constructor(
         return E_OUTOFMEMORY;
     }
 
-    let hr: HRESULT = RecycleBin5Enum_Init(pThis, prb, hInfo, hInfoMapped, szPrefix);
+    let hr: HRESULT = RecycleBin5Enum_Init_body(pThis, prb, hInfo, hInfoMapped, szPrefix);
     if hr < 0 {
         RecycleBin5Enum_delete(pThis);
         return hr;

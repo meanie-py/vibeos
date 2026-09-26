@@ -64,15 +64,14 @@ VOID
 PrintCurrentContextHeader(
     _In_ PCONTEXT_ENTRY pContext)
 {
-    WCHAR szBuffer[SMALL_HELP_BUFFER_SIZE];
-
     if (pContext == pCurrentContext)
     {
         ConResPrintf(StdOut, IDS_THIS_COMMANDS);
     }
     else
     {
-        GetContextFullName(pContext, szBuffer, SMALL_HELP_BUFFER_SIZE);
+        WCHAR szBuffer[SMALL_HELP_BUFFER_SIZE];
+        GetContextFullName(pContext, szBuffer, _countof(szBuffer));
         ConResPrintf(StdOut, IDS_CONTEXT_COMMANDS, szBuffer);
     }
 }
@@ -88,14 +87,21 @@ PrintShortGroupCommands(
     WCHAR szBuffer1[TINY_HELP_BUFFER_SIZE];
     WCHAR szBuffer2[SMALL_HELP_BUFFER_SIZE];
 
-    pCommand = pGroup->pCommandListHead;
-    while (pCommand != NULL)
+    for (pCommand = pGroup->pCommandListHead; pCommand != NULL; pCommand = pCommand->pNext)
     {
-        swprintf(szBuffer1, L"%s %s", pGroup->pwszCmdGroupToken, pCommand->pwszCmdToken);
-        LoadStringW(pContext->hModule, pCommand->dwShortCmdHelpToken, szBuffer2, SMALL_HELP_BUFFER_SIZE);
+        DPRINT("CheckVersion (Command) %S %S", pGroup->pwszCmdGroupToken, pCommand->pwszCmdToken);
+        if (!CheckOsVersion(pCommand->pfnOsVersionCheck))
+            continue;
+
+        if (((pCommand->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pCommand->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pCommand->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
+        _swprintf(szBuffer1, L"%s %s", pGroup->pwszCmdGroupToken, pCommand->pwszCmdToken);
+        LoadStringW(pContext->hModule, pCommand->dwShortCmdHelpToken, szBuffer2, _countof(szBuffer2));
 
         ConPrintf(StdOut, L"%-15s - %s", szBuffer1, szBuffer2);
-        pCommand = pCommand->pNext;
     }
 }
 
@@ -130,27 +136,45 @@ PrintContext(
     PrintCurrentContextHeader(pContext);
 
     /* Count short commands */
-    pCommand = pContext->pCommandListHead;
-    while (pCommand != NULL)
+    for (pCommand = pContext->pCommandListHead; pCommand != NULL; pCommand = pCommand->pNext)
     {
+        if (!CheckOsVersion(pCommand->pfnOsVersionCheck))
+            continue;
+
+        if (((pCommand->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pCommand->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pCommand->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         dwCount++;
-        pCommand = pCommand->pNext;
     }
 
     /* Count short groups */
-    pGroup = pContext->pGroupListHead;
-    while (pGroup != NULL)
+    for (pGroup = pContext->pGroupListHead; pGroup != NULL; pGroup = pGroup->pNext)
     {
+        if (!CheckOsVersion(pGroup->pfnOsVersionCheck))
+            continue;
+
+        if (((pGroup->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pGroup->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pGroup->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         dwCount++;
-        pGroup = pGroup->pNext;
     }
 
     /* Count short subcontexts */
-    pSubContext = pContext->pSubContextHead;
-    while (pSubContext != NULL)
+    for (pSubContext = pContext->pSubContextHead; pSubContext != NULL; pSubContext = pSubContext->pNext)
     {
+        if (!CheckOsVersion(pSubContext->pfnOsVersionCheck))
+            continue;
+
+        if (((pSubContext->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pSubContext->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pSubContext->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         dwCount++;
-        pSubContext = pSubContext->pNext;
     }
 
     pHelpArray = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwCount * sizeof(HELP_ENTRY));
@@ -160,38 +184,56 @@ PrintContext(
     dwIndex = 0;
 
     /* Add short commands */
-    pCommand = pContext->pCommandListHead;
-    while (pCommand != NULL)
+    for (pCommand = pContext->pCommandListHead; pCommand != NULL; pCommand = pCommand->pNext)
     {
+        if (!CheckOsVersion(pCommand->pfnOsVersionCheck))
+            continue;
+
+        if (((pCommand->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pCommand->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pCommand->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         pHelpArray[dwIndex].Type = Command;
         pHelpArray[dwIndex].pszCommand = pCommand->pwszCmdToken;
         pHelpArray[dwIndex].dwHelpId = pCommand->dwShortCmdHelpToken;
-//        pHelpArray[dwIndex].Pointer.pCommand = pCommand;
+        pHelpArray[dwIndex].Pointer.pCommand = pCommand;
         dwIndex++;
-        pCommand = pCommand->pNext;
     }
 
     /* Add short groups */
-    pGroup = pContext->pGroupListHead;
-    while (pGroup != NULL)
+    for (pGroup = pContext->pGroupListHead; pGroup != NULL; pGroup = pGroup->pNext)
     {
+        if (!CheckOsVersion(pGroup->pfnOsVersionCheck))
+            continue;
+
+        if (((pGroup->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pGroup->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pGroup->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         pHelpArray[dwIndex].Type = Group;
         pHelpArray[dwIndex].pszCommand = pGroup->pwszCmdGroupToken;
         pHelpArray[dwIndex].dwHelpId = pGroup->dwShortCmdHelpToken;
-//        pHelpArray[dwIndex].Pointer.pGroup = pGroup;
+        pHelpArray[dwIndex].Pointer.pGroup = pGroup;
         dwIndex++;
-        pGroup = pGroup->pNext;
     }
 
     /* Count short subcontexts */
-    pSubContext = pContext->pSubContextHead;
-    while (pSubContext != NULL)
+    for (pSubContext = pContext->pSubContextHead; pSubContext != NULL; pSubContext = pSubContext->pNext)
     {
+        if (!CheckOsVersion(pSubContext->pfnOsVersionCheck))
+            continue;
+
+        if (((pSubContext->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pSubContext->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pSubContext->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         pHelpArray[dwIndex].Type = SubContext;
         pHelpArray[dwIndex].pszCommand = pSubContext->pszContextName;
         pHelpArray[dwIndex].Pointer.pSubContext = pSubContext;
         dwIndex++;
-        pSubContext = pSubContext->pNext;
     }
 
     qsort(pHelpArray, dwCount, sizeof(HELP_ENTRY), HelpCompare);
@@ -201,14 +243,19 @@ PrintContext(
         switch (pHelpArray[dwIndex].Type)
         {
             case Command:
+                if (LoadStringW(pContext->hModule, pHelpArray[dwIndex].dwHelpId, szBuffer, _countof(szBuffer)) == 0)
+                    szBuffer[0] = UNICODE_NULL;
+                ConPrintf(StdOut, L"%-15s - %s", pHelpArray[dwIndex].pszCommand, szBuffer);
+                break;
+
             case Group:
-                if (LoadStringW(pContext->hModule, pHelpArray[dwIndex].dwHelpId, szBuffer, SMALL_HELP_BUFFER_SIZE) == 0)
+                if (LoadStringW(pContext->hModule, pHelpArray[dwIndex].dwHelpId, szBuffer, _countof(szBuffer)) == 0)
                     szBuffer[0] = UNICODE_NULL;
                 ConPrintf(StdOut, L"%-15s - %s", pHelpArray[dwIndex].pszCommand, szBuffer);
                 break;
 
             case SubContext:
-                GetContextFullName(pHelpArray[dwIndex].Pointer.pSubContext, szBuffer, SMALL_HELP_BUFFER_SIZE);
+                GetContextFullName(pHelpArray[dwIndex].Pointer.pSubContext, szBuffer, _countof(szBuffer));
                 ConPrintf(StdOut, L"%-15s - Changes to the \"%s\" context.\n", pHelpArray[dwIndex].pszCommand, szBuffer);
                 break;
         }
@@ -241,11 +288,17 @@ PrintSubcontexts(
         return;
 
     dwCount = 0;
-    pSubContext = pContext->pSubContextHead;
-    while (pSubContext != NULL)
+    for (pSubContext = pContext->pSubContextHead; pSubContext != NULL; pSubContext = pSubContext->pNext)
     {
+        if (!CheckOsVersion(pSubContext->pfnOsVersionCheck))
+            continue;
+
+        if (((pSubContext->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pSubContext->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pSubContext->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         dwCount++;
-        pSubContext = pSubContext->pNext;
     }
 
     pSubContextArray = HeapAlloc(GetProcessHeap(), 0, dwCount * sizeof(PCONTEXT_ENTRY));
@@ -253,12 +306,18 @@ PrintSubcontexts(
         return;
 
     dwIndex = 0;
-    pSubContext = pContext->pSubContextHead;
-    while (pSubContext != NULL)
+    for (pSubContext = pContext->pSubContextHead; pSubContext != NULL; pSubContext = pSubContext->pNext)
     {
+        if (!CheckOsVersion(pSubContext->pfnOsVersionCheck))
+            continue;
+
+        if (((pSubContext->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+            ((pSubContext->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+            (pSubContext->dwFlags & CMD_FLAG_HIDDEN))
+            continue;
+
         pSubContextArray[dwIndex] = pSubContext;
         dwIndex++;
-        pSubContext = pSubContext->pNext;
     }
   
     qsort(pSubContextArray, dwCount, sizeof(PCONTEXT_ENTRY), SubContextCompare);
@@ -280,55 +339,45 @@ PrintCommandHelp(
     _In_ PCOMMAND_GROUP pGroup,
     _In_ PCOMMAND_ENTRY pCommand)
 {
-    LPWSTR pszInBuffer = NULL, pszOutBuffer = NULL, pszCommandBuffer = NULL;
+    LPWSTR pszCommandBuffer;
     DWORD_PTR Args[2];
+    DWORD dwLength = 1;
 
     DPRINT("PrintCommandHelp(%p %p %p)\n", pContext, pGroup, pCommand);
 
-    pszInBuffer = HeapAlloc(GetProcessHeap(), 0, HUGE_HELP_BUFFER_SIZE * sizeof(WCHAR));
-    if (pszInBuffer == NULL)
-        goto done;
+    if (!CheckOsVersion(pCommand->pfnOsVersionCheck))
+        return;
 
-    pszOutBuffer = HeapAlloc(GetProcessHeap(), 0, HUGE_HELP_BUFFER_SIZE * sizeof(WCHAR));
-    if (pszOutBuffer == NULL)
-        goto done;
+    if (((pCommand->dwFlags & CMD_FLAG_LOCAL) && (g_pszMachine != NULL)) ||
+        ((pCommand->dwFlags & CMD_FLAG_ONLINE) && (g_bOnline == FALSE)) ||
+        (pCommand->dwFlags & CMD_FLAG_HIDDEN))
+        return;
 
-    pszCommandBuffer = HeapAlloc(GetProcessHeap(), 0, TINY_HELP_BUFFER_SIZE * sizeof(WCHAR));
-    if (pszCommandBuffer == NULL)
-        goto done;
-
-    wcscpy(pszCommandBuffer, pCommand->pwszCmdToken);
+    dwLength += wcslen(pCommand->pwszCmdToken);
     if (pGroup)
-    {
-        wcscat(pszCommandBuffer, L" ");
-        wcscat(pszCommandBuffer, pGroup->pwszCmdGroupToken);
-    }
+        dwLength += (wcslen(pGroup->pwszCmdGroupToken) + 1);
 
-    LoadStringW(pContext->hModule, pCommand->dwCmdHlpToken, pszInBuffer, HUGE_HELP_BUFFER_SIZE);
+    pszCommandBuffer = HeapAlloc(GetProcessHeap(), 0, dwLength * sizeof(WCHAR));
+    if (pszCommandBuffer == NULL)
+        return;
+
+    _swprintf(pszCommandBuffer, L"%s%s%s",
+              (pGroup) ? pGroup->pwszCmdGroupToken : L"",
+              (pGroup) ? L" " : L"",
+              pCommand->pwszCmdToken);
 
     Args[0] = (DWORD_PTR)pszCommandBuffer;
     Args[1] = (DWORD_PTR)NULL;
 
-    FormatMessageW(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
-                   pszInBuffer,
-                   0,
-                   0,
-                   pszOutBuffer,
-                   HUGE_HELP_BUFFER_SIZE,
-                   (va_list *)&Args);
-
-    ConPuts(StdOut, pszOutBuffer);
+    ConResMsgPrintfExV(StdOut,
+                       pContext->hModule,
+                       FORMAT_MESSAGE_ARGUMENT_ARRAY,
+                       pCommand->dwCmdHlpToken,
+                       LANG_USER_DEFAULT,
+                       (va_list *)&Args);
     ConPuts(StdOut, L"\n");
 
-done:
-    if (pszCommandBuffer)
-        HeapFree(GetProcessHeap(), 0, pszCommandBuffer);
-
-    if (pszOutBuffer)
-        HeapFree(GetProcessHeap(), 0, pszOutBuffer);
-
-    if (pszInBuffer)
-        HeapFree(GetProcessHeap(), 0, pszInBuffer);
+    HeapFree(GetProcessHeap(), 0, pszCommandBuffer);
 }
 
 

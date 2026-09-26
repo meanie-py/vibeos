@@ -6,6 +6,9 @@ use crate::floatobj::*;
 use crate::surface::gajBitsPerFormat;
 use crate::dib_helpers::abs;
 
+// File-local, matching copy.rs / safe_user_io.rs in this crate.
+const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as NTSTATUS;
+
 // ---- pool tags + small helpers ----
 // C: win32ss/user/ntuser/tags.h `#define TAG_DIB ' BID'` (big-endian).
 const TAG_DIB: u32 = u32::from_be_bytes(*b" BID");
@@ -1816,12 +1819,26 @@ pub unsafe extern "system" fn NtGdiCreateDIBSection(
         core::mem::size_of::<DWORD>(),
         1,
     );
+    // CAPTURE biSize rather than loading it inline. The probe above validated
+    // the RANGE of this field and not its MAPPING -- it cannot touch-test under
+    // DUMMY_PSEH -- so `(*bmi).bmiHeader.biSize` was a raw load of a user
+    // pointer with no handler behind it. That exact instruction is
+    // win32k.sys+0xFAD1A (NtGdiCreateDIBSection+0x4A, `movl (%r9), %r10d`),
+    // where `win32u_apitest NtGdiCreateDIBSection` BUGCHECKs 0x1E.
+    // Reading it once into a local is also what stops the size being re-read
+    // from user memory after it has been validated.
+    let mut biSize: DWORD = 0;
+    if NT_SUCCESS(Status)
+        && !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(biSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*bmi).bmiHeader.biSize) as *const core::ffi::c_void,
+            core::mem::size_of::<DWORD>(),
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
+    }
     if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(
-            bmi as *const core::ffi::c_void,
-            (*bmi).bmiHeader.biSize as usize,
-            1,
-        );
+        Status = SafeProbeForRead(bmi as *const core::ffi::c_void, biSize as usize, 1);
     }
     if NT_SUCCESS(Status) {
         Status = SafeProbeForRead(

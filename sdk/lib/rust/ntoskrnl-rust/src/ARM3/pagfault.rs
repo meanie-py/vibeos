@@ -30,41 +30,98 @@ const HYDRA_PROCESS: PEPROCESS = 1 as PEPROCESS;
 #[cfg(feature = "MI_TRACE_PFNS")]
 static mut UserPdeFault: BOOLEAN = 0;
 
-unsafe fn MiCheckForUserStackOverflow(
-    Address: PVOID,
-    TrapInformation: PVOID,
-) -> NTSTATUS {
-    let CurrentThread = PsGetCurrentThread();
-    let Teb: PTEB = (*(CurrentThread as *mut _ETHREAD)).Tcb.Teb as PTEB;
-    let mut StackBase: PVOID;
-    let mut DeallocationStack: PVOID;
-    let mut NextStackAddress: PVOID;
-    let mut GuaranteedSize: SIZE_T;
+/// Faulting PC out of a trap frame, or 0 when there is none.
+///
+/// The only reason this exists is the stack-runaway report below: a thread that
+/// eats its whole stack is identified by WHERE it was when it did, and the trap
+/// frame is the only thing at this depth that knows.
+/// The sentinel several Mm paths pass INSTEAD of a trap frame, to tell the
+/// fault handler they are running unlocked (mdlsup.rs, virtual.rs). It is not
+/// a pointer and must never be dereferenced -- reading `.Rip` off it yields a
+/// plausible-looking address, which is worse than none: it cost this probe its
+/// first set of results, where 2 of 4 reported "PCs" were garbage and one was
+/// page-aligned across three samples.
+///
+/// Spelled as a u64 cast to usize, exactly as the CALLERS spell it
+/// (`0xBADBADA3BADBADA3u64 as PVOID`), so the value truncates the same way they
+/// do and the comparison holds on both widths. Writing the literal directly as
+/// a `usize` does not merely mismatch on i386 -- it does not COMPILE there
+/// ("literal out of range for usize"), which is how the merge queue caught it
+/// after a green `check`: `check` does not build.
+const MI_TRAP_INFO_UNLOCKED: usize = 0xBADBADA3BADBADA3u64 as usize;
 
-    if false /* elided _ETHREAD bitfield */ {
-        return STATUS_GUARD_PAGE_VIOLATION;
+#[inline]
+unsafe fn MiFaultingPc(TrapInformation: PVOID) -> ULONG_PTR {
+    if TrapInformation.is_null() || TrapInformation as usize == MI_TRAP_INFO_UNLOCKED {
+        return 0;
+    }
+    let tf = TrapInformation as PKTRAP_FRAME;
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*tf).Rip as ULONG_PTR
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (*tf).Pc as ULONG_PTR
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        (*tf).Eip as ULONG_PTR
+    }
+}
+
+/// Code selector out of a trap frame, or 0. A sane amd64 value is 0x33 (user)
+/// or 0x10 (kernel); anything else convicts the offsets rather than the PC.
+#[inline]
+unsafe fn MiFaultingCs(TrapInformation: PVOID) -> u16 {
+    if TrapInformation.is_null() || TrapInformation as usize == MI_TRAP_INFO_UNLOCKED {
+        return 0;
+    }
+    let tf = TrapInformation as PKTRAP_FRAME;
+    #[cfg(target_arch = "x86_64")]
+    {
+        (*tf).SegCs
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = tf;
+        0
+    }
+}
+
+/// Outcome of trying to grow ONE stack descriptor.
+///
+/// `new_limit` is the `NtTib.StackLimit` the caller must publish, in whichever
+/// TEB owns the descriptor that matched — that is the whole reason this is
+/// split out rather than writing the TEB inline.
+struct MiStackGrowth {
+    status: NTSTATUS,
+    new_limit: Option<ULONG_PTR>,
+}
+
+/// Faithful `MiCheckForUserStackOverflow` body for a single [dealloc, base)
+/// stack, returning `None` when `Address` is not in this stack at all so the
+/// caller can try another descriptor.
+unsafe fn MiGrowOneUserStack(
+    Address: ULONG_PTR,
+    StackBase: ULONG_PTR,
+    DeallocationStack: ULONG_PTR,
+) -> Option<MiStackGrowth> {
+    if StackBase == 0 || DeallocationStack == 0 || DeallocationStack >= StackBase {
+        return None;
+    }
+    if Address >= StackBase || Address < DeallocationStack {
+        return None;
     }
 
-    if KeIsAttachedProcess() != 0 {
-        return STATUS_GUARD_PAGE_VIOLATION;
-    }
+    // GuaranteedStackBytes is asserted zero upstream; one page is the guarantee.
+    let mut GuaranteedSize: SIZE_T = PAGE_SIZE as SIZE_T;
+    let mut NextStackAddress: PVOID = (PAGE_ALIGN(Address) - GuaranteedSize) as PVOID;
 
-    StackBase = (*Teb).NtTib.StackBase;
-    DeallocationStack = (*Teb).DeallocationStack;
-    GuaranteedSize = ((*Teb).GuaranteedStackBytes) as usize;
+    if ((NextStackAddress as ULONG_PTR) - PAGE_SIZE as ULONG_PTR) <= DeallocationStack {
+        NextStackAddress = (PAGE_ALIGN(DeallocationStack) + GuaranteedSize) as PVOID;
 
-    ASSERT!(GuaranteedSize == 0);
-    GuaranteedSize = PAGE_SIZE as SIZE_T;
-
-    if (Address >= StackBase) || (Address < DeallocationStack) {
-        return STATUS_GUARD_PAGE_VIOLATION;
-    }
-
-    NextStackAddress = (PAGE_ALIGN(Address as ULONG_PTR) - GuaranteedSize) as PVOID;
-
-    if ((NextStackAddress as ULONG_PTR) - PAGE_SIZE as ULONG_PTR) <= (DeallocationStack as ULONG_PTR) {
-        NextStackAddress = (PAGE_ALIGN(DeallocationStack as ULONG_PTR) + GuaranteedSize) as PVOID;
-
+        crate::dbg_print!(b"[MM] Close to our death...\n\0");
         let Status = ZwAllocateVirtualMemory(
             NtCurrentProcess(),
             &mut NextStackAddress,
@@ -73,16 +130,21 @@ unsafe fn MiCheckForUserStackOverflow(
             MEM_COMMIT,
             PAGE_READWRITE,
         );
-        if Status >= 0 {
-            (*Teb).NtTib.StackLimit = NextStackAddress;
+        if Status < 0 {
+            crate::dbg_print!(b"[MM] Failed to allocate memory: %lx\n\0", Status as u32);
         }
-
-        return STATUS_STACK_OVERFLOW;
+        return Some(MiStackGrowth {
+            status: STATUS_STACK_OVERFLOW,
+            new_limit: if Status >= 0 {
+                Some(NextStackAddress as ULONG_PTR)
+            } else {
+                None
+            },
+        });
     }
 
     // ASSERT: NtGlobalFlag FLG_DISABLE_STACK_EXTENSION not set
-
-    (*Teb).NtTib.StackLimit = ((NextStackAddress as ULONG_PTR) + GuaranteedSize) as PVOID;
+    let PublishedLimit = (NextStackAddress as ULONG_PTR) + GuaranteedSize;
 
     let Status = ZwAllocateVirtualMemory(
         NtCurrentProcess(),
@@ -93,11 +155,125 @@ unsafe fn MiCheckForUserStackOverflow(
         PAGE_READWRITE | 0x100,
     );
     if (Status >= 0) || (Status == STATUS_ALREADY_COMMITTED) {
-        return STATUS_PAGE_FAULT_GUARD_PAGE;
+        return Some(MiStackGrowth {
+            status: STATUS_PAGE_FAULT_GUARD_PAGE,
+            new_limit: Some(PublishedLimit),
+        });
     }
 
+    crate::dbg_print!(b"[MM] Guard page failure: %lx\n\0", Status as u32);
     ASSERT!(false);
-    STATUS_STACK_OVERFLOW
+    Some(MiStackGrowth {
+        status: STATUS_STACK_OVERFLOW,
+        new_limit: Some(PublishedLimit),
+    })
+}
+
+unsafe fn MiCheckForUserStackOverflow(
+    Address: PVOID,
+    TrapInformation: PVOID,
+) -> NTSTATUS {
+    let CurrentThread = PsGetCurrentThread();
+    let Teb: PTEB = (*(CurrentThread as *mut _ETHREAD)).Tcb.Teb as PTEB;
+
+    if false /* elided _ETHREAD bitfield */ {
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    if KeIsAttachedProcess() != 0 {
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+    if Teb.is_null() {
+        return STATUS_GUARD_PAGE_VIOLATION;
+    }
+
+    // Kept from the original body: the guaranteed-bytes path is unimplemented,
+    // and this assert is what says so out loud. MiGrowOneUserStack hardcodes one
+    // page as the guarantee, which is only correct while this holds.
+    ASSERT!((*Teb).GuaranteedStackBytes == 0);
+
+    let Addr = Address as ULONG_PTR;
+
+    // The NATIVE stack first, and unconditionally. A WoW64 thread owns TWO
+    // stacks and the 64-bit one is the busier of them -- it carries the whole
+    // loader, every thunk and every unwind -- so anything that makes this test
+    // conditional breaks host growth for every guest process. Redirecting it
+    // wholesale to TEB32 did exactly that: 0 PASS / 16 EXITED, dying in
+    // RtlpUnwindInternal, which is the 64-bit unwinder failing to get a frame.
+    if let Some(g) = MiGrowOneUserStack(
+        Addr,
+        (*Teb).NtTib.StackBase as ULONG_PTR,
+        (*Teb).DeallocationStack as ULONG_PTR,
+    ) {
+        if let Some(limit) = g.new_limit {
+            (*Teb).NtTib.StackLimit = limit as PVOID;
+
+            // A thread that has eaten HALF its stack reservation is a runaway
+            // until proven otherwise, and by the time it faults at the bottom
+            // the evidence is gone -- the PC there is whoever drew the short
+            // straw, not the cause. Report the midpoint crossing instead, with
+            // the faulting PC, which names the code doing the consuming.
+            //
+            // Stateless one-shot: growth is monotonic and page-at-a-time, so
+            // the midpoint is crossed exactly once per thread.
+            let base = (*Teb).NtTib.StackBase as ULONG_PTR;
+            let dealloc = (*Teb).DeallocationStack as ULONG_PTR;
+            if base > dealloc {
+                let midpoint = dealloc + (base - dealloc) / 2;
+                if limit <= midpoint && limit + PAGE_SIZE as ULONG_PTR > midpoint {
+                    // TrapInformation is printed beside the PC on purpose: a
+                    // trap frame lives on the KERNEL STACK, so if the "PC"
+                    // tracks the frame pointer then MiFaultingPc is reading
+                    // the wrong displacement and the address is furniture, not
+                    // a call site. Two of the values this probe reported look
+                    // exactly like that -- page-aligned and repeated -- and
+                    // there is no way to tell from the PC alone.
+                    crate::dbg_print!(
+                        b"[MM] stack runaway: thread ate half its stack (base=%p limit=%p dealloc=%p pc=%p tf=%p cs=%lx)\n\0",
+                        base,
+                        limit,
+                        dealloc,
+                        MiFaultingPc(TrapInformation),
+                        TrapInformation as usize,
+                        MiFaultingCs(TrapInformation) as u32,
+                    );
+                }
+            }
+        }
+        return g.status;
+    }
+
+    // Not the native stack. On a WoW64 thread the fault may still be the GUEST
+    // stack, which only TEB32 describes -- TEB64's bounds never cover it, so
+    // the test above rejects every guest stack-growth fault and the guest dies
+    // on its first page of growth. Measured: eventvwr's worker needed the page
+    // at 0x1fae000 with TEB64 covering [0x1fb0000, 0x20b0000).
+    #[cfg(not(target_arch = "x86"))]
+    if let Some(teb32) = ntkrnl_sys::wow64::teb32_of_current(Teb) {
+        if let Some(g) = MiGrowOneUserStack(
+            Addr,
+            (*teb32).NtTib.StackBase as ULONG_PTR,
+            (*teb32).DeallocationStack as ULONG_PTR,
+        ) {
+            if let Some(limit) = g.new_limit {
+                (*teb32).NtTib.StackLimit = limit as u32;
+            }
+            return g.status;
+        }
+    }
+
+    // The C prints this whenever the fault is not in the stack at all. Here it
+    // belongs at the END rather than at the first bounds test, because a WoW64
+    // thread has TWO descriptors and missing the native one is the NORMAL way
+    // a guest stack fault reaches TEB32 -- printing there would fire on every
+    // healthy guest stack growth.
+    crate::dbg_print!(
+        b"[MM] Faulting address outside of stack bounds. Address=%p, StackBase=%p, DeallocationStack=%p\n\0",
+        Addr,
+        (*Teb).NtTib.StackBase as usize,
+        (*Teb).DeallocationStack as usize,
+    );
+    STATUS_GUARD_PAGE_VIOLATION
 }
 
 #[inline]
@@ -1409,6 +1585,28 @@ unsafe fn arm64_dump_fault_stack(Address: PVOID, TrapInformation: PVOID) {
         );
     }
     ARM64_UART_TRACE_HEX(b"[KSTACK] FaultVA=\0".as_ptr(), Address as ULONG_PTR);
+    // The faulting PC/LR, so a bugcheck names the code rather than only the frame
+    // address (P3). A 0x50 at smss startup otherwise gave no symbol at all.
+    if !TrapInformation.is_null() {
+        let tf = TrapInformation as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
+        ARM64_UART_TRACE_HEX(b"[KSTACK] FaultPC=\0".as_ptr(), (*tf).Pc as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[KSTACK] FaultLR=\0".as_ptr(), (*tf).Lr as ULONG_PTR);
+        // Name the module each lives in: a boot driver's address is otherwise
+        // unsymbolizable from the log (no load bases are printed).
+        for (tag, pc) in [(b"PC\0", (*tf).Pc as usize), (b"LR\0", (*tf).Lr as usize)] {
+            let mut entry: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+            let mut in_kernel: u8 = 0;
+            let base = crate::ke::bug::KiPcToFileHeader(pc as _, &mut entry as *mut _ as _, 0, &mut in_kernel);
+            if !base.is_null() && !entry.is_null() {
+                crate::dbg_print!(
+                    b"[KSTACK] Fault%s in %wZ+0x%x\n\0",
+                    tag.as_ptr(),
+                    core::ptr::addr_of!((*entry).BaseDllName),
+                    (pc - (*entry).DllBase as usize) as u32,
+                );
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]

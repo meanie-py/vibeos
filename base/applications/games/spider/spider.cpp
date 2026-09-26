@@ -25,7 +25,7 @@ TCHAR MsgWin[128];
 TCHAR MsgDeal[128];
 DWORD dwDifficulty;
 
-CardWindow SpiderWnd;
+CARDWINDOW *SpiderWnd;
 
 typedef struct _CardBack
 {
@@ -117,7 +117,14 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE hPrev, LPTSTR szCmdLine, int iCm
 
     srand((unsigned)GetTickCount());
 
-    /* InitCardLib(); */
+    /* Load the card artwork out of cards.dll. Nothing below here can draw
+       without it, so a failure is fatal rather than a blank table. */
+    if (!CardLib_Init())
+    {
+        MessageBox(NULL, _T("Failed to load the card images from cards.dll."),
+                   szAppName, MB_OK | MB_ICONERROR);
+        return 1;
+    }
 
     /* Construct the path to our help file */
     MakePath(szHelpPath, MAX_PATH, _T(".hlp"));
@@ -199,11 +206,11 @@ LRESULT CALLBACK CardImageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                        2,
                        CARDBACK_OPTIONS_WIDTH,
                        CARDBACK_OPTIONS_HEIGHT,
-                       __hdcCardBitmaps,
-                       pCardBack->hdcNum * __cardwidth,
+                       CardLib_CardBitmapsDC(),
+                       pCardBack->hdcNum * CardLib_CardWidth(),
                        0,
-                       __cardwidth,
-                       __cardheight,
+                       CardLib_CardWidth(),
+                       CardLib_CardHeight(),
                        SRCCOPY);
 
             SelectObject(hdc, hOldPen);
@@ -298,8 +305,8 @@ VOID ShowDeckOptionsDlg(HWND hwnd)
 
     if ((cardBack = DialogBox(hInstance, MAKEINTRESOURCE(IDD_CARDBACK), hwnd, CardBackDlgProc)))
     {
-        SpiderWnd.SetBackCardIdx(CARDBACK_RES_START + (cardBack - 1));
-        SpiderWnd.Redraw();
+        CardWindow_SetBackCardIdx(SpiderWnd, CARDBACK_RES_START + (cardBack - 1));
+        CardWindow_Redraw(SpiderWnd);
     }
 }
 
@@ -314,7 +321,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             // For now, the Help dialog is disabled because of lacking of HTML Help support
             EnableMenuItem(GetMenu(hwnd), IDM_HELP_CONTENTS, MF_BYCOMMAND | MF_GRAYED);
 
-            SpiderWnd.Create(hwnd, 0, WS_CHILD | WS_VISIBLE, 0, 0, 100, 100);
+            SpiderWnd = CardWindow_Create(hwnd, 0, WS_CHILD | WS_VISIBLE, 0, 0, 100, 100);
             dwDifficulty = IDC_DIF_ONECOLOR;
             CreateSpider();
 
@@ -333,7 +340,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             nWidth  = LOWORD(lParam);
             nHeight = HIWORD(lParam);
 
-            MoveWindow(SpiderWnd, 0, 0, nWidth, nHeight, TRUE);
+            MoveWindow(CardWindow_GetHwnd(SpiderWnd), 0, 0, nWidth, nHeight, TRUE);
             return 0;
 
         case WM_GETMINMAXINFO:
@@ -341,11 +348,11 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             MINMAXINFO *mmi;
 
             mmi = (MINMAXINFO *)lParam;
-            mmi->ptMinTrackSize.x = NUM_STACKS * __cardwidth + (NUM_STACKS + 3) * X_BORDER + 12; // Border left and right of 6px
+            mmi->ptMinTrackSize.x = NUM_STACKS * CardLib_CardWidth() + (NUM_STACKS + 3) * X_BORDER + 12; // Border left and right of 6px
             mmi->ptMinTrackSize.y = GetSystemMetrics(SM_CYCAPTION) +
                                     GetSystemMetrics(SM_CYMENU) +
                                     2 * Y_BORDER +
-                                    3 * __cardheight +
+                                    3 * CardLib_CardHeight() +
                                     6 * yRowStackCardOffset;
             return 0;
         }

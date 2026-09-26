@@ -216,6 +216,7 @@ class SerialClient:
                 self._pos = start + idx + len(marker)
                 return window[: idx + len(marker)]
             if dead:
+                self.partial_output = window
                 raise ConnectionError("Serial socket closed")
             if time.monotonic() >= deadline:
                 self.partial_output = window

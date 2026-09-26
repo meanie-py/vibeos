@@ -3,7 +3,7 @@ use core::ffi::c_void;
 // user32-internal cohab symbols (UserApiHook trio, LoadUserApiHook, guah,
 // gfServerProcess) live in the surviving C objects / internal.rs.
 use crate::internal::{
-    BeginIfHookedUserApiHook, EndUserApiHook, LoadUserApiHook, gpsi_perusr, guah,
+    BeginIfHookedUserApiHook, EndUserApiHook, LoadUserApiHook, guah,
 };
 
 // RGB(r,g,b) is a wingdi.h macro, not a function — reimplement inline.
@@ -569,7 +569,7 @@ unsafe fn UITOOLS_DrawCheckedRect(dc: HDC, rect: LPRECT) {
     if GetSysColor(COLOR_BTNHIGHLIGHT as i32) == RGB(255, 255, 255) {
         FillRect(dc, rect, GetSysColorBrush(COLOR_BTNFACE as i32));
         let bg = SetBkColor(dc, RGB(255, 255, 255));
-        let hbsave = SelectObject(dc, if !gpsi.is_null() { (*gpsi_perusr()).hbrGray as HGDIOBJ } else { core::ptr::null_mut() }) as HBRUSH;
+        let hbsave = SelectObject(dc, if !gpsi.is_null() { crate::wow64::psi::hbr_gray() as HGDIOBJ } else { core::ptr::null_mut() }) as HBRUSH;
         PatBlt(dc, (*rect).left, (*rect).top, (*rect).right - (*rect).left, (*rect).bottom - (*rect).top, 0x00FA0089);
         SelectObject(dc, hbsave as HGDIOBJ);
         SetBkColor(dc, bg);
@@ -1119,7 +1119,7 @@ unsafe fn IntGrayString(
                 break 'cleanup;
             }
 
-            hbsave = SelectObject(MemDC, if !gpsi.is_null() { (*gpsi_perusr()).hbrGray as HGDIOBJ } else { core::ptr::null_mut() }) as HBRUSH;
+            hbsave = SelectObject(MemDC, if !gpsi.is_null() { crate::wow64::psi::hbr_gray() as HGDIOBJ } else { core::ptr::null_mut() }) as HBRUSH;
             PatBlt(MemDC, 0, 0, nWidth, nHeight, 0x000A0329);
             SelectObject(MemDC, hbsave as HGDIOBJ);
         }
@@ -1346,7 +1346,7 @@ unsafe fn IntDrawState(hdc: HDC, mut hbr: HBRUSH, func: DRAWSTATEPROC, lp: LPARA
 
         if (flags & DSS_UNION) != 0
         {
-            let gray = if !gpsi.is_null() { (*gpsi_perusr()).hbrGray } else { 0 as HBRUSH };
+            let gray = if !gpsi.is_null() { crate::wow64::psi::hbr_gray() } else { 0 as HBRUSH };
             hbsave = SelectObject(memdc, gray as HGDIOBJ) as HBRUSH;
             if hbsave.is_null() { break 'cleanup; }
             tmp = PatBlt(memdc, 0, 0, cx, cy, 0x00FA0089);
@@ -1590,7 +1590,7 @@ pub unsafe extern "system" fn DrawFocusRect(hdc: HDC, rect: *const RECT) -> i32 
     );
 
     let brush = if !gpsi.is_null() {
-        (*gpsi_perusr()).hbrGray as HGDIOBJ
+        crate::wow64::psi::hbr_gray() as HGDIOBJ
     } else {
         core::ptr::null_mut()
     };

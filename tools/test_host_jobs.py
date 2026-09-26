@@ -107,6 +107,9 @@ def test_environment_preserves_cache_and_reports_explicit_policy(runner, tmp_pat
     from tests.qemu.cli import buildpolicy, hostlock
 
     monkeypatch.setattr(hostlock, "HOSTLOCK_DIR", tmp_path)
+    # Durable policy config now lives apart from the ephemeral lock tree; without this
+    # the test reads the real host policy and asserts against this box's capacity.
+    monkeypatch.setattr(hostlock, "POLICY_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOSTLOCK_DIR", str(tmp_path))
     (tmp_path / "build-policy.json").write_text(json.dumps(buildpolicy.TRIAL))
     env = hostjobs.environment(

@@ -17,9 +17,8 @@ list(APPEND SOURCE
     # tui.c      — replaced by Rust (sdk/lib/rust/msgina-rust/src/tui.rs)
     # utils.c    — replaced by Rust (sdk/lib/rust/msgina-rust/src/utils.rs)
     #
-    # NOT a translation reverted to C: rust_varargs_shim.c holds the `va_start` for strsafe.h's
-    # two variadic entry points, which stable Rust can declare but not define. See its header.
-    rust_varargs_shim.c
+    # rust_varargs_shim.c is no longer built: strsafe's printf family is strsafe-rust macros
+    # that CALL msvcrt's variadic _snwprintf (retired 2026-09-25; file stays on disk, inert).
     )
 
 list(APPEND PCH_SKIP_SOURCE

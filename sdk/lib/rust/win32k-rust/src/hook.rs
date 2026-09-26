@@ -8,6 +8,7 @@ use ntkrnl_sys::ob::{ObReferenceObject, ObDereferenceObject};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 const UNICODE_NULL: u16 = 0;
 
@@ -801,14 +802,12 @@ unsafe fn co_IntCallDebugHook_impl(
             core::mem::size_of::<DEBUGHOOKINFO>() as ULONG as usize,
             1,
         );
-        if !NT_SUCCESS(Status) {
+        // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+        // takes the existing bail-out below instead of faulting unhandled.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(core::ptr::addr_of_mut!(Debug) as PVOID, lParam as PVOID, core::mem::size_of::<DEBUGHOOKINFO>())
+        {
             BadChk = 1;
-        } else {
-            RtlCopyMemory(
-                core::ptr::addr_of_mut!(Debug) as PVOID,
-                lParam as PVOID,
-                core::mem::size_of::<DEBUGHOOKINFO>(),
-            );
         }
 
         if BadChk != 0 {
@@ -862,10 +861,12 @@ unsafe fn co_IntCallDebugHook_impl(
 
     if !HooklParam.is_null() {
         Status = SafeProbeForRead(Debug.lParam as PVOID, Size as usize, 1);
-        if !NT_SUCCESS(Status) {
+        // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+        // takes the existing bail-out below instead of faulting unhandled.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(HooklParam, Debug.lParam as PVOID, Size as usize)
+        {
             BadChk = 1;
-        } else {
-            RtlCopyMemory(HooklParam, Debug.lParam as PVOID, Size as usize);
         }
 
         if BadChk != 0 {
@@ -907,14 +908,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                 core::mem::size_of::<MOUSEHOOKSTRUCTEX>(),
                 1,
             );
-            if !NT_SUCCESS(Status) {
+            // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+            // takes the existing bail-out below instead of faulting unhandled.
+            if !NT_SUCCESS(Status)
+                || !crate::copy::capture_from_user(&mut Mouse as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<MOUSEHOOKSTRUCTEX>())
+            {
                 BadChk = 1;
-            } else {
-                RtlCopyMemory(
-                    &mut Mouse as *mut _ as PVOID,
-                    lParam as PVOID,
-                    core::mem::size_of::<MOUSEHOOKSTRUCTEX>(),
-                );
             }
 
             if BadChk != 0 {
@@ -939,14 +938,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                     core::mem::size_of::<MSLLHOOKSTRUCT>(),
                     1,
                 );
-                if !NT_SUCCESS(Status) {
+                // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                // takes the existing bail-out below instead of faulting unhandled.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::capture_from_user(&mut Mouse as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<MSLLHOOKSTRUCT>())
+                {
                     BadChk = 1;
-                } else {
-                    RtlCopyMemory(
-                        &mut Mouse as *mut _ as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<MSLLHOOKSTRUCT>(),
-                    );
                 }
 
                 if BadChk != 0 {
@@ -969,14 +966,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                     core::mem::size_of::<KBDLLHOOKSTRUCT>(),
                     1,
                 );
-                if !NT_SUCCESS(Status) {
+                // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                // takes the existing bail-out below instead of faulting unhandled.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::capture_from_user(&mut Keyboard as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<KBDLLHOOKSTRUCT>())
+                {
                     BadChk = 1;
-                } else {
-                    RtlCopyMemory(
-                        &mut Keyboard as *mut _ as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<KBDLLHOOKSTRUCT>(),
-                    );
                 }
 
                 if BadChk != 0 {
@@ -996,14 +991,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
             if lParam != 0 {
                 Status =
                     SafeProbeForRead(lParam as PVOID, core::mem::size_of::<MSG>(), 1);
-                if !NT_SUCCESS(Status) {
+                // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                // takes the existing bail-out below instead of faulting unhandled.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::capture_from_user(&mut Msg as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<MSG>())
+                {
                     BadChk = 1;
-                } else {
-                    RtlCopyMemory(
-                        &mut Msg as *mut _ as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<MSG>(),
-                    );
                 }
 
                 if BadChk != 0 {
@@ -1020,14 +1013,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                         core::mem::size_of::<MSG>(),
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
+                    // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                    // takes the existing bail-out below instead of faulting unhandled.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::capture_from_user(lParam as PVOID, &mut Msg as *mut _ as PVOID, core::mem::size_of::<MSG>())
+                    {
                         BadChk = 1;
-                    } else {
-                        RtlCopyMemory(
-                            lParam as PVOID,
-                            &mut Msg as *mut _ as PVOID,
-                            core::mem::size_of::<MSG>(),
-                        );
                     }
 
                     if BadChk != 0 {
@@ -1050,25 +1041,55 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                             core::mem::size_of::<CBT_CREATEWNDA>(),
                             1,
                         );
+                        // Each of these pointers has to be CAPTURED before it can be
+                        // probed: reading it is itself an access to the probed-only
+                        // user struct, which is the fault this whole class is about.
+                        let mut lpcsA: PVOID = core::ptr::null_mut();
+                        if NT_SUCCESS(Status)
+                            && !crate::copy::capture_from_user(
+                                core::ptr::addr_of_mut!(lpcsA) as *mut core::ffi::c_void,
+                                core::ptr::addr_of!((*pcbtcww).lpcs) as *const core::ffi::c_void,
+                                core::mem::size_of::<PVOID>(),
+                            )
+                        {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        }
                         if NT_SUCCESS(Status) {
                             Status = SafeProbeForWrite(
-                                (*pcbtcww).lpcs as PVOID,
+                                lpcsA,
                                 core::mem::size_of::<CREATESTRUCTA>(),
                                 1,
                             );
                         }
+                        let mut lpszNameA: PVOID = core::ptr::null_mut();
+                        let mut lpszClassA: PVOID = core::ptr::null_mut();
+                        if NT_SUCCESS(Status)
+                            && (!crate::copy::capture_from_user(
+                                core::ptr::addr_of_mut!(lpszNameA) as *mut core::ffi::c_void,
+                                core::ptr::addr_of!((*(lpcsA as *const CREATESTRUCTA)).lpszName)
+                                    as *const core::ffi::c_void,
+                                core::mem::size_of::<PVOID>(),
+                            )
+                                || !crate::copy::capture_from_user(
+                                    core::ptr::addr_of_mut!(lpszClassA) as *mut core::ffi::c_void,
+                                    core::ptr::addr_of!((*(lpcsA as *const CREATESTRUCTA)).lpszClass)
+                                        as *const core::ffi::c_void,
+                                    core::mem::size_of::<PVOID>(),
+                                ))
+                        {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        }
                         if NT_SUCCESS(Status) {
                             Status = SafeProbeForRead(
-                                (*(*pcbtcww).lpcs).lpszName as PVOID,
+                                lpszNameA,
                                 core::mem::size_of::<CHAR>(),
                                 1,
                             );
                         }
 
-                        if NT_SUCCESS(Status) && IS_ATOM!((*(*pcbtcww).lpcs).lpszClass) == 0 {
-                            // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
+                        if NT_SUCCESS(Status) && IS_ATOM!(lpszClassA as *const CHAR) == 0 {
                             Status = SafeProbeForRead(
-                                (*(*pcbtcww).lpcs).lpszClass as PVOID,
+                                lpszClassA,
                                 core::mem::size_of::<CHAR>(),
                                 1,
                             );
@@ -1079,25 +1100,55 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                             core::mem::size_of::<CBT_CREATEWNDW>(),
                             1,
                         );
+                        // Each of these pointers has to be CAPTURED before it can be
+                        // probed: reading it is itself an access to the probed-only
+                        // user struct, which is the fault this whole class is about.
+                        let mut lpcsW: PVOID = core::ptr::null_mut();
+                        if NT_SUCCESS(Status)
+                            && !crate::copy::capture_from_user(
+                                core::ptr::addr_of_mut!(lpcsW) as *mut core::ffi::c_void,
+                                core::ptr::addr_of!((*pcbtcww).lpcs) as *const core::ffi::c_void,
+                                core::mem::size_of::<PVOID>(),
+                            )
+                        {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        }
                         if NT_SUCCESS(Status) {
                             Status = SafeProbeForWrite(
-                                (*pcbtcww).lpcs as PVOID,
+                                lpcsW,
                                 core::mem::size_of::<CREATESTRUCTW>(),
                                 1,
                             );
                         }
+                        let mut lpszNameW: PVOID = core::ptr::null_mut();
+                        let mut lpszClassW: PVOID = core::ptr::null_mut();
+                        if NT_SUCCESS(Status)
+                            && (!crate::copy::capture_from_user(
+                                core::ptr::addr_of_mut!(lpszNameW) as *mut core::ffi::c_void,
+                                core::ptr::addr_of!((*(lpcsW as *const CREATESTRUCTW)).lpszName)
+                                    as *const core::ffi::c_void,
+                                core::mem::size_of::<PVOID>(),
+                            )
+                                || !crate::copy::capture_from_user(
+                                    core::ptr::addr_of_mut!(lpszClassW) as *mut core::ffi::c_void,
+                                    core::ptr::addr_of!((*(lpcsW as *const CREATESTRUCTW)).lpszClass)
+                                        as *const core::ffi::c_void,
+                                    core::mem::size_of::<PVOID>(),
+                                ))
+                        {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        }
                         if NT_SUCCESS(Status) {
                             Status = SafeProbeForRead(
-                                (*(*pcbtcww).lpcs).lpszName as PVOID,
+                                lpszNameW,
                                 core::mem::size_of::<WCHAR>(),
                                 1,
                             );
                         }
 
-                        if NT_SUCCESS(Status) && IS_ATOM!((*(*pcbtcww).lpcs).lpszClass) == 0 {
-                            // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
+                        if NT_SUCCESS(Status) && IS_ATOM!(lpszClassW as *const WCHAR) == 0 {
                             Status = SafeProbeForRead(
-                                (*(*pcbtcww).lpcs).lpszClass as PVOID,
+                                lpszClassW,
                                 core::mem::size_of::<WCHAR>(),
                                 1,
                             );
@@ -1128,14 +1179,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                             core::mem::size_of::<RECT>(),
                             1,
                         );
-                        if !NT_SUCCESS(Status) {
+                        // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                        // takes the existing bail-out below instead of faulting unhandled.
+                        if !NT_SUCCESS(Status)
+                            || !crate::copy::capture_from_user(&mut rt as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<RECT>())
+                        {
                             BadChk = 1;
-                        } else {
-                            RtlCopyMemory(
-                                &mut rt as *mut _ as PVOID,
-                                lParam as PVOID,
-                                core::mem::size_of::<RECT>(),
-                            );
                         }
 
                         if BadChk != 0 {
@@ -1159,14 +1208,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                             core::mem::size_of::<CBTACTIVATESTRUCT>(),
                             1,
                         );
-                        if !NT_SUCCESS(Status) {
+                        // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                        // takes the existing bail-out below instead of faulting unhandled.
+                        if !NT_SUCCESS(Status)
+                            || !crate::copy::capture_from_user(&mut CbAs as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<CBTACTIVATESTRUCT>())
+                        {
                             BadChk = 1;
-                        } else {
-                            RtlCopyMemory(
-                                &mut CbAs as *mut _ as PVOID,
-                                lParam as PVOID,
-                                core::mem::size_of::<CBTACTIVATESTRUCT>(),
-                            );
                         }
 
                         if BadChk != 0 {
@@ -1200,14 +1247,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                     core::mem::size_of::<EVENTMSG>(),
                     1,
                 );
-                if !NT_SUCCESS(Status) {
+                // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                // takes the existing bail-out below instead of faulting unhandled.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::capture_from_user(&mut EventMsg as *mut _ as PVOID, lParam as PVOID, core::mem::size_of::<EVENTMSG>())
+                {
                     BadChk = 1;
-                } else {
-                    RtlCopyMemory(
-                        &mut EventMsg as *mut _ as PVOID,
-                        lParam as PVOID,
-                        core::mem::size_of::<EVENTMSG>(),
-                    );
                 }
 
                 if BadChk != 0 {
@@ -1229,14 +1274,12 @@ unsafe extern "system" fn co_UserCallNextHookEx(
                         core::mem::size_of::<EVENTMSG>(),
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
+                    // Validate-only probe; the copy is the access. A copy fault sets BadChk, so it
+                    // takes the existing bail-out below instead of faulting unhandled.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::capture_from_user(lParam as PVOID, &mut EventMsg as *mut _ as PVOID, core::mem::size_of::<EVENTMSG>())
+                    {
                         BadChk = 1;
-                    } else {
-                        RtlCopyMemory(
-                            lParam as PVOID,
-                            &mut EventMsg as *mut _ as PVOID,
-                            core::mem::size_of::<EVENTMSG>(),
-                        );
                     }
 
                     if BadChk != 0 {

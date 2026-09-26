@@ -1,6 +1,6 @@
 use win32k_sys::win32k::*;
 // ntdll Rtl* exports + RtlInitEmptyUnicodeString inline live in crate::internal.
-use crate::internal::{RtlAllocateHeap, RtlFreeHeap, RtlGetProcessHeap, RtlInitEmptyUnicodeString, RtlInitUnicodeString, gpsi_perusr, LOWORD, HIWORD, MAKELONG};
+use crate::internal::{RtlAllocateHeap, RtlFreeHeap, RtlGetProcessHeap, RtlInitEmptyUnicodeString, RtlInitUnicodeString, LOWORD, HIWORD, MAKELONG};
 use crate::ntwrapper::{NtUserxEnableWindow, NtUserxGetKeyboardLayout, NtUserxGetKeyboardType, NtUserxSwapMouseButton};
 use core::ffi::c_void;
 
@@ -930,7 +930,7 @@ pub unsafe extern "system" fn GetLastInputInfo(plii: PLASTINPUTINFO) -> i32 {
     }
 
     let dwTime = if !gpsi.is_null() {
-        (*gpsi_perusr()).dwLastRITEventTickCount
+        crate::wow64::psi::last_rit_event_tick()
     } else {
         0
     };

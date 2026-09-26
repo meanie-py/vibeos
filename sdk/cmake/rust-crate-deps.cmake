@@ -38,7 +38,20 @@ function(rust_crate_sources out_var workspace crate)
             continue()
         endif()
 
-        file(GLOB_RECURSE _rs "${_dir}/src/*.rs")
+        # CONFIGURE_DEPENDS: without it the glob is evaluated ONCE, at configure time, so a .rs
+        # file ADDED later is never an input of this edge until something else forces a
+        # reconfigure — and edits to it then leave the .a "up to date". Same false green as
+        # above, one level down: a module added to shell32-rust for the COM-server port was
+        # edited, the DLL did not rebuild, and smoke booted the stale media without a word.
+        # With it, CMake's VerifyGlobs step (the "Re-checking globbed directories" line every
+        # build already prints) re-runs this glob and reconfigures when the file set changes.
+        # Project mode only: CMake rejects CONFIGURE_DEPENDS under `cmake -P`, which is how
+        # test_cli_units exercises this function, and there is no rebuild to track there.
+        if(CMAKE_SCRIPT_MODE_FILE)
+            file(GLOB_RECURSE _rs "${_dir}/src/*.rs")
+        else()
+            file(GLOB_RECURSE _rs CONFIGURE_DEPENDS "${_dir}/src/*.rs")
+        endif()
         list(APPEND _srcs ${_rs} "${_toml}")
         # A build script is an input to the crate exactly like its sources are, and the islands
         # some of them generate are what this whole function exists to track.

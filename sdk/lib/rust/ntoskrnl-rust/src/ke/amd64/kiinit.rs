@@ -744,12 +744,6 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
         KiInitModuleList(LoaderBlock);
 
         KeInitExceptions();
-
-        let kd_ret = KdInitSystem(0, KeLoaderBlock);
-
-        if KdPollBreakIn() != 0 {
-            DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);
-        }
     }
 
     while InterlockedBitTestAndSet64(
@@ -761,6 +755,18 @@ pub unsafe extern "system" fn KiSystemStartup(LoaderBlock: PLOADER_PARAMETER_BLO
     }
 
     HalInitializeProcessor(Cpu as u32, KeLoaderBlock);
+
+    if Cpu == 0 {
+        // KD init MUST follow HalInitializeProcessor: a PCI-based KD transport's
+        // module depends on the functions HalpRegisterKdSupportFunctions() registers,
+        // so initialising the debugger first leaves those transports dead. i386 and
+        // Win7 x64 already order it this way. Upstream-Commit: 8aac5c4c872
+        let _kd_ret = KdInitSystem(0, KeLoaderBlock);
+
+        if KdPollBreakIn() != 0 {
+            DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);
+        }
+    }
 
     // A CPU must not advertise itself in KeActiveProcessors until it can
     // actually run work — the dispatcher / DPC targeting iterates this mask,

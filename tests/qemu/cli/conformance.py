@@ -398,6 +398,8 @@ def conformance(args, repo: Path) -> int:
         if i:
             args.no_build = True
         print(f"\n=== conformance round {i + 1}/{repeat} ({args.arch}) ===", flush=True)
+        built_here = not args.no_build
+        rounds_before = len(_ROUNDS)
         try:
             rc = _conformance_once(args, repo)
         except KeyboardInterrupt:
@@ -407,6 +409,20 @@ def conformance(args, repo: Path) -> int:
             print(f"[conformance] round {i + 1} raised {e!r} — continuing", file=sys.stderr)
             continue
         worst = max(worst, rc)
+
+        # The build round failed: only this round builds, so every later one
+        # would boot the PREVIOUS media and bank its verdicts in the shared
+        # ledger as if they measured this tree. Measured 2026-09-24: an
+        # assembler error in trap.S failed round 1, and rounds 2-3 then booted
+        # the stale kernel and recorded two 0xE3 bugchecks against a fix that
+        # was never in it.
+        if built_here and rc != 0 and len(_ROUNDS) == rounds_before:
+            print(
+                "\n[conformance] ABORTING the soak: the build round failed, and every "
+                "further round would boot stale media.",
+                file=sys.stderr,
+            )
+            break
 
         if _ROUNDS and _ROUNDS[-1].get("launched") == 0:
             consecutive_nolaunch += 1

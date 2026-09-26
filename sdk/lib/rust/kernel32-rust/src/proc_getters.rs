@@ -7,6 +7,41 @@ fn NT_SUCCESS(s: NTSTATUS) -> bool {
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
+// Upstream-sync 2026-09: GetActiveProcessorGroupCount/GetActiveProcessorCount/
+// GetMaximumProcessorCount are genuinely NEW upstream code (proc.c, added in the
+// 1,269-commit merge; no pre-merge C or Rust form existed). All three are UP-only fakes
+// in the C original too -- `STUB; // FIXME: Real group support` -- so this is a
+// faithful, not a lesser, port: there is only ever one group (THEONLYGROUP == 0) until
+// real processor-group support lands.
+const THEONLYGROUP: WORD = 0;
+
+#[no_mangle]
+pub unsafe extern "system" fn GetActiveProcessorGroupCount() -> WORD {
+    1
+}
+
+unsafe fn GetProcessorCountInfo(GroupNumber: WORD, _Maximum: BOOL) -> DWORD {
+    if GroupNumber != ALL_PROCESSOR_GROUPS as WORD && GroupNumber != THEONLYGROUP {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    // NB: the sysinfo island has its own _SYSTEM_INFO distinct from ntdll-sys's;
+    // GetNativeSystemInfo takes the former, so name it explicitly.
+    let mut info: crate::client::sysinfo::_SYSTEM_INFO = core::mem::zeroed();
+    crate::client::sysinfo::GetNativeSystemInfo(&mut info);
+    info.dwNumberOfProcessors
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetActiveProcessorCount(GroupNumber: WORD) -> DWORD {
+    GetProcessorCountInfo(GroupNumber, FALSE)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetMaximumProcessorCount(GroupNumber: WORD) -> DWORD {
+    GetProcessorCountInfo(GroupNumber, TRUE)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GetProcessAffinityMask(
     hProcess: HANDLE,

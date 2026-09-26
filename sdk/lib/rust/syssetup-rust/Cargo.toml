@@ -12,6 +12,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
+va-slots-rust = { path = "../va-slots-rust" }
 ntdll-sys = { path = "../ntdll-sys" }
 strsafe-rust = { path = "../strsafe-rust" }
 win32macros-rust = { path = "../win32macros-rust" }

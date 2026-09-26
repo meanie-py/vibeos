@@ -88,54 +88,30 @@ KNOWN_FLAKES = [
     # hang now classifies HANG_TIMEOUT (still gate-retryable) — the honest signal,
     # no longer masked as an expected flake.
     #
-    # arm64 ERESOURCE release-not-owned (thread-teardown family): the rare
-    # non-deterministic 0x3 — KeBugCheckEx(0x03, Resource, Thread, OwnerTable, 3)
-    # from ex-rust/src/resource.rs (owner-table scan miss on a SHARED resource;
-    # both live hits had OwnerTable == NULL, hence the P3=0 in the signature),
-    # firing around thread-exit rundown (`PspExitThread: about to call
-    # LpcExitThread` context) under load. Documented: roadmap "Known bugs &
-    # flakes" 2026-07-18 + the 2026-07-16 conformance-quest 0x3 entry (same
-    # param shape, pre-dating this entry by two days). Density measured
-    # 2026-07-18: 2/2 under 3-arch-parallel gate load, 0/3 solo arm64 —
-    # load-sensitive, and the raiser predates the tree that first showed it in
-    # a gate (the crates rebuilt that night are user-mode; no WoW64 guest had
-    # started in either hit). RETIRE on the ERESOURCE root fix (verify-gone).
-    # 2026-07-26: the stop code in this signature was STALE. The raiser's code was
-    # corrected 0x03 -> 0xE3 (RESOURCE_NOT_OWNED, its real value — the 0x03 was an
-    # LLM-invented constant, roadmap "arm64 BUGCHECK 0x3 — IT IS RESOURCE_NOT_OWNED"
-    # + field manual §9.124), so this entry matched nothing afterwards and every
-    # lane ate the flake as a fresh red. Keyed on 0xE3 now. Do NOT re-add 0x03: from
-    # d3ca121cb09 on, KiSetAffinityThread raises a genuine 0x03 with ALL-ZERO
+    # RETIRED 2026-09-25 — arm64_eresource_notowned_0xe3 (#43) and
+    # arm64_smp39_zero_pc_fetch_abort (#39), together. #43's root fix landed
+    # 2026-09-24 (fastfat's C shim tested IRP_CONTEXT_FLAG_DISABLE_DIRTY as the WAIT
+    # bit, so FCB acquires ran non-blocking and FatCommonCleanup released a page
+    # fault's lock; field manual "0xE3 RESOURCE_NOT_OWNED (#43) was a fastfat shim").
+    # Verify-gone: 102 arm64 MP kmtest rounds at e2928af9a3c, zero bugchecks of ANY
+    # code, where the same corpus had 0xE3 in 18/336 and 0x1E in 10/336 before it.
+    # #39's own root is NOT proven: one capture's stack ran through
+    # ExReleaseResourceForThreadLite, so it is plausibly the same corruption, and
+    # retiring it is the 0xF4 precedent above — a recurrence must now BLOCK as a
+    # fresh BUGCHECK 0x1E with its capture preserved, which is how the next lead
+    # arrives. Both signatures, kept for a re-add if either recurs:
+    #   0xE3, P3/P4 "0x0000000000000000, 0x0000000000000003)"
+    #   0x1E with "[KEXC]" + "PC=0x0000000000000000" + "ESR=0x0000000086000007"
+    #        + "Spsr=0x0000000020000345" (the whole shape: SEH tests print ESRs on
+    #        purpose and pass)
+    # Do NOT re-add 0x03: KiSetAffinityThread raises a genuine 0x03 with ALL-ZERO
     # parameters, which is a different bug and must keep blocking.
-    {
-        "name": "arm64_eresource_notowned_0xe3",
-        "when": "bugcheck",
-        "code": "0x000000E3",
-        "any": ["0x0000000000000000, 0x0000000000000003)"],
-        "note": "known arm64 ERESOURCE release-not-owned flake (roadmap; retry)",
-    },
-    # MP-default beta (2026-09-12, user's call): the fleet now boots the MP
-    # kernel by default and eats these two while they are hunted in the open.
-    # Both signatures are DELIBERATELY narrow. The retired
-    # `arm64_lpcexitthread_race` entry above is the warning: a broad signature
-    # masked real bugs for months. Retire each of these the moment its root fix
+    #
+    # MP-default beta (2026-09-12, user's call): the fleet boots the MP kernel by
+    # default and eats this one while it is hunted in the open. DELIBERATELY narrow
+    # — the retired `arm64_lpcexitthread_race` entry above is the warning: a broad
+    # signature masked real bugs for months. Retire it the moment its root fix
     # lands and a re-gate shows the signature gone.
-    {
-        "name": "arm64_smp39_zero_pc_fetch_abort",
-        "when": "bugcheck",
-        "code": "0x0000001E",
-        # The whole shape, not any one part: an EL1 instruction abort (ESR EC
-        # 0x21 / IFSC 0x07) taken at a ZERO PC, which is the `ldp x29,x30,[sp]`
-        # of a frame that was zeroed underneath its callee. ESR alone would be
-        # wrong -- the SEH tests print [UEXC] ESR=0x92000047 on PURPOSE and pass.
-        "any": [
-            "[KEXC]",
-            "PC=0x0000000000000000",
-            "ESR=0x0000000086000007",
-            "Spsr=0x0000000020000345",
-        ],
-        "note": "task #39 arm64 MP boot: zero-PC instruction abort (18/1375=1.3%); retry",
-    },
     {
         "name": "i386_mp_win32k_av_0x1e",
         "when": "bugcheck",

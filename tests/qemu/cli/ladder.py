@@ -40,6 +40,7 @@ parity guests passed, not that the stock applets did.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import time
@@ -63,6 +64,11 @@ LADDER: dict[str, int] = {
     "fault32": 0x600D,
     "selfmod32": 0x600D,
     "reg32": 0x600D,
+    # Promoted from DIAGNOSTIC 2026-09-19, the day it first reported 0x600D.
+    # It was built to MEASURE guest CreateProcess while that gap was open; a
+    # diagnostic guest that starts passing has finished its job, and leaving it
+    # ungraded would mean a regression in the thing it proved could go unnoticed.
+    "spawn32": 0x600D,
 }
 
 # Optional guests: reported when seen, never required. This table is the PARITY
@@ -75,6 +81,56 @@ OPTIONAL: dict[str, int] = {
     "sqlite32": 0x600D,
     "lua32": 0x600D,
 }
+
+# DIAGNOSTIC guests measure a gap we KNOW is open. They report a verdict and
+# never fail a gate -- grading one would redden every lane in the fleet for a
+# hole we already have a task for, which is how a known gap turns into a
+# disabled check. They are graded by a HUMAN reading the summary line.
+#
+# The value is the PASS code, not the failure code we currently expect. Writing
+# today's failure in here would enshrine it: the guest would then go quiet on
+# the day the failure mode CHANGES, which is exactly the day worth hearing
+# about. Instead `summary` prints whatever code came back, and shouts if it is
+# PASS -- because a diagnostic guest that starts passing means the gap closed
+# and the guest should be promoted into LADDER, where a regression can red it.
+#
+# A diagnostic guest must be cheap to abandon: it shares the ladder's drain
+# budget, and one guest that hangs has cost four later ones their verdicts
+# before now (marshal32, six days stale, ate 420s). spawn32 caps its own wait
+# at 30s for that reason.
+# Empty today, and that is a good state rather than an unused mechanism: the
+# machinery below is what let spawn32 measure an open gap for a day without
+# reddening any lane's gate, and it is the right home for the next guest
+# written against a hole we already have a task for.
+DIAGNOSTIC: dict[str, int] = {}
+
+# A diagnostic guest that can BUGCHECK must be kept off the media entirely, not
+# merely left ungraded, and spawn32 is where that was learned. For one day it
+# was both: a 32-bit CreateProcessW took the kernel down with a 0x1E
+# (c0000005) AFTER NtCreateProcessEx had already succeeded, and "report, never
+# red" buys nothing against a dead machine -- it reds the boot for every lane
+# in the fleet. The answer was to not stage it at all unless asked (built under
+# VIBEOS_WOW64_SPAWN=1, staged `if(EXISTS)`, run last of all guests so its
+# crash could not cost anyone else a verdict).
+#
+# All of that is history now: the bugcheck was a dropped _SEH2_EXCEPT, the gap
+# it measured is closed, and spawn32 is an ordinary parity guest built and
+# staged with the rest. Kept written down because the next diagnostic guest
+# aimed at a crashing gap needs the same three precautions -- and because the
+# ordering rule INVERTS on promotion: a graded guest must run BEFORE sqlite32,
+# never after it.
+
+
+def staged_guests() -> list[str]:
+    """The guests CMake stages UNCONDITIONALLY (`_wow64_ladder`).
+
+    Only LADDER. That set is all-or-nothing (`_wow64_guest_ok`), so a missing
+    member costs every other guest its staging -- which is why absence is a
+    hole here and merely a skip for the opt-in guests. DIAGNOSTIC is
+    deliberately not included: it is staged `if(EXISTS)` like the stress
+    guests, so an absent spawn32 must cost the parity set nothing."""
+    return list(LADDER)
+
 
 # [WINLOGON] selfmod32.exe exit = 0x600d (0x600D = PASS)
 _VERDICT = re.compile(r"\[WINLOGON\] ([A-Za-z0-9_]+)\.exe exit = 0x([0-9a-fA-F]+)")
@@ -98,6 +154,49 @@ LADDER_TIMEOUT_SECONDS = 420.0
 # it accuses did nothing wrong.
 OPTIONAL_EXTRA_SECONDS = 360.0
 
+# A Wine conformance subtest winlogon has started: TryStartWinetest gives each
+# one 180s before it kills it and prints TIMED OUT, and runs them one after
+# another. check() FAILS a subtest that started and never reported (see
+# winetests_lost), so the drain has to wait for it. It did not, and the gate
+# went red on a guest that reported cleanly 8 lines after the drain stopped.
+WINETEST_EXTRA_SECONDS = 200.0
+
+# Env override: keep draining for at least this many seconds even after every
+# graded guest has reported.
+#
+# The drain stops the moment the graded set is complete, which is right for a
+# gate and WRONG for an investigation: the STOCK applets (winmine, notepad,
+# mspaint, wordpad, ...) run AFTER the parity set and are not graded at all, so
+# nothing in the normal path ever waits for them. A `--ladder` run therefore
+# ends at ~87s with the applet phase entirely unobserved -- which is why the
+# 58-fault execute-at-NULL cascade those three take could be recorded in the
+# bug registry and then not reproduced by the very flag meant to watch the
+# ladder. This makes that phase reachable without hand-rolling a QEMU boot.
+#
+# It only ever EXTENDS the drain, never shortens it, so it cannot turn a slow
+# host into a fake failure. Unset means the old behaviour exactly.
+DRAIN_FLOOR_ENV = "VIBEOS_LADDER_DRAIN_FLOOR"
+
+
+def drain_floor() -> float:
+    """Seconds from DRAIN_FLOOR_ENV; 0.0 when unset.
+
+    An unparseable or negative value is a HARD ERROR rather than a silent 0:
+    the whole point of setting it is to observe a phase that is invisible
+    without it, so quietly ignoring a typo would hand back a run that looks
+    like it watched and did not.
+    """
+    raw = os.environ.get(DRAIN_FLOOR_ENV)
+    if raw is None or raw == "":
+        return 0.0
+    try:
+        val = float(raw)
+    except ValueError:
+        raise ValueError(f"{DRAIN_FLOOR_ENV}={raw!r} is not a number of seconds") from None
+    if val < 0:
+        raise ValueError(f"{DRAIN_FLOOR_ENV}={raw!r} must not be negative")
+    return val
+
 
 # Where add_cd_file stages the guests (dll/win32/wow64cpu/CMakeLists.txt on
 # amd64, qemu/mkramdisk.sh on arm64). Matched on the CD path, not the source
@@ -113,8 +212,133 @@ STAGED_DIR = "syswow64"
 RAMDISK_REL = "qemu/ramdisk.img"
 
 
+# guest -> the .c it is built from. Explicit rather than derived: win32 is built
+# from Win32App.c, so a name-mangling convention would silently check nothing for
+# it -- and a staleness check that quietly verifies nothing is worse than none,
+# because it reports "fresh".
+GUEST_SOURCE: dict[str, str] = {
+    "hello32": "tools/fex/hello-compute/Hello32.c",
+    "gui32": "tools/fex/hello-compute/Gui32.c",
+    "win32": "tools/fex/hello-compute/Win32App.c",
+    "file32": "tools/fex/hello-compute/File32.c",
+    "async32": "tools/fex/hello-compute/Async32.c",
+    "marshal32": "tools/fex/hello-compute/Marshal32.c",
+    "thread32": "tools/fex/hello-compute/Thread32.c",
+    "fault32": "tools/fex/hello-compute/Fault32.c",
+    "selfmod32": "tools/fex/hello-compute/Selfmod32.c",
+    "reg32": "tools/fex/hello-compute/Reg32.c",
+    "spawn32": "tools/fex/hello-compute/Spawn32.c",
+}
+
+# The script carries the link lines, so a change to it (a new flag, a different
+# importlib) invalidates every guest just as a source edit invalidates one.
+GUEST_BUILDER = "tools/fex/build-hello-compute.sh"
+
+# The OPTIONAL guests live somewhere else entirely: their own dir under
+# tools/stress/, their own build.sh, and their .exe beside the source rather
+# than in build-fex-hello/. Value is (exe, [OUR sources]).
+#
+# Only OUR two files per guest are listed, and that is the whole subtlety.
+# Each dir also holds fetched third-party code -- tools/stress/lua/src/ (Lua
+# 5.4.7) and tools/stress/sqlite/amalg/ (the amalgamation) -- both gitignored,
+# both re-fetched on demand by build.sh. Their mtime records WHEN CURL RAN, not
+# when anything changed, so a build on a machine that had to re-fetch leaves
+# upstream source newer than a binary that is perfectly current. Including them
+# would red a healthy guest on a schedule set by the network. The question this
+# check asks is "did OUR source move after we built", and upstream cannot
+# answer it.
+OPTIONAL_SOURCE: dict[str, tuple[str, list[str]]] = {
+    "lua32": (
+        "tools/stress/lua/lua32.exe",
+        ["tools/stress/lua/Lua32.c", "tools/stress/lua/build.sh"],
+    ),
+    "sqlite32": (
+        "tools/stress/sqlite/sqlite32.exe",
+        ["tools/stress/sqlite/Sqlite32.c", "tools/stress/sqlite/build.sh"],
+    ),
+}
+
+
+def stale_guests(repo: Path) -> list[str]:
+    """Guests whose .exe is OLDER than the source it was built from.
+
+    The guests are NOT in git -- `.gitignore` excludes `build-fex-*`, and
+    `vibeos-cli build` does not rebuild them -- so the ladder's verdict depends
+    on three inputs of which only one is versioned: the commit, these binaries,
+    and the build-i386 import closure. Two lanes at the SAME commit can therefore
+    grade different guest code, and did: a marshal32.exe built 35 minutes before
+    a fix to its own socket rung hung there for a week, costing the four guests
+    that run after it their verdicts on every boot, while the lane that built it
+    saw nothing wrong -- every input it could see was internally consistent.
+
+    Keyed on source-vs-binary mtime, deliberately NOT on absolute age. That
+    binary was six days old; any age threshold loose enough not to nag would
+    have passed it. What makes it detectably wrong is only that Marshal32.c is
+    NEWER than marshal32.exe.
+
+    A guest with no binary is not stale -- it is unbuilt, which the
+    partially-built branch of `gate_decision` already reports with its own
+    remedy. Only guests present on disk are compared. A guest missing from
+    GUEST_SOURCE is reported as stale rather than skipped: an unmapped guest is
+    a gap in this check, and it must not read as freshness.
+    """
+    out: list[str] = []
+    for guest in staged_guests():
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if not exe.is_file():
+            continue
+        rel = GUEST_SOURCE.get(guest)
+        if rel is None:
+            out.append(f"{guest} (no source mapping)")
+            continue
+        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+
+    # DIAGNOSTIC guests are opt-in (VIBEOS_WOW64_SPAWN=1), so absent is the
+    # normal state and must not read as a hole -- but a built one is compared
+    # exactly like a parity guest, because it lives in build-fex-hello/ and
+    # goes stale the same way.
+    for guest in DIAGNOSTIC:
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if not exe.is_file():
+            continue
+        rel = GUEST_SOURCE.get(guest)
+        if rel is None:
+            out.append(f"{guest} (no source mapping)")
+            continue
+        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+
+    # OPTIONAL guests are built on demand by a script that FETCHES, so they are
+    # absent in most trees. Absent means "nobody built it", which
+    # media_optional_staged already handles by not grading it -- so unlike a
+    # LADDER guest, an absent one is not a hole in this check and must not read
+    # as stale. Only a binary that EXISTS is compared.
+    for guest, (exe_rel, srcs) in OPTIONAL_SOURCE.items():
+        exe = repo / exe_rel
+        if not exe.is_file():
+            continue
+        out.extend(_newer_than(repo, guest, exe, srcs))
+    return out
+
+
+def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[str]:
+    """Which of `sources` postdates `exe`. A source that does not exist is
+    reported, not skipped: the map naming a file the tree does not have is a
+    broken mapping, and silence about it would read as freshness."""
+    built = exe.stat().st_mtime
+    out: list[str] = []
+    for rel in sources:
+        src = repo / rel
+        if not src.is_file():
+            out.append(f"{guest} (source {rel} missing)")
+        elif src.stat().st_mtime > built:
+            out.append(f"{guest} ({rel} is newer)")
+    return out
+
+
 def _guest_names() -> set[str]:
-    return {f"{g}.exe".lower() for g in LADDER}
+    # DIAGNOSTIC included: it is not unconditionally staged, but when it IS
+    # on the media the probe must see it.
+    return {f"{g}.exe".lower() for g in [*LADDER, *DIAGNOSTIC]}
 
 
 def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
@@ -157,12 +381,46 @@ def _staged_per_manifest(repo: Path, arch: str, subdir: str, names: set[str]) ->
     return found
 
 
+def uses_ramdisk(arch: str) -> bool:
+    """Does this arch stage into the FAT ramdisk rather than an assembled ISO?
+
+    Asked of the ARCH, never of the disk. `RAMDISK_REL` is a fixed path with no
+    arch in it, so "does qemu/ramdisk.img exist" is not the same question and
+    answering with it makes arm64's media speak for amd64. That substitution
+    has now produced two separate bugs from one root -- a probe that read
+    arm64's ramdisk on amd64's behalf, and a restage remedy that told an amd64
+    tree to run `VIBEOS_FEX=1 build --arch arm64` -- so the derivation lives
+    here once instead of at each site that needs it.
+    """
+    from . import archcfg
+
+    try:
+        media = Path(archcfg.arch_build(arch).boot_media_rel)
+    except (KeyError, AttributeError):
+        return False
+    return not (media.parts and media.parts[0].startswith("build-"))
+
+
 def _staged_per_ramdisk(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str] | None:
     """arm64 media, filled by mcopy. None = cannot tell (no image, no mtools).
 
     Reads stdout, never the exit code: `mdir` exits 0 on "File not found", which
     is the same $?-is-not-the-answer trap AGENTS.md names twice.
+
+    Declines for an arch that does not USE a ramdisk, and that is not a
+    formality. The image lives at a fixed repo path with no arch in its name, so
+    this probe used to read arm64's ramdisk and answer on behalf of amd64. It
+    was invisible while a tree had a build-amd64/ manifest -- that probe runs
+    first and answers -- and surfaced on a freshly-restored box where the only
+    media present was a two-week-old qemu/ramdisk.img: amd64 was told "no WoW64
+    CPU layer on this arch's media", sourced entirely from arm64's media.
+    Derived from archcfg rather than an arch list: x86 media is an ISO assembled
+    under build-<arch>/, arm64's is mcopy-filled and lives outside it, and that
+    IS the mechanism split this function's None contract is about.
     """
+    if not uses_ramdisk(arch):
+        return None  # assembled ISO -- the manifest is this arch's mechanism
+
     img = repo / RAMDISK_REL
     if not img.is_file():
         return None
@@ -200,10 +458,20 @@ def _read_media(repo: Path, arch: str, subdir: str, names: set[str]) -> set[str]
     return None
 
 
-def supports_wow64(repo: Path, arch: str) -> bool:
+def supports_wow64(repo: Path, arch: str) -> bool | None:
     """Is a WoW64 CPU layer on this media? False on a native-x86 livecd, which is
-    why 'no guests staged' is the final answer there rather than a fixable state."""
-    return bool(_read_media(repo, arch, "system32", CPU_LAYERS))
+    why 'no guests staged' is the final answer there rather than a fixable state.
+
+    None when the media cannot answer -- no build dir, no manifest, no ramdisk.
+    Tri-state on purpose: `bool()` here would have thrown away the distinction
+    that `_read_media` and both probes exist to preserve, and turned "I have not
+    looked at any media" into the positive architectural claim "32-bit guests
+    cannot run here". That is the reassuring direction to be wrong in, so nothing
+    downstream would ever have questioned it -- an unbuilt amd64 tree would be
+    told the ladder does not apply to amd64.
+    """
+    answer = _read_media(repo, arch, "system32", CPU_LAYERS)
+    return None if answer is None else bool(answer)
 
 
 def media_has_guests(repo: Path, arch: str) -> bool:
@@ -262,15 +530,40 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     """
     staged = media_has_guests(repo, arch)
     if staged:
+        # Stale guests SKIP, they do not fail. A stale binary is our own
+        # bookkeeping error, not a regression in the OS, and grading it produces
+        # a RED that blames the guests running AFTER the stale one -- which is
+        # how one six-day-old marshal32.exe read as four broken guests. The
+        # remedy is one command and belongs in the message, not in a bisect.
+        stale = stale_guests(repo)
+        if stale:
+            return (
+                [],
+                False,
+                f"staged guest binaries are older than their sources "
+                f"({', '.join(stale)}) — the guests are NOT in git and a normal "
+                f"build does not rebuild them, so the ladder would grade stale "
+                f"code; rebuild with: {GUEST_BUILDER}",
+            )
         return (
             ["--ladder"],
             True,
-            f"{len(LADDER)} WoW64 guests staged — boot watched past the desktop marker",
+            f"{len(LADDER)} parity + {len(DIAGNOSTIC)} diagnostic WoW64 guests staged — "
+            f"boot watched past the desktop marker",
         )
     # A native-x86 boot has no CPU layer, so it has no SysWOW64 to stage into and
     # "not staged" is the final answer, not a fixable state. Checked by asking the
     # media for the layer winlogon itself gates on, so no arch list appears here.
-    if not supports_wow64(repo, arch):
+    cpu_layer = supports_wow64(repo, arch)
+    if cpu_layer is None:
+        return (
+            [],
+            False,
+            f"no media to read for {arch} — neither a build-{arch}/ manifest nor a "
+            f"ramdisk this arch uses, so whether it can host 32-bit guests is UNKNOWN, "
+            f"not no; build the arch first: ./vibeos-cli build --arch {arch}",
+        )
+    if not cpu_layer:
         return (
             [],
             False,
@@ -282,31 +575,31 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
     # assembled, so guests built afterwards sit on disk while the media has none --
     # silently. That cost 45 minutes tonight. The remedy differs by mechanism, so
     # name the one that matches this media rather than the x86 one everywhere.
-    built = sorted(g for g in LADDER if (repo / "build-fex-hello" / f"{g}.exe").is_file())
+    built = sorted(g for g in staged_guests() if (repo / "build-fex-hello" / f"{g}.exe").is_file())
     # Partially built is its own state, and restaging cannot fix it. The CMake
     # ladder list is all-or-nothing (`_wow64_guest_ok`), so ONE missing guest
     # keeps every other one off the media -- the same failure doom caused once
     # by being absent. A tree that predates a newly added guest lands here, and
     # telling it to restage would send it round a build that changes nothing.
-    if built and len(built) < len(LADDER):
-        absent = ", ".join(f"{g}.exe" for g in LADDER if g not in built)
+    if built and len(built) < len(staged_guests()):
+        absent = ", ".join(f"{g}.exe" for g in staged_guests() if g not in built)
         return (
             [],
             False,
-            f"{len(built)}/{len(LADDER)} ladder guests built — {absent} missing, and "
+            f"{len(built)}/{len(staged_guests())} ladder guests built — {absent} missing, and "
             f"staging is all-or-nothing, so NOTHING is staged; build the guests with: "
             f"tools/fex/build-hello-compute.sh",
         )
     if built:
         fix = (
             "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
-            if (repo / RAMDISK_REL).is_file()
-            else "touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch <a>"
+            if uses_ramdisk(arch)
+            else f"touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch {arch}"
         )
         return (
             [],
             False,
-            f"{len(built)}/{len(LADDER)} guests are BUILT but none is staged on this "
+            f"{len(built)}/{len(staged_guests())} guests are BUILT but none is staged on this "
             f"arch's media — staging is snapshotted when the media is assembled; "
             f"restage with: {fix}",
         )
@@ -348,25 +641,39 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     Returns only the NEWLY drained text; the caller appends it to the boot serial,
     so a BUGCHECK during the ladder still lands in full.log.
     """
+    floor = drain_floor()
     need = [m for m in markers() if m not in seen]
-    if not need and not _optional_in_flight(seen):
+    if not need and not _optional_in_flight(seen) and not winetests_lost(seen) and not floor:
         return ""  # every guest already reported before we were called
     buf = ""
-    deadline = time.monotonic() + seconds
+    start = time.monotonic()
+    deadline = start + max(seconds, floor)
     # A launched optional guest gets its own extension on top of the parity
     # budget: it is third-party code doing real work under emulation, so it is
     # slow by nature, and charging it to the parity budget is what turned a
     # green ladder into a fake selfmod32 failure the first time one was added.
+    # A started winetest is the same case: check() grades it, so the drain must
+    # not end while one is still running.
     extended: set[str] = set()
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
         pending = _optional_in_flight(buf)
-        if all(m in buf for m in need) and not pending:
+        running = winetests_lost(seen + buf)
+        if (
+            all(m in buf for m in need)
+            and not pending
+            and not running
+            and time.monotonic() - start >= floor
+        ):
             break
         for g in pending:
             if g not in extended:
                 deadline += OPTIONAL_EXTRA_SECONDS
                 extended.add(g)
+        for label in running:
+            if label not in extended:
+                deadline += WINETEST_EXTRA_SECONDS
+                extended.add(label)
     return buf
 
 
@@ -377,6 +684,54 @@ def verdicts(text: str) -> dict[str, int]:
     for name, code in _VERDICT.findall(text):
         out[name] = int(code, 16)
     return out
+
+
+# [WT] user32:class: started (PID 123)  /  [WT] user32:class: exit = 4 failure(s), ...
+# The label is <suite>:<subtest>, written by winlogon's TryStartWinetest, and
+# carries a `native/` prefix for the bare-i386 control run of the same binary --
+# the pair is what makes a red assertion attributable to the WoW64 seam rather
+# than to user32.
+_WT_STARTED = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): started ")
+_WT_VERDICT = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): exit = (\d+) failure")
+_WT_CRASH = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): CRASHED, exit = (0x[0-9a-fA-F]+)")
+_WT_TIMEOUT = re.compile(r"\[WT\] ([A-Za-z0-9_/]+:[A-Za-z0-9_]+): TIMED OUT,")
+
+
+def winetests(text: str) -> dict[str, int]:
+    """Failure count per Wine conformance subtest that reported.
+
+    A winetest's exit code IS its failure count, so 0 means the suite agreed
+    with real Windows on every assertion it made."""
+    return {label: int(n) for label, n in _WT_VERDICT.findall(text)}
+
+
+def winetests_crashed(text: str) -> dict[str, str]:
+    """Subtests that died on an unhandled exception, and the NTSTATUS.
+
+    Distinct from a failure count on purpose: a count is the oracle's verdict
+    on the OS, a crash is the OS taking the oracle down with it and leaving
+    every later assertion unrun. Only the second is a verdict about THIS run."""
+    return dict(_WT_CRASH.findall(text))
+
+
+def winetests_timed_out(text: str) -> list[str]:
+    """Subtests we killed. A third outcome, kept apart from the other two for
+    the same reason: the exit code is OURS (0xDEAD), so counting it as failures
+    reports 57005 of them."""
+    return _WT_TIMEOUT.findall(text)
+
+
+def winetests_lost(text: str) -> list[str]:
+    """Subtests that STARTED and never reported.
+
+    This, and not the failure count, is what the ladder gates on. The counts
+    are the oracle grading US: they start non-zero by construction and go down
+    as the OS improves, so gating on zero would paint the ladder permanently
+    red and teach everyone to ignore it. A subtest that vanishes mid-run has
+    crashed or hung the guest, which is a regression in OUR code and is the
+    same signal every other rung here carries."""
+    done = set(winetests(text)) | set(winetests_crashed(text)) | set(winetests_timed_out(text))
+    return [label for label in _WT_STARTED.findall(text) if label not in done]
 
 
 def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
@@ -403,10 +758,14 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
             missing.append(g)
     missing += [g for g in _optional_in_flight(text) if g not in missing]
 
-    if not missing and not wrong:
+    lost = winetests_lost(text)
+
+    if not missing and not wrong and not lost:
         return None
 
     salient: list[str] = []
+    for label in lost:
+        salient.append(f"winetest {label} started and never reported — the guest crashed or hung")
     if len(missing) == len(LADDER):
         # Nothing ran at all — almost always staging, not a regression. Say so
         # with the recipe rather than letting it read as "the ladder broke".
@@ -431,6 +790,34 @@ def summary(text: str) -> str:
     """One-line roll-up for the stage detail."""
     seen = verdicts(text)
     ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
-    extra = [g for g in seen if g not in LADDER]
+    extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
-    return f"{ok}/{len(LADDER)} guests PASS{tail}"
+    wt = {f"{k}={v}" for k, v in winetests(text).items()}
+    wt |= {f"{k}=CRASH({v})" for k, v in winetests_crashed(text).items()}
+    wt |= {f"{k}=TIMEOUT" for k in winetests_timed_out(text)}
+    wt_tail = ""
+    if wt:
+        # Reported, never gated — see winetests_lost() for why the failure
+        # count is information and not a verdict.
+        wt_tail = "; winetests " + ", ".join(sorted(wt))
+    return f"{ok}/{len(LADDER)} guests PASS{tail}{_diagnostic_tail(seen)}{wt_tail}"
+
+
+def _diagnostic_tail(seen: dict[str, int]) -> str:
+    """The diagnostic guests' codes, appended to the roll-up. Never a verdict.
+
+    A guest that came back PASS is called out in words rather than left as a
+    hex code among others: it means the gap it measures has closed, and the
+    next move is to promote it into LADDER so a regression can red it again. A
+    silent 0x600d here would be a result nobody reads."""
+    bits: list[str] = []
+    for g, want in sorted(DIAGNOSTIC.items()):
+        if g not in seen:
+            continue
+        got = seen[g]
+        bits.append(
+            f"{g} PASSES (0x{got:04x}) — gap closed, promote it to LADDER"
+            if got == want
+            else f"{g}=0x{got:04x}"
+        )
+    return f"; diagnostic: {', '.join(bits)}" if bits else ""

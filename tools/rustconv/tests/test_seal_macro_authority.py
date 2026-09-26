@@ -12,7 +12,12 @@ import json
 import pytest
 
 from rustconv.call_seal import CallSealError, seal_calls, unseal_calls
-from rustconv.macro_authority import MacroAuthorityError, _compile_entry, function_like_macros
+from rustconv.macro_authority import (
+    MacroAuthorityError,
+    _compile_entry,
+    _function_like,
+    function_like_macros,
+)
 
 SOURCE = """HRESULT go() {
     ret = CoCreateInstance(CLSID_X, NULL, CTX, IID_PPV_ARG(IProgressDialog, &ppv));
@@ -233,3 +238,39 @@ def test_a_sibling_from_ANOTHER_module_is_not_borrowed(tmp_path):
         ],
     )
     assert _sibling_target_entry(tmp_path, "i386", a / "flipped.c") is None
+
+
+def test_an_object_like_ALIAS_of_a_function_like_macro_is_function_like():
+    """mingw spells three of the four va_ macros as bare aliases.
+
+    `#define va_arg __crt_va_arg` is object-like, so the `#define NAME(` scan could not
+    see it, while `#define va_copy(d,s) ...` right beside it was caught. The seal then
+    tokenized `va_arg(ap, int)` as a runtime callee of arity 2, which no Rust rendering
+    can match -- the type is a turbofish and the arity check blanks its commas. That is
+    an envelope the model cannot satisfy at any price, so every retry re-buys the same
+    reject.
+    """
+    dump = "\n".join(
+        [
+            "#define __crt_va_arg(v,l) __builtin_va_arg(v,l)",
+            "#define va_arg __crt_va_arg",
+            "#define va_copy(d,s) __va_copy((d),(s))",
+            "#define PLAIN_OBJECT 1",
+            "#define ALIAS_OF_OBJECT PLAIN_OBJECT",
+        ]
+    )
+    names = _function_like(dump)
+    assert {"__crt_va_arg", "va_arg", "va_copy"} <= names
+    # An alias whose target is NOT function-like stays out: it has no call site to
+    # protect, and widening the set silently relaxes the seal for an ordinary constant.
+    assert "ALIAS_OF_OBJECT" not in names
+    assert "PLAIN_OBJECT" not in names
+
+
+def test_an_alias_CHAIN_resolves_and_a_cycle_terminates():
+    chained = _function_like(
+        "#define REAL(a) a\n#define MID REAL\n#define TOP MID\n"
+    )
+    assert {"REAL", "MID", "TOP"} <= chained
+    # A cyclic pair defines nothing callable; it must not hang the derivation.
+    assert _function_like("#define A B\n#define B A\n") == set()

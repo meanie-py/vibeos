@@ -202,10 +202,23 @@ KeUserModeCallback(
      * Returns when NtCallbackReturn longjmps back with status. */
     CallbackStatus = KiCallUserMode(Result, ResultLength);
 
-    /* Read GDI batch count (if TEB is accessible) */
-    if (Teb && MmIsAddressValid(&Teb->GdiBatchCount))
+    /* Defined in ke/arm64/trap.c -- shared so both the syscall and the
+     * user-callback return paths agree on WHICH TEB carries the count. */
+    extern PULONG KiWow64GdiBatchCount(PTEB Teb);
+
+    /* Read GDI batch count (if TEB is accessible).
+     * A WoW64 guest bumps TEB32->GdiBatchCount, not TEB64's -- see
+     * KiWow64GdiBatchCount in trap.c and field manual §9.41 (2nd occurrence):
+     * reading the wrong TEB means the flush never runs for a guest, so
+     * gdi32's batch Offset is never reset and its next append walks out of
+     * GdiTebBatch.Buffer into CLIENTINFO. */
+    if (Teb)
     {
-        GdiBatchCount = Teb->GdiBatchCount;
+        PULONG pGdiBatchCount = KiWow64GdiBatchCount(Teb);
+        if (MmIsAddressValid(pGdiBatchCount))
+        {
+            GdiBatchCount = *pGdiBatchCount;
+        }
     }
 
     /* Flush GDI batch if needed */

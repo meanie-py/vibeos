@@ -81,6 +81,11 @@ BOOLEAN KmtAreInterruptsEnabled(VOID)
 #endif
 }
 
+/* NOTE: gate on _WIN64, not _M_AMD64. ntoskrnl's own POOL_HEADER (mm/ARM3/miarm.h)
+ * uses _WIN64, so on ARM64 the kernel writes the 64-bit layout while this struct used
+ * to read the 32-bit one — wrong field widths, wrong offsets, wrong union member. That
+ * made KmtGetPoolTag/KmtGetPoolType return garbage that varied with heap layout, which
+ * showed up as an intermittent ExPools ratchet regression on arm64. */
 typedef struct _POOL_HEADER
 {
     union

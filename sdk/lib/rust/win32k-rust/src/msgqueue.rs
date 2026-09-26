@@ -26,6 +26,7 @@ const STATUS_WAIT_1: NTSTATUS = 0x00000001;
 const STATUS_WAIT_2: NTSTATUS = 0x00000002;
 const STATUS_USER_APC: NTSTATUS = 0x000000C0;
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // --- NTAPI/stdcall (`_Name@N`) eng exports. extern "system" = stdcall i386. ---
 extern "system" {
@@ -3422,14 +3423,26 @@ pub unsafe extern "system" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWOR
         SetLastNtError(Status);
         ret = 0;
     } else {
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND all 768 of
+        // these stores inside one _SEH2_TRY. Build the table in kernel memory and
+        // publish it in one fault-tolerant copy — the `|=` was a read-modify-write
+        // of user memory besides.
+        let mut SafeKeyState: [u8; 256] = [0; 256];
         for i in 0..256u32 {
-            *lpKeyState.add(i as usize) = 0;
             if IS_KEY_DOWN((*MessageQueue).afKeyState.as_ptr(), i) != 0 {
-                *lpKeyState.add(i as usize) |= KS_DOWN_BIT as u8;
+                SafeKeyState[i as usize] |= KS_DOWN_BIT as u8;
             }
             if IS_KEY_LOCKED((*MessageQueue).afKeyState.as_ptr(), i) != 0 {
-                *lpKeyState.add(i as usize) |= KS_LOCK_BIT as u8;
+                SafeKeyState[i as usize] |= KS_LOCK_BIT as u8;
             }
+        }
+        if !crate::copy::publish_to_user(
+            lpKeyState as *mut core::ffi::c_void,
+            SafeKeyState.as_ptr() as *const core::ffi::c_void,
+            SafeKeyState.len(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            ret = 0;
         }
     }
 
@@ -3456,14 +3469,26 @@ pub unsafe extern "system" fn NtUserGetKeyboardState(lpKeyState: LPBYTE) -> DWOR
         SetLastNtError(Status);
         ret = 0;
     } else {
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe AND all 768 of
+        // these stores inside one _SEH2_TRY. Build the table in kernel memory and
+        // publish it in one fault-tolerant copy — the `|=` was a read-modify-write
+        // of user memory besides.
+        let mut SafeKeyState: [u8; 256] = [0; 256];
         for i in 0..256u32 {
-            *lpKeyState.add(i as usize) = 0;
             if IS_KEY_DOWN((*MessageQueue).afKeyState.as_ptr(), i) != 0 {
-                *lpKeyState.add(i as usize) |= KS_DOWN_BIT as u8;
+                SafeKeyState[i as usize] |= KS_DOWN_BIT as u8;
             }
             if IS_KEY_LOCKED((*MessageQueue).afKeyState.as_ptr(), i) != 0 {
-                *lpKeyState.add(i as usize) |= KS_LOCK_BIT as u8;
+                SafeKeyState[i as usize] |= KS_LOCK_BIT as u8;
             }
+        }
+        if !crate::copy::publish_to_user(
+            lpKeyState as *mut core::ffi::c_void,
+            SafeKeyState.as_ptr() as *const core::ffi::c_void,
+            SafeKeyState.len(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            ret = 0;
         }
     }
 
@@ -3489,17 +3514,28 @@ pub unsafe extern "system" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL 
         SetLastNtError(Status);
         bRet = 0;
     } else {
+        // Probe is validate-only; the C had probe AND all 512 loads in one
+        // _SEH2_TRY. One fault-tolerant copy, then read kernel memory.
+        let mut SafeKeyState: [u8; 256] = [0; 256];
+        if !crate::copy::capture_from_user(
+            SafeKeyState.as_mut_ptr() as *mut core::ffi::c_void,
+            pKeyState as *const core::ffi::c_void,
+            SafeKeyState.len(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            return 0;
+        }
         let mut i: UINT = 0;
         while i < 256 {
             SET_KEY_DOWN(
                 (*MessageQueue).afKeyState.as_mut_ptr() as *mut u8,
                 i,
-                (*pKeyState.add(i as usize) & KS_DOWN_BIT as u8) as BOOL,
+                (SafeKeyState[i as usize] & KS_DOWN_BIT as u8) as BOOL,
             );
             SET_KEY_LOCKED(
                 (*MessageQueue).afKeyState.as_mut_ptr() as *mut u8,
                 i,
-                (*pKeyState.add(i as usize) & KS_LOCK_BIT as u8) as BOOL,
+                (SafeKeyState[i as usize] & KS_LOCK_BIT as u8) as BOOL,
             );
             i += 1;
         }
@@ -3528,17 +3564,28 @@ pub unsafe extern "system" fn NtUserSetKeyboardState(pKeyState: LPBYTE) -> BOOL 
         SetLastNtError(Status);
         bRet = 0;
     } else {
+        // Probe is validate-only; the C had probe AND all 512 loads in one
+        // _SEH2_TRY. One fault-tolerant copy, then read kernel memory.
+        let mut SafeKeyState: [u8; 256] = [0; 256];
+        if !crate::copy::capture_from_user(
+            SafeKeyState.as_mut_ptr() as *mut core::ffi::c_void,
+            pKeyState as *const core::ffi::c_void,
+            SafeKeyState.len(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            return 0;
+        }
         let mut i: UINT = 0;
         while i < 256 {
             SET_KEY_DOWN(
                 (*MessageQueue).afKeyState.as_mut_ptr() as *mut u8,
                 i,
-                (*pKeyState.add(i as usize) & KS_DOWN_BIT as u8) as BOOL,
+                (SafeKeyState[i as usize] & KS_DOWN_BIT as u8) as BOOL,
             );
             SET_KEY_LOCKED(
                 (*MessageQueue).afKeyState.as_mut_ptr() as *mut u8,
                 i,
-                (*pKeyState.add(i as usize) & KS_LOCK_BIT as u8) as BOOL,
+                (SafeKeyState[i as usize] & KS_LOCK_BIT as u8) as BOOL,
             );
             i += 1;
         }

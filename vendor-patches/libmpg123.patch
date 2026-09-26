@@ -1,0 +1,112 @@
+# libmpg123 1.33.7 — our delta from pristine upstream.
+#
+# Upstream: https://www.mpg123.de/download/mpg123-1.33.7.tar.bz2
+#           sha256 31d0e35a4ca567ec9b5ebda6c3062bb4435d6d3eacd6ef0d95cadd7854dc03ee
+# Apply from sdk/lib/3rdparty/libmpg123/ with: patch -p1 < vendor-patches/libmpg123.patch
+#
+# THE VENDORED TREE ROOT MIRRORS UPSTREAM'S src/ EXACTLY. libmpg123/, common/,
+# compat/, include/ and version.h sit where mpg123 puts them, so the sources' own
+# relative includes ("../common/debug.h", "../version.h") resolve with no edits at all.
+# Before the 1.33.7 bump the headers were hoisted flat into
+# sdk/include/reactos/libs/libmpg123/, which is what forced include-line patching.
+# DO NOT FLATTEN IT AGAIN.
+#
+# FILE-SET RULE, so a re-vendor is a copy: take every .c and .h from src/libmpg123
+# except calctables.c (a host-side table generator we never build), all of
+# src/common/*.h, src/include/{mpg123,fmt123}.h, src/compat/{compat.c,compat_str.c,
+# compat.h,wpathconv.h}, and src/version.h. No .S — we build no assembly, only the
+# generic-C decoder. out123.h and syn123.h are skipped: they are the public headers of
+# sibling libraries (libout123, libsyn123) that this tree does not contain.
+#
+# OURS, WITH NO UPSTREAM COUNTERPART: config.h (upstream generates it here from
+# config.h.in — keep it in step with that template on every bump), precomp.h and
+# CMakeLists.txt.
+#
+# ----------------------------------------------------------------------------------
+# THE TWO PATCHED FILES — FIVE LINES
+# ----------------------------------------------------------------------------------
+#
+#   include/mpg123.h    Extends upstream's own "a little hack to help MSVC not having
+#                       ssize_t" to cover us. Our CRT does not declare ssize_t either
+#                       (not in <sys/types.h>, not in <corecrt.h>), so the #else branch
+#                       fails to compile. 1.26.2's generated mpg123.h carried its own
+#                       fallback, `typedef long ssize_t`, which was WRONG ON 64-BIT;
+#                       upstream removed that fallback in the meantime. ptrdiff_t, which
+#                       is what upstream already uses for MSVC, is correct on all three
+#                       of our targets. This one is worth sending upstream: the condition
+#                       is really "Windows CRT", not "MSVC".
+#
+#   libmpg123/optimize.h  Gives ALIGNED() an MSVC spelling. config.h defines CCALIGN
+#                       unconditionally and upstream expands it to
+#                       __attribute__((aligned(a))), which MSVC does not accept. Kept
+#                       rather than dropped because ReactOS supports MSVC builds and we
+#                       cannot test one here — dropping it would silently remove that
+#                       capability. Not reducible to a -D: it guards a DEFINITION.
+#
+# ----------------------------------------------------------------------------------
+# 1.26.2 -> 1.33.7 (2026-09-20): FOUR PATCHES BECAME TWO
+# ----------------------------------------------------------------------------------
+#
+# Retired, all because upstream changed rather than because we gave anything up:
+#
+#   compat.c    THE CHECKLIST ITEM, and it is now discharged. Our compat.c was NOT
+#               1.26.2 — it was 1.24.0-1.25.13 vintage, 215 lines adrift, and the
+#               registry carried a standing warning not to carry it across a bump. It
+#               was not carried; the tree takes 1.33.7's compat.c verbatim, which also
+#               brings the wpathconv.h split.
+#   parse.c     Moved `#include "getbits.h"` below the winsock includes. 1.33.7 needs
+#               no such reordering.
+#   compat.h    Suppressed the MSVC ssize_t typedef. 1.33.7's compat.h does not mention
+#               ssize_t at all.
+#
+# SECURITY: THIS IS WHY THE BUMP MATTERED. 1.26.2 is 2020. Fixed in between, in
+# libmpg123 specifically (from upstream NEWS): use of uninitialized values in layer III
+# dequantization (III_dequantize_sample); a double free when deleting a handle after a
+# failed mpg123_decoder(); a double free in the mpg123_set_index() 32-bit wrapper called
+# with index size 0; realloc calls hardened against size_t multiplication overflow; and
+# ID3v2 UTF16 texts not being terminated when they overwrite previous frames. Our one
+# consumer, winemp3.acm, feeds attacker-supplied MP3 bytes straight into this decoder.
+#
+# THE API IS COMPATIBLE. winemp3.acm uses twelve entry points (mpg123_init/exit/new/
+# delete/open_feed/close/feed/read/feedseek/getformat/param + mpg123_handle); all twelve
+# survive 1.33.7 with compatible signatures. mpg123_read's first buffer parameter widened
+# from `unsigned char*` to `void*`, which is source-compatible for callers.
+#
+# TWO LATENT 64-BIT BUGS DIED WITH THE OLD config.h, both from it being a 32-bit
+# autoconf output applied to all three arches:
+#   SIZEOF_SIZE_T / SIZEOF_SSIZE_T were hardcoded to 4. compat.h used them to choose the
+#   printf conversion for size_t, so on amd64 and arm64 it selected %lu for an 8-byte
+#   value. Diagnostic paths only, and 1.33.7 no longer uses those macros.
+#   `#define ssize_t long` — 4 bytes where 8 was needed. Also gone; see mpg123.h above.
+#
+# lfs_wrap.c IS BUILT NOW and must stay built: it supplies mpg123_feedseek and the
+# INT123_wrap_* helpers that libmpg123.c calls. (lfs_alias.c, which 1.26.2 shipped and we
+# never built, no longer exists upstream.) If you see mpg123_* reported as DUPLICATE
+# symbols while changing this list, suspect a stale liblibmpg123.a from an older file
+# layout before you suspect the source — that is what it was here.
+#
+--- a/include/mpg123.h
++++ b/include/mpg123.h
+@@ -98,7 +98,7 @@
+ #ifndef MPG123_PORTABLE_API
+ #include <sys/types.h>
+ /** A little hack to help MSVC not having ssize_t. */
+-#ifdef _MSC_VER
++#if defined(_MSC_VER) || defined(__REACTOS__)
+ typedef ptrdiff_t mpg123_ssize_t;
+ #else
+ typedef ssize_t mpg123_ssize_t;
+--- a/libmpg123/optimize.h
++++ b/libmpg123/optimize.h
+@@ -181,7 +181,11 @@
+ 
+ /* this is included in mpg123.h, which includes config.h */
+ #ifdef CCALIGN
++#ifdef _MSC_VER
++#define ALIGNED(a) __declspec(align(a))
++#else
+ #define ALIGNED(a) __attribute__((aligned(a)))
++#endif
+ #else
+ #define ALIGNED(a)
+ #endif

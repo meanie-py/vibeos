@@ -214,7 +214,7 @@ void DECLSPEC_NORETURN WINAPI RpcRaiseException(RPC_STATUS exception)
 {
   /* shouldn't return */
   RaiseException(exception, 0, 0, NULL);
-  ERR("handler continued execution\n");
+  ERR("handler continued execution (exception %lu = 0x%lx)\n", (ULONG)exception, (ULONG)exception);
   ExitProcess(1);
 }
 

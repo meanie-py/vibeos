@@ -2,6 +2,14 @@ use crate::prelude::*;
 use crate::shellrecyclebin::recyclebin::EmptyRecycleBinW;
 use crate::shellrecyclebin::recyclebin_v5_enumerator_free::RecycleBin5Enum_Constructor;
 use crate::shellrecyclebin::recyclebin_support::wide_len;
+// recyclebin_private.h:26-28 defines these three as `#define NAME L"..."` (WIDE strings), but
+// the bindgen island runs in C mode and captured them as narrow `&[u8; N]` byte strings
+// (types_amd64.rs:3937-3939) -- a nominal AND semantic split, not just layout. Explicit imports
+// here shadow that glob-imported wrong copy with recyclebin_support's correct `LPCWSTR` ones
+// (a plain `use crate::prelude::*;` would silently prefer the wrong byte-string constants).
+use crate::shellrecyclebin::recyclebin_support::{
+    RECYCLE_BIN_DIRECTORY_WITH_ACL, RECYCLE_BIN_DIRECTORY_WITHOUT_ACL, RECYCLE_BIN_FILE_NAME,
+};
 // IRecycleBin5: 11 slot(s) from the bindgen island, which agrees with recyclebin_v5.h.
 // Not re-rendered here -- a second `IRecycleBin5` would be a distinct type with the same name.
 
@@ -120,7 +128,7 @@ pub unsafe fn RecycleBin5_new() -> *mut RecycleBin5 {
         core::mem::size_of::<RecycleBin5>(),
     ) as *mut RecycleBin5;
     if this.is_null() { return core::ptr::null_mut(); }
-    (*this).IRecycleBin5_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBIN5_IRECYCLEBIN5_VTBL);
+    (*this).IRecycleBin5_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBIN5_IRECYCLEBIN5_VTBL) as *mut IRecycleBin5Vtbl;
     RecycleBin5_ctor_body(this);
     this
 }
@@ -198,9 +206,36 @@ pub const OPEN_EXISTING: DWORD = 3;
 
 pub const TokenUser: DWORD = 1;
 
+// winnt.h `_ULARGE_INTEGER`: a union of a `{ DWORD LowPart; DWORD HighPart; }` struct (named
+// `u` here -- winnt.h's OTHER anonymous-struct member and NONAMELESSUNION's `s` are unused by
+// this TU) and `QuadPart`. The C++ reads/writes `FileSize.u.LowPart` directly -- one level of
+// nesting, not two -- so this must NOT gain a bindgen-style `__bindgen_anon_1` layer.
 #[repr(C)]
-pub struct ULARGE_INTEGER {
+#[derive(Clone, Copy)]
+pub struct ULARGE_INTEGER_U {
+    pub LowPart: DWORD,
+    pub HighPart: DWORD,
+}
+#[repr(C)]
+pub union ULARGE_INTEGER {
+    pub u: ULARGE_INTEGER_U,
     pub QuadPart: ULONGLONG,
+}
+impl Default for ULARGE_INTEGER {
+    fn default() -> Self {
+        // SAFETY: all-zero is a valid bit pattern for every union member (two DWORDs / one
+        // ULONGLONG), matching `ULARGE_INTEGER FileSize;` (C++ leaves it default-initialized,
+        // but every call site sets `.u.LowPart`/`.u.HighPart` or `.QuadPart` before reading).
+        unsafe { core::mem::zeroed() }
+    }
+}
+
+/// `recyclebin_private.h:31` `#define ROUND_UP(N, S) (((N) + (S) - 1) / (S) * (S))`. A macro
+/// there (double-evaluates `S`), but both call sites here pass a plain local, so a function is
+/// faithful and avoids the double-eval footgun for any future caller.
+#[inline]
+fn ROUND_UP(n: DWORD, s: DWORD) -> DWORD {
+    (n + s - 1) / s * s
 }
 
 #[repr(C)]
@@ -217,7 +252,17 @@ pub struct WIN32_FIND_DATAW {
     pub cAlternateFileName: [WCHAR; 14],
 }
 
-// Deterministic from shldisp.h
+// Deterministic from shldisp.h. `Folder`/`FolderVtbl` below are dead scaffolding -- no function
+// body in this file calls through them -- but shldisp.h forward-declares `FolderItems` and
+// `FolderItem` as opaque COM interfaces (their own vtables live in shell32's IDL closure, not
+// this module's island), so the vtable's `*mut *mut FolderItems`/`FolderItem` slots need SOME
+// nominal type to name. Opaque zero-sized structs, exactly as a C `struct FolderItems;` forward
+// declaration would be: only ever used behind a pointer, never dereferenced here.
+#[repr(C)]
+pub struct FolderItems { _private: [u8; 0] }
+#[repr(C)]
+pub struct FolderItem { _private: [u8; 0] }
+
 #[repr(C)]
 pub struct Folder {
     pub lpVtbl: *const FolderVtbl,
@@ -422,7 +467,10 @@ pub unsafe fn SHELL_SingleFileOperation_body(hWnd: HWND, Op: UINT, pszFrom: LPCW
     let mut szzFrom = CZZWStr::new();
     let mut szzTo = CZZWStr::new();
     if !szzFrom.Initialize(pszFrom) || !szzTo.Initialize(pszTo) {
-        return ERROR_OUTOFMEMORY;
+        // recyclebin_v5.cpp:42 `return ERROR_OUTOFMEMORY;` -- an `int` return smuggling a
+        // Win32 error code, per the comment there ("Not one of the DE errors"). ERROR_OUTOFMEMORY
+        // is DWORD; the function's declared return is `i32` (matching `int SHELL_SingleFileOperation`).
+        return ERROR_OUTOFMEMORY as i32;
     }
     let mut fos: SHFILEOPSTRUCTW = core::mem::zeroed();
     fos.hwnd = hWnd;
@@ -430,7 +478,7 @@ pub unsafe fn SHELL_SingleFileOperation_body(hWnd: HWND, Op: UINT, pszFrom: LPCW
     fos.pFrom = szzFrom.c_str();
     fos.pTo = szzTo.c_str();
     fos.fFlags = Flags;
-    SHFileOperationW(&fos)
+    SHFileOperationW(&mut fos)
 }
 
 pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
@@ -438,13 +486,13 @@ pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
     let mut find_data: WIN32_FIND_DATAW = core::mem::zeroed::<WIN32_FIND_DATAW>();
     let mut h_search: HANDLE = INVALID_HANDLE_VALUE;
     let mut full_path: *mut u16 = core::ptr::null_mut();
-    let mut ret: i32 = FALSE;
+    let mut ret: BOOL = FALSE as BOOL;
 
     'cleanup: {
         let file_attributes: u32 = GetFileAttributesW(FullName);
         if file_attributes == INVALID_FILE_ATTRIBUTES {
             if GetLastError() == ERROR_FILE_NOT_FOUND {
-                ret = TRUE;
+                ret = TRUE as BOOL;
             }
             break 'cleanup;
         }
@@ -482,7 +530,7 @@ pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
             let p_file_part: *mut u16 = full_path.add(dw_length);
             wcscpy(p_file_part, CPP_COM_WSTR_E8A4B2EE7EDE.as_ptr());
 
-            h_search = FindFirstFileW(full_path, &mut find_data);
+            h_search = FindFirstFileW(full_path, (&mut find_data as *mut WIN32_FIND_DATAW).cast());
             if h_search == INVALID_HANDLE_VALUE {
                 break 'cleanup;
             }
@@ -504,7 +552,7 @@ pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
                     }
                 }
 
-                if FindNextFileW(h_search, &mut find_data) == 0 {
+                if FindNextFileW(h_search, (&mut find_data as *mut WIN32_FIND_DATAW).cast()) == 0 {
                     break;
                 }
             }
@@ -525,7 +573,7 @@ pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
             }
         }
 
-        ret = TRUE;
+        ret = TRUE as BOOL;
     }
 
     // cleanup
@@ -541,10 +589,10 @@ pub unsafe fn IntDeleteRecursive_body(FullName: LPCWSTR) -> BOOL {
 }
 
 pub unsafe fn RecycleBin5_GetDirectory_body(this: *mut RecycleBin5, szPath: LPWSTR) -> HRESULT {
-    if (*this).m_Folder[0] == 0 {
+    if (*this).m_Folder.GetAt(0) == 0 {
         return E_UNEXPECTED;
     }
-    lstrcpynW(szPath, (*this).m_Folder, MAX_PATH);
+    lstrcpynW(szPath, (*this).m_Folder.as_ptr(), MAX_PATH as i32);
     S_OK
 }
 
@@ -567,7 +615,7 @@ pub unsafe fn RecycleBin5_QueryInterface_body(this: *mut RecycleBin5, riid: REFI
 }
 
 pub unsafe fn RecycleBin5_AddRef_body(this: *mut RecycleBin5) -> ULONG {
-    ntdll_sys::nt::InterlockedIncrement(&mut (*this).m_ref) as u32
+    InterlockedIncrement(&mut (*this).m_ref) as u32
 }
 
 pub unsafe fn RecycleBin5_dtor_body(this: *mut RecycleBin5) -> () {
@@ -584,7 +632,7 @@ pub unsafe fn RecycleBin5_Release_body(this: *mut RecycleBin5) -> ULONG {
     if refCount == 0 {
         RecycleBin5_delete(this);
     }
-    refCount
+    refCount as ULONG
 }
 
 pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LPCWSTR) -> HRESULT {
@@ -595,17 +643,21 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
     let mut hFile: HANDLE = INVALID_HANDLE_VALUE;
     let mut pHeader: *mut INFO2_HEADER = core::ptr::null_mut();
     let mut pDeletedFile: *mut DELETED_FILE_RECORD;
-    let mut FileSize: ULARGE_INTEGER;
+    // Declared uninitialized in the C++ (`ULARGE_INTEGER FileSize;`), but every use here is
+    // `&mut FileSize.u.LowPart`/`.HighPart` -- an FFI out-param write the Rust definite-init
+    // checker cannot see as initializing the union. Zeroed to satisfy it; every read site
+    // happens only after the corresponding write.
+    let mut FileSize: ULARGE_INTEGER = ULARGE_INTEGER::default();
     let mut dwAttributes: u32;
     let mut dwEntries: u32;
-    let mut SystemTime: SYSTEMTIME;
+    let mut SystemTime: SYSTEMTIME = core::mem::zeroed();
     let mut hr: HRESULT = 0;
     let mut wfd: WIN32_FIND_DATAW = core::mem::zeroed();
     let mut DeletedFileName: CStringW = CStringW::new();
     let mut szUniqueId: [u16; 64 as usize] = [0; 64 as usize];
 
     if (*this).m_EnumeratorCount != 0 {
-        return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION as LONG);
+        return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION);
     }
 
     'main_body: loop {
@@ -619,7 +671,7 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
             );
             if len == 0 {
                 if !szFullName.is_null() {
-                    CoTaskMemFree(szFullName);
+                    CoTaskMemFree(szFullName.cast());
                     szFullName = core::ptr::null_mut();
                 }
                 hr = HResultFromWin32(GetLastError());
@@ -628,22 +680,22 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
                 break;
             }
             if !szFullName.is_null() {
-                CoTaskMemFree(szFullName);
+                CoTaskMemFree(szFullName.cast());
                 szFullName = core::ptr::null_mut();
             }
             dwBufferLength = len;
             szFullName = CoTaskMemAlloc(
-                (dwBufferLength as usize) * core::mem::size_of::<u16>(),
+                (dwBufferLength as usize) as SIZE_T * core::mem::size_of::<u16>() as SIZE_T,
             ) as LPWSTR;
             if szFullName.is_null() {
-                hr = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY as LONG);
+                hr = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
                 break 'main_body;
             }
         }
 
         dwAttributes = GetFileAttributesW(szFullName);
         if dwAttributes == INVALID_FILE_ATTRIBUTES {
-            CoTaskMemFree(szFullName);
+            CoTaskMemFree(szFullName.cast());
             szFullName = core::ptr::null_mut();
             hr = HResultFromWin32(GetLastError());
             break 'main_body;
@@ -652,9 +704,9 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
         if dwBufferLength < 2
             || *szFullName.add(1 as usize) != 0x003A_u16
         {
-            CoTaskMemFree(szFullName);
+            CoTaskMemFree(szFullName.cast());
             szFullName = core::ptr::null_mut();
-            hr = HRESULT_FROM_WIN32(ERROR_INVALID_NAME as LONG);
+            hr = HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
             break 'main_body;
         }
 
@@ -709,9 +761,9 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
             break 'main_body;
         }
 
-        FileSize.u.__bindgen_anon_1.LowPart =
-            GetFileSize((*this).m_hInfo, &mut FileSize.u.__bindgen_anon_1.HighPart);
-        if FileSize.u.__bindgen_anon_1.LowPart < core::mem::size_of::<INFO2_HEADER>() as u32 {
+        FileSize.u.LowPart =
+            GetFileSize((*this).m_hInfo, &mut FileSize.u.HighPart);
+        if FileSize.u.LowPart < core::mem::size_of::<INFO2_HEADER>() as u32 {
             hr = HResultFromWin32(GetLastError());
             break 'main_body;
         }
@@ -723,19 +775,19 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
         pDeletedFile = (pHeader.add(1 as usize) as *mut DELETED_FILE_RECORD)
             .add(dwEntries as usize);
 
-        FileSize.u.__bindgen_anon_1.LowPart =
-            GetFileSize(hFile, &mut FileSize.u.__bindgen_anon_1.HighPart);
-        if FileSize.u.__bindgen_anon_1.LowPart == INVALID_FILE_SIZE
+        FileSize.u.LowPart =
+            GetFileSize(hFile, &mut FileSize.u.HighPart);
+        if FileSize.u.LowPart == INVALID_FILE_SIZE
             && GetLastError() != NO_ERROR
         {
             hr = HResultFromWin32(GetLastError());
             break 'main_body;
         }
-        if FileSize.u.__bindgen_anon_1.HighPart != 0 {
-            hr = HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED as LONG);
+        if FileSize.u.HighPart != 0 {
+            hr = HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
             break 'main_body;
         }
-        (*pHeader).dwTotalLogicalSize += FileSize.u.__bindgen_anon_1.LowPart;
+        (*pHeader).dwTotalLogicalSize += FileSize.u.LowPart;
 
         let Extension: LPCWSTR = PathFindExtensionW(szFullName);
         ZeroMemory(
@@ -753,7 +805,7 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
         }
 
         (*pDeletedFile).dwDriveNumber =
-            tolower(*szFullName.add(0 as usize) as i32) - 0x61u32;
+            (tolower(*szFullName.add(0 as usize) as i32) - 0x61i32) as DWORD;
         _ultow(
             (*pDeletedFile).dwRecordUniqueId,
             szUniqueId.as_mut_ptr(),
@@ -783,39 +835,48 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
         let ClusterSize = BytesPerSector * SectorsPerCluster;
 
         GetSystemTime(&mut SystemTime);
+        // DELETED_FILE_RECORD is #[repr(C, packed)]; `&mut (*pDeletedFile).DeletionTime` would
+        // be an unaligned reference (E0793). Write through a local FILETIME and store it back
+        // with `write_unaligned`, which is exactly what packed-field writes need.
+        let mut deletion_time: FILETIME = core::mem::zeroed();
         if SystemTimeToFileTime(
             &SystemTime,
-            &mut (*pDeletedFile).DeletionTime,
+            &mut deletion_time,
         ) == 0
         {
             hr = HResultFromWin32(GetLastError());
             break 'main_body;
         }
+        core::ptr::addr_of_mut!((*pDeletedFile).DeletionTime).write_unaligned(deletion_time);
         (*pDeletedFile).dwPhysicalFileSize =
-            ROUND_UP(FileSize.u.__bindgen_anon_1.LowPart, ClusterSize);
+            ROUND_UP(FileSize.u.LowPart, ClusterSize);
 
+        // DELETED_FILE_RECORD is #[repr(C, packed)] (types_amd64.rs:16611) -- `.as_ptr()` /
+        // `.as_mut_ptr()` on a field array would borrow `&(*pDeletedFile).FileNameW`, an
+        // unaligned reference (AGENTS.md / repair brief rule on packed fields). `addr_of!`
+        // takes the address without ever forming a reference.
         wcscpy(
-            (*pDeletedFile).FileNameW.as_mut_ptr(),
+            core::ptr::addr_of_mut!((*pDeletedFile).FileNameW).cast::<u16>(),
             szFullName,
         );
         if WideCharToMultiByte(
             CP_ACP,
             0,
-            (*pDeletedFile).FileNameW.as_ptr(),
+            core::ptr::addr_of!((*pDeletedFile).FileNameW).cast::<u16>(),
             -1,
-            (*pDeletedFile).FileNameA.as_mut_ptr() as LPSTR,
-            MAX_PATH,
+            core::ptr::addr_of_mut!((*pDeletedFile).FileNameA) as LPSTR,
+            MAX_PATH as i32,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
         ) == 0
         {
-            hr = HRESULT_FROM_WIN32(ERROR_INVALID_NAME as LONG);
+            hr = HRESULT_FROM_WIN32(ERROR_INVALID_NAME);
             SetLastError(ERROR_INVALID_NAME);
             break 'main_body;
         }
 
         wfd.dwFileAttributes = dwAttributes;
-        wfd.nFileSizeLow = FileSize.u.__bindgen_anon_1.LowPart;
+        wfd.nFileSizeLow = FileSize.u.LowPart;
         GetFileTime(
             hFile,
             &mut wfd.ftCreationTime,
@@ -832,9 +893,9 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
         if hr >= 0 {
             let ident = RECYCLEBINFILEIDENTITY {
                 DeletionTime: (*pDeletedFile).DeletionTime,
-                FileName: DeletedFileName.as_ptr(),
+                RecycledFullPath: DeletedFileName.as_ptr(),
             };
-            CRecycleBin_NotifyRecycled(szFullName, &wfd, &ident);
+            CRecycleBin_NotifyRecycled(szFullName, (&wfd as *const WIN32_FIND_DATAW).cast(), &ident);
         }
 
         break 'main_body;
@@ -847,7 +908,7 @@ pub unsafe fn RecycleBin5_DeleteFile_body(this: *mut RecycleBin5, szFileName: LP
         CloseHandle(hFile);
     }
     if !szFullName.is_null() {
-        CoTaskMemFree(szFullName);
+        CoTaskMemFree(szFullName.cast());
     }
     hr
 }
@@ -861,18 +922,18 @@ pub unsafe fn RecycleBin5_EmptyRecycleBin_body(this: *mut RecycleBin5) -> HRESUL
         }
 
         let mut prbf: *mut IRecycleBinFile = ::core::ptr::null_mut();
-        let hr: HRESULT = ((*(*prbel).lpVtbl).Next)(
+        let hr: HRESULT = ((*(*prbel).lpVtbl).Next.unwrap_unchecked())(
             prbel,
             1,
             &mut prbf,
             ::core::ptr::null_mut(),
         );
-        ((*(*prbel).lpVtbl).Release)(prbel);
+        ((*(*prbel).lpVtbl).Release.unwrap_unchecked())(prbel);
         if hr == S_FALSE {
             return S_OK;
         }
-        let hr: HRESULT = ((*(*prbf).lpVtbl).Delete)(prbf);
-        ((*(*prbf).lpVtbl).Release)(prbf);
+        let hr: HRESULT = ((*(*prbf).lpVtbl).Delete.unwrap_unchecked())(prbf);
+        ((*(*prbf).lpVtbl).Release.unwrap_unchecked())(prbf);
         if !(hr >= 0) {
             return hr;
         }
@@ -886,8 +947,11 @@ pub unsafe fn RecycleBin5_EnumObjects_body(this: *mut RecycleBin5, ppEnumList: *
     // ATL CStringW typically stores the buffer pointer as its first (and only) member.
     let folder_ptr: *const u16 = *(&(*this).m_Folder as *const CStringW as *const *const u16);
 
+    // `this` (RecycleBin5*) implicitly upcasts to IRecycleBin5* in the C++ call
+    // (`RecycleBin5Enum_Constructor(this, ...)`, recyclebin_v5.cpp:437) -- valid because
+    // `IRecycleBin5_iface` is RecycleBin5's first field, so the address is identical.
     let mut hr = RecycleBin5Enum_Constructor(
-        this,
+        core::ptr::addr_of_mut!((*this).IRecycleBin5_iface),
         (*this).m_hInfo,
         (*this).m_hInfoMapped,
         folder_ptr,
@@ -899,9 +963,9 @@ pub unsafe fn RecycleBin5_EnumObjects_body(this: *mut RecycleBin5, ppEnumList: *
     }
 
     let mut prbel: *mut IRecycleBinEnumList = core::ptr::null_mut();
-    hr = ((*(*pUnk).lpVtbl).QueryInterface)(
+    hr = ((*(*pUnk).lpVtbl).QueryInterface.unwrap_unchecked())(
         pUnk,
-        &IID_IRecycleBinEnumList as *const GUID,
+        (&IID_IRecycleBinEnumList as *const GUID).cast(),
         &mut prbel as *mut *mut _ as *mut *mut core::ffi::c_void,
     );
 
@@ -910,7 +974,7 @@ pub unsafe fn RecycleBin5_EnumObjects_body(this: *mut RecycleBin5, ppEnumList: *
         *ppEnumList = prbel;
     }
 
-    ((*(*pUnk).lpVtbl).Release)(pUnk);
+    ((*(*pUnk).lpVtbl).Release.unwrap_unchecked())(pUnk);
     hr
 }
 
@@ -931,7 +995,7 @@ pub unsafe fn RecycleBin5_Restore_v1_body(this: *mut RecycleBin5, pDeletedFileNa
         core::ptr::null_mut(),
         FO_MOVE,
         pDeletedFileName,
-        (*pDeletedFile).FileNameW,
+        core::ptr::addr_of!((*pDeletedFile).FileNameW).cast::<u16>(),
         0,
     );
     if res != 0 {
@@ -949,11 +1013,11 @@ pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDe
     let pHeader: PINFO2_HEADER;
     let mut pRecord: *const DELETED_FILE_RECORD;
     let pLast: *const DELETED_FILE_RECORD;
-    let dwEntries: DWORD;
+    let mut dwEntries: DWORD;
     let mut i: DWORD;
 
     if (*this).m_EnumeratorCount != 0 {
-        return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION as LONG);
+        return HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION);
     }
 
     pHeader = MapViewOfFile(
@@ -967,8 +1031,8 @@ pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDe
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
-    FileSize.u.__bindgen_anon_1.LowPart = GetFileSize((*this).m_hInfo, &mut FileSize.u.__bindgen_anon_1.HighPart);
-    if FileSize.u.__bindgen_anon_1.LowPart == 0 {
+    FileSize.u.LowPart = GetFileSize((*this).m_hInfo, &mut FileSize.u.HighPart);
+    if FileSize.u.LowPart == 0 {
         UnmapViewOfFile(pHeader as *mut c_void);
         return HRESULT_FROM_WIN32(GetLastError());
     }
@@ -984,9 +1048,15 @@ pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDe
         if (*pRecord).dwRecordUniqueId == (*pDeletedFile).dwRecordUniqueId {
             // FIXME: The caller does not release pHeader!
             // Clear last entry in the file
-            MoveMemory(
-                (pRecord as *mut c_void).add(core::mem::size_of::<DELETED_FILE_RECORD>() * 1 as usize),
-                pRecord as *const c_void,
+            // recyclebin_v5.cpp:719 `MoveMemory(pRecord, pRecord + 1, ...)` -- dest is the
+            // record being removed, src is the record AFTER it (shift the tail down by one
+            // slot). The prior translation had dest/src swapped (`pRecord.add(1)` as dest,
+            // `pRecord` as src), which corrupts the INFO2 database by shifting the wrong way
+            // instead of deleting the entry. `MoveMemory` is also a MACRO (prelude.rs), not a
+            // function -- called here as `MoveMemory!`.
+            MoveMemory!(
+                pRecord as *mut c_void,
+                (pRecord as *const u8).add(core::mem::size_of::<DELETED_FILE_RECORD>() * 1 as usize),
                 (dwEntries - i - 1) as usize * core::mem::size_of::<DELETED_FILE_RECORD>(),
             );
             pLast = (pRecord as *const u8).add(
@@ -1031,7 +1101,7 @@ pub unsafe fn RecycleBin5_RemoveFromDatabase_v1_body(this: *mut RecycleBin5, pDe
     }
 
     UnmapViewOfFile(pHeader as *mut c_void);
-    HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND as LONG)
+    HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
 }
 
 pub unsafe fn RecycleBin5_OnClosing_body(this: *mut RecycleBin5, prbel: *mut IRecycleBinEnumList) -> HRESULT {
@@ -1050,7 +1120,7 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
         let needed: usize = (wcslen(Folder)
             + 1
             + max(
-                wcslen(RECYCLE_BIN_FILE_NAME as *const c_char),
+                wcslen(RECYCLE_BIN_FILE_NAME),
                 wcslen(CPP_COM_WSTR_A5DBFDEBD401.as_ptr()),
             )
             + 1)
@@ -1062,7 +1132,10 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
             needed,
         ) as LPWSTR;
         if buffer_name.is_null() {
-            hr = ERROR_NOT_ENOUGH_MEMORY;
+            // recyclebin_v5.cpp:557 `hr = ERROR_NOT_ENOUGH_MEMORY; goto cleanup;` -- the C++
+            // itself stores the raw Win32 error into `hr` here (unlike every other failure
+            // path in this function, which wraps via HRESULT_FROM_WIN32). Preserved as-is.
+            hr = ERROR_NOT_ENOUGH_MEMORY as HRESULT;
             break 'cleanup_main;
         }
 
@@ -1080,7 +1153,7 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
         }
 
         // Create main directory (without separator)
-        if !CreateDirectoryW(buffer_name, core::ptr::null_mut())
+        if CreateDirectoryW(buffer_name, core::ptr::null_mut()) == 0
             && GetLastError() != ERROR_ALREADY_EXISTS
         {
             hr = HRESULT_FROM_WIN32(GetLastError());
@@ -1096,7 +1169,7 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
         // If we had a separator (e.g. backslash), create the subdirectory too
         if !separator.is_null() {
             *separator = 0x005Cu16;
-            if !CreateDirectoryW(buffer_name, core::ptr::null_mut())
+            if CreateDirectoryW(buffer_name, core::ptr::null_mut()) == 0
                 && GetLastError() != ERROR_ALREADY_EXISTS
             {
                 hr = HRESULT_FROM_WIN32(GetLastError());
@@ -1133,12 +1206,18 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
             break 'cleanup_main;
         }
 
-        let bytes_to_write: u32 =
-            strlen(RECYCLE_BIN_FILE_NAME as *const c_char) as u32;
+        // recyclebin_v5.cpp:552 `LPCSTR DesktopIniContents = "[.ShellClassInfo]\r\nCLSID=
+        // {645FF040-5081-101B-9F08-00AA002F954E}\r\n";` -- a distinct ASCII literal. The prior
+        // translation dropped it entirely and reused `RECYCLE_BIN_FILE_NAME` ("INFO2") as the
+        // desktop.ini payload instead, which would write the wrong 5 bytes into every
+        // newly-created recycle bin's desktop.ini. Restored verbatim against the C++.
+        const DESKTOP_INI_CONTENTS: &[u8] =
+            b"[.ShellClassInfo]\r\nCLSID={645FF040-5081-101B-9F08-00AA002F954E}\r\n";
+        let bytes_to_write: u32 = DESKTOP_INI_CONTENTS.len() as u32;
         let mut bytes_written: u32 = 0;
         if WriteFile(
             hFile,
-            RECYCLE_BIN_FILE_NAME as *const c_char as *const u8,
+            DESKTOP_INI_CONTENTS.as_ptr().cast(),
             bytes_to_write,
             &mut bytes_written,
             core::ptr::null_mut(),
@@ -1182,7 +1261,7 @@ pub unsafe fn RecycleBin5_Create_body(Folder: LPCWSTR, OwnerSid: PSID) -> HRESUL
         bytes_written = 0;
         if WriteFile(
             hFile,
-            info2_contents.as_ptr() as *const u8,
+            info2_contents.as_ptr().cast(),
             bytes_to_write,
             &mut bytes_written,
             core::ptr::null_mut(),
@@ -1224,7 +1303,7 @@ pub unsafe fn RecycleBin5_Init_body(this: *mut RecycleBin5, VolumePath: LPCWSTR)
     let mut tokenHandle: HANDLE = INVALID_HANDLE_VALUE;
     let mut TokenUserInfo: PTOKEN_USER = core::ptr::null_mut();
     let mut StringSid: LPWSTR = core::ptr::null_mut();
-    let mut Needed: DWORD;
+    let mut Needed: DWORD = 0;
     let mut len: i32;
 
     let cleanup_hr: HRESULT = 'init: loop {
@@ -1277,7 +1356,7 @@ pub unsafe fn RecycleBin5_Init_body(this: *mut RecycleBin5, VolumePath: LPCWSTR)
                 GetProcessHeap(),
                 0,
                 Needed,
-            );
+            ) as PTOKEN_USER;
             if TokenUserInfo.is_null() {
                 hr = E_OUTOFMEMORY;
                 break 'init hr;
@@ -1285,7 +1364,7 @@ pub unsafe fn RecycleBin5_Init_body(this: *mut RecycleBin5, VolumePath: LPCWSTR)
             if GetTokenInformation(
                 tokenHandle,
                 TokenUser,
-                TokenUserInfo,
+                TokenUserInfo.cast(),
                 Needed,
                 &mut Needed,
             ) == 0 {
@@ -1299,14 +1378,14 @@ pub unsafe fn RecycleBin5_Init_body(this: *mut RecycleBin5, VolumePath: LPCWSTR)
         }
 
         RecycleBin5_cpp_com_assign_m_Folder(this, VolumePath);
-        (*this).m_Folder += RecycleBinDirectory;
+        (*this).m_Folder.append_str(RecycleBinDirectory);
         if !StringSid.is_null() {
-            (*this).m_Folder += 0x005Cu16;
-            (*this).m_Folder += StringSid;
+            (*this).m_Folder.append_char(0x005Cu16);
+            (*this).m_Folder.append_str(StringSid);
         }
         len = (*this).m_Folder.GetLength();
-        (*this).m_Folder += CPP_COM_WSTR_B7FC02907B1F.as_ptr();
-        (*this).m_Folder += RECYCLE_BIN_FILE_NAME;
+        (*this).m_Folder.append_str(CPP_COM_WSTR_B7FC02907B1F.as_ptr());
+        (*this).m_Folder.append_str(RECYCLE_BIN_FILE_NAME);
 
         (*this).m_hInfo = CreateFileW(
             (*this).m_Folder.as_ptr(),
@@ -1323,15 +1402,17 @@ pub unsafe fn RecycleBin5_Init_body(this: *mut RecycleBin5, VolumePath: LPCWSTR)
                 || GetLastError() == ERROR_FILE_NOT_FOUND)
         {
             RecycleBin5_cpp_com_assign_m_Folder(this, (*this).m_Folder.Left(len).as_ptr());
-            hr = RecycleBin5_Create_body(this, (*this).m_Folder.as_ptr(),
+            // recyclebin_v5.cpp:752: `RecycleBin5_Create` is the free function above, not a
+            // method -- it takes no `this`.
+            hr = RecycleBin5_Create_body((*this).m_Folder.as_ptr(),
                 if !TokenUserInfo.is_null() {
                     (*TokenUserInfo).User.Sid
                 } else {
                     core::ptr::null_mut()
                 },
             );
-            (*this).m_Folder += CPP_COM_WSTR_B7FC02907B1F.as_ptr();
-            (*this).m_Folder += RECYCLE_BIN_FILE_NAME;
+            (*this).m_Folder.append_str(CPP_COM_WSTR_B7FC02907B1F.as_ptr());
+            (*this).m_Folder.append_str(RECYCLE_BIN_FILE_NAME);
             if (hr as i32) < 0 {
                 break 'init hr;
             }
@@ -1378,7 +1459,7 @@ pub unsafe fn RecycleBin5_Init_body(this: *mut RecycleBin5, VolumePath: LPCWSTR)
         TokenUserInfo,
     );
     if !StringSid.is_null() {
-        LocalFree(StringSid);
+        LocalFree(StringSid.cast());
     }
     cleanup_hr
 }

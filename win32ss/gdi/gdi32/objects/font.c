@@ -13,6 +13,7 @@
 
 #include <math.h>
 #include <strsafe.h>
+#include <cjkcode.h>
 
 #define NDEBUG
 #include <debug.h>
@@ -706,7 +707,6 @@ GetCharABCWidthsFloatW(HDC hdc,
 
 /*
  * @implemented
- *
  */
 BOOL
 WINAPI
@@ -716,7 +716,8 @@ GetCharWidthFloatW(HDC hdc,
                    PFLOAT pxBuffer)
 {
     DPRINT("GetCharWidthsFloatW\n");
-    if ((!pxBuffer) || (iFirstChar > iLastChar))
+    if ((!pxBuffer) || (iFirstChar > iLastChar) || HIWORD(iLastChar) ||
+        (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -731,7 +732,6 @@ GetCharWidthFloatW(HDC hdc,
 
 /*
  * @implemented
- *
  */
 BOOL
 WINAPI
@@ -741,7 +741,8 @@ GetCharWidthW(HDC hdc,
               LPINT lpBuffer)
 {
     DPRINT("GetCharWidthsW\n");
-    if ((!lpBuffer) || (iFirstChar > iLastChar))
+    if ((!lpBuffer) || (iFirstChar > iLastChar) || HIWORD(iLastChar) ||
+        (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -756,7 +757,6 @@ GetCharWidthW(HDC hdc,
 
 /*
  * @implemented
- *
  */
 BOOL
 WINAPI
@@ -766,7 +766,8 @@ GetCharWidth32W(HDC hdc,
                 LPINT lpBuffer)
 {
     DPRINT("GetCharWidths32W\n");
-    if ((!lpBuffer) || (iFirstChar > iLastChar))
+    if ((!lpBuffer) || (iFirstChar > iLastChar) || HIWORD(iLastChar) ||
+        (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -779,10 +780,8 @@ GetCharWidth32W(HDC hdc,
                                lpBuffer);
 }
 
-
 /*
  * @implemented
- *
  */
 BOOL
 WINAPI
@@ -812,10 +811,9 @@ BOOL
 WINAPI
 GetCharWidthA(
     HDC	hdc,
-    UINT	iFirstChar,
-    UINT	iLastChar,
-    LPINT	lpBuffer
-)
+    UINT iFirstChar,
+    UINT iLastChar,
+    LPINT lpBuffer)
 {
     INT wlen, count = 0;
     LPSTR str;
@@ -823,6 +821,12 @@ GetCharWidthA(
     BOOL ret = TRUE;
 
     DPRINT("GetCharWidthsA\n");
+
+    if (!lpBuffer || (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc))
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
 
     str = FONT_GetCharsByRangeA(hdc, iFirstChar, iLastChar, &count);
     if (!str)
@@ -855,10 +859,9 @@ BOOL
 WINAPI
 GetCharWidth32A(
     HDC	hdc,
-    UINT	iFirstChar,
-    UINT	iLastChar,
-    LPINT	lpBuffer
-)
+    UINT iFirstChar,
+    UINT iLastChar,
+    LPINT lpBuffer)
 {
     INT wlen, count = 0;
     LPSTR str;
@@ -866,6 +869,12 @@ GetCharWidth32A(
     BOOL ret = TRUE;
 
     DPRINT("GetCharWidths32A\n");
+
+    if (!lpBuffer || (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc))
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
 
     str = FONT_GetCharsByRangeA(hdc, iFirstChar, iLastChar, &count);
     if (!str)
@@ -898,10 +907,9 @@ BOOL
 APIENTRY
 GetCharWidthFloatA(
     HDC	hdc,
-    UINT	iFirstChar,
-    UINT	iLastChar,
-    PFLOAT	pxBuffer
-)
+    UINT iFirstChar,
+    UINT iLastChar,
+    PFLOAT pxBuffer)
 {
     INT wlen, count = 0;
     LPSTR str;
@@ -909,6 +917,12 @@ GetCharWidthFloatA(
     BOOL ret = TRUE;
 
     DPRINT("GetCharWidthsFloatA\n");
+
+    if (!pxBuffer || (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc))
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
 
     str = FONT_GetCharsByRangeA(hdc, iFirstChar, iLastChar, &count);
     if (!str)
@@ -1037,16 +1051,19 @@ GetCharWidthI(HDC hdc,
               UINT giFirst,
               UINT cgi,
               LPWORD pgi,
-              LPINT lpBuffer
-             )
+              LPINT lpBuffer)
 {
     DPRINT("GetCharWidthsI\n");
-    if (!lpBuffer || (!pgi && (giFirst == MAXUSHORT))) // Cannot be at max.
+
+    if (!lpBuffer || (!pgi && HIWORD(giFirst)))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    if (!cgi) return TRUE;
+
+    if (!cgi)
+        return TRUE;
+
     return NtGdiGetCharWidthW( hdc,
                                giFirst,
                                cgi,
@@ -1096,8 +1113,13 @@ GetGlyphIndicesA(
     WCHAR *lpstrW;
     INT countW;
 
-    lpstrW = FONT_mbtowc(hdc, lpstr, count, &countW, NULL);
+    if (count > 0 && (GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC || !GdiValidateHandle(hdc)))
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return GDI_ERROR;
+    }
 
+    lpstrW = FONT_mbtowc(hdc, lpstr, count, &countW, NULL);
     if (lpstrW == NULL)
         return GDI_ERROR;
 
@@ -1106,94 +1128,120 @@ GetGlyphIndicesA(
     return Ret;
 }
 
-/*
- * @implemented
- */
-DWORD
-WINAPI
-GetGlyphOutlineA(
-    HDC		hdc,
-    UINT		uChar,
-    UINT		uFormat,
-    LPGLYPHMETRICS	lpgm,
-    DWORD		cbBuffer,
-    LPVOID		lpvBuffer,
-    CONST MAT2	*lpmat2
-)
+static __inline DWORD APIENTRY
+IntGetGlyphOutlineW(
+    HDC hdc,
+    UINT uChar,
+    UINT fuFormat,
+    LPGLYPHMETRICS lpgm,
+    DWORD cbBuffer,
+    LPVOID lpvBuffer,
+    CONST MAT2 *lpmat2,
+    BOOL bIgnoreRotation)
 {
+    if (!lpmat2 || !lpgm)
+        return GDI_ERROR;
+    if (!lpvBuffer)
+        cbBuffer = 0;
+    return NtGdiGetGlyphOutline(hdc, uChar, fuFormat, lpgm, cbBuffer, lpvBuffer, lpmat2,
+                                bIgnoreRotation);
+}
 
-    LPWSTR p = NULL;
-    DWORD ret;
-    UINT c;
-    DPRINT("GetGlyphOutlineA uChar %x\n", uChar);
-    if (!lpgm || !lpmat2) return GDI_ERROR;
-    if(!(uFormat & GGO_GLYPH_INDEX))
+static DWORD APIENTRY
+IntGetGlyphOutlineA(
+    HDC hdc,
+    UINT uChar,
+    UINT fuFormat,
+    LPGLYPHMETRICS lpgm,
+    DWORD cbBuffer,
+    LPVOID lpvBuffer,
+    CONST MAT2 *lpmat2,
+    BOOL bIgnoreRotation)
+{
+    UINT nCodePage, cchAnsi;
+    CHAR szAnsi[4];
+    WCHAR szWide[2];
+
+    if (fuFormat & GGO_GLYPH_INDEX)
     {
-        int len;
-        char mbchs[2];
-        if(uChar > 0xff)   /* but, 2 bytes character only */
-        {
-            len = 2;
-            mbchs[0] = (uChar & 0xff00) >> 8;
-            mbchs[1] = (uChar & 0xff);
-        }
-        else
-        {
-            len = 1;
-            mbchs[0] = (uChar & 0xff);
-        }
-        p = FONT_mbtowc(hdc, mbchs, len, NULL, NULL);
-        if(!p)
-            return GDI_ERROR;
-        c = p[0];
+        szWide[0] = (WCHAR)uChar;
+        return IntGetGlyphOutlineW(hdc, szWide[0], fuFormat, lpgm, cbBuffer, lpvBuffer, lpmat2,
+                                   bIgnoreRotation);
+    }
+
+    nCodePage = GdiGetCodePage(hdc);
+    if ((nCodePage == CP_SHIFTJIS ||
+         nCodePage == CP_HANGUL ||
+         nCodePage == CP_BIG5 ||
+         nCodePage == CP_GB2312) && IsDBCSLeadByteEx(nCodePage, HIBYTE(uChar)))
+    {
+        szAnsi[0] = HIBYTE(uChar);
+        szAnsi[1] = LOBYTE(uChar);
+        cchAnsi = 2;
     }
     else
-        c = uChar;
-    ret = NtGdiGetGlyphOutline(hdc, c, uFormat, lpgm, cbBuffer, lpvBuffer, (CONST LPMAT2)lpmat2, TRUE);
-    HeapFree(GetProcessHeap(), 0, p);
-    return ret;
+    {
+        szAnsi[0] = LOBYTE(uChar);
+        cchAnsi = 1;
+    }
+
+    if (!MultiByteToWideChar(nCodePage, 0, szAnsi, cchAnsi, szWide, _countof(szWide)))
+    {
+        GdiSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    return IntGetGlyphOutlineW(hdc, szWide[0], fuFormat, lpgm, cbBuffer, lpvBuffer, lpmat2,
+                               bIgnoreRotation);
+}
+
+/*
+ * @implemented
+ */
+DWORD WINAPI
+GetGlyphOutlineA(
+    _In_ HDC hdc,
+    _In_ UINT uChar,
+    _In_ UINT fuFormat,
+    _Out_ LPGLYPHMETRICS lpgm,
+    _In_ DWORD cbBuffer,
+    _Out_writes_bytes_opt_(cbBuffer) LPVOID lpvBuffer,
+    _In_ CONST MAT2 *lpmat2)
+{
+    return IntGetGlyphOutlineA(hdc, uChar, fuFormat, lpgm, cbBuffer, lpvBuffer, lpmat2, FALSE);
 }
 
 
 /*
  * @implemented
  */
-DWORD
-WINAPI
+DWORD WINAPI
 GetGlyphOutlineW(
-    HDC		hdc,
-    UINT		uChar,
-    UINT		uFormat,
-    LPGLYPHMETRICS	lpgm,
-    DWORD		cbBuffer,
-    LPVOID		lpvBuffer,
-    CONST MAT2	*lpmat2
-)
+    _In_ HDC hdc,
+    _In_ UINT uChar,
+    _In_ UINT fuFormat,
+    _Out_ LPGLYPHMETRICS lpgm,
+    _In_ DWORD cbBuffer,
+    _Out_writes_bytes_opt_(cbBuffer) LPVOID lpvBuffer,
+    _In_ CONST MAT2 *lpmat2)
 {
-    DPRINT("GetGlyphOutlineW uChar %x\n", uChar);
-    if (!lpgm || !lpmat2) return GDI_ERROR;
-    if (!lpvBuffer) cbBuffer = 0;
-    return NtGdiGetGlyphOutline ( hdc, uChar, uFormat, lpgm, cbBuffer, lpvBuffer, (CONST LPMAT2)lpmat2, TRUE);
+    return IntGetGlyphOutlineW(hdc, uChar, fuFormat, lpgm, cbBuffer, lpvBuffer, lpmat2, FALSE);
 }
 
 /*
- * @unimplemented
+ * @implemented
  */
-DWORD
-WINAPI
+DWORD WINAPI
 GetGlyphOutlineWow(
-    DWORD	a0,
-    DWORD	a1,
-    DWORD	a2,
-    DWORD	a3,
-    DWORD	a4,
-    DWORD	a5,
-    DWORD	a6
-)
+    _In_ HDC hdc,
+    _In_ UINT uChar,
+    _In_ UINT fuFormat,
+    _Out_ LPGLYPHMETRICS lpgm,
+    _In_ DWORD cbBuffer,
+    _Out_writes_bytes_opt_(cbBuffer) LPVOID lpvBuffer,
+    _In_ CONST MAT2 *lpmat2)
 {
-    UNIMPLEMENTED;
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    return 0;
+    return IntGetGlyphOutlineA(hdc, uChar, fuFormat, lpgm, cbBuffer, lpvBuffer, lpmat2, TRUE);
 }
 
 /*

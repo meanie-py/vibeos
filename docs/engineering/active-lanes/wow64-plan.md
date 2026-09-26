@@ -13,8 +13,9 @@ hardware faults into their own SEH, and generate and execute code at runtime.
   mspaint, regedit, winver, taskmgr, wordpad, clipbrd, eventvwr, magnify, osk,
   spider — plus x86 DOOM, rendering and playable.
 
-What remains is depth, not capability: guest *processes*, registry redirection,
-and the marshalgen audit backlog. See **What is deliberately not built**.
+What remains is depth, not capability: guest *processes* and the marshalgen audit
+backlog. Registry redirection was the third item here until E24 landed it. See
+**What is deliberately not built**.
 
 Owner: `wow64-amd64` lane.
 Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
@@ -212,7 +213,10 @@ scratch. The guest also opens `\KnownDlls32` rather than `\KnownDlls`, because
 the latter holds **host-arch** sections — a guest mapping an arm64 kernel32 gets
 `ILLEGAL_DLL_RELOCATION`, which is a spectacular way to learn this.
 
-**Registry redirection does not exist** (see below).
+**Registry redirection lives in CM, not here** — see phase E24. It is the one part
+of the redirection story that is deliberately not in wow64.dll, because registry
+opens are overwhelmingly relative and a user-mode rewrite would need a
+handle-to-path syscall per open.
 
 **The kernel's share is small on purpose** — `ARM3/procsup.rs` (PEB32/TEB32),
 `ke/amd64/except.rs` and `ke/amd64/thrdini.rs` (compat-mode entry/exit), plus
@@ -246,13 +250,29 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
 
 ## What is deliberately not built
 
-- **Guest processes.** A 32-bit guest can create threads but not processes;
-  `CreateProcess` from a guest and cross-process `CreateRemoteThread` both need
-  the CSR-LPC-32 layer. This is the largest remaining hole — it is what
-  installers and any app that shells out will hit.
-- **Registry redirection** (`Wow6432Node`, `KEY_WOW64_32KEY/64KEY`) — task #66.
-  Not merely missing: a 32-bit guest currently reads and writes the *native*
-  hive, so it is a silent correctness bug, not a stubbed feature.
+- ~~**Guest processes**~~ — **`CreateProcess` WORKS** (2026-09-19). What was
+  "the largest remaining hole" took five stacked defects, each invisible until
+  the one before it was fixed: a dropped `_SEH2_EXCEPT` (bugcheck), an invented
+  `STATUS_PARTIAL_COPY` constant, a missing TEB32 `RemotePeb` channel, an
+  unmarshalled `BASE_CREATE_PROCESS` CSR message, and PEB64 process parameters
+  that only a 64-bit parent would have filled. `spawn32.exe` reports `0x600D`
+  across all five rungs and is now a graded LADDER guest (11/11 on amd64).
+  Full chain in `x64-primary-plan.md` gap #1.
+
+  **`CreateRemoteThread` closed the same night**, and it needed no channel
+  either: the new thread's start routine is the TARGET's own
+  `Wow64pGuestThreadStart`, so the per-thread setup runs in the target, on the
+  new thread, by the target's own code — which is what Win10's work list exists
+  to arrange. `Wow64ProcessPendingCrossProcessItems` is therefore legitimately
+  empty rather than pending. The one thing that could NOT be assumed is the
+  start address: `wow64.dll` loads at DIFFERENT bases in the two processes
+  (measured on the live boot), so the creator walks the target's loader list and
+  translates through the delta. spawn32 rungs 6-7 guard it.
+- ~~**Registry redirection**~~ — **BUILT** (phase E24, task #66). Listed here as a
+  silent correctness bug until then: a 32-bit guest read and wrote the *native*
+  hive. Now redirected in `CmpParseKey` (`config-rust/src/cmwow64.rs`), with
+  `reg32.exe` as the runtime guard. Two documented deviations from Windows remain,
+  both recorded under E24 and both reversible.
 - **The 209 remaining audit-baseline entries** — services whose payloads provably
   diverge but that still flat-thunk. Each is a latent version of bugs already
   paid for. E19 closed the pointer-width **out-cell** slice (which was corrupting
@@ -2541,7 +2561,25 @@ notifications drove code paths nothing had reached before.
    on `PTE=…4C3` (Normal) — an ordinary unaligned atomic, which is exactly the
    case FEX's own handler exists to absorb.
 
-2. **FILED (task #76) — `MiDoPoolCopy` reports success without writing.** It
+2. **FIXED (task #76, 2026-09-19) — `MiDoPoolCopy` reported success without
+   writing.** Closed by the validate-first probe conversion in `ARM3/virtual.rs`,
+   which was made for a different bug entirely (the dropped `_SEH2_EXCEPT` that
+   BUGCHECKed guest `CreateProcess`) and gave this one the observability its
+   entry below says it needed. The kernel now answers `STATUS_PARTIAL_COPY` with
+   0 written where it used to answer `STATUS_SUCCESS` with 6 — the truth instead
+   of the lie.
+
+   *And the fix made `selfmod32` go RED, because rung 7 had encoded the bug.* It
+   read `st < 0` as failure, which was right only while the kernel was wrong. The
+   rung now accepts a refusal, but verifies WHY — `VirtualQuery` must report the
+   page unwritable (measured: `0x20`, `PAGE_EXECUTE_READ`, exactly the SMC
+   write-protection FEX installs) — and checks the out-cell canary on both paths,
+   since a refused write may not clobber the guest's 4-byte count cell either.
+   amd64 has no SMC trap, so the write succeeds there and the original assertion
+   still runs. **11/11 on both arches.** Field manual: "A test that ENCODES a bug
+   goes red the day the bug is fixed".
+
+   *Original filing, kept because it is why the entry existed:* It
    translated the C's `_SEH2_TRY/_SEH2_EXCEPT` as straight-line code, so
    `Status` is initialised to `STATUS_SUCCESS` and never assigned anywhere in
    the function; both `if Status >= 0 { copy }` guards always pass and the tail
@@ -3277,7 +3315,13 @@ frame, coroutine resume/yield switches between independent stacks, and rung 4 ra
 frame whose value stack has MOVED since it was entered. Nothing else in the ladder reaches any
 of that.
 
-**Ordering rule: the guest that can BUGCHECK goes LAST.** `sqlite32` is the registered arm64
+**Ordering rule: the guest that can BUGCHECK goes LAST — and it is the GRADED
+guests the rule protects.** spawn32 is the worked example in both directions: it
+ran dead last while it could kill the machine, and moved ahead of the stress
+guests the day it was promoted into the graded set, because a crash in sqlite32
+costs every guest sequenced after it its verdict.
+
+ `sqlite32` is the registered arm64
 on-disk instability (roadmap: 0x1E / `RtlRaiseStatus+68`), and a guest that takes the machine
 down costs every guest launched after it its verdict — silently, because the harness sees a
 clean 9/9 parity pass and simply no line about the others. That is not hypothetical: it is what

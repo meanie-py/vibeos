@@ -305,7 +305,6 @@ pub const THREAD_PRIORITY_ERROR_RETURN: u32 = 2147483647;
 pub const TIME_ZONE_ID_UNKNOWN: u32 = 0;
 pub const TIME_ZONE_ID_STANDARD: u32 = 1;
 pub const TIME_ZONE_ID_DAYLIGHT: u32 = 2;
-pub const TIME_ZONE_ID_INVALID: u32 = 4294967295;
 pub const FS_CASE_IS_PRESERVED: u32 = 2;
 pub const FS_CASE_SENSITIVE: u32 = 1;
 pub const FS_UNICODE_STORED_ON_DISK: u32 = 4;
@@ -545,6 +544,10 @@ pub const INIT_ONCE_CHECK_ONLY: u32 = 1;
 pub const INIT_ONCE_ASYNC: u32 = 2;
 pub const INIT_ONCE_INIT_FAILED: u32 = 4;
 pub const INIT_ONCE_CTX_RESERVED_BITS: u32 = 2;
+pub const RESOURCE_ENUM_LN: u32 = 1;
+pub const RESOURCE_ENUM_MUI: u32 = 2;
+pub const RESOURCE_ENUM_MUI_SYSTEM: u32 = 4;
+pub const RESOURCE_ENUM_VALIDATE: u32 = 8;
 pub const REG_CREATED_NEW_KEY: u32 = 1;
 pub const REG_OPENED_EXISTING_KEY: u32 = 2;
 pub const REG_NONE: u32 = 0;
@@ -2757,20 +2760,6 @@ pub const ENDSESSION_LOGOFF: u32 = 2147483648;
 pub const ENDSESSION_CRITICAL: u32 = 1073741824;
 pub const ENDSESSION_CLOSEAPP: u32 = 1;
 pub const CHILDID_SELF: u32 = 0;
-pub const OBJID_WINDOW: u32 = 0;
-pub const OBJID_SYSMENU: u32 = 4294967295;
-pub const OBJID_TITLEBAR: u32 = 4294967294;
-pub const OBJID_MENU: u32 = 4294967293;
-pub const OBJID_CLIENT: u32 = 4294967292;
-pub const OBJID_VSCROLL: u32 = 4294967291;
-pub const OBJID_HSCROLL: u32 = 4294967290;
-pub const OBJID_SIZEGRIP: u32 = 4294967289;
-pub const OBJID_CARET: u32 = 4294967288;
-pub const OBJID_CURSOR: u32 = 4294967287;
-pub const OBJID_ALERT: u32 = 4294967286;
-pub const OBJID_SOUND: u32 = 4294967285;
-pub const OBJID_QUERYCLASSNAMEIDX: u32 = 4294967284;
-pub const OBJID_NATIVEOM: u32 = 268435440;
 pub const GUI_CARETBLINKING: u32 = 1;
 pub const GUI_INMOVESIZE: u32 = 2;
 pub const GUI_INMENUMODE: u32 = 4;
@@ -2923,6 +2912,8 @@ pub const RID_HEADER: u32 = 268435461;
 pub const RIDI_PREPARSEDDATA: u32 = 536870917;
 pub const RIDI_DEVICENAME: u32 = 536870919;
 pub const RIDI_DEVICEINFO: u32 = 536870923;
+pub const RIDEV_EXINPUTSINK: u32 = 4096;
+pub const RIDEV_DEVNOTIFY: u32 = 8192;
 pub const RIDEV_REMOVE: u32 = 1;
 pub const RIDEV_EXCLUDE: u32 = 16;
 pub const RIDEV_PAGEONLY: u32 = 32;
@@ -2931,6 +2922,7 @@ pub const RIDEV_INPUTSINK: u32 = 256;
 pub const RIDEV_CAPTUREMOUSE: u32 = 512;
 pub const RIDEV_NOHOTKEYS: u32 = 512;
 pub const RIDEV_APPKEYS: u32 = 1024;
+pub const RIDEV_EXMODEMASK: u32 = 240;
 pub const STATE_SYSTEM_UNAVAILABLE: u32 = 1;
 pub const STATE_SYSTEM_SELECTED: u32 = 2;
 pub const STATE_SYSTEM_FOCUSED: u32 = 4;
@@ -2960,6 +2952,7 @@ pub const STATE_SYSTEM_EXTSELECTABLE: u32 = 33554432;
 pub const STATE_SYSTEM_ALERT_LOW: u32 = 67108864;
 pub const STATE_SYSTEM_ALERT_MEDIUM: u32 = 134217728;
 pub const STATE_SYSTEM_ALERT_HIGH: u32 = 268435456;
+pub const STATE_SYSTEM_PROTECTED: u32 = 536870912;
 pub const STATE_SYSTEM_VALID: u32 = 536870911;
 pub const USER_DEFAULT_SCREEN_DPI: u32 = 96;
 pub const MNGOF_TOPGAP: u32 = 1;
@@ -7556,6 +7549,14 @@ pub const FCIDM_MENU_EXPLORE: u32 = 33104;
 pub const FCIDM_MENU_FAVORITES: u32 = 33136;
 pub const FCIDM_TOOLBAR: u32 = 40960;
 pub const FCIDM_STATUS: u32 = 40961;
+pub const QITIPF_DEFAULT: u32 = 0;
+pub const QITIPF_USENAME: u32 = 1;
+pub const QITIPF_LINKNOTARGET: u32 = 2;
+pub const QITIPF_LINKUSETARGET: u32 = 4;
+pub const QITIPF_USESLOWTIP: u32 = 8;
+pub const QITIPF_SINGLELINE: u32 = 16;
+pub const QIF_CACHED: u32 = 1;
+pub const QIF_DONTEXPANDFOLDER: u32 = 2;
 pub const ACLO_NONE: u32 = 0;
 pub const ACLO_CURRENTDIR: u32 = 1;
 pub const ACLO_MYCOMPUTER: u32 = 2;
@@ -7725,6 +7726,7 @@ pub const SHDID_COMPUTER_AUDIO: u32 = 19;
 pub const SHDID_COMPUTER_SHAREDDOCS: u32 = 20;
 pub const SSF_SHOWALLOBJECTS: u32 = 1;
 pub const SSF_SHOWEXTENSIONS: u32 = 2;
+pub const SSF_SERVERADMINUI: u32 = 4;
 pub const SSF_SHOWCOMPCOLOR: u32 = 8;
 pub const SSF_SORTCOLUMNS: u32 = 16;
 pub const SSF_SHOWSYSFILES: u32 = 32;
@@ -8117,6 +8119,9 @@ pub const LOCALE_ILANGUAGE: u32 = 1;
 pub const LOCALE_SLANGUAGE: u32 = 2;
 pub const LOCALE_SENGLANGUAGE: u32 = 4097;
 pub const LOCALE_SENGLISHLANGUAGENAME: u32 = 4097;
+pub const LOCALE_SNATIVELANGUAGENAME: u32 = 4;
+pub const LOCALE_SLOCALIZEDCOUNTRYNAME: u32 = 6;
+pub const LOCALE_SNATIVECOUNTRYNAME: u32 = 8;
 pub const LOCALE_SABBREVLANGNAME: u32 = 3;
 pub const LOCALE_SNATIVELANGNAME: u32 = 4;
 pub const LOCALE_ICOUNTRY: u32 = 5;
@@ -8221,6 +8226,7 @@ pub const LOCALE_SISO3166CTRYNAME: u32 = 90;
 pub const LOCALE_SNAME: u32 = 92;
 pub const LOCALE_IREADINGLAYOUT: u32 = 112;
 pub const LOCALE_INEUTRAL: u32 = 113;
+pub const LOCALE_SENGLISHDISPLAYNAME: u32 = 114;
 pub const LOCALE_SNATIVEDISPLAYNAME: u32 = 115;
 pub const LOCALE_INEGATIVEPERCENT: u32 = 116;
 pub const LOCALE_IPOSITIVEPERCENT: u32 = 117;
@@ -8246,8 +8252,10 @@ pub const SORT_STRINGSORT: u32 = 4096;
 pub const SORT_DIGITSASNUMBERS: u32 = 8;
 pub const LCMAP_LOWERCASE: u32 = 256;
 pub const LCMAP_UPPERCASE: u32 = 512;
+pub const LCMAP_TITLECASE: u32 = 768;
 pub const LCMAP_SORTKEY: u32 = 1024;
 pub const LCMAP_BYTEREV: u32 = 2048;
+pub const LCMAP_HASH: u32 = 262144;
 pub const LCMAP_HIRAGANA: u32 = 1048576;
 pub const LCMAP_KATAKANA: u32 = 2097152;
 pub const LCMAP_HALFWIDTH: u32 = 4194304;
@@ -8255,10 +8263,13 @@ pub const LCMAP_FULLWIDTH: u32 = 8388608;
 pub const LCMAP_LINGUISTIC_CASING: u32 = 16777216;
 pub const LCMAP_SIMPLIFIED_CHINESE: u32 = 33554432;
 pub const LCMAP_TRADITIONAL_CHINESE: u32 = 67108864;
+pub const LCMAP_SORTHANDLE: u32 = 536870912;
 pub const ENUM_ALL_CALENDARS: i32 = -1;
 pub const DATE_SHORTDATE: u32 = 1;
 pub const DATE_LONGDATE: u32 = 2;
 pub const DATE_USE_ALT_CALENDAR: u32 = 4;
+pub const DATE_AUTOLAYOUT: u32 = 64;
+pub const DATE_MONTHDAY: u32 = 128;
 pub const CP_INSTALLED: u32 = 1;
 pub const CP_SUPPORTED: u32 = 2;
 pub const LCID_INSTALLED: u32 = 1;
@@ -8549,6 +8560,7 @@ pub const DATE_RTLREADING: u32 = 32;
 pub const MAP_EXPAND_LIGATURES: u32 = 8192;
 pub const CAL_NOUSEROVERRIDE: u32 = 2147483648;
 pub const CAL_RETURN_NUMBER: u32 = 536870912;
+pub const CAL_RETURN_GENITIVE_NAMES: u32 = 268435456;
 pub const CAL_USE_CP_ACP: u32 = 1073741824;
 pub const HIGH_SURROGATE_START: u32 = 55296;
 pub const HIGH_SURROGATE_END: u32 = 56319;
@@ -8845,6 +8857,45 @@ pub const ASSOCQUERY_EXTRA_NON_VERB: u32 = 16777216;
 pub const ASSOCQUERY_EXTRA_VERB: u32 = 33554432;
 pub const ASSOCQUERY_SIGNIFICANCE: u32 = 67108864;
 pub const ASSOCQUERY_FALLBACK: u32 = 2147483648;
+pub const FCIDM_SHVIEW_CREATELINK: u32 = 28688;
+pub const FCIDM_SHVIEW_RENAME: u32 = 28690;
+pub const FCIDM_SHVIEW_DESELECTALL: u32 = 28707;
+pub const FCIDM_SHVIEW_ARRANGE_AUTO: u32 = 28753;
+pub const FCIDM_SHVIEW_ARRANGE_GRID: u32 = 28754;
+pub const FCIDM_SHVIEW_SHOWDESKTOPICONS: u32 = 28755;
+pub const FCIDM_SHVIEW_ARRANGE_AUTOGRID: u32 = 28756;
+pub const FCIDM_SHVIEW_REFRESH: u32 = 28931;
+pub const FCIDM_SHVIEW_SHOWINGROUPS: u32 = 30209;
+pub const FCIDM_SHBROWSER_REFRESH: u32 = 41061;
+pub const FCIDM_SHBROWSER_MAPNETDRIVE: u32 = 41089;
+pub const FCIDM_SHBROWSER_UNMAPNETDRIVE: u32 = 41090;
+pub const FCIDM_SHBROWSER_FINDFILES: u32 = 41093;
+pub const FCIDM_SHBROWSER_FINDCOMPUTER: u32 = 41094;
+pub const FCIDM_SHBROWSER_OPTIONS: u32 = 41251;
+pub const FCIDM_CABINET_NT5_GOTO_DRIVES: u32 = 41266;
+pub const FCIDM_CABINET_TOGGLEITBAR: u32 = 41473;
+pub const FCIDM_CABINET_TOGGLESTATUSBAR: u32 = 41474;
+pub const FCIDM_CABINET_REFRESH: u32 = 41504;
+pub const SBCMDID_ENABLESHOWTREE: u32 = 0;
+pub const SBCMDID_SHOWCONTROL: u32 = 1;
+pub const SBCMDID_CANCELNAVIGATION: u32 = 2;
+pub const SBCMDID_MAYSAVECHANGES: u32 = 3;
+pub const SBCMDID_SETHLINKFRAME: u32 = 4;
+pub const SBCMDID_ENABLESTOP: u32 = 5;
+pub const SBCMDID_OPTIONS: u32 = 6;
+pub const SBCMDID_EXPLORERBARFOLDERS: u32 = 35;
+pub const SBCMDID_MIXEDZONE: u32 = 39;
+pub const SBCMDID_ONVIEWMOVETOTOP: u32 = 60;
+pub const PANE_ZONE: u32 = 1;
+pub const PANE_OFFLINE: u32 = 2;
+pub const PANE_PRINTER: u32 = 3;
+pub const PANE_SSL: u32 = 4;
+pub const PANE_NAVIGATION: u32 = 5;
+pub const PANE_PROGRESS: u32 = 6;
+pub const PANE_PRIVACY: u32 = 7;
+pub const SHDVID_FINALTITLEAVAIL: u32 = 0;
+pub const DVCMDID_SET_DEFAULTFOLDER_SETTINGS: u32 = 0;
+pub const DVCMDID_RESET_DEFAULTFOLDER_SETTINGS: u32 = 1;
 pub const WHICH_PIF: u32 = 1;
 pub const WHICH_COM: u32 = 2;
 pub const WHICH_EXE: u32 = 4;
@@ -8887,44 +8938,6 @@ pub const SHACF_FILEOPENBOGUSCTRLID: u32 = 131072;
 pub const SHACF_FORCELFNIDLIST: u32 = 262144;
 pub const SHACF_UNKNOWN2: u32 = 16777216;
 pub const SHACF_UNKNOWN3: u32 = 2147483648;
-pub const FCIDM_SHVIEW_CREATELINK: u32 = 28688;
-pub const FCIDM_SHVIEW_RENAME: u32 = 28690;
-pub const FCIDM_SHVIEW_DESELECTALL: u32 = 28707;
-pub const FCIDM_SHVIEW_ARRANGE_AUTO: u32 = 28753;
-pub const FCIDM_SHVIEW_ARRANGE_GRID: u32 = 28754;
-pub const FCIDM_SHVIEW_SHOWDESKTOPICONS: u32 = 28755;
-pub const FCIDM_SHVIEW_ARRANGE_AUTOGRID: u32 = 28756;
-pub const FCIDM_SHVIEW_REFRESH: u32 = 28931;
-pub const FCIDM_SHVIEW_SHOWINGROUPS: u32 = 30209;
-pub const FCIDM_SHBROWSER_REFRESH: u32 = 41061;
-pub const FCIDM_SHBROWSER_MAPNETDRIVE: u32 = 41089;
-pub const FCIDM_SHBROWSER_UNMAPNETDRIVE: u32 = 41090;
-pub const FCIDM_SHBROWSER_FINDFILES: u32 = 41093;
-pub const FCIDM_SHBROWSER_OPTIONS: u32 = 41251;
-pub const FCIDM_CABINET_NT5_GOTO_DRIVES: u32 = 41266;
-pub const FCIDM_CABINET_TOGGLEITBAR: u32 = 41473;
-pub const FCIDM_CABINET_TOGGLESTATUSBAR: u32 = 41474;
-pub const FCIDM_CABINET_REFRESH: u32 = 41504;
-pub const SBCMDID_ENABLESHOWTREE: u32 = 0;
-pub const SBCMDID_SHOWCONTROL: u32 = 1;
-pub const SBCMDID_CANCELNAVIGATION: u32 = 2;
-pub const SBCMDID_MAYSAVECHANGES: u32 = 3;
-pub const SBCMDID_SETHLINKFRAME: u32 = 4;
-pub const SBCMDID_ENABLESTOP: u32 = 5;
-pub const SBCMDID_OPTIONS: u32 = 6;
-pub const SBCMDID_EXPLORERBARFOLDERS: u32 = 35;
-pub const SBCMDID_MIXEDZONE: u32 = 39;
-pub const SBCMDID_ONVIEWMOVETOTOP: u32 = 60;
-pub const PANE_ZONE: u32 = 1;
-pub const PANE_OFFLINE: u32 = 2;
-pub const PANE_PRINTER: u32 = 3;
-pub const PANE_SSL: u32 = 4;
-pub const PANE_NAVIGATION: u32 = 5;
-pub const PANE_PROGRESS: u32 = 6;
-pub const PANE_PRIVACY: u32 = 7;
-pub const SHDVID_FINALTITLEAVAIL: u32 = 0;
-pub const DVCMDID_SET_DEFAULTFOLDER_SETTINGS: u32 = 0;
-pub const DVCMDID_RESET_DEFAULTFOLDER_SETTINGS: u32 = 1;
 pub const SFGDNO_RETRYWITHFORPARSING: u32 = 1;
 pub const SFGDNO_RETRYALWAYS: u32 = 2147483648;
 pub const ABE_LEFT: u32 = 0;
@@ -9197,6 +9210,8 @@ pub const TRAYCMD_TILE_H: u32 = 404;
 pub const TRAYCMD_TILE_V: u32 = 405;
 pub const TRAYCMD_TOGGLE_DESKTOP: u32 = 407;
 pub const TRAYCMD_DATE_AND_TIME: u32 = 408;
+pub const TRAYCMD_SUSPEND: u32 = 409;
+pub const TRAYCMD_EJECT: u32 = 410;
 pub const TRAYCMD_TASKBAR_PROPERTIES: u32 = 413;
 pub const TRAYCMD_MINIMIZE_ALL: u32 = 415;
 pub const TRAYCMD_RESTORE_ALL: u32 = 416;
@@ -9210,8 +9225,10 @@ pub const TRAYCMD_SHUTDOWN_DIALOG: u32 = 506;
 pub const TRAYCMD_PRINTERS_AND_FAXES: u32 = 510;
 pub const TRAYCMD_LOCK_DESKTOP: u32 = 517;
 pub const TRAYCMD_SWITCH_USER_DIALOG: u32 = 5000;
+pub const TRAYCMD_RELOAD_STARTMENUCFG: u32 = 41061;
 pub const TRAYCMD_SEARCH_FILES: u32 = 41093;
 pub const TRAYCMD_SEARCH_COMPUTERS: u32 = 41094;
+pub const TRAYCMD_REFRESH_MENU: u32 = 41504;
 pub const TABDMC_APPBAR: u32 = 0;
 pub const TABDMC_NOTIFY: u32 = 1;
 pub const TABDMC_LOADINPROC: u32 = 2;
@@ -9316,8 +9333,6 @@ pub const ASK_OVERWRITE_FOLDER: u32 = 11;
 pub const IDC_STATIC: i32 = -1;
 pub const IDA_SHELLVIEW: u32 = 1;
 pub const IDA_DESKBROWSER: u32 = 3;
-pub const IDB_REACTOS: u32 = 131;
-pub const IDB_LINEBAR: u32 = 138;
 pub const IDB_SHELL_IEXPLORE_LG: u32 = 204;
 pub const IDB_SHELL_IEXPLORE_LG_HOT: u32 = 205;
 pub const IDB_SHELL_IEXPLORE_SM: u32 = 206;
@@ -9934,7 +9949,7 @@ pub const IDI_SHELL_FOLDER_POINT: u32 = 264;
 pub const IDI_SHELL_SENDMAIL: u32 = 265;
 pub const IDI_SHELL_CD_POINT: u32 = 266;
 pub const IDI_SHELL_SHARED_FOLDER: u32 = 267;
-pub const IDI_SHELL_ACCESSABILITY: u32 = 268;
+pub const IDI_SHELL_ACCESSIBILITY: u32 = 268;
 pub const IDI_SHELL_USERS: u32 = 269;
 pub const IDI_SHELL_SCREEN_COLORS: u32 = 270;
 pub const IDI_SHELL_ADD_REM_PROGRAMS: u32 = 271;
@@ -10085,6 +10100,8 @@ pub const IDR_COPYASPATHMENU: u32 = 161;
 pub const IDR_RECYCLEBINCLEANER: u32 = 162;
 pub const IDR_EXPLORER: u32 = 163;
 pub const IDR_SYSTEMFILEASSOC: u32 = 164;
+pub const IDR_SHELLLIBRARY: u32 = 165;
+pub const IDR_USEREVENTTIMER: u32 = 166;
 pub const WM_CPL_LAUNCH: u32 = 2024;
 pub const WM_CPL_LAUNCHED: u32 = 2025;
 pub const CPL_DYNAMIC_RES: u32 = 0;
@@ -11986,9 +12003,6 @@ unsafe extern "system" {
     pub fn FileTimeToLocalFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL;
-}
-unsafe extern "system" {
     pub fn FindActCtxSectionGuid(
         arg1: DWORD,
         arg2: *const GUID,
@@ -12680,6 +12694,9 @@ unsafe extern "system" {
     pub fn GetProcessAffinityMask(arg1: HANDLE, arg2: PDWORD_PTR, arg3: PDWORD_PTR) -> BOOL;
 }
 unsafe extern "system" {
+    pub fn GetProcessDEPPolicy(arg1: HANDLE, arg2: LPDWORD, arg3: PBOOL) -> BOOL;
+}
+unsafe extern "system" {
     pub fn GetProcessHandleCount(arg1: HANDLE, arg2: PDWORD) -> BOOL;
 }
 unsafe extern "system" {
@@ -12823,6 +12840,9 @@ unsafe extern "system" {
     pub fn GetStdHandle(arg1: DWORD) -> HANDLE;
 }
 unsafe extern "system" {
+    pub fn GetSystemDEPPolicy() -> DEP_SYSTEM_POLICY_TYPE;
+}
+unsafe extern "system" {
     pub fn GetSystemDirectoryA(arg1: LPSTR, arg2: UINT) -> UINT;
 }
 unsafe extern "system" {
@@ -12930,9 +12950,6 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn GetThreadId(arg1: HANDLE) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn GetTimeZoneInformation(arg1: LPTIME_ZONE_INFORMATION) -> DWORD;
 }
 unsafe extern "system" {
     pub fn GetTokenInformation(
@@ -14256,6 +14273,9 @@ unsafe extern "system" {
     pub fn SetProcessAffinityMask(arg1: HANDLE, arg2: DWORD_PTR) -> BOOL;
 }
 unsafe extern "system" {
+    pub fn SetProcessDEPPolicy(arg1: DWORD) -> BOOL;
+}
+unsafe extern "system" {
     pub fn SetProcessPriorityBoost(arg1: HANDLE, arg2: BOOL) -> BOOL;
 }
 unsafe extern "system" {
@@ -14263,6 +14283,9 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn SetProcessWorkingSetSize(arg1: HANDLE, arg2: SIZE_T, arg3: SIZE_T) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetSearchPathMode(arg1: DWORD) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetSecurityAccessMask(arg1: SECURITY_INFORMATION, arg2: LPDWORD);
@@ -14343,9 +14366,6 @@ unsafe extern "system" {
     pub fn SetThreadToken(arg1: PHANDLE, arg2: HANDLE) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetTimeZoneInformation(arg1: *const TIME_ZONE_INFORMATION) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetTokenInformation(
         arg1: HANDLE,
         arg2: TOKEN_INFORMATION_CLASS,
@@ -14420,16 +14440,6 @@ unsafe extern "system" {
     pub fn SwitchToThread() -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SystemTimeToFileTime(arg1: *const SYSTEMTIME, arg2: LPFILETIME) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SystemTimeToTzSpecificLocalTime(
-        arg1: *const TIME_ZONE_INFORMATION,
-        arg2: *const SYSTEMTIME,
-        arg3: LPSYSTEMTIME,
-    ) -> BOOL;
-}
-unsafe extern "system" {
     pub fn TerminateProcess(hProcess: HANDLE, uExitCode: UINT) -> BOOL;
 }
 unsafe extern "system" {
@@ -14463,13 +14473,6 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn TryEnterCriticalSection(arg1: LPCRITICAL_SECTION) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn TzSpecificLocalTimeToSystemTime(
-        arg1: LPTIME_ZONE_INFORMATION,
-        arg2: LPSYSTEMTIME,
-        arg3: LPSYSTEMTIME,
-    ) -> BOOL;
 }
 unsafe extern "system" {
     pub fn UnhandledExceptionFilter(arg1: LPEXCEPTION_POINTERS) -> LONG;
@@ -15060,6 +15063,24 @@ unsafe extern "system" {
     pub fn RegLoadKeyW(arg1: HKEY, arg2: LPCWSTR, arg3: LPCWSTR) -> LSTATUS;
 }
 unsafe extern "system" {
+    pub fn RegLoadAppKeyA(
+        lpFile: LPCSTR,
+        phkResult: PHKEY,
+        samDesired: REGSAM,
+        dwOptions: DWORD,
+        Reserved: DWORD,
+    ) -> LSTATUS;
+}
+unsafe extern "system" {
+    pub fn RegLoadAppKeyW(
+        lpFile: LPCWSTR,
+        phkResult: PHKEY,
+        samDesired: REGSAM,
+        dwOptions: DWORD,
+        Reserved: DWORD,
+    ) -> LSTATUS;
+}
+unsafe extern "system" {
     pub fn RegNotifyChangeKeyValue(
         arg1: HKEY,
         arg2: BOOL,
@@ -15203,6 +15224,9 @@ unsafe extern "system" {
         arg2: SECURITY_INFORMATION,
         arg3: PSECURITY_DESCRIPTOR,
     ) -> LSTATUS;
+}
+unsafe extern "system" {
+    pub fn RegRenameKey(hKey: HKEY, lpSubKeyName: LPCWSTR, lpNewKeyName: LPCWSTR) -> LSTATUS;
 }
 unsafe extern "system" {
     pub fn RegSetKeyValueA(
@@ -16555,6 +16579,9 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn GetWindowRgn(arg1: HWND, arg2: HRGN) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetWindowRgnBox(arg1: HWND, arg2: LPRECT) -> ::core::ffi::c_int;
 }
 unsafe extern "system" {
     pub fn GetWindowTextA(
@@ -22980,6 +23007,12 @@ unsafe extern "system" {
     pub fn CoBuildVersion() -> DWORD;
 }
 pub use self::tagCOINIT as COINIT;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CO_MTA_USAGE_COOKIE__ {
+    pub unused: ::core::ffi::c_int,
+}
+pub type CO_MTA_USAGE_COOKIE = *mut CO_MTA_USAGE_COOKIE__;
 unsafe extern "system" {
     pub fn CoInitialize(lpReserved: LPVOID) -> HRESULT;
 }
@@ -22997,6 +23030,12 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn CoGetApartmentType(type_: *mut APTTYPE, qualifier: *mut APTTYPEQUALIFIER) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn CoIncrementMTAUsage(cookie: *mut CO_MTA_USAGE_COOKIE) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn CoDecrementMTAUsage(cookie: CO_MTA_USAGE_COOKIE) -> HRESULT;
 }
 unsafe extern "system" {
     pub fn CoLoadLibrary(lpszLibName: LPOLESTR, bAutoFree: BOOL) -> HINSTANCE;
@@ -23190,6 +23229,12 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn CoIsHandlerConnected(pUnk: LPUNKNOWN) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn CoDisableCallCancellation(reserved: *mut ::core::ffi::c_void) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn CoEnableCallCancellation(reserved: *mut ::core::ffi::c_void) -> HRESULT;
 }
 unsafe extern "system" {
     pub fn CoInitializeSecurity(
@@ -23542,6 +23587,12 @@ pub use self::tagINVOKEKIND as INVOKEKIND;
 pub use self::tagSYSKIND as SYSKIND;
 pub use self::tagTYPEKIND as TYPEKIND;
 pub use self::tagVARKIND as VARKIND;
+#[repr(C)]
+pub struct tagCAC {
+    pub cElems: ULONG,
+    pub pElems: *mut ::core::ffi::c_char,
+}
+pub type CAC = tagCAC;
 #[repr(C, packed)]
 pub struct __WIDL_shtypes_generated_name_0000000A {
     pub cb: WORD,
@@ -23601,6 +23652,22 @@ pub type COMDLG_FILTERSPEC = _COMDLG_FILTERSPEC;
 pub type SHCOLSTATEF = DWORD;
 pub type KNOWNFOLDERID = GUID;
 pub type FOLDERTYPEID = GUID;
+pub const tagPERCEIVED_PERCEIVED_TYPE_CUSTOM: tagPERCEIVED = -3;
+pub const tagPERCEIVED_PERCEIVED_TYPE_UNSPECIFIED: tagPERCEIVED = -2;
+pub const tagPERCEIVED_PERCEIVED_TYPE_FOLDER: tagPERCEIVED = -1;
+pub const tagPERCEIVED_PERCEIVED_TYPE_UNKNOWN: tagPERCEIVED = 0;
+pub const tagPERCEIVED_PERCEIVED_TYPE_TEXT: tagPERCEIVED = 1;
+pub const tagPERCEIVED_PERCEIVED_TYPE_IMAGE: tagPERCEIVED = 2;
+pub const tagPERCEIVED_PERCEIVED_TYPE_AUDIO: tagPERCEIVED = 3;
+pub const tagPERCEIVED_PERCEIVED_TYPE_VIDEO: tagPERCEIVED = 4;
+pub const tagPERCEIVED_PERCEIVED_TYPE_COMPRESSED: tagPERCEIVED = 5;
+pub const tagPERCEIVED_PERCEIVED_TYPE_DOCUMENT: tagPERCEIVED = 6;
+pub const tagPERCEIVED_PERCEIVED_TYPE_SYSTEM: tagPERCEIVED = 7;
+pub const tagPERCEIVED_PERCEIVED_TYPE_APPLICATION: tagPERCEIVED = 8;
+pub const tagPERCEIVED_PERCEIVED_TYPE_GAMEMEDIA: tagPERCEIVED = 9;
+pub const tagPERCEIVED_PERCEIVED_TYPE_CONTACTS: tagPERCEIVED = 10;
+pub type tagPERCEIVED = ::core::ffi::c_int;
+pub use self::tagPERCEIVED as PERCEIVED;
 unsafe extern "system" {
     pub fn SHAutoComplete(arg1: HWND, arg2: DWORD) -> HRESULT;
 }
@@ -24797,6 +24864,7 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn AssocIsDangerous(arg1: LPCWSTR) -> BOOL;
 }
+pub type PERCEIVEDFLAG = INT;
 unsafe extern "system" {
     pub fn AssocQueryStringA(
         arg1: ASSOCF,
@@ -24853,6 +24921,14 @@ unsafe extern "system" {
         arg3: LPCWSTR,
         arg4: LPCWSTR,
         arg5: PHKEY,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn AssocGetPerceivedType(
+        lpszExt: LPCWSTR,
+        lpType: *mut PERCEIVED,
+        lpFlag: *mut INT,
+        lppszType: *mut LPWSTR,
     ) -> HRESULT;
 }
 unsafe extern "system" {
@@ -29373,10 +29449,22 @@ pub struct FolderItem {
     pub vtable_: *const FolderItem__bindgen_vtable,
 }
 #[repr(C)]
+pub struct FolderItem2 {
+    pub _base: FolderItem,
+}
+#[repr(C)]
 pub struct FolderItems__bindgen_vtable(::core::ffi::c_void);
 #[repr(C)]
 pub struct FolderItems {
     pub vtable_: *const FolderItems__bindgen_vtable,
+}
+#[repr(C)]
+pub struct FolderItems2 {
+    pub _base: FolderItems,
+}
+#[repr(C)]
+pub struct FolderItems3 {
+    pub _base: FolderItems2,
 }
 #[repr(C)]
 pub struct FolderItemVerb__bindgen_vtable(::core::ffi::c_void);
@@ -29539,6 +29627,12 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub static CLSID_ProgressDialog: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_ShellLibrary: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_UserEventTimer: GUID;
 }
 unsafe extern "C" {
     pub static FMTID_ShellDetails: GUID;
@@ -29970,13 +30064,13 @@ unsafe extern "C" {
 }
 pub type LPENUMEXTRASEARCH = *mut IEnumExtraSearch;
 #[repr(C, packed)]
-pub struct __WIDL_shobjidl_generated_name_00000021 {
+pub struct __WIDL_shobjidl_generated_name_00000022 {
     pub guidSearch: GUID,
     pub wszFriendlyName: [WCHAR; 80usize],
     pub wszUrl: [WCHAR; 2084usize],
 }
-pub type EXTRASEARCH = __WIDL_shobjidl_generated_name_00000021;
-pub type LPEXTRASEARCH = *mut __WIDL_shobjidl_generated_name_00000021;
+pub type EXTRASEARCH = __WIDL_shobjidl_generated_name_00000022;
+pub type LPEXTRASEARCH = *mut __WIDL_shobjidl_generated_name_00000022;
 unsafe extern "C" {
     pub static IID_IEnumExtraSearch: GUID;
 }
@@ -29987,36 +30081,77 @@ pub struct IEnumExtraSearch {
     pub vtable_: *const IEnumExtraSearch__bindgen_vtable,
 }
 #[repr(C, packed)]
-pub struct __WIDL_shobjidl_generated_name_00000022 {
+pub struct __WIDL_shobjidl_generated_name_00000023 {
     pub fmtid: GUID,
     pub pid: DWORD,
 }
-pub type SHCOLUMNID = __WIDL_shobjidl_generated_name_00000022;
-pub type LPSHCOLUMNID = *mut __WIDL_shobjidl_generated_name_00000022;
+pub type SHCOLUMNID = __WIDL_shobjidl_generated_name_00000023;
+pub type LPSHCOLUMNID = *mut __WIDL_shobjidl_generated_name_00000023;
 pub type LPCSHCOLUMNID = *const SHCOLUMNID;
 unsafe extern "C" {
     pub static IID_IShellFolder2: GUID;
 }
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_NORMALDISPLAY:
-    __WIDL_shobjidl_generated_name_00000023 = 0;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_PARENTRELATIVEPARSING:
-    __WIDL_shobjidl_generated_name_00000023 = 2147581953;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_DESKTOPABSOLUTEPARSING:
-    __WIDL_shobjidl_generated_name_00000023 = 2147647488;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_PARENTRELATIVEEDITING:
-    __WIDL_shobjidl_generated_name_00000023 = 2147684353;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_DESKTOPABSOLUTEEDITING:
-    __WIDL_shobjidl_generated_name_00000023 = 2147794944;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_FILESYSPATH:
-    __WIDL_shobjidl_generated_name_00000023 = 2147844096;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_URL:
-    __WIDL_shobjidl_generated_name_00000023 = 2147909632;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_PARENTRELATIVEFORADDRESSBAR:
-    __WIDL_shobjidl_generated_name_00000023 = 2147991553;
-pub const __WIDL_shobjidl_generated_name_00000023_SIGDN_PARENTRELATIVE:
-    __WIDL_shobjidl_generated_name_00000023 = 2148007937;
-pub type __WIDL_shobjidl_generated_name_00000023 = ::core::ffi::c_uint;
-pub use self::__WIDL_shobjidl_generated_name_00000023 as SIGDN;
+unsafe extern "C" {
+    pub static IID_IParentAndItem: GUID;
+}
+#[repr(C)]
+pub struct IParentAndItem__bindgen_vtable(::core::ffi::c_void);
+#[repr(C, packed)]
+pub struct IParentAndItem {
+    pub vtable_: *const IParentAndItem__bindgen_vtable,
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_RemoteGetParentAndItem_Proxy(
+        This: *mut IParentAndItem,
+        parent: *mut PIDLIST_ABSOLUTE,
+        folder: *mut *mut IShellFolder,
+        child: *mut PITEMID_CHILD,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_RemoteGetParentAndItem_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_GetParentAndItem_Proxy(
+        This: *mut IParentAndItem,
+        parent: *mut PIDLIST_ABSOLUTE,
+        folder: *mut *mut IShellFolder,
+        child: *mut PITEMID_CHILD,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_GetParentAndItem_Stub(
+        This: *mut IParentAndItem,
+        parent: *mut PIDLIST_ABSOLUTE,
+        folder: *mut *mut IShellFolder,
+        child: *mut PITEMID_CHILD,
+    ) -> HRESULT;
+}
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_NORMALDISPLAY:
+    __WIDL_shobjidl_generated_name_00000024 = 0;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_PARENTRELATIVEPARSING:
+    __WIDL_shobjidl_generated_name_00000024 = 2147581953;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_DESKTOPABSOLUTEPARSING:
+    __WIDL_shobjidl_generated_name_00000024 = 2147647488;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_PARENTRELATIVEEDITING:
+    __WIDL_shobjidl_generated_name_00000024 = 2147684353;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_DESKTOPABSOLUTEEDITING:
+    __WIDL_shobjidl_generated_name_00000024 = 2147794944;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_FILESYSPATH:
+    __WIDL_shobjidl_generated_name_00000024 = 2147844096;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_URL:
+    __WIDL_shobjidl_generated_name_00000024 = 2147909632;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_PARENTRELATIVEFORADDRESSBAR:
+    __WIDL_shobjidl_generated_name_00000024 = 2147991553;
+pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_PARENTRELATIVE:
+    __WIDL_shobjidl_generated_name_00000024 = 2148007937;
+pub type __WIDL_shobjidl_generated_name_00000024 = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_00000024 as SIGDN;
 pub const _SICHINTF_SICHINT_DISPLAY: _SICHINTF = 0;
 pub const _SICHINTF_SICHINT_CANONICAL: _SICHINTF = 268435456;
 pub const _SICHINTF_SICHINT_TEST_FILESYSPATH_IF_NOT_EQUAL: _SICHINTF = 536870912;
@@ -30034,6 +30169,15 @@ pub struct IShellItem2__bindgen_vtable(::core::ffi::c_void);
 #[repr(C, packed)]
 pub struct IShellItem2 {
     pub vtable_: *const IShellItem2__bindgen_vtable,
+}
+unsafe extern "C" {
+    pub static IID_IRelatedItem: GUID;
+}
+#[repr(C)]
+pub struct IRelatedItem__bindgen_vtable(::core::ffi::c_void);
+#[repr(C, packed)]
+pub struct IRelatedItem {
+    pub vtable_: *const IRelatedItem__bindgen_vtable,
 }
 pub const tagNWMF_NWMF_UNLOADING: tagNWMF = 1;
 pub const tagNWMF_NWMF_USERINITED: tagNWMF = 2;
@@ -30106,28 +30250,6 @@ pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_NO_URL: DATAOBJ_GET_ITEM_FLAGS = 4;
 pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_ONLY_IF_ONE: DATAOBJ_GET_ITEM_FLAGS = 8;
 pub type DATAOBJ_GET_ITEM_FLAGS = ::core::ffi::c_uint;
 unsafe extern "system" {
-    pub fn SHCreateItemFromParsingName(
-        pszPath: PCWSTR,
-        pbc: *mut IBindCtx,
-        riid: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHCreateItemFromIDList(
-        pidl: PCIDLIST_ABSOLUTE,
-        riid: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHGetItemFromObject(
-        punk: *mut IUnknown,
-        riid: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
     pub fn SHCreateShellItemArray(
         pidlParent: PCIDLIST_ABSOLUTE,
         psf: *mut IShellFolder,
@@ -30160,104 +30282,104 @@ pub struct IShellItemFilter {
     pub vtable_: *const IShellItemFilter__bindgen_vtable,
 }
 pub type LPVIEWSETTINGS = *mut ::core::ffi::c_char;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_AUTOARRANGE:
-    __WIDL_shobjidl_generated_name_00000024 = 1;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_ABBREVIATEDNAMES:
-    __WIDL_shobjidl_generated_name_00000024 = 2;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_SNAPTOGRID:
-    __WIDL_shobjidl_generated_name_00000024 = 4;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_OWNERDATA:
-    __WIDL_shobjidl_generated_name_00000024 = 8;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_BESTFITWINDOW:
-    __WIDL_shobjidl_generated_name_00000024 = 16;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_DESKTOP:
-    __WIDL_shobjidl_generated_name_00000024 = 32;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_SINGLESEL:
-    __WIDL_shobjidl_generated_name_00000024 = 64;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOSUBFOLDERS:
-    __WIDL_shobjidl_generated_name_00000024 = 128;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_TRANSPARENT:
-    __WIDL_shobjidl_generated_name_00000024 = 256;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOCLIENTEDGE:
-    __WIDL_shobjidl_generated_name_00000024 = 512;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOSCROLL:
-    __WIDL_shobjidl_generated_name_00000024 = 1024;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_ALIGNLEFT:
-    __WIDL_shobjidl_generated_name_00000024 = 2048;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOICONS:
-    __WIDL_shobjidl_generated_name_00000024 = 4096;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_SHOWSELALWAYS:
-    __WIDL_shobjidl_generated_name_00000024 = 8192;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOVISIBLE:
-    __WIDL_shobjidl_generated_name_00000024 = 16384;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_SINGLECLICKACTIVATE:
-    __WIDL_shobjidl_generated_name_00000024 = 32768;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOWEBVIEW:
-    __WIDL_shobjidl_generated_name_00000024 = 65536;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_HIDEFILENAMES:
-    __WIDL_shobjidl_generated_name_00000024 = 131072;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_CHECKSELECT:
-    __WIDL_shobjidl_generated_name_00000024 = 262144;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOENUMREFRESH:
-    __WIDL_shobjidl_generated_name_00000024 = 524288;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOGROUPING:
-    __WIDL_shobjidl_generated_name_00000024 = 1048576;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_FULLROWSELECT:
-    __WIDL_shobjidl_generated_name_00000024 = 2097152;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOFILTERS:
-    __WIDL_shobjidl_generated_name_00000024 = 4194304;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOCOLUMNHEADER:
-    __WIDL_shobjidl_generated_name_00000024 = 8388608;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOHEADERINALLVIEWS:
-    __WIDL_shobjidl_generated_name_00000024 = 16777216;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_EXTENDEDTILES:
-    __WIDL_shobjidl_generated_name_00000024 = 33554432;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_TRICHECKSELECT:
-    __WIDL_shobjidl_generated_name_00000024 = 67108864;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_AUTOCHECKSELECT:
-    __WIDL_shobjidl_generated_name_00000024 = 134217728;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_NOBROWSERVIEWSTATE:
-    __WIDL_shobjidl_generated_name_00000024 = 268435456;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_SUBSETGROUPS:
-    __WIDL_shobjidl_generated_name_00000024 = 536870912;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_USESEARCHFOLDER:
-    __WIDL_shobjidl_generated_name_00000024 = 1073741824;
-pub const __WIDL_shobjidl_generated_name_00000024_FWF_ALLOWRTLREADING:
-    __WIDL_shobjidl_generated_name_00000024 = 2147483648;
-pub type __WIDL_shobjidl_generated_name_00000024 = ::core::ffi::c_uint;
-pub use self::__WIDL_shobjidl_generated_name_00000024 as FOLDERFLAGS;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_AUTO:
-    __WIDL_shobjidl_generated_name_00000025 = -1;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_ICON:
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_AUTOARRANGE:
     __WIDL_shobjidl_generated_name_00000025 = 1;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_FIRST:
-    __WIDL_shobjidl_generated_name_00000025 = 1;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_SMALLICON:
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_ABBREVIATEDNAMES:
     __WIDL_shobjidl_generated_name_00000025 = 2;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_LIST:
-    __WIDL_shobjidl_generated_name_00000025 = 3;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_DETAILS:
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SNAPTOGRID:
     __WIDL_shobjidl_generated_name_00000025 = 4;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_THUMBNAIL:
-    __WIDL_shobjidl_generated_name_00000025 = 5;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_TILE:
-    __WIDL_shobjidl_generated_name_00000025 = 6;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_THUMBSTRIP:
-    __WIDL_shobjidl_generated_name_00000025 = 7;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_CONTENT:
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_OWNERDATA:
     __WIDL_shobjidl_generated_name_00000025 = 8;
-pub const __WIDL_shobjidl_generated_name_00000025_FVM_LAST:
-    __WIDL_shobjidl_generated_name_00000025 = 8;
-pub type __WIDL_shobjidl_generated_name_00000025 = ::core::ffi::c_int;
-pub use self::__WIDL_shobjidl_generated_name_00000025 as FOLDERVIEWMODE;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_BESTFITWINDOW:
+    __WIDL_shobjidl_generated_name_00000025 = 16;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_DESKTOP:
+    __WIDL_shobjidl_generated_name_00000025 = 32;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SINGLESEL:
+    __WIDL_shobjidl_generated_name_00000025 = 64;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOSUBFOLDERS:
+    __WIDL_shobjidl_generated_name_00000025 = 128;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_TRANSPARENT:
+    __WIDL_shobjidl_generated_name_00000025 = 256;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOCLIENTEDGE:
+    __WIDL_shobjidl_generated_name_00000025 = 512;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOSCROLL:
+    __WIDL_shobjidl_generated_name_00000025 = 1024;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_ALIGNLEFT:
+    __WIDL_shobjidl_generated_name_00000025 = 2048;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOICONS:
+    __WIDL_shobjidl_generated_name_00000025 = 4096;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SHOWSELALWAYS:
+    __WIDL_shobjidl_generated_name_00000025 = 8192;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOVISIBLE:
+    __WIDL_shobjidl_generated_name_00000025 = 16384;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SINGLECLICKACTIVATE:
+    __WIDL_shobjidl_generated_name_00000025 = 32768;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOWEBVIEW:
+    __WIDL_shobjidl_generated_name_00000025 = 65536;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_HIDEFILENAMES:
+    __WIDL_shobjidl_generated_name_00000025 = 131072;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_CHECKSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 262144;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOENUMREFRESH:
+    __WIDL_shobjidl_generated_name_00000025 = 524288;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOGROUPING:
+    __WIDL_shobjidl_generated_name_00000025 = 1048576;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_FULLROWSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 2097152;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOFILTERS:
+    __WIDL_shobjidl_generated_name_00000025 = 4194304;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOCOLUMNHEADER:
+    __WIDL_shobjidl_generated_name_00000025 = 8388608;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOHEADERINALLVIEWS:
+    __WIDL_shobjidl_generated_name_00000025 = 16777216;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_EXTENDEDTILES:
+    __WIDL_shobjidl_generated_name_00000025 = 33554432;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_TRICHECKSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 67108864;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_AUTOCHECKSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 134217728;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOBROWSERVIEWSTATE:
+    __WIDL_shobjidl_generated_name_00000025 = 268435456;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SUBSETGROUPS:
+    __WIDL_shobjidl_generated_name_00000025 = 536870912;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_USESEARCHFOLDER:
+    __WIDL_shobjidl_generated_name_00000025 = 1073741824;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_ALLOWRTLREADING:
+    __WIDL_shobjidl_generated_name_00000025 = 2147483648;
+pub type __WIDL_shobjidl_generated_name_00000025 = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_00000025 as FOLDERFLAGS;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_AUTO:
+    __WIDL_shobjidl_generated_name_00000026 = -1;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_ICON:
+    __WIDL_shobjidl_generated_name_00000026 = 1;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_FIRST:
+    __WIDL_shobjidl_generated_name_00000026 = 1;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_SMALLICON:
+    __WIDL_shobjidl_generated_name_00000026 = 2;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_LIST:
+    __WIDL_shobjidl_generated_name_00000026 = 3;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_DETAILS:
+    __WIDL_shobjidl_generated_name_00000026 = 4;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_THUMBNAIL:
+    __WIDL_shobjidl_generated_name_00000026 = 5;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_TILE:
+    __WIDL_shobjidl_generated_name_00000026 = 6;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_THUMBSTRIP:
+    __WIDL_shobjidl_generated_name_00000026 = 7;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_CONTENT:
+    __WIDL_shobjidl_generated_name_00000026 = 8;
+pub const __WIDL_shobjidl_generated_name_00000026_FVM_LAST:
+    __WIDL_shobjidl_generated_name_00000026 = 8;
+pub type __WIDL_shobjidl_generated_name_00000026 = ::core::ffi::c_int;
+pub use self::__WIDL_shobjidl_generated_name_00000026 as FOLDERVIEWMODE;
 #[repr(C, packed)]
-pub struct __WIDL_shobjidl_generated_name_00000026 {
+pub struct __WIDL_shobjidl_generated_name_00000027 {
     pub ViewMode: UINT,
     pub fFlags: UINT,
 }
-pub type FOLDERSETTINGS = __WIDL_shobjidl_generated_name_00000026;
-pub type PFOLDERSETTINGS = *mut __WIDL_shobjidl_generated_name_00000026;
-pub type LPFOLDERSETTINGS = *mut __WIDL_shobjidl_generated_name_00000026;
+pub type FOLDERSETTINGS = __WIDL_shobjidl_generated_name_00000027;
+pub type PFOLDERSETTINGS = *mut __WIDL_shobjidl_generated_name_00000027;
+pub type LPFOLDERSETTINGS = *mut __WIDL_shobjidl_generated_name_00000027;
 pub type LPCFOLDERSETTINGS = *const FOLDERSETTINGS;
 unsafe extern "C" {
     pub static IID_IShellIcon: GUID;
@@ -30270,30 +30392,30 @@ pub struct IShellIcon {
 }
 pub type LPSHELLVIEW = *mut IShellView;
 pub type SVSIF = UINT;
-pub const __WIDL_shobjidl_generated_name_00000027_SVGIO_BACKGROUND:
-    __WIDL_shobjidl_generated_name_00000027 = 0;
-pub const __WIDL_shobjidl_generated_name_00000027_SVGIO_SELECTION:
-    __WIDL_shobjidl_generated_name_00000027 = 1;
-pub const __WIDL_shobjidl_generated_name_00000027_SVGIO_ALLVIEW:
-    __WIDL_shobjidl_generated_name_00000027 = 2;
-pub const __WIDL_shobjidl_generated_name_00000027_SVGIO_CHECKED:
-    __WIDL_shobjidl_generated_name_00000027 = 3;
-pub const __WIDL_shobjidl_generated_name_00000027_SVGIO_TYPE_MASK:
-    __WIDL_shobjidl_generated_name_00000027 = 15;
-pub const __WIDL_shobjidl_generated_name_00000027_SVGIO_FLAG_VIEWORDER:
-    __WIDL_shobjidl_generated_name_00000027 = 2147483648;
-pub type __WIDL_shobjidl_generated_name_00000027 = ::core::ffi::c_uint;
-pub use self::__WIDL_shobjidl_generated_name_00000027 as SVGIO;
-pub const __WIDL_shobjidl_generated_name_00000028_SVUIA_DEACTIVATE:
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_BACKGROUND:
     __WIDL_shobjidl_generated_name_00000028 = 0;
-pub const __WIDL_shobjidl_generated_name_00000028_SVUIA_ACTIVATE_NOFOCUS:
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_SELECTION:
     __WIDL_shobjidl_generated_name_00000028 = 1;
-pub const __WIDL_shobjidl_generated_name_00000028_SVUIA_ACTIVATE_FOCUS:
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_ALLVIEW:
     __WIDL_shobjidl_generated_name_00000028 = 2;
-pub const __WIDL_shobjidl_generated_name_00000028_SVUIA_INPLACEACTIVATE:
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_CHECKED:
     __WIDL_shobjidl_generated_name_00000028 = 3;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_TYPE_MASK:
+    __WIDL_shobjidl_generated_name_00000028 = 15;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_FLAG_VIEWORDER:
+    __WIDL_shobjidl_generated_name_00000028 = 2147483648;
 pub type __WIDL_shobjidl_generated_name_00000028 = ::core::ffi::c_uint;
-pub use self::__WIDL_shobjidl_generated_name_00000028 as SVUIA_STATUS;
+pub use self::__WIDL_shobjidl_generated_name_00000028 as SVGIO;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_DEACTIVATE:
+    __WIDL_shobjidl_generated_name_00000029 = 0;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_ACTIVATE_NOFOCUS:
+    __WIDL_shobjidl_generated_name_00000029 = 1;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_ACTIVATE_FOCUS:
+    __WIDL_shobjidl_generated_name_00000029 = 2;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_INPLACEACTIVATE:
+    __WIDL_shobjidl_generated_name_00000029 = 3;
+pub type __WIDL_shobjidl_generated_name_00000029 = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_00000029 as SVUIA_STATUS;
 unsafe extern "C" {
     pub static IID_IShellView: GUID;
 }
@@ -30399,34 +30521,34 @@ pub struct IShellBrowser__bindgen_vtable(::core::ffi::c_void);
 pub struct IShellBrowser {
     pub vtable_: *const IShellBrowser__bindgen_vtable,
 }
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_NO_UI:
-    __WIDL_shobjidl_generated_name_00000029 = 1;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_ANY_MATCH:
-    __WIDL_shobjidl_generated_name_00000029 = 2;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_UPDATE:
-    __WIDL_shobjidl_generated_name_00000029 = 4;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_NOUPDATE:
-    __WIDL_shobjidl_generated_name_00000029 = 8;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_NOSEARCH:
-    __WIDL_shobjidl_generated_name_00000029 = 16;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_NOTRACK:
-    __WIDL_shobjidl_generated_name_00000029 = 32;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_NOLINKINFO:
-    __WIDL_shobjidl_generated_name_00000029 = 64;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_INVOKE_MSI:
-    __WIDL_shobjidl_generated_name_00000029 = 128;
-pub const __WIDL_shobjidl_generated_name_00000029_SLR_NO_UI_WITH_MSG_PUMP:
-    __WIDL_shobjidl_generated_name_00000029 = 257;
-pub type __WIDL_shobjidl_generated_name_00000029 = ::core::ffi::c_uint;
-pub use self::__WIDL_shobjidl_generated_name_00000029 as SLR_FLAGS;
-pub const __WIDL_shobjidl_generated_name_0000002A_SLGP_SHORTPATH:
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NO_UI:
     __WIDL_shobjidl_generated_name_0000002A = 1;
-pub const __WIDL_shobjidl_generated_name_0000002A_SLGP_UNCPRIORITY:
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_ANY_MATCH:
     __WIDL_shobjidl_generated_name_0000002A = 2;
-pub const __WIDL_shobjidl_generated_name_0000002A_SLGP_RAWPATH:
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_UPDATE:
     __WIDL_shobjidl_generated_name_0000002A = 4;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOUPDATE:
+    __WIDL_shobjidl_generated_name_0000002A = 8;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOSEARCH:
+    __WIDL_shobjidl_generated_name_0000002A = 16;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOTRACK:
+    __WIDL_shobjidl_generated_name_0000002A = 32;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOLINKINFO:
+    __WIDL_shobjidl_generated_name_0000002A = 64;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_INVOKE_MSI:
+    __WIDL_shobjidl_generated_name_0000002A = 128;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NO_UI_WITH_MSG_PUMP:
+    __WIDL_shobjidl_generated_name_0000002A = 257;
 pub type __WIDL_shobjidl_generated_name_0000002A = ::core::ffi::c_uint;
-pub use self::__WIDL_shobjidl_generated_name_0000002A as SLGP_FLAGS;
+pub use self::__WIDL_shobjidl_generated_name_0000002A as SLR_FLAGS;
+pub const __WIDL_shobjidl_generated_name_0000002B_SLGP_SHORTPATH:
+    __WIDL_shobjidl_generated_name_0000002B = 1;
+pub const __WIDL_shobjidl_generated_name_0000002B_SLGP_UNCPRIORITY:
+    __WIDL_shobjidl_generated_name_0000002B = 2;
+pub const __WIDL_shobjidl_generated_name_0000002B_SLGP_RAWPATH:
+    __WIDL_shobjidl_generated_name_0000002B = 4;
+pub type __WIDL_shobjidl_generated_name_0000002B = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_0000002B as SLGP_FLAGS;
 unsafe extern "C" {
     pub static IID_IShellLinkA: GUID;
 }
@@ -30456,14 +30578,14 @@ pub struct IShellExtInit {
     pub vtable_: *const IShellExtInit__bindgen_vtable,
 }
 #[repr(C, packed)]
-pub struct __WIDL_shobjidl_generated_name_0000002B {
+pub struct __WIDL_shobjidl_generated_name_0000002C {
     pub pidlTargetFolder: PIDLIST_ABSOLUTE,
     pub szTargetParsingName: [WCHAR; 260usize],
     pub szNetworkProvider: [WCHAR; 260usize],
     pub dwAttributes: DWORD,
     pub csidl: ::core::ffi::c_int,
 }
-pub type PERSIST_FOLDER_TARGET_INFO = __WIDL_shobjidl_generated_name_0000002B;
+pub type PERSIST_FOLDER_TARGET_INFO = __WIDL_shobjidl_generated_name_0000002C;
 unsafe extern "C" {
     pub static IID_IPersistFolder3: GUID;
 }
@@ -30554,14 +30676,14 @@ pub struct IDockingWindowFrame {
     pub vtable_: *const IDockingWindowFrame__bindgen_vtable,
 }
 #[repr(C, packed)]
-pub struct __WIDL_shobjidl_generated_name_0000002C {
+pub struct __WIDL_shobjidl_generated_name_0000002D {
     pub sizeDragImage: SIZE,
     pub ptOffset: POINT,
     pub hbmpDragImage: HBITMAP,
     pub crColorKey: COLORREF,
 }
-pub type SHDRAGIMAGE = __WIDL_shobjidl_generated_name_0000002C;
-pub type LPSHDRAGIMAGE = *mut __WIDL_shobjidl_generated_name_0000002C;
+pub type SHDRAGIMAGE = __WIDL_shobjidl_generated_name_0000002D;
+pub type LPSHDRAGIMAGE = *mut __WIDL_shobjidl_generated_name_0000002D;
 unsafe extern "C" {
     pub static IID_IDragSourceHelper: GUID;
 }
@@ -31417,6 +31539,7 @@ pub const _FILEOPENDIALOGOPTIONS_FOS_DONTADDTORECENT: _FILEOPENDIALOGOPTIONS = 3
 pub const _FILEOPENDIALOGOPTIONS_FOS_FORCESHOWHIDDEN: _FILEOPENDIALOGOPTIONS = 268435456;
 pub const _FILEOPENDIALOGOPTIONS_FOS_DEFAULTNOMINIMODE: _FILEOPENDIALOGOPTIONS = 536870912;
 pub const _FILEOPENDIALOGOPTIONS_FOS_FORCEPREVIEWPANEON: _FILEOPENDIALOGOPTIONS = 1073741824;
+pub const _FILEOPENDIALOGOPTIONS_FOS_SUPPORTSTREAMABLEITEMS: _FILEOPENDIALOGOPTIONS = 2147483648;
 pub type _FILEOPENDIALOGOPTIONS = ::core::ffi::c_uint;
 pub type FILEOPENDIALOGOPTIONS = DWORD;
 unsafe extern "C" {
@@ -31827,6 +31950,47 @@ pub struct IQueryContinue__bindgen_vtable(::core::ffi::c_void);
 pub struct IQueryContinue {
     pub vtable_: *const IQueryContinue__bindgen_vtable,
 }
+pub const LIBRARYFOLDERFILTER_LFF_FORCEFILESYSTEM: LIBRARYFOLDERFILTER = 1;
+pub const LIBRARYFOLDERFILTER_LFF_STORAGEITEMS: LIBRARYFOLDERFILTER = 2;
+pub const LIBRARYFOLDERFILTER_LFF_ALLITEMS: LIBRARYFOLDERFILTER = 3;
+pub type LIBRARYFOLDERFILTER = ::core::ffi::c_uint;
+pub const LIBRARYOPTIONFLAGS_LOF_DEFAULT: LIBRARYOPTIONFLAGS = 0;
+pub const LIBRARYOPTIONFLAGS_LOF_PINNEDTONAVPANE: LIBRARYOPTIONFLAGS = 1;
+pub const LIBRARYOPTIONFLAGS_LOF_MASK_ALL: LIBRARYOPTIONFLAGS = 1;
+pub type LIBRARYOPTIONFLAGS = ::core::ffi::c_uint;
+pub const DEFAULTSAVEFOLDERTYPE_DSFT_DETECT: DEFAULTSAVEFOLDERTYPE = 1;
+pub const DEFAULTSAVEFOLDERTYPE_DSFT_PRIVATE: DEFAULTSAVEFOLDERTYPE = 2;
+pub const DEFAULTSAVEFOLDERTYPE_DSFT_PUBLIC: DEFAULTSAVEFOLDERTYPE = 3;
+pub type DEFAULTSAVEFOLDERTYPE = ::core::ffi::c_uint;
+pub const LIBRARYSAVEFLAGS_LSF_FAILIFTHERE: LIBRARYSAVEFLAGS = 0;
+pub const LIBRARYSAVEFLAGS_LSF_OVERRIDEEXISTING: LIBRARYSAVEFLAGS = 1;
+pub const LIBRARYSAVEFLAGS_LSF_MAKEUNIQUENAME: LIBRARYSAVEFLAGS = 2;
+pub type LIBRARYSAVEFLAGS = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IShellLibrary: GUID;
+}
+#[repr(C)]
+pub struct IShellLibrary__bindgen_vtable(::core::ffi::c_void);
+#[repr(C, packed)]
+pub struct IShellLibrary {
+    pub vtable_: *const IShellLibrary__bindgen_vtable,
+}
+unsafe extern "C" {
+    pub static IID_IUserEventTimerCallback: GUID;
+}
+#[repr(C)]
+pub struct IUserEventTimerCallback__bindgen_vtable(::core::ffi::c_void);
+#[repr(C, packed)]
+pub struct IUserEventTimerCallback {
+    pub vtable_: *const IUserEventTimerCallback__bindgen_vtable,
+}
+unsafe extern "C" {
+    pub static IID_IUserEventTimer: GUID;
+}
+#[repr(C, packed)]
+pub struct IUserEventTimer {
+    pub _base: IUserEventTimerCallback,
+}
 unsafe extern "C" {
     pub static IID_IUserNotification: GUID;
 }
@@ -32078,16 +32242,6 @@ pub struct _SFVM_PROPPAGE_DATA {
 pub type SFVM_PROPPAGE_DATA = _SFVM_PROPPAGE_DATA;
 pub type LPSFVM_PROPPAGE_DATA = *mut _SFVM_PROPPAGE_DATA;
 unsafe extern "system" {
-    pub fn SHFormatDrive(arg1: HWND, arg2: UINT, arg3: UINT, arg4: UINT) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SHSetFolderPathA(csidl: INT, hToken: HANDLE, dwFlags: DWORD, pszPath: LPCSTR)
-        -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn PathIsSlowA(pszFile: LPCSTR, dwAttr: DWORD) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SHILCreateFromPath(
         arg1: PCWSTR,
         arg2: *mut PIDLIST_ABSOLUTE,
@@ -32096,29 +32250,6 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn SHSimpleIDListFromPath(arg1: PCWSTR) -> PIDLIST_ABSOLUTE;
-}
-unsafe extern "system" {
-    pub fn PickIconDlg(
-        arg1: HWND,
-        arg2: LPWSTR,
-        cchIconPath: UINT,
-        arg3: *mut ::core::ffi::c_int,
-    ) -> INT;
-}
-unsafe extern "system" {
-    pub fn RestartDialog(arg1: HWND, arg2: LPCWSTR, arg3: DWORD) -> ::core::ffi::c_int;
-}
-unsafe extern "system" {
-    pub fn RestartDialogEx(
-        arg1: HWND,
-        arg2: LPCWSTR,
-        arg3: DWORD,
-        arg4: DWORD,
-    ) -> ::core::ffi::c_int;
-}
-unsafe extern "system" {
-    pub fn SHStartNetConnectionDialogA(hwnd: HWND, pszRemoteName: LPCSTR, dwType: DWORD)
-        -> HRESULT;
 }
 unsafe extern "system" {
     pub fn PathMakeUniqueName(
@@ -32337,9 +32468,6 @@ pub struct _CSFV {
 }
 pub type CSFV = _CSFV;
 pub type LPCSFV = *mut _CSFV;
-unsafe extern "system" {
-    pub fn SHCreateShellFolderViewEx(pshfvi: LPCSFV, ppshv: *mut *mut IShellView) -> HRESULT;
-}
 #[repr(C)]
 pub struct _SFV_CREATE {
     pub cbSize: UINT,
@@ -32348,10 +32476,6 @@ pub struct _SFV_CREATE {
     pub psfvcb: *mut IShellFolderViewCB,
 }
 pub type SFV_CREATE = _SFV_CREATE;
-unsafe extern "system" {
-    pub fn SHCreateShellFolderView(pscfv: *const SFV_CREATE, ppsv: *mut *mut IShellView)
-        -> HRESULT;
-}
 #[repr(C)]
 pub struct _QCMINFO_IDMAP_PLACEMENT {
     pub id: UINT,
@@ -34161,9 +34285,6 @@ pub struct _SHChangeNotifyEntry {
     pub fRecursive: BOOL,
 }
 pub type SHChangeNotifyEntry = _SHChangeNotifyEntry;
-unsafe extern "system" {
-    pub fn SHChangeNotify(wEventId: LONG, uFlags: UINT, dwItem1: LPCVOID, dwItem2: LPCVOID);
-}
 pub const SHELL_LINK_DATA_FLAGS_SLDF_DEFAULT: SHELL_LINK_DATA_FLAGS = 0;
 pub const SHELL_LINK_DATA_FLAGS_SLDF_HAS_ID_LIST: SHELL_LINK_DATA_FLAGS = 1;
 pub const SHELL_LINK_DATA_FLAGS_SLDF_HAS_LINK_INFO: SHELL_LINK_DATA_FLAGS = 2;
@@ -34275,51 +34396,9 @@ pub struct _SHChangeProductKeyAsIDList {
 }
 pub type SHChangeProductKeyAsIDList = _SHChangeProductKeyAsIDList;
 pub type LPSHChangeProductKeyAsIDList = *mut _SHChangeProductKeyAsIDList;
-unsafe extern "system" {
-    pub fn SHChangeNotifyRegister(
-        hwnd: HWND,
-        fSources: ::core::ffi::c_int,
-        fEvents: LONG,
-        wMsg: UINT,
-        cEntries: ::core::ffi::c_int,
-        pshcne: *mut SHChangeNotifyEntry,
-    ) -> ULONG;
-}
-unsafe extern "system" {
-    pub fn SHChangeNotifyDeregister(ulID: ULONG) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SHChangeNotification_Lock(
-        hChangeNotification: HANDLE,
-        dwProcessId: DWORD,
-        pppidl: *mut *mut PIDLIST_ABSOLUTE,
-        plEvent: *mut LONG,
-    ) -> HANDLE;
-}
-unsafe extern "system" {
-    pub fn SHChangeNotification_Unlock(hLock: HANDLE) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SHGetRealIDL(
-        psf: *mut IShellFolder,
-        pidlSimple: PCUITEMID_CHILD,
-        ppidlReal: *mut PITEMID_CHILD,
-    ) -> HRESULT;
-}
 pub const SHGFP_TYPE_SHGFP_TYPE_CURRENT: SHGFP_TYPE = 0;
 pub const SHGFP_TYPE_SHGFP_TYPE_DEFAULT: SHGFP_TYPE = 1;
 pub type SHGFP_TYPE = ::core::ffi::c_uint;
-unsafe extern "system" {
-    pub fn SHGetDesktopFolder(arg1: *mut *mut IShellFolder) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHCreateFileExtractIconW(
-        pszFile: LPCWSTR,
-        dwFileAttributes: DWORD,
-        riid: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
 #[repr(C, packed)]
 pub struct _DROPFILES {
     pub pFiles: DWORD,
@@ -34808,13 +34887,6 @@ pub struct DEFCONTEXTMENU {
     pub cKeys: UINT,
     pub aKeys: *const HKEY,
 }
-unsafe extern "system" {
-    pub fn SHCreateDefaultContextMenu(
-        arg1: *const DEFCONTEXTMENU,
-        arg2: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
 pub type LPFNDFMCALLBACK = ::core::option::Option<
     unsafe extern "system" fn(
         arg1: *mut IShellFolder,
@@ -34825,35 +34897,6 @@ pub type LPFNDFMCALLBACK = ::core::option::Option<
         arg6: LPARAM,
     ) -> HRESULT,
 >;
-unsafe extern "system" {
-    pub fn CDefFolderMenu_Create2(
-        arg1: PCIDLIST_ABSOLUTE,
-        arg2: HWND,
-        cidl: UINT,
-        arg3: PCUITEMID_CHILD_ARRAY,
-        arg4: *mut IShellFolder,
-        arg5: LPFNDFMCALLBACK,
-        nKeys: UINT,
-        arg6: *const HKEY,
-        arg7: *mut *mut IContextMenu,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHCreateDefaultExtractIcon(
-        riid: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHCreateDataObject(
-        pidlFolder: PCIDLIST_ABSOLUTE,
-        cidl: UINT,
-        apidl: PCUITEMID_CHILD_ARRAY,
-        pdtInner: *mut IDataObject,
-        riid: *const IID,
-        ppv: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
 pub const tagOPEN_AS_INFO_FLAGS_OAIF_ALLOW_REGISTRATION: tagOPEN_AS_INFO_FLAGS = 1;
 pub const tagOPEN_AS_INFO_FLAGS_OAIF_REGISTER_EXT: tagOPEN_AS_INFO_FLAGS = 2;
 pub const tagOPEN_AS_INFO_FLAGS_OAIF_EXEC: tagOPEN_AS_INFO_FLAGS = 4;
@@ -34869,9 +34912,6 @@ pub struct tagOPENASINFO {
     pub oaifInFlags: OPEN_AS_INFO_FLAGS,
 }
 pub type OPENASINFO = tagOPENASINFO;
-unsafe extern "system" {
-    pub fn SHOpenWithDialog(hwndParent: HWND, poainfo: *const OPENASINFO) -> HRESULT;
-}
 #[repr(C)]
 pub struct IShellIconOverlayIdentifier__bindgen_vtable(::core::ffi::c_void);
 #[repr(C)]
@@ -37913,6 +37953,12 @@ unsafe extern "C" {
     pub static IID_IMruDataList: GUID;
 }
 unsafe extern "C" {
+    pub static IID_IQuerySourceOld: GUID;
+}
+unsafe extern "C" {
+    pub static IID_IQuerySource: GUID;
+}
+unsafe extern "C" {
     pub static IID_IAggregateFilterCondition: GUID;
 }
 unsafe extern "C" {
@@ -38048,12 +38094,6 @@ unsafe extern "C" {
     pub static IID_ITransferProvider: GUID;
 }
 unsafe extern "C" {
-    pub static IID_IUserEventTimer: GUID;
-}
-unsafe extern "C" {
-    pub static IID_IUserEventTimerCallback: GUID;
-}
-unsafe extern "C" {
     pub static IID_IAssociationArrayOld: GUID;
 }
 unsafe extern "C" {
@@ -38071,7 +38111,423 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static IID_IPinnedList: GUID;
 }
+unsafe extern "C" {
+    pub static GUID_Restrictions: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_UsePathEnvVarForCommandTemplates: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_ScanWithAntiVirus: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_SaveZoneInformation: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_UseTrustedHandlers: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_HideZoneInfoOnProperties: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_DefaultFileTypeRisk: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_HighRiskFileTypes: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_ModRiskFileTypes: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_LowRiskFileTypes: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_PreXPSP2ShellProtocolBehavior: GUID;
+}
+unsafe extern "C" {
+    pub static POLID_CompareJunctionness: GUID;
+}
+unsafe extern "C" {
+    pub static IID_IObjectWithRegistryKeyOld: GUID;
+}
+unsafe extern "C" {
+    pub static IID_IObjectWithRegistryKey: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocApplicationElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocClientElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocClsidElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocFolderElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocPerceivedElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocProgidElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocShellElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocStarElement: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_AssocSystemElement: GUID;
+}
+#[repr(C)]
+pub struct tagSLOTITEMDATA {
+    pub dwFlags: DWORD,
+    pub cbData: UINT,
+    pub pvData: LPVOID,
+}
+pub type SLOTITEMDATA = tagSLOTITEMDATA;
+pub type PSLOTITEMDATA = *mut tagSLOTITEMDATA;
+pub type SLOTCOMPARE = ::core::option::Option<
+    unsafe extern "system" fn(pvData1: LPCVOID, pvData2: LPCVOID, cbData: UINT) -> INT,
+>;
 pub type ASSOCQUERY = DWORD;
+#[repr(C)]
+pub struct SHELLSTATE2 {
+    pub oldState: SHELLSTATE,
+    pub newState1: ::core::ffi::c_long,
+    pub newState2: ::core::ffi::c_long,
+}
+#[repr(C)]
+pub struct persistState {
+    pub dwSize: ::core::ffi::c_long,
+    pub browseType: ::core::ffi::c_long,
+    pub alwaysZero: ::core::ffi::c_long,
+    pub browserIndex: ::core::ffi::c_long,
+    pub persistClass: CLSID,
+    pub pidlSize: ULONG,
+}
+#[repr(C)]
+pub struct IInitializeObject__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IInitializeObject {
+    pub vtable_: *const IInitializeObject__bindgen_vtable,
+}
+pub const BMICON_LARGE: _bindgen_ty_9 = 0;
+pub const BMICON_SMALL: _bindgen_ty_9 = 1;
+pub type _bindgen_ty_9 = ::core::ffi::c_uint;
+#[repr(C)]
+pub struct IBanneredBar__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IBanneredBar {
+    pub vtable_: *const IBanneredBar__bindgen_vtable,
+}
+#[repr(C)]
+pub struct DEFFOLDERSETTINGS {
+    pub _bitfield_align_1: [u8; 0],
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
+    pub __bindgen_padding_0: [u8; 3usize],
+    pub FolderSettings: FOLDERSETTINGS,
+    pub vid: SHELLVIEWID,
+    pub Version: UINT,
+    pub Counter: UINT,
+    pub ViewPriority: UINT,
+}
+pub const DEFFOLDERSETTINGS_SIZE_NT4: DEFFOLDERSETTINGS__bindgen_ty_1 = 8;
+pub const DEFFOLDERSETTINGS_SIZE_IE4: DEFFOLDERSETTINGS__bindgen_ty_1 = 36;
+pub const DEFFOLDERSETTINGS_SIZE_XP: DEFFOLDERSETTINGS__bindgen_ty_1 = 40;
+pub type DEFFOLDERSETTINGS__bindgen_ty_1 = ::core::ffi::c_uint;
+pub const DEFFOLDERSETTINGS_VER_98: DEFFOLDERSETTINGS__bindgen_ty_2 = 0;
+pub const DEFFOLDERSETTINGS_VER_2000: DEFFOLDERSETTINGS__bindgen_ty_2 = 3;
+pub const DEFFOLDERSETTINGS_VER_XP: DEFFOLDERSETTINGS__bindgen_ty_2 = 4;
+pub type DEFFOLDERSETTINGS__bindgen_ty_2 = ::core::ffi::c_uint;
+impl DEFFOLDERSETTINGS {
+    #[inline]
+    pub fn Statusbar(&self) -> UINT {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Statusbar(&mut self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(0usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Statusbar_raw(this: *const Self) -> UINT {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                0usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Statusbar_raw(this: *mut Self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                0usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn Toolbar(&self) -> UINT {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Toolbar(&mut self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            self._bitfield_1.set(1usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub unsafe fn Toolbar_raw(this: *const Self) -> UINT {
+        unsafe {
+            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
+                ::core::ptr::addr_of!((*this)._bitfield_1),
+                1usize,
+                1u8,
+            ) as u32)
+        }
+    }
+    #[inline]
+    pub unsafe fn set_Toolbar_raw(this: *mut Self, val: UINT) {
+        unsafe {
+            let val: u32 = ::core::mem::transmute(val);
+            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
+                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
+                1usize,
+                1u8,
+                val as u64,
+            )
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(Statusbar: UINT, Toolbar: UINT) -> __BindgenBitfieldUnit<[u8; 1usize]> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
+        __bindgen_bitfield_unit.set(0usize, 1u8, {
+            let Statusbar: u32 = unsafe { ::core::mem::transmute(Statusbar) };
+            Statusbar as u64
+        });
+        __bindgen_bitfield_unit.set(1usize, 1u8, {
+            let Toolbar: u32 = unsafe { ::core::mem::transmute(Toolbar) };
+            Toolbar as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+#[repr(C)]
+pub struct IGlobalFolderSettings__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IGlobalFolderSettings {
+    pub vtable_: *const IGlobalFolderSettings__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IStartMenuCallback__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IStartMenuCallback {
+    pub vtable_: *const IStartMenuCallback__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IBandSiteStreamCallback__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IBandSiteStreamCallback {
+    pub vtable_: *const IBandSiteStreamCallback__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IShellDesktopTray__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IShellDesktopTray {
+    pub vtable_: *const IShellDesktopTray__bindgen_vtable,
+}
+#[repr(C)]
+pub struct INscTree__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct INscTree {
+    pub vtable_: *const INscTree__bindgen_vtable,
+}
+#[repr(C)]
+pub struct INscTree2 {
+    pub _base: INscTree,
+}
+#[repr(C)]
+pub struct IAddressEditBox__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAddressEditBox {
+    pub vtable_: *const IAddressEditBox__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IBandProxy__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IBandProxy {
+    pub vtable_: *const IBandProxy__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IExplorerToolbar__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IExplorerToolbar {
+    pub vtable_: *const IExplorerToolbar__bindgen_vtable,
+}
+pub const tagWALK_TREE_CMD_WALK_TREE_SAVE: tagWALK_TREE_CMD = 0;
+pub const tagWALK_TREE_CMD_WALK_TREE_DESTROY: tagWALK_TREE_CMD = 1;
+pub const tagWALK_TREE_CMD_WALK_TREE_DEFAULT: tagWALK_TREE_CMD = 2;
+pub const tagWALK_TREE_CMD_WALK_TREE_REFRESH: tagWALK_TREE_CMD = 3;
+pub type tagWALK_TREE_CMD = ::core::ffi::c_uint;
+pub use self::tagWALK_TREE_CMD as WALK_TREE_CMD;
+#[repr(C)]
+pub struct IRegTreeOptions__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IRegTreeOptions {
+    pub vtable_: *const IRegTreeOptions__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IBandNavigate__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IBandNavigate {
+    pub vtable_: *const IBandNavigate__bindgen_vtable,
+}
+#[repr(C)]
+pub struct INamespaceProxy__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct INamespaceProxy {
+    pub vtable_: *const INamespaceProxy__bindgen_vtable,
+}
+#[repr(C, packed)]
+pub struct IShellMenu2 {
+    pub _base: IShellMenu,
+}
+#[repr(C)]
+pub struct IWinEventHandler__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IWinEventHandler {
+    pub vtable_: *const IWinEventHandler__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IAddressBand__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAddressBand {
+    pub vtable_: *const IAddressBand__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IShellMenuAcc__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IShellMenuAcc {
+    pub vtable_: *const IShellMenuAcc__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IBandSiteHelper__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IBandSiteHelper {
+    pub vtable_: *const IBandSiteHelper__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IShellBrowserService__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IShellBrowserService {
+    pub vtable_: *const IShellBrowserService__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IMruDataList__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IMruDataList {
+    pub vtable_: *const IMruDataList__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IMruPidlList__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IMruPidlList {
+    pub vtable_: *const IMruPidlList__bindgen_vtable,
+}
+#[repr(C)]
+pub struct ITrayPriv__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct ITrayPriv {
+    pub vtable_: *const ITrayPriv__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IQuerySourceOld__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IQuerySourceOld {
+    pub vtable_: *const IQuerySourceOld__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IQuerySource__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IQuerySource {
+    pub vtable_: *const IQuerySource__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IObjectWithQuerySourceOld__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IObjectWithQuerySourceOld {
+    pub vtable_: *const IObjectWithQuerySourceOld__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IObjectWithQuerySource__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IObjectWithQuerySource {
+    pub vtable_: *const IObjectWithQuerySource__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IAssociationElementOld__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAssociationElementOld {
+    pub vtable_: *const IAssociationElementOld__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IAssociationElement__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAssociationElement {
+    pub vtable_: *const IAssociationElement__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IEnumAssociationElements__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IEnumAssociationElements {
+    pub vtable_: *const IEnumAssociationElements__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IAssociationArrayOld__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAssociationArrayOld {
+    pub vtable_: *const IAssociationArrayOld__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IAssociationArray__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAssociationArray {
+    pub vtable_: *const IAssociationArray__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IAssociationArrayInitialize__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IAssociationArrayInitialize {
+    pub vtable_: *const IAssociationArrayInitialize__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IPersistString2__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IPersistString2 {
+    pub vtable_: *const IPersistString2__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IObjectWithRegistryKeyOld__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IObjectWithRegistryKeyOld {
+    pub vtable_: *const IObjectWithRegistryKeyOld__bindgen_vtable,
+}
+#[repr(C)]
+pub struct IObjectWithRegistryKey__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct IObjectWithRegistryKey {
+    pub vtable_: *const IObjectWithRegistryKey__bindgen_vtable,
+}
 #[repr(C)]
 pub struct tagPOLICYDATA {
     pub policy: DWORD,
@@ -38101,10 +38557,23 @@ unsafe extern "system" {
     ) -> DWORD;
 }
 unsafe extern "system" {
+    pub fn SHRestrictedMessageBox(hWnd: HWND) -> INT;
+}
+unsafe extern "system" {
     pub fn SHAboutInfoA(lpszDest: LPSTR, dwDestLen: DWORD) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SHAboutInfoW(lpszDest: LPWSTR, dwDestLen: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn NextPathA(pszStart: PCSTR, pszDest: PSTR, cchDest: UINT) -> PSTR;
+}
+unsafe extern "system" {
+    pub fn NextPathW(pszStart: PCWSTR, pszDest: PWSTR, cchDest: UINT) -> PWSTR;
+}
+unsafe extern "system" {
+    pub fn IUnknown_ShowBrowserBar(punk: *mut IUnknown, rguid: *const GUID, bShow: BOOL)
+        -> HRESULT;
 }
 unsafe extern "system" {
     pub fn CLSIDFromStringWrap(idstr: LPCWSTR, id: *mut CLSID) -> HRESULT;
@@ -38213,6 +38682,16 @@ unsafe extern "system" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "system" {
+    pub fn SHInvokeCommandsOnContextMenu(
+        hwnd: HWND,
+        punkSite: *mut IUnknown,
+        pCM: *mut IContextMenu,
+        fMask: DWORD,
+        pVerbs: *mut PCSTR,
+        cVerbs: UINT,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
     pub fn MayQSForward(
         lpUnknown: *mut IUnknown,
         nUnknown: INT,
@@ -38265,6 +38744,15 @@ unsafe extern "system" {
     ) -> HRESULT;
 }
 unsafe extern "system" {
+    pub fn QuerySourceCreateFromKey(
+        hKey: HKEY,
+        lpSubKey: PCWSTR,
+        bCreate: BOOL,
+        riid: *const IID,
+        ppv: *mut PVOID,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
     pub fn SHAddDataBlock(lppList: *mut LPDBLIST, lpNewItem: *const DATABLOCK_HEADER) -> BOOL;
 }
 unsafe extern "system" {
@@ -38281,6 +38769,12 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn SHFreeDataBlockList(lpList: LPDBLIST);
+}
+unsafe extern "system" {
+    pub fn IStream_ReadPidl(pstm: *mut IStream, ppidlOut: *mut LPITEMIDLIST) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IStream_WritePidl(pstm: *mut IStream, pidlWrite: LPCITEMIDLIST) -> HRESULT;
 }
 unsafe extern "system" {
     pub fn RegCreateKeyExWrapW(
@@ -38717,6 +39211,26 @@ pub type _shellkey_flags = ::core::ffi::c_uint;
 unsafe extern "system" {
     pub fn SHGetShellKey(flags: DWORD, sub_key: LPCWSTR, create: BOOL) -> HKEY;
 }
+unsafe extern "system" {
+    pub fn SKGetValueW(
+        flags: DWORD,
+        subkey: LPCWSTR,
+        value: LPCWSTR,
+        type_: *mut DWORD,
+        data: *mut ::core::ffi::c_void,
+        count: *mut DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SKSetValueW(
+        flags: DWORD,
+        subkey: LPCWSTR,
+        value: LPCWSTR,
+        type_: DWORD,
+        data: *mut ::core::ffi::c_void,
+        count: DWORD,
+    ) -> HRESULT;
+}
 unsafe extern "C" {
     pub fn ShellMessageBoxWrapW(
         hAppInst: HINSTANCE,
@@ -38738,6 +39252,22 @@ unsafe extern "system" {
     ) -> BOOL;
 }
 unsafe extern "system" {
+    pub fn PathUnExpandEnvStringsForUserA(
+        hUserToken: HANDLE,
+        pszPath: PCSTR,
+        pszBuff: PSTR,
+        cchBuff: INT,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn PathUnExpandEnvStringsForUserW(
+        hUserToken: HANDLE,
+        pwszPath: PCWSTR,
+        pszBuff: PWSTR,
+        cchBuff: INT,
+    ) -> BOOL;
+}
+unsafe extern "system" {
     pub fn PathFindOnPathExW(
         lpszFile: LPWSTR,
         lppszOtherDirs: *mut LPCWSTR,
@@ -38745,7 +39275,10 @@ unsafe extern "system" {
     ) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn FixSlashesAndColonW(arg1: LPWSTR);
+    pub fn FixSlashesAndColonA(lpstr: LPSTR);
+}
+unsafe extern "system" {
+    pub fn FixSlashesAndColonW(lpwstr: LPWSTR);
 }
 unsafe extern "system" {
     pub fn PathIsValidCharA(c: ::core::ffi::c_char, dwClass: DWORD) -> BOOL;
@@ -38761,6 +39294,33 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn PathFileExistsAndAttributesW(lpszPath: LPCWSTR, dwAttr: *mut DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn PrettifyFileDescriptionW(pszTarget: PWSTR, pszCutList: PCWSTR);
+}
+unsafe extern "system" {
+    pub fn SHGetFileDescriptionA(
+        pszPath: PCSTR,
+        pszVerKey: PCSTR,
+        pszDisplayName: PCSTR,
+        pszOut: PSTR,
+        pcchOut: PUINT,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SHGetFileDescriptionW(
+        pszPath: PCWSTR,
+        pszVerKey: PCWSTR,
+        pszDisplayName: PCWSTR,
+        pszOut: PWSTR,
+        pcchOut: PUINT,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn StrCpyNXA(lpszDest: LPSTR, lpszSrc: LPCSTR, iLen: ::core::ffi::c_int) -> LPSTR;
+}
+unsafe extern "system" {
+    pub fn StrCpyNXW(lpszDest: LPWSTR, lpszSrc: LPCWSTR, iLen: ::core::ffi::c_int) -> LPWSTR;
 }
 unsafe extern "system" {
     pub fn IContextMenu_Invoke(
@@ -38790,318 +39350,207 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn SHGetAppCompatFlags(dwMask: DWORD) -> DWORD;
 }
-#[repr(C)]
-pub struct IAssociationElementOld__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IAssociationElementOld {
-    pub vtable_: *const IAssociationElementOld__bindgen_vtable,
+unsafe extern "system" {
+    pub fn IUnknown_QueryServiceForWebBrowserApp(
+        lpUnknown: *mut IUnknown,
+        riid: *const GUID,
+        lppOut: *mut LPVOID,
+    ) -> HRESULT;
 }
-#[repr(C)]
-pub struct tagSLOTITEMDATA {
-    pub dwFlags: DWORD,
-    pub cbData: UINT,
-    pub pvData: LPVOID,
-}
-pub type SLOTITEMDATA = tagSLOTITEMDATA;
-pub type PSLOTITEMDATA = *mut tagSLOTITEMDATA;
-pub type SLOTCOMPARE = ::core::option::Option<
-    unsafe extern "system" fn(pvData1: LPCVOID, pvData2: LPCVOID, cbData: UINT) -> INT,
+pub type SHDIALOGPROC = ::core::option::Option<
+    unsafe extern "system" fn(
+        pThis: PVOID,
+        hWnd: HWND,
+        uMsg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+    ) -> INT_PTR,
 >;
-#[repr(C)]
-pub struct SHELLSTATE2 {
-    pub oldState: SHELLSTATE,
-    pub newState1: ::core::ffi::c_long,
-    pub newState2: ::core::ffi::c_long,
-}
-#[repr(C)]
-pub struct persistState {
-    pub dwSize: ::core::ffi::c_long,
-    pub browseType: ::core::ffi::c_long,
-    pub alwaysZero: ::core::ffi::c_long,
-    pub browserIndex: ::core::ffi::c_long,
-    pub persistClass: CLSID,
-    pub pidlSize: ULONG,
-}
-#[repr(C)]
-pub struct IInitializeObject__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IInitializeObject {
-    pub vtable_: *const IInitializeObject__bindgen_vtable,
-}
-pub const BMICON_LARGE: _bindgen_ty_9 = 0;
-pub const BMICON_SMALL: _bindgen_ty_9 = 1;
-pub type _bindgen_ty_9 = ::core::ffi::c_uint;
-#[repr(C)]
-pub struct IBanneredBar__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IBanneredBar {
-    pub vtable_: *const IBanneredBar__bindgen_vtable,
-}
-#[repr(C)]
-pub struct DEFFOLDERSETTINGS {
-    pub _bitfield_align_1: [u8; 0],
-    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 1usize]>,
-    pub __bindgen_padding_0: [u8; 3usize],
-    pub FolderSettings: FOLDERSETTINGS,
-    pub vid: SHELLVIEWID,
-    pub Version: UINT,
-    pub Counter: UINT,
-    pub ViewPriority: UINT,
-}
-pub const DEFFOLDERSETTINGS_SIZE_NT4: DEFFOLDERSETTINGS__bindgen_ty_1 = 8;
-pub const DEFFOLDERSETTINGS_SIZE_IE4: DEFFOLDERSETTINGS__bindgen_ty_1 = 36;
-pub const DEFFOLDERSETTINGS_SIZE_XP: DEFFOLDERSETTINGS__bindgen_ty_1 = 40;
-pub type DEFFOLDERSETTINGS__bindgen_ty_1 = ::core::ffi::c_uint;
-pub const DEFFOLDERSETTINGS_VER_98: DEFFOLDERSETTINGS__bindgen_ty_2 = 0;
-pub const DEFFOLDERSETTINGS_VER_2000: DEFFOLDERSETTINGS__bindgen_ty_2 = 3;
-pub const DEFFOLDERSETTINGS_VER_XP: DEFFOLDERSETTINGS__bindgen_ty_2 = 4;
-pub type DEFFOLDERSETTINGS__bindgen_ty_2 = ::core::ffi::c_uint;
-impl DEFFOLDERSETTINGS {
-    #[inline]
-    pub fn Statusbar(&self) -> UINT {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 1u8) as u32) }
-    }
-    #[inline]
-    pub fn set_Statusbar(&mut self, val: UINT) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(0usize, 1u8, val as u64)
-        }
-    }
-    #[inline]
-    pub unsafe fn Statusbar_raw(this: *const Self) -> UINT {
-        unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
-                ::core::ptr::addr_of!((*this)._bitfield_1),
-                0usize,
-                1u8,
-            ) as u32)
-        }
-    }
-    #[inline]
-    pub unsafe fn set_Statusbar_raw(this: *mut Self, val: UINT) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
-                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
-                0usize,
-                1u8,
-                val as u64,
-            )
-        }
-    }
-    #[inline]
-    pub fn Toolbar(&self) -> UINT {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(1usize, 1u8) as u32) }
-    }
-    #[inline]
-    pub fn set_Toolbar(&mut self, val: UINT) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(1usize, 1u8, val as u64)
-        }
-    }
-    #[inline]
-    pub unsafe fn Toolbar_raw(this: *const Self) -> UINT {
-        unsafe {
-            ::core::mem::transmute(<__BindgenBitfieldUnit<[u8; 1usize]>>::raw_get(
-                ::core::ptr::addr_of!((*this)._bitfield_1),
-                1usize,
-                1u8,
-            ) as u32)
-        }
-    }
-    #[inline]
-    pub unsafe fn set_Toolbar_raw(this: *mut Self, val: UINT) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            <__BindgenBitfieldUnit<[u8; 1usize]>>::raw_set(
-                ::core::ptr::addr_of_mut!((*this)._bitfield_1),
-                1usize,
-                1u8,
-                val as u64,
-            )
-        }
-    }
-    #[inline]
-    pub fn new_bitfield_1(Statusbar: UINT, Toolbar: UINT) -> __BindgenBitfieldUnit<[u8; 1usize]> {
-        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 1usize]> = Default::default();
-        __bindgen_bitfield_unit.set(0usize, 1u8, {
-            let Statusbar: u32 = unsafe { ::core::mem::transmute(Statusbar) };
-            Statusbar as u64
-        });
-        __bindgen_bitfield_unit.set(1usize, 1u8, {
-            let Toolbar: u32 = unsafe { ::core::mem::transmute(Toolbar) };
-            Toolbar as u64
-        });
-        __bindgen_bitfield_unit
-    }
-}
-#[repr(C)]
-pub struct IGlobalFolderSettings__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IGlobalFolderSettings {
-    pub vtable_: *const IGlobalFolderSettings__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IStartMenuCallback__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IStartMenuCallback {
-    pub vtable_: *const IStartMenuCallback__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IBandSiteStreamCallback__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IBandSiteStreamCallback {
-    pub vtable_: *const IBandSiteStreamCallback__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IShellDesktopTray__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IShellDesktopTray {
-    pub vtable_: *const IShellDesktopTray__bindgen_vtable,
-}
-#[repr(C)]
-pub struct INscTree__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct INscTree {
-    pub vtable_: *const INscTree__bindgen_vtable,
-}
-#[repr(C)]
-pub struct INscTree2 {
-    pub _base: INscTree,
-}
-#[repr(C)]
-pub struct IAddressEditBox__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IAddressEditBox {
-    pub vtable_: *const IAddressEditBox__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IBandProxy__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IBandProxy {
-    pub vtable_: *const IBandProxy__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IExplorerToolbar__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IExplorerToolbar {
-    pub vtable_: *const IExplorerToolbar__bindgen_vtable,
-}
-pub const tagWALK_TREE_CMD_WALK_TREE_SAVE: tagWALK_TREE_CMD = 0;
-pub const tagWALK_TREE_CMD_WALK_TREE_DESTROY: tagWALK_TREE_CMD = 1;
-pub const tagWALK_TREE_CMD_WALK_TREE_DEFAULT: tagWALK_TREE_CMD = 2;
-pub const tagWALK_TREE_CMD_WALK_TREE_REFRESH: tagWALK_TREE_CMD = 3;
-pub type tagWALK_TREE_CMD = ::core::ffi::c_uint;
-pub use self::tagWALK_TREE_CMD as WALK_TREE_CMD;
-#[repr(C)]
-pub struct IRegTreeOptions__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IRegTreeOptions {
-    pub vtable_: *const IRegTreeOptions__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IBandNavigate__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IBandNavigate {
-    pub vtable_: *const IBandNavigate__bindgen_vtable,
-}
-#[repr(C)]
-pub struct INamespaceProxy__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct INamespaceProxy {
-    pub vtable_: *const INamespaceProxy__bindgen_vtable,
-}
-#[repr(C, packed)]
-pub struct IShellMenu2 {
-    pub _base: IShellMenu,
-}
-#[repr(C)]
-pub struct IWinEventHandler__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IWinEventHandler {
-    pub vtable_: *const IWinEventHandler__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IAddressBand__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IAddressBand {
-    pub vtable_: *const IAddressBand__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IShellMenuAcc__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IShellMenuAcc {
-    pub vtable_: *const IShellMenuAcc__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IBandSiteHelper__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IBandSiteHelper {
-    pub vtable_: *const IBandSiteHelper__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IShellBrowserService__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IShellBrowserService {
-    pub vtable_: *const IShellBrowserService__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IMruDataList__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IMruDataList {
-    pub vtable_: *const IMruDataList__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IMruPidlList__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IMruPidlList {
-    pub vtable_: *const IMruPidlList__bindgen_vtable,
-}
-#[repr(C)]
-pub struct ITrayPriv__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct ITrayPriv {
-    pub vtable_: *const ITrayPriv__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IAssociationElement__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IAssociationElement {
-    pub vtable_: *const IAssociationElement__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IEnumAssociationElements__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IEnumAssociationElements {
-    pub vtable_: *const IEnumAssociationElements__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IAssociationArrayOld__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IAssociationArrayOld {
-    pub vtable_: *const IAssociationArrayOld__bindgen_vtable,
-}
-#[repr(C)]
-pub struct IAssociationArray__bindgen_vtable(::core::ffi::c_void);
-#[repr(C)]
-pub struct IAssociationArray {
-    pub vtable_: *const IAssociationArray__bindgen_vtable,
+unsafe extern "system" {
+    pub fn SHDialogBox(
+        hInstance: HINSTANCE,
+        lpTemplateName: PCSTR,
+        hWndParent: HWND,
+        fn_: SHDIALOGPROC,
+        pThis: PVOID,
+    ) -> INT_PTR;
 }
 unsafe extern "system" {
-    pub fn SHCreateDesktop(arg1: *mut IShellDesktopTray) -> HANDLE;
+    pub fn MapWin32ErrorToSTG(hr: HRESULT) -> HRESULT;
 }
 unsafe extern "system" {
-    pub fn SHDesktopMessageLoop(arg1: HANDLE) -> BOOL;
+    pub fn CharLowerNoDBCSA(lpString: PSTR) -> PSTR;
 }
 unsafe extern "system" {
-    pub fn SHCreateFileDataObject(
-        pidlFolder: PCIDLIST_ABSOLUTE,
-        cidl: UINT,
-        apidl: PCUITEMID_CHILD_ARRAY,
-        pDataInner: *mut IDataObject,
-        ppDataObj: *mut *mut IDataObject,
+    pub fn CharLowerNoDBCSW(lpString: PWSTR) -> PWSTR;
+}
+unsafe extern "system" {
+    pub fn CharUpperNoDBCSA(lpString: PSTR) -> PSTR;
+}
+unsafe extern "system" {
+    pub fn CharUpperNoDBCSW(lpString: PWSTR) -> PWSTR;
+}
+unsafe extern "system" {
+    pub fn SHWindowsPolicyGetValue(
+        rpolid: *const GUID,
+        pvValue: PVOID,
+        pcbValue: PDWORD,
+    ) -> HRESULT;
+}
+#[repr(C)]
+pub struct _ASSOCMAKEVERB {
+    pub pszVerb: LPCWSTR,
+    pub pszFriendlyName: LPCWSTR,
+    pub pszUnknown: LPCWSTR,
+    pub pszExe: LPCWSTR,
+    pub pszArgs: LPCWSTR,
+}
+pub type ASSOCMAKEVERB = _ASSOCMAKEVERB;
+#[repr(C)]
+pub struct _ASSOCMAKESHELL {
+    pub pVerbs: *mut ASSOCMAKEVERB,
+    pub Count: UINT,
+    pub DefaultIndex: UINT,
+}
+pub type ASSOCMAKESHELL = _ASSOCMAKESHELL;
+unsafe extern "system" {
+    pub fn AssocMakeShell(
+        Unknown: SIZE_T,
+        hClass: HKEY,
+        pszExe: LPCWSTR,
+        pAMS: *const ASSOCMAKESHELL,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn AssocMakeProgid(
+        Unknown1: SIZE_T,
+        Unknown2: SIZE_T,
+        Unknown3: SIZE_T,
+        Unknown4: SIZE_T,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn AssocMakeApplicationByKeyW(
+        Unknown1: SIZE_T,
+        Unknown2: SIZE_T,
+        Unknown3: SIZE_T,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn AssocMakeApplicationByKeyA(
+        Unknown1: SIZE_T,
+        Unknown2: SIZE_T,
+        Unknown3: SIZE_T,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn AssocCopyVerbs(hSrc: HKEY, hDst: HKEY) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn AssocCreateElement(
+        rclsid: *const CLSID,
+        riid: *const IID,
+        ppvObj: *mut PVOID,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckUrlExCacheA(
+        pszUrl: PCSTR,
+        pbPolicy: PBYTE,
+        cbPolicy: DWORD,
+        pbContext: PBYTE,
+        cbContext: DWORD,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+        pISM: *mut IInternetSecurityManager,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckUrlExCacheW(
+        pszUrl: PCWSTR,
+        pbPolicy: PBYTE,
+        cbPolicy: DWORD,
+        pbContext: PBYTE,
+        cbContext: DWORD,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+        pISM: *mut IInternetSecurityManager,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckPathA(
+        pszPath: PCSTR,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckPathW(
+        pszPath: PCWSTR,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckUrlA(
+        pszUrl: PCSTR,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckUrlW(
+        pszUrl: PCWSTR,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckUrlExA(
+        pszUrl: PCSTR,
+        pbPolicy: PBYTE,
+        cbPolicy: DWORD,
+        pbContext: PBYTE,
+        cbContext: DWORD,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckUrlExW(
+        pszUrl: PCWSTR,
+        pbPolicy: PBYTE,
+        cbPolicy: DWORD,
+        pbContext: PBYTE,
+        cbContext: DWORD,
+        dwAction: DWORD,
+        dwFlags: DWORD,
+        pSecuritySite: *mut IInternetSecurityMgrSite,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckHost(
+        pISM: *mut IInternetSecurityManager,
+        pszUrl: PCWSTR,
+        dwAction: DWORD,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ZoneCheckHostEx(
+        pISM: *mut IInternetSecurityManager,
+        pbPolicy: PBYTE,
+        cbPolicy: DWORD,
+        pbContext: PBYTE,
+        cbContext: DWORD,
+        pszUrl: PCWSTR,
+        dwAction: DWORD,
     ) -> HRESULT;
 }
 unsafe extern "system" {
@@ -39384,40 +39833,11 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "system" {
-    pub fn SHQueryRecycleBinA(pszRootPath: LPCSTR, pSHQueryRBInfo: LPSHQUERYRBINFO) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHQueryRecycleBinW(pszRootPath: LPCWSTR, pSHQueryRBInfo: LPSHQUERYRBINFO) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHEmptyRecycleBinA(hwnd: HWND, pszRootPath: LPCSTR, dwFlags: DWORD) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHEmptyRecycleBinW(hwnd: HWND, pszRootPath: LPCWSTR, dwFlags: DWORD) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHSetUnreadMailCountW(
-        pszMailAddress: PCWSTR,
-        dwCount: DWORD,
-        pszShellExecuteCommand: PCWSTR,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHEnumerateUnreadMailAccountsW(
-        hKeyUser: HKEY,
-        dwIndex: DWORD,
-        pszMailAddress: PWSTR,
-        cchMailAddress: INT,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHGetUnreadMailCountW(
-        hKeyUser: HKEY,
-        pszMailAddress: PCWSTR,
-        pdwCount: PDWORD,
-        pFileTime: PFILETIME,
-        pszShellExecuteCommand: PWSTR,
-        cchShellExecuteCommand: INT,
+    pub fn SHEvaluateSystemCommandTemplate(
+        pszCmdTemplate: PCWSTR,
+        ppszApplication: *mut PWSTR,
+        ppszCommandLine: *mut PWSTR,
+        ppszParameters: *mut PWSTR,
     ) -> HRESULT;
 }
 pub type NOTIFYICONDATA = NOTIFYICONDATAW;
@@ -39536,6 +39956,16 @@ pub const SHSTOCKICONID_SIID_MEDIABDRE: SHSTOCKICONID = 139;
 pub const SHSTOCKICONID_SIID_CLUSTEREDDRIVE: SHSTOCKICONID = 140;
 pub const SHSTOCKICONID_SIID_MAX_ICONS: SHSTOCKICONID = 175;
 pub type SHSTOCKICONID = ::core::ffi::c_int;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_NOT_PRESENT: QUERY_USER_NOTIFICATION_STATE = 1;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_BUSY: QUERY_USER_NOTIFICATION_STATE = 2;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_RUNNING_D3D_FULL_SCREEN:
+    QUERY_USER_NOTIFICATION_STATE = 3;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_PRESENTATION_MODE: QUERY_USER_NOTIFICATION_STATE = 4;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_ACCEPTS_NOTIFICATIONS: QUERY_USER_NOTIFICATION_STATE =
+    5;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_QUIET_TIME: QUERY_USER_NOTIFICATION_STATE = 6;
+pub const QUERY_USER_NOTIFICATION_STATE_QUNS_APP: QUERY_USER_NOTIFICATION_STATE = 7;
+pub type QUERY_USER_NOTIFICATION_STATE = ::core::ffi::c_uint;
 #[repr(C)]
 pub struct _TRAYNOTIFYDATAW {
     pub dwSignature: DWORD,
@@ -39544,15 +39974,6 @@ pub struct _TRAYNOTIFYDATAW {
 }
 pub type TRAYNOTIFYDATAW = _TRAYNOTIFYDATAW;
 pub type PTRAYNOTIFYDATAW = *mut _TRAYNOTIFYDATAW;
-unsafe extern "system" {
-    pub fn DisplayNameOfW(
-        psf: *mut IShellFolder,
-        pidl: LPCITEMIDLIST,
-        dwFlags: DWORD,
-        pszBuf: LPWSTR,
-        cchBuf: UINT,
-    ) -> HRESULT;
-}
 unsafe extern "system" {
     pub fn SHInvokeCommand(
         hWnd: HWND,
@@ -39576,9 +39997,29 @@ pub struct _SHCNF_PRINTJOB_INFO {
 }
 pub type SHCNF_PRINTJOB_INFO = _SHCNF_PRINTJOB_INFO;
 pub type PSHCNF_PRINTJOB_INFO = *mut _SHCNF_PRINTJOB_INFO;
-unsafe extern "system" {
-    pub fn SHUpdateRecycleBinIcon() -> HRESULT;
+#[repr(C, packed)]
+pub struct tagSHCNF_UPDATEIMAGE_DATA_1 {
+    pub cbSize: WORD,
+    pub iIndex: INT,
+    pub iEffective: INT,
+    pub uFlags: UINT,
+    pub iEffective2: INT,
+    pub terminator: USHORT,
 }
+pub type SHCNF_UPDATEIMAGE_DATA_1 = tagSHCNF_UPDATEIMAGE_DATA_1;
+pub type PSHCNF_UPDATEIMAGE_DATA_1 = *mut tagSHCNF_UPDATEIMAGE_DATA_1;
+#[repr(C, packed)]
+pub struct tagSHCNF_UPDATEIMAGE_DATA_2 {
+    pub cbOffset: WORD,
+    pub iIndex: INT,
+    pub iEffectiveImageIndex: INT,
+    pub uFlags: UINT,
+    pub dwProcessId: DWORD,
+    pub szHashItem: [WCHAR; 260usize],
+    pub terminator: USHORT,
+}
+pub type SHCNF_UPDATEIMAGE_DATA_2 = tagSHCNF_UPDATEIMAGE_DATA_2;
+pub type PSHCNF_UPDATEIMAGE_DATA_2 = *mut tagSHCNF_UPDATEIMAGE_DATA_2;
 #[repr(C)]
 pub struct _NMRUNFILEDLGW {
     pub hdr: NMHDR,
@@ -39592,34 +40033,6 @@ pub type LPNMRUNFILEDLGW = *mut _NMRUNFILEDLGW;
 pub type NMRUNFILEDLG = NMRUNFILEDLGW;
 pub type PNMRUNFILEDLG = PNMRUNFILEDLGW;
 pub type LPNMRUNFILEDLG = LPNMRUNFILEDLGW;
-unsafe extern "system" {
-    pub fn RunFileDlg(
-        hWndOwner: HWND,
-        hIcon: HICON,
-        lpstrDirectory: LPCWSTR,
-        lpstrTitle: LPCWSTR,
-        lpstrDescription: LPCWSTR,
-        uFlags: UINT,
-    );
-}
-unsafe extern "system" {
-    pub fn LogoffWindowsDialog(hWndOwner: HWND) -> ::core::ffi::c_int;
-}
-unsafe extern "system" {
-    pub fn ExitWindowsDialog(hWndOwner: HWND);
-}
-unsafe extern "system" {
-    pub fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedSearch: LPCITEMIDLIST) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SHShouldShowWizards(pUnknown: *mut IUnknown) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHIsTempDisplayMode() -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SHGetUserDisplayName(pName: PWSTR, puSize: PULONG) -> HRESULT;
-}
 #[repr(C)]
 pub struct CWTESTPATHSTRUCT {
     pub dwType: DWORD,
@@ -39633,15 +40046,6 @@ unsafe extern "system" {
         dwFileAttributes: DWORD,
         uFlags: UINT,
     ) -> HICON;
-}
-unsafe extern "system" {
-    pub fn ExtractIconResInfoA(
-        hHandle: HANDLE,
-        lpFileName: LPCSTR,
-        wIndex: WORD,
-        lpSize: LPWORD,
-        lpIcon: LPHANDLE,
-    ) -> WORD;
 }
 unsafe extern "system" {
     pub fn FileMenu_AppendItem(
@@ -39725,9 +40129,6 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn PathFindOnPathAW(sFile: LPVOID, sOtherDirs: *mut LPCVOID) -> BOOL;
 }
-unsafe extern "system" {
-    pub fn PathIsEqualOrSubFolder(pszFile1OrCSIDL: LPCWSTR, pszFile2: LPCWSTR) -> BOOL;
-}
 #[repr(C)]
 pub struct _REGSHELLSTATE {
     pub dwSize: DWORD,
@@ -39801,71 +40202,8 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn SHInitRestricted(unused: LPCVOID, inpRegKey: LPCVOID) -> BOOL;
 }
-unsafe extern "system" {
-    pub fn SHCreatePropertyBag(riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn StrRStrA(pszSrc: PCSTR, pszLast: PCSTR, pszSearch: PCSTR) -> PSTR;
-}
-unsafe extern "system" {
-    pub fn StrRStrW(pszSrc: PCWSTR, pszLast: PCWSTR, pszSearch: PCWSTR) -> PWSTR;
-}
-unsafe extern "system" {
-    pub fn SheRemoveQuotesA(psz: LPSTR) -> LPSTR;
-}
-unsafe extern "system" {
-    pub fn SheRemoveQuotesW(psz: LPWSTR) -> LPWSTR;
-}
-unsafe extern "system" {
-    pub fn Int64ToString(
-        llValue: LONGLONG,
-        pszOut: LPWSTR,
-        cchOut: UINT,
-        bUseFormat: BOOL,
-        pNumberFormat: *const NUMBERFMTW,
-        dwNumberFlags: DWORD,
-    ) -> INT;
-}
-unsafe extern "system" {
-    pub fn LargeIntegerToString(
-        pLargeInt: *const LARGE_INTEGER,
-        pszOut: LPWSTR,
-        cchOut: UINT,
-        bUseFormat: BOOL,
-        pNumberFormat: *const NUMBERFMTW,
-        dwNumberFlags: DWORD,
-    ) -> INT;
-}
-unsafe extern "system" {
-    pub fn ShortSizeFormatW(dwNumber: DWORD, pszBuffer: LPWSTR) -> LPWSTR;
-}
-unsafe extern "system" {
-    pub fn SHOpenEffectiveToken(phToken: LPHANDLE) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SHGetUserSessionId(hToken: HANDLE) -> DWORD;
-}
 pub type PRIVILEGED_FUNCTION =
     ::core::option::Option<unsafe extern "system" fn(lParam: LPARAM) -> HRESULT>;
-unsafe extern "system" {
-    pub fn SHInvokePrivilegedFunctionW(
-        pszName: LPCWSTR,
-        fn_: PRIVILEGED_FUNCTION,
-        lParam: LPARAM,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHTestTokenPrivilegeW(hToken: HANDLE, lpName: LPCWSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn IsSuspendAllowed() -> BOOL;
-}
-unsafe extern "system" {
-    pub fn Activate_RunDLL(hwnd: HWND, hinst: HINSTANCE, cmdline: LPCWSTR, cmdshow: INT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn ShellDDEInit(bInit: BOOL);
-}
 unsafe extern "system" {
     pub fn SHGetViewStream(
         arg1: LPCITEMIDLIST,
@@ -39874,25 +40212,6 @@ unsafe extern "system" {
         arg4: LPCTSTR,
         arg5: LPCTSTR,
     ) -> *mut IStream;
-}
-unsafe extern "system" {
-    pub fn SHIsBadInterfacePtr(pv: LPCVOID, ucb: UINT_PTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn CopyStreamUI(
-        pSrc: *mut IStream,
-        pDst: *mut IStream,
-        pProgress: *mut IProgressDialog,
-        dwlSize: DWORDLONG,
-    ) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn SHGetComputerDisplayNameW(
-        pszServerName: LPWSTR,
-        dwFlags: DWORD,
-        pszName: LPWSTR,
-        cchNameMax: DWORD,
-    ) -> HRESULT;
 }
 #[repr(C, packed)]
 pub struct tagSHELL_LINK_HEADER {
@@ -39904,7 +40223,7 @@ pub struct tagSHELL_LINK_HEADER {
     pub ftLastAccessTime: FILETIME,
     pub ftLastWriteTime: FILETIME,
     pub nFileSizeLow: DWORD,
-    pub nIconIndex: DWORD,
+    pub nIconIndex: INT,
     pub nShowCommand: DWORD,
     pub wHotKey: WORD,
     pub wReserved1: WORD,
@@ -40475,13 +40794,6 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn GetDefaultRecycleBin(pszVolume: LPCWSTR, pprb: *mut *mut IRecycleBin) -> HRESULT;
 }
-unsafe extern "C" {
-    pub fn CRecycleBin_NotifyRecycled(
-        OrigPath: LPCWSTR,
-        pFind: *const WIN32_FIND_DATAW,
-        pFI: *const RECYCLEBINFILEIDENTITY,
-    );
-}
 pub type PIDLTYPE = BYTE;
 #[repr(C, packed)]
 pub struct tagPIDLCPanelStruct {
@@ -40603,39 +40915,6 @@ unsafe extern "C" {
     pub static mut ShellIconBPP: INT;
 }
 unsafe extern "C" {
-    pub fn SHELL32_AliasTranslatePidl(
-        pidl: LPCITEMIDLIST,
-        ppidlNew: *mut LPITEMIDLIST,
-        dwFlags: DWORD,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn SHELL32_ReparentAsAliasPidl(
-        hwnd: HWND,
-        hToken: HANDLE,
-        pidlTarget: LPCITEMIDLIST,
-        ppidlNew: *mut LPITEMIDLIST,
-        dwFlags: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn IDataObject_Constructor(
-        hwndOwner: HWND,
-        pMyPidl: LPCITEMIDLIST,
-        apidl: PCUITEMID_CHILD_ARRAY,
-        cidl: UINT,
-        bExtendedObject: BOOL,
-        dataObject: *mut *mut IDataObject,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn IEnumFORMATETC_Constructor(
-        cfmt: UINT,
-        afmt: *const FORMATETC,
-        enumerator: *mut *mut IEnumFORMATETC,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
     pub fn IClassFactory_Constructor(arg1: *const CLSID) -> LPCLASSFACTORY;
 }
 unsafe extern "C" {
@@ -40666,13 +40945,6 @@ unsafe extern "C" {
     pub fn ISvBgCm_Constructor(pSFParent: LPSHELLFOLDER, bDesktop: BOOL) -> *mut IContextMenu2;
 }
 unsafe extern "system" {
-    pub fn CDefViewDual_Constructor(riid: *const IID, ppvOut: *mut LPVOID) -> HRESULT;
-}
-unsafe extern "system" {
-    pub fn IFileSystemBindData_Constructor(pfd: *const WIN32_FIND_DATAW, ppV: *mut LPBC)
-        -> HRESULT;
-}
-unsafe extern "system" {
     pub fn CPanel_ExtractIconA(
         pidl: LPITEMIDLIST,
         pszFile: LPCSTR,
@@ -40692,11 +40964,22 @@ unsafe extern "system" {
         nIconSize: UINT,
     ) -> HRESULT;
 }
-unsafe extern "C" {
-    pub fn InitChangeNotifications();
+unsafe extern "system" {
+    pub fn CustomDestinationList_Constructor(
+        outer: *mut IUnknown,
+        riid: *const IID,
+        obj: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
 }
 unsafe extern "C" {
-    pub fn FreeChangeNotifications();
+    pub fn SHELL_InitializeExtension(
+        clsid: *const CLSID,
+        pidlFolder: PCIDLIST_ABSOLUTE,
+        pDO: *mut IDataObject,
+        hkeyProgID: HKEY,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
 }
 unsafe extern "C" {
     pub static mut swShell32Name: [WCHAR; 260usize];
@@ -40709,13 +40992,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub static CLSID_UnixDosFolder: GUID;
-}
-unsafe extern "C" {
-    pub fn SH_FormatFileSizeWithBytes(
-        lpQwSize: PULARGE_INTEGER,
-        pszBuf: LPWSTR,
-        cchBuf: UINT,
-    ) -> LPWSTR;
 }
 unsafe extern "system" {
     pub fn DoRegisterServer() -> HRESULT;
@@ -40806,6 +41082,12 @@ pub struct CEnumIDListBase {
     pub mpLast: *mut ENUMLIST,
     pub mpCurrent: *mut ENUMLIST,
 }
+pub type CEnumIDListBase_CREATEINSTANCEFILTERFUNC = ::core::option::Option<
+    unsafe extern "system" fn(
+        CallerCookie: *mut ::core::ffi::c_void,
+        pidl: LPCITEMIDLIST,
+    ) -> HRESULT,
+>;
 #[repr(C)]
 pub struct _CI_STATE {
     pub cbStruct: DWORD,
@@ -40896,6 +41178,26 @@ pub struct CShellItem {
 }
 pub type CShellItem__CreatorClass = ATL_CComCreator2;
 #[repr(C)]
+pub struct CShellItemArray__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct CShellItemArray {
+    pub vtable_: *const CShellItemArray__bindgen_vtable,
+    pub _base: u8,
+    pub _base_1: ATL_CComObjectRootEx,
+    pub m_pHIDA: *mut CDataObjectHIDA,
+}
+pub type CShellItemArray__CreatorClass = ATL_CComCreator2;
+#[repr(C)]
+pub struct CSimpleShellItemArray__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+pub struct CSimpleShellItemArray {
+    pub vtable_: *const CSimpleShellItemArray__bindgen_vtable,
+    pub _base: u8,
+    pub _base_1: ATL_CComObjectRootEx,
+    pub m_items: ATL_CAtlArray<ATL_CComPtr<IShellItem>>,
+}
+pub type CSimpleShellItemArray__CreatorClass = ATL_CComCreator2;
+#[repr(C)]
 pub struct CShellLink {
     pub _base: u8,
     pub _base_1: ATL_CComObjectRootEx,
@@ -40962,6 +41264,7 @@ pub struct CFolderItem {
     pub _base: u8,
     pub _base_1: ATL_CComObjectRootEx,
     pub _base_2: __BindgenOpaqueArray<u32, 2usize>,
+    pub _base_3: IParentAndItem,
     pub m_idlist: ATL_CComHeapPtr<ITEMIDLIST>,
     pub m_Folder: ATL_CComPtr<Folder>,
 }
@@ -40975,6 +41278,8 @@ pub struct CFolderItems {
     pub m_EnumIDList: ATL_CComPtr<IEnumIDList>,
     pub m_Folder: ATL_CComPtr<Folder>,
     pub m_Count: ::core::ffi::c_long,
+    pub m_Contf: LONG,
+    pub m_bstrFilter: BSTR,
 }
 pub type CFolderItems__CreatorClass = ATL_CComCreator2;
 #[repr(C)]
@@ -40983,8 +41288,10 @@ pub struct CFolder {
     pub _base_1: ATL_CComObjectRootEx,
     pub _base_2: __BindgenOpaqueArray<u32, 2usize>,
     pub m_idlist: ATL_CComHeapPtr<ITEMIDLIST>,
-    pub m_Application: ATL_CComPtr<IShellDispatch>,
+    pub m_Application: ATL_CComPtr<IDispatch>,
 }
+pub const CFolder_INFOTIPCOLUMN: CFolder__bindgen_ty_1 = -1;
+pub type CFolder__bindgen_ty_1 = ::core::ffi::c_int;
 pub type CFolder__CreatorClass = ATL_CComCreator2;
 #[repr(C)]
 pub struct CShellDispatch {
@@ -40994,6 +41301,13 @@ pub struct CShellDispatch {
     pub _base_3: IObjectSafety,
 }
 pub type CShellDispatch__CreatorClass = ATL_CComCreator2;
+#[repr(C)]
+pub struct CShellLibrary {
+    pub _base: u8,
+    pub _base_1: ATL_CComObjectRootEx,
+    pub _base_2: IShellLibrary,
+}
+pub type CShellLibrary__CreatorClass = ATL_CComCreator2;
 #[repr(C)]
 pub struct CDropTargetHelper {
     pub _base: u8,
@@ -41147,12 +41461,6 @@ pub struct CAdminToolsFolder {
     pub m_pidlInner: LPITEMIDLIST,
 }
 pub type CAdminToolsFolder__CreatorClass = ATL_CComCreator2;
-unsafe extern "C" {
-    pub fn TRASH_CanTrashFile(wszPath: LPCWSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn TRASH_TrashFile(wszPath: LPCWSTR) -> BOOL;
-}
 #[repr(C)]
 pub struct CRecycleBin {
     pub _base: u8,
@@ -41171,7 +41479,7 @@ pub struct CRecycleBinFolderViewCB {
     pub _base: ATL_CComObjectRootEx,
     pub _base_1: IShellFolderViewCB,
     pub m_pShellView: *mut IShellView,
-    pub m_pRecycleBin: *mut CRecycleBin,
+    pub m_pRecycleBin: *mut IShellFolder2,
     pub m_nChangeNotif: ULONG,
     pub m_pidlParent: ATL_CComHeapPtr<ITEMIDLIST>,
     pub m_pidls: [ATL_CComHeapPtr<ITEMIDLIST>; 2usize],
@@ -41184,8 +41492,8 @@ pub struct CExeDropHandler {
     pub vtable_: *const CExeDropHandler__bindgen_vtable,
     pub _base: u8,
     pub _base_1: ATL_CComObjectRootEx,
-    pub pclsid: *mut CLSID,
-    pub sPathTarget: LPWSTR,
+    pub m_PathTarget: LPWSTR,
+    pub m_grfKeyState: DWORD,
 }
 pub type CExeDropHandler__CreatorClass = ATL_CComCreator2;
 #[repr(C)]
@@ -41389,6 +41697,15 @@ pub struct CQueryAssociations {
     pub _base_2: IQueryAssociations,
     pub hkeySource: HKEY,
     pub hkeyProgID: HKEY,
+    pub m_pBaseClass: ATL_CComPtr<CQueryAssociations>,
+    pub m_InitFlags: ASSOCF,
+    pub m_InitType: BYTE,
+    pub m_SkipBaseClass: bool,
+}
+#[repr(C)]
+pub struct CQueryAssociations_RegKeyRef {
+    pub hKey: HKEY,
+    pub hKeyClose: HKEY,
 }
 pub type CQueryAssociations__CreatorClass = ATL_CComCreator2;
 #[repr(C)]
@@ -42102,6 +42419,13 @@ unsafe extern "system" {
     pub fn RSHELL_CMergedFolder_CreateInstance(riid: *const IID, ppv: *mut LPVOID) -> HRESULT;
 }
 #[repr(C)]
+pub struct CUserEventTimer {
+    pub _base: u8,
+    pub _base_1: ATL_CComObjectRootEx,
+    pub _base_2: IUserEventTimer,
+}
+pub type CUserEventTimer__CreatorClass = ATL_CComCreator2;
+#[repr(C)]
 pub struct CUserNotification {
     pub _base: u8,
     pub _base_1: ATL_CComObjectRootEx,
@@ -42121,14 +42445,6 @@ pub struct CUserNotification {
     pub m_szInfoTitle: ATL_CStringW,
 }
 pub type CUserNotification__CreatorClass = ATL_CComCreator2;
-unsafe extern "system" {
-    pub fn FolderOptionsFileTypesDlg(
-        hwndDlg: HWND,
-        uMsg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> INT_PTR;
-}
 unsafe extern "C" {
     pub static mut g_pszShell32: LPCWSTR;
 }
@@ -42185,15 +42501,6 @@ pub struct CCidaChildArrayHelper {
 unsafe extern "C" {
     pub static CLSID_OpenWith: GUID;
 }
-unsafe extern "system" {
-    pub fn SHMultiFileProperties(pDataObject: *mut IDataObject, dwFlags: DWORD) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn SHELL32_ShowFilesystemItemsPropertiesDialogAsync(
-        hOwner: HWND,
-        pDO: *mut IDataObject,
-    ) -> HRESULT;
-}
 pub type HDCMA = HDSA;
 #[repr(C)]
 pub struct _DCMENTRY {
@@ -42202,6 +42509,9 @@ pub struct _DCMENTRY {
     pub idCmdLast: UINT,
 }
 pub type DCMENTRY = _DCMENTRY;
+unsafe extern "system" {
+    pub fn SHELL32_RunControlPanel(commandLine: PCWSTR, parent: HWND) -> BOOL;
+}
 #[repr(C)]
 pub struct CStubWindow32 {
     pub _base: ATL_CWindowImpl<ATL_CWindow>,
@@ -42209,78 +42519,6 @@ pub struct CStubWindow32 {
 pub const CStubWindow32_TYPE_FORMATDRIVE: CStubWindow32__bindgen_ty_1 = 1;
 pub const CStubWindow32_TYPE_PROPERTYSHEET: CStubWindow32__bindgen_ty_1 = 2;
 pub type CStubWindow32__bindgen_ty_1 = ::core::ffi::c_uint;
-unsafe extern "C" {
-    pub fn SHBindToObject(
-        psf: *mut IShellFolder,
-        pidl: LPCITEMIDLIST,
-        riid: *const IID,
-        ppvObj: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn SHELL_GetUIObjectOfAbsoluteItem(
-        hWnd: HWND,
-        pidl: PCIDLIST_ABSOLUTE,
-        riid: *const IID,
-        ppvObj: *mut *mut ::core::ffi::c_void,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn SHELL_GetIDListTarget(pidl: LPCITEMIDLIST, ppidl: *mut PIDLIST_ABSOLUTE) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn SHCoInitializeAnyApartment() -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn SHGetNameAndFlagsW(
-        pidl: LPCITEMIDLIST,
-        dwFlags: DWORD,
-        pszText: LPWSTR,
-        cchBuf: UINT,
-        pdwAttributes: *mut DWORD,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn BindCtx_GetUIWindow(pBindCtx: *mut IBindCtx) -> HWND;
-}
-unsafe extern "C" {
-    pub fn BindCtx_RegisterObjectParam(
-        pBindCtx: *mut IBindCtx,
-        pszKey: LPOLESTR,
-        punk: *mut IUnknown,
-        ppbc: *mut LPBC,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn PathIsValidElement(pszPath: LPCWSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn IUnknown_InitializeCommand(
-        pUnk: *mut IUnknown,
-        pszCommandName: PCWSTR,
-        pPB: *mut IPropertyBag,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn InvokeIExecuteCommand(
-        pEC: *mut IExecuteCommand,
-        pszCommandName: PCWSTR,
-        pPB: *mut IPropertyBag,
-        pSIA: *mut IShellItemArray,
-        pICI: LPCMINVOKECOMMANDINFOEX,
-        pSite: *mut IUnknown,
-    ) -> HRESULT;
-}
-unsafe extern "C" {
-    pub fn InvokeIExecuteCommandWithDataObject(
-        pEC: *mut IExecuteCommand,
-        pszCommandName: PCWSTR,
-        pPB: *mut IPropertyBag,
-        pDO: *mut IDataObject,
-        pICI: LPCMINVOKECOMMANDINFOEX,
-        pSite: *mut IUnknown,
-    ) -> HRESULT;
-}
 pub const _FILEOPCALLBACKEVENT_FOCE_STARTOPERATIONS: _FILEOPCALLBACKEVENT = 0;
 pub const _FILEOPCALLBACKEVENT_FOCE_FINISHOPERATIONS: _FILEOPCALLBACKEVENT = 1;
 pub const _FILEOPCALLBACKEVENT_FOCE_PREMOVEITEM: _FILEOPCALLBACKEVENT = 2;

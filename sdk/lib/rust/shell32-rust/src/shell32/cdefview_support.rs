@@ -275,3 +275,14 @@ pub static REGSTR_PATH_EXPLORER_ICONUNDERLINE: [WCHAR; 65] = [
     0x0065, 0x0072, 0x005C, 0x0049, 0x0063, 0x006F, 0x006E, 0x0055, 0x006E, 0x0064, 0x0065, 0x0072,
     0x006C, 0x0069, 0x006E, 0x0065, 0x0000,
 ];
+
+// ------------------------------------------------------------------------------------------
+// user32 exports outside the island's closure
+// ------------------------------------------------------------------------------------------
+
+extern "system" {
+    /// `SetShellWindowEx` (winuser.h). Not in shell32's bindgen island — the header guards it
+    /// behind `#if (_WIN32_WINNT >= 0x0500)` plus `NTDDI`, and shell32's TUs never pull it in
+    /// (CDefView.cpp declares it itself). shell32.dll already imports user32.
+    pub fn SetShellWindowEx(hwndShell: HWND, hwndShellListView: HWND) -> BOOL;
+}

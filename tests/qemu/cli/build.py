@@ -273,7 +273,7 @@ def _ninja_jobs() -> list[str]:
     survives for the one case it might matter again — build ∥ a WHPX boot, which is real
     hardware-virt and does contend — but even there the hostlock CPU-lease pool is the
     right throttle, not a blunt `-j` cap. Set VIBEOS_BUILD_CORE_RESERVE>0 to re-enable."""
-    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
     if policy:
         return ["-j", str(policy["ninja_jobs"])]
     reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "0"))
@@ -284,7 +284,7 @@ def _ninja_jobs() -> list[str]:
 
 
 def _policy_build_env(env: dict | None) -> dict | None:
-    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
     if policy is None:
         return env
     return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
@@ -743,6 +743,17 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build so a plain build reverts to the APIC HAL. i386 only — amd64
             # hal is always APIC.
             "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
+            # The full winetest corpus (`--rostests`). RECONCILED, not sticky,
+            # which is the opposite call from ENABLE_ROSTESTS_KMTESTS below and
+            # for a reason: kmtests are cheap to keep and something (conformance)
+            # always wants them, whereas ENABLE_ROSTESTS adds ~128 executables
+            # that no default build has any use for. Sticky would mean one
+            # opt-in silently bloats every later i386 build in the worktree --
+            # the exact surprise this flag exists to avoid. Toggling is cheap
+            # after the first build: turning it OFF only drops the targets from
+            # build.ninja, so the objects survive and turning it back ON is an
+            # up-to-date ninja pass.
+            "ENABLE_ROSTESTS": bool(getattr(args, "rostests", False)),
         },
         # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
         # sweeps, and both cmake options gating it default OFF, so a build dir
@@ -750,7 +761,18 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         # the whole fix for a fresh worktree building a full media and only
         # finding out at `[KMTEST-SWEEP] launch FAILED`, minutes later and a
         # layer away from the cause.
-        sticky_on=("ENABLE_ROSTESTS_KMTESTS",) if getattr(args, "kmtests", False) else (),
+        sticky_on=tuple(
+            opt
+            for opt, flag in (
+                ("ENABLE_ROSTESTS_KMTESTS", "kmtests"),
+                # Sticky for the same reason as kmtests: the apitest payload
+                # sweeps this corpus, the cmake option defaults OFF, and a fresh
+                # worktree that silently built no apitests only says so minutes
+                # later at `[APITEST-SWEEP] launch FAILED`.
+                ("ENABLE_ROSTESTS_APITESTS", "apitests"),
+            )
+            if getattr(args, flag, False)
+        ),
     )
     if wrapped is None:
         return run.finalize(repo)
@@ -812,7 +834,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if build_env is None:
             return run.finalize(repo)  # ccache reconfigure failed hard
 
-    policy = hostlock.buildpolicy.read(hostlock.HOSTLOCK_DIR)
+    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
     if policy:
         build_env = _policy_build_env(build_env)
         run.extra["build_policy"] = policy

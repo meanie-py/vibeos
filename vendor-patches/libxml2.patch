@@ -1,0 +1,106 @@
+# libxml2 2.13.9 — our delta from pristine upstream.
+#
+# Upstream: https://download.gnome.org/sources/libxml2/2.13/libxml2-2.13.9.tar.xz
+#           sha256 a2c9ae7b770da34860050c309f903221c67830c86e4a7e760692b803df95143a
+# Apply from sdk/lib/3rdparty/libxml2/ with: patch -p1 < vendor-patches/libxml2.patch
+#
+# ONE FILE, TWO LINES. It used to be three files; the other two were build shims and
+# both are retired — see THE BUILD SHIMS ARE GONE below. Nothing here blocks a version
+# bump: the hunk is a 2-line #if 0 around a stable decade-old branch.
+#
+# WHY xmlschemas.c IS PATCHED AND NOT A BUILD FLAG:
+#   It disables libxml2's XSD 1.0 Unique Particle Attribution (UPA) check. You cannot
+#   -D away a branch upstream does not gate, and there is no parser option for it: the
+#   error goes through xmlSchemaPCustomErr, which increments pctxt->nberrors, so
+#   xmlSchemaParse() returns NULL no matter what error handler you install.
+#
+#   THIS IS NOT A WORKAROUND FOR A BUG IN OUR CODE. Measured 2026-09-20 with a host
+#   probe (msxml3's real dll/win32/msxml3/xdr.c linked against pristine upstream
+#   2.12.8, datatypes namespace wired up exactly as schema.c does via link_datatypes()
+#   plus an external entity loader):
+#
+#     - 5 of the 6 XDR schemas in the msxml3 winetest compile clean on PRISTINE libxml2.
+#     - szDatatypeXDR does not: "The content model is not determinist" x2, from the
+#       Value and Properties complex types.
+#     - Applying ONLY this hunk to that same pristine tree makes all 6 compile. So the
+#       hunk is both necessary and sufficient; A/B on one binary.
+#
+#   The cause is a genuine expressiveness gap, not a lowering bug. XDR's open content
+#   model ("model='open'") permits extra DECLARED elements as trailing content, which
+#   xdr.c lowers to a trailing <xsd:any namespace="##any" processContents="strict"/>.
+#   That wildcard necessarily overlaps its own sibling element particles whenever one
+#   of them is optional or repeating, which is exactly UPA. XSD 1.0 cannot express it;
+#   XSD 1.1 invented <xs:openContent> for this case and libxml2 implements neither.
+#
+#   Tightening the wildcard to ##other WOULD satisfy UPA and IS WRONG — verified against
+#   the winetest's own documented expectations (modules/rostests/winetests/msxml3/
+#   schema.c, test_openseq). With the hunk applied, validating szOpenSeqXDR gives:
+#       <test><x/><x/><y/><z/><z/></test>        VALID    (declared, in order)
+#       <test><x/><x/><y/><z/><z/><w/></test>    VALID    <-- w is DECLARED and in the
+#                                                             SAME namespace; ##other
+#                                                             would reject it
+#       <test><w/><x/><x/><y/><z/><z/></test>    invalid  (extra only allowed at end)
+#       <test><x/><x/><y/><z/><z/><v/></test>    invalid  (v undeclared; strict works)
+#   4/4 match what the test asserts. So ##any + processContents="strict" is the correct
+#   lowering and the ambiguity is inherent. Don't "fix" xdr.c; it is not broken.
+#
+# THE BUILD SHIMS ARE GONE (2026-09-20). libxml.h and include/win32config.h were
+# patched for years so that libxml.h included "win32config.h" in place of the
+# "config.h" the build system was supposed to generate, and so that win32config.h
+# pulled in <io.h> and <direct.h>. Both files are now PRISTINE. What replaced them is
+# a config.h of ours at the tree root, which is what upstream's OWN CMakeLists does on
+# Windows — `configure_file(include/win32config.h config.h COPYONLY)` — so our version
+# is that copy expressed as an include, plus the two headers.
+#
+# The old note said `config.h` was "a dangerously generic name to put on this tree's
+# include path (sdk/include/wine ships one too)", and that was the reason for the
+# whole shim. It was also unnecessary: libxml.h's `#include "config.h"` is QUOTED, and
+# a quoted include resolves against the including file's own directory before any -I
+# path. Putting the file beside libxml.h therefore satisfies it without going near an
+# include path at all.
+#
+# ------------------------------------------------------------------------------------
+# WHY 2.13.9 AND NOT 2.15.4 — A CONCRETE, ONE-LINE BLOCKER
+# ------------------------------------------------------------------------------------
+#
+# 2.13.9 is the LAST release that links against this OS as configured. 2.14.0 changed
+# threads.c to call InitOnceExecuteOnce, and our kernel32.spec gates that export behind
+# `-version=0x600+`. spec2def defaults to 0x502 (guOsVersion in sdk/tools/spec2def/
+# spec2def.c) and NOTHING in the tree overrides it — `spec2def(... VERSION ...)` exists
+# and is used by zero CMakeLists — so no module can import it, and a module raising its
+# own _WIN32_WINNT does not help, because the import library is a single global artifact
+# built from the spec rather than per consumer.
+#
+# So 2.14+ needs `spec2def(kernel32.dll kernel32.spec ADD_IMPORTLIB VERSION 600)` in
+# dll/win32/kernel32/CMakeLists.txt. Our kernel32 DOES implement and export
+# InitOnceExecuteOnce, so that is a policy change (which Windows version our import
+# libraries advertise) rather than a missing feature — which is why it was not made as
+# part of a vendor bump. That is the whole blocker; measured, not guessed.
+#
+# WHAT THE BUMP ALSO NEEDED, and got:
+#   BCryptGenRandom — 2.13 seeds its hash RNG with it on Windows (dict.c). Our bcrypt
+#   exports it, but sdk/include/psdk/bcrypt.h was missing the SDK's own BCRYPT_SUCCESS
+#   macro, so no caller could test the NTSTATUS. Added to the header, not worked around
+#   here. libxslt and msxml3 gained `bcrypt` in add_importlibs.
+#
+# include/libxml/xmlversion.h is GENERATED from xmlversion.h.in, not patched. Ours
+# turns every feature on except ICU, MODULES, LZMA, FTP and HTTP, none of which this
+# tree builds the sources for.
+#
+--- a/xmlschemas.c
++++ b/xmlschemas.c
+@@ -13129,12 +13129,14 @@
+ 	    XML_SCHEMAP_INTERNAL,
+ 	    WXS_BASIC_CAST type, type->node,
+ 	    "Failed to compile the content model", NULL);
++#if 0  /* disabled in Wine */
+     } else if (xmlRegexpIsDeterminist(type->contModel) != 1) {
+         xmlSchemaPCustomErr(ctxt,
+ 	    XML_SCHEMAP_NOT_DETERMINISTIC,
+ 	    /* XML_SCHEMAS_ERR_NOTDETERMINIST, */
+ 	    WXS_BASIC_CAST type, type->node,
+ 	    "The content model is not determinist", NULL);
++#endif
+     } else {
+     }
+     ctxt->state = NULL;

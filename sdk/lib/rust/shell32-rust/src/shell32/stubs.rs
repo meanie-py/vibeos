@@ -4,6 +4,70 @@ use core::ffi::c_void;
 use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
 
+extern "system" {
+    fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
+}
+
+// Upstream-sync 2026-09: the four functions below (GetAppPathFromLink,
+// GetCurrentProcessExplicitAppUserModelID, SetCurrentProcessExplicitAppUserModelID,
+// RunInstallUninstallStubs) are genuinely lost exports -- real Win32 stub bodies in
+// upstream's stubs.cpp with no Rust twin, because this TU's flip predates these upstream
+// additions. Ported 1:1; every one of them is ALREADY an "Unimplemented"/FIXME stub in
+// the C, so this is not a lesser port, just closing the export gap the flip left open.
+#[no_mangle]
+pub unsafe extern "system" fn GetAppPathFromLink(
+    _pItem: *mut IShellItem,
+    _pwszPathBuffer: LPWSTR,
+    _dwBufferLen: DWORD,
+) -> HRESULT {
+    FIXME!("GetAppPathFromLink() stub\n");
+    S_OK
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetCurrentProcessExplicitAppUserModelID(
+    AppID: *mut PWSTR,
+) -> HRESULT {
+    SHStrDupW(
+        [b'R' as u16, b'O' as u16, b'S' as u16, b' ' as u16,
+         b'F' as u16, b'i' as u16, b'x' as u16, b'M' as u16, b'e' as u16, 0u16]
+            .as_ptr(),
+        AppID as *mut LPWSTR,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn SetCurrentProcessExplicitAppUserModelID(
+    _AppID: PCWSTR,
+) -> HRESULT {
+    FIXME!("SetCurrentProcessExplicitAppUserModelID stub\n");
+    S_OK
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RunInstallUninstallStubs() -> DWORD {
+    FIXME!("RunInstallUninstallStubs() stub!\n");
+    0
+}
+
+// Upstream-sync 2026-09 (round 2): SHQueryUserNotificationState -- fifth lost export the
+// scanner's tail-comment fix surfaced, alongside the four above. Trivial 1:1 port
+// (shellapi.h QUERY_USER_NOTIFICATION_STATE is a plain enum, not in the bindgen island).
+type QUERY_USER_NOTIFICATION_STATE = core::ffi::c_int;
+const QUNS_ACCEPTS_NOTIFICATIONS: QUERY_USER_NOTIFICATION_STATE = 5;
+
+#[no_mangle]
+pub unsafe extern "system" fn SHQueryUserNotificationState(
+    pquns: *mut QUERY_USER_NOTIFICATION_STATE,
+) -> HRESULT {
+    FIXME!("SHQueryUserNotificationState() stub\n");
+    if pquns.is_null() {
+        return E_INVALIDARG;
+    }
+    *pquns = QUNS_ACCEPTS_NOTIFICATIONS;
+    S_OK
+}
+
 // ---- file-scope preamble (translated) ----
 #[no_mangle]
 pub unsafe extern "system" fn CheckDiskSpace() {

@@ -682,12 +682,30 @@ pub unsafe extern "system" fn MmUnmapLockedPages(mut BaseAddress: PVOID, Mdl: PM
     }
 }
 
+// The exported API raises on failure, as the C does. Rust callers cannot catch that raise (no
+// kernel SEH around their call sites), so they call MmTryProbeAndLockPages and get the status.
 #[no_mangle]
 pub unsafe extern "system" fn MmProbeAndLockPages(
     Mdl: PMDL,
     AccessMode: KPROCESSOR_MODE,
-    mut Operation: LOCK_OPERATION,
+    Operation: LOCK_OPERATION,
 ) {
+    let Status = MmTryProbeAndLockPages(Mdl, AccessMode, Operation);
+    if Status < 0 {
+        ExRaiseStatus(Status);
+    }
+}
+
+/// MmProbeAndLockPages returning its failure instead of raising it (docs/engineering/
+/// dummy-pseh-verdict.md, class 2: convert the contract at the callee). Every failure path leaves
+/// the MDL exactly as the raising version did. Exported so the other Rust crates linked into the
+/// kernel image can call it; the raising export stays as the NT ABI for everything else.
+#[no_mangle]
+pub unsafe extern "system" fn MmTryProbeAndLockPages(
+    Mdl: PMDL,
+    AccessMode: KPROCESSOR_MODE,
+    mut Operation: LOCK_OPERATION,
+) -> NTSTATUS {
     let Mdl = opaque_ptr(Mdl);
     let mut MdlPages: PPFN_NUMBER;
     let mut Address: PVOID;
@@ -719,7 +737,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
 
     if (AccessMode != 0i8) && ((LastAddress as ULONG_PTR > (0x7FFFFFFF0000u64) as usize) || (Address >= LastAddress)) {
         *MdlPages = LIST_HEAD;
-        ExRaiseStatus(STATUS_ACCESS_VIOLATION);
+        return STATUS_ACCESS_VIOLATION;
     }
 
     if Address as ULONG_PTR <= MM_HIGHEST_USER_ADDRESS as ULONG_PTR {
@@ -737,9 +755,30 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
     let mut pages_left = LockPages;
     loop {
         *mdl_ptr = LIST_HEAD;
-        *(addr as *const CHAR);
+        // The C touches each page inside _SEH2_TRY and turns a fault into ProbeStatus. The
+        // translation kept a bare `*(addr as *const CHAR);` -- unprotected, and a non-volatile
+        // read whose value is unused, so it may not even be emitted. A fault here is a hostile
+        // or unmapped caller address (ReadProcessMemory past the end of a stack), and it
+        // BUGCHECKed 0x1E. Touch through the fault-tolerant copy instead.
+        let mut byte: u8 = 0;
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!(byte) as *mut core::ffi::c_void,
+            addr as *const core::ffi::c_void,
+            1,
+        ) {
+            ProbeStatus = st;
+            break;
+        }
         if (Operation != IoReadAccess) && (addr as ULONG_PTR <= MM_HIGHEST_USER_ADDRESS as ULONG_PTR) {
-            ProbeForWriteChar(addr as PCHAR as *mut u8);
+            // ProbeForWriteChar: write the byte back, fault-protected.
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                addr as *mut core::ffi::c_void,
+                core::ptr::addr_of!(byte) as *const core::ffi::c_void,
+                1,
+            ) {
+                ProbeStatus = st;
+                break;
+            }
         }
         addr = ((addr as ULONG_PTR + PAGE_SIZE) & !(PAGE_SIZE - 1)) as PVOID;
         pages_left -= 1;
@@ -751,7 +790,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
 
     if ProbeStatus < 0 {
         (*Mdl).Process = core::ptr::null_mut();
-        ExRaiseStatus(ProbeStatus);
+        return ProbeStatus;
     }
 
     PointerPte = MiAddressToPte(StartAddress);
@@ -818,13 +857,10 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
 
             Status = MmAccessFault(0, Address, 0i8, 0xBADBADA3BADBADA3u64 as PVOID);
             if Status < 0 {
-                if UsePfnLock != 0 {
-                    MiReleasePfnLock(OldIrql);
-                } else {
-                    MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as *mut _ETHREAD);
-                }
+                // The lock was dropped before MmAccessFault; the C's `goto Cleanup` skips the release.
+                // Releasing it again here released a lock this thread no longer held.
                 MmUnlockPages(Mdl);
-                ExRaiseStatus(Status);
+                return Status;
             }
 
             if UsePfnLock != 0 {
@@ -847,13 +883,10 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
 
                         Status = MmAccessFault(1, Address, 0i8, 0xBADBADA3BADBADA3u64 as PVOID);
                         if Status < 0 {
-                            if UsePfnLock != 0 {
-                                MiReleasePfnLock(OldIrql);
-                            } else {
-                                MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as *mut _ETHREAD);
-                            }
+                            // The lock was dropped before MmAccessFault; the C's `goto Cleanup` skips the release.
+                            // Releasing it again here released a lock this thread no longer held.
                             MmUnlockPages(Mdl);
-                            ExRaiseStatus(Status);
+                            return Status;
                         }
 
                         if UsePfnLock != 0 {
@@ -873,7 +906,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
                     MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as *mut _ETHREAD);
                 }
                 MmUnlockPages(Mdl);
-                ExRaiseStatus(Status);
+                return Status;
             }
         }
 
@@ -911,6 +944,7 @@ pub unsafe extern "system" fn MmProbeAndLockPages(
     } else {
         MiUnlockProcessWorkingSet(CurrentProcess, PsGetCurrentThread() as *mut _ETHREAD);
     }
+    STATUS_SUCCESS
 }
 
 #[no_mangle]
@@ -1179,10 +1213,15 @@ pub unsafe extern "system" fn MmProbeAndLockProcessPages(
         IsAttached = 1;
     }
 
-    MmProbeAndLockPages(MemoryDescriptorList, AccessMode, Operation);
+    // The C detached in a _SEH2_FINALLY; raising out of here instead left the thread attached
+    // to the other process. Take the status, detach, then raise.
+    let Status = MmTryProbeAndLockPages(MemoryDescriptorList, AccessMode, Operation);
 
     if IsAttached != 0 {
         KeUnstackDetachProcess(&mut ApcState as *mut _KAPC_STATE);
+    }
+    if Status < 0 {
+        ExRaiseStatus(Status);
     }
 }
 

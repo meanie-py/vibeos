@@ -4,7 +4,7 @@
  * FILE:            ntoskrnl/kd/i386/kdbg.c
  * PURPOSE:         Serial i/o functions for the kernel debugger.
  * PROGRAMMER:      Alex Ionescu
- *                  Herv� Poussineau
+ *                  Hervé Poussineau
  */
 
 /* INCLUDES *****************************************************************/
@@ -60,10 +60,9 @@ KdPortInitializeEx(
         if (ComPortNumber == 0)
         {
             /*
-             * Start enumerating COM ports from the last one to the first one,
-             * and break when we find a valid port.
-             * If we reach the first element of the list, the invalid COM port,
-             * then it means that no valid port was found.
+             * Enumerate COM ports from the last to the first one, and stop
+             * when we find a valid port. If we reach the first list element
+             * (the undefined COM port), no valid port was found.
              */
             for (ComPortNumber = MAX_COM_PORTS; ComPortNumber > 0; ComPortNumber--)
             {
@@ -75,7 +74,7 @@ KdPortInitializeEx(
             }
             if (ComPortNumber == 0)
             {
-                HalDisplayString("\r\nKernel Debugger: No COM port found!\r\n\r\n");
+                HalDisplayString("\r\nKernel Debugger: No serial port found\r\n\r\n");
                 return FALSE;
             }
         }
@@ -90,11 +89,11 @@ KdPortInitializeEx(
     Status = CpInitialize(PortInformation,
                           (ComPortNumber == 0 ? PortInformation->Address
                                               : UlongToPtr(BaseArray[ComPortNumber])),
-                          (PortInformation->BaudRate == 0 ? DEFAULT_BAUD_RATE
+                          (PortInformation->BaudRate == 0 ? DEFAULT_DEBUG_BAUD_RATE
                                                           : PortInformation->BaudRate));
     if (!NT_SUCCESS(Status))
     {
-        HalDisplayString("\r\nKernel Debugger: Serial port not found!\r\n\r\n");
+        HalDisplayString("\r\nKernel Debugger: Serial port not available\r\n\r\n");
         return FALSE;
     }
     else
@@ -105,7 +104,7 @@ KdPortInitializeEx(
 
         /* Print message to blue screen */
         Length = snprintf(Buffer, sizeof(Buffer),
-                          "\r\nKernel Debugger: Serial port found: COM%ld (Port 0x%p) BaudRate %ld\r\n\r\n",
+                          "\r\nKernel Debugger: Using COM%lu (Port 0x%p) BaudRate %lu\r\n\r\n",
                           ComPortNumber,
                           PortInformation->Address,
                           PortInformation->BaudRate);

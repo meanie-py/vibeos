@@ -25,6 +25,7 @@ unsafe fn IntUnLockFreeType() {
 
 // ---- integration preamble (consts/macros/globals the translation needs) ----
 use ntkrnl_sys::base::NT_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -1335,7 +1336,7 @@ unsafe fn InitFontSupport_impl() -> BOOL {
     }
 
     if IntLoadFontsInRegistry() == 0 {
-        DbgPrint(b"InitFontSupport: loading system fonts (direct-by-name)\n\0".as_ptr() as *const i8);
+        DbgPrint(b"InitFontSupport: loading system fonts\n\0".as_ptr() as *const i8);
         IntLoadSystemFonts();
         DbgPrint(b"InitFontSupport: font loading done\n\0".as_ptr() as *const i8);
     }
@@ -1889,61 +1890,152 @@ pub unsafe extern "C" fn IntLoadSystemFonts() {
     IntLoadSystemFonts_impl();
 }
 
-unsafe fn IntLoadSystemFonts_impl() {
-    let mut FileName: _UNICODE_STRING = core::mem::zeroed();
-    let mut i: INT;
-    let mut nLoaded: INT = 0;
+extern "system" {
+    fn ZwQueryDirectoryFile(
+        FileHandle: HANDLE,
+        Event: HANDLE,
+        ApcRoutine: PVOID,
+        ApcContext: PVOID,
+        IoStatusBlock: *mut IO_STATUS_BLOCK,
+        FileInformation: PVOID,
+        Length: ULONG,
+        FileInformationClass: ULONG,
+        ReturnSingleEntry: BOOLEAN,
+        FileName: *mut _UNICODE_STRING,
+        RestartScan: BOOLEAN,
+    ) -> NTSTATUS;
+    fn RtlCopyUnicodeString(DestinationString: *mut _UNICODE_STRING, SourceString: *const _UNICODE_STRING);
+}
 
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        DbgPrint(b"IntLoadSystemFonts: SKIPPED (deferred to winlogon user-space)\n\0".as_ptr() as *const i8);
+/// Load every font file in `\SystemRoot\Fonts`, as upstream does.
+///
+/// This used to load nothing on x86 ("deferred to winlogon", which then added 8 fonts
+/// by name) and a fixed 6 on arm64. Neither list held the console's default face
+/// "VGA" (UniVGA16.ttf) or its "Terminal" fallback, so no console window could be
+/// created on any arch: consrv's WM_NCCREATE failed in InitFonts, and its teardown
+/// then waited forever on a term event the input thread never sets for a window
+/// that does not exist. That wedged the csrss API thread serving the CUI process.
+unsafe fn IntLoadSystemFonts_impl() {
+    const FILE_DIRECTORY_INFORMATION_CLASS: ULONG = 1; // FileDirectoryInformation
+    const STATUS_NO_MORE_FILES: NTSTATUS = 0x8000_0006u32 as NTSTATUS;
+    const DIR_BUFFER_SIZE: ULONG = 0x4000;
+    // Upstream queries once per pattern (*.ttf, *.ttc, *.otf, *.otc, *.fon, *.fnt).
+    // Our FAT driver ignores the pattern and returns every file each time, which
+    // loaded each font six times, so enumerate once and match the extension here.
+    const EXTENSIONS: [[u16; 4]; 6] = [
+        [b'.' as u16, b't' as u16, b't' as u16, b'f' as u16],
+        [b'.' as u16, b't' as u16, b't' as u16, b'c' as u16],
+        [b'.' as u16, b'o' as u16, b't' as u16, b'f' as u16],
+        [b'.' as u16, b'o' as u16, b't' as u16, b'c' as u16],
+        [b'.' as u16, b'f' as u16, b'o' as u16, b'n' as u16],
+        [b'.' as u16, b'f' as u16, b'n' as u16, b't' as u16],
+    ];
+    unsafe fn has_font_extension(name: *const u16, len_chars: usize) -> bool {
+        if len_chars < 4 {
+            return false;
+        }
+        let tail = core::slice::from_raw_parts(name.add(len_chars - 4), 4);
+        EXTENSIONS.iter().any(|ext| {
+            tail.iter().zip(ext.iter()).all(|(&c, &e)| {
+                let lc = if (b'A' as u16..=b'Z' as u16).contains(&c) { c + 32 } else { c };
+                lc == e
+            })
+        })
+    }
+    let mut Directory: _UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(&mut Directory, wide_str!("\\SystemRoot\\Fonts\\"));
+    let mut Dot: _UNICODE_STRING = core::mem::zeroed();
+    let mut DotDot: _UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(&mut Dot, wide_str!("."));
+    RtlInitUnicodeString(&mut DotDot, wide_str!(".."));
+
+    let DirInfoBuffer = ExAllocatePoolWithTag(PagedPool, DIR_BUFFER_SIZE as usize, TAG_FONT) as *mut u8;
+    if DirInfoBuffer.is_null() {
         return;
     }
+    let mut FileName: _UNICODE_STRING = core::mem::zeroed();
+    FileName.Buffer = ExAllocatePoolWithTag(PagedPool, MAX_PATH as usize * 2, TAG_FONT) as *mut u16;
+    if FileName.Buffer.is_null() {
+        ExFreePoolWithTag(DirInfoBuffer as _, TAG_FONT);
+        return;
+    }
+    FileName.MaximumLength = (MAX_PATH * 2) as USHORT;
 
-    #[cfg(target_arch = "aarch64")]
+    let mut nLoaded: INT = 0;
     {
-        let KnownFonts: [PCWSTR; 6] = [
-            wide_str!("\\SystemRoot\\Fonts\\tahoma.ttf"),
-            wide_str!("\\SystemRoot\\Fonts\\tahomabd.ttf"),
-            wide_str!("\\SystemRoot\\Fonts\\Marlett.ttf"),
-            wide_str!("\\SystemRoot\\Fonts\\arial.ttf"),
-            wide_str!("\\SystemRoot\\Fonts\\cour.ttf"),
-            wide_str!("\\SystemRoot\\Fonts\\symbol.ttf"),
-        ];
-
-        let count = KnownFonts.len() as INT;
-
-        DbgPrint(
-            b"IntLoadSystemFonts: loading %d known fonts by path\n\0".as_ptr() as *const i8,
-            count,
+        let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+        ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+        ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
+        ObjectAttributes.ObjectName = &mut Directory;
+        let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
+        let mut hDirectory: HANDLE = core::ptr::null_mut();
+        let Status = ZwOpenFile(
+            &mut hDirectory,
+            SYNCHRONIZE | FILE_LIST_DIRECTORY,
+            &mut ObjectAttributes,
+            &mut Iosb,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
         );
-
-        i = 0;
-        while i < count {
-            RtlInitUnicodeString(&mut FileName, KnownFonts[i as usize]);
-            DbgPrint(
-                b"IntLoadSystemFonts: [%d/%d] loading %S\n\0".as_ptr() as *const i8,
-                i + 1,
-                count,
-                KnownFonts[i as usize],
-            );
-            if IntGdiAddFontResourceEx(&FileName, 1, 0, AFRX_WRITE_REGISTRY) != 0 {
-                nLoaded += 1;
-            } else {
-                DbgPrint(
-                    b"IntLoadSystemFonts: [%d] FAILED\n\0".as_ptr() as *const i8,
-                    i + 1,
-                );
-            }
-            i += 1;
+        if !NT_SUCCESS(Status) {
+            DbgPrint(b"IntLoadSystemFonts: cannot open fonts directory (0x%08lx)\n\0".as_ptr() as *const i8, Status);
+            ExFreePoolWithTag(FileName.Buffer as _, TAG_FONT);
+            ExFreePoolWithTag(DirInfoBuffer as _, TAG_FONT);
+            return;
         }
 
-        DbgPrint(
-            b"IntLoadSystemFonts: loaded %d of %d fonts\n\0".as_ptr() as *const i8,
-            nLoaded,
-            count,
-        );
+        let mut bRestartScan: BOOLEAN = 1;
+        loop {
+            let Status = ZwQueryDirectoryFile(
+                hDirectory,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                &mut Iosb,
+                DirInfoBuffer as PVOID,
+                DIR_BUFFER_SIZE,
+                FILE_DIRECTORY_INFORMATION_CLASS,
+                0,
+                core::ptr::null_mut(),
+                bRestartScan,
+            );
+            if !NT_SUCCESS(Status) || Status == STATUS_NO_MORE_FILES {
+                break;
+            }
+
+            let mut DirInfo = DirInfoBuffer as *mut _FILE_DIRECTORY_INFORMATION;
+            loop {
+                let mut TempString: _UNICODE_STRING = core::mem::zeroed();
+                TempString.Buffer = core::ptr::addr_of_mut!((*DirInfo).FileName) as *mut u16;
+                TempString.Length = (*DirInfo).FileNameLength as USHORT;
+                TempString.MaximumLength = TempString.Length;
+
+                if RtlEqualUnicodeString(&Dot, &TempString, 0) == 0
+                    && RtlEqualUnicodeString(&DotDot, &TempString, 0) == 0
+                    && has_font_extension(TempString.Buffer, TempString.Length as usize / 2)
+                {
+                    RtlCopyUnicodeString(&mut FileName, &Directory);
+                    RtlAppendUnicodeStringToString(&mut FileName, &TempString);
+                    if IntGdiAddFontResourceEx(&FileName, 1, 0, AFRX_WRITE_REGISTRY) != 0 {
+                        nLoaded += 1;
+                    } else {
+                        DbgPrint(b"IntLoadSystemFonts: failed to load %wZ\n\0".as_ptr() as *const i8, &FileName as *const _UNICODE_STRING);
+                    }
+                }
+
+                if (*DirInfo).NextEntryOffset == 0 {
+                    break;
+                }
+                DirInfo = (DirInfo as *mut u8).add((*DirInfo).NextEntryOffset as usize) as *mut _FILE_DIRECTORY_INFORMATION;
+            }
+            bRestartScan = 0;
+        }
+        ZwClose(hDirectory);
     }
+
+    DbgPrint(b"IntLoadSystemFonts: loaded %d font files from \\SystemRoot\\Fonts\n\0".as_ptr() as *const i8, nLoaded);
+    ExFreePoolWithTag(FileName.Buffer as _, TAG_FONT);
+    ExFreePoolWithTag(DirInfoBuffer as _, TAG_FONT);
 }
 
 #[cfg(target_arch = "x86")]
@@ -5944,6 +6036,9 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         return 0;
     }
 
+    /* Lock FreeType for face lookup (upstream e1bf662d9a) */
+    IntLockFreeType();
+
     if (*(*face).charmap).encoding == FT_ENCODING_UNICODE {
         let mut glyph_code: FT_UInt = 0;
         let mut char_code: FT_ULong;
@@ -5953,6 +6048,7 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         char_code_prev = char_code;
 
         if glyph_code == 0 {
+            IntUnLockFreeType();
             return 0;
         }
 
@@ -5965,6 +6061,7 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         num_ranges = 1;
         while glyph_code != 0 {
             if char_code < char_code_prev {
+                IntUnLockFreeType();
                 return 0;
             }
             if char_code - char_code_prev > 1 {
@@ -5990,6 +6087,10 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
         (*glyphset).cRanges = num_ranges;
         (*glyphset).flAccel = 0;
     }
+
+    /* Unlock FreeType */
+    IntUnLockFreeType();
+
     size
 }
 
@@ -8727,8 +8828,15 @@ pub unsafe extern "system" fn NtGdiExtTextOutW(
 
     if !UnsafeRect.is_null() {
         Status = SafeProbeForRead(UnsafeRect as PVOID, core::mem::size_of::<RECT>(), 1);
-        if NT_SUCCESS(Status) {
-            SafeRect = *(UnsafeRect as *const RECTL);
+        if NT_SUCCESS(Status)
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(SafeRect) as *mut core::ffi::c_void,
+                UnsafeRect as *const core::ffi::c_void,
+                core::mem::size_of::<RECTL>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
         if !NT_SUCCESS(Status) {
             if Buffer as *mut u8 != LocalBuffer.as_mut_ptr() {
@@ -8849,7 +8957,46 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
         return 0;
     }
 
-    FontGDI = ObjToGDI!(TextObj, FONT);
+    // freetype.c: `FontGDI = ObjToGDI(TextObj->Font, FONT)`. This read `ObjToGDI(TextObj, ...)`,
+    // the LFONT itself, as if it were the realized FONTGDI (the only such site in win32k), so
+    // SharedFace was whatever lay at that offset in the TEXTOBJ: NULL, and the guard below
+    // refused every call. That is what "an unrealized font reaches this syscall" was, and why
+    // every SS_*ELLIPSIS static (whose fit is measured here) drew ONE glyph: file Properties,
+    // dxdiag's values, Regional Options' samples.
+    FontGDI = ObjToGDI!((*TextObj).Font, FONT);
+
+    /* An unrealized font has no SharedFace, and dereferencing it here BUGCHECKs
+     * the machine (0x1E, c0000005). Measured twice from 32-bit guests in the
+     * applet phase of a full-drain ladder boot, at the two instructions this
+     * pair compiles to: once loading `SharedFace->Face`, once later unlocking
+     * through the garbage `Face` it had loaded. TextObj is null-checked just
+     * above and survives, so FontGDI is fine — it is specifically SharedFace.
+     *
+     * Upstream does not check here either, but it is not consistent about it:
+     * IntGetOutlineTextMetrics in this same file guards `(*FontGDI).SharedFace`
+     * before use. We take the guarded reading. Killing the box is never the
+     * better failure, and a syscall reachable from an unprivileged 32-bit guest
+     * must not be able to do it — so this returns the same clean
+     * ERROR_INVALID_HANDLE the TextObj-missing path above already returns.
+     *
+     * Loud on purpose: WHY an unrealized font reaches this syscall is a
+     * separate open question (roadmap registry), and a silent guard would
+     * retire the only evidence of it. */
+    if (*FontGDI).SharedFace.is_null() || (*(*FontGDI).SharedFace).Face.is_null() {
+        DbgPrint(
+            b"NtGdiGetCharABCWidthsW: unrealized font (SharedFace=%p) - refusing rather than faulting\n\0"
+                .as_ptr() as *const i8,
+            (*FontGDI).SharedFace,
+        );
+        w32r_TEXTOBJ_UnlockText(TextObj);
+        ExFreePoolWithTag(SafeBuff as PVOID, GDITAG_TEXT);
+        if !Safepwch.is_null() {
+            ExFreePoolWithTag(Safepwch as PVOID, GDITAG_TEXT);
+        }
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
     face = (*(*FontGDI).SharedFace).Face;
 
     if (*face).charmap.is_null() {

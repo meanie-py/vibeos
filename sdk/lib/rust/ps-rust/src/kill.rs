@@ -13,6 +13,11 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::mm::PsInitialSystemProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
+// The checked-in bindgen still declares the PRE-merge two-parameter forms of these
+// (Process, Job) / (Job, Process); upstream simplified both to take only PEPROCESS
+// (ntoskrnl/include/internal/ps.h). Import the crate-local definitions explicitly so
+// the stale externs from the ddk glob cannot win name resolution here.
+use crate::job::{PspExitProcessFromJob, PspRemoveProcessFromJob};
 
 // Bugcheck codes
 const CRITICAL_PROCESS_DIED: ULONG = 0xEF;
@@ -217,14 +222,13 @@ unsafe fn PspCatchCriticalBreak(
     }
 
     if handled == 0 {
-        // Debug: print process name before bugcheck
-        #[cfg(target_arch = "x86_64")]
-        {
-            crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s\n\0",
-                process_or_thread,
-                image_name,
-            );
-        }
+        // Name the critical process before bugchecking. It was amd64-only, and an
+        // i386 0xF4 then left nothing but an EPROCESS address in the log.
+        crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s Message=%s\n\0",
+            process_or_thread,
+            image_name,
+            message,
+        );
         KeBugCheckEx(
             CRITICAL_OBJECT_TERMINATION,
             (*(process_or_thread as *mut _EPROCESS)).Pcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type as ULONG_PTR,
@@ -381,7 +385,7 @@ pub unsafe extern "system" fn PspDeleteProcess(object_body: PVOID) {
     }
 
     if !(*(process as *mut _EPROCESS)).Job.is_null() {
-        PspRemoveProcessFromJob(process, (*(process as *mut _EPROCESS)).Job);
+        PspRemoveProcessFromJob(process);
         ObDereferenceObject((*(process as *mut _EPROCESS)).Job as PVOID);
         (*(process as *mut _EPROCESS)).Job = core::ptr::null_mut();
     }
@@ -814,10 +818,7 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
         }
 
         if !(*(current_process as *mut _EPROCESS)).Job.is_null() {
-            PspExitProcessFromJob(
-                (*(current_process as *mut _EPROCESS)).Job,
-                current_process,
-            );
+            PspExitProcessFromJob(current_process);
         }
     }
 

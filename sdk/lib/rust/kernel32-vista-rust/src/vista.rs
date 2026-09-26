@@ -628,3 +628,72 @@ pub unsafe extern "system" fn SetThreadPreferredUILanguages(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     0
 }
+
+// ===========================================================================
+// CompareStringOrdinal — added by the 2026-09-20 upstream sync
+// ===========================================================================
+// Upstream added this to vista.c and exported it from kernel32_vista.spec after our fork.
+// Ported here rather than building their vista.c, which this crate already owns.
+// Lengths are in CHARACTERS on both sides of the RtlCompareUnicodeStrings call.
+use core::ffi::c_int;
+// Upstream calls ntdll's RtlCompareUnicodeStrings here, but that export is
+// `-version=0x600+` in ntdll.spec and this tree builds ntdll at 0x502, so the importlib
+// does not carry it. The comparison itself is small, so it is inlined rather than
+// widening ntdll's export surface: ordinal (code-unit) order, optionally upcased, then
+// shorter-is-less. RtlUpcaseUnicodeChar is exported unversioned.
+extern "system" {
+    fn RtlUpcaseUnicodeChar(SourceCharacter: WCHAR) -> WCHAR;
+}
+
+unsafe fn compare_unicode_strings(
+    s1: *const WCHAR,
+    l1: usize,
+    s2: *const WCHAR,
+    l2: usize,
+    ignore_case: bool,
+) -> LONG {
+    let n = core::cmp::min(l1, l2);
+    for i in 0..n {
+        let (mut a, mut b) = (*s1.add(i), *s2.add(i));
+        if a != b && ignore_case {
+            a = RtlUpcaseUnicodeChar(a);
+            b = RtlUpcaseUnicodeChar(b);
+        }
+        if a != b {
+            return a as LONG - b as LONG;
+        }
+    }
+    l1 as LONG - l2 as LONG
+}
+
+const CSTR_LESS_THAN: c_int = 1;
+const CSTR_EQUAL: c_int = 2;
+const CSTR_GREATER_THAN: c_int = 3;
+
+#[no_mangle]
+pub unsafe extern "system" fn CompareStringOrdinal(
+    str1: *const WCHAR,
+    mut len1: c_int,
+    str2: *const WCHAR,
+    mut len2: c_int,
+    ignore_case: BOOL,
+) -> c_int {
+    if str1.is_null() || str2.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    if len1 < 0 {
+        len1 = lstrlenW(str1);
+    }
+    if len2 < 0 {
+        len2 = lstrlenW(str2);
+    }
+    let ret = compare_unicode_strings(str1, len1 as usize, str2, len2 as usize, ignore_case != 0);
+    if ret < 0 {
+        CSTR_LESS_THAN
+    } else if ret > 0 {
+        CSTR_GREATER_THAN
+    } else {
+        CSTR_EQUAL
+    }
+}

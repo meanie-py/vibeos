@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -188,17 +188,17 @@ AcpiExSystemDoStall (
          * (ACPI specifies 100 usec as max, but this gives some slack in
          * order to support existing BIOSs)
          */
-        ACPI_ERROR ((AE_INFO,
+        ACPI_ERROR_ONCE ((AE_INFO,
             "Time parameter is too large (%u)", HowLongUs));
         Status = AE_AML_OPERAND_VALUE;
     }
     else
     {
         if (HowLongUs > 100)
-	{
-            ACPI_WARNING ((AE_INFO,
+        {
+            ACPI_WARNING_ONCE ((AE_INFO,
                 "Time parameter %u us > 100 us violating ACPI spec, please fix the firmware.", HowLongUs));
-	}
+        }
         AcpiOsStall (HowLongUs);
     }
 

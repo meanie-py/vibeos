@@ -22,31 +22,34 @@ list(APPEND SOURCE
 
 list(APPEND MINIZIP_SOURCE
     contrib/minizip/crypt.h
+    contrib/minizip/ints.h
     contrib/minizip/ioapi.c
     contrib/minizip/ioapi.h
     contrib/minizip/iowin32.c
     contrib/minizip/iowin32.h
+    contrib/minizip/skipset.h
     contrib/minizip/unzip.c
     contrib/minizip/unzip.h
     contrib/minizip/zip.c
     contrib/minizip/zip.h)
 
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_compile_options(-Wno-deprecated-non-prototype)
-endif()
-
 if(CMAKE_CROSSCOMPILING)
-    add_library(zlib ${SOURCE} ${SOLO_SOURCE})
+    add_library(zlib STATIC ${SOURCE} ${SOLO_SOURCE})
     target_link_libraries(zlib oldnames)
-    target_include_directories(zlib PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
-    add_library(zlib_solo ${SOLO_SOURCE})
+    target_include_directories(zlib PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+
+    add_library(zlib_solo STATIC ${SOLO_SOURCE})
     target_compile_definitions(zlib_solo PRIVATE Z_SOLO)
-    target_include_directories(zlib_solo PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
-    add_library(minizip ${MINIZIP_SOURCE})
+    target_include_directories(zlib_solo PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+
+    add_library(minizip STATIC ${MINIZIP_SOURCE})
     add_dependencies(minizip psdk)
     target_include_directories(minizip PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+    target_include_directories(minizip
+        INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/contrib
+        INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/contrib/minizip)
 else()
-    add_library(zlibhost ${SOLO_SOURCE})
+    add_library(zlibhost STATIC ${SOLO_SOURCE})
     target_compile_definitions(zlibhost PRIVATE Z_SOLO)
     target_include_directories(zlibhost PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
 endif()

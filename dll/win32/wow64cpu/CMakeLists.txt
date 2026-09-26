@@ -52,7 +52,14 @@ set(_wow64_ladder
     ${REACTOS_SOURCE_DIR}/build-fex-hello/fault32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/thread32.exe
     ${REACTOS_SOURCE_DIR}/build-fex-hello/selfmod32.exe
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/reg32.exe)
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/reg32.exe
+    # spawn32: PROMOTED out of the diagnostic extras 2026-09-19, the day it
+    # first reported 0x600D. It measured guest CreateProcess while that gap was
+    # open; now that the gap is closed it is a parity guest like the rest, and
+    # belongs in the unconditional set so a REGRESSION can red it. Its old
+    # reason for being opt-in -- it could BUGCHECK the machine -- died with the
+    # dropped _SEH2_EXCEPT that caused it.
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe)
 
 # Best-effort robustness extras. Their pass criterion is "still running after
 # 8-10s", which ladder.py explicitly does NOT check, so a missing one must not
@@ -92,6 +99,13 @@ set(_wow64_extras
     # tools/stress/lua/build.sh). Same deal as sqlite32 -- built on demand,
     # machine-verdicted (0x600D), graded from ladder.py's OPTIONAL table.
     ${REACTOS_SOURCE_DIR}/tools/stress/lua/lua32.exe
+    # Wine's own conformance suites, i386, run under WoW64 by winlogon's
+    # TryStartWow64Winetest. Present only after an i386 `build --rostests`, so
+    # the EXISTS filter above is the opt-in: a normal tree stages nothing and a
+    # rostests tree stages them automatically, with no third flag to forget.
+    # Also a closure root, like every other guest -- a winetest links more of
+    # the CRT than any applet here does.
+    ${REACTOS_SOURCE_DIR}/build-i386/modules/rostests/winetests/user32/user32_winetest.exe
     )
 
 set(_wow64_guest_ok TRUE)
@@ -117,10 +131,24 @@ if(_wow64_guest_ok)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
                  ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                  ${REACTOS_SOURCE_DIR}/media/inf/nettcpip.inf)
+    # Same hazard, other input: every optional guest is admitted by an
+    # `if(EXISTS)` evaluated at CONFIGURE time, so BUILDING one (sqlite32,
+    # lua32, doom) does not make the next `vibeos-cli build` stage it -- the
+    # cached configure still says it was absent. Measured 2026-09-20: built
+    # all three, rebuilt amd64 green, and none of them reached the livecd.
+    # That silence is the expensive part, because the guest then reports no
+    # verdict and reads as "did not run" rather than "was never staged".
+    # Depending on the paths makes their CREATION re-run configure.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                 ${_wow64_extras})
     execute_process(
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386
                 --include-prestaged --no-strip
+                # Follow LoadLibrary targets named inside staged libraries too
+                # (comctl32 -> msvfw32 for the Animate control). The livecd has
+                # room; see string_referenced in the tool for the measurement.
+                --library-literals
                 # Every guest we STAGE is also a closure root. It was not always so:
                 # the roots were the stock applets, and a ladder guest's imports were
                 # covered only because some applet happened to import the same DLLs.
@@ -141,12 +169,29 @@ if(_wow64_guest_ok)
     string(REPLACE "\n" ";" _wow64_lines "${_wow64_closure}")
     list(LENGTH _wow64_lines _wow64_n)
     message(STATUS "WOW64 E4: staging ${_wow64_n} i386 SysWOW64 modules + hello32/gui32 onto livecd")
+    set(_wow64_has_comctl32 FALSE)
     foreach(_line ${_wow64_lines})
         string(REPLACE "\t" ";" _kv "${_line}")
         list(GET _kv 0 _name)
         list(GET _kv 1 _path)
         add_cd_file(FILE ${_path} DESTINATION reactos/syswow64 NAME_ON_CD ${_name} FOR livecd)
+        if(_name STREQUAL "comctl32.dll")
+            set(_wow64_has_comctl32 ${_path})
+        endif()
     endforeach()
+    # The x86 side-by-side assemblies. A 64-bit Windows carries both
+    # architectures in winsxs; with only the amd64 ones, the guest's comctl32
+    # failed CreateActCtxW for both its v5 and v6 contexts, because it looks for
+    # x86_microsoft.windows.common-controls_* manifests.
+    if(_wow64_has_comctl32)
+        foreach(_v 5.82.2600.2982 6.0.2600.2982)
+            set(_asm x86_microsoft.windows.common-controls_6595b64144ccf1df_${_v}_none_deadbeef)
+            add_cd_file(FILE ${_wow64_has_comctl32} DESTINATION reactos/winsxs/${_asm}
+                        NAME_ON_CD comctl32.dll FOR livecd)
+            add_cd_file(FILE ${REACTOS_SOURCE_DIR}/dll/win32/comctl32/${_asm}.manifest
+                        DESTINATION reactos/winsxs/manifests FOR livecd)
+        endforeach()
+    endif()
     # The nine graded guests: the existence gate above already proved every one
     # of them, so these are unconditional.
     foreach(_f ${_wow64_ladder})

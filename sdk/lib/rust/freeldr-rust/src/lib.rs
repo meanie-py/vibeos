@@ -61,8 +61,10 @@ pub mod freeldr;
 // arch/arm64/debug.c — ARM64 UEFI PL011 UART + Rs232Port stubs.
 // Active on arm64 UEFI builds; rs232.rs is gated out on arm64 (x86
 // port-IO model doesn't apply) so no Rs232Port* symbol collision.
-#[cfg(all(target_arch = "aarch64", feature = "uefi"))]
+#[cfg(target_arch = "aarch64")]
 pub mod arm64_debug;
+#[cfg(target_arch = "aarch64")]
+mod arm64_serial_acpi;
 
 // 🟢 sweep — cache unit (lib/cache/{blocklist,cache}.c).
 // Gated off for `rosload` — rosload uses CacheRead* indirectly via Arc/FS
@@ -316,8 +318,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     // PL011 (QEMU virt UART DR @ 0x09000000) so panics are diagnosable.
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        let uart_dr = 0x0900_0000usize as *mut u32;
-        let putc = |c: u8| core::ptr::write_volatile(uart_dr, c as u32);
+        let putc = |c: u8| crate::frldr::dbgcon(c);
         for &b in b"\n!!FREELDR-RUST-PANIC@" { putc(b); }
         if let Some(loc) = info.location() {
             for &b in loc.file().as_bytes() { putc(b); }

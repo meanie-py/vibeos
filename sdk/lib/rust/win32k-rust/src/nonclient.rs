@@ -26,6 +26,7 @@ extern "fastcall" {
     fn co_WinPosSetWindowPos( Wnd: PWND, WndInsertAfter: HWND, x: ::core::ffi::c_int, y: ::core::ffi::c_int, cx: ::core::ffi::c_int, cy: ::core::ffi::c_int, flags: UINT, ) -> BOOL;
     fn co_IntGetScrollBarInfo(pWnd: PWND, hBar: INT, sbi: *mut SCROLLBARINFO) -> BOOL;
     fn MsqSetStateWindow(pti: PTHREADINFO, ty: ULONG, hWnd: HWND) -> HWND;
+    fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG);
     fn UpdateThreadWindows(pWnd: PWND, pti: PTHREADINFO, hRgn: HRGN);
 }
 #[cfg(not(target_arch = "x86"))]
@@ -37,6 +38,7 @@ extern "C" {
     fn co_WinPosSetWindowPos( Wnd: PWND, WndInsertAfter: HWND, x: ::core::ffi::c_int, y: ::core::ffi::c_int, cx: ::core::ffi::c_int, cy: ::core::ffi::c_int, flags: UINT, ) -> BOOL;
     fn co_IntGetScrollBarInfo(pWnd: PWND, hBar: INT, sbi: *mut SCROLLBARINFO) -> BOOL;
     fn MsqSetStateWindow(pti: PTHREADINFO, ty: ULONG, hWnd: HWND) -> HWND;
+    fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG);
     fn UpdateThreadWindows(pWnd: PWND, pti: PTHREADINFO, hRgn: HRGN);
 }
 
@@ -512,6 +514,16 @@ unsafe fn DefWndStartSizeMove_impl(Wnd: PWND, wParam: WPARAM, capturePoint: *mut
                 continue;
             }
 
+            // A WM_QUIT removed here never reaches the thread's outer GetMessage()
+            // loop, so a thread that posted its own quit mid-drag waits forever.
+            // Upstream's repro: drag the first-boot setup window while it finishes,
+            // setup stalls and the shell never starts. Re-post and leave the loop.
+            // Upstream-Commit: cf470941031 (#9087)
+            if msg.message == WM_QUIT {
+                MsqPostQuitMessage(pti, msg.wParam as ULONG);
+                return 0;
+            }
+
             match msg.message {
                 x if x == WM_MOUSEMOVE => {
                     pt.x = min(max(msg.pt.x, rectWindow.left), rectWindow.right - 1);
@@ -733,6 +745,16 @@ unsafe fn DefWndDoSizeMove_impl(pwnd: PWND, wParam: WORD) {
         }
         if IntCallMsgFilter(core::ptr::addr_of_mut!(msg), MSGF_SIZE as i32) != 0 {
             continue;
+        }
+
+        // A WM_QUIT removed here never reaches the thread's outer GetMessage()
+        // loop, so a thread that posted its own quit mid-drag waits forever.
+        // Upstream's repro: drag the first-boot setup window while it finishes,
+        // setup stalls and the shell never starts. Re-post and leave the loop.
+        // Upstream-Commit: cf470941031 (#9087)
+        if msg.message == WM_QUIT {
+            MsqPostQuitMessage(pti, msg.wParam as ULONG);
+            break;
         }
 
         if msg.message == WM_KEYDOWN && (msg.wParam == VK_RETURN as WPARAM || msg.wParam == VK_ESCAPE as WPARAM) {

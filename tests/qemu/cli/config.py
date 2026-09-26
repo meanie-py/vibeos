@@ -32,7 +32,8 @@ DEFAULTS: dict[str, Any] = {
         #   x86, TCG on arm64). Works on real Linux and (nested) in WSL2.
         # "windows-host": launch the Windows-host QEMU.exe via WSL interop, media staged to a
         #   Windows-visible dir, QMP+serial over TCP (WSL listens, QEMU connects to 127.0.0.1).
-        #   Escapes WSL2 nested-virt contention (see docs/engineering/windows-host-qemu-spike.md).
+        #   Escapes WSL2 nested-virt contention. See
+        #   docs/engineering/windows-host-qemu-whpx-spike.md.
         #   DEFAULT (all agents on this Windows host) — validated boot ~1m35s vs
         #   contended native ~6min. A non-Windows-host env (real Linux / CI) overrides back via
         #   VIBEOS_QEMU_BACKEND=native or a .vibeos-cli.local.json with backend="native".

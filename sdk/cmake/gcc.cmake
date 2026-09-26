@@ -6,6 +6,19 @@ else()
     set(DLLTOOL_MACHINE_FLAG "")
 endif()
 
+# Real delay-load imports for llvm-mingw (sdk/tools/gen-delaylib.py). OFF
+# links every add_delay_importlibs() library as an ORDINARY import, loaded
+# eagerly: rpcrt4 then pulls wininet -> shell32 -> comctl32 into every process
+# that touches RPC, which is why a plain console winetest found comctl32
+# already loaded (user32:class). It was parked OFF for an i386 0x1E after
+# explorer spawned; that was the pushlock-wait-block bug, fixed 2026-07-05
+# and re-verified with delay-load ON on 2026-07-11. VIBEOS_NO_DELAYLOAD still
+# forces the old behaviour. arm64 was held OFF for a day: with it ON, arm64
+# kmtest boots hit 0xE3 in 4 of 5 rounds. That was not delay-load but a fastfat
+# shim testing the wrong IRP_CONTEXT WAIT bit (the fastfat cohab shim), which
+# delay-load's later DLL page-ins made collide; fixed, 10 of 10 clean.
+option(VIBEOS_ENABLE_DELAYLOAD "Generate real delay-import libraries" ON)
+
 # Show a note about ccache build
 if(ENABLE_CCACHE)
     message("-- Enabling ccache build - done")
@@ -132,7 +145,6 @@ else()
 endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
-    add_compile_options("-Wno-unknown-pragmas")
     add_compile_options(-fno-aggressive-loop-optimizations)
     if (DBG)
         add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wold-style-declaration>")
@@ -206,11 +218,12 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
         add_compile_options(-fno-builtin-erf)
         add_compile_options(-fno-builtin-erff)
+        add_compile_options(-fno-builtin-execv)
+        add_compile_options(-fno-builtin-execve)
+        add_compile_options(-fno-builtin-execvp)
     endif()
 
 elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-microsoft>")
-    add_compile_options(-Wno-pragma-pack)
     add_compile_options(-fno-associative-math)
 
     if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
@@ -248,7 +261,11 @@ endif()
 add_compile_options(-march=${OARCH} -mtune=${TUNE})
 
 # Warnings, errors
-if((NOT CMAKE_BUILD_TYPE STREQUAL "Release") AND (NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo") AND (NOT CMAKE_C_COMPILER_ID STREQUAL Clang))
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+   NOT ARCH STREQUAL "amd64" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "Release" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" AND
+   NOT CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
     add_compile_options(-Werror)
 endif()
 
@@ -256,7 +273,6 @@ add_compile_options(-Wall -Wpointer-arith)
 
 # Disable some overzealous warnings
 add_compile_options(
-    -Wno-unknown-warning-option
     -Wno-char-subscripts
     -Wno-multichar
     -Wno-unused-value
@@ -266,10 +282,23 @@ add_compile_options(
     -Wno-unused-result # FIXME To be removed when CORE-17637 is resolved
     -Wno-format
     -Wno-maybe-uninitialized
+    -Wno-nonnull-compare
 )
 
 if(FALSE)
     add_compile_options(-Wno-attributes)
+endif()
+
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(
+        -Wno-unknown-pragmas
+    )
+elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    add_compile_options("$<$<COMPILE_LANGUAGE:C>:-Wno-microsoft>")
+    add_compile_options(
+        -Wno-pragma-pack
+        -Wno-unknown-warning-option
+    )
 endif()
 
 # Optimizations
@@ -317,7 +346,6 @@ elseif(ARCH STREQUAL "amd64")
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
         add_compile_options(-mpreferred-stack-boundary=4)
     endif()
-    add_compile_options(-Wno-error)
 endif()
 
 # Other
@@ -433,6 +461,37 @@ set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_fl
 
 set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
 
+# use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
+# llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
+# resource scripts that use syntax llvm-rc has never implemented; everything
+# else stays on the pinned toolchain, so this is an escape hatch and not a
+# second resource pipeline.
+#
+# It works by overriding the rule variable rather than CMAKE_RC_COMPILER,
+# because CMake expands <CMAKE_RC_COMPILER> from the global value and would
+# ignore a directory-scoped one. Flags, includes, defines and the depfile
+# plumbing are IDENTICAL to the rule above -- the compiler is the only change --
+# and the preprocessor is still the pinned clang, so the preprocessed text the
+# two compilers see is the same text.
+#
+# Missing GNU windres is reported and the caller decides; it must not silently
+# fall back to llvm-rc, which would "succeed" at configure time and then fail
+# the build with a parse error that names the resource script instead of the
+# missing host tool.
+function(use_gnu_rc)
+    if(NOT GNU_RC_COMPILER)
+        message(WARNING
+            "GNU windres not found: resource scripts in ${CMAKE_CURRENT_SOURCE_DIR} "
+            "cannot be built (llvm-rc does not implement the syntax they use). "
+            "Install mingw-w64 binutils (Debian/Ubuntu: binutils-mingw-w64-x86-64; "
+            "Homebrew: mingw-w64) or pass -DGNU_RC_COMPILER=/path/to/windres.")
+        return()
+    endif()
+    set(CMAKE_RC_COMPILE_OBJECT
+        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        PARENT_SCOPE)
+endfunction()
+
 if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     set(RC_PREPROCESSOR_TARGET "--preprocessor-arg=--target=${CMAKE_C_COMPILER_TARGET}")
 else()
@@ -542,9 +601,9 @@ function(add_delay_importlibs _module)
         # llvm-dlltool lacks --output-delaylib; when VIBEOS_ENABLE_DELAYLOAD is set
         # we generate a real delay-import lib ourselves (sdk/tools/gen-delaylib.py,
         # used by generate_import_lib below), so delay-load works on all llvm-mingw
-        # arches. The default remains the old behaviour (empty _delayed.a + regular
-        # imports) until the i386 runtime regression is fixed. See
-        # docs/engineering/delay-import-llvm-mingw-design.md.
+        # arches. That is the default; the old behaviour (empty _delayed.a +
+        # regular imports) is kept behind VIBEOS_NO_DELAYLOAD. See
+        # docs/engineering/archive/delay-import-llvm-mingw-design.md.
         if(CMAKE_DLLTOOL_MACHINE AND (VIBEOS_NO_DELAYLOAD OR NOT VIBEOS_ENABLE_DELAYLOAD))
             target_link_libraries(${_module} lib${_basename})
         else()
@@ -1012,9 +1071,9 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     # delay-import lib ourselves: sdk/tools/gen-delaylib.py emits the descriptor + INT/IAT
     # + per-function thunk from the implib .def and clang-compiles it. The delay-load
     # runtime helper is sdk/lib/delayimp (__delayLoadHelper2). See
-    # docs/engineering/delay-import-llvm-mingw-design.md. VIBEOS_ENABLE_DELAYLOAD opts in
-    # to the generated delay libs; otherwise we keep the empty-archive +
-    # regular-import fallback while the i386 runtime regression is tracked.
+    # docs/engineering/archive/delay-import-llvm-mingw-design.md. VIBEOS_ENABLE_DELAYLOAD
+    # (default ON) selects the generated delay libs; VIBEOS_NO_DELAYLOAD keeps the
+    # empty-archive + regular-import fallback.
     if(CMAKE_DLLTOOL_MACHINE AND VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD)
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
@@ -1063,7 +1122,7 @@ function(spec2def _dllname _spec_file)
     cmake_parse_arguments(__spec2def "ADD_IMPORTLIB;NO_PRIVATE_WARNINGS;WITH_RELAY;WITH_DBG;NO_DBG" "VERSION" "" ${ARGN})
 
     # Get library basename
-    get_filename_component(_file ${_dllname} NAME_WE)
+    get_filename_component(_file ${_dllname} NAME_WLE)
 
     # Error out on anything else than spec
     if(NOT ${_spec_file} MATCHES ".*\\.spec")
@@ -1100,6 +1159,8 @@ function(spec2def _dllname _spec_file)
         endif()
 
         generate_import_lib(lib${_file} ${_dllname} ${_spec_file} ${_extraflags} "${__version_arg}" "${__dbg_arg}")
+        target_include_directories(lib${_file} INTERFACE $<TARGET_PROPERTY:${_file},INTERFACE_INCLUDE_DIRECTORIES>)
+        target_include_directories(lib${_file}_delayed INTERFACE $<TARGET_PROPERTY:${_file},INTERFACE_INCLUDE_DIRECTORIES>)
     endif()
 endfunction()
 

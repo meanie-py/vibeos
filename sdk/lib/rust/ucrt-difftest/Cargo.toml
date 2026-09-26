@@ -1,0 +1,83 @@
+# ucrt-difftest — grades Rust against the GENUINE Microsoft UCRT C, on the host.
+#
+# ## Why this exists, and why it was urgent
+#
+# `sdk/lib/ucrt` is 64,353 lines of vendored Windows SDK source and it is still
+# the live implementation behind ~999 of ucrtbase.dll's exports. We are
+# replacing it family by family and DELETING the C as we go — which means the
+# only reference for "what does UCRT actually do here" is being destroyed on a
+# schedule. Data could be captured ahead of that (the ctype and mbctype tables
+# were, and the four state-struct layouts); BEHAVIOUR cannot. It has to be
+# compared while both halves exist.
+#
+# Every family taken over before this harness existed is ungraded permanently.
+# Two already were (`bits`, `ismbbyte`), which is two too many.
+#
+# ## What it is for, concretely
+#
+# Two jobs, and the second is the one that pays now:
+#
+#   1. TAKEOVER GATE. Write the Rust, compare it against the C still sitting in
+#      the tree, then delete the C. Not "delete and hope".
+#
+#   2. ANSWERING THE 809. Of the exports still owed, 809 already have a Rust
+#      body in msvcrt-crt-rust — written and graded against MSVCRT at
+#      `_MSVCR_VER=0`, where ucrtbase is 140. Whether each one is reusable is
+#      currently GUESSWORK informed by surveys, and the surveys have already
+#      contradicted each other twice. This harness can answer it per function,
+#      with a measurement: compile UCRT's C, call it and our Rust in one
+#      process, compare.
+#
+# ## The reference is the real thing, not a transcription
+#
+# Same mechanism as the sibling msvcrt-difftest: the genuine `.cpp` is handed
+# to `cc` AS the translation unit, with its public symbols renamed to `ref_*`
+# by a generated `-include` prelude, so both implementations coexist in one
+# binary. Nothing is retyped, so nothing can drift.
+#
+# Getting Microsoft's headers through a Linux compiler took a specific set of
+# hacks; they are in refstub/ and each one says what it is for. The short
+# version: vcruntime.h is SHADOWED via its own include guard (the mingw headers
+# redefine __cdecl to an attribute g++ rejects, and a prelude cannot win that
+# race), stddef/stdarg/intrin are shadowed because the UCRT copies are on the
+# include path and would beat the host's, and the SAL vocabulary is neutralised
+# by the tree's own no_sal2.h plus 15 annotations it does not cover, which were
+# ENUMERATED from the headers rather than guessed.
+#
+# ## Reach, stated honestly
+#
+# TIER 1 (works): TUs including only PUBLIC ucrt headers — abs, div, imaxabs,
+# strcat and their kin.
+#
+# TIER 2 (not yet): TUs including `corecrt_internal.h`, which pulls the whole
+# Windows header chain (minwindef -> winnt). That is most of the interesting
+# ones. The fix is a types-only shim rather than satisfying the chain, and the
+# inputs for it already exist: the four state layouts are pinned in
+# ucrt-rust/src/{locale,ptd}.rs, measured from these very headers.
+[package]
+name = "ucrt-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# The SUBJECT for job 2: the bodies we would be reusing for ucrtbase. Grading
+# the shipping artifact, not a proxy — same reasoning as msvcrt-difftest's.
+msvcrt-crt-rust = { path = "../msvcrt-crt-rust", default-features = false }
+
+[build-dependencies]
+cc = "1"
+
+# `harness = false` for the reason the sibling harnesses document: msvcrt-crt-rust
+# exports a `#[no_mangle] getenv` that shadows glibc's, libtest reads
+# RUST_TEST_THREADS through it, gets NULL and misbehaves. A plain `fn main()`
+# never calls getenv and never spawns threads.
+[[test]]
+name = "ref_integrity"
+path = "tests/ref_integrity.rs"
+harness = false
+
+[[test]]
+name = "classify"
+path = "tests/classify.rs"
+harness = false

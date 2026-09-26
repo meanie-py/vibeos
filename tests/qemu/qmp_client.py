@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+from collections import deque
 from typing import Any
 
 
@@ -28,6 +29,20 @@ class QmpClient:
         self._sock: socket.socket | None = None
         self._server: socket.socket | None = None
         self._buf = b""
+        # QMP events, kept instead of dropped. _recv_json has to skip them to find
+        # a command's reply, and it used to discard them on the way past — which
+        # silently threw away the only notification QEMU sends for things nobody
+        # asked about, STOP among them.
+        #
+        # That cost a real answer: a record/replay `replay-break` stops the guest
+        # and announces it with STOP, and with the event discarded a replay paused
+        # at a breakpoint is indistinguishable from a replay wedged, because both
+        # present as a frozen serial log and a busy CPU. Keeping them lets a caller
+        # ask what happened rather than infer it from where output stopped.
+        #
+        # Bounded: a long boot emits plenty, and this is a diagnostic tail, not a
+        # log. Callers that need every event should consume as they go.
+        self.events: deque[dict] = deque(maxlen=256)
 
     def connect(self, path: str, timeout: float = 10.0) -> dict:
         """Connect and complete QMP handshake (greeting + qmp_capabilities).
@@ -86,6 +101,18 @@ class QmpClient:
         resp = self.execute("human-monitor-command", **{"command-line": command})
         return resp.get("return", "")
 
+    def saw_event(self, name: str) -> dict | None:
+        """The most recent retained event called `name`, or None.
+
+        Answers "did the guest stop?" without the caller reaching into a deque and
+        guessing at QMP's schema. Only as far back as the retention bound, so a
+        None means "not in the recent tail", not "never happened".
+        """
+        for obj in reversed(self.events):
+            if obj.get("event") == name:
+                return obj
+        return None
+
     def close(self) -> None:
         """Close the connection and (if listening) the server socket."""
         for attr in ("_sock", "_server"):
@@ -106,9 +133,10 @@ class QmpClient:
         """Read one JSON object from the socket, skipping QMP events."""
         while True:
             obj = self._recv_one_json()
-            # Skip asynchronous events (they have "event" key)
+            # Skip asynchronous events (they have "event" key) — but keep them.
             if "event" not in obj:
                 return obj
+            self.events.append(obj)
 
     def _recv_one_json(self) -> dict:
         """Read exactly one JSON object from the socket."""

@@ -101,7 +101,6 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
 
     let Status: NTSTATUS;
     let mut DebugString: STRING = core::mem::zeroed();
-    let mut Buffer: [CHAR; 512] = [0; 512];
     let mut Length: SIZE_T;
     let mut PrefixLength: SIZE_T;
 
@@ -115,31 +114,51 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
         return STATUS_SUCCESS as ULONG;
     }
 
+    // The C is `CHAR Buffer[512];` -- uninitialised, free. The translation
+    // wrote `[0; 512]`, which is a 512-byte memset, and declared it at the top
+    // so it ran on EVERY DbgPrint -- including the filtered and re-entrant
+    // calls that return two lines above without ever touching the buffer. This
+    // is one of the hottest paths in the system.
+    //
+    // It also distorted stack diagnostics: the memset was the first thing to
+    // TOUCH the new frame, so a thread crossing a guard page anywhere under a
+    // DbgPrint reported the fault against this function instead of against
+    // whatever actually consumed the stack. That cost a probe today.
+    //
+    // NOTE the 512-byte FRAME is faithful to the C and is not the issue --
+    // tracing costs the same stack in ReactOS as it does here. Only the memset
+    // was ours, and MaybeUninit removes it outright: the C never writes a byte
+    // it does not then fill, and neither does this. Only the first `Length`
+    // bytes are ever read back, exactly as in the C.
+    const DBG_BUFFER_LEN: usize = 512;
+    let mut Buffer = core::mem::MaybeUninit::<[CHAR; DBG_BUFFER_LEN]>::uninit();
+    let BufferPtr = Buffer.as_mut_ptr() as *mut CHAR;
+
     PrefixLength = strlen(Prefix);
-    if PrefixLength > core::mem::size_of_val(&Buffer) {
-        PrefixLength = core::mem::size_of_val(&Buffer);
+    if PrefixLength > DBG_BUFFER_LEN {
+        PrefixLength = DBG_BUFFER_LEN;
     }
 
-    strncpy(Buffer.as_mut_ptr(), Prefix, PrefixLength);
+    strncpy(BufferPtr, Prefix, PrefixLength);
 
     Length = rtldiag_format_va(
-        Buffer.as_mut_ptr().add(PrefixLength),
-        core::mem::size_of_val(&Buffer) - PrefixLength,
+        BufferPtr.add(PrefixLength),
+        DBG_BUFFER_LEN - PrefixLength,
         Format,
         ap,
     );
 
     if Length == MAXULONG as SIZE_T {
-        Buffer[core::mem::size_of_val(&Buffer) - 2] = b'\n' as CHAR;
-        Buffer[core::mem::size_of_val(&Buffer) - 1] = b'\0' as CHAR;
+        *BufferPtr.add(DBG_BUFFER_LEN - 2) = b'\n' as CHAR;
+        *BufferPtr.add(DBG_BUFFER_LEN - 1) = b'\0' as CHAR;
 
-        Length = (core::mem::size_of_val(&Buffer) - 1) as SIZE_T;
+        Length = (DBG_BUFFER_LEN - 1) as SIZE_T;
     } else {
         Length += PrefixLength;
     }
 
     DebugString.Length = Length as USHORT;
-    DebugString.Buffer = Buffer.as_mut_ptr();
+    DebugString.Buffer = BufferPtr;
 
     Status = DebugPrint(&mut DebugString, ComponentId, Level) as NTSTATUS;
 

@@ -58,6 +58,94 @@ resolves it. A red batch **splits recursively**, so innocent lanes still land an
 is rejected with its gate classification plus its artifact dir. Full design:
 `tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
 
+### Which local gate to run BEFORE submitting — and never DURING
+
+`land` gates for you, so these are about not wasting a 25-minute queue wait on something you
+could have caught in seconds. Every line below is a batch that actually bounced.
+
+- **`./vibeos-cli check --arch i386`** when the lane adds translated `.rs`. An UNBUILT crate is
+  covered only by `verify_c_signatures`, which has caught real signature bugs in crates no
+  compiler had ever read (wldap32's `ldap_value_freeA/W` lost a `*`; netcfgx's `MoveItem` had
+  `INT_PTR` for `INT`). A signature fix usually needs the BODY's casts fixed with it.
+- **`./vibeos-cli check-tooling`** when the lane touches `tools/*.py`. `ruff check` plus a `-k`
+  pytest subset is NOT this gate: `ruff format --check` is a separate check inside it, and one
+  unformatted dict literal bounced a batch as TOOLING_FAIL after the full queue wait.
+- **`./vibeos-cli check --strict --scope source-deferred`** when the lane adds a file walk,
+  or any Python the source scanners read. The gate runs that partition in STRICT mode and
+  plain `check` does not, so `check` goes green on exactly what the conductor rejects as
+  LINT_FAIL. It takes ten seconds and reproduces the verdict. (`scan_unpruned_walk` bounced a
+  batch for a bare `rglob("*.rs")` over a crate — not a style point: a crate's `target/` holds
+  generated copies of its own modules, so an unpruned walk answers questions from build
+  artifacts. Use `tools/source_walk.py source_files()`.)
+- **`./vibeos-cli difftest`** when the lane wires a new `.rs` into `msvcrt-crt-rust` /
+  `cnt-rust` / `rtl-rust`. The host harness links the subject crate beside the reference C, so a
+  new `#[no_mangle]` can collide with a test's own fake stub or the reference TU's data globals
+  — file.c's flip bounced DIFFTEST_FAIL on ten duplicate symbols. `check` cannot see that,
+  because nothing links there.
+
+**BEFORE, never DURING.** Running any of these — or a build — while your own lane sits in the
+queue starves its smoke: one net test timed out at ~186s against ~44s passing and bounced the
+batch NET_FLAKE, and the gate's three retries all fire inside the same window, so they cannot
+rescue it. `./vibeos-cli host-status`, submit, then leave the host alone. Backgrounding `land`
+and editing while it runs fails `receipt-validation` with "Tooling inputs changed during
+checks" — which reads exactly like an intermittent flake and is not one.
+
+**`receipt-validation` failing with every substantive check GREEN is infrastructure, not a
+defect in your change** — rerun it. What actually invalidates it is narrower than it looks,
+and an earlier version of this entry got it wrong in a way worth keeping as the example.
+
+That version claimed activity in a SIBLING worktree could fail the conductor's receipts,
+on the strength of tip `51e72900c8c9`: REJECTED TOOLING_FAIL with all 56 checks green while
+its author ran `check-tooling` and `git merge` in a sibling checkout, then the
+byte-identical tip landing as `f5d93d6c2174` on resubmission. Same commit, both verdicts —
+and the author wrote "Measured" beside it. **It was not measured, it was a correlation with
+an uncontrolled confound:** the resubmission also re-gated against a different master with
+different co-queued lanes, so "the author sat still" was never the isolated variable. The
+direct measurement, done afterwards, refutes it — `source_identity` and `runtime_identity`
+of a live integration worktree, sampled before and after mutating a sibling checkout, come
+back byte-identical. `_file()` is a pure content sha256 with no mtime, and `source_identity`
+walks only the gating repo's own `git ls-files`. Sibling activity cannot reach it. Note the
+tell that should have stopped the sentence: the author's own text said the code "does not
+look like it should" behave that way, which is a reason to go measure, not a flourish to
+put in front of a claim.
+
+**The one genuine cross-worktree surface is `runtime_identity`,** which hashes the SHARED
+toolchain — `.venv/bin/ruff`, `pyright`, and the rustup-selected rustc/cargo plus sysroot
+`.so` files. So a `rustup component add`, a venv upgrade or a `pip install` mid-gate really
+does reach the conductor and will invalidate its receipts; a merge, an edit or a
+`check-tooling` in another worktree will not. Save toolchain changes for a quiet queue.
+
+**A COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT EVERYTHING.** A `build-<arch>`
+that predates a new entry in a model the tooling checks is stamped and still lacks the object
+directory, so `check-tooling` refuses a change that has nothing to do with it — including a
+docs-only one. Measured 2026-09-20: `c474d932eb7` added `wine` to
+`verify_ucrtbase_cohab`'s `OURS_ON_LINK_LINE`, and
+`test_every_modelled_target_has_a_real_object_directory` then bounced this lane's land
+**three times in a row** — i386, then amd64, then arm64 — because the assertion reported only
+the FIRST missing target, so each failure read as one stale tree until you fixed it and hit the
+next. The remedy is `./vibeos-cli build --arch <a>` for each, and the assertion now names them
+all at once. Note what the stamp does and does not assert before concluding the model is wrong:
+if the named target was recently added, the tree is stale, not the check.
+
+**A host-only stage that reads build output is not host-only.** Same incident, the general
+form: `check-tooling` is documented as arch-independent, and `_lint_preflight` moves it earlier
+on the stated grounds that it needs no `build-<arch>`. That test reads three of them. The
+aggregate message removes the three-cycle cost, not the category — a stage advertised as
+needing no build can still fail for reasons unrelated to the change. Worth deciding properly
+rather than patching per-incident.
+
+**A green local gate is WARM unless you pass `--clean`, so it is not evidence the tree builds
+cold.** A warm gate once reported OK on a tree whose i386 build failed cold, minted a push
+stamp, and the queue rejected the lane. When a lane touches a shared `-sys` crate, gate with
+`--clean` or skip the local gate entirely and let the conductor's fresh worktree be the oracle.
+
+**Read the summary at the TOP of a run, not the tail**, and never `| tail` a `vibeos-cli`
+command whose failure you need to understand — that hides the `FAIL — N/M checks failed` line
+and swallows the exit code. Environmental noise in one check does not license skipping the rest.
+
+**A build races anything that writes `.rs`.** A translation running concurrently makes sources
+newer than the cargo-linked binaries, and the staleness check then reports BUILD_INCOMPLETE.
+
 ## Discarding work safely — the stash, and why index numbers lie
 
 AGENTS.md forbids `git checkout`/`restore` for discarding. Stash instead. The trap is that the
@@ -187,6 +275,40 @@ Two related traps, both real bugs we ate (field manual §9.65):
   ntoskrnl exports them; just import them.
 
 Full reference: `docs/engineering/build-system.md` §"Cargo target model".
+
+## Searching the tree — `grep` is ugrep, and it SKIPS 175 sources in silence
+
+`grep` in this environment is a shell function wrapping **ugrep**. On a file that is not
+valid UTF-8 it finds nothing and says nothing — no "Binary file matches", no warning, exit 1,
+which is indistinguishable from a genuine no-match.
+
+**175 of the 16,466 tracked C/C++ sources (1.1%) are ISO-8859, not UTF-8** — usually one
+accented byte in an upstream copyright line. `dll/win32/shell32/CExtractIcon.cpp` is one
+(`0xe9` at offset 234), along with `shellrecyclebin/guid.c` and `recyclebin_v5.h`.
+
+```bash
+grep -c DuplicateString dll/win32/shell32/CExtractIcon.cpp      # nothing, rc=1  ← LIE
+grep -ac DuplicateString dll/win32/shell32/CExtractIcon.cpp     # 5  ← the truth
+```
+
+**Pass `-a` whenever you grep source, and treat an empty result on a file you have not
+`-a`-checked as unproven.** (`--encoding=LATIN1` works too; `-a` is shorter and is the same
+flag the serial logs need, since those carry NULs.) To enumerate the blind spot itself, read
+the bytes in Python — `Path(f).read_bytes().decode('utf-8')` and catch `UnicodeDecodeError`.
+
+This is the field manual's "a claim ABOUT a measurement needs a route the suspect tool does
+not mediate", in its cheapest form. It cost a near-miss: an empty grep was about to be
+reported as "`DuplicateString` exists nowhere in shell32 — rustconv invented it", when the
+function is at `CExtractIcon.cpp:72` and rustconv had parsed it correctly. Two sweeps in that
+same session were re-derived in Python afterwards; both conclusions survived (0 extra hits
+for `#ifdef _M_ARM64` and for bare self-`QueryInterface`/`AddRef`/`Release`), and one tree-wide
+count moved: `_CreatorClass::CreateInstance` is 5, not 4, the fifth in
+`dll/win32/browseui/shellbars/CBandSite.cpp`.
+
+**The repo's own scanners are NOT affected** — they read with
+`read_text(encoding="utf-8", errors="replace")`, so the gate sees these files. This is an
+interactive-search hazard only, which is exactly why it is written down here rather than
+fixed in a tool.
 
 ## Key Technical Patterns
 
@@ -517,6 +639,36 @@ Sonnet is considered only after substrate closure leaves a genuine semantic/stru
 residual. The complete protocol and stop rules are in
 `docs/engineering/rustconv-substrate-closure-protocol.md`.
 
+### How much C is left — `tools/port_audit.py`
+
+```bash
+python3 tools/port_audit.py                # the generated core ledger (markdown)
+python3 tools/port_audit.py --json         # same rows, machine-readable
+python3 tools/port_audit.py --check        # ratchet: every compiled source is classified
+python3 tools/port_audit.py --detail "Win32 DLLs"   # live directories in one surface
+python3 tools/port_audit.py --rust         # lines of Rust: translation / generated / harness
+```
+
+Answers "where are we at on the core OS" from the **ninja build graph of this worktree's
+three build dirs**, unioned — so a surface's "live C" is what the link actually compiles,
+after every `if(ARCH)` and every commented-out CMake entry. Core is everything we own
+that ships in the base OS, **Wine-derived code included** (provenance is a column, not a
+scope); only `vendor.yaml` trees, applications, tests and host tools are reported
+separately. Its lines are C lines — compare Rust progress with `--rust`, which is ~2x.
+
+Two things it will not do. It **hard-fails** on a missing build dir or a graph older than
+a CMakeLists edit, rather than reporting the smaller tree a partial answer produces (fix:
+`./vibeos-cli build --arch <a>`); and `--check` **fails on a compiled source that matches
+no rule**, so a new top-level area has to be classified before the ledger prints at all —
+the same ratchet `vendored.py --check` applies to a new vendor drop. Coverage is computed
+from the `Rust twin` column (the module has a crate in `sdk/lib/rust/`), never from
+"out of build", because out-of-build also holds upstream C this port never compiled.
+
+It is a LINE ledger, not a symbol one: for who backs a specific export ask
+`export_census.py`, and for whether a flip took at the symbol level ask
+`verify_cohab_coverage.py`, which reads object files. Output goes in
+`rust-port-status.md`; do not hand-edit those tables.
+
 ### Which C is NOT ours — `vendor.yaml`
 
 ```bash
@@ -545,6 +697,16 @@ QUESTIONS, deliberately not gate findings: whether a driver framework this OS sh
 translation target is a judgement call, and auto-excluding on a copyright grep would
 shrink the denominator silently, which is the failure the registry exists to prevent.
 
+### Moving vendored code — `tools/vendor_move_plan.py`
+
+```bash
+python3 tools/vendor_move_plan.py                       # blast radius per tree, cheapest first
+python3 tools/vendor_move_plan.py --tree <vendored path> # every reference to one tree
+```
+
+Lists every reference that pins a vendored tree to its path — relative CMake, `.cmake`
+fragments, bindgen scripts, include-root consumers, and paths built from variables —
+before anyone runs `git mv`. Plan and hazards: `docs/engineering/vendor-relocation-plan.md`.
 ### Static Analysis Tools
 
 ```bash

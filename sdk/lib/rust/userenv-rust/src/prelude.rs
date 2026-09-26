@@ -160,14 +160,17 @@ extern "system" {
 }
 extern "C" {
     // StringCb*/StringCch* non-variadic are strsafe.h `static inline`s (no symbol) → inline shims
-    // below. StringCchPrintfW is VARIADIC (can't be a stable-Rust fn) → a real out-of-line cdecl
-    // def is provided by rust_strsafe_shim.c in the userenv build. RemoveDirectoryPath etc. are
-    // userenv-internal #[no_mangle] cdecl fns defined in the modules.
-    pub fn StringCchPrintfW(pszDest: LPWSTR, cchDest: usize, pszFormat: LPCWSTR, ...) -> i32;
+    // below. RemoveDirectoryPath etc. are userenv-internal #[no_mangle] cdecl fns defined in the
+    // modules.
     pub fn RemoveDirectoryPath(lpPathName: LPCWSTR) -> BOOL;
     pub fn UpdateUsersShellFolderSettings(lpUserProfilePath: LPCWSTR, hUserKey: HKEY) -> BOOL;
     pub fn AppendSystemPostfix(lpName: LPWSTR, dwMaxLength: DWORD) -> BOOL;
 }
+// strsafe.h's printf entry points are VARIADIC, and stable Rust can CALL a C-variadic though
+// it cannot define one; so these are strsafe-rust macros that call msvcrt's `_snwprintf` in
+// place, with strsafe's bounds and HRESULTs. The C trampoline that used to define them
+// (rust_varargs_shim.c) retired 2026-09-25. Call sites say `StringCchPrintfW!(...)`.
+pub use strsafe_rust::StringCchPrintfW;
 
 // strsafe.h StringCchCopyNW is a `static inline` (no linkable symbol) — undefined at link when
 // declared extern. Reimplement inline (§9.65-sanctioned for a header inline): copy at most

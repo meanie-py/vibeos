@@ -28,6 +28,22 @@ pub unsafe extern "system" fn MprAdminIsServiceRunning(server: LPWSTR) -> BOOL {
     (FALSE) as i32
 }
 
+// Added by the 2026-09-20 upstream sync: upstream implemented MprConfigServerConnect
+// (mprapi.c) and added it to mprapi.spec after our fork. The spec drives the .def, so the
+// export went live in this tree the moment the merge landed and the link failed here —
+// the oracle arriving as a link error rather than as a diff. Still a stub upstream, but
+// the NULL check is the real behaviour and is worth having.
+#[no_mangle]
+pub unsafe extern "system" fn MprConfigServerConnect(
+    _lpws_server_name: LPWSTR,
+    phmpr_config: *mut HANDLE,
+) -> DWORD {
+    if phmpr_config.is_null() {
+        return ERROR_INVALID_PARAMETER;
+    }
+    ERROR_SUCCESS
+}
+
 // ============================================================================
 // ORIGINAL C SOURCE
 // ============================================================================

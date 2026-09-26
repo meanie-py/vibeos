@@ -455,62 +455,6 @@ pub unsafe extern "C" fn RemoveStatusMessage(Session: PWLSESSION) -> BOOL {
     (*Session).Gina.Functions.WlxRemoveStatusMessage.unwrap()((*Session).Gina.Context)
 }
 
-// FontLoadThread — WINAPI thread routine (CreateThread's LPTHREAD_START_ROUTINE
-// is `extern "stdcall"` on i386 / `extern "C"` on amd64+arm64). Split into a
-// shared impl + two cfg trampolines (same pattern as shutdown.rs).
-unsafe fn FontLoadThreadImpl(_lpParam: LPVOID) -> DWORD {
-    const FONT_NAMES: [&[u16]; 8] = [
-        wstr!("\\Fonts\\tahoma.ttf"),
-        wstr!("\\Fonts\\tahomabd.ttf"),
-        wstr!("\\Fonts\\Marlett.ttf"),
-        wstr!("\\Fonts\\arial.ttf"),
-        wstr!("\\Fonts\\arialbd.ttf"),
-        wstr!("\\Fonts\\cour.ttf"),
-        wstr!("\\Fonts\\times.ttf"),
-        wstr!("\\Fonts\\symbol.ttf"),
-    ];
-    let mut WinDir: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut FontPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-
-    let Len = GetWindowsDirectoryW(WinDir.as_mut_ptr(), MAX_PATH);
-    DbgPrint(
-        b"[WINLOGON] FontLoadThread: WindowsDirectory=%S len=%lu\n\0".as_ptr() as *const i8,
-        WinDir.as_ptr(),
-        Len,
-    );
-    if Len == 0 || Len >= MAX_PATH - 40 {
-        DbgPrint(
-            b"[WINLOGON] FontLoadThread: GetWindowsDirectoryW failed\n\0".as_ptr() as *const i8,
-        );
-        return 1;
-    }
-    for name in FONT_NAMES.iter() {
-        wcscpy(FontPath.as_mut_ptr(), WinDir.as_ptr());
-        wcscat(FontPath.as_mut_ptr(), name.as_ptr());
-        if AddFontResourceW(FontPath.as_ptr()) != 0 {
-            DbgPrint(
-                b"[WINLOGON] Loaded font: %S\n\0".as_ptr() as *const i8,
-                FontPath.as_ptr(),
-            );
-        } else {
-            DbgPrint(
-                b"[WINLOGON] Failed to load font: %S (err %lu)\n\0".as_ptr() as *const i8,
-                FontPath.as_ptr(),
-                GetLastError(),
-            );
-        }
-    }
-    DbgPrint(
-        b"[WINLOGON] Font loading complete (%d fonts)\n\0".as_ptr() as *const i8,
-        FONT_NAMES.len() as i32,
-    );
-    0
-}
-
-unsafe extern "system" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
-    FontLoadThreadImpl(lpParam)
-}
-
 /* DOOM (opt-in demo, VIBEOS_DOOM=1 at image-build time). doomgeneric's
  * Win32/GDI backend — a genuinely foreign binary — is launched ONLY if
  * doom.exe was staged into the image (GetFileAttributesW succeeds): arm64
@@ -1316,6 +1260,74 @@ unsafe fn TryStartWow64Reg() {
     }
 }
 
+/* spawn32.exe — the i386 PROCESS-CREATION guest: can a 32-bit guest start
+ * another 32-bit process at all (CreateProcessW, IsWow64Process on the child,
+ * ResumeThread across the process boundary, wait, exit code).
+ *
+ * DIAGNOSTIC, not a parity guest. It measures a gap the x64-primary plan ranks
+ * #1 and which is expected to be OPEN, so ladder.py reports its verdict from
+ * the DIAGNOSTIC table and never fails a gate on it. Launched here all the
+ * same, and BEFORE the optional stress guests: it is fast and bounded, while
+ * they are slow third-party code that can push later guests past the drain.
+ *
+ * The 60s wait is deliberately double the guest's own 30s child timeout, so a
+ * guest that hit its internal cap still gets to report a verdict rather than
+ * being cut off by winlogon and read as a hang. */
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+unsafe fn TryStartWow64Spawn() {
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\syswow64\\spawn32.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("spawn32.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] spawn32.exe (i386 process-creation guest) created (PID %lu) - waiting\n\0"
+                .as_ptr() as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 60_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] spawn32.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr()
+                as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(spawn32.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* sqlite32.exe — a THIRD-PARTY STRESS guest (tools/stress/sqlite/build.sh).
  *
  * Every other guest here probes one mechanism on purpose, with a body written
@@ -1778,6 +1790,308 @@ unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: D
     CloseHandle(Pi.hProcess);
 }
 
+/* A Wine conformance suite, run as a WoW64 guest.
+ *
+ * Every other guest on this ladder reports in one number -- an exit code, or
+ * "still running after N seconds". A winetest reports in PROSE on stdout and
+ * only summarises in its exit code (= the failure count), so both of those
+ * verdicts throw away the part we actually want: WHICH assertion failed and
+ * where. Nothing inside the guest can reach the serial port, so this hands the
+ * child a pipe for stdout+stderr and re-emits what comes back, line by line,
+ * through DbgPrint -- the one channel the smoke harness already reads.
+ *
+ * `Sub` names ONE subtest. A winetest invoked with no argument runs all of
+ * them, which on a suite like user32 is thousands of lines and ends at the
+ * first crash with everything after it unrun; pass null only when running the
+ * whole suite is the point.
+ *
+ * The read loop peeks rather than blocking, because a blocking ReadFile on a
+ * pipe whose writer is a wedged guest never returns and would hang winlogon
+ * itself -- the ladder would stop dead with no verdict for anything after it.
+ */
+/* i386 + amd64. On amd64 `Dir` is "syswow64" and the guest is a WoW64 one; on
+ * i386 it is "system32" and the SAME i386 binary runs natively. That pair is
+ * the point: without the native control, a red assertion cannot be attributed
+ * -- it is equally consistent with a WoW64 marshalling bug and with a plain
+ * user32 gap that would fail on bare i386 too. The tree already insists on
+ * this for testgui; a conformance suite needs it more, not less, because it
+ * asserts against real Windows rather than against us. arm64 gets it the day
+ * it stages a winetest. */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn TryStartWinetest(
+    Dir: *const u16,
+    Exe: *const u16,
+    Sub: *const u16,
+    Label: *const i8,
+    TimeoutMs: DWORD,
+) {
+    /* Serial is the bottleneck for the whole boot, and a looping suite can
+     * emit without bound. Past this many bytes the output is dropped (the
+     * pipe is still drained, or the child blocks on a full pipe and the
+     * timeout below turns a chatty test into a fake hang). */
+    const WT_MAX_OUTPUT: u32 = 256 * 1024;
+
+    /* The CPU layer only gates the WoW64 side; a native i386 run needs none.
+     * Gating both on it would silently delete the control half of the A/B. */
+    #[cfg(target_arch = "x86_64")]
+    if !Wow64SupportStaged() {
+        return; // CPU layer absent
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\").as_ptr());
+    wcscat(Path.as_mut_ptr(), Dir);
+    wcscat(Path.as_mut_ptr(), wstr!("\\").as_ptr());
+    wcscat(Path.as_mut_ptr(), Exe);
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged -- silent no-op, like every other optional guest
+    }
+    /* Not in a kmtest conformance boot. Its sweep grades timing-sensitive
+     * kernel tests (ExFastMutex, ExResource) against a banked baseline, and a
+     * tree built with --rostests staged the winetest into that media too:
+     * user32:class and its 26 child processes then ran alongside the sweep,
+     * and every i386 sweep regressed ExFastMutex, while the conductor's fresh
+     * tree (no winetest) stayed clean. The sweep's test list is the marker. */
+    let mut Kmt: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Kmt.as_mut_ptr(), MAX_PATH - 32) != 0 {
+        wcscat(Kmt.as_mut_ptr(), wstr!("\\bin\\kmtest-tests.txt").as_ptr());
+        if GetFileAttributesW(Kmt.as_ptr()) != 0xFFFF_FFFF {
+            DbgPrint(
+                b"[WT] %s: skipped - kmtest conformance boot\n\0".as_ptr() as *const i8,
+                Label,
+            );
+            return;
+        }
+    }
+
+    let mut Sa: SECURITY_ATTRIBUTES = zeroed();
+    Sa.nLength = size_of::<SECURITY_ATTRIBUTES>() as DWORD;
+    Sa.bInheritHandle = 1;
+    let mut Rd: HANDLE = null_mut();
+    let mut Wr: HANDLE = null_mut();
+    if CreatePipe(&mut Rd, &mut Wr, &mut Sa, 64 * 1024) == 0 {
+        DbgPrint(
+            b"[WT] %s: CreatePipe FAILED (error %lu) - not running\n\0".as_ptr() as *const i8,
+            Label,
+            GetLastError(),
+        );
+        return;
+    }
+    /* The child must NOT inherit the read end: if it did, the last writer
+     * would never close and the drain below would never see EOF. */
+    SetHandleInformation(Rd, HANDLE_FLAG_INHERIT, 0);
+
+    let mut Line: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    wcscat(Line.as_mut_ptr(), Exe);
+    if !Sub.is_null() {
+        wcscat(Line.as_mut_ptr(), wstr!(" ").as_ptr());
+        wcscat(Line.as_mut_ptr(), Sub);
+    }
+
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    Si.dwFlags |= STARTF_USESTDHANDLES;
+    Si.hStdInput = null_mut();
+    Si.hStdOutput = Wr;
+    Si.hStdError = Wr;
+    /* Every winetest gets a real console, native and WoW64 guest alike.
+     *
+     * This ran DETACHED_PROCESS on both sides because console creation hung:
+     * `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`,
+     * then an unbounded `Sending to Suspended Thread` spin. That was three bugs,
+     * fixed 2026-09-23:
+     *   - win32k never loaded consrv's "VGA" font;
+     *   - KAPC_STATE_ACTUAL_LENGTH made attached threads read as suspended;
+     *   - consrv's handle table and GuiVtbl (ABI and stride) crashed csrss on i386.
+     * The native control then ran end to end in ~1 minute. Before, class.c's
+     * fifteen CUI children each burned winetest_wait_child_process's 30s.
+     *
+     * The WoW64 guest was kept DETACHED until it was measured separately. On
+     * amd64 the guest user32:wsprintf now runs with a console, 58 tests and 0
+     * failures, matching the native control. The --ladder rungs stay green. */
+    let WT_CREATE_FLAGS: DWORD = 0;
+    if CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        1, /* bInheritHandles: required for the child to get Wr */
+        WT_CREATE_FLAGS,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    ) == 0
+    {
+        DbgPrint(
+            b"[WT] %s: CreateProcessW FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            Label,
+            GetLastError(),
+        );
+        CloseHandle(Rd);
+        CloseHandle(Wr);
+        return;
+    }
+    /* Drop OUR copy of the write end. The child now holds the only one, so
+     * the pipe reports empty-and-closed exactly when the child is gone --
+     * without this the drain below can never distinguish "no output yet"
+     * from "finished". */
+    CloseHandle(Wr);
+
+    DbgPrint(
+        b"[WT] %s: started (PID %lu)\n\0".as_ptr() as *const i8,
+        Label,
+        Pi.dwProcessId,
+    );
+
+    let mut Chunk: [u8; 1024] = [0; 1024];
+    let mut Out: [u8; 512] = [0; 512];
+    let mut OutLen: usize = 0;
+    let mut Total: u32 = 0;
+    let mut Truncated = false;
+    let Start = GetTickCount();
+    const WAIT_TIMEOUT_: DWORD = 0x102;
+    let mut TimedOut = false;
+
+    loop {
+        let mut Avail: DWORD = 0;
+        let Peeked = PeekNamedPipe(
+            Rd,
+            null_mut(),
+            0,
+            null_mut(),
+            &mut Avail,
+            null_mut(),
+        );
+        if Peeked != 0 && Avail > 0 {
+            let Want = if Avail as usize > Chunk.len() {
+                Chunk.len() as DWORD
+            } else {
+                Avail
+            };
+            let mut Got: DWORD = 0;
+            if ReadFile(
+                Rd,
+                Chunk.as_mut_ptr() as *mut _,
+                Want,
+                &mut Got,
+                null_mut(),
+            ) == 0
+                || Got == 0
+            {
+                break;
+            }
+            Total = Total.saturating_add(Got);
+            if Total > WT_MAX_OUTPUT {
+                if !Truncated {
+                    Truncated = true;
+                    DbgPrint(
+                        b"[WT] %s: output past %lu bytes DROPPED (still draining)\n\0".as_ptr()
+                            as *const i8,
+                        Label,
+                        WT_MAX_OUTPUT,
+                    );
+                }
+            } else {
+                for i in 0..Got as usize {
+                    let c = Chunk[i];
+                    if c == b'\n' || OutLen == Out.len() - 1 {
+                        Out[OutLen] = 0;
+                        /* "%s" and not the line itself: a test's own output
+                         * is full of %d/%s from the assertions it prints. */
+                        DbgPrint(
+                            b"[WT] %s| %s\n\0".as_ptr() as *const i8,
+                            Label,
+                            Out.as_ptr(),
+                        );
+                        OutLen = 0;
+                    }
+                    if c != b'\n' && c != b'\r' {
+                        Out[OutLen] = c;
+                        OutLen += 1;
+                    }
+                }
+            }
+            continue; /* drain greedily before re-checking the clock */
+        }
+        /* Nothing buffered: the child is either done or thinking. */
+        if WaitForSingleObject(Pi.hProcess, 0) != WAIT_TIMEOUT_ {
+            /* Exited. One more peek catches whatever it wrote last. */
+            let mut Left: DWORD = 0;
+            if PeekNamedPipe(Rd, null_mut(), 0, null_mut(), &mut Left, null_mut()) == 0
+                || Left == 0
+            {
+                break;
+            }
+            continue;
+        }
+        if GetTickCount().wrapping_sub(Start) > TimeoutMs {
+            TimedOut = true;
+            break;
+        }
+        Sleep(20);
+    }
+
+    if OutLen > 0 {
+        Out[OutLen] = 0;
+        DbgPrint(
+            b"[WT] %s| %s\n\0".as_ptr() as *const i8,
+            Label,
+            Out.as_ptr(),
+        );
+    }
+
+    if TimedOut {
+        DbgPrint(
+            b"[WT] %s: TIMEOUT after %lu ms - terminating\n\0".as_ptr() as *const i8,
+            Label,
+            TimeoutMs,
+        );
+        TerminateProcess(Pi.hProcess, 0xDEAD);
+        WaitForSingleObject(Pi.hProcess, 5_000);
+    }
+    let mut ExitCode: DWORD = 0xDEAD;
+    GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+    /* A winetest's exit code IS its failure count -- but only when it got to
+     * choose it. An unhandled exception exits the process with the NTSTATUS,
+     * and 0xC0000005 read as "3221225477 failures" is a number that looks like
+     * data and is not: the suite died partway and every assertion after the
+     * fault went unrun. Say which of the two this is, because they mean
+     * opposite things about the run. */
+    if TimedOut {
+        /* Not a count either: we killed it, so 0xDEAD is OUR number. Reporting
+         * it as "57005 failure(s)" is the same lie as reporting 0xC0000005 as
+         * "3221225477 failure(s)". */
+        DbgPrint(
+            b"[WT] %s: TIMED OUT, %lu bytes of output\n\0".as_ptr() as *const i8,
+            Label,
+            Total,
+        );
+    } else if ExitCode >= 0xC000_0000 {
+        DbgPrint(
+            b"[WT] %s: CRASHED, exit = 0x%lx, %lu bytes of output\n\0".as_ptr() as *const i8,
+            Label,
+            ExitCode,
+            Total,
+        );
+    } else {
+        DbgPrint(
+            b"[WT] %s: exit = %lu failure(s), %lu bytes of output\n\0".as_ptr() as *const i8,
+            Label,
+            ExitCode,
+            Total,
+        );
+    }
+    CloseHandle(Rd);
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
+}
+
 /* E4c robustness: winmine.exe — a STOCK i386 OS applet (menus, WM_TIMER,
  * dialog/menu resources, GetSystemMetrics-driven layout) that nobody wrote
  * for the WoW64 harness. Same inverted verdict as testgui: still running
@@ -2090,18 +2404,11 @@ pub unsafe extern "system" fn WinMain(
             DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
         }
 
-        /* Load system fonts SYNCHRONOUSLY now — right after the window station and
-         * desktops exist (CreateWindowStationAndDesktops above) and BEFORE any text
-         * is rendered: the GINA status message (DisplayStatusMessage), the desktop
-         * watermark, and explorer's taskbar all need g_FontListHead populated. The
-         * kernel defers system-font loading to user space on x86 (IntLoadSystemFonts
-         * is a no-op there), so until winlogon calls AddFontResourceW the global font
-         * list is empty and every GreExtTextOutW hits IntRealizeFont NOMATCH. The old
-         * code did this on a background thread AFTER spawning explorer, which raced
-         * the shell's first paint and lost on i386 -> permanently blank desktop.
-         * Doing it here, before the first text render, makes it deterministic. */
-        DbgPrint(b"[WINLOGON] Loading system fonts (synchronous, pre-shell)...\n\0".as_ptr() as *const i8);
-        FontLoadThreadImpl(null_mut());
+        /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
+         * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
+         * winlogon used to AddFontResourceW eight fonts by name here because the
+         * kernel skipped that load on x86. The list lacked the console's "VGA" face,
+         * so no console window could be created. */
 
         DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
         if crate::rpcserver::StartRpcServer() == 0 {
@@ -2452,10 +2759,6 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
-    /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the
-     * shell's first paint already has g_FontListHead populated. The old async
-     * CreateThread(FontLoadThread) here raced the shell and lost on i386. */
-
     /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus.
      * arm64-only: on amd64/i386 notepad hits a separate pre-existing
      * desktop-heap handle-validation AV (pci->pDeskInfo bogus in user32
@@ -2554,6 +2857,16 @@ pub unsafe extern "system" fn WinMain(
          * 32-bit process. The only ladder rung whose failure is silent. */
         TryStartWow64Reg();
 
+        /* Guest process creation. MOVED AHEAD of the stress guests 2026-09-19,
+         * when it started passing and joined the graded parity set: it used to
+         * run dead last because it bugchecked the kernel reliably, and anything
+         * after it would never report. That reason is gone, and the ordering
+         * rule now cuts the other way -- sqlite32 carries the registered
+         * BUGCHECK, so a GRADED guest must run BEFORE it or an sqlite32 crash
+         * silently costs spawn32 its verdict, which is exactly what the rule
+         * above describes happening to lua32. */
+        TryStartWow64Spawn();
+
         /* Third-party stress: real SQLite on the storage + allocator axis.
          * LAST, after every parity guest: it is slow third-party code under
          * emulation, and running it earlier delays the parity set past the
@@ -2572,6 +2885,7 @@ pub unsafe extern "system" fn WinMain(
         TryStartWow64Lua();
 
         TryStartWow64Sqlite();
+
 
         /* The testgui pair never exits, so it would sit on top of DOOM's window.
          * When the WoW64 doom is staged, DOOM is the demo — skip them. */
@@ -2670,6 +2984,16 @@ pub unsafe extern "system" fn WinMain(
         TryStartWow64Selfmod();
         /* Wow6432Node redirection, isolation and the two-view delete. */
         TryStartWow64Reg();
+
+        /* Guest process creation. MOVED AHEAD of the stress guests 2026-09-19,
+         * when it started passing and joined the graded parity set: it used to
+         * run dead last because it bugchecked the kernel reliably, and anything
+         * after it would never report. That reason is gone, and the ordering
+         * rule now cuts the other way -- sqlite32 carries the registered
+         * BUGCHECK, so a GRADED guest must run BEFORE it or an sqlite32 crash
+         * silently costs spawn32 its verdict, which is exactly what the rule
+         * above describes happening to lua32. */
+        TryStartWow64Spawn();
         /* Third-party stress: real SQLite, last — see the note at the other
          * call site on why it must not precede the parity guests. */
         /* Third-party stress #2: real Lua, setjmp/longjmp-heavy. BEFORE
@@ -2677,6 +3001,33 @@ pub unsafe extern "system" fn WinMain(
          * can BUGCHECK must go last. */
         TryStartWow64Lua();
         TryStartWow64Sqlite();
+
+        /* Wine's own conformance suites, under WoW64. Every guest above this
+         * line is one we wrote or one we chose; these are the ORACLE, and they
+         * assert against real Windows behaviour rather than against what our
+         * implementation happens to do. Two subtests to start, picked to
+         * separate the two things that could be wrong:
+         *   wsprintf — almost no win32k surface, so a failure here is the
+         *              runner, the pipe or the CRT, not WoW64
+         *   class    — RegisterClass/GetClassInfo/GetClassLong, i.e. real
+         *              win32k round-trips with 32<->64 handle and LONG_PTR
+         *              width conversion in the middle
+         * Silent no-op unless the i386 rostests build staged them. */
+        TryStartWinetest(
+            wstr!("syswow64").as_ptr(),
+            wstr!("user32_winetest.exe").as_ptr(),
+            wstr!("wsprintf").as_ptr(),
+            b"user32:wsprintf\0".as_ptr() as *const i8,
+            180_000,
+        );
+        TryStartWinetest(
+            wstr!("syswow64").as_ptr(),
+            wstr!("user32_winetest.exe").as_ptr(),
+            wstr!("class").as_ptr(),
+            b"user32:class\0".as_ptr() as *const i8,
+            180_000,
+        );
+
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
          * window (created last) stays the demo on top. */
@@ -2804,6 +3155,34 @@ pub unsafe extern "system" fn WinMain(
             TryStartWow64TestGui();
         }
         TryStartWow64Doom();
+    }
+
+    /* The NATIVE half of the winetest A/B. Same i386 binary, same two
+     * subtests, running on bare i386 with no WoW64 anywhere in the picture --
+     * so subtracting this from the amd64 WoW64 run is what makes a red
+     * assertion attributable. Without it every failure reads equally as "the
+     * 32<->64 seam is wrong" and as "our user32 does not implement this",
+     * and the first WoW64 winetest run produced a cluster that could plausibly
+     * be either. `reactos\\bin` is where add_rostests_file already puts every
+     * winetest, so this needs no staging change at all -- an i386
+     * `build --rostests` is the whole opt-in, and a tree without one finds no
+     * file and says nothing. */
+    #[cfg(target_arch = "x86")]
+    {
+        TryStartWinetest(
+            wstr!("bin").as_ptr(),
+            wstr!("user32_winetest.exe").as_ptr(),
+            wstr!("wsprintf").as_ptr(),
+            b"native/user32:wsprintf\0".as_ptr() as *const i8,
+            180_000,
+        );
+        TryStartWinetest(
+            wstr!("bin").as_ptr(),
+            wstr!("user32_winetest.exe").as_ptr(),
+            wstr!("class").as_ptr(),
+            b"native/user32:class\0".as_ptr() as *const i8,
+            180_000,
+        );
     }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned

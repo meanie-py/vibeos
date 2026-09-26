@@ -52,6 +52,10 @@ pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009A_u32 as i32;
 pub const STATUS_ALREADY_COMMITTED: NTSTATUS = 0xC0000021_u32 as i32;
 pub const STATUS_NO_MEMORY: NTSTATUS = 0xC0000017_u32 as i32;
 pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002_u32 as i32;
+// 0x8... is a WARNING-severity status, not 0xC... . ARM3/virtual.rs carried
+// 0xC000009B here, which is STATUS_DFS_EXIT_PATH_FOUND -- one past
+// STATUS_INSUFFICIENT_RESOURCES above, and a plausible-looking neighbour.
+pub const STATUS_PARTIAL_COPY: NTSTATUS = 0x8000000D_u32 as i32;
 
 #[inline]
 pub fn NT_SUCCESS(status: NTSTATUS) -> bool {

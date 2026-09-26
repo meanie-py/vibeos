@@ -1,11 +1,8 @@
 
 spec2def(scsiport.sys scsiport.spec ADD_IMPORTLIB)
 
-include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/sptilib)
-
 # Link GCC stack protector lib
-if (STACK_PROTECTOR)
+if(STACK_PROTECTOR)
     target_link_libraries(libscsiport INTERFACE gcc_ssp_scsiport)
 endif()
 

@@ -8,9 +8,11 @@ add_definitions(
     -DCOM_NO_WINDOWS_H
     -DENTRY_PREFIX=OLE32_
     -DPROXY_CLSID=CLSID_PSFactoryBuffer
-    -DWINE_REGISTER_DLL)
+    -DWINE_REGISTER_DLL
+    -D_ROAPI_)
 
 spec2def(ole32.dll ole32.spec ADD_IMPORTLIB NO_PRIVATE_WARNINGS)
+
 generate_idl_iids(dcom.idl)
 add_idl_headers(ole32idl dcom.idl irot.idl)
 add_rpc_files(client irot.idl)
@@ -123,10 +125,16 @@ add_library(ole32 MODULE
 if(MSVC)
     # Disable warning C4090: '=': different 'const' qualifiers
     # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    target_compile_options(ole32 PRIVATE /wd4090 /wd4146)
+    # Disable warning C4133: 'function': incompatible types - from 'UINT *' to 'MSIINSTALLCONTEXT *'
+    target_compile_options(ole32 PRIVATE /wd4090 /wd4146 /wd4133)
 endif()
 
 set_module_type(ole32 win32dll)
+# The proxy/stub registration (every Interface\{iid}\ProxyStubClsid32 that CoGetPSClsid reads)
+# is generated from the IDL: upstream 7675017f60d deleted the hand-written .rgs resources from
+# ole32res.rc and added this line, and the upstream sync kept the .rc change but lost the line.
+# DllRegisterServer then wrote nothing and returned S_OK, so no interface could be marshalled.
+add_idl_reg_scripts(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ole32_unknwn.idl)
 # OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
 target_link_options(ole32 PRIVATE LINKER:--allow-multiple-definition)

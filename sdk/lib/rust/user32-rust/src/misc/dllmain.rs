@@ -50,13 +50,6 @@ fn NtCurrentProcess() -> HANDLE {
     -1isize as HANDLE
 }
 
-// `gpsi->PERUSERSERVERINFO` accessor — bindgen flattened the anon-embedded
-// `_PERUSERSERVERINFO` into the tail padding of `tagSERVERINFO` (mirrors
-// internal::gpsi_perusr, but over THIS module's `gpsi`).
-#[inline]
-unsafe fn gpsi_perusr() -> *const _PERUSERSERVERINFO {
-    core::ptr::addr_of!((*gpsi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
-}
 
 // user32 imm dispatch table + helpers owned by misc/imm.rs.
 use crate::misc::imm::{ghImm32, gImmApiEntries, InitializeImmEntryTable};
@@ -662,6 +655,11 @@ pub unsafe extern "system" fn Init(UserCon: PUSERCONNECT) -> BOOL {
     NT_SUCCESS(Status) as BOOL
 }
 
+const LDR_ADDREF_DLL_PIN: ULONG = 1;
+extern "system" {
+    fn LdrAddRefDll(Flags: ULONG, BaseAddress: PVOID) -> NTSTATUS;
+}
+
 unsafe fn Cleanup() {
     UnloadAppInitDlls();
     DeleteCriticalSection(core::ptr::addr_of_mut!(U32AccelCacheLock));
@@ -713,6 +711,13 @@ pub unsafe extern "system" fn DllMain(
                     return 0;
                 }
             }
+
+            // Once connected, user32 must stay: the PEB's KernelCallbackTable points into it and
+            // the thread's CLIENTINFO keeps CI_INITTHREAD. Unloaded by a FreeLibrary (a .cpl
+            // was the only user32 importer) and reloaded, ClientThreadSetupHelper saw
+            // CI_INITTHREAD and failed DllMain, and every later user32 importer failed to load
+            // (1114, then 1450) — Control Panel's applet enumeration in a console process.
+            LdrAddRefDll(LDR_ADDREF_DLL_PIN, hDll);
         }
 
         DLL_PROCESS_DETACH => {
@@ -770,7 +775,7 @@ pub unsafe extern "system" fn User32CallSetWndIconsFromKernel(
 ) -> NTSTATUS {
     let Common: PSETWNDICONS_CALLBACK_ARGUMENTS = Arguments as PSETWNDICONS_CALLBACK_ARGUMENTS;
 
-    if gpsi.is_null() || (*gpsi_perusr()).hIconSmWindows.is_null() {
+    if gpsi.is_null() || crate::wow64::psi::hicon_sm_windows().is_null() {
         (*Common).hIconSample = LoadImageW(
             0 as HINSTANCE,
             IDI_APPLICATION,

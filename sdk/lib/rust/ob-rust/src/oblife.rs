@@ -25,6 +25,7 @@ use ntkrnl_sys::ddk::{
     PUNICODE_STRING, PCUNICODE_STRING, PANSI_STRING,
     ANSI_STRING, KEVENT,
     SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
+    PSECURITY_INFORMATION, SECURITY_OPERATION_CODE, PGENERIC_MAPPING,
     _SECURITY_OPERATION_CODE_DeleteSecurityDescriptor, _SECURITY_OPERATION_CODE_QuerySecurityDescriptor,
     _OBJECT_INFORMATION_CLASS_ObjectBasicInformation, _OBJECT_INFORMATION_CLASS_ObjectTypeInformation,
     _OBJECT_INFORMATION_CLASS_ObjectNameInformation, _OBJECT_INFORMATION_CLASS_ObjectTypesInformation,
@@ -46,7 +47,7 @@ use ntkrnl_sys::ddk::{
     ObpReleaseObjectCreateInformation, ObpSetHandleAttributes, ObQueryNameString,
     PsGetCurrentProcessId, PsGetCurrentProcessSessionId, PsReturnSharedPoolQuota,
     SeCaptureSecurityDescriptor, SeComputeQuotaInformationSize,
-    SeDefaultObjectMethod, SeSinglePrivilegeCheck,
+    SeSinglePrivilegeCheck,
     RtlCopyUnicodeString, RtlInitEmptyUnicodeString,
     RtlUnicodeStringToAnsiString, RtlFreeAnsiString,
 };
@@ -56,6 +57,26 @@ const LookasideCreateInfoList: u32 = _PP_NPAGED_LOOKASIDE_NUMBER_LookasideCreate
 
 const TAG_OBJECT_TYPE: ULONG = 0x546A624F;
 const FLG_MAINTAIN_OBJECT_TYPELIST: ULONG = 0x4000;
+
+// ntkrnl_sys::ddk's bindgen-generated OB_SECURITY_METHOD (and its SeDefaultObjectMethod
+// extern decl) predates the upstream-sync merge's se.h/obtypes.h change that appended a
+// trailing KPROCESSOR_MODE AccessMode param -- the checked-in bindgen_*.rs was never
+// regenerated. Declare the REAL 9-param signature locally (shadowing the stale 8-param
+// import) so the pointer-identity assignment below transmutes from a type that actually
+// matches se-rust's semgr.rs definition, rather than silently truncating the arg list.
+extern "system" {
+    fn SeDefaultObjectMethod(
+        Object: PVOID,
+        OperationType: SECURITY_OPERATION_CODE,
+        SecurityInformation: PSECURITY_INFORMATION,
+        SecurityDescriptor: PSECURITY_DESCRIPTOR,
+        ReturnLength: *mut ULONG,
+        OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
+        PoolType: POOL_TYPE,
+        GenericMapping: PGENERIC_MAPPING,
+        AccessMode: KPROCESSOR_MODE,
+    ) -> NTSTATUS;
+}
 
 extern "C" {
     static mut NtGlobalFlag: ULONG;
@@ -190,7 +211,8 @@ pub unsafe extern "system" fn ObpDeleteObject(Object: PVOID, CalledFromWorkerThr
     if !(*Header).SecurityDescriptor.is_null() {
         let mut CalloutIrql: KIRQL = 0;
         ObpCalloutStart(core::ptr::addr_of_mut!(CalloutIrql));
-        ((*ObjectType).TypeInfo.SecurityProcedure.unwrap())(
+        crate::obsecure::ObpCallSecurityProcedure(
+            (*ObjectType).TypeInfo.SecurityProcedure,
             Object,
             _SECURITY_OPERATION_CODE_DeleteSecurityDescriptor,
             core::ptr::null_mut(),
@@ -943,7 +965,9 @@ pub unsafe extern "system" fn ObCreateObjectType(
     }
 
     if (*ObjectTypeInitializer).SecurityProcedure.is_none() {
-        (*LocalObjectType).TypeInfo.SecurityProcedure = Some(SeDefaultObjectMethod);
+        (*LocalObjectType).TypeInfo.SecurityProcedure = Some(core::mem::transmute(
+            SeDefaultObjectMethod as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> NTSTATUS,
+        ));
     }
 
     if (*LocalObjectType).TypeInfo.UseDefaultObject != 0 {
@@ -1184,7 +1208,8 @@ pub unsafe extern "system" fn NtQueryObject(
                         | DACL_SECURITY_INFORMATION
                         | SACL_SECURITY_INFORMATION;
 
-                    ((*ObjectType).TypeInfo.SecurityProcedure.unwrap())(
+                    crate::obsecure::ObpCallSecurityProcedure(
+            (*ObjectType).TypeInfo.SecurityProcedure,
                         Object,
                         _SECURITY_OPERATION_CODE_QuerySecurityDescriptor,
                         core::ptr::addr_of_mut!(SecurityInformation),

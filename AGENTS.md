@@ -116,6 +116,15 @@ same: `/proc/<pid>/environ` not `sccache -s`; `dmesg` not the killer's message; 
 `$?`. This is why "judge build success by artifact existence" (below) holds so well: it never
 consults rc at all.
 
+**A path AROUND a guard is not a path THROUGH it.** Both halves of this pair bypassed a
+check that existed and would have fired: a replay harness built from `manifest.json`'s argv
+never called `check_trace`, and so ran on media rebuilt two hours earlier; a line citation read
+from a working tree instead of `git show origin/master:<path>` came from a checkout 411 commits
+behind. Both produce plausible output, both are wrong in a direction nobody checks, and in both
+cases the guard was one call away. When you reconstruct a tool's inputs by hand, you inherit its
+checks as your responsibility — enumerate what the real entry point does before the work, not
+after it surprises you.
+
 **Deferral is temporary, never silent.** Deferred work stays tracked and owed. Don't drop a
 thing permanently by calling it "out of scope."
 
@@ -179,6 +188,28 @@ One `ps` killed it. Note also what that host-status could NOT tell me: one of th
 holding build permits was the user's own, deliberately taking over a tarpitted lane. A position
 is a measurement, not a property — timestamp it or don't send it, and say which parts you
 observed and which you inferred.
+
+**The check you owe a claim is usually already SCHEDULED — publish at the artifact, not at
+the hypothesis.** The rule above says check before relaying; this says you were about to do
+the check anyway, as the next step of the work, and doing it first costs nothing. Four times
+in one day I wrote the confident version of a finding and found the refutation minutes later
+while building the very thing that depended on it: the c2rust root cause, a cross-worktree
+claim committed to a doc with the word "Measured" beside it after I had said out loud I could
+not demonstrate the mechanism, "235 functions bought twice" that were one purchase written to
+two paths, and "327 re-buys" whose headline example was a retry. Every one was accurate about
+what I had seen and wrong about what it meant. The defect is the ORDER, not the accuracy —
+and the tell is that you can name the artifact that would settle it. If you can, wait for it.
+
+**Deference is the failure mode of independent verification — publish the METHOD, not just
+the number.** Two lanes counted the same bytes and got 483 and 327; the disagreement located
+a real bug in each, and neither could have found their own. That only worked because both
+published how they normalized. Had we exchanged totals alone, one would have deferred to the
+other and the bug would have survived inside whichever number won — a second pass that ends
+in agreement by politeness has verified nothing. Two habits made every disagreement that day
+resolvable instead of a standoff: show the normalization, and settle it against the bytes
+(`sha256` the three copies, read the actual `.partial` extension) rather than by argument.
+Then put the answer in a TOOL: `0 → 327 → 60 → 65` and only the last is a command anyone can
+run — the rest lived in messages between sessions that no longer exist.
 
 **A TRUE observation about our tree is not an observation about the thing it depends on.**
 The shape: you check something local, the check comes back clean, and you attribute the

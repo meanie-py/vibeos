@@ -229,7 +229,7 @@ unsafe extern "fastcall" fn IntNotifyWinEvent(
     ne.idObject = idObject;
     ne.idChild = idChild;
     ne.flags = flags;
-    if !gpsi.is_null() && ((*gpsi).dwInstalledEventHooks & GetMaskFromEvent(event)) != 0 {
+    if !gpsi.is_null() && (crate::wow64::psi::installed_event_hooks() & GetMaskFromEvent(event)) != 0 {
         NtUserxNotifyWinEvent(hwnd, core::ptr::addr_of_mut!(ne) as PVOID);
     }
 }
@@ -248,7 +248,7 @@ unsafe extern "C" fn IntNotifyWinEvent(
     ne.idObject = idObject;
     ne.idChild = idChild;
     ne.flags = flags;
-    if !gpsi.is_null() && ((*gpsi).dwInstalledEventHooks & GetMaskFromEvent(event)) != 0 {
+    if !gpsi.is_null() && (crate::wow64::psi::installed_event_hooks() & GetMaskFromEvent(event)) != 0 {
         NtUserxNotifyWinEvent(hwnd, core::ptr::addr_of_mut!(ne) as PVOID);
     }
 }
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn NotifyWinEvent(
     idObject: LONG,
     idChild: LONG,
 ) {
-    if !gpsi.is_null() && ((*gpsi).dwInstalledEventHooks & GetMaskFromEvent(event)) != 0 {
+    if !gpsi.is_null() && (crate::wow64::psi::installed_event_hooks() & GetMaskFromEvent(event)) != 0 {
         NtUserNotifyWinEvent(event, hwnd, idObject, idChild);
     }
 }
@@ -451,7 +451,7 @@ pub unsafe extern "system" fn SetWinEventHook(
 pub unsafe extern "system" fn IsWinEventHookInstalled(event: DWORD) -> BOOL {
     if !((*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO).is_null() {
         return if !gpsi.is_null() {
-            (((*gpsi).dwInstalledEventHooks & GetMaskFromEvent(event)) != 0) as BOOL
+            ((crate::wow64::psi::installed_event_hooks() & GetMaskFromEvent(event)) != 0) as BOOL
         } else {
             0
         };

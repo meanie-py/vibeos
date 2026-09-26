@@ -338,9 +338,10 @@ pub unsafe extern "C" fn SHELL32_IsShellFolderNamespaceItemHidden(SubKey: PCWSTR
     let mut name: [u16; CHARS_IN_GUID as usize] = core::mem::zeroed();
     wsprintfW(path.as_mut_ptr(), CPP_COM_WSTR_BA2342D760A2.as_ptr(), REGSTR_PATH_EXPLORER, SubKey);
     SHELL32_GUIDToStringW(Clsid.cast(), name.as_mut_ptr());
-    let mut data: u32 = 0;
-    let mut size: u32 = core::mem::size_of::<u32>() as u32;
-    (((RegGetValueW(HKEY_CURRENT_USER, path.as_ptr(), name.as_ptr(), RRF_RT_DWORD, core::ptr::null_mut(), core::ptr::addr_of_mut!(data) as *mut c_void, &mut size) == 0) && (data != 0)) as u8) as i32
+    // Check the value in both HKEY_CURRENT_USER and HKEY_LOCAL_MACHINE (upstream
+    // 9342ed43d9a; the pre-fix body read HKCU only). Returns true if the item should
+    // be hidden in DefView but not in the Explorer folder tree.
+    crate::island::SHRegGetBoolUSValueW(path.as_ptr(), name.as_ptr(), FALSE, FALSE)
 }
 unsafe extern "C" fn TryToLockOrUnlockDrive(hDrive: HANDLE, bLock: BOOL) -> BOOL {
     let mut dwError: DWORD = NO_ERROR;

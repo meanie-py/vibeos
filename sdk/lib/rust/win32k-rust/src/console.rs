@@ -5,6 +5,7 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NOT_IMPLEMENTED};
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_INFO_LENGTH_MISMATCH, STATUS_INVALID_INFO_CLASS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // SafeProbeForRead/Write: NTAPI (extern "system" = stdcall i386 / cdecl else),
 // Length = SIZE_T (canonical signature — see icm.rs).
@@ -84,8 +85,14 @@ unsafe fn NtUserConsoleControl_impl(
             );
             if !NT_SUCCESS(Status) {
                 break 'block;
-            } else {
-                DesktopConsoleThreadInfo = *(ConsoleCtrlInfo as PDESKTOP_CONSOLE_THREAD);
+            } else if !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(DesktopConsoleThreadInfo) as *mut core::ffi::c_void,
+                ConsoleCtrlInfo as *const core::ffi::c_void,
+                core::mem::size_of::<DESKTOP_CONSOLE_THREAD>(),
+            ) {
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                Status = STATUS_ACCESS_VIOLATION;
+                break 'block;
             }
 
             /* Reference the desktop */
@@ -118,12 +125,35 @@ unsafe fn NtUserConsoleControl_impl(
             /* Dereference the desktop */
             ObDereferenceObject(Desktop as PVOID);
 
-            /* Return the information back to the caller (user-mode output pointer —
-             * write_volatile so LLVM can't treat the buffer as captures(none)). */
-            core::ptr::write_volatile(
-                ConsoleCtrlInfo as PDESKTOP_CONSOLE_THREAD,
-                DesktopConsoleThreadInfo,
-            );
+            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+            // C (win32ss/user/ntuser/console.c, NtUserConsoleControl,
+            // ConsoleCtrlDesktopConsoleThread case):
+            //   _SEH2_TRY {
+            //       *(PDESKTOP_CONSOLE_THREAD)ConsoleCtrlInfo = DesktopConsoleThreadInfo;
+            //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+            //       Status = _SEH2_GetExceptionCode();
+            //   } _SEH2_END;
+            //   break;
+            //
+            // Shape: the handler only ASSIGNS Status and falls through to the
+            // case's `break` — there is no separate cleanup, so setting `Status`
+            // here and letting this 'block end naturally (falling through to
+            // `UserLeave(); return Status;` below) reproduces it exactly.
+            //
+            // Note this C _SEH2_TRY wraps a BARE store with no ProbeFor* call at
+            // all (unlike the SafeProbeForWrite used earlier in this same case,
+            // for the initial capture) — so per rule 1 there is no literal
+            // alignment to carry forward, and per safe_copy_raw's own doc this is
+            // exactly the "bare _SEH2_TRY { store } _SEH2_EXCEPT" shape it exists
+            // for: a fault-tolerant copy with NO probing, catching only the
+            // hardware fault the raw store could take.
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                ConsoleCtrlInfo as *mut c_void,
+                core::ptr::addr_of!(DesktopConsoleThreadInfo) as *const c_void,
+                core::mem::size_of::<DESKTOP_CONSOLE_THREAD>(),
+            ) {
+                Status = st;
+            }
         }
     } else if ConsoleCtrl == GuiConsoleWndClassAtom {
         'block: {
@@ -137,13 +167,20 @@ unsafe fn NtUserConsoleControl_impl(
                 ConsoleCtrlInfoLength as SIZE_T,
                 core::mem::size_of::<USHORT>() as u32,
             );
-            if NT_SUCCESS(Status) {
-                gaGuiConsoleWndClass = *(ConsoleCtrlInfo as *mut ATOM);
+            if NT_SUCCESS(Status)
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                && !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(gaGuiConsoleWndClass) as *mut core::ffi::c_void,
+                    ConsoleCtrlInfo as *const core::ffi::c_void,
+                    core::mem::size_of::<ATOM>(),
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
         }
     } else if ConsoleCtrl == ConsoleMakePalettePublic {
         'block: {
-            let hPalette: HPALETTE;
+            let mut hPalette: HPALETTE = core::ptr::null_mut();
 
             if ConsoleCtrlInfoLength as usize != core::mem::size_of::<HPALETTE>() {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
@@ -157,8 +194,14 @@ unsafe fn NtUserConsoleControl_impl(
             );
             if !NT_SUCCESS(Status) {
                 break 'block;
-            } else {
-                hPalette = *(ConsoleCtrlInfo as *mut HPALETTE);
+            } else if !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(hPalette) as *mut core::ffi::c_void,
+                ConsoleCtrlInfo as *const core::ffi::c_void,
+                core::mem::size_of::<HPALETTE>(),
+            ) {
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                Status = STATUS_ACCESS_VIOLATION;
+                break 'block;
             }
 
             /* Make the palette handle public */
