@@ -6920,6 +6920,41 @@ Same family as `$?` after a pipe and `sccache -s` reporting another server: a re
 a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
 conclusion.
 
+### A codegen tool skips a whole ARCH and exits 0, so the FFI substrate drifts unnoticed
+
+**Symptom:** a `-sys` crate's struct layouts disagree with the C headers — `EPROCESS` 1000 bytes
+in C, 992 in Rust — while `generate_bindings.sh` and `verify_sizes.py` both report success and
+the OS still boots. The drift is invisible because the bindings and the size assertions were
+generated from the *same* stale headers, so they agree with each other; only regenerating one
+side exposes it.
+
+**Cause:** a preamble stub colliding with a header prototype. Both scripts define
+`__wfi()`/`__yield()` as zero-argument function-like macros (added because libclang cannot
+handle the intrinsics' inline-asm bodies). Once `intrin_arm64.h` arrived, `intrin.h`'s
+`void __yield(void);` parsed as a *one-argument* invocation of that macro → "too many arguments
+provided to function-like macro invocation". bindgen aborted on arm64; `verify_sizes.py`
+emitted zero arm64 assertions. Two things hid it: the retry loop only knows how to blank
+offending lines *in the generated file*, so a header error can never be cleared by it, and the
+failure path `return`ed without a nonzero exit. The `_INTRIN_H_`/`_INTRIN_X86_H_` defines that
+look like they suppress the header are inert — `intrin.h` is `#pragma once` with an
+unconditional `#define __INTRIN_H_` and no `#ifndef`.
+
+**Scope check before you believe it:** three tools carry this same preamble
+(`verify_sizes.py`, `generate_bindings.sh`, `tools/verify_offsets.py`), so grep for the stub
+rather than fixing one. And the *size* verifier understates the damage — the OFFSET verifier
+showed 43 failures over 7 structs, including a field inserted at offset 0
+(`_IO_BUS_TYPE_GUID_LIST.Lock`), which displaces every field after it. Judge severity by the
+EARLIEST drifted offset per struct, not by the count: a new field at the tail of an
+11824-byte KPRCB is harmless, a new field at offset 0 is not.
+
+**Fix:** drop the stubs where a real clang drives the compile (it handles the asm fine); print
+the actual `error:` diagnostics rather than the first N lines of stderr, which are all
+"In file included from" and name nothing; and make the per-arch failure set a nonzero exit so
+"2 of 3 arches" can never read as success. **A generated-artifact tool must fail the BUILD when
+an arch drops out, not narrate it** — a tool's own claim that it succeeded is not evidence about
+that tool, and the cheap independent check is a standalone `_Static_assert` on `sizeof`/`offsetof`
+that does not go through the tool at all.
+
 ### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
 
 **Symptom:** you isolate a quarantined failure to reproduce it (`--only <one suite>`), the boot

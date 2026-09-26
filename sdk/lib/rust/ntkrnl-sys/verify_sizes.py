@@ -397,10 +397,18 @@ def main():
                 print(f"  Wrote {out_path.name}: {count} size assertions")
 
     print()
-    if check_mode and not all_ok:
-        print("FAILED — some assertions need regeneration")
+    # all_ok must be honoured in BOTH modes. It used to be consulted only under
+    # --check, so a generate run that lost an entire arch — arm64 was silently
+    # unmeasurable for six days — printed "Done." and exited 0. A codegen tool that
+    # drops an arch has to fail the build, not narrate it.
+    if not all_ok:
+        if check_mode:
+            print("FAILED — some assertions need regeneration")
+        else:
+            print("FAILED — at least one arch produced NO assertions (see errors above).")
+            print("The other arches' files were still written; this tree is now INCONSISTENT.")
         sys.exit(1)
-    elif not check_mode:
+    if not check_mode:
         print("Done. Add size_check modules to lib.rs and run cargo check.")
 
 

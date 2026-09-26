@@ -524,6 +524,43 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
+  would have caught it were broken by one cause and both exited 0. OPEN, owed**
+  (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs
+  1016; also `EJOB`, `KIPCR`, `ARBITER_ALTERNATIVE`, `IO_BUS_TYPE_GUID_LIST`,
+  `PS_JOB_TOKEN_FILTER`, `RTL_BSD_DATA`, `STACK_TRACE_DATABASE` -- ~10-11 structs per arch.
+  Root cause is ONE line in two places: the bindgen wrapper and `verify_sizes.py` both
+  define `__wfi()`/`__yield()` as zero-arg function-like macros, and since
+  `intrin_arm64.h` landed (`28a26f3b664`, 2026-09-20) `intrin.h`'s `void __yield(void);`
+  prototype parses as a one-argument invocation of that macro. So `bindgen` ABORTS on arm64
+  (no arm64 regeneration has been possible since 2026-09-20) and `verify_sizes.py` emitted
+  ZERO arm64 assertions -- and, because the error is in a header rather than in the
+  generated file, its retry loop that blanks offending type lines could never clear it.
+  Both scripts reported success. `verify_sizes.py` is FIXED (real diagnostics + stubs
+  dropped; a real clang handles the asm bodies that libclang could not). `generate_bindings.sh`
+  is NOT: dropping the stub there is proven to make arm64 bindgen succeed (rc=0, 88608
+  lines) but applying it means regenerating the substrate, which touches every crate naming
+  those structs. Owed: that regeneration, on a quiet host, as its own change. Note the
+  `_INTRIN_H_`/`_INTRIN_X86_H_` defines beside the stubs are inert -- `intrin.h` is
+  `#pragma once` + an unconditional `#define __INTRIN_H_` with no `#ifndef`, and
+  `_INTRIN_X86_H_` matches nothing in the tree.
+
+  **`tools/verify_offsets.py` has the SAME bug** (same `intrin.h:1029` failure, same rc=0,
+  same silent arm64 skip -- and it ignores `--arch` and runs all three anyway), and its
+  regenerated amd64/i386 files moved 80 of 132 lines, which is independent corroboration
+  from a second implementation. It also makes the drift FIELD-LEVEL, not just trailing
+  size: 43 `offset_of!` assertions fail on amd64 across 7 structs. Earliest drifted field
+  per struct, which is what decides severity:
+  `_IO_BUS_TYPE_GUID_LIST.Lock @ 0` (a field inserted at the FRONT -- every field after it
+  is displaced), `_PS_JOB_TOKEN_FILTER.CapturedSids @ 8`, `_ARBITER_ALTERNATIVE.Alignment
+  @ 24`, `_RTL_BSD_DATA.ErrorInfo @ 68`, `_EJOB.UIRestrictionsClass @ 248`, and -- benignly
+  -- `_KPRCB.FeatureBitsHigh @ 11416` and `_KIPCR.ContextSwitches @ 11808`, both new tail
+  fields on structs of 11824 bytes. So the reason the OS still boots is that the two
+  boot-critical structs (KPRCB/KIPCR) drifted only at the TAIL; the front-loaded drift is in
+  structs the boot path does not reach. That is luck, not safety. (I first wrote that all
+  the drift was tail padding. That was wrong, and I had not yet run the offset verifier
+  when I wrote it.)
+
 - **`test_payload_launched` misses a launch marker that IS in its own serial log. OPEN,
   owed** (2026-09-25). `smoke --arch i386 --payload oldcrt`: the payload's
   `payload/i386-uefi_serial.log` carries `[OLDCRT] done PASS` at byte 78,018, pytest
