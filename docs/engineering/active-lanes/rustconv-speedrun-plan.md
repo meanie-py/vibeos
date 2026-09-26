@@ -84,8 +84,17 @@ every translated body. **Owed, in order:**
      `ex/init.rs` SharedUserData Reserved1/3 (amd64 stored truncated 64-bit constants, 0
      for the WOW64 system range start; elsewhere Reserved1 got SystemRangeStart, not
      HighestUserAddress); user32 `GetClassLongA/W` `_WIN64` gated amd64-only (new gated
-     class, `scan_win64_cfg`); and a fourth, stale copy of arm64 SMP `SYNCH_LEVEL` = 2 in
+     class — now the general `scan_cfg_vs_c`, see below); and a fourth, stale copy of arm64 SMP `SYNCH_LEVEL` = 2 in
      `ke-inlines` that the July-25 fix missed (dead under smp today, now 12).
+   - Then mechanized: `scan_cfg_vs_c` (gated, empty baseline) evaluates every in-body arch
+     cfg and every C `#if` in the twin (arch macros, `_WIN64`, `_MI_PAGING_LEVELS`) to arch
+     sets and flags a Rust set that splits arches the C keeps together. Of 1,648 in-body
+     arch cfgs: 438 agree with the C mechanically, 548 are ABI/layout spellings or
+     per-arch file twins, 77 mix in non-arch features, and ~650 have no C arch `#if` to
+     compare against — the Rust-only cfgs, still a reading job. First run flagged 54; the
+     rule refinements (arm64-unaware C, paging levels, file twins, bindgen layout) left 15,
+     all Rust-only diagnostics / bring-up allowances, now `nolint`ed with reasons. Only
+     real hit: GetClassLongA/W, already fixed. Supersedes the one-day `scan_win64_cfg`.
    - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
      `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
      body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.

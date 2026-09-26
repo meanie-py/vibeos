@@ -414,7 +414,7 @@ pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
 """,
 }
 
-# scan_win64_cfg. user32 before the fix: class.c's `#ifdef _WIN64` index check was
+# scan_cfg_vs_c. user32 before the fix: class.c's `#ifdef _WIN64` index check was
 # translated as amd64-only, so arm64 returned a truncated pointer for GCLP_* indices.
 _WIN64_CFG_BAD = """\
 pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
@@ -1735,8 +1735,8 @@ CONTROLS: list[Control] = [
         good=_BOOL_WIDTH_GOOD,
     ),
     Control(
-        name="scan_win64_cfg",
-        script="tools/scan_win64_cfg.py",
+        name="scan_cfg_vs_c",
+        script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
         bad={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD},
         good={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD},

@@ -4937,8 +4937,8 @@ and check each against the C: a per-arch cfg is *legitimate* only where the C br
 amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
 user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
 truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
-Spell it `target_pointer_width = "64"`. Gated by `scan_win64_cfg` (C twin says `_WIN64` and
-names no specific arch).
+Spell it `target_pointer_width = "64"`. Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg
+against the arch sets the C twin's own `#if`s draw.
 
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
