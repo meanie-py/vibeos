@@ -91,6 +91,11 @@ FAMILIES = [
         "obj_root": "dll/win32/msvcrt",
         "spec": "dll/win32/msvcrt/msvcrt.spec",
         "archive": "dll/win32/msvcrt/libmsvcrt_crt_cargo.a",
+        # Which objects are LIVE is read from ninja, never from which files sit in a
+        # directory: the DLL target's link line, and the static library's own archive
+        # command for the flipped C objects. See _link_inputs.
+        "link_target": "msvcrt",
+        "static_lib": "dll/win32/msvcrt/libmsvcrt_static.a",
         # Sources whose edits must be reflected in the archive before a verdict means
         # anything. The crate list mirrors the CMakeLists GLOB that drives the rebuild.
         "archive_sources": [
@@ -179,19 +184,64 @@ def _require_fresh(build: Path, fam: dict, arch: str) -> None:
         )
 
 
-def _providers(build: Path, fam: dict, nm: Path) -> set[str]:
+def _ninja_last_command(build: Path, target: str) -> str:
+    """The last command ninja would run for `target` -- a link or an archive step."""
+    try:
+        res = subprocess.run(
+            [
+                "bash",
+                str(ROOT / "tools" / "canon-run.sh"),
+                "ninja",
+                "-C",
+                str(build),
+                "-t",
+                "commands",
+                target,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=ROOT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        sys.exit(f"verify_cohab_coverage: could not ask ninja for {target}: {exc}")
+    lines = [ln for ln in res.stdout.splitlines() if ln.strip()]
+    if res.returncode != 0 or not lines:
+        sys.exit(
+            f"verify_cohab_coverage: `ninja -t commands {target}` failed in {build} "
+            f"(exit {res.returncode}): {res.stderr.strip()[:1000]}\n"
+            f"  fix: ./vibeos-cli build --arch <arch>"
+        )
+    return lines[-1]
+
+
+def _link_inputs(build: Path, fam: dict) -> tuple[list[Path], list[Path]]:
+    """(objects linked DIRECTLY into the module, members of the flipped static library).
+
+    From ninja, not from a directory glob. Globbing `CMakeFiles/*.dir` made the verdict
+    depend on which files happened to exist: when msvcrt's varargs shims moved from
+    msvcrt.dir to msvcrt_rust_shims.dir, every build dir configured before the move kept
+    stale copies in msvcrt.dir, and the glob counted them as live providers alongside the
+    real ones -- harmless while identical, a false "provided" the moment the shim changed.
+    A stale C twin in the static library's directory posed as live the same way.
+    """
+
+    def objs(cmd: str) -> list[Path]:
+        return [build / t for t in cmd.split() if t.endswith(".obj")]
+
+    return objs(_ninja_last_command(build, fam["link_target"])), objs(
+        _ninja_last_command(build, fam["static_lib"])
+    )
+
+
+def _providers(build: Path, fam: dict, nm: Path, direct: list[Path]) -> set[str]:
     """Every global symbol that RESOLVES BEFORE the flipped static library does."""
     out: set[str] = set()
-    static_dir = Path(fam["obj_dir"]).name
     sources = []
     archive = build / fam["archive"]
     if archive.is_file():
         sources.append(archive)
-    sources += [
-        o
-        for o in sorted((build / fam["obj_root"]).rglob("CMakeFiles/*.dir/*.obj"))
-        if o.parent.name != static_dir
-    ]
+    sources += direct
     for src in sources:
         for kind, name in _symbols(nm, src, "defined"):
             if kind.isupper():
@@ -199,10 +249,10 @@ def _providers(build: Path, fam: dict, nm: Path) -> set[str]:
     return out
 
 
-def _referenced(build: Path, fam: dict, nm: Path) -> set[str]:
+def _referenced(fam: dict, nm: Path, objects: list[Path]) -> set[str]:
     """Everything the module still needs from outside some TU, plus its export table."""
     out: set[str] = set()
-    for obj in sorted((build / fam["obj_root"]).rglob("*.obj")):
+    for obj in objects:
         for _kind, name in _symbols(nm, obj, "undefined"):
             out |= _spellings(name)
     spec = ROOT / fam["spec"]
@@ -243,14 +293,16 @@ def check_family(fam: dict, arch: str, nm: Path) -> list[str]:
         )
 
     _require_fresh(build, fam, arch)
-    providers = _providers(build, fam, nm)
+    direct, members = _link_inputs(build, fam)
+    live_members = set(members)
+    providers = _providers(build, fam, nm, direct)
     if not providers:
         sys.exit(
             f"verify_cohab_coverage: nothing links ahead of {fam['obj_dir']} in build-{arch} "
             f"— with no Rust archive and no module objects every symbol would look missing, "
             f"which is a false verdict, not a finding.\n  fix: ./vibeos-cli build --arch {arch}"
         )
-    referenced = _referenced(build, fam, nm)
+    referenced = _referenced(fam, nm, direct + members)
 
     findings = []
     for mod in _flipped_modules(fam):
@@ -258,7 +310,9 @@ def check_family(fam: dict, arch: str, nm: Path) -> list[str]:
             continue
         obj_rel = fam.get("objects", {}).get(mod, f"{mod}.c.obj")
         obj = obj_dir / obj_rel
-        if not obj.is_file():
+        # A LIVE member of the static library, not merely a file on disk: a twin whose
+        # source moved leaves its old object behind, and that one links into nothing.
+        if obj not in live_members:
             # Two very different reasons an object can be absent, and skipping both alike is
             # how a flipped module gets checked against NOTHING and still reports clean. If
             # the C source exists, this arch simply does not compile it (`except_i386.c` on
