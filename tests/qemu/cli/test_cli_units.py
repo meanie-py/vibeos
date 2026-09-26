@@ -5595,16 +5595,27 @@ def test_every_baseline_line_is_immune_to_line_drift():
     blind: list[str] = []
     for path in baselines:
         for line in path.read_text().splitlines():
-            m = loc.search(line)
-            if not line.strip() or not m:
-                continue
-            drifted = line[: m.start("n")] + str(int(m.group("n")) + 1000) + line[m.end("n") :]
-            if lints._finding_key(line) != lints._finding_key(drifted):
-                blind.append(f"{path.name}: {line[:110]}")
+            # EVERY location, one at a time: perturbing only the first let the embedded
+            # twin list of scan_dropped_asserts drift unseen behind its stripped prefix.
+            for m in loc.finditer(line):
+                n = str(int(m.group("n")) + 1000)
+                drifted = line[: m.start("n")] + n + line[m.end("n") :]
+                if lints._finding_key(line) != lints._finding_key(drifted):
+                    blind.append(f"{path.name}: {line[:110]}")
+                    break
     assert not blind, (
         f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
         f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
     )
+
+
+def test_lint_baseline_ignores_drift_in_locations_inside_the_message():
+    """scan_dropped_asserts: `h:1033: MI_UPDATE_VALID_PTE: … (a/section.rs:252, b.rs:1454)`."""
+    base = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:252, r/s.rs:14)"}
+    drifted = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:258, r/s.rs:14)"}
+    assert lints._new_findings(drifted, base) == []
+    moved = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/other.rs:252, r/s.rs:14)"}
+    assert lints._new_findings(moved, base) != []
 
 
 def test_lint_baseline_compares_prefixless_findings_verbatim():

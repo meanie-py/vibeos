@@ -135,7 +135,21 @@ _TAGGED_LOCATION = re.compile(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+
 _TRAILING_LOCATION = re.compile(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$")
 
 
+# And locations INSIDE the message: scan_dropped_asserts lists the Rust twins as
+# `… Rust has 0 (sdk/lib/rust/…/section.rs:252, …/shim_exports.rs:1454)` after its own
+# `file:line:` prefix. Only the prefix was stripped, so a 6-line fix in section.rs read as
+# "2 new" for two findings nobody touched (2026-09-26). A path with a real source extension
+# followed by `:digits` is a location wherever it sits.
+_INNER_LOCATION = re.compile(
+    r"(?P<f>[\w./+-]+\.(?:rs|c|h|cpp|hpp|py|md|txt|cmake|spec|toml|sh|S|s|asm|inc)):\d+(?::\d+)?\b"
+)
+
+
 def _finding_key(line: str) -> str:
+    return _INNER_LOCATION.sub(r"\g<f>", _finding_key_outer(line))
+
+
+def _finding_key_outer(line: str) -> str:
     m = _LOCATION.match(line)
     if m:
         return f"{m.group('file')}: {line[m.end() :].strip()}"
@@ -617,7 +631,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    # Three bug CLASSES that rustconv difftest-contract found in shipping Rust on
+    # Four bug CLASSES that rustconv difftest-contract found in shipping Rust on
     # 2026-09-26, each now a $0 check over every translated body. None was visible to
     # smoke; all compile, link and boot. The two C-oracle scanners pair a Rust function
     # with its C twin by NAME (tools/c_twin.py, index cached in tools/.cache/).
@@ -626,8 +640,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     #   misaligned_cast: a `[u8; N]` cast to *mut u32 and dereferenced (cryptlib sha1 +18).
     #   dropped_null_guard: the C null-tests an out-param, the Rust stores through it
     #     unconditionally (rtl compress, ole32, mlang, msvcrt, fastfat).
-    # All three were driven to zero before wiring; baselines are EMPTY.
-    for lint_name in ("scan_ptr_byte_diff", "scan_misaligned_cast", "scan_dropped_null_guard"):
+    #   store_on_failure: the C writes an out-param only after its last failure return,
+    #     the Rust writes it and then returns a status that can fail (rtl compress).
+    # All four were driven to zero before wiring; baselines are EMPTY.
+    for lint_name in (
+        "scan_ptr_byte_diff",
+        "scan_misaligned_cast",
+        "scan_dropped_null_guard",
+        "scan_store_on_failure",
+    ):
         script = repo / "tools" / f"{lint_name}.py"
         specs.append(
             (lint_name, [py, str(script), "--lint"] if script.is_file() else ["MISSING"], "stdout")
