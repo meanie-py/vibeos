@@ -165,6 +165,31 @@ Every staged payload carries a `manifest.json` with the commit it came from and
 whether the tree was dirty. Tie each board result to that, never to "what was on
 the card".
 
+## USB input: the Pico
+
+A Pico 2 W running the picousb firmware (`D:\home\Projects\picousb`) sits in a
+Pi USB port. It presents a boot keyboard, boot mouse, mass storage and an
+absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
+did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
+in the script header):
+
+```bash
+tools/pi4/pico.sh usb                       # mounted / resets / per-endpoint completions
+tools/pi4/pico.sh type 'hello' --delay 30
+tools/pi4/pico.sh pointer click 16384 16384 # absolute, 0..32767 per axis
+```
+
+The token file is created by the bench owner; agents pass its path and never
+read it. The Pico is powered by the Pi, so it reboots with every power cycle
+and is on Wi-Fi ~12.5 s after power-on: too late for the UEFI F1 window, which
+stays on serial.
+
+Baseline, 2026-09-26 (build `f5abd8cee6a4`, before usbxhci runs on the Pi):
+UEFI configures the Pico by ~17 s and polls its keyboard endpoint; at hand-over
+to the loader (~57 s) a bus reset unmounts it, and under VibeOS it stays
+unmounted. usbxhci on the Pi is working when `usb` shows `mounted=True` with
+growing completions at the desktop.
+
 ## Firmware facts worth knowing
 
 - `acpiview -s DBG2` / `-s APIC` in the UEFI Shell show what the loader will

@@ -564,10 +564,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   arm64 `KeAcquireSpinLockRaiseToDpc` only raised IRQL and never took the lock, which
   under real concurrency corrupted the PFN lists (`0x4E`). `smoke --smp 4` 3/3, and the
   Pi runs four cores to the desktop.
-- **Notepad's menu bar renders blank. OPEN** (seen 2026-09-26). The `File Edit Format
-  View Help` bar is an empty strip, on arm64 QEMU and on a Raspberry Pi 4 alike (the
-  smoke screenshot shows it too), while the title bar, status bar and taskbar draw
-  text fine. Not investigated.
+- **Notepad's menu bar renders blank. FIXED on master, cause not traced** (seen
+  2026-09-26 morning on arm64 QEMU and the Pi). The same evening the Pi drew the full
+  `File Edit Format View Help` bar on build `f5abd8cee6a4`; the fix came in with a
+  master merge and was not identified.
 - **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
   would have caught it were broken by one cause and both exited 0. OPEN, owed**
   (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs
