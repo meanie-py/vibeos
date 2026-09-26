@@ -1796,10 +1796,10 @@ Licensed under the MIT License.
 
 - Upstream: https://ijg.org/
 - Version: 9f
-- In this tree: `dll/3rdparty/libjpeg`, `sdk/include/reactos/libs/libjpeg`
+- In this tree: `vendor/libjpeg`
 - Licence: IJG
 - Modified by us: yes, see `vendor-patches/libjpeg.patch`
-- Grant reproduced from: `dll/3rdparty/libjpeg/README`
+- Grant reproduced from: `vendor/libjpeg/README`
 
 ```
 The Independent JPEG Group's JPEG software
@@ -2966,9 +2966,9 @@ POSSIBILITY OF SUCH DAMAGES.
 
 - Upstream: http://www.libpng.org/pub/png/libpng.html
 - Version: 1.6.58
-- In this tree: `dll/3rdparty/libpng`, `sdk/include/reactos/libs/libpng`
+- In this tree: `vendor/libpng`
 - Licence: libpng-2.0
-- Grant reproduced from: `dll/3rdparty/libpng/docs/LICENSE`
+- Grant reproduced from: `vendor/libpng/docs/LICENSE`
 
 ```
 COPYRIGHT NOTICE, DISCLAIMER, and LICENSE
@@ -3147,9 +3147,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - Upstream: http://www.libtiff.org/
 - Version: 4.7.1
-- In this tree: `dll/3rdparty/libtiff`, `sdk/include/reactos/libs/libtiff`
+- In this tree: `vendor/libtiff`
 - Licence: libtiff (BSD-like)
-- Grant reproduced from: `dll/3rdparty/libtiff/tif_open.c (header comment)`
+- Grant reproduced from: `vendor/libtiff/tif_open.c (header comment)`
 
 ```
 Copyright (c) 1988-1997 Sam Leffler
@@ -3590,9 +3590,9 @@ THE SOFTWARE.
 
 - Upstream: https://gitlab.gnome.org/GNOME/libxslt
 - Version: 1.1.42
-- In this tree: `dll/3rdparty/libxslt`, `sdk/include/reactos/libs/libxslt`
+- In this tree: `vendor/libxslt`
 - Licence: MIT
-- Grant reproduced from: `dll/3rdparty/libxslt/Copyright`
+- Grant reproduced from: `vendor/libxslt/Copyright`
 
 ```
 Licence for libxslt except libexslt
@@ -5272,11 +5272,11 @@ SOFTWARE.
 
 - Upstream: https://zlib.net/
 - Version: 1.3.2
-- In this tree: `sdk/lib/3rdparty/zlib`, `sdk/include/reactos/libs/zlib`
+- In this tree: `vendor/zlib`
 - Licence: Zlib
 - Also contains: Info-ZIP — contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c) 1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP licence, 2009-Jan-02 version), now vendored. The code was always licensed this way — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a licence file and this registry recorded only Zlib. The obligation is live: minizip is built into rapps and zipfldr.
 - Modified by us: yes, see `vendor-patches/zlib.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/zlib/LICENSE`
+- Grant reproduced from: `vendor/zlib/LICENSE`
 
 ```
 Copyright notice:

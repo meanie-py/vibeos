@@ -6,7 +6,8 @@
 |---|---|---|
 | 1 | dxtn, virtio, dosfstools, cmidriver, ac97, netkvm, ms-compiler-tests, stlport (sources), glu (src + include), libsamplerate, schilytools, treelist, tsclient | **moved** |
 | 2a | standalone public headers: GL → `vendor/opengl-headers/include/GL`, `d3dkmthk.h` → `vendor/libdxg/include`, stlport's include tree → `vendor/stlport/stlport` (upstream's layout; stlport is now whole) | **moved** — the two public roots are the `VENDOR_INCLUDE_ROOTS` list in the top-level CMakeLists, appended LAST so a vendored header can never shadow an SDK one |
-| 2b | the `sdk/include/reactos/libs/*` header halves (libjpeg, libpng, libtiff, libxslt, mbedtls+psa, zlib) — each moves WITH its sources as one `vendor/<lib>`, since consumers reach them as bare `<zlib.h>` through per-lib roots the move plan cannot see | owed |
+| 2b | zlib, libjpeg, libpng, libtiff, libxslt — each rejoined into one `vendor/<lib>` with its headers at `vendor/<lib>/include` (libxslt at `include/libxslt`, so `<libxslt/x.h>` still resolves; msxml3 gained that root) | **moved** |
+| 2c | mbedtls + psa headers: 78 files spell `<mbedtls/…>`/`<psa/…>` through the GLOBAL `sdk/include/reactos/libs` root, so it goes with its sources in its own commit (it is also one of the expensive five) | owed |
 | 3 | CRT-coupled: `sdk/lib/crt/math/ieee754` (neighbours `#include "ieee754/ieee754.h"`), `libm_sse2`; host tool pair chmc + lzx_compress (reach out to `../../port`) | owed |
 | 4 | mstsc — split first: rdesktop's engine is vendored, the Win32 front end (connectdialog.c, settings.c, .rc) is ReactOS's | owed |
 | 5 | the expensive five, one per commit: ucrt, wdf, acpica, mbedtls, fex | owed |

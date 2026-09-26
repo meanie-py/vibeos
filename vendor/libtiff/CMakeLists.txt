@@ -55,7 +55,7 @@ list(APPEND SOURCE
 
 add_library(libtiff MODULE ${SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/libtiff.def)
 add_pch(libtiff precomp.h SOURCE)
-target_include_directories(libtiff PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/libtiff)
+target_include_directories(libtiff PUBLIC ${REACTOS_SOURCE_DIR}/vendor/libtiff/include)
 
 if(MSVC)
     # error C4311: 'type cast': pointer truncation from 'thandle_t' to 'int'

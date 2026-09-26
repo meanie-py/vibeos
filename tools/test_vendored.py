@@ -69,8 +69,11 @@ def test_reactos_own_code_under_libs_is_not_swept_up():
         "fast486",
     ):
         assert not reg.is_vendored(f"sdk/include/reactos/libs/{ours}/x.h"), ours
-    for foreign in ("zlib", "mbedtls", "libpng"):
-        assert reg.is_vendored(f"sdk/include/reactos/libs/{foreign}/x.h"), foreign
+    # mbedtls's headers still sit in that mixed directory; zlib's and libpng's moved into
+    # their own vendor/<lib>/include with the rest of the library (2026-09-26).
+    assert reg.is_vendored("sdk/include/reactos/libs/mbedtls/x.h")
+    for foreign in ("zlib", "libpng"):
+        assert reg.is_vendored(f"vendor/{foreign}/include/x.h"), foreign
 
 
 def test_prefix_match_respects_path_boundaries():

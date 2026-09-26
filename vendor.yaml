@@ -875,11 +875,11 @@ trees:
       Font rasteriser, ~208K lines and the single largest vendored tree. win32k
       consumes it through a stable C API; upstream tracking beats ownership.
 
-  - path: sdk/lib/3rdparty/zlib
+  - path: vendor/zlib
     name: zlib
     upstream: https://zlib.net/
     license: Zlib
-    license_file: sdk/lib/3rdparty/zlib/LICENSE
+    license_file: vendor/zlib/LICENSE
     license_extra:
       Info-ZIP: >-
         contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c)
@@ -891,10 +891,8 @@ trees:
         is built into rapps and zipfldr.
     modified: yes  # 10 lines across 3 files under contrib/minizip; zlib proper is pristine
     patch: vendor-patches/zlib.patch
-    headers:
-      - sdk/include/reactos/libs/zlib
     version:
-      file: sdk/include/reactos/libs/zlib/zlib.h
+      file: vendor/zlib/include/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
     review: >
       BUMPED 1.2.13 -> 1.3.2 ON 2026-09-20, and the delta SHRANK: 14 patched lines down to
@@ -1603,20 +1601,18 @@ trees:
       a delete-and-replace rather than a merge.
     reason: TLS/crypto for schannel and bcrypt; upstream-tracked.
 
-  - path: dll/3rdparty/libjpeg
+  - path: vendor/libjpeg
     name: libjpeg
     upstream: https://ijg.org/
     license: IJG
-    license_file: dll/3rdparty/libjpeg/README
+    license_file: vendor/libjpeg/README
     modified: no  # sources byte-identical to pristine IJG 9d
     patch: vendor-patches/libjpeg.patch
-    headers:
-      - sdk/include/reactos/libs/libjpeg
     version:
       # jversion.h carries the real IJG release ("9d  12-Jan-2020"). The old
       # extractor read JPEG_LIB_VERSION from jpeglib.h, which is 90 for every
       # 9.x release and so cannot tell 9a from 9d — useless for CVE matching.
-      file: sdk/include/reactos/libs/libjpeg/jversion.h
+      file: vendor/libjpeg/include/jversion.h
       pattern: '#define JVERSION\s+"([^ "]+)'
     review: >
       BUMPED 9d -> 9f ON 2026-09-20, and it was the cheapest bump in this registry: the
@@ -1661,14 +1657,15 @@ trees:
       TWO THINGS THE REGISTRY HAD WRONG OR MISSING. The version was recorded as `90`,
       which is the JPEG_LIB_VERSION macro and spans several IJG releases; the actual
       release is 9d (12-Jan-2020), stated in jversion.h, README and change.log. And
-      this tree is SPLIT — the headers live in sdk/include/reactos/libs/libjpeg, where
+      this tree WAS SPLIT — the headers lived in sdk/include/reactos/libs/libjpeg (now
+      vendor/libjpeg/include, rejoined 2026-09-26), where
       jmorecfg.h carries a documented DLL-export patch (JPEG_IMPEXP/JPEG_API) with
       rosdiff.patch sitting beside it, and jconfig.h is upstream's own jconfig.vc
       template trimmed of the cjpeg/djpeg tool flags. Those are build glue, so the
       SOURCE verdict is `no`, but a re-vendor must handle both directories.
     reason: JPEG codec; upstream-tracked.
 
-  - path: dll/3rdparty/libpng
+  - path: vendor/libpng
     name: libpng
     staleness: >
       AUDITED 2026-09-20: was 1.6.39 (2022-11), nineteen patch releases behind on an image
@@ -1686,12 +1683,10 @@ trees:
       exercises it on every boot.
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
-    license_file: dll/3rdparty/libpng/docs/LICENSE
+    license_file: vendor/libpng/docs/LICENSE
     modified: no  # byte-identical to pristine 1.6.39, verified twice
-    headers:
-      - sdk/include/reactos/libs/libpng
     version:
-      file: sdk/include/reactos/libs/libpng/png.h
+      file: vendor/libpng/include/png.h
       pattern: '#define PNG_LIBPNG_VER_STRING "([^"]+)"'
     review: >
       DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19 and it is a CLEAN DROP: all 19
@@ -1702,16 +1697,14 @@ trees:
       definition. Nothing touches bounds checks, allocation or chunk parsing.
     reason: PNG codec; upstream-tracked.
 
-  - path: dll/3rdparty/libtiff
+  - path: vendor/libtiff
     name: libtiff
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
-    license_ref: dll/3rdparty/libtiff/tif_open.c
+    license_ref: vendor/libtiff/tif_open.c
     modified: no  # byte-identical to pristine 4.7.0 (only our 6 config headers differ)
-    headers:
-      - sdk/include/reactos/libs/libtiff
     version:
-      file: sdk/include/reactos/libs/libtiff/tiffvers.h
+      file: vendor/libtiff/include/tiffvers.h
       pattern: 'LIBTIFF, Version ([0-9.]+)'
     review: >
       DE-PATCHED 2026-09-19 — all 43 shared .c files are byte-identical to pristine
@@ -1775,16 +1768,14 @@ trees:
 
     reason: TIFF codec; upstream-tracked.
 
-  - path: dll/3rdparty/libxslt
+  - path: vendor/libxslt
     name: libxslt
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
-    license_file: dll/3rdparty/libxslt/Copyright
+    license_file: vendor/libxslt/Copyright
     modified: no  # de-patched 2026-09-19; one -D replaces the edit
-    headers:
-      - sdk/include/reactos/libs/libxslt
     version:
-      file: sdk/include/reactos/libs/libxslt/xsltconfig.h
+      file: vendor/libxslt/include/libxslt/xsltconfig.h
       pattern: '#define LIBXSLT_DOTTED_VERSION "([^"]+)"'
     review: >
       DE-PATCHED 2026-09-19 — all 28 shared files byte-identical to pristine 1.1.42.
