@@ -40,9 +40,10 @@ unsafe fn io_trace(s: &[u8]) {
     }
 }
 
-// Crate-local (correct, post-upstream-sync) definitions -- NOT the stale
-// ntkrnl_sys::ddk externs (bindgen predates the merge's io.h AccessMode/
-// ULONG_PTR fixes and was never regenerated).
+// Crate-local definitions, because this crate owns these translations. The previous note
+// here said the ddk externs were stale, predating io.h's AccessMode/ULONG_PTR fixes and
+// "never regenerated" -- true when written, false now; the island carries both. Prefer
+// regenerating over shadowing or transmuting when the substrate looks wrong.
 use crate::file::IopGetSetSecurityObject;
 use crate::file::IopCloseFile;
 
@@ -542,11 +543,12 @@ unsafe fn IopCreateObjectTypes() -> BOOLEAN {
     ObjectTypeInitializer.GenericMapping = IopFileMapping;
     // IopCloseFile's real (C-header) signature is ULONG_PTR for the two handle
     // counts; the stale bindgen OB_CLOSE_METHOD typedef (predates the merge's
-    // io.h fix, never regenerated) still says ULONG. Transmute past it, same as
-    // fltmgr's CloseProcedure does for the identical drift.
-    ObjectTypeInitializer.CloseProcedure = Some(core::mem::transmute(
-        IopCloseFile as unsafe extern "system" fn(_, _, _, _, _),
-    ));
+    // Direct assignment, no transmute. This used to transmute past a stale
+    // OB_CLOSE_METHOD that still said ULONG, citing fltmgr as precedent for "the
+    // identical drift". The island is regenerated, so the slot and IopCloseFile agree
+    // and the coercion type-checks -- which is the point: a transmute here would go on
+    // silently accepting a signature that no longer matches.
+    ObjectTypeInitializer.CloseProcedure = Some(IopCloseFile);
     ObjectTypeInitializer.DeleteProcedure = Some(IopDeleteFile);
     // IopGetSetSecurityObject's real (C-header) signature grew a trailing
     // KPROCESSOR_MODE AccessMode param the stale bindgen OB_SECURITY_METHOD

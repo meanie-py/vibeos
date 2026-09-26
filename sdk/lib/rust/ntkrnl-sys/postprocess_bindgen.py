@@ -68,7 +68,14 @@ def wrap_kernel_data_imports(content: str, kernel_data: set[str]) -> tuple[str, 
 
 def extract_bitfield_unit(content: str) -> tuple[str, str]:
     """Extract __BindgenBitfieldUnit definition and return (unit_code, rest)."""
-    pattern = r'(#\[repr\(C\)\]\n#\[derive\([^)]*\)\]\npub struct __BindgenBitfieldUnit.*?)(?=\n#\[repr|\npub type|\npub const|\nunsafe extern)'
+    # `\n#\[derive` MUST be in the boundary set. Without it the non-greedy .*? ran past
+    # the NEXT type's `#[derive(...)]` line to the `#[repr(C)]` under it, so that derive
+    # got swallowed into the extracted bitfield boilerplate. bindgen 0.73 emits
+    # `#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]` + `#[repr(C)]` +
+    # `pub struct __BindgenOpaqueArray<T>` immediately after the bitfield impls, so it
+    # arrived derive-less and `#[derive(Copy, Clone)]` on every struct containing one
+    # (_KPRCB among them) failed to compile.
+    pattern = r'(#\[repr\(C\)\]\n#\[derive\([^)]*\)\]\npub struct __BindgenBitfieldUnit.*?)(?=\n#\[derive|\n#\[repr|\npub type|\npub const|\nunsafe extern)'
     match = re.search(pattern, content, re.DOTALL)
     if match:
         unit_code = match.group(1)
@@ -81,7 +88,9 @@ def extract_bindgen_flex_array(content: str) -> tuple[str, str]:
     """Extract __BindgenUnionField / __IncompleteArrayField definitions."""
     parts_to_remove = []
     for name in ['__BindgenUnionField', '__IncompleteArrayField']:
-        pattern = rf'(#\[repr\(transparent\)\]\npub struct {name}.*?)(?=\n#\[repr|\npub type|\npub const|\nunsafe extern)'
+        # Same boundary hazard as extract_bitfield_unit: `\n#\[derive` must terminate the
+        # non-greedy match or the NEXT type's derive line is swallowed into this one.
+        pattern = rf'(#\[repr\(transparent\)\]\npub struct {name}.*?)(?=\n#\[derive|\n#\[repr|\npub type|\npub const|\nunsafe extern)'
         match = re.search(pattern, content, re.DOTALL)
         if match:
             parts_to_remove.append((match.start(), match.end(), match.group(1)))

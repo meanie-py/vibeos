@@ -1130,9 +1130,16 @@ unsafe fn MmpDeleteSectionInner(ObjectBody: PVOID) {
     }
 }
 
+// The handle counts are ULONG_PTR (OB_CLOSE_METHOD, ndk/obtypes.h:188) — 8 bytes on
+// 64-bit, not ULONG. They were ULONG here while the bindgen island was stale and had
+// OB_CLOSE_METHOD's shape wrong; nothing caught it because the wrong declaration matched
+// the wrong typedef. `ntkrnl_sys::ddk::ULONG_PTR` specifically: the ddk alias is
+// c_ulonglong while `base::ULONG_PTR` is usize — same size, distinct types to rustc, and
+// only the declared one coerces to the CloseProcedure slot.
 unsafe extern "system" fn MmpCloseSection(
     _Process: PEPROCESS, _Object: PVOID, _GrantedAccess: ACCESS_MASK,
-    _ProcessHandleCount: ULONG, _SystemHandleCount: ULONG
+    _ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    _SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {}
 
 #[no_mangle]

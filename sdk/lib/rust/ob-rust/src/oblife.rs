@@ -13,13 +13,13 @@ use ntkrnl_sys::ddk::{
     _OBJECT_HEADER, _OBJECT_TYPE, _OBJECT_HEADER_HANDLE_INFO, _OBJECT_HEADER_NAME_INFO,
     _OBJECT_HEADER_CREATOR_INFO, _OBJECT_HEADER_QUOTA_INFO, _OBJECT_CREATE_INFORMATION,
     _OBJECT_TYPE_INITIALIZER, _OBJECT_ATTRIBUTES, _FILE_OBJECT, _LPCP_PORT_OBJECT,
-    _OBJECT_BASIC_INFORMATION, _OBJECT_HANDLE_ATTRIBUTE_INFORMATION, _OBJECT_NAME_INFORMATION,
+    _OBJECT_BASIC_INFORMATION, _OBJECT_HANDLE_FLAG_INFORMATION, _OBJECT_NAME_INFORMATION,
     _OBJECT_TYPE_INFORMATION, _KAPC_STATE, _EPROCESS, _UNICODE_STRING, _SECURITY_QUALITY_OF_SERVICE,
     _EPROCESS_QUOTA_BLOCK, _GENERAL_LOOKASIDE,
     POBJECT_HEADER, POBJECT_TYPE, POBJECT_HEADER_HANDLE_INFO, POBJECT_HEADER_NAME_INFO,
     POBJECT_HEADER_CREATOR_INFO, POBJECT_HEADER_QUOTA_INFO, POBJECT_CREATE_INFORMATION,
     POBJECT_TYPE_INITIALIZER, POBJECT_ATTRIBUTES,
-    POBJECT_BASIC_INFORMATION, POBJECT_HANDLE_ATTRIBUTE_INFORMATION, POBJECT_NAME_INFORMATION,
+    POBJECT_BASIC_INFORMATION, POBJECT_HANDLE_FLAG_INFORMATION, POBJECT_NAME_INFORMATION,
     POBJECT_TYPE_INFORMATION, POBJECT_DIRECTORY, PKAPC_STATE,
     KPROCESSOR_MODE, HANDLE,
     PUNICODE_STRING, PCUNICODE_STRING, PANSI_STRING,
@@ -44,7 +44,7 @@ use ntkrnl_sys::ddk::{
     ObpFreeCapturedAttributes, ObpFreeObjectCreateInformation, ObpInitializeLookupContext,
     ObpInsertEntryDirectory, ObpLeaveObjectTypeMutex, ObpLookupEntryDirectory,
     ObpReleaseDirectoryLock, ObpReleaseLookupContext, ObpReleaseObjectLock,
-    ObpReleaseObjectCreateInformation, ObpSetHandleAttributes, ObQueryNameString,
+    ObpReleaseObjectCreateInformation, ObQueryNameString,
     PsGetCurrentProcessId, PsGetCurrentProcessSessionId, PsReturnSharedPoolQuota,
     SeCaptureSecurityDescriptor, SeComputeQuotaInformationSize,
     SeSinglePrivilegeCheck,
@@ -1245,11 +1245,11 @@ pub unsafe extern "system" fn NtQueryObject(
             Status = STATUS_NOT_IMPLEMENTED;
         }
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation => {
-            InfoLength = core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG;
-            if Length != core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG {
+            InfoLength = core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG;
+            if Length != core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let HandleFlags = ObjectInformation as POBJECT_HANDLE_ATTRIBUTE_INFORMATION;
+                let HandleFlags = ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION;
 
                 (*HandleFlags).Inherit = if (HandleInfo.HandleAttributes & OBJ_INHERIT) != 0 { TRUE } else { FALSE };
                 (*HandleFlags).ProtectFromClose = if (HandleInfo.HandleAttributes & OBJ_PROTECT_CLOSE) != 0 { TRUE } else { FALSE };
@@ -1292,7 +1292,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 
     match ObjectInformationClass {
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation => {
-            if Length != core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG {
+            if Length != core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG {
                 return STATUS_INFO_LENGTH_MISMATCH;
             }
 
@@ -1301,15 +1301,15 @@ pub unsafe extern "system" fn NtSetInformationObject(
             if Context.PreviousMode != 0 {
                 if let Err(s) = probe_user_buffer(
                     ObjectInformation as _,
-                    core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>(),
+                    core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>(),
                     core::mem::size_of::<BOOLEAN>(),
                     Context.PreviousMode,
                 ) {
                     return s;
                 }
-                Context.Information = *(ObjectInformation as POBJECT_HANDLE_ATTRIBUTE_INFORMATION);
+                Context.Information = *(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION);
             } else {
-                Context.Information = *(ObjectInformation as POBJECT_HANDLE_ATTRIBUTE_INFORMATION);
+                Context.Information = *(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION);
             }
 
             let mut handle = ObjectHandle;
@@ -1328,7 +1328,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
                 if ExChangeHandle(
                     ObjectTable,
                     handle,
-                    Some(ObpSetHandleAttributes),
+                    Some(crate::obhandle::ObpSetHandleAttributes),
                     core::ptr::addr_of_mut!(Context) as ULONG_PTR as _,
                 ) == 0
                 {
@@ -1342,7 +1342,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
                 if ExChangeHandle(
                     ObjectTable,
                     handle,
-                    Some(ObpSetHandleAttributes),
+                    Some(crate::obhandle::ObpSetHandleAttributes),
                     core::ptr::addr_of_mut!(Context) as ULONG_PTR as _,
                 ) == 0
                 {
@@ -2967,7 +2967,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 // {
 //     OBJECT_HANDLE_INFORMATION HandleInfo;
 //     POBJECT_HEADER ObjectHeader = NULL;
-//     POBJECT_HANDLE_ATTRIBUTE_INFORMATION HandleFlags;
+//     POBJECT_HANDLE_FLAG_INFORMATION HandleFlags;
 //     POBJECT_BASIC_INFORMATION BasicInfo;
 //     ULONG InfoLength = 0;
 //     PVOID Object = NULL;
@@ -3150,7 +3150,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 //                 }
 //
 //                 /* Get the structure */
-//                 HandleFlags = (POBJECT_HANDLE_ATTRIBUTE_INFORMATION)
+//                 HandleFlags = (POBJECT_HANDLE_FLAG_INFORMATION)
 //                                ObjectInformation;
 //
 //                 /* Set the flags */
@@ -3256,7 +3256,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 //                     ProbeForRead(ObjectInformation,
 //                                  sizeof(OBJECT_HANDLE_ATTRIBUTE_INFORMATION),
 //                                  sizeof(BOOLEAN));
-//                     Context.Information = *(POBJECT_HANDLE_ATTRIBUTE_INFORMATION)
+//                     Context.Information = *(POBJECT_HANDLE_FLAG_INFORMATION)
 //                                             ObjectInformation;
 //                 }
 //                 _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -3269,7 +3269,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 //             else
 //             {
 //                 /* Just copy the buffer directly */
-//                 Context.Information = *(POBJECT_HANDLE_ATTRIBUTE_INFORMATION)
+//                 Context.Information = *(POBJECT_HANDLE_FLAG_INFORMATION)
 //                                         ObjectInformation;
 //             }
 //

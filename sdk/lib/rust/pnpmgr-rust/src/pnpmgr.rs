@@ -196,7 +196,16 @@ pub static mut PpDeviceReferenceTable: _RTL_AVL_TABLE = unsafe { core::mem::zero
 pub static mut IopRootDriverObject: PDRIVER_OBJECT = core::ptr::null_mut();
 #[no_mangle]
 #[used]
-pub static mut PnpBusTypeGuidList: PIO_BUS_TYPE_GUID_LIST = core::ptr::null_mut();
+// A global STRUCT whose GUID array is allocated separately (upstream a7f658e3221),
+// not a pointer to a struct with an inline Guids[] tail. The old shape survived here
+// only because the stale bindgen island still described the old header; against the
+// real header the old grow-in-place body wrote each GUID over the `Guids` pointer and
+// past the end of a 44-byte block -- 8 bytes into the next pool header on i386
+// (BUGCHECK 0x19), and silently into the rounding slack on 64-bit.
+pub static mut PnpBusTypeGuidList: _IO_BUS_TYPE_GUID_LIST = unsafe { core::mem::zeroed() };
+
+/// `TAG_PNP_GUIDS` = `'GPnP'` (ntoskrnl/include/internal/tag.h).
+pub(crate) const TAG_PNP_GUIDS: ULONG = u32::from_le_bytes(*b"PnPG");
 
 unsafe fn IopFixupDeviceId(String: PWSTR) {
     let Length = wcslen(String);
@@ -663,34 +672,24 @@ pub unsafe extern "C" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVIC
 /// `IopGetBusTypeGuidIndex` — find or insert a bus-type GUID into the global
 /// `PnpBusTypeGuidList`, returning its index (or 0xFFFF on allocation failure).
 ///
-/// Direct translation of the C body that lived in `io_rust_shims.c` as
-/// `IopGetBusTypeGuidIndex_c`. The list grows by one slot at a time:
-/// initial allocation in `pnpinit.rs` reserves room for one GUID via the
-/// inline `Guids[1]` array; on each grow we allocate `sizeof(IO_BUS_TYPE_GUID_LIST)
-/// + sizeof(GUID) * GuidCount` (room for `GuidCount + 1` GUIDs), copy the
-/// old contents minus the trailing slot, free the old, and append.
-///
-/// Mirrors the original C bug pattern: if `ExAllocatePool` fails on grow we
-/// free the current list AND fall through to `ExReleaseFastMutex` on a
-/// freed pointer. Preserved verbatim for behavior compatibility — the
-/// list is never expected to fail allocation in practice.
+/// Port of upstream a7f658e3221 ("[NTOS:IO] Fix IopGetBusTypeGuidIndex",
+/// CORE-12791): the list keeps `AllocatedCount` and `GuidCount`, and only the GUID
+/// buffer is reallocated, growing in steps of 8. The old body grew the whole struct
+/// one slot at a time and, on allocation failure, freed the list and then released
+/// a mutex inside the freed block; upstream's version leaves the list intact.
 #[no_mangle]
 pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
+    let List = core::ptr::addr_of_mut!(PnpBusTypeGuidList);
     let mut FoundIndex: USHORT = 0xFFFF;
 
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
-
-    // Bindgen renders the flexible Guids[] tail as `[GUID; 1]`. Indexing past
-    // [0] panics on bounds-check, so use pointer arithmetic from the array
-    // base for every access (including i==0).
-    let guids_base = core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids) as *mut GUID;
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*List).Lock));
 
     'quickie: {
         let mut i: ULONG = 0;
-        while i < (*PnpBusTypeGuidList).GuidCount {
+        while i < (*List).GuidCount {
             if RtlCompareMemory(
                 BusTypeGuid as PVOID,
-                guids_base.add(i as usize) as PVOID,
+                (*List).Guids.add(i as usize) as PVOID,
                 core::mem::size_of::<GUID>() as SIZE_T,
             ) == core::mem::size_of::<GUID>() as SIZE_T
             {
@@ -700,39 +699,44 @@ pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USH
             i += 1;
         }
 
-        if (*PnpBusTypeGuidList).GuidCount != 0 {
-            let mut NewSize: ULONG = core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>() as ULONG
-                + (core::mem::size_of::<GUID>() as ULONG) * (*PnpBusTypeGuidList).GuidCount;
+        ntkrnl_sys::ASSERT!((*List).GuidCount <= (*List).AllocatedCount);
+        if (*List).GuidCount == (*List).AllocatedCount {
+            let NewAllocatedCount: ULONG = (*List).AllocatedCount + 8;
 
-            let NewList = ExAllocatePool(PagedPool, NewSize as ULONG_PTR)
-                as *mut _IO_BUS_TYPE_GUID_LIST;
+            let NewList = ExAllocatePoolWithTag(
+                PagedPool,
+                (NewAllocatedCount as usize * core::mem::size_of::<GUID>()) as _,
+                TAG_PNP_GUIDS,
+            ) as *mut GUID;
             if NewList.is_null() {
-                ExFreePool(PnpBusTypeGuidList as PVOID);
                 break 'quickie;
             }
 
-            NewSize -= core::mem::size_of::<GUID>() as ULONG;
             core::ptr::copy_nonoverlapping(
-                PnpBusTypeGuidList as *const u8,
-                NewList as *mut u8,
-                NewSize as usize,
+                (*List).Guids as *const GUID,
+                NewList,
+                (*List).GuidCount as usize,
             );
-            ExFreePool(PnpBusTypeGuidList as PVOID);
-            PnpBusTypeGuidList = NewList;
+            core::ptr::write_bytes(
+                NewList.add((*List).GuidCount as usize),
+                0,
+                (NewAllocatedCount - (*List).GuidCount) as usize,
+            );
+
+            ExFreePool((*List).Guids as PVOID);
+
+            (*List).Guids = NewList;
+            (*List).AllocatedCount = NewAllocatedCount;
         }
 
-        let count = (*PnpBusTypeGuidList).GuidCount;
-        let dst = core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids) as *mut GUID;
-        core::ptr::copy_nonoverlapping(
-            BusTypeGuid as *const u8,
-            dst.add(count as usize) as *mut u8,
-            core::mem::size_of::<GUID>(),
-        );
-        FoundIndex = count as USHORT;
-        (*PnpBusTypeGuidList).GuidCount = count + 1;
+        *(*List).Guids.add((*List).GuidCount as usize) = *BusTypeGuid;
+
+        ntkrnl_sys::ASSERT!((*List).GuidCount < 0xFFFF);
+        FoundIndex = (*List).GuidCount as USHORT;
+        (*List).GuidCount += 1;
     }
 
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*List).Lock));
     FoundIndex
 }
 
@@ -1400,22 +1404,16 @@ pub unsafe extern "system" fn PnpBusTypeGuidGet(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    let List = core::ptr::addr_of_mut!(PnpBusTypeGuidList);
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*List).Lock));
 
-    if (Index as ULONG) < (*PnpBusTypeGuidList).GuidCount {
-        // Bindgen renders the flexible Guids[] tail as `[GUID; 1]`; indexing
-        // past [0] panics on bounds-check, so use pointer arithmetic.
-        let src = core::ptr::addr_of!((*PnpBusTypeGuidList).Guids) as *const GUID;
-        core::ptr::copy_nonoverlapping(
-            src.add(Index as usize) as *const u8,
-            BusTypeGuid as *mut u8,
-            core::mem::size_of::<GUID>(),
-        );
+    if (Index as ULONG) < (*List).GuidCount {
+        *BusTypeGuid = *(*List).Guids.add(Index as usize);
     } else {
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*List).Lock));
     Status
 }
 

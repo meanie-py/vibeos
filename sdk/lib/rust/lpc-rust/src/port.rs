@@ -151,11 +151,9 @@ pub unsafe extern "system" fn LpcInitSystem() -> BOOLEAN {
     object_type_initializer.UseDefaultObject = 1u8;
     // LpcpClosePort's real (C-header) signature is ULONG_PTR for the two handle
     // counts; the stale bindgen OB_CLOSE_METHOD typedef (predates the merge's
-    // lpc.h fix, never regenerated) still says ULONG. Transmute past it, same
-    // as fltmgr's CloseProcedure does for the identical drift.
-    object_type_initializer.CloseProcedure = Some(core::mem::transmute(
-        LpcpClosePort as unsafe extern "system" fn(_, _, _, _, _),
-    ));
+    // Direct assignment, no transmute -- see the iomgr note. The stale
+    // OB_CLOSE_METHOD that made the transmute necessary is regenerated.
+    object_type_initializer.CloseProcedure = Some(LpcpClosePort);
     object_type_initializer.DeleteProcedure = Some(LpcpDeletePort);
     object_type_initializer.ValidAccessMask = PORT_ALL_ACCESS;
     object_type_initializer.InvalidAttributes = OBJ_VALID_ATTRIBUTES & !OBJ_CASE_INSENSITIVE;

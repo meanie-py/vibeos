@@ -6969,6 +6969,48 @@ Same family as `$?` after a pipe and `sccache -s` reporting another server: a re
 a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
 conclusion.
 
+### A self-consistent pair of DERIVED values cannot detect its own staleness
+
+**Symptom:** an array whose length is an enum bound, a struct whose size assertion is
+generated beside it, a table indexed by a generated constant — all compile, all agree, all
+wrong. `rtl-bootdata`'s `BsdItemTable` was declared
+`[RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize]` with 16 rows while upstream's
+`RTL_BSD_ITEM_TYPE` had grown to 19 members, so every
+`RtlGetSetBootStatusData(DataClass >= RtlBsdPowerTransitionExtension)` indexed off the end of
+the table. Nothing could see it: the row count and `RtlBsdItemMax` came from the *same* stale
+bindgen island, so they matched each other while both disagreed with the C header.
+
+**Cause:** the checker and the thing checked share a source. This is why a stale `-sys` crate
+is so much worse than a wrong one — `size_check_*.rs` assertions regenerate from C and
+therefore *can* catch drift, but only if the bindings are regenerated too; regenerate only the
+assertions and you get failures with no fix, regenerate neither and everything is green
+forever. Writing MORE assertions over the same stale source adds no information.
+
+**Fix:** break the tie from outside. Regenerate one side from the primary artifact (the C
+headers) and let the compiler compare — a compile error is the detector you could not write by
+hand. A standalone `clang -fsyntax-only` with `_Static_assert` on `sizeof`/`offsetof`, or
+`-Xclang -fdump-record-layouts` to read the field list, answers without going through any
+project tool. **Corollary: do not "fix" the symptom at the consumer.** Four sites in this tree
+transmuted past a stale `OB_CLOSE_METHOD` (`config-rust`, `mm/section.rs`, `iomgr-rust`,
+`lpc-rust`), two of them with `core::mem::transmute` and comments citing each other as
+precedent for "the identical drift". A transmute deletes the only check that would ever have
+noticed, so the wrong-width callback (`ULONG` handle counts where the caller passes
+`ULONG_PTR`) became permanent and invisible. Regenerating turned all four into ordinary type
+errors. When a substrate looks wrong, regenerate it; if you cannot, say so loudly rather than
+silencing the diagnostic.
+
+**When the regen COMPILES and the boot dies, suspect a stale translation the stale island was
+agreeing with.** `pnpmgr-rust` `IopGetBusTypeGuidIndex` was translated from pre-`a7f658e3221`
+C, where `IO_BUS_TYPE_GUID_LIST` ended in an inline `Guids[]`; upstream made `Guids` a separately
+allocated `PGUID`, and that change landed as dead C in a cohab-flipped file. The regenerated
+island described the new struct and everything still compiled, because the Rust spelled every
+access `addr_of!((*List).Guids) as *mut GUID` -- a cast that is valid whether the field is an
+array or a pointer. So each GUID was written over the pointer and past a 44-byte block: BUGCHECK
+0x19 on i386, silent on 64-bit where pool rounding absorbed the 8 bytes. `SPECIALPOOL=*` found it
+in one boot where three hypotheses had not. Before trusting a green compile after a regen, grep
+the consumers of every struct whose FIELD KINDS changed (array to pointer, inline to indirect)
+for `addr_of!` casts, and read the upstream commit that changed the header.
+
 ### A codegen tool skips a whole ARCH and exits 0, so the FFI substrate drifts unnoticed
 
 **Symptom:** a `-sys` crate's struct layouts disagree with the C headers — `EPROCESS` 1000 bytes

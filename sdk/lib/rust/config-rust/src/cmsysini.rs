@@ -8,9 +8,12 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
-// Crate-local (correct 9-param, post-upstream-sync) definition -- NOT the stale
-// 8-param ntkrnl_sys::ddk::CmpSecurityMethod extern decl (bindgen predates the
-// merge's cm.h AccessMode addition and was never regenerated).
+// Crate-local definition, because this crate OWNS the Rust translation of
+// CmpSecurityMethod -- not because the substrate is wrong. The note that used to sit here
+// said the ddk extern was a stale 8-param decl predating cm.h's AccessMode addition and
+// "never regenerated". That was true and is no longer: OB_SECURITY_METHOD now carries the
+// 9th param (KPROCESSOR_MODE AccessMode). Do not cite this site as precedent for
+// transmuting past the substrate; regenerate it instead.
 use crate::cmse::CmpSecurityMethod;
 use ntkrnl_sys::ddk::{
     ACCESS_MASK, ANSI_STRING, CMHIVE, CM_KEY_BODY, CM_KEY_NODE, CM_PARSE_CONTEXT,
@@ -824,12 +827,19 @@ unsafe extern "system" fn CmpCloseKeyObjectCallback(
     Process: ntkrnl_sys::ddk::PEPROCESS,
     Object: PVOID,
     GrantedAccess: ACCESS_MASK,
-    ProcessHandleCount: ULONG,
-    SystemHandleCount: ULONG,
+    // ddk::ULONG_PTR, not the base one: OB_CLOSE_METHOD is declared with the bindgen
+    // ddk alias (c_ulonglong on 64-bit) while `base::ULONG_PTR` is `usize`. Same size,
+    // DIFFERENT type to rustc, so a fn-pointer coercion to CloseProcedure fails on the
+    // alias alone. Match the callee's declared type name, never its width.
+    ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
-    // The registered CloseProcedure field (OB_CLOSE_METHOD) is still the stale
-    // bindgen 4-byte-ULONG shape (predates the merge's io.h/cm.h ULONG_PTR fix,
-    // never regenerated) -- widen here at the call into the real function.
+    // Matching OB_CLOSE_METHOD (ndk/obtypes.h:188). This shim used to take
+    // ULONG and widen at the call, with a comment saying the bindgen island was stale
+    // and had never been regenerated. That was true, and working around it here meant
+    // the function REGISTERED as CloseProcedure had 4-byte handle counts where the
+    // caller passes 8 on 64-bit — a live ABI mismatch on every key close, papered over
+    // at the wrong end. The island is regenerated now, so the shim just matches.
     CmpCloseKeyObject(
         Process as _,
         Object,
