@@ -109,5 +109,11 @@ findfile = []
 # for why not msvcrt's engine. Needs strtox for the width/position parser.
 output = ["strtox"]
 
+# convert/strtod.cpp -- strtod, strtof, strtold and their wide and _l forms: the
+# parser and the correctly-rounded big-integer conversion from
+# corecrt_internal_strtox.h, ported (src/strtod.rs, src/big_integer.rs). Needs
+# strtox for its character trait.
+strtod = ["strtox"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

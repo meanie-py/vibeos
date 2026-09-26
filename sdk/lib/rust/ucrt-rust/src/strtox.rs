@@ -137,6 +137,10 @@ unsafe fn invalid_parameter() {
 /// `parse_integer_from_string` + `parse_integer`, for an accumulator of `bits`
 /// (32 or 64) bits. The result is the accumulator's bit pattern, which each
 /// export reinterprets as its own type, as the C's `static_cast<Integer>` does.
+///
+/// `trim_whitespace` is the template's `TrimWhitespace` parameter: true for
+/// every public strtol, false for `_tcstol_internal` (printf's width and
+/// position parser), which must not skip a space.
 pub(crate) unsafe fn parse<C: Char>(
     string: *const C,
     end: *mut *const C,
@@ -144,6 +148,7 @@ pub(crate) unsafe fn parse<C: Char>(
     locale: *mut CrtLocalePointers,
     bits: u32,
     is_result_signed: bool,
+    trim_whitespace: bool,
 ) -> u64 {
     // The character source's constructor.
     if !end.is_null() {
@@ -177,7 +182,7 @@ pub(crate) unsafe fn parse<C: Char>(
     }
 
     let mut c = get!();
-    while c.is_space(loc) {
+    while trim_whitespace && c.is_space(loc) {
         c = get!();
     }
 
@@ -268,11 +273,11 @@ macro_rules! strtox {
             base: c_int,
             locale: *mut CrtLocalePointers,
         ) -> $ret {
-            parse(string, end_ptr as *mut *const $ch, base, locale, $bits, $signed) as $ret
+            parse(string, end_ptr as *mut *const $ch, base, locale, $bits, $signed, true) as $ret
         }
         #[no_mangle]
         pub unsafe extern "C" fn $plain(string: *const $ch, end_ptr: *mut *mut $ch, base: c_int) -> $ret {
-            parse(string, end_ptr as *mut *const $ch, base, core::ptr::null_mut(), $bits, $signed)
+            parse(string, end_ptr as *mut *const $ch, base, core::ptr::null_mut(), $bits, $signed, true)
                 as $ret
         }
     };

@@ -794,14 +794,16 @@ impl<'h, C: OutChar, A: Adapter<C>> Processor<'h, C, A> {
         (*self.format_it.add(offset)).code()
     }
 
-    /// `_tcstol_internal(ptd, p, &end, 10)`: `long` is 32 bits here. ERANGE is
+    /// `_tcstol_internal(ptd, p, &end, 10)`: `long` is 32 bits here, and it does
+    /// NOT skip leading whitespace (its `TrimWhitespace` is false), so
+    /// `%1$* 2$d` fails where a public strtol would read the 2. ERANGE is
     /// reported into the host's errno cache, where the C's lands.
     unsafe fn tcstol(&mut self, p: *const C, end: &mut *const C) -> i32 {
         let locale = self.host.get_locale();
         let errno = _errno();
         let saved = *errno;
         *errno = 0;
-        let value = parse::<C>(p, end, 10, locale, 32, true) as u32 as i32;
+        let value = parse::<C>(p, end, 10, locale, 32, true, false) as u32 as i32;
         if *errno == ERANGE {
             self.host.errno().set(ERANGE);
         }

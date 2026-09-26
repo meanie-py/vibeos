@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 769
-  amd64: 769
-  arm64: 766
+  i386: 757
+  amd64: 757
+  arm64: 754
 
 families:
   bits:
@@ -600,15 +600,17 @@ families:
       A 142-format corpus (literals, every flag/width/precision/length, %c/%s/%Z
       narrow and wide, %p, the float conversions through inf/nan/DBL_MAX and a
       precision past the inline buffer, and the malformed formats the two
-      transition tables disagree on) plus a 24-format positional corpus, through every
+      transition tables disagree on) plus a 28-format positional corpus, through every
       function; the buffer functions across option bits and buffer sizes
       including NULL and too-small, _vsnprintf_s across count/max pairs, %n
       disabled and enabled at each width; the stream functions into a real file
       per side in binary, text and UTF-16LE modes. Graded: return, the whole
       buffer or file, errno from a sentinel, and the invalid-parameter count.
-      All fourteen MATCH, dll_fail=0: vsprintf/vswprintf n=14844 each,
-      vsnprintf_s/vsnwprintf_s n=7392, the _s and _p buffer forms n=6108, and
-      the six stream forms n=1256 each -- 76,440 cases.
+      All fourteen MATCH, dll_fail=0. Regraded with the strtod takeover (the
+      reference restored for it) after a 28-format positional corpus added the
+      no-whitespace width/position cases: vsprintf/vswprintf n=15196 each,
+      vsnprintf_s/vsnwprintf_s n=7568, the _s and _p buffer forms n=6252, the six
+      stream forms n=1272 each -- 78,168 cases.
     note: >
       A PORT of Microsoft's processor, not msvcrt's engine: UCRT's printf is a
       table-driven state machine with a standard and a validation table (the
@@ -634,3 +636,41 @@ families:
       - __stdio_common_vswprintf
       - __stdio_common_vswprintf_p
       - __stdio_common_vswprintf_s
+
+  strtod:
+    replaces:
+      - sdk/lib/ucrt/convert/strtod.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export over a
+      ~120-string corpus -- boundaries of both types (DBL_MAX and one past it,
+      the smallest normals and denormals, the round-to-even halfway points,
+      float's overflow edge), exact 53-bit ties, a mantissa longer than the
+      768 digits the parser keeps with the deciding digit after them, clamped
+      exponents, every spelling of inf/nan/nan(snan)/nan(ind), hex floats with
+      and without digits, and malformed tails -- plus, for the wide forms,
+      Unicode decimal digits. Graded: the result's BITS, the end offset, errno
+      from a sentinel, the invalid-parameter count, and NULL. All twelve MATCH,
+      dll_fail=0: the narrow forms n=456 each, the wide n=484 -- 5,640 cases.
+      Before the guest: 604,046 random and edge conversions matched Rust's own
+      correctly-rounded parse::<f64>/<f32> bit for bit on the host.
+    note: >
+      A PORT of the parser and the big-integer conversion in
+      corecrt_internal_strtox.h and corecrt_internal_big_integer.h. msvcrt's
+      fpnum.rs is Wine's _MSVCR_VER=0 contract (no hex floats, no inf/nan words,
+      no strtof). Built entirely from bits, so i386's no-SSE rule holds. The
+      powers-of-ten table is computed by a const fn, checked element for element
+      against Microsoft's packed literal. Rounding consults fegetround() exactly
+      where the C does -- today ucrtbase's generated stub, round-to-nearest.
+    exports:
+      - _strtod_l
+      - _strtof_l
+      - _strtold_l
+      - _wcstod_l
+      - _wcstof_l
+      - _wcstold_l
+      - strtod
+      - strtof
+      - strtold
+      - wcstod
+      - wcstof
+      - wcstold
