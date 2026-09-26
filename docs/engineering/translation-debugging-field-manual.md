@@ -10337,6 +10337,34 @@ back to the caller. `window.rs` `CaptureComboState` / `CaptureListBoxPageSize`, 
 guest offsets pinned by `const` asserts. **Grep for the class:** `as PWND2` in win32k. Any
 cast of a `WND` to a struct that extends past it reads client-owned extra bytes.
 
+### A "guest-only" failure in the WoW64 A/B can be a 64-BIT KERNEL failure
+**Symptom.** A winetest assertion fails under WoW64 and passes on native i386, so it gets filed
+as a seam bug, but no marshaller is involved: the arguments cross flat and are correct.
+**Cause.** The A/B control is native **i386**, so it differs from the guest in two ways, not
+one: the seam, and the width of the *kernel*. `user32:winstation`'s `EnumWindowStations`
+failure was win32k sizing a directory listing wrong. That code path only runs when the
+entries overflow a 256-byte stack buffer, and an `OBJECT_DIRECTORY_INFORMATION` entry is
+16 bytes on i386 and 32 on amd64. Three window stations fit on i386 and overflow on amd64.
+**Fix.** Before blaming the seam, ask whether the failing path depends on `sizeof` anything
+pointer-bearing on the KERNEL side. The discriminator is a native amd64 caller, not a
+better thunk. The underlying bug there was a real API-contract mistake: in multi-entry mode,
+`NtQueryDirectoryObject` with a too-small buffer returns `STATUS_MORE_ENTRIES` and reports
+the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
+the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
+
+### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
+**Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
+the call succeeded, dying several calls later somewhere unrelated.
+**Cause.** The refusal is loud in the serial log but not to the caller. It returns
+`WOW64_STATUS_INVALID_SYSTEM_SERVICE` as the syscall's value, which a caller expecting an
+`HDESK`/`HWND`/`BOOL` reads as a valid non-zero result. `user32:winstation` passed its
+`desk != 0` check on `NtUserCreateDesktop`'s refusal, and crashed three calls later on junk
+from a query against that fake handle. No single failure value fixes this: some NtUser
+calls return an NTSTATUS, where 0 means success.
+**Fix.** Treat a `NEEDS MANUAL MARSHALLER` line as the root cause of whatever the guest does
+next, and write the marshaller. When triaging a guest crash, grep its serial for that line
+before reading the crash site.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
