@@ -78,20 +78,20 @@ C this port never compiled; `Rust twin` narrows that to files whose module has a
 
 | Surface | Live C (TUs) | Live C (lines) | of which Wine | Out of build | Rust twin | Covered |
 |---|---:|---:|---:|---:|---:|---:|
-| Win32 DLLs | 1,023 | 1,012,731 | 580,847 | 520,185 | 433,645 | 30% |
+| Win32 DLLs | 1,023 | 1,012,731 | 933,768 | 520,185 | 433,645 | 30% |
 | DirectX | 201 | 267,951 | 267,683 | 40,884 | 0 | 0% |
-| Support libraries | 699 | 118,881 | 14,505 | 93,559 | 82,615 | 41% |
+| Support libraries | 699 | 118,881 | 17,817 | 93,559 | 82,615 | 41% |
 | Driver fleet | 191 | 68,938 | 0 | 425,597 | 388,912 | 85% |
 | Setup | 46 | 56,454 | 0 | 132 | 0 | 0% |
 | Keyboard layouts | 86 | 37,899 | 0 | 0 | 0 | 0% |
-| Control Panel applets | 72 | 28,183 | 0 | 24,863 | 24,753 | 47% |
+| Control Panel applets | 72 | 28,183 | 1,473 | 24,863 | 24,753 | 47% |
 | Shell | 69 | 27,189 | 0 | 14,826 | 14,513 | 35% |
-| Text services (CTF/IME) | 31 | 27,175 | 0 | 0 | 0 | 0% |
-| Print spooler | 66 | 27,069 | 0 | 0 | 0 | 0% |
+| Text services (CTF/IME) | 31 | 27,175 | 8,218 | 0 | 0 | 0% |
+| Print spooler | 66 | 27,069 | 694 | 0 | 0 | 0% |
 | win32k: USER | 25 | 20,079 | 3,749 | 87,009 | 79,550 | 80% |
 | Shell extensions | 57 | 18,940 | 0 | 9 | 0 | 0% |
-| System spine | 61 | 18,176 | 0 | 28,526 | 28,505 | 61% |
-| Services | 41 | 16,169 | 0 | 21,495 | 21,495 | 57% |
+| System spine | 61 | 18,176 | 1,516 | 28,526 | 28,505 | 61% |
+| Services | 41 | 16,169 | 1,152 | 21,495 | 21,495 | 57% |
 | win32k: display drivers | 26 | 11,322 | 0 | 1,798 | 1,798 | 14% |
 | win32k: GDI | 13 | 9,522 | 9,299 | 29,465 | 24,038 | 72% |
 | AppCompat | 24 | 7,339 | 0 | 0 | 0 | 0% |
@@ -105,17 +105,17 @@ C this port never compiled; `Rust twin` narrows that to files whose module has a
 | CSR subsystem | 1 | 17 | 0 | 12,258 | 11,284 | 100% |
 | Kernel (ntoskrnl.exe) | 0 | 0 | 0 | 273,724 | 273,107 | 100% |
 | HAL | 0 | 0 | 0 | 17,766 | 15,773 | 100% |
-| **CORE TOTAL** | **2,766** | **1,784,120** | **876,083** | **1,648,587** | **1,446,067** | **45%** |
+| **CORE TOTAL** | **2,766** | **1,784,120** | **1,245,369** | **1,648,587** | **1,446,067** | **45%** |
 
 | Core by provenance | Live C (lines) | Rust twin | Covered |
 |---|---:|---:|---:|
-| ReactOS-native | 908,037 | 1,361,040 | 60% |
-| Wine-derived | 876,083 | 85,027 | 9% |
+| ReactOS-native | 538,751 | 1,144,697 | 68% |
+| Wine-derived | 1,245,369 | 301,370 | 19% |
 
 | Surface | Live C (TUs) | Live C (lines) | of which Wine | Out of build | Rust twin | Covered |
 |---|---:|---:|---:|---:|---:|---:|
-| In-box applications | 357 | 168,848 | 0 | 15,952 | 7,860 | 4% |
-| **APPS TOTAL** | **357** | **168,848** | **0** | **15,952** | **7,860** | **4%** |
+| In-box applications | 357 | 168,848 | 24,806 | 15,952 | 7,860 | 4% |
+| **APPS TOTAL** | **357** | **168,848** | **24,806** | **15,952** | **7,860** | **4%** |
 
 | Not ours to translate | Live C (TUs) | Live C (lines) | Why |
 |---|---:|---:|---|
@@ -132,10 +132,20 @@ C this port never compiled; `Rust twin` narrows that to files whose module has a
 win32k USER/GDI/ReactX are 72–84% with ~30K live lines left. Nothing in the
 boot-to-desktop chain is waiting on a translation.
 
-**Core is 1.78M live lines, split almost exactly in half by provenance** — 908K
-ReactOS-native at 60% covered, 876K Wine-derived at **9%**. The native half is where the
-fleet has been working; the Wine half has barely been started (ole32, oleaut32 and a
-handful of others are the 85K that is done).
+**Core is 1.78M live lines, and 70% of what is left is Wine-derived** — 539K
+ReactOS-native at 68% covered, 1.25M Wine-derived at 19%. Provenance comes from two
+sources: vendor.yaml's `ours:` Wine entry (24 paths) and upstream's own import ledger,
+`media/doc/WINESYNC.txt` (~316 paths and files). Reading only the first, as the 2026-09-25
+morning cut did, labelled gdiplus, shlwapi, riched20, dbghelp, comdlg32, usp10, rsaenh
+and ~150 others "native" and reported the split as 50/50. `Forked` entries count as Wine
+(shell32 forked in 2007, which is why the Wine twin column includes it).
+
+**The ReactOS-native remainder, by module** (live lines): browseui 22K, cmd 22K, setup
+(lib 21K + reactos 20K + usetup 14K), portcls 18K, imm32 16K, spooler base 15K, ndis 13K,
+wow64 11K, the sound/rdbss/rxce driver libs ~30K, devmgr 10K (C++), diskpart 9K, cmlib
+9K, videoprt 8K, netkvm 8K, the CTF cluster (msutb/cicero/msctfime ~18K), apphelp 6K,
+the static CRT (~12K across stdio/string/math) and keyboard layouts (38K of scancode
+tables). Kernel, HAL, ntdll and CSR are at or near zero.
 
 **Where the Wine half sits** (live lines): comctl32 87K, wined3d 80K, mshtml 71K, msi 53K,
 msvcrt 45K, crypt32 42K, msxml3 35K, jscript 34K, d3dx9_36 34K, setupapi 32K,

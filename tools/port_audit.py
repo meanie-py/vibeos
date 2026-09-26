@@ -199,7 +199,35 @@ class Row:
         return 100.0 * self.twin_lines / denom if denom else 0.0
 
 
-def provenance(rel: str, registry: vendored.Registry) -> str:
+WINESYNC = Path("media") / "doc" / "WINESYNC.txt"
+
+
+def winesync_paths(repo: Path = REPO) -> tuple[str, ...]:
+    """Every tree path upstream ReactOS records as shared with Wine.
+
+    `media/doc/WINESYNC.txt` is ReactOS's own ledger of Wine imports, maintained by the
+    people who did the syncing: ~200 modules and files, each with the Wine version it
+    tracks. vendor.yaml's Wine entry lists 24 of them, so reading only the registry
+    labelled gdiplus, shlwapi, riched20, dbghelp and comdlg32 -- 150K live lines --
+    "ReactOS-native". A line counts when its first token is a path that exists here
+    (`dll/win32/msi   # Synced to Wine-9.8`, and the indented per-file lines under
+    `kernel32 -`); prose and missing paths are ignored. "Forked" entries count too:
+    shell32 forked from Wine in 2007 is still Wine-derived, however rewritten.
+    """
+    path = repo / WINESYNC
+    if not path.is_file():
+        raise PortAuditError(f"{WINESYNC} missing -- it is upstream's Wine-import ledger")
+    out: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "#" not in line:
+            continue
+        token = line.split("#", 1)[0].strip().rstrip("/")
+        if "/" in token and " " not in token and (repo / token).exists():
+            out.append(token)
+    return tuple(out)
+
+
+def provenance(rel: str, registry: vendored.Registry, winesync: tuple[str, ...] = ()) -> str:
     """ "vendored", "wine" or "native" -- reported, and it never moves a file OUT of core."""
     if registry.is_vendored(rel):
         return "vendored"
@@ -214,6 +242,8 @@ def provenance(rel: str, registry: vendored.Registry) -> str:
         # covers 24 shipped modules; reading the singular mislabelled 23 of them.
         if any(rel == p or rel.startswith(p + "/") for p in our.paths):
             return "wine" if "Wine" in (our.origin or "") else "native"
+    if any(rel == p or rel.startswith(p + "/") for p in winesync):
+        return "wine"
     return "native"
 
 
@@ -349,6 +379,7 @@ def survey(repo: Path = REPO, arches=ARCHES) -> tuple[dict[str, Row], dict[str, 
     live = set().union(*per_arch.values())
     registry = vendored.load(repo)
     crates = rust_crates(repo)
+    winesync = winesync_paths(repo)
     rows: dict[str, Row] = {}
 
     def row_for(rel: str) -> Row:
@@ -360,7 +391,7 @@ def survey(repo: Path = REPO, arches=ARCHES) -> tuple[dict[str, Row], dict[str, 
         n = _line_count(repo / rel)
         row.live_tus += 1
         row.live_lines += n
-        if provenance(rel, registry) == "wine":
+        if provenance(rel, registry, winesync) == "wine":
             row.wine_live_lines += n
         row.live_dirs[str(Path(rel).parent)] += 1
 
@@ -383,7 +414,7 @@ def survey(repo: Path = REPO, arches=ARCHES) -> tuple[dict[str, Row], dict[str, 
         row.dead_lines += lines
         if _twin_of(rel, crates):
             row.twin_lines += lines
-            if provenance(rel, registry) == "wine":
+            if provenance(rel, registry, winesync) == "wine":
                 row.wine_twin_lines += lines
     return rows, per_arch
 
