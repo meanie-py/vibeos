@@ -1893,8 +1893,15 @@ unsafe fn TryStartWinetest(
      * would never close and the drain below would never see EOF. */
     SetHandleInformation(Rd, HANDLE_FLAG_INHERIT, 0);
 
+    /* argv[0] is the FULL path, as a real winetest runner passes it. Suites
+     * re-launch themselves with CreateProcessA(argv[0], ...), and an
+     * lpApplicationName is resolved against the current directory only, never
+     * PATH. With the bare name the native control's children all failed error 2
+     * (user32:winstation 1088, never reaching the 1054 the guest reached). The
+     * GUEST only worked by accident: WoW64 redirects its system32 CWD to
+     * syswow64, where its copy lives. `Path` has no spaces, so no quoting. */
     let mut Line: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    wcscat(Line.as_mut_ptr(), Exe);
+    wcscat(Line.as_mut_ptr(), Path.as_ptr());
     if !Sub.is_null() {
         wcscat(Line.as_mut_ptr(), wstr!(" ").as_ptr());
         wcscat(Line.as_mut_ptr(), Sub);

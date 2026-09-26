@@ -654,11 +654,14 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             if BrkImm == 0xF000 && (*TrapFrame).__bindgen_anon_3.X[0] == 1 {
                 let Buf = (*TrapFrame).__bindgen_anon_3.X[1] as *const u8;
                 let mut Len = (*TrapFrame).__bindgen_anon_3.X[2] as ULONG;
-                let Uart = Arm64UartKernelBase as *mut ULONG;
 
                 if Len > 512 {
                     Len = 512;
                 }
+                // Copy first: faulting a user buffer in can block, which must
+                // not happen while holding the output lock below.
+                let mut Line = [0u8; 512];
+                let mut Got = 0usize;
                 for i in 0..Len {
                     if MmIsAddressValid(Buf.add(i as usize) as PVOID) == 0 {
                         if (Buf.add(i as usize) as ULONG_PTR) < MmUserProbeAddress {
@@ -668,12 +671,20 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                             break;
                         }
                     }
-                    let c = *Buf.add(i as usize);
+                    Line[Got] = *Buf.add(i as usize);
+                    Got += 1;
+                }
+                // One message reaches the UART whole (see uart_line_lock):
+                // without it every CPU's prints shredded each other byte by
+                // byte, which is how the smoke's per-CPU markers went missing.
+                let daif = crate::arm64_dbg::uart_line_lock();
+                for &c in &Line[..Got] {
                     if c == b'\n' {
                         crate::arm64_dbg::uart_putc_default(b'\r' as u8);
                     }
                     crate::arm64_dbg::uart_putc_default(c as u8);
                 }
+                crate::arm64_dbg::uart_line_unlock(daif);
             }
 
             (*TrapFrame).Pc += 4;

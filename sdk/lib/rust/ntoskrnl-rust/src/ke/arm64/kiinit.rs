@@ -363,8 +363,12 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     let ap = (*Prcb).Number != 0;
     ap_stage(ap, 10);
 
-    (*Prcb).ParentNode = *(core::ptr::addr_of!(KeNodeBlock) as *const *mut core::ffi::c_void).add(0) as *mut ntkrnl_sys::ddk::_KNODE;
-    (*((*Prcb).ParentNode as *mut _KNODE)).ProcessorMask |= (*Prcb).SetMember;
+    // Through the REAL _KNODE: a local one-field stand-in put ProcessorMask at
+    // offset 0 instead of 32, so every CPU ORed its bit into another field and
+    // the node's mask stayed 0. Every thread then got ideal processor 0 and
+    // CPUs 2 and 3 of four never ran a thread (arm64 -smp 4, and a Pi 4).
+    (*Prcb).ParentNode = *(core::ptr::addr_of!(KeNodeBlock) as *const *mut ntkrnl_sys::ddk::_KNODE).add(0);
+    (*(*Prcb).ParentNode).ProcessorMask |= (*Prcb).SetMember;
 
     KiSaveProcessorControlState(core::ptr::addr_of_mut!((*Prcb).ProcessorState));
     ap_stage(ap, 11);
@@ -571,11 +575,6 @@ struct _KSERVICE_TABLE_DESCRIPTOR {
     Count: *mut ULONG,
     Limit: ULONG,
     Number: *mut u8,
-}
-
-#[repr(C)]
-struct _KNODE {
-    ProcessorMask: u64, // KAFFINITY = ULONG_PTR = c_ulonglong on arm64
 }
 
 #[no_mangle]

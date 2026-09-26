@@ -86,5 +86,10 @@ ismbc = ["ctype", "ismbbyte"]
 # UCRT at EOF, the very first case. See src/tocase.rs.
 tocase = []
 
+# convert/strtox.cpp -- strtol and its 31 siblings, narrow and wide: one template,
+# __crt_strtox::parse_integer, ported with the accumulator width as a parameter.
+# A port: msvcrt's bodies are Wine's _MSVCR_VER=0 overflow contract. See src/strtox.rs.
+strtox = ["ctype"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

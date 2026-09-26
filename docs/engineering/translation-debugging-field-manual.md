@@ -4933,6 +4933,13 @@ CMake `set_module_type`) for what that value is — do not assume the newest.
 and check each against the C: a per-arch cfg is *legitimate* only where the C branched on
 `_M_IX86`/`_M_AMD64`/`_M_ARM64` or on a pointer-width-derived macro. Anything else is this bug.
 
+**The neighbouring mistake: `_WIN64` spelled as one ARCH.** `_WIN64` is pointer width —
+amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
+user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
+truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
+Spell it `target_pointer_width = "64"`. Gated by `scan_win64_cfg` (C twin says `_WIN64` and
+names no specific arch).
+
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
 **Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
@@ -10394,6 +10401,20 @@ better thunk. The underlying bug there was a real API-contract mistake: in multi
 the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
 the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
 
+### A winetest's "N failures in child process" can be a child that DIED
+**Symptom.** A suite reports a huge failure count (native `user32:scroll`: 140), but the
+printed failures account for a handful, and one child printed nothing at all.
+**Cause.** Wine's `winetest_wait_child_process` reports the child's EXIT CODE as its failure
+count. A child killed by an unhandled exception exits `0x80` (csrss terminating a
+second-chance client), and the parent prints that as "128 failures in child process". Its
+buffered stdout dies with it, which is why nothing was printed. On i386 the death itself
+was invisible: `[EXIT-THR]` and the second-chance `[KI-EXC]` tripwire were amd64-only, which
+made the native CONTROL of the A/B the one arch that could not see it.
+**Fix.** Read child counts of exactly 128 as a death until proven otherwise, and find the
+`[KI-EXC] ... second chance` line (both x86 arches now print it before the exception port
+gets a chance to swallow it). The scroll instance was `uxtheme!ThemeGetWndData` returning
+another process's heap pointer for a window that process owned.
+
 ### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
 **Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
 the call succeeded, dying several calls later somewhere unrelated.
@@ -10776,8 +10797,13 @@ the snapshot. Both halves are the same bug found years apart: the WND half surfa
 EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
 until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
 with what a syscall had just set. Address the tail off the snapped kernel object
-(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
-fixed struct is in the same position and has not been audited.
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. The third instance was the
+scrollbar CONTROL: `pwnd as PSBWND` read `SBCALC` off the snapshot, so every guest
+`GetScrollPos(SB_CTL)` returned junk while `SetScrollPos`, a syscall served from the real window,
+worked (`user32:scroll` 161/170/179). That split, **writes fine and reads wrong**, is the
+signature: the kernel side is right and only the client's view is off. Audited 2026-09-26: no
+other `WND`-extending cast remains in user32-rust (`IMEWND` goes through
+`Get/SetWindowLongPtr`). Grep `as P[A-Z]*WND` for a new one.
 **SERVERINFO was never in the view, and "most things work" hid it.** `dwSRVIFlags` is at
 offset 0 in both layouts, so the flag checks worked while metrics, colours and the class-proc
 tables read garbage. Read `gpsi` only through `wow64::psi`, never as `(*gpsi).field`. The same

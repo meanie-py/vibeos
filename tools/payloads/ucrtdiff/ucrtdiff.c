@@ -55,6 +55,55 @@ int __cdecl rust__setmbcp(int);
  * genuine ucrt body here to grade them against. */
 long __cdecl ref_strtol(const char *, char **, int);
 unsigned long __cdecl ref_strtoul(const char *, char **, int);
+/* The rest of the strtox family (convert/strtox.cpp), graded two-sided by
+ * run_strtox_family. Written with the widths Windows gives them: long is 32 bits,
+ * __int64/intmax_t are long long, wchar_t is 16 bits. */
+int *__cdecl ref__errno(void);
+long __cdecl ref__strtol_l(const char *, char **, int, _locale_t);
+unsigned long __cdecl ref__strtoul_l(const char *, char **, int, _locale_t);
+long long __cdecl ref__strtoi64(const char *, char **, int);
+long long __cdecl ref__strtoi64_l(const char *, char **, int, _locale_t);
+long long __cdecl ref_strtoll(const char *, char **, int);
+long long __cdecl ref__strtoll_l(const char *, char **, int, _locale_t);
+long long __cdecl ref_strtoimax(const char *, char **, int);
+long long __cdecl ref__strtoimax_l(const char *, char **, int, _locale_t);
+unsigned long long __cdecl ref__strtoui64(const char *, char **, int);
+unsigned long long __cdecl ref__strtoui64_l(const char *, char **, int, _locale_t);
+unsigned long long __cdecl ref_strtoull(const char *, char **, int);
+unsigned long long __cdecl ref__strtoull_l(const char *, char **, int, _locale_t);
+unsigned long long __cdecl ref_strtoumax(const char *, char **, int);
+unsigned long long __cdecl ref__strtoumax_l(const char *, char **, int, _locale_t);
+long __cdecl ref_wcstol(const wchar_t *, wchar_t **, int);
+long __cdecl ref__wcstol_l(const wchar_t *, wchar_t **, int, _locale_t);
+unsigned long __cdecl ref_wcstoul(const wchar_t *, wchar_t **, int);
+unsigned long __cdecl ref__wcstoul_l(const wchar_t *, wchar_t **, int, _locale_t);
+long long __cdecl ref__wcstoi64(const wchar_t *, wchar_t **, int);
+long long __cdecl ref__wcstoi64_l(const wchar_t *, wchar_t **, int, _locale_t);
+long long __cdecl ref_wcstoll(const wchar_t *, wchar_t **, int);
+long long __cdecl ref__wcstoll_l(const wchar_t *, wchar_t **, int, _locale_t);
+long long __cdecl ref_wcstoimax(const wchar_t *, wchar_t **, int);
+long long __cdecl ref__wcstoimax_l(const wchar_t *, wchar_t **, int, _locale_t);
+unsigned long long __cdecl ref__wcstoui64(const wchar_t *, wchar_t **, int);
+unsigned long long __cdecl ref__wcstoui64_l(const wchar_t *, wchar_t **, int, _locale_t);
+unsigned long long __cdecl ref_wcstoull(const wchar_t *, wchar_t **, int);
+unsigned long long __cdecl ref__wcstoull_l(const wchar_t *, wchar_t **, int, _locale_t);
+unsigned long long __cdecl ref_wcstoumax(const wchar_t *, wchar_t **, int);
+unsigned long long __cdecl ref__wcstoumax_l(const wchar_t *, wchar_t **, int, _locale_t);
+/* The shipping side's spellings the toolchain headers may not declare. */
+long long __cdecl _strtoimax_l(const char *, char **, int, _locale_t);
+unsigned long long __cdecl _strtoumax_l(const char *, char **, int, _locale_t);
+long long __cdecl _wcstoimax_l(const wchar_t *, wchar_t **, int, _locale_t);
+unsigned long long __cdecl _wcstoumax_l(const wchar_t *, wchar_t **, int, _locale_t);
+long long __cdecl _strtoll_l(const char *, char **, int, _locale_t);
+unsigned long long __cdecl _strtoull_l(const char *, char **, int, _locale_t);
+long long __cdecl wcstoll(const wchar_t *, wchar_t **, int);
+long long __cdecl _wcstoll_l(const wchar_t *, wchar_t **, int, _locale_t);
+unsigned long long __cdecl wcstoull(const wchar_t *, wchar_t **, int);
+unsigned long long __cdecl _wcstoull_l(const wchar_t *, wchar_t **, int, _locale_t);
+long long __cdecl strtoimax(const char *, char **, int);
+unsigned long long __cdecl strtoumax(const char *, char **, int);
+long long __cdecl wcstoimax(const wchar_t *, wchar_t **, int);
+unsigned long long __cdecl wcstoumax(const wchar_t *, wchar_t **, int);
 int __cdecl ref_atoi(const char *);
 long __cdecl ref_atol(const char *);
 int __cdecl ref_tolower(int);
@@ -522,6 +571,7 @@ static void run_strtox(void)
     char *e1, *e2, *e3;
     for (unsigned i = 0; i < sizeof(in) / sizeof(in[0]); i++) {
         for (unsigned b = 0; b < sizeof(bases) / sizeof(bases[0]); b++) {
+#if UCRTDIFF_REF_HAS_strtol
             e1 = e2 = e3 = 0;
             grade(with_base("strtol", bases[b]), in[i], strtol(in[i], &e1, bases[b]),
                   rust_strtol(in[i], &e3, bases[b]), ref_strtol(in[i], &e2, bases[b]));
@@ -529,15 +579,175 @@ static void run_strtox(void)
              * often drifts -- a body can return the right number having consumed
              * the wrong number of characters. */
             grade(with_base("strtol.end", bases[b]), in[i], off(in[i], e1), off(in[i], e3), off(in[i], e2));
+#endif
+#if UCRTDIFF_REF_HAS_strtoul
             e1 = e2 = e3 = 0;
             grade(with_base("strtoul", bases[b]), in[i], (long long)strtoul(in[i], &e1, bases[b]),
                   (long long)rust_strtoul(in[i], &e3, bases[b]),
                   (long long)ref_strtoul(in[i], &e2, bases[b]));
             grade(with_base("strtoul.end", bases[b]), in[i], off(in[i], e1), off(in[i], e3), off(in[i], e2));
+#endif
         }
         grade("atoi", in[i], atoi(in[i]), rust_atoi(in[i]), ref_atoi(in[i]));
         grade("atol", in[i], atol(in[i]), rust_atol(in[i]), ref_atol(in[i]));
     }
+}
+
+/* The WHOLE strtox family, two-sided (shipping DLL vs Microsoft): value, end
+ * offset and errno, at the same six bases, over the legacy inputs plus the edges
+ * of the 64-bit types. The wide spellings get the same strings widened plus the
+ * cases only a wide parser has: Unicode decimal digits (fullwidth, Arabic-Indic),
+ * a fullwidth LETTER that must not parse, and U+3000 as leading whitespace.
+ * The _l forms are called with a NULL locale -- the current one. */
+static const char *const g_strtox_in[] = {
+    "42", "-42", "0", "  \t 17", "+99", "0x1f", "2147483647", "-2147483648",
+    "2147483648", "-2147483649", "4294967295", "4294967296", "-4294967295",
+    "999999999999999", "", "   ", "abc", "12abc", "0x", "0X", "-", "+", "0b101",
+    "  -0X7FfF", "007", "z", "Zz", "1_000", "\t\n\v\f\r 5", "-0",
+    "9223372036854775807", "-9223372036854775808", "9223372036854775808",
+    "-9223372036854775809", "18446744073709551615", "18446744073709551616",
+    "-18446744073709551615", "0xFFFFFFFFFFFFFFFF", "0x10000000000000000",
+};
+static const wchar_t *const g_strtox_win[] = {
+    L"\xFF11\xFF12", L"-\xFF19", L"\x0663\x0664", L"\x06F7", L"\x3000 42", L"\xFF21",
+    L"\x00B2", L"4\xFF15", L"0\xFF58" L"1",
+};
+#define STRTOX_N (sizeof(g_strtox_in) / sizeof(g_strtox_in[0]))
+#define STRTOX_WN (sizeof(g_strtox_win) / sizeof(g_strtox_win[0]))
+
+#define STRTOX_ROW(fn, CH, s, lbl, base, ...) do {                                  \
+        CH *e1 = 0, *e2 = 0;                                                        \
+        *_errno() = 0; *ref__errno() = 0;                                           \
+        long long v1 = (long long)fn(s, &e1, base, ##__VA_ARGS__);                  \
+        long long v2 = (long long)ref_##fn(s, &e2, base, ##__VA_ARGS__);            \
+        int n1 = *_errno(), n2 = *ref__errno();                                     \
+        grade2(with_base(#fn, base), lbl, v1, v2);                                  \
+        grade2(with_base(#fn ".end", base), lbl, e1 ? (long long)(e1 - s) : -1,     \
+               e2 ? (long long)(e2 - s) : -1);                                      \
+        grade2(with_base(#fn ".errno", base), lbl, n1, n2);                         \
+    } while (0)
+
+#define STRTOX_NARROW(fn, ...)                                                       \
+    for (unsigned i = 0; i < STRTOX_N; i++)                                          \
+        for (unsigned b = 0; b < 6; b++)                                             \
+            STRTOX_ROW(fn, char, g_strtox_in[i], g_strtox_in[i], bases[b], ##__VA_ARGS__)
+
+#define STRTOX_WIDE(fn, ...)                                                         \
+    for (unsigned i = 0; i < STRTOX_N + STRTOX_WN; i++) {                            \
+        wchar_t w[48]; const wchar_t *ws;                                            \
+        if (i < STRTOX_N) {                                                          \
+            unsigned k = 0;                                                          \
+            for (; g_strtox_in[i][k] && k < 47; k++) w[k] = (unsigned char)g_strtox_in[i][k]; \
+            w[k] = 0; ws = w;                                                        \
+        } else {                                                                     \
+            ws = g_strtox_win[i - STRTOX_N];                                         \
+        }                                                                            \
+        for (unsigned b = 0; b < 6; b++)                                             \
+            STRTOX_ROW(fn, wchar_t, ws, label_idx(i), bases[b], ##__VA_ARGS__);      \
+    }
+
+static void run_strtox_family(void)
+{
+    static const int bases[] = { 0, 8, 10, 16, 36, 2 };
+    (void)bases;
+#if UCRTDIFF_REF_HAS__strtol_l
+    STRTOX_NARROW(_strtol_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__strtoul_l
+    STRTOX_NARROW(_strtoul_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__strtoi64
+    STRTOX_NARROW(_strtoi64);
+#endif
+#if UCRTDIFF_REF_HAS__strtoi64_l
+    STRTOX_NARROW(_strtoi64_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_strtoll
+    STRTOX_NARROW(strtoll);
+#endif
+#if UCRTDIFF_REF_HAS__strtoll_l
+    STRTOX_NARROW(_strtoll_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_strtoimax
+    STRTOX_NARROW(strtoimax);
+#endif
+#if UCRTDIFF_REF_HAS__strtoimax_l
+    STRTOX_NARROW(_strtoimax_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__strtoui64
+    STRTOX_NARROW(_strtoui64);
+#endif
+#if UCRTDIFF_REF_HAS__strtoui64_l
+    STRTOX_NARROW(_strtoui64_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_strtoull
+    STRTOX_NARROW(strtoull);
+#endif
+#if UCRTDIFF_REF_HAS__strtoull_l
+    STRTOX_NARROW(_strtoull_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_strtoumax
+    STRTOX_NARROW(strtoumax);
+#endif
+#if UCRTDIFF_REF_HAS__strtoumax_l
+    STRTOX_NARROW(_strtoumax_l, NULL);
+#endif
+}
+
+/* Split from the narrow half only to keep each legacy export well inside the
+ * per-export hang timeout (UCRTDIFF_EXPORT_TIMEOUT_MS). */
+static void run_wcstox_family(void)
+{
+    static const int bases[] = { 0, 8, 10, 16, 36, 2 };
+    (void)bases;
+#if UCRTDIFF_REF_HAS_wcstol
+    STRTOX_WIDE(wcstol);
+#endif
+#if UCRTDIFF_REF_HAS__wcstol_l
+    STRTOX_WIDE(_wcstol_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_wcstoul
+    STRTOX_WIDE(wcstoul);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoul_l
+    STRTOX_WIDE(_wcstoul_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoi64
+    STRTOX_WIDE(_wcstoi64);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoi64_l
+    STRTOX_WIDE(_wcstoi64_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_wcstoll
+    STRTOX_WIDE(wcstoll);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoll_l
+    STRTOX_WIDE(_wcstoll_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_wcstoimax
+    STRTOX_WIDE(wcstoimax);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoimax_l
+    STRTOX_WIDE(_wcstoimax_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoui64
+    STRTOX_WIDE(_wcstoui64);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoui64_l
+    STRTOX_WIDE(_wcstoui64_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_wcstoull
+    STRTOX_WIDE(wcstoull);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoull_l
+    STRTOX_WIDE(_wcstoull_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_wcstoumax
+    STRTOX_WIDE(wcstoumax);
+#endif
+#if UCRTDIFF_REF_HAS__wcstoumax_l
+    STRTOX_WIDE(_wcstoumax_l, NULL);
+#endif
 }
 
 static void run_ctype(void)
@@ -843,6 +1053,8 @@ static void run_legacy(void)
         void (*fn)(void);
     } legacy[] = {
         { "legacy:strtox", run_strtox },
+        { "legacy:strtox-family", run_strtox_family },
+        { "legacy:wcstox-family", run_wcstox_family },
         { "legacy:ctype", run_ctype },
         { "legacy:string", run_string },
 #define HAND(name) { #name, HAND_FN_##name },

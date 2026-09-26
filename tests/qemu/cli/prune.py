@@ -196,7 +196,7 @@ def classify(
         return "current worktree (use --self)"
     # Preserve conductor scratch for ordinary manual pruning. Scheduled retention
     # explicitly includes it, subject to the same idle window and activity lock.
-    if wtr.name == queue.INTEGRATION_DIRNAME and not allow_self and not include_integration:
+    if queue.is_integration_dirname(wtr.name) and not allow_self and not include_integration:
         return "merge-queue integration tree (its warm caches gate every batch)"
     if wtr in live_qemu:
         return "live QEMU running"

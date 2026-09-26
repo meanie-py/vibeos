@@ -49,6 +49,7 @@ fast-forwards `master` to exactly the commit it gated. N ready lanes therefore c
 ```bash
 ./vibeos-cli land                  # submit (and train the batch if nobody else is)
 ./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land --withdraw       # take MY queued submission out of line (not ready / would gate cold)
 ./vibeos-cli land --direct         # opt out: gate and push this lane alone
 ./vibeos-cli land --drain          # train without submitting (orphan recovery)
 ```
@@ -461,7 +462,7 @@ It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, wh
 `--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
 
 Each bug class it finds becomes a gated `check` scanner over every body. The first four, plus
-`scan_bool_width` (all with EMPTY baselines, all run by `./vibeos-cli check`):
+`scan_bool_width` and `scan_win64_cfg` (all with EMPTY baselines, all run by `./vibeos-cli check`):
 
 - `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
   `a - b` counted ELEMENTS. The fix is `a.offset_from(b)`.
@@ -480,6 +481,8 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   Two directions: a Rust extern DECL wider than the Rust definition, and an exported Rust
   DEFINITION narrower than its C twin (every C caller) or than its own per-arch cfg twin.
   Its 202 findings were 25 wrong definitions, not 202 wrong decls; 56 in all.
+- `scan_win64_cfg`: the C's `#ifdef _WIN64` translated as `target_arch = "x86_64"`, which
+  hands arm64 the 32-bit path. The fix is `target_pointer_width = "64"`.
 
 The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
 of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
@@ -829,9 +832,11 @@ queue, not a gate, and a finding is "look here", not "this is wrong":
 
 ```bash
 python3 tools/scan_sibling_drift.py    # paired twins (Acquire/Release, Nt/Zw, X/XEx, per-arch
-                                       # cfg twins) whose bodies differ on one line
-python3 tools/scan_arch_cfg.py         # ~2.4K per-arch #[cfg] sites that gate LOGIC, out of
-                                       # ~8.4K; the input list for a per-arch drift audit
+                                       # cfg twins) whose bodies differ on one line. 65
+                                       # candidates, all hand-read 2026-09-20, re-checked 09-26
+python3 tools/scan_arch_cfg.py         # ~2.8K per-arch #[cfg] sites that gate LOGIC, out of
+                                       # ~6.7K; the input list for a per-arch drift audit.
+                                       # Diff against the last audited tree, not the whole list
 python3 tools/lint_wide_strings.py     # hand-encoded UTF-16 b"..." literals: C-octal confusion
                                        # and odd lengths (currently clean)
 python3 tools/find_dead_tus.py         # linked TUs whose symbols nothing references — dead

@@ -1044,14 +1044,20 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         HeadlessInit(LoaderBlock);
     }
 
+    // init.c: amd64 publishes the WOW64 32-bit ranges (amd64/mm.h:35-36); everyone else
+    // the native HIGHEST USER address and system range start. This stored 64-bit kernel
+    // constants truncated to ULONG on amd64 (0xFFFFFFFF and 0 — a WOW64 process was told
+    // the system range starts at address 0) and MmSystemRangeStart in both fields elsewhere.
     #[cfg(target_arch = "x86_64")]
     {
-        (*SharedUserData).Reserved1 = 0x000007FFFFFFFFFFu64 as ULONG;
-        (*SharedUserData).Reserved3 = 0xFFFF080000000000u64 as ULONG;
+        const MM_HIGHEST_USER_ADDRESS_WOW64: ULONG = 0x7FFE_FFFF;
+        const MM_SYSTEM_RANGE_START_WOW64: ULONG = 0x8000_0000;
+        (*SharedUserData).Reserved1 = MM_HIGHEST_USER_ADDRESS_WOW64;
+        (*SharedUserData).Reserved3 = MM_SYSTEM_RANGE_START_WOW64;
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
-        (*SharedUserData).Reserved1 = MmSystemRangeStart as ULONG;
+        (*SharedUserData).Reserved1 = MmHighestUserAddress as ULONG;
         (*SharedUserData).Reserved3 = MmSystemRangeStart as ULONG;
     }
 
@@ -1362,6 +1368,25 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
                     ran, active
                 );
                 KeBugCheckEx(ntkrnl_sys::bugcodes::HAL_INITIALIZATION_FAILED, 0x4743, ran as usize, active as usize, 0); // 0x4743 = 'GC'
+            }
+
+            // NT (Phase1InitializationDiscard, right after KeStartAllProcessors):
+            // give the System process and all its threads every processor. It
+            // was created in Phase 0 with KeActiveProcessors == the boot CPU,
+            // and everything it spawns inherits that, so without this every
+            // system thread (and smss) stays pinned to CPU 0 for the life of the
+            // boot. A no-op on one CPU. The wait above guarantees `active` is
+            // the full set.
+            unsafe extern "system" {
+                fn KeSetAffinityProcess(
+                    Process: ntkrnl_sys::ddk::PKPROCESS,
+                    Affinity: ntkrnl_sys::ddk::KAFFINITY,
+                ) -> ntkrnl_sys::ddk::KAFFINITY;
+            }
+            // EPROCESS begins with its KPROCESS (Pcb), so the pointer is both.
+            let system = ntkrnl_sys::mm::PsInitialSystemProcess as ntkrnl_sys::ddk::PKPROCESS;
+            if !system.is_null() {
+                KeSetAffinityProcess(system, active as ntkrnl_sys::ddk::KAFFINITY);
             }
         }
     }
