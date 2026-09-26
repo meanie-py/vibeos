@@ -10754,8 +10754,13 @@ the snapshot. Both halves are the same bug found years apart: the WND half surfa
 EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
 until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
 with what a syscall had just set. Address the tail off the snapped kernel object
-(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
-fixed struct is in the same position and has not been audited.
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. The third instance was the
+scrollbar CONTROL: `pwnd as PSBWND` read `SBCALC` off the snapshot, so every guest
+`GetScrollPos(SB_CTL)` returned junk while `SetScrollPos`, a syscall served from the real window,
+worked (`user32:scroll` 161/170/179). That split, **writes fine and reads wrong**, is the
+signature: the kernel side is right and only the client's view is off. Audited 2026-09-26: no
+other `WND`-extending cast remains in user32-rust (`IMEWND` goes through
+`Get/SetWindowLongPtr`). Grep `as P[A-Z]*WND` for a new one.
 **SERVERINFO was never in the view, and "most things work" hid it.** `dwSRVIFlags` is at
 offset 0 in both layouts, so the flag checks worked while metrics, colours and the class-proc
 tables read garbage. Read `gpsi` only through `wow64::psi`, never as `(*gpsi).field`. The same
