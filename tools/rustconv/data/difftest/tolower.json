@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "random_cases": 256,
+  "seed": 230923,
+  "validity": "Grades shipping pure ASCII case-fold core, not its C ABI wrapper. C char is signed. Inputs 0..32767 avoid signed overflow; high bytes deliberately exercise full-int return semantics. No locale or external state.",
+  "c_source": "../../../../sdk/lib/crt/string/tolower_nt.c",
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/core_rs/casemap.rs",
+  "c_flags": [
+    "-fsigned-char",
+    "-fno-builtin",
+    "-D_Check_return_=",
+    "-D_CRTIMP=",
+    "-D_In_=",
+    "-D__cdecl=",
+    "-Dtolower=reference_tolower"
+  ],
+  "functions": [
+    {
+      "c": "reference_tolower",
+      "rust": "candidate::tolower_ascii",
+      "rust_abi": "Rust",
+      "rust_unsafe": false,
+      "return": "i32",
+      "args": [
+        {
+          "name": "c",
+          "type": "i32",
+          "values": [
+            0,
+            64,
+            65,
+            90,
+            91,
+            97,
+            127,
+            128,
+            255,
+            321,
+            346,
+            384,
+            32602,
+            32767
+          ],
+          "random_range": [
+            0,
+            32767
+          ]
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "wrong_constant",
+      "find": "        c + 32",
+      "replace": "        c + 31"
+    },
+    {
+      "name": "wrong_boundary",
+      "find": "if (b'A' as i32..=b'Z' as i32).contains(&lc)",
+      "replace": "if (b'B' as i32..=b'Z' as i32).contains(&lc)"
+    }
+  ]
+}

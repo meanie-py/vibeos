@@ -2,9 +2,10 @@
 # Host side of the Pi 4B bench, driven from WSL. Guide: docs/engineering/pi4-bench.md
 #
 #   tools/pi4/bench.sh status
-#   tools/pi4/bench.sh up       # serial capture listener + TFTP server
+#   tools/pi4/bench.sh up       # serial capture listener + TFTP + sanboot HTTP servers
 #   tools/pi4/bench.sh down
 #   tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
+#   tools/pi4/bench.sh http     # just the sanboot HTTP server (needs the TCP 8069 rule)
 #
 # Both services run as WINDOWS processes: the USB-serial port belongs to Windows,
 # and WSL2 in NAT mode (172.x) is unreachable from the LAN the Pi is on. `up`
@@ -18,6 +19,8 @@ REPO=$(cd "$HERE/../.." && pwd)
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
 PORT=${PI4_COM:-COM5}
 PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+HTTP_PORT=${PI4_HTTP_PORT:-8069}
+HOST_IP=${PI4_HOST_IP:-192.168.1.183}
 # Windows python (the Microsoft Store stub does not count).
 PY=${PI4_WINPY:-'C:\Users\Lambda\AppData\Local\Programs\Python\Python313\python.exe'}
 
@@ -47,6 +50,7 @@ except Exception as e:
     print('  last state    : unreadable', e)
 PY
     printf 'tftp server     : %s\n' "${t:-down}"
+    printf 'http server     : %s\n' "$(pids 'serve_http.py' | xargs)"
     printf 'power           : %s\n' "$("$HERE/power.sh" status 2>&1)"
 }
 
@@ -71,10 +75,29 @@ up() {
         echo "pi4-bench: TFTP server exited - see $BENCH/tftp-server.err" >&2
         return 1
     }
+    http
+}
+
+# The sanboot server is started only on request: a first TCP listen from a new
+# program can raise a Windows Firewall prompt on the desktop, and without an
+# inbound rule for the port the Pi cannot reach it anyway (docs/engineering/pi4-bench.md).
+http() {
+    cp "$HERE/serve_http.py" "$BENCH/"
+    if [ -z "$(pids 'serve_http.py')" ]; then
+        # This Start-Process never returns on its own (python is serving within
+        # a second; powershell.exe stays). Bound it and trust the PID check below.
+        timeout 10 "$PS" -NoProfile -Command "Start-Process -FilePath '$PY' -ArgumentList '-u','$WBENCH\\serve_http.py','$WBENCH\\payload','$HOST_IP','$HTTP_PORT' -WindowStyle Hidden -RedirectStandardOutput '$WBENCH\\http-server.log' -RedirectStandardError '$WBENCH\\http-server.err'" >/dev/null 2>&1 </dev/null
+        sleep 2
+    fi
+    [ -n "$(pids 'serve_http.py')" ] || {
+        echo "pi4-bench: HTTP server exited - see $BENCH/http-server.err" >&2
+        return 1
+    }
+    echo "http server on $HOST_IP:$HTTP_PORT"
 }
 
 down() {
-    for pat in 'Capture-RpiSerial.ps1' 'serve_tftp.py'; do
+    for pat in 'Capture-RpiSerial.ps1' 'serve_tftp.py' 'serve_http.py'; do
         for p in $(pids "$pat"); do
             ps_run "Stop-Process -Id $p -Force" >/dev/null && echo "stopped $pat ($p)"
         done
@@ -87,13 +110,37 @@ down() {
 stage() {
     local efi="$REPO/build-arm64/boot/freeldr/freeldr/uefildr.efi"
     local img="$REPO/qemu/ramdisk.img"
-    for f in "$efi" "$img"; do
+    for f in "$efi" "$img" "$REPO/qemu/boot.img"; do
         [ -f "$f" ] || { echo "pi4-bench: missing $f - run ./vibeos-cli build --arch arm64" >&2; return 1; }
     done
     mkdir -p "$BENCH/payload/EFI/BOOT"
     cp "$efi" "$BENCH/payload/EFI/BOOT/BOOTAA64.EFI"
-    cp "$HERE/freeldr.ini" "$BENCH/payload/freeldr.ini"
+    # The MP pair (ntkrnlmp.exe + halmp.dll) is the default; PI4_KERNEL=up boots
+    # the UP pair instead. Only the staged copy's DefaultOS= changes; the sed
+    # keeps the CRLF line ending.
+    case "${PI4_KERNEL:-mp}" in
+        mp) cp "$HERE/freeldr.ini" "$BENCH/payload/freeldr.ini" ;;
+        up) sed 's/^DefaultOS=ReactOS_Arm64_MP\(\r\{0,1\}\)$/DefaultOS=ReactOS_Arm64_UP\1/' \
+                "$HERE/freeldr.ini" > "$BENCH/payload/freeldr.ini"
+            grep -q '^DefaultOS=ReactOS_Arm64_UP' "$BENCH/payload/freeldr.ini" || {
+                echo "pi4-bench: could not flip DefaultOS to the UP entry" >&2; return 1; } ;;
+        *) echo "pi4-bench: PI4_KERNEL must be up or mp" >&2; return 1 ;;
+    esac
     cp "$img" "$BENCH/payload/ramdisk.img"
+    # sanboot payload: the QEMU boot image (loader + ramdisk) with the Pi's
+    # freeldr.ini, which iPXE serves to the board as a block device.
+    cp "$REPO/qemu/boot.img" "$BENCH/payload/boot.img.tmp"
+    mcopy -o -i "$BENCH/payload/boot.img.tmp" "$BENCH/payload/freeldr.ini" ::/freeldr.ini
+    mv -f "$BENCH/payload/boot.img.tmp" "$BENCH/payload/boot.img"
+    printf '#!ipxe\necho [ipxe] sanboot http://%s:%s/boot.img\ndhcp\nsanboot http://%s:%s/boot.img\n' \
+        "$HOST_IP" "$HTTP_PORT" "$HOST_IP" "$HTTP_PORT" > "$BENCH/payload/autoexec.ipxe"
+    # iPXE itself is upstream's prebuilt arm64 ipxe.efi (NOT snponly.efi, which
+    # sees no NIC when launched from the card), kept in <bench>/ipxe/.
+    if [ -f "$BENCH/ipxe/ipxe.efi" ]; then
+        cp "$BENCH/ipxe/ipxe.efi" "$BENCH/payload/ipxe.efi"
+    else
+        echo "pi4-bench: no $BENCH/ipxe/ipxe.efi - --sanboot needs https://boot.ipxe.org/arm64-efi/ipxe.efi there" >&2
+    fi
     python3 - "$BENCH/payload" "$REPO" <<'PY'
 import hashlib, json, pathlib, subprocess, sys, time
 payload, repo = pathlib.Path(sys.argv[1]), sys.argv[2]
@@ -105,8 +152,8 @@ def sha(p):
     return h.hexdigest()
 git = lambda *a: subprocess.check_output(['git', '-C', repo, *a], text=True).strip()
 files = [{'path': r, 'bytes': (payload / r).stat().st_size, 'sha256': sha(payload / r)}
-         for r in ('EFI/BOOT/BOOTAA64.EFI', 'freeldr.ini', 'ramdisk.img')]
-m = {'status': 'STAGED', 'staged': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+         for r in ('EFI/BOOT/BOOTAA64.EFI', 'freeldr.ini', 'ramdisk.img', 'boot.img', 'autoexec.ipxe')]
+m = {'status': 'STAGED', 'kernel': __import__('os').environ.get('PI4_KERNEL', 'mp'), 'staged': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
      'source_head': git('rev-parse', 'HEAD'),
      'source_dirty': bool(git('status', '--porcelain', '--untracked-files=no')),
      'files': files}
@@ -120,5 +167,6 @@ case "${1:-status}" in
     up) up ;;
     down) down ;;
     stage) stage ;;
-    *) echo "usage: $0 status|up|down|stage" >&2; exit 2 ;;
+    http) http ;;
+    *) echo "usage: $0 status|up|down|stage|http" >&2; exit 2 ;;
 esac

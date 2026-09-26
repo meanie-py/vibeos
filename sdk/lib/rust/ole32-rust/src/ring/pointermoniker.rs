@@ -441,6 +441,11 @@ fn PointerMonikerImpl_CommonPrefixWith(
 ) -> HRESULT {
     TRACE!(b"(%p, %p)\n\0".as_ptr(), pmkOther, ppmkPrefix);
 
+    // pointermoniker.c (current): `if (!prefix || !other) return E_INVALIDARG;`
+    if ppmkPrefix.is_null() || pmkOther.is_null() {
+        return E_INVALIDARG;
+    }
+
     *ppmkPrefix = core::ptr::null_mut();
 
     /* FAITHFUL to the C oracle (pointermoniker.c:422):

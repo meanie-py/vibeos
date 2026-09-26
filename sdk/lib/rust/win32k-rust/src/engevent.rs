@@ -171,15 +171,15 @@ pub unsafe extern "system" fn EngUnmapEvent(
 pub unsafe extern "system" fn EngWaitForSingleObject(
     Event: PEVENT,
     TimeOut: PLARGE_INTEGER,
-) -> u8 {
+) -> BOOL {
     let Status: NTSTATUS;
 
     if Event.is_null() {
-        return 0u8;
+        return 0;
     }
 
     if ((*Event).fFlags & ENG_EVENT_USERMAPPED) != 0 {
-        return 0u8;
+        return 0;
     }
 
     Status = KeWaitForSingleObject(
@@ -191,9 +191,9 @@ pub unsafe extern "system" fn EngWaitForSingleObject(
     );
 
     if NT_SUCCESS(Status) {
-        1u8
+        1
     } else {
-        0u8
+        0
     }
 }
 

@@ -627,10 +627,11 @@ MODEL_PRICING = {
     # are a ceiling for the per-function re-send cost, not the typical bill.
     "deepseek-chat": (0.27, 1.10),
     "deepseek-reasoner": (0.55, 2.19),
-    # v4 tier (cache-miss list prices; server-side caching makes the real bill far
-    # lower on agentic re-sends — ~99% cache hit). Approximate; dashboard is truth.
-    "deepseek-v4-pro": (0.28, 1.10),
-    "deepseek-v4-flash": (0.14, 0.55),
+    # Verified 2026-09-22: https://api-docs.deepseek.com/quick_start/pricing/
+    # Peak cache-miss prices: conservative across time bands, no discount assumed.
+    "deepseek-v4-pro": (1.32, 3.96),
+    "deepseek-v4-flash": (0.30, 1.20),
+    "deepseek-flash": (0.30, 1.20),
 }
 # Anthropic Message Batches API runs at 50% of the list prices above. The
 # synchronous `translate`/`submit` path does NOT get this discount.

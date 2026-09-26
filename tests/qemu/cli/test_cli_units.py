@@ -1446,6 +1446,36 @@ def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
     assert "UNKNOWN" in body and "FROZEN" not in body
 
 
+def test_the_drain_finishes_the_marker_line_before_returning():
+    # The marker is a prefix of the verdict line. A read that ended mid-line
+    # returned "[APPSTORM] done VER" and failed a 38/38 sweep's pass check.
+    from tests.qemu import test_payload as payload_mod
+
+    chunks = iter(["noise\n[APPSTORM] done VER", "DICT=PASS pass=38\n", "never read\n"])
+    clock = iter(range(0, 1000))
+    out, why = payload_mod.drain_for_marker(
+        lambda timeout: next(chunks, ""), "", "[APPSTORM] done", "", 600, now=lambda: next(clock)
+    )
+    assert why == "marker"
+    assert "[APPSTORM] done VERDICT=PASS pass=38\n" in out
+    assert "never read" not in out
+
+
+def test_the_drain_does_not_wait_forever_for_a_line_that_never_ends():
+    from tests.qemu import test_payload as payload_mod
+
+    clock = iter(range(0, 1000))
+    out, why = payload_mod.drain_for_marker(
+        lambda timeout: "",
+        "[APPSTORM] done VER",
+        "[APPSTORM] done",
+        "",
+        600,
+        now=lambda: next(clock),
+    )
+    assert why == "marker" and out == "[APPSTORM] done VER"
+
+
 def test_a_drained_out_payload_captures_the_hang_before_it_fails():
     # The gap this closes: a sweep that BOOTS and then wedges never enters
     # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
@@ -4671,6 +4701,24 @@ def test_clearing_the_quarantine_is_not_a_no_op(monkeypatch, tmp_path):
     assert any("-DVIBEOS_WINETEST_SKIP=" in c for c in cmds), cmds
 
 
+def test_winetest_only_reaches_cmake_like_the_quarantine_does(monkeypatch, tmp_path):
+    # `--winetest-only` is the narrowing twin of `--winetest-skip`, and it rides
+    # the same string-instr path. If it were missing from instr_values the build
+    # would report success with an un-narrowed marker, and the "repro one
+    # subtest" boot would quietly become a 40-minute whole-suite sweep.
+    cache = "VIBEOS_WINETEST_SWEEP:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cache, canonical=True)
+    build_mod._maybe_canonize(
+        run,
+        repo,
+        bd,
+        "amd64",
+        {"VIBEOS_WINETEST_SWEEP": True},
+        instr_values={"VIBEOS_WINETEST_ONLY": "combo"},
+    )
+    assert any("-DVIBEOS_WINETEST_ONLY=combo" in c for c in cmds), cmds
+
+
 def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_path):
     # Sticky means a later PLAIN build must not flip it back OFF — the opposite of
     # --lockdep, which is reconciled every build so a gate can't inherit it. An ON
@@ -5625,16 +5673,27 @@ def test_every_baseline_line_is_immune_to_line_drift():
     blind: list[str] = []
     for path in baselines:
         for line in path.read_text().splitlines():
-            m = loc.search(line)
-            if not line.strip() or not m:
-                continue
-            drifted = line[: m.start("n")] + str(int(m.group("n")) + 1000) + line[m.end("n") :]
-            if lints._finding_key(line) != lints._finding_key(drifted):
-                blind.append(f"{path.name}: {line[:110]}")
+            # EVERY location, one at a time: perturbing only the first let the embedded
+            # twin list of scan_dropped_asserts drift unseen behind its stripped prefix.
+            for m in loc.finditer(line):
+                n = str(int(m.group("n")) + 1000)
+                drifted = line[: m.start("n")] + n + line[m.end("n") :]
+                if lints._finding_key(line) != lints._finding_key(drifted):
+                    blind.append(f"{path.name}: {line[:110]}")
+                    break
     assert not blind, (
         f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
         f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
     )
+
+
+def test_lint_baseline_ignores_drift_in_locations_inside_the_message():
+    """scan_dropped_asserts: `h:1033: MI_UPDATE_VALID_PTE: … (a/section.rs:252, b.rs:1454)`."""
+    base = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:252, r/s.rs:14)"}
+    drifted = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:258, r/s.rs:14)"}
+    assert lints._new_findings(drifted, base) == []
+    moved = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/other.rs:252, r/s.rs:14)"}
+    assert lints._new_findings(moved, base) != []
 
 
 def test_lint_baseline_compares_prefixless_findings_verbatim():
@@ -9207,3 +9266,60 @@ def test_reaper_walks_debug_toolkit_manifests(reaper):
     (runs / "torn" / "manifest.json").write_text("{")
     vm_mod.reap_orphan_qemus()
     assert [k["qemu_pid"] for k in kills] == [300]
+
+
+# --- vm: output printed before the `ready` snapshot is boot output, never flushed -------
+
+
+class _SnapshotSerial:
+    """read_until / read_until_idle / read_available over a scripted stream, with the
+    real SerialClient's consume semantics: a TimeoutError does NOT consume."""
+
+    def __init__(self, boot: str, settle: str, settle_times_out: bool) -> None:
+        self.buf, self.pos = boot + settle, 0
+        self.boot, self.settle_times_out = boot, settle_times_out
+
+    def read_until(self, marker: str, timeout: float = 0) -> str:
+        end = self.buf.index(marker) + len(marker)
+        out, self.pos = self.buf[self.pos : end], end
+        return out
+
+    def read_until_idle(self, idle_seconds: float = 0, timeout: float = 0, min_bytes: int = 0):
+        if self.settle_times_out:
+            raise TimeoutError("never idle")
+        out, self.pos = self.buf[self.pos :], len(self.buf)
+        return out
+
+    def read_available(self, timeout: float = 0) -> str:
+        out, self.pos = self.buf[self.pos :], len(self.buf)
+        return out
+
+
+class _FakeQmp:
+    def hmp(self, cmd: str) -> str:
+        return ""
+
+
+@pytest.mark.parametrize("settle_times_out", [True, False])
+def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restore(
+    monkeypatch, settle_times_out
+):
+    """The ucrtdiff/oldcrt hang: the marker arrived during the settle, the settle timed
+    out because the payload was chatty, and restore_snapshot's flush ate it."""
+    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
+    vm = object.__new__(vm_mod.QemuVM)
+    vm.config = cast(
+        Any,
+        type(
+            "C", (), {"boot_marker": "shell ready", "boot_timeout": 1, "desktop_settle_seconds": 5}
+        )(),
+    )
+    vm.serial = cast(
+        Any, _SnapshotSerial("...shell ready", "\n[UCRTDIFF] done\n", settle_times_out)
+    )
+    vm.qmp = cast(Any, _FakeQmp())
+    vm._boot_output = ""
+    vm.wait_for_boot()
+    vm.save_snapshot("ready")
+    vm.restore_snapshot("ready")  # the autouse fixture, before the first test
+    assert "[UCRTDIFF] done" in vm._boot_output

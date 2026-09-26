@@ -80,10 +80,10 @@ MIT License
 
 - Upstream: https://github.com/acpica/acpica
 - Version: 0x20260408
-- In this tree: `drivers/bus/acpi/acpica`
+- In this tree: `vendor/acpica`
 - Licence: BSD-3-Clause OR GPL-2.0
 - Modified by us: yes, see `vendor-patches/acpica.patch`
-- Grant reproduced from: `drivers/bus/acpi/acpica/include/acpi.h (header comment)`
+- Grant reproduced from: `vendor/acpica/include/acpi.h (header comment)`
 
 ```
 Name: acpi.h - Master public include file used to interface to ACPICA
@@ -131,12 +131,12 @@ POSSIBILITY OF SUCH DAMAGES.
 
 - Upstream: https://www.chiark.greenend.org.uk/~ian/adns/
 - Version: 1.0
-- In this tree: `sdk/lib/3rdparty/adns`
+- In this tree: `vendor/adns`
 - Licence: GPL-2.0-or-later
 - Also contains: LGPL-2.0-or-later — src/adns.h and adns_win32/adns_win32.h, and DELIBERATELY so — this is upstream's own carve-out, not drift. Both headers say the public header alone ("but only the public header file adns.h and not any other part of adns") may also be taken under the GNU Library GPL v2-or-later, so that a program can include it without the whole work becoming GPL. The library itself stays GPL-2.0-or-later. Found by the prose half of `--licences` on 2026-09-20; neither file carries an SPDX tag.
 
 - Modified by us: yes, see `vendor-patches/adns.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/adns/COPYING`
+- Grant reproduced from: `vendor/adns/COPYING`
 
 ```
 GNU GENERAL PUBLIC LICENSE
@@ -563,9 +563,9 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - Upstream: https://sourceforge.net/projects/chmc/
 - Version: ??? (Imported on 2015.08.11: 65780ec (r68685))
-- In this tree: `sdk/tools/hhpcomp/chmc`
+- In this tree: `vendor/chmc`
 - Licence: GPL-3.0-or-later
-- Grant reproduced from: `sdk/tools/hhpcomp/chmc/chmc.c (header comment)`
+- Grant reproduced from: `vendor/chmc/chmc.c (header comment)`
 
 ```
 Copyright(C) 2010 Alex Andreotti <alex.andreotti@gmail.com>
@@ -1309,11 +1309,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - Upstream: TianoCore EDK II
 - Version: unknown
-- In this tree: `sdk/include/reactos/edk2`
+- In this tree: `vendor/edk2`
 - Licence: BSD-2-Clause
-- Also contains: MIT — AppleGraphInfo.h, added 2026-09-20 by the upstream merge (freeldr UEFI Apple Graphics Info Protocol support, upstream PR #8706). NOT a TianoCore file that wandered off the headline licence: its own header says `PROJECT: ReactOS UEFI Support`, `COPYRIGHT: Copyright 2026 Sylas Hollander`, `LICENSE: MIT` — it is a ReactOS-authored header that a merge commit dropped into the vendored edk2 directory rather than beside the other freeldr UEFI sources. The MIT declaration is the ReactOS author's own for this file's new text; a second comment separately credits the struct layout as based on macosxbootloader's AppleGraphInfo.h (BSD-3-Clause) for the shape being reimplemented, not a licence on this file. Recorded here rather than moved: moving it out from under sdk/include/reactos/edk2 touches freeldr's include paths, which is outside this pass's scope (see upstream-sync-merge-decisions.md). It is NOT a translation target either way — header only, no body — so leaving it filed under the vendored tree costs nothing but this licence-drift note; a future pass can relocate it to sit with the rest of the ReactOS-authored freeldr UEFI code.
-
-- Grant reproduced from: `sdk/include/reactos/edk2/License.txt`
+- Grant reproduced from: `vendor/edk2/License.txt`
 
 ```
 Copyright (c) 2004 - 2016, Intel Corporation. All rights reserved.
@@ -1415,7 +1413,7 @@ SOFTWARE.
 
 - Upstream: https://freetype.org/
 - Version: 2.10.4
-- In this tree: `sdk/lib/3rdparty/freetype`
+- In this tree: `vendor/freetype`
 - Licence: GPL-2.0-only
 - Modified by us: yes, see `vendor-patches/freetype.patch`
 - Grant reproduced from: `COPYING`
@@ -1775,9 +1773,9 @@ the said software).
 
 - Upstream: https://github.com/microsoft/libdxg
 - Version: git commit 045831e
-- In this tree: `sdk/include/ddk/d3dkmthk.h`
+- In this tree: `vendor/libdxg`
 - Licence: MIT
-- Grant reproduced from: `sdk/include/ddk/d3dkmthk.h (header comment)`
+- Grant reproduced from: `vendor/libdxg/include/d3dkmthk.h (header comment)`
 
 ```
 Module*Header**********************************\
@@ -1796,10 +1794,10 @@ Licensed under the MIT License.
 
 - Upstream: https://ijg.org/
 - Version: 9f
-- In this tree: `dll/3rdparty/libjpeg`, `sdk/include/reactos/libs/libjpeg`
+- In this tree: `vendor/libjpeg`
 - Licence: IJG
 - Modified by us: yes, see `vendor-patches/libjpeg.patch`
-- Grant reproduced from: `dll/3rdparty/libjpeg/README`
+- Grant reproduced from: `vendor/libjpeg/README`
 
 ```
 The Independent JPEG Group's JPEG software
@@ -2182,10 +2180,10 @@ Please send bug reports, offers of help, etc. to jpeg-info@ijg.org.
 
 - Upstream: https://www.mpg123.de/
 - Version: 1.33.7
-- In this tree: `sdk/lib/3rdparty/libmpg123`, `sdk/lib/3rdparty/libmpg123/include`
+- In this tree: `vendor/libmpg123`, `vendor/libmpg123/include`
 - Licence: LGPL-2.1
 - Modified by us: yes, see `vendor-patches/libmpg123.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/libmpg123/COPYING`
+- Grant reproduced from: `vendor/libmpg123/COPYING`
 
 ```
 This is the file that contains the terms of use, copying, etc. for the mpg123 distribution package.
@@ -2966,9 +2964,9 @@ POSSIBILITY OF SUCH DAMAGES.
 
 - Upstream: http://www.libpng.org/pub/png/libpng.html
 - Version: 1.6.58
-- In this tree: `dll/3rdparty/libpng`, `sdk/include/reactos/libs/libpng`
+- In this tree: `vendor/libpng`
 - Licence: libpng-2.0
-- Grant reproduced from: `dll/3rdparty/libpng/docs/LICENSE`
+- Grant reproduced from: `vendor/libpng/docs/LICENSE`
 
 ```
 COPYRIGHT NOTICE, DISCLAIMER, and LICENSE
@@ -3147,9 +3145,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - Upstream: http://www.libtiff.org/
 - Version: 4.7.1
-- In this tree: `dll/3rdparty/libtiff`, `sdk/include/reactos/libs/libtiff`
+- In this tree: `vendor/libtiff`
 - Licence: libtiff (BSD-like)
-- Grant reproduced from: `dll/3rdparty/libtiff/tif_open.c (header comment)`
+- Grant reproduced from: `vendor/libtiff/tif_open.c (header comment)`
 
 ```
 Copyright (c) 1988-1997 Sam Leffler
@@ -3183,12 +3181,12 @@ TIFF Library.
 
 - Upstream: https://sourceforge.net/projects/libtirpc/
 - Version: 0.2.1
-- In this tree: `dll/3rdparty/libtirpc`
+- In this tree: `vendor/libtirpc`
 - Licence: BSD-3-Clause
 - Also contains: LGPL-2.1-or-later — THE WINDOWS PORT HALF OF THIS TREE IS COPYLEFT, and the entry said BSD-3-Clause flat until 2026-09-20. Sixteen files carry "Copyright (c) 2012 The Regents of the University of Michigan" and the LGPL-2.1-or-later notice: src/{auth_none,auth_sspi, auth_unix,authsspi_prot,clnt_generic,clnt_vc,rpc_prot,wintirpc,xdr_rec}.c and tirpc/{wintirpc.h,rpc/{auth,auth_gss,auth_sspi,clnt,rpc_msg,types}.h}. They are the ms-nfs41-client Windows/SSPI port this tree's review already describes as having no surviving upstream artifact — so now we know what licence that port is under. This is the most consequential finding the prose scan has made: a weak-copyleft obligation inside a tree recorded as permissive, in files that ARE built. The Sun/upstream libtirpc half remains BSD-3-Clause.
 
 - Modified by us: yes, see `vendor-patches/libtirpc.patch`
-- Grant reproduced from: `dll/3rdparty/libtirpc/COPYING`
+- Grant reproduced from: `vendor/libtirpc/COPYING`
 
 ```
 Sun Industry Standards Source License 1.0
@@ -3555,10 +3553,10 @@ Specification RFC2695:  Authentication Mechanisms for ONC RPC
 
 - Upstream: https://gitlab.gnome.org/GNOME/libxml2
 - Version: 2.13.9
-- In this tree: `sdk/lib/3rdparty/libxml2`
+- In this tree: `vendor/libxml2`
 - Licence: MIT
 - Modified by us: yes, see `vendor-patches/libxml2.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/libxml2/Copyright`
+- Grant reproduced from: `vendor/libxml2/Copyright`
 
 ```
 Except where otherwise noted in the source code (e.g. the files dict.c and
@@ -3590,9 +3588,9 @@ THE SOFTWARE.
 
 - Upstream: https://gitlab.gnome.org/GNOME/libxslt
 - Version: 1.1.42
-- In this tree: `dll/3rdparty/libxslt`, `sdk/include/reactos/libs/libxslt`
+- In this tree: `vendor/libxslt`
 - Licence: MIT
-- Grant reproduced from: `dll/3rdparty/libxslt/Copyright`
+- Grant reproduced from: `vendor/libxslt/Copyright`
 
 ```
 Licence for libxslt except libexslt
@@ -3654,9 +3652,9 @@ ings in this Software without prior written authorization from him.
 
 - Upstream: https://sourceforge.net/projects/chmc/
 - Version: ??? (Imported on 2015.08.11: 65780ec (r68685))
-- In this tree: `sdk/tools/hhpcomp/lzx_compress`
+- In this tree: `vendor/lzx_compress`
 - Licence: LGPL-2.1-or-later
-- Grant reproduced from: `sdk/tools/hhpcomp/lzx_compress/lzx_layer.c (header comment)`
+- Grant reproduced from: `vendor/lzx_compress/lzx_layer.c (header comment)`
 
 ```
 File lzx_layer.c, part of lzxcomp library
@@ -3680,9 +3678,9 @@ File lzx_layer.c, part of lzxcomp library
 
 - Upstream: https://github.com/Mbed-TLS/mbedtls
 - Version: 3.6.7
-- In this tree: `dll/3rdparty/mbedtls`, `sdk/include/reactos/libs/mbedtls`, `sdk/include/reactos/libs/psa`
+- In this tree: `vendor/mbedtls`
 - Licence: Apache-2.0 OR GPL-2.0-or-later
-- Grant reproduced from: `dll/3rdparty/mbedtls/LICENSE`
+- Grant reproduced from: `vendor/mbedtls/LICENSE`
 
 ```
 Mbed TLS files are provided under a dual [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html)
@@ -4244,9 +4242,9 @@ Public License instead of this License.
 
 - Upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
 - Version: 2.6
-- In this tree: `dll/opengl/mesa`
+- In this tree: `vendor/mesa`
 - Licence: LGPL-2.0-or-later
-- Grant reproduced from: `dll/opengl/mesa/context.c (header comment)`
+- Grant reproduced from: `vendor/mesa/context.c (header comment)`
 
 ```
 $Id: context.c,v 1.64 1998/02/05 00:34:56 brianp Exp $ */
@@ -4500,13 +4498,13 @@ This is the largest unresolved provenance question in the tree (~78K lines) and 
 
 - Upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
 - Version: 7.6
-- In this tree: `sdk/include/GL`
+- In this tree: `vendor/opengl-headers`
 - Licence: MIT
 - Also contains: Khronos — glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos MIT-style Materials licence.
 
 - Also contains: SGI-B-1.1 — glu.h, SGI Free Software License B version 1.1 -- the same text as the libnurbs half of dll/opengl/glu32.
 
-- Grant reproduced from: `sdk/include/GL/gl.h (header comment)`
+- Grant reproduced from: `vendor/opengl-headers/include/GL/gl.h (header comment)`
 
 ```
 Mesa 3-D graphics library
@@ -4537,9 +4535,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - Upstream: https://github.com/rdesktop/rdesktop
 - Version: 1.8.3
-- In this tree: `base/applications/mstsc`
+- In this tree: `vendor/rdesktop`
 - Licence: GPL-3.0-or-later
-- Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
+- Also contains: GPL-2.0-or-later — ssl_calls.c is not rdesktop's: its header reads "xrdp: A Remote Desktop Protocol server. Copyright (C) Jay Sorg 2004-2005", GPL-2.0-or-later. Same author as the Win32 UI port (uimain.c/bsops.c/win32.c), carried along with it.
+
+- Grant reproduced from: `vendor/rdesktop/rdesktop.h (header comment)`
 
 ```
 rdesktop: A Remote Desktop Protocol client.
@@ -4566,7 +4566,7 @@ rdesktop: A Remote Desktop Protocol client.
 - Version: 1.8.3
 - In this tree: `vendor/tsclient`
 - Licence: GPL-3.0-or-later
-- Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
+- Grant reproduced from: `vendor/rdesktop/rdesktop.h (header comment)`
 
 ```
 rdesktop: A Remote Desktop Protocol client.
@@ -5022,7 +5022,7 @@ Silicon Graphics, Inc.
 
 - Upstream: http://www.stlport.org/
 - Version: 5.2.1
-- In this tree: `vendor/stlport`, `sdk/include/c++/stlport`
+- In this tree: `vendor/stlport`
 - Licence: STLport licence (permissive)
 - Modified by us: yes, see `vendor-patches/stlport.patch`
 - Grant reproduced from: `vendor/stlport/README`
@@ -5222,9 +5222,9 @@ SUCH DAMAGE.
 
 - Upstream: https://github.com/win-iconv/win-iconv
 - Version: unknown
-- In this tree: `sdk/lib/3rdparty/libwin-iconv`
+- In this tree: `vendor/libwin-iconv`
 - Licence: Unlicense OR MIT
-- Grant reproduced from: `sdk/lib/3rdparty/libwin-iconv/win_iconv.c (header comment)`
+- Grant reproduced from: `vendor/libwin-iconv/win_iconv.c (header comment)`
 
 ```
 iconv implementation using Win32 API to convert.
@@ -5239,10 +5239,10 @@ for WC_NO_BEST_FIT_CHARS */
 
 - Upstream: https://github.com/microsoft/Windows-Driver-Frameworks
 - Version: 1.17.7600
-- In this tree: `sdk/lib/drivers/wdf`, `sdk/include/wdf`
+- In this tree: `vendor/wdf`
 - Licence: MIT
 - Modified by us: yes, see `vendor-patches/wdf.patch`
-- Grant reproduced from: `sdk/lib/drivers/wdf/LICENSE`
+- Grant reproduced from: `vendor/wdf/LICENSE`
 
 ```
 The MIT License (MIT)
@@ -5272,11 +5272,11 @@ SOFTWARE.
 
 - Upstream: https://zlib.net/
 - Version: 1.3.2
-- In this tree: `sdk/lib/3rdparty/zlib`, `sdk/include/reactos/libs/zlib`
+- In this tree: `vendor/zlib`
 - Licence: Zlib
 - Also contains: Info-ZIP — contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c) 1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP licence, 2009-Jan-02 version), now vendored. The code was always licensed this way — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a licence file and this registry recorded only Zlib. The obligation is live: minizip is built into rapps and zipfldr.
 - Modified by us: yes, see `vendor-patches/zlib.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/zlib/LICENSE`
+- Grant reproduced from: `vendor/zlib/LICENSE`
 
 ```
 Copyright notice:

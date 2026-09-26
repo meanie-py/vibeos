@@ -1,6 +1,36 @@
 
 spec2def(jscript.dll jscript.spec)
 
+# Preserve the original C source; the Rust archive supplies decode_source.
+set(JSCRIPT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+if(ARCH STREQUAL "i386")
+    set(JSCRIPT_RUST_TARGET "i686-pc-windows-gnu")
+elseif(ARCH STREQUAL "amd64")
+    set(JSCRIPT_RUST_TARGET "x86_64-pc-windows-gnu")
+elseif(ARCH STREQUAL "arm64")
+    set(JSCRIPT_RUST_TARGET "aarch64-pc-windows-gnullvm")
+endif()
+rust_storage_target(JSCRIPT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-jscript-target" jscript-rust)
+set(JSCRIPT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libjscript_rust.a")
+rust_crate_sources(JSCRIPT_RUST_SRCS "${JSCRIPT_RUST_WORKSPACE_DIR}" jscript-rust)
+add_custom_command(
+    OUTPUT ${JSCRIPT_RUST_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CARGO_TARGET_DIR=${JSCRIPT_RUST_TARGET_DIR}
+        cargo build --release --target ${JSCRIPT_RUST_TARGET}
+            -p jscript-rust
+            --manifest-path ${JSCRIPT_RUST_WORKSPACE_DIR}/Cargo.toml
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${JSCRIPT_RUST_TARGET_DIR}/${JSCRIPT_RUST_TARGET}/release/libjscript_rust.a
+        ${JSCRIPT_RUST_LIB}
+    DEPENDS ${JSCRIPT_RUST_SRCS}
+            ${JSCRIPT_RUST_WORKSPACE_DIR}/jscript-rust/Cargo.toml
+    WORKING_DIRECTORY ${JSCRIPT_RUST_WORKSPACE_DIR}
+    COMMENT "Building jscript-rust (${JSCRIPT_RUST_TARGET})"
+)
+add_custom_target(rust_jscript DEPENDS ${JSCRIPT_RUST_LIB})
+
+
 list(APPEND SOURCE
     activex.c
     array.c
@@ -8,7 +38,7 @@ list(APPEND SOURCE
     bool.c
     compile.c
     date.c
-    decode.c
+    # decode.c (compiler-translated into jscript-rust/src/decode.rs)
     dispex.c
     engine.c
     enumerator.c
@@ -61,7 +91,8 @@ add_idl_reg_scripts(jscript registry jscript_classes.idl)
 add_idl_reg_scripts(jscript regtypelib jsglobal.idl)
 add_dependencies(jscript jscript_idlheader jscript_jsdisp_header stdole2)
 set_module_type(jscript win32dll)
-target_link_libraries(jscript uuid wine oldnames wine_dll_register)
+target_link_libraries(jscript ${JSCRIPT_RUST_LIB} uuid wine oldnames wine_dll_register)
+add_dependencies(jscript rust_jscript)
 add_importlibs(jscript user32 ole32 oleaut32 advapi32 msvcrt kernel32 ntdll)
 add_pch(jscript precomp.h "${PCH_SKIP_SOURCE}")
 add_cd_file(TARGET jscript DESTINATION reactos/system32 FOR all)

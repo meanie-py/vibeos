@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 240924,
+  "random_cases": 128,
+  "validity": "Genuine ReactOS _strlwr_nt.c and shipping cnt-rust _strlwr shim plus cstr_slice, raw_mut_slice and core_rs::casemap::lower_ascii. Inputs are non-null, ASCII, NUL-terminated byte strings; arbitrary ASCII including punctuation and embedded NUL is allowed because both implementations must stop at the first NUL. This grades ASCII-only in-place folding, preservation of all bytes after the first NUL, and returning the original pointer. Host behavior only.",
+  "c_source": "../../../../sdk/lib/crt/string/_strlwr_nt.c",
+  "c_prelude": "strlwr_include/prelude.h",
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "rust_items": ["m_strlwr::_strlwr"],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": ["cstr_slice", "raw_mut_slice"]
+    }
+  ],
+  "rust_support": {"core_rs": "casemap_core.rs"},
+  "functions": [
+    {
+      "c": "_strlwr",
+      "rust": "candidate::_strlwr",
+      "return": {
+        "type": "bytes",
+        "within": ["_String"],
+        "nullable": false,
+        "one_past": false,
+        "c_type": "char *"
+      },
+      "args": [
+        {
+          "name": "_String",
+          "type": "mut_cstr",
+          "generator": {
+            "max_bytes": 48,
+            "examples": [
+              "",
+              "ABC XYZ",
+              "already lower",
+              "MiXeD CaSe 123!",
+              "[\\]^_`AZ",
+              "az{|}~",
+              "\u0000AFTER NUL",
+              "Ab\u0000CD"
+            ],
+            "grammar": {
+              "sequence": [
+                {"charset": "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "min": 0, "max": 16},
+                {"charset": "abcdefghijklmnopqrstuvwxyz0123456789 !?_-", "min": 0, "max": 16}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "skip_ascii_folding",
+      "find": "crate::core_rs::casemap::lower_ascii(s);",
+      "replace": "let _ = s;"
+    },
+    {
+      "name": "read_past_terminator",
+      "find": "let n = cstr_slice(_String as *const u8).len();",
+      "replace": "let n = cstr_slice(_String as *const u8).len();\n        core::ptr::read_volatile(_String.add(n + 1));",
+      "expect": "memory_fault"
+    }
+  ]
+}

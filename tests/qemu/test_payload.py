@@ -213,9 +213,20 @@ def drain_for_marker(
     """
     deadline = now() + budget_secs
     last_progress = now()
+    line_deadline = None
     while True:
         if marker in output:
-            return output, "marker"
+            # A marker is usually a PREFIX of the line that carries the verdict
+            # ("[APPSTORM] done" vs "... done VERDICT=PASS"). Returning on the
+            # prefix alone let a read that ended mid-line hand the caller
+            # "[APPSTORM] done VER", and a 38/38 sweep failed its pass check.
+            # Finish the line first, briefly bounded.
+            if "\n" in output[output.index(marker) :]:
+                return output, "marker"
+            if line_deadline is None:
+                line_deadline = now() + 10.0
+            elif now() >= line_deadline:
+                return output, "marker"
         if fail_marker and fail_marker in output:
             return output, "fail"
         if now() >= deadline:

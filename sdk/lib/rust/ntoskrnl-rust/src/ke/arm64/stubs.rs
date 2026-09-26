@@ -123,9 +123,17 @@ const _B: u64 = 0x0000000000000402;
 // These were bit-swapped (cached→AttrIndx1=Device etc.), so every cached page in
 // this table mapped as Device → unaligned accesses alignment-faulted (the 0x1E
 // cold-build cascade). Corrected to match the actual MAIR.
-const _C: u64 = 0x0000000000000000; // cached → AttrIndx 0 (Normal-WB)
+//
+// Normal memory must also be Inner Shareable (SH, bits [9:8] = 0b11). With SH
+// 0b00 (Non-shareable) the cores' caches and exclusive monitors need not be
+// coherent for the page, so on a multi-core board an LDXR/STXR atomic from one
+// core can overwrite another's: a Raspberry Pi 4 lost a KeIpiGenericCall
+// arrival decrement on a kernel stack this way and hung. QEMU ignores
+// shareability. Device memory (_NC) ignores SH, so it stays 0 there.
+const SH_INNER: u64 = 0x0000000000000300;
+const _C: u64 = 0x0000000000000000 | SH_INNER; // cached → AttrIndx 0 (Normal-WB)
 const _NC: u64 = 0x0000000000000004; // no-cache → AttrIndx 1 (Device-nGnRnE)
-const _WC: u64 = 0x0000000000000008; // write-combine → AttrIndx 2 (Normal-NC)
+const _WC: u64 = 0x0000000000000008 | SH_INNER; // write-combine → AttrIndx 2 (Normal-NC)
 const _ND: u64 = 0x0000000000000080;
 const _RO: u64 = 0x0040000000000000 | _ND;
 const _X: u64 = 0x0000000000000000 | _ND;

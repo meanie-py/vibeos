@@ -29,6 +29,7 @@ import os
 import re
 import signal
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -92,8 +93,8 @@ class RunArchive:
 
     def __init__(self, label: str, model: str, target: str):
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.dir = RUSTCONV_RESPONSES_DIR / f"{ts}-{_slug(label)}"
-        self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir = RUSTCONV_RESPONSES_DIR / f"{ts}-{_slug(label)}-run-{uuid.uuid4().hex[:12]}"
+        self.dir.mkdir(parents=True, exist_ok=False)
         self.model = model
         self.label = label
         self.committed: list[str] = []  # human-facing list of saved files
@@ -111,22 +112,27 @@ class RunArchive:
 
     def stream_path(self, idx: int, name: str) -> Path:
         """Live partial-stream file for an in-flight call (kept on kill)."""
-        return self.dir / f"{idx:02d}_{_slug(name)}.partial"
+        return self.dir / f"{uuid.uuid4().int}_{_slug(name)}.partial"
 
-    def commit(self, idx: int, name: str, code: str, input_tokens: int, output_tokens: int) -> Path:
+    def commit(
+        self,
+        idx: int,
+        name: str,
+        code: str,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        attempt_id: str | None = None,
+    ) -> Path:
         """Persist a completed unit's final Rust + record token usage."""
-        final = self.dir / f"{idx:02d}_{_slug(name)}.rs"
+        final = self.dir / f"{uuid.uuid4().int}_{_slug(name)}.rs"
         final.write_text(code, encoding="utf-8")
-        partial = self.stream_path(idx, name)
-        if partial.exists():
-            try:
-                partial.unlink()  # superseded by the committed .rs
-            except OSError:
-                pass
+        # Raw streams are paid evidence; immutable attempts own their authoritative copy.
         self.committed.append(final.name)
         self._meta["calls"].append(
             {
                 "idx": idx,
+                "attempt_id": attempt_id,
                 "name": name,
                 "file": final.name,
                 "input_tokens": input_tokens,

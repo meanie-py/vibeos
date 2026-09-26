@@ -77,6 +77,45 @@ static void snapshot_pids(void)
     CloseHandle(snap);
 }
 
+/* Single-instance apps (osk) exit at once when a copy is already up, and winlogon's stock-app
+ * check leaves one running. Whether it was still alive decided osk's verdict, so every run was
+ * a coin flip. Give each app a fresh start instead. explorer.exe is the shell: never touch it. */
+static void end_prior_instances(const char *exe)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    WCHAR wexe[MAX_PATH];
+    DWORD parent = 0;
+    HANDLE snap;
+    if (!lstrcmpiA(exe, "explorer.exe"))
+        return;
+    MultiByteToWideChar(CP_ACP, 0, exe, -1, wexe, MAX_PATH);
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    /* Never our own launcher: arm64 starts appstorm from a cmd.exe, and cmd is on the list. */
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (pe.th32ProcessID == GetCurrentProcessId())
+                parent = pe.th32ParentProcessID;
+        } while (Process32NextW(snap, &pe));
+    pe.dwSize = sizeof pe;
+    if (Process32FirstW(snap, &pe))
+        do {
+            HANDLE h;
+            if (lstrcmpiW(pe.szExeFile, wexe) || pe.th32ProcessID == parent
+                || pe.th32ProcessID == GetCurrentProcessId())
+                continue;
+            h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pe.th32ProcessID);
+            if (!h)
+                continue;
+            SAY("  ended prior %s pid=%lu\n", exe, pe.th32ProcessID);
+            TerminateProcess(h, 0);
+            WaitForSingleObject(h, 5000);
+            CloseHandle(h);
+        } while (Process32NextW(snap, &pe));
+    CloseHandle(snap);
+}
+
 static int prior_pid(DWORD pid)
 {
     for (int i = 0; i < n_prior; i++)
@@ -125,6 +164,18 @@ static void dump_hung_thread(HWND h)
 {
     DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
     dump_thread(pid, tid);
+}
+
+/* A process that ignores WM_CLOSE is stuck somewhere no single window's thread tells us:
+ * the UI thread may be fine while a worker holds up ExitProcess. Dump every thread. */
+static void dump_process(DWORD pid)
+{
+    THREADENTRY32 te = { sizeof te };
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (s == INVALID_HANDLE_VALUE) return;
+    for (BOOL k = Thread32First(s, &te); k; k = Thread32Next(s, &te))
+        if (te.th32OwnerProcessID == pid) dump_thread(pid, te.th32ThreadID);
+    CloseHandle(s);
 }
 
 /* Boot-time `setup -mini` installs devices and registers components for minutes after the
@@ -195,6 +246,7 @@ int main(void)
         ExpandEnvironmentStringsA(a->args, args, MAX_PATH);
         snprintf(cmd, sizeof cmd, "\"%s\" %s", path, args);
         wset_t before, got;
+        end_prior_instances(a->exe);
         snapshot(&before);
         snapshot_pids();
         STARTUPINFOA si = { sizeof si };
@@ -282,7 +334,12 @@ int main(void)
             HANDLE h = j ? OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION,
                                        FALSE, pids[j]) : pi.hProcess;
             if (!h) continue;
-            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) { TerminateProcess(h, 1); close = "TIMEOUT"; }
+            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) {
+                SAY("  close timeout pid=%lu, threads:\n", pids[j]);
+                dump_process(pids[j]);
+                TerminateProcess(h, 1);
+                close = "TIMEOUT";
+            }
             if (!j) GetExitCodeProcess(h, &rc);
             if (j) CloseHandle(h);
         }

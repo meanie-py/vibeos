@@ -2258,6 +2258,10 @@ pub unsafe extern "system" fn IsAccelerator(
 /// ole2.c:2033 ReleaseStgMedium [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn ReleaseStgMedium(pmedium: *mut STGMEDIUM) {
+    // ole2.c: `if (!pmedium) return;`
+    if pmedium.is_null() {
+        return;
+    }
     match (*pmedium).tymed {
         TYMED_HGLOBAL => {
             if (*pmedium).pUnkForRelease.is_null()

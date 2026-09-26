@@ -22,11 +22,8 @@ for A in $ARCHES; do
     # zero serial evidence). Guarded below.
     "$TC/${CC[$A]}" -O2 -o "$HERE/httpd-$A.exe" "$HERE/vibehttpd.c" \
         -lmsvcrt-os -lws2_32 -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-    objd="$TC/${CC[$A]%-gcc}-objdump"
-    ss=$("$objd" -p "$HERE/httpd-$A.exe" | awk '$1=="Subsystem" && !p {print $2; p=1}')
-    [ "$ss" = "00000002" ] || { echo "[httpd] FAIL($A): subsystem=$ss (want GUI)"; exit 1; }
-    "$objd" -p "$HERE/httpd-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[httpd] FAIL($A): links UCRT api-sets (want classic msvcrt.dll)"; exit 1; } \
-        || true
+    # Headers + import table read directly (tools/payloads/pecheck.py): the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/httpd-$A.exe" --tag httpd --gui --forbid-dll api-ms-win-crt
 done
 echo "[httpd] done. Enable with: VIBEOS_PAYLOAD=httpd ./vibeos-cli build --arch <arch>"

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 240925,
+  "random_cases": 128,
+  "validity": "Genuine ReactOS _wcslwr_nt.c and shipping cnt-rust _wcslwr shim plus wcstr_slice, wraw_mut_slice and core_rs::casemap::lower_ascii. The host adapter maps ReactOS 16-bit wchar_t to uint16_t and compiles the source's relaxed no-op invalid-parameter handler. Inputs are either NULL or NUL-terminated UTF-16 with valid Unicode scalars. The implementation folds ASCII A-Z only; BMP non-ASCII and supplementary-plane scalars must be preserved. This grades in-place mutation, NUL handling and returned-pointer behavior on the host.",
+  "c_source": "../../../../sdk/lib/crt/wstring/_wcslwr_nt.c",
+  "c_include_dirs": ["wcslwr_include"],
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "rust_items": ["m_wcslwr::_wcslwr"],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": ["wcstr_slice", "wraw_mut_slice"]
+    }
+  ],
+  "rust_support": {"core_rs": "casemap_core.rs"},
+  "functions": [
+    {
+      "c": "_wcslwr",
+      "rust": "candidate::_wcslwr",
+      "return": {
+        "type": "mut_wstr",
+        "within": ["_String"],
+        "nullable": true,
+        "one_past": false
+      },
+      "args": [
+        {
+          "name": "_String",
+          "type": "mut_wstr",
+          "nullable": true,
+          "generator": {
+            "encoding": "utf16le",
+            "max_bytes": 100,
+            "examples": [
+              "",
+              "ABC XYZ",
+              "already lower",
+              "MiXeD CaSe 123!",
+              "[\\]^_`AZ",
+              "az{|}~",
+              "ÀÉÑ",
+              "Äà é 🌱"
+            ],
+            "grammar": {
+              "sequence": [
+                {"charset": "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "min": 0, "max": 16},
+                {"choice": [
+                  {"literal": ""},
+                  {"charset": "abcdefghijklmnopqrstuvwxyz0123456789 !?_-ÀÉÑÄàé🌱", "min": 0, "max": 16}
+                ]}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "skip_ascii_folding",
+      "find": "crate::core_rs::casemap::lower_ascii(s);",
+      "replace": "let _ = s;"
+    },
+    {
+      "name": "read_past_terminator",
+      "find": "let n = wcstr_slice(_String as *const u16).len();",
+      "replace": "let n = wcstr_slice(_String as *const u16).len();\n        core::ptr::read_volatile(_String.add(n + 1));",
+      "expect": "memory_fault"
+    }
+  ]
+}

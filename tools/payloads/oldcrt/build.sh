@@ -13,6 +13,7 @@ A="${1:-i386}"
 "$TC/i686-w64-mingw32-gcc" -O2 -o "$HERE/oldcrt-$A.exe" "$HERE/oldcrt.c" \
     -lmsvcrt-os -lntdll -lkernel32 \
     -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-"$TC/i686-w64-mingw32-objdump" -p "$HERE/oldcrt-$A.exe" | grep -qi "api-ms-win-crt" \
-    && { echo "[oldcrt] FAIL($A): links UCRT api-sets"; exit 1; } || true
+# Headers + import table read directly (tools/payloads/pecheck.py): the old
+# `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+python3 "$(dirname "$HERE")/pecheck.py" "$HERE/oldcrt-$A.exe" --tag oldcrt --forbid-dll api-ms-win-crt
 echo "[oldcrt] OK"

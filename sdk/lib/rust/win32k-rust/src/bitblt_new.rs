@@ -346,7 +346,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
     pbo: *mut BRUSHOBJ,
     pptlBrush: *mut POINTL,
     rop4: ROP4,
-) -> u8 {
+) -> BOOL {
     let mut bResult: u8;
     let mut rcClipped: RECTL = core::mem::zeroed();
     let mut ptOffset: POINTL;
@@ -358,7 +358,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
     let mut pco_mut = pco;
 
     if RECTL_bClipRectBySize(&mut rcClipped, prclTrg, &(*psoTrg).sizlBitmap) == 0 {
-        return 1u8;
+        return 1;
     }
 
     if pco_mut.is_null() {
@@ -367,7 +367,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
 
     if (*pco_mut).iDComplexity != DC_TRIVIAL {
         if RECTL_bIntersectRect(&mut rcClipped, &rcClipped, &(*pco_mut).rclBounds) == 0 {
-            return 1u8;
+            return 1;
         }
     }
 
@@ -401,7 +401,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
     }
 
     if sizTrg.cx <= 0 || sizTrg.cy <= 0 {
-        return 1u8;
+        return 1;
     }
 
     ptSrc.x += ptOffset.x;

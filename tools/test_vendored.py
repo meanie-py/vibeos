@@ -38,9 +38,9 @@ def test_the_committed_registry_registers_the_trees_that_motivated_it():
     # named; mbedtls was the largest omission from the tuple this replaced.
     for p in (
         "sdk/lib/ucrt",
-        "drivers/bus/acpi/acpica",
-        "sdk/lib/3rdparty/freetype",
-        "dll/3rdparty/mbedtls",
+        "vendor/acpica",
+        "vendor/freetype",
+        "vendor/mbedtls",
     ):
         assert p in paths, f"{p} is not registered"
 
@@ -69,8 +69,11 @@ def test_reactos_own_code_under_libs_is_not_swept_up():
         "fast486",
     ):
         assert not reg.is_vendored(f"sdk/include/reactos/libs/{ours}/x.h"), ours
-    for foreign in ("zlib", "mbedtls", "libpng"):
-        assert reg.is_vendored(f"sdk/include/reactos/libs/{foreign}/x.h"), foreign
+    # mbedtls's headers still sit in that mixed directory; zlib's and libpng's moved into
+    # their own vendor/<lib>/include with the rest of the library (2026-09-26).
+    assert reg.is_vendored("vendor/mbedtls/include/mbedtls/x.h")
+    for foreign in ("zlib", "libpng"):
+        assert reg.is_vendored(f"vendor/{foreign}/include/x.h"), foreign
 
 
 def test_prefix_match_respects_path_boundaries():
@@ -253,8 +256,8 @@ def test_the_two_halves_disagree_about_nothing():
     """Both verdicts are recorded, and no path carries both."""
     reg = vendored.load(REPO)
     # WDF is vendored: a stable ABI third-party binaries bind to, tracked upstream.
-    assert reg.is_vendored("sdk/lib/drivers/wdf/shared/core/fxdevice.cpp")
-    assert reg.is_vendored("sdk/include/wdf/kmdf/1.17/wdf.h")
+    assert reg.is_vendored("vendor/wdf/shared/core/fxdevice.cpp")
+    assert reg.is_vendored("vendor/wdf/include/kmdf/1.17/wdf.h")
     # The storage class drivers are ours: MS-PL, already diverged, no ABI contract.
     assert reg.is_declared_ours("drivers/storage/class/classpnp/class.c")
     assert not reg.is_vendored("drivers/storage/class/classpnp/class.c")
@@ -735,8 +738,8 @@ def test_the_three_trees_the_prose_pass_actually_found_stay_recorded():
     reg = vendored.load(REPO)
     by_path = {t.path: t for t in reg.trees}
     assert "BSL-1.0" in by_path["external/fex"].license_extra
-    assert "LGPL-2.0-or-later" in by_path["sdk/lib/3rdparty/adns"].license_extra
-    assert "LGPL-2.1-or-later" in by_path["dll/3rdparty/libtirpc"].license_extra
+    assert "LGPL-2.0-or-later" in by_path["vendor/adns"].license_extra
+    assert "LGPL-2.1-or-later" in by_path["vendor/libtirpc"].license_extra
 
 
 # ── the Rust-crate half (added 2026-09-20) ─────────────────────────────────

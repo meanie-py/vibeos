@@ -1087,15 +1087,23 @@ pub unsafe extern "system" fn A_SHAFinal(Context: *mut SHA_CTX, Result: *mut u32
     );
 
     Buffer[0] = 0x80u8;
+    // `Buffer + Pad` is misaligned whenever the byte count is not a multiple of 4. The C
+    // (`Count = (ULONG*)(Buffer + Pad)`) is UB there too — UBSan reports it at sha1.c:190 —
+    // and in Rust a misaligned `*mut u32` store is UB that LLVM may exploit, so store
+    // unaligned: the bytes written are identical.
     Count = Buffer.as_mut_ptr().add(Pad as usize) as *mut u32;
-    *Count.offset(0) = (LengthHi >> 24) & 0xff
-        | (LengthHi >> 8) & 0xff00
-        | (LengthHi << 8) & 0xff0000
-        | (LengthHi << 24) & 0xff000000;
-    *Count.offset(1) = (LengthLo >> 24) & 0xff
-        | (LengthLo >> 8) & 0xff00
-        | (LengthLo << 8) & 0xff0000
-        | (LengthLo << 24) & 0xff000000;
+    Count.offset(0).write_unaligned(
+        (LengthHi >> 24) & 0xff
+            | (LengthHi >> 8) & 0xff00
+            | (LengthHi << 8) & 0xff0000
+            | (LengthHi << 24) & 0xff000000,
+    );
+    Count.offset(1).write_unaligned(
+        (LengthLo >> 24) & 0xff
+            | (LengthLo >> 8) & 0xff00
+            | (LengthLo << 8) & 0xff0000
+            | (LengthLo << 24) & 0xff000000,
+    );
 
     A_SHAUpdate(Context, Buffer.as_ptr(), (Pad + 8) as u32);
 

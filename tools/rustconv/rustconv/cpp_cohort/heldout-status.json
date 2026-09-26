@@ -1,0 +1,31 @@
+{
+  "selection_manifest": "cohort-manifest.json",
+  "cenum": {
+    "source": "dll/win32/shell32/CEnumIDListBase.cpp",
+    "tested_first_pass": ["Skip", "Reset"],
+    "reference": "verbatim methods extracted from pinned C++ source; list layout and TRACE are host shims",
+    "candidate": "verbatim banked Skip/Reset Rust bodies",
+    "grade": "cenum-heldout-grade.json",
+    "cases_compared": 83,
+    "mismatch_count": 0,
+    "guards": ["pinned source and bank hashes", "verbatim C++ and Rust bodies", "bounded list-layout shim"],
+    "result": "83/83 bounded Skip/Reset cursor sequences match; whole TU not accepted",
+    "not_accepted": {
+      "Next": "REJECTED: untouched banked Rust fails rustc E0308: pointer slot assigned integer 0; cenum_next_rustc.log",
+      "AppendItemsFromEnumerator": "requires genuine IEnumIDList virtual Reset/Next and ownership/allocator substrate; no host grade",
+      "DeleteList": "requires SHFree/PIDL ownership instrumentation; no host grade"
+    },
+    "required_unsupported_methods": ["AppendItemsFromEnumerator", "DeleteList"]
+  },
+  "copy_as_path": {
+    "source": "dll/win32/shell32/CCopyAsPathMenu.cpp",
+    "banked_body": "20260716-183948-CCopyAsPathMenu.cpp/01_CCopyAsPathMenu_DoCopyAsPath.rs",
+    "status": "unsupported_host_grade",
+    "cases_compared": 0,
+    "mismatch_count": null,
+    "guards": ["pinned source and bank hashes", "complete helper-body requirement"],
+    "required_unsupported_methods": ["DoCopyAsPath"],
+    "reason": "DoCopyAsPath depends on IShellItemArray/IShellItem vtables, CStringW, CppComPtrGuard, CoTaskMemFree, and clipboard transfer. Its required AppendToPathList and SetClipboardFromString bodies are only .partial in the available bank. No faithful executable candidate can be assembled from preserved complete bodies alone.",
+    "first_pass_acceptance": false
+  }
+}

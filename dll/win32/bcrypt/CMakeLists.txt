@@ -1,6 +1,7 @@
 
 include_directories(
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/mbedtls)
+    ${REACTOS_SOURCE_DIR}/vendor/mbedtls/include
+    ${REACTOS_SOURCE_DIR}/vendor/mbedtls/include/mbedtls)
 spec2def(bcrypt.dll bcrypt.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE

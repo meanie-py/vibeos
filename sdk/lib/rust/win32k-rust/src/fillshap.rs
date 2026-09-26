@@ -1299,14 +1299,14 @@ pub unsafe extern "system" fn NtGdiRoundRect(
     BottomRect: i32,
     Width: i32,
     Height: i32,
-) -> u8 {
+) -> BOOL {
     let dc: *mut DC = DC_LockDc(hDC);
-    let mut ret: u8 = 0u8;
+    let mut ret: BOOL = 0;
 
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
     } else {
-        ret = IntRoundRect(dc, LeftRect, TopRect, RightRect, BottomRect, Width, Height);
+        ret = IntRoundRect(dc, LeftRect, TopRect, RightRect, BottomRect, Width, Height) as BOOL;
         DC_UnlockDc(dc);
     }
 
@@ -1528,11 +1528,11 @@ pub unsafe extern "system" fn NtGdiExtFloodFill(
     YStart: i32,
     Color: COLORREF,
     FillType: u32,
-) -> u8 {
+) -> BOOL {
     let mut dc: PDC;
     let mut psurf: *mut SURFACE;
     let mut exlo: EXLATEOBJ = core::mem::zeroed();
-    let mut Ret: u8 = 0u8;
+    let mut Ret: BOOL = 0;
     let mut DestRect: RECTL = core::mem::zeroed();
     let mut Pt: POINTL = core::mem::zeroed();
     let mut ConvColor: u32;
@@ -1541,11 +1541,11 @@ pub unsafe extern "system" fn NtGdiExtFloodFill(
     dc = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
 
     if (*dc).dclevel.pSurface.is_null() {
-        Ret = 1u8;
+        Ret = 1;
         DC_UnlockDc(dc);
         return Ret;
     }
@@ -1565,7 +1565,7 @@ pub unsafe extern "system" fn NtGdiExtFloodFill(
     };
 
     if !prgn.is_null() {
-        Ret = REGION_PtInRegion(prgn, Pt.x, Pt.y) as u8;
+        Ret = REGION_PtInRegion(prgn, Pt.x, Pt.y) as BOOL;
         if Ret != 0 {
             REGION_GetRgnBox(prgn, core::ptr::addr_of_mut!(DestRect) as *mut RECTL);
         } else {
@@ -1597,14 +1597,14 @@ pub unsafe extern "system" fn NtGdiExtFloodFill(
     );
 
     ConvColor = XLATEOBJ_iXlate(&mut exlo.xlo, Color);
-    Ret = DIB_XXBPP_FloodFillSolid(
+    Ret = (DIB_XXBPP_FloodFillSolid(
         &mut (*psurf).SurfObj as *mut _ as *mut core::ffi::c_void,
         &mut (*dc).eboFill.BrushObject as *mut _ as *mut core::ffi::c_void,
         &mut DestRect,
         &mut Pt,
         ConvColor,
         FillType,
-    );
+    )) as BOOL;
 
     DC_vFinishBlit(dc, core::ptr::null_mut());
 

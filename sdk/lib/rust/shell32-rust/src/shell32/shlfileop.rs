@@ -1436,7 +1436,10 @@ unsafe extern "C" fn wildcard_to_file(szWildCard: PCWSTR, szFileName: PCWSTR) ->
     if ptr.is_null() || ptr < ptr2 {
         ptr = ptr2;
     }
-    let dwDirLen: u32 = ((ptr as usize) - (szWildCard as usize) + 1 as usize) as u32;
+    // C `ptr - szWildCard + 1` counts WCHARs. Subtracting addresses counted bytes, so
+    // lstrcpynW copied past the directory into the wildcard's file part and the result
+    // (sized from it) could overflow (found by scan_ptr_byte_diff).
+    let dwDirLen: u32 = (ptr.offset_from(szWildCard) + 1) as u32;
 
     let dwFullLen: u32 = dwDirLen + lstrlenW(szFileName) as u32 + 1;
     let szFullPath: PWSTR = HeapAlloc(

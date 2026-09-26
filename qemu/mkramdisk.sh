@@ -109,6 +109,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/subsystems/win/basesrv/basesrv.dll"
     "$BUILD_DIR/media/nls/c_437.nls"
     "$BUILD_DIR/media/nls/c_1252.nls"
+    "$BUILD_DIR/media/nls/c_20127.nls"
     "$BUILD_DIR/dll/win32/kernel32/kernel32.dll"
     "$BUILD_DIR/win32ss/user/user32/user32.dll"
     "$BUILD_DIR/win32ss/gdi/gdi32/gdi32.dll"
@@ -179,6 +180,11 @@ REQUIRED_FILES=(
     # Level 2 transitive deps
     "$BUILD_DIR/dll/win32/winmm/winmm.dll"
     "$BUILD_DIR/dll/win32/usp10/usp10.dll"
+    # gdi32's LoadLPK retries LoadLibraryW(L"lpk.dll") on EVERY ExtTextOut /
+    # GetTextExtentExPoint until it succeeds, so without it each glyph run
+    # walks the whole DLL search path (seen on a Pi 4: explorer spent its tray
+    # clock repaints in RtlDosSearchPath_U).
+    "$BUILD_DIR/dll/win32/lpk/lpk.dll"
     "$BUILD_DIR/win32ss/user/imm32/imm32.dll"
     "$BUILD_DIR/dll/win32/urlmon/urlmon.dll"
     "$BUILD_DIR/dll/win32/windowscodecs/windowscodecs.dll"
@@ -450,6 +456,7 @@ RMC "$BUILD_DIR/dll/win32/uxtheme/uxtheme.dll"                 ::/reactos/system
 # Level 2 transitive deps
 RMC "$BUILD_DIR/dll/win32/winmm/winmm.dll"                    ::/reactos/system32/winmm.dll
 RMC "$BUILD_DIR/dll/win32/usp10/usp10.dll"                    ::/reactos/system32/usp10.dll
+RMC "$BUILD_DIR/dll/win32/lpk/lpk.dll"                        ::/reactos/system32/lpk.dll
 RMC "$BUILD_DIR/win32ss/user/imm32/imm32.dll"                 ::/reactos/system32/imm32.dll
 RMC "$BUILD_DIR/dll/win32/urlmon/urlmon.dll"                   ::/reactos/system32/urlmon.dll
 RMC "$BUILD_DIR/dll/win32/windowscodecs/windowscodecs.dll"     ::/reactos/system32/windowscodecs.dll
@@ -485,6 +492,10 @@ RMC "$BUILD_DIR/dll/win32/psapi/psapi.dll"                    ::/reactos/system3
 
 RMC "$BUILD_DIR/media/nls/c_437.nls"                           ::/reactos/system32/c_437.nls
 RMC "$BUILD_DIR/media/nls/c_1252.nls"                          ::/reactos/system32/c_1252.nls
+# US-ASCII. msvcrt's _setmbcp(_MB_CP_SBCS) selects it (Wine's mapping), and without the
+# table every MultiByteToWideChar(20127) fails -- so every _ismbc*/_mbcto* call answered
+# 0 even for 'A' on arm64, the only arch whose media is curated here (x86 ships all NLS).
+RMC "$BUILD_DIR/media/nls/c_20127.nls"                         ::/reactos/system32/c_20127.nls
 if [ -n "$L_INTL_NLS" ]; then
     RMC "$L_INTL_NLS"                                          ::/reactos/system32/l_intl.nls
 fi
@@ -933,10 +944,12 @@ mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 # from that one selector.
 if [ -n "$UP" ]; then
     UP_INI="$(mktemp)"
-    sed 's#^DefaultOS=ReactOS_Arm64_MP$#DefaultOS=ReactOS_Arm64_UP#' "$FREELDR_INI" > "$UP_INI"
+    # freeldr.ini is CRLF, so a bare `...MP$` anchor never matched and every --up
+    # build failed here; keep the CR the loader expects.
+    sed 's#^DefaultOS=ReactOS_Arm64_MP\(\r\{0,1\}\)$#DefaultOS=ReactOS_Arm64_UP\1#' "$FREELDR_INI" > "$UP_INI"
     # Fail loud rather than shipping UP-defaulted media from an --smp build: that
     # is a false-green (the boot looks fine and runs the wrong kernel).
-    if ! grep -q '^DefaultOS=ReactOS_Arm64_UP$' "$UP_INI"; then
+    if ! tr -d '\r' < "$UP_INI" | grep -qx 'DefaultOS=ReactOS_Arm64_UP'; then
         echo "[!] freeldr.ini: no 'DefaultOS=ReactOS_Arm64_MP' line to flip — entry names drifted"
         rm -f "$UP_INI"
         exit 1

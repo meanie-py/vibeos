@@ -2,7 +2,7 @@
 #
 # Upstream: https://download.gnome.org/sources/libxml2/2.13/libxml2-2.13.9.tar.xz
 #           sha256 a2c9ae7b770da34860050c309f903221c67830c86e4a7e760692b803df95143a
-# Apply from sdk/lib/3rdparty/libxml2/ with: patch -p1 < vendor-patches/libxml2.patch
+# Apply from vendor/libxml2/ with: patch -p1 < vendor-patches/libxml2.patch
 #
 # ONE FILE, TWO LINES. It used to be three files; the other two were build shims and
 # both are retired — see THE BUILD SHIMS ARE GONE below. Nothing here blocks a version

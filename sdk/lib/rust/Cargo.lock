@@ -905,6 +905,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jscript-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "kbdclass-cargo"
 version = "0.1.0"
 dependencies = [

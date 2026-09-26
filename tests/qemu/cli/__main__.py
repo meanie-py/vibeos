@@ -70,6 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument(
+        "--extra-target",
+        action="append",
+        default=[],
+        metavar="TARGET",
+        help="also build this Ninja target; preserves the full boot build and guards (repeatable)",
+    )
+    b.add_argument(
         "--rust-storage-shards",
         type=int,
         choices=range(17),
@@ -168,6 +175,18 @@ def build_parser() -> argparse.ArgumentParser:
         "entries, do not inherit them",
     )
     b.add_argument(
+        "--winetest-only",
+        default="",
+        metavar="SUBTESTS",
+        help="space-separated subtest names to RUN from --winetest-sweep, and "
+        "nothing else, e.g. 'combo'. The repro loop for one crashing subtest: "
+        "a guest sweep of user32 is ~40 minutes, one subtest is seconds. Written "
+        "into the sweep marker as `only <name>` lines; winlogon counts the rest "
+        "as 'not selected' in its completion line, apart from the quarantined, "
+        "so a narrowed sweep never reads as a whole one. Implies nothing without "
+        "--winetest-sweep",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "
@@ -223,7 +242,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--no-gdb", action="store_true")
     s.add_argument("--attach-on-fail", action="store_true")
-    s.add_argument("--repeat", type=int, default=1, help="N independent boots (flake rate)")
+    s.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="N independent boots (flake rate); with --payload, N payload runs too",
+    )
     s.add_argument("--until", default="", help="success marker (default: arch boot marker)")
     s.add_argument("--fail-on", default=None, help="regex; abort at first match")
     s.add_argument(
@@ -813,6 +837,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--only",
         metavar="NAME[,NAME]",
         help="restrict to named *-difftest crates (default: every workspace member)",
+    )
+    dt.add_argument(
+        "--case",
+        action="append",
+        help="exact case (repeatable); needs one --only crate honouring --exact (cnt-difftest)",
+    )
+    dt.add_argument(
+        "--test-target", default="diff", help="Cargo test target for --case (default: diff)"
     )
     dt.set_defaults(fn=difftest_mod.difftest)
 

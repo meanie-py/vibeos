@@ -817,7 +817,7 @@ unsafe extern "C" fn msvcrt_init_fp(file: *mut FILE, fd: i32, stream_flags: u32)
     0
 }
 #[no_mangle]
-pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *mut *mut u8) -> u8 {
+pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *mut *mut u8) -> BOOL {
     let mut fd: i32;
     let mut last_fd: i32;
     let mut wxflag_ptr: *mut i8;
@@ -837,7 +837,7 @@ pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *
     *block = calloc(1, (*size) as usize as _) as *mut u8;
     if (*block).is_null() {
         *size = 0;
-        return FALSE;
+        return FALSE as BOOL;
     }
     wxflag_ptr = (*block).add(core::mem::size_of::<u32>()) as *mut i8;
     handle_ptr = wxflag_ptr.add(last_fd as usize) as *mut HANDLE;
@@ -857,7 +857,7 @@ pub unsafe extern "C" fn msvcrt_create_io_inherit_block(size: *mut u16, block: *
         handle_ptr = handle_ptr.add(1);
         fd += 1;
     }
-    (TRUE) as u8
+    TRUE as BOOL
 }
 #[no_mangle]
 pub unsafe extern "C" fn msvcrt_init_io() {

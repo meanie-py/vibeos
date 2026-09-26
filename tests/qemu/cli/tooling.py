@@ -59,6 +59,10 @@ _PYTEST_SUITES = [
     # the kernel down. A parser that cannot tell a crash from a pass turns the
     # whole harness into decoration, so it gets its own oracle.
     (".", ".", "tools/test_parse_apitest_serial.py"),
+    # Every payload build.sh gates its exe on pecheck (GUI subsystem, required and
+    # forbidden imports). It replaced `objdump | grep -q` pipes that passed and failed
+    # at random under pipefail, so it must not become a new untested oracle.
+    (".", ".", "tools/payloads/test_pecheck.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it

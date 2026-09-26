@@ -86,7 +86,7 @@ unsafe extern "C" fn IntSetShellStateSettings(bDoubleClick: i32, bUseCommonTasks
     (TRUE) as i32
 }
 #[no_mangle]
-pub unsafe extern "C" fn SHELL32_ReadRegShellState(prss: PREGSHELLSTATE) -> u8 {
+pub unsafe extern "C" fn SHELL32_ReadRegShellState(prss: PREGSHELLSTATE) -> BOOL {
     let mut dwSize: u32 = core::mem::size_of::<REGSHELLSTATE>() as u32;
     let err = SHGetValueW(
         HKEY_CURRENT_USER,
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn SHELL32_ReadRegShellState(prss: PREGSHELLSTATE) -> u8 {
         (prss).cast(),
         core::ptr::addr_of_mut!(dwSize),
     );
-    (err == ERROR_SUCCESS && (*prss).dwSize >= REGSHELLSTATE_SIZE) as u8
+    ((err == ERROR_SUCCESS && (*prss).dwSize >= REGSHELLSTATE_SIZE)) as BOOL
 }
 unsafe extern "C" fn IntSetUnderlineState(bUnderlineHover: i32) -> i32 {
     let dwValue: u32 = if bUnderlineHover != 0 { UNDERLINE_HOVER } else { UNDERLINE_IE };

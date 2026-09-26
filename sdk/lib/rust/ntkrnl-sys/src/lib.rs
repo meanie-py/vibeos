@@ -168,7 +168,7 @@ mod hal_bindgen_i386;
 /// Auto-generated bindings covering:
 /// - HAL-internal headers: `halhw.h`, `halp.h`, `haldma.h`, `bus.h`,
 ///   `halacpi.h`, `mps.h`, `halirq.h`, `ioapic.h`.
-/// - ACPICA umbrella (`drivers/bus/acpi/acpica/include/acpi.h`) with all
+/// - ACPICA umbrella (`vendor/acpica/include/acpi.h`) with all
 ///   spec table layouts: FADT, MADT, RSDT, XSDT, SRAT, etc.
 ///
 /// **Use `hal_ddk::*` when porting HAL files.** Types in this module are
