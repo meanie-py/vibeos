@@ -4641,6 +4641,24 @@ def test_clearing_the_quarantine_is_not_a_no_op(monkeypatch, tmp_path):
     assert any("-DVIBEOS_WINETEST_SKIP=" in c for c in cmds), cmds
 
 
+def test_winetest_only_reaches_cmake_like_the_quarantine_does(monkeypatch, tmp_path):
+    # `--winetest-only` is the narrowing twin of `--winetest-skip`, and it rides
+    # the same string-instr path. If it were missing from instr_values the build
+    # would report success with an un-narrowed marker, and the "repro one
+    # subtest" boot would quietly become a 40-minute whole-suite sweep.
+    cache = "VIBEOS_WINETEST_SWEEP:BOOL=ON\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cache, canonical=True)
+    build_mod._maybe_canonize(
+        run,
+        repo,
+        bd,
+        "amd64",
+        {"VIBEOS_WINETEST_SWEEP": True},
+        instr_values={"VIBEOS_WINETEST_ONLY": "combo"},
+    )
+    assert any("-DVIBEOS_WINETEST_ONLY=combo" in c for c in cmds), cmds
+
+
 def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_path):
     # Sticky means a later PLAIN build must not flip it back OFF — the opposite of
     # --lockdep, which is reconciled every build so a gate can't inherit it. An ON

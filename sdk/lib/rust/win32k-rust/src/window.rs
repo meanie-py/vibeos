@@ -491,6 +491,173 @@ pub struct _WND2LB {
 pub type WND2LB = _WND2LB;
 pub type PWND2LB = *mut _WND2LB;
 
+// ---------------------------------------------------------------------------
+// Reading a control's PRIVATE state out of user memory.
+//
+// For the system combobox and listbox, win32k does not ask the control -- it
+// reaches into the HEADCOMBO / LB_DESCR that user32 allocated in its own heap,
+// through the pointer user32 stored in the window's extra bytes. Two things
+// follow, and the code this replaced got both wrong:
+//
+// 1. The LAYOUT is the owner's. A WoW64 guest's user32 is 32-bit: it stored a
+//    4-byte pointer, to a struct whose HWNDs are 4 bytes. Read through the
+//    amd64 definitions, `hWndLBox` came from 16 bytes past where the guest put
+//    it, so GetComboBoxInfo handed back a garbage `hwndList`. The wine user32
+//    `combo` test then sent LB_GETITEMHEIGHT to that non-window, got 0, and
+//    divided by it: a guest-only STATUS_INTEGER_DIVIDE_BY_ZERO, with native
+//    i386 running the same test clean. "Owner", not "caller": a cross-process
+//    query attaches to the owner, so the caller's bitness proves nothing.
+//
+// 2. The POINTER is the process's. Nothing stops a process writing any value
+//    into its own control's extra bytes with SetWindowLongPtr, and the old code
+//    dereferenced it raw -- unprobed, so a kernel address was a kernel READ,
+//    published straight back into the caller's buffer. Probe it and go through
+//    the protected copy, like every other pointer that came from user mode.
+// ---------------------------------------------------------------------------
+
+/// Prefix of a 32-bit user32's HEADCOMBO, through the last field win32k reads.
+#[cfg(not(target_arch = "x86"))]
+#[repr(C)]
+struct HEADCOMBO32 {
+    self_: u32,
+    owner: u32,
+    dwStyle: UINT,
+    hWndEdit: u32,
+    hWndLBox: u32,
+    wState: UINT,
+    hFont: u32,
+    textRect: RECTL,
+    buttonRect: RECTL,
+}
+
+/// Prefix of a 32-bit user32's LB_DESCR, through `page_size`.
+#[cfg(not(target_arch = "x86"))]
+#[repr(C)]
+struct LB_DESCR32 {
+    self_: u32,
+    owner: u32,
+    style: UINT,
+    width: INT,
+    height: INT,
+    items: u32,
+    nb_items: INT,
+    top_item: INT,
+    selected_item: INT,
+    focus_item: INT,
+    anchor_item: INT,
+    item_height: INT,
+    page_size: INT,
+}
+
+// Pin the guest offsets win32k depends on to the numbers 32-bit user32 uses.
+#[cfg(not(target_arch = "x86"))]
+const _: () = {
+    assert!(core::mem::offset_of!(HEADCOMBO32, hWndLBox) == 16);
+    assert!(core::mem::offset_of!(HEADCOMBO32, textRect) == 28);
+    assert!(core::mem::offset_of!(LB_DESCR32, page_size) == 48);
+};
+
+/// A guest HWND widened the way the WoW64 thunks widen one (sign-extended).
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+fn hwnd_from_guest(h: u32) -> HWND {
+    h as i32 as isize as HWND
+}
+
+/// The user pointer a control stored in its first extra-bytes slot, read at the
+/// OWNER's pointer width. Kernel memory (the WND lives in the desktop heap), so
+/// a plain read is right here; it is what the pointer points AT that is user's.
+unsafe fn ControlStatePointer(Wnd: PWND, OwnerIsWow64: bool) -> *const c_void {
+    let slot = (Wnd as *const u8).add(core::mem::size_of::<WND>());
+    if OwnerIsWow64 {
+        core::ptr::read_unaligned(slot as *const u32) as usize as *const c_void
+    } else {
+        core::ptr::read_unaligned(slot as *const *const c_void)
+    }
+}
+
+/// Probe, then capture `bytes` of user memory at `src` into `dst`. False when
+/// either refuses; the caller fails the call rather than trusting the bytes.
+unsafe fn CaptureControlState(dst: *mut c_void, src: *const c_void, bytes: usize) -> bool {
+    NT_SUCCESS(SafeProbeForRead(src as *mut c_void, bytes as SIZE_T, 1))
+        && crate::copy::capture_from_user(dst, src, bytes)
+}
+
+/// The HEADCOMBO fields NtUserGetComboBoxInfo reports, at native width.
+struct ComboState {
+    self_: HWND,
+    hWndEdit: HWND,
+    hWndLBox: HWND,
+    wState: UINT,
+    textRect: RECTL,
+    buttonRect: RECTL,
+}
+
+unsafe fn CaptureComboState(Wnd: PWND, OwnerIsWow64: bool) -> Option<ComboState> {
+    let src = ControlStatePointer(Wnd, OwnerIsWow64);
+    #[cfg(not(target_arch = "x86"))]
+    if OwnerIsWow64 {
+        let mut c: HEADCOMBO32 = core::mem::zeroed();
+        if !CaptureControlState(
+            core::ptr::addr_of_mut!(c) as *mut c_void,
+            src,
+            core::mem::size_of::<HEADCOMBO32>(),
+        ) {
+            return None;
+        }
+        return Some(ComboState {
+            self_: hwnd_from_guest(c.self_),
+            hWndEdit: hwnd_from_guest(c.hWndEdit),
+            hWndLBox: hwnd_from_guest(c.hWndLBox),
+            wState: c.wState,
+            textRect: c.textRect,
+            buttonRect: c.buttonRect,
+        });
+    }
+    let mut c: HEADCOMBO = core::mem::zeroed();
+    if !CaptureControlState(
+        core::ptr::addr_of_mut!(c) as *mut c_void,
+        src,
+        core::mem::size_of::<HEADCOMBO>(),
+    ) {
+        return None;
+    }
+    Some(ComboState {
+        self_: c.self_,
+        hWndEdit: c.hWndEdit,
+        hWndLBox: c.hWndLBox,
+        wState: c.wState,
+        textRect: c.textRect,
+        buttonRect: c.buttonRect,
+    })
+}
+
+/// LB_DESCR's `page_size`, read at the owner's layout.
+unsafe fn CaptureListBoxPageSize(Wnd: PWND, OwnerIsWow64: bool) -> Option<INT> {
+    let src = ControlStatePointer(Wnd, OwnerIsWow64);
+    #[cfg(not(target_arch = "x86"))]
+    if OwnerIsWow64 {
+        let mut d: LB_DESCR32 = core::mem::zeroed();
+        if !CaptureControlState(
+            core::ptr::addr_of_mut!(d) as *mut c_void,
+            src,
+            core::mem::size_of::<LB_DESCR32>(),
+        ) {
+            return None;
+        }
+        return Some(d.page_size);
+    }
+    let mut d: LB_DESCR = core::mem::zeroed();
+    if !CaptureControlState(
+        core::ptr::addr_of_mut!(d) as *mut c_void,
+        src,
+        core::mem::size_of::<LB_DESCR>(),
+    ) {
+        return None;
+    }
+    Some(d.page_size)
+}
+
 
 #[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn IntReAllocatePoolWithTag(
@@ -4545,19 +4712,26 @@ pub unsafe extern "system" fn NtUserGetComboBoxInfo(
         }
 
         {
-            let lphc: LPHEADCOMBO = (*(Wnd as PWND2CBOX)).pCBox;
-            SafeCbi.rcItem = (*lphc).textRect;
-            SafeCbi.rcButton = (*lphc).buttonRect;
+            let OwnerIsWow64 = crate::wow64::IsWow64Eprocess(PROCESSINFO_peProcess(
+                (*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi,
+            ) as _);
+            let Some(mut lphc) = CaptureComboState(Wnd, OwnerIsWow64) else {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Ret = 0;
+                break 'exit;
+            };
+            SafeCbi.rcItem = lphc.textRect;
+            SafeCbi.rcButton = lphc.buttonRect;
             SafeCbi.stateButton = 0;
-            if (*lphc).wState & CBF_BUTTONDOWN != 0 {
+            if lphc.wState & CBF_BUTTONDOWN != 0 {
                 SafeCbi.stateButton |= STATE_SYSTEM_PRESSED;
             }
-            if RECTL_bIsEmptyRect(core::ptr::addr_of_mut!((*lphc).buttonRect)) != 0 {
+            if RECTL_bIsEmptyRect(core::ptr::addr_of_mut!(lphc.buttonRect)) != 0 {
                 SafeCbi.stateButton |= STATE_SYSTEM_INVISIBLE;
             }
-            SafeCbi.hwndCombo = (*lphc).self_;
-            SafeCbi.hwndItem = (*lphc).hWndEdit;
-            SafeCbi.hwndList = (*lphc).hWndLBox;
+            SafeCbi.hwndCombo = lphc.self_;
+            SafeCbi.hwndItem = lphc.hWndEdit;
+            SafeCbi.hwndList = lphc.hWndLBox;
             if !crate::copy::publish_to_user(
                 pcbi as *mut core::ffi::c_void,
                 core::ptr::addr_of!(SafeCbi) as *const core::ffi::c_void,
@@ -4603,8 +4777,13 @@ pub unsafe extern "system" fn NtUserGetListBoxInfo(hWnd: HWND) -> DWORD {
             KeAttachProcess(core::ptr::addr_of_mut!((*PROCESSINFO_peProcess((*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi)).Pcb) as *mut _);
         }
 
-        let descr = (*(Wnd as PWND2LB)).pLBiv;
-        Ret = (*descr).page_size as DWORD;
+        let OwnerIsWow64 = crate::wow64::IsWow64Eprocess(PROCESSINFO_peProcess(
+            (*HEAD_pti(core::ptr::addr_of!((*Wnd).head))).ppi,
+        ) as _);
+        match CaptureListBoxPageSize(Wnd, OwnerIsWow64) {
+            Some(page_size) => Ret = page_size as DWORD,
+            None => SetLastNtError(STATUS_ACCESS_VIOLATION),
+        }
     }
 
     if NotSameppi != 0 {

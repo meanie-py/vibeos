@@ -433,7 +433,17 @@ def _boot_vm(
                 header=label,
             )
             _lad_t0 = time.monotonic()
-            ladder_txt = ladder_mod.watch(vm, seen=text)
+            # The drain waits on the same media answer check() grades with --
+            # otherwise it can stop between the last parity verdict and an
+            # optional guest's launch line, and check() fails a guest mid-run.
+            # program_done_expected: the media is this tree's (staleness was
+            # checked before boot), so its winlogon prints PROGRAM_DONE.
+            ladder_txt = ladder_mod.watch(
+                vm,
+                seen=text,
+                optional_staged=ladder_mod.media_optional_staged(repo, arch),
+                program_done_expected=True,
+            )
             # Record what the drain actually COST, not just its ceiling. This is
             # additive wall-clock on every gate that stages guests, and the ceiling
             # (420s) is ~2x the whole gate's modelled warm runtime -- so the real

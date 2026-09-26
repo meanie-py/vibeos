@@ -10306,6 +10306,27 @@ create still succeeds and a read still finds it. Assert the default-view handle'
 `KEY_WOW64_64KEY` cannot see the value just written — two independent encodings, so faking one
 still fails the other.
 
+### win32k reading a control's PRIVATE state must use the OWNER's layout
+**Symptom.** A guest-only `STATUS_INTEGER_DIVIDE_BY_ZERO` (`0xc0000094`) in the wine user32
+`combo` test, with native i386 running the same binary clean. No kernel fault, and the
+syscall's WoW64 thunk is provably correct.
+**Cause.** For the system combobox and listbox, `NtUserGetComboBoxInfo` /
+`NtUserGetListBoxInfo` do not ask the control. They reach through the pointer user32 stored in
+the window's extra bytes into user32's own `HEADCOMBO` / `LB_DESCR`. In a WoW64 process that
+pointer is 4 bytes, to a struct whose `HWND`s are 4 bytes, and the amd64 kernel read it at its
+own layout, so `hWndLBox` came from 16 bytes past where the guest put it. The test sent
+`LB_GETITEMHEIGHT` to the garbage `hwndList`, got 0, and divided by it. A thunk cannot fix
+this: the syscall's own arguments were marshalled perfectly. The layout mismatch is one hop
+further in, in memory the thunk never sees.
+**Fix.** Select the layout by the window OWNER's bitness (`wow64::IsWow64Eprocess` on the
+owner's `EPROCESS`), not the caller's. A cross-process query attaches to the owner, so the
+caller's bitness proves nothing. Read the pointer slot at that width, then probe it and
+capture through `copy::capture_from_user`: the process can write any value into its own
+control's extra bytes, and the raw deref it replaced was an unprobed kernel read published
+back to the caller. `window.rs` `CaptureComboState` / `CaptureListBoxPageSize`, with the
+guest offsets pinned by `const` asserts. **Grep for the class:** `as PWND2` in win32k. Any
+cast of a `WND` to a struct that extends past it reads client-owned extra bytes.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
@@ -10322,6 +10343,15 @@ it exited `0xBAD9` there from the day it landed, through every green gate.
 "remembering a recipe" smell AGENTS.md names as a bug report against the tool — and the same
 blind spot had already been written down once, in the roadmap's `_MmCopyFromCaller` entry, and
 still cost a day.)*
+**Then the drain itself raced every launch.** `--ladder` decided "done" from nothing graded
+being in flight, and each launch leaves a gap where nothing is. It stopped between
+`spawn32`'s verdict and `lua32`'s launch line (then `check()` failed a guest mid-run), and
+once that was fixed, between `sqlite32`'s and the winetest sweep's (a sweep boot went green
+having run zero subtests). The workaround had been to remember
+`VIBEOS_LADDER_DRAIN_FLOOR≈2400`. Now winlogon prints `[WINLOGON] graded program complete`
+after the last graded item on each arch, and the drain waits for that line. Once it
+appears, nothing graded can still arrive, so it also ends an i386 native sweep that used to
+sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.

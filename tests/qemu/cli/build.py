@@ -805,6 +805,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ),
         instr_values={
             "VIBEOS_WINETEST_SKIP": (getattr(args, "winetest_skip", "") or "").strip(),
+            "VIBEOS_WINETEST_ONLY": (getattr(args, "winetest_only", "") or "").strip(),
         },
     )
     if wrapped is None:
