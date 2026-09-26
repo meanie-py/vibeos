@@ -2698,7 +2698,7 @@ pub unsafe extern "system" fn WinMain(
      * spawns, so i386 never reaches the desktop. Until that MM deadlock is
      * fixed, i386 keeps the pre-existing behavior (no layout -> app keys dead,
      * tracked); the boot-to-desktop North Star wins over interactive input. */
-    #[cfg(not(target_arch = "x86"))]
+    #[cfg(not(target_arch = "x86"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         if InitKeyboardLayouts() == 0 {
             DbgPrint(
@@ -2884,7 +2884,7 @@ pub unsafe extern "system" fn WinMain(
      * KiUserExceptionDispatcher -> ntdll dispatch -> __except delivery
      * end-to-end. amd64/arm64 only (native clang SEH does not lower on
      * i386), matching sehtest's cmake gate. */
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         let mut Si: STARTUPINFOW = zeroed();
         let mut Pi: PROCESS_INFORMATION = zeroed();
@@ -3338,7 +3338,7 @@ pub unsafe extern "system" fn WinMain(
      * always (its window doubles as regression coverage for the callback
      * marshallers); doom is the demo rung, same mutual-occlusion rule as
      * arm64. See wow64-plan.md Phase E. */
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         /* Full arm64-parity probe ladder (each is a silent no-op unless its
          * guest is staged): loader → GDI → window/callbacks → file I/O →
@@ -3558,7 +3558,7 @@ pub unsafe extern "system" fn WinMain(
      * winetest, so this needs no staging change at all -- an i386
      * `build --rostests` is the whole opt-in, and a tree without one finds no
      * file and says nothing. */
-    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         let mut Skips: [u8; 2048] = [0; 2048];
         if WinetestSweepRequested(Skips.as_mut_ptr(), Skips.len()) {
