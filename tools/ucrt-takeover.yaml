@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 783
-  amd64: 783
-  arm64: 780
+  i386: 769
+  amd64: 769
+  arm64: 766
 
 families:
   bits:
@@ -590,3 +590,47 @@ families:
       - _wfindnext32i64
       - _wfindnext64
       - _wfindnext64i32
+
+  output:
+    replaces:
+      - sdk/lib/ucrt/stdio/output.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export, each
+      through a pair of variadic trampolines so both sides get a genuine va_list.
+      A 142-format corpus (literals, every flag/width/precision/length, %c/%s/%Z
+      narrow and wide, %p, the float conversions through inf/nan/DBL_MAX and a
+      precision past the inline buffer, and the malformed formats the two
+      transition tables disagree on) plus a 24-format positional corpus, through every
+      function; the buffer functions across option bits and buffer sizes
+      including NULL and too-small, _vsnprintf_s across count/max pairs, %n
+      disabled and enabled at each width; the stream functions into a real file
+      per side in binary, text and UTF-16LE modes. Graded: return, the whole
+      buffer or file, errno from a sentinel, and the invalid-parameter count.
+      All fourteen MATCH, dll_fail=0: vsprintf/vswprintf n=14844 each,
+      vsnprintf_s/vsnwprintf_s n=7392, the _s and _p buffer forms n=6108, and
+      the six stream forms n=1256 each -- 76,440 cases.
+    note: >
+      A PORT of Microsoft's processor, not msvcrt's engine: UCRT's printf is a
+      table-driven state machine with a standard and a validation table (the
+      _s/_p functions), and they disagree on malformed formats that Wine's parser
+      matches neither way. The three base classes are one runtime Base. Errno goes
+      through a layout-identical __crt_cached_ptd_host (ptd_host.rs), because the
+      C's errno semantics are the cache's: the handler sees the OLD errno, and
+      guards restore the cache. __acrt_fp_format, _wctomb_internal,
+      _mbtowc_internal, the _fputc/_fputwc_nolock_internal writes and the
+      temporary-buffering hooks are called, not replaced.
+    exports:
+      - __stdio_common_vfprintf
+      - __stdio_common_vfprintf_p
+      - __stdio_common_vfprintf_s
+      - __stdio_common_vfwprintf
+      - __stdio_common_vfwprintf_p
+      - __stdio_common_vfwprintf_s
+      - __stdio_common_vsnprintf_s
+      - __stdio_common_vsnwprintf_s
+      - __stdio_common_vsprintf
+      - __stdio_common_vsprintf_p
+      - __stdio_common_vsprintf_s
+      - __stdio_common_vswprintf
+      - __stdio_common_vswprintf_p
+      - __stdio_common_vswprintf_s

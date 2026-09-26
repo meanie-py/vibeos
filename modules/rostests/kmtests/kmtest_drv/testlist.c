@@ -17,6 +17,7 @@ KMT_TESTFUNC Test_ExInterlocked;
 KMT_TESTFUNC Test_ExPools;
 KMT_TESTFUNC Test_ExPushLock;
 KMT_TESTFUNC Test_ExResource;
+KMT_TESTFUNC Test_ExResourceBounded;
 KMT_TESTFUNC Test_ExSequencedList;
 KMT_TESTFUNC Test_ExSingleList;
 KMT_TESTFUNC Test_ExTimer;
@@ -104,6 +105,7 @@ const KMT_TEST TestList[] =
     { "ExPools",                            Test_ExPools },
     { "ExPushLock",                         Test_ExPushLock },
     { "ExResource",                         Test_ExResource },
+    { "ExResourceBounded",                  Test_ExResourceBounded },
     { "ExSequencedList",                    Test_ExSequencedList },
     { "ExSingleList",                       Test_ExSingleList },
     { "-ExTimer",                           Test_ExTimer },

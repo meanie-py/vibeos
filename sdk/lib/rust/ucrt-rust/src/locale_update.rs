@@ -54,24 +54,24 @@ pub const PER_THREAD_LOCALE_BIT: c_int = 0x2;
 extern "C" {
     /// The per-thread data block. Provided by the vendored C today; see the
     /// module docs for why we deliberately share it rather than allocate our own.
-    fn __acrt_getptd() -> *mut AcrtPtd;
+    pub(crate) fn __acrt_getptd() -> *mut AcrtPtd;
 
     /// Resynchronise the thread's locale/multibyte pointers with the global
     /// locale. Still C: replacing these is the locale subsystem's own slice,
     /// and reimplementing them here to avoid one extern would be reimplementing
     /// the thing this module exists to defer.
-    fn __acrt_update_locale_info(ptd: *mut AcrtPtd, data: *mut *mut CrtLocaleData);
-    fn __acrt_update_multibyte_info(ptd: *mut AcrtPtd, data: *mut *mut CrtMultibyteData);
+    pub(crate) fn __acrt_update_locale_info(ptd: *mut AcrtPtd, data: *mut *mut CrtLocaleData);
+    pub(crate) fn __acrt_update_multibyte_info(ptd: *mut AcrtPtd, data: *mut *mut CrtMultibyteData);
 
     /// `corecrt_internal.h:739`. Read directly rather than through the C's
     /// `__acrt_locale_changed()`, which is an `__inline` over exactly this and
     /// so has no symbol to call. Its own comment notes the read needs no
     /// interlock: a naturally-aligned 4-byte load is atomic on every target we
     /// build.
-    static __acrt_locale_changed_data: c_long;
+    pub(crate) static __acrt_locale_changed_data: c_long;
 
     /// The process-initial locale, used by the never-changed fast path.
-    static __acrt_initial_locale_pointers: CrtLocalePointers;
+    pub(crate) static __acrt_initial_locale_pointers: CrtLocalePointers;
 }
 
 /// A resolved locale for the duration of one call.

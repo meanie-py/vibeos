@@ -646,6 +646,22 @@ HAND_GRADED = (
     "_wfindfirst64",
     "_wfindnext64",
     "_findclose",
+    # run_pf_* (stdio/output.cpp): va_list entry points, which the generator has no
+    # driver for; each is graded through a pair of variadic trampolines.
+    "__stdio_common_vsprintf",
+    "__stdio_common_vswprintf",
+    "__stdio_common_vsprintf_s",
+    "__stdio_common_vswprintf_s",
+    "__stdio_common_vsnprintf_s",
+    "__stdio_common_vsnwprintf_s",
+    "__stdio_common_vsprintf_p",
+    "__stdio_common_vswprintf_p",
+    "__stdio_common_vfprintf",
+    "__stdio_common_vfwprintf",
+    "__stdio_common_vfprintf_s",
+    "__stdio_common_vfwprintf_s",
+    "__stdio_common_vfprintf_p",
+    "__stdio_common_vfwprintf_p",
 )
 
 

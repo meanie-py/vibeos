@@ -1765,7 +1765,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (1.6.39 -> 1.6.58) and the zlib audit are DONE.
 
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
-  more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
+  more than the retries. LABEL FIXED 2026-09-26; the discriminator is still OPEN** (2026-09-19).
+  Renamed `CONFORMANCE_RED` (owner-approved) — it names the observation, not a cause. It
+  recurred the day of the rename: `rustconv-speedrun` @ `e50515abfab5` was rejected
+  "CONFORMANCE_FLAKE, 3 attempts" for an i386 BUGCHECK 0x1E identical on all 9 surviving
+  rounds (an un-gated empty stub shadowing a self-patching asm routine). What is still owed is
+  the signature diff below: the final verdict still cannot say "reproduced identically". Verbatim from `land-status`:
 
         REJECTED: shell32-com @ 3607b8d766e0 (CONFORMANCE_FLAKE)
                   conformance:i386: CONFORMANCE_FLAKE, 3 attempts
@@ -4045,6 +4050,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     bit saturates at "over 100 ms" either way. The discriminator is the ACTUAL delay, which
     needs an instrument (record the wait's elapsed time on the timeout path), not more boots.
     That is the next step whenever this is picked up; do not re-soak it.
+    **INSTRUMENTED 2026-09-26 (`66668384be1`, diagnostic only) — and the first catch is a
+    SCHEDULER STARVATION, not a slow pipe.** `[NPFS-LATE]` stamps trigger / worker-woke /
+    work-done and prints when an item finishes past its caller's deadline. arm64 round 3 of
+    3 at that commit regressed NpfsConnect harder than ever recorded (pass 679 -> 606, fail
+    0 -> 73) and printed `work done 149890 ms after trigger (deadline 100 ms): woke +149890
+    ms, work 0 ms`, followed immediately by `[CENSUS] wait profile: 29 thread(s) parked
+    >20s`. Two artifact readings were checked and ruled out: it was the FIRST late item of
+    the test on a fresh worker (so not a previous diagnostic print still running), and the
+    round ran `KeStartAllProcessors: 1 processor(s) online` (so not cross-CPU clock skew,
+    and not the CPUs-2/3 bug). A ready kernel thread did not run for ~150 s on ONE CPU.
+    Evidence: `/tmp/vibeos-cli/20260926-175208-lvwp5qhv-conformance-arm64/` (preserved to
+    `~/vibeos-flake-farm/fails/auto/`). Next: what held the CPU for those 150 s — the
+    flight recorder and census around that line, not more sweeps.
+    **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
+    test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
+    `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;
+    a large `work` on a clean run is by design.
     **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
     (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate ASKS for the
     WoW64 ladder (`gate_argv=['--ladder']`, previously silently empty), so `LADDER_FAIL` is a
