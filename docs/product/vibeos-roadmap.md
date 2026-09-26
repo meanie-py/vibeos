@@ -495,16 +495,44 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **`user32_winetest input` BUGCHECKs i386 0x1E, and it is the first find of the winetest
-  SWEEP. OPEN** (2026-09-25). `*** BUGCHECK: 0x0000001E (0xc0000005, 0x805349b9, ...)` with
-  `win32k.sys+0x9DF48` = `NtUserGetKeyboardLayoutName+0x158` on the stack, preceded by a run
-  of `(win32k-rust/src/keyboard.rs:1689) err: Cannot copy key state` — the
-  `capture_from_user` of the 256-byte key-state array failing over and over. Native i386, no
-  WoW64 involved, so it is ours outright.
-  It is also why the sweep needs a quarantine at all: a subtest that takes the machine down
-  blinds every subtest after it, and `input` sits twelfth of user32's twenty-four. Run it with
-  `build --arch i386 --winetest-sweep` and no skip list to reproduce; the sweep gets past it
-  with `--winetest-skip input`.
+- **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
+  probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
+  The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
+  anywhere) found all three; each one blinds every subtest after it, so they had to be
+  quarantined one at a time to see the next:
+  | subtest | BUGCHECK PC | lead |
+  |---|---|---|
+  | `win` | `NtUserFlashWindowEx+0x6f` | `painting.rs:2006` — probed `pfwi`, then `RtlCopyMemory` off it |
+  | `msg` | `NtUserPeekMessage+0xf3` | `message.rs:3275` — probed `pMsg`, then `RtlCopyMemory` into it |
+  | `input` | PC in ntoskrnl, `NtUserGetKeyboardLayoutName+0x158` as caller | not characterized |
+  **What this changes is the priority, not the inventory.** The 152 bulk-copy leads below are
+  already known and already open; what they lacked was any evidence they were reachable. Two
+  are now demonstrated machine-killers, reached by a stock Wine subtest doing nothing exotic.
+  A scanner count is audit debt; a reproducer is a bug.
+  `input` is a different shape and should not be assumed to be the same one: its PC is in
+  ntoskrnl rather than win32k, and it follows a run of
+  `(win32k-rust/src/keyboard.rs:1689) err: Cannot copy key state` — the `capture_from_user`
+  of the 256-byte key-state array failing repeatedly, which is the SAFE helper, not a raw
+  access.
+  Repro: `build --arch i386 --rostests` once for the binary, then
+  `build --arch i386 --winetest-sweep` and boot `smoke --arch i386 --ladder` with
+  `VIBEOS_LADDER_DRAIN_FLOOR=1500`. Add `--winetest-skip "input msg"` to get past the first
+  two.
+
+- **Native i386 `user32_winetest` baseline, 21 of 24 subtests. REFERENCE** (2026-09-25).
+  Measured three times with byte-identical failure and output counts, so these are a
+  baseline and not noise. This is the CONTROL half of the WoW64 A/B — a guest-only
+  regression is a divergence from this table, not a non-zero number in it.
+  Clean: `broadcast`, `generated`, `uitools` (0 failures).
+  Failing: `scroll` 140, `sysparams` 46, `text` 36, `static` 35, `combo` 23, `monitor` 20,
+  `dce` 16, `menu` 3, `resource` 3; `clipboard`, `cursoricon` and `listbox` all hit test.h's
+  255 cap.
+  Not a failure count: `class` CRASHED `0xc0150010`, `dialog` and `edit` CRASHED
+  `0xc0000005`, `dde` TIMED OUT at 180s having written 114 bytes.
+  Unmeasured: `win`, `winstation`, `wsprintf` — `win` bugchecks (above) and the two after it
+  never ran.
+  Cost, for budgeting a wider sweep: most subtests are under 3s; the outliers are `dde` 180s
+  (the timeout itself), `sysparams` 128s, `clipboard` 20s, `class` 21s, `monitor` 14s.
 
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
