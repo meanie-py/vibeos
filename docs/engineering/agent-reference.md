@@ -49,6 +49,7 @@ fast-forwards `master` to exactly the commit it gated. N ready lanes therefore c
 ```bash
 ./vibeos-cli land                  # submit (and train the batch if nobody else is)
 ./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land --withdraw       # take MY queued submission out of line (not ready / would gate cold)
 ./vibeos-cli land --direct         # opt out: gate and push this lane alone
 ./vibeos-cli land --drain          # train without submitting (orphan recovery)
 ```

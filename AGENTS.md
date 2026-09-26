@@ -224,7 +224,7 @@ that only ever described *your* side. It happened twice in one morning in one do
 is no x64-on-arm64 path here" (true: `libwow64fex.dll` is built as the x86-guest plugin, zero
 ARM64EC in our source) became "FEX cannot host x64" — FEX advertises x64 and is the reason we
 picked it over box64; the blockers were all in our own build flags and BTCpu wiring. And
-"`external/fex` is vendored *unmodified*, so this fault is upstream behaviour" — but
+"`vendor/fex` is vendored *unmodified*, so this fault is upstream behaviour" — but
 unmodified locates the faulting CODE, not the CAUSE. Vendored code faults from what we hand it
 at least as readily as from its own defects, and we configure, build, link and drive all of it.
 Before blaming anything you did not write, name the specific input you are claiming is
