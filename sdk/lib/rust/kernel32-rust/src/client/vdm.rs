@@ -613,7 +613,11 @@ pub unsafe extern "system" fn BaseCreateVDMEnvironment(
                 }
                 Delimiter = *SourcePtr;
 
-                NameLength = (SourcePtr as isize - StartPtr as isize) as ULONG;
+                // C `SourcePtr - StartPtr` counts WCHARs, and everything below uses it as a
+                // count (GetShortPathNameW's buffer size, `* sizeof(WCHAR)` for the copy,
+                // DestPtr's advance). Subtracting addresses counted BYTES, doubling all three:
+                // an over-stated buffer, a 4x copy, and a 2x advance past the name.
+                NameLength = SourcePtr.offset_from(StartPtr) as ULONG;
                 if NameLength != 0 {
                     *SourcePtr = 0;
 

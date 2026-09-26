@@ -727,7 +727,12 @@ pub unsafe fn VersionInfoIs16(ver: *const c_void) -> BOOL {
     // C: `((const VS_VERSION_INFO_STRUCT16 *)ver)->szKey[0] >= ' '` where szKey
     // is CHAR (signed). Compare as signed i8 so high bytes (0x80-0xFF) read as
     // negative (< ' ') exactly as the C does — casting to u8 first diverged.
-    if (*(ver as *const CHAR)) >= b' ' as CHAR { 1 } else { 0 }
+    //
+    // szKey[0] is at offset 4 (after wLength/wValueLength) — NOT offset 0. Reading
+    // `*(ver as *const CHAR)` tested wLength's low byte, so every 32-bit block whose
+    // length's low byte was >= 0x20 took the 16-bit path and every query failed
+    // (found by rustconv difftest-contract, version.json).
+    if (*(*(ver as *const VS_VERSION_INFO_STRUCT16)).szKey.as_ptr()) >= b' ' as CHAR { 1 } else { 0 }
 }
 
 // ============================================================================
@@ -1938,7 +1943,10 @@ unsafe fn VersionInfo32_QueryValue(
             continue;
         }
 
-        info = VersionInfo32_FindChild(info, lpSubBlock, (lpNextSlash as isize - lpSubBlock as isize) as UINT);
+        // C's `lpNextSlash - lpSubBlock` on LPCWSTR counts WCHARs; subtracting the
+        // addresses as integers counted BYTES, so every key compared twice its length
+        // and no 32-bit child was ever found (rustconv difftest-contract, version.json).
+        info = VersionInfo32_FindChild(info, lpSubBlock, lpNextSlash.offset_from(lpSubBlock) as UINT);
         if info.is_null() {
             if !puLen.is_null() {
                 *puLen = 0;
@@ -2062,11 +2070,16 @@ pub unsafe extern "system" fn VerQueryValueW(
     puLen: *mut UINT,
 ) -> BOOL {
     static rootW: [WCHAR; 2] = [b'\\' as WCHAR, 0];
-    static varfileinfoW: [WCHAR; 15] = [
+    // version.c: `'\\','V','a','r','F','i','l','e','I','n','f','o','\\','T','r','a','n',
+    // 's','l','a','t','i','o','n',0`. The translation had truncated it to "\\VarFileInfo\\T",
+    // so a 16-bit block's Translation value was wrongly re-encoded as a string.
+    static varfileinfoW: [WCHAR; 25] = [
         b'\\' as WCHAR, b'V' as WCHAR, b'a' as WCHAR, b'r' as WCHAR,
         b'F' as WCHAR, b'i' as WCHAR, b'l' as WCHAR, b'e' as WCHAR,
         b'I' as WCHAR, b'n' as WCHAR, b'f' as WCHAR, b'o' as WCHAR,
-        b'\\' as WCHAR, b'T' as WCHAR, 0,
+        b'\\' as WCHAR, b'T' as WCHAR, b'r' as WCHAR, b'a' as WCHAR,
+        b'n' as WCHAR, b's' as WCHAR, b'l' as WCHAR, b'a' as WCHAR,
+        b't' as WCHAR, b'i' as WCHAR, b'o' as WCHAR, b'n' as WCHAR, 0,
     ];
 
     let info: *const VS_VERSION_INFO_STRUCT32 = pBlock as *const VS_VERSION_INFO_STRUCT32;

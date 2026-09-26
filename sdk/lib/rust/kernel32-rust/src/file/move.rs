@@ -365,6 +365,10 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
         }
     }
 
+    // DELIBERATE divergence from move.c, which has `NameLength = EndOfName - AbsolutePath`
+    // (a WCHAR count) and then uses NameLength as BYTES everywhere after: the byte-length
+    // limits, `RtlCopyMemory(.., NameLength)` and `/ sizeof(WCHAR)` — so the C returns half
+    // the computer name. The byte difference here is what that code means; keep it.
     NameLength = (EndOfName as isize - AbsolutePath as isize) as u16;
     if NameLength >= AbsolutePathLength
         || NameLength >= (MAX_COMPUTERNAME_LENGTH as u16) * core::mem::size_of::<WCHAR>() as u16

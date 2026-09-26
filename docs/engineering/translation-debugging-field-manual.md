@@ -5507,6 +5507,13 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   pointer.
 - **`copy_nonoverlapping`/`copy` have the same element-vs-byte trap** (the `RtlCopyMemory`
   sibling).
+- **A C pointer difference lowered as ADDRESS subtraction.** `lpNextSlash - lpSubBlock` on
+  `LPCWSTR` counts WCHARs; `(a as isize - b as isize)` counts bytes. version.dll's
+  `VersionInfo32_QueryValue` passed that to `FindChild` as the key length, so every key
+  compared twice its length and no 32-bit child was ever found; the byte-typed 16-bit twin
+  was correct, which is what makes the class easy to copy. Use `a.offset_from(b)`. Found by
+  `rustconv difftest-contract` (`version.json`), together with a `VersionInfoIs16` that read
+  offset 0 instead of `szKey[0]` at offset 4, and a wide literal truncated to 15 units.
 - **A pointer difference with an adjustment folded into `offset_from`, and then applied
   AGAIN.** `sym->current - 1 - ptr` parses as `(current - 1) - ptr`; the translation correctly
   turned `current - ptr` into `offset_from(ptr)` and then kept the `- 1` as well, so msvcrt's
