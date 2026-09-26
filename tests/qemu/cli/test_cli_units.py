@@ -9148,3 +9148,58 @@ def test_reaper_walks_debug_toolkit_manifests(reaper):
     (runs / "torn" / "manifest.json").write_text("{")
     vm_mod.reap_orphan_qemus()
     assert [k["qemu_pid"] for k in kills] == [300]
+
+
+# --- vm: output printed before the `ready` snapshot is boot output, never flushed -------
+
+
+class _FakeSerial:
+    """read_until / read_until_idle / read_available over a scripted stream, with the
+    real SerialClient's consume semantics: a TimeoutError does NOT consume."""
+
+    def __init__(self, boot: str, settle: str, settle_times_out: bool) -> None:
+        self.buf, self.pos = boot + settle, 0
+        self.boot, self.settle_times_out = boot, settle_times_out
+
+    def read_until(self, marker: str, timeout: float = 0) -> str:
+        end = self.buf.index(marker) + len(marker)
+        out, self.pos = self.buf[self.pos : end], end
+        return out
+
+    def read_until_idle(self, idle_seconds: float = 0, timeout: float = 0, min_bytes: int = 0):
+        if self.settle_times_out:
+            raise TimeoutError("never idle")
+        out, self.pos = self.buf[self.pos :], len(self.buf)
+        return out
+
+    def read_available(self, timeout: float = 0) -> str:
+        out, self.pos = self.buf[self.pos :], len(self.buf)
+        return out
+
+
+class _FakeQmp:
+    def hmp(self, cmd: str) -> str:
+        return ""
+
+
+@pytest.mark.parametrize("settle_times_out", [True, False])
+def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restore(
+    monkeypatch, settle_times_out
+):
+    """The ucrtdiff/oldcrt hang: the marker arrived during the settle, the settle timed
+    out because the payload was chatty, and restore_snapshot's flush ate it."""
+    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
+    vm = object.__new__(vm_mod.QemuVM)
+    vm.config = cast(
+        Any,
+        type(
+            "C", (), {"boot_marker": "shell ready", "boot_timeout": 1, "desktop_settle_seconds": 5}
+        )(),
+    )
+    vm.serial = cast(Any, _FakeSerial("...shell ready", "\n[UCRTDIFF] done\n", settle_times_out))
+    vm.qmp = cast(Any, _FakeQmp())
+    vm._boot_output = ""
+    vm.wait_for_boot()
+    vm.save_snapshot("ready")
+    vm.restore_snapshot("ready")  # the autouse fixture, before the first test
+    assert "[UCRTDIFF] done" in vm._boot_output

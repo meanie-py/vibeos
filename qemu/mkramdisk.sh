@@ -109,6 +109,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/subsystems/win/basesrv/basesrv.dll"
     "$BUILD_DIR/media/nls/c_437.nls"
     "$BUILD_DIR/media/nls/c_1252.nls"
+    "$BUILD_DIR/media/nls/c_20127.nls"
     "$BUILD_DIR/dll/win32/kernel32/kernel32.dll"
     "$BUILD_DIR/win32ss/user/user32/user32.dll"
     "$BUILD_DIR/win32ss/gdi/gdi32/gdi32.dll"
@@ -485,6 +486,10 @@ RMC "$BUILD_DIR/dll/win32/psapi/psapi.dll"                    ::/reactos/system3
 
 RMC "$BUILD_DIR/media/nls/c_437.nls"                           ::/reactos/system32/c_437.nls
 RMC "$BUILD_DIR/media/nls/c_1252.nls"                          ::/reactos/system32/c_1252.nls
+# US-ASCII. msvcrt's _setmbcp(_MB_CP_SBCS) selects it (Wine's mapping), and without the
+# table every MultiByteToWideChar(20127) fails -- so every _ismbc*/_mbcto* call answered
+# 0 even for 'A' on arm64, the only arch whose media is curated here (x86 ships all NLS).
+RMC "$BUILD_DIR/media/nls/c_20127.nls"                         ::/reactos/system32/c_20127.nls
 if [ -n "$L_INTL_NLS" ]; then
     RMC "$L_INTL_NLS"                                          ::/reactos/system32/l_intl.nls
 fi
