@@ -126,7 +126,7 @@ def conformance_signatures(rec: dict) -> list[str]:
         except ValueError:
             pass
         return [f"BUGCHECK {code}"]
-    if shape in ("B:no-launch", "stalled/DID-NOT-FINISH"):
+    if shape in ("B:no-launch", "L:no-guest-serial", "stalled/DID-NOT-FINISH"):
         return [shape]
     # Grouped on the VERBATIM detail: the one-event tell is a shared CONSTANT
     # ("never launched", "OK -> FAILSTART"). Three tests each dropping a different
@@ -175,7 +175,7 @@ _COMPLETED = frozenset({"clean", "clean-but-ratchet-regression"})
 
 
 def _run_level(sig: str) -> bool:
-    return sig.startswith(("B:", "BUGCHECK", "stalled", "mass:"))
+    return sig.startswith(("B:", "L:", "BUGCHECK", "stalled", "mass:"))
 
 
 def _ledger_path(repo: Path) -> Path:

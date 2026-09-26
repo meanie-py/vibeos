@@ -10,7 +10,7 @@ from collections.abc import Iterator
 import pytest
 
 from .cli import config as cli_config
-from .vm import PROJECT_DIR, QemuVM, get_arch_config, reap_orphan_qemus
+from .vm import PROJECT_DIR, QemuVM, get_arch_config, launch_with_retry, reap_orphan_qemus
 
 # Add tools/ to path for scan_ud2, lint_kernel
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -204,8 +204,19 @@ def vm(
     # backend got a working boot stage but a net stage that failed on KVM.
     cli_cfg = cli_config.load(PROJECT_DIR)
     backend = cli_cfg.get("qemu.backend", "native")
-    vm = QemuVM(config, work_dir, backend=backend, windows=cli_cfg.get("qemu.windows", {}))
-    vm.start()
+    # Through the shared retry, like smoke: a lost serial socket is the HOST, it resolves
+    # on a fresh VM (new port), and without this it was graded a lost boot of the OS.
+    # Each retry is printed, and a launch that fails every attempt raises as before.
+    started, _attempts, launch_exc = launch_with_retry(
+        lambda: QemuVM(config, work_dir, backend=backend, windows=cli_cfg.get("qemu.windows", {})),
+        {},
+        lambda msg: print(f"[pytest] {msg}"),
+        "launch",
+    )
+    if launch_exc is not None:
+        raise launch_exc
+    assert started is not None
+    vm = started
     # Tell watchers where to follow boot progress live — a cold arm64 TCG boot
     # is silent for minutes, so this is how an agent distinguishes "working"
     # from "wedged" without restarting the run.

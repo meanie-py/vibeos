@@ -9291,11 +9291,11 @@ class _FlakyVM:
 
 
 def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
-    """Drive _launch_with_retry against a VM that fails `failures` times."""
-    from tests.qemu.cli import smoke as smoke_mod
+    """Drive launch_with_retry against a VM that fails `failures` times."""
+    from tests.qemu import vm as vm_mod
 
-    monkeypatch.setattr(smoke_mod, "_LAUNCH_ATTEMPTS", attempts)
-    monkeypatch.setattr(smoke_mod, "_LAUNCH_RETRY_SECONDS", 0)
+    monkeypatch.setattr(vm_mod, "LAUNCH_ATTEMPTS", attempts)
+    monkeypatch.setattr(vm_mod, "LAUNCH_RETRY_SECONDS", 0)
     budget = {"n": failures}
     built: list[_FlakyVM] = []
     logs: list[str] = []
@@ -9310,9 +9310,7 @@ def _retry_probe(monkeypatch, failures: int, attempts: int = 3):
     timings: dict[str, float] = {}
     # _FlakyVM is a stand-in, not a QemuVM -- the helper only ever touches
     # start/stop/launch_timings, which is exactly what makes it testable here.
-    vm, n, exc = smoke_mod._launch_with_retry(
-        cast("Any", make_vm), timings, logs.append, "boot 1/5"
-    )
+    vm, n, exc = vm_mod.launch_with_retry(cast("Any", make_vm), timings, logs.append, "boot 1/5")
     return built, logs, timings, vm, n, exc
 
 
@@ -9355,10 +9353,10 @@ def test_launch_retry_is_a_no_op_on_a_healthy_launch(monkeypatch):
 
 
 def test_launch_attempts_stays_small_enough_not_to_slow_a_broken_launch():
-    from tests.qemu.cli import smoke as smoke_mod
+    from tests.qemu import vm as vm_mod
 
-    assert 2 <= smoke_mod._LAUNCH_ATTEMPTS <= 3
-    assert smoke_mod._LAUNCH_RETRY_SECONDS <= 5
+    assert 2 <= vm_mod.LAUNCH_ATTEMPTS <= 3
+    assert vm_mod.LAUNCH_RETRY_SECONDS <= 5
 
 
 def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():

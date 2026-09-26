@@ -853,16 +853,7 @@ def _conformance_once(args, repo: Path) -> int:
         serial_text = Path(summary["serial_log"]).read_text(errors="replace")
     except Exception:
         pass
-    if bugcheck:
-        shape = f"A:bugcheck {bugcheck}"
-    elif not results:
-        shape = "B:no-launch"
-    elif not done_line:
-        shape = "stalled/DID-NOT-FINISH"
-    elif regressions:
-        shape = "clean-but-ratchet-regression"
-    else:
-        shape = "clean"
+    shape = round_shape(bugcheck, results, done_line, regressions, serial_text)
     try:
         from . import triage as _triage
 
@@ -968,3 +959,27 @@ def _conformance_once(args, repo: Path) -> int:
         return 0
     print("  ratchet holds: no regressions vs baseline.")
     return 0
+
+
+def round_shape(bugcheck, results: list, done_line, regressions: list, serial_text: str) -> str:
+    """The failure MODE of one round -- the partition every flake rate is taken within.
+
+    A round whose serial holds NOTHING but the harness's own `#` header never ran a
+    guest instruction. 16 rounds in two weeks failed that way in under a minute, with no
+    kernel on serial; the one whose run dir survived shows why -- handshake_seconds
+    15.001, QEMU never connected the serial socket. Filed as B:no-launch they sat in the
+    same bucket as kernels that died before the sweep, which is a different bug on a
+    different side of the machine. Named for what is OBSERVED, not for a cause.
+    """
+    guest_serial = any(ln.strip() and not ln.startswith("#") for ln in serial_text.splitlines())
+    if bugcheck:
+        return f"A:bugcheck {bugcheck}"
+    if not guest_serial:
+        return "L:no-guest-serial"
+    if not results:
+        return "B:no-launch"
+    if not done_line:
+        return "stalled/DID-NOT-FINISH"
+    if regressions:
+        return "clean-but-ratchet-regression"
+    return "clean"

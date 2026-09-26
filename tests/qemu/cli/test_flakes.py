@@ -247,3 +247,36 @@ def test_collect_reads_signed_ledger_rows(tmp_path, monkeypatch):
     graded = flakes.grade(flakes.collect(tmp_path, since=0))
     assert one(graded, "BUGCHECK 0x1E")["grade"] == "FLAKE"  # STALE_MEDIA is not a boot
     assert one(graded, "assert X.c:1")["grade"] == "UNGRADED"
+
+
+# ----------------------------------------------------------- lost boots, split
+
+
+def test_a_round_with_no_guest_serial_is_not_a_lost_boot():
+    """F3: QEMU never connected, so the serial holds only the harness header. That is
+    the host, not the OS -- it must not share B:no-launch with kernels that died."""
+    from .conformance import round_shape
+
+    header = "# vibeos smoke live serial -- amd64-uefi -- pid(launcher)=1\n# tail -f x\n"
+    assert round_shape(None, [], None, [], header) == "L:no-guest-serial"
+    assert round_shape(None, [], None, [], header + "BdsDxe: loading Boot0001\n") == "B:no-launch"
+    # a bugcheck is still named first, whatever else the round shows
+    assert round_shape("0x1E", [], None, [], header) == "A:bugcheck 0x1E"
+    assert flakes.conformance_signatures({"shape": "L:no-guest-serial"}) == ["L:no-guest-serial"]
+
+
+def test_every_gated_boot_path_launches_through_the_retry():
+    """The retry lived in cli/smoke.py, so the pytest `vm` fixture (conformance, the
+    payload suites, the net suite) kept a bare `vm.start()` and lost rounds to the
+    exact socket flake smoke had already fixed. Pin both call sites to the shared one."""
+    import inspect
+    from pathlib import Path
+
+    from .. import conftest
+    from . import smoke
+
+    fixture = Path(conftest.__file__).read_text()
+    body = fixture[fixture.index("def vm(") : fixture.index("\ndef ", fixture.index("def vm(") + 1)]
+    assert "launch_with_retry(" in body
+    assert "vm.start()" not in body
+    assert "launch_with_retry(" in inspect.getsource(smoke._boot_vm)
