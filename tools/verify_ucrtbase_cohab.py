@@ -749,9 +749,11 @@ def main() -> int:
     for f in findings:
         print(f)
     # Notes last, so a green run ends on the number going down -- which is the
-    # one line anyone actually wants to see from this tool.
+    # one line anyone actually wants to see from this tool. On STDERR: the lint
+    # harness counts stdout lines as findings against a baseline, so a note there
+    # ("not measured, build is stale") failed `check --strict` and blocked a land.
     for n in bd_notes:
-        print(n)
+        print(n, file=sys.stderr)
     return 1 if findings else 0
 
 
