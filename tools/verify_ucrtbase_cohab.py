@@ -395,6 +395,33 @@ def _content_changed_at() -> tuple[float, str] | None:
     return (best, what) if best else None
 
 
+def _ucrt_archive(build: Path, triple: str) -> Path | None:
+    """The libcrt_shared_cargo.a a build dir links into ucrtbase, if it has one."""
+    for archive in (
+        build / "sdk" / "lib" / "rust" / "target" / triple / "release" / "libcrt_shared_cargo.a",
+        build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a",
+    ):
+        if archive.is_file():
+            return archive
+    return None
+
+
+def burndown_stale(arch: str) -> str | None:
+    """Why `arch`'s build cannot be measured for the ratchet right now, or None.
+
+    The ratchet reads the BUILD, and the gate runs check-tooling CONCURRENTLY with
+    its builds. A commit that takes a family over and lowers the ceiling in the same
+    change is then measured against the previous commit's archive, and reads as a
+    regression: the integration tree reported 999 against a recorded 991 and bounced
+    the lane that had made the number 991. Same rule as check_archive: an archive
+    older than its sources gets no verdict, in either direction.
+    """
+    archive = _ucrt_archive(REPO / f"build-{arch}", ARCHES[arch])
+    if archive is None:
+        return "no libcrt_shared_cargo.a in the build"
+    return _stale_against_sources(archive)
+
+
 def _stale_against_sources(archive: Path) -> str | None:
     """What changed after `archive` was built, or None if it is current.
 
@@ -480,12 +507,8 @@ def check_archive() -> list[str]:
         if not build.is_dir():
             continue  # not built here; the structural check still ran
 
-        archive = (
-            build / "sdk" / "lib" / "rust" / "target" / triple / "release" / "libcrt_shared_cargo.a"
-        )
-        if not archive.is_file():
-            archive = build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a"
-        if not archive.is_file():
+        archive = _ucrt_archive(build, triple)
+        if archive is None:
             continue  # ucrtbase cohab not wired into this build dir yet
 
         stale = _stale_against_sources(archive)
@@ -691,6 +714,10 @@ def check_burndown() -> tuple[list[str], list[str]]:
     notes: list[str] = []
     for arch, ceiling in sorted(want.items()):
         if not (REPO / f"build-{arch}").is_dir():
+            continue
+        stale = burndown_stale(arch)
+        if stale:
+            notes.append(f"note: ucrt burn-down: {arch} not measured -- build is stale ({stale})")
             continue
         try:
             buckets, _ = classify(arch)

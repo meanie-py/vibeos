@@ -503,6 +503,10 @@ def test_the_recorded_ceiling_matches_what_the_tree_actually_measures():
     for arch, ceiling in want.items():
         if not (vuc.REPO / f"build-{arch}").is_dir():
             continue
+        # A build older than its sources measures the PREVIOUS commit. The gate runs this
+        # concurrently with its own builds, so that is the normal case there.
+        if vuc.burndown_stale(arch):
+            continue
         from ucrt_burndown import classify
 
         buckets, _ = classify(arch)
@@ -526,16 +530,19 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
     that happens to answer a ucrtbase export moves this count. That is how a
     gate gets switched off, so it must only ever fail upward.
     """
-    if not any((vuc.REPO / f"build-{a}").is_dir() for a in ("i386", "amd64", "arm64")):
-        import pytest
-
-        pytest.skip("no build tree in this worktree; the ratchet needs objects")
-
+    import pytest
     import yaml
 
     original = vuc.TAKEOVER.read_text(encoding="utf-8")
     doc = yaml.safe_load(original)
-    arch = next(a for a in doc["burndown"] if (vuc.REPO / f"build-{a}").is_dir())
+    fresh = [
+        a
+        for a in doc["burndown"]
+        if (vuc.REPO / f"build-{a}").is_dir() and not vuc.burndown_stale(a)
+    ]
+    if not fresh:
+        pytest.skip("no fresh build tree in this worktree; the ratchet needs current objects")
+    arch = fresh[0]
     real = doc["burndown"][arch]
 
     # Perturb a COPY, never the tracked file. Writing tools/ucrt-takeover.yaml in place and
@@ -585,3 +592,17 @@ def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
         dst.write_text(src.replace(" crt-portable-rust", "", 1))
     found = vuc.check_rebuild_lists(repo=tmp_path)
     assert any("omits `crt-portable-rust`" in f for f in found), found
+
+
+def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) -> None:
+    """The gate measures the ratchet while its own builds are still running, so a
+    commit that lowers the ceiling is first measured against the PREVIOUS archive.
+    That must be a note, never a failure -- it bounced the lane that earned the drop."""
+    scratch = tmp_path / "ucrt-takeover.yaml"
+    scratch.write_text("burndown:\n  i386: 1\n  amd64: 1\n  arm64: 1\n")
+    monkeypatch.setattr(vuc, "TAKEOVER", scratch)
+    monkeypatch.setattr(vuc, "burndown_stale", lambda arch: "archive older than sources")
+    fails, notes = vuc.check_burndown()
+    assert fails == []
+    if any((vuc.REPO / f"build-{a}").is_dir() for a in ("i386", "amd64", "arm64")):
+        assert any("not measured" in n for n in notes), notes

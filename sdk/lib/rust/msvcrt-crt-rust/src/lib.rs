@@ -30,7 +30,7 @@ use cnt_rust::core_rs::radix::format_radix;
 // The string family and the helpers it shares with the rest of this crate live
 // in crt-portable-rust, so ucrtbase.dll can link the SAME bodies without
 // depending on this crate. See crt-portable-rust/Cargo.toml.
-use crt_portable_rust::{cstr_copy, nz, ByteSet};
+use crt_portable_rust::nz;
 pub use crt_portable_rust::{strcat, strcpy, strcspn, strlen, strncat, strncpy, strnlen, strpbrk, strspn};
 
 // ── Wave 1: int↔string radix family ─────────────────────────────────
