@@ -145,6 +145,29 @@ def build_parser() -> argparse.ArgumentParser:
         "Build one target with ninja and stage it as a payload instead",
     )
     b.add_argument(
+        "--winetest-sweep",
+        action="store_true",
+        help="stage the winetest SWEEP marker, so winlogon runs EVERY subtest "
+        "of each staged Wine conformance suite instead of the two hand-picked "
+        "ones (user32:wsprintf, user32:class). Enumerated from the binary via "
+        "`--list`, one guest process per subtest, so a sweep costs minutes and "
+        "is deliberately off the gate's path. Needs the suites to exist: an "
+        "i386 `build --rostests` first, then this on the arch whose media you "
+        "will boot. RECONCILED, not sticky",
+    )
+    b.add_argument(
+        "--winetest-skip",
+        default="",
+        metavar="SUBTESTS",
+        help="space-separated subtest names to QUARANTINE from --winetest-sweep, "
+        "e.g. 'input dde'. A subtest that BUGCHECKs the machine blinds every one "
+        "after it in the sweep, so the list is how a sweep gets past a known "
+        "crasher. Written into the sweep marker as `skip <name>` lines; winlogon "
+        "logs each as QUARANTINED so an absent subtest never reads as a pass. "
+        "Same discipline as tools/payloads/apitest/quarantine-amd64.txt: re-derive "
+        "entries, do not inherit them",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "
@@ -341,6 +364,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="report the plan (merge needed? gate needed? who is landing) and exit",
     )
+    la.add_argument(
+        "--hold",
+        metavar="REASON",
+        help="STOP THE LINE: no conductor starts a batch, submissions still queue, only this "
+        "lane may --direct. Say why; it shows in every land/land-status",
+    )
+    la.add_argument(
+        "--preempt",
+        action="store_true",
+        help="with --hold: also stop a detached conductor mid-batch (its batch stays queued)",
+    )
+    la.add_argument("--release", action="store_true", help="lift the hold and wake the queue")
     la.add_argument(
         "--queue-timeout",
         type=float,
@@ -725,6 +760,13 @@ def build_parser() -> argparse.ArgumentParser:
     he.add_argument("--json", action="store_true", help="raw ledger rows")
     he.set_defaults(fn=health_mod.health)
 
+    rp = sub.add_parser(
+        "reap", help="kill orphan QEMUs (owner gone) and any past their lifetime cap"
+    )
+    rp.add_argument("--dry-run", action="store_true", help="report, kill nothing")
+    rp.add_argument("--verbose", "-v", action="store_true", help="(accepted; always verbose)")
+    rp.set_defaults(fn=_cmd_reap)
+
     hs = sub.add_parser(
         "host-status", help="host CPU broker: who holds the build/boot lease (across worktrees)"
     )
@@ -851,6 +893,19 @@ def build_parser() -> argparse.ArgumentParser:
     rp.set_defaults(fn=repro_mod.repro)
 
     return p
+
+
+def _cmd_reap(args, repo: Path) -> int:
+    """`vibeos-cli reap` -- and `qemu/reap.sh`, which is now a wrapper around it. Action lines
+    go to stderr as `[reap] ...` (start.sh passes them through to the user)."""
+    from tests.qemu.vm import reap_orphan_qemus
+
+    actions = reap_orphan_qemus(dry_run=bool(getattr(args, "dry_run", False)))
+    for line in actions:
+        print(f"[reap] {line}", file=sys.stderr)
+    failed = [a for a in actions if a.startswith("FAILED")]
+    print(f"reap: {len(actions) - len(failed)} action(s), {len(failed)} failed")
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:

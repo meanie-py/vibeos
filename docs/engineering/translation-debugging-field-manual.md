@@ -5119,6 +5119,28 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A live ASSERT over state that only a `#[cfg(debug_assertions)]` block maintains.** The C
+  pairs `#if DBG` bookkeeping with DBG-only ASSERTs, and this tree builds the C with DBG=1.
+  The translation turned the bookkeeping into `#[cfg(debug_assertions)]` (off in release) while
+  `c4d82e425fc` made the ASSERTs live. The pushlock waker's `WaitBlock->Signaled = TRUE` was
+  compiled out, so every contended wait printed `ASSERT FAILED: (*WaitBlock).Signaled != 0`
+  with a correct wake. Any field written only under `cfg(debug_assertions)` and read by an
+  `ASSERT!` is a false positive waiting for its first execution; write it unconditionally.
+- **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
+  an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
+  resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
+  shared-icon cache never matched and every `LoadCursor`/`LoadIcon(LR_SHARED)` made a new icon,
+  two bitmaps and a leaked pool string. The damage surfaced far away: GDI quota exhaustion, NULL
+  regions deleted in win32k, pool exhaustion bugchecks. The tell in a trace is a lookup
+  repeated with identical arguments that never hits (IDC_ARROW 4139 times). Diff each function's
+  sequence of capture/probe calls against the C as a list; a statement the C does not have is
+  easy to read past because it looks like its neighbour.
+- **A `goto Cleanup` that skips a release becomes a second release.** In the C
+  `MmProbeAndLockPages`, a failed `MmAccessFault` jumps to `Cleanup:`, past the lock release at
+  `CleanupWithLock:`, because the lock was dropped before the call. The Rust inlined the
+  cleanup at each site and included the release both times, releasing the PFN lock or the
+  working-set pushlock that this thread no longer held. When translating label-based cleanup,
+  map each `goto` to the LABEL it names, not to the whole cleanup tail.
 - **A local deviation that changes WHAT a function returns but not what it CLAIMS.** Our
   `LdrpApplyFileNameRedirection` emits an api-set's host as a BARE name (`kernel32.dll`,
   resolved by the search path) where stock ReactOS builds `NtSystemRoot\System32\<host>`, but
@@ -5948,6 +5970,13 @@ Three method lessons from the hunt:
 - **Before blaming the process that was running when the box died, check whether it merely
   outlived the one that killed it.** The real culprit was a third process entirely; the two
   apparent victims were downstream of the box-kill, which is why both looked guilty.
+
+- **The mirror case: the EXCEPT arm as a bare block runs every time.** kernel32-rust
+  `GlobalSize` put `_SEH2_EXCEPT { dwSize = MAXULONG_PTR; }` in a labeled block straight after
+  the try block, so it executed unconditionally and every GlobalSize/LocalSize returned 0
+  (ERROR_INVALID_HANDLE). Callers that size buffers from it (`LocalSize()/2 - 1`) wrapped to a
+  zero-byte allocation and wrote past it. A labeled block after a try block is not a handler;
+  drop the arm (nothing raises into it) rather than keep it reachable.
 
 ### An SEH filter expression is a PREDICATE, not a value `[§9.70]`
 `GlobalLock` materialised `EXCEPTION_EXECUTE_HANDLER` into a local and branched on it, so it

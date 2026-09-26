@@ -1187,11 +1187,11 @@ pub unsafe extern "system" fn NtUserFindExistingCursorIcon(
     }
 
     'done: {
-        Status = ProbeAndCaptureUnicodeString(
-            core::ptr::addr_of_mut!(ustrRsrcSafe).cast::<_UNICODE_STRING>().offset(0),
-            1i32 as i8,
-            pustrModule,
-        );
+        // The translation had a second capture here, of pustrModule INTO ustrRsrcSafe. It
+        // overwrote the resource name with the module path, so no LR_SHARED icon ever matched:
+        // every LoadIcon/LoadImage(LR_SHARED) minted a new icon and two bitmaps, and the real
+        // resource capture leaked its pool buffer. A repainting app hit the 10K GDI quota, and
+        // win32k then fell over on the NULL regions (REGION_Delete(NULL)) or pool exhaustion.
         Status = ProbeAndCaptureUnicodeString(
             core::ptr::addr_of_mut!(ustrModuleSafe),
             1i32 as i8,

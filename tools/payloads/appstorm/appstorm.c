@@ -56,6 +56,35 @@ static int contains(const wset_t *s, HWND h)
 static void snapshot(wset_t *s) { s->n = 0; EnumWindows(collect, (LPARAM)s); }
 
 /* New visible windows that are not ours and not the shell's. */
+/* Processes alive before the launch. Their new windows are not the app's -- on amd64 the
+ * background WoW64 user32_winetest pops console windows at any moment, and one was scored as
+ * dxdiag's window. explorer.exe is the exception: a folder window opens INSIDE the shell. */
+static DWORD prior_pids[512];
+static int n_prior;
+
+static void snapshot_pids(void)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    n_prior = 0;
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (lstrcmpiW(pe.szExeFile, L"explorer.exe") && n_prior < 512)
+                prior_pids[n_prior++] = pe.th32ProcessID;
+        } while (Process32NextW(snap, &pe));
+    CloseHandle(snap);
+}
+
+static int prior_pid(DWORD pid)
+{
+    for (int i = 0; i < n_prior; i++)
+        if (prior_pids[i] == pid)
+            return 1;
+    return 0;
+}
+
 static int new_windows(const wset_t *before, wset_t *out)
 {
     wset_t now;
@@ -64,9 +93,25 @@ static int new_windows(const wset_t *before, wset_t *out)
     for (int i = 0; i < now.n; i++) {
         DWORD pid = 0;
         GetWindowThreadProcessId(now.h[i], &pid);
-        if (!contains(before, now.h[i]) && pid != GetCurrentProcessId()) out->h[out->n++] = now.h[i];
+        if (!contains(before, now.h[i]) && pid != GetCurrentProcessId() && !prior_pid(pid))
+            out->h[out->n++] = now.h[i];
     }
     return out->n;
+}
+
+static int is_real(HWND h)
+{
+    RECT r;
+    return GetWindowRect(h, &r) && r.right - r.left >= 50 && r.bottom - r.top >= 30 && r.left > -30000;
+}
+
+static int has_real_window(const wset_t *before, wset_t *got)
+{
+    new_windows(before, got);
+    for (int i = 0; i < got->n; i++)
+        if (is_real(got->h[i]))
+            return 1;
+    return 0;
 }
 
 static void ascii(const WCHAR *w, char *o, size_t n)
@@ -132,10 +177,26 @@ int main(void)
             absent++;
             continue;
         }
+#ifdef APPSTORM_PAGEHEAP
+        /* Debug page heap for the app (IFEO GlobalFlag = FLG_HEAP_PAGE_ALLOCS): a heap overrun
+         * then faults AT the corrupting store instead of in a later RtlFreeHeap. */
+        {
+            char key[300];
+            HKEY hk;
+            DWORD flag = 0x02000000;
+            wsprintfA(key, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s", a->exe);
+            if (!RegCreateKeyExA(HKEY_LOCAL_MACHINE, key, 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, NULL)) {
+                RegSetValueExA(hk, "GlobalFlag", 0, REG_DWORD, (const BYTE *)&flag, sizeof flag);
+                RegCloseKey(hk);
+                SAY("pageheap on for %s\n", a->exe);
+            }
+        }
+#endif
         ExpandEnvironmentStringsA(a->args, args, MAX_PATH);
         snprintf(cmd, sizeof cmd, "\"%s\" %s", path, args);
         wset_t before, got;
         snapshot(&before);
+        snapshot_pids();
         STARTUPINFOA si = { sizeof si };
         PROCESS_INFORMATION pi;
         if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
@@ -148,7 +209,10 @@ int main(void)
         DWORD t0 = GetTickCount();
         /* No early out on process exit: control.exe exits as soon as it has started the
          * applet's rundll32, so a gone launcher says nothing about the window. */
-        while (!new_windows(&before, &got) && GetTickCount() - t0 < 30000)
+        /* Wait for a REAL window, not just the first new one: an applet's rundll32 shows its
+         * hidden 166x24 host window at -32000,-32000 long before the dialog when the machine is
+         * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000)
             Sleep(250);
         Sleep(3000);
         new_windows(&before, &got);
@@ -222,7 +286,10 @@ int main(void)
             if (!j) GetExitCodeProcess(h, &rc);
             if (j) CloseHandle(h);
         }
-        int crashed = (rc & 0xC0000000u) == 0xC0000000u && rc != 0xC000013Au;
+        /* 0x80 as well: a user-mode exception reaching second chance is terminated by csrss's
+         * exception port with TerminateProcess(client, 0x80), not with the exception code
+         * (ke/amd64/except.rs). dxdiag died that way and was scored PASS. */
+        int crashed = ((rc & 0xC0000000u) == 0xC0000000u && rc != 0xC000013Au) || rc == 0x80;
         int good = ok && !hung && !errbox && !crashed;
         SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx\n", a->name,
             good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc);

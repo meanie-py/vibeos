@@ -1032,6 +1032,35 @@ unsafe fn MmMakeSegmentResident(
                 KeWaitForSingleObject(core::ptr::addr_of_mut!(Event) as PVOID, 0, 0i8, 0u8, core::ptr::null_mut());
                 Status = Iosb.__bindgen_anon_1.Status;
             }
+            // ARM's instruction fetch is not coherent with its data cache. The
+            // read above filled these pages through the D-cache, so until the
+            // lines are cleaned to the point of unification an instruction fetch
+            // from them reads whatever the RAM held before - on a Raspberry Pi 4,
+            // smss died with STATUS_ILLEGAL_INSTRUCTION on the first `stp` of
+            // RtlSetUnhandledExceptionFilter, a page of zeros decoding as UDF.
+            // QEMU models no caches, so only hardware shows it. Clean through a
+            // system mapping (A72 caches are physically indexed, so any alias
+            // reaches the lines) and invalidate the I-cache, which may hold stale
+            // instructions for a recycled physical page even when the driver
+            // wrote by DMA. Image segments only: data-file pages are never
+            // executed from this path. The existing cleanup below unmaps
+            // whatever mapping is present, including one made here.
+            #[cfg(target_arch = "aarch64")]
+            if NT_SUCCESS(Status) && (*Segment).SegFlags & MM_DATAFILE_SEGMENT == 0 {
+                if (*Mdl).MdlFlags & 0x01 == 0 {
+                    use ntkrnl_sys::ddk::{
+                        MmMapLockedPagesSpecifyCache, _MEMORY_CACHING_TYPE_MmCached,
+                        _MM_PAGE_PRIORITY_HighPagePriority, _MODE_KernelMode,
+                    };
+                    // A CACHED alias, so the clean below reaches the same lines the
+                    // read dirtied. Bugcheck on failure (the 1) rather than skip it.
+                    MmMapLockedPagesSpecifyCache(
+                        Mdl as _, _MODE_KernelMode as _, _MEMORY_CACHING_TYPE_MmCached,
+                        core::ptr::null_mut(), 1, _MM_PAGE_PRIORITY_HighPagePriority as ULONG,
+                    );
+                }
+                ntkrnl_sys::inline::ke::KeSweepICache((*Mdl).MappedSystemVa, ReadLength as ULONG_PTR);
+            }
             if (*Mdl).MdlFlags & 0x01 != 0 {
                 MmUnmapLockedPages((*Mdl).MappedSystemVa, Mdl);
             }

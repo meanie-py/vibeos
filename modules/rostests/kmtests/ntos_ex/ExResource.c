@@ -356,6 +356,38 @@ StartThread(
     return KeWaitForSingleObject(&ThreadData->OutEvent, Executive, KernelMode, FALSE, Timeout);
 }
 
+/* A thread started with a 10ms timeout that "should block" has only been GIVEN 10ms --
+ * STATUS_TIMEOUT says it did not acquire in that time, not that it has reached the
+ * resource's wait yet. Under load (TCG, a busy host) a freshly created thread may not
+ * have been scheduled at all, and the waiter-count check that follows then reads 0.
+ * Every recorded failure of these sites read exactly that ("= 0, expected 1"), and the
+ * implementation counts a waiter under the resource lock BEFORE blocking, so a 0 means
+ * "not there yet", never "there but uncounted".
+ *
+ * So wait -- bounded -- until the counts the test is about to assert have been reached,
+ * then assert them unchanged. This removes the scheduling assumption and nothing else:
+ * an implementation that never counts the waiter still fails, after the bound instead
+ * of after 10ms, and one that over-counts fails at once. */
+static
+VOID
+WaitForWaiters(
+    PERESOURCE Res,
+    ULONG ExclusiveWaiters,
+    ULONG SharedWaiters)
+{
+    LARGE_INTEGER Delay;
+    ULONG Tries;
+
+    Delay.QuadPart = -10 * 1000; /* 1 ms */
+    for (Tries = 0; Tries < 5000; ++Tries) /* ~5 s */
+    {
+        if (ExGetExclusiveWaiterCount(Res) >= ExclusiveWaiters &&
+            ExGetSharedWaiterCount(Res) >= SharedWaiters)
+            return;
+        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+    }
+}
+
 static
 VOID
 FinishThread(
@@ -429,6 +461,7 @@ TestResourceWithThreads(
     /* as above, but this time it should block */
     Status = StartThread(&ThreadDataExclusive, &Timeout, TRUE, TRUE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
+    WaitForWaiters(Res, 1LU, 0LU);
     CheckResourceStatus(Res, FALSE, 0LU, 1LU, 0LU);
     ok_eq_int(Res->ActiveCount, 1);
 
@@ -466,6 +499,7 @@ TestResourceWithThreads(
     /* block another shared one */
     Status = StartThread(&ThreadDataShared2, &Timeout, TRUE, TRUE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
+    WaitForWaiters(Res, 1LU, 1LU);
     CheckResourceStatus(Res, FALSE, 0LU, 1LU, 1LU);
     ok_eq_int(Res->ActiveCount, 1);
 
@@ -567,6 +601,7 @@ TestSharedReleasePreemption(
         ok_bool_true(ExAcquireResourceExclusiveLite(Res, TRUE), "exclusive acquire");
         Status = StartThread(&Waiter, &Timeout, TRUE, TRUE);
         ok_eq_hex(Status, STATUS_TIMEOUT);
+        WaitForWaiters(Res, 0LU, 1LU);
         ok_eq_ulong(ExGetSharedWaiterCount(Res), 1);
         KeSetPriorityThread(Waiter.Thread, LOW_REALTIME_PRIORITY);
 

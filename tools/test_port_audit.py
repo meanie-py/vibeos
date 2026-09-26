@@ -62,6 +62,20 @@ def test_a_wine_subdirectory_of_a_native_module_is_labelled_per_file(registry):
     assert port_audit.provenance("dll/win32/kernel32/client/proc.c", registry) == "native"
 
 
+def test_winesync_is_read_so_upstreams_imports_are_not_called_native(registry):
+    """vendor.yaml's Wine entry lists 24 paths; upstream's WINESYNC.txt lists ~316.
+    Reading only the registry called gdiplus, shlwapi, riched20 and comdlg32 ReactOS-
+    written and reported the remaining core as half native when it is 30%."""
+    ws = port_audit.winesync_paths(REPO)
+    for rel in ("dll/win32/gdiplus/image.c", "dll/win32/shlwapi/string.c"):
+        assert port_audit.provenance(rel, registry) == "native"  # the registry alone
+        assert port_audit.provenance(rel, registry, ws) == "wine", rel
+    # per-file entries under a native module are honoured, and the module stays native
+    assert "dll/win32/kernel32/winnls/string/locale.c" in ws
+    assert port_audit.provenance("dll/win32/kernel32/client/proc.c", registry, ws) == "native"
+    assert port_audit.provenance("ntoskrnl/ke/dpc.c", registry, ws) == "native"
+
+
 def test_rust_inventory_never_counts_bindings_or_harnesses_as_translation(tmp_path):
     """The Rust headline is 7M lines, of which 4M are checked-in bindgen output nobody
     wrote or paid for. Quoting the total as translation overstates it by 2.3x."""

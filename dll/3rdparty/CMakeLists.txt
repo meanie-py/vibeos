@@ -1,5 +1,5 @@
 
-add_subdirectory(dxtn)
+add_subdirectory(${REACTOS_SOURCE_DIR}/vendor/dxtn dxtn)
 add_subdirectory(libjpeg)
 add_subdirectory(libpng)
 add_subdirectory(libtiff)

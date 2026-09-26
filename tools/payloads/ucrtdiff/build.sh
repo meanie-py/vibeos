@@ -146,6 +146,9 @@ for A in $ARCHES; do
     # also pick up the prose in this file's comments.
     for fn in $(grep -oE '__cdecl[[:space:]]+\*?ref_[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' \
                 "$HERE/ucrtdiff.c" | sed 's/.*ref_//; s/[[:space:]]*($//; s/(//' | sort -u); do
+        # A hand-graded export whose reference a takeover removed is compiled OUT
+        # (generated-refs.h says 0), so it is not graded and need not be imported.
+        grep -qE "^#define UCRTDIFF_REF_HAS_$fn 0\$" "$HERE/generated-refs.h" 2>/dev/null && continue
         echo "$imports" | grep -qE "[[:space:]]$fn\$" || missing="$missing $fn"
     done
     [ -z "$missing" ] || {

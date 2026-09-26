@@ -145,6 +145,7 @@ const TOKEN_DUPLICATE: ACCESS_MASK = 0x0002;
 #[cfg(target_arch = "aarch64")]
 extern "system" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[no_mangle]
@@ -233,7 +234,7 @@ pub unsafe extern "system" fn SepCreateToken(
         if !uart.is_null() {
             let msg = b"[TOK] before ObCreateObject\n";
             for &c in msg.iter() {
-                *uart = c as ULONG;
+                Arm64UartPutChar(c as u8);
             }
         }
     }
@@ -256,7 +257,7 @@ pub unsafe extern "system" fn SepCreateToken(
         if !uart.is_null() {
             let msg = b"[TOK] after ObCreateObject\n";
             for &c in msg.iter() {
-                *uart = c as ULONG;
+                Arm64UartPutChar(c as u8);
             }
         }
     }

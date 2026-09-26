@@ -353,7 +353,7 @@ def test_unrelated_crate_does_not_trigger_staleness(tmp_path: Path, monkeypatch)
     os.utime(src, (2_000_000, 2_000_000))
 
     monkeypatch.setattr(vuc, "REPO", tmp_path)
-    assert "shell32-rust" not in vuc._ARCHIVE_SOURCE_CRATES
+    assert "shell32-rust" not in vuc._archive_source_crates()
     assert vuc._stale_against_sources(archive) is None
 
 
@@ -503,6 +503,10 @@ def test_the_recorded_ceiling_matches_what_the_tree_actually_measures():
     for arch, ceiling in want.items():
         if not (vuc.REPO / f"build-{arch}").is_dir():
             continue
+        # A build older than its sources measures the PREVIOUS commit. The gate runs this
+        # concurrently with its own builds, so that is the normal case there.
+        if vuc.burndown_stale(arch):
+            continue
         from ucrt_burndown import classify
 
         buckets, _ = classify(arch)
@@ -526,16 +530,19 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
     that happens to answer a ucrtbase export moves this count. That is how a
     gate gets switched off, so it must only ever fail upward.
     """
-    if not any((vuc.REPO / f"build-{a}").is_dir() for a in ("i386", "amd64", "arm64")):
-        import pytest
-
-        pytest.skip("no build tree in this worktree; the ratchet needs objects")
-
+    import pytest
     import yaml
 
     original = vuc.TAKEOVER.read_text(encoding="utf-8")
     doc = yaml.safe_load(original)
-    arch = next(a for a in doc["burndown"] if (vuc.REPO / f"build-{a}").is_dir())
+    fresh = [
+        a
+        for a in doc["burndown"]
+        if (vuc.REPO / f"build-{a}").is_dir() and not vuc.burndown_stale(a)
+    ]
+    if not fresh:
+        pytest.skip("no fresh build tree in this worktree; the ratchet needs current objects")
+    arch = fresh[0]
     real = doc["burndown"][arch]
 
     # Perturb a COPY, never the tracked file. Writing tools/ucrt-takeover.yaml in place and
@@ -560,3 +567,56 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
         assert any("fewer Microsoft-backed exports" in n for n in notes), notes
     finally:
         vuc.TAKEOVER = original_takeover
+
+
+def test_archive_source_crates_are_walked_not_listed() -> None:
+    """ucrt-rust reaches the archive through crt-shared-cargo; a hand-kept list
+    missed it, so the closure must be derived from the manifests."""
+    crates = vuc._archive_source_crates()
+    assert "ucrt-rust" in crates
+    assert "crt-shared-rust" in crates
+    assert "msvcrt-crt-rust" not in crates
+
+
+def test_rebuild_lists_match_the_crate_closure() -> None:
+    assert vuc.check_rebuild_lists() == []
+
+
+def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
+    """Control: a list that drops a closure crate must be reported -- a gate nobody
+    has watched fail is a gate nobody knows works."""
+    for cmake, _var, _root in vuc.REBUILD_LISTS:
+        src = (vuc.REPO / cmake).read_text()
+        dst = tmp_path / cmake
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(src.replace(" crt-portable-rust", "", 1))
+    found = vuc.check_rebuild_lists(repo=tmp_path)
+    assert any("omits `crt-portable-rust`" in f for f in found), found
+
+
+def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) -> None:
+    """The gate measures the ratchet while its own builds are still running, so a
+    commit that lowers the ceiling is first measured against the PREVIOUS archive.
+    That must be a note, never a failure -- it bounced the lane that earned the drop."""
+    scratch = tmp_path / "ucrt-takeover.yaml"
+    scratch.write_text("burndown:\n  i386: 1\n  amd64: 1\n  arm64: 1\n")
+    monkeypatch.setattr(vuc, "TAKEOVER", scratch)
+    monkeypatch.setattr(vuc, "burndown_stale", lambda arch: "archive older than sources")
+    fails, notes = vuc.check_burndown()
+    assert fails == []
+    if any((vuc.REPO / f"build-{a}").is_dir() for a in ("i386", "amd64", "arm64")):
+        assert any("not measured" in n for n in notes), notes
+
+
+def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monkeypatch) -> None:
+    """The land queue reuses one integration build dir across batches, so an archive
+    can be NEWER than this tree's commits and still be another tree's. Content decides:
+    a declared takeover the archive does not define means it was not built from here."""
+    monkeypatch.setattr(vuc, "_ucrt_archive", lambda build, triple: tmp_path / "lib.a")
+    monkeypatch.setattr(vuc, "_stale_against_sources", lambda a: None)  # clock says fresh
+    monkeypatch.setattr(vuc, "declared_takeovers", lambda: {"strlen": "string", "isalpha": "ctype"})
+    monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "memcpy"})
+    why = vuc.burndown_stale("arm64")
+    assert why and "isalpha" in why and "different tree" in why
+    monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "isalpha"})
+    assert vuc.burndown_stale("arm64") is None

@@ -11,9 +11,7 @@ list(APPEND UCRT_CONVERT_SOURCES
     convert/fcvt.cpp
     convert/fp_flags.cpp
     convert/gcvt.cpp
-    convert/isctype.cpp
     convert/ismbstr.cpp
-    convert/iswctype.cpp
     convert/mblen.cpp
     convert/mbrtoc16.cpp
     convert/mbrtoc32.cpp
@@ -32,10 +30,8 @@ list(APPEND UCRT_CONVERT_SOURCES
     convert/wctrans.cpp
     convert/wctype.cpp
     convert/xtoa.cpp
-    convert/_ctype.cpp
     convert/_fptostr.cpp
     convert/_mbslen.cpp
-    convert/_wctype.cpp
 )
 
 # All multibyte string functions require the _MBCS macro to be defined

@@ -78,7 +78,7 @@
 /sdk/include/reactos/libs/libxml/       @ThFabba
 /sdk/include/reactos/libs/libxslt/      @ThFabba
 /sdk/lib/3rdparty/libmpg123/            @ThFabba
-/sdk/lib/3rdparty/libsamplerate/        @ThFabba
+/vendor/libsamplerate/        @ThFabba
 /sdk/lib/3rdparty/libxml2/              @ThFabba
 
 # ACPI
@@ -408,7 +408,7 @@
 /media/doc/README.FSD               @HeisSpiter
 /sdk/lib/fslib/btrfslib/            @HeisSpiter
 /sdk/lib/fslib/ext2lib/             @HeisSpiter
-/sdk/lib/fslib/vfatlib/check/       @HeisSpiter
+/vendor/dosfstools/       @HeisSpiter
 
 # USB Drivers
 #   M: ThFabba, Thomas Faber

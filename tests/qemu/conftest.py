@@ -172,20 +172,12 @@ def vm(
     arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
 ) -> Iterator[QemuVM]:
     """Boot QEMU once per test session, save 'ready' snapshot."""
-    # Reap ONLY orphan QEMUs whose launcher process is dead (crashed/timed-out
-    # prior runs). A QEMU with a live launcher — possibly another agent's —
-    # is never touched. Safe by construction; see vm.reap_orphan_qemus.
+    # Reap ONLY orphan QEMUs whose owner is dead (or that are past their lifetime cap):
+    # the smoke harness's lock files AND the kernel-debug toolkit's run manifests. A QEMU
+    # with a live owner -- possibly another agent's -- is never touched. In-process; see
+    # vm.reap_orphan_qemus for why this is no longer a qemu/reap.sh shell-out.
     for line in reap_orphan_qemus():
-        print(f"[pytest] {line}")
-    # Also sweep kernel-debug-toolkit orphans (qemu/start.sh manifests with
-    # a dead owner_pid). The Python reaper above only knows the smoke
-    # harness's /tmp/vibeos-qemu-locks/ lockfiles; reap.sh covers both halves.
-    reap_sh = PROJECT_DIR / "qemu" / "reap.sh"
-    if reap_sh.is_file():
-        result = subprocess.run([str(reap_sh)], capture_output=True, text=True, check=False)
-        for line in result.stderr.splitlines():
-            if line.startswith("[reap] killed") or line.startswith("[reap] FAILED"):
-                print(f"[pytest] {line}")
+        print(f"[pytest] [reap] {line}")
     # Surface a missing screenshot dependency up front (don't fail — boot is
     # still verifiable via serial markers — but tell the operator how to fix it,
     # since screenshots silently degrade to raw .ppm without it).

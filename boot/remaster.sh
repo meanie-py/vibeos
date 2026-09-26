@@ -156,7 +156,7 @@ echo
 
 ## Create a mkisofs sort file to specify an explicit ordering for the boot files
 ## to place them at the beginning of the image (makes ISO image analysis easier).
-## See mkisofs/schilytools/mkisofs/README.sort and boot/boot_images.cmake script
+## See vendor/schilytools/mkisofs/README.sort and boot/boot_images.cmake script
 ## in the ReactOS source tree for more details.
 
 ## echo ${CMAKE_CURRENT_BINARY_DIR}/empty/boot.catalog 4

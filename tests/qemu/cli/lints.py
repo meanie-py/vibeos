@@ -561,6 +561,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A bare store to the PL011 data register (Arm64UartKernelBase). The FIFO holds
+    # 16-32 bytes and drains at 115200 baud, so a CPU writing faster than that loses
+    # every byte after the FIFO fills - and QEMU's model drains instantly, so it only
+    # shows on hardware. On a physical Pi 4 it cut each Phase-1 trace to its first
+    # `[` and made a hang look like it stopped earlier than it did. 87 private copies
+    # in six crates when found. Baseline is EMPTY.
+    sru = repo / "tools" / "scan_raw_uart_writes.py"
+    specs.append(
+        (
+            "scan_raw_uart_writes",
+            [py, str(sru), "--lint"] if sru.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sbc = repo / "tools" / "scan_bugcheck_codes.py"
     specs.append(
         (

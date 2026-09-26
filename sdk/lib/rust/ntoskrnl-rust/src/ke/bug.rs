@@ -1697,74 +1697,74 @@ pub unsafe extern "system" fn KeBugCheckEx(
         let mut s: &[u8] = b"\r\n*** BUGCHECK: code=0x\0";
         let mut i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" LR=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((lr >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P1=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter1 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P2=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter2 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P3=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter3 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P4=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter4 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b"\r\n\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
     }
@@ -1817,30 +1817,30 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
         let mut s: &[u8] = b"\r\n*** BUGCHECK: code=0x\0";
         let mut i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" LR=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((lr >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b"\r\n\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
     }

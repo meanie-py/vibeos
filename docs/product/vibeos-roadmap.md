@@ -524,6 +524,98 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`test_payload_launched` misses a launch marker that IS in its own serial log. OPEN,
+  owed** (2026-09-25). `smoke --arch i386 --payload oldcrt`: the payload's
+  `payload/i386-uefi_serial.log` carries `[OLDCRT] done PASS` at byte 78,018, pytest
+  reported `Boot complete (70445 bytes)` and then `drain-end: budget` -- 300s of draining
+  without matching the marker -- and failed the run
+  (`/tmp/vibeos-cli/20260925-210919-beje4luf-smoke-i386`). ucrtdiff showed a relative
+  the same day: pytest never finished after `[UCRTDIFF] done` reached its log, and the
+  main thread sat in `poll`. Read and ruled out, NOT reproduced: `read_until` and
+  `read_until_idle` both leave `_pos` correct (the settle's TimeoutError path does not
+  consume), and the drainer appends the same text to `_buf` that it tees to the file.
+  So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
+  payload's verdict must be read from its serial log, not from the smoke exit code.
+- **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
+  blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
+  `./vibeos-cli check-tooling` with
+  `bindgen: refusing output in another worktree: /tmp`, which is
+  `tools/bindgen-stage.sh`'s ancestry walk deciding that `/tmp/.git` exists. Run on its own
+  the same file is 11/11, and the very next full `check-tooling` was 69/69, so the guard is
+  reacting to something transient rather than to the test's own tmpdir — **what creates a
+  `/tmp/.git` is NOT identified**, and no such path exists at rest. Same class as the two
+  load-sensitive tests below: the cheap discriminator is running the single file, and it
+  should be run before believing a lane broke this.
+  It is not free to ignore: this is a `land` PREFLIGHT, so a transient failure rejects the
+  submission of whichever lane happens to hit it.
+
+- **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
+  probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
+  The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
+  anywhere) found all three; each one blinds every subtest after it, so they had to be
+  quarantined one at a time to see the next:
+  | subtest | BUGCHECK PC | lead |
+  |---|---|---|
+  | `win` | `NtUserFlashWindowEx+0x6f` | `painting.rs:2006` — probed `pfwi`, then `RtlCopyMemory` off it |
+  | `msg` | `NtUserPeekMessage+0xf3` | `message.rs:3275` — probed `pMsg`, then `RtlCopyMemory` into it |
+  | `input` | PC in ntoskrnl, `NtUserGetKeyboardLayoutName+0x158` as caller | not characterized |
+  **What this changes is the priority, not the inventory.** The 152 bulk-copy leads below are
+  already known and already open; what they lacked was any evidence they were reachable. Two
+  are now demonstrated machine-killers, reached by a stock Wine subtest doing nothing exotic.
+  A scanner count is audit debt; a reproducer is a bug.
+  `input` is a different shape and should not be assumed to be the same one: its PC is in
+  ntoskrnl rather than win32k, and it follows a run of
+  `(win32k-rust/src/keyboard.rs:1689) err: Cannot copy key state` — the `capture_from_user`
+  of the 256-byte key-state array failing repeatedly, which is the SAFE helper, not a raw
+  access.
+  Repro: `build --arch i386 --rostests` once for the binary, then
+  `build --arch i386 --winetest-sweep` and boot `smoke --arch i386 --ladder` with
+  `VIBEOS_LADDER_DRAIN_FLOOR=1500`. Add `--winetest-skip "input msg"` to get past the first
+  two.
+
+- **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
+  REFERENCE + 6 OPEN** (2026-09-25). First time the WoW64 control has run across a whole
+  suite instead of two subtests. Same 21 subtests both sides, same quarantine
+  (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
+  Seventeen matching is the control doing its job; those are OUR user32, not the seam.
+  | subtest | native i386 | WoW64 | |
+  |---|---|---|---|
+  | `combo` | 23 failures | **CRASH `0xc0000094`** | guest-only, and `0xc0000094` is INTEGER_DIVIDE_BY_ZERO — a width bug shape |
+  | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
+  | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
+  | `monitor` | 20 failures | **23** | +3 guest-only |
+  | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
+  | `scroll` | 140 failures | **17** | fewer under WoW64 — NOT yet a win, see below |
+  | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
+  `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
+  owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
+  correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
+  `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
+  `NtGdiPatBlt` and no brush select at all**. Both are batched, the batch is reset rather
+  than executed, the fill never happens and `GetPixel` returns white. The GDI-batch entry
+  says executing them needs four 32-bit record layouts and names `GDIBSPATBLT.hbrush`
+  first; this is that record. It also says the discard "costs no drawing that was not
+  already dropped" — true, and now known to cost a conformance assertion as well.
+  **`scroll` 140 -> 17 must not be read as an improvement until someone diffs the
+  assertions.** A conformance suite reporting fewer failures usually means it stopped
+  asking, not that we got better, and the byte counts (896 native vs 1271 guest) do not
+  settle it either way.
+  Cost, for budgeting a wider sweep: most subtests are under 3s natively; the outliers are
+  `dde` 180s (the timeout itself), `sysparams` 128s, `class` 21s, `clipboard` 20s,
+  `monitor` 14s. Under WoW64 the same suite is roughly 3x that — `class` 115s, `sysparams`
+  80s, `clipboard` 73s — so a 21-subtest guest sweep needs a drain floor near 2400s.
+  Repro: `build --arch <a> --winetest-sweep --winetest-skip "input msg win"` on both
+  arches, then `smoke --arch amd64 --ladder` and `smoke --arch i386 --ladder`.
+  **Stated because it would otherwise read as a green run: the amd64 sweep boot FAILED.**
+  `BUGCHECK 0x19 (BAD_POOL_HEADER, param1 0xa)` at serial line 996885 — 348k lines AFTER
+  `sweep complete` at 648787 — during the stock-applet phase with doom running, with a
+  free-list dump whose entries mostly carry `tag=00000000`. The A/B numbers above all
+  predate it and are unaffected, but the boot is not green and this is NOT attributed:
+  whether 21 extra guest processes provoked it or it is the pre-existing amd64 pool flake
+  is unmeasured, and a plain non-sweep ladder boot is the cheap discriminator nobody has
+  run yet. Artifact: `/tmp/vibeos-cli/20260925-222408-xlois8r6-smoke-amd64`.
+
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
   instruction and printed NOTHING on serial, while the boot itself reached
@@ -600,12 +692,56 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
   - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
     import that does not resolve; arm64 too).
-  - amd64 flake, OPEN: 1 of 5 conformance runs bugchecked 0x1E `c000009a` raised by
-    `FsRtlAllocatePoolWithTag` (a raise-on-failure pool allocation from a driver at
-    `fffff80003cbb22b`) during the `ZwAllocateVirtualMemory` kmtest. That run's WOW64 test app
-    was repainting in a loop (6.8K `StretchDIBits`, serial 192K lines). The loop predates the
-    registration fix, and so do its run-to-run swings of 60-3.4K calls. Artifact:
-    `/tmp/vibeos-cli/20260925-182151-b9nppk9s-conformance-amd64`.
+  - FIXED: amd64 bugchecks under long GUI runs: 0x1E `c000009a` from a pool allocation, and
+    0x1E `c0000005` in win32k (`REGION_Delete(NULL)` from `IntSelectClipRgn` and
+    `VIS_ComputeVisibleRegion`). All one bug. `NtUserFindExistingCursorIcon` had a stray
+    capture of the module name INTO the resource-name slot, so no LR_SHARED icon ever matched
+    (IDC_ARROW looked up 4139 times, never found). Each LoadCursor/LoadIcon made a new icon + two
+    bitmaps and leaked a pool string; a repainting WOW64 app reached the 10K GDI quota, region
+    allocations returned NULL, and the pool ran dry. Found by counting create vs delete per
+    handle type in the WOW64 syscall trace, then logging the icon-cache calls
+    (`[WOW64-CURICON]`).
+  - OPEN, harness: `smoke --payload rpmprobe` on amd64 FAILED with "`[RPMPROBE] done` never
+    appeared" although the serial file has it (line 4201, byte 236K, `VERDICT=PASS`). Boot
+    output was 78K bytes; the drain then ran its whole 600s budget over a 39.8MB serial (WOW64
+    trace) without matching. The file shows `shell ready` three times for one payload run, so the
+    `ready` snapshot restore is the first suspect: the reader may be following a timeline the
+    marker is not in. Read the serial for the verdict until this is fixed.
+  - FIXED: the pushlock `ASSERT FAILED: (*WaitBlock).Signaled != 0` (pushlock.rs 495/643, on
+    UP i386 too) was a false positive: the waker's DBG-only `Signaled = 1` was compiled out
+    while the ASSERT was live. appstorm i386 38/38 with 0 assertions (was 4).
+  - FIXED: amd64 app sweeps were starved, not failing. `Wow64TraceSyscalls` was still 1, and
+    every amd64 boot runs user32_winetest under WoW64, so the serial reached ~40MB and apps
+    missed their window timeouts (then the run was reaped). Off: serial 2.2MB, 17 min, 36/38.
+  - OPEN, amd64: `sysdm.cpl` and `powercfg.cpl` open but do not close (appstorm
+    close=TIMEOUT).
+  - FIXED: dxdiag's heap corruption (`RtlpRemoveFreeBlock`, amd64). kernel32-rust `GlobalSize`
+    ran its translated `_SEH2_EXCEPT` arm unconditionally, so GlobalSize/LocalSize returned 0
+    for EVERY block on every arch. The edit control sizes its undo buffer from
+    `LocalSize()/2 - 1`, which wrapped to a 0-byte allocation it then wrote into. Found with
+    `APPSTORM_PAGEHEAP=1`, which faulted at the write (`EDIT_WM_Create`, `*es->undo_text = 0`).
+  - OPEN, page heap: under `APPSTORM_PAGEHEAP=1` wordpad faults in comctl32
+    `TOOLBAR_AddBitmap` storing through the NULL that `ReAlloc` (LocalReAlloc) returned. Without
+    page heap wordpad passes, so the suspect is page-heap allocation failing (it spends >= 2
+    pages per block), met by comctl32 not checking ReAlloc. Also: upstream's page heap never
+    implemented its normal-heap fallbacks (`FIXME` + `ASSERT(FALSE)`); the translation dropped
+    those ASSERTs, so hitting one returns NULL silently instead of stopping.
+  - OPEN, SMP lane (2026-09-25, handed off): `tools/payloads/rpmprobe` has a race phase (per CPU,
+    one thread copies across a page boundary with Read/WriteProcessMemory while another
+    commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X
+    --payload rpmprobe` and read `[RPMPROBE] ... race` in the serial.
+    i386 `-smp 4`: PASS (46,273 copies ok, 686,336 clean errors, 0 silent, no bugcheck).
+    arm64 `-smp 2`: the fixed-address probes pass, then the box WEDGES in the race phase
+    (serial silent right after the race threads start). Not localized; attach gdb during
+    the race. arm64's TB flush is a broadcast `tlbi vmalle1is`, so it is not the IPI path.
+    arm64 also prints `ASSERT FAILED: KeGetCurrentIrql() == SYNCH_LEVEL at ke/ipi.rs:312` on
+    every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
+    `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
+    DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
+    amd64 `-smp 2` and `-smp 4`: boot dies (csrss exits, crit, 0xF4; winlogon AV), so the race
+    cannot run there. Not yet checked against master.
+  - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
+    `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
     that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
     it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
@@ -1560,13 +1696,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
   passes both before and after, so `scan_invented_constants` does not catch a wrong bare
   hex in an `as NTSTATUS` cast.
-  **ONE THING STILL OPEN, left visible rather than made to look handled:**
-  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
-  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
-  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
-  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
-  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
-  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
+  **FIXED 2026-09-25:** `MiDoMappedCopy` now calls `MiProbeAndLockPagesStatus`, the
+  status-returning body of `MmProbeAndLockPages` (the export still raises). Its page touch is
+  fault-protected (it had been a bare, non-volatile read), and two `MmAccessFault` failure
+  paths no longer release the PFN/working-set lock a second time. appstorm's stack dumper
+  bugchecked amd64 through this; `tools/payloads/rpmprobe` pins it on amd64 and i386.
 
 - **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
   REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps
@@ -2308,6 +2442,33 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernel checks the header size BEFORE `ObReferenceObjectByHandle` (`lpc-rust/send.rs:407-420`),
   which is why a guest with no connection still reports `c000000d` and not `c0000008`.
   The desktop boots green throughout — this is confined to the 32-bit guest path.
+- **ExResource waiter-count "race" — ROOT-CAUSED 2026-09-26: a 10 ms timing assumption in the
+  test, not the ERESOURCE implementation.** Every recorded failure at the three moving sites
+  (`ExResource.c:432`, `:469`, and `:570` in our own `TestSharedReleasePreemption`, 197 hits in
+  the 2026-09-25 gates) read exactly `= 0, expected 1`. Each site starts a thread with a 10 ms
+  timeout, takes `STATUS_TIMEOUT` as "it blocked", and asserts the waiter count at once. But
+  ERESOURCE is RUST (`sdk/lib/rust/ex-rust/src/resource.rs`; `ntoskrnl/ex/resource.c` is
+  commented out of `ntos.cmake` -- the entry below saying no port had taken it over is stale),
+  and it increments `NumberOf{Exclusive,Shared}Waiters` under the resource lock BEFORE blocking,
+  on a uniprocessor guest. So a 0 can only mean the new thread had not been SCHEDULED yet --
+  which on TCG under host load (load average 22-27 that night) takes longer than 10 ms. It went
+  from arm64-only to i386 as load rose, and it livelocked the land queue: each red batch
+  started another 3-build/4-boot gate, re-creating the load. Fix: `WaitForWaiters()` waits
+  (bounded, ~5 s) for the counts the test is about to assert, then asserts them UNCHANGED; an
+  implementation that never counts a waiter still fails, one that over-counts fails at once.
+  The two ExResource failures the baseline KEEPS (`:441`/`:488`, renumbered from 409/455 by the
+  helper) are NT6 `ActiveCount` bookkeeping checked against the test's WS03 branch -- upstream
+  semantics, accepted, not this race.
+- **`NpfsFileInfo.c:57` "bistable" — ROOT-CAUSED 2026-09-26: the conformance PARSER, not npfs.**
+  npfs returns `Information = 158` (Windows: 154 -- it subtracts the padded
+  `sizeof(FILE_NAME_INFORMATION)`, 8, where Windows uses `FIELD_OFFSET(.., FileName)`, 4; upstream
+  C does the same) on EVERY boot, EVERY arch. But `:56`'s message prints a raw `0xFFFF` WCHAR that
+  often eats its newline, gluing `:57` onto the end of the line, and `parse_kmtest_serial.py`
+  matched identities only at the line start. So `:57` surfaced on some boots; the 596-round soak
+  banked it `assert?` on amd64/arm64, and the i386 seeding never saw it at all -- until a quiet
+  host flipped the byte and i386 went "NEW failing" in the gate. Parser now finds identities
+  anywhere on a line; `:57` is a stable `assert` on all three arches. The 4-byte npfs divergence
+  itself is real Windows-vs-ReactOS behaviour and still OWED.
 - **`conformance:arm64` wedges on an ExResource waiter-count race — OPEN, NOT a code regression**
   (2026-09-06, found by the wow64-amd64 lane, NOT owned by it). Two independent arm64 runs on
   the same tree both failed the kmtest sweep, and the line number MOVED between them:

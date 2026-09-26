@@ -37,7 +37,7 @@
 #
 # Fields populated by start.sh; other tools read but never modify (except
 # stop.sh, which sets a "stopped_at" field). The schema is intentionally flat:
-# nesting would only make jq queries longer.
+# nesting would only make field lookups longer.
 
 manifest_path() {
     local run_id="$1"
@@ -54,7 +54,7 @@ manifest_get() {
     local path
     path="$(manifest_path "$run_id")"
     [ -f "$path" ] || die "no manifest for run-id '$run_id'"
-    jq -r ".$field // empty" "$path"
+    vjson get "$path" "$field"
 }
 
 # Write the initial manifest at run-creation time. Only fields known up-front
@@ -72,7 +72,8 @@ manifest_init() {
     # immediately and would mark the run orphaned).
     [ -z "$owner_pid" ] && owner_pid="$(owner_pid_for "$PPID")"
     local owner_comm
-    owner_comm="$(ps -o comm= -p "$owner_pid" 2>/dev/null | tr -d ' ')"
+    owner_comm=""
+    { read -r owner_comm < "/proc/$owner_pid/comm"; } 2>/dev/null
 
     local kernel_mtime=""
     if [ -f "$kernel_image" ]; then
@@ -87,32 +88,21 @@ manifest_init() {
         fi
     fi
 
-    jq -n \
+    vjson write "$(manifest_path "$run_id")" \
         --arg run_id "$run_id" \
         --arg arch "$arch" \
+        --argjson qemu_pid null \
+        --argjson qemu_cmd null \
         --argjson owner_pid "${owner_pid:-null}" \
         --arg owner_comm "${owner_comm:-}" \
+        --argjson gdb_port null \
+        --argjson qmp_socket null \
+        --argjson serial_socket null \
         --arg start_time "$(date -u +%FT%TZ)" \
         --arg kernel_image "$kernel_image" \
         --arg kernel_mtime "$kernel_mtime" \
         --arg git_sha "$git_sha" \
-        --argjson git_dirty "$git_dirty" \
-        '{
-          run_id:        $run_id,
-          arch:          $arch,
-          qemu_pid:      null,
-          qemu_cmd:      null,
-          owner_pid:     $owner_pid,
-          owner_comm:    $owner_comm,
-          gdb_port:      null,
-          qmp_socket:    null,
-          serial_socket: null,
-          start_time:    $start_time,
-          kernel_image:  $kernel_image,
-          kernel_mtime:  $kernel_mtime,
-          git_sha:       $git_sha,
-          git_dirty:     $git_dirty
-        }' > "$(manifest_path "$run_id")"
+        --argjson git_dirty "$git_dirty"
 }
 
 # Set a single field. Numeric values pass --argjson; strings pass --arg.
@@ -122,11 +112,9 @@ manifest_set() {
     local path
     path="$(manifest_path "$run_id")"
     [ -f "$path" ] || die "no manifest for run-id '$run_id'"
-    local tmp="$path.tmp"
     if [ "$mode" = "--json" ]; then
-        jq --argjson v "$value" ".$field = \$v" "$path" > "$tmp"
+        vjson set "$path" "$field" "$value" --json
     else
-        jq --arg v "$value" ".$field = \$v" "$path" > "$tmp"
+        vjson set "$path" "$field" "$value"
     fi
-    mv "$tmp" "$path"
 }

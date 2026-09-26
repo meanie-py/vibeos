@@ -228,6 +228,12 @@ Mechanical, incremental, each step independently smoke-gateable:
    Migrate the ~12 internal Rust callers to the `try_` form. This alone
    fixes the profile.rs bug class and the KMDF/afd bugcheck exposure path
    from the kernel side.
+   **DONE 2026-09-25 for the function and three callers** (`MiDoMappedCopy`,
+   `MmProbeAndLockProcessPages`, `ex/profile.rs`); `#[no_mangle]`, so any crate
+   linked into the kernel image can declare it. Still raising, to migrate: iomgr
+   (`iofunc.rs` ×4, `irp.rs` ×2), `ex/sysinfo.rs`, and the driver crates (afd, cdfs,
+   fastfat, classpnp, ks, mup, cdrom, win32k `mem.rs`), which also need it in
+   `ntoskrnl.spec`. Each site must reproduce its C handler, not just swallow the status.
 2. **Same split for the probe exports**: raising `ProbeForRead/Write`
    (exintrin.rs) stay as the ABI edge; internal Rust callers move to
    `probe.rs`. Grep-audit: no internal Rust caller of a raising export.

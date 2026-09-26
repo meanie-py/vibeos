@@ -268,18 +268,73 @@ def check_structure(ws: Path | None = None) -> list[str]:
     return findings
 
 
-#: The crates whose Rust actually ends up in `libcrt_shared_cargo.a`, closed over
-#: path dependencies (crt-shared-cargo -> crt-shared-rust/panic-common/cnt-rust,
-#: and crt-shared-rust -> msvcrt-sys). Deliberately NOT "every crate in
-#: sdk/lib/rust": a staleness warning that fires whenever any unrelated lane
-#: edits any .rs is noise, and noise is what gets a check ignored.
-_ARCHIVE_SOURCE_CRATES = (
-    "crt-shared-cargo",
-    "crt-shared-rust",
-    "panic-common",
-    "cnt-rust",
-    "msvcrt-sys",
+def _archive_source_crates(ws: Path | None = None) -> tuple[str, ...]:
+    """The crates whose Rust actually ends up in `libcrt_shared_cargo.a`: the
+    path-dependency closure of crt-shared-cargo, WALKED, not listed.
+
+    This was a hand-written tuple, and it went stale the day ucrt-rust joined the
+    archive: edits to the takeover bodies never tripped the staleness note, because
+    nobody had added the crate to a list that nothing checked. Deliberately NOT
+    "every crate in sdk/lib/rust": a staleness warning that fires whenever any
+    unrelated lane edits any .rs is noise, and noise is what gets a check ignored.
+    """
+    ws = WS if ws is None else ws
+    seen = [UCRT_ARCHIVE_CRATE]
+    for cur in seen:
+        for dep in sorted(_deps_of(ws / cur)):
+            if dep not in seen:
+                seen.append(dep)
+    return tuple(seen)
+
+
+def _closure(root: str, ws: Path | None = None) -> set[str]:
+    """Path-dependency closure of one crate, root included."""
+    ws = WS if ws is None else ws
+    seen = [root]
+    for cur in seen:
+        for dep in sorted(_deps_of(ws / cur)):
+            if dep not in seen:
+                seen.append(dep)
+    return set(seen)
+
+
+#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the `set(...)` naming the
+#: crates whose sources trigger its rebuild, the crate cargo builds).
+REBUILD_LISTS = (
+    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_CRATES", "crt-shared-cargo"),
+    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_CRATES", "msvcrt-crt-cargo"),
 )
+
+
+def check_rebuild_lists(repo: Path | None = None, ws: Path | None = None) -> list[str]:
+    """Each archive's CMake rebuild list must name its whole crate closure.
+
+    A crate compiled INTO an archive but missing from the custom command's DEPENDS
+    never triggers a rebuild: edit it and the build ships the stale archive, green,
+    with no error anywhere. ucrtbase's list named two of its seven crates -- the
+    ucrt-rust takeover families and cnt-rust's math were invisible to it -- and
+    msvcrt's lacked crt-portable-rust the day the string family moved there.
+    """
+    repo = REPO if repo is None else repo
+    findings = []
+    for cmake, var, root in REBUILD_LISTS:
+        text = (repo / cmake).read_text(errors="replace")
+        m = re.search(rf"set\(\s*{var}\s+([^)]*)\)", text)
+        if not m:
+            findings.append(f"{cmake}: no `set({var} ...)` -- the rebuild list is missing")
+            continue
+        listed = set(m.group(1).split())
+        want = _closure(root, ws)
+        for crate in sorted(want - listed):
+            findings.append(
+                f"{cmake}: {var} omits `{crate}`, which is compiled into {root}'s archive -- "
+                f"an edit to it would ship a STALE archive. fix: add it to {var}"
+            )
+        for crate in sorted(listed - want):
+            findings.append(
+                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. fix: remove it"
+            )
+    return findings
 
 
 def _content_changed_at() -> tuple[float, str] | None:
@@ -300,7 +355,7 @@ def _content_changed_at() -> tuple[float, str] | None:
     falls back to mtime, which is wrong in the merge case but is strictly better
     than skipping the assertion entirely.
     """
-    paths = [f"sdk/lib/rust/{c}" for c in _ARCHIVE_SOURCE_CRATES]
+    paths = [f"sdk/lib/rust/{c}" for c in _archive_source_crates()]
     try:
         committed = subprocess.run(
             ["git", "-C", str(REPO), "log", "-1", "--format=%ct", "--", *paths],
@@ -340,6 +395,54 @@ def _content_changed_at() -> tuple[float, str] | None:
     return (best, what) if best else None
 
 
+def _ucrt_archive(build: Path, triple: str) -> Path | None:
+    """The libcrt_shared_cargo.a a build dir links into ucrtbase, if it has one."""
+    for archive in (
+        build / "sdk" / "lib" / "rust" / "target" / triple / "release" / "libcrt_shared_cargo.a",
+        build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a",
+    ):
+        if archive.is_file():
+            return archive
+    return None
+
+
+def burndown_stale(arch: str) -> str | None:
+    """Why `arch`'s build cannot be measured for the ratchet right now, or None.
+
+    The ratchet reads the BUILD, and the gate runs check-tooling CONCURRENTLY with
+    its builds. A commit that takes a family over and lowers the ceiling in the same
+    change is then measured against the previous commit's archive, and reads as a
+    regression: the integration tree reported 999 against a recorded 991 and bounced
+    the lane that had made the number 991. Same rule as check_archive: an archive
+    older than its sources gets no verdict, in either direction.
+    """
+    archive = _ucrt_archive(REPO / f"build-{arch}", ARCHES[arch])
+    if archive is None:
+        return "no libcrt_shared_cargo.a in the build"
+    stale = _stale_against_sources(archive)
+    if stale:
+        return stale
+    # CONTENT, not the clock. The land queue's integration worktree is shared by
+    # consecutive batches with DIFFERENT content, so the archive a previous batch
+    # built is newer than this tree's commits and passes every mtime test -- while
+    # lacking this tree's takeovers. That measured 999 against a recorded 991 and
+    # bounced the lane that earned the drop, gate after gate, after the mtime guard
+    # above was already in place. An archive that does not define every export this
+    # tree DECLARES taken over was built from some other tree.
+    defined = _nm_defined(archive)
+    if defined is None:
+        return "nm cannot read the archive"
+    if arch == "i386":
+        defined = {d[1:] if d.startswith("_") else d for d in defined}
+    missing = sorted(set(declared_takeovers()) - defined)
+    if missing:
+        return (
+            f"the archive lacks {len(missing)} export(s) this tree declares taken over "
+            f"(e.g. {', '.join(missing[:3])}) -- it was built from a different tree"
+        )
+    return None
+
+
 def _stale_against_sources(archive: Path) -> str | None:
     """What changed after `archive` was built, or None if it is current.
 
@@ -356,7 +459,7 @@ def _stale_against_sources(archive: Path) -> str | None:
         return what if ts > archive_mtime else None
 
     # git could not answer — fall back to raw mtimes.
-    for crate in _ARCHIVE_SOURCE_CRATES:
+    for crate in _archive_source_crates():
         src = REPO / "sdk" / "lib" / "rust" / crate
         if not src.is_dir():
             continue
@@ -425,12 +528,8 @@ def check_archive() -> list[str]:
         if not build.is_dir():
             continue  # not built here; the structural check still ran
 
-        archive = (
-            build / "sdk" / "lib" / "rust" / "target" / triple / "release" / "libcrt_shared_cargo.a"
-        )
-        if not archive.is_file():
-            archive = build / "dll" / "win32" / "ucrtbase" / "libcrt_shared_cargo.a"
-        if not archive.is_file():
+        archive = _ucrt_archive(build, triple)
+        if archive is None:
             continue  # ucrtbase cohab not wired into this build dir yet
 
         stale = _stale_against_sources(archive)
@@ -637,6 +736,10 @@ def check_burndown() -> tuple[list[str], list[str]]:
     for arch, ceiling in sorted(want.items()):
         if not (REPO / f"build-{arch}").is_dir():
             continue
+        stale = burndown_stale(arch)
+        if stale:
+            notes.append(f"note: ucrt burn-down: {arch} not measured -- build is stale ({stale})")
+            continue
         try:
             buckets, _ = classify(arch)
         except SystemExit as e:
@@ -661,15 +764,17 @@ def check_burndown() -> tuple[list[str], list[str]]:
 
 
 def main() -> int:
-    findings = check_structure() + check_extern_crates() + check_archive()
+    findings = check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
     bd_fails, bd_notes = check_burndown()
     findings += bd_fails
     for f in findings:
         print(f)
     # Notes last, so a green run ends on the number going down -- which is the
-    # one line anyone actually wants to see from this tool.
+    # one line anyone actually wants to see from this tool. On STDERR: the lint
+    # harness counts stdout lines as findings against a baseline, so a note there
+    # ("not measured, build is stale") failed `check --strict` and blocked a land.
     for n in bd_notes:
-        print(n)
+        print(n, file=sys.stderr)
     return 1 if findings else 0
 
 
