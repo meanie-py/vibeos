@@ -5119,6 +5119,13 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A live ASSERT over state that only a `#[cfg(debug_assertions)]` block maintains.** The C
+  pairs `#if DBG` bookkeeping with DBG-only ASSERTs, and this tree builds the C with DBG=1.
+  The translation turned the bookkeeping into `#[cfg(debug_assertions)]` (off in release) while
+  `c4d82e425fc` made the ASSERTs live. The pushlock waker's `WaitBlock->Signaled = TRUE` was
+  compiled out, so every contended wait printed `ASSERT FAILED: (*WaitBlock).Signaled != 0`
+  with a correct wake. Any field written only under `cfg(debug_assertions)` and read by an
+  `ASSERT!` is a false positive waiting for its first execution; write it unconditionally.
 - **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
   an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
   resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
@@ -5931,6 +5938,13 @@ Three method lessons from the hunt:
 - **Before blaming the process that was running when the box died, check whether it merely
   outlived the one that killed it.** The real culprit was a third process entirely; the two
   apparent victims were downstream of the box-kill, which is why both looked guilty.
+
+- **The mirror case: the EXCEPT arm as a bare block runs every time.** kernel32-rust
+  `GlobalSize` put `_SEH2_EXCEPT { dwSize = MAXULONG_PTR; }` in a labeled block straight after
+  the try block, so it executed unconditionally and every GlobalSize/LocalSize returned 0
+  (ERROR_INVALID_HANDLE). Callers that size buffers from it (`LocalSize()/2 - 1`) wrapped to a
+  zero-byte allocation and wrote past it. A labeled block after a try block is not a handler;
+  drop the arm (nothing raises into it) rather than keep it reachable.
 
 ### An SEH filter expression is a PREDICATE, not a value `[§9.70]`
 `GlobalLock` materialised `EXCEPTION_EXECUTE_HANDLER` into a local and branched on it, so it

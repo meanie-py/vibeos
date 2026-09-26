@@ -678,6 +678,39 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     trace) without matching. The file shows `shell ready` three times for one payload run, so the
     `ready` snapshot restore is the first suspect: the reader may be following a timeline the
     marker is not in. Read the serial for the verdict until this is fixed.
+  - FIXED: the pushlock `ASSERT FAILED: (*WaitBlock).Signaled != 0` (pushlock.rs 495/643, on
+    UP i386 too) was a false positive: the waker's DBG-only `Signaled = 1` was compiled out
+    while the ASSERT was live. appstorm i386 38/38 with 0 assertions (was 4).
+  - FIXED: amd64 app sweeps were starved, not failing. `Wow64TraceSyscalls` was still 1, and
+    every amd64 boot runs user32_winetest under WoW64, so the serial reached ~40MB and apps
+    missed their window timeouts (then the run was reaped). Off: serial 2.2MB, 17 min, 36/38.
+  - OPEN, amd64: `sysdm.cpl` and `powercfg.cpl` open but do not close (appstorm
+    close=TIMEOUT).
+  - FIXED: dxdiag's heap corruption (`RtlpRemoveFreeBlock`, amd64). kernel32-rust `GlobalSize`
+    ran its translated `_SEH2_EXCEPT` arm unconditionally, so GlobalSize/LocalSize returned 0
+    for EVERY block on every arch. The edit control sizes its undo buffer from
+    `LocalSize()/2 - 1`, which wrapped to a 0-byte allocation it then wrote into. Found with
+    `APPSTORM_PAGEHEAP=1`, which faulted at the write (`EDIT_WM_Create`, `*es->undo_text = 0`).
+  - OPEN, page heap: under `APPSTORM_PAGEHEAP=1` wordpad faults in comctl32
+    `TOOLBAR_AddBitmap` storing through the NULL that `ReAlloc` (LocalReAlloc) returned. Without
+    page heap wordpad passes, so the suspect is page-heap allocation failing (it spends >= 2
+    pages per block), met by comctl32 not checking ReAlloc. Also: upstream's page heap never
+    implemented its normal-heap fallbacks (`FIXME` + `ASSERT(FALSE)`); the translation dropped
+    those ASSERTs, so hitting one returns NULL silently instead of stopping.
+  - OPEN, SMP lane (2026-09-25, handed off): `tools/payloads/rpmprobe` has a race phase (per CPU,
+    one thread copies across a page boundary with Read/WriteProcessMemory while another
+    commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X
+    --payload rpmprobe` and read `[RPMPROBE] ... race` in the serial.
+    i386 `-smp 4`: PASS (46,273 copies ok, 686,336 clean errors, 0 silent, no bugcheck).
+    arm64 `-smp 2`: the fixed-address probes pass, then the box WEDGES in the race phase
+    (serial silent right after the race threads start). Not localized; attach gdb during
+    the race. arm64's TB flush is a broadcast `tlbi vmalle1is`, so it is not the IPI path.
+    arm64 also prints `ASSERT FAILED: KeGetCurrentIrql() == SYNCH_LEVEL at ke/ipi.rs:312` on
+    every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
+    `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
+    DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
+    amd64 `-smp 2` and `-smp 4`: boot dies (csrss exits, crit, 0xF4; winlogon AV), so the race
+    cannot run there. Not yet checked against master.
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
