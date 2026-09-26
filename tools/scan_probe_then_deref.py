@@ -126,6 +126,20 @@ def is_comment(line: str) -> bool:
     return t == "*" or (t.startswith("*") and t[1:2].isspace())
 
 
+def alias_of(idents: set[str]) -> re.Pattern[str]:
+    """`x = <tainted> as T;` -- a second NAME for the same user pointer.
+
+    The scanner keyed on the probed identifier alone, so a probe of `Param`
+    followed by `pdwLayout = Param as PDWORD; *pdwLayout = ...` reported
+    nothing. That is not a corner case: it is how the whole ONEPARAM_ROUTINE
+    family is written, and one of them (GETPROCDEFLAYOUT) was a live BUGCHECK
+    0x1E reachable from `NtUserCallOneParam` -- found by the wine user32:win
+    subtest only AFTER the fault in front of it was fixed, not by this file.
+    """
+    alt = "|".join(re.escape(i) for i in sorted(idents))
+    return re.compile(rf"^\s*(?:let\s+(?:mut\s+)?)?(\w+)\s*=\s*(?:{alt})\b[^=]*;\s*$")
+
+
 def derefs_of(ident: str) -> re.Pattern[str]:
     i = re.escape(ident)
     # `*ident`, `*(ident`, `(*ident)`, and `(*ident).field`
@@ -213,6 +227,7 @@ def scan_text(
         if not ident:
             continue
         probe_line = text.count("\n", 0, m.start())
+        idents = {ident}
         pat = derefs_of(ident)
         # Look ahead within this function: stop at a line that starts a new
         # top-level item, which is a good-enough body boundary for this shape.
@@ -242,6 +257,15 @@ def scan_text(
             # Assigning NULL does NOT end it. Error paths null the pointer and the
             # success path keeps deref'ing the original; treating that as untainted
             # hid the real `dwHookData` leads two lines further down.
+            # Propagate the taint to an alias before testing for a deref, so
+            # the very line that creates the alias does not also have to use it.
+            al = alias_of(idents).match(ln)
+            if al and al.group(1) not in idents:
+                idents.add(al.group(1))
+                pat = re.compile(
+                    "|".join(derefs_of(i).pattern for i in sorted(idents))
+                )
+                continue
             reassign = re.match(rf"\s*{re.escape(ident)}\s*=\s*([^=].*)$", ln)
             if (
                 reassign
