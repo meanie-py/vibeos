@@ -5,6 +5,9 @@ use ntkrnl_sys::ddk::{ExFreePoolWithTag};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::IsListEmpty;
 
+// Not in ntkrnl_sys::base; declared per-file, as the rest of the crate does.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // ---- file-scope preamble (translated) ----
 pub const FW_COMPLETED: u32 = 0;
 
@@ -1923,12 +1926,16 @@ pub unsafe extern "system" fn NtUserEndPaint(hWnd: HWND, pUnsafePs: *const PAINT
             core::mem::size_of::<PAINTSTRUCT>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
+        // The probe VALIDATES only; this capture is the access, and a fault lands in
+        // Status, which is checked immediately below.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
                 &mut Ps as *mut PAINTSTRUCT as *mut core::ffi::c_void,
-                pUnsafePs as *mut core::ffi::c_void,
+                pUnsafePs as *const core::ffi::c_void,
                 core::mem::size_of::<PAINTSTRUCT>(),
-            );
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
         if !NT_SUCCESS(Status) {
             break 'cleanup;
@@ -2003,11 +2010,15 @@ pub unsafe extern "system" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
                 break 'exit;
             }
         }
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(finfo) as *mut _,
-            pfwi as *mut _,
-            core::mem::size_of::<FLASHWINFO>() as _,
-        );
+        // The probe VALIDATES only; this capture is the access, and takes the same exit.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(finfo) as *mut core::ffi::c_void,
+            pfwi as *const core::ffi::c_void,
+            core::mem::size_of::<FLASHWINFO>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            break 'exit;
+        }
 
         pWnd = ValidateHwndNoErr(finfo.hwnd);
         if pWnd.is_null()
@@ -2224,12 +2235,16 @@ pub unsafe extern "system" fn NtUserRedrawWindow(
                 core::mem::size_of::<RECTL>(),
                 1,
             );
-            if NT_SUCCESS(Status) {
-                core::ptr::copy_nonoverlapping(
-                    lprcUpdate as *const RECTL,
-                    &mut SafeUpdateRect,
-                    1,
-                );
+            // The probe VALIDATES only; this capture is the access, and a fault lands
+            // in Status, which is checked immediately below.
+            if NT_SUCCESS(Status)
+                && !crate::copy::capture_from_user(
+                    &mut SafeUpdateRect as *mut RECTL as *mut core::ffi::c_void,
+                    lprcUpdate as *const core::ffi::c_void,
+                    core::mem::size_of::<RECTL>(),
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
             if !NT_SUCCESS(Status) {
                 EngSetLastError(RtlNtStatusToDosError(Status));
@@ -2673,12 +2688,18 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
         );
     }
     if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+        // The probe VALIDATES only; this capture is the access. There is no label to
+        // break to here -- a fault lands in Status, which is checked immediately after
+        // this block, and the string handling below is skipped so it does not run on a
+        // capture that did not happen.
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(SafeRect) as *mut core::ffi::c_void,
-            lpRc as *mut core::ffi::c_void,
+            lpRc as *const core::ffi::c_void,
             core::mem::size_of::<RECTL>(),
-        );
-        if !str.is_null() {
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
+        if NT_SUCCESS(Status) && !str.is_null() {
             SafeStr = ProbeForReadUnicodeString(str);
             if SafeStr.Length != 0 {}
         }
@@ -2776,12 +2797,16 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
         );
     }
     if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+        // The probe VALIDATES only; this capture is the access, and a fault lands in
+        // Status, which is checked immediately after this block.
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(SafeRect) as *mut core::ffi::c_void,
-            lpRc as *mut core::ffi::c_void,
+            lpRc as *const core::ffi::c_void,
             core::mem::size_of::<RECTL>(),
-        );
-        if !str.is_null() {
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
+        if NT_SUCCESS(Status) && !str.is_null() {
             SafeStr = ProbeForReadUnicodeString(str);
             if SafeStr.Length != 0 {}
         }

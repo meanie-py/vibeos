@@ -8,6 +8,9 @@ use ntkrnl_sys::rtl::RtlCopyMemory;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use ntkrnl_sys::constants::STATUS_INVALID_HANDLE;
 
+// Not in ntkrnl_sys::base; declared per-file, as the rest of the crate does.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // USERTAG_CLIPBOARD: C `'bcsU'` = ('b'<<24)|('c'<<16)|('s'<<8)|'U' = 0x62637355,
 // stored little-endian = bytes "Uscb".
 const USERTAG_CLIPBOARD: u32 = u32::from_le_bytes(*b"Uscb");
@@ -1216,11 +1219,16 @@ pub unsafe extern "system" fn NtUserSetClipboardData(
             return core::ptr::null_mut();
         }
     }
-    RtlCopyMemory(
+    // The probe VALIDATES only; this capture is the access. Upstream wraps the probe
+    // and the copy in one _SEH2_TRY whose handler sets the last error and returns NULL.
+    if !crate::copy::capture_from_user(
         core::ptr::addr_of_mut!(scd) as *mut core::ffi::c_void,
         pUnsafeScd as *const core::ffi::c_void,
         core::mem::size_of::<SETCLIPBDATA>(),
-    );
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return core::ptr::null_mut();
+    }
 
     UserEnterExclusive();
 
@@ -1308,7 +1316,7 @@ pub unsafe extern "system" fn NtUserConvertMemHandle(
 ) -> HANDLE {
     let mut hMem: HANDLE = core::ptr::null_mut();
     let pMemObj: PCLIPBOARDDATA;
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS;
 
     UserEnterExclusive();
 
@@ -1334,12 +1342,16 @@ pub unsafe extern "system" fn NtUserConvertMemHandle(
         // we had just written -- a BSOD any user-mode caller could trigger with a bad
         // pData. Upstream feb9febaae3 (#7878) made the same split.
         Status = SafeProbeForRead(pData, cbData as _, 1);
-        if NT_SUCCESS(Status) {
-            memcpy(
-                core::ptr::addr_of_mut!((*pMemObj).Data) as *mut _,
-                pData,
-                cbData as _,
-            );
+        // The probe VALIDATES only; the memcpy is the access, and it reads the
+        // caller's buffer. Signal a fault the same way, through Status.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!((*pMemObj).Data) as *mut core::ffi::c_void,
+                pData as *const core::ffi::c_void,
+                cbData as usize,
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         /* Release the extra reference (UserCreateObject added 2 references) */
@@ -1392,16 +1404,28 @@ pub unsafe extern "system" fn NtUserCreateLocalMemHandle(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForWrite(pData, cbData, 1);
         }
+        // The probes VALIDATE only; the store and the copy below are the access.
         if NT_SUCCESS(Status) {
             if !pcbData.is_null() {
-                core::ptr::write_volatile(pcbData, (*pMemObj).cbData);
+                let cb = (*pMemObj).cbData;
+                if !crate::copy::publish_to_user(
+                    pcbData as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(cb) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&cb),
+                ) {
+                    Status = STATUS_ACCESS_VIOLATION;
+                }
             }
 
-            memcpy(
-                pData,
-                core::ptr::addr_of_mut!((*pMemObj).Data) as PVOID,
-                cbData as usize,
-            );
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(
+                    pData as *mut core::ffi::c_void,
+                    core::ptr::addr_of!((*pMemObj).Data) as *const core::ffi::c_void,
+                    cbData as usize,
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
     }
 
@@ -1446,16 +1470,28 @@ pub unsafe extern "system" fn NtUserCreateLocalMemHandle(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForWrite(pData, cbData as _, 1);
         }
+        // The probes VALIDATE only; the store and the copy below are the access.
         if NT_SUCCESS(Status) {
             if !pcbData.is_null() {
-                core::ptr::write_volatile(pcbData, (*pMemObj).cbData);
+                let cb = (*pMemObj).cbData;
+                if !crate::copy::publish_to_user(
+                    pcbData as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(cb) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&cb),
+                ) {
+                    Status = STATUS_ACCESS_VIOLATION;
+                }
             }
 
-            memcpy(
-                pData,
-                core::ptr::addr_of_mut!((*pMemObj).Data) as PVOID,
-                cbData as usize,
-            );
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(
+                    pData as *mut core::ffi::c_void,
+                    core::ptr::addr_of!((*pMemObj).Data) as *const core::ffi::c_void,
+                    cbData as usize,
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
     }
 

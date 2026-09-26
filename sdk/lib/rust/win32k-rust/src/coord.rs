@@ -469,10 +469,16 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForRead(UnsafePtsIn as *mut _, Size, 1);
         }
-        if !NT_SUCCESS(Status) {
+        // The probes VALIDATE only; this capture is the access, and a fault takes the
+        // same exit a failed probe takes.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(
+                Points as *mut core::ffi::c_void,
+                UnsafePtsIn as *const core::ffi::c_void,
+                Size as usize,
+            )
+        {
             break 'leave;
-        } else {
-            RtlCopyMemory(Points as *mut _, UnsafePtsIn as *const _, Size as usize);
         }
 
         match iMode as u32 {
@@ -489,8 +495,18 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
             }
         }
 
-        if ret != 0 {
-            RtlCopyMemory(UnsafePtOut as *mut _, Points as *const _, Size as usize);
+        // Probed above, but the probe only validates -- this publish is the access.
+        // A fault here means the caller's output buffer went away, so report the
+        // failure rather than claiming success.
+        if ret != 0
+            && !crate::copy::publish_to_user(
+                UnsafePtOut as *mut core::ffi::c_void,
+                Points as *const core::ffi::c_void,
+                Size as usize,
+            )
+        {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            ret = FALSE as BOOL;
         }
     }
 
@@ -541,10 +557,16 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForRead(UnsafePtsIn as *mut _, Size as _, 1);
         }
-        if !NT_SUCCESS(Status) {
+        // The probes VALIDATE only; this capture is the access, and a fault takes the
+        // same exit a failed probe takes.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(
+                Points as *mut core::ffi::c_void,
+                UnsafePtsIn as *const core::ffi::c_void,
+                Size as usize,
+            )
+        {
             break 'leave;
-        } else {
-            RtlCopyMemory(Points as *mut _, UnsafePtsIn as *const _, Size as usize);
         }
 
         match iMode as u32 {
@@ -561,8 +583,18 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
             }
         }
 
-        if ret != 0 {
-            RtlCopyMemory(UnsafePtOut as *mut _, Points as *const _, Size as usize);
+        // Probed above, but the probe only validates -- this publish is the access.
+        // A fault here means the caller's output buffer went away, so report the
+        // failure rather than claiming success.
+        if ret != 0
+            && !crate::copy::publish_to_user(
+                UnsafePtOut as *mut core::ffi::c_void,
+                Points as *const core::ffi::c_void,
+                Size as usize,
+            )
+        {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            ret = FALSE as BOOL;
         }
     }
 
@@ -640,14 +672,16 @@ pub unsafe extern "system" fn NtGdiModifyWorldTransform(
             core::mem::size_of::<XFORML>() as u32,
             1,
         );
-        if !NT_SUCCESS(Status) {
-            Ret = 0;
-        } else {
-            RtlCopyMemory(
+        // Validate-only probe; the capture is the access. Both faults clear Ret, which
+        // is what gates the GreModifyWorldTransform call below.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(
                 core::ptr::addr_of_mut!(xformSafe) as *mut core::ffi::c_void,
                 pxformUnsafe as *const core::ffi::c_void,
-                core::mem::size_of::<XFORML>() as usize,
-            );
+                core::mem::size_of::<XFORML>(),
+            )
+        {
+            Ret = 0;
         }
     }
 
@@ -685,14 +719,16 @@ pub unsafe extern "system" fn NtGdiModifyWorldTransform(
             core::mem::size_of::<XFORML>() as _,
             1,
         );
-        if !NT_SUCCESS(Status) {
-            Ret = 0;
-        } else {
-            RtlCopyMemory(
+        // Validate-only probe; the capture is the access. Both faults clear Ret, which
+        // is what gates the GreModifyWorldTransform call below.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(
                 core::ptr::addr_of_mut!(xformSafe) as *mut core::ffi::c_void,
                 pxformUnsafe as *const core::ffi::c_void,
-                core::mem::size_of::<XFORML>() as usize,
-            );
+                core::mem::size_of::<XFORML>(),
+            )
+        {
+            Ret = 0;
         }
     }
 

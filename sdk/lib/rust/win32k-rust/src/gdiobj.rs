@@ -1391,11 +1391,16 @@ pub unsafe extern "system" fn NtGdiExtGetObjectW(
             return 0;
         }
 
-        core::ptr::copy_nonoverlapping(
-            core::ptr::addr_of!(object) as *const u8,
-            lpBuffer as *mut u8,
+        // The probe above VALIDATES only. Given what the comment says this statement
+        // can do -- copy kernel stack to a caller-chosen address -- the publish must be
+        // the protected one, and a fault takes the probe's own exit.
+        if !crate::copy::publish_to_user(
+            lpBuffer as *mut core::ffi::c_void,
+            core::ptr::addr_of!(object) as *const core::ffi::c_void,
             cjMaxSize as usize,
-        );
+        ) {
+            return 0;
+        }
     }
 
     iResult as i32

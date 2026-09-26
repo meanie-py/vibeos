@@ -1473,8 +1473,18 @@ pub unsafe extern "system" fn NtUserGetObjectInformation(
         Status = STATUS_BUFFER_TOO_SMALL;
     }
 
+    // The STORE is the access, exactly as the block below already documents for its
+    // own copies -- one word into the caller's page is enough to fault unhandled.
     if !nLengthNeeded.is_null() {
-        core::ptr::write_volatile(nLengthNeeded, nDataSize as DWORD);
+        let needed = nDataSize as DWORD;
+        if !crate::copy::publish_to_user(
+            nLengthNeeded as *mut core::ffi::c_void,
+            core::ptr::addr_of!(needed) as *const core::ffi::c_void,
+            core::mem::size_of::<DWORD>(),
+        ) && Status == STATUS_SUCCESS
+        {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
     }
 
     if Status == STATUS_SUCCESS && nDataSize > 0 {
@@ -2177,8 +2187,16 @@ pub unsafe extern "system" fn NtUserSetWindowStationUser(
 
             Status = STATUS_SUCCESS;
             Status = SafeProbeForRead(psid as *mut _, size as SIZE_T, 1);
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory((*WindowStation).psidUser, psid, size as usize);
+            // The probe VALIDATES only; this capture is the access, and a fault lands
+            // in Status, which is checked below.
+            if NT_SUCCESS(Status)
+                && !crate::copy::capture_from_user(
+                    (*WindowStation).psidUser as *mut core::ffi::c_void,
+                    psid as *const core::ffi::c_void,
+                    size as usize,
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             if !NT_SUCCESS(Status) {
