@@ -240,6 +240,7 @@ members = [
     "usbehci-rust",
     "usbohci-rust",
     "usbuhci-rust",
+    "usbxhci-rust",
     "usbport-rust",
     "i8042prt-rust",
     "handle",

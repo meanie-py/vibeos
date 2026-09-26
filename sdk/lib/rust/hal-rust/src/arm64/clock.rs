@@ -371,7 +371,7 @@ static IRQ_COUNTS: [AtomicU32; TRACE_SLOTS] =
 static IRQ_COUNT_OTHER: AtomicU32 = AtomicU32::new(0);
 /// Spurious IAR reads (1020..1023).
 static IRQ_SPURIOUS: AtomicU32 = AtomicU32::new(0);
-/// One-shot "fired but no ISR connected" bitmap for INTIDs 0..63 (+1 global
+/// One-shot "fired but no ISR claimed it" bitmap for INTIDs 0..63 (+1 global
 /// latch for the rest) so a mis-routed line reports once instead of flooding.
 static UNHANDLED_SEEN: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 static UNHANDLED_SEEN_OTHER: AtomicU32 = AtomicU32::new(0);
@@ -403,7 +403,7 @@ unsafe fn report_unhandled(intid: u32) {
     };
     if fresh {
         DbgPrint(
-            b"[GIC] unhandled INTID %u fired (no ISR connected) - acked+dropped\n\0".as_ptr(),
+            b"[GIC] unhandled INTID %u fired, no ISR claimed it (none connected, or the ISR returned FALSE) - EOIed\n\0".as_ptr(),
             intid,
         );
         // Full GIC state at first anomaly — a misrouted/storming line is

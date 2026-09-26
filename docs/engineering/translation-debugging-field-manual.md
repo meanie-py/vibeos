@@ -11422,6 +11422,37 @@ introduced at any heap exit — it is an external stray write.**
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
 
+### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
+- **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
+  N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
+  INTID in a register. Seen 2026-09-26 bringing up `usbxhci` (INTID 35, the xHCI INTx).
+- **Cause:** a **level-triggered line that no ISR claims fires forever.** The HAL EOIs it,
+  the line is still asserted, it re-fires at once, and the CPU never runs anything else. The
+  message does not mean "no ISR connected": it also prints when the connected ISR returned
+  FALSE. Two ways to get there, both hit the same day:
+  1. **The device was already asserting when its vector was enabled.** Firmware can hand
+     over a controller mid-flight (UEFI's own USB stack ran the xHCI and left it with
+     interrupts on), and the driver cannot quiet hardware it has not mapped yet.
+  2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
+     connects the interrupt, calls the miniport's StartController, and only *then* sets
+     the flags its ISR wrapper checks. A StartController that enables controller
+     interrupts and issues a command gets its completion interrupt declined.
+- **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
+  COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
+  the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
+  IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
+  device family, ask "can this line be asserted before my ISR says yes?"
+
+### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
+- **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
+  immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
+  starts.
+- **Cause:** the arm64 boot disk is `virtio-blk-pci` (`if=virtio` on `virt`), and the
+  efivars shipped with the harness save Boot0001 as `PciRoot(0x0)/Pci(0x2,0x0)`. A new PCI
+  device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
+  now names the new device. UEFI skips it silently and falls through to network boot.
+- **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
+
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op
   macros, so **their absence in the serial is NOT evidence of where execution stopped** — that
