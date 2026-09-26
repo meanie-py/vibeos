@@ -781,6 +781,11 @@ NON_BUILD_PATHSPEC = (
     # Deliberately narrow: the rest of tools/ carries real compiled sources
     # (tools/libschily/*.c, tools/gen-delaylib.py) and stays in the fingerprint.
     ":(exclude)tools/lint-baseline",
+    # tools/pi4/ drives a physical Raspberry Pi bench (serial, TFTP, power) from
+    # the host. Nothing in it is compiled or staged into media, and editing a
+    # bench script while an arm64 build ran made that build's smoke STALE_MEDIA
+    # twice in a row.
+    ":(exclude)tools/pi4",
 )
 
 

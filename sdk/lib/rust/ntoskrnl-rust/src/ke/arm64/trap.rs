@@ -670,9 +670,9 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                     }
                     let c = *Buf.add(i as usize);
                     if c == b'\n' {
-                        core::ptr::write_volatile(Uart, b'\r' as ULONG);
+                        crate::arm64_dbg::uart_putc_default(b'\r' as u8);
                     }
-                    core::ptr::write_volatile(Uart, c as ULONG);
+                    crate::arm64_dbg::uart_putc_default(c as u8);
                 }
             }
 

@@ -10,8 +10,8 @@
 # small chunk per iteration is self-pacing: wait for the file to disappear
 # before writing the next chunk.
 #
-# Usage: pi4-serial-send.sh "ifconfig -l eth0"        # appends CR
-#        pi4-serial-send.sh --raw $'\033OP'           # send bytes verbatim
+# Usage: tools/pi4/serial-send.sh "ifconfig -l eth0"        # appends CR
+#        tools/pi4/serial-send.sh --raw $'\033OP'           # send bytes verbatim
 set -u
 
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
