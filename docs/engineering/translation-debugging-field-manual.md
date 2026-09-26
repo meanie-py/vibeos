@@ -10352,6 +10352,20 @@ better thunk. The underlying bug there was a real API-contract mistake: in multi
 the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
 the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
 
+### A winetest's "N failures in child process" can be a child that DIED
+**Symptom.** A suite reports a huge failure count (native `user32:scroll`: 140), but the
+printed failures account for a handful, and one child printed nothing at all.
+**Cause.** Wine's `winetest_wait_child_process` reports the child's EXIT CODE as its failure
+count. A child killed by an unhandled exception exits `0x80` (csrss terminating a
+second-chance client), and the parent prints that as "128 failures in child process". Its
+buffered stdout dies with it, which is why nothing was printed. On i386 the death itself
+was invisible: `[EXIT-THR]` and the second-chance `[KI-EXC]` tripwire were amd64-only, which
+made the native CONTROL of the A/B the one arch that could not see it.
+**Fix.** Read child counts of exactly 128 as a death until proven otherwise, and find the
+`[KI-EXC] ... second chance` line (both x86 arches now print it before the exception port
+gets a chance to swallow it). The scroll instance was `uxtheme!ThemeGetWndData` returning
+another process's heap pointer for a window that process owned.
+
 ### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
 **Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
 the call succeeded, dying several calls later somewhere unrelated.
