@@ -32,7 +32,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import artifacts
+from . import artifacts, flakes
 
 SUITE = "kmtest"
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
@@ -888,6 +888,12 @@ def _conformance_once(args, repo: Path) -> int:
             "rust_panics": serial_text.count("*** RUST PANIC"),
         }
     )
+    # Out of /tmp before anything reads it: reboots wipe the artifact root, and a
+    # red round's serial + results are the only way to re-grade it later.
+    if shape != "clean":
+        kept = artifacts.preserve_failure(run_dir, base, shape, repo)
+        if kept:
+            rec["preserved"] = kept
     _append_round(rec)
 
     # ...and to the SHARED ledger under vibeos_root, which is what every other
@@ -924,6 +930,12 @@ def _conformance_once(args, repo: Path) -> int:
             "have_baseline": have_baseline,
             "regressions": regressions,
             "new_passes": new_passes,
+            # What `flake-report` grades: the round's failure signatures, whether the
+            # commit names the code that ran, and where the evidence survives.
+            "sigs": flakes.conformance_signatures(rec),
+            "dirty": artifacts._is_dirty(repo),
+            "run_id": run_dir.name,
+            "preserved": rec.get("preserved"),
         },
     )
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -100,6 +101,9 @@ def is_incomplete(summary: dict) -> bool:
 
 FARM_DIR = Path.home() / "vibeos-flake-farm"
 
+# Commands whose ledger rows carry a flake signature (see `Run._ledger_append`).
+BOOT_COMMANDS = frozenset({"smoke", "gate", "boot"})
+
 
 def _sha12(path: Path) -> str | None:
     import hashlib
@@ -171,7 +175,8 @@ def preserve_failure(
         if not serials:
             return None  # not a boot-bearing run; nothing to preserve
         mp = any("ntkrnlmp.exe" in s.read_text(errors="replace") for s in serials)
-        dst = FARM_DIR / "fails" / "auto" / f"{run_dir.name}-{classification or 'FAIL'}"
+        tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", classification or "FAIL").strip("_")
+        dst = FARM_DIR / "fails" / "auto" / f"{run_dir.name}-{tag}"
         dst.mkdir(parents=True, exist_ok=True)
         for src in serials:
             shutil.copy2(src, dst / src.name)
@@ -179,6 +184,11 @@ def preserve_failure(
             src = run_dir / name
             if src.is_file():
                 shutil.copy2(src, dst / name)
+        # A conformance round's parsed results: without them a later parser fix
+        # cannot re-grade history (NpfsFileInfo.c:57's "passes" were parser misses,
+        # and the files that would prove it were in /tmp).
+        for src in run_dir.glob("*-results.txt"):
+            shutil.copy2(src, dst / src.name)
         for shot in run_dir.glob("*.png"):
             shutil.copy2(shot, dst / shot.name)
         manifest = {
@@ -454,7 +464,25 @@ class Run:
     def _ledger_append(self, repo: Path | None, summary: dict, dur: float) -> None:
         """Delegates to the module-level `ledger_append`. See its docstring for why
         that is not a method: a command does not have to use `Run` to have an
-        outcome worth keeping, and `conformance` does not."""
+        outcome worth keeping, and `conformance` does not.
+
+        A boot's row carries enough to NAME its failure after /tmp is gone: the
+        signature, the preserved-evidence dir, and whether the tree was dirty (a
+        lane iterating on uncommitted edits otherwise reads as a flaky commit).
+        `vibeos-cli flake-report` is the reader."""
+        extra: dict = {"run_id": summary.get("run_id")}
+        if self.command in BOOT_COMMANDS and repo is not None:
+            from . import flakes
+
+            extra["dirty"] = _is_dirty(repo)
+            if "runs" in summary:
+                extra["boots"] = summary.get("runs")
+                extra["passes"] = summary.get("passes")
+            sig = flakes.run_signature(summary)
+            if sig:
+                extra["sig"] = sig
+            if summary.get("preserved"):
+                extra["preserved"] = summary["preserved"]
         ledger_append(
             repo,
             cmd=self.command,
@@ -462,6 +490,7 @@ class Run:
             verdict=self.verdict,
             classification=self.classification,
             duration_ms=int(dur * 1000),
+            extra=extra,
         )
 
     def _glyph(self, st: Stage) -> str:

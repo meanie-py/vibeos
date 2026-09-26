@@ -8880,6 +8880,21 @@ SOME-runs split cannot establish determinism no matter how clean the corpus is. 
 was mostly undecidable here anyway: 151 of 170 batches held a single run, so there was nothing
 to compare within them.
 
+**The mirror error: a run that never REACHED the check is not evidence the check passed.** Grading
+"flaky" as *present in some runs at a commit, absent in others* graded `NpfsFileInfo.c:57` a FLAKE
+at 17 commits — it is deterministic (`Information = 158`, expected 154, every time). Of the 60
+rounds that "lacked" it at those commits, 6 died before the test ran and 54 completed with the line
+unparsed — a raw WCHAR swallowed the newline (`2f9bdcee30d`). The grader can fix the first kind, and
+nothing but the source data can fix the second. Absence counts only from a run that could have seen
+the failure: a completed round for an assertion; any round for a run-level event (lost boot,
+bugcheck); a green boot for a smoke signature — never a run that failed some OTHER way first. And
+one run-level event must collapse only on a VERBATIM shared constant: normalizing numbers first
+merged three tests each dropping a *different* count into one fake "mass" event. Both rules are code
+now, with the mutation-verified tests beside them: `vibeos-cli flake-report`
+(`tests/qemu/cli/flakes.py`). Read its grade, not a tally — and note that history it cannot re-parse
+stays wrong: those rounds' results files were in `/tmp`, which is why failing rounds are now
+preserved to `~/vibeos-flake-farm/fails/auto/` with their `*-results.txt`.
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
