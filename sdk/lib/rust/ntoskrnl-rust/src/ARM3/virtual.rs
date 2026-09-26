@@ -859,18 +859,13 @@ pub unsafe extern "system" fn MiDoMappedCopy(
 
         if Status >= 0 {
             MmInitializeMdl(Mdl as ntkrnl_sys::ddk::PMDL, CurrentAddress, CurrentSize);
-            // STILL UNPROTECTED, and deliberately left visible rather than made to
-            // look handled. The C's _SEH2_TRY covered this call too, and
-            // MmProbeAndLockPages RAISES BY DESIGN on pages it cannot lock -- so
-            // validate-first does not reach it: there is no range check that proves
-            // a page stays mapped. dummy-pseh-verdict.md lists exactly this under
-            // "software exceptions raised by design" and marks it THE open gap; the
-            // fix is a Result-returning try_ variant at the callee, which does not
-            // exist yet (no such symbol in ntkrnl-sys). So this path can still
-            // BUGCHECK where the C returned a status, and the probes above no
-            // longer can. Registered in the roadmap bug registry.
-            MmProbeAndLockPages(Mdl, PreviousMode, IoReadAccess);
-            PagesLocked = 1;
+            // The C's _SEH2_TRY covered this call, and MmProbeAndLockPages RAISES BY DESIGN on
+            // a page it cannot lock, so the status-returning variant stands in for the handler.
+            // Before it existed a user ReadProcessMemory over an unmapped page BUGCHECKed 0x1E.
+            Status = crate::ARM3::mdlsup::MmTryProbeAndLockPages(Mdl as PMDL, PreviousMode, IoReadAccess);
+            if Status >= 0 {
+                PagesLocked = 1;
+            }
         }
 
         KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));

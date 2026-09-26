@@ -571,12 +571,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
   - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
     import that does not resolve; arm64 too).
-  - amd64 flake, OPEN: 1 of 5 conformance runs bugchecked 0x1E `c000009a` raised by
-    `FsRtlAllocatePoolWithTag` (a raise-on-failure pool allocation from a driver at
-    `fffff80003cbb22b`) during the `ZwAllocateVirtualMemory` kmtest. That run's WOW64 test app
-    was repainting in a loop (6.8K `StretchDIBits`, serial 192K lines). The loop predates the
-    registration fix, and so do its run-to-run swings of 60-3.4K calls. Artifact:
-    `/tmp/vibeos-cli/20260925-182151-b9nppk9s-conformance-amd64`.
+  - FIXED: amd64 bugchecks under long GUI runs: 0x1E `c000009a` from a pool allocation, and
+    0x1E `c0000005` in win32k (`REGION_Delete(NULL)` from `IntSelectClipRgn` and
+    `VIS_ComputeVisibleRegion`). All one bug. `NtUserFindExistingCursorIcon` had a stray
+    capture of the module name INTO the resource-name slot, so no LR_SHARED icon ever matched
+    (IDC_ARROW looked up 4139 times, never found). Each LoadCursor/LoadIcon made a new icon + two
+    bitmaps and leaked a pool string; a repainting WOW64 app reached the 10K GDI quota, region
+    allocations returned NULL, and the pool ran dry. Found by counting create vs delete per
+    handle type in the WOW64 syscall trace, then logging the icon-cache calls
+    (`[WOW64-CURICON]`).
+  - OPEN, harness: `smoke --payload rpmprobe` on amd64 FAILED with "`[RPMPROBE] done` never
+    appeared" although the serial file has it (line 4201, byte 236K, `VERDICT=PASS`). Boot
+    output was 78K bytes; the drain then ran its whole 600s budget over a 39.8MB serial (WOW64
+    trace) without matching. The file shows `shell ready` three times for one payload run, so the
+    `ready` snapshot restore is the first suspect: the reader may be following a timeline the
+    marker is not in. Read the serial for the verdict until this is fixed.
+  - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
+    `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
     that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
     it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
@@ -1441,13 +1452,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
   passes both before and after, so `scan_invented_constants` does not catch a wrong bare
   hex in an `as NTSTATUS` cast.
-  **ONE THING STILL OPEN, left visible rather than made to look handled:**
-  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
-  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
-  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
-  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
-  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
-  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
+  **FIXED 2026-09-25:** `MiDoMappedCopy` now calls `MiProbeAndLockPagesStatus`, the
+  status-returning body of `MmProbeAndLockPages` (the export still raises). Its page touch is
+  fault-protected (it had been a bare, non-volatile read), and two `MmAccessFault` failure
+  paths no longer release the PFN/working-set lock a second time. appstorm's stack dumper
+  bugchecked amd64 through this; `tools/payloads/rpmprobe` pins it on amd64 and i386.
 
 - **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
   REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps
