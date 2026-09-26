@@ -1005,13 +1005,17 @@ def render_status(st: dict) -> str:
 def cmd_status(args, repo: Path) -> int:
     """`vibeos-cli host-status` — who holds the CPU lease / build-dir locks. `--json`
     feeds the wait-for-quiet poll guards agents have been hand-rolling."""
-    from . import hostjobs
+    from . import hostjobs, queue
 
     st = status()
     st["jobs"] = hostjobs.status(repo)
+    # A held line explains an idle land lock with a full queue better than anything below.
+    st["hold"] = queue.effective_hold(repo)
     if getattr(args, "json", False):
         print(json.dumps(st, indent=2))
     else:
+        if st["hold"]:
+            print(queue.describe_hold(st["hold"]))
         print(render_status(st))
         print(hostjobs.render_status(st["jobs"]))
     return 0

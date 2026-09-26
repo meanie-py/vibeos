@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+import shutil
 import sys
 from pathlib import Path
 
@@ -47,7 +48,7 @@ def find_nm() -> str:
     local = REPO / ".build-tools/llvm-mingw/bin/llvm-nm"
     if local.exists():
         return str(local)
-    if subprocess.run(["which", "llvm-nm"], capture_output=True).returncode == 0:
+    if shutil.which("llvm-nm"):
         return "llvm-nm"
     sys.exit("no llvm-nm in .build-tools or on PATH")
 

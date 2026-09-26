@@ -6373,6 +6373,126 @@ def _two_queued(repo, prefix):
     return subs
 
 
+def _origin_master(repo) -> str:
+    subprocess.run(["git", "fetch", "-q", "origin"], cwd=repo, check=True, capture_output=True)
+    return subprocess.run(
+        ["git", "rev-parse", "origin/master"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_a_held_line_starts_no_batch_and_keeps_everyone_queued(queue_repo, monkeypatch):
+    """STOP THE LINE (2026-09-25): while held, a conductor must not spend a single gate."""
+    repo, _ = queue_repo
+    _two_queued(repo, "hl")
+    monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r: r)
+    gated = []
+    monkeypatch.setattr(q_mod, "land_subset", lambda *a, **k: gated.append(a))
+    q_mod.set_hold(repo, lane="fixer", reason="master red: ucrt-difftest")
+    with pytest.raises(q_mod.LineHeld) as ei:
+        q_mod.drain(repo, lambda m: None)
+    assert "master red: ucrt-difftest" in str(ei.value)
+    assert gated == [], "a held line gated a batch"
+    assert len(q_mod.pending(repo)) == 2, "a hold must never drop a submission"
+
+
+def test_a_red_base_holds_the_line_until_master_moves(queue_repo, monkeypatch):
+    """The livelock: every new submission re-gated the same red base. BaseRed now pins an
+    AUTO hold to the red sha, and it lapses by itself once a fix moves master."""
+    repo, _ = queue_repo
+    _two_queued(repo, "ar")
+    red = _origin_master(repo)
+    monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r: r)
+
+    def base_red(*a, **k):
+        raise q_mod.BaseRed("origin/master itself fails the gate (BUILD_FAIL)")
+
+    monkeypatch.setattr(q_mod, "land_subset", base_red)
+    with pytest.raises(q_mod.BaseRed):
+        q_mod.drain(repo, lambda m: None)
+    hold = q_mod.effective_hold(repo)
+    assert hold and hold["auto"] and hold["base"] == red
+    assert q_mod.may_land_direct(hold, "anyone"), "the fix may come from any lane"
+    with pytest.raises(q_mod.LineHeld):
+        q_mod.drain(repo, lambda m: None)
+    # a fix lands directly: master moves, the auto hold lapses
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "fix", red], cwd=repo, check=True, capture_output=True
+    )
+    _commit(repo, "fix.txt")
+    subprocess.run(
+        ["git", "push", "-q", "origin", "HEAD:master"], cwd=repo, check=True, capture_output=True
+    )
+    _origin_master(repo)
+    assert q_mod.effective_hold(repo) is None
+    assert not q_mod.hold_path(repo).exists()
+
+
+def test_a_manual_hold_admits_only_its_holder_to_the_direct_path(queue_repo):
+    repo, _ = queue_repo
+    rec = q_mod.set_hold(repo, lane="fixer", reason="landing the fix")
+    assert q_mod.may_land_direct(rec, "fixer")
+    assert not q_mod.may_land_direct(rec, "bystander")
+    assert q_mod.may_land_direct(None, "bystander")
+    # a manual hold is NOT pinned to a sha: master moving does not lift it
+    assert q_mod.effective_hold(repo) is not None
+
+
+def test_an_unreadable_hold_file_still_holds(queue_repo):
+    """Failing open would restart the line under whoever stopped it."""
+    repo, _ = queue_repo
+    q_mod.hold_path(repo).parent.mkdir(parents=True, exist_ok=True)
+    q_mod.hold_path(repo).write_text("{not json")
+    assert q_mod.effective_hold(repo) is not None
+
+
+def test_land_hold_and_release_round_trip(queue_repo, tmp_path, monkeypatch):
+    repo, _ = queue_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    spawned = []
+    monkeypatch.setattr(land_mod, "_spawn_detached", lambda argv, cwd, log: spawned.append(argv))
+    assert land_mod.land(_Args(hold="master red", preempt=False), repo) == 0
+    assert (q_mod.read_hold(repo) or {}).get("reason") == "master red"
+    # someone else cannot take a manual hold over
+    monkeypatch.setattr(q_mod, "lane_id", lambda r: "bystander")
+    assert land_mod.land(_Args(hold="mine now", preempt=False), repo) != 0
+    assert (q_mod.read_hold(repo) or {}).get("reason") == "master red"
+    with pytest.raises(land_mod.LandAbort):
+        land_mod._check_hold_for_direct(repo)
+    # release wakes the queue only when something is waiting
+    assert land_mod.land(_Args(release=True), repo) == 0
+    assert q_mod.read_hold(repo) is None and spawned == []
+    _two_queued(repo, "rl")
+    q_mod.set_hold(repo, lane="x", reason="y")
+    land_mod.land(_Args(release=True), repo)
+    assert spawned and spawned[-1][-2:] == ["--drain", "--foreground"]
+
+
+def test_land_hold_requires_a_reason(queue_repo, tmp_path, monkeypatch):
+    repo, _ = queue_repo
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    assert land_mod.land(_Args(hold="  ", preempt=False), repo) != 0
+    assert q_mod.read_hold(repo) is None
+
+
+def test_preempt_never_kills_a_direct_lander_or_a_non_detached_conductor(monkeypatch):
+    killed = []
+    monkeypatch.setattr(land_mod.os, "killpg", lambda *a: killed.append(a))
+    run = Run("land", "hold")
+    monkeypatch.setattr(hl_mod, "land_holder", lambda: {"kind": "land:mylane", "pid": 4242})
+    land_mod._preempt_conductor(run)
+    # a conductor that is not its own session leader runs inside someone's shell
+    monkeypatch.setattr(hl_mod, "land_holder", lambda: {"kind": "conductor:x", "pid": 4242})
+    monkeypatch.setattr(land_mod.os, "getsid", lambda pid: 100 if pid == 4242 else 1)
+    monkeypatch.setattr(land_mod.os, "getpgid", lambda pid: 200 if pid == 4242 else 2)
+    land_mod._preempt_conductor(run)
+    assert killed == []
+    # a detached conductor (sid == pgid, not ours) is stopped as a whole session
+    monkeypatch.setattr(land_mod.os, "getsid", lambda pid: 300 if pid == 4242 else 1)
+    monkeypatch.setattr(land_mod.os, "getpgid", lambda pid: 300 if pid == 4242 else 2)
+    land_mod._preempt_conductor(run)
+    assert killed == [(300, land_mod.signal.SIGTERM)]
+
+
 def test_queue_red_base_rejects_nobody_and_halts_the_train(queue_repo, monkeypatch):
     """The first REAL batch got this wrong: mainline was red (fltmgr-rust failed to compile
     for i386), the train split down to one submission per half and rejected BOTH — one of
@@ -8923,3 +9043,108 @@ def test_gdb_engine_names_the_missing_gdb(monkeypatch):
     monkeypatch.setattr(ge_mod.shutil, "which", lambda _name: None)
     with pytest.raises(RuntimeError, match="apt-get install -y gdb-multiarch"):
         ge_mod._gdb_bin()
+
+
+# --- the orphan reaper: it deletes locks and kills processes, so pin every rule ----------
+
+
+@pytest.fixture
+def reaper(tmp_path, monkeypatch):
+    """vm.reap_orphan_qemus against a private lock dir + runs dir, with liveness and the
+    kill stubbed: `alive` is the set of live pids, `kills` records every kill_one call."""
+    from . import killvm
+
+    locks, runs = tmp_path / "locks", tmp_path / "runs"
+    locks.mkdir()
+    runs.mkdir()
+    monkeypatch.setattr(vm_mod, "LOCK_DIR", locks)
+    monkeypatch.setenv("RUNS_DIR", str(runs))
+    alive: set[int] = set()
+    kills: list[dict] = []
+    outcome = {"line": "SIGTERM qemu_pid=?"}
+    monkeypatch.setattr(vm_mod, "_pid_alive", lambda pid: pid in alive)
+    monkeypatch.setattr(vm_mod, "_proc_is_qemu", lambda pid: pid in alive)
+
+    def fake_kill(info):
+        kills.append(info)
+        return outcome["line"]
+
+    monkeypatch.setattr(killvm, "kill_one", fake_kill)
+    return locks, runs, alive, kills, outcome
+
+
+def _lock(locks: Path, name: str, **info) -> Path:
+    p = locks / f"{name}.json"
+    p.write_text(json.dumps(info))
+    return p
+
+
+def test_reaper_never_touches_a_live_owner_within_its_cap(reaper):
+    locks, _, alive, kills, _ = reaper
+    alive.update({100, 200})
+    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200, deadline=time.time() + 600)
+    assert vm_mod.reap_orphan_qemus() == []
+    assert lf.exists() and kills == []
+
+
+def test_reaper_kills_past_the_cap_even_with_a_live_owner(reaper):
+    locks, _, alive, kills, _ = reaper
+    alive.update({100, 200})
+    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200, deadline=time.time() - 1)
+    vm_mod.reap_orphan_qemus()
+    assert [k["qemu_pid"] for k in kills] == [200] and not lf.exists()
+
+
+def test_reaper_kills_windows_host_vms_by_uid_even_when_the_shim_is_gone(reaper):
+    """The shim pid dying says nothing about qemu.exe. The old reaper saw a dead pid,
+    deleted the lock, and left the Windows-side VM unmanaged."""
+    locks, _, _, kills, _ = reaper
+    lf = _lock(locks, "w", launcher_pid=100, qemu_pid=200, cmd=["qemu.exe", "-name", "u-123"])
+    vm_mod.reap_orphan_qemus()
+    assert len(kills) == 1 and not lf.exists()
+
+
+def test_reaper_keeps_the_lock_when_the_kill_fails(reaper):
+    locks, _, alive, _, outcome = reaper
+    alive.add(200)
+    outcome["line"] = "STILL ALIVE after SIGTERM+SIGKILL qemu_pid=200"
+    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200)
+    actions = vm_mod.reap_orphan_qemus()
+    assert lf.exists(), "a lock must never be dropped for a VM that may still run"
+    assert actions and actions[0].startswith("FAILED")
+
+
+def test_reaper_leaves_a_fresh_unparseable_lock_alone(reaper):
+    """Unknown is not stale: the jq-less reap.sh read every field as empty and purged
+    every live VM's lock on each new smoke."""
+    locks, _, _, kills, _ = reaper
+    lf = locks / "torn.json"
+    lf.write_text("{half a lo")
+    assert vm_mod.reap_orphan_qemus() == []
+    assert lf.exists() and kills == []
+
+
+def test_reaper_dry_run_changes_nothing(reaper):
+    locks, _, alive, kills, _ = reaper
+    alive.add(200)
+    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200)
+    actions = vm_mod.reap_orphan_qemus(dry_run=True)
+    assert lf.exists() and kills == [] and actions[0].startswith("DRY-RUN")
+
+
+def test_reaper_walks_debug_toolkit_manifests(reaper):
+    _, runs, alive, kills, _ = reaper
+    alive.update({300, 301, 302, 999})
+
+    def manifest(rid, **info):
+        (runs / rid).mkdir()
+        (runs / rid / "manifest.json").write_text(json.dumps(info))
+
+    manifest("orphan", qemu_pid=300, owner_pid=4242)  # owner dead
+    manifest("owned", qemu_pid=301, owner_pid=999)  # owner alive
+    manifest("stopped", qemu_pid=302, owner_pid=4242, stopped_at="2026-09-26T00:00:00")
+    manifest("legacy", qemu_pid=302)  # no owner recorded, within cap
+    (runs / "torn").mkdir()
+    (runs / "torn" / "manifest.json").write_text("{")
+    vm_mod.reap_orphan_qemus()
+    assert [k["qemu_pid"] for k in kills] == [300]

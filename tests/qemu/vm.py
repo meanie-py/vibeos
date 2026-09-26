@@ -401,49 +401,108 @@ def _proc_is_qemu(pid: int) -> bool:
         return False
 
 
-def reap_orphan_qemus() -> list[str]:
-    """Kill ONLY QEMUs whose launcher process is gone. Returns action log.
+def _reap_kill(info: dict) -> tuple[bool, str]:
+    """Stop an orphan the PRECISE way for its backend -- killvm.kill_one, the same path as
+    `vibeos-cli kill`. The reaper used to `killpg` the recorded pid, which on the default
+    windows-host backend is only the WSL interop shim: the real qemu.exe could survive
+    it, and the reaper then deleted the lock, leaving a VM that `ps`, `kill` and the
+    lifetime cap could no longer see. Returns (stopped, outcome line)."""
+    from .cli import killvm
 
-    Safe to call from any session: a lock whose launcher pid is still alive
-    is left strictly untouched (it may be another agent's live VM).
+    outcome = killvm.kill_one(info)
+    failed = outcome.startswith(("FAILED", "STILL ALIVE")) or "SIGKILL FAILED" in outcome
+    return not failed, outcome
+
+
+def _runs_dir() -> Path:
+    """The kernel-debug toolkit's manifests (qemu/lib/common.sh: RUNS_DIR)."""
+    return Path(os.environ.get("RUNS_DIR") or PROJECT_DIR / "qemu" / "runs")
+
+
+def reap_orphan_qemus(*, dry_run: bool = False) -> list[str]:
+    """Kill ONLY QEMUs whose launcher process is gone, or that are past their lifetime
+    deadline. Returns the action log.
+
+    Walks both trackers: the smoke harness's lock files and the kernel-debug toolkit's
+    run manifests (qemu/start.sh). The second walk was `qemu/reap.sh`, where a jq that was
+    not installed made every lock field read empty -- so every lock looked stale, and
+    each new smoke purged every live VM's lock. It is here now, where a field is a dict
+    lookup and "could not read" is an exception rather than an empty string.
+
+    Safe to call from any session: a tracker whose owner pid is still alive and whose
+    VM is within its deadline is left strictly untouched (it may be another agent's).
     """
     actions: list[str] = []
-    if not LOCK_DIR.is_dir():
-        return actions
-    for lf in LOCK_DIR.glob("*.json"):
-        try:
-            info = json.loads(lf.read_text())
-        except (OSError, ValueError):
-            # Only a lock that has STAYED unparseable is garbage. One caught
-            # mid-write by an older launcher (before locks were renamed into
-            # place) belongs to a live VM, and deleting it unregisters that VM.
+    now = time.time()
+    if LOCK_DIR.is_dir():
+        for lf in LOCK_DIR.glob("*.json"):
             try:
-                if time.time() - lf.stat().st_mtime > 60:
-                    lf.unlink(missing_ok=True)
-            except OSError:
-                pass
-            continue
-        lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
-        deadline = info.get("deadline")
-        launcher_alive = bool(lpid) and _pid_alive(lpid)
-        # A VM past its 30-min hard cap is reaped REGARDLESS of launcher
-        # liveness — the cap is an absolute ceiling, not an orphan check. A
-        # live launcher only protects a VM that's still within its lifetime.
-        expired = bool(deadline) and time.time() >= deadline
-        if launcher_alive and not expired:
-            continue  # live session (maybe another agent), within cap — DO NOT TOUCH
-        if qpid and _pid_alive(qpid) and _proc_is_qemu(qpid):
-            reason = "exceeded 30-min lifetime cap" if expired else f"launcher {lpid} dead"
+                info = json.loads(lf.read_text())
+            except (OSError, ValueError):
+                # Only a lock that has STAYED unparseable is garbage. One caught
+                # mid-write by an older launcher (before locks were renamed into
+                # place) belongs to a live VM, and deleting it unregisters that VM.
+                try:
+                    if not dry_run and now - lf.stat().st_mtime > 60:
+                        lf.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
+            if not isinstance(info, dict):
+                continue
+            lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
+            deadline = info.get("deadline")
+            launcher_alive = isinstance(lpid, int) and _pid_alive(lpid)
+            # A VM past its hard cap is reaped REGARDLESS of launcher liveness -- the
+            # cap is an absolute ceiling, not an orphan check. A live launcher only
+            # protects a VM that is still within its lifetime.
+            expired = isinstance(deadline, (int, float)) and now >= deadline
+            if launcher_alive and not expired:
+                continue  # live session (maybe another agent), within cap -- DO NOT TOUCH
+            reason = "exceeded lifetime cap" if expired else f"launcher {lpid} dead"
+            linux_side = isinstance(qpid, int) and _pid_alive(qpid) and _proc_is_qemu(qpid)
+            # A windows-host VM is killed by its uid even when the Linux shim is gone:
+            # the shim dying says nothing about qemu.exe on the other side.
+            from .cli import killvm
+
+            if linux_side or killvm.win_uid_of(info):
+                if dry_run:
+                    actions.append(f"DRY-RUN would reap qemu pid={qpid} ({reason})")
+                    continue
+                stopped, outcome = _reap_kill(info)
+                if not stopped:
+                    actions.append(f"FAILED to reap qemu pid={qpid} ({reason}): {outcome}")
+                    continue  # keep the lock: never claim a VM is gone when it may not be
+                actions.append(f"killed orphan qemu pid={qpid} ({reason}): {outcome}")
+            if not dry_run:
+                lf.unlink(missing_ok=True)
+    runs = _runs_dir()
+    if runs.is_dir():
+        for manifest in sorted(runs.glob("*/manifest.json")):
+            rid = manifest.parent.name
             try:
-                os.killpg(os.getpgid(qpid), signal.SIGTERM)
-                time.sleep(2)
-                if _pid_alive(qpid):
-                    os.killpg(os.getpgid(qpid), signal.SIGKILL)
-                actions.append(f"reaped qemu pid={qpid} ({reason})")
-            except (ProcessLookupError, OSError) as e:
-                actions.append(f"qemu pid={qpid} reap failed: {e}")
-                continue  # leave the lock; don't claim it's gone if kill failed
-        lf.unlink(missing_ok=True)
+                info = json.loads(manifest.read_text())
+            except (OSError, ValueError):
+                continue  # unknown is not stale
+            if not isinstance(info, dict) or info.get("stopped_at"):
+                continue
+            qpid = info.get("qemu_pid")
+            if not (isinstance(qpid, int) and _pid_alive(qpid) and _proc_is_qemu(qpid)):
+                continue
+            opid = info.get("owner_pid") or info.get("parent_pid")
+            deadline = info.get("deadline")
+            if isinstance(deadline, (int, float)) and now >= deadline:
+                reason = f"manifest {rid} exceeded lifetime cap"
+            elif not isinstance(opid, int) or _pid_alive(opid):
+                continue  # legacy manifest without an owner, or owner still here
+            else:
+                reason = f"manifest {rid} owner pid={opid} dead"
+            if dry_run:
+                actions.append(f"DRY-RUN would reap qemu pid={qpid} ({reason})")
+                continue
+            stopped, outcome = _reap_kill(info)
+            verb = "killed orphan" if stopped else "FAILED to reap"
+            actions.append(f"{verb} qemu pid={qpid} ({reason}): {outcome}")
     return actions
 
 

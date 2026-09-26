@@ -273,7 +273,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
+### `land [--direct] [--drain] [--hold R] [--release] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -333,6 +333,24 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   link turned 17 of 18 batched gates red on 2026-09-25.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
+
+### `land --hold REASON [--preempt]` / `land --release` — stop the line
+While a hold stands, no conductor starts a batch, `land` still **queues** your
+lane (nobody loses their place, nobody retry-loops), and only the holding lane
+may `land --direct`. `--preempt` also stops a *detached* conductor mid-batch; its
+batch stays queued, and a `--direct` lander is never killed. `--release` lifts it
+and wakes the queue. The hold shows at the top of `land-status` and `host-status`.
+
+A red base holds the line **by itself**: when a train halts on `BASE_RED`, an
+AUTO hold is pinned to that master sha, any lane may `land --direct` the fix, and
+the hold lapses as soon as master moves. A `land --direct` that lands also wakes
+the queue, so submissions never sit under `CONDUCTOR: none` afterwards.
+
+Why (2026-09-25): mainline went red, and every new submission elected a
+conductor that re-gated the same red base, all night. The load that generated
+turned a 10 ms test-timing assumption into a second, unrelated red, and the fix
+lane's gate queued behind the churn for hours. Stopping it took killing
+conductors by hand, messaging every lane, and finally `wsl --shutdown`.
 
 ### `land --direct` — the single-lane path
 One serialized critical section, under the same fleet-wide FIFO

@@ -64,8 +64,10 @@ gate, and every queued lane is a blocked agent. That is what the merge queue add
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -577,7 +579,20 @@ def _land_queued(args, repo: Path) -> int:
                     detail=f"{lane} @ {head[:12]} queued (position {depth})",
                 )
             )
-        _conduct(repo, run, args)
+        held = queue.effective_hold(repo)
+        if held:
+            # Queued, not refused: a refusal would have every lane retry-looping against the
+            # hold, and a queued submission costs nothing while no conductor is running.
+            run.add(
+                Stage(
+                    "conduct",
+                    status="warn",
+                    detail="line is HELD — queued, no conductor started",
+                    salient=[queue.describe_hold(held), "drains on `vibeos-cli land --release`"],
+                )
+            )
+        else:
+            _conduct(repo, run, args)
         rec = next((r for r in queue.results(repo, limit=200) if r.get("seq") == sub.seq), None)
         if rec is None and getattr(args, "wait", False):
             rec = _wait_for_verdict(repo, sub.seq, float(getattr(args, "wait_timeout", 3600)), run)
@@ -693,6 +708,16 @@ def _conduct(repo: Path, run: Run, args) -> tuple[bool, str]:
                 retries=int(getattr(args, "retries", 2)),
                 timeout=wait,
             )
+        except queue.LineHeld as e:
+            run.add(
+                Stage(
+                    "conduct",
+                    status="warn",
+                    detail="line is HELD — nothing drained",
+                    salient=[str(e)],
+                )
+            )
+            return True, "held"
         except queue.NoVerdict as e:
             # Same distinction as the submit path above: "no verdict" is not "mainline is red".
             base_red = isinstance(e, queue.BaseRed)
@@ -741,6 +766,10 @@ def land(args, repo: Path) -> int:
     """`vibeos-cli land`. Queue path by default (see _land_queued); `--direct` keeps the
     serialized single-lane path below, which is right when you are the only active agent or
     when the queue itself needs bypassing."""
+    if getattr(args, "release", False):
+        return _release(args, repo)
+    if getattr(args, "hold", None) is not None:
+        return _hold(args, repo)
     if getattr(args, "drain", False):
         run = Run("land", "drain")
         _conduct(repo, run, args)
@@ -752,6 +781,7 @@ def land(args, repo: Path) -> int:
 
 def _land_direct(args, repo: Path) -> int:
     run = Run("land", "master")
+    pushed = False
     try:
         branch, head = _preflight(repo)
         _git(repo, "fetch", "origin")
@@ -790,6 +820,7 @@ def _land_direct(args, repo: Path) -> int:
         _source_lint_preflight(repo, run, args)
         _difftest_preflight(repo, run, args)
 
+        _check_hold_for_direct(repo)
         _report_queue(run)
         timeout = float(getattr(args, "queue_timeout", 0) or hostlock.LAND_LOCK_TIMEOUT)
         t_queue = time.monotonic()
@@ -801,6 +832,8 @@ def _land_direct(args, repo: Path) -> int:
             # Re-fetch INSIDE the lock: whoever we queued behind just landed, so the
             # origin/master we resolved during preflight is stale by construction.
             _git(repo, "fetch", "origin")
+            # And the hold again: someone may have stopped the line while we queued.
+            _check_hold_for_direct(repo)
             head = _merge_master(repo, run)
             tree = _git(repo, "rev-parse", "HEAD^{tree}")
             stamp = fresh_full_stamp(repo, tree)
@@ -818,6 +851,9 @@ def _land_direct(args, repo: Path) -> int:
                 run.add(Stage("push", status="skip", detail="--no-push: gated but not landed"))
             else:
                 _push(repo, run, head)
+                pushed = True
+        if pushed:
+            _after_direct_landing(repo, run, args)
         run.extra["branch"] = branch
         run.extra["head"] = head
         run.extra["queued_s"] = round(queued, 1)
@@ -834,11 +870,145 @@ def _land_direct(args, repo: Path) -> int:
         return run.finalize(repo)
 
 
+def _check_hold_for_direct(repo: Path) -> None:
+    """`--direct` is how a held line gets its fix in, so it is the one path a hold does not
+    simply close -- but only for the lane that holds it (or anyone, under an AUTO hold on a
+    red base). Everyone else waiting on the hold is the point of it."""
+    rec = queue.effective_hold(repo)
+    if not queue.may_land_direct(rec, queue.lane_id(repo)):
+        assert rec is not None
+        raise LandAbort(
+            f"{queue.describe_hold(rec)}. Only {rec.get('lane')} may land while it stands. "
+            "Commit and wait -- `vibeos-cli land-status` shows the hold; "
+            "`vibeos-cli land` still QUEUES your lane and it drains on release."
+        )
+
+
+def _after_direct_landing(repo: Path, run: Run, args) -> None:
+    """A direct landing leaves any queued lanes with no conductor (2026-09-26: five
+    submissions sat under `CONDUCTOR: none` after the fix landed). Wake the train -- unless
+    the line is still held, in which case say so, because a forgotten hold is a silent stop."""
+    queue.git(repo, "fetch", "origin")
+    rec = queue.effective_hold(repo)  # an AUTO hold lapses here: master just moved
+    if rec is not None:
+        run.add(
+            Stage(
+                "hold",
+                status="warn",
+                detail="the line is STILL HELD — `vibeos-cli land --release` when you are done",
+                salient=[queue.describe_hold(rec)],
+            )
+        )
+        return
+    if queue.pending(repo) and not getattr(args, "no_push", False):
+        _conduct(repo, run, argparse.Namespace(foreground=False))
+
+
+def _preempt_conductor(run: Run) -> None:
+    """Stop a conductor that is mid-batch. Its submissions stay queued -- a killed conductor
+    is the crash case the queue was built for (queue.py: 'Crash-safety is the kernel's job'),
+    and the next drain resets the integration tree hard. Only a DETACHED conductor is
+    stopped, as its whole session: that is the gate's builds and boots with it, and it can
+    never be an ancestor of ours. A `--direct` lander is someone's own landing -- that one
+    is named, never killed."""
+    h = hostlock.land_holder()
+    kind = str(h.get("kind", ""))
+    pid = int(h.get("pid") or 0)
+    if not h or not pid:
+        run.add(Stage("preempt", status="skip", detail="no conductor running"))
+        return
+    if not kind.startswith("conductor:"):
+        run.add(
+            Stage(
+                "preempt",
+                status="warn",
+                detail=f"the land lock is held by a direct landing ({kind}, pid {pid}) — not "
+                "killed; the hold takes effect when it finishes",
+            )
+        )
+        return
+    try:
+        sid, pgid = os.getsid(pid), os.getpgid(pid)
+    except OSError:
+        run.add(Stage("preempt", status="skip", detail=f"conductor pid {pid} already gone"))
+        return
+    if sid != pgid or pgid in (os.getpgid(0), os.getsid(0)):
+        run.add(
+            Stage(
+                "preempt",
+                status="warn",
+                detail=f"conductor pid {pid} is not a detached session (it runs inside "
+                "someone's shell) — not killed; it stops at its next batch boundary",
+            )
+        )
+        return
+    os.killpg(pgid, signal.SIGTERM)
+    run.add(
+        Stage(
+            "preempt",
+            status="ok",
+            detail=f"stopped conductor pid {pid} (session {pgid}); its batch stays QUEUED",
+            salient=["stray QEMUs, if any: `vibeos-cli kill --stale`"],
+        )
+    )
+
+
+def _hold(args, repo: Path) -> int:
+    run = Run("land", "hold")
+    lane = queue.lane_id(repo)
+    reason = str(args.hold or "").strip()
+    if not reason:
+        run.add(Stage("hold", status="fail", detail='say WHY: `land --hold "master red: ..."`'))
+        run.classification = "LAND_ABORT"
+        return run.finalize(repo)
+    cur = queue.read_hold(repo)
+    if cur and not cur.get("auto") and cur.get("lane") != lane:
+        run.classification = "LAND_ABORT"
+        run.add(
+            Stage(
+                "hold",
+                status="fail",
+                detail="the line is already held by someone else — not taken over",
+                salient=[queue.describe_hold(cur)],
+            )
+        )
+        return run.finalize(repo)
+    rec = queue.set_hold(repo, lane=lane, reason=reason)
+    run.add(Stage("hold", status="ok", detail=queue.describe_hold(rec)))
+    if getattr(args, "preempt", False):
+        _preempt_conductor(run)
+    else:
+        h = hostlock.land_holder()
+        if h:
+            run.add(
+                Stage(
+                    "hold",
+                    status="warn",
+                    detail=f"a landing is in flight ({h.get('kind')}, pid {h.get('pid')}) — it "
+                    "finishes its current batch first; `--preempt` stops it now",
+                )
+            )
+    return run.finalize(repo)
+
+
+def _release(args, repo: Path) -> int:
+    run = Run("land", "release")
+    rec = queue.clear_hold(repo)
+    if rec is None:
+        run.add(Stage("release", status="skip", detail="the line was not held"))
+        return run.finalize(repo)
+    run.add(Stage("release", status="ok", detail=f"released: {queue.describe_hold(rec)}"))
+    if queue.pending(repo):
+        _conduct(repo, run, argparse.Namespace(foreground=False))
+    return run.finalize(repo)
+
+
 def cmd_land_status(args, repo: Path) -> int:
     """`vibeos-cli land-status` — the merge queue at a glance: who is training, what is
     queued behind them, and recent verdicts (a rejected lane's triage pointer lives here)."""
     holder = hostlock.land_holder()
     subs = queue.pending(repo)
+    hold = queue.effective_hold(repo)
     mine = queue.lane_id(repo) if getattr(args, "mine", False) else None
     recent = queue.results(repo, lane=mine, limit=int(getattr(args, "limit", 8)))
     if getattr(args, "json", False):
@@ -848,12 +1018,15 @@ def cmd_land_status(args, repo: Path) -> int:
                     "conductor": holder,
                     "pending": [s.to_json() for s in subs],
                     "lock_queue": hostlock.land_queue(),
+                    "hold": hold,
                     "results": recent,
                 },
                 indent=2,
             )
         )
         return 0
+    if hold:
+        print(queue.describe_hold(hold))
     if holder:
         print(
             f"CONDUCTOR: pid={holder.get('pid')} {holder.get('kind', '?')} "
