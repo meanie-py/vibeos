@@ -667,8 +667,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 1 OPEN** (2026-09-25; `combo`, `winstation`, `scroll` FIXED and `monitor` no
-  longer diverging, 2026-09-26, see below; `dde` remains, plus `uitools`' known GDI batch). First time the WoW64 control has run across a whole
+  REFERENCE, ALL SEVEN RESOLVED except `uitools`** (2026-09-25; `combo`, `winstation`,
+  `scroll`, `dde` FIXED and `monitor` no longer diverging, 2026-09-26, see below;
+  `uitools` is the known discarded GDI batch). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
@@ -676,7 +677,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   |---|---|---|---|
   | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
   | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
-  | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
+  | `dde` | ~~TIMED OUT~~ **24** | ~~CRASH `0xc0000005`~~ **24** | **FIXED 2026-09-26**; the guest now PASSES one assertion native fails (929) |
   | `monitor` | 20 failures | ~~23~~ **20** | **NO LONGER DIVERGES 2026-09-26** — cause unattributed, see below |
   | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
   | `scroll` | ~~140~~ **14** | ~~17~~ **14** | FIXED 2026-09-26 on BOTH sides; now identical line for line |
@@ -714,6 +715,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   09-25 log died with `/tmp`), so the fix cannot be attributed: that day's `NtQueryObject`
   marshaller and the upstream merges since are both candidates, and neither is proven.
   Record per-assertion diffs, not counts, or a disappearing divergence cannot be explained.
+  **`dde` was three things, and the middle one was never about DDE.** (1) The DDE
+  post/get user callbacks (13/14) had no WoW64 bridge: `[WOW64CB] callback 13 NEEDS
+  64->32 MARSHALLER`, so every cross-process DDE data message failed to post. (2) With
+  the bridge in, the posted `WM_DDE_DATA` still carried `lParam 0`, because the guest's
+  `PackDDElParam` got NULL from `GlobalLock` on a handle `GlobalAlloc` had just returned.
+  kernel32 fills `SystemRangeStart` at startup with
+  `NtQuerySystemInformation(SystemRangeStartInformation, &x, 4)`, which the WoW64
+  marshaller passed through to a host that answers 8 bytes. It failed
+  `STATUS_INFO_LENGTH_MISMATCH` in EVERY guest (19 per boot), left the value 0, and
+  `GlobalLock`'s `hMem >= SystemRangeStart` then refused every FIXED global in every
+  32-bit process. Class 50 is now marshalled (0x80000000, matching the guest's
+  0x7FFEFFFF user ceiling). (3) Found on the way: gui32 had improved to a full `0x600D`
+  (desktop readback now works) and the ladder failed it for not being the soft-pass
+  `0x600E`. The queue's integration tree does not stage the guests, so only lanes saw
+  it; `ladder.ALSO_ACCEPTED` now names the upgrade. Now 24 on both sides; against a quiet
+  native run the guest differs only by PASSING 929, plus one extra trailing byte in the
+  2510 failure both sides share.
   `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
   owed item (since paid: the guest batch is executed as of 2026-09-26; re-run `uitools`). `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32

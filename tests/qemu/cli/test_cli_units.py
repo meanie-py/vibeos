@@ -7496,14 +7496,19 @@ def test_ladder_all_pass_is_clean():
     assert ladder_mod.summary(_ladder_log()).startswith(f"{n}/{n} guests PASS")
 
 
-def test_ladder_gui32_pass_code_is_600e_not_600d():
+def test_ladder_gui32_pass_code_is_600e_and_600d_is_an_upgrade():
     """gui32 is the GDI/draw rung and reports its own verdict code. Asserting a
     blanket 0x600D would make the check permanently red for a healthy boot --
-    which is how a gate gets disabled."""
+    which is how a gate gets disabled. So it is GRADED on 0x600E (drew, readback
+    mismatched). But 0x600D is Gui32.c's GUI32_PASS -- drew AND read it back --
+    and this test used to demand that be red; once desktop readback started
+    working, that turned the rung red for improving. It is accepted as a named
+    upgrade (ladder.ALSO_ACCEPTED); a real error code still fails."""
     from tests.qemu.cli import ladder as ladder_mod
 
     assert ladder_mod.LADDER["gui32"] == 0x600E
-    bad = ladder_mod.check(_ladder_log({"gui32": 0x600D}))
+    assert ladder_mod.check(_ladder_log({"gui32": 0x600D})) is None
+    bad = ladder_mod.check(_ladder_log({"gui32": 0xBAD1}))
     assert bad is not None and "gui32" in bad["salient"][0]
 
 

@@ -10372,6 +10372,20 @@ better thunk. The underlying bug there was a real API-contract mistake: in multi
 the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
 the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
 
+### A pointer-sized OUT from `NtQuerySystemInformation` is 4 bytes in the guest
+**Symptom.** A 32-bit guest's `GlobalLock` returns NULL on a handle `GlobalAlloc` returned a
+moment earlier, but only for FIXED (non-moveable) memory. Anything built on it degrades
+silently: `PackDDElParam` returned 0, so every packed DDE `lParam` went out as 0.
+**Cause.** kernel32 fills `SystemRangeStart` once, with
+`NtQuerySystemInformation(SystemRangeStartInformation, &x, sizeof(ULONG_PTR))`. That is 4
+bytes in the guest, and the host kernel answers a `ULONG_PTR`, 8 bytes. The WoW64 marshaller
+passed the class through, the query failed `STATUS_INFO_LENGTH_MISMATCH`, and nobody checked
+the status. The value stayed 0, so `hMem >= SystemRangeStart` refused every pointer. The
+serial said it every boot: `class=50 passthrough => c0000004 (len=4)`.
+**Fix.** Marshal the class (`wow64_manual.c`), answering from the guest's own address-space
+limit. **Grep the boot for `passthrough => c0000004`**: a length mismatch on a passthrough
+class is this bug for whichever class it names.
+
 ### A winetest's "N failures in child process" can be a child that DIED
 **Symptom.** A suite reports a huge failure count (native `user32:scroll`: 140), but the
 printed failures account for a handful, and one child printed nothing at all.

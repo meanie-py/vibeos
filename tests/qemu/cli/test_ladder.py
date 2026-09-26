@@ -299,6 +299,21 @@ def test_program_done_matches_what_winlogon_prints():
     assert ladder.PROGRAM_DONE + "\\n" in src
 
 
+def test_gui32_improving_to_a_full_pass_is_not_a_red_rung():
+    """The measured false red: desktop GetPixel readback started working, gui32
+    exited 0x600D instead of its graded soft-pass 0x600E, and the ladder failed
+    it for passing better."""
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    text = _serial(**others) + _serial(gui32=0x600D)
+    assert ladder.check(text) is None
+
+
+def test_gui32_still_fails_on_a_real_error_code():
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    text = _serial(**others) + _serial(gui32=0xBAD1)
+    assert _red(text)["classification"] == "LADDER_FAIL"
+
+
 def test_a_guest_that_never_reports_still_uses_the_budget():
     """The ceiling must stay a real ceiling — a silent guest is what it is for."""
     vm = _FakeVM([_serial(hello32=0x600D)])
