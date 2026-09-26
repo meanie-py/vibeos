@@ -425,6 +425,36 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
+## 11. Retire MSVC support — Size: M
+
+**MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
+clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
+MSVC build, and everything that exists only for it is dead weight here: code nothing
+compiles, CMake branches nothing takes, and tests of a compiler we do not use.
+Deliberately deferred, not urgent. Measured 2026-09-26:
+
+- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
+  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
+  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
+  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
+  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
+- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
+- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
+  non-MSVC arm. 29 of those files are rostests.
+- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
+  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
+- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
+  Many are portability guards that also select the clang path, so read each one; do not
+  delete by regex.
+
+**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
+from a file upstream still edits becomes a merge conflict on the next sync. So take the
+self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
+`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
+files we already own or have translated.
+
+---
+
 ## Check-back ledger — owed items from closed docs/lanes (opened 2026-07-10)
 
 When a plan/quest/handoff doc closes, its *outstanding* items land here (one line + a

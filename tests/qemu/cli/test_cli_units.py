@@ -5779,6 +5779,221 @@ def test_queue_resolve_always_leaves_a_verdict(queue_repo):
     assert not q_mod.git_ok(repo, "rev-parse", "--verify", sub.ref)
 
 
+def test_withdraw_takes_only_this_lanes_submissions_out_of_line(queue_repo):
+    """upstream-sync (2026-09-26) could not step aside: its cold gate sat at the head of the
+    queue for ~80 minutes. Withdrawing must remove ITS submissions and leave a verdict, and
+    must not touch anyone else's place in line."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wd")
+    withdrawn, busy = q_mod.withdraw(repo, lane="lane-a")
+    assert [s.seq for s in withdrawn] == [subs[0].seq] and busy == []
+    assert [s.lane for s in q_mod.pending(repo)] == ["lane-b"]
+    rec = q_mod.results(repo, lane="lane-a")[0]
+    assert rec["outcome"] == "withdrawn"
+    assert not q_mod.git_ok(repo, "rev-parse", "--verify", subs[0].ref)
+
+
+def test_withdraw_leaves_a_submission_that_is_already_being_gated(queue_repo):
+    """Its merge is in the tree being gated; pulling it out would push a tree nobody gated."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wf")
+    assert q_mod.take(repo, [subs[0]]) == [subs[0]]
+    withdrawn, busy = q_mod.withdraw(repo, lane="lane-a")
+    assert withdrawn == [] and [s.seq for s in busy] == [subs[0].seq]
+    assert len(q_mod.pending(repo)) == 2
+    q_mod.release_inflight(repo, [subs[0]])
+    assert q_mod.read_inflight(repo) == {}
+
+
+def test_take_drops_what_was_withdrawn_after_the_queue_was_read(queue_repo):
+    """The conductor reads the queue, then takes a batch. A withdrawal in between must win:
+    the conductor must not gate (and land) something its lane has stepped back from."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wt")
+    q_mod.withdraw(repo, lane="lane-a")
+    assert [s.seq for s in q_mod.take(repo, subs)] == [subs[1].seq]
+
+
+def test_a_dead_conductors_inflight_record_does_not_block_a_withdrawal(queue_repo, monkeypatch):
+    """A conductor killed mid-batch leaves INFLIGHT.json behind. Its submissions are still
+    queued and will be redone, so they must be withdrawable, not stuck as 'being gated'."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wz")
+    q_mod.take(repo, [subs[0]])
+    monkeypatch.setattr(q_mod, "_pid_alive", lambda pid, since=None: False)
+    withdrawn, busy = q_mod.withdraw(repo, lane="lane-a")
+    assert [s.seq for s in withdrawn] == [subs[0].seq] and busy == []
+
+
+class _Train:
+    """Doubles for one pipelined drain: records what each car was merged onto, gated as,
+    and judged with. `landed` decides whether the lead car reached master whole."""
+
+    def __init__(self, monkeypatch, tmp_path, *, lead_ok=True, landed=True, follow_conflict=None):
+        self.events: list[str] = []
+        self.onto: dict[str, str] = {}
+        self.judged: dict[str, bool] = {}
+        self.landed = landed
+        wts = {0: tmp_path / "int-1", 1: tmp_path / "int-2"}
+        for w in wts.values():
+            w.mkdir(exist_ok=True)
+        monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r, slot=0: wts[slot])
+
+        def prepare(repo, wt, subs, log, *, onto="origin/master", defer_conflicts=False):
+            name = wt.name
+            self.onto[name] = onto
+            conflicted = [s for s in subs if s.lane == follow_conflict]
+            if conflicted and not defer_conflicts:
+                raise AssertionError("a follower's conflict must be deferred")
+            merged = [s for s in subs if s not in conflicted]
+            res = q_mod.BatchResult(
+                ok=False, tip=f"tip-{name}", merged=merged, conflicted=conflicted
+            )
+            return res, merged
+
+        def gate(wt, log, retries=2):
+            time.sleep(0.05)
+            self.events.append(f"gated {wt.name}")
+            ok = lead_ok if wt.name == "int-1" else True
+            return q_mod.GateVerdict(ok, "" if ok else "BUGCHECK", "/tmp/art", "")
+
+        def judge(repo, wt, subs, res, verdict, log, *, retries=2, base):
+            self.events.append(f"judged {wt.name}")
+            self.judged[wt.name] = verdict.ok
+
+        monkeypatch.setattr(q_mod, "prepare_car", prepare)
+        monkeypatch.setattr(q_mod, "gate_car", gate)
+        monkeypatch.setattr(q_mod, "judge_car", judge)
+        monkeypatch.setattr(q_mod, "_landed_exactly", lambda repo, tip: self.landed)
+
+
+def test_pipeline_gates_the_next_car_on_top_of_the_car_ahead(queue_repo, monkeypatch, tmp_path):
+    """The merge train: while car A gates, car B is merged onto A's tip and gated too, so
+    B's verdict is about exactly the master A will leave behind."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pl")
+    t = _Train(monkeypatch, tmp_path)
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert t.onto == {"int-1": "origin/master", "int-2": "tip-int-1"}
+    assert sorted(e for e in t.events if e.startswith("gated")) == ["gated int-1", "gated int-2"]
+    judged = [e for e in t.events if e.startswith("judged")]
+    assert judged == ["judged int-1", "judged int-2"], "A must be judged (pushed) before B"
+
+
+def test_pipeline_discards_the_followers_verdict_when_the_car_ahead_did_not_land(
+    queue_repo, monkeypatch, tmp_path
+):
+    """B was gated against master+A. If A is red (split, partly landed, requeued), that
+    tree never exists, so B must be neither landed nor rejected -- it stays queued."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pd")
+    t = _Train(monkeypatch, tmp_path, lead_ok=False, landed=False)
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert "gated int-2" in t.events, "the follower's gate still has to finish (joined)"
+    assert "judged int-2" not in t.events
+    assert [s.seq for s in q_mod.pending(repo)] == [lead.seq, follow.seq]
+
+
+def test_a_followers_conflict_with_an_unlanded_car_is_not_held_against_it(
+    queue_repo, monkeypatch, tmp_path
+):
+    """B conflicting with A's code is only a real conflict if A lands."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pc")
+    _Train(monkeypatch, tmp_path, landed=False, follow_conflict="lane-b")
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert follow.seq in [s.seq for s in q_mod.pending(repo)]
+    assert q_mod.results(repo, lane="lane-b") == []
+
+
+def test_a_followers_conflict_is_rejected_once_the_car_ahead_is_on_master(
+    queue_repo, monkeypatch, tmp_path
+):
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pr")
+    t = _Train(monkeypatch, tmp_path, landed=True, follow_conflict="lane-b")
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    rec = q_mod.results(repo, lane="lane-b")[0]
+    assert rec["outcome"] == "rejected" and rec["classification"] == "CONFLICT"
+    assert "judged int-2" not in t.events, "nothing was left to judge in car B"
+
+
+def test_a_starved_pipelined_gate_requeues_the_follower_without_halting(
+    queue_repo, monkeypatch, tmp_path
+):
+    """Two gates at once contend for the host. A follower whose gate could not render a
+    verdict goes again later as a lead; it must not stop a train whose lead just landed."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pi")
+    t = _Train(monkeypatch, tmp_path)
+
+    def gate(wt, log, retries=2):
+        ok = wt.name == "int-1"
+        return q_mod.GateVerdict(ok, "" if ok else "HOST_STARVED", "/tmp/art", "")
+
+    monkeypatch.setattr(q_mod, "gate_car", gate)
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert "judged int-2" not in t.events
+    assert follow.seq in [s.seq for s in q_mod.pending(repo)]
+
+
+def test_a_halting_lead_still_joins_the_followers_gate(queue_repo, monkeypatch, tmp_path):
+    """No gate may outlive the conductor: the next one resets the same worktree."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "ph")
+    t = _Train(monkeypatch, tmp_path)
+
+    def judge(repo, wt, subs, res, verdict, log, *, retries=2, base):
+        raise q_mod.Inconclusive("host starved")
+
+    monkeypatch.setattr(q_mod, "judge_car", judge)
+    with pytest.raises(q_mod.Inconclusive):
+        q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert "gated int-2" in t.events
+
+
+def test_drain_pipelines_the_second_car_and_releases_both(queue_repo, monkeypatch, tmp_path):
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "pq")
+    monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r, slot=0: tmp_path)
+    seen = []
+
+    def pipelined(repo_, lead, follower, log, *, retries):
+        seen.append(([s.lane for s in lead], [s.lane for s in follower]))
+        assert set(q_mod.read_inflight(repo_)) == {s.seq for s in subs}
+        for s in lead + follower:
+            q_mod.resolve(repo_, s, outcome="landed", landed_as="x")
+
+    monkeypatch.setattr(q_mod, "_pipelined", pipelined)
+    q_mod.drain(repo, lambda m: None, cap=1, depth=2)
+    assert seen == [(["lane-a"], ["lane-b"])]
+    assert q_mod.read_inflight(repo) == {}
+
+
+def test_depth_one_is_the_serial_train(queue_repo, monkeypatch, tmp_path):
+    repo, _ = queue_repo
+    _two_queued(repo, "ps")
+    monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r, slot=0: tmp_path)
+    monkeypatch.setattr(q_mod, "_pipelined", lambda *a, **k: pytest.fail("pipelined at depth 1"))
+    batches = []
+
+    def serial(repo_, wt, subs, log, *, retries=2, base=None):
+        batches.append([s.lane for s in subs])
+        for s in subs:
+            q_mod.resolve(repo_, s, outcome="landed", landed_as="x")
+
+    monkeypatch.setattr(q_mod, "land_subset", serial)
+    q_mod.drain(repo, lambda m: None, cap=1, depth=1)
+    assert batches == [["lane-a"], ["lane-b"]]
+
+
+def test_a_second_integration_tree_is_protected_from_prune_too():
+    assert q_mod.is_integration_dirname("vibeos-integration")
+    assert q_mod.is_integration_dirname("vibeos-integration-2")
+    assert not q_mod.is_integration_dirname("vibeos-integration-x")
+    assert not q_mod.is_integration_dirname("vibeos-integrations")
+
+
 def test_queue_conflicting_submission_is_bounced_not_resolved(queue_repo, monkeypatch):
     """A conflict is the lane's intent to reconcile, never the conductor's to guess. The rest
     of the batch must still proceed."""
@@ -5834,7 +6049,7 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
 
     gated: list[tuple[str, ...]] = []
 
-    def fake_build(repo_, wt_, batch, log):
+    def fake_build(repo_, wt_, batch, log, **_k):
         return q_mod.BatchResult(ok=False, tip="t" * 40, merged=list(batch), conflicted=[])
 
     def fake_gate(wt_, log, retries=2):
@@ -5845,7 +6060,7 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
             ok, "" if ok else "BUGCHECK", "/tmp/art", "smoke:amd64: BUGCHECK 0x50"
         )
 
-    def tracking_build(repo_, wt_, batch, log):
+    def tracking_build(repo_, wt_, batch, log, **_k):
         gated.append(tuple(s.lane for s in batch))
         return fake_build(repo_, wt_, batch, log)
 
@@ -5907,7 +6122,7 @@ def _stamp_scenario(repo, monkeypatch, *, lanes=("a", "b"), dirt="", stages=None
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod,
@@ -6081,7 +6296,7 @@ def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch)
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod,
@@ -6563,7 +6778,7 @@ def test_queue_red_base_rejects_nobody_and_halts_the_train(queue_repo, monkeypat
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="e" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="e" * 40, merged=list(b)),
     )
     # EVERYTHING is red, base included — the honest verdict is "not their fault".
     monkeypatch.setattr(
@@ -6593,7 +6808,7 @@ def test_queue_red_base_still_convicts_a_fault_the_base_passes(queue_repo, monke
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
     )
     seen = []
 
@@ -6638,7 +6853,7 @@ def test_queue_red_base_does_not_convict_a_SMOKE_fault_it_happens_to_pass(queue_
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="9" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="9" * 40, merged=list(b)),
     )
     seen = []
 
@@ -6673,7 +6888,7 @@ def test_queue_red_base_does_not_convict_a_stage_the_base_never_ran(queue_repo, 
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="8" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="8" * 40, merged=list(b)),
     )
     seen = []
 
@@ -6702,7 +6917,7 @@ def test_queue_red_batch_with_green_base_rejects_the_guilty(queue_repo, monkeypa
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod,
@@ -6743,7 +6958,7 @@ def test_queue_inconclusive_gate_requeues_instead_of_rejecting(queue_repo, monke
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="c" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="c" * 40, merged=list(b)),
     )
     gates = []
     monkeypatch.setattr(
@@ -6769,7 +6984,7 @@ def test_queue_empty_classification_is_inconclusive(queue_repo, monkeypatch):
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="b" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="b" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod, "gate_batch", lambda w, log, retries=2: q_mod.GateVerdict(False, "", "", "")
@@ -6789,7 +7004,7 @@ def test_queue_rejection_names_what_it_was_gated_against(queue_repo, monkeypatch
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="a" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="a" * 40, merged=list(b)),
     )
     # full batch red; first half green (lands); second half red (genuinely rejected)
     seen = []

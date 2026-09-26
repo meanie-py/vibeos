@@ -72,7 +72,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import hostlock, queue
+from . import hostlock, queue, warmth
 from .artifacts import Run, Stage
 
 STAMP_MAX_AGE_S = 24 * 3600
@@ -180,9 +180,16 @@ def _docs_only_vs_master(repo: Path) -> bool:
         diff = _git(repo, "diff", "--name-only", "origin/master...HEAD")
     except Exception:
         return False
-    # By PATH, not by name: a `sys.path` insert leaves `docs_only` in `sys.modules`, and a
-    # process that later conducts a drain would then judge the INTEGRATION tree with this
-    # lane's copy of the rule. Same reason queue.py loads it this way.
+    module = _docs_only_module(repo)
+    return bool(module and module.docs_only(diff.splitlines()))
+
+
+def _docs_only_module(repo: Path):
+    """`tools/docs_only.py` from THIS worktree, or None.
+
+    By PATH, not by name: a `sys.path` insert leaves `docs_only` in `sys.modules`, and a
+    process that later conducts a drain would then judge the INTEGRATION tree with this
+    lane's copy of the rule. Same reason queue.py loads it this way."""
     import importlib.util
 
     try:
@@ -190,12 +197,57 @@ def _docs_only_vs_master(repo: Path) -> bool:
             "_land_docs_only", repo / "tools" / "docs_only.py"
         )
         if spec is None or spec.loader is None:
-            return False
+            return None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     except Exception:
-        return False
-    return module.docs_only(diff.splitlines())
+        return None
+    return module
+
+
+GATE_ARCHES = ("i386", "amd64", "arm64")
+
+
+def _warm_preflight(repo: Path, run: Run, args) -> None:
+    """Refuse a lane whose code no build has seen, so the gate would compile it cold.
+
+    See warmth.py for the incident. Cheap (a few git calls). Skipped for a docs-only lane,
+    which the conductor does not gate at all, and overridable with `--cold` for the rare
+    lane that means to land cold anyway -- report every use, since that lane's gate can
+    hold the whole queue for hours. Fails OPEN when the receipts cannot be read: this is a
+    courtesy to the fleet, not a correctness check, and the gate itself still judges."""
+    if getattr(args, "cold", False):
+        run.add(
+            Stage("warm", status="warn", detail="--cold: gate may compile this lane from scratch")
+        )
+        return
+    if _docs_only_vs_master(repo):
+        run.add(Stage("warm", status="skip", detail="docs-only delta"))
+        return
+    module = _docs_only_module(repo)
+    if module is None:
+        run.add(Stage("warm", status="warn", detail="docs_only predicate unavailable; not checked"))
+        return
+    try:
+        tree = _git(repo, "rev-parse", "HEAD^{tree}")
+        master = _git(repo, "rev-parse", "origin/master^{tree}")
+        cold = warmth.missing(repo, tree, GATE_ARCHES, module.is_inert, master=master)
+    except Exception as exc:
+        run.add(Stage("warm", status="warn", detail=f"could not check receipts: {exc}"))
+        return
+    if not cold:
+        run.add(Stage("warm", status="ok", detail="built on all three arches"))
+        return
+    raise LandAbort(
+        f"this tree has not been BUILT on {', '.join(cold)} — the merge queue's gate builds "
+        "cold and leans on the shared compiler caches, so code no build has seen compiles "
+        "from scratch there and can hold the whole queue for hours (upstream-sync, "
+        "2026-09-26). Build first, which warms the cache for the gate:\n    "
+        + "\n    ".join(f"./vibeos-cli build --arch {a}" for a in cold)
+        + "\n  then `./vibeos-cli land` again. Commit exactly what you built: the receipt is "
+        "keyed on the tree's content (docs-only differences are fine).\n"
+        "  override (report every use): ./vibeos-cli land --cold"
+    )
 
 
 def _lint_preflight(repo: Path, run: Run, args) -> None:
@@ -567,6 +619,7 @@ def _land_queued(args, repo: Path) -> int:
         else:
             # Only on a REAL submission: if this tip is already queued we are adding no new
             # risk to the batch, and a --dry-run has already returned above.
+            _warm_preflight(repo, run, args)
             _lint_preflight(repo, run, args)
             _source_lint_preflight(repo, run, args)
             _difftest_preflight(repo, run, args)
@@ -768,6 +821,8 @@ def land(args, repo: Path) -> int:
     when the queue itself needs bypassing."""
     if getattr(args, "release", False):
         return _release(args, repo)
+    if getattr(args, "withdraw", False):
+        return _withdraw(args, repo)
     if getattr(args, "hold", None) is not None:
         return _hold(args, repo)
     if getattr(args, "drain", False):
@@ -816,6 +871,7 @@ def _land_direct(args, repo: Path) -> int:
         # BEFORE the land lock, not inside it: the direct path's gate is this lane's own,
         # but a lint failure still burns a whole gate, and there is no reason to hold a
         # fleet-wide lock for the ~40s this takes.
+        _warm_preflight(repo, run, args)
         _lint_preflight(repo, run, args)
         _source_lint_preflight(repo, run, args)
         _difftest_preflight(repo, run, args)
@@ -1003,6 +1059,37 @@ def _release(args, repo: Path) -> int:
     return run.finalize(repo)
 
 
+def _withdraw(args, repo: Path) -> int:
+    """Step this lane out of line without stopping anyone else (`--hold` stops everyone)."""
+    run = Run("land", "withdraw")
+    withdrawn, busy = queue.withdraw(repo)
+    if withdrawn:
+        run.add(
+            Stage(
+                "withdraw",
+                status="ok",
+                detail=f"withdrew {len(withdrawn)} submission(s); resubmit with `vibeos-cli land`",
+                salient=[f"{s.tip[:12]} (queued {s.seq[:10]})" for s in withdrawn],
+            )
+        )
+    if busy:
+        run.add(
+            Stage(
+                "in-flight",
+                status="warn",
+                detail=(
+                    f"{len(busy)} submission(s) are being GATED right now and were left alone: "
+                    "they will land or be rejected. `vibeos-cli land --hold REASON --preempt` "
+                    "stops the batch (and holds the whole line)"
+                ),
+                salient=[s.tip[:12] for s in busy],
+            )
+        )
+    if not withdrawn and not busy:
+        run.add(Stage("withdraw", status="skip", detail="this lane has nothing queued"))
+    return run.finalize(repo)
+
+
 def cmd_land_status(args, repo: Path) -> int:
     """`vibeos-cli land-status` — the merge queue at a glance: who is training, what is
     queued behind them, and recent verdicts (a rejected lane's triage pointer lives here)."""
@@ -1011,12 +1098,14 @@ def cmd_land_status(args, repo: Path) -> int:
     hold = queue.effective_hold(repo)
     mine = queue.lane_id(repo) if getattr(args, "mine", False) else None
     recent = queue.results(repo, lane=mine, limit=int(getattr(args, "limit", 8)))
+    inflight = queue.read_inflight(repo)
     if getattr(args, "json", False):
         print(
             json.dumps(
                 {
                     "conductor": holder,
                     "pending": [s.to_json() for s in subs],
+                    "inflight": inflight,
                     "lock_queue": hostlock.land_queue(),
                     "hold": hold,
                     "results": recent,
@@ -1037,7 +1126,11 @@ def cmd_land_status(args, repo: Path) -> int:
     now = time.time()
     for i, s in enumerate(subs):
         waited = max(0, int(now - s.submitted_at))
-        print(f"  queued #{i + 1}: {s.lane} @ {s.tip[:12]}  ({waited // 60}m{waited % 60:02d}s)")
+        gating = "  [GATING]" if s.seq in inflight else ""
+        print(
+            f"  queued #{i + 1}: {s.lane} @ {s.tip[:12]}  ({waited // 60}m{waited % 60:02d}s)"
+            + gating
+        )
     if not subs:
         print("  queue: empty")
     # A killed submit is INVISIBLE here otherwise, and "not listed" reads as "the conductor
@@ -1055,7 +1148,9 @@ def cmd_land_status(args, repo: Path) -> int:
         # REJECTED either way (a None key simply misses), but dict.get is typed
         # for str keys and pyright rejects the Unknown | None that JSON gives back.
         outcome = rec.get("outcome") or ""
-        tag = {"landed": "landed ", "superseded": "superseded"}.get(outcome, "REJECTED")
+        tag = {"landed": "landed ", "superseded": "superseded", "withdrawn": "withdrawn"}.get(
+            outcome, "REJECTED"
+        )
         extra = (
             f" as {rec.get('landed_as', '')[:12]}"
             if rec.get("outcome") == "landed"

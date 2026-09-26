@@ -276,7 +276,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--hold R] [--release] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
+### `land [--direct] [--drain] [--hold R] [--release] [--withdraw] [--cold] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -336,6 +336,31 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   link turned 17 of 18 batched gates red on 2026-09-25.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
+
+### The train: pipelined gates (`VIBEOS_QUEUE_DEPTH`, default 2)
+While one batch gates, the conductor merges the NEXT batch on top of it in a
+second integration worktree (`vibeos-integration-2`) and gates that at the same
+time. The second batch's verdict is about master + first + second, so it is
+used only if the first landed whole; otherwise it is discarded and those lanes
+stay queued, neither landed nor rejected. A second batch's merge conflict with
+the first is likewise only rejected once the first is on master. Depth 1 is the
+serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
+
+### `land --withdraw` — step out of line
+Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),
+without touching anyone else's place. A submission already being gated —
+`[GATING]` in `land-status` — is left alone: its merge is in the tree under test.
+Resubmit with a plain `land`. Use it when you learn your lane is not ready, or
+would gate cold; `--hold` is for stopping everyone.
+
+### Warm receipts, and `land --cold`
+Every successful `vibeos-cli build` records a receipt for the working tree's
+content on that arch. `land` refuses a lane whose tree has no receipt on all
+three arches — the queue's gate builds cold and leans on the shared compiler
+caches, so code no build has seen compiles from scratch there and can hold the
+whole queue for hours. Build the three arches, commit what you built (a
+docs-only difference is fine; a docs-only lane needs no build at all), and
+`land` again. `--cold` overrides; report every use.
 
 ### `land --hold REASON [--preempt]` / `land --release` — stop the line
 While a hold stands, no conductor starts a batch, `land` still **queues** your

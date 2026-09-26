@@ -401,6 +401,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     la.add_argument("--release", action="store_true", help="lift the hold and wake the queue")
     la.add_argument(
+        "--cold",
+        action="store_true",
+        help="submit even though no build has seen this tree (its gate compiles from "
+        "scratch and can hold the queue for hours; report every use)",
+    )
+    la.add_argument(
+        "--withdraw",
+        action="store_true",
+        help="take THIS lane's queued submissions out of line (one already being gated is "
+        "left alone); resubmit with a plain `land` when ready",
+    )
+    la.add_argument(
         "--queue-timeout",
         type=float,
         default=0,
