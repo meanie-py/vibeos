@@ -117,7 +117,7 @@ const _: () = assert!(size_of::<super::ddk::_CLIENT_DIED_MSG>() == 48);
 const _: () = assert!(size_of::<super::ddk::_CLIENT_ID>() == 16);
 const _: () = assert!(size_of::<super::ddk::_CLIENT_ID32>() == 8);
 const _: () = assert!(size_of::<super::ddk::_CLIENT_ID64>() == 16);
-const _: () = assert!(size_of::<super::ddk::_CMHIVE>() == 5928);
+const _: () = assert!(size_of::<super::ddk::_CMHIVE>() == 5944);
 const _: () = assert!(size_of::<super::ddk::_CMP_MF_TYPE>() == 16);
 const _: () = assert!(size_of::<super::ddk::_CM_ALLOC_PAGE>() == 16);
 const _: () = assert!(size_of::<super::ddk::_CM_BIG_DATA>() == 8);

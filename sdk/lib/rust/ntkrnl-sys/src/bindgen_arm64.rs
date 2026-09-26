@@ -73081,6 +73081,7 @@ pub struct _CMHIVE {
     pub FlushCount: ULONG,
     pub HiveIsLoading: BOOLEAN,
     pub CreatorOwner: PKTHREAD,
+    pub HiveRootPath: UNICODE_STRING,
 }
 pub type CMHIVE = _CMHIVE;
 pub type PCMHIVE = *mut _CMHIVE;

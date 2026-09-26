@@ -139,8 +139,13 @@ def generate_c_source(types: list[tuple[str, str]]) -> str:
         '#ifndef __int64',
         '#define __int64 long long',
         '#endif',
-        '#define __wfi() ((void)0)',
-        '#define __yield() ((void)0)',
+        # NOT the bindgen wrapper's __wfi()/__yield() stubs. Those exist because
+        # libclang cannot handle the intrinsics' inline-asm bodies; a real clang can.
+        # Worse, they BREAK arm64 here: a zero-arg function-like __yield() turns
+        # intrin_arm64.h's `void __yield(void)` declaration into a one-argument macro
+        # invocation ("too many arguments provided to function-like macro invocation"),
+        # and since the error is in a header, the retry loop that blanks offending type
+        # lines can never clear it — arm64 silently produced no assertions at all.
         '#undef FORCEINLINE',
         '#define FORCEINLINE',
         '/* Full ntoskrnl master header (DDK + NDK + internal) */',
@@ -236,9 +241,17 @@ def compile_to_llvm_ir(
                 error_lines.add(int(m.group(1)))
 
         if not error_lines:
+            # No error line inside the generated file means the failure is in a HEADER,
+            # so the retry loop (which blanks offending type lines) can never clear it.
+            # Print the real diagnostics, not the include chain leading up to them: the
+            # first five lines are all "In file included from" and name nothing wrong.
             print(f"  ERROR: Unrecoverable compilation failure for {arch['name']}")
-            for line in result.stderr.split('\n')[:5]:
+            diags = [ln for ln in result.stderr.split('\n')
+                     if ': error:' in ln or ': fatal error:' in ln]
+            for line in (diags or result.stderr.split('\n'))[:15]:
                 print(f"    {line}")
+            if not diags:
+                print("    (no 'error:' diagnostic; full stderr above is the include chain)")
             return None, []
 
         # Remove problematic lines (blank them to avoid nested comment issues)

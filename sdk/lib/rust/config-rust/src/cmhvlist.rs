@@ -4,7 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{CmpCompressedNameSize, CmpCopyCompressedName, HCELL_INDEX, _OBJECT_ATTRIBUTES, OBJECT_NAME_INFORMATION, ObCloseHandle, PCELL_DATA, PCMHIVE, POBJECT_NAME_INFORMATION, PUNICODE_STRING, _UNICODE_STRING, ZwCreateKey, ZwDeleteValueKey, ZwOpenKey, ZwQueryObject, ZwSetValueKey};
+use ntkrnl_sys::ddk::{CmpCompressedNameSize, CmpCopyCompressedName, HCELL_INDEX, _OBJECT_ATTRIBUTES, OBJECT_NAME_INFORMATION, ObCloseHandle, PCELL_DATA, PCMHIVE, POBJECT_NAME_INFORMATION, PUNICODE_STRING, RtlInitEmptyUnicodeString, _UNICODE_STRING, ZwCreateKey, ZwDeleteValueKey, ZwOpenKey, ZwQueryObject, ZwSetValueKey};
 use core::ffi::c_void;
 
 use ntkrnl_sys::opaque_ptr;
@@ -202,7 +202,8 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
 
     Status = ZwCreateKey(
         core::ptr::addr_of_mut!(KeyHandle),
-        KEY_READ | KEY_WRITE,
+        // Upstream 396019984c9: we only ever set a value here, so ask for exactly that.
+        KEY_SET_VALUE,
         core::ptr::addr_of_mut!(ObjectAttributes),
         0,
         core::ptr::null_mut(),
@@ -324,9 +325,24 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
         );
     }
 
-    if !HivePath.Buffer.is_null() {
-        ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, TAG_CM);
-    }
+    // Capture the hive path and reset the local buffer so the cleanup below does not
+    // free it. Upstream 396019984c9: CmpRemoveFromHiveFileList() used to RE-DERIVE this
+    // path from the hive at unload time, by which point CmpUnlinkFromMasterHive() had
+    // already invalidated the LinkData node it reads — so the name came back wrong (or
+    // with a bogus KEY_COMP_NAME flag) and the wrong value name was looked up. Capturing
+    // it here, while the node is still valid, is the fix.
+    //
+    // Only the success path reaches this point: every failure above returns out of a
+    // 'Quickie block, which is this translation's spelling of the C's `goto Quit` — and
+    // the C's capture likewise sits after the last goto, so a failed add captures nothing
+    // and CmpRemoveFromHiveFileList() then sees a NULL Buffer and does nothing.
+    (*Hive).HiveRootPath = HivePath;
+
+    // The C nulls HivePath.Buffer here so its shared `Quit:` cleanup skips the free. This
+    // translation has no shared cleanup — each failure path returns its own copy — so the
+    // buffer simply is not freed on the one path that reaches here, and the null-and-test
+    // dance would be dead code. The hive owns the allocation now; CmpRemoveFromHiveFileList
+    // frees it.
     if !FileNameInfo.is_null() {
         ExFreePoolWithTag(FileNameInfo as *mut core::ffi::c_void, TAG_CM);
     }
@@ -337,10 +353,14 @@ pub unsafe extern "system" fn CmpAddToHiveFileList(Hive: PCMHIVE) -> i32 {
 #[no_mangle]
 pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
     let Hive = opaque_ptr(Hive);
-    let mut Status: i32;
+    let Status: i32;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyHandle: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut HivePath: _UNICODE_STRING = core::mem::zeroed();
+
+    // Do nothing if no hive path was captured, e.g. CmpAddToHiveFileList() failed.
+    if (*Hive).HiveRootPath.Buffer.is_null() {
+        return;
+    }
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -351,7 +371,8 @@ pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
 
     Status = ZwOpenKey(
         core::ptr::addr_of_mut!(KeyHandle),
-        KEY_READ | KEY_WRITE,
+        // Upstream 396019984c9: only a value is deleted here.
+        KEY_SET_VALUE,
         core::ptr::addr_of_mut!(ObjectAttributes),
     );
     if !NT_SUCCESS(Status) {
@@ -362,11 +383,24 @@ pub unsafe extern "system" fn CmpRemoveFromHiveFileList(Hive: PCMHIVE) {
         return;
     }
 
-    CmpGetHiveName(Hive, core::ptr::addr_of_mut!(HivePath));
+    // Delete the hive path from the list. This is the path CAPTURED at add time, not one
+    // re-derived now: CmpUnlinkFromMasterHive() has already run by the time CmUnloadKey()
+    // gets here, so re-deriving read an invalidated LinkData node. That is why ReactOS
+    // left \Registry\Machine\USetup_Software listed in the hivelist after 1st-stage
+    // setup had cleanly unloaded it.
+    ZwDeleteValueKey(KeyHandle, core::ptr::addr_of_mut!((*Hive).HiveRootPath));
 
-    ZwDeleteValueKey(KeyHandle, core::ptr::addr_of_mut!(HivePath));
+    // Free the captured hive path.
+    ExFreePoolWithTag(
+        (*Hive).HiveRootPath.Buffer as *mut core::ffi::c_void,
+        TAG_CM,
+    );
+    RtlInitEmptyUnicodeString(
+        core::ptr::addr_of_mut!((*Hive).HiveRootPath),
+        core::ptr::null_mut(),
+        0,
+    );
 
-    ExFreePoolWithTag(HivePath.Buffer as *mut core::ffi::c_void, 0x20204D43);
     ObCloseHandle(KeyHandle, 0);
 }
 
