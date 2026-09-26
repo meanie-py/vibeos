@@ -1817,7 +1817,6 @@ unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: D
  * this for testgui; a conformance suite needs it more, not less, because it
  * asserts against real Windows rather than against us. arm64 gets it the day
  * it stages a winetest. */
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /*
  * Point TEMP/TMP at a writable scratch volume, when the harness attached one.
  *
@@ -1830,6 +1829,7 @@ unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: D
  * Absent, nothing changes. Only winlogon's own environment is touched, and
  * only just before the first winetest, so nothing launched earlier sees it.
  */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn WinetestScratchTemp() {
     static mut DONE: bool = false;
     if DONE {
@@ -1847,6 +1847,7 @@ unsafe fn WinetestScratchTemp() {
     DbgPrint(b"[WT] TEMP/TMP -> C:\\TEMP (writable scratch volume)\n\0".as_ptr() as *const i8);
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn TryStartWinetest(
     Dir: *const u16,
     Exe: *const u16,
