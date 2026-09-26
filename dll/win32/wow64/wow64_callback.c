@@ -223,6 +223,28 @@ typedef struct _WOW64_CB_CONTEXT {
 #define WOW64_CB_CONTEXT_EXTENDED 0x00010020
 
 /* ---- in-flight callback frame -------------------------------------------- */
+/* DDEPOSTGET_CALLBACK_ARGUMENTS in both widths (callbacks 13/14). The MSG is
+ * inline and anonymous in the C, so it is spelled out field by field here. */
+typedef struct {
+    INT Type; ULONG _pad0;
+    ULONGLONG hwnd; ULONG message; ULONG _pad1;
+    ULONGLONG wParam; ULONGLONG lParam;
+    ULONG time; LONG x; LONG y; ULONG _pad2;
+    INT size; ULONG _pad3;
+    ULONGLONG pvData;
+} WOW64_DDECB64;
+typedef struct {
+    INT Type;
+    ULONG hwnd; ULONG message; ULONG wParam; ULONG lParam;
+    ULONG time; LONG x; LONG y;
+    INT size;
+    ULONG pvData;
+} WOW64_DDECB32;
+#define WOW64_DDECB64_HDR 72 /* offsetof(buffer), host */
+#define WOW64_DDECB32_HDR 40 /* offsetof(buffer), guest */
+C_ASSERT(sizeof(WOW64_DDECB64) == WOW64_DDECB64_HDR);
+C_ASSERT(sizeof(WOW64_DDECB32) == WOW64_DDECB32_HDR);
+
 typedef struct _WOW64_CB_FRAME {
     struct _WOW64_CB_FRAME *Prev;
     ULONG Index;
@@ -645,6 +667,54 @@ static NTSTATUS Wow64pUserCallbackCommon(ULONG Index, PVOID Arg, ULONG Len)
                 break;
             }
 
+            case 13: /* DDEPOST */
+            case 14: /* DDEGET  */
+                /* DDEPOSTGET_CALLBACK_ARGUMENTS {INT Type; MSG; int size;
+                 * PVOID pvData; BYTE buffer[]}: 80 bytes on the host (MSG is
+                 * 48, buffer at 72), 44 in the guest (MSG 28, buffer at 40).
+                 * POST: the SENDER's user32 packs a WM_DDE_* message and hands
+                 * back a new lParam plus pvData/size naming the data in its own
+                 * memory, which win32k copies out. GET: the RECEIVER's user32
+                 * gets that data in `buffer` and returns the lParam of the global
+                 * it rebuilt. Unbridged, every cross-process DDE data message a
+                 * guest posted failed ("DDE Post callback failed!"), and wine's
+                 * user32:dde client saw DMLERR_DATAACKTIMEOUT on its FIRST
+                 * transaction and NO_CONV_ESTABLISHED on every one after. */
+            {
+                const WOW64_DDECB64 *A64 = (const WOW64_DDECB64 *)Arg;
+                UCHAR *Buf = Frame.Buf64;
+                WOW64_DDECB32 *A32 = (WOW64_DDECB32 *)Buf;
+                ULONG Tail, i;
+
+                if (!Arg || Len < WOW64_DDECB64_HDR ||
+                    Len - WOW64_DDECB64_HDR > sizeof(Frame.Buf64) - WOW64_DDECB32_HDR)
+                {
+                    DbgPrint("[WOW64CB] DDE%s arg=%p len=%lu unusable (payload over %lu)\n",
+                             Index == 13 ? "POST" : "GET", Arg, Len,
+                             (ULONG)(sizeof(Frame.Buf64) - WOW64_DDECB32_HDR));
+                    break;
+                }
+                Tail = Len - WOW64_DDECB64_HDR;
+                if (Wow64TraceSyscalls)
+                    DbgPrint("[WOW64CB] DDE%s msg %04lx hwnd %08lx lParam %08lx size %d tail %lu\n",
+                         Index == 13 ? "POST" : "GET", A64->message, (ULONG)A64->hwnd,
+                         (ULONG)A64->lParam, A64->size, Tail);
+                A32->Type = A64->Type;
+                A32->hwnd = (ULONG)A64->hwnd;
+                A32->message = A64->message;
+                A32->wParam = (ULONG)A64->wParam;
+                A32->lParam = (ULONG)A64->lParam;
+                A32->time = A64->time;
+                A32->x = A64->x;
+                A32->y = A64->y;
+                A32->size = A64->size;
+                A32->pvData = (ULONG)A64->pvData;
+                for (i = 0; i < Tail; i++)
+                    Buf[WOW64_DDECB32_HDR + i] = ((const UCHAR *)Arg)[WOW64_DDECB64_HDR + i];
+                Wow64pEnterGuestCallback(&Frame, Index, Buf, WOW64_DDECB32_HDR + Tail);
+                break;
+            }
+
             case 3:  /* LOADDEFAULTCURSORS: arg = BOOL* (flat 4 bytes ok) */
             case 11: /* SETWNDICONS: no meaningful payload divergence */
             case 12: /* DELIVERUSERAPC */
@@ -866,6 +936,40 @@ int Wow64pCompleteUserCallback(ULONG Result32, ULONG Len32, NTSTATUS Status)
                              A32->Proc, A32->IsAnsiProc, A32->Wnd, A32->Msg,
                              (long)A32->lParamBufferSize, Len32);
                 Frame->RetBuf = A64;
+                Frame->RetLen = N;
+                break;
+            }
+
+            case 13: /* DDEPOST: guest returns lParam + pvData/size */
+            case 14: /* DDEGET:  guest returns the rebuilt lParam */
+            {
+                /* Rebuild the host struct from the kernel's original, then
+                 * take the fields the guest wrote. lParam sign-extends like
+                 * every LPARAM crossing up; pvData is a guest address, which
+                 * zero-extends, and win32k copies `size` bytes from it in this
+                 * same (sender) process. */
+                const WOW64_DDECB32 *R32 = (const WOW64_DDECB32 *)(ULONG_PTR)Result32;
+                WOW64_DDECB64 *R64 = (WOW64_DDECB64 *)Frame->Buf64;
+                ULONG N = Frame->ArgLen64, i;
+
+                if (N > sizeof(Frame->Buf64))
+                    N = sizeof(Frame->Buf64);
+                if (!Frame->OrigArg || N < WOW64_DDECB64_HDR || Len32 < WOW64_DDECB32_HDR)
+                {
+                    DbgPrint("[WOW64CB] DDE%s result unusable (len32 %lu, len64 %lu, "
+                             "status %08lx, first dword %08lx)\n",
+                             Frame->Index == 13 ? "POST" : "GET", Len32, N,
+                             (ULONG)Status,
+                             Len32 >= 4 ? *(const ULONG *)(ULONG_PTR)Result32 : 0);
+                    Frame->Status = WOW64_STATUS_NOT_IMPLEMENTED;
+                    break;
+                }
+                for (i = 0; i < N; i++)
+                    Frame->Buf64[i] = ((const BYTE *)Frame->OrigArg)[i];
+                R64->lParam = (ULONGLONG)(LONGLONG)(LONG)R32->lParam;
+                R64->size = R32->size;
+                R64->pvData = (ULONGLONG)R32->pvData;
+                Frame->RetBuf = Frame->Buf64;
                 Frame->RetLen = N;
                 break;
             }

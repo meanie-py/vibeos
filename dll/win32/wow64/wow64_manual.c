@@ -628,6 +628,28 @@ static NTSTATUS Wow64Manual_NtQuerySystemInformation(ULONG *a)
         if (RetLen32) *RetLen32 = sizeof(*Sbi32);
         return St;
     }
+    if (Class == 50 /* SystemRangeStartInformation: a ULONG_PTR */)
+    {
+        /* The host answers 8 bytes; the guest asks for its own ULONG_PTR, 4.
+         * Passed through, it failed STATUS_INFO_LENGTH_MISMATCH in EVERY guest
+         * (kernel32's heapmem init asks at startup), left kernel32's
+         * SystemRangeStart at 0, and GlobalLock's `hMem >= SystemRangeStart`
+         * then refused every FIXED global in every 32-bit process. user32:dde
+         * is where it surfaced: PackDDElParam's GlobalLock returned NULL, every
+         * packed WM_DDE_DATA/ACK/POKE lParam went out as 0, and the client saw
+         * DMLERR_DATAACKTIMEOUT on its first transaction. The value follows the
+         * clamp above: a guest's user space ends at 0x7FFEFFFF. */
+        if (Len32 < sizeof(ULONG))
+        {
+            if (RetLen32) *RetLen32 = sizeof(ULONG);
+            return (NTSTATUS)0xC0000004L; /* STATUS_INFO_LENGTH_MISMATCH */
+        }
+        if (!Buf32)
+            return (NTSTATUS)0xC0000005L; /* STATUS_ACCESS_VIOLATION */
+        *(ULONG *)Buf32 = 0x80000000u;
+        if (RetLen32) *RetLen32 = sizeof(ULONG);
+        return 0;
+    }
     {
         ULONG Ret = 0;
         NTSTATUS St = NtQuerySystemInformation(Class, Buf32, Len32, &Ret);
