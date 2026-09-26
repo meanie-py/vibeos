@@ -30,17 +30,67 @@ class FakeRegistry:
         return rel in self._v
 
 
-def cls(rel: str, live: set[str], on_disk: bool = True, vendored: set[str] | None = None) -> str:
-    return T.classify_file(rel, live, FakeRegistry(vendored), on_disk)
+def cls(
+    rel: str,
+    live: set[str],
+    on_disk: bool = True,
+    vendored: set[str] | None = None,
+    disabled: frozenset[str] = frozenset(),
+) -> str:
+    return T.classify_file(rel, live, FakeRegistry(vendored), on_disk, disabled)
 
 
 def test_compiled_source_is_a_plain_merge() -> None:
     assert cls("dll/win32/usp10/usp10.c", {"dll/win32/usp10/usp10.c"}) == T.MERGE
 
 
-def test_uncompiled_source_still_on_disk_is_an_oracle_hit() -> None:
+def test_uncompiled_source_a_cmake_comment_disables_is_an_oracle_hit() -> None:
     """The whole point: we translated it, so an upstream fix there is our bug too."""
-    assert cls("ntoskrnl/ke/i386/thrdini.c", set()) == T.ORACLE
+    f = "ntoskrnl/ke/i386/thrdini.c"
+    assert cls(f, set(), disabled=frozenset({f})) == T.ORACLE
+
+
+def test_uncompiled_source_nothing_disables_is_unbuilt_not_oracle() -> None:
+    """Dead C with no disabling comment was never built by this port, so there is no
+    Rust to read it against. Counting these as oracle hits made the already-merged
+    range read as 465."""
+    assert cls("drivers/bus/pcix/pci/ecam.c", set()) == T.UNBUILT
+
+
+def _exists(paths: set[str]):
+    return lambda rel: rel in paths
+
+
+def test_comment_resolution_handles_the_generator_expression_spelling() -> None:
+    """ntos.cmake disables pnpmgr.c inside a generator expression. The cohab registry
+    missed exactly this, and pnpmgr.c is the translated file whose upstream fix
+    (a7f658e3221) went dead on arrival and cost a day."""
+    line = "    #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmgr.c>"
+    f = "ntoskrnl/io/pnpmgr/pnpmgr.c"
+    assert T.resolve_comment_sources("ntoskrnl/ntos.cmake", line, _exists({f})) == {f}
+
+
+def test_comment_resolution_relative_and_current_dir_spellings() -> None:
+    exists = _exists({"hal/halx86/generic/beep.c", "drivers/hid/hidclass/pdo.c"})
+    assert T.resolve_comment_sources(
+        "hal/halx86/generic.cmake",
+        "    # generic/beep.c — replaced by Rust (sdk/lib/rust/hal-rust/src/x86/beep.rs)",
+        exists,
+    ) == {"hal/halx86/generic/beep.c"}
+    assert T.resolve_comment_sources(
+        "drivers/hid/hidclass/CMakeLists.txt",
+        "    #${CMAKE_CURRENT_SOURCE_DIR}/pdo.c  # replaced by Rust",
+        exists,
+    ) == {"drivers/hid/hidclass/pdo.c"}
+
+
+def test_comment_resolution_ignores_names_that_do_not_exist() -> None:
+    """Prose mentions a .rs-adjacent name or a file long gone; only real paths count."""
+    line = "# mouhid.c moved to sdk/lib/rust/mouhid-rust (see old/gone.c)"
+    assert (
+        T.resolve_comment_sources("drivers/hid/mouhid/CMakeLists.txt", line, _exists(set()))
+        == set()
+    )
 
 
 def test_a_source_we_do_not_have_is_not_an_oracle_hit() -> None:

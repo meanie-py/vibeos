@@ -42,6 +42,8 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import posixpath
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -81,6 +83,7 @@ HEADER = "HEADER"
 MERGE = "MERGE"
 VENDORED = "VENDORED"
 TESTS = "TESTS"
+UNBUILT = "UNBUILT"
 OTHER = "OTHER"
 
 # Trees whose sources this build does not compile by CONFIGURATION, not because they were
@@ -92,7 +95,9 @@ OTHER = "OTHER"
 TEST_TREES = ("modules/rostests/", "modules/rosapps/")
 
 
-def classify_file(rel: str, live: set[str], registry, on_disk: bool) -> str:
+def classify_file(
+    rel: str, live: set[str], registry, on_disk: bool, disabled: frozenset[str] = frozenset()
+) -> str:
     """One file -> one bucket. See the module docstring for why headers are separate."""
     if registry.is_vendored(rel):
         return VENDORED
@@ -103,14 +108,75 @@ def classify_file(rel: str, live: set[str], registry, on_disk: bool) -> str:
     if rel.endswith(SOURCE_SUFFIXES):
         if rel in live:
             return MERGE
-        # Not compiled by ANY arch. Either we translated it (the oracle case) or this
-        # port never built it. `on_disk` separates those: a file upstream has and we do
-        # not is not a translation of ours, it is new code.
-        return ORACLE if on_disk else OTHER
+        # Not compiled by ANY arch. A file upstream has and we do not is new code, not a
+        # translation of ours. A file we have that a CMake COMMENT switches off was
+        # deliberately taken out of the build -- almost always a cohab flip, so an
+        # upstream change there is a change our Rust never saw. A file we have that no
+        # comment mentions was simply never built by this port (PCIX, say): reading it
+        # against the Rust finds nothing, because there is no Rust. Folding those two
+        # together is what made the already-merged range read as 465 oracle hits.
+        if not on_disk:
+            return OTHER
+        return ORACLE if rel in disabled else UNBUILT
     return OTHER
 
 
-def triage(rev_range: str, live: set[str], registry, repo: Path = REPO):
+# One source name in a CMake comment line: a `${REACTOS_SOURCE_DIR}/...` path, a
+# `${CMAKE_CURRENT_SOURCE_DIR}/...` path, or a path relative to the CMake file.
+_SRC_TOKEN = re.compile(r"[A-Za-z0-9_${}/.+-]*[A-Za-z0-9_+-]\.(?:c|cpp|cxx|cc)\b")
+
+
+def resolve_comment_sources(cmake_rel: str, line: str, exists) -> set[str]:
+    """Repo-relative sources a commented CMake `line` names, keeping only paths that
+    `exists`. Generator expressions are why this is not just a basename match:
+    ntos.cmake disables pnpmgr.c as
+    `#$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/pnpmgr.c>`,
+    and the cohab registry missed exactly that spelling -- along with the only
+    translated file whose upstream fix had already cost a day."""
+    here = posixpath.dirname(cmake_rel)
+    out: set[str] = set()
+    for tok in _SRC_TOKEN.findall(line):
+        cands = []
+        if "${REACTOS_SOURCE_DIR}/" in tok:
+            cands.append(tok.split("${REACTOS_SOURCE_DIR}/", 1)[1])
+        elif "${CMAKE_CURRENT_SOURCE_DIR}/" in tok:
+            cands.append(posixpath.join(here, tok.split("${CMAKE_CURRENT_SOURCE_DIR}/", 1)[1]))
+        elif "$" not in tok:
+            cands.append(posixpath.join(here, tok))
+            cands.append(tok)
+        for c in cands:
+            c = posixpath.normpath(c)
+            if not c.startswith("..") and exists(c):
+                out.add(c)
+                break
+    return out
+
+
+def disabled_sources(root: Path = REPO) -> frozenset[str]:
+    """Every existing source a commented-out CMake line names, across the tree. Uses
+    cohab_census's walker and comment pattern, so the two tools agree on what a
+    disabling comment is."""
+    cc = _load("cohab_census", HERE / "cohab_census.py")
+    out: set[str] = set()
+    for p in cc.cmake_files(root):
+        rel = p.relative_to(root).as_posix()
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if cc.SRC_IN_COMMENT.match(line):
+                out |= resolve_comment_sources(rel, line, lambda r: (root / r).is_file())
+    return frozenset(out)
+
+
+def triage(
+    rev_range: str,
+    live: set[str],
+    registry,
+    repo: Path = REPO,
+    disabled: frozenset[str] = frozenset(),
+):
     """Yield (sha, subject, verdict, {bucket: [files]}) oldest-first."""
     log = git("log", "--reverse", "--format=%H%x1f%s", rev_range, repo=repo)
     for line in log.splitlines():
@@ -125,8 +191,9 @@ def triage(rev_range: str, live: set[str], registry, repo: Path = REPO):
         buckets: dict[str, list[str]] = {}
         for rel in files:
             on_disk = (repo / rel).exists()
-            buckets.setdefault(classify_file(rel, live, registry, on_disk), []).append(rel)
-        for verdict in (ORACLE, HEADER, MERGE, VENDORED, TESTS, OTHER):
+            verdict = classify_file(rel, live, registry, on_disk, disabled)
+            buckets.setdefault(verdict, []).append(rel)
+        for verdict in (ORACLE, HEADER, MERGE, VENDORED, TESTS, UNBUILT, OTHER):
             if verdict in buckets:
                 break
         else:
@@ -142,7 +209,9 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="commit range (default: merge-base(HEAD, upstream/master)..upstream/master)",
     )
-    ap.add_argument("--only", choices=[ORACLE, HEADER, MERGE, VENDORED, TESTS, OTHER], default=None)
+    ap.add_argument(
+        "--only", choices=[ORACLE, HEADER, MERGE, VENDORED, TESTS, UNBUILT, OTHER], default=None
+    )
     ap.add_argument("--files", action="store_true", help="list each commit's files")
     args = ap.parse_args(argv)
 
@@ -168,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    rows = list(triage(rev_range, live, registry))
+    rows = list(triage(rev_range, live, registry, disabled=disabled_sources(REPO)))
     counts: dict[str, int] = {}
     for _sha, _subj, verdict, _b in rows:
         counts[verdict] = counts.get(verdict, 0) + 1
@@ -178,20 +247,21 @@ def main(argv: list[str] | None = None) -> int:
             continue
         print(f"{verdict:8} {sha}  {subject}")
         if args.files:
-            for bucket in (ORACLE, HEADER, MERGE, VENDORED, TESTS, OTHER):
+            for bucket in (ORACLE, HEADER, MERGE, VENDORED, TESTS, UNBUILT, OTHER):
                 for rel in buckets.get(bucket, []):
                     print(f"           {bucket:8} {rel}")
 
-    order = [ORACLE, HEADER, MERGE, VENDORED, TESTS, OTHER]
+    order = [ORACLE, HEADER, MERGE, VENDORED, TESTS, UNBUILT, OTHER]
     summary = ", ".join(f"{counts.get(k, 0)} {k}" for k in order if counts.get(k))
     print(f"\nupstream_triage: {len(rows)} commit(s) in {rev_range} — {summary}")
     print(
-        "  ORACLE   = touches C no arch compiles and we still have on disk → read it\n"
+        "  ORACLE   = touches C a CMake comment switched off (a cohab flip) → read it\n"
         "             against our Rust; a fix there is a bug we translated.\n"
         "  HEADER   = header-only reach; check struct layout, our Rust binds these.\n"
         "  MERGE    = C we still compile → ordinary merge.\n"
         "  VENDORED = vendor.yaml third-party → sync, not translate.\n"
         "  TESTS    = rostests/rosapps; not compiled here by CONFIG, not translated.\n"
+        "  UNBUILT  = C on disk that nothing builds OR disables; no Rust to read it against.\n"
         "  A verdict is a READING ORDER, not a work order."
     )
     return 0
