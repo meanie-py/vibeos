@@ -339,23 +339,16 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
         0,
     );
     if status < 0 {
+        // psmgr.c bugchecks here on every arch. arm64 used to return the status and
+        // boot on without a system DLL; the C's only arm64 leniency is in
+        // PspInitializeSystemDll (subcodes 7/8), not here. The UART line stays: the
+        // bugcheck banner alone is easy to miss on arm64's console.
         #[cfg(target_arch = "aarch64")]
-        {
-            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/2 here; arm64 returns
-            // the status and IoInitSystem carries on booting ("continuing on ARM64").
-            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
-            // so a failure of the SYSTEM DLL setup has been completely silent on the
-            // one arch that tolerates it. Subcode 2 identifies the step.
-            ARM64_UART_TRACE_HEX(
-                b"[PS] PsLocateSystemDll FAILED subcode=2 status=\0".as_ptr() as PCSTR,
-                status as ULONG_PTR,
-            );
-            return status;
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 2, 0, 0);
-        }
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PsLocateSystemDll FAILED subcode=2 status=\0".as_ptr() as PCSTR,
+            status as ULONG_PTR,
+        );
+        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 2, 0, 0);
     }
 
     status = MmCheckSystemImage(file_handle);
@@ -383,23 +376,16 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     );
     ZwClose(file_handle);
     if status < 0 {
+        // psmgr.c bugchecks here on every arch. arm64 used to return the status and
+        // boot on without a system DLL; the C's only arm64 leniency is in
+        // PspInitializeSystemDll (subcodes 7/8), not here. The UART line stays: the
+        // bugcheck banner alone is easy to miss on arm64's console.
         #[cfg(target_arch = "aarch64")]
-        {
-            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/3 here; arm64 returns
-            // the status and IoInitSystem carries on booting ("continuing on ARM64").
-            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
-            // so a failure of the SYSTEM DLL setup has been completely silent on the
-            // one arch that tolerates it. Subcode 3 identifies the step.
-            ARM64_UART_TRACE_HEX(
-                b"[PS] PsLocateSystemDll FAILED subcode=3 status=\0".as_ptr() as PCSTR,
-                status as ULONG_PTR,
-            );
-            return status;
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 3, 0, 0);
-        }
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PsLocateSystemDll FAILED subcode=3 status=\0".as_ptr() as PCSTR,
+            status as ULONG_PTR,
+        );
+        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 3, 0, 0);
     }
 
     status = ObReferenceObjectByHandle(
@@ -412,44 +398,30 @@ pub unsafe extern "system" fn PsLocateSystemDll() -> NTSTATUS {
     );
     ZwClose(section_handle);
     if status < 0 {
+        // psmgr.c bugchecks here on every arch. arm64 used to return the status and
+        // boot on without a system DLL; the C's only arm64 leniency is in
+        // PspInitializeSystemDll (subcodes 7/8), not here. The UART line stays: the
+        // bugcheck banner alone is easy to miss on arm64's console.
         #[cfg(target_arch = "aarch64")]
-        {
-            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/4 here; arm64 returns
-            // the status and IoInitSystem carries on booting ("continuing on ARM64").
-            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
-            // so a failure of the SYSTEM DLL setup has been completely silent on the
-            // one arch that tolerates it. Subcode 4 identifies the step.
-            ARM64_UART_TRACE_HEX(
-                b"[PS] PsLocateSystemDll FAILED subcode=4 status=\0".as_ptr() as PCSTR,
-                status as ULONG_PTR,
-            );
-            return status;
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 4, 0, 0);
-        }
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PsLocateSystemDll FAILED subcode=4 status=\0".as_ptr() as PCSTR,
+            status as ULONG_PTR,
+        );
+        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 4, 0, 0);
     }
 
     status = PspMapSystemDll(PsGetCurrentProcess() as PEPROCESS, &raw mut PspSystemDllBase, 0u8);
     if status < 0 {
+        // psmgr.c bugchecks here on every arch. arm64 used to return the status and
+        // boot on without a system DLL; the C's only arm64 leniency is in
+        // PspInitializeSystemDll (subcodes 7/8), not here. The UART line stays: the
+        // bugcheck banner alone is easy to miss on arm64's console.
         #[cfg(target_arch = "aarch64")]
-        {
-            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/5 here; arm64 returns
-            // the status and IoInitSystem carries on booting ("continuing on ARM64").
-            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
-            // so a failure of the SYSTEM DLL setup has been completely silent on the
-            // one arch that tolerates it. Subcode 5 identifies the step.
-            ARM64_UART_TRACE_HEX(
-                b"[PS] PsLocateSystemDll FAILED subcode=5 status=\0".as_ptr() as PCSTR,
-                status as ULONG_PTR,
-            );
-            return status;
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 5, 0, 0);
-        }
+        ARM64_UART_TRACE_HEX(
+            b"[PS] PsLocateSystemDll FAILED subcode=5 status=\0".as_ptr() as PCSTR,
+            status as ULONG_PTR,
+        );
+        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 5, 0, 0);
     }
 
     status
@@ -463,44 +435,34 @@ unsafe fn PspInitializeSystemDll() -> NTSTATUS {
         &raw mut PspSystemDllEntryPoint,
     );
     if status < 0 {
+        // psmgr.c's own `#ifdef _M_ARM64 return Status;` — the one arm64 leniency the C
+        // has in this file. Traced, since the return is otherwise silent.
         #[cfg(target_arch = "aarch64")]
         {
-            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/7 here; arm64 returns
-            // the status and IoInitSystem carries on booting ("continuing on ARM64").
-            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
-            // so a failure of the SYSTEM DLL setup has been completely silent on the
-            // one arch that tolerates it. Subcode 7 identifies the step.
             ARM64_UART_TRACE_HEX(
-                b"[PS] PsLocateSystemDll FAILED subcode=7 status=\0".as_ptr() as PCSTR,
+                b"[PS] PspInitializeSystemDll FAILED subcode=7 status=\0".as_ptr() as PCSTR,
                 status as ULONG_PTR,
             );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 7, 0, 0);
-        }
+        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 7, 0, 0);
     }
 
     status = PspLookupKernelUserEntryPoints();
     if status < 0 {
+        // psmgr.c's own `#ifdef _M_ARM64 return Status;` — the one arm64 leniency the C
+        // has in this file. Traced, since the return is otherwise silent.
         #[cfg(target_arch = "aarch64")]
         {
-            // x86 bugchecks PROCESS1_INITIALIZATION_FAILED/8 here; arm64 returns
-            // the status and IoInitSystem carries on booting ("continuing on ARM64").
-            // Say so on the UART: the existing io_trace report is a NO-OP on aarch64,
-            // so a failure of the SYSTEM DLL setup has been completely silent on the
-            // one arch that tolerates it. Subcode 8 identifies the step.
             ARM64_UART_TRACE_HEX(
-                b"[PS] PsLocateSystemDll FAILED subcode=8 status=\0".as_ptr() as PCSTR,
+                b"[PS] PspInitializeSystemDll FAILED subcode=8 status=\0".as_ptr() as PCSTR,
                 status as ULONG_PTR,
             );
             return status;
         }
         #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 8, 0, 0);
-        }
+        KeBugCheckEx(PROCESS1_INITIALIZATION_FAILED, status as ULONG_PTR, 8, 0, 0);
     }
 
     KdUpdateDataBlock();

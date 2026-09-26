@@ -644,8 +644,8 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     #     the Rust writes it and then returns a status that can fail (rtl compress).
     #   bool_width (older, wired 2026-09-26): a u8/BOOLEAN return where the other side
     #     reads a BOOL — 56 definitions across userenv, win32k, shell32, winsrv, ks, msvcrt.
-    #   win64_cfg: the C's `#ifdef _WIN64` translated as `target_arch = "x86_64"`, dropping
-    #     arm64 onto the 32-bit path (user32 GetClassLongA/W).
+    #   cfg_vs_c: a per-arch `#[cfg]` whose arch set the C twin's `#if`s never draw — e.g.
+    #     `_WIN64` translated as `target_arch = "x86_64"` (user32 GetClassLongA/W on arm64).
     # All were driven to zero before wiring; baselines are EMPTY.
     for lint_name in (
         "scan_ptr_byte_diff",
@@ -653,7 +653,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         "scan_dropped_null_guard",
         "scan_store_on_failure",
         "scan_bool_width",
-        "scan_win64_cfg",
+        "scan_cfg_vs_c",
     ):
         script = repo / "tools" / f"{lint_name}.py"
         specs.append(

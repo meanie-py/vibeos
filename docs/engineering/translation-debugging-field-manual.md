@@ -4937,8 +4937,17 @@ and check each against the C: a per-arch cfg is *legitimate* only where the C br
 amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
 user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
 truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
-Spell it `target_pointer_width = "64"`. Gated by `scan_win64_cfg` (C twin says `_WIN64` and
-names no specific arch).
+Spell it `target_pointer_width = "64"`. Same family: `#if (NTDDI_VERSION < NTDDI_VISTA)`
+came back as pointer width in smlib's `SmConnectToSm` (the version is 0x502 on every arch).
+Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg against the arch sets the C
+twin's own `#if`s draw.
+
+**Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
+`#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
+`#[cfg(not(target_arch = "x86"))]` into "never". win32k's `TEXT_NextLineW` measured no text
+on any arch this way (four stacked cfgs), and eight more items were silently compiled out
+everywhere. It links, because whatever else provides or never calls the symbol keeps it
+linking. Gated by `scan_cfg_vs_c`'s dead-cfg check.
 
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
