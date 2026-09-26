@@ -628,6 +628,24 @@ HAND_GRADED = (
     "_i64tow_s",
     "_ui64tow",
     "_ui64tow_s",
+    # run_findfile_family: filesystem/findfile.cpp.
+    "_findfirst32",
+    "_findnext32",
+    "_wfindfirst32",
+    "_wfindnext32",
+    "_findfirst32i64",
+    "_findnext32i64",
+    "_wfindfirst32i64",
+    "_wfindnext32i64",
+    "_findfirst64i32",
+    "_findnext64i32",
+    "_wfindfirst64i32",
+    "_wfindnext64i32",
+    "_findfirst64",
+    "_findnext64",
+    "_wfindfirst64",
+    "_wfindnext64",
+    "_findclose",
 )
 
 

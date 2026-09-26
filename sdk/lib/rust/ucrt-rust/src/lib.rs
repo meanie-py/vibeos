@@ -34,6 +34,9 @@ pub mod atox;
 #[cfg(feature = "xtoa")]
 pub mod xtoa;
 
+#[cfg(feature = "findfile")]
+pub mod findfile;
+
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
 #[cfg(feature = "portable-string")]

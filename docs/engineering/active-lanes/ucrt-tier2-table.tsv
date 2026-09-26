@@ -6,12 +6,12 @@ __iscsymf	MATCH n=40	686d118764bb-dirty
 __iswcsym	MATCH n=40	686d118764bb-dirty
 __iswcsymf	MATCH n=40	686d118764bb-dirty
 __toascii	MATCH n=40	686d118764bb-dirty
-_abs64	MATCH n=40	e67f13c02b0a-dirty
+_abs64	MATCH n=40	5116cddd89a4-dirty
 _atoi64	MATCH n=7	e67f13c02b0a-dirty
 _atoi64_l	MATCH n=7	e67f13c02b0a-dirty
 _atoi_l	MATCH n=7	e67f13c02b0a-dirty
 _atol_l	MATCH n=7	e67f13c02b0a-dirty
-_getmbcp	DIFF rust=1 dll=0 of 1 first=_getmbcp:()	e67f13c02b0a-dirty
+_getmbcp	DIFF rust=1 dll=0 of 1 first=_getmbcp:()	5116cddd89a4-dirty
 _isalnum_l	MATCH n=40	686d118764bb-dirty
 _isalpha_l	MATCH n=40	686d118764bb-dirty
 _iscntrl_l	MATCH n=40	686d118764bb-dirty
@@ -55,8 +55,8 @@ _ismbcupper	MATCH n=40	febc967f24d6-dirty
 _ismbcupper_l	MATCH n=40	febc967f24d6-dirty
 _ismbslead	MATCH n=49	febc967f24d6-dirty
 _ismbslead_l	MATCH n=49	febc967f24d6-dirty
-_ismbstrail	MATCH n=49	e67f13c02b0a-dirty
-_ismbstrail_l	MATCH n=49	e67f13c02b0a-dirty
+_ismbstrail	MATCH n=49	5116cddd89a4-dirty
+_ismbstrail_l	MATCH n=49	5116cddd89a4-dirty
 _isprint_l	MATCH n=40	686d118764bb-dirty
 _ispunct_l	MATCH n=40	686d118764bb-dirty
 _isspace_l	MATCH n=40	686d118764bb-dirty
@@ -75,66 +75,66 @@ _iswspace_l	MATCH n=40	686d118764bb-dirty
 _iswupper_l	MATCH n=40	686d118764bb-dirty
 _iswxdigit_l	MATCH n=40	686d118764bb-dirty
 _isxdigit_l	MATCH n=40	686d118764bb-dirty
-_mbbtombc	MATCH n=40	e67f13c02b0a-dirty
-_mbbtombc_l	MATCH n=40	e67f13c02b0a-dirty
+_mbbtombc	MATCH n=40	5116cddd89a4-dirty
+_mbbtombc_l	MATCH n=40	5116cddd89a4-dirty
 _mbbtype	MATCH n=64	febc967f24d6-dirty
 _mbbtype_l	MATCH n=64	febc967f24d6-dirty
 _mbcjistojms	MATCH n=40	febc967f24d6-dirty
 _mbcjistojms_l	MATCH n=40	febc967f24d6-dirty
 _mbcjmstojis	MATCH n=40	febc967f24d6-dirty
 _mbcjmstojis_l	MATCH n=40	febc967f24d6-dirty
-_mbclen	MATCH n=7	e67f13c02b0a-dirty
-_mbclen_l	MATCH n=7	e67f13c02b0a-dirty
+_mbclen	MATCH n=7	5116cddd89a4-dirty
+_mbclen_l	MATCH n=7	5116cddd89a4-dirty
 _mbctohira	MATCH n=40	febc967f24d6-dirty
 _mbctohira_l	MATCH n=40	febc967f24d6-dirty
 _mbctokata	MATCH n=40	febc967f24d6-dirty
 _mbctokata_l	MATCH n=40	febc967f24d6-dirty
 _mbctolower	MATCH n=40	febc967f24d6-dirty
 _mbctolower_l	MATCH n=40	febc967f24d6-dirty
-_mbctombb	MATCH n=40	e67f13c02b0a-dirty
-_mbctombb_l	MATCH n=40	e67f13c02b0a-dirty
+_mbctombb	MATCH n=40	5116cddd89a4-dirty
+_mbctombb_l	MATCH n=40	5116cddd89a4-dirty
 _mbctoupper	MATCH n=40	febc967f24d6-dirty
 _mbctoupper_l	MATCH n=40	febc967f24d6-dirty
-_mblen_l	MATCH n=56	e67f13c02b0a-dirty
+_mblen_l	MATCH n=56	5116cddd89a4-dirty
 _mbsbtype	DIFF rust=37 dll=0 of 56 first=_mbsbtype:i=000	febc967f24d6-dirty
 _mbsbtype_l	DIFF rust=37 dll=0 of 56 first=_mbsbtype_l:i=000	febc967f24d6-dirty
-_mbscmp	MATCH n=49	e67f13c02b0a-dirty
-_mbscmp_l	MATCH n=49	e67f13c02b0a-dirty
-_mbscspn	MATCH n=49	e67f13c02b0a-dirty
-_mbscspn_l	MATCH n=49	e67f13c02b0a-dirty
-_mbsicmp	MATCH n=49	e67f13c02b0a-dirty
-_mbsicmp_l	MATCH n=49	e67f13c02b0a-dirty
-_mbslen	MATCH n=7	e67f13c02b0a-dirty
-_mbslen_l	MATCH n=7	e67f13c02b0a-dirty
-_mbsnbcmp	MATCH n=392	e67f13c02b0a-dirty
-_mbsnbcmp_l	MATCH n=392	e67f13c02b0a-dirty
-_mbsnbcnt	MATCH n=56	e67f13c02b0a-dirty
-_mbsnbcnt_l	MATCH n=56	e67f13c02b0a-dirty
-_mbsnccnt	MATCH n=56	e67f13c02b0a-dirty
-_mbsnccnt_l	MATCH n=56	e67f13c02b0a-dirty
-_mbsncmp	MATCH n=392	e67f13c02b0a-dirty
-_mbsncmp_l	MATCH n=392	e67f13c02b0a-dirty
-_mbsnextc	MATCH n=7	e67f13c02b0a-dirty
-_mbsnextc_l	MATCH n=7	e67f13c02b0a-dirty
-_mbsnlen	MATCH n=56	e67f13c02b0a-dirty
-_mbsnlen_l	MATCH n=56	e67f13c02b0a-dirty
-_mbsspn	MATCH n=49	e67f13c02b0a-dirty
-_mbsspn_l	MATCH n=49	e67f13c02b0a-dirty
-_mbstrlen	MATCH n=7	e67f13c02b0a-dirty
-_mbstrlen_l	MATCH n=7	e67f13c02b0a-dirty
-_setmbcp	DIFF rust=1 dll=0 of 40 first=_setmbcp:i=002	e67f13c02b0a-dirty
-_stricmp	MATCH n=49	e67f13c02b0a-dirty
-_stricmp_l	MATCH n=49	e67f13c02b0a-dirty
+_mbscmp	MATCH n=49	5116cddd89a4-dirty
+_mbscmp_l	MATCH n=49	5116cddd89a4-dirty
+_mbscspn	MATCH n=49	5116cddd89a4-dirty
+_mbscspn_l	MATCH n=49	5116cddd89a4-dirty
+_mbsicmp	MATCH n=49	5116cddd89a4-dirty
+_mbsicmp_l	MATCH n=49	5116cddd89a4-dirty
+_mbslen	MATCH n=7	5116cddd89a4-dirty
+_mbslen_l	MATCH n=7	5116cddd89a4-dirty
+_mbsnbcmp	MATCH n=392	5116cddd89a4-dirty
+_mbsnbcmp_l	MATCH n=392	5116cddd89a4-dirty
+_mbsnbcnt	MATCH n=56	5116cddd89a4-dirty
+_mbsnbcnt_l	MATCH n=56	5116cddd89a4-dirty
+_mbsnccnt	MATCH n=56	5116cddd89a4-dirty
+_mbsnccnt_l	MATCH n=56	5116cddd89a4-dirty
+_mbsncmp	MATCH n=392	5116cddd89a4-dirty
+_mbsncmp_l	MATCH n=392	5116cddd89a4-dirty
+_mbsnextc	MATCH n=7	5116cddd89a4-dirty
+_mbsnextc_l	MATCH n=7	5116cddd89a4-dirty
+_mbsnlen	MATCH n=56	5116cddd89a4-dirty
+_mbsnlen_l	MATCH n=56	5116cddd89a4-dirty
+_mbsspn	MATCH n=49	5116cddd89a4-dirty
+_mbsspn_l	MATCH n=49	5116cddd89a4-dirty
+_mbstrlen	MATCH n=7	5116cddd89a4-dirty
+_mbstrlen_l	MATCH n=7	5116cddd89a4-dirty
+_setmbcp	DIFF rust=1 dll=0 of 40 first=_setmbcp:i=002	5116cddd89a4-dirty
+_stricmp	MATCH n=49	5116cddd89a4-dirty
+_stricmp_l	MATCH n=49	5116cddd89a4-dirty
 _tolower	MATCH n=40	f88f7caf6bb7-dirty
 _tolower_l	DIFF rust=1 dll=0 of 40 first=_tolower_l:i=000	f88f7caf6bb7-dirty
 _toupper	MATCH n=40	f88f7caf6bb7-dirty
 _toupper_l	DIFF rust=1 dll=0 of 40 first=_toupper_l:i=000	f88f7caf6bb7-dirty
 _towlower_l	MATCH n=40	f88f7caf6bb7-dirty
 _towupper_l	MATCH n=40	f88f7caf6bb7-dirty
-_wcsicmp	MATCH n=49	e67f13c02b0a-dirty
-_wcsicmp_l	MATCH n=49	e67f13c02b0a-dirty
-_wcsnicmp	MATCH n=392	e67f13c02b0a-dirty
-_wcsnicmp_l	MATCH n=392	e67f13c02b0a-dirty
+_wcsicmp	MATCH n=49	5116cddd89a4-dirty
+_wcsicmp_l	MATCH n=49	5116cddd89a4-dirty
+_wcsnicmp	MATCH n=392	5116cddd89a4-dirty
+_wcsnicmp_l	MATCH n=392	5116cddd89a4-dirty
 _wtoi	MATCH n=7	e67f13c02b0a-dirty
 _wtoi64	MATCH n=7	e67f13c02b0a-dirty
 _wtoi64_l	MATCH n=7	e67f13c02b0a-dirty
@@ -144,7 +144,7 @@ _wtol_l	MATCH n=7	e67f13c02b0a-dirty
 atoi	MATCH n=7	e67f13c02b0a-dirty
 atol	MATCH n=7	e67f13c02b0a-dirty
 atoll	NORUST dll=MATCH n=7	e67f13c02b0a-dirty
-btowc	MATCH n=40	e67f13c02b0a-dirty
+btowc	MATCH n=40	5116cddd89a4-dirty
 isalnum	MATCH n=40	686d118764bb-dirty
 isalpha	MATCH n=40	686d118764bb-dirty
 isblank	MATCH n=40	686d118764bb-dirty
@@ -171,23 +171,24 @@ iswspace	MATCH n=40	686d118764bb-dirty
 iswupper	MATCH n=40	686d118764bb-dirty
 iswxdigit	MATCH n=40	686d118764bb-dirty
 isxdigit	MATCH n=40	686d118764bb-dirty
-legacy:atox-family	MATCH n=1398	e67f13c02b0a-dirty
-legacy:ctype	NOCASES	e67f13c02b0a-dirty
-legacy:string	MATCH n=363	e67f13c02b0a-dirty
-legacy:strtox	DIFF rust=10 dll=0 of 46 first=atoi:2147483648	e67f13c02b0a-dirty
-legacy:strtox-family	NOCASES	e67f13c02b0a-dirty
-legacy:wcstox-family	NOCASES	e67f13c02b0a-dirty
-legacy:xtoa-family	MATCH n=2400	e67f13c02b0a-dirty
-legacy:xtoa_s-family	MATCH n=50430	e67f13c02b0a-dirty
-llabs	NORUST dll=MATCH n=40	e67f13c02b0a-dirty
-mblen	MATCH n=56	e67f13c02b0a-dirty
+legacy:atox-family	NOCASES	5116cddd89a4-dirty
+legacy:ctype	NOCASES	5116cddd89a4-dirty
+legacy:findfile-family	MATCH n=816	5116cddd89a4-dirty
+legacy:string	MATCH n=363	5116cddd89a4-dirty
+legacy:strtox	NOCASES	5116cddd89a4-dirty
+legacy:strtox-family	NOCASES	5116cddd89a4-dirty
+legacy:wcstox-family	NOCASES	5116cddd89a4-dirty
+legacy:xtoa-family	NOCASES	5116cddd89a4-dirty
+legacy:xtoa_s-family	NOCASES	5116cddd89a4-dirty
+llabs	NORUST dll=MATCH n=40	5116cddd89a4-dirty
+mblen	MATCH n=56	5116cddd89a4-dirty
 strcat	MATCH n=64	af738a3b14e7-dirty
-strcmp	MATCH n=49	e67f13c02b0a-dirty
+strcmp	MATCH n=49	5116cddd89a4-dirty
 strcpy	MATCH n=8	af738a3b14e7-dirty
 strcspn	MATCH n=49	af738a3b14e7-dirty
 strlen	MATCH n=7	af738a3b14e7-dirty
 strncat	MATCH n=448	af738a3b14e7-dirty
-strncmp	MATCH n=392	e67f13c02b0a-dirty
+strncmp	MATCH n=392	5116cddd89a4-dirty
 strncpy	MATCH n=56	af738a3b14e7-dirty
 strpbrk	MATCH n=64	af738a3b14e7-dirty
 strspn	MATCH n=49	af738a3b14e7-dirty
@@ -195,6 +196,6 @@ tolower	MATCH n=40	f88f7caf6bb7-dirty
 toupper	MATCH n=40	f88f7caf6bb7-dirty
 towlower	MATCH n=40	f88f7caf6bb7-dirty
 towupper	MATCH n=40	f88f7caf6bb7-dirty
-wcscspn	MATCH n=49	e67f13c02b0a-dirty
-wcsspn	MATCH n=49	e67f13c02b0a-dirty
-wctob	MATCH n=40	e67f13c02b0a-dirty
+wcscspn	MATCH n=49	5116cddd89a4-dirty
+wcsspn	MATCH n=49	5116cddd89a4-dirty
+wctob	MATCH n=40	5116cddd89a4-dirty

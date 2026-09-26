@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 800
-  amd64: 800
-  arm64: 797
+  i386: 783
+  amd64: 783
+  arm64: 780
 
 families:
   bits:
@@ -543,3 +543,50 @@ families:
       - _i64tow_s
       - _ui64tow
       - _ui64tow_s
+  findfile:
+    replaces:
+      - sdk/lib/ucrt/filesystem/findfile.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, against a REAL directory the
+      harness builds: an empty file, a 1234-byte file dated 2001, a read-only
+      file, a hidden one with spaces in its name, a subdirectory, and a file dated
+      2040 (past the 32-bit time_t, so the __time32_t forms must answer -1). All 16
+      first/next forms walk 9 patterns (wildcards, an exact name, no match, a
+      missing directory, "", NULL) on both sides, each record compared byte for
+      byte, plus errno and invalid-parameter counts; the NULL-record and 0/-1
+      handle paths; and each side closes its own handles with its own _findclose.
+      MATCH n=816, dll_fail=0. The DLL side is called through its IMPORT POINTER:
+      the toolchain's io.h inlines _findfirst64i32/_findnext64i32 over
+      _findfirst64, which pecheck caught -- a call by name graded mingw, not us.
+    note: >
+      A PORT. Every search is wide underneath; the narrow forms convert the pattern
+      and the found name through __acrt_get_utf8_acp_compatibility_codepage. The
+      eight record layouts are one generic struct, pinned by compile-time asserts
+      against offsets measured with the target compiler on all three arches.
+
+      Silent-if-wrong details, each transcribed: FILE_ATTRIBUTE_NORMAL reads back
+      as 0; a zero FILETIME (or one the OS cannot convert) is -1, and times are
+      LOCAL; a 32-bit size is the low word only; the narrow forms leak the find
+      handle when the found name does not convert back (returning -1 having opened
+      it); a NULL narrow pattern fails in the wide check, after the conversion;
+      _findclose on a bad handle is a quiet EINVAL, never the invalid-parameter
+      handler. The Win32 calls, __loctotime*_t, the conversion thunks and
+      strcpy_s/wcscpy_s are called, not replaced.
+    exports:
+      - _findclose
+      - _findfirst32
+      - _findfirst32i64
+      - _findfirst64
+      - _findfirst64i32
+      - _findnext32
+      - _findnext32i64
+      - _findnext64
+      - _findnext64i32
+      - _wfindfirst32
+      - _wfindfirst32i64
+      - _wfindfirst64
+      - _wfindfirst64i32
+      - _wfindnext32
+      - _wfindnext32i64
+      - _wfindnext64
+      - _wfindnext64i32

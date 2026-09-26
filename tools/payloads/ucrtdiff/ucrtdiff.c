@@ -148,6 +148,52 @@ wchar_t *__cdecl ref__i64tow(long long, wchar_t *, int);
 int __cdecl ref__i64tow_s(long long, wchar_t *, size_t, int);
 wchar_t *__cdecl ref__ui64tow(unsigned long long, wchar_t *, int);
 int __cdecl ref__ui64tow_s(unsigned long long, wchar_t *, size_t, int);
+/* filesystem/findfile.cpp, graded two-sided against a real directory by
+ * run_findfile_family. */
+#include <io.h>
+intptr_t __cdecl ref__findfirst32(const char *, struct _finddata32_t *);
+intptr_t __cdecl ref__findfirst32i64(const char *, struct _finddata32i64_t *);
+intptr_t __cdecl ref__findfirst64i32(const char *, struct _finddata64i32_t *);
+intptr_t __cdecl ref__findfirst64(const char *, struct __finddata64_t *);
+intptr_t __cdecl ref__wfindfirst32(const wchar_t *, struct _wfinddata32_t *);
+intptr_t __cdecl ref__wfindfirst32i64(const wchar_t *, struct _wfinddata32i64_t *);
+intptr_t __cdecl ref__wfindfirst64i32(const wchar_t *, struct _wfinddata64i32_t *);
+intptr_t __cdecl ref__wfindfirst64(const wchar_t *, struct _wfinddata64_t *);
+int __cdecl ref__findnext32(intptr_t, struct _finddata32_t *);
+int __cdecl ref__findnext32i64(intptr_t, struct _finddata32i64_t *);
+int __cdecl ref__findnext64i32(intptr_t, struct _finddata64i32_t *);
+int __cdecl ref__findnext64(intptr_t, struct __finddata64_t *);
+int __cdecl ref__wfindnext32(intptr_t, struct _wfinddata32_t *);
+int __cdecl ref__wfindnext32i64(intptr_t, struct _wfinddata32i64_t *);
+int __cdecl ref__wfindnext64i32(intptr_t, struct _wfinddata64i32_t *);
+int __cdecl ref__wfindnext64(intptr_t, struct _wfinddata64_t *);
+int __cdecl ref__findclose(intptr_t);
+/* The SHIPPING side, called through its IMPORT POINTER. The toolchain's io.h
+ * defines _findfirst64i32/_findnext64i32 as __CRT_INLINE wrappers over
+ * _findfirst64, so a call by name grades mingw's inline, not ucrtbase -- pecheck's
+ * import check caught it, and an assembler label on the name did not help, since
+ * the label IS the inline's symbol and clang inlined it anyway. `__imp_<sym>`
+ * exists only in the import table: there is no body to inline, so the call is
+ * provably ucrtbase's. __USER_LABEL_PREFIX__ supplies i386's leading underscore. */
+#define UD_STR2(x) #x
+#define UD_STR(x) UD_STR2(x)
+#define UD_IMP(n) "__imp_" UD_STR(__USER_LABEL_PREFIX__) #n
+extern intptr_t(__cdecl *const ud__findfirst32)(const char *, struct _finddata32_t *) __asm__(UD_IMP(_findfirst32));
+extern intptr_t(__cdecl *const ud__findfirst32i64)(const char *, struct _finddata32i64_t *) __asm__(UD_IMP(_findfirst32i64));
+extern intptr_t(__cdecl *const ud__findfirst64i32)(const char *, struct _finddata64i32_t *) __asm__(UD_IMP(_findfirst64i32));
+extern intptr_t(__cdecl *const ud__findfirst64)(const char *, struct __finddata64_t *) __asm__(UD_IMP(_findfirst64));
+extern intptr_t(__cdecl *const ud__wfindfirst32)(const wchar_t *, struct _wfinddata32_t *) __asm__(UD_IMP(_wfindfirst32));
+extern intptr_t(__cdecl *const ud__wfindfirst32i64)(const wchar_t *, struct _wfinddata32i64_t *) __asm__(UD_IMP(_wfindfirst32i64));
+extern intptr_t(__cdecl *const ud__wfindfirst64i32)(const wchar_t *, struct _wfinddata64i32_t *) __asm__(UD_IMP(_wfindfirst64i32));
+extern intptr_t(__cdecl *const ud__wfindfirst64)(const wchar_t *, struct _wfinddata64_t *) __asm__(UD_IMP(_wfindfirst64));
+extern int(__cdecl *const ud__findnext32)(intptr_t, struct _finddata32_t *) __asm__(UD_IMP(_findnext32));
+extern int(__cdecl *const ud__findnext32i64)(intptr_t, struct _finddata32i64_t *) __asm__(UD_IMP(_findnext32i64));
+extern int(__cdecl *const ud__findnext64i32)(intptr_t, struct _finddata64i32_t *) __asm__(UD_IMP(_findnext64i32));
+extern int(__cdecl *const ud__findnext64)(intptr_t, struct __finddata64_t *) __asm__(UD_IMP(_findnext64));
+extern int(__cdecl *const ud__wfindnext32)(intptr_t, struct _wfinddata32_t *) __asm__(UD_IMP(_wfindnext32));
+extern int(__cdecl *const ud__wfindnext32i64)(intptr_t, struct _wfinddata32i64_t *) __asm__(UD_IMP(_wfindnext32i64));
+extern int(__cdecl *const ud__wfindnext64i32)(intptr_t, struct _wfinddata64i32_t *) __asm__(UD_IMP(_wfindnext64i32));
+extern int(__cdecl *const ud__wfindnext64)(intptr_t, struct _wfinddata64_t *) __asm__(UD_IMP(_wfindnext64));
 int __cdecl ref_atoi(const char *);
 long __cdecl ref_atol(const char *);
 int __cdecl ref_tolower(int);
@@ -1041,6 +1087,207 @@ static void run_xtoa_s_family(void)
 #endif
 }
 
+/* ---- findfile ------------------------------------------------------------
+ *
+ * A real directory, built fresh: an empty file, a 1234-byte file dated 2001, a
+ * read-only file, a hidden one with spaces in its name, a subdirectory, and a file
+ * dated 2040 -- past the 32-bit time_t, so the __time32_t forms must answer -1
+ * for it while the 64-bit forms answer the date. Both sides enumerate the same
+ * directory; each record is compared byte for byte (both prefilled 'X', so bytes
+ * the C leaves alone must be left alone), and each side closes its OWN handles
+ * with its own _findclose. A fixture that cannot be built is a failing row, never
+ * a family that silently grades nothing. */
+static wchar_t g_ff_dir[MAX_PATH];
+
+static int ff_make_file(const wchar_t *name, DWORD size, int year, DWORD attrs)
+{
+    wchar_t path[MAX_PATH];
+    lstrcpyW(path, g_ff_dir); lstrcatW(path, L"\\"); lstrcatW(path, name);
+    SetFileAttributesW(path, FILE_ATTRIBUTE_NORMAL); /* a previous run's read-only */
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        DbgPrint("[UCRTDIFF] findfile fixture: CreateFileW(%ls) failed, error %lu\n", path,
+                 GetLastError());
+        return 0;
+    }
+    static char zeros[1234];
+    DWORD wrote = 0;
+    if (size && !WriteFile(h, zeros, size, &wrote, NULL)) {
+        DbgPrint("[UCRTDIFF] findfile fixture: WriteFile(%ls) failed, error %lu\n", path,
+                 GetLastError());
+        CloseHandle(h);
+        return 0;
+    }
+    if (year) {
+        SYSTEMTIME st = { (WORD)year, 6, 0, 15, 12, 30, 44, 0 };
+        FILETIME ft;
+        SystemTimeToFileTime(&st, &ft);
+        if (!SetFileTime(h, &ft, &ft, &ft))
+            DbgPrint("[UCRTDIFF] findfile fixture: SetFileTime(%ls) failed, error %lu (graded anyway)\n",
+                     path, GetLastError());
+    }
+    CloseHandle(h);
+    if (attrs != FILE_ATTRIBUTE_NORMAL)
+        SetFileAttributesW(path, attrs);
+    return 1;
+}
+
+/* Build the fixture under the first base directory that takes it: %TEMP%, the
+ * root of C:, the directory holding this exe. Each failure is logged with its
+ * Win32 error, so a fixture that cannot be built says WHY on serial. */
+static int ff_try_base(const wchar_t *base)
+{
+    lstrcpyW(g_ff_dir, base);
+    size_t n = (size_t)lstrlenW(g_ff_dir);
+    if (n && g_ff_dir[n - 1] != L'\\')
+        lstrcatW(g_ff_dir, L"\\");
+    lstrcatW(g_ff_dir, L"ucrtdiff_ff");
+    if (!CreateDirectoryW(g_ff_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        DbgPrint("[UCRTDIFF] findfile fixture: CreateDirectoryW(%ls) failed, error %lu\n",
+                 g_ff_dir, GetLastError());
+        return 0;
+    }
+    wchar_t sub[MAX_PATH];
+    lstrcpyW(sub, g_ff_dir); lstrcatW(sub, L"\\sub");
+    CreateDirectoryW(sub, NULL);
+    int ok = ff_make_file(L"a.txt", 0, 0, FILE_ATTRIBUTE_NORMAL)
+        && ff_make_file(L"b.bin", 1234, 2001, FILE_ATTRIBUTE_NORMAL)
+        && ff_make_file(L"c.txt", 7, 0, FILE_ATTRIBUTE_READONLY)
+        && ff_make_file(L"e with space.txt", 3, 0, FILE_ATTRIBUTE_HIDDEN)
+        && ff_make_file(L"f_2040.dat", 1, 2040, FILE_ATTRIBUTE_NORMAL);
+    if (ok)
+        DbgPrint("[UCRTDIFF] findfile fixture: built under %ls\n", g_ff_dir);
+    return ok;
+}
+
+static int ff_setup(void)
+{
+    wchar_t base[MAX_PATH];
+    DWORD n = GetTempPathW(MAX_PATH - 32, base);
+    if (n && n < MAX_PATH - 32 && ff_try_base(base))
+        return 1;
+    if (ff_try_base(L"C:\\"))
+        return 1;
+    n = GetModuleFileNameW(NULL, base, MAX_PATH - 32);
+    if (n && n < MAX_PATH - 32) {
+        wchar_t *slash = NULL;
+        for (wchar_t *p = base; *p; p++)
+            if (*p == L'\\')
+                slash = p;
+        if (slash) {
+            *slash = 0;
+            if (ff_try_base(base))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+#define FF_RECORD(pfx, lbl, ok1, ok2, d1, d2) do {                                 \
+        grade2(pfx ".ok", lbl, ok1, ok2);                                          \
+        grade2(pfx ".errno", lbl, *_errno(), *ref__errno());                       \
+        grade2(pfx ".iph", lbl, g_iph_dll, g_iph_ref);                             \
+        if ((ok1) && (ok2))                                                        \
+            grade2(pfx ".rec", lbl, fnv(&(d1), sizeof(d1)), fnv(&(d2), sizeof(d2))); \
+    } while (0)
+
+#define FF_RESET(d1, d2) do {                                                      \
+        memset(&(d1), 'X', sizeof(d1)); memset(&(d2), 'X', sizeof(d2));            \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;               \
+    } while (0)
+
+/* One pattern through one first/next pair: first, then next until either side
+ * stops, then close. */
+#define FF_WALK(T, first, next, pat, lbl) do {                                     \
+        struct T d1, d2;                                                           \
+        FF_RESET(d1, d2);                                                          \
+        intptr_t h1 = ud_##first(pat, &d1), h2 = ref_##first(pat, &d2);                 \
+        FF_RECORD(#first, lbl, h1 != -1, h2 != -1, d1, d2);                        \
+        for (int step = 0; h1 != -1 && h2 != -1 && step < 32; step++) {            \
+            FF_RESET(d1, d2);                                                      \
+            int r1 = ud_##next(h1, &d1), r2 = ref_##next(h2, &d2);                      \
+            FF_RECORD(#next, lbl, r1 == 0, r2 == 0, d1, d2);                       \
+            if (r1 != 0 || r2 != 0)                                                \
+                break;                                                             \
+        }                                                                          \
+        *_errno() = 0; *ref__errno() = 0;                                          \
+        int c1 = h1 != -1 ? _findclose(h1) : -2;                                   \
+        int c2 = h2 != -1 ? ref__findclose(h2) : -2;                               \
+        grade2("_findclose", lbl, c1, c2);                                         \
+        grade2("_findclose.errno", lbl, *_errno(), *ref__errno());                 \
+    } while (0)
+
+/* The argument-validation paths: NULL record, and _findnext on handles 0/-1. */
+#define FF_INVALID(T, first, next, pat) do {                                       \
+        struct T d1, d2;                                                           \
+        FF_RESET(d1, d2);                                                          \
+        intptr_t h1 = ud_##first(pat, (struct T *)0), h2 = ref_##first(pat, (struct T *)0); \
+        FF_RECORD(#first ".nullrec", "-", h1 != -1, h2 != -1, d1, d2);             \
+        FF_RESET(d1, d2);                                                          \
+        int r1 = ud_##next(0, &d1), r2 = ref_##next(0, &d2);                            \
+        FF_RECORD(#next ".h0", "-", r1 == 0, r2 == 0, d1, d2);                     \
+        FF_RESET(d1, d2);                                                          \
+        r1 = ud_##next(-1, &d1); r2 = ref_##next(-1, &d2);                              \
+        FF_RECORD(#next ".hm1", "-", r1 == 0, r2 == 0, d1, d2);                    \
+    } while (0)
+
+static void run_findfile_family(void)
+{
+    install_counting_iph();
+#if UCRTDIFF_REF_HAS__findfirst32
+    if (!ff_setup()) {
+        grade2("findfile.fixture", "setup", 0, 1); /* fail loud */
+        return;
+    }
+    static const wchar_t *const tails[] = {
+        L"\\*", L"\\*.txt", L"\\b.bin", L"\\f_2040.dat", L"\\nomatch*", L"\\sub",
+    };
+    enum { NT = sizeof(tails) / sizeof(tails[0]) };
+    for (int t = 0; t < NT + 3; t++) {
+        wchar_t wp[MAX_PATH];
+        char np[MAX_PATH * 2];
+        const wchar_t *w = wp;
+        const char *n = np;
+        if (t < NT) {
+            lstrcpyW(wp, g_ff_dir); lstrcatW(wp, tails[t]);
+        } else if (t == NT) {
+            lstrcpyW(wp, L"C:\\ucrtdiff_no_such_dir\\*");
+        } else if (t == NT + 1) {
+            wp[0] = 0;
+        } else {
+            w = 0; /* NULL pattern */
+        }
+        if (w)
+            WideCharToMultiByte(CP_ACP, 0, w, -1, np, sizeof np, NULL, NULL);
+        else
+            n = 0;
+        const char *lbl = label_idx((size_t)t);
+        FF_WALK(_finddata32_t, _findfirst32, _findnext32, n, lbl);
+        FF_WALK(_finddata32i64_t, _findfirst32i64, _findnext32i64, n, lbl);
+        FF_WALK(_finddata64i32_t, _findfirst64i32, _findnext64i32, n, lbl);
+        FF_WALK(__finddata64_t, _findfirst64, _findnext64, n, lbl);
+        FF_WALK(_wfinddata32_t, _wfindfirst32, _wfindnext32, w, lbl);
+        FF_WALK(_wfinddata32i64_t, _wfindfirst32i64, _wfindnext32i64, w, lbl);
+        FF_WALK(_wfinddata64i32_t, _wfindfirst64i32, _wfindnext64i32, w, lbl);
+        FF_WALK(_wfinddata64_t, _wfindfirst64, _wfindnext64, w, lbl);
+    }
+    {
+        char np[MAX_PATH * 2];
+        wchar_t wp[MAX_PATH];
+        lstrcpyW(wp, g_ff_dir); lstrcatW(wp, L"\\*");
+        WideCharToMultiByte(CP_ACP, 0, wp, -1, np, sizeof np, NULL, NULL);
+        FF_INVALID(_finddata32_t, _findfirst32, _findnext32, np);
+        FF_INVALID(_finddata32i64_t, _findfirst32i64, _findnext32i64, np);
+        FF_INVALID(_finddata64i32_t, _findfirst64i32, _findnext64i32, np);
+        FF_INVALID(__finddata64_t, _findfirst64, _findnext64, np);
+        FF_INVALID(_wfinddata32_t, _wfindfirst32, _wfindnext32, wp);
+        FF_INVALID(_wfinddata32i64_t, _wfindfirst32i64, _wfindnext32i64, wp);
+        FF_INVALID(_wfinddata64i32_t, _wfindfirst64i32, _wfindnext64i32, wp);
+        FF_INVALID(_wfinddata64_t, _wfindfirst64, _wfindnext64, wp);
+    }
+#endif
+}
+
 static void run_ctype(void)
 {
     /* The full 0..255 range plus EOF: the 0x80-0xFF half is where the narrow
@@ -1349,6 +1596,7 @@ static void run_legacy(void)
         { "legacy:atox-family", run_atox_family },
         { "legacy:xtoa-family", run_xtoa_family },
         { "legacy:xtoa_s-family", run_xtoa_s_family },
+        { "legacy:findfile-family", run_findfile_family },
         { "legacy:ctype", run_ctype },
         { "legacy:string", run_string },
 #define HAND(name) { #name, HAND_FN_##name },
