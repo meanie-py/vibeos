@@ -16,6 +16,11 @@ pub mod bits;
 #[cfg(feature = "ismbbyte")]
 pub mod ismbbyte;
 
+// Named, not just depended on: a staticlib drops a dependency nothing references,
+// and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
+#[cfg(feature = "portable-string")]
+extern crate crt_portable_rust;
+
 // Always compiled: it defines no symbols, only UCRT's locale layout and the
 // compile-time assertions pinning it. Gating it would mean the pins only hold
 // when some other family happens to be on.

@@ -353,7 +353,7 @@ def test_unrelated_crate_does_not_trigger_staleness(tmp_path: Path, monkeypatch)
     os.utime(src, (2_000_000, 2_000_000))
 
     monkeypatch.setattr(vuc, "REPO", tmp_path)
-    assert "shell32-rust" not in vuc._ARCHIVE_SOURCE_CRATES
+    assert "shell32-rust" not in vuc._archive_source_crates()
     assert vuc._stale_against_sources(archive) is None
 
 
@@ -560,3 +560,12 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
         assert any("fewer Microsoft-backed exports" in n for n in notes), notes
     finally:
         vuc.TAKEOVER = original_takeover
+
+
+def test_archive_source_crates_are_walked_not_listed() -> None:
+    """ucrt-rust reaches the archive through crt-shared-cargo; a hand-kept list
+    missed it, so the closure must be derived from the manifests."""
+    crates = vuc._archive_source_crates()
+    assert "ucrt-rust" in crates
+    assert "crt-shared-rust" in crates
+    assert "msvcrt-crt-rust" not in crates

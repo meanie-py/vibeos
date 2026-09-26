@@ -47,6 +47,27 @@ vlog() { [ "$VERBOSE" -eq 1 ] && printf '[reap] %s\n' "$*" >&2 || true; }
 
 pid_alive() { kill -0 "$1" 2>/dev/null; }
 
+# One JSON field, or empty. python3 rather than jq, deliberately: this script runs
+# at the start of EVERY pytest session fleet-wide (tests/qemu/conftest.py), jq is
+# not installed on the dev host, and `jq ... 2>/dev/null` failing silently made
+# every lock read as "no qemu_pid" -- so each new smoke purged EVERY live VM's
+# lock, unregistering them from `vibeos-cli ps`/`kill` and the lifetime cap.
+# Exit status 2 means the file itself could not be read as JSON, which callers
+# must treat as "unknown", never as "stale".
+jfield() {
+    python3 - "$1" "$2" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        d = json.load(f)
+except (OSError, ValueError):
+    sys.exit(2)
+v = d.get(sys.argv[2]) if isinstance(d, dict) else None
+if v is not None:
+    print(v)
+PY
+}
+
 proc_is_qemu() {
     local p="$1"
     [ -r "/proc/$p/comm" ] || return 1
@@ -98,17 +119,17 @@ if [ -d "$RUNS_DIR" ]; then
         manifest="$run_dir/manifest.json"
         [ -f "$manifest" ] || continue
 
-        stopped="$(jq -r '.stopped_at // empty' "$manifest" 2>/dev/null)"
+        stopped="$(jfield "$manifest" stopped_at)"
         if [ -n "$stopped" ]; then
             vlog "manifest $rid: stopped_at=$stopped — skipping"
             continue
         fi
 
-        qpid="$(jq -r '.qemu_pid // empty' "$manifest" 2>/dev/null)"
-        opid="$(jq -r '.owner_pid // empty' "$manifest" 2>/dev/null)"
+        qpid="$(jfield "$manifest" qemu_pid)"
+        opid="$(jfield "$manifest" owner_pid)"
         # Backwards compat with the brief parent_pid intermediate schema.
         [ -z "$opid" ] || [ "$opid" = "null" ] && \
-            opid="$(jq -r '.parent_pid // empty' "$manifest" 2>/dev/null)"
+            opid="$(jfield "$manifest" parent_pid)"
 
         if [ -z "$qpid" ] || [ "$qpid" = "null" ]; then
             vlog "manifest $rid: no qemu_pid — skipping"
@@ -125,7 +146,7 @@ if [ -d "$RUNS_DIR" ]; then
         # Hard lifetime cap takes precedence over owner liveness: a VM past its
         # deadline is reaped even if its owner is still alive (it has overrun
         # any legitimate lifetime). Owner liveness only protects within the cap.
-        dl="$(jq -r '.deadline // empty' "$manifest" 2>/dev/null)"
+        dl="$(jfield "$manifest" deadline)"
         dl="${dl%.*}"   # tolerate a float deadline — `[ -ge ]` errors on one
         if [ -n "$dl" ] && [ "$dl" != "null" ] && [ "$(date +%s)" -ge "$dl" ] 2>/dev/null; then
             kill_qemu_pgroup "$qpid" "manifest $rid exceeded lifetime cap (deadline=$dl)"
@@ -147,9 +168,13 @@ fi
 if [ -d "$SMOKE_LOCK_DIR" ]; then
     for lf in "$SMOKE_LOCK_DIR"/*.json; do
         [ -f "$lf" ] || continue
-        lpid="$(jq -r '.launcher_pid // empty' "$lf" 2>/dev/null)"
-        qpid="$(jq -r '.qemu_pid // empty' "$lf" 2>/dev/null)"
-        dl="$(jq -r '.deadline // empty' "$lf" 2>/dev/null)"
+        if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$lf" 2>/dev/null; then
+            vlog "lock $(basename "$lf"): unreadable as JSON -- skipping (unknown is not stale)"
+            continue
+        fi
+        lpid="$(jfield "$lf" launcher_pid)"
+        qpid="$(jfield "$lf" qemu_pid)"
+        dl="$(jfield "$lf" deadline)"
         dl="${dl%.*}"   # tolerate a float deadline (smoke lockfiles) — see Walk 1
         if [ -z "$qpid" ] || [ "$qpid" = "null" ]; then
             vlog "lock $(basename "$lf"): no qemu_pid — purging stale lock"

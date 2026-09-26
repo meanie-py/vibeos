@@ -268,18 +268,23 @@ def check_structure(ws: Path | None = None) -> list[str]:
     return findings
 
 
-#: The crates whose Rust actually ends up in `libcrt_shared_cargo.a`, closed over
-#: path dependencies (crt-shared-cargo -> crt-shared-rust/panic-common/cnt-rust,
-#: and crt-shared-rust -> msvcrt-sys). Deliberately NOT "every crate in
-#: sdk/lib/rust": a staleness warning that fires whenever any unrelated lane
-#: edits any .rs is noise, and noise is what gets a check ignored.
-_ARCHIVE_SOURCE_CRATES = (
-    "crt-shared-cargo",
-    "crt-shared-rust",
-    "panic-common",
-    "cnt-rust",
-    "msvcrt-sys",
-)
+def _archive_source_crates(ws: Path | None = None) -> tuple[str, ...]:
+    """The crates whose Rust actually ends up in `libcrt_shared_cargo.a`: the
+    path-dependency closure of crt-shared-cargo, WALKED, not listed.
+
+    This was a hand-written tuple, and it went stale the day ucrt-rust joined the
+    archive: edits to the takeover bodies never tripped the staleness note, because
+    nobody had added the crate to a list that nothing checked. Deliberately NOT
+    "every crate in sdk/lib/rust": a staleness warning that fires whenever any
+    unrelated lane edits any .rs is noise, and noise is what gets a check ignored.
+    """
+    ws = WS if ws is None else ws
+    seen = [UCRT_ARCHIVE_CRATE]
+    for cur in seen:
+        for dep in sorted(_deps_of(ws / cur)):
+            if dep not in seen:
+                seen.append(dep)
+    return tuple(seen)
 
 
 def _content_changed_at() -> tuple[float, str] | None:
@@ -300,7 +305,7 @@ def _content_changed_at() -> tuple[float, str] | None:
     falls back to mtime, which is wrong in the merge case but is strictly better
     than skipping the assertion entirely.
     """
-    paths = [f"sdk/lib/rust/{c}" for c in _ARCHIVE_SOURCE_CRATES]
+    paths = [f"sdk/lib/rust/{c}" for c in _archive_source_crates()]
     try:
         committed = subprocess.run(
             ["git", "-C", str(REPO), "log", "-1", "--format=%ct", "--", *paths],
@@ -356,7 +361,7 @@ def _stale_against_sources(archive: Path) -> str | None:
         return what if ts > archive_mtime else None
 
     # git could not answer — fall back to raw mtimes.
-    for crate in _ARCHIVE_SOURCE_CRATES:
+    for crate in _archive_source_crates():
         src = REPO / "sdk" / "lib" / "rust" / crate
         if not src.is_dir():
             continue

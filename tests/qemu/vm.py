@@ -414,7 +414,14 @@ def reap_orphan_qemus() -> list[str]:
         try:
             info = json.loads(lf.read_text())
         except (OSError, ValueError):
-            lf.unlink(missing_ok=True)
+            # Only a lock that has STAYED unparseable is garbage. One caught
+            # mid-write by an older launcher (before locks were renamed into
+            # place) belongs to a live VM, and deleting it unregisters that VM.
+            try:
+                if time.time() - lf.stat().st_mtime > 60:
+                    lf.unlink(missing_ok=True)
+            except OSError:
+                pass
             continue
         lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
         deadline = info.get("deadline")
@@ -1910,7 +1917,13 @@ class QemuVM:
         try:
             LOCK_DIR.mkdir(parents=True, exist_ok=True)
             self._lock_path = LOCK_DIR / f"{os.getpid()}-{proc.pid}.json"
-            self._lock_path.write_text(
+            # Written to a temp name and RENAMED into place: write_text truncates
+            # and then writes, and reap_orphan_qemus() -- run from any session --
+            # deletes a lock it cannot parse. A reap landing in that window would
+            # unregister a LIVE VM, leaving it invisible to `vibeos-cli ps`/`kill`
+            # and outside the 30-min cap. rename is atomic on one filesystem.
+            tmp_lock = self._lock_path.with_suffix(".json.tmp")
+            tmp_lock.write_text(
                 json.dumps(
                     {
                         "launcher_pid": os.getpid(),
@@ -1930,6 +1943,7 @@ class QemuVM:
                     }
                 )
             )
+            os.replace(tmp_lock, self._lock_path)
             atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
         except OSError:
             self._lock_path = None

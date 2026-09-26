@@ -63,12 +63,19 @@ int __cdecl ref_isdigit(int);
 int __cdecl ref_isspace(int);
 int __cdecl ref_isupper(int);
 int __cdecl ref_ispunct(int);
-size_t __cdecl ref_strlen(const char *);
 int __cdecl ref_strcmp(const char *, const char *);
+char *__cdecl ref_strcat(char *, const char *);
+char *__cdecl ref_strcpy(char *, const char *);
+char *__cdecl ref_strncat(char *, const char *, size_t);
+char *__cdecl ref_strncpy(char *, const char *, size_t);
+char *__cdecl ref_strpbrk(const char *, const char *);
+char *__cdecl rust_strcat(char *, const char *);
+char *__cdecl rust_strcpy(char *, const char *);
+char *__cdecl rust_strncat(char *, const char *, size_t);
+char *__cdecl rust_strncpy(char *, const char *, size_t);
+char *__cdecl rust_strpbrk(const char *, const char *);
 int __cdecl ref__stricmp(const char *, const char *);
 int __cdecl ref_strncmp(const char *, const char *, size_t);
-size_t __cdecl ref_strspn(const char *, const char *);
-size_t __cdecl ref_strcspn(const char *, const char *);
 
 /* The THIRD side: our existing msvcrt Rust bodies, renamed rust_* from
  * libmsvcrt_crt_cargo.a. These are the 799 exports that already have a Rust body
@@ -88,12 +95,9 @@ int __cdecl rust_isdigit(int);
 int __cdecl rust_isspace(int);
 int __cdecl rust_isupper(int);
 int __cdecl rust_ispunct(int);
-size_t __cdecl rust_strlen(const char *);
 int __cdecl rust_strcmp(const char *, const char *);
 int __cdecl rust__stricmp(const char *, const char *);
 int __cdecl rust_strncmp(const char *, const char *, size_t);
-size_t __cdecl rust_strspn(const char *, const char *);
-size_t __cdecl rust_strcspn(const char *, const char *);
 
 /* ---- generated-case corpora ------------------------------------------- */
 /* One looping scalar argument gets the FULL range plus the edges: the ctype and
@@ -563,9 +567,14 @@ static void run_string(void)
         "\x80\xff mixed", "aaaa", "abcabcabc", "z",
     };
     const unsigned n = sizeof(s) / sizeof(s[0]);
+    /* strlen, strspn and strcspn used to be graded here too. They are now TAKEN
+     * OVER (the `string` family in tools/ucrt-takeover.yaml): the DLL links the
+     * same crt-portable-rust bodies as rust_, and their Microsoft objects are
+     * deleted, so there is no reference left to grade against and a DLL-vs-rust_
+     * row would compare the code with itself. Their evidence is the MATCH rows in
+     * docs/engineering/active-lanes/ucrt-tier2-table.tsv, stamped with the commit
+     * they were graded at. */
     for (unsigned i = 0; i < n; i++) {
-        grade("strlen", s[i], (long long)strlen(s[i]), (long long)rust_strlen(s[i]),
-              (long long)ref_strlen(s[i]));
         for (unsigned j = 0; j < n; j++) {
             grade("strcmp", s[i], sgn(strcmp(s[i], s[j])), sgn(rust_strcmp(s[i], s[j])),
                   sgn(ref_strcmp(s[i], s[j])));
@@ -573,12 +582,106 @@ static void run_string(void)
                   sgn(ref__stricmp(s[i], s[j])));
             grade("strncmp", s[i], sgn(strncmp(s[i], s[j], 3)), sgn(rust_strncmp(s[i], s[j], 3)),
                   sgn(ref_strncmp(s[i], s[j], 3)));
-            grade("strspn", s[i], (long long)strspn(s[i], s[j]),
-                  (long long)rust_strspn(s[i], s[j]), (long long)ref_strspn(s[i], s[j]));
-            grade("strcspn", s[i], (long long)strcspn(s[i], s[j]),
-                  (long long)rust_strcspn(s[i], s[j]), (long long)ref_strcspn(s[i], s[j]));
         }
     }
+}
+
+/* The string WRITERS and the pointer-returning searcher, which the generator has no
+ * driver for (it only compares integer returns). Hand-written for the same reason
+ * run_string is. Each side writes into its OWN buffer, pre-filled with the same
+ * sentinel pattern, and the graded value folds together the returned pointer's
+ * OFFSET into that side's own buffer and an FNV-1a hash of the WHOLE buffer -- so a
+ * wrong return, a missing terminator, strncpy's zero padding, or a stray write past
+ * the end all change it. Comparing raw pointers would be meaningless: three buffers. */
+#define WBUF 48
+static long long wfold(const char *buf, const char *ret)
+{
+    unsigned long long h = 1469598103934665603ULL;
+    for (int k = 0; k < WBUF; k++) {
+        h ^= (unsigned char)buf[k];
+        h *= 1099511628211ULL;
+    }
+    long long off = ret ? (long long)(ret - buf) : -1;
+    return (long long)(h ^ ((unsigned long long)(off + 2) << 56));
+}
+static void wfill(char *b, const char *init)
+{
+    for (int k = 0; k < WBUF; k++)
+        b[k] = (char)(0xA5 ^ k);
+    if (init)
+        memcpy(b, init, strlen(init) + 1);
+}
+
+static long long poff(const char *base, const char *ret)
+{
+    return ret ? (long long)(ret - base) : -1;
+}
+
+static const char *const wcorp[] = {
+    "", "a", "abc", "ABC", "hello world", "\x80\xff mixed", "abcabcabc", "z",
+};
+static const size_t wns[] = { 0, 1, 2, 3, 5, 11, 20 };
+#define WN (sizeof(wcorp) / sizeof(wcorp[0]))
+#define WNS (sizeof(wns) / sizeof(wns[0]))
+
+/* strnlen is deliberately absent: on arm64 -- the only arch Tier 2 runs on -- Microsoft's
+ * strnlen.cpp defines nothing (the export is UNBACKED there), so there is no ref_strnlen
+ * to grade against. Its in-guest evidence is owed, not assumed.
+ *
+ * One runner per export, so each gets its own table row keyed by its real name --
+ * that row is the evidence a takeover cites. Every corpus pair fits in WBUF. */
+static void run_strcat(void)
+{
+    char a[WBUF], b[WBUF], c[WBUF];
+    for (unsigned i = 0; i < WN; i++)
+        for (unsigned j = 0; j < WN; j++) {
+            wfill(a, wcorp[i]); wfill(b, wcorp[i]); wfill(c, wcorp[i]);
+            grade("strcat", wcorp[i], wfold(a, strcat(a, wcorp[j])),
+                  wfold(b, rust_strcat(b, wcorp[j])), wfold(c, ref_strcat(c, wcorp[j])));
+        }
+}
+static void run_strcpy(void)
+{
+    char a[WBUF], b[WBUF], c[WBUF];
+    for (unsigned j = 0; j < WN; j++) {
+        wfill(a, 0); wfill(b, 0); wfill(c, 0);
+        grade("strcpy", wcorp[j], wfold(a, strcpy(a, wcorp[j])),
+              wfold(b, rust_strcpy(b, wcorp[j])), wfold(c, ref_strcpy(c, wcorp[j])));
+    }
+}
+static void run_strncat(void)
+{
+    char a[WBUF], b[WBUF], c[WBUF];
+    for (unsigned i = 0; i < WN; i++)
+        for (unsigned j = 0; j < WN; j++)
+            for (unsigned k = 0; k < WNS; k++) {
+                size_t m = wns[k];
+                wfill(a, wcorp[i]); wfill(b, wcorp[i]); wfill(c, wcorp[i]);
+                grade("strncat", wcorp[i], wfold(a, strncat(a, wcorp[j], m)),
+                      wfold(b, rust_strncat(b, wcorp[j], m)),
+                      wfold(c, ref_strncat(c, wcorp[j], m)));
+            }
+}
+static void run_strncpy(void)
+{
+    char a[WBUF], b[WBUF], c[WBUF];
+    for (unsigned j = 0; j < WN; j++)
+        for (unsigned k = 0; k < WNS; k++) {
+            size_t m = wns[k];
+            wfill(a, 0); wfill(b, 0); wfill(c, 0);
+            grade("strncpy", wcorp[j], wfold(a, strncpy(a, wcorp[j], m)),
+                  wfold(b, rust_strncpy(b, wcorp[j], m)), wfold(c, ref_strncpy(c, wcorp[j], m)));
+        }
+}
+static void run_strpbrk(void)
+{
+    /* Offset into the SAME input on every side: comparing it is exact, and it never
+     * reads past the string the way hashing a fixed window would. */
+    for (unsigned i = 0; i < WN; i++)
+        for (unsigned j = 0; j < WN; j++)
+            grade("strpbrk", wcorp[i], poff(wcorp[i], strpbrk(wcorp[i], wcorp[j])),
+                  poff(wcorp[i], rust_strpbrk(wcorp[i], wcorp[j])),
+                  poff(wcorp[i], ref_strpbrk(wcorp[i], wcorp[j])));
 }
 
 /* The generated half: 233 exports on i386, declared with __typeof__ of the real
@@ -601,6 +704,27 @@ static void run_string(void)
  * has listed as unverified from the start. */
 extern unsigned long msvcrt_tls_index;
 unsigned char __cdecl msvcrt_init_locale(void);
+
+/* The REFERENCE side's CRT startup. ref_ is a private copy of Microsoft's UCRT
+ * objects with only the EXPORTS renamed, so its internals -- including this, the
+ * table ucrtbase's own DllMain runs -- keep their names and resolve to the private
+ * copy. Nothing called it before, so ref_ ran with a zeroed lock table: a zeroed
+ * CRITICAL_SECTION reads as HELD (LockCount 0; unlocked is -1), and the first
+ * ref_ call that takes __acrt_lock -- ref_setlocale -- waited on an owner that
+ * does not exist until ntdll raised STATUS_POSSIBLE_DEADLOCK (0xC0000194). It is
+ * also why the ref_ side's multibyte state never matched the DLL's: no
+ * __acrt_initialize_multibyte either. */
+unsigned char __cdecl __acrt_initialize(void); /* C++ `bool`: one byte, same ABI */
+
+static int init_ref_crt(void)
+{
+    if (!__acrt_initialize()) {
+        DbgPrint("[UCRTDIFF] FATAL: the reference UCRT's __acrt_initialize failed\n");
+        return 0;
+    }
+    DbgPrint("[UCRTDIFF] ref CRT initialized\n");
+    return 1;
+}
 
 static int init_rust_thread_state(void)
 {
@@ -684,6 +808,11 @@ static void run_legacy(void)
         { "legacy:strtox", run_strtox },
         { "legacy:ctype", run_ctype },
         { "legacy:string", run_string },
+        { "strcat", run_strcat },
+        { "strcpy", run_strcpy },
+        { "strncat", run_strncat },
+        { "strncpy", run_strncpy },
+        { "strpbrk", run_strpbrk },
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
@@ -702,6 +831,15 @@ void ucrtdiff_entry(void)
      * self-test below already needs that to be true. */
     g_owner_tid = GetCurrentThreadId();
     DbgPrint("[UCRTDIFF] entry\n");
+    /* BEFORE the C initializers, which is the order real startup has: ucrtbase's
+     * DllMain runs __acrt_initialize long before any image's .CRT$XI* table. Linking
+     * it pulls in reference objects that register XI initializers of their own, and
+     * those allocate -- run first, ref__calloc_base called HeapAlloc on a NULL
+     * __acrt_heap and the process died in RtlAllocateHeap. */
+    if (!init_ref_crt()) {
+        DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
+        ExitProcess(1);
+    }
     if (!run_c_initializers()) {
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         ExitProcess(1);
@@ -761,28 +899,40 @@ static int ucrtdiff_main(void)
      * So put all three into one explicit, identical state and prove it on serial. A
      * difftest whose sides disagree about the locale is not grading our code.
      *
-     * MEASURED RESULT: this does NOT align them. After all six calls below the line
-     * still reads `dll=0 rust=1252 ref=0`, and the eight mbc case/classification rows
-     * diverge exactly as before. Two things follow, and they are different claims:
+     * MEASURED, now that ref_ gets real startup (init_ref_crt): all three calls return
+     * 0 and the line reads `dll=0 rust=20127 ref=0`. The DLL and ref_ -- the same
+     * Microsoft C -- agree on every case (dll_fail=0), so no row is ungradeable any
+     * more. The rust_ side stores 20127 because Wine's _setmbcp maps _MB_CP_SBCS to
+     * ASCII (20127) where Microsoft stores 0: a real CONTRACT difference, and the
+     * root of the rust_ side's high-range mbc answers.
      *
-     *   1. Our Rust`s _setmbcp(0) resolves 0 to the ANSI codepage and STORES 1252;
-     *      Microsoft`s stores 0. Same round trip, different readback -- which is what
-     *      the _getmbcp DIFF row (rust=1 dll=0) was reporting all along. That one is a
-     *      genuine divergence in our code and is the root of the rust_ side`s
-     *      high-range mbc answers.
-     *
-     *   2. It does NOT explain the DLL differing from ref_, which are the same
-     *      Microsoft C (neither is in ucrtbase`s cohab archive). Those eight rows are
-     *      therefore UNGRADEABLE as things stand -- not "the product is broken", which
-     *      is what the identical dll/rust fail counts were first read as, and not
-     *      "the product is fine" either. The ref_ side needs real CRT initialisation,
-     *      which _setmbcp cannot supply, before they mean anything. */
+     * CORRECTION. An earlier version of this comment reported `rust=1252` after these
+     * calls and concluded that our _setmbcp "resolves 0 to the ANSI codepage". Neither
+     * holds: create_mbcinfo maps 0 to 20127, and with return codes on serial the
+     * rust_ call is seen to succeed and store exactly that. WHY that earlier run read
+     * 1252 is not established -- 1252 is msvcrt_init_locale's value, so the call's
+     * effect never reached the readback, and a stale harness binary would do it, but
+     * that was not shown. What is established is the lesson: a readback without its
+     * call's return code is not a measurement of the call. */
+    /* A line BEFORE each call as well as after: the process has died here with
+     * STATUS_POSSIBLE_DEADLOCK (0xC0000194), and a call that never returns prints
+     * nothing of its own. The last "->" line on serial names it. */
+    DbgPrint("[UCRTDIFF] -> dll setlocale\n");
     setlocale(LC_ALL, "C");
+    DbgPrint("[UCRTDIFF] -> ref setlocale\n");
     ref_setlocale(LC_ALL, "C");
+    DbgPrint("[UCRTDIFF] -> rust setlocale\n");
     rust_setlocale(LC_ALL, "C");
-    _setmbcp(0);
-    ref__setmbcp(0);
-    rust__setmbcp(0);
+    DbgPrint("[UCRTDIFF] -> setmbcp\n");
+    /* One serial line PER CALL, each printed after its call returns: a failing
+     * _setmbcp leaves the PREVIOUS codepage installed, so a readback alone cannot
+     * tell "stored 1252" from "refused and kept the 1252 msvcrt_init_locale put
+     * there". And one of these three has been seen to die in a critical section
+     * (the process exited STATUS_POSSIBLE_DEADLOCK, 0xC0000194, right here) -- with
+     * a line per call, the last line on serial names which one. */
+    DbgPrint("[UCRTDIFF] setmbcp(0) dll rc=%d\n", _setmbcp(0));
+    DbgPrint("[UCRTDIFF] setmbcp(0) ref rc=%d\n", ref__setmbcp(0));
+    DbgPrint("[UCRTDIFF] setmbcp(0) rust rc=%d\n", rust__setmbcp(0));
 
     /* The old diagnostic, kept as the PROOF the alignment took. If these three ever
      * disagree again, every mbc row below is comparing codepages, not implementations.
