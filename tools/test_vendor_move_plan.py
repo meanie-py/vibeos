@@ -110,3 +110,14 @@ def test_build_dirs_and_subagent_checkouts_are_never_read(tmp_path):
     )
     refs = _refs(repo, "libs/foo")
     assert not refs["build"] and not refs["review"]
+
+
+def test_a_neighbour_including_into_the_tree_by_relative_path_is_a_source_ref(tmp_path):
+    """`sdk/lib/crt/math/j0_y0.c` says `#include "ieee754/ieee754.h"`: the path is
+    relative to the including file and never spells the tree's. Missed by the first
+    cut; found only by reading math.cmake's neighbours before a move."""
+    repo = _repo(
+        tmp_path,
+        {"libs/foo/foo.h": "", "libs/user.c": '#include "foo/foo.h"\n#include "other.h"\n'},
+    )
+    assert _refs(repo, "libs/foo")["source"] == {"libs/user.c"}

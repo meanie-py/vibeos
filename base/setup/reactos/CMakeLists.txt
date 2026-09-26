@@ -1,10 +1,13 @@
 
+# The TreeList control is vendored (vendor/treelist); reactos.h includes its header.
+include_directories(${REACTOS_SOURCE_DIR}/vendor/treelist)
+
 list(APPEND SOURCE
     spapisup/fileqsup.c
     spapisup/infsupp.c
     drivepage.c
     reactos.c
-    treelist.c
+    ${REACTOS_SOURCE_DIR}/vendor/treelist/treelist.c
     reactos.h)
 
 file(GLOB reactos_rc_deps res/*.*)
