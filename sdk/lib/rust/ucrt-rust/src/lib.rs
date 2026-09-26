@@ -25,6 +25,9 @@ pub mod ismbc;
 #[cfg(feature = "tocase")]
 pub mod tocase;
 
+#[cfg(feature = "strtox")]
+pub mod strtox;
+
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
 #[cfg(feature = "portable-string")]

@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 868
-  amd64: 868
-  arm64: 865
+  i386: 836
+  amd64: 836
+  arm64: 833
 
 families:
   bits:
@@ -410,3 +410,62 @@ families:
       - toupper
       - towlower
       - towupper
+  strtox:
+    replaces:
+      - sdk/lib/ucrt/convert/strtox.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft object. The
+      harness graded only strtol/strtoul before this change -- the generator has no
+      driver for (string, char**, base) -- so run_strtox_family/run_wcstox_family
+      now grade ALL 32: value, end offset and errno, 39 inputs (the 64-bit limits,
+      "0x"/"0X" with no digit, "-0", letters as digits, every isspace byte) at bases
+      0/8/10/16/36/2, and for the wide forms nine more inputs a narrow parser never
+      sees (fullwidth and Arabic-Indic digits, a fullwidth letter, U+3000 leading
+      space). Narrow MATCH n=9828, wide MATCH n=13824, plus the legacy
+      strtol/strtoul rows at dll=0; dll_fail=0 across all 29,146 cases of the run.
+    note: >
+      A PORT of __crt_strtox::parse_integer (corecrt_internal_strtox.h:222), the one
+      template every export in the file wraps, with the accumulator width (32 for
+      long, 64 for everything else) as a parameter. Not msvcrt's bodies: those are
+      Wine's _MSVCR_VER=0 overflow contract and DIFF against UCRT on 14 of 598 cases.
+
+      Silent-if-wrong details, each transcribed: *end is written to string first
+      and to the final position last, so a no-digit parse leaves it at string with
+      whitespace and sign unconsumed; "0x" with no hex digit is no digits at all;
+      an unsigned result negates with wraparound and only a too-large magnitude
+      sets ERANGE; wide digits include 17 Unicode decimal blocks (fullwidth,
+      Arabic-Indic, ...) and wide whitespace is iswspace, locale-independent.
+    exports:
+      - _strtoi64
+      - _strtoi64_l
+      - _strtoimax_l
+      - _strtol_l
+      - _strtoll_l
+      - _strtoui64
+      - _strtoui64_l
+      - _strtoul_l
+      - _strtoull_l
+      - _strtoumax_l
+      - _wcstoi64
+      - _wcstoi64_l
+      - _wcstoimax_l
+      - _wcstol_l
+      - _wcstoll_l
+      - _wcstoui64
+      - _wcstoui64_l
+      - _wcstoul_l
+      - _wcstoull_l
+      - _wcstoumax_l
+      - strtoimax
+      - strtol
+      - strtoll
+      - strtoul
+      - strtoull
+      - strtoumax
+      - wcstoimax
+      - wcstol
+      - wcstoll
+      - wcstoul
+      - wcstoull
+      - wcstoumax
