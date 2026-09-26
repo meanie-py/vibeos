@@ -2182,6 +2182,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernel checks the header size BEFORE `ObReferenceObjectByHandle` (`lpc-rust/send.rs:407-420`),
   which is why a guest with no connection still reports `c000000d` and not `c0000008`.
   The desktop boots green throughout — this is confined to the 32-bit guest path.
+- **ExResource waiter-count "race" — ROOT-CAUSED 2026-09-26: a 10 ms timing assumption in the
+  test, not the ERESOURCE implementation.** Every recorded failure at the three moving sites
+  (`ExResource.c:432`, `:469`, and `:570` in our own `TestSharedReleasePreemption`, 197 hits in
+  the 2026-09-25 gates) read exactly `= 0, expected 1`. Each site starts a thread with a 10 ms
+  timeout, takes `STATUS_TIMEOUT` as "it blocked", and asserts the waiter count at once. But
+  ERESOURCE is RUST (`sdk/lib/rust/ex-rust/src/resource.rs`; `ntoskrnl/ex/resource.c` is
+  commented out of `ntos.cmake` -- the entry below saying no port had taken it over is stale),
+  and it increments `NumberOf{Exclusive,Shared}Waiters` under the resource lock BEFORE blocking,
+  on a uniprocessor guest. So a 0 can only mean the new thread had not been SCHEDULED yet --
+  which on TCG under host load (load average 22-27 that night) takes longer than 10 ms. It went
+  from arm64-only to i386 as load rose, and it livelocked the land queue: each red batch
+  started another 3-build/4-boot gate, re-creating the load. Fix: `WaitForWaiters()` waits
+  (bounded, ~5 s) for the counts the test is about to assert, then asserts them UNCHANGED; an
+  implementation that never counts a waiter still fails, one that over-counts fails at once.
+  Separate and NOT this: `NpfsFileInfo.c:57` is deterministic (`IoStatusBlock.Information = 158,
+  expected 154`, every time) -- a real 4-byte discrepancy in the npfs query, still OPEN.
 - **`conformance:arm64` wedges on an ExResource waiter-count race — OPEN, NOT a code regression**
   (2026-09-06, found by the wow64-amd64 lane, NOT owned by it). Two independent arm64 runs on
   the same tree both failed the kmtest sweep, and the line number MOVED between them:
