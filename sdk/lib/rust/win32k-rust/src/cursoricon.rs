@@ -879,9 +879,24 @@ pub unsafe extern "system" fn NtUserGetIconSize(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForWrite(plcy as *mut c_void, core::mem::size_of::<LONG>() as _, 1);
         }
+            // The probes VALIDATE only; these STORES are the access. A raw write into the
+        // caller's page faults with no handler under DUMMY_PSEH, so publish both
+        // through the protected copy and record a fault in Status, which is checked
+        // just below.
         if NT_SUCCESS(Status) {
-            core::ptr::write_volatile(plcx, (*CurIcon).cx as LONG);
-            core::ptr::write_volatile(plcy, (*CurIcon).cy as LONG);
+            let cx: LONG = (*CurIcon).cx as LONG;
+            let cy: LONG = (*CurIcon).cy as LONG;
+            if !crate::copy::publish_to_user(
+                plcx as *mut c_void,
+                core::ptr::addr_of!(cx) as *const c_void,
+                core::mem::size_of::<LONG>(),
+            ) || !crate::copy::publish_to_user(
+                plcy as *mut c_void,
+                core::ptr::addr_of!(cy) as *const c_void,
+                core::mem::size_of::<LONG>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if NT_SUCCESS(Status) {
@@ -1148,12 +1163,22 @@ pub unsafe extern "system" fn NtUserFindExistingCursorIcon(
         core::mem::size_of::<FINDEXISTINGCURICONPARAM>() as _,
         1,
     );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(paramSafe) as *mut core::ffi::c_void,
-            param as *const core::ffi::c_void,
-            core::mem::size_of::<FINDEXISTINGCURICONPARAM>(),
-        );
+    // Two defects at this one site. The probe is validate-only, so the copy had to
+    // become the protected one -- and the probe's verdict was being THROWN AWAY: the
+    // next statement overwrites Status with ProbeAndCaptureUnicodeStringOrAtom's
+    // result, so a failed probe here fell through and the function carried on with a
+    // zeroed paramSafe instead of failing. Both faults now return.
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+        return core::ptr::null_mut();
+    }
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(paramSafe) as *mut c_void,
+        param as *const c_void,
+        core::mem::size_of::<FINDEXISTINGCURICONPARAM>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return core::ptr::null_mut();
     }
 
     Status = ProbeAndCaptureUnicodeStringOrAtom(core::ptr::addr_of_mut!(ustrRsrcSafe), pustrRsrc);
@@ -2220,9 +2245,19 @@ pub unsafe extern "system" fn NtUserGetCursorFrameInfo(
             1,
         );
     }
+    // The probes VALIDATE only; these STORES are the access.
     if NT_SUCCESS(Status) {
-        core::ptr::write_volatile(rate_jiffies, jiffies);
-        core::ptr::write_volatile(num_steps, steps);
+        if !crate::copy::publish_to_user(
+            rate_jiffies as *mut c_void,
+            core::ptr::addr_of!(jiffies) as *const c_void,
+            core::mem::size_of_val(&jiffies),
+        ) || !crate::copy::publish_to_user(
+            num_steps as *mut c_void,
+            core::ptr::addr_of!(steps) as *const c_void,
+            core::mem::size_of_val(&steps),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
     }
 
     if !NT_SUCCESS(Status) {

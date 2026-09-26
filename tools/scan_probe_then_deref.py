@@ -228,12 +228,6 @@ def scan_text(
             # lead under the dead source it was translated from.
             if is_comment(ln):
                 continue
-            # `addr_of!((*p).field)` COMPUTES an address; it does not load, so
-            # it cannot fault. It is also the idiom the probes themselves use to
-            # name a subfield, so without this every correct probe reports
-            # itself.
-            if "addr_of!" in ln or "addr_of_mut!" in ln:
-                continue
             # Reassigning the probed identifier to an UNRELATED pointer ends the
             # taint: it now names something else. dibobj's `bmi = pbmiSafe;` swaps a
             # user pointer for a kernel pool copy, so every later `(*bmi).…` is a
@@ -252,6 +246,19 @@ def scan_text(
                 and "null" not in reassign.group(1).lower()
             ):
                 break
+            # `addr_of!((*p).field)` COMPUTES an address; it does not load, so it
+            # cannot fault. It is also the idiom the probes themselves use to name a
+            # subfield, so without this every correct probe reports itself.
+            #
+            # This MUST come after the taint-end check above, not before it. Repointing
+            # the probed name at a kernel local -- `prcl = addr_of_mut!(rclLocal);` --
+            # is the tree's idiom for the CORRECT fix, and skipping the line for
+            # containing `addr_of_mut!` skipped the reassignment that ends the taint,
+            # so every such site kept reporting after it was fixed. That is the same
+            # false-signal shape as the old break-at-first-hit bug: the tool saying
+            # there is work left where there is none.
+            if "addr_of!" in ln or "addr_of_mut!" in ln:
+                continue
             # The probed pointer handed to a callee that dereferences THAT
             # parameter -- the NtUserSetSysColors -> IntSetSysColors shape.
             if deref_index:

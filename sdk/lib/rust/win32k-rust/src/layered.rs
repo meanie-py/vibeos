@@ -5,6 +5,10 @@ use ntkrnl_sys::rtl::RtlZeroMemory;
 use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 
 
+// Not in ntkrnl_sys::base; the tree declares it per-file where a fault has to be
+// reported as a status rather than swallowed.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // USERTAG_REDIRECT: C 'rdrU' (big-endian multi-char) = 0x72647255 → LE bytes "Urdr".
 const USERTAG_REDIRECT: u32 = u32::from_le_bytes(*b"Urdr");
 
@@ -424,13 +428,40 @@ pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
             break 'block;
         } else {
             if !pcrKey.is_null() {
-                core::ptr::write_volatile(pcrKey, (*pLrdProp).Key);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Key;
+                if !crate::copy::publish_to_user(
+                    pcrKey as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pbAlpha.is_null() {
-                core::ptr::write_volatile(pbAlpha, (*pLrdProp).Alpha);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Alpha;
+                if !crate::copy::publish_to_user(
+                    pbAlpha as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pdwFlags.is_null() {
-                core::ptr::write_volatile(pdwFlags, (*pLrdProp).Flags);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Flags;
+                if !crate::copy::publish_to_user(
+                    pdwFlags as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
         }
 
@@ -503,13 +534,40 @@ pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
             break 'block;
         } else {
             if !pcrKey.is_null() {
-                core::ptr::write_volatile(pcrKey, (*pLrdProp).Key);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Key;
+                if !crate::copy::publish_to_user(
+                    pcrKey as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pbAlpha.is_null() {
-                core::ptr::write_volatile(pbAlpha, (*pLrdProp).Alpha);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Alpha;
+                if !crate::copy::publish_to_user(
+                    pbAlpha as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pdwFlags.is_null() {
-                core::ptr::write_volatile(pdwFlags, (*pLrdProp).Flags);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Flags;
+                if !crate::copy::publish_to_user(
+                    pdwFlags as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
         }
 
