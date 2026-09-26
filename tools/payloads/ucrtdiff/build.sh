@@ -123,38 +123,19 @@ for A in $ARCHES; do
         -Wl,--allow-multiple-definition \
         -Wl,--subsystem,windows -Wl,-e,ucrtdiff_entry
 
-    objd="$TC/$(echo "${CC[$A]}" | sed 's/-clang$//')-objdump"
-    # GUI subsystem: a console exe launched from explorer's startup walk gets no
-    # CSRSS console attach and dies without a word on serial (kmtest's lesson).
-    ss=$("$objd" -p "$HERE/ucrtdiff-$A.exe" | awk '$1=="Subsystem" && !p {print $2; p=1}')
-    [ "$ss" = "00000002" ] || { echo "[ucrtdiff] FAIL($A): subsystem=$ss (want GUI)"; exit 1; }
-    # It must import ucrtbase.dll directly. If it ever links the api-ms-win-crt-*
-    # sets instead, the bare side stops being OUR DLL and the harness silently
-    # grades Microsoft's C against Microsoft's C.
-    "$objd" -p "$HERE/ucrtdiff-$A.exe" | grep -qi "ucrtbase.dll" \
-        || { echo "[ucrtdiff] FAIL($A): does not import ucrtbase.dll"; exit 1; }
-    "$objd" -p "$HERE/ucrtdiff-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[ucrtdiff] FAIL($A): links UCRT api-sets (want ucrtbase.dll direct)"; exit 1; } \
-        || true
-    # EVERY graded function must appear in the ucrtbase import table. A row whose
-    # "ours" side got inlined or constant-folded still PASSES -- it just compares
-    # Microsoft's body against the compiler's idea instead of against our DLL, and
-    # nothing in the output says so. This caught isdigit before -fno-builtin.
-    imports=$("$objd" -p "$HERE/ucrtdiff-$A.exe" | sed -n '/ucrtbase.dll/,/^$/p')
-    missing=""
-    # Only real DECLARATIONS: `__cdecl ref_name(...);`. Matching ref_ anywhere would
-    # also pick up the prose in this file's comments.
-    for fn in $(grep -oE '__cdecl[[:space:]]+\*?ref_[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' \
-                "$HERE/ucrtdiff.c" | sed 's/.*ref_//; s/[[:space:]]*($//; s/(//' | sort -u); do
-        # A hand-graded export whose reference a takeover removed is compiled OUT
-        # (generated-refs.h says 0), so it is not graded and need not be imported.
-        grep -qE "^#define UCRTDIFF_REF_HAS_$fn 0\$" "$HERE/generated-refs.h" 2>/dev/null && continue
-        echo "$imports" | grep -qE "[[:space:]]$fn\$" || missing="$missing $fn"
-    done
-    [ -z "$missing" ] || {
-        echo "[ucrtdiff] FAIL($A): graded but NOT imported from ucrtbase.dll:$missing"
-        echo "[ucrtdiff]   those rows would grade the compiler, not our DLL (see -fno-builtin)"
-        exit 1
-    }
-    echo "[ucrtdiff] ok($A): $(stat -c%s "$HERE/ucrtdiff-$A.exe") bytes, $(echo "$missing" | wc -w) ungraded"
+    # Three checks, read straight from the PE by tools/payloads/pecheck.py (the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE):
+    #  * GUI subsystem: a console exe launched from explorer's startup walk gets no
+    #    CSRSS console attach and dies without a word on serial (kmtest's lesson).
+    #  * ucrtbase.dll imported directly, no api-ms-win-crt-* sets: otherwise the bare
+    #    side stops being OUR DLL and the harness grades Microsoft's C against itself.
+    #  * EVERY graded function imported from ucrtbase.dll. A row whose "ours" side got
+    #    inlined or constant-folded still PASSES -- it compares Microsoft's body against
+    #    the compiler's idea instead of our DLL. This caught isdigit before -fno-builtin.
+    #    A reference a takeover removed (generated-refs.h says 0) is compiled out.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/ucrtdiff-$A.exe" --tag ucrtdiff \
+        --gui --require-dll ucrtbase.dll --forbid-dll api-ms-win-crt \
+        --graded-from ucrtbase.dll --graded-decls "$HERE/ucrtdiff.c" \
+        --refs-header "$HERE/generated-refs.h"
+    echo "[ucrtdiff] ok($A): $(stat -c%s "$HERE/ucrtdiff-$A.exe") bytes, 0 ungraded"
 done

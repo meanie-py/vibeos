@@ -2104,12 +2104,33 @@ class QemuVM:
                 )
                 self._boot_output += extra
             except TimeoutError:
-                pass  # Settle time elapsed — that's fine
+                # Settle time elapsed -- that's fine, but what the guest printed during
+                # it is still boot output. A chatty payload never lets serial go idle,
+                # so this is the NORMAL path for one, and dropping the window here left
+                # those bytes unconsumed for restore_snapshot's flush to throw away.
+                self._absorb_pending()
 
         return self._boot_output
 
+    def _absorb_pending(self) -> None:
+        """Move every drained-but-unconsumed serial byte into `_boot_output`.
+
+        WHY (2026-09-26): `test_payload_launched` waited out whole VM lifetimes for a
+        marker that was sitting in its own serial log -- ucrtdiff's `[UCRTDIFF] done`,
+        oldcrt's `[OLDCRT] done PASS`. A fast payload finishes inside the settle window;
+        the settle timed out (the payload was talking) and kept none of it; the `ready`
+        snapshot was then taken with the payload already done; and the first test's
+        restore_snapshot flushed the unread bytes -- marker included -- and rewound the
+        guest to a point after the payload had exited, so nothing ever printed it again.
+        Output from before the snapshot belongs to the boot record, never to a flush."""
+        self._boot_output += self.serial.read_available(timeout=0)
+
     def save_snapshot(self, name: str = "ready") -> None:
         """Save VM state via QMP/HMP savevm."""
+        # Everything drained so far was printed BEFORE the snapshot: keep it (see
+        # _absorb_pending). restore_snapshot flushes what is left, and a restored guest
+        # never prints pre-snapshot output again.
+        self._absorb_pending()
         result = self.qmp.hmp(f"savevm {name}")
         if "Error" in result:
             raise RuntimeError(f"savevm failed: {result}")

@@ -22,11 +22,8 @@ for A in $ARCHES; do
     # zero serial evidence). DbgPrint comes from ntdll.
     "$TC/${CC[$A]}" -O2 -o "$HERE/procstorm-$A.exe" "$HERE/storm.c" \
         -lmsvcrt-os -lntdll -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-    objd="$TC/${CC[$A]%-gcc}-objdump"
-    ss=$("$objd" -p "$HERE/procstorm-$A.exe" | awk '$1=="Subsystem" && !p {print $2; p=1}')
-    [ "$ss" = "00000002" ] || { echo "[procstorm] FAIL($A): subsystem=$ss (want GUI)"; exit 1; }
-    "$objd" -p "$HERE/procstorm-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[procstorm] FAIL($A): links UCRT api-sets (want classic msvcrt.dll)"; exit 1; } \
-        || true
+    # Headers + import table read directly (tools/payloads/pecheck.py): the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/procstorm-$A.exe" --tag procstorm --gui --forbid-dll api-ms-win-crt
 done
 echo "[procstorm] OK"

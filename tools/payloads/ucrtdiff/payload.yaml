@@ -40,4 +40,8 @@ test:
   # which is the signature of the boot being cut off rather than the payload faulting.
   # The remaining suspect is total runtime against the VM lifetime, not this counter.
   launch_marker: "[UCRTDIFF] done"
-  launch_drain_secs: 60000
+  # WALL-CLOCK seconds since drain_for_marker was fixed (the note above predates it):
+  # 60000 meant 16.7 hours, and it also sets pytest's --timeout, so the 2026-09-26
+  # marker-eating hang ran each shard to the full VM lifetime. A shard's own budget is
+  # UCRTDIFF_BUDGET_MS (420 s by default); this is that plus boot-to-launch slack.
+  launch_drain_secs: 900

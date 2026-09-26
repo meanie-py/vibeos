@@ -28,12 +28,8 @@ for A in $ARCHES; do
     # GUI subsystem + classic msvcrt, same recipe and reasons as ../regdiff/build.sh.
     "$TC/${CC[$A]}" -O2 -o "$HERE/shelltail-$A.exe" "$HERE/shelltail.c" \
         -lmsvcrt-os -lntdll -luser32 -lkernel32 -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-    objd="$TC/${CC[$A]%-gcc}-objdump"
-    "$objd" -p "$HERE/shelltail-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[shelltail] FAIL($A): links UCRT api-sets (want classic msvcrt.dll)"; exit 1; } \
-        || true
-    "$objd" -p "$HERE/shelltail-$A.exe" | grep -qi "DLL Name: shell32" \
-        && { echo "[shelltail] FAIL($A): imports shell32 (the children must load it themselves)"; exit 1; } \
-        || true
+    # Headers + import table read directly (tools/payloads/pecheck.py): the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/shelltail-$A.exe" --tag shelltail --forbid-dll api-ms-win-crt --forbid-dll shell32
 done
 echo "[shelltail] OK"
