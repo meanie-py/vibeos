@@ -1707,7 +1707,10 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   always; AArch64 for normal cacheable memory, and we never set SCTLR.A). The real objection is
   LANGUAGE-level — dereferencing a misaligned `*const u16` is UB and LLVM tags the load
   `align 2` — and it only bites where RUST ITSELF dereferences, whereas the overwhelmingly
-  common site hands the pointer straight to a Win32/Nt callee. **So: convert these to `w!()`
+  common site hands the pointer straight to a Win32/Nt callee. (Where Rust does dereference —
+  a faithful copy of C's `Count = (ULONG*)(Buffer + Pad); Count[0] = ...` over a byte array,
+  as cryptlib's `A_SHAFinal` was — use `write_unaligned`/`read_unaligned`; `rustconv
+  difftest-contract` finds the C side, because UBSan rejects the genuine reference there.) **So: convert these to `w!()`
   when you are already in the crate for another reason, and gate it with whatever you were
   doing. Never as a repo-wide sweep** — the risk of touching kernel crates for a reviewability
   win does not pay. `b"LogEvent\0" as *const u16` is the severe
@@ -5444,6 +5447,14 @@ suspect call kept it failing; eighty made it green.
   string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
   Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
   part of the contract — keep the order.
+- **The mirror: an out-parameter store made UNCONDITIONAL.** compress.c writes
+  `*final_size` only at its `out:` label and only `if (final_size)`; its error paths `return`
+  first. The Rust `RtlDecompressFragment` stored `result.bytes_written` after every call, so
+  a NULL `FinalUncompressedSize` faulted (the C returns `STATUS_BAD_COMPRESSION_BUFFER`) and
+  every error clobbered the caller's value with 0; `RtlCompressBuffer` had the NULL half.
+  Found by `rustconv difftest-contract` (`compress.json`) on its first run with the out-param
+  declared `nullable`. When a C out-param store sits behind a label or an `if (p)`, the guard
+  and the path are both contract — and declare such params `nullable` in any difftest.
 - **`if (CAS(...))` compared against the WRONG operand — an atomic publish that frees what it
   just published.** C tests the compare-exchange result for truthiness: the call returns the
   PREVIOUS value, so non-NULL means *another thread got there first and my block is the loser*.
@@ -5691,6 +5702,13 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   pointer.
 - **`copy_nonoverlapping`/`copy` have the same element-vs-byte trap** (the `RtlCopyMemory`
   sibling).
+- **A C pointer difference lowered as ADDRESS subtraction.** `lpNextSlash - lpSubBlock` on
+  `LPCWSTR` counts WCHARs; `(a as isize - b as isize)` counts bytes. version.dll's
+  `VersionInfo32_QueryValue` passed that to `FindChild` as the key length, so every key
+  compared twice its length and no 32-bit child was ever found; the byte-typed 16-bit twin
+  was correct, which is what makes the class easy to copy. Use `a.offset_from(b)`. Found by
+  `rustconv difftest-contract` (`version.json`), together with a `VersionInfoIs16` that read
+  offset 0 instead of `szKey[0]` at offset 4, and a wide literal truncated to 15 units.
 - **A pointer difference with an adjustment folded into `offset_from`, and then applied
   AGAIN.** `sym->current - 1 - ptr` parses as `(current - 1) - ptr`; the translation correctly
   turned `current - ptr` into `offset_from(ptr)` and then kept the `- 1` as well, so msvcrt's

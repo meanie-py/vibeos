@@ -4,17 +4,20 @@ import json
 import os
 import sys
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 import anthropic
 from openai import OpenAI
 
+from .attempts import Attempt, durable_json
 from .config import (
     CLAUDE_MAX_TOKENS,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_MAX_TOKENS,
     DEFAULT_MODELS,
     GEMINI_MAX_TOKENS,
+    MODEL_PRICING,
     get_backend,
 )
 
@@ -30,6 +33,8 @@ class TranslationResult:
     error: str | None = None
     cache_read_tokens: int = 0  # served from cache (~0.1x price)
     cache_write_tokens: int = 0  # written to cache (~1.25x price)
+    attempt_id: str | None = None
+    usage_known: bool = False
 
 
 # Per-1M-token USD pricing (input, output, cache_read, cache_write).
@@ -317,12 +322,15 @@ def _submit_deepseek(
     stable prefix per function is cheap — no explicit cache_control needed).
     Streams deltas to `sink` so a kill mid-stream never discards paid output.
     """
+    input_tokens = output_tokens = 0
+    usage_known = False
+    response_text = ""
     try:
         api_key = os.environ.get("DEEPSEEK_API_KEY")
         if not api_key:
             raise RuntimeError("DEEPSEEK_API_KEY not set (add it to .env)")
 
-        client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+        client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL, max_retries=0)
 
         messages = []
         if system_prompt:
@@ -343,11 +351,17 @@ def _submit_deepseek(
             temperature=0.0,
             stream=True,
             stream_options={"include_usage": True},
+            extra_body={
+                "thinking": {"type": os.environ.get("RUSTCONV_DEEPSEEK_THINKING", "enabled")}
+            },
         )
         for chunk in stream:
             if chunk.choices:
                 choice = chunk.choices[0]
                 delta = choice.delta
+                reasoning = getattr(delta, "reasoning_content", None) if delta is not None else None
+                if reasoning and sink is not None and hasattr(sink, "write_reasoning"):
+                    sink.write_reasoning(reasoning)
                 content = getattr(delta, "content", None) if delta is not None else None
                 if content:
                     response_text += content
@@ -358,6 +372,7 @@ def _submit_deepseek(
             # Usage arrives on the final chunk (choices empty) with include_usage.
             usage = getattr(chunk, "usage", None)
             if usage:
+                usage_known = True
                 input_tokens = usage.prompt_tokens
                 output_tokens = usage.completion_tokens
 
@@ -376,6 +391,7 @@ def _submit_deepseek(
                 source_file="",
                 rust_code="",
                 model=model,
+                usage_known=usage_known,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 success=False,
@@ -392,6 +408,7 @@ def _submit_deepseek(
                 source_file="",
                 rust_code=rust_code,
                 model=model,
+                usage_known=usage_known,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 success=False,
@@ -406,6 +423,7 @@ def _submit_deepseek(
             source_file="",
             rust_code=rust_code,
             model=model,
+            usage_known=usage_known,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             success=True,
@@ -414,16 +432,86 @@ def _submit_deepseek(
     except Exception as e:
         return TranslationResult(
             source_file="",
-            rust_code="",
+            rust_code=_extract_rust_code(response_text),
             model=model,
-            input_tokens=0,
-            output_tokens=0,
+            usage_known=usage_known,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             success=False,
             error=str(e),
         )
 
 
 def submit_single(
+    prompt: str, model: str = "", system_prompt: str = "", file_context: str = "", sink=None
+) -> TranslationResult:
+    """Preserve each purchase and reserve its maximum charge before contacting the API."""
+    model = model or DEFAULT_MODELS[get_backend()]
+    thinking = os.environ.get("RUSTCONV_DEEPSEEK_THINKING", "enabled")
+    if thinking not in {"enabled", "disabled"}:
+        raise ValueError("RUSTCONV_DEEPSEEK_THINKING must be enabled or disabled")
+    budget_file = os.environ.get("RUSTCONV_BUDGET_FILE")
+    budget_limit = os.environ.get("RUSTCONV_BUDGET_USD")
+    if bool(budget_file) != bool(budget_limit):
+        raise ValueError("Set both RUSTCONV_BUDGET_FILE and RUSTCONV_BUDGET_USD")
+    budget = None
+    upper = None
+    pin = pout = Decimal(0)
+    if budget_file:
+        from .spend_guard import Budget
+
+        if model not in {"deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash"}:
+            raise ValueError(f"No verified reservation bound for {model}; refusing payment")
+        if not 0 < DEEPSEEK_MAX_TOKENS <= 384000:
+            raise ValueError("DEEPSEEK_MAX_TOKENS outside verified model limit")
+        pin, pout = (Decimal(str(v)) for v in MODEL_PRICING[model])
+        # Full documented context limit, not a tokenizer estimate. SDK retries disabled.
+        upper = (Decimal(1048576) * pin + DEEPSEEK_MAX_TOKENS * pout) / 1000000
+        assert budget_limit is not None
+        budget = Budget(Path(budget_file), budget_limit)
+    attempt = Attempt(
+        {
+            "model": model,
+            "thinking": thinking,
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "file_context": file_context,
+            "max_output_tokens": DEEPSEEK_MAX_TOKENS if model.startswith("deepseek-") else None,
+            "legacy_sink": str(sink.path) if sink is not None and hasattr(sink, "path") else None,
+            "reserved_upper_usd": str(upper) if upper is not None else None,
+            "price_basis": "peak/cache-miss conservative estimate, verified 2026-09-22",
+            "usd_per_million": MODEL_PRICING.get(model),
+        },
+        downstream=sink,
+    )
+    try:
+        if budget is not None:
+            assert upper is not None
+            budget.reserve(attempt.id, upper)
+        result = _submit_single_backend(prompt, model, system_prompt, file_context, sink=attempt)
+        result.attempt_id = attempt.id
+        attempt.finish(result)
+        if budget is not None:
+            actual: Decimal | None = None
+            if result.usage_known:
+                actual = (result.input_tokens * pin + result.output_tokens * pout) / 1000000
+            budget.settle(attempt.id, actual)
+            durable_json(
+                attempt.path / "accounting.json",
+                {
+                    "schema": 1,
+                    "attempt_id": attempt.id,
+                    "estimated_usd": str(actual) if actual is not None else None,
+                    "basis": "provider usage at reserved peak/cache-miss rates; not invoice",
+                    "budget_file": budget_file,
+                },
+            )
+        return result
+    finally:
+        attempt.close()
+
+
+def _submit_single_backend(
     prompt: str, model: str = "", system_prompt: str = "", file_context: str = "", sink=None
 ) -> TranslationResult:
     """Submit a single translation request.

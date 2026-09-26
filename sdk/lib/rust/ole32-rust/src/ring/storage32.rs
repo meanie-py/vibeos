@@ -2844,7 +2844,7 @@ unsafe fn Storage32Impl_AddBlockDepot(This: *mut StorageImpl, blockIndex: ULONG,
   {
     let offset = (rangeLockIndex % blocksPerDepot) as usize;
     let ptr = blockBuffer.as_mut_ptr() as *mut ULONG;
-    *ptr.add(offset) = BLOCK_END_OF_CHAIN;
+    ptr.add(offset).write_unaligned(BLOCK_END_OF_CHAIN);
   }
 
   StorageImpl_WriteBigBlock(This, blockIndex, blockBuffer.as_ptr() as *const core::ffi::c_void);

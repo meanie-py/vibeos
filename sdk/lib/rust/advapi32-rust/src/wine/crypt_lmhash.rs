@@ -134,8 +134,9 @@ pub unsafe extern "system" fn SystemFunction004(
     }
 
     let data_ui = data.as_mut_ptr() as *mut u32;
-    *data_ui.offset(0) = (*in_).Length;
-    *data_ui.offset(1) = 1;
+    // `data` is a byte array: store unaligned (same bytes, no misaligned-deref UB).
+    data_ui.offset(0).write_unaligned((*in_).Length);
+    data_ui.offset(1).write_unaligned(1);
 
     if ((*key).Length as usize) < core::mem::size_of_val(&deskey) {
         memset(deskey.as_mut_ptr() as *mut _, 0, core::mem::size_of_val(&deskey));

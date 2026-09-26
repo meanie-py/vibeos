@@ -1862,7 +1862,10 @@ pub unsafe extern "system" fn FatOpenExistingDirectory(
             }
         }
         if !UnwindDcb.is_null() {
-            (*FileObject).SectionObjectPointer = core::ptr::null_mut();
+            // create.c: `if (ARGUMENT_PRESENT( FileObject ))` — FileObject is optional here.
+            if !FileObject.is_null() {
+                (*FileObject).SectionObjectPointer = core::ptr::null_mut();
+            }
             FatDeleteFcb(IrpContext, &mut UnwindDcb);
             *Dcb = core::ptr::null_mut();
         }
@@ -2568,7 +2571,9 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                         *Fcb,
                         UnwindCcb,
                     );
-                    (*FileObject).SectionObjectPointer =
+                    // Unconditional in create.c too; its ARGUMENT_PRESENT(FileObject) guards only the
+                    // AbnormalTermination() unwind, which DUMMY_PSEH never runs.
+                    (*FileObject).SectionObjectPointer = // nolint: dropped-null-guard
                         core::ptr::addr_of_mut!((*(*(*Fcb)).NonPaged).SectionObjectPointers) as *mut _;
                     Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
                     Iosb.Information = FILE_OPENED as _;

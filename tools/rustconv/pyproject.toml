@@ -30,7 +30,9 @@ gemini = ["google-genai>=0.3"]
 include = ["rustconv*"]
 
 [tool.setuptools.package-data]
-rustconv = ["../templates/*", "../data/*"]
+rustconv = ["../templates/*", "../data/*", "../data/pilots/*", "../data/difftest/*.json", "../data/difftest/*.md", "../data/difftest/*.rs", "../data/difftest/include/*", "../data/difftest/atoi64_include/*", "../data/difftest/strtoi64_include/*", "../data/difftest/wtoi64_include/*", "../data/difftest/wtoi64_include/internal/wine/*", "../data/difftest/strlwr_include/*", "../data/difftest/wcslwr_include/*", "../data/difftest/strdup_include/*", "../data/difftest/*.h", "../data/difftest/cryptlib_include/*"]
+"rustconv.cpp_cohort" = ["*.rs", "*.cpp", "*.json", "*.md"]
+"rustconv.c_cohort" = ["*.rs", "*.c", "*.json"]
 
 [project.scripts]
 rustconv = "rustconv.__main__:main"

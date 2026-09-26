@@ -4790,13 +4790,27 @@ fn main() {
     macro_rules! run {
         ($($t:ident),* $(,)?) => {{
             use std::io::Write;
+            let args: Vec<String> = std::env::args().skip(1).collect();
+            let selected = if args.is_empty() {
+                &args[..]
+            } else {
+                assert_eq!(args[0], "--exact", "only exact case selection is supported");
+                assert!(args.len() > 1, "--exact requires a case name");
+                &args[1..]
+            };
+            let known = [$(stringify!($t)),*];
+            for name in selected {
+                assert!(known.contains(&name.as_str()), "unknown differential case: {name}");
+            }
             let mut n = 0usize;
             $(
+                if selected.is_empty() || selected.iter().any(|name| name == stringify!($t)) {
                 print!("test {} ... ", stringify!($t));
                 std::io::stdout().flush().ok();
                 $t();
                 println!("ok");
                 n += 1;
+                }
             )*
             n
         }};
