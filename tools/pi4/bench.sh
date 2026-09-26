@@ -2,10 +2,10 @@
 # Host side of the Pi 4B bench, driven from WSL. Guide: docs/engineering/pi4-bench.md
 #
 #   tools/pi4/bench.sh status
-#   tools/pi4/bench.sh up       # serial capture listener + TFTP server
+#   tools/pi4/bench.sh up       # serial capture listener + TFTP + sanboot HTTP servers
 #   tools/pi4/bench.sh down
 #   tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
-#   tools/pi4/bench.sh http     # start the sanboot HTTP server (needs a TCP firewall rule)
+#   tools/pi4/bench.sh http     # just the sanboot HTTP server (needs the TCP 8069 rule)
 #
 # Both services run as WINDOWS processes: the USB-serial port belongs to Windows,
 # and WSL2 in NAT mode (172.x) is unreachable from the LAN the Pi is on. `up`
@@ -75,6 +75,7 @@ up() {
         echo "pi4-bench: TFTP server exited - see $BENCH/tftp-server.err" >&2
         return 1
     }
+    http
 }
 
 # The sanboot server is started only on request: a first TCP listen from a new
@@ -83,7 +84,9 @@ up() {
 http() {
     cp "$HERE/serve_http.py" "$BENCH/"
     if [ -z "$(pids 'serve_http.py')" ]; then
-        ps_launch "Start-Process -FilePath '$PY' -ArgumentList '-u','$WBENCH\\serve_http.py','$WBENCH\\payload','$HOST_IP','$HTTP_PORT' -WindowStyle Hidden -RedirectStandardOutput '$WBENCH\\http-server.log' -RedirectStandardError '$WBENCH\\http-server.err'"
+        # This Start-Process never returns on its own (python is serving within
+        # a second; powershell.exe stays). Bound it and trust the PID check below.
+        timeout 10 "$PS" -NoProfile -Command "Start-Process -FilePath '$PY' -ArgumentList '-u','$WBENCH\\serve_http.py','$WBENCH\\payload','$HOST_IP','$HTTP_PORT' -WindowStyle Hidden -RedirectStandardOutput '$WBENCH\\http-server.log' -RedirectStandardError '$WBENCH\\http-server.err'" >/dev/null 2>&1 </dev/null
         sleep 2
     fi
     [ -n "$(pids 'serve_http.py')" ] || {

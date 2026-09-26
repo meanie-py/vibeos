@@ -42,7 +42,7 @@ in VibeOS.
 ## Host services
 
 ```bash
-tools/pi4/bench.sh up       # serial capture listener + TFTP server
+tools/pi4/bench.sh up       # serial capture listener + TFTP + sanboot HTTP servers
 tools/pi4/bench.sh status   # listener, TFTP server, plug state and watts
 tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
 tools/pi4/bench.sh down
@@ -101,9 +101,14 @@ itself boots from.
 ./vibeos-cli build --arch arm64
 ./vibeos-cli smoke --arch arm64        # QEMU first, always
 tools/pi4/bench.sh stage
-tools/pi4/netboot.sh [--ramdisk]       # power-cycle -> Shell -> TFTP -> boot
+tools/pi4/netboot.sh                   # power-cycle -> Shell -> iPXE sanboot: ~100 s to desktop
 tools/pi4/hdmi.sh                      # what the screen shows
 ```
+
+The default is sanboot (below): nothing but iPXE touches the SD card, and a
+kernel change reaches the desktop ~100 s after power-on (measured 2026-09-26:
+80 s firmware + Shell + iPXE, 20 s loader to desktop). `netboot.sh --card
+[--ramdisk]` is the old path, TFTP onto the card, kept for when HTTP is down.
 
 `netboot.sh` cycles power, catches the firmware splash and sends F1 for the UEFI
 Shell. The splash is a window of about 5 s. Missing it costs about 90 s of
@@ -113,9 +118,9 @@ card. The script then brings up DHCP, TFTPs `BOOTAA64.EFI` (and, with
 picks the loader's default menu entry. The Pi's `freeldr.ini` is
 `tools/pi4/freeldr.ini`: `TimeOut=-1`, so the menu waits for that keypress.
 
-The loader is ~300 KB and lands in about a second. The ramdisk is ~140 MB and
-takes **~13.5 minutes**, then freeldr spends another **~3.5 minutes** reading
-it back off the card, so only pass `--ramdisk` when kernel-side code changed.
+On the `--card` path the loader is ~300 KB and lands in about a second. The
+ramdisk is ~140 MB and takes **~13.5 minutes**, then freeldr spends another
+**~3.5 minutes** reading it back off the card.
 
 The limit is **the SD card as this firmware drives it, not the network**.
 Measured 2026-09-26 on the same 146,800,640-byte file:
@@ -136,14 +141,13 @@ Both need TCP (HTTP or iSCSI), so a second inbound firewall rule.
 
 ### Sanboot (no card writes)
 
-`tools/pi4/netboot.sh --sanboot` TFTPs `ipxe.efi` and `autoexec.ipxe` onto the
-card (a second each) and launches iPXE, which runs
+`tools/pi4/netboot.sh` (the default) TFTPs `ipxe.efi` and `autoexec.ipxe` onto
+the card (a second each) and launches iPXE, which runs
 `sanboot http://<host>:8069/boot.img`. `boot.img` is `qemu/boot.img` with the
-Pi's `freeldr.ini`, built by `bench.sh stage`; `bench.sh http` serves it with
-`serve_http.py` (HEAD and byte ranges, which iPXE needs). Proven end to end in
-QEMU on 2026-09-26, VibeOS reaching the desktop with no local disk. On the Pi
-it needs one more inbound firewall rule, created by the bench owner in an
-elevated PowerShell:
+Pi's `freeldr.ini`, built by `bench.sh stage`; `bench.sh up` (or `http`) serves
+it with `serve_http.py` (HEAD and byte ranges, which iPXE needs). Proven in
+QEMU and then on the Pi on 2026-09-26. It needs a second inbound firewall rule,
+created once by the bench owner in an elevated PowerShell (this bench has it):
 
 ```powershell
 New-NetFirewallRule -DisplayName "VibeOS Pi4 sanboot HTTP (bring-up)" -Direction Inbound `
