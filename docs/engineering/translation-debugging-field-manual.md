@@ -6907,6 +6907,9 @@ it only ever asks "was this attempt red", never "red the same way" — which is 
 intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
 ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
 already captured at `gate.py:314`.
+Renamed `CONFORMANCE_RED` on 2026-09-26, owner-approved: the word now says what was observed
+(the ratchet failed) and not a cause. That fixes the invitation to requeue, not the missing
+discriminator above — the label is still a constant.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a

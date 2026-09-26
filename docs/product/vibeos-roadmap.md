@@ -1751,7 +1751,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (1.6.39 -> 1.6.58) and the zlib audit are DONE.
 
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
-  more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
+  more than the retries. LABEL FIXED 2026-09-26; the discriminator is still OPEN** (2026-09-19).
+  Renamed `CONFORMANCE_RED` (owner-approved) — it names the observation, not a cause. It
+  recurred the day of the rename: `rustconv-speedrun` @ `e50515abfab5` was rejected
+  "CONFORMANCE_FLAKE, 3 attempts" for an i386 BUGCHECK 0x1E identical on all 9 surviving
+  rounds (an un-gated empty stub shadowing a self-patching asm routine). What is still owed is
+  the signature diff below: the final verdict still cannot say "reproduced identically". Verbatim from `land-status`:
 
         REJECTED: shell32-com @ 3607b8d766e0 (CONFORMANCE_FLAKE)
                   conformance:i386: CONFORMANCE_FLAKE, 3 attempts

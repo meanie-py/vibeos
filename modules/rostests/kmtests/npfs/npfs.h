@@ -191,6 +191,12 @@ typedef struct _THREAD_CONTEXT
     KEVENT StartWorkEvent;
     KEVENT WorkCompleteEvent;
     PKTHREAD Thread;
+    /* DIAGNOSTIC ONLY (vibeos): interrupt-time stamps of one work item, so a work item
+     * that finishes after its caller's deadline can say WHERE the time went -- waking
+     * the worker (scheduler latency) or doing the work (the pipe operation itself).
+     * Read and printed by PipeWorkerThread; no assertion or return value uses them. */
+    volatile ULONGLONG DiagTriggered;
+    volatile ULONG DiagDeadlineMs;
 } THREAD_CONTEXT, *PTHREAD_CONTEXT;
 
 VOID
