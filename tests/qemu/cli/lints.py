@@ -1232,10 +1232,12 @@ def _sacred_analysis(run: Run, repo: Path, arch: str, script: Path):
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`).
 
-    scan_ud2 + sacred primitives + scan_self_recursive. All three are POST-LINK
-    miscompile detectors: they read the emitted code, because the defects they
-    catch are invisible in the source (an ABI mismatch that LLVM turned into a
-    `ud2`; a Rust `memcpy` that LLVM lowered into a call to itself).
+    scan_ud2 + sacred primitives + scan_self_recursive + scan_flex_array_panic.
+    All four are POST-LINK detectors: they read the emitted code, because the
+    defects they catch are invisible in the source (an ABI mismatch that LLVM
+    turned into a `ud2`; a Rust `memcpy` that LLVM lowered into a call to itself;
+    a bindgen `[T; 1]` whose bounds check panics on element 2 of a C flexible
+    array -- the Rust reads as correct, and only the emitted immediate says 1).
     """
     py = sys.executable
     build_dir = repo / f"build-{arch}"
@@ -1244,6 +1246,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
+        run.add(Stage("scan_flex_array_panic", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1280,3 +1283,29 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         strict=strict,
         by_exit_code=True,
     )
+    # A bounds check against a length of 1 on a bindgen flexible array: the C
+    # over-allocates past a trailing `T x[1]`, bindgen believes the 1, and every
+    # element after the first panics. Only i386 encodes the length as an immediate
+    # push, so the reader can only grade there -- on the other arches say so as a
+    # SKIP WITH A REASON rather than running it and taking its refusal (exit 2) as
+    # a failure. Sites graded as genuine 1-element arrays live in
+    # tools/flex_array_allowlist.txt; a stale entry there fails this stage too,
+    # because it means the site was fixed or the reader went blind.
+    flexarr = repo / "tools" / "scan_flex_array_panic.py"
+    if arch != "i386":
+        run.add(
+            Stage(
+                "scan_flex_array_panic",
+                status="skip",
+                detail=f"{arch} passes the length in a register, not a push; reader is i386-only",
+            )
+        )
+    else:
+        _lint_stage(
+            run,
+            repo,
+            "scan_flex_array_panic",
+            [py, str(flexarr), "--lint", "--arch", arch] if flexarr.is_file() else ["MISSING"],
+            strict=strict,
+            by_exit_code=True,
+        )

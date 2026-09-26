@@ -1421,9 +1421,14 @@ pub unsafe extern "system" fn WSPSelect(
     (*PollInfo).Exclusive = (0u8 as _);
     (*PollInfo).Timeout = Timeout;
 
+    // Handles is a C flexible array (`AFD_HANDLE Handles[1]`, drivers/afd/shared.h:59)
+    // and PollBuffer above is sized sizeof(AFD_POLL_INFO) + (HandleCount - 1) *
+    // sizeof(AFD_HANDLE), so bindgen's [AFD_HANDLE; 1] bounds-checks every walk below
+    // and panics on any select() with more than one socket. Constant index 0 is
+    // checked at compile time, so `[0]` + .add(n) carries no panic branch.
     i = 0;
     while i < selectfds.fd_count {
-        (*PollInfo).Handles[i as usize].Handle = selectfds.fd_array[i as usize];
+        (*(&raw mut (*PollInfo).Handles[0]).add(i as usize)).Handle = selectfds.fd_array[i as usize];
         i += 1;
     }
 
@@ -1432,7 +1437,7 @@ pub unsafe extern "system" fn WSPSelect(
         while i < (*readfds).fd_count {
             j = 0;
             while j < HandleCount {
-                if (*PollInfo).Handles[j as usize].Handle == (*readfds).fd_array[i as usize] {
+                if (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Handle == (*readfds).fd_array[i as usize] {
                     break;
                 }
                 j += 1;
@@ -1456,7 +1461,7 @@ pub unsafe extern "system" fn WSPSelect(
                 NtClose(SockEvent);
                 return SOCKET_ERROR;
             }
-            (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_RECEIVE | AFD_EVENT_DISCONNECT | AFD_EVENT_ABORT | AFD_EVENT_CLOSE | AFD_EVENT_ACCEPT;
+            (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Events |= AFD_EVENT_RECEIVE | AFD_EVENT_DISCONNECT | AFD_EVENT_ABORT | AFD_EVENT_CLOSE | AFD_EVENT_ACCEPT;
             i += 1;
         }
     }
@@ -1466,7 +1471,7 @@ pub unsafe extern "system" fn WSPSelect(
         while i < (*writefds).fd_count {
             j = 0;
             while j < HandleCount {
-                if (*PollInfo).Handles[j as usize].Handle == (*writefds).fd_array[i as usize] {
+                if (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Handle == (*writefds).fd_array[i as usize] {
                     break;
                 }
                 j += 1;
@@ -1490,10 +1495,10 @@ pub unsafe extern "system" fn WSPSelect(
                 NtClose(SockEvent);
                 return SOCKET_ERROR;
             }
-            (*PollInfo).Handles[j as usize].Handle = (*writefds).fd_array[i as usize];
-            (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_SEND;
+            (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Handle = (*writefds).fd_array[i as usize];
+            (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Events |= AFD_EVENT_SEND;
             if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
-                (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_CONNECT;
+                (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Events |= AFD_EVENT_CONNECT;
             }
             i += 1;
         }
@@ -1504,7 +1509,7 @@ pub unsafe extern "system" fn WSPSelect(
         while i < (*exceptfds).fd_count {
             j = 0;
             while j < HandleCount {
-                if (*PollInfo).Handles[j as usize].Handle == (*exceptfds).fd_array[i as usize] {
+                if (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Handle == (*exceptfds).fd_array[i as usize] {
                     break;
                 }
                 j += 1;
@@ -1528,12 +1533,12 @@ pub unsafe extern "system" fn WSPSelect(
                 NtClose(SockEvent);
                 return SOCKET_ERROR;
             }
-            (*PollInfo).Handles[j as usize].Handle = (*exceptfds).fd_array[i as usize];
+            (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Handle = (*exceptfds).fd_array[i as usize];
             if (*(*Socket).SharedData).__bindgen_anon_1.OobInline() == 0 {
-                (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_OOB_RECEIVE;
+                (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Events |= AFD_EVENT_OOB_RECEIVE;
             }
             if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
-                (*PollInfo).Handles[j as usize].Events |= AFD_EVENT_CONNECT_FAIL;
+                (*(&raw mut (*PollInfo).Handles[0]).add(j as usize)).Events |= AFD_EVENT_CONNECT_FAIL;
             }
             i += 1;
         }
@@ -1576,8 +1581,8 @@ pub unsafe extern "system" fn WSPSelect(
 
     i = 0;
     while i < HandleCount {
-        Events = (*PollInfo).Handles[i as usize].Events;
-        Handle = (*PollInfo).Handles[i as usize].Handle;
+        Events = (*(&raw mut (*PollInfo).Handles[0]).add(i as usize)).Events;
+        Handle = (*(&raw mut (*PollInfo).Handles[0]).add(i as usize)).Handle;
         x = 1;
         loop {
             if x == 0 {

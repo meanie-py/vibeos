@@ -952,7 +952,13 @@ pub unsafe extern "C" fn DoAdminUnlock(
             } else {
                 i = 0;
                 while i < (*Groups).GroupCount {
-                    if RtlEqualSid((*Groups).Groups[i as usize].Sid, AdminSid) != 0 {
+                    // Groups is a C flexible array (`SID_AND_ATTRIBUTES
+                    // Groups[ANYSIZE_ARRAY]`, xdk/setypes.h:1030) in a buffer sized by
+                    // the NtQueryInformationToken query above, so bindgen's
+                    // [SID_AND_ATTRIBUTES; 1] bounds-checks this walk and panics for any
+                    // token carrying more than one group -- which is every real token.
+                    let group = (&raw const (*Groups).Groups[0]).add(i as usize);
+                    if RtlEqualSid((*group).Sid, AdminSid) != 0 {
                         if (*__wine_dbch___default).flags & (1 << __WINE_DBCL_TRACE) != 0 {
                             ros_dbg_log(
                                 __WINE_DBCL_TRACE,

@@ -1144,10 +1144,17 @@ pub unsafe extern "system" fn FindNextVolumeW(
             b'e' as WCHAR,
             b'{' as WCHAR,
         ];
-        let link: *mut WCHAR = (data as *mut u8)
-            .offset((*data).MountPoints[(*data).Size as usize].SymbolicLinkNameOffset as isize)
-            as *mut WCHAR;
-        let size: DWORD = (*data).MountPoints[(*data).Size as usize].SymbolicLinkNameLength as DWORD;
+        // MountPoints is a C flexible array (`MOUNTMGR_MOUNT_POINT MountPoints[1]`,
+        // ddk/mountmgr.h:109) that bindgen renders as [T; 1], and the handle points at an
+        // IOCTL output buffer holding NumberOfMountPoints of them. `Size` is reused as the
+        // iteration cursor here exactly as the C does (volume.c:1088-1092), so indexing it
+        // bounds-checks against 1 and PANICS on the second volume of any enumeration.
+        // Constant index 0 is checked at compile time and yields the element pointer
+        // without naming the element type.
+        let point = (&raw const (*data).MountPoints[0]).add((*data).Size as usize);
+        let link: *mut WCHAR =
+            (data as *mut u8).offset((*point).SymbolicLinkNameOffset as isize) as *mut WCHAR;
+        let size: DWORD = (*point).SymbolicLinkNameLength as DWORD;
         (*data).Size += 1;
         /* skip non-volumes */
         if size < core::mem::size_of::<[WCHAR; 11]>() as DWORD

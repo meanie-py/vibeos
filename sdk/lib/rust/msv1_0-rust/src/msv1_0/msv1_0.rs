@@ -522,8 +522,8 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
-                            if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                            if !(*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
@@ -566,8 +566,8 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
-                            if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                            if !(*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
@@ -607,8 +607,8 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
-                            if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                            if !(*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
@@ -649,8 +649,8 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
                     if !(*Buffer).Groups.is_null() {
                         i = 0;
                         while i < (*(*Buffer).Groups).GroupCount {
-                            if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                            if !(*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                                (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid as *mut core::ffi::c_void);
                             }
                             i = i.wrapping_add(1);
                         }
@@ -686,8 +686,8 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
                 if !(*Buffer).Groups.is_null() {
                     i = 0;
                     while i < (*(*Buffer).Groups).GroupCount {
-                        if !(*(*Buffer).Groups).Groups[i as usize].Sid.is_null() {
-                            (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(*Buffer).Groups).Groups[i as usize].Sid as *mut core::ffi::c_void);
+                        if !(*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid.is_null() {
+                            (DispatchTable.FreeLsaHeap.unwrap_unchecked())((*(&raw const (*(*Buffer).Groups).Groups[0]).add(i as usize)).Sid as *mut core::ffi::c_void);
                         }
                         i = i.wrapping_add(1);
                     }

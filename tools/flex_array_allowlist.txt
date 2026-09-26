@@ -1,0 +1,23 @@
+# scan_flex_array_panic: sites GRADED and found NOT to be bindgen flexible arrays.
+#
+# Format: <crate>: <symbol>            # rationale
+#
+# An entry here is a claim that the bounds check is CORRECT and must stay. It is not a
+# deferral -- deferred work belongs in the roadmap, not in a file that silences a gate.
+# Every entry names the evidence for both grading tests: does the C over-allocate, and is
+# the declared length a LITERAL 1.
+#
+# A stale entry (one that no longer matches any finding) is reported as an error rather
+# than ignored: it means either the site was fixed and the entry should go, or the reader
+# stopped seeing it and the gate has quietly lost coverage.
+
+atapi-rust: __ZN10atapi_rust5entry29AtapiFindNativeModeController17hdfb3d453d68b3c94E@24
+# NativeModeAdapters is a genuine one-entry static table, not an allocation:
+#   atapi.h:319  NATIVE_MODE_CONTROLLER_INFORMATION const NativeModeAdapters[] = {
+#                    { "10ad", 4, "0105", 4} };
+#   atapi.h:322  #define NUM_NATIVE_MODE_ADAPTERS (sizeof(...) / sizeof(...))
+# Test 1 (does the C over-allocate?): NO -- static const, nothing is allocated.
+# Test 2 (literal 1?): the length is DERIVED from the initializer and the bound callers
+# use is computed from it, so the [T; 1] the Rust declares is faithful. The index is
+# dynamic (atapi.c:2745 takes it from the caller's Context), so the check is real, correct
+# and must stay -- rewriting it as a pointer add would delete a live safety check.

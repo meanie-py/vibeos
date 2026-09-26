@@ -124,6 +124,23 @@ _CARRY = re.compile(r"pushl|calll|IMAGE_REL|movl|leal")
 _PANIC = "panic_bounds_check"
 
 
+ALLOWLIST = REPO / "tools" / "flex_array_allowlist.txt"
+
+
+def graded_ok() -> set[tuple[str, str]]:
+    """(crate, symbol) pairs graded as correct bounds checks -- see the allowlist file."""
+    out = set()
+    if not ALLOWLIST.is_file():
+        return out
+    for line in ALLOWLIST.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        crate, sym = line.split(":", 1)
+        out.add((crate.strip(), sym.strip()))
+    return out
+
+
 def declared_corpus() -> list[str]:
     """Crate names that declare a staticlib -- the workspace IS the declaration."""
     out = []
@@ -348,8 +365,22 @@ def main(argv: list[str]) -> int:
                 for line in ctx:
                     print(f"    {line}")
 
-    for crate, sym in sorted({(c, s) for c, s in findings}):
+    graded = graded_ok()
+    seen = sorted({(c, s) for c, s in findings})
+    ungraded = [p for p in seen if p not in graded]
+    for crate, sym in ungraded:
         print(f"{crate}: {sym}: bounds check on a 1-element array (bindgen flexible array?)")
+    for crate, sym in sorted(p for p in seen if p in graded):
+        print(f"{crate}: {sym}: GRADED OK (allowlisted) — correct check on a real 1-element array")
+    # A stale entry means the site was fixed (drop the entry) or the reader stopped seeing
+    # it (the gate has silently lost coverage). Either way it is not a clean result.
+    stale = sorted(graded - set(seen))
+    if stale:
+        print(
+            "STALE ALLOWLIST ENTRIES (no longer found — remove them, or find out why the "
+            "reader went blind): " + ", ".join(f"{c}: {s}" for c, s in stale),
+            file=sys.stderr,
+        )
     print(
         f"\n{len(set(findings))} site(s) in {len({c for c, _ in findings})} module(s); "
         f"corpus {len(corpus)} declared, {len(missing)} not built",
@@ -359,7 +390,7 @@ def main(argv: list[str]) -> int:
         # Not a silent skip: an unbuilt member is missing COVERAGE, and saying so
         # is the difference between "clean" and "did not look".
         print(f"NOT BUILT (no coverage): {' '.join(sorted(missing))}", file=sys.stderr)
-    return 1 if (args.lint and findings) else 0
+    return 1 if (args.lint and (ungraded or stale)) else 0
 
 
 if __name__ == "__main__":
