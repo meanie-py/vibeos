@@ -5,7 +5,9 @@
 | Batch | Trees | State |
 |---|---|---|
 | 1 | dxtn, virtio, dosfstools, cmidriver, ac97, netkvm, ms-compiler-tests, stlport (sources), glu (src + include), libsamplerate, schilytools, treelist, tsclient | **moved** |
-| 2 | header trees reached through include roots: `sdk/include/GL`, `d3dkmthk.h`, `sdk/include/c++/stlport`, the `sdk/include/reactos/libs/*` halves | owed — each needs its new include root |
+| 2a | standalone public headers: GL → `vendor/opengl-headers/include/GL`, `d3dkmthk.h` → `vendor/libdxg/include`, stlport's include tree → `vendor/stlport/stlport` (upstream's layout; stlport is now whole) | **moved** — the two public roots are the `VENDOR_INCLUDE_ROOTS` list in the top-level CMakeLists, appended LAST so a vendored header can never shadow an SDK one |
+| 2b | zlib, libjpeg, libpng, libtiff, libxslt — each rejoined into one `vendor/<lib>` with its headers at `vendor/<lib>/include` (libxslt at `include/libxslt`, so `<libxslt/x.h>` still resolves; msxml3 gained that root) | **moved** |
+| 2c | mbedtls + psa headers: 78 files spell `<mbedtls/…>`/`<psa/…>` through the GLOBAL `sdk/include/reactos/libs` root, so it goes with its sources in its own commit (it is also one of the expensive five) | owed |
 | 3 | CRT-coupled: `sdk/lib/crt/math/ieee754` (neighbours `#include "ieee754/ieee754.h"`), `libm_sse2`; host tool pair chmc + lzx_compress (reach out to `../../port`) | owed |
 | 4 | mstsc — split first: rdesktop's engine is vendored, the Win32 front end (connectdialog.c, settings.c, .rc) is ReactOS's | owed |
 | 5 | the expensive five, one per commit: ucrt, wdf, acpica, mbedtls, fex | owed |
@@ -96,7 +98,20 @@ number: `ucrt`'s 17 `rust` hits are mostly doc comments in `ucrt-rust`.
    `dosfsck.h` was ReactOS glue filed inside the vendored dir; it moved back beside
    vfatlib. `vendor_move_plan.py` did not flag this one, because the spelling was
    relative to an include ROOT outside `sdk/include` — only the build caught it.
-7. **Registry follow-through.** After each move: update `path`/`headers`/`license_*`/
+7. **Generators that SCAN a header directory lose a moved header silently.**
+   `tools/rustconv/gen_enum_constants.py` walks `sdk/include/ddk` for the CamelCase enum
+   constants fact-sealing protects; moving `d3dkmthk.h` out dropped its D3DKMT_*
+   constants from the sealed set, and only the `generated:ddk_enum_constants` drift
+   check caught it. The fix is to scan the header where it now lives (it is in that
+   script's `HEADER_ROOTS`). Before moving a header tree, grep tools/ for scripts
+   that glob its current directory, not just ones that name the file.
+8. **A global include root is baked into committed flag templates.** Adding
+   `VENDOR_INCLUDE_ROOTS` put two `-I` lines into every
+   `sdk/lib/rust/reactos-link/cflags/*.flags` (the cmake-off fallbacks), and the
+   queue rejected batches 2a+2b as `LINT_FAIL` on `committed_drift`. After changing
+   any global include directory, run `python3 tools/gen_cflags.py` (all arches) and
+   confirm `python3 tools/check_committed_drift.py` shows 0 DRIFT before `land`.
+9. **Registry follow-through.** After each move: update `path`/`headers`/`license_*`/
    `version.file` in vendor.yaml, `--write-stamps`, `--notices`, and make the new
    directory a `containers:` entry. Once everything has moved, the three containers
    collapse into one and the container ratchet covers every vendored tree structurally,

@@ -224,14 +224,6 @@ boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/amd64/rtlmem.S
 boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/i386/res_asm.s
 boot/rtl/blrtl.cmake	1	## message.c
 boot/rtl/blrtl.cmake	1	## res.c ## Optional? Needs SEH
-dll/3rdparty/libtiff/CMakeLists.txt	1	#mkg3states.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jbig.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jpeg.c # off with JPEG_SUPPORT — see tiffconf.h
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_lzma.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_ojpeg.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_stream.cxx
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_webp.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_zstd.c
 dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/auth_des.c
 dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/auth_gss.c
 dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/authgss_prot.c
@@ -239,8 +231,6 @@ dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/crypt_client.c
 dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/des_crypt.c
 dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/svc_auth_des.c
 dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/svc_auth_gss.c
-dll/3rdparty/libxslt/CMakeLists.txt	1	# Pre-defining HAVE_STAT here makes security.c's `#ifndef HAVE_STAT` guard
-dll/3rdparty/libxslt/CMakeLists.txt	1	# This tree supplies its own CRT, so security.c's HAVE__STAT->stat()->_stat()
 dll/3rdparty/mbedtls/CMakeLists.txt	1	# 3.x rewrote aesni.c from inline asm to AES-NI/PCLMUL intrinsics, which the compiler
 dll/3rdparty/mbedtls/CMakeLists.txt	1	# behind -DHAVE_HARDCLOCK. 3.x deleted hardclock from timing.c outright, so both the
 dll/3rdparty/mbedtls/CMakeLists.txt	1	# timing_hardclock.c USED to be listed here too, supplying mbedtls_timing_hardclock
@@ -1813,6 +1803,16 @@ subsystems/csr/csrss/CMakeLists.txt	1	# The csrss link compiles ZERO C: csrss_ru
 subsystems/csr/csrss/CMakeLists.txt	1	# csrss.c is flipped to Rust (smss-csrss-rust/src/csrss.rs). csrss.exe's LINK is
 subsystems/win/basesrv/CMakeLists.txt	1	# 2026-06 (task #41): dosdev.c + vdm.c translated (Opus 4.8) and flipped too —
 subsystems/win/basesrv/CMakeLists.txt	1	# The basesrv link compiles ZERO C: basesrv_rust_stub.c was a cmake-era
+vendor/libtiff/CMakeLists.txt	1	#mkg3states.c
+vendor/libtiff/CMakeLists.txt	1	#tif_jbig.c
+vendor/libtiff/CMakeLists.txt	1	#tif_jpeg.c # off with JPEG_SUPPORT — see tiffconf.h
+vendor/libtiff/CMakeLists.txt	1	#tif_lzma.c
+vendor/libtiff/CMakeLists.txt	1	#tif_ojpeg.c
+vendor/libtiff/CMakeLists.txt	1	#tif_stream.cxx
+vendor/libtiff/CMakeLists.txt	1	#tif_webp.c
+vendor/libtiff/CMakeLists.txt	1	#tif_zstd.c
+vendor/libxslt/CMakeLists.txt	1	# Pre-defining HAVE_STAT here makes security.c's `#ifndef HAVE_STAT` guard
+vendor/libxslt/CMakeLists.txt	1	# This tree supplies its own CRT, so security.c's HAVE__STAT->stat()->_stat()
 win32ss/CMakeLists.txt	1	# gdi/dib/alphablend.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_alphablend.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_AlphaBlend]
 win32ss/CMakeLists.txt	1	# gdi/dib/dib.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib.rs) — cohabitation [Phase 2b dib wave 2b: table + DIB_DoRop + Dummy_*]
 win32ss/CMakeLists.txt	1	# gdi/dib/dib16bpp.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib16bpp.rs) — cohabitation [Phase 2b dib wave 2]

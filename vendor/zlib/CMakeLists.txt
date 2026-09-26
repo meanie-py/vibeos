@@ -36,20 +36,20 @@ list(APPEND MINIZIP_SOURCE
 if(CMAKE_CROSSCOMPILING)
     add_library(zlib STATIC ${SOURCE} ${SOLO_SOURCE})
     target_link_libraries(zlib oldnames)
-    target_include_directories(zlib PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+    target_include_directories(zlib PUBLIC ${REACTOS_SOURCE_DIR}/vendor/zlib/include)
 
     add_library(zlib_solo STATIC ${SOLO_SOURCE})
     target_compile_definitions(zlib_solo PRIVATE Z_SOLO)
-    target_include_directories(zlib_solo PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+    target_include_directories(zlib_solo PUBLIC ${REACTOS_SOURCE_DIR}/vendor/zlib/include)
 
     add_library(minizip STATIC ${MINIZIP_SOURCE})
     add_dependencies(minizip psdk)
-    target_include_directories(minizip PRIVATE ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+    target_include_directories(minizip PRIVATE ${REACTOS_SOURCE_DIR}/vendor/zlib/include)
     target_include_directories(minizip
         INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/contrib
         INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/contrib/minizip)
 else()
     add_library(zlibhost STATIC ${SOLO_SOURCE})
     target_compile_definitions(zlibhost PRIVATE Z_SOLO)
-    target_include_directories(zlibhost PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/zlib)
+    target_include_directories(zlibhost PUBLIC ${REACTOS_SOURCE_DIR}/vendor/zlib/include)
 endif()

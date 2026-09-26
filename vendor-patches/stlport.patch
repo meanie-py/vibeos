@@ -3,9 +3,9 @@
 # Upstream: https://sourceforge.net/projects/stlport/files/STLport/STLport-5.2.1/STLport-5.2.1.tar.bz2
 #           sha256 755b007b982c4545086c43affc8ed32c0acd577ee206eb1f6967e250c3546fc9
 # Apply from vendor/stlport/ for the a/... paths, and from
-# sdk/include/c++/stlport/ for the a/stlport/... paths (see SPLIT TREE below).
+# vendor/stlport/stlport/ for the a/stlport/... paths (see SPLIT TREE below).
 #
-# Version 5.2.1, from sdk/include/c++/stlport/stl/_stlport_version.h
+# Version 5.2.1, from vendor/stlport/stlport/stl/_stlport_version.h
 # (_STLPORT_MAJOR 5 / _STLPORT_MINOR 2 / _STLPORT_PATCHLEVEL 1 / _STLPORT_VERSION 0x521),
 # corroborated by etc/ChangeLog's last entry, 2008-12-10 "STLport release 5.2.1".
 # The README's "STLport 5.0" is simply stale — do not believe it. 5.2.1 is the FINAL
@@ -14,7 +14,7 @@
 #
 # SPLIT TREE — this caught us out, and vendor.yaml did not record it:
 #   vendor/stlport                src/, build/, doc/, etc/, test/  (the library sources)
-#   sdk/include/c++/stlport       326 files = upstream's top-level stlport/ include tree
+#   vendor/stlport/stlport       326 files = upstream's top-level stlport/ include tree
 # The second directory was NOT registered in vendor.yaml at all until 2026-09-20. It is
 # not a copy of the first; it is the other half of the same drop.
 #
