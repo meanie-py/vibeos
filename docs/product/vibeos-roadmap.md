@@ -586,6 +586,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     trace) without matching. The file shows `shell ready` three times for one payload run, so the
     `ready` snapshot restore is the first suspect: the reader may be following a timeline the
     marker is not in. Read the serial for the verdict until this is fixed.
+  - FIXED: the pushlock `ASSERT FAILED: (*WaitBlock).Signaled != 0` (pushlock.rs 495/643, on
+    UP i386 too) was a false positive: the waker's DBG-only `Signaled = 1` was compiled out
+    while the ASSERT was live. appstorm i386 38/38 with 0 assertions (was 4).
+  - FIXED: amd64 app sweeps were starved, not failing. `Wow64TraceSyscalls` was still 1, and
+    every amd64 boot runs user32_winetest under WoW64, so the serial reached ~40MB and apps
+    missed their window timeouts (then the run was reaped). Off: serial 2.2MB, 17 min, 36/38.
+  - OPEN, amd64: `sysdm.cpl` and `powercfg.cpl` open but do not close (appstorm
+    close=TIMEOUT); dxdiag still faults in `RtlpRemoveFreeBlock` (heap corruption, see below).
   - OPEN, SMP lane (2026-09-25, handed off): `tools/payloads/rpmprobe` has a race phase (per CPU,
     one thread copies across a page boundary with Read/WriteProcessMemory while another
     commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X

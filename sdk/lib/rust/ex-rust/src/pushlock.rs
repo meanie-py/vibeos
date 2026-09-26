@@ -184,10 +184,11 @@ unsafe fn ExfWakePushLock(PushLock: PEX_PUSH_LOCK, mut OldValue: EX_PUSH_LOCK) {
 
         ntkrnl_sys::ASSERT!((*WaitBlock).Signaled == 0);
 
-        #[cfg(debug_assertions)]
-        {
-            (*WaitBlock).Signaled = 1u8;
-        }
+        // The C's `#if DBG` -- and this tree builds the C with DBG=1. Gated on
+        // cfg(debug_assertions) (off in release) while the waiters' ASSERT!s on
+        // Signaled are live, every contended pushlock wait reported
+        // "ASSERT FAILED: (*WaitBlock).Signaled != 0" although the wake was correct.
+        (*WaitBlock).Signaled = 1u8;
 
         if core::sync::atomic::AtomicI32::from_ptr(core::ptr::addr_of_mut!((*WaitBlock).Flags))
             .fetch_and(!((1i32) << 1), core::sync::atomic::Ordering::SeqCst)
@@ -420,7 +421,8 @@ fastcall_export! {
                 }
             }
 
-            #[cfg(debug_assertions)]
+            // DBG bookkeeping, unconditional for the same reason as the waker's
+            // `Signaled = 1`: the ASSERT!s that read it are live.
             {
                 (*WaitBlock).Signaled = 0;
                 (*WaitBlock).OldValue = OldValue;
@@ -566,7 +568,8 @@ fastcall_export! {
 
             ntkrnl_sys::ASSERT!(NewValue.__bindgen_anon_1.__bindgen_anon_1.Waiting() != 0);
 
-            #[cfg(debug_assertions)]
+            // DBG bookkeeping, unconditional for the same reason as the waker's
+            // `Signaled = 1`: the ASSERT!s that read it are live.
             {
                 (*WaitBlock).Signaled = 0;
                 (*WaitBlock).OldValue = OldValue;

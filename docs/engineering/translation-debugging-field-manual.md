@@ -5119,6 +5119,13 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A live ASSERT over state that only a `#[cfg(debug_assertions)]` block maintains.** The C
+  pairs `#if DBG` bookkeeping with DBG-only ASSERTs, and this tree builds the C with DBG=1.
+  The translation turned the bookkeeping into `#[cfg(debug_assertions)]` (off in release) while
+  `c4d82e425fc` made the ASSERTs live. The pushlock waker's `WaitBlock->Signaled = TRUE` was
+  compiled out, so every contended wait printed `ASSERT FAILED: (*WaitBlock).Signaled != 0`
+  with a correct wake. Any field written only under `cfg(debug_assertions)` and read by an
+  `ASSERT!` is a false positive waiting for its first execution; write it unconditionally.
 - **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
   an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
   resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
