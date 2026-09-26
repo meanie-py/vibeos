@@ -364,6 +364,23 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
         if result["classification"] == "SCANNER_ERROR":
             # Infrastructure, not a finding — the conductor has a built tree and we may
             # not. Say so and let the gate be the oracle.
+            #
+            # BUT ONLY FOR THE SCANNER THAT CRASHED. A partition is one classification
+            # for many scanners, and SCANNER_ERROR from one of them used to wave through
+            # a real NEW finding from another: on 2026-09-26 msvcrt-homebrew's preflight
+            # reported `scan_const_contradictions: 4 new` right beside a marshalgen crash
+            # (a stale build dir), submitted three times on "could not complete", and the
+            # conductor's gate caught the finding ~80 minutes later.
+            real = _real_findings(run.dir / f"preflight-lint-{part}")
+            if real:
+                raise LandAbort(
+                    f"check --strict --scope {part} found NEW findings (another scanner in "
+                    "the partition also crashed, which does not excuse these):\n    "
+                    + "\n    ".join(real[:8])
+                    + f"\n  artifact: {run.dir / f'preflight-lint-{part}'}"
+                    + f"\n  reproduce: ./vibeos-cli check --strict --scope {part}"
+                    + "\n  override (report every use): ./vibeos-cli land --skip-lint"
+                )
             run.add(
                 Stage(
                     f"lint:{part}",
@@ -383,6 +400,25 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
             " so a green `check` is not evidence here.)"
             + "\n  override (report every use): ./vibeos-cli land --skip-lint"
         )
+
+
+def _real_findings(root: Path) -> list[str]:
+    """Scanners in a partition run under `root` that FAILED WITH FINDINGS, as opposed to
+    crashing. A crash reports `SCANNER_ERROR: ...` in its stage detail; anything else
+    that failed is a verdict. Unreadable summaries yield [] (fail open, as before)."""
+    out: list[str] = []
+    for summary in sorted(root.glob("**/summary.json")):
+        try:
+            stages = json.loads(summary.read_text()).get("stages", [])
+        except (OSError, ValueError):
+            continue
+        for st in stages:
+            detail = str(st.get("detail", ""))
+            if st.get("status") != "fail" or detail.startswith("SCANNER_ERROR"):
+                continue
+            first = (st.get("salient") or [""])[0]
+            out.append(f"{st.get('name')}: {detail}" + (f" — {first}" if first else ""))
+    return out
 
 
 def _difftest_preflight(repo: Path, run: Run, args) -> None:
@@ -823,6 +859,8 @@ def land(args, repo: Path) -> int:
         return _release(args, repo)
     if getattr(args, "withdraw", False):
         return _withdraw(args, repo)
+    if getattr(args, "evict", None) is not None:
+        return _evict(args, repo)
     if getattr(args, "hold", None) is not None:
         return _hold(args, repo)
     if getattr(args, "drain", False):
@@ -1090,6 +1128,49 @@ def _withdraw(args, repo: Path) -> int:
     return run.finalize(repo)
 
 
+def _evict(args, repo: Path) -> int:
+    """Kick every other lane's queued work back to it. Only under THIS lane's own hold:
+    eviction is for clearing the line, and a line that is not held can start a batch
+    halfway through it."""
+    run = Run("land", "evict")
+    reason = str(args.evict or "").strip()
+    if not reason:
+        run.add(Stage("evict", status="fail", detail='say WHY: `land --evict "..."`'))
+        return run.finalize(repo)
+    hold = queue.effective_hold(repo)
+    lane = queue.lane_id(repo)
+    if not hold or hold.get("auto") or hold.get("lane") != lane:
+        run.add(
+            Stage(
+                "evict",
+                status="fail",
+                detail="hold the line first: `vibeos-cli land --hold REASON --preempt`, then "
+                "--evict, then land your fix, then --release",
+            )
+        )
+        return run.finalize(repo)
+    evicted, busy = queue.evict(repo, reason=reason, keep_lane=lane)
+    run.add(
+        Stage(
+            "evict",
+            status="ok" if evicted else "skip",
+            detail=f"evicted {len(evicted)} submission(s)" if evicted else "nothing to evict",
+            salient=[f"{s.lane} @ {s.tip[:12]}" for s in evicted],
+        )
+    )
+    if busy:
+        run.add(
+            Stage(
+                "in-flight",
+                status="warn",
+                detail=f"{len(busy)} submission(s) are being GATED by a live conductor and were "
+                "left alone — `land --hold ... --preempt` stops it",
+                salient=[f"{s.lane} @ {s.tip[:12]}" for s in busy],
+            )
+        )
+    return run.finalize(repo)
+
+
 def cmd_land_status(args, repo: Path) -> int:
     """`vibeos-cli land-status` — the merge queue at a glance: who is training, what is
     queued behind them, and recent verdicts (a rejected lane's triage pointer lives here)."""
@@ -1148,9 +1229,12 @@ def cmd_land_status(args, repo: Path) -> int:
         # REJECTED either way (a None key simply misses), but dict.get is typed
         # for str keys and pyright rejects the Unknown | None that JSON gives back.
         outcome = rec.get("outcome") or ""
-        tag = {"landed": "landed ", "superseded": "superseded", "withdrawn": "withdrawn"}.get(
-            outcome, "REJECTED"
-        )
+        tag = {
+            "landed": "landed ",
+            "superseded": "superseded",
+            "withdrawn": "withdrawn",
+            "evicted": "EVICTED",
+        }.get(outcome, "REJECTED")
         extra = (
             f" as {rec.get('landed_as', '')[:12]}"
             if rec.get("outcome") == "landed"

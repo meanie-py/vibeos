@@ -520,7 +520,7 @@ def resolve(
     rd.mkdir(parents=True, exist_ok=True)
     rec = {
         **sub.to_json(),
-        "outcome": outcome,  # landed | rejected | superseded | withdrawn
+        "outcome": outcome,  # landed | rejected | superseded | withdrawn | evicted
         "reason": reason,
         "classification": classification,
         "artifact": artifact,
@@ -673,6 +673,29 @@ def withdraw(repo: Path, *, lane: str | None = None) -> tuple[list[Submission], 
             )
             withdrawn.append(sub)
     return withdrawn, busy
+
+
+def evict(
+    repo: Path, *, reason: str, keep_lane: str | None = None
+) -> tuple[list[Submission], list[Submission]]:
+    """Kick every OTHER lane's queued submissions back to its owner (verdict `evicted`, with
+    `reason`). For clearing the line: the caller must already hold it (see land.py), so no
+    conductor takes a batch mid-eviction. In-flight submissions are left alone, exactly as
+    for `withdraw`. Returns (evicted, in_flight)."""
+    keep_lane = keep_lane or lane_id(repo)
+    evicted: list[Submission] = []
+    busy: list[Submission] = []
+    with state_lock(repo):
+        inflight = read_inflight(repo)
+        for sub in pending(repo):
+            if sub.lane == keep_lane:
+                continue
+            if sub.seq in inflight:
+                busy.append(sub)
+                continue
+            resolve(repo, sub, outcome="evicted", reason=reason)
+            evicted.append(sub)
+    return evicted, busy
 
 
 # ── the integration worktree ────────────────────────────────────────────────

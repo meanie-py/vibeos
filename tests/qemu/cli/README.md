@@ -276,7 +276,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--hold R] [--release] [--withdraw] [--cold] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
+### `land [--direct] [--drain] [--hold R] [--release] [--withdraw] [--evict R] [--cold] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -352,6 +352,12 @@ without touching anyone else's place. A submission already being gated —
 `[GATING]` in `land-status` — is left alone: its merge is in the tree under test.
 Resubmit with a plain `land`. Use it when you learn your lane is not ready, or
 would gate cold; `--hold` is for stopping everyone.
+
+### `land --evict REASON` — clear the line for a fix
+Only under your OWN manual hold (`land --hold REASON --preempt` first). Kicks
+every other lane's queued submissions back to them with verdict `EVICTED` and
+REASON (e.g. "merge origin/master and resubmit"); anything a live conductor is
+gating is left alone. Then land your fix with `--direct` and `--release`.
 
 ### Warm receipts, and `land --cold`
 Every successful `vibeos-cli build` records a receipt for the working tree's

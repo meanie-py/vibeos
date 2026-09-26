@@ -407,6 +407,12 @@ def build_parser() -> argparse.ArgumentParser:
         "scratch and can hold the queue for hours; report every use)",
     )
     la.add_argument(
+        "--evict",
+        metavar="REASON",
+        help="under your own --hold: kick every OTHER lane's queued submissions back to them "
+        "(verdict `evicted`, with REASON) so the line is clear for your fix",
+    )
+    la.add_argument(
         "--withdraw",
         action="store_true",
         help="take THIS lane's queued submissions out of line (one already being gated is "

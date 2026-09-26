@@ -5805,6 +5805,38 @@ def test_withdraw_leaves_a_submission_that_is_already_being_gated(queue_repo):
     assert q_mod.read_inflight(repo) == {}
 
 
+def test_evict_kicks_back_every_other_lane_and_keeps_mine(queue_repo):
+    repo, _ = queue_repo
+    a, bsub = _two_queued(repo, "ev")
+    evicted, busy = q_mod.evict(repo, reason="merge origin/master and resubmit", keep_lane="lane-a")
+    assert [s.seq for s in evicted] == [bsub.seq] and busy == []
+    assert [s.seq for s in q_mod.pending(repo)] == [a.seq]
+    rec = q_mod.results(repo, lane="lane-b")[0]
+    assert rec["outcome"] == "evicted" and "merge origin/master" in rec["reason"]
+
+
+def test_evict_leaves_what_a_live_conductor_is_gating(queue_repo):
+    repo, _ = queue_repo
+    _, bsub = _two_queued(repo, "ei")
+    q_mod.take(repo, [bsub])
+    evicted, busy = q_mod.evict(repo, reason="r", keep_lane="lane-a")
+    assert evicted == [] and [s.seq for s in busy] == [bsub.seq]
+
+
+def test_land_evict_refuses_unless_this_lane_holds_the_line(queue_repo, tmp_path, monkeypatch):
+    """Eviction mid-drain would race a conductor taking a batch; and clearing everyone's
+    work must be a deliberate, visible act, which is what holding the line is."""
+    repo, _ = queue_repo
+    _two_queued(repo, "eh")
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    monkeypatch.setattr(q_mod, "lane_id", lambda r: "lane-me")
+    assert land_mod._evict(types.SimpleNamespace(evict="clear"), repo) != 0
+    assert len(q_mod.pending(repo)) == 2
+    q_mod.set_hold(repo, lane="lane-me", reason="landing the fix")
+    assert land_mod._evict(types.SimpleNamespace(evict="clear"), repo) == 0
+    assert q_mod.pending(repo) == []
+
+
 def test_take_drops_what_was_withdrawn_after_the_queue_was_read(queue_repo):
     """The conductor reads the queue, then takes a batch. A withdrawal in between must win:
     the conductor must not gate (and land) something its lane has stepped back from."""
@@ -9115,6 +9147,50 @@ def test_source_lint_preflight_fails_OPEN_on_a_scanner_error(tmp_path, monkeypat
     )
     land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())  # must NOT raise
     assert [s.status for s in run.stages] == ["ok", "warn"]
+
+
+def test_a_crashed_scanner_does_not_excuse_a_real_finding_beside_it(tmp_path, monkeypatch):
+    """2026-09-26: msvcrt-homebrew's source-deferred partition reported
+    `scan_const_contradictions: 4 new` next to a marshalgen crash (stale build dir). The
+    partition classified as SCANNER_ERROR, the preflight failed open, and the finding
+    rode into the queue three times. Fail open for the CRASH only."""
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {
+            "source-early": _src_lint_result(True),
+            "source-deferred": _src_lint_result(
+                False, classification="SCANNER_ERROR", salient="marshalgen", exit_code=1
+            ),
+        },
+    )
+    part = run.dir / "preflight-lint-source-deferred" / "x-check-source-deferred-all"
+    part.mkdir(parents=True)
+    (part / "summary.json").write_text(
+        json.dumps(
+            {
+                "stages": [
+                    {
+                        "name": "scan_const_contradictions",
+                        "status": "fail",
+                        "detail": "4 new",
+                        "salient": ["sdk/lib/rust/ucrt-rust/src/findfile.rs: ENOENT = 0x2"],
+                    },
+                    {
+                        "name": "marshalgen_audit",
+                        "status": "fail",
+                        "detail": "SCANNER_ERROR: scanner did not complete; coverage unavailable",
+                    },
+                ]
+            }
+        )
+    )
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())
+    msg = str(ei.value)
+    assert "scan_const_contradictions: 4 new" in msg and "ENOENT" in msg
+    assert "marshalgen_audit" not in msg
 
 
 def test_source_lint_preflight_honours_skip_lint(tmp_path, monkeypatch):
