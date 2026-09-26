@@ -737,7 +737,7 @@ def test_the_three_trees_the_prose_pass_actually_found_stay_recorded():
     of them from license_extra would make the notices file wrong again."""
     reg = vendored.load(REPO)
     by_path = {t.path: t for t in reg.trees}
-    assert "BSL-1.0" in by_path["external/fex"].license_extra
+    assert "BSL-1.0" in by_path["vendor/fex"].license_extra
     assert "LGPL-2.0-or-later" in by_path["vendor/adns"].license_extra
     assert "LGPL-2.1-or-later" in by_path["vendor/libtirpc"].license_extra
 

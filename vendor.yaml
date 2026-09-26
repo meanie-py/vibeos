@@ -22,6 +22,7 @@
 #
 #   * docs/engineering/rust-port-status.md  — prose, names ACPICA + FreeType
 #   * external/README-fex-vendor.md         — a good manifest, covering exactly one tree
+#                                             (now vendor-patches/fex.md)
 #   * tools/verify_conv_macros.py:_VENDORED — a 6-entry hardcoded tuple
 #
 # Three lists, three different contents, none of them complete. The tuple covered 5 of
@@ -31,10 +32,12 @@
 # A GLOB CANNOT REPLACE THIS LIST. sdk/include/reactos/libs/ mixes third-party with
 # ReactOS-native code — audiosrv, samsrv, umpnpmgr, syssetup, fslib, fmifs, epsapi,
 # cportlib and fast486 are all ours, sitting in the same directory as zlib and mbedtls.
-# No path convention encodes vendored-ness anywhere in this tree: ACPICA lives under
-# drivers/, FreeType under sdk/lib/3rdparty/, FEX under external/, ucrt under sdk/lib/.
-# So the list is explicit, and `vendored.py --check` refuses a vendor directory that
-# is not in it.
+# When this file was written no path convention encoded vendored-ness: ACPICA lived
+# under drivers/, FreeType under sdk/lib/3rdparty/, FEX under external/. The 2026-09
+# relocation gathered every tree into vendor/<lib> except the CRT-coupled three (ucrt,
+# ieee754, libm_sse2), and `vendor` is a container. The list stays explicit anyway:
+# versions, licences and patches live here, and `vendored.py --check` refuses a
+# directory under a container that is not in it.
 #
 # VERSION IS A PROBE, NOT A COPY. Each entry says WHERE its version lives (file +
 # regex) and the tool derives it on demand. A copied literal is a second source of
@@ -55,7 +58,6 @@ containers:
   - vendor
   - sdk/lib/3rdparty
   - dll/3rdparty
-  - external
 
 trees:
   # ── ACPI ────────────────────────────────────────────────────────────────
@@ -587,7 +589,7 @@ trees:
 
   # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
 
-  - path: external/fex
+  - path: vendor/fex
     name: FEX-Emu
     upstream: https://github.com/FEX-Emu/FEX
     license: MIT
@@ -613,14 +615,14 @@ trees:
         and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a
         vendored tree that itself vendors: its External/ is a second registry we do not
         maintain, so those licences surface here rather than upstream.
-    license_file: external/fex/LICENSE
-    modified: "no"  # asserted by external/README-fex-vendor.md
+    license_file: vendor/fex/LICENSE
+    modified: "no"  # asserted by vendor-patches/fex.md
     version:
       literal: FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08)
     reason: >
       A pruned byte-identical snapshot of an upstream tag, built out-of-band by
       tools/fex/build-fex.sh and deliberately outside the ReactOS cmake graph.
-      Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
+      Full manifest, prune list and re-vendor recipe: vendor-patches/fex.md.
 
   # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
   - path: vendor/mesa
