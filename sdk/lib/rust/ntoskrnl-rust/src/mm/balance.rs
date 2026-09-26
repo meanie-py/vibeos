@@ -366,6 +366,9 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
 
     I += 1;
     if I >= 100 {
+        // Not drift: balance.c waits on every arch, but a relative sub-tick wait blocked
+        // ~6.3s on amd64 and stalled boot (97d678e72ef); only i386 services it promptly.
+        // Yield is the throttle's intent. Revisit when relative waits are sound off-i386.
         #[cfg(target_arch = "x86")]
         KeDelayExecutionThread(0i8, 0u8, core::ptr::addr_of_mut!(TINY_TIME));
         #[cfg(not(target_arch = "x86"))]

@@ -730,8 +730,6 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
     }
 }
 
-#[cfg(target_arch = "x86")]
-
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeInvalidAccessAllowed(TrapInformation: PVOID) -> BOOLEAN {
@@ -1059,8 +1057,6 @@ pub unsafe extern "system" fn KiDispatchExceptionFromTrapFrame(
 
     KiEoiHelper(TrapFrame);
 }
-
-#[cfg(target_arch = "x86")]
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]

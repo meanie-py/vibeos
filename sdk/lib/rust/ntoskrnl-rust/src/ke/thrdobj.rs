@@ -1060,7 +1060,9 @@ pub unsafe extern "system" fn KeSetSystemAffinityThread(Affinity: KAFFINITY) {
     (*CurrentThread).Affinity = Affinity;
     *kt_SystemAffinityActive(CurrentThread) = 1;
 
-    #[cfg(not(target_arch = "x86"))]
+    // thrdobj.c: `#ifdef CONFIG_SMP` — a BUILD option, not an arch. Gated `not(x86)` it
+    // ran on UP amd64/arm64 and would have been skipped by the i386 SMP kernel.
+    #[cfg(feature = "smp")]
     {
         (*CurrentThread).IdealProcessor = KeFindNextRightSetAffinity((*CurrentThread).IdealProcessor, Affinity);
     }

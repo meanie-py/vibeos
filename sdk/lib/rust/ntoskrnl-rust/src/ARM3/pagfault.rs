@@ -957,8 +957,8 @@ unsafe fn MiResolveTransitionFault(
     PageFrameIndex = TempPte.page_frame_number() as PFN_NUMBER;
     Pfn1 = MiGetPfnEntry(PageFrameIndex);
 
-    // DIAGNOSTIC: Catch NULL PFN entry (PageFrameIndex out of range)
-    #[cfg(target_arch = "x86_64")]
+    // DIAGNOSTIC: Catch NULL PFN entry (PageFrameIndex out of range). Every arch: the
+    // next line dereferences Pfn1, so the alternative is an anonymous NULL fault.
     {
         if Pfn1.is_null() {
             KeBugCheckEx( // nolint: bugcheck-code (0xDEAD0040 = deliberate NULL-PFN diagnostic marker, not a stop code)
@@ -1009,8 +1009,9 @@ unsafe fn MiResolveTransitionFault(
     if FaultingAddress >= MmSystemRangeStart {
         PointerToPteForProtoPage = MiAddressToPte(PointerPte as PVOID);
 
-        // DIAGNOSTIC: Verify self-map is accessible before reading through it
-        #[cfg(target_arch = "x86_64")]
+        // DIAGNOSTIC: Verify self-map is accessible before reading through it. Both
+        // 4-level arches (the PXE lesson: arm64 is 4-level too); i386 has no PXE/PPE.
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             let DiagPde = MiAddressToPde(PointerToPteForProtoPage as PVOID);
             let DiagPpe = MiAddressToPpe(PointerToPteForProtoPage as PVOID);

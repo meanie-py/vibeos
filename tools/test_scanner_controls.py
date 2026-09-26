@@ -432,6 +432,22 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
 """
 _WIN64_CFG_GOOD = _WIN64_CFG_BAD.replace('target_arch = "x86_64"', 'target_pointer_width = "64"')
 
+# The same scanner's no-C half: an orphaned cfg (its fastcall twin deleted) stacked onto
+# the next item ANDs to "never", compiling RtlPrefetchMemoryNonTemporal out on every arch.
+_DEAD_CFG_BAD = """\
+#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+"""
+_DEAD_CFG_GOOD = """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+#[cfg(all(target_arch = "x86_64", target_os = "windows"))]
+pub fn allowed() {}
+"""
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -1738,8 +1754,14 @@ CONTROLS: list[Control] = [
         name="scan_cfg_vs_c",
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
-        bad={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD},
-        good={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD},
+        bad={
+            "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD,
+            "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_BAD,
+        },
+        good={
+            "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD,
+            "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_GOOD,
+        },
     ),
     Control(
         name="scan_bitwise_not_bool",

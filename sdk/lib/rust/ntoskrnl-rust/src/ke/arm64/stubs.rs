@@ -1595,11 +1595,6 @@ pub unsafe extern "system" fn KeSwitchKernelStack(
     core::ptr::null_mut()
 }
 
-#[cfg(target_arch = "x86")]
-#[cfg(target_arch = "x86")]
-
-#[cfg(not(target_arch = "x86"))]
-
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn RtlUshortByteSwap(Source: u16) -> u16 {

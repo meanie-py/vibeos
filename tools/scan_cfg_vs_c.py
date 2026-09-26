@@ -33,6 +33,9 @@ HOW. Arch universe U = {x86, x86_64, aarch64}.
   Known blind spot: the comparison is per FUNCTION, not per block. A Rust-only block (a
   diagnostic, a bring-up allowance) in a function that also has an unrelated C `#if` is
   flagged; read it and mark it `nolint` with the reason.
+Second check, no C needed: STACKED cfg attributes whose conjunction is empty — an item
+compiled out on every arch, usually by an orphaned cfg left when its twin was deleted.
+
 A C twin with no arch conditional at all is not evidence either way (the Rust cfg is
 Rust-only: a bring-up shortcut, a diagnostic, an ABI twin) — counted in `--stats`, never
 flagged. Those still need a human; this tool shrinks that pile, it does not empty it.
@@ -303,12 +306,66 @@ def _rel(p: Path) -> Path:
         return p
 
 
+_CFG_LINE = re.compile(r"^\s*#\[cfg\((.*)\)\]\s*(?://.*)?$")
+
+
+def _os_or_arch(pred: str) -> frozenset[str] | None:
+    # Every target this workspace builds is `*-windows-*` (i686/x86_64-pc-windows-gnu,
+    # aarch64-pc-windows-gnullvm), so `target_os = "windows"` is always true.
+    p = pred.strip()
+    if re.fullmatch(r'target_os\s*=\s*"windows"', p):
+        return U
+    if re.fullmatch(r'not\(\s*target_os\s*=\s*"windows"\s*\)', p):
+        return frozenset()
+    return rust_set(p)
+
+
+def stacked_dead(f: Path, raw: str) -> list[tuple[Path, int, list[str]]]:
+    """Runs of consecutive `#[cfg]` lines (blank lines allowed between) on one item whose
+    conjunction selects NO arch. Stacked attributes AND together, so an orphaned cfg left
+    behind by a deleted twin silently compiles its neighbour out everywhere: win32k's
+    TEXT_NextLineW lost its text measurement on all three arches to four stacked cfgs
+    (32-bit AND 64-bit AND windows AND not-windows)."""
+    out = []
+    lines = raw.split("\n")
+    i = 0
+    while i < len(lines):
+        run: list[tuple[int, str]] = []
+        j = i
+        while j < len(lines) and (_CFG_LINE.match(lines[j]) or (run and not lines[j].strip())):
+            m = _CFG_LINE.match(lines[j])
+            if m:
+                run.append((j + 1, m.group(1)))
+            j += 1
+        if len(run) >= 2 and NOLINT not in lines[run[0][0] - 1]:
+            sets = [_os_or_arch(p) for _, p in run]
+            known = [x for x in sets if x is not None]
+            if len(known) == len(sets) and not frozenset(U).intersection(*known):
+                out.append((_rel(f), run[0][0], [" ".join(p.split()) for _, p in run]))
+        i = max(j, i + 1)
+    return out
+
+
+def _wl(f: Path, ln: int, cat: str, name: str, pred: str, twin: Func | None, nxt: str) -> str:
+    code = " ".join(nxt.split())[:120]
+    c = f"{_rel(twin.path)}:{twin.line}" if twin else "-"
+    return f"{_rel(f)}:{ln}\t{cat}\t{name}\tcfg({' '.join(pred.split())})\t{c}\t{code}"
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     lint = "--lint" in sys.argv
     stats = "--stats" in sys.argv
+    # --worklist FILE: the sites this tool CANNOT decide, one per line, for human/agent
+    # review: `path:line<TAB>category<TAB>fn<TAB>cfg(pred)<TAB>C twin or -<TAB>attached code`.
+    wl_path = next(
+        (sys.argv[i + 1] for i, a in enumerate(sys.argv[:-1]) if a == "--worklist"), None
+    )
+    if wl_path in args:
+        args.remove(wl_path)
+    worklist: list[str] = []
     roots = [Path(a) for a in args] if args else [RUST_ROOT]
-    sites: list[tuple[Path, Func, int, str, frozenset[str]]] = []
+    sites: list[tuple[Path, Func, int, str, frozenset[str], str]] = []
     n = {"cfg": 0, "unknown": 0, "exempt": 0, "file_twin": 0}
     files = [f for root in roots for f in ([root] if root.is_file() else source_files(root))]
     # A name defined more than once in a crate is a per-arch FILE twin (i386/page.rs and
@@ -336,6 +393,9 @@ def main() -> int:
                 n["cfg"] += 1
                 if s is None or s in (U, frozenset()):
                     n["unknown"] += 1
+                    ln = raw.count("\n", 0, fn.body_start + off) + 1
+                    if s is None and NOLINT not in lines[ln - 1]:
+                        worklist.append(_wl(f, ln, "mixed-predicate", fn.name, pred, None, nxt))
                     continue
                 # A statement whose arch twin differs only in bindgen's anonymous-member
                 # numbering (`Tcb.__bindgen_anon_7` on i386, `_5` elsewhere) is LAYOUT.
@@ -348,21 +408,23 @@ def main() -> int:
                 ln = raw.count("\n", 0, fn.body_start + off) + 1
                 if NOLINT in lines[ln - 1]:
                     continue
-                sites.append((f, fn, ln, pred, s))
+                sites.append((f, fn, ln, pred, s, nxt))
     index = CIndex()
-    index.load({fn.name for _, fn, _, _, _ in sites})
+    index.load({fn.name for _, fn, _, _, _, _ in sites})
     n.update(no_twin=0, c_no_arch=0, agrees=0, flagged=0)
     findings = []
-    for f, fn, ln, pred, s in sites:
+    for f, fn, ln, pred, s, nxt in sites:
         twins = [t for t in prefer(f, index.get(fn.name)) if same_module(f, t)]
         if not twins:
             n["no_twin"] += 1
+            worklist.append(_wl(f, ln, "no-c-twin", fn.name, pred, None, nxt))
             continue
         c = twins[0].path.read_text(errors="replace")
         cbody = c[twins[0].body_start : twins[0].body_start + len(twins[0].body)]
         branches = c_branch_sets(cbody)
         if not branches:
             n["c_no_arch"] += 1
+            worklist.append(_wl(f, ln, "c-has-no-arch-if", fn.name, pred, twins[0], nxt))
             continue
         # A C that never names an arm64 macro never decided where arm64 goes: its `#else`
         # lumps aarch64 with i386 because upstream's arm64 port predates the code, and the
@@ -376,6 +438,12 @@ def main() -> int:
         n["flagged"] += 1
         evidence = next((t for b, t in branches if b == cut or (cut <= b)), branches[0][1])
         findings.append((_rel(f), ln, fn.name, pred, sorted(s), sorted(cut), evidence))
+    dead = [d for f, raw in parsed for d in stacked_dead(f, raw)]
+    for rel, ln, preds in dead:
+        if lint:
+            print(f"{rel}:{ln}: dead-cfg")
+        else:
+            print(f"{rel}:{ln}: dead-cfg: stacked cfgs are never all true: {' & '.join(preds)}")
     for rel, ln, name, pred, s, cut, ev in findings:
         if lint:
             print(f"{rel}:{ln}: cfg-vs-c {name}")
@@ -384,6 +452,8 @@ def main() -> int:
                 f"{rel}:{ln}: cfg-vs-c: {name}: `cfg({' '.join(pred.split())})` = {s} "
                 f"splits {cut}, which the C keeps together (`{ev}`)"
             )
+    if wl_path:
+        Path(wl_path).write_text("".join(w + "\n" for w in sorted(worklist)))
     if stats:
         print(
             f"\nin-body arch cfgs {n['cfg']}: {n['unknown']} not pure-arch, {n['exempt']} "
@@ -398,7 +468,7 @@ def main() -> int:
             print("fix: draw the arch line where the C does — `_WIN64` is")
             print('     `target_pointer_width = "64"`; mark a reviewed divergence')
             print("     `// nolint: cfg-vs-c` with its reason.")
-    return 1 if findings else 0
+    return 1 if findings or dead else 0
 
 
 if __name__ == "__main__":

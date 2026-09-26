@@ -215,7 +215,6 @@ struct KEY_VALUE_PARTIAL_INFORMATION {
     Data: [UCHAR; 1],
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
