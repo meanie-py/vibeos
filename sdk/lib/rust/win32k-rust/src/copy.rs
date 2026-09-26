@@ -126,3 +126,48 @@ pub unsafe fn zero_to_user(dst: *mut core::ffi::c_void, bytes: usize) -> bool {
     }
     true
 }
+
+// ---------------------------------------------------------------------------
+// TYPED wrappers, for the shapes a byte-oriented helper cannot express.
+//
+// `capture_from_user`/`publish_to_user` take `*mut c_void` + a byte count,
+// which fits `RtlCopyMemory` exactly but not the two other unprotected shapes
+// the scanner finds. `core::ptr::copy_nonoverlapping(src, dst, count)` counts
+// ELEMENTS, and `core::ptr::write_volatile(p, v)` has no length at all -- both
+// carry their size in the pointee type, so the wrapper has to be generic to
+// get it. Being generic also means the call sites need no casts, which is what
+// makes the rewrite mechanical: the `as *mut _` a cast-taking helper would
+// force has no type to infer from.
+//
+// Same contract as the byte helpers: the probe stays (it is what rejects a
+// kernel-range pointer), the ACCESS becomes fault-tolerant, and `false` means
+// the copy faulted -- map it to STATUS_ACCESS_VIOLATION and the C's error path.
+
+/// `core::ptr::copy_nonoverlapping(src, dst, count)`, read direction, protected.
+/// Note the argument order is dst-first here, matching the other helpers rather
+/// than `copy_nonoverlapping`'s src-first.
+#[inline]
+pub unsafe fn capture_n<T>(dst: *mut T, src: *const T, count: usize) -> bool {
+    let bytes = count * core::mem::size_of::<T>();
+    bytes == 0 || KmProtectedCopyMemory(dst as PVOID, src as *mut T as PVOID, bytes) != 0
+}
+
+/// `core::ptr::copy_nonoverlapping(src, dst, count)`, write direction, protected.
+#[inline]
+pub unsafe fn publish_n<T>(dst: *mut T, src: *const T, count: usize) -> bool {
+    capture_n(dst, src, count)
+}
+
+/// `core::ptr::write_volatile(dst, val)` into user memory, protected.
+///
+/// The store is the whole hazard: a probed-but-unmapped out-parameter is the
+/// single commonest write-direction instance of this class, because it looks
+/// so much smaller than a struct copy that it reads as safe.
+#[inline]
+pub unsafe fn write_user<T>(dst: *mut T, val: T) -> bool {
+    KmProtectedCopyMemory(
+        dst as PVOID,
+        core::ptr::addr_of!(val) as *mut T as PVOID,
+        core::mem::size_of::<T>(),
+    ) != 0
+}
