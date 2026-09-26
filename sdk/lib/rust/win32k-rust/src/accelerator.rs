@@ -504,11 +504,14 @@ pub unsafe extern "system" fn NtUserTranslateAccelerator(
                 break 'cleanup;
             }
         }
-        RtlCopyMemory(
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(Message) as *mut core::ffi::c_void,
             pUnsafeMessage as *const core::ffi::c_void,
-            core::mem::size_of::<MSG>() as _,
-        );
+            core::mem::size_of::<MSG>(),
+        ) {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            break 'cleanup;
+        }
 
         if (Message.message != WM_KEYDOWN)
             && (Message.message != WM_SYSKEYDOWN)
@@ -596,11 +599,14 @@ pub unsafe extern "system" fn NtUserTranslateAccelerator(
                 break 'cleanup;
             }
         }
-        RtlCopyMemory(
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(Message) as *mut core::ffi::c_void,
             pUnsafeMessage as *const core::ffi::c_void,
-            core::mem::size_of::<MSG>() as _,
-        );
+            core::mem::size_of::<MSG>(),
+        ) {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            break 'cleanup;
+        }
 
         if (Message.message != WM_KEYDOWN)
             && (Message.message != WM_SYSKEYDOWN)

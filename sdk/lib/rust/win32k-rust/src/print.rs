@@ -199,7 +199,15 @@ pub unsafe extern "system" fn NtGdiExtEscape(
                 Result = 0;
                 break 'exit;
             } else {
-                RtlCopyMemory(SafeInData, UnsafeInData as *const core::ffi::c_void, InSize as usize);
+                if !crate::copy::capture_from_user(
+                    SafeInData as *mut core::ffi::c_void,
+                    UnsafeInData as *const core::ffi::c_void,
+                    InSize as usize,
+                ) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    Result = 0;
+                    break 'exit;
+                }
             }
         }
 

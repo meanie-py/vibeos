@@ -6927,11 +6927,14 @@ pub unsafe extern "system" fn NtUserGetTitleBarInfo(
                 break 'exit;
             }
         }
-        core::ptr::copy_nonoverlapping(
-            bti,
+        if !crate::copy::capture_n(
             &mut bartitleinfo as *mut TITLEBARINFO,
+            bti,
             1,
-        );
+        ) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            break 'exit;
+        }
 
         retValue = intGetTitleBarInfo(WindowObject, &mut bartitleinfo as *mut TITLEBARINFO);
         if retValue == 0 {

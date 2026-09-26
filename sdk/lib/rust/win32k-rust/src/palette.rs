@@ -1233,11 +1233,17 @@ pub unsafe extern "system" fn NtGdiEngCreatePalette(
         }
     }
 
-    RtlCopyMemory(
+    if !crate::copy::capture_from_user(
         pulcSafe as *mut core::ffi::c_void,
         pulColors as *const core::ffi::c_void,
-        (cColors as usize) * core::mem::size_of::<ULONG>(),
-    );
+        (cColors as usize) * core::mem::size_of::<ULONG>() as usize,
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        if cColors > WINDDI_MAXSETPALETTECOLORS {
+            ExFreePoolWithTag(pulcSafe as *mut core::ffi::c_void, GDITAG_UMPD);
+        }
+        return hPal;
+    }
 
     hPal = EngCreatePalette(iMode, cColors, pulcSafe, flRed, flGreen, flBlue);
 

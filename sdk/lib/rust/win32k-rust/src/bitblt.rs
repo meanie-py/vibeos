@@ -474,26 +474,34 @@ pub unsafe extern "system" fn NtGdiEngBitBlt(
     if !NT_SUCCESS(Status) {
         return 0;
     } else {
-        RtlCopyMemory(
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(rclTrg) as *mut core::ffi::c_void,
             prclTrg as *const core::ffi::c_void,
             core::mem::size_of::<RECTL>(),
-        );
-        RtlCopyMemory(
+        ) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(ptlSrc) as *mut core::ffi::c_void,
             pptlSrc as *const core::ffi::c_void,
             core::mem::size_of::<POINTL>(),
-        );
-        RtlCopyMemory(
+        ) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(ptlMask) as *mut core::ffi::c_void,
             pptlMask as *const core::ffi::c_void,
             core::mem::size_of::<POINTL>(),
-        );
-        RtlCopyMemory(
+        ) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(ptlBrush) as *mut core::ffi::c_void,
             pptlBrush as *const core::ffi::c_void,
             core::mem::size_of::<POINTL>(),
-        );
+        ) {
+            return 0;
+        }
     }
 
     return EngBitBlt(

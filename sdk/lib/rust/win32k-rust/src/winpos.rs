@@ -4130,18 +4130,24 @@ pub unsafe extern "system" fn NtUserSetInternalWindowPos(
             break 'exit;
         } else {
             if !lppt.is_null() {
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!(pt) as *mut _,
-                    lppt as *const _,
-                    core::mem::size_of::<POINT>() as _,
-                );
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(pt) as *mut core::ffi::c_void,
+                    lppt as *const core::ffi::c_void,
+                    core::mem::size_of::<POINT>(),
+                ) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'exit;
+                }
             }
             if !lprect.is_null() {
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!(rect) as *mut _,
-                    lprect as *const _,
-                    core::mem::size_of::<RECT>() as _,
-                );
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(rect) as *mut core::ffi::c_void,
+                    lprect as *const core::ffi::c_void,
+                    core::mem::size_of::<RECT>(),
+                ) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'exit;
+                }
             }
         }
 
@@ -4208,18 +4214,24 @@ pub unsafe extern "system" fn NtUserSetInternalWindowPos(
             break 'exit;
         } else {
             if !lppt.is_null() {
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!(pt) as *mut _,
-                    lppt as *const _,
-                    core::mem::size_of::<POINT>() as _,
-                );
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(pt) as *mut core::ffi::c_void,
+                    lppt as *const core::ffi::c_void,
+                    core::mem::size_of::<POINT>(),
+                ) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'exit;
+                }
             }
             if !lprect.is_null() {
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!(rect) as *mut _,
-                    lprect as *const _,
-                    core::mem::size_of::<RECT>() as _,
-                );
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(rect) as *mut core::ffi::c_void,
+                    lprect as *const core::ffi::c_void,
+                    core::mem::size_of::<RECT>(),
+                ) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'exit;
+                }
             }
         }
 

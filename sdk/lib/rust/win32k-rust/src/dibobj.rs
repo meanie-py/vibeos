@@ -572,7 +572,14 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
             ret = 0;
             break 'exit;
         } else {
-            RtlCopyMemory(pbmiSafe as *mut core::ffi::c_void, bmi as *const core::ffi::c_void, cjMaxInfo as usize);
+            if !crate::copy::capture_from_user(
+                pbmiSafe as *mut core::ffi::c_void,
+                bmi as *const core::ffi::c_void,
+                cjMaxInfo as usize,
+            ) {
+                ret = 0;
+                break 'exit;
+            }
             bmi = pbmiSafe;
         }
 
@@ -1200,7 +1207,13 @@ pub unsafe extern "system" fn NtGdiGetDIBitsInternal(
             }
         }
 
-        RtlCopyMemory(pbmiSafe as *mut _, pbmi as *const _, cjMaxInfo as usize);
+        if !crate::copy::capture_from_user(
+            pbmiSafe as *mut core::ffi::c_void,
+            pbmi as *const core::ffi::c_void,
+            cjMaxInfo as usize,
+        ) {
+            break 'cleanup;
+        }
 
         if ((*pbmiSafe).bmiHeader.biSize < core::mem::size_of::<BITMAPCOREHEADER>() as u32)
             || ((*pbmiSafe).bmiHeader.biSize > cjMaxInfo)
@@ -1233,7 +1246,13 @@ pub unsafe extern "system" fn NtGdiGetDIBitsInternal(
                 cjMaxInfo = infoSize;
             }
             ProbeForWrite(pbmi as *mut _, cjMaxInfo as usize, 1);
-            RtlCopyMemory(pbmi as *mut _, pbmiSafe as *const _, cjMaxInfo as usize);
+            if !crate::copy::capture_from_user(
+                pbmi as *mut core::ffi::c_void,
+                pbmiSafe as *const core::ffi::c_void,
+                cjMaxInfo as usize,
+            ) {
+                break 'cleanup;
+            }
         }
     }
 
@@ -1318,11 +1337,14 @@ pub unsafe extern "system" fn NtGdiStretchDIBitsInternal(
         }
     }
 
-    core::ptr::copy_nonoverlapping(
-        pbmi as *const u8,
+    if !crate::copy::capture_n(
         pbmiSafe as *mut u8,
+        pbmi as *const u8,
         cjMaxInfo as usize,
-    );
+    ) {
+        ExFreePoolWithTag(pbmiSafe as *mut core::ffi::c_void, TAG_GBMI);
+        return 0;
+    }
 
     if ((*pbmiSafe).bmiHeader.biSize < core::mem::size_of::<BITMAPCOREHEADER>() as u32)
         || ((*pbmiSafe).bmiHeader.biSize > cjMaxInfo)
@@ -1360,7 +1382,14 @@ pub unsafe extern "system" fn NtGdiStretchDIBitsInternal(
                 return 0;
             }
         }
-        core::ptr::copy_nonoverlapping(pjInit, pvBits, cjMaxBits as usize);
+        if !crate::copy::capture_n(
+            pvBits,
+            pjInit,
+            cjMaxBits as usize,
+        ) {
+            ExFreePoolWithTag(pvBits as *mut core::ffi::c_void, TAG_DIB);
+            return 0;
+        }
     } else {
         pvBits = core::ptr::null_mut();
     }
@@ -1699,7 +1728,14 @@ pub unsafe extern "system" fn NtGdiCreateDIBitmapInternal(
             break 'cleanup;
         } else {
             if !pjInit.is_null() && (fInit & CBM_INIT) != 0 {
-                core::ptr::copy_nonoverlapping(pjInit, safeBits, cjMaxBits as usize);
+                if !crate::copy::capture_n(
+                    safeBits,
+                    pjInit,
+                    cjMaxBits as usize,
+                ) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'cleanup;
+                }
             }
         }
 

@@ -1216,11 +1216,14 @@ pub unsafe extern "system" fn NtUserSetClipboardData(
             return core::ptr::null_mut();
         }
     }
-    RtlCopyMemory(
+    if !crate::copy::capture_from_user(
         core::ptr::addr_of_mut!(scd) as *mut core::ffi::c_void,
         pUnsafeScd as *const core::ffi::c_void,
         core::mem::size_of::<SETCLIPBDATA>(),
-    );
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return core::ptr::null_mut();
+    }
 
     UserEnterExclusive();
 

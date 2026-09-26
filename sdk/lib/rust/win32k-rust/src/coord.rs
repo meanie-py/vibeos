@@ -472,7 +472,13 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
         if !NT_SUCCESS(Status) {
             break 'leave;
         } else {
-            RtlCopyMemory(Points as *mut _, UnsafePtsIn as *const _, Size as usize);
+            if !crate::copy::capture_from_user(
+                Points as *mut core::ffi::c_void,
+                UnsafePtsIn as *const core::ffi::c_void,
+                Size as usize,
+            ) {
+                break 'leave;
+            }
         }
 
         match iMode as u32 {
@@ -490,7 +496,13 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
         }
 
         if ret != 0 {
-            RtlCopyMemory(UnsafePtOut as *mut _, Points as *const _, Size as usize);
+            if !crate::copy::publish_to_user(
+                UnsafePtOut as *mut core::ffi::c_void,
+                Points as *const core::ffi::c_void,
+                Size as usize,
+            ) {
+                break 'leave;
+            }
         }
     }
 
@@ -544,7 +556,13 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
         if !NT_SUCCESS(Status) {
             break 'leave;
         } else {
-            RtlCopyMemory(Points as *mut _, UnsafePtsIn as *const _, Size as usize);
+            if !crate::copy::capture_from_user(
+                Points as *mut core::ffi::c_void,
+                UnsafePtsIn as *const core::ffi::c_void,
+                Size as usize,
+            ) {
+                break 'leave;
+            }
         }
 
         match iMode as u32 {
@@ -562,7 +580,13 @@ pub unsafe extern "system" fn NtGdiTransformPoints(
         }
 
         if ret != 0 {
-            RtlCopyMemory(UnsafePtOut as *mut _, Points as *const _, Size as usize);
+            if !crate::copy::publish_to_user(
+                UnsafePtOut as *mut core::ffi::c_void,
+                Points as *const core::ffi::c_void,
+                Size as usize,
+            ) {
+                break 'leave;
+            }
         }
     }
 

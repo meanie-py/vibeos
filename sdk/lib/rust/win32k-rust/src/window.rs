@@ -3698,11 +3698,14 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
             }
         }
 
-        core::ptr::copy_nonoverlapping(
-            lstrTemp.Buffer as *const u8,
+        if !crate::copy::capture_n(
             pvBuffer as *mut u8,
+            lstrTemp.Buffer as *const u8,
             lstrTemp.Length as usize,
-        );
+        ) {
+            ExFreePoolWithTag(pvBuffer, TAG_STRING);
+            return ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _;
+        }
     }
 
     (*plstrSafe).Buffer = pvBuffer as _;

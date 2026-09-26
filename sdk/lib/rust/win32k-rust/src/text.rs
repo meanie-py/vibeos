@@ -717,11 +717,14 @@ pub unsafe extern "system" fn NtGdiGetTextMetricsW(
                     return 0;
                 }
             }
-            RtlCopyMemory(
-                pUnsafeTmwi as *mut _,
-                &mut Tmwi as *mut _ as *mut _,
+            if !crate::copy::publish_to_user(
+                pUnsafeTmwi as *mut core::ffi::c_void,
+                &mut Tmwi as *const _ as *const core::ffi::c_void,
                 cj as usize,
-            );
+            ) {
+                SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                return 0;
+            }
 
             return 1;
         }

@@ -424,13 +424,22 @@ pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
             break 'block;
         } else {
             if !pcrKey.is_null() {
-                core::ptr::write_volatile(pcrKey, (*pLrdProp).Key);
+                if !crate::copy::write_user(pcrKey, (*pLrdProp).Key) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'block;
+                }
             }
             if !pbAlpha.is_null() {
-                core::ptr::write_volatile(pbAlpha, (*pLrdProp).Alpha);
+                if !crate::copy::write_user(pbAlpha, (*pLrdProp).Alpha) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'block;
+                }
             }
             if !pdwFlags.is_null() {
-                core::ptr::write_volatile(pdwFlags, (*pLrdProp).Flags);
+                if !crate::copy::write_user(pdwFlags, (*pLrdProp).Flags) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'block;
+                }
             }
         }
 
@@ -503,13 +512,22 @@ pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
             break 'block;
         } else {
             if !pcrKey.is_null() {
-                core::ptr::write_volatile(pcrKey, (*pLrdProp).Key);
+                if !crate::copy::write_user(pcrKey, (*pLrdProp).Key) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'block;
+                }
             }
             if !pbAlpha.is_null() {
-                core::ptr::write_volatile(pbAlpha, (*pLrdProp).Alpha);
+                if !crate::copy::write_user(pbAlpha, (*pLrdProp).Alpha) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'block;
+                }
             }
             if !pdwFlags.is_null() {
-                core::ptr::write_volatile(pdwFlags, (*pLrdProp).Flags);
+                if !crate::copy::write_user(pdwFlags, (*pLrdProp).Flags) {
+                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+                    break 'block;
+                }
             }
         }
 

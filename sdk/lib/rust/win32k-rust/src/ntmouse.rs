@@ -612,11 +612,14 @@ pub unsafe extern "system" fn NtUserTrackMouseEvent(
             return 0;
         }
     }
-    RtlCopyMemory(
+    if !crate::copy::capture_from_user(
         core::ptr::addr_of_mut!(SafeTME) as *mut core::ffi::c_void,
         lpEventTrack as *const core::ffi::c_void,
-        core::mem::size_of::<TRACKMOUSEEVENT>() as usize,
-    );
+        core::mem::size_of::<TRACKMOUSEEVENT>(),
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return 0;
+    }
 
     if SafeTME.cbSize != core::mem::size_of::<TRACKMOUSEEVENT>() as DWORD {
         EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -688,11 +691,14 @@ pub unsafe extern "system" fn NtUserGetMouseMovePointsEx(
             return -1i32 as DWORD;
         }
     }
-    RtlCopyMemory(
-        core::ptr::addr_of_mut!(Safeppt) as *mut _,
-        lpptIn as *const _,
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(Safeppt) as *mut core::ffi::c_void,
+        lpptIn as *const core::ffi::c_void,
         cbSize as usize,
-    );
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return -1i32 as DWORD;
+    }
 
     UserEnterShared();
 

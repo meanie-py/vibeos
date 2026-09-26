@@ -3305,7 +3305,13 @@ pub unsafe extern "system" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BO
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpmsg, &mut Msg as *mut MSG, 1);
+    if !crate::copy::capture_n(
+        &mut Msg as *mut MSG,
+        lpmsg,
+        1,
+    ) {
+        return 0;
+    }
 
     UserEnterExclusive();
     Ret = IntCallMsgFilter(&mut Msg as *mut MSG, code);
@@ -3334,7 +3340,13 @@ pub unsafe extern "system" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BO
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpmsg, &mut Msg as *mut MSG, 1);
+    if !crate::copy::capture_n(
+        &mut Msg as *mut MSG,
+        lpmsg,
+        1,
+    ) {
+        return 0;
+    }
 
     UserEnterExclusive();
     Ret = IntCallMsgFilter(&mut Msg as *mut MSG, code);
@@ -3361,7 +3373,14 @@ pub unsafe extern "system" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRES
         return 0;
     }
 
-    core::ptr::copy_nonoverlapping(UnsafeMsgInfo, &mut SafeMsg, 1);
+    if !crate::copy::capture_n(
+        &mut SafeMsg,
+        UnsafeMsgInfo,
+        1,
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return 0;
+    }
 
     UserEnterExclusive();
 
@@ -3383,7 +3402,14 @@ pub unsafe extern "system" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRES
         return 0;
     }
 
-    core::ptr::copy_nonoverlapping(UnsafeMsgInfo, &mut SafeMsg, 1);
+    if !crate::copy::capture_n(
+        &mut SafeMsg,
+        UnsafeMsgInfo,
+        1,
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return 0;
+    }
 
     UserEnterExclusive();
 
@@ -3406,7 +3432,14 @@ pub unsafe extern "system" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) 
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpMsg, &mut SafeMsg, 1);
+    if !crate::copy::capture_n(
+        &mut SafeMsg,
+        lpMsg,
+        1,
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return 0;
+    }
 
     UserEnterExclusive();
     pWnd = UserGetWindowObject(SafeMsg.hwnd);
@@ -3435,7 +3468,14 @@ pub unsafe extern "system" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) 
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpMsg, &mut SafeMsg, 1);
+    if !crate::copy::capture_n(
+        &mut SafeMsg,
+        lpMsg,
+        1,
+    ) {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+        return 0;
+    }
 
     UserEnterExclusive();
     pWnd = UserGetWindowObject(SafeMsg.hwnd);
@@ -3527,11 +3567,13 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     if !NT_SUCCESS(Status) {
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::capture_from_user(
                             &mut parm as *mut _ as *mut core::ffi::c_void,
-                            ResultInfo as *mut core::ffi::c_void,
+                            ResultInfo as *const core::ffi::c_void,
                             core::mem::size_of::<BROADCASTPARM>(),
-                        );
+                        ) {
+                            break 'block;
+                        }
                     }
                 } else {
                     break 'block;
@@ -3878,11 +3920,13 @@ pub unsafe extern "system" fn NtUserMessageCall(
                 if !NT_SUCCESS(Status) {
                     break 'block;
                 } else {
-                    RtlCopyMemory(
+                    if !crate::copy::capture_from_user(
                         &mut CallBackInfo as *mut _ as *mut core::ffi::c_void,
-                        ResultInfo as *mut core::ffi::c_void,
+                        ResultInfo as *const core::ffi::c_void,
                         core::mem::size_of::<CALL_BACK_INFO>(),
-                    );
+                    ) {
+                        break 'block;
+                    }
                 }
 
                 if is_pointer_message(Msg, wParam) != 0 {
@@ -3919,11 +3963,14 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         Ret = 0;
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::publish_to_user(
                             ResultInfo as *mut core::ffi::c_void,
                             &lResult as *const _ as *const core::ffi::c_void,
                             core::mem::size_of::<ULONG_PTR>(),
-                        );
+                        ) {
+                            Ret = 0;
+                            break 'block;
+                        }
                     }
                 }
             }
@@ -3938,11 +3985,13 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     if !NT_SUCCESS(Status) {
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::capture_from_user(
                             &mut dsm as *mut _ as *mut core::ffi::c_void,
                             pdsm as *const core::ffi::c_void,
                             core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
+                        ) {
+                            break 'block;
+                        }
                     }
                 }
 
@@ -3964,11 +4013,14 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         Ret = 0;
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::publish_to_user(
                             pdsm as *mut core::ffi::c_void,
                             &dsm as *const _ as *const core::ffi::c_void,
                             core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
+                        ) {
+                            Ret = 0;
+                            break 'block;
+                        }
                     }
                 }
             }
@@ -4199,11 +4251,13 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     if !NT_SUCCESS(Status) {
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::capture_from_user(
                             &mut parm as *mut _ as *mut core::ffi::c_void,
-                            ResultInfo as *mut core::ffi::c_void,
+                            ResultInfo as *const core::ffi::c_void,
                             core::mem::size_of::<BROADCASTPARM>(),
-                        );
+                        ) {
+                            break 'block;
+                        }
                     }
                 } else {
                     break 'block;
@@ -4550,11 +4604,13 @@ pub unsafe extern "system" fn NtUserMessageCall(
                 if !NT_SUCCESS(Status) {
                     break 'block;
                 } else {
-                    RtlCopyMemory(
+                    if !crate::copy::capture_from_user(
                         &mut CallBackInfo as *mut _ as *mut core::ffi::c_void,
-                        ResultInfo as *mut core::ffi::c_void,
+                        ResultInfo as *const core::ffi::c_void,
                         core::mem::size_of::<CALL_BACK_INFO>(),
-                    );
+                    ) {
+                        break 'block;
+                    }
                 }
 
                 if is_pointer_message(Msg, wParam) != 0 {
@@ -4591,11 +4647,14 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         Ret = 0;
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::publish_to_user(
                             ResultInfo as *mut core::ffi::c_void,
                             &lResult as *const _ as *const core::ffi::c_void,
                             core::mem::size_of::<ULONG_PTR>(),
-                        );
+                        ) {
+                            Ret = 0;
+                            break 'block;
+                        }
                     }
                 }
             }
@@ -4610,11 +4669,13 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     if !NT_SUCCESS(Status) {
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::capture_from_user(
                             &mut dsm as *mut _ as *mut core::ffi::c_void,
                             pdsm as *const core::ffi::c_void,
                             core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
+                        ) {
+                            break 'block;
+                        }
                     }
                 }
 
@@ -4636,11 +4697,14 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         Ret = 0;
                         break 'block;
                     } else {
-                        RtlCopyMemory(
+                        if !crate::copy::publish_to_user(
                             pdsm as *mut core::ffi::c_void,
                             &dsm as *const _ as *const core::ffi::c_void,
                             core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
+                        ) {
+                            Ret = 0;
+                            break 'block;
+                        }
                     }
                 }
             }

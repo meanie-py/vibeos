@@ -1498,8 +1498,24 @@ pub unsafe extern "system" fn NtGdiGradientFill(
         SetLastNtError(Status);
         return 0;
     } else {
-        RtlCopyMemory(SafeVertex as PVOID, pVertex as PVOID, cbVertex as usize);
-        RtlCopyMemory(SafeMesh, pMesh, cbMesh as usize);
+        if !crate::copy::capture_from_user(
+            SafeVertex as PVOID as *mut core::ffi::c_void,
+            pVertex as PVOID as *const core::ffi::c_void,
+            cbVertex as usize,
+        ) {
+            ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            return 0;
+        }
+        if !crate::copy::capture_from_user(
+            SafeMesh as *mut core::ffi::c_void,
+            pMesh as *const core::ffi::c_void,
+            cbMesh as usize,
+        ) {
+            ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            return 0;
+        }
     }
 
     bRet = GreGradientFill(hdc, SafeVertex, nVertex, SafeMesh, nMesh, ulMode);

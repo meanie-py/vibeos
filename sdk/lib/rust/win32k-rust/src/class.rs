@@ -3095,11 +3095,14 @@ pub unsafe extern "system" fn NtUserGetClassInfo(
         return 0;
     }
     if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            &mut Safewcexw as *mut _ as *mut _,
-            lpWndClassEx as *const _,
-            core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
+        if !crate::copy::capture_from_user(
+            &mut Safewcexw as *mut _ as *mut core::ffi::c_void,
+            lpWndClassEx as *const core::ffi::c_void,
+            core::mem::size_of::<WNDCLASSEXW>(),
+        ) {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            return 0;
+        }
         if !ppszMenuName.is_null() {}
     }
 
