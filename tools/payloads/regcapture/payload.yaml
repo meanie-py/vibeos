@@ -1,0 +1,31 @@
+# regcapture — what does setup's COM registration phase WRITE, per DLL?
+#
+# Runs syssetup.inf's registration sections ([EarlyRegisterDlls], [OleControlDlls],
+# [TypeLibraries]) in-guest, each entry in a child process against an in-process registry
+# sandbox (RegOverridePredefKey, as ../regdiff does), and streams what each wrote as INF AddReg
+# lines. The per-entry "lines=N" is the point: it is how ole32's DllRegisterServer was found
+# writing NOTHING while returning S_OK (its registry resources had been lost in an upstream
+# sync; tools/test_wine_registry_resources.py now guards that).
+#   tools/payloads/regcapture/build.sh <arch>
+#   VIBEOS_PAYLOAD=regcapture ./vibeos-cli build --arch <arch>
+#   VIBEOS_QEMU_MAX_LIFETIME=10800 ./vibeos-cli smoke --arch <arch> --payload regcapture
+name: regcapture
+description: run syssetup.inf's registration sections in a sandbox and stream the writes as INF
+
+build_hint: "tools/payloads/regcapture/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/regcapture/regcapture-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/regcapture.exe
+  # The capture reads the registration list from the image's own syssetup.inf, and the
+  # curated arm64 ramdisk does not carry one. Same file everywhere, so staging it is harmless.
+  - src: media/inf/syssetup.inf
+    dest: inf/syssetup.inf
+
+test:
+  launch_marker: "[REGCAP] done"
+  # ~50s per DLL under TCG (a child process each, and every line crosses the serial port),
+  # so a full capture outlives the default 30-minute QEMU lifetime: run it with
+  # VIBEOS_QEMU_MAX_LIFETIME=10800.
+  launch_drain_secs: 10800

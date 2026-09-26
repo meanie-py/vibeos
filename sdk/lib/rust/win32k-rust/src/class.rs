@@ -1893,10 +1893,18 @@ pub unsafe extern "C" fn UserGetClassName(
                     break 'leave;
                 }
 
+                // RtlUnicodeStringToAnsiString terminates when MaximumLength has room, and the
+                // C ran it on the caller's buffer; copy that terminator out too (see the
+                // Unicode branch below).
+                let mut CopyLen = TempAnsi.Length as usize;
+                if CopyLen < TempAnsi.MaximumLength as usize {
+                    *TempAnsi.Buffer.add(CopyLen) = 0;
+                    CopyLen += 1;
+                }
                 if let Err(_st) = ntkrnl_sys::probe::safe_copy_raw(
                     (*AnsiClassName).Buffer as *mut c_void,
                     TempAnsi.Buffer as *const c_void,
-                    TempAnsi.Length as usize,
+                    CopyLen,
                 ) {
                     ExFreePoolWithTag(TempAnsi.Buffer as *mut c_void, USERTAG_CLASS);
                     SetLastNtError(STATUS_ACCESS_VIOLATION);
@@ -1939,10 +1947,19 @@ pub unsafe extern "C" fn UserGetClassName(
                 break 'leave;
             }
 
+            // The C lets RtlQueryAtomInAtomTable write straight into the caller's buffer,
+            // name AND terminator when there is room. BufLen counts the name only, so copying
+            // BufLen bytes out of the temp dropped the NUL: GetClassNameW then handed back
+            // whatever the caller's buffer held past the name (a zeroed buffer hid it).
+            let mut CopyLen = BufLen.min(TempBufCap) as usize;
+            if CopyLen + core::mem::size_of::<WCHAR>() <= TempBufCap as usize {
+                *TempBuf.add(CopyLen / core::mem::size_of::<WCHAR>()) = 0;
+                CopyLen += core::mem::size_of::<WCHAR>();
+            }
             if let Err(_st) = ntkrnl_sys::probe::safe_copy_raw(
                 (*ClassName).Buffer as *mut c_void,
                 TempBuf as *const c_void,
-                BufLen.min(TempBufCap) as usize,
+                CopyLen,
             ) {
                 ExFreePoolWithTag(TempBuf as *mut c_void, USERTAG_CLASS);
                 SetLastNtError(STATUS_ACCESS_VIOLATION);

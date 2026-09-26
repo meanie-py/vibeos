@@ -3222,10 +3222,10 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
     let cSelectedItems = (*this).m_ListView.GetSelectedCount();
     if cSelectedItems != 0 {
         LoadStringW(shell32_hInstance, IDS_OBJECTS_SELECTED, szFormat.as_mut_ptr(), szFormat.len() as INT);
-        StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), cSelectedItems);
+        strsafe_rust::StringCchPrintfW!(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), cSelectedItems);
     } else {
         LoadStringW(shell32_hInstance, IDS_OBJECTS, szFormat.as_mut_ptr(), szFormat.len() as INT);
-        StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
+        strsafe_rust::StringCchPrintfW!(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
     }
 
     let mut lResult: LRESULT = 0;
@@ -4529,13 +4529,9 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
     CDefView_UpdateStatusbar_body(this);
     CDefView_UpdateStatusbarLocation_body(this);
 
-    if !pdt.is_null() {
-        ((*((*pdt).lpVtbl)).Release)(pdt);
-    }
-    if !ppf2.is_null() {
-        ((*((*ppf2).lpVtbl)).Release)(ppf2);
-    }
-
+    // `pdt` and `ppf2` are CComPtrs in the C++: their guards release them at scope exit. An
+    // explicit Release here as well dropped the FOLDER's refcount by one per view created, and
+    // closing any folder window then released a freed folder (browseui OnDestroy, RIP 0).
     S_OK as LRESULT
 }
 

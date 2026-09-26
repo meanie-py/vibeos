@@ -57,9 +57,14 @@ add_library(wow64 MODULE
     wow64_automarshal.c
     wow64_cb_automarshal.c
     wow64_callback.c
+    wow64_pfnmap.c
     wow64.rc
     ${CMAKE_CURRENT_BINARY_DIR}/wow64.def)
 target_include_directories(wow64 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+# Only the pfnmap source reads SERVERINFO, so only it gets the win32k headers.
+set_property(SOURCE wow64_pfnmap.c APPEND PROPERTY INCLUDE_DIRECTORIES
+    ${REACTOS_SOURCE_DIR}/win32ss/include
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 set_property(SOURCE wow64_thunks.c APPEND PROPERTY OBJECT_DEPENDS ${_wow64_thunks})
 set_property(SOURCE wow64_win32k.c APPEND PROPERTY OBJECT_DEPENDS ${_wow64_w32k_thunks})
 

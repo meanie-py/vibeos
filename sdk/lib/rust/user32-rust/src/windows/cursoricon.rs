@@ -76,9 +76,8 @@ extern "C" {
     fn memcpy(dst: *mut c_void, src: *const c_void, n: usize) -> *mut c_void;
 }
 
-// ---- libpng.dll — plain cdecl exports. Resolve to libpng.dll on i386/amd64
-//      (regular import) and to the NULL-stubs in arm64_user32_stubs.c on arm64.
-//      Opaque pointers per the C public surface (see png.h / the arm64 stubs).
+// ---- libpng.dll — plain cdecl exports, delay-imported on every arch (the arm64
+//      NULL-stubs retired 2026-09-25 with delay-load). Opaque pointers per png.h.
 type png_structp = *mut c_void;
 type png_infop = *mut c_void;
 type png_bytep = *mut u8;
@@ -547,7 +546,7 @@ unsafe fn CURSORICON_ConvertPngToBmpIcon(
 }
 
 unsafe fn LoadSystemCursors() {
-    if gpsi.is_null() || (*crate::internal::gpsi_perusr()).hIconSmWindows.is_null() {
+    if gpsi.is_null() || crate::wow64::psi::hicon_sm_windows().is_null() {
         ERR!("Loading System Cursors\n");
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_NORMAL);
         NtUserSetSystemCursor(LoadImageW(core::ptr::null_mut(), IDC_IBEAM, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE) as HCURSOR, OCR_IBEAM);

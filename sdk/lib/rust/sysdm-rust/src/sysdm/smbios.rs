@@ -380,7 +380,7 @@ unsafe extern "C" fn AppendSystemFamily(pBuf: PWSTR, cchBuf: usize, DmiStrings: 
 
     i = 0;
     while i < _countof!(KnownFamilies) as u32 {
-        StringCchPrintfW(wideStr.as_mut_ptr(), _countof!(wideStr) as usize, w!("%S"), *KnownFamilies.get_unchecked(i as usize));
+        StringCchPrintfW!(wideStr.as_mut_ptr(), _countof!(wideStr) as usize, w!("%S"), *KnownFamilies.get_unchecked(i as usize));
 
         if wcsistr(dev, wideStr.as_ptr()) == core::ptr::null_mut() &&
             (*Aliases.get_unchecked(i as usize) == core::ptr::null() || wcsistr(dev, *Aliases.get_unchecked(i as usize)) == core::ptr::null_mut()) &&

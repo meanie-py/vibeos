@@ -639,6 +639,36 @@ Sonnet is considered only after substrate closure leaves a genuine semantic/stru
 residual. The complete protocol and stop rules are in
 `docs/engineering/rustconv-substrate-closure-protocol.md`.
 
+### How much C is left — `tools/port_audit.py`
+
+```bash
+python3 tools/port_audit.py                # the generated core ledger (markdown)
+python3 tools/port_audit.py --json         # same rows, machine-readable
+python3 tools/port_audit.py --check        # ratchet: every compiled source is classified
+python3 tools/port_audit.py --detail "Win32 DLLs"   # live directories in one surface
+python3 tools/port_audit.py --rust         # lines of Rust: translation / generated / harness
+```
+
+Answers "where are we at on the core OS" from the **ninja build graph of this worktree's
+three build dirs**, unioned — so a surface's "live C" is what the link actually compiles,
+after every `if(ARCH)` and every commented-out CMake entry. Core is everything we own
+that ships in the base OS, **Wine-derived code included** (provenance is a column, not a
+scope); only `vendor.yaml` trees, applications, tests and host tools are reported
+separately. Its lines are C lines — compare Rust progress with `--rust`, which is ~2x.
+
+Two things it will not do. It **hard-fails** on a missing build dir or a graph older than
+a CMakeLists edit, rather than reporting the smaller tree a partial answer produces (fix:
+`./vibeos-cli build --arch <a>`); and `--check` **fails on a compiled source that matches
+no rule**, so a new top-level area has to be classified before the ledger prints at all —
+the same ratchet `vendored.py --check` applies to a new vendor drop. Coverage is computed
+from the `Rust twin` column (the module has a crate in `sdk/lib/rust/`), never from
+"out of build", because out-of-build also holds upstream C this port never compiled.
+
+It is a LINE ledger, not a symbol one: for who backs a specific export ask
+`export_census.py`, and for whether a flip took at the symbol level ask
+`verify_cohab_coverage.py`, which reads object files. Output goes in
+`rust-port-status.md`; do not hand-edit those tables.
+
 ### Which C is NOT ours — `vendor.yaml`
 
 ```bash

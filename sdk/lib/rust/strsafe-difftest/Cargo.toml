@@ -1,0 +1,24 @@
+# Differential harness: strsafe-rust's printf family (the `StringC*PrintfW!` macros that
+# replaced every module's rust_varargs_shim.c trampoline) against the GENUINE
+# sdk/include/psdk/strsafe.h, compiled for the host. Host crate (std, `cargo test`, no QEMU).
+#
+# Both sides call ONE shared wide-printf engine (csrc/engine.c, providing `_snwprintf` and
+# `_vsnwprintf` with msvcrt's contract: count chars at most, no NUL on overflow, -1). So what
+# is graded is strsafe's own logic -- bounds, truncation, flags, fill bytes, end pointer,
+# remaining count -- which is exactly the part the macros re-implemented.
+[package]
+name = "strsafe-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+strsafe-rust = { path = "../strsafe-rust" }
+
+[build-dependencies]
+cc = "1"
+
+[[test]]
+name = "diff"
+path = "tests/diff.rs"
+harness = false

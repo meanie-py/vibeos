@@ -1585,6 +1585,28 @@ unsafe fn arm64_dump_fault_stack(Address: PVOID, TrapInformation: PVOID) {
         );
     }
     ARM64_UART_TRACE_HEX(b"[KSTACK] FaultVA=\0".as_ptr(), Address as ULONG_PTR);
+    // The faulting PC/LR, so a bugcheck names the code rather than only the frame
+    // address (P3). A 0x50 at smss startup otherwise gave no symbol at all.
+    if !TrapInformation.is_null() {
+        let tf = TrapInformation as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
+        ARM64_UART_TRACE_HEX(b"[KSTACK] FaultPC=\0".as_ptr(), (*tf).Pc as ULONG_PTR);
+        ARM64_UART_TRACE_HEX(b"[KSTACK] FaultLR=\0".as_ptr(), (*tf).Lr as ULONG_PTR);
+        // Name the module each lives in: a boot driver's address is otherwise
+        // unsymbolizable from the log (no load bases are printed).
+        for (tag, pc) in [(b"PC\0", (*tf).Pc as usize), (b"LR\0", (*tf).Lr as usize)] {
+            let mut entry: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+            let mut in_kernel: u8 = 0;
+            let base = crate::ke::bug::KiPcToFileHeader(pc as _, &mut entry as *mut _ as _, 0, &mut in_kernel);
+            if !base.is_null() && !entry.is_null() {
+                crate::dbg_print!(
+                    b"[KSTACK] Fault%s in %wZ+0x%x\n\0",
+                    tag.as_ptr(),
+                    core::ptr::addr_of!((*entry).BaseDllName),
+                    (pc - (*entry).DllBase as usize) as u32,
+                );
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]

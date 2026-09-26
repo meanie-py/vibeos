@@ -47,7 +47,7 @@ extern "C" {
 }
 
 pub const VA_SLOTS: usize = 12;
-const VA_STAGE: usize = 32;
+pub const VA_STAGE: usize = 32;
 
 /// The captured variadic slot sequence, in call order.
 pub type VaSlots = [usize; VA_SLOTS];
@@ -65,6 +65,17 @@ pub unsafe fn format_slots(
     let mut stage: [usize; VA_STAGE] = [0; VA_STAGE];
     stage[..VA_SLOTS].copy_from_slice(slots);
     _vsnprintf(buf, count, fmt, stage.as_mut_ptr() as *mut core::ffi::c_void)
+}
+
+/// The captured slots as an argument area a `va_list` can point at, for a consumer
+/// that takes the `va_list` itself rather than formatting through `_vsnprintf`
+/// (shell32's `ShellMessageBoxA` hands it to `FormatMessageA`, whose `Arguments`
+/// is a `va_list *`). Staged exactly as `format_slots` does: the slots, then zeros.
+/// The caller keeps the array alive for as long as the `va_list` is in use.
+pub fn stage(slots: &VaSlots) -> [usize; VA_STAGE] {
+    let mut stage: [usize; VA_STAGE] = [0; VA_STAGE];
+    stage[..VA_SLOTS].copy_from_slice(slots);
+    stage
 }
 
 /// `format_slots` for callers that hand the buffer to a string printer rather

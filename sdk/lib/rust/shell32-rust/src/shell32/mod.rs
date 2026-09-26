@@ -100,7 +100,7 @@ pub mod shlexec;
 pub mod shlfileop;
 /// changenotify.cpp — the CLIENT half of shell change notification (the server half is the
 /// separate `shelldesktop/CChangeNotifyServer.cpp`, still C++). Its one ATL `CWindowImpl<>`
-/// stays behind in `rust_changenotify_broker_stub.cpp`; the module header says why.
+/// followed on 2026-09-24 (crate::atl_stub_windows).
 ///
 /// The first TU in this wave to need NO `EXTERN_C` lockstep at all — every one of its 15
 /// declared names was already inside an `extern "C"` block, and its other 8 exports have no
@@ -125,8 +125,9 @@ pub mod cidldataobj_free;
 /// probes, the DFM verb map, and the `*_RustBridge` entry points C++ callers still reach.
 ///
 /// It needs no ATL window substrate: the file's one `CWindowImpl` mention is a COMMENT
-/// explaining why `CStubWindow32` is BRIDGED rather than reimplemented (its thunk and
-/// registered class must have exactly one owner, and two C++ TUs still use it).
+/// explaining why `CStubWindow32` was BRIDGED rather than reimplemented (its thunk and
+/// registered class must have exactly one owner). It is Rust since 2026-09-24,
+/// crate::atl_stub_windows, once no C++ constructed it.
 /// Hand-written substrate for utils.cpp: SDK constants outside the island's closure, plus the
 /// shellutils.h `static inline`s (SHELL_ErrorBoxHelper) that have no symbol to import.
 pub mod utils_support;
@@ -200,6 +201,6 @@ pub mod cfolder_free;
 /// The guard also said the flip needed all 16 `*_RustBridge` wrappers rehomed. It did not:
 /// utils.rs publishes 14 of them itself, so only the CStubWindow32 pair moved (to
 /// dll/win32/shell32/rust_stubwindow32_stub.cpp), because only that pair reaches a C++ ATL
-/// class that propsheet.cpp and CDrivesFolder.cpp still construct. See the CMakeLists entry for
-/// the measured capture set.
+/// class that propsheet.cpp and CDrivesFolder.cpp still constructed (since 2026-09-24 that class
+/// is Rust too, crate::atl_stub_windows). See the CMakeLists entry for the measured capture set.
 pub mod utils;

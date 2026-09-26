@@ -286,7 +286,7 @@ unsafe fn CreateTipText(Ctx: PFORMAT_DRIVE_CONTEXT) -> PWSTR {
             szGuid.as_mut_ptr(),
             _countof!(szGuid) as INT,
         );
-        StringCchPrintfW(
+        strsafe_rust::StringCchPrintfW!(
             szBuf.as_mut_ptr(),
             _countof!(szBuf) as usize,
             CPP_COM_WSTR_EF3F9C6228AC.as_ptr(),
@@ -295,7 +295,7 @@ unsafe fn CreateTipText(Ctx: PFORMAT_DRIVE_CONTEXT) -> PWSTR {
         );
     }
     if pie.PartitionStyle == PARTITION_STYLE_MBR {
-        StringCchPrintfW(
+        strsafe_rust::StringCchPrintfW!(
             szBuf.as_mut_ptr(),
             _countof!(szBuf) as usize,
             CPP_COM_WSTR_DBA59E42764C.as_ptr(),
@@ -662,7 +662,7 @@ unsafe fn InitializeFormatDriveDlg(hwndDlg: HWND, pContext: PFORMAT_DRIVE_CONTEX
         }
     }
 
-    StringCchPrintfW(
+    strsafe_rust::StringCchPrintfW!(
         szText.as_mut_ptr().add(cchText as usize),
         _countof!(szText) as usize - cchText as usize,
         CPP_COM_WSTR_F3A549CDECCE.as_ptr(),

@@ -589,20 +589,29 @@ unsafe fn co_IntInitializeDesktopGraphics_impl() -> BOOL {
 
     UserAttachMonitor((*gpmdev).ppdevGlobal as HDEV);
 
+    // Setup the cursor and icons here, as upstream does (winsta.c, unconditionally).
+    // They were skipped from 2026-03 under a comment claiming the C compiled this
+    // out under _USE_DUMMY_PSEH. It never did: the guard was ours. The skip was
+    // blamed on "no user callback table on the desktop thread" and an i386
+    // "Sending to Suspended Thread" hang. That predicate was a padded KAPC_STATE
+    // copy (fixed 2026-09-23). The load needs a KeUserModeCallback, so it still
+    // requires a callback table. Without one, co_IntDeferredCursorsAndIcons()
+    // does it later on the first GUI thread.
     {
-        let mut Delay: LARGE_INTEGER = core::mem::zeroed();
-        Delay.QuadPart = -500000i64;
-        KeDelayExecutionThread(0i32 as i8, 0u8, core::ptr::addr_of_mut!(Delay) as _);
+        extern "C" { fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32; }
+        let Process: PEPROCESS = PsGetCurrentProcess() as PEPROCESS;
+        if !Process.is_null()
+            && !(*Process).Peb.is_null()
+            && !(*(*Process).Peb).KernelCallbackTable.is_null()
+        {
+            co_IntLoadDefaultCursors();
+            co_IntSetWndIcons();
+            gbDesktopCursorsAndIconsLoaded = 1;
+            DbgPrint(b"[WIN32K] cursors/icons loaded at desktop-graphics init\n\0".as_ptr() as *const _);
+        } else {
+            DbgPrint(b"[WIN32K] cursors/icons deferred (no callback table on this thread)\n\0".as_ptr() as *const _);
+        }
     }
-
-    // C: `#if !defined(_USE_DUMMY_PSEH)` ... `#else /* skip */ #endif`.
-    // _USE_DUMMY_PSEH is defined on ALL arches in this project (llvm-mingw), so
-    // the cursor/icon block is compiled OUT in C — the KeUserModeCallback for
-    // icon/cursor loading runs on the SYSTEM desktop thread (no user callback
-    // table) and crashes/hangs there. It is instead deferred to
-    // co_IntDeferredCursorsAndIcons() on a real GUI thread. A Rust `#[cfg]`
-    // cannot see the C `_USE_DUMMY_PSEH` define (it's always-false → block always
-    // ran → i386 "Sending to Suspended Thread" hang). Match the C: skip here.
 
     MenuInit();
 

@@ -55,6 +55,8 @@ fn NT_SUCCESS(status: NTSTATUS) -> bool {
 /// Snapshot kind tags (NOT the USER handle TYPE_* values — CLS has no handle type).
 const SNAP_WND: UINT = 1;
 const SNAP_CLS: UINT = 2;
+const SNAP_CPD: UINT = 3;
+const SNAP_PROP: UINT = 4;
 
 /// `GetWin32ClientInfo()` = `NtCurrentTeb()->Win32ClientInfo` (ntuser.h macro).
 #[inline]
@@ -228,6 +230,136 @@ pub struct UserHandleTable64 {
     pub allocated_handles: i32,
 }
 
+/// `CALLPROCDATA` — what a CPD handle (`0xFFFFxxxx` from `GetWindowLongPtr` on a
+/// window of the other charset) resolves to. `CallWindowProcA/W` read
+/// `pfnClientPrevious` out of it and CALL it, so misreading the 64-bit layout here
+/// is an execute fault on a garbage address, not a wrong value.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CallProcData64 {
+    /// PROCDESKHEAD: `HEAD` (h, cLockObj + pad), hTaskWow, rpdesk, pSelf.
+    pub h: u64,
+    pub cLockObj: u32,
+    pub Padding0: u32,
+    pub hTaskWow: u64,
+    pub rpdesk: u64,
+    pub pSelf: u64,
+    pub spcpdNext: u64,
+    pub pfnClientPrevious: u64,
+    pub wType: u32,
+}
+
+/// `PROPERTY`, a node of a window's property list (shared heap). `GetProp` walks
+/// the list client-side, so read natively its Flink/Data land in the wrong
+/// place, and `GetPropW` on a WoW64 window found nothing. comctl32's IP address
+/// control then dereferenced the NULL it got back.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Property64 {
+    pub Flink: u64,
+    pub Blink: u64,
+    pub Data: u64,
+    pub Atom: ATOM,
+    pub fs: WORD,
+}
+
+/// Pointer-slot counts of the client proc tables. Both are arrays of fn pointers,
+/// so the division gives the same count on every target.
+const N_PFNCLIENT: usize = core::mem::size_of::<PFNCLIENT>() / core::mem::size_of::<usize>();
+const N_PFNCLIENTWORKER: usize = core::mem::size_of::<PFNCLIENTWORKER>() / core::mem::size_of::<usize>();
+/// ntuser.h `FNID_NUM` / `FNID_NUMSERVERPROC`, as bindgen sized the arrays.
+const N_FNID: usize = 31;
+const N_FNID_SERVERPROC: usize = 7;
+/// `OBI_CTYPES` is an enum's last member, so bindgen emits no constant for it.
+const N_OBI: usize = 93;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DpiServerInfo64 {
+    pub gclBorder: INT,
+    pub hCaptionFont: u64,
+    pub hMsgFont: u64,
+    pub cxMsgFontChar: INT,
+    pub cyMsgFontChar: INT,
+    pub wMaxBtnSize: UINT,
+}
+
+/// `PERUSERSERVERINFO`, the anonymous tail of `SERVERINFO`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PerUserServerInfo64 {
+    pub aiSysMet: [INT; SM_CMETRICS as usize],
+    pub argbSystemUnmatched: [ULONG; NUM_SYSCOLORS as usize],
+    pub argbSystem: [COLORREF; NUM_SYSCOLORS as usize],
+    pub ahbrSystem: [u64; NUM_SYSCOLORS as usize],
+    pub hbrGray: u64,
+    pub ptCursor: POINTL,
+    pub ptCursorReal: POINTL,
+    pub dwLastRITEventTickCount: DWORD,
+    pub nEvents: INT,
+    pub dtScroll: UINT,
+    pub dtLBSearch: UINT,
+    pub dtCaretBlink: UINT,
+    pub ucWheelScrollLines: UINT,
+    pub ucWheelScrollChars: UINT,
+    pub wMaxLeftOverlapChars: INT,
+    pub wMaxRightOverlapChars: INT,
+    pub cxSysFontChar: INT,
+    pub cySysFontChar: INT,
+    pub tmSysFont: TEXTMETRICW,
+    pub dpiSystem: DpiServerInfo64,
+    pub hIconSmWindows: u64,
+    pub hIconWindows: u64,
+    pub dwKeyCache: DWORD,
+    pub dwAsyncKeyCache: DWORD,
+    pub cCaptures: ULONG,
+    pub oembmi: [OEMBITMAPINFO; N_OBI],
+    pub rcScreenReal: RECTL,
+    pub BitCount: USHORT,
+    pub dmLogPixels: USHORT,
+    pub Planes: BYTE,
+    pub BitsPixel: BYTE,
+    pub PUSIFlags: ULONG,
+    pub uCaretWidth: UINT,
+    pub UILangID: USHORT,
+    pub dwLastSystemRITEventTickCountUpdate: DWORD,
+    pub adwDBGTAGFlags: [ULONG; 35],
+    pub dwTagCount: DWORD,
+    pub dwRIPFlags: DWORD,
+}
+
+/// `SERVERINFO` (`gpsi`). It lives in the shared section, so a 32-bit client can
+/// address it but not parse it: `cHandleEntries` and the proc tables are
+/// pointer-sized, so every field after `dwSRVIFlags` sits at a different offset.
+/// Reading it through the native struct gave a WoW64 guest garbage system
+/// metrics, colours, brushes and class procs.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ServerInfo64 {
+    pub dwSRVIFlags: DWORD,
+    pub cHandleEntries: u64,
+    pub mpFnidPfn: [u64; N_FNID],
+    pub aStoCidPfn: [u64; N_FNID_SERVERPROC],
+    pub mpFnid_serverCBWndProc: [USHORT; N_FNID],
+    pub apfnClientA: [u64; N_PFNCLIENT],
+    pub apfnClientW: [u64; N_PFNCLIENT],
+    pub apfnClientWorker: [u64; N_PFNCLIENTWORKER],
+    pub cbHandleTable: ULONG,
+    pub atomSysClass: [ATOM; 26],
+    pub dwDefaultHeapBase: DWORD,
+    pub dwDefaultHeapSize: DWORD,
+    pub uiShellMsg: UINT,
+    pub MBStrings: [MBSTRING; 11],
+    pub atomIconSmProp: ATOM,
+    pub atomIconProp: ATOM,
+    pub atomContextHelpIdProp: ATOM,
+    pub atomFrostedWindowProp: ATOM,
+    pub acOemToAnsi: [CHAR; 256],
+    pub acAnsiToOem: [CHAR; 256],
+    pub dwInstalledEventHooks: DWORD,
+    pub perusr: PerUserServerInfo64,
+}
+
 // ── the tripwire ─────────────────────────────────────────────────────────────
 //
 // On a native 64-bit build these shapes must BE the real structs. Any drift in
@@ -270,6 +402,42 @@ mod layout_guard {
     const _: () = assert!(offset_of!(DesktopInfo64, spwnd) == offset_of!(DESKTOPINFO, spwnd));
     const _: () = assert!(offset_of!(DesktopInfo64, fsHooks) == offset_of!(DESKTOPINFO, fsHooks));
     const _: () = assert!(offset_of!(DesktopInfo64, hShellWindow) == offset_of!(DESKTOPINFO, hShellWindow));
+
+    const _: () = assert!(size_of::<CallProcData64>() == size_of::<CALLPROCDATA>());
+    const _: () = assert!(offset_of!(CallProcData64, spcpdNext) == offset_of!(CALLPROCDATA, spcpdNext));
+    const _: () =
+        assert!(offset_of!(CallProcData64, pfnClientPrevious) == offset_of!(CALLPROCDATA, pfnClientPrevious));
+    const _: () = assert!(offset_of!(CallProcData64, wType) == offset_of!(CALLPROCDATA, wType));
+
+    const _: () = assert!(size_of::<Property64>() == size_of::<PROPERTY>());
+    const _: () = assert!(offset_of!(PROPERTY, PropListEntry) == 0);
+    const _: () = assert!(offset_of!(Property64, Data) == offset_of!(PROPERTY, Data));
+    const _: () = assert!(offset_of!(Property64, Atom) == offset_of!(PROPERTY, Atom));
+    const _: () = assert!(offset_of!(Property64, fs) == offset_of!(PROPERTY, fs));
+
+    const _: () = assert!(size_of::<ServerInfo64>() == size_of::<SERVERINFO>());
+    const _: () = assert!(offset_of!(ServerInfo64, aStoCidPfn) == offset_of!(SERVERINFO, aStoCidPfn));
+    const _: () = assert!(offset_of!(ServerInfo64, apfnClientA) == offset_of!(SERVERINFO, apfnClientA));
+    const _: () = assert!(offset_of!(ServerInfo64, apfnClientW) == offset_of!(SERVERINFO, apfnClientW));
+    const _: () = assert!(offset_of!(ServerInfo64, atomIconSmProp) == offset_of!(SERVERINFO, atomIconSmProp));
+    const _: () = assert!(offset_of!(ServerInfo64, atomIconProp) == offset_of!(SERVERINFO, atomIconProp));
+    const _: () =
+        assert!(offset_of!(ServerInfo64, dwInstalledEventHooks) == offset_of!(SERVERINFO, dwInstalledEventHooks));
+    // The anonymous PERUSERSERVERINFO is flattened by bindgen into the tail padding.
+    const _: () = assert!(offset_of!(ServerInfo64, perusr) == offset_of!(SERVERINFO, __bindgen_padding_0));
+    const _: () = assert!(size_of::<PerUserServerInfo64>() == size_of::<_PERUSERSERVERINFO>());
+    const _: () = assert!(offset_of!(PerUserServerInfo64, argbSystem) == offset_of!(_PERUSERSERVERINFO, argbSystem));
+    const _: () = assert!(offset_of!(PerUserServerInfo64, ahbrSystem) == offset_of!(_PERUSERSERVERINFO, ahbrSystem));
+    const _: () = assert!(offset_of!(PerUserServerInfo64, hbrGray) == offset_of!(_PERUSERSERVERINFO, hbrGray));
+    const _: () = assert!(
+        offset_of!(PerUserServerInfo64, dwLastRITEventTickCount)
+            == offset_of!(_PERUSERSERVERINFO, dwLastRITEventTickCount)
+    );
+    const _: () =
+        assert!(offset_of!(PerUserServerInfo64, hIconSmWindows) == offset_of!(_PERUSERSERVERINFO, hIconSmWindows));
+    const _: () =
+        assert!(offset_of!(PerUserServerInfo64, hIconWindows) == offset_of!(_PERUSERSERVERINFO, hIconWindows));
+    const _: () = assert!(offset_of!(PerUserServerInfo64, PUSIFlags) == offset_of!(_PERUSERSERVERINFO, PUSIFlags));
 
     const _: () = assert!(size_of::<UserHandleEntry64>() == size_of::<USER_HANDLE_ENTRY>());
     const _: () = assert!(size_of::<UserHandleTable64>() == size_of::<USER_HANDLE_TABLE>());
@@ -347,6 +515,8 @@ mod snap {
     pub(super) union SnapObj {
         pub wnd: WND,
         pub cls: CLS,
+        pub cpd: CALLPROCDATA,
+        pub prop: PROPERTY,
     }
 
     pub(super) struct Snap {
@@ -431,7 +601,7 @@ pub unsafe fn normalize_wnd(p64: PVOID) -> PWND {
     (*d).rcWindow = src.rcWindow;
     (*d).rcClient = src.rcClient;
 
-    (*d).lpfnWndProc = core::mem::transmute::<usize, WNDPROC>(src.lpfnWndProc as usize);
+    (*d).lpfnWndProc = psi::map_client_proc(src.lpfnWndProc);
     (*d).pcls = src.pcls as usize as PCLS;
     (*d).hrgnUpdate = src.hrgnUpdate as usize as HRGN;
 
@@ -474,6 +644,35 @@ pub unsafe fn normalize_wnd(p64: PVOID) -> PWND {
     d
 }
 
+/// Normalize the 64-bit `CALLPROCDATA` at client address `p64` into a cached
+/// native one. Only the head's handle and the three payload fields are read by
+/// user32 (`ValidateCallProc`, `CallWindowProcA/W`, `IntGetWndProc`).
+#[cfg(target_arch = "x86")]
+pub unsafe fn normalize_cpd(p64: PVOID) -> PCALLPROCDATA {
+    if p64.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let s = snap::find_or_add(p64, SNAP_CPD);
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let src = &*(p64 as *const CallProcData64);
+    let d = core::ptr::addr_of_mut!((*s).obj.cpd);
+
+    (*(d as *mut _HEAD)).h = src.h as usize as HANDLE;
+    (*(d as *mut _HEAD)).cLockObj = src.cLockObj;
+    (*d).head.hTaskWow = src.hTaskWow as usize as DWORD_PTR;
+    (*d).head.rpdesk = src.rpdesk as usize as *mut _DESKTOP;
+    (*d).head.pSelf = src.pSelf as usize as PVOID;
+    (*d).spcpdNext = src.spcpdNext as usize as PCALLPROCDATA;
+    (*d).pfnClientPrevious = psi::map_client_proc(src.pfnClientPrevious);
+    (*d).wType = src.wType;
+
+    d
+}
+
 /// Normalize the 64-bit `CLS` at client address `p64` into a cached native `CLS`.
 #[cfg(target_arch = "x86")]
 pub unsafe fn normalize_cls(p64: PVOID) -> PCLS {
@@ -503,7 +702,7 @@ pub unsafe fn normalize_cls(p64: PVOID) -> PCLS {
     (*d).pclsClone = src.pclsClone as usize as PCLS;
     (*d).cWndReferenceCount = src.cWndReferenceCount;
     (*d).style = src.style;
-    (*d).lpfnWndProc = core::mem::transmute::<usize, WNDPROC>(src.lpfnWndProc as usize);
+    (*d).lpfnWndProc = psi::map_client_proc(src.lpfnWndProc);
     (*d).cbclsExtra = src.cbclsExtra;
     (*d).cbwndExtra = src.cbwndExtra;
     (*d).hModule = src.hModule as usize as HINSTANCE;
@@ -648,6 +847,47 @@ pub unsafe fn desktop_cls_to_user(kernel_cls: PVOID) -> PCLS {
     p as PCLS
 }
 
+/// `IntGetProp`'s list walk, over the 64-bit nodes. `pWnd` is the normalized
+/// WND, whose `PropListHead.Flink` and `PropListItems` are already native.
+/// Returns a snapshot `PROPERTY` (stable per node) or null.
+#[cfg(target_arch = "x86")]
+pub unsafe fn find_prop(pWnd: PWND, Atom: ATOM, SystemFlag: u16) -> PPROPERTY {
+    let mut node = SharedPtrToUser((*pWnd).PropListHead.Flink as PVOID) as *const Property64;
+    let mut i = 0;
+    while i < (*pWnd).PropListItems && !node.is_null() {
+        if (*node).Atom == Atom && ((*node).fs & PROPERTY_FLAG_SYSTEM as u16) == SystemFlag {
+            let s = snap::find_or_add(node as PVOID, SNAP_PROP);
+            if s.is_null() {
+                return core::ptr::null_mut();
+            }
+            let d = core::ptr::addr_of_mut!((*s).obj.prop);
+            (*d).PropListEntry.Flink = (*node).Flink as usize as PLIST_ENTRY;
+            (*d).PropListEntry.Blink = (*node).Blink as usize as PLIST_ENTRY;
+            (*d).Data = (*node).Data as usize as HANDLE;
+            (*d).Atom = (*node).Atom;
+            (*d).fs = (*node).fs;
+            return d;
+        }
+        node = SharedPtrToUser((*node).Flink as usize as PVOID) as *const Property64;
+        i += 1;
+    }
+    core::ptr::null_mut()
+}
+
+/// Typed `DesktopPtrToUser` for a `CALLPROCDATA`.
+#[inline]
+pub unsafe fn desktop_cpd_to_user(kernel_cpd: PVOID) -> PCALLPROCDATA {
+    if kernel_cpd.is_null() {
+        return core::ptr::null_mut();
+    }
+    let p = desktop_ptr_to_user(kernel_cpd);
+    #[cfg(target_arch = "x86")]
+    if IsWow64() {
+        return normalize_cpd(p);
+    }
+    p as PCALLPROCDATA
+}
+
 /// Read entry `index` of the shared USER handle table, normalized into `out`
 /// (a caller-owned buffer — see GetUser32Handle). Returns `false` if the index is
 /// out of range.
@@ -745,3 +985,152 @@ pub unsafe fn wow64_unsupported(type_: &'static str) {
 #[cfg(not(target_arch = "x86"))]
 #[inline]
 pub unsafe fn wow64_unsupported(_type_: &'static str) {}
+
+// ── gpsi (SERVERINFO) ───────────────────────────────────────────────────────
+//
+// Read through here, never as `(*gpsi).field`. Under WoW64 each accessor reads
+// the live 64-bit struct, so values that change at runtime (event hooks, the
+// RIT tick, metrics, colours) are always current. A snapshot would need a
+// refresh point, and there is none. Natively each folds to the plain field read.
+// `dwSRVIFlags` alone may still be read directly: it is at offset 0 in both
+// layouts.
+pub mod psi {
+    use super::*;
+    use crate::misc::dllmain::gpsi;
+
+    #[cfg(target_arch = "x86")]
+    #[inline]
+    unsafe fn s64() -> &'static ServerInfo64 {
+        &*(gpsi as *const ServerInfo64)
+    }
+
+    #[inline]
+    unsafe fn perusr() -> *const _PERUSERSERVERINFO {
+        core::ptr::addr_of!((*gpsi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
+    }
+
+    macro_rules! field {
+        ($name:ident, $ty:ty, |$s:ident| $wow:expr, $native:expr) => {
+            #[inline]
+            pub unsafe fn $name() -> $ty {
+                #[cfg(target_arch = "x86")]
+                if IsWow64() {
+                    let $s = s64();
+                    return $wow;
+                }
+                $native
+            }
+        };
+    }
+
+    field!(installed_event_hooks, DWORD, |s| s.dwInstalledEventHooks, (*gpsi).dwInstalledEventHooks);
+    field!(atom_icon_prop, ATOM, |s| s.atomIconProp, (*gpsi).atomIconProp);
+    field!(atom_icon_sm_prop, ATOM, |s| s.atomIconSmProp, (*gpsi).atomIconSmProp);
+    field!(hbr_gray, HBRUSH, |s| s.perusr.hbrGray as usize as HBRUSH, (*perusr()).hbrGray);
+    field!(
+        last_rit_event_tick,
+        DWORD,
+        |s| s.perusr.dwLastRITEventTickCount,
+        (*perusr()).dwLastRITEventTickCount
+    );
+    field!(pusi_flags, ULONG, |s| s.perusr.PUSIFlags, (*perusr()).PUSIFlags);
+    field!(hicon_sm_windows, HICON, |s| s.perusr.hIconSmWindows as usize as HICON, (*perusr()).hIconSmWindows);
+    field!(hicon_windows, HICON, |s| s.perusr.hIconWindows as usize as HICON, (*perusr()).hIconWindows);
+
+    /// `aiSysMet[i]`; the caller has range-checked `i` against `SM_CMETRICS`.
+    #[inline]
+    pub unsafe fn sys_met(i: usize) -> INT {
+        #[cfg(target_arch = "x86")]
+        if IsWow64() {
+            return s64().perusr.aiSysMet[i];
+        }
+        (*perusr()).aiSysMet[i]
+    }
+
+    /// `argbSystem[i]`; the caller has range-checked `i` against `NUM_SYSCOLORS`.
+    #[inline]
+    pub unsafe fn sys_color(i: usize) -> COLORREF {
+        #[cfg(target_arch = "x86")]
+        if IsWow64() {
+            return s64().perusr.argbSystem[i];
+        }
+        (*perusr()).argbSystem[i]
+    }
+
+    /// `ahbrSystem[i]`. A GDI handle keeps its meaning in the low 32 bits.
+    #[inline]
+    pub unsafe fn sys_color_brush(i: usize) -> HBRUSH {
+        #[cfg(target_arch = "x86")]
+        if IsWow64() {
+            return s64().perusr.ahbrSystem[i] as usize as HBRUSH;
+        }
+        (*perusr()).ahbrSystem[i]
+    }
+
+    /// `GETPFNSERVER(fnid)`, only ever COMPARED with a `lpfnWndProc`. It is
+    /// not a kernel address: win32k fills `aStoCidPfn` with the 64-bit
+    /// user32's `apfnClientW` (NtUserInitializeClientPfnArrays), so a
+    /// server-side window's proc is a host client proc. The WND normalizer
+    /// maps that to the guest's W proc, so this must map the same way.
+    /// Truncating instead matched nothing, and `GetWindowLongPtr(GWLP_WNDPROC)`
+    /// returned 0 for every server-side window (DefWindowProc classes,
+    /// ScrollBar).
+    #[inline]
+    pub unsafe fn pfn_server(fnid: usize) -> WNDPROC {
+        let i = fnid - FNID_FIRST as usize;
+        #[cfg(target_arch = "x86")]
+        if IsWow64() {
+            return map_client_proc(s64().aStoCidPfn[i]);
+        }
+        (*gpsi).aStoCidPfn[i]
+    }
+
+    /// `GETPFNCLIENTA(fnid)`. Under WoW64 this is the guest's OWN table:
+    /// gpsi's holds the 64-bit user32's procs, which the guest cannot call.
+    #[inline]
+    pub unsafe fn pfn_client_a(fnid: usize) -> WNDPROC {
+        client_slot(false, fnid - FNID_FIRST as usize)
+    }
+
+    /// `GETPFNCLIENTW(fnid)`; see `pfn_client_a`.
+    #[inline]
+    pub unsafe fn pfn_client_w(fnid: usize) -> WNDPROC {
+        client_slot(true, fnid - FNID_FIRST as usize)
+    }
+
+    #[inline]
+    unsafe fn client_slot(unicode: bool, i: usize) -> WNDPROC {
+        #[cfg(target_arch = "x86")]
+        if IsWow64() {
+            let (a, w) = crate::controls::regcontrol::guest_pfn_client();
+            let t = if unicode { w } else { a };
+            return *(t as *const WNDPROC).add(i);
+        }
+        let base = if unicode {
+            core::ptr::addr_of!((*gpsi).apfnClientW)
+        } else {
+            core::ptr::addr_of!((*gpsi).apfnClientA)
+        } as *const WNDPROC;
+        *base.add(i)
+    }
+
+    /// Map a proc read out of a 64-bit WND/CLS/CPD to one this guest can call.
+    /// A built-in class's proc is the 64-bit user32's `apfnClientA/W` entry.
+    /// Its slot index names the guest's equivalent, so return that. Anything
+    /// else is the guest's own proc (or a kernel one) and is passed through,
+    /// truncated.
+    #[cfg(target_arch = "x86")]
+    pub unsafe fn map_client_proc(p64: u64) -> WNDPROC {
+        if p64 != 0 && !gpsi.is_null() {
+            let s = s64();
+            let (a, w) = crate::controls::regcontrol::guest_pfn_client();
+            if let Some(i) = s.apfnClientW.iter().position(|&x| x == p64) {
+                return *(w as *const WNDPROC).add(i);
+            }
+            if let Some(i) = s.apfnClientA.iter().position(|&x| x == p64) {
+                return *(a as *const WNDPROC).add(i);
+            }
+        }
+        core::mem::transmute::<usize, WNDPROC>(p64 as usize)
+    }
+}

@@ -399,7 +399,7 @@ unsafe extern "C" fn AdvAppearanceDlg_Init(hwndDlg: HWND, g: *mut GLOBALS) {
 
     i = 6;
     while i <= 24 {
-        StringCbPrintf(Size.as_mut_ptr(), core::mem::size_of_val(&Size), w!("%d"), i);
+        StringCbPrintf!(Size.as_mut_ptr(), core::mem::size_of_val(&Size), w!("%d"), i);
         SendDlgItemMessage(hwndDlg, (IDC_ADVAPPEARANCE_FONTSIZE_E) as i32, CB_ADDSTRING, 0, Size.as_ptr() as LPARAM);
         i += 1;
     }

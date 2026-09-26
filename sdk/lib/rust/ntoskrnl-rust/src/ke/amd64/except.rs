@@ -671,6 +671,25 @@ pub unsafe extern "system" fn KiDispatchException(
                 pdesk as usize,
                 delta as usize,
             );
+            // The stack words: when RIP is not code at all (a call through a garbage pointer),
+            // the caller is the return address at [RSP], and nothing else on this line names
+            // it. Print RSP and the first qwords above it that look like user code addresses.
+            let rsp = (*TrapFrame).Rsp as usize;
+            crate::dbg_print!(b"[KI-EXC]   rsp=%p\n\0", rsp);
+            let mut shown = 0;
+            let mut off = 0usize;
+            while off < 0x100 && shown < 6 {
+                let a = rsp + off;
+                if MmIsAddressValid(a as _) == 0 {
+                    break;
+                }
+                let w = core::ptr::read_unaligned(a as *const u64);
+                if w >= 0x10000 && w < 0x0000_8000_0000_0000 && (w >> 32) >= 0x7ff {
+                    crate::dbg_print!(b"[KI-EXC]   [rsp+0x%lx]=%p\n\0", off as u32, w as usize);
+                    shown += 1;
+                }
+                off += 8;
+            }
         }
 
         if DbgkForwardException(ExceptionRecord, 1u8, 1u8) != 0 {

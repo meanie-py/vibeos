@@ -136,6 +136,19 @@ _SIG = re.compile(r"^(.*?)\s*\((.*?)\)(?:\s*__attribute__.*)?$")
 #: real one: it buries the real ones. Both sides are normalised to 0/1 instead.
 _PREDICATE = re.compile(r"^_?(is[a-z]|isw|_?ismb|_?iswcsym)")
 
+#: Comparators contract only the SIGN of their result, never its magnitude. C says
+#: strcmp returns a value "greater than, equal to, or less than zero"; Microsoft's
+#: returns the byte difference while ours returns -1/0/1, so grading the RAW return
+#: marks perfect agreement as failure.
+#:
+#: This is not hypothetical. It manufactured 292 failures out of 392 on each of
+#: strncmp, _mbsncmp(_l) and _mbsnbcmp(_l), and that cluster read as the sweep's single
+#: largest group of real bugs -- five exports, identical counts, a tidy shared root
+#: cause -- until someone looked at what the functions actually return. The
+#: hand-written runner in ucrtdiff.c always knew this and wrapped every comparator in
+#: sgn(); the generator did not, and nothing cross-checked the two.
+_COMPARATOR = re.compile(r"(cmp|coll)(_l)?$")
+
 #: Exports excluded because the sweep cannot get past them.
 #:
 #: `_mbsnbcoll` was the first suspect and is NOT the cause -- excluding it (verified in
@@ -167,22 +180,73 @@ _PREDICATE = re.compile(r"^_?(is[a-z]|isw|_?ismb|_?iswcsym)")
 #: The note that the guest "keeps logging, so the HARNESS is wedged" was wrong -- it was
 #: read from a log that had stopped for an unrelated reason (see 1).
 QUARANTINE_REASON = (
-    "the multibyte/locale collation family wedges the ENTIRE GUEST, not just its "
-    "thread: all serial output stops, so neither run_guarded's per-export timeout nor "
-    "the harness's own deadline can fire. Quarantined to unblock the other ~194 "
-    "exports; this is OWED WORK, not a decision that these are fine."
+    "these exports wedge the ENTIRE GUEST, not just their own thread: all serial output "
+    "stops, kernel logging included, so neither run_guarded's per-export timeout nor "
+    "the harness's own deadline can fire (the deadline is cooperative, checked between "
+    "exports). Two rules: QUARANTINE_EXACT lists exports individually WITNESSED killing "
+    "a boot; the *coll* rule holds out a family by inference from two known members. "
+    "This is OWED WORK, not a decision that any of them are fine."
 )
+
+
+#: Exports PROVEN to end the boot, each by a run that died entering it. Distinct from
+#: the *coll* family rule below, which is a family held out by inference from two known
+#: members; these are individually witnessed and named with their evidence.
+QUARANTINE_EXACT = {
+    # 2026-09-23: the full 194-export single-boot run graded 110 exports and the guest
+    # died entering this one -- all serial stops, kernel [PS] spam included. Note the
+    # neighbour: _mbsnbcmp_l (plain compare, same shape, same corpora) graded 392 cases
+    # immediately before it, so this is the case-INSENSITIVE path, not multibyte
+    # compare in general.
+    "_mbsnbicmp",
+    "_mbsnbicmp_l",
+    # 2026-09-23, the 8-shard sweep. Each of these killed the shard it sat in, and the
+    # rule they share is exact: a LENGTH-BOUNDED, narrow-or-multibyte, case-INSENSITIVE
+    # compare. The controls matter as much as the cases -- _stricmp_l (unbounded, same
+    # family) graded MATCH n=49, and _wcsnicmp (bounded but WIDE, so no lead-byte path)
+    # graded clean in shard 3. That is what the wrapping_sub over-read in
+    # mbcs.rs _mbsnbicmp_l needs: a `len` to underflow, and mbcs lead-byte logic to
+    # reach `len == 1` with `clen == 2`. Case folding then makes mismatches rare enough
+    # that the walk runs off into unmapped guest memory instead of stopping at a NUL.
+    "_strnicmp",  # shard 1, after 16 exports
+    "_strnicmp_l",  # shard 2, after 16
+    "_mbsnicmp",  # shard 4, after 14
+    "_mbsnicmp_l",  # shard 5, after 14
+    # 2026-09-23, the corrected full run: died entering this after 122 exports. It had
+    # never graded in ANY run -- in every shard it sat behind another killer -- so it
+    # stayed invisible until the others were held out.
+    #
+    # It also BREAKS the tidy rule the four above suggested. _mbstrnlen is not a
+    # comparator at all, and _mbsnbcmp (bounded AND multibyte, case-sensitive) grades
+    # fine, so "length-bounded narrow/mb case-insensitive compare" was over-fitted to
+    # the cases then in hand. What the six share is only "length-bounded, multibyte or
+    # locale-aware"; what separates them from the bounded multibyte SURVIVORS is NOT
+    # established. Treat this as a list of witnessed facts, not a proven predicate.
+    "_mbstrnlen",
+    "_mbstrnlen_l",
+    # 2026-09-23: killed the tail run after 173 exports. NOTE it is not deterministic --
+    # earlier runs caught it as a clean HANG row (run_guarded's 8s timeout fired and the
+    # sweep carried on), and this time it took the guest down instead. Same body, two
+    # outcomes, so whatever it does is timing-dependent. It is the only killer so far
+    # that is neither bounded nor multibyte.
+    "rand",
+}
 
 
 def is_quarantined(name: str) -> bool:
     """Exports held out of the sweep because grading them ends the boot.
 
-    Every *coll* export routes through the same locale-collation path, and the two
-    originally known deadlockers (_mbsnbcoll, _mbsnbcoll_l) are members of it. Rather
-    than discover the rest one dead boot at a time -- each costs ~11 minutes and hides
-    every export after it -- the whole family is held out and recorded as owed.
+    Two rules, deliberately kept separate. QUARANTINE_EXACT names exports individually
+    witnessed killing a boot. The *coll* rule holds out a whole FAMILY by inference:
+    every *coll* export routes through the same locale-collation path and the two
+    originally known deadlockers (_mbsnbcoll, _mbsnbcoll_l) are members, so rather than
+    discover the rest one dead boot at a time -- each costs ~25 minutes and hides every
+    export after it -- the family goes out together.
+
+    Holding an export out is never a verdict that it is FINE. Both rules are owed work,
+    and the generator announces the full list on stderr every run so it cannot go quiet.
     """
-    return "coll" in name
+    return "coll" in name or name in QUARANTINE_EXACT
 
 
 class GenError(RuntimeError):
@@ -436,8 +500,15 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
     for _e, name, kinds, has_rust in rows:
         macro = "GRADE_" + ("VOID" if not kinds else "_".join(kinds))
         pred = bool(_PREDICATE.match(name))
+        cmpf = bool(_COMPARATOR.search(name))
         out.append("#undef NORM")
-        out.append("#define NORM(x) " + ("(!!(x))" if pred else "(x)"))
+        if pred:
+            norm = "(!!(x))"
+        elif cmpf:
+            norm = "(sgn(x))"
+        else:
+            norm = "(x)"
+        out.append("#define NORM(x) " + norm)
         out.append(f"static void ucrtdiff_run_{name}(void)")
         out.append("{")
         out.append(f"    {macro}{'' if has_rust else '_NORUST'}({name});")

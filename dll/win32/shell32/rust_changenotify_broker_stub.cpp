@@ -1,3 +1,7 @@
+/* INERT since 2026-09-24: not in CMake. This class is Rust now, on the crate's atlwin
+ * substrate (sdk/lib/rust/shell32-rust/src/atl_stub_windows.rs). Kept on disk as the
+ * reference the port was checked against. */
+
 /* rust_changenotify_broker_stub.cpp — the ONE ATL window class changenotify.cpp still needs.
  *
  * `changenotify.cpp` is otherwise fully translated (shell32-rust/src/changenotify.rs) and is out

@@ -800,9 +800,13 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     } else {
                         BytesRemainingInBuffer - BaseLength
                     };
+                    // RtlCopyMemory: BytesConverted is a BYTE count. As a u16 copy it moved
+                    // twice the bytes, reading past LongFileName and writing past the entry.
+                    // It faulted (BUGCHECK 0x50) once a long name's overread crossed an
+                    // unmapped page, first seen enumerating %windir%\winsxs.
                     core::ptr::copy_nonoverlapping(
-                        LongFileName.Buffer,
-                        Buffer.add(NextEntry as usize + BaseLength as usize) as *mut u16,
+                        LongFileName.Buffer as *const u8,
+                        Buffer.add(NextEntry as usize + BaseLength as usize),
                         BytesConverted as usize,
                     );
 

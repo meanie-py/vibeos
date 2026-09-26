@@ -601,8 +601,8 @@ macro_rules! TreeView_HitTest { ($h:expr, $p:expr $(,)?) => { $crate::prelude::S
 macro_rules! Button_SetCheck { ($h:expr, $c:expr $(,)?) => { { $crate::prelude::SendMessageW($h, BM_SETCHECK, $c as WPARAM, 0); } }; }
 pub use crate::{Button_SetCheck, ListView_DeleteAllItems, ListView_DeleteItem, ListView_EditLabel, ListView_GetColumnWidth, ListView_GetEditControl, ListView_GetItem, ListView_GetItemCount, ListView_GetItemText, ListView_GetNextItem, ListView_GetSelectedCount, ListView_SetColumnWidth, ListView_SetExtendedListViewStyle, ListView_SetItemText, ListView_Update, TreeView_GetNextItem, TreeView_GetSelection, TreeView_HitTest};
 
-// sysdm.c's own variadic. Stable Rust cannot DEFINE one, so the entry point is a trampoline in
-// dll/cpl/sysdm/rust_varargs_shim.c and the real body is `ResourceMessageBox_v` next to it.
+// sysdm.c's own variadic. Stable Rust cannot DEFINE one, so sysdm.rs RECEIVES it the va-slots
+// way (fixed trailing slot parameters); this declaration is how the Rust callers reach it.
 // `extern "C"`, not "system", even though the C says `__cdecl` explicitly: no ABI on any of our
 // targets has a variadic stdcall, so the two agree.
 extern "C" {
@@ -641,13 +641,11 @@ pub use crate::types::{
 };
 // strsafe.h's TCHAR spellings, from the shared crate.
 pub use strsafe_rust::{StringCchCatW as StringCchCat, StringCchCopyW as StringCchCopy};
-// The VARIADIC strsafe entries sysdm reaches. Bodies are in strsafe-rust; the `...` entry
-// points are trampolines in dll/cpl/sysdm/rust_varargs_shim.c. `extern "C"` because no ABI
-// on our targets has a variadic stdcall.
-extern "C" {
-    pub fn StringCchPrintfW(d: *mut WCHAR, cch: usize, f: *const WCHAR, ...) -> HRESULT;
-}
-pub use self::StringCchPrintfW as StringCchPrintf;
+// strsafe.h's printf entry points are VARIADIC, and stable Rust can CALL a C-variadic though
+// it cannot define one; so these are strsafe-rust macros that call msvcrt's `_snwprintf` in
+// place, with strsafe's bounds and HRESULTs. The C trampoline that used to define them
+// (rust_varargs_shim.c) retired 2026-09-25. Call sites say `StringCchPrintfW!(...)`.
+pub use strsafe_rust::{StringCchPrintfW, StringCchPrintfW as StringCchPrintf};
 
 // ================= COM (COBJMACROS) ===========================================================
 // performance.c drives shell32's IRegTreeOptions through objbase.h's COBJMACROS, which expand to

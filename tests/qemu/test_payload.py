@@ -24,7 +24,9 @@ Verb vocabulary (grown on demand — see design doc; keep it small):
 
 from __future__ import annotations
 
+import re
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -109,15 +111,21 @@ def _click_center(vm: QemuVM) -> None:
     corner (saturate), recenter into the client area, left-click. Exercises
     the full mouse chain (class driver -> win32k hit-test -> activation)."""
     for _ in range(25):  # pin to top-left corner (rel mouse: saturate)
-        _send(vm, [
-            {"type": "rel", "data": {"axis": "x", "value": -50}},
-            {"type": "rel", "data": {"axis": "y", "value": -40}},
-        ])
+        _send(
+            vm,
+            [
+                {"type": "rel", "data": {"axis": "x", "value": -50}},
+                {"type": "rel", "data": {"axis": "y", "value": -40}},
+            ],
+        )
     for _ in range(10):  # move to ~screen centre — inside a maximized client area
-        _send(vm, [
-            {"type": "rel", "data": {"axis": "x", "value": 40}},
-            {"type": "rel", "data": {"axis": "y", "value": 28}},
-        ])
+        _send(
+            vm,
+            [
+                {"type": "rel", "data": {"axis": "x", "value": 40}},
+                {"type": "rel", "data": {"axis": "y", "value": 28}},
+            ],
+        )
     _send(vm, [{"type": "btn", "data": {"button": "left", "down": True}}])
     _send(vm, [{"type": "btn", "data": {"button": "left", "down": False}}])
     time.sleep(1.5)  # let activation settle
@@ -125,9 +133,9 @@ def _click_center(vm: QemuVM) -> None:
 
 def _send_key(vm: QemuVM, qcode: str) -> None:
     for down in (True, False):
-        _send(vm, [
-            {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}
-        ])
+        _send(
+            vm, [{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}]
+        )
 
 
 def _run_drive(vm: QemuVM, steps: list[dict[str, Any]]) -> None:
@@ -184,6 +192,7 @@ def drain_for_marker(
     budget_secs: float,
     idle_secs: float = 0.0,
     now: Any = time.monotonic,
+    on_output: Any = None,
 ) -> tuple[str, str]:
     """Drain serial until `marker` appears, `fail_marker` appears, or
     `budget_secs` of WALL CLOCK elapse.
@@ -217,11 +226,47 @@ def drain_for_marker(
         if chunk:
             output += chunk
             last_progress = now()
+            if on_output is not None:
+                on_output(output)
 
 
-def test_payload_launched(
-    vm: QemuVM, arch: str, payload: str, spec: dict[str, Any]
-) -> None:
+class ShotTaker:
+    """A payload's screenshot requests: each complete serial line containing
+    `<shot_prefix><name>` gets one QMP screendump, saved as shot-NN-<name>.png in the run's
+    artifact dir. The guest waits a few seconds after printing it; a screendump is immediate.
+    This is how a payload that drives GUI apps shows what they actually DREW, which no
+    in-guest check can see."""
+
+    def __init__(self, vm: Any, prefix: str | None) -> None:
+        self.vm, self.prefix, self.taken = vm, prefix, 0
+
+    def __call__(self, output: str) -> None:
+        if not self.prefix:
+            return
+        # Only complete lines: a name split across two serial reads must not be shot twice.
+        requests = re.findall(re.escape(self.prefix) + r"([A-Za-z0-9_.\-]+)\r?\n", output)
+        for name in requests[self.taken :]:
+            self.taken += 1
+            dest_dir = self.vm.artifact_dir or self.vm.work_dir
+            ppm = Path(dest_dir) / f"shot-{self.taken:02d}-{name}.ppm"
+            try:
+                # QMP screendump writes PPM whatever the name says; convert as test_smoke does.
+                self.vm.screendump(ppm)
+                path = ppm
+                try:
+                    from PIL import Image
+
+                    path = ppm.with_suffix(".png")
+                    Image.open(ppm).save(path, "PNG")
+                    ppm.unlink()
+                except ImportError:
+                    pass
+                print(f"[payload] screenshot {path}", flush=True)
+            except Exception as e:  # a lost screenshot must not end the run
+                print(f"[payload] screenshot {name} FAILED: {e}", flush=True)
+
+
+def test_payload_launched(vm: QemuVM, arch: str, payload: str, spec: dict[str, Any]) -> None:
     """The payload's exe was spawned (media staged + launcher ran)."""
     t = spec.get("test", {})
     _require_net(spec, arch, payload)
@@ -236,6 +281,8 @@ def test_payload_launched(
     # conformance verb still parses the partial log for the CRASH attribution).
     fail_marker = t.get("fail_marker", "*** BUGCHECK")
     output = vm._boot_output or ""
+    shooter = ShotTaker(vm, t.get("shot_prefix"))
+    shooter(output)
     if marker not in output:
         # Launcher may fire slightly after the boot marker — drain a little more.
         # WALL-CLOCK bounded; see drain_for_marker for why that is not obvious.
@@ -246,6 +293,7 @@ def test_payload_launched(
             fail_marker,
             float(t.get("launch_drain_secs", 30)),
             float(t.get("launch_idle_secs", 0)),
+            on_output=shooter,
         )
         # Printed so a DRIVER above can tell WHY the boot stopped. "idle" is the
         # one reason that positively implicates the guest: the payload went
@@ -267,6 +315,14 @@ def test_payload_launched(
         f"launcher regressed (grep serial for CreateProcessW errors).\n"
         f"serial tail: {output[-800:]!r}"
     )
+    # A payload that grades itself says so in its output; without this a run whose own
+    # verdict was FAIL passed the harness because its launch marker appeared.
+    pass_marker = t.get("pass_marker")
+    if pass_marker:
+        verdict = next((ln for ln in output.splitlines() if marker in ln), "")
+        assert pass_marker in output, (
+            f"--payload {payload} finished but its output lacks {pass_marker!r}: {verdict.strip()!r}"
+        )
 
 
 def test_payload_renders(
@@ -316,9 +372,7 @@ def test_payload_input_reaches_app(
     oracle = inp.get("oracle") or {}
     static_max = float(oracle.get("frame_delta_static_max", STATIC_DELTA_MAX))
     oracle_gap = float(oracle.get("gap", 1.5))
-    render_min = float(
-        (t.get("renders") or {}).get("frame_delta_min", RENDER_DELTA_MIN)
-    )
+    render_min = float((t.get("renders") or {}).get("frame_delta_min", RENDER_DELTA_MIN))
 
     time.sleep(float(inp.get("settle", 3)))
     if inp.get("focus", "click-center") == "click-center":
@@ -356,9 +410,7 @@ def test_payload_input_reaches_app(
     print(f"\n[{payload}] PLAYABLE — drive script confirmed (delta {pre:.1%} -> {post:.1%})")
 
 
-def test_payload_tcp_hammer(
-    vm: QemuVM, arch: str, payload: str, spec: dict[str, Any]
-) -> None:
+def test_payload_tcp_hammer(vm: QemuVM, arch: str, payload: str, spec: dict[str, Any]) -> None:
     """Load gate: hammer the payload's TCP server from the host through the
     slirp hostfwd and verify every response byte.
 

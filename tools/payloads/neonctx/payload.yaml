@@ -1,0 +1,25 @@
+# neonctx — do the arm64 V registers survive an exception and NtContinue?
+#
+# Loads a pattern into v0-v31, faults, and a vectored handler resumes with
+# EXCEPTION_CONTINUE_EXECUTION after scribbling over the live registers and editing
+# CONTEXT.V[31]. Passes only if the handler SAW the pattern in its CONTEXT, the resumed
+# code gets the pattern back, v31 carries the edit, and FPCR round-trips. Before 2026-09-25
+# the kernel dispatched exceptions with CONTROL|INTEGER only and NtContinue's exit
+# (KiExceptionExit) skipped the NEON restore, so all four failed.
+#
+#   tools/payloads/neonctx/build.sh arm64
+#   ./vibeos-cli smoke --arch arm64 --payload neonctx
+# Verdict line: "[NEONCTX] done VERDICT=PASS|FAIL". arm64 only.
+name: neonctx
+description: arm64 V0-V31/FPCR through an exception, the handler's CONTEXT, and NtContinue
+
+build_hint: "tools/payloads/neonctx/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/neonctx/neonctx-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/neonctx.exe
+
+test:
+  launch_marker: "[NEONCTX] done"
+  launch_drain_secs: 600

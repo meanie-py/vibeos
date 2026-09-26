@@ -30,16 +30,15 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 
 - **`--allow-multiple-definition` elimination** — kill the load-bearing link flag categorically (spike proven; see the ratchet doc + `tools/scan_duplicate_symbols.py`).
 - **DUMMY_PSEH resolution** — decide + execute the path off the SEH-is-dead-code hack across
-  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug —
-  that pointer was wrong and was removed 2026-09-06.** The reasoning was that `_USE_DUMMY_PSEH`
-  compiles out `co_IntInitializeDesktopGraphics`'s cursor/icon `KeUserModeCallback`, so
-  resolving DUMMY_PSEH would let it run. It would not. That function is already Rust
-  (`win32k-rust/src/winsta.rs`), where no C `#if` reaches it, and the block is still skipped
-  deliberately: it runs on the **system desktop thread**, whose process has no
-  `KernelCallbackTable`, so the user-mode callback cannot be made there at all — letting it run
-  is what produced the i386 "Sending to Suspended Thread" hang. The constraint is the thread,
-  not the SEH shape, and it survives DUMMY_PSEH resolution untouched. Judge this item on code
-  shape alone.
+  all arches (spike + open-question doc landed). **It does NOT block the system-cursor bug.**
+  **Update 2026-09-23:** the cursor/icon block this note defended skipping now runs where
+  upstream runs it (`co_IntInitializeDesktopGraphics`), on all arches. The skip was ours
+  (`5802b15ed60`, 2026-03), not a C `_USE_DUMMY_PSEH` guard, and its stated reason was wrong.
+  The thread does have a user-callback table: all three arches log
+  `cursors/icons loaded at desktop-graphics init`, and the gates passed 9/9. The i386 hang
+  the skip avoided was the padded `KAPC_STATE` copy that made threads read as suspended.
+  `co_IntDeferredCursorsAndIcons()` remains as the fallback for a thread without a callback
+  table.
 
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
@@ -408,6 +407,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `SwitchDesktop OK` in 33s, **0 `BAD gate` hits** (§9.13/§9.24 fixed the family). **Now-
   actionable follow-on:** flip `VIBEOS_ENABLE_DELAYLOAD` default ON in `sdk/cmake/gcc.cmake`,
   ×3-gate, delete the arm64 `arm64_*_stubs.c` optional-DLL hacks. *(archive/delay-import-llvm-mingw-roadmap)*
+  **Flipped on all three arches, 2026-09-24:** `VIBEOS_ENABLE_DELAYLOAD` is now an option
+  defaulting ON. The WoW64 `user32:class` found the eager loads, which put comctl32 in every
+  RPC-using process. arm64 needed an 8-aligned IAT in `gen-delaylib.py`, then exposed #43
+  (below), which it was held OFF for until that was fixed. The four arm64 `arm64_*_stubs.c`
+  optional-DLL hacks were deleted 2026-09-25 (advapi32 LSA logon, rpcrt4, user32 libpng,
+  consrv ole32/shell32), and every arch now uses the same delay-import lists. rpcrt4's stubs
+  had included `VARIANT_UserMarshal` and `BSTR_UserMarshal` returning nothing, which silently
+  broke OLE automation marshalling on arm64 alone.
 - [x] **amd64 whpx net 13/15 — A/B done, inbound failure is GENUINE** (verified 2026-07-11):
   wedge fixed → VM boots fully under whpx, but both guest listeners never announce (echo +
   TDI `:8888`) — a whpx-specific inbound-listen bug (passes on TCG). Moved from "verify" to a
@@ -504,36 +511,146 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the arch actually boots (`arm64_launch.json` names it).
   This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
   first-chance dispatch is wired only there.
-- **arm64 fails `test_start_menu_opens` on fresh media: after Ctrl+Esc the screen is bare
-  wallpaper, with no taskbar, no desktop icons and no notepad window. UNOWNED** (2026-09-22;
-  root cause narrowed 2026-09-23). This is NOT a shell or start-menu bug.
-  - **Trigger:** arm64 winlogon's demo sequence spawns `cmd.exe`
-    (`winlogon-rust/src/winlogon.rs`, the "cmd.exe INFINITE wait" block) while explorer is
-    starting.
-  - **Mechanism:** cmd's consrv connect (`[CSRSRV] CliCon: ServerId=2`) wedges csrss.
-    cmd's `kernel32 DllMain PROCESS_ATTACH` never returns, and depending on timing either
-    explorer never reaches `_tWinMain` or its windows never paint. There is no further
-    `[DESKPAINT]` after the taskbar is created.
-  - **Measured (same fresh media, gate verdicts):**
-    - `cmd.exe` deleted from the ramdisk: PASS (panel lit 0.68 → 0.90).
-    - With cmd: FAIL 6 times.
-    - After adding unrelated `DbgPrint`s to winsrv: PASS once. It is timing-sensitive.
-    - Giving cmd `lpDesktop = WinSta0\Default`: still FAIL.
-  - **The kmtest sweep is NOT it.** The original inference here was refuted: the failure
-    reproduces with no Startup items at all, and on a kmtests-OFF build at `894e872ede1`
-    (2026-09-12).
-  - **Why it "worked until 09-13":** that media had been refreshed in place for weeks. Old
-    FEX probe binaries (`fexprobe.exe`, `wow64probe.exe`, `syswow64\*`) survived there, and
-    winlogon runs them BEFORE cmd, which moved cmd off explorer's startup window. Booting
-    `vibeos-research`'s 09-20 boot.img passes; a fresh ramdisk from any commit fails.
-    mkramdisk now prunes stale payloads and recreates a ramdisk that has no record, so every
-    fresh arm64 image shows this.
-  - **Next step:** find what the csrss console connect waits on. winsrv's own `DbgPrint`s did
-    not reach serial in any run, so consrv checkpoints are not a usable probe. csrsrv prints
-    only through its non-variadic `dbg_print!`, so route checkpoints that way, or walk the
-    csrss thread stacks under `vibeos-cli debug`.
-  - **Reproduce:** `python -m pytest tests/qemu/test_smoke.py --arch arm64 -k
-    test_start_menu_opens -s`. The default `vibeos-cli smoke` does not run this test.
+- **`SHObjectProperties` on a file hangs in ole32 marshalling. FIXED 2026-09-25**, and it was
+  five bugs deep. Right-click > Properties now opens a correct sheet (name, type, location, size,
+  dates, attributes) on i386; `tools/payloads/comprobe` checks it end to end with a screenshot.
+  1. No interface had a proxy/stub registration: `CoGetPSClsid` gave `REGDB_E_IIDNOTREG` for
+     IDataObject, IStream, IUnknown... The livecd registers COM from `setup -mini`
+     (syssetup `InstallLiveCD`), which never got that far: kernel32's INI parser computed every
+     length in BYTES (`PROFILE_Load`), so `GetPrivateProfileStringW` on `unattend.inf` never
+     returned. Same file: `CurProfile` was its own static instead of `MRUProfile[0]`, and a
+     `return TRUE` was dropped.
+  2. Even with setup unstuck, ole32's `DllRegisterServer` wrote nothing: the upstream sync kept
+     `7675017f60d`'s `.rc` change but lost its `add_idl_reg_scripts` line
+     (`tools/test_wine_registry_resources.py` guards it now).
+  3. Every value on the sheet drew as one glyph: `NtGdiGetCharABCWidthsW` read the LFONT as
+     the realized FONTGDI, so its SharedFace guard refused every call and every
+     `SS_*ELLIPSIS` static truncated. Same fix repairs dxdiag's values and Regional Options.
+  With setup's LiveCD phase now running, PlugPlay starts too, which is what devmgmt and dxdiag
+  were failing on (`RPC_S_SERVER_UNAVAILABLE`). setup no longer launches userinit when a shell
+  is already up (vibeos's winlogon starts it directly).
+- **App sweep findings, 2026-09-25 (`tools/payloads/appstorm`). OPEN.** 38 stock apps and
+  applets launched, checked and screenshotted per arch. Fixed on the way: an i386 0x1E in
+  `ExAcquirePushLockShared` from `CmpQueryKeyName` (a local lock helper skipped the KCB hash);
+  `GetClassNameW/A` dropping the terminator; user-mode `DbgPrint` returning failure; Toolhelp
+  snapshots with their counts overwritten; every kernel-built file-object name two characters
+  short (`IopQueryNameInternal` used 8 for `FIELD_OFFSET(FILE_NAME_INFORMATION, FileName)`, so
+  process names read `svchost.e`). The kmtest sweep now waits for setup's PnP device-install
+  burst (~25-35s, measured) before its first test: started inside it, the load-sensitive tests
+  failed on every attempt. Still open:
+  - FIXED: folder windows opened from another process never appeared (`explorer.exe <path>`,
+    Control Panel, `ncpa.cpl`). Two bugs. (1) `gen-delaylib.py` bound browseui's `NONAME` export
+    `SHOnCWMCommandLine` by name, so explorer's `CWM_COMMANDLINE` handler raised `0xc06d007f`
+    (all arches). (2) CControlPanelFolder handed its IShellFolder2 pointer to the view as the
+    IShellFolderViewCB, so the view's first `MessageSFVCB` ran `ParseDisplayName` and faulted in
+    CRegFolder. appstorm on amd64: explorer-folder, Control Panel (18 applets drawn) and
+    Network Connections all PASS.
+  - FIXED: closing a folder window faulted at RIP 0 in `browseui!CShellBrowser::OnDestroy`
+    (`fCurrentShellFolder.Release()` on a freed folder). `CDefView_OnCreate_body` released
+    `pdt` and `ppf2` explicitly AND through their CComPtr guards, so every view creation cost
+    its folder one reference. Found with a gdb probe logging each AddRef/Release of the folder.
+  - OPEN: with that fixed, browseui warns `Unexpected RefCount > 0 (1)` for the view at close.
+    The double `pdt` release (the view's own IDropTarget) had been hiding a +1 leak on CDefView.
+  - FIXED: the i386 Control Panel "hang" was a thread busy loading applets while boot-time
+    `setup -mini` was still installing devices (7.8s to answer). appstorm now waits for setup
+    to exit and gives a slow window 60s, sampling its PC; on amd64 and i386 explorer-folder,
+    Control Panel and Network Connections all PASS with titled windows.
+  - FIXED: a process that loaded and FreeLibrary'd its only user32 importer (Control Panel's
+    applet enumeration in a console process) unloaded user32; the reload failed DllMain on the
+    thread's stale `CI_INITTHREAD` (1114), every later user32 importer failed (1450), and
+    `powercfg.cpl` hung on i386. user32 now pins itself once connected. `tools/payloads/cplreuse`
+    replays it: 12/12 loads on amd64 and i386.
+  - FIXED: amd64 setup.exe faulted (RIP `0x1b85ac0`) as registration began. A gdb write-watch
+    showed `LdrpManifestProberRoutine` being set by the real setter, from a SECOND kernel32
+    mapped at `0x1b50000`: ucrtbase's api-set load went through a redirect that returns a bare
+    host name while claiming `RedirectedDll`, so the already-loaded check compared it against
+    full paths and never matched. The loader now looks bare redirected names up by base name.
+    Registration then reached the csrss crash below.
+  - FIXED: registration crashed csrss in `winsrv!ConSrvGetConsole` (0xF4):
+    `GetThreadConsoleDesktop` read `ServerData[1]` (basesrv's slot) instead of
+    `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
+  - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
+    import that does not resolve; arm64 too).
+  - amd64 flake, OPEN: 1 of 5 conformance runs bugchecked 0x1E `c000009a` raised by
+    `FsRtlAllocatePoolWithTag` (a raise-on-failure pool allocation from a driver at
+    `fffff80003cbb22b`) during the `ZwAllocateVirtualMemory` kmtest. That run's WOW64 test app
+    was repainting in a loop (6.8K `StretchDIBits`, serial 192K lines). The loop predates the
+    registration fix, and so do its run-to-run swings of 60-3.4K calls. Artifact:
+    `/tmp/vibeos-cli/20260925-182151-b9nppk9s-conformance-amd64`.
+  - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
+    that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
+    it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
+  - Small: Date/Time's analog clock is not drawn; Add/Remove Programs' info pane draws text as
+    a column; the Properties size line loses its closing parenthesis; comprobe hangs after
+    closing the sheet (not yet shown to be a product bug).
+  - Kernel `ASSERT FAILED: (*WaitBlock).Signaled != 0` at `ex-rust/src/pushlock.rs:643`,
+    seen once during an i386 sweep.
+- **Retire the other modules' printf/varargs C shims the way shell32's went. USER-MODE SIX
+  DONE 2026-09-25; the rest OWED.** desk, msgina, sysdm, netcfgx, userenv and syssetup compile no
+  shim now. The strsafe printf family is `strsafe_rust::StringCchPrintfW!`/`StringCbPrintfW!`/
+  `StringCbPrintfExW!`, which CALL msvcrt's variadic `_snwprintf`. The modules' own variadics
+  (sysdm `ResourceMessageBox`, syssetup's exported `pSetupDebugPrint` and `FatalError`) RECEIVE
+  their arguments the va-slots way. userenv's two data globals are `#[no_mangle]` Rust statics
+  now; its shim's `StringCchPrintfW` also passed `cchDest` where strsafe passes `cchDest - 1`.
+  Graded by `strsafe-difftest` against the genuine strsafe.h: 59,853 cases over every size, flag
+  and NULL out-param, and it catches a planted off-by-one in either the bound or the remaining
+  count. **Still owed**, each its own class:
+  - variadic RECEIVERS: aclui `LoadAndFormatString`, wldap32 `ber_printf`/`ber_scanf`, dhcpcsvc,
+    msvcrt's 30 CRT shells;
+  - the kernel drivers' debug-print shims (pcix, pciidex, uniata, scsiport, storport, usbhub,
+    usbport, usbstor, acpi). These cannot call msvcrt, so they would be va-slots receivers;
+  - usersrv's `usersrv_rust_strsafe_shim.c`.
+- **arm64 `test_start_menu_opens` on fresh media: bare wallpaper, no taskbar. FIXED
+  2026-09-23 (`5e2fb0703c2`); re-verified 2026-09-24 on fresh arm64 media: the start menu
+  opens over the desktop with the taskbar and tray drawn. Two bugs, both needed.**
+  Arm64 winlogon spawns `cmd.exe` while explorer starts, and cmd's console connect wedged
+  csrss:
+  1. **No console font could exist.** win32k never enumerated `\SystemRoot\Fonts`. It
+     loaded a hardcoded list instead: 6 fonts on arm64, and nothing on x86 ("deferred to
+     winlogon", which added 8 by name). Neither list held consrv's default face "VGA"
+     (`UniVGA16.ttf`) or its "Terminal" fallback. So `InitFonts` failed, `WM_NCCREATE`
+     failed, and `GuiInitFrontEnd` fell into `GuiDeinitFrontEnd`. That waits forever on
+     `hGuiTermEvent`, because the input thread skips `NtSetEvent` when `hWindow` is NULL.
+     The API thread serving cmd's connect was left parked there for good. Stacks taken
+     via the census:
+     - tid 148: `GuiDeinitFrontEnd` ← `GuiInitFrontEnd` ← `ConSrvConnect` ←
+       `CsrApiRequestThread`.
+     - The input thread: idle in `NtUserGetMessage`.
+     Fix: upstream's directory enumeration is restored in `IntLoadSystemFonts` on all
+     arches (enumerating once and filtering the extension, because our FAT driver ignores
+     the search pattern). winlogon's font list is gone, and arm64 stages `UniVGA16.ttf` and
+     `lucon.ttf`.
+  2. **`KAPC_STATE_ACTUAL_LENGTH` was `size_of` (48/24), not the unpadded 43/23**
+     (`ke/apc.rs`, since the Feb KE translation). Every attach/detach copied `ApcState`'s
+     tail over `SavedApcState`'s, i.e. into `FreezeCount` (and on 64-bit `SuspendCount`).
+     Any thread that ever attached to another process, which includes every thread that
+     created one, then read as suspended. win32k refused all sends to it with "Sending to
+     Suspended Thread". This is the same predicate as the i386 hang behind the desktop-thread
+     cursor-callback hack (Tier 1 above).
+  - **Measured:**
+    - Both fixes: arm64 gate 7/7 with `cmd.exe` present; 0 suspended sends; cmd's
+      `PROCESS_ATTACH` completes.
+    - Fonts only: 2 passes, then 1 boot where explorer never started.
+    - amd64: passes.
+  - **Exposed, then FIXED (i8042prt):** fix 2 lets win32k's RIT really block in the
+    WH_KEYBOARD_LL hook send, so keystrokes queued up. That exposed an upstream race in
+    `i8042KbdDpcRoutine`:
+    - It hands kbdclass `KeyboardBuffer[0..n]` outside the interrupt lock, then only does
+      `KeysInBuffer -= transferred`.
+    - A key the ISR appended during the callback sits behind a stale slot 0. The next DPC
+      re-delivered the old key and lost the new one: one Esc make twice, its break never
+      delivered.
+    - Ctrl+Esc then toggled the start menu open and shut. i386 went from 4/4 on master to
+      about 1/3 with fix 2.
+    The DPC now compacts the tail as the mouse DPC always did. i386 is 8/8; amd64 3/3.
+  - **Not caused by these fixes:** the arm64 PC/LR/FP=0 fetch fault (`ESR=0x86000007`,
+    during services' `ScmStartUserModeService`), which is the registered smp-bringup flake.
+    A/B under 5-way parallel load: 9/10 boots with fix 2, 9/10 with it reverted, one
+    PC=0 fault in each. That is well above the registered 1.7%.
+  - **Correction:** an earlier version of this entry said winsrv's `DbgPrint`s never reach
+    serial. That was false. It was read from a stale `qemu/arm64_smoke_live.log` dated
+    2026-08-06. In a worktree, pytest's serial lives under `/tmp/pytest-of-*/`. The kmtest
+    and stale-payload inferences above it were refuted as well.
 - **shell32's DllRegisterServer returns 0x80070002 (ERROR_FILE_NOT_FOUND) on the livecd, all
   three arches. UNOWNED** (2026-09-23). Measured by `tools/payloads/regdiff`, identically for
   the C++ build (`bf5c0d1573f`) and the Rust one, so it predates retiring shell32.cpp. Every
@@ -888,34 +1005,85 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   DETACHED_PROCESS (a console is legal there; it is only the WoW64 guest that cannot
   create one). That is a one-line experiment and it also A/Bs the console bug below.
 
-- **Console creation HANGS a CUI process launched by winlogon — on bare i386 as well as
-  under WoW64. OPEN, and it is one bug behind three symptoms** (2026-09-21).
-  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`
-  (`win32k-rust/src/window.rs`), after which the process spins in
-  `Sending to Suspended Thread` and never reaches main: 180s timeout, **0 bytes of
-  output**, 9075 spin lines. First seen on a WoW64 guest; the native i386 control of the
-  same binary reproduced it EXACTLY, so it is ours and not a 32↔64 bug — "WoW64" was
-  where it was seen, not where it lives.
-  The three symptoms: (1) a WoW64 winetest hangs before main; (2) the native one does
-  too; (3) `class.c` spawns fifteen children of its own, and a CUI child of a
-  console-less parent gets a NEW console from csrss, so each burns the full 30s of
-  `winetest_wait_child_process` — 7.5 minutes, and the reason the native control has
-  never reached the wndproc block it exists to adjudicate.
-  Worked around for the winetest runner by launching `DETACHED_PROCESS` (a piped test
-  wants no console), which is why the ladder does not depend on it. **Fixing this is the
-  unblock for the wndproc attribution above**, and it is reachable natively, so no WoW64
-  machinery is needed to debug it.
-  LOCALIZED, not yet root-caused: `co_UserCreateWindowEx` fails at
-  `co_IntSendMessage(hwnd, WM_NCCREATE, …)` returning 0, and the send is refused by
-  `IsThreadSuspended(ptirec)` in `msgqueue.rs` — the receiving thread reads as suspended
-  or frozen. That predicate is `Tcb.SuspendCount == 0 && PsGetThreadFreezeCount() == 0`,
-  both of which are bindgen-anon-union reads that differ per arch
-  (`kt_suspend_count` in msgqueue.rs, `PsGetThreadFreezeCount` in ps-rust/thread.rs), so
-  a wrong union member would make every thread look suspended. Note the ERR fires
-  **3327 times in a HEALTHY amd64 boot**, so it is either badly over-firing already or
-  there really are that many suspended sends; either way the next step is a runtime
-  probe printing SuspendCount and FreezeCount for the receiving thread, not more
-  source reading — the two candidate reads look correct on inspection.
+- **Console creation HANGS a CUI process launched by winlogon — FIXED 2026-09-23.** Five
+  bugs, the last three found only once console creation began to work:
+  1. win32k never loaded consrv's "VGA" font.
+  2. `KAPC_STATE_ACTUAL_LENGTH` made attached threads look suspended.
+  3. consrv's handle table was indexed through winsrv-sys's opaque 1-byte
+     `_CONSOLE_IO_HANDLE`, so `.add(i)` stepped one byte and entries overlapped. csrss
+     died on the first console close: AV in `ConSrvCloseHandle`, BUGCHECK 0xF4 on i386.
+  4. 22 of `GuiVtbl`'s 25 slots, plus `GuiConsoleInputThread`, were Rust-ABI fns
+     transmuted into NTAPI slots, under a comment claiming they were `extern "system"`.
+     Six of them returned u8 for C's BOOL.
+  5. The same ABI shape was in msgina's dialog procs and advapi32's crypt callbacks.
+  Two new gates, `scan_opaque_ptr_arith` and `scan_fnptr_abi_transmute`, keep 3–5 at zero.
+  The i386 native user32 `class` winetest now runs end to end with a real console: winlogon
+  no longer detaches it, and since the follow-ups below neither is the WoW64 guest.
+  Follow-ups, 2026-09-23:
+  - **WoW64 guest console (WORKS).** On amd64 the guest `user32:wsprintf` runs with a
+    console: 58 tests, 0 failures, the same as the native i386 control. The ladder stays green.
+  - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
+    `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
+    bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
+  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
+    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
+    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
+    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
+    not attached on i386. OPEN (harness).
+  - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
+    exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
+    its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
+  - **The 50 ms `KeDelayExecutionThread` in `co_IntInitializeDesktopGraphics` is REMOVED.**
+    It was a March workaround for a race fixed since; 12 boots passed without it.
+
+- **WoW64 guest user32 read 64-bit shared structures with its 32-bit layout — FIXED
+  2026-09-24; guest `user32:class` now fails exactly what the native control fails.** The first real conformance
+  suite under WoW64 found this. The guest `user32:class` used to die with an execute AV
+  after ~1.4 KB of output. It now runs to the same ending as the native i386 control (the
+  read-only-TEMP 0xc0150010) with no faults. Fixed:
+  1. **`gpsi` was never normalized.** Every read after `dwSRVIFlags` (offset 0 in both
+     layouts) was misplaced: system metrics, colours, brushes, icons, event-hook bits, the
+     class-proc tables. `wow64.rs` now has `ServerInfo64` with 64-bit layout guards and a
+     `psi` accessor module that reads it live. There is no snapshot, because several fields
+     change at runtime. Every guest call site goes through it.
+  2. **Host class procs reached the guest.** win32k keeps the 64-bit user32's
+     `apfnClientA/W` as the system procs. Such a proc is now swapped for the guest's proc
+     in the same PFNCLIENT slot wherever one crosses over: the WND/CLS/CPD normalizers, the
+     WINDOWPROC callback, and GetClassInfo. The guest's procs are swapped back going in:
+     RegisterClassExWOW, and new manual SetWindowLong/SetClassLong(WNDPROC) and GetCPD
+     thunks (`dll/win32/wow64/wow64_pfnmap.c`).
+  3. **win32k refused `SetWindowLong(GWL_WNDPROC)` from every WoW64 caller**, even through
+     the Ptr entry point. It compared the op size to `sizeof(LONG)` rather than to the
+     caller's pointer size (`UserCallerPtrSize()`). No 32-bit app could subclass a window.
+  4. `CALLPROCDATA`, `PROPERTY` (client-side `GetProp`), and `NtUserBuildPropList`'s
+     `PROPLISTITEM` had no 32-bit shape. comctl32's IP-address control crashed on the
+     NULL `GetProp` returned once subclassing started working.
+  Second pass, same day. It took the guest-only failures from 17 to 1:
+  5. **`GETPFNSERVER` was truncated.** `aStoCidPfn` holds the 64-bit user32's `apfnClientW`,
+     so `psi::pfn_server` now maps it like any other proc. Server-side windows had read
+     `GWLP_WNDPROC` as 0 (class.c:731/732, ScrollBar 774/778).
+  6. **The WINDOWPROC callback discarded `WM_GETTEXT` output.** It is the one
+     `MMS_FLAG_WRITE` message the copy-back list lacked (719).
+  7. **Icons:** the COPYIMAGE callback, `NtUserGetIconInfo` and `NtGdiExtGetObjectW` had
+     no marshallers. Guest `GetIconInfo`, `CopyImage` and `GetObject` on a bitmap all failed,
+     so win32k could not derive a class small icon (1190–1219).
+  8. **comctl32 was loaded in every guest at startup.** Delay-load had never been on:
+     rpcrt4's delay imports were ordinary ones, loading wininet → shell32 → comctl32. Now
+     ON by default on i386/amd64 (the guest's DLLs are i386); see the ledger for arm64
+     (1292–1346, 1632/1643). The native run's
+     "comctl32 not loaded" failures (1315/1322) are shared now.
+  Still OPEN, guest-only:
+  - ~~`SysAnimate32` window creation (class.c:1357)~~ FIXED 2026-09-24. Animate
+    `LoadLibrary`s `msvfw32.dll`, a literal inside comctl32 that the roots-only literal scan
+    missed. The amd64 livecd now passes `wow64-closure.py --library-literals`: 180 modules,
+    +25 MB stripped, ISO 295 → 334 MB. The guest failure list is now IDENTICAL to the native
+    control's. The arm64 FEX ramdisk (fixed 140 MB) stays roots-only.
+  Also fixed with it: amd64 media had staged only amd64 `winsxs` assemblies, so the guest's
+  comctl32 failed `CreateActCtxW` for both of its manifests. The x86 common-controls
+  assemblies are now staged beside syswow64 (`dll/win32/wow64cpu/CMakeLists.txt`).
+  Repro: amd64 media with `build-fex-hello` guests and an i386 `--rostests`
+  user32_winetest, then
+  `smoke --arch amd64 --until "[WT] user32:class: exit" --fail-on "user32:class: CRASHED"`.
 
 - **Stock WoW64 applets (taskmgr, magnify, osk) died at `exit_status=0x80` about one boot
   in three — FIXED 2026-09-20.** Root cause was a native-stack LEAK, not recursion and not
@@ -1877,7 +2045,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   §9.41 was a wrong OFFSET (0x74 vs 0x1740) and is gated by `scan_magic_offsets`; this would
   be the same class through a wrong TEB, which that scanner cannot see.
 
-- **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — OPEN**
+- **`NtGdiGetCharABCWidthsW` BUGCHECKs 0x1E when called from a 32-bit guest — ROOT-CAUSED 2026-09-25**: it took `FontGDI` from the LFONT instead of `TextObj->Font` (see the SHObjectProperties entry); the guard below stays as defense. Original report:
   (2026-09-20). Found by the drain floor above: with the applet phase actually observed, a
   `--ladder` boot does not merely storm with first-chance faults, it **dies**.
 
@@ -1969,11 +2137,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   explicitly to stop measuring and get more eyes on it: a thousand identical soak rounds
   sample one condition a thousand times, while fleet usage samples many for free. **Do not
   propose more soak rounds as a precondition for anything here.** Two narrow signatures in
-  `triage.KNOWN_FLAKES` make the gate retry these once (~1-in-42 → ~1-in-3200 disruption);
+  `triage.KNOWN_FLAKES` made the gate retry these once (~1-in-42 → ~1-in-3200 disruption;
+  both retired 2026-09-25, below);
   across all 1375 MP rounds `0x1E` and `0xE3` are the only codes that have ever appeared, so
-  the pair is exhaustive, not merely sufficient. **#39 (arm64 `0x1E`) and #43 (`0xE3`) stay
-  OPEN and owed** — the flake registry is a licence to keep working, not to stop looking, and
-  each entry retires when its root fix lands and a re-gate shows the signature gone.
+  the pair is exhaustive, not merely sufficient. **#43 (`0xE3`) FIXED 2026-09-24**: fastfat's
+  C shim tested `IRP_CONTEXT_FLAG_DISABLE_DIRTY` (0x1) as the WAIT bit, so FCB acquires ran
+  non-blocking and `FatCommonCleanup` released a page fault's FCB lock; field manual, "0xE3
+  RESOURCE_NOT_OWNED (#43) was a fastfat shim". Measured with delay-load ON (which made it
+  hit 4 in 5 kmtest boots): 10/10 clean after. **Re-measured 2026-09-25: 102 arm64 MP kmtest
+  rounds at `e2928af9a3c`, ZERO bugchecks of any code**, against 0xE3 in 18/336 and 0x1E in
+  10/336 in the same corpus before the fix. Chance of 0/102 at those rates: 0.4% (0xE3) and
+  4.5% (0x1E). At #39's long-run fleet rate of 1.3% it is 26%, so #39 is UNREPRODUCED, not
+  proven fixed. One capture's stack ran through `ExReleaseResourceForThreadLite` under
+  `NtFlushKey`, which fits the same corruption. **Both KNOWN_FLAKES entries are RETIRED**
+  (the 0xF4 precedent), so a recurrence now BLOCKS as a fresh `BUGCHECK 0x1E`/`0xE3` with its
+  capture preserved. That is how the next lead arrives, and the signatures are kept in
+  triage.py's retirement note for a re-add.
 
 - **No scanner catches a C `ASSERT` that VANISHES in translation — CLOSED (2026-09-06) by
   `tools/scan_dropped_asserts.py`.** 89 findings baselined; gated at 0 NEW. It pairs each C
@@ -2293,7 +2472,9 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the callee's arity is invisible to a cdecl/win64 caller. Field manual: "Which of the four is
   silent is a property of the HEADER" (whose freeldr row this corrects) and "A printf-style
   callee can take varargs on stable Rust".
-- **PARTLY FIXED (task #39): the arm64 `--smp 1` wedge reaches an EL1 user PC;
+- **UNREPRODUCED since #43's fix (task #39), 2026-09-25: 0 in 102 arm64 MP rounds; flake
+  entry retired, see the #43 entry above. History follows. PARTLY FIXED: the arm64 `--smp 1`
+  wedge reaches an EL1 user PC;
   exception handling hid the first fault, and the jumper is not yet found.** A 300-round
   soak on fixed media hit it 5 times (1.7%), and every capture showed the same shape: a vCPU at
   **EL1h with `PC=0x10000`**, register file byte-identical across samples, every timed wait

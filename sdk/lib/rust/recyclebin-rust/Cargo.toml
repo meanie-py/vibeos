@@ -14,6 +14,7 @@ crate-type = ["staticlib"]
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 win32macros-rust = { path = "../win32macros-rust" }
+strsafe-rust = { path = "../strsafe-rust" }
 # The island blocklists com-sys's types and re-exports them, so IUnknown/IID/HRESULT keep a
 # SINGLE identity with the rest of the tree rather than this crate minting a second set that
 # is structurally identical and type-incompatible. See SYS_CRATES in gen_driver_types.sh.

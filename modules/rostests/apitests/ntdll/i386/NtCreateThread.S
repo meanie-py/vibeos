@@ -29,8 +29,10 @@ PUBLIC _ThreadStartupThunk
     /* Clear direction flag */
     cld
 
-    /* Capture the context */
-    push offset _TestThreadStartupContext
+    /* Capture the context. clang's integrated assembler cannot encode
+       "push offset <extern>" ("unsupported relocation type"); eax is free here. */
+    lea eax, [_TestThreadStartupContext]
+    push eax
     call _RtlCaptureContext@4
 
     /* Fix up control registers */

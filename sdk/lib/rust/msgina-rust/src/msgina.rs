@@ -1106,7 +1106,7 @@ pub unsafe extern "C" fn CreateProfile(
                 );
             }
         } else {
-            StringCbPrintfW(
+            StringCbPrintfW!(
                 pEnvironment as STRSAFE_LPWSTR,
                 cbSize as size_t,
                 { static __WS2: [u16; 18] = unsafe { core::mem::transmute::<[u8; 36], [u16; 18]>(*b"L\0O\0G\0O\0N\0S\0E\0R\0V\0E\0R\0=\0\\\0\\\0%\0w\0s\0\0\0") }; __WS2.as_ptr() as STRSAFE_LPCWSTR },

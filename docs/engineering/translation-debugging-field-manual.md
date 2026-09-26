@@ -1010,6 +1010,12 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   `git add` ("will not add file alias"). Rename the module.
 
 ### Assorted ABI-adjacent traps
+- **A trap handler that never sets the return register returns the caller's own argument.**
+  User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and
+  `KdpStub` (the no-debugger path) handled `BREAKPOINT_PRINT` without calling
+  `KeSetContextReturnRegister`, so the caller got its service code back (1). Every `DPRINT1` in
+  user mode then read "failed" and printed a second `(file:line) DbgPrint() failed!` line,
+  doubling serial debug output. `KdpTrap` always set it; with no debugger a print succeeded.
 - **LLM appends `as u64` to every SIZE_T/ULONG_PTR** → ~50 i386-only E0308s. Use `as _` or
   `usize`; never hardcode a width for an arch-width field.
 - **amd64 `cpuid` 32-bit `xchg ebx` dance zero-extends and wipes the upper 32 bits of rbx**,
@@ -1043,6 +1049,51 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   which carries the correct per-arch ABI.
 
 ---
+
+### `transmute(f as *const ())` into a callback slot erases the ABI check
+**Symptom.** Works on amd64/arm64; on i386 the callee reads garbage arguments. In consrv this
+killed csrss (BUGCHECK 0xF4) the first time an i386 GUI console was created. A BOOL slot
+filled by a fn returning `u8` returns garbage upper bits on every arch.
+
+**Cause.** `f as *const ()` discards `f`'s ABI and the transmute re-types it as the slot's
+`extern "system" fn`. rustc cannot compare them. consrv's `GuiVtbl` filled 25 NTAPI slots
+this way under a comment claiming the impls were `extern "system"`; 22 were plain Rust fns
+and six returned `u8` for C's `BOOL`. msgina's dialog procs and advapi32's crypt callbacks
+had the same shape.
+
+**Fix.** Declare the fn with the slot's ABI and pass it directly: `Some(f)`. rustc then
+checks the ABI and the whole signature. `scan_fnptr_abi_transmute` gates it (baseline empty).
+
+### Pointer arithmetic on a field bindgen typed as an opaque stub strides one byte
+**Symptom.** A table that works while only entry 0 is used. Once there are several entries
+they overlap, and a pointer read back from one is garbage. consrv's console handle table
+crashed csrss in `ConSrvCloseHandle` on the first console close.
+
+**Cause.** bindgen emits an unseen type as `struct X { _address: u8 }`. A field `*mut X` makes
+`.add(i)` step one byte, and the cast afterwards (`field.add(i) as PREAL`) comes too late. The
+allocation used the real element size, so nothing looked wrong until index 1.
+
+**Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
+(`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
+
+### A C byte count kept as the element count of a `u16` copy moves twice the bytes
+**Symptom.** A string copy that over-reads its source and over-writes its destination by
+exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
+staging `winsxs` made smss enumerate long names and hit BUGCHECK 0x50 in `memcpy`, called
+from `fastfat.sys` (`FatQueryDirectory`).
+
+**Cause.** `RtlCopyMemory(dst, src, Bytes)` counts bytes. `core::ptr::copy_nonoverlapping`
+counts elements of `T`, and `T` is whatever the pointers say. The translation kept
+`BytesConverted` and typed the pointers `u16`. The same shape was in the registry value cache
+(uncompressed value names) and in five mountmgr `DeviceString` copies, plus one uncast
+instance in `IoVolumeDeviceToDosName`.
+
+**Fix.** Copy bytes as the C does (`src as *const u8, dst as *mut u8, Bytes`), or divide the
+count by `size_of::<u16>()`. Keep element-typed pointer arithmetic for the destination
+offset: `&Dst[Len / sizeof(WCHAR)]` is `dst.add(len / 2) as *mut u8`.
+`scan_wide_byte_copy` gates the cast form (baseline empty). It only trusts an explicit cast,
+because both pointers share one `T`, and an uncast `.Buffer` is too often ANSI. An uncast
+`u16` field pair still needs reading against the C.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -2207,6 +2258,25 @@ handles like 0x3DC) means a bit-test never matches after a cohab flip.
 
 ---
 
+### A C length macro that stops short of the padding is not `size_of`
+**Symptom.** Threads read as suspended to win32k ("Sending to Suspended Thread"), so every
+`SendMessage` to them was refused. This hung the arm64 console and the i386 desktop thread,
+and 3327 of those ERRs appeared in a healthy amd64 boot. The fields were correct in every
+bindgen island.
+
+**Cause.** `KAPC_STATE_ACTUAL_LENGTH` is `FIELD_OFFSET(KAPC_STATE, UserApcPending) +
+sizeof(BOOLEAN)`: 43 on 64-bit and 23 on i386, deliberately short of the padded
+`sizeof` (48 / 24). KTHREAD overlays `FreezeCount`/`SuspendCount` on `SavedApcState`'s
+padding and `ApcQueueable`/`Priority` on `ApcState`'s. The translation wrote it as
+`size_of::<_KAPC_STATE>()`, so `KiMoveApcState` on every attach/detach copied `ApcState`'s
+tail into the suspend counts.
+
+**Fix.** `offset_of!(_KAPC_STATE, UserApcPending) + size_of::<BOOLEAN>()`.
+
+**Generalize.** A macro spelled `FIELD_OFFSET(..) + sizeof(..)` or `RTL_SIZEOF_THROUGH_FIELD`
+exists precisely because the tail is someone else's storage. Grep for the overlay
+(`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
+
 ## Constants: invented, guessed, and swallowed match arms
 
 **This is the single largest translation bug class in the repo, and the least visible.** rustc
@@ -2656,6 +2726,15 @@ findings and still exited non-zero. A verifier that cannot resolve its oracle mu
 proceed. And `verify_constants`' curated ~25 headers are too narrow for a general flag check:
 `cmdata.h` and `ntoskrnl/include/internal/cm.h` own the registry's own flag families, so a
 repo-wide `#define` index (dropping any name with two *different* values) backs it now.
+
+### A named SLOT index spelled as a literal picks another component's slot
+`GetThreadConsoleDesktop` read `Process->ServerData[1]` for consrv's per-process data; the C
+says `ConsoleGetPerProcessData()`, i.e. `ServerData[CONSRV_SERVERDLL_INDEX]` = **2**. Slot 1
+is basesrv's, which has no per-process data, so every call passed NULL to `ConSrvGetConsole`
+and csrss faulted — a 0xF4 whenever a thread's first GUI connect asked for its console
+desktop (amd64 setup's registration pass). Every other consrv site used the constant, so
+grep a module for `ServerData.as_ptr().add(<digit>)` / `[<digit>]` and friends; a literal
+where the C names a slot is the bug until proven otherwise.
 
 ### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
 
@@ -3609,6 +3688,23 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
+**Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
+that meant no `Interface\{iid}\ProxyStubClsid32` anywhere, so `CoGetPSClsid` failed with
+`REGDB_E_IIDNOTREG`, no interface could cross an apartment, and right-click > Properties
+showed an error box.
+
+**Cause.** Upstream `7675017f60d` moved ole32's registration from hand-written `.rgs`
+resources to `add_idl_reg_scripts(...)`. Our ole32 CMakeLists is heavily cohab-edited, and the
+sync kept the `.rc` deletion but lost the one CMake line. With `-DWINE_REGISTER_DLL`,
+`DllRegisterServer` is `__wine_register_resources(hProxyDll)`, which is happy to replay zero
+resources.
+
+**Fix.** Restore the line. `tools/test_wine_registry_resources.py` now fails any
+`-DWINE_REGISTER_DLL` module with neither an `add_idl_reg_scripts` line nor a `WINE_REGISTRY`
+`.rc` entry. `tools/payloads/regcapture` shows what each registration writes in the guest:
+`lines=0` beside `hr=0` is this bug.
+
 ### Re-translating an integrated module silently reverts every post-integration repair
 
 **Symptom.** A module that has been flipped, ground green and booted for weeks is
@@ -3782,6 +3878,29 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 **Corollary — hand-written code does not survive a re-run.** Each half is overwritten
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
+
+### A CComPtr guard PLUS the explicit Release it replaces: two releases per call
+`CDefView_OnCreate_body` wraps `pdt` and `ppf2` in `CppComPtrGuard` (the translation of a C++
+`CComPtr` local), then also calls `Release` on both at the end of the function, the way C code
+without smart pointers would. Every view creation dropped its FOLDER's refcount by one, and
+the fault surfaced much later and elsewhere: closing any folder window released an
+already-freed folder in browseui (`OnDestroy`, RIP 0). Nothing warns: both halves are
+individually right. Find it by looking for `Release)(X)` in a function that also has
+`CppComPtrGuard::new(addr_of_mut!(X))`, where X is not set to null afterwards (a reassignment
+right after the release, as in a CComPtr walk, is fine). Chase a use-after-free on a COM object
+with a gdb probe that logs every AddRef/Release of that object with its return addresses: the
+double release shows as two Releases from one frame.
+
+### C++ `this` passed where an INTERFACE is expected converts; the raw Rust `this` does not
+`SFV_CREATE sfvparams = { sizeof(SFV_CREATE), this, NULL, this };` in CControlPanelFolder converts
+`this` to `IShellFolder*` for one field and to `IShellFolderViewCB*` for the other: two different
+addresses under multiple inheritance. The translation wrote `psfvcb: this`, the object's start,
+which is its FIRST vtable (IShellFolder2). The view's `MessageSFVCB` (slot 3) then ran
+`ParseDisplayName` with four arguments instead of seven, and the stack-garbage `ppidl` faulted
+inside CRegFolder, two frames from the bug. Fix: `addr_of_mut!((*this).IShellFolderViewCB_iface)`.
+The tell is a callee that is a real method of the right OBJECT but the wrong INTERFACE. Grep the
+C++ for `this` in an initializer or argument whose declared type is an interface other than the
+class's first base.
 
 ### Wiring a `--cpp-com` class: five deterministic-layer gaps, all fixed FREE and RETROACTIVELY
 
@@ -4958,6 +5077,18 @@ linking, silently wrong. `_WIN32_WINNT=0x502` instead of the module's real `0x60
 not a hand re-preprocess:** `strings -el <the pre-flip .c.obj>` shows exactly which literals
 the real build compiled in. A bare `clang -E` with guessed `-D`s is how the bug arose.
 
+### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
+Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
+input that is NOT in the table. Cause: the C table ends in a terminator row (`L""`, `NULL`,
+`{0}`) and the loop is `while (tbl[i][0])`; the translation turned the table into a fixed-size
+Rust array and dropped the terminator (it looks like padding), but kept the terminator-driven
+loop. Every hit returns early and hides it; the first miss reads past the end. shell32's
+`PathIsExeW` did this: any path that was not an executable panicked, which is every folder
+passed to `SHObjectProperties` (found 2026-09-24 by `tools/payloads/shelltail`). Fix: iterate
+the array (`for e in TABLE.iter()`), rather than restoring the terminator and the index loop.
+Review hint: when a translated `static` table's length is one less than the C initializer's,
+check how it is walked.
+
 ### Never-executed translation code accumulates bugs, and the first execution finds them ALL
 Bringing up a path nothing had exercised is not "fix the bug" — it is **fix the stack of bugs**.
 WHPX x86 was shelved because the AHCI boot CD was dead end-to-end; it took **six stacked
@@ -4988,6 +5119,34 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A local deviation that changes WHAT a function returns but not what it CLAIMS.** Our
+  `LdrpApplyFileNameRedirection` emits an api-set's host as a BARE name (`kernel32.dll`,
+  resolved by the search path) where stock ReactOS builds `NtSystemRoot\System32\<host>`, but
+  it still sets `RedirectedDll = TRUE` — and every consumer reads that flag as "this is an
+  absolute path". `LdrpCheckForLoadedDll` compared the bare name against full paths, never
+  matched, and mapped a second copy of an already-loaded host. On amd64 ucrtbase's
+  `LCMapStringEx` thunk loaded `api-ms-win-core-localization-*` this way, so setup.exe got a
+  relocated kernel32 whose DllMain re-pointed `LdrpManifestProberRoutine` into itself; the
+  next DLL load called through it after the copy was gone (RIP in "heap"). A duplicate is
+  visible in the PEB module list as the same path in different case. When you change a
+  function's output, list every consumer of each OUT parameter, not just the one you meant.
+- **A C `#define` ALIAS for an lvalue, translated as its own variable, stops aliasing.**
+  kernel32's profile.c has `#define CurProfile (MRUProfile[0])`; the translation made
+  `CurProfile` a separate `static mut`. Every `CurProfile = p` in the C writes the head of the
+  MRU array, so after the port the rotation code left `MRUProfile[0]` stale and duplicated,
+  and the "current" profile was one nothing in the cache pointed to. Nothing faults: the
+  cache just silently keeps the wrong entries. Grep the C for `#define NAME (x[...])` and
+  `#define NAME (s->field)` and make sure the Rust spells the lvalue, not a copy of it.
+  **The same file dropped a `return TRUE`** from the "already cached, not yet on disk" branch
+  of `PROFILE_Open`, so it fell through and re-created the profile, losing unsaved writes.
+- **A local copy of a SHARED helper drops the step the shared one does.** config-rust's
+  `inlines.rs` has `CmpAcquireKcbLockShared(kcb)` = `ByIndex(GET_HASH_INDEX(kcb->ConvKey))`.
+  `cmsysini.rs` carried its own `#[inline]` copy that passed the raw `ConvKey` as the index, so
+  `CmpQueryKeyName` (NtQueryObject for a key's name) did a `lock cmpxchg` at
+  `CmpCacheTable[hash]`: an i386 `0x1E` in `ExAcquirePushLockShared` when that was unmapped,
+  and a silent write into unrelated kernel memory when it was not, followed by a release of the
+  real bucket it had never acquired. Found by launching `rapps.exe`. Before trusting a
+  file-local helper with a shared helper's name, diff the two.
 - **A `CComPtr` local lowered to a RAW pointer plus an RAII guard must not ALSO keep the
   explicit `Release()` calls — that is a double release.** `CDefView::FillList` declares
   `CComPtr<IEnumIDList> pEnumIDList` and releases it NOWHERE: the destructor does it once, on
@@ -5517,6 +5676,26 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   `CBaseUnknown` as `CBaseUnknow`, in the shipping DLL, on every C++ symbol. The shape to
   distrust is any `a - K - b` where `a` and `b` are pointers: the `K` belongs to ONE of the two
   operands, and once `a - b` becomes a method call the reader can no longer see which.
+- **C pointer arithmetic lowered to INTEGER arithmetic counts BYTES.** `ptr - ptr` on a
+  `WCHAR*` is a count of characters; `(a as isize).wrapping_sub(b as isize)` is a count of
+  bytes. kernel32's INI parser (`profile.rs` `PROFILE_Load`) had all nine of its differences in
+  that shape, so every `memchrW` scanned twice the line, off the end of the file buffer, and
+  `GetPrivateProfileStringW` on the livecd's `unattend.inf` never returned. That stalled
+  setup's LiveCD phase, which is what registers COM and starts Plug and Play, so devmgmt,
+  dxdiag and right-click > Properties all failed with it. The `+ 1` form is the same bug:
+  toolhelp's `OffsetToPtr(Snapshot, off)` is `(ULONG_PTR)(Snapshot + 1) + off`, which skips
+  the whole header, and the writers had it as `Snapshot as usize + 1`, one BYTE, so the entries
+  overwrote the header's counts (`Process32First` always said no more files). Fix with
+  `offset_from`/`.add()` on the TYPED pointer. And if you factor it into a helper, type the
+  parameter: a generic `<T>` helper handed `Snapshot as *const c_void` steps one byte again,
+  which the first fix did in three readers until the signature was narrowed to
+  `PTH32SNAPSHOT` and the compiler named them.
+- **`sizeof` of a variable-length struct where the C says `FIELD_OFFSET(..., Array)`.**
+  `FILE_NAME_INFORMATION` is `{ULONG FileNameLength; WCHAR FileName[1]}`: `sizeof` is 8 after
+  padding, the name starts at 4. iomgr's `IopQueryNameInternal` had a literal `8` in all five
+  places the C uses the field offset, so every name `ObQueryNameString` built for a file
+  object was two characters short. Process image names read `svchost.e`, which also blinded a
+  harness looking for `setup.exe`. Spell it `offset_of!(T, Field)`, never a number.
 - **Cast-before-offset**: `(ptr as *T).offset(1)` overshoots by the size delta → heap overrun.
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-
@@ -5615,6 +5794,20 @@ same defect in both directions: the original LPC translation shipped it by passi
 conversion that FIXED that bug then reintroduced it at five more sites. Both times the
 answer was one line of `probe.h`.
 
+
+### Redirecting an opaque callee through a kernel TEMP buffer drops what it wrote past the count
+**Symptom.** `GetClassNameW` returns the right length but the buffer holds the class name
+followed by whatever the caller had there before (`#32770` plus garbage on amd64; a zeroed
+buffer hides it on i386/arm64). `GetClassNameA` the same.
+
+**Cause.** To make a user-buffer write fault-tolerant, win32k's `UserGetClassName` calls
+`RtlQueryAtomInAtomTable` (and `RtlUnicodeStringToAnsiString`) on a KERNEL temp buffer, then
+`safe_copy_raw`s the result out. It copied `BufLen` bytes, and `BufLen` counts the name only;
+the C let the callee write straight into the caller's buffer, terminator included.
+
+**Fix.** Copy the terminator too when the capacity allows (write it into the temp first). Any
+"query into a temp, then copy out" redirect must copy everything the callee would have
+written, not just the count it returned.
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
@@ -9443,6 +9636,51 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 whole class collapsed to the one case that is *supposed* to happen.
 
 ### arm64 bring-up bugs worth recognising again
+- **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**
+  Symptom: arm64 `0xE3 (Resource, Thread, 0, 3)`, a shared release of an ERESOURCE that is
+  completely idle (no owner, `ActiveEntries 0`). Rare normally, 4 in 5 kmtest boots once
+  delay-load moved DLL page-ins to arbitrary later points. Cause: `rust_cohab_stub.c`
+  hard-coded `FAT_IRP_CTX_FLAG_WAIT` as `0x1`, which is `IRP_CONTEXT_FLAG_DISABLE_DIRTY`; the
+  real WAIT bit is `0x2`. Every global/VCB/FCB acquire through that shim therefore ran
+  non-blocking. `FatCommonCleanup` ignores the result of its FCB acquire, because in the C it
+  always blocks. So while a page fault held the FCB exclusively (`MmNotPresentFaultSectionView`
+  → `FsRtlAcquireFileExclusive`), cleanup on another thread "released" it, and the fault's own
+  `FsRtlReleaseFile` then found it idle. Found by making the resource record its LAST releaser
+  (caller PC and thread in `ERESOURCE.Reserved2`/`Address`, arm64 only, printed on the 0xE3
+  and resolved with `KiPcToFileHeader`): four captures, all `prev.caller =
+  fastfat.sys+0x4d068` = `FatCommonCleanup`'s `FatReleaseFcb`, on another thread. Fix: the
+  shim takes the flag from `rust_cohab_fat.c`, which is built against the real `fatstruc.h`,
+  exactly as it already did for the struct offsets. The lesson: a hand-written shim that
+  hard-codes a header constant is the same hazard as one that hard-codes an offset.
+  Nothing checks it, and when it is wrong the code usually still runs.
+  The same shim's `FatAcquireExclusiveFcb` stood in for a function the translation had
+  dropped, and dropped half of it again: no `OutstandingAsyncWrites` drain and no
+  `FatVerifyOperationIsLegal`, so an exclusive acquirer (truncate, set-EOF, cleanup, flush)
+  could run under a non-cached async write still landing. It is ported into `resrcsup.rs` next
+  to its shared siblings, which always had the drain (2026-09-25). When a shim stands in for a
+  dropped function, diff it against the C BODY, not just the signature.
+- **Nothing saved FP/SIMD state across arm64 traps or context switches.** `kiinit.rs`
+  enables FP on every CPU and the compiler vectorizes kernel code (memcpy, struct zeroing,
+  frame copies), but the vectors saved only x0–x30, and `KiSwapContext`/`KiCallUserMode` only
+  x19–x30. Fixed: `NEON_SAVE`/`NEON_RESTORE` of q0–q31 plus FPCR/FPSR on every returning
+  vector entry (`trap.S`, placed below the frames so the trap frame's position is unchanged),
+  and d8–d15 in the switch and callout frames. This was a real latent bug, but it was NOT the
+  cause of #43: a 10-round soak with it in place still hit 0xE3 four times. Do not re-read
+  the 3/3 clean run that preceded that soak as evidence.
+  The same gap had a second exit, closed 2026-09-25. `NtContinue` and `NtRaiseException` leave
+  through `KiExceptionExit`, which does `mov sp, TrapFrame; b KiTrapReturn` and so never reaches
+  `NEON_RESTORE`: a thread resumed after an exception got whatever V registers the kernel last
+  used, not its own. `KiDispatchException` and `KiInitializeUserApc` also asked for
+  CONTROL|INTEGER only, where Windows asks for `CONTEXT_FULL`, so V never reached a handler
+  either. Fix: `NEON_SAVE` records the area's distance below its trap frame in
+  `KTRAP_FRAME.VfpState` (0 = no area, cleared again by `NEON_RESTORE`).
+  `KeTrapFrameToContext`/`KeContextToTrapFrame` convert V0–V31/FPCR/FPSR through that area,
+  and `KiExceptionExit` reloads from it. The user-callback frame is a byte COPY of the trap
+  frame, so it copied the distance too, which is wrong measured from the copy; it clears it.
+  The general rule: a frame field that locates something by OFFSET is wrong in every copy of
+  that frame. Regression check: `tools/payloads/neonctx` (arm64), which faults with a pattern in
+  v0–v31 and resumes from a vectored handler. It passes 20/20 with the fix; with the fix
+  disabled it fails every round, showing exactly the handler's scribbled registers.
 - **A dropped C `ASSERT` is a machine freeze on arm64, not a lost debug check.** Symptom: a
   boot wedges with a vCPU at EL1, PC parked, DAIF all masked, no bugcheck and no timer; the
   faulting VA is a user address, hardware reports a level-3 translation fault (EC 0x25,
@@ -10168,6 +10406,24 @@ until Wine's `user32:class` was pointed at it and reported all eight class words
 with what a syscall had just set. Address the tail off the snapped kernel object
 (`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
 fixed struct is in the same position and has not been audited.
+**SERVERINFO was never in the view, and "most things work" hid it.** `dwSRVIFlags` is at
+offset 0 in both layouts, so the flag checks worked while metrics, colours and the class-proc
+tables read garbage. Read `gpsi` only through `wow64::psi`, never as `(*gpsi).field`. The same
+audit found `CALLPROCDATA`, `PROPERTY` and `PROPLISTITEM` without 32-bit shapes. **A proc is
+not a plain pointer here either**: win32k's system procs are the 64-bit user32's
+`apfnClientA/W`, so a proc crossing to the guest must be swapped for the guest's proc in the
+same slot (`wow64_pfnmap.c`). Narrowed instead, the guest executes the host address's low half
+(`eip=b2041ac0`). **`aStoCidPfn` is one of those tables**: ReactOS fills it with the 64-bit
+user32's `apfnClientW`, not kernel addresses, so `GETPFNSERVER` has to map the same way. When it
+was truncated it matched nothing, and every server-side window (DefWindowProc classes,
+ScrollBar) read `GWLP_WNDPROC` as 0.
+**A `PVOID` buffer hides its layout from `marshalgen audit`.** `NtGdiExtGetObjectW` answers in
+64-bit `BITMAP`/`DIBSECTION`/`LOGBRUSH`/`EXTLOGPEN` shapes and refuses a `BITMAP` buffer smaller
+than its own, so through the flat thunk every guest `GetObject` on a bitmap returned 0. The icon
+paths built on it (`GetIconInfo` → `CopyImage`, and the COPYIMAGE callback win32k uses to derive
+a class small icon) failed with it. Callbacks have the same gap in the other direction: the
+WINDOWPROC copy-back list has to cover every `MMS_FLAG_WRITE` entry of win32k's `g_MsgMemory`.
+`WM_GETTEXT` was missing, so a server-side window's text came back as kernel scratch.
 
 ### Loader ordering and process bring-up `[§9.47]`
 A CUI process hangs in kernel32 `ConDllInitialize` with exit code **0x103 = STILL_ACTIVE**
@@ -10181,6 +10437,35 @@ from early init. csrss dying 0xF4 when a wow64 process connects was a separate b
 0x4C `0xc0000139`. Confirm by stashing just the `.spec` and rebuilding that one arch. Fix by
 arch-gating the new exports, or pinning **explicit ordinals** on the new lines.
 **Adding a named export is not free in an auto-ordinal spec.**
+
+### Delay imports are invisible to `objdump -p`
+Symptom: with delay-load on, the WoW64 syswow64 closure silently shrank (user32_winetest: 64
+modules → 29), and anything walking import tables stopped seeing rpcrt4 → wininet and friends.
+Cause: `sdk/tools/gen-delaylib.py` emits the `ImgDelayDescr` tables as plain `.rdata`, and the
+MinGW linker never fills the PE delay-import directory, so that directory stays 0. Fix: read the
+descriptors by shape (`wow64-closure.py` `delay_imports_of`: attributes 1, four in-image RVAs,
+three zero DWORDs, a module name at the name RVA). That works on stripped copies too, where the
+`___DELAY_DESC_*` symbols are gone. Also on arm64: the IAT must be 8-aligned, or the stubs'
+`ldr x16, [x16, :lo12:__imp_X]` fails the link with "misaligned ldr/str offset".
+
+### A delay import of a `NONAME` export raises 0xc06d007f at its first call
+Symptom: explorer raised `0xc06d007f` from `__delayLoadHelper2`, and every folder window opened
+from another process (`explorer.exe <path>`, Control Panel, `ncpa.cpl`) never appeared, on all
+arches. Cause: `gen-delaylib.py` skipped only `.def` lines whose FIRST token is `@N`; a line
+`SHOnCWMCommandLine @127 NONAME` (browseui) was bound BY NAME, and the DLL exports no name for
+it, so `GetProcAddress` failed. Fix: a `NONAME` export gets an ordinal INT entry
+(`IMAGE_ORDINAL_FLAG | ordinal`); `tools/test_gen_delaylib.py` pins it. To check a DLL, look for
+the function's name as a string in the importer: a NONAME import must not have one.
+
+### user32 unloaded and reloaded in one process fails DllMain (1114), then 1450 for everyone
+Symptom: a console process that `LoadLibrary`s and frees applets (`*.cpl`, all importing
+user32) gets `ERROR_DLL_INIT_FAILED` on the second, then `ERROR_NO_SYSTEM_RESOURCES` for every
+later user32 importer; on i386 one load hung. Cause: the first applet was the process's only
+user32 importer, so `FreeLibrary` unloaded user32 after it had connected to win32k. The
+thread's CLIENTINFO keeps `CI_INITTHREAD` and the PEB's `KernelCallbackTable` still points into
+the unloaded image, so the reload's `ClientThreadSetupHelper` refuses. Fix: user32 pins itself
+(`LdrAddRefDll(LDR_ADDREF_DLL_PIN)`) once DllMain succeeds. Repro:
+`tools/payloads/cplreuse`.
 
 ### A DLL "loads fine" then crashes at PC=0xFFBADD11 `[§9.44-poison]`
 Our ntdll loader intentionally **poison-snaps** missing by-name imports instead of failing the
@@ -10281,6 +10566,26 @@ detection — uniata's 12 × `AtapiSoftReset` cost **2.85 s/boot**. Recipe: perm
 phase markers at the suspect boundaries, then read the timestamps.
 
 ---
+
+### One keystroke delivered twice: a port DPC that decrements but never compacts
+**Symptom.** Ctrl+Esc opened the start menu and closed it at once, in about 2 of 3 i386
+boots. win32k processed a single Esc make twice and never saw its break (`co_UserProcessHotKeys`
+fired twice). It moved with any instrumentation on the read path.
+
+**Cause.** `i8042KbdDpcRoutine` (upstream too) passes `KeyboardBuffer[0..n]` to kbdclass
+outside the interrupt lock, then only subtracts the transferred count. A key the ISR appended
+meanwhile stays behind the already-sent slot 0, and the next DPC delivers slot 0 again. It
+stayed latent while keys never queued. Once the RIT blocked in a real LL-hook send, they did.
+
+**Fix.** Move the untransferred tail to the buffer start under the interrupt lock, as the mouse
+DPC does.
+
+**How it was found.** Keep the probes quiet until something is wrong. A per-read print made
+the race vanish. What found it:
+- The RIT printed only when a record repeated the previous one.
+- kbdclass recorded its queue operations into a ring buffer, dumped on the final key.
+Each step located a layer: the buffer was right when the read returned, so kbdclass was
+handing out the repeat, and the port appended the repeat.
 
 ## Per-arch quick reference
 

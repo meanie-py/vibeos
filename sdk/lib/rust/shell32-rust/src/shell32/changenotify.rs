@@ -4,8 +4,9 @@
 //!
 //! What did NOT come across is `CChangeNotifyBroker` and the `CreateNotificationBroker` that
 //! constructs it — an ATL `CWindowImpl<>` whose per-instance thunk and message map are C++
-//! templates with no Rust spelling. Both stay in `rust_changenotify_broker_stub.cpp`; see that
-//! file for why the class is inseparable from its factory. This flip needed NO `EXTERN_C` work:
+//! templates. Both stayed in `rust_changenotify_broker_stub.cpp` until 2026-09-24, when they
+//! moved onto the crate's atlwin substrate (crate::atl_stub_windows) together, since the class
+//! is inseparable from its factory. This flip needed NO `EXTERN_C` work:
 //! `InitChangeNotifications`/`FreeChangeNotifications` are declared inside the `extern "C"`
 //! block of `wine/shell32_main.h`, the exported entry points inside shlobj.h's, and the
 //! remaining eight have no header declaration at all (only .spec ordinals), so no C++ caller
@@ -34,13 +35,8 @@ extern "system" {
     fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
 }
 
-extern "C" {
-    /// The ATL half, in `dll/win32/shell32/rust_changenotify_broker_stub.cpp`. It was a
-    /// file-local `static` in C++ (so __cdecl), and the stub deliberately keeps it plain
-    /// `extern "C"` with no `WINAPI` — on i386 a stdcall/cdecl disagreement here would corrupt
-    /// the stack rather than fail to link.
-    fn CreateNotificationBroker(hwnd: HWND, wMsg: UINT) -> HWND;
-}
+// The ATL broker window is Rust now (crate::atl_stub_windows).
+use crate::atl_stub_windows::CreateNotificationBroker;
 
 extern "system" {
     /// Neither the island nor `win32.rs` carries this one; three sibling modules

@@ -111,15 +111,24 @@ KiUserThreadStartupExit:
 .globl KiSwapContext
 KiSwapContext:
     /*
-     * Save KEXCEPTION_FRAME: x19-x28, fp(x29), lr(x30) = 12 regs * 8 = 96 bytes
-     * Pre-decrement SP by 96 and store pairs.
+     * Save KEXCEPTION_FRAME: x19-x28, fp(x29), lr(x30) = 12 regs * 8 = 96 bytes,
+     * then d8-d15 (64 bytes). Pre-decrement SP by 160 and store pairs.
      */
-    stp     x19, x20, [sp, #-96]!
+    stp     x19, x20, [sp, #-160]!
     stp     x21, x22, [sp, #16]
     stp     x23, x24, [sp, #32]
     stp     x25, x26, [sp, #48]
     stp     x27, x28, [sp, #64]
     stp     x29, x30, [sp, #80]
+    /* d8-d15 are callee-saved (AAPCS64), and KiSwapContext is an ordinary
+     * call: whatever the next thread leaves in them must not reach this one's
+     * caller. This frame is private -- a NEW thread's first switch-in returns
+     * from KiSwapContextInternal straight to KiThreadStartup and never runs
+     * the restore below, so its initial stack (thrdini.rs) is unaffected. */
+    stp     d8,  d9,  [sp, #96]
+    stp     d10, d11, [sp, #112]
+    stp     d12, d13, [sp, #128]
+    stp     d14, d15, [sp, #144]
 
     /* Get NewThread from PCR->Prcb.CurrentThread
      * (Caller has already set Prcb->CurrentThread = NewThread) */
@@ -136,7 +145,11 @@ KiSwapContext:
     ldp     x25, x26, [sp, #48]
     ldp     x27, x28, [sp, #64]
     ldp     x29, x30, [sp, #80]
-    add     sp, sp, #96
+    ldp     d8,  d9,  [sp, #96]
+    ldp     d10, d11, [sp, #112]
+    ldp     d12, d13, [sp, #128]
+    ldp     d14, d15, [sp, #144]
+    add     sp, sp, #160
 
     ret
 

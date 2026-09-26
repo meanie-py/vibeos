@@ -143,7 +143,7 @@ unsafe extern "C" fn GetUniqueConnectionName(
     }
 
     if dwSubKeys != 0 {
-        StringCchPrintfW(
+        StringCchPrintfW!(
             pszNameBuffer,
             (Length + 6) as usize,
             w!("%.*s %lu") as LPCWSTR,
@@ -152,7 +152,7 @@ unsafe extern "C" fn GetUniqueConnectionName(
             dwSubKeys + 1,
         );
     } else {
-        StringCchPrintfW(
+        StringCchPrintfW!(
             pszNameBuffer,
             (Length + 1) as usize,
             w!("%.*s") as LPCWSTR,
