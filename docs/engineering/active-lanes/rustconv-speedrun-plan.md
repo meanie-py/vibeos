@@ -113,6 +113,16 @@ every translated body. **Owed, in order:**
      bugchecks NO_PAGES_AVAILABLE); 29 win32k x86/not(x86) arms with identical calls
      (cosmetic). Tool gap: map C `CONFIG_SMP` to `feature = "smp"` so the thrdobj class
      is mechanical too. Reports: scratchpad `cfgaudit/shard_{A,B,C}.report.tsv` (not kept).
+   - Correction (conformance lane caught it): two of the "revived" dead items were dead ON
+     PURPOSE. i386 `RtlPrefetchMemoryNonTemporal` is owned by rtlk's prefetch_asm.rs (a
+     `ret` that kiinit patches to NOP); the revived empty stub won the link under
+     `--allow-multiple-definition` and i386 kmtest RtlMemoryKM bugchecked 0x1E, EIP=0
+     (e50515abfab rejected). arm64 `RtlUshortByteSwap` duplicated the byteswap crate. Both
+     deleted instead; dead-cfg output now says to look for another provider first.
+   - Owed, tooling: `scan_duplicate_symbols` only compares `#[no_mangle]` names ACROSS
+     crates, so a same-crate duplicate or a `global_asm!` `.globl` label vs a Rust fn is
+     invisible (25 such names today, most presumably per-arch splits — needs an
+     arch-aware check, cfg + module gating, before it can gate).
    - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
      `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
      body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.

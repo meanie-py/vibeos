@@ -215,9 +215,10 @@ struct KEY_VALUE_PARTIAL_INFORMATION {
     Data: [UCHAR; 1],
 }
 
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+// i386's `@RtlPrefetchMemoryNonTemporal@8` is prefetch_asm.rs (the prefetch.S port):
+// it starts with `ret`, which ke/i386/kiinit.rs patches to a NOP at boot to enable the
+// loop. An empty Rust stub here binds the same name and the patch then runs it off its
+// end (i386 BUGCHECK 0x1E, EIP=0, in kmtest RtlMemoryKM). Non-x86 only.
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}

@@ -444,6 +444,13 @@ def main() -> int:
             print(f"{rel}:{ln}: dead-cfg")
         else:
             print(f"{rel}:{ln}: dead-cfg: stacked cfgs are never all true: {' & '.join(preds)}")
+    if dead and not lint:
+        # e50515abfab revived an empty i386 RtlPrefetchMemoryNonTemporal stub this way. It
+        # had been dead ON PURPOSE: prefetch_asm.rs owns the symbol on i386, the kernel
+        # links with --allow-multiple-definition, and the stub won — i386 BUGCHECK 0x1E.
+        print("fix: a dead item may be dead on purpose. Before reviving one, find who else")
+        print("     defines the symbol on those arches (global_asm!, another crate, C); if")
+        print("     anyone does, DELETE the dead item instead of dropping a cfg line.")
     for rel, ln, name, pred, s, cut, ev in findings:
         if lint:
             print(f"{rel}:{ln}: cfg-vs-c {name}")

@@ -1604,11 +1604,8 @@ pub unsafe extern "system" fn KeSwitchKernelStack(
     core::ptr::null_mut()
 }
 
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "C" fn RtlUshortByteSwap(Source: u16) -> u16 {
-    (Source >> 8) | (Source << 8)
-}
+// RtlUshortByteSwap: provided by the `byteswap` crate on every arch; a second
+// definition here links silently and picks a winner by link order.
 
 #[cfg(any(target_arch = "x86", target_arch = "arm", target_arch = "aarch64"))]
 #[no_mangle]
