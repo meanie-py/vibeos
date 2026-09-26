@@ -5068,12 +5068,24 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontCodePages(
         codepages as *const core::ffi::c_void,
     );
 
+    // mlang.c zeroes the optional out-param first and fails when the font cannot be
+    // selected; both were dropped. Its final store is unguarded (a NULL crashes the C on
+    // success) — guarded here too.
+    if !codepages.is_null() {
+        *codepages = 0;
+    }
+
     old_font = SelectObject(hdc, hfont as *mut core::ffi::c_void) as HFONT;
+    if old_font.is_null() {
+        return E_FAIL;
+    }
     GetTextCharsetInfo(hdc, fontsig.as_mut_ptr(), 0);
     SelectObject(hdc, old_font as *mut core::ffi::c_void);
 
     let fontsig = fontsig.assume_init();
-    *codepages = fontsig.fsCsb[0];
+    if !codepages.is_null() {
+        *codepages = fontsig.fsCsb[0];
+    }
     TRACE(
         b"ret 0x%x\n\0".as_ptr() as *const i8,
         fontsig.fsCsb[0],

@@ -460,6 +460,22 @@ named trap. Contract format, examples and limits: `tools/rustconv/data/difftest/
 It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, which takes
 `--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
 
+Each bug class it finds becomes a gated `check` scanner over every body. The first three
+(all with EMPTY baselines, all run by `./vibeos-cli check`):
+
+- `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
+  `a - b` counted ELEMENTS. The fix is `a.offset_from(b)`.
+- `scan_misaligned_cast`: a `[u8; N]` cast to a wider pointer and dereferenced. The fix is
+  `read_unaligned` / `write_unaligned`. `--pointers` also reports byte-POINTER bases, as a
+  246-site review queue.
+- `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
+  it unconditionally.
+
+The first and third read the C twin by function NAME through `tools/c_twin.py`. Its index
+of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
+cold build, then only changed files are re-read. Each scanner honours
+`// nolint: <tag>` on a reviewed line, with the reason written beside it.
+
 ### QEMU Kernel Tests (28 tests via serial dispatch loop)
 
 ```bash

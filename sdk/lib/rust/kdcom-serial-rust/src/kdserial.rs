@@ -123,7 +123,7 @@ pub unsafe extern "system" fn KdpReceivePacketLeader(
     KdDebuggerNotPresent = 0u8;
     (*SharedUserData).KdDebuggerEnabled |= 0x00000002;
 
-    *PacketLeader = *(Buffer.as_ptr() as *const u32);
+    *PacketLeader = (Buffer.as_ptr() as *const u32).read_unaligned();
 
     return KDP_PACKET_RECEIVED;
 }

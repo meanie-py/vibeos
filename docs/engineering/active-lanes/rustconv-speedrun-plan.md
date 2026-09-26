@@ -52,12 +52,18 @@ pointer difference and truncated wide literal, plus kernel32 `vdm.rs`'s byte-vs-
 found by grepping that class tree-wide. None was visible to smoke. The lesson for the MAIN
 pass: difftest discovers bug CLASSES; the leverage is a $0 static check per class run on
 every translated body. **Owed, in order:**
-1. Three pattern checkers, as `tools/scan_*.py` wired into `tests/qemu/cli/lints.py` (the
-   existing convention, 0-NEW vs baseline): (a) pointer difference lowered as
-   `(a as isize - b as isize)` on non-byte pointers, where the C subtracted typed pointers;
-   (b) cast-and-store through a byte array (`(buf.as_mut_ptr().add(n) as *mut u32)` deref)
-   without `write_unaligned`; (c) a C out-param store under `if (p)` / after a label whose
-   Rust twin stores unconditionally. Measure hit rate on the translated tree before gating.
+1. ~~Three pattern checkers~~ DONE 2026-09-26: `scan_ptr_byte_diff`, `scan_misaligned_cast`,
+   `scan_dropped_null_guard`, all gated with EMPTY baselines (agent-reference, "Differential
+   grading"). Each re-finds its seed bug in the pre-fix source.
+   - First runs found 3 / 18 / 5 real sites in the tree: 3 byte-count bugs (vdm.rs:540,
+     move.rs:315, shell32 `wildcard_to_file`), 18 byte-array casts, and 5 dropped guards
+     (ole32 ×3, mlang, fastfat). One more finding, msvcrt `_wfopen_s`, was a scanner miss
+     of a cast-then-compare test, now recognised.
+   - Riding along: an umpnpmgr UUID formatter that printed bytes 0..8 twice, and mlang's
+     dropped `if (!old_font) return E_FAIL`.
+   - All fixed. The 6 reviewed-intentional sites carry `nolint` with their reason.
+   - Not covered, and still owed: the "store only at the `out:` label" half of (c), where
+     the C writes an out-param only on success.
 2. `tools/scan_bool_width.py` (unwired) reports 202 findings on 2026-09-26 — the BOOLEAN-
    return-widened-to-i32 class that broke fastfat and mountmgr. Untriaged.
 3. Also unwired and worth a pass: `scan_sibling_drift.py`, `scan_arch_cfg.py` (see

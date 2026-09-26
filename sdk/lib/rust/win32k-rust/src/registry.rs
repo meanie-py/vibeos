@@ -106,7 +106,7 @@ pub unsafe extern "system" fn RegQueryValue(
         cbDataSize = 0;
     }
 
-    *pcbValue = cbDataSize;
+    *pcbValue = cbDataSize; // nolint: dropped-null-guard (retired registry.c derefs it unconditionally; the pairing is freeldr's)
 
     if pInfo != ajBuffer.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION {
         ExFreePoolWithTag(pInfo as *mut core::ffi::c_void, TAG_TEMP);
