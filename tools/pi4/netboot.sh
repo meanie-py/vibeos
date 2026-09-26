@@ -1,29 +1,36 @@
 #!/usr/bin/env bash
-# Drive a Pi 4B bring-up cycle end to end, so the only manual step is power.
+# Drive a Pi 4B bring-up cycle end to end, with nobody at the bench.
 #
-#   power on the Pi, then:  tools/pi4-netboot.sh [--no-launch]
+#   tools/pi4/netboot.sh [--no-power] [--no-launch] [--ramdisk]
 #
-# Catches the firmware splash (a ~5 second window that is easy to miss by hand -
+# Power-cycles the board through the bench's smart plug (power.sh), catches the
+# firmware splash (a ~5 second window that is easy to miss by hand -
 # missing it means sitting through ~90s of PXE/HTTP timeouts and then booting
 # whatever stale loader is on the card), enters the UEFI Shell, brings up DHCP,
 # TFTPs the freshly built loader onto the card, and launches it.
 #
-# Requires: Capture-RpiSerial.ps1 running, and Serve-Tftp.py serving the payload
-# directory on the host's LAN address.
+# Requires `tools/pi4/bench.sh up` (serial listener + TFTP server) and a payload
+# staged with `tools/pi4/bench.sh stage`. Guide: docs/engineering/pi4-bench.md
 set -u
 
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
 HOST_IP=${PI4_HOST_IP:-192.168.1.183}
-SEND="$(dirname "$0")/pi4-serial-send.sh"
+# RFC 7440 window: blocks sent per ACK. 1 = classic lockstep TFTP.
+TFTP_WINDOW=${PI4_TFTP_WINDOW:-32}
+TFTP_BLKSIZE=${PI4_TFTP_BLKSIZE:-1468}
+SEND="$(dirname "$0")/serial-send.sh"
 LAUNCH=1
+POWER=1
 RAMDISK=0
 for arg in "$@"; do
     case "$arg" in
         --no-launch) LAUNCH=0 ;;
+        # Leave power alone and wait for someone to cycle the board by hand.
+        --no-power) POWER=0 ;;
         # Only needed when kernel-side sources changed: the loader is 300 KB and
         # takes seconds, the ramdisk is 140 MB and takes a couple of minutes.
         --ramdisk) RAMDISK=1 ;;
-        *) echo "usage: $0 [--no-launch] [--ramdisk]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--no-power] [--no-launch] [--ramdisk]" >&2; exit 2 ;;
     esac
 done
 
@@ -62,7 +69,12 @@ wait_for() {
 size() { stat -c %s "$F" 2>/dev/null || echo 0; }
 
 start=$(size)
-log "waiting for the firmware splash (power-cycle the Pi now if you have not)"
+if [ "$POWER" -eq 1 ]; then
+    log "power-cycling the board"
+    "$(dirname "$0")/power.sh" cycle 5 >/dev/null || exit 1
+else
+    log "waiting for the firmware splash (power-cycle the Pi now)"
+fi
 if ! wait_for 'ENTER (boot)' "$start" "${PI4_SPLASH_TIMEOUT:-180}"; then
     log "no splash seen in ${PI4_SPLASH_TIMEOUT:-180}s - is the Pi powered on?"
     exit 1
@@ -90,20 +102,20 @@ fi
 
 log "TFTP: BOOTAA64.EFI from $HOST_IP onto the card"
 mark=$(size)
-"$SEND" "tftp -s 1408 $HOST_IP EFI/BOOT/BOOTAA64.EFI fs0:\\EFI\\BOOT\\BOOTAA64.EFI"
+"$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI fs0:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Shell>' "$mark" 120; then
     log "TFTP did not finish"
     exit 1
 fi
 if tail -c "+$((mark + 1))" "$F" | strings | grep -qF 'TFTP Error'; then
-    log "TFTP reported an error - is Serve-Tftp.py running and the firewall rule present?"
+    log "TFTP reported an error - is serve_tftp.py running (bench.sh status) and the firewall rule present?"
     exit 1
 fi
 
 if [ "$RAMDISK" -eq 1 ]; then
     log "TFTP: ramdisk.img (140 MB, a couple of minutes)"
     mark=$(size)
-    "$SEND" "tftp -s 1408 $HOST_IP ramdisk.img fs0:\\ramdisk.img"
+    "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img fs0:\\ramdisk.img"
     if ! wait_for 'Shell>' "$mark" 900; then
         log "ramdisk TFTP did not finish"
         exit 1

@@ -33,6 +33,7 @@ use ntkrnl_sys::ddk::{
 #[cfg(target_arch = "aarch64")]
 extern "system" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -42,7 +43,7 @@ unsafe fn arm64_uart_trace(s: &[u8]) {
         return;
     }
     for &byte in s {
-        core::ptr::write_volatile(uart, byte as ULONG);
+        Arm64UartPutChar(byte as u8);
     }
 }
 

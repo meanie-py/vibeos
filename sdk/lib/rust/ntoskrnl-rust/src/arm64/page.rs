@@ -42,7 +42,7 @@ extern "C" {
 
 unsafe fn PagePutChar(c: u8) {
     let pl011_base = Arm64UartKernelBase as *mut ULONG;
-    *pl011_base = c as ULONG;
+    crate::arm64_dbg::uart_putc_default(c as u8);
 }
 
 unsafe fn PagePuts(s: &[u8]) {

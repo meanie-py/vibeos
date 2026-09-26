@@ -382,6 +382,8 @@ boot.**
 
 ### Next, in order
 
+(Superseded 2026-09-25: see "Session 3" below. Item 1's premise was wrong.)
+
 1. **Why serial dies at the Phase-1 UART remap.** Output stops within
    `MmInitSystem(1)`/the `MmMapIoSpace` remap of the PL011 in `ex-rust/init.rs`,
    and `[PHASE1] UART remapped to kernel VA` never appears. Cheapest probe: skip
@@ -428,3 +430,44 @@ latest build. And the BCM2711 watchdog (`PM_WDOG`/`PM_RSTC` at 0xFE100024 /
 0xFE10001C, password 0x5A000000) maxes at ~16s, so it can only be armed right
 before a known-risky step and disarmed at kernel entry - long enough to turn
 "halts forever" into "reboots", not long enough to cover a 3-minute ramdisk load.
+
+## Session 3 (2026-09-25) — the bench runs itself; the "last line" was not the last line
+
+### Bench
+
+The bench is now driven entirely from the host: a Shelly smart plug switches the
+Pi's power (`tools/pi4/power.sh`), so `tools/pi4/netboot.sh` does power-cycle ->
+splash -> Shell -> TFTP -> boot with nobody at the bench. All bench tooling moved
+into the repo under `tools/pi4/`. The serial listener and TFTP server used to
+exist only on the bench machine's D: drive. The standing how-to is
+`docs/engineering/pi4-bench.md`; this file keeps the findings.
+
+Current master (1,540 commits past session 2) reproduced the session-2 stop
+exactly on the first hands-free boot.
+
+### Serial output was being truncated, not stopping
+
+The raw bytes around the Phase-1 stop read
+
+    [MM] MmArmInitSystem returning TRUE\r\n[E[\n[[[KERNEL] ExpInitializeExecutive returned!
+    [PHASE1] ObInitSystem\r\n[PHASE1] ExI[[[[[[[MM1] MiCreateMemoryEvent LowMem
+
+Each `[` is a whole trace line cut to its first byte. `ARM64_UART_TRACE`, which
+every ex-rust `uart_trace!` goes through, stored bytes straight into the PL011
+data register. Session 2's FIFO fix covered `kiinit`/`trap` only. The same bare
+store had 87 private copies in 13 files across ntoskrnl, iomgr, se, ps and lpc.
+All of them now go through `Arm64UartPutChar` (exported from `arm64_dbg.rs`),
+and `tools/scan_raw_uart_writes.py` gates new ones (baseline empty; it finds
+all 87 on the old tree).
+
+So session 2's "serial stops at `MiInitializeMemoryEvents done`" located
+nothing. Whole Phase-1 lines were being lost, and the remap-failure theory
+(next step 1 above) was built on that. The hang location has to be re-read
+from a FIFO-safe boot.
+
+### Other QEMU-virt constants still live (not yet on the boot path)
+
+- `hal-rust/src/arm64/mpboot.rs`: the AP trampoline writes a trace byte to
+  physical `0x09000000`, which is RAM on a Pi. That only matters for the MP
+  entry; the Pi `freeldr.ini` defaults to UP.
+- `pl011-rust/src/pl011.rs`: `PL011_PHYS_ADDR = 0x09000000`.
