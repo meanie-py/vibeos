@@ -114,11 +114,48 @@ picks the loader's default menu entry. The Pi's `freeldr.ini` is
 `tools/pi4/freeldr.ini`: `TimeOut=-1`, so the menu waits for that keypress.
 
 The loader is ~300 KB and lands in about a second. The ramdisk is ~140 MB and
-takes **~13.5 minutes**, so only pass `--ramdisk` when kernel-side code changed.
-The limit is on the board, not the network: the firmware's TFTP client takes
-about 136 packets a second (one 1468-byte block per ~7 ms). RFC 7440 windowing
-(`PI4_TFTP_WINDOW`, default 32) made no difference, 805 s against 825 s
-lockstep, so it is not the round trip. Only moving fewer bytes will help.
+takes **~13.5 minutes**, then freeldr spends another **~3.5 minutes** reading
+it back off the card, so only pass `--ramdisk` when kernel-side code changed.
+
+The limit is **the SD card as this firmware drives it, not the network**.
+Measured 2026-09-26 on the same 146,800,640-byte file:
+
+| Path | Time |
+|---|---|
+| Firmware Shell `tftp` → card | 805 s (825 s lockstep; windowing and 8K blocks changed nothing) |
+| iPXE `imgfetch` (TFTP, lockstep, 1432-byte blocks) → RAM | **18.9 s** (7.8 MB/s) |
+| Shell `cp` from iPXE's RAM volume → card | ~810 s |
+| freeldr reading it from the card | ~3.5 min |
+
+So card writes run at ~0.18 MB/s and every write-to-card route costs the same;
+an earlier reading of the TFTP number as "one frame per poll" was wrong. The
+fix is to not touch the card: iPXE `sanboot` of the whole boot image (iPXE
+installs it as a UEFI block device, and freeldr reads block devices with its
+own FAT driver), or freeldr fetching over the network itself (roadmap 10e).
+Both need TCP (HTTP or iSCSI), so a second inbound firewall rule.
+
+### Sanboot (no card writes)
+
+`tools/pi4/netboot.sh --sanboot` TFTPs `ipxe.efi` and `autoexec.ipxe` onto the
+card (a second each) and launches iPXE, which runs
+`sanboot http://<host>:8069/boot.img`. `boot.img` is `qemu/boot.img` with the
+Pi's `freeldr.ini`, built by `bench.sh stage`; `bench.sh http` serves it with
+`serve_http.py` (HEAD and byte ranges, which iPXE needs). Proven end to end in
+QEMU on 2026-09-26, VibeOS reaching the desktop with no local disk. On the Pi
+it needs one more inbound firewall rule, created by the bench owner in an
+elevated PowerShell:
+
+```powershell
+New-NetFirewallRule -DisplayName "VibeOS Pi4 sanboot HTTP (bring-up)" -Direction Inbound `
+  -Protocol TCP -LocalPort 8069 -RemoteAddress 192.168.1.0/24 -Profile Private `
+  -Program "C:\Users\Lambda\AppData\Local\Programs\Python\Python313\python.exe" -Action Allow
+```
+
+iPXE notes: use `ipxe.efi`, not `snponly.efi`. snponly only drives the NIC it
+was loaded from, and loaded from the card it sees none. Chaining a UEFI Shell
+from iPXE exposes iPXE's downloaded images as a volume, and in that shell the
+mapping shifts: the iPXE volume becomes `FS0:` and the card `FS1:`. Find the
+card by its `HD(1,MBR,...)` device path, never by number.
 
 Every staged payload carries a `manifest.json` with the commit it came from and
 whether the tree was dirty. Tie each board result to that, never to "what was on

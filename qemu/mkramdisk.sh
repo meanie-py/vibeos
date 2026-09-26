@@ -179,6 +179,11 @@ REQUIRED_FILES=(
     # Level 2 transitive deps
     "$BUILD_DIR/dll/win32/winmm/winmm.dll"
     "$BUILD_DIR/dll/win32/usp10/usp10.dll"
+    # gdi32's LoadLPK retries LoadLibraryW(L"lpk.dll") on EVERY ExtTextOut /
+    # GetTextExtentExPoint until it succeeds, so without it each glyph run
+    # walks the whole DLL search path (seen on a Pi 4: explorer spent its tray
+    # clock repaints in RtlDosSearchPath_U).
+    "$BUILD_DIR/dll/win32/lpk/lpk.dll"
     "$BUILD_DIR/win32ss/user/imm32/imm32.dll"
     "$BUILD_DIR/dll/win32/urlmon/urlmon.dll"
     "$BUILD_DIR/dll/win32/windowscodecs/windowscodecs.dll"
@@ -450,6 +455,7 @@ RMC "$BUILD_DIR/dll/win32/uxtheme/uxtheme.dll"                 ::/reactos/system
 # Level 2 transitive deps
 RMC "$BUILD_DIR/dll/win32/winmm/winmm.dll"                    ::/reactos/system32/winmm.dll
 RMC "$BUILD_DIR/dll/win32/usp10/usp10.dll"                    ::/reactos/system32/usp10.dll
+RMC "$BUILD_DIR/dll/win32/lpk/lpk.dll"                        ::/reactos/system32/lpk.dll
 RMC "$BUILD_DIR/win32ss/user/imm32/imm32.dll"                 ::/reactos/system32/imm32.dll
 RMC "$BUILD_DIR/dll/win32/urlmon/urlmon.dll"                   ::/reactos/system32/urlmon.dll
 RMC "$BUILD_DIR/dll/win32/windowscodecs/windowscodecs.dll"     ::/reactos/system32/windowscodecs.dll
@@ -933,10 +939,12 @@ mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 # from that one selector.
 if [ -n "$UP" ]; then
     UP_INI="$(mktemp)"
-    sed 's#^DefaultOS=ReactOS_Arm64_MP$#DefaultOS=ReactOS_Arm64_UP#' "$FREELDR_INI" > "$UP_INI"
+    # freeldr.ini is CRLF, so a bare `...MP$` anchor never matched and every --up
+    # build failed here; keep the CR the loader expects.
+    sed 's#^DefaultOS=ReactOS_Arm64_MP\(\r\{0,1\}\)$#DefaultOS=ReactOS_Arm64_UP\1#' "$FREELDR_INI" > "$UP_INI"
     # Fail loud rather than shipping UP-defaulted media from an --smp build: that
     # is a false-green (the boot looks fine and runs the wrong kernel).
-    if ! grep -q '^DefaultOS=ReactOS_Arm64_UP$' "$UP_INI"; then
+    if ! tr -d '\r' < "$UP_INI" | grep -qx 'DefaultOS=ReactOS_Arm64_UP'; then
         echo "[!] freeldr.ini: no 'DefaultOS=ReactOS_Arm64_MP' line to flip — entry names drifted"
         rm -f "$UP_INI"
         exit 1

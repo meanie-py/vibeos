@@ -9874,6 +9874,29 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 `PTE=…4C3` (AttrIndx 0) with `OPC=0x88DFFE85` — `ldar`, absorbed and the run passes. So the
 whole class collapsed to the one case that is *supposed* to happen.
 
+### Real hardware: what QEMU's TCG does not model
+Every one of these passed smoke ×N and failed on the first physical board (Raspberry Pi 4,
+2026-09-25/26). On arm64, a green QEMU run is necessary and nowhere near sufficient.
+- **Idle `WFE` with IRQs masked never wakes.** Symptom: desktop up, then ~70 s later the clock
+  freezes, serial goes silent, no bugcheck; a raw-UART tick heartbeat stops too. Cause: the
+  idle loop masked IRQs (`daifset #2`) and ran `wfe` when nothing was ready. A masked IRQ is
+  not a WFE wake-up event (it is for WFI), and nothing issued `SEV` or enabled the timer event
+  stream, so the core slept forever with the tick pending. TCG implements WFE as a yield. The
+  ~70 s was the zero-page thread: it keeps the CPU busy until all free RAM is zeroed, and the
+  first truly idle moment was fatal. Fix: `wfi`. What found it: sampling the tick's health from
+  IRQ entry, user traps AND the idle loop, and all three staying silent — "the CPU is in
+  none of those places" was the answer. Do not use WFE without an explicit `SEV` protocol.
+- **PL011 FIFO overrun.** A bare store to the data register drops bytes once the 16–32 byte
+  FIFO fills; TCG drains instantly. Serial "stopped" mid-line and was misread as the kernel
+  stopping. Every debug byte goes through `Arm64UartPutChar` (TXFF-bounded); enforced by
+  `scan_raw_uart_writes`.
+- **A PTE attribute the MAIR doesn't mean.** `MI_PAGE_DISABLE_CACHE` set x86 PCD bits that
+  selected MAIR slot 0 (Normal WB) on arm64, so the UART and GIC were cached. TCG ignores
+  memory attributes. Fixed in `mm.rs` to AttrIndx 1 (Device) / 2 (Normal-NC).
+- **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
+  the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
+  invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
+
 ### arm64 bring-up bugs worth recognising again
 - **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**
   Symptom: arm64 `0xE3 (Resource, Thread, 0, 3)`, a shared release of an ERESOURCE that is
