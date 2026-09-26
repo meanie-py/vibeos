@@ -134,6 +134,23 @@ installs it as a UEFI block device, and freeldr reads block devices with its
 own FAT driver), or freeldr fetching over the network itself (roadmap 10e).
 Both need TCP (HTTP or iSCSI), so a second inbound firewall rule.
 
+### Sanboot (no card writes)
+
+`tools/pi4/netboot.sh --sanboot` TFTPs `ipxe.efi` and `autoexec.ipxe` onto the
+card (a second each) and launches iPXE, which runs
+`sanboot http://<host>:8069/boot.img`. `boot.img` is `qemu/boot.img` with the
+Pi's `freeldr.ini`, built by `bench.sh stage`; `bench.sh http` serves it with
+`serve_http.py` (HEAD and byte ranges, which iPXE needs). Proven end to end in
+QEMU on 2026-09-26, VibeOS reaching the desktop with no local disk. On the Pi
+it needs one more inbound firewall rule, created by the bench owner in an
+elevated PowerShell:
+
+```powershell
+New-NetFirewallRule -DisplayName "VibeOS Pi4 sanboot HTTP (bring-up)" -Direction Inbound `
+  -Protocol TCP -LocalPort 8069 -RemoteAddress 192.168.1.0/24 -Profile Private `
+  -Program "C:\Users\Lambda\AppData\Local\Programs\Python\Python313\python.exe" -Action Allow
+```
+
 iPXE notes: use `ipxe.efi`, not `snponly.efi`. snponly only drives the NIC it
 was loaded from, and loaded from the card it sees none. Chaining a UEFI Shell
 from iPXE exposes iPXE's downloaded images as a volume, and in that shell the

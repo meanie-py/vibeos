@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # Drive a Pi 4B bring-up cycle end to end, with nobody at the bench.
 #
-#   tools/pi4/netboot.sh [--no-power] [--no-launch] [--ramdisk]
+#   tools/pi4/netboot.sh [--no-power] [--no-launch] [--ramdisk | --sanboot]
 #
 # Power-cycles the board through the bench's smart plug (power.sh), catches the
 # firmware splash (a ~5 second window that is easy to miss by hand -
 # missing it means sitting through ~90s of PXE/HTTP timeouts and then booting
 # whatever stale loader is on the card), enters the UEFI Shell, brings up DHCP,
 # TFTPs the freshly built loader onto the card, and launches it.
+#
+# --sanboot skips the card for everything but iPXE itself: iPXE sanboots
+# payload/boot.img over HTTP (bench.sh http), so a kernel change costs seconds
+# instead of the ~17 minutes of card write + read. Needs the TCP rule in
+# docs/engineering/pi4-bench.md.
 #
 # Requires `tools/pi4/bench.sh up` (serial listener + TFTP server) and a payload
 # staged with `tools/pi4/bench.sh stage`. Guide: docs/engineering/pi4-bench.md
@@ -22,6 +27,7 @@ SEND="$(dirname "$0")/serial-send.sh"
 LAUNCH=1
 POWER=1
 RAMDISK=0
+SANBOOT=0
 for arg in "$@"; do
     case "$arg" in
         --no-launch) LAUNCH=0 ;;
@@ -30,7 +36,8 @@ for arg in "$@"; do
         # Only needed when kernel-side sources changed: the loader is 300 KB and
         # takes seconds, the ramdisk is 140 MB and takes ~13.5 minutes (card writes).
         --ramdisk) RAMDISK=1 ;;
-        *) echo "usage: $0 [--no-power] [--no-launch] [--ramdisk]" >&2; exit 2 ;;
+        --sanboot) SANBOOT=1 ;;
+        *) echo "usage: $0 [--no-power] [--no-launch] [--ramdisk | --sanboot]" >&2; exit 2 ;;
     esac
 done
 
@@ -98,6 +105,39 @@ mark=$(size)
 if ! wait_for '192.168.' "$mark" 30; then
     log "eth0 did not get a DHCP address"
     exit 1
+fi
+
+# tftp_to_card REMOTE CARDPATH [TIMEOUT]
+tftp_to_card() {
+    local mark
+    mark=$(size)
+    "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP $1 $2"
+    if ! wait_for 'Shell>' "$mark" "${3:-120}"; then
+        log "TFTP of $1 did not finish"
+        exit 1
+    fi
+    if tail -c "+$((mark + 1))" "$F" | strings | grep -qF 'TFTP Error'; then
+        log "TFTP of $1 reported an error - is serve_tftp.py running (bench.sh status) and the firewall rule present?"
+        exit 1
+    fi
+}
+
+if [ "$SANBOOT" -eq 1 ]; then
+    [ "$RAMDISK" -eq 0 ] || { log "--sanboot serves the ramdisk over HTTP; drop --ramdisk"; exit 2; }
+    log "TFTP: ipxe.efi + autoexec.ipxe onto the card"
+    tftp_to_card ipxe.efi 'fs0:\ipxe.efi'
+    tftp_to_card autoexec.ipxe 'fs0:\autoexec.ipxe'
+    log "launching iPXE (sanboot http://$HOST_IP:${PI4_HTTP_PORT:-8069}/boot.img)"
+    mark=$(size)
+    "$SEND" 'fs0:\ipxe.efi'
+    if ! wait_for 'Switching stack' "$mark" 300; then
+        log "loader never started - see the capture for iPXE's error (HTTP rule? bench.sh http?)"
+        exit 1
+    fi
+    log "loader at its menu; selecting the default entry"
+    "$SEND" --raw $'\r'
+    log "booting - watch the capture for [FLDR]/[KERNEL] output"
+    exit 0
 fi
 
 log "TFTP: BOOTAA64.EFI from $HOST_IP onto the card"
