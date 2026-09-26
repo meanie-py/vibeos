@@ -75,5 +75,11 @@ portable-string = ["dep:crt-portable-rust", "crt-portable-rust/string"]
 # msvcrt's bodies (the multibyte path differs in contract, not just plumbing).
 ctype = []
 
+# mbstring/{ismb*,mbbtype,mbsbtype,mbclevel,mbtolwr,mbtoupr,mbtohira,mbtokata,
+# tojisjms}.cpp -- the _ismbc* character-classification family and the small
+# conversions over it. A port for the same reason as ctype: msvcrt's bodies are
+# Wine's _MB_CP_SBCS=20127 contract, UCRT's is codepage 0. See src/ismbc.rs.
+ismbc = ["ctype", "ismbbyte"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
