@@ -105,7 +105,13 @@ number: `ucrt`'s 17 `rust` hits are mostly doc comments in `ucrt-rust`.
    check caught it. The fix is to scan the header where it now lives (it is in that
    script's `HEADER_ROOTS`). Before moving a header tree, grep tools/ for scripts
    that glob its current directory, not just ones that name the file.
-8. **Registry follow-through.** After each move: update `path`/`headers`/`license_*`/
+8. **A global include root is baked into committed flag templates.** Adding
+   `VENDOR_INCLUDE_ROOTS` put two `-I` lines into every
+   `sdk/lib/rust/reactos-link/cflags/*.flags` (the cmake-off fallbacks), and the
+   queue rejected batches 2a+2b as `LINT_FAIL` on `committed_drift`. After changing
+   any global include directory, run `python3 tools/gen_cflags.py` (all arches) and
+   confirm `python3 tools/check_committed_drift.py` shows 0 DRIFT before `land`.
+9. **Registry follow-through.** After each move: update `path`/`headers`/`license_*`/
    `version.file` in vendor.yaml, `--write-stamps`, `--notices`, and make the new
    directory a `containers:` entry. Once everything has moved, the three containers
    collapse into one and the container ratchet covers every vendored tree structurally,
