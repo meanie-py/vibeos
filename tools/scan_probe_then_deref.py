@@ -140,6 +140,15 @@ def alias_of(idents: set[str]) -> re.Pattern[str]:
     return re.compile(rf"^\s*(?:let\s+(?:mut\s+)?)?(\w+)\s*=\s*(?:{alt})\b[^=]*;\s*$")
 
 
+# Intrinsics that take a POINTER and access it. Unlike a bulk copy there is no
+# protected counterpart to route these through -- a `KmProtected` atomic would have
+# to be written in kmsafecopy.c on all three arches -- so a hit here is a report,
+# not something the fixer can rewrite.
+ATOMIC_ACCESS = re.compile(
+    r"\bInterlocked(?:Increment|Decrement|Exchange\w*|CompareExchange\w*|And|Or|Xor)\w*\s*\("
+)
+
+
 def derefs_of(ident: str) -> re.Pattern[str]:
     i = re.escape(ident)
     # `*ident`, `*(ident`, `(*ident)`, and `(*ident).field`
@@ -280,6 +289,16 @@ def scan_text(
             # false-signal shape as the old break-at-first-hit bug: the tool saying
             # there is work left where there is none.
             if "addr_of!" in ln or "addr_of_mut!" in ln:
+                # ...unless the address is handed, on this same line, to an
+                # intrinsic that dereferences it. `InterlockedIncrement(
+                # addr_of_mut!((*pimeui).nCntInIMEProc))` never lets the address
+                # escape: the callee IS the access, and there is no protected
+                # atomic for it to go through, so this is the one shape in the
+                # class with no fix available at the call site. Skipping the whole
+                # line for containing `addr_of_mut!` hid ime.rs's two live sites
+                # completely -- the scanner reported ZERO while they sat there.
+                if ATOMIC_ACCESS.search(ln):
+                    out.append((n + 1, ident, ln.strip()))
                 continue
             # The probed pointer handed to a callee that dereferences THAT
             # parameter -- the NtUserSetSysColors -> IntSetSysColors shape.

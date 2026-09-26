@@ -5919,6 +5919,23 @@ different question, racily).
   Three user32 subtests BUGCHECKed i386 0x1E (`win`, `msg`, `input`); each is one of the shapes
   above, and fixing the first fault in `win` merely uncovered the next one behind it. A suite
   that runs to completion after a fix is the oracle; a suite you quarantined is not.
+- **A scanner exclusion that is correct in general can still be a blind spot in
+  particular.** `scan_probe_then_deref.py` skips any line containing `addr_of!`/`addr_of_mut!`,
+  and it is right to: computing an address does not load, and it is the idiom the probes
+  themselves use, so without the skip every correct probe reports itself. But
+  `InterlockedIncrement(addr_of_mut!((*pimeui).nCntInIMEProc))` never lets the address escape
+  the line -- the callee IS the access -- so the skip hid two live unprotected writes to user
+  memory in `ime.rs` while the tool reported the whole class clear. Zero is a claim like any
+  other: when a scanner reaches it, the useful next question is which shapes it cannot express,
+  not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
+  accessing intrinsic before taking it.
+- **An atomic on user memory has no protected form yet.** `capture_from_user`/`publish_to_user`
+  cannot express a read-modify-write: capture -> mutate -> publish loses the atomicity, and
+  silently weakening a concurrency guarantee to buy fault-tolerance is the wrong trade. The
+  primitive needed is a `KmProtected` atomic beside `KmProtectedCopyMemory` -- a native-SEH
+  shim on amd64/arm64, an exception-table entry for the `lock` instruction on i386 (§9.123) --
+  with a self-test twin, because an unproven protection is worse than a documented gap.
+
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
   `NtUserSetSysColors` and hand the callee kernel memory.

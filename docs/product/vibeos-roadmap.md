@@ -1124,8 +1124,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   memory → publish once, and `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`,
   where the C had a `_SEH2_TRY` per access) has **no protected primitive at all** — it needs a
   `KmProtected` atomic in `kmsafecopy.c` on three arches, which is owed and not yet written.
-  **Burned down to 69 leads as of 2026-09-26, and the scanner now reports 0 that can be
-  fixed mechanically** -- by TWO lanes independently, in the same week, without either
+  **Every COPY-shaped lead is closed as of 2026-09-26, and TWO atomic ones are open.** The
+  last 8 copy leads were the alias shape (`retparam = ResultInfo as PBROADCASTPARM` followed
+  by two raw field stores, four times over in `message.rs`), hand-fixed because the fixer
+  refuses an aliased access by design. Then the scanner hit zero -- and zero was the wrong
+  answer, which is the lesson: it skips any line containing `addr_of_mut!`, correctly, because
+  taking an address is not a load. But `InterlockedIncrement(addr_of_mut!((*pimeui).
+  nCntInIMEProc))` never lets that address escape -- the callee IS the access -- so ime.rs's
+  two sites were invisible while the tool reported the class clear. The scanner now flags an
+  `Interlocked*` on a probed pointer (and finds exactly those two, tree-wide, with no false
+  positives, which is independent confirmation the rest really is clear). **They remain
+  UNFIXED and are the last of the class**: there is no protected atomic to route them
+  through, so closing them means writing a `KmProtected` atomic next to
+  `KmProtectedCopyMemory` -- native-SEH shim on amd64/arm64, an exception-table entry for
+  the `lock` instruction on i386 -- plus a self-test twin so the per-boot oracle covers it.
+  It got there by TWO lanes independently, in the
+  same week, without either
   knowing: upstream-sync's `21b349ccb63` ("70 more probe-then-raw-copy sites") and this
   lane's `66fa9466bbc` (62 sites) overlapped heavily and collided as a merge conflict in
   `message.rs`/`stretchblt.rs`/`winpos.rs`, where both had written the same `capture_from_user`
