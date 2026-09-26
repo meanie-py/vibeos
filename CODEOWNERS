@@ -243,8 +243,8 @@
 #   M: ThFabba, Thomas Faber
 #   S: Upstream
 #   C: See media/doc/3rd Party Files.txt
-/dll/3rdparty/mbedtls/              @ThFabba
-/sdk/include/reactos/libs/mbedtls/  @ThFabba
+/vendor/mbedtls/              @ThFabba
+/vendor/mbedtls/include/mbedtls/  @ThFabba
 
 # Mount Point Manager
 #   M: HeisSpiter, Heis Spiter, Pierre Schweitzer

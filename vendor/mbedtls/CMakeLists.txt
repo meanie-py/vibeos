@@ -5,9 +5,9 @@
 # upstream's file set, our comments and whatever the config actually enabled. A source
 # whose feature is off compiles to an empty translation unit, so listing all of them
 # costs nothing and makes the next bump a copy. What is built is decided in ONE place:
-# sdk/include/reactos/libs/mbedtls/mbedtls_config.h.
+# vendor/mbedtls/include/mbedtls/mbedtls_config.h.
 
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
                     ${CMAKE_CURRENT_SOURCE_DIR})
 
 spec2def(mbedtls.dll mbedtls.spec ADD_IMPORTLIB)

@@ -1495,20 +1495,17 @@ trees:
       Red Hat, Inc." only because the scan never looked for Red Hat; the entry is
       recorded now so the container ratchet keeps it.
 
-  - path: dll/3rdparty/mbedtls
+  - path: vendor/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0 OR GPL-2.0-or-later
-    license_file: dll/3rdparty/mbedtls/LICENSE
+    license_file: vendor/mbedtls/LICENSE
     modified: no
     version:
       # build_info.h, upstream's own. 3.x moved the string out of version.h (which
       # still exists and no longer carries it).
-      file: sdk/include/reactos/libs/mbedtls/build_info.h
+      file: vendor/mbedtls/include/mbedtls/build_info.h
       pattern: '#define MBEDTLS_VERSION_STRING\s+"([^"]+)"'
-    headers:
-      - sdk/include/reactos/libs/mbedtls
-      - sdk/include/reactos/libs/psa
     review: >
       BUMPED 2.16.11 -> 3.6.7 (LTS) ON 2026-09-20, closing the worst entry in this
       registry: the 2.16 branch stopped receiving security fixes at the end of 2021, so
@@ -1565,7 +1562,7 @@ trees:
       between upstream's file set, our comments, and whatever the config actually
       enabled. A source whose feature is off compiles to an empty translation unit, so
       listing all of them costs nothing and moves the decision into one place:
-      sdk/include/reactos/libs/mbedtls/mbedtls_config.h.
+      vendor/mbedtls/include/mbedtls/mbedtls_config.h.
 
       WHAT IS DELIBERATELY OFF IN THAT CONFIG: PSA Crypto and TLS 1.3, both default-on
       in 3.6. This bump preserves capability (TLS 1.2) and buys five years of fixes;

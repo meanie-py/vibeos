@@ -3678,9 +3678,9 @@ File lzx_layer.c, part of lzxcomp library
 
 - Upstream: https://github.com/Mbed-TLS/mbedtls
 - Version: 3.6.7
-- In this tree: `dll/3rdparty/mbedtls`, `sdk/include/reactos/libs/mbedtls`, `sdk/include/reactos/libs/psa`
+- In this tree: `vendor/mbedtls`
 - Licence: Apache-2.0 OR GPL-2.0-or-later
-- Grant reproduced from: `dll/3rdparty/mbedtls/LICENSE`
+- Grant reproduced from: `vendor/mbedtls/LICENSE`
 
 ```
 Mbed TLS files are provided under a dual [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html)
