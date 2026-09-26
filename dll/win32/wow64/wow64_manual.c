@@ -22,6 +22,7 @@ typedef LONG NTSTATUS;
 ULONG WINAPI DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
 #include "wow64_status.h"
+#include "wow64_pfnmap.h"
 
 int Wow64pStrEq(const char *a, const char *b);
 
@@ -42,6 +43,14 @@ NTSTATUS WINAPI NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK Access,
                                     PHANDLE TokenHandle);
 NTSTATUS WINAPI NtQuerySystemInformation(ULONG InfoClass, PVOID Info, ULONG Len,
                                          PULONG RetLen);
+/* #64 (initial-thread half): RtlCreateUserThread takes a FOREIGN ProcessHandle
+ * and does the stack allocation + host CONTEXT build in that process, which is
+ * the whole reason the cross-process initial thread needs no new machinery. */
+LONG WINAPI RtlCreateUserThread(HANDLE ProcessHandle, PVOID SecurityDescriptor,
+                                BOOLEAN CreateSuspended, ULONG StackZeroBits,
+                                SIZE_T StackReserve, SIZE_T StackCommit,
+                                PVOID StartAddress, PVOID Parameter,
+                                PHANDLE ThreadHandle, PVOID ClientId);
 NTSTATUS WINAPI NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess,
                           PVOID ObjectAttributes);
 NTSTATUS WINAPI NtOpenDirectoryObject(PHANDLE Handle, ACCESS_MASK Access,
@@ -796,6 +805,52 @@ static NTSTATUS Wow64Manual_NtCreateProcess(ULONG *a)
     return St;
 }
 
+/* TEB32 is TEB64 + WowTebOffset — MmCreateTeb allocates both as one region and
+ * records the delta in that slot. Spelled locally, as the other TEB offsets in
+ * this tree are. */
+#define WOW64_TEB_WOWTEBOFFSET   0x180c
+#define WOW64_TEB32_ARBUSERPTR   0x14   /* NT_TIB32.ArbitraryUserPointer */
+
+/*
+ * ---- the CreateProcess remote-PEB channel --------------------------------
+ *
+ * The SAME SHAPE as the win32k last-error channel in wow64.c, and the same
+ * fix. ps/process.c:866 does
+ *
+ *     CurrentThread->Tcb.Teb->NtTib.ArbitraryUserPointer = Process->Peb;
+ *
+ * stashing the NEW process's PEB in the CALLER's TEB, and kernel32's
+ * BasePushProcessParameters reads it straight back out to learn where in the
+ * child to write the ProcessParameters pointer. Two things go wrong for a
+ * 32-bit caller, and they compound: `KTHREAD.Teb` is the SIXTY-FOUR-bit TEB,
+ * which the guest never reads, and the value stored is the child's 64-bit PEB
+ * when a 32-bit parent needs its PEB32.
+ *
+ * So the guest read a TEB32 slot nothing had written. Measured before this
+ * existed: the third NtWriteVirtualMemory of CreateProcess — the one the
+ * source calls "Write the PEB Pointer" — landed on that stale value and came
+ * back STATUS_PARTIAL_COPY, so CreateProcessW failed with ERROR_PARTIAL_COPY
+ * and no 32-bit guest could start a process at all.
+ *
+ * ProcessWow64Information is the child's PEB32 by construction: procsup.rs
+ * sets `EPROCESS.Wow64Process = Peb32` and that query is what hands it back.
+ */
+static void Wow64pPublishRemotePeb32(HANDLE Process)
+{
+    PBYTE Teb = (PBYTE)NtCurrentTeb();
+    LONG  WowTebOffset = *(LONG *)(Teb + WOW64_TEB_WOWTEBOFFSET);
+    PVOID Peb32 = NULL;
+
+    if (!WowTebOffset)
+        return;  /* no 32-bit side — nothing to publish to */
+    if (NtQueryInformationProcess(Process, ProcessWow64Information,
+                                  &Peb32, sizeof(Peb32), NULL) < 0)
+        return;  /* not a WoW64 child; leave the slot alone */
+
+    *(ULONG *)(Teb + WowTebOffset + WOW64_TEB32_ARBUSERPTR) =
+        (ULONG)(ULONG_PTR)Peb32;
+}
+
 static NTSTATUS Wow64Manual_NtCreateProcessEx(ULONG *a)
 {
     WOW64_OBJECT_ATTRIBUTES64_M Oa64;
@@ -809,7 +864,10 @@ static NTSTATUS Wow64Manual_NtCreateProcessEx(ULONG *a)
                                     (HANDLE)(LONG_PTR)(LONG)a[7],
                                     (BOOLEAN)a[8]);
     if (St >= 0)
+    {
         Wow64pPutHandle(a[0], Process);
+        Wow64pPublishRemotePeb32(Process);
+    }
     return St;
 }
 
@@ -1878,6 +1936,7 @@ static VOID Wow64pCsrPut32(unsigned char *P, ULONG Off, ULONG V);
 #define WOW64_CSR_SERVER_DLL_MAX 4   /* subsystems/csr/csrsrv/api.h:34 */
 #define WOW64_BASESRV_SERVERDLL_INDEX 1 /* reactos/subsys/win/basemsg.h:15 */
 /* CSR_MAKE_API_NUMBER(BASESRV_SERVERDLL_INDEX, BasepCreateThread) */
+#define WOW64_CSRAPI_BASEP_CREATEPROCESS 0x00010000
 #define WOW64_CSRAPI_BASEP_CREATETHREAD 0x00010001
 
 /* BASE_STATIC_SERVER_DATA is the struct entry[BASESRV_SERVERDLL_INDEX] points
@@ -2712,6 +2771,7 @@ static NTSTATUS Wow64Manual_NtUserProcessConnect(ULONG *a)
                      "(psi=%I64x ahe=%I64x) — kernel low-map missing?!\n",
                      Uc64.siClient.psi, Uc64.siClient.aheList);
         Uc32->siClient.psi = (ULONG)Uc64.siClient.psi;
+        Wow64pPfnMapSetPsi(Uc64.siClient.psi);
         Uc32->siClient.aheList = (ULONG)Uc64.siClient.aheList;
         Uc32->siClient.pDispInfo = (ULONG)Uc64.siClient.pDispInfo;
         Uc32->siClient.ulSharedDelta = (ULONG)Uc64.siClient.ulSharedDelta;
@@ -2807,6 +2867,125 @@ static NTSTATUS Wow64Manual_NtUserDefSetText(ULONG *a)
     return (NTSTATUS)(ULONG)NtUserDefSetText((PVOID)(ULONG_PTR)a[0], Ls64Ptr);
 }
 
+/*
+ * Window/class procs crossing into the kernel. A guest system proc (Button's,
+ * DefWindowProc, ...) is swapped for the host's proc in the same PFNCLIENT slot
+ * (wow64_pfnmap.c), and a host proc coming back is swapped for the guest's.
+ * The WNDPROC indices go through the *Ptr entry points because the 32-bit ones
+ * narrow the value: the new host proc on the way in (SetClassLong's ULONG),
+ * and the old one on the way out (SetWindowLong returns a LONG). Neither can
+ * be mapped once it has lost its high half.
+ */
+extern LONG NtUserSetWindowLong(PVOID, ULONG, LONG, ULONG);
+extern LONG_PTR NtUserSetWindowLongPtr(PVOID, ULONG, LONG_PTR, ULONG);
+extern ULONG_PTR NtUserSetClassLong(PVOID, INT, ULONG, ULONG);
+extern ULONG_PTR NtUserSetClassLongPtr(PVOID, INT, ULONG_PTR, ULONG);
+extern ULONG_PTR NtUserGetCPD(PVOID, ULONG, ULONG_PTR);
+
+#define WOW64_GWL_WNDPROC (-4)
+#define WOW64_GCL_WNDPROC (-24)
+
+/*
+ * NtUserBuildPropList(hWnd, Buffer, BufferSize, Count). PROPLISTITEM is
+ * {ATOM; HANDLE}: 8 bytes in the guest, 16 on the host. With a NULL buffer the
+ * kernel reports the size NEEDED, in bytes of ITS items; with a buffer it
+ * requires a whole number of items and reports how many it wrote. Flat, the
+ * guest's EnumProps* read a 16-byte-stride array at an 8-byte stride.
+ */
+#define WOW64_PROPLISTITEM32_CB 8
+#define WOW64_PROPLISTITEM64_CB 16
+#define WOW64_PROPLIST_STACK 32
+
+static NTSTATUS Wow64Manual_NtUserBuildPropList(ULONG *a)
+{
+    extern NTSTATUS NtUserBuildPropList(PVOID, PVOID, ULONG, ULONG *);
+    typedef struct { USHORT Atom; ULONG Data; } ITEM32;      /* 8 bytes */
+    typedef struct { USHORT Atom; ULONGLONG Data; } ITEM64;  /* 16 bytes */
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0];
+    ITEM32 *Out32 = (ITEM32 *)(ULONG_PTR)a[1];
+    ULONG Size32 = a[2];
+    ULONG *Count32 = (ULONG *)(ULONG_PTR)a[3];
+    ITEM64 Stack[WOW64_PROPLIST_STACK], *Items = Stack;
+    PVOID Heap = NULL;
+    ULONG Count = 0, n, i;
+    NTSTATUS St;
+
+    C_ASSERT(sizeof(ITEM32) == WOW64_PROPLISTITEM32_CB);
+    C_ASSERT(sizeof(ITEM64) == WOW64_PROPLISTITEM64_CB);
+
+    if (!Out32)
+    {
+        St = NtUserBuildPropList(Wnd, NULL, 0, &Count);
+        if (St >= 0 && Count32)
+            *Count32 = Count / WOW64_PROPLISTITEM64_CB * WOW64_PROPLISTITEM32_CB;
+        return St;
+    }
+    if (Size32 == 0 || Size32 % WOW64_PROPLISTITEM32_CB)
+        return (NTSTATUS)0xC000000DL; /* STATUS_INVALID_PARAMETER, as the kernel says */
+
+    n = Size32 / WOW64_PROPLISTITEM32_CB;
+    if (n > WOW64_PROPLIST_STACK)
+    {
+        SIZE_T Size = (SIZE_T)n * WOW64_PROPLISTITEM64_CB;
+        St = NtAllocateVirtualMemory((HANDLE)(LONG_PTR)-1, &Heap, 0, &Size,
+                                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (St < 0)
+            return St;
+        Items = (ITEM64 *)Heap;
+    }
+
+    St = NtUserBuildPropList(Wnd, Items, n * WOW64_PROPLISTITEM64_CB, &Count);
+    if (St >= 0)
+    {
+        for (i = 0; i < Count && i < n; i++)
+        {
+            Out32[i].Atom = Items[i].Atom;
+            Out32[i].Data = (ULONG)Items[i].Data; /* a handle-sized value */
+        }
+        if (Count32)
+            *Count32 = Count;
+    }
+
+    if (Heap)
+    {
+        SIZE_T Free = 0;
+        NtFreeVirtualMemory((HANDLE)(LONG_PTR)-1, &Heap, &Free, MEM_RELEASE);
+    }
+    return St;
+}
+
+/* NtUserSetWindowLong(hWnd, Index, NewValue, Ansi) */
+static NTSTATUS Wow64Manual_NtUserSetWindowLong(ULONG *a)
+{
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0]; /* handle: sign-extend */
+
+    if ((LONG)a[1] == WOW64_GWL_WNDPROC)
+        return (NTSTATUS)Wow64pMapClientProc((ULONGLONG)NtUserSetWindowLongPtr(
+            Wnd, a[1], (LONG_PTR)Wow64pUnmapClientProc(a[2]), a[3]));
+    return (NTSTATUS)NtUserSetWindowLong(Wnd, a[1], (LONG)a[2], a[3]);
+}
+
+/* NtUserSetClassLong(hWnd, Offset, dwNewLong, Ansi) */
+static NTSTATUS Wow64Manual_NtUserSetClassLong(ULONG *a)
+{
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0];
+
+    if ((LONG)a[1] == WOW64_GCL_WNDPROC)
+        return (NTSTATUS)Wow64pMapClientProc((ULONGLONG)NtUserSetClassLongPtr(
+            Wnd, (INT)a[1], (ULONG_PTR)Wow64pUnmapClientProc(a[2]), a[3]));
+    return (NTSTATUS)NtUserSetClassLong(Wnd, (INT)a[1], a[2], a[3]);
+}
+
+/* NtUserGetCPD(hWnd, Flags, ProcIn): returns a CPD handle (0xFFFFxxxx, which
+ * the map leaves alone) or a proc. */
+static NTSTATUS Wow64Manual_NtUserGetCPD(ULONG *a)
+{
+    PVOID Wnd = (PVOID)(LONG_PTR)(LONG)a[0];
+
+    return (NTSTATUS)Wow64pMapClientProc(
+        (ULONGLONG)NtUserGetCPD(Wnd, a[1], (ULONG_PTR)Wow64pUnmapClientProc(a[2])));
+}
+
 static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
 {
     extern ULONG NtUserRegisterClassExWOW(PVOID, PVOID, PVOID, PVOID, ULONG, ULONG, PVOID);
@@ -2835,7 +3014,9 @@ static NTSTATUS Wow64Manual_NtUserRegisterClassExWOW(ULONG *a)
         return 0; /* ATOM 0 = fail */
     W64.cbSize = sizeof(W64);      /* kernel probes cbSize == sizeof(WNDCLASSEXW) */
     W64.style = W32->style;
-    W64.lpfnWndProc = W32->lpfnWndProc;
+    /* A guest system proc becomes the host's (wow64_pfnmap.c): win32k picks an
+     * ANSI window's A proc by comparing the class proc against gpsi. */
+    W64.lpfnWndProc = Wow64pUnmapClientProc(W32->lpfnWndProc);
     W64.cbClsExtra = W32->cbClsExtra;
     W64.cbWndExtra = W32->cbWndExtra;
     W64.hInstance = W32->hInstance;
@@ -3087,14 +3268,15 @@ static NTSTATUS Wow64Manual_NtUserGetClassInfo(ULONG *a)
         /* Narrow back. A class whose members came from 64-bit code (a system
          * class wndproc, a >4GB menu-name mapping) cannot be represented for
          * the guest — trace it loudly instead of silently truncating. */
-        if ((W64.lpfnWndProc | W64.lpszMenuName | W64.lpszClassName | MenuName64)
-            >> 32)
+        if ((W64.lpszMenuName | W64.lpszClassName | MenuName64) >> 32 ||
+            (W64.lpfnWndProc >> 32 &&
+             Wow64pMapClientProc(W64.lpfnWndProc) == (ULONG)W64.lpfnWndProc))
             DbgPrint("[WOW64] NtUserGetClassInfo: 64-bit-only members "
                      "(proc=%I64x menu=%I64x cls=%I64x pmenu=%I64x) TRUNCATED\n",
                      W64.lpfnWndProc, W64.lpszMenuName, W64.lpszClassName,
                      MenuName64);
         W32->style = W64.style;
-        W32->lpfnWndProc = (ULONG)W64.lpfnWndProc;
+        W32->lpfnWndProc = Wow64pMapClientProc(W64.lpfnWndProc);
         W32->cbClsExtra = W64.cbClsExtra;
         W32->cbWndExtra = W64.cbWndExtra;
         W32->hInstance = (ULONG)W64.hInstance;
@@ -3369,12 +3551,12 @@ static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
  * non-divergent (no pointers, identical 32/64) so the guest buffer passes
  * straight through and the kernel writes the shared layout. Handle returns
  * narrow to the guest's low 32 bits (all user handles are <4GB).
- * The two members that ALSO carry a divergent struct — NtUserCreateDesktop
- * (OBJECT_ATTRIBUTES) and NtUserGetIconInfo (ICONINFO HBITMAP widen) — are
- * listed in manual-win32k.txt WITHOUT a dispatch entry, so they fall through
- * to the generated table and come back WOW64_AUTOMARSHAL_UNIMPL, which the
+ * NtUserCreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES) and
+ * is listed in manual-win32k.txt WITHOUT a dispatch entry, so it falls through
+ * to the generated table and comes back WOW64_AUTOMARSHAL_UNIMPL, which the
  * caller reports loudly by name (a clean error, NOT a bugcheck) until a guest
- * that needs them arrives with a marshaller to disprove. */
+ * that needs it arrives. NtUserGetIconInfo was the other one; a guest reached
+ * it (user32:class) and it has a marshaller now, further down. */
 static NTSTATUS Wow64Manual_NtUserFindWindowEx(ULONG *a)
 {
     extern HANDLE NtUserFindWindowEx(PVOID, PVOID, PVOID, PVOID, ULONG);
@@ -3634,6 +3816,24 @@ static NTSTATUS Wow64Manual_NtUserCreateWindowStation(ULONG *a)
     return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
 }
 
+/* Shared-icon cache diagnosis: a WOW64 app whose LR_SHARED icons never match re-creates them on
+ * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. */
+static void Wow64pTraceCurIcon(const char *What, ULONG Mod32, ULONG Rsrc32, LONG *Param,
+                               ULONG Flags, ULONG Ret)
+{
+    WOW64_UNICODE_STRING32_M *M = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Mod32;
+    WOW64_UNICODE_STRING32_M *R = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Rsrc32;
+    DbgPrint("[WOW64-CURICON] %s mod=%.*S rsrc=%s%.*S%s id=%lx len=%u flags=%lx param=%ld,%ld,%ld ret=%lx\n",
+             What,
+             M && M->Buffer ? (int)(M->Length / 2) : 0, M && M->Buffer ? (PWSTR)(ULONG_PTR)M->Buffer : L"",
+             R && R->Buffer >= 0x10000 ? "\"" : "",
+             R && R->Buffer >= 0x10000 ? (int)(R->Length / 2) : 0,
+             R && R->Buffer >= 0x10000 ? (PWSTR)(ULONG_PTR)R->Buffer : L"",
+             R && R->Buffer >= 0x10000 ? "\"" : "",
+             R ? (ULONG)R->Buffer : 0, R ? R->Length : 0, Flags,
+             Param ? Param[0] : -1, Param ? Param[1] : -1, Param ? Param[2] : -1, Ret);
+}
+
 /* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
  * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
  * and identical 32/64, so its guest pointer passes straight through. */
@@ -3645,6 +3845,8 @@ static NTSTATUS Wow64Manual_NtUserFindExistingCursorIcon(ULONG *a)
     Ret = NtUserFindExistingCursorIcon(Wow64pUS32to64(a[0], &Mod64),
                                        Wow64pUS32to64(a[1], &Rsrc64),
                                        (PVOID)(ULONG_PTR)a[2]);
+    Wow64pTraceCurIcon("FindExisting", a[0], a[1], a[2] ? ((LONG *)(ULONG_PTR)a[2]) : NULL, 0,
+                       (ULONG)(ULONG_PTR)Ret);
     return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
 }
 
@@ -3711,10 +3913,207 @@ static NTSTATUS Wow64Manual_NtUserSetCursorIconData(ULONG *a)
                      "frame arrays not re-marshalled (owed)\n");
     }
 
+    Wow64pTraceCurIcon("SetData", a[1], a[2], NULL, C32 ? C32->CURSORF_flags : 0xffffffff, a[0]);
     return NtUserSetCursorIconData((HANDLE)(LONG_PTR)(LONG)a[0],
                                    Wow64pUS32to64(a[1], &Mod64),
                                    Wow64pUS32to64(a[2], &Rsrc64),
                                    C32 ? &C64 : NULL);
+}
+
+/* NtUserGetIconInfo(hCurIcon, IconInfo, lpModule, lpResName, pbpp, bInternal):
+ * ICONINFO carries two HBITMAPs (20 bytes guest, 32 host) and both strings
+ * are IN/OUT: win32k reads MaximumLength/Buffer, then writes Length,
+ * MaximumLength (the size needed, when too small) and, for an integer
+ * resource, Buffer itself (the id). So each string goes up and comes back
+ * down field by field. With no marshaller every guest GetIconInfo and
+ * CopyImage failed, which is how user32:class lost the class small icon
+ * win32k derives through the COPYIMAGE callback. */
+typedef struct { ULONG fIcon, xHotspot, yHotspot, hbmMask, hbmColor; } WOW64_ICONINFO32_M;
+typedef struct { ULONG fIcon, xHotspot, yHotspot, __pad;
+                 ULONGLONG hbmMask, hbmColor; } WOW64_ICONINFO64_M;
+
+static VOID Wow64pUSUp(ULONG U32Ptr, WOW64_UNICODE_STRING64_M *U64)
+{
+    const WOW64_UNICODE_STRING32_M *U32 = (const WOW64_UNICODE_STRING32_M *)(ULONG_PTR)U32Ptr;
+    U64->Length = U32->Length;
+    U64->MaximumLength = U32->MaximumLength;
+    U64->__pad = 0;
+    U64->Buffer = U32->Buffer;
+}
+
+static VOID Wow64pUSDown(const WOW64_UNICODE_STRING64_M *U64, ULONG U32Ptr)
+{
+    WOW64_UNICODE_STRING32_M *U32 = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)U32Ptr;
+    U32->Length = U64->Length;
+    U32->MaximumLength = U64->MaximumLength;
+    U32->Buffer = (ULONG)U64->Buffer;
+}
+
+static NTSTATUS Wow64Manual_NtUserGetIconInfo(ULONG *a)
+{
+    extern BOOL NtUserGetIconInfo(HANDLE, PVOID, PVOID, PVOID, PVOID, BOOL);
+    WOW64_ICONINFO64_M Ii64;
+    WOW64_UNICODE_STRING64_M Mod64, Res64;
+    BOOL Ret;
+
+    if (a[2]) Wow64pUSUp(a[2], &Mod64);
+    if (a[3]) Wow64pUSUp(a[3], &Res64);
+    Ret = NtUserGetIconInfo((HANDLE)(LONG_PTR)(LONG)a[0],
+                            a[1] ? &Ii64 : NULL,
+                            a[2] ? &Mod64 : NULL,
+                            a[3] ? &Res64 : NULL,
+                            (PVOID)(ULONG_PTR)a[4], (BOOL)a[5]);
+    if (Ret && a[1])
+    {
+        WOW64_ICONINFO32_M *Ii32 = (WOW64_ICONINFO32_M *)(ULONG_PTR)a[1];
+        Ii32->fIcon = Ii64.fIcon;
+        Ii32->xHotspot = Ii64.xHotspot;
+        Ii32->yHotspot = Ii64.yHotspot;
+        Ii32->hbmMask = (ULONG)Ii64.hbmMask;
+        Ii32->hbmColor = (ULONG)Ii64.hbmColor;
+    }
+    /* A too-small string buffer is answered in the string itself (Length 0,
+     * the needed MaximumLength), so the strings come back down whatever Ret
+     * says. */
+    if (a[2]) Wow64pUSDown(&Mod64, a[2]);
+    if (a[3]) Wow64pUSDown(&Res64, a[3]);
+    return (NTSTATUS)Ret;
+}
+
+/* NtGdiExtGetObjectW(h, cj, pvOut): win32k answers in its OWN layouts, and
+ * three of them have a pointer-width field. BITMAP ends in LPVOID bmBits (24
+ * bytes guest, 32 host), DIBSECTION adds a HANDLE (84 / 104), LOGBRUSH ends in
+ * ULONG_PTR lbHatch (12 / 16), and EXTLOGPEN has ULONG_PTR elpHatch before its
+ * style array (24+4n / 28+4n). BITMAP_GetObject refuses a buffer smaller than
+ * its sizeof(BITMAP), so with the flat thunk every guest GetObject on a bitmap
+ * returned 0: CopyImage could not copy an icon (user32:class, class.c:1214).
+ * The rest (LOGPEN, LOGFONTW, a palette's WORD) are width-identical and pass
+ * straight through. */
+#define WOW64_GDI_TYPE_MASK   0x007f0000
+#define WOW64_GDI_TYPE_BITMAP 0x00050000
+#define WOW64_GDI_TYPE_BRUSH  0x00100000
+#define WOW64_GDI_TYPE_PEN    0x00300000
+#define WOW64_GDI_TYPE_EXTPEN 0x00500000
+
+typedef struct { LONG bmType, bmWidth, bmHeight, bmWidthBytes;
+                 USHORT bmPlanes, bmBitsPixel; ULONG bmBits; } WOW64_BITMAP32_M;
+typedef struct { LONG bmType, bmWidth, bmHeight, bmWidthBytes;
+                 USHORT bmPlanes, bmBitsPixel; ULONGLONG bmBits; } WOW64_BITMAP64_M;
+typedef struct { WOW64_BITMAP32_M dsBm; BYTE dsBmih[40]; ULONG dsBitfields[3];
+                 ULONG dshSection; ULONG dsOffset; } WOW64_DIBSECTION32_M;
+typedef struct { WOW64_BITMAP64_M dsBm; BYTE dsBmih[40]; ULONG dsBitfields[3];
+                 ULONGLONG dshSection; ULONG dsOffset; } WOW64_DIBSECTION64_M;
+typedef struct { ULONG lbStyle, lbColor, lbHatch; } WOW64_LOGBRUSH32_M;
+typedef struct { ULONG lbStyle, lbColor; ULONGLONG lbHatch; } WOW64_LOGBRUSH64_M;
+/* EXTLOGPEN: four DWORDs, the hatch, elpNumEntries, then the style array. */
+#define WOW64_EXTPEN32_HEAD 24
+#define WOW64_EXTPEN64_HEAD 28
+C_ASSERT(sizeof(WOW64_BITMAP32_M) == 24);
+C_ASSERT(sizeof(WOW64_BITMAP64_M) == 32);
+C_ASSERT(sizeof(WOW64_DIBSECTION32_M) == 84);
+C_ASSERT(sizeof(WOW64_DIBSECTION64_M) == 104);
+C_ASSERT(sizeof(WOW64_LOGBRUSH32_M) == 12);
+C_ASSERT(sizeof(WOW64_LOGBRUSH64_M) == 16);
+
+static VOID Wow64pBitmapDown(const WOW64_BITMAP64_M *B64, WOW64_BITMAP32_M *B32)
+{
+    B32->bmType = B64->bmType;
+    B32->bmWidth = B64->bmWidth;
+    B32->bmHeight = B64->bmHeight;
+    B32->bmWidthBytes = B64->bmWidthBytes;
+    B32->bmPlanes = B64->bmPlanes;
+    B32->bmBitsPixel = B64->bmBitsPixel;
+    B32->bmBits = (ULONG)B64->bmBits;
+}
+
+static NTSTATUS Wow64Manual_NtGdiExtGetObjectW(ULONG *a)
+{
+    extern INT NtGdiExtGetObjectW(HANDLE, INT, PVOID);
+    HANDLE h = (HANDLE)(LONG_PTR)(LONG)a[0];
+    INT cj = (INT)a[1];
+    BYTE *Out = (BYTE *)(ULONG_PTR)a[2];
+    union {
+        WOW64_DIBSECTION64_M Ds;
+        WOW64_LOGBRUSH64_M Lb;
+        BYTE Pen[WOW64_EXTPEN64_HEAD + 64 * sizeof(ULONG)];
+    } Host;
+    INT r, i;
+
+    switch (a[0] & WOW64_GDI_TYPE_MASK)
+    {
+        case WOW64_GDI_TYPE_BITMAP:
+            if (!Out)
+            {
+                r = NtGdiExtGetObjectW(h, cj, NULL);
+                return r == sizeof(WOW64_BITMAP64_M) ? sizeof(WOW64_BITMAP32_M) : r;
+            }
+            if (cj < (INT)sizeof(WOW64_BITMAP32_M))
+                return 0;
+            r = NtGdiExtGetObjectW(h, cj >= (INT)sizeof(WOW64_DIBSECTION32_M)
+                                           ? sizeof(WOW64_DIBSECTION64_M)
+                                           : sizeof(WOW64_BITMAP64_M), &Host);
+            if (r < (INT)sizeof(WOW64_BITMAP64_M))
+                return 0;
+            Wow64pBitmapDown(&Host.Ds.dsBm, (WOW64_BITMAP32_M *)Out);
+            if (r < (INT)sizeof(WOW64_DIBSECTION64_M))
+                return sizeof(WOW64_BITMAP32_M);
+            {
+                WOW64_DIBSECTION32_M *D32 = (WOW64_DIBSECTION32_M *)Out;
+                for (i = 0; i < 40; i++) D32->dsBmih[i] = Host.Ds.dsBmih[i];
+                for (i = 0; i < 3; i++) D32->dsBitfields[i] = Host.Ds.dsBitfields[i];
+                D32->dshSection = (ULONG)Host.Ds.dshSection;
+                D32->dsOffset = Host.Ds.dsOffset;
+            }
+            return sizeof(WOW64_DIBSECTION32_M);
+
+        case WOW64_GDI_TYPE_BRUSH:
+            if (!Out)
+            {
+                r = NtGdiExtGetObjectW(h, cj, NULL);
+                return r == sizeof(WOW64_LOGBRUSH64_M) ? sizeof(WOW64_LOGBRUSH32_M) : r;
+            }
+            if (cj < (INT)sizeof(WOW64_LOGBRUSH32_M))
+                return 0;
+            r = NtGdiExtGetObjectW(h, sizeof(WOW64_LOGBRUSH64_M), &Host);
+            if (r < (INT)sizeof(WOW64_LOGBRUSH64_M))
+                return 0;
+            ((WOW64_LOGBRUSH32_M *)Out)->lbStyle = Host.Lb.lbStyle;
+            ((WOW64_LOGBRUSH32_M *)Out)->lbColor = Host.Lb.lbColor;
+            ((WOW64_LOGBRUSH32_M *)Out)->lbHatch = (ULONG)Host.Lb.lbHatch;
+            return sizeof(WOW64_LOGBRUSH32_M);
+
+        case WOW64_GDI_TYPE_PEN:
+        case WOW64_GDI_TYPE_EXTPEN:
+        {
+            /* An old-style pen answers with a 16-byte LOGPEN (identical), an
+             * extended one with an EXTLOGPEN 4 bytes longer than the guest's.
+             * PEN_GetObject tells them apart by the size it is given, so the
+             * guest's EXTLOGPEN-sized request is passed up 4 bytes larger. */
+            INT cjHost = cj;
+            if (!Out)
+            {
+                r = NtGdiExtGetObjectW(h, cj, NULL);
+                return r >= WOW64_EXTPEN64_HEAD ? r - 4 : r;
+            }
+            if (cj >= WOW64_EXTPEN32_HEAD)
+                cjHost = cj + 4;
+            if (cjHost > (INT)sizeof(Host.Pen))
+                cjHost = sizeof(Host.Pen);
+            r = NtGdiExtGetObjectW(h, cjHost, Host.Pen);
+            if (r < WOW64_EXTPEN64_HEAD)
+            {
+                for (i = 0; i < r; i++) Out[i] = Host.Pen[i];
+                return r;
+            }
+            for (i = 0; i < 16; i++) Out[i] = Host.Pen[i];               /* 4 DWORDs */
+            *(ULONG *)(Out + 16) = (ULONG)*(ULONGLONG *)(Host.Pen + 16); /* elpHatch */
+            for (i = 24; i < r; i++) Out[i - 4] = Host.Pen[i];           /* count + styles */
+            return r - 4;
+        }
+
+        default:
+            return NtGdiExtGetObjectW(h, cj, Out);
+    }
 }
 
 /* Guest completion of a kernel->user callback (wow64_callback.c). */
@@ -4211,6 +4610,23 @@ static NTSTATUS Wow64pLpcBadArg(const char *Who, const char *Why)
 #define WOW64_CSRMSG_BODY64_RESERVED   16
 #define WOW64_CSRMSG_BODY64_DATA       24
 
+/* sizeof(BASE_CREATE_PROCESS) per arch, measured with offsetof/sizeof against
+ * the real basemsg.h and cross-checked against the size_check_*.rs asserts the
+ * tree already carries (140 i386 / 232 amd64). */
+#define WOW64_BCP32_SIZE               140
+#define WOW64_BCP64_SIZE               232
+
+/* Narrow one field of the BASE_CREATE_PROCESS reply back to the guest. */
+#define WOW64_BCP_NARROW(o32, o64)                                             \
+            Wow64pCsrPut32(R32, WOW64_CSRMSG_BODY32_DATA + (o32),              \
+                        Wow64pCsrGet32(R64, WOW64_CSRMSG_BODY64_DATA + (o64)))
+
+static void Wow64pZeroBytes(unsigned char *d, unsigned n)
+{
+    while (n--)
+        *d++ = 0;
+}
+
 static ULONG Wow64pCsrGet32(const unsigned char *P, ULONG Off)
 {
     ULONG V; Wow64pCpy((unsigned char *)&V, P + Off, 4); return V;
@@ -4381,6 +4797,7 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
     ULONG CapBackLen = 0;
     ULONG Cap32Orig = 0, Info32Orig = 0;
     int IsCreateThread = 0;
+    int IsCreateProcess = 0;
     ULONG DataLength, RepData;
     NTSTATUS St;
 
@@ -4474,6 +4891,90 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
                             (ULONGLONG)Info32);
             }
         }
+        else if (Api == WOW64_CSRAPI_BASEP_CREATEPROCESS &&
+                 Data32Len >= WOW64_BCP32_SIZE)
+        {
+            /* BASE_CREATE_PROCESS -- the message CreateProcess sends basesrv
+             * once the child and its initial thread exist. It opens with
+             * HANDLE, HANDLE, CLIENT_ID, i.e. FOUR pointer-width fields in a
+             * row, so the verbatim copy handed basesrv a ProcessHandle and a
+             * ClientId assembled from the wrong words and it answered
+             * c0000008; the guest reported CreateProcessW err 0x6
+             * (ERROR_INVALID_HANDLE). Identical failure to BASEP_CREATETHREAD
+             * below, one struct larger.
+             *
+             * Offsets MEASURED, not derived -- offsetof() dumps from the real
+             * basemsg.h structs built with the llvm-mingw i686 and x86_64
+             * targets. The control on that measurement is sizeof: 140/96 on
+             * i386 and 232/160 on amd64, which is exactly what the tree
+             * already asserts in ntdll-sys/src/size_check_{i386,amd64}.rs, so
+             * a bad transcription would have shown up as a size mismatch
+             * rather than as quietly wrong offsets.
+             *
+             *   field                  i386    amd64
+             *   ProcessHandle          0x00    0x00
+             *   ThreadHandle           0x04    0x08
+             *   ClientId.UniqueProcess 0x08    0x10
+             *   ClientId.UniqueThread  0x0c    0x18
+             *   CreationFlags          0x10    0x20
+             *   VdmBinaryType          0x14    0x24
+             *   VdmTask                0x18    0x28
+             *   hVDM                   0x1c    0x30
+             *   Sxs                    0x20    0x38
+             *   PebAddressNative       0x80    0xd8
+             *   PebAddressWow64        0x84    0xe0
+             *   ProcessorArchitecture  0x88    0xe4
+             *   sizeof                 0x8c    0xe8
+             *
+             * ProcessHandle is NOT purely a handle: kernel32 packs up to two
+             * flag bits into its low bits (AddToHandle/RemoveFromHandle) and
+             * BaseSrvCreateProcess reads them back out as `Handle & 3` before
+             * masking. Zero-extension preserves them, which is the only
+             * reason the naive widening is right here.
+             *
+             * Sxs is the one field NOT marshalled. BaseSrvCreateProcess never
+             * reads it -- the SxS work belongs to a different API
+             * (BaseSrvSxsCreateActivationContext) -- so widening thirty fields
+             * including four UNICODE_STRINGs whose Buffers are guest pointers
+             * would buy nothing today. It is ZEROED rather than left as
+             * whatever the verbatim copy put there, and the guest is told when
+             * it mattered, so the day the server starts reading it this
+             * announces itself instead of going quiet. */
+            IsCreateProcess = 1;
+
+            /* Zero first: every byte the server might read is then either a
+             * field written below or a deliberate zero, never leftover. */
+            Wow64pZeroBytes(B64 + WOW64_CSRMSG_BODY64_DATA, WOW64_BCP64_SIZE);
+
+#define WOW64_BCP_WIDEN(o32, o64)                                              \
+            Wow64pCsrPut64(B64, WOW64_CSRMSG_BODY64_DATA + (o64),              \
+                        (ULONGLONG)Wow64pCsrGet32(B32,                         \
+                                    WOW64_CSRMSG_BODY32_DATA + (o32)))
+#define WOW64_BCP_COPY32(o32, o64)                                             \
+            Wow64pCsrPut32(B64, WOW64_CSRMSG_BODY64_DATA + (o64),              \
+                        Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + (o32)))
+
+            WOW64_BCP_WIDEN (0x00, 0x00);   /* ProcessHandle (+ flag bits)   */
+            WOW64_BCP_WIDEN (0x04, 0x08);   /* ThreadHandle                  */
+            WOW64_BCP_WIDEN (0x08, 0x10);   /* ClientId.UniqueProcess        */
+            WOW64_BCP_WIDEN (0x0c, 0x18);   /* ClientId.UniqueThread         */
+            WOW64_BCP_COPY32(0x10, 0x20);   /* CreationFlags        (ULONG)  */
+            WOW64_BCP_COPY32(0x14, 0x24);   /* VdmBinaryType        (ULONG)  */
+            WOW64_BCP_COPY32(0x18, 0x28);   /* VdmTask              (ULONG)  */
+            WOW64_BCP_WIDEN (0x1c, 0x30);   /* hVDM                          */
+            WOW64_BCP_WIDEN (0x80, 0xd8);   /* PebAddressNative              */
+            WOW64_BCP_COPY32(0x84, 0xe0);   /* PebAddressWow64      (ULONG)  */
+            WOW64_BCP_COPY32(0x88, 0xe4);   /* ProcessorArchitecture(USHORT) */
+
+            if (Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 0x20) != 0)
+                DbgPrint("[WOW64] LPC BasepCreateProcess: Sxs.Flags=%08lx is "
+                         "NOT marshalled (basesrv ignores Sxs today) -- if this "
+                         "starts mattering, widen BASE_SXS_CREATEPROCESS_MSG\n",
+                         Wow64pCsrGet32(B32, WOW64_CSRMSG_BODY32_DATA + 0x20));
+
+            Req64->u1.s1.DataLength = (SHORT)(WOW64_CSRMSG_BODY64_DATA +
+                                              WOW64_BCP64_SIZE);
+        }
         else if (Api == WOW64_CSRAPI_BASEP_CREATETHREAD && Data32Len >= 12)
         {
             /* BASE_CREATE_THREAD { HANDLE ThreadHandle; CLIENT_ID ClientId; } --
@@ -4560,6 +5061,25 @@ static NTSTATUS Wow64Manual_NtRequestWaitReplyPort(ULONG *a)
             Wow64pCpy(R32 + WOW64_CSRMSG_BODY32_DATA,
                       R64 + WOW64_CSRMSG_BODY64_DATA,
                       RepData - WOW64_CSRMSG_BODY64_DATA);
+
+        if (IsCreateProcess)
+        {
+            /* basesrv passes &ClientId to CsrCreateProcess by reference, and
+             * the verbatim reply copy above laid 64-bit words into a struct the
+             * guest reads with 32-bit offsets. kernel32 happens to fill
+             * PROCESS_INFORMATION from its OWN local ClientId rather than from
+             * the reply, so nothing reads this today -- narrow it anyway, so
+             * the guest is not left holding a struct that is wrong in a way
+             * only the next reader discovers. */
+            WOW64_BCP_NARROW(0x00, 0x00);   /* ProcessHandle                 */
+            WOW64_BCP_NARROW(0x04, 0x08);   /* ThreadHandle                  */
+            WOW64_BCP_NARROW(0x08, 0x10);   /* ClientId.UniqueProcess        */
+            WOW64_BCP_NARROW(0x0c, 0x18);   /* ClientId.UniqueThread         */
+            WOW64_BCP_NARROW(0x10, 0x20);   /* CreationFlags                 */
+            WOW64_BCP_NARROW(0x14, 0x24);   /* VdmBinaryType                 */
+            WOW64_BCP_NARROW(0x18, 0x28);   /* VdmTask                       */
+            WOW64_BCP_NARROW(0x1c, 0x30);   /* hVDM                          */
+        }
 
         if (IsCreateThread)
         {
@@ -5757,7 +6277,9 @@ static NTSTATUS Wow64Manual_NtUserInitializeClientPfnArrays(ULONG *a)
 {
     static int Announced;
 
-    (void)a;
+    /* Not installed globally, but remembered: wow64_pfnmap.c maps the host's
+     * built-in class procs onto these slots before they reach the guest. */
+    Wow64pPfnMapSetGuest(a[0], a[1]);
     if (!Announced)
     {
         Announced = 1;
@@ -6059,6 +6581,11 @@ static NTSTATUS Wow64Manual_NtWaitForMultipleObjects(ULONG *a)
  * PreviousStackLimit, StackBase, StackLimit, AllocatedStackBase. */
 #define WOW64_ITEB32_STACKBASE  0x08
 #define WOW64_ITEB32_STACKLIMIT 0x0C
+/* AllocatedStackBase -- the BOTTOM of the guest's stack reservation, which the
+ * guest's BaseCreateStack already filled in and this thunk used to discard.
+ * It becomes TEB32.DeallocationStack, without which the kernel cannot grow a
+ * guest stack at all (see Wow64pThreadInit). */
+#define WOW64_ITEB32_ALLOCBASE  0x10
 
 /* wow64.c — #64: creates a NATIVE thread that runs 32-bit guest code, and
  * establishes the per-thread WoW64 state on it (CPU area, TEB32 NtTib stack
@@ -6070,11 +6597,345 @@ typedef struct _WOW64_CLIENT_ID {
 
 LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
                             ULONG StackBase, ULONG StackLimit,
+                            ULONG DeallocationStack,
                             BOOLEAN CreateSuspended,
                             HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId);
 VOID Wow64FreeThreadCpuArea(VOID);
 NTSTATUS WINAPI NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 VOID WINAPI RtlExitUserThread(NTSTATUS Status);
+
+/* ---- PEB64 process parameters for a child a 32-BIT parent created --------
+ *
+ * The mirror image of wow64.c's M3b down-conversion, and needed for the
+ * opposite reason. When a NATIVE parent spawns an i386 child, its 64-bit
+ * kernel32 writes 64-bit RTL_USER_PROCESS_PARAMETERS into PEB64, the child's
+ * LdrpInitializeProcess reads them, and wow64.dll then DERIVES the 32-bit copy
+ * for the guest. A 32-bit parent cannot do that first step: it can only build
+ * a 32-bit block, and since Wow64pPublishRemotePeb32 it correctly writes that
+ * into the child's PEB32. Nothing fills PEB64 -- and PEB64 is what runs first,
+ * so the child died in LdrpInitializeProcess on its very first dereference,
+ * `(*(*Peb).ProcessParameters).ImagePathName.Buffer`, before printing a line.
+ *
+ * So we widen the block the guest already wrote and point PEB64 at it. Note
+ * what this does NOT do: no string bytes are copied. Every Buffer the guest
+ * built already lives in the CHILD's address space, below 2GB, which a 64-bit
+ * pointer addresses perfectly well -- so the 64-bit strings point at the very
+ * same characters and only the fixed header is rebuilt. The environment block
+ * is shared the same way.
+ *
+ * The output is marked NORMALIZED and carries absolute pointers, which is why
+ * the denormalized case costs nothing extra: a denormalized Buffer is an
+ * offset from the block base, so resolving it is one addition done here
+ * instead of by the reader. Which fields that applies to is not a guess --
+ * rtl-ppb's RtlDeNormalizeProcessParams adjusts exactly the eight
+ * UNICODE_STRINGs below and deliberately leaves Environment alone, because the
+ * environment is a separate allocation rather than part of the block.
+ *
+ * Layout MEASURED with the same offsetof-plus-control method as
+ * BASE_CREATE_PROCESS, and the control EARNED ITS KEEP here: transcribing the
+ * struct from wine/winternl.h gave sizeof 676/1040 against the 656/1008 that
+ * ntdll-sys/src/size_check_{i386,amd64}.rs asserts. The five trailing fields
+ * that header carries (EnvironmentSize, EnvironmentVersion,
+ * PackageDependencyData, ProcessGroupId, LoaderThreads) are not in the struct
+ * this tree builds against. Nothing above RuntimeData moved, so a derivation
+ * would have produced correct field offsets and the WRONG BLOCK SIZE.
+ *
+ *   field                  i386    amd64          field        i386   amd64
+ *   MaximumLength          0x00    0x00           Environment  0x48   0x80
+ *   Length                 0x04    0x04           dwX..Show    0x4c   0x88
+ *   Flags                  0x08    0x08           WindowTitle  0x70   0xb0
+ *   DebugFlags             0x0c    0x0c           DesktopInfo  0x78   0xc0
+ *   ConsoleHandle          0x10    0x10           ShellInfo    0x80   0xd0
+ *   ConsoleFlags           0x14    0x18           RuntimeData  0x88   0xe0
+ *   StandardInput          0x18    0x20           sizeof       0x290  0x3f0
+ *   StandardOutput         0x1c    0x28
+ *   StandardError          0x20    0x30
+ *   CurDir.DosPath         0x24    0x38
+ *   CurDir.Handle          0x2c    0x48
+ *   DllPath                0x30    0x50
+ *   ImagePathName          0x38    0x60
+ *   CommandLine            0x40    0x70
+ */
+#define WOW64_UPP32_SIZE        0x290
+#define WOW64_UPP64_SIZE        0x3f0
+#define WOW64_UPP32_HDR         0x90   /* everything up to DLCurrentDirectory */
+#define WOW64_PEB32_PARAMS_OFF  0x10
+#define WOW64_PEB64_PARAMS_OFF  0x20
+#define WOW64_PPF_NORMALIZED    0x00000001
+
+static NTSTATUS Wow64pPublishPeb64Params(HANDLE Process, ULONG_PTR Peb32,
+                                         ULONGLONG Peb64)
+{
+    unsigned char Hdr32[WOW64_UPP32_HDR];
+    unsigned char Blk64[WOW64_UPP64_SIZE];
+    ULONG Upp32 = 0;
+    ULONG_PTR StrBase;
+    PVOID Remote = NULL;
+    SIZE_T Size = WOW64_UPP64_SIZE, Done = 0;
+    ULONGLONG Remote64;
+    NTSTATUS St;
+    unsigned i;
+
+    /* Where the guest put its own block. */
+    St = NtReadVirtualMemory(Process,
+                             (PVOID)(Peb32 + WOW64_PEB32_PARAMS_OFF),
+                             &Upp32, sizeof(Upp32), &Done);
+    if (St < 0 || Done != sizeof(Upp32) || !Upp32)
+    {
+        DbgPrint("[WOW64] PEB64 params: child PEB32->ProcessParameters is "
+                 "empty (st=%08lx) -- nothing to widen\n", St);
+        return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
+    }
+
+    St = NtReadVirtualMemory(Process, (PVOID)(ULONG_PTR)Upp32,
+                             Hdr32, sizeof(Hdr32), &Done);
+    if (St < 0 || Done != sizeof(Hdr32))
+        return St < 0 ? St : (NTSTATUS)0xC0000018; /* CONFLICTING_ADDRESSES */
+
+    /* A denormalized Buffer is an offset from the block base; a normalized one
+     * is already absolute. Resolve to absolute either way, once. */
+    StrBase = (*(ULONG *)(Hdr32 + 0x08) & WOW64_PPF_NORMALIZED)
+                  ? 0 : (ULONG_PTR)Upp32;
+
+    for (i = 0; i < sizeof(Blk64); i++)
+        Blk64[i] = 0;
+
+#define UPP_U32(o32, o64)  (*(ULONG *)(Blk64 + (o64)) = *(ULONG *)(Hdr32 + (o32)))
+#define UPP_PTR(o32, o64)  (*(ULONGLONG *)(Blk64 + (o64)) =                    \
+                            (ULONGLONG)*(ULONG *)(Hdr32 + (o32)))
+/* UNICODE_STRING32{Length,Max,Buffer} -> UNICODE_STRING64{Length,Max,pad,Buffer}.
+ * A zero Buffer stays zero rather than becoming StrBase, which would hand the
+ * reader the block header as if it were a string. */
+#define UPP_STR(o32, o64)                                                      \
+    do {                                                                       \
+        ULONG _b = *(ULONG *)(Hdr32 + (o32) + 4);                              \
+        *(USHORT *)(Blk64 + (o64) + 0) = *(USHORT *)(Hdr32 + (o32) + 0);       \
+        *(USHORT *)(Blk64 + (o64) + 2) = *(USHORT *)(Hdr32 + (o32) + 2);       \
+        *(ULONGLONG *)(Blk64 + (o64) + 8) =                                    \
+            _b ? (ULONGLONG)((ULONG_PTR)_b + StrBase) : 0ULL;                  \
+    } while (0)
+
+    /* The block describes itself as fully used: the strings it points at live
+     * outside it, so there is no arena tail to account for. */
+    *(ULONG *)(Blk64 + 0x00) = WOW64_UPP64_SIZE;   /* MaximumLength */
+    *(ULONG *)(Blk64 + 0x04) = WOW64_UPP64_SIZE;   /* Length        */
+    *(ULONG *)(Blk64 + 0x08) =
+        *(ULONG *)(Hdr32 + 0x08) | WOW64_PPF_NORMALIZED;
+    UPP_U32(0x0c, 0x0c);                            /* DebugFlags    */
+    UPP_PTR(0x10, 0x10);                            /* ConsoleHandle */
+    UPP_U32(0x14, 0x18);                            /* ConsoleFlags  */
+    UPP_PTR(0x18, 0x20);                            /* StandardInput */
+    UPP_PTR(0x1c, 0x28);                            /* StandardOutput*/
+    UPP_PTR(0x20, 0x30);                            /* StandardError */
+    UPP_STR(0x24, 0x38);                            /* CurDir.DosPath*/
+    UPP_PTR(0x2c, 0x48);                            /* CurDir.Handle */
+    UPP_STR(0x30, 0x50);                            /* DllPath       */
+    UPP_STR(0x38, 0x60);                            /* ImagePathName */
+    UPP_STR(0x40, 0x70);                            /* CommandLine   */
+    UPP_PTR(0x48, 0x80);                            /* Environment   */
+    for (i = 0; i < 9; i++)                         /* dwX..wShowWindow */
+        UPP_U32(0x4c + i * 4, 0x88 + i * 4);
+    UPP_STR(0x70, 0xb0);                            /* WindowTitle   */
+    UPP_STR(0x78, 0xc0);                            /* DesktopInfo   */
+    UPP_STR(0x80, 0xd0);                            /* ShellInfo     */
+    UPP_STR(0x88, 0xe0);                            /* RuntimeData   */
+#undef UPP_U32
+#undef UPP_PTR
+#undef UPP_STR
+
+    St = NtAllocateVirtualMemory(Process, &Remote, 0, &Size,
+                                 MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (St < 0)
+    {
+        DbgPrint("[WOW64] PEB64 params: allocate in child failed %08lx\n", St);
+        return St;
+    }
+
+    St = NtWriteVirtualMemory(Process, Remote, Blk64, sizeof(Blk64), &Done);
+    if (St < 0 || Done != sizeof(Blk64))
+        return St < 0 ? St : (NTSTATUS)0x8000000D; /* STATUS_PARTIAL_COPY */
+
+    Remote64 = (ULONGLONG)(ULONG_PTR)Remote;
+    St = NtWriteVirtualMemory(Process,
+                              (PVOID)(ULONG_PTR)(Peb64 + WOW64_PEB64_PARAMS_OFF),
+                              &Remote64, sizeof(Remote64), &Done);
+    if (St < 0 || Done != sizeof(Remote64))
+        return St < 0 ? St : (NTSTATUS)0x8000000D;
+
+    DbgPrint("[WOW64] PEB64->ProcessParameters published at %p (widened from "
+             "PEB32 block %08lx, strings %s)\n", Remote, Upp32,
+             StrBase ? "denormalized" : "normalized");
+    return 0;
+}
+
+LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,
+                                   ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
+                                   ULONG StackBase, ULONG StackLimit,
+                                   ULONG DeallocationStack,
+                                   BOOLEAN CreateSuspended,
+                                   HANDLE *ThreadHandle, WOW64_CLIENT_ID *ClientId);
+
+/*
+ * Wow64pCreateForeignThread — both halves of task #64.
+ *
+ * `NtCreateThread` with a ProcessHandle that is not -1 arrives here, and the two
+ * callers that get there are not alike. The split is what made the gap
+ * tractable: they were refused together on the harder one's reason.
+ *
+ *   CreateRemoteThread into a RUNNING process needs the target's wow64.dll to
+ *   establish the guest side of a thread it did not create. In-process
+ *   creation does that by handing RtlCreateUserThread a WOW64_THREAD_SEED on
+ *   the local heap and Wow64pGuestThreadStart as the start routine; neither
+ *   address means anything in another process, which is why that path cannot
+ *   simply be pointed at a foreign handle. Wow64CreateForeignGuestThread
+ *   (wow64.c) fixes both ends -- seed allocated in the target, start routine
+ *   translated through the target's own wow64.dll base -- and in doing so it
+ *   gets the target's code running the setup, on the new thread, which is the
+ *   property Win10's Wow64ProcessPendingCrossProcessItems work list exists to
+ *   provide. That is why the drain is still empty and does not need to be.
+ *
+ *   The INITIAL thread of a brand-new child needs none of it, because the child
+ *   establishes its own guest side from data the kernel already wrote. The
+ *   child's Wow64LdrpInitialize reads PEB32->ImageBaseAddress and takes the
+ *   entry point out of the image's own NT headers (wow64.c); it never looks at
+ *   a CONTEXT the parent supplied. And it is reached from LdrpInitializeProcess
+ *   on the strength of ProcessWow64Information on ITSELF (ntdll-rust
+ *   ldrinit.rs), so it does not matter who created the thread or how. The
+ *   existence proof is that winlogon spawns all ten ladder guests this way
+ *   today; the only difference for a 32-bit parent is that its NtCreateThread
+ *   passes through this thunk, where a native parent's does not.
+ *
+ * So the guest's CONTEXT32/INITIAL_TEB32 are deliberately IGNORED on this path.
+ * They describe a 32-bit start (kernel32!BaseProcessStartThunk with the entry in
+ * Eax and PEB32 in Ebx) that the child will recompute for itself. The guest
+ * stack its kernel32 already allocated cross-process in BaseCreateStack is left
+ * where it is -- unused, in the child's own address space, freed when the child
+ * dies. Reproducing that allocation here would not make it any more used.
+ *
+ * Two conditions, and both are load-bearing rather than defensive:
+ *
+ *   The target must be a WoW64 process. A 32-bit parent spawning a SIXTY-FOUR-bit
+ *   child is a real case and a different one -- nothing would hand that child's
+ *   initial thread a guest context because it does not want one -- and it stays
+ *   refused rather than silently taking this path.
+ *
+ *   The target must not have started. PEB->Ldr is NULL until the child's own
+ *   LdrpInitializeProcess fills it, so a NULL there is the kernel's word for
+ *   "this process has not run any user code yet", which is exactly the
+ *   precondition the paragraph above relies on. A running target falls through
+ *   to the refusal, which is the CreateRemoteThread case and still owed.
+ */
+static NTSTATUS Wow64pCreateForeignThread(HANDLE Process,
+                                          BOOLEAN CreateSuspended,
+                                          PBYTE Ctx32, PBYTE ITeb32,
+                                          ULONG *Handle32, ULONG *ClientId32)
+{
+    WOW64_PROCESS_BASIC_INFORMATION64 Pbi = {0};
+    ULONG_PTR TargetPeb32 = 0;
+    ULONGLONG Ldr = (ULONGLONG)-1;
+    SIZE_T Read = 0;
+    HANDLE Thread = NULL;
+    WOW64_CLIENT_ID Cid = { NULL, NULL };
+    NTSTATUS St;
+
+    St = NtQueryInformationProcess(Process, ProcessWow64Information,
+                                   &TargetPeb32, sizeof(TargetPeb32), NULL);
+    if (St < 0 || !TargetPeb32)
+    {
+        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process into a "
+                 "non-WoW64 target (ProcessHandle=%p st=%08lx) (task #64).\n",
+                 Process, St);
+        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
+    }
+
+    St = NtQueryInformationProcess(Process, ProcessBasicInformation,
+                                   &Pbi, sizeof(Pbi), NULL);
+    if (St >= 0 && Pbi.PebBaseAddress)
+    {
+        /* PEB64.Ldr is at +0x18 on every 64-bit host we build for. */
+        St = NtReadVirtualMemory(Process,
+                                 (PVOID)(ULONG_PTR)(Pbi.PebBaseAddress + 0x18),
+                                 &Ldr, sizeof(Ldr), &Read);
+        if (St < 0 || Read != sizeof(Ldr))
+            Ldr = (ULONGLONG)-1; /* unreadable: treat as "already running" */
+    }
+
+    if (Ldr != 0)
+    {
+        /* A RUNNING target: this is CreateRemoteThread, and unlike the initial
+         * thread it really does need the target's wow64.dll to establish the
+         * guest side. It gets it by BEING the start routine -- see
+         * Wow64CreateForeignGuestThread. The guest's CONTEXT32 describes a
+         * 32-bit thread start exactly as it does in-process, and the guest
+         * stack in ITeb32 was allocated cross-process by the caller's
+         * BaseCreateStack, so both already refer to the target. */
+        if (!Ctx32 || !ITeb32)
+            return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
+        St = Wow64CreateForeignGuestThread(
+                 Process, Pbi.PebBaseAddress,
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_EIP),
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_ESP),
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_EAX),
+                 *(ULONG *)(Ctx32 + WOW64_CTX32_EBX),
+                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKBASE),
+                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKLIMIT),
+                 *(ULONG *)(ITeb32 + WOW64_ITEB32_ALLOCBASE),
+                 CreateSuspended, &Thread, &Cid);
+        if (St < 0)
+            return St;
+        if (Handle32)
+            *Handle32 = (ULONG)(ULONG_PTR)Thread;
+        if (ClientId32)
+        {
+            ClientId32[0] = (ULONG)(ULONG_PTR)Cid.UniqueProcess;
+            ClientId32[1] = (ULONG)(ULONG_PTR)Cid.UniqueThread;
+        }
+        return St;
+    }
+
+    /* The child's 64-bit loader runs before its wow64.dll and reads PEB64's
+     * process parameters, which only a 64-bit parent would have filled. Widen
+     * the block the guest wrote into PEB32 and point PEB64 at it, BEFORE the
+     * thread exists -- once it is running the loader has already dereferenced
+     * that pointer. A failure here is fatal to the child, so it fails the
+     * creation rather than starting a process that cannot survive its own
+     * first dereference. */
+    St = Wow64pPublishPeb64Params(Process, (ULONG_PTR)TargetPeb32,
+                                  Pbi.PebBaseAddress);
+    if (St < 0)
+    {
+        DbgPrint("[WOW64] NtCreateThread: PEB64 params not published %08lx -- "
+                 "refusing rather than starting a child that cannot load\n", St);
+        return St;
+    }
+
+    /* StartAddress is never reached: the child's LdrpInitializeProcess diverts
+     * into Wow64LdrpInitialize, which ends in BTCpuSimulate and does not
+     * return. RtlExitUserThread is named anyway so that if that assumption is
+     * ever wrong the thread exits instead of running whatever is at the
+     * address -- the failure that costs a bugcheck is the one worth aiming. */
+    St = RtlCreateUserThread(Process, NULL, CreateSuspended, 0, 0, 0,
+                             (PVOID)RtlExitUserThread, NULL, &Thread, &Cid);
+    if (St < 0)
+    {
+        DbgPrint("[WOW64] NtCreateThread: cross-process initial thread failed "
+                 "%08lx\n", St);
+        return St;
+    }
+
+    if (Handle32)
+        *Handle32 = (ULONG)(ULONG_PTR)Thread;
+    if (ClientId32)
+    {
+        ClientId32[0] = (ULONG)(ULONG_PTR)Cid.UniqueProcess;
+        ClientId32[1] = (ULONG)(ULONG_PTR)Cid.UniqueThread;
+    }
+    DbgPrint("[WOW64] NtCreateThread: cross-process INITIAL thread pid=%lx "
+             "tid=%lx suspended=%u (task #64 initial-thread half)\n",
+             (ULONG)(ULONG_PTR)Cid.UniqueProcess,
+             (ULONG)(ULONG_PTR)Cid.UniqueThread, CreateSuspended);
+    return St;
+}
 
 /*
  * NtTerminateThread — pass-through, except that a thread terminating ITSELF is
@@ -6144,18 +7005,13 @@ static NTSTATUS Wow64Manual_NtCreateThread(ULONG *a)
     WOW64_CLIENT_ID Cid = { NULL, NULL };
     NTSTATUS St;
 
-    /* Cross-process creation (CreateRemoteThread into a different process)
-     * would need the TARGET's wow64.dll to run the per-thread entry, and there
-     * is no cross-process channel yet (Wow64ProcessPendingCrossProcessItems is
-     * still empty). Refuse rather than create a thread nobody will initialize —
-     * that is the exact shape of the bug this replaced. */
+    /* Cross-process creation splits in two -- a brand-new child's initial
+     * thread and CreateRemoteThread into a running one -- and they need
+     * different things. See Wow64pCreateForeignThread. */
     if ((HANDLE)(LONG_PTR)(LONG)a[3] != (HANDLE)(LONG_PTR)-1)
-    {
-        DbgPrint("[WOW64] NtCreateThread: REFUSED - cross-process creation "
-                 "(ProcessHandle=%08lx) has no per-thread entry in the target "
-                 "(task #64).\n", a[3]);
-        return (NTSTATUS)0xC0000002; /* STATUS_NOT_IMPLEMENTED */
-    }
+        return Wow64pCreateForeignThread((HANDLE)(LONG_PTR)(LONG)a[3],
+                                        (BOOLEAN)(a[7] & 0xFF),
+                                        Ctx32, ITeb32, Handle32, ClientId32);
 
     if (!Ctx32 || !ITeb32)
         return (NTSTATUS)0xC000000D; /* STATUS_INVALID_PARAMETER */
@@ -6166,6 +7022,7 @@ static NTSTATUS Wow64Manual_NtCreateThread(ULONG *a)
                                 *(ULONG *)(Ctx32 + WOW64_CTX32_EBX),
                                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKBASE),
                                 *(ULONG *)(ITeb32 + WOW64_ITEB32_STACKLIMIT),
+                                *(ULONG *)(ITeb32 + WOW64_ITEB32_ALLOCBASE),
                                 (BOOLEAN)(a[7] & 0xFF),
                                 &Thread, &Cid);
     if (St < 0)
@@ -6378,6 +7235,14 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserMessageCall(Arguments);
     if (WOW64_IS("NtQueryValueKey"))
         return Wow64Manual_NtQueryValueKey(Arguments);
+    if (WOW64_IS("NtUserBuildPropList"))
+        return Wow64Manual_NtUserBuildPropList(Arguments);
+    if (WOW64_IS("NtUserSetWindowLong"))
+        return Wow64Manual_NtUserSetWindowLong(Arguments);
+    if (WOW64_IS("NtUserSetClassLong"))
+        return Wow64Manual_NtUserSetClassLong(Arguments);
+    if (WOW64_IS("NtUserGetCPD"))
+        return Wow64Manual_NtUserGetCPD(Arguments);
     if (WOW64_IS("NtUserRegisterClassExWOW"))
         return Wow64Manual_NtUserRegisterClassExWOW(Arguments);
     if (WOW64_IS("NtUserGetClassInfo"))
@@ -6449,6 +7314,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserFindExistingCursorIcon(Arguments);
     if (WOW64_IS("NtUserSetCursorIconData"))
         return Wow64Manual_NtUserSetCursorIconData(Arguments);
+    if (WOW64_IS("NtUserGetIconInfo"))
+        return Wow64Manual_NtUserGetIconInfo(Arguments);
+    if (WOW64_IS("NtGdiExtGetObjectW"))
+        return Wow64Manual_NtGdiExtGetObjectW(Arguments);
     if (WOW64_IS("NtUserDefSetText"))
         return Wow64Manual_NtUserDefSetText(Arguments);
     if (WOW64_IS("NtCallbackReturn"))

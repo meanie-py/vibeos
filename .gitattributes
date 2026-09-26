@@ -106,3 +106,21 @@ external/fex/** -text
 # guarantee, with no signal. The append-at-EOF collision is now fixed at the source instead:
 # entries go in the topical section their symptom belongs to, so two lanes rarely touch the
 # same region, and `tools/scan_doc_sections.py --lint` fails a newly minted number.
+
+# Vendor patches are BYTE-EXACT artifacts, not source. `* text=auto` above was
+# silently stripping CR from the diff bodies of patches taken against CRLF trees,
+# which made the committed patch fail to apply even though the working copy was
+# verified — caught on stlport.patch, where 99 CR lines vanished on commit.
+vendor-patches/*.patch -text
+
+# Vendored LICENCE TEXTS are byte-exact artifacts too, and `*.txt text` above
+# normalises them. EDK II ships its License.txt with CRLF; committing it through
+# that rule silently produced a blob with a different sha256 from upstream's,
+# which is the same failure `vendor-patches/*.patch` was given this treatment for
+# (stlport, where 99 CR bytes vanished between the copy I verified and the copy I
+# committed). The point is not the line endings — it is that vendor.yaml records
+# an upstream sha256 for provenance, and a recorded hash that does not match the
+# committed file is worse than no hash. Every other vendored licence file is LF
+# upstream and needs no rule; add one here if that ever stops being true.
+sdk/include/reactos/edk2/License.txt -text
+COPYING.DJ -text

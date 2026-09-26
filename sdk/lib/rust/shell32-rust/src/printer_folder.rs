@@ -870,6 +870,37 @@ pub unsafe fn CPrinterFolder_GetAttributesOf_body(this: *mut CPrinterFolder, cid
     hr
 }
 
+// ShellExecute needs a working IQueryAssociations from the folder to resolve an item's
+// verbs; the pre-fix GetUIObjectOf answered E_NOINTERFACE (upstream b60f66cbbfa, CORE-20467).
+unsafe fn CPrinterFolder__AssocCreate(riid: REFIID, ppvObj: *mut *mut c_void) -> HRESULT {
+    use crate::query_associations::IQueryAssociations;
+    static W_PRINTERS: [u16; 9] = [
+        b'P' as u16, b'r' as u16, b'i' as u16, b'n' as u16, b't' as u16,
+        b'e' as u16, b'r' as u16, b's' as u16, 0,
+    ];
+    let mut pAssoc: *mut IQueryAssociations = core::ptr::null_mut();
+    let mut hr: HRESULT = crate::island::AssocCreate(
+        crate::island::CLSID_QueryAssociations,
+        core::ptr::addr_of!(crate::island::IID_IQueryAssociations).cast(),
+        core::ptr::addr_of_mut!(pAssoc).cast(),
+    );
+    if hr < 0 {
+        return hr;
+    }
+    hr = ((*(*pAssoc).lpVtbl).Init)(
+        pAssoc,
+        crate::island::ASSOCF_NONE as _,
+        W_PRINTERS.as_ptr(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    );
+    if hr >= 0 {
+        hr = ((*(*pAssoc).lpVtbl).QueryInterface)(pAssoc, riid.cast(), ppvObj);
+    }
+    ((*(*pAssoc).lpVtbl).Release)(pAssoc);
+    hr
+}
+
 pub unsafe fn CPrinterFolder_GetUIObjectOf_body(this: *mut CPrinterFolder, hwndOwner: HWND, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, riid: REFIID, prgfInOut: *mut UINT, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT {
     let mut pObj: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut hr: HRESULT = E_INVALIDARG;
@@ -888,6 +919,8 @@ pub unsafe fn CPrinterFolder_GetUIObjectOf_body(this: *mut CPrinterFolder, hwndO
             riid,
             &mut pObj,
         );
+    } else if cpp_com_iid_equal(riid, core::ptr::addr_of!(crate::query_associations::IID_IQueryAssociations).cast()) {
+        hr = CPrinterFolder__AssocCreate(riid, &mut pObj);
     } else {
         hr = E_NOINTERFACE;
     }

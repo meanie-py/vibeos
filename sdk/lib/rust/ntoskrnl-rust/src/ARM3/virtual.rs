@@ -839,15 +839,33 @@ pub unsafe extern "system" fn MiDoMappedCopy(
 
         Status = STATUS_SUCCESS;
         if CurrentAddress == SourceAddress && PreviousMode != 0i8 {
+            // Validate-first: the C wrapped this in _SEH2_TRY/_SEH2_EXCEPT and the
+            // translation kept the body and dropped the handler, so a bad pointer
+            // raised into nothing and BUGCHECKed instead of returning a status.
+            // Setting Status here is what makes the `if _FailedInProbe != 0`
+            // branch below reachable again -- it is the C's discriminator between
+            // a failed probe and a faulting copy, and nothing could set it.
             _FailedInProbe = 1;
-            ProbeForRead(SourceAddress, BufferSize, core::mem::size_of::<i8>() as ULONG);
-            _FailedInProbe = 0;
+            match ntkrnl_sys::probe::probe_user_buffer(
+                SourceAddress as *const core::ffi::c_void,
+                BufferSize as usize,
+                core::mem::size_of::<i8>(),
+                PreviousMode,
+            ) {
+                Ok(()) => _FailedInProbe = 0,
+                Err(st) => Status = st,
+            }
         }
 
         if Status >= 0 {
             MmInitializeMdl(Mdl as ntkrnl_sys::ddk::PMDL, CurrentAddress, CurrentSize);
-            MmProbeAndLockPages(Mdl, PreviousMode, IoReadAccess);
-            PagesLocked = 1;
+            // The C's _SEH2_TRY covered this call, and MmProbeAndLockPages RAISES BY DESIGN on
+            // a page it cannot lock, so the status-returning variant stands in for the handler.
+            // Before it existed a user ReadProcessMemory over an unmapped page BUGCHECKed 0x1E.
+            Status = crate::ARM3::mdlsup::MmTryProbeAndLockPages(Mdl as PMDL, PreviousMode, IoReadAccess);
+            if Status >= 0 {
+                PagesLocked = 1;
+            }
         }
 
         KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
@@ -866,13 +884,38 @@ pub unsafe extern "system" fn MiDoMappedCopy(
 
         Status = STATUS_SUCCESS;
         if CurrentTargetAddress == TargetAddress && PreviousMode != 0i8 {
+            // Validate-first: the C wrapped this in _SEH2_TRY/_SEH2_EXCEPT and the
+            // translation kept the body and dropped the handler, so a bad pointer
+            // raised into nothing and BUGCHECKed instead of returning a status.
+            // Setting Status here is what makes the `if _FailedInProbe != 0`
+            // branch below reachable again -- it is the C's discriminator between
+            // a failed probe and a faulting copy, and nothing could set it.
             _FailedInProbe = 1;
-            ProbeForWrite(TargetAddress, BufferSize, core::mem::size_of::<i8>() as ULONG);
-            _FailedInProbe = 0;
+            match ntkrnl_sys::probe::probe_user_buffer(
+                TargetAddress as *const core::ffi::c_void,
+                BufferSize as usize,
+                core::mem::size_of::<i8>(),
+                PreviousMode,
+            ) {
+                Ok(()) => _FailedInProbe = 0,
+                Err(st) => Status = st,
+            }
         }
 
         if Status >= 0 {
-            core::ptr::copy_nonoverlapping(MdlAddress as *const u8, CurrentTargetAddress as *mut u8, CurrentSize);
+            // FAULT-PROTECTED, not a bare memcpy. The C's _SEH2_TRY covered the
+            // RtlCopyMemory as well as the probe, and a range check proves where a
+            // buffer IS, never that it stays mapped -- measured: converting only the
+            // probe moved the BUGCHECK from ProbeForWrite into memcpy, same 0x1E, one
+            // frame along. _FailedInProbe stays 0 here, which is what selects the C's
+            // copy-faulted arm (STATUS_PARTIAL_COPY) over its probe-failed one.
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                CurrentTargetAddress as *mut core::ffi::c_void,
+                MdlAddress as *const core::ffi::c_void,
+                CurrentSize as usize,
+            ) {
+                Status = st;
+            }
         }
 
         KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
@@ -882,7 +925,7 @@ pub unsafe extern "system" fn MiDoMappedCopy(
                 *ReturnSize = BufferSize - RemainingSize;
             } else {
                 *ReturnSize = 0;
-                Status = 0xC000009Bu32 as NTSTATUS;
+                Status = STATUS_PARTIAL_COPY;
             }
             break;
         }
@@ -958,13 +1001,38 @@ pub unsafe extern "system" fn MiDoPoolCopy(
 
         Status = STATUS_SUCCESS;
         if CurrentAddress == SourceAddress && PreviousMode != 0i8 {
+            // Validate-first: the C wrapped this in _SEH2_TRY/_SEH2_EXCEPT and the
+            // translation kept the body and dropped the handler, so a bad pointer
+            // raised into nothing and BUGCHECKed instead of returning a status.
+            // Setting Status here is what makes the `if _FailedInProbe != 0`
+            // branch below reachable again -- it is the C's discriminator between
+            // a failed probe and a faulting copy, and nothing could set it.
             _FailedInProbe = 1;
-            ProbeForRead(SourceAddress, BufferSize, core::mem::size_of::<i8>() as ULONG);
-            _FailedInProbe = 0;
+            match ntkrnl_sys::probe::probe_user_buffer(
+                SourceAddress as *const core::ffi::c_void,
+                BufferSize as usize,
+                core::mem::size_of::<i8>(),
+                PreviousMode,
+            ) {
+                Ok(()) => _FailedInProbe = 0,
+                Err(st) => Status = st,
+            }
         }
 
         if Status >= 0 {
-            core::ptr::copy_nonoverlapping(CurrentAddress as *const u8, PoolAddress as *mut u8, CurrentSize);
+            // FAULT-PROTECTED, not a bare memcpy. The C's _SEH2_TRY covered the
+            // RtlCopyMemory as well as the probe, and a range check proves where a
+            // buffer IS, never that it stays mapped -- measured: converting only the
+            // probe moved the BUGCHECK from ProbeForWrite into memcpy, same 0x1E, one
+            // frame along. _FailedInProbe stays 0 here, which is what selects the C's
+            // copy-faulted arm (STATUS_PARTIAL_COPY) over its probe-failed one.
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                PoolAddress as *mut core::ffi::c_void,
+                CurrentAddress as *const core::ffi::c_void,
+                CurrentSize as usize,
+            ) {
+                Status = st;
+            }
         }
 
         KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
@@ -974,7 +1042,7 @@ pub unsafe extern "system" fn MiDoPoolCopy(
                 *ReturnSize = BufferSize - RemainingSize;
             } else {
                 *ReturnSize = 0;
-                Status = 0xC000009Bu32 as NTSTATUS;
+                Status = STATUS_PARTIAL_COPY;
             }
             break;
         }
@@ -983,13 +1051,38 @@ pub unsafe extern "system" fn MiDoPoolCopy(
 
         Status = STATUS_SUCCESS;
         if CurrentTargetAddress == TargetAddress && PreviousMode != 0i8 {
+            // Validate-first: the C wrapped this in _SEH2_TRY/_SEH2_EXCEPT and the
+            // translation kept the body and dropped the handler, so a bad pointer
+            // raised into nothing and BUGCHECKed instead of returning a status.
+            // Setting Status here is what makes the `if _FailedInProbe != 0`
+            // branch below reachable again -- it is the C's discriminator between
+            // a failed probe and a faulting copy, and nothing could set it.
             _FailedInProbe = 1;
-            ProbeForWrite(TargetAddress, BufferSize, core::mem::size_of::<i8>() as ULONG);
-            _FailedInProbe = 0;
+            match ntkrnl_sys::probe::probe_user_buffer(
+                TargetAddress as *const core::ffi::c_void,
+                BufferSize as usize,
+                core::mem::size_of::<i8>(),
+                PreviousMode,
+            ) {
+                Ok(()) => _FailedInProbe = 0,
+                Err(st) => Status = st,
+            }
         }
 
         if Status >= 0 {
-            core::ptr::copy_nonoverlapping(PoolAddress as *const u8, CurrentTargetAddress as *mut u8, CurrentSize);
+            // FAULT-PROTECTED, not a bare memcpy. The C's _SEH2_TRY covered the
+            // RtlCopyMemory as well as the probe, and a range check proves where a
+            // buffer IS, never that it stays mapped -- measured: converting only the
+            // probe moved the BUGCHECK from ProbeForWrite into memcpy, same 0x1E, one
+            // frame along. _FailedInProbe stays 0 here, which is what selects the C's
+            // copy-faulted arm (STATUS_PARTIAL_COPY) over its probe-failed one.
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+                CurrentTargetAddress as *mut core::ffi::c_void,
+                PoolAddress as *const core::ffi::c_void,
+                CurrentSize as usize,
+            ) {
+                Status = st;
+            }
         }
 
         KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
@@ -999,7 +1092,7 @@ pub unsafe extern "system" fn MiDoPoolCopy(
                 *ReturnSize = BufferSize - RemainingSize;
             } else {
                 *ReturnSize = 0;
-                Status = 0xC000009Bu32 as NTSTATUS;
+                Status = STATUS_PARTIAL_COPY;
             }
             break;
         }
@@ -2844,7 +2937,16 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
         fail_path!(STATUS_UNABLE_TO_DELETE_SECTION);
     }
 
-    // ASSERT(NoChange == 0)
+    /* Don't allow freeing of protected VADs (PEB/TEB/shared user page).
+     * Upstream's pre-fix C guarded this with a debug-only ASSERT, which our
+     * translation correctly rendered as a comment -- so in a release build there
+     * was no guard at all on either side, and any usermode caller could hand
+     * NtFreeVirtualMemory its own PEB, TEB or the shared user data page and fall
+     * straight into the MEM_RELEASE path below. Upstream replaced the ASSERT with
+     * a real runtime check. Upstream-Commit: fca332046ed4 */
+    if (*Vad).u.VadFlags.NoChange() != 0 {
+        fail_path!(STATUS_INVALID_PAGE_PROTECTION);
+    }
 
     if (FreeType & MEM_RELEASE) != 0 {
         // ASSERT(VadType == VadNone)

@@ -3,6 +3,17 @@
 # Two halves. `trees:` is what we do NOT translate. `ours:` is foreign-COPYRIGHT code we
 # DO — the verdicts that used to have nowhere to live. See the header above `ours:`.
 #
+# THE RUST HALF LIVES IN tools/rust-crates.yaml. This file models vendored C/C++
+# only. Its question — "is this ours to translate?" — is meaningless for a crates.io
+# dependency, because crates are the translation DESTINATION; but the registry's other
+# job, provenance and licensing for what we ship, applies to them in full, and until
+# 2026-09-20 nothing tracked them at all. smoltcp, which IS the TCP/IP stack, shipped
+# unrecorded. That half is GENERATED from `cargo metadata` (`--write-crates`), gated
+# for freshness against sdk/lib/rust/Cargo.lock by `check`, and feeds the same
+# THIRD-PARTY-NOTICES.md. Note `--suspects` still cannot see crates and never will:
+# it walks directories for foreign copyright headers, and crates live in
+# ~/.cargo/registry, outside the repo. Discovery there is the lockfile's job.
+#
 # WHY THIS EXISTS
 # ---------------
 # The project's goal is Rust, so the only number that matters is "how much of the C
@@ -47,10 +58,84 @@ trees:
     name: ACPICA
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
-    modified: unknown
+    license_ref: drivers/bus/acpi/acpica/include/acpi.h
+    modified: yes  # 7 host-port files; the other 219 differ only by licence FORM
+    patch: vendor-patches/acpica.patch
     version:
       file: drivers/bus/acpi/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
+    review: >
+      BUMPED 20221020 -> 20260408 ON 2026-09-20, three and a half years, and the patch
+      now ROUND-TRIPS BYTE-FOR-BYTE for the first time — the previous one was
+      deliberately incomplete. All three arches build AND BOOT TO THE DESKTOP MARKER,
+      which for a tree on the boot path is the gate that matters.
+
+      SEVEN SHIMS BECAME SIX. hardware/hwgpe.c carried the only unguarded non-header
+      code edit in the tree — a `(UINT64)` cast on RegisterBit inside ACPI_CLEAR_BIT
+      that could not change the low 8 bits of the UINT8 EnableMask. The previous review
+      called it "worth dropping or marking next time someone is in there"; this was that
+      time. Dropped, and all three arches compile the file with no warning at all, so
+      the truncation it was silencing does not exist under our flags.
+
+      THE LICENCE-FORM PROBLEM IS NOW SOLVED RATHER THAN WARNED ABOUT. Our files carry
+      the pre-SPDX Linux-format header, upstream's tarball ships the long form, and that
+      difference alone accounts for 35,271 of the 35,271-line naive diff. Instead of
+      leaving a "re-vendor from the linuxized form" instruction that nobody can execute,
+      the patch header states the substitution exactly: in each file there is exactly
+      one leading comment block containing both "Intel Corp" and a NO WARRANTY
+      disclaimer — verified 226 of 226, same block index in both forms — and it is
+      replaced by a single canonical 36-line block, identical in all 226 files after
+      year-normalisation, with start year always 2000 and end year taken from upstream's
+      own line. Pristine + that substitution + the patch reproduces the tree exactly.
+
+      AND THE PROBLEM IS GOING AWAY BY ITSELF. Upstream converted to a one-line
+      `SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only` on master AFTER the
+      20260408 release. The next bump past a release carrying that conversion sheds the
+      substitution entirely — and gains a machine-readable tag that
+      `vendored.py --licences` reads directly. Taking the long form now instead would
+      have cost +1.49 MB of boilerplate that upstream has already deleted.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (open-acpica/acpica tag R10_20_22 — the
+      acpica/acpica org redirects there, and tags are date-encoded MM_DD_YY so 20221020 is
+      R10_20_22; sha256 1aa17eb1779cd171110074ce271a65c06046eacbba7be7ce5ee71df1b31c3b86).
+      The entry said `modified: yes` with no patch and no review. Version confirmed exactly:
+      upstream acpixf.h carries ACPI_CA_VERSION 0x20221020, matching our probe.
+
+      THE HEADLINE IS A TRAP FOR THE NEXT PERSON. Diffed naively, ALL 226 vendored files
+      differ — and 219 of them differ ONLY inside the top-of-file licence comment. That is a
+      DISTRIBUTION FORM, not a modification: our tree carries the pre-SPDX "Linux-format"
+      ACPICA header (short BSD-3-Clause conditions, the "Alternatively ... GPL version 2"
+      arm, and NO WARRANTY), which Intel generates itself via ACPICA's generate/linux
+      tooling and which Linux shipped verbatim through v4.x — verified character-for-
+      character against torvalds/linux v4.4 drivers/acpi/acpica/tbutils.c, only the
+      copyright year differing. The raw GitHub tree carries Intel's long form with numbered
+      sections 1-4 (patent grant, 3.1-3.5 redistribution conditions, export compliance). So
+      the recorded licence `BSD-3-Clause OR GPL-2.0` describes OUR files correctly; re-
+      vendor from the linuxized form or you will re-create this 219-file phantom.
+
+      Only 7 files carry real changes, all host-port shims and 5 of them cleanly
+      __REACTOS__-guarded: acpi.h pulls in ntddk.h and #undefs ACPI_BIOS_ERROR; acenv.h
+      picks ACPI_OSL_MUTEX and (UNGUARDED) widens the compiler-select #if for __clang__ and
+      to exclude WIN64 so a clang/mingw PE64 build lands on acwin64.h; acgcc.h / acmsvc.h /
+      acwin.h suppress upstream's inline-asm cache-flush and Global Lock macros; acwin64.h
+      reimplements them with __wbinvd() and Interlocked* (standard ACPICA port practice).
+      The seventh, hardware/hwgpe.c, is the ONLY unguarded non-header code edit in the whole
+      tree: a (UINT64) cast on RegisterBit inside ACPI_CLEAR_BIT that cannot change the low
+      8 bits of the UINT8 EnableMask — inert, almost certainly a truncation-warning
+      silencer, worth dropping or marking next time someone is in there.
+
+      SECURITY: nothing in the vendored tree touches ACPI table/AML parsing, bounds checking
+      or allocation. All 9 tables/*.c and all 14 resources/*.c differ only in the header —
+      re-checked independently by measuring the highest upstream line any hunk reaches
+      (upstream's licence block ends around line 150), not taken on faith from the first
+      pass.
+
+      NOTE THE PATCH IS DELIBERATELY INCOMPLETE and so does NOT reproduce the tree byte-for-
+      byte, unlike the others in vendor-patches/: it carries the 7 real files only, because
+      the alternative is ~30k lines of licence boilerplate that says nothing. The patch
+      header explains how to re-verify the 219 claim in one command. 187 upstream files are
+      not vendored at all — ASL compiler, disassembler, debugger, tools, OS service layers —
+      none of which a runtime kernel driver needs.
     reason: >
       Intel's ACPI Component Architecture, the reference implementation every OS
       vendors rather than reimplements. Tracking upstream is worth more than owning
@@ -62,7 +147,9 @@ trees:
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
-    modified: "lightly"  # 9 of 488 files mention ReactOS; see reason
+    license_file: sdk/lib/drivers/wdf/LICENSE
+    modified: "lightly"  # ~35 marker files + mechanical portability; see review
+    patch: vendor-patches/wdf.patch
     headers:
       - sdk/include/wdf
     version:
@@ -72,6 +159,133 @@ trees:
         - '__WDF_MINOR_VERSION=(\d+)'
         - '__WDF_BUILD_NUMBER=(\d+)'
       join: "."
+    review: >
+      LICENCE TEXT IS NOT IN THE TREE. 474 of 488 files carry a Microsoft copyright
+      line and not one carries a grant. The `MIT` in this entry comes from upstream's
+      2017 relicensing of the WDF sources — a fact about the world, not a quotation from
+      this tree. Nothing here can be cited for it.
+      GPL FILES REMOVED 2026-09-19, tree now Microsoft's alone. It used to carry 3,851
+      lines of ReactOS-authored GPL-2.0-or-later code inside this MIT drop — not
+      adapters but REIMPLEMENTATIONS of two Microsoft components the source drop does
+      not contain: WdfLdr.sys (the KMDF loader) and WdfDriverEntry.lib. They are now
+      sdk/lib/drivers/{wdfldr,wdfdriverentry}, built from sdk/lib/drivers/CMakeLists.txt.
+      Three ReactOS headers went to sdk/lib/drivers/wdf_reactos/include/: usbspec.h and
+      wdfcx.h, which Perevertkin wrote in 2020 as "Missing headers" so THIS drop would
+      compile, and wdfldr.h, the loader's exported interface. wdfldr_.h was deleted — 38
+      lines, referenced nowhere, and its own comment said "likely to be removed when the
+      proper wdfldr.sys is ready", which it has been since 2019.
+
+      THE COUPLING IS NOT GONE AND IS NOT AN ACCIDENT: wdf01000 still puts
+      sdk/lib/drivers/wdfldr on its include path and does `add_importlibs(wdf01000
+      wdfldr ...)`. That is how KMDF works — the framework binds to a loader — so an
+      upstream WDF drop would still need our loader supplied beside it rather than
+      inside it. What changed is that the dependency is now across a tree boundary
+      instead of hidden as files in someone else's directory.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20, and both open questions on this entry are
+      now answered.
+
+      THE LICENCE GAP IS CLOSED. Upstream ships a LICENSE at the repo root — plain MIT,
+      "Copyright (c) 2015 Microsoft", sha256
+      cf248820bf1178370bb4f1670a59f8748d46bc96d0f64080cd631511c6046409 — which our drop
+      simply failed to bring along. It is now vendored at sdk/lib/drivers/wdf/LICENSE and
+      `license_file` points at it, so the MIT grant is reproducible from the tree and the
+      old `license_note` ("correct by provenance, unstated by us") is retired.
+
+      WHICH UPSTREAM: tag win-10.0.10586.0 (Windows 10 1511), archive sha256
+      6289cf8b5284ab27a801f7a04d9bb35c893159e82c04055df079e3ab3dcb3304. Chosen by
+      measurement, not assumption: sampled files bottom out there (powerstatemachine.cpp 57
+      changed lines at neighbouring tags versus 2 at 10586.0; fxpkgpnp.cpp 465 versus
+      478/517), and src/publicinc/wdf/kmdf/1.17 first appears at that tag. NOTE our
+      CMakeLists bakes __WDF_BUILD_NUMBER=7600, the Windows 7 RTM build, next to KMDF 1.17
+      which is a Windows 10-era version — internally inconsistent, and NOT evidence of
+      provenance. No Win7-era tag exists upstream at all.
+
+      THE "9 of 488 files mention ReactOS" FIGURE WAS WRONG — it is ~35. Case-insensitive
+      `grep -ri reactos` matches 35 files, case-sensitive 34 (lowercase `// reactos start`
+      blocks were being missed). Separately, ROSWDFNOTIMPLEMENTED marks stubbed functions in
+      5 files, and that is a DIFFERENT mechanism — poxinterface.cpp has its entire Power-
+      Framework interop commented out behind it while containing no literal "reactos" text
+      at all, so a grep-only survey misses it completely.
+
+      SCALE, REMEASURED 2026-09-20 during patch-ification, and the file-set question is
+      now settled: we vendor src/framework/ ENTIRELY — all 475 files, none skipped, none
+      added, mapping 1:1 with no case-only or ambiguous names. src/publicinc/ is not
+      vendored AT ALL (156 files), which corrects the earlier note that only kmdf/1.15
+      and the UMDF header sets were left out.
+
+      Of those 475: 80 byte-identical, 395 differing, 34,224 changed lines. THAT NUMBER
+      IS 85% NOISE. Our copy has zero trailing whitespace in 477 files — the repo's
+      .editorconfig sets trim_trailing_whitespace for [*] — while upstream has it
+      everywhere. Strip it from upstream first and the delta becomes 263 files and 5,411
+      lines, with 132 files that differed by NOTHING ELSE collapsing to identical. Diff
+      this tree with `-w` or you will read churn as a port.
+
+      The 5,411 real lines: 1,252 #include path/case (backslashes, and case for a
+      case-sensitive filesystem), 1,197 comments, 1,049 NTAPI/WDFAPI/__declspec
+      annotations for clang and GCC, 401 blank lines, 178 WPP .tmh includes commented
+      out, 142 preprocessor, 122 `__super::` rewritten to the explicit base, 62 marked
+      reactos blocks, 19 ROSWDFNOTIMPLEMENTED, and 989 everything-else concentrated in
+      four files: poxinterface.cpp (228), fxpkgpnp.cpp (166), fxpkgpnpkm.cpp (92),
+      fxpkgfdokm.cpp (62).
+
+      Vendored but NEVER BUILT: umdf/ (10 files) and shared/*/um/ (91) — about 101 files
+      of dead weight, since CMakeLists builds wdf01000 from SOURCE_SHARED + SOURCE_KM
+      only. They are in the patch because they are in the tree, but nothing compiles
+      them, so their delta has never been exercised.
+
+      PATCH-IFIED 2026-09-20. `vendor-patches/wdf.patch` (420 KB, 263 files) reproduces
+      this tree byte-for-byte from a pristine win-10.0.10586.0 src/framework AFTER the
+      one-line trailing-whitespace normalization, which the patch header spells out.
+      Verified by doing exactly that on a fresh extraction: 0 differences, 0 fuzz, 0
+      rejects.
+
+      NO UNMARKED FUNCTIONAL REMOVALS REMAIN, and that is checked rather than assumed.
+      The delta was scanned for files that net out to removed or commented-out
+      executable code while carrying no `reactos` and no ROSWDFNOTIMPLEMENTED anywhere.
+      Six matched; all six are benign, and two are outright FIXES: fxpkgio.cpp casts
+      DispatchContext through ULONG_PTR before UCHAR in two ASSERTs (casting a pointer
+      straight to UCHAR is ill-formed on 64-bit clang), and fxtelemetry.cpp repairs a
+      comment ending in a bare backslash, which is a line continuation that would have
+      swallowed the next line. The rest are declare-at-top merged into declare-at-use and
+      an RtlZeroMemory rewritten as `*p = {}`. The one real unmarked removal this tree
+      DID carry — powerstatemachinekm.cpp skipping the DMA-enabler PowerUp()/PowerDown()
+      loops — was restored earlier the same day, so it is deliberately absent here.
+
+      THE TARBALL HASH IS NOT A PROVENANCE ANCHOR, and the entry below should not be read
+      as one. Refetching tag win-10.0.10586.0 on 2026-09-20 produced sha256
+      d252fc80175bb249a278ea284a887ec201220f709bf04b110f1afc3fdb6a4b31, not the
+      6289cf8b5284ab27a801f7a04d9bb35c893159e82c04055df079e3ab3dcb3304 recorded earlier:
+      GitHub's auto-generated archives are not byte-stable. The tag is the identifier and
+      the round-trip is the check.
+
+      *** ONE UNMARKED FUNCTIONAL REMOVAL, and it is the finding worth acting on. ***
+      shared/irphandlers/pnp/km/powerstatemachinekm.cpp comments out the DMA-enabler
+      PowerUp() and PowerDown() loops in BOTH the device power-up and power-down transitions
+      — verified: the file contains zero "reactos" text and zero ROSWDFNOTIMPLEMENTED, so
+      nothing in the tree records that DMA channel power transitions are silently skipped
+      for any driver using DMA enablers. Plausibly deliberate (DMA not wired up yet) but
+      undocumented, unlike the poxinterface.cpp and fxpkgpnp.cpp stubs which at least call a
+      named not-implemented macro. RESTORED 2026-09-20, byte-exact from upstream
+      win-10.0.10586.0 rather than by hand-uncommenting. Checked first that nothing blocked
+      it: FxDmaEnabler::PowerUp/PowerDown are fully implemented and compiled
+      (kmdf/src/dma/base/fxdmaenabler.cpp:934/993, invoking the driver's EvtDmaEnablerFill /
+      EvtDmaEnablerEnable / EvtDmaEnablerSelfManagedIoStart callbacks); m_DmaEnablerList is
+      created, Add-ed to and torn down in fxpkgpnpkm.cpp; LockForEnum/GetNextEntry are
+      implemented in fxtransactionedlist.cpp. So there was no technical reason for the stub
+      and no recorded one either — git blame lands on the fork-boundary commit, the same
+      dead end as ucrt. Gate is green after the restore: build + smoke + conformance on all
+      three arches. READ THAT AS WEAK EVIDENCE: nothing in the smoke path registers a DMA
+      enabler, so the restored loops almost certainly never execute. It proves no
+      regression, not that DMA power transitions work. Done anyway because it removes an
+      undocumented divergence that real-hardware work would otherwise have to rediscover,
+      and it moves this tree closer to drop-in.
+
+      No patch file: at 295 differing files dominated by mechanical annotation churn, a
+      patch would be tens of thousands of lines that obscure rather than reveal. The
+      upstream tag and sha256 above make the diff reproducible in one command, which is the
+      useful artifact here.
+
     reason: >
       290K lines / 488 files, the second-largest foreign tree in the repo after FEX and
       bigger than FreeType — and the single biggest classification call this registry has
@@ -115,7 +329,9 @@ trees:
     name: AMD LibM for Windows
     upstream: https://github.com/amd/win-libm
     license: MIT
-    modified: unknown
+    license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
+    modified: yes  # unconditional LP64->LLP64 fork, no markers; see patch
+    patch: vendor-patches/amd-libm.patch
     version:
       literal: git commit 6121d02
     reason: >
@@ -136,23 +352,49 @@ trees:
       failure the msvcrt percentage had three times — a true fact living only in prose,
       where nothing checks it.
     review: >
-      The version is a LITERAL, not a probe, and that is a weakness worth stating: there is
-      no version macro, stamp or manifest anywhere in the tree, so `git commit 6121d02` is
-      copied from 3rd Party Files.txt and cannot be verified against the source here. It is
-      recorded so a future re-vendor has a starting point, not because it is checkable.
-      Confirming it against github.com/amd/win-libm is owed.
+      DIFFED 2026-09-20, AND THE COMMIT IS NOW CONFIRMED. This entry previously said the
+      version was a literal copied from "3rd Party Files.txt" that could not be checked, and
+      that confirming it against github.com/amd/win-libm was owed. Done: commit
+      6121d02aef0c775947d5dc655d7fc4ccfe2144ab exists ("First github commit of AMD LibM for
+      Windows", 2019-07-24, archive sha256
+      ca15d1bab53cf576ba0bba8c07aa6deac8d2a0fe9d6f219dc35c0d78c5a8d45f), and against that
+      exact tree 17 of our files are byte-identical while the 35 that differ do so by 2-58
+      lines each. A wrong base would not look like that.
 
-      NOTE the tree is NOT wholly foreign in effect: `crtmath` also compiles OUR C beside it
-      (stubs.c, fdivbug.c, machfpcw.c, the sdk/lib/crt/float control-word set), and those
-      remain translation targets. The vendored boundary is this directory, not the library.
-      The `ieee754/` Bessel set was named here as ours when this entry was written; it is
-      not, it is Sun FDLIBM, and it now has its own entry below.
+      THE DELTA IS ESSENTIALLY ONE FIX APPLIED EVERYWHERE: LP64 -> LLP64. AMD wrote this
+      assuming `long` is 64 bits. On Windows x64 it is 32, so every place the code packs a
+      double's bit pattern into a `long`/`unsigned long` would truncate; ours uses `long
+      long` throughout. That accounts for roughly 240 of the ~257 changed lines — the
+      GET_BITS_DP64/PUT_BITS_DP64 sites and casts like `(double)(long)(dx / w)` in
+      remainder.c. A genuine correctness fix, and not expressible as a -D because it is a
+      type spelled in hundreds of places. The rest: ~20 lines guarding `#pragma
+      function(...)` behind #ifdef _MSC_VER because clang lacks that pragma, plus
+      fma3_available.c's CRT-startup glue rewritten around _CRTALLOC/<intrin.h> instead of
+      <windows.h>/<cruntime.h>/<internal.h>.
 
-  # ── Sun FDLIBM's Bessel functions, also under crtmath ───────────────────
+      ELEVEN UPSTREAM .asm FILES WERE RE-IMPLEMENTED IN C and so are additions rather than
+      edits: L2_by_pi_bits, Lsincos_array, Lsincosf_array,
+      log{,10}_{128,256}_lead_tail_table, log_F_inv_{dword,qword}_table and
+      two_to_jby64{,_head_tail}_table — all MASM constant tables. Re-vendoring means redoing
+      that conversion, so budget for it rather than assuming a copy. Also added:
+      _handle_error.c, ldexp.c, ldexpf.c.
+
+      THERE IS NOT ONE __REACTOS__ MARKER IN THIS TREE. Unlike FreeType, where every hunk is
+      guarded and undefining the macro restores upstream behaviour, this is an unconditional
+      fork — nothing in the source tells a reader which lines are ours. That is precisely
+      what the patch file is for, and why it matters more here than elsewhere. Verified it
+      applies to a fresh extraction of that commit and reproduces our tree byte-for-byte
+      across all 52 shared files.
+
+      Still true from the earlier pass: the vendored boundary is this DIRECTORY, not the
+      library. `crtmath` also compiles our own C beside it (stubs.c, fdivbug.c, machfpcw.c
+      and the sdk/lib/crt/float control-word set), and those remain translation targets.
+
   - path: sdk/lib/crt/math/ieee754
     name: FDLIBM (Sun Microsystems freely-distributable libm)
-    upstream: https://www.netlib.org/fdlibm/
+    upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
     license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
+    license_ref: sdk/lib/crt/math/ieee754/j0_y0.c
     modified: yes
     version:
       file: sdk/lib/crt/math/ieee754/j0_y0.c
@@ -174,28 +416,93 @@ trees:
       one level up ARE ours -- 102 lines that set `errno = EDOM` on a non-finite argument
       and then call the `__ieee754_*` body -- and they stay translation targets.
     review: >
-      `modified: yes` is deliberate and is the weakness here. j0_y0.c and j1_y1.c carry a
-      1997 performance patch by Naohiko Shimizu (Tokai University) on top of Sun's text, so
-      this is a patched drop rather than a clean one, and a re-vendor from netlib would have
-      to re-apply or re-evaluate it. jn_yn.c appears unpatched.
+      DIFFED 2026-09-20, AND THE RECORDED UPSTREAM WAS WRONG. This entry pointed at
+      netlib.org/fdlibm, but that is the ancestor, not our base. netlib FDLIBM 5.3 ships
+      e_jn.c marked "@(#)e_jn.c 1.4 95/01/18" and "Developed at SunSoft"; ours says "5.1
+      93/09/24" and "Developed at SunPro", which is what NetBSD's lib/libm/src carries. The
+      real base is NETBSD's libm, itself FDLIBM-derived. `upstream:` now says so.
 
-      The version probe reads the NetBSD RCS id rather than a release number, because FDLIBM
-      5.3 ships no version macro. That makes it a real probe -- it breaks loudly if the file
-      is replaced -- but it identifies NetBSD's revision of the file, not an FDLIBM release.
+      Confirmed by content, not just by the banner: our files use NetBSD libm conventions
+      that netlib FDLIBM does not have — int32_t rather than int, the GET_HIGH_WORD macro
+      rather than __HI, and calls to __sincos and __ieee754_sqrt.
 
-      `math/s_modf.c` (194 lines) and `math/modf.c` carry the SAME Sun header while sitting
-      outside this directory. They are deliberately NOT covered by this entry: a path-based
-      registry should not claim files it does not name, and whether to move them under
-      `ieee754/` or give them their own entry is a question for whoever next touches modf.
+      THE EXACT BASE REVISION IS IDENTIFIED BUT NOT RETRIEVABLE. The files name it
+      themselves in their RCS ids: e_j0.c 1.8 and e_j1.c 1.8 (both 1995/05/10), e_jn.c 1.9.
+      cvsweb.netbsd.org answers HTTP 503 from here, so those 1995 revisions could not be
+      fetched and there is therefore NO patch file — an honest dead end, like dxtn, not an
+      oversight. Anyone who can reach NetBSD CVS can finish this in ten minutes.
 
-  # ── the Microsoft CRT under ucrtbase.dll ────────────────────────────────
+      What the delta consists of, measured against the two retrievable candidates (neither
+      is the true base, so treat these as bounds): vs netlib FDLIBM 5.3, normalized 159 /
+      137 / 71 lines for j0_y0.c / j1_y1.c / jn_yn.c; vs NetBSD trunk, 266 / 246 / 71. The
+      trunk numbers are LARGER because trunk is thirty years newer — its jn_yn.c delta is
+      almost entirely NetBSD's own modernization (dropping the K&R `#ifdef __STDC__` arms,
+      adding __sincos), which our 1995-era copy predates. Read that as evidence our copy is
+      close to pristine-for-its-revision, not as evidence of local editing.
+
+      Three things are ours. (1) The 1997 Naohiko Shimizu (Tokai University) performance
+      patch, which turns the R0x/S0x scalar coefficients into R[]/S[] arrays and adds
+      r1/r2/s1/s2/z2/z4 temporaries for pipelined processors. VERIFIED present in j0_y0.c
+      and j1_y1.c and ABSENT from jn_yn.c — the earlier review claimed this and the marker
+      count (1/1/0) confirms it. (2) Include retargeting: `#include "fdlibm.h"` becomes
+      `#include "math.h"` plus `"ieee754.h"`. (3) Nothing else — there is no __REACTOS__
+      marker anywhere in the directory.
+
+      Still true and still owed from the earlier pass: math/s_modf.c and math/modf.c carry
+      the same Sun header while sitting outside this directory, and are deliberately not
+      claimed by this path-based entry.
   - path: sdk/lib/ucrt
     name: Microsoft UCRT
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
+    license_note: >
+      THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only
+      "Copyright (c) Microsoft Corporation. All rights reserved." with no permission
+      statement of any kind, and there is no LICENSE, COPYING or README in either
+      sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER
+      to the Windows SDK licence terms under which Microsoft distributes the ucrt
+      sources, not something reproducible from this repository — and those terms are
+      an SDK EULA, not an open-source licence.
+
+      This is the largest unresolved provenance question in the tree (~78K lines) and
+      the reason the entry says the SDK version is unknown: without the version we
+      cannot even name which EULA applies. It is recorded here rather than rounded
+      off so that generated notices state the gap instead of hiding it. Resolving it
+      means establishing the SDK version and its terms, or replacing the tree — see
+      the ucrtbase work item in the roadmap.
     modified: yes
     headers:
       - sdk/include/ucrt
+    unwelcome: >
+      The largest unlicensed-Microsoft exposure left in the tree, and the only
+      one that is still the LIVE implementation rather than inert source: ~78K
+      lines carrying "Copyright (c) Microsoft Corporation. All rights reserved."
+      with no permission statement anywhere, under Windows SDK EULA terms we
+      cannot even name because the SDK version was never established. The same
+      judgement that deleted the atapi and uniata C applies here; it has not
+      been acted on only because ucrtbase is 999 live exports rather than a
+      file nobody links.
+
+      THE EXIT, and it is already underway. Take the exports over family by
+      family into sdk/lib/rust/ucrt-rust, declaring each in
+      tools/ucrt-takeover.yaml and grading it against the genuine C in
+      sdk/lib/rust/ucrt-difftest BEFORE deleting that C -- the reference is
+      destroyed by its own replacement, so the grading has to happen first.
+      Progress is a command: `python3 tools/ucrt_burndown.py --arch i386`.
+      Done so far: bits (9 exports), ismbbyte (24), three source files gone,
+      1,032 -> 999.
+
+      The headers in sdk/include/ucrt go LAST and that ordering is forced, not
+      chosen: Microsoft's .c include Microsoft's headers, so the headers cannot
+      leave while any body remains. Their replacement is already identified --
+      current mingw-w64, public domain, the same lineage sdk/include/crt
+      already is.
+
+      NOT a gate, by the field's own design: shipping something unwelcome is a
+      decision, not a defect, and a red gate would only teach the next person
+      to delete this text. If pressure is wanted, the honest lever is a
+      burn-down threshold in check() that ratchets the Microsoft export count
+      downward, never a hard fail on the tree existing.
     reason: >
       Microsoft's Universal CRT source as vendored by upstream ReactOS long before
       this fork (oldest commit touching it here is 5213cf717cf, upstream, predating
@@ -211,6 +518,17 @@ trees:
       makes ucrtbase read as permanently ~8% reachable; excluding it makes the goal
       sayable — everything in ucrtbase that is ours is Rust. See task #55.
     review: >
+      MIT FILES REMOVED 2026-09-19. Five ReactOS ADDITIONS carrying `SPDX MIT` and
+      `Copyright (c) 2024 Timo Kreuzer` used to sit in this Microsoft drop
+      (math/matherr.cpp, inc/corecrt_internal_state_isolation.h,
+      locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c). They are now
+      sdk/lib/ucrt_reactos/, outside the vendored boundary, so this tree is Microsoft's
+      alone. ONE TIE REMAINS AND CANNOT BE MOVED: corecrt_internal.h:2119 — a Microsoft
+      file — does `#include <corecrt_internal_state_isolation.h>`, so the drop reaches
+      into our header, which is now supplied via an include path. That #include is itself
+      one of the adaptation sites below, and for any future upstream-alignment work it is
+      the shape that has to become a patch rather than an in-place edit.
+
       No version probe: there is no version macro, no stamp, and no manifest anywhere
       in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from.
       Re-searched 2026-09-13 and the absence is total: no `10.0.NNNNN` string, no build
@@ -241,11 +559,57 @@ trees:
       records for its 1997 Shimizu patch, and the reason `modified` is worth getting
       right rather than leaving at `unknown`.
 
+      RE-AUDITED 2026-09-20 and this entry is now AT ITS ACHIEVABLE MAXIMUM — the remaining
+      gap is not work anyone skipped. There is no patch file because there is no upstream
+      artifact to diff against: Microsoft ships ucrt source only inside the Windows SDK, so
+      without a real SDK drop no diff and therefore no patch is possible. A dead end like
+      FDLIBM's unreachable NetBSD revisions and dxtn's vanished distribution, not an
+      oversight.
+
+      CORRECTING THE COUNT ABOVE: the "23 clang/GCC adaptation sites across 8 files" figure
+      covered only sdk/lib/ucrt. Including sdk/include/ucrt — which is half of this
+      registered tree — it is 33 SITES ACROSS 12 FILES: the eight already named plus
+      corecrt.h (7 sites), corecrt_stdio_config.h, malloc.h and stddef.h (1 each). Same
+      shape as the STLport finding from the same pass: a split tree where only the source
+      half got measured.
+
+      Independently re-verified rather than inherited: `#pragma GCC target(...)` really is
+      in strnlen-sse2.cpp and strnlen-avx2.cpp (MSVC has no such pragma); strnlen.cpp really
+      does turn common_strnlen_simd from a DEFINITION into a bare DECLARATION under
+      `(__GNUC__ || __clang__) && !_UCRT_BUILD_SSE2 && !_UCRT_BUILD_AVX2`, which is
+      behavioural rather than cosmetic; and _M_ARM64EC really does appear in exactly 7
+      files, holding the 10.0.22000 dating floor. `grep -rli reactos` over both halves
+      matches only CMakeLists.txt, math.cmake and locale.cmake — no source file — which is
+      exactly why the marker-absence lesson above is worth keeping.
+
   # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
+
   - path: external/fex
     name: FEX-Emu
     upstream: https://github.com/FEX-Emu/FEX
     license: MIT
+    license_extra:
+      BSL-1.0: >
+        External/range-v3 — 586 files under the Boost Software License 1.0, the largest
+        single unrecorded licence this registry has found. It is ericniebler's range-v3,
+        which FEX vendors as a dependency, so this is a vendored tree inside a vendored
+        tree; its own grant is at External/range-v3/LICENSE.txt. 0% ours, and permissive,
+        but 586 files stating a licence the entry did not name is exactly the gap the
+        prose half of `--licences` was added to close (2026-09-20).
+      LGPL-2.1-or-later: >
+        Wine-derived headers FEX carries for its Windows build:
+        Source/Windows/include/{winternl.h,winnt.h} and
+        Source/Windows/include/wine/{unixlib.h,debug.h}.
+      GPL-2.0-only: >
+        External/xxhash/tests/{sanity_test.c,sanity_test_vectors_generator.c} — upstream
+        xxhash dual-licences its library BSD and its tests GPL. Not built by us; recorded
+        because the files are in the tree.
+      Apache-2.0 WITH LLVM-exception: >
+        External/code-format-helper/code-format-helper.py and
+        External/unordered_dense/test/third-party/FuzzedDataProvider.h, which is LLVM's
+        and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a
+        vendored tree that itself vendors: its External/ is a second registry we do not
+        maintain, so those licences surface here rather than upstream.
     license_file: external/fex/LICENSE
     modified: "no"  # asserted by external/README-fex-vendor.md
     version:
@@ -255,12 +619,190 @@ trees:
       tools/fex/build-fex.sh and deliberately outside the ReactOS cmake graph.
       Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
 
+  # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
+  - path: dll/opengl/mesa
+    name: Mesa 3-D graphics library
+    upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
+    license: LGPL-2.0-or-later
+    license_ref: dll/opengl/mesa/context.c
+    modified: yes  # ReactOS carries an i386 asm path and its own GL_VENDOR string
+    version:
+      # ReactOS's own statement of what it imported, which is the only version claim
+      # in the tree that is about the DROP rather than about one file. The per-file
+      # `Version:` headers disagree with each other -- 2.0 (24 files), 2.2 (2), 2.3
+      # (14), 2.4 (27), 2.5 (21), 2.6 (25) -- because upstream never bumped them all,
+      # so probing any single source file would record a version that is true of that
+      # file and false of the tree.
+      file: dll/opengl/Mesa_for_ReactOS.txt
+      pattern: 'based on Mesa ([0-9.]+)'
+    staleness: >
+      DELIBERATELY FROZEN, and this is the one entry where "behind upstream" is not a
+      defect. Mesa 2.6 is from 1997 and current Mesa is 25.x, but `Mesa_for_ReactOS.txt`
+      states the intent: this exists to match what Windows itself ships in software --
+      OpenGL 1.1 with WGL -- and is "not intended to be synchronized with recent
+      versions" (CORE-7499). `glGetString(GL_VERSION)` returns "1.1.0" for that reason.
+      A modern software GL is a separate, optional install via RAPPS (Gallium llvmpipe),
+      not a bump of this tree. So do not audit this against upstream; audit it against
+      whether Windows-1.1 parity still holds.
+    reason: >
+      53,679 lines of Brian Paul's Mesa, carried by upstream ReactOS since forever and
+      never registered. `opengl32.dll` links it as the software rasterizer behind
+      `wglCreateContext` when no hardware ICD claims the pixel format -- the same role
+      Microsoft's own software GL plays -- so it ships, and every line of it was sitting
+      in the "core OS still in C" denominator as work someone might one day be asked to
+      translate. It is third-party graphics code, and there is no reason to spend money
+      turning a 1997 rasterizer into Rust.
+
+      HOW IT WAS FOUND, because the answer is uncomfortable: not by `--suspects`, which
+      reported a clean tree the same afternoon. That scan matches CORPORATE copyright
+      holders by design, and Mesa's headers say `Copyright (C) 1995-1997  Brian Paul` --
+      an individual. `dll/opengl` is also not one of the three registered containers, so
+      neither half of the discovery machinery could see it. It surfaced from
+      `tools/port_audit.py`, whose ratchet fails on a COMPILED directory matching no
+      classification rule: a different question (what does the link contain) that happens
+      to catch what a copyright grep cannot. The blind spot is still there for any
+      individually-authored drop that nothing compiles.
+
+  - path: dll/opengl/glu32/src
+    name: SGI GLU (OpenGL Utility Library)
+    upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed
+      with Mesa. No release stamp in the drop; see review.
+    license: SGI-B-2.0
+    license_ref: dll/opengl/glu32/include/GL/glu.h
+    license_extra:
+      SGI-B-1.1: >-
+        The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess}
+        carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not
+        the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
+      LGPL-2.0-or-later: >
+        include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998
+        Brian Paul, under the GNU Library General Public License v2 or later. One file,
+        a symbol-mangling header, but a copyleft licence sitting inside a permissive
+        drop is exactly the shape this registry exists to make visible.
+    modified: yes  # 5 files after the systemic include-commenting; see review
+    patch: vendor-patches/glu32.patch
+    version:
+      # LITERAL: recovered 2026-09-20 by file-set fingerprint + minimal content
+      # diff, not by an in-tree stamp (there is none). Evidence in the review.
+      literal: glu-9.0.1 (Mesa git tag, not a release tarball)
+    headers:
+      - dll/opengl/glu32/include
+    reason: >
+      47,386 lines of SGI's GLU across libnurbs (NURBS tessellation), libtess (polygon
+      tessellation) and libutil, carried by upstream ReactOS and never registered. Found
+      2026-09-19 by widening the foreign-copyright scan past its eight corporate holders
+      — `--suspects` could not see it because Silicon Graphics was not in the list.
+
+      Zero ReactOS-authored files in the tree, which makes it the cleanest vendored entry
+      in this registry: no adapters, no missing-header reconstructions, no scope leak.
+      Only the BUILD WRAPPER is ours and it deliberately sits outside this path —
+      dll/opengl/glu32/{CMakeLists.txt,glu32.spec,glu32.rc,precomp.h}. A path-based entry
+      must not claim those, so the tree is `src` plus the `include` headers and stops
+      there.
+
+      Every one of the 190 sources declares SGI FREE SOFTWARE LICENSE B (Version 2.0,
+      Sept. 18, 2008). The 73 files that reference http://oss.sgi.com/projects/FreeB/
+      are NOT a second licence — that URL is part of License B's own required notice,
+      and reading it as FreeB 1.1 is the obvious wrong answer here.
+    review: >
+      NO VERSION PROBE, deliberately. The drop carries no release stamp: what it does
+      carry is the API level, `GLU_VERSION_1_3` in include/GL/glu.h, so this is the GLU
+      1.3 interface. That is an API version, not a version of this source drop, and
+      recording it in the `version:` field would make the table state something the tree
+      does not say — the same mistake vendor.yaml's header warns about for ucrt.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20, AND THE VERSION IS RECOVERED. This is
+      Mesa's standalone glu at GIT TAG glu-9.0.1 — not the SGI Sample Implementation, and
+      not a release tarball. The file set is the giveaway: we carry src/libtess/README and
+      src/libtess/alg-outline, which exist only in the git tree and are excluded from make
+      dist, and we do NOT carry src/meson.build, which 9.0.2 added. Content confirms it:
+      after normalizing the systemic transform below, differing files number 13 against
+      9.0.0, FIVE against 9.0.1, 7 against 9.0.2, 8 against 9.0.3 and 18 against master.
+      9.0.1 is the unambiguous minimum. `version:` is a literal because there is no in-tree
+      stamp — only GLU_VERSION_1_3, an API level, which is what the old "no version probe"
+      note was reacting to.
+
+      THE 122-FILE "DIFF" IS A DISTRIBUTION FORM, NOT MODIFICATION. Every `#include "x.h"`
+      across libnurbs/libtess/libutil/gluos.h is commented out. Same shape
+      as ACPICA's licence-header phantom: count it naively and 127 of 194 files look
+      modified. Allow that one substitution and only FIVE differ.
+
+      The five: trimregion.h adds a `~TrimRegion(){}` under `#if defined(__REACTOS__) &&
+      defined(__clang__)` with a /* FIXME: Inspect */ comment — the one file the old note
+      already named, now located precisely. gluos.h adds `#define WIN32_NO_STATUS` and
+      `#include <string.h>` (a build shim, not reducible to a -D because the include is a
+      real source addition). subdivider.cc and quilt.cc differ only by two statements
+      reflowed onto one line — pure formatting. And mipmap.c gives gluScaleImage an explicit
+      GLAPI prefix that the other six exported functions in the same file do not have, in
+      ours OR upstream: a single-symbol, asymmetric, unexplained dllexport edit. Worth a
+      maintainer's second look; not changed here.
+
+      *** LICENCE FINDING: THE RECORDED LICENCE IS INCOMPLETE FOR 73 OF 194 FILES. *** The
+      73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry
+      "SGI Free Software License B, Version 1.1" — a distinct, earlier licence — while the
+      other 117 carry Version 2.0. Verified by direct count in the tree (73 vs 117) and
+      confirmed present in pristine glu-9.0.1, so this split is inherited from Mesa and is
+      0% ours. Now recorded in `license_extra`. Note the earlier review dismissed the
+      oss.sgi.com/FreeB URL as "part of License B's own required notice, not a second
+      licence" — correct for the 117 v2.0 files, wrong for these 73, which carry a different
+      licence's header rather than merely citing the URL.
+
+      AND THAT EXPOSED A BLIND SPOT IN OUR OWN RATCHET: `vendored.py --licences` reported
+      "every declared licence accounted for" while this was sitting in the tree.
+      license_drift() looks for SPDX-style identifiers, and these files state their licence
+      in free-form prose ("SGI Free Software License B, Version 1.1") with no SPDX tag, so
+      it sees nothing. Recorded rather than fixed: teaching the scanner free-text licence
+      names is a real change to a gate, not an audit finding.
+
+      Three files carry NO licence header — src/include/gluos.h, src/libtess/README and
+      src/libtess/alg-outline — and all three are byte-for-byte that way upstream too, so
+      unlike adns's getopt.c this is not something we stripped and not ours to delete. No
+      upstream directory was skipped: libnurbs, libtess and libutil are all fully vendored,
+      and the file lists match exactly in both directions.
+
+      PATCH-IFIED 2026-09-20. `vendor-patches/glu32.patch` now carries all 127 differing
+      files — 729 changed lines — and reproduces this tree BYTE-FOR-BYTE from a pristine
+      glu-9.0.1 extraction, verified by applying it to a fresh copy and diffing recursively:
+      zero differences, zero fuzz, zero rejects. dll/opengl/glu32/include/ is not in the
+      patch because it is byte-identical to upstream; note that `path:` here covers only
+      src/, while `headers:` records include/ separately.
+
+      CORRECTION, AND IT CHANGES THE ADVICE FOR A RE-VENDOR: this entry used to say the
+      122-file include-commenting was safe because the build force-includes everything
+      through precomp.h via `add_pch(glu32 precomp.h ...)`. IT DOES NOT. add_pch is
+      `if(PCH) target_precompile_headers(...) else() <nothing> endif()` and PCH is OFF by
+      default (PCH:BOOL=OFF in every build dir here), so precomp.h is force-included
+      nowhere; and even with PCH on it would not reach the C files, since glu32's
+      CMakeLists puts all of ${SOURCE} into PCH_SKIP_SOURCE. What is actually observable is
+      that glu32.dll builds and links with PCH off, so those headers arrive transitively
+      through the includes left alive. The transform therefore buys NOTHING in the default
+      configuration: on a bump, drop it and take upstream's includes verbatim rather than
+      reapplying it. (Same false mechanism was recorded on libtiff and libsamplerate; both
+      corrected in the same pass, and on libsamplerate it was not merely cosmetic — the
+      0.2.2 bump broke on exactly this assumption.)
+
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: sdk/lib/3rdparty/freetype
     name: FreeType
+    staleness: >
+      AUDITED 2026-09-20: ours 2.10.0 (2019-03), current upstream 2.14.3 — about five years
+      and a dozen-plus CVEs behind. NOT, however, exposed to the headline one:
+      CVE-2020-15999 (the sbix embedded-PNG heap overflow, fixed in 2.10.4, exploited in the
+      wild as a Chrome 0-day) lives in Load_SBit_Png, and we do not build it.
+      FT_CONFIG_OPTION_USE_PNG is left commented out in include/freetype/config/ftoption.h
+      and our CMakeLists never defines it, so src/sfnt/pngshim.c compiles to `typedef int
+      _pngshim_dummy;` and the ttsbit.c call sites are inside #ifdef
+      FT_CONFIG_OPTION_USE_PNG. Checked in the tree, not inferred from the version.
+      Uncompressed colour bitmaps ARE still supported, so do not read this as 'sbix is off'.
+      The remaining CVEs are in the sfnt/cff/type1 parsers we DO build, so a bump is still
+      wanted — just not an emergency. Unlike libtiff this is on the boot path (desktop font
+      rendering), which makes a bump riskier and, usefully, actually covered by the smoke
+      suite.
     upstream: https://freetype.org/
-    license: FTL OR GPL-2.0
-    modified: unknown
+    license: GPL-2.0-only  # ELECTED from FreeType's FTL-or-GPL dual grant
+    license_file: COPYING  # the repo's own GPL-2.0 text; see review
+    modified: yes  # 16 files, ALL __REACTOS__-guarded; see patch
+    patch: vendor-patches/freetype.patch
     version:
       file: sdk/lib/3rdparty/freetype/include/freetype/freetype.h
       patterns:
@@ -268,6 +810,64 @@ trees:
         - '#define FREETYPE_MINOR\s+(\d+)'
         - '#define FREETYPE_PATCH\s+(\d+)'
       join: "."
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (freetype-2.10.0.tar.gz from savannah,
+      sha256 955e17244e9b38adb0c98df66abb50467312e6bb70eac07e49ce6bd1a20e809a). 449 files
+      exist in both trees, 432 byte-identical. SIXTEEN differ and EVERY ONE is wrapped in
+      #ifdef/#ifndef __REACTOS__, so undefining that macro yields pristine upstream
+      behaviour — there is no unmarked edit in the tree. A seventeenth file,
+      include/freetype/internal/ftdebug.h, differed by one added blank line and was reverted
+      to pristine rather than carried, which is what makes "16, all marked" exactly true.
+      Not vendored by design: builds/, devel/, docs/, objs/ and the
+      Jamfile/module.mk/rules.mk chaff — 81 files, all build system, and the tree's own
+      TechNote.txt says to drop them.
+
+      Fourteen of the sixteen are two mechanical themes. STACK -> HEAP: `FooRec worker[1];`
+      becomes a malloc with a null check and free() on each exit path, because kernel stack
+      is scarce (TechNote.txt says so outright) — ttsbit.c, ftraster.c, psintrp.c,
+      cidgload.c, t1gload.c, ftgrays.c and four autofit files. That changes WHERE a fixed-
+      size struct lives, not its size. CONFIG/GLUE: ftoption.h flips three macros, ftdebug.c
+      defers FT_Message/FT_Panic to the win32k font glue, ftlcdfil.c changes one parameter
+      from FT_Vector* to FT_Vector[3].
+
+      A REAL BUG LIVES IN THAT SET AND IS CURRENTLY UNREACHABLE. autofit/aflatin2.c has
+      `AF_LatinMetricsRec *dummy = malloc(...); if (dummy) goto Exit;` — the test is
+      INVERTED; the identical construct in sibling files afcjk.c and aflatin.c correctly
+      reads `if (!dummy)`. As written the SUCCESS path skips the whole width-computation
+      block and falls back to a constant width. It is dead today: every caller sits behind
+      #ifdef FT_OPTION_AUTOFIT2, which is referenced in five places and DEFINED IN NONE —
+      verified by grep across the tree and the CMakeLists. Real defect, zero runtime effect.
+      FIXED 2026-09-20: flipped to `if (!dummy)`, matching the siblings. Safe and complete
+      because `free(dummy)` was already at Exit, so the failure path now frees NULL and
+      takes the constant-width fallback exactly as afcjk.c does. Note it was inverted in
+      BOTH directions — on malloc SUCCESS it skipped the work, and on FAILURE it fell
+      through to `&dummy->root.scaler` with dummy NULL. Still unreachable, so this is
+      insurance for whoever enables FT_OPTION_AUTOFIT2, not a live fix.
+
+      Two deliberate features, not mechanical: ftbitmap.{h,c} add
+      FT_Bitmap_Convert_ReactOS_Hack(), an extended FT_Bitmap_Convert emitting 0xFF/0x00
+      bytes instead of 1/0 bits for text output, with the original name kept as a wrapper
+      passing hack=FALSE so upstream behaviour is unchanged; and sfnt/ttcmap.c adds a
+      DEFENSIVE check in tt_cmap4_char_map_binary that refuses to parse unless the
+      subtable's format field really is 4, citing ReactOS bug CORE-12549 (stale cmap data
+      after a font file is replaced on disk). That one hardens the parser rather than
+      relaxing it.
+
+      SECURITY, stated as what is NOT here: no bounds check, allocation size, or
+      length/offset arithmetic differs from upstream anywhere in the sixteen files, and no
+      backported CVE fix is present either — this is stock 2.10.0, which is the standing
+      `staleness:` item. FT_CONFIG_OPTION_USE_PNG remains NOT enabled, so pngshim.c compiles
+      to `typedef int _pngshim_dummy;` and CVE-2020-15999 is not reachable; verified twice,
+      independently. No copyright line or licence header differs anywhere in the delta.
+
+      Verified: the patch applies to a fresh 2.10.0 extraction and reproduces our tree byte-
+      for-byte across all 443 shared source files.
+
+      COUNTING NOTE, because it is easy to get wrong and one audit did: 17 files DIFFER, 16
+      carry a __REACTOS__ marker. A bare `grep -rl __REACTOS__` returns 17 paths but one of
+      them is TechNote.txt, which is prose. The earlier "16 source files" figure in this
+      entry was right.
+
     reason: >
       Font rasteriser, ~208K lines and the single largest vendored tree. win32k
       consumes it through a stable C API; upstream tracking beats ownership.
@@ -277,46 +877,329 @@ trees:
     upstream: https://zlib.net/
     license: Zlib
     license_file: sdk/lib/3rdparty/zlib/LICENSE
-    modified: unknown
+    license_extra:
+      Info-ZIP: >-
+        contrib/minizip IS NOT UNDER THE ZLIB LICENCE. Its files carry "Copyright (c)
+        1990-2000 Info-ZIP" alongside Gilles Vollant's minizip copyright, and since 1.3.x
+        upstream ships the grant explicitly as contrib/minizip/LICENSE.Info-Zip (Info-ZIP
+        licence, 2009-Jan-02 version), now vendored. The code was always licensed this way
+        — 1.2.13's unzip.c says so in its header — but upstream had never stated it as a
+        licence file and this registry recorded only Zlib. The obligation is live: minizip
+        is built into rapps and zipfldr.
+    modified: yes  # 10 lines across 3 files under contrib/minizip; zlib proper is pristine
+    patch: vendor-patches/zlib.patch
     headers:
       - sdk/include/reactos/libs/zlib
     version:
       file: sdk/include/reactos/libs/zlib/zlib.h
       pattern: '#define ZLIB_VERSION "([^"]+)"'
+    review: >
+      BUMPED 1.2.13 -> 1.3.2 ON 2026-09-20, and the delta SHRANK: 14 patched lines down to
+      10, and the CMakeLists lost both of its warning suppressions. Nothing was traded away
+      to get that — upstream fixed all three independently. Builds clean on i386, amd64 and
+      arm64.
+
+      PROVENANCE IS CRYPTOGRAPHIC. zlib-1.3.2.tar.gz, sha256
+      bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16, ships a detached
+      .asc that verifies as a Good signature from "Mark Adler
+      <madler@alumni.caltech.edu>", DSA key 5ED46A6721D365587791E2AA783FCD8E58BCAFBA —
+      zlib's own author. Second tree in this registry with a verified signature, after
+      libsamplerate. As there, no independent trust path to the key: corroboration, not a
+      root of trust.
+
+      ZLIB PROPER IS PRISTINE, before and after. adler32, crc32, deflate, inflate,
+      inftrees, trees, zutil, the gz* family, compress, uncompr, infback and both public
+      headers are byte-identical to 1.3.2. Nothing we carry touches bounds checking,
+      allocation, or the inflate/deflate state machines. The whole delta is ten lines in
+      three files under contrib/minizip, the ZIP-archive helper — the scary-sounding
+      `modified` was never about the compressor.
+
+      WHAT THE TEN LINES DO, and the REASON IS SHARPER THAN THE OLD NOTE SAID. minizip has
+      a stdio FILE* backend (ioapi.c) and a win32-HANDLE backend (iowin32.c); we compile
+      out the stdio half and the zipOpen2/unzOpen2 entry points that depend on it. The old
+      review said this was because "ReactOS uses only the win32 one", which reads as
+      preference. It is not: ioapi.c's fopen64_file_func calls FOPEN_FUNC, which resolves
+      to fopen64, and fopen64/ftello64/fseeko64 do not exist in our CRT. Removing the guard
+      during this bump produced "call to undeclared function 'fopen64'". Measured, not
+      inherited.
+
+      WHAT UPSTREAM RETIRED FOR US:
+
+      1. THE NOUNCRYPT HUNK IS GONE. 1.2.13's unzip.c force-defined NOUNCRYPT, which
+      DISABLES traditional-PKWARE decryption, and our patch wrapped that in __REACTOS__ to
+      get decryption back. 1.3.x dropped the force-define, so decryption is on by default
+      for everyone. Behaviour is unchanged — NOUNCRYPT is still undefined in our build, so
+      crypt.h is still included — but the hunk has nothing left to do.
+
+      2. -Wno-deprecated-non-prototype is gone from the CMakeLists. It existed for 1.2.13's
+      K&R-style definitions; 1.3.0 converted the library to prototypes.
+
+      3. -Wno-unused-variable on minizip is gone. It existed for four `mode_fopen` locals
+      in iowin32.c that only the stdio backend used; 1.3.x no longer leaves them unused.
+      Note that flag was itself only added on 2026-09-19, to de-patch iowin32.c — so this
+      tree went comment-out-the-source, then build-flag, then nothing, in two days.
+
+      THREE NEW UPSTREAM FILES were vendored for minizip to build: ints.h (fixed-width
+      integer typedefs from <limits.h>), skipset.h (a skiplist set, used by zip.c for
+      duplicate-name detection) and LICENSE.Info-Zip, which is a licence fact rather than a
+      build input — see license_extra.
+
+      HISTORY: before 2026-09-20 this entry said `modified: yes` with no patch and no
+      review, the last bare unexplained claim in the registry. It was then measured and
+      de-patched from five files to three, and bumped the same day.
     reason: Ubiquitous compression library; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libxml2
     name: libxml2
+    staleness: >
+      AUDITED 2026-09-20, BUMPED 2.12.8 -> 2.13.9 the same day. Current upstream is
+      2.15.4 and we are deliberately one minor line behind it, for one identified
+      reason: 2.14.0 made threads.c call InitOnceExecuteOnce, our kernel32.spec gates
+      that export behind `-version=0x600+`, and spec2def defaults to 0x502 with nothing
+      in the tree overriding it. Going further needs
+      `spec2def(kernel32.dll kernel32.spec ADD_IMPORTLIB VERSION 600)` — a project
+      policy decision about which Windows version our import libraries advertise, not a
+      missing feature, since our kernel32 does export the function. Everything else
+      about 2.15.4 was already made to build during this bump (see review), so that one
+      line is the whole remaining cost.
     upstream: https://gitlab.gnome.org/GNOME/libxml2
     license: MIT
-    license_file: sdk/lib/3rdparty/libxml2/COPYING
-    modified: unknown
+    license_file: sdk/lib/3rdparty/libxml2/Copyright
+    modified: yes  # ONE file, two lines; see review
+    patch: vendor-patches/libxml2.patch
     version:
+      # READS BACK OUR OWN SUBSTITUTION, and there is no better source in the vendored
+      # set: xmlversion.h is generated from xmlversion.h.in, and 2.13.9 ships no plain
+      # VERSION file (2.15 added one). Treat it as a label we maintain, not evidence.
       file: sdk/lib/3rdparty/libxml2/include/libxml/xmlversion.h
       pattern: '#define LIBXML_DOTTED_VERSION "([^"]+)"'
+    review: >
+      BUMPED 2.12.8 -> 2.13.9 ON 2026-09-20, and the delta went from three files to ONE
+      FILE AND TWO LINES. Builds clean on i386, amd64 and arm64, as do both consumers
+      (libxslt and msxml3). Patch round-trips byte-for-byte from
+      libxml2-2.13.9.tar.xz, sha256
+      a2c9ae7b770da34860050c309f903221c67830c86e4a7e760692b803df95143a.
+
+      THE TWO BUILD SHIMS ARE RETIRED, not carried. libxml.h and include/win32config.h
+      were patched for years so libxml.h included "win32config.h" in place of the
+      "config.h" the build system was supposed to produce, and so win32config.h pulled
+      in <io.h> and <direct.h>. Both are now PRISTINE. In their place is a config.h of
+      ours at the tree root doing what upstream's OWN CMakeLists does on Windows —
+      `configure_file(include/win32config.h config.h COPYONLY)` — plus those two
+      includes. The old entry justified the shim by saying `config.h` was "a dangerously
+      generic name to put on this tree's include path"; that was true and also beside
+      the point, because libxml.h's include is QUOTED and resolves against its own
+      directory before any -I path. The file never had to go on an include path at all.
+
+      WHY 2.13.9 AND NOT 2.15.4, measured rather than assumed. 2.15.4 was taken all the
+      way to a clean compile of libxml2, libxslt and msxml3 before being backed out, and
+      it fails at ONE symbol: 2.14.0 changed threads.c to call InitOnceExecuteOnce for
+      its one-time parser init. kernel32.spec marks that export `-version=0x600+`;
+      spec2def's default is 0x502 (guOsVersion, sdk/tools/spec2def/spec2def.c) and no
+      CMakeLists in the tree passes `spec2def(... VERSION ...)`, so the export is in no
+      import library. Raising a MODULE's _WIN32_WINNT does not help — the import library
+      is one global artifact built from the spec, not a per-consumer one. The fix is one
+      line in dll/win32/kernel32/CMakeLists.txt and it is a policy change, so it is
+      recorded in `staleness:` for a human rather than taken here.
+
+      Everything else 2.15.4 needs is already done and would survive the jump: SAX.c and
+      xmlunicode.c are gone upstream and drop out of the source list, win32config.h is
+      deleted upstream (our root config.h stops depending on it), the codegen/*.inc
+      tables have to be vendored, ICU/MODULES/HTTP must be off, and XML_SYSCONFDIR has
+      to be defined because catalog.c pastes it into a string unconditionally.
+
+      BCryptGenRandom, AND AN SDK GAP IT EXPOSED. 2.13 seeds its hash RNG with
+      BCryptGenRandom on Windows. Our bcrypt.dll exports it, but sdk/include/psdk/
+      bcrypt.h was missing BCRYPT_SUCCESS — the Windows SDK's own success test for the
+      NTSTATUS every BCrypt function returns. So the header declared the functions and
+      offered no way to check one, and documented usage did not compile. Added to that
+      header rather than worked around in the vendored tree; libxslt and msxml3 gained
+      `bcrypt` in add_importlibs.
+
+      That last one is the one that matters for a re-vendor, and note its provenance:
+      the comment says WINE, not ReactOS. It arrived already-patched in the bulk import
+      rather than being edited here — which is exactly why "no __REACTOS__ marker" is
+      not evidence of a clean drop.
+
+      RESOLVED 2026-09-20 — the xmlschemas.c patch is JUSTIFIED AND MINIMAL; it does not
+      block CVE tracking. Two stray-double-semicolon cleanups were reverted to pristine, so
+      xmlschemas.c now differs from upstream 2.12.8 by exactly the 2-line `#if 0`. `patch
+      -p1 --dry-run` applies clean to a fresh 2.12.8 extraction and the result is byte-
+      identical to our tree for all three files, so a version bump is a normal rebase of one
+      tiny hunk.
+
+      The hunk disables the XSD 1.0 Unique Particle Attribution check. Measured with a host
+      probe (real dll/win32/msxml3/xdr.c linked against PRISTINE upstream 2.12.8, datatypes
+      namespace wired as schema.c does): 5 of the 6 XDR schemas in the msxml3 winetest
+      compile clean unpatched; szDatatypeXDR emits 'The content model is not determinist'
+      twice; applying only this hunk to that same tree makes all 6 compile. Necessary and
+      sufficient, A/B on one binary.
+
+      It is NOT covering for a bug in xdr.c. XDR's open content model permits extra DECLARED
+      elements as trailing content, lowered to an xsd:any with namespace='##any' and
+      processContents='strict', which unavoidably overlaps its sibling particles when one is
+      optional or repeating — inherent UPA. XSD 1.1 added xs:openContent for exactly this;
+      libxml2 implements neither. Narrowing to ##other would satisfy UPA and be WRONG: the
+      winetest requires <test><x/><x/><y/><z/><z/><w/></test> to VALIDATE (w is declared,
+      same namespace) while rejecting an undeclared <v/>. All 4 test_openseq documents
+      validate exactly as asserted with the hunk in place. Full evidence in the patch
+      header. Do not 'fix' xdr.c and do not translate it expecting to remove this patch.
     reason: XML parser; upstream-tracked.
 
   - path: sdk/lib/3rdparty/adns
     name: adns
+    staleness: >
+      AUDITED 2026-09-20: ours 1.0, current 1.7.0 — a DNS parser handling untrusted network
+      input, roughly 25 years behind. Bumping is NOT a copy: our tree is GNU adns 1.0 plus a
+      third-party Windows port whose own distribution (adns.jgaa.com) no longer exists, so
+      the port would have to be redone against a modern adns.
     upstream: https://www.chiark.greenend.org.uk/~ian/adns/
     license: GPL-2.0-or-later
     license_file: sdk/lib/3rdparty/adns/COPYING
-    modified: unknown
+    license_extra:
+      LGPL-2.0-or-later: >
+        src/adns.h and adns_win32/adns_win32.h, and DELIBERATELY so — this is upstream's
+        own carve-out, not drift. Both headers say the public header alone ("but only the
+        public header file adns.h and not any other part of adns") may also be taken under
+        the GNU Library GPL v2-or-later, so that a program can include it without the
+        whole work becoming GPL. The library itself stays GPL-2.0-or-later. Found by the
+        prose half of `--licences` on 2026-09-20; neither file carries an SPDX tag.
+    modified: yes  # a third-party Windows port, not our work; see review
+    patch: vendor-patches/adns.patch
     version:
       file: sdk/lib/3rdparty/adns/client/client.h
       pattern: '#define ADNS_VERSION_STRING "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (adns-1.0.tar.gz from chiark, sha256
+      bed27a4ec5b71acc08333368e842a1248e83328018b582caf644985539967c5d). The entry said
+      `modified: yes` with no patch and no review; now measured, and the headline is that
+      THE DELTA IS NOT OURS.
+
+      It is a third-party Windows port that arrived already applied — "the ADNS resolver
+      library for Windows, ported by Jarle (jgaa) Aase" per adns_win32/README.TXT, built
+      with -DADNS_JGAA_WIN32. Exactly ONE file in the tree carries a __REACTOS__ marker
+      (src/setup.c), so reading this diff as ReactOS's work would be wrong.
+
+      Version 1.0 is certain: all twelve top-level files (COPYING, GPL-vs-LGPL, README,
+      INSTALL, TODO, changelog, configure.in, acconfig.h, aclocal.m4, Makefile.in,
+      settings.make.in, install-sh) are byte-identical to pristine 1.0, and the changelog's
+      newest entry is "adns (1.0)".
+
+      THE PORT'S OWN UPSTREAM IS GONE — adns.jgaa.com does not resolve (jgaa.com still does)
+      and the Wayback API has no snapshot, the same dead-distribution problem as dxtn. So
+      the patch is taken against GNU adns 1.0, the only surviving reference point, and it
+      necessarily conflates jgaa's port with any later local change. Don't read a hunk as a
+      ReactOS decision without checking for a marker first.
+
+      Scope: src/ is 11 files and ~570 normalized lines and IS compiled; client/ is 8 files
+      and ~123 lines and is NOT (the adnshost/adnslogres tools are absent from our CMake
+      list), included in the patch only so pristine+patch reproduces the tree. Verified all
+      20 files reproduce byte-for-byte. Normalize before counting anything here — the tree
+      is CRLF in places and raw diffs overstate badly (src/adns.h 150 raw vs 92 real).
+
+      DELETED 2026-09-20: adns_win32/getopt.c and getopt.h carried NO licence — the header
+      read verbatim "jgaa oct 9th 2000: Found this on www. No copyright information given.
+      Slightly modified." with a winsite.com origin URL. Neither was in the CMake source
+      list. Correcting this entry's earlier wording, which said "nothing references them"
+      and was too broad: client/adnslogres.c does #include "getopt.h" under ADNS_JGAA_WIN32
+      — but client/ appears NOWHERE in our CMakeLists, so the adnshost/adnslogres tool set
+      is itself unbuilt vendored source and that reference is dead too. adns and its
+      consumer dnsapi.dll both rebuild clean after the removal. The rest of adns_win32
+      (adns_unix_calls.c, adns_win32.h) is properly GPL-2.0-or-later, jgaa plus Ian Jackson,
+      and adns_unix_calls.c IS compiled.
     reason: Asynchronous DNS resolver; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libmpg123
     name: libmpg123
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
-    modified: unknown
+    license_file: sdk/lib/3rdparty/libmpg123/COPYING
+    modified: yes  # 5 lines across 2 files; see review
+    patch: vendor-patches/libmpg123.patch
     headers:
-      - sdk/include/reactos/libs/libmpg123
+      - sdk/lib/3rdparty/libmpg123/include
     version:
-      file: sdk/include/reactos/libs/libmpg123/mpg123.h
-      pattern: '#define MPG123_API_VERSION\s+(\d+)'
+      # UPSTREAM'S OWN version.h, which 1.33.7 added and which the tree now vendors.
+      # This is strictly better than the two things this probe has pointed at before:
+      # MPG123_API_VERSION in mpg123.h (45 across a whole span of releases, so it could
+      # not tell 1.26.2 from 1.33.7 — the same defect libjpeg's JPEG_LIB_VERSION 90 had),
+      # and PACKAGE_VERSION in our hand-maintained config.h, which reads back a value WE
+      # write. version.h is upstream's and cannot be laundered by us.
+      file: sdk/lib/3rdparty/libmpg123/version.h
+      patterns:
+        - '#define MPG123_MAJOR (\d+)'
+        - '#define MPG123_MINOR (\d+)'
+        - '#define MPG123_PATCH (\d+)'
+      join: '.'
+    review: >
+      BUMPED 1.26.2 -> 1.33.7 ON 2026-09-20, five years and a stack of decoder fixes. The
+      delta went from four patched files (2,477 meaningful lines) to TWO FILES AND FIVE
+      LINES, and the mixed-vintage compat.c problem this entry used to carry is discharged.
+      Builds clean on i386, amd64 and arm64.
+
+      SECURITY IS THE REASON. Our one consumer, winemp3.acm, feeds attacker-supplied MP3
+      bytes straight into this decoder. Fixed upstream between 1.26.2 and 1.33.7, in
+      libmpg123 specifically: use of uninitialized values in layer III dequantization
+      (III_dequantize_sample); a double free when deleting a handle after a failed
+      mpg123_decoder(); a double free in the mpg123_set_index() 32-bit wrapper called with
+      index size 0; realloc calls hardened against size_t multiplication overflow; and
+      ID3v2 UTF16 texts not being terminated when they overwrite previous frames.
+
+      THE TREE WAS RESTRUCTURED, and that is what shrank the patch. Its root now mirrors
+      upstream's src/ exactly — libmpg123/, common/, compat/, include/, version.h — so the
+      sources' own relative includes ("../common/debug.h", "../version.h") resolve with no
+      edits. The old layout hoisted every header flat into
+      sdk/include/reactos/libs/libmpg123/, which is precisely what forced include-line
+      patching; that directory is deleted and winemp3.acm now points at the tree's own
+      include/. DO NOT FLATTEN IT AGAIN. The file-set rule is written at the top of the
+      patch so a re-vendor is a copy.
+
+      THE CHECKLIST ITEM IS DISCHARGED. compat.c was NOT 1.26.2 — it was 1.24.0-1.25.13
+      vintage, 215 lines adrift, and this entry carried a standing warning not to carry it
+      across a bump. It was not carried. The tree takes 1.33.7's compat.c verbatim, which
+      also brings the wpathconv.h split our older copy inlined and defines the
+      unintr_fwrite that compat.h had been declaring with nothing behind it.
+
+      WHAT IS LEFT, FIVE LINES:
+
+      include/mpg123.h extends upstream's own "little hack to help MSVC not having
+      ssize_t" to cover us, because our CRT does not declare ssize_t either — not in
+      <sys/types.h>, not in <corecrt.h>. Worth sending upstream: the real condition is
+      "Windows CRT", not "MSVC". libmpg123/optimize.h gives ALIGNED() an MSVC spelling,
+      since config.h defines CCALIGN unconditionally and upstream expands it to
+      __attribute__((aligned(a))). Kept rather than dropped because ReactOS supports MSVC
+      builds and we cannot test one here.
+
+      RETIRED BY UPSTREAM, not given up: parse.c's __REACTOS__ reordering of `#include
+      "getbits.h"` (1.33.7 needs none) and compat.h's ssize_t guard (1.33.7's compat.h does
+      not mention ssize_t at all). Also gone: the 37 files that differed only by
+      trailing-whitespace stripping, so unlike the old patch this one DOES reproduce the
+      tree byte-for-byte from pristine.
+
+      TWO LATENT 64-BIT BUGS DIED WITH THE OLD config.h, both from a 32-bit autoconf output
+      being applied to all three arches. SIZEOF_SIZE_T and SIZEOF_SSIZE_T were hardcoded to
+      4, and compat.h used them to pick the printf conversion for size_t — so on amd64 and
+      arm64 it chose %lu for an 8-byte value (diagnostic paths only). And `#define ssize_t
+      long` gave 4 bytes where 8 were needed. 1.33.7 uses neither macro, and ptrdiff_t is
+      correct on all three targets. The new config.h is regenerated from 1.33.7's
+      config.h.in with our 51 previous choices carried across and the 26 new switches left
+      undefined; KEEP IT IN STEP WITH THAT TEMPLATE on every bump.
+
+      THE API IS COMPATIBLE. winemp3.acm uses twelve entry points (mpg123_init/exit/new/
+      delete/open_feed/close/feed/read/feedseek/getformat/param + mpg123_handle); all
+      twelve survive with compatible signatures. mpg123_read's buffer parameter widened
+      from `unsigned char*` to `void*`, source-compatible for callers. lfs_wrap.c is now
+      BUILT and must stay built — it supplies mpg123_feedseek and the INT123_wrap_*
+      helpers libmpg123.c calls; lfs_alias.c, which 1.26.2 shipped and we never built, no
+      longer exists upstream.
+
+      LICENCE: upstream's COPYING and AUTHORS are now vendored, so the LGPL-2.1 grant is
+      reproducible from the tree instead of pointing at the repo's own COPYING.LIB.
+
+      MEASUREMENT NOTE, still true and still a trap: match files by their FULL upstream
+      path, not basename. mpg123 ships both src/equalizer.c (the frontend's) and
+      src/libmpg123/equalizer.c; a basename match picks the wrong one and reports 56
+      phantom changed lines.
     reason: MPEG audio decoder; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libsamplerate
@@ -324,176 +1207,899 @@ trees:
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
     license_file: sdk/lib/3rdparty/libsamplerate/COPYING
-    modified: unknown
+    modified: no
+    version:
+      # LITERAL, and it has to be. Upstream ships no version macro in any file we
+      # vendor: the string lives in NEWS and in the CMake project() call, neither of
+      # which is source. Our own config.h says VERSION "0.2.2", but that file is OURS,
+      # so probing it would just read back what we wrote. Established instead from the
+      # tarball, whose sha256 is recorded in the review and whose GPG signature verifies.
+      literal: 0.2.2
+    review: >
+      BUMPED 0.1.9 -> 0.2.2 ON 2026-09-20, AND THE TREE IS NOW UNMODIFIED. Every
+      upstream-derived file — common.h, the three coefficient tables, samplerate.c,
+      src_linear.c, src_sinc.c, src_zoh.c and the public samplerate.h — is byte-identical
+      to pristine 0.2.2, so `vendor-patches/libsamplerate.patch` is DELETED rather than
+      rebased. What remains is three files with no upstream counterpart: config.h (our
+      stand-in for a generated header, see below), precomp.h and CMakeLists.txt.
+
+      PROVENANCE IS CRYPTOGRAPHIC, a first for this registry. libsamplerate-0.2.2.tar.xz,
+      sha256 3258da280511d24b49d6b08615bbe824d0cacc9842b0e4caf11c52cf2b043893, carries a
+      detached GPG signature that verifies against key B8D5315DA00072C0A860889FCE36E117202E3842,
+      "David Seifert <soap@gentoo.org>" — a maintainer named in upstream's own AUTHORS.
+      Read that as strong corroboration, not a root of trust: the key was fetched from a
+      public keyserver with no independent trust path, and it has since expired. (The
+      0.1.9 tarball the old patch cited also re-hashes correctly, so the base was sound.)
+
+      WHY THE BUMP WAS WORTH DOING: 0.2.0 fixed "a buffer out-of-bounds read error in
+      src/src_sinc.c" plus two undefined behaviours, and src_sinc.c is the hot path both
+      consumers select (SRC_SINC_FASTEST). libsamplerate is linked into kmixer.sys, so
+      that OOB read was a RING-0 read driven by audio sample data. 0.2.x also added
+      bounds assertions throughout those paths; they are linked into kmixer.sys on all
+      three arches (verified by string-matching the assert text in the .sys).
+
+      THE PUBLIC API IS STRICTLY ADDITIVE ACROSS THE BUMP, which is why a five-year jump
+      was cheap: samplerate.h gains only src_clone() and two comment changes. All seven
+      entry points kmixer.sys and wdmaud.drv use are unchanged. Internally it is a large
+      refactor (SRC_PRIVATE became SRC_STATE with a vtable), but none of that is visible.
+
+      FOUR THINGS UPSTREAM CHANGED THAT THE PORT HAD TO ABSORB, all recorded because each
+      was invisible until something failed:
+
+      1. float_cast.h WAS DELETED UPSTREAM in 0.2.0 — one of the two files the old patch
+      existed to carry. 0.2.x relies on C99 <math.h> for lrint/lrintf instead. Our two
+      consumers were including that PRIVATE vendored header for their own lrintf() and now
+      include <math.h>; that also stops libsamplerate's config.h leaking into them, which
+      it had been doing, kernel-mode shim and all, into user-mode wdmaud.drv.
+
+      2. Win32/config.h WAS ALSO DELETED, so the other patched file has no upstream
+      counterpart either. Ours is now a hand-maintained stand-in for config.h.cmake,
+      mirroring that template's switch list in its order — the same arrangement as
+      libtiff's tiffconf.h. KEEP IT IN STEP ON EVERY BUMP.
+
+      3. THE SINC CONVERTERS ARE OPTIONAL SINCE 0.2.0 and the switches are SILENT:
+      leave ENABLE_SINC_FAST_CONVERTER undefined and src_new(SRC_SINC_FASTEST) simply
+      returns an error at runtime with nothing failing at build time. All three are
+      defined in config.h, which is what keeps this drop behaviour-identical to 0.1.9,
+      where the converters were unconditional.
+
+      4. 0.2.x GUARDS ITS OWN `#include "config.h"` behind HAVE_CONFIG_H, which the
+      CMakeLists now defines. Nothing else supplies it — see the add_pch finding below.
+
+      THE KERNEL-MODE SHIM IS GONE. config.h no longer defines exit() or printf(): in
+      0.2.2 every call to both is dead code (src_linear.c guards its pair with
+      `#define SRC_DEBUG 0`; samplerate.c's three printf()s are commented out). Confirmed
+      by linking kmixer.sys without it on all three arches. config.h records the one-line
+      grep to re-check this on the next bump, and the ordering trap if it ever comes back.
+
+      TWO SYMBOLS kmixer.sys HAD TO GROW, beside the calloc/free it already supplied:
+      malloc (0.2.x uses it in the src_*_copy paths behind src_clone — we never call
+      src_clone, but the converter vtables name the copy functions so the symbol must
+      resolve) and _assert. The asserts are routed at RtlAssert rather than compiled out
+      with NDEBUG, deliberately: several of them ARE the bounds checks added alongside
+      the src_sinc.c OOB fix, and in ring 0 a loud stop beats the overrun.
+
+      DELETED: unistd.h, an empty placeholder 0.1.9 shipped under Win32/ that 0.2.2 does
+      not, referenced by nothing and sitting on kmixer.sys's include path.
+
+      CORRECTION TO THE PREVIOUS REVIEW, which said the 2026-09-19 de-patch was safe
+      because `add_pch(libsamplerate precomp.h SOURCE)` force-includes precomp.h. IT DOES
+      NOT. add_pch is `if(PCH) target_precompile_headers(...) else() <nothing> endif()`
+      and PCH is OFF by default (PCH:BOOL=OFF in every build dir here), so precomp.h is
+      force-included nowhere and is inert in an ordinary build. The de-patch was safe for
+      a different reason: upstream 0.1.9's own sources include config.h unconditionally.
+      This surfaced the moment 0.2.x put that include behind HAVE_CONFIG_H and the
+      supposed force-include did not save it. The same wrong mechanism was written into
+      libtiff's entry; corrected there too.
+
+      HISTORY. Ours was 0.1.9, established from the LICENCE BOUNDARY rather than from any
+      version string: libsamplerate relicensed LGPL-2.1 -> BSD-2-Clause AT 0.1.9, and
+      0.1.9's own hand-maintained Win32/config.h still said PACKAGE_VERSION "0.1.8",
+      which is why the registry read `unknown` for years.
     reason: Sample-rate conversion; upstream-tracked.
 
   - path: sdk/lib/3rdparty/libwin-iconv
     name: win-iconv
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
-    modified: unknown
+    license_ref: sdk/lib/3rdparty/libwin-iconv/win_iconv.c
+    modified: no  # patch was DEAD CODE; reverted to pristine 2026-09-20
+    review: >
+      THE PATCH WAS DEAD CODE AND IS GONE (2026-09-20). The 22-line rewrite of
+      _errno resolution — reading the Import Address Table instead of upstream's
+      module-handle + GetProcAddress — sits entirely inside
+      `#if defined(USE_LIBICONV_DLL)`, and that symbol is defined only inside an
+      `#if 0` block at win_iconv.c:29. Nothing in the build defines it either.
+      Confirmed at the symbol level before touching anything: win_iconv.c.obj exports
+      iconv/iconv_close/iconv_open and contains neither find_imported_function nor
+      MyImageDirectoryEntryToData.
+
+      So the fork carried a reimplementation that never compiled, and it was the thing
+      making this tree unable to track upstream. Every file is now byte-identical to
+      upstream commit 1046215 except CMakeLists.txt, which is ours. That includes
+      converting CRLF to upstream's LF on the five files that differed only that way —
+      no content change, and it is what makes "byte-identical" literally true rather
+      than true-modulo-line-endings.
+
+      DIFFED AGAINST UPSTREAM 2026-09-19 at the commit our ChangeLog matches
+      (win-iconv 1046215, 2014-02-05). THE FIRST DIFF WAS A LIE: every file appeared to
+      differ by thousands of lines, because our copy is CRLF and upstream is LF — 4,146
+      "changed" lines in a 2,071-line file is the tell. Normalising line endings leaves
+      22 real lines in win_iconv.c and 4 in readme.txt; win_iconv_test.c, iconv.h and
+      ChangeLog are identical.
+
+      The 22 lines are a genuine reimplementation, not a shim: upstream finds the
+      importing module and calls GetProcAddress for `_errno`
+      (find_imported_module_by_funcname -> HMODULE); ours resolves the address straight
+      out of the Import Address Table (find_imported_function -> FARPROC). Same goal,
+      different mechanism, and it is ours to re-apply. The readme changes are
+      proofreading ("drop or replace" -> "drops or replaces") that upstream lacked at
+      that commit.
+
+      So the tree is: upstream 2014-02-05, CRLF-converted, with one function rewritten.      RECORDED `Unlicense OR MIT`, BUT THE FILE SAYS PUBLIC DOMAIN: win_iconv.c's header
+      is three lines and reads "This file is placed in the public domain." No Unlicense
+      text and no MIT text appears anywhere in the tree. A public-domain dedication and
+      the Unlicense are not the same instrument and are not equally effective in every
+      jurisdiction, so the recorded value is someone's interpretation, not a quotation.
+      Left as recorded rather than silently rewritten — this wants a human answer before
+      launch.
     reason: iconv shim over the Win32 codepage APIs; upstream-tracked.
 
   - path: sdk/lib/3rdparty/stlport
     name: STLport
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
-    modified: unknown
+    license_file: sdk/lib/3rdparty/stlport/README
+    modified: yes  # 30 semantic files across BOTH halves; see patch
+    patch: vendor-patches/stlport.patch
+    headers:
+      # The other half of the same drop: upstream's top-level stlport/ include tree,
+      # 326 files. It was missing from this entry entirely until 2026-09-20, so every
+      # earlier audit of STLport silently covered only the library sources.
+      - sdk/include/c++/stlport
+    version:
+      file: sdk/include/c++/stlport/stl/_stlport_version.h
+      patterns:
+        - '#define _STLPORT_MAJOR\s+(\d+)'
+        - '#define _STLPORT_MINOR\s+(\d+)'
+        - '#define _STLPORT_PATCHLEVEL\s+(\d+)'
+      join: '.'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (STLport-5.2.1.tar.bz2 from SourceForge,
+      sha256 755b007b982c4545086c43affc8ed32c0acd577ee206eb1f6967e250c3546fc9). The entry
+      said `modified: yes` with no patch, no review and no version.
+
+      VERSION IS 5.2.1 and now probed, from sdk/include/c++/stlport/stl/_stlport_version.h
+      (_STLPORT_VERSION 0x521), corroborated by etc/ChangeLog's final entry "2008-12-10 ...
+      STLport release 5.2.1". The README says "STLport 5.0" and is simply stale — don't
+      believe it. 5.2.1 is the FINAL STLport release ever made, so there is no upstream left
+      to track and no bump to owe.
+
+      THE TREE IS SPLIT AND HALF OF IT WAS UNREGISTERED. sdk/lib/3rdparty/stlport holds the
+      library sources; sdk/include/c++/stlport holds 326 files that are upstream's top-level
+      stlport/ include tree. The second directory was not in this entry at all, so every
+      earlier pass over STLport silently covered only half the drop. Now recorded under
+      `headers:`. Same class of gap as libjpeg's split tree.
+
+      WE CARRY TWO GENUINE UPSTREAM BUG FIXES, and a naive re-vendor would REGRESS both.
+      src/locale.cpp:211 — upstream writes strcmp(name1, name1), comparing a string to
+      itself, which makes the locale-name equality test documented directly above it always
+      true; ours compares name1 to name2. stl/_fstream.c:87 — upstream writes `__ok == __ok
+      && this->_M_unshift();`, an == where = was meant, so the result including the
+      _M_unshift() outcome is computed and discarded; ours assigns. Upstream gets the same
+      line right at 710. Both verified directly against the pristine tarball.
+
+      The one architectural change is that the fstream backend is switched from native Win32
+      I/O to C stdio, via three coordinated edits (host.h uncomments _STLP_USE_STDIO_IO and
+      _STLP_USE_STATIC_LIB; _windows.h wraps its _STLP_USE_WIN32_IO define in `#if 0`),
+      carried by a 35-line _Filebuf_base::_M_open(FILE*, openmode) added to
+      details/fstream_stdio.cpp plus matching declarations in _fstream.h. That is a CRT-
+      interop addition, not a macro toggle, so it cannot reduce to a -D.
+      details/fstream_win32io.cpp is vendored but dead.
+
+      Counts: 30 files differ semantically (14 in the library half, 16 in the include half)
+      plus one added file, stl/config/_reactos.h — a compiler-config header in STLport's own
+      style dispatched from _system.h under #if __REACTOS__. A further 50 files differ ONLY
+      by CRLF/trailing whitespace and are deliberately excluded from the patch, so pristine
+      + patch does NOT reproduce the tree byte-for-byte; the patch header says so and gives
+      the one-line normalized-diff command to re-check.
+
+      ONE CLUSTER COULD MOVE INTO THE BUILD and is left as a follow-up: user_config.h
+      activates _STLP_NEW_PLATFORM_SDK, _STLP_USING_PLATFORM_SDK_COMPILER and
+      _STLP_DONT_USE_AUTO_LINK, which are presence-only macros with no structural coupling —
+      exactly the shape that belongs in target_compile_definitions rather than an edited
+      header. Not done here because it changes the build rather than the record.
+
+      ODDITY, flagged not fixed: stlport/errno.h carries a stray `#define errno foo` the
+      tarball does not, sitting immediately before an `#error` so it can never take effect —
+      apparently an example that leaked out of the comment above it. Harmless, but combined
+      with the two bug fixes it suggests this tree was synced from a post-tag SVN revision
+      rather than from the 5.2.1 tarball, which would mean our copy is not a strict subset
+      of the tagged release in either direction. Unresolved; STLport's SVN history was not
+      consulted.
     reason: >
       C++ standard library used by the C++ substrate. Upstream is long dead, but it
       is still a foreign STL implementation rather than ReactOS code; translating an
       STL to Rust is not a goal of this project.
 
-  - path: sdk/lib/3rdparty/cardlib
-    name: cardlib
-    upstream: unknown
-    license: unknown
+  - path: drivers/wdm/audio/drivers/ac97
+    name: AC'97 audio sample driver
+    upstream: Microsoft Windows-driver-samples
+    license: MIT
+    license_file: drivers/wdm/audio/drivers/ac97/license.txt
     modified: unknown
-    reason: Card-rendering library for the bundled card games, carried in the 3rdparty tree.
+    reason: >
+      Microsoft's AC'97 WDM audio sample, with Intel-copyright portions. Not a
+      translation target: there is no ac97-rust and the roadmap does not list it.
     review: >
-      Provenance not established — no COPYING, and ReadMe.txt does not name an
-      upstream. If this turns out to be ReactOS-authored it belongs OUT of this
-      registry and IN the translation denominator.
+      FOUND 2026-09-20 by the widened `_FOREIGN_HOLDER`. It had been invisible to
+      `--suspects` for the life of the registry because every file says
+      "Copyright (c) 1998-2000 Microsoft Corporation" and the pattern only matched
+      a holder IMMEDIATELY after `(c)`, with no year in between.
 
-  - path: sdk/lib/3rdparty/libwine
-    name: libwine
-    upstream: https://gitlab.winehq.org/wine/wine
-    license: LGPL-2.1
+      The grant is real and in the tree: license.txt is the plain MIT text over
+      "Copyright (c) Microsoft Corporation", i.e. the Windows-driver-samples
+      relicensing, not the NT DDK EULA that drivers/storage/ide/atapi carries.
+      Worth stating because the 1998-2000 copyright dates invite the opposite
+      assumption, and the first pass of this audit made it.
+
+  - path: sdk/include/reactos/edk2
+    name: EDK2 / TianoCore headers
+    upstream: TianoCore EDK II
+    license: BSD-2-Clause
+    license_file: sdk/include/reactos/edk2/License.txt
+    license_extra:
+      MIT: >
+        AppleGraphInfo.h, added 2026-09-20 by the upstream merge (freeldr UEFI Apple
+        Graphics Info Protocol support, upstream PR #8706). NOT a TianoCore file that
+        wandered off the headline licence: its own header says `PROJECT: ReactOS UEFI
+        Support`, `COPYRIGHT: Copyright 2026 Sylas Hollander`, `LICENSE: MIT` — it is a
+        ReactOS-authored header that a merge commit dropped into the vendored edk2
+        directory rather than beside the other freeldr UEFI sources. The MIT declaration
+        is the ReactOS author's own for this file's new text; a second comment separately
+        credits the struct layout as based on macosxbootloader's AppleGraphInfo.h
+        (BSD-3-Clause) for the shape being reimplemented, not a licence on this file.
+        Recorded here rather than moved: moving it out from under sdk/include/reactos/edk2
+        touches freeldr's include paths, which is outside this pass's scope (see
+        upstream-sync-merge-decisions.md). It is NOT a translation target either way —
+        header only, no body — so leaving it filed under the vendored tree costs nothing
+        but this licence-drift note; a future pass can relocate it to sit with the rest of
+        the ReactOS-authored freeldr UEFI code.
     modified: unknown
-    reason: Wine's port/support library, carried in the 3rdparty tree by upstream ReactOS.
+    reason: >
+      UEFI interface headers from EDK II, Intel-copyright, consumed by the UEFI
+      boot path. Headers only, no bodies, so nothing here is translatable.
     review: >
-      CLASSIFICATION IS A JUDGEMENT CALL, flagged rather than made quietly: the
-      roadmap's Phase 0 Tier 3 treats the Wine-derived bucket (~154 DLLs) as a
-      translation TARGET, and this is Wine-derived. It sits here only because
-      upstream files it under 3rdparty. 1.1K lines, so the stakes are small either
-      way — but the answer should be deliberate.
+      FOUND 2026-09-20 by the widened `_FOREIGN_HOLDER`; the missing grant was
+      CLOSED the same day. The headers say "This program and the accompanying
+      materials are licensed and made available under the terms and conditions of
+      the BSD License which accompanies this distribution. The full text of the
+      license may be found at http://opensource.org/licenses/bsd-license.php" --
+      a URL, and no such file accompanied the distribution here, so the only copy
+      of the terms we handed a recipient was a link. Same shape as the dangling
+      pointers `--grants` reports.
 
-  - path: sdk/lib/3rdparty/strmbase
-    name: strmbase
-    upstream: https://gitlab.winehq.org/wine/wine
-    license: LGPL-2.1
+      FIXED by vendoring EDK II's own License.txt, taken verbatim from
+      tianocore/edk2 at tag edk2-stable201811 (sha256
+      90c196d6845efcdd..., identical at vUDK2018 and edk2-stable201903 -- three
+      tags, one file, so this is not a snapshot of something in flux). Upstream's
+      text, not BSD-2-Clause typed from memory: a licence reconstructed from
+      recollection is the same failure as an invented constant, and it is worse
+      here because nobody would check it.
+
+      NOTE THE HOLDERS ARE BROADER THAN OUR SUBSET. Upstream's file covers Intel,
+      Apple, ARM, Linaro and Red Hat; the 18 headers we actually carry name only
+      Intel and Apple. Vendoring the file whole is still right -- it is upstream's
+      licence for the work these headers come from -- but do not read the extra
+      holders as evidence that we carry their code.
+
+  - path: sdk/lib/drivers/virtio
+    name: VirtIO driver library
+    upstream: virtio-win
+    license: BSD-3-Clause
+    license_file: sdk/lib/drivers/virtio/LICENSE
     modified: unknown
-    reason: Wine's DirectShow base classes, carried in the 3rdparty tree by upstream ReactOS.
-    review: Same open question as libwine — Wine-derived, and the Wine bucket is a target.
+    reason: >
+      The VirtIO ring/PCI library shared by the virtio guest drivers. Red Hat,
+      Qumranet, Google and IBM copyrights; no virtio-rust, not a translation target.
+    review: >
+      FOUND 2026-09-20, same widened pattern -- it hid behind "Copyright (C) 2014
+      Red Hat, Inc." only because the scan never looked for Red Hat; the entry is
+      recorded now so the container ratchet keeps it.
 
-  # ── dll/3rdparty ────────────────────────────────────────────────────────
   - path: dll/3rdparty/mbedtls
     name: Mbed TLS
     upstream: https://github.com/Mbed-TLS/mbedtls
-    license: Apache-2.0
-    modified: unknown
+    license: Apache-2.0 OR GPL-2.0-or-later
+    license_file: dll/3rdparty/mbedtls/LICENSE
+    modified: no
+    version:
+      # build_info.h, upstream's own. 3.x moved the string out of version.h (which
+      # still exists and no longer carries it).
+      file: sdk/include/reactos/libs/mbedtls/build_info.h
+      pattern: '#define MBEDTLS_VERSION_STRING\s+"([^"]+)"'
     headers:
       - sdk/include/reactos/libs/mbedtls
-    version:
-      file: sdk/include/reactos/libs/mbedtls/version.h
-      pattern: '#define MBEDTLS_VERSION_STRING\s+"([^"]+)"'
-    reason: >
-      TLS implementation. The largest omission from the old hardcoded tuple — 78
-      headers, none of them excluded from the convention-alias scan.
+      - sdk/include/reactos/libs/psa
+    review: >
+      BUMPED 2.16.11 -> 3.6.7 (LTS) ON 2026-09-20, closing the worst entry in this
+      registry: the 2.16 branch stopped receiving security fixes at the end of 2021, so
+      the TLS library behind schannel and bcrypt had been unmaintained for five years.
+      The tree is now `modified: no` — a pure upstream drop, every file byte-identical,
+      no patch at all. All three arches build; the TLS harness is green.
+
+      IT WAS DONE IN THREE PHASES, and the first two are why the third was tractable.
+      Phase 1 built sdk/lib/rust/schannel-tls-difftest, a real TLS 1.2 handshake through
+      the genuine backend on the host, green against 2.16.11 first so it was an oracle
+      rather than a hope. Phase 2 removed the glue's dependency on mbedtls/md_internal.h
+      and mbedtls/ssl_internal.h — headers 3.x deletes and stops installing, and the
+      actual blocker behind the "77 symbols" framing. Only then was this a version
+      change.
+
+      WHAT THE HARNESS SAID, and it is the whole return on building it: across a
+      five-year major-version jump the negotiated connection is IDENTICAL — TLS 1.2,
+      CALG_AES_256 at 256, CALG_SHA_384 at 384, CALG_ECDH_EPHEM at 256, block size 16,
+      max message 16384. Exactly ONE value moved: schan_imp_enabled_protocols went
+      0xfc0 -> 0xc00, because 3.0 DELETED SSL 3.0, TLS 1.0 and TLS 1.1 outright. That
+      narrowing is the single behavioural change in the port, and it is pinned in the
+      harness so it had to be looked at rather than discovered later by a client that
+      stopped connecting.
+
+      THREE THINGS THE PORT HAD TO SOLVE THAT THE OLD SIZING DID NOT MENTION:
+
+      1. ENTROPY WAS A DEPENDENCY CYCLE. 3.x's built-in Windows entropy source calls
+      BCryptGenRandom, and bcrypt.dll already imports mbedtls.dll — importing back
+      would close the loop. 2.16 used CryptGenRandom from advapi32 and had no such
+      problem. Fixed with MBEDTLS_NO_PLATFORM_ENTROPY plus MBEDTLS_ENTROPY_HARDWARE_ALT
+      and a new adapter, sdk/lib/mbedtls_reactos/entropy_hardware_poll.c, going straight
+      to RtlGenRandom (advapi32's SystemFunction036, already linked) — the generator
+      CryptGenRandom is itself built over, so a shorter path to the same bytes.
+
+      2. AES-NI IS OFF NOW, and that is a performance loss rather than a security one.
+      2.16's aesni.c was inline assembly; 3.x rewrote it to intrinsics, and on 32-bit
+      x86 that is the only implementation upstream offers. Our x86 baseline is
+      -march=pentium and enabling -maes -mpclmul for that one file did not make clang's
+      immintrin.h declare the intrinsics under our -nostdinc include set — the flags do
+      reach the command line and __AES__/__PCLMUL__ are defined, yet the intrinsics stay
+      undeclared, while the same file compiles standalone with the same flags. Left
+      unresolved and written down rather than papered over; AES falls back to portable C.
+
+      3. platform.c CALLS vsnprintf_s NOW, not _vsnprintf_s, and msvcrt exports only the
+      underscored spelling. sdk/lib/mbedtls_reactos/strsafe_wrapper.c supplies both names
+      over one body.
+
+      RETIRED BY THE BUMP: timing_hardclock.c, a ReactOS adapter that existed only to
+      supply mbedtls_timing_hardclock behind -DHAVE_HARDCLOCK. 3.x deleted hardclock from
+      timing.c, so both the adapter and the define are gone.
+
+      THE SOURCE LIST IS NOW EVERY .c UPSTREAM SHIPS (109 of them). 2.16's was
+      hand-curated with 32 entries commented out, which made every bump a three-way merge
+      between upstream's file set, our comments, and whatever the config actually
+      enabled. A source whose feature is off compiles to an empty translation unit, so
+      listing all of them costs nothing and moves the decision into one place:
+      sdk/include/reactos/libs/mbedtls/mbedtls_config.h.
+
+      WHAT IS DELIBERATELY OFF IN THAT CONFIG: PSA Crypto and TLS 1.3, both default-on
+      in 3.6. This bump preserves capability (TLS 1.2) and buys five years of fixes;
+      turning on TLS 1.3 is a real improvement and a separate, reviewable change, not
+      something to smuggle into a catch-up. The switches are named in the config.
+
+      TWO PROPERTIES OF THIS TLS STACK, unchanged by the bump and worth knowing because
+      neither is obvious: schannel_mbedtls.c sets MBEDTLS_SSL_VERIFY_NONE, so mbedTLS
+      does not validate the peer certificate (schannel's contract puts that on the
+      caller, and Wine does the same); and MBEDTLS_HAVE_TIME is off, so there is no
+      certificate expiry checking anywhere.
+
+      ALSO STILL TRUE: schannel's server path is dead twice over. MBEDTLS_SSL_SRV_C is
+      off, and nothing in the glue ever calls mbedtls_ssl_conf_ca_chain, so the
+      SECPKG_CRED_INBOUND arm would have no CA chain even if the library had a server in
+      it.
+
+      HISTORY. Before this bump the tree was 2.16.11 with exactly one modified file
+      (timing.c, a portability widening of a QueryPerformanceCounter guard) and a
+      ReactOS-authored LGPL adapter that had been moved out to sdk/lib/mbedtls_reactos/
+      on 2026-09-19 so the drop would be a pure copy. That move is what makes this bump
+      a delete-and-replace rather than a merge.
+    reason: TLS/crypto for schannel and bcrypt; upstream-tracked.
 
   - path: dll/3rdparty/libjpeg
     name: libjpeg
     upstream: https://ijg.org/
     license: IJG
-    modified: unknown
+    license_file: dll/3rdparty/libjpeg/README
+    modified: no  # sources byte-identical to pristine IJG 9d
+    patch: vendor-patches/libjpeg.patch
     headers:
       - sdk/include/reactos/libs/libjpeg
     version:
-      file: sdk/include/reactos/libs/libjpeg/jpeglib.h
-      pattern: '#define JPEG_LIB_VERSION\s+(\d+)'
+      # jversion.h carries the real IJG release ("9d  12-Jan-2020"). The old
+      # extractor read JPEG_LIB_VERSION from jpeglib.h, which is 90 for every
+      # 9.x release and so cannot tell 9a from 9d — useless for CVE matching.
+      file: sdk/include/reactos/libs/libjpeg/jversion.h
+      pattern: '#define JVERSION\s+"([^ "]+)'
+    review: >
+      BUMPED 9d -> 9f ON 2026-09-20, and it was the cheapest bump in this registry: the
+      one patched hunk applied to 9f with no fuzz and no rejects, every source file is
+      byte-identical to pristine 9f, and libjpeg.dll plus windowscodecs build unchanged
+      on i386, amd64 and arm64. Tarball jpegsrc.v9f.tar.gz, sha256
+      04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b. That is what a
+      tree kept at "pristine apart from one header" is worth.
+
+      jconfig.h is ours and needed no change: upstream's jconfig.txt is byte-identical
+      between 9d and 9f, and the macros ours omits (BMP_SUPPORTED, GIF_SUPPORTED,
+      TARGA_SUPPORTED, TWO_FILE_COMMANDLINE and the rest) are cjpeg/djpeg application
+      switches the library never reads.
+
+      DELETED IN THE SAME PASS: sdk/include/reactos/libs/libjpeg/rosdiff.patch, an
+      in-tree copy of the same hunk with repo-root-relative paths. It predates
+      vendor-patches/ and was the precedent this directory followed; keeping both means
+      two records of one fact, and it was already stale at 9d's line offsets. Nothing
+      referenced it.
+
+      LINEAGE WARNING, unchanged: the IJG 9.x line is NOT libjpeg-turbo, which is what
+      most distributions ship and where most CVE traffic is reported. Match advisories
+      against IJG releases, not turbo ones.
+
+      PARTIALLY DE-PATCHED 2026-09-19. jpeglib.h and jdct.h differed by trailing
+      whitespace only and are restored; the header directory is 10 of 11 identical.
+
+      jmorecfg.h CANNOT be de-patched with a -D, and the attempt was refused rather
+      than forced. Upstream defines the macros UNGUARDED — `#define GLOBAL(type) type`
+      at jmorecfg.h:246, `#define EXTERN(type) extern type` at :248 — so a command-line
+      -D is overridden the moment the header is processed. Our patch rewrites the macro
+      BODIES to inject JPEG_API/JPEG_IMPEXP, tokens absent from vanilla 9d, and adds the
+      `#ifndef EXTERN` guard that would be required to make a -D stick at all. Forcing
+      it would either silently not apply or need the file edited anyway, and getting it
+      wrong breaks every DLL export. This one belongs in the patch series.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: jpegsrc.v9d.tar.gz from ijg.org.
+      All 73 shared files byte-identical — including the historically fragile ones,
+      jdhuff.c, jmemmgr.c, jquant2.c. Nothing in bounds checking, allocation or
+      marker/Huffman parsing differs.
+
+      TWO THINGS THE REGISTRY HAD WRONG OR MISSING. The version was recorded as `90`,
+      which is the JPEG_LIB_VERSION macro and spans several IJG releases; the actual
+      release is 9d (12-Jan-2020), stated in jversion.h, README and change.log. And
+      this tree is SPLIT — the headers live in sdk/include/reactos/libs/libjpeg, where
+      jmorecfg.h carries a documented DLL-export patch (JPEG_IMPEXP/JPEG_API) with
+      rosdiff.patch sitting beside it, and jconfig.h is upstream's own jconfig.vc
+      template trimmed of the cjpeg/djpeg tool flags. Those are build glue, so the
+      SOURCE verdict is `no`, but a re-vendor must handle both directories.
     reason: JPEG codec; upstream-tracked.
 
   - path: dll/3rdparty/libpng
     name: libpng
+    staleness: >
+      AUDITED 2026-09-20: was 1.6.39 (2022-11), nineteen patch releases behind on an image
+      parser reachable from untrusted input. BUMPED to 1.6.58 the same day.
+      libpng-1.6.58.tar.xz from sourceforge, sha256
+      28eb403f51f0f7405249132cecfe82ea5c0ef97f1b32c5a65828814ae0d34775 (computed here;
+      cross-check it before treating this drop as provenance-clean). Cheap for the same
+      reason libtiff was — the tree was already a verified clean drop, so there was nothing
+      of ours to re-apply, and 1.6.x is ABI-stable so no consumer changed. All 15 sources,
+      the four private headers, png.h and pngconf.h are byte-identical to pristine 1.6.58;
+      pnglibconf.h is upstream's own scripts/pnglibconf.h.prebuilt, which is what the 1.6.39
+      one already was. docs/LICENSE refreshed from upstream LICENSE. SIMD stays out (the
+      arm/intel/mips/powerpc/loongarch dirs were never vendored and -DPNG_ARM_NEON_OPT=0
+      remains). Unlike libtiff this one IS covered: user32 links libpng, so the smoke suite
+      exercises it on every boot.
     upstream: http://www.libpng.org/pub/png/libpng.html
     license: libpng-2.0
-    modified: unknown
+    license_file: dll/3rdparty/libpng/docs/LICENSE
+    modified: no  # byte-identical to pristine 1.6.39, verified twice
     headers:
       - sdk/include/reactos/libs/libpng
     version:
       file: sdk/include/reactos/libs/libpng/png.h
       pattern: '#define PNG_LIBPNG_VER_STRING "([^"]+)"'
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19 and it is a CLEAN DROP: all 19
+      sources byte-identical to libpng 1.6.39, cross-checked against both the GitHub
+      tag archive and the SourceForge release tarball, then re-verified independently.
+      docs/ is upstream's flat files relocated into a subdirectory — a layout choice,
+      not content drift. libpng.spec is our Wine-format export table, ours by
+      definition. Nothing touches bounds checks, allocation or chunk parsing.
     reason: PNG codec; upstream-tracked.
 
   - path: dll/3rdparty/libtiff
     name: libtiff
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
-    modified: unknown
+    license_ref: dll/3rdparty/libtiff/tif_open.c
+    modified: no  # byte-identical to pristine 4.7.0 (only our 6 config headers differ)
     headers:
       - sdk/include/reactos/libs/libtiff
     version:
       file: sdk/include/reactos/libs/libtiff/tiffvers.h
       pattern: 'LIBTIFF, Version ([0-9.]+)'
+    review: >
+      DE-PATCHED 2026-09-19 — all 43 shared .c files are byte-identical to pristine
+      4.1.0 and NOTHING replaced the edit, because the build was already doing it.
+      The 35 hand-edited `#include <precomp.h>` lines were reverted to upstream's own
+      `#include "tiffiop.h"`, which resolves through the existing include_directories.
+      libtiff.dll builds and links unchanged. The largest block of "modification" in
+      this registry was leftovers, not a port.
+
+      CORRECTED 2026-09-20: this entry used to say the de-patch was safe because
+      `add_pch(libtiff precomp.h SOURCE)` force-includes precomp.h on clang. IT DOES
+      NOT. add_pch is `if(PCH) target_precompile_headers(...) else() <nothing> endif()`
+      and PCH is OFF by default (PCH:BOOL=OFF in every build dir here), so precomp.h is
+      force-included nowhere. The revert was safe on its own terms — the include path
+      finds tiffiop.h either way — and the false mechanism was caught during the
+      libsamplerate bump, where the equivalent claim did NOT hold and the build broke.
+
+      THE SECURITY FACT (now RESOLVED, kept for the record): this was stock 4.1.0
+      (Nov 2019) with NO backported fixes, so it was exactly as vulnerable as unpatched
+      4.1.0 — which predates fixes for known OOB-read/write and directory-parsing CVEs.
+      De-patching made the version bump trivial but did not perform it; the bump below
+      did, on 2026-09-20.
+
+      (This paragraph was written once before and SILENTLY LOST: the editing helper
+      did nothing when an entry had no `review:` block, and reported success. It is
+      here now because the helper was made to fail loudly instead.)
+
+      BUMPED 4.1.0 -> 4.7.0 on 2026-09-20, which is what that security item asked for.
+      tiff-4.7.0.tar.gz from download.osgeo.org, sha256
+      67160e3457365ab96c5b3286a0903aa6e78bdc44c4bc737d2e486bcecb6ba976 — NOTE osgeo
+      publishes only a GPG .sig for this file, no .sha256, so that hash is computed here and
+      NOT yet checked against an independent source. Verify it before treating this drop as
+      provenance-clean.
+
+      The bump was cheap precisely because the 2026-09-19 de-patching had already made the
+      tree pristine: no local edit had to be re-applied. Every .c, .cxx and non-config
+      header is now byte-identical to pristine 4.7.0; the only files that differ are the six
+      ReactOS config headers (tif_config*.h, tiffconf*.h), which stand in for what libtiff's
+      own CMake generates and are build glue rather than upstream source.
+
+      What had to change. tiffconf.h was rewritten against 4.7's tiffconf.h.cmake.in,
+      preserving our exact codec selection: 4.5 moved the fixed-width types to <stdint.h>,
+      so without the new stddef/stdint/inttypes includes every uint16_t in tiff.h is an
+      unknown type. One new source file, tif_hash_set.c, is required by tif_dirread.c and is
+      added to the CMake source list. Upstream also added tif_lerc.c, which stays out along
+      with the other optional codecs we do not build (jpeg, jbig, ojpeg, lzma, webp, zstd,
+      libdeflate).
+
+      Verified: libtiff.dll builds and links, and so does its only consumer
+      (dll/win32/windowscodecs/libtiff.c, 29 API symbols, all long-stable core calls). The
+      spec2def exports all resolved, which is the check a removed export would have failed.
+      The new DoS guard TIFF_MAX_DIR_COUNT defaults to 1048576 via tiffiop.h and is
+      therefore ACTIVE even though our config does not set it; STRIP_SIZE_DEFAULT likewise
+      defaults to 8192. CHUNKY_STRIP_READ_SUPPORT and DEFER_STRILE_LOAD stay off, as they
+      were under 4.1.0.
+
+      NOT verified: there is no TIFF decode test in this tree and libtiff is not on the boot
+      path, so the smoke suite does not exercise a single line of this. The evidence is
+      compile-and-link plus byte-identity with upstream, not runtime behaviour. Anyone
+      adding a WIC image test should point it here first.
+
     reason: TIFF codec; upstream-tracked.
 
   - path: dll/3rdparty/libxslt
     name: libxslt
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
-    modified: unknown
+    license_file: dll/3rdparty/libxslt/Copyright
+    modified: no  # de-patched 2026-09-19; one -D replaces the edit
     headers:
       - sdk/include/reactos/libs/libxslt
     version:
       file: sdk/include/reactos/libs/libxslt/xsltconfig.h
       pattern: '#define LIBXSLT_DOTTED_VERSION "([^"]+)"'
+    review: >
+      DE-PATCHED 2026-09-19 — all 28 shared files byte-identical to pristine 1.1.42.
+      The one behavioural line moved into the build: CMakeLists.txt passes
+      `-DHAVE_STAT` and win32config.h is upstream's again. security.c's outer gate is
+      `#ifndef HAVE_STAT`, so defining it before any header is read makes the whole
+      block inert and the stat()->_stat() remap never happens — exactly what the
+      in-source edit achieved. Upstream's HAVE__STAT is defined again and unreachable.
+
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-19: libxslt-1.1.42.tar.xz from
+      download.gnome.org, version confirmed from NEWS. 21 of 27 shared files are
+      byte-identical, 5 differ only by a stripped trailing blank line, and ONE line is
+      real:
+
+        win32config.h:48   upstream `#define HAVE__STAT`  ->  ours `#define HAVE_STAT`
+
+      Behavioural, narrowly. Upstream's HAVE__STAT drives security.c's macro chain to
+      remap stat() to _stat() for a stock MSVC CRT; defining HAVE_STAT directly skips
+      that remap, so security.c calls a real stat(). Correct for this tree, which
+      supplies its own CRT — but it changes which libc function is actually called, so
+      it is a divergence a re-vendor must re-apply rather than discard.
+
+      trio.h and triodef.h were checked specifically and are upstream's own vendored
+      copies, unmodified.
     reason: XSLT processor; upstream-tracked.
 
   - path: dll/3rdparty/libtirpc
     name: libtirpc
+    staleness: >
+      AUDITED 2026-09-20: ours is 0.2.1 (2011), not the 0.1.11 the registry used to claim —
+      see the review for why the VERSION file lies. Current upstream is 1.3.8, so this is
+      still the largest version gap in the registry by a wide margin, and it is an RPC wire-
+      format parser. The catch: our tree is a Windows/SSPI port with ~3650 lines of delta
+      and no surviving upstream artifact for the port itself, so a bump is a re-port, not a
+      copy.
     upstream: https://sourceforge.net/projects/libtirpc/
     license: BSD-3-Clause
     license_file: dll/3rdparty/libtirpc/COPYING
-    modified: unknown
+    license_extra:
+      LGPL-2.1-or-later: >
+        THE WINDOWS PORT HALF OF THIS TREE IS COPYLEFT, and the entry said BSD-3-Clause
+        flat until 2026-09-20. Sixteen files carry "Copyright (c) 2012 The Regents of the
+        University of Michigan" and the LGPL-2.1-or-later notice: src/{auth_none,auth_sspi,
+        auth_unix,authsspi_prot,clnt_generic,clnt_vc,rpc_prot,wintirpc,xdr_rec}.c and
+        tirpc/{wintirpc.h,rpc/{auth,auth_gss,auth_sspi,clnt,rpc_msg,types}.h}. They are the
+        ms-nfs41-client Windows/SSPI port this tree's review already describes as having
+        no surviving upstream artifact — so now we know what licence that port is under.
+        This is the most consequential finding the prose scan has made: a weak-copyleft
+        obligation inside a tree recorded as permissive, in files that ARE built. The
+        Sun/upstream libtirpc half remains BSD-3-Clause.
+    modified: yes  # a Windows/SSPI port over 0.2.1; see review
+    patch: vendor-patches/libtirpc.patch
     version:
-      file: dll/3rdparty/libtirpc/VERSION
-      patterns:
-        - 'PKG_MAJOR=(\d+)'
-        - 'PKG_MINOR=(\d+)'
-        - 'PKG_REVISION=(\d+)'
-      join: "."
+      # LITERAL, not a probe, and deliberately so: the only in-tree version string is
+      # VERSION's PKG_REVISION=11, and upstream 0.2.1 ships that exact same stale file,
+      # so probing it reports 0.1.11 and launders upstream's error. 0.2.1 is established
+      # in the review from the Sun BSD relicense boundary plus whole-tree best fit.
+      literal: 0.2.1  # established 2026-09-20; no probe-able source exists
+    review: >
+      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 and THE RECORDED VERSION WAS WRONG. The
+      entry said `modified: yes` with no patch and no review, and probed 0.1.11 out of the
+      VERSION file. It is really 0.2.1.
+
+      The probe is now REMOVED rather than repointed, because there is no honest in-tree
+      source for this version: upstream 0.2.1's own VERSION file ALSO says PKG_REVISION=11 —
+      upstream never bumped it — so ours is byte-identical to theirs and the probe was
+      faithfully laundering upstream's error. Third instance of this shape here, after
+      libjpeg's JPEG_LIB_VERSION 90 and libmpg123's MPG123_API_VERSION 45; an API or
+      packaging number is not a release. (libsamplerate had exactly the same defect until
+      the 0.2.2 bump, also from an upstream-shipped stale config.)
+
+      0.2.1 established two independent ways. First, licence headers: our sources carry the
+      BSD-3-Clause "Copyright (c) 2009, Sun Microsystems, Inc." notice, while 0.1.11 still
+      carries the old restrictive Sun RPC legend ("not authorized to license or distribute
+      it to anyone else"). Sun relicensed after 0.1.11, so this tree cannot be 0.1.11 —
+      which also means the recorded BSD-3-Clause licence was right all along while the
+      version was not. Second, best fit: whole-tree normalized diff is 8106 lines against
+      0.1.11, 3652 against 0.2.1 and 4442 against 0.2.2.
+
+      The delta is a WINDOWS PORT, not ReactOS logic. The added files give it away:
+      src/wintirpc.c, src/winstubs.c, src/auth_sspi.c, src/authsspi_prot.c, tirpc/wintirpc.h
+      and tirpc/rpc/auth_sspi.h — SSPI standing in for GSS-API (src/auth_gss.c and
+      src/authgss_prot.c are commented out of the CMake source list) plus a Win32 syscall
+      shim; src/asprintf.c and src/gettimeofday.c are POSIX fill-ins. 92 files differ, ~3652
+      normalized lines, 17 byte-identical, 10 ours-only. The patch reproduces the tree byte-
+      for-byte from pristine 0.2.1 (109 files compared, 0 mismatches). It cannot separate
+      third-party porting from later local edits: the port has no separately published
+      artifact, the same dead-upstream problem as adns and dxtn.
+
+      MEASUREMENT TRAP worth inheriting: several files here are ISO-8859 rather than UTF-8,
+      and `grep -c` silently produced NO OUTPUT on twelve of them under this shell, so they
+      read as unmeasured rather than as errors. Count with awk and LC_ALL=C. Normalize
+      CRLF/trailing whitespace too, or the totals inflate.
     reason: Transport-independent RPC; upstream-tracked.
 
   - path: dll/3rdparty/dxtn
     name: dxtn (S3TC)
     upstream: unknown
     license: MIT
-    modified: unknown
+    license_ref: dll/3rdparty/dxtn/txc_compress_dxtn.c
+    modified: unknown  # upstream distribution is gone; see review
+    review: >
+      VERSION IDENTIFIED 2026-09-19, MODIFICATION STILL OPEN. The registry said
+      `version: unknown, upstream: unknown`; the files say otherwise — txc_dxtn.h and
+      txc_compress_dxtn.c both carry "libtxc_dxtn / Version: 1.0 / Copyright (C) 2004
+      Roland Scheidegger". So this is libtxc_dxtn 1.0, the S3TC/DXTn codec.
+
+      It cannot be fully diffed: libtxc_dxtn's distribution point
+      (people.freedesktop.org/~mareko) is a 404 and the project has no surviving
+      canonical home. The nearest artifact is divVerent/s2tc, which carries a verbatim
+      copy of txc_dxtn.h — ours is byte-identical to it — but s2tc is a clean-room
+      reimplementation and does not ship the two .c files, so 1,086 of our 1,137 lines
+      have nothing to compare against. `modified` stays unknown, now for a stated
+      reason rather than for want of looking.
+
+      RE-CHECKED 2026-09-20: still unresolvable, with one more avenue eliminated. Beyond the
+      dead people.freedesktop.org/~mareko distribution point already recorded, the plausible
+      GitHub mirrors (mesa3d/libtxc_dxtn, freedreno/libtxc_dxtn and similar) return nothing
+      and sources.debian.org has no libtxc-dxtn source package. So `modified: unknown`
+      stands and there is no patch for the same reason there is no diff. This entry is at
+      its achievable maximum too — the gap is the world's, not ours.
+
     reason: S3TC/DXTn texture (de)compression for the GL stack.
+
+  # ── Found 2026-09-25 by diffing `media/doc/3rd Party Files.txt` against this file ──
+  # Upstream ReactOS's own third-party ledger. Every entry below was in it, with a
+  # version and a licence, and none was here: the discovery scans could not see them
+  # (individual copyright holders, or no container), and nobody had cross-checked the
+  # one list upstream already maintains. Where a version exists only in that ledger,
+  # the probe READS the ledger rather than copying it, so an upstream sync that bumps a
+  # tree and its ledger line moves the recorded version with it.
+
+  - path: sdk/lib/fslib/vfatlib/check
+    name: dosfstools (fsck.fat)
+    upstream: https://github.com/dosfstools/dosfstools
+    license: GPL-3.0-or-later
+    license_file: sdk/lib/fslib/vfatlib/check/COPYING
+    license_extra:
+      LGPL-2.1-or-later: >
+        byteswap.h and byteswap1.h are GNU C Library headers ("This file is part of the
+        GNU C Library", FSF 1997-2003) that dosfstools carries for portability. Two
+        headers, no bodies.
+    modified: yes  # rosglue.h and __REACTOS__ blocks port it onto the NT file API
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/lib/fslib/vfatlib/check\s+Used Version: ([^\r\n]+)'
+    reason: >
+      The FAT checker behind vfatlib's chkdsk path: seven TUs (boot/check/common/fat/
+      file/io/lfn), 5,344 lines, compiled into vfatlib by its parent CMakeLists. The rest
+      of vfatlib is ReactOS's own and stays a translation target; only this directory is
+      vendored. GPL-3.0-or-later, the only GPL-3 code linked into a shipped library, which
+      is worth knowing on its own.
+
+  - path: drivers/wdm/audio/drivers/CMIDriver
+    name: C-Media CMI8738/8768 WDM audio driver
+    upstream: https://code.google.com/archive/p/cmediadrivers/
+    license: BSD-3-Clause
+    license_ref: drivers/wdm/audio/drivers/CMIDriver/adapter.cpp
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: drivers/wdm/audio/drivers/CMIDriver\s+Used Version: ([^\r\n]+)'
+    reason: >
+      dogbert's open-source C-Media driver, with its cmicontrol tray app and cpl applet
+      in subdirectories. 5,532 lines of C++, "Copyright (c) 2006-2008 dogbert" under
+      BSD-3-Clause. A hardware driver for a 2000s PCI sound chip, carried for real-HW
+      coverage; nothing in the roadmap asks for it in Rust.
+
+  - path: drivers/network/dd/netkvm
+    name: VirtIO NetKVM guest driver (NDIS 5)
+    upstream: https://github.com/virtio-win/kvm-guest-drivers-windows (NetKVM/NDIS5)
+    license: BSD-3-Clause
+    license_ref: drivers/network/dd/netkvm/Common/ParaNdis-VirtIO.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: drivers/network/dd/netkvm\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Red Hat's virtio-net miniport, 9,500 lines. The companion of sdk/lib/drivers/virtio,
+      which was registered 2026-09-20 while this directory was not -- --suspects matches
+      Red Hat now, but netkvm's headers carry the holder after a year range the scan
+      evidently did not reach. Same decision as the library it links: vendored.
+
+  - path: base/applications/mstsc
+    name: rdesktop (as mstsc.exe)
+    upstream: https://github.com/rdesktop/rdesktop
+    license: GPL-3.0-or-later
+    license_ref: base/applications/mstsc/rdesktop.h
+    modified: yes  # the Win32 front end (connectdialog.c, settings.c, the .rc) is ReactOS's
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: base/applications/mstsc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      The Remote Desktop client is rdesktop's protocol engine (iso/mcs/secure/rdp/rdp5/
+      orders/bitmap/cache, "Copyright (C) Matthew Chapman 1999-2008") under a ReactOS
+      Win32 UI. 17,850 lines, 20 TUs. An application, so it never entered the core
+      ledger, but it ships in system32 and its licence is GPL-3.
+
+  - path: modules/rosapps/applications/net/tsclient
+    name: rdesktop (rosapps tsclient)
+    upstream: https://github.com/rdesktop/rdesktop
+    license: GPL-3.0-or-later
+    license_ref: base/applications/mstsc/rdesktop.h
+    license_note: >
+      Same upstream and version as base/applications/mstsc, per upstream's ledger, which
+      lists both paths under one entry. The rosapps copy is not configured into the build.
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: modules/rosapps/applications/net/tsclient\s+Used Version: ([^\r\n]+)'
+    reason: >
+      A second, older rdesktop import in rosapps (mstsc/mstscax wrappers plus the rdesktop
+      tree). Not built. Registered so the ledger's two rdesktop paths are both accounted
+      for, and so a future move of vendored code finds it.
+
+  - path: base/setup/reactos/treelist.c
+    name: TreeList control
+    upstream: https://github.com/sebkirche/treelist
+    license: GPL-3.0-or-later
+    license_ref: base/setup/reactos/treelist.c
+    modified: unknown
+    headers:
+      - base/setup/reactos/treelist.h
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: base/setup/reactos/treelist.c\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      A tree-list common control (Anton Zechner / Sebastien Kirche) that the graphical
+      installer uses for its partition list. Two loose files inside a ReactOS-authored
+      directory, so this is a single-file entry with no VENDORED stamp; it is the
+      clearest case for the planned move of vendored code into its own directory.
+
+  - path: sdk/include/ddk/d3dkmthk.h
+    name: libdxg D3DKMT thunk header
+    upstream: https://github.com/microsoft/libdxg
+    license: MIT
+    license_ref: sdk/include/ddk/d3dkmthk.h
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/include/ddk/d3dkmthk.h\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Microsoft's MIT-licensed WDDM kernel-thunk header, one file in the ReactOS-authored
+      DDK directory. Header only, nothing to translate; registered for the licence record.
+
+  - path: sdk/include/GL
+    name: OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
+    upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
+    license: MIT
+    license_ref: sdk/include/GL/gl.h
+    license_extra:
+      Khronos: >
+        glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos
+        MIT-style Materials licence.
+      SGI-B-1.1: >
+        glu.h, SGI Free Software License B version 1.1 -- the same text as the libnurbs
+        half of dll/opengl/glu32.
+    modified: unknown
+    version:
+      file: sdk/include/GL/gl.h
+      pattern: 'Version:\s+([0-9.]+)'
+    reason: >
+      The public GL headers every OpenGL consumer includes, 14,345 lines. NOT headers of
+      the Mesa tree in dll/opengl/mesa: that is Mesa 2.6 under LGPL, these are Mesa 7.6's
+      gl.h under MIT, so they cannot be a `headers:` entry on it without recording the
+      wrong licence and the wrong version. Not listed in upstream's ledger at all.
+
+  - path: sdk/tools/hhpcomp/chmc
+    name: chmc (CHM compiler)
+    upstream: https://sourceforge.net/projects/chmc/
+    license: GPL-3.0-or-later
+    license_ref: sdk/tools/hhpcomp/chmc/chmc.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/hhpcomp/chmc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool (the hhpcomp help compiler). Never ships and never translates;
+      registered so the registry agrees with upstream's ledger.
+
+  - path: sdk/tools/hhpcomp/lzx_compress
+    name: lzx_compress (LZX encoder)
+    upstream: https://sourceforge.net/projects/chmc/
+    license: LGPL-2.1-or-later
+    license_ref: sdk/tools/hhpcomp/lzx_compress/lzx_layer.c
+    license_note: >
+      Upstream's ledger files this under the chmc entry as GPL-3.0-or-later; the files'
+      own headers (Matthew T. Russotto, 2002) say GNU LESSER GPL. Recorded from the files.
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/hhpcomp/chmc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool, the LZX compressor chmc links. Never ships.
+
+  - path: sdk/tools/mkisofs/schilytools
+    name: Schily Tools (mkisofs)
+    upstream: https://sourceforge.net/projects/schilytools/
+    license: CDDL-1.0
+    license_file: sdk/tools/mkisofs/schilytools/CDDL.Schily.txt
+    license_extra:
+      GPL-2.0-or-later: >
+        mkisofs itself is Eric Youngdale's GPL program that Schily maintains: its sources
+        say "either version 2, or (at your option) any later version" (and four say
+        "version 2" only), while the schily libraries carry the CDDL. A host tool, so
+        nothing here reaches the shipped image.
+    modified: yes
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/mkisofs/schilytools\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool that masters livecd.iso, ~35K lines. Never ships.
 
   # ── headers with no source in this tree ─────────────────────────────────
   # Registered because the convention-alias scanner walks them and they are foreign
   # code, even though the implementation is not vendored here.
-  - path: sdk/include/reactos/libs/expat
-    name: Expat (headers only)
-    upstream: https://libexpat.github.io/
-    license: MIT
-    modified: unknown
-    headers:
-      - sdk/include/reactos/libs/expat
-    version:
-      file: sdk/include/reactos/libs/expat/expat.h
-      patterns:
-        - '#define XML_MAJOR_VERSION\s+(\d+)'
-        - '#define XML_MINOR_VERSION\s+(\d+)'
-        - '#define XML_MICRO_VERSION\s+(\d+)'
-      join: "."
-    reason: >
-      Headers only — there is NO expat source anywhere in this tree. Surfaced by
-      building this registry; it was one of the six entries in the old hardcoded
-      tuple, which gave no hint that the library behind it is absent.
-
-  - path: sdk/include/reactos/libs/fullfat
-    name: FullFAT (headers only)
-    upstream: https://github.com/jameswalmsley/FullFAT
-    license: unknown  # James Walmsley, 2009
-    modified: unknown
-    headers:
-      - sdk/include/reactos/libs/fullfat
-    reason: >
-      Headers only — no FullFAT source in this tree. 19 headers, none of them
-      excluded from the convention-alias scan before this registry existed.
-
 # ─────────────────────────────────────────────────────────────────────────────
 # THE OTHER HALF: foreign-COPYRIGHT code that IS ours to translate.
 #
@@ -512,6 +2118,180 @@ trees:
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
 ours:
+  - paths:
+      - sdk/lib/libwine
+      - sdk/lib/strmbase
+    name: Wine-derived support libraries
+    origin: Wine (LGPL-2.1-or-later)
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      MISFILED AS VENDORED UNTIL 2026-09-19. Both were `trees:` entries, and both
+      carried a review note admitting the contradiction — Wine-derived code in a
+      registry half that means "not ours to translate", while the roadmap treats the
+      Wine bucket as a target. The owner settled it: Wine is ours and on the
+      translation path, so they belong here with the other 24 Wine modules.
+
+      They also had to MOVE. sdk/lib/3rdparty is a registered CONTAINER where every
+      child must be a vendored tree, so `ours:` code cannot live there — `--check`
+      refuses it, which is how the mbedtls adapter was caught earlier the same day.
+      They are now sdk/lib/{libwine,strmbase}, built from sdk/lib/CMakeLists.txt.
+
+      1,134 + 7,046 lines. Small, but they are linked by quartz, qcap, qedit, amstream
+      and (as a static archive by absolute build path) by userinit and winlogon, so the
+      move touched four CMakeLists beyond the two being moved.
+
+
+  # ── Microsoft driver samples we DO translate ────────────────────────────
+  - paths:
+      - drivers/filesystems/fastfat
+      - drivers/filesystems/cdfs
+    name: Microsoft sample filesystems (FastFAT, CDFS)
+    origin: Microsoft Windows-driver-samples (MIT)
+    tier: "Tier 1 (boot-path filesystems)"
+    reason: >
+      FOUND UNCLASSIFIED 2026-09-20, 114,076 lines between them, by the widened
+      `_FOREIGN_HOLDER` -- every file is "Copyright (c) 1989-2000 Microsoft
+      Corporation" and the old pattern could not see a year between `(c)` and the
+      holder. The largest thing this registry has ever missed.
+
+      They belong in `ours:` and not in `trees:` on the evidence rather than by
+      preference: fastfat-rust and cdfs-rust both exist and are being translated,
+      and rust-port-status lists both among the boot-path filesystems. Filing them
+      as vendored would have cut 114K lines out of the translation denominator --
+      the exact silent-shrink this half of the registry exists to prevent.
+
+      LICENCE, AND WHAT CAN ACTUALLY BE CITED: fastfat/README.md is Microsoft's
+      Windows-driver-samples page verbatim, `page_type: sample` front matter and
+      all, and that repository is MIT. So MIT is very probably right -- but as with
+      WDF before its LICENSE was vendored, the grant is a fact about upstream and
+      NOT quotable from anything in this tree: neither directory carries a LICENSE,
+      COPYING or any permission text. Vendoring the upstream MIT LICENSE into both
+      is the cheap fix and is owed. Until then this is recorded, not resolved.
+
+  # ── Wine-derived code: OURS, and on the translation path ────────────────
+  - paths:
+      - dll/win32/comctl32
+      - dll/win32/crypt32
+      - dll/win32/hhctrl.ocx
+      - dll/win32/hlink
+      - dll/win32/hnetcfg
+      - dll/win32/ieframe
+      - dll/win32/inetcomm
+      - dll/win32/jscript
+      - dll/win32/mshtml
+      - dll/win32/msi
+      - dll/win32/msvcrt
+      - dll/win32/msxml3
+      - dll/win32/ole32
+      - dll/win32/oleacc
+      - dll/win32/rpcrt4
+      - dll/win32/setupapi
+      - dll/win32/urlmon
+      - dll/win32/vbscript
+      - dll/win32/wbemprox
+      - dll/win32/windowscodecs
+      - dll/win32/winhttp
+      - dll/win32/wininet
+      - dll/directx/wine/d3dcompiler_43
+      - dll/directx/wine/wined3d
+    name: Wine-derived shipped modules
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      ONE DECISION, 24 paths, owner-confirmed 2026-09-19: Wine-derived code is OURS and
+      is on the translation path. These are forked Wine modules this project ships,
+      maintains and translates — not a vendored drop tracked against upstream. The
+      proof is in the tree: dll/win32/msvcrt is on this list and is already ~fully
+      translated, graded against the genuine C by msvcrt-difftest.
+
+      They are listed here rather than left silent because `--suspects` learned to see
+      Wine on 2026-09-19 (it matches `Copyright ... for CodeWeavers`, since Wine does
+      not use the `(c)` form the other holders do) and would otherwise re-ask about 24
+      directories forever. Being in `ours:` is a claim about SCOPE, not authorship: the
+      code is foreign, the responsibility is ours, and the lines stay in the
+      translation denominator.
+
+  # ── Wine-derived code declined at build time: still OURS ────────────────
+  - paths:
+      - dll/win32/combase
+      - dll/win32/coml2
+      - dll/win32/shcore
+      - dll/win32/uiautomationcore
+    name: Wine COM/shell restructure (combase/coml2/shcore/uiautomationcore)
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue) — currently UNBUILT, see reason"
+    reason: >
+      ADDED 2026-09-20 by the 1,269-commit upstream merge, and flagged UNCLASSIFIED by
+      `--suspects` (uiautomationcore: 8 files, combase: 5 files; coml2 and shcore sit
+      below the >=5-file threshold but are the same case and the same decision).
+
+      Same argument as the 24-path "Wine-derived shipped modules" entry above — LGPL-2.1
+      CodeWeavers-style Wine code, forked and shipped by this project, on the
+      translation path in principle — but with one difference worth recording instead of
+      silently inheriting: **none of the four currently build.**
+      `dll/win32/CMakeLists.txt` comments out all four `add_subdirectory()` calls with an
+      explicit decision note: upstream's COM/shell restructure is DECLINED for now
+      because our ole32 stays monolithic, our kernelbase is a minimal Vista shim, and
+      shlwapi keeps its own exports — combase.c externs symbols
+      (`Ole32DllGetClassObject`, `DestroyRunningObjectTable`) that only exist once ole32
+      has been split, and our ole32 moniker/oleproxy code is already Rust and does not
+      export them. Half-adopting the split would link and then misbehave. Full detail:
+      upstream-sync-merge-decisions.md.
+
+      Filed as `ours:` rather than `trees:` for the same reason fastfat/cdfs were:
+      dropping them from the denominator on account of being temporarily unbuilt would
+      be exactly the silent-shrink this half of the registry exists to prevent, and the
+      standing rule is to never hide a translation (or a translation CANDIDATE) from
+      view. If the restructure is ever adopted, this is the tier queue entry to pick up;
+      until then these four are dead-but-present source, same shape as a cohab-flipped
+      `.c` file, just never wired in rather than wired out.
+
+  - paths:
+      - modules/rostests/winetests/comctl32
+      - modules/rostests/winetests/kernel32
+      - modules/rostests/winetests/mshtml
+      - modules/rostests/winetests/msi
+      - modules/rostests/winetests/shell32
+      - modules/rostests/winetests/ucrtbase
+      - modules/rostests/winetests/urlmon
+      - modules/rostests/winetests/windowscodecs
+      - modules/rostests/winetests/activeds
+      - modules/rostests/winetests/combase
+      - modules/rostests/winetests/rtworkq
+      - modules/rostests/winetests/shcore
+      - modules/rostests/winetests/uiautomationcore
+      - modules/rostests/winetests/vbscript
+    name: Wine conformance tests
+    origin: Wine's own test suite (LGPL-2.1-or-later)
+    reason: >
+      A DIFFERENT argument from the shipped modules above, which is why it is a separate
+      entry. These are Wine's conformance tests: they are the ORACLE we grade against,
+      not code we are porting. Translating them would be translating the ruler. They are
+      `ours:` in the only sense that matters to this registry — a deliberate decision,
+      not an unclassified import — and they should NOT be read as translation debt.
+
+      The last six paths were ADDED 2026-09-20 by the 1,269-commit upstream merge, which
+      also brought the corresponding shipped-module sources (activeds, combase, rtworkq,
+      shcore, uiautomationcore, vbscript). vbscript builds; the other four DLLs under
+      test do not — combase/coml2/shcore/uiautomationcore are commented out of
+      `dll/win32/CMakeLists.txt` (upstream's COM/shell restructure is declined, see the
+      shipped-module entry below) — but `modules/rostests/winetests/CMakeLists.txt`
+      still `add_subdirectory`s all of their test dirs unconditionally. That is Wine's
+      test suite either way, oracle not translation debt, same as the rest of this list;
+      it is filed here rather than left silent because `--suspects`' >=5-file threshold
+      flagged winetests/vbscript (12 files) and winetests/combase (8 files) as
+      unclassified, and the other four sit below that threshold but are the same case.
+
+  - paths:
+      - sdk/include/wine
+    name: Wine headers
+    origin: Wine (LGPL-2.1-or-later)
+    reason: >
+      The Wine compatibility headers the modules above compile against. Headers, not
+      bodies, so they carry no translation debt either way (the `ours:` table measures
+      bodies) — but they are foreign-copyright and unclassified code sits in neither
+      list, so the ratchet is owed an answer. This is it.
+
   # ── Microsoft DDK storage class drivers ─────────────────────────────────
   # All three share one argument, written out here and cross-referenced below.
   - path: drivers/storage/class/classpnp
@@ -563,3 +2343,78 @@ ours:
       from, and these are individual headers living inside our own. Nothing here is a
       translation target in the first place — the project translates C bodies, and this
       directory has none.
+
+  # ── the NDK, ReactOS's own native API headers ───────────────────────────
+  - path: sdk/include/ndk
+    name: NDK (ReactOS native API headers)
+    origin: ReactOS-authored (Alex Ionescu, alex.ionescu@reactos.com)
+    reason: >
+      45 headers carrying `Copyright (c) Alex Ionescu.  All rights reserved.` and no
+      grant of any kind, which is why `--grants` reported the directory twice (the
+      root and the i386 subdir). The header block is the DDK's `/*++ ... --*/` house
+      style, which has no LICENSE: line to put one on.
+
+      Not a foreign tree: the NDK was written FOR ReactOS by one of its founders,
+      using a reactos.com address, and has shipped as part of ReactOS since 2004 —
+      so the project's own COPYING is its grant, the same as for any other
+      contribution. "All rights reserved" beside a personal copyright is the 1990s
+      boilerplate the DDK template carried, not a withholding.
+
+      Registered as ours rather than given a licence file, because adding a grant to
+      45 upstream files on a contributor's behalf is not ours to write, and it would
+      conflict with every ReactOS sync forever. Nothing here is a translation target
+      anyway: headers, no C bodies.
+
+  # ── Ken Kato's Virtual Floppy Drive, shipped inside rosapps ─────────────
+  - paths:
+      - modules/rosapps/lib/vfdlib
+      - modules/rosapps/drivers/vfd
+      - modules/rosapps/include/vfd
+    name: Virtual Floppy Drive (VFD)
+    origin: Ken Kato, Virtual Floppy Drive 2.1 — GPL-2.0 (see reason)
+    tier: "rosapps (not shipped on the boot path)"
+    reason: >
+      33 files carrying `Copyright (C) 2003-2008 Ken Kato` and no grant of any kind.
+      One decision, three directories, because ReactOS split one upstream program
+      into a driver, a control library and its shared headers.
+
+      The grant is GPL-2: the upstream project (Virtual Floppy Drive, SourceForge
+      `projects/vfd`) is published under GNU GPL v2.0, and ReactOS carries it inside
+      `modules/rosapps`, whose own COPYING is the GPL-2 text. So the terms are
+      readable in this distribution twice over — what is missing is any file saying
+      which licence applies, which is why `--grants` reported all three directories.
+
+      Recorded here rather than by editing 33 upstream headers, which would conflict
+      with every ReactOS sync. NOT laundered through the rosapps COPYING: a
+      collection licence three levels up is explicitly rejected as coverage
+      (`_COLLECTION_ROOTS`), precisely so these three directories could not go quiet
+      on their own. What is NOT verified: the SourceForge project page states the
+      licence and the program name but does not name Ken Kato, so the chain is
+      name-and-licence, not authorship. Cheap to firm up if it ever matters —
+      the upstream release tarball carries a COPYING and a readme.
+
+  # ── Found 2026-09-25 in upstream's `media/doc/3rd Party Files.txt` ──────
+  # Both were third-party per upstream's own ledger, and both are ALREADY Rust: a
+  # `trees:` entry would have been false twice over (we do translate them, and did).
+  - path: drivers/storage/port/buslogic
+    name: VMware BusLogic BT-958 SCSI miniport (vmscsi)
+    origin: VMware, based on the Linux BusLogic driver — GPL-2.0-or-later (BusLogic958.c header)
+    tier: "Tier 1 (storage port drivers)"
+    reason: >
+      Upstream's ledger lists it as VMware's vmscsi 1.2.0.4 (2005-08-17), GPL-2.0-or-later,
+      and README.ReactOS records where VMware published it. BusLogic958.c is translated
+      and cohab-flipped to buslogic-rust; the C stays on disk per the never-delete rule.
+      Recorded because the Rust is a derivative of GPL-2.0-or-later code, and that is a
+      fact about the shipped buslogic.sys whoever wrote the translation.
+
+  - path: sdk/lib/cryptlib
+    name: cryptlib (MD4/MD5/RC4/SHA1/AES/DES)
+    origin: Wine contributors (Leidekker, McCormack, Navara, Kamuju, Jung) — LGPL-2.1-or-later; mvAesAlg from Marvell's OCF reference AES
+    tier: "Tier 1 (ksecdd dependency)"
+    reason: >
+      The primitive crypto ksecdd.sys links. Per-file headers are Wine-era LGPL
+      (Hans Leidekker's MD4/MD5, Mike McCormack's RC4, Filip Navara's SHA1, Vijay Kiran
+      Kamuju's AES, Michael Jung's DES), plus mvAesAlg from an OpenWrt/Marvell reference
+      implementation that README.txt cites. Already translated: the cross build links
+      libcryptlib_rust.a from cryptlib-rust and compiles only a stub TU; the C is built
+      solely for host tools. `ours:` rather than `trees:` because it is translated.

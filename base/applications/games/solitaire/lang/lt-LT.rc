@@ -1,6 +1,6 @@
 /*
  * PROJECT:     Solitaire
- * LICENSE:     Freeware, permission to use under Public Domain
+ * LICENSE:     See COPYING in top level directory
  * FILE:        base/applications/games/solitaire/lang/lt-LT.rc
  * PURPOSE:     Lithuanian Language File for Solitaire
  * TRANSLATORS: Vytis "CMan" Girdžijauskas (cman@cman.us)
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Solitaire"
-    IDS_SOL_ABOUT "Solitaire sukurta J Brown\nCardLib version 1.0"
+    IDS_SOL_ABOUT "Solitaire"
     IDS_SOL_QUIT "Baigti žaidimą?"
     IDS_SOL_WIN "Sveikiname, jūs laimėjote!!"
     IDS_SOL_DEAL "Dalinti vėl?"

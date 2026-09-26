@@ -1,6 +1,13 @@
 use crate::prelude::*;
 use crate::shellrecyclebin::RecycleBin5::RecycleBin5_new;
+use crate::shellrecyclebin::RecycleBin5::RecycleBin5_Init_body;
+use crate::shellrecyclebin::RecycleBin5::RecycleBin5_delete;
 use crate::shellrecyclebin::RecycleBin5::WIN32_FIND_DATAW;
+// recyclebin_private.h:26-28's #define's, as real UTF-16 constants -- the glob-imported
+// `types_arch::RECYCLE_BIN_FILE_NAME` is a bindgen-decoded `&[u8; 6] = b"INFO2\0"` (an ASCII
+// byte string, wrong unit entirely for `wcslen`/`wcscpy`'s LPCWSTR). This explicit import
+// shadows that glob hit with the real wide-string pointer recyclebin_support.rs provides.
+use crate::shellrecyclebin::recyclebin_support::RECYCLE_BIN_FILE_NAME;
 // Deterministic UTF-16 literals from the selected C++ helper closure.
 pub static CPP_COM_WSTR_A5DBFDEBD401: [WCHAR; 12] = [0x0064, 0x0065, 0x0073, 0x006B, 0x0074, 0x006F, 0x0070, 0x002E, 0x0069, 0x006E, 0x0069, 0x0000];
 pub static CPP_COM_WSTR_B7FC02907B1F: [WCHAR; 2] = [0x005C, 0x0000];
@@ -14,32 +21,24 @@ use crate::shellrecyclebin::recyclebin_support::CStringW;
 
 use core::ffi::c_void;
 
-// ---- file-scope preamble (translated) ----
-pub type PRecycleBin5 = *mut RecycleBin5;
-
-#[repr(C)]
-pub struct RecycleBin5 {
-    pub lpVtbl: *const IRecycleBin5Vtbl,
-    pub m_ref: LONG,
-    pub m_hInfo: HANDLE,
-    pub m_hInfoMapped: HANDLE,
-    pub m_EnumeratorCount: DWORD,
-    pub m_VolumePath: CStringW,
-    pub m_Folder: CStringW,
-}
+// NOTE: no local `RecycleBin5` preamble struct/`PRecycleBin5` alias here -- RecycleBin5_new()
+// below returns the REAL `RecycleBin5` from RecycleBin5.rs (imported below); a same-named
+// local duplicate would be a distinct nominal type and fail exactly like RecycleBin5Enum's
+// `pThis` did (see RecycleBin5Enum.rs / recyclebin_v5_enumerator_free.rs for the same bug).
+use crate::shellrecyclebin::RecycleBin5::RecycleBin5;
 
 unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
     let RemovableAttributes: DWORD = FILE_ATTRIBUTE_READONLY;
     let mut FindData: WIN32_FIND_DATAW = core::mem::zeroed();
     let mut hSearch: HANDLE = INVALID_HANDLE_VALUE;
     let mut FullPath: LPWSTR = core::ptr::null_mut();
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = FALSE as BOOL;
 
     'cleanup: {
         let FileAttributes = GetFileAttributesW(FullName);
         if FileAttributes == INVALID_FILE_ATTRIBUTES {
             if GetLastError() == ERROR_FILE_NOT_FOUND {
-                ret = TRUE;
+                ret = TRUE as BOOL;
             }
             break 'cleanup;
         }
@@ -53,7 +52,7 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
             FullPath = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                (dwLength + 1 + MAX_PATH + 1) * core::mem::size_of::<u16>(),
+                ((dwLength + 1 + MAX_PATH as usize + 1) * core::mem::size_of::<u16>()) as SIZE_T,
             ) as LPWSTR;
             if FullPath.is_null() {
                 SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -68,7 +67,11 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
             let pFilePart = FullPath.offset(dwLength as isize);
             wcscpy(pFilePart, CPP_COM_WSTR_E8A4B2EE7EDE.as_ptr());
 
-            hSearch = FindFirstFileW(FullPath, &mut FindData);
+            // `WIN32_FIND_DATAW` here is RecycleBin5.rs's own struct (imported above), a
+            // distinct nominal type with the same layout as the bindgen `_WIN32_FIND_DATAW`
+            // FindFirstFileW/FindNextFileW actually declare -- `.cast()` at the crossing,
+            // same pattern RecycleBin5.rs itself uses (its FindFirstFileW/FindNextFileW calls).
+            hSearch = FindFirstFileW(FullPath, core::ptr::addr_of_mut!(FindData).cast());
             if hSearch == INVALID_HANDLE_VALUE {
                 break 'cleanup;
             }
@@ -84,7 +87,7 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
                         break 'cleanup;
                     }
                 }
-                if FindNextFileW(hSearch, &mut FindData) == 0 {
+                if FindNextFileW(hSearch, core::ptr::addr_of_mut!(FindData).cast()) == 0 {
                     break;
                 }
             }
@@ -100,10 +103,10 @@ unsafe extern "C" fn IntDeleteRecursive(FullName: LPCWSTR) -> BOOL {
                 break 'cleanup;
             }
         }
-        ret = TRUE;
+        ret = TRUE as BOOL;
     }
 
-    HeapFree(GetProcessHeap(), 0, FullPath);
+    HeapFree(GetProcessHeap(), 0, FullPath.cast());
     ret
 }
 unsafe extern "C" fn RecycleBin5_Create(
@@ -113,15 +116,20 @@ unsafe extern "C" fn RecycleBin5_Create(
     let mut BufferName: LPWSTR = core::ptr::null_mut();
     let desktop_ini_contents: LPCSTR =
         b"[.ShellClassInfo]\r\nCLSID={645FF040-5081-101B-9F08-00AA002F954E}\r\n\0".as_ptr() as LPCSTR;
+    // recyclebin_v5.cpp:559 -- `{ 5, 0, 0, 0x320, 0 }` is positional-init in C; the Rust
+    // struct literal needs field names (dwRecordSize=0x320 == sizeof(DELETED_FILE_RECORD)).
     let mut info2_contents: [_INFO2_HEADER; 1] = [_INFO2_HEADER {
-        5,
-        0,
-        0,
-        0x320,
-        0,
+        dwVersion: 5,
+        dwNumberOfEntries: 0,
+        dwHighestRecordUniqueId: 0,
+        dwRecordSize: 0x320,
+        dwTotalLogicalSize: 0,
     }];
     let mut BytesToWrite: u32;
-    let mut BytesWritten: u32;
+    // C leaves `DWORD BytesWritten;` uninitialized (WriteFile always sets it on both success
+    // paths below); zero-init is a safe superset and satisfies Rust's definite-init check for
+    // the plain-value reads (`BytesWritten != BytesToWrite`) after each WriteFile out-param use.
+    let mut BytesWritten: u32 = 0;
     let Needed: usize;
     let mut hFile: HANDLE = INVALID_HANDLE_VALUE;
     let hr: HRESULT;
@@ -137,12 +145,16 @@ unsafe extern "C" fn RecycleBin5_Create(
     BufferName = HeapAlloc(
         GetProcessHeap(),
         0,
-        Needed,
+        Needed as SIZE_T,
     ) as LPWSTR;
 
     hr = 'body: {
         if BufferName.is_null() {
-            break 'body ERROR_NOT_ENOUGH_MEMORY;
+            // recyclebin_v5.cpp:571 -- `hr = ERROR_NOT_ENOUGH_MEMORY;` assigns a raw Win32
+            // error code straight into the HRESULT `hr`, with no HRESULT_FROM_WIN32() wrap
+            // (unlike every other error path in this function). That looks like an upstream
+            // bug, but it's the actual C++ behaviour, so it's preserved faithfully, not fixed.
+            break 'body ERROR_NOT_ENOUGH_MEMORY as HRESULT;
         }
 
         let mut Separator: LPWSTR;
@@ -240,7 +252,7 @@ unsafe extern "C" fn RecycleBin5_Create(
     };
 
     // cleanup
-    HeapFree(GetProcessHeap(), 0, BufferName);
+    HeapFree(GetProcessHeap(), 0, BufferName.cast());
     if hFile != INVALID_HANDLE_VALUE {
         CloseHandle(hFile);
     }
@@ -259,9 +271,9 @@ pub unsafe extern "C" fn RecycleBin5_Constructor(
     if pThis.is_null() {
         return E_OUTOFMEMORY;
     }
-    let hr = unsafe { RecycleBin5::Init(pThis, VolumePath) };
+    let hr = RecycleBin5_Init_body(pThis, VolumePath);
     if hr < 0 {
-        unsafe { RecycleBin5::delete(pThis) };
+        RecycleBin5_delete(pThis);
         return hr;
     }
     *ppUnknown = pThis as *mut core::ffi::c_void;

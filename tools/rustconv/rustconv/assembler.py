@@ -232,6 +232,7 @@ def assemble_file(
         # skipping BOTH of these, so a COM target assembled here got no stdmethod! wrapper
         # and a crate-island target got its `types` symbols collapsed into the sys umbrella.
         com_method_macro=target.com_method_macro,
+        concrete_stdcall_slots=target.concrete_stdcall_slots,
         crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
     )
 

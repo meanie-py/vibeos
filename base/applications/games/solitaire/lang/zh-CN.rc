@@ -1,6 +1,6 @@
 /*
  * PROJECT:    Solitaire
- * LICENSE:    Freeware, permission to use under Public Domain
+ * LICENSE:    See COPYING in top level directory
  * FILE:       base/applications/games/solitaire/lang/zh-CN.rc
  * PURPOSE:    Simplified Chinese Language resources File for Solitaire
  * TRANSLATOR: zhangbing <e_zb@21cn.com, ezb@mail.gywb.cn>
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "纸牌"
-    IDS_SOL_ABOUT "纸牌由 J Brown 开发\nCardLib 版本 1.0"
+    IDS_SOL_ABOUT "纸牌"
     IDS_SOL_QUIT "退出当前游戏？"
     IDS_SOL_WIN "恭喜你，你赢了！"
     IDS_SOL_DEAL "再玩一次？"

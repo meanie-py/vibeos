@@ -24,6 +24,11 @@ extern crate crt_shared_rust;
 // msvcrt.dll. Mirrors msvcrt-crt-cargo's `extern crate cnt_rust`.
 extern crate cnt_rust;
 
+// Same reason as cnt_rust above, and the same silent failure if omitted: a
+// dependency nothing references contributes no objects to a staticlib, so the
+// manifest entry alone would build green, gate green, and simply not flip.
+extern crate ucrt_rust;
+
 // Absorbed by --allow-multiple-definition against any other Rust staticlib in the module
 // (mirrors msvcrt-crt-cargo and crt-dllmain-rust).
 #[no_mangle]

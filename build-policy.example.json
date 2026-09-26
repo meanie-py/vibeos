@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "leases": 2,
+  "max_builds": 1,
+  "ninja_jobs": 4,
+  "cargo_jobs": 1
+}

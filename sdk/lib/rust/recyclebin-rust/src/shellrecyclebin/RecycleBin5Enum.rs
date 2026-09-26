@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_Init_body;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_delete;
 use crate::shellrecyclebin::RecycleBin5File::RecycleBin5File_new;
@@ -84,7 +85,7 @@ pub unsafe fn RecycleBin5Enum_new() -> *mut RecycleBin5Enum {
         core::mem::size_of::<RecycleBin5Enum>(),
     ) as *mut RecycleBin5Enum;
     if this.is_null() { return core::ptr::null_mut(); }
-    (*this).IRecycleBinEnumList_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBIN5ENUM_IRECYCLEBINENUMLIST_VTBL);
+    (*this).IRecycleBinEnumList_iface.lpVtbl = core::ptr::addr_of!(RECYCLEBIN5ENUM_IRECYCLEBINENUMLIST_VTBL).cast_mut();
     RecycleBin5Enum_ctor_body(this);
     this
 }
@@ -124,12 +125,18 @@ pub const INVALID_FILE_SIZE: DWORD = 0xFFFFFFFF;
 
 pub const OPEN_EXISTING: DWORD = 3;
 
-#[repr(C)]
-pub struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
+// NOTE: no local `ULARGE_INTEGER` here -- see RecycleBin5File.rs for why a same-named local
+// struct would shadow the real bindgen union and split the nominal type.
 
 // Deterministic from shldisp.h
+// FolderItems/FolderItem are forward-declared COM interfaces in shldisp.h with no member of
+// this file ever calling through them; opaque stubs match a C forward decl used only as a
+// pointer target (see RecycleBin5File.rs for the identical scaffold).
+#[repr(C)]
+pub struct FolderItems { _unused: [u8; 0] }
+#[repr(C)]
+pub struct FolderItem { _unused: [u8; 0] }
+
 #[repr(C)]
 pub struct Folder {
     pub lpVtbl: *const FolderVtbl,
@@ -353,19 +360,28 @@ pub unsafe fn RecycleBin5Enum_QueryInterface_body(this: *mut RecycleBin5Enum, ri
 }
 
 pub unsafe fn RecycleBin5Enum_AddRef_body(this: *mut RecycleBin5Enum) -> ULONG {
-    InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref))
+    // InterlockedIncrement returns LONG (i32); recyclebin_v5_enumerator.cpp:348 returns it
+    // out of an `ULONG AddRef()`, same reinterpretation C performs implicitly.
+    InterlockedIncrement(core::ptr::addr_of_mut!((*this).m_ref)) as ULONG
 }
 
 pub unsafe fn RecycleBin5Enum_dtor_body(this: *mut RecycleBin5Enum) -> () {
+    // recyclebin_v5_enumerator.cpp:355-358. Vtable slots are Option<fn>; OnClosing/Release
+    // need .unwrap_unchecked(). UnmapViewOfFile takes LPCVOID (*const c_void); m_pInfo is the mapped
+    // view's *mut _INFO2_HEADER -- an allocator/free-boundary `.cast()`.
+    // recyclebin_v5_enumerator.cpp:355 -- `m_recycleBin->OnClosing(this)` upcasts the
+    // RecycleBin5Enum* to IRecycleBinEnumList* (its embedded interface, at offset 0); pass
+    // the interface field's address, not the concrete-object pointer.
     let recycle_bin = (*this).m_recycleBin;
-    ((*(*recycle_bin).lpVtbl).OnClosing)(recycle_bin, this);
-    UnmapViewOfFile((*this).m_pInfo);
-    ((*(*recycle_bin).lpVtbl).Release)(recycle_bin);
+    ((*(*recycle_bin).lpVtbl).OnClosing.unwrap_unchecked())(recycle_bin, core::ptr::addr_of_mut!((*this).IRecycleBinEnumList_iface));
+    UnmapViewOfFile((*this).m_pInfo.cast());
+    ((*(*recycle_bin).lpVtbl).Release.unwrap_unchecked())(recycle_bin);
     SHFree(((*this).m_pszPrefix) as LPVOID);
 }
 
 pub unsafe fn RecycleBin5Enum_Release_body(this: *mut RecycleBin5Enum) -> ULONG {
-    let refCount = InterlockedDecrement(&raw mut (*this).m_ref);
+    // recyclebin_v5_enumerator.cpp:365 -- ULONG refCount = InterlockedDecrement(&m_ref);
+    let refCount = InterlockedDecrement(&raw mut (*this).m_ref) as ULONG;
     if refCount == 0 {
         RecycleBin5Enum_delete(this);
     }
@@ -380,9 +396,11 @@ pub unsafe fn RecycleBin5Enum_Next_body(this: *mut RecycleBin5Enum, celt: DWORD,
         return E_INVALIDARG;
     }
 
+    // recyclebin_v5_enumerator.cpp:382-384 -- the real ULARGE_INTEGER union names this
+    // member `u` directly (winnt.h uses `u`, not `__bindgen_anon_1`).
     let mut FileSize: ULARGE_INTEGER = core::mem::zeroed();
-    FileSize.u.__bindgen_anon_1.LowPart = GetFileSize((*this).m_hInfo, &mut FileSize.u.__bindgen_anon_1.HighPart);
-    if FileSize.u.__bindgen_anon_1.LowPart == 0 {
+    FileSize.u.LowPart = GetFileSize((*this).m_hInfo, core::ptr::addr_of_mut!(FileSize.u.HighPart));
+    if FileSize.u.LowPart == 0 {
         return HResultFromWin32(GetLastError());
     }
 
@@ -396,11 +414,16 @@ pub unsafe fn RecycleBin5Enum_Next_body(this: *mut RecycleBin5Enum, celt: DWORD,
     let mut pDeletedFile = (pInfo_ptr.add(1) as *mut DELETED_FILE_RECORD).add(iEntry as usize);
 
     while iEntry < dwEntries && fetched < celt {
+        // recyclebin_v5_enumerator.cpp:394 -- `&rgelt[fetched]` is the address of the
+        // fetched-th *slot* in the output array (a `*mut *mut IRecycleBinFile`), i.e.
+        // `rgelt.add(fetched)`. The previous `&mut *(*rgelt).add(...)` instead dereferenced
+        // rgelt FIRST (reading whatever garbage pointer was at slot 0) and then walked off of
+        // THAT as if it were itself an array -- a real bug, not just a type mismatch.
         let hr = RecycleBin5File_Constructor_body(
             (*this).m_recycleBin,
             (*this).m_pszPrefix,
             pDeletedFile,
-            &mut *(*rgelt).add(fetched as usize),
+            rgelt.add(fetched as usize),
         );
         if hr >= 0 {
             fetched += 1;
@@ -442,7 +465,7 @@ pub unsafe fn RecycleBin5Enum_ctor_body(this: *mut RecycleBin5Enum) -> () {
 pub unsafe fn RecycleBin5Enum_Init_body(this: *mut RecycleBin5Enum, prb: *mut IRecycleBin5, hInfo: HANDLE, hInfoMapped: HANDLE, pszPrefix: LPCWSTR) -> HRESULT {
     // m_recycleBin = prb; AddRef
     (*this).m_recycleBin = prb;
-    (*((*(*((*this).m_recycleBin))).lpVtbl).AddRef)((*this).m_recycleBin);
+    ((*(*(*this).m_recycleBin).lpVtbl).AddRef.unwrap_unchecked())((*this).m_recycleBin);
 
     // Duplicate the prefix string
     let hr: HRESULT = SHStrDup(pszPrefix, &mut (*this).m_pszPrefix);
@@ -469,7 +492,7 @@ pub unsafe fn RecycleBin5Enum_Init_body(this: *mut RecycleBin5Enum, prb: *mut IR
 
     // Validate header version and record size
     if (*p_info).dwVersion != 5
-        || (*p_info).dwRecordSize != core::mem::size_of::<DELETED_FILE_RECORD>()
+        || (*p_info).dwRecordSize != core::mem::size_of::<DELETED_FILE_RECORD>() as DWORD
     {
         return E_FAIL;
     }

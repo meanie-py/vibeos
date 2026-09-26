@@ -74,16 +74,21 @@ XMLPUBFUN int
 XMLPUBFUN int
 		xmlSaveClose		(xmlSaveCtxtPtr ctxt);
 XMLPUBFUN int
+		xmlSaveFinish		(xmlSaveCtxtPtr ctxt);
+XMLPUBFUN int
 		xmlSaveSetEscape	(xmlSaveCtxtPtr ctxt,
 					 xmlCharEncodingOutputFunc escape);
 XMLPUBFUN int
 		xmlSaveSetAttrEscape	(xmlSaveCtxtPtr ctxt,
 					 xmlCharEncodingOutputFunc escape);
 
+XML_DEPRECATED
 XMLPUBFUN int
                 xmlThrDefIndentTreeOutput(int v);
+XML_DEPRECATED
 XMLPUBFUN const char *
                 xmlThrDefTreeIndentString(const char * v);
+XML_DEPRECATED
 XMLPUBFUN int
                 xmlThrDefSaveNoEmptyTags(int v);
 
@@ -93,3 +98,5 @@ XMLPUBFUN int
 
 #endif /* LIBXML_OUTPUT_ENABLED */
 #endif /* __XML_XMLSAVE_H__ */
+
+

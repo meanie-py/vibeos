@@ -181,3 +181,44 @@ def test_forwarded_export_is_served(tmp_path):
         rust={"lib.rs": "// nothing\n"},
     )
     assert vle.audit("m", ddir, crate)[0] == []
+
+
+def test_no_mangle_on_the_SAME_LINE_as_the_fn_still_counts(tmp_path):
+    """`#[no_mangle] pub unsafe extern "system" fn Gone()` — attribute and fn on ONE line.
+
+    Found 2026-09-19 flipping shell32's utils.cpp: that file writes every export this way, so
+    the lint called SHOpenEffectiveToken (SHELL32.235) a LOST export while utils.rs was
+    defining it. A sweep of sdk/lib/rust found 209 such definitions across 46 files invisible
+    to the old spelling, each one a false LOST export waiting for its .c to be commented out.
+    """
+    ddir, crate = _module(
+        tmp_path,
+        spec="@ stdcall Gone()\n",
+        cmake=FLIPPED_CMAKE,
+        sources={"impl.c": "VOID\nGone(void)\n{\n}\n", "other.c": "int x;\n"},
+        rust={"lib.rs": '#[no_mangle] pub unsafe extern "system" fn Gone() {}\n'},
+    )
+    assert vle.audit("m", ddir, crate)[0] == []
+
+
+def test_same_line_no_mangle_with_a_trailing_comment_still_counts(tmp_path):
+    ddir, crate = _module(
+        tmp_path,
+        spec="@ stdcall Gone()\n",
+        cmake=FLIPPED_CMAKE,
+        sources={"impl.c": "VOID\nGone(void)\n{\n}\n", "other.c": "int x;\n"},
+        rust={"lib.rs": '#[no_mangle] // SHELL32.235\npub unsafe extern "system" fn Gone() {}\n'},
+    )
+    assert vle.audit("m", ddir, crate)[0] == []
+
+
+def test_a_bare_attribute_with_no_fn_after_it_is_still_not_a_definition(tmp_path):
+    """Widening the attribute/fn gap must not start matching an attribute on its own."""
+    ddir, crate = _module(
+        tmp_path,
+        spec="@ stdcall Gone()\n",
+        cmake=FLIPPED_CMAKE,
+        sources={"impl.c": "VOID\nGone(void)\n{\n}\n", "other.c": "int x;\n"},
+        rust={"lib.rs": "#[no_mangle]\npub static Gone: u32 = 0;\n"},
+    )
+    assert [s for s, _ in vle.audit("m", ddir, crate)[0]] == ["Gone"]

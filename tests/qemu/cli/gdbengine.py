@@ -40,6 +40,22 @@ RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
 GDB_HELPERS = PROJECT_DIR / "qemu" / "gdb-helpers"
 GDB_BIN = "gdb-multiarch"
 
+
+def _gdb_bin() -> str:
+    """The gdb to drive, or a hard failure that says how to get it.
+
+    Without this, a host lacking gdb-multiarch surfaced as `[Errno 13] Permission denied`
+    (the exec search tripping over an unreadable PATH entry), which reads like a sandbox
+    problem. Host `gdb` is no substitute: it has no aarch64 support.
+    """
+    path = shutil.which(GDB_BIN)
+    if path is None:
+        raise RuntimeError(
+            f"{GDB_BIN} not found; install it: sudo apt-get install -y gdb-multiarch"
+        )
+    return path
+
+
 # Sourced into every gdb batch, in dependency order (preamble first). Same set the
 # bash inspect.sh/run-until.sh source; they're pure gdb-python and transport-agnostic.
 HELPER_FILES = [
@@ -91,8 +107,12 @@ def _gdb_arch(arch: str) -> str:
 def _kernel_image(arch: str) -> Path:
     arch = archcfg.base_arch(arch)
     kernel_dir = PROJECT_DIR / f"build-{arch}" / "ntoskrnl"
-    if smp_count() is not None:
-        return kernel_dir / "ntkrnlmp" / "ntkrnlmp.exe"
+    # Every media boots the MP kernel by default (DefaultOS=LiveCD_SMP / ReactOS_Arm64_MP since
+    # 2026-09-12), with or without VIBEOS_QEMU_SMP. Naming the UP image here loaded its DWARF at
+    # the MP kernel's base, so every symbol and struct offset in a gdb session was wrong.
+    mp = kernel_dir / "ntkrnlmp" / "ntkrnlmp.exe"
+    if mp.is_file():
+        return mp
     return kernel_dir / "ntoskrnl.exe"
 
 
@@ -249,6 +269,19 @@ def start(
     win_cfg: dict,
     gdb_wait: bool = False,
 ) -> DebugRun:
+    from ..portlease import launch_lock
+
+    with launch_lock():
+        return _start_locked(arch, backend=backend, win_cfg=win_cfg, gdb_wait=gdb_wait)
+
+
+def _start_locked(
+    arch: str,
+    *,
+    backend: str,
+    win_cfg: dict,
+    gdb_wait: bool = False,
+) -> DebugRun:
     """Launch a detached debug QEMU with a gdbstub; write + return the run manifest.
     windows-host only for now (the whole point — native breakpoints don't fire under
     KVM; the native port reuses this shell once its accel is forced to tcg)."""
@@ -268,6 +301,9 @@ def start(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     staging_root = Path(win_cfg.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
+    from ..windows_staging import auto_cleanup_locked
+
+    auto_cleanup_locked(staging_root)
     staging = staging_root / f"dbg-{run_id}"
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
@@ -360,7 +396,7 @@ def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float) -> str:
     env = {**os.environ, "VIBEOS_ARCH": run.arch, "VIBEOS_KERNEL": run.kernel_image}
     try:
         cp = subprocess.run(
-            [GDB_BIN, "-batch", "-nx", *ex],
+            [_gdb_bin(), "-batch", "-nx", *ex],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -429,7 +465,7 @@ def probe(run: DebugRun, script: Path, *, timeout: float) -> dict:
         else _gdb_arch(archcfg.base_arch(run.arch))
     )
     command = [
-        GDB_BIN,
+        _gdb_bin(),
         "-q",
         "-nx",
         "-batch",

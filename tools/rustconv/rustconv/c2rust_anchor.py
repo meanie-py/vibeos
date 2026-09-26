@@ -57,8 +57,45 @@ def _decanon(s: str) -> str:
     return s.replace(_CANON_ROOT, str(REACTOS_ROOT))
 
 
+def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, Path]]:
+    """Every (entry, build_dir) for c_file, pinned arch first, then the other arches.
+
+    More than one is useful because a c2rust failure can be a property of the ARCH's
+    flags rather than of the file: c2rust 0.22.1 panics in convert_type.rs whenever a
+    pointer is formed to a function type carrying a calling-convention attribute, and
+    on i386 `WINAPI` IS such an attribute while on amd64 it is nothing. msvcrt's
+    except.c fails on the i386 db and transpiles cleanly on the amd64 one.
+    """
+    cf = str(c_file.resolve())
+    order = (
+        _DB_BUILD_DIRS
+        if arch is None
+        else ([f"build-{arch}"] + [b for b in _DB_BUILD_DIRS if b != f"build-{arch}"])
+    )
+    out: list[tuple[dict, Path]] = []
+    for bd in order:
+        db_path = REACTOS_ROOT / bd / "compile_commands.json"
+        if not db_path.exists():
+            continue
+        try:
+            with open(db_path) as f:
+                db = json.load(f)
+        except Exception:
+            continue
+        for e in db:
+            if str(Path(_decanon(e["file"])).resolve()) == cf:
+                out.append((e, REACTOS_ROOT / bd))
+                break
+    return out
+
+
 def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] | None:
-    """Return (entry, build_dir) for c_file from the first build db that has it."""
+    """Return (entry, build_dir) for c_file from the first build db that has it.
+
+    A PINNED arch is honoured exactly — no sibling build is consulted. Only
+    `_transpile_text` falls back, and only after the pinned arch's db has actually
+    failed, and it says so when it does.
+    """
     cf = str(c_file.resolve())
     for bd in [f"build-{arch}"] if arch is not None else _DB_BUILD_DIRS:
         db_path = REACTOS_ROOT / bd / "compile_commands.json"
@@ -73,6 +110,74 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
             if str(Path(_decanon(e["file"])).resolve()) == cf:
                 return e, (REACTOS_ROOT / bd)
     return None
+
+
+#: Function ATTRIBUTES that c2rust 0.22.1's Clang AST exporter cannot map. Each one
+#: makes the exporter drop the TYPE of the declaration it sits on -- "Missing type
+#: <id> for node: AstNode { tag: TagFunctionDecl ... }" followed by "Exported Clang
+#: AST was invalid" -- and one such decl anywhere in the include closure kills the
+#: whole transpile. They come from msvcrt's PRIVATE headers, so every msvcrt TU
+#: inherits them and the failure looked like "c2rust refuses the SDK include
+#: closure". It is not the closure: it is exactly these three macros.
+#:
+#: Measured 2026-09-13 on dll/win32/msvcrt: 32 invalid-AST sites -> 26 with
+#: __WINE_MALLOC neutralised -> 0 with the two format attrs as well, and the TU
+#: transpiled. Across the module: 2/37 before, 35/37 after. The two stragglers
+#: (except.c, cpp.c) fail on the SEPARATE, already-documented `__label__` class --
+#: they use wine's __TRY/__EXCEPT_CTX, which under _USE_DUMMY_PSEH=1 opens a block
+#: with a GCC local-label declaration that c2rust does not support.
+#:
+#: Neutralising them is safe for the ANCHOR because they carry no semantics we
+#: translate: `malloc` and `format(printf/scanf)` are optimiser and -Wformat hints,
+#: not part of the ABI or the body. The real build is untouched -- these -D only
+#: reach c2rust. They work because the macros are `#ifndef`-guarded in
+#: dll/win32/msvcrt/include/corecrt.h (that guard is the one C change this needed).
+_ATTR_NEUTRALIZERS = (
+    "-D__WINE_MALLOC=",
+    "-D__WINE_CRT_PRINTF_ATTR(a,b)=",
+    "-D__WINE_CRT_SCANF_ATTR(a,b)=",
+    # GCC LOCAL LABELS -- the second, separate blocker. c2rust cannot export a
+    # `__label__` declaration: it becomes a TagDeclStmt whose only child is missing,
+    # clang's AST is rejected, and the transpile dies with a CDeclId panic. Under
+    # _USE_DUMMY_PSEH (the tree's global C compile mode) sdk/lib/pseh/include/pseh/pseh2.h
+    # opens every _SEH2_TRY / __TRY block with one. That branch is INERT -- the except
+    # arm is `if (_SEH2_Volatile0 || (0 && filter))`, never entered -- so the label only
+    # ever serves _SEH2_LEAVE, and these label-free replacements are behaviour-identical
+    # for the anchor. A TU that really uses _SEH2_LEAVE gets "use of undeclared label"
+    # and fails LOUDLY rather than being anchored against control flow it does not have.
+    # The guard that lets these win is the `#ifndef _SEH2_TRY` in pseh2.h.
+)
+
+#: PSEH overrides, tried in order. Both are behaviour-identical to the inert dummy
+#: branch; they differ only in which C they FAIL to compile, and each one's failure is
+#: loud.
+#:
+#: 1. `labelled` keeps the `__seh2_scope_end__:` labels and drops only the `__label__`
+#:    DECLARATIONS, so the labels become function-scoped. `_SEH2_LEAVE`'s goto still has
+#:    a target. It compiles exactly when the function has ONE _SEH2_TRY chain; a second
+#:    one in the same function is a duplicate-label error.
+#: 2. `labelfree` drops the labels too. It handles any number of TRY blocks, and a
+#:    `_SEH2_LEAVE` anywhere in the TU is `goto` to a label that does not exist —
+#:    c2rust says "Goto target label not found" rather than anchoring against control
+#:    flow the C does not have.
+#:
+#: Trying (1) first and falling back to (2) means a file is only rejected when NEITHER
+#: is legal, which so far means "several TRY blocks in one function AND a LEAVE".
+#: Measured 2026-09-19 over the 54 SEH-using TUs in the i386 compile db: 50 anchor.
+_PSEH_VARIANTS = (
+    (
+        "-D_SEH2_TRY={",
+        "-D_SEH2_FINALLY=__seh2_scope_end__:; } if (1) {",
+        "-D_SEH2_EXCEPT(...)=__seh2_scope_end__:; } if (_SEH2_Volatile0 || (0 && (__VA_ARGS__))) {",
+        "-D_SEH2_END=__seh2_scope_end__:; }",
+    ),
+    (
+        "-D_SEH2_TRY={",
+        "-D_SEH2_FINALLY=} if (1) {",
+        "-D_SEH2_EXCEPT(...)=} if (_SEH2_Volatile0 || (0 && (__VA_ARGS__))) {",
+        "-D_SEH2_END=}",
+    ),
+)
 
 
 def _extract_clang_flags(entry: dict) -> list[str]:
@@ -132,6 +237,20 @@ def _extract_clang_flags(entry: dict) -> list[str]:
             keep.append(_decanon(token))
         i += 1
     return keep
+
+
+def _targets_i386(flags: list[str]) -> bool:
+    """True when this compile command builds 32-bit x86, where __stdcall/__thiscall are
+    real ABI and must never be erased."""
+    for i, tok in enumerate(flags):
+        val = (
+            tok.split("=", 1)[1]
+            if tok.startswith("--target=")
+            else (flags[i + 1] if tok in ("--target", "-target") and i + 1 < len(flags) else "")
+        )
+        if val and re.match(r"^(i[3-6]86|x86)-", val):
+            return True
+    return False
 
 
 def _parse_functions(rs_text: str) -> dict[str, str]:
@@ -223,16 +342,82 @@ def _transpile_text(
         _TRANSPILE_CACHE[key] = None
         _fail("binary not on PATH (install c2rust, or pass --no-c2rust to translate pure-LLM)")
         return None
-    found = _find_db_entry(c_file, arch)
-    if found is None:
+    candidates = _find_db_entries(c_file, arch)
+    if not candidates:
         _TRANSPILE_CACHE[key] = None
         _fail(
             f"no compile_commands entry for {c_file.name} "
             "(build the arch first so the compile DB exists, or pass --no-c2rust)"
         )
         return None
-    entry, build_dir = found
+    attempts: list[str] = []
+    for attempt_no, (entry, build_dir) in enumerate(candidates):
+        result = _transpile_one(
+            c_file, entry, build_dir, timeout=timeout, attempts=attempts, strict=strict
+        )
+        if result is not None:
+            if attempt_no and verbose:
+                # NOT a silent degrade: say which db actually produced the anchor and
+                # why the asked-for one could not. An anchor from another arch is still
+                # a compiler-exact structural checklist, but arch-specific code in it
+                # (pointer widths, calling conventions) is that arch's, so the caller
+                # has to know.
+                print(
+                    f"  [c2rust] {c_file.name}: anchored from {build_dir.name}, not the "
+                    f"requested {candidates[0][1].name} — {attempts[0]}",
+                    file=sys.stderr,
+                )
+            _TRANSPILE_CACHE[key] = result
+            return result
+    _TRANSPILE_CACHE[key] = None
+    _fail(
+        f"no .rs produced for {c_file.name} — this file cannot be anchored on any built "
+        f"arch; pass --no-c2rust to translate it pure-LLM as a deliberate choice.\n    "
+        + "\n    ".join(attempts)
+    )
+    return None
+
+
+def _transpile_one(
+    c_file: Path,
+    entry: dict,
+    build_dir: Path,
+    timeout: int,
+    attempts: list[str],
+    strict: bool,
+) -> str | None:
+    """One c2rust run against one build db. Appends a `<db>: <reason>` line to
+    `attempts` on failure and returns None; returns the raw .rs text on success."""
     flags = _extract_clang_flags(entry)
+    # __thiscall is the third and last c2rust blocker in the msvcrt closure: forming a
+    # pointer to a function whose type carries a CALLING-CONVENTION attribute panics
+    # convert_type.rs ("ctype parameter must be a function instead of Attributed(...)"),
+    # and cxx.h's DEFINE_CXX_DATA takes the address of every __thiscall dtor. On a
+    # 64-bit target the compiler ignores the keyword outright — there is only one
+    # convention — so erasing it there is a no-op, not a semantic edit. On i386 it is
+    # real, so we never touch it: that file anchors from a 64-bit db instead (the caller
+    # is told), or not at all.
+    extra = [] if _targets_i386(flags) else ["-D__thiscall="]
+    for variant in _PSEH_VARIANTS:
+        result = _transpile_attempt(
+            c_file, build_dir, flags, [*extra, *variant], timeout, attempts, strict
+        )
+        if result is not None:
+            return result
+    return None
+
+
+def _transpile_attempt(
+    c_file: Path,
+    build_dir: Path,
+    flags: list[str],
+    extra: list[str],
+    timeout: int,
+    attempts: list[str],
+    strict: bool,
+) -> str | None:
+    """One c2rust invocation. Appends a `<db>: <reason>` line to `attempts` on failure."""
+    result: str | None = None
     out_dir = Path(tempfile.mkdtemp(prefix="c2rust_anchor_"))
     try:
         cmd = [
@@ -242,6 +427,9 @@ def _transpile_text(
             str(out_dir),
             str(c_file.resolve()),
             "--",
+            # BEFORE the db flags, so a -D of the same name in the db still wins.
+            *_ATTR_NEUTRALIZERS,
+            *extra,
             *flags,
         ]
         try:
@@ -249,39 +437,26 @@ def _transpile_text(
                 cmd, cwd=str(build_dir), capture_output=True, text=True, timeout=timeout
             )
         except subprocess.TimeoutExpired:
-            _TRANSPILE_CACHE[key] = None
-            _fail(f"timeout on {c_file.name} after {timeout}s")
+            attempts.append(f"{build_dir.name}: timeout after {timeout}s")
             return None
-        if strict and proc.returncode != 0:
-            _TRANSPILE_CACHE[key] = None
-            _fail(
-                f"c2rust failed for {c_file.name} (exit {proc.returncode}): "
-                f"{_c2rust_reason(proc.stderr, proc.stdout)}"
-            )
-            return None
-        # Best-effort library callers may inspect partial output; strict callers never do.
+        # SURFACE c2rust's own diagnosis. This used to say only "(AST unsupported)",
+        # which is a GUESS — the real reason (a clang parse error in OUR flags, a c2rust
+        # panic, an unsupported construct) was captured and thrown away, so every failure
+        # looked identical and un-actionable. Failing loud means saying WHY.
         rs = out_dir / "src" / f"{c_file.stem}.rs"
         if not rs.exists():
             alt = out_dir / f"{c_file.stem}.rs"  # some layouts drop it at the top level
             rs = alt if alt.exists() else rs
-        if rs.exists():
-            result = rs.read_text(errors="replace")
-        else:
-            _TRANSPILE_CACHE[key] = None
-            # SURFACE c2rust's own diagnosis. This used to say only "(AST unsupported)",
-            # which is a GUESS — the real reason (a clang parse error in OUR flags, a c2rust
-            # panic, an unsupported construct) was captured and thrown away, so every failure
-            # looked identical and un-actionable. Failing loud means saying WHY.
-            why = _c2rust_reason(proc.stderr, proc.stdout)
-            _fail(
-                f"no .rs produced for {c_file.name} — this file cannot be anchored; pass "
-                f"--no-c2rust to translate it pure-LLM as a deliberate choice.\n"
-                f"    c2rust said: {why}"
+        # Best-effort library callers may still use a partial .rs; strict callers never do.
+        if not rs.exists() or (strict and proc.returncode != 0):
+            attempts.append(
+                f"{build_dir.name}: exit {proc.returncode}: "
+                f"{_c2rust_reason(proc.stderr, proc.stdout)}"
             )
             return None
+        result = rs.read_text(errors="replace")
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
-    _TRANSPILE_CACHE[key] = result
     return result
 
 

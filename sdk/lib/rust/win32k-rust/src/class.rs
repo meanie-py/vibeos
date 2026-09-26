@@ -3,7 +3,7 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentProc
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::interlocked::InterlockedExchangePointer;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_SUCCESS};
-use ntkrnl_sys::constants::{STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_PARAMETER, STATUS_OBJECT_NAME_NOT_FOUND};
+use ntkrnl_sys::constants::{STATUS_ACCESS_VIOLATION, STATUS_BUFFER_TOO_SMALL, STATUS_INVALID_PARAMETER, STATUS_OBJECT_NAME_NOT_FOUND};
 use core::ffi::c_void;
 
 // SetLastNtError is FASTCALL (`@SetLastNtError@4`).
@@ -171,39 +171,79 @@ unsafe fn mm_user_probe_address() -> usize {
     *MmUserProbeAddress_imp as usize
 }
 
-// ProbeForReadGenericType(Ptr, Type, Default): range-check then volatile read.
-// Under DUMMY_PSEH the raise path is dead; we return Default on out-of-range.
+// probe_read_checked(Ptr): range-check then fault-protected read, returning
+// the caught NTSTATUS on failure instead of a default.
+//
+// RENAMED from the old `probe_read_generic` (and deliberately NOT reusing
+// that name, which collides with `ntkrnl_sys::probe::probe_read_generic` --
+// a DIFFERENT function with different semantics; the name clash is what hid
+// this file's local shadow from an audit of the real one). This local
+// version keeps the same MmUserProbeAddress-based range check the old one
+// had (`mm_user_probe_address()`, declared above per-arch specifically
+// because win32k.sys cannot link the DATA import `MmUserProbeAddress`
+// directly -- see the comment on that helper), but is wrong in BOTH
+// directions if left as-is:
+//   - out-of-range used to silently return `default` where the C macro
+//     RAISES (caught by the enclosing SEH, which then calls
+//     SetLastNtError) -- so a bad pointer yielded a zeroed UNICODE_STRING
+//     the caller then trusted as real data;
+//   - in-range-but-unmapped used to `read_volatile` unconditionally, which
+//     still faults (bugchecks under DUMMY_PSEH) on an unmapped page.
+// Fixed by returning `Err(STATUS_ACCESS_VIOLATION)` on out-of-range instead
+// of a default, and doing the actual read through
+// `ntkrnl_sys::probe::safe_copy_raw` (hardware-fault-tolerant, catches the
+// unmapped-page case the bare `read_volatile` could not).
 #[inline(always)]
-unsafe fn probe_read_generic<T: Copy>(ptr: *const T, default: T) -> T {
+unsafe fn probe_read_checked<T: Copy>(ptr: *const T) -> Result<T, NTSTATUS> {
     let addr = ptr as usize;
     let end = addr.wrapping_add(core::mem::size_of::<T>().wrapping_sub(1));
     if end < addr || end >= mm_user_probe_address() {
-        return default;
+        return Err(STATUS_ACCESS_VIOLATION);
     }
-    core::ptr::read_volatile(ptr)
+    let mut out: core::mem::MaybeUninit<T> = core::mem::MaybeUninit::uninit();
+    ntkrnl_sys::probe::safe_copy_raw(
+        out.as_mut_ptr() as *mut c_void,
+        ptr as *const c_void,
+        core::mem::size_of::<T>(),
+    )?;
+    // A fault may have copied a prefix; only a complete copy (Ok above)
+    // initializes T, so this is sound.
+    Ok(out.assume_init())
 }
 
 // ProbeForReadUnicodeString(Ptr) — captures a UNICODE_STRING by value.
 #[inline(always)]
-unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> _UNICODE_STRING {
-    let empty: _UNICODE_STRING = core::mem::zeroed();
-    probe_read_generic(ptr as *const _UNICODE_STRING, empty)
+unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> Result<_UNICODE_STRING, NTSTATUS> {
+    probe_read_checked(ptr as *const _UNICODE_STRING)
 }
 
 // ProbeForReadUint(Ptr) — captures a UINT by value.
 #[inline(always)]
-unsafe fn ProbeForReadUint(ptr: *const UINT) -> UINT {
-    probe_read_generic(ptr, 0u32)
+unsafe fn ProbeForReadUint(ptr: *const UINT) -> Result<UINT, NTSTATUS> {
+    probe_read_checked(ptr)
 }
 
 // ProbeForWriteUnicodeString(Ptr) — write-probe a UNICODE_STRING.
+//
+// Uses SafeProbeForWrite (already imported at the top of this file — the
+// real kernel routine, returns NTSTATUS) rather than the raw raising
+// `ProbeForWrite` extern: this is the one caller of `ProbeForWrite` in the
+// file, and inside a guarded region an uncaught raise still bugchecks
+// under DUMMY_PSEH just like `ProbeForRead` would. A write probe is not a
+// read probe, so this does NOT reuse `probe_read_checked` — SafeProbeForWrite
+// is the write-shaped equivalent.
 #[inline(always)]
-unsafe fn ProbeForWriteUnicodeString(ptr: PUNICODE_STRING) {
-    ProbeForWrite(
+unsafe fn ProbeForWriteUnicodeString(ptr: PUNICODE_STRING) -> Result<(), NTSTATUS> {
+    let st = SafeProbeForWrite(
         ptr as *mut c_void,
-        core::mem::size_of::<_UNICODE_STRING>(),
+        core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
         core::mem::align_of::<_UNICODE_STRING>() as u32,
     );
+    if st < 0 {
+        Err(st)
+    } else {
+        Ok(())
+    }
 }
 
 // RtlInitEmptyUnicodeString(Dst, Buffer, MaxLen).
@@ -375,14 +415,27 @@ pub unsafe extern "system" fn ProbeAndCaptureUnicodeStringOrAtom(
     /* Default to NULL */
     RtlInitEmptyUnicodeString(pustrOut, core::ptr::null_mut(), 0);
 
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:204) ----
+    // Shape: "free pustrOut->Buffer if already allocated, then cleanup" --
+    // the handler only sets `status` to the caught code if a buffer was
+    // already allocated at fault time (faithfully replicated below: if the
+    // FIRST probe/capture faults, pustrOut->Buffer is still NULL, so the C
+    // handler's `if (pustrOut->Buffer)` is false and `status` stays
+    // STATUS_SUCCESS despite the exception -- an existing C oddity, kept
+    // as-is rather than "fixed").
     'seh: {
-        ProbeForRead(
-            pustrUnsafe as *const c_void,
-            core::mem::size_of::<_UNICODE_STRING>(),
-            1,
-        );
-
-        ustr_copy = *pustrUnsafe;
+        // ProbeForRead(pustrUnsafe, sizeof(UNICODE_STRING), 1) + `ustr_copy = *pustrUnsafe`
+        // -- exactly probe_read_checked's shape (probe then capture a T by value).
+        ustr_copy = match probe_read_checked(pustrUnsafe as *const _UNICODE_STRING) {
+            Ok(v) => v,
+            Err(st) => {
+                if !(*pustrOut).Buffer.is_null() {
+                    ExFreePoolWithTag((*pustrOut).Buffer as *mut c_void, TAG_STRING);
+                    status = st;
+                }
+                break 'seh;
+            }
+        };
 
         /* Validate the string */
         if (ustr_copy.Length & 1) != 0 || ustr_copy.Buffer.is_null() {
@@ -411,17 +464,25 @@ pub unsafe extern "system" fn ProbeAndCaptureUnicodeStringOrAtom(
             }
 
             /* Copy the string and zero terminate it */
-            ProbeForRead(ustr_copy.Buffer as *const c_void, (*pustrOut).Length as usize, 1);
-            RtlCopyMemory(
+            // ProbeForRead(ustr_copy.Buffer, pustrOut->Length, 1) + RtlCopyMemory --
+            // no separate probe needed, safe_copy_raw's fault protection covers
+            // both the range check and the actual byte-for-byte copy.
+            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
                 (*pustrOut).Buffer as *mut c_void,
                 ustr_copy.Buffer as *const c_void,
                 (*pustrOut).Length as usize,
-            );
+            ) {
+                // pustrOut->Buffer is allocated at this point, so (unlike the
+                // first probe above) the handler's `if (pustrOut->Buffer)`
+                // is true here: free it and record the status.
+                ExFreePoolWithTag((*pustrOut).Buffer as *mut c_void, TAG_STRING);
+                status = st;
+                break 'seh;
+            }
             *(*pustrOut).Buffer.add((*pustrOut).Length as usize / core::mem::size_of::<u16>()) =
                 UNICODE_NULL;
         }
 
-        let _ = &mut status;
         break 'seh;
     }
 
@@ -637,9 +698,23 @@ unsafe fn IntRegisterClassAtom(ClassName: PUNICODE_STRING, pAtom: *mut RTL_ATOM)
             }
         }
 
-        RtlCopyMemory(AtomName as *mut core::ffi::c_void,
-                      (*ClassName).Buffer as *const core::ffi::c_void,
-                      (*ClassName).Length as usize);
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:368) ----
+        // No ProbeForRead in the C at this site (rule: don't add one where
+        // the C has none) -- RtlCopyMemory alone was the guarded region, so
+        // safe_copy_raw (fault-tolerant copy, no probing) is the direct match.
+        // Handler shape: free AtomName if not the stack buffer, SetLastNtError,
+        // then an immediate `_SEH2_YIELD(return FALSE)` -- not a fall-through.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            AtomName as *mut core::ffi::c_void,
+            (*ClassName).Buffer as *const core::ffi::c_void,
+            (*ClassName).Length as usize,
+        ) {
+            if AtomName != szBuf.as_mut_ptr() {
+                ExFreePoolWithTag(AtomName as *mut core::ffi::c_void, TAG_USTR);
+            }
+            SetLastNtError(st);
+            return 0;
+        }
 
         *AtomName.add((*ClassName).Length as usize / core::mem::size_of::<u16>()) = 0;
     } else {
@@ -1249,7 +1324,19 @@ unsafe fn IntCreateClass_impl(
                 (*gpsi).atomSysClass[iCls as usize] = (*Class).atomClassName;
             }
 
-            {
+            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:1222) ----
+            // Handler shape: plain fall-through `Status = _SEH2_GetExceptionCode();`
+            // -- the `if !NT_SUCCESS(Status)` cleanup right after this block
+            // already exists and is unchanged. `lpwcx` itself is always a
+            // kernel-owned copy at both call sites (UserRegisterClass's
+            // captured struct, or the local `wc` built by
+            // UserRegisterSystemClasses), so its field reads can't fault and
+            // get no new protection (rule: don't add a probe/guard the C
+            // didn't need). `(*MenuName).Buffer`, however, is the raw
+            // CALLER pointer (NtUserRegisterClassExWOW only captures the
+            // UNICODE_STRING header, not the string bytes) -- that's the
+            // literal RtlCopyMemory the C's SEH existed to catch.
+            'seh_try: {
                 let mut pszMenuNameBuffer: PWSTR = pszMenuName;
 
                 (*Class).lpfnWndProc = (*lpwcx).lpfnWndProc;
@@ -1278,11 +1365,14 @@ unsafe fn IntCreateClass_impl(
                     (*Class).set_MenuNameIsString(1);
 
                     (*Class).lpszClientUnicodeMenuName = pszMenuNameBuffer;
-                    RtlCopyMemory(
+                    if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
                         (*Class).lpszClientUnicodeMenuName as *mut core::ffi::c_void,
                         (*MenuName).Buffer as *const core::ffi::c_void,
                         (*MenuName).Length as usize,
-                    );
+                    ) {
+                        Status = st;
+                        break 'seh_try;
+                    }
                     *(*Class)
                         .lpszClientUnicodeMenuName
                         .add((*MenuName).Length as usize / core::mem::size_of::<u16>()) = 0;
@@ -1426,11 +1516,22 @@ pub unsafe extern "system" fn IntGetAtomFromStringOrAtom(
             }
         }
 
-        RtlCopyMemory(
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:1331) ----
+        // Same shape as IntRegisterClassAtom above (site class.c:368): no
+        // ProbeForRead in the C, RtlCopyMemory alone was guarded, handler
+        // frees AtomName if heap-allocated, SetLastNtError, immediate
+        // `_SEH2_YIELD(return FALSE)`.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
             AtomName as *mut core::ffi::c_void,
             (*ClassName).Buffer as *const core::ffi::c_void,
             (*ClassName).Length as usize,
-        );
+        ) {
+            if AtomName != szBuf.as_mut_ptr() {
+                ExFreePoolWithTag(AtomName as *mut core::ffi::c_void, 0x52545355);
+            }
+            SetLastNtError(st);
+            return 0;
+        }
 
         *AtomName.add((*ClassName).Length as usize / core::mem::size_of::<u16>()) = 0;
 
@@ -1756,30 +1857,115 @@ pub unsafe extern "C" fn UserGetClassName(
             if NT_SUCCESS(Status) {
                 RtlInitUnicodeString(core::ptr::addr_of_mut!(UnicodeClassName) as _, szTemp);
 
-                Status = RtlUnicodeStringToAnsiString(AnsiClassName as _, core::ptr::addr_of_mut!(UnicodeClassName) as _, 0u8);
+                // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:1753) ----
+                // The C calls RtlUnicodeStringToAnsiString(AnsiClassName, ...)
+                // directly, writing ANSI bytes straight into AnsiClassName->Buffer,
+                // which IS the CALLER's raw pointer (this fn's `ClassName` param is
+                // `&CapturedClassName` from NtUserGetClassName, but `.Buffer`'s
+                // VALUE was only shallow-copied from the original user pointer).
+                // RtlUnicodeStringToAnsiString is an opaque ntoskrnl routine --
+                // we cannot make its internal store fault-tolerant directly. So
+                // the conversion is redirected into a KERNEL-owned temporary
+                // ANSI_STRING, and `safe_copy_raw` does the one store that
+                // actually reaches the caller's buffer: same bytes end up in the
+                // same place on success, but the only risky store now goes
+                // through hardware fault protection instead of a bare write.
+                let mut TempAnsi: ANSI_STRING = core::mem::zeroed();
+                TempAnsi.MaximumLength = (*AnsiClassName).MaximumLength;
+                TempAnsi.Buffer = ExAllocatePoolWithTag(
+                    PagedPool,
+                    TempAnsi.MaximumLength as SIZE_T,
+                    USERTAG_CLASS,
+                ) as PSTR;
+                if TempAnsi.Buffer.is_null() {
+                    EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                    break 'leave;
+                }
+
+                Status = RtlUnicodeStringToAnsiString(
+                    core::ptr::addr_of_mut!(TempAnsi) as _,
+                    core::ptr::addr_of_mut!(UnicodeClassName) as _,
+                    0u8,
+                );
                 if !NT_SUCCESS(Status) {
+                    ExFreePoolWithTag(TempAnsi.Buffer as *mut c_void, USERTAG_CLASS);
                     SetLastNtError(Status);
                     break 'leave;
                 }
+
+                // RtlUnicodeStringToAnsiString terminates when MaximumLength has room, and the
+                // C ran it on the caller's buffer; copy that terminator out too (see the
+                // Unicode branch below).
+                let mut CopyLen = TempAnsi.Length as usize;
+                if CopyLen < TempAnsi.MaximumLength as usize {
+                    *TempAnsi.Buffer.add(CopyLen) = 0;
+                    CopyLen += 1;
+                }
+                if let Err(_st) = ntkrnl_sys::probe::safe_copy_raw(
+                    (*AnsiClassName).Buffer as *mut c_void,
+                    TempAnsi.Buffer as *const c_void,
+                    CopyLen,
+                ) {
+                    ExFreePoolWithTag(TempAnsi.Buffer as *mut c_void, USERTAG_CLASS);
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'leave;
+                }
+                (*AnsiClassName).Length = TempAnsi.Length;
+                ExFreePoolWithTag(TempAnsi.Buffer as *mut c_void, USERTAG_CLASS);
             }
 
             Ret = (BufLen / core::mem::size_of::<WCHAR>() as ULONG) as INT;
         } else {
             BufLen = (*ClassName).MaximumLength as ULONG;
 
+            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:1753) ----
+            // Same reasoning as the ansi branch above: RtlQueryAtomInAtomTable
+            // writes straight into `ClassName->Buffer`, the caller's raw
+            // pointer, and is an opaque call we cannot wrap directly. Query
+            // into a KERNEL temp buffer of the same capacity, then
+            // `safe_copy_raw` the result out to the caller's buffer.
+            let TempBufCap = BufLen.max(1);
+            let TempBuf: PWSTR =
+                ExAllocatePoolWithTag(PagedPool, TempBufCap as SIZE_T, USERTAG_CLASS) as PWSTR;
+            if TempBuf.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                break 'leave;
+            }
+
             Status = RtlQueryAtomInAtomTable(
                 gAtomTable as _,
                 if Atom != 0 { Atom } else { (*Class).atomNVClassName },
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
-                (*ClassName).Buffer as PWSTR,
+                TempBuf,
                 &mut BufLen,
             );
 
             if !NT_SUCCESS(Status) {
+                ExFreePoolWithTag(TempBuf as *mut c_void, USERTAG_CLASS);
                 SetLastNtError(Status);
                 break 'leave;
             }
+
+            // The C lets RtlQueryAtomInAtomTable write straight into the caller's buffer,
+            // name AND terminator when there is room. BufLen counts the name only, so copying
+            // BufLen bytes out of the temp dropped the NUL: GetClassNameW then handed back
+            // whatever the caller's buffer held past the name (a zeroed buffer hid it).
+            let mut CopyLen = BufLen.min(TempBufCap) as usize;
+            if CopyLen + core::mem::size_of::<WCHAR>() <= TempBufCap as usize {
+                *TempBuf.add(CopyLen / core::mem::size_of::<WCHAR>()) = 0;
+                CopyLen += core::mem::size_of::<WCHAR>();
+            }
+            if let Err(_st) = ntkrnl_sys::probe::safe_copy_raw(
+                (*ClassName).Buffer as *mut c_void,
+                TempBuf as *const c_void,
+                CopyLen,
+            ) {
+                ExFreePoolWithTag(TempBuf as *mut c_void, USERTAG_CLASS);
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                break 'leave;
+            }
+            ExFreePoolWithTag(TempBuf as *mut c_void, USERTAG_CLASS);
 
             Ret = (BufLen / core::mem::size_of::<WCHAR>() as ULONG) as INT;
         }
@@ -1809,18 +1995,35 @@ unsafe fn IntSetClassMenuName(Class: PCLS, MenuName: PUNICODE_STRING) -> BOOL {
         ) as PWSTR;
 
         if strBufW != core::ptr::null_mut() {
-            {
+            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:1810) ----
+            // Handler shape: `SetLastNtError(code);` only, no early return
+            // (Ret stays 0, matching the C falling through to _SEH2_END with
+            // Ret untouched). `(*MenuName).Buffer` is a raw caller pointer,
+            // so the RtlCopyMemory read from it is the real fault risk --
+            // replaced with safe_copy_raw.
+            'seh: {
                 /* Copy the unicode string */
-                RtlCopyMemory(
+                if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
                     strBufW as *mut core::ffi::c_void,
                     (*MenuName).Buffer as *const core::ffi::c_void,
                     (*MenuName).Length as usize,
-                );
+                ) {
+                    SetLastNtError(st);
+                    break 'seh;
+                }
                 *strBufW.add((*MenuName).Length as usize / core::mem::size_of::<u16>()) = 0;
 
                 /* Create an ANSI copy of the string */
                 AnsiString.Buffer = strBufW.add((*MenuName).Length as usize / core::mem::size_of::<u16>() + 1) as PSTR;
-                let Status = RtlUnicodeStringToAnsiString(core::ptr::addr_of_mut!(AnsiString) as _, MenuName as _, 0u8);
+                // Source is now the already fault-protected kernel copy
+                // (strBufW), not the raw `MenuName` pointer -- avoids a
+                // second raw read of caller memory for a value we already
+                // hold safely, and needs no separate guard.
+                let mut SafeMenuName: _UNICODE_STRING = core::mem::zeroed();
+                SafeMenuName.Length = (*MenuName).Length;
+                SafeMenuName.MaximumLength = (*MenuName).Length;
+                SafeMenuName.Buffer = strBufW;
+                let Status = RtlUnicodeStringToAnsiString(core::ptr::addr_of_mut!(AnsiString) as _, core::ptr::addr_of_mut!(SafeMenuName) as _, 0u8);
                 if !NT_SUCCESS(Status) {
                     SetLastNtError(Status);
                 } else {
@@ -2531,25 +2734,69 @@ pub unsafe extern "system" fn NtUserRegisterClassExWOW(
         UserRegisterSystemClasses();
     }
 
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:2577) ----
+    // Handler shape: ERR(...) + SetLastNtError(code) + `Exception = TRUE`,
+    // a FLAG the code below tests (`if (!Exception) { Ret = UserRegisterClass(...) }`).
+    // Note this differs from the `EngSetLastError(ERROR_INVALID_PARAMETER); break 'seh;`
+    // paths already in this block (the C's `goto InvalidParameter` sites): those
+    // are deliberate validation failures, NOT exceptions -- they do NOT set
+    // Exception, so UserRegisterClass still runs on that path in the C too
+    // (an existing oddity, left exactly as the current code already has it).
     'seh: {
         /* Probe the parameters and basic parameter checks */
-        if ProbeForReadUint(core::ptr::addr_of_mut!((*lpwcx).cbSize))
-            != core::mem::size_of::<WNDCLASSEXW>() as u32
-        {
+        let cbSize = match ProbeForReadUint(core::ptr::addr_of_mut!((*lpwcx).cbSize)) {
+            Ok(v) => v,
+            Err(st) => {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(st);
+                Exception = 1;
+                break 'seh;
+            }
+        };
+        if cbSize != core::mem::size_of::<WNDCLASSEXW>() as u32 {
             EngSetLastError(ERROR_INVALID_PARAMETER);
             break 'seh;
         }
 
-        RtlCopyMemory(
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
             core::ptr::addr_of_mut!(CapturedClassInfo) as *mut _,
             lpwcx as *const _,
             core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
+        ) {
+            ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+            SetLastNtError(st);
+            Exception = 1;
+            break 'seh;
+        }
 
-        CapturedName = ProbeForReadUnicodeString(ClassName);
-        CapturedVersion = ProbeForReadUnicodeString(ClsVersion);
+        CapturedName = match ProbeForReadUnicodeString(ClassName) {
+            Ok(v) => v,
+            Err(st) => {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(st);
+                Exception = 1;
+                break 'seh;
+            }
+        };
+        CapturedVersion = match ProbeForReadUnicodeString(ClsVersion) {
+            Ok(v) => v,
+            Err(st) => {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(st);
+                Exception = 1;
+                break 'seh;
+            }
+        };
 
-        CapturedMenuName = ProbeForReadUnicodeString((*pClassMenuName).pusMenuName);
+        CapturedMenuName = match ProbeForReadUnicodeString((*pClassMenuName).pusMenuName) {
+            Ok(v) => v,
+            Err(st) => {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(st);
+                Exception = 1;
+                break 'seh;
+            }
+        };
 
         if (CapturedName.Length & 1) != 0
             || (CapturedMenuName.Length & 1) != 0
@@ -2567,7 +2814,21 @@ pub unsafe extern "system" fn NtUserRegisterClassExWOW(
         }
 
         if CapturedName.Length != 0 {
-            // ProbeForRead(CapturedName.Buffer, ...)
+            // ProbeForRead(CapturedName.Buffer, CapturedName.Length, sizeof(WCHAR)) --
+            // probe-only (no capture here), so SafeProbeForRead (already
+            // imported, real kernel routine, returns NTSTATUS instead of
+            // raising) rather than probe_read_checked.
+            if SafeProbeForRead(
+                CapturedName.Buffer as PVOID,
+                CapturedName.Length as SIZE_T,
+                core::mem::size_of::<u16>() as u32,
+            ) < 0
+            {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Exception = 1;
+                break 'seh;
+            }
         } else {
             if IS_ATOM!(CapturedName.Buffer) == 0 {
                 EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -2576,7 +2837,17 @@ pub unsafe extern "system" fn NtUserRegisterClassExWOW(
         }
 
         if CapturedVersion.Length != 0 {
-            // ProbeForRead(CapturedVersion.Buffer, ...)
+            if SafeProbeForRead(
+                CapturedVersion.Buffer as PVOID,
+                CapturedVersion.Length as SIZE_T,
+                core::mem::size_of::<u16>() as u32,
+            ) < 0
+            {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Exception = 1;
+                break 'seh;
+            }
         } else {
             if IS_ATOM!(CapturedVersion.Buffer) == 0 {
                 EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -2585,7 +2856,17 @@ pub unsafe extern "system" fn NtUserRegisterClassExWOW(
         }
 
         if CapturedMenuName.Length != 0 {
-            // ProbeForRead(CapturedMenuName.Buffer, ...)
+            if SafeProbeForRead(
+                CapturedMenuName.Buffer as PVOID,
+                CapturedMenuName.Length as SIZE_T,
+                core::mem::size_of::<u16>() as u32,
+            ) < 0
+            {
+                ERR!("NtUserRegisterClassExWOW Exception Error!\n");
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Exception = 1;
+                break 'seh;
+            }
         } else if !CapturedMenuName.Buffer.is_null()
             && IS_INTRESOURCE!(CapturedMenuName.Buffer) == 0
         {
@@ -2597,8 +2878,6 @@ pub unsafe extern "system" fn NtUserRegisterClassExWOW(
             // Never seen this yet
         }
     }
-
-    let _ = &mut Exception;
 
     if Exception == 0 {
         Ret = UserRegisterClass(
@@ -2640,6 +2919,10 @@ pub unsafe extern "system" fn IntNtUserSetClassLongPtr(
                 break 'cleanup;
             }
 
+            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:2692) ----
+            // Handler shape: `SetLastNtError(code);` only, falling through to
+            // `Cleanup: UserLeave(); return Ret;` (Ret stays whatever it was,
+            // 0 here since this is before UserSetClassLongPtr runs).
             'try_block: {
                 let mut Value: _UNICODE_STRING = core::mem::zeroed();
 
@@ -2650,7 +2933,13 @@ pub unsafe extern "system" fn IntNtUserSetClassLongPtr(
                         Value.Length = 0;
                         Value.Buffer = dwNewLong as PWSTR;
                     } else {
-                        Value = ProbeForReadUnicodeString(dwNewLong as PUNICODE_STRING);
+                        Value = match ProbeForReadUnicodeString(dwNewLong as PUNICODE_STRING) {
+                            Ok(v) => v,
+                            Err(st) => {
+                                SetLastNtError(st);
+                                break 'try_block;
+                            }
+                        };
                     }
 
                     if Value.Length & 1 != 0 {
@@ -2659,11 +2948,19 @@ pub unsafe extern "system" fn IntNtUserSetClassLongPtr(
                     }
 
                     if Value.Length != 0 {
-                        ProbeForRead(
-                            Value.Buffer as *const _,
-                            Value.Length as usize,
+                        // ProbeForRead(Value.Buffer, Value.Length, sizeof(WCHAR)) --
+                        // probe-only (no capture), so SafeProbeForRead (real,
+                        // non-raising kernel routine) instead of the raw
+                        // raising `ProbeForRead` extern.
+                        if SafeProbeForRead(
+                            Value.Buffer as PVOID,
+                            Value.Length as SIZE_T,
                             core::mem::size_of::<u16>() as u32,
-                        );
+                        ) < 0
+                        {
+                            SetLastNtError(STATUS_ACCESS_VIOLATION);
+                            break 'try_block;
+                        }
                     } else {
                         if Offset == GCW_ATOM as INT && IS_ATOM!(Value.Buffer as ULONG_PTR) == 0 {
                             EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -2843,18 +3140,44 @@ pub unsafe extern "system" fn NtUserGetClassInfo(
 
     UserLeave();
 
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:2867) ----
+    // Handler shape: `EngSetLastError(ERROR_CLASS_DOES_NOT_EXIST); Ret = FALSE;`
+    // -- a FIXED error, NOT the caught exception code (unlike every other
+    // site in this file). `lpWndClassEx`/`ppszMenuName` were only
+    // range/alignment-checked by SafeProbeForWrite at function entry, which
+    // doesn't guarantee the actual store won't fault (page since revoked,
+    // etc.) -- that's exactly what this handler existed to catch.
     if Ret != 0 {
-        if !ppszMenuName.is_null() {
-            *ppszMenuName = Safewcexw.lpszMenuName as LPWSTR;
+        'seh_ret: {
+            if !ppszMenuName.is_null() {
+                let menu_name_val = Safewcexw.lpszMenuName as LPWSTR;
+                if ntkrnl_sys::probe::safe_copy_raw(
+                    ppszMenuName as *mut c_void,
+                    core::ptr::addr_of!(menu_name_val) as *const c_void,
+                    core::mem::size_of::<LPWSTR>(),
+                )
+                .is_err()
+                {
+                    EngSetLastError(ERROR_CLASS_DOES_NOT_EXIST);
+                    Ret = 0;
+                    break 'seh_ret;
+                }
+            }
+
+            if ntkrnl_sys::probe::safe_copy_raw(
+                lpWndClassEx as *mut c_void,
+                core::ptr::addr_of!(Safewcexw) as *const c_void,
+                core::mem::size_of::<WNDCLASSEXW>(),
+            )
+            .is_err()
+            {
+                EngSetLastError(ERROR_CLASS_DOES_NOT_EXIST);
+                Ret = 0;
+                break 'seh_ret;
+            }
+
+            Ret = ClassAtom as BOOL;
         }
-
-        RtlCopyMemory(
-            lpWndClassEx as *mut _,
-            &Safewcexw as *const _ as *const _,
-            core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
-
-        Ret = ClassAtom as BOOL;
     }
 
     if IS_ATOM!(SafeClassName.Buffer) == 0 {
@@ -2885,21 +3208,62 @@ pub unsafe extern "system" fn NtUserGetClassName(
             }
         }
 
-        ProbeForWriteUnicodeString(ClassName);
-        CapturedClassName = *ClassName;
-        if CapturedClassName.Length != 0 {
-            // ProbeForRead expanded inline (no-op for valid kernel addresses)
-        }
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here (class.c:2928) ----
+        // Handler shape: `SetLastNtError(code);` only, falling through to
+        // `UserLeave(); return Ret;` with Ret left as whatever it already was.
+        'seh: {
+            if let Err(st) = ProbeForWriteUnicodeString(ClassName) {
+                SetLastNtError(st);
+                break 'seh;
+            }
+            // `CapturedClassName = *ClassName` in the C -- `ClassName` here is
+            // the raw syscall argument, so this bare dereference is exactly
+            // probe_read_checked's shape (probe then capture a T by value).
+            CapturedClassName = match probe_read_checked(ClassName as *const _UNICODE_STRING) {
+                Ok(v) => v,
+                Err(st) => {
+                    SetLastNtError(st);
+                    break 'seh;
+                }
+            };
+            if CapturedClassName.Length != 0 {
+                // ProbeForRead(CapturedClassName.Buffer, CapturedClassName.Length,
+                // sizeof(WCHAR)) -- probe-only, so SafeProbeForRead.
+                if SafeProbeForRead(
+                    CapturedClassName.Buffer as PVOID,
+                    CapturedClassName.Length as SIZE_T,
+                    core::mem::size_of::<u16>() as u32,
+                ) < 0
+                {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'seh;
+                }
+            }
 
-        Ret = UserGetClassName(
-            (*Window).pcls,
-            core::ptr::addr_of_mut!(CapturedClassName),
-            Atom,
-            0,
-        );
+            Ret = UserGetClassName(
+                (*Window).pcls,
+                core::ptr::addr_of_mut!(CapturedClassName),
+                Atom,
+                0,
+            );
 
-        if Ret != 0 {
-            (*ClassName).Length = CapturedClassName.Length;
+            if Ret != 0 {
+                // `ClassName->Length = CapturedClassName.Length` in the C --
+                // a write to the caller's raw pointer, still inside the same
+                // guarded region. On failure here the C's handler only calls
+                // SetLastNtError; Ret keeps whatever UserGetClassName
+                // returned (not reset), matching that exactly.
+                if ntkrnl_sys::probe::safe_copy_raw(
+                    core::ptr::addr_of_mut!((*ClassName).Length) as *mut c_void,
+                    core::ptr::addr_of!(CapturedClassName.Length) as *const c_void,
+                    core::mem::size_of::<USHORT>(),
+                )
+                .is_err()
+                {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'seh;
+                }
+            }
         }
     }
 

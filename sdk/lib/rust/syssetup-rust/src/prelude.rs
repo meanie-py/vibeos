@@ -465,10 +465,10 @@ pub use crate::DialogBox;
 
 // ================= CRT the island does not carry ==============================================
 // strsafe.h's StringCch*/StringCb* are STRSAFEAPI `static __inline`, so no object file in the
-// tree defines them — they are ported in syssetup::strsafe and re-exported below. Only the
-// VARIADIC entry point is external: it is the trampoline in rust_varargs_shim.c.
+// tree defines them — they are ported in syssetup::strsafe and re-exported below. The VARIADIC
+// StringCchPrintfW is a strsafe-rust macro (calls `_snwprintf` in place): `StringCchPrintfW!(..)`.
+pub use strsafe_rust::StringCchPrintfW;
 extern "C" {
-    pub fn StringCchPrintfW(dst: *mut u16, cch: usize, fmt: *const u16, ...) -> HRESULT;
     pub fn swprintf(buf: *mut u16, fmt: *const u16, ...) -> c_int;
     pub fn _ultow(value: u32, buf: *mut u16, radix: c_int) -> *mut u16;
     pub fn _wtoi(s: *const u16) -> c_int;

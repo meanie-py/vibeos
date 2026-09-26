@@ -5,9 +5,15 @@ add_subdirectory(shlwapi_resource_dll)
 include_directories($<TARGET_FILE_DIR:shlwapi_resource_dll>)
 
 list(APPEND SOURCE
+    AssocQueryKey.c
     AssocQueryString.c
+    CharUpperNoDBCS.cpp
     IShellFolderHelpers.cpp
+    IsOS.c
     IsQSForward.cpp
+    IStreamPidl.cpp
+    MapWin32ErrorToSTG.c
+    NextPath.c
     PathFileExistsDefExtAndAttributesW.c
     PathFindOnPath.c
     PathIsUNC.c
@@ -15,8 +21,11 @@ list(APPEND SOURCE
     PathIsUNCServerShare.c
     PathUnExpandEnvStrings.c
     PathUnExpandEnvStringsForUser.c
+    QuerySourceCreateFromKey.cpp
     SHAreIconsEqual.c
+    SHGetFileDescription.c
     SHGetRestriction.c
+    SHInvokeCommandsOnContextMenu.cpp
     SHLoadIndirectString.c
     SHLoadRegUIString.c
     SHPropertyBag.cpp
@@ -31,7 +40,11 @@ add_rc_deps(testdata.rc ${CMAKE_CURRENT_BINARY_DIR}/shlwapi_resource_dll/shlwapi
 
 add_executable(shlwapi_apitest ${SOURCE})
 set_module_type(shlwapi_apitest win32cui)
-target_link_libraries(shlwapi_apitest ${PSEH_LIB} uuid)
+# cpprt for __cxa_pure_virtual: the merge added C++ suites here
+# (CharUpperNoDBCS / IStreamPidl / QuerySourceCreateFromKey /
+# SHInvokeCommandsOnContextMenu) without it, and clang emits that symbol for any
+# class with a pure virtual. shell32_apitest already links cpprt for the same reason.
+target_link_libraries(shlwapi_apitest ${PSEH_LIB} uuid cpprt)
 add_importlibs(shlwapi_apitest shlwapi oleaut32 ole32 user32 gdi32 advapi32 msvcrt kernel32)
 add_dependencies(shlwapi_apitest shlwapi_resource_dll)
 add_rostests_file(TARGET shlwapi_apitest)

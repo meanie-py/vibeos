@@ -1571,10 +1571,10 @@ FsRtlAcquireFileExclusiveCommon(IN PFILE_OBJECT FileObject,
     /* Get master FsRtl lock */
     FsRtlEnterFileSystem();
 
-    DriverExtension = (PEXTENDED_DRIVER_EXTENSION)DeviceObject->DriverObject->DriverExtension;
+    DriverExtension = IoGetDrvObjExtension(DeviceObject->DriverObject);
     FilterCallbacks = DriverExtension->FsFilterCallbacks;
 
-    /* Check if Filter Cllbacks are supported */
+    /* Check if Filter Callbacks are supported */
     if (FilterCallbacks && FilterCallbacks->PreAcquireForSectionSynchronization)
     {
         NTSTATUS Status;
@@ -1843,7 +1843,7 @@ FsRtlpGetResourceForModWrite(_In_ PFSRTL_COMMON_FCB_HEADER FcbHeader,
 }
 
 /**
- * @brief Lock a file object before flushing pages to disk. 
+ * @brief Lock a file object before flushing pages to disk.
  *        To be called by the Modified Page Writer (MPW)
  *
  * @param FileObject - The file object to lock
@@ -1903,7 +1903,7 @@ FsRtlAcquireFileForModWriteEx(_In_ PFILE_OBJECT FileObject,
 
         if (ResourceToAcquire == NULL)
         {
-            /* 
+            /*
              * There's nothing to acquire, we can simply return success
              */
 
@@ -1953,7 +1953,7 @@ FsRtlAcquireFileForModWriteEx(_In_ PFILE_OBJECT FileObject,
 }
 
 /**
- * @brief Unlock a file object after flushing pages to disk. 
+ * @brief Unlock a file object after flushing pages to disk.
  *        To be called by the Modified Page Writer (MPW) after a succesful call to
  *        FsRtlAcquireFileForModWriteEx
  *
@@ -2038,7 +2038,7 @@ FsRtlRegisterFileSystemFilterCallbacks(
     RtlCopyMemory(NewCallbacks, Callbacks, Callbacks->SizeOfFsFilterCallbacks);
 
     /* Set the callbacks in the driver extension */
-    DriverExtension = (PEXTENDED_DRIVER_EXTENSION)FilterDriverObject->DriverExtension;
+    DriverExtension = IoGetDrvObjExtension(FilterDriverObject);
     DriverExtension->FsFilterCallbacks = NewCallbacks;
 
     return STATUS_SUCCESS;

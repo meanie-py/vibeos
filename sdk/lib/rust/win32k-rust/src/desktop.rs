@@ -3305,8 +3305,35 @@ pub unsafe extern "system" fn NtUserResolveDesktop(
             hDesktop = core::ptr::null_mut();
         }
 
-        /* Return the window station handle */
-        *phWinSta = hWinSta;
+        /* Return the window station handle. desktop.c wraps ONLY this single
+         * write in _SEH2_TRY/_SEH2_EXCEPT (desktop.c ~2924-2937); the
+         * translation kept the write but dropped the handler, so a bad
+         * `phWinSta` from user mode bugchecked instead of failing the call.
+         * The C's handler does REAL CLEANUP, not a bare status-propagate: it
+         * assigns Status, then closes the desktop and window station that
+         * IntResolveDesktop just opened -- the caller never received the
+         * handles, so leaving them open would leak both. Replicated exactly,
+         * including that only hDesktop is nulled afterward (matching the C). */
+        // safe_copy_raw, not write_user: the C wraps a BARE store here with no
+        // ProbeForWrite at all, so a range check would be stricter than upstream
+        // -- and write_user reads MmUserProbeAddress, a DATA export a separate
+        // driver cannot reference plainly (arm64 link failure; see class.rs).
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            phWinSta as *mut core::ffi::c_void,
+            core::ptr::addr_of!(hWinSta) as *const core::ffi::c_void,
+            core::mem::size_of::<HWINSTA>(),
+        ) {
+            Status = st;
+
+            /* We failed, close the opened desktop and window station */
+            if !hDesktop.is_null() {
+                ObCloseHandle(hDesktop as *mut _, 1i32 as i8);
+            }
+            hDesktop = core::ptr::null_mut();
+            if !hWinSta.is_null() {
+                ObCloseHandle(hWinSta as *mut _, 1i32 as i8);
+            }
+        }
 
         /* Free the captured string */
         ReleaseCapturedUnicodeString(&mut CapturedDesktopPath, 1i32 as _);

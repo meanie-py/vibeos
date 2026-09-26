@@ -164,7 +164,17 @@ def _scan(start: int, end: int, want: str, step: int = 0x1000):
 
     pc = _current_pc()
     if pc is not None:
-        containing = [c for c in pe_candidates if c[0] <= pc < c[0] + c[2]]
+        # Only a KERNEL image can win this way. Stopped inside the HAL (an idle i386 guest
+        # halts in it), "the image containing $pc" is halmp, and relocating kernel symbols
+        # there broke every helper. A nameless image may be a kernel whose export table is
+        # paged out, so it still qualifies.
+        kernels = (want, MP_KERNEL_STEM)
+        containing = [
+            c
+            for c in pe_candidates
+            if c[0] <= pc < c[0] + c[2]
+            and (c[1] is None or any(k in c[1].lower() for k in kernels))
+        ]
         if containing:
             # Innermost/highest base wins if images somehow nest.
             addr, name, _size = max(containing, key=lambda c: c[0])
@@ -258,7 +268,9 @@ def _ensure_stopped() -> None:
 
 def find_kbase():
     arch = os.environ.get("VIBEOS_ARCH", "")
-    want = os.path.splitext(os.path.basename(os.environ.get("VIBEOS_KERNEL", "ntoskrnl.exe")))[0].lower()
+    want = os.path.splitext(os.path.basename(os.environ.get("VIBEOS_KERNEL", "ntoskrnl.exe")))[
+        0
+    ].lower()
     if arch == "amd64":
         ranges = [(0xFFFFF80000000000, 0xFFFFF80100000000)]
     elif arch == "arm64":
@@ -274,8 +286,25 @@ def find_kbase():
         hit, name = _scan(lo, hi, want)
         if hit is not None:
             gdb.write(f"[find-kbase] matched '{name}' at {hit:#x}\n")
-            return hit
-    return None
+            return hit, name
+    return None, None
+
+
+def _symbols_for(kernel_path: str, matched: str | None) -> str:
+    """The image whose symbols belong at the base we found.
+
+    _scan prefers the MP kernel's BASE when both are mapped, but VIBEOS_KERNEL still names the
+    UP file, and loading the UP file's DWARF at the MP base made every symbol and struct offset
+    wrong (list-threads: "DWARF struct offsets unavailable"). Follow the match to its sibling.
+    """
+    if not kernel_path or not matched:
+        return kernel_path
+    stem = os.path.splitext(os.path.basename(kernel_path))[0].lower()
+    if MP_KERNEL_STEM in matched.lower() and MP_KERNEL_STEM not in stem:
+        mp = os.path.join(os.path.dirname(kernel_path), MP_KERNEL_STEM, MP_KERNEL_STEM + ".exe")
+        if os.path.isfile(mp):
+            return mp
+    return kernel_path
 
 
 PE_PREFERRED_IMAGE_BASE = 0x00400000
@@ -304,8 +333,9 @@ class FindKbaseCmd(gdb.Command):
             except ValueError:
                 gdb.write(f"[find-kbase] invalid arg '{cached}'\n", gdb.STDERR)
                 return
-        else:
-            kbase = find_kbase()
+        matched = None
+        if not cached:
+            kbase, matched = find_kbase()
             if kbase is None:
                 gdb.write("[find-kbase] not found in expected ranges\n", gdb.STDERR)
                 return
@@ -314,8 +344,9 @@ class FindKbaseCmd(gdb.Command):
         gdb.execute(f"set $kbase = {kbase:#x}", to_string=True)
         gdb.execute(f"set $kreloc = {offset:#x}", to_string=True)
 
-        kernel_path = os.environ.get("VIBEOS_KERNEL", "")
+        kernel_path = _symbols_for(os.environ.get("VIBEOS_KERNEL", ""), matched)
         if kernel_path:
+            os.environ["VIBEOS_KERNEL"] = kernel_path  # later helpers read it too
             # Reload with offset so all symbols match runtime VAs. We use
             # symbol-file (not add-symbol-file) to replace, not stack.
             gdb.execute(f"symbol-file {kernel_path} -o {offset:#x}", to_string=True)

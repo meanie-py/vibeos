@@ -247,7 +247,7 @@ unsafe fn KiDispatchExceptionToUser(
     ExceptionRecord: PEXCEPTION_RECORD,
 ) -> BOOLEAN {
     let mut LocalExceptRecord: EXCEPTION_RECORD = core::mem::zeroed();
-    let UserRsp: u64;
+    let mut UserRsp: u64;
     let UserStack: PKUSER_EXCEPTION_STACK;
     let mut ExceptionRecordPtr = ExceptionRecord;
     
@@ -259,6 +259,50 @@ unsafe fn KiDispatchExceptionToUser(
     }
     
     UserRsp = ((*Context).Rsp - core::mem::size_of::<KUSER_EXCEPTION_STACK>() as u64) & !15u64;
+
+    // A STACK OVERFLOW cannot be reported on the stack that just overflowed,
+    // and until this clamp it structurally never was.
+    //
+    // MiCheckForUserStackOverflow commits the GUARANTEED page at
+    // DeallocationStack + PAGE_SIZE, points NtTib.StackLimit at it and raises
+    // STATUS_STACK_OVERFLOW. The last page, [DeallocationStack, StackLimit),
+    // is the hard floor and is never committed. But the record goes BELOW the
+    // faulting Rsp -- which by definition is already at the bottom -- so it
+    // lands in that uncommitted floor every time. The pre-fault below then
+    // fails with 0xc0000005, dispatch aborts, and csrss terminates the process
+    // with 0x80, laundering the cause. MEASURED: rsp=0x60920, limit=0x61000,
+    // dealloc=0x60000 -- the record wanted 0x60360, one page under the lowest
+    // committed byte.
+    //
+    // So place it at StackLimit when it would fall below: that IS the page the
+    // guarantee exists to provide, the thread has no live data down there (it
+    // faulted trying to get there), and a handler that runs on the guaranteed
+    // page is the entire point of guaranteeing one. Only when even that does
+    // not fit is the exception genuinely undeliverable.
+    {
+        let teb = (*PsGetCurrentThread()).Teb as PTEB;
+        if !teb.is_null() {
+            let limit = (*teb).NtTib.StackLimit as u64;
+            let base = (*teb).NtTib.StackBase as u64;
+            let size = core::mem::size_of::<KUSER_EXCEPTION_STACK>() as u64;
+            // The `limit + size <= Rsp` half is LOAD-BEARING and its absence
+            // was a livelock. Without it the clamp also fires when Rsp is
+            // already AT StackLimit -- there is then no committed room below,
+            // so the frame is placed back at the address that just faulted,
+            // the handler re-overflows and re-raises, forever. Measured at
+            // 273,430 iterations in one boot (rsp=limit=0x61000), which read
+            // as "no failed dispatches" because dispatch never got to fail.
+            // Clamp only where doing so yields real room.
+            if limit != 0
+                && UserRsp < limit
+                && limit.saturating_add(size) <= base
+                && limit.saturating_add(size) <= (*Context).Rsp
+            {
+                UserRsp = (limit + 15) & !15u64;
+            }
+        }
+    }
+
     UserStack = UserRsp as PKUSER_EXCEPTION_STACK;
     
     _enable();
@@ -297,11 +341,46 @@ unsafe fn KiDispatchExceptionToUser(
                 // FaultCode=2 (write, not present), Mode=UserMode(1)
                 let status = MmAccessFault(2, page as PVOID, 1i8, core::ptr::null_mut());
                 if status < 0 {
-                    // Fail-loud: see the probe-failure print above.
+                    // Fail-loud: see the probe-failure print above. The bounds
+                    // are part of the evidence, not decoration: this same line
+                    // is printed both when the thread has genuinely run out of
+                    // stack and when MiCheckForUserStackOverflow was handed
+                    // bounds it could not honour, and without StackLimit /
+                    // DeallocationStack next to the faulting page the two are
+                    // indistinguishable -- which is how a whole boot's worth of
+                    // guests died at one address with no way to tell why.
+                    let teb = (*PsGetCurrentThread()).Teb as PTEB;
+                    let (sb, sl, ds) = if teb.is_null() {
+                        (0usize, 0usize, 0usize)
+                    } else {
+                        (
+                            (*teb).NtTib.StackBase as usize,
+                            (*teb).NtTib.StackLimit as usize,
+                            (*teb).DeallocationStack as usize,
+                        )
+                    };
+                    if (*ExceptionRecordPtr).ExceptionCode == STATUS_STACK_OVERFLOW
+                        || (sb != 0 && (*Context).Rsp <= sl as u64)
+                    {
+                        // Name it. Otherwise this is the anonymous 0x80 that
+                        // made every stack bug in this system unattributable:
+                        // the thread is out of stack AND out of the room the
+                        // guarantee was supposed to leave for reporting it.
+                        crate::dbg_print!(
+                            b"[KI-EXC] STACK EXHAUSTED and undeliverable: no committed room for the exception record (rsp=%p limit=%p dealloc=%p)\n\0",
+                            (*Context).Rsp as usize,
+                            sl,
+                            ds,
+                        );
+                    }
                     crate::dbg_print!(
-                        b"[KI-EXC] user dispatch FAILED: pre-fault of stack page %p = 0x%lx\n\0",
+                        b"[KI-EXC] user dispatch FAILED: pre-fault of stack page %p = 0x%lx (rsp=%p base=%p limit=%p dealloc=%p)\n\0",
                         page,
                         status as u32,
+                        (*Context).Rsp as usize,
+                        sb,
+                        sl,
+                        ds,
                     );
                     break 'seh 0u8;
                 }
@@ -592,6 +671,25 @@ pub unsafe extern "system" fn KiDispatchException(
                 pdesk as usize,
                 delta as usize,
             );
+            // The stack words: when RIP is not code at all (a call through a garbage pointer),
+            // the caller is the return address at [RSP], and nothing else on this line names
+            // it. Print RSP and the first qwords above it that look like user code addresses.
+            let rsp = (*TrapFrame).Rsp as usize;
+            crate::dbg_print!(b"[KI-EXC]   rsp=%p\n\0", rsp);
+            let mut shown = 0;
+            let mut off = 0usize;
+            while off < 0x100 && shown < 6 {
+                let a = rsp + off;
+                if MmIsAddressValid(a as _) == 0 {
+                    break;
+                }
+                let w = core::ptr::read_unaligned(a as *const u64);
+                if w >= 0x10000 && w < 0x0000_8000_0000_0000 && (w >> 32) >= 0x7ff {
+                    crate::dbg_print!(b"[KI-EXC]   [rsp+0x%lx]=%p\n\0", off as u32, w as usize);
+                    shown += 1;
+                }
+                off += 8;
+            }
         }
 
         if DbgkForwardException(ExceptionRecord, 1u8, 1u8) != 0 {

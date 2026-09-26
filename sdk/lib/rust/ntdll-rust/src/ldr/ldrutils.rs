@@ -1724,6 +1724,14 @@ pub unsafe extern "system" fn LdrpSearchPath(
     Status
 }
 
+unsafe fn unicode_has_path_separator(Name: PUNICODE_STRING) -> bool {
+    let n = (*Name).Length as usize / core::mem::size_of::<WCHAR>();
+    (0..n).any(|i| {
+        let c = *(*Name).Buffer.add(i);
+        c == b'\\' as u16 || c == b'/' as u16
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn LdrpCheckForLoadedDll(
     DllPath: PWSTR,
@@ -1755,6 +1763,18 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDll(
     if (*DllName).Buffer.is_null() || *(*DllName).Buffer == 0 {
         return 0u8;
     }
+
+    // An api-set redirect here yields the BARE host name ("kernel32.dll", found by the search
+    // path; see LdrpApplyFileNameRedirection), not the absolute path stock ReactOS builds. Taken
+    // as a full path it matched no FullDllName, so every api-set load of an already-loaded host
+    // mapped a second copy: ucrtbase's LCMapStringEx thunk loaded kernel32 twice, the copy's
+    // DllMain re-pointed LdrpManifestProberRoutine into it, and the next DLL load called
+    // through that pointer after the copy was gone (setup.exe, amd64). Look it up by base name.
+    let RedirectedDll: BOOLEAN = if RedirectedDll != 0 && !unicode_has_path_separator(DllName) {
+        0u8
+    } else {
+        RedirectedDll
+    };
 
     'lookinhash: loop {
         if Flag != 0 && RedirectedDll == 0 {

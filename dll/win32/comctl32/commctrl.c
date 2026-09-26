@@ -108,6 +108,8 @@ static const WCHAR strCC32SubclassInfo[] = {
 #define ARCH L"x86"
 #elif defined __x86_64__
 #define ARCH L"amd64"
+#elif defined __aarch64__
+#define ARCH L"arm64"
 #else
 #define ARCH L"none"
 #endif
@@ -157,9 +159,9 @@ static HANDLE CreateComctl32ActCtx(BOOL bV6)
     }
     ActCtx.lpSource = pwstrSource;
     ret = CreateActCtxW(&ActCtx);
-    HeapFree(GetProcessHeap(), 0, pwstrSource);
     if (ret == INVALID_HANDLE_VALUE)
-        ERR("CreateActCtxW failed! bV6=%d\n", bV6);
+        ERR("CreateActCtxW failed! bV6=%d err=%lu src=%S\n", bV6, GetLastError(), pwstrSource);
+    HeapFree(GetProcessHeap(), 0, pwstrSource);
     return ret;
 }
 

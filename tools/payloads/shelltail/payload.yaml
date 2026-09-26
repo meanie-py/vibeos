@@ -1,0 +1,31 @@
+# shelltail — does shell32's former C/C++ glue behave the same now that it is Rust?
+#
+# On 2026-09-24 shell32's last five non-Rust files moved to Rust: three ATL window classes
+# (property-sheet and Folder Options owner stubs, the old-style change-notify broker), the
+# variadic ShellMessageBoxA, and the StringCchPrintfW trampoline. No boot exercises most of
+# them, so this A/Bs them against a baseline shell32 (staged as system32\shelltail-base.dll)
+# in two child processes and also checks absolute expectations on the new DLL.
+#
+#   SHELLTAIL_BASE=<baseline checkout> tools/payloads/shelltail/build.sh <arch>
+#   VIBEOS_PAYLOAD=shelltail ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload shelltail
+# Verdict line: "[SHELLTAIL] done VERDICT=SAME|DIFFERENT|ERROR"; each difference is printed
+# above it as "[SHELLTAIL] - <old line>" / "[SHELLTAIL] + <new line>".
+name: shelltail
+description: A/B shell32's ATL stub windows, ShellMessageBoxA and the broker against a baseline build
+
+build_hint: "SHELLTAIL_BASE=<baseline checkout> tools/payloads/shelltail/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/shelltail/shelltail-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/shelltail.exe
+  - src: tools/payloads/shelltail/shelltail-base-{arch}.dll
+    dest: system32/shelltail-base.dll
+
+test:
+  launch_marker: "[SHELLTAIL] done"
+  # Ten child processes, each a fresh GUI process under TCG, and the amd64 guest runs the
+  # chatty WoW64 ladder alongside. Measured: ~16 min alone on amd64, and just over 30 min
+  # with all three arches booting at once (the verdict landed after a 1800s drain).
+  launch_drain_secs: 3600

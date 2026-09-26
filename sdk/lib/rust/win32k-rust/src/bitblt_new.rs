@@ -471,10 +471,10 @@ pub unsafe extern "system" fn NtGdiEngBitBlt(
     let mut ptlSrc: POINTL = core::mem::zeroed();
     let mut ptlMask: POINTL = core::mem::zeroed();
     let mut ptlBrush: POINTL = core::mem::zeroed();
-    let mut hsurfTrg: HSURF;
+    let mut hsurfTrg: HSURF = core::ptr::null_mut();
     let mut hsurfSrc: HSURF = core::ptr::null_mut();
     let mut hsurfMask: HSURF = core::ptr::null_mut();
-    let mut hBrushObj: HANDLE;
+    let mut hBrushObj: HANDLE = core::ptr::null_mut();
     let psoTrg: *mut SURFOBJ;
     let psoSrc: *mut SURFOBJ;
     let psoMask: *mut SURFOBJ;
@@ -509,26 +509,34 @@ pub unsafe extern "system" fn NtGdiEngBitBlt(
     if !NT_SUCCESS(Status) {
         return 0;
     } else {
-        rclTrg = *prclTrg;
+        macro_rules! grab {
+            ($dst:expr, $src:expr, $ty:ty) => {
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!($dst) as *mut core::ffi::c_void,
+                    $src as *const core::ffi::c_void,
+                    core::mem::size_of::<$ty>(),
+                ) {
+                    return 0;
+                }
+            };
+        }
 
-        hsurfTrg = (*psoTrgUMPD).hsurf;
+        grab!(rclTrg, prclTrg, RECTL);
+        grab!(hsurfTrg, core::ptr::addr_of!((*psoTrgUMPD).hsurf), HSURF);
 
         if ROP4_USES_SOURCE(rop4) != 0 {
-            ptlSrc = *pptlSrc;
-
-            hsurfSrc = (*psoSrcUMPD).hsurf;
+            grab!(ptlSrc, pptlSrc, POINTL);
+            grab!(hsurfSrc, core::ptr::addr_of!((*psoSrcUMPD).hsurf), HSURF);
         }
 
         if ROP4_USES_MASK(rop4) != 0 {
-            ptlMask = *pptlMask;
-
-            hsurfMask = (*psoMaskUMPD).hsurf;
+            grab!(ptlMask, pptlMask, POINTL);
+            grab!(hsurfMask, core::ptr::addr_of!((*psoMaskUMPD).hsurf), HSURF);
         }
 
         if ROP4_USES_PATTERN(rop4) != 0 {
-            ptlBrush = *pptlBrush;
-
-            hBrushObj = (*pboUMPD).pvRbrush;
+            grab!(ptlBrush, pptlBrush, POINTL);
+            grab!(hBrushObj, core::ptr::addr_of!((*pboUMPD).pvRbrush), HANDLE);
         }
     }
 

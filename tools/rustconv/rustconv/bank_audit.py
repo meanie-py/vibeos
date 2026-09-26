@@ -57,10 +57,13 @@ shipped when it is not.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from tools.source_walk import source_files
 
 from rustconv.lex_mask import mask_code
 
@@ -76,7 +79,13 @@ _RE_SEQ_PREFIX = re.compile(r"^\d+_")
 # A banked body that is a C-variadic: `...)` in the signature, or a va_start in the body.
 _RE_VARIADIC = re.compile(r"\.\.\.\s*\)|\bva_start\b")
 # How the tree decorates a variadic's fixed-arity twin. See `varargs_twins`.
-_TWIN_SUFFIXES = ("_v", "_body", "_impl")
+# `_dispatch` is msvcrt's: `_sopen`'s trampoline in rust_file_varargs_shim.c tail-calls
+# the Rust `_sopen_dispatch`.
+_TWIN_SUFFIXES = ("_v", "_body", "_impl", "_dispatch")
+# A macro INVOCATION and its argument region: `isc!(_isalnum_l, isalnum, ...)`.
+_RE_MACRO_CALL = re.compile(r"\b[A-Za-z_]\w*!\s*\(")
+# A macro argument that is nothing but an identifier — the only shape we will trust.
+_RE_BARE_IDENT = re.compile(r"^[A-Za-z_]\w*$")
 
 # Manifest keys that are pipeline bookkeeping, never a translated function.
 _NON_FN_KEYS = frozenset({"preamble"})
@@ -248,12 +257,120 @@ def varargs_twins(name: str, tree: set[str]) -> list[str]:
     names are exactly where a sloppy rule reports missing work as shipped.
     """
     exact = [f"{name}{suffix}" for suffix in _TWIN_SUFFIXES if f"{name}{suffix}" in tree]
+    # The C stdio convention: the va_list twin of `fprintf` is `vfprintf`, of
+    # `_fwprintf_p_l` is `_vfwprintf_p_l`. The `v` goes after any leading underscores,
+    # never at the front. This is an EXACT name, so it is as tight as the suffix rules —
+    # the looseness the docstring warns about is containment, not a second spelling.
+    lead = len(name) - len(name.lstrip("_"))
+    v_twin = f"{name[:lead]}v{name[lead:]}"
+    if v_twin in tree and v_twin not in exact:
+        exact.append(v_twin)
     prefixed = sorted(
         n
         for n in tree
         if n not in exact and any(n.endswith(f"_{name}{suffix}") for suffix in _TWIN_SUFFIXES)
     )
     return exact + prefixed
+
+
+def macro_arg_names(path: Path) -> set[str]:
+    """Identifiers passed as bare arguments to a macro invocation in one file.
+
+    A whole family of shipped symbols has no `fn NAME` anywhere, because a macro writes
+    the items: msvcrt's ctype predicates are 24 lines of
+    `isc!(_isalnum_l, isalnum, (sys::_ALPHA | sys::_DIGIT) as i32);` in lib.rs, and every
+    one of them was reported as unintegrated paid work while shipping and graded MATCH.
+
+    Kept in a SEPARATE index from `tree_fn_names`, and consulted only after every other
+    rule, because the dangerous direction here is a false name in the TREE index — that
+    reports paid work as shipped when it is not. Hence "bare identifier argument" and
+    nothing looser: an expression argument, a path, a literal and anything inside nested
+    parens are all ignored, so a name merely MENTIONED near a macro cannot match.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    masked = mask_code(text)
+    found: set[str] = set()
+    for m in _RE_MACRO_CALL.finditer(masked):
+        depth, i = 1, m.end()
+        arg_start, args = i, []
+        while i < len(masked) and depth:
+            c = masked[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if not depth:
+                    args.append(masked[arg_start:i])
+                    break
+            elif c == "," and depth == 1:
+                args.append(masked[arg_start:i])
+                arg_start = i + 1
+            i += 1
+        found |= {a.strip() for a in args if _RE_BARE_IDENT.match(a.strip())}
+    return found
+
+
+#: A `#[no_mangle]` / `#[export_name = "..."]` function item — the definitions that win
+#: the link and displace the C. Ordinary `fn`s are internal scaffolding.
+_RE_EXPORTED_FN = re.compile(
+    r"#\[\s*(?:no_mangle|export_name\s*=\s*\"(?P<alias>[^\"]+)\")\s*\]"
+    r"(?:\s*#\[[^\]]*\])*"
+    r"\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?P<name>\w+)"
+)
+
+
+def exported_symbols(crate_root: Path) -> dict[str, Path]:
+    """{exported symbol: the .rs that defines it} for one crate.
+
+    Lives here rather than beside its caller because it is the same question the audit
+    asks — "what does this crate actually ship?" — and because one module importing
+    `tools.source_walk` is enough. `rustconv translate` uses it to refuse, before
+    spending anything, to re-buy a TU the crate already serves.
+    """
+    out: dict[str, Path] = {}
+    for rs in source_files(crate_root, "*.rs"):
+        try:
+            text = rs.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        masked = mask_code(text)
+        for m in _RE_EXPORTED_FN.finditer(masked):
+            # Scan the MASKED text so a commented-out item cannot match, but read the
+            # alias back out of the ORIGINAL: masking blanks string CONTENTS, which is
+            # exactly where `#[export_name = "alpha"]` keeps the symbol. mask_code is
+            # length-preserving, so the span is the same in both.
+            alias = text[m.start("alias") : m.end("alias")] if m.group("alias") else None
+            out.setdefault(alias or m.group("name"), rs)
+    return out
+
+
+def tree_macro_arg_names(rust_root: Path) -> set[str]:
+    """Index every bare macro-invocation argument under a crate root."""
+    names: set[str] = set()
+    for path in source_files(rust_root, "*.rs"):
+        names |= macro_arg_names(path)
+    return names
+
+
+def member_body(name: str, tree: set[str]) -> str | None:
+    """`CDefView_Refresh` → `CDefView_Refresh_body`, the C++ member lowering.
+
+    rustconv lowers a C++ member function into a free `Class_Method_body` plus a separate
+    `extern "system"` vtable thunk, so the banked LABEL (the C++ construct that was sent)
+    never appears verbatim. `_body` is already in `_TWIN_SUFFIXES`, but only the variadic
+    path consults it, so a non-variadic member resolved as unintegrated — 25 of shell32's
+    130 "unintegrated" entries were this one spelling, and every `.partial` in that lane
+    was a retried call whose successful body is shipping under the suffix.
+
+    EXACT name plus the suffix, like the twin rules and for the same reason: a containment
+    test here would match `CDefView_Refresh` to `CDefView_RefreshGhostedState_body`, which
+    is a different function that happens to share a prefix.
+    """
+    cand = f"{name}_body"
+    return cand if cand in tree else None
 
 
 def tchar_variants(name: str) -> list[str]:
@@ -265,29 +382,79 @@ def tchar_variants(name: str) -> list[str]:
 
 
 def load_allowlist(path: Path = ALLOW_PATH) -> dict[str, str]:
-    """Reviewed exceptions: {function name: written reason}."""
+    """Reviewed exceptions: {function name: written reason}.
+
+    Two spellings, both requiring a reason. `[allow]` gives one function its own, which is
+    right when the reason is specific to it. `[groups]` gives one reason to a named list,
+    which is right when a whole CLASS was superseded at once — shell32 retired
+    `CFolderOptions`'s eleven banked members in a single rewrite, and eleven copies of one
+    paragraph is a file nobody re-reads. A group with no `functions`, or a function in no
+    group, is dropped rather than allowed silently: the invariant is that every allowed
+    name carries a written reason, not that the file parses.
+    """
     if not path.exists():
         return {}
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return {}
+    out: dict[str, str] = {}
+    groups = data.get("groups", {})
+    if isinstance(groups, dict):
+        for group in groups.values():
+            if not isinstance(group, dict):
+                continue
+            reason = group.get("reason")
+            names = group.get("functions")
+            if not isinstance(reason, str) or not isinstance(names, list):
+                continue
+            for name in names:
+                if isinstance(name, str):
+                    out[name] = reason
     allowed = data.get("allow", {})
-    return {k: str(v) for k, v in allowed.items()} if isinstance(allowed, dict) else {}
+    if isinstance(allowed, dict):
+        out.update({k: str(v) for k, v in allowed.items()})
+    return out
 
 
-def resolve(fn: BankedFn, tree: set[str], allow: dict[str, str]) -> Resolution:
+def _body_name_ok(name: str, tree: set[str], allow: dict[str, str]) -> bool:
+    """Is one name declared inside a banked body accounted for?
+
+    In the tree directly, under the `_body` member lowering, or allowlisted. The
+    allowlist is keyed by the C++ LABEL, so a body name is checked with `_body` stripped
+    as well — `CFolderOptions_ctor_body` is the shipping-side spelling of the allowlisted
+    `CFolderOptions_ctor`, and requiring the allowlist to carry both spellings would be a
+    second place to forget one.
+    """
+    return (
+        name in tree
+        or member_body(name, tree) is not None
+        or name in allow
+        or (name.endswith("_body") and name[: -len("_body")] in allow)
+    )
+
+
+def resolve(
+    fn: BankedFn,
+    tree: set[str],
+    allow: dict[str, str],
+    macro_args: set[str] | None = None,
+) -> Resolution:
     """Match one banked function against the tree, cheapest rule first."""
     if fn.name in tree:
         return Resolution(fn, fn.name, "direct")
 
     # The key may be a macro or a stale label; the body holds what actually shipped.
-    # Require EVERY function in the body to be in the tree: a body whose 5 definitions
-    # became 1 is partially-lost paid work, and accepting the first hit would call it
-    # integrated. Report the count rather than a representative name — picking one from
-    # a multi-function body names an arbitrary symbol and reads as if that were the match.
+    # Each declared name goes through the SAME rules, not a raw set test. A
+    # content-addressed memo entry (`translation-memory-exact-v1/<sha>.rs`) is keyed by a
+    # hash, so its body is the only thing that can identify it — and its body holds
+    # `Class_Method_body` names and superseded members, which only resolve via the rules
+    # below. Requiring EVERY name to resolve is what keeps this tight: a body whose 5
+    # definitions became 1 is partially-lost paid work, and accepting the first hit would
+    # call it integrated. Report the count rather than a representative name — picking one
+    # from a multi-function body names an arbitrary symbol and reads as if it were the match.
     body = declared_names(fn.path)
-    if body and not body - tree:
+    if body and all(n in tree or member_body(n, tree) for n in body):
         return Resolution(fn, f"{len(body)} body fn(s)", "declared_in_body")
 
     if is_variadic_body(fn.path):
@@ -299,8 +466,24 @@ def resolve(fn: BankedFn, tree: set[str], allow: dict[str, str]) -> Resolution:
         if cand in tree:
             return Resolution(fn, cand, "tchar_macro")
 
+    body_twin = member_body(fn.name, tree)
+    if body_twin:
+        return Resolution(fn, body_twin, "member_body")
+
+    # Last of the mechanical rules, because it reads a looser index than the others.
+    if macro_args and fn.name in macro_args:
+        return Resolution(fn, fn.name, "macro_generated")
+
     if fn.name in allow:
         return Resolution(fn, fn.name, "allowlist")
+
+    # A content-addressed memo entry (`translation-memory-exact-v1/<sha>.rs`) is keyed by a
+    # hash, so its BODY is the only thing that can identify it. Checked last, and reported
+    # as `allowlist` rather than `declared_in_body`, because a reviewed exception must stay
+    # visible as one — laundering it into a mechanical verdict is how an allowlist stops
+    # being re-read.
+    if body and all(_body_name_ok(n, tree, allow) for n in body):
+        return Resolution(fn, f"{len(body)} body fn(s)", "allowlist")
 
     return Resolution(fn, None, "unresolved")
 
@@ -314,6 +497,7 @@ def audit(
     if allow is None:
         allow = load_allowlist()
     tree = tree_fn_names(rust_root)
+    macro_args = tree_macro_arg_names(rust_root)
 
     reports = []
     for resp_dir in sorted(p for p in responses_root.iterdir() if p.is_dir()):
@@ -324,9 +508,138 @@ def audit(
         fns = complete + [fn for fn in truncated_fns(resp_dir) if fn.name not in done]
         if not fns:
             continue
-        resolutions = [resolve(fn, tree, allow) for fn in fns]
+        resolutions = [resolve(fn, tree, allow, macro_args) for fn in fns]
         reports.append(DirReport(resp_dir.name, len(fns), resolutions))
     return reports
+
+
+#: A `RunArchive` dir — one `translate`/`submit` invocation, streamed as it was bought.
+_RE_RUN_ARCHIVE = re.compile(r"^\d{8}-\d{6}-")
+
+
+@dataclass(frozen=True)
+class Redundancy:
+    """One banked function present in several dirs, and whether the copies AGREE."""
+
+    name: str
+    dirs: list[str]
+    integrated: bool
+    identical: bool
+    #: Any copy is a `.partial` — a rejected or truncated body. Then the divergence is a
+    #: RETRY, and a retry after a wrong deterministic audit is legitimate (the second
+    #: purchase is the one you keep). Divergent copies that are ALL completed `.rs` are
+    #: the class that was bought again with nothing rejected in between.
+    retry: bool
+    module: str
+
+
+def bank_module(dir_name: str) -> str:
+    """The MODULE a response dir belongs to — `20260919-022222-file.c` and
+    `msvcrt__file__factseal_v1__callseal_v1` are both `file`.
+
+    Getting this wrong is the single most productive bug in this area, and it was found
+    twice in one afternoon from opposite directions. Splitting `<group>__<module>__<flags>`
+    and taking `parts[0]` buckets by GROUP, collapsing 37 distinct shell32 modules into
+    one — and every cross-module pair that invents is two different modules' completed
+    bodies, which lands in the "bought again" class by construction. Keeping the `.cpp`
+    on the timestamped side is the mirror-image error: `utils.cpp` and `utils` then read
+    as different modules and real duplicate pairs are discarded as collisions.
+    """
+    m = re.match(r"^\d{8}-\d{6}-(.+?)(?:\.\w+)?$", dir_name)
+    if m:
+        return m.group(1)
+    parts = dir_name.split("__")
+    return parts[1] if len(parts) > 1 else dir_name
+
+
+def _body_hash(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def redundancies(reports: list[DirReport]) -> tuple[list[Redundancy], list[str]]:
+    """Functions banked in MORE THAN ONE dir, and run archives that duplicate the cache.
+
+    **Two dirs holding a function is normally ONE purchase, not two.** Every `translate`
+    writes each body twice: to a timestamped `RunArchive` (`20260919-022222-file.c`) as
+    it streams, and to the namespaced `ResponseCache`
+    (`msvcrt__file__factseal_v1__callseal_v1__wideseal_v1`) that makes a replay free. The
+    first draft of this function called that "bought more than once" and was wrong about
+    all 235 of msvcrt's — they are byte-identical pairs from a single run. So the copies
+    are HASHED, and only genuinely DIVERGENT ones are reported as separate purchases.
+    A divergent pair is the real re-buy signal, and its usual cause is a re-run under a
+    different seal-flag namespace.
+
+    Returns (duplicates, run-archive dirs that are safe to archive). The second list is
+    deliberately never a `ResponseCache` dir: **that directory is the live replay cache,
+    and deleting it makes the next run re-buy the file.** Only a timestamped RunArchive
+    whose every function is byte-identical to a cached copy — and integrated — qualifies.
+
+    An ALLOWLISTED resolution does not count as integrated here, though `integrated` is
+    true for it. "Allowlisted" means correctly ABSENT — superseded by a rewrite, or a body
+    that must never ship — so a dir full of them is the record of a decision, not a
+    redundant copy of shipping code, and the report's own sentence ("every function in
+    them is integrated") would be false of it. `20260718-205701-CEnumIDListBase.cpp` is
+    the live example: seven bodies that must never be defined in Rust, because eight C++
+    classes still derive from the live base they would capture.
+
+    REPORTS ONLY. `.responses/` is paid artifact; removing even a provably redundant
+    copy is a human's call, not a tool's.
+    """
+    where: dict[str, dict[str, Path]] = {}
+    resolved: dict[str, bool] = {}
+    for rep in reports:
+        for res in rep.resolutions:
+            where.setdefault(res.fn.name, {})[rep.name] = res.fn.path
+            resolved[res.fn.name] = resolved.get(res.fn.name, False) or res.integrated
+
+    dupes: list[Redundancy] = []
+    agree: dict[tuple[str, str], bool] = {}
+    for name, by_dir in sorted(where.items()):
+        if len(by_dir) < 2:
+            continue
+        hashes = {d: _body_hash(path) for d, path in by_dir.items()}
+        identical = len(set(hashes.values())) == 1 and None not in hashes.values()
+        for d in by_dir:
+            agree[(d, name)] = identical
+        # Group by MODULE before calling anything a duplicate: shell32 has an
+        # `IsRegItem` in CDrivesFolder, CDesktopFolder and CControlPanelFolder, and
+        # those are three different functions that share a name, not one bought thrice.
+        mods: dict[str, list[str]] = {}
+        for d in by_dir:
+            mods.setdefault(bank_module(d), []).append(d)
+        for mod, dirs in sorted(mods.items()):
+            if len(dirs) < 2:
+                continue
+            same = len({hashes[d] for d in dirs}) == 1 and all(hashes[d] for d in dirs)
+            dupes.append(
+                Redundancy(
+                    name,
+                    sorted(dirs),
+                    resolved[name],
+                    same,
+                    any(by_dir[d].suffix == ".partial" for d in dirs),
+                    mod,
+                )
+            )
+
+    cache_dirs = {r.name for r in reports if not _RE_RUN_ARCHIVE.match(r.name)}
+    safe_archives = [
+        rep.name
+        for rep in reports
+        if _RE_RUN_ARCHIVE.match(rep.name)
+        and rep.resolutions
+        and all(
+            res.integrated
+            and res.via != "allowlist"
+            and agree.get((rep.name, res.fn.name), False)
+            and any(d in cache_dirs for d in where[res.fn.name])
+            for res in rep.resolutions
+        )
+    ]
+    return dupes, safe_archives
 
 
 def format_report(reports: list[DirReport], verbose: bool = False) -> str:
@@ -355,6 +668,60 @@ def format_report(reports: list[DirReport], verbose: bool = False) -> str:
                 for res in rep.aliased:
                     lines.append(f"  {rep.name}: {res.fn.name} -> {res.found_as} ({res.via})")
             lines.append("")
+
+    dupes, safe_archives = redundancies(reports)
+    divergent = [d for d in dupes if not d.identical]
+    rebought = [d for d in divergent if not d.retry]
+    retried = [d for d in divergent if d.retry]
+    mirrored = [d for d in dupes if d.identical]
+    if rebought:
+        by_mod: dict[str, int] = {}
+        for d in rebought:
+            by_mod[d.module] = by_mod.get(d.module, 0) + 1
+        lines.append(
+            f"BOUGHT AGAIN — {len(rebought)} function(s) with two COMPLETED bodies in one "
+            "module and nothing rejected in between:"
+        )
+        shown = rebought if verbose else rebought[:12]
+        for dup in shown:
+            flag = "" if dup.integrated else "  [UNINTEGRATED]"
+            lines.append(f"  {dup.module}/{dup.name}  x{len(dup.dirs)}{flag}")
+        if not verbose and len(rebought) > 12:
+            lines.append(f"  ... and {len(rebought) - 12} more (--verbose for all)")
+        lines.append(
+            "  by module: "
+            + ", ".join(f"{m}={n}" for m, n in sorted(by_mod.items(), key=lambda kv: -kv[1])[:8])
+        )
+        lines.append(
+            "  Usual cause: a re-run under a different SEAL-FLAG namespace re-buys the "
+            "whole file.\n  Pass --seal-facts --seal-calls --seal-wide from the START.\n"
+            "  NOTE: paid more than once is not yet paid NEEDLESSLY — the outcome ledger "
+            "says which."
+        )
+        lines.append("")
+    if retried:
+        # Separated because conflating the two overstated shell32's re-buys by 4x.
+        lines.append(
+            f"({len(retried)} further divergent function(s) have a `.partial` among their "
+            "copies — a RETRY after a reject, where the second purchase is the one you "
+            "keep. Legitimate; not counted above.)"
+        )
+        lines.append("")
+    if mirrored:
+        lines.append(
+            f"({len(mirrored)} function(s) appear in several dirs with IDENTICAL bytes "
+            "— one purchase written to both its run archive and the replay cache.)"
+        )
+        lines.append("")
+    if safe_archives:
+        lines.append(
+            f"RUN ARCHIVE FULLY MIRRORED BY THE CACHE — {len(safe_archives)} dir(s); every "
+            "function in them is integrated AND byte-identical to a copy in a replay-cache "
+            "dir, so archiving loses nothing. NEVER remove the namespaced cache dir itself: "
+            "that is what makes a replay free. Deleting paid artifact is a HUMAN's call:"
+        )
+        lines.extend(f"  {name}" for name in safe_archives)
+        lines.append("")
 
     lines.append(
         f"{len(reports)} response dir(s), {total_fns} banked function(s), "

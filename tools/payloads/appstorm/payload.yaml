@@ -1,0 +1,21 @@
+# appstorm — do the stock GUI apps and control-panel applets open, draw and close?
+#   tools/payloads/appstorm/build.sh <arch>
+#   VIBEOS_PAYLOAD=appstorm ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload appstorm
+# Each app gets a screenshot, shot-NN-<name>.png in the run's artifact dir (shot_prefix below),
+# and a "[APPSTORM] app <name> PASS|FAIL ..." line; FAIL = no window, hung, crashed, error box.
+name: appstorm
+description: launch ~38 stock apps and applets, check each window, screenshot it, close it
+
+build_hint: "tools/payloads/appstorm/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/appstorm/appstorm-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/appstorm.exe
+
+test:
+  launch_marker: "[APPSTORM] done"
+  shot_prefix: "[APPSTORM] shot "
+  pass_marker: "[APPSTORM] done VERDICT=PASS"
+  launch_drain_secs: 3600

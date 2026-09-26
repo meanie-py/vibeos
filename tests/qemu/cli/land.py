@@ -151,6 +151,51 @@ def _preflight(repo: Path) -> tuple[str, str]:
     return branch, _git(repo, "rev-parse", "HEAD")
 
 
+def _docs_only_vs_master(repo: Path) -> bool:
+    """Does this lane change NOTHING but docs, measured against the merge base with master?
+
+    The pre-push hook has carried this exemption since it was written -- a docs-only delta
+    needs no fresh gate stamp -- but the land preflights did not, so a commit touching one
+    `.md` paid a full `check-tooling` plus both strict source-lint partitions. A docs-only
+    change cannot fail a Python linter or a source scanner, because it contains no Python
+    and no source.
+
+    It bit the change that recorded the orphan inventory: refused at
+    `test_verify_ucrtbase_cohab.py` over a stale `build-i386` in the author's worktree,
+    for a delta of one Markdown file.
+
+    Skipping here is safe in the direction that matters. The CONDUCTOR still runs every
+    check on the merged batch, so this cannot put unlinted code on master -- it only
+    declines to lint a lane that has none. The predicate is `tools/docs_only.py`, shared
+    with the pre-push hook: two spellings of "docs-only" that can disagree is worse than
+    neither, so there is exactly one.
+
+    Uses the three-dot merge base, so a lane that is merely BEHIND master is still judged
+    on what IT changed rather than on what landed while it worked. Fails CLOSED -- any git
+    error returns False and the lane lints normally.
+    """
+    try:
+        diff = _git(repo, "diff", "--name-only", "origin/master...HEAD")
+    except Exception:
+        return False
+    # By PATH, not by name: a `sys.path` insert leaves `docs_only` in `sys.modules`, and a
+    # process that later conducts a drain would then judge the INTEGRATION tree with this
+    # lane's copy of the rule. Same reason queue.py loads it this way.
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_land_docs_only", repo / "tools" / "docs_only.py"
+        )
+        if spec is None or spec.loader is None:
+            return False
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return False
+    return module.docs_only(diff.splitlines())
+
+
 def _lint_preflight(repo: Path, run: Run, args) -> None:
     """Run `check-tooling` HERE, before this lane consumes a batched gate.
 
@@ -176,6 +221,9 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
     """
     if getattr(args, "skip_lint", False):
         run.add(Stage("lint", status="skip", detail="--skip-lint: check-tooling not run"))
+        return
+    if _docs_only_vs_master(repo):
+        run.add(Stage("lint", status="skip", detail="docs-only delta: nothing for it to lint"))
         return
     t0 = time.monotonic()
     try:
@@ -218,6 +266,69 @@ def _lint_preflight(repo: Path, run: Run, args) -> None:
         + "\n  run `./vibeos-cli check-tooling` for the detail."
         + "\n  override (report every use): ./vibeos-cli land --skip-lint"
     )
+
+
+def _source_lint_preflight(repo: Path, run: Run, args) -> None:
+    """Run the conductor's OWN source-lint partitions here, before the batched gate.
+
+    `_lint_preflight` above is named "lint" but only ever ran `check-tooling`. The gate
+    runs that AND `check --strict --scope source-early|source-deferred`, and those two
+    are the other cheap half — pure source, no build, no boot. On 2026-09-19 they
+    rejected the same lane twice (`scan_unpruned_walk`, a one-line fix each time) after
+    the full queue wait, while `./vibeos-cli check` stayed green the whole time, because
+    plain `check` does not run those partitions in STRICT mode. A gate downstream of the
+    cost is not a gate.
+
+    Uses gate's `_lint_once` rather than re-deriving the command, so this cannot drift
+    from what the conductor actually runs.
+
+    NEVER MORE STRICT THAN THE GATE, which is the property that makes moving it sound:
+    a partition that could not RUN here must not block. `source-deferred` contains
+    `verify_signatures` and `gen_ctype_tables`, which hard-fail without this worktree's
+    `build-<arch>` — a fresh lane legitimately has none. `_lint_once` already separates
+    those: a crash, or a nonzero exit with no parseable finding lines, classifies as
+    SCANNER_ERROR, and only a real NEW-findings verdict blocks. Everything else warns,
+    matching the fail-open rule the check-tooling half already follows.
+    """
+    if getattr(args, "skip_lint", False):
+        return
+    if _docs_only_vs_master(repo):
+        for part in ("source-early", "source-deferred"):
+            run.add(Stage(f"lint:{part}", status="skip", detail="docs-only delta"))
+        return
+    from .gate import _lint_once
+
+    for part in ("source-early", "source-deferred"):
+        try:
+            result = _lint_once(repo, part, run.dir / f"preflight-lint-{part}")
+        except (OSError, subprocess.SubprocessError) as exc:
+            run.add(Stage(f"lint:{part}", status="warn", detail=f"could not run: {exc}"))
+            continue
+        if result["ok"]:
+            run.add(Stage(f"lint:{part}", status="ok", detail=f"clean ({result['seconds']:.0f}s)"))
+            continue
+        if result["classification"] == "SCANNER_ERROR":
+            # Infrastructure, not a finding — the conductor has a built tree and we may
+            # not. Say so and let the gate be the oracle.
+            run.add(
+                Stage(
+                    f"lint:{part}",
+                    status="warn",
+                    detail=f"could not complete here ({result['salient'] or 'scanner error'})",
+                )
+            )
+            continue
+        raise LandAbort(
+            f"check --strict --scope {part} FAILED — fix it before queueing, or the "
+            "conductor bounces the whole batch (3 builds + 4 boots of fleet load) for a "
+            "source lint:\n    "
+            + (result["salient"] or f"exit {result['exit']}")
+            + f"\n  artifact: {run.dir / f'preflight-lint-{part}'}"
+            + f"\n  reproduce: ./vibeos-cli check --strict --scope {part}"
+            + "\n  (plain `./vibeos-cli check` does NOT run this partition in strict mode,"
+            " so a green `check` is not evidence here.)"
+            + "\n  override (report every use): ./vibeos-cli land --skip-lint"
+        )
 
 
 def _merge_master(repo: Path, run: Run) -> str:
@@ -412,6 +523,7 @@ def _land_queued(args, repo: Path) -> int:
             # Only on a REAL submission: if this tip is already queued we are adding no new
             # risk to the batch, and a --dry-run has already returned above.
             _lint_preflight(repo, run, args)
+            _source_lint_preflight(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
             depth = len(queue.pending(repo))
             run.add(
@@ -631,6 +743,7 @@ def _land_direct(args, repo: Path) -> int:
         # but a lint failure still burns a whole gate, and there is no reason to hold a
         # fleet-wide lock for the ~40s this takes.
         _lint_preflight(repo, run, args)
+        _source_lint_preflight(repo, run, args)
 
         _report_queue(run)
         timeout = float(getattr(args, "queue_timeout", 0) or hostlock.LAND_LOCK_TIMEOUT)

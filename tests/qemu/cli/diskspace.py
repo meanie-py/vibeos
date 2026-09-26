@@ -97,6 +97,25 @@ def policy(*, initialize: bool = False) -> dict:
         raise AdmissionError(f"invalid host disk policy {path}: {exc}") from exc
 
 
+def backing_mounts() -> list[Path]:
+    """Host volumes BACKING our filesystem, which `df /` cannot see.
+
+    A WSL ext4 lives in a sparse .vhdx on a Windows volume, so the guest reports the
+    VHDX CEILING while the real constraint is free space on the host volume underneath.
+    On 2026-09-13 that gap ate the fleet: a 1 TiB ceiling over a C: with 620 GiB free,
+    so seven concurrent lane builds filled the HOST while `df /` still showed room, and
+    the disk did not survive it. Admission was not wrong, it was answering a different
+    question than the one that mattered.
+
+    Colon-separated in VIBEOS_DISK_BACKING_MOUNTS; unset means unarmed, which is the
+    correct default for a bare-metal host that has no backing store. Deliberately NOT a
+    policy.json key: that file's loader rejects an unknown key set, so adding one there
+    would fail admission closed in every lane still running an older commit.
+    """
+    raw = os.environ.get("VIBEOS_DISK_BACKING_MOUNTS", "")
+    return [Path(p) for p in raw.split(":") if p]
+
+
 def filesystems(repo: Path) -> list[dict]:
     """Account each device once, including separate cache/temp/artifact volumes."""
     cache = cachecfg.make(repo)
@@ -106,6 +125,9 @@ def filesystems(repo: Path) -> list[dict]:
         cache.sccache_dir,
         Path(tempfile.gettempdir()),
         Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli")),
+        # Each is a distinct st_dev, so the dedup below folds it in as one more volume
+        # and every reservation/floor check then applies to it unchanged.
+        *backing_mounts(),
     ]
     devices = {}
     for path in paths:
@@ -265,6 +287,10 @@ def status(repo: Path, *, sizes: bool = False) -> dict:
         "filesystems": volumes,
         "leases": live,
         "coverage": "cooperating CLI build/tooling jobs only; not a physical quota",
+        # Say ARMED/UNARMED positively. An absent guard that reports nothing reads
+        # identically to a guard that found nothing to worry about.
+        "backing_mounts": [str(p) for p in backing_mounts()]
+        or "UNARMED: set VIBEOS_DISK_BACKING_MOUNTS",
         "automatic_retention": timer_active,
         "retention_policy_path": str(retention_policy),
     }

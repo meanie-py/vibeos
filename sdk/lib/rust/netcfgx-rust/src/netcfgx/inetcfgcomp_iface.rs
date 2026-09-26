@@ -197,13 +197,31 @@ pub unsafe extern "system" fn INetCfgComponentPrivate_fnRelease(
 }
 
 #[no_mangle]
+// Upstream-sync 2026-09-20. This vtable slot is `Unknown1(THIS_ REFIID riid, void **ppv)`
+// (sdk/include/reactos/netcfgx_undoc.h) — a QueryInterface-shaped call, NOT the two DWORDs
+// the pre-merge stub was translated from. Upstream has since given it a real body:
+// CreateNotifyObject(This, ...) then delegate to This->pItem->pControl's QueryInterface.
+// Neither CreateNotifyObject nor the pItem/pControl fields exist in netcfgx-rust yet, so
+// the body stays unimplemented — but the SIGNATURE and the RETURN are fixed here, because
+// the merge made this reachable and dangerous:
+//
+//   dll/win32/ifmon/ip.c:189 (upstream's new `netsh interface ip`, +2409 lines, which we
+//   now build) does
+//       hr = INetCfgComponentPrivate_Unknown1(p, &IID_ITcpipProperties, (PVOID*)&pProps);
+//       if (hr != S_OK) goto exit;
+//   and then dereferences pProps. The old stub returned S_OK WITHOUT WRITING ppv, so the
+//   caller sailed past its own error check straight into an uninitialized stack pointer.
+//
+// Returning E_NOTIMPL with *ppv cleared makes the caller take the path it already has.
 pub unsafe extern "system" fn INetCfgComponentPrivate_fnUnknown1(
-    iface: *mut INetCfgComponentPrivate,
-    dwParam1: DWORD,
-    dwParam2: DWORD,
+    _iface: *mut INetCfgComponentPrivate,
+    _riid: *const GUID,
+    ppvObj: *mut LPVOID,
 ) -> HRESULT {
-    // ERR("INetCfgComponentPrivate_fnUnknown1(%p %lx %lx)\n", iface, dwParam1, dwParam2);
-    S_OK
+    if !ppvObj.is_null() {
+        *ppvObj = core::ptr::null_mut();
+    }
+    E_NOTIMPL
 }
 
 #[no_mangle]
@@ -962,7 +980,16 @@ pub static vt_NetCfgComponentPrivate: INetCfgComponentPrivateVtbl = INetCfgCompo
     QueryInterface: Some(INetCfgComponentPrivate_fnQueryInterface),
     AddRef: Some(INetCfgComponentPrivate_fnAddRef),
     Release: Some(INetCfgComponentPrivate_fnRelease),
-    Unknown1: Some(INetCfgComponentPrivate_fnUnknown1),
+    // The bindgen island still carries the PRE-merge `(DWORD, DWORD)` shape for this
+    // slot; the merged netcfgx_undoc.h says `(REFIID, void**)` and that is what the C
+    // callers use. Transmute past the stale field type — same precedent as fltmgr's
+    // CloseProcedure and ob's SecurityProcedure — until the island is regenerated.
+    Unknown1: Some(unsafe {
+        core::mem::transmute::<
+            unsafe extern "system" fn(*mut INetCfgComponentPrivate, *const GUID, *mut LPVOID) -> HRESULT,
+            unsafe extern "system" fn(*mut INetCfgComponentPrivate, u32, u32) -> HRESULT,
+        >(INetCfgComponentPrivate_fnUnknown1)
+    }),
 };
 
 /// inetcfgcomp_iface.c:727 `static const INetCfgComponentVtbl vt_NetCfgComponent`  (slot order: rust:types_amd64.rs)

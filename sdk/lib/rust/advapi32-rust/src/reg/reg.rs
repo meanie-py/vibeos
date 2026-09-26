@@ -91,7 +91,7 @@ unsafe fn MapDefaultKey(RealKey: PHANDLE, Key: HKEY) -> NTSTATUS {
     RegInitialize();
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(HandleTableCS));
 
-    if Key == HKEY_CURRENT_USER {
+    if SamePredefKey(Key, HKEY_CURRENT_USER) {
         DefDisabled = DefaultHandleHKUDisabled;
     } else {
         DefDisabled = DefaultHandlesDisabled;
@@ -274,12 +274,12 @@ pub unsafe extern "system" fn RegDisablePredefinedCacheEx() -> LONG {
 pub unsafe extern "system" fn RegOverridePredefKey(hKey: HKEY, mut hNewHKey: HKEY) -> LONG {
     let mut ErrorCode: LONG = ERROR_SUCCESS as LONG;
 
-    if (hKey == HKEY_CLASSES_ROOT
-        || hKey == HKEY_CURRENT_CONFIG
-        || hKey == HKEY_CURRENT_USER
-        || hKey == HKEY_LOCAL_MACHINE
-        || hKey == HKEY_PERFORMANCE_DATA
-        || hKey == HKEY_USERS)
+    if (SamePredefKey(hKey, HKEY_CLASSES_ROOT)
+        || SamePredefKey(hKey, HKEY_CURRENT_CONFIG)
+        || SamePredefKey(hKey, HKEY_CURRENT_USER)
+        || SamePredefKey(hKey, HKEY_LOCAL_MACHINE)
+        || SamePredefKey(hKey, HKEY_PERFORMANCE_DATA)
+        || SamePredefKey(hKey, HKEY_USERS))
         && (((hNewHKey as ULONG_PTR) & 0xF0000000) != 0x80000000)
     {
         let Handle: PHANDLE;
@@ -2376,7 +2376,7 @@ pub unsafe extern "system" fn RegFlushKey(hKey: HKEY) -> LONG {
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_SUCCESS as LONG;
     }
 
@@ -2408,7 +2408,7 @@ pub unsafe extern "system" fn RegGetKeySecurity(
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 
@@ -2485,7 +2485,7 @@ pub unsafe extern "system" fn RegLoadKeyW(
     let mut Status: NTSTATUS;
     let mut ErrorCode: LONG = ERROR_SUCCESS as LONG;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 
@@ -2552,7 +2552,7 @@ pub unsafe extern "system" fn RegNotifyChangeKeyValue(
     let mut Status: NTSTATUS;
     let mut ErrorCode: LONG = ERROR_SUCCESS as LONG;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 
@@ -3659,7 +3659,7 @@ pub unsafe extern "system" fn RegReplaceKeyW(
     let mut Status: NTSTATUS;
     let mut ErrorCode: LONG = ERROR_SUCCESS as LONG;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 
@@ -3799,7 +3799,7 @@ pub unsafe extern "system" fn RegRestoreKeyW(
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 
@@ -4006,7 +4006,7 @@ pub unsafe extern "system" fn RegSetKeySecurity(
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 
@@ -4274,7 +4274,7 @@ pub unsafe extern "system" fn RegUnLoadKeyW(hKey: HKEY, lpSubKey: LPCWSTR) -> LO
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    if hKey == HKEY_PERFORMANCE_DATA {
+    if SamePredefKey(hKey, HKEY_PERFORMANCE_DATA) {
         return ERROR_INVALID_HANDLE as LONG;
     }
 

@@ -43,6 +43,7 @@ from . import (
 from .argument_facts import require_argument_facts
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .bank_audit import audit as bank_audit
+from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
@@ -95,6 +96,7 @@ from .cpp_com import (
     render_cpp_support,
     render_interface,
     render_object_map_adapter,
+    render_rewrite_support,
     render_wide_literal_statics,
     require_supported_worker_raii,
     rewrite_wide_literals,
@@ -102,7 +104,12 @@ from .cpp_com import (
     worker_signature,
 )
 from .crate_integrate import resolve_in_crate_imports, strip_top_level_items
-from .dead_regions import never_compiled_lines, pinned_int_macros
+from .dead_regions import (
+    conditional_arm_notes,
+    never_compiled_lines,
+    pinned_int_macros,
+    sibling_header_int_macros,
+)
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
     FactSealError,
@@ -133,6 +140,7 @@ from .probe_migrate import (
     scan_rust_file,
 )
 from .profile_derive import ProfileDeriveError, _target_names, parse_cmakelists
+from .projects.reactos.targets import module_lock_for_crate
 from .prompt_builder import (
     build_file_prompt,
     build_full_prompt,
@@ -709,6 +717,10 @@ def _open_response_cache(
 # these looks like when it is wrong (fact_seal.unseal_facts).
 UNVERIFIED_CONSTANT_BODIES: list[str] = []
 
+# Bodies spanning a preprocessor conditional, with which arm is live when that is
+# decidable. See the emission site for why this is report-only.
+CONDITIONAL_ARM_BODIES: list[str] = []
+
 # Bodies whose UTF-16 tokens all survived but in a different ORDER than the C used them.
 # The one damage a closed-set check cannot see (the permutation that got `_tzset` past the
 # constant seal), so it is a review queue rather than a rejection — legitimate reordering
@@ -951,6 +963,80 @@ def _normalize_unseal_cpp_worker(dep, rust: str, fact_seals, call_seals) -> str:
     return normalize_worker_semantics(dep.body_text, rust)
 
 
+_USE_LINE_RE = re.compile(r"^use ([A-Za-z_][\w:]*)::(?:\{([^{}]*)\}|([A-Za-z_]\w*))\s*;$")
+
+
+def _dedupe_hoisted_imports(code: str) -> str:
+    """Import each NAME once, keeping the first `use` that brings it in.
+
+    The materializer HOISTS a body-level `use` to file scope, and writing the import inside the
+    function body is the only way to make it survive materialization at all — so a name several
+    bodies need arrives several times and every copy after the first is
+    `E0252: the name ... is defined multiple times`.
+
+    Deduping whole LINES is not enough: the copies are rarely identical, they are overlapping
+    SETS (`use m::{A, B};` beside `use m::{B, C};`). So this works per name, rewrites a brace
+    list down to the names still needed, and drops a `use` that has nothing left.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in code.split("\n"):
+        match = _USE_LINE_RE.match(line.strip())
+        if match is None:
+            out.append(line)
+            continue
+        path, braced, single = match.group(1), match.group(2), match.group(3)
+        names = [n.strip() for n in (braced or single or "").split(",") if n.strip()]
+        keep = [n for n in names if n.split(" as ")[-1].strip() not in seen]
+        seen.update(n.split(" as ")[-1].strip() for n in names)
+        if not keep:
+            continue
+        out.append(
+            f"use {path}::{{{', '.join(keep)}}};" if len(keep) > 1 else f"use {path}::{keep[0]};"
+        )
+    return "\n".join(out)
+
+
+def _crate_of(output: str | None) -> Path | None:
+    """The crate directory an `-o` path lands in — the nearest ancestor holding a Cargo.toml.
+
+    `-o` is how a TU with more than one class writes its second and later slices, and nothing
+    requires that path to sit inside the crate `--target` resolves to.
+    """
+    if not output:
+        return None
+    for parent in Path(output).resolve().parents:
+        if (parent / "Cargo.toml").is_file():
+            return parent
+    return None
+
+
+def _module_lock_of(args, rustconv_target=None) -> tuple[str, str]:
+    """The COM module-lock pair for the crate this run's output lands in.
+
+    Keyed on the CRATE rather than `--target` because the host DLL defines the symbol. A
+    `--target shell32` run writing into menuband-rust is the case that matters: menuband's
+    staticlib links into rshell.dll too, which has no `Shell32RustObject*`.
+    """
+    crate = _crate_of(getattr(args, "output", None))
+    if crate is None and rustconv_target is not None:
+        crate = getattr(rustconv_target, "output_crate", None)
+    return module_lock_for_crate(crate.name if crate is not None else None)
+
+
+def _resolve_activation_source(args) -> Path | None:
+    """`--activation-source`, resolved against the repo root like every other source path.
+
+    A class is often constructed by a different TU than the one defining it, and scanning
+    only its own file reports the activation as unmapped when it is merely next door.
+    """
+    raw = getattr(args, "activation_source", None)
+    if raw is None:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else REACTOS_ROOT / path
+
+
 def cmd_candidate_check(args):
     """Batch-compile candidate workers against real target substrate."""
     manifest = Path(args.manifest)
@@ -1127,6 +1213,7 @@ def cmd_cpp_com(args):
         source,
         args.class_name,
         object_map_source=object_map,
+        activation_source=_resolve_activation_source(args),
         method_names=[f.name for f in class_methods],
         island_files=[SHELL32_ISLAND_FILES[a] for a in ("i386", "amd64", "arm64")],
     )
@@ -1181,6 +1268,7 @@ def cmd_cpp_com(args):
             allow_internal=args.internal,
             allow_plain=getattr(args, "plain", False),
             island_slots=island_slots,
+            module_lock=_module_lock_of(args),
         )
     )
     output = "\n\n".join(chunks) + "\n"
@@ -1196,7 +1284,10 @@ def cmd_cpp_com(args):
             raise CppComError("--adapter-output is invalid for internal COM construction")
         adapter = Path(args.adapter_output)
         adapter.parent.mkdir(parents=True, exist_ok=True)
-        adapter.write_text(render_object_map_adapter(cls) + "\n", encoding="utf-8")
+        adapter.write_text(
+            render_object_map_adapter(cls, module_lock=_module_lock_of(args)) + "\n",
+            encoding="utf-8",
+        )
         print(f"wrote deterministic ATL adapter: {adapter}")
 
 
@@ -1353,6 +1444,7 @@ def cmd_submit(args):
             sys_umbrella=target.sys_umbrella,
             c_source_path=path,
             com_method_macro=target.com_method_macro,
+            concrete_stdcall_slots=target.concrete_stdcall_slots,
             crate_module=getattr(target, "crate_module", "") if target.crate_bindgen_files else "",
         )
         print(code)
@@ -2022,8 +2114,82 @@ def unmatched_skip_fn(requested: Iterable[str], matched: Iterable[str]) -> list[
     return sorted(set(requested) - set(matched))
 
 
+def _already_translated(
+    c_file: Path, output_crate: Path, c_names: set[str]
+) -> tuple[list[Path], int, int] | None:
+    """Are this TU's exported functions ALREADY served from Rust in the output crate?
+
+    This guard exists because a lane doc said "Owed: a Rust port of file.c" long after
+    file.c had been ported, wired and bug-fixed on top — and $2.06 of DeepSeek was spent
+    re-buying all 232 bodies before anyone looked at the crate. A stale "owed" line is
+    not evidence; the crate is. Nothing else catches it: `estimate` reads the resume
+    cache, which is keyed by seal-flag namespace, so an earlier translation bought under
+    different flags reports "0 banked" and looks like virgin work.
+
+    Matched by SYMBOL, not by filename. The obvious `<stem>.rs` check looks right and
+    silently misses the renames that integration actually does — msvcrt's wcs.c ships as
+    `wcs_rest.rs`, and a TU split across two modules matches neither. Symbols are what
+    the link resolves and what a second translation would collide with.
+
+    `#[no_mangle]`/`#[export_name]` is the operative property: those are the definitions
+    that win the link and displace the C. A module full of ordinary `fn`s is internal
+    scaffolding and does not block.
+
+    Same intent as `--reassemble`, which has always refused to OVERWRITE a committed
+    .rs — but that refusal fires at assembly, after every function has been bought. This
+    one fires before the first API call, and `--reassemble` waives both.
+    """
+    src = output_crate / "src"
+    if not src.is_dir() or not c_names:
+        return None
+    served = exported_symbols(src)
+    hits = sorted(n for n in c_names if n in served)
+    if not hits:
+        return None
+    # A handful of shared helpers overlapping is normal; a majority means the TU is
+    # already ported. Below the threshold we say nothing and let the run proceed.
+    if len(hits) * 2 < len(c_names):
+        return None
+    where = sorted({served[n] for n in hits})
+    return where, len(hits), len(c_names)
+
+
+def _unmatched_fn_names(fn_arg: str, found: set[str]) -> set[str]:
+    """`--fn` names (comma-separated) that matched in NO translated file."""
+    return {n.strip() for n in fn_arg.split(",") if n.strip()} - found
+
+
+def _class_declaration_scope(cls) -> str:
+    """The text that selects a class's support closure: its HEADER — unless the class is
+    declared inside the translation unit itself, in which case only its own declaration.
+
+    Using the whole .cpp for an in-TU class over-selects: shell32.cpp's IDefClFImpl pulled in
+    extern bridges for three helpers named only by the Shell32Rust* trampolines elsewhere in that
+    1,200-line file — one of which then collided (E0255) with the crate's own Rust definition
+    the import resolver found for the same name."""
+    text = cls.header.read_text(encoding="utf-8", errors="replace")
+    if cls.header.resolve() != cls.source.resolve():
+        return text
+    m = re.search(r"\bclass\s+" + re.escape(cls.name) + r"\b[^;{]*\{", text)
+    if not m:
+        return text
+    depth, i = 0, m.end() - 1
+    while i < len(text):
+        depth += text[i] == "{"
+        depth -= text[i] == "}"
+        i += 1
+        if depth == 0:
+            break
+    return text[m.start() : i]
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
+    # `--fn` names that matched in SOME file. A name missing from one file of a multi-file run is
+    # normal; a name that matched NOWHERE is a failed request, and used to end with rc=0 after an
+    # "Error:" line — which a script checking the exit code reads as success. (It was hit when a
+    # `#if 0` had hidden the bodies from the scanner: nothing was written, and nothing said so.)
+    fn_names_found: set[str] = set()
 
     # The CLI contract says --prompt is inspection-only. Enforce it here before
     # creating a paid archive or resolving a backend so a prompt preview can
@@ -2122,6 +2288,7 @@ def cmd_translate(args):
             target_path,
             args.class_name,
             object_map_source=rustconv_target.com_object_map,
+            activation_source=_resolve_activation_source(args),
             island_files=list(rustconv_target.com_island_files.values()),
         )
         scan = _extend_cpp_class_scan(
@@ -2213,7 +2380,12 @@ def cmd_translate(args):
             )
         print(
             f"  [cpp-com] preflight: {len(cpp_com_cls.com_map)} interface(s), "
-            f"{sum(len(i.methods) for i in cpp_com_interfaces)} vtable slot(s), "
+            # Only the class's OWN interfaces: `cpp_com_interfaces` also holds every interface
+            # the TU merely mentions (IShellItem as a parameter type, ...), and summing those
+            # printed 84 slots for IShellLibrary's 20 — a number that reads like a broken
+            # scaffold and sends you auditing one that is fine.
+            f"{sum(len(i.methods) for i in cpp_com_interfaces if i.name in class_interface_names)}"
+            " vtable slot(s), "
             f"{len(implemented)} method body/bodies",
             file=sys.stderr,
         )
@@ -2415,6 +2587,27 @@ def cmd_translate(args):
                     file=sys.stderr,
                 )
             print(f"  [substrate] {derived.module.name}: profile audit passed", file=sys.stderr)
+        if c_file.suffix.lower() == ".c" and not getattr(args, "reassemble", False):
+            shipping = _already_translated(
+                c_file,
+                rustconv_target.output_crate,
+                {f.name for f in scan.functions},
+            )
+            if shipping is not None:
+                where, hits, total = shipping
+                listed = "\n      ".join(str(w.relative_to(REACTOS_ROOT)) for w in where[:6])
+                raise ValueError(
+                    f"{c_file.name} is ALREADY TRANSLATED and shipping: {hits} of its "
+                    f"{total} functions are already defined as #[no_mangle] in "
+                    f"{rustconv_target.output_crate.name}:\n      {listed}\n"
+                    "    Re-translating re-pays for work that exists, and the shipping "
+                    "module has had fixes landed on top of the original output that a "
+                    "fresh translation does not contain.\n"
+                    "    AGENTS.md: never re-translate a file that already has output "
+                    "without explicit approval. --reassemble already means exactly that "
+                    "and already gates the WRITE; this is the same gate moved ahead of "
+                    "the MONEY."
+                )
         if cpp_com_mode:
             scan = _extend_cpp_class_scan(
                 scan,
@@ -2770,6 +2963,7 @@ def cmd_translate(args):
         if args.fn:
             requested = {name.strip() for name in args.fn.split(",") if name.strip()}
             selected = [d for d in sorted_deps if d.name in requested]
+            fn_names_found.update(d.name for d in selected)
             missing = requested - {d.name for d in selected}
             sorted_deps = selected
             if missing:
@@ -2876,8 +3070,18 @@ def cmd_translate(args):
             # The same $0 pass the real run does, so the plan says what you will actually
             # PAY for rather than how many functions the file has. Free on mbcs.c is 76 of
             # 192 — a dry-run that hid that would misprice the file by 40%.
+            # Mirror the REAL run's branch exactly — it lowers on `cpp_com_mode`, not on the
+            # target name. Keying this on `target != "shell32"` meant every shell32 C++ run
+            # previewed its free trivial workers as PAID: filetypes' one-line DoExtractIcon
+            # forwarder showed as "1 to buy" on a reassembly that has always cost $0.00, which
+            # is exactly the number you read before deciding whether to spend.
             preview: dict[str, str] = {}
-            if rustconv_target.name != "shell32":
+            if cpp_com_mode:
+                for dep in sorted_deps:
+                    sig = worker_signature(dep.name, dep.cpp_class, dep.params, dep.return_type)
+                    if lower_trivial_worker(dep.body_text, sig) is not None:
+                        preview[dep.name] = "trivial worker"
+            else:
                 preview = {
                     name: low.shape
                     for name, low in trivial_c.lower_trivial_c_functions(
@@ -4019,11 +4223,12 @@ def cmd_translate(args):
                     allow_internal=getattr(args, "internal", False),
                     allow_plain=getattr(args, "plain", False),
                     island_slots=island_slots,
+                    module_lock=_module_lock_of(args, rustconv_target),
                 )
             )
             support_selection = "\n".join(
                 [
-                    cpp_com_cls.header.read_text(encoding="utf-8", errors="replace"),
+                    _class_declaration_scope(cpp_com_cls),
                     *(dep.body_text for dep in sorted_deps),
                     *deterministic,
                 ]
@@ -4037,6 +4242,9 @@ def cmd_translate(args):
                     {pod.name for pod in cpp_com_cls.pod_state_types},
                     provided_types=set(local_raii_impls),
                     island_types=set(island_slots),
+                    select_from_source=(
+                        cpp_com_cls.header.resolve() != cpp_com_cls.source.resolve()
+                    ),
                 )
             )
             if cpp_com_wide_statics:
@@ -4060,6 +4268,13 @@ def cmd_translate(args):
             # call into the RAII lowering, so both have to be in the module or every
             # reference dangles.
             prelude = []
+            # The definitions the REWRITES introduced (`LOWORD!`, `StringCbPrintfW!`). The
+            # rewrites fire on both paths but only --cpp-com ever emitted the definitions, so
+            # free-functions TUs hand-wrote them — filetypes.cpp reinvented LOWORD and a printf
+            # helper that way. See render_rewrite_support for why this is not the whole closure.
+            support = render_rewrite_support(stitched, preamble_rust)
+            if support.strip():
+                prelude.append(support)
             if cpp_com_wide_statics:
                 prelude.append(cpp_com_wide_statics)
             for raii_name, raii_rust in local_raii_impls.items():
@@ -4135,6 +4350,7 @@ def cmd_translate(args):
             sys_umbrella=rustconv_target.sys_umbrella,
             c_source_path=None if cpp_com_mode else c_file,
             com_method_macro=rustconv_target.com_method_macro,
+            concrete_stdcall_slots=rustconv_target.concrete_stdcall_slots,
             crate_module=(
                 getattr(rustconv_target, "crate_module", "")
                 if rustconv_target.crate_bindgen_files
@@ -4171,8 +4387,19 @@ def cmd_translate(args):
             # crate name.
             if (rustconv_target.output_crate / "src" / "prelude.rs").is_file():
                 umbrella = rustconv_target.sys_umbrella
-                if umbrella:
-                    sys_glob = re.escape(f"{rustconv_target.sys_crate}::{umbrella}")
+                # A FLAT substrate has no umbrella segment, and `if umbrella:` then skipped
+                # the collapse entirely -- so a crate with its OWN prelude still got
+                # `use <sys>::*;` and none of its island. That is menuband-rust over com-sys:
+                # 71 errors for five functions, every one a shell type the prelude has and the
+                # COM ABI does not. "" and None mean different things here (see
+                # collapse_sys_crate): "" is a real substrate that simply has no segment.
+                if umbrella is not None:
+                    sys_path = (
+                        f"{rustconv_target.sys_crate}::{umbrella}"
+                        if umbrella
+                        else rustconv_target.sys_crate
+                    )
+                    sys_glob = re.escape(sys_path)
                     narrow = rf"(?:{narrow}|^use {sys_glob}::\*;\n)"
             if re.search(narrow, code, re.M):
                 code = re.sub(narrow, "", code, flags=re.M)
@@ -4185,10 +4412,25 @@ def cmd_translate(args):
         # Runs here, on the ASSEMBLED file, so it also repairs bodies replayed from the resume
         # cache -- the prompt hint that used to be the only source of these `use` lines cannot,
         # because prompt prose is out of the cache key.
-        if rustconv_target.output_crate.is_dir():
-            code, import_notes = resolve_in_crate_imports(code, rustconv_target.output_crate)
+        # Resolve against the crate the file will actually LIVE IN, which `-o` can make a
+        # different crate from the one `--target` names. Translating shellmenu's TUs with
+        # `--target shell32 -o .../menuband-rust/src/...` indexed shell32-rust and emitted
+        # `use crate::wine::shlmenu::HMENU;` into a crate that has no `wine` module — an
+        # unresolvable import, generated, so unfixable in the file.
+        # The materializer HOISTS a body-level `use` to file scope, so the same import written
+        # inside several function bodies becomes several identical file-scope `use` lines and
+        # every one after the first is `E0252: the name ... is defined multiple times`. That is
+        # not a body defect — writing the import per-function is the only way to make it survive
+        # materialization at all — so collapse the duplicates here.
+        import_crate = _crate_of(getattr(args, "output", None)) or rustconv_target.output_crate
+        if import_crate.is_dir():
+            code, import_notes = resolve_in_crate_imports(code, import_crate)
             for note in import_notes:
                 print(f"  [imports] {note}", file=sys.stderr)
+
+        # AFTER the resolver, not before: it adds its own `use` lines, and a name it imports
+        # singly can collide with the same name inside a brace list hoisted out of a body.
+        code = _dedupe_hoisted_imports(code)
 
         # Per-line trailing whitespace, stripped once here so BOTH writers below get it --
         # the `-o` path writes `code` directly and the crate path hands it to the assembler.
@@ -4293,6 +4535,24 @@ def cmd_translate(args):
                 sys.exit(1)
             print(f"  Assembled to {out_path}", file=sys.stderr)
 
+        # Which arm of a preprocessor conditional did each body translate?
+        #
+        # Nothing else in the pipeline asks. The seals treat a whole `#if/#else/#endif` as
+        # one dead span -- every arm's tokens optional -- so a body that renders the `#else`
+        # of a conditional whose `#if` is live drops the difference silently and compiles.
+        # CStartMenu's `GetMergedFolder` did exactly that against
+        # `shellmenu.h:69 #define MERGE_FOLDERS 1`: the shipped translation returned the USER
+        # start menu unmerged and left the entire merge tail of the function dead. The only
+        # thing that ever objected was a rustc `unreachable statement` warning, a build and a
+        # link after the money was spent.
+        #
+        # Report-only, like the free-half audit was on its first pass: a finding a reviewer
+        # settles by reading two lines is worth more than a rejection that bills a retry.
+        arm_pinned = sibling_header_int_macros(c_file)
+        for dep in sorted_deps:
+            for note in conditional_arm_notes(dep.body_text, arm_pinned):
+                CONDITIONAL_ARM_BODIES.append(f"{c_file.name}:{dep.name}: {note}")
+
         # Respect the cost cap across files too, not just within one file.
         if capped:
             print(
@@ -4326,6 +4586,11 @@ def cmd_translate(args):
 
     # The `--free-functions` half, audited for the first time. Report-only: these have never
     # been graded, so the first runs are calibrating the CHECK as much as the bodies.
+    if CONDITIONAL_ARM_BODIES:
+        audit_findings.setdefault(
+            "PREPROCESSOR ARMS (verify the body took the live one)", []
+        ).extend(CONDITIONAL_ARM_BODIES)
+
     if FREE_HALF_AUDIT_FINDINGS:
         audit_findings.setdefault("FREE-HALF AUDIT (report-only, first pass)", []).extend(
             FREE_HALF_AUDIT_FINDINGS
@@ -4384,6 +4649,17 @@ def cmd_translate(args):
 
     if not args.dry_run:
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
+
+    if getattr(args, "fn", None):
+        unmatched = _unmatched_fn_names(args.fn, fn_names_found)
+        if unmatched:
+            print(
+                f"\nERROR: --fn named function(s) found in no translated file: "
+                f"{', '.join(sorted(unmatched))}. A body inside `#if 0` is invisible to the "
+                f"scanner — lift the guard to translate it.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
 
 def cmd_estimate(args):
@@ -5125,6 +5401,15 @@ def main():
         help="shell32 cpp-com: allow exact internal ShellObjectCreator<T> activation",
     )
     p.add_argument(
+        "--activation-source",
+        help=(
+            "Another .cpp that CONSTRUCTS this class, when the construction is not in the "
+            "class's own TU (e.g. CFolderItems.cpp does `new CComObject<CFolderItemVerbs>()` "
+            "for a class defined in CFolderItemVerbs.cpp). Scanned for internal-activation "
+            "shapes only; it never supplies initializer arguments."
+        ),
+    )
+    p.add_argument(
         "--plain",
         action="store_true",
         help="shell32 cpp-com: the class is a file-local C++ HELPER, not COM — no vtable, no "
@@ -5220,7 +5505,8 @@ def main():
         "--reassemble",
         action="store_true",
         help="Allow overwriting a COMMITTED, unmodified .rs. Off by default: a re-translation "
-        "sees only the C, so it reverts every repair made after integration.",
+        "sees only the C, so it reverts every repair made after integration. Also waives the "
+        "pre-payment refusal when the output crate already ships a #[no_mangle] port of this TU.",
     )
     p.add_argument("--dry-run", action="store_true", help="Show translation plan without API calls")
     p.add_argument(

@@ -168,3 +168,80 @@ impl Default for ClipboardViewerChain {
         Self::new()
     }
 }
+
+// ------------------------------------------------------------------------------------------
+// shellutils.h inlines — no symbol to import, so they are ported here
+// ------------------------------------------------------------------------------------------
+
+/// `ERROR_INTERNAL_ERROR` (winerror.h:1185). Not in shell32's bindgen island: winerror.h
+/// defines it as a bare integer macro with no type, so bindgen drops it. `ERROR_SUCCESS` is
+/// deliberately NOT re-declared here -- it already reaches this crate through another glob,
+/// and a second copy makes every use of the name E0659-ambiguous.
+pub const ERROR_INTERNAL_ERROR: UINT = 1359;
+
+/// `STR_FILE_SYS_BIND_DATA` (shobjidl.idl:2058, a `cpp_quote` of `L"File System Bind Data"`).
+///
+/// The island DOES carry this name — as `&[u8; 22]`, the NARROW bytes. That is a wide-literal
+/// misrendering, not a different-but-usable spelling: the C casts the macro to `LPWSTR` and
+/// passes it to `IBindCtx::GetObjectParam`, so the island's array read as UTF-16 is `"iF"`,
+/// `"el"`, `" S"`… and the bind-context lookup would simply never match. Spelled wide here.
+pub const STR_FILE_SYS_BIND_DATA_W: [WCHAR; 22] = [
+    b'F' as WCHAR, b'i' as WCHAR, b'l' as WCHAR, b'e' as WCHAR, b' ' as WCHAR,
+    b'S' as WCHAR, b'y' as WCHAR, b's' as WCHAR, b't' as WCHAR, b'e' as WCHAR,
+    b'm' as WCHAR, b' ' as WCHAR, b'B' as WCHAR, b'i' as WCHAR, b'n' as WCHAR,
+    b'd' as WCHAR, b' ' as WCHAR, b'D' as WCHAR, b'a' as WCHAR, b't' as WCHAR,
+    b'a' as WCHAR, 0,
+];
+
+/// `USER32`, for the IDS_ERROR fallback below.
+const USER32_DLL_W: [WCHAR; 7] = [
+    b'U' as WCHAR, b'S' as WCHAR, b'E' as WCHAR, b'R' as WCHAR, b'3' as WCHAR,
+    b'2' as WCHAR, 0,
+];
+
+/// `"\n\n%#x (%d)"`, the wsprintfW format of the IDS_ERROR fallback.
+const ERRBOX_FALLBACK_FMT_W: [WCHAR; 11] = [
+    b'\n' as WCHAR, b'\n' as WCHAR, b'%' as WCHAR, b'#' as WCHAR, b'x' as WCHAR,
+    b' ' as WCHAR, b'(' as WCHAR, b'%' as WCHAR, b'd' as WCHAR, b')' as WCHAR, 0,
+];
+
+/// `SHELL_ErrorBoxHelper` (shellutils.h:97) — a `static inline`, so there is no symbol to
+/// import and utils.cpp's `SHELL_ErrorBox_RustBridge` needs the body here.
+pub unsafe fn SHELL_ErrorBoxHelper(mut hwndOwner: HWND, mut Error: UINT) -> UINT {
+    let mut buf = [0u16; 400];
+
+    if IsWindowVisible(hwndOwner) == 0 {
+        hwndOwner = core::ptr::null_mut();
+    }
+    if Error == ERROR_SUCCESS {
+        Error = ERROR_INTERNAL_ERROR;
+    }
+
+    let mut cch: UINT = FormatMessageW(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        core::ptr::null(),
+        Error,
+        0,
+        buf.as_mut_ptr(),
+        buf.len() as DWORD,
+        core::ptr::null_mut(),
+    );
+    if cch == 0 {
+        // IDS_ERROR from user32's resource.h — the "Error" string.
+        const USER32_IDS_ERROR: UINT = 2;
+        cch = LoadStringW(
+            LoadLibraryW(USER32_DLL_W.as_ptr()),
+            USER32_IDS_ERROR,
+            buf.as_mut_ptr(),
+            buf.len() as INT,
+        ) as UINT;
+        wsprintfW(
+            buf.as_mut_ptr().add(cch as usize),
+            ERRBOX_FALLBACK_FMT_W.as_ptr(),
+            Error,
+            Error,
+        );
+    }
+    MessageBoxW(hwndOwner, buf.as_ptr(), core::ptr::null(), MB_OK | MB_ICONSTOP);
+    Error
+}

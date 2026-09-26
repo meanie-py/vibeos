@@ -1,0 +1,139 @@
+# zlib 1.3.2 — our delta from pristine upstream.
+#
+# Upstream: https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+#           sha256 bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+#           GPG: zlib-1.3.2.tar.gz.asc verifies as a Good signature from
+#           "Mark Adler <madler@alumni.caltech.edu>", DSA key
+#           5ED46A6721D365587791E2AA783FCD8E58BCAFBA — upstream's own author.
+#           (No independent trust path to that key; corroboration, not a root of trust.)
+# Apply from sdk/lib/3rdparty/zlib/ with: patch -p1 < vendor-patches/zlib.patch
+# zlib.h and zconf.h live in sdk/include/reactos/libs/zlib/ and are PRISTINE, so they
+# are not in this patch.
+#
+# SCOPE: zlib PROPER IS PRISTINE — every file of the compression library (adler32,
+# crc32, deflate, inflate, inftrees, trees, zutil, gz*, compress, uncompr, infback and
+# both public headers) is byte-identical to upstream 1.3.2. Nothing here touches bounds
+# checking, allocation, or the inflate/deflate state machines. The whole delta is TEN
+# LINES across three files in contrib/minizip, the ZIP-archive helper.
+#
+# WHAT IT DOES: minizip has two file backends — a stdio FILE* one (ioapi.c) and a
+# win32-HANDLE one (iowin32.c). We compile out the stdio half and the zipOpen2/unzOpen2
+# entry points that depend on it.
+#
+# WHY, precisely: it is NOT merely that we prefer the win32 backend. ioapi.c's
+# fopen64_file_func calls FOPEN_FUNC, which resolves to fopen64 — and fopen64,
+# ftello64 and fseeko64 do not exist in our CRT. Without the guard the build fails with
+# "call to undeclared function 'fopen64'". Confirmed by removing the guard and
+# rebuilding during the 1.3.2 bump, rather than inherited from the old note.
+#
+# WHY NOT A BUILD FLAG: __REACTOS__ already IS one; what cannot move into the build is
+# WHICH REGIONS it guards, because upstream has no such conditionals to switch on.
+# Deleting the stdio backend outright would be a larger delta, not a smaller one.
+#
+# ----------------------------------------------------------------------------------
+# 1.2.13 -> 1.3.2 (2026-09-20): THE DELTA SHRANK ON ITS OWN
+# ----------------------------------------------------------------------------------
+#
+# The patch went from 14 lines to 10, and the CMakeLists lost both of its warning
+# suppressions. Nothing was given up to get that; upstream fixed all three:
+#
+#   * THE NOUNCRYPT HUNK IS GONE. 1.2.13's unzip.c force-defined NOUNCRYPT
+#     (`#ifndef NOUNCRYPT / #define NOUNCRYPT / #endif`), which DISABLES traditional
+#     PKWARE decryption, and our patch wrapped that in __REACTOS__ to get decryption
+#     back. 1.3.x removed the force-define, so decryption is on by default for
+#     everyone and the hunk has nothing left to do. Behaviour is unchanged: NOUNCRYPT
+#     is still undefined in our build, so crypt.h is still included.
+#   * -Wno-deprecated-non-prototype is gone. It existed for 1.2.13's K&R-style
+#     definitions; 1.3.0 converted the whole library to prototypes.
+#   * -Wno-unused-variable on minizip is gone. It existed for four `mode_fopen` locals
+#     in iowin32.c that only the stdio backend used; 1.3.x no longer leaves them unused.
+#
+# THREE NEW UPSTREAM FILES had to be vendored for minizip to build:
+#   ints.h            fixed-width integer typedefs derived from <limits.h>
+#   skipset.h         a skiplist set, used by zip.c for duplicate-name detection
+#   LICENSE.Info-Zip  see below — this one is a licence fact, not a build input
+#
+# LICENCE: minizip IS NOT UNDER THE ZLIB LICENCE. 1.3.x began shipping an explicit
+# contrib/minizip/LICENSE.Info-Zip (Info-ZIP licence, 2009-Jan-02 version), and
+# unzip.c/crypt.h carry "Copyright (c) 1990-2000 Info-ZIP" alongside Gilles Vollant's
+# minizip copyright. This was always true of the code — 1.2.13's unzip.c says so too —
+# but upstream had never stated it as a licence file, and our registry recorded only
+# `Zlib`. Now recorded in vendor.yaml under license_extra. We build minizip into rapps
+# and zipfldr, so the obligation is live, not theoretical.
+#
+--- a/contrib/minizip/ioapi.c
++++ b/contrib/minizip/ioapi.c
+@@ -63,6 +63,7 @@
+     }
+ }
+ 
++#ifndef __REACTOS__
+ void fill_zlib_filefunc64_32_def_from_filefunc32(zlib_filefunc64_32_def* p_filefunc64_32, const zlib_filefunc_def* p_filefunc32) {
+     p_filefunc64_32->zfile_func64.zopen64_file = NULL;
+     p_filefunc64_32->zopen32_file = p_filefunc32->zopen_file;
+@@ -229,3 +230,5 @@
+     pzlib_filefunc_def->zerror_file = ferror_file_func;
+     pzlib_filefunc_def->opaque = NULL;
+ }
++
++#endif
+--- a/contrib/minizip/unzip.c
++++ b/contrib/minizip/unzip.c
+@@ -510,9 +510,11 @@
+ 
+     us.z_filefunc.zseek32_file = NULL;
+     us.z_filefunc.ztell32_file = NULL;
++#ifndef __REACTOS__
+     if (pzlib_filefunc64_32_def==NULL)
+         fill_fopen64_filefunc(&us.z_filefunc.zfile_func64);
+     else
++#endif
+         us.z_filefunc = *pzlib_filefunc64_32_def;
+     us.is64bitOpenFunction = is64bitOpenFunction;
+ 
+@@ -667,6 +669,7 @@
+ }
+ 
+ 
++#ifndef __REACTOS__
+ extern unzFile ZEXPORT unzOpen2(const char *path,
+                                 zlib_filefunc_def* pzlib_filefunc32_def) {
+     if (pzlib_filefunc32_def != NULL)
+@@ -678,6 +681,7 @@
+     else
+         return unzOpenInternal(path, NULL, 0);
+ }
++#endif
+ 
+ extern unzFile ZEXPORT unzOpen2_64(const void *path,
+                                    zlib_filefunc64_def* pzlib_filefunc_def) {
+--- a/contrib/minizip/zip.c
++++ b/contrib/minizip/zip.c
+@@ -1064,9 +1064,11 @@
+ 
+     ziinit.z_filefunc.zseek32_file = NULL;
+     ziinit.z_filefunc.ztell32_file = NULL;
++#ifndef __REACTOS__
+     if (pzlib_filefunc64_32_def==NULL)
+         fill_fopen64_filefunc(&ziinit.z_filefunc.zfile_func64);
+     else
++#endif
+         ziinit.z_filefunc = *pzlib_filefunc64_32_def;
+ 
+     ziinit.filestream = ZOPEN64(ziinit.z_filefunc,
+@@ -1128,6 +1130,7 @@
+     }
+ }
+ 
++#ifndef __REACTOS__
+ extern zipFile ZEXPORT zipOpen2(const char *pathname, int append, zipcharpc* globalcomment, zlib_filefunc_def* pzlib_filefunc32_def) {
+     if (pzlib_filefunc32_def != NULL)
+     {
+@@ -1138,6 +1141,7 @@
+     else
+         return zipOpen3(pathname, append, globalcomment, NULL);
+ }
++#endif
+ 
+ extern zipFile ZEXPORT zipOpen2_64(const void *pathname, int append, zipcharpc* globalcomment, zlib_filefunc64_def* pzlib_filefunc_def) {
+     if (pzlib_filefunc_def != NULL)

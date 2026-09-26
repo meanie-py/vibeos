@@ -75,6 +75,30 @@ def _spec_exports(spec: Path, arch: str) -> set[str]:
     return set(parse_spec(spec, arch))
 
 
+TAKEOVER = REPO / "tools" / "ucrt-takeover.yaml"
+
+
+def declared_takeovers() -> dict[str, str]:
+    """Genuine UCRT exports we have DELIBERATELY replaced -> the family that did it.
+
+    Displacing a ucrt body is the exact shape of the accident this file exists to
+    prevent; the only thing separating the two is that somebody declared it and
+    named an oracle. `tools/ucrt-takeover.yaml` is that declaration, and it is read
+    both ways -- an undeclared displacement fails, and so does a declaration the
+    archive no longer backs, because a stale entry is how a list stops being read.
+    """
+    if not TAKEOVER.is_file():
+        return {}
+    import yaml
+
+    doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
+    out: dict[str, str] = {}
+    for fam, body in (doc.get("families") or {}).items():
+        for sym in body.get("exports") or []:
+            out[sym] = fam
+    return out
+
+
 WS = REPO / "sdk" / "lib" / "rust"
 
 # The crate ucrtbase links, and the crate it must never be able to reach.
@@ -94,8 +118,12 @@ OURS_ON_LINK_LINE = {
     "msvcrt_shared": Path("dll/win32/msvcrt/CMakeFiles/msvcrt_shared.dir"),
     "crtmath": Path("sdk/lib/crt/CMakeFiles/crtmath.dir"),
     "vcruntime": Path("sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"),
+    # upstream-sync 2026-09-20: upstream split sdk/lib/vcruntime in two and ucrtbase now
+    # links BOTH halves. vcstartup holds mainCRTStartup/atexit/tlssup/the security cookie
+    # — objects this tree already owned, just under the other target name.
+    "vcstartup": Path("sdk/lib/vcstartup/CMakeFiles/vcstartup.dir"),
     "chkstk": Path("sdk/lib/crt/CMakeFiles/chkstk.dir"),
-    "wine": Path("sdk/lib/3rdparty/libwine/CMakeFiles/wine.dir"),
+    "wine": Path("sdk/lib/libwine/CMakeFiles/wine.dir"),
 }
 
 #: ucrtbase's OWN C -- printf.c, stubs.c and the generated ucrtbase_stubs.c. Kept
@@ -528,10 +556,28 @@ def check_archive() -> list[str]:
                 or not re.fullmatch(r"[A-Za-z_?@$][\w?@$]*", sym)
             )
 
+        # A DECLARED takeover is not shadowing -- it is the quest. Compared on the
+        # stripped name so one declaration covers all three arches' decoration.
+        declared = declared_takeovers()
+        declared_norm = {k.lstrip("_"): v for k, v in declared.items()}
+        rust_norm = {strip(s).lstrip("_") for s in rust_syms}
+        gone = sorted(k for k in declared_norm if k not in rust_norm)
+        if gone:
+            findings.append(
+                f"build-{arch}: tools/ucrt-takeover.yaml declares {len(gone)} export(s) that "
+                f"libcrt_shared_cargo.a does not define: {', '.join(gone[:12])}. Either the "
+                f"body was removed and the declaration is stale, or the family's cargo "
+                f"feature is not enabled in crt-shared-cargo -- in which case the takeover "
+                f"silently did not happen and the Microsoft body is still live"
+            )
+
         extra = sorted(
             s
             for s in rust_syms
-            if strip(s) not in c_norm and strip(s) in exported and not is_rust_internal(s)
+            if strip(s) not in c_norm
+            and strip(s) in exported
+            and not is_rust_internal(s)
+            and strip(s).lstrip("_") not in declared_norm
         )
         if extra:
             more = f", +{len(extra) - 12} more" if len(extra) > 12 else ""
@@ -542,16 +588,88 @@ def check_archive() -> list[str]:
                 f"({', '.join(OURS_ON_LINK_LINE)}) defines, so each one "
                 f"silently replaces the genuine Microsoft UCRT body callers expect "
                 f"(--allow-multiple-definition raises nothing): {shown}. fix: move the body "
-                f"back to msvcrt-crt-rust, or -- if ucrtbase really does owe it to us -- add "
-                f"the C to SHARED_SOURCE so both sides agree on the surface"
+                f"back to msvcrt-crt-rust; or, if this is a DELIBERATE takeover of the "
+                f"Microsoft body, implement it in ucrt-rust and declare it in "
+                f"tools/ucrt-takeover.yaml with the oracle that grades it; or -- if "
+                f"ucrtbase really does owe it to us -- add the C to SHARED_SOURCE so both "
+                f"sides agree on the surface"
             )
     return findings
 
 
+def check_burndown() -> tuple[list[str], list[str]]:
+    """THE RATCHET: how much of ucrtbase is still answered by vendored Microsoft C.
+
+    `vendor.yaml` flags `sdk/lib/ucrt` UNWELCOME -- ~78K lines carrying no
+    licence grant at all. That records the intent; this is what stops the tree
+    quietly growing while nobody is looking, and what makes the number march
+    down instead of drifting.
+
+    Only an INCREASE fails. A decrease is the entire point of the exercise, and
+    it is routinely caused by ANOTHER lane landing a Rust body that happens to
+    answer a ucrtbase export -- 234 owed exports became 218 that way in a single
+    evening. A gate that failed on "better than recorded" would bounce lanes for
+    improving the tree, which is precisely how a gate ends up switched off. A
+    decrease prints a note asking for the ceiling to be re-recorded.
+
+    Needs a build: which OBJECT defines a body is not answerable from the .spec,
+    and that distinction is the whole point (see check_archive). Arches without
+    a build are skipped rather than guessed at.
+
+    Returns (failures, notes).
+    """
+    if not TAKEOVER.is_file():
+        return [], []
+    import yaml
+
+    doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
+    want = {str(k): int(v) for k, v in (doc.get("burndown") or {}).items()}
+    if not want:
+        return [], []
+
+    try:
+        from ucrt_burndown import classify
+    except ImportError as e:
+        return [f"ucrt burn-down ratchet could not run: {e}"], []
+
+    fails: list[str] = []
+    notes: list[str] = []
+    for arch, ceiling in sorted(want.items()):
+        if not (REPO / f"build-{arch}").is_dir():
+            continue
+        try:
+            buckets, _ = classify(arch)
+        except SystemExit as e:
+            notes.append(f"note: ucrt burn-down: {arch} not measurable ({e})")
+            continue
+        have = len(buckets["MICROSOFT"])
+        if have > ceiling:
+            fails.append(
+                f"ucrt burn-down REGRESSED on {arch}: {have} exports are answered by "
+                f"vendored Microsoft C, up from the recorded {ceiling}. Something "
+                f"re-enabled a sdk/lib/ucrt body or dropped one of ours. Investigate "
+                f"before re-recording: the ceiling in tools/ucrt-takeover.yaml only "
+                f"ever goes DOWN. (python3 tools/ucrt_burndown.py --arch {arch})"
+            )
+        elif have < ceiling:
+            notes.append(
+                f"note: ucrt burn-down {arch}: {ceiling} -> {have}, {ceiling - have} "
+                f"fewer Microsoft-backed exports. Lower the ceiling in "
+                f"tools/ucrt-takeover.yaml to keep the ratchet tight."
+            )
+    return fails, notes
+
+
 def main() -> int:
     findings = check_structure() + check_extern_crates() + check_archive()
+    bd_fails, bd_notes = check_burndown()
+    findings += bd_fails
     for f in findings:
         print(f)
+    # Notes last, so a green run ends on the number going down -- which is the
+    # one line anyone actually wants to see from this tool.
+    for n in bd_notes:
+        print(n)
     return 1 if findings else 0
 
 

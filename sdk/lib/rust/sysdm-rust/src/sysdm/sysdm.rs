@@ -22,11 +22,34 @@ pub static mut Applets: [APPLET; (NUM_APPLETS) as usize] = [
 pub const MAX_SYSTEM_PAGES: u32 = 32;
 
 pub type PCreateNetIDPropertyPage = Option<unsafe extern "system" fn() -> HPROPSHEETPAGE>;
+/// sysdm.c:27 `INT __cdecl ResourceMessageBox(…, ...)`, the variadic entry point.
+///
+/// Stable Rust cannot DEFINE a C-variadic (`c_variadic`, rust-lang#44930), so this RECEIVES
+/// the varargs the va-slots way (`va_slots_rust`, as shell32's ShellMessageBoxA and the kernel's
+/// printf family do): on all three targets a variadic call puts its arguments in the same slots
+/// as a fixed-arity call with that many parameters (i386 cdecl stack; win64 RCX-R9 then stack;
+/// arm64 x0-x7 then stack, where Windows passes varargs in integer registers), and a `va_list` is
+/// a plain pointer. The trailing slots are ordinary parameters, staged into an array a `va_list`
+/// points at. This replaced the `va_start` trampoline in rust_varargs_shim.c (2026-09-25).
+#[no_mangle]
+pub unsafe extern "C" fn ResourceMessageBox(
+    hInstance: HINSTANCE,
+    hwnd: HWND,
+    uType: u32,
+    uCaption: u32,
+    uText: u32,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) -> i32 {
+    let mut stage = va_slots_rust::stage(&[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    let mut ap: *mut core::ffi::c_void = stage.as_mut_ptr() as *mut core::ffi::c_void;
+    ResourceMessageBox_v(hInstance, hwnd, uType, uCaption, uText,
+                         &mut ap as *mut *mut core::ffi::c_void as *mut core::ffi::c_void)
+}
+
 /// sysdm.c:27 `INT __cdecl ResourceMessageBox(…, ...)`, minus the `...`.
 ///
-/// The variadic entry point of that name is the trampoline in
-/// `dll/cpl/sysdm/rust_varargs_shim.c`: stable Rust cannot DEFINE a C-variadic, so the shim
-/// does the `va_start` and hands us `app`, a POINTER to the `va_list`. strsafe-rust's
+/// The variadic entry point above hands us `app`, a POINTER to the `va_list`. strsafe-rust's
 /// `StringCchPrintfW_v` takes that same by-pointer form, so the C's
 /// `StringCchVPrintfW(…, args)` lands as a `_v` call here rather than a by-value one.
 #[no_mangle]

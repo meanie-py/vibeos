@@ -51,7 +51,14 @@ const THREAD_STATE_RUNNING: u8 = 2;
 const THREAD_STATE_WAITING: u8 = 5;
 const THREAD_STATE_GATE_WAIT: u8 = 8;
 const APC_OBJECT_TYPE: u8 = 0x12;
-const KAPC_STATE_ACTUAL_LENGTH: usize = core::mem::size_of::<_KAPC_STATE>();
+// xdk/ketypes.h: FIELD_OFFSET(KAPC_STATE, UserApcPending) + sizeof(BOOLEAN) — the length
+// WITHOUT tail padding (64-bit 43, i386 23). It must not be size_of (48 / 24): KTHREAD
+// overlays FreezeCount/SuspendCount on SavedApcState's padding and Priority & co. on
+// ApcState's, so a padded KiMoveApcState copy on every attach/detach wrote ApcState's tail
+// into the suspend counts. The thread then read as suspended, and win32k refused every
+// SendMessage to it ("Sending to Suspended Thread"): the console-window NCCREATE hang.
+const KAPC_STATE_ACTUAL_LENGTH: usize =
+    core::mem::offset_of!(_KAPC_STATE, UserApcPending) + core::mem::size_of::<BOOLEAN>();
 const IRQL_UNEXPECTED_VALUE: u32 = 0x0000_00C8;
 
 unsafe fn containing_record_apc(entry: PLIST_ENTRY) -> PKAPC {

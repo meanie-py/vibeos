@@ -8,11 +8,13 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from ..vm import QemuVM, get_arch_config
@@ -263,11 +265,63 @@ def _smp_check(text: str, arch: str) -> dict | None:
 
 
 def _one_boot(run: Run, repo: Path, arch: str, **kwargs) -> dict:
-    result = _boot_vm(run, repo, arch, **kwargs)
+    started = time.monotonic()
+    timings: dict[str, float] = {}
+    result = _boot_vm(run, repo, arch, timings=timings, **kwargs)
+    timings["total_seconds"] = round(time.monotonic() - started, 3)
+    result["timings"] = timings
     serial = run.dir / f"boot{kwargs['idx']}" / "serial.log"
     if serial.is_file():
         result["serial_log"] = str(serial)
     return result
+
+
+def _launch_with_retry(
+    make_vm: Callable[[], QemuVM],
+    timings: dict[str, float],
+    log: Callable[[str], None],
+    label: str,
+) -> tuple[QemuVM | None, int, Exception | None]:
+    """Start a VM, retrying a host-side launch failure.
+
+    Returns (vm, attempts, last_exc); `last_exc` is None on success. A fresh VM
+    is built per attempt because the port and serial socket path are chosen in
+    QemuVM.__init__ -- retrying start() on the same instance would retry onto
+    the same bad port and could never recover.
+    """
+    last_exc: Exception | None = None
+    vm: QemuVM | None = None
+    attempts = 0
+    while attempts < _LAUNCH_ATTEMPTS:
+        attempts += 1
+        vm = make_vm()
+        started = time.monotonic()
+        try:
+            vm.start()
+            timings["start_seconds"] = round(time.monotonic() - started, 3)
+            timings.update(vm.launch_timings)
+            if attempts > 1:
+                # Loud on the way through: a retried launch is still an incident.
+                timings["launch_attempts"] = attempts
+                log(f"{label}: launched on attempt {attempts} (host-side flake)")
+            return vm, attempts, None
+        except Exception as e:
+            last_exc = e
+            first = str(e).splitlines()[0][:140]
+            log(f"{label}: start failed (attempt {attempts}/{_LAUNCH_ATTEMPTS}): {first}")
+            with contextlib.suppress(Exception):
+                vm.stop()
+            if attempts < _LAUNCH_ATTEMPTS:
+                time.sleep(_LAUNCH_RETRY_SECONDS)
+    return vm, attempts, last_exc
+
+
+# Host-side launch retries. Small on purpose: the failure mode this exists for
+# resolves on the next attempt (a lost socket / port), so a third attempt buys
+# almost nothing and a large number would turn a genuinely broken launch into a
+# slow one. Overridable for tests.
+_LAUNCH_ATTEMPTS = 3
+_LAUNCH_RETRY_SECONDS = 2.0
 
 
 def _boot_vm(
@@ -280,6 +334,7 @@ def _boot_vm(
     idx: int,
     total: int,
     want_ladder: bool = False,
+    timings: dict[str, float] | None = None,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
@@ -292,28 +347,57 @@ def _boot_vm(
     # "native"; a WSL user can set qemu.backend="windows-host" to escape nested-virt contention.
     cli_cfg = cli_config.load(repo)
     backend = cli_cfg.get("qemu.backend", "native")
-    vm = QemuVM(
-        config,
-        work,
-        backend=backend,
-        windows=cli_cfg.get("qemu.windows", {}),
-        serial_log=work / "serial.log",
-    )
     label = f"boot {idx + 1}/{total}" if total > 1 else "boot"
     if backend != "native":
         run.log(f"backend={backend} (qemu.windows={cli_cfg.get('qemu.windows', {})})", header=label)
-    try:
-        vm.start()
-    except Exception as e:  # surface any launch failure
-        run.log(f"{label}: start failed: {e}", header=label)
+    timings = timings if timings is not None else {}
+
+    # A launch failure happens BEFORE a single guest instruction runs, so it
+    # says nothing about the OS -- but it still consumed a boot and, in a
+    # --repeat run, it lands as a red flake next to real verdicts. Two host-side
+    # failures cost runs on 2026-09-20: "QEMU did not connect to serial socket
+    # within 15.0s" killed one boot of five, and the net suite's chardev
+    # "Failed to connect to 127.0.0.1:<port>" errored all 15 of its tests
+    # identically. Both are the host losing a socket, both passed on a rerun of
+    # the same media.
+    #
+    # So retry the LAUNCH, with a fresh QemuVM each time because the port and
+    # socket path are chosen in the constructor -- reusing the instance would
+    # retry onto the same bad port. Retries are LOGGED and counted into the
+    # timings so a worsening host cannot hide behind them: this is meant to stop
+    # a flake costing a 50-minute run, not to make it invisible. A genuinely
+    # broken launch (missing media, no QEMU) fails all attempts in seconds and
+    # reports exactly as before.
+    vm, attempts, last_exc = _launch_with_retry(
+        lambda: QemuVM(
+            config,
+            work,
+            backend=backend,
+            windows=cli_cfg.get("qemu.windows", {}),
+            serial_log=work / "serial.log",
+        ),
+        timings,
+        lambda msg: run.log(msg, header=label),
+        label,
+    )
+
+    if last_exc is not None:
+        run.log(f"{label}: start failed: {last_exc}", header=label)
         return {
             "ok": False,
             "outcome": "launch_fail",
             "classification": "LAUNCH_FAIL",
-            "salient": [str(e).splitlines()[0][:140]],
+            "launch_attempts": attempts,
+            "salient": [
+                f"{attempts} launch attempts, all failed",
+                str(last_exc).splitlines()[0][:140],
+            ],
         }
+    assert vm is not None  # _launch_with_retry returns a VM whenever last_exc is None
     try:
+        watching = time.monotonic()
         outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
+        timings["watch_seconds"] = round(time.monotonic() - watching, 3)
         run.log(text[-8000:], header=f"{label} serial tail")
         # On success, let the desktop settle (taskbar/tray render ~15s after the
         # marker) so the canonical screenshot shows the real shell, KEEPING the
@@ -330,9 +414,11 @@ def _boot_vm(
                 and any("shell ready" in m for m in config.required_milestones)
                 and "shell ready" not in text
             )
+            settling = time.monotonic()
             settle_txt, shell_seen = _settle_watch(
                 vm, config.desktop_settle_seconds, "shell ready" if need_shell else None
             )
+            timings["settle_seconds"] = round(time.monotonic() - settling, 3)
             if settle_txt:
                 text += settle_txt
                 run.log(settle_txt[-4000:], header=f"{label} settle serial")
@@ -469,7 +555,9 @@ def _boot_vm(
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
     finally:
+        stopping = time.monotonic()
         vm.stop()
+        timings["stop_seconds"] = round(time.monotonic() - stopping, 3)
 
 
 def _net_stage(run: Run, repo: Path, arch: str) -> None:
@@ -573,6 +661,12 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     pytest_arch = {"i386": "i386-uefi", "amd64": "amd64-uefi"}.get(arch, arch)
     # Payloads that declare `net: true` (e.g. httpd) need the -net arch variant
     # (NIC + payload hostfwd). Sniff the specs; one net payload upgrades the boot.
+    # The pytest timeout covers the boot AND each payload's launch drain. A fixed 600s let a
+    # payload's declared launch_drain_secs be cut short silently (procstorm declares 1800), and
+    # failed regdiff on amd64 while its VERDICT line was still on its way. Budget the boot
+    # separately and add the longest drain.
+    boot_budget = 600
+    drain = 0.0
     try:
         import yaml as _yaml
 
@@ -580,9 +674,10 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
             _spec_path = repo / "tools" / "payloads" / _name.strip() / "payload.yaml"
             if _spec_path.is_file():
                 _spec = _yaml.safe_load(_spec_path.read_text()) or {}
-                if _spec.get("test", {}).get("net") and not pytest_arch.endswith("-net"):
+                _test = _spec.get("test", {}) or {}
+                drain = max(drain, float(_test.get("launch_drain_secs", 30)))
+                if _test.get("net") and not pytest_arch.endswith("-net"):
                     pytest_arch += "-net"
-                    break
     except ImportError:
         pass  # no pyyaml -> test_payload itself will fail loud on the guard
     cmd = [
@@ -596,23 +691,38 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
         payloads,
         "--skip-clean-build",  # smoke already gated staleness; don't rebuild
         "--timeout",
-        "600",
+        str(int(boot_budget + drain)),
         "-q",
         "-p",
         "no:cacheprovider",
     ]
+    outer_timeout = int(boot_budget + drain) * 2
+    # The payload suite boots its OWN VM. Without an artifact dir its serial landed in a pytest
+    # tmp dir that pytest prunes, so a payload that reports its result over serial (regdiff's
+    # VERDICT line, a sweep's per-test lines) left no record of it anywhere once the run
+    # ended — the stage summary only says whether the launch marker appeared.
+    payload_dir = run.dir / "payload"
+    payload_dir.mkdir(parents=True, exist_ok=True)
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True, text=True, timeout=1200)
+        proc = subprocess.run(
+            cmd,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=outer_timeout,
+            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(payload_dir)},
+        )
     except subprocess.TimeoutExpired:
         run.add(
             Stage(
                 "payload",
                 status="fail",
                 detail=f"payload suite ({payloads}) timed out",
-                salient=["tests/qemu/test_payload.py hung > 1200s"],
+                salient=[f"tests/qemu/test_payload.py hung > {outer_timeout}s"],
             )
         )
         return
+    (payload_dir / "pytest.log").write_text((proc.stdout or "") + (proc.stderr or ""))
     tail = (proc.stdout or "").strip().splitlines()
     summary = next(
         (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),
@@ -630,6 +740,7 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
                     summary.strip("= "),
                     f"repro: pytest tests/qemu/test_payload.py --arch {pytest_arch} "
                     f"--payload {payloads}",
+                    f"serial + pytest.log: {payload_dir}",
                 ],
             )
         )
@@ -731,6 +842,7 @@ def smoke(args, repo: Path) -> int:
             Stage(
                 f"run{i + 1}" if total > 1 else "boot",
                 status=status,
+                seconds=r["timings"]["total_seconds"],
                 detail=detail,
                 salient=r.get("salient", []),
             )

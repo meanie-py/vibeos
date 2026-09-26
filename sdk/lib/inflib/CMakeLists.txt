@@ -6,6 +6,9 @@
 if(CMAKE_CROSSCOMPILING)
     # ── kernel/setup: drop the 6 flipped .c, link libinflib_rust.a ──────────
     add_library(inflib inflib_rust_stub.c)
+    # upstream publishes infros.h through the target; its consumers dropped their own
+    # include_directories line in the same commit, so this has to live here now.
+    target_include_directories(inflib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
     add_dependencies(inflib psdk)
 
     set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
@@ -56,7 +59,7 @@ else()
         infhostrtl.c)
 
     add_definitions(-D__NO_CTYPE_INLINES -DINFLIB_HOST -D_CRT_SECURE_NO_WARNINGS)
-    add_library(inflibhost ${SOURCE})
+    add_library(inflibhost STATIC ${SOURCE})
     target_include_directories(inflibhost INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
     if(NOT MSVC)

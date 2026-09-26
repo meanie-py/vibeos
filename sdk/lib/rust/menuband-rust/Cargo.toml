@@ -23,4 +23,9 @@ crate-type = ["staticlib"]
 
 [dependencies]
 com-sys = { path = "../com-sys" }
+# The bindgen island is path-included here too (see lib.rs): `shellcom` re-exports its DATA
+# types from it, so any crate that compiles shellcom.rs needs the island, and the island
+# resolves its base Win32/NT field types through `pub use ntdll_sys::nt::*`. Declaration-only,
+# so it adds no symbols to either linking DLL.
+ntdll-sys = { path = "../ntdll-sys" }
 panic-common = { path = "../panic-common", features = ["user"] }

@@ -8,10 +8,13 @@ use core::ffi::c_void;
 // Canonical per-architecture SDK layouts. Keep ABI-heavy COM/Win32 records in
 // com-sys rather than growing a second hand-maintained shell32 copy.
 pub use com_sys::{
-    BIND_OPTS, FORMATETC, HDC, HICON, HOLEMENU, INT8, LPOLEMENUGROUPWIDTHS, LRESULT, MSG,
-    PBYTE, POINTL, RECT, STATDATA, STATSTG, STGMEDIUM, SYSTEMTIME, ULARGE_INTEGER, ULONGLONG,
+    BIND_OPTS, FORMATETC, HDC, HICON, HOLEMENU, INT8, LPOLEMENUGROUPWIDTHS, LRESULT,
+    PBYTE, STATDATA, STATSTG, STGMEDIUM, SYSTEMTIME, ULARGE_INTEGER, ULONGLONG,
     WPARAM,
 };
+// Same rule as POINT/SIZE below: the island owns these layouts, so take them from there
+// rather than from com-sys -- otherwise a vtable slot and the body behind it disagree.
+pub use crate::island::{MSG, POINTL, RECT};
 
 pub type BOOL = i32;
 pub type BOOLEAN = u8;
@@ -155,20 +158,12 @@ pub struct MENUITEMINFOW {
     pub hbmpItem: HBITMAP,
 }
 
-/// SIZE and POINT from wtypes.h.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct SIZE {
-    pub cx: LONG,
-    pub cy: LONG,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct POINT {
-    pub x: LONG,
-    pub y: LONG,
-}
+/// SIZE and POINT from wtypes.h. RE-EXPORTED from the bindgen island, not declared here:
+/// the island owns DATA LAYOUTS (see shellcom.rs's header). A second local copy is a
+/// distinct nominal type, so a vtable slot typed from here and a body typed from the
+/// island stop agreeing -- and `as *mut _` cannot bridge two structs, it only splits one
+/// error into two.
+pub use crate::island::{POINT, SIZE};
 
 /// winuser.h notification header. `idFrom` is pointer-sized on Win64.
 #[repr(C)]
@@ -236,12 +231,9 @@ pub struct LUID {
     pub HighPart: LONG,
 }
 
-/// LARGE_INTEGER (only the quad is needed here).
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct LARGE_INTEGER {
-    pub QuadPart: i64,
-}
+// LARGE_INTEGER: the island owns it (same rule as POINT/SIZE/RECT above). The local copy
+// kept only the quad arm.
+pub use crate::island::LARGE_INTEGER;
 
 /// TOKEN_STATISTICS (setypes.h) — faithful layout so `size_of` matches what
 /// GetTokenInformation expects. Only AuthenticationId (offset 8) is read here.

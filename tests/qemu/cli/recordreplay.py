@@ -454,7 +454,10 @@ def trace_read_position(trace_dir: Path) -> int | None:
             continue  # not ours, or exited between listing and opening
         for fd in fds:
             try:
-                if fd.resolve() != rrfile:
+                # /proc already exposes the kernel's absolute target. Resolving
+                # every target walks unrelated mounts (including Windows media)
+                # and can stall this progress probe on their filesystem I/O.
+                if fd.readlink() != rrfile:
                     continue
                 for line in (pid_dir / "fdinfo" / fd.name).read_text().splitlines():
                     if line.startswith("pos:"):
@@ -574,14 +577,18 @@ def check_trace(trace_dir: Path) -> list[str]:
                 "since the recording (rebuilt media) — the guest would read different "
                 "bytes than were recorded. Re-record."
             )
-    if not m.get("finalised"):
+    if not m.get("finalised") and not trace_is_provably_complete(trace_dir):
+        # Two ways to be satisfied, because the marker only covers traces recorded
+        # after it existed. An older trace whose log decodes end-to-end onto a
+        # shutdown event is demonstrably whole, and refusing it would be refusing
+        # a trace we can prove is fine — the marker's absence is missing evidence,
+        # not evidence of truncation.
         warnings.append(
-            f"{FATAL_MARKER} carries no `finalised` marker, so there is no evidence "
-            "the recording was allowed to finish. Traces made before `rr record` waited "
-            "for the trace to stop growing are TRUNCATED, and replaying one aborts with "
-            '"Missing character write event in the replay log". A trace merely OLDER than '
-            "the marker may be perfectly good — but nothing here can tell the two apart, "
-            "which is what the marker is for. Re-record."
+            f"{FATAL_MARKER} carries no `finalised` marker, and its log does not "
+            "decode end-to-end onto a shutdown event, so there is no evidence the "
+            "recording was allowed to finish. Traces made before `rr record` waited "
+            "for the trace to stop growing are TRUNCATED, and replaying one aborts "
+            'with "Missing character write event in the replay log". Re-record.'
         )
     rr = Path(trace_dir) / "replay.bin"
     if not rr.is_file() or rr.stat().st_size == 0:
@@ -761,6 +768,86 @@ def instruction_boundaries(trace_dir: Path) -> list[int]:
                 continue
             fh.read(_V12_PAYLOAD.get(eid, 0))
     return out
+
+
+# v12 shutdown event ids: EVENT_SHUTDOWN through EVENT_SHUTDOWN___MAX. A log that
+# ends on one of these ended because the machine stopped, not because the writer
+# was killed.
+_V12_SHUTDOWN_IDS = frozenset(range(11, 22))
+
+
+def trace_is_provably_complete(trace_dir: Path) -> bool:
+    """True if `replay.bin` decodes end-to-end AND finishes on a shutdown event.
+
+    This is the evidence the `finalised` marker cannot supply. The marker records
+    that the TOOL waited for the trace to stop growing; it says nothing about
+    traces recorded before the marker existed, which is why its absence had to be
+    treated as fatal — "nothing here can tell the two apart".
+
+    Something can: the log itself. Walking it proves two things at once. That the
+    walk consumes exactly the whole file means no event is cut in half, which is
+    what truncation looks like. That the final event is a shutdown means the
+    machine stopped of its own accord rather than the writer being killed
+    mid-stream. A recording killed part way fails both — it ends inside an event,
+    at a byte that is payload rather than an event id.
+
+    Checking the last byte alone would be cheap and wrong: in a truncated log that
+    byte is arbitrary, and ~4% of arbitrary bytes fall in the shutdown range. The
+    walk is what makes this proof instead of a guess, so it is worth its seconds.
+
+    The criterion is "the walk REACHES a shutdown event", not "the file ends on
+    one". Replay stops at shutdown and never looks further, so bytes after it are
+    irrelevant — and there are some: clean1 carries a trailing 0x27 past its
+    EVENT_SHUTDOWN_HOST_QMP_RESET, which QEMU's own replay-dump.py never reads
+    because it stops at the same place. Requiring EOF would fail a trace that is
+    demonstrably whole.
+
+    Returns False rather than raising on a log this decoder cannot read — an
+    unknown version is a reason to withhold the upgrade, not to refuse the trace.
+    """
+    path = Path(trace_dir) / "replay.bin"
+    if not path.is_file():
+        return False
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(12)
+            if len(head) < 12:
+                return False
+            if struct.unpack(">I", head[:4])[0] != _SUPPORTED_REPLAY_VERSION:
+                return False
+            while True:
+                b = fh.read(1)
+                if not b:
+                    break
+                eid = b[0]
+                if eid in _V12_SHUTDOWN_IDS:
+                    return True  # the machine stopped; replay stops here too
+                if eid == 0:
+                    if len(fh.read(4)) < 4:
+                        return False
+                elif eid in _V12_ASYNC_IDS:
+                    k = fh.read(1)
+                    if not k or len(fh.read(1)) < 1:
+                        return False
+                    width = _V12_ASYNC_PAYLOAD.get(k[0])
+                    if width is None or len(fh.read(width)) < width:
+                        return False
+                elif eid == _V12_RANDOM_ID:
+                    if len(fh.read(4)) < 4:
+                        return False
+                    raw = fh.read(4)
+                    if len(raw) < 4:
+                        return False
+                    n = struct.unpack(">I", raw)[0]
+                    if len(fh.read(n)) < n:
+                        return False
+                else:
+                    want = _V12_PAYLOAD.get(eid, 0)
+                    if len(fh.read(want)) < want:
+                        return False
+    except OSError:
+        return False
+    return False  # ran off the end without ever stopping: truncated
 
 
 def snap_break_icount(trace_dir: Path, want: int) -> int:

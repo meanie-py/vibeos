@@ -1,4 +1,4 @@
 
 list(APPEND UCRT_MATH_SOURCES
-    math/matherr.cpp
+    ${REACTOS_SOURCE_DIR}/sdk/lib/ucrt_reactos/math/matherr.cpp
 )

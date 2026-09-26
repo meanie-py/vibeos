@@ -54,9 +54,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        // QEMU virt PL011 UART DR (identity-mapped at this stage of boot).
-        let uart_dr = 0x0900_0000usize as *mut u32;
-        let putc = |c: u8| core::ptr::write_volatile(uart_dr, c as u32);
+        extern "C" { fn Rs232PortPutByte(byte: u8); }
+        let putc = |c: u8| Rs232PortPutByte(c);
         for &b in b"\n!!FREELDR-RUST-PANIC@" {
             putc(b);
         }

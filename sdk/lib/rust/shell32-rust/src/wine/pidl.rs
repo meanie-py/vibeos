@@ -1073,11 +1073,11 @@ unsafe fn shell_get_safearray_dataptr(p_sa: *mut SAFEARRAY, pcb: *mut SIZE_T) ->
 
 /// SHELL_VariantToBuffer (shell32_main.h:299).
 unsafe fn shell_variant_to_buffer(p_var: *mut VARIANT, p_data: *mut c_void, cb: SIZE_T) -> HRESULT {
-    if (*p_var).vt != (VT_ARRAY | VT_UI1) {
+    if (*p_var).n1.n2.vt != (VT_ARRAY | VT_UI1) {
         return E_INVALIDARG;
     }
     let mut cb_arr: SIZE_T = 0;
-    let p_arr_data = shell_get_safearray_dataptr((*p_var).val.parray, &mut cb_arr);
+    let p_arr_data = shell_get_safearray_dataptr((*p_var).n1.n2.n3.parray, &mut cb_arr);
     if p_arr_data.is_null() || cb_arr < cb {
         return E_FAIL;
     }
@@ -1098,7 +1098,7 @@ unsafe fn get_shellfolder2_item_details_ex_to_buffer(
     cb: UINT,
 ) -> HRESULT {
     let mut var: VARIANT = zeroed();
-    var.vt = VT_EMPTY;
+    var.n1.n2.vt = VT_EMPTY;
     let mut hr = ((*(*psf2).lpVtbl).GetDetailsEx)(psf2, pidl, pscid, &mut var);
     if SUCCEEDED(hr) {
         hr = shell_variant_to_buffer(&mut var, buf, cb as SIZE_T);
@@ -1483,15 +1483,147 @@ pub unsafe extern "system" fn SHGetNameFromIDList(
     ret
 }
 
-/// SHGetItemFromDataObject [SHELL32.@] (pidl.c:1671) — FIXME stub (matches the C).
+// Upstream-sync 2026-09: the previous body here (`return E_NOTIMPL; // FIXME`) was a
+// faithful translation of the WRONG C source. wine/pidl.c wraps its own copy of this
+// function in `#ifndef __REACTOS__` (dead in our build even before the cohab flip: this
+// tree always defines __REACTOS__), while CShellItem.cpp -- also flipped, in the SAME
+// crate -- carries the REAL, always-compiled ReactOS implementation. The lost-exports
+// scanner only checks "does ANY Rust fn provide this symbol", so the dead-C-derived stub
+// silently satisfied it and the export was never flagged, even after the tail-comment
+// fix. Ported CShellItem.cpp's real body 1:1 (HIDA -> ILCombine -> SHCreateItemFromIDList,
+// with a CF_HDROP fallback); CF_URL fallback stays unimplemented, matching upstream's own
+// `FIXME("... should try CF_URL.")` (a no-op FIXME, not a dropped code path).
+// DOGIF_ONLY_IF_ONE, CP_ACP, lstrlenW and MultiByteToWideChar are already declared
+// file-scope above (lines ~47-186) for other exports in this TU; reused, not redeclared.
+const DOGIF_NO_HDROP: DWORD = 2;
+const DOGIF_NO_URL: DWORD = 4;
+const CF_HDROP: DWORD = 15;
+const TYMED_HGLOBAL: DWORD = 1;
+const DVASPECT_CONTENT: DWORD = 1;
+
+extern "system" {
+    fn GlobalLock(memory: HGLOBAL) -> LPVOID;
+    fn GlobalUnlock(memory: HGLOBAL) -> BOOL;
+    fn RegisterClipboardFormatW(fmt: LPCWSTR) -> UINT;
+    fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
+    fn lstrlenA(s: LPCSTR) -> INT;
+}
+
+#[repr(C)]
+struct DROPFILES {
+    pFiles: DWORD,
+    pt: crate::island::POINT,
+    fNC: BOOL,
+    fWide: BOOL,
+}
+
+/// SHGetItemFromDataObject [SHELL32.@] — real body, from CShellItem.cpp (not pidl.c's
+/// dead `#ifndef __REACTOS__` twin; see the note above).
 #[no_mangle]
 pub unsafe extern "system" fn SHGetItemFromDataObject(
-    _pdtobj: *mut IDataObject,
-    _dwFlags: DWORD,
-    _riid: REFIID,
-    _ppv: *mut *mut c_void,
+    pdtobj: *mut IDataObject,
+    dwFlags: DWORD,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
 ) -> HRESULT {
-    E_NOTIMPL // FIXME
+    use crate::shellutils::hida_clipformat;
+
+    if pdtobj.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let mut fmt: FORMATETC = zeroed();
+    fmt.cfFormat = hida_clipformat();
+    fmt.ptd = null_mut();
+    fmt.dwAspect = DVASPECT_CONTENT;
+    fmt.lindex = -1;
+    fmt.tymed = TYMED_HGLOBAL;
+
+    let mut medium: STGMEDIUM = zeroed();
+    let mut hr = ((*(*pdtobj).lpVtbl).GetData)(pdtobj, addr_of_mut!(fmt).cast(), addr_of_mut!(medium).cast());
+    if hr >= 0 {
+        let pida = GlobalLock(medium.__bindgen_anon_1.hGlobal) as *const crate::island::CIDA;
+        if !pida.is_null()
+            && (*pida).cidl >= 1
+            && (((*pida).cidl > 1 && (dwFlags & DOGIF_ONLY_IF_ONE) == 0) || (*pida).cidl == 1)
+        {
+            let pidl = ILCombine(
+                crate::shellutils::HIDA_GetPIDLFolder(pida).cast(),
+                crate::shellutils::HIDA_GetPIDLItem(pida, 0).cast(),
+            );
+            if !pidl.is_null() {
+                hr = crate::shell_item::SHCreateItemFromIDList(pidl, riid, ppv);
+                ILFree(pidl);
+            } else {
+                hr = E_OUTOFMEMORY;
+            }
+        } else {
+            hr = E_FAIL;
+        }
+
+        if !medium.__bindgen_anon_1.hGlobal.is_null() {
+            GlobalUnlock(medium.__bindgen_anon_1.hGlobal);
+            ReleaseStgMedium(&mut medium);
+        }
+    }
+
+    if hr < 0 && (dwFlags & DOGIF_NO_HDROP) == 0 {
+        let mut fmt2: FORMATETC = zeroed();
+        fmt2.cfFormat = CF_HDROP as u16;
+        fmt2.ptd = null_mut();
+        fmt2.dwAspect = DVASPECT_CONTENT;
+        fmt2.lindex = -1;
+        fmt2.tymed = TYMED_HGLOBAL;
+        let mut medium2: STGMEDIUM = zeroed();
+
+        hr = ((*(*pdtobj).lpVtbl).GetData)(pdtobj, addr_of_mut!(fmt2).cast(), addr_of_mut!(medium2).cast());
+        if hr >= 0 {
+            let df = GlobalLock(medium2.__bindgen_anon_1.hGlobal) as *const DROPFILES;
+            hr = E_FAIL;
+            if !df.is_null() {
+                let files = (df as *const u8).add((*df).pFiles as usize);
+                if (*df).fWide == 0 {
+                    let first = files as LPCSTR;
+                    let multi = *files.add(lstrlenA(first) as usize + 1) != 0;
+                    if !(multi && (dwFlags & DOGIF_ONLY_IF_ONE) != 0) {
+                        let mut filename: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+                        MultiByteToWideChar(
+                            CP_ACP,
+                            0,
+                            first,
+                            -1,
+                            filename.as_mut_ptr(),
+                            filename.len() as INT,
+                        );
+                        hr = crate::shell_item::SHCreateItemFromParsingName(
+                            filename.as_ptr(),
+                            null_mut(),
+                            riid,
+                            ppv,
+                        );
+                    }
+                } else {
+                    // WCHAR-unit pointer arithmetic, matching the C's
+                    // `*(first + lstrlenW(first) + 1) != 0` -- a byte-stride read here
+                    // would wrongly treat a WCHAR whose low byte is 0 as the terminator.
+                    let first = files as *const WCHAR;
+                    let multi = *first.add(lstrlenW(first) as usize + 1) != 0;
+                    if !(multi && (dwFlags & DOGIF_ONLY_IF_ONE) != 0) {
+                        hr = crate::shell_item::SHCreateItemFromParsingName(first, null_mut(), riid, ppv);
+                    }
+                }
+                GlobalUnlock(medium2.__bindgen_anon_1.hGlobal);
+            }
+            ReleaseStgMedium(&mut medium2);
+        }
+    }
+
+    if hr < 0 && (dwFlags & DOGIF_NO_URL) == 0 {
+        // FIXME("Failed to create item, should try CF_URL.\n"); -- matches upstream:
+        // a logged FIXME, not an implemented fallback.
+    }
+
+    hr
 }
 
 /// SHGetIDListFromObject [SHELL32.@] (pidl.c:1680).

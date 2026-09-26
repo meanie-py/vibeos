@@ -1,106 +1,88 @@
 // rustconv-assembly: free-functions
-//! ORPHAN-BY-DESIGN: all 95 free functions of `dll/win32/shell32/utils.cpp` are translated and
-//! present, but the module is not wired yet -- utils.cpp is still the compiled implementation.
-//! Nothing here is a decoy and no worker is missing.
+//! `dll/win32/shell32/utils.cpp` -- all 95 free functions, translated, present, and compiling
+//! clean on i686/amd64/arm64.
+//! COHAB-FLIPPED 2026-09-19: `utils.cpp` is out of `dll/win32/shell32/CMakeLists.txt` and this
+//! module is the shipping implementation of its 95 free functions.
 //!
-//! Bought 2026-09-13 for $1.17 (97 workers; 91 replayed from bank at $0 on the retry pass).
-//! Zero AUDIT REJECTs. Six workers failed on TRANSPORT the first time -- "peer closed
+//! Wiring and the flip had to be ONE change, and the ORPHAN-BY-DESIGN guard that used to stand
+//! here was recording why. Wired alone, with the `.cpp` still compiled, this module's
+//! `#[no_mangle]` names shadowed the live C++ ones with no duplicate-symbol error -- the linker
+//! resolves archive members against object files and simply picks one -- so live entry points
+//! rerouted into Rust that had never run. Measured: the guest booted, passed smoke on all three
+//! arches, then froze between `[EXPLORER] taskbar: OnCreate begin` and `child controls
+//! created`, so `ProcessStartupItems` never ran and the kmtest sweep launched 0 of 91. Smoke
+//! cannot see that; `vibeos-cli conformance` can, and it is the oracle for this class of change.
+//!
+//! What the flip actually needed was SMALLER than the guard predicted. Measured against the
+//! LIVE CMake source list plus libshell32_rust.a, 36 symbols leave this TU and this module
+//! publishes 32 of them. The guard said all 16 `*_RustBridge` wrappers needed rehoming; 14 are
+//! published right here. Only the `CStubWindow32` create/destroy pair moved, to
+//! `dll/win32/shell32/rust_stubwindow32_stub.cpp`, because only that pair reaches a C++ ATL
+//! class that propsheet.cpp and folders/CDrivesFolder.cpp still construct -- and an ATL
+//! `CWindowImpl`'s thunk and registered class must have exactly one owner. (Once those two were
+//! Rust too, the class followed: crate::atl_stub_windows, 2026-09-24.) The last two,
+//! `SHELL_GetCommandStringImpl` and `SHELL_MapContextMenuVerbToCmdId`, had their utils.h
+//! declarations made EXTERN_C so shell32.cpp names the unmangled symbols emitted here.
+//!
+//! One measurement trap worth keeping: an intra-DLL undefined-symbol sweep does NOT see .spec
+//! exports, because those are consumed by other modules entirely. `SHOpenEffectiveToken`
+//! (SHELL32.235) is one, and it was `verify_lost_exports` that said so -- after the banner came
+//! off. Which is the other half of the lesson: `scan_extern_arity`, `scan_cc_mismatch`,
+//! `scan_silent_failures` and `verify_lost_exports` all SKIP a file carrying an
+//! `ORPHAN-BY-DESIGN` banner, so a stale one silently switches four checks off.
+//!
+//!
+//! Bought 2026-09-13 for $1.17 (97 workers; 91 replayed from bank at $0 on the retry pass),
+//! zero AUDIT REJECTs. Six workers failed on TRANSPORT the first time -- "peer closed
 //! connection without sending complete message body" -- which is NOT an audit rejection and
 //! must not be treated as one: nothing was banked for them, so they were clean cache misses
 //! and the retry cost $0.09.
 //!
-//! Unlike CDefView this TU needs NO ATL window substrate: its one `CWindowImpl` mention is a
-//! COMMENT, and `CComPtr` is already complete in atl.rs. Repaired so far, 211 -> 168 errors:
 //!
-//! - `CStubWindow32_{Create,Destroy}Stub_RustBridge` were REMOVED, not repaired. They are the
-//!   C++ side of a bridge that exists so Rust never needs CStubWindow32; utils.cpp says an ATL
-//!   CWindowImpl's thunk and registered class must have exactly ONE owner, and two C++ TUs
-//!   still use it. Translating the bridge builds the second implementation it was built to
-//!   prevent. The tell it could never work: the island renders CStubWindow32 as a layout-only
-//!   struct, so the model invented `CStubWindow32_new()` / `core::boxed::CStubWindow32_delete()`.
-//!   It surfaced as a syntax error, which is the LUCKY version of that category error.
-//! - A `Vec<u16>` in SHSetUnreadMailCountW, in a `no_std` crate with no allocator -- and wrong
+//! RE-VERIFYING the zero-error claim (it will rot otherwise -- that is how this file reached
+//! 799 errors once): wire it temporarily, `cargo check --target {i686-pc-windows-gnu,
+//! x86_64-pc-windows-gnu,aarch64-pc-windows-gnullvm}` for BOTH shell32-rust and menuband-rust
+//! (which #[path]-includes types.rs/shellcom.rs), then UN-WIRE before building, gating or
+//! landing. Verified clean on all six combinations 2026-09-19.
+//! Things worth carrying to the next TU:
+//!
+//! - **Vtable slot ORDER is the whole ABI contract and nothing checks it.** Call sites resolve
+//!   by NAME, so a misplaced slot calls the wrong method with the wrong arguments and compiles
+//!   perfectly. objidl.idl's `IBindCtx` is the live trap: it declares RemoteSetBindOptions and
+//!   RemoteGetBindOptions as `[call_as(...)]` RPC proxy SUBSTITUTES, not extra slots. Counting
+//!   them gives 15 and shifts everything after SetBindOptions by two.
+//!
+//! - **Check before authoring.** The estimate was "six vtables to write"; six of the nine
+//!   opaque interfaces already had a full vtable elsewhere in the crate and are exercised by
+//!   their own modules. Likewise "blocked on substrate: BIND_OPTS / STATSTG / LARGE_INTEGER /
+//!   ULARGE_INTEGER are in neither shellcom nor the island" was WRONG and the fix was an import
+//!   -- all four already existed. Search the CRATE, not the two places you expect.
+//!
+//! - **Three-target agreement is on `expected` ALONE.** `found` is what the expression
+//!   currently IS, which legitimately differs by target without the repair differing at all.
+//!   Comparing the whole (expected, found) pair wrongly quarantined 5 sites whose fix was
+//!   identical everywhere. Where `expected` ITSELF differed by target, the cast is the callee's
+//!   declared TYPE NAME (`as SIZE_T`, `as UINT_PTR`), width-correct on all three by construction.
+//!
+//! Real bugs found here, each a class rather than a one-off:
+//!
+//! - `STR_FILE_SYS_BIND_DATA` is `L"File System Bind Data"` in shobjidl.idl, and the island
+//!   carries that name as `&[u8; 22]` -- the NARROW bytes. The C casts the macro to `LPWSTR`
+//!   for `IBindCtx::GetObjectParam`, so the island's array read back as UTF-16 is `"iF"`,
+//!   `"el"`, `" S"`... and the bind-context lookup would never match. The wide spelling is in
+//!   utils_support.rs. The island has 111 such `&[u8; N]` consts; this one is proven wrong.
+//! - `CDummyOleWindow` came out of the run as a LAYOUT with no object behind it, because
+//!   `new CDummyOleWindow()` has no Rust spelling in a no_std crate. It is implemented here
+//!   the way the rest of shell32-rust does a COM object: HeapAlloc + a static vtable,
+//!   refcount from 1, `delete this` as HeapFree.
+//! - `SHELL_ErrorBoxHelper` is a shellutils.h `static inline`, so there is no symbol to import
+//!   and `SHELL_ErrorBox_RustBridge` had nothing to call. Ported into utils_support.rs.
+//! - `CStubWindow32_{Create,Destroy}Stub_RustBridge` were REMOVED, not repaired -- see above.
+//! - A `Vec<u16>` in SHSetUnreadMailCountW, in a no_std crate with no allocator -- and wrong
 //!   even where Vec exists, since `with_capacity` leaves len at 0 and every write went through
-//!   `as_mut_ptr()` past the initialized region. Now `CStringW` + `Append`, which is what the
-//!   C++ (`CString strKey; strKey += pszMailAddress;`) actually does.
-//! - `pub const PATH_VALID_ELEMENT = ...` with no TYPE, and a `COMPUTER_DESCRIPTIONS_KEY`
-//!   preamble referencing a `CPP_COM_WSTR_*` symbol no wide-literal lowering ever emitted.
-//! - A parameter named `fn` (legal C, reserved in Rust): the signature was renamed to `fn_`
-//!   but one call site kept the C spelling.
-//!
-//! The COM call shape is now FIXED (46 sites, 211 -> 162): the ABI passes the interface
-//! pointer as the first argument, so `(*p).Release()` becomes `((*(*p).lpVtbl).Release)(p)`,
-//! and a vtable slot is a fn-POINTER FIELD, so it needs its own parens -- `(x.f)(a)`, never
-//! `x.f(a)`. Both forms were already used correctly at 13 sites in this file.
-//!
-//! OPAQUE INTERFACES, mostly resolved. The island renders the COM interfaces this TU drives as
-//! opaque C++ classes with no `lpVtbl` field. SIX of the nine already had a full vtable
-//! elsewhere in the crate and were IMPORTED rather than re-authored -- IExecuteCommand
-//! (CDefaultContextMenu.rs), IDefaultExtractIconInit (control_panel_folder.rs), IProgressDialog
-//! (shlfileop.rs), IContextMenu + IStream (shellcom.rs), IShellBrowser (net_folder.rs).
-//!
-//! Checking first mattered here: the estimate was "six vtables to write", and six of the nine
-//! already existed and are exercised by their own modules, so importing carries no ordering
-//! risk at all. Authoring them would have been six chances to get a slot wrong.
-//!
-//! The remaining THREE are now authored in shellcom.rs from shobjidl.idl --
-//! IFileSystemBindData, IInitializeCommand, IObjectWithSelection. They turned out to be one or
-//! two methods each after the inherited IUnknown triple, with the order explicit in the IDL,
-//! so the ambiguity that made this look risky was not actually present. Reading the IDL before
-//! estimating would have said so; "six vtables to write" was a guess that survived two
-//! deferrals unexamined.
-//!
-//! Slot ORDER remains the whole ABI contract and nothing checks it -- call sites resolve by
-//! NAME, so a misplaced slot calls the wrong method with the wrong arguments and compiles
-//! perfectly. Anyone extending those vtables transcribes from the IDL, in order, and does not
-//! infer from call sites.
-//!
-//! 59 errors remain, from 211. Everything unambiguous has been done; what is left needs a
-//! DECISION rather than a repair, which is why it stops here:
-//!
-//!   * Type IDENTITY -- com_sys::IUnknown vs shellcom::IUnknown, com_sys::IBindCtx vs
-//!     shellcom::IBindCtx, LARGE_INTEGER vs _LARGE_INTEGER. These are ABI-identical, so a
-//!     `.cast()` compiles at every site; the question is which module owns the canonical
-//!     spelling, and casting everywhere would bury that question rather than answer it.
-//!   * 12 "arguments to this function are incorrect" -- each one wants its C read against the
-//!     callee, individually. No shared root.
-//!   * A handful of one-offs: non-primitive casts of Option<fn>, control_panel_folder's
-//!     SetNormalIcon, and the SHELLSTATE bitfield accessors (island renders them as methods,
-//!     the C reads them as fields). `shellcom::IBindCtxVtbl` is now its full THIRTEEN slots in objidl.idl
-//! order, and IStream's Seek/CopyTo/Stat placeholders are typed -- this TU was their first
-//! caller, which is how the placeholder convention surfaces when a new consumer arrives.
-//!
-//! The `call_as` trap is recorded at the struct itself and is worth repeating: objidl.idl
-//! declares RemoteSetBindOptions and RemoteGetBindOptions as `[call_as(...)]` RPC proxy
-//! SUBSTITUTES, not extra slots. Counting them gives 15 and shifts everything after
-//! SetBindOptions by two, which compiles perfectly and calls the wrong method forever.
-//!
-//! I recorded this as "blocked on substrate: BIND_OPTS / STATSTG / LARGE_INTEGER /
-//! ULARGE_INTEGER are in neither shellcom nor the island". That was WRONG and the fix was an
-//! import: all four already existed in recycle_bin.rs, open_with_menu.rs, types.rs and
-//! new_menu.rs. The search that produced the claim looked in two modules and concluded
-//! "absent from the crate" -- the same too-narrow predicate that made ERROR_INSUFFICIENT_BUFFER
-//! an ambiguity error earlier. Search the CRATE, not the two places you expect.
-//!
-//! What is left: IUnknown/IBindCtx identity across com_sys vs shellcom, SHELLSTATE's bitfield
-//! accessors (island renders them as methods, the C reads them as fields), CStringW/RAII
-//! constructors written as tuple-struct calls, and residual pointer casts. Settle casts on
-//! three-target agreement of EXPECTED.
-//!
-//! The integer/pointer cast pass is DONE (162 -> 108): 54 edits, every one applied only where
-//! all three targets named the same EXPECTED type at the same rustc byte span.
-//!
-//! Agreement is on `expected` ALONE, and that distinction is load-bearing. `found` is what the
-//! expression currently IS, which legitimately differs by target -- a usize-typed local is u64
-//! on 64-bit and u32 on 32-bit -- without the repair differing at all, because the cast target
-//! is `expected`. Comparing the whole (expected, found) pair wrongly quarantined 5 sites whose
-//! fix was identical everywhere.
-//!
-//! Four sites remained where `expected` ITSELF differed by target (u64 vs u32). Those took the
-//! callee's declared TYPE NAME -- `CoTaskMemAlloc(cbBuff as SIZE_T)`,
-//! `IsBadReadPtr(.., size_of::<..>() as UINT_PTR)` -- which is width-correct on all three by
-//! construction. A width cast inferred from amd64 would have compiled there and broken i686,
-//! which is precisely what crate-repair's three-arch rule exists to prevent.
+//!   `as_mut_ptr()` past the initialized region. Now `CStringW` + `Append`.
+//! - `FARPROC` is `Option<unsafe extern "system" fn() -> INT_PTR>`, so a null test on one is
+//!   `.is_none()` and a call is a `match`, never `as *const ()` / `.unwrap()`.
 use crate::prelude::*;
 use crate::atl::CStringW;
 use crate::shell32::utils_support::*;
@@ -232,6 +214,125 @@ pub struct CDummyOleWindow {
     pub lpVtbl: *mut CDummyOleWindowVtbl,
     pub m_cRefs: LONG,
     pub m_hWnd: HWND,
+}
+
+// utils.cpp:548 `class CDummyOleWindow : public IOleWindow`. The declaration above came out of
+// the paid run; the object itself did not, because `new CDummyOleWindow()` has no Rust
+// spelling in a no_std crate. Same shape the rest of shell32-rust uses for a COM object:
+// HeapAlloc + a static vtable, refcount starting at 1, `delete this` becoming HeapFree.
+
+/// `IID_IOleWindow` — oleidl.idl:65. Not in shell32's island (olectlid.h only `extern`s it,
+/// and shell32 links no ole32 import lib for the data symbol), so it is spelled out.
+/// `IID_IUnknown` — unknwn.idl. Same reason as IID_IOleWindow_LOCAL below.
+static IID_IUnknown_LOCAL: GUID = GUID {
+    Data1: 0x00000000,
+    Data2: 0x0000,
+    Data3: 0x0000,
+    Data4: [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+/// `IsEqualIID` — guiddef.h compares the sixteen bytes, nothing more.
+#[inline]
+unsafe fn cpp_com_iid_equal_utils(left: REFIID, right: *const GUID) -> bool {
+    if left.is_null() || right.is_null() {
+        return false;
+    }
+    (*left).Data1 == (*right).Data1
+        && (*left).Data2 == (*right).Data2
+        && (*left).Data3 == (*right).Data3
+        && (*left).Data4 == (*right).Data4
+}
+
+static IID_IOleWindow_LOCAL: GUID = GUID {
+    Data1: 0x00000114,
+    Data2: 0x0000,
+    Data3: 0x0000,
+    Data4: [0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+};
+
+unsafe extern "system" fn CDummyOleWindow_QueryInterface(
+    this: *mut CDummyOleWindow,
+    riid: REFIID,
+    ppvObj: *mut LPVOID,
+) -> HRESULT {
+    if ppvObj.is_null() {
+        return E_POINTER;
+    }
+    // The C++ is `QISearch` over a one-entry QITAB for IOleWindow; QISearch also answers
+    // IUnknown from the first entry's interface pointer, which for a single-base class is
+    // the object itself.
+    if cpp_com_iid_equal_utils(riid, core::ptr::addr_of!(IID_IOleWindow_LOCAL))
+        || cpp_com_iid_equal_utils(riid, core::ptr::addr_of!(IID_IUnknown_LOCAL))
+    {
+        *ppvObj = this.cast();
+        (*this).m_cRefs += 1;
+        return S_OK;
+    }
+    *ppvObj = core::ptr::null_mut();
+    E_NOINTERFACE
+}
+
+unsafe extern "system" fn CDummyOleWindow_AddRef(this: *mut CDummyOleWindow) -> ULONG {
+    (*this).m_cRefs += 1;
+    (*this).m_cRefs as ULONG
+}
+
+unsafe extern "system" fn CDummyOleWindow_Release(this: *mut CDummyOleWindow) -> ULONG {
+    (*this).m_cRefs -= 1;
+    if (*this).m_cRefs == 0 {
+        HeapFree(GetProcessHeap(), 0, this.cast::<core::ffi::c_void>());
+        return 0;
+    }
+    (*this).m_cRefs as ULONG
+}
+
+unsafe extern "system" fn CDummyOleWindow_GetWindow(
+    this: *mut CDummyOleWindow,
+    phWnd: *mut HWND,
+) -> HRESULT {
+    *phWnd = (*this).m_hWnd;
+    if (*this).m_hWnd.is_null() {
+        return E_NOTIMPL;
+    }
+    S_OK
+}
+
+unsafe extern "system" fn CDummyOleWindow_ContextSensitiveHelp(
+    _this: *mut CDummyOleWindow,
+    _fEnterMode: BOOL,
+) -> HRESULT {
+    E_NOTIMPL
+}
+
+static CDUMMYOLEWINDOW_VTBL: CDummyOleWindowVtbl = CDummyOleWindowVtbl {
+    QueryInterface: CDummyOleWindow_QueryInterface,
+    AddRef: CDummyOleWindow_AddRef,
+    Release: CDummyOleWindow_Release,
+    GetWindow: CDummyOleWindow_GetWindow,
+    ContextSensitiveHelp: CDummyOleWindow_ContextSensitiveHelp,
+};
+
+/// `new CDummyOleWindow()` — utils.cpp:555, `m_cRefs(1), m_hWnd(NULL)`. Returns NULL on an
+/// allocation failure, which is the one case the C++ cannot express and the caller already
+/// null-checks.
+unsafe fn CDummyOleWindow_new() -> *mut CDummyOleWindow {
+    let this = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<CDummyOleWindow>() as SIZE_T,
+    ) as *mut CDummyOleWindow;
+    if this.is_null() {
+        return core::ptr::null_mut();
+    }
+    core::ptr::write(
+        this,
+        CDummyOleWindow {
+            lpVtbl: core::ptr::addr_of!(CDUMMYOLEWINDOW_VTBL) as *mut CDummyOleWindowVtbl,
+            m_cRefs: 1,
+            m_hWnd: core::ptr::null_mut(),
+        },
+    );
+    this
 }
 unsafe extern "C" fn StrEndNA(psz: *const core::ffi::c_char, cch: isize) -> *const core::ffi::c_char {
     let mut pch = psz;
@@ -414,10 +515,10 @@ pub unsafe extern "system" fn SHShouldShowWizards(
 ) -> HRESULT {
     let mut pBrowser: *mut IShellBrowser = core::ptr::null_mut();
     let mut hr: HRESULT = IUnknown_QueryService(
-        pUnknown,
+        pUnknown.cast(),
         &SID_STopWindow,
         &IID_IShellBrowser,
-        &mut pBrowser as *mut *mut core::ffi::c_void,
+        core::ptr::addr_of_mut!(pBrowser).cast(),
     );
     if hr < 0 {
         return hr;
@@ -429,7 +530,7 @@ pub unsafe extern "system" fn SHShouldShowWizards(
         SSF_WEBVIEW,
         FALSE,
     );
-    if state.fWebView != 0
+    if state.fWebView() != 0
         && SHRegGetBoolUSValueW(
             CPP_COM_WSTR_8888EF3C3D8B.as_ptr(),
             CPP_COM_WSTR_3C3501C6F1F3.as_ptr(),
@@ -481,9 +582,6 @@ pub unsafe extern "C" fn BindCtx_ContainsObject(pBindCtx: *mut IBindCtx, pszName
     } else {
         TRUE
     };
-    if !punk.is_null() {
-        ((*(*punk).lpVtbl).Release)(punk);
-    }
     result
 }
 #[no_mangle]
@@ -493,8 +591,8 @@ pub unsafe extern "C" fn BindCtx_GetMode(pbc: *mut IBindCtx, dwDefault: u32) -> 
     }
 
     let mut BindOpts = core::mem::zeroed::<BIND_OPTS>();
-    BindOpts.cbSize = core::mem::size_of::<BIND_OPTS>() as u32;
-    let hr = ((*(*pbc).lpVtbl).GetBindOptions)(pbc, &mut BindOpts);
+    BindOpts.cbStruct = core::mem::size_of::<BIND_OPTS>() as u32;
+    let hr = ((*(*pbc).lpVtbl).GetBindOptions)(pbc, core::ptr::addr_of_mut!(BindOpts).cast());
     if hr < 0 {
         return dwDefault;
     }
@@ -519,7 +617,7 @@ pub unsafe extern "C" fn SHSkipJunctionBinding(pbc: *mut IBindCtx, pclsid: *mut 
     if pclsid.is_null() {
         return 0;
     }
-    SHSkipJunction(pbc, pclsid)
+    SHSkipJunction(pbc.cast(), pclsid)
 }
 #[no_mangle]
 pub unsafe extern "C" fn SHIsFileSysBindCtx(
@@ -533,25 +631,16 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
 
     if pBindCtx.is_null()
         || ((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx,
-            STR_FILE_SYS_BIND_DATA as PWSTR,
+            STR_FILE_SYS_BIND_DATA_W.as_ptr() as PWSTR,
             core::ptr::addr_of_mut!(punk),
         ) < 0
     {
-        if !punk.is_null() {
-            ((*(*punk).lpVtbl).Release)(punk);
-        }
         return S_FALSE;
     }
 
-    if ((*(*punk).lpVtbl).QueryInterface)(punk, core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of!(pBindData).cast())
+    if ((*(*punk).lpVtbl).QueryInterface)(punk, core::ptr::addr_of!(IID_IFileSystemBindData), core::ptr::addr_of_mut!(pBindData).cast())
         < 0
     {
-        if !pBindData.is_null() {
-            ((*(*pBindData).lpVtbl).Release)(pBindData);
-        }
-        if !punk.is_null() {
-            ((*(*punk).lpVtbl).Release)(punk);
-        }
         return S_FALSE;
     }
 
@@ -559,8 +648,6 @@ pub unsafe extern "C" fn SHIsFileSysBindCtx(
         ((*(*pBindData).lpVtbl).GetFindData)(pBindData, ((pFindData) as _));
     }
 
-    ((*(*pBindData).lpVtbl).Release)(pBindData);
-    ((*(*punk).lpVtbl).Release)(punk);
     return S_OK;
 }
 #[no_mangle]
@@ -600,16 +687,13 @@ pub unsafe extern "C" fn SHBindToObjectEx(
         if _ILIsDesktop(pidl) != 0 {
             hr = ((*(*pShellFolder).lpVtbl).QueryInterface)(pShellFolder, ((riid) as _), ppvObj);
         } else {
-            hr = ((*(*pShellFolder).lpVtbl).BindToObject)(pShellFolder, pidl, pBindCtx, riid, ppvObj);
+            hr = ((*(*pShellFolder).lpVtbl).BindToObject)(pShellFolder, pidl, pBindCtx, riid.cast(), ppvObj);
         }
 
         if hr >= 0 && (*ppvObj).is_null() {
             hr = E_FAIL;
         }
 
-        if !psfDesktop.is_null() {
-            ((*(*psfDesktop).lpVtbl).Release)(psfDesktop);
-        }
 
         hr
     }
@@ -649,10 +733,10 @@ pub unsafe extern "C" fn SHELL_GetUIObjectOfAbsoluteItem(
 
     if hr >= 0 {
         hr = ((*(*psf).lpVtbl).GetUIObjectOf)(psf,
-            hWnd,
+            hWnd.cast(),
             1,
             &pidlChild,
-            riid,
+            riid.cast(),
             core::ptr::null_mut(),
             ppvObj,
         );
@@ -681,26 +765,20 @@ pub unsafe extern "C" fn SHELL_DisplayNameOf(
     let mut hr: HRESULT = 0;
     if psf.is_null() {
         let mut pidlChild: PCUITEMID_CHILD = core::ptr::null_mut();
-        hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(psfRoot).cast(), core::ptr::addr_of_mut!(pidlChild));
+        hr = SHBindToParent(pidl, core::ptr::addr_of!(IID_IShellFolder).cast(), core::ptr::addr_of_mut!(psfRoot).cast(), core::ptr::addr_of_mut!(pidlChild));
         if hr < 0 {
-            if !psfRoot.is_null() {
-                let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
-            }
             return hr;
         }
         psf = psfRoot;
         pidl = pidlChild;
     }
     let mut sr: STRRET = core::mem::zeroed();
-    hr = ((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl as PCUITEMID_CHILD, Flags, core::ptr::addr_of_mut!(sr));
+    hr = ((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl as PCUITEMID_CHILD, Flags, core::ptr::addr_of_mut!(sr).cast());
     let result = if hr >= 0 {
         StrRetToStrW(core::ptr::addr_of_mut!(sr), pidl, ppStr)
     } else {
         hr
     };
-    if !psfRoot.is_null() {
-        let _ = ((*(*psfRoot).lpVtbl).Release)(psfRoot);
-    }
     result
 }
 
@@ -714,7 +792,7 @@ pub unsafe extern "system" fn DisplayNameOfW(
 ) -> HRESULT {
     *pszBuf = UNICODE_NULL;
     let mut sr: STRRET = core::mem::zeroed();
-    let hr = ((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl, dwFlags, &mut sr);
+    let hr = ((*(*psf).lpVtbl).GetDisplayNameOf)(psf, pidl, dwFlags, core::ptr::addr_of_mut!(sr).cast());
     if hr < 0 {
         return hr;
     }
@@ -758,7 +836,7 @@ pub unsafe extern "C" fn SHGetAttributes(
        (dwAttributes & SFGAO_STREAM) != 0 &&
        (dwAttributes & SFGAO_STORAGEANCESTOR) == 0 &&
        (oldAttrs & SFGAO_STORAGEANCESTOR) != 0 &&
-       (SHGetObjectCompatFlags(psf, core::ptr::null_mut() as LPCITEMIDLIST) & 0x200) != 0
+       (SHGetObjectCompatFlags(psf.cast(), core::ptr::null()) & 0x200) != 0
     {
         dwAttributes &= !(SFGAO_STREAM | SFGAO_STORAGEANCESTOR);
         dwAttributes |= SFGAO_STORAGEANCESTOR;
@@ -821,7 +899,7 @@ pub unsafe extern "C" fn SHGetNameAndFlagsW(
     let mut ppidlLast: LPCITEMIDLIST = core::ptr::null();
     let mut hr = SHBindToParent(
         pidl,
-        &IID_IShellFolder,
+        core::ptr::addr_of!(IID_IShellFolder).cast(),
         core::ptr::addr_of_mut!(psfFolder) as *mut *mut core::ffi::c_void,
         core::ptr::addr_of_mut!(ppidlLast),
     );
@@ -865,11 +943,8 @@ pub unsafe extern "C" fn BindCtx_GetUIWindow(pBindCtx: *mut IBindCtx) -> HWND {
     let mut hWnd: HWND = core::ptr::null_mut();
     let mut punk: *mut IUnknown = core::ptr::null_mut();
     let _punk_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(punk));
-    if !pBindCtx.is_null() && (((*pBindCtx).GetObjectParam)(CPP_COM_WSTR_64A3D5F8DF2B.as_ptr() as LPOLESTR, core::ptr::addr_of_mut!(punk)) >= 0) {
-        IUnknown_GetWindow(punk, core::ptr::addr_of_mut!(hWnd));
-    }
-    if !punk.is_null() {
-        ((*punk).Release)();
+    if !pBindCtx.is_null() && (((*(*pBindCtx).lpVtbl).GetObjectParam)(pBindCtx, CPP_COM_WSTR_64A3D5F8DF2B.as_ptr() as LPOLESTR, core::ptr::addr_of_mut!(punk)) >= 0) {
+        IUnknown_GetWindow(punk.cast(), core::ptr::addr_of_mut!(hWnd));
     }
     hWnd
 }
@@ -889,25 +964,25 @@ pub unsafe extern "C" fn BindCtx_RegisterObjectParam(
     if !pBindCtx.is_null() {
         ((*(*pBindCtx).lpVtbl).AddRef)(pBindCtx);
     } else {
-        hr = CreateBindCtx(0, ppbc);
+        hr = CreateBindCtx(0, ppbc.cast());
         if hr < 0 {
             return hr;
         }
     }
 
     if punk.is_null() {
-        p_unknown = CDummyOleWindow();
+        p_unknown = CDummyOleWindow_new();
         punk = p_unknown as *mut IUnknown;
     }
 
-    hr = (*(*ppbc)).RegisterObjectParam(pszKey, punk);
+    hr = ((*(*(*ppbc)).lpVtbl).RegisterObjectParam)(*ppbc, pszKey, punk);
 
     if !p_unknown.is_null() {
         ((*(*p_unknown).lpVtbl).Release)(p_unknown);
     }
 
     if hr < 0 {
-        (*(*ppbc)).Release();
+        ((*(*(*ppbc)).lpVtbl).Release)(*ppbc);
         *ppbc = core::ptr::null_mut();
     }
 
@@ -930,7 +1005,7 @@ pub unsafe extern "system" fn PathIsSlowA(
     pszFile: *const i8,
     dwAttr: u32,
 ) -> i32 {
-    let strFileW = CStringW::new(pszFile);
+    let strFileW = CStringW::from_ansi(pszFile);
     ((PathIsSlowW(strFileW.as_ptr(), dwAttr)) as i32)
 }
 
@@ -957,7 +1032,7 @@ pub unsafe extern "system" fn ShortSizeFormatW(
 ) -> PWSTR {
     StrFormatByteSizeW(((dwNumber) as i64), pszBuffer, 0x8FFF)
 }
-#[no_mangle] #[no_mangle]
+#[no_mangle]
 #[no_mangle] pub unsafe extern "system" fn SHOpenEffectiveToken(phToken: *mut HANDLE) -> BOOL {
     OpenEffectiveToken(TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, phToken)
 }
@@ -990,14 +1065,14 @@ pub unsafe extern "system" fn SHGetUserSessionId(mut hToken: HANDLE) -> DWORD {
 
     dwSessionId
 }
-#[no_mangle] #[no_mangle]
+#[no_mangle]
 #[no_mangle] pub unsafe extern "system" fn SHInvokePrivilegedFunctionW(
     pszName: PCWSTR,
     fn_: PRIVILEGED_FUNCTION,
     lParam: LPARAM,
 ) -> HRESULT {
     unsafe {
-        if pszName.is_null() || (fn_ as *const ()).is_null() {
+        if pszName.is_null() || fn_.is_none() {
             return E_INVALIDARG;
         }
 
@@ -1027,7 +1102,9 @@ pub unsafe extern "system" fn SHGetUserSessionId(mut hToken: HANDLE) -> DWORD {
             );
         }
 
-        let hr: HRESULT = fn_(lParam);
+        // `fn_` is a FARPROC-shaped Option; the null test above already returned, and a
+        // `.unwrap()` here would put a panic on a live shell path.
+        let hr: HRESULT = match fn_ { Some(f) => f(lParam), None => E_INVALIDARG };
 
         if bAdjusted != 0 {
             AdjustTokenPrivileges(
@@ -1085,7 +1162,7 @@ pub unsafe extern "system" fn SHTestTokenPrivilegeW(
             break 'quit;
         }
 
-        pTokenPriv = LocalAlloc(LPTR, dwLength) as PTOKEN_PRIVILEGES;
+        pTokenPriv = LocalAlloc(LPTR, dwLength as SIZE_T) as PTOKEN_PRIVILEGES;
         if pTokenPriv.is_null() {
             break 'quit;
         }
@@ -1111,7 +1188,7 @@ pub unsafe extern "system" fn SHTestTokenPrivilegeW(
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsShutdownAllowed() -> BOOL {
-    SHTestTokenPrivilegeW(core::ptr::null_mut(), SE_SHUTDOWN_NAME)
+    SHTestTokenPrivilegeW(core::ptr::null_mut(), SE_SHUTDOWN_NAME())
 }
 
 #[no_mangle]
@@ -1207,7 +1284,7 @@ pub unsafe extern "system" fn SHCreatePropertyBag(
     riid: REFIID,
     ppvObj: *mut *mut core::ffi::c_void,
 ) -> i32 {
-    SHCreatePropertyBagOnMemory(STGM_READWRITE, riid, ppvObj)
+    SHCreatePropertyBagOnMemory(STGM_READWRITE, riid.cast(), ppvObj)
 }
 unsafe extern "C" fn SHELL_ReadSingleUnreadMailCount(
     hKey: HKEY,
@@ -1223,9 +1300,9 @@ unsafe extern "C" fn SHELL_ReadSingleUnreadMailCount(
     let mut error: DWORD = SHQueryValueExW(
         hKey,
         CPP_COM_WSTR_8758F49A4AA2.as_ptr(),
-        0,
+        core::ptr::null_mut(),
         &mut dwType,
-        &mut dwCount,
+        core::ptr::addr_of_mut!(dwCount).cast(),
         &mut cbSize,
     );
     if error != 0 {
@@ -1240,16 +1317,18 @@ unsafe extern "C" fn SHELL_ReadSingleUnreadMailCount(
     error = SHQueryValueExW(
         hKey,
         CPP_COM_WSTR_CC16ED28C79D.as_ptr(),
-        0,
+        core::ptr::null_mut(),
         &mut dwType,
-        &mut FileTime,
+        core::ptr::addr_of_mut!(FileTime).cast(),
         &mut cbSize,
     );
     if error != 0 {
         return error;
     }
     if !pFileTime.is_null() && dwType == REG_BINARY {
-        *pFileTime = FileTime;
+        // FILETIME here is the island's `_FILETIME`; `*pFileTime` is the hand-written
+        // one, so the C++ struct assignment is a byte copy.
+        core::ptr::copy_nonoverlapping(core::ptr::addr_of!(FileTime).cast(), pFileTime, 1);
     }
 
     let mut szName = [0u16; (2 * MAX_PATH) as usize];
@@ -1257,9 +1336,9 @@ unsafe extern "C" fn SHELL_ReadSingleUnreadMailCount(
     error = SHQueryValueExW(
         hKey,
         CPP_COM_WSTR_0C7319B93B0B.as_ptr(),
-        0,
+        core::ptr::null_mut(),
         &mut dwType,
-        szName.as_mut_ptr(),
+        szName.as_mut_ptr().cast(),
         &mut cbSize,
     );
     if error != 0 {
@@ -1390,7 +1469,7 @@ pub unsafe extern "system" fn SHGetUnreadMailCountW(
             error = SHELL_ReadSingleUnreadMailCount(
                 hSubKey,
                 &mut dwCount,
-                &mut FileTime,
+                core::ptr::addr_of_mut!(FileTime).cast(),
                 core::ptr::null_mut(),
                 0,
             ) as u32;
@@ -1487,11 +1566,12 @@ pub unsafe extern "system" fn SHSetUnreadMailCountW(
     }
 
     let mut szBuff = [0u16; (2 * MAX_PATH) as usize];
-    if !PathUnExpandEnvStringsW(
+    if PathUnExpandEnvStringsW(
         pszShellExecuteCommand,
         szBuff.as_mut_ptr(),
         szBuff.len() as u32,
-    ) {
+    ) == FALSE
+    {
         let hr: HRESULT = StringCchCopyW(
             szBuff.as_mut_ptr(),
             szBuff.len() as usize,
@@ -1628,7 +1708,7 @@ pub unsafe extern "system" fn SHFindComputer(pidlRoot: LPCITEMIDLIST, pidlSavedS
     InvokeInfo.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFO>() as u32;
     InvokeInfo.lpParameters = b"{996E1EB1-B524-11D1-9120-00A0C98BA67D}\0".as_ptr() as *const i8;
     InvokeInfo.nShow = ((SW_SHOWNORMAL) as i32);
-    hr = ((*(*pCM).lpVtbl).InvokeCommand)(pCM, &InvokeInfo);
+    hr = ((*(*pCM).lpVtbl).InvokeCommand)(pCM, core::ptr::addr_of_mut!(InvokeInfo).cast());
     ((*(*pCM).lpVtbl).Release)(pCM);
 
     (hr >= 0) as i32
@@ -1661,7 +1741,7 @@ unsafe extern "C" fn Int64ToStr(
             }
         }
 
-        if bMinus != 0 && (ich as usize) < &szBuff.len() {
+        if bMinus != 0 && (ich as usize) < szBuff.len() {
             szBuff[ich as usize] = '-' as u16;
             ich += 1;
         }
@@ -1694,7 +1774,8 @@ unsafe extern "C" fn Int64GetNumFormat(
     let mut szBuff = [0u16; 20];
 
     if !pSrc.is_null() {
-        *pDest = *pSrc;
+        // NUMBERFMTW is a bindgen struct with no Copy; the C++ is a struct assignment.
+        core::ptr::copy_nonoverlapping(pSrc, pDest, 1);
     } else {
         dwNumberFlags = 0;
     }
@@ -1823,8 +1904,8 @@ pub unsafe extern "system" fn LargeIntegerToString(
 pub unsafe extern "system" fn CopyStreamUI(
     pSrc: *mut IStream,
     pDst: *mut IStream,
-    pProgress: *mut IProgressDialog,
-    dwlSize: u64,
+    mut pProgress: *mut IProgressDialog,
+    mut dwlSize: u64,
 ) -> i32 {
     let mut hr: i32 = E_FAIL;
     let mut cbBuff: u32 = 0;
@@ -1843,7 +1924,7 @@ pub unsafe extern "system" fn CopyStreamUI(
     );
 
     if dwlSize == 0 {
-        let stat_hr = ((*(*pSrc).lpVtbl).Stat)(pSrc, &mut Stat, STATFLAG_NONAME);
+        let stat_hr = ((*(*pSrc).lpVtbl).Stat)(pSrc, core::ptr::addr_of_mut!(Stat).cast(), STATFLAG_NONAME);
         if stat_hr < 0 {
             pProgress = core::ptr::null_mut();
         } else {
@@ -1852,12 +1933,12 @@ pub unsafe extern "system" fn CopyStreamUI(
     }
 
     if pProgress.is_null() {
-        let mut uliSize: ULARGE_INTEGER = core::mem::zeroed();
+        let mut uliSize: crate::island::ULARGE_INTEGER = core::mem::zeroed();
         if dwlSize > 0 {
             uliSize.QuadPart = dwlSize;
         } else {
-            uliSize.HighPart = INVALID_FILE_SIZE;
-            uliSize.LowPart = INVALID_FILE_SIZE;
+            uliSize.u.HighPart = INVALID_FILE_SIZE;
+            uliSize.u.LowPart = INVALID_FILE_SIZE;
         }
         return ((*(*pSrc).lpVtbl).CopyTo)(
             pSrc,
@@ -1884,7 +1965,7 @@ pub unsafe extern "system" fn CopyStreamUI(
         }
     }
 
-    let mut zero: LARGE_INTEGER = core::mem::zeroed();
+    let mut zero: crate::island::LARGE_INTEGER = core::mem::zeroed();
     zero.QuadPart = 0;
     ((*(*pSrc).lpVtbl).Seek)(pSrc, zero, 0, core::ptr::null_mut());
     ((*(*pDst).lpVtbl).Seek)(pDst, zero, 0, core::ptr::null_mut());
@@ -2021,7 +2102,7 @@ unsafe extern "C" fn DynamicSHGetSpecialFolderPathW(
     bCreate: i32,
 ) -> HRESULT {
     let mut pidl: LPITEMIDLIST = core::ptr::null_mut();
-    let mut hr: HRESULT = SHGetSpecialFolderLocation(hwndOwner, nCSIDL, core::ptr::addr_of_mut!(pidl));
+    let mut hr: HRESULT = SHGetSpecialFolderLocation(hwndOwner.cast(), nCSIDL, core::ptr::addr_of_mut!(pidl));
     if hr >= 0 {
         hr = DynamicSHGetPathFromIDListW(pidl, &mut *strPath);
         CoTaskMemFree(((pidl) as _));
@@ -2035,7 +2116,7 @@ unsafe extern "C" fn DynamicSHGetSpecialFolderPathW(
 }
 unsafe extern "C" fn DynamicPathRemoveBackslashW(strPath: &mut CStringW) {
     let nLength = strPath.GetLength();
-    if nLength > 0 && strPath[nLength - 1] == 0x005Cu16 {
+    if nLength > 0 && strPath.GetAt(nLength - 1) == 0x005Cu16 {
         *strPath = strPath.Left(nLength - 1);
     }
 }
@@ -2056,7 +2137,7 @@ pub unsafe extern "system" fn PathIsEqualOrSubFolder(
             FALSE,
         );
     } else {
-        strPath1 = CStringW::from(pszPath1OrCSIDL);
+        strPath1 = CStringW::from_ptr(pszPath1OrCSIDL);
     }
 
     DynamicPathRemoveBackslashW(&mut strPath1);
@@ -2142,9 +2223,6 @@ pub unsafe extern "C" fn IUnknown_InitializeCommand(
     } {
         hr = ((*(*pIC).lpVtbl).Initialize)(pIC, pszCommandName, ((pPB) as _));
     }
-    if !pIC.is_null() {
-        ((*(*pIC).lpVtbl).Release)(pIC);
-    }
     hr
 }
 #[no_mangle]
@@ -2160,14 +2238,14 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
         return E_INVALIDARG;
     }
 
-    let _site = CScopedSetObjectWithSite(pEC, pSite);
+    let _site = CScopedSetObjectWithSite::new(pEC.cast(), pSite.cast());
     IUnknown_InitializeCommand(((pEC) as _), pszCommandName, pPB);
 
     let mut pOWS: *mut IObjectWithSelection = core::ptr::null_mut();
     let _pOWS_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(pOWS));
     if !pSIA.is_null() {
         let hr = ((*(*pEC).lpVtbl).QueryInterface)(pEC,
-            IID_IObjectWithSelection,
+            core::ptr::addr_of!(IID_IObjectWithSelection).cast(),
             core::ptr::addr_of_mut!(pOWS) as *mut *mut core::ffi::c_void,
         );
         if hr >= 0 && !pOWS.is_null() {
@@ -2218,9 +2296,6 @@ pub unsafe extern "C" fn InvokeIExecuteCommand(
     }
 
     let result = ((*(*pEC).lpVtbl).Execute)(pEC);
-    if !pOWS.is_null() {
-        ((*(*pOWS).lpVtbl).Release)(pOWS);
-    }
     result
 }
 #[no_mangle]
@@ -2245,9 +2320,6 @@ pub unsafe extern "C" fn InvokeIExecuteCommandWithDataObject(
         hr
     };
 
-    if !pSIA.is_null() {
-        IUnknown_Release(pSIA as *mut IUnknown);
-    }
 
     result
 }
@@ -2314,7 +2386,7 @@ pub unsafe extern "C" fn SHELL_MapContextMenuVerbToCmdId(
     let mut buf: [CHAR; ((MAX_PATH) as usize)] = [0; ((MAX_PATH) as usize)];
     let pICIX = pICI as LPCMINVOKECOMMANDINFOEX;
 
-    if IsUnicode(pICIX) && !IS_INTRESOURCE((*pICIX).lpVerbW) {
+    if IsUnicode(pICIX.cast_const().cast()) && !IS_INTRESOURCE((*pICIX).lpVerbW) {
         if SHUnicodeToAnsi((*pICIX).lpVerbW, buf.as_mut_ptr(), ((buf.len()) as i32)) != 0 {
             pVerbA = buf.as_ptr();
         }
@@ -2406,16 +2478,10 @@ pub unsafe extern "C" fn SHELL_CreateShell32DefaultExtractIcon(
         &mut initIcon as *mut *mut IDefaultExtractIconInit as *mut *mut c_void,
     );
     if ((hr) < 0) {
-        if !initIcon.is_null() {
-            ((*(*initIcon).lpVtbl).Release)(initIcon);
-        }
         return hr;
     }
-    (*(*initIcon).lpVtbl).SetNormalIcon(initIcon, swShell32Name.as_ptr(), IconIndex);
+    ((*(*initIcon).lpVtbl).SetNormalIcon)(initIcon, swShell32Name.as_ptr(), IconIndex);
     let result = ((*(*initIcon).lpVtbl).QueryInterface)(initIcon, ((riid) as _), ppvOut);
-    if !initIcon.is_null() {
-        ((*(*initIcon).lpVtbl).Release)(initIcon);
-    }
     result
 }
 #[no_mangle]
@@ -2456,10 +2522,10 @@ pub unsafe extern "C" fn DCIA_AddShellExSubkey(hDCIA: HDCIA, hProgId: HKEY, pszS
             break;
         }
         let mut clsid: CLSID = core::mem::zeroed();
-        if SHELL_GetShellExtensionRegCLSID(hEnum, szKey.as_ptr(), core::ptr::addr_of_mut!(clsid))
+        if SHELL_GetShellExtensionRegCLSID(hEnum.cast(), szKey.as_ptr(), core::ptr::addr_of_mut!(clsid))
             >= 0
         {
-            DCIA_AddEntry(hDCIA, clsid);
+            DCIA_AddEntry(hDCIA, core::ptr::addr_of!(clsid).cast());
         }
     }
     RegCloseKey(hEnum);
@@ -2492,14 +2558,19 @@ pub unsafe extern "system" fn SHIsBadInterfacePtr(
 
     if IsBadReadPtr(
         (*punk).lpVtbl as *const core::ffi::c_void,
-        ucb,
+        ucb as UINT_PTR,
     ) != 0
     {
         return 1;
     }
 
     if IsBadCodePtr(
-        (*(*punk).lpVtbl).Release as unsafe extern "system" fn() -> isize,
+        // FARPROC is `Option<unsafe extern "system" fn() -> INT_PTR>`; the slot is a data
+        // pointer in this vtable rendering, so it takes a transmute, not an `as` cast.
+        Some(core::mem::transmute::<
+            *mut core::ffi::c_void,
+            unsafe extern "system" fn() -> INT_PTR,
+        >((*(*punk).lpVtbl).Release)),
     ) != 0
     {
         return 1;
@@ -2680,7 +2751,7 @@ unsafe extern "C" fn SHELL_BuildDisplayMachineName(
 #[no_mangle]
 pub unsafe extern "system" fn SHGetComputerDisplayNameW(
     mut pszServerName: PWSTR,
-    dwFlags: u32,
+    mut dwFlags: u32,
     pszName: PWSTR,
     cchNameMax: u32,
 ) -> HRESULT {
@@ -2708,7 +2779,7 @@ pub unsafe extern "system" fn SHGetComputerDisplayNameW(
     if hr < (0 as HRESULT) {
         hr = SHELL_GetComputerDescription(
             szDesc.as_mut_ptr(),
-            szDesc.len(),
+            szDesc.len() as SIZE_T,
             pszServerName,
         );
         if hr < (0 as HRESULT) {

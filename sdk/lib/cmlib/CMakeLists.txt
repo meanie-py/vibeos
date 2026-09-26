@@ -42,10 +42,11 @@ set(CMLIB_RUST_FLIPPED
 
 if(CMAKE_CROSSCOMPILING)
     # CMLIB for NT bootloader (still 100% C)
-    add_library(blcmlib ${SOURCE})
-    target_compile_definitions(blcmlib PRIVATE _BLDR_)
-    add_dependencies(blcmlib bugcodes xdk)
+    add_library(blcmlib STATIC ${SOURCE})
     add_pch(blcmlib cmlib.h SOURCE)
+    target_compile_definitions(blcmlib PRIVATE _BLDR_)
+    target_include_directories(blcmlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_dependencies(blcmlib bugcodes xdk)
 
     # CMLIB for NT kernel — drop the Rust-flipped .c, link libcmlib_rust.a.
     set(CMLIB_KERNEL_SOURCE ${SOURCE})
@@ -114,7 +115,7 @@ else()
     add_definitions(
         -D__NO_CTYPE_INLINES
         -DCMLIB_HOST)
-    add_library(cmlibhost ${SOURCE})
+    add_library(cmlibhost STATIC ${SOURCE})
     target_include_directories(cmlibhost INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
     if(NOT MSVC)

@@ -307,6 +307,11 @@ struct InternalIconData {
     guidItem: GUID,
     hBalloonIcon: HICON,
     uVersionCopy: UINT,
+    /// Set once RemoveButton starts tearing the item down. Closing its balloon sends
+    /// NIN_BALLOONHIDE to the owner, which may answer with NIM_DELETE for the same
+    /// icon; without this the re-entered RemoveButton freed the item twice
+    /// (upstream 8d44ccdd5f7, CORE-20685, which packs this into cbSize's high word).
+    bRemoved: BOOL,
 }
 
 /// `TRAYNOTIFYDATAW` (undocshell.h) — the WM_COPYDATA payload.
@@ -646,9 +651,9 @@ impl InfoList {
         &mut (*node).data
     }
     unsafe fn remove_at(&mut self, node: *mut InfoNode) {
-        // Faithful to CAtlList::RemoveAt, but guarded against NULL (the C++
-        // RemoveInfo loop can pass an advanced-past-end POSITION — a latent
-        // upstream bug; we no-op instead of dereferencing null).
+        // Faithful to CAtlList::RemoveAt, but guarded against NULL (the pre-fix
+        // C++ RemoveInfo loop passed an advanced-past-end POSITION; upstream
+        // 8d44ccdd5f7 fixed the loop, bq_remove_info follows it).
         if node.is_null() {
             return;
         }
@@ -687,7 +692,6 @@ pub struct CBalloonQueue {
     m_toolbar: *mut CNotifyToolbar,
     m_queue: InfoList,
     m_current: *mut InternalIconData,
-    m_currentClosed: bool,
     m_timer: i32,
 }
 
@@ -822,7 +826,6 @@ unsafe fn CSysPagerWnd_ctor(this: *mut CSysPagerWnd) {
         m_toolbar: null_mut(),
         m_queue: InfoList::zeroed(),
         m_current: null_mut(),
-        m_currentClosed: false,
         m_timer: -1,
     };
 }
@@ -1128,11 +1131,9 @@ unsafe fn bq_on_timer(bq: *mut CBalloonQueue, timer_id: i32) -> bool {
     KillTimer((*bq).m_hwndParent, (*bq).m_timer as UINT_PTR);
     (*bq).m_timer = -1;
 
-    if !(*bq).m_current.is_null() && !(*bq).m_currentClosed {
+    if !(*bq).m_current.is_null() {
         bq_close(bq, (*bq).m_current, NIN_BALLOONTIMEOUT);
     } else {
-        (*bq).m_current = null_mut();
-        (*bq).m_currentClosed = false;
         if !(*bq).m_queue.is_empty() {
             let mut info = (*bq).m_queue.remove_head();
             bq_show(bq, &mut info);
@@ -1164,11 +1165,16 @@ unsafe fn bq_update_info(bq: *mut CBalloonQueue, notify_item: *mut InternalIconD
 unsafe fn bq_remove_info(bq: *mut CBalloonQueue, notify_item: *mut InternalIconData) {
     bq_close(bq, notify_item, NIN_BALLOONHIDE);
 
-    let mut position = (*bq).m_queue.get_head_position();
-    while !position.is_null() {
-        let info = (*bq).m_queue.get_next(&mut position);
+    // get_next advances the cursor, so the node to drop is the one read, not the
+    // cursor: the pre-fix loop unlinked the NEXT entry (or none, at the tail) and left
+    // this item's pending balloon queued against memory about to be freed.
+    let mut next = (*bq).m_queue.get_head_position();
+    while !next.is_null() {
+        let current = next;
+        let info = (*bq).m_queue.get_next(&mut next);
         if !info.is_null() && (*info).pSource == notify_item {
-            (*bq).m_queue.remove_at(position);
+            (*bq).m_queue.remove_at(current);
+            break;
         }
     }
 }
@@ -1236,11 +1242,13 @@ unsafe fn bq_show(bq: *mut CBalloonQueue, info: *mut Info) {
 }
 
 unsafe fn bq_close(bq: *mut CBalloonQueue, notify_item: *mut InternalIconData, u_reason: UINT) {
-    if (*bq).m_current == notify_item && !(*bq).m_currentClosed {
+    if (*bq).m_current == notify_item {
         tb_send_notify_callback((*bq).m_toolbar, (*bq).m_current, u_reason);
 
-        // Prevent re-entry.
-        (*bq).m_currentClosed = true;
+        // Prevent re-entry (TrackDeactivate generates a TTN_POP). Clearing m_current,
+        // rather than flagging it closed, also stops a later timer or queue step from
+        // touching an item RemoveButton is about to free (upstream 8d44ccdd5f7).
+        (*bq).m_current = null_mut();
         tt_track_deactivate(*(*bq).m_tooltips);
         bq_set_timer(bq, BQ_COOLDOWN);
     }
@@ -1501,7 +1509,8 @@ unsafe fn tb_update_button(tb: *mut CNotifyToolbar, icon_data: *const NOTIFYICON
 
     let index = tb_find_item(tb, (*icon_data).hWnd, (*icon_data).uID, &mut notify_item);
     if index < 0 {
-        return tb_add_button_notify(tb, icon_data);
+        // NIM_MODIFY on an unknown icon fails; it must not resurrect one (upstream 8d44ccdd5f7).
+        return FALSE as BOOL;
     }
 
     let mut btn: TBBUTTON = core::mem::zeroed();
@@ -1592,6 +1601,10 @@ unsafe fn tb_remove_button(tb: *mut CNotifyToolbar, icon_data: *const NOTIFYICON
     if index < 0 {
         return FALSE as BOOL;
     }
+    if (*notify_item).bRemoved != 0 {
+        return FALSE as BOOL; // re-entered from the balloon close below
+    }
+    (*notify_item).bRemoved = TRUE as BOOL;
 
     if (*notify_item).dwState & NIS_HIDDEN == 0 {
         (*tb).m_VisibleButtonCount -= 1;

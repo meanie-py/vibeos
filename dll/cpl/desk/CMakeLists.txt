@@ -11,8 +11,8 @@ spec2def(desk.cpl desk.spec)
 # guid.c stays C. It is an `initguid.h` translation unit whose whole job is EMITTING the CLSIDs
 # as data — zero functions, so there is nothing to translate. Same call as ole32 and aclui.
 #
-# rust_varargs_shim.c is NOT a translation reverted to C: it holds the `va_start` for the three
-# strsafe.h variadics, which stable Rust can declare but not define. See the file's own header.
+# rust_varargs_shim.c is no longer built (retired 2026-09-25: the strsafe printf family is strsafe-rust macros that CALL
+# msvcrt's variadic _snwprintf, which stable Rust can do; the file stays on disk, inert).
 #
 # Profile decisions (gen_driver_types.sh), all load-bearing:
 #   * BLOCKLIST_FUNCS_FROM_CRATE — desk is a thin driver of other people's APIs
@@ -80,9 +80,6 @@ add_custom_target(rust_desk DEPENDS ${DESK_RUST_LIB})
 #     draw.c
 #     theme.c
 #     muireg.c)
-
-list(APPEND SOURCE
-    rust_varargs_shim.c)
 
 list(APPEND PCH_SKIP_SOURCE
     guid.c)

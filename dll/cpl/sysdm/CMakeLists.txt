@@ -10,9 +10,9 @@ include_directories(
 # hardware-profile manager, the user-profile list, the pagefile (virtual memory) editor, and
 # the startup/recovery boot.ini editor.
 #
-# rust_varargs_shim.c is NOT a translation reverted to C: it holds the `va_start` for
-# ResourceMessageBox (sysdm's own, sysdm.c:27) and for strsafe.h's StringCchPrintfW, neither of
-# which stable Rust can DEFINE. See the file's own header.
+# rust_varargs_shim.c is no longer built (retired 2026-09-25; the file stays on disk, inert):
+# ResourceMessageBox RECEIVES its varargs the va-slots way in sysdm.rs, and StringCchPrintfW is
+# a strsafe-rust macro that CALLS msvcrt's variadic _snwprintf.
 #
 # Profile decisions (gen_driver_types.sh), all load-bearing:
 #   * BLOCKLIST_FUNCS_FROM_CRATE — sysdm is a thin driver of other people's APIs, so
@@ -67,7 +67,6 @@ add_custom_target(rust_sysdm DEPENDS ${SYSDM_RUST_LIB})
 #     virtmem.c)
 
 list(APPEND SOURCE
-    rust_varargs_shim.c
     precomp.h)
 
 file(GLOB sysdm_rc_deps resources/*.*)
@@ -77,6 +76,7 @@ add_library(sysdm MODULE
     ${SOURCE}
     sysdm.rc
     ${CMAKE_CURRENT_BINARY_DIR}/sysdm.def)
+add_pch(sysdm precomp.h SOURCE)
 
 set_module_type(sysdm cpl UNICODE)
 # libsysdm_rust.a FIRST so its #[no_mangle] symbols win.
@@ -86,5 +86,4 @@ target_link_libraries(sysdm ${SYSDM_RUST_LIB} udmihelp uuid)
 target_link_options(sysdm PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(sysdm rust_sysdm)
 add_importlibs(sysdm advapi32 setupapi user32 gdi32 comctl32 comdlg32 msimg32 shell32 shlwapi ole32 powrprof msvcrt kernel32 ntdll)
-add_pch(sysdm precomp.h SOURCE)
 add_cd_file(TARGET sysdm DESTINATION reactos/system32 FOR all)

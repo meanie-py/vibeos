@@ -238,12 +238,6 @@ unsafe fn debugstr_w(_s: LPCWSTR) -> *const i8 {
     b"\0".as_ptr() as *const i8
 }
 
-// gpsi->PUSIFlags accessor. SERVERINFO anon-embeds PERUSERSERVERINFO at its tail,
-// where bindgen emitted `__bindgen_padding_0` (matches defwnd.rs::gpsi_perusr).
-#[inline]
-unsafe fn gpsi_perusr() -> *const _PERUSERSERVERINFO {
-    core::ptr::addr_of!((*gpsi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
-}
 
 // ---- file-scope preamble (translated) ----
 pub const DF_END: u32 = 0x0001;
@@ -2778,7 +2772,7 @@ pub unsafe extern "system" fn IsDialogMessageW(mut hDlg: HWND, lpMsg: LPMSG) -> 
             if HIWORD((*lpMsg).lParam as DWORD) as u32 & KF_ALTDOWN != 0
                 && !gpsi.is_null()
                 && ((*gpsi).dwSRVIFlags & SRVINFO_KBDPREF) == 0
-                && ((*gpsi_perusr()).PUSIFlags & PUSIF_KEYBOARDCUES) == 0
+                && (crate::wow64::psi::pusi_flags() & PUSIF_KEYBOARDCUES) == 0
             {
                 SendMessageW(hDlg, WM_CHANGEUISTATE,
                     MAKEWPARAM(UIS_CLEAR as u16, (UISF_HIDEACCEL | UISF_HIDEFOCUS) as u16) as WPARAM, 0);
@@ -2788,7 +2782,7 @@ pub unsafe extern "system" fn IsDialogMessageW(mut hDlg: HWND, lpMsg: LPMSG) -> 
             if (*lpMsg).wParam == SC_KEYMENU as WPARAM
                 && !gpsi.is_null()
                 && ((*gpsi).dwSRVIFlags & SRVINFO_KBDPREF) == 0
-                && ((*gpsi_perusr()).PUSIFlags & PUSIF_KEYBOARDCUES) == 0
+                && (crate::wow64::psi::pusi_flags() & PUSIF_KEYBOARDCUES) == 0
             {
                 SendMessageW(hDlg, WM_CHANGEUISTATE,
                     MAKEWPARAM(UIS_CLEAR as u16, (UISF_HIDEACCEL | UISF_HIDEFOCUS) as u16) as WPARAM, 0);

@@ -1,6 +1,7 @@
 
 
 list(APPEND SOURCE
+    rtlinit.c
     RtlIntSafe.c
 )
 
@@ -18,6 +19,7 @@ elseif(ARCH STREQUAL "amd64")
     )
     list(APPEND SOURCE
         amd64/RtlCaptureContext.c
+        amd64/RtlVirtualUnwind.c
     )
 endif()
 
@@ -38,9 +40,13 @@ endif()
 
 # RTL tests with static linkage (called unittest, so it won't run in rosautotest)
 add_executable(rtl_unittest
+    rtlinit.c
     testlist.c
-    ldrstubs.c)
-target_compile_definitions(rtl_unittest PRIVATE _RTL_TEST _NTSYSTEM_)
+    ldrstubs.c
+    # rtl_um is an empty cohab stub in this tree (its libsupp.c is Rust now,
+    # inside ntdll's own link), so the rtlp.h support layer comes from here.
+    rtlsupp_stubs.c)
+target_compile_definitions(rtl_unittest PRIVATE _RTL_TEST _NTSYSTEM_ TEST_STATIC)
 target_link_libraries(rtl_unittest rtl_test_lib rtl rtl_um rtl_vista wine uuid ${PSEH_LIB})
 set_module_type(rtl_unittest win32cui)
 add_importlibs(rtl_unittest msvcrt advapi32 kernel32 ntdll)

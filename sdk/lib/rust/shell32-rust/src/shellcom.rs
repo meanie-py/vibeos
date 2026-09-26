@@ -1,9 +1,29 @@
-//! shellcom — canonical shared shell/COM types for the shell32-rust cohab: the PIDL
-//! on-disk format (SHITEMID/ITEMIDLIST/PIDLDATA + PT_* tags), STRRET, the GUID family,
-//! and the COM interface vtables. Promoted verbatim from the Wave-4 pidl.rs translation so
-//! pidl/shellpath/shellord share ONE definition (killing the cross-file extern-decl clash).
-//! Wave 0-3 files keep their file-local copies — retrofitting them is deferred to avoid
-//! destabilizing the already-landed waves.
+//! shellcom — the shared shell/COM substrate for the shell32-rust cohab. Promoted verbatim
+//! from the Wave-4 pidl.rs translation so pidl/shellpath/shellord share ONE definition
+//! (killing the cross-file extern-decl clash). Wave 0-3 files keep their file-local copies —
+//! retrofitting them is deferred to avoid destabilizing the already-landed waves.
+//!
+//! THE BOUNDARY, which this file now actually honours: **the bindgen island owns DATA
+//! LAYOUTS; shellcom owns VTABLE ABI.** prelude.rs has stated that for a while, but shellcom
+//! used to declare its own ITEMIDLIST, GUID, SHELLDETAILS and 30-odd other layouts, so any
+//! island-first TU that called a shellcom vtable slot split nominally at every PIDL and every
+//! GUID — ABI-identical types that rustc rightly refuses to unify. CDefView, the first module
+//! to sit on both sides of the line, found this as ~50 errors that a `.cast()` would have
+//! silenced at each site without answering anything. The layouts are now `pub use
+//! crate::island::{...}`.
+//!
+//! What shellcom still OWNS is the vtable shape: the island renders a shobjidl interface as a
+//! bindgen C++ class with `Option<fn>` slots, and the 40 landed COM-class modules are written
+//! against the C `lpVtbl` idiom with raw fn pointers. One crate cannot carry both — a call
+//! through an `Option` slot is E0618, and "just `.unwrap()`" would put a panic on every COM
+//! call in a shipping DLL. So the interfaces are blocklisted out of the island and live here.
+//!
+//! THE PREREQUISITE, recorded because it is not obvious and it rejected two submissions
+//! before: this file is `#[path]`-included into BOTH shell32-rust and menuband-rust, so
+//! `crate::island` has to resolve in both. menuband-rust therefore path-includes island.rs
+//! as well and carries the declaration-only `ntdll-sys` dep the island resolves its field
+//! types through. Verify BOTH crates on all three targets after touching this file; only the
+//! arm64 gate caught it last time.
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
@@ -17,52 +37,33 @@ pub type ULONG = u32; // winnt.h
 pub type USHORT = u16; // winnt.h
 pub type SIZE_T = usize; // basetsd.h (ULONG_PTR)
 pub type LPARAM = LONG_PTR; // windef.h
-pub type SFGAOF = DWORD; // shobjidl (ULONG attribute mask)
-pub type SHGDNF = DWORD; // shobjidl (SHGDN flags)
 pub type SIGDN = u32; // shobjidl (v1_enum)
 pub const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
-pub type SICHINTF = DWORD;
-pub type GETPROPERTYSTOREFLAGS = DWORD;
-pub type SIATTRIBFLAGS = DWORD;
+// shobjidl.idl:4864-4892 — IShellLibrary's parameter enums, all `[v1_enum]` (32-bit), so `u32`
+// like SIGDN. They arrived with the post-fork upstream sync ("[SDK][SHELL32] A big bundle of
+// NT6+ shell32 implementations and stubs"); the island was last generated on 2026-08-08,
+// BEFORE that sync, so it does not carry them. Declared here rather than by regenerating
+// the island mid-flip — see the roadmap entry on the stale shell32 island.
+pub type LIBRARYFOLDERFILTER = u32;
+pub type LIBRARYOPTIONFLAGS = u32;
+pub type DEFAULTSAVEFOLDERTYPE = u32;
+pub type LIBRARYSAVEFLAGS = u32;
+// shtypes.h:129-140 — `#define REFKNOWNFOLDERID const KNOWNFOLDERID &` under C++ and
+// `const KNOWNFOLDERID *` under C: a reference is a pointer on the ABI, and because these are
+// `#define`d TYPE MACROS rather than typedefs, bindgen never emits them at all — which is why
+// these two are missing independently of the island's staleness.
+pub type REFKNOWNFOLDERID = *const crate::island::KNOWNFOLDERID;
+pub type REFFOLDERTYPEID = *const crate::island::FOLDERTYPEID;
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
-pub type SHCONTF = DWORD;
-pub type SHCOLSTATEF = DWORD;
 
-/// SHDRAGIMAGE from shobjidl.h, used by IDragSourceHelper.
-#[repr(C)]
-pub struct SHDRAGIMAGE {
-    pub sizeDragImage: SIZE,
-    pub ptOffset: POINT,
-    pub hbmpDragImage: HBITMAP,
-    pub crColorKey: COLORREF,
-}
-pub type LPSHDRAGIMAGE = *mut SHDRAGIMAGE;
 
 // Active Desktop's current implementation is a pure E_NOTIMPL stub. These SDK
 // records cross its COM ABI only by pointer, so opaque repr(C) pointees are exact
 // for this class; promote their fields from shlobj.h before any body dereferences
 // them.
-#[repr(C)]
-pub struct WALLPAPEROPT {
-    _opaque: [u8; 0],
-}
-pub type LPWALLPAPEROPT = *mut WALLPAPEROPT;
-pub type LPCWALLPAPEROPT = *const WALLPAPEROPT;
 
-#[repr(C)]
-pub struct COMPONENTSOPT {
-    _opaque: [u8; 0],
-}
-pub type LPCOMPONENTSOPT = *mut COMPONENTSOPT;
-pub type LPCCOMPONENTSOPT = *const COMPONENTSOPT;
 
-#[repr(C)]
-pub struct COMPONENT {
-    _opaque: [u8; 0],
-}
-pub type LPCOMPONENT = *mut COMPONENT;
-pub type LPCCOMPONENT = *const COMPONENT;
 
 #[repr(C)]
 pub struct IErrorLog {
@@ -71,16 +72,8 @@ pub struct IErrorLog {
 
 // ── GUID family (guiddef.h) ─────────────────────────────────────────────────────────────
 /// GUID/CLSID/IID/FMTID — { Data1: u32; Data2: u16; Data3: u16; Data4: [u8;8] }.
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct GUID {
-    pub Data1: u32,
-    pub Data2: u16,
-    pub Data3: u16,
-    pub Data4: [u8; 8],
-}
-pub type CLSID = GUID;
-pub type IID = GUID;
+// The GUID family comes from the ISLAND. See the boundary note at the top of this file.
+pub use crate::island::{CLSID, GUID, IID};
 pub type FMTID = GUID;
 pub type REFGUID = *const GUID;
 pub type REFIID = *const IID;
@@ -88,35 +81,38 @@ pub type REFCLSID = *const CLSID;
 pub type REFFMTID = *const FMTID;
 
 // ── PIDL on-disk format (shtypes.h + pidl.h, pshpack1 — ALL packed) ──────────────────────
-// These DUPLICATE the island's `_SHITEMID`/`_ITEMIDLIST`, and that is deliberate — do not
-// "collapse" them to `pub use crate::island::{...}`. This file is `#[path]`-included into
-// menuband-rust (lib.rs:38), which has no island module, precisely so that crate gets a
-// layout-identical copy without depending on the shell32-rust staticlib. A `crate::island`
-// reference here compiles in shell32-rust and breaks menuband-rust with E0432, which only
-// the arm64 gate surfaced. The cost is that PIDLs crossing an island extern into one of the
-// vtable signatures below need a `.cast()`; pay it at the call site.
-/// SHITEMID (shtypes.h): { WORD cb; BYTE abID[1]; }
-#[repr(C, packed)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
-/// ITEMIDLIST (shtypes.h): { SHITEMID mkid; }
-#[repr(C, packed)]
-pub struct ITEMIDLIST {
-    pub mkid: SHITEMID,
-}
-pub type LPITEMIDLIST = *mut ITEMIDLIST;
-pub type LPCITEMIDLIST = *const ITEMIDLIST;
-pub type PIDLIST_ABSOLUTE = LPITEMIDLIST;
-pub type PCIDLIST_ABSOLUTE = LPCITEMIDLIST;
-pub type PIDLIST_RELATIVE = LPITEMIDLIST;
-pub type PCUIDLIST_RELATIVE = LPCITEMIDLIST;
-pub type PCUITEMID_CHILD = LPCITEMIDLIST;
-pub type PCUITEMID_CHILD_ARRAY = *const PCUITEMID_CHILD;
-pub type PITEMID_CHILD = LPITEMIDLIST;
+// From the ISLAND, which is header-derived. This file used to carry its own copies with a
+// comment saying not to collapse them, because menuband-rust #[path]-includes this file and
+// had no island. That premise is gone: menuband-rust now path-includes island.rs too (and
+// gained the declaration-only ntdll-sys dep the island resolves its field types through), so
+// both crates that compile shellcom.rs have one. Every definition replaced here was diffed
+// against the island's first; the island is identical or STRONGER (PERSIST_FOLDER_TARGET_INFO
+// was opaque here and has its real layout there).
+pub use crate::island::{
+    ITEMIDLIST, LPCITEMIDLIST, LPCSHITEMID, LPITEMIDLIST, PCIDLIST_ABSOLUTE,
+    PCUIDLIST_RELATIVE, PCUITEMID_CHILD, PCUITEMID_CHILD_ARRAY, PIDLIST_ABSOLUTE,
+    PIDLIST_RELATIVE, PITEMID_CHILD, SHITEMID,
+};
 pub type LPOLESTR = LPWSTR;
-pub type LPCSHITEMID = *const SHITEMID;
+
+// The rest of the DATA layouts, also from the island. Each was diffed against shellcom's own
+// copy before deletion: 26 were byte-for-byte identical (INT vs c_int, [T; 1] vs [T; 1usize]),
+// and four -- COMPONENT, COMPONENTSOPT, PERSIST_FOLDER_TARGET_INFO, WALLPAPEROPT -- were
+// OPAQUE here and have their real layout there.
+//
+// STRRET, SHELLDETAILS and PIDLDATA deliberately do NOT move, and the reason is ergonomic
+// rather than structural: bindgen renders their anonymous unions as `__bindgen_anon_1` full of
+// `__BindgenUnionField`, so `strret.u.pOleStr` would become
+// `strret.__bindgen_anon_1.pOleStr.as_ref()` at 40 sites across 12 modules. The layouts agree;
+// the boundary exists to make ONE module own a layout, and it is already owned here. Revisit
+// if bindgen's union rendering improves.
+pub use crate::island::{
+    COMPONENT, COMPONENTSOPT, FileStructW, GETPROPERTYSTOREFLAGS, LPCCOMPONENT,
+    LPCCOMPONENTSOPT, LPCOMPONENT, LPCOMPONENTSOPT, LPCWALLPAPEROPT, LPSHDRAGIMAGE,
+    LPSHELLFOLDER, LPWALLPAPEROPT, PERSIST_FOLDER_TARGET_INFO, PIDLTYPE, PROPERTYKEY,
+    SFGAOF, SHCOLSTATEF, SHCOLUMNID, SHCONTF, SHDRAGIMAGE, SHGDNF, SIATTRIBFLAGS,
+    SICHINTF, WALLPAPEROPT,
+};
 
 pub const SHGDN_NORMAL: SHGDNF = 0;
 pub const SHGDN_FORPARSING: SHGDNF = 0x8000;
@@ -142,8 +138,6 @@ pub struct SHELLDETAILS {
     pub str_: STRRET,
 }
 
-/// PIDLTYPE (pidl.h) — first byte of PIDLDATA, one of the PT_* tags below.
-pub type PIDLTYPE = BYTE;
 
 // PT_* type tags (pidl.h:86-121). Pinned exactly; do not guess.
 pub const PT_CPLAPPLET: PIDLTYPE = 0x00;
@@ -190,6 +184,24 @@ pub const REGITEMORDER_RECYCLEBIN: BYTE = 0x60; // REGITEMLOCATION_CONTROLS(=CSI
 pub const REGITEMORDER_INTERNET: BYTE = 0x68;
 pub const REGITEMORDER_MYCOMPUTER_CONTROLS: BYTE = 0x1E; // NT5
 
+/// network sub-struct (pidl.h): { WORD dummy; CHAR szNames[1]; } — szNames at PIDLDATA+3.
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct PIDLNetworkStruct {
+    pub dummy: WORD,
+    pub szNames: [CHAR; 1],
+}
+/// htmlhelp sub-struct (pidl.h): { WORD dummy; DWORD dummy1; CHAR szName[1]; }
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct PIDLHtmlHelpStruct {
+    pub dummy: WORD,
+    pub dummy1: DWORD,
+    pub szName: [CHAR; 1],
+}
+// These seven stay LOCAL although the island has them, and it is not an oversight: they are
+// the members of `PIDLDATA_u` below, and a Rust union field must be `Copy`. The island's
+// bindgen structs do not derive Copy, so re-exporting them turns this union into E0740.
 /// GUIDStruct (pidl.h): { BYTE uSortOrder; GUID guid; } — guid at offset 02.
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
@@ -215,26 +227,6 @@ pub struct FileStruct {
     pub uFileAttribs: WORD,
     pub szNames: [CHAR; 1],
 }
-/// FileStructW (pidl.h) — appended after FileStruct with 2-byte alignment; a trailing WORD
-/// holds the offset (from the PIDL start) to this member. wszName at offset 20.
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct FileStructW {
-    pub cbLen: WORD,
-    pub dummy1: [BYTE; 6],
-    pub uCreationDate: WORD,
-    pub uCreationTime: WORD,
-    pub uLastAccessDate: WORD,
-    pub uLastAccessTime: WORD,
-    pub dummy2: [BYTE; 4],
-    pub wszName: [WCHAR; 1],
-}
-/// ValueWStruct (pidl.h): { WCHAR name[1]; }
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct ValueWStruct {
-    pub name: [WCHAR; 1],
-}
 /// PIDLCPanelStruct (pidl.h): dummy/01 iconIdx/02 offsDispName/06 offsComment/08 szName/10.
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
@@ -244,6 +236,12 @@ pub struct PIDLCPanelStruct {
     pub offsDispName: WORD,
     pub offsComment: WORD,
     pub szName: [WCHAR; 1],
+}
+/// ValueWStruct (pidl.h): { WCHAR name[1]; }
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ValueWStruct {
+    pub name: [WCHAR; 1],
 }
 /// PIDLFontStruct (pidl.h, __REACTOS__).
 #[repr(C, packed)]
@@ -262,21 +260,7 @@ pub struct PIDLPrinterStruct {
     pub offsServer: WORD,
     pub szName: [WCHAR; 1],
 }
-/// network sub-struct (pidl.h): { WORD dummy; CHAR szNames[1]; } — szNames at PIDLDATA+3.
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct PIDLNetworkStruct {
-    pub dummy: WORD,
-    pub szNames: [CHAR; 1],
-}
-/// htmlhelp sub-struct (pidl.h): { WORD dummy; DWORD dummy1; CHAR szName[1]; }
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub struct PIDLHtmlHelpStruct {
-    pub dummy: WORD,
-    pub dummy1: DWORD,
-    pub szName: [CHAR; 1],
-}
+
 /// PIDLDATA (pidl.h): { PIDLTYPE type; union { … } u; } — type/00, union/01 (packed).
 /// Modeled as the type byte + a raw union payload; field access in the bodies is done by
 /// PIDLDATA-relative byte offset (read_unaligned) since the whole structure is packed.
@@ -325,40 +309,16 @@ pub struct FILETIME {
 }
 
 // ── VARIANT / SAFEARRAY / SHCOLUMNID (oaidl.idl / shobjidl.idl) ──────────────────────────
-/// SAFEARRAY (oaidl.idl). Only cDims/pvData are read here.
-#[repr(C)]
-pub struct SAFEARRAY {
-    pub cDims: USHORT,
-    pub fFeatures: USHORT,
-    pub cbElements: ULONG,
-    pub cLocks: ULONG,
-    pub pvData: PVOID,
-    // SAFEARRAYBOUND rgsabound[] follows (flexible)
-}
-/// VARIANT value union — only vt (offset 0) and parray (offset 8) are touched; the
-/// `_brecord`/`_dec` members force the union to 8 bytes on i386 / 16 on amd64-arm64 so
-/// sizeof(VARIANT) is 16/24 (matches the SDK, for VariantClear).
-#[repr(C)]
-pub union VARIANT_value {
-    pub iVal: i16,
-    pub lVal: i32,
-    pub parray: *mut SAFEARRAY,
-    pub _brecord: [usize; 2],
-}
-#[repr(C)]
-pub struct VARIANT {
-    pub vt: VARTYPE,
-    pub wReserved1: WORD,
-    pub wReserved2: WORD,
-    pub wReserved3: WORD,
-    pub val: VARIANT_value,
-}
-/// SHCOLUMNID (shobjidl.idl): { GUID fmtid; DWORD pid; }
-#[repr(C)]
-pub struct SHCOLUMNID {
-    pub fmtid: GUID,
-    pub pid: DWORD,
-}
+// SAFEARRAY: same rule as VARIANT below -- the island owns it. The local copy stopped at
+// `pvData` and left the flexible `rgsabound[]` implicit, so it was not even the same size.
+pub use crate::island::SAFEARRAY;
+// VARIANT: the ISLAND owns this layout. It was a flattened hand-written copy here, which
+// made `crate::island::VARIANT` (bindgen's `tagVARIANT`, an anonymous-union nest reached as
+// `n1.n2.vt` / `n1.n2.n3.<member>`) a DISTINCT nominal type -- so shlfolder.rs and
+// shellutils.rs, which take the island's, could not share one `V_VT!` with CDefView, which
+// took this one. The flat copy also carried only four union members, so `VT_INT_PTR`'s
+// pointer-width `pintVal` slot did not exist at all.
+pub use crate::island::VARIANT;
 
 // ── COM vtables (STDMETHODCALLTYPE == __stdcall on i386 → extern "system") ───────────────
 // Only the slots actually invoked carry real signatures; the rest are pointer-sized
@@ -445,7 +405,6 @@ pub struct IShellFolderVtbl {
         *mut PITEMID_CHILD,
     ) -> HRESULT,
 }
-pub type LPSHELLFOLDER = *mut IShellFolder;
 
 /// `IContextMenu` in the crate's `lpVtbl` shape. The island renders it as a bindgen C++ class
 /// with an opaque `vtable_`, which no translated call site can go through; only the slots with
@@ -506,7 +465,12 @@ pub struct IShellFolder2Vtbl {
     pub SetNameOf: usize,
     pub GetDefaultSearchGUID: usize,
     pub EnumSearches: usize,
-    pub GetDefaultColumn: usize,
+    pub GetDefaultColumn: unsafe extern "system" fn(
+        *mut IShellFolder2,
+        DWORD,
+        *mut ULONG,
+        *mut ULONG,
+    ) -> HRESULT,
     pub GetDefaultColumnState:
         unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLSTATEF) -> HRESULT,
     pub GetDetailsEx: unsafe extern "system" fn(
@@ -523,6 +487,28 @@ pub struct IShellFolder2Vtbl {
     ) -> HRESULT,
     pub MapColumnToSCID:
         unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLUMNID) -> HRESULT,
+}
+
+/// `IShellDetails` (shlobj.h:650, a DECLARE_INTERFACE_ rather than an IDL interface, so
+/// it never reaches the island as a `lpVtbl` struct -- the island renders it as a bindgen
+/// C++ class with `Option<fn>` slots, which cannot be CALLED). Two methods after IUnknown.
+#[repr(C)]
+pub struct IShellDetails {
+    pub lpVtbl: *mut IShellDetailsVtbl,
+}
+#[repr(C)]
+pub struct IShellDetailsVtbl {
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IShellDetails, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IShellDetails) -> ULONG,
+    pub GetDetailsOf: unsafe extern "system" fn(
+        *mut IShellDetails,
+        PCUITEMID_CHILD,
+        UINT,
+        *mut SHELLDETAILS,
+    ) -> HRESULT,
+    pub ColumnClick: unsafe extern "system" fn(*mut IShellDetails, UINT) -> HRESULT,
 }
 
 #[repr(C)]
@@ -652,12 +638,6 @@ pub struct IPersistFolder2Vtbl {
     pub GetCurFolder: unsafe extern "system" fn(*mut IPersistFolder2, *mut LPITEMIDLIST) -> HRESULT,
 }
 
-/// PERSIST_FOLDER_TARGET_INFO (shlobj.h) — crosses this ABI only by pointer, so an opaque
-/// pointee is exact here. Promote its fields before any body dereferences it.
-#[repr(C)]
-pub struct PERSIST_FOLDER_TARGET_INFO {
-    _opaque: [u8; 0],
-}
 
 // IPersistFolder / IPersistFolder3 in the `lpVtbl` shape. The island has bindgen's rendering of
 // both, but that one puts `Option<fn>` in every slot; keeping the crate on ONE vtable shape is
@@ -771,11 +751,6 @@ pub struct IShellItemVtbl {
     pub Compare: unsafe extern "system" fn(*mut IShellItem, *mut IShellItem, SICHINTF, *mut INT) -> HRESULT,
 }
 
-#[repr(C)]
-pub struct PROPERTYKEY {
-    pub fmtid: GUID,
-    pub pid: DWORD,
-}
 pub type REFPROPERTYKEY = *const PROPERTYKEY;
 
 #[repr(C)]
@@ -826,7 +801,10 @@ pub struct IBindCtxVtbl {
     pub RegisterObjectBound: usize,
     pub RevokeObjectBound: usize,
     pub ReleaseBoundObjects: usize,
-    pub SetBindOptions: usize,
+    // Typed rather than left a placeholder: IFileSystemBindData_Constructor calls it.
+    // Same BIND_OPTS as GetBindOptions below, so the two stay one layout.
+    pub SetBindOptions:
+        unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
     pub GetBindOptions:
         unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
     pub GetRunningObjectTable: usize,
@@ -868,53 +846,20 @@ use crate::types::LARGE_INTEGER;
 // would collide by glob with the copies in those modules and make the NAME ambiguous in every
 // consumer that globs both -- six E0659s the first time I tried it.
 
-/// `BIND_OPTS` (objidl.h).
-#[repr(C)]
-struct BIND_OPTS {
-    pub cbStruct: DWORD,
-    pub grfFlags: DWORD,
-    pub grfMode: DWORD,
-    pub dwTickCountDeadline: DWORD,
-}
+// BIND_OPTS / STATSTG come from com-sys through `crate::types`, and WIN32_FIND_DATAW from
+// the island. They used to be private copies here, which typed the vtable slots below but
+// made every one of those slots UNCALLABLE from another module ("type ... is private"). A
+// plain (non-`pub`) import fixes both halves: the type in the signature is public, and the
+// name is not re-exported, so no consumer that globs both this module and its own copy gets
+// the E0659 the comment above warns about.
+use crate::island::WIN32_FIND_DATAW;
 
-/// `ULARGE_INTEGER` (winnt.h) — the QuadPart view; the anonymous Low/High struct is a union
-/// arm nothing in these signatures reads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
+// ULARGE_INTEGER: the island owns it, same rule as VARIANT/SAFEARRAY above. The local copy
+// here kept only the QuadPart arm, so a body that reached for `.u.HighPart` -- which is what
+// utils.cpp's stream copy does -- had nowhere to put it.
+use crate::island::ULARGE_INTEGER;
 
-/// `WIN32_FIND_DATAW` (minwinbase.h).
-#[repr(C)]
-struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
 
-/// `STATSTG` (objidl.h).
-#[repr(C)]
-struct STATSTG {
-    pub pwcsName: LPOLESTR,
-    pub r#type: DWORD,
-    pub cbSize: ULARGE_INTEGER,
-    pub mtime: FILETIME,
-    pub ctime: FILETIME,
-    pub atime: FILETIME,
-    pub grfMode: DWORD,
-    pub grfLocksSupported: DWORD,
-    pub clsid: CLSID,
-    pub grfStateBits: DWORD,
-    pub reserved: DWORD,
-}
 
 /// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
 #[repr(C)]

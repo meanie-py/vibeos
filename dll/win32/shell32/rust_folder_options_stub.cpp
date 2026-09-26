@@ -1,3 +1,7 @@
+/* INERT since 2026-09-24: not in CMake. This class is Rust now, on the crate's atlwin
+ * substrate (sdk/lib/rust/shell32-rust/src/atl_stub_windows.rs). Kept on disk as the
+ * reference the port was checked against. */
+
 /* rust_folder_options_stub.cpp — the ONE ATL class dialogs/folder_options.cpp still needs.
  *
  * `dialogs/folder_options.cpp` is otherwise fully translated (shell32-rust/src/dialogs/

@@ -404,7 +404,7 @@ unsafe fn co_UserShowCaret_impl(Window: PWND) -> BOOL {
         (*ThreadQueue).CaretInfo.Visible = 1;
         pWnd = ValidateHwndNoErr((*ThreadQueue).CaretInfo.hWnd);
         if (*ThreadQueue).CaretInfo.Showing == 0 && !pWnd.is_null() {
-            IntNotifyWinEvent(EVENT_OBJECT_SHOW, pWnd, OBJID_CARET as LONG, OBJID_CARET as LONG, 0);
+            IntNotifyWinEvent(EVENT_OBJECT_SHOW, pWnd, OBJID_CARET as LONG, CHILDID_SELF as LONG, 0);
         }
         if ((*pusi(gpsi)).dtCaretBlink as INT) > 0 {
             IntSetTimer(pWnd, IDCARETTIMER as UINT_PTR, (*pusi(gpsi)).dtCaretBlink, Some(CaretSystemTimerProc), TMRF_SYSTEM as INT);

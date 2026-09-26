@@ -3,6 +3,7 @@ use win32k_sys::win32k::*;
 use core::ffi::c_void;
 use crate::floatobj::*;
 use ntkrnl_sys::base::STATUS_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // IntLPtoDP/IntDPtoLP (coord.h `static inline`) + INTERNAL_APPLY_MATRIX (FORCEINLINE):
 // no exported symbols — reimplement inline (mirrors dcutil.rs). DC_vUpdate* come via glob.
@@ -455,8 +456,13 @@ pub unsafe extern "system" fn NtGdiGetAppClipBox(hdc: HDC, prc: LPRECT) -> i32 {
         Status = SafeProbeForWrite(prc as *mut core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
         if !NT_SUCCESS(Status) {
             iComplexity = ERROR as i32;
-        } else {
-            *prc = rect;
+        } else if !crate::copy::publish_to_user(
+            prc as *mut core::ffi::c_void,
+            core::ptr::addr_of!(rect) as *const core::ffi::c_void,
+            core::mem::size_of::<RECT>(),
+        ) {
+            // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+            iComplexity = ERROR as i32;
         }
     }
 
@@ -623,8 +629,15 @@ pub unsafe extern "system" fn NtGdiRectVisible(hDC: HDC, UnsafeRect: LPRECT) -> 
     }
 
     Status = SafeProbeForRead(UnsafeRect as *const core::ffi::c_void, core::mem::size_of::<RECT>(), 1);
-    if NT_SUCCESS(Status) {
-        Rect = *(UnsafeRect as *mut RECTL);
+    if NT_SUCCESS(Status)
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        && !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(Rect) as *mut core::ffi::c_void,
+            UnsafeRect as *const core::ffi::c_void,
+            core::mem::size_of::<RECTL>(),
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {

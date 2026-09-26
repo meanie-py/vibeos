@@ -348,6 +348,8 @@ unsafe fn release(this: *mut CExeDropHandler) -> ULONG {
         - 1;
     if refs == 0 {
         Shell32RustObjectUnlock();
+        // ~CExeDropHandler: the Load() copy was leaked on every drop (upstream 763ce84cf55).
+        crate::wine::shellole::SHFree((*this).sPathTarget.cast());
         HeapFree(GetProcessHeap(), 0, this.cast());
     }
     refs as ULONG
@@ -484,6 +486,9 @@ unsafe fn load(this: *mut CExeDropHandler, file: LPCOLESTR, _mode: DWORD) -> HRE
     let target =
         crate::wine::shellole::SHAlloc((len + 1) * core::mem::size_of::<WCHAR>()) as LPWSTR;
     (*this).sPathTarget = target;
+    if target.is_null() {
+        return E_OUTOFMEMORY;
+    }
     core::ptr::copy_nonoverlapping(file, target, len + 1);
     S_OK
 }

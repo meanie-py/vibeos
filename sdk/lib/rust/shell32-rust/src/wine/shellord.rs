@@ -9,10 +9,10 @@
 //!
 //! ⚠ INTEGRATION NOTE: `ShellMessageBoxA` is a genuine C-variadic export (`...` + va_list
 //! forwarded to FormatMessageA). Stable Rust cannot DEFINE a variadic fn (`c_variadic`,
-//! rust-lang#44930), so the variadic entry point is a 3-line trampoline in
-//! `dll/win32/shell32/rust_varargs_shim.c` and the body below is its fixed-arity `_v`
-//! twin (see `sdk/lib/rust/varargs-rust` for the contract). The exported ordinal-183
-//! symbol + its cdecl variadic ABI are unchanged.
+//! rust-lang#44930). It was a 3-line trampoline in `dll/win32/shell32/rust_varargs_shim.c`;
+//! since 2026-09-24 `ShellMessageBoxA` below RECEIVES the varargs as fixed slots
+//! (va-slots-rust) and calls the fixed-arity `_v` body. The exported ordinal-183 symbol + its
+//! cdecl variadic ABI are unchanged.
 //!
 //! ABI: WINAPI -> extern "system" (i386 `_Name@N`); plain cdecl/EXTERN_C -> extern "C"
 //! (i386 `_Name`). Imports declared with the convention matching each obj decoration
@@ -105,6 +105,11 @@ const SSF_STRUCTONLY: DWORD = SSF_NOCONFIRMRECYCLE
     | SSF_WIN95CLASSIC
     | SSF_SORTCOLUMNS
     | SSF_STARTPANELON;
+// SSF_ALL / SSF_IMPLEMENTED (shellord.c, upstream 4fecc908e7d). SERVERADMINUI is
+// written by Explorer and read by IsOS(), never through this struct.
+const SSF_SERVERADMINUI: DWORD = 0x00000004;
+const SSF_ALL: DWORD = 0x07FF_FFFF & !0x40;
+const SSF_IMPLEMENTED: DWORD = SSF_ALL & !SSF_SERVERADMINUI;
 
 // SHELLSTATE w0 bit indices (gcc bitfield packing of the first 17 :1 fields)
 const SS_SHOWALLOBJECTS: u32 = 0;
@@ -1205,9 +1210,15 @@ pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD
 
     if bSet != 0 {
         let mut changed: DWORD = 0;
-        if (dwMask & !g_CachedSSF) != 0 {
+        // The whole struct is about to be written to the registry, so every member
+        // not yet cached must be read back first, except the ones being set. The
+        // pre-fix test was `dwMask & ~g_CachedSSF`, which skipped the backfill
+        // whenever the flag being set was already cached and wrote whatever gpss
+        // held for everything else (upstream 4fecc908e7d, CORE-20585).
+        let notcached: DWORD = !g_CachedSSF & SSF_IMPLEMENTED;
+        if (notcached & !dwMask) != 0 {
             let mut tempstate: SHELLSTATE = core::mem::zeroed();
-            SHGetSetSettings(&mut tempstate, dwMask, FALSE); // read entries not in g_CachedSSF
+            SHGetSetSettings(&mut tempstate, notcached & !dwMask, FALSE); // read entries not in gpss/g_CachedSSF
         }
 
         // SHGSS_WriteAdv helper
@@ -1395,8 +1406,12 @@ pub unsafe extern "system" fn SHGetSetSettings(lpss: LPSHELLSTATE, dwMask: DWORD
                 cache_bit!(1, SS_STARTPANELON, SSF_STARTPANELON);
             } else {
                 SHELL32_GetDefaultShellState(gpss);
-                read = 0;
+                read = 0; // the advanced items we read are no longer valid in gpss
                 g_CachedSSF = SSF_STRUCTONLY;
+                // HACKFIX (upstream 39ad1b6824f, CORE-20585): persist the defaults
+                // when no ShellState value exists yet.
+                rss.ss = *gpss;
+                SHELL32_WriteRegShellState(&mut rss);
             }
         }
         // SHGSS_GetSetStruct(SHGSS_GetField): gpss -> lpss
@@ -1469,13 +1484,40 @@ pub unsafe extern "system" fn RegisterShellHook(hWnd: HWND, dwType: DWORD) -> BO
     FALSE
 }
 
-/// ShellMessageBoxA [SHELL32.183] — fixed-arity twin of the C-variadic entry point in
-/// `dll/win32/shell32/rust_varargs_shim.c`. The C side exists only to do the `va_start`
-/// that stable Rust cannot (`c_variadic`, rust-lang#44930) and to keep the EXPORTED
-/// ordinal-183 symbol's variadic cdecl (WINAPIV) ABI for external callers; `ap` is a
-/// pointer to its `va_list` — which is exactly what FormatMessageA's `Arguments`
-/// parameter wants, so it forwards unchanged. All the logic stays here.
+/// ShellMessageBoxA [SHELL32.183], the EXPORTED variadic (cdecl, WINAPIV) entry point.
+///
+/// Stable Rust cannot DEFINE a C-variadic (`c_variadic`, rust-lang#44930), so this used to be
+/// a `va_start` trampoline in rust_varargs_shim.c. It RECEIVES the varargs instead, the
+/// va-slots way (`va_slots_rust`, which freeldr's and the kernel's printf family already use):
+/// on all three of our targets a variadic call puts its arguments in the same slots as a
+/// fixed-arity call with that many parameters (i386 cdecl stack; win64 RCX-R9 then stack;
+/// arm64 x0-x7 then stack, where Windows passes varargs in integer registers), and `va_list`
+/// is a plain pointer. So the trailing slots are declared as ordinary parameters and staged
+/// into an array that a `va_list` points at. FormatMessageA takes a `va_list *` for
+/// `Arguments`, which is what `&ap` is.
 #[no_mangle]
+pub unsafe extern "C" fn ShellMessageBoxA(
+    hInstance: HINSTANCE,
+    hWnd: HWND,
+    lpText: LPCSTR,
+    lpCaption: LPCSTR,
+    uType: UINT,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) -> c_int {
+    let mut stage = va_slots_rust::stage(&[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    let mut ap: *mut c_void = stage.as_mut_ptr() as *mut c_void;
+    ShellMessageBoxA_v(
+        hInstance,
+        hWnd,
+        lpText,
+        lpCaption,
+        uType,
+        &mut ap as *mut *mut c_void as *mut c_void,
+    )
+}
+
+/// The body of `ShellMessageBoxA`; `ap` points at the `va_list` FormatMessageA consumes.
 pub unsafe extern "C" fn ShellMessageBoxA_v(
     hInstance: HINSTANCE,
     hWnd: HWND,
@@ -1988,6 +2030,11 @@ pub unsafe extern "system" fn SHRunControlPanel(commandLine: LPCWSTR, parent: HW
     // initialize with L"shell32.dll,Control_RunDLL "
     let init_len = wcslen(W_CONTROL_RUNDLL.as_ptr());
     core::ptr::copy_nonoverlapping(W_CONTROL_RUNDLL.as_ptr(), parameters.as_mut_ptr(), init_len + 1);
+    // IShellDispatch::ControlPanelItem passes a script-supplied BSTR straight through,
+    // and a null one would crash wcscat (upstream a83411cfefe).
+    if commandLine.is_null() {
+        return FALSE;
+    }
     wcscat(parameters.as_mut_ptr(), commandLine);
 
     (ShellExecuteW(
@@ -2846,7 +2893,31 @@ pub unsafe extern "system" fn SHSetLocalizedName(
 /// LinkWindow_RegisterClass [SHELL32.258] (stub)
 #[no_mangle]
 pub unsafe extern "system" fn LinkWindow_RegisterClass() -> BOOL {
-    TRUE
+    // Superclass comctl32's SysLink as "Link Window". The pre-fix stub returned TRUE
+    // having registered nothing, so a caller's CreateWindow on the class then failed
+    // (upstream d6cc284435e, which moved it to utils.cpp).
+    use crate::island as i;
+    static W_SYSLINK: [u16; 8] = [
+        b'S' as u16, b'y' as u16, b's' as u16, b'L' as u16, b'i' as u16, b'n' as u16,
+        b'k' as u16, 0,
+    ];
+    static W_LINK_WINDOW: [u16; 12] = [
+        b'L' as u16, b'i' as u16, b'n' as u16, b'k' as u16, b' ' as u16, b'W' as u16,
+        b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, 0,
+    ];
+    let mut iccx: i::INITCOMMONCONTROLSEX = core::mem::zeroed();
+    iccx.dwSize = core::mem::size_of::<i::INITCOMMONCONTROLSEX>() as i::DWORD;
+    iccx.dwICC = i::ICC_LINK_CLASS as i::DWORD;
+    i::InitCommonControlsEx(&mut iccx);
+
+    let mut wcx: i::WNDCLASSEXW = core::mem::zeroed();
+    wcx.cbSize = core::mem::size_of::<i::WNDCLASSEXW>() as i::UINT;
+    if i::GetClassInfoExW(core::ptr::null_mut(), W_SYSLINK.as_ptr(), &mut wcx) == 0 {
+        return FALSE;
+    }
+    wcx.lpszClassName = W_LINK_WINDOW.as_ptr();
+    (i::RegisterClassExW(&wcx) != 0
+        || i::GetLastError() == i::ERROR_CLASS_ALREADY_EXISTS as i::DWORD) as BOOL
 }
 
 /// LinkWindow_UnregisterClass [SHELL32.259] (stub)

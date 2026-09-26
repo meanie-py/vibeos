@@ -1828,9 +1828,10 @@ pub unsafe extern "system" fn NtSetInformationThread(
                             if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*(ProcThread as *mut _ETHREAD)).RundownProtect)) != 0 {
                                 Teb = (*(ProcThread as *mut _ETHREAD)).Tcb.Teb;
                                 if !Teb.is_null() && IsWow64 {
-                                    // TEB32 sits at TEB64+0x2000 (MmCreateTeb's
-                                    // combined region); its TlsSlots are ULONG.
-                                    let Teb32 = (Teb as *mut u8).add(0x2000); // nolint: magic-offset (WoW64 combined-region layout, see MmCreateTeb)
+                                    // TEB32 shares TEB64's combined region
+                                    // (MmCreateTeb); its TlsSlots are ULONG.
+                                    let Teb32 =
+                                        (Teb as *mut u8).add(ntkrnl_sys::wow64::WOW64_TEB32_OFFSET);
                                     if TlsIndex > (TLS_MINIMUM_AVAILABLE - 1) as ULONG_PTR {
                                         if TlsIndex < ((TLS_MINIMUM_AVAILABLE + TLS_EXPANSION_SLOTS) - 1) as ULONG_PTR {
                                             let Exp32 = *(Teb32.add(0xF94) as *mut u32); // nolint: magic-offset (TEB32.TlsExpansionSlots)

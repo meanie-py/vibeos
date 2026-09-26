@@ -38,6 +38,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import anthropic
+from anthropic.types import MessageParam
 from openai import OpenAI
 
 from . import config
@@ -379,12 +380,21 @@ def _call_deepseek(model: str, system: str, user: str) -> tuple[str, int, int]:
 
 def _call_claude(model: str, system: str, user: str) -> tuple[str, int, int]:
     client = anthropic.Anthropic()
+    # Annotated, not inlined: pyright infers a bare literal as dict[str, str], and the
+    # SDK's `role` is Literal["user", "assistant"] -- so the inline form matches no
+    # overload of `create` even though it is correct at runtime.
+    messages: list[MessageParam] = [{"role": "user", "content": user}]
+    # No `temperature=0.0` here: the Messages API dropped the parameter (anthropic
+    # 1.5.0 has zero occurrences of it, and `create` takes no **kwargs), so passing it
+    # raised TypeError on EVERY call down this path -- pyright's "no overloads match"
+    # was reporting a crash, not a typing nit. The DeepSeek path below still pins
+    # temperature; it goes through the OpenAI client, which still accepts it. This
+    # path therefore samples at the service default and is no longer deterministic.
     msg = client.messages.create(
         model=model,
         max_tokens=8192,
-        temperature=0.0,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=messages,
     )
     text = "".join(b.text for b in msg.content if isinstance(b, anthropic.types.TextBlock))
     return text, msg.usage.input_tokens, msg.usage.output_tokens

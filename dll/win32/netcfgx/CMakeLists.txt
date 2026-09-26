@@ -68,11 +68,9 @@ add_custom_target(rust_netcfgx DEPENDS ${NETCFGX_RUST_LIB})
 #     propertypage.c
 #     precomp.h)
 
-# rust_strsafe_shim.c is a C-language gap filler, not a translation left in C: strsafe.h's
-# StringCchPrintfW is a `static inline`, so no object file carries the symbol, and stable Rust
-# can neither define a C-variadic fn nor use va_start. See the file's header comment.
+# rust_strsafe_shim.c is no longer built (retired 2026-09-25: the strsafe printf family is strsafe-rust macros that CALL
+# msvcrt's variadic _snwprintf, which stable Rust can do; the file stays on disk, inert).
 list(APPEND SOURCE
-    rust_strsafe_shim.c
     ${CMAKE_CURRENT_BINARY_DIR}/netcfgx_stubs.c)
 
 add_library(netcfgx MODULE
@@ -88,6 +86,6 @@ target_link_libraries(netcfgx ${NETCFGX_RUST_LIB} uuid wine)
 target_link_options(netcfgx PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(netcfgx rust_netcfgx)
 add_importlibs(netcfgx rpcrt4 setupapi advapi32 iphlpapi dhcpcsvc ole32 user32 comctl32 ws2_32 msvcrt kernel32 ntdll)
-# add_pch dropped with the C: the only TUs left are rust_strsafe_shim.c (windef/winbase/strsafe
-# only) and the generated netcfgx_stubs.c, neither of which includes precomp.h.
+# add_pch dropped with the C: the only TU left is the generated netcfgx_stubs.c, which does not
+# include precomp.h.
 add_cd_file(TARGET netcfgx DESTINATION reactos/system32 FOR all)

@@ -61,6 +61,7 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_import_cc.py",
     "pytest:tools/test_scan_invented_constants.py",
     "pytest:tools/test_scan_octal_literals.py",
+    "pytest:tools/test_cohab_census.py",
     "pytest:tools/test_scan_orphan_modules.py",
     "pytest:tools/test_scan_self_recursive.py",
     "pytest:tools/test_scan_wide_literals.py",

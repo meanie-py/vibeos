@@ -29,8 +29,12 @@ extern "C" {
 
 const UNICODE_NULL: WCHAR = 0;
 const ANSI_NULL: CHAR = 0;
-// UNICODE_STRING_MAX_CHARS = 0x7FFE, UNICODE_STRING_MAX_BYTES = 0xFFFE (ntdef.h)
-const UNICODE_STRING_MAX_CHARS: USHORT = 0x7FFE;
+// UNICODE_STRING_MAX_CHARS = 32767 (0x7FFF), UNICODE_STRING_MAX_BYTES = 65534 (0xFFFE)
+// -- sdk/include/xdk/ntbasedef.h:620-621. This said 0x7FFE (32766): an off-by-one
+// carried in from the translation, which made every guard here fire one character
+// early. Caught 2026-09-21 by scan_const_contradictions, once rtl-strings gained
+// the correct value and the two disagreed. Every bindgen island says 32767.
+const UNICODE_STRING_MAX_CHARS: USHORT = 32767;
 const UNICODE_STRING_MAX_BYTES: USHORT = 0xFFFE;
 const ERROR_CALL_NOT_IMPLEMENTED: DWORD = 120;
 
@@ -200,7 +204,7 @@ pub unsafe extern "system" fn GetEnvironmentVariableA(
 pub unsafe extern "system" fn GetEnvironmentVariableW(
     lpName: LPCWSTR,
     lpBuffer: LPWSTR,
-    nSize: DWORD,
+    mut nSize: DWORD,
 ) -> DWORD {
     let mut VarName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
@@ -214,6 +218,15 @@ pub unsafe extern "system" fn GetEnvironmentVariableW(
     };
     let mut Status: NTSTATUS = 0;
     let mut UniSize: USHORT = 0;
+
+    // A caller may legitimately pass lpBuffer = NULL to ask only for the required
+    // size. Without this, UniSize stays nonzero, RtlInitEmptyUnicodeString builds a
+    // UNICODE_STRING with a NULL Buffer and a nonzero MaximumLength, and the query
+    // below writes through it. Reachable from any usermode caller, in a DLL every
+    // process loads. Upstream-Commit: 242937b1229
+    if lpBuffer.is_null() {
+        nSize = 0;
+    }
 
     if nSize <= (UNICODE_STRING_MAX_CHARS - 1) as DWORD {
         if nSize != 0 {

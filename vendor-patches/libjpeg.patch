@@ -1,0 +1,99 @@
+# IJG libjpeg 9f — our delta from pristine, headers only.
+#
+# Upstream: https://www.ijg.org/files/jpegsrc.v9f.tar.gz
+#           sha256 04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b
+# Apply from sdk/include/reactos/libs/libjpeg/ with:
+#   patch -p1 < vendor-patches/libjpeg.patch
+#
+# NOTE the tree is SPLIT: sources live in dll/3rdparty/libjpeg and are byte-identical
+# to 9f; only one header carries a delta.
+#
+# WHY A PATCH AND NOT A BUILD FLAG — this was tried and refused. Upstream defines the
+# macros UNGUARDED: `#define GLOBAL(type) type` and `#define EXTERN(type) extern type`.
+# A command-line -D is overridden the moment the header is processed, and the patch
+# rewrites the macro BODIES to inject JPEG_API/JPEG_IMPEXP, tokens vanilla libjpeg does
+# not contain. Getting this wrong breaks every DLL export.
+#
+# BUMPED 9d -> 9f (2026-09-20). The hunk applied to 9f with no fuzz and no rejects,
+# which is what "the tree is pristine apart from one header" buys you. jconfig.h is
+# ours and needed no change: upstream's jconfig.txt is byte-identical between 9d and
+# 9f, and the macros ours omits (BMP_SUPPORTED, GIF_SUPPORTED, TARGA_SUPPORTED,
+# TWO_FILE_COMMANDLINE and friends) are cjpeg/djpeg application switches the library
+# does not read.
+#
+# DELETED IN THE SAME PASS: sdk/include/reactos/libs/libjpeg/rosdiff.patch, an in-tree
+# copy of this exact hunk with repo-root-relative paths. It was the precedent this
+# directory followed before vendor-patches existed, and keeping both means two records
+# of one fact — it was already stale at 9d's line offsets and nothing referenced it.
+#
+# LINEAGE WARNING: the IJG 9.x line is NOT libjpeg-turbo, which is what most
+# distributions ship and where most CVE traffic is reported. Match advisories against
+# IJG releases, not turbo ones.
+#
+--- a/jmorecfg.h
++++ b/jmorecfg.h
+@@ -238,14 +238,62 @@
+  * or code profilers that require it.
+  */
+ 
++#ifdef _WIN32
++#  if defined(ALL_STATIC)
++#    if defined(JPEG_DLL)
++#      undef JPEG_DLL
++#    endif
++#    if !defined(JPEG_STATIC)
++#      define JPEG_STATIC
++#    endif
++#  endif
++#  if defined(JPEG_DLL)
++#    if defined(JPEG_STATIC)
++#      undef JPEG_STATIC
++#    endif
++#  endif
++#  if defined(JPEG_DLL)
++/* building a DLL */
++#    define JPEG_IMPEXP __declspec(dllexport)
++#  elif defined(JPEG_STATIC)
++/* building or linking to a static library */
++#    define JPEG_IMPEXP
++#  else
++/* linking to the DLL */
++#    define JPEG_IMPEXP __declspec(dllimport)
++#  endif
++#  if !defined(JPEG_API)
++#    define JPEG_API __cdecl
++#  endif
++/* The only remaining magic that is necessary for cygwin */
++#elif defined(__CYGWIN__)
++#  if !defined(JPEG_IMPEXP)
++#    define JPEG_IMPEXP
++#  endif
++#  if !defined(JPEG_API)
++#    define JPEG_API __cdecl
++#  endif
++#endif
++
++/* Ensure our magic doesn't hurt other platforms */
++#if !defined(JPEG_IMPEXP)
++#  define JPEG_IMPEXP
++#endif
++#if !defined(JPEG_API)
++#  define JPEG_API
++#endif
++
+ /* a function called through method pointers: */
+ #define METHODDEF(type)		static type
+ /* a function used only in its module: */
+ #define LOCAL(type)		static type
+ /* a function referenced thru EXTERNs: */
+-#define GLOBAL(type)		type
++#define GLOBAL(type)		type JPEG_API
+ /* a reference to a GLOBAL function: */
+-#define EXTERN(type)		extern type
++#ifndef EXTERN
++# define EXTERN(type)		extern JPEG_IMPEXP type JPEG_API
++/* a reference to a "GLOBAL" function exported by sourcefiles of utility progs */
++#endif /* EXTERN */
+ 
+ 
+ /* This macro is used to declare a "method", that is, a function pointer.

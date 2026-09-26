@@ -13,8 +13,10 @@ direction. What retires is the i386 kernel, HAL and boot path; what stays is the
 i386 user-mode PE set, for as long as we run x86 apps at all. No date attaches to
 it and nothing here proposes ripping it out in one go; see **Sequencing**.
 
-Opened 2026-09-13 by the `research` lane, as a survey. The depth work below is
-mostly owned by `wow64-amd64`; see **Ownership** before starting anything.
+Opened 2026-09-13 by the `research` lane, as a survey. The depth work below was
+mostly owned by `wow64-amd64` when this was written; the split has since been
+resolved and most of it is now `research`'s — see **Ownership**, which is the
+one place that answers it.
 
 ---
 
@@ -257,24 +259,385 @@ a ladder to watch", and neither was visible from reading.
 
 ## Real gaps, ranked by what a user hits
 
-1. **Guest processes.** `CreateProcess` from a 32-bit guest, and cross-process
-   `CreateRemoteThread`. Every installer and every app that shells out hits this.
-   `wow64-plan.md` calls it "the largest remaining hole" and names the CSR-LPC-32
-   layer as its prerequisite — which just landed. Its status is therefore
-   genuinely **unknown**, not known-broken, and measuring it on today's tree is
-   the first move rather than a design question.
+1. **Guest processes — GAP CLOSED 2026-09-19, both halves.** `CreateProcess`
+   from a 32-bit guest, and cross-process `CreateRemoteThread`. Every installer
+   and every app that shells out hits this. `wow64-plan.md` calls it "the largest
+   remaining hole" and names the CSR-LPC-32 layer as its prerequisite — which
+   landed. Its status was therefore genuinely **unknown**, not known-broken, so
+   measuring it on today's tree was the first move rather than a design question.
 
-2. **Registry redirection — LARGELY DONE 2026-09-13, one function left.** The wow64-amd64
+   **The measurement now exists.** `tools/fex/hello-compute/Spawn32.c` is an
+   eleventh guest that self-spawns (same .exe plus one argument, so no second
+   binary can go unstaged) and reports five rungs: `CreateProcessW`
+   (CREATE_SUSPENDED), `IsWow64Process` on the child, `ResumeThread` across the
+   process boundary, the child reaching its exit, and the exit code surviving.
+
+   **It is DIAGNOSTIC, not a parity guest**, and that distinction is new
+   machinery (`ladder.DIAGNOSTIC`). A guest that measures a gap we already know
+   is open must not red every lane's gate — the fleet's answer to a check that
+   reds for a known reason is to disable the check. So `ladder.check` never fails
+   on it and `ladder.summary` prints its code; when it comes back `0x600D` the
+   summary says so **in words** and tells the reader to promote it into `LADDER`,
+   where a regression can red it again. The grading split is not a staging split:
+   `staged_guests()` still includes it, because CMake's ladder list is
+   all-or-nothing and an unbuilt diagnostic guest would cost every parity guest
+   its coverage.
+
+   **MEASURED 2026-09-19 on amd64, and the prediction below was WRONG — the
+   real answer is worse and more interesting.** A 32-bit guest calling
+   `CreateProcessW` does not get a clean refusal. `NtCreateProcessEx`
+   **SUCCEEDS**, `MmCreatePeb` builds the child's WoW64 i386 PEB32, two
+   `NtWriteVirtualMemory` calls put the process parameters into it — and then
+   the kernel takes **BUGCHECK 0x1E (`c0000005`)**. All ten parity guests PASS
+   on the same boot; the machine dies only when spawn32 runs.
+
+   Symbolicated against `ntkrnlmp.exe` — **not** `ntoskrnl.exe`, which is the
+   trap the roadmap registry already documents, and which cost me one wrong
+   answer before I caught it (`ntoskrnl.exe` resolved the faulting PC to
+   `NtShutdownSystem`, a plausible-looking symbol from an image the machine is
+   not running):
+
+        faulting PC   ProbeForWrite         ex-rust/src/exintrin.rs:267
+        caller        MiDoPoolCopy          ntoskrnl-rust/src/ARM3/virtual.rs:987
+
+   **Root cause, confirmed against the C rather than inferred.**
+   `ntoskrnl/mm/ARM3/virtual.c:876` wraps both probes in
+   `_SEH2_TRY { … } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status =
+   _SEH2_GetExceptionCode(); }`. The Rust translation kept the body and
+   **dropped the handler**, at four probe sites across `MiDoMappedCopy` and
+   `MiDoPoolCopy`. So `ProbeForWrite` raises via `ExRaiseAccessViolation()`,
+   nothing catches it, and KMODE_EXCEPTION_NOT_HANDLED follows. The tell is
+   visible in the Rust alone, without the C beside it: `_FailedInProbe` is set
+   to 1, the probe is called, it is set back to 0, and a later `if Status < 0 {
+   if _FailedInProbe != 0 { … } }` recovery branch tests a combination nothing
+   between those lines can now produce. **A recovery path that has become
+   unreachable is the fingerprint of a deleted handler.**
+
+   **This is NOT a WoW64 bug and the entry is filed here only because spawn32
+   is what found it.** Any caller of `NtWriteVirtualMemory` into another
+   process with a bad target address and `PreviousMode != KernelMode` reaches
+   the same sites; a 32-bit guest was merely the first thing in the tree
+   to do it. The sanctioned fix is the validate-first `probe.rs`
+   (`Result<T, NTSTATUS>`) idiom that `dummy-pseh-verdict.md` already prescribes
+   and that SE and OB have migrated to — an unfinished migration, not a new
+   mechanism. Registered in the roadmap's bug registry; owned there, not here.
+
+   **FIXED 2026-09-19, and the measurement moved on.** All four probe sites and all three
+   copies in `MiDoMappedCopy`/`MiDoPoolCopy` now use `ntkrnl_sys::probe`
+   (`probe_user_buffer` + `safe_copy_raw`). Converting only the probes was not enough and
+   the tree said so rather than my reasoning it out: the same 0x1E came back inside
+   `memcpy`, because the C's TRY covered `RtlCopyMemory` too. With both fixed the boot is
+   clean and spawn32 reports a verdict instead of killing the machine.
+
+   **The real next blocker, now visible for the first time:**
+
+        NtCreateProcessEx        => 00000000   (child created, PEB32 built)
+        NtWriteVirtualMemory     => 00000000
+        NtWriteVirtualMemory     => 00000000
+        NtWriteVirtualMemory     => 8000000d   STATUS_PARTIAL_COPY
+        CreateProcessW           => FALSE, GetLastError 0x12b (ERROR_PARTIAL_COPY)
+
+   **AND THAT IS NOW FIXED TOO — the path reaches the refusal this entry predicted
+   at the top, three bugs later.** The failing write was the one kernel32 calls
+   "Write the PEB Pointer", into `RemotePeb->ProcessParameters`. `RemotePeb` comes
+   from `TEB->NtTib.ArbitraryUserPointer`, which `ps/process.c:866` fills in as
+   `CurrentThread->Tcb.Teb->NtTib.ArbitraryUserPointer = Process->Peb`. Two
+   compounding mismatches for a 32-bit caller: `KTHREAD.Teb` is the SIXTY-FOUR-bit
+   TEB, and the value is the child's 64-bit PEB when a 32-bit parent needs its
+   PEB32. The guest was reading a TEB32 slot nothing had ever written.
+   `Wow64pPublishRemotePeb32` in `wow64_manual.c` now bridges it — the same shape,
+   and the same fix, as the win32k last-error channel already in `wow64.c`, which
+   exists because the kernel writes TEB64 and the guest reads TEB32. Today's state:
+
+        NtCreateProcessEx        => 00000000
+        NtWriteVirtualMemory x4  => 00000000      (all four now succeed)
+        NtCreateThread           => c0000002      REFUSED, cross-process (task #64)
+        CreateProcessW           => FALSE, GetLastError 1 (ERROR_INVALID_FUNCTION)
+
+   **So the original traced prediction was right about the DESTINATION and wrong
+   about it being NEXT** — three defects stood in front of it: a dropped
+   `_SEH2_EXCEPT` (bugcheck), a wrong `STATUS_PARTIAL_COPY` constant hiding in the
+   dead error path, and this missing TEB32 channel. Each was invisible until the
+   one before it was fixed. That is the general shape worth keeping: **a stack of
+   bugs is discovered strictly in order, and "the next blocker" is only ever
+   knowable one at a time.**
+
+   **Task #64 turned out to be TWO tasks, and the cheap half is DONE (2026-09-19).**
+   The thunk refused every `ProcessHandle != -1` on one reason — the target's
+   wow64.dll must run a per-thread entry and `Wow64ProcessPendingCrossProcessItems`
+   is empty — but that reason only covers `CreateRemoteThread` into a **running**
+   process. The **initial** thread of a brand-new child needs no channel at all,
+   and the tree says so in two places: the child's `Wow64LdrpInitialize` takes the
+   guest entry from `PEB32->ImageBaseAddress` and the image's own NT headers,
+   never from a CONTEXT the parent passed (`wow64.c`), and it is reached from
+   `LdrpInitializeProcess` on the strength of `ProcessWow64Information` on ITSELF
+   (`ntdll-rust/src/ldr/ldrinit.rs:2379`), so it does not care who created the
+   thread. The standing existence proof is that winlogon spawns all ten ladder
+   guests exactly this way; the only difference for a 32-bit parent is that its
+   `NtCreateThread` passes through the thunk and a native parent's does not.
+
+   `Wow64pCreateForeignInitialThread` (`wow64_manual.c`) now takes that half:
+   `RtlCreateUserThread` against the foreign handle, which does the stack
+   allocation and host CONTEXT build in the target. The guest's
+   CONTEXT32/INITIAL_TEB32 are deliberately ignored — they describe a 32-bit start
+   the child recomputes for itself. Two conditions gate it, both load-bearing
+   rather than defensive: the target must be a WoW64 process (a 32-bit parent
+   spawning a **64-bit** child is a different, still-refused case), and the
+   target's `PEB->Ldr` must be NULL, which is the kernel's word for "has not run
+   user code yet" and exactly the precondition the argument above rests on. A
+   running target falls through to the old refusal, which is the
+   `CreateRemoteThread` half and still owed.
+
+   **Measured the same day, and it moved:**
+
+        [WOW64] NtCreateThread: cross-process INITIAL thread pid=2ec tid=2f0 suspended=1
+        [WOW64] NtCreateThread(0x37) [manual] => 00000000
+
+   All ten parity guests PASS on the same boot, no bugcheck.
+
+   **The FOURTH defect in the stack, and the harness named it itself:**
+
+        [WOW64] LPC: api 00010000 has NO payload marshaller — body copied verbatim,
+                     fields past CsrCaptureData may be wrong
+        [WOW64] LPC request: Api=00010000 DataLen=156
+        [WOW64] LPC reply: api Status=c0000008          STATUS_INVALID_HANDLE
+        [spawn32] rung1 CreateProcessW FAILED, GetLastError 0x6   ERROR_INVALID_HANDLE
+
+   `0x00010000` is `BasepCreateProcess`, and `BASE_CREATE_PROCESS`
+   (`subsys/win/basemsg.h:84`) opens with `HANDLE ProcessHandle; HANDLE
+   ThreadHandle; CLIENT_ID ClientId;` — four pointer-width fields before anything
+   else, so the verbatim body copy hands basesrv handles assembled from the wrong
+   words. It is the identical failure `WOW64_CSRAPI_BASEP_CREATETHREAD` was written
+   for, one struct larger, and the "no payload marshaller" warning existing at all
+   is why it cost one boot instead of a hunt. Note this is a marshaller, not thread
+   creation: **task #64's remaining half is `CreateRemoteThread`, and this is a
+   separate, better-understood piece of work in front of it.**
+
+   **DONE 2026-09-19, and it cost far less than this paragraph first estimated.** The
+   estimate assumed the embedded `BASE_SXS_CREATEPROCESS_MSG` had to be widened — two
+   `SIZE_T`s, three pointers, four `UNICODE_STRING`s whose `Buffer`s are guest pointers.
+   It does not: `BaseSrvCreateProcess` (`smss-csrss-rust/src/basesrv/proc.rs:97`) never
+   reads `Sxs` at all, because the SxS work belongs to a different API
+   (`BaseSrvSxsCreateActivationContext`). Reading the server before budgeting the client
+   turned thirty fields into eleven. `Sxs` is zeroed rather than left as whatever the
+   verbatim copy put there, and a non-zero guest `Sxs.Flags` now prints, so the day the
+   server starts reading it that announces itself instead of going quiet.
+
+   Offsets were **measured, not derived**, per the note this paragraph used to carry, and
+   the measurement had a control worth reusing: the structs were transcribed into a
+   standalone `offsetof` dumper built with the llvm-mingw i686 and x86_64 targets, and
+   its `sizeof` line has to reproduce 140/96 and 232/160 — the numbers
+   `ntdll-sys/src/size_check_{i386,amd64}.rs` already asserts. A bad transcription fails
+   as a size mismatch instead of as quietly wrong offsets. (The hand-derivation done
+   first agreed, but agreement found afterwards is not what made it trustworthy.)
+
+   One field needs naming because it does not look like what it is: `ProcessHandle`
+   carries up to two FLAG bits in its low bits (kernel32's `AddToHandle`/
+   `RemoveFromHandle`), which the server reads back as `Handle & 3` before masking.
+   Zero-extension preserves them, which is the only reason the naive widening is correct.
+
+   **Measured after the fix — rungs 1 through 4 PASS, all ten parity guests still PASS:**
+
+        [spawn32] rung1 CreateProcessW OK
+        [spawn32] child pid 0x000002e4
+        [spawn32] rung2 child is a 32-bit guest OK
+        [spawn32] rung3 ResumeThread OK
+        [spawn32] rung4 child exited OK
+        [spawn32] rung5 wrong child exit code 0x00000080      verdict 0xBAE5
+
+   So cross-process `ResumeThread` works (rung 3 was written to catch a partial fix, and
+   it did not fire), and the child really is a 32-bit guest by the SYSTEM's reckoning.
+
+**The FIFTH defect, and it is the structurally interesting one: a 32-bit parent can
+only fill the child's PEB32, but the child's SIXTY-FOUR-bit loader runs first.** The
+child dies before printing a single loader line:
+
+        [KI-EXC] spawn32.exe code=0xc0000005 rip=000007ffb7004c4f
+        [EXIT-THR] image=spawn32.exe exit_status=0x80
+
+`ntdll.dll` is based at `0x7FFB7000000`, so that PC symbolicates to
+`LdrpInitializeProcess`, `ldrinit.rs:1827` — the first line of the function that
+dereferences anything:
+
+        ImagePath = (*(*Peb).ProcessParameters).ImagePathName.Buffer;
+
+`PEB64->ProcessParameters` is NULL. The asymmetry is the whole bug. When a NATIVE
+parent spawns an i386 child, its 64-bit kernel32 writes 64-bit process parameters into
+PEB64, the child's loader finds them, and `wow64.dll` then DERIVES the 32-bit copy —
+that is the `[FEX-WOW64C] PEB32->ProcessParameters built at ...` line every working
+guest prints. A 32-bit parent cannot do the first step: it builds a 32-bit
+`RTL_USER_PROCESS_PARAMETERS` and, since `Wow64pPublishRemotePeb32`, correctly writes
+it into the child's PEB32. Nothing fills PEB64, and PEB64 is what runs first.
+
+Note what this says about the earlier fix: `Wow64pPublishRemotePeb32` was right about
+WHERE the guest's kernel32 should write, and that is exactly why this defect was
+invisible until now — it was hidden behind two failures that stopped the child before
+its loader ever ran.
+
+**FIXED, and `spawn32` reports `0x600D` — five rungs, five defects, gap closed.**
+`Wow64pPublishPeb64Params` widens the block the guest wrote and points PEB64 at it,
+before the thread exists, because once it is running the loader has already
+dereferenced that pointer. A failure there fails the creation rather than starting a
+child that cannot survive its own first instruction.
+
+It copies no string bytes at all, which is the part worth keeping. Every `Buffer` the
+guest built already lives in the CHILD's address space below 2GB, and a 64-bit pointer
+addresses those characters perfectly well — so the 64-bit strings point at the very
+same memory and only the fixed header is rebuilt. The environment block is shared the
+same way. The output is marked NORMALIZED with absolute pointers, which is what makes
+the denormalized input free: a denormalized `Buffer` is an offset from the block base,
+so resolving it is one addition done here instead of by every reader. Which fields that
+applies to was read out of `rtl-ppb`'s `RtlDeNormalizeProcessParams` rather than
+guessed — the eight `UNICODE_STRING`s, and deliberately not `Environment`, which is a
+separate allocation. The live boot takes the denormalized path.
+
+        [WOW64] PEB64->ProcessParameters published at 0000000000160000
+                (widened from PEB32 block 00050000, strings denormalized)
+        [spawn32] rung1 CreateProcessW OK          [spawn32] rung4 child exited OK
+        [spawn32] rung2 child is a 32-bit guest OK [spawn32] rung5 child exit code intact OK
+        [spawn32] rung3 ResumeThread OK            [spawn32] verdict 0x0000600d
+
+**The `offsetof`-with-a-control method paid for itself here rather than in theory.**
+Transcribing `RTL_USER_PROCESS_PARAMETERS` from `wine/winternl.h` gave `sizeof`
+676/1040 against the 656/1008 that `ntdll-sys/src/size_check_{i386,amd64}.rs` asserts:
+that header carries five trailing fields (`EnvironmentSize`, `EnvironmentVersion`,
+`PackageDependencyData`, `ProcessGroupId`, `LoaderThreads`) which are not in the struct
+this tree builds against. **Nothing above `RuntimeData` moved**, so every field offset a
+derivation would have produced was correct and the BLOCK SIZE was wrong — the one error
+a field-by-field review does not catch, caught by a line of output that had to match a
+number already in the tree.
+
+**`spawn32` PROMOTED from `DIAGNOSTIC` to `LADDER` the same day**, which is what its own
+contract says to do when a diagnostic guest starts passing: it measured an open gap, the
+gap is closed, and leaving it ungraded would mean a regression in the thing it proved
+could pass unnoticed. Three consequences, all landed: it is built unconditionally
+(both reasons for the opt-in are spent — the bugcheck was the dropped `_SEH2_EXCEPT`,
+and "red by design" ended when it went green), it joined the all-or-nothing
+`_wow64_ladder` CMake set, and **its launch order INVERTED** — it used to run dead last
+because it could kill the machine, and a graded guest must now run BEFORE `sqlite32`,
+which carries the registered BUGCHECK, or an sqlite32 crash silently costs spawn32 its
+verdict. That is the same rule that already cost lua32 a verdict once. Ladder now reports
+**11/11 guests PASS** on amd64.
+
+The `DIAGNOSTIC` table is empty again, and its tests were re-pointed at a synthetic
+guest rather than deleted — the machinery is what the next guest aimed at a known-open
+gap will need, and coverage deleted because a table happens to be empty rots
+unexercised until the moment someone depends on it.
+
+**`CreateRemoteThread` — the other half of task #64 — CLOSED the same night, and it
+did not need the channel either.** The refusal covered both callers on the harder
+one's reason, and splitting them showed the hard one was smaller than advertised. Two
+things make the in-process path unusable through a foreign handle, and only one is
+interesting:
+
+- The SEED is a pointer into the creator's heap. Allocate it in the target instead;
+  `WOW64_THREAD_SEED` gained a `Remote` flag so the consumer frees it with
+  `NtFreeVirtualMemory` rather than corrupting the heap with `RtlFreeHeap`.
+- The START ROUTINE is a code address in the creator's copy of `wow64.dll`.
+
+**That second one is where assuming would have cost a night.** "It is a system DLL,
+it is always at the same base" is the comfortable reading, and it is FALSE here —
+measured, on the live boot: `wow64.dll delta NONZERO - relocated`. The two processes
+load it at different addresses, so the naive version starts a thread at whatever
+happens to live at that address in the target. `Wow64CreateForeignGuestThread` walks
+the TARGET's loader list for its own `wow64.dll` and translates
+`Wow64pGuestThreadStart` through the measured delta; equal bases would make the delta
+zero and cost only the walk. Loader-walk offsets measured with the usual control
+(`PEB_LDR_DATA` 72, `LDR_DATA_TABLE_ENTRY` 152 on amd64).
+
+**And that is why `Wow64ProcessPendingCrossProcessItems` is still empty and does not
+need to be filled.** Win10 keeps that work list so the TARGET can do per-thread setup
+on its own schedule; here the new thread's start routine IS the target's
+`Wow64pGuestThreadStart`, so the setup happens in the target, on the new thread, by
+the target's own code. The property the list exists to provide is obtained by
+construction. It would start to matter only if the target had to act at a moment it
+chooses — guest-memory invalidation after a foreign `WriteProcessMemory` being the
+obvious candidate, which a JIT CPU layer would need and the native one does not.
+
+**`spawn32` grew rungs 6 and 7** — `CreateRemoteThread` into the running child, and
+the injected thread running to completion. Two independent observers of the same
+event: the thread's own exit code, and the child noticing a named event it set.
+Rung 7 caught a race in the TEST rather than the feature on its first run — the child
+called `ExitProcess` the moment it was signalled, overwriting the injected thread's
+`0x0DEF` with the process code, so rung 7 read the child's verdict back to itself. A
+thread's exit code only exists while its process does; a third event now holds the
+child open until the parent has collected rung 7.
+
+        [FEX-WOW64C] foreign guest thread tid=2ec eip=7c4e112c esp=0050fffc
+                     start=00000000001A1C90 (wow64.dll delta NONZERO - relocated)
+        [spawn32] rung6 CreateRemoteThread OK, tid 0x000002ec
+        [spawn32] remote thread: running INSIDE the child
+        [spawn32] child: saw the injected thread's signal
+        [spawn32] rung7 remote thread ran to completion OK
+        [spawn32] verdict 0x0000600d          ladder: 11/11 guests PASS
+
+**Seven rungs, seven defects-or-designs, one gap.** Nothing is owed on guest processes.
+
+   *(Superseded, kept as a dated waypoint: while the `STATUS_PARTIAL_COPY` write was
+   still failing I wrote here that the next question was "why the child's parameter
+   block is not mapped where the parent is writing it." It was not a mapping fault at
+   all — it was the missing TEB32 `RemotePeb` channel described above, and the block was
+   always mapped. Do not follow that lead; it is closed.)*
+
+   **A SECOND translation bug, found only because the first fix made the status
+   visible — and it corrects something I wrote here an hour ago.** The first clean run
+   reported `c000009b` and `ERROR_PATH_NOT_FOUND`, and I wrote that kernel32 maps
+   partial-copy misleadingly to a path error. **That was wrong.** `STATUS_PARTIAL_COPY`
+   is `0x8000000D`; `0xC000009B` is `STATUS_DFS_EXIT_PATH_FOUND`, so the Win32 mapping
+   was doing its job correctly on a status that was itself a lie. All three
+   "Return partial copy" sites in `virtual.rs` carried the wrong constant. Note where
+   the wrong value sits: `STATUS_INSUFFICIENT_RESOURCES` is `0xC000009A`, used a few
+   lines earlier in the same function — the bad constant is its numeric neighbour, which
+   is what a plausible-looking invention looks like. Fixed by adding a named
+   `STATUS_PARTIAL_COPY` to `ntkrnl-sys::base` and using it; verified the guest now
+   reports `ERROR_PARTIAL_COPY` (299). **The general lesson: a wrong status code hides
+   behind a correct-looking error message, and the first thing a restored error path
+   buys you is the ability to see the next lie.**
+
+   **Consequence for this lane, and a correction to the design above:** a
+   diagnostic guest that BUGCHECKS cannot be carried by "report, never red".
+   That promise covers a bad exit code and is worth exactly nothing against a
+   dead machine, which reds the boot for every lane in the fleet. So spawn32 is
+   **opt-in** — built only under `VIBEOS_WOW64_SPAWN=1`, staged `if(EXISTS)`
+   rather than in the unconditional `_wow64_ladder`, and run by winlogon **dead
+   last**, after even the stress guests, so that when it does take the machine
+   down every other verdict has already been reported. That last rule is
+   sqlite32's, and spawn32 is a harder case than sqlite32, not a softer one.
+
+   **The original traced prediction, kept because being wrong is the point.**
+   `CreateProcess` builds a child in two steps — `NtCreateProcessEx`, then
+   `NtCreateThread` for the initial thread, passing the CHILD's `ProcessHandle`
+   (`kernel32-rust/src/proc_create.rs`, the "Create the Kernel Thread Object"
+   call). `wow64_manual.c`'s `NtCreateThread` thunk refuses any `ProcessHandle`
+   that is not `-1`, deliberately: a cross-process thread has no per-thread entry
+   in the target and nobody would initialize it. So rung 1 is predicted to fail
+   and `CreateProcess` to report what its own source calls "a process is not
+   allowed to exist without a main thread". **It was traced from source, NOT
+   observed** — written down so the first boot could confirm or correct it, and
+   the boot corrected it. The error was assuming that a refusal I had read in
+   the thunk would be the FIRST thing the path hit; the kernel died two
+   syscalls earlier than the code I was reading. Reading one layer and
+   predicting the whole stack is the mistake, and it is an easy one to make
+   when the layer you read says something definite.
+
+2. **Registry redirection — DONE.** The wow64-amd64
    lane landed it: `878e0ac0b67` (E24) puts Wow6432Node redirection in the **CM parse**, not in
    wow64.dll, because registry opens are overwhelmingly RELATIVE — advapi32 caches a handle to
    `\REGISTRY\MACHINE` and passes RootDirectory + a subpath, so a user-mode rewrite would need
    a handle-to-path syscall on every open. `911b1e1d82b` (E21) fixed `NtOpenKey` denying every
-   `KEY_WOW64_32KEY` open outright. **Residue, verified on master:** exactly two live
-   `Wow64 not yet supported` sites remain, both in `RegDeleteKeyExW`, so an explicit
-   `KEY_WOW64_32KEY`/`64KEY` on a DELETE is still logged and ignored — a narrow wrong-hive
-   hazard confined to deletion. (The two in `RegLoadMUIStringA` are commented out.) **This entry
-   previously called the whole feature an open silent bug; that was true when written and is
-   not now.** Original scoping kept below, because it is why it mattered:
+   `KEY_WOW64_32KEY` open outright. This lane closed the runtime hole with `reg32.exe`, the
+   tenth ladder guest, which `878e0ac0b67` structurally could not test from outside.
+
+   **The last residue is closed too, re-verified on this tree 2026-09-19.** This entry used to
+   say "one function left": two live `Wow64 not yet supported` sites in `RegDeleteKeyExW`,
+   dropping an explicit `KEY_WOW64_32KEY`/`64KEY` on a DELETE and so deleting from the native
+   hive when the caller had asked for the other view. `reg.rs:1073-1081` now passes the view
+   selectors straight into `NtOpenKey`, which is all that was needed once E21 stopped refusing
+   them and CM started honouring them. The only `Wow64 not yet supported` text left in
+   advapi32 is the comment recording that fix, plus two commented-out `RegLoadMUIString`
+   lines. **This entry has now called the feature an open silent bug and then a nearly-closed
+   one; both were true when written and neither is now.** Original scoping kept below, because
+   it is why it mattered:
 
    *Was:* **a silent wrong answer, not a missing feature.**
    `sdk/lib/rust/advapi32-rust/src/reg/reg.rs:1073-1079` prints
@@ -321,10 +684,17 @@ a ladder to watch", and neither was visible from reading.
    assumed to be this lane's; `mkramdisk.sh` and `build-fex.sh` are the fex
    lane's files and that lane is auditing them right now.
 
-   What is known, so it can be decided without re-deriving it: FEX source is **vendored
-   in-tree** (`external/fex`, 58M), so this is not a fetch, licensing or availability problem —
-   it is a per-worktree *build* cost. Exactly **one** worktree carries a `build-fex-arm64`
-   today. The recurring cost once staged is the ~85s ladder drain per arm64 gate, already
+   **Both unmeasured numbers are now measured (2026-09-19), and they settle it:
+   `tools/fex/build-fex.sh` takes 68 seconds and `build-fex-arm64` occupies 25M.**
+   This paragraph asked for them rather than guessing, and the guess would have been
+   high — the staging debate was conducted against a cost that turns out to be one
+   minute and a rounding error of disk, per worktree, once.
+
+   What was already known: FEX source is **vendored in-tree** (`external/fex`, 58M),
+   so this is not a fetch, licensing or availability problem — it is a per-worktree
+   *build* cost. **Correction:** this said "exactly one worktree carries a
+   `build-fex-arm64` today", meaning the fex lane's. Measured across the fleet
+   2026-09-19: `vibeos-research` is the only one, and `vibeos-fex` has none. The recurring cost once staged is the ~85s ladder drain per arm64 gate, already
    measured. **Unmeasured, and deliberately not guessed here:** how long `tools/fex/build-fex.sh`
    takes and how much disk `build-fex-arm64` occupies — the only tree that has one belongs to
    another lane, and reading a sibling's generated artifacts is exactly what the fleet-isolation
@@ -436,7 +806,14 @@ doing.
 
 ## Ownership
 
-Items 2 and 3 are `wow64-amd64` territory and that lane is moving fast (five
-commits in two days). `research` takes item 1, which is gate/verdict
-instrumentation and its natural shape. Item 4 should be offered to whoever owns
-`stable-toolchain-plan.md` rather than grabbed. Coordinate before starting 2 or 3.
+**RESOLVED 2026-09-19 — this paragraph used to hand items 2 and 3 to
+`wow64-amd64` and it is out of date.** The split was settled the other way:
+`research` takes item 1 (done), item 3 registry redirection (done — `reg32.exe`,
+the tenth guest, closes the runtime hole that `878e0ac0b67` structurally could
+not test from outside) and item 2 guest `CreateProcess` (in progress —
+`spawn32.exe`). Item 4 should still be offered to whoever owns
+`stable-toolchain-plan.md` rather than grabbed.
+
+Left standing rather than deleted, because the reason matters: the coordination
+cost of "coordinate before starting" was real, and it was paid twice over the
+same two items before anyone wrote the answer down.

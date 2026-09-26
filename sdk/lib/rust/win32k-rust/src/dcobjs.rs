@@ -323,7 +323,14 @@ pub unsafe extern "system" fn NtGdiSetBrushOrg(
             if !NT_SUCCESS(__SehStatus) {
                 return 0;
             }
-            *pptOut = ptOut;
+            // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+            if !crate::copy::publish_to_user(
+                pptOut as *mut core::ffi::c_void,
+                core::ptr::addr_of!(ptOut) as *const core::ffi::c_void,
+                core::mem::size_of::<POINT>(),
+            ) {
+                return 0;
+            }
         }
     }
     Ret
