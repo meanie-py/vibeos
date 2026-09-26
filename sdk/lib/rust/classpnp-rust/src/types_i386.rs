@@ -42204,7 +42204,7 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn ClassAddDevice(arg1: *mut _DRIVER_OBJECT, arg2: *mut _DEVICE_OBJECT) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspSendSynchronousCompletion(
         arg1: *mut _DEVICE_OBJECT,
         arg2: *mut _IRP,

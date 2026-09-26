@@ -22,6 +22,19 @@ FIX: declare the fn `extern "system"` (or whatever the slot's ABI is) and pass
 it DIRECTLY, e.g. `Some(f)`. rustc then checks the ABI and the signature. Keep a
 transmute only when the types differ in spelling alone, and never for ABI.
 
+SECOND SHAPE, same bug: a TYPED transmute whose source says `extern "C"`,
+
+    IoSetCompletionRoutine(irp, Some(transmute::<unsafe extern "C" fn(..) -> NTSTATUS, _>(F)), ..)
+
+rustc checks the source type against F -- so it agrees F is cdecl -- and then
+the inferred target re-types it NTAPI. Found 2026-09-26: classpnp's
+ClasspSendSynchronousCompletion, so on i386 every synchronous SRB of a hard disk
+returned from IofCompleteRequest through its own arguments into pool (BUGCHECK
+0x1E at a <no module> EIP). A cdecl fn into a cdecl slot is legitimate (msvcrt's
+_exit), so this fires only when the target is spelled `extern "system"`, or the
+transmute is an argument of an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po kernel API, whose
+callback parameters are all NTAPI.
+
 The check is per crate: a name counts as Rust-ABI when every definition of it
 in the crate is a bodied `fn` without `extern "..."`. Foreign declarations
 (body-less `fn x(..);` inside an `extern` block) are foreign, never Rust-ABI.
@@ -61,6 +74,39 @@ TRANSMUTE_RE = re.compile(
     r"transmute(?:::<[^>]*>)?\(\s*(\w+)\s+as\s+\*(?:const|mut)\s*"
     r"(?:\(\)|c_void|core::ffi::c_void|std::ffi::c_void)\s*\)"
 )
+
+
+TYPED_C_RE = re.compile(
+    r'transmute::<\s*(?:unsafe\s+)?extern\s+"C"\s+fn\s*\((?:[^()]|\([^()]*\))*\)'
+    r"(?:\s*->\s*[^,>]+)?\s*,\s*([^>]*?)>\s*\(\s*(\w+)\s*\)"
+)
+NTAPI_CALLEE_RE = re.compile(r"\b((?:Io|Ke|Ex|Ps|Ob|FsRtl|Cc|Mm|Po)[A-Z]\w*)\s*\($")
+
+
+def _enclosing_call(text: str, pos: int) -> str | None:
+    """The nearest kernel API whose argument list contains `pos`, if any.
+
+    Walks OUTWARD through every open paren, not just the innermost: the slot is
+    usually wrapped, as in `IoSetCompletionRoutine(irp, Some(transmute..))`.
+    Stops at a `;`, the end of the enclosing statement."""
+    depth = 0
+    k = pos - 1
+    lo = max(0, pos - 800)
+    while k >= lo:
+        c = text[k]
+        if c == ";" and depth == 0:
+            return None
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth == 0:
+                m = NTAPI_CALLEE_RE.search(text[max(0, k - 80) : k + 1])
+                if m:
+                    return m.group(1)
+            else:
+                depth -= 1
+        k -= 1
+    return None
 
 
 def crate_of(path: Path, roots: list[Path]) -> Path:
@@ -122,6 +168,14 @@ def scan(roots: list[Path]) -> list[tuple[Path, int, str]]:
                 if NOLINT_RE.search(lines[lineno - 1]):
                     continue
                 findings.append((f, lineno, name))
+            for m in TYPED_C_RE.finditer(text):
+                target, name = m.group(1), m.group(2)
+                if 'extern "system"' not in target and not _enclosing_call(text, m.start()):
+                    continue
+                lineno = text.count("\n", 0, m.start()) + 1
+                if NOLINT_RE.search(lines[lineno - 1]):
+                    continue
+                findings.append((f, lineno, f'{name} (extern "C" re-typed NTAPI)'))
     return sorted(findings)
 
 
@@ -138,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         if lint:
             print(f"{rel}:{lineno}: fnptr-abi-transmute {name}")
         else:
-            print(f"{rel}:{lineno}: Rust-ABI fn `{name}` transmuted into a fn-pointer slot")
+            print(f"{rel}:{lineno}: non-NTAPI fn `{name}` transmuted into a fn-pointer slot")
     if findings and not lint:
         print(
             f'\n{len(findings)} finding(s): declare each fn extern "system" and pass it '

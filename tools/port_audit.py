@@ -396,11 +396,24 @@ def survey(repo: Path = REPO, arches=ARCHES) -> tuple[dict[str, Row], dict[str, 
         row.live_dirs[str(Path(rel).parent)] += 1
 
     skip = {".git", "target", "obj-i386", "obj-amd64", "obj-arm64"}
-    for path in repo.rglob("*"):
+
+    def _skipped(name: str) -> bool:
+        return name in skip or name.startswith("build-") or name.startswith(".")
+
+    # Prune WHILE walking. `rglob` descended into build-*/ and filtered afterwards,
+    # so a concurrent `build --clean` deleting a dir under it (every gate runs this
+    # beside three builds) raised FileNotFoundError mid-walk and failed tooling.
+    def _walk():
+        for dirpath, dirnames, filenames in os.walk(repo):
+            dirnames[:] = [d for d in dirnames if not _skipped(d)]
+            for f in filenames:
+                yield Path(dirpath) / f
+
+    for path in _walk():
         if path.suffix.lower() not in SOURCE_SUFFIXES or not path.is_file():
             continue
         parts = path.relative_to(repo).parts
-        if any(p in skip or p.startswith("build-") or p.startswith(".") for p in parts):
+        if any(_skipped(p) for p in parts):
             continue
         rel = str(path.relative_to(repo))
         if rel in live:

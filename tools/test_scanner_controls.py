@@ -608,6 +608,18 @@ pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(InitFrontEnd as *const ())) };
 """
+# Second shape (classpnp 2026-09-26): the source type SAYS extern "C", so rustc
+# agrees with the fn, and the inferred target re-types it for an NTAPI slot.
+_FNABI_BAD_TYPED = """\
+pub unsafe extern "C" fn Done(d: *mut u8, i: *mut u8, c: *mut u8) -> i32 { 0 }
+pub unsafe fn f(irp: *mut u8) {
+    IoSetCompletionRoutine(
+        irp,
+        Some(core::mem::transmute::<unsafe extern "C" fn(*mut u8, *mut u8, P) -> i32, _>(Done)),
+        core::ptr::null_mut(), 1, 1, 1,
+    );
+}
+"""
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -616,6 +628,9 @@ extern "system" {
 }
 pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+pub unsafe extern "C" fn cexit(code: i32) -> ! { loop {} }
+pub static EXIT: unsafe extern "C" fn(i32) =
+    unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
 """
 
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
@@ -1817,7 +1832,7 @@ CONTROLS: list[Control] = [
         name="scan_fnptr_abi_transmute",
         script="tools/scan_fnptr_abi_transmute.py",
         argv=["--lint"],
-        bad={"bad.rs": _FNABI_BAD},
+        bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
     ),
     Control(

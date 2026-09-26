@@ -920,6 +920,49 @@ def _unique_launch_port(picker: Callable[[], int]) -> int:
     raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
 
 
+TEMP_DISK_MB = 64
+_TEMP_PART_START = 2048  # sectors; the conventional 1 MiB alignment
+
+
+def make_temp_disk(out: Path) -> None:
+    """MBR + one FAT16 partition with an empty \\TEMP, converted to qcow2.
+
+    Built fresh per boot: it is scratch, and a disk that carried files from an
+    earlier run would let a test pass on leftovers.
+    """
+    raw = out.with_suffix(".img")
+    raw.unlink(missing_ok=True)
+    with open(raw, "wb") as f:
+        f.truncate(TEMP_DISK_MB * 1024 * 1024)
+    # type 6 = FAT16 (>32M); bootable flag off -- nothing should ever boot this.
+    subprocess.run(
+        ["sfdisk", "--quiet", str(raw)],
+        input=f"start={_TEMP_PART_START}, type=6\n",
+        text=True,
+        check=True,
+        capture_output=True,
+    )
+    sectors = TEMP_DISK_MB * 2048 - _TEMP_PART_START
+    subprocess.run(
+        ["mkfs.fat", "-F", "16", "-n", "VIBEOSTEMP", "--offset", str(_TEMP_PART_START),
+         str(raw), str(sectors // 2)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["mmd", "-i", f"{raw}@@{_TEMP_PART_START * 512}", "::/TEMP"],
+        check=True,
+        capture_output=True,
+    )
+    out.unlink(missing_ok=True)
+    subprocess.run(
+        ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(raw), str(out)],
+        check=True,
+        capture_output=True,
+    )
+    raw.unlink()
+
+
 def _free_tcp_port() -> int:
     """Pick a currently-free TCP port for a slirp hostfwd rule.
 
@@ -1531,6 +1574,40 @@ class QemuVM:
             i += 1
         return out
 
+    def _temp_disk_args(self) -> list[str]:
+        """A writable FAT volume holding \\TEMP, for x86 boots that run winetests.
+
+        The livecd's only volume is the CD, so `GetTempPath` is X:\\reactos\\TEMP --
+        read-only -- and any conformance test that writes a scratch file fails on
+        the harness rather than on the OS (user32:class's manifest is the measured
+        case: 0xc0150010 on both sides of the WoW64 A/B). winlogon points the
+        winetest children's TEMP here when it finds C:\\TEMP (winlogon.rs).
+
+        IDE, not virtio: x86 has no virtio-blk driver, and uniata already serves
+        the CD. Partitioned, not a superfloppy: FreeLDR crashes on an unpartitioned
+        BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
+        No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
+        """
+        if not self.config.arch.startswith(("i386", "amd64")):
+            return []
+        # Default ON for amd64: it is also the only hard disk any smoke attaches,
+        # and the classpnp disk path hung every boot that had one
+        # (ClassCompleteRequest spinning on a never-initialized lock) for months
+        # without a single red, because nothing exercised it. `=0` opts out.
+        # i386 is opt-in (`=1`) until its post-mount BUGCHECK 0x1E is fixed
+        # (roadmap bug registry: "i386 with a hard disk attached").
+        default = "1" if self.config.arch.startswith("amd64") else "0"
+        if os.environ.get("VIBEOS_QEMU_TEMP_DISK", default).strip() in ("0", "false", "no"):
+            return []
+        disk = self.scratch_path.parent / "tempdisk.qcow2"
+        make_temp_disk(disk)
+        return [
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=tempdisk",
+            "-device",
+            "ide-hd,drive=tempdisk",
+        ]
+
     def _usb_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
         by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
@@ -1747,7 +1824,7 @@ class QemuVM:
             capture_output=True,
         )
         arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
-        disks = [*self._scratch_device_args(), *self._usb_disk_args()]
+        disks = [*self._scratch_device_args(), *self._usb_disk_args(), *self._temp_disk_args()]
         self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
         self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
 

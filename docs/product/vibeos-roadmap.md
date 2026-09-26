@@ -556,6 +556,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — OPEN**
+  (2026-09-26). `VIBEOS_QEMU_TEMP_DISK=1 ./vibeos-cli smoke --arch i386`: the disk now
+  starts and fastfat mounts it (the two classpnp fixes in the user32 A/B "Class-test"
+  entry below), then around desktop start
+  `0x1E (0xc000001d, EIP in no module)` with EIP on the stack a few dozen bytes above ESP:
+  another return through a corrupted frame, i386-only, on the FAT/disk path. The stack scan
+  shows only stale words (`IopInitializePlugPlayServices`, `fastfat.sys+0`).
+  `scan_fnptr_abi_transmute` and a sweep of every `abi_cast!` and typed transmute find
+  nothing else on that path, so the next step is a GDB session breaking on the fault.
+  amd64 boots clean with the same disk and runs the winetests against it.
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
@@ -1507,11 +1517,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
     `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
     bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
-  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
-    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
-    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
-    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
-    not attached on i386. OPEN (harness).
+  - **Class-test 0xc0150010 (ENVIRONMENTAL) — FIXED on amd64 2026-09-26.** The winetest
+    wrote its manifest to `GetTempPathA` = `X:\reactos\TEMP`, read-only on the livecd. The
+    harness now attaches a FAT disk holding `\TEMP` (`vm.py _temp_disk_args`, default ON for
+    amd64) and winlogon points the winetest children's TEMP/TMP at `C:\TEMP` when it exists.
+    Guest `user32:class` now runs to completion (32 failures) instead of crashing. Attaching
+    that disk found two classpnp bugs that had hung or crashed EVERY boot with a hard disk:
+    `ClassCompleteRequest` spinning on a lock the release build never initializes, and a cdecl
+    `ClasspSendSynchronousCompletion` in an NTAPI slot (i386). i386 stays opt-in
+    (`VIBEOS_QEMU_TEMP_DISK=1`) until the bug below is fixed.
   - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
     exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
     its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
