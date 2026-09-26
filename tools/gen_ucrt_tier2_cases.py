@@ -555,6 +555,9 @@ HAND_GRADED = (
     "isspace",
     "isupper",
     "ispunct",
+    # ...and its tolower/toupper rows: the tocase takeover deleted theirs.
+    "tolower",
+    "toupper",
 )
 
 

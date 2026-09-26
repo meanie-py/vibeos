@@ -21,9 +21,6 @@ list(APPEND UCRT_CONVERT_SOURCES
     convert/strtod.cpp
     convert/strtox.cpp
     convert/swab.cpp
-    convert/tolower_toupper.cpp
-    convert/towlower.cpp
-    convert/towupper.cpp
     convert/wcrtomb.cpp
     convert/wcstombs.cpp
     convert/wctomb.cpp

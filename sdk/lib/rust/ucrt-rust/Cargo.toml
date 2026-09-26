@@ -81,5 +81,10 @@ ctype = []
 # Wine's _MB_CP_SBCS=20127 contract, UCRT's is codepage 0. See src/ismbc.rs.
 ismbc = ["ctype", "ismbbyte"]
 
+# convert/{tolower_toupper,towlower,towupper}.cpp -- single-character case
+# mapping, narrow and wide. A port: msvcrt's _tolower_l/_toupper_l DIFF against
+# UCRT at EOF, the very first case. See src/tocase.rs.
+tocase = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
