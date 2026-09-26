@@ -1762,6 +1762,15 @@ pub unsafe extern "system" fn USBPORT_AllocateBandwidthUSB2(
         return 1 as BOOLEAN;
     }
 
+    // An xHCI controller budgets periodic bandwidth itself (Configure Endpoint fails
+    // with a Bandwidth Error) and drives transaction translators itself, so this
+    // USB2 budget does not apply to it. It would also crash: low- and full-speed
+    // devices sit directly on xHCI root ports with no TtExtension, which never
+    // happens under EHCI, where companion controllers take those devices.
+    if (*(*FdoExtension).MiniPortInterface).Packet.MiniPortVersion == USB_MINIPORT_VERSION_XHCI {
+        return 1 as BOOLEAN;
+    }
+
     if !(*Endpoint).TtExtension.is_null() {
         TtExtension = (*Endpoint).TtExtension as PUSB2_TT_EXTENSION;
     } else {
@@ -1976,6 +1985,11 @@ pub unsafe extern "system" fn USBPORT_FreeBandwidthUSB2(
         || TransferType == USBPORT_TRANSFER_TYPE_BULK as ULONG
         || ((*Endpoint).Flags as ULONG & ENDPOINT_FLAG_ROOTHUB_EP0 as ULONG) != 0
     {
+        return;
+    }
+
+    // Nothing was allocated for an xHCI endpoint (see USBPORT_AllocateBandwidthUSB2).
+    if (*(*FdoExtension).MiniPortInterface).Packet.MiniPortVersion == USB_MINIPORT_VERSION_XHCI {
         return;
     }
 

@@ -1486,6 +1486,51 @@ class QemuVM:
             return []
         return shlex.split(raw)
 
+    def _xhci_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_XHCI", "").strip() in ("1", "true", "yes")
+
+    def _xhci_args(self) -> list[str]:
+        """VIBEOS_QEMU_XHCI=1 attaches a qemu-xhci controller with a USB keyboard
+        and mouse (usbxhci bring-up rig, docs/engineering/usbxhci-design.md).
+
+        The controller is pinned to PCI slot 8. Left to auto-assignment it takes
+        the first free slot, which shifts arm64's virtio-blk-pci boot disk off the
+        `Pci(0x2,0x0)` path saved in efivars, and UEFI falls through to PXE."""
+        if not self._xhci_enabled():
+            return []
+        return [
+            "-device",
+            "qemu-xhci,id=xhci,addr=0x8",
+            "-device",
+            "usb-kbd,bus=xhci.0,id=ukbd",
+            "-device",
+            "usb-mouse,bus=xhci.0,id=umouse",
+        ]
+
+    def _without_virtio_input(self, args: list[str]) -> list[str]:
+        """Drop arm64's virtio keyboard/mouse when the xHCI rig is on.
+
+        QEMU sends host input to the most recently ACTIVATED handler. usb-kbd
+        activates when it is created; virtio-input activates later, when the
+        guest driver starts it, and so would take every keystroke meant for USB.
+        (`input-send-event`'s `device` argument cannot pick one: it names a
+        display console, and QEMU aborts looking it up with -display none.)"""
+        if not self._xhci_enabled():
+            return args
+        out: list[str] = []
+        i = 0
+        while i < len(args):
+            if (
+                args[i] == "-device"
+                and i + 1 < len(args)
+                and args[i + 1].startswith(("virtio-keyboard-device", "virtio-mouse-device"))
+            ):
+                i += 2
+                continue
+            out.append(args[i])
+            i += 1
+        return out
+
     def _usb_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
         by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
@@ -1701,7 +1746,7 @@ class QemuVM:
             check=True,
             capture_output=True,
         )
-        arch = self.config.prepare_args(self.work_dir)
+        arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
         disks = [*self._scratch_device_args(), *self._usb_disk_args()]
         self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
         self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
@@ -1721,6 +1766,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",
@@ -1820,6 +1866,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",

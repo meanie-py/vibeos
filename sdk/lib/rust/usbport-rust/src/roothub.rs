@@ -904,7 +904,12 @@ pub unsafe extern "system" fn USBPORT_RootHubCreateDevice(
         {
             (*RH_HubDescriptor).bDescriptorType = USB_20_HUB_DESCRIPTOR_TYPE;
         } else if (*Packet).MiniPortVersion == USB_MINIPORT_VERSION_XHCI {
-            (*RH_HubDescriptor).bDescriptorType = USB_30_HUB_DESCRIPTOR_TYPE;
+            // usbxhci's root hub exposes the controller's USB2-protocol ports with
+            // USB 2.0 hub semantics (wPortStatus bits, not the USB 3.0 layout), and
+            // this descriptor is built with the USB 2.0 layout, so it must say so.
+            // The C used the USB 3.0 type here for a SuperSpeed root hub that no
+            // miniport implements.
+            (*RH_HubDescriptor).bDescriptorType = USB_20_HUB_DESCRIPTOR_TYPE;
         } else {
             DbgBreakPoint();
         }

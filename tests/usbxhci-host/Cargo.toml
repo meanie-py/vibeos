@@ -1,0 +1,13 @@
+[package]
+name = "usbxhci-host-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+ntkrnl-sys = { path = "../../sdk/lib/rust/ntkrnl-sys", default-features = false }
+
+[lib]
+path = "lib.rs"
