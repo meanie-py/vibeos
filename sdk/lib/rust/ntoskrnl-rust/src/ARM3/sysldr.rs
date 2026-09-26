@@ -239,7 +239,7 @@ pub unsafe extern "system" fn MiLoadImageSection(
         // section views. The stale PTEs prevent page faults from firing, so
         // the section data never gets demand-paged in. Zero them and fix up
         // UsedPageTableEntries on the parent PDE.
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (amd64 stale-PTE workaround, Rust-only)
         {
             let start_pte = MiAddressToPte(base);
             let end_pte = MiAddressToPte(((base as ULONG_PTR) + ((pte_count as ULONG_PTR) << PAGE_SHIFT) - 1) as PVOID);

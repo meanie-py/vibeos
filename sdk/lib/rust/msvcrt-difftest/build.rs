@@ -3836,8 +3836,14 @@ fn main() {
     // Only for a crate that links file.rs; see `subject_stdio`.
     const SHIM_ABI_SAFE: &[&str] = &["_open", "_wopen", "_sopen", "_wsopen"];
     let shim_c = msvcrt_dir.join("rust_file_varargs_shim.c");
-    let shim_obj =
-        repo.join("build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt.dir/rust_file_varargs_shim.c.obj");
+    // The shims are their own object library since 89fe4906dfc (msvcrt_rust_cohab.cmake),
+    // so msvcrt20/40 and crtdll can link the same ones. Reading the OLD `msvcrt.dir` path
+    // kept passing only in build dirs configured before the move, which still held a stale
+    // copy of this object -- the harness graded a days-old shim there and failed on every
+    // freshly configured tree.
+    let shim_obj = repo.join(
+        "build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_rust_shims.dir/rust_file_varargs_shim.c.obj",
+    );
     let shim_symbols: Vec<String> = object_symbols(&repo, &shim_obj, &["T"]);
     for keep in SHIM_ABI_SAFE {
         assert!(

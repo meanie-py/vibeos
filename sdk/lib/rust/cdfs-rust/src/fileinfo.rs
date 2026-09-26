@@ -180,174 +180,183 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
 
     // SEH2_TRY .. SEH2_FINALLY .. SEH2_END emulation
     // The try block will be enclosed in a loop to allow a clean break to the finally block.
-    'try_block: loop {
-        // Outer switch on TypeOfOpen (emulated with a loop containing a match)
-        'outer_switch: loop {
-            match TypeOfOpen {
-                UserDirectoryOpen | UserFileOpen => {
-                    // Acquire shared access
-                    CdAcquireFileShared(IrpContext, Fcb);
-                    ReleaseFcb = 1; // TRUE
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_ReleaseFcb = core::ptr::addr_of_mut!(ReleaseFcb);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'try_block: loop {
+                // Outer switch on TypeOfOpen (emulated with a loop containing a match)
+                'outer_switch: loop {
+                    match TypeOfOpen {
+                        UserDirectoryOpen | UserFileOpen => {
+                            // Acquire shared access
+                            CdAcquireFileShared(IrpContext, Fcb);
+                            ReleaseFcb = 1; // TRUE
 
-                    // Make sure directory sizes are correct
-                    if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
-                        // NT_ASSERT macro
-                        NT_ASSERT((TypeOfOpen == UserDirectoryOpen) as i32);
-                        CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
-                    }
-
-                    // Verify Fcb is usable
-                    CdVerifyFcbOperation(IrpContext, Fcb);
-
-                    // Inner switch on FileInformationClass
-                    match FileInformationClass {
-                        FileAllInformation => {
-                            // Do not allow operation on file opened by ID
-                            if FlagOn((*Ccb).Flags, CCB_FLAG_OPEN_BY_ID) != 0 {
-                                Status = STATUS_INVALID_PARAMETER;
-                                break; // exit inner match
+                            // Make sure directory sizes are correct
+                            if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
+                                // NT_ASSERT macro
+                                NT_ASSERT((TypeOfOpen == UserDirectoryOpen) as i32);
+                                CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
                             }
 
-                            Length -= (core::mem::size_of::<FILE_ACCESS_INFORMATION>()
-                                + core::mem::size_of::<FILE_MODE_INFORMATION>()
-                                + core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>()) as u32;
+                            // Verify Fcb is usable
+                            CdVerifyFcbOperation(IrpContext, Fcb);
 
-                            CdQueryBasicInfo(
-                                IrpContext,
-                                Fcb,
-                                core::ptr::addr_of_mut!((*Buffer).BasicInformation) as *mut FILE_BASIC_INFORMATION,
-                                &mut Length,
-                            );
-                            CdQueryStandardInfo(
-                                IrpContext,
-                                Fcb,
-                                core::ptr::addr_of_mut!((*Buffer).StandardInformation) as *mut FILE_STANDARD_INFORMATION,
-                                &mut Length,
-                            );
-                            CdQueryInternalInfo(
-                                IrpContext,
-                                Fcb,
-                                core::ptr::addr_of_mut!((*Buffer).InternalInformation) as *mut FILE_INTERNAL_INFORMATION,
-                                &mut Length,
-                            );
-                            CdQueryEaInfo(
-                                IrpContext,
-                                Fcb,
-                                core::ptr::addr_of_mut!((*Buffer).EaInformation) as *mut FILE_EA_INFORMATION,
-                                &mut Length,
-                            );
-                            CdQueryPositionInfo(
-                                IrpContext,
-                                (*IrpSp).FileObject,
-                                core::ptr::addr_of_mut!((*Buffer).PositionInformation) as *mut FILE_POSITION_INFORMATION,
-                                &mut Length,
-                            );
-                            Status = CdQueryNameInfo(
-                                IrpContext,
-                                (*IrpSp).FileObject,
-                                core::ptr::addr_of_mut!((*Buffer).NameInformation) as *mut FILE_NAME_INFORMATION,
-                                &mut Length,
-                            );
-                        }
-                        FileBasicInformation => {
-                            CdQueryBasicInfo(
-                                IrpContext,
-                                Fcb,
-                                Buffer as *mut FILE_BASIC_INFORMATION,
-                                &mut Length,
-                            );
-                        }
-                        FileStandardInformation => {
-                            CdQueryStandardInfo(
-                                IrpContext,
-                                Fcb,
-                                Buffer as *mut FILE_STANDARD_INFORMATION,
-                                &mut Length,
-                            );
-                        }
-                        FileInternalInformation => {
-                            CdQueryInternalInfo(
-                                IrpContext,
-                                Fcb,
-                                Buffer as *mut FILE_INTERNAL_INFORMATION,
-                                &mut Length,
-                            );
-                        }
-                        FileEaInformation => {
-                            CdQueryEaInfo(
-                                IrpContext,
-                                Fcb,
-                                Buffer as *mut FILE_EA_INFORMATION,
-                                &mut Length,
-                            );
-                        }
-                        FilePositionInformation => {
-                            CdQueryPositionInfo(
-                                IrpContext,
-                                (*IrpSp).FileObject,
-                                Buffer as *mut FILE_POSITION_INFORMATION,
-                                &mut Length,
-                            );
-                        }
-                        FileNameInformation => {
-                            if FlagOn((*Ccb).Flags, CCB_FLAG_OPEN_BY_ID) == 0 {
-                                Status = CdQueryNameInfo(
-                                    IrpContext,
-                                    (*IrpSp).FileObject,
-                                    Buffer as *mut FILE_NAME_INFORMATION,
-                                    &mut Length,
-                                );
-                            } else {
-                                Status = STATUS_INVALID_PARAMETER;
-                            }
-                        }
-                        FileAlternateNameInformation => {
-                            if FlagOn((*Ccb).Flags, CCB_FLAG_OPEN_BY_ID) == 0 {
-                                Status = CdQueryAlternateNameInfo(
-                                    IrpContext,
-                                    Fcb,
-                                    Ccb,
-                                    Buffer as *mut FILE_NAME_INFORMATION,
-                                    &mut Length,
-                                );
-                            } else {
-                                Status = STATUS_INVALID_PARAMETER;
-                            }
-                        }
-                        FileNetworkOpenInformation => {
-                            CdQueryNetworkInfo(
-                                IrpContext,
-                                Fcb,
-                                Buffer as *mut FILE_NETWORK_OPEN_INFORMATION,
-                                &mut Length,
-                            );
+                            // Inner switch on FileInformationClass
+                            match FileInformationClass {
+                                FileAllInformation => {
+                                    // Do not allow operation on file opened by ID
+                                    if FlagOn((*Ccb).Flags, CCB_FLAG_OPEN_BY_ID) != 0 {
+                                        Status = STATUS_INVALID_PARAMETER;
+                                        break; // exit inner match
+                                    }
+
+                                    Length -= (core::mem::size_of::<FILE_ACCESS_INFORMATION>()
+                                        + core::mem::size_of::<FILE_MODE_INFORMATION>()
+                                        + core::mem::size_of::<FILE_ALIGNMENT_INFORMATION>()) as u32;
+
+                                    CdQueryBasicInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        core::ptr::addr_of_mut!((*Buffer).BasicInformation) as *mut FILE_BASIC_INFORMATION,
+                                        &mut Length,
+                                    );
+                                    CdQueryStandardInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        core::ptr::addr_of_mut!((*Buffer).StandardInformation) as *mut FILE_STANDARD_INFORMATION,
+                                        &mut Length,
+                                    );
+                                    CdQueryInternalInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        core::ptr::addr_of_mut!((*Buffer).InternalInformation) as *mut FILE_INTERNAL_INFORMATION,
+                                        &mut Length,
+                                    );
+                                    CdQueryEaInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        core::ptr::addr_of_mut!((*Buffer).EaInformation) as *mut FILE_EA_INFORMATION,
+                                        &mut Length,
+                                    );
+                                    CdQueryPositionInfo(
+                                        IrpContext,
+                                        (*IrpSp).FileObject,
+                                        core::ptr::addr_of_mut!((*Buffer).PositionInformation) as *mut FILE_POSITION_INFORMATION,
+                                        &mut Length,
+                                    );
+                                    Status = CdQueryNameInfo(
+                                        IrpContext,
+                                        (*IrpSp).FileObject,
+                                        core::ptr::addr_of_mut!((*Buffer).NameInformation) as *mut FILE_NAME_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                FileBasicInformation => {
+                                    CdQueryBasicInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        Buffer as *mut FILE_BASIC_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                FileStandardInformation => {
+                                    CdQueryStandardInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        Buffer as *mut FILE_STANDARD_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                FileInternalInformation => {
+                                    CdQueryInternalInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        Buffer as *mut FILE_INTERNAL_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                FileEaInformation => {
+                                    CdQueryEaInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        Buffer as *mut FILE_EA_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                FilePositionInformation => {
+                                    CdQueryPositionInfo(
+                                        IrpContext,
+                                        (*IrpSp).FileObject,
+                                        Buffer as *mut FILE_POSITION_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                FileNameInformation => {
+                                    if FlagOn((*Ccb).Flags, CCB_FLAG_OPEN_BY_ID) == 0 {
+                                        Status = CdQueryNameInfo(
+                                            IrpContext,
+                                            (*IrpSp).FileObject,
+                                            Buffer as *mut FILE_NAME_INFORMATION,
+                                            &mut Length,
+                                        );
+                                    } else {
+                                        Status = STATUS_INVALID_PARAMETER;
+                                    }
+                                }
+                                FileAlternateNameInformation => {
+                                    if FlagOn((*Ccb).Flags, CCB_FLAG_OPEN_BY_ID) == 0 {
+                                        Status = CdQueryAlternateNameInfo(
+                                            IrpContext,
+                                            Fcb,
+                                            Ccb,
+                                            Buffer as *mut FILE_NAME_INFORMATION,
+                                            &mut Length,
+                                        );
+                                    } else {
+                                        Status = STATUS_INVALID_PARAMETER;
+                                    }
+                                }
+                                FileNetworkOpenInformation => {
+                                    CdQueryNetworkInfo(
+                                        IrpContext,
+                                        Fcb,
+                                        Buffer as *mut FILE_NETWORK_OPEN_INFORMATION,
+                                        &mut Length,
+                                    );
+                                }
+                                _ => {
+                                    Status = STATUS_INVALID_PARAMETER;
+                                }
+                            } // end inner match
+
+                            // break outer switch after inner switch has executed (corresponds to C break; after inner switch)
+                            break 'outer_switch;
                         }
                         _ => {
                             Status = STATUS_INVALID_PARAMETER;
+                            break 'outer_switch;
                         }
-                    } // end inner match
+                    } // end match TypeOfOpen
+                } // end 'outer_switch loop
 
-                    // break outer switch after inner switch has executed (corresponds to C break; after inner switch)
-                    break 'outer_switch;
-                }
-                _ => {
-                    Status = STATUS_INVALID_PARAMETER;
-                    break 'outer_switch;
-                }
-            } // end match TypeOfOpen
-        } // end 'outer_switch loop
+                // Set information field (after outer switch, inside try)
+                (*Irp).IoStatus.Information = (initial_length - Length) as _;
 
-        // Set information field (after outer switch, inside try)
-        (*Irp).IoStatus.Information = (initial_length - Length) as _;
+                // exit try block to run finally
+                break 'try_block;
+            } // end 'try loop
+        },
+        |_, _| {
+            if (*p_ReleaseFcb) != 0 {
+                CdReleaseFile(IrpContext, Fcb);
+            }
+        },
+    );
 
-        // exit try block to run finally
-        break 'try_block;
-    } // end 'try loop
-
-    // _SEH2_FINALLY : release the file if acquired
-    if ReleaseFcb != 0 {
-        CdReleaseFile(IrpContext, Fcb);
-    }
 
     // _SEH2_END done
 
@@ -383,41 +392,48 @@ pub unsafe extern "C" fn CdCommonSetInfo(
     CdAcquireFileShared(IrpContext, Fcb);
 
     // _SEH2_TRY
-    'se2_try: loop {
-        CdVerifyFcbOperation(IrpContext, Fcb);
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'se2_try: loop {
+                CdVerifyFcbOperation(IrpContext, Fcb);
 
-        let Buffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_POSITION_INFORMATION;
+                let Buffer = (*Irp).AssociatedIrp.SystemBuffer as PFILE_POSITION_INFORMATION;
 
-        let file_object = (*IrpSp).FileObject;
-        let flags = (*file_object).Flags;
+                let file_object = (*IrpSp).FileObject;
+                let flags = (*file_object).Flags;
 
-        // FlagOn(FO_NO_INTERMEDIATE_BUFFERING) check + alignment check
-        if (flags & FO_NO_INTERMEDIATE_BUFFERING) != 0
-            && ((*Buffer).CurrentByteOffset.__bindgen_anon_1.LowPart
-                & (*(*Fcb).Vcb).BlockMask)
-                != 0
-        {
-            // try_return(NOTHING) -> goto try_exit, which is after the loop body
-            break 'se2_try;
-        }
+                // FlagOn(FO_NO_INTERMEDIATE_BUFFERING) check + alignment check
+                if (flags & FO_NO_INTERMEDIATE_BUFFERING) != 0
+                    && ((*Buffer).CurrentByteOffset.__bindgen_anon_1.LowPart
+                        & (*(*Fcb).Vcb).BlockMask)
+                        != 0
+                {
+                    // try_return(NOTHING) -> goto try_exit, which is after the loop body
+                    break 'se2_try;
+                }
 
-        CdLockFcb(IrpContext, Fcb);
-        // FileObject->CurrentByteOffset = Buffer->CurrentByteOffset;
-        core::ptr::copy_nonoverlapping::<LARGE_INTEGER>(
-            &(*Buffer).CurrentByteOffset as *const LARGE_INTEGER,
-            &mut (*file_object).CurrentByteOffset as *mut LARGE_INTEGER,
-            1,
-        );
-        CdUnlockFcb(IrpContext, Fcb);
+                CdLockFcb(IrpContext, Fcb);
+                // FileObject->CurrentByteOffset = Buffer->CurrentByteOffset;
+                core::ptr::copy_nonoverlapping::<LARGE_INTEGER>(
+                    &(*Buffer).CurrentByteOffset as *const LARGE_INTEGER,
+                    &mut (*file_object).CurrentByteOffset as *mut LARGE_INTEGER,
+                    1,
+                );
+                CdUnlockFcb(IrpContext, Fcb);
 
-        Status = STATUS_SUCCESS;
-        // try_exit: NOTHING;
-        break 'se2_try; // normal exit to finally
-    }
-    // _SEH2_FINALLY
-    {
-        CdReleaseFile(IrpContext, Fcb);
-    }
+                Status = STATUS_SUCCESS;
+                // try_exit: NOTHING;
+                break 'se2_try; // normal exit to finally
+            }
+        },
+        |_, _| {
+            CdReleaseFile(IrpContext, Fcb);
+        },
+    );
+
     // _SEH2_END
 
     CdCompleteRequest(IrpContext, Irp, Status);
@@ -451,20 +467,29 @@ pub unsafe extern "system" fn CdFastQueryBasicInfo(
         return 0;
     }
 
-    if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) != 0 {
-        let creation: i64 = (*Fcb).CreationTime;
-        (*Buffer).CreationTime.QuadPart = creation;
-        (*Buffer).LastWriteTime.QuadPart = creation;
-        (*Buffer).ChangeTime.QuadPart = creation;
-        (*Buffer).LastAccessTime.QuadPart = 0;
-        (*Buffer).FileAttributes = (*Fcb).FileAttributes;
-        (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
-        (*IoStatus).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as _;
-        Result = 1;
-    }
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            if CdVerifyFcbOperation(core::ptr::null_mut(), Fcb) != 0 {
+                let creation: i64 = (*Fcb).CreationTime;
+                (*Buffer).CreationTime.QuadPart = creation;
+                (*Buffer).LastWriteTime.QuadPart = creation;
+                (*Buffer).ChangeTime.QuadPart = creation;
+                (*Buffer).LastAccessTime.QuadPart = 0;
+                (*Buffer).FileAttributes = (*Fcb).FileAttributes;
+                (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
+                (*IoStatus).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as _;
+                Result = 1;
+            }
+        },
+        |_, _| {
+            ExReleaseResourceLite((*cd_fcb_header(Fcb)).Resource);
+            FsRtlExitFileSystem();
+        },
+    );
 
-    ExReleaseResourceLite((*cd_fcb_header(Fcb)).Resource);
-    FsRtlExitFileSystem();
     return Result;
 }
 #[no_mangle]
@@ -499,31 +524,39 @@ pub unsafe extern "system" fn CdFastQueryStdInfo(
     }
 
     // _SEH2_TRY block
-    {
-        if CdVerifyFcbOperation(core::ptr::null_mut(), fcb) != 0 {
-            if FlagOn((*fcb).FileAttributes, FILE_ATTRIBUTE_DIRECTORY) != 0 {
-                (*buffer).AllocationSize.QuadPart = 0;
-                (*buffer).EndOfFile.QuadPart = 0;
-                (*buffer).Directory = 1;
-            } else {
-                (*buffer).AllocationSize.QuadPart = (*cd_fcb_header(fcb)).AllocationSize.QuadPart;
-                (*buffer).EndOfFile.QuadPart = (*cd_fcb_header(fcb)).FileSize.QuadPart;
-                (*buffer).Directory = 0;
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            {
+                if CdVerifyFcbOperation(core::ptr::null_mut(), fcb) != 0 {
+                    if FlagOn((*fcb).FileAttributes, FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                        (*buffer).AllocationSize.QuadPart = 0;
+                        (*buffer).EndOfFile.QuadPart = 0;
+                        (*buffer).Directory = 1;
+                    } else {
+                        (*buffer).AllocationSize.QuadPart = (*cd_fcb_header(fcb)).AllocationSize.QuadPart;
+                        (*buffer).EndOfFile.QuadPart = (*cd_fcb_header(fcb)).FileSize.QuadPart;
+                        (*buffer).Directory = 0;
+                    }
+
+                    (*buffer).NumberOfLinks = 1;
+                    (*buffer).DeletePending = 0;
+
+                    (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
+                    (*io_status).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as _;
+
+                    result = 1;
+                }
             }
+        },
+        |_, _| {
+            ExReleaseResourceLite((*cd_fcb_header(fcb)).Resource);
+            FsRtlExitFileSystem();
+        },
+    );
 
-            (*buffer).NumberOfLinks = 1;
-            (*buffer).DeletePending = 0;
-
-            (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
-            (*io_status).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as _;
-
-            result = 1;
-        }
-    }
-
-    // _SEH2_FINALLY block
-    ExReleaseResourceLite((*cd_fcb_header(fcb)).Resource);
-    FsRtlExitFileSystem();
 
     result
 }
@@ -560,35 +593,42 @@ pub unsafe extern "system" fn CdFastQueryNetworkInfo(
     }
 
     // _SEH2_TRY
-    loop {
-        if CdVerifyFcbOperation(core::ptr::null_mut(), fcb) != 0 {
-            let time = (*fcb).CreationTime;
-            (*Buffer).CreationTime.QuadPart = time;
-            (*Buffer).LastWriteTime.QuadPart = time;
-            (*Buffer).ChangeTime.QuadPart = time;
-            (*Buffer).LastAccessTime.QuadPart = 0;
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            loop {
+                if CdVerifyFcbOperation(core::ptr::null_mut(), fcb) != 0 {
+                    let time = (*fcb).CreationTime;
+                    (*Buffer).CreationTime.QuadPart = time;
+                    (*Buffer).LastWriteTime.QuadPart = time;
+                    (*Buffer).ChangeTime.QuadPart = time;
+                    (*Buffer).LastAccessTime.QuadPart = 0;
 
-            (*Buffer).FileAttributes = (*fcb).FileAttributes;
+                    (*Buffer).FileAttributes = (*fcb).FileAttributes;
 
-            if FlagOn((*fcb).FileAttributes, FILE_ATTRIBUTE_DIRECTORY) != 0 {
-                (*Buffer).AllocationSize.QuadPart = 0;
-                (*Buffer).EndOfFile.QuadPart = 0;
-            } else {
-                (*Buffer).AllocationSize.QuadPart = (*cd_fcb_header(fcb)).AllocationSize.QuadPart;
-                (*Buffer).EndOfFile.QuadPart = (*cd_fcb_header(fcb)).FileSize.QuadPart;
+                    if FlagOn((*fcb).FileAttributes, FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                        (*Buffer).AllocationSize.QuadPart = 0;
+                        (*Buffer).EndOfFile.QuadPart = 0;
+                    } else {
+                        (*Buffer).AllocationSize.QuadPart = (*cd_fcb_header(fcb)).AllocationSize.QuadPart;
+                        (*Buffer).EndOfFile.QuadPart = (*cd_fcb_header(fcb)).FileSize.QuadPart;
+                    }
+
+                    (*IoStatus).__bindgen_anon_1.Status = ntkrnl_sys::base::STATUS_SUCCESS;
+                    (*IoStatus).Information = core::mem::size_of::<ntkrnl_sys::ddk::FILE_NETWORK_OPEN_INFORMATION>() as _;
+                    result = 1;
+                }
+                break;
             }
+        },
+        |_, _| {
+            ntkrnl_sys::ddk::ExReleaseResourceLite((*cd_fcb_header(fcb)).Resource);
+            FsRtlExitFileSystem();
+        },
+    );
 
-            (*IoStatus).__bindgen_anon_1.Status = ntkrnl_sys::base::STATUS_SUCCESS;
-            (*IoStatus).Information = core::mem::size_of::<ntkrnl_sys::ddk::FILE_NETWORK_OPEN_INFORMATION>() as _;
-            result = 1;
-        }
-        break;
-    }
-    // _SEH2_FINALLY
-    {
-        ntkrnl_sys::ddk::ExReleaseResourceLite((*cd_fcb_header(fcb)).Resource);
-        FsRtlExitFileSystem();
-    }
 
     result
 }
@@ -757,108 +797,125 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
     }
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let _ = 'try_block: loop {
-        ParentFcb = (*Fcb).ParentFcb;
-        CdAcquireFileShared(IrpContext, ParentFcb);
-        ReleaseParentFcb = 1;
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_CleanupFileLookup = core::ptr::addr_of_mut!(CleanupFileLookup);
+    let p_CleanupDirectoryLookup = core::ptr::addr_of_mut!(CleanupDirectoryLookup);
+    let p_ReleaseParentFcb = core::ptr::addr_of_mut!(ReleaseParentFcb);
+    let p_ParentFcb = core::ptr::addr_of_mut!(ParentFcb);
+    let p_DirContext = core::ptr::addr_of_mut!(DirContext);
+    let p_Dirent = core::ptr::addr_of_mut!(Dirent);
+    let p_CompoundPathEntry = core::ptr::addr_of_mut!(CompoundPathEntry);
+    let p_FileContext = core::ptr::addr_of_mut!(FileContext);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            let _ = 'try_block: loop {
+                ParentFcb = (*Fcb).ParentFcb;
+                CdAcquireFileShared(IrpContext, ParentFcb);
+                ReleaseParentFcb = 1;
 
-        CdVerifyOrCreateDirStreamFile(IrpContext, ParentFcb);
+                CdVerifyOrCreateDirStreamFile(IrpContext, ParentFcb);
 
-        let name_to_use: *mut _UNICODE_STRING;
-        let dirent_offset: ULONG;
+                let name_to_use: *mut _UNICODE_STRING;
+                let dirent_offset: ULONG;
 
-        if CdFidIsDirectory((*Fcb).FileId) != 0 {
-            CdInitializeCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
-            CdInitializeFileContext(IrpContext, &mut FileContext);
-            CleanupDirectoryLookup = 1;
+                if CdFidIsDirectory((*Fcb).FileId) != 0 {
+                    CdInitializeCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
+                    CdInitializeFileContext(IrpContext, &mut FileContext);
+                    CleanupDirectoryLookup = 1;
 
-            CdLookupPathEntry(
-                IrpContext,
-                CdQueryFidPathTableOffset((*Fcb).FileId),
-                (*cd_fcb_index(Fcb)).Ordinal,
-                0,
-                &mut CompoundPathEntry,
-            );
+                    CdLookupPathEntry(
+                        IrpContext,
+                        CdQueryFidPathTableOffset((*Fcb).FileId),
+                        (*cd_fcb_index(Fcb)).Ordinal,
+                        0,
+                        &mut CompoundPathEntry,
+                    );
 
-            CdUpdatePathEntryName(IrpContext, &mut CompoundPathEntry.PathEntry, 1);
+                    CdUpdatePathEntryName(IrpContext, &mut CompoundPathEntry.PathEntry, 1);
 
-            if CdFindDirectory(
-                IrpContext,
-                ParentFcb,
-                &mut CompoundPathEntry.PathEntry.CdCaseDirName,
-                1,
-                &mut FileContext,
-            ) == 0 {
-                CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+                    if CdFindDirectory(
+                        IrpContext,
+                        ParentFcb,
+                        &mut CompoundPathEntry.PathEntry.CdCaseDirName,
+                        1,
+                        &mut FileContext,
+                    ) == 0 {
+                        CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+                    }
+
+                    name_to_use = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent.CdCaseFileName.FileName) as *mut _UNICODE_STRING;
+                    dirent_offset = (*FileContext.InitialDirent).Dirent.DirentOffset;
+                } else {
+                    CdInitializeDirContext(IrpContext, &mut DirContext);
+                    CdInitializeDirent(IrpContext, &mut Dirent);
+                    CleanupFileLookup = 1;
+
+                    CdLookupDirent(
+                        IrpContext,
+                        ParentFcb,
+                        CdQueryFidDirentOffset((*Fcb).FileId),
+                        &mut DirContext,
+                    );
+
+                    CdUpdateDirentFromRawDirent(
+                        IrpContext,
+                        ParentFcb,
+                        &mut DirContext,
+                        &mut Dirent,
+                    );
+
+                    CdUpdateDirentName(IrpContext, &mut Dirent, 1);
+
+                    name_to_use = core::ptr::addr_of_mut!(Dirent.CdCaseFileName.FileName) as *mut _UNICODE_STRING;
+                    dirent_offset = Dirent.DirentOffset;
+                }
+
+                if CdIs8dot3Name(IrpContext, *name_to_use) != 0 {
+                    Status = STATUS_OBJECT_NAME_NOT_FOUND;
+                    break 'try_block;
+                }
+
+                CdGenerate8dot3Name(
+                    IrpContext,
+                    name_to_use,
+                    dirent_offset,
+                    ShortNameBuffer.as_mut_ptr(),
+                    &mut ShortNameLength,
+                );
+
+                (*Buffer).FileNameLength = ShortNameLength as u32;
+
+                if (*Buffer).FileNameLength as usize + core::mem::size_of::<u32>() > *Length as usize {
+                    (*Buffer).FileNameLength =
+                        (*Length as u32).wrapping_sub(core::mem::size_of::<u32>() as u32);
+                    Status = STATUS_BUFFER_OVERFLOW;
+                }
+
+                core::ptr::copy_nonoverlapping(
+                    ShortNameBuffer.as_ptr() as *const u8,
+                    (*Buffer).FileName.as_mut_ptr() as *mut u8,
+                    (*Buffer).FileNameLength as usize,
+                );
+
+                break 'try_block;
+            };
+        },
+        |_, _| {
+            if (*p_CleanupFileLookup) != 0 {
+                CdCleanupDirContext(IrpContext, &mut (*p_DirContext));
+                CdCleanupDirent(IrpContext, &mut (*p_Dirent));
+            } else if (*p_CleanupDirectoryLookup) != 0 {
+                CdCleanupCompoundPathEntry(IrpContext, &mut (*p_CompoundPathEntry));
+                CdCleanupFileContext(IrpContext, &mut (*p_FileContext));
             }
+            if (*p_ReleaseParentFcb) != 0 {
+                CdReleaseFile(IrpContext, (*p_ParentFcb));
+            }
+        },
+    );
 
-            name_to_use = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent.CdCaseFileName.FileName) as *mut _UNICODE_STRING;
-            dirent_offset = (*FileContext.InitialDirent).Dirent.DirentOffset;
-        } else {
-            CdInitializeDirContext(IrpContext, &mut DirContext);
-            CdInitializeDirent(IrpContext, &mut Dirent);
-            CleanupFileLookup = 1;
-
-            CdLookupDirent(
-                IrpContext,
-                ParentFcb,
-                CdQueryFidDirentOffset((*Fcb).FileId),
-                &mut DirContext,
-            );
-
-            CdUpdateDirentFromRawDirent(
-                IrpContext,
-                ParentFcb,
-                &mut DirContext,
-                &mut Dirent,
-            );
-
-            CdUpdateDirentName(IrpContext, &mut Dirent, 1);
-
-            name_to_use = core::ptr::addr_of_mut!(Dirent.CdCaseFileName.FileName) as *mut _UNICODE_STRING;
-            dirent_offset = Dirent.DirentOffset;
-        }
-
-        if CdIs8dot3Name(IrpContext, *name_to_use) != 0 {
-            Status = STATUS_OBJECT_NAME_NOT_FOUND;
-            break 'try_block;
-        }
-
-        CdGenerate8dot3Name(
-            IrpContext,
-            name_to_use,
-            dirent_offset,
-            ShortNameBuffer.as_mut_ptr(),
-            &mut ShortNameLength,
-        );
-
-        (*Buffer).FileNameLength = ShortNameLength as u32;
-
-        if (*Buffer).FileNameLength as usize + core::mem::size_of::<u32>() > *Length as usize {
-            (*Buffer).FileNameLength =
-                (*Length as u32).wrapping_sub(core::mem::size_of::<u32>() as u32);
-            Status = STATUS_BUFFER_OVERFLOW;
-        }
-
-        core::ptr::copy_nonoverlapping(
-            ShortNameBuffer.as_ptr() as *const u8,
-            (*Buffer).FileName.as_mut_ptr() as *mut u8,
-            (*Buffer).FileNameLength as usize,
-        );
-
-        break 'try_block;
-    };
-
-    if CleanupFileLookup != 0 {
-        CdCleanupDirContext(IrpContext, &mut DirContext);
-        CdCleanupDirent(IrpContext, &mut Dirent);
-    } else if CleanupDirectoryLookup != 0 {
-        CdCleanupCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
-        CdCleanupFileContext(IrpContext, &mut FileContext);
-    }
-    if ReleaseParentFcb != 0 {
-        CdReleaseFile(IrpContext, ParentFcb);
-    }
 
     Status
 }

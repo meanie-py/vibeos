@@ -119,3 +119,6 @@ def test_takeover_check_freezes_inputs_after_the_first_shard(monkeypatch) -> Non
     seen.clear()
     sweep.main(["--arch", "arm64", "--shards", "3", "--dry-run"])
     assert seen == [(0, False), (1, False), (2, False)]
+    seen.clear()
+    sweep.main(["--arch", "arm64", "--shards", "3", "--dry-run", "--reuse-inputs", "--only", "0"])
+    assert seen == [(0, True)]

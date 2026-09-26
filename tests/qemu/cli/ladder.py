@@ -53,6 +53,24 @@ from pathlib import Path
 # paths share nothing below wow64.dll. arm64-only extras (fexprobe,
 # wow64probe) are reported when seen but are not required, so this table stays
 # the definition of parity rather than of "whatever arm64 happens to stage".
+# A verdict BETTER than the one a rung is graded on. gui32's 0x600E means "drew,
+# but GetPixel readback mismatched" -- the soft pass it earned when desktop
+# readback did not work. Once readback started working it exited 0x600D, a full
+# PASS, and an exact-match grade failed the rung for improving: LADDER_FAIL
+# "gui32.exe exit = 0x600d (want 0x600e)" on a tree whose gui32 log said
+# "PASS: 32-bit GDI drew on the host desktop and read it back". Its source never
+# changed; the OS got better. The graded value stays 0x600E so an arch where
+# readback still mismatches stays green; this names the upgrade.
+ALSO_ACCEPTED: dict[str, frozenset[int]] = {
+    "gui32": frozenset({0x600D}),
+}
+
+
+def verdict_ok(guest: str, got: int, want: int) -> bool:
+    """`got` satisfies a rung graded `want`: exactly, or a named upgrade."""
+    return got == want or got in ALSO_ACCEPTED.get(guest, frozenset())
+
+
 LADDER: dict[str, int] = {
     "hello32": 0x600D,
     "gui32": 0x600E,
@@ -826,7 +844,11 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     for and must not read as absent."""
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
-    wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
+    wrong = [
+        (g, seen[g], want)
+        for g, want in LADDER.items()
+        if g in seen and not verdict_ok(g, seen[g], want)
+    ]
     # An optional guest is ignored when absent and enforced when present: the
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
@@ -874,7 +896,7 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
 def summary(text: str) -> str:
     """One-line roll-up for the stage detail."""
     seen = verdicts(text)
-    ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
+    ok = sum(1 for g, want in LADDER.items() if g in seen and verdict_ok(g, seen[g], want))
     extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
     wt = {f"{k}={v}" for k, v in winetests(text).items()}

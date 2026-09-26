@@ -215,6 +215,19 @@ a 1-in-50 flake becomes overnight statistics instead of lore. Canonical
 overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
 "SPECIALPOOL=*"`. Staleness-gated like smoke.
 
+### `flake-report [--days N] [--arch A] [--source smoke|conformance] [--min K] [--json]`
+**Which fleet failures are flakes.** `farm-report` reads only `farm` soaks; the fleet
+runs `smoke`/`gate`/`conformance`, so this reads the durable ledger (every run) plus the
+preserved evidence under `~/vibeos-flake-farm/` (history from before ledger rows carried
+signatures). Each failure is reduced to a signature (`BUGCHECK 0x1E post-marker @ fn`,
+`HANG_TIMEOUT wedged | <last serial>`, `assert File.c:N`, the payload/ladder that failed),
+then graded at the commit it was seen on: **FLAKE** = present in one run and observed
+*absent* in another at the same commit; **DETERMINISTIC** = present in every observing run
+(n≥2); **UNGRADED** otherwise. A run only counts as absence if it could have seen the
+failure (a lost boot says nothing about an assertion it never reached). Dirty-tree runs
+are listed separately and never graded, because their commit does not name the code. The
+evidence pointer says so when it pointed into `/tmp` and is gone.
+
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
 The source-scanner suite runs **once in two disjoint partitions**. Five audited
@@ -276,7 +289,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--hold R] [--release] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
+### `land [--direct] [--drain] [--hold R] [--release] [--withdraw] [--evict R] [--cold] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -336,6 +349,37 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   link turned 17 of 18 batched gates red on 2026-09-25.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
+
+### The train: pipelined gates (`VIBEOS_QUEUE_DEPTH`, default 2)
+While one batch gates, the conductor merges the NEXT batch on top of it in a
+second integration worktree (`vibeos-integration-2`) and gates that at the same
+time. The second batch's verdict is about master + first + second, so it is
+used only if the first landed whole; otherwise it is discarded and those lanes
+stay queued, neither landed nor rejected. A second batch's merge conflict with
+the first is likewise only rejected once the first is on master. Depth 1 is the
+serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
+
+### `land --withdraw` — step out of line
+Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),
+without touching anyone else's place. A submission already being gated —
+`[GATING]` in `land-status` — is left alone: its merge is in the tree under test.
+Resubmit with a plain `land`. Use it when you learn your lane is not ready, or
+would gate cold; `--hold` is for stopping everyone.
+
+### `land --evict REASON` — clear the line for a fix
+Only under your OWN manual hold (`land --hold REASON --preempt` first). Kicks
+every other lane's queued submissions back to them with verdict `EVICTED` and
+REASON (e.g. "merge origin/master and resubmit"); anything a live conductor is
+gating is left alone. Then land your fix with `--direct` and `--release`.
+
+### Warm receipts, and `land --cold`
+Every successful `vibeos-cli build` records a receipt for the working tree's
+content on that arch. `land` refuses a lane whose tree has no receipt on all
+three arches — the queue's gate builds cold and leans on the shared compiler
+caches, so code no build has seen compiles from scratch there and can hold the
+whole queue for hours. Build the three arches, commit what you built (a
+docs-only difference is fine; a docs-only lane needs no build at all), and
+`land` again. `--cold` overrides; report every use.
 
 ### `land --hold REASON [--preempt]` / `land --release` — stop the line
 While a hold stands, no conductor starts a batch, `land` still **queues** your

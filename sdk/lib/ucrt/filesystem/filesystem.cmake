@@ -2,7 +2,6 @@
 list(APPEND UCRT_FILESYSTEM_SOURCES
     filesystem/access.cpp
     filesystem/chmod.cpp
-    filesystem/findfile.cpp
     filesystem/fullpath.cpp
     filesystem/makepath.cpp
     filesystem/mkdir.cpp

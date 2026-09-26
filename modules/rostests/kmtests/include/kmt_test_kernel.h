@@ -124,6 +124,15 @@ typedef struct _POOL_HEADER
     };
 } POOL_HEADER, *PPOOL_HEADER;
 
+/* Real Windows' POOL_HEADER is 16 bytes on EVERY 64-bit target -- the union's
+ * ProcessBilled pointer forces it -- so the predicate above is _WIN64, not
+ * _M_AMD64. Gating on the latter was an amd64-shaped assumption that held only
+ * while amd64 was our sole 64-bit arch; on arm64 it made this copy 8 bytes while
+ * the kernel's (ntoskrnl/mm/ARM3/miarm.h) stayed 16, so `Header--` below read
+ * half a header and reported phantom pool corruption. Keep it wired to the
+ * kernel's own invariant so the two cannot drift again. */
+C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY));
+
 ULONG KmtGetPoolTag(PVOID Memory)
 {
     PPOOL_HEADER Header;

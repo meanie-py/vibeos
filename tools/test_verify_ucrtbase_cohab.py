@@ -543,7 +543,18 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
     if not fresh:
         pytest.skip("no fresh build tree in this worktree; the ratchet needs current objects")
     arch = fresh[0]
-    real = doc["burndown"][arch]
+    recorded = doc["burndown"][arch]
+    # Anchor on what the tree MEASURES, not on the recorded ceiling. The two differ
+    # whenever the build dir holds a newer (or older) Rust archive than the commit
+    # recorded -- routinely, in the conductor's integration worktree, which the
+    # previous gate built. A +/-50 around the RECORDED number stopped being "below
+    # reality" once a batch's archive answered 53 more exports, the check truthfully
+    # found no regression, and the test read that as the ratchet being broken: it
+    # halted the merge train as "master is red" (2026-09-26).
+    from ucrt_burndown import classify
+
+    measured = len(classify(arch)[0]["MICROSOFT"])
+    recorded_line = f"  {arch}: {recorded}"
 
     # Perturb a COPY, never the tracked file. Writing tools/ucrt-takeover.yaml in place and
     # restoring it leaves the content clean but moves the mtime, and `vibeos-cli build`'s
@@ -556,12 +567,12 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
     vuc.TAKEOVER = scratch
     try:
         # Ceiling below reality -> a regression, and it must FAIL.
-        scratch.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real - 50}"))
+        scratch.write_text(original.replace(recorded_line, f"  {arch}: {measured - 1}"))
         fails, _ = vuc.check_burndown()
         assert any("REGRESSED" in f and arch in f for f in fails), fails
 
         # Ceiling above reality -> an improvement, and it must only NOTE.
-        scratch.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real + 50}"))
+        scratch.write_text(original.replace(recorded_line, f"  {arch}: {measured + 1}"))
         fails, notes = vuc.check_burndown()
         assert not fails, fails
         assert any("fewer Microsoft-backed exports" in n for n in notes), notes

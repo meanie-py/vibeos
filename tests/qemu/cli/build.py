@@ -15,7 +15,18 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, diskspace, hostdisk, hostjobs, hostlock, lints, provenance
+from . import (
+    archcfg,
+    cachecfg,
+    canon,
+    diskspace,
+    hostdisk,
+    hostjobs,
+    hostlock,
+    lints,
+    provenance,
+    warmth,
+)
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -1190,6 +1201,14 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("artifact-check", status="ok", detail="media present + fresh"))
+
+    # --- warm receipt: `land` asks whether this lane's code has been built, i.e. whether
+    # the merge queue's cold gate will find it in the shared compiler caches (warmth.py).
+    try:
+        tree = warmth.record(repo, arch)
+        run.add(Stage("warm-receipt", status="ok", detail=f"tree {tree[:12]}"))
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        run.add(Stage("warm-receipt", status="warn", detail=f"not recorded: {exc}"))
 
     # NOTE: auto hardlink-dedup of cache trees was RETIRED 2026-07-04 (unsound on
     # live trees — SIGBUS + mtime-poisoned false-green; see tools/dedup-build-cache.sh

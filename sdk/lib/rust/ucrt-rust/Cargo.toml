@@ -86,5 +86,22 @@ ismbc = ["ctype", "ismbbyte"]
 # UCRT at EOF, the very first case. See src/tocase.rs.
 tocase = []
 
+# convert/strtox.cpp -- strtol and its 31 siblings, narrow and wide: one template,
+# __crt_strtox::parse_integer, ported with the accumulator width as a parameter.
+# A port: msvcrt's bodies are Wine's _MSVCR_VER=0 overflow contract. See src/strtox.rs.
+strtox = ["ctype"]
+
+# convert/atox.cpp -- atoi and its 15 siblings: the strtox template at base 10
+# with no end pointer, so a call into src/strtox.rs.
+atox = ["strtox"]
+
+# convert/xtoa.cpp -- _itoa and its 19 siblings, plain and _s, narrow and wide.
+xtoa = []
+
+# filesystem/findfile.cpp -- _findfirst/_findnext/_findclose, all 17: the wide
+# search, the narrow forms converting through the file-API codepage, eight record
+# layouts pinned against the compiler. See src/findfile.rs.
+findfile = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

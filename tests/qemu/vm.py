@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import fcntl
 import json
 import os
@@ -1225,6 +1226,60 @@ def get_arch_config(arch: str) -> ArchConfig:
     return cls()
 
 
+def launch_with_retry(
+    make_vm: Callable[[], QemuVM],
+    timings: dict[str, float],
+    log: Callable[[str], None],
+    label: str,
+) -> tuple[QemuVM | None, int, Exception | None]:
+    """Start a VM, retrying a host-side launch failure.
+
+    EVERY gated boot path must launch through this. It lived in cli/smoke.py, so the
+    pytest `vm` fixture -- which carries conformance, the payload suites and the net
+    suite -- kept a bare `vm.start()`: 16 conformance rounds in two weeks died on
+    "QEMU did not connect to serial socket within 15.0s", before a guest instruction
+    ran, and were graded as LOST BOOTS beside real kernel failures.
+
+    Returns (vm, attempts, last_exc); `last_exc` is None on success. A fresh VM
+    is built per attempt because the port and serial socket path are chosen in
+    QemuVM.__init__ -- retrying start() on the same instance would retry onto
+    the same bad port and could never recover.
+    """
+    last_exc: Exception | None = None
+    vm: QemuVM | None = None
+    attempts = 0
+    while attempts < LAUNCH_ATTEMPTS:
+        attempts += 1
+        vm = make_vm()
+        started = time.monotonic()
+        try:
+            vm.start()
+            timings["start_seconds"] = round(time.monotonic() - started, 3)
+            timings.update(vm.launch_timings)
+            if attempts > 1:
+                # Loud on the way through: a retried launch is still an incident.
+                timings["launch_attempts"] = attempts
+                log(f"{label}: launched on attempt {attempts} (host-side flake)")
+            return vm, attempts, None
+        except Exception as e:
+            last_exc = e
+            first = str(e).splitlines()[0][:140]
+            log(f"{label}: start failed (attempt {attempts}/{LAUNCH_ATTEMPTS}): {first}")
+            with contextlib.suppress(Exception):
+                vm.stop()
+            if attempts < LAUNCH_ATTEMPTS:
+                time.sleep(LAUNCH_RETRY_SECONDS)
+    return vm, attempts, last_exc
+
+
+# Host-side launch retries. Small on purpose: the failure mode this exists for
+# resolves on the next attempt (a lost socket / port), so a third attempt buys
+# almost nothing and a large number would turn a genuinely broken launch into a
+# slow one. Overridable for tests.
+LAUNCH_ATTEMPTS = 3
+LAUNCH_RETRY_SECONDS = 2.0
+
+
 class QemuVM:
     """Manages a single QEMU VM instance with QMP + serial control."""
 
@@ -1438,6 +1493,51 @@ class QemuVM:
         if not raw:
             return []
         return shlex.split(raw)
+
+    def _xhci_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_XHCI", "").strip() in ("1", "true", "yes")
+
+    def _xhci_args(self) -> list[str]:
+        """VIBEOS_QEMU_XHCI=1 attaches a qemu-xhci controller with a USB keyboard
+        and mouse (usbxhci bring-up rig, docs/engineering/usbxhci-design.md).
+
+        The controller is pinned to PCI slot 8. Left to auto-assignment it takes
+        the first free slot, which shifts arm64's virtio-blk-pci boot disk off the
+        `Pci(0x2,0x0)` path saved in efivars, and UEFI falls through to PXE."""
+        if not self._xhci_enabled():
+            return []
+        return [
+            "-device",
+            "qemu-xhci,id=xhci,addr=0x8",
+            "-device",
+            "usb-kbd,bus=xhci.0,id=ukbd",
+            "-device",
+            "usb-mouse,bus=xhci.0,id=umouse",
+        ]
+
+    def _without_virtio_input(self, args: list[str]) -> list[str]:
+        """Drop arm64's virtio keyboard/mouse when the xHCI rig is on.
+
+        QEMU sends host input to the most recently ACTIVATED handler. usb-kbd
+        activates when it is created; virtio-input activates later, when the
+        guest driver starts it, and so would take every keystroke meant for USB.
+        (`input-send-event`'s `device` argument cannot pick one: it names a
+        display console, and QEMU aborts looking it up with -display none.)"""
+        if not self._xhci_enabled():
+            return args
+        out: list[str] = []
+        i = 0
+        while i < len(args):
+            if (
+                args[i] == "-device"
+                and i + 1 < len(args)
+                and args[i + 1].startswith(("virtio-keyboard-device", "virtio-mouse-device"))
+            ):
+                i += 2
+                continue
+            out.append(args[i])
+            i += 1
+        return out
 
     def _usb_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
@@ -1654,7 +1754,7 @@ class QemuVM:
             check=True,
             capture_output=True,
         )
-        arch = self.config.prepare_args(self.work_dir)
+        arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
         disks = [*self._scratch_device_args(), *self._usb_disk_args()]
         self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
         self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
@@ -1674,6 +1774,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",
@@ -1773,6 +1874,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",

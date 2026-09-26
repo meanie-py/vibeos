@@ -85,7 +85,7 @@
 # handle automatically.
 # You must not rely on them having a particular line ending style!
 # Vendored FEX snapshot: preserve upstream bytes exactly (no EOL normalization)
-external/fex/** -text
+vendor/fex/** -text
 
 # NO `merge=union` HERE — the field manual was the obvious candidate and it was WRONG.
 #

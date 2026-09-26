@@ -175,9 +175,9 @@ pub unsafe extern "C" fn CdQueryDirectory(
     let mut Information: u32 = 0;
     let mut LastEntry: u32 = 0;
     let mut NextEntry: u32 = 0;
-    let mut FileNameBytes: u32;
-    let mut SeparatorBytes: u32;
-    let mut VersionStringBytes: u32;
+    let mut FileNameBytes: u32 = 0;
+    let mut SeparatorBytes: u32 = 0;
+    let mut VersionStringBytes: u32 = 0;
     let mut FileContext: FILE_ENUM_CONTEXT = core::mem::zeroed();
     let mut ThisDirent: *mut DIRENT = core::ptr::null_mut();
     let mut InitialQuery: BOOLEAN = 0;
@@ -186,12 +186,12 @@ pub unsafe extern "C" fn CdQueryDirectory(
     let mut Found: BOOLEAN = 0;
     let mut DoCcbUpdate: BOOLEAN = 0; // FALSE
     let UserBuffer: *mut u8;
-    let mut BytesRemainingInBuffer: u32;
+    let mut BytesRemainingInBuffer: u32 = 0;
     let BaseLength: u32;
     let mut DirInfo: *mut FILE_BOTH_DIR_INFORMATION = core::ptr::null_mut();
-    let mut NamesInfo: *mut FILE_NAMES_INFORMATION;
-    let mut IdFullDirInfo: *mut FILE_ID_FULL_DIR_INFORMATION;
-    let mut IdBothDirInfo: *mut FILE_ID_BOTH_DIR_INFORMATION;
+    let mut NamesInfo: *mut FILE_NAMES_INFORMATION = core::ptr::null_mut();
+    let mut IdFullDirInfo: *mut FILE_ID_FULL_DIR_INFORMATION = core::ptr::null_mut();
+    let mut IdBothDirInfo: *mut FILE_ID_BOTH_DIR_INFORMATION = core::ptr::null_mut();
 
     // PAGED_CODE(); – omitted, annotation only.
 
@@ -233,293 +233,314 @@ pub unsafe extern "C" fn CdQueryDirectory(
     // Acquire the directory.
     CdAcquireFileShared(IrpContext, Fcb);
 
-    // ------ Start of the outer SEH try block ------
-    // We emulate SEH try/finally with a labeled loop + a finally block after it.
-    // Any `try_leave(Status)` becomes `Status = expr; break 'outer_finally;`.
-    'outer_finally: loop {
-        // Verify the Fcb is still good.
-        CdVerifyFcbOperation(IrpContext, Fcb);
+    // try { ... } finally { cleanup, Ccb update, CdReleaseFile } — a real __finally
+    // (ntkrnl_sys::seh), so a raise inside still releases the directory. The body is the
+    // translated loop unchanged; the finally reads the locals it needs through pointers
+    // taken here, and runs only after the body has returned or been unwound.
+    let p_file_context = core::ptr::addr_of_mut!(FileContext);
+    let p_do_ccb_update = core::ptr::addr_of_mut!(DoCcbUpdate);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_this_dirent = core::ptr::addr_of_mut!(ThisDirent);
+    let p_return_next_entry = core::ptr::addr_of_mut!(ReturnNextEntry);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            // ------ Start of the outer SEH try block ------
+            // We emulate SEH try/finally with a labeled loop + a finally block after it.
+            // Any `try_leave(Status)` becomes `Status = expr; break 'outer_finally;`.
+            'outer_finally: loop {
+                // Verify the Fcb is still good.
+                CdVerifyFcbOperation(IrpContext, Fcb);
 
-        // Initialize the enumeration parameters.
-        CdInitializeEnumeration(
-            IrpContext,
-            IrpSp,
-            Fcb,
-            Ccb,
-            &mut FileContext,
-            &mut ReturnNextEntry,
-            &mut ReturnSingleEntry,
-            &mut InitialQuery,
-        );
+                // Initialize the enumeration parameters.
+                CdInitializeEnumeration(
+                    IrpContext,
+                    IrpSp,
+                    Fcb,
+                    Ccb,
+                    &mut FileContext,
+                    &mut ReturnNextEntry,
+                    &mut ReturnSingleEntry,
+                    &mut InitialQuery,
+                );
 
-        // Store the initial dirent pointer.
-        ThisDirent = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent);
+                // Store the initial dirent pointer.
+                ThisDirent = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent);
 
-        // Main enumeration loop.
-        loop {
-            // If a single entry was returned and it is not the first, exit.
-            if (NextEntry != 0) && (ReturnSingleEntry != 0) {
-                DoCcbUpdate = 1;
-                Status = STATUS_SUCCESS;
-                break 'outer_finally;
-            }
-
-            // Find the next matching dirent.
-            Found = CdEnumerateIndex(IrpContext, Ccb, &mut FileContext, ReturnNextEntry as i32) as BOOLEAN;
-            // Prepare to search for the next entry after current.
-            ReturnNextEntry = 1; // TRUE
-
-            if Found == 0 {
-                if NextEntry == 0 {
-                    Status = STATUS_NO_MORE_FILES;
-                    if InitialQuery != 0 {
-                        Status = STATUS_NO_SUCH_FILE;
+                // Main enumeration loop.
+                loop {
+                    // If a single entry was returned and it is not the first, exit.
+                    if (NextEntry != 0) && (ReturnSingleEntry != 0) {
+                        DoCcbUpdate = 1;
+                        Status = STATUS_SUCCESS;
+                        break 'outer_finally;
                     }
-                }
-                DoCcbUpdate = 1;
-                break 'outer_finally; // try_leave(Status)
-            }
 
-            // New dirent found.
-            ThisDirent = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent);
+                    // Find the next matching dirent.
+                    Found = CdEnumerateIndex(IrpContext, Ccb, &mut FileContext, ReturnNextEntry as i32) as BOOLEAN;
+                    // Prepare to search for the next entry after current.
+                    ReturnNextEntry = 1; // TRUE
 
-            // Calculate name lengths.
-            SeparatorBytes = 0;
-            VersionStringBytes = 0;
+                    if Found == 0 {
+                        if NextEntry == 0 {
+                            Status = STATUS_NO_MORE_FILES;
+                            if InitialQuery != 0 {
+                                Status = STATUS_NO_SUCH_FILE;
+                            }
+                        }
+                        DoCcbUpdate = 1;
+                        break 'outer_finally; // try_leave(Status)
+                    }
 
-            FileNameBytes = (*ThisDirent).CdFileName.FileName.Length as u32;
+                    // New dirent found.
+                    ThisDirent = core::ptr::addr_of_mut!((*FileContext.InitialDirent).Dirent);
 
-            // Determine version string bytes.
-            let is_directory = ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_DIRECTORY as u8) != 0;
-            let search_has_version = ((*Ccb).SearchExpression.VersionString.Length as u32) != 0;
-            let have_illegal_semicolon = is_directory; // directories allow illegal ";"
-            let dirent_has_version = ((*ThisDirent).CdFileName.VersionString.Length as u32) != 0;
+                    // Calculate name lengths.
+                    SeparatorBytes = 0;
+                    VersionStringBytes = 0;
 
-            if (search_has_version || have_illegal_semicolon) && dirent_has_version {
-                SeparatorBytes = 2u32;
-                VersionStringBytes = (*ThisDirent).CdFileName.VersionString.Length as u32;
-            }
+                    FileNameBytes = (*ThisDirent).CdFileName.FileName.Length as u32;
 
-            // Check if we exceeded the buffer.
-            if NextEntry > irp_sp.Parameters.QueryDirectory.Length {
-                ReturnNextEntry = 0; // FALSE
-                DoCcbUpdate = 1;
-                Status = STATUS_SUCCESS;
-                break 'outer_finally;
-            }
+                    // Determine version string bytes.
+                    let is_directory = ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_DIRECTORY as u8) != 0;
+                    let search_has_version = ((*Ccb).SearchExpression.VersionString.Length as u32) != 0;
+                    let have_illegal_semicolon = is_directory; // directories allow illegal ";"
+                    let dirent_has_version = ((*ThisDirent).CdFileName.VersionString.Length as u32) != 0;
 
-            // Compute remaining bytes in user buffer (rounded down to WCHAR boundary).
-            BytesRemainingInBuffer = irp_sp.Parameters.QueryDirectory.Length - NextEntry;
-            BytesRemainingInBuffer &= !1u32; // Clear low bit.
+                    if (search_has_version || have_illegal_semicolon) && dirent_has_version {
+                        SeparatorBytes = 2u32;
+                        VersionStringBytes = (*ThisDirent).CdFileName.VersionString.Length as u32;
+                    }
 
-            // Will this entry fit?
-            if (BaseLength + FileNameBytes + SeparatorBytes + VersionStringBytes) > BytesRemainingInBuffer {
-                if NextEntry != 0 {
-                    ReturnNextEntry = 0;
-                    DoCcbUpdate = 1;
-                    Status = STATUS_SUCCESS;
-                    break 'outer_finally;
-                }
+                    // Check if we exceeded the buffer.
+                    if NextEntry > irp_sp.Parameters.QueryDirectory.Length {
+                        ReturnNextEntry = 0; // FALSE
+                        DoCcbUpdate = 1;
+                        Status = STATUS_SUCCESS;
+                        break 'outer_finally;
+                    }
 
-                if (BaseLength + FileNameBytes) > BytesRemainingInBuffer {
-                    FileNameBytes = BytesRemainingInBuffer - BaseLength;
-                }
+                    // Compute remaining bytes in user buffer (rounded down to WCHAR boundary).
+                    BytesRemainingInBuffer = irp_sp.Parameters.QueryDirectory.Length - NextEntry;
+                    BytesRemainingInBuffer &= !1u32; // Clear low bit.
 
-                VersionStringBytes = 0;
-                SeparatorBytes = 0;
-                Status = STATUS_BUFFER_OVERFLOW;
-                ReturnSingleEntry = 1;
-            }
-
-            // ------ Internal SEH try (buffer fill) ------
-            // DUMMY_PSEH: the __try body runs inline; the __except handler is dead code
-            // (see project SEH model). Pointers are validated before deref in this path.
-            {
-                // Zero the base part of the entry.
-                let dest = (UserBuffer as *mut u8).add(NextEntry as usize);
-                core::ptr::write_bytes(dest, 0, BaseLength as usize);
-
-                // Populate the buffer based on file information class.
-                match irp_sp.Parameters.QueryDirectory.FileInformationClass {
-                    FileBothDirectoryInformation
-                    | FileFullDirectoryInformation
-                    | FileIdBothDirectoryInformation
-                    | FileIdFullDirectoryInformation
-                    | FileDirectoryInformation => {
-                        DirInfo = (UserBuffer as *mut u8)
-                            .add(NextEntry as usize)
-                            as *mut FILE_BOTH_DIR_INFORMATION;
-
-                        let cd_time = (*ThisDirent).CdTime;
-                        CdConvertCdTimeToNtTime(
-                            IrpContext,
-                            cd_time,
-                            core::ptr::addr_of_mut!((*DirInfo).CreationTime) as *mut LARGE_INTEGER,
-                        );
-                        (*DirInfo).LastWriteTime = (*DirInfo).CreationTime;
-                        (*DirInfo).ChangeTime = (*DirInfo).CreationTime;
-
-                        if is_directory {
-                            (*DirInfo).EndOfFile.QuadPart = 0;
-                            (*DirInfo).AllocationSize.QuadPart = 0;
-                            (*DirInfo).FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
-                        } else {
-                            (*DirInfo).EndOfFile.QuadPart = FileContext.FileSize;
-                            (*DirInfo).AllocationSize.QuadPart =
-                                LlSectorAlign(FileContext.FileSize);
-                            (*DirInfo).FileAttributes |= FILE_ATTRIBUTE_READONLY;
+                    // Will this entry fit?
+                    if (BaseLength + FileNameBytes + SeparatorBytes + VersionStringBytes) > BytesRemainingInBuffer {
+                        if NextEntry != 0 {
+                            ReturnNextEntry = 0;
+                            DoCcbUpdate = 1;
+                            Status = STATUS_SUCCESS;
+                            break 'outer_finally;
                         }
 
-                        if ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_HIDDEN as u8) != 0 {
-                            (*DirInfo).FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
+                        if (BaseLength + FileNameBytes) > BytesRemainingInBuffer {
+                            FileNameBytes = BytesRemainingInBuffer - BaseLength;
                         }
 
-                        (*DirInfo).FileIndex = (*ThisDirent).DirentOffset;
-                        (*DirInfo).FileNameLength =
-                            (FileNameBytes + SeparatorBytes + VersionStringBytes) as u32;
+                        VersionStringBytes = 0;
+                        SeparatorBytes = 0;
+                        Status = STATUS_BUFFER_OVERFLOW;
+                        ReturnSingleEntry = 1;
                     }
-                    FileNamesInformation => {
-                        NamesInfo = (UserBuffer as *mut u8)
-                            .add(NextEntry as usize)
-                            as *mut FILE_NAMES_INFORMATION;
-                        (*NamesInfo).FileIndex = (*ThisDirent).DirentOffset;
-                        (*NamesInfo).FileNameLength =
-                            (FileNameBytes + SeparatorBytes + VersionStringBytes) as u32;
-                    }
-                    _ => {} // ReactOS default case
-                }
 
-                // Fill FileId for the two extended classes.
-                match irp_sp.Parameters.QueryDirectory.FileInformationClass {
-                    FileIdBothDirectoryInformation => {
-                        IdBothDirInfo = (UserBuffer as *mut u8)
-                            .add(NextEntry as usize)
-                            as *mut FILE_ID_BOTH_DIR_INFORMATION;
-                        CdSetFidFromParentAndDirent(
-                            core::ptr::addr_of_mut!((*IdBothDirInfo).FileId) as *mut i64,
-                            Fcb,
-                            ThisDirent,
-                        );
-                    }
-                    FileIdFullDirectoryInformation => {
-                        IdFullDirInfo = (UserBuffer as *mut u8)
-                            .add(NextEntry as usize)
-                            as *mut FILE_ID_FULL_DIR_INFORMATION;
-                        CdSetFidFromParentAndDirent(
-                            core::ptr::addr_of_mut!((*IdFullDirInfo).FileId) as *mut i64,
-                            Fcb,
-                            ThisDirent,
-                        );
-                    }
-                    _ => {}
-                }
+                    // try { fill the entry } except (EXECUTE_HANDLER) { Information = 0;
+                    // try_leave(Status = GetExceptionCode()) }: a fault on the caller's buffer is
+                    // "the only reason any exception would have occurred at this level" (C).
+                    let fill = ntkrnl_sys::seh::try_except(
+                        &mut (),
+                        |_| {
+                                // Zero the base part of the entry.
+                                let dest = (UserBuffer as *mut u8).add(NextEntry as usize);
+                                core::ptr::write_bytes(dest, 0, BaseLength as usize);
 
-                // Copy the file name and version string.
-                if FileNameBytes != 0 {
-                    let dest_name = (UserBuffer as *mut u8)
-                        .add(NextEntry as usize + BaseLength as usize);
-                    core::ptr::copy_nonoverlapping(
-                        (*ThisDirent).CdFileName.FileName.Buffer as *const u8,
-                        dest_name,
-                        FileNameBytes as usize,
+                                // Populate the buffer based on file information class.
+                                match irp_sp.Parameters.QueryDirectory.FileInformationClass {
+                                    FileBothDirectoryInformation
+                                    | FileFullDirectoryInformation
+                                    | FileIdBothDirectoryInformation
+                                    | FileIdFullDirectoryInformation
+                                    | FileDirectoryInformation => {
+                                        DirInfo = (UserBuffer as *mut u8)
+                                            .add(NextEntry as usize)
+                                            as *mut FILE_BOTH_DIR_INFORMATION;
+
+                                        let cd_time = (*ThisDirent).CdTime;
+                                        CdConvertCdTimeToNtTime(
+                                            IrpContext,
+                                            cd_time,
+                                            core::ptr::addr_of_mut!((*DirInfo).CreationTime) as *mut LARGE_INTEGER,
+                                        );
+                                        (*DirInfo).LastWriteTime = (*DirInfo).CreationTime;
+                                        (*DirInfo).ChangeTime = (*DirInfo).CreationTime;
+
+                                        if is_directory {
+                                            (*DirInfo).EndOfFile.QuadPart = 0;
+                                            (*DirInfo).AllocationSize.QuadPart = 0;
+                                            (*DirInfo).FileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
+                                        } else {
+                                            (*DirInfo).EndOfFile.QuadPart = FileContext.FileSize;
+                                            (*DirInfo).AllocationSize.QuadPart =
+                                                LlSectorAlign(FileContext.FileSize);
+                                            (*DirInfo).FileAttributes |= FILE_ATTRIBUTE_READONLY;
+                                        }
+
+                                        if ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_HIDDEN as u8) != 0 {
+                                            (*DirInfo).FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
+                                        }
+
+                                        (*DirInfo).FileIndex = (*ThisDirent).DirentOffset;
+                                        (*DirInfo).FileNameLength =
+                                            (FileNameBytes + SeparatorBytes + VersionStringBytes) as u32;
+                                    }
+                                    FileNamesInformation => {
+                                        NamesInfo = (UserBuffer as *mut u8)
+                                            .add(NextEntry as usize)
+                                            as *mut FILE_NAMES_INFORMATION;
+                                        (*NamesInfo).FileIndex = (*ThisDirent).DirentOffset;
+                                        (*NamesInfo).FileNameLength =
+                                            (FileNameBytes + SeparatorBytes + VersionStringBytes) as u32;
+                                    }
+                                    _ => {} // ReactOS default case
+                                }
+
+                                // Fill FileId for the two extended classes.
+                                match irp_sp.Parameters.QueryDirectory.FileInformationClass {
+                                    FileIdBothDirectoryInformation => {
+                                        IdBothDirInfo = (UserBuffer as *mut u8)
+                                            .add(NextEntry as usize)
+                                            as *mut FILE_ID_BOTH_DIR_INFORMATION;
+                                        CdSetFidFromParentAndDirent(
+                                            core::ptr::addr_of_mut!((*IdBothDirInfo).FileId) as *mut i64,
+                                            Fcb,
+                                            ThisDirent,
+                                        );
+                                    }
+                                    FileIdFullDirectoryInformation => {
+                                        IdFullDirInfo = (UserBuffer as *mut u8)
+                                            .add(NextEntry as usize)
+                                            as *mut FILE_ID_FULL_DIR_INFORMATION;
+                                        CdSetFidFromParentAndDirent(
+                                            core::ptr::addr_of_mut!((*IdFullDirInfo).FileId) as *mut i64,
+                                            Fcb,
+                                            ThisDirent,
+                                        );
+                                    }
+                                    _ => {}
+                                }
+
+                                // Copy the file name and version string.
+                                if FileNameBytes != 0 {
+                                    let dest_name = (UserBuffer as *mut u8)
+                                        .add(NextEntry as usize + BaseLength as usize);
+                                    core::ptr::copy_nonoverlapping(
+                                        (*ThisDirent).CdFileName.FileName.Buffer as *const u8,
+                                        dest_name,
+                                        FileNameBytes as usize,
+                                    );
+
+                                    if SeparatorBytes != 0 {
+                                        let sep_dest = (UserBuffer as *mut u16)
+                                            .add(((NextEntry + BaseLength + FileNameBytes) / 2) as usize);
+                                        *sep_dest = b';' as u16; // L';'
+
+                                        if VersionStringBytes != 0 {
+                                            let ver_dest = (UserBuffer as *mut u8).add(
+                                                (NextEntry + BaseLength + FileNameBytes + core::mem::size_of::<u16>() as u32)
+                                                    as usize,
+                                            );
+                                            core::ptr::copy_nonoverlapping(
+                                                (*ThisDirent).CdFileName.VersionString.Buffer as *const u8,
+                                                ver_dest,
+                                                VersionStringBytes as usize,
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // Short name handling (only if we are returning success and appropriate class).
+                                if (Status == STATUS_SUCCESS)
+                                    && (irp_sp.Parameters.QueryDirectory.FileInformationClass
+                                        == FileBothDirectoryInformation
+                                        || irp_sp.Parameters.QueryDirectory.FileInformationClass
+                                            == FileIdBothDirectoryInformation)
+                                    && ((*Ccb).SearchExpression.VersionString.Length as u32) == 0
+                                    && ((*ThisDirent).Flags & DIRENT_FLAG_CONSTANT_ENTRY as u8) == 0
+                                {
+                                    if FileContext.ShortName.FileName.Length != 0 {
+                                        core::ptr::copy_nonoverlapping(
+                                            FileContext.ShortName.FileName.Buffer as *const u8,
+                                            (*DirInfo).ShortName.as_mut_ptr() as *mut u8,
+                                            FileContext.ShortName.FileName.Length as usize,
+                                        );
+                                        (*DirInfo).ShortNameLength =
+                                            FileContext.ShortName.FileName.Length as i8;
+                                    } else {
+                                        let is_8dot3_name = CdIs8dot3Name(
+                                            IrpContext,
+                                            (*ThisDirent).CdFileName.FileName,
+                                        );
+                                        if is_8dot3_name == 0 {
+                                            CdGenerate8dot3Name(
+                                                IrpContext,
+                                                core::ptr::addr_of!((*ThisDirent).CdCaseFileName.FileName),
+                                                (*ThisDirent).DirentOffset,
+                                                (*DirInfo).ShortName.as_mut_ptr(),
+                                                core::ptr::addr_of_mut!(FileContext.ShortName.FileName.Length),
+                                            );
+                                            (*DirInfo).ShortNameLength =
+                                                FileContext.ShortName.FileName.Length as i8;
+                                        }
+                                    }
+                                }
+
+                                // Advance to the next entry in the buffer.
+                                FileNameBytes += SeparatorBytes + VersionStringBytes;
+                                Information = NextEntry + BaseLength + FileNameBytes;
+
+                                // Update the previous entry's offset.
+                                // Add2Ptr( UserBuffer, LastEntry, PULONG ): byte offset by LastEntry.
+                                let prev_offset_ptr =
+                                    (UserBuffer as *mut u8).add(LastEntry as usize) as *mut u32;
+                                *prev_offset_ptr = NextEntry - LastEntry;
+
+                                // Prepare for next iteration.
+                                InitialQuery = 0;
+                                LastEntry = NextEntry;
+                                NextEntry = (Information + 7) & !7u32; // QuadAlign
+                        },
+                        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
                     );
-
-                    if SeparatorBytes != 0 {
-                        let sep_dest = (UserBuffer as *mut u16)
-                            .add(((NextEntry + BaseLength + FileNameBytes) / 2) as usize);
-                        *sep_dest = b';' as u16; // L';'
-
-                        if VersionStringBytes != 0 {
-                            let ver_dest = (UserBuffer as *mut u8).add(
-                                (NextEntry + BaseLength + FileNameBytes + core::mem::size_of::<u16>() as u32)
-                                    as usize,
-                            );
-                            core::ptr::copy_nonoverlapping(
-                                (*ThisDirent).CdFileName.VersionString.Buffer as *const u8,
-                                ver_dest,
-                                VersionStringBytes as usize,
-                            );
-                        }
+                    if let Err(code) = fill {
+                        Information = 0;
+                        Status = code;
+                        break 'outer_finally;
                     }
+                } // end of while(true)
+
+                // After the loop, set DoCcbUpdate and break normally to finally.
+                DoCcbUpdate = 1;
+                break;
+            } // end of 'outer_finally loop
+        },
+        |_, _| {
+            CdCleanupFileContext(IrpContext, p_file_context);
+
+            if (*p_do_ccb_update != 0) && (((*p_status as u32) >> 30) != 3) {
+                // !NT_ERROR( Status )
+                CdLockFcb(IrpContext, Fcb);
+
+                (*Ccb).CurrentDirentOffset = (**p_this_dirent).DirentOffset;
+                (*Ccb).Flags &= !CCB_FLAG_ENUM_RETURN_NEXT;
+                if *p_return_next_entry != 0 {
+                    (*Ccb).Flags |= CCB_FLAG_ENUM_RETURN_NEXT;
                 }
 
-                // Short name handling (only if we are returning success and appropriate class).
-                if (Status == STATUS_SUCCESS)
-                    && (irp_sp.Parameters.QueryDirectory.FileInformationClass
-                        == FileBothDirectoryInformation
-                        || irp_sp.Parameters.QueryDirectory.FileInformationClass
-                            == FileIdBothDirectoryInformation)
-                    && ((*Ccb).SearchExpression.VersionString.Length as u32) == 0
-                    && ((*ThisDirent).Flags & DIRENT_FLAG_CONSTANT_ENTRY as u8) == 0
-                {
-                    if FileContext.ShortName.FileName.Length != 0 {
-                        core::ptr::copy_nonoverlapping(
-                            FileContext.ShortName.FileName.Buffer as *const u8,
-                            (*DirInfo).ShortName.as_mut_ptr() as *mut u8,
-                            FileContext.ShortName.FileName.Length as usize,
-                        );
-                        (*DirInfo).ShortNameLength =
-                            FileContext.ShortName.FileName.Length as i8;
-                    } else {
-                        let is_8dot3_name = CdIs8dot3Name(
-                            IrpContext,
-                            (*ThisDirent).CdFileName.FileName,
-                        );
-                        if is_8dot3_name == 0 {
-                            CdGenerate8dot3Name(
-                                IrpContext,
-                                core::ptr::addr_of!((*ThisDirent).CdCaseFileName.FileName),
-                                (*ThisDirent).DirentOffset,
-                                (*DirInfo).ShortName.as_mut_ptr(),
-                                core::ptr::addr_of_mut!(FileContext.ShortName.FileName.Length),
-                            );
-                            (*DirInfo).ShortNameLength =
-                                FileContext.ShortName.FileName.Length as i8;
-                        }
-                    }
-                }
-
-                // Advance to the next entry in the buffer.
-                FileNameBytes += SeparatorBytes + VersionStringBytes;
-                Information = NextEntry + BaseLength + FileNameBytes;
-
-                // Update the previous entry's offset.
-                // Add2Ptr( UserBuffer, LastEntry, PULONG ): byte offset by LastEntry.
-                let prev_offset_ptr =
-                    (UserBuffer as *mut u8).add(LastEntry as usize) as *mut u32;
-                *prev_offset_ptr = NextEntry - LastEntry;
-
-                // Prepare for next iteration.
-                InitialQuery = 0;
-                LastEntry = NextEntry;
-                NextEntry = (Information + 7) & !7u32; // QuadAlign
+                CdUnlockFcb(IrpContext, Fcb);
             }
-        } // end of while(true)
 
-        // After the loop, set DoCcbUpdate and break normally to finally.
-        DoCcbUpdate = 1;
-        break;
-    } // end of 'outer_finally loop
-
-    // ----- Finally block (outer SEH finally) -----
-    CdCleanupFileContext(IrpContext, &mut FileContext);
-
-    if (DoCcbUpdate != 0) && (((Status as u32) >> 30) != 3) {
-        // !NT_ERROR( Status )
-        CdLockFcb(IrpContext, Fcb);
-
-        (*Ccb).CurrentDirentOffset = (*ThisDirent).DirentOffset;
-        (*Ccb).Flags &= !CCB_FLAG_ENUM_RETURN_NEXT;
-        if ReturnNextEntry != 0 {
-            (*Ccb).Flags |= CCB_FLAG_ENUM_RETURN_NEXT;
-        }
-
-        CdUnlockFcb(IrpContext, Fcb);
-    }
-
-    CdReleaseFile(IrpContext, Fcb);
-
-    // ----- End of outer SEH block -----
+            CdReleaseFile(IrpContext, Fcb);
+        },
+    );
 
     (*Irp).IoStatus.Information = Information as _;
     CdCompleteRequest(IrpContext, Irp, Status);
@@ -542,27 +563,27 @@ pub unsafe extern "C" fn CdNotifyChangeDirectory(
 
     CdAcquireVcbShared(IrpContext, (*IrpContext).Vcb, 0);
 
-    // _SEH2_TRY block
-    {
-        CdVerifyVcb(IrpContext, (*IrpContext).Vcb);
+    // try { verify; register the notify } finally { CdReleaseVcb } (ntkrnl_sys::seh).
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            CdVerifyVcb(IrpContext, (*IrpContext).Vcb);
 
-        FsRtlNotifyFullChangeDirectory(
-            (*(*IrpContext).Vcb).NotifySync,
-            core::ptr::addr_of!((*(*IrpContext).Vcb).DirNotifyList) as PLIST_ENTRY,
-            Ccb as PVOID,
-            core::ptr::addr_of!((*(*IrpSp).FileObject).FileName) as PSTRING,
-            (((*IrpSp).Flags as u32 & SL_WATCH_TREE) != 0) as BOOLEAN,
-            0,
-            (*IrpSp).Parameters.NotifyDirectory.CompletionFilter,
-            Irp,
-            None,
-            core::ptr::null_mut(),
-        );
-    }
-    // _SEH2_FINALLY block
-    {
-        CdReleaseVcb(IrpContext, (*IrpContext).Vcb);
-    }
+            FsRtlNotifyFullChangeDirectory(
+                (*(*IrpContext).Vcb).NotifySync,
+                core::ptr::addr_of!((*(*IrpContext).Vcb).DirNotifyList) as PLIST_ENTRY,
+                Ccb as PVOID,
+                core::ptr::addr_of!((*(*IrpSp).FileObject).FileName) as PSTRING,
+                (((*IrpSp).Flags as u32 & SL_WATCH_TREE) != 0) as BOOLEAN,
+                0,
+                (*IrpSp).Parameters.NotifyDirectory.CompletionFilter,
+                Irp,
+                None,
+                core::ptr::null_mut(),
+            );
+        },
+        |_, _| CdReleaseVcb(IrpContext, (*IrpContext).Vcb),
+    );
 
     CdCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
 

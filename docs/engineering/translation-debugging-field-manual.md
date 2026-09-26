@@ -4937,8 +4937,17 @@ and check each against the C: a per-arch cfg is *legitimate* only where the C br
 amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
 user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
 truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
-Spell it `target_pointer_width = "64"`. Gated by `scan_win64_cfg` (C twin says `_WIN64` and
-names no specific arch).
+Spell it `target_pointer_width = "64"`. Same family: `#if (NTDDI_VERSION < NTDDI_VISTA)`
+came back as pointer width in smlib's `SmConnectToSm` (the version is 0x502 on every arch).
+Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg against the arch sets the C
+twin's own `#if`s draw.
+
+**Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
+`#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
+`#[cfg(not(target_arch = "x86"))]` into "never". win32k's `TEXT_NextLineW` measured no text
+on any arch this way (four stacked cfgs), and eight more items were silently compiled out
+everywhere. It links, because whatever else provides or never calls the symbol keeps it
+linking. Gated by `scan_cfg_vs_c`'s dead-cfg check.
 
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
@@ -5823,6 +5832,35 @@ runs other agents' builds and QEMUs).
 ---
 
 ## SEH, PSEH & exception handling
+
+### Rust code CAN have real `__try/__except` and `__finally`: `ntkrnl_sys::seh`
+
+**Symptom:** a translated FS/driver path raises by design (`CdRaiseStatus`,
+`STATUS_CANT_WAIT`, a Cc in-page error) and bugchecks 0x1E, because its `_SEH2_EXCEPT` arm
+is dead under DUMMY_PSEH.
+
+**Fix:** `ntkrnl_sys::seh::{try_except, try_finally}` call the Rust body through C
+trampolines (`ntoskrnl/sehtry.c`, exported as `RtlSehTryExcept`/`RtlSehTryFinally`) that
+own a real handler: native SEH on amd64/arm64, a hand-built `fs:[0]` frame on i386. Rust
+frames carry `.pdata`, so the unwind walks through them. `fin` runs during the unwind with
+the stack intact, which is where a translated `__finally` that released a lock must go;
+left inline after the try body, it is skipped on the exception path. Closures must not
+capture anything that needs `Drop`. `[SEH-TRY] ... (PASS)` at boot proves it per arch.
+
+**i386 trap, found building it:** `RtlUnwind` returns through `ZwContinue` on a CONTEXT
+captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A C handler
+that keeps its frame pointer in `esi` across the call faults on the next line. Save them
+around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
+
+**Converting a module (cdfs, 2026-09-26):** the translated `__finally` is usually a
+labeled `loop { ... break; }` followed by inline cleanup. Move the loop verbatim into
+`try_finally`'s body and the cleanup into `fin`; a local the finally reads that the body
+changes is read through an `addr_of_mut!` pointer taken before the call. Check each body
+for `return` (it now leaves only the closure) and give uninitialized locals a value
+(closures cannot capture them). **Enabling the exception path makes dead code live, and
+live code must link:** cdfs's FSP retry had declared a flag constant as an extern SYMBOL
+nothing defined, which linked for months only because its status could never become
+`STATUS_CANT_WAIT` under DUMMY_PSEH, so LLVM dropped the reference.
 
 ### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
 
@@ -8780,6 +8818,163 @@ published something wrong" gets you half of it, and misses the half where you pu
 because everything appeared fine. *(First case found in the wow64 lane, second by
 conformance-ratchet; the published/investigated line is the control-plane lane's.)*
 
+**The structural remedy, where the absence is OUR OWN artifact: make the claim POSITIVELY, up
+front.** The two cases above are absences in someone else's output and can only be met with a
+control. But a missing `summary.json` in a `vibeos-cli` run dir was our absence, and it was
+overloaded three ways: the run is still going, the run was killed, or the directory was never
+a run at all. A SIGKILL -- the host's memory reaper, a broad-kill, the machine going away --
+left an artifact dir holding a `full.log` of green stage lines and no verdict, and a caller
+whose exit status is not the work's (a pipeline's last stage, a backgrounded shell's `echo`;
+see the `$?`/`PIPESTATUS` rule) read that as a pass. **A reaped process must not look
+successful to its caller.** Fix: `artifacts.create_run_dir` -- the one choke point every run
+dir passes through -- now seeds `summary.json` with `verdict: INCOMPLETE`,
+`classification: RUN_INTERRUPTED` BEFORE the work starts, and `finalize()` overwrites it. What
+is on disk is then always a true statement: incomplete until a verdict exists, a verdict once
+one does. This is `.vibeos-build-stamp.json` (written at the END, so presence means finished)
+turned inside out -- there the positive claim is completion, here it is incompletion, and both
+exist so no consumer has to infer a run's state from an exit code it may not have. **Two
+things this must not break, both of which are the general shape of adding a positive marker
+to a system that has been reading an absence.** `RUN_INTERRUPTED` had to be added to
+`queue.INCONCLUSIVE`: these runs previously arrived as `""` (nothing to read), which is
+already inconclusive, so gaining a marker would otherwise have silently moved them OUT of the
+set and started REJECTING lanes for being reaped by the host. And `gate._read_summary` routes
+a marker back to its existing no-summary branch, which keeps the child's exit code and last
+console words -- the marker says strictly less than that path already knows. So: when you
+replace an absence with a marker, find every consumer that was reading the absence and check
+whether the marker lands them somewhere worse.
+**Validated in production within the hour, on the fix's own author.** A full
+`vibeos-cli gate` was reaped mid-run at **33 GiB MemAvailable with zero `oom` in `dmesg`** --
+the harness's background-task reaper, reading `MemFree`, which is near-zero on any warm
+machine. The run dir it left behind held `lint-*`, `cohab-*`, `smoke-*` and `conf-*`
+subdirectories full of apparently-complete work; before the marker its `summary.json` would
+simply have been missing. It now reads `verdict: INCOMPLETE`, `classification:
+RUN_INTERRUPTED`. Note which way the evidence ran: the reaper's own message named memory
+pressure, and the disconfirming check -- `MemAvailable` and `dmesg`, not the killer's
+account -- is the sibling rule one entry down.
+
+### The reading is true of the HANDLE, not of the thing — a different oracle, not a fresher one
+
+**Lead with the repair, because the symptom actively suggests the wrong one.** Every instance
+below looks like staleness from the inside, so the instinct is *check it again*. Checking it
+again cannot work: the reading is correct, current, and stable, and it is about the handle you
+used rather than about the thing you asked about. The fix is always a DIFFERENT oracle.
+
+    os.kill(pid, 0) on a zombie        pid        vs  process   -> /proc/<pid>/status State: Z
+    $? after a pipeline                last stage vs  the work  -> PIPESTATUS[0]
+    sccache -s on a 148G cache dir     its server vs  that dir  -> /proc/<pid>/environ
+    MemFree                            free ctr   vs  reclaimable -> MemAvailable
+    merge-base vs a moving origin/master  ref     vs  commit    -> land-status --tip
+    df / inside WSL                    VHDX ceiling vs the host volume under it
+                                                              -> VIBEOS_DISK_BACKING_MOUNTS
+
+The zombie is the clearest member and the one to reason from. `os.kill(pid, 0)` succeeding on
+a zombie is not a stale answer: the pid genuinely is in the table until the parent reaps it,
+no signal will ever change that, and repeating the call returns the same true thing forever.
+`vibeos-cli kill` reported `STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)` for a
+QEMU that had died promptly on the SIGTERM. *(Found and fixed by smp-bringup, `3ee8e7f16df`.)*
+
+**The most expensive member, and the one that shows the class is not a curiosity.** `df /`
+inside WSL reports the ext4 VHDX's own ceiling. The volume that can actually run out is the
+Windows one underneath it, which the guest cannot see at all. Seven lanes built concurrently
+after a build-time cut from ~45min to under 5; the VHDX grew to 990 GB against a 1 TiB ceiling
+on a host `C:` with 620 GiB free, and the HOST ran out while `df /` in the guest still reported
+room. The disk stopped attaching (HCS 0x80070570) and never mounted again -- WSL had to be
+rebuilt on a new 2 TB NVMe and everything restored from backup. Disk admission had been asking
+an honest question of the wrong subject the whole time. Fixed by
+`VIBEOS_DISK_BACKING_MOUNTS=/mnt/g`, which enters the backing mount into admission as a real
+filesystem so a build is refused on HOST headroom the same way it is on guest headroom. Note
+this one could not be caught by retrying either: `df /` would have returned the same reassuring
+number every time, right up to the failure.
+
+**The borderline member is the on-ramp, so concede it rather than defend it.**
+`git merge-base --is-ancestor <tip> origin/master` against a moving ref is BOTH a handle
+standing in for a commit AND genuinely stale, and it is the only member where "check it again
+later" does work — which makes it the one a reader will use to argue the class is just
+staleness. It is also where agents meet the class first, because queue forensics is where they
+land. So state the test outright: **if retrying helps, you are not yet in this class.**
+
+**What this class is NOT, and the two must stay separate.** A tool's own account of ITSELF —
+the low-memory killer naming its own cause while `dmesg` holds zero `oom` and 33 GiB is
+available — has no handle standing in for a thing. The reporter is the suspect, and the repair
+is a different WITNESS, not a different handle. The two sit side by side in AGENTS.md's
+"claim ABOUT a measurement" paragraph as siblings, and this entry carves that paragraph at the
+joint rather than spanning it. Tested against its six recorded instances: the handle rule
+covers five and fails exactly on the self-report one. *(Scope established by smp-bringup
+testing the formulation against the instance list rather than against the cases that suggested
+it — the same discipline that killed an earlier two-property generalisation here, which
+explained two of ten.)*
+
+**And it caught this entry's own author, in the test written to demonstrate it.** The
+regression test for `land`'s submit verification identified its two run dirs with
+`sorted(glob("*-land-queue"))[-1]`. Run dirs are `<ts>-<random>-land-queue`; both runs land in
+the same second, so the RANDOM SUFFIX decides lexicographic order, and the sort is a handle
+standing in for "the newer run". It passed locally and failed in the real `check-tooling`
+preflight, having picked the wrong dir. Sorting by name is the cheapest instance of this class
+there is, and knowing the class an hour earlier did not prevent writing it. Use set difference
+against the dirs that existed before the call, not an ordering over their names.
+
+**Corollary, from the same incident: fixing a SILENT failure by making it LOUD converts a cost
+you were not paying into one you pay immediately.** Both halves lived in the same function, and
+the loud half was introduced while fixing the silent one. `kill` had been reporting
+success-without-killing for hours at no observed cost; the "unkillable" message produced a
+wrong decision within a minute — a second replay started against media the caller believed was
+still held. Loud is still the right direction, but the new message is now load-bearing on the
+first read, so it needs the same scrutiny the silent one never got.
+
+### A per-item tally over run artifacts manufactures N findings from ONE event
+
+**Symptom.** A tally shows N items each failing across many unrelated batches, spanning lanes
+and commits. It reads as N independent, corroborated findings — and the batch spread looks like
+exactly the evidence that rules out "one lane broke it".
+
+**Cause.** One RUN-level failure that reports per-ITEM. A conformance lost boot
+(`BUGCHECK 0x1E`, `ok` and `bad` both 0) lists the ENTIRE baseline as *"in baseline (OK) but
+never launched"*, so 8 lost boots added +8 batches to every test in the baseline at once. That
+manufactured nine "flaky tests" — `CmSecurity`, `ExCallback`, `ExDoubleList`, `ExUuid`,
+`IoFilesystem`, `ZwMapViewOfSection`, `HalSystemInfo`, `FsRtlTunnel`, `RtlCaptureContextKM` —
+**none of which had ever been observed regressing in an ordinary sweep, not once.** The genuine
+set was three: `ExPools`, `NpfsConnect`, and marginally `KeEvent`/`IoInterrupt`.
+
+**Fix.** Before believing any per-item tally drawn from run-level artifacts, check for a SHARED
+CONSTANT across unrelated items. Nine tests all showing precisely 8 was the tell, sitting in
+plain sight in the table. Partition by failure MODE first and give each mode its own
+denominator — pooling them also corrupts the rate (27% pooled, 23.3% over mode-1 runs only).
+
+**Two things that make this worth its own entry rather than a footnote to the census.**
+
+*Each ghost arrives carrying its own count*, which is what makes one event read as N
+corroborations instead of one. A finding that shows up with a number attached defeats the
+instinct to ask "how do we know?", because the number looks like the answer.
+
+*Batch spread proves less than it appears to.* It rules out "one lane broke it" and nothing
+more. `ExPools` had 30 batches of perfect spread and was a HARNESS bug — a `_M_AMD64`/`_WIN64`
+arch gate making the test read half a `POOL_HEADER` — reproducible on every single boot, on one
+arch. Spread does not distinguish "flaky" from "the test is wrong on this arch", and that
+distinction is the entire six-week ExPools misfile.
+
+**Related, and it kills the obvious next move:** *"regressed in SOME runs of a batch" is not
+"nondeterministic cause".* Before the fix ExPools misread the header on every boot; what varied
+was which of `ProcessBilled`'s bits happened to be set. **A deterministic fault with a variable
+observable is indistinguishable from a flake in a pass/fail tally**, so an ALL-runs vs
+SOME-runs split cannot establish determinism no matter how clean the corpus is. And determinism
+was mostly undecidable here anyway: 151 of 170 batches held a single run, so there was nothing
+to compare within them.
+
+**The mirror error: a run that never REACHED the check is not evidence the check passed.** Grading
+"flaky" as *present in some runs at a commit, absent in others* graded `NpfsFileInfo.c:57` a FLAKE
+at 17 commits — it is deterministic (`Information = 158`, expected 154, every time). Of the 60
+rounds that "lacked" it at those commits, 6 died before the test ran and 54 completed with the line
+unparsed — a raw WCHAR swallowed the newline (`2f9bdcee30d`). The grader can fix the first kind, and
+nothing but the source data can fix the second. Absence counts only from a run that could have seen
+the failure: a completed round for an assertion; any round for a run-level event (lost boot,
+bugcheck); a green boot for a smoke signature — never a run that failed some OTHER way first. And
+one run-level event must collapse only on a VERBATIM shared constant: normalizing numbers first
+merged three tests each dropping a *different* count into one fake "mass" event. Both rules are code
+now, with the mutation-verified tests beside them: `vibeos-cli flake-report`
+(`tests/qemu/cli/flakes.py`). Read its grade, not a tally — and note that history it cannot re-parse
+stays wrong: those rounds' results files were in `/tmp`, which is why failing rounds are now
+preserved to `~/vibeos-flake-farm/fails/auto/` with their `*-results.txt`.
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
@@ -9318,6 +9513,27 @@ language rules) over loosening what it reports.
   which with `expool.rs`'s coalescer (`PoolType() == 0` is its absorb-this-neighbour test)
   would have been reported as a memory-corruption vector in a kernel that is writing a
   perfectly correct header.
+  **FIXED (2026-09-13):** the three `#ifdef _M_AMD64` in `kmt_test_kernel.h`'s `POOL_HEADER`
+  are now `#ifdef _WIN64`, matching the kernel's. Real Windows' `POOL_HEADER` is 16 bytes on
+  every 64-bit target -- the union's `ProcessBilled` pointer forces it -- so `_WIN64` was
+  always the correct predicate and `_M_AMD64` was an amd64-shaped assumption that held only
+  while amd64 was our sole 64-bit arch. arm64 ExPools went `pass=14 fail=4`
+  (`{119,135,178,210}`) -> `pass=17 fail=1` (`{210}`), stable across four boots, which is
+  **exactly amd64's baseline row** -- the two 64-bit arches agreeing is the confirmation, not
+  merely fewer failures. `:210` is the shared 64-bit 2GB-quota case and is not this bug.
+  The three stale `assert?`/`assert` marks at `:176`/`:178`/`:181` came out of the ratchet
+  with it: they described the misread, so leaving them would have kept the floor tolerating a
+  failure that can no longer happen. **The guard is what keeps this fixed**, not the edit --
+  `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now sits under the struct, wired to
+  the same invariant the kernel asserts, so the two copies cannot drift apart silently again.
+  Verified as a discriminator, not assumed: restoring `_M_AMD64` fails that assert at compile
+  time on arm64 (`'c_assert' declared as an array with a negative size`).
+  **And note which rule this turned out NOT to need.** "Never change the conformance tests"
+  had held this for six weeks as an owner decision. The owner's scoping: a build-flag or
+  arch-gate correction that makes a test read a structure the same width the kernel writes it
+  is not a semantic change and needs no approval. What needs approval is changing what a test
+  MEANS in a direction that favours us -- anything that would pass here and fail on real
+  Windows. Fix the OS, baseline the test; never the reverse.
 - **A genuine kernel fault does not fail an assertion STABLY, so determinism is evidence
   AGAINST a kernel bug.** The inversion is worth having explicitly, because the instinct runs
   the other way — a reliably failing assertion feels like the solid one to chase and the
@@ -10414,6 +10630,34 @@ better thunk. The underlying bug there was a real API-contract mistake: in multi
 the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
 the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
 
+### A pointer-sized OUT from `NtQuerySystemInformation` is 4 bytes in the guest
+**Symptom.** A 32-bit guest's `GlobalLock` returns NULL on a handle `GlobalAlloc` returned a
+moment earlier, but only for FIXED (non-moveable) memory. Anything built on it degrades
+silently: `PackDDElParam` returned 0, so every packed DDE `lParam` went out as 0.
+**Cause.** kernel32 fills `SystemRangeStart` once, with
+`NtQuerySystemInformation(SystemRangeStartInformation, &x, sizeof(ULONG_PTR))`. That is 4
+bytes in the guest, and the host kernel answers a `ULONG_PTR`, 8 bytes. The WoW64 marshaller
+passed the class through, the query failed `STATUS_INFO_LENGTH_MISMATCH`, and nobody checked
+the status. The value stayed 0, so `hMem >= SystemRangeStart` refused every pointer. The
+serial said it every boot: `class=50 passthrough => c0000004 (len=4)`.
+**Fix.** Marshal the class (`wow64_manual.c`), answering from the guest's own address-space
+limit. **Grep the boot for `passthrough => c0000004`**: a length mismatch on a passthrough
+class is this bug for whichever class it names.
+
+### A winetest's "N failures in child process" can be a child that DIED
+**Symptom.** A suite reports a huge failure count (native `user32:scroll`: 140), but the
+printed failures account for a handful, and one child printed nothing at all.
+**Cause.** Wine's `winetest_wait_child_process` reports the child's EXIT CODE as its failure
+count. A child killed by an unhandled exception exits `0x80` (csrss terminating a
+second-chance client), and the parent prints that as "128 failures in child process". Its
+buffered stdout dies with it, which is why nothing was printed. On i386 the death itself
+was invisible: `[EXIT-THR]` and the second-chance `[KI-EXC]` tripwire were amd64-only, which
+made the native CONTROL of the A/B the one arch that could not see it.
+**Fix.** Read child counts of exactly 128 as a death until proven otherwise, and find the
+`[KI-EXC] ... second chance` line (both x86 arches now print it before the exception port
+gets a chance to swallow it). The scroll instance was `uxtheme!ThemeGetWndData` returning
+another process's heap pointer for a window that process owned.
+
 ### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
 **Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
 the call succeeded, dying several calls later somewhere unrelated.
@@ -10796,8 +11040,13 @@ the snapshot. Both halves are the same bug found years apart: the WND half surfa
 EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
 until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
 with what a syscall had just set. Address the tail off the snapped kernel object
-(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
-fixed struct is in the same position and has not been audited.
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. The third instance was the
+scrollbar CONTROL: `pwnd as PSBWND` read `SBCALC` off the snapshot, so every guest
+`GetScrollPos(SB_CTL)` returned junk while `SetScrollPos`, a syscall served from the real window,
+worked (`user32:scroll` 161/170/179). That split, **writes fine and reads wrong**, is the
+signature: the kernel side is right and only the client's view is off. Audited 2026-09-26: no
+other `WND`-extending cast remains in user32-rust (`IMEWND` goes through
+`Get/SetWindowLongPtr`). Grep `as P[A-Z]*WND` for a new one.
 **SERVERINFO was never in the view, and "most things work" hid it.** `dwSRVIFlags` is at
 offset 0 in both layouts, so the flag checks worked while metrics, colours and the class-proc
 tables read garbage. Read `gpsi` only through `wow64::psi`, never as `(*gpsi).field`. The same
@@ -11195,6 +11444,37 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
+- **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
+  N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
+  INTID in a register. Seen 2026-09-26 bringing up `usbxhci` (INTID 35, the xHCI INTx).
+- **Cause:** a **level-triggered line that no ISR claims fires forever.** The HAL EOIs it,
+  the line is still asserted, it re-fires at once, and the CPU never runs anything else. The
+  message does not mean "no ISR connected": it also prints when the connected ISR returned
+  FALSE. Two ways to get there, both hit the same day:
+  1. **The device was already asserting when its vector was enabled.** Firmware can hand
+     over a controller mid-flight (UEFI's own USB stack ran the xHCI and left it with
+     interrupts on), and the driver cannot quiet hardware it has not mapped yet.
+  2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
+     connects the interrupt, calls the miniport's StartController, and only *then* sets
+     the flags its ISR wrapper checks. A StartController that enables controller
+     interrupts and issues a command gets its completion interrupt declined.
+- **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
+  COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
+  the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
+  IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
+  device family, ask "can this line be asserted before my ISR says yes?"
+
+### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
+- **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
+  immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
+  starts.
+- **Cause:** the arm64 boot disk is `virtio-blk-pci` (`if=virtio` on `virt`), and the
+  efivars shipped with the harness save Boot0001 as `PciRoot(0x0)/Pci(0x2,0x0)`. A new PCI
+  device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
+  now names the new device. UEFI skips it silently and falls through to network boot.
+- **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op

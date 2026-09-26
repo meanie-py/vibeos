@@ -737,7 +737,7 @@ def test_the_three_trees_the_prose_pass_actually_found_stay_recorded():
     of them from license_extra would make the notices file wrong again."""
     reg = vendored.load(REPO)
     by_path = {t.path: t for t in reg.trees}
-    assert "BSL-1.0" in by_path["external/fex"].license_extra
+    assert "BSL-1.0" in by_path["vendor/fex"].license_extra
     assert "LGPL-2.0-or-later" in by_path["vendor/adns"].license_extra
     assert "LGPL-2.1-or-later" in by_path["vendor/libtirpc"].license_extra
 
@@ -1064,3 +1064,33 @@ def test_an_accepted_finding_that_got_fixed_fails_too(monkeypatch):
     monkeypatch.setitem(vendored._GRANTS_ACCEPTED, "dir:drivers/does/not/exist", "invented")
     problems = vendored.check(vendored.load(REPO))
     assert any("no longer reports it" in p for p in problems), problems
+
+
+def test_every_committed_tree_carries_a_valid_translate_verdict():
+    """The owner's per-tree call on whether we will own the code. A missing or
+    misspelt value must not pass silently as a real one."""
+    reg = vendored.load(REPO)
+    assert all(t.translate in vendored.TRANSLATE_VALUES for t in reg.trees)
+    by_path = {t.path: t for t in reg.trees}
+    assert by_path["vendor/wdf"].translate == "planned"
+    assert by_path["vendor/mbedtls"].translate == "keep"
+
+
+def test_a_bare_no_is_rejected_because_yaml_reads_it_as_false(tmp_path):
+    """`translate: no` parses as the boolean false, not the string "no". It shipped for
+    one draft of this field and zeroed the `keep` count; check() must catch it."""
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: lib
+            name: Lib
+            reason: test
+            translate: no
+    """,
+    )
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "a.c").write_text("int a;\n")
+    problems = vendored.check(vendored.load(tmp_path))
+    assert any("translate: 'False'" in p for p in problems), problems
