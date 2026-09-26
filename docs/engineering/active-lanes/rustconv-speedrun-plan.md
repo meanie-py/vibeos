@@ -74,8 +74,21 @@ every translated body. **Owed, in order:**
    exports only C calls. All 56 widened to BOOL (61 bodies: win32k's REGION_* and
    GreSetBrushOrg have per-arch cfg twins, which the scanner now also compares);
    userenv's local decls narrowed `OpenEventW`/`CreateMutexW`'s BOOL params to u8 too.
-3. Also unwired and worth a pass: `scan_sibling_drift.py`, `scan_arch_cfg.py` (see
-   agent-reference "Triage scanners that are NOT wired into `check`").
+3. ~~`scan_sibling_drift` / `scan_arch_cfg` pass~~ DONE 2026-09-26.
+   - sibling_drift: still the same 65 candidates hand-read on 09-20 (`WSPSelect` stays
+     listed after its fix, by design). The 19 in files changed since were re-read: no bug.
+   - arch_cfg: 2,825 sites vs 2,453 at the July audit; path-free diff against that tree
+     (`git archive 2607142dce2`) left 507 new, of which the 133 in the risky shapes
+     (single-64-bit-arch gates, `not(aarch64)`, smp-per-arch) and the 27 that exclude only
+     arm64 were read. Three bugs:
+     `ex/init.rs` SharedUserData Reserved1/3 (amd64 stored truncated 64-bit constants, 0
+     for the WOW64 system range start; elsewhere Reserved1 got SystemRangeStart, not
+     HighestUserAddress); user32 `GetClassLongA/W` `_WIN64` gated amd64-only (new gated
+     class, `scan_win64_cfg`); and a fourth, stale copy of arm64 SMP `SYNCH_LEVEL` = 2 in
+     `ke-inlines` that the July-25 fix missed (dead under smp today, now 12).
+   - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
+     `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
+     body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.
 
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 

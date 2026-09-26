@@ -4933,6 +4933,13 @@ CMake `set_module_type`) for what that value is — do not assume the newest.
 and check each against the C: a per-arch cfg is *legitimate* only where the C branched on
 `_M_IX86`/`_M_AMD64`/`_M_ARM64` or on a pointer-width-derived macro. Anything else is this bug.
 
+**The neighbouring mistake: `_WIN64` spelled as one ARCH.** `_WIN64` is pointer width —
+amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
+user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
+truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
+Spell it `target_pointer_width = "64"`. Gated by `scan_win64_cfg` (C twin says `_WIN64` and
+names no specific arch).
+
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
 **Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
