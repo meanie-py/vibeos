@@ -177,7 +177,8 @@ if(VIBEOS_WINETEST_SWEEP)
         "# process per name) instead of the two hand-picked subtests.\n"
         "# Staged by: vibeos-cli build --arch <a> --winetest-sweep\n"
         "# `skip <name>` lines quarantine a subtest; winlogon logs each as\n"
-        "# QUARANTINED so an absent subtest never reads as a pass.\n")
+        "# QUARANTINED so an absent subtest never reads as a pass.\n"
+        "# `only <name>` lines, if any, run just those subtests.\n")
     # One `skip` line per name from --winetest-skip. A subtest that BUGCHECKs
     # blinds every one after it, so this is how a sweep gets past a crasher.
     if(VIBEOS_WINETEST_SKIP)
@@ -186,6 +187,15 @@ if(VIBEOS_WINETEST_SWEEP)
             file(APPEND ${_sweep_marker} "skip ${_s}\n")
         endforeach()
         message(STATUS "winetest sweep: quarantined ${VIBEOS_WINETEST_SKIP}")
+    endif()
+    # One `only` line per name from --winetest-only: run just these. The
+    # repro loop for a single crashing subtest, without a whole guest sweep.
+    if(VIBEOS_WINETEST_ONLY)
+        string(REPLACE " " ";" _sweep_onlys "${VIBEOS_WINETEST_ONLY}")
+        foreach(_s ${_sweep_onlys})
+            file(APPEND ${_sweep_marker} "only ${_s}\n")
+        endforeach()
+        message(STATUS "winetest sweep: narrowed to ${VIBEOS_WINETEST_ONLY}")
     endif()
     message(STATUS "winetest sweep: marker staged — winlogon will run EVERY subtest")
     add_cd_file(FILE ${_sweep_marker} DESTINATION reactos/bin FOR livecd)
