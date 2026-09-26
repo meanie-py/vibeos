@@ -43,9 +43,9 @@ def main() -> int:
             )
     source = repo / manifest["source"]
     includes = [
-        repo / "sdk/include/reactos/libs",
-        repo / "sdk/include/reactos/libs/mbedtls",
-        repo / "dll/3rdparty/mbedtls",
+        repo / "vendor/mbedtls/include",
+        repo / "vendor/mbedtls/include/mbedtls",
+        repo / "vendor/mbedtls",
     ]
     raw_dir = output / "raw"
     output.mkdir(parents=True)
