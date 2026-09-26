@@ -233,6 +233,24 @@ whole-crate integration. Both wrappers disable Rust builtin recognition with `no
 The `tolower` example grades the shipping pure core, not the separate C ABI shim. The
 `swab` example grades the exact shipping `_swab` body against genuine standalone CRT C.
 
+## Genuine Windows/Wine C on the host
+
+`"c_host_profile": "reactos-amd64"` compiles the C against the tree's OWN headers:
+`__ROS_LONG64__` (ReactOS's LP64-host switch, so `LONG`/`DWORD` stay 32-bit), the handful of
+keyword defines `_mingw.h` would supply, `-fshort-wchar`, and `host_profile/reactos/` for the
+two runtime headers that collide with glibc. Windows x64 layouts were checked (`IMAGE_NT_HEADERS64`
+264, `OFSTRUCT` 136, `VS_FIXEDFILEINFO` 52). Generated headers come from this worktree's
+`build-amd64`; a missing one is a hard failure naming the build command. The genuine TU is
+compiled with strict-prototype and pointer-type errors waived (mingw-era headers); the typed
+wrappers are not.
+
+What the C calls out to is the ENVIRONMENT, shared by both sides: `c_env` lists reviewed C
+files linked into the reference and the Rust candidate alike, so only the unit under grade
+differs. Every other external becomes a generated trap that aborts with its name
+(`report.c_traps`), so an unmodeled call is loud, never guessed. Neither library may import
+glibc's wide-char family (4-byte `wchar_t`). `version.json` grades `VerQueryValueW` from a whole
+Wine TU this way; its first run found three shipping bugs.
+
 ## What earns a pass
 
 Both sides run twice in independent subprocesses. Missing output, crashes, timeouts,
@@ -327,7 +345,7 @@ allocation edge. Both compile the original shipping shim/helper bytes and genuin
 A pass is sampled behavioral agreement within this contract. Host fixtures do not establish
 Windows ABI correctness or cross-architecture behavior. Canaries alone do not catch reads;
 protected pages catch allocation-edge crossings, and UBSan does not catch all C undefined
-behavior. No branch coverage is reported. Report schema 16 records nullable inputs, typed C-string
+behavior. No branch coverage is reported. Report schema 16 records host-profile traps, nullable inputs, typed C-string
 output pointers, bounded owned string and byte results, generated records with nested values,
 fixed arrays of inline records, relocated pointer fields and bounded hidden pointee graphs, and
 the string corpus alongside scalar/buffer and layout formats. Older artifacts remain intact, but

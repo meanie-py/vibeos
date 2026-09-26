@@ -63,6 +63,12 @@ POINTERS = {
     "mut_wstr": ("uint16_t *", "*mut u16"),
 }
 OUT_POINTERS = {"cstr_out": ("char **", "*mut *mut u8")}
+# Other honest spellings of the same output slot (e.g. VerQueryValue's `LPVOID *`).
+OUT_POINTER_SPELLINGS = {
+    ("char **", "*mut *mut u8"),
+    ("void **", "*mut *mut core::ffi::c_void"),
+    ("LPVOID *", "*mut *mut core::ffi::c_void"),
+}
 STRING_POINTERS = {"const_cstr", "mut_cstr", "const_wstr", "mut_wstr"}
 READONLY = {"const_bytes", "const_void_bytes", "const_cstr", "const_wstr"}
 GUARD = 32
@@ -117,6 +123,122 @@ C_RETURN_TYPES = {
     "intptr_t",
     "uintptr_t",
 }
+
+
+# Compile genuine Windows/Wine C on the Linux host against the tree's OWN headers.
+# `__ROS_LONG64__` is ReactOS's switch for LP64 hosts (LONG/ULONG/DWORD stay 32-bit);
+# the defines stand in for what vcruntime's _mingw.h provides; host_profile/reactos
+# replaces the two runtime headers that collide with glibc. Layouts were checked against
+# Windows x64 (IMAGE_NT_HEADERS64 264, OFSTRUCT 136, VS_FIXEDFILEINFO 52, WCHAR 2), and
+# record contracts assert theirs again per run. Generated headers come from THIS
+# worktree's build dir — never a sibling's.
+HOST_PROFILES = {"reactos-amd64": "build-amd64"}
+HOST_PROFILE_DEFINES = [
+    "-std=gnu11",
+    "-fshort-wchar",
+    "-Wno-attributes",
+    # Distro gcc enables fortify at -O2; its inline memcpy collides with intrin_x86.h's.
+    "-U_FORTIFY_SOURCE",
+    "-D__ROS_LONG64__",
+    "-D_WIN64",
+    "-DWIN32",
+    "-D_WIN32",
+    "-D_M_AMD64",
+    "-D_AMD64_",
+    "-D__REACTOS__",
+    "-D__cdecl=",
+    "-D__stdcall=",
+    "-D__unaligned=",
+    "-D__ptr32=",
+    "-D__ptr64=",
+    "-D__int64=long",
+    "-D__int32=int",
+    "-D__int16=short",
+    "-D__int8=char",
+    "-D__forceinline=static inline __attribute__((always_inline))",
+    "-D__declspec(x)=__attribute__((x))",
+]
+# Undefined externals the C may keep binding to host libc: byte/char routines whose
+# behavior does not depend on wchar_t width. Everything else the C calls must come
+# from c_env or becomes a trap.
+HOST_LIBC_SAFE = {
+    "memcpy", "memmove", "memset", "memcmp", "memchr", "strlen", "strcmp", "strncmp",
+    "strchr", "strrchr", "strcpy", "strncpy", "strcat", "strncat", "abort",
+    "malloc", "calloc", "realloc", "free", "__stack_chk_fail",
+}  # fmt: skip
+# glibc's wide-char family assumes a 4-byte wchar_t; bound from 2-byte WCHAR code it is
+# silently wrong, so neither library may import any of it.
+HOST_WIDE_LIBC = re.compile(r"_?(wcs|wmem|tow|isw|mbs|mbrto|wcrto|wcto|mbto|swprintf|vswprintf)")
+
+
+def host_profile_flags(profile: str, c_source: Path) -> list[str]:
+    root = next(
+        (p for p in c_source.parents if (p / "sdk/include/psdk").is_dir()),
+        None,
+    )
+    if root is None:
+        raise ContractError("c_host_profile: c_source is not inside a ReactOS tree")
+    build = root / HOST_PROFILES[profile]
+    if not (build / "sdk/include/psdk/winnt.h").is_file():
+        raise ContractError(
+            f"c_host_profile: {build}/sdk/include/psdk/winnt.h is missing; "
+            f"fix: ./vibeos-cli build --arch {HOST_PROFILES[profile].split('-')[1]}"
+        )
+    shims = Path(__file__).resolve().parent.parent / "data/difftest/host_profile/reactos"
+    includes = [
+        root / "sdk/include/psdk",
+        build / "sdk/include/psdk",
+        build / "sdk/include",
+        root / "sdk/include/reactos/wine",
+        root / "sdk/include/reactos",
+        root / "sdk/include",
+        root / "sdk/include/wine",
+        shims,
+        root / "sdk/include/ddk",
+        root / "sdk/lib/pseh/include",
+    ]
+    return [
+        *HOST_PROFILE_DEFINES,
+        *(flag for p in includes for flag in ("-I", str(p))),
+        "-idirafter",
+        str(root / "sdk/include/vcruntime"),
+    ]
+
+
+def _undefined(objects: list[Path], output: Path, label: str) -> set[str]:
+    result = _command(["nm", "-u", "--format=just-symbols", *map(str, objects)], output, label)
+    if result.returncode:
+        raise ContractError(f"{label} failed; see {label}.stderr")
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def _defined(objects: list[Path], output: Path, label: str) -> set[str]:
+    result = _command(
+        ["nm", "--defined-only", "--format=just-symbols", *map(str, objects)], output, label
+    )
+    if result.returncode:
+        raise ContractError(f"{label} failed; see {label}.stderr")
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def _trap_source(names: list[str]) -> str:
+    """One aborting definition per unmodeled external: a call is loud, never a guess."""
+    # No libc headers: a trap may shadow a libc name (sprintf), so it must not also see
+    # that name's real prototype. The report goes straight to fd 2 by syscall builtin.
+    lines = [
+        "extern long write(int, const void *, unsigned long);",
+        "static void __diff_trap(const char *name) {",
+        '  static const char head[] = "difftest: unmodeled external called: ";',
+        "  unsigned long n = 0;",
+        "  while (name[n]) n++;",
+        "  write(2, head, sizeof head - 1);",
+        "  write(2, name, n);",
+        '  write(2, "\\n", 1);',
+        "  __builtin_trap();",
+        "}",
+    ]
+    lines += [f'void {name}(void) {{ __diff_trap("{name}"); }}' for name in names]
+    return "\n".join(lines) + "\n"
 
 
 def digest(path: Path) -> str:
@@ -545,6 +667,8 @@ def load_contract(path: Path) -> dict:
             "sequences",
             "fixtures",
             "c_allow_ub",
+            "c_host_profile",
+            "c_env",
         },
         "contract",
     )
@@ -606,6 +730,14 @@ def load_contract(path: Path) -> dict:
             raise ContractError(
                 f"{flag_key}: unsupported flag; use explicit include dirs and defines"
             )
+    if "c_host_profile" in data:
+        if data["c_host_profile"] not in HOST_PROFILES:
+            raise ContractError(f"c_host_profile must be one of {sorted(HOST_PROFILES)}")
+        data["c_host_flags"] = host_profile_flags(data["c_host_profile"], Path(data["c_source"]))
+    env = data.setdefault("c_env", [])
+    if not isinstance(env, list) or len(env) > 16:
+        raise ContractError("c_env must list up to 16 reviewed C files")
+    data["c_env"] = [str((path.parent / item).resolve(strict=True)) for item in env]
     # Windows C routinely reads a WORD/ULONG through a byte pointer at any offset. That is
     # UB, and UBSan's alignment check kills the reference on every such input, so the
     # source could never be graded. Waiving it is a declared, reported property of the
@@ -757,8 +889,10 @@ def load_contract(path: Path) -> dict:
                     "nullable",
                     "within",
                     "one_past",
+                    "result_nullable",
                     "align",
                     "examples",
+                    "examples_only",
                 },
                 "argument",
             )
@@ -806,7 +940,7 @@ def load_contract(path: Path) -> dict:
                     raise ContractError("record must be an object")
                 if "nullable" in arg and type(arg["nullable"]) is not bool:
                     raise ContractError("pointer nullable must be boolean")
-                if "within" in arg or "one_past" in arg:
+                if "within" in arg or "one_past" in arg or "result_nullable" in arg:
                     raise ContractError("within and one_past apply only to cstr_out")
                 if kind in STRING_POINTERS:
                     if "generator" not in arg or any(
@@ -818,7 +952,7 @@ def load_contract(path: Path) -> dict:
                     encoding = "utf16le" if kind in ("const_wstr", "mut_wstr") else "ascii"
                     validate_string_generator(arg["generator"], arg["name"], encoding)
                 elif (
-                    ("length" not in arg and record is None)
+                    ("length" not in arg and record is None and not arg.get("examples_only"))
                     or ("length" in arg and record is not None)
                     or "values" in arg
                     or "random_range" in arg
@@ -827,12 +961,19 @@ def load_contract(path: Path) -> dict:
                     raise ContractError("byte pointer requires length or a structured record")
                 if "examples" in arg:
                     validate_byte_examples(arg, fn["args"])
+                elif "examples_only" in arg:
+                    raise ContractError(f"{arg['name']}: examples_only requires examples")
             elif kind in OUT_POINTERS:
-                if any(
-                    key in arg
-                    for key in ("values", "length", "random_range", "generator", "c_type")
-                ):
+                if any(key in arg for key in ("values", "length", "random_range", "generator")):
                     raise ContractError("cstr_out does not accept input-buffer fields")
+                spelling = (
+                    arg.get("c_type", OUT_POINTERS[kind][0]),
+                    arg.get("rust_type", OUT_POINTERS[kind][1]),
+                )
+                if spelling not in OUT_POINTER_SPELLINGS:
+                    raise ContractError(
+                        f"cstr_out spelling must be one of {sorted(OUT_POINTER_SPELLINGS)}"
+                    )
                 if type(arg.get("nullable")) is not bool:
                     raise ContractError("cstr_out requires boolean nullable for the pointer slot")
                 targets = arg.get("within")
@@ -847,6 +988,8 @@ def load_contract(path: Path) -> dict:
                     raise ContractError("cstr_out requires distinct within input names")
                 if type(arg.setdefault("one_past", False)) is not bool:
                     raise ContractError("cstr_out one_past must be boolean")
+                if type(arg.setdefault("result_nullable", False)) is not bool:
+                    raise ContractError("cstr_out result_nullable must be boolean")
             else:
                 raise ContractError(f"unsupported argument type: {kind}")
         if data["scope"] == "stateful-host":
@@ -890,6 +1033,8 @@ def load_contract(path: Path) -> dict:
         for arg in fn["args"]:
             if arg["type"] not in POINTERS or arg["type"] in STRING_POINTERS or "record" in arg:
                 continue
+            if "length" not in arg:
+                continue  # examples_only: each case is exactly as long as its example
             length = arg["length"]
             if type(length) is int:
                 _int(length, 0, 65536, "buffer length")
@@ -1227,6 +1372,8 @@ def validate_byte_examples(arg: dict, args: list[dict]) -> None:
     for that case, so `length` must name an unsigned scalar that can hold it.
     """
     examples = arg["examples"]
+    if type(arg.setdefault("examples_only", False)) is not bool:
+        raise ContractError(f"{arg['name']}: examples_only must be boolean")
     if (
         arg["type"] in STRING_POINTERS
         or "record" in arg
@@ -1235,21 +1382,34 @@ def validate_byte_examples(arg: dict, args: list[dict]) -> None:
         or len(examples) > 64
     ):
         raise ContractError(f"{arg['name']}: examples must be 1..64 hex payloads on a byte buffer")
-    length = arg["length"]
-    scalar = (
-        next((a for a in args if a["name"] == length), None) if isinstance(length, str) else None
-    )
-    if scalar is None or scalar["type"] not in ("u8", "u16", "u32", "u64", "usize"):
-        raise ContractError(f"{arg['name']}: examples need a length named by an unsigned scalar")
+    # With a length argument, an example sets it; with none (examples_only, e.g. a
+    # version block whose size is implied by its own header) the example IS the buffer.
+    length = arg.get("length")
+    limit = 65536
+    if length is not None:
+        scalar = (
+            next((a for a in args if a["name"] == length), None)
+            if isinstance(length, str)
+            else None
+        )
+        if scalar is None or scalar["type"] not in ("u8", "u16", "u32", "u64", "usize"):
+            raise ContractError(
+                f"{arg['name']}: examples need a length named by an unsigned scalar"
+            )
+        limit = min(TYPES[scalar["type"]][3], limit)
+    elif not arg["examples_only"]:
+        raise ContractError(f"{arg['name']}: examples without a length argument need examples_only")
     for example in examples:
         try:
             payload = bytes.fromhex(example)
         except (TypeError, ValueError) as exc:
             raise ContractError(f"{arg['name']}: example is not hex") from exc
-        _int(len(payload), 0, min(TYPES[scalar["type"]][3], 65536), f"{arg['name']} example length")
+        _int(len(payload), 0, limit, f"{arg['name']} example length")
 
 
 def validate_c_pointer(arg: dict) -> None:
+    if arg.get("type") in OUT_POINTERS:
+        return  # spelled from OUT_POINTER_SPELLINGS, checked with the other slot fields
     if "rust_type" in arg and (
         arg.get("type") not in POINTERS
         or not isinstance(arg["rust_type"], str)
@@ -1422,7 +1582,7 @@ def generate_cases(data: dict) -> list[dict]:
                     if a["type"] in STRING_POINTERS
                     else {"record": a["name"]}
                     if "record" in a
-                    else a["length"]
+                    else a.get("length", 0)
                 )
                 for a in pointers
             }
@@ -1561,6 +1721,11 @@ def generate_cases(data: dict) -> list[dict]:
             }
             for null_values in null_combinations:
                 rows.append((values, 4, string_values, record_values, null_values, {}))
+        # A buffer whose only valid inputs are well-formed payloads (a version block whose
+        # wLength must fit) takes no seeded patterns: those cases would grade the caller
+        # contract violation, not the code.
+        if any(a.get("examples_only", False) for a in byte_buffers):
+            rows = []
         # Example payloads replace one buffer's bytes and set its length argument; every
         # other scalar keeps its edge values (deduplicated once the length is overridden).
         for arg in byte_buffers:
@@ -1568,7 +1733,11 @@ def generate_cases(data: dict) -> list[dict]:
                 payload = bytes.fromhex(example)
                 seen_rows = set()
                 for scalar_row in scalar_rows:
-                    values = {**scalar_row, arg["length"]: len(payload)}
+                    values = (
+                        {**scalar_row, arg["length"]: len(payload)}
+                        if "length" in arg
+                        else dict(scalar_row)
+                    )
                     key = tuple(sorted(values.items()))
                     if key in seen_rows:
                         continue
@@ -1576,16 +1745,17 @@ def generate_cases(data: dict) -> list[dict]:
                     for null_values in null_combinations:
                         if null_values.get(arg["name"], False):
                             continue
-                        rows.append(
-                            (
-                                values,
-                                2,
-                                string_combinations[0],
-                                record_combinations[0],
-                                null_values,
-                                {arg["name"]: payload},
+                        for string_values in string_combinations:
+                            rows.append(
+                                (
+                                    values,
+                                    2,
+                                    string_values,
+                                    record_combinations[0],
+                                    null_values,
+                                    {arg["name"]: payload},
+                                )
                             )
-                        )
         for values, pattern, string_values, record_values, null_values, overrides in rows:
             for layout in layouts:
                 allocations = {}
@@ -1701,7 +1871,7 @@ def generate_cases(data: dict) -> list[dict]:
                         len(_encode_string_input(string_values[arg["name"]], arg["type"]))
                         if arg["type"] in STRING_POINTERS
                         else allocation_lengths[binding["allocation"]]
-                        if "record" in arg
+                        if "record" in arg or "length" not in arg
                         else extent(arg["length"], values)
                     )
                     capacity = len(allocations[binding["allocation"]]) // 2
@@ -1938,6 +2108,45 @@ def selected_rust(source: str, names: list[str], *, preserve_cfg: bool = False) 
                 found.setdefault(qualified, []).append(
                     "\n".join([*inherited, *attrs, raw[node.start_byte : node.end_byte].decode()])
                 )
+            elif node.type == "foreign_mod_item":
+                # A selected extern DECLARATION keeps the crate's own spelling and ABI —
+                # re-typing it by hand would hide exactly the ABI mistakes worth grading.
+                abi = next(
+                    (
+                        raw[c.start_byte : c.end_byte].decode()
+                        for c in node.children
+                        if c.type == "extern_modifier"
+                    ),
+                    "extern",
+                )
+                body = node.child_by_field_name("body") or next(
+                    (c for c in node.children if c.type == "declaration_list"), None
+                )
+                item_attrs: list[str] = []
+                for item in body.children if body is not None else []:
+                    if item.type == "attribute_item":
+                        item_attrs.append(raw[item.start_byte : item.end_byte].decode())
+                        continue
+                    item_name = item.child_by_field_name("name")
+                    spelled = (
+                        prefix + raw[item_name.start_byte : item_name.end_byte].decode()
+                        if item_name
+                        else ""
+                    )
+                    if item.type in ("function_signature_item", "foreign_static_item") and (
+                        spelled in names
+                    ):
+                        item_guards = guards + [a for a in item_attrs if "cfg" in a]
+                        if spelled in found or (item_guards and not preserve_cfg):
+                            raise ContractError(f"conditional/duplicate selected item: {spelled}")
+                        unguarded.add(spelled)
+                        declaration = "\n".join(
+                            [*item_attrs, raw[item.start_byte : item.end_byte].decode()]
+                        )
+                        found[spelled] = [
+                            "\n".join([*inherited, *attrs, f"{abi} {{\n{declaration}\n}}"])
+                        ]
+                    item_attrs = []
             elif node.type == "mod_item" and any(n.startswith(qualified + "::") for n in names):
                 body = node.child_by_field_name("body")
                 if body is None:
@@ -2310,7 +2519,20 @@ def emit_wrappers(
         c.append(f"#include {json.dumps(data['c_prelude'])}")
     if data["scope"] == "stateful-host":
         c.extend(_c_fixture_prototype(fixture) for fixture in data["fixtures"])
-    c.append(f"#include {json.dumps(data['c_source'])}")
+    if data.get("c_host_flags"):
+        # The tree's headers were written for mingw: old-style FARPROC declarations, and
+        # LONG64 spelled `long` under __ROS_LONG64__ where the intrinsics say `long long`
+        # (same width). Waived for the genuine TU only — the typed wrappers below still
+        # compile under the strict prototype and pointer-type errors.
+        c += [
+            "#pragma GCC diagnostic push",
+            '#pragma GCC diagnostic ignored "-Wstrict-prototypes"',
+            '#pragma GCC diagnostic ignored "-Wincompatible-pointer-types"',
+            f"#include {json.dumps(data['c_source'])}",
+            "#pragma GCC diagnostic pop",
+        ]
+    else:
+        c.append(f"#include {json.dumps(data['c_source'])}")
     record_pointer_typecheck = [0]
     nested_record_typecheck = [0]
     for fn in data["functions"]:
@@ -2356,7 +2578,7 @@ def emit_wrappers(
             if a["type"] in TYPES
             else a.get("c_type", POINTERS[a["type"]][0])
             if a["type"] in POINTERS
-            else OUT_POINTERS[a["type"]][0]
+            else a.get("c_type", OUT_POINTERS[a["type"]][0])
             for a in fn["args"]
         ]
         r_types = [
@@ -2364,7 +2586,7 @@ def emit_wrappers(
             if a["type"] in TYPES
             else a.get("rust_type", POINTERS[a["type"]][1])
             if a["type"] in POINTERS
-            else OUT_POINTERS[a["type"]][1]
+            else a.get("rust_type", OUT_POINTERS[a["type"]][1])
             for a in fn["args"]
         ]
         result = fn["return"]
@@ -2843,7 +3065,9 @@ def worker(contract: Path, corpus: Path, library: Path, case_index: int | None =
                     pointer_slots[name].value,
                     {
                         "within": arg["within"],
-                        "nullable": False,
+                        # A slot the function leaves untouched (a failed lookup) stays at
+                        # its initial NULL; only a declared result_nullable accepts that.
+                        "nullable": arg.get("result_nullable", False),
                         "one_past": arg["one_past"],
                     },
                     case,
@@ -3286,12 +3510,76 @@ def grade(path: Path, output: Path) -> dict:
         }
         if "c_prelude" in data:
             explicit.add(Path(data["c_prelude"]))
+        explicit.update(map(Path, data["c_env"]))
+        host_flags = data.get("c_host_flags", [])
+        # The shared environment: reviewed C for whatever the graded C calls out to, plus
+        # an aborting trap for every other external. Linked into BOTH libraries, so the
+        # only thing that differs between the sides is the unit under grade.
+        link_objects: dict[str, list[str]] = {"c": [], "rust": []}
+        if data["c_env"] or host_flags:
+            object_flags = [cc, "-std=c11", "-c", "-fPIC", "-O2", *host_flags, *data["c_flags"]]
+            object_flags += [f for p in data["c_include_dirs"] for f in ("-I", p)]
+            object_flags += ["-fno-builtin", "-Werror=implicit-function-declaration"]
+            sanitize = [
+                "-fsanitize=undefined",
+                *(f"-fno-sanitize={check}" for check in data["c_allow_ub"]),
+                "-fno-sanitize-recover=all",
+            ]
+            env_objects = []
+            for index, env_source in enumerate(data["c_env"]):
+                for side, extra in (("c", sanitize), ("rust", [])):
+                    target = output / f"env_{index}_{side}.o"
+                    result = _command(
+                        [*object_flags, *extra, env_source, "-o", str(target)],
+                        output,
+                        f"build-env-{index}-{side}",
+                    )
+                    if result.returncode:
+                        raise ContractError(f"build-env-{index}-{side} failed; see its stderr")
+                    link_objects[side].append(str(target))
+                    if side == "c":
+                        env_objects.append(target)
+            if host_flags:
+                probe = output / "reference_probe.o"
+                result = _command(
+                    [*object_flags, *sanitize, str(output / "reference.c"), "-o", str(probe)],
+                    output,
+                    "build-c-probe",
+                )
+                if result.returncode:
+                    raise ContractError("build-c-probe failed; see build-c-probe.stderr")
+                missing = _undefined([probe, *env_objects], output, "nm-undefined")
+                if env_objects:
+                    missing -= _defined(env_objects, output, "nm-env-defined")
+                traps = sorted(
+                    name
+                    for name in missing
+                    if name not in HOST_LIBC_SAFE
+                    and name != "write"
+                    and not name.startswith("__ubsan")
+                    and name != "_GLOBAL_OFFSET_TABLE_"
+                )
+                report["c_traps"] = traps
+                (output / "traps.c").write_text(_trap_source(traps))
+                for side in ("c", "rust"):
+                    target = output / f"traps_{side}.o"
+                    result = _command(
+                        [cc, "-c", "-fPIC", "-O2", str(output / "traps.c"), "-o", str(target)],
+                        output,
+                        f"build-traps-{side}",
+                    )
+                    if result.returncode:
+                        raise ContractError(f"build-traps-{side} failed; see its stderr")
+                    link_objects[side].append(str(target))
+            report["c_host_profile"] = data.get("c_host_profile")
+            report["c_env"] = data["c_env"]
         c_command = [
             cc,
             "-std=c11",
             "-shared",
             "-fPIC",
             "-O2",
+            *host_flags,
             *data["c_flags"],
             *(flag for p in data["c_include_dirs"] for flag in ("-I", p)),
             "-fno-builtin",
@@ -3308,6 +3596,7 @@ def grade(path: Path, output: Path) -> dict:
             "-MF",
             str(output / "reference.d"),
             str(output / "reference.c"),
+            *link_objects["c"],
             "-o",
             str(output / "reference.so"),
         ]
@@ -3320,6 +3609,7 @@ def grade(path: Path, output: Path) -> dict:
             "link-arg=-Wl,-Bsymbolic",
             "-O",
             *data["rust_flags"],
+            *(arg for obj in link_objects["rust"] for arg in ("-C", f"link-arg={obj}")),
             f"--emit=link,dep-info={output / 'candidate.d'}",
             str(output / "candidate.rs"),
             "-o",
@@ -3354,6 +3644,29 @@ def grade(path: Path, output: Path) -> dict:
         pins = {str(p): digest(p) for p in dependencies}
         if any(pins.get(p) != value for p, value in before.items()):
             raise ContractError("input changed during compilation")
+        if host_flags:
+            for name in ("reference", "candidate"):
+                result = _command(
+                    [
+                        "nm",
+                        "-D",
+                        "--undefined-only",
+                        "--format=just-symbols",
+                        str(output / f"{name}.so"),
+                    ],
+                    output,
+                    f"nm-{name}-imports",
+                )
+                wide = sorted(
+                    line.strip().split("@")[0]
+                    for line in result.stdout.splitlines()
+                    if HOST_WIDE_LIBC.match(line.strip())
+                )
+                if result.returncode or wide:
+                    raise ContractError(
+                        f"{name}.so binds host wide-char libc {wide} (4-byte wchar_t); "
+                        "provide 16-bit definitions in c_env"
+                    )
         report["inputs"] = pins
         report["libraries"] = {
             name: digest(output / f"{name}.so") for name in ("reference", "candidate")
@@ -3416,6 +3729,7 @@ def grade(path: Path, output: Path) -> dict:
                 "link-arg=-Wl,-Bsymbolic",
                 "-O",
                 *data["rust_flags"],
+                *(arg for obj in link_objects["rust"] for arg in ("-C", f"link-arg={obj}")),
                 str(wrapper_path),
                 "-o",
                 str(library),

@@ -23,6 +23,20 @@ def test_shipped_target_passes_with_every_mutant_detected(tmp_path, name):
     assert all(m["detected"] for m in report["mutants"])
 
 
+@pytest.mark.skipif(
+    not (DATA.parents[3] / "build-amd64/sdk/include/psdk/winnt.h").is_file(),
+    reason="reactos-amd64 host profile needs this worktree's generated headers: "
+    "./vibeos-cli build --arch amd64",
+)
+def test_wine_version_dll_through_the_host_profile(tmp_path):
+    """A whole Wine TU against the tree's real headers, a shared env, generated traps."""
+    report = grade(DATA / "version.json", tmp_path / "version")
+    assert report["status"] == "pass", report
+    assert report["mismatches"] == 0
+    assert "LZOpenFileW" in report["c_traps"]
+    assert all(m["detected"] for m in report["mutants"])
+
+
 def test_byte_pointee_fault_proves_the_allocation_ends_at_length(tmp_path):
     report = grade(DATA / "encode.json", tmp_path / "encode")
     overread = next(m for m in report["mutants"] if m["name"] == "encode_overread")
