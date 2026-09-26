@@ -28,7 +28,7 @@ for arg in "$@"; do
         # Leave power alone and wait for someone to cycle the board by hand.
         --no-power) POWER=0 ;;
         # Only needed when kernel-side sources changed: the loader is 300 KB and
-        # takes seconds, the ramdisk is 140 MB and takes a couple of minutes.
+        # takes seconds, the ramdisk is 140 MB and takes ~13.5 minutes (card writes).
         --ramdisk) RAMDISK=1 ;;
         *) echo "usage: $0 [--no-power] [--no-launch] [--ramdisk]" >&2; exit 2 ;;
     esac
@@ -113,7 +113,7 @@ if tail -c "+$((mark + 1))" "$F" | strings | grep -qF 'TFTP Error'; then
 fi
 
 if [ "$RAMDISK" -eq 1 ]; then
-    log "TFTP: ramdisk.img (140 MB, a couple of minutes)"
+    log "TFTP: ramdisk.img (140 MB, ~13.5 min - the SD card write is the limit)"
     mark=$(size)
     "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img fs0:\\ramdisk.img"
     if ! wait_for 'Shell>' "$mark" 900; then
