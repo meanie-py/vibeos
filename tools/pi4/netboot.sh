@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Drive a Pi 4B bring-up cycle end to end, with nobody at the bench.
 #
-#   tools/pi4/netboot.sh [--no-power] [--no-launch] [--ramdisk | --sanboot]
+#   tools/pi4/netboot.sh [--no-power]                       # sanboot (default, ~100 s to desktop)
+#   tools/pi4/netboot.sh --card [--no-launch] [--ramdisk]   # old path: TFTP onto the SD card
 #
 # Power-cycles the board through the bench's smart plug (power.sh), catches the
 # firmware splash (a ~5 second window that is easy to miss by hand -
@@ -9,10 +10,10 @@
 # whatever stale loader is on the card), enters the UEFI Shell, brings up DHCP,
 # TFTPs the freshly built loader onto the card, and launches it.
 #
-# --sanboot skips the card for everything but iPXE itself: iPXE sanboots
-# payload/boot.img over HTTP (bench.sh http), so a kernel change costs seconds
-# instead of the ~17 minutes of card write + read. Needs the TCP rule in
-# docs/engineering/pi4-bench.md.
+# The default is sanboot: only iPXE touches the card, and iPXE sanboots
+# payload/boot.img over HTTP (bench.sh http), so a kernel change costs ~100 s
+# power-on to desktop instead of the ~23 minutes of card write + read that
+# --card takes. Needs the TCP 8069 rule in docs/engineering/pi4-bench.md.
 #
 # Requires `tools/pi4/bench.sh up` (serial listener + TFTP server) and a payload
 # staged with `tools/pi4/bench.sh stage`. Guide: docs/engineering/pi4-bench.md
@@ -27,7 +28,7 @@ SEND="$(dirname "$0")/serial-send.sh"
 LAUNCH=1
 POWER=1
 RAMDISK=0
-SANBOOT=0
+SANBOOT=1
 for arg in "$@"; do
     case "$arg" in
         --no-launch) LAUNCH=0 ;;
@@ -35,9 +36,10 @@ for arg in "$@"; do
         --no-power) POWER=0 ;;
         # Only needed when kernel-side sources changed: the loader is 300 KB and
         # takes seconds, the ramdisk is 140 MB and takes ~13.5 minutes (card writes).
-        --ramdisk) RAMDISK=1 ;;
+        --ramdisk) RAMDISK=1; SANBOOT=0 ;;
+        --card) SANBOOT=0 ;;
         --sanboot) SANBOOT=1 ;;
-        *) echo "usage: $0 [--no-power] [--no-launch] [--ramdisk | --sanboot]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk]" >&2; exit 2 ;;
     esac
 done
 
@@ -123,7 +125,6 @@ tftp_to_card() {
 }
 
 if [ "$SANBOOT" -eq 1 ]; then
-    [ "$RAMDISK" -eq 0 ] || { log "--sanboot serves the ramdisk over HTTP; drop --ramdisk"; exit 2; }
     log "TFTP: ipxe.efi + autoexec.ipxe onto the card"
     tftp_to_card ipxe.efi 'fs0:\ipxe.efi'
     tftp_to_card autoexec.ipxe 'fs0:\autoexec.ipxe'

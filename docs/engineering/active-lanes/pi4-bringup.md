@@ -569,7 +569,8 @@ killing a `debug start` VM when the tool call that launched it exited (pass
 
 ### Next
 
-- Owner: create the sanboot firewall rule, then make `--sanboot` the default loop.
+- ~~Sanboot firewall rule~~ done 2026-09-26 morning; sanboot is now the default loop, measured
+  at ~100 s power-on to desktop (was ~23 min).
 - bootvid geometry (splash streaked and undersized; the desktop is fine).
 - Input: xHCI behind PCIe; nothing drives it yet.
 - MP on the board: the AP trampoline (`hal-rust/src/arm64/mpboot.rs`) still
