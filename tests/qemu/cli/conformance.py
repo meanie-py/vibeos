@@ -538,6 +538,11 @@ def _conformance_once(args, repo: Path) -> int:
     baseline_path = repo / "tools" / "conformance-baseline" / base / baseline_name
 
     # --- 1. build (default on) with the kmtest payload -----------------------
+    if args.no_build:
+        gap = media_payload_gap(repo / f"build-{base}")
+        if gap:
+            print(f"[conformance] --no-build refused: {gap}", file=sys.stderr)
+            return 2
     if not args.no_build:
         unprovisioned = _worktree_provisioning_gaps(repo, base)
         if unprovisioned:
@@ -983,3 +988,27 @@ def round_shape(bugcheck, results: list, done_line, regressions: list, serial_te
     if regressions:
         return "clean-but-ratchet-regression"
     return "clean"
+
+
+def media_payload_gap(build_dir: Path) -> str | None:
+    """Why this build dir's media cannot run the sweep, or None if it can.
+
+    `--no-build` boots whatever media is there. A plain `vibeos-cli build` stamps
+    `{"payloads": []}`, and its media boots to a normal desktop with no sweep on it:
+    the round then drains its whole budget (~30 min) waiting for a marker that cannot
+    appear, and is filed B:no-launch -- a fake LOST BOOT in the flake corpus. That
+    cost three arches x 30 min on 2026-09-26. The build's own payload stamp answers
+    the question before a single boot; a missing stamp is refused too, since it says
+    nothing about what the media holds.
+    """
+    stamp = build_dir / "payload-selection.json"
+    fix = f"drop --no-build (conformance builds with VIBEOS_PAYLOAD={SUITE}) or build with it"
+    try:
+        names = json.loads(stamp.read_text()).get("payloads", [])
+    except OSError:
+        return f"{stamp} is missing, so nothing says what this media holds; {fix}"
+    except ValueError as e:
+        return f"{stamp} is unreadable ({e}); {fix}"
+    if SUITE not in names:
+        return f"this media was built with payloads {names or '[]'}, not {SUITE!r}; {fix}"
+    return None
