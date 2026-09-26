@@ -6829,6 +6829,40 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
+
+**Symptom:** you isolate a quarantined failure to reproduce it (`--only <one suite>`), the boot
+comes back clean, and you conclude something about the bug from that — that it needs residue from
+the other suites, that it is fixed, that it is self-contained. The run never exercised it: the
+quarantine entry that told you *which* subtest wedges is also what tells the harness to skip it,
+so the serial says `SKIP <subtest>` and the sweep sails past.
+
+**Cause:** the record of a defect and the suppression of it are the same file. Anything that reads
+that file to build the worklist — a skip list, a lint baseline, a disabled-test registry, an
+`ignore` glob — inherits the property that *asking about the bug removes it from the question*.
+The green result is not wrong, it is vacuous, and nothing in the output distinguishes "ran and
+passed" from "never ran" unless you go looking for the SKIP line.
+
+**Fix:** give the generator an explicit disarm (`gen_suites.py --ignore-quarantine`, plumbed
+through `characterize.py --only / --ignore-quarantine`) and make the disarmed run mark its own
+artifacts unbankable, exactly as `--only` already does. Hand-editing the suppression file works
+once and is how you forget to put it back. Two corollaries:
+
+- **Disable the SUBTRACTION, not the CHECKS.** The first draft cleared the quarantine sets before
+  the staleness comparison, which silently disabled the typo check that guards the file — the same
+  "filter applied upstream of the checks that describe the build" mistake `--only` made. A test
+  caught it asserting the opposite of what the code did.
+- **A disarmed reproduction must not write back to the file it disarmed**, or the round that
+  reproduces the wedge re-appends the entry it was launched to remove (`--ignore-quarantine`
+  implies `--no-quarantine`).
+
+**And look for the CONTROL already in the run before publishing a mechanism.** The same boot that
+was supposed to prove "a bounded `WaitForSingleObject` never times out" contained
+`TIMEOUT ... log10 (120s) - terminated` — the identical call on the identical object type,
+expiring on schedule. A mechanism that claims a primitive is broken is refuted by any healthy use
+of that primitive in the same artifact, and a sweep over dozens of subtests almost always contains
+one. Grep for it before writing the entry; it is cheaper than the retraction.
+
 ### A timeout measured in ITERATIONS shrinks as the guest gets chattier — and the driver above blames the test
 
 **Symptom:** a long conformance sweep stops partway through, at a different place each run, with

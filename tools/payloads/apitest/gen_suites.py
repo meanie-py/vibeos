@@ -90,6 +90,17 @@ def main(argv: list[str] | None = None) -> int:
         "whether a wedge is self-contained. Quarantines still apply, and a name that "
         "matches nothing is an error rather than an empty run.",
     )
+    ap.add_argument(
+        "--ignore-quarantine",
+        action="store_true",
+        help="do not subtract the quarantine — neither the suites nor the subtest "
+        "skips. This is how you REPRODUCE a quarantined wedge: the entry that "
+        "records it is also what suppresses it, so a plain --only run of a "
+        "quarantined suite announces SKIP and cannot fail. Hand-editing the "
+        "quarantine to get around that is how you forget to put it back, so it "
+        "is a flag. Like --only, the generated lists are marked as a reproduction "
+        "set and must not seed a baseline.",
+    )
     args = ap.parse_args(argv)
 
     build_dir = args.build_dir or (REPO / f"build-{args.arch}")
@@ -121,6 +132,13 @@ def main(argv: list[str] | None = None) -> int:
         found = [s for s in found if s in want]
 
     quarantined, skipped, qpath = read_quarantine(args.arch)
+    # --ignore-quarantine disables the SUBTRACTION ONLY. The staleness checks below
+    # keep reading the real file: clearing these up front (the first draft did)
+    # silently disabled the typo check too -- the same "filter applied upstream of the
+    # checks that describe the build" mistake --only's first draft made, and the
+    # comment there claimed the opposite of what the code did until a test said so.
+    armed = set() if args.ignore_quarantine else quarantined
+    armed_skips = [] if args.ignore_quarantine else skipped
     stale = sorted(quarantined - set(all_found))
     if stale:
         # Loud, per the module docstring: a quarantine that matches nothing is
@@ -136,7 +154,12 @@ def main(argv: list[str] | None = None) -> int:
     skip_lines = [
         f"# apitest subtest skips — {args.arch}. GENERATED from {qpath.name}.",
         "# '<suite.exe> <subtest>' per line; the sweep announces each as SKIP.",
-        *skipped,
+        *(
+            ["# QUARANTINE IGNORED (--ignore-quarantine): deliberately EMPTY."]
+            if args.ignore_quarantine
+            else []
+        ),
+        *armed_skips,
     ]
     skip_out.write_text("\n".join(skip_lines) + "\n", encoding="utf-8")
 
@@ -161,22 +184,31 @@ def main(argv: list[str] | None = None) -> int:
             "# This is a REPRODUCTION list, not the full sweep — do not bank a baseline",
             "# from a run using it; the coverage would silently be one suite's worth.",
         ]
-    if quarantined:
-        lines.append(f"# {len(quarantined & set(found))} suite(s) quarantined via {qpath.name}.")
-    lines += [s for s in found if s not in quarantined]
+    if args.ignore_quarantine:
+        lines += [
+            f"# QUARANTINE IGNORED (--ignore-quarantine): {qpath.name} was not",
+            "# subtracted, so known-wedging suites and subtests are ARMED. This is a",
+            "# REPRODUCTION list — do not bank a baseline from a run using it.",
+        ]
+    if armed:
+        lines.append(f"# {len(armed & set(found))} suite(s) quarantined via {qpath.name}.")
+    lines += [s for s in found if s not in armed]
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    kept = len([s for s in found if s not in quarantined])
+    kept = len([s for s in found if s not in armed])
     # `built` counts what the BUILD produced, not what --only kept, or a restricted
     # run reports "1 suite(s) (1 built)" and reads like the build lost 62 of them.
     restricted = f", RESTRICTED to {len(found)} by --only" if args.only else ""
+    if args.ignore_quarantine:
+        restricted += ", QUARANTINE IGNORED"
+    # One f-string for both shapes: the --only-specific `filtered` clause was
+    # duplicated into two branches, and `restricted` only reached one of them, so
+    # --ignore-quarantine on its own printed a summary that did not mention it.
+    filtered = f"{len(all_found) - len(found)} filtered, " if args.only else ""
     print(
         f"gen_suites: {out.name} — {kept} suite(s) ({len(all_found)} built, "
-        f"{len(all_found) - len(found)} filtered{restricted}, "
-        f"{len(found) - kept} quarantined), {len(skipped)} subtest skip(s)"
-        if args.only
-        else f"gen_suites: {out.name} — {kept} suite(s) ({len(all_found)} built, "
-        f"{len(all_found) - kept} quarantined), {len(skipped)} subtest skip(s)"
+        f"{filtered}{len(found) - kept} quarantined{restricted}), "
+        f"{len(armed_skips)} subtest skip(s)"
     )
     return 0
 

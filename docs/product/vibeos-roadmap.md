@@ -764,52 +764,75 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
 
-- **THE APITEST WEDGE CLUSTER IS A BOUNDED `WaitForSingleObject` THAT NEVER TIMES OUT —
-  and it is almost certainly the SAME BUG as the winlogon hang filed separately below.
-  OPEN, root cause localised** (2026-09-24).
+- **THE APITEST WEDGE CLUSTER: the "bounded `WaitForSingleObject` that never times out"
+  root cause is FALSIFIED. The timeout DOES fire. OPEN, and back to un-attributed**
+  (2026-09-24, corrected 2026-09-25).
 
-  Measured in ONE isolated boot (`gen_suites.py --only msvcrt_apitest.exe`, all 55
-  subtests), with a `spawned` DbgPrint added to `sweep.c` between `CreateProcessA` and
-  the wait specifically to discriminate the two candidates:
+  The previous entry here claimed the cluster was a 120s `WaitForSingleObject` failing to
+  expire, and unified it with the winlogon hang as one kernel bug. **One isolated boot
+  with the quarantine disarmed refuted it**, and the refutation was one command away the
+  whole time:
 
-      [APITEST-SWEEP] exit    msvcrt_apitest.exe _wcsupr code=0
-      [APITEST-SWEEP] launch  msvcrt_apitest.exe _wsystem
-      [APITEST-SWEEP] spawned msvcrt_apitest.exe pid=968      <- CreateProcessA RETURNED
-      ... 240+ seconds of nothing from the sweep, no `TIMEOUT ... (120s) - terminated` ...
+      $ gen_suites.py --arch amd64 --only msvcrt_apitest.exe --ignore-quarantine
+      $ characterize.py --arch amd64 --rounds 1 --only msvcrt_apitest.exe --ignore-quarantine
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe _wsystem code=0          <- PASSES
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe system  code=3           <- PASSES
+      [APITEST-SWEEP] TIMEOUT msvcrt_apitest.exe log10 (120s) - terminated <- TIMEOUT FIRES
+      [APITEST-SWEEP] done total=1 launched=1 subtests=55 failstart=0 timeouts=1
 
-  `sweep.c` bounds every wait: 120s on the child, +10s after `TerminateProcess`, 15s on
-  the pump join. It must advance within ~145s whatever the child does. It does not, and
-  `CreateProcessA` is excluded by the `spawned` line, so the block is
-  `WaitForSingleObject(pi.hProcess, 120000)` **failing to return after its timeout**.
+  **`log10` is the control the earlier run had and did not use.** It is the same
+  `WaitForSingleObject(pi.hProcess, 120000)`, on the same object type, in the same boot,
+  and it expired on schedule. A bounded wait that demonstrably times out 120s after a
+  hung child cannot also be the mechanism that never times out.
 
-  Four things this settles, each measured rather than inferred:
-  - **The box is ALIVE.** The serial grew 779 bytes in 25s (eventlog, LSASS) while the
-    sweep sat dead. This OVERTURNS the standing conclusion recorded in
-    `quarantine-amd64.txt` — "if it cannot time out its own child, it is not running
-    either; the box is dead, not the harness waiting". It is one stuck process.
-  - **The wedge is SELF-CONTAINED.** Only 21 msvcrt subtests ran before it, not ~200
-    across 30 suites, so no accumulated residue (leaked handles, desktop heap, leftover
-    `WineTestService` registrations) is required. Reproduction drops from a 3-hour
-    30-suite sweep to a ~12-minute one-suite boot.
-  - **It explains the whole cluster with one mechanism.** Every member shows `launch`
-    then no `exit` AND no `TIMEOUT`: msvcrt system/_wsystem/atexit/static_construct, cmd
-    attrib/exit/pushd, kernel32 (8 victims), ntdll (3), user32 VirtualKey/WndProc,
-    iphlpapi GetOwnerModuleFrom*/GetExtendedTcpTable. The missing TIMEOUT line was
-    always the anomaly; it is now the diagnosis.
-  - **It is the winlogon signature.** That entry records
-    `WaitForSingleObject(Pi.hProcess, 60_000)` not returning after 500+ seconds and says
-    the anomaly "is not 'the process did not signal' — it is a bounded wait that does not
-    time out", and asks whether the shared predicate is "a coincidence or the link". Same
-    call, same object type, same failure. Treat them as ONE investigation.
+  What survives from the earlier investigation, and what does not:
 
-  **Next, and it is now a kernel question not a harness one:** why a
-  `KeWaitForSingleObject` on a process object with a non-NULL timeout fails to expire.
-  Look at timer insertion/expiry for that wait path. Proximate context, offered as
-  context and NOT as a cause: `_wsystem`'s grandchild (pid 980) fails
+  - **FALSIFIED — "the wait never expires".** `log10` times out in the same boot. The
+    argument was "`sweep.c` bounds every wait, so it must advance within ~145s"; that is
+    true of the *waits* but the stalled span also holds `CloseHandle(wr)` and
+    `CreateThread`, which are not waits and are not bounded either. The reasoning
+    enumerated two candidates and there were four.
+  - **FALSIFIED — "the wedge is SELF-CONTAINED".** Isolated msvcrt with every quarantine
+    entry ARMED reaches `[APITEST-SWEEP] done`: 55 subtests, 3 bad, 4m49s. The wedge needs
+    something the isolated run lacks — cross-suite residue, or it is a rare race. Note the
+    earlier isolated boot *did* stall at `_wsystem` under the same restriction, so it is
+    intermittent, which is also why one green isolated run must not un-quarantine anything.
+  - **UNSUPPORTED — the unification with the winlogon hang.** That rested entirely on the
+    shared never-expiring-wait mechanism. Same call and same object type is a shared
+    *predicate*, not a shared cause; the winlogon entry itself asked whether it was "a
+    coincidence or the link" and the answer is still unknown. They are two entries again.
+  - **STANDS — the box is ALIVE while the sweep is stuck.** The serial grew 779 bytes in
+    25s (eventlog, LSASS) during the stall. That measurement is independent of the wait
+    hypothesis and still overturns `quarantine-amd64.txt`'s "the box is dead, not the
+    harness waiting". It is one stuck process, not a dead guest.
+  - **STANDS — `CreateProcessA` returned.** The `spawned` line printed in the observed
+    stall, so process creation is excluded from that instance.
+
+  **Next:** the stall is somewhere in `spawned` → `closed` → `waiting` → the wait, and
+  `sweep.c` now prints all three, so the next occurrence localises itself with no new
+  build. Do NOT go looking at timer insertion/expiry first: the whole chain
+  (`KeWaitForSingleObject`, `KxSetTimerForThreadWait`, `KiComputeDueTime`,
+  `KiInsertTimerTable`, `KiComputeTimerTableIndex`, `KiCheckForTimerExpiration`,
+  `KiTimerExpiration`, `KiTimerListExpire`) was read against the C it was translated from
+  and is faithful, and upstream has made **zero** commits to `ntoskrnl/ke/` or
+  `ntoskrnl/ob/` since the fork, so the bug oracle is silent here too. One known latent
+  quirk, shared with upstream and therefore not our regression: `TIMER_TABLE_SIZE` is 512
+  while `DISPATCHER_HEADER.Hand` is a `UCHAR`, so hands 256-511 truncate on store and
+  `KiRemoveEntryTimer` does its bucket-empty bookkeeping against the wrong slot.
+
+  Proximate context, offered as context and NOT as a cause: `_wsystem`'s grandchild fails
   `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE` just before the stall — but that
   message is AMBIENT (counted 11-16 times in all 42 archived serials including healthy
-  ones), so its position here is suggestive only. The bug to fix is the wait; a child
-  that hangs forever is allowed to, and the timeout exists precisely for that.
+  ones), so its position there is suggestive only.
+
+  **Method note, because this cost a wrong root cause in the repo:** the refuting artifact
+  was a run I was already going to do, and I wrote the conclusion first. The specific trap
+  was circular and is now closed in the tool: the quarantine entry that RECORDS a wedge is
+  also what SUPPRESSES it, so `--only msvcrt_apitest.exe` printed `SKIP ... _wsystem` and
+  completed clean — a green run that proves nothing about the bug it was launched to
+  reproduce. `gen_suites.py --ignore-quarantine` (and `characterize.py --only /
+  --ignore-quarantine`, which implies `--no-quarantine`) exist so that reproducing a
+  quarantined wedge does not mean hand-editing the file that records it.
 
 - **`NtGdiCreateBitmap` BUGCHECKed 0x1E in a naked `memcpy`. FIXED 2026-09-24**, verified
   by boot (`exit win32u_apitest.exe NtGdiCreateBitmap code=2` — real test failures, no

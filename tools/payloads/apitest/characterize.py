@@ -162,7 +162,43 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="merged results table (default: tools/conformance-baseline/<arch>/apitest.txt.new)",
     )
+    ap.add_argument(
+        "--only",
+        action="append",
+        metavar="SUITE.exe",
+        help="passed through to gen_suites.py: drive ONE suite to completion instead "
+        "of all 58. This is the only way to reproduce a wedge with the sweep's real "
+        "bounds -- `vibeos-cli smoke --payload apitest` returns as soon as the payload "
+        "marker appears and terminates the guest mid-sweep, which looks like a clean "
+        "run and proves nothing.",
+    )
+    ap.add_argument(
+        "--ignore-quarantine",
+        action="store_true",
+        help="passed through to gen_suites.py: ARM the known wedges. Implies "
+        "--no-quarantine, because the entry that records a wedge is what suppresses "
+        "it, so a reproduction run would otherwise re-append what it was launched to "
+        "reproduce.",
+    )
+    ap.add_argument(
+        "--no-quarantine",
+        action="store_true",
+        help="do not append culprits to the quarantine. For a reproduction run, where "
+        "the culprit is already known and the point is to watch it happen.",
+    )
     args = ap.parse_args(argv)
+
+    # A reproduction run must not edit the quarantine it deliberately disarmed.
+    reproducing = bool(args.only or args.ignore_quarantine)
+    no_quarantine = args.no_quarantine or args.ignore_quarantine
+    if reproducing:
+        print(
+            "[characterize] REPRODUCTION run"
+            + (" (--only)" if args.only else "")
+            + (" (quarantine DISARMED)" if args.ignore_quarantine else "")
+            + " — coverage is partial, so do NOT bank the results table it writes.",
+            flush=True,
+        )
 
     parser = _load(
         "parse_apitest_serial", REPO / "tools" / "conformance" / "parse_apitest_serial.py"
@@ -187,7 +223,12 @@ def main(argv: list[str] | None = None) -> int:
     for rnd in range(1, args.rounds + 1):
         print(f"\n[characterize] ===== round {rnd}/{args.rounds} =====", flush=True)
 
-        if run([py, str(HERE / "gen_suites.py"), "--arch", args.arch]) != 0:
+        gen = [py, str(HERE / "gen_suites.py"), "--arch", args.arch]
+        for one in args.only or []:
+            gen += ["--only", one]
+        if args.ignore_quarantine:
+            gen.append("--ignore-quarantine")
+        if run(gen) != 0:
             return 1
 
         env = dict(os.environ, VIBEOS_PAYLOAD="apitest")
@@ -316,17 +357,27 @@ def main(argv: list[str] | None = None) -> int:
         if culprit.endswith(" <enumeration>"):
             culprit = culprit.split()[0]
 
-        culprits.append(culprit)
         why = (
             f"BUGCHECK {meta['bugcheck']}"
             if meta["bugcheck"]
             else "guest went SILENT here (idle cutoff) — a wedge, not a rig timeout"
         )
+        if no_quarantine:
+            print(
+                f"[characterize] would have quarantined {culprit!r} ({why}) — "
+                "not written (--no-quarantine). Stopping: without a quarantine the "
+                "next round would wedge in the same place.",
+                flush=True,
+            )
+            culprits.append(culprit)
+            break
+
         with quarantine.open("a", encoding="utf-8") as fh:
             fh.write(
                 f"\n# characterize.py round {rnd}: sweep stopped here — {why}.\n"
                 f"# serial: {serial}\n{culprit}\n"
             )
+        culprits.append(culprit)
         print(f"[characterize] quarantined {culprit!r} ({why})", flush=True)
 
     out = args.out or (REPO / "tools" / "conformance-baseline" / args.arch / "apitest.txt.new")
