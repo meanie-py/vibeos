@@ -43,6 +43,26 @@ placements separately. Baseline crashes invalidate grading; only explicit memory
 controls may count a reproducible SIGSEGV/SIGBUS during the native call. Scope remains
 stateless host grading, not parser/stateful/guest coverage. No model spend.
 
+**2026-09-26 difftest on uncovered code, and what is owed next.** Ten contracts over code no
+`*-difftest` crate grades (MD4/MD5/SHA1, CRC32, RtlRunEncode, LZNT1, version.dll's
+`VerQueryValueW` from the whole Wine TU via the `reactos-amd64` host profile) found shipping
+bugs in 4 of them, all fixed (`c70ae28f033`, `ba512e2f47a`): compress's unconditional
+out-param store, sha1's misaligned cast-store, version.dll's `Is16` offset, byte-vs-WCHAR
+pointer difference and truncated wide literal, plus kernel32 `vdm.rs`'s byte-vs-WCHAR length
+found by grepping that class tree-wide. None was visible to smoke. The lesson for the MAIN
+pass: difftest discovers bug CLASSES; the leverage is a $0 static check per class run on
+every translated body. **Owed, in order:**
+1. Three pattern checkers, as `tools/scan_*.py` wired into `tests/qemu/cli/lints.py` (the
+   existing convention, 0-NEW vs baseline): (a) pointer difference lowered as
+   `(a as isize - b as isize)` on non-byte pointers, where the C subtracted typed pointers;
+   (b) cast-and-store through a byte array (`(buf.as_mut_ptr().add(n) as *mut u32)` deref)
+   without `write_unaligned`; (c) a C out-param store under `if (p)` / after a label whose
+   Rust twin stores unconditionally. Measure hit rate on the translated tree before gating.
+2. `tools/scan_bool_width.py` (unwired) reports 202 findings on 2026-09-26 — the BOOLEAN-
+   return-widened-to-i32 class that broke fastfat and mountmgr. Untriaged.
+3. Also unwired and worth a pass: `scan_sibling_drift.py`, `scan_arch_cfg.py` (see
+   agent-reference "Triage scanners that are NOT wired into `check`").
+
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 
 Every number below is an anecdote from a lane that happened to notice something. Nobody has

@@ -49,9 +49,12 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache]`
+### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache] [--extra-target T]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
+
+- **`--extra-target T`** (repeatable) also builds a Ninja target the boot DAG does not
+  include, keeping the full boot build and its guards — instead of raw `ninja T`.
 
 - **Fast local iteration:** source lint is no longer part of a normal build.
   Use `check` for source analysis or opt into advisory lint with `build --check`.
@@ -381,6 +384,13 @@ cooperative estimates, not filesystem quotas: legacy lanes and other writers
 remain unaccounted for. `retention --enable` can install bounded hourly cleanup
 after a quiet-fleet compatibility check; `disk-status` reports timer activity.
 
+### `host-policy [--apply | --rollback | --pause | --resume]`
+
+Fleet-operator control, not a per-lane tool: with no flag it previews a drained-fleet
+build trial; `--apply`/`--rollback` switch between three and two concurrent builds after
+the fleet drains, and `--pause`/`--resume` stop and restart CPU admission around a cutover.
+Every lane on the host feels it — do not flip it to speed up your own build.
+
 ### `host-status [--json]`
 
 Shows active and waiting compiler/linker jobs across worktrees, plus legacy
@@ -666,7 +676,12 @@ per-package: `tools/rustconv/pyproject.toml`
 `tools/*.py` use the repo-root `pyproject.toml`. Policy is identical across all
 four so the surface lints under one standard.
 
-### `difftest [--only NAME[,NAME]]`
+### `difftest [--only NAME[,NAME]] [--case NAME ... --test-target T]`
+`--case` (repeatable, needs exactly one `--only` crate) runs only those exact cases, and
+fails unless exactly that many were graded — only crates whose `main` honours `--exact`
+(today `cnt-difftest`) support it. For code no crate covers, `rustconv difftest-contract`
+generates the harness from a JSON contract instead (`tools/rustconv/data/difftest/README.md`).
+
 Runs every **host differential harness** — the `*-difftest` crates, which compile
 the genuine ReactOS C as a host TU with its public symbols renamed `ref_*`, link
 that beside the shipping Rust, and fuzz the two for parity in one process. No

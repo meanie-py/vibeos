@@ -52,6 +52,12 @@ subsystem `.c` files are cohab-flipped: commented out in CMake, with `#[no_mangl
 over, leaving **inert dead source on disk** where a `DbgPrint` fires never. Grep
 `sdk/lib/rust/` for the symbol before touching any `.c`.
 
+**Exceed the C; don't preserve its bugs.** Fidelity is to what the C *means*, not to its
+defects. When the C is demonstrably wrong — kernel32's `move.c` computes a WCHAR count and
+then uses it as bytes, returning half the computer name — the Rust does the right thing and
+says so in a comment naming the divergence. The burden is on "demonstrably": a C behaviour
+you merely find odd is usually load-bearing, so show the contradiction in the C itself.
+
 ---
 
 ## How to work here
@@ -479,6 +485,11 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    `.try_into().unwrap()` suggestion by design — that turns C's silent truncation into a panic
    in a live service.
 4. Cohab flip → `vibeos-cli gate`.
+5. **Grade the logic smoke never reaches** with `rustconv difftest-contract` — shipping Rust vs
+   the genuine C on the host, mutants required, $0 (whole Wine TUs via
+   `"c_host_profile": "reactos-amd64"`). It found shipping bugs in 4 of its first 10 new
+   targets. Each bug is a CLASS: turn it into a static check, don't just fix the site.
+   `tools/rustconv/data/difftest/README.md`.
 
 Note the interaction: sealing restores constant *names* into `match` patterns, so step 1 gets
 **more** important once you seal, not less.
