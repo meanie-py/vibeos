@@ -222,8 +222,12 @@ const MAP_SYSTEM: ULONG = 2;
 
 #[inline]
 unsafe fn RtlLongLongSub(a: i64, b: i64, result: *mut i64) -> NTSTATUS {
-    *result = a.wrapping_sub(b);
-    STATUS_SUCCESS
+    // ntintsafe: overflow FAILS. A wrapping sub that always succeeded made the caller's
+    // `!NT_SUCCESS(RtlLongLongSub(..))` check dead code.
+    match a.checked_sub(b) {
+        Some(v) => { *result = v; STATUS_SUCCESS }
+        None => STATUS_INTEGER_OVERFLOW
+    }
 }
 
 #[inline]
@@ -1063,20 +1067,29 @@ unsafe fn MiMapViewOfDataSection(
     if status < 0 {
         return status;
     }
+    // section.c: the offset is aligned BEFORE the size is derived from it, the derived size
+    // must be non-negative and fit SIZE_T (`RtlLongLongToSIZET`), and both branches reject
+    // a view over MAXLONG_PTR. This had the alignment after the subtraction (a view 0..64K
+    // short) and neither range check, so an offset past the end became a huge SIZE_T.
+    const MAXLONG_PTR: SIZE_T = (SIZE_T::MAX) >> 1;
     if *view_size == 0 {
         let mut view_size_ll: LONGLONG = 0;
+        (*section_offset).__bindgen_anon_1.LowPart &= !(_64K as u32 - 1);
         if !NT_SUCCESS(RtlLongLongSub(
             (*((section as PSECTION) as *mut _SECTION)).SizeOfSection.QuadPart,
             (*section_offset).QuadPart,
             &mut view_size_ll,
-        )) {
+        )) || view_size_ll < 0
+            || view_size_ll as u64 > MAXLONG_PTR as u64
+        {
             MiDereferenceControlArea(control_area);
             return STATUS_INVALID_VIEW_SIZE;
         }
         *view_size = view_size_ll as SIZE_T;
-        (*section_offset).__bindgen_anon_1.LowPart &= !(_64K as u32 - 1);
     } else {
-        if !NT_SUCCESS(RtlSIZETAdd(*view_size, ((*section_offset).__bindgen_anon_1.LowPart & (_64K as u32 - 1)) as SIZE_T, view_size)) {
+        if !NT_SUCCESS(RtlSIZETAdd(*view_size, ((*section_offset).__bindgen_anon_1.LowPart & (_64K as u32 - 1)) as SIZE_T, view_size))
+            || *view_size > MAXLONG_PTR
+        {
             MiDereferenceControlArea(control_area);
             return STATUS_INVALID_VIEW_SIZE;
         }

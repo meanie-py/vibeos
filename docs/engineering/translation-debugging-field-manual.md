@@ -5467,6 +5467,8 @@ suspect call kept it failing; eighty made it green.
   Found by `rustconv difftest-contract` (`compress.json`) on its first run with the out-param
   declared `nullable`. When a C out-param store sits behind a label or an `if (p)`, the guard
   and the path are both contract — and declare such params `nullable` in any difftest.
+  Both halves are gated: `scan_dropped_null_guard` (the `if (p)`) and `scan_store_on_failure`
+  (the path).
 - **`if (CAS(...))` compared against the WRONG operand — an atomic publish that frees what it
   just published.** C tests the compare-exchange result for truthiness: the call returns the
   PREVIOUS value, so non-NULL means *another thread got there first and my block is the loser*.
