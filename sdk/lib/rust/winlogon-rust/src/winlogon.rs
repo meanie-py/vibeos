@@ -1818,6 +1818,35 @@ unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: D
  * asserts against real Windows rather than against us. arm64 gets it the day
  * it stages a winetest. */
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+/*
+ * Point TEMP/TMP at a writable scratch volume, when the harness attached one.
+ *
+ * The livecd's only volume is the CD, so the inherited TEMP is X:\reactos\TEMP
+ * and every conformance test that writes a scratch file fails on the MEDIA, not
+ * on the OS -- user32:class's activation-context manifest was the measured case
+ * (0xc0150010 on both sides of the WoW64 A/B). The harness attaches a FAT disk
+ * holding \TEMP (tests/qemu/vm.py _temp_disk_args); when it is there, the
+ * winetest children -- which inherit our environment -- write to it instead.
+ * Absent, nothing changes. Only winlogon's own environment is touched, and
+ * only just before the first winetest, so nothing launched earlier sees it.
+ */
+unsafe fn WinetestScratchTemp() {
+    static mut DONE: bool = false;
+    if DONE {
+        return;
+    }
+    DONE = true;
+    let Temp = wstr!("C:\\TEMP");
+    let Attr = GetFileAttributesW(Temp.as_ptr());
+    if Attr == 0xFFFF_FFFF || Attr & FILE_ATTRIBUTE_DIRECTORY == 0 {
+        DbgPrint(b"[WT] no scratch volume - TEMP stays on the read-only CD\n\0".as_ptr() as *const i8);
+        return;
+    }
+    SetEnvironmentVariableW(wstr!("TEMP").as_ptr(), Temp.as_ptr());
+    SetEnvironmentVariableW(wstr!("TMP").as_ptr(), Temp.as_ptr());
+    DbgPrint(b"[WT] TEMP/TMP -> C:\\TEMP (writable scratch volume)\n\0".as_ptr() as *const i8);
+}
+
 unsafe fn TryStartWinetest(
     Dir: *const u16,
     Exe: *const u16,
@@ -1858,6 +1887,7 @@ unsafe fn TryStartWinetest(
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged -- silent no-op, like every other optional guest
     }
+    WinetestScratchTemp();
     /* Not in a kmtest conformance boot. Its sweep grades timing-sensitive
      * kernel tests (ExFastMutex, ExResource) against a banked baseline, and a
      * tree built with --rostests staged the winetest into that media too:

@@ -118,6 +118,17 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `extern "system"` breaks the fastcall members (`IofCallDriver`, `IofCompleteRequest`,
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
+6. **A cdecl CALLBACK in an NTAPI slot: the CALLER returns into its own arguments.** The
+   callee does not pop what stdcall says it pops, so the caller's `ret` takes an argument as
+   its return address. Symptom: BUGCHECK 0x1E with EIP in **no module**, in pool right next to
+   a device object, and a return address just past `IofCompleteRequest` two words above ESP.
+   classpnp's `ClasspSendSynchronousCompletion` was `extern "C"` and registered through
+   `transmute::<unsafe extern "C" fn(..), _>(f)`: rustc checks the source type against the
+   fn (so it agrees it is cdecl) and the inferred target re-types it. Every hard disk's first
+   synchronous SRB crashed i386 (2026-09-26); 64-bit has one convention and was fine.
+   `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
+   an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
+   bugcheck print every stack word that lands in a module; the bad call's caller is there.
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -3710,6 +3721,21 @@ a decision to take deliberately, not to reach for because a module will not tran
 ## Dropped, degraded & silently-rewritten translation output
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
+
+### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
+
+**Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
+lockdep report. classpnp: every hard disk hung the boot inside `DiskInitFdo`'s MBR read.
+
+**Cause:** the C keeps a debug-only structure behind `#if DBG` in BOTH its initializer and
+its users, and the non-DBG initializer stores a marker instead: `RemoveTrackingSpinlock =
+(ULONG_PTR)-1`. The translation kept the marker under `cfg(not(debug_assertions))` but lost
+the `#if DBG` around one user, `ClassCompleteRequest`, which then acquired a spinlock whose
+value reads as HELD and spun forever.
+
+**Fix:** gate the user exactly as the C does (`cfg(debug_assertions)`). When an initializer
+has a debug arm and a release arm, grep every use of the field it initializes: each one
+must sit behind the same gate, or read the release marker as "absent".
 
 ### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
 **Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
