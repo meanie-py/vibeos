@@ -519,20 +519,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `VIBEOS_LADDER_DRAIN_FLOOR=1500`. Add `--winetest-skip "input msg"` to get past the first
   two.
 
-- **Native i386 `user32_winetest` baseline, 21 of 24 subtests. REFERENCE** (2026-09-25).
-  Measured three times with byte-identical failure and output counts, so these are a
-  baseline and not noise. This is the CONTROL half of the WoW64 A/B — a guest-only
-  regression is a divergence from this table, not a non-zero number in it.
-  Clean: `broadcast`, `generated`, `uitools` (0 failures).
-  Failing: `scroll` 140, `sysparams` 46, `text` 36, `static` 35, `combo` 23, `monitor` 20,
-  `dce` 16, `menu` 3, `resource` 3; `clipboard`, `cursoricon` and `listbox` all hit test.h's
-  255 cap.
-  Not a failure count: `class` CRASHED `0xc0150010`, `dialog` and `edit` CRASHED
-  `0xc0000005`, `dde` TIMED OUT at 180s having written 114 bytes.
-  Unmeasured: `win`, `winstation`, `wsprintf` — `win` bugchecks (above) and the two after it
-  never ran.
-  Cost, for budgeting a wider sweep: most subtests are under 3s; the outliers are `dde` 180s
-  (the timeout itself), `sysparams` 128s, `clipboard` 20s, `class` 21s, `monitor` 14s.
+- **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
+  REFERENCE + 6 OPEN** (2026-09-25). First time the WoW64 control has run across a whole
+  suite instead of two subtests. Same 21 subtests both sides, same quarantine
+  (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
+  Seventeen matching is the control doing its job; those are OUR user32, not the seam.
+  | subtest | native i386 | WoW64 | |
+  |---|---|---|---|
+  | `combo` | 23 failures | **CRASH `0xc0000094`** | guest-only, and `0xc0000094` is INTEGER_DIVIDE_BY_ZERO — a width bug shape |
+  | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
+  | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
+  | `monitor` | 20 failures | **23** | +3 guest-only |
+  | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
+  | `scroll` | 140 failures | **17** | fewer under WoW64 — NOT yet a win, see below |
+  | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
+  `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
+  owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
+  correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
+  `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
+  `NtGdiPatBlt` and no brush select at all**. Both are batched, the batch is reset rather
+  than executed, the fill never happens and `GetPixel` returns white. The GDI-batch entry
+  says executing them needs four 32-bit record layouts and names `GDIBSPATBLT.hbrush`
+  first; this is that record. It also says the discard "costs no drawing that was not
+  already dropped" — true, and now known to cost a conformance assertion as well.
+  **`scroll` 140 -> 17 must not be read as an improvement until someone diffs the
+  assertions.** A conformance suite reporting fewer failures usually means it stopped
+  asking, not that we got better, and the byte counts (896 native vs 1271 guest) do not
+  settle it either way.
+  Cost, for budgeting a wider sweep: most subtests are under 3s natively; the outliers are
+  `dde` 180s (the timeout itself), `sysparams` 128s, `class` 21s, `clipboard` 20s,
+  `monitor` 14s. Under WoW64 the same suite is roughly 3x that — `class` 115s, `sysparams`
+  80s, `clipboard` 73s — so a 21-subtest guest sweep needs a drain floor near 2400s.
+  Repro: `build --arch <a> --winetest-sweep --winetest-skip "input msg win"` on both
+  arches, then `smoke --arch amd64 --ladder` and `smoke --arch i386 --ladder`.
 
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
