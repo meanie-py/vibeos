@@ -3404,6 +3404,101 @@ def _candidate_crash(
     }
 
 
+def _build_environment(
+    data: dict, output: Path, cc: str, report: dict
+) -> tuple[list[str], dict[str, list[str]]]:
+    """The shared environment: reviewed C for whatever the graded C calls out to, plus an
+    aborting trap for every other external. Linked into BOTH libraries, so the only thing
+    that differs between the sides is the unit under grade."""
+    host_flags = data.get("c_host_flags", [])
+    link_objects: dict[str, list[str]] = {"c": [], "rust": []}
+    if data["c_env"] or host_flags:
+        object_flags = [cc, "-std=c11", "-c", "-fPIC", "-O2", *host_flags, *data["c_flags"]]
+        object_flags += [f for p in data["c_include_dirs"] for f in ("-I", p)]
+        object_flags += ["-fno-builtin", "-Werror=implicit-function-declaration"]
+        sanitize = [
+            "-fsanitize=undefined",
+            *(f"-fno-sanitize={check}" for check in data["c_allow_ub"]),
+            "-fno-sanitize-recover=all",
+        ]
+        env_objects = []
+        for index, env_source in enumerate(data["c_env"]):
+            for side, extra in (("c", sanitize), ("rust", [])):
+                target = output / f"env_{index}_{side}.o"
+                result = _command(
+                    [*object_flags, *extra, env_source, "-o", str(target)],
+                    output,
+                    f"build-env-{index}-{side}",
+                )
+                if result.returncode:
+                    raise ContractError(f"build-env-{index}-{side} failed; see its stderr")
+                link_objects[side].append(str(target))
+                if side == "c":
+                    env_objects.append(target)
+        if host_flags:
+            probe = output / "reference_probe.o"
+            result = _command(
+                [*object_flags, *sanitize, str(output / "reference.c"), "-o", str(probe)],
+                output,
+                "build-c-probe",
+            )
+            if result.returncode:
+                raise ContractError("build-c-probe failed; see build-c-probe.stderr")
+            missing = _undefined([probe, *env_objects], output, "nm-undefined")
+            if env_objects:
+                missing -= _defined(env_objects, output, "nm-env-defined")
+            traps = sorted(
+                name
+                for name in missing
+                if name not in HOST_LIBC_SAFE
+                and name != "write"
+                and not name.startswith("__ubsan")
+                and name != "_GLOBAL_OFFSET_TABLE_"
+            )
+            report["c_traps"] = traps
+            (output / "traps.c").write_text(_trap_source(traps))
+            for side in ("c", "rust"):
+                target = output / f"traps_{side}.o"
+                result = _command(
+                    [cc, "-c", "-fPIC", "-O2", str(output / "traps.c"), "-o", str(target)],
+                    output,
+                    f"build-traps-{side}",
+                )
+                if result.returncode:
+                    raise ContractError(f"build-traps-{side} failed; see its stderr")
+                link_objects[side].append(str(target))
+        report["c_host_profile"] = data.get("c_host_profile")
+        report["c_env"] = data["c_env"]
+    return host_flags, link_objects
+
+
+def _refuse_host_wide_libc(output: Path) -> None:
+    """glibc's wide-char API assumes a 4-byte wchar_t; bound from 2-byte WCHAR code it is
+    silently wrong, so neither library may import any of it."""
+    for name in ("reference", "candidate"):
+        result = _command(
+            [
+                "nm",
+                "-D",
+                "--undefined-only",
+                "--format=just-symbols",
+                str(output / f"{name}.so"),
+            ],
+            output,
+            f"nm-{name}-imports",
+        )
+        wide = sorted(
+            line.strip().split("@")[0]
+            for line in result.stdout.splitlines()
+            if HOST_WIDE_LIBC.match(line.strip())
+        )
+        if result.returncode or wide:
+            raise ContractError(
+                f"{name}.so binds host wide-char libc {wide} (4-byte wchar_t); "
+                "provide 16-bit definitions in c_env"
+            )
+
+
 def grade(path: Path, output: Path) -> dict:
     """Write a fresh durable run; invalid/unsupported runs never become passes."""
     output = output.resolve()
@@ -3511,68 +3606,7 @@ def grade(path: Path, output: Path) -> dict:
         if "c_prelude" in data:
             explicit.add(Path(data["c_prelude"]))
         explicit.update(map(Path, data["c_env"]))
-        host_flags = data.get("c_host_flags", [])
-        # The shared environment: reviewed C for whatever the graded C calls out to, plus
-        # an aborting trap for every other external. Linked into BOTH libraries, so the
-        # only thing that differs between the sides is the unit under grade.
-        link_objects: dict[str, list[str]] = {"c": [], "rust": []}
-        if data["c_env"] or host_flags:
-            object_flags = [cc, "-std=c11", "-c", "-fPIC", "-O2", *host_flags, *data["c_flags"]]
-            object_flags += [f for p in data["c_include_dirs"] for f in ("-I", p)]
-            object_flags += ["-fno-builtin", "-Werror=implicit-function-declaration"]
-            sanitize = [
-                "-fsanitize=undefined",
-                *(f"-fno-sanitize={check}" for check in data["c_allow_ub"]),
-                "-fno-sanitize-recover=all",
-            ]
-            env_objects = []
-            for index, env_source in enumerate(data["c_env"]):
-                for side, extra in (("c", sanitize), ("rust", [])):
-                    target = output / f"env_{index}_{side}.o"
-                    result = _command(
-                        [*object_flags, *extra, env_source, "-o", str(target)],
-                        output,
-                        f"build-env-{index}-{side}",
-                    )
-                    if result.returncode:
-                        raise ContractError(f"build-env-{index}-{side} failed; see its stderr")
-                    link_objects[side].append(str(target))
-                    if side == "c":
-                        env_objects.append(target)
-            if host_flags:
-                probe = output / "reference_probe.o"
-                result = _command(
-                    [*object_flags, *sanitize, str(output / "reference.c"), "-o", str(probe)],
-                    output,
-                    "build-c-probe",
-                )
-                if result.returncode:
-                    raise ContractError("build-c-probe failed; see build-c-probe.stderr")
-                missing = _undefined([probe, *env_objects], output, "nm-undefined")
-                if env_objects:
-                    missing -= _defined(env_objects, output, "nm-env-defined")
-                traps = sorted(
-                    name
-                    for name in missing
-                    if name not in HOST_LIBC_SAFE
-                    and name != "write"
-                    and not name.startswith("__ubsan")
-                    and name != "_GLOBAL_OFFSET_TABLE_"
-                )
-                report["c_traps"] = traps
-                (output / "traps.c").write_text(_trap_source(traps))
-                for side in ("c", "rust"):
-                    target = output / f"traps_{side}.o"
-                    result = _command(
-                        [cc, "-c", "-fPIC", "-O2", str(output / "traps.c"), "-o", str(target)],
-                        output,
-                        f"build-traps-{side}",
-                    )
-                    if result.returncode:
-                        raise ContractError(f"build-traps-{side} failed; see its stderr")
-                    link_objects[side].append(str(target))
-            report["c_host_profile"] = data.get("c_host_profile")
-            report["c_env"] = data["c_env"]
+        host_flags, link_objects = _build_environment(data, output, cc, report)
         c_command = [
             cc,
             "-std=c11",
@@ -3645,28 +3679,7 @@ def grade(path: Path, output: Path) -> dict:
         if any(pins.get(p) != value for p, value in before.items()):
             raise ContractError("input changed during compilation")
         if host_flags:
-            for name in ("reference", "candidate"):
-                result = _command(
-                    [
-                        "nm",
-                        "-D",
-                        "--undefined-only",
-                        "--format=just-symbols",
-                        str(output / f"{name}.so"),
-                    ],
-                    output,
-                    f"nm-{name}-imports",
-                )
-                wide = sorted(
-                    line.strip().split("@")[0]
-                    for line in result.stdout.splitlines()
-                    if HOST_WIDE_LIBC.match(line.strip())
-                )
-                if result.returncode or wide:
-                    raise ContractError(
-                        f"{name}.so binds host wide-char libc {wide} (4-byte wchar_t); "
-                        "provide 16-bit definitions in c_env"
-                    )
+            _refuse_host_wide_libc(output)
         report["inputs"] = pins
         report["libraries"] = {
             name: digest(output / f"{name}.so") for name in ("reference", "candidate")
