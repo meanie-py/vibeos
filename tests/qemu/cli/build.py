@@ -61,9 +61,50 @@ def source_date_epoch(repo: Path) -> str | None:
     return ts if cp.returncode == 0 and ts.isdigit() else None
 
 
-def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
+NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
+
+
+def _ninja_timeout() -> int:
+    """The ninja stage's wall-clock budget in seconds (default one hour).
+
+    An hour covers a warm build with room to spare, but not a regenerated -sys
+    crate on i386, where each kernel cargo cell has its own target dir and rebuilds
+    the whole crate graph at CARGO_BUILD_JOBS=1. Re-running into the same wall is
+    not free: each kill throws away the rustc invocations in flight."""
+    raw = os.environ.get(NINJA_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return 3600
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SystemExit(f"{NINJA_TIMEOUT_ENV}={raw!r}: expected whole seconds") from None
+    if value <= 0:
+        raise SystemExit(f"{NINJA_TIMEOUT_ENV}={raw!r}: must be positive")
+    return value
+
+
+def _classify_build_failure(
+    out: str, err: str, returncode: int | None = None
+) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
+    # A TIMEOUT is not a build defect, and it must be decided from the RETURN CODE —
+    # never from the output, which is simply whatever the build had printed when the
+    # clock ran out. `timeout` exits 124. Without this, a cold rebuild that overruns
+    # the ninja budget is handed to the text matchers below and comes back
+    # "LINK_FAIL" with a salient line sliced out of an unrelated doc comment
+    # ("s: undefined"), i.e. as a defect in the diff — the same wrong-cause mistake
+    # the DISK_FULL check above exists to prevent. Regenerating a -sys crate
+    # invalidates nearly the whole workspace, so this is the expected shape there:
+    # re-run and let ninja resume, do not go hunting for a symbol.
+    if returncode == 124:
+        return "BUILD_TIMEOUT", [
+            f"ninja exceeded its {_ninja_timeout()}s time budget (exit 124) — NOT a link error.",
+            "Re-run; ninja resumes incrementally and ccache/sccache keep finished crates.",
+            "A -sys regen can need several hours on i386 (every kernel cargo cell rebuilds "
+            f"serially); raise the budget with {NINJA_TIMEOUT_ENV}=<seconds> rather than "
+            "re-running into the same wall — each kill discards the rustc calls in flight.",
+        ]
     # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
     # as a defect in the diff, which is exactly the wrong cause. It cost four
@@ -911,7 +952,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=1800,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -956,10 +997,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         cwd=build_dir,
         env=build_env,
         stage="ninja",
-        timeout=3600,
+        timeout=_ninja_timeout(),
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1012,7 +1053,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if "unknown target" in blob.lower():
             run.add(Stage(f"opt:{target}", status="skip", detail="absent from ninja graph"))
             continue
-        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "")
+        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "", cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1048,7 +1089,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=1800,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(

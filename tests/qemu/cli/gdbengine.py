@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..vm import PROJECT_DIR, get_arch_config, smp_count
+from ..vm import PROJECT_DIR, get_arch_config, smp_count, tripwire_args
 from . import archcfg
 
 RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
@@ -249,6 +249,7 @@ def _build_windows_cmd(
         *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(debugcon)}"]),
         *scratch_dev,
         *(["-smp", str(smp)] if smp is not None else []),
+        *tripwire_args(),
         *arch_args,
     ]
     meta = {
@@ -603,6 +604,9 @@ def cmd_start(args, repo: Path) -> int:
     print(f"gdb    : {run.gdb_host}:{run.gdb_port}  (gdb-multiarch target remote)")
     print(f"serial : {run.serial_log}")
     print(f"kernel : {run.kernel_image}")
+    tripwire = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
+    if tripwire:
+        print(f"tripwire: {tripwire}  (fw_cfg opt/org.vibeos.tripwire)")
     print(f"\nnext: vibeos-cli gdb wait-for {run.run_id} --pattern '<marker>'")
     print(f"      vibeos-cli gdb run-until {run.run_id} --break KeBugCheckEx")
     print(f"      vibeos-cli gdb stop {run.run_id}")

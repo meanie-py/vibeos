@@ -592,6 +592,36 @@ def _param_type(p: str) -> str | None:
     return p  # unnamed (rare)
 
 
+def _param_list(text: str, popen: int) -> tuple[str, int]:
+    """The balanced param list after the '(' at `popen`, with comments removed,
+    and the index of its closing ')'. Comments must not reach `_split_params`:
+    a `// ... usize: same size, distinct type` note inside the list otherwise
+    splits into phantom params, and a HIGH arity finding is documented as almost
+    never a false positive -- so it has to be one we can trust."""
+    out, depth, j, n = [], 0, popen, len(text)
+    while j < n:
+        if text.startswith("//", j):
+            j = text.find("\n", j)
+            if j < 0:
+                j = n
+            continue
+        if text.startswith("/*", j):
+            end = text.find("*/", j + 2)
+            j = n if end < 0 else end + 2
+            continue
+        ch = text[j]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        if j > popen:
+            out.append(ch)
+        j += 1
+    return "".join(out), j
+
+
 EXPORT_ATTR = re.compile(r"#\[\s*(no_mangle|export_name\s*=\s*\"([^\"]+)\")")
 FN_SIG = re.compile(r'(?:pub\s+)?(?:unsafe\s+)?extern\s+"([^"]+)"\s+fn\s+(\w+)\s*\(')
 
@@ -615,17 +645,8 @@ def scan_rust_crate(src: Path) -> list[dict]:
             conv = fm.group(1)
             name = link or fm.group(2)
             rust_ident = fm.group(2)
-            # extract balanced param list
             popen = fm.end() - 1  # at '('
-            depth, j = 0, popen
-            for j in range(popen, len(text)):
-                if text[j] == "(":
-                    depth += 1
-                elif text[j] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        break
-            params_str = text[popen + 1 : j]
+            params_str, j = _param_list(text, popen)
             # return type: between ')' and '{' or ';' or 'where'
             rest = text[j + 1 : j + 400]
             ret = "()"
