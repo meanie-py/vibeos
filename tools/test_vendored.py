@@ -39,7 +39,7 @@ def test_the_committed_registry_registers_the_trees_that_motivated_it():
     for p in (
         "sdk/lib/ucrt",
         "drivers/bus/acpi/acpica",
-        "sdk/lib/3rdparty/freetype",
+        "vendor/freetype",
         "dll/3rdparty/mbedtls",
     ):
         assert p in paths, f"{p} is not registered"
@@ -738,8 +738,8 @@ def test_the_three_trees_the_prose_pass_actually_found_stay_recorded():
     reg = vendored.load(REPO)
     by_path = {t.path: t for t in reg.trees}
     assert "BSL-1.0" in by_path["external/fex"].license_extra
-    assert "LGPL-2.0-or-later" in by_path["sdk/lib/3rdparty/adns"].license_extra
-    assert "LGPL-2.1-or-later" in by_path["dll/3rdparty/libtirpc"].license_extra
+    assert "LGPL-2.0-or-later" in by_path["vendor/adns"].license_extra
+    assert "LGPL-2.1-or-later" in by_path["vendor/libtirpc"].license_extra
 
 
 # ── the Rust-crate half (added 2026-09-20) ─────────────────────────────────

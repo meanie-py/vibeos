@@ -2,7 +2,7 @@
 #
 # Upstream: https://download.savannah.gnu.org/releases/freetype/freetype-2.10.0.tar.gz
 #           sha256 955e17244e9b38adb0c98df66abb50467312e6bb70eac07e49ce6bd1a20e809a
-# Apply from sdk/lib/3rdparty/freetype/ with: patch -p1 < vendor-patches/freetype.patch
+# Apply from vendor/freetype/ with: patch -p1 < vendor-patches/freetype.patch
 #
 # 449 files exist in both trees; 432 are byte-identical. SIXTEEN differ, and every one of
 # them is wrapped in #ifdef __REACTOS__ / #ifndef __REACTOS__ — so undefining that macro
