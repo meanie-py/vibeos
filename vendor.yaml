@@ -1908,6 +1908,195 @@ trees:
 
     reason: S3TC/DXTn texture (de)compression for the GL stack.
 
+  # ── Found 2026-09-25 by diffing `media/doc/3rd Party Files.txt` against this file ──
+  # Upstream ReactOS's own third-party ledger. Every entry below was in it, with a
+  # version and a licence, and none was here: the discovery scans could not see them
+  # (individual copyright holders, or no container), and nobody had cross-checked the
+  # one list upstream already maintains. Where a version exists only in that ledger,
+  # the probe READS the ledger rather than copying it, so an upstream sync that bumps a
+  # tree and its ledger line moves the recorded version with it.
+
+  - path: sdk/lib/fslib/vfatlib/check
+    name: dosfstools (fsck.fat)
+    upstream: https://github.com/dosfstools/dosfstools
+    license: GPL-3.0-or-later
+    license_file: sdk/lib/fslib/vfatlib/check/COPYING
+    license_extra:
+      LGPL-2.1-or-later: >
+        byteswap.h and byteswap1.h are GNU C Library headers ("This file is part of the
+        GNU C Library", FSF 1997-2003) that dosfstools carries for portability. Two
+        headers, no bodies.
+    modified: yes  # rosglue.h and __REACTOS__ blocks port it onto the NT file API
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/lib/fslib/vfatlib/check\s+Used Version: ([^\r\n]+)'
+    reason: >
+      The FAT checker behind vfatlib's chkdsk path: seven TUs (boot/check/common/fat/
+      file/io/lfn), 5,344 lines, compiled into vfatlib by its parent CMakeLists. The rest
+      of vfatlib is ReactOS's own and stays a translation target; only this directory is
+      vendored. GPL-3.0-or-later, the only GPL-3 code linked into a shipped library, which
+      is worth knowing on its own.
+
+  - path: drivers/wdm/audio/drivers/CMIDriver
+    name: C-Media CMI8738/8768 WDM audio driver
+    upstream: https://code.google.com/archive/p/cmediadrivers/
+    license: BSD-3-Clause
+    license_ref: drivers/wdm/audio/drivers/CMIDriver/adapter.cpp
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: drivers/wdm/audio/drivers/CMIDriver\s+Used Version: ([^\r\n]+)'
+    reason: >
+      dogbert's open-source C-Media driver, with its cmicontrol tray app and cpl applet
+      in subdirectories. 5,532 lines of C++, "Copyright (c) 2006-2008 dogbert" under
+      BSD-3-Clause. A hardware driver for a 2000s PCI sound chip, carried for real-HW
+      coverage; nothing in the roadmap asks for it in Rust.
+
+  - path: drivers/network/dd/netkvm
+    name: VirtIO NetKVM guest driver (NDIS 5)
+    upstream: https://github.com/virtio-win/kvm-guest-drivers-windows (NetKVM/NDIS5)
+    license: BSD-3-Clause
+    license_ref: drivers/network/dd/netkvm/Common/ParaNdis-VirtIO.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: drivers/network/dd/netkvm\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Red Hat's virtio-net miniport, 9,500 lines. The companion of sdk/lib/drivers/virtio,
+      which was registered 2026-09-20 while this directory was not -- --suspects matches
+      Red Hat now, but netkvm's headers carry the holder after a year range the scan
+      evidently did not reach. Same decision as the library it links: vendored.
+
+  - path: base/applications/mstsc
+    name: rdesktop (as mstsc.exe)
+    upstream: https://github.com/rdesktop/rdesktop
+    license: GPL-3.0-or-later
+    license_ref: base/applications/mstsc/rdesktop.h
+    modified: yes  # the Win32 front end (connectdialog.c, settings.c, the .rc) is ReactOS's
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: base/applications/mstsc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      The Remote Desktop client is rdesktop's protocol engine (iso/mcs/secure/rdp/rdp5/
+      orders/bitmap/cache, "Copyright (C) Matthew Chapman 1999-2008") under a ReactOS
+      Win32 UI. 17,850 lines, 20 TUs. An application, so it never entered the core
+      ledger, but it ships in system32 and its licence is GPL-3.
+
+  - path: modules/rosapps/applications/net/tsclient
+    name: rdesktop (rosapps tsclient)
+    upstream: https://github.com/rdesktop/rdesktop
+    license: GPL-3.0-or-later
+    license_ref: base/applications/mstsc/rdesktop.h
+    license_note: >
+      Same upstream and version as base/applications/mstsc, per upstream's ledger, which
+      lists both paths under one entry. The rosapps copy is not configured into the build.
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: modules/rosapps/applications/net/tsclient\s+Used Version: ([^\r\n]+)'
+    reason: >
+      A second, older rdesktop import in rosapps (mstsc/mstscax wrappers plus the rdesktop
+      tree). Not built. Registered so the ledger's two rdesktop paths are both accounted
+      for, and so a future move of vendored code finds it.
+
+  - path: base/setup/reactos/treelist.c
+    name: TreeList control
+    upstream: https://github.com/sebkirche/treelist
+    license: GPL-3.0-or-later
+    license_ref: base/setup/reactos/treelist.c
+    modified: unknown
+    headers:
+      - base/setup/reactos/treelist.h
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: base/setup/reactos/treelist.c\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      A tree-list common control (Anton Zechner / Sebastien Kirche) that the graphical
+      installer uses for its partition list. Two loose files inside a ReactOS-authored
+      directory, so this is a single-file entry with no VENDORED stamp; it is the
+      clearest case for the planned move of vendored code into its own directory.
+
+  - path: sdk/include/ddk/d3dkmthk.h
+    name: libdxg D3DKMT thunk header
+    upstream: https://github.com/microsoft/libdxg
+    license: MIT
+    license_ref: sdk/include/ddk/d3dkmthk.h
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/include/ddk/d3dkmthk.h\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Microsoft's MIT-licensed WDDM kernel-thunk header, one file in the ReactOS-authored
+      DDK directory. Header only, nothing to translate; registered for the licence record.
+
+  - path: sdk/include/GL
+    name: OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
+    upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
+    license: MIT
+    license_ref: sdk/include/GL/gl.h
+    license_extra:
+      Khronos: >
+        glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos
+        MIT-style Materials licence.
+      SGI-B-1.1: >
+        glu.h, SGI Free Software License B version 1.1 -- the same text as the libnurbs
+        half of dll/opengl/glu32.
+    modified: unknown
+    version:
+      file: sdk/include/GL/gl.h
+      pattern: 'Version:\s+([0-9.]+)'
+    reason: >
+      The public GL headers every OpenGL consumer includes, 14,345 lines. NOT headers of
+      the Mesa tree in dll/opengl/mesa: that is Mesa 2.6 under LGPL, these are Mesa 7.6's
+      gl.h under MIT, so they cannot be a `headers:` entry on it without recording the
+      wrong licence and the wrong version. Not listed in upstream's ledger at all.
+
+  - path: sdk/tools/hhpcomp/chmc
+    name: chmc (CHM compiler)
+    upstream: https://sourceforge.net/projects/chmc/
+    license: GPL-3.0-or-later
+    license_ref: sdk/tools/hhpcomp/chmc/chmc.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/hhpcomp/chmc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool (the hhpcomp help compiler). Never ships and never translates;
+      registered so the registry agrees with upstream's ledger.
+
+  - path: sdk/tools/hhpcomp/lzx_compress
+    name: lzx_compress (LZX encoder)
+    upstream: https://sourceforge.net/projects/chmc/
+    license: LGPL-2.1-or-later
+    license_ref: sdk/tools/hhpcomp/lzx_compress/lzx_layer.c
+    license_note: >
+      Upstream's ledger files this under the chmc entry as GPL-3.0-or-later; the files'
+      own headers (Matthew T. Russotto, 2002) say GNU LESSER GPL. Recorded from the files.
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/hhpcomp/chmc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool, the LZX compressor chmc links. Never ships.
+
+  - path: sdk/tools/mkisofs/schilytools
+    name: Schily Tools (mkisofs)
+    upstream: https://sourceforge.net/projects/schilytools/
+    license: CDDL-1.0
+    license_file: sdk/tools/mkisofs/schilytools/CDDL.Schily.txt
+    license_extra:
+      GPL-2.0-or-later: >
+        mkisofs itself is Eric Youngdale's GPL program that Schily maintains: its sources
+        say "either version 2, or (at your option) any later version" (and four say
+        "version 2" only), while the schily libraries carry the CDDL. A host tool, so
+        nothing here reaches the shipped image.
+    modified: yes
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/mkisofs/schilytools\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool that masters livecd.iso, ~35K lines. Never ships.
+
   # ── headers with no source in this tree ─────────────────────────────────
   # Registered because the convention-alias scanner walks them and they are foreign
   # code, even though the implementation is not vendored here.
@@ -2203,3 +2392,29 @@ ours:
       licence and the program name but does not name Ken Kato, so the chain is
       name-and-licence, not authorship. Cheap to firm up if it ever matters —
       the upstream release tarball carries a COPYING and a readme.
+
+  # ── Found 2026-09-25 in upstream's `media/doc/3rd Party Files.txt` ──────
+  # Both were third-party per upstream's own ledger, and both are ALREADY Rust: a
+  # `trees:` entry would have been false twice over (we do translate them, and did).
+  - path: drivers/storage/port/buslogic
+    name: VMware BusLogic BT-958 SCSI miniport (vmscsi)
+    origin: VMware, based on the Linux BusLogic driver — GPL-2.0-or-later (BusLogic958.c header)
+    tier: "Tier 1 (storage port drivers)"
+    reason: >
+      Upstream's ledger lists it as VMware's vmscsi 1.2.0.4 (2005-08-17), GPL-2.0-or-later,
+      and README.ReactOS records where VMware published it. BusLogic958.c is translated
+      and cohab-flipped to buslogic-rust; the C stays on disk per the never-delete rule.
+      Recorded because the Rust is a derivative of GPL-2.0-or-later code, and that is a
+      fact about the shipped buslogic.sys whoever wrote the translation.
+
+  - path: sdk/lib/cryptlib
+    name: cryptlib (MD4/MD5/RC4/SHA1/AES/DES)
+    origin: Wine contributors (Leidekker, McCormack, Navara, Kamuju, Jung) — LGPL-2.1-or-later; mvAesAlg from Marvell's OCF reference AES
+    tier: "Tier 1 (ksecdd dependency)"
+    reason: >
+      The primitive crypto ksecdd.sys links. Per-file headers are Wine-era LGPL
+      (Hans Leidekker's MD4/MD5, Mike McCormack's RC4, Filip Navara's SHA1, Vijay Kiran
+      Kamuju's AES, Michael Jung's DES), plus mvAesAlg from an OpenWrt/Marvell reference
+      implementation that README.txt cites. Already translated: the cross build links
+      libcryptlib_rust.a from cryptlib-rust and compiles only a stub TU; the C is built
+      solely for host tools. `ours:` rather than `trees:` because it is translated.
