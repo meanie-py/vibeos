@@ -12,7 +12,8 @@ for A in $ARCHES; do
     "$TC/${CC[$A]}" -O2 -o "$HERE/regcapture-$A.exe" "$HERE/regcapture.c" \
         -lmsvcrt-os -lntdll -lsetupapi -loleaut32 -lole32 -ladvapi32 -lkernel32 \
         -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-    "$TC/${CC[$A]%-gcc}-objdump" -p "$HERE/regcapture-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[regcapture] FAIL($A): links UCRT api-sets"; exit 1; } || true
+    # Headers + import table read directly (tools/payloads/pecheck.py): the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/regcapture-$A.exe" --tag regcapture --forbid-dll api-ms-win-crt
 done
 echo "[regcapture] OK"
