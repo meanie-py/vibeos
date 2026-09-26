@@ -148,17 +148,15 @@ trees:
       The Rust-facing boundary is sdk/lib/rust/acpica-sys.
 
   # ── the kernel/user driver framework ────────────────────────────────────
-  - path: sdk/lib/drivers/wdf
+  - path: vendor/wdf
     name: Windows Driver Frameworks (KMDF/UMDF)
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
-    license_file: sdk/lib/drivers/wdf/LICENSE
+    license_file: vendor/wdf/LICENSE
     modified: "lightly"  # ~35 marker files + mechanical portability; see review
     patch: vendor-patches/wdf.patch
-    headers:
-      - sdk/include/wdf
     version:
-      file: sdk/lib/drivers/wdf/CMakeLists.txt
+      file: vendor/wdf/CMakeLists.txt
       patterns:
         - '__WDF_MAJOR_VERSION=(\d+)'
         - '__WDF_MINOR_VERSION=(\d+)'
@@ -193,7 +191,7 @@ trees:
       THE LICENCE GAP IS CLOSED. Upstream ships a LICENSE at the repo root — plain MIT,
       "Copyright (c) 2015 Microsoft", sha256
       cf248820bf1178370bb4f1670a59f8748d46bc96d0f64080cd631511c6046409 — which our drop
-      simply failed to bring along. It is now vendored at sdk/lib/drivers/wdf/LICENSE and
+      simply failed to bring along. It is now vendored at vendor/wdf/LICENSE and
       `license_file` points at it, so the MIT grant is reproducible from the tree and the
       old `license_note` ("correct by provenance, unstated by us") is retired.
 

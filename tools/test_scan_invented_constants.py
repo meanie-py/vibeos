@@ -164,3 +164,12 @@ def test_same_compares_at_the_declared_width() -> None:
     """`0xC0000052_u32 as i32` and the header's `0xC0000052L` are one value."""
     assert sic.same(-0x3FFFFFAE, 0xC0000052, "i32")
     assert not sic.same(0x10, 0x20, "u32")
+
+
+def test_the_header_oracle_follows_public_headers_into_vendor() -> None:
+    """Moving a library's headers to `vendor/<lib>/include` must not drop them from
+    the oracle. WDF's did, and cdrom-rust's WDF_REMOVE_LOCK_OPTION_ACQUIRE_FOR_IO
+    went UNRESOLVED."""
+    headers = {h.relative_to(REPO).as_posix() for h in sic.sdk_headers()}
+    assert "vendor/wdf/include/kmdf/1.17/wdf.h" in headers
+    assert "sdk/include/ddk/ata.h" in headers

@@ -203,7 +203,7 @@ target_compile_definitions(wdf01000
     PRIVATE NO_KERNEL_LIST_ENTRY_CHECKS)
 
 target_include_directories(wdf01000
-    PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/wdf/kmdf/1.17
+    PUBLIC ${REACTOS_SOURCE_DIR}/vendor/wdf/include/kmdf/1.17
     PRIVATE
         ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdfldr
         ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf_reactos/include

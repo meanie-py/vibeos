@@ -256,8 +256,8 @@ def test_the_two_halves_disagree_about_nothing():
     """Both verdicts are recorded, and no path carries both."""
     reg = vendored.load(REPO)
     # WDF is vendored: a stable ABI third-party binaries bind to, tracked upstream.
-    assert reg.is_vendored("sdk/lib/drivers/wdf/shared/core/fxdevice.cpp")
-    assert reg.is_vendored("sdk/include/wdf/kmdf/1.17/wdf.h")
+    assert reg.is_vendored("vendor/wdf/shared/core/fxdevice.cpp")
+    assert reg.is_vendored("vendor/wdf/include/kmdf/1.17/wdf.h")
     # The storage class drivers are ours: MS-PL, already diverged, no ABI contract.
     assert reg.is_declared_ours("drivers/storage/class/classpnp/class.c")
     assert not reg.is_vendored("drivers/storage/class/classpnp/class.c")

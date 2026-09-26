@@ -10,7 +10,8 @@
 | 2c | mbedtls: sources → `vendor/mbedtls`, the `libs/mbedtls` + `libs/psa` halves → `vendor/mbedtls/include/{mbedtls,psa}` (upstream's layout). The "78 files" were almost all mbedtls's own; outside the tree only bcrypt, schannel and schannel-tls-difftest's harness include it, and each now names `vendor/mbedtls/include` | **moved** |
 | 3 | the rest of `sdk/lib/3rdparty` (adns, freetype, libmpg123, libwin-iconv, libxml2) + libtirpc, mesa, edk2, and the hhpcomp pair chmc + lzx_compress. edk2 was split first: `AppleGraphInfo.h` is ReactOS-authored and went to `boot/freeldr/freeldr/include/arch/uefi/`. chmc's `"../../port/port.h"` became `"port/port.h"` through a `sdk/tools` root | **moved** |
 | 4 | mstsc split: rdesktop's engine + Jay Sorg's Win32 UI port (and xrdp's `ssl_calls.c`, GPL-2.0-or-later, now a `license_extra`) → `vendor/rdesktop`; ReactOS's front end (`connectdialog.c` — Ged Murphy under an rdesktop banner — `settings.c`, `.rc`, `lang/`, `res/`, `precomp.h`) stays in `base/applications/mstsc`, which compiles the engine from `vendor/rdesktop` | **moved** |
-| 5 | the expensive ones, one per commit: wdf, acpica, fex | owed |
+| 5a | wdf: `sdk/lib/drivers/wdf` → `vendor/wdf`, its public headers `sdk/include/wdf` → `vendor/wdf/include` (not from upstream's `src/framework`, so `wdf.patch` now says it reproduces the tree *less* `include/`). kmdf and cdrom bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
+| 5 | the expensive ones, one per commit: acpica, fex | owed |
 | CRT | `sdk/lib/ucrt`, `sdk/lib/crt/math/ieee754`, `libm_sse2` | **held** — owner, 2026-09-26: the CRT lane is working in these trees; do not move them from here |
 
 **How a tree moves** (batch 1 established it): `git mv` to `vendor/<libname>`, then
@@ -106,6 +107,9 @@ number: `ucrt`'s 17 `rust` hits are mostly doc comments in `ucrt-rust`.
    check caught it. The fix is to scan the header where it now lives (it is in that
    script's `HEADER_ROOTS`). Before moving a header tree, grep tools/ for scripts
    that glob its current directory, not just ones that name the file.
+   It recurred with wdf: `scan_invented_constants`' header oracle walked only
+   `sdk/include`, so cdrom-rust's WDF constants went UNRESOLVED (a `check` WARN).
+   That oracle now globs `vendor/*/include` too — the convention, not a list.
 8. **A global include root is baked into committed flag templates.** Adding
    `VENDOR_INCLUDE_ROOTS` put two `-I` lines into every
    `sdk/lib/rust/reactos-link/cflags/*.flags` (the cmake-off fallbacks), and the
