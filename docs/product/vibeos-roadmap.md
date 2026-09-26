@@ -1070,8 +1070,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 - **The probe-then-raw-access class is CLEARED in win32k as of 2026-09-23** — all 108 leads
   `tools/scan_probe_then_deref.py` reported are fixed across 31 files, plus ~30 more that the
   scanner's own `break`-at-first-hit was hiding. Built on all three arches, amd64 boots to
-  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class,
-  which are OPEN:** 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
+  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class**
+  (since worked down to 69 -- see below): 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
   the `write_volatile` / `copy_nonoverlapping` spellings) rather than a syntactic `*p`, and 8
   genuinely interprocedural. Heaviest: `message.rs` 22, `font.rs` 20, `hook.rs` 11,
   `stretchblt.rs` 9, `dibobj.rs` 9. Two shapes inside that set need more than a copy call:
@@ -1079,7 +1079,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   memory → publish once, and `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`,
   where the C had a `_SEH2_TRY` per access) has **no protected primitive at all** — it needs a
   `KmProtected` atomic in `kmsafecopy.c` on three arches, which is owed and not yet written.
-  **62 of those burned down 2026-09-26 (`66fa9466bbc`), mechanically, leaving 108 OPEN.**
+  **Burned down to 69 leads as of 2026-09-26, and the scanner now reports 0 that can be
+  fixed mechanically** -- by TWO lanes independently, in the same week, without either
+  knowing: upstream-sync's `21b349ccb63` ("70 more probe-then-raw-copy sites") and this
+  lane's `66fa9466bbc` (62 sites) overlapped heavily and collided as a merge conflict in
+  `message.rs`/`stretchblt.rs`/`winpos.rs`, where both had written the same `capture_from_user`
+  call with different line wrapping. Resolved in master's favour at every conflicting site,
+  then re-scanned to prove nothing unique was dropped. **The duplicated effort is the lesson,
+  not the merge:** a scanner that prints a lead list is an invitation for two lanes to work
+  it at once, and nothing in the list says who holds it. The three BUGCHECKs above were NOT
+  duplicated -- `NtUserFlashWindowEx`, `NtUserGetKeyboardLayoutName` and the two
+  `NtUserCallOneParam` aliases were untouched on master -- which is the useful signal: the
+  reproducer-driven sites and the list-driven sites barely intersect.
+  The mechanization (`tools/fix_probe_then_deref.py`):
   `tools/fix_probe_then_deref.py` is the counterpart to the scanner. It never invents an
   error path -- it replays the probe's OWN failure block, which is the only reason a rewrite
   of 62 kernel syscall entry points is safe to automate at all: no new semantics are
@@ -1093,9 +1105,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtUserGetLayeredWindowAttributes` while fixing the two above it); and a multi-line probe
   inside the condition, where the brace scan scoops the probe's arguments up as the error
   body. Pinned in `tools/test_fix_probe_then_deref.py`, one test per wrong rewrite.
-  The 108 refusals are listed by the tool, not silently dropped; each needs a human to decide
-  what its cleanup does, and the answer at most of them is `Status = STATUS_ACCESS_VIOLATION`
-  plus fall-through.
+  The 69 remaining leads are listed by the tool as refusals, not silently dropped; each needs
+  a human to decide what its cleanup does, and the answer at most of them is
+  `Status = STATUS_ACCESS_VIOLATION` plus fall-through.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).
