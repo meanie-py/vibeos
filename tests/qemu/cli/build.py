@@ -840,6 +840,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # every later boot in the worktree into one. It only stages a
             # marker file, so toggling costs a media rebuild and nothing else.
             "VIBEOS_WINETEST_SWEEP": bool(getattr(args, "winetest_sweep", False)),
+            # WoW64 staging deferred (`--no-wow64-stage`): reconciled so the
+            # restage pass that follows it -- a plain build -- turns it back on.
+            "VIBEOS_WOW64_NO_STAGE": bool(getattr(args, "no_wow64_stage", False)),
         },
         # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
         # sweeps, and both cmake options gating it default OFF, so a build dir
@@ -963,7 +966,13 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # Their CREATION re-runs configure (CONFIGURE_DEPENDS in wow64cpu's
     # CMakeLists), so building them here, before the first ninja, is enough to
     # stage them. Only when needed: a rebuilt guest re-runs configure.
-    if arch == "amd64" and not _refresh_wow64_guests(run, repo):
+    # Deferred staging must not build guests either: they link build-i386's
+    # importlibs, which is the tree a deferring caller is rebuilding right now.
+    if (
+        arch == "amd64"
+        and not getattr(args, "no_wow64_stage", False)
+        and not _refresh_wow64_guests(run, repo)
+    ):
         return run.finalize(repo)
 
     # --- generated-header barrier ---

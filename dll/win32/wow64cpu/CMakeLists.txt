@@ -115,6 +115,15 @@ foreach(_f ${_wow64_ladder})
         message(STATUS "WOW64 E4: ${_f} missing — syswow64 NOT staged on livecd (WoW64 probes will no-op)")
     endif()
 endforeach()
+# `vibeos-cli build --no-wow64-stage`: the caller is rebuilding build-i386
+# concurrently (a gate), so the closure below would snapshot a half-cleaned tree
+# -- measured: `UNRESOLVED import kernel32.dll` and a FATAL configure, because
+# --clean deletes the cargo-built kernel32.dll. The gate restages afterwards.
+option(VIBEOS_WOW64_NO_STAGE "Defer SysWOW64 staging (a concurrent i386 build is running)" OFF)
+if(VIBEOS_WOW64_NO_STAGE)
+    set(_wow64_guest_ok FALSE)
+    message(STATUS "WOW64 E4: staging DEFERRED (VIBEOS_WOW64_NO_STAGE) — syswow64 NOT staged on this build")
+endif()
 # Every guest is admitted by an `if(EXISTS)` evaluated at CONFIGURE time, so
 # BUILDING one does not make the next build stage it -- the cached configure
 # still says it was absent, and the guest then reads as "did not run" rather
