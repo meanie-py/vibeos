@@ -5939,6 +5939,38 @@ different question, racily).
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
   `NtUserSetSysColors` and hand the callee kernel memory.
+- **The same scanner then failed the OTHER way twice, and a false POSITIVE about this class is
+  worse than a miss** — it hides the correct fix and mis-states how much work is left. (a) The
+  `addr_of!`/`addr_of_mut!` skip, there so that taking a probed struct's *field address* is not
+  read as a load, ran BEFORE the taint-end check and `continue`d past it. But
+  `prcl = core::ptr::addr_of_mut!(rclLocal);` IS the idiom for the correct fix — capture into a
+  kernel local, then repoint the name at it — so every site fixed that way kept reporting, and an
+  already-correct `NtUserClipCursor` was reported as a live defect on both arches. Ordering the
+  taint-end check first dropped 95 → 85 leads with no source change. (b) `RtlCopyMemory` is in
+  `UNSAFE_COPIES` *and* dereferences its arguments, so the direct rule and the interprocedural
+  rule both fired on every site: 281 rows for 165 real defects, and the inflated 281 was quoted
+  as the size of the remaining work. A callee that is itself a bulk copy is the direct case;
+  exclude it from the interprocedural pass and keep that pass for a deref hidden behind a
+  *project* function. **Both directions of a lead-count error are silent, so pin each with a
+  test: one that a repoint-to-kernel-local ends the taint, one that a site is reported once.**
+- **Fixing this class in bulk: `RtlCopyMemory` batches, `copy_nonoverlapping` does NOT.**
+  `RtlCopyMemory(dst, src, bytes)` matches the copy helpers argument-for-argument, so a
+  mechanical rewrite is safe. `core::ptr::copy_nonoverlapping(src, dst, ELEMENT COUNT)` is
+  reversed AND counts elements, so the same rewrite emits swapped pointers with a length of
+  `1` — it fails on the pointer types where it is lucky and silently truncates where it is not.
+  A generic pass over both was written and thrown away for exactly this; convert that spelling
+  by hand. And `write_volatile` is a third spelling: one DWORD into the caller's page is the
+  same unprotected touch, and one word is enough to take the machine.
+- **A length read OUT OF the buffer being validated is a DOUBLE FETCH, not just an
+  unprotected read.** `NtGdiCreateDIBSection` probed `bmi` for
+  `DIB_BitmapInfoSize(bmi, Usage)` bytes — a function that WALKS the caller's buffer to work out
+  how long it is. So the walk was an unprotected read, *and* the size could change between the
+  call that computed it and the probe that trusted it. The shape recurs wherever a header
+  declares its own extent (`biSize`, `cbSize`, RLE streams). **Fix: capture the header bounded
+  by an already-validated field, compute the extent from the KERNEL copy, then capture the full
+  buffer and pass the copy downstream.** Validating the captured bytes instead of the caller's
+  also closes the check-then-copy window for free — which is why `font.rs` now captures before
+  calling `IntCheckFontPathNames` rather than after.
 - **Read-modify-write of user memory has no protected primitive, and `|=` hides it.** A field
   store is a publish, but `(*pcbi).stateButton |= FLAG` and `set_fDefault(1)` on a user bitfield
   are a load AND a store; capture the struct, mutate in kernel memory, publish once.
@@ -6906,6 +6938,71 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### `grep` reports ZERO matches in 21 of our .c/.h files, because it decides they are binary
+
+**Symptom:** you grep a source file for a symbol you have every reason to expect and get
+nothing back. No error, no warning, exit status 1, just silence — and silence reads as "the
+symbol is not there", which is a fact about the code rather than about the tool.
+
+**Cause:** those files contain extended-ASCII bytes (an author name like `Hermès`, a
+copyright sign), so `grep` classifies them as binary and suppresses output. `file` says
+`C source, Non-ISO extended-ASCII text`. Twenty-one files in this tree are affected, and
+they are not obscure ones:
+
+- `ntoskrnl/ex/resource.c` — the whole ERESOURCE implementation, 2290 lines
+- `ntoskrnl/po/events.c`, `ntoskrnl/include/internal/i386/mm.h`
+- **the entire `sdk/lib/crt/printf/` cluster — 16 files** (`printf.c`, `vprintf_s.c`,
+  `_vsprintf_p.c`, `wprintf.c`, …), which is msvcrt's busiest neighbourhood
+- `sdk/lib/crt/time/localtime.c`, two `strsafe-difftest/refstub` headers
+
+**Fix:** `grep -a` (or `rg`, which does not do this). Refresh the list with
+`for f in $(find . -name '*.c' -o -name '*.h'); do grep -qI . "$f" || echo "$f"; done`.
+
+**The transferable part is the shape, not the flag: an IMPLAUSIBLE ZERO is a claim about
+your tool, not about the code.** Zero hits for `ActiveCount` in a 2290-line executive-resource
+implementation is not a finding, it is a malfunction — and it cost a wrong attribution that
+got relayed to another lane before the one-command check (`grep -a`) was run. The tell is
+cheap and always available: when a search returns nothing and the thing you searched for
+almost certainly exists, verify the SEARCH before you conclude anything about the subject.
+Same family as `$?` after a pipe and `sccache -s` reporting another server: a reading about
+a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
+conclusion.
+
+### A codegen tool skips a whole ARCH and exits 0, so the FFI substrate drifts unnoticed
+
+**Symptom:** a `-sys` crate's struct layouts disagree with the C headers — `EPROCESS` 1000 bytes
+in C, 992 in Rust — while `generate_bindings.sh` and `verify_sizes.py` both report success and
+the OS still boots. The drift is invisible because the bindings and the size assertions were
+generated from the *same* stale headers, so they agree with each other; only regenerating one
+side exposes it.
+
+**Cause:** a preamble stub colliding with a header prototype. Both scripts define
+`__wfi()`/`__yield()` as zero-argument function-like macros (added because libclang cannot
+handle the intrinsics' inline-asm bodies). Once `intrin_arm64.h` arrived, `intrin.h`'s
+`void __yield(void);` parsed as a *one-argument* invocation of that macro → "too many arguments
+provided to function-like macro invocation". bindgen aborted on arm64; `verify_sizes.py`
+emitted zero arm64 assertions. Two things hid it: the retry loop only knows how to blank
+offending lines *in the generated file*, so a header error can never be cleared by it, and the
+failure path `return`ed without a nonzero exit. The `_INTRIN_H_`/`_INTRIN_X86_H_` defines that
+look like they suppress the header are inert — `intrin.h` is `#pragma once` with an
+unconditional `#define __INTRIN_H_` and no `#ifndef`.
+
+**Scope check before you believe it:** three tools carry this same preamble
+(`verify_sizes.py`, `generate_bindings.sh`, `tools/verify_offsets.py`), so grep for the stub
+rather than fixing one. And the *size* verifier understates the damage — the OFFSET verifier
+showed 43 failures over 7 structs, including a field inserted at offset 0
+(`_IO_BUS_TYPE_GUID_LIST.Lock`), which displaces every field after it. Judge severity by the
+EARLIEST drifted offset per struct, not by the count: a new field at the tail of an
+11824-byte KPRCB is harmless, a new field at offset 0 is not.
+
+**Fix:** drop the stubs where a real clang drives the compile (it handles the asm fine); print
+the actual `error:` diagnostics rather than the first N lines of stderr, which are all
+"In file included from" and name nothing; and make the per-arch failure set a nonzero exit so
+"2 of 3 arches" can never read as success. **A generated-artifact tool must fail the BUILD when
+an arch drops out, not narrate it** — a tool's own claim that it succeeded is not evidence about
+that tool, and the cheap independent check is a standalone `_Static_assert` on `sizeof`/`offsetof`
+that does not go through the tool at all.
 
 ### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
 

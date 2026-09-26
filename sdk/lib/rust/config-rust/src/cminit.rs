@@ -236,6 +236,9 @@ pub unsafe extern "system" fn CmpInitializeHive(
 
     RtlInitEmptyUnicodeString(&mut (*Hive).FileUserName, core::ptr::null_mut(), 0);
     RtlInitEmptyUnicodeString(&mut (*Hive).FileFullPath, core::ptr::null_mut(), 0);
+    // Upstream 396019984c9: CmpRemoveFromHiveFileList() keys off a NULL Buffer to decide
+    // whether a path was ever captured, so it must START NULL.
+    RtlInitEmptyUnicodeString(&mut (*Hive).HiveRootPath, core::ptr::null_mut(), 0);
 
     CmpInitHiveViewList(Hive);
 
