@@ -10883,6 +10883,16 @@ win32k is the largest single flip surface and its failures are stereotyped:
   "which offset", and a WoW64 guest writes the one the kernel does not read by default.**
   Any kernel path that reads a TEB field a 32-bit guest also writes needs the same
   treatment; `wow64_teb32()` (amd64) and `KiWow64GdiBatchCount()` (arm64) are the shape.
+  **Its third face (2026-09-26) is a GDI HANDLE LEAK, not corruption.** The 09-20 fix reset
+  the guest batch without executing it, on the reasoning that it dropped no drawing that was
+  not already dropped. But the batch is not only drawing: gdi32's `DeleteObject` on a region
+  or brush with a user attribute is a batched `GdiBCDelRgn`/`GdiBCDelObj`. Symptom: after
+  minutes of uptime, thousands of `failed to free. pvAlloc=0`, then a 0x1E on a NULL region
+  (every Create* fails once the 64K table is full; the NULL frees are the pens that failed
+  to insert). A `[GDI-CENSUS]` dump at the first failed insert named ~63K regions owned by a
+  WoW64 osk. Fix: execute the guest batch by widening each i386 record
+  (`flush_guest_batch()`, `gdibatch.rs`). **A "discard" of a command queue discards every
+  command kind in it: enumerate them before calling one harmless.**
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**
