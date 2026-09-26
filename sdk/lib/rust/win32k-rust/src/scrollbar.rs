@@ -1491,11 +1491,14 @@ pub unsafe extern "system" fn NtUserSBGetParms(
             break 'exit;
         }
 
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(psi) as *mut _,
-            lpsi as *const _,
-            core::mem::size_of::<SCROLLINFO>() as _,
-        );
+        // Validate-only probe above; this capture is the access and takes its exit.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(psi) as *mut core::ffi::c_void,
+            lpsi as *const core::ffi::c_void,
+            core::mem::size_of::<SCROLLINFO>(),
+        ) {
+            break 'exit;
+        }
         if !pSBData.is_null() {
             // Upstream made this copy unconditional and probes pSBData always, which
             // turns a legitimately-NULL optional argument into a failure. Keep our
@@ -1507,11 +1510,14 @@ pub unsafe extern "system" fn NtUserSBGetParms(
             )) {
                 break 'exit;
             }
-            RtlCopyMemory(
-                core::ptr::addr_of_mut!(SBDataSafe) as *mut _,
-                pSBData as *const _,
-                core::mem::size_of::<SBDATA>() as _,
-            );
+            // Validate-only probe above; this capture is the access and takes its exit.
+            if !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(SBDataSafe) as *mut core::ffi::c_void,
+                pSBData as *const core::ffi::c_void,
+                core::mem::size_of::<SBDATA>(),
+            ) {
+                break 'exit;
+            }
         }
 
         Window = UserGetWindowObject(hWnd);
@@ -1528,11 +1534,16 @@ pub unsafe extern "system" fn NtUserSBGetParms(
         );
         UserDerefObjectCo(Window);
 
-        RtlCopyMemory(
-            lpsi as *mut _,
-            core::ptr::addr_of!(psi) as *const _,
-            core::mem::size_of::<SCROLLINFO>() as _,
-        );
+        // lpsi was probed for WRITE at the top of this block (it is read and written),
+        // but the probe only validates -- this publish is the access. A fault means the
+        // caller's SCROLLINFO went away, so do not report success for it.
+        if !crate::copy::publish_to_user(
+            lpsi as *mut core::ffi::c_void,
+            core::ptr::addr_of!(psi) as *const core::ffi::c_void,
+            core::mem::size_of::<SCROLLINFO>(),
+        ) {
+            Ret = 0;
+        }
     }
 
     UserLeave();

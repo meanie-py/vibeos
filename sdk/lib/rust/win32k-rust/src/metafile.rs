@@ -56,14 +56,15 @@ pub unsafe extern "system" fn NtGdiCreateServerMetaFile(
             (*pmto).cjData = cjData;
 
             Status = SafeProbeForRead(pjData as _, cjData as _, 1);
-            if !NT_SUCCESS(Status) {
+            // Validate-only probe; this capture is the access and clears Pass too.
+            if !NT_SUCCESS(Status)
+                || !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!((*pmto).pjData) as *mut core::ffi::c_void,
+                    pjData as *const core::ffi::c_void,
+                    cjData as usize,
+                )
+            {
                 Pass = 0;
-            } else {
-                RtlCopyMemory(
-                    core::ptr::addr_of_mut!((*pmto).pjData) as _,
-                    pjData as _,
-                    cjData as _,
-                );
             }
 
             if Pass != 0 {

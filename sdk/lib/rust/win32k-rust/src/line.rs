@@ -4,6 +4,9 @@ use crate::brushbody::pbrushbody;
 use crate::floatobj::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 #[inline(always)] unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, n: usize) { core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, n); }
 
 // CRT (cdecl); GDI_Bezier is a real cdecl fn (bezier.c → bezier.rs).
@@ -1216,11 +1219,18 @@ pub unsafe extern "system" fn NtGdiMoveTo(
 
     if Ret != 0 && !pptOut.is_null() {
         let Status: NTSTATUS = SafeProbeForWrite(pptOut as *mut core::ffi::c_void, core::mem::size_of::<POINT>() as SIZE_T, 1);
+        // Validate-only probe; the publish is the access. Two branches so the error
+        // reported is the one that happened.
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             Ret = 0;
-        } else {
-            core::ptr::copy_nonoverlapping(&Point as *const POINT, pptOut, 1);
+        } else if !crate::copy::publish_to_user(
+            pptOut as *mut core::ffi::c_void,
+            &Point as *const POINT as *const core::ffi::c_void,
+            core::mem::size_of::<POINT>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            Ret = 0;
         }
     }
 

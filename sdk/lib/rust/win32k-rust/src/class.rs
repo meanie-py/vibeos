@@ -3094,13 +3094,16 @@ pub unsafe extern "system" fn NtUserGetClassInfo(
         SetLastNtError(Status);
         return 0;
     }
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+    // The probe VALIDATES only; this copy is the access. A fault lands in Status,
+    // which is checked just below -- one _SEH2_TRY's worth of behaviour.
+    if NT_SUCCESS(Status)
+        && !crate::copy::publish_to_user(
             &mut Safewcexw as *mut _ as *mut _,
             lpWndClassEx as *const _,
             core::mem::size_of::<WNDCLASSEXW>() as _,
-        );
-        if !ppszMenuName.is_null() {}
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     Status = ProbeAndCaptureUnicodeStringOrAtom(&mut SafeClassName, ClassName);

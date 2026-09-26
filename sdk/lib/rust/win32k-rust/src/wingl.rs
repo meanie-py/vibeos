@@ -102,12 +102,17 @@ pub unsafe extern "system" fn NtGdiDescribePixelFormat(
             // C guarded the copy with ProbeForWrite inside _SEH2_TRY; restore the
             // user-pointer validation via the non-raising SafeProbeForWrite (rustconv
             // dropped it). On failure, skip the copy rather than fault on a bad ppfd.
-            if NT_SUCCESS(SafeProbeForWrite(ppfd as *mut core::ffi::c_void, cjpfd as _, 1)) {
-                RtlCopyMemory(
+            // The probe VALIDATES only, so the copy still had to become the protected
+            // one. A fault is skipped here for the same reason the probe failure is:
+            // the caller gets Ret without the descriptor rather than a BUGCHECK.
+            if NT_SUCCESS(SafeProbeForWrite(ppfd as *mut core::ffi::c_void, cjpfd as _, 1))
+                && !crate::copy::publish_to_user(
                     ppfd as *mut core::ffi::c_void,
                     &mut pfdSafe as *mut _ as *const core::ffi::c_void,
                     cjpfd as usize,
-                );
+                )
+            {
+                Ret = 0;
             }
         }
     }

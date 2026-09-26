@@ -3698,11 +3698,16 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
             }
         }
 
-        core::ptr::copy_nonoverlapping(
-            lstrTemp.Buffer as *const u8,
-            pvBuffer as *mut u8,
+        // Validate-only probe above; this capture is the access and takes its exit,
+        // including the free, and reports a status the way that path does.
+        if !crate::copy::capture_from_user(
+            pvBuffer as *mut core::ffi::c_void,
+            lstrTemp.Buffer as *const core::ffi::c_void,
             lstrTemp.Length as usize,
-        );
+        ) {
+            ExFreePoolWithTag(pvBuffer, TAG_STRING);
+            return STATUS_ACCESS_VIOLATION;
+        }
     }
 
     (*plstrSafe).Buffer = pvBuffer as _;

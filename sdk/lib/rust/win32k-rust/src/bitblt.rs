@@ -473,27 +473,36 @@ pub unsafe extern "system" fn NtGdiEngBitBlt(
     }
     if !NT_SUCCESS(Status) {
         return 0;
-    } else {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(rclTrg) as *mut core::ffi::c_void,
-            prclTrg as *const core::ffi::c_void,
-            core::mem::size_of::<RECTL>(),
-        );
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(ptlSrc) as *mut core::ffi::c_void,
-            pptlSrc as *const core::ffi::c_void,
-            core::mem::size_of::<POINTL>(),
-        );
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(ptlMask) as *mut core::ffi::c_void,
-            pptlMask as *const core::ffi::c_void,
-            core::mem::size_of::<POINTL>(),
-        );
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(ptlBrush) as *mut core::ffi::c_void,
-            pptlBrush as *const core::ffi::c_void,
-            core::mem::size_of::<POINTL>(),
-        );
+    }
+    // The probes above VALIDATE only; each capture is the access, so every one of
+    // them takes the same exit a failed probe takes.
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(rclTrg) as *mut core::ffi::c_void,
+        prclTrg as *const core::ffi::c_void,
+        core::mem::size_of::<RECTL>(),
+    ) {
+        return 0;
+    }
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(ptlSrc) as *mut core::ffi::c_void,
+        pptlSrc as *const core::ffi::c_void,
+        core::mem::size_of::<POINTL>(),
+    ) {
+        return 0;
+    }
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(ptlMask) as *mut core::ffi::c_void,
+        pptlMask as *const core::ffi::c_void,
+        core::mem::size_of::<POINTL>(),
+    ) {
+        return 0;
+    }
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(ptlBrush) as *mut core::ffi::c_void,
+        pptlBrush as *const core::ffi::c_void,
+        core::mem::size_of::<POINTL>(),
+    ) {
+        return 0;
     }
 
     return EngBitBlt(
