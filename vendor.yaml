@@ -1945,28 +1945,36 @@ trees:
       Red Hat now, but netkvm's headers carry the holder after a year range the scan
       evidently did not reach. Same decision as the library it links: vendored.
 
-  - path: base/applications/mstsc
+  - path: vendor/rdesktop
     name: rdesktop (as mstsc.exe)
     upstream: https://github.com/rdesktop/rdesktop
     license: GPL-3.0-or-later
-    license_ref: base/applications/mstsc/rdesktop.h
-    modified: yes  # the Win32 front end (connectdialog.c, settings.c, the .rc) is ReactOS's
+    license_ref: vendor/rdesktop/rdesktop.h
+    license_extra:
+      GPL-2.0-or-later: >
+        ssl_calls.c is not rdesktop's: its header reads "xrdp: A Remote Desktop Protocol
+        server. Copyright (C) Jay Sorg 2004-2005", GPL-2.0-or-later. Same author as the
+        Win32 UI port (uimain.c/bsops.c/win32.c), carried along with it.
+    modified: yes  # win32.c's window caption says "ReactOS Remote Desktop"
     version:
       file: media/doc/3rd Party Files.txt
       pattern: 'Path: base/applications/mstsc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
     reason: >
       The Remote Desktop client is rdesktop's protocol engine (iso/mcs/secure/rdp/rdp5/
-      orders/bitmap/cache, "Copyright (C) Matthew Chapman 1999-2008") under a ReactOS
-      Win32 UI. 17,850 lines, 20 TUs. An application, so it never entered the core
+      orders/bitmap/cache, "Copyright (C) Matthew Chapman 1999-2008") plus Jay Sorg's
+      Win32 UI port. SPLIT 2026-09-26: the ReactOS front end that mstsc.exe wraps around
+      it (connectdialog.c, Ged Murphy 2007, despite the rdesktop banner; settings.c;
+      the .rc, lang/, res/) stays in base/applications/mstsc as ours; this directory is
+      only the vendored engine, which that target compiles from here. An application, so it never entered the core
       ledger, but it ships in system32 and its licence is GPL-3.
 
   - path: vendor/tsclient
     name: rdesktop (rosapps tsclient)
     upstream: https://github.com/rdesktop/rdesktop
     license: GPL-3.0-or-later
-    license_ref: base/applications/mstsc/rdesktop.h
+    license_ref: vendor/rdesktop/rdesktop.h
     license_note: >
-      Same upstream and version as base/applications/mstsc, per upstream's ledger, which
+      Same upstream and version as vendor/rdesktop (upstream's base/applications/mstsc), per upstream's ledger, which
       lists both paths under one entry. The rosapps copy is not configured into the build.
     modified: unknown
     version:

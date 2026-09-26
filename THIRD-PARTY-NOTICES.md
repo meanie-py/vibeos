@@ -4535,9 +4535,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - Upstream: https://github.com/rdesktop/rdesktop
 - Version: 1.8.3
-- In this tree: `base/applications/mstsc`
+- In this tree: `vendor/rdesktop`
 - Licence: GPL-3.0-or-later
-- Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
+- Also contains: GPL-2.0-or-later — ssl_calls.c is not rdesktop's: its header reads "xrdp: A Remote Desktop Protocol server. Copyright (C) Jay Sorg 2004-2005", GPL-2.0-or-later. Same author as the Win32 UI port (uimain.c/bsops.c/win32.c), carried along with it.
+
+- Grant reproduced from: `vendor/rdesktop/rdesktop.h (header comment)`
 
 ```
 rdesktop: A Remote Desktop Protocol client.
@@ -4564,7 +4566,7 @@ rdesktop: A Remote Desktop Protocol client.
 - Version: 1.8.3
 - In this tree: `vendor/tsclient`
 - Licence: GPL-3.0-or-later
-- Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
+- Grant reproduced from: `vendor/rdesktop/rdesktop.h (header comment)`
 
 ```
 rdesktop: A Remote Desktop Protocol client.
