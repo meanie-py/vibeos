@@ -1178,8 +1178,6 @@ mod _force_shim_symbols {
         // _force_ps_inlines_symbols above).
         fn RMAP_IS_SEGMENT();
         fn ReleaseCapturedUnicodeString();
-        fn RtlAcquireSRWLockExclusive();
-        fn RtlAcquireSRWLockShared();
         fn RtlInitEmptyAnsiString();
         fn RtlInitEmptyUnicodeString();
         fn RtlInitializeSplayLinks();
@@ -1188,8 +1186,6 @@ mod _force_shim_symbols {
         fn RtlIsLeftChild();
         fn RtlLongLongAdd();
         fn RtlParent();
-        fn RtlReleaseSRWLockExclusive();
-        fn RtlReleaseSRWLockShared();
         fn RtlStringCbCopyA();
         fn SWAPENTRY_FROM_SSE();
         fn SeLengthSid();
@@ -1227,7 +1223,7 @@ mod _force_shim_symbols {
         fn SeDeleteClientSecurity();
     }
     #[used]
-    static REFS: [unsafe extern "C" fn(); 239] = [
+    static REFS: [unsafe extern "C" fn(); 235] = [
         ARM64_UART_TRACE,
         ARM64_UART_TRACE_HEX,
         CONTAINING_RECORD,
@@ -1435,8 +1431,6 @@ mod _force_shim_symbols {
         PspClearCrossThreadFlag,
         RMAP_IS_SEGMENT,
         ReleaseCapturedUnicodeString,
-        RtlAcquireSRWLockExclusive,
-        RtlAcquireSRWLockShared,
         RtlInitEmptyAnsiString,
         RtlInitEmptyUnicodeString,
         RtlInitializeSplayLinks,
@@ -1445,8 +1439,6 @@ mod _force_shim_symbols {
         RtlIsLeftChild,
         RtlLongLongAdd,
         RtlParent,
-        RtlReleaseSRWLockExclusive,
-        RtlReleaseSRWLockShared,
         RtlStringCbCopyA,
         SWAPENTRY_FROM_SSE,
         SeLengthSid,

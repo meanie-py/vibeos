@@ -329,17 +329,15 @@ pub unsafe fn KiSendEOI() {
     core::ptr::write_volatile(eoi, 0);
 }
 
-// ============================================================================
-// RtlFillMemoryUlong
-// ============================================================================
-
-/// RtlFillMemoryUlong — fill memory with a ULONG pattern.
+/// RtlFillMemoryUlong — fill memory with a ULONG pattern. An inline helper for
+/// drivers (fastfat), NOT an export: the kernel's `RtlFillMemoryUlong` symbol is the
+/// `mem` crate's.
 #[inline]
 pub unsafe fn RtlFillMemoryUlong(dest: PVOID, length: usize, pattern: ULONG) {
     let count = length / 4;
     asm!(
         "rep stosd",
-        inout("ecx") count => _,
+        inout("rcx") count => _,
         inout("rdi") dest => _,
         in("eax") pattern,
         options(nostack),

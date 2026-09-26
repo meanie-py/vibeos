@@ -977,8 +977,9 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   froze inside explorer's taskbar `OnCreate` (two of the captured names,
   `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
   `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
-  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
-  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  **`scan_duplicate_symbols` does not catch this** — it models Rust definitions and
+  `global_asm!` labels, not C/C++ objects, and the dangerous direction here is Rust shadowing
+  C++ across the cohab boundary. Get the capture set before you
   wire anything, with `llvm-nm --defined-only` over both sides:
   `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
   awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
