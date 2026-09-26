@@ -65,7 +65,10 @@ mod ffi {
 
             match lznt1::compress(dst, src) {
                 Ok(written) => {
-                    unsafe { *final_compressed_size = written as u32 };
+                    // compress.c: `if (final_size) *final_size = ...` — NULL is tolerated.
+                    if !final_compressed_size.is_null() {
+                        unsafe { *final_compressed_size = written as u32 };
+                    }
                     STATUS_SUCCESS
                 }
                 Err(status) => status,
@@ -126,7 +129,13 @@ mod ffi {
                 };
 
                 let result = lznt1::decompress(dst, src, offset as usize, ws);
-                unsafe { *final_size = result.bytes_written as u32 };
+                // compress.c writes *final_size only at its `out:` label — i.e. on success,
+                // never on an early error return — and only when the pointer is non-NULL.
+                // Writing unconditionally faulted on a NULL FinalUncompressedSize and
+                // clobbered the caller's value on STATUS_BAD_COMPRESSION_BUFFER.
+                if result.status == STATUS_SUCCESS && !final_size.is_null() {
+                    unsafe { *final_size = result.bytes_written as u32 };
+                }
                 result.status
             }
             COMPRESSION_FORMAT_NONE | COMPRESSION_FORMAT_DEFAULT => STATUS_INVALID_PARAMETER,
