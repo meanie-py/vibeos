@@ -8373,7 +8373,8 @@ def test_conformance_lane_is_retryable_so_one_bistable_cannot_reject_a_batch():
     gates ONCE for N lanes, so a non-retryable miss would reject a whole batch
     of innocent lanes on a coin flip. A real regression still fails the retry.
     """
-    assert "CONFORMANCE_FLAKE" in gate_mod.RETRYABLE
+    assert "CONFORMANCE_RED" in gate_mod.RETRYABLE
+    assert "CONFORMANCE_FLAKE" not in gate_mod.RETRYABLE, "the label names a cause nobody proved"
 
 
 def test_conformance_lane_skips_loudly_when_the_arch_has_no_floor(tmp_path):
@@ -8404,7 +8405,7 @@ def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp
     monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _CP())
     r = gate_mod._conformance_once(tmp_path, "amd64", tmp_path / "conf")
     assert r["ok"] is False
-    assert r["classification"] == "CONFORMANCE_FLAKE"
+    assert r["classification"] == "CONFORMANCE_RED"
     assert r["retryable"] is True
     assert "IoDeviceObject_drv.c:206" in r["salient"]
     assert "pass=11" not in r["salient"], "the per-test table must not reach the summary"

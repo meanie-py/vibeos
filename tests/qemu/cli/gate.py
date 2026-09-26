@@ -105,7 +105,9 @@ RETRYABLE = {
     # identity floor marks the bistables it KNOWS about, and one that never fired
     # during seeding looks exactly like a regression on a single sweep. A real
     # regression reproduces on the retry; a coin-flip does not. See _conformance_once.
-    "CONFORMANCE_FLAKE",
+    # RED, not FLAKE: the label is what a lane reads to decide investigate-vs-requeue, and
+    # "FLAKE, 3 attempts" invited a blind resubmit of a failure that reproduced 9/9.
+    "CONFORMANCE_RED",
 }
 
 
@@ -293,7 +295,7 @@ def _conformance_once(repo: Path, arch: str, root: Path) -> dict:
     RETRY SEMANTICS, and why they are not optional. The floor marks known-bistable
     identities `assert?`, but the corpus is not closed — a bistable that simply did not
     fire during seeding is indistinguishable from a regression on any single sweep. So a
-    first-attempt failure is CONFORMANCE_FLAKE and retryable, exactly as NET_FLAKE is: a
+    first-attempt failure is CONFORMANCE_RED and retryable, exactly as NET_FLAKE is: a
     real regression reproduces, a coin-flip does not. Without this, one unlucky boot
     would reject a whole merge-queue batch of innocent lanes.
     """
@@ -333,7 +335,11 @@ def _conformance_once(repo: Path, arch: str, root: Path) -> dict:
     return {
         "arch": f"conf:{arch}",
         "verdict": "PASS" if ok else "RATCHET",
-        "classification": "" if ok else "CONFORMANCE_FLAKE",
+        # RED says what was observed -- the ratchet failed -- and nothing about why. It was
+        # CONFORMANCE_FLAKE, a CAUSE the gate never established: a deterministic regression
+        # that reproduced on every attempt carried the same word as a coin flip, and a lane
+        # reading "FLAKE" requeues instead of looking at its own diff.
+        "classification": "" if ok else "CONFORMANCE_RED",
         "ok": ok,
         "retryable": not ok,
         "seconds": time.monotonic() - t0,
