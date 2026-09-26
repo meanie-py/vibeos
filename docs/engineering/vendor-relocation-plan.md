@@ -1,6 +1,6 @@
 # Vendored-code relocation plan
 
-**Status (2026-09-25): destination DECIDED — `vendor/<libname>` (owner). Batches 1–4 moved; CRT trees held for the CRT lane.**
+**Status (2026-09-26): destination DECIDED — `vendor/<libname>` (owner). Every tree moved except the three CRT trees, held for the CRT lane.**
 
 | Batch | Trees | State |
 |---|---|---|
@@ -12,7 +12,7 @@
 | 4 | mstsc split: rdesktop's engine + Jay Sorg's Win32 UI port (and xrdp's `ssl_calls.c`, GPL-2.0-or-later, now a `license_extra`) → `vendor/rdesktop`; ReactOS's front end (`connectdialog.c` — Ged Murphy under an rdesktop banner — `settings.c`, `.rc`, `lang/`, `res/`, `precomp.h`) stays in `base/applications/mstsc`, which compiles the engine from `vendor/rdesktop` | **moved** |
 | 5a | wdf: `sdk/lib/drivers/wdf` → `vendor/wdf`, its public headers `sdk/include/wdf` → `vendor/wdf/include` (not from upstream's `src/framework`, so `wdf.patch` now says it reproduces the tree *less* `include/`). kmdf and cdrom bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
 | 5b | acpica: `drivers/bus/acpi/acpica` → `vendor/acpica`. The acpica library stays defined in `drivers/bus/acpi/CMakeLists.txt` (its only consumer) through one `ACPICA_DIR`. HAL, acpica-sys and acpi-rust bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
-| 5 | fex | owed |
+| 5c | fex: `external/fex` → `vendor/fex`, its manifest `external/README-fex-vendor.md` → `vendor-patches/fex.md`; `external/` is gone and left `containers:`. `tools/fex/build-fex.sh` resets a build dir whose CMake cache still names the old source (verified: stale cache → reset → `libwow64fex.dll` built from `vendor/fex`) | **moved** |
 | CRT | `sdk/lib/ucrt`, `sdk/lib/crt/math/ieee754`, `libm_sse2` | **held** — owner, 2026-09-26: the CRT lane is working in these trees; do not move them from here |
 
 **How a tree moves** (batch 1 established it): `git mv` to `vendor/<libname>`, then

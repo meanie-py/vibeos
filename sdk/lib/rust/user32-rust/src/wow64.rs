@@ -953,15 +953,23 @@ pub unsafe fn desktop_info_shell_window(pdi: PDESKTOPINFO) -> HWND {
     (*pdi).hShellWindow
 }
 
-/// `MENU`/`ITEM`, `HOOK` and `SBINFO` are desktop-heap objects too, and they carry
-/// pointers — so a WoW64 client misreads them exactly like it used to misread
-/// `WND`. They have no normalizing view yet (nothing on the M9 path reaches them).
+/// `MENU`/`ITEM`, `HOOK` and `SBINFO` are desktop-heap objects too. The first two
+/// carry pointers, so a WoW64 client misreads them exactly like it used to misread
+/// `WND`. (`SBINFO` does NOT -- it is all `INT`s, identical on both sides -- and is
+/// listed only because nothing has proven its call sites; a scrollbar CONTROL's
+/// data is in the window's extra bytes instead, see scrollbar.rs `SBCalcOf`.) They have no normalizing view yet (nothing on the M9 path reaches them).
 /// Rather than let a 32-bit client silently walk a 64-bit `MENU`, say so — once per
 /// type. If you hit this, the fix is another `*64` shape above plus a normalizer,
 /// not a workaround at the call site.
 #[cfg(target_arch = "x86")]
 pub unsafe fn wow64_unsupported(type_: &'static str) {
     use core::sync::atomic::{AtomicU32, Ordering};
+    // The i386 user32 is ALSO the native one. Unguarded, this told every native
+    // i386 process its scroll bars were garbage -- a false alarm sitting right
+    // beside a real WoW64 bug in the same file, which is the worst place for one.
+    if !IsWow64() {
+        return;
+    }
     static WARNED: AtomicU32 = AtomicU32::new(0);
 
     let bit = match type_.as_bytes()[0] {

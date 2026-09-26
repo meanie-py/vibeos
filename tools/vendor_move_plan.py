@@ -3,11 +3,11 @@
 
 WHY THIS EXISTS
 ---------------
-Vendored code is scattered through the ReactOS layout -- ACPICA under drivers/, FreeType
+Vendored code was scattered through the ReactOS layout -- ACPICA under drivers/, FreeType
 under sdk/lib/3rdparty/, FEX under external/, dosfstools inside vfatlib, two loose
 files in setup -- because upstream put each drop wherever its consumer lived. The plan
-is to gather it into one directory, so that "is this ours to translate" becomes a fact
-about the path instead of a lookup in vendor.yaml.
+(docs/engineering/vendor-relocation-plan.md) gathers it into vendor/<lib>, so that "is
+this ours to translate" becomes a fact about the path instead of a lookup in vendor.yaml.
 
 A move is only as safe as its reference list. A tree is referenced from its consumers'
 CMakeLists (often RELATIVELY: `add_subdirectory(acpica)` never spells the full path),

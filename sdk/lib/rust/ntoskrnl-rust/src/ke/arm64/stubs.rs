@@ -699,10 +699,19 @@ pub unsafe extern "system" fn KdpSysWriteMsr(Msr: ULONG, MsrValue: *mut u64) -> 
     STATUS_UNSUCCESSFUL
 }
 
+/// Raise to DISPATCH_LEVEL and TAKE the lock. This used to be the raise alone,
+/// which is all a UP kernel needs, so on the MP kernel every KeAcquireSpinLock
+/// caller on arm64 - the PFN lock among them - had no cross-CPU exclusion at
+/// all (its KeReleaseSpinLock pair in the HAL did clear the lock). Four cores
+/// actually running threads tore the page lists apart within a minute:
+/// 0x4E PFN_LIST_CORRUPT, in QEMU `--smp 4` and on a Raspberry Pi 4.
+/// KxAcquireSpinLock is compiled away on UP, so the UP kernel is unchanged.
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
 pub unsafe extern "system" fn KeAcquireSpinLockRaiseToDpc(SpinLock: PKSPIN_LOCK) -> KIRQL {
-    KfRaiseIrql(DISPATCH_LEVEL)
+    let OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+    ntkrnl_sys::inline::ke::KxAcquireSpinLock(SpinLock as *mut _);
+    OldIrql
 }
 
 const CONTEXT_ARM64: ULONG = 0x00400000;

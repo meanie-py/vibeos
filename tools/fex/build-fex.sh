@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the vendored FEX-Emu (external/fex) for arm64 Windows with the repo's
+# Build the vendored FEX-Emu (vendor/fex) for arm64 Windows with the repo's
 # llvm-mingw — OUT-OF-BAND from the ReactOS cmake graph (fex-bringup-plan.md
 # rung 1). Produces libwow64fex.dll (x86-guest WoW64 BTCpu plugin, imports
 # ntdll+wow64 only) and FEXOfflineCompiler.exe in $BUILD_DIR/Bin/.
@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FEX_SRC="$REPO_ROOT/external/fex"
+FEX_SRC="$REPO_ROOT/vendor/fex"
 BUILD_DIR="${1:-$REPO_ROOT/build-fex-arm64}"
 LLVM_MINGW="$REPO_ROOT/.build-tools/llvm-mingw/bin"
 
@@ -18,6 +18,20 @@ LLVM_MINGW="$REPO_ROOT/.build-tools/llvm-mingw/bin"
     echo "FATAL: vendored FEX not found at $FEX_SRC" >&2; exit 1; }
 
 export PATH="$LLVM_MINGW:$PATH"
+
+# A CMake cache pins its source dir. FEX moved from external/fex to vendor/fex
+# (2026-09-26), and a build dir configured before that refuses `-S` with "does not
+# match the source used to generate cache". Reset only the cache, loudly; the
+# objects are rebuilt from the new source either way.
+CACHE="$BUILD_DIR/CMakeCache.txt"
+if [ -f "$CACHE" ]; then
+    CACHED_SRC="$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' "$CACHE")"
+    if [ -n "$CACHED_SRC" ] && [ "$CACHED_SRC" != "$FEX_SRC" ]; then
+        echo "[build-fex] $BUILD_DIR was configured from $CACHED_SRC;" \
+             "resetting its CMake cache to configure from $FEX_SRC" >&2
+        rm -rf "$CACHE" "$BUILD_DIR/CMakeFiles"
+    fi
+fi
 
 mkdir -p "$BUILD_DIR"
 cmake -S "$FEX_SRC" -B "$BUILD_DIR" -G Ninja \

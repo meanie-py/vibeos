@@ -124,6 +124,21 @@ static mut ScrollTrackHitTest: DWORD = SCROLL_NOWHERE;
 static mut ScrollTrackVertical: BOOL = 0;
 static mut ScrollMovingThumb: BOOL = 0;
 
+/// A scrollbar CONTROL's `SBCALC`, which lives in the window's extra bytes (the
+/// tail of `SBWND` past its `WND`). Never `pwnd as PSBWND`: under WoW64 `pwnd`
+/// is a 32-bit SNAPSHOT of the 64-bit WND, so indexing past its end reads
+/// whatever follows the snapshot, not the window. That made every guest
+/// `GetScrollPos(SB_CTL)` return junk while `SetScrollPos` -- a syscall, which
+/// the kernel serves from the real window -- worked (user32:scroll 161/170/179).
+/// `wnd_extra_base` finds the real extra bytes; the SBWND tail is all 4-byte
+/// fields, so its offset from the end of WND is the same on both sides.
+#[inline]
+unsafe fn SBCalcOf(pwnd: PWND) -> *mut SBCALC {
+    crate::wow64::wnd_extra_base(pwnd)
+        .add(core::mem::offset_of!(SBWND, SBCalc) - core::mem::size_of::<WND>())
+        as *mut SBCALC
+}
+
 // `#[inline(never)]` restores the C's codegen shape, and is load-bearing (field manual
 // §9.99, middle row). This returns NULL on two arms and every caller derefs the result
 // unchecked — exactly as scrollbar.c does. Inlined, LLVM sees NULL reach a deref,
@@ -151,8 +166,7 @@ unsafe fn IntGetSBData(pwnd: PWND, Bar: INT) -> PSBDATA {
                 ERR!("IntGetSBData Wrong Extra bytes for CTL Scrollbar!\n");
                 return core::ptr::null_mut();
             }
-            let pSBWnd: PSBWND = pwnd as PSBWND;
-            return core::ptr::addr_of_mut!((*pSBWnd).SBCalc) as PSBDATA;
+            return SBCalcOf(pwnd) as PSBDATA;
         }
         _ => {
             ERR!("IntGetSBData Bad Bar!\n");
@@ -604,7 +618,6 @@ unsafe fn IntScrollGetScrollBarRect(
     let pWnd: PWND;
     let pSBInfo: PSBINFO;
     let pSBData: PSBDATA;
-    let pSBWnd: PSBWND;
 
     pWnd = ValidateHwnd(Wnd);
     if pWnd.is_null() {
@@ -652,8 +665,7 @@ unsafe fn IntScrollGetScrollBarRect(
         SB_CTL => {
             GetClientRect(Wnd, Rect);
             Vertical = ((*pWnd).style & SBS_VERT) as BOOL;
-            pSBWnd = pWnd as PSBWND;
-            pSBData = core::ptr::addr_of_mut!((*pSBWnd).SBCalc) as PSBDATA;
+            pSBData = SBCalcOf(pWnd) as PSBDATA;
         }
         _ => {
             return 0;
@@ -1380,7 +1392,7 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
     unicode: BOOL,
 ) -> LRESULT {
     let pWnd: PWND;
-    let pSBWnd: PSBWND;
+    let pSBCalc: *mut SBCALC;
     let mut ScrollInfo: SCROLLINFO = core::mem::zeroed();
 
     pWnd = ValidateHwnd(Wnd);
@@ -1409,7 +1421,7 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
         return 0;
     }
 
-    pSBWnd = pWnd as PSBWND;
+    pSBCalc = SBCalcOf(pWnd);
 
     match Msg {
         WM_CREATE => {
@@ -1522,12 +1534,12 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
         }
 
         SBM_GETPOS => {
-            return (*pSBWnd).SBCalc.pos as LRESULT;
+            return (*pSBCalc).pos as LRESULT;
         }
 
         SBM_GETRANGE => {
-            *(wParam as LPINT) = (*pSBWnd).SBCalc.posMin;
-            *(lParam as LPINT) = (*pSBWnd).SBCalc.posMax;
+            *(wParam as LPINT) = (*pSBCalc).posMin;
+            *(lParam as LPINT) = (*pSBCalc).posMax;
             return 0;
         }
 
@@ -1556,7 +1568,7 @@ pub unsafe extern "system" fn ScrollBarWndProc_common(
         }
 
         SBM_GETSCROLLINFO => {
-            let pSBData: PSBDATA = core::ptr::addr_of_mut!((*pSBWnd).SBCalc) as PSBDATA;
+            let pSBData: PSBDATA = pSBCalc as PSBDATA;
             let ret: DWORD = NtUserSBGetParms(Wnd, SB_CTL as INT, pSBData, lParam as *mut SCROLLINFO) as DWORD;
             if ret == 0 {
                 ERR!("SBM_GETSCROLLINFO No ScrollInfo\n");
