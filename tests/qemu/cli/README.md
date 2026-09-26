@@ -249,7 +249,12 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
   (16); the per-arch serialize cap is bypassed on the default windows-host TCG
-  backend, so same-arch retries run in parallel too.
+  backend, so same-arch retries run in parallel too. **Half that pool is reserved
+  for landing**: boots under a conductor's gate (`VIBEOS_JOB_CLASS=integration`)
+  queue separately and take the reserved permits first; every other boot — a lane's
+  own smokes, payloads, sweeps — fills only the rest, so the job that unblocks the
+  fleet never waits behind it. `VIBEOS_LAND_BOOT_RESERVE` resizes it (0 disables);
+  `host-status` shows it.
 - **`cohab:<arch>` — fresh object coverage.** `tools/verify_cohab_
   coverage.py` asks each flipped C object what it *exports* (`llvm-nm`, after every
   `-D`, `#ifdef` and ABI decoration) and checks that something linking ahead of the
@@ -322,7 +327,10 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   if the preflight itself cannot run it warns and proceeds, because a broken
   preflight must never be able to wedge the fleet's ability to land. `--skip-lint`
   overrides (report every use). It lints the lane tip, not the tip merged with
-  master, so it is an early filter and not a replacement for the gate.
+  master, so it is an early filter and not a replacement for the gate. The gate's
+  **source-lint partitions and host difftests** run there too, by the same rules and
+  the same override — the difftests since a lane whose own `ucrt-difftest` could not
+  link turned 17 of 18 batched gates red on 2026-09-25.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
 

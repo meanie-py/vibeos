@@ -331,6 +331,49 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
         )
 
 
+def _difftest_preflight(repo: Path, run: Run, args) -> None:
+    """Run the gate's host differential harnesses HERE, before this lane is batched.
+
+    The other cheap, build-free, boot-free third of the gate. Without it, on 2026-09-25 a
+    lane that deleted a Microsoft source file its own difftest still linked against went
+    through lint preflight green, then turned SEVENTEEN of eighteen batched gates red over
+    one evening -- splitting every batch it rode in, and (through a stale cargo cache in
+    the integration tree) poisoning batches it was not even in. ~30s here would have
+    stopped it at the door.
+
+    Uses gate's `_difftest_once`, so this cannot drift from what the conductor runs. Same
+    rules as the two lint preflights: never stricter than the gate (it is the same
+    command), approximate only in that it tests the lane tip rather than tip+master, and
+    FAIL OPEN when the harness cannot run at all -- only a harness that ran and reported a
+    divergence blocks.
+    """
+    if getattr(args, "skip_lint", False):
+        run.add(Stage("difftest", status="skip", detail="--skip-lint: difftest not run"))
+        return
+    if _docs_only_vs_master(repo):
+        run.add(Stage("difftest", status="skip", detail="docs-only delta"))
+        return
+    from .gate import _difftest_once
+
+    root = run.dir / "preflight-difftest"
+    try:
+        result = _difftest_once(repo, root)
+    except (OSError, subprocess.SubprocessError) as exc:
+        run.add(Stage("difftest", status="warn", detail=f"could not run: {exc}"))
+        return
+    if result["ok"]:
+        run.add(Stage("difftest", status="ok", detail=f"clean ({result['seconds']:.0f}s)"))
+        return
+    raise LandAbort(
+        "difftest FAILED — fix it before queueing, or the conductor bounces the whole batch "
+        "(3 builds + 4 boots of fleet load) for it:\n    "
+        + (result["salient"] or f"exit {result['exit']}")
+        + f"\n  console: {root / 'difftest-console.log'}"
+        + "\n  reproduce: ./vibeos-cli difftest"
+        + "\n  override (report every use): ./vibeos-cli land --skip-lint"
+    )
+
+
 def _merge_master(repo: Path, run: Run) -> str:
     """Merge origin/master into HEAD (no-op when already contained). Returns the new HEAD.
     A conflicting merge is aborted and reported — resolving it is the lane's call, not
@@ -524,6 +567,7 @@ def _land_queued(args, repo: Path) -> int:
             # risk to the batch, and a --dry-run has already returned above.
             _lint_preflight(repo, run, args)
             _source_lint_preflight(repo, run, args)
+            _difftest_preflight(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
             depth = len(queue.pending(repo))
             run.add(
@@ -744,6 +788,7 @@ def _land_direct(args, repo: Path) -> int:
         # fleet-wide lock for the ~40s this takes.
         _lint_preflight(repo, run, args)
         _source_lint_preflight(repo, run, args)
+        _difftest_preflight(repo, run, args)
 
         _report_queue(run)
         timeout = float(getattr(args, "queue_timeout", 0) or hostlock.LAND_LOCK_TIMEOUT)

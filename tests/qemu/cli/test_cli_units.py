@@ -2893,6 +2893,48 @@ def test_hostlock_cpu_lease_serializes(tmp_path, monkeypatch):
     hl_mod.release(fd3)
 
 
+def test_lane_boots_cannot_take_the_landing_reserve(tmp_path, monkeypatch):
+    """A lane's smokes/payloads/sweeps fill only the unreserved share, so a conductor's
+    gate never queues behind them -- the night-long 17-red-to-1-green queue did."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.delenv("VIBEOS_LAND_BOOT_RESERVE", raising=False)
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "interactive")
+    held = [hl_mod.acquire_boot_lease("boot:lane", leases=8, timeout=0.0) for _ in range(4)]
+    assert all(fd is not None for fd in held)
+    assert hl_mod.acquire_boot_lease("boot:lane", leases=8, timeout=0.2) is None
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
+    gate = [hl_mod.acquire_boot_lease("boot:gate", leases=8, timeout=0.0) for _ in range(4)]
+    assert all(fd is not None for fd in gate), "the reserve must be free for landing"
+    for fd in held + gate:
+        hl_mod.release(fd)
+
+
+def test_landing_takes_reserved_permits_first_and_can_overflow(tmp_path, monkeypatch):
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.delenv("VIBEOS_LAND_BOOT_RESERVE", raising=False)
+    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
+    fds = [hl_mod.acquire_boot_lease("boot:gate", leases=8, timeout=0.0) for _ in range(8)]
+    assert all(fd is not None for fd in fds), "an idle host lends landing every permit"
+    names = [os.readlink(f"/proc/self/fd/{fd}").rsplit("/", 1)[-1] for fd in fds[:4]]
+    assert names == [f"bootcpu-{i:02d}" for i in range(4, 8)], names
+    for fd in fds:
+        hl_mod.release(fd)
+
+
+def test_the_landing_reserve_never_takes_the_whole_pool(monkeypatch):
+    monkeypatch.setenv("VIBEOS_LAND_BOOT_RESERVE", "99")
+    assert hl_mod.land_boot_reserve(4) == 3
+    monkeypatch.setenv("VIBEOS_LAND_BOOT_RESERVE", "0")
+    assert hl_mod.land_boot_reserve(8) == 0
+
+
+def test_a_land_lock_wait_says_it_is_the_land_lock():
+    """Every pool used to print "waiting for host CPU lease", so a conductor queued behind
+    another conductor read as boot starvation. The prefix stays (looks_starved matches it)."""
+    line = hl_mod._wait_line("conductor:x", "land")
+    assert line.startswith(hl_mod.WAIT_ANNOUNCE) and "LAND LOCK" in line
+
+
 def test_hostlock_cpu_lease_pool_of_two(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     a = hl_mod.acquire_cpu_lease("x", leases=2, timeout=0.0)
@@ -4380,6 +4422,8 @@ def test_hostlock_build_exclusive_does_not_block_windows_host_boot(tmp_path, mon
 
 def test_hostlock_boot_pool_throttles_boot_vs_boot(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    # Pool throttling in isolation; the landing reserve has its own tests above.
+    monkeypatch.setenv("VIBEOS_LAND_BOOT_RESERVE", "0")
     a = hl_mod.acquire_boot_lease("boot:i386", leases=2, timeout=0.0)
     b = hl_mod.acquire_boot_lease("boot:amd64", leases=2, timeout=0.0)
     assert a is not None and b is not None
@@ -6063,6 +6107,42 @@ def test_lint_preflight_honours_skip_lint(tiny_repo: Path, tmp_path, monkeypatch
     run = Run("land", "t")
     land_mod._lint_preflight(tiny_repo, run, _Args(skip_lint=True))  # must not raise
     assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
+
+
+def test_difftest_preflight_blocks_a_red_difftest(tiny_repo: Path, tmp_path, monkeypatch):
+    """2026-09-25: a lane whose own difftest could not LINK after deleting a reference
+    TU turned 17 of 18 batched gates red. The same ~30s check, here, stops it at the door."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="  ✗ ucrt-difftest\n> rust-lld: undefined symbol: ref_strcpy")
+    run = Run("land", "t")
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._difftest_preflight(tiny_repo, run, _Args())
+    assert "ucrt-difftest" in str(ei.value)
+    assert (run.dir / "preflight-difftest" / "difftest-console.log").exists()
+
+
+def test_difftest_preflight_passes_a_green_difftest(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=0, out="difftest host  —  OK")
+    run = Run("land", "t")
+    land_mod._difftest_preflight(tiny_repo, run, _Args())
+    assert any(s.name == "difftest" and s.status == "ok" for s in run.stages)
+
+
+def test_difftest_preflight_fails_OPEN_when_it_cannot_run(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    assert not (tiny_repo / "vibeos-cli").exists()
+    run = Run("land", "t")
+    land_mod._difftest_preflight(tiny_repo, run, _Args())  # must not raise
+    assert any(s.name == "difftest" and s.status == "warn" for s in run.stages)
+
+
+def test_difftest_preflight_honours_skip_lint(tiny_repo: Path, tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    _fake_cli(tiny_repo, rc=1, out="✗ everything")
+    run = Run("land", "t")
+    land_mod._difftest_preflight(tiny_repo, run, _Args(skip_lint=True))
+    assert any(s.name == "difftest" and s.status == "skip" for s in run.stages)
 
 
 def test_red_lint_keeps_the_lane_OUT_of_the_queue(lane_repo, tmp_path, monkeypatch):
