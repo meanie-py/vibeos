@@ -662,6 +662,19 @@ HAND_GRADED = (
     "__stdio_common_vfwprintf_s",
     "__stdio_common_vfprintf_p",
     "__stdio_common_vfwprintf_p",
+    # run_fp_* (convert/strtod.cpp): floating returns, graded by their bits.
+    "strtof",
+    "_strtof_l",
+    "strtod",
+    "_strtod_l",
+    "strtold",
+    "_strtold_l",
+    "wcstof",
+    "_wcstof_l",
+    "wcstod",
+    "_wcstod_l",
+    "wcstold",
+    "_wcstold_l",
 )
 
 

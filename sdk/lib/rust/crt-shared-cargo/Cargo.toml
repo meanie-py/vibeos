@@ -56,4 +56,4 @@ cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-m
 # It has an EMPTY [dependencies] table, so this edge cannot reach
 # msvcrt-crt-rust -- the one thing this crate exists to keep out. That is
 # asserted by check_structure, not assumed.
-ucrt-rust = { path = "../ucrt-rust", features = ["bits", "ismbbyte", "portable-string", "ctype", "ismbc", "tocase", "strtox", "atox", "xtoa", "findfile", "output"] }
+ucrt-rust = { path = "../ucrt-rust", features = ["bits", "ismbbyte", "portable-string", "ctype", "ismbc", "tocase", "strtox", "atox", "xtoa", "findfile", "output", "strtod"] }

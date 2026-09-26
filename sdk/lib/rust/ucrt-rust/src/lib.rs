@@ -40,6 +40,11 @@ pub mod findfile;
 #[cfg(feature = "output")]
 pub mod output;
 
+#[cfg(feature = "strtod")]
+pub mod big_integer;
+#[cfg(feature = "strtod")]
+pub mod strtod;
+
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
 #[cfg(feature = "portable-string")]

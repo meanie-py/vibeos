@@ -1431,7 +1431,8 @@ static const struct { unsigned short len, max; const void *buf; } g_pf_z_nobuf =
     X("%2$d", 1, 2) X("%1$d %d", 1, 2) X("%d %1$d", 1, 2) X("%0$d", 1) X("%101$d", 1)   \
     X("%1$d %1$s", 1) X("%1$lld %2$d", 1LL, 2) X("%1$c%2$c", 'a', 'b') X("abc %1$d def", 5) \
     X("%%%1$d", 5) X("%1$p", (void *)1) X("%1$d %1$x", 255) X("%1$d %1$lld", 1LL)          \
-    X("%1$*1$d", 3) X("%1$", 1) X("%1$-5d|", 4) X("%1$n", (int *)0) X("%3$d %1$d", 1, 2, 3)
+    X("%1$*1$d", 3) X("%1$", 1) X("%1$-5d|", 4) X("%1$n", (int *)0) X("%3$d %1$d", 1, 2, 3) \
+    X("%1$* 2$d|", 5, 8) X("%1$*+2$d|", 5, 8) X("% 1$d", 5) X("%1$.* 2$f", 1.5, 2)
 
 static const struct { unsigned long long opt; int size; } g_pf_cfg[] = {
     { 0, -1 }, { 0, -2 }, { 0, 0 }, { 0, 1 }, { 0, 4 }, { 0, 12 }, { 0, 256 },
@@ -1701,6 +1702,144 @@ static void run_pf_vfwprintf_s(void)  { PF_STREAM_FAMILY(__stdio_common_vfwprint
 static void run_pf_vfprintf_p(void)   { PF_STREAM_FAMILY(__stdio_common_vfprintf_p, "vfprintf_p", , PF_POSITIONAL); }
 static void run_pf_vfwprintf_p(void)  { PF_STREAM_FAMILY(__stdio_common_vfwprintf_p, "vfwprintf_p", L"", PF_POSITIONAL); }
 #endif /* UCRTDIFF_REF_HAS___stdio_common_vsprintf */
+
+/* ---- strtod (convert/strtod.cpp) ----------------------------------------
+ *
+ * One runner per export. Each converts the corpus on both sides and grades the
+ * result's BITS (a -0.0, a NaN payload or a one-ulp miss all show), the end
+ * offset, errno from a sentinel, and the invalid-parameter count. The wide runners
+ * add strings only a wide parser can see: Unicode decimal digits, which UCRT's
+ * wide digit parser accepts. */
+#if UCRTDIFF_REF_HAS_strtod
+float __cdecl ref_strtof(const char *, char **);
+float __cdecl ref__strtof_l(const char *, char **, _locale_t);
+double __cdecl ref_strtod(const char *, char **);
+double __cdecl ref__strtod_l(const char *, char **, _locale_t);
+long double __cdecl ref_strtold(const char *, char **);
+long double __cdecl ref__strtold_l(const char *, char **, _locale_t);
+float __cdecl ref_wcstof(const wchar_t *, wchar_t **);
+float __cdecl ref__wcstof_l(const wchar_t *, wchar_t **, _locale_t);
+double __cdecl ref_wcstod(const wchar_t *, wchar_t **);
+double __cdecl ref__wcstod_l(const wchar_t *, wchar_t **, _locale_t);
+long double __cdecl ref_wcstold(const wchar_t *, wchar_t **);
+long double __cdecl ref__wcstold_l(const wchar_t *, wchar_t **, _locale_t);
+/* The shipping side through its import pointers: the toolchain headers declare
+ * some of these inline or with a different long double. */
+extern float(__cdecl *const ud_strtof)(const char *, char **) __asm__(UD_IMP(strtof));
+extern float(__cdecl *const ud__strtof_l)(const char *, char **, _locale_t) __asm__(UD_IMP(_strtof_l));
+extern double(__cdecl *const ud_strtod)(const char *, char **) __asm__(UD_IMP(strtod));
+extern double(__cdecl *const ud__strtod_l)(const char *, char **, _locale_t) __asm__(UD_IMP(_strtod_l));
+extern long double(__cdecl *const ud_strtold)(const char *, char **) __asm__(UD_IMP(strtold));
+extern long double(__cdecl *const ud__strtold_l)(const char *, char **, _locale_t) __asm__(UD_IMP(_strtold_l));
+extern float(__cdecl *const ud_wcstof)(const wchar_t *, wchar_t **) __asm__(UD_IMP(wcstof));
+extern float(__cdecl *const ud__wcstof_l)(const wchar_t *, wchar_t **, _locale_t) __asm__(UD_IMP(_wcstof_l));
+extern double(__cdecl *const ud_wcstod)(const wchar_t *, wchar_t **) __asm__(UD_IMP(wcstod));
+extern double(__cdecl *const ud__wcstod_l)(const wchar_t *, wchar_t **, _locale_t) __asm__(UD_IMP(_wcstod_l));
+extern long double(__cdecl *const ud_wcstold)(const wchar_t *, wchar_t **) __asm__(UD_IMP(wcstold));
+extern long double(__cdecl *const ud__wcstold_l)(const wchar_t *, wchar_t **, _locale_t) __asm__(UD_IMP(_wcstold_l));
+
+static const char *const g_fp_in[] = {
+    "0", "-0", "+0", "1", "-1", "0.1", "0.30000000000000004", "1e308", "1e309", "-1e309",
+    "1.7976931348623157e308", "1.7976931348623158e308", "1.7976931348623159e308",
+    "2.2250738585072011e-308", "2.2250738585072014e-308", "4.9406564584124654e-324",
+    "2.4703282292062327e-324", "2.4703282292062328e-324", "1e-324", "1e-400", "-1e-400",
+    "3.4028235e38", "3.4028236e38", "3.40282357e38", "1.17549435e-38", "1.4e-45", "7e-46", "7.1e-46",
+    "9007199254740993", "9007199254740992.5", "9007199254740993.0000000000000000001",
+    "123456789012345678901234567890", "0.000001", "000000.000000123e+0010",
+    "1e99999", "1e-99999", "0e99999", "1e5200", "1e5201", "0.0000000001e5205",
+    "  \t\n12.5xyz", "+.5", "-.5e1", ".", "..5", "e5", "1e", "1e+", "1e-", "1E3", "1ee3",
+    "inf", "INF", "-Inf", "infinity", "INFINITY", "infinit", "infx", "in", "i",
+    "nan", "-NaN", "nan(", "nan()", "nan(123abc_)", "nan(1-2)", "nan(snan)", "NAN(SNAN)",
+    "nan(ind)", "-nan(ind)", "nan(inda)", "nan(sna)", "nanq",
+    "0x", "0X", "0x1", "0x1p", "0x1p-2", "0x1.8p1", "0xAbC.dEfP+4", "0x.8p1", "0x1p1024",
+    "0x1p-1074", "0x1p-1075", "0x1.00000000000008p0", "0x1.00000000000018p0",
+    "0x1.fffffffffffff8p1023", "0x1.000001p0", "0x1.0000011p0", "0x0p5", "0x0000.0000p9", "0xg",
+    "0.5e", "5.", "05", "-0x1p3", "0x-1", "x1", "", " ", "-", "+",
+    "1.00000000000000011102230246251565404236316680908203125",
+    "1.000000000000000111022302462515654042363166809082031251",
+    "1.000000000000000111022302462515654042363166809082031249",
+    "4503599627370496.5", "4503599627370497.5", "2.5e-324", "123.456e-2", "1,5",
+    "\x80\xff 1", "1\xa0",
+};
+#define FP_N (sizeof(g_fp_in) / sizeof(g_fp_in[0]))
+
+/* A long mantissa: past the parser's 768 kept digits, with the deciding digit
+ * after them. */
+static char g_fp_long[1100];
+static void fp_make_long(void)
+{
+    int k = 0;
+    g_fp_long[k++] = '0'; g_fp_long[k++] = '.';
+    for (int i = 0; i < 322; i++) g_fp_long[k++] = '0';
+    g_fp_long[k++] = '2'; g_fp_long[k++] = '4'; g_fp_long[k++] = '7';
+    for (int i = 0; i < 700; i++) g_fp_long[k++] = (char)('0' + i * 7 % 10);
+    g_fp_long[k++] = '1';
+    g_fp_long[k] = 0;
+}
+
+static const wchar_t *const g_fp_win[] = {
+    L"\x0661\x0662.\x0665", L"\xff11\xff10" L"e\xff12", L"\x0966.5", L"1\x2003", L"\x3000 3.5",
+    L"1\x0e50\x0e50", L"\x17e0x1p1",
+};
+#define FP_WN (sizeof(g_fp_win) / sizeof(g_fp_win[0]))
+
+#define FP_BITS(v) _Generic((v), float: (long long)fp_bits32(v), default: (long long)fp_bits64((double)(v)))
+static unsigned fp_bits32(float f) { unsigned u; memcpy(&u, &f, 4); return u; }
+static unsigned long long fp_bits64(double d) { unsigned long long u; memcpy(&u, &d, 8); return u; }
+
+#define FP_ROW(fn, T, s, lbl, ...) do {                                              \
+        T *e1 = (T *)1, *e2 = (T *)1;                                                \
+        *_errno() = PF_ERRNO_SENTINEL; *ref__errno() = PF_ERRNO_SENTINEL;            \
+        g_iph_dll = g_iph_ref = 0;                                                   \
+        long long v1 = FP_BITS(ud_##fn(s, &e1, ##__VA_ARGS__));                      \
+        long long v2 = FP_BITS(ref_##fn(s, &e2, ##__VA_ARGS__));                     \
+        grade2(#fn, lbl, v1, v2);                                                    \
+        grade2(#fn ".end", lbl, s ? e1 - s : (e1 == 0) - 2, s ? e2 - s : (e2 == 0) - 2); \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                         \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                               \
+    } while (0)
+
+#define FP_NARROW(fn, ...) do {                                                      \
+        install_counting_iph();                                                      \
+        fp_make_long();                                                              \
+        for (unsigned i = 0; i < FP_N; i++)                                          \
+            FP_ROW(fn, char, g_fp_in[i], g_fp_in[i], ##__VA_ARGS__);                 \
+        FP_ROW(fn, char, g_fp_long, "long", ##__VA_ARGS__);                          \
+        FP_ROW(fn, char, (const char *)0, "NULL", ##__VA_ARGS__);                    \
+    } while (0)
+
+#define FP_WIDE(fn, ...) do {                                                        \
+        install_counting_iph();                                                      \
+        fp_make_long();                                                              \
+        static wchar_t w[1100];                                                      \
+        for (unsigned i = 0; i < FP_N + 1 + FP_WN; i++) {                            \
+            const wchar_t *ws = w;                                                   \
+            if (i < FP_N + 1) {                                                      \
+                const char *n = i < FP_N ? g_fp_in[i] : g_fp_long;                   \
+                unsigned k = 0;                                                      \
+                for (; n[k]; k++) w[k] = (unsigned char)n[k];                        \
+                w[k] = 0;                                                            \
+            } else {                                                                 \
+                ws = g_fp_win[i - FP_N - 1];                                         \
+            }                                                                        \
+            FP_ROW(fn, wchar_t, ws, label_idx(i), ##__VA_ARGS__);                    \
+        }                                                                            \
+        FP_ROW(fn, wchar_t, (const wchar_t *)0, "NULL", ##__VA_ARGS__);              \
+    } while (0)
+
+static void run_fp_strtof(void)    { FP_NARROW(strtof); }
+static void run_fp__strtof_l(void) { FP_NARROW(_strtof_l, NULL); }
+static void run_fp_strtod(void)    { FP_NARROW(strtod); }
+static void run_fp__strtod_l(void) { FP_NARROW(_strtod_l, NULL); }
+static void run_fp_strtold(void)   { FP_NARROW(strtold); }
+static void run_fp__strtold_l(void){ FP_NARROW(_strtold_l, NULL); }
+static void run_fp_wcstof(void)    { FP_WIDE(wcstof); }
+static void run_fp__wcstof_l(void) { FP_WIDE(_wcstof_l, NULL); }
+static void run_fp_wcstod(void)    { FP_WIDE(wcstod); }
+static void run_fp__wcstod_l(void) { FP_WIDE(_wcstod_l, NULL); }
+static void run_fp_wcstold(void)   { FP_WIDE(wcstold); }
+static void run_fp__wcstold_l(void){ FP_WIDE(_wcstold_l, NULL); }
+#endif /* UCRTDIFF_REF_HAS_strtod */
 
 static void run_ctype(void)
 {
@@ -2050,6 +2189,14 @@ static void run_legacy(void)
         PF_HAND(vsnprintf_s) PF_HAND(vsnwprintf_s) PF_HAND(vsprintf_p) PF_HAND(vswprintf_p)
         PF_HAND(vfprintf) PF_HAND(vfwprintf) PF_HAND(vfprintf_s) PF_HAND(vfwprintf_s)
         PF_HAND(vfprintf_p) PF_HAND(vfwprintf_p)
+#if UCRTDIFF_REF_HAS_strtod
+#define FP_HAND(name) { #name, run_fp_##name },
+#else
+#define FP_HAND(name) { #name, 0 },
+#endif
+        FP_HAND(strtof) FP_HAND(_strtof_l) FP_HAND(strtod) FP_HAND(_strtod_l)
+        FP_HAND(strtold) FP_HAND(_strtold_l) FP_HAND(wcstof) FP_HAND(_wcstof_l)
+        FP_HAND(wcstod) FP_HAND(_wcstod_l) FP_HAND(wcstold) FP_HAND(_wcstold_l)
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {

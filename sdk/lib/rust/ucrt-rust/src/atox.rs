@@ -16,11 +16,11 @@ macro_rules! atox {
     ($ch:ty, $ret:ty, $bits:expr, $plain:ident, $l:ident) => {
         #[no_mangle]
         pub unsafe extern "C" fn $l(string: *const $ch, locale: *mut CrtLocalePointers) -> $ret {
-            parse(string, core::ptr::null_mut(), 10, locale, $bits, true) as $ret
+            parse(string, core::ptr::null_mut(), 10, locale, $bits, true, true) as $ret
         }
         #[no_mangle]
         pub unsafe extern "C" fn $plain(string: *const $ch) -> $ret {
-            parse(string, core::ptr::null_mut(), 10, core::ptr::null_mut(), $bits, true) as $ret
+            parse(string, core::ptr::null_mut(), 10, core::ptr::null_mut(), $bits, true, true) as $ret
         }
     };
 }
