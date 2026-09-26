@@ -573,6 +573,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   change anyway -- with all three arches regenerable, which needs the
   `generate_bindings.sh` stub removed first.
 
+- **The ucrt Tier 2 case generator reads the WRONG headers, and drops what they lack
+  without a word. OPEN, owed** (2026-09-26). `gen_ucrt_tier2_cases.ast_functions` parses
+  `#include <mbstring.h>` etc. with no `-I`, so clang resolves the llvm-mingw toolchain's
+  own mingw-w64 headers, not `sdk/include/ucrt`. Any UCRT export mingw does not declare
+  is never generated and is not in the "held out" announcement either: found because
+  `_ismbcblank`/`_ismbcblank_l` (declared at `sdk/include/ucrt/mbstring.h:1134`) were
+  missing from the ismbc takeover check. Fix: parse the UCRT headers the DLL is built
+  against, then regrade the whole table, since the case set will move. Until then the
+  table's coverage is "what mingw declares", not "what ucrtbase exports".
+
 - **`test_payload_launched` misses a launch marker that IS in its own serial log.
   ROOT-CAUSED + FIXED 2026-09-26: `restore_snapshot`'s flush ate it.** A fast payload
   finishes inside the settle window; a CHATTY one never lets serial go idle, so the settle

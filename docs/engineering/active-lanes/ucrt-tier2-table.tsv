@@ -6,12 +6,12 @@ __iscsymf	MATCH n=40	686d118764bb-dirty
 __iswcsym	MATCH n=40	686d118764bb-dirty
 __iswcsymf	MATCH n=40	686d118764bb-dirty
 __toascii	MATCH n=40	686d118764bb-dirty
-_abs64	MATCH n=40	6e246ddc6128
-_atoi64	MATCH n=7	6e246ddc6128
-_atoi64_l	MATCH n=7	6e246ddc6128
-_atoi_l	MATCH n=7	6e246ddc6128
-_atol_l	MATCH n=7	6e246ddc6128
-_getmbcp	DIFF rust=1 dll=0 of 1 first=_getmbcp:()	6e246ddc6128
+_abs64	MATCH n=40	febc967f24d6-dirty
+_atoi64	MATCH n=7	febc967f24d6-dirty
+_atoi64_l	MATCH n=7	febc967f24d6-dirty
+_atoi_l	MATCH n=7	febc967f24d6-dirty
+_atol_l	MATCH n=7	febc967f24d6-dirty
+_getmbcp	DIFF rust=1 dll=0 of 1 first=_getmbcp:()	febc967f24d6-dirty
 _isalnum_l	MATCH n=40	686d118764bb-dirty
 _isalpha_l	MATCH n=40	686d118764bb-dirty
 _iscntrl_l	MATCH n=40	686d118764bb-dirty
@@ -21,42 +21,42 @@ _isdigit_l	MATCH n=40	686d118764bb-dirty
 _isgraph_l	MATCH n=40	686d118764bb-dirty
 _isleadbyte_l	MATCH n=40	686d118764bb-dirty
 _islower_l	MATCH n=40	686d118764bb-dirty
-_ismbcalnum	MATCH n=40	6e246ddc6128
-_ismbcalnum_l	MATCH n=40	6e246ddc6128
-_ismbcalpha	MATCH n=40	6e246ddc6128
-_ismbcalpha_l	MATCH n=40	6e246ddc6128
-_ismbcdigit	MATCH n=40	6e246ddc6128
-_ismbcdigit_l	MATCH n=40	6e246ddc6128
-_ismbcgraph	DIFF rust=6 dll=0 of 40 first=_ismbcgraph:i=033	6e246ddc6128
-_ismbcgraph_l	DIFF rust=6 dll=0 of 40 first=_ismbcgraph_l:i=033	6e246ddc6128
-_ismbchira	MATCH n=40	6e246ddc6128
-_ismbchira_l	MATCH n=40	6e246ddc6128
-_ismbckata	MATCH n=40	6e246ddc6128
-_ismbckata_l	MATCH n=40	6e246ddc6128
-_ismbcl0	MATCH n=40	6e246ddc6128
-_ismbcl0_l	MATCH n=40	6e246ddc6128
-_ismbcl1	MATCH n=40	6e246ddc6128
-_ismbcl1_l	MATCH n=40	6e246ddc6128
-_ismbcl2	MATCH n=40	6e246ddc6128
-_ismbcl2_l	MATCH n=40	6e246ddc6128
-_ismbclegal	FAULT code=0xc0000005 after=1	6e246ddc6128
-_ismbclegal_l	FAULT code=0xc0000005 after=1	6e246ddc6128
-_ismbclower	MATCH n=40	6e246ddc6128
-_ismbclower_l	MATCH n=40	6e246ddc6128
-_ismbcprint	DIFF rust=8 dll=0 of 40 first=_ismbcprint:i=005	6e246ddc6128
-_ismbcprint_l	DIFF rust=8 dll=0 of 40 first=_ismbcprint_l:i=005	6e246ddc6128
-_ismbcpunct	DIFF rust=6 dll=0 of 40 first=_ismbcpunct:i=033	6e246ddc6128
-_ismbcpunct_l	DIFF rust=6 dll=0 of 40 first=_ismbcpunct_l:i=033	6e246ddc6128
-_ismbcspace	DIFF rust=1 dll=0 of 40 first=_ismbcspace:i=032	6e246ddc6128
-_ismbcspace_l	DIFF rust=1 dll=0 of 40 first=_ismbcspace_l:i=032	6e246ddc6128
-_ismbcsymbol	DIFF rust=7 dll=0 of 40 first=_ismbcsymbol:i=005	6e246ddc6128
-_ismbcsymbol_l	DIFF rust=7 dll=0 of 40 first=_ismbcsymbol_l:i=005	6e246ddc6128
-_ismbcupper	MATCH n=40	6e246ddc6128
-_ismbcupper_l	MATCH n=40	6e246ddc6128
-_ismbslead	MATCH n=49	6e246ddc6128
-_ismbslead_l	MATCH n=49	6e246ddc6128
-_ismbstrail	MATCH n=49	6e246ddc6128
-_ismbstrail_l	MATCH n=49	6e246ddc6128
+_ismbcalnum	MATCH n=40	febc967f24d6-dirty
+_ismbcalnum_l	MATCH n=40	febc967f24d6-dirty
+_ismbcalpha	MATCH n=40	febc967f24d6-dirty
+_ismbcalpha_l	MATCH n=40	febc967f24d6-dirty
+_ismbcdigit	MATCH n=40	febc967f24d6-dirty
+_ismbcdigit_l	MATCH n=40	febc967f24d6-dirty
+_ismbcgraph	DIFF rust=6 dll=0 of 40 first=_ismbcgraph:i=033	febc967f24d6-dirty
+_ismbcgraph_l	DIFF rust=6 dll=0 of 40 first=_ismbcgraph_l:i=033	febc967f24d6-dirty
+_ismbchira	MATCH n=40	febc967f24d6-dirty
+_ismbchira_l	MATCH n=40	febc967f24d6-dirty
+_ismbckata	MATCH n=40	febc967f24d6-dirty
+_ismbckata_l	MATCH n=40	febc967f24d6-dirty
+_ismbcl0	MATCH n=40	febc967f24d6-dirty
+_ismbcl0_l	MATCH n=40	febc967f24d6-dirty
+_ismbcl1	MATCH n=40	febc967f24d6-dirty
+_ismbcl1_l	MATCH n=40	febc967f24d6-dirty
+_ismbcl2	MATCH n=40	febc967f24d6-dirty
+_ismbcl2_l	MATCH n=40	febc967f24d6-dirty
+_ismbclegal	FAULT code=0xc0000005 after=1	febc967f24d6-dirty
+_ismbclegal_l	FAULT code=0xc0000005 after=1	febc967f24d6-dirty
+_ismbclower	MATCH n=40	febc967f24d6-dirty
+_ismbclower_l	MATCH n=40	febc967f24d6-dirty
+_ismbcprint	DIFF rust=8 dll=0 of 40 first=_ismbcprint:i=005	febc967f24d6-dirty
+_ismbcprint_l	DIFF rust=8 dll=0 of 40 first=_ismbcprint_l:i=005	febc967f24d6-dirty
+_ismbcpunct	DIFF rust=6 dll=0 of 40 first=_ismbcpunct:i=033	febc967f24d6-dirty
+_ismbcpunct_l	DIFF rust=6 dll=0 of 40 first=_ismbcpunct_l:i=033	febc967f24d6-dirty
+_ismbcspace	DIFF rust=1 dll=0 of 40 first=_ismbcspace:i=032	febc967f24d6-dirty
+_ismbcspace_l	DIFF rust=1 dll=0 of 40 first=_ismbcspace_l:i=032	febc967f24d6-dirty
+_ismbcsymbol	DIFF rust=7 dll=0 of 40 first=_ismbcsymbol:i=005	febc967f24d6-dirty
+_ismbcsymbol_l	DIFF rust=7 dll=0 of 40 first=_ismbcsymbol_l:i=005	febc967f24d6-dirty
+_ismbcupper	MATCH n=40	febc967f24d6-dirty
+_ismbcupper_l	MATCH n=40	febc967f24d6-dirty
+_ismbslead	MATCH n=49	febc967f24d6-dirty
+_ismbslead_l	MATCH n=49	febc967f24d6-dirty
+_ismbstrail	MATCH n=49	febc967f24d6-dirty
+_ismbstrail_l	MATCH n=49	febc967f24d6-dirty
 _isprint_l	MATCH n=40	686d118764bb-dirty
 _ispunct_l	MATCH n=40	686d118764bb-dirty
 _isspace_l	MATCH n=40	686d118764bb-dirty
@@ -75,76 +75,76 @@ _iswspace_l	MATCH n=40	686d118764bb-dirty
 _iswupper_l	MATCH n=40	686d118764bb-dirty
 _iswxdigit_l	MATCH n=40	686d118764bb-dirty
 _isxdigit_l	MATCH n=40	686d118764bb-dirty
-_mbbtombc	MATCH n=40	6e246ddc6128
-_mbbtombc_l	MATCH n=40	6e246ddc6128
-_mbbtype	MATCH n=64	6e246ddc6128
-_mbbtype_l	MATCH n=64	6e246ddc6128
-_mbcjistojms	MATCH n=40	6e246ddc6128
-_mbcjistojms_l	MATCH n=40	6e246ddc6128
-_mbcjmstojis	MATCH n=40	6e246ddc6128
-_mbcjmstojis_l	MATCH n=40	6e246ddc6128
-_mbclen	MATCH n=7	6e246ddc6128
-_mbclen_l	MATCH n=7	6e246ddc6128
-_mbctohira	MATCH n=40	6e246ddc6128
-_mbctohira_l	MATCH n=40	6e246ddc6128
-_mbctokata	MATCH n=40	6e246ddc6128
-_mbctokata_l	MATCH n=40	6e246ddc6128
-_mbctolower	MATCH n=40	6e246ddc6128
-_mbctolower_l	MATCH n=40	6e246ddc6128
-_mbctombb	MATCH n=40	6e246ddc6128
-_mbctombb_l	MATCH n=40	6e246ddc6128
-_mbctoupper	MATCH n=40	6e246ddc6128
-_mbctoupper_l	MATCH n=40	6e246ddc6128
-_mblen_l	MATCH n=56	6e246ddc6128
-_mbsbtype	DIFF rust=37 dll=0 of 56 first=_mbsbtype:i=000	6e246ddc6128
-_mbsbtype_l	DIFF rust=37 dll=0 of 56 first=_mbsbtype_l:i=000	6e246ddc6128
-_mbscmp	MATCH n=49	6e246ddc6128
-_mbscmp_l	MATCH n=49	6e246ddc6128
-_mbscspn	MATCH n=49	6e246ddc6128
-_mbscspn_l	MATCH n=49	6e246ddc6128
-_mbsicmp	MATCH n=49	6e246ddc6128
-_mbsicmp_l	MATCH n=49	6e246ddc6128
-_mbslen	MATCH n=7	6e246ddc6128
-_mbslen_l	MATCH n=7	6e246ddc6128
-_mbsnbcmp	MATCH n=392	6e246ddc6128
-_mbsnbcmp_l	MATCH n=392	6e246ddc6128
-_mbsnbcnt	MATCH n=56	6e246ddc6128
-_mbsnbcnt_l	MATCH n=56	6e246ddc6128
-_mbsnccnt	MATCH n=56	6e246ddc6128
-_mbsnccnt_l	MATCH n=56	6e246ddc6128
-_mbsncmp	MATCH n=392	6e246ddc6128
-_mbsncmp_l	MATCH n=392	6e246ddc6128
-_mbsnextc	MATCH n=7	6e246ddc6128
-_mbsnextc_l	MATCH n=7	6e246ddc6128
-_mbsnlen	MATCH n=56	6e246ddc6128
-_mbsnlen_l	MATCH n=56	6e246ddc6128
-_mbsspn	MATCH n=49	6e246ddc6128
-_mbsspn_l	MATCH n=49	6e246ddc6128
-_mbstrlen	MATCH n=7	6e246ddc6128
-_mbstrlen_l	MATCH n=7	6e246ddc6128
-_setmbcp	DIFF rust=1 dll=0 of 40 first=_setmbcp:i=002	6e246ddc6128
-_stricmp	MATCH n=49	6e246ddc6128
-_stricmp_l	MATCH n=49	6e246ddc6128
-_tolower	MATCH n=40	6e246ddc6128
-_tolower_l	DIFF rust=1 dll=0 of 40 first=_tolower_l:i=000	6e246ddc6128
-_toupper	MATCH n=40	6e246ddc6128
-_toupper_l	DIFF rust=1 dll=0 of 40 first=_toupper_l:i=000	6e246ddc6128
-_towlower_l	MATCH n=40	6e246ddc6128
-_towupper_l	MATCH n=40	6e246ddc6128
-_wcsicmp	MATCH n=49	6e246ddc6128
-_wcsicmp_l	MATCH n=49	6e246ddc6128
-_wcsnicmp	MATCH n=392	6e246ddc6128
-_wcsnicmp_l	MATCH n=392	6e246ddc6128
-_wtoi	MATCH n=7	6e246ddc6128
-_wtoi64	MATCH n=7	6e246ddc6128
-_wtoi64_l	MATCH n=7	6e246ddc6128
-_wtoi_l	MATCH n=7	6e246ddc6128
-_wtol	MATCH n=7	6e246ddc6128
-_wtol_l	MATCH n=7	6e246ddc6128
-atoi	MATCH n=7	6e246ddc6128
-atol	MATCH n=7	6e246ddc6128
-atoll	NORUST dll=MATCH n=7	6e246ddc6128
-btowc	MATCH n=40	6e246ddc6128
+_mbbtombc	MATCH n=40	febc967f24d6-dirty
+_mbbtombc_l	MATCH n=40	febc967f24d6-dirty
+_mbbtype	MATCH n=64	febc967f24d6-dirty
+_mbbtype_l	MATCH n=64	febc967f24d6-dirty
+_mbcjistojms	MATCH n=40	febc967f24d6-dirty
+_mbcjistojms_l	MATCH n=40	febc967f24d6-dirty
+_mbcjmstojis	MATCH n=40	febc967f24d6-dirty
+_mbcjmstojis_l	MATCH n=40	febc967f24d6-dirty
+_mbclen	MATCH n=7	febc967f24d6-dirty
+_mbclen_l	MATCH n=7	febc967f24d6-dirty
+_mbctohira	MATCH n=40	febc967f24d6-dirty
+_mbctohira_l	MATCH n=40	febc967f24d6-dirty
+_mbctokata	MATCH n=40	febc967f24d6-dirty
+_mbctokata_l	MATCH n=40	febc967f24d6-dirty
+_mbctolower	MATCH n=40	febc967f24d6-dirty
+_mbctolower_l	MATCH n=40	febc967f24d6-dirty
+_mbctombb	MATCH n=40	febc967f24d6-dirty
+_mbctombb_l	MATCH n=40	febc967f24d6-dirty
+_mbctoupper	MATCH n=40	febc967f24d6-dirty
+_mbctoupper_l	MATCH n=40	febc967f24d6-dirty
+_mblen_l	MATCH n=56	febc967f24d6-dirty
+_mbsbtype	DIFF rust=37 dll=0 of 56 first=_mbsbtype:i=000	febc967f24d6-dirty
+_mbsbtype_l	DIFF rust=37 dll=0 of 56 first=_mbsbtype_l:i=000	febc967f24d6-dirty
+_mbscmp	MATCH n=49	febc967f24d6-dirty
+_mbscmp_l	MATCH n=49	febc967f24d6-dirty
+_mbscspn	MATCH n=49	febc967f24d6-dirty
+_mbscspn_l	MATCH n=49	febc967f24d6-dirty
+_mbsicmp	MATCH n=49	febc967f24d6-dirty
+_mbsicmp_l	MATCH n=49	febc967f24d6-dirty
+_mbslen	MATCH n=7	febc967f24d6-dirty
+_mbslen_l	MATCH n=7	febc967f24d6-dirty
+_mbsnbcmp	MATCH n=392	febc967f24d6-dirty
+_mbsnbcmp_l	MATCH n=392	febc967f24d6-dirty
+_mbsnbcnt	MATCH n=56	febc967f24d6-dirty
+_mbsnbcnt_l	MATCH n=56	febc967f24d6-dirty
+_mbsnccnt	MATCH n=56	febc967f24d6-dirty
+_mbsnccnt_l	MATCH n=56	febc967f24d6-dirty
+_mbsncmp	MATCH n=392	febc967f24d6-dirty
+_mbsncmp_l	MATCH n=392	febc967f24d6-dirty
+_mbsnextc	MATCH n=7	febc967f24d6-dirty
+_mbsnextc_l	MATCH n=7	febc967f24d6-dirty
+_mbsnlen	MATCH n=56	febc967f24d6-dirty
+_mbsnlen_l	MATCH n=56	febc967f24d6-dirty
+_mbsspn	MATCH n=49	febc967f24d6-dirty
+_mbsspn_l	MATCH n=49	febc967f24d6-dirty
+_mbstrlen	MATCH n=7	febc967f24d6-dirty
+_mbstrlen_l	MATCH n=7	febc967f24d6-dirty
+_setmbcp	DIFF rust=1 dll=0 of 40 first=_setmbcp:i=002	febc967f24d6-dirty
+_stricmp	MATCH n=49	febc967f24d6-dirty
+_stricmp_l	MATCH n=49	febc967f24d6-dirty
+_tolower	MATCH n=40	febc967f24d6-dirty
+_tolower_l	DIFF rust=1 dll=0 of 40 first=_tolower_l:i=000	febc967f24d6-dirty
+_toupper	MATCH n=40	febc967f24d6-dirty
+_toupper_l	DIFF rust=1 dll=0 of 40 first=_toupper_l:i=000	febc967f24d6-dirty
+_towlower_l	MATCH n=40	febc967f24d6-dirty
+_towupper_l	MATCH n=40	febc967f24d6-dirty
+_wcsicmp	MATCH n=49	febc967f24d6-dirty
+_wcsicmp_l	MATCH n=49	febc967f24d6-dirty
+_wcsnicmp	MATCH n=392	febc967f24d6-dirty
+_wcsnicmp_l	MATCH n=392	febc967f24d6-dirty
+_wtoi	MATCH n=7	febc967f24d6-dirty
+_wtoi64	MATCH n=7	febc967f24d6-dirty
+_wtoi64_l	MATCH n=7	febc967f24d6-dirty
+_wtoi_l	MATCH n=7	febc967f24d6-dirty
+_wtol	MATCH n=7	febc967f24d6-dirty
+_wtol_l	MATCH n=7	febc967f24d6-dirty
+atoi	MATCH n=7	febc967f24d6-dirty
+atol	MATCH n=7	febc967f24d6-dirty
+atoll	NORUST dll=MATCH n=7	febc967f24d6-dirty
+btowc	MATCH n=40	febc967f24d6-dirty
 isalnum	MATCH n=40	686d118764bb-dirty
 isalpha	MATCH n=40	686d118764bb-dirty
 isblank	MATCH n=40	686d118764bb-dirty
@@ -171,25 +171,25 @@ iswspace	MATCH n=40	686d118764bb-dirty
 iswupper	MATCH n=40	686d118764bb-dirty
 iswxdigit	MATCH n=40	686d118764bb-dirty
 isxdigit	MATCH n=40	686d118764bb-dirty
-legacy:ctype	MATCH n=514	6e246ddc6128
-legacy:string	MATCH n=363	6e246ddc6128
-legacy:strtox	DIFF rust=14 dll=0 of 598 first=strtoul:b16:-2147483648	6e246ddc6128
-llabs	NORUST dll=MATCH n=40	6e246ddc6128
-mblen	MATCH n=56	6e246ddc6128
+legacy:ctype	MATCH n=514	febc967f24d6-dirty
+legacy:string	MATCH n=363	febc967f24d6-dirty
+legacy:strtox	DIFF rust=14 dll=0 of 598 first=strtoul:b16:-2147483648	febc967f24d6-dirty
+llabs	NORUST dll=MATCH n=40	febc967f24d6-dirty
+mblen	MATCH n=56	febc967f24d6-dirty
 strcat	MATCH n=64	af738a3b14e7-dirty
-strcmp	MATCH n=49	6e246ddc6128
+strcmp	MATCH n=49	febc967f24d6-dirty
 strcpy	MATCH n=8	af738a3b14e7-dirty
 strcspn	MATCH n=49	af738a3b14e7-dirty
 strlen	MATCH n=7	af738a3b14e7-dirty
 strncat	MATCH n=448	af738a3b14e7-dirty
-strncmp	MATCH n=392	6e246ddc6128
+strncmp	MATCH n=392	febc967f24d6-dirty
 strncpy	MATCH n=56	af738a3b14e7-dirty
 strpbrk	MATCH n=64	af738a3b14e7-dirty
 strspn	MATCH n=49	af738a3b14e7-dirty
-tolower	MATCH n=40	6e246ddc6128
-toupper	MATCH n=40	6e246ddc6128
-towlower	MATCH n=40	6e246ddc6128
-towupper	MATCH n=40	6e246ddc6128
-wcscspn	MATCH n=49	6e246ddc6128
-wcsspn	MATCH n=49	6e246ddc6128
-wctob	MATCH n=40	6e246ddc6128
+tolower	MATCH n=40	febc967f24d6-dirty
+toupper	MATCH n=40	febc967f24d6-dirty
+towlower	MATCH n=40	febc967f24d6-dirty
+towupper	MATCH n=40	febc967f24d6-dirty
+wcscspn	MATCH n=49	febc967f24d6-dirty
+wcsspn	MATCH n=49	febc967f24d6-dirty
+wctob	MATCH n=40	febc967f24d6-dirty
