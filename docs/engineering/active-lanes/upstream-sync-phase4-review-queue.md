@@ -550,7 +550,269 @@ Two separate discoveries, the same shape, found while porting rangelist:
    `NtGetCurrentProcessorNumberEx` tests one of the two functions we found have no
    implementation anywhere.
 
-   **The tool to build is a `tools/payloads/apitest/` payload modelled on the kmtest one** —
-   same one-process-per-suite isolation, same serial protocol, same ratchet baseline. The
-   kmtest payload already proves every piece of the design. The one thing to do differently is
-   derive the suite list rather than commit it, so finding (1) cannot recur on the new harness.
+   **Job objects make the case concretely.** `ntoskrnl/ps/job.c` is 2,593 lines after the
+   merge; `ps-rust/src/job.rs` is 795, translated from the pre-merge stub-heavy version. Six
+   helpers have no Rust at all — `PspCloseJob`, `PspSetJobLimitsBasicOrExtended`,
+   `PspAssociateCompletionPortWithJob`, `PspQueryJobBasicAccountingInfo`,
+   `PspQueryJobLimitInformation`, `PspQueryJobProcessIdList`. The `Nt*` entry points are real
+   implementations rather than stubs, so nothing fails loudly; they are just the old, smaller
+   behaviour. That port needs a grader, and the merge shipped one: `JobObject.c`. Porting 1,800
+   lines of job-object semantics with no way to run its test is the expensive way to do it.
+
+   **BUILT** (2026-09-21), as `tools/payloads/apitest/` + `tools/conformance/parse_apitest_serial.py`:
+
+   - `sweep.c` pipes each child's stdout (apitests report through
+     `winetest_vprintf` → `fprintf(stdout)`, not the debug serial like kmtest) and re-emits it
+     as `[APITEST:<suite> <subtest>]`. Two-phase: a wine binary run with no arguments prints
+     usage and exits 1, so phase 1 parses its `Valid test names:` block and phase 2 runs one
+     process per subtest.
+   - The suite list is **derived** by `gen_suites.py`, not committed — which is the direct
+     lesson of (1). Quarantines are committed, at suite OR subtest granularity, and a
+     quarantine matching nothing is reported rather than silently ignored.
+   - `ENABLE_ROSTESTS_APITESTS` / `vibeos-cli build --apitests`, mirroring the kmtests switch,
+     because the full `ENABLE_ROSTESTS` has 4 non-apitest targets that do not build and a
+     failed build produces no ISO.
+   - Three build fixes got 63/63 apitests linking: `rtl_unittest` had not linked since the
+     ntdll cohab flip (`rtl_um` is an empty stub, its `libsupp.c` being Rust inside
+     `libntdll_rust.a`, which only ntdll links — nine undefined symbols nobody saw because
+     nothing builds rostests); `shlwapi_apitest` gained C++ suites in the merge without
+     gaining `cpprt`; and `winetestlib` had to come out of the `ENABLE_ROSTESTS` guard.
+   - The parser shares `ratchet.py` with the kmtest one, so the floor semantics cannot drift.
+
+   **Three real bugs in the first four boots**, all in the roadmap's live registry:
+   `afd_apitest send` → BUGCHECK 0x1E (`FCB->ReceiveIrp.InFlightRequest != Irp`; the
+   translation is faithful to `read.c:279`, so the broken thing is the invariant),
+   `advapi32_apitest RtlEncryptMemory` crash-looping `services.exe`, and `opengl32_apitest`
+   wedging during enumeration.
+
+   **Still owed**: a banked baseline (needs one boot that reaches
+   `[APITEST-SWEEP] done`, which means quarantining crashers until it does), and i386/arm64,
+   which will each surface their own. amd64 is the characterisation arch for now.
+
+## The harness's first root-caused crasher: `gdi32_apitest SetSysColors`
+
+Characterisation round 3 died with `BUGCHECK 0x0000001E (0xC0000005, …)` at
+`win32k.sys+0xFADD8`, serial archived at `.characterize-amd64/round03-amd64-uefi_serial.log`.
+Root-caused entirely offline — no QEMU, so it did not contend with the running driver.
+
+**`NtUserSetSysColors` is a new member of the documented probe-then-raw-read cluster**
+(`ntkrnl-sys/src/probe.rs`: "the memcpy+0x40 cluster — ObSymbolicLink /
+ZwWaitForMultipleObjects / IoReadWrite"). This is the first one found in win32k rather than
+ntoskrnl, and the first found by a *test* rather than by a boot crash.
+
+The chain:
+
+- `SetSysColors.c` opens with `SetSysColors(1, NULL, crColors)` and asserts `FALSE` +
+  `ERROR_NOACCESS`. The NULL is deliberate — the test exists to drive the error path.
+- `SafeProbeForRead(NULL, 4, 1)` **legitimately succeeds**. It is validate-only by design
+  (`safe_user_io.rs`): it range/alignment-checks against `MmUserProbeAddress` and does not
+  touch the page, because a touch fault has no handler under `USE_DUMMY_PSEH`. NULL is below
+  the probe boundary, so the range check passes.
+- The C then reads the array *inside* the same `_SEH2_TRY` as the probe, so the access
+  violation is caught and turned into `FALSE` / `ERROR_NOACCESS` — exactly what the test wants.
+- Our Rust probes, then calls `IntSetSysColors` **outside** any guard. The read faults with
+  nothing to catch it → `BUGCHECK 0x1E`.
+
+Disassembly pins it exactly: the faulting instruction is
+`10add8: movl (%rdi,%r14,4), %eax` — `lpaElements[i]` in the inlined `IntSetSysColors` loop,
+with `%r14 = 0`, i.e. the read of `NULL[0]`. The bugcheck's fault-address parameter is `0`.
+
+**The fix is precedented, not novel.** `win32k-rust/src/copy.rs` already closes this exact hole
+for `MmCopyFromCaller`/`MmCopyToCaller`, with a comment naming it (task #68): the probe stays
+validate-only and the *copy* becomes fault-tolerant via `KmProtectedCopyMemory`, which is
+protected on all three arches and carries a per-boot `[KMSAFECOPY] … (PASS)` oracle. So
+`NtUserSetSysColors` should capture the two user arrays through a fault-tolerant copy and run
+`IntSetSysColors` over the kernel copies, mapping a faulted copy to
+`SetLastNtError(STATUS_ACCESS_VIOLATION)` + `FALSE`.
+
+Note `cElements` is caller-controlled up to `0x3FFFFFFF`, so the capture must be **chunked**
+rather than allocated whole — a naive capture is an 8 GB allocation from user mode. Chunking is
+semantically identical, since `IntSetSysColors` applies elements independently and the C's SEH
+likewise aborts mid-loop leaving earlier elements applied.
+
+**Not fixed in this lane yet, and deliberately so**: `characterize.py` rebuilds from the working
+tree every round, so a source edit made while it runs silently enters the characterisation
+media. The fix waits for the driver to finish. The quarantine entry is what keeps the sweep
+moving meanwhile.
+
+One stale comment found on the way: `ntoskrnl/kmsafecopy.c` still says arm64 was "TRIED AND
+REJECTED". `probe.rs` records arm64 as PROTECTED since 2026-07-17 after the `.xdata`
+`save_next` decoder fix (§9.69/§9.93). `probe.rs` is the newer of the two; `kmsafecopy.c`'s
+header needs the correction.
+
+## The harness was lying about its own budget, and the driver turned that into false bugs
+
+Between the SetSysColors root-cause and the next round it became clear that the characterisation
+loop had a worse problem than any bug it was finding: **it was manufacturing bugs.**
+
+`launch_drain_secs` is consumed by `test_payload.py`'s drain loop, which was
+`for _ in range(budget)` wrapped around `serial_output(timeout=1.0)`. That call returns the
+instant bytes are already waiting, so one "second" cost a full second only while the guest was
+**silent**, and about 20 ms while it was talking. The budget therefore shrank in proportion to
+how chatty the payload was — precisely inverted, since the payloads that need the longest drain
+are the ones that produce the most output.
+
+The apitest sweep is the chattiest payload after procstorm. Its declared 7200-second drain was
+ending after 12–28 minutes, mid-sweep, every single run:
+
+| round | subtests launched | wall clock | ended on |
+|---|---|---|---|
+| 1 | 60 | 12 min | ordinary output, mid-stream |
+| 2 | 61 | 21 min | ordinary output, mid-stream |
+| 3 | 156 | 3 min | **genuine BUGCHECK** (SetSysColors) |
+| 4 | 174 | 28 min | iphlpapi subtest's own passing summary |
+| 5 | 173 | 23 min | iphlpapi subtest's own passing summary |
+
+The truncation was not the expensive part. `characterize.py` attributes a boot that stopped
+early to whichever subtest was in flight, so **each truncated round minted a "crasher" and
+committed it to the quarantine**. Seven innocent subtests had been quarantined this way: `afd
+windowsize`, `appshim ignorefreelib`, `cmd attrib` / `exit` / `pushd`, and both `iphlpapi
+GetOwnerModuleFrom*Entry`. The tell was in every one of their serials and nobody looked for it —
+the log ends with **the accused subtest's own summary line and its `[EXIT-THR]`**. It had passed
+and exited; the harness just stopped reading. All seven removed.
+
+What stays has *positive* evidence rather than an absence of output: a BUGCHECK banner
+(`afd send`, `gdi32 SetSysColors`) or `services.exe` visibly restart-looping
+(`advapi32 RtlEncryptMemory`). That is the discriminator worth keeping — **"the log stops here"
+is not evidence of anything; "the log shows something going wrong here" is.**
+
+**This footgun was already written down, one directory away.** `procstorm/payload.yaml` carried
+a NOTE explaining the read-iteration semantics — it had been bitten first (2400 "seconds" spent
+in 175 s, its storm cut off at 500/1000) — and worked around it by inflating its own number to
+60000 rather than fixing the loop. The next payload to come along walked straight into it. This
+is the second time in two days the same shape has cost us: the `pytest-current` symlink had its
+fix sitting in `conformance.py` with a comment naming the wedge it lost, and the new tool made
+the identical mistake beside it. **A note that documents a footgun instead of removing it is a
+deferred bug with interest.**
+
+So the fix is the loop, not another note: the drain is wall-clock bounded, procstorm's number
+goes back to a real duration, and `characterize.py`'s pytest timeout moves above the drain budget
+so the driver cannot quietly become the real bound again.
+`tools/test_payload_drain.py` pins it with a **chatty-guest** case, which is the only kind that
+can distinguish the two implementations — a test that feeds an idle guest passes against both.
+
+### …and the fix promoted the next bound down
+
+The drain fix was correct and bought nothing. The next run truncated at **~30 minutes** and
+quarantined four more innocent subtests — `cmd_apitest attrib`/`exit`/`pushd`, the same three
+just removed, plus `iphlpapi GetExtendedUdpTable`, whose serial ends with its own summary and
+`[EXIT-THR] exit_status=0x4`.
+
+The new bound was `tests/qemu/vm.py`'s `MAX_VM_LIFETIME_SECONDS`, a 30-minute hard cap.
+`qemu/lib/common.sh` has always honoured `VIBEOS_QEMU_MAX_LIFETIME` and its comment says it
+mirrors that constant — it did not, so the shell path was tunable and the pytest path was not.
+
+**Three bounds, each hidden behind the one above it.** That is the actual lesson, and it is why
+the fix is not "raise the budget": every raise promotes the next-lowest timer into the same role.
+The rule now is on the accusation, not the clock — a round may quarantine only on positive
+evidence the **guest** faulted, with a harness kill counting as counter-evidence, and the driver
+reads the rig's own output to tell them apart. `tools/test_characterize_attribution.py` pins it,
+including the converse case that stops the loop going inert.
+
+One casualty, and the third instance of one lesson in two days: `archive()` collided across runs
+(round numbers restart at 1; `--artifact-dir` replaced the timestamped default), so the
+SetSysColors BUGCHECK serial was overwritten. The flag added for durability removed
+run-uniqueness. The analysis survives in `c4e66b8695e` and the crash reproduces by unquarantining
+the subtest, so this one is annoying rather than expensive.
+
+### Correction: four of the seven retractions were wrong
+
+Running the sweep with all three bounds lifted settled it, and it went against me. Each of the
+three rounds wedged inside `cmd_apitest` and the driver re-derived `attrib`, `exit` and `pushd`
+on its own — the same entries I had removed the day before. One boot sat **silent for 77
+minutes** after `launch cmd_apitest.exe attrib`, with QEMU alive and the serial not growing.
+That is a hang, not a truncation.
+
+The reasoning error is the useful part. For the iphlpapi pair the evidence was real: their
+serials end with the subtest's own passing summary and `[EXIT-THR]`, so the child had genuinely
+finished. I extended that verdict to three `cmd_apitest` entries **whose last-launch lines I
+never looked at** — they show no completion at all. And even for iphlpapi the conclusion did not
+follow, because a child completing says nothing about whether the *sweep* recovered: in both
+rounds the sweep printed `launch` and never the matching `exit`. All five had stopped the sweep;
+only the reason differed.
+
+So "the log stops here is not evidence" was right, and I used it to conclude innocence, which is
+the same error mirrored. The discriminator that actually works is **the launch/exit pairing —
+did the sweep advance** — and its runtime form is **silence**, which is the one signal the rig
+cannot manufacture while it is still reading.
+
+Both iphlpapi entries are restored. `launch_idle_secs: 600` now ends a drain on ten minutes of
+quiet, `drain_for_marker` reports *why* it stopped, and `should_quarantine` accuses only on a
+BUGCHECK or an idle stop — innocent by default, which is the polarity the original rule had
+backwards. Side benefit: a wedge costs ten minutes instead of the full two-hour budget.
+
+**Still open on `cmd_apitest`:** three of its six subtests wedge the guest. Not yet root-caused,
+and the suite is a plausible candidate for a single shared cause (it spawns `cmd.exe` children,
+which is also the grandchild-inherits-the-pipe shape suspected behind the iphlpapi stalls).
+
+## The process-wedge cluster: two blind alleys eliminated, and the experiment that is actually needed
+
+The cluster is the rounds that end with **no BUGCHECK at all** and one unresolved
+`[APITEST-SWEEP] launch` — as distinct from the ~20 rounds that ended in a clean 0x1E.
+Across all 39 archived serials it is: `cmd_apitest` attrib/exit/pushd, `kernel32_apitest`
+(eight victims, one cause), `msvcrt_apitest` _wsystem/atexit/static_construct/system,
+`iphlpapi_apitest GetExtendedTcpTable`, and `user32_apitest` LoadImage/desktop.
+
+**Attribution checks out.** Re-derived independently over all 39 serials by classifying every
+`launch` as resolved by a matching `exit` *or* a `TIMEOUT … terminated` line: every wedge round
+has **exactly one** unresolved row, and it is the one in the quarantine file. No round has two,
+which is what a misattribution would look like.
+
+A correction to how I first read this: an unpaired `launch` is **not** the discriminator on its
+own. Four subtests (`afd windowsize`, `appshim ignorefreelib`, `iphlpapi GetExtendedUdpTable`,
+`msvcrt log10`) appear in the 063608 serials as `launch` with no `exit` — and each is followed by
+`TIMEOUT … (120s) - terminated`, after which the sweep carries straight on. They are *resolved*
+rows. `parse_apitest_serial.py`'s `RESOLVED` set already encodes this; an ad-hoc grep does not.
+Worth noting for the same four: they were **timeouts** in the 063608 run and **BUGCHECKs** in the
+132403 run. Same subtests, different outcome across runs, so this class is not deterministic.
+
+The msvcrt four are all CRT process/teardown tests — `system`, `_wsystem`, `atexit`,
+`static_construct` — which is one cause wearing four names, and supports treating the cluster as
+a single investigation rather than a dozen bugs.
+
+**Two attractive signatures, both eliminated. Do not re-chase these:**
+
+- **`co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`** (window.rs:3485),
+  followed by threads piling into `UserRequest` waits (`[CENSUS] … 88 thread(s) parked >20s`).
+  This reads exactly like a window-manager deadlock strangling every console-spawning test, and
+  it is ambient: **11–16 occurrences in every single serial**, including rounds that ended in an
+  unrelated BUGCHECK and rounds that reached `[APITEST-SWEEP] done`. It does not discriminate.
+  (It may still be a real bug worth fixing on its own; it is not *this* bug.)
+- **The serial ending mid-line** — most wedge captures end on a bare `[`, which looks like the
+  box freezing inside a debug print. Also ambient: 15 of 20 BUGCHECK rounds end the same way. It
+  is how the capture ends when the VM is killed with the serial buffer mid-flush.
+
+- **Leftover `WineTestService` registrations being restarted by services.exe.**
+  `advapi32_apitest ServiceArgs` registers services, and several wedge tails show
+  `ScmStartUserModeService(WineTestServiceNNNNN)` cycling long after advapi32 finished --
+  which reads like a service-restart storm strangling the box. Counted across all 42
+  archived serials as matches in the last 300 lines, split by outcome:
+
+      CRASH: 0 0 0 0 0 0 4 6 7 14 21 21 21 23 27 27 27 27 27 27 30 38 39 41
+      WEDGE: 0 0 0 21 21 21 21 27 27 27 27 27 27 27 30 35 48 48
+
+  Same distribution, zeros in both. No discrimination.
+
+Each was checked precisely because it looked conclusive. The generalisable bit: a signature
+found by staring at failing logs means nothing until it has been counted in the PASSING ones too.
+
+**And there is a structural reason all three failed the same way.** A serial here is 20-45
+minutes of a busy multi-process OS, so nearly any subsystem message appears *somewhere* in
+every one of them. Selecting a signature out of a failing tail selects on PRESENCE, and at
+this log volume presence is close to universal. Only two kinds of signal can discriminate:
+one tied to the specific transition under investigation -- the `launch`/`exit`/`TIMEOUT`
+pairing, which is per-subtest by construction -- or one whose absence from healthy runs is
+guaranteed rather than merely observed. Stop looking for a message; look for a pairing, or
+run the isolated boot.
+
+**What is actually known, and it is the same two facts as before:** the sweep's own 120s
+per-subtest timeout never fires, so the sweep — an ordinary user-mode process — is not running
+either, which makes this the box dying rather than the harness waiting; and the wedged child
+emits no output whatsoever.
+
+**The next step is not more log archaeology, it is a single-suite boot.** Build media whose suite
+list contains *only* `msvcrt_apitest` with only `system` unskipped, and boot it. If it wedges in
+isolation that is a ~20-minute reproduction instead of a 3-hour sweep, with no other suite's
+residue in the serial — and it also answers whether the wedge needs the preceding 200 subtests
+(leftover `WineTestService` registrations, a leaked handle, exhausted desktop heap) or is
+self-contained. `gen_suites.py` already takes the lists, so this needs no new tooling.

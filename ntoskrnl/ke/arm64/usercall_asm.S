@@ -49,6 +49,15 @@
  */
 .globl KiCallUserMode
 KiCallUserMode:
+    /* d8-d15 are callee-saved (AAPCS64) and the callback runs arbitrary user
+     * code plus nested traps before we return. KCALLOUT_FRAME has a fixed
+     * ketypes.h layout, so they go in their own area just above it;
+     * KiCallbackReturn lands on the frame and the return below pops both. */
+    stp     d8,  d9,  [sp, #-64]!
+    stp     d10, d11, [sp, #16]
+    stp     d12, d13, [sp, #32]
+    stp     d14, d15, [sp, #48]
+
     /* Allocate KCALLOUT_FRAME on kernel stack */
     sub     sp, sp, #CfSize
 
@@ -88,6 +97,11 @@ KiCallUserModeReturn:
 
     /* Deallocate KCALLOUT_FRAME */
     add     sp, sp, #CfSize
+
+    ldp     d10, d11, [sp, #16]
+    ldp     d12, d13, [sp, #32]
+    ldp     d14, d15, [sp, #48]
+    ldp     d8,  d9,  [sp], #64
 
     /* Return to KeUserModeCallback with status in x0 */
     ret

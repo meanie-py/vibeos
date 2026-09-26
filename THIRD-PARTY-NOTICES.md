@@ -2,17 +2,21 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-26 vendored C/C++ components:
+38 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
 - [adns](#adns) — 1.0 — GPL-2.0-or-later
 - [AMD LibM for Windows](#amd-libm-for-windows) — git commit 6121d02 — MIT
+- [C-Media CMI8738/8768 WDM audio driver](#c-media-cmi87388768-wdm-audio-driver) — 1.2.6 — BSD-3-Clause
+- [chmc (CHM compiler)](#chmc-chm-compiler) — ??? (Imported on 2015.08.11: 65780ec (r68685)) — GPL-3.0-or-later
+- [dosfstools (fsck.fat)](#dosfstools-fsckfat) — 4.1 — GPL-3.0-or-later
 - [dxtn (S3TC)](#dxtn-s3tc) — unknown — MIT
 - [EDK2 / TianoCore headers](#edk2--tianocore-headers) — unknown — BSD-2-Clause
 - [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
 - [FreeType](#freetype) — 2.10.4 — GPL-2.0-only
+- [libdxg D3DKMT thunk header](#libdxg-d3dkmt-thunk-header) — git commit 045831e — MIT
 - [libjpeg](#libjpeg) — 9f — IJG
 - [libmpg123](#libmpg123) — 1.33.7 — LGPL-2.1
 - [libpng](#libpng) — 1.6.58 — libpng-2.0
@@ -21,12 +25,20 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [libtirpc](#libtirpc) — 0.2.1 — BSD-3-Clause
 - [libxml2](#libxml2) — 2.13.9 — MIT
 - [libxslt](#libxslt) — 1.1.42 — MIT
+- [lzx_compress (LZX encoder)](#lzx_compress-lzx-encoder) — ??? (Imported on 2015.08.11: 65780ec (r68685)) — LGPL-2.1-or-later
 - [Mbed TLS](#mbed-tls) — 3.6.7 — Apache-2.0 OR GPL-2.0-or-later
+- [Mesa 3-D graphics library](#mesa-3-d-graphics-library) — 2.6 — LGPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
 - [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
+- [OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)](#opengl-sdk-headers-mesa-glh-khronos-glexth-sgi-gluh) — 7.6 — MIT
+- [rdesktop (as mstsc.exe)](#rdesktop-as-mstscexe) — 1.8.3 — GPL-3.0-or-later
+- [rdesktop (rosapps tsclient)](#rdesktop-rosapps-tsclient) — 1.8.3 — GPL-3.0-or-later
+- [Schily Tools (mkisofs)](#schily-tools-mkisofs) — schily-2017-09-07 — CDDL-1.0
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
 - [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
+- [TreeList control](#treelist-control) — ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668)) — GPL-3.0-or-later
 - [VirtIO driver library](#virtio-driver-library) — unknown — BSD-3-Clause
+- [VirtIO NetKVM guest driver (NDIS 5)](#virtio-netkvm-guest-driver-ndis-5) — git commit 5e01b36 — BSD-3-Clause
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
 - [zlib](#zlib) — 1.3.2 — Zlib
@@ -36,9 +48,9 @@ This product includes third-party software. **This file is GENERATED** from `ven
 
 - Upstream: Microsoft Windows-driver-samples
 - Version: unknown
-- In this tree: `drivers/wdm/audio/drivers/ac97`
+- In this tree: `vendor/ac97`
 - Licence: MIT
-- Grant reproduced from: `drivers/wdm/audio/drivers/ac97/license.txt`
+- Grant reproduced from: `vendor/ac97/license.txt`
 
 ```
 MIT License
@@ -512,13 +524,762 @@ Defines __L_2_by_pi_bits array
 Used in trigonometric argument reduction
 ```
 
+## C-Media CMI8738/8768 WDM audio driver
+
+- Upstream: https://code.google.com/archive/p/cmediadrivers/
+- Version: 1.2.6
+- In this tree: `vendor/cmidriver`
+- Licence: BSD-3-Clause
+- Grant reproduced from: `vendor/cmidriver/adapter.cpp (header comment)`
+
+```
+Copyright (c) 2006-2008 dogbert <dogber1@gmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. The name of the author may not be used to endorse or promote products
+   derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## chmc (CHM compiler)
+
+- Upstream: https://sourceforge.net/projects/chmc/
+- Version: ??? (Imported on 2015.08.11: 65780ec (r68685))
+- In this tree: `sdk/tools/hhpcomp/chmc`
+- Licence: GPL-3.0-or-later
+- Grant reproduced from: `sdk/tools/hhpcomp/chmc/chmc.c (header comment)`
+
+```
+Copyright(C) 2010 Alex Andreotti <alex.andreotti@gmail.com>
+
+  This file is part of chmc.
+
+  chmc is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  chmc is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with chmc.  If not, see <http://www.gnu.org/licenses/>.
+```
+
+## dosfstools (fsck.fat)
+
+- Upstream: https://github.com/dosfstools/dosfstools
+- Version: 4.1
+- In this tree: `vendor/dosfstools`
+- Licence: GPL-3.0-or-later
+- Also contains: LGPL-2.1-or-later — byteswap.h and byteswap1.h are GNU C Library headers ("This file is part of the GNU C Library", FSF 1997-2003) that dosfstools carries for portability. Two headers, no bodies.
+
+- Grant reproduced from: `vendor/dosfstools/COPYING`
+
+```
+GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <http://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+the GNU General Public License is intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.  We, the Free Software Foundation, use the
+GNU General Public License for most of our software; it applies also to
+any other work released this way by its authors.  You can apply it to
+your programs, too.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights.  Therefore, you have
+certain responsibilities if you distribute copies of the software, or if
+you modify it: responsibilities to respect the freedom of others.
+
+  For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received.  You must make sure that they, too, receive
+or can get the source code.  And you must show them these terms so they
+know their rights.
+
+  Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
+
+  For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software.  For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
+
+  Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the manufacturer
+can do so.  This is fundamentally incompatible with the aim of
+protecting users' freedom to change the software.  The systematic
+pattern of such abuse occurs in the area of products for individuals to
+use, which is precisely where it is most unacceptable.  Therefore, we
+have designed this version of the GPL to prohibit the practice for those
+products.  If such problems arise substantially in other domains, we
+stand ready to extend this provision to those domains in future versions
+of the GPL, as needed to protect the freedom of users.
+
+  Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish to
+avoid the special danger that patents applied to a free program could
+make it effectively proprietary.  To prevent this, the GPL assures that
+patents cannot be used to render the program non-free.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU General Public License.
+
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
+
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
+
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
+
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
+
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
+
+  The Corresponding Source for a work in source code form is that
+same work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
+
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
+
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
+
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
+
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
+
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
+
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU General Public License from time to time.  Such new versions will
+be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    <one line to give the program's name and a brief idea of what it does.>
+    Copyright (C) <year>  <name of author>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If the program does terminal interaction, make it output a short
+notice like this when it starts in an interactive mode:
+
+    <program>  Copyright (C) <year>  <name of author>
+    This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; type `show c' for details.
+
+The hypothetical commands `show w' and `show c' should show the appropriate
+parts of the General Public License.  Of course, your program's commands
+might be different; for a GUI interface, you would use an "about box".
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU GPL, see
+<http://www.gnu.org/licenses/>.
+
+  The GNU General Public License does not permit incorporating your program
+into proprietary programs.  If your program is a subroutine library, you
+may consider it more useful to permit linking proprietary applications with
+the library.  If this is what you want to do, use the GNU Lesser General
+Public License instead of this License.  But first, please read
+<http://www.gnu.org/philosophy/why-not-lgpl.html>.
+```
+
 ## dxtn (S3TC)
 
 - Upstream: unknown
 - Version: unknown
-- In this tree: `dll/3rdparty/dxtn`
+- In this tree: `vendor/dxtn`
 - Licence: MIT
-- Grant reproduced from: `dll/3rdparty/dxtn/txc_compress_dxtn.c (header comment)`
+- Grant reproduced from: `vendor/dxtn/txc_compress_dxtn.c (header comment)`
 
 ```
 libtxc_dxtn
@@ -1008,6 +1769,27 @@ applications. This exception does not alter any other responsibilities of
 the licensee under the GPL (meaning that such software must still obey
 the GPL for the free ("open-sourced") code that has been integrated into
 the said software).
+```
+
+## libdxg D3DKMT thunk header
+
+- Upstream: https://github.com/microsoft/libdxg
+- Version: git commit 045831e
+- In this tree: `sdk/include/ddk/d3dkmthk.h`
+- Licence: MIT
+- Grant reproduced from: `sdk/include/ddk/d3dkmthk.h (header comment)`
+
+```
+Module*Header**********************************\
+
+Module Name: d3dkmthk.h
+
+Content: Windows Display Driver Model (WDDM) kernel mode thunk interfaces
+
+Copyright (c) Microsoft Corporation.
+Licensed under the MIT License.
+
+\*****************************************************************************/
 ```
 
 ## libjpeg
@@ -2329,9 +3111,9 @@ be appreciated.
 
 - Upstream: https://libsndfile.github.io/libsamplerate/
 - Version: 0.2.2
-- In this tree: `sdk/lib/3rdparty/libsamplerate`
+- In this tree: `vendor/libsamplerate`
 - Licence: BSD-2-Clause
-- Grant reproduced from: `sdk/lib/3rdparty/libsamplerate/COPYING`
+- Grant reproduced from: `vendor/libsamplerate/COPYING`
 
 ```
 Copyright (c) 2012-2016, Erik de Castro Lopo <erikd@mega-nerd.com>
@@ -2866,6 +3648,32 @@ Except as contained in this notice, the name of the authors shall not
 be used in advertising or otherwise to promote the sale, use or other deal-
 ings in this Software without prior written authorization from him.
 ----------------------------------------------------------------------
+```
+
+## lzx_compress (LZX encoder)
+
+- Upstream: https://sourceforge.net/projects/chmc/
+- Version: ??? (Imported on 2015.08.11: 65780ec (r68685))
+- In this tree: `sdk/tools/hhpcomp/lzx_compress`
+- Licence: LGPL-2.1-or-later
+- Grant reproduced from: `sdk/tools/hhpcomp/lzx_compress/lzx_layer.c (header comment)`
+
+```
+File lzx_layer.c, part of lzxcomp library
+    Copyright (C) 2002 Matthew T. Russotto
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU Lesser General Public License as published by
+    the Free Software Foundation; version 2.1 only
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ```
 
 ## Mbed TLS
@@ -3432,13 +4240,224 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 ```
 
+## Mesa 3-D graphics library
+
+- Upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
+- Version: 2.6
+- In this tree: `dll/opengl/mesa`
+- Licence: LGPL-2.0-or-later
+- Grant reproduced from: `dll/opengl/mesa/context.c (header comment)`
+
+```
+$Id: context.c,v 1.64 1998/02/05 00:34:56 brianp Exp $ */
+
+
+Mesa 3-D graphics library
+Version:  2.6
+Copyright (C) 1995-1997  Brian Paul
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Library General Public
+License as published by the Free Software Foundation; either
+version 2 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Library General Public License for more details.
+
+You should have received a copy of the GNU Library General Public
+License along with this library; if not, write to the Free
+Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+
+
+
+$Log: context.c,v $
+Revision 1.64  1998/02/05 00:34:56  brianp
+added John Stone's initial thread modifications
+
+Revision 1.63  1998/01/06 02:40:52  brianp
+added DavidB's clipping interpolation optimization
+
+Revision 1.62  1997/12/31 06:10:03  brianp
+added Henk Kok's texture validation optimization (AnyDirty flag)
+
+Revision 1.61  1997/12/08 04:04:52  brianp
+changed gl_copy_context() to not use MEMCPY for PolygonStipple (John Stone)
+
+Revision 1.60  1997/12/06 18:06:50  brianp
+moved several static display list vars into GLcontext
+
+Revision 1.59  1997/11/25 03:37:53  brianp
+simple clean-ups for multi-threading (John Stone)
+
+Revision 1.58  1997/10/29 01:29:09  brianp
+added GL_EXT_point_parameters extension from Daniel Barrero
+
+Revision 1.57  1997/10/16 01:59:08  brianp
+added GL_EXT_shared_texture_palette extension
+
+Revision 1.56  1997/10/15 03:08:50  brianp
+don't clear depth buffer in gl_ResizeBuffersMESA()
+
+Revision 1.55  1997/09/29 22:25:28  brianp
+added const to a few function parameters
+
+Revision 1.54  1997/09/27 00:15:20  brianp
+added ctx->DirectContext flag
+
+Revision 1.53  1997/09/23 00:58:15  brianp
+now using hash table for texture objects
+
+Revision 1.52  1997/09/22 02:33:58  brianp
+display lists now implemented with hash table
+
+Revision 1.51  1997/09/17 01:39:11  brianp
+added update_clipmask() function from Michael Pichler
+
+Revision 1.50  1997/09/10 00:29:19  brianp
+set all NewState flags in gl_ResizeBuffersMESA() (Miklos Fazekas)
+
+Revision 1.49  1997/07/24 01:24:45  brianp
+changed precompiled header symbol from PCH to PC_HEADER
+
+Revision 1.48  1997/06/20 02:19:49  brianp
+replaced Current.IntColor with Current.ByteColor
+
+Revision 1.47  1997/06/20 01:57:28  brianp
+free_shared_state() didn't free display lists
+
+Revision 1.46  1997/05/31 16:57:14  brianp
+added MESA_NO_RASTER env var support
+
+Revision 1.45  1997/05/28 04:06:03  brianp
+implemented projection near/far value stack for Driver.NearFar() function
+
+Revision 1.44  1997/05/28 03:23:48  brianp
+added precompiled header (PCH) support
+
+Revision 1.43  1997/05/26 21:18:54  brianp
+better comments
+
+Revision 1.42  1997/05/26 21:14:13  brianp
+gl_create_visual() now takes red/green/blue/alpha_bits arguments
+
+Revision 1.41  1997/05/24 12:07:07  brianp
+removed unused vars
+
+Revision 1.40  1997/05/14 03:27:24  brianp
+miscellaneous alloc/free clean-ups
+
+Revision 1.39  1997/05/09 22:42:09  brianp
+replaced gl_init_vb() with gl_alloc_vb(), similarly for pb
+
+Revision 1.38  1997/05/01 02:07:35  brianp
+added shared state variable NextFreeTextureName
+
+Revision 1.37  1997/05/01 01:25:33  brianp
+added call to gl_init_math()
+
+Revision 1.36  1997/04/28 02:06:14  brianp
+also check if texturing enabled in the test for NeedNormals
+
+Revision 1.35  1997/04/26 04:34:43  brianp
+fixed problem with Depth/Accum/StencilBits initialization (Mark Kilgard)
+
+Revision 1.34  1997/04/24 01:49:02  brianp
+call gl_set_color_function() instead of directly setting pointers
+
+Revision 1.33  1997/04/24 00:18:10  brianp
+Proxy2D tex object was allocated twice.  reported by Randy Frank.
+
+Revision 1.32  1997/04/16 23:55:06  brianp
+added gl_set_api_table()
+
+Revision 1.31  1997/04/14 02:01:03  brianp
+#include "texstate.h" instead of "texture.h"
+
+Revision 1.30  1997/04/12 17:11:38  brianp
+added gl_get_current_context()
+
+Revision 1.29  1997/04/12 16:54:05  brianp
+new NEW_POLYGON state flag
+
+Revision 1.28  1997/04/12 16:20:51  brianp
+added call to Driver.Dither() in gl_update_state()
+
+Revision 1.27  1997/04/12 12:25:37  brianp
+added Driver.QuadFunc and Driver.RectFunc
+
+Revision 1.26  1997/04/01 04:20:22  brianp
+added new matrix type code
+
+Revision 1.25  1997/03/14 00:24:37  brianp
+only print runtime warnings if MESA_DEBUG env var is set
+
+Revision 1.24  1997/03/13 03:06:14  brianp
+init AlphaRefUbyte to zero
+
+Revision 1.23  1997/03/08 01:59:00  brianp
+if RenderMode != GL_RENDER then don't enable ctx->DirectTriangles
+
+Revision 1.22  1997/02/27 19:57:38  brianp
+added gl_problem() function
+
+Revision 1.21  1997/02/10 19:49:50  brianp
+added gl_ResizeBuffersMESA()
+
+Revision 1.20  1997/02/10 19:22:47  brianp
+added device driver Error() function
+
+Revision 1.19  1997/02/09 18:50:05  brianp
+added GL_EXT_texture3D support
+
+Revision 1.18  1997/01/28 22:15:14  brianp
+now there's separate state for CI and RGBA logic op enabled
+
+Revision 1.17  1997/01/09 19:56:09  brianp
+new error message format in gl_error()
+
+Revision 1.16  1997/01/09 19:47:32  brianp
+better checking and handling of out-of-memory errors
+
+Revision 1.15  1996/12/18 20:00:12  brianp
+added code to initialize ColorMaterialBitmask
+
+Revision 1.14  1996/12/11 20:18:53  brianp
+changed formatting of messages in gl_warning()
+
+Revision 1.13  1996/11/08 02:20:52  brianp
+added check for MESA_NO_RASTER env var
+
+Revision 1.12  1996/11/04 02:18:47  brianp
+multiply Viewport.Sz and .Tz by DEPTH_SCALE
+
+Revision 1.11  1996/10/16 00:52:22  brianp
+gl_initialize_api_function_pointers() now gl_init_api_function_pointers()
+
+Revision 1.10  1996/10/11 03:41:28  brianp
+removed Polygon.OffsetBias initialization
+
+Revision 1.9  1996/10/11 00:26:34  brianp
+initialize Point/Line/PolygonZoffset to 0.0
+
+Revision 1.8  1996/10/01 01:42:31  brianp
+moved device driver initialization into gl_update_state()
+
+Revision 1.7  1996/09/27 01:24:33  brianp
+removed unneeded set_thread_context(), added call to gl_init_vb()
+
+Revision 1.6  1996/09/25 03:22:53  brianp
+```
+
 ## Microsoft compiler-tests (EH/SEH)
 
 - Upstream: https://github.com/microsoft/compiler-tests
 - Version: unknown
-- In this tree: `modules/rostests/apitests/compiler/ms`
+- In this tree: `vendor/ms-compiler-tests`
 - Licence: MIT
-- Grant reproduced from: `modules/rostests/apitests/compiler/ms/LICENSE.TXT`
+- Grant reproduced from: `vendor/ms-compiler-tests/LICENSE.TXT`
 
 ```
 The MIT License (MIT)
@@ -3477,17 +4496,497 @@ THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only "Copyright (c) 
 This is the largest unresolved provenance question in the tree (~78K lines) and the reason the entry says the SDK version is unknown: without the version we cannot even name which EULA applies. It is recorded here rather than rounded off so that generated notices state the gap instead of hiding it. Resolving it means establishing the SDK version and its terms, or replacing the tree — see the ucrtbase work item in the roadmap.
 ```
 
+## OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
+
+- Upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
+- Version: 7.6
+- In this tree: `sdk/include/GL`
+- Licence: MIT
+- Also contains: Khronos — glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos MIT-style Materials licence.
+
+- Also contains: SGI-B-1.1 — glu.h, SGI Free Software License B version 1.1 -- the same text as the libnurbs half of dll/opengl/glu32.
+
+- Grant reproduced from: `sdk/include/GL/gl.h (header comment)`
+
+```
+Mesa 3-D graphics library
+Version:  7.6
+
+Copyright (C) 1999-2006  Brian Paul   All Rights Reserved.
+Copyright (C) 2009  VMware, Inc.  All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## rdesktop (as mstsc.exe)
+
+- Upstream: https://github.com/rdesktop/rdesktop
+- Version: 1.8.3
+- In this tree: `base/applications/mstsc`
+- Licence: GPL-3.0-or-later
+- Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
+
+```
+rdesktop: A Remote Desktop Protocol client.
+   Master include file
+   Copyright (C) Matthew Chapman 1999-2008
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+```
+
+## rdesktop (rosapps tsclient)
+
+- Upstream: https://github.com/rdesktop/rdesktop
+- Version: 1.8.3
+- In this tree: `vendor/tsclient`
+- Licence: GPL-3.0-or-later
+- Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
+
+```
+rdesktop: A Remote Desktop Protocol client.
+   Master include file
+   Copyright (C) Matthew Chapman 1999-2008
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+```
+
+## Schily Tools (mkisofs)
+
+- Upstream: https://sourceforge.net/projects/schilytools/
+- Version: schily-2017-09-07
+- In this tree: `vendor/schilytools`
+- Licence: CDDL-1.0
+- Also contains: GPL-2.0-or-later — mkisofs itself is Eric Youngdale's GPL program that Schily maintains: its sources say "either version 2, or (at your option) any later version" (and four say "version 2" only), while the schily libraries carry the CDDL. A host tool, so nothing here reaches the shipped image.
+
+- Grant reproduced from: `vendor/schilytools/CDDL.Schily.txt`
+
+```
+COMMON DEVELOPMENT AND DISTRIBUTION LICENSE Version 1.0
+
+1. Definitions.
+
+    1.1. "Contributor" means each individual or entity that creates
+         or contributes to the creation of Modifications.
+
+    1.2. "Contributor Version" means the combination of the Original
+         Software, prior Modifications used by a Contributor (if any),
+         and the Modifications made by that particular Contributor.
+
+    1.3. "Covered Software" means (a) the Original Software, or (b)
+         Modifications, or (c) the combination of files containing
+         Original Software with files containing Modifications, in
+         each case including portions thereof.
+
+    1.4. "Executable" means the Covered Software in any form other
+         than Source Code.
+
+    1.5. "Initial Developer" means the individual or entity that first
+         makes Original Software available under this License.
+
+    1.6. "Larger Work" means a work which combines Covered Software or
+         portions thereof with code not governed by the terms of this
+         License.
+
+    1.7. "License" means this document.
+
+    1.8. "Licensable" means having the right to grant, to the maximum
+         extent possible, whether at the time of the initial grant or
+         subsequently acquired, any and all of the rights conveyed
+         herein.
+
+    1.9. "Modifications" means the Source Code and Executable form of
+         any of the following:
+
+        A. Any file that results from an addition to, deletion from or
+           modification of the contents of a file containing Original
+           Software or previous Modifications;
+
+        B. Any new file that contains any part of the Original
+           Software or previous Modifications; or
+
+        C. Any new file that is contributed or otherwise made
+           available under the terms of this License.
+
+    1.10. "Original Software" means the Source Code and Executable
+          form of computer software code that is originally released
+          under this License.
+
+    1.11. "Patent Claims" means any patent claim(s), now owned or
+          hereafter acquired, including without limitation, method,
+          process, and apparatus claims, in any patent Licensable by
+          grantor.
+
+    1.12. "Source Code" means (a) the common form of computer software
+          code in which modifications are made and (b) associated
+          documentation included in or with such code.
+
+    1.13. "You" (or "Your") means an individual or a legal entity
+          exercising rights under, and complying with all of the terms
+          of, this License.  For legal entities, "You" includes any
+          entity which controls, is controlled by, or is under common
+          control with You.  For purposes of this definition,
+          "control" means (a) the power, direct or indirect, to cause
+          the direction or management of such entity, whether by
+          contract or otherwise, or (b) ownership of more than fifty
+          percent (50%) of the outstanding shares or beneficial
+          ownership of such entity.
+
+2. License Grants.
+
+    2.1. The Initial Developer Grant.
+
+    Conditioned upon Your compliance with Section 3.1 below and
+    subject to third party intellectual property claims, the Initial
+    Developer hereby grants You a world-wide, royalty-free,
+    non-exclusive license:
+
+        (a) under intellectual property rights (other than patent or
+            trademark) Licensable by Initial Developer, to use,
+            reproduce, modify, display, perform, sublicense and
+            distribute the Original Software (or portions thereof),
+            with or without Modifications, and/or as part of a Larger
+            Work; and
+
+        (b) under Patent Claims infringed by the making, using or
+            selling of Original Software, to make, have made, use,
+            practice, sell, and offer for sale, and/or otherwise
+            dispose of the Original Software (or portions thereof).
+
+        (c) The licenses granted in Sections 2.1(a) and (b) are
+            effective on the date Initial Developer first distributes
+            or otherwise makes the Original Software available to a
+            third party under the terms of this License.
+
+        (d) Notwithstanding Section 2.1(b) above, no patent license is
+            granted: (1) for code that You delete from the Original
+            Software, or (2) for infringements caused by: (i) the
+            modification of the Original Software, or (ii) the
+            combination of the Original Software with other software
+            or devices.
+
+    2.2. Contributor Grant.
+
+    Conditioned upon Your compliance with Section 3.1 below and
+    subject to third party intellectual property claims, each
+    Contributor hereby grants You a world-wide, royalty-free,
+    non-exclusive license:
+
+        (a) under intellectual property rights (other than patent or
+            trademark) Licensable by Contributor to use, reproduce,
+            modify, display, perform, sublicense and distribute the
+            Modifications created by such Contributor (or portions
+            thereof), either on an unmodified basis, with other
+            Modifications, as Covered Software and/or as part of a
+            Larger Work; and
+
+        (b) under Patent Claims infringed by the making, using, or
+            selling of Modifications made by that Contributor either
+            alone and/or in combination with its Contributor Version
+            (or portions of such combination), to make, use, sell,
+            offer for sale, have made, and/or otherwise dispose of:
+            (1) Modifications made by that Contributor (or portions
+            thereof); and (2) the combination of Modifications made by
+            that Contributor with its Contributor Version (or portions
+            of such combination).
+
+        (c) The licenses granted in Sections 2.2(a) and 2.2(b) are
+            effective on the date Contributor first distributes or
+            otherwise makes the Modifications available to a third
+            party.
+
+        (d) Notwithstanding Section 2.2(b) above, no patent license is
+            granted: (1) for any code that Contributor has deleted
+            from the Contributor Version; (2) for infringements caused
+            by: (i) third party modifications of Contributor Version,
+            or (ii) the combination of Modifications made by that
+            Contributor with other software (except as part of the
+            Contributor Version) or other devices; or (3) under Patent
+            Claims infringed by Covered Software in the absence of
+            Modifications made by that Contributor.
+
+3. Distribution Obligations.
+
+    3.1. Availability of Source Code.
+
+    Any Covered Software that You distribute or otherwise make
+    available in Executable form must also be made available in Source
+    Code form and that Source Code form must be distributed only under
+    the terms of this License.  You must include a copy of this
+    License with every copy of the Source Code form of the Covered
+    Software You distribute or otherwise make available.  You must
+    inform recipients of any such Covered Software in Executable form
+    as to how they can obtain such Covered Software in Source Code
+    form in a reasonable manner on or through a medium customarily
+    used for software exchange.
+
+    3.2. Modifications.
+
+    The Modifications that You create or to which You contribute are
+    governed by the terms of this License.  You represent that You
+    believe Your Modifications are Your original creation(s) and/or
+    You have sufficient rights to grant the rights conveyed by this
+    License.
+
+    3.3. Required Notices.
+
+    You must include a notice in each of Your Modifications that
+    identifies You as the Contributor of the Modification.  You may
+    not remove or alter any copyright, patent or trademark notices
+    contained within the Covered Software, or any notices of licensing
+    or any descriptive text giving attribution to any Contributor or
+    the Initial Developer.
+
+    3.4. Application of Additional Terms.
+
+    You may not offer or impose any terms on any Covered Software in
+    Source Code form that alters or restricts the applicable version
+    of this License or the recipients' rights hereunder.  You may
+    choose to offer, and to charge a fee for, warranty, support,
+    indemnity or liability obligations to one or more recipients of
+    Covered Software.  However, you may do so only on Your own behalf,
+    and not on behalf of the Initial Developer or any Contributor.
+    You must make it absolutely clear that any such warranty, support,
+    indemnity or liability obligation is offered by You alone, and You
+    hereby agree to indemnify the Initial Developer and every
+    Contributor for any liability incurred by the Initial Developer or
+    such Contributor as a result of warranty, support, indemnity or
+    liability terms You offer.
+
+    3.5. Distribution of Executable Versions.
+
+    You may distribute the Executable form of the Covered Software
+    under the terms of this License or under the terms of a license of
+    Your choice, which may contain terms different from this License,
+    provided that You are in compliance with the terms of this License
+    and that the license for the Executable form does not attempt to
+    limit or alter the recipient's rights in the Source Code form from
+    the rights set forth in this License.  If You distribute the
+    Covered Software in Executable form under a different license, You
+    must make it absolutely clear that any terms which differ from
+    this License are offered by You alone, not by the Initial
+    Developer or Contributor.  You hereby agree to indemnify the
+    Initial Developer and every Contributor for any liability incurred
+    by the Initial Developer or such Contributor as a result of any
+    such terms You offer.
+
+    3.6. Larger Works.
+
+    You may create a Larger Work by combining Covered Software with
+    other code not governed by the terms of this License and
+    distribute the Larger Work as a single product.  In such a case,
+    You must make sure the requirements of this License are fulfilled
+    for the Covered Software.
+
+4. Versions of the License.
+
+    4.1. New Versions.
+
+    Sun Microsystems, Inc. is the initial license steward and may
+    publish revised and/or new versions of this License from time to
+    time.  Each version will be given a distinguishing version number.
+    Except as provided in Section 4.3, no one other than the license
+    steward has the right to modify this License.
+
+    4.2. Effect of New Versions.
+
+    You may always continue to use, distribute or otherwise make the
+    Covered Software available under the terms of the version of the
+    License under which You originally received the Covered Software.
+    If the Initial Developer includes a notice in the Original
+    Software prohibiting it from being distributed or otherwise made
+    available under any subsequent version of the License, You must
+    distribute and make the Covered Software available under the terms
+    of the version of the License under which You originally received
+    the Covered Software.  Otherwise, You may also choose to use,
+    distribute or otherwise make the Covered Software available under
+    the terms of any subsequent version of the License published by
+    the license steward.
+
+    4.3. Modified Versions.
+
+    When You are an Initial Developer and You want to create a new
+    license for Your Original Software, You may create and use a
+    modified version of this License if You: (a) rename the license
+    and remove any references to the name of the license steward
+    (except to note that the license differs from this License); and
+    (b) otherwise make it clear that the license contains terms which
+    differ from this License.
+
+5. DISCLAIMER OF WARRANTY.
+
+    COVERED SOFTWARE IS PROVIDED UNDER THIS LICENSE ON AN "AS IS"
+    BASIS, WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+    INCLUDING, WITHOUT LIMITATION, WARRANTIES THAT THE COVERED
+    SOFTWARE IS FREE OF DEFECTS, MERCHANTABLE, FIT FOR A PARTICULAR
+    PURPOSE OR NON-INFRINGING.  THE ENTIRE RISK AS TO THE QUALITY AND
+    PERFORMANCE OF THE COVERED SOFTWARE IS WITH YOU.  SHOULD ANY
+    COVERED SOFTWARE PROVE DEFECTIVE IN ANY RESPECT, YOU (NOT THE
+    INITIAL DEVELOPER OR ANY OTHER CONTRIBUTOR) ASSUME THE COST OF ANY
+    NECESSARY SERVICING, REPAIR OR CORRECTION.  THIS DISCLAIMER OF
+    WARRANTY CONSTITUTES AN ESSENTIAL PART OF THIS LICENSE.  NO USE OF
+    ANY COVERED SOFTWARE IS AUTHORIZED HEREUNDER EXCEPT UNDER THIS
+    DISCLAIMER.
+
+6. TERMINATION.
+
+    6.1. This License and the rights granted hereunder will terminate
+    automatically if You fail to comply with terms herein and fail to
+    cure such breach within 30 days of becoming aware of the breach.
+    Provisions which, by their nature, must remain in effect beyond
+    the termination of this License shall survive.
+
+    6.2. If You assert a patent infringement claim (excluding
+    declaratory judgment actions) against Initial Developer or a
+    Contributor (the Initial Developer or Contributor against whom You
+    assert such claim is referred to as "Participant") alleging that
+    the Participant Software (meaning the Contributor Version where
+    the Participant is a Contributor or the Original Software where
+    the Participant is the Initial Developer) directly or indirectly
+    infringes any patent, then any and all rights granted directly or
+    indirectly to You by such Participant, the Initial Developer (if
+    the Initial Developer is not the Participant) and all Contributors
+    under Sections 2.1 and/or 2.2 of this License shall, upon 60 days
+    notice from Participant terminate prospectively and automatically
+    at the expiration of such 60 day notice period, unless if within
+    such 60 day period You withdraw Your claim with respect to the
+    Participant Software against such Participant either unilaterally
+    or pursuant to a written agreement with Participant.
+
+    6.3. In the event of termination under Sections 6.1 or 6.2 above,
+    all end user licenses that have been validly granted by You or any
+    distributor hereunder prior to termination (excluding licenses
+    granted to You by any distributor) shall survive termination.
+
+7. LIMITATION OF LIABILITY.
+
+    UNDER NO CIRCUMSTANCES AND UNDER NO LEGAL THEORY, WHETHER TORT
+    (INCLUDING NEGLIGENCE), CONTRACT, OR OTHERWISE, SHALL YOU, THE
+    INITIAL DEVELOPER, ANY OTHER CONTRIBUTOR, OR ANY DISTRIBUTOR OF
+    COVERED SOFTWARE, OR ANY SUPPLIER OF ANY OF SUCH PARTIES, BE
+    LIABLE TO ANY PERSON FOR ANY INDIRECT, SPECIAL, INCIDENTAL, OR
+    CONSEQUENTIAL DAMAGES OF ANY CHARACTER INCLUDING, WITHOUT
+    LIMITATION, DAMAGES FOR LOST PROFITS, LOSS OF GOODWILL, WORK
+    STOPPAGE, COMPUTER FAILURE OR MALFUNCTION, OR ANY AND ALL OTHER
+    COMMERCIAL DAMAGES OR LOSSES, EVEN IF SUCH PARTY SHALL HAVE BEEN
+    INFORMED OF THE POSSIBILITY OF SUCH DAMAGES.  THIS LIMITATION OF
+    LIABILITY SHALL NOT APPLY TO LIABILITY FOR DEATH OR PERSONAL
+    INJURY RESULTING FROM SUCH PARTY'S NEGLIGENCE TO THE EXTENT
+    APPLICABLE LAW PROHIBITS SUCH LIMITATION.  SOME JURISDICTIONS DO
+    NOT ALLOW THE EXCLUSION OR LIMITATION OF INCIDENTAL OR
+    CONSEQUENTIAL DAMAGES, SO THIS EXCLUSION AND LIMITATION MAY NOT
+    APPLY TO YOU.
+
+8. U.S. GOVERNMENT END USERS.
+
+    The Covered Software is a "commercial item," as that term is
+    defined in 48 C.F.R. 2.101 (Oct. 1995), consisting of "commercial
+    computer software" (as that term is defined at 48
+    C.F.R. 252.227-7014(a)(1)) and "commercial computer software
+    documentation" as such terms are used in 48 C.F.R. 12.212
+    (Sept. 1995).  Consistent with 48 C.F.R. 12.212 and 48
+    C.F.R. 227.7202-1 through 227.7202-4 (June 1995), all
+    U.S. Government End Users acquire Covered Software with only those
+    rights set forth herein.  This U.S. Government Rights clause is in
+    lieu of, and supersedes, any other FAR, DFAR, or other clause or
+    provision that addresses Government rights in computer software
+    under this License.
+
+9. MISCELLANEOUS.
+
+    This License represents the complete agreement concerning subject
+    matter hereof.  If any provision of this License is held to be
+    unenforceable, such provision shall be reformed only to the extent
+    necessary to make it enforceable.  This License shall be governed
+    by the law of the jurisdiction specified in a notice contained
+    within the Original Software (except to the extent applicable law,
+    if any, provides otherwise), excluding such jurisdiction's
+    conflict-of-law provisions.  Any litigation relating to this
+    License shall be subject to the jurisdiction of the courts located
+    in the jurisdiction and venue specified in a notice contained
+    within the Original Software, with the losing party responsible
+    for costs, including, without limitation, court costs and
+    reasonable attorneys' fees and expenses.  The application of the
+    United Nations Convention on Contracts for the International Sale
+    of Goods is expressly excluded.  Any law or regulation which
+    provides that the language of a contract shall be construed
+    against the drafter shall not apply to this License.  You agree
+    that You alone are responsible for compliance with the United
+    States export administration regulations (and the export control
+    laws and regulation of any other countries) when You use,
+    distribute or otherwise make available any Covered Software.
+
+10. RESPONSIBILITY FOR CLAIMS.
+
+    As between Initial Developer and the Contributors, each party is
+    responsible for claims and damages arising, directly or
+    indirectly, out of its utilization of rights under this License
+    and You agree to work with Initial Developer and Contributors to
+    distribute such responsibility on an equitable basis.  Nothing
+    herein is intended or shall be deemed to constitute any admission
+    of liability.
+
+--------------------------------------------------------------------
+
+NOTICE PURSUANT TO SECTION 9 OF THE COMMON DEVELOPMENT AND
+DISTRIBUTION LICENSE (CDDL)
+
+For Covered Software in this distribution, this License shall
+be governed by the laws of Germany (excluding conflict-of-law
+provisions).
+
+Any litigation relating to this License shall be subject to the
+jurisdiction and the courts of Berlin Germany, with venue lying
+in Berlin Germany.
+```
+
 ## SGI GLU (OpenGL Utility Library)
 
 - Upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed with Mesa. No release stamp in the drop; see review.
 - Version: glu-9.0.1 (Mesa git tag, not a release tarball)
-- In this tree: `dll/opengl/glu32/src`, `dll/opengl/glu32/include`
+- In this tree: `vendor/glu`
 - Licence: SGI-B-2.0
 - Also contains: LGPL-2.0-or-later — include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998 Brian Paul, under the GNU Library General Public License v2 or later. One file, a symbol-mangling header, but a copyleft licence sitting inside a permissive drop is exactly the shape this registry exists to make visible.
 
 - Also contains: SGI-B-1.1 — The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
 - Modified by us: yes, see `vendor-patches/glu32.patch`
-- Grant reproduced from: `dll/opengl/glu32/include/GL/glu.h (header comment)`
+- Grant reproduced from: `vendor/glu/include/GL/glu.h (header comment)`
 
 ```
 SGI FREE SOFTWARE LICENSE B (Version 2.0, Sept. 18, 2008)
@@ -3523,10 +5022,10 @@ Silicon Graphics, Inc.
 
 - Upstream: http://www.stlport.org/
 - Version: 5.2.1
-- In this tree: `sdk/lib/3rdparty/stlport`, `sdk/include/c++/stlport`
+- In this tree: `vendor/stlport`, `sdk/include/c++/stlport`
 - Licence: STLport licence (permissive)
 - Modified by us: yes, see `vendor-patches/stlport.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/stlport/README`
+- Grant reproduced from: `vendor/stlport/README`
 
 ```
 **********************************************************************
@@ -3595,13 +5094,59 @@ This software is being distributed under the following terms:
 **********************************************************************
 ```
 
+## TreeList control
+
+- Upstream: https://github.com/sebkirche/treelist
+- Version: ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668))
+- In this tree: `vendor/treelist`
+- Licence: GPL-3.0-or-later
+- Grant reproduced from: `vendor/treelist/treelist.c (header comment)`
+
+```
+PROJECT:     ReactOS GUI first stage setup application
+LICENSE:     GPL-3.0-or-later (https://spdx.org/licenses/GPL-3.0-or-later)
+PURPOSE:     Implements a TreeList control: a tree window with columns.
+COPYRIGHT:   Copyright (C) Anton Zechner (az_software@inode.at) 2007
+             Copyright (C) Sébastien Kirche (sebastien.kirche@free.fr) 2014
+
+NOTE: Taken from the TreeList code found at https://github.com/sebkirche/treelist
+
+
+*****************************************************************************
+*
+*
+*		TreeListWnd.cpp
+*
+*
+*****************************************************************************
+
+This code creates a tree window with a list
+
+
+Copyright (C) Anton Zechner (az_software@inode.at) 2007
+Copyright (C) Sébastien Kirche (sebastien.kirche@free.fr) 2014
+
+TreeListWnd is distributed under the GNU GENERAL PUBLIC LICENSE (GPL)
+Sourcecode which use TreeListWnd must be published. Commercial users
+must published their code too, or make an licence agreement with me.
+
+
+TreeListWnd wird unter GNU GENERAL PUBLIC LICENSE (GPL) vertreiben.
+Sourcecode welcher TreeListWnd verwendet muss veröffendlicht werden.
+Komerzielle Nutzer müssen ihren Code ebenfalls veröffentlichen, oder
+eine Nutzungsvereinbarung mit mir treffen.
+
+
+Version:	2.04
+```
+
 ## VirtIO driver library
 
 - Upstream: virtio-win
 - Version: unknown
-- In this tree: `sdk/lib/drivers/virtio`
+- In this tree: `vendor/virtio`
 - Licence: BSD-3-Clause
-- Grant reproduced from: `sdk/lib/drivers/virtio/LICENSE`
+- Grant reproduced from: `vendor/virtio/LICENSE`
 
 ```
 Copyright 2009-2017 Red Hat, Inc. and/or its affiliates.
@@ -3634,6 +5179,43 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## VirtIO NetKVM guest driver (NDIS 5)
+
+- Upstream: https://github.com/virtio-win/kvm-guest-drivers-windows (NetKVM/NDIS5)
+- Version: git commit 5e01b36
+- In this tree: `vendor/netkvm`
+- Licence: BSD-3-Clause
+- Grant reproduced from: `vendor/netkvm/Common/ParaNdis-VirtIO.c (header comment)`
+
+```
+This file contains NDIS driver VirtIO callbacks
+
+Copyright (c) 2008-2017 Red Hat, Inc.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met :
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and / or other materials provided with the distribution.
+3. Neither the names of the copyright holders nor the names of their contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
 ```
 
 ## win-iconv

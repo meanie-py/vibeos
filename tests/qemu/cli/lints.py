@@ -561,6 +561,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A bare store to the PL011 data register (Arm64UartKernelBase). The FIFO holds
+    # 16-32 bytes and drains at 115200 baud, so a CPU writing faster than that loses
+    # every byte after the FIFO fills - and QEMU's model drains instantly, so it only
+    # shows on hardware. On a physical Pi 4 it cut each Phase-1 trace to its first
+    # `[` and made a hang look like it stopped earlier than it did. 87 private copies
+    # in six crates when found. Baseline is EMPTY.
+    sru = repo / "tools" / "scan_raw_uart_writes.py"
+    specs.append(
+        (
+            "scan_raw_uart_writes",
+            [py, str(sru), "--lint"] if sru.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sbc = repo / "tools" / "scan_bugcheck_codes.py"
     specs.append(
         (
@@ -803,6 +817,43 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_dangling_transmute",
             [py, str(sdt), "--lint"] if sdt.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Pointer arithmetic on a struct field bindgen typed as an OPAQUE 1-byte stub
+    # steps one byte per element whatever the code casts to afterwards. consrv's
+    # handle table overlapped its entries this way and crashed csrss on the first
+    # console close (BUGCHECK 0xF4). Baseline EMPTY.
+    sopa = repo / "tools" / "scan_opaque_ptr_arith.py"
+    specs.append(
+        (
+            "scan_opaque_ptr_arith",
+            [py, str(sopa), "--lint"] if sopa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A Rust-ABI fn transmuted into a C callback slot (`transmute(f as *const ())`)
+    # erases the ABI rustc would otherwise check. It works by accident on
+    # amd64/arm64 and breaks on i386: consrv's GuiVtbl (22 of 25 slots) killed
+    # csrss with BUGCHECK 0xF4 on the first i386 GUI console. Baseline EMPTY.
+    sfa = repo / "tools" / "scan_fnptr_abi_transmute.py"
+    specs.append(
+        (
+            "scan_fnptr_abi_transmute",
+            [py, str(sfa), "--lint"] if sfa.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C byte count (RtlCopyMemory) kept as the ELEMENT count of a u16-typed
+    # core::ptr::copy moves twice the bytes. fastfat's FatQueryDirectory copied
+    # every long name at double length and faulted on arm64 once winsxs names
+    # were long enough (BUGCHECK 0x50 at smss); mountmgr and the registry value
+    # cache had the same shape. Baseline EMPTY.
+    swb = repo / "tools" / "scan_wide_byte_copy.py"
+    specs.append(
+        (
+            "scan_wide_byte_copy",
+            [py, str(swb), "--lint"] if swb.is_file() else ["MISSING"],
             "stdout",
         )
     )

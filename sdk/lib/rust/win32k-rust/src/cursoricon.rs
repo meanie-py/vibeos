@@ -4,6 +4,7 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentProc
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_SUCCESS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // Debug-channel macros — no kernel symbol, no-op.
 #[allow(unused_macros)]
@@ -673,14 +674,25 @@ pub unsafe extern "system" fn NtUserGetIconInfo(
                 );
             }
             if NT_SUCCESS(Status) {
-                RtlCopyMemory(
+                // Probes are validate-only (USE_DUMMY_PSEH); the C had probe AND
+                // store in one _SEH2_TRY, so the stores must be the fault-tolerant
+                // copy. RtlCopyMemory into a user buffer is a plain memcpy.
+                if !crate::copy::publish_to_user(
                     IconInfo as *mut core::ffi::c_void,
                     core::ptr::addr_of!(ii) as *const core::ffi::c_void,
                     core::mem::size_of::<ICONINFO>(),
-                );
-
-                if !pbpp.is_null() {
-                    *pbpp = colorBpp;
+                ) {
+                    Status = STATUS_ACCESS_VIOLATION;
+                }
+                if NT_SUCCESS(Status)
+                    && !pbpp.is_null()
+                    && !crate::copy::publish_to_user(
+                        pbpp as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(colorBpp) as *const core::ffi::c_void,
+                        core::mem::size_of_val(&colorBpp),
+                    )
+                {
+                    Status = STATUS_ACCESS_VIOLATION;
                 }
             }
 
@@ -771,28 +783,53 @@ pub unsafe extern "system" fn NtUserGetIconInfo(
                 core::mem::size_of::<_UNICODE_STRING>() as ULONG_PTR,
                 1,
             );
+            // Probe is validate-only (USE_DUMMY_PSEH); the C had the probes AND every
+            // one of these loads and stores inside one _SEH2_TRY. Capture the
+            // UNICODE_STRING into kernel memory, mutate it there, publish once —
+            // note the Buffer probe below needs the CAPTURED length, since reading it
+            // back out of user memory is the very access being protected.
+            let mut SafeName: _UNICODE_STRING = core::mem::zeroed();
+            if NT_SUCCESS(Status)
+                && !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(SafeName) as *mut core::ffi::c_void,
+                    lpResName as *const core::ffi::c_void,
+                    core::mem::size_of::<_UNICODE_STRING>(),
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
             if NT_SUCCESS(Status) {
                 Status = SafeProbeForWrite(
-                    (*lpResName).Buffer as *mut core::ffi::c_void,
-                    (*lpResName).MaximumLength as ULONG_PTR,
+                    SafeName.Buffer as *mut core::ffi::c_void,
+                    SafeName.MaximumLength as ULONG_PTR,
                     1,
                 );
             }
             if NT_SUCCESS(Status) {
+                let mut ok = true;
                 if IS_INTRESOURCE((*CurIcon).strName.Buffer) != 0 {
-                    (*lpResName).Buffer = (*CurIcon).strName.Buffer;
-                    (*lpResName).Length = 0;
-                    (*lpResName).MaximumLength = 0;
-                } else if (*lpResName).MaximumLength < (*CurIcon).strName.MaximumLength {
-                    (*lpResName).Length = 0;
-                    (*lpResName).MaximumLength = (*CurIcon).strName.MaximumLength;
+                    SafeName.Buffer = (*CurIcon).strName.Buffer;
+                    SafeName.Length = 0;
+                    SafeName.MaximumLength = 0;
+                } else if SafeName.MaximumLength < (*CurIcon).strName.MaximumLength {
+                    SafeName.Length = 0;
+                    SafeName.MaximumLength = (*CurIcon).strName.MaximumLength;
                 } else {
-                    RtlCopyMemory(
-                        (*lpResName).Buffer as *mut core::ffi::c_void,
+                    ok = crate::copy::publish_to_user(
+                        SafeName.Buffer as *mut core::ffi::c_void,
                         (*CurIcon).strName.Buffer as *const core::ffi::c_void,
                         (*CurIcon).strName.Length as usize,
                     );
-                    (*lpResName).Length = (*CurIcon).strName.Length;
+                    SafeName.Length = (*CurIcon).strName.Length;
+                }
+                if !ok
+                    || !crate::copy::publish_to_user(
+                        lpResName as *mut core::ffi::c_void,
+                        core::ptr::addr_of!(SafeName) as *const core::ffi::c_void,
+                        core::mem::size_of::<_UNICODE_STRING>(),
+                    )
+                {
+                    Status = STATUS_ACCESS_VIOLATION;
                 }
             }
         }
@@ -842,9 +879,24 @@ pub unsafe extern "system" fn NtUserGetIconSize(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForWrite(plcy as *mut c_void, core::mem::size_of::<LONG>() as _, 1);
         }
+            // The probes VALIDATE only; these STORES are the access. A raw write into the
+        // caller's page faults with no handler under DUMMY_PSEH, so publish both
+        // through the protected copy and record a fault in Status, which is checked
+        // just below.
         if NT_SUCCESS(Status) {
-            core::ptr::write_volatile(plcx, (*CurIcon).cx as LONG);
-            core::ptr::write_volatile(plcy, (*CurIcon).cy as LONG);
+            let cx: LONG = (*CurIcon).cx as LONG;
+            let cy: LONG = (*CurIcon).cy as LONG;
+            if !crate::copy::publish_to_user(
+                plcx as *mut c_void,
+                core::ptr::addr_of!(cx) as *const c_void,
+                core::mem::size_of::<LONG>(),
+            ) || !crate::copy::publish_to_user(
+                plcy as *mut c_void,
+                core::ptr::addr_of!(cy) as *const c_void,
+                core::mem::size_of::<LONG>(),
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         }
 
         if NT_SUCCESS(Status) {
@@ -901,13 +953,25 @@ pub unsafe extern "system" fn NtUserGetCursorInfo(pci: PCURSORINFO) -> BOOL {
         1,
     );
     if NT_SUCCESS(Status) {
-        if (*pci).cbSize == core::mem::size_of::<CURSORINFO>() as u32 {
-            RtlCopyMemory(
+        // Probe is validate-only (USE_DUMMY_PSEH); the C had probe, load and store
+        // in one _SEH2_TRY. Both directions go through the fault-tolerant copy.
+        let mut cbSize: u32 = 0;
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(cbSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*pci).cbSize) as *const core::ffi::c_void,
+            core::mem::size_of::<u32>(),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        } else if cbSize == core::mem::size_of::<CURSORINFO>() as u32 {
+            if crate::copy::publish_to_user(
                 pci as *mut core::ffi::c_void,
                 core::ptr::addr_of!(SafeCi) as *const core::ffi::c_void,
-                core::mem::size_of::<CURSORINFO>() as usize,
-            );
-            Ret = 1;
+                core::mem::size_of::<CURSORINFO>(),
+            ) {
+                Ret = 1;
+            } else {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
         } else {
             EngSetLastError(ERROR_INVALID_PARAMETER);
         }
@@ -974,7 +1038,15 @@ pub unsafe extern "system" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
             return 0;
         }
 
-        rclLocal = *prcl;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rclLocal) as *mut core::ffi::c_void,
+            prcl as *const core::ffi::c_void,
+            core::mem::size_of::<RECTL>(),
+        ) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            return 0;
+        }
 
         prcl = core::ptr::addr_of_mut!(rclLocal);
     }
@@ -1001,7 +1073,15 @@ pub unsafe extern "system" fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
             return 0;
         }
 
-        rclLocal = *prcl;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rclLocal) as *mut core::ffi::c_void,
+            prcl as *const core::ffi::c_void,
+            core::mem::size_of::<RECTL>(),
+        ) {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            return 0;
+        }
 
         prcl = core::ptr::addr_of_mut!(rclLocal);
     }
@@ -1083,12 +1163,22 @@ pub unsafe extern "system" fn NtUserFindExistingCursorIcon(
         core::mem::size_of::<FINDEXISTINGCURICONPARAM>() as _,
         1,
     );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(paramSafe) as *mut core::ffi::c_void,
-            param as *const core::ffi::c_void,
-            core::mem::size_of::<FINDEXISTINGCURICONPARAM>(),
-        );
+    // Two defects at this one site. The probe is validate-only, so the copy had to
+    // become the protected one -- and the probe's verdict was being THROWN AWAY: the
+    // next statement overwrites Status with ProbeAndCaptureUnicodeStringOrAtom's
+    // result, so a failed probe here fell through and the function carried on with a
+    // zeroed paramSafe instead of failing. Both faults now return.
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+        return core::ptr::null_mut();
+    }
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(paramSafe) as *mut c_void,
+        param as *const c_void,
+        core::mem::size_of::<FINDEXISTINGCURICONPARAM>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return core::ptr::null_mut();
     }
 
     Status = ProbeAndCaptureUnicodeStringOrAtom(core::ptr::addr_of_mut!(ustrRsrcSafe), pustrRsrc);
@@ -1097,11 +1187,11 @@ pub unsafe extern "system" fn NtUserFindExistingCursorIcon(
     }
 
     'done: {
-        Status = ProbeAndCaptureUnicodeString(
-            core::ptr::addr_of_mut!(ustrRsrcSafe).cast::<_UNICODE_STRING>().offset(0),
-            1i32 as i8,
-            pustrModule,
-        );
+        // The translation had a second capture here, of pustrModule INTO ustrRsrcSafe. It
+        // overwrote the resource name with the module path, so no LR_SHARED icon ever matched:
+        // every LoadIcon/LoadImage(LR_SHARED) minted a new icon and two bitmaps, and the real
+        // resource capture leaked its pool buffer. A repainting app hit the 10K GDI quota, and
+        // win32k then fell over on the NULL regions (REGION_Delete(NULL)) or pool exhaustion.
         Status = ProbeAndCaptureUnicodeString(
             core::ptr::addr_of_mut!(ustrModuleSafe),
             1i32 as i8,
@@ -2155,9 +2245,19 @@ pub unsafe extern "system" fn NtUserGetCursorFrameInfo(
             1,
         );
     }
+    // The probes VALIDATE only; these STORES are the access.
     if NT_SUCCESS(Status) {
-        core::ptr::write_volatile(rate_jiffies, jiffies);
-        core::ptr::write_volatile(num_steps, steps);
+        if !crate::copy::publish_to_user(
+            rate_jiffies as *mut c_void,
+            core::ptr::addr_of!(jiffies) as *const c_void,
+            core::mem::size_of_val(&jiffies),
+        ) || !crate::copy::publish_to_user(
+            num_steps as *mut c_void,
+            core::ptr::addr_of!(steps) as *const c_void,
+            core::mem::size_of_val(&steps),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        }
     }
 
     if !NT_SUCCESS(Status) {

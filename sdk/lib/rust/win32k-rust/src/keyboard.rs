@@ -4,6 +4,7 @@ use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread, ZwDeviceIoControlFile, ExAl
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
 use ntkrnl_sys::constants::{STATUS_BUFFER_TOO_SMALL, STATUS_NOT_SUPPORTED, STATUS_INVALID_HANDLE};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 const UNICODE_NULL: WCHAR = 0;
 
@@ -1675,13 +1676,26 @@ unsafe fn NtUserToUnicodeEx_impl(
         SetLastNtError(Status);
         return 0;
     } else {
-        /* Probe and copy key state to smaller bitmap */
+        /* Probe and copy key state to smaller bitmap. The probe is validate-only
+         * (USE_DUMMY_PSEH) and the C had probe AND all 512 loads inside one
+         * _SEH2_TRY, so the array comes across in ONE fault-tolerant copy and the
+         * loop then reads kernel memory. */
+        let mut SafeKeyState: [u8; 256] = [0; 256];
+        if !crate::copy::capture_from_user(
+            SafeKeyState.as_mut_ptr() as *mut core::ffi::c_void,
+            pKeyStateUnsafe as *const core::ffi::c_void,
+            SafeKeyState.len(),
+        ) {
+            ERR!("Cannot copy key state\n");
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            return 0;
+        }
         let mut i: INT = 0;
         while i < 256 {
-            if *pKeyStateUnsafe.add(i as usize) & KS_DOWN_BIT as u8 != 0 {
+            if SafeKeyState[i as usize] & KS_DOWN_BIT as u8 != 0 {
                 SET_KEY_DOWN!(afKeyState.as_mut_ptr(), i, 1);
             }
-            if *pKeyStateUnsafe.add(i as usize) & KS_LOCK_BIT as u8 != 0 {
+            if SafeKeyState[i as usize] & KS_LOCK_BIT as u8 != 0 {
                 SET_KEY_LOCKED!(afKeyState.as_mut_ptr(), i, 1);
             }
             i += 1;
@@ -1804,9 +1818,22 @@ unsafe fn NtUserGetKeyNameText_impl(lParam: LONG, lpString: LPWSTR, cchSize: INT
             if !NT_SUCCESS(Status) {
                 SetLastNtError(Status);
             } else {
-                RtlCopyMemory(lpString as *mut c_void, pKeyName as *const c_void, cchKeyName as usize * core::mem::size_of::<WCHAR>());
-                *lpString.add(cchKeyName as usize) = UNICODE_NULL;
-                dwRet = cchKeyName as DWORD;
+                // Probe is validate-only; the C had probe AND both stores in one
+                // _SEH2_TRY. RtlCopyMemory into a user buffer is a plain memcpy.
+                let nul: WCHAR = UNICODE_NULL;
+                if crate::copy::publish_to_user(
+                    lpString as *mut core::ffi::c_void,
+                    pKeyName as *const core::ffi::c_void,
+                    cchKeyName as usize * core::mem::size_of::<WCHAR>(),
+                ) && crate::copy::publish_to_user(
+                    lpString.add(cchKeyName as usize) as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(nul) as *const core::ffi::c_void,
+                    core::mem::size_of::<WCHAR>(),
+                ) {
+                    dwRet = cchKeyName as DWORD;
+                } else {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                }
             }
         } else {
             EngSetLastError(ERROR_INVALID_PARAMETER);

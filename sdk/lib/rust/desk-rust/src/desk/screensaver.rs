@@ -187,7 +187,7 @@ unsafe extern "C" fn SetScreenSaverPreviewBox(hwndDlg: HWND, pData: PDATA) {
         return;
     }
 
-    hr = StringCbPrintf(
+    hr = StringCbPrintf!(
         szCmdline.as_mut_ptr(),
         core::mem::size_of_val(&szCmdline),
         w!("%s /p %Iu"),
@@ -271,7 +271,7 @@ unsafe extern "C" fn ScreenSaverConfig(hwndDlg: HWND, pData: PDATA) {
         return;
     }
 
-    hr = StringCbPrintf(
+    hr = StringCbPrintf!(
         szCmdline.as_mut_ptr(),
         core::mem::size_of_val(&szCmdline),
         TEXT(w!("%s /c:%Iu") as LPCTSTR),
@@ -337,7 +337,7 @@ unsafe extern "C" fn ScreenSaverPreview(hwndDlg: HWND, pData: *mut DATA) {
         (*pData).PrevWindowPi.hProcess = core::ptr::null_mut();
     }
 
-    hr = StringCbPrintf(
+    hr = StringCbPrintf!(
         szCmdline.as_mut_ptr(),
         core::mem::size_of_val(&szCmdline),
         TEXT(w!("%s /s") as LPCTSTR),
@@ -526,7 +526,7 @@ unsafe extern "C" fn SearchScreenSavers(
     let hFind: HANDLE;
     let mut szFilePath: [TCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
 
-    hr = StringCbPrintf(
+    hr = StringCbPrintf!(
         szFilePath.as_mut_ptr(),
         core::mem::size_of_val(&szFilePath),
         TEXT(w!("%s\\*.scr") as LPCTSTR),
@@ -552,7 +552,7 @@ unsafe extern "C" fn SearchScreenSavers(
                 break 'scan;
             }
 
-            hr = StringCbPrintf(
+            hr = StringCbPrintf!(
                 szFilePath.as_mut_ptr(),
                 core::mem::size_of_val(&szFilePath),
                 TEXT(w!("%s\\%s") as LPCTSTR),

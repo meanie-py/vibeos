@@ -54,6 +54,7 @@ extern "system" {
     fn PoVolumeDevice(DeviceObject: PDEVICE_OBJECT);
     static mut ExpInitializationPhase: u32;
     static mut Arm64UartKernelBase: usize;
+    fn Arm64UartPutChar(c: u8);
 }
 // The link_name target IoGetDevObjExtension_shim is defined extern "system" in
 // inlines.rs — the decl MUST match the shim's ABI, not IoGetDevObjExtension's.
@@ -158,7 +159,7 @@ macro_rules! ARM64_UART_TRACE {
             let uart = Arm64UartKernelBase as *mut u32;
             if !uart.is_null() {
                 for &byte in $msg {
-                    *uart = byte as u32;
+                    Arm64UartPutChar(byte as u8);
                 }
             }
         }
@@ -1315,9 +1316,10 @@ pub unsafe extern "system" fn IoVolumeDeviceToDosName(
     (*DosName).Length = (*VolumePathPtr).MultiSzLength as u16 - 2 * core::mem::size_of::<u16>() as u16;
     (*DosName).MaximumLength = (*DosName).Length + core::mem::size_of::<u16>() as u16;
     (*DosName).Buffer = VolumePathPtr as *mut u16;
+    // RtlCopyMemory/RtlMoveMemory count BYTES; copy as u8 (a u16 copy moves 2x).
     core::ptr::copy(
-        (*VolumePathPtr).MultiSz.as_ptr(),
-        (*DosName).Buffer,
+        (*VolumePathPtr).MultiSz.as_ptr() as *const u8,
+        (*DosName).Buffer as *mut u8,
         (*DosName).Length as usize,
     );
     *((*DosName).Buffer.add((*DosName).Length as usize / core::mem::size_of::<u16>())) = 0;

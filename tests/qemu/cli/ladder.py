@@ -154,6 +154,13 @@ LADDER_TIMEOUT_SECONDS = 420.0
 # it accuses did nothing wrong.
 OPTIONAL_EXTRA_SECONDS = 360.0
 
+# A Wine conformance subtest winlogon has started: TryStartWinetest gives each
+# one 180s before it kills it and prints TIMED OUT, and runs them one after
+# another. check() FAILS a subtest that started and never reported (see
+# winetests_lost), so the drain has to wait for it. It did not, and the gate
+# went red on a guest that reported cleanly 8 lines after the drain stopped.
+WINETEST_EXTRA_SECONDS = 200.0
+
 # Env override: keep draining for at least this many seconds even after every
 # graded guest has reported.
 #
@@ -636,7 +643,7 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     """
     floor = drain_floor()
     need = [m for m in markers() if m not in seen]
-    if not need and not _optional_in_flight(seen) and not floor:
+    if not need and not _optional_in_flight(seen) and not winetests_lost(seen) and not floor:
         return ""  # every guest already reported before we were called
     buf = ""
     start = time.monotonic()
@@ -645,16 +652,28 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     # budget: it is third-party code doing real work under emulation, so it is
     # slow by nature, and charging it to the parity budget is what turned a
     # green ladder into a fake selfmod32 failure the first time one was added.
+    # A started winetest is the same case: check() grades it, so the drain must
+    # not end while one is still running.
     extended: set[str] = set()
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
         pending = _optional_in_flight(buf)
-        if all(m in buf for m in need) and not pending and time.monotonic() - start >= floor:
+        running = winetests_lost(seen + buf)
+        if (
+            all(m in buf for m in need)
+            and not pending
+            and not running
+            and time.monotonic() - start >= floor
+        ):
             break
         for g in pending:
             if g not in extended:
                 deadline += OPTIONAL_EXTRA_SECONDS
                 extended.add(g)
+        for label in running:
+            if label not in extended:
+                deadline += WINETEST_EXTRA_SECONDS
+                extended.add(label)
     return buf
 
 

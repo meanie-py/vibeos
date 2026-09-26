@@ -32,6 +32,7 @@ macro_rules! w {
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -39,7 +40,7 @@ unsafe fn _TOKI_TRACE(msg: &[u8]) {
     let u = Arm64UartKernelBase as *mut ULONG;
     if !u.is_null() {
         for &byte in msg {
-            *u = byte as ULONG;
+            Arm64UartPutChar(byte as u8);
         }
     }
 }
@@ -49,17 +50,17 @@ unsafe fn _TOKI_HEX(prefix: &[u8], val: ULONG_PTR) {
     let u = Arm64UartKernelBase as *mut ULONG;
     if !u.is_null() {
         for &byte in prefix {
-            *u = byte as ULONG;
+            Arm64UartPutChar(byte as u8);
         }
         let hex = b"0123456789ABCDEF";
-        *u = b'0' as ULONG;
-        *u = b'x' as ULONG;
+        Arm64UartPutChar(b'0' as u8);
+        Arm64UartPutChar(b'x' as u8);
         for i in (0..16).rev() {
             let shift = i * 4;
             let nibble = ((val >> shift) & 0xF) as usize;
-            *u = hex[nibble] as ULONG;
+            Arm64UartPutChar(hex[nibble] as u8);
         }
-        *u = b'\n' as ULONG;
+        Arm64UartPutChar(b'\n' as u8);
     }
 }
 

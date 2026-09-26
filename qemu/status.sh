@@ -55,23 +55,14 @@ if [ -n "$GDB_PORT" ] && [ "$GDB_PORT" != "null" ]; then
 fi
 
 if [ "$JSON" -eq 1 ]; then
-    jq -n \
+    vjson obj \
         --arg run_id "$RUN_ID" \
         --argjson alive "$ALIVE" \
-        --arg pid "$PID" \
-        --arg gdb_port "$GDB_PORT" \
+        --argnum qemu_pid "$PID" \
+        --argnum gdb_port "$GDB_PORT" \
         --argjson gdb_reachable "$GDB_REACHABLE" \
         --argjson serial_bytes "$SERIAL_BYTES" \
-        --arg stopped_at "$STOPPED_AT" \
-        '{
-          run_id:        $run_id,
-          alive:         $alive,
-          qemu_pid:      ($pid | if . == "null" or . == "" then null else tonumber end),
-          gdb_port:      ($gdb_port | if . == "null" or . == "" then null else tonumber end),
-          gdb_reachable: $gdb_reachable,
-          serial_bytes:  $serial_bytes,
-          stopped_at:    ($stopped_at | if . == "" then null else . end)
-        }'
+        --argopt stopped_at "$STOPPED_AT"
 else
     cat <<EOF
 run-id:        $RUN_ID

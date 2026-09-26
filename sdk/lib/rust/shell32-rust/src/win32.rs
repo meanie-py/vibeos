@@ -961,19 +961,8 @@ pub const PSN_APPLY: UINT = PSN_FIRST.wrapping_sub(2);
 
 pub const IDC_VIEW_RESTORE_DEFAULTS: DWORD = 0x36b4; // shresdef.h
 
-// utils.cpp bridges for CStubWindow32, an ATL CWindowImpl<> that the C++ still owns.
-// Paired: the object must outlive the call because its thunk lives as long as the
-// window, so it comes back as an opaque pointer and is released by the destroy half.
-extern "system" {
-    pub fn CStubWindow32_CreateStub_RustBridge(
-        Type: UINT,
-        Path: LPCWSTR,
-        pPt: *const POINT,
-        phWnd: *mut HWND,
-        ppStub: *mut *mut c_void,
-    ) -> HRESULT;
-    pub fn CStubWindow32_DestroyStub_RustBridge(pStub: *mut c_void);
-}
+// CStubWindow32 is Rust now (crate::atl_stub_windows); re-exported under its old path.
+pub use crate::atl_stub_windows::{CStubWindow32_CreateStub_RustBridge, CStubWindow32_DestroyStub_RustBridge};
 
 /// precomp.h `CStubWindow32::TYPE_PROPERTYSHEET` (the enum starts at TYPE_FORMATDRIVE = 1).
 pub const CSTUBWINDOW32_TYPE_FORMATDRIVE: UINT = 1;

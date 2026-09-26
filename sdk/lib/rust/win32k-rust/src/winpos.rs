@@ -2,6 +2,7 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentThreadWin32Thread};
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // LOWORD/HIWORD (minwindef.h).
 #[inline(always)]
@@ -3759,19 +3760,29 @@ pub unsafe extern "system" fn NtUserGetInternalWindowPos(
         wndpl.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
 
         if IntGetWindowPlacement(Window, &mut wndpl) != 0 && Hit == 0 {
-            if !rectWnd.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this copy is the access. A fault sets Hit, the
+            // flag already read below, so it takes the same path a failed probe takes.
+            if !rectWnd.is_null()
+                && !crate::copy::publish_to_user(
                     rectWnd as *mut core::ffi::c_void,
                     core::ptr::addr_of!(wndpl.rcNormalPosition) as *const core::ffi::c_void,
-                    core::mem::size_of::<RECT>() as SIZE_T,
-                );
+                    core::mem::size_of::<RECT>(),
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Hit = 1u8;
             }
-            if !ptIcon.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this copy is the access. A fault sets Hit, the
+            // flag already read below, so it takes the same path a failed probe takes.
+            if !ptIcon.is_null()
+                && !crate::copy::publish_to_user(
                     ptIcon as *mut core::ffi::c_void,
                     core::ptr::addr_of!(wndpl.ptMinPosition) as *const core::ffi::c_void,
-                    core::mem::size_of::<POINT>() as SIZE_T,
-                );
+                    core::mem::size_of::<POINT>(),
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Hit = 1u8;
             }
 
             if Hit == 0 {
@@ -3829,19 +3840,29 @@ pub unsafe extern "system" fn NtUserGetInternalWindowPos(
         wndpl.length = core::mem::size_of::<WINDOWPLACEMENT>() as u32;
 
         if IntGetWindowPlacement(Window, &mut wndpl) != 0 && Hit == 0 {
-            if !rectWnd.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this copy is the access. A fault sets Hit, the
+            // flag already read below, so it takes the same path a failed probe takes.
+            if !rectWnd.is_null()
+                && !crate::copy::publish_to_user(
                     rectWnd as *mut core::ffi::c_void,
                     core::ptr::addr_of!(wndpl.rcNormalPosition) as *const core::ffi::c_void,
                     core::mem::size_of::<RECT>() as _,
-                );
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Hit = 1u8;
             }
-            if !ptIcon.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this copy is the access. A fault sets Hit, the
+            // flag already read below, so it takes the same path a failed probe takes.
+            if !ptIcon.is_null()
+                && !crate::copy::publish_to_user(
                     ptIcon as *mut core::ffi::c_void,
                     core::ptr::addr_of!(wndpl.ptMinPosition) as *const core::ffi::c_void,
                     core::mem::size_of::<POINT>() as _,
-                );
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Hit = 1u8;
             }
 
             if Hit == 0 {
@@ -4128,19 +4149,29 @@ pub unsafe extern "system" fn NtUserSetInternalWindowPos(
             SetLastNtError(Status);
             break 'exit;
         } else {
-            if !lppt.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this capture is the access, and a fault takes the
+            // same exit the probe failure takes.
+            if !lppt.is_null()
+                && !crate::copy::capture_from_user(
                     core::ptr::addr_of_mut!(pt) as *mut _,
                     lppt as *const _,
                     core::mem::size_of::<POINT>() as _,
-                );
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                break 'exit;
             }
-            if !lprect.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this capture is the access, and a fault takes the
+            // same exit the probe failure takes.
+            if !lprect.is_null()
+                && !crate::copy::capture_from_user(
                     core::ptr::addr_of_mut!(rect) as *mut _,
                     lprect as *const _,
                     core::mem::size_of::<RECT>() as _,
-                );
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                break 'exit;
             }
         }
 
@@ -4206,19 +4237,29 @@ pub unsafe extern "system" fn NtUserSetInternalWindowPos(
             SetLastNtError(Status);
             break 'exit;
         } else {
-            if !lppt.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this capture is the access, and a fault takes the
+            // same exit the probe failure takes.
+            if !lppt.is_null()
+                && !crate::copy::capture_from_user(
                     core::ptr::addr_of_mut!(pt) as *mut _,
                     lppt as *const _,
                     core::mem::size_of::<POINT>() as _,
-                );
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                break 'exit;
             }
-            if !lprect.is_null() {
-                RtlCopyMemory(
+            // Validate-only probe above; this capture is the access, and a fault takes the
+            // same exit the probe failure takes.
+            if !lprect.is_null()
+                && !crate::copy::capture_from_user(
                     core::ptr::addr_of_mut!(rect) as *mut _,
                     lprect as *const _,
                     core::mem::size_of::<RECT>() as _,
-                );
+                )
+            {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                break 'exit;
             }
         }
 
@@ -4263,7 +4304,15 @@ pub unsafe extern "system" fn NtUserSetWindowPlacement(hWnd: HWND, lpwndpl: *mut
             break 'exit;
         }
 
-        Safepl = *lpwndpl;
+        // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(Safepl) as *mut core::ffi::c_void,
+            lpwndpl as *const core::ffi::c_void,
+            core::mem::size_of::<WINDOWPLACEMENT>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            break 'exit;
+        }
 
         if LOWORD((*gptiCurrent).dwExpWinVer as u32) < WINVER_WINNT4 as u32 {
             Safepl.length = core::mem::size_of::<WINDOWPLACEMENT>() as _;

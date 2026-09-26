@@ -7,6 +7,8 @@ add_library(msvcrt40 MODULE
 
 set_module_type(msvcrt40 win32dll ENTRYPOINT DllMain 12)
 add_dependencies(msvcrt40 psdk)
+include(${REACTOS_SOURCE_DIR}/dll/win32/msvcrt/msvcrt_rust_cohab.cmake)
+link_msvcrt_rust_cohab(msvcrt40)
 target_link_libraries(msvcrt40 msvcrt_static crtmath vcruntime chkstk wine ${PSEH_LIB})
 
 add_importlibs(msvcrt40 kernel32 kernel32_vista ntdll)

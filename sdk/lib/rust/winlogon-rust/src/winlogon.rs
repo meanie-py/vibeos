@@ -455,62 +455,6 @@ pub unsafe extern "C" fn RemoveStatusMessage(Session: PWLSESSION) -> BOOL {
     (*Session).Gina.Functions.WlxRemoveStatusMessage.unwrap()((*Session).Gina.Context)
 }
 
-// FontLoadThread — WINAPI thread routine (CreateThread's LPTHREAD_START_ROUTINE
-// is `extern "stdcall"` on i386 / `extern "C"` on amd64+arm64). Split into a
-// shared impl + two cfg trampolines (same pattern as shutdown.rs).
-unsafe fn FontLoadThreadImpl(_lpParam: LPVOID) -> DWORD {
-    const FONT_NAMES: [&[u16]; 8] = [
-        wstr!("\\Fonts\\tahoma.ttf"),
-        wstr!("\\Fonts\\tahomabd.ttf"),
-        wstr!("\\Fonts\\Marlett.ttf"),
-        wstr!("\\Fonts\\arial.ttf"),
-        wstr!("\\Fonts\\arialbd.ttf"),
-        wstr!("\\Fonts\\cour.ttf"),
-        wstr!("\\Fonts\\times.ttf"),
-        wstr!("\\Fonts\\symbol.ttf"),
-    ];
-    let mut WinDir: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut FontPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-
-    let Len = GetWindowsDirectoryW(WinDir.as_mut_ptr(), MAX_PATH);
-    DbgPrint(
-        b"[WINLOGON] FontLoadThread: WindowsDirectory=%S len=%lu\n\0".as_ptr() as *const i8,
-        WinDir.as_ptr(),
-        Len,
-    );
-    if Len == 0 || Len >= MAX_PATH - 40 {
-        DbgPrint(
-            b"[WINLOGON] FontLoadThread: GetWindowsDirectoryW failed\n\0".as_ptr() as *const i8,
-        );
-        return 1;
-    }
-    for name in FONT_NAMES.iter() {
-        wcscpy(FontPath.as_mut_ptr(), WinDir.as_ptr());
-        wcscat(FontPath.as_mut_ptr(), name.as_ptr());
-        if AddFontResourceW(FontPath.as_ptr()) != 0 {
-            DbgPrint(
-                b"[WINLOGON] Loaded font: %S\n\0".as_ptr() as *const i8,
-                FontPath.as_ptr(),
-            );
-        } else {
-            DbgPrint(
-                b"[WINLOGON] Failed to load font: %S (err %lu)\n\0".as_ptr() as *const i8,
-                FontPath.as_ptr(),
-                GetLastError(),
-            );
-        }
-    }
-    DbgPrint(
-        b"[WINLOGON] Font loading complete (%d fonts)\n\0".as_ptr() as *const i8,
-        FONT_NAMES.len() as i32,
-    );
-    0
-}
-
-unsafe extern "system" fn FontLoadThread(lpParam: LPVOID) -> DWORD {
-    FontLoadThreadImpl(lpParam)
-}
-
 /* DOOM (opt-in demo, VIBEOS_DOOM=1 at image-build time). doomgeneric's
  * Win32/GDI backend — a genuinely foreign binary — is launched ONLY if
  * doom.exe was staged into the image (GetFileAttributesW succeeds): arm64
@@ -1880,7 +1824,17 @@ unsafe fn TryStartWinetest(
     Sub: *const u16,
     Label: *const i8,
     TimeoutMs: DWORD,
+    /* Non-null: accumulate the child's stdout here (NUL-terminated, truncated
+     * to CaptureMax-1) INSTEAD of re-emitting it line by line. Only `--list`
+     * uses it -- 49 lines of subtest names are for the sweep to read, not for
+     * a human to scroll past. */
+    Capture: *mut u8,
+    CaptureMax: usize,
 ) {
+    let mut CapLen: usize = 0;
+    if !Capture.is_null() && CaptureMax > 0 {
+        *Capture = 0;
+    }
     /* Serial is the bottleneck for the whole boot, and a looping suite can
      * emit without bound. Past this many bytes the output is dropped (the
      * pipe is still drained, or the child blocks on a full pipe and the
@@ -1903,6 +1857,23 @@ unsafe fn TryStartWinetest(
     wcscat(Path.as_mut_ptr(), Exe);
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged -- silent no-op, like every other optional guest
+    }
+    /* Not in a kmtest conformance boot. Its sweep grades timing-sensitive
+     * kernel tests (ExFastMutex, ExResource) against a banked baseline, and a
+     * tree built with --rostests staged the winetest into that media too:
+     * user32:class and its 26 child processes then ran alongside the sweep,
+     * and every i386 sweep regressed ExFastMutex, while the conductor's fresh
+     * tree (no winetest) stayed clean. The sweep's test list is the marker. */
+    let mut Kmt: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Kmt.as_mut_ptr(), MAX_PATH - 32) != 0 {
+        wcscat(Kmt.as_mut_ptr(), wstr!("\\bin\\kmtest-tests.txt").as_ptr());
+        if GetFileAttributesW(Kmt.as_ptr()) != 0xFFFF_FFFF {
+            DbgPrint(
+                b"[WT] %s: skipped - kmtest conformance boot\n\0".as_ptr() as *const i8,
+                Label,
+            );
+            return;
+        }
     }
 
     let mut Sa: SECURITY_ATTRIBUTES = zeroed();
@@ -1938,28 +1909,22 @@ unsafe fn TryStartWinetest(
     Si.hStdInput = null_mut();
     Si.hStdOutput = Wr;
     Si.hStdError = Wr;
-    /* DETACHED_PROCESS, on BOTH sides.
+    /* Every winetest gets a real console, native and WoW64 guest alike.
      *
-     * A winetest is a CUI image, so without this csrss allocates it a console
-     * -- and console creation HANGS the process before it reaches main:
+     * This ran DETACHED_PROCESS on both sides because console creation hung:
      * `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE message failed`,
-     * then an unbounded `Sending to Suspended Thread` spin. Measured at a 180s
-     * timeout with ZERO bytes of output, 9075 spin lines.
+     * then an unbounded `Sending to Suspended Thread` spin. That was three bugs,
+     * fixed 2026-09-23:
+     *   - win32k never loaded consrv's "VGA" font;
+     *   - KAPC_STATE_ACTUAL_LENGTH made attached threads read as suspended;
+     *   - consrv's handle table and GuiVtbl (ABI and stride) crashed csrss on i386.
+     * The native control then ran end to end in ~1 minute. Before, class.c's
+     * fifteen CUI children each burned winetest_wait_child_process's 30s.
      *
-     * It was first seen on a WoW64 guest, and the native control settled where
-     * it lives: bare i386, no WoW64 anywhere, same two subtests, SAME failure
-     * and same zero bytes. So it is a plain console bug of ours, not a 32<->64
-     * one, and detaching is the right call on both sides rather than a WoW64
-     * workaround. The test needs no console: its stdout is the pipe above.
-     *
-     * It also explains the child-process hang the native control runs into
-     * later. class.c spawns fifteen children of its own; a CUI child of a
-     * console-less parent gets a NEW console from csrss, which is this same
-     * hang, so each one burns the full 30s of winetest_wait_child_process.
-     * That is 7.5 minutes, and it is why the control has never reached the
-     * wndproc block it exists to adjudicate. One bug, three symptoms; fixing
-     * console creation unblocks the attribution. */
-    const WT_CREATE_FLAGS: DWORD = 0x0000_0008; /* DETACHED_PROCESS */
+     * The WoW64 guest was kept DETACHED until it was measured separately. On
+     * amd64 the guest user32:wsprintf now runs with a console, 58 tests and 0
+     * failures, matching the native control. The --ladder rungs stay green. */
+    let WT_CREATE_FLAGS: DWORD = 0;
     if CreateProcessW(
         Path.as_ptr(),
         Line.as_mut_ptr(),
@@ -2042,6 +2007,14 @@ unsafe fn TryStartWinetest(
                         WT_MAX_OUTPUT,
                     );
                 }
+            } else if !Capture.is_null() {
+                for i in 0..Got as usize {
+                    if CapLen + 1 < CaptureMax {
+                        *Capture.add(CapLen) = Chunk[i];
+                        CapLen += 1;
+                        *Capture.add(CapLen) = 0;
+                    }
+                }
             } else {
                 for i in 0..Got as usize {
                     let c = Chunk[i];
@@ -2082,7 +2055,7 @@ unsafe fn TryStartWinetest(
         Sleep(20);
     }
 
-    if OutLen > 0 {
+    if OutLen > 0 && Capture.is_null() {
         Out[OutLen] = 0;
         DbgPrint(
             b"[WT] %s| %s\n\0".as_ptr() as *const i8,
@@ -2091,6 +2064,10 @@ unsafe fn TryStartWinetest(
         );
     }
 
+    /* Wall-clock per subtest. A sweep's budget is set by its slowest members,
+     * and without this the only way to find them is to diff timestamps that
+     * the serial log does not carry. */
+    let ElapsedMs = GetTickCount().wrapping_sub(Start);
     if TimedOut {
         DbgPrint(
             b"[WT] %s: TIMEOUT after %lu ms - terminating\n\0".as_ptr() as *const i8,
@@ -2113,28 +2090,332 @@ unsafe fn TryStartWinetest(
          * it as "57005 failure(s)" is the same lie as reporting 0xC0000005 as
          * "3221225477 failure(s)". */
         DbgPrint(
-            b"[WT] %s: TIMED OUT, %lu bytes of output\n\0".as_ptr() as *const i8,
+            b"[WT] %s: TIMED OUT, %lu bytes of output, %lu ms\n\0".as_ptr() as *const i8,
             Label,
             Total,
+            ElapsedMs,
         );
     } else if ExitCode >= 0xC000_0000 {
         DbgPrint(
-            b"[WT] %s: CRASHED, exit = 0x%lx, %lu bytes of output\n\0".as_ptr() as *const i8,
+            b"[WT] %s: CRASHED, exit = 0x%lx, %lu bytes of output, %lu ms\n\0".as_ptr()
+                as *const i8,
             Label,
             ExitCode,
             Total,
+            ElapsedMs,
         );
     } else {
         DbgPrint(
-            b"[WT] %s: exit = %lu failure(s), %lu bytes of output\n\0".as_ptr() as *const i8,
+            b"[WT] %s: exit = %lu failure(s), %lu bytes of output, %lu ms\n\0".as_ptr()
+                as *const i8,
             Label,
             ExitCode,
             Total,
+            ElapsedMs,
         );
     }
     CloseHandle(Rd);
     CloseHandle(Pi.hThread);
     CloseHandle(Pi.hProcess);
+}
+
+/* Run EVERY subtest of one suite, enumerated from the binary itself.
+ *
+ * The subtest list comes from `<exe> --list`, not from a table here and not
+ * from parsing testlist.c at build time. Both of those drift the moment
+ * upstream adds a test, and a list that silently loses an entry reports
+ * "all green" for a suite it no longer runs -- the failure mode a conformance
+ * sweep exists to prevent. Asking the binary cannot drift.
+ *
+ * One process per subtest is forced on us: wine's test.h `main` prints usage
+ * and exits when given no argument (unless the suite has exactly one test),
+ * so there is no whole-suite mode to use instead. The cost is a guest process
+ * launch per subtest, which under WoW64 is thousands of serial lines of loader
+ * trace before the test says anything.
+ *
+ * OFF unless the media carries the sweep marker -- see
+ * `--winetest-sweep`. A default boot keeps running the two hand-picked
+ * subtests, because the ladder is on the gate's path and a 48-subtest sweep
+ * is not.
+ */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn TryStartWinetestSuite(
+    Dir: *const u16,
+    Exe: *const u16,
+    Prefix: *const u8,
+    TimeoutMs: DWORD,
+    Skips: *const u8,
+) {
+    /* 48 names averaging ~10 chars, plus the header, is under 1 KB for
+     * user32; the biggest suite in the tree (kernel32, 68) still fits. A
+     * suite that overruns this is truncated mid-name, so the parse below
+     * drops the partial tail rather than launching a bogus subtest. */
+    let mut List: [u8; 4096] = [0; 4096];
+    /* The enumeration run is labelled `<prefix>:--list` ON PURPOSE: ladder.py
+     * matches a graded label as `[A-Za-z0-9_/]+:[A-Za-z0-9_]+`, and the two
+     * dashes keep this one out of every winetest tally. It is bookkeeping, not
+     * a subtest, and counting it would add a phantom pass to each suite. */
+    let mut ListLabel: [u8; 64] = [0; 64];
+    let n = AppendAscii(&mut ListLabel, 0, Prefix);
+    AppendAscii(&mut ListLabel, n, b":--list\0".as_ptr());
+
+    TryStartWinetest(
+        Dir,
+        Exe,
+        wstr!("--list").as_ptr(),
+        ListLabel.as_ptr() as *const i8,
+        60_000,
+        List.as_mut_ptr(),
+        List.len(),
+    );
+
+    /* `--list` prints "Valid test names:" then one indented name per line.
+     * Anything before the header is noise from the loader, not a name. */
+    let mut i = 0usize;
+    let mut Found = 0u32;
+    let mut Launched = 0u32;
+    let mut Skipped = 0u32;
+    let mut QuarantineLabel: [u8; 128] = [0; 128];
+    while i < List.len() && List[i] != 0 {
+        /* one line: [i, e) */
+        let mut e = i;
+        while e < List.len() && List[e] != 0 && List[e] != b'\n' {
+            e += 1;
+        }
+        let mut a = i;
+        while a < e && (List[a] == b' ' || List[a] == b'\t' || List[a] == b'\r') {
+            a += 1;
+        }
+        let mut b = e;
+        while b > a && (List[b - 1] == b' ' || List[b - 1] == b'\t' || List[b - 1] == b'\r') {
+            b -= 1;
+        }
+        if Found == 0 {
+            /* still looking for the header */
+            if b > a && List[a] == b'V' {
+                Found = 1;
+            }
+        } else if b > a {
+            let len = b - a;
+            if WinetestSkipped(Skips, &List[a..b]) {
+                Skipped += 1;
+                DbgPrint(
+                    b"[WT] %s: QUARANTINED, not launched\n\0".as_ptr() as *const i8,
+                    {
+                        /* label it the same way a run would, so a reader
+                         * grepping for a subtest finds why it is absent. */
+                        let mut L: [u8; 128] = [0; 128];
+                        let mut p = AppendAscii(&mut L, 0, Prefix);
+                        if p + 1 < L.len() {
+                            L[p] = b':';
+                            p += 1;
+                        }
+                        for k in 0..len {
+                            if p + 1 < L.len() {
+                                L[p] = List[a + k];
+                                p += 1;
+                            }
+                        }
+                        L[p] = 0;
+                        QuarantineLabel = L;
+                        QuarantineLabel.as_ptr() as *const i8
+                    },
+                );
+            } else if len < 64 {
+                let mut SubW: [u16; 64] = [0; 64];
+                for k in 0..len {
+                    SubW[k] = List[a + k] as u16;
+                }
+                let mut Label: [u8; 128] = [0; 128];
+                let mut p = AppendAscii(&mut Label, 0, Prefix);
+                if p + 1 < Label.len() {
+                    Label[p] = b':';
+                    p += 1;
+                }
+                for k in 0..len {
+                    if p + 1 < Label.len() {
+                        Label[p] = List[a + k];
+                        p += 1;
+                    }
+                }
+                Label[p] = 0;
+                Launched += 1;
+                TryStartWinetest(
+                    Dir,
+                    Exe,
+                    SubW.as_ptr(),
+                    Label.as_ptr() as *const i8,
+                    TimeoutMs,
+                    null_mut(),
+                    0,
+                );
+            }
+        }
+        i = if e < List.len() && List[e] == b'\n' { e + 1 } else { e };
+    }
+
+    if Found == 0 {
+        /* Loud: a suite that is staged but whose --list said nothing has been
+         * swept for zero subtests, and silence there reads exactly like a
+         * clean sweep. */
+        DbgPrint(
+            b"[WT] %s: --list produced no subtest names - suite NOT swept\n\0".as_ptr()
+                as *const i8,
+            Prefix,
+        );
+    } else {
+        DbgPrint(
+            b"[WT] %s: sweep complete, %lu subtests, %lu quarantined\n\0".as_ptr() as *const i8,
+            Prefix,
+            Launched,
+            Skipped,
+        );
+    }
+}
+
+/* Append a NUL-terminated ASCII string into `dst` at `at`; returns the new
+ * length. Always leaves `dst` NUL-terminated. */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn AppendAscii(dst: &mut [u8], at: usize, src: *const u8) -> usize {
+    let mut n = at;
+    let mut k = 0usize;
+    while *src.add(k) != 0 && n + 1 < dst.len() {
+        dst[n] = *src.add(k);
+        n += 1;
+        k += 1;
+    }
+    dst[n] = 0;
+    n
+}
+
+/* Does this media ask for the full sweep, and with what quarantined?
+ *
+ * Both answers come from one staged file, `reactos\bin\winetest-sweep`: its
+ * EXISTENCE turns the sweep on, and its `skip <subtest>` lines name subtests
+ * not to launch. One file rather than two because the quarantine is
+ * meaningless without the sweep, and a skip list that outlived its sweep would
+ * be a silent subtraction nobody re-reads.
+ *
+ * A quarantine is needed at all because one subtest can BUGCHECK the machine,
+ * and everything after it in the sweep then never runs -- `user32:input` does
+ * exactly that on i386 today, blinding the twelve subtests behind it. Same
+ * shape as tools/payloads/apitest/quarantine-amd64.txt, and the same warning
+ * applies: an entry that matches nothing is reported below, not ignored,
+ * because a typo'd skip silently un-skips.
+ *
+ * Returns false (sweep off) when the file is absent. Read failures are LOUD
+ * and fall back to sweeping everything: a quarantine we could not read must
+ * not quietly become "skip nothing" without saying so, nor cancel the sweep.
+ */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn WinetestSweepRequested(Skips: *mut u8, SkipsMax: usize) -> bool {
+    if !Skips.is_null() && SkipsMax > 0 {
+        *Skips = 0;
+    }
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return false;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\bin\\winetest-sweep").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return false;
+    }
+    if Skips.is_null() || SkipsMax == 0 {
+        return true;
+    }
+    const GENERIC_READ_: DWORD = 0x8000_0000;
+    let INVALID_HANDLE_VALUE_: HANDLE = (-1isize) as HANDLE;
+    const FILE_SHARE_READ_: DWORD = 1;
+    const OPEN_EXISTING_: DWORD = 3;
+    let h = CreateFileW(
+        Path.as_ptr(),
+        GENERIC_READ_,
+        FILE_SHARE_READ_,
+        null_mut(),
+        OPEN_EXISTING_,
+        0,
+        null_mut(),
+    );
+    if h == INVALID_HANDLE_VALUE_ {
+        DbgPrint(
+            b"[WT] sweep marker present but unreadable (error %lu) - quarantine IGNORED, sweeping everything\n\0"
+                .as_ptr() as *const i8,
+            GetLastError(),
+        );
+        return true;
+    }
+    let mut Got: DWORD = 0;
+    if ReadFile(
+        h,
+        Skips as *mut _,
+        (SkipsMax - 1) as DWORD,
+        &mut Got,
+        null_mut(),
+    ) == 0
+    {
+        DbgPrint(
+            b"[WT] sweep marker read FAILED (error %lu) - quarantine IGNORED, sweeping everything\n\0"
+                .as_ptr() as *const i8,
+            GetLastError(),
+        );
+        Got = 0;
+    }
+    *Skips.add(Got as usize) = 0;
+    CloseHandle(h);
+    true
+}
+
+/* Is `name` (len bytes at `name`) on a `skip <name>` line of the marker? */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn WinetestSkipped(Skips: *const u8, name: &[u8]) -> bool {
+    if Skips.is_null() {
+        return false;
+    }
+    let mut i = 0usize;
+    loop {
+        /* start of a line */
+        let mut e = i;
+        while *Skips.add(e) != 0 && *Skips.add(e) != b'\n' {
+            e += 1;
+        }
+        let mut a = i;
+        while a < e && (*Skips.add(a) == b' ' || *Skips.add(a) == b'\t') {
+            a += 1;
+        }
+        /* "skip" + whitespace + name */
+        if e - a > 5
+            && *Skips.add(a) == b's'
+            && *Skips.add(a + 1) == b'k'
+            && *Skips.add(a + 2) == b'i'
+            && *Skips.add(a + 3) == b'p'
+            && (*Skips.add(a + 4) == b' ' || *Skips.add(a + 4) == b'\t')
+        {
+            let mut w = a + 5;
+            while w < e && (*Skips.add(w) == b' ' || *Skips.add(w) == b'\t') {
+                w += 1;
+            }
+            let mut z = e;
+            while z > w && (*Skips.add(z - 1) == b' ' || *Skips.add(z - 1) == b'\t' || *Skips.add(z - 1) == b'\r') {
+                z -= 1;
+            }
+            if z - w == name.len() {
+                let mut same = true;
+                for k in 0..name.len() {
+                    if *Skips.add(w + k) != name[k] {
+                        same = false;
+                        break;
+                    }
+                }
+                if same {
+                    return true;
+                }
+            }
+        }
+        if *Skips.add(e) == 0 {
+            return false;
+        }
+        i = e + 1;
+    }
 }
 
 /* E4c robustness: winmine.exe — a STOCK i386 OS applet (menus, WM_TIMER,
@@ -2449,18 +2730,11 @@ pub unsafe extern "system" fn WinMain(
             DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
         }
 
-        /* Load system fonts SYNCHRONOUSLY now — right after the window station and
-         * desktops exist (CreateWindowStationAndDesktops above) and BEFORE any text
-         * is rendered: the GINA status message (DisplayStatusMessage), the desktop
-         * watermark, and explorer's taskbar all need g_FontListHead populated. The
-         * kernel defers system-font loading to user space on x86 (IntLoadSystemFonts
-         * is a no-op there), so until winlogon calls AddFontResourceW the global font
-         * list is empty and every GreExtTextOutW hits IntRealizeFont NOMATCH. The old
-         * code did this on a background thread AFTER spawning explorer, which raced
-         * the shell's first paint and lost on i386 -> permanently blank desktop.
-         * Doing it here, before the first text render, makes it deterministic. */
-        DbgPrint(b"[WINLOGON] Loading system fonts (synchronous, pre-shell)...\n\0".as_ptr() as *const i8);
-        FontLoadThreadImpl(null_mut());
+        /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
+         * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
+         * winlogon used to AddFontResourceW eight fonts by name here because the
+         * kernel skipped that load on x86. The list lacked the console's "VGA" face,
+         * so no console window could be created. */
 
         DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
         if crate::rpcserver::StartRpcServer() == 0 {
@@ -2811,10 +3085,6 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
-    /* Fonts are now loaded synchronously BEFORE explorer.exe (see above), so the
-     * shell's first paint already has g_FontListHead populated. The old async
-     * CreateThread(FontLoadThread) here raced the shell and lost on i386. */
-
     /* Spawn notepad.exe LAST among GUI apps so it gets keyboard focus.
      * arm64-only: on amd64/i386 notepad hits a separate pre-existing
      * desktop-heap handle-validation AV (pci->pDeskInfo bogus in user32
@@ -3069,20 +3339,35 @@ pub unsafe extern "system" fn WinMain(
          *              win32k round-trips with 32<->64 handle and LONG_PTR
          *              width conversion in the middle
          * Silent no-op unless the i386 rostests build staged them. */
-        TryStartWinetest(
-            wstr!("syswow64").as_ptr(),
-            wstr!("user32_winetest.exe").as_ptr(),
-            wstr!("wsprintf").as_ptr(),
-            b"user32:wsprintf\0".as_ptr() as *const i8,
-            180_000,
-        );
-        TryStartWinetest(
-            wstr!("syswow64").as_ptr(),
-            wstr!("user32_winetest.exe").as_ptr(),
-            wstr!("class").as_ptr(),
-            b"user32:class\0".as_ptr() as *const i8,
-            180_000,
-        );
+        let mut Skips: [u8; 2048] = [0; 2048];
+        if WinetestSweepRequested(Skips.as_mut_ptr(), Skips.len()) {
+            TryStartWinetestSuite(
+                wstr!("syswow64").as_ptr(),
+                wstr!("user32_winetest.exe").as_ptr(),
+                b"user32\0".as_ptr(),
+                180_000,
+                Skips.as_ptr(),
+            );
+        } else {
+            TryStartWinetest(
+                wstr!("syswow64").as_ptr(),
+                wstr!("user32_winetest.exe").as_ptr(),
+                wstr!("wsprintf").as_ptr(),
+                b"user32:wsprintf\0".as_ptr() as *const i8,
+                180_000,
+                null_mut(),
+                0,
+            );
+            TryStartWinetest(
+                wstr!("syswow64").as_ptr(),
+                wstr!("user32_winetest.exe").as_ptr(),
+                wstr!("class").as_ptr(),
+                b"user32:class\0".as_ptr() as *const i8,
+                180_000,
+                null_mut(),
+                0,
+            );
+        }
 
         /* E4c robustness: a stock i386 OS applet nobody wrote for this test —
          * menus, timers, dialog resources. Launched BEFORE doom so doom's
@@ -3225,20 +3510,35 @@ pub unsafe extern "system" fn WinMain(
      * file and says nothing. */
     #[cfg(target_arch = "x86")]
     {
-        TryStartWinetest(
-            wstr!("bin").as_ptr(),
-            wstr!("user32_winetest.exe").as_ptr(),
-            wstr!("wsprintf").as_ptr(),
-            b"native/user32:wsprintf\0".as_ptr() as *const i8,
-            180_000,
-        );
-        TryStartWinetest(
-            wstr!("bin").as_ptr(),
-            wstr!("user32_winetest.exe").as_ptr(),
-            wstr!("class").as_ptr(),
-            b"native/user32:class\0".as_ptr() as *const i8,
-            180_000,
-        );
+        let mut Skips: [u8; 2048] = [0; 2048];
+        if WinetestSweepRequested(Skips.as_mut_ptr(), Skips.len()) {
+            TryStartWinetestSuite(
+                wstr!("bin").as_ptr(),
+                wstr!("user32_winetest.exe").as_ptr(),
+                b"native/user32\0".as_ptr(),
+                180_000,
+                Skips.as_ptr(),
+            );
+        } else {
+            TryStartWinetest(
+                wstr!("bin").as_ptr(),
+                wstr!("user32_winetest.exe").as_ptr(),
+                wstr!("wsprintf").as_ptr(),
+                b"native/user32:wsprintf\0".as_ptr() as *const i8,
+                180_000,
+                null_mut(),
+                0,
+            );
+            TryStartWinetest(
+                wstr!("bin").as_ptr(),
+                wstr!("user32_winetest.exe").as_ptr(),
+                wstr!("class").as_ptr(),
+                b"native/user32:class\0".as_ptr() as *const i8,
+                180_000,
+                null_mut(),
+                0,
+            );
+        }
     }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned

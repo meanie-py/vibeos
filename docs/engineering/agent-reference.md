@@ -665,6 +665,36 @@ Sonnet is considered only after substrate closure leaves a genuine semantic/stru
 residual. The complete protocol and stop rules are in
 `docs/engineering/rustconv-substrate-closure-protocol.md`.
 
+### How much C is left — `tools/port_audit.py`
+
+```bash
+python3 tools/port_audit.py                # the generated core ledger (markdown)
+python3 tools/port_audit.py --json         # same rows, machine-readable
+python3 tools/port_audit.py --check        # ratchet: every compiled source is classified
+python3 tools/port_audit.py --detail "Win32 DLLs"   # live directories in one surface
+python3 tools/port_audit.py --rust         # lines of Rust: translation / generated / harness
+```
+
+Answers "where are we at on the core OS" from the **ninja build graph of this worktree's
+three build dirs**, unioned — so a surface's "live C" is what the link actually compiles,
+after every `if(ARCH)` and every commented-out CMake entry. Core is everything we own
+that ships in the base OS, **Wine-derived code included** (provenance is a column, not a
+scope); only `vendor.yaml` trees, applications, tests and host tools are reported
+separately. Its lines are C lines — compare Rust progress with `--rust`, which is ~2x.
+
+Two things it will not do. It **hard-fails** on a missing build dir or a graph older than
+a CMakeLists edit, rather than reporting the smaller tree a partial answer produces (fix:
+`./vibeos-cli build --arch <a>`); and `--check` **fails on a compiled source that matches
+no rule**, so a new top-level area has to be classified before the ledger prints at all —
+the same ratchet `vendored.py --check` applies to a new vendor drop. Coverage is computed
+from the `Rust twin` column (the module has a crate in `sdk/lib/rust/`), never from
+"out of build", because out-of-build also holds upstream C this port never compiled.
+
+It is a LINE ledger, not a symbol one: for who backs a specific export ask
+`export_census.py`, and for whether a flip took at the symbol level ask
+`verify_cohab_coverage.py`, which reads object files. Output goes in
+`rust-port-status.md`; do not hand-edit those tables.
+
 ### Which C is NOT ours — `vendor.yaml`
 
 ```bash
@@ -693,6 +723,16 @@ QUESTIONS, deliberately not gate findings: whether a driver framework this OS sh
 translation target is a judgement call, and auto-excluding on a copyright grep would
 shrink the denominator silently, which is the failure the registry exists to prevent.
 
+### Moving vendored code — `tools/vendor_move_plan.py`
+
+```bash
+python3 tools/vendor_move_plan.py                       # blast radius per tree, cheapest first
+python3 tools/vendor_move_plan.py --tree <vendored path> # every reference to one tree
+```
+
+Lists every reference that pins a vendored tree to its path — relative CMake, `.cmake`
+fragments, bindgen scripts, include-root consumers, and paths built from variables —
+before anyone runs `git mv`. Plan and hazards: `docs/engineering/vendor-relocation-plan.md`.
 ### Static Analysis Tools
 
 ```bash
@@ -821,7 +861,7 @@ if (u) { while (*msg) *u = (ULONG)*msg++; }
 
 All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64), or standard PC (i386).
 
-**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — **works since 2026-07-10: both x86 arches boot to desktop in ~52s** (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`; the boot CD rides an ich9-ahci controller under whpx so OVMF DMAs it instead of ~5min of PIO VM-exits — see `docs/engineering/windows-host-qemu-whpx-spike.md` + field manual §9.46 for the six guest-side bugs that bring-up flushed out). Still opt-in (default stays TCG) until whpx accumulates reliability history; same-arch whpx boots serialize (hardware-virt contention, like KVM). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real-hardware boot (e.g., Raspberry Pi for ARM64) is an aspirational target, not a current one.
+**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — **works since 2026-07-10: both x86 arches boot to desktop in ~52s** (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`; the boot CD rides an ich9-ahci controller under whpx so OVMF DMAs it instead of ~5min of PIO VM-exits — see `docs/engineering/windows-host-qemu-whpx-spike.md` + field manual §9.46 for the six guest-side bugs that bring-up flushed out). Still opt-in (default stays TCG) until whpx accumulates reliability history; same-arch whpx boots serialize (hardware-virt contention, like KVM). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real hardware: a **Raspberry Pi 4B** bench boots arm64 VibeOS to the desktop (UP kernel, 2026-09-25). Bench wiring and the hands-free netboot loop: `docs/engineering/pi4-bench.md`; findings: `docs/engineering/active-lanes/pi4-bringup.md`.
 
 ## rustconv — model shortcuts, HAL mode, and pipeline stages
 

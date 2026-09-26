@@ -16,6 +16,10 @@ static FMT_PERCENT_D: [u16; 3] = [
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+// misc.c:35. `#[no_mangle]`: profile.rs and the bindgen island read it through an `extern`, and
+// this is the one definition they link to (it was C storage in userenv_rust_shims.c until
+// 2026-09-25, and this copy was a private twin nothing else saw).
+#[no_mangle]
 pub static mut LocalSystemAuthority: SID_IDENTIFIER_AUTHORITY = _SID_IDENTIFIER_AUTHORITY {
     Value: [
         0 as ::core::ffi::c_int as BYTE,
@@ -369,7 +373,7 @@ unsafe extern "system" fn TimerDlgProc(
         WM_INITDIALOG => {
             if (*Info).ulTimeout != 0 {
                 let mut szTimeout: [WCHAR; 10] = [0; 10];
-                StringCchPrintfW(
+                StringCchPrintfW!(
                     szTimeout.as_mut_ptr(),
                     10,
                     FMT_PERCENT_D.as_ptr() as PCWSTR,
@@ -440,7 +444,7 @@ unsafe extern "system" fn TimerDlgProc(
             } else {
                 let mut szTimeout: [WCHAR; 10] = [0; 10];
                 (*Info).ulTimeout = (*Info).ulTimeout.wrapping_sub(1);
-                StringCchPrintfW(
+                StringCchPrintfW!(
                     szTimeout.as_mut_ptr(),
                     10,
                     FMT_PERCENT_D.as_ptr() as PCWSTR,

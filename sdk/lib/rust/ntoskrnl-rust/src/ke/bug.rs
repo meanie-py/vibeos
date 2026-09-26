@@ -898,45 +898,7 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
         // is otherwise unattributable (nothing to symbolicate at the fault).
         #[cfg(target_arch = "x86")]
         if !TrapFrame.is_null() {
-            let tf = TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
-            let eip = (*tf).Eip as u32;
-            let ebp = (*tf).Ebp as u32;
-            crate::dbg_print!(b"***   TrapFrame Eip=%p Ebp=%p Esp=%p\n\0",
-                eip as ULONG_PTR as PVOID, ebp as ULONG_PTR as PVOID,
-                core::ptr::addr_of!((*tf).HardwareEsp) as PVOID);
-            unsafe fn ksym(pc: u32) {
-                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
-                let mut in_kernel: BOOLEAN = 0;
-                let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
-                if !base.is_null() && !le.is_null() {
-                    let mut ansi = [0i8; 64];
-                    KeBugCheckUnicodeToAnsi(
-                        &(*le).BaseDllName as *const _ as PUNICODE_STRING,
-                        ansi.as_mut_ptr(), 64);
-                    crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
-                        pc as ULONG_PTR as PVOID, ansi.as_ptr(),
-                        (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
-                } else {
-                    crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
-                }
-            }
-            ksym(eip);
-            // EBP-chain backtrace (frame-pointer builds; bail on bad links)
-            let mut bp = ebp;
-            let mut n = 0;
-            while n < 16 && bp > 0x1000 {
-                if MmIsAddressValid(bp as ULONG_PTR as PVOID) == 0
-                    || MmIsAddressValid((bp + 7) as ULONG_PTR as PVOID) == 0 {
-                    break;
-                }
-                let ret = core::ptr::read_volatile((bp + 4) as *const u32);
-                if ret < 0x1000 { break; }
-                ksym(ret);
-                let next = core::ptr::read_volatile(bp as *const u32);
-                if next <= bp { break; }
-                bp = next;
-                n += 1;
-            }
+            i386_trap_frame_backtrace(TrapFrame as ULONG_PTR);
         }
         #[cfg(target_arch = "x86_64")]
         if !TrapFrame.is_null() {
@@ -1549,6 +1511,56 @@ pub unsafe extern "system" fn KeDeregisterNmiCallback(Handle: PVOID) -> NTSTATUS
     STATUS_INVALID_HANDLE
 }
 
+/// i386: symbolicate a trap frame's Eip and walk its EBP chain (frame-pointer builds; bails on
+/// a bad link). Shared by KeBugCheckWithTf and KeBugCheckEx's 0x1E, whose P3 on i386 IS the
+/// trap frame (KiDispatchException) — that crash used to print no stack at all.
+#[cfg(target_arch = "x86")]
+unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
+    if MmIsAddressValid(TrapFrame as PVOID) == 0 {
+        return;
+    }
+    let tf = TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
+    let eip = (*tf).Eip as u32;
+    let ebp = (*tf).Ebp as u32;
+    crate::dbg_print!(b"***   TrapFrame Eip=%p Ebp=%p Esp=%p\n\0",
+        eip as ULONG_PTR as PVOID, ebp as ULONG_PTR as PVOID,
+        core::ptr::addr_of!((*tf).HardwareEsp) as PVOID);
+    unsafe fn ksym(pc: u32) {
+        let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+        let mut in_kernel: BOOLEAN = 0;
+        let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
+        if !base.is_null() && !le.is_null() {
+            let mut ansi = [0i8; 64];
+            KeBugCheckUnicodeToAnsi(
+                &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                ansi.as_mut_ptr(), 64);
+            crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
+                pc as ULONG_PTR as PVOID, ansi.as_ptr(),
+                (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
+        } else {
+            crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
+        }
+    }
+    ksym(eip);
+    // EBP-chain backtrace (frame-pointer builds; bail on bad links)
+    let mut bp = ebp;
+    let mut n = 0;
+    while n < 16 && bp > 0x1000 {
+        if MmIsAddressValid(bp as ULONG_PTR as PVOID) == 0
+            || MmIsAddressValid((bp + 7) as ULONG_PTR as PVOID) == 0 {
+            break;
+        }
+        let ret = core::ptr::read_volatile((bp + 4) as *const u32);
+        if ret < 0x1000 { break; }
+        ksym(ret);
+        let next = core::ptr::read_volatile(bp as *const u32);
+        if next <= bp { break; }
+        bp = next;
+        n += 1;
+    }
+
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeBugCheckEx(
     BugCheckCode: ULONG,
@@ -1574,6 +1586,10 @@ pub unsafe extern "system" fn KeBugCheckEx(
         BugCheckParameter4 as PVOID,
     );
     KiBannerDone = 1; // WithTf must not re-print (Ex -> WithTf path)
+    #[cfg(target_arch = "x86")]
+    if BugCheckCode == 0x1E && BugCheckParameter3 > 0x80000000 {
+        i386_trap_frame_backtrace(BugCheckParameter3);
+    }
     // Self-symbolicate: any parameter that lands inside a loaded image prints
     // module+offset right in the banner, so post-boot-marker crashes are
     // self-reporting on serial (no GDB round-trip; module bases vary per boot,
@@ -1681,74 +1697,74 @@ pub unsafe extern "system" fn KeBugCheckEx(
         let mut s: &[u8] = b"\r\n*** BUGCHECK: code=0x\0";
         let mut i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" LR=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((lr >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P1=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter1 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P2=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter2 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P3=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter3 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P4=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter4 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b"\r\n\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
     }
@@ -1801,30 +1817,30 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
         let mut s: &[u8] = b"\r\n*** BUGCHECK: code=0x\0";
         let mut i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" LR=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((lr >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b"\r\n\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
     }

@@ -111,6 +111,11 @@ pub unsafe extern "C" fn KiUserModeCallout(CalloutFrame: PKCALLOUT_FRAME) -> NTS
     (*CallbackTrapFrame).Sp = (*TrapFrame).Sp;
 
     (*CallbackTrapFrame).ExceptionActive = 1u8;
+    // The copy carried VfpState, a DISTANCE to the NEON area below the ORIGINAL
+    // frame (trap.S NEON_SAVE); measured from here it lands on this function's own
+    // stack, and KiExceptionExit would load q0-q31 from it. The callback starts a
+    // fresh call, so it needs no vector state.
+    (*CallbackTrapFrame).VfpState = 0;
 
     KiExceptionExit(CallbackTrapFrame, core::ptr::null_mut());
 }

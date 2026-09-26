@@ -277,6 +277,8 @@ substance, don't pad with filler sections, redundant summaries, or boilerplate.
   innocent lanes still land. `./vibeos-cli land-status [--mine]` shows the conductor, the queue,
   and your verdict. `land --direct` is the opt-out (single-lane: merge master → gate → push,
   same lock) and `land --drain` forces a drain if the queue ever sits with no conductor.
+  **Mainline red? `land --hold "why" [--preempt]`, fix it with `land --direct`, `land --release`**
+  — never by messaging lanes to stop submitting (a red base also auto-holds until master moves).
   Hand-rolling gate-then-push is what made every lane race: the stamp is keyed to an exact
   TREE, so whoever pushes first voids everyone else's gate — and each wasted gate is 3 builds
   + 4 boots of fleet load that widens the window that voided it.

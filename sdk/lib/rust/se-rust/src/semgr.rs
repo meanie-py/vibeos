@@ -139,11 +139,12 @@ struct LUID {
 unsafe fn _se_trace(msg: &[u8]) {
     extern "C" {
         static mut Arm64UartKernelBase: PVOID;
+        fn Arm64UartPutChar(c: u8);
     }
     let u = Arm64UartKernelBase as *mut ULONG;
     if !u.is_null() {
         for &ch in msg {
-            *u = ch as ULONG;
+            Arm64UartPutChar(ch as u8);
         }
     }
 }

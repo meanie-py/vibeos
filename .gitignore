@@ -51,6 +51,7 @@ build-i386/
 
 # QEMU binary images (tracked scripts are fine)
 qemu/*.img
+qemu/ramdisk.payloads
 qemu/*.qcow2
 qemu/*.fd
 # ...but DO track the canonical UEFI firmware blobs so every worktree boots
@@ -100,3 +101,6 @@ qemu/snapshots/
 /build-policy.lock
 /build-policy.paused
 /build-policy.*.tmp
+
+# characterize.py serial archives (durable, but never committed)
+/.characterize-*/

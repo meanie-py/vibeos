@@ -14,6 +14,9 @@ RUNS_DIR="${RUNS_DIR:-$QEMU_DIR/runs}"
 
 SUPPORTED_ARCHES=(i386 amd64 arm64)
 
+# JSON in and out, stdlib python instead of jq (see lib/vjson.py for why).
+vjson() { python3 "$_LIB_DIR/vjson.py" "$@"; }
+
 # Hard wall-clock ceiling (seconds) on any QEMU we launch. Mirrors
 # tests/qemu/vm.py:MAX_VM_LIFETIME_SECONDS. A wedged guest / halted-at-gdb
 # debug VM / hung run must never hold a KVM slot or GBs of RAM forever.
@@ -213,11 +216,21 @@ owner_pid_for() {
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
         [ -z "$p" ] && break
         [ "$p" = "1" ] && break
-        comm="$(ps -o comm= -p "$p" 2>/dev/null | tr -d ' ')"
+        # /proc via bash builtins, not `ps | tr`: when that pipeline failed, comm read
+        # empty and this returned the SHORT-LIVED start.sh shell as the owner -- which
+        # the reaper then saw die and killed a live debug VM for.
+        comm=""
+        { read -r comm < "/proc/$p/comm"; } 2>/dev/null
         [ -z "$comm" ] && break
         case "$comm" in
             bash|sh|dash|zsh|fish|ksh|-bash|-sh|-zsh|-fish|-ksh|-dash)
-                pp="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+                # /proc/<pid>/stat is "pid (comm) state ppid ..."; comm may hold spaces
+                # or parens, so split after the LAST ") ".
+                local stat rest
+                { stat="$(< "/proc/$p/stat")"; } 2>/dev/null || break
+                rest="${stat##*) }"
+                pp="${rest#* }"
+                pp="${pp%% *}"
                 [ -z "$pp" ] && break
                 p="$pp"
                 ;;

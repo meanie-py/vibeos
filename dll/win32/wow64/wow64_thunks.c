@@ -27,9 +27,12 @@ DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
  * WOW64_AUTOMARSHAL_UNIMPL, not WOW64_MANUAL_UNIMPL -- test both. */
 NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments);
 
-/* Serial-noisy per-syscall trace for M3 bring-up; flip to 0 once the guest
- * loader path is stable (each guest syscall costs a DbgPrint line). */
-ULONG Wow64TraceSyscalls = 1;
+/* Serial-noisy per-syscall trace for M3 bring-up (each guest syscall costs a
+ * DbgPrint line, callbacks too). OFF since 2026-09-26: the loader path is long
+ * stable, and every amd64 boot runs user32_winetest as a WoW64 guest, so the
+ * trace grew the serial to ~40MB per sweep and slowed the whole TCG guest until
+ * unrelated apps missed their window timeouts. Set to 1 to debug a thunk. */
+ULONG Wow64TraceSyscalls = 0;
 
 /* wow64_win32k.c: the win32k (NtGdi/NtUser) table (guest EAX = 0x1000 +
  * w32ksvc32.h index -- the win32k service-table tag bit). */

@@ -1562,10 +1562,14 @@ pub const SLDF_HAS_EXP_ICON_SZ: DWORD = 0x00004000;
 pub const SLDF_RUN_WITH_SHIMLAYER: DWORD = 0x00020000;
 pub const SLDF_ALLOW_LINK_TO_LINK: DWORD = 0x00800000;
 // sdkddkver.h:157 + root CMakeLists.txt:250-252 (_WIN32_WINNT=0x502 => NTDDI=WS03).
-// The tree builds with NTDDI_VERSION < NTDDI_LONGHORN, so every
-// `#if (NTDDI_VERSION < NTDDI_LONGHORN)` block in CShellLink.cpp is COMPILED IN.
-pub const NTDDI_VERSION: DWORD = 0x05020000;
-pub const NTDDI_LONGHORN: DWORD = 0x06000000;
+// CShellLink.cpp has eight `#if (NTDDI_VERSION < NTDDI_LONGHORN)` blocks, all Logo3 (the
+// EXP_LOGO3_ID_SIG advertised-product block). They are EXCLUDED from the real build: shell32's
+// CMakeLists replaces the tree's -D_WIN32_WINNT=0x502 with 0x600, and sdkddkver.h derives
+// NTDDI_VERSION from it, so NTDDI_VERSION == NTDDI_LONGHORN == 0x06000000 and `<` is false —
+// confirmed with the build's own compiler on a probe (`BLOCK_IS_EXCLUDED`). This file used to
+// state the opposite and carried NTDDI_VERSION = 0x05020000 to match; four of the eight blocks
+// had been translated as live code on that basis. Every Logo3 path below is therefore absent
+// on purpose — each site says so where it would have been.
 
 #[repr(C)]
 pub struct BITMAPINFO {
@@ -3689,7 +3693,9 @@ pub unsafe fn CShellLink_WriteAdvertiseInfo_body(this: *mut CShellLink, string: 
     let mut buffer: EXP_DARWIN_LINK = core::mem::zeroed();
     let mut pInfo: *mut EXP_DARWIN_LINK;
 
-    if dwSig != EXP_DARWIN_ID_SIG && dwSig != EXP_LOGO3_ID_SIG {
+    // CShellLink.cpp:2102 `&& (dwSig != EXP_LOGO3_ID_SIG)` is inside an excluded NTDDI block, so
+    // a Logo3 signature is rejected here exactly as the real build rejects it.
+    if dwSig != EXP_DARWIN_ID_SIG {
         return E_INVALIDARG;
     }
     if string.is_null() {
@@ -3701,9 +3707,8 @@ pub unsafe fn CShellLink_WriteAdvertiseInfo_body(this: *mut CShellLink, string: 
         if (*pInfo).dbh.cbSize as usize != core::mem::size_of::<EXP_DARWIN_LINK>() {
             if dwSig == EXP_DARWIN_ID_SIG {
                 (*this).m_Header.dwFlags &= !SLDF_HAS_DARWINID;
-            } else if dwSig == EXP_LOGO3_ID_SIG {
-                (*this).m_Header.dwFlags &= !SLDF_HAS_LOGO3ID;
             }
+            // (CShellLink.cpp:2124-2127, the Logo3 branch, is an excluded NTDDI block.)
             CShellLink_RemoveDataBlock_body(this, dwSig);
             pInfo = core::ptr::null_mut();
         }
@@ -3726,9 +3731,8 @@ pub unsafe fn CShellLink_WriteAdvertiseInfo_body(this: *mut CShellLink, string: 
     if hr == S_OK {
         if dwSig == EXP_DARWIN_ID_SIG {
             (*this).m_Header.dwFlags |= SLDF_HAS_DARWINID;
-        } else if dwSig == EXP_LOGO3_ID_SIG {
-            (*this).m_Header.dwFlags |= SLDF_HAS_LOGO3ID;
         }
+        // (CShellLink.cpp:2153-2156, the Logo3 branch, is an excluded NTDDI block.)
     }
     hr
 }
@@ -3797,8 +3801,10 @@ pub unsafe fn CShellLink_SetAdvertiseInfo_body(this: *mut CShellLink, str: LPCWS
 
     hr = CShellLink_WriteAdvertiseInfo_body(this, szComponent, EXP_DARWIN_ID_SIG);
     // if (FAILED(hr)) return hr;  (commented out in the C++ too)
-    hr = CShellLink_WriteAdvertiseInfo_body(this, szProduct, EXP_LOGO3_ID_SIG);
-    // if (FAILED(hr)) return hr;
+    // CShellLink.cpp:2224-2228 writes the Logo3 PRODUCT block — an excluded NTDDI block, so the
+    // real build never writes it and neither does this. szProduct is still parsed and freed:
+    // that part of the C is outside the #if.
+    let _ = hr;
 
     HeapFree(GetProcessHeap(), 0, szComponent as PVOID);
     HeapFree(GetProcessHeap(), 0, szProduct as PVOID);

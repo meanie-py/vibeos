@@ -66,6 +66,15 @@ pub unsafe extern "system" fn GreSetBitmapOwner(
     GreSetObjectOwner(hbmp as HGDIOBJ, ulOwner)
 }
 
+/// `UnsafeSetBitmapBits` faulted reading the caller's buffer.
+///
+/// Not 0: a legitimate call CAN copy zero bytes (nHeight rows all clipped away), and
+/// `NtGdiSetBitmapBits` returns this value straight to user mode as a byte count. A
+/// caller must be able to tell "copied nothing" from "the buffer went away", because
+/// the C distinguished them with a `_SEH2_EXCEPT` and only the fault path tears down
+/// the surface it just allocated.
+const UNSAFE_SET_BITMAP_BITS_FAULTED: LONG = -1;
+
 #[no_mangle]
 pub unsafe extern "system" fn UnsafeSetBitmapBits(
     psurf: PSURFACE,
@@ -97,20 +106,24 @@ pub unsafe extern "system" fn UnsafeSetBitmapBits(
             let a = cjBits - iSrc;
             let b = cbDst - iDst;
             let lDelta: LONG = if a < b { a as LONG } else { b as LONG };
-            RtlCopyMemory(
+            if !crate::copy::capture_from_user(
                 pjDst as *mut core::ffi::c_void,
                 pjSrc as *const core::ffi::c_void,
                 lDelta as usize,
-            );
+            ) {
+                return UNSAFE_SET_BITMAP_BITS_FAULTED;
+            }
             iSrc += lDelta as ULONG;
             break;
         }
 
-        RtlCopyMemory(
+        if !crate::copy::capture_from_user(
             pjDst as *mut core::ffi::c_void,
             pjSrc as *const core::ffi::c_void,
             lDeltaSrc as usize,
-        );
+        ) {
+            return UNSAFE_SET_BITMAP_BITS_FAULTED;
+        }
         pjSrc = pjSrc.add(lDeltaSrc as usize);
         pjDst = pjDst.offset(lDeltaDst as isize);
         iSrc += lDeltaSrc as ULONG;
@@ -254,7 +267,18 @@ pub unsafe extern "system" fn NtGdiCreateBitmap(
             GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
             return core::ptr::null_mut();
         }
-        UnsafeSetBitmapBits(psurf, cjSize as ULONG, pUnsafeBits as *const core::ffi::c_void);
+        // The probe above only range-checks (validate-only under USE_DUMMY_PSEH). The
+        // C wrapped ProbeForRead AND this call in ONE _SEH2_TRY whose handler deleted
+        // the surface and returned NULL, so the COPY has to be fault-tolerant too and
+        // its failure has to take that same path. Restoring the probe alone left this
+        // a live BUGCHECK 0x1E: win32u_apitest NtGdiCreateBitmap faulted at
+        // NtGdiCreateBitmap+0x1F9 -> memcpy -> raw_move with 0xC0000005.
+        if UnsafeSetBitmapBits(psurf, cjSize as ULONG, pUnsafeBits as *const core::ffi::c_void)
+            == UNSAFE_SET_BITMAP_BITS_FAULTED
+        {
+            GDIOBJ_vDeleteObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
+            return core::ptr::null_mut();
+        }
     } else {
         RtlZeroMemory(
             (*psurf).SurfObj.pvBits,
@@ -602,7 +626,15 @@ pub unsafe extern "system" fn NtGdiGetBitmapDimension(
         return 0;
     }
 
-    *psizDim = dim;
+    // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND access
+    // in one _SEH2_TRY, so the access itself must be the fault-tolerant copy.
+    if !crate::copy::publish_to_user(
+        psizDim as *mut core::ffi::c_void,
+        core::ptr::addr_of!(dim) as *const core::ffi::c_void,
+        core::mem::size_of::<SIZE>(),
+    ) {
+        return 0;
+    }
 
     1
 }
@@ -705,7 +737,7 @@ pub unsafe extern "system" fn NtGdiSetBitmapBits(
     pUnsafeBits: PBYTE,
 ) -> LONG {
 
-    let ret: LONG;
+    let mut ret: LONG;
     let psurf: PSURFACE;
 
     if pUnsafeBits.is_null() || Bytes == 0 {
@@ -744,7 +776,11 @@ pub unsafe extern "system" fn NtGdiSetBitmapBits(
         return 0;
     }
 
+    // Same shape as NtGdiCreateBitmap above; here the C's handler set ret = 0.
     ret = UnsafeSetBitmapBits(psurf, Bytes, pUnsafeBits as *const core::ffi::c_void);
+    if ret == UNSAFE_SET_BITMAP_BITS_FAULTED {
+        ret = 0;
+    }
 
     SURFACE_ShareUnlockSurface(psurf);
 
@@ -776,8 +812,13 @@ pub unsafe extern "system" fn NtGdiSetBitmapDimension(
         Status = SafeProbeForWrite(Size as *mut core::ffi::c_void, core::mem::size_of::<SIZE>(), 1);
         if !NT_SUCCESS(Status) {
             Ret = 0;
-        } else {
-            *Size = (*psurf).sizlDim;
+        } else if !crate::copy::publish_to_user(
+            Size as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*psurf).sizlDim) as *const core::ffi::c_void,
+            core::mem::size_of::<SIZE>(),
+        ) {
+            // Probe is validate-only; the C had probe AND store in one _SEH2_TRY.
+            Ret = 0;
         }
     }
 

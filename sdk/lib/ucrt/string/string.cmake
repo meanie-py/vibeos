@@ -70,37 +70,26 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     endif()
 endif()
 
+# strcat strcpy strcspn strlen strncat strncpy strpbrk strspn are no longer built
+# here on any arch: ucrtbase takes them from crt-portable-rust (the `string`
+# family in tools/ucrt-takeover.yaml).
 if(${ARCH} STREQUAL "i386")
     list(APPEND UCRT_STRING_ASM_SOURCES
         string/i386/_memicmp.s
         string/i386/_strnicm.s
         string/i386/memccpy.s
-        string/i386/strcat.s
         string/i386/strcmp.s
-        string/i386/strcspn.s
-        string/i386/strlen.s
-        string/i386/strncat.s
         string/i386/strncmp.s
-        string/i386/strncpy.s
         string/i386/strnset.s
-        string/i386/strpbrk.s
         string/i386/strrev.s
         string/i386/strset.s
-        string/i386/strspn.s
     )
 elseif(${ARCH} STREQUAL "amd64")
     list(APPEND UCRT_STRING_ASM_SOURCES
-        string/amd64/strcat.s
         string/amd64/strcmp.s
-        string/amd64/strlen.s
-        string/amd64/strncat.s
         string/amd64/strncmp.s
-        string/amd64/strncpy.s
     )
     list(APPEND UCRT_STRING_SOURCES
-        string/amd64/strcspn.c
-        string/amd64/strpbrk.c
-        string/amd64/strspn.c
         string/memccpy.c
         string/strnset.c
         string/strrev.c
@@ -110,19 +99,12 @@ elseif(${ARCH} STREQUAL "arm64")
     # ARM64 assembly files use ARMASM syntax which isn't compatible with Clang/GAS
     # Use C fallbacks instead.
     list(APPEND UCRT_STRING_SOURCES
-        string/arm64/strlen.c
         string/memccpy.c
-        string/strcat.c
         string/strcmp.c
-        string/strcspn.c
-        string/strncat.c
         string/strncmp.c
-        string/strncpy.c
         string/strnset.c
-        string/strpbrk.c
         string/strrev.c
         string/strset.c
-        string/strspn.c
     )
 endif()
 

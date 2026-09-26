@@ -22,7 +22,7 @@
 #include <ndk/rtlfuncs.h>
 #include <fmifs/fmifs.h>
 
-#include "check/dosfsck.h"
+#include "dosfsck.h"
 
 #include <pshpack1.h>
 typedef struct _FAT16_BOOT_SECTOR

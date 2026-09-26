@@ -609,7 +609,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     sizeRemain = (buffersize) as usize;
     c = filter;
 
-    if StringCbPrintfEx(c, sizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(sizeRemain), 0, w!("%ls (%ls)"), filterdesc.as_ptr(), extensions) < 0 {
+    if StringCbPrintfEx!(c, sizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(sizeRemain), 0, w!("%ls (%ls)"), filterdesc.as_ptr(), extensions) < 0 {
         HeapFree(GetProcessHeap(), 0, extensions as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, filter as *mut core::ffi::c_void);
         return;
@@ -618,7 +618,7 @@ unsafe extern "C" fn OnBrowseButton(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
     c = c.offset(1);
     sizeRemain -= core::mem::size_of::<TCHAR>();
 
-    if StringCbPrintfEx(c, sizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(sizeRemain), 0, w!("%ls"), extensions) < 0 {
+    if StringCbPrintfEx!(c, sizeRemain, core::ptr::addr_of_mut!(c), core::ptr::addr_of_mut!(sizeRemain), 0, w!("%ls"), extensions) < 0 {
         HeapFree(GetProcessHeap(), 0, extensions as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, filter as *mut core::ffi::c_void);
         return;
@@ -1194,7 +1194,7 @@ unsafe extern "C" fn SetDesktopBackColor(hwndDlg: HWND, pData: *mut BACKGROUND_D
     green = GetGValue!(g_GlobalData.desktop_color);
     blue = GetBValue!(g_GlobalData.desktop_color);
 
-    StringCbPrintf(clText.as_mut_ptr(), core::mem::size_of_val(&clText), w!("%d %d %d"), red as c_int, green as c_int, blue as c_int);
+    StringCbPrintf!(clText.as_mut_ptr(), core::mem::size_of_val(&clText), w!("%d %d %d"), red as c_int, green as c_int, blue as c_int);
     RegSetValueEx(hKey, w!("Background"), 0, REG_SZ, clText.as_ptr() as LPBYTE,
                   ((wcslen(clText.as_ptr()) + 1) * core::mem::size_of::<TCHAR>()) as u32);
 

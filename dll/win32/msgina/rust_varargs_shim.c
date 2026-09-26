@@ -1,3 +1,6 @@
+/* INERT since 2026-09-25: no longer in the build. Its varargs moved to Rust (strsafe-rust's
+ * StringC*PrintfW! macros call msvcrt's variadic _snwprintf; the module's own variadics RECEIVE
+ * their arguments the va-slots way). Kept on disk as the reference the Rust was checked against. */
 /* rust_varargs_shim.c — msgina-rust variadic entry trampolines.
  *
  * Stable Rust cannot DEFINE a C-variadic function (`va_start` is only legal inside one —

@@ -626,14 +626,8 @@ pub unsafe fn RecycleBin5File_ctor_body(this: *mut RecycleBin5File) -> () {
     ZeroMemory((&raw mut (*this).m_deletedFile) as *mut _, size);
 }
 
-extern "C" {
-    // strsafe.h:515's bounded swprintf, a STRSAFEAPI `static __inline` with no export of its
-    // own; binds to the forwarding trampoline shell32-rust/src/prelude.rs already established
-    // (dll/win32/shell32/rust_strsafe_shim.c calls the real StringCchVPrintfW). Same symbol,
-    // declared locally since this crate doesn't otherwise import it.
-    #[link_name = "StringCchPrintfW_RustBridge"]
-    fn StringCchPrintfW(pszDest: LPWSTR, cchDest: usize, pszFormat: LPCWSTR, ...) -> HRESULT;
-}
+// StringCchPrintfW is strsafe_rust::StringCchPrintfW!, which calls msvcrt's variadic
+// `_snwprintf` directly. It used to bind to shell32's C trampoline (rust_strsafe_shim.c).
 
 pub unsafe fn RecycleBin5File_Init_body(this: *mut RecycleBin5File, prb: *mut IRecycleBin5, Folder: LPCWSTR, pDeletedFile: PDELETED_FILE_RECORD) -> HRESULT {
     // 1. set recycle bin pointer and addref
@@ -646,7 +640,7 @@ pub unsafe fn RecycleBin5File_Init_body(this: *mut RecycleBin5File, prb: *mut IR
 
     // 3. build unique id string
     let mut szUniqueId: [WCHAR; 32] = [0u16; 32];
-    StringCchPrintfW(
+    strsafe_rust::StringCchPrintfW!(
         szUniqueId.as_mut_ptr(),
         szUniqueId.len(),
         CPP_COM_WSTR_F3C6A8F2AC47.as_ptr(),

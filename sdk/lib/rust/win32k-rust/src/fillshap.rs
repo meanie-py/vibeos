@@ -4,6 +4,7 @@ use crate::brushbody::pbrushbody;
 use crate::floatobj::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::STATUS_SUCCESS;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 
 // CRT (cdecl); DIB_XXBPP_FloodFillSolid is plain cdecl (dib*.h, BOOLEAN).
@@ -715,7 +716,18 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
             }
             i = 0;
             while NT_SUCCESS(Status) && i < Count {
-                let count_val = *UnsafeCounts.add(i as usize);
+                // Probe is validate-only; the C had probe AND these loads in one
+                // _SEH2_TRY. Count is caller-controlled, so capture per element
+                // rather than allocating a kernel mirror of the whole array.
+                let mut count_val: u32 = 0;
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(count_val) as *mut core::ffi::c_void,
+                    UnsafeCounts.add(i as usize) as *const core::ffi::c_void,
+                    core::mem::size_of::<u32>(),
+                ) {
+                    Status = STATUS_ACCESS_VIOLATION;
+                    break;
+                }
                 if count_val < 2 {
                     nInvalid += 1;
                 }
@@ -785,17 +797,22 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
     // where the buffer is, never that it stays mapped.
     Status = SafeProbeForRead(UnsafePoints as *const c_void, points_bytes, 1);
 
-    if NT_SUCCESS(Status) {
-        core::ptr::copy_nonoverlapping(
-            UnsafeCounts,
-            SafeCounts,
-            Count as usize,
-        );
-        core::ptr::copy_nonoverlapping(
-            UnsafePoints,
-            SafePoints,
-            nPoints as usize,
-        );
+    // The probes VALIDATE only -- which is exactly what the comment above says a range
+    // check cannot do about staying mapped. These two copies ARE the access, so they go
+    // through the protected path and a fault lands in Status, checked just below.
+    // `points_bytes` and the counts length are the same byte counts the probes used.
+    if NT_SUCCESS(Status)
+        && (!crate::copy::capture_from_user(
+            SafeCounts as *mut c_void,
+            UnsafeCounts as *const c_void,
+            (Count as usize) * core::mem::size_of::<u32>(),
+        ) || !crate::copy::capture_from_user(
+            SafePoints as *mut c_void,
+            UnsafePoints as *const c_void,
+            points_bytes,
+        ))
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
@@ -1481,13 +1498,22 @@ pub unsafe extern "system" fn NtGdiGradientFill(
     if NT_SUCCESS(Status) {
         Status = SafeProbeForRead(pMesh as *const c_void, cbMesh as usize, 1);
     }
-    if !NT_SUCCESS(Status) {
+    // The probes VALIDATE only; both copies are the access and take the same exit.
+    if !NT_SUCCESS(Status)
+        || !crate::copy::capture_from_user(
+            SafeVertex as *mut c_void,
+            pVertex as *const c_void,
+            cbVertex as usize,
+        )
+        || !crate::copy::capture_from_user(
+            SafeMesh as *mut c_void,
+            pMesh as *const c_void,
+            cbMesh as usize,
+        )
+    {
         ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
-        SetLastNtError(Status);
+        SetLastNtError(if NT_SUCCESS(Status) { STATUS_ACCESS_VIOLATION } else { Status });
         return 0;
-    } else {
-        RtlCopyMemory(SafeVertex as PVOID, pVertex as PVOID, cbVertex as usize);
-        RtlCopyMemory(SafeMesh, pMesh, cbMesh as usize);
     }
 
     bRet = GreGradientFill(hdc, SafeVertex, nVertex, SafeMesh, nMesh, ulMode);

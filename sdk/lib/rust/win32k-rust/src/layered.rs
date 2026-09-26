@@ -5,6 +5,10 @@ use ntkrnl_sys::rtl::RtlZeroMemory;
 use ntkrnl_sys::ddk::ExAllocatePoolWithTag;
 
 
+// Not in ntkrnl_sys::base; the tree declares it per-file where a fault has to be
+// reported as a status rather than swallowed.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // USERTAG_REDIRECT: C 'rdrU' (big-endian multi-char) = 0x72647255 → LE bytes "Urdr".
 const USERTAG_REDIRECT: u32 = u32::from_le_bytes(*b"Urdr");
 
@@ -424,13 +428,40 @@ pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
             break 'block;
         } else {
             if !pcrKey.is_null() {
-                core::ptr::write_volatile(pcrKey, (*pLrdProp).Key);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Key;
+                if !crate::copy::publish_to_user(
+                    pcrKey as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pbAlpha.is_null() {
-                core::ptr::write_volatile(pbAlpha, (*pLrdProp).Alpha);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Alpha;
+                if !crate::copy::publish_to_user(
+                    pbAlpha as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pdwFlags.is_null() {
-                core::ptr::write_volatile(pdwFlags, (*pLrdProp).Flags);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Flags;
+                if !crate::copy::publish_to_user(
+                    pdwFlags as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
         }
 
@@ -503,13 +534,40 @@ pub unsafe extern "system" fn NtUserGetLayeredWindowAttributes(
             break 'block;
         } else {
             if !pcrKey.is_null() {
-                core::ptr::write_volatile(pcrKey, (*pLrdProp).Key);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Key;
+                if !crate::copy::publish_to_user(
+                    pcrKey as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pbAlpha.is_null() {
-                core::ptr::write_volatile(pbAlpha, (*pLrdProp).Alpha);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Alpha;
+                if !crate::copy::publish_to_user(
+                    pbAlpha as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
             if !pdwFlags.is_null() {
-                core::ptr::write_volatile(pdwFlags, (*pLrdProp).Flags);
+                // The probes VALIDATE only; this STORE is the access.
+                let v = (*pLrdProp).Flags;
+                if !crate::copy::publish_to_user(
+                    pdwFlags as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(v) as *const core::ffi::c_void,
+                    core::mem::size_of_val(&v),
+                ) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    break 'block;
+                }
             }
         }
 
@@ -562,7 +620,7 @@ pub unsafe extern "system" fn NtUserUpdateLayeredWindow(
     let mut info: UPDATELAYEREDWINDOWINFO = core::mem::zeroed();
     let mut Dst: POINT = core::mem::zeroed();
     let mut Src: POINT = core::mem::zeroed();
-    let mut Size: SIZE;
+    let mut Size: SIZE = core::mem::zeroed();
     let mut Dirty: RECT = core::mem::zeroed();
     let mut blend: BLENDFUNCTION = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
@@ -602,18 +660,26 @@ pub unsafe extern "system" fn NtUserUpdateLayeredWindow(
             EngSetLastError(ERROR_INVALID_PARAMETER);
             break 'exit;
         } else {
-            if !pptDst.is_null() {
-                Dst = *pptDst;
+            // Probes are validate-only (USE_DUMMY_PSEH); the C wrapped every probe
+            // AND every load in one _SEH2_TRY, so the loads must be the
+            // fault-tolerant copy.
+            macro_rules! grab {
+                ($dst:expr, $src:expr, $ty:ty) => {
+                    crate::copy::capture_from_user(
+                        core::ptr::addr_of_mut!($dst) as *mut core::ffi::c_void,
+                        $src as *const core::ffi::c_void,
+                        core::mem::size_of::<$ty>(),
+                    )
+                };
             }
-            if !pptSrc.is_null() {
-                Src = *pptSrc;
-            }
-            Size = *psize;
-            if !pblend.is_null() {
-                blend = *pblend;
-            }
-            if !prcDirty.is_null() {
-                Dirty = *prcDirty;
+            let ok = (pptDst.is_null() || grab!(Dst, pptDst, POINT))
+                && (pptSrc.is_null() || grab!(Src, pptSrc, POINT))
+                && grab!(Size, psize, SIZE)
+                && (pblend.is_null() || grab!(blend, pblend, BLENDFUNCTION))
+                && (prcDirty.is_null() || grab!(Dirty, prcDirty, RECT));
+            if !ok {
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                break 'exit;
             }
         }
 

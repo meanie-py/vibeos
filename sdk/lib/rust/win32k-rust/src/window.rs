@@ -20,6 +20,7 @@ extern "system" {
 }
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_INVALID_PARAMETER, STATUS_INVALID_HANDLE};
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
 // a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
@@ -3670,7 +3671,14 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
         }
     }
 
-    lstrTemp = *plstrUnsafe;
+    // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(lstrTemp) as *mut core::ffi::c_void,
+        plstrUnsafe as *const core::ffi::c_void,
+        core::mem::size_of::<LARGE_STRING>(),
+    ) {
+        return STATUS_ACCESS_VIOLATION;
+    }
 
     if lstrTemp.Length != 0 {
         pvBuffer = ExAllocatePoolWithTag(PagedPool, lstrTemp.Length as _, TAG_STRING);
@@ -3690,11 +3698,16 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
             }
         }
 
-        core::ptr::copy_nonoverlapping(
-            lstrTemp.Buffer as *const u8,
-            pvBuffer as *mut u8,
+        // Validate-only probe above; this capture is the access and takes its exit,
+        // including the free, and reports a status the way that path does.
+        if !crate::copy::capture_from_user(
+            pvBuffer as *mut core::ffi::c_void,
+            lstrTemp.Buffer as *const core::ffi::c_void,
             lstrTemp.Length as usize,
-        );
+        ) {
+            ExFreePoolWithTag(pvBuffer, TAG_STRING);
+            return STATUS_ACCESS_VIOLATION;
+        }
     }
 
     (*plstrSafe).Buffer = pvBuffer as _;
@@ -4491,7 +4504,21 @@ pub unsafe extern "system" fn NtUserGetComboBoxInfo(
             }
         }
 
-        if ((*pcbi).cbSize as usize) < core::mem::size_of::<COMBOBOXINFO>() {
+        // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe, this load
+        // and every store below in one _SEH2_TRY. Capture once, fill in kernel
+        // memory, publish once — the `|=` was a read-modify-write of user memory.
+        let mut SafeCbi: COMBOBOXINFO = core::mem::zeroed();
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(SafeCbi) as *mut core::ffi::c_void,
+            pcbi as *const core::ffi::c_void,
+            core::mem::size_of::<COMBOBOXINFO>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            Ret = 0;
+            break 'exit;
+        }
+
+        if (SafeCbi.cbSize as usize) < core::mem::size_of::<COMBOBOXINFO>() {
             EngSetLastError(ERROR_INVALID_PARAMETER);
             Ret = 0;
             break 'exit;
@@ -4519,18 +4546,26 @@ pub unsafe extern "system" fn NtUserGetComboBoxInfo(
 
         {
             let lphc: LPHEADCOMBO = (*(Wnd as PWND2CBOX)).pCBox;
-            (*pcbi).rcItem = (*lphc).textRect;
-            (*pcbi).rcButton = (*lphc).buttonRect;
-            (*pcbi).stateButton = 0;
+            SafeCbi.rcItem = (*lphc).textRect;
+            SafeCbi.rcButton = (*lphc).buttonRect;
+            SafeCbi.stateButton = 0;
             if (*lphc).wState & CBF_BUTTONDOWN != 0 {
-                (*pcbi).stateButton |= STATE_SYSTEM_PRESSED;
+                SafeCbi.stateButton |= STATE_SYSTEM_PRESSED;
             }
             if RECTL_bIsEmptyRect(core::ptr::addr_of_mut!((*lphc).buttonRect)) != 0 {
-                (*pcbi).stateButton |= STATE_SYSTEM_INVISIBLE;
+                SafeCbi.stateButton |= STATE_SYSTEM_INVISIBLE;
             }
-            (*pcbi).hwndCombo = (*lphc).self_;
-            (*pcbi).hwndItem = (*lphc).hWndEdit;
-            (*pcbi).hwndList = (*lphc).hWndLBox;
+            SafeCbi.hwndCombo = (*lphc).self_;
+            SafeCbi.hwndItem = (*lphc).hWndEdit;
+            SafeCbi.hwndList = (*lphc).hWndLBox;
+            if !crate::copy::publish_to_user(
+                pcbi as *mut core::ffi::c_void,
+                core::ptr::addr_of!(SafeCbi) as *const core::ffi::c_void,
+                core::mem::size_of::<COMBOBOXINFO>(),
+            ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Ret = 0;
+            }
         }
     }
 
@@ -4809,7 +4844,12 @@ unsafe fn co_IntSetWindowLongPtr(hWnd: HWND, Index: DWORD, NewValue: LONG_PTR, A
     } else {
         #[cfg(target_pointer_width = "64")]
         {
-            if Size as usize == core::mem::size_of::<LONG>() {
+            // A 4-byte write to a pointer index is 64-bit code using the 32-bit
+            // API, so it is refused. For a WoW64 caller 4 bytes IS a pointer.
+            // Comparing against size_of::<LONG>() refused the guest's
+            // SetWindowLong(GWL_WNDPROC) outright, and through SetWindowLongPtr
+            // too, since that passes UserCallerPtrSize() = 4 for WoW64.
+            if Size < UserCallerPtrSize() {
                 if (Index != GWL_STYLE as DWORD)
                     && (Index != GWL_EXSTYLE as DWORD)
                     && (Index != GWL_ID as DWORD)

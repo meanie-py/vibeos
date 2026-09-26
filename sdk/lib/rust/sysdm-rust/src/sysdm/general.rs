@@ -469,7 +469,7 @@ unsafe extern "C" fn SetProcSpeed(hwnd: HWND, hKey: HKEY, Value: LPTSTR, uID: u3
             {
                 return FALSE;
             }
-            StringCchPrintf(
+            StringCchPrintf!(
                 szBuf.as_mut_ptr(),
                 (_countof!(szBuf)) as usize,
                 _T(w!("%lu %s") as *const u16),
@@ -639,7 +639,7 @@ unsafe extern "C" fn GetSystemUptime(hwndDlg: HWND) {
     }
 
     cSeconds = (cMilliseconds / 1000) as u32;
-    StringCchPrintfW(szBuf.as_mut_ptr(), (_countof!(szBuf)) as usize, szUptimeFormat.as_ptr(),
+    StringCchPrintfW!(szBuf.as_mut_ptr(), (_countof!(szBuf)) as usize, szUptimeFormat.as_ptr(),
                      cSeconds / (60*60*24),
                      (cSeconds / (60*60)) % 24,
                      (cSeconds / 60) % 60,

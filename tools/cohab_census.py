@@ -61,7 +61,7 @@ SRC_IN_COMMENT = re.compile(
     r"^\s*#.*?[A-Za-z0-9_${}/.+-]*[A-Za-z0-9_+-]\.(?:c|cpp|cxx|cc|S|s|asm|inc)\b"
 )
 
-SKIP_DIRS = {".git", "build", "output", "target", "__pycache__"}
+SKIP_DIRS = {".git", "build", "output", "target", "__pycache__", ".claude"}
 
 
 def cmake_files(root: Path = REPO) -> list[Path]:
@@ -83,6 +83,16 @@ def cmake_files(root: Path = REPO) -> list[Path]:
     prevent. It is the right walker for a scan rooted INSIDE sdk/lib/rust; this one
     is rooted at the repo, where `build-*` is a child. The census came out
     BYTE-IDENTICAL either way, which is exactly why the swap looked safe and was not.
+
+    `.claude` is pruned for a different reason, and it is the fleet-isolation law
+    (AGENTS.md rule 8) rather than a performance one: the harness keeps subagent
+    worktrees under `.claude/worktrees/<name>`, which are WHOLE SECOND CHECKOUTS of
+    this repo at whatever commit that agent was working from. Walking one reports
+    ANOTHER tree's CMake comments as drift in THIS one, so the census fails in
+    exactly the checkouts that have run a subagent and passes everywhere else -- a
+    verdict that depends on which agents happen to have run is not a verdict. It
+    surfaced as 1,900 phantom [CENSUS-ADDED] lines blocking an unrelated landing.
+    `vendored.py` carries the same guard (`_SUSPECT_SKIP`, `_is_nested_checkout`).
     """
     out = []
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):

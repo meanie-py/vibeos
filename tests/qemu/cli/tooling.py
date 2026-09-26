@@ -53,12 +53,40 @@ _PYTEST_SUITES = [
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
+    # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
+    # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
+    # subtest caused, because the subtest printed a clean summary before taking
+    # the kernel down. A parser that cannot tell a crash from a pass turns the
+    # whole harness into decoration, so it gets its own oracle.
+    (".", ".", "tools/test_parse_apitest_serial.py"),
+    # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
+    # being named and documented as seconds, so a chatty payload spent a declared
+    # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
+    # just stopped early, and the driver above turned that into false quarantine
+    # entries blaming whichever subtest was in flight. Only a chatty-guest test
+    # distinguishes the two implementations.
+    (".", ".", "tools/test_payload_drain.py"),
+    (".", ".", "tools/test_wine_registry_resources.py"),
+    (".", ".", "tools/test_gen_delaylib.py"),
+    # The characterisation driver's accusation rule. Its failure mode is to
+    # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
+    # for the VM watchdog on the very next run after that was fixed. Raising
+    # budgets only moves the next-lowest bound into place, so the oracle is on
+    # the rule itself: no accusation without guest-side fault evidence.
+    (".", ".", "tools/test_characterize_attribution.py"),
+    # The probe-then-raw-deref scanner. It reports leads, so its failure modes
+    # are false positives (which bury the real ones under the commented-out C
+    # these files carry) and false negatives on the shape that actually
+    # bugchecked. Both are pinned.
+    (".", ".", "tools/test_scan_probe_then_deref.py"),
+    (".", ".", "tools/test_gen_suites.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_raw_uart_writes.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_rust_storage.py"),
@@ -81,7 +109,20 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_lost_exports.py"),
     (".", ".", "tools/test_verify_translation_literals.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
+    (".", ".", "tools/test_ucrt_tier2_refset.py"),
+    # The sharded sweep's completeness oracle. Its failure mode is FALSE
+    # COMPLETENESS -- a run cut short reading as a finished one -- which is the
+    # defect the single-boot harness shipped for weeks without anything noticing.
+    (".", ".", "tools/test_ucrt_tier2_sweep.py"),
     (".", ".", "tools/test_docs_only.py"),
+    # The port ledger's classification is the whole measurement: one Wine module left in
+    # the core bucket moves the published coverage figure and nothing in the output says
+    # so. Its build-graph cases skip when this worktree has no build-* dirs.
+    (".", ".", "tools/test_port_audit.py"),
+    # The vendored-code move plan is a reference list: a missed spelling (relative
+    # add_subdirectory, a .cmake fragment, a ${VAR}-built path, an include root) is a
+    # build that breaks after the move. Hermetic fixtures, no build dirs needed.
+    (".", ".", "tools/test_vendor_move_plan.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),

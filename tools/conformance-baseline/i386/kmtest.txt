@@ -48,9 +48,9 @@ ExInterlocked OK pass=970 fail=4 skip=0 exit=0
     assert ExInterlocked.c:297
 ExPools OK pass=19 fail=1 skip=0 exit=0
     assert ExPools.c:222
-ExResource OK pass=399 fail=2 skip=0 exit=0
-    assert ExResource.c:409
-    assert ExResource.c:455
+ExResource OK pass=879 fail=2 skip=0 exit=0
+    assert ExResource.c:441
+    assert ExResource.c:488
 ExSequencedList OK pass=232 fail=0 skip=0 exit=0
 ExSingleList OK pass=240 fail=12 skip=0 exit=0
 ExUuid OK pass=3000 fail=0 skip=0 exit=0
@@ -124,7 +124,7 @@ KeSpinLock OK pass=755 fail=30 skip=0 exit=0
     assert KeSpinLock.c:333
     assert KeSpinLock.c:343
 KeTimer OK pass=54 fail=0 skip=0 exit=0
-MmMdl OK pass=593 fail=0 skip=0 exit=0
+MmMdl OK pass=587 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003
@@ -157,6 +157,7 @@ NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
     assert NpfsFileInfo.c:116
     assert NpfsFileInfo.c:48
     assert NpfsFileInfo.c:56
+    assert NpfsFileInfo.c:57
     assert NpfsFileInfo.c:78
     assert NpfsFileInfo.c:84
     assert NpfsFileInfo.c:85

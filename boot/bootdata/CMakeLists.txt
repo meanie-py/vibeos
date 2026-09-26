@@ -140,7 +140,12 @@ add_custom_target(livecd_links DEPENDS ${LIVECD_SHORTCUTS})
 # be produced with ENABLE_ROSTESTS at all. This way the opt-in is still just
 # "run an i386 build --rostests once", and the media that carries the control
 # is an ordinary one.
-if(ARCH STREQUAL "i386")
+# Not while ENABLE_ROSTESTS is on: then that path is also the user32_winetest
+# target's OUTPUT, and naming it here (as a staged file OR as a configure
+# dependency) makes ninja refuse the whole manifest ("multiple rules generate
+# ..."), so the exe could never be rebuilt. The plain build that follows turns
+# rostests back off and stages it.
+if(ARCH STREQUAL "i386" AND NOT ENABLE_ROSTESTS)
     set(_native_winetest
         ${REACTOS_SOURCE_DIR}/build-i386/modules/rostests/winetests/user32/user32_winetest.exe)
     # Its CREATION must re-run configure, or a tree that builds it after the
@@ -151,4 +156,37 @@ if(ARCH STREQUAL "i386")
         message(STATUS "winetest A/B: staging the native i386 user32_winetest onto livecd")
         add_cd_file(FILE ${_native_winetest} DESTINATION reactos/bin FOR livecd)
     endif()
+endif()
+
+# The winetest SWEEP marker (`vibeos-cli build --winetest-sweep`).
+#
+# Its mere presence on the media tells winlogon to run EVERY subtest of each
+# staged Wine suite, enumerated from the binary's own `--list`, instead of the
+# two hand-picked ones. A marker file rather than a compiled-in switch because
+# the choice is per-MEDIA, not per-source-tree: the same winlogon binary has to
+# serve a cheap gate boot and a minutes-long sweep, and rebuilding winlogon to
+# change which tests run would make the sweep a code change instead of a run.
+#
+# Contents are documentation for whoever finds it on a mounted ISO and wonders
+# why the boot is slow; winlogon only checks that it EXISTS.
+if(VIBEOS_WINETEST_SWEEP)
+    set(_sweep_marker ${CMAKE_CURRENT_BINARY_DIR}/winetest-sweep)
+    file(WRITE ${_sweep_marker}
+        "# Presence of this file makes winlogon run every subtest of each staged\n"
+        "# Wine conformance suite (<suite>_winetest.exe --list, then one guest\n"
+        "# process per name) instead of the two hand-picked subtests.\n"
+        "# Staged by: vibeos-cli build --arch <a> --winetest-sweep\n"
+        "# `skip <name>` lines quarantine a subtest; winlogon logs each as\n"
+        "# QUARANTINED so an absent subtest never reads as a pass.\n")
+    # One `skip` line per name from --winetest-skip. A subtest that BUGCHECKs
+    # blinds every one after it, so this is how a sweep gets past a crasher.
+    if(VIBEOS_WINETEST_SKIP)
+        string(REPLACE " " ";" _sweep_skips "${VIBEOS_WINETEST_SKIP}")
+        foreach(_s ${_sweep_skips})
+            file(APPEND ${_sweep_marker} "skip ${_s}\n")
+        endforeach()
+        message(STATUS "winetest sweep: quarantined ${VIBEOS_WINETEST_SKIP}")
+    endif()
+    message(STATUS "winetest sweep: marker staged — winlogon will run EVERY subtest")
+    add_cd_file(FILE ${_sweep_marker} DESTINATION reactos/bin FOR livecd)
 endif()

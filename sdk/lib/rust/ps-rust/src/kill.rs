@@ -123,6 +123,7 @@ unsafe fn InterlockedExchange(target: *mut LONG, value: LONG) -> LONG {
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 extern "C" {
     fn ARM64_UART_TRACE(msg: PCSTR);
@@ -222,14 +223,13 @@ unsafe fn PspCatchCriticalBreak(
     }
 
     if handled == 0 {
-        // Debug: print process name before bugcheck
-        #[cfg(target_arch = "x86_64")]
-        {
-            crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s\n\0",
-                process_or_thread,
-                image_name,
-            );
-        }
+        // Name the critical process before bugchecking. It was amd64-only, and an
+        // i386 0xF4 then left nothing but an EPROCESS address in the log.
+        crate::dbg_print!(b"[CRIT-TERM] Process=%p ImageName=%s Message=%s\n\0",
+            process_or_thread,
+            image_name,
+            message,
+        );
         KeBugCheckEx(
             CRITICAL_OBJECT_TERMINATION,
             (*(process_or_thread as *mut _EPROCESS)).Pcb.Header.__bindgen_anon_1.__bindgen_anon_1.Type as ULONG_PTR,
@@ -1084,7 +1084,7 @@ pub unsafe extern "system" fn NtTerminateProcess(
         if !u.is_null() && KeGetPreviousMode() == UserMode {
             let m = b"[PROC-TERM] PID=\0";
             for &c in m.iter().take_while(|&&x| x != 0) {
-                *u = c as ULONG;
+                Arm64UartPutChar(c as u8);
             }
             let mut pid = PsGetProcessId(current_process) as ULONG;
             let mut buf = [0u8; 12];
@@ -1107,20 +1107,20 @@ pub unsafe extern "system" fn NtTerminateProcess(
                 }
             }
             for i in 0..pos {
-                *u = buf[i] as ULONG;
+                Arm64UartPutChar(buf[i] as u8);
             }
             let m2 = b" ExitStatus=0x\0";
             for &c in m2.iter().take_while(|&&x| x != 0) {
-                *u = c as ULONG;
+                Arm64UartPutChar(c as u8);
             }
             let s = exit_status as ULONG;
             for hi in (0..8).rev() {
                 let digit = (s >> (hi * 4)) & 0xF;
                 let ch = if digit < 10 { b'0' + digit as u8 } else { b'A' + (digit - 10) as u8 };
-                *u = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
-            *u = b'\r' as ULONG;
-            *u = b'\n' as ULONG;
+            Arm64UartPutChar(b'\r' as u8);
+            Arm64UartPutChar(b'\n' as u8);
         }
     }
 

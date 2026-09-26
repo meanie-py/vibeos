@@ -114,7 +114,8 @@ unsafe extern "C" fn SHELL_CreatePropSheetStubWindow(
         CSTUBWINDOW32_TYPE_PROPERTYSHEET,
         path,
         pPt,
-        phWnd,
+        // crate::win32's HWND is a bare HANDLE; the island's is `*mut HWND__`. Same pointer.
+        phWnd as _,
         ppStub,
     );
 

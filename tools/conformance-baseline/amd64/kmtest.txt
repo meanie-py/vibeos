@@ -36,9 +36,9 @@ ExHardError OK pass=24 fail=6 skip=0 exit=0
 ExInterlocked OK pass=180 fail=0 skip=0 exit=0
 ExPools OK pass=17 fail=1 skip=0 exit=0
     assert ExPools.c:210
-ExResource OK pass=399 fail=2 skip=0 exit=0
-    assert ExResource.c:409
-    assert ExResource.c:455
+ExResource OK pass=879 fail=2 skip=0 exit=0
+    assert ExResource.c:441
+    assert ExResource.c:488
 ExSequencedList OK pass=0 fail=0 skip=0 exit=0
 ExSingleList OK pass=240 fail=12 skip=0 exit=0
 ExUuid OK pass=3000 fail=0 skip=0 exit=0
@@ -132,7 +132,7 @@ NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
     assert NpfsFileInfo.c:116
     assert NpfsFileInfo.c:48
     assert NpfsFileInfo.c:56
-    assert? NpfsFileInfo.c:57
+    assert NpfsFileInfo.c:57
     assert NpfsFileInfo.c:78
     assert NpfsFileInfo.c:84
     assert NpfsFileInfo.c:85

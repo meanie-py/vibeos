@@ -546,15 +546,12 @@ extern "C" {
 // bytes to pop — so the CRT declares these __cdecl even under -DUNICODE.
 extern "C" {
     pub fn swprintf(buffer: *mut u16, format: *const u16, ...) -> c_int;
-    // strsafe.h's StringCchPrintfW is a `static inline` (STRSAFEAPI), so NO object file in the
-    // tree carries the symbol and there is nothing to link. rust_strsafe_shim.c gives it an
-    // out-of-line home; the shim is a C-language gap filler, not a translation left in C
-    // (stable Rust cannot DEFINE a C-variadic fn — rust-lang/rust#44930). The `link_name`
-    // keeps the C spelling at the call sites: the shim has to use a different symbol because
-    // it includes <strsafe.h> itself, whose inline would collide with the definition.
-    #[link_name = "rust_StringCchPrintfW"]
-    pub fn StringCchPrintfW(pszDest: *mut u16, cchDest: usize, pszFormat: *const u16, ...) -> HRESULT;
 }
+// strsafe.h's printf entry points are VARIADIC, and stable Rust can CALL a C-variadic though
+// it cannot define one; so these are strsafe-rust macros that call msvcrt's `_snwprintf` in
+// place, with strsafe's bounds and HRESULTs. The C trampoline that used to define them
+// (rust_varargs_shim.c) retired 2026-09-25. Call sites say `StringCchPrintfW!(...)`.
+pub use strsafe_rust::StringCchPrintfW;
 
 // A wide string literal, NUL-terminated, with one stable address for the program's life.
 // `static` and not `const`: a const is inlined at each use site, so `.as_ptr()` would hand the

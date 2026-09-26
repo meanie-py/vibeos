@@ -23,13 +23,30 @@ pub struct DLG_DATA {
 }
 
 pub type PDLG_DATA = *mut DLG_DATA;
-// install.c:53 is C-VARIADIC, which stable Rust can declare but not DEFINE (`va_start` is only
-// legal inside one — c_variadic, rust-lang/rust#44930). So the entry point lives in
-// rust_varargs_shim.c, which does the va_start and tail-calls this fixed-arity twin. `ap` comes
-// through as a `void*`: on all three targets va_list is a single `char*`.
+// install.c:53 `FatalError(char *pszFmt, ...)`. The callers below reach it through this variadic
+// declaration; the definition after it receives the arguments.
 extern "C" {
     fn FatalError(pszFmt: *mut i8, ...);
 }
+
+// Stable Rust cannot DEFINE a C-variadic (`c_variadic`, rust-lang#44930), so this RECEIVES
+// the varargs the va-slots way (`va_slots_rust`, as shell32's ShellMessageBoxA and the kernel's
+// printf family do): on all three targets a variadic call puts its arguments in the same slots
+// as a fixed-arity call with that many parameters (i386 cdecl stack; win64 RCX-R9 then stack;
+// arm64 x0-x7 then stack, where Windows passes varargs in integer registers), and a `va_list` is
+// a plain pointer. The trailing slots are ordinary parameters, staged into an array a `va_list`
+// points at. This replaced the `va_start` trampoline in rust_varargs_shim.c (2026-09-25).
+#[export_name = "FatalError"]
+unsafe extern "C" fn FatalError_slots(
+    pszFmt: *mut i8,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
+    let mut stage = va_slots_rust::stage(&[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    FatalError_v(pszFmt, stage.as_mut_ptr() as *mut core::ffi::c_void)
+}
+
+// The body; `ap` is the va_list itself (a single `char*` on all three targets).
 
 #[no_mangle]
 pub unsafe extern "C" fn FatalError_v(pszFmt: *mut i8, ap: *mut core::ffi::c_void) {
@@ -1438,6 +1455,7 @@ unsafe extern "C" fn CommonInstall() -> BOOL {
             FatalError(b"EnableUserModePnpManager() failed!\n\0".as_ptr() as *mut i8);
             break 'Exit;
         }
+        DPRINT1!("[SYSSETUP] CommonInstall: PlugPlay running, waiting for pending installs\n");
 
         if CMP_WaitNoPendingInstallEvents((INFINITE) as u32) != (WAIT_OBJECT_0) as u32 {
             FatalError(b"CMP_WaitNoPendingInstallEvents() failed!\n\0".as_ptr() as *mut i8);
@@ -1464,11 +1482,31 @@ unsafe extern "C" fn CommonInstall() -> BOOL {
 
     bResult
 }
+/// Logs each DLL `RegistrationPhase2` registers, and its result. The LiveCD path passed no
+/// callback (upstream shows no progress there), which left a registration that crashes setup
+/// with nothing to say which DLL did it.
+unsafe extern "system" fn LiveCdRegistrationProgress(
+    _Context: PVOID,
+    Notification: UINT,
+    Param1: UINT_PTR,
+    _Param2: UINT_PTR,
+) -> UINT {
+    let st = Param1 as *const SP_REGISTER_CONTROL_STATUSW;
+    if Notification == SPFILENOTIFY_STARTREGISTRATION && !st.is_null() {
+        DPRINT1!("[SYSSETUP] registering %ls\n", (*st).FileName);
+    } else if Notification == SPFILENOTIFY_ENDREGISTRATION && !st.is_null() && (*st).FailureCode != 0 {
+        DPRINT1!("[SYSSETUP]   %ls failed: code=%lu err=0x%lx\n", (*st).FileName, (*st).FailureCode,
+                 (*st).Win32Error);
+    }
+    FILEOP_DOIT as UINT
+}
+
 unsafe extern "C" fn InstallLiveCD() -> u32 {
     let mut StartupInfo: STARTUPINFOW = core::mem::zeroed();
     let mut ProcessInformation: PROCESS_INFORMATION = core::mem::zeroed();
     let bRes: i32;
 
+    DPRINT1!("[SYSSETUP] InstallLiveCD: start\n");
     PreprocessUnattend((FALSE) as i32);
     if CommonInstall() == 0 {
         MessageBoxW(
@@ -1480,6 +1518,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         return 0;
     }
 
+    DPRINT1!("[SYSSETUP] InstallLiveCD: CommonInstall done\n");
     let mut bRes = InstallNetworkComponent(w!("MS_TCPIP") as PWSTR);
     if bRes == 0 && GetLastError() != ERROR_FILE_NOT_FOUND {
         // DPRINT removed
@@ -1488,6 +1527,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         SetupStartService(w!("Dhcp") as LPCWSTR, (FALSE) as i32);
         SetupStartService(w!("Dnscache") as LPCWSTR, (FALSE) as i32);
     }
+    DPRINT1!("[SYSSETUP] InstallLiveCD: network started, registering components\n");
 
     {
         if SetupInstallFromInfSectionW(
@@ -1498,7 +1538,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
             core::ptr::null_mut(),
             core::ptr::null(),
             0,
-            None,
+            Some(LiveCdRegistrationProgress),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -1515,7 +1555,16 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         );
     }
 
+    DPRINT1!("[SYSSETUP] InstallLiveCD: registration done\n");
     SetupCloseInfFile(hSysSetupInf);
+
+    // userinit is how the LiveCD reaches its shell upstream (the language page, then
+    // explorer). vibeos's winlogon starts the shell itself and runs this setup alongside it,
+    // so by now a shell is usually up: launching userinit then would start a second one.
+    if !GetShellWindow().is_null() {
+        DPRINT1!("[SYSSETUP] InstallLiveCD: shell already running, not starting userinit\n");
+        return 0;
+    }
 
     ZeroMemory!(
         &mut StartupInfo as *mut STARTUPINFOW as LPVOID,

@@ -190,7 +190,7 @@ pub unsafe extern "system" fn RealGetSystemMetrics(nIndex: core::ffi::c_int) -> 
     if nIndex < 0 || nIndex >= SM_CMETRICS as core::ffi::c_int || gpsi.is_null() {
         return 0;
     }
-    (*gpsi_perusr()).aiSysMet[nIndex as usize]
+    crate::wow64::psi::sys_met(nIndex as usize)
 }
 
 #[no_mangle]

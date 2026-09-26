@@ -68,10 +68,22 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 set(UCRT_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcrt_shared_cargo.a")
-file(GLOB_RECURSE UCRT_SHARED_RUST_SOURCES CONFIGURE_DEPENDS
-    ${UCRT_RUST_WORKSPACE_DIR}/crt-shared-rust/src/*.rs
-    ${UCRT_RUST_WORKSPACE_DIR}/crt-shared-cargo/src/*.rs
-)
+# Every crate whose code lands in libcrt_shared_cargo.a -- the path-dependency
+# closure of crt-shared-cargo. A crate missing here compiles into the archive but
+# never triggers its rebuild, so an edit to it ships a STALE archive with no error:
+# this list had drifted to two of seven crates (ucrt-rust's takeover families and
+# cnt-rust's math were both invisible to it). verify_ucrtbase_cohab.py derives the
+# closure from the manifests and fails if this list and it disagree.
+set(UCRT_SHARED_RUST_CRATES
+    crt-shared-cargo cnt-rust crt-portable-rust crt-shared-rust panic-common msvcrt-sys
+    ucrt-rust)
+set(UCRT_SHARED_RUST_GLOBS)
+set(UCRT_SHARED_RUST_MANIFESTS)
+foreach(crate ${UCRT_SHARED_RUST_CRATES})
+    list(APPEND UCRT_SHARED_RUST_GLOBS ${UCRT_RUST_WORKSPACE_DIR}/${crate}/src/*.rs)
+    list(APPEND UCRT_SHARED_RUST_MANIFESTS ${UCRT_RUST_WORKSPACE_DIR}/${crate}/Cargo.toml)
+endforeach()
+file(GLOB_RECURSE UCRT_SHARED_RUST_SOURCES CONFIGURE_DEPENDS ${UCRT_SHARED_RUST_GLOBS})
 add_custom_command(
     OUTPUT ${UCRT_SHARED_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -84,8 +96,7 @@ add_custom_command(
         ${UCRT_SHARED_RUST_LIB}
     DEPENDS
             ${UCRT_SHARED_RUST_SOURCES}
-            ${UCRT_RUST_WORKSPACE_DIR}/crt-shared-rust/Cargo.toml
-            ${UCRT_RUST_WORKSPACE_DIR}/crt-shared-cargo/Cargo.toml
+            ${UCRT_SHARED_RUST_MANIFESTS}
             ${UCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust ucrtbase msvcrt_shared cohab (${UCRT_RUST_TARGET})"
 )

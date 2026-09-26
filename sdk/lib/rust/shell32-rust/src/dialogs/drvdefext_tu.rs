@@ -62,7 +62,7 @@ unsafe extern "C" fn GetDriveNameWithLetter(pwszText: *mut u16, cchTextMax: u32,
         }
     }
 
-    StringCchPrintfW(
+    strsafe_rust::StringCchPrintfW!(
         pwszText.offset(cchText as isize),
         (cchTextMax as usize).wrapping_sub(cchText),
         CPP_COM_WSTR_F3A549CDECCE.as_ptr(),

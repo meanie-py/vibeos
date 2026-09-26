@@ -17,6 +17,7 @@ use core::ffi::c_void;
 // Debug-channel / stub macros — no kernel symbol, no-op.
 #[allow(unused_imports)]
 use {ERR as _ERR, TRACE as _TRACE};
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // HWND_BROADCAST = (HWND)0xffff (winuser.h).
 const HWND_BROADCAST: HWND = 0xffff as HWND;
@@ -144,31 +145,33 @@ pub unsafe extern "system" fn NtUserInitializeClientPfnArrays(
             1,
         );
     }
+    // The probes above VALIDATE only; these four captures are the access, and they
+    // write the client callback tables the whole of user32's callback path dispatches
+    // through. A fault lands in Status, checked just below, and the tables are only
+    // declared initialised (ClientPfnInit) once every one of them has landed.
     if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).apfnClientA) as *mut core::ffi::c_void,
             pfnClientA as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-        );
-        RtlCopyMemory(
+            core::mem::size_of::<PFNCLIENT>(),
+        ) || !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).apfnClientW) as *mut core::ffi::c_void,
             pfnClientW as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-        );
-        RtlCopyMemory(
+            core::mem::size_of::<PFNCLIENT>(),
+        ) || !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).apfnClientWorker) as *mut core::ffi::c_void,
             pfnClientWorker as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENTWORKER>() as _,
-        );
-
-        RtlCopyMemory(
+            core::mem::size_of::<PFNCLIENTWORKER>(),
+        ) || !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).aStoCidPfn) as *mut core::ffi::c_void,
             pfnClientW as *const core::ffi::c_void,
             core::mem::size_of_val(&(*gpsi).aStoCidPfn),
-        );
-
-        hModClient = hmodUser;
-        ClientPfnInit = 1;
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        } else {
+            hModClient = hmodUser;
+            ClientPfnInit = 1;
+        }
     }
 
     if !NT_SUCCESS(Status) {
@@ -303,7 +306,38 @@ pub unsafe extern "system" fn NtUserSetSysColors(
     };
 
     if NT_SUCCESS(Status) {
-        IntSetSysColors(cElements as _, lpaElements, lpaRgbValues);
+        // The probes above only range-check; they are validate-only by design under
+        // USE_DUMMY_PSEH. The actual loads happen one level down, inside
+        // IntSetSysColors, which is ALSO reachable with kernel pointers -- so the
+        // capture belongs here, not there.
+        //
+        // Chunked deliberately: cElements is the caller's, bounded only by the
+        // 0x40000000 test above, so a whole-array capture would be a user-triggered
+        // 8 GB kernel allocation. IntSetSysColors applies each element
+        // independently, so feeding it CHUNK at a time is equivalent.
+        const SYSCOLOR_CHUNK: usize = 256;
+        let mut Elements: [INT; SYSCOLOR_CHUNK] = [0; SYSCOLOR_CHUNK];
+        let mut RgbValues: [COLORREF; SYSCOLOR_CHUNK] = [0; SYSCOLOR_CHUNK];
+        let total = cElements as usize;
+        let mut done = 0usize;
+        while done < total {
+            let n = core::cmp::min(SYSCOLOR_CHUNK, total - done);
+            if !crate::copy::capture_from_user(
+                Elements.as_mut_ptr() as *mut core::ffi::c_void,
+                lpaElements.add(done) as *const core::ffi::c_void,
+                n * core::mem::size_of::<INT>(),
+            ) || !crate::copy::capture_from_user(
+                RgbValues.as_mut_ptr() as *mut core::ffi::c_void,
+                lpaRgbValues.add(done) as *const core::ffi::c_void,
+                n * core::mem::size_of::<COLORREF>(),
+            ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Ret = 0;
+                break;
+            }
+            IntSetSysColors(n as _, Elements.as_ptr(), RgbValues.as_ptr());
+            done += n;
+        }
     } else {
         SetLastNtError(Status);
         Ret = 0;
@@ -453,33 +487,43 @@ pub unsafe extern "system" fn NtUserProcessConnect(
 
     Status = SafeProbeForWrite(
         pUserConnect as PVOID,
-        core::mem::size_of_val(&*pUserConnect) as _,
+        core::mem::size_of::<USERCONNECT>() as _,
         core::mem::size_of::<PVOID>() as _,
     );
     if NT_SUCCESS(Status) {
-        (*pUserConnect).siClient.ulSharedDelta =
-            ((*W32Process).HeapMappings.KernelMapping as ULONG_PTR)
-                .wrapping_sub((*W32Process).HeapMappings.UserMapping as ULONG_PTR);
+        // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND every one
+        // of these stores in one _SEH2_TRY. Three of them also read ulSharedDelta
+        // back OUT of the user struct to compute the next one. Assemble the whole
+        // SHAREDINFO in kernel memory and publish it in one fault-tolerant copy.
+        let mut siClient: SHAREDINFO = core::mem::zeroed();
 
-        (*pUserConnect).siClient.psi = (gpsi as ULONG_PTR)
-            .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
-            as PVOID as _;
-        (*pUserConnect).siClient.aheList = (gHandleTable as ULONG_PTR)
-            .wrapping_sub((*pUserConnect).siClient.ulSharedDelta)
-            as PVOID as _;
-        (*pUserConnect).siClient.pDispInfo = core::ptr::null_mut();
+        siClient.ulSharedDelta = ((*W32Process).HeapMappings.KernelMapping as ULONG_PTR)
+            .wrapping_sub((*W32Process).HeapMappings.UserMapping as ULONG_PTR);
 
-        (*pUserConnect).siClient.DefWindowMsgs.maxMsgs = 0;
-        (*pUserConnect).siClient.DefWindowMsgs.abMsgs = core::ptr::null_mut();
-        (*pUserConnect).siClient.DefWindowSpecMsgs.maxMsgs = 0;
-        (*pUserConnect).siClient.DefWindowSpecMsgs.abMsgs = core::ptr::null_mut();
+        siClient.psi = (gpsi as ULONG_PTR).wrapping_sub(siClient.ulSharedDelta) as PVOID as _;
+        siClient.aheList =
+            (gHandleTable as ULONG_PTR).wrapping_sub(siClient.ulSharedDelta) as PVOID as _;
+        siClient.pDispInfo = core::ptr::null_mut();
 
-        let count = (*pUserConnect).siClient.awmControl.len();
+        siClient.DefWindowMsgs.maxMsgs = 0;
+        siClient.DefWindowMsgs.abMsgs = core::ptr::null_mut();
+        siClient.DefWindowSpecMsgs.maxMsgs = 0;
+        siClient.DefWindowSpecMsgs.abMsgs = core::ptr::null_mut();
+
+        let count = siClient.awmControl.len();
         let mut i: UINT = 0;
         while (i as usize) < count {
-            (*pUserConnect).siClient.awmControl[i as usize].maxMsgs = 0;
-            (*pUserConnect).siClient.awmControl[i as usize].abMsgs = core::ptr::null_mut();
+            siClient.awmControl[i as usize].maxMsgs = 0;
+            siClient.awmControl[i as usize].abMsgs = core::ptr::null_mut();
             i += 1;
+        }
+
+        if !crate::copy::publish_to_user(
+            core::ptr::addr_of_mut!((*pUserConnect).siClient) as *mut core::ffi::c_void,
+            core::ptr::addr_of!(siClient) as *const core::ffi::c_void,
+            core::mem::size_of::<SHAREDINFO>(),
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 
@@ -627,11 +671,26 @@ pub unsafe extern "system" fn NtUserSetInformationThread(
                         core::mem::align_of::<ULONG>() as ULONG,
                     );
                     if NT_SUCCESS(Status) {
-                        CapturedFlags = *(ThreadInformation as PULONG);
+                        // Probe is validate-only; the C had probe, load and store in
+                        // one _SEH2_TRY.
+                        if !crate::copy::capture_from_user(
+                            core::ptr::addr_of_mut!(CapturedFlags) as *mut core::ffi::c_void,
+                            ThreadInformation as *const core::ffi::c_void,
+                            core::mem::size_of::<ULONG>(),
+                        ) {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        } else {
+                            Status =
+                                UserInitiateShutdown(Thread, core::ptr::addr_of_mut!(CapturedFlags));
 
-                        Status = UserInitiateShutdown(Thread, core::ptr::addr_of_mut!(CapturedFlags));
-
-                        core::ptr::write_volatile(ThreadInformation as PULONG, CapturedFlags);
+                            if !crate::copy::publish_to_user(
+                                ThreadInformation as *mut core::ffi::c_void,
+                                core::ptr::addr_of!(CapturedFlags) as *const core::ffi::c_void,
+                                core::mem::size_of::<ULONG>(),
+                            ) {
+                                Status = STATUS_ACCESS_VIOLATION;
+                            }
+                        }
                     }
                 }
             }
@@ -648,8 +707,18 @@ pub unsafe extern "system" fn NtUserSetInformationThread(
                         core::mem::align_of::<NTSTATUS>() as ULONG,
                     );
                     if NT_SUCCESS(Status) {
-                        let ShutdownStatus: NTSTATUS = *(ThreadInformation as *mut NTSTATUS);
-                        Status = UserEndShutdown(Thread, ShutdownStatus);
+                        // Probe is validate-only; the C had probe AND load in one
+                        // _SEH2_TRY.
+                        let mut ShutdownStatus: NTSTATUS = 0;
+                        if crate::copy::capture_from_user(
+                            core::ptr::addr_of_mut!(ShutdownStatus) as *mut core::ffi::c_void,
+                            ThreadInformation as *const core::ffi::c_void,
+                            core::mem::size_of::<NTSTATUS>(),
+                        ) {
+                            Status = UserEndShutdown(Thread, ShutdownStatus);
+                        } else {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        }
                     }
                 }
             }
@@ -666,8 +735,18 @@ pub unsafe extern "system" fn NtUserSetInformationThread(
                         core::mem::align_of::<HANDLE>() as ULONG,
                     );
                     if NT_SUCCESS(Status) {
-                        let CsrPortHandle: HANDLE = *(ThreadInformation as PHANDLE);
-                        Status = InitCsrApiPort(CsrPortHandle);
+                        // Probe is validate-only; the C had probe AND load in one
+                        // _SEH2_TRY.
+                        let mut CsrPortHandle: HANDLE = core::ptr::null_mut();
+                        if crate::copy::capture_from_user(
+                            core::ptr::addr_of_mut!(CsrPortHandle) as *mut core::ffi::c_void,
+                            ThreadInformation as *const core::ffi::c_void,
+                            core::mem::size_of::<HANDLE>(),
+                        ) {
+                            Status = InitCsrApiPort(CsrPortHandle);
+                        } else {
+                            Status = STATUS_ACCESS_VIOLATION;
+                        }
                     }
                 }
             }

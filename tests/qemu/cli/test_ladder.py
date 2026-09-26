@@ -880,3 +880,26 @@ def test_a_timeout_is_its_own_outcome():
     assert ladder.winetests(text) == {}
     assert ladder.winetests_timed_out(text) == ["native/user32:class"]
     assert "native/user32:class=TIMEOUT" in ladder.summary(text)
+
+
+def test_the_drain_waits_for_a_started_winetest(monkeypatch):
+    """check() fails a winetest that started and never reported, so watch()
+    must not stop while one is running. It did: the gate went LADDER_FAIL on
+    user32:wsprintf, which reported `exit = 0` eight serial lines after the
+    drain had already ended on the last parity marker."""
+    monkeypatch.setattr(ladder, "WINETEST_EXTRA_SECONDS", 5.0)
+    started = "[WT] user32:wsprintf: started (PID 1148)\n"
+    done = "[WT] user32:wsprintf: exit = 0 failure(s), 272 bytes of output\n"
+    vm = _FakeVM([_all_pass() + started, "", done])
+    out = ladder.watch(vm, seconds=0.01, seen="")
+    assert done in out, "the drain stopped before the running winetest reported"
+    assert ladder.check(out) is None
+
+
+def test_a_winetest_started_in_the_settle_read_is_still_waited_for(monkeypatch):
+    monkeypatch.setattr(ladder, "WINETEST_EXTRA_SECONDS", 5.0)
+    started = "[WT] user32:class: started (PID 901)\n"
+    vm = _FakeVM(["", _WT_RED])
+    out = ladder.watch(vm, seconds=0.01, seen=_all_pass() + started)
+    assert _WT_RED in out
+    assert vm.serial.reads == 2

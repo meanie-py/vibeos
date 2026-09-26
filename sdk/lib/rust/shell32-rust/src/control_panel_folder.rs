@@ -1014,7 +1014,11 @@ pub unsafe fn CControlPanelFolder_CreateViewObject_body(this: *mut CControlPanel
             cbSize: core::mem::size_of::<SFV_CREATE>() as u32,
             pshf: core::ptr::addr_of_mut!((*this).IShellFolder2_iface) as *mut _ as *mut IShellFolder,
             psvOuter: core::ptr::null_mut(),
-            psfvcb: this as *mut core::ffi::c_void,
+            // C++ `{ sizeof, this, NULL, this }` converts `this` to IShellFolderViewCB* here.
+            // The raw object pointer is the IShellFolder2 vtable, so the view's
+            // MessageSFVCB (slot 3) ran ParseDisplayName with shifted arguments, which
+            // forwarded a garbage ppidl to CRegFolder (Control Panel never opened on amd64).
+            psfvcb: core::ptr::addr_of_mut!((*this).IShellFolderViewCB_iface) as *mut core::ffi::c_void,
         };
         hr = SHCreateShellFolderView(
             &sfvparams as *const SFV_CREATE,

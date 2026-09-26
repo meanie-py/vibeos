@@ -284,10 +284,16 @@ pub const TRUSTEE_IS_IMPERSONATE: MULTIPLE_TRUSTEE_OPERATION =
 pub const TRUSTEE_IS_UNKNOWN: TRUSTEE_TYPE = advapi32_sys::_TRUSTEE_TYPE_TRUSTEE_IS_UNKNOWN;
 
 // ---- HKEY predefined-key consts (cast macros — not bindgen-evaluable) ----
-pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as usize as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as usize as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as usize as HKEY;
-pub const HKEY_USERS: HKEY = 0x8000_0003u32 as usize as HKEY;
+// winreg.h: `#define HKEY_CLASSES_ROOT ((HKEY)(ULONG_PTR)((LONG)0x80000000))` — the LONG cast
+// makes them SIGN-extended on 64-bit (0xFFFFFFFF80000000), which is what every C and mingw
+// caller passes. These were `as usize` (zero-extended) until 2026-09: exact comparisons
+// against them never matched a real caller on amd64/arm64, so RegOverridePredefKey refused
+// every key with ERROR_INVALID_HANDLE. Compare with `SamePredefKey`, not `==` — several Rust
+// crates still define their own zero-extended copies and pass those in.
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 
 // UlongToHandle / UlongToPtr (basetsd.h inline casts)
 #[inline]
@@ -459,8 +465,8 @@ pub const TagInfoLevelNameFromTag: TAG_INFO_LEVEL =
     advapi32_sys::_TAG_INFO_LEVEL_TagInfoLevelNameFromTag;
 
 // HKEY predefined-key cast-macro consts (winreg.h) — Wave 4 adds the last two.
-pub const HKEY_PERFORMANCE_DATA: HKEY = 0x8000_0004u32 as usize as HKEY;
-pub const HKEY_CURRENT_CONFIG: HKEY = 0x8000_0005u32 as usize as HKEY;
+pub const HKEY_PERFORMANCE_DATA: HKEY = 0x8000_0004u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_CONFIG: HKEY = 0x8000_0005u32 as i32 as isize as HKEY;
 
 // winsvc.h SCM event/db names — W-API wide strings (services.h SCM_START_EVENT is
 // L"..."; bindgen folded it narrow, so hand-define wide to match OpenEventW).
@@ -591,6 +597,11 @@ pub unsafe fn ClosePredefKey(handle: HANDLE) {
     if (handle as ULONG_PTR) & 0x1 != 0 {
         NtClose(handle);
     }
+}
+/// `a` is the predefined key `predef`, however the caller extended it to pointer width.
+#[inline]
+pub fn SamePredefKey(a: HKEY, predef: HKEY) -> bool {
+    IsPredefKey(a) != 0 && (a as ULONG_PTR as u32) == (predef as ULONG_PTR as u32)
 }
 #[inline]
 pub fn IsPredefKey(hkey: HKEY) -> BOOL {

@@ -252,7 +252,12 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
   (16); the per-arch serialize cap is bypassed on the default windows-host TCG
-  backend, so same-arch retries run in parallel too.
+  backend, so same-arch retries run in parallel too. **Half that pool is reserved
+  for landing**: boots under a conductor's gate (`VIBEOS_JOB_CLASS=integration`)
+  queue separately and take the reserved permits first; every other boot — a lane's
+  own smokes, payloads, sweeps — fills only the rest, so the job that unblocks the
+  fleet never waits behind it. `VIBEOS_LAND_BOOT_RESERVE` resizes it (0 disables);
+  `host-status` shows it.
 - **`cohab:<arch>` — fresh object coverage.** `tools/verify_cohab_
   coverage.py` asks each flipped C object what it *exports* (`llvm-nm`, after every
   `-D`, `#ifdef` and ABI decoration) and checks that something linking ahead of the
@@ -271,7 +276,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
+### `land [--direct] [--drain] [--hold R] [--release] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -325,9 +330,30 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   if the preflight itself cannot run it warns and proceeds, because a broken
   preflight must never be able to wedge the fleet's ability to land. `--skip-lint`
   overrides (report every use). It lints the lane tip, not the tip merged with
-  master, so it is an early filter and not a replacement for the gate.
+  master, so it is an early filter and not a replacement for the gate. The gate's
+  **source-lint partitions and host difftests** run there too, by the same rules and
+  the same override — the difftests since a lane whose own `ucrt-difftest` could not
+  link turned 17 of 18 batched gates red on 2026-09-25.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
+
+### `land --hold REASON [--preempt]` / `land --release` — stop the line
+While a hold stands, no conductor starts a batch, `land` still **queues** your
+lane (nobody loses their place, nobody retry-loops), and only the holding lane
+may `land --direct`. `--preempt` also stops a *detached* conductor mid-batch; its
+batch stays queued, and a `--direct` lander is never killed. `--release` lifts it
+and wakes the queue. The hold shows at the top of `land-status` and `host-status`.
+
+A red base holds the line **by itself**: when a train halts on `BASE_RED`, an
+AUTO hold is pinned to that master sha, any lane may `land --direct` the fix, and
+the hold lapses as soon as master moves. A `land --direct` that lands also wakes
+the queue, so submissions never sit under `CONDUCTOR: none` afterwards.
+
+Why (2026-09-25): mainline went red, and every new submission elected a
+conductor that re-gated the same red base, all night. The load that generated
+turned a 10 ms test-timing assumption into a second, unrelated red, and the fix
+lane's gate queued behind the churn for hours. Stopping it took killing
+conductors by hand, messaging every lane, and finally `wsl --shutdown`.
 
 ### `land --direct` — the single-lane path
 One serialized critical section, under the same fleet-wide FIFO

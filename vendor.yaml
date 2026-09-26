@@ -44,10 +44,15 @@
 # Adding a vendored tree: add an entry here, run `tools/vendored.py --write-stamps`.
 # Field reference and the check semantics: tools/vendored.py.
 
+# `vendor/` is THE home for vendored code (owner decision 2026-09-25: `vendor/<libname>`);
+# trees are moving there in batches, see docs/engineering/vendor-relocation-plan.md.
+# The other three containers empty out as they do.
+#
 # Directories whose every immediate child is a vendored tree and must be registered.
 # This is what makes --check a ratchet rather than a snapshot: drop a new library into
 # one of these and the gate fails until it has an entry.
 containers:
+  - vendor
   - sdk/lib/3rdparty
   - dll/3rdparty
   - external
@@ -310,11 +315,11 @@ trees:
       structs in reactos_special.h are V1_15).
 
   # ── Microsoft's compiler conformance tests ──────────────────────────────
-  - path: modules/rostests/apitests/compiler/ms
+  - path: vendor/ms-compiler-tests
     name: Microsoft compiler-tests (EH/SEH)
     upstream: https://github.com/microsoft/compiler-tests
     license: MIT
-    license_file: modules/rostests/apitests/compiler/ms/LICENSE.TXT
+    license_file: vendor/ms-compiler-tests/LICENSE.TXT
     modified: "no"  # zero files mention ReactOS
     reason: >
       A snapshot of Microsoft's C++EH and SEH conformance tests, carried to check WinEH
@@ -620,12 +625,55 @@ trees:
       Full manifest, prune list and re-vendor recipe: external/README-fex-vendor.md.
 
   # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
-  - path: dll/opengl/glu32/src
+  - path: dll/opengl/mesa
+    name: Mesa 3-D graphics library
+    upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
+    license: LGPL-2.0-or-later
+    license_ref: dll/opengl/mesa/context.c
+    modified: yes  # ReactOS carries an i386 asm path and its own GL_VENDOR string
+    version:
+      # ReactOS's own statement of what it imported, which is the only version claim
+      # in the tree that is about the DROP rather than about one file. The per-file
+      # `Version:` headers disagree with each other -- 2.0 (24 files), 2.2 (2), 2.3
+      # (14), 2.4 (27), 2.5 (21), 2.6 (25) -- because upstream never bumped them all,
+      # so probing any single source file would record a version that is true of that
+      # file and false of the tree.
+      file: dll/opengl/Mesa_for_ReactOS.txt
+      pattern: 'based on Mesa ([0-9.]+)'
+    staleness: >
+      DELIBERATELY FROZEN, and this is the one entry where "behind upstream" is not a
+      defect. Mesa 2.6 is from 1997 and current Mesa is 25.x, but `Mesa_for_ReactOS.txt`
+      states the intent: this exists to match what Windows itself ships in software --
+      OpenGL 1.1 with WGL -- and is "not intended to be synchronized with recent
+      versions" (CORE-7499). `glGetString(GL_VERSION)` returns "1.1.0" for that reason.
+      A modern software GL is a separate, optional install via RAPPS (Gallium llvmpipe),
+      not a bump of this tree. So do not audit this against upstream; audit it against
+      whether Windows-1.1 parity still holds.
+    reason: >
+      53,679 lines of Brian Paul's Mesa, carried by upstream ReactOS since forever and
+      never registered. `opengl32.dll` links it as the software rasterizer behind
+      `wglCreateContext` when no hardware ICD claims the pixel format -- the same role
+      Microsoft's own software GL plays -- so it ships, and every line of it was sitting
+      in the "core OS still in C" denominator as work someone might one day be asked to
+      translate. It is third-party graphics code, and there is no reason to spend money
+      turning a 1997 rasterizer into Rust.
+
+      HOW IT WAS FOUND, because the answer is uncomfortable: not by `--suspects`, which
+      reported a clean tree the same afternoon. That scan matches CORPORATE copyright
+      holders by design, and Mesa's headers say `Copyright (C) 1995-1997  Brian Paul` --
+      an individual. `dll/opengl` is also not one of the three registered containers, so
+      neither half of the discovery machinery could see it. It surfaced from
+      `tools/port_audit.py`, whose ratchet fails on a COMPILED directory matching no
+      classification rule: a different question (what does the link contain) that happens
+      to catch what a copyright grep cannot. The blind spot is still there for any
+      individually-authored drop that nothing compiles.
+
+  - path: vendor/glu
     name: SGI GLU (OpenGL Utility Library)
     upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed
       with Mesa. No release stamp in the drop; see review.
     license: SGI-B-2.0
-    license_ref: dll/opengl/glu32/include/GL/glu.h
+    license_ref: vendor/glu/include/GL/glu.h
     license_extra:
       SGI-B-1.1: >-
         The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess}
@@ -642,8 +690,6 @@ trees:
       # LITERAL: recovered 2026-09-20 by file-set fingerprint + minimal content
       # diff, not by an in-tree stamp (there is none). Evidence in the review.
       literal: glu-9.0.1 (Mesa git tag, not a release tarball)
-    headers:
-      - dll/opengl/glu32/include
     reason: >
       47,386 lines of SGI's GLU across libnurbs (NURBS tessellation), libtess (polygon
       tessellation) and libutil, carried by upstream ReactOS and never registered. Found
@@ -720,7 +766,7 @@ trees:
       PATCH-IFIED 2026-09-20. `vendor-patches/glu32.patch` now carries all 127 differing
       files — 729 changed lines — and reproduces this tree BYTE-FOR-BYTE from a pristine
       glu-9.0.1 extraction, verified by applying it to a fresh copy and diffing recursively:
-      zero differences, zero fuzz, zero rejects. dll/opengl/glu32/include/ is not in the
+      zero differences, zero fuzz, zero rejects. vendor/glu/include/ is not in the
       patch because it is byte-identical to upstream; note that `path:` here covers only
       src/, while `headers:` records include/ separately.
 
@@ -1159,11 +1205,11 @@ trees:
       phantom changed lines.
     reason: MPEG audio decoder; upstream-tracked.
 
-  - path: sdk/lib/3rdparty/libsamplerate
+  - path: vendor/libsamplerate
     name: libsamplerate
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
-    license_file: sdk/lib/3rdparty/libsamplerate/COPYING
+    license_file: vendor/libsamplerate/COPYING
     modified: no
     version:
       # LITERAL, and it has to be. Upstream ships no version macro in any file we
@@ -1302,11 +1348,11 @@ trees:
       launch.
     reason: iconv shim over the Win32 codepage APIs; upstream-tracked.
 
-  - path: sdk/lib/3rdparty/stlport
+  - path: vendor/stlport
     name: STLport
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
-    license_file: sdk/lib/3rdparty/stlport/README
+    license_file: vendor/stlport/README
     modified: yes  # 30 semantic files across BOTH halves; see patch
     patch: vendor-patches/stlport.patch
     headers:
@@ -1332,7 +1378,7 @@ trees:
       believe it. 5.2.1 is the FINAL STLport release ever made, so there is no upstream left
       to track and no bump to owe.
 
-      THE TREE IS SPLIT AND HALF OF IT WAS UNREGISTERED. sdk/lib/3rdparty/stlport holds the
+      THE TREE IS SPLIT AND HALF OF IT WAS UNREGISTERED. vendor/stlport holds the
       library sources; sdk/include/c++/stlport holds 326 files that are upstream's top-level
       stlport/ include tree. The second directory was not in this entry at all, so every
       earlier pass over STLport silently covered only half the drop. Now recorded under
@@ -1379,11 +1425,11 @@ trees:
       is still a foreign STL implementation rather than ReactOS code; translating an
       STL to Rust is not a goal of this project.
 
-  - path: drivers/wdm/audio/drivers/ac97
+  - path: vendor/ac97
     name: AC'97 audio sample driver
     upstream: Microsoft Windows-driver-samples
     license: MIT
-    license_file: drivers/wdm/audio/drivers/ac97/license.txt
+    license_file: vendor/ac97/license.txt
     modified: unknown
     reason: >
       Microsoft's AC'97 WDM audio sample, with Intel-copyright portions. Not a
@@ -1450,11 +1496,11 @@ trees:
       licence for the work these headers come from -- but do not read the extra
       holders as evidence that we carry their code.
 
-  - path: sdk/lib/drivers/virtio
+  - path: vendor/virtio
     name: VirtIO driver library
     upstream: virtio-win
     license: BSD-3-Clause
-    license_file: sdk/lib/drivers/virtio/LICENSE
+    license_file: vendor/virtio/LICENSE
     modified: unknown
     reason: >
       The VirtIO ring/PCI library shared by the virtio guest drivers. Red Hat,
@@ -1836,11 +1882,11 @@ trees:
       CRLF/trailing whitespace too, or the totals inflate.
     reason: Transport-independent RPC; upstream-tracked.
 
-  - path: dll/3rdparty/dxtn
+  - path: vendor/dxtn
     name: dxtn (S3TC)
     upstream: unknown
     license: MIT
-    license_ref: dll/3rdparty/dxtn/txc_compress_dxtn.c
+    license_ref: vendor/dxtn/txc_compress_dxtn.c
     modified: unknown  # upstream distribution is gone; see review
     review: >
       VERSION IDENTIFIED 2026-09-19, MODIFICATION STILL OPEN. The registry said
@@ -1864,6 +1910,193 @@ trees:
       its achievable maximum too — the gap is the world's, not ours.
 
     reason: S3TC/DXTn texture (de)compression for the GL stack.
+
+  # ── Found 2026-09-25 by diffing `media/doc/3rd Party Files.txt` against this file ──
+  # Upstream ReactOS's own third-party ledger. Every entry below was in it, with a
+  # version and a licence, and none was here: the discovery scans could not see them
+  # (individual copyright holders, or no container), and nobody had cross-checked the
+  # one list upstream already maintains. Where a version exists only in that ledger,
+  # the probe READS the ledger rather than copying it, so an upstream sync that bumps a
+  # tree and its ledger line moves the recorded version with it.
+
+  - path: vendor/dosfstools
+    name: dosfstools (fsck.fat)
+    upstream: https://github.com/dosfstools/dosfstools
+    license: GPL-3.0-or-later
+    license_file: vendor/dosfstools/COPYING
+    license_extra:
+      LGPL-2.1-or-later: >
+        byteswap.h and byteswap1.h are GNU C Library headers ("This file is part of the
+        GNU C Library", FSF 1997-2003) that dosfstools carries for portability. Two
+        headers, no bodies.
+    modified: yes  # rosglue.h and __REACTOS__ blocks port it onto the NT file API
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/lib/fslib/vfatlib/check\s+Used Version: ([^\r\n]+)'
+    reason: >
+      The FAT checker behind vfatlib's chkdsk path: seven TUs (boot/check/common/fat/
+      file/io/lfn), 5,344 lines, compiled into vfatlib by its parent CMakeLists. The rest
+      of vfatlib is ReactOS's own and stays a translation target; only this directory is
+      vendored. GPL-3.0-or-later, the only GPL-3 code linked into a shipped library, which
+      is worth knowing on its own.
+
+  - path: vendor/cmidriver
+    name: C-Media CMI8738/8768 WDM audio driver
+    upstream: https://code.google.com/archive/p/cmediadrivers/
+    license: BSD-3-Clause
+    license_ref: vendor/cmidriver/adapter.cpp
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: drivers/wdm/audio/drivers/CMIDriver\s+Used Version: ([^\r\n]+)'
+    reason: >
+      dogbert's open-source C-Media driver, with its cmicontrol tray app and cpl applet
+      in subdirectories. 5,532 lines of C++, "Copyright (c) 2006-2008 dogbert" under
+      BSD-3-Clause. A hardware driver for a 2000s PCI sound chip, carried for real-HW
+      coverage; nothing in the roadmap asks for it in Rust.
+
+  - path: vendor/netkvm
+    name: VirtIO NetKVM guest driver (NDIS 5)
+    upstream: https://github.com/virtio-win/kvm-guest-drivers-windows (NetKVM/NDIS5)
+    license: BSD-3-Clause
+    license_ref: vendor/netkvm/Common/ParaNdis-VirtIO.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: drivers/network/dd/netkvm\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Red Hat's virtio-net miniport, 9,500 lines. The companion of vendor/virtio,
+      which was registered 2026-09-20 while this directory was not -- --suspects matches
+      Red Hat now, but netkvm's headers carry the holder after a year range the scan
+      evidently did not reach. Same decision as the library it links: vendored.
+
+  - path: base/applications/mstsc
+    name: rdesktop (as mstsc.exe)
+    upstream: https://github.com/rdesktop/rdesktop
+    license: GPL-3.0-or-later
+    license_ref: base/applications/mstsc/rdesktop.h
+    modified: yes  # the Win32 front end (connectdialog.c, settings.c, the .rc) is ReactOS's
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: base/applications/mstsc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      The Remote Desktop client is rdesktop's protocol engine (iso/mcs/secure/rdp/rdp5/
+      orders/bitmap/cache, "Copyright (C) Matthew Chapman 1999-2008") under a ReactOS
+      Win32 UI. 17,850 lines, 20 TUs. An application, so it never entered the core
+      ledger, but it ships in system32 and its licence is GPL-3.
+
+  - path: vendor/tsclient
+    name: rdesktop (rosapps tsclient)
+    upstream: https://github.com/rdesktop/rdesktop
+    license: GPL-3.0-or-later
+    license_ref: base/applications/mstsc/rdesktop.h
+    license_note: >
+      Same upstream and version as base/applications/mstsc, per upstream's ledger, which
+      lists both paths under one entry. The rosapps copy is not configured into the build.
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: modules/rosapps/applications/net/tsclient\s+Used Version: ([^\r\n]+)'
+    reason: >
+      A second, older rdesktop import in rosapps (mstsc/mstscax wrappers plus the rdesktop
+      tree). Not built. Registered so the ledger's two rdesktop paths are both accounted
+      for, and so a future move of vendored code finds it.
+
+  - path: vendor/treelist
+    name: TreeList control
+    upstream: https://github.com/sebkirche/treelist
+    license: GPL-3.0-or-later
+    license_ref: vendor/treelist/treelist.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: base/setup/reactos/treelist.c\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      A tree-list common control (Anton Zechner / Sebastien Kirche) that the graphical
+      installer uses for its partition list. Two loose files inside a ReactOS-authored
+      directory, so this is a single-file entry with no VENDORED stamp; it is the
+      clearest case for the planned move of vendored code into its own directory.
+
+  - path: sdk/include/ddk/d3dkmthk.h
+    name: libdxg D3DKMT thunk header
+    upstream: https://github.com/microsoft/libdxg
+    license: MIT
+    license_ref: sdk/include/ddk/d3dkmthk.h
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/include/ddk/d3dkmthk.h\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Microsoft's MIT-licensed WDDM kernel-thunk header, one file in the ReactOS-authored
+      DDK directory. Header only, nothing to translate; registered for the licence record.
+
+  - path: sdk/include/GL
+    name: OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
+    upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
+    license: MIT
+    license_ref: sdk/include/GL/gl.h
+    license_extra:
+      Khronos: >
+        glext.h, "Copyright (c) 2007-2012 The Khronos Group Inc." under the Khronos
+        MIT-style Materials licence.
+      SGI-B-1.1: >
+        glu.h, SGI Free Software License B version 1.1 -- the same text as the libnurbs
+        half of dll/opengl/glu32.
+    modified: unknown
+    version:
+      file: sdk/include/GL/gl.h
+      pattern: 'Version:\s+([0-9.]+)'
+    reason: >
+      The public GL headers every OpenGL consumer includes, 14,345 lines. NOT headers of
+      the Mesa tree in dll/opengl/mesa: that is Mesa 2.6 under LGPL, these are Mesa 7.6's
+      gl.h under MIT, so they cannot be a `headers:` entry on it without recording the
+      wrong licence and the wrong version. Not listed in upstream's ledger at all.
+
+  - path: sdk/tools/hhpcomp/chmc
+    name: chmc (CHM compiler)
+    upstream: https://sourceforge.net/projects/chmc/
+    license: GPL-3.0-or-later
+    license_ref: sdk/tools/hhpcomp/chmc/chmc.c
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/hhpcomp/chmc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool (the hhpcomp help compiler). Never ships and never translates;
+      registered so the registry agrees with upstream's ledger.
+
+  - path: sdk/tools/hhpcomp/lzx_compress
+    name: lzx_compress (LZX encoder)
+    upstream: https://sourceforge.net/projects/chmc/
+    license: LGPL-2.1-or-later
+    license_ref: sdk/tools/hhpcomp/lzx_compress/lzx_layer.c
+    license_note: >
+      Upstream's ledger files this under the chmc entry as GPL-3.0-or-later; the files'
+      own headers (Matthew T. Russotto, 2002) say GNU LESSER GPL. Recorded from the files.
+    modified: unknown
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/hhpcomp/chmc\s+(?:Path: [^\r\n]+\s+)*Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool, the LZX compressor chmc links. Never ships.
+
+  - path: vendor/schilytools
+    name: Schily Tools (mkisofs)
+    upstream: https://sourceforge.net/projects/schilytools/
+    license: CDDL-1.0
+    license_file: vendor/schilytools/CDDL.Schily.txt
+    license_extra:
+      GPL-2.0-or-later: >
+        mkisofs itself is Eric Youngdale's GPL program that Schily maintains: its sources
+        say "either version 2, or (at your option) any later version" (and four say
+        "version 2" only), while the schily libraries carry the CDDL. A host tool, so
+        nothing here reaches the shipped image.
+    modified: yes
+    version:
+      file: media/doc/3rd Party Files.txt
+      pattern: 'Path: sdk/tools/mkisofs/schilytools\s+Used Version: ([^\r\n]+)'
+    reason: >
+      Host build tool that masters livecd.iso, ~35K lines. Never ships.
 
   # ── headers with no source in this tree ─────────────────────────────────
   # Registered because the convention-alias scanner walks them and they are foreign
@@ -2160,3 +2393,29 @@ ours:
       licence and the program name but does not name Ken Kato, so the chain is
       name-and-licence, not authorship. Cheap to firm up if it ever matters —
       the upstream release tarball carries a COPYING and a readme.
+
+  # ── Found 2026-09-25 in upstream's `media/doc/3rd Party Files.txt` ──────
+  # Both were third-party per upstream's own ledger, and both are ALREADY Rust: a
+  # `trees:` entry would have been false twice over (we do translate them, and did).
+  - path: drivers/storage/port/buslogic
+    name: VMware BusLogic BT-958 SCSI miniport (vmscsi)
+    origin: VMware, based on the Linux BusLogic driver — GPL-2.0-or-later (BusLogic958.c header)
+    tier: "Tier 1 (storage port drivers)"
+    reason: >
+      Upstream's ledger lists it as VMware's vmscsi 1.2.0.4 (2005-08-17), GPL-2.0-or-later,
+      and README.ReactOS records where VMware published it. BusLogic958.c is translated
+      and cohab-flipped to buslogic-rust; the C stays on disk per the never-delete rule.
+      Recorded because the Rust is a derivative of GPL-2.0-or-later code, and that is a
+      fact about the shipped buslogic.sys whoever wrote the translation.
+
+  - path: sdk/lib/cryptlib
+    name: cryptlib (MD4/MD5/RC4/SHA1/AES/DES)
+    origin: Wine contributors (Leidekker, McCormack, Navara, Kamuju, Jung) — LGPL-2.1-or-later; mvAesAlg from Marvell's OCF reference AES
+    tier: "Tier 1 (ksecdd dependency)"
+    reason: >
+      The primitive crypto ksecdd.sys links. Per-file headers are Wine-era LGPL
+      (Hans Leidekker's MD4/MD5, Mike McCormack's RC4, Filip Navara's SHA1, Vijay Kiran
+      Kamuju's AES, Michael Jung's DES), plus mvAesAlg from an OpenWrt/Marvell reference
+      implementation that README.txt cites. Already translated: the cross build links
+      libcryptlib_rust.a from cryptlib-rust and compiles only a stub TU; the C is built
+      solely for host tools. `ours:` rather than `trees:` because it is translated.

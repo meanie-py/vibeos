@@ -3222,10 +3222,10 @@ pub unsafe fn CDefView_UpdateStatusbar_body(this: *mut CDefView) -> () {
     let cSelectedItems = (*this).m_ListView.GetSelectedCount();
     if cSelectedItems != 0 {
         LoadStringW(shell32_hInstance, IDS_OBJECTS_SELECTED, szFormat.as_mut_ptr(), szFormat.len() as INT);
-        StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), cSelectedItems);
+        strsafe_rust::StringCchPrintfW!(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), cSelectedItems);
     } else {
         LoadStringW(shell32_hInstance, IDS_OBJECTS, szFormat.as_mut_ptr(), szFormat.len() as INT);
-        StringCchPrintfW(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
+        strsafe_rust::StringCchPrintfW!(szPartText.as_mut_ptr(), szPartText.len(), szFormat.as_ptr(), (*this).m_ListView.GetItemCount());
     }
 
     let mut lResult: LRESULT = 0;
@@ -4076,6 +4076,12 @@ pub unsafe fn CDefView_LV_RefreshIcon_body(this: *mut CDefView, iItem: INT) -> (
     lvItem.iItem = iItem;
     lvItem.iImage = I_IMAGECALLBACK;
     CListView_SetItem_body(&mut (*this).m_ListView, &mut lvItem);
+    // Re-query the text too, or an ejected CD keeps its old volume label
+    // (upstream 6730ec5508f; it renames this LV_RefreshItem).
+    let mut iCol: u32 = 0;
+    while (*this).m_ListView.SetItemText(iItem, iCol as i32, LPSTR_TEXTCALLBACK) != 0 {
+        iCol += 1;
+    }
     CListView_Update_body(&mut (*this).m_ListView, iItem);
 }
 
@@ -4523,13 +4529,9 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
     CDefView_UpdateStatusbar_body(this);
     CDefView_UpdateStatusbarLocation_body(this);
 
-    if !pdt.is_null() {
-        ((*((*pdt).lpVtbl)).Release)(pdt);
-    }
-    if !ppf2.is_null() {
-        ((*((*ppf2).lpVtbl)).Release)(ppf2);
-    }
-
+    // `pdt` and `ppf2` are CComPtrs in the C++: their guards release them at scope exit. An
+    // explicit Release here as well dropped the FOLDER's refcount by one per view created, and
+    // closing any folder window then released a freed folder (browseui OnDestroy, RIP 0).
     S_OK as LRESULT
 }
 
@@ -6193,10 +6195,9 @@ pub unsafe fn CDefView_DestroyViewWindow_body(this: *mut CDefView) -> HRESULT {
         (*this).m_hMenu = ::core::ptr::null_mut();
     }
 
-    if !(*this).m_ListView.is_null() {
-        DestroyWindow((*this).m_ListView.m_hWnd);
-    }
-
+    // SFVM_WINDOWCLOSING goes out BEFORE the list view dies: a callback that
+    // subclassed DefView (browseui's CFindFolder) must unsubclass while its
+    // children still exist, or teardown crashes (upstream 68a03b2e1ae, CORE-20504).
     if !(*this).m_hWnd.is_null() {
         CDefView__DoFolderViewCB_body(
             this,
@@ -6204,6 +6205,16 @@ pub unsafe fn CDefView_DestroyViewWindow_body(this: *mut CDefView) -> HRESULT {
             (*this).m_hWnd as WPARAM,
             0,
         );
+    }
+
+    if !(*this).m_ListView.is_null() {
+        // ATL CWindow::DestroyWindow clears m_hWnd on success.
+        if DestroyWindow((*this).m_ListView.m_hWnd) != 0 {
+            (*this).m_ListView.m_hWnd = ::core::ptr::null_mut();
+        }
+    }
+
+    if !(*this).m_hWnd.is_null() {
         DestroyWindow((*this).m_hWnd);
     }
 

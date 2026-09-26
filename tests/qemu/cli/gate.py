@@ -240,11 +240,20 @@ def _ensure_kmtest_payload(repo: Path, arches: list[str]) -> tuple[bool, str]:
     script = repo / "tools" / "payloads" / SUITE_NAME / "build.sh"
     if not script.is_file():
         return False, f"no {script}"
-    missing = [
-        a
-        for a in arches
-        if not (repo / "tools" / "payloads" / SUITE_NAME / f"{SUITE_NAME}-sweep-{a}.exe").is_file()
-    ]
+    # Missing OR STALE: a worktree that already has an exe keeps it across every later
+    # merge, so a change to sweep.c (the 2026-09-25 PnP-quiescence gate) never reached
+    # the merge queue's integration worktree, which went on gating with the old sweep and
+    # rejected the change for exactly the failures that gate exists to prevent.
+    src_dir = repo / "tools" / "payloads" / SUITE_NAME
+    newest_src = max(
+        (p.stat().st_mtime for p in (src_dir / "sweep.c", script) if p.is_file()), default=0.0
+    )
+
+    def _needs_build(a: str) -> bool:
+        exe = src_dir / f"{SUITE_NAME}-sweep-{a}.exe"
+        return not exe.is_file() or exe.stat().st_mtime < newest_src
+
+    missing = [a for a in arches if _needs_build(a)]
     if not missing:
         return True, ""
     tc = repo / ".build-tools" / "llvm-mingw"

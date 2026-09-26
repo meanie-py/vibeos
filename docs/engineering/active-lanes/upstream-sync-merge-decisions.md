@@ -350,6 +350,38 @@ name resolution.
 symbols.** Until then, the rule is: when a callee's signature is corrected, fix every call site
 in the same change, and prefer one shared helper over scattered transmutes.
 
+The user-mode islands were in the same position. **shell32-rust's island is now regenerated
+(2026-09-22) and AUDITED** — the method, so the next crate can reuse it:
+
+1. Regenerate into scratch, not the tree: `OUT_CRATE_DIR=<scratch> bash
+   tools/rustconv/gen_driver_types.sh <drv>`, with the SAME bindgen that built the committed
+   island (read it off the file's banner — install that version side by side and put it first
+   on PATH). Change one variable at a time or the diff mixes header drift with tool drift.
+2. Diff STRUCTURALLY, not textually: records/aliases/consts that were added (harmless),
+   removed (compile errors — benign), or changed; resolve each changed ALIAS to the record it
+   names, because widl's anonymous `__WIDL_*_generated_name_000000NN` types were RENUMBERED
+   by the merge (inserted anonymous types shift every later number). All 7 changed aliases
+   shell32 uses resolved to identical layouts on all 3 arches — renumbering only.
+3. For every changed/removed name, ask whether a crate USES it outside the island.
+
+What it found in shell32: no live layout drift (the changed C++-class renderings are unused —
+each Rust port owns its layout), but one LIVE regression the island hid: upstream moved the
+About banner into rosbrand.dll and removed IDB_REACTOS/IDB_LINEBAR from shell32, so the Rust
+About dialog was loading resources that no longer exist (fixed; arm64 media now stages
+rosbrand.dll too). And one CONTRACT change: `SHBindToObject` became a 5-arg stdcall Vista
+export upstream while the crate still defines the old 4-arg cdecl internal — unexported at
+0x502 and with no live C/C++ caller, so declared by its real contract in the prelude; adopting
+the new one is owed.
+
+Four generator defects fell out, each of which would have bitten the next regeneration:
+OUT_CRATE_DIR was scanned for the crate's own definitions and _extra.rs (both must read the
+crate); amd64 lacked `-mcx16` that every real amd64 TU gets; `intrin_arm64.h` and
+`interlocked.h` both defined `_InterlockedAdd64` under the same `!__has_builtin` guard; and the
+prelude's declarations of crate-defined functions were hand-copied — now derived by
+`tools/rustconv/own_exports_decls.py`, which HARD-FAILS when a crate definition's arity or
+calling convention has diverged from the header (it caught SHBindToObject, and caught its own
+first draft declaring cdecl functions as stdcall). Other crates' islands are still pre-merge.
+
 
 ## Five tool bugs, found because the merge moved the ground under the tests
 

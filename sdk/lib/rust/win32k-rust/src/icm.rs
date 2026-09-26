@@ -2,6 +2,9 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{RtlCompareMemory};
 use core::ffi::c_void;
 
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // SafeProbeForWrite: NTAPI (extern "system" = stdcall i386 / cdecl else), Length = SIZE_T.
 extern "system" {
     fn SafeProbeForWrite(Address: LPVOID, Length: SIZE_T, Alignment: u32) -> NTSTATUS;
@@ -106,12 +109,16 @@ pub unsafe extern "system" fn NtGdiCreateColorSpace(
         core::mem::size_of::<LOGCOLORSPACEEXW>() as _,
         1,
     );
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+    // The probe VALIDATES only; this copy is the access. A fault lands in Status,
+    // which is checked just below -- one _SEH2_TRY's worth of behaviour.
+    if NT_SUCCESS(Status)
+        && !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(Safelcs) as *mut core::ffi::c_void,
             pLogColorSpace as *const core::ffi::c_void,
             core::mem::size_of::<LOGCOLORSPACEEXW>() as _,
-        );
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
@@ -205,8 +212,16 @@ pub unsafe extern "system" fn NtGdiGetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) ->
     }
 
     Status = SafeProbeForWrite(Ramp, core::mem::size_of::<GAMMARAMP>() as _, 1);
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(Ramp, SafeRamp as LPVOID, core::mem::size_of::<GAMMARAMP>());
+    // Validate-only probe; the publish is the access. A fault lands in Status, checked
+    // below, and the unlock/free that follow still run either way.
+    if NT_SUCCESS(Status)
+        && !crate::copy::publish_to_user(
+            Ramp as *mut core::ffi::c_void,
+            SafeRamp as *const core::ffi::c_void,
+            core::mem::size_of::<GAMMARAMP>(),
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     DC_UnlockDc(dc);
@@ -471,12 +486,16 @@ pub unsafe extern "system" fn NtGdiSetDeviceGammaRamp(hDC: HDC, Ramp: LPVOID) ->
     }
 
     Status = SafeProbeForRead(Ramp, core::mem::size_of::<GAMMARAMP>() as _, 1);
-    if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+    // The probe VALIDATES only; this copy is the access. A fault lands in Status,
+    // which is checked just below -- one _SEH2_TRY's worth of behaviour.
+    if NT_SUCCESS(Status)
+        && !crate::copy::capture_from_user(
             SafeRamp as PVOID,
             Ramp,
             core::mem::size_of::<GAMMARAMP>() as _,
-        );
+        )
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
