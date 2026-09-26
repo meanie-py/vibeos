@@ -371,10 +371,10 @@ fn main() {
         );
         linker = linker
             .rust_lib("cnt-rust-lib", cnt_feats, true)
-            .rust_lib("rtl-rust", &[], true);
+            .rust_lib("rtl-rust", &["kernel"], false);
     } else {
         linker = linker
-            .rust_lib("rtl-rust", &[], true)
+            .rust_lib("rtl-rust", &["kernel"], false)
             .rust_lib("cnt-rust-lib", cnt_feats, true);
     }
     linker = linker

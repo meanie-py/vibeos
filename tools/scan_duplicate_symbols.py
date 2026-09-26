@@ -1,53 +1,51 @@
 #!/usr/bin/env python3
-"""Duplicate `#[no_mangle]` symbol ratchet for the kernel link.
+"""Two definitions of one exported symbol, live on the SAME arch, in the SAME link.
 
 WHY THIS EXISTS
 ---------------
-The kernel PE is linked from ~11 INDEPENDENT Rust staticlib graphs (the
-`kernel-rust` umbrella + rtl / cmlib / guids / cport / csq / arbiter / lsalib /
-rossym / cnt-rust-lib / pseh) plus a C floor. `-Wl,--allow-multiple-definition`
-(reactos-link, "common to every module kind") lets lld resolve any symbol
-defined in >1 of those archives FIRST-MATCH instead of erroring.
+Every PE is linked with `-Wl,--allow-multiple-definition` (reactos-link, "common to
+every module kind"), which is load-bearing: each independent Rust staticlib graph
+emits its own panic / compiler-builtins runtime. The price is that ANY duplicate
+resolves first-match, silently. Two incidents, both invisible to the old
+crate-name census this replaces:
 
-That flag is LOAD-BEARING and cannot simply be dropped:
-  * Every independent Rust staticlib graph emits its OWN copy of the panic /
-    eh_personality / compiler-builtins runtime — IRREDUCIBLE while N>1
-    staticlibs feed one link.
-  * Merging them into one graph is partly IMPOSSIBLE: rtl-rust / cnt-rust-lib
-    build a DIFFERENT rustc target (user-mode hardfloat) than the kernel-json
-    softfloat kernel-rust — they physically cannot share a crate graph.
+  * i386 `RtlPrefetchMemoryNonTemporal` (88b04bf7f86): reviving an orphan-cfg'd
+    empty Rust stub put it in the same crate as `prefetch_asm.rs`'s `global_asm!`
+    label. rustc cannot see into the assembler, the stub won the link, and the
+    kiinit NOP patch fell through it — BUGCHECK 0x1E in kmtest RtlMemoryKM.
+  * arm64 `RtlUshortByteSwap` in `arm64/stubs.rs` duplicated the byteswap crate,
+    which the old hard-coded crate list did not include.
 
-So we keep the flag but RATCHET it: freeze the set of Rust `#[no_mangle]`
-symbols that are defined in more than one kernel-linked crate, and FAIL if a
-NEW one appears. That stops a future translation from silently re-defining a
-symbol another crate already owns — the exact near-miss `IsEqualGUID` was.
+WHAT IT MEASURES
+----------------
+`tools/rust_link_model.py` builds a source model of every crate: only files
+reachable from the crate root through `mod`/`#[path]`/`include!`, every
+definition's full cfg conjunction (item + inline modules + mod declarations +
+`#![cfg]`), `#[no_mangle]`/`#[export_name]` items and `global_asm!` `.globl` labels.
 
-WHAT IT MEASURES (and its limits)
----------------------------------
-A SOURCE scan: it finds every `#[no_mangle]` fn/static DEFINITION (an attribute
-that only ever precedes a real definition — never an `extern {}` import, so
-import decls are correctly excluded) across the kernel-link crate group, and
-reports any symbol name defined in >=2 of those crates.
+A LINK UNIT is the path-dependency closure of the Rust libraries one binary links:
+every `rust_staticlib("X")` / `rust_lib("X", …)` in a `*-cargo/build.rs`, plus each
+`crate-type = staticlib|cdylib` crate on its own. A finding is one undecorated
+name (i386 `_X`, `_X@N`, `@X@N` → `X`) defined at two places in one unit whose
+cfgs are jointly satisfiable on one arch — arch is fixed per build, every other
+atom (`feature = "smp"`, `debug_assertions`) is free, so `feature="smp"` /
+`not(feature="smp")` twins are correctly apart.
 
-This is a deliberately DIFFERENTIAL check, not an exact model of lld's link:
-  * It does NOT try to know which archive members lld actually pulls (only the
-    linker knows; rustc hides linker output on a successful link). So the
-    absolute count includes benign entries — those freeze into the baseline.
-  * It does NOT see compiler-emitted runtime symbols (memcpy, eh_personality)
-    or C-side cohab — both out of scope here.
-What it DOES reliably catch is the thing that matters: a NEW cross-crate
-`#[no_mangle]` collision introduced by a translation. Everything present today
-is baselined; only net-new collisions fail the gate.
+Out of scope: C objects in the link, and symbols a `macro_rules!` expands into.
+
+FIXING A FINDING
+----------------
+Decide which definition is the real one and DELETE the other. Never "fix" it by
+narrowing a cfg until the scanner is quiet without knowing which body the link
+actually took — that is how the prefetch stub came back. When both are
+deliberate (a cohab override), say so on the losing definition with
+`// nolint: duplicate-symbol (<which one wins and why>)`.
 
 USAGE
 -----
-  scan_duplicate_symbols.py            # human-readable census
-  scan_duplicate_symbols.py --lint     # bare `SYM\\tcrates` finding lines
-
-Wired into `vibeos-cli check` as a source lint: the harness baseline-diffs the
-`--lint` output against tools/lint-baseline/scan_duplicate_symbols.txt and gates
-NEW lines only (regenerate with `vibeos-cli check --update-baseline
-scan_duplicate_symbols`). The baseline doubles as the accepted-cohab registry.
+  scan_duplicate_symbols.py            # human-readable report
+  scan_duplicate_symbols.py --lint     # one finding per line (vibeos-cli check)
+  scan_duplicate_symbols.py ROOT       # a fixture tree (crates found by Cargo.toml)
 """
 
 from __future__ import annotations
@@ -55,131 +53,249 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.source_walk import source_files
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from rust_link_model import (
+    ARCHES,
+    REPO,
+    Def,
+    crate_defs,
+    crates,
+    feature_atom,
+    free_atoms,
+    resolve_features,
+    unknown_build_cfgs,
+)
 
-REPO = Path(__file__).resolve().parent.parent
+NOLINT = "nolint: duplicate-symbol"
 
-# The crates whose object code is linked into the kernel PE (ntoskrnl-cargo /
-# ntkrnlmp-cargo `.rust_lib`/`.rust_staticlib` set). A `#[no_mangle]` symbol
-# defined in two of these collides at link and is masked by the flag.
-KERNEL_LINK_CRATES = [
-    "kernel-rust",  # umbrella staticlib (pulls ntoskrnl-rust + extracted crates)
-    "ntoskrnl-rust",
-    "lpc-rust",
-    "fsrtl-rust",
-    "dbgk-rust",
-    "wmi-rust",
-    "dbgprint-rust",
-    "cc-rust",
-    "iomgr-rust",
-    "kdbg-rust",
-    "config-rust",
-    "ex-rust",
-    "ob-rust",
-    "ps-rust",
-    "kd-rust",
-    "kd64-rust",
-    "vf-rust",
-    "rtlk-rust",
-    "po-rust",
-    "inbv-rust",
-    "vdm-rust",
-    "fstub-rust",
-    "se-rust",
-    "pnpmgr-rust",
-    "guids-rust",
-    "rtl-rust",
-    "cnt-rust-lib",
-    "cmlib-rust",
-    "cport-rust",
-    "csq-rust",
-    "arbiter-rust",
-    "lsalib-rust",
-    "rossym-rust",
-    "pseh-rust",
-]
-RUST_ROOT = REPO / "sdk" / "lib" / "rust"
-
-# `#[no_mangle]` attribute, then (skipping further attrs / cfg / doc lines) the
-# defined item. Matches `pub? (unsafe)? (extern "..")? fn NAME` and
-# `pub? static (mut)? NAME`. An attribute can't sit on an extern-block decl, so
-# this only ever pairs with real definitions.
-# Anchored to line start so a `#[no_mangle]` mentioned inside a `//` comment
-# (e.g. "provide inlines (NOT #[no_mangle])") is NOT taken as an attribute.
-NO_MANGLE = re.compile(r"^\s*#\s*\[\s*no_mangle\s*\]")
-FN_DEF = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)")
-STATIC_DEF = re.compile(r"\bstatic\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)")
-# lines that may legitimately sit between the attr and the item
-ATTR_OR_DOC = re.compile(r"^\s*(#\s*\[|//|/\*|\*)")
-
-
-def symbols_in_crate(crate: str) -> set[str]:
-    src = RUST_ROOT / crate / "src"
-    if not src.is_dir():
-        return set()
-    found: set[str] = set()
-    for rs in source_files(src):
-        try:
-            lines = rs.read_text(errors="replace").splitlines()
-        except OSError:
-            continue
-        for i, ln in enumerate(lines):
-            if not NO_MANGLE.search(ln):
-                continue
-            # walk forward to the first non-attr/doc line = the defined item
-            for j in range(i + 1, min(i + 8, len(lines))):
-                nxt = lines[j]
-                if ATTR_OR_DOC.match(nxt) or not nxt.strip():
-                    continue
-                m = FN_DEF.search(nxt) or STATIC_DEF.search(nxt)
-                if m:
-                    found.add(m.group(1))
-                break
-    return found
-
-
-# Structural runtime: symbols each independent Rust staticlib graph legitimately
-# defines its own copy of (the panic/eh runtime). Irreducible by the multi-
-# staticlib design, so they are NOT ratchet debt — excluded from the census.
+# Symbols each independent Rust staticlib graph legitimately defines its own copy
+# of (the panic/eh runtime). Irreducible while N>1 staticlibs feed one link.
 STRUCTURAL = re.compile(
     r"^(rust_eh_personality|rust_begin_unwind|rust_oom|__rust_[a-z_]+|_fltused)$"
 )
 
-
-def census() -> dict[str, list[str]]:
-    owners: dict[str, set[str]] = {}
-    for crate in KERNEL_LINK_CRATES:
-        for sym in symbols_in_crate(crate):
-            if STRUCTURAL.match(sym):
-                continue
-            owners.setdefault(sym, set()).add(crate)
-    return {s: sorted(c) for s, c in owners.items() if len(c) >= 2}
+_LINK_CALL = re.compile(r'\.rust_(?:staticlib|lib)\s*\(\s*"([^"]+)"')
+_LIB = re.compile(r'\.rust_lib\s*\(\s*"([^"]+)"\s*,\s*(&\[[^\]]*\]|\w+)\s*,\s*(true|false)')
+_STATICLIB = re.compile(r'\.rust_staticlib\s*\(\s*"([^"]+)"')
+_FEATS = re.compile(r"\.rust_features\s*\(\s*&\[([^\]]*)\]")
+_HELPER = re.compile(r"\b(\w+)_link::")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "--lint",
-        action="store_true",
-        help="emit bare `SYM<TAB>crates` finding lines for the "
-        "harness baseline-diff (vibeos-cli check)",
+@dataclass
+class Unit:
+    crates: list[str]
+    pinned: frozenset[tuple[str, bool]]  # feature atoms this binary decides
+
+
+def _strip_comments(src: str) -> str:
+    return re.sub(r"//[^\n]*", "", src)
+
+
+def _unit(roots: dict[str, tuple[set[str], bool]], maybe: set[str], root: Path | None) -> Unit:
+    on, unknown = resolve_features(roots, maybe, root)
+    allc = crates(root)
+    pinned = []
+    for c in on:
+        for f in allc[c].features:
+            if f != "default" and f not in unknown[c]:
+                pinned.append((feature_atom(c, f), f in on[c]))
+    return Unit(sorted(on), frozenset(pinned))
+
+
+def _arch_guard(cond: str) -> set[str] | None:
+    """Arches an `if` header over `arch == "x"` / `arch != "x"` (joined by || or &&)
+    selects; None when it tests anything else."""
+    cond = cond.strip().strip("()")
+    for op, join in (("||", set.union), ("&&", set.intersection)):
+        if op in cond:
+            parts = [_arch_guard(p) for p in cond.split(op)]
+            return None if None in parts else join(*parts)  # type: ignore[arg-type]
+    m = re.fullmatch(r'arch(?:\.as_str\(\))?\s*(==|!=)\s*"(\w+)"', cond)
+    if not m:
+        return None
+    return {m.group(2)} if m.group(1) == "==" else set(ARCHES) - {m.group(2)}
+
+
+def _arches_at(src: str) -> list[set[str]]:
+    """For every offset, the arches whose build reaches it through `if arch == …`
+    blocks (and their `else`). Other conditions don't restrict."""
+    out: list[set[str]] = []
+    stack: list[set[str]] = [set(ARCHES)]
+    last_if: set[str] | None = None
+    header_start = 0
+    for i, c in enumerate(src):
+        out.append(stack[-1])
+        if c == "{":
+            header = src[header_start:i]
+            cur = stack[-1]
+            m = re.search(r"(?:^|\s)(else\s+)?if\s+(.*)$", header, re.S)
+            if m and not re.search(r"\bmatch\b|=>|\blet\b", m.group(2)):
+                g = _arch_guard(m.group(2))
+                sel = set(ARCHES) if g is None else g
+                if m.group(1) and last_if is not None:
+                    sel &= set(ARCHES) - last_if
+                last_if = sel if g is not None else None
+                stack.append(cur & sel)
+            elif re.search(r"(?:^|\s)else\s*$", header) and last_if is not None:
+                stack.append(cur - last_if)
+                last_if = None
+            else:
+                stack.append(cur)
+            header_start = i + 1
+        elif c == "}":
+            if len(stack) > 1:
+                stack.pop()
+            header_start = i + 1
+        elif c == ";":
+            header_start = i + 1
+            last_if = None
+    return out
+
+
+def link_units(root: Path | None) -> dict[str, dict[str, Unit]]:
+    """unit -> arch -> Unit. One unit per binary: each *-cargo build.rs (plus the
+    `<x>-link` helper crate it delegates to), and each staticlib crate on its own. A
+    crate a build.rs links only under `if arch == "x86"` is in the x86 unit only."""
+    allc = crates(root)
+    base = root or REPO
+    units: dict[str, dict[str, Unit]] = {}
+    for br in sorted(base.rglob("*-cargo/build.rs")):
+        if root is None and "sdk/lib/rust" not in br.as_posix():
+            continue
+        src = _strip_comments(br.read_text(errors="replace"))
+        for helper in set(_HELPER.findall(src)) - {"reactos"}:
+            h = allc.get(helper.replace("_", "-") + "-link")
+            if h and (h.dir / "src" / "lib.rs").is_file():
+                src += "\n" + _strip_comments(
+                    (h.dir / "src" / "lib.rs").read_text(errors="replace")
+                )
+        at = _arches_at(src)
+        maybe = set(re.findall(r'"([\w-]+)"', src))  # any name spelled may be env/arch-switched
+        per: dict[str, Unit] = {}
+        for arch in ARCHES:
+            roots: dict[str, tuple[set[str], bool]] = {}
+            for m in _LIB.finditer(src):
+                if arch in at[m.start()]:
+                    crate, feats, dflt = m.groups()
+                    lit = set(re.findall(r'"([^"]+)"', feats)) if feats.startswith("&") else set()
+                    roots[crate] = (roots.get(crate, (set(), False))[0] | lit, dflt == "true")
+            off = 0
+            for stmt in src.split(";"):
+                if (m := _STATICLIB.search(stmt)) and arch in at[off + m.start()]:
+                    lit = {f for x in _FEATS.findall(stmt) for f in re.findall(r'"([^"]+)"', x)}
+                    roots[m.group(1)] = (lit, True)
+                off += len(stmt) + 1
+            for m in _LINK_CALL.finditer(src):
+                if arch in at[m.start()]:
+                    roots.setdefault(m.group(1), (set(), True))
+            roots = {k: v for k, v in roots.items() if k in allc}
+            if roots:
+                per[arch] = _unit(roots, maybe, root)
+        if per:
+            units[br.parent.name] = per
+    for c in allc.values():
+        if c.staticlib and c.name not in units:
+            u = _unit({c.name: (set(), True)}, set(), root)
+            units[c.name] = dict.fromkeys(ARCHES, u)
+    return units
+
+
+def _nolint(d: Def) -> bool:
+    try:
+        lines = d.path.read_text(errors="replace").splitlines()
+    except OSError:
+        return False
+    lo = max(0, d.line - 6)
+    return any(NOLINT in ln for ln in lines[lo : d.line])
+
+
+def findings(root: Path | None = None) -> dict[tuple[Def, Def], tuple[set[str], set[str]]]:
+    """(def, def) -> (arches, units)."""
+    out: dict[tuple[Def, Def], tuple[set[str], set[str]]] = {}
+    for unit, per_arch in link_units(root).items():
+        for arch, u in per_arch.items():
+            fixed = u.pinned
+            defs = [d for c in u.crates for d in crate_defs(c, root)]
+            by_name: dict[str, list[Def]] = {}
+            for d in defs:
+                n = d.link_name(arch)
+                if STRUCTURAL.match(d.base) or not d.cond.satisfiable_with(d.cond, arch, fixed):
+                    continue
+                by_name.setdefault(n, []).append(d)
+            for group in by_name.values():
+                for a, b in combinations(sorted(set(group), key=lambda d: (d.loc(), d.name)), 2):
+                    if a.loc() == b.loc() or not a.cond.satisfiable_with(b.cond, arch, fixed):
+                        continue
+                    if _nolint(a) or _nolint(b):
+                        continue
+                    arches, units = out.setdefault((a, b), (set(), set()))
+                    arches.add(arch)
+                    units.add(unit)
+    return out
+
+
+def _fmt(d: Def) -> str:
+    return f"{d.loc()} ({d.crate}, {d.kind} {d.name})"
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    args = ap.parse_args()
+    ap.add_argument(
+        "--lint", action="store_true", help="one finding per line, for the baseline diff"
+    )
+    ap.add_argument("root", nargs="?", type=Path, help="fixture tree instead of the repo")
+    args = ap.parse_args(argv)
+    root = args.root.resolve() if args.root else None
 
-    dups = census()
-
-    if args.lint:
-        for s in sorted(dups):
-            print(f"{s}\t{','.join(dups[s])}")
-        return 0
-
-    print("=== duplicate #[no_mangle] census (kernel link group) ===")
-    print(f"collisions: {len(dups)}")
-    for s in sorted(dups):
-        print(f"  {s}\t{','.join(dups[s])}")
+    res = findings(root)
+    # A build-script cfg the model can't evaluate reads as a free boolean, which makes
+    # exclusive backends look co-linkable (or hides a real overlap). Refuse to guess.
+    unknown = unknown_build_cfgs(root)
+    used = {x for (a, b) in res for d in (a, b) for p in d.cond.preds for x in free_atoms(p)}
+    linked = {c for per in link_units(root).values() for u in per.values() for c in u.crates}
+    used |= {
+        x for c in linked for d in crate_defs(c, root) for p in d.cond.preds for x in free_atoms(p)
+    }
+    if hit := sorted(set(unknown) & used):
+        for n in hit:
+            print(
+                f"error: cfg `{n}` is set by {unknown[n]}; add what it means to "
+                "BUILD_CFGS in tools/rust_link_model.py"
+            )
+        return 2
+    rows = sorted(
+        (
+            (
+                a.base if a.kind == "rust" else b.base,
+                ",".join(x for x in ARCHES if x in ar),
+                a,
+                b,
+                un,
+            )
+            for (a, b), (ar, un) in res.items()
+        ),
+        key=lambda r: (r[0], r[1], r[2].loc(), r[3].loc()),
+    )
+    for name, arches, a, b, units in rows:
+        if args.lint:
+            print(f"{_fmt(a)}: {name} [{arches}] also defined at {_fmt(b)}")
+        else:
+            print(f"{name}  [{arches}]  in {', '.join(sorted(units))}")
+            print(f"    {_fmt(a)}")
+            print(f"    {_fmt(b)}")
+    if not args.lint:
+        print(f"\n{len(rows)} duplicate definition pair(s)")
+        if rows:
+            print(
+                "fix: decide which body the binary should run and DELETE the other; "
+                "see the docstring."
+            )
     return 0
 
 
