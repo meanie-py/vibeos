@@ -9153,7 +9153,7 @@ def test_reaper_walks_debug_toolkit_manifests(reaper):
 # --- vm: output printed before the `ready` snapshot is boot output, never flushed -------
 
 
-class _FakeSerial:
+class _SnapshotSerial:
     """read_until / read_until_idle / read_available over a scripted stream, with the
     real SerialClient's consume semantics: a TimeoutError does NOT consume."""
 
@@ -9196,7 +9196,9 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
             "C", (), {"boot_marker": "shell ready", "boot_timeout": 1, "desktop_settle_seconds": 5}
         )(),
     )
-    vm.serial = cast(Any, _FakeSerial("...shell ready", "\n[UCRTDIFF] done\n", settle_times_out))
+    vm.serial = cast(
+        Any, _SnapshotSerial("...shell ready", "\n[UCRTDIFF] done\n", settle_times_out)
+    )
     vm.qmp = cast(Any, _FakeQmp())
     vm._boot_output = ""
     vm.wait_for_boot()
