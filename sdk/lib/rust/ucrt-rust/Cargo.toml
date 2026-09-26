@@ -103,5 +103,11 @@ xtoa = []
 # layouts pinned against the compiler. See src/findfile.rs.
 findfile = []
 
+# stdio/output.cpp -- the fourteen __stdio_common_v*printf* entry points behind
+# every printf, sprintf and fprintf: Microsoft's table-driven processor with its
+# three bases (standard, _s validation, _p positional), ported. See src/output.rs
+# for why not msvcrt's engine. Needs strtox for the width/position parser.
+output = ["strtox"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
