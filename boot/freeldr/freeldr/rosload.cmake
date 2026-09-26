@@ -34,6 +34,14 @@ list(APPEND ROSLOAD_SOURCE
     # ntldr/wlmemory.c   # replaced by Rust (freeldr-rust/src/wlmemory.rs)
     # ntldr/wlregistry.c # replaced by Rust (freeldr-rust/src/wlregistry.rs)
 )
+    # NEW upstream TUs in ROSLOAD_SOURCE since the fork, deliberately not added:
+    #   ntoskrnl/ke/config.c  — upstream factored the kernel/loader shared config
+    #     reader into its own TU; our equivalent already lives in cmboot-rust,
+    #     which the kernel and BOTH loaders link.
+    #   ntldr/advopts.c       — the F8 Advanced Boot Options menu, extracted
+    #     upstream from ntldropts.c + options.c, both of which are Rust here
+    #     (freeldr-rust ntldropts.rs / options.rs). Port it there to pick the
+    #     feature up; adding the C would duplicate symbols the Rust owns.
 
 if(ARCH STREQUAL "i386")
 

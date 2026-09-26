@@ -219,6 +219,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cardlib-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -386,6 +393,7 @@ dependencies = [
  "cnt-rust",
  "crt-shared-rust",
  "panic-common",
+ "ucrt-rust",
 ]
 
 [[package]]
@@ -1421,6 +1429,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 
@@ -1856,6 +1865,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "recyclebin-rust"
+version = "0.1.0"
+dependencies = [
+ "com-sys",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2126,6 +2146,13 @@ name = "samsrv-sys"
 version = "0.1.0"
 
 [[package]]
+name = "schannel-tls-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2210,6 +2237,8 @@ dependencies = [
  "com-sys",
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
+ "va-slots-rust",
 ]
 
 [[package]]
@@ -2309,6 +2338,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "strsafe-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "strsafe-rust",
+]
+
+[[package]]
 name = "strsafe-rust"
 version = "0.1.0"
 
@@ -2372,6 +2409,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "va-slots-rust",
  "win32macros-rust",
 ]
 
@@ -2382,6 +2420,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "va-slots-rust",
  "win32macros-rust",
 ]
 
@@ -2482,6 +2521,18 @@ dependencies = [
  "tracing-core",
  "tracing-log",
 ]
+
+[[package]]
+name = "ucrt-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "msvcrt-crt-rust",
+]
+
+[[package]]
+name = "ucrt-rust"
+version = "0.1.0"
 
 [[package]]
 name = "uefildr-cargo"
@@ -2634,6 +2685,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
 ]
 
 [[package]]

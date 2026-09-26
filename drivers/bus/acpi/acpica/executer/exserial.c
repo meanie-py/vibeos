@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -251,6 +251,12 @@ AcpiExReadSerialBus (
         Function = ACPI_READ;
         break;
 
+    case ACPI_ADR_SPACE_FIXED_HARDWARE:
+
+        BufferLength = ACPI_FFH_INPUT_BUFFER_SIZE;
+        Function = ACPI_READ;
+        break;
+
     default:
         return_ACPI_STATUS (AE_AML_INVALID_SPACE_ID);
     }
@@ -397,8 +403,7 @@ AcpiExWriteSerialBus (
     /* Copy the input buffer data to the transfer buffer */
 
     Buffer = BufferDesc->Buffer.Pointer;
-    DataLength = (BufferLength < SourceDesc->Buffer.Length ?
-        BufferLength : SourceDesc->Buffer.Length);
+    DataLength = ACPI_MIN (BufferLength, SourceDesc->Buffer.Length);
     memcpy (Buffer, SourceDesc->Buffer.Pointer, DataLength);
 
     /* Lock entire transaction if requested */

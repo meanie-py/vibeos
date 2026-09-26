@@ -17,6 +17,13 @@
 #define CurrentArchitecture L"ppc"
 #endif
 
+template<class T> struct Deleter
+{
+    Deleter(T ptr) : p(ptr) {}
+    ~Deleter () { delete p; }
+    T p;
+};
+
 static inline HRESULT
 HResultFromWin32(UINT Error)
 {
@@ -46,6 +53,8 @@ UINT
 ClassifyFile(PCWSTR Path);
 BOOL
 OpensWithExplorer(PCWSTR Path);
+UINT
+WaitForProcess(HANDLE hProcess);
 BOOL
 StartProcess(const CStringW &Path, BOOL Wait);
 BOOL
@@ -97,6 +106,8 @@ UnixTimeToFileTime(DWORD dwUnixTime, LPFILETIME pFileTime);
 BOOL
 SearchPatternMatch(LPCWSTR szHaystack, LPCWSTR szNeedle);
 
+BOOL
+IsSameRegKey(HKEY hRoot, LPCWSTR Path1, REGSAM Sam1, LPCWSTR Path2, REGSAM Sam2);
 HRESULT
 RegKeyHasValues(HKEY hKey, LPCWSTR Path, REGSAM wowsam = 0);
 LPCWSTR

@@ -33,10 +33,19 @@ Output only one Rust worker function. No Markdown and no explanation.
 - Never guess a constant. Keep the symbolic C name. Numeric literals already present in
   the source must remain byte-for-byte equivalent, including signedness and width.
 - Never invent a GUID/IID/CLSID value. Use its symbolic extern name.
-- `CComPtr<T>` semantics are exact AddRef/Release ownership. Do not replace them with a
-  raw pointer without preserving both operations and their original timing.
-- Preserve RAII cleanup at the same control-flow point. Explicitly drop a guard early
-  when the C++ object's lifetime ends before function return.
+- A `CComPtr<T>` LOCAL is owned by the deterministic scaffold, not by you. Declare it as
+  `let mut <name>: *mut T = core::ptr::null_mut();`, keeping the C++ spelling of `<name>`
+  EXACTLY — do not rename it to snake_case. Then use it as a plain raw pointer and do NOT
+  write any `AddRef`/`Release` for it: the scaffold installs a `CppComPtrGuard` on the slot,
+  and that guard IS the C++ destructor. It releases and nulls on every exit path, including
+  early returns. A hand-written `Release` next to that guard is a SECOND release — the guard
+  then reads `lpVtbl` out of freed memory and calls through it. (CDefView's `FillList` shipped
+  exactly that on three exit paths: arm64 died instantly, amd64 and i386 passed conformance
+  three times because the freed block still held a plausible pointer.)
+- That applies only to a `CComPtr` LOCAL. A raw `IFoo*` local that the C++ itself releases
+  explicitly gets no guard, so keep its `Release` exactly where the C++ has it.
+- Preserve every other RAII cleanup at the same control-flow point. Explicitly drop a guard
+  early when the C++ object's lifetime ends before function return.
 - TRACE/WARN/ERR/FIXME-style macros are macros or compile-time no-ops, never out-of-line
   no-op functions.
 - Stable Rust only: no feature gates, no `RUSTC_BOOTSTRAP`, no `std`.

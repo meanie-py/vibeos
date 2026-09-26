@@ -77,7 +77,7 @@ extern "C" {
 //
 // Static Kernel-Mode Address start (use MM_KSEG0_BASE for actual)
 //
-#define KSEG0_BASE 0xfffff80000000000ULL
+#define KSEG0_BASE 0xFFFF800000000000ULL
 
 //
 // Address of the user-shared data (same location as AMD64)

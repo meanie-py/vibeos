@@ -1,3 +1,13 @@
+# NOTE (upstream-sync 2026-09-20): upstream's "Stop using non-conforming swprintf /
+# vswprintf" removed the tree-wide -D_CRT_NON_CONFORMING_SWPRINTFS from the top-level
+# CMakeLists and fixed every call site, so <stdio.h> now always declares the C99 3-arg
+# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
+# 2-arg engines behind the msvcrt/ntdll exports of those names, so they alone still need
+# the old declaration — hence the per-source define at the bottom of this file. Upstream
+# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
+# because our cargo modules (rosload-cargo, ntdll-cargo) replay these exact
+# compile_commands entries and reactos-link hard-fails on a source with no cc entry.
+
 
 list(APPEND LIBCNTPR_PRINTF_SOURCE
     printf/_snprintf.c

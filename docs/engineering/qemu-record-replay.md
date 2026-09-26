@@ -288,6 +288,48 @@ icount, better than inferring position from the rrfile read offset.
 
 ### Wired into the tool: `rr replay --break-at`
 
+**Measured end to end, and one gap found by doing it.** On a freshly recorded
+arm64 trace, through the real harness:
+
+```
+[rr] break icount 8000000000 is mid-chunk and would abort the replay;
+     using the next legal boundary 8139927533 (+139927533)
+[rr] replay-break armed at icount 8139927533
+```
+
+The snap distance is the point: 8e9 lands inside one of the 2**28-instruction
+idle chunks, so the unsnapped request was 139.9M instructions from anywhere
+legal. The arming works; the replay then stopped with its serial frozen at 5,789
+bytes, which is about where that icount falls, so the break very likely fired.
+
+**"Very likely" is the gap.** Nothing reports that the break FIRED. From outside,
+a replay paused at a break and a replay wedged look identical — both have a
+frozen serial log, and both leave QEMU burning CPU. The obvious discriminator
+does not work: this paused-or-wedged QEMU sat at 87% CPU in `R` state, so
+"paused replays idle, wedged ones spin" is false, or at least not reliable.
+Confirming a pause needs `query-status`, and the harness owns the QMP socket —
+the same reason `--break-at` had to be a hook in the first place.
+
+**Closed.** QEMU does announce the stop — a QMP `STOP` event — and the harness's
+client was throwing it away: `_recv_json` has to skip events while scanning for a
+command's reply, and it discarded them on the way past. They are retained now
+(bounded tail), `QmpClient.saw_event("STOP")` asks the question, and a replay run
+with `--break-at` reports on the timeout path:
+
+```
+[rr] replay-break FIRED: guest stopped at icount 8139927533
+```
+
+or, when it did not, says so and names the next thing to check. That is the
+timeout path on purpose: a break that fires IS a quiet serial log followed by the
+harness waiting out its boot timeout, so that is where the answer is needed.
+
+A control run of the same trace with no break wedged at a different, later point
+(724,992 trace bytes / 36,965 serial bytes, against 229,376 / 5,789 with the
+break). One run each, so that difference does not attribute: it is equally
+consistent with the break firing early by design and with ordinary run-to-run
+variance, which replays through the harness have shown before.
+
 `./vibeos-cli rr replay <trace> --break-at <icount> [--gdb]` arms the break
 through the harness's OWN QMP connection, snapping the requested icount forward
 to a legal boundary and saying so when it moves.

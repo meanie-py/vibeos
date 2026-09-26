@@ -62,7 +62,7 @@ use crate::win32::{
 use crate::prelude::{
     GetPrivateProfileIntW, PathParseIconLocationW, PathRemoveExtensionW,
     SHCreateDefaultExtractIcon, SHELL_GetSetting, SHQueryValueExW, SHRegGetCLSIDKeyW,
-    SHRegGetValueW, StringCchPrintfW,
+    SHRegGetValueW,
 };
 
 /// strsafe.h `StringCbCopyW` — a byte-count STRSAFEAPI inline (no export symbol), same as the
@@ -410,7 +410,7 @@ pub unsafe extern "C" fn CFSExtractIcon_CreateInstance(
             ) == ERROR_SUCCESS
             {
                 let mut szSubKey: [u16; MAX_PATH] = [0; MAX_PATH];
-                StringCchPrintfW(
+                strsafe_rust::StringCchPrintfW!(
                     szSubKey.as_mut_ptr(),
                     _countof!(szSubKey) as usize,
                     CPP_COM_WSTR_173B87169959.as_ptr(),

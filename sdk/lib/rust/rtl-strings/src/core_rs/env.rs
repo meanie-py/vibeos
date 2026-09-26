@@ -22,6 +22,12 @@ pub const STATUS_SUCCESS: i32 = 0;
 pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 pub const STATUS_VARIABLE_NOT_FOUND: i32 = 0xC000_0100u32 as i32;
 pub const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
+/// Upstream 2026-09 overflow guard added to both `_U` wrappers.
+pub const STATUS_UNSUCCESSFUL: i32 = 0xC000_0001u32 as i32;
+/// `ntdef.h`'s `UNICODE_STRING_MAX_CHARS` (32767) — the overflow
+/// threshold the 2026-09 rewrite checks `ResultLength`/`ReturnLength`
+/// against before writing it into a `UNICODE_STRING::Length` (USHORT).
+pub const UNICODE_STRING_MAX_CHARS: usize = 32767;
 
 /// Result of `find_env_var`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

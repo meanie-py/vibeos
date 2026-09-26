@@ -8,6 +8,10 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
+// Crate-local (correct 9-param, post-upstream-sync) definition -- NOT the stale
+// 8-param ntkrnl_sys::ddk::CmpSecurityMethod extern decl (bindgen predates the
+// merge's cm.h AccessMode addition and was never regenerated).
+use crate::cmse::CmpSecurityMethod;
 use ntkrnl_sys::ddk::{
     ACCESS_MASK, ANSI_STRING, CMHIVE, CM_KEY_BODY, CM_KEY_NODE, CM_PARSE_CONTEXT,
     CmiCallRegisteredCallbacks, CmpAcquireKcbLockExclusiveByKey, CmpAddToHiveFileList,
@@ -17,7 +21,7 @@ use ntkrnl_sys::ddk::{
     CmpInitDelayDerefKCBEngine, CmpInitializeCache, CmpInitializeHardwareConfiguration,
     CmpInitializeHive, CmpInitializeMachineDependentConfiguration, CmpNameSize,
     CmpOpenHiveFiles, CmpParseKey, CmpReleaseKcbLock, CmpReleaseKcbLockByKey,
-    CmpSecurityMethod, CmpShutdownWorkers, ERESOURCE, ExAcquireResourceExclusiveLite,
+    CmpShutdownWorkers, ERESOURCE, ExAcquireResourceExclusiveLite,
     ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExInitializePushLock,
     ExInitializeResourceLite, ExIsResourceAcquiredExclusiveLite,
     ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, _GENERIC_MAPPING, HCELL_INDEX,
@@ -555,10 +559,15 @@ unsafe fn kcb_delete(Kcb: PCM_KEY_CONTROL_BLOCK) -> u32 {
     (*Kcb).__bindgen_anon_1.Delete()
 }
 
+// cm_x.h: `CmpAcquireKcbLockSharedByKey(k)` is `...ByIndex(GET_HASH_INDEX(k))`. This local copy
+// passed the raw ConvKey hash as the INDEX, so CmpQueryKeyName (NtQueryObject for a key's
+// name) did a `lock cmpxchg` at CmpCacheTable[hash]: a 0x1E when that was unmapped, a silent
+// write into unrelated kernel memory when it was not, and then released the REAL bucket
+// through the shared CmpReleaseKcbLock, which it had never acquired.
 #[inline(always)]
 unsafe fn CmpAcquireKcbLockShared(Kcb: PCM_KEY_CONTROL_BLOCK) {
     if !Kcb.is_null() {
-        CmpAcquireKcbLockSharedByIndex(kcb_conv_key(Kcb));
+        CmpAcquireKcbLockSharedByIndex(GET_HASH_INDEX(kcb_conv_key(Kcb)));
     }
 }
 
@@ -713,8 +722,8 @@ pub unsafe extern "system" fn CmpCloseKeyObject(
     Process: PEPROCESS,
     Object: PVOID,
     GrantedAccess: ACCESS_MASK,
-    ProcessHandleCount: ULONG,
-    SystemHandleCount: ULONG,
+    ProcessHandleCount: ULONG_PTR,
+    SystemHandleCount: ULONG_PTR,
 ) {
     let Process = opaque_ptr(Process);
     let Object = opaque_ptr(Object);
@@ -818,7 +827,16 @@ unsafe extern "system" fn CmpCloseKeyObjectCallback(
     ProcessHandleCount: ULONG,
     SystemHandleCount: ULONG,
 ) {
-    CmpCloseKeyObject(Process as _, Object, GrantedAccess, ProcessHandleCount, SystemHandleCount);
+    // The registered CloseProcedure field (OB_CLOSE_METHOD) is still the stale
+    // bindgen 4-byte-ULONG shape (predates the merge's io.h/cm.h ULONG_PTR fix,
+    // never regenerated) -- widen here at the call into the real function.
+    CmpCloseKeyObject(
+        Process as _,
+        Object,
+        GrantedAccess,
+        ProcessHandleCount as ULONG_PTR,
+        SystemHandleCount as ULONG_PTR,
+    );
 }
 
 unsafe extern "system" fn CmpQueryKeyNameCallback(
@@ -1589,7 +1607,13 @@ pub unsafe extern "system" fn CmpCreateObjectTypes() -> NTSTATUS {
     ObjectTypeInitializer.UseDefaultObject = 1u8;
     ObjectTypeInitializer.DeleteProcedure = Some(CmpDeleteKeyObjectCallback);
     ObjectTypeInitializer.ParseProcedure = Some(CmpParseKey);
-    ObjectTypeInitializer.SecurityProcedure = Some(CmpSecurityMethod);
+    // CmpSecurityMethod's real (C-header) signature grew a trailing KPROCESSOR_MODE
+    // AccessMode param that the stale bindgen OB_SECURITY_METHOD typedef does not
+    // carry yet; transmute past the field's outdated arity like fltmgr's
+    // CloseProcedure does for the analogous ULONG_PTR drift.
+    ObjectTypeInitializer.SecurityProcedure = Some(core::mem::transmute(
+        CmpSecurityMethod as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> i32,
+    ));
     ObjectTypeInitializer.QueryNameProcedure = Some(CmpQueryKeyNameCallback);
     ObjectTypeInitializer.CloseProcedure = Some(CmpCloseKeyObjectCallback);
     ObjectTypeInitializer.SecurityRequired = 1u8;

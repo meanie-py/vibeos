@@ -79,9 +79,13 @@ def gen(arch):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arch", action="append", help="arch(es) to regen (default: i386 amd64)")
+    ap.add_argument("--arch", action="append", help="arch(es) to regen (default: i386 amd64 arm64)")
     args = ap.parse_args()
-    for arch in args.arch or ["i386", "amd64"]:
+    # NOTE: arm64 is in the default list. It was not, while check_committed_drift.py has
+    # always CHECKED arm64 — so a regeneration after any input change left arm64 stale and
+    # only the drift checker noticed, one gate later. Found during the 2026-09-20 upstream
+    # merge, when every committed artifact went stale at once.
+    for arch in args.arch or ["i386", "amd64", "arm64"]:
         gen(arch)
 
 

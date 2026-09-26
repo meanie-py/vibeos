@@ -272,6 +272,17 @@ fn main() {
          #define RtlAppendUnicodeToString ref_RtlAppendUnicodeToString\n\
          #define RtlAppendAsciizToString ref_RtlAppendAsciizToString\n\
          #define RtlCompareUnicodeStrings ref_RtlCompareUnicodeStrings\n\
+         /* upstream-sync 2026-09-20: RtlStringFromGUID (unicode.c:2153) now calls the\n\
+            count-less _swprintf, which glibc does not have. The GUID format writes a\n\
+            fixed 38 chars into a buffer RtlStringFromGUID sized for exactly that, so a\n\
+            generously-bounded vswprintf is a faithful stand-in. */\n\
+         #include <stdarg.h>\n\
+         static int ref_unicode_swprintf(wchar_t* out, const wchar_t* fmt, ...) {{\n\
+            va_list ap; va_start(ap, fmt);\n\
+            int n = vswprintf(out, 0x1000, fmt, ap);\n\
+            va_end(ap); return n;\n\
+         }}\n\
+         #define _swprintf ref_unicode_swprintf\n\
          /* Wave RTL-4b slice 1: validate/find/erase/free/GUID (genuine\n\
             unicode.c; free calls the RtlpFreeStringMemory no-op stub;\n\
             RtlpIsCharInUnicodeString is file-static, exercised via\n\
@@ -330,10 +341,17 @@ fn main() {
          #define RtlPrefixUnicodeString ref_RtlPrefixUnicodeString\n\
          #define RtlUpperString ref_RtlUpperString\n\
          #define RtlHashUnicodeString ref_RtlHashUnicodeString\n\
+         /* upstream-sync 2026-09-20: upstream MOVED RtlCompareUnicodeStrings out of\n\
+            unicode.c into unicode_vista.c. The test still exercises it, so the ref TU\n\
+            compiles both files -- unicode_vista.c is 64 self-contained lines whose only\n\
+            outside needs (RtlUpcaseUnicodeChar, min) unicode.c already supplies. */\n\
+         #define RtlCompareUnicodeStrings ref_RtlCompareUnicodeStrings\n\
          {}\
+         #include \"{}\"\n\
          #include \"{}\"\n",
         scrape_protos(&fs::read_to_string(&unicode_c).unwrap()),
-        unicode_c.display()
+        unicode_c.display(),
+        repo.join("sdk/lib/rtl/unicode_vista.c").display()
     );
 
     let src = out.join("ref_unicode.c");
@@ -349,6 +367,7 @@ fn main() {
         .file(&src);
 
     println!("cargo:rerun-if-changed={}", unicode_c.display());
+    println!("cargo:rerun-if-changed={}", repo.join("sdk/lib/rtl/unicode_vista.c").display());
     println!("cargo:rerun-if-changed={}", refstub.display());
     // Link the reference .o directly (build-script rustc-link-lib
     // doesn't reach integration tests; trailing link-args do — the
@@ -509,6 +528,9 @@ fn main() {
             }}\n\
             out[n]=0; va_end(ap); return n; }}\n\
          #define swprintf sid_swprintf\n\
+         /* upstream-sync 2026-09-20: upstream's non-conforming-swprintf cleanup\n\
+            renamed these call sites to _swprintf, so the model needs both names. */\n\
+         #define _swprintf sid_swprintf\n\
          static BOOLEAN sid_RtlCreateUnicodeString(PUNICODE_STRING d,const WCHAR* s){{(void)d;(void)s;return 0;}}\n\
          #define RtlCreateUnicodeString sid_RtlCreateUnicodeString\n\
          #define RtlValidSid ref_RtlValidSid\n\
@@ -824,6 +846,13 @@ fn main() {
          #define STATUS_NOT_IMPLEMENTED         ((NTSTATUS)0xC0000002L)\n\
          #define STATUS_BUFFER_TOO_SMALL        ((NTSTATUS)0xC0000023L)\n\
          #define STATUS_INVALID_PARAMETER       ((NTSTATUS)0xC000000DL)\n\
+         /* upstream-sync 2026-09-20: upstream added overflow guards to env.c\n\
+            (ResultLength > UNICODE_STRING_MAX_CHARS -> STATUS_UNSUCCESSFUL) in both\n\
+            RtlExpandEnvironmentStrings_U and RtlQueryEnvironmentVariable_U. Real\n\
+            fixes, and the ref TU compiles the genuine C, so the harness needs the\n\
+            two names. UNICODE_STRING_MAX_CHARS is ntdef.h's 32767. */\n\
+         #define STATUS_UNSUCCESSFUL            ((NTSTATUS)0xC0000001L)\n\
+         #define UNICODE_STRING_MAX_CHARS       (32767)\n\
          #define UNIMPLEMENTED ((void)0)\n\
          #define MemoryBasicInformation 0\n\
          typedef PVOID HANDLE;\n\
@@ -832,6 +861,26 @@ fn main() {
          static __inline WCHAR* refenv_wcschr(const WCHAR* s, WCHAR c){{\n\
             while(*s){{ if(*s==c) return (WCHAR*)s; s++; }} return 0; }}\n\
          #define wcschr refenv_wcschr\n\
+         /* upstream-sync 2026-09-20: env.c's variable lookup now uses _wcsnicmp.\n\
+            NOT glibc's wcsncasecmp: host wchar_t is 32-bit and WCHAR here is 16-bit,\n\
+            the exact reason refenv_wcschr above exists. Mapping it at wcsncasecmp made\n\
+            every name comparison mismatch, so the ORACLE returned VARIABLE_NOT_FOUND\n\
+            for every query and its output was not evidence about anything. */\n\
+         static __inline int refenv_wcsnicmp(const WCHAR* a, const WCHAR* b, size_t n){{\n\
+            for(; n; --n, ++a, ++b){{\n\
+               WCHAR ca=*a, cb=*b;\n\
+               if(ca>=L'a'&&ca<=L'z') ca=(WCHAR)(ca-32);\n\
+               if(cb>=L'a'&&cb<=L'z') cb=(WCHAR)(cb-32);\n\
+               if(ca!=cb) return ca<cb?-1:1;\n\
+               if(!ca) return 0;\n\
+            }}\n\
+            return 0; }}\n\
+         #define _wcsnicmp refenv_wcsnicmp\n\
+         /* rtl-strings now exports the raw-buffer cores upstream added (they are in\n\
+            ntdll.spec at -version=0x600+), so the ref TU must rename them too or they\n\
+            collide with the genuine C at link. */\n\
+         #define RtlQueryEnvironmentVariable ref_RtlQueryEnvironmentVariable\n\
+         #define RtlExpandEnvironmentStrings ref_RtlExpandEnvironmentStrings\n\
          typedef struct _MEMORY_BASIC_INFORMATION {{\n\
             PVOID BaseAddress; PVOID AllocationBase; ULONG AllocationProtect;\n\
             SIZE_T RegionSize; ULONG State; ULONG Protect; ULONG Type;\n\

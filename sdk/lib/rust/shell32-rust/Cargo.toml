@@ -32,4 +32,8 @@ com-sys = { path = "../com-sys" }
 # other usermode translated DLL does. See the shell32 cell in that script for why the island
 # exists: without one, `verify_ffi` cannot see this crate's extern blocks at all.
 ntdll-sys = { path = "../ntdll-sys" }
+# strsafe's printf family called directly (StringCchPrintfW!), and va-slots for receiving
+# ShellMessageBoxA's varargs: together they retired shell32's last two C files.
+strsafe-rust = { path = "../strsafe-rust" }
+va-slots-rust = { path = "../va-slots-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }

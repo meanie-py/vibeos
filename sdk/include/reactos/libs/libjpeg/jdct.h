@@ -2,14 +2,14 @@
  * jdct.h
  *
  * Copyright (C) 1994-1996, Thomas G. Lane.
- * Modified 2002-2019 by Guido Vollbeding.
+ * Modified 2002-2023 by Guido Vollbeding.
  * This file is part of the Independent JPEG Group's software.
  * For conditions of distribution and use, see the accompanying README file.
  *
  * This include file contains common declarations for the forward and
  * inverse DCT modules.  These declarations are private to the DCT managers
  * (jcdctmgr.c, jddctmgr.c) and the individual DCT algorithms.
- * The individual DCT algorithms are kept in separate files to ease
+ * The individual DCT algorithms are kept in separate files to ease 
  * machine-dependent tuning (e.g., assembly coding).
  */
 
@@ -158,7 +158,7 @@ typedef FAST_FLOAT FLOAT_MULT_TYPE; /* preferred floating type */
 #define jpeg_idct_6x12		jRD6x12
 #define jpeg_idct_5x10		jRD5x10
 #define jpeg_idct_4x8		jRD4x8
-#define jpeg_idct_3x6		jRD3x8
+#define jpeg_idct_3x6		jRD3x6
 #define jpeg_idct_2x4		jRD2x4
 #define jpeg_idct_1x2		jRD1x2
 #endif /* NEED_SHORT_EXTERNAL_NAMES */

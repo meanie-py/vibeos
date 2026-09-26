@@ -1,13 +1,12 @@
 
 include_directories(
     include
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl
-    ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/adns/src
-    ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/adns/adns_win32)
+    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl)
 
 add_rpc_files(client ${REACTOS_SOURCE_DIR}/sdk/include/reactos/idl/dnsrslvr.idl)
 
 add_definitions(-DADNS_JGAA_WIN32 -D_CRT_NO_POSIX_ERROR_CODES)
+
 spec2def(dnsapi.dll dnsapi.spec ADD_IMPORTLIB)
 
 # dnsapi.dll — Rust cohabitation flip (FULL: all 8 compiled src *.c → dnsapi-rust). The
@@ -66,6 +65,7 @@ add_library(dnsapi MODULE
     dnsapi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/dnsapi_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/dnsapi.def)
+add_pch(dnsapi precomp.h SOURCE)
 
 set_module_type(dnsapi win32dll)
 # libdnsapi_rust.a FIRST so its #[no_mangle] symbols win; adns provides the resolver, dnsrslvr_c.c

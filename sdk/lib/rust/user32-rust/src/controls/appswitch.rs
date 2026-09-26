@@ -351,13 +351,10 @@ pub unsafe extern "system" fn EnumerateCallback(window: HWND, lParam: LPARAM) ->
                 );
             }
             if hIcon.is_null() {
-                hIcon = {
-                    let perusr = crate::internal::gpsi_perusr();
-                    if !perusr.is_null() {
-                        (*perusr).hIconWindows
-                    } else {
-                        core::ptr::null_mut()
-                    }
+                hIcon = if !crate::misc::dllmain::gpsi.is_null() {
+                    crate::wow64::psi::hicon_windows()
+                } else {
+                    core::ptr::null_mut()
                 };
                 if hIcon.is_null() {
                     return 1;

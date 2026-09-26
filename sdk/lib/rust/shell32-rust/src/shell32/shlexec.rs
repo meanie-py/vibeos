@@ -743,15 +743,15 @@ unsafe extern "system" fn RunAsDlgProc(
                     _countof!(fmtbuf) as _,
                     fmtbuf.as_mut_ptr() as LPARAM,
                 );
-                StringCchPrintfW(
+                strsafe_rust::StringCchPrintfW!(
                     fmtbuf.as_mut_ptr(),
-                    _countof!(fmtbuf) as _,
+                    _countof!(fmtbuf) as usize,
                     buf.as_mut_ptr(),
                     CPP_COM_WSTR_6E8A9C6CE19B.as_ptr(),
                 );
-                StringCchPrintfW(
+                strsafe_rust::StringCchPrintfW!(
                     buf.as_mut_ptr(),
-                    _countof!(buf) as _,
+                    _countof!(buf) as usize,
                     fmtbuf.as_mut_ptr(),
                     (*pData).NameBuffer.as_mut_ptr(),
                 );
@@ -874,15 +874,15 @@ unsafe extern "system" fn RunAsDlgProc(
                     _countof!(fmtbuf) as _,
                     fmtbuf.as_mut_ptr() as LPARAM,
                 );
-                StringCchPrintfW(
+                strsafe_rust::StringCchPrintfW!(
                     fmtbuf.as_mut_ptr(),
-                    _countof!(fmtbuf) as _,
+                    _countof!(fmtbuf) as usize,
                     buf.as_mut_ptr(),
                     CPP_COM_WSTR_6E8A9C6CE19B.as_ptr(),
                 );
-                StringCchPrintfW(
+                strsafe_rust::StringCchPrintfW!(
                     buf.as_mut_ptr(),
-                    _countof!(buf) as _,
+                    _countof!(buf) as usize,
                     fmtbuf.as_mut_ptr(),
                     (*pData).NameBuffer.as_mut_ptr(),
                 );
@@ -3563,7 +3563,7 @@ pub unsafe extern "system" fn ShellExecCmdLine(
                     let mut szText = [0u16; (128 + MAX_PATH) as usize];
                     let mut szFormat = [0u16; 128];
                     LoadStringW(shell32_hInstance, IDS_FILE_NOT_FOUND, szFormat.as_mut_ptr(), (_countof!(&szFormat)) as i32);
-                    StringCchPrintfW(szText.as_mut_ptr(), (_countof!(&szText)) as usize, szFormat.as_ptr(), szFile.as_ptr());
+                    strsafe_rust::StringCchPrintfW!(szText.as_mut_ptr(), (_countof!(&szText)) as usize, szFormat.as_ptr(), szFile.as_ptr());
                     MessageBoxW(hwnd, szText.as_ptr(), core::ptr::null(), MB_ICONERROR);
                 }
                 return CO_E_APPNOTFOUND;
@@ -3576,7 +3576,7 @@ pub unsafe extern "system" fn ShellExecCmdLine(
                     let mut szText = [0u16; (128 + MAX_PATH) as usize];
                     let mut szFormat = [0u16; 128];
                     LoadStringW(shell32_hInstance, IDS_FILE_NOT_FOUND, szFormat.as_mut_ptr(), (_countof!(&szFormat)) as i32);
-                    StringCchPrintfW(szText.as_mut_ptr(), (_countof!(&szText)) as usize, szFormat.as_ptr(), szFile.as_ptr());
+                    strsafe_rust::StringCchPrintfW!(szText.as_mut_ptr(), (_countof!(&szText)) as usize, szFormat.as_ptr(), szFile.as_ptr());
                     MessageBoxW(hwnd, szText.as_ptr(), core::ptr::null(), MB_ICONERROR);
                 }
                 return HRESULT_FROM_WIN32((ERROR_FILE_NOT_FOUND) as i32);

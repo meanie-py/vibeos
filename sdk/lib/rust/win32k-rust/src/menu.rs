@@ -482,7 +482,7 @@ unsafe fn VerifyMenu_impl(pMenu: PMENU) -> PMENU {
     let _hMenu: HMENU;
     let pItem: PITEM;
     let Error: ULONG;
-    let i: UINT;
+    let mut i: UINT;
 
     if pMenu.is_null() {
         return core::ptr::null_mut();
@@ -493,8 +493,40 @@ unsafe fn VerifyMenu_impl(pMenu: PMENU) -> PMENU {
     _hMenu = UserHMGetHandle(pMenu) as HMENU ;
     pItem = (*pMenu).rgItems;
     if !pItem.is_null() {
-        i = (*pItem.offset(0)).wID;
-        (*pItem.offset(0)).wID = i;
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (menu.c:187-228, VerifyMenu): the guarded region is a plain
+        // self-touch of `pMenu->rgItems[0].wID` -- a corruption probe on a
+        // KERNEL structure, not a user-mode pointer, so there is no
+        // ProbeFor* call to restore here (unlike the syscall sites in this
+        // pair). It exists only to detect a bad `rgItems` pointer/page via
+        // the fault itself, which is exactly what `safe_copy_raw` (no
+        // probing, just a fault-tolerant copy) exists for.
+        //
+        // Handler shape is the ODD one out of this file's two sites -- NOT
+        // "assign Status and fall through". It is:
+        //   ERR("Run away LOOP!\n"); EngSetLastError(Error); _SEH2_YIELD(return NULL);
+        // an early return of a POINTER (not an NTSTATUS), restoring `Error`
+        // (the value read BEFORE the touch, not a fresh EngGetLastError())
+        // before returning. Replicated exactly: no fall-through here.
+        i = 0;
+        if let Err(_st) = ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!(i) as *mut c_void,
+            core::ptr::addr_of!((*pItem).wID) as *const c_void,
+            core::mem::size_of::<UINT>(),
+        ) {
+            ERR!("Run away LOOP!\n");
+            EngSetLastError(Error);
+            return core::ptr::null_mut();
+        }
+        if let Err(_st) = ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!((*pItem).wID) as *mut c_void,
+            core::ptr::addr_of!(i) as *const c_void,
+            core::mem::size_of::<UINT>(),
+        ) {
+            ERR!("Run away LOOP!\n");
+            EngSetLastError(Error);
+            return core::ptr::null_mut();
+        }
     }
 
     EngSetLastError(Error);
@@ -7086,8 +7118,13 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
         );
         if !NT_SUCCESS(Status) {
             kmbi.cbSize = 0;
-        } else {
-            kmbi.cbSize = (*pmbi).cbSize;
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(kmbi.cbSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*pmbi).cbSize) as *const core::ffi::c_void,
+            core::mem::size_of_val(&kmbi.cbSize),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            kmbi.cbSize = 0;
         }
 
         if kmbi.cbSize as usize != core::mem::size_of::<MENUBARINFO>() {
@@ -7246,8 +7283,13 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
         );
         if !NT_SUCCESS(Status) {
             kmbi.cbSize = 0;
-        } else {
-            kmbi.cbSize = (*pmbi).cbSize;
+        } else if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(kmbi.cbSize) as *mut core::ffi::c_void,
+            core::ptr::addr_of!((*pmbi).cbSize) as *const core::ffi::c_void,
+            core::mem::size_of_val(&kmbi.cbSize),
+        ) {
+            // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+            kmbi.cbSize = 0;
         }
 
         if kmbi.cbSize as usize != core::mem::size_of::<MENUBARINFO>() {
@@ -7373,7 +7415,7 @@ pub unsafe extern "system" fn NtUserGetMenuItemRect(
     let mut Rect: RECTL = core::mem::zeroed();
     let mut Menu: PMENU;
     let MenuItem: PITEM;
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut Ret: BOOL = 0;
 
     UserEnterShared();
@@ -7424,11 +7466,24 @@ pub unsafe extern "system" fn NtUserGetMenuItemRect(
         Rect.right += XMove;
         Rect.bottom += YMove;
 
-        RtlCopyMemory(
-            lprcItem as *mut _,
-            core::ptr::addr_of!(Rect) as *const _,
-            core::mem::size_of::<RECTL>() as _,
-        );
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (menu.c:6181-6189, NtUserGetMenuItemRect): bare
+        //   _SEH2_TRY { RtlCopyMemory(lprcItem, &Rect, sizeof(RECTL)); }
+        //   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }
+        //   _SEH2_END;
+        // with no ProbeFor* call at all -- the same bare-store shape as
+        // console.rs's ConsoleCtrlDesktopConsoleThread case, so
+        // `safe_copy_raw` (no probing, just a fault-tolerant copy) is the
+        // faithful replacement. Handler only assigns Status and falls
+        // through -- no return/goto inside the SEH itself -- to the
+        // `if (!NT_SUCCESS(Status))` check that already exists right below.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            lprcItem as *mut c_void,
+            core::ptr::addr_of!(Rect) as *const c_void,
+            core::mem::size_of::<RECTL>(),
+        ) {
+            Status = st;
+        }
 
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
@@ -7455,7 +7510,7 @@ pub unsafe extern "system" fn NtUserGetMenuItemRect(
     let mut Rect: RECTL = core::mem::zeroed();
     let mut Menu: PMENU;
     let MenuItem: PITEM;
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut Ret: BOOL = 0;
 
     UserEnterShared();
@@ -7506,11 +7561,24 @@ pub unsafe extern "system" fn NtUserGetMenuItemRect(
         Rect.right += XMove;
         Rect.bottom += YMove;
 
-        RtlCopyMemory(
-            lprcItem as *mut _,
-            core::ptr::addr_of!(Rect) as *const _,
-            core::mem::size_of::<RECTL>() as _,
-        );
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (menu.c:6181-6189, NtUserGetMenuItemRect): bare
+        //   _SEH2_TRY { RtlCopyMemory(lprcItem, &Rect, sizeof(RECTL)); }
+        //   _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Status = _SEH2_GetExceptionCode(); }
+        //   _SEH2_END;
+        // with no ProbeFor* call at all -- the same bare-store shape as
+        // console.rs's ConsoleCtrlDesktopConsoleThread case, so
+        // `safe_copy_raw` (no probing, just a fault-tolerant copy) is the
+        // faithful replacement. Handler only assigns Status and falls
+        // through -- no return/goto inside the SEH itself -- to the
+        // `if (!NT_SUCCESS(Status))` check that already exists right below.
+        if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            lprcItem as *mut c_void,
+            core::ptr::addr_of!(Rect) as *const c_void,
+            core::mem::size_of::<RECTL>(),
+        ) {
+            Status = st;
+        }
 
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
@@ -8121,7 +8189,14 @@ pub unsafe extern "system" fn NtUserTrackPopupMenuEx(
                 if !NT_SUCCESS(__SehStatus) {
                     break 'Exit;
                 }
-                tpm = *lptpm;
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(tpm) as *mut core::ffi::c_void,
+                    lptpm as *const core::ffi::c_void,
+                    core::mem::size_of::<TPMPARAMS>(),
+                ) {
+                    break 'Exit;
+                }
             }
 
             UserRefObjectCo((pWnd as *mut core::ffi::c_void as PWND), &mut WndRef);
@@ -8194,7 +8269,14 @@ pub unsafe extern "system" fn NtUserTrackPopupMenuEx(
                 if !NT_SUCCESS(__SehStatus) {
                     break 'Exit;
                 }
-                tpm = *lptpm;
+                // Probe is validate-only; the C had probe AND load in one _SEH2_TRY.
+                if !crate::copy::capture_from_user(
+                    core::ptr::addr_of_mut!(tpm) as *mut core::ffi::c_void,
+                    lptpm as *const core::ffi::c_void,
+                    core::mem::size_of::<TPMPARAMS>(),
+                ) {
+                    break 'Exit;
+                }
             }
 
             UserRefObjectCo(pWnd as PWND, &mut WndRef);

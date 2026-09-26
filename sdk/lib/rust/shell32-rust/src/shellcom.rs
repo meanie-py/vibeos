@@ -39,6 +39,21 @@ pub type SIZE_T = usize; // basetsd.h (ULONG_PTR)
 pub type LPARAM = LONG_PTR; // windef.h
 pub type SIGDN = u32; // shobjidl (v1_enum)
 pub const SIGDN_DESKTOPABSOLUTEPARSING: SIGDN = 0x8002_8000;
+// shobjidl.idl:4864-4892 — IShellLibrary's parameter enums, all `[v1_enum]` (32-bit), so `u32`
+// like SIGDN. They arrived with the post-fork upstream sync ("[SDK][SHELL32] A big bundle of
+// NT6+ shell32 implementations and stubs"); the island was last generated on 2026-08-08,
+// BEFORE that sync, so it does not carry them. Declared here rather than by regenerating
+// the island mid-flip — see the roadmap entry on the stale shell32 island.
+pub type LIBRARYFOLDERFILTER = u32;
+pub type LIBRARYOPTIONFLAGS = u32;
+pub type DEFAULTSAVEFOLDERTYPE = u32;
+pub type LIBRARYSAVEFLAGS = u32;
+// shtypes.h:129-140 — `#define REFKNOWNFOLDERID const KNOWNFOLDERID &` under C++ and
+// `const KNOWNFOLDERID *` under C: a reference is a pointer on the ABI, and because these are
+// `#define`d TYPE MACROS rather than typedefs, bindgen never emits them at all — which is why
+// these two are missing independently of the island's staleness.
+pub type REFKNOWNFOLDERID = *const crate::island::KNOWNFOLDERID;
+pub type REFFOLDERTYPEID = *const crate::island::FOLDERTYPEID;
 pub type PWSTR = LPWSTR; // winnt.h
 pub type VARTYPE = u16; // wtypes.h
 
@@ -294,34 +309,16 @@ pub struct FILETIME {
 }
 
 // ── VARIANT / SAFEARRAY / SHCOLUMNID (oaidl.idl / shobjidl.idl) ──────────────────────────
-/// SAFEARRAY (oaidl.idl). Only cDims/pvData are read here.
-#[repr(C)]
-pub struct SAFEARRAY {
-    pub cDims: USHORT,
-    pub fFeatures: USHORT,
-    pub cbElements: ULONG,
-    pub cLocks: ULONG,
-    pub pvData: PVOID,
-    // SAFEARRAYBOUND rgsabound[] follows (flexible)
-}
-/// VARIANT value union — only vt (offset 0) and parray (offset 8) are touched; the
-/// `_brecord`/`_dec` members force the union to 8 bytes on i386 / 16 on amd64-arm64 so
-/// sizeof(VARIANT) is 16/24 (matches the SDK, for VariantClear).
-#[repr(C)]
-pub union VARIANT_value {
-    pub iVal: i16,
-    pub lVal: i32,
-    pub parray: *mut SAFEARRAY,
-    pub _brecord: [usize; 2],
-}
-#[repr(C)]
-pub struct VARIANT {
-    pub vt: VARTYPE,
-    pub wReserved1: WORD,
-    pub wReserved2: WORD,
-    pub wReserved3: WORD,
-    pub val: VARIANT_value,
-}
+// SAFEARRAY: same rule as VARIANT below -- the island owns it. The local copy stopped at
+// `pvData` and left the flexible `rgsabound[]` implicit, so it was not even the same size.
+pub use crate::island::SAFEARRAY;
+// VARIANT: the ISLAND owns this layout. It was a flattened hand-written copy here, which
+// made `crate::island::VARIANT` (bindgen's `tagVARIANT`, an anonymous-union nest reached as
+// `n1.n2.vt` / `n1.n2.n3.<member>`) a DISTINCT nominal type -- so shlfolder.rs and
+// shellutils.rs, which take the island's, could not share one `V_VT!` with CDefView, which
+// took this one. The flat copy also carried only four union members, so `VT_INT_PTR`'s
+// pointer-width `pintVal` slot did not exist at all.
+pub use crate::island::VARIANT;
 
 // ── COM vtables (STDMETHODCALLTYPE == __stdcall on i386 → extern "system") ───────────────
 // Only the slots actually invoked carry real signatures; the rest are pointer-sized
@@ -468,7 +465,12 @@ pub struct IShellFolder2Vtbl {
     pub SetNameOf: usize,
     pub GetDefaultSearchGUID: usize,
     pub EnumSearches: usize,
-    pub GetDefaultColumn: usize,
+    pub GetDefaultColumn: unsafe extern "system" fn(
+        *mut IShellFolder2,
+        DWORD,
+        *mut ULONG,
+        *mut ULONG,
+    ) -> HRESULT,
     pub GetDefaultColumnState:
         unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLSTATEF) -> HRESULT,
     pub GetDetailsEx: unsafe extern "system" fn(
@@ -485,6 +487,28 @@ pub struct IShellFolder2Vtbl {
     ) -> HRESULT,
     pub MapColumnToSCID:
         unsafe extern "system" fn(*mut IShellFolder2, UINT, *mut SHCOLUMNID) -> HRESULT,
+}
+
+/// `IShellDetails` (shlobj.h:650, a DECLARE_INTERFACE_ rather than an IDL interface, so
+/// it never reaches the island as a `lpVtbl` struct -- the island renders it as a bindgen
+/// C++ class with `Option<fn>` slots, which cannot be CALLED). Two methods after IUnknown.
+#[repr(C)]
+pub struct IShellDetails {
+    pub lpVtbl: *mut IShellDetailsVtbl,
+}
+#[repr(C)]
+pub struct IShellDetailsVtbl {
+    pub QueryInterface:
+        unsafe extern "system" fn(*mut IShellDetails, REFIID, *mut *mut c_void) -> HRESULT,
+    pub AddRef: usize,
+    pub Release: unsafe extern "system" fn(*mut IShellDetails) -> ULONG,
+    pub GetDetailsOf: unsafe extern "system" fn(
+        *mut IShellDetails,
+        PCUITEMID_CHILD,
+        UINT,
+        *mut SHELLDETAILS,
+    ) -> HRESULT,
+    pub ColumnClick: unsafe extern "system" fn(*mut IShellDetails, UINT) -> HRESULT,
 }
 
 #[repr(C)]
@@ -777,7 +801,10 @@ pub struct IBindCtxVtbl {
     pub RegisterObjectBound: usize,
     pub RevokeObjectBound: usize,
     pub ReleaseBoundObjects: usize,
-    pub SetBindOptions: usize,
+    // Typed rather than left a placeholder: IFileSystemBindData_Constructor calls it.
+    // Same BIND_OPTS as GetBindOptions below, so the two stay one layout.
+    pub SetBindOptions:
+        unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
     pub GetBindOptions:
         unsafe extern "system" fn(*mut IBindCtx, *mut BIND_OPTS) -> HRESULT,
     pub GetRunningObjectTable: usize,
@@ -819,53 +846,20 @@ use crate::types::LARGE_INTEGER;
 // would collide by glob with the copies in those modules and make the NAME ambiguous in every
 // consumer that globs both -- six E0659s the first time I tried it.
 
-/// `BIND_OPTS` (objidl.h).
-#[repr(C)]
-struct BIND_OPTS {
-    pub cbStruct: DWORD,
-    pub grfFlags: DWORD,
-    pub grfMode: DWORD,
-    pub dwTickCountDeadline: DWORD,
-}
+// BIND_OPTS / STATSTG come from com-sys through `crate::types`, and WIN32_FIND_DATAW from
+// the island. They used to be private copies here, which typed the vtable slots below but
+// made every one of those slots UNCALLABLE from another module ("type ... is private"). A
+// plain (non-`pub`) import fixes both halves: the type in the signature is public, and the
+// name is not re-exported, so no consumer that globs both this module and its own copy gets
+// the E0659 the comment above warns about.
+use crate::island::WIN32_FIND_DATAW;
 
-/// `ULARGE_INTEGER` (winnt.h) — the QuadPart view; the anonymous Low/High struct is a union
-/// arm nothing in these signatures reads.
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct ULARGE_INTEGER {
-    pub QuadPart: ULONGLONG,
-}
+// ULARGE_INTEGER: the island owns it, same rule as VARIANT/SAFEARRAY above. The local copy
+// here kept only the QuadPart arm, so a body that reached for `.u.HighPart` -- which is what
+// utils.cpp's stream copy does -- had nowhere to put it.
+use crate::island::ULARGE_INTEGER;
 
-/// `WIN32_FIND_DATAW` (minwinbase.h).
-#[repr(C)]
-struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
 
-/// `STATSTG` (objidl.h).
-#[repr(C)]
-struct STATSTG {
-    pub pwcsName: LPOLESTR,
-    pub r#type: DWORD,
-    pub cbSize: ULARGE_INTEGER,
-    pub mtime: FILETIME,
-    pub ctime: FILETIME,
-    pub atime: FILETIME,
-    pub grfMode: DWORD,
-    pub grfLocksSupported: DWORD,
-    pub clsid: CLSID,
-    pub grfStateBits: DWORD,
-    pub reserved: DWORD,
-}
 
 /// `interface IFileSystemBindData : IUnknown` — SetFindData, GetFindData (in that order).
 #[repr(C)]

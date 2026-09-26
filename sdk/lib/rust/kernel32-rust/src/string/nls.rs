@@ -1000,7 +1000,9 @@ unsafe fn IntMultiByteToWideCharUTF8(
     let mut MbsPtrSave: LPCSTR = core::ptr::null();
     let mut Char: UCHAR = 0;
     let mut TrailLength: UCHAR = 0;
-    let mut WideChar: WCHAR = 0;
+    // UINT, not WCHAR: a 4-byte UTF-8 sequence decodes above U+FFFF and must
+    // survive long enough to be split into a surrogate pair.
+    let mut WideChar: UINT = 0;
     let mut Count: LONG = 0;
     let mut CharIsValid: BOOL = 0;
     let mut StringIsValid: BOOL = 1;
@@ -1028,14 +1030,14 @@ unsafe fn IntMultiByteToWideCharUTF8(
                 } else {
                     CharIsValid = 1;
                     MbsPtrSave = MultiByteString;
-                    WideChar = (Char as i32 & UTF8Mask[TrailLength as usize] as i32) as WCHAR;
+                    WideChar = (Char as i32 & UTF8Mask[TrailLength as usize] as i32) as UINT;
                     while TrailLength != 0 && MultiByteString < MbsEnd {
                         if (*MultiByteString as i32) & 0xC0 != 0x80 {
                             StringIsValid = 0;
                             CharIsValid = StringIsValid;
                             break;
                         } else {
-                            WideChar = ((WideChar as i32) << 6 | *MultiByteString as i32 & 0x7F) as WCHAR;
+                            WideChar = ((WideChar as i32) << 6 | *MultiByteString as i32 & 0x7F) as UINT;
                             MultiByteString = MultiByteString.offset(1);
                             TrailLength = TrailLength.wrapping_sub(1);
                         }
@@ -1045,6 +1047,10 @@ unsafe fn IntMultiByteToWideCharUTF8(
                             < UTF8LBound[UTF8Length[(Char as i32 - 0x80) as usize] as usize]
                     {
                         MultiByteString = MbsPtrSave;
+                    } else if WideChar > 0xFFFF {
+                        /* Above the BMP: encodes as a UTF-16 surrogate PAIR, so it
+                         * costs a second code unit. Upstream-Commit: 5635d244fc2 */
+                        WideCharCount += 1;
                     }
                 }
             }
@@ -1087,14 +1093,14 @@ unsafe fn IntMultiByteToWideCharUTF8(
             } else {
                 CharIsValid = 1;
                 MbsPtrSave = MultiByteString;
-                WideChar = (Char as i32 & UTF8Mask[TrailLength as usize] as i32) as WCHAR;
+                WideChar = (Char as i32 & UTF8Mask[TrailLength as usize] as i32) as UINT;
                 while TrailLength != 0 && MultiByteString < MbsEnd {
                     if (*MultiByteString as i32) & 0xC0 != 0x80 {
                         StringIsValid = 0;
                         CharIsValid = StringIsValid;
                         break;
                     } else {
-                        WideChar = ((WideChar as i32) << 6 | *MultiByteString as i32 & 0x7F) as WCHAR;
+                        WideChar = ((WideChar as i32) << 6 | *MultiByteString as i32 & 0x7F) as UINT;
                         MultiByteString = MultiByteString.offset(1);
                         TrailLength = TrailLength.wrapping_sub(1);
                     }
@@ -1103,8 +1109,25 @@ unsafe fn IntMultiByteToWideCharUTF8(
                     && UTF8LBound[UTF8Length[(Char as i32 - 0x80) as usize] as usize]
                         <= WideChar as u32
                 {
-                    *WideCharString = WideChar;
-                    WideCharString = WideCharString.offset(1);
+                    if WideChar > 0xFFFF {
+                        /* UTF-16 surrogate pair */
+                        let Scalar = WideChar - 0x10000;
+                        *WideCharString = (0xD800 | (Scalar >> 10)) as WCHAR;
+                        WideCharString = WideCharString.offset(1);
+                        Count += 1;
+                        /* No room for the low half: this is a hard failure, not a
+                         * partial conversion -- breaking here would fall through to
+                         * the tail and report a success count. */
+                        if Count >= WideCharCount as LONG {
+                            SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                            return 0;
+                        }
+                        *WideCharString = (0xDC00 | (Scalar & 0x3FF)) as WCHAR;
+                        WideCharString = WideCharString.offset(1);
+                    } else {
+                        *WideCharString = WideChar as WCHAR;
+                        WideCharString = WideCharString.offset(1);
+                    }
                 } else {
                     *WideCharString = InvalidChar;
                     WideCharString = WideCharString.offset(1);

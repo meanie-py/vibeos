@@ -630,33 +630,13 @@ extern "system" {
     // allowlist that brought IDataObject in did not bring this.
     pub fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
 }
-// strsafe.h's VARIADIC entry points. Everything else in that header is ported into
-// crate::desk::strsafe, because `STRSAFEAPI` is `static __inline` and no object file in the tree
-// defines it — but stable Rust cannot DEFINE a C-variadic (`va_start`, rust-lang/rust#44930), so
-// these three keep their entry in dll/cpl/desk/rust_varargs_shim.c, which does the `va_start` and
-// tail-calls the fixed-arity `*_v` twin next door. Sanctioned trampoline pattern, NOT a
-// translation reverted to C.
-// `extern "C"` and not `extern "system"`, even though strsafe.h spells them WINAPI: no ABI on
-// any of our three targets has a VARIADIC stdcall, so the compiler silently gives a variadic
-// WINAPI function the cdecl convention, and Rust rejects the mismatch outright ("C-variadic
-// functions with the `system` calling convention are unstable"). The shim next door declares
-// them the same way.
-extern "C" {
-    pub fn StringCchPrintfW(dst: *mut WCHAR, cch: usize, fmt: *const WCHAR, ...) -> HRESULT;
-    pub fn StringCbPrintfW(dst: *mut WCHAR, cb: usize, fmt: *const WCHAR, ...) -> HRESULT;
-    pub fn StringCbPrintfExW(
-        dst: *mut WCHAR,
-        cb: usize,
-        dstEnd: *mut *mut WCHAR,
-        cbRemaining: *mut usize,
-        flags: DWORD,
-        fmt: *const WCHAR,
-        ...
-    ) -> HRESULT;
-}
-pub use self::{
-    StringCbPrintfExW as StringCbPrintfEx, StringCbPrintfW as StringCbPrintf,
-    StringCchPrintfW as StringCchPrintf,
+// strsafe.h's printf entry points are VARIADIC, and stable Rust can CALL a C-variadic though
+// it cannot define one; so these are strsafe-rust macros that call msvcrt's `_snwprintf` in
+// place, with strsafe's bounds and HRESULTs. The C trampoline that used to define them
+// (rust_varargs_shim.c) retired 2026-09-25. Call sites say `StringCchPrintfW!(...)`.
+pub use strsafe_rust::{
+    StringCbPrintfExW, StringCbPrintfExW as StringCbPrintfEx, StringCbPrintfW,
+    StringCbPrintfW as StringCbPrintf, StringCchPrintfW, StringCchPrintfW as StringCchPrintf,
 };
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;

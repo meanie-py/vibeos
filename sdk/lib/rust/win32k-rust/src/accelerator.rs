@@ -7,11 +7,16 @@ use ntkrnl_sys::rtl::RtlCopyMemory;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY};
 use ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
 use core::ffi::c_void;
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
 // SafeProbeForRead/Write are NTAPI (stdcall i386, `_Safe...@12`).
 extern "system" {
     fn SafeProbeForRead(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
     fn SafeProbeForWrite(addr: *mut c_void, len: SIZE_T, align: ULONG) -> NTSTATUS;
+}
+// KPROCESSOR_MODE is i8 (0 = KernelMode, 1 = UserMode) — see ntkrnl_sys::probe.
+extern "system" {
+    fn KeGetPreviousMode() -> i8;
 }
 // FASTCALL win32k exports.
 #[cfg(target_arch = "x86")]
@@ -250,10 +255,26 @@ pub unsafe extern "system" fn NtUserCopyAcceleratorTable(
             Ret = 0;
         } else {
             Ret = 0;
+            // Probe is validate-only (USE_DUMMY_PSEH); the C wrapped probe AND every
+            // store in one _SEH2_TRY. Publish field by field rather than whole
+            // structs, so ACCEL's padding stays untouched exactly as the C left it.
             while Ret < EntriesCount {
-                (*Entries.add(Ret as usize)).fVirt = (*(*Accel).Table.add(Ret as usize)).fVirt;
-                (*Entries.add(Ret as usize)).key = (*(*Accel).Table.add(Ret as usize)).key;
-                (*Entries.add(Ret as usize)).cmd = (*(*Accel).Table.add(Ret as usize)).cmd;
+                let src = (*Accel).Table.add(Ret as usize);
+                let dst = Entries.add(Ret as usize);
+                macro_rules! put {
+                    ($field:ident) => {
+                        crate::copy::publish_to_user(
+                            core::ptr::addr_of_mut!((*dst).$field) as *mut core::ffi::c_void,
+                            core::ptr::addr_of!((*src).$field) as *const core::ffi::c_void,
+                            core::mem::size_of_val(&(*src).$field),
+                        )
+                    };
+                }
+                if !put!(fVirt) || !put!(key) || !put!(cmd) {
+                    SetLastNtError(STATUS_ACCESS_VIOLATION);
+                    Ret = 0;
+                    break;
+                }
                 Ret += 1;
             }
         }
@@ -277,7 +298,14 @@ pub unsafe extern "system" fn NtUserCreateAcceleratorTable(
     UserEnterExclusive();
 
     'exit: {
-        if Entries.is_null() || EntriesCount == 0 {
+        // The byte size below is `EntriesCount as usize * size_of::<ACCEL>()`. On i386
+        // usize is 32 bits, so a large EntriesCount WRAPS, we allocate a short buffer
+        // and then copy EntriesCount entries into it -- heap corruption from user mode.
+        // Upstream c65740eeb3a (#7888) added the same bound as MAXULONG_PTR/sizeof.
+        if Entries.is_null()
+            || EntriesCount == 0
+            || EntriesCount as usize > usize::MAX / core::mem::size_of::<ACCEL>()
+        {
             SetLastNtError(STATUS_INVALID_PARAMETER);
             break 'exit;
         }
@@ -311,27 +339,92 @@ pub unsafe extern "system" fn NtUserCreateAcceleratorTable(
             break 'exit;
         }
 
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (win32ss/user/ntuser/accelerator.c, NtUserCreateAcceleratorTable):
+        //   _SEH2_TRY {
+        //       ProbeForRead(Entries, EntriesCount * sizeof(ACCEL), 4);
+        //       for (Index = 0; Index < EntriesCount; Index++) { ...copy... }
+        //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+        //       Status = _SEH2_GetExceptionCode();
+        //   } _SEH2_END;
+        //   if (!NT_SUCCESS(Status)) { ...cleanup...; goto Exit; }
+        //
+        // Shape: the handler only ASSIGNS Status and falls through — there is no
+        // return/goto inside the SEH block itself, control simply reaches the
+        // `if (!NT_SUCCESS(Status))` cleanup that already existed below. So here
+        // we set `Status` on the first faulting entry and break out of both the
+        // probe and the copy loop with a labeled block; the untouched
+        // `if !NT_SUCCESS(Status)` check right after this block is the same
+        // fall-through cleanup path as the C.
+        let PreviousMode: i8 = KeGetPreviousMode();
         Index = 0;
-        while Index < EntriesCount {
-            (*(*Accel).Table.add(Index as usize)).fVirt =
-                (*Entries.add(Index as usize)).fVirt & FVIRT_MASK as u8;
-            if (*(*Accel).Table.add(Index as usize)).fVirt & FVIRTKEY as u8 != 0 {
-                (*(*Accel).Table.add(Index as usize)).key =
-                    (*Entries.add(Index as usize)).key;
-            } else {
-                RtlMultiByteToUnicodeN(
-                    core::ptr::addr_of_mut!((*(*Accel).Table.add(Index as usize)).key),
-                    core::mem::size_of::<u16>() as _,
-                    core::ptr::null_mut(),
-                    core::ptr::addr_of!((*Entries.add(Index as usize)).key) as PCSTR,
-                    core::mem::size_of::<i8>() as _,
-                );
+        'seh: {
+            // ProbeForRead(Entries, EntriesCount * sizeof(ACCEL), 4) — literal
+            // alignment 4 from the C.
+            //
+            // SafeProbeForRead, not ntkrnl_sys::probe::probe_user_buffer. The
+            // ntkrnl-sys range check reads `MmUserProbeAddress`, which is a DATA
+            // export: a plain extern reference to it is unsatisfiable from a
+            // separate driver, because the import library provides only `__imp_`
+            // and the binding differs per arch (see the comment in class.rs).
+            // Inside ntoskrnl the symbol is local so it resolves; from win32k.sys
+            // it does not, and arm64 failed to link on exactly this
+            // (`undefined symbol: MmUserProbeAddress`) while amd64 happened to
+            // resolve it. win32k already imports SafeProbeForRead and it does the
+            // same range check, so use the one this driver can actually link.
+            let st = SafeProbeForRead(
+                Entries as *mut c_void,
+                (EntriesCount as usize * core::mem::size_of::<ACCEL>()) as SIZE_T,
+                4,
+            );
+            if st < 0 {
+                Status = st;
+                break 'seh;
             }
 
-            (*(*Accel).Table.add(Index as usize)).cmd =
-                (*Entries.add(Index as usize)).cmd;
+            while Index < EntriesCount {
+                // Fault-protected capture of Entries[Index] — the per-element reads
+                // in the C loop sit inside the same _SEH2_TRY as the probe, so a
+                // page fault mid-loop (not just an out-of-range pointer) must be
+                // caught too, not merely range-checked once up front.
+                // safe_copy_raw rather than a range-checking helper: the range
+                // was proven once above, and this only has to survive the page
+                // going away mid-loop. It also avoids MmUserProbeAddress (above).
+                let mut CapturedEntry: ACCEL = core::mem::zeroed();
+                let CapturedEntry: ACCEL = match ntkrnl_sys::probe::safe_copy_raw(
+                    core::ptr::addr_of_mut!(CapturedEntry) as *mut c_void,
+                    Entries.add(Index as usize) as *const c_void,
+                    core::mem::size_of::<ACCEL>(),
+                )
+                .map(|()| CapturedEntry)
+                {
+                    Ok(v) => v,
+                    Err(st) => {
+                        Status = st;
+                        break 'seh;
+                    }
+                };
 
-            Index += 1;
+                (*(*Accel).Table.add(Index as usize)).fVirt =
+                    CapturedEntry.fVirt & FVIRT_MASK as u8;
+                if (*(*Accel).Table.add(Index as usize)).fVirt & FVIRTKEY as u8 != 0 {
+                    (*(*Accel).Table.add(Index as usize)).key = CapturedEntry.key;
+                } else {
+                    // Source is now the already fault-protected local capture
+                    // (kernel memory), not the raw user pointer.
+                    RtlMultiByteToUnicodeN(
+                        core::ptr::addr_of_mut!((*(*Accel).Table.add(Index as usize)).key),
+                        core::mem::size_of::<u16>() as _,
+                        core::ptr::null_mut(),
+                        core::ptr::addr_of!(CapturedEntry.key) as PCSTR,
+                        core::mem::size_of::<i8>() as _,
+                    );
+                }
+
+                (*(*Accel).Table.add(Index as usize)).cmd = CapturedEntry.cmd;
+
+                Index += 1;
+            }
         }
 
         if !NT_SUCCESS(Status) {

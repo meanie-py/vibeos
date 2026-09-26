@@ -1,0 +1,3567 @@
+# GNU adns 1.0 — our delta from pristine upstream.
+#
+# Upstream: https://www.chiark.greenend.org.uk/~ian/adns/ftp/adns-1.0.tar.gz
+#           sha256 bed27a4ec5b71acc08333368e842a1248e83328018b582caf644985539967c5d
+# Apply from sdk/lib/3rdparty/adns/ with: patch -p1 < vendor-patches/adns.patch
+#
+# READ THIS FIRST: the delta is NOT ours. It is overwhelmingly a THIRD-PARTY WINDOWS
+# PORT that arrived already applied — "the ADNS resolver library for Windows, ported by
+# Jarle (jgaa) Aase", per adns_win32/README.TXT, built here with -DADNS_JGAA_WIN32.
+# Exactly ONE file in the whole tree carries a __REACTOS__ marker (src/setup.c), so
+# treating this diff as ReactOS's work would be wrong.
+#
+# Version is 1.0 and is certain: every top-level file (COPYING, GPL-vs-LGPL, README,
+# INSTALL, TODO, changelog, configure.in, acconfig.h, aclocal.m4, Makefile.in,
+# settings.make.in, install-sh) is byte-identical to pristine adns-1.0, and the changelog's
+# newest entry is "adns (1.0)".
+#
+# THE PORT'S OWN UPSTREAM IS GONE. adns.jgaa.com does not resolve (jgaa.com itself still
+# does) and the Wayback API returns no snapshot, so there is no artifact to diff the port
+# against — the same dead-distribution problem as dxtn. That is why this patch is taken
+# against GNU adns 1.0 rather than against the port: it is the only surviving reference
+# point, so the hunks below conflate "jgaa's port" with "any later local change". Do not
+# read a hunk here as a ReactOS decision without checking for a __REACTOS__ marker first.
+#
+# NORMALIZE BEFORE YOU COUNT. This tree is CRLF in places and a raw diff badly overstates
+# it: src/adns.h is 150 raw changed lines but 92 real ones, src/types.c 115 raw vs 51.
+#
+# SCOPE — only src/ is compiled (plus adns_win32/adns_unix_calls.c):
+#   src/       11 files, ~570 normalized lines. COMPILED. This is the port proper.
+#   client/    8 files, ~123 normalized lines. NOT COMPILED — the adnshost/adnslogres
+#              command-line tools are not in our CMake source list. Included here only so
+#              that pristine + patch reproduces the tree exactly.
+#
+# NOT IN THIS PATCH (no upstream counterpart — the port ADDS these):
+#   adns_win32/adns_unix_calls.c, adns_win32.h   GPL-2.0-or-later, jgaa + Ian Jackson.
+#                                                adns_unix_calls.c IS compiled.
+#   adns_win32/timercmp.h
+#   adns_win32/getopt.c, getopt.h   *** DELETED 2026-09-20 — unlicensed dead code ***
+#       getopt.c's header said verbatim: "jgaa oct 9th 2000: Found this on www. No
+#       copyright information given. Slightly modified." with an origin URL on
+#       winsite.com. Carrying a file whose licence is "none stated" is exactly the
+#       provenance hole this registry exists to close, so both files are gone.
+#       They were never in the CMake source list. NOTE the one referrer, so nobody is
+#       surprised later: client/adnslogres.c does `#include "getopt.h"` under
+#       ADNS_JGAA_WIN32 — but client/ appears NOWHERE in our CMakeLists, so the whole
+#       adnshost/adnslogres tool set is already unbuilt vendored source. Reviving those
+#       tools now needs a getopt from somewhere with a licence; that is a feature.
+#
+--- a/src/adns.h
++++ b/src/adns.h
+@@ -10,30 +10,30 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+  *
+- * 
++ *
+  *  For the benefit of certain LGPL'd `omnibus' software which
+  *  provides a uniform interface to various things including adns, I
+  *  make the following additional licence.  I do this because the GPL
+  *  would otherwise force either the omnibus software to be GPL'd or
+  *  the adns-using part to be distributed separately.
+- *  
++ *
+  *  So: you may also redistribute and/or modify adns.h (but only the
+  *  public header file adns.h and not any other part of adns) under the
+  *  terms of the GNU Library General Public License as published by the
+  *  Free Software Foundation; either version 2 of the License, or (at
+  *  your option) any later version.
+- *  
++ *
+  *  Note that adns itself is GPL'd.  Authors of adns-using applications
+  *  with GPL-incompatible licences, and people who distribute adns with
+  *  applications where the whole distribution is not GPL'd, are still
+@@ -51,19 +51,29 @@
+  *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  *
+  *
+- *  $Id: adns.h,v 1.83 2000/09/17 01:56:18 ian Exp $
+  */
+ 
+ #ifndef ADNS_H_INCLUDED
+ #define ADNS_H_INCLUDED
+ 
+-#include <stdio.h>
+-
+-#include <sys/socket.h>
+-#include <netinet/in.h>
+-#include <sys/types.h>
+-#include <sys/time.h>
+-#include <unistd.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <stdio.h>
++# include <sys/socket.h>
++# include <netinet/in.h>
++# include <sys/types.h>
++# include <sys/time.h>
++# include <unistd.h>
++
++# define ADNS_API
++# define ADNS_SOCKET int
++# define adns_socket_close(sck) close(sck)
++# define adns_socket_read(sck, data, len) read(sck, data, len)
++# define adns_socket_write(sck, data, len) write(sck, data, len)
++# define ADNS_CAPTURE_ERRNO {}
++# define ADNS_CLEAR_ERRNO {}
++#endif
+ 
+ #ifdef __cplusplus
+ extern "C" { /* I really dislike this - iwj. */
+@@ -104,34 +114,34 @@
+   adns__rrt_typemask=  0x0ffff,
+   adns__qtf_deref=     0x10000, /* dereference domains and perhaps produce extra data */
+   adns__qtf_mail822=   0x20000, /* make mailboxes be in RFC822 rcpt field format */
+-  
++
+   adns_r_none=               0,
+-  
++
+   adns_r_a=                  1,
+-  
++
+   adns_r_ns_raw=             2,
+   adns_r_ns=                    adns_r_ns_raw|adns__qtf_deref,
+-  
++
+   adns_r_cname=              5,
+-  
++
+   adns_r_soa_raw=            6,
+-  adns_r_soa=                   adns_r_soa_raw|adns__qtf_mail822, 
+-  
++  adns_r_soa=                   adns_r_soa_raw|adns__qtf_mail822,
++
+   adns_r_ptr_raw=           12,
+   adns_r_ptr=                   adns_r_ptr_raw|adns__qtf_deref,
+-  
+-  adns_r_hinfo=             13,  
+-  
++
++  adns_r_hinfo=             13,
++
+   adns_r_mx_raw=            15,
+   adns_r_mx=                    adns_r_mx_raw|adns__qtf_deref,
+-  
++
+   adns_r_txt=               16,
+-  
++
+   adns_r_rp_raw=            17,
+   adns_r_rp=                    adns_r_rp_raw|adns__qtf_mail822,
+ 
+   adns_r_addr=                  adns_r_a|adns__qtf_deref
+-  
++
+ } adns_rrtype;
+ 
+ /*
+@@ -139,7 +149,7 @@
+  * legal syntax, or you get adns_s_querydomainvalid (if the query
+  * domain contains bad characters) or adns_s_answerdomaininvalid (if
+  * the answer contains bad characters).
+- * 
++ *
+  * In queries _with_ qf_quoteok_*, domains in the query or response
+  * may contain any characters, quoted according to RFC1035 5.1.  On
+  * input to adns, the char* is a pointer to the interior of a "
+@@ -211,7 +221,7 @@
+   adns_s_systemfail,
+ 
+   adns_s_max_localfail= 29,
+-  
++
+   /* remotely induced errors, detected locally */
+   adns_s_timeout,
+   adns_s_allservfail,
+@@ -220,7 +230,7 @@
+   adns_s_unknownformat,
+ 
+   adns_s_max_remotefail= 59,
+-  
++
+   /* remotely induced errors, reported by remote server to us */
+   adns_s_rcodeservfail,
+   adns_s_rcodeformaterror,
+@@ -236,14 +246,14 @@
+   adns_s_answerdomaininvalid,
+   adns_s_answerdomaintoolong,
+   adns_s_invaliddata,
+-  
++
+   adns_s_max_misconfig= 199,
+ 
+   /* permanent problems with the query */
+   adns_s_querydomainwrong,
+   adns_s_querydomaininvalid,
+   adns_s_querydomaintoolong,
+-  
++
+   adns_s_max_misquery= 299,
+ 
+   /* permanent errors */
+@@ -251,7 +261,7 @@
+   adns_s_nodata,
+ 
+   adns_s_max_permfail= 499
+-  
++
+ } adns_status;
+ 
+ typedef struct {
+@@ -337,7 +347,7 @@
+  *  For _init, _init_strcfg, _submit and _synchronous, system errors
+  *  (eg, failure to create sockets, malloc failure, etc.) return errno
+  *  values.
+- * 
++ *
+  *  For _wait and _check failures are reported in the answer
+  *  structure, and only 0, ESRCH or (for _check) EAGAIN is
+  *  returned: if no (appropriate) requests are done adns_check returns
+@@ -353,10 +363,18 @@
+  *  requested.
+  */
+ 
+-int adns_init(adns_state *newstate_r, adns_initflags flags,
++ADNS_API int adns_init(adns_state *newstate_r, adns_initflags flags,
+ 	      FILE *diagfile /*0=>stderr*/);
+ 
+-int adns_init_strcfg(adns_state *newstate_r, adns_initflags flags,
++/* ReactOS addition */
++ADNS_API void adns_addserver(adns_state state, struct in_addr server);
++ADNS_API void adns_ccf_search(adns_state state,
++                              const char *fn,
++                              int lno,
++                              const char *buf);
++ADNS_API int adns_numservers(adns_state state);
++
++ADNS_API int adns_init_strcfg(adns_state *newstate_r, adns_initflags flags,
+ 		     FILE *diagfile /*0=>discard*/, const char *configtext);
+ 
+ /* Configuration:
+@@ -368,7 +386,7 @@
+  *  is set later overrides any that is set earlier.
+  *
+  * Standard directives understood in resolv[-adns].conf:
+- * 
++ *
+  *  nameserver <address>
+  *   Must be followed by the IP address of a nameserver.  Several
+  *   nameservers may be specified, and they will be tried in the order
+@@ -432,7 +450,7 @@
+  *   Changes the consistency checking frequency; this overrides the
+  *   setting of adns_if_check_entex, adns_if_check_freq, or neither,
+  *   in the flags passed to adns_init.
+- * 
++ *
+  * There are a number of environment variables which can modify the
+  * behaviour of adns.  They take effect only if adns_init is used, and
+  * the caller of adns_init can disable them using adns_if_noenv.  In
+@@ -459,7 +477,7 @@
+  *   line in resolv.conf.
+  */
+ 
+-int adns_synchronous(adns_state ads,
++ADNS_API int adns_synchronous(adns_state ads,
+ 		     const char *owner,
+ 		     adns_rrtype type,
+ 		     adns_queryflags flags,
+@@ -470,7 +488,7 @@
+  * processing functions to actually get things to happen.
+  */
+ 
+-int adns_submit(adns_state ads,
++ADNS_API int adns_submit(adns_state ads,
+ 		const char *owner,
+ 		adns_rrtype type,
+ 		adns_queryflags flags,
+@@ -479,23 +497,23 @@
+ 
+ /* The owner should be quoted in master file format. */
+ 
+-int adns_check(adns_state ads,
++ADNS_API int adns_check(adns_state ads,
+ 	       adns_query *query_io,
+ 	       adns_answer **answer_r,
+ 	       void **context_r);
+ 
+-int adns_wait(adns_state ads,
++ADNS_API int adns_wait(adns_state ads,
+ 	      adns_query *query_io,
+ 	      adns_answer **answer_r,
+ 	      void **context_r);
+ 
+ /* same as adns_wait but uses poll(2) internally */
+-int adns_wait_poll(adns_state ads,
++ADNS_API int adns_wait_poll(adns_state ads,
+ 		   adns_query *query_io,
+ 		   adns_answer **answer_r,
+ 		   void **context_r);
+ 
+-void adns_cancel(adns_query query);
++ADNS_API void adns_cancel(adns_query query);
+ 
+ /* The adns_query you get back from _submit is valid (ie, can be
+  * legitimately passed into adns functions) until it is returned by
+@@ -509,7 +527,7 @@
+  * query type.
+  */
+ 
+-int adns_submit_reverse(adns_state ads,
++ADNS_API int adns_submit_reverse(adns_state ads,
+ 			const struct sockaddr *addr,
+ 			adns_rrtype type,
+ 			adns_queryflags flags,
+@@ -519,7 +537,7 @@
+  * addr->sa_family must be AF_INET or you get ENOSYS.
+  */
+ 
+-int adns_submit_reverse_any(adns_state ads,
++ADNS_API int adns_submit_reverse_any(adns_state ads,
+ 			    const struct sockaddr *addr,
+ 			    const char *rzone,
+ 			    adns_rrtype type,
+@@ -532,14 +550,14 @@
+  * addr->sa_family must be AF_INET or you get ENOSYS.
+  */
+ 
+-void adns_finish(adns_state ads);
++ADNS_API void adns_finish(adns_state ads);
+ /* You may call this even if you have queries outstanding;
+  * they will be cancelled.
+  */
+ 
+ 
+-void adns_forallqueries_begin(adns_state ads);
+-adns_query adns_forallqueries_next(adns_state ads, void **context_r);
++ADNS_API void adns_forallqueries_begin(adns_state ads);
++ADNS_API adns_query adns_forallqueries_next(adns_state ads, void **context_r);
+ /* Iterator functions, which you can use to loop over the outstanding
+  * (submitted but not yet successfuly checked/waited) queries.
+  *
+@@ -555,7 +573,7 @@
+  * context_r may be 0.  *context_r may not be set when _next returns 0.
+  */
+ 
+-void adns_checkconsistency(adns_state ads, adns_query qu);
++ADNS_API  void adns_checkconsistency(adns_state ads, adns_query qu);
+ /* Checks the consistency of adns's internal data structures.
+  * If any error is found, the program will abort().
+  * You may pass 0 for qu; if you pass non-null then additional checks
+@@ -587,16 +605,16 @@
+  * blocking, or you may not have an up-to-date list of it's fds.
+  */
+ 
+-int adns_processany(adns_state ads);
++ADNS_API int adns_processany(adns_state ads);
+ /* Gives adns flow-of-control for a bit.  This will never block, and
+  * can be used with any threading/asynch-io model.  If some error
+  * occurred which might cause an event loop to spin then the errno
+  * value is returned.
+  */
+ 
+-int adns_processreadable(adns_state ads, int fd, const struct timeval *now);
+-int adns_processwriteable(adns_state ads, int fd, const struct timeval *now);
+-int adns_processexceptional(adns_state ads, int fd, const struct timeval *now);
++ADNS_API int adns_processreadable(adns_state ads, ADNS_SOCKET fd, const struct timeval *now);
++ADNS_API int adns_processwriteable(adns_state ads, ADNS_SOCKET fd, const struct timeval *now);
++ADNS_API int adns_processexceptional(adns_state ads, ADNS_SOCKET fd, const struct timeval *now);
+ /* Gives adns flow-of-control so that it can process incoming data
+  * from, or send outgoing data via, fd.  Very like _processany.  If it
+  * returns zero then fd will no longer be readable or writeable
+@@ -615,7 +633,7 @@
+  * then the errno value is returned.
+  */
+ 
+-void adns_processtimeouts(adns_state ads, const struct timeval *now);
++ADNS_API void adns_processtimeouts(adns_state ads, const struct timeval *now);
+ /* Gives adns flow-of-control so that it can process any timeouts
+  * which might have happened.  Very like _processreadable/writeable.
+  *
+@@ -623,12 +641,12 @@
+  * obtained from gettimeofday.
+  */
+ 
+-void adns_firsttimeout(adns_state ads,
++ADNS_API void adns_firsttimeout(adns_state ads,
+ 		       struct timeval **tv_mod, struct timeval *tv_buf,
+ 		       struct timeval now);
+ /* Asks adns when it would first like the opportunity to time
+  * something out.  now must be the current time, from gettimeofday.
+- * 
++ *
+  * If tv_mod points to 0 then tv_buf must be non-null, and
+  * _firsttimeout will fill in *tv_buf with the time until the first
+  * timeout, and make *tv_mod point to tv_buf.  If adns doesn't have
+@@ -642,7 +660,7 @@
+  * is using.  It always succeeds and never blocks.
+  */
+ 
+-void adns_globalsystemfailure(adns_state ads);
++ADNS_API void adns_globalsystemfailure(adns_state ads);
+ /* If serious problem(s) happen which globally affect your ability to
+  * interact properly with adns, or adns's ability to function
+  * properly, you or adns can call this function.
+@@ -661,7 +679,7 @@
+  * Entrypoints for select-loop based asynch io:
+  */
+ 
+-void adns_beforeselect(adns_state ads, int *maxfd, fd_set *readfds,
++ADNS_API void adns_beforeselect(adns_state ads, int *maxfd, fd_set *readfds,
+ 		       fd_set *writefds, fd_set *exceptfds,
+ 		       struct timeval **tv_mod, struct timeval *tv_buf,
+ 		       const struct timeval *now);
+@@ -677,7 +695,7 @@
+  * finishes in _beforeselect.
+  */
+ 
+-void adns_afterselect(adns_state ads, int maxfd, const fd_set *readfds,
++ADNS_API void adns_afterselect(adns_state ads, int maxfd, const fd_set *readfds,
+ 		      const fd_set *writefds, const fd_set *exceptfds,
+ 		      const struct timeval *now);
+ /* Gives adns flow-of-control for a bit; intended for use after
+@@ -711,12 +729,12 @@
+  * entrypoints will not be defined in libadns.  Sorry !
+  */
+ 
+-int adns_beforepoll(adns_state ads, struct pollfd *fds, int *nfds_io, int *timeout_io,
++ADNS_API int adns_beforepoll(adns_state ads, struct pollfd *fds, int *nfds_io, int *timeout_io,
+ 		    const struct timeval *now);
+ /* Finds out which fd's adns is interested in, and when it would like
+  * to be able to time things out.  This is in a form suitable for use
+  * with poll(2).
+- * 
++ *
+  * On entry, usually fds should point to at least *nfds_io structs.
+  * adns will fill up to that many structs will information for poll,
+  * and record in *nfds_io how many structs it filled.  If it wants to
+@@ -763,7 +781,7 @@
+  * require more space than this.
+  */
+ 
+-void adns_afterpoll(adns_state ads, const struct pollfd *fds, int nfds,
++ADNS_API void adns_afterpoll(adns_state ads, const struct pollfd *fds, int nfds,
+ 		    const struct timeval *now);
+ /* Gives adns flow-of-control for a bit; intended for use after
+  * poll(2).  fds and nfds should be the results from poll().  pollfd
+@@ -771,7 +789,7 @@
+  */
+ 
+ 
+-adns_status adns_rr_info(adns_rrtype type,
++ADNS_API adns_status adns_rr_info(adns_rrtype type,
+ 			 const char **rrtname_r, const char **fmtname_r,
+ 			 int *len_r,
+ 			 const void *datap, char **data_r);
+@@ -831,9 +849,9 @@
+  *  dns2.spong.dyn.ml.org timeout "DNS query timed out" ?
+  */
+ 
+-const char *adns_strerror(adns_status st);
+-const char *adns_errabbrev(adns_status st);
+-const char *adns_errtypeabbrev(adns_status st);
++ADNS_API const char *adns_strerror(adns_status st);
++ADNS_API const char *adns_errabbrev(adns_status st);
++ADNS_API const char *adns_errtypeabbrev(adns_status st);
+ /* Like strerror but for adns_status values.  adns_errabbrev returns
+  * the abbreviation of the error - eg, for adns_s_timeout it returns
+  * "timeout".  adns_errtypeabbrev returns the abbreviation of the
+--- a/src/check.c
++++ b/src/check.c
+@@ -9,20 +9,20 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+ #include "internal.h"
+@@ -31,6 +31,8 @@
+   adns__consistency(ads,qu,cc_user);
+ }
+ 
++/* The original macro. Too gnuish for other compilers */
++#if 0
+ #define DLIST_CHECK(list, nodevar, part, body)					\
+   if ((list).head) {								\
+     assert(! (list).head->part back);						\
+@@ -41,6 +43,29 @@
+       body									\
+     }										\
+   }
++#endif /* 0 */
++
++#define DLIST_CHECK1(list, nodevar, body)					\
++  if ((list).head) {								\
++    assert(! (list).head->back);						\
++    for ((nodevar)= (list).head; (nodevar); (nodevar)= (nodevar)->next) {	\
++      assert((nodevar)->next						\
++	     ? (nodevar) == (nodevar)->next->back			\
++	     : (nodevar) == (list).tail);					\
++      body									\
++    }										\
++  }
++
++#define DLIST_CHECK2(list, nodevar, part, body)					\
++  if ((list).head) {								\
++    assert(! (list).head->part.back);						\
++    for ((nodevar)= (list).head; (nodevar); (nodevar)= (nodevar)->part.next) {	\
++      assert((nodevar)->part.next						\
++	     ? (nodevar) == (nodevar)->part.next->part.back			\
++	     : (nodevar) == (list).tail);					\
++      body									\
++    }										\
++  }
+ 
+ #define DLIST_ASSERTON(node, nodevar, list, part)				\
+   do {										\
+@@ -54,7 +79,8 @@
+ static void checkc_query_alloc(adns_state ads, adns_query qu) {
+   allocnode *an;
+ 
+-  DLIST_CHECK(qu->allocations, an, , {
++
++  DLIST_CHECK1(qu->allocations, an, {
+   });
+ }
+ 
+@@ -75,14 +101,14 @@
+ 
+ static void checkc_global(adns_state ads) {
+   int i;
+-  
++
+   assert(ads->udpsocket >= 0);
+ 
+   for (i=0; i<ads->nsortlist; i++)
+     assert(!(ads->sortlist[i].base.s_addr & ~ads->sortlist[i].mask.s_addr));
+ 
+   assert(ads->tcpserver >= 0 && ads->tcpserver < ads->nservers);
+-  
++
+   switch (ads->tcpstate) {
+   case server_connecting:
+     assert(ads->tcpsocket >= 0);
+@@ -106,8 +132,8 @@
+ 
+ static void checkc_queue_udpw(adns_state ads) {
+   adns_query qu;
+-  
+-  DLIST_CHECK(ads->udpw, qu, , {
++
++  DLIST_CHECK1(ads->udpw, qu, {
+     assert(qu->state==query_tosend);
+     assert(qu->retries <= UDPMAXRETRIES);
+     assert(qu->udpsent);
+@@ -119,8 +145,8 @@
+ 
+ static void checkc_queue_tcpw(adns_state ads) {
+   adns_query qu;
+-  
+-  DLIST_CHECK(ads->tcpw, qu, , {
++
++  DLIST_CHECK1(ads->tcpw, qu, {
+     assert(qu->state==query_tcpw);
+     assert(!qu->children.head && !qu->children.tail);
+     assert(qu->retries <= ads->nservers+1);
+@@ -132,10 +158,10 @@
+ static void checkc_queue_childw(adns_state ads) {
+   adns_query parent, child;
+ 
+-  DLIST_CHECK(ads->childw, parent, , {
++  DLIST_CHECK1(ads->childw, parent, {
+     assert(parent->state == query_childw);
+     assert(parent->children.head);
+-    DLIST_CHECK(parent->children, child, siblings., {
++    DLIST_CHECK2(parent->children, child, siblings, {
+       assert(child->parent == parent);
+       assert(child->state != query_done);
+     });
+@@ -146,8 +172,8 @@
+ 
+ static void checkc_queue_output(adns_state ads) {
+   adns_query qu;
+-  
+-  DLIST_CHECK(ads->output, qu, , {
++
++  DLIST_CHECK1(ads->output, qu, {
+     assert(qu->state == query_done);
+     assert(!qu->children.head && !qu->children.tail);
+     assert(!qu->parent);
+@@ -158,7 +184,7 @@
+ 
+ void adns__consistency(adns_state ads, adns_query qu, consistency_checks cc) {
+   adns_query search;
+-  
++
+   switch (cc) {
+   case cc_user:
+     break;
+--- a/src/config.h
++++ b/src/config.h
+@@ -5,22 +5,22 @@
+ #define HAVE_INLINE 1
+ 
+ /* Define if function attributes a la GCC 2.5 and higher are available.  */
+-#define HAVE_GNUC25_ATTRIB 1
++/* #define HAVE_GNUC25_ATTRIB 1 */
+ 
+ /* Define if constant functions a la GCC 2.5 and higher are available.  */
+-#define HAVE_GNUC25_CONST 1
++/* #define HAVE_GNUC25_CONST 1 */
+ 
+ /* Define if nonreturning functions a la GCC 2.5 and higher are available.  */
+-#define HAVE_GNUC25_NORETURN 1
++/* #define HAVE_GNUC25_NORETURN 1 */
+ 
+ /* Define if printf-format argument lists a la GCC are available.  */
+-#define HAVE_GNUC25_PRINTFFORMAT 1
++/* #define HAVE_GNUC25_PRINTFFORMAT 1 */
+ 
+ /* Define if we want to include rpc/types.h.  Crap BSDs put INADDR_LOOPBACK there. */
+ /* #undef HAVEUSE_RPCTYPES_H */
+ 
+ /* Define if you have the poll function.  */
+-#define HAVE_POLL 1
++/* #define HAVE_POLL 1 */
+ 
+ /* Define if you have the <sys/select.h> header file.  */
+ #define HAVE_SYS_SELECT_H 1
+@@ -101,6 +101,6 @@
+ #include <rpc/types.h>
+ #endif
+ 
+-#ifdef HAVE_SYS_SELECT_H
++#if !defined(ADNS_JGAA_WIN32) && defined(HAVE_SYS_SELECT_H)
+ #include <sys/select.h>
+ #endif
+--- a/src/event.c
++++ b/src/event.c
+@@ -11,32 +11,36 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+- *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  along with this program; if not, adns_socket_write to the Free Software Foundation,
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+ #include <errno.h>
+ #include <stdlib.h>
+-#include <unistd.h>
+ 
+-#include <sys/types.h>
+-#include <sys/time.h>
+-#include <netdb.h>
+-#include <sys/socket.h>
+-#include <netinet/in.h>
+-#include <arpa/inet.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <unistd.h>
++# include <sys/types.h>
++# include <sys/time.h>
++# include <netdb.h>
++# include <sys/socket.h>
++# include <netinet/in.h>
++# include <arpa/inet.h>
++#endif
+ 
+ #include "internal.h"
+ #include "tvarith.h"
+@@ -45,9 +49,9 @@
+ 
+ static void tcp_close(adns_state ads) {
+   int serv;
+-  
++
+   serv= ads->tcpserver;
+-  close(ads->tcpsocket);
++  adns_socket_close(ads->tcpsocket);
+   ads->tcpsocket= -1;
+   ads->tcprecv.used= ads->tcprecv_skip= ads->tcpsend.used= 0;
+ }
+@@ -55,7 +59,7 @@
+ void adns__tcp_broken(adns_state ads, const char *what, const char *why) {
+   int serv;
+   adns_query qu;
+-  
++
+   assert(ads->tcpstate == server_connecting || ads->tcpstate == server_ok);
+   serv= ads->tcpserver;
+   if (what) adns__warn(ads,serv,0,"TCP connection failed: %s: %s",what,why);
+@@ -73,7 +77,7 @@
+ 
+ static void tcp_connected(adns_state ads, struct timeval now) {
+   adns_query qu, nqu;
+-  
++
+   adns__debug(ads,ads->tcpserver,0,"TCP connected");
+   ads->tcpstate= server_ok;
+   for (qu= ads->tcpw.head; qu && ads->tcpstate == server_ok; qu= nqu) {
+@@ -84,7 +88,8 @@
+ }
+ 
+ void adns__tcp_tryconnect(adns_state ads, struct timeval now) {
+-  int r, fd, tries;
++  int r, tries;
++  ADNS_SOCKET fd;
+   struct sockaddr_in addr;
+   struct protoent *proto;
+ 
+@@ -99,14 +104,16 @@
+     default:
+       abort();
+     }
+-    
++
+     assert(!ads->tcpsend.used);
+     assert(!ads->tcprecv.used);
+     assert(!ads->tcprecv_skip);
+ 
+     proto= getprotobyname("tcp");
+     if (!proto) { adns__diag(ads,-1,0,"unable to find protocol no. for TCP !"); return; }
++	ADNS_CLEAR_ERRNO
+     fd= socket(AF_INET,SOCK_STREAM,proto->p_proto);
++	ADNS_CAPTURE_ERRNO;
+     if (fd<0) {
+       adns__diag(ads,-1,0,"cannot create TCP socket: %s",strerror(errno));
+       return;
+@@ -114,14 +121,16 @@
+     r= adns__setnonblock(ads,fd);
+     if (r) {
+       adns__diag(ads,-1,0,"cannot make TCP socket nonblocking: %s",strerror(r));
+-      close(fd);
++      adns_socket_close(fd);
+       return;
+     }
+     memset(&addr,0,sizeof(addr));
+     addr.sin_family= AF_INET;
+     addr.sin_port= htons(DNS_PORT);
+     addr.sin_addr= ads->servers[ads->tcpserver].addr;
++    ADNS_CLEAR_ERRNO;
+     r= connect(fd,(const struct sockaddr*)&addr,sizeof(addr));
++    ADNS_CAPTURE_ERRNO;
+     ads->tcpsocket= fd;
+     ads->tcpstate= server_connecting;
+     if (r==0) { tcp_connected(ads,now); return; }
+@@ -160,7 +169,7 @@
+ 
+   timerclear(rbuf);
+ }
+-    
++
+ static void inter_maxto(struct timeval **tv_io, struct timeval *tvbuf,
+ 			struct timeval maxto) {
+   struct timeval *rbuf;
+@@ -197,7 +206,7 @@
+ 			   struct timeval **tv_io, struct timeval *tvbuf,
+ 			   struct timeval now, struct query_queue *queue) {
+   adns_query qu, nqu;
+-  
++
+   for (qu= queue->head; qu; qu= nqu) {
+     nqu= qu->next;
+     if (!timercmp(&now,&qu->timeout,>)) {
+@@ -219,7 +228,7 @@
+ 		       struct timeval **tv_io, struct timeval *tvbuf,
+ 		       struct timeval now) {
+   adns_query qu, nqu;
+-  
++
+   for (;;) {
+     switch (ads->tcpstate) {
+     case server_broken:
+@@ -326,11 +335,11 @@
+   return 2;
+ }
+ 
+-int adns_processreadable(adns_state ads, int fd, const struct timeval *now) {
++int adns_processreadable(adns_state ads, ADNS_SOCKET fd, const struct timeval *now) {
+   int want, dgramlen, r, udpaddrlen, serv, old_skip;
+   byte udpbuf[DNS_MAXUDP];
+   struct sockaddr_in udpaddr;
+-  
++
+   adns__consistency(ads,0,cc_entex);
+ 
+   switch (ads->tcpstate) {
+@@ -358,14 +367,16 @@
+ 	want= 2;
+       }
+       ads->tcprecv.used -= ads->tcprecv_skip;
+-      memmove(ads->tcprecv.buf,ads->tcprecv.buf+ads->tcprecv_skip,ads->tcprecv.used);
++      memmove(ads->tcprecv.buf,ads->tcprecv.buf+ads->tcprecv_skip, (size_t) ads->tcprecv.used);
+       ads->tcprecv_skip= 0;
+       if (!adns__vbuf_ensure(&ads->tcprecv,want)) { r= ENOMEM; goto xit; }
+       assert(ads->tcprecv.used <= ads->tcprecv.avail);
+       if (ads->tcprecv.used == ads->tcprecv.avail) continue;
+-      r= read(ads->tcpsocket,
++	  ADNS_CLEAR_ERRNO;
++      r= adns_socket_read(ads->tcpsocket,
+ 	      ads->tcprecv.buf+ads->tcprecv.used,
+ 	      ads->tcprecv.avail-ads->tcprecv.used);
++	  ADNS_CAPTURE_ERRNO;
+       if (r>0) {
+ 	ads->tcprecv.used+= r;
+       } else {
+@@ -374,7 +385,7 @@
+ 	  if (errno==EINTR) continue;
+ 	  if (errno_resources(errno)) { r= errno; goto xit; }
+ 	}
+-	adns__tcp_broken(ads,"read",r?strerror(errno):"closed");
++	adns__tcp_broken(ads,"adns_socket_read",r?strerror(errno):"closed");
+       }
+     } while (ads->tcpstate == server_ok);
+     r= 0; goto xit;
+@@ -384,13 +395,15 @@
+   if (fd == ads->udpsocket) {
+     for (;;) {
+       udpaddrlen= sizeof(udpaddr);
+-      r= recvfrom(ads->udpsocket,udpbuf,sizeof(udpbuf),0,
++	  ADNS_CLEAR_ERRNO;
++      r= recvfrom(ads->udpsocket,(char*)udpbuf,sizeof(udpbuf),0,
+ 		  (struct sockaddr*)&udpaddr,&udpaddrlen);
++	  ADNS_CAPTURE_ERRNO;
+       if (r<0) {
+-	if (errno == EAGAIN || errno == EWOULDBLOCK) { r= 0; goto xit; }
++	if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ECONNRESET) { r= 0; goto xit; }
+ 	if (errno == EINTR) continue;
+ 	if (errno_resources(errno)) { r= errno; goto xit; }
+-	adns__warn(ads,-1,0,"datagram receive error: %s",strerror(errno));
++	adns__warn(ads,-1,0,"datagram receive error: %s (%d)",strerror(errno), errno);
+ 	r= 0; goto xit;
+       }
+       if (udpaddrlen != sizeof(udpaddr)) {
+@@ -427,9 +440,9 @@
+   return r;
+ }
+ 
+-int adns_processwriteable(adns_state ads, int fd, const struct timeval *now) {
++int adns_processwriteable(adns_state ads, ADNS_SOCKET fd, const struct timeval *now) {
+   int r;
+-  
++
+   adns__consistency(ads,0,cc_entex);
+ 
+   switch (ads->tcpstate) {
+@@ -442,35 +455,39 @@
+     assert(ads->tcprecv_skip==0);
+     for (;;) {
+       if (!adns__vbuf_ensure(&ads->tcprecv,1)) { r= ENOMEM; goto xit; }
+-      r= read(ads->tcpsocket,&ads->tcprecv.buf,1);
++	  ADNS_CLEAR_ERRNO;
++      r= adns_socket_read(ads->tcpsocket,&ads->tcprecv.buf,1);
++	  ADNS_CAPTURE_ERRNO;
+       if (r==0 || (r<0 && (errno==EAGAIN || errno==EWOULDBLOCK))) {
+ 	tcp_connected(ads,*now);
+ 	r= 0; goto xit;
+       }
+       if (r>0) {
+-	adns__tcp_broken(ads,"connect/read","sent data before first request");
++	adns__tcp_broken(ads,"connect/adns_socket_read","sent data before first request");
+ 	r= 0; goto xit;
+       }
+       if (errno==EINTR) continue;
+       if (errno_resources(errno)) { r= errno; goto xit; }
+-      adns__tcp_broken(ads,"connect/read",strerror(errno));
++      adns__tcp_broken(ads,"connect/adns_socket_read",strerror(errno));
+       r= 0; goto xit;
+     } /* not reached */
+   case server_ok:
+     if (fd != ads->tcpsocket) break;
+     while (ads->tcpsend.used) {
+       adns__sigpipe_protect(ads);
+-      r= write(ads->tcpsocket,ads->tcpsend.buf,ads->tcpsend.used);
++	  ADNS_CLEAR_ERRNO;
++      r= adns_socket_write(ads->tcpsocket,ads->tcpsend.buf,ads->tcpsend.used);
++	  ADNS_CAPTURE_ERRNO;
+       adns__sigpipe_unprotect(ads);
+       if (r<0) {
+ 	if (errno==EINTR) continue;
+ 	if (errno==EAGAIN || errno==EWOULDBLOCK) { r= 0; goto xit; }
+ 	if (errno_resources(errno)) { r= errno; goto xit; }
+-	adns__tcp_broken(ads,"write",strerror(errno));
++	adns__tcp_broken(ads,"adns_socket_write",strerror(errno));
+ 	r= 0; goto xit;
+       } else if (r>0) {
+ 	ads->tcpsend.used -= r;
+-	memmove(ads->tcpsend.buf,ads->tcpsend.buf+r,ads->tcpsend.used);
++	memmove(ads->tcpsend.buf,ads->tcpsend.buf+r, (size_t) ads->tcpsend.used);
+       }
+     }
+     r= 0;
+@@ -483,8 +500,8 @@
+   adns__consistency(ads,0,cc_entex);
+   return r;
+ }
+-  
+-int adns_processexceptional(adns_state ads, int fd, const struct timeval *now) {
++
++int adns_processexceptional(adns_state ads, ADNS_SOCKET fd, const struct timeval *now) {
+   adns__consistency(ads,0,cc_entex);
+   switch (ads->tcpstate) {
+   case server_disconnected:
+@@ -502,15 +519,15 @@
+   return 0;
+ }
+ 
+-static void fd_event(adns_state ads, int fd,
++static void fd_event(adns_state ads, ADNS_SOCKET fd,
+ 		     int revent, int pollflag,
+ 		     int maxfd, const fd_set *fds,
+-		     int (*func)(adns_state, int fd, const struct timeval *now),
++		     int (*func)(adns_state, ADNS_SOCKET fd, const struct timeval *now),
+ 		     struct timeval now, int *r_r) {
+   int r;
+-  
++
+   if (!(revent & pollflag)) return;
+-  if (fds && !(fd<maxfd && FD_ISSET(fd,fds))) return;
++  if (fds && !((int)fd<maxfd && FD_ISSET(fd,fds))) return;
+   r= func(ads,fd,&now);
+   if (r) {
+     if (r_r) {
+@@ -527,11 +544,12 @@
+ 		    int maxfd, const fd_set *readfds,
+ 		    const fd_set *writefds, const fd_set *exceptfds,
+ 		    struct timeval now, int *r_r) {
+-  int i, fd, revents;
++  int i, revents;
++  ADNS_SOCKET fd;
+ 
+   for (i=0; i<npollfds; i++) {
+     fd= pollfds[i].fd;
+-    if (fd >= maxfd) maxfd= fd+1;
++    if ((int)fd >= maxfd) maxfd= fd+1;
+     revents= pollfds[i].revents;
+     fd_event(ads,fd, revents,POLLIN, maxfd,readfds, adns_processreadable,now,r_r);
+     fd_event(ads,fd, revents,POLLOUT, maxfd,writefds, adns_processwriteable,now,r_r);
+@@ -547,8 +565,9 @@
+ 		       const struct timeval *now) {
+   struct timeval tv_nowbuf;
+   struct pollfd pollfds[MAX_POLLFDS];
+-  int i, fd, maxfd, npollfds;
+-  
++  int i, maxfd, npollfds;
++  ADNS_SOCKET fd;
++
+   adns__consistency(ads,0,cc_entex);
+ 
+   if (tv_mod && (!*tv_mod || (*tv_mod)->tv_sec || (*tv_mod)->tv_usec)) {
+@@ -562,7 +581,7 @@
+   maxfd= *maxfd_io;
+   for (i=0; i<npollfds; i++) {
+     fd= pollfds[i].fd;
+-    if (fd >= maxfd) maxfd= fd+1;
++    if ((int)fd >= maxfd) maxfd= fd+1;
+     if (pollfds[i].events & POLLIN) FD_SET(fd,readfds_io);
+     if (pollfds[i].events & POLLOUT) FD_SET(fd,writefds_io);
+     if (pollfds[i].events & POLLPRI) FD_SET(fd,exceptfds_io);
+@@ -602,7 +621,7 @@
+ 
+   while (ads->udpw.head) adns__query_fail(ads->udpw.head, adns_s_systemfail);
+   while (ads->tcpw.head) adns__query_fail(ads->tcpw.head, adns_s_systemfail);
+-  
++
+   switch (ads->tcpstate) {
+   case server_connecting:
+   case server_ok:
+@@ -630,7 +649,7 @@
+ 
+   /* We just use adns__fdevents to loop over the fd's trying them.
+    * This seems more sensible than calling select, since we're most
+-   * likely just to want to do a read on one or two fds anyway.
++   * likely just to want to do a adns_socket_read on one or two fds anyway.
+    */
+   npollfds= adns__pollfds(ads,pollfds);
+   for (i=0; i<npollfds; i++) pollfds[i].revents= pollfds[i].events & ~POLLPRI;
+@@ -681,7 +700,7 @@
+   int r, maxfd, rsel;
+   fd_set readfds, writefds, exceptfds;
+   struct timeval tvbuf, *tvp;
+-  
++
+   adns__consistency(ads,*query_io,cc_entex);
+   for (;;) {
+     r= adns__internal_check(ads,query_io,answer_r,context_r);
+@@ -690,7 +709,9 @@
+     FD_ZERO(&readfds); FD_ZERO(&writefds); FD_ZERO(&exceptfds);
+     adns_beforeselect(ads,&maxfd,&readfds,&writefds,&exceptfds,&tvp,&tvbuf,0);
+     assert(tvp);
++	ADNS_CLEAR_ERRNO;
+     rsel= select(maxfd,&readfds,&writefds,&exceptfds,tvp);
++	ADNS_CAPTURE_ERRNO;
+     if (rsel==-1) {
+       if (errno == EINTR) {
+ 	if (ads->iflags & adns_if_eintr) { r= EINTR; break; }
+@@ -713,7 +734,7 @@
+ 	       void **context_r) {
+   struct timeval now;
+   int r;
+-  
++
+   adns__consistency(ads,*query_io,cc_entex);
+   r= gettimeofday(&now,0);
+   if (!r) adns__autosys(ads,now);
+--- a/src/general.c
++++ b/src/general.c
+@@ -10,29 +10,33 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+ #include <stdlib.h>
+-#include <unistd.h>
+ 
+-#include <sys/types.h>
+-#include <sys/socket.h>
+-#include <netinet/in.h>
+-#include <arpa/inet.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <unistd.h>
++# include <sys/types.h>
++# include <sys/socket.h>
++# include <netinet/in.h>
++# include <arpa/inet.h>
++#endif
+ 
+ #include "internal.h"
+ 
+@@ -42,7 +46,7 @@
+ 		 int serv, adns_query qu, const char *fmt, va_list al) {
+   const char *bef, *aft;
+   vbuf vb;
+-  
++
+   if (!ads->diagfile ||
+       (!(ads->iflags & adns_if_debug) && (!prevent || (ads->iflags & prevent))))
+     return;
+@@ -70,7 +74,7 @@
+     bef=", "; aft=")\n";
+     adns__vbuf_free(&vb);
+   }
+-  
++
+   if (serv>=0) {
+     fprintf(ads->diagfile,"%sNS=%s",bef,inet_ntoa(ads->servers[serv].addr));
+     bef=", "; aft=")\n";
+@@ -111,16 +115,16 @@
+ 
+ int adns__vbuf_ensure(vbuf *vb, int want) {
+   void *nb;
+-  
++
+   if (vb->avail >= want) return 1;
+-  nb= realloc(vb->buf,want); if (!nb) return 0;
++  nb= realloc(vb->buf, (size_t) want); if (!nb) return 0;
+   vb->buf= nb;
+   vb->avail= want;
+   return 1;
+ }
+-  
++
+ void adns__vbuf_appendq(vbuf *vb, const byte *data, int len) {
+-  memcpy(vb->buf+vb->used,data,len);
++  memcpy(vb->buf+vb->used,data, (size_t) len);
+   vb->used+= len;
+ }
+ 
+@@ -132,8 +136,8 @@
+   if (vb->avail < newlen) {
+     if (newlen<20) newlen= 20;
+     newlen <<= 1;
+-    nb= realloc(vb->buf,newlen);
+-    if (!nb) { newlen= vb->used+len; nb= realloc(vb->buf,newlen); }
++    nb= realloc(vb->buf,(size_t) newlen);
++    if (!nb) { newlen= vb->used+len; nb= realloc(vb->buf, (size_t) newlen); }
+     if (!nb) return 0;
+     vb->buf= nb;
+     vb->avail= newlen;
+@@ -145,7 +149,7 @@
+ int adns__vbuf_appendstr(vbuf *vb, const char *data) {
+   int l;
+   l= strlen(data);
+-  return adns__vbuf_append(vb,data,l);
++  return adns__vbuf_append(vb,(byte*)data,l);
+ }
+ 
+ void adns__vbuf_free(vbuf *vb) {
+@@ -168,15 +172,15 @@
+     if (!(adns__vbuf_appendstr(vb,"<bad format... ") &&
+ 	  adns__vbuf_appendstr(vb,adns_strerror(st)) &&
+ 	  adns__vbuf_appendstr(vb,">") &&
+-	  adns__vbuf_append(vb,"",1))) {
++	  adns__vbuf_append(vb,(byte*)"",1))) {
+       return "<cannot report bad format... out of memory>";
+     }
+   }
+   if (!vb->used) {
+     adns__vbuf_appendstr(vb,"<truncated ...>");
+-    adns__vbuf_append(vb,"",1);
++    adns__vbuf_append(vb,(byte*)"",1);
+   }
+-  return vb->buf;
++  return (char*)vb->buf;
+ }
+ 
+ adns_status adns_rr_info(adns_rrtype type,
+@@ -195,14 +199,14 @@
+   if (len_r) *len_r= typei->rrsz;
+ 
+   if (!datap) return adns_s_ok;
+-  
++
+   adns__vbuf_init(&vb);
+   st= typei->convstring(&vb,datap);
+   if (st) goto x_freevb;
+-  if (!adns__vbuf_append(&vb,"",1)) { st= adns_s_nomemory; goto x_freevb; }
+-  assert(strlen(vb.buf) == vb.used-1);
+-  *data_r= realloc(vb.buf,vb.used);
+-  if (!*data_r) *data_r= vb.buf;
++  if (!adns__vbuf_append(&vb,(byte*)"",1)) { st= adns_s_nomemory; goto x_freevb; }
++  assert((int)strlen((char*)vb.buf) == vb.used-1);
++  *data_r= realloc(vb.buf, (size_t) vb.used);
++  if (!*data_r) *data_r= (char*)vb.buf;
+   return adns_s_ok;
+ 
+  x_freevb:
+@@ -235,7 +239,7 @@
+   SINFO(  rcodenotimplemented, "Query not implemented by nameserver"           ),
+   SINFO(  rcoderefused,        "Query refused by nameserver"                   ),
+   SINFO(  rcodeunknown,        "Nameserver sent unknown response code"         ),
+-  
++
+   SINFO(  inconsistent,        "Inconsistent resource records in DNS"          ),
+   SINFO(  prohibitedcname,     "DNS alias found where canonical name wanted"   ),
+   SINFO(  answerdomaininvalid, "Found syntactically invalid domain name"       ),
+@@ -300,7 +304,7 @@
+   here= *st;
+   min= (sti==stinfos) ? 0 : sti[-1].stmax+1;
+   max= sti->stmax;
+-  
++
+   return here < min  ? -1 : here > max ? 1 : 0;
+ }
+ 
+@@ -323,16 +327,18 @@
+ 	 place>0 && needswap(context, data + (place-1)*sz, data + i*sz);
+ 	 place--);
+     if (place != i) {
+-      memcpy(tempbuf, data + i*sz, sz);
+-      memmove(data + (place+1)*sz, data + place*sz, (i-place)*sz);
+-      memcpy(data + place*sz, tempbuf, sz);
++      memcpy(tempbuf, data + i*sz, (size_t) sz);
++      memmove(data + (place+1)*sz, data + place*sz, (size_t) (i-place)*sz);
++      memcpy(data + place*sz, tempbuf, (size_t) sz);
+     }
+   }
+ }
+ 
+ /* SIGPIPE protection. */
++/* Not required under Win32 with MSVC */
+ 
+ void adns__sigpipe_protect(adns_state ads) {
++#ifndef ADNS_JGAA_WIN32
+   sigset_t toblock;
+   struct sigaction sa;
+   int r;
+@@ -345,16 +351,19 @@
+   sa.sa_handler= SIG_IGN;
+   sigfillset(&sa.sa_mask);
+   sa.sa_flags= 0;
+-  
++
+   r= sigprocmask(SIG_SETMASK,&toblock,&ads->stdsigmask); assert(!r);
+   r= sigaction(SIGPIPE,&sa,&ads->stdsigpipe); assert(!r);
++#endif
+ }
+ 
+ void adns__sigpipe_unprotect(adns_state ads) {
++#ifndef ADNS_JGAA_WIN32
+   int r;
+ 
+   if (ads->iflags & adns_if_nosigpipe) return;
+ 
+   r= sigaction(SIGPIPE,&ads->stdsigpipe,0); assert(!r);
+   r= sigprocmask(SIG_SETMASK,&ads->stdsigmask,0); assert(!r);
++#endif
+ }
+--- a/src/internal.h
++++ b/src/internal.h
+@@ -31,16 +31,25 @@
+ #define ADNS_INTERNAL_H_INCLUDED
+ 
+ #include "config.h"
++
++#ifndef ADNS_JGAA_WIN32
+ typedef unsigned char byte;
++#endif
++
+ 
+ #include <stdarg.h>
+ #include <assert.h>
+-#include <unistd.h>
++
++#ifndef ADNS_JGAA_WIN32
++# include <unistd.h>
++#endif
+ #include <signal.h>
+ #include <errno.h>
+ #include <string.h>
+ 
+-#include <sys/time.h>
++#ifndef ADNS_JGAA_WIN32
++#  include <sys/time.h>
++#endif
+ 
+ #include "adns.h"
+ #include "dlist.h"
+@@ -158,7 +167,7 @@
+   void *p;
+   void (*fp)(void);
+   union maxalign *up;
+-} data;
++};
+ 
+ typedef struct {
+   void *ext;
+@@ -285,7 +294,8 @@
+   int configerrno;
+   struct query_queue udpw, tcpw, childw, output;
+   adns_query forallnext;
+-  int nextid, udpsocket, tcpsocket;
++  int nextid;
++  ADNS_SOCKET udpsocket, tcpsocket;
+   vbuf tcpsend, tcprecv;
+   int nservers, nsortlist, nsearchlist, searchndots, tcpserver, tcprecv_skip;
+   enum adns__tcpstate {
+@@ -298,8 +308,10 @@
+    * we are idle (ie, tcpw queue is empty), in which case it is the
+    * absolute time when we will close the connection.
+    */
++#ifndef ADNS_JGAA_WIN32
+   struct sigaction stdsigpipe;
+   sigset_t stdsigmask;
++#endif
+   struct pollfd pollfds_buf[MAX_POLLFDS];
+   struct server {
+     struct in_addr addr;
+@@ -312,7 +324,7 @@
+ 
+ /* From setup.c: */
+ 
+-int adns__setnonblock(adns_state ads, int fd); /* => errno value */
++int adns__setnonblock(adns_state ads, ADNS_SOCKET fd); /* => errno value */
+ 
+ /* From general.c: */
+ 
+@@ -567,7 +579,7 @@
+ } parsedomain_flags;
+ 
+ adns_status adns__parse_domain(adns_state ads, int serv, adns_query qu,
+-			       vbuf *vb, parsedomain_flags flags,
++			       vbuf *vb, adns_queryflags flags,
+ 			       const byte *dgram, int dglen, int *cbyte_io, int max);
+ /* vb must already have been initialised; it will be reset if necessary.
+  * If there is truncation, vb->used will be set to 0; otherwise
+--- a/src/parse.c
++++ b/src/parse.c
+@@ -9,28 +9,32 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#endif
++
+ #include "internal.h"
+ 
+ int vbuf__append_quoted1035(vbuf *vb, const byte *buf, int len) {
+   char qbuf[10];
+   int i, ch;
+-  
++
+   while (len) {
+     qbuf[0]= 0;
+     for (i=0; i<len; i++) {
+@@ -43,7 +47,7 @@
+ 	break;
+       }
+     }
+-    if (!adns__vbuf_append(vb,buf,i) || !adns__vbuf_append(vb,qbuf,strlen(qbuf)))
++    if (!adns__vbuf_append(vb,buf,i) || !adns__vbuf_append(vb,(byte*)qbuf,(int)  strlen(qbuf)))
+       return 0;
+     if (i<len) i++;
+     buf+= i;
+@@ -72,7 +76,7 @@
+   int lablen, jumpto;
+   const char *dgram;
+ 
+-  dgram= fls->dgram;
++  dgram= (char*)fls->dgram;
+   for (;;) {
+     if (fls->cbyte >= fls->dglen) goto x_truncated;
+     if (fls->cbyte >= fls->max) goto x_badresponse;
+@@ -105,7 +109,7 @@
+   *lablen_r= -1;
+   return adns_s_ok;
+ 
+- x_badresponse: 
++ x_badresponse:
+   adns__diag(fls->ads,fls->serv,fls->qu,"label in domain runs beyond end of domain");
+   return adns_s_invalidresponse;
+ }
+@@ -114,7 +118,7 @@
+ 			       vbuf *vb, adns_queryflags flags,
+ 			       const byte *dgram, int dglen, int *cbyte_io, int max) {
+   findlabel_state fls;
+-  
++
+   adns__findlabel_start(&fls,ads, serv,qu, dgram,dglen,max, *cbyte_io,cbyte_io);
+   vb->used= 0;
+   return adns__parse_domain_more(&fls,ads,qu, vb,flags,dgram);
+@@ -135,7 +139,7 @@
+     if (first) {
+       first= 0;
+     } else {
+-      if (!adns__vbuf_append(vb,".",1)) return adns_s_nomemory;
++      if (!adns__vbuf_append(vb,(byte*)".",1)) return adns_s_nomemory;
+     }
+     if (flags & pdf_quoteok) {
+       if (!vbuf__append_quoted1035(vb,dgram+labstart,lablen))
+@@ -152,10 +156,10 @@
+ 	return adns_s_nomemory;
+     }
+   }
+-  if (!adns__vbuf_append(vb,"",1)) return adns_s_nomemory;
++  if (!adns__vbuf_append(vb,(byte*)"",1)) return adns_s_nomemory;
+   return adns_s_ok;
+ }
+-	
++
+ adns_status adns__findrr_anychk(adns_query qu, int serv,
+ 				const byte *dgram, int dglen, int *cbyte_io,
+ 				int *type_r, int *class_r, unsigned long *ttl_r,
+@@ -164,7 +168,7 @@
+ 				int *eo_matched_r) {
+   findlabel_state fls, eo_fls;
+   int cbyte;
+-  
++
+   int tmp, rdlen, mismatch;
+   unsigned long ttl;
+   int lablen, labstart, ch;
+@@ -180,7 +184,7 @@
+   } else {
+     mismatch= 1;
+   }
+-  
++
+   for (;;) {
+     st= adns__findlabel_next(&fls,&lablen,&labstart);
+     if (st) return st;
+@@ -199,7 +203,7 @@
+     if (!lablen) break;
+   }
+   if (eo_matched_r) *eo_matched_r= !mismatch;
+-   
++
+   if (cbyte+10>dglen) goto x_truncated;
+   GET_W(cbyte,tmp); *type_r= tmp;
+   GET_W(cbyte,tmp); *class_r= tmp;
+@@ -207,7 +211,7 @@
+   GET_L(cbyte,ttl);
+   if (ttl > MAXTTLBELIEVE) ttl= MAXTTLBELIEVE;
+   *ttl_r= ttl;
+-  
++
+   GET_W(cbyte,rdlen); if (rdlen_r) *rdlen_r= rdlen;
+   if (rdstart_r) *rdstart_r= cbyte;
+   cbyte+= rdlen;
+--- a/src/query.c
++++ b/src/query.c
+@@ -11,29 +11,30 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+-#include "internal.h"
+-
+-#include <stdlib.h>
+-#include <unistd.h>
+-#include <errno.h>
+-
+-#include <sys/time.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <stdlib.h>
++# include <unistd.h>
++# include <errno.h>
++# include <sys/time.h>
++#endif
+ 
+ #include "internal.h"
+ 
+@@ -41,10 +42,10 @@
+ 			      adns_queryflags flags, struct timeval now) {
+   /* Allocate a virgin query and return it. */
+   adns_query qu;
+-  
++
+   qu= malloc(sizeof(*qu));  if (!qu) return 0;
+   qu->answer= malloc(sizeof(*qu->answer));  if (!qu->answer) { free(qu); return 0; }
+-  
++
+   qu->ads= ads;
+   qu->state= query_tosend;
+   qu->back= qu->next= qu->parent= 0;
+@@ -97,13 +98,13 @@
+   qu->vb= *qumsg_vb;
+   adns__vbuf_init(qumsg_vb);
+ 
+-  qu->query_dgram= malloc(qu->vb.used);
++  qu->query_dgram= malloc( (size_t) qu->vb.used);
+   if (!qu->query_dgram) { adns__query_fail(qu,adns_s_nomemory); return; }
+-  
++
+   qu->id= id;
+   qu->query_dglen= qu->vb.used;
+-  memcpy(qu->query_dgram,qu->vb.buf,qu->vb.used);
+-  
++  memcpy(qu->query_dgram,qu->vb.buf,(size_t) qu->vb.used);
++
+   adns__query_send(qu,now);
+ }
+ 
+@@ -117,9 +118,9 @@
+   if (!qu) { adns__vbuf_free(qumsg_vb); return adns_s_nomemory; }
+   *query_r= qu;
+ 
+-  memcpy(&qu->ctx,ctx,sizeof(qu->ctx));
++  memcpy(&qu->ctx,ctx,(size_t) sizeof(qu->ctx));
+   query_submit(ads,qu, typei,qumsg_vb,id,flags,now);
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -150,7 +151,7 @@
+ void adns__search_next(adns_state ads, adns_query qu, struct timeval now) {
+   const char *nextentry;
+   adns_status stat;
+-  
++
+   if (qu->search_doneabs<0) {
+     nextentry= 0;
+     qu->search_doneabs= 1;
+@@ -170,7 +171,7 @@
+ 
+   qu->search_vb.used= qu->search_origlen;
+   if (nextentry) {
+-    if (!adns__vbuf_append(&qu->search_vb,".",1) ||
++    if (!adns__vbuf_append(&qu->search_vb,(byte*)".",1) ||
+ 	!adns__vbuf_appendstr(&qu->search_vb,nextentry)) {
+       stat= adns_s_nomemory; goto x_fail;
+     }
+@@ -179,9 +180,9 @@
+   free(qu->query_dgram);
+   qu->query_dgram= 0; qu->query_dglen= 0;
+ 
+-  query_simple(ads,qu, qu->search_vb.buf, qu->search_vb.used, qu->typei, qu->flags, now);
++  query_simple(ads,qu, (char*)qu->search_vb.buf, qu->search_vb.used, qu->typei, qu->flags, now);
+   return;
+-  
++
+ x_fail:
+   adns__query_fail(qu,stat);
+ }
+@@ -193,9 +194,9 @@
+   ans= qu->answer;
+   assert(!ans->owner);
+ 
+-  ans->owner= adns__alloc_preserved(qu,ol+1);  if (!ans->owner) return 0;
++  ans->owner= adns__alloc_preserved(qu, (size_t) ol+1);  if (!ans->owner) return 0;
+ 
+-  memcpy(ans->owner,owner,ol);
++  memcpy(ans->owner,owner, (size_t) ol);
+   ans->owner[ol]= 0;
+   return 1;
+ }
+@@ -220,7 +221,7 @@
+ 
+   r= gettimeofday(&now,0); if (r) goto x_errno;
+   qu= query_alloc(ads,typei,flags,now); if (!qu) goto x_errno;
+-  
++
+   qu->ctx.ext= context;
+   qu->ctx.callback= 0;
+   memset(&qu->ctx.info,0,sizeof(qu->ctx.info));
+@@ -230,7 +231,7 @@
+   ol= strlen(owner);
+   if (!ol) { stat= adns_s_querydomaininvalid; goto x_adnsfail; }
+   if (ol>DNS_MAXDOMAIN+1) { stat= adns_s_querydomaintoolong; goto x_adnsfail; }
+-				 
++
+   if (ol>=1 && owner[ol-1]=='.' && (ol<2 || owner[ol-2]!='\\')) {
+     flags &= ~adns_qf_search;
+     qu->flags= flags;
+@@ -238,7 +239,7 @@
+   }
+ 
+   if (flags & adns_qf_search) {
+-    r= adns__vbuf_append(&qu->search_vb,owner,ol);
++    r= adns__vbuf_append(&qu->search_vb,(byte*)owner,ol);
+     if (!r) { stat= adns_s_nomemory; goto x_adnsfail; }
+ 
+     for (ndots=0, p=owner; (p= strchr(p,'.')); p++, ndots++);
+@@ -285,8 +286,8 @@
+   iaddr= (const unsigned char*) &(((const struct sockaddr_in*)addr) -> sin_addr);
+ 
+   lreq= strlen(zone) + 4*4 + 1;
+-  if (lreq > sizeof(shortbuf)) {
+-    buf= malloc(strlen(zone) + 4*4 + 1);
++  if (lreq > (int)sizeof(shortbuf)) {
++    buf= malloc( strlen(zone) + 4*4 + 1 );
+     if (!buf) return errno;
+     buf_free= buf;
+   } else {
+@@ -317,7 +318,7 @@
+ 		     adns_answer **answer_r) {
+   adns_query qu;
+   int r;
+-  
++
+   r= adns_submit(ads,owner,type,flags,0,&qu);
+   if (r) return r;
+ 
+@@ -340,7 +341,7 @@
+ 
+ void *adns__alloc_interim(adns_query qu, size_t sz) {
+   void *rv;
+-  
++
+   sz= MEM_ROUND(sz);
+   rv= alloc_common(qu,sz);
+   if (!rv) return 0;
+@@ -350,7 +351,7 @@
+ 
+ void *adns__alloc_preserved(adns_query qu, size_t sz) {
+   void *rv;
+-  
++
+   sz= MEM_ROUND(sz);
+   rv= adns__alloc_interim(qu,sz);
+   if (!rv) return 0;
+@@ -370,7 +371,7 @@
+ 
+   assert(!to->final_allocspace);
+   assert(!from->final_allocspace);
+-  
++
+   LIST_UNLINK(from->allocations,an);
+   LIST_LINK_TAIL(to->allocations,an);
+ 
+@@ -478,17 +479,17 @@
+   qu->final_allocspace= (byte*)ans + MEM_ROUND(sizeof(*ans));
+   adns__makefinal_str(qu,&ans->cname);
+   adns__makefinal_str(qu,&ans->owner);
+-  
++
+   if (ans->nrrs) {
+-    adns__makefinal_block(qu, &ans->rrs.untyped, ans->nrrs*ans->rrsz);
++    adns__makefinal_block(qu, &ans->rrs.untyped, (size_t) ans->nrrs*ans->rrsz);
+ 
+     for (rrn=0; rrn<ans->nrrs; rrn++)
+       qu->typei->makefinal(qu, ans->rrs.bytes + rrn*ans->rrsz);
+   }
+-  
++
+   free_query_allocs(qu);
+   return;
+-  
++
+  x_nomem:
+   qu->preserved_allocd= 0;
+   qu->answer->cname= 0;
+@@ -510,7 +511,7 @@
+ 
+   if (qu->flags & adns_qf_owner && qu->flags & adns_qf_search &&
+       ans->status != adns_s_nomemory) {
+-    if (!save_owner(qu, qu->search_vb.buf, qu->search_vb.used)) {
++    if (!save_owner(qu, (char*)qu->search_vb.buf, qu->search_vb.used)) {
+       adns__query_fail(qu,adns_s_nomemory);
+       return;
+     }
+@@ -556,9 +557,9 @@
+   before= *strp;
+   if (!before) return;
+   l= strlen(before)+1;
+-  after= adns__alloc_final(qu,l);
+-  memcpy(after,before,l);
+-  *strp= after;  
++  after= adns__alloc_final(qu, (size_t) l);
++  memcpy(after,before,(size_t) l);
++  *strp= after;
+ }
+ 
+ void adns__makefinal_block(adns_query qu, void **blpp, size_t sz) {
+@@ -567,6 +568,6 @@
+   before= *blpp;
+   if (!before) return;
+   after= adns__alloc_final(qu,sz);
+-  memcpy(after,before,sz);
++  memcpy(after,before, (size_t) sz);
+   *blpp= after;
+ }
+--- a/src/reply.c
++++ b/src/reply.c
+@@ -9,26 +9,30 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#endif
++
+ #include <stdlib.h>
+ 
+ #include "internal.h"
+-    
++
+ void adns__procdgram(adns_state ads, const byte *dgram, int dglen,
+ 		     int serv, int viatcp, struct timeval now) {
+   int cbyte, rrstart, wantedrrs, rri, foundsoa, foundns, cname_here;
+@@ -45,7 +49,7 @@
+   vbuf tempvb;
+   byte *newquery, *rrsdata;
+   parseinfo pai;
+-  
++
+   if (dglen<DNS_HDRSIZE) {
+     adns__diag(ads,serv,0,"received datagram too short for message header (%d)",dglen);
+     return;
+@@ -68,7 +72,7 @@
+   rcode= (f2&0x0f);
+ 
+   cname_here= 0;
+-  
++
+   if (!flg_qr) {
+     adns__diag(ads,serv,0,"server sent us a query, not a response");
+     return;
+@@ -79,7 +83,7 @@
+   }
+ 
+   qu= 0;
+-  /* See if we can find the relevant query, or leave qu=0 otherwise ... */   
++  /* See if we can find the relevant query, or leave qu=0 otherwise ... */
+ 
+   if (qdcount == 1) {
+     for (qu= viatcp ? ads->tcpw.head : ads->udpw.head; qu; qu= nqu) {
+@@ -88,7 +92,7 @@
+       if (dglen < qu->query_dglen) continue;
+       if (memcmp(qu->query_dgram+DNS_HDRSIZE,
+ 		 dgram+DNS_HDRSIZE,
+-		 qu->query_dglen-DNS_HDRSIZE))
++		 (size_t) qu->query_dglen-DNS_HDRSIZE))
+ 	continue;
+       if (viatcp) {
+ 	assert(qu->state == query_tcpw);
+@@ -104,7 +108,7 @@
+       else LIST_UNLINK(ads->udpw,qu);
+     }
+   }
+-  
++
+   /* If we're going to ignore the packet, we return as soon as we have
+    * failed the query (if any) and printed the warning message (if
+    * any).
+@@ -151,7 +155,7 @@
+   }
+ 
+   /* We're definitely going to do something with this packet and this query now. */
+-  
++
+   anstart= qu->query_dglen;
+   arstart= -1;
+ 
+@@ -202,14 +206,14 @@
+ 			       dgram,dglen, &rdstart,rdstart+rdlength);
+ 	if (!qu->vb.used) goto x_truncated;
+ 	if (st) { adns__query_fail(qu,st); return; }
+-	l= strlen(qu->vb.buf)+1;
+-	qu->answer->cname= adns__alloc_preserved(qu,l);
++	l= strlen((char*)qu->vb.buf)+1;
++	qu->answer->cname= adns__alloc_preserved(qu,(size_t) l);
+ 	if (!qu->answer->cname) { adns__query_fail(qu,adns_s_nomemory); return; }
+ 
+-	qu->cname_dgram= adns__alloc_mine(qu,dglen);
+-	memcpy(qu->cname_dgram,dgram,dglen);
++	qu->cname_dgram= adns__alloc_mine(qu, (size_t) dglen);
++	memcpy(qu->cname_dgram,dgram,(size_t) dglen);
+ 
+-	memcpy(qu->answer->cname,qu->vb.buf,l);
++	memcpy(qu->answer->cname,qu->vb.buf, (size_t) l);
+ 	cname_here= 1;
+ 	adns__update_expires(qu,ttl,now);
+ 	/* If we find the answer section truncated after this point we restart
+@@ -218,7 +222,7 @@
+ 	 * it contains the relevant info.
+ 	 */
+       }
+-    } else if (rrtype == (qu->typei->type & adns__rrt_typemask)) {
++    } else if (rrtype == ((INT)qu->typei->type & (INT)adns__rrt_typemask)) {
+       wantedrrs++;
+     } else {
+       adns__debug(ads,serv,qu,"ignoring answer RR with irrelevant type %d",rrtype);
+@@ -229,7 +233,7 @@
+    * which we could use.
+    */
+   if (flg_tc) goto x_truncated;
+-  
++
+   nsstart= cbyte;
+ 
+   if (!wantedrrs) {
+@@ -252,7 +256,7 @@
+       if (rrtype == adns_r_soa_raw) { foundsoa= 1; soattl= ttl; break; }
+       else if (rrtype == adns_r_ns_raw) { foundns= 1; }
+     }
+-    
++
+     if (rcode == rcode_nxdomain) {
+       /* We still wanted to look for the SOA so we could find the TTL. */
+       adns__update_expires(qu,soattl,now);
+@@ -295,7 +299,7 @@
+ 
+   /* Now, we have some RRs which we wanted. */
+ 
+-  qu->answer->rrs.untyped= adns__alloc_interim(qu,qu->typei->rrsz*wantedrrs);
++  qu->answer->rrs.untyped= adns__alloc_interim(qu,(size_t) qu->typei->rrsz*wantedrrs);
+   if (!qu->answer->rrs.untyped) { adns__query_fail(qu,adns_s_nomemory); return; }
+ 
+   typei= qu->typei;
+@@ -318,7 +322,7 @@
+ 		     &ownermatched);
+     assert(!st); assert(rrtype != -1);
+     if (rrclass != DNS_CLASS_IN ||
+-	rrtype != (qu->typei->type & adns__rrt_typemask) ||
++	rrtype != ((INT)qu->typei->type & (INT)adns__rrt_typemask) ||
+ 	!ownermatched)
+       continue;
+     adns__update_expires(qu,ttl,now);
+@@ -340,29 +344,29 @@
+   return;
+ 
+  x_truncated:
+-  
++
+   if (!flg_tc) {
+     adns__diag(ads,serv,qu,"server sent datagram which points outside itself");
+     adns__query_fail(qu,adns_s_invalidresponse);
+     return;
+   }
+   qu->flags |= adns_qf_usevc;
+-  
++
+  x_restartquery:
+   if (qu->cname_dgram) {
+     st= adns__mkquery_frdgram(qu->ads,&qu->vb,&qu->id,
+ 			      qu->cname_dgram, qu->cname_dglen, qu->cname_begin,
+ 			      qu->typei->type, qu->flags);
+     if (st) { adns__query_fail(qu,st); return; }
+-    
+-    newquery= realloc(qu->query_dgram,qu->vb.used);
++
++    newquery= realloc(qu->query_dgram, (size_t) qu->vb.used);
+     if (!newquery) { adns__query_fail(qu,adns_s_nomemory); return; }
+-    
++
+     qu->query_dgram= newquery;
+     qu->query_dglen= qu->vb.used;
+-    memcpy(newquery,qu->vb.buf,qu->vb.used);
++    memcpy(newquery,qu->vb.buf, (size_t) qu->vb.used);
+   }
+-  
++
+   if (qu->state == query_tcpw) qu->state= query_tosend;
+   qu->retries= 0;
+   adns__reset_preserved(qu);
+--- a/src/setup.c
++++ b/src/setup.c
+@@ -10,32 +10,36 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+-#include <stdlib.h>
+-#include <errno.h>
+-#include <limits.h>
+-#include <unistd.h>
+-#include <fcntl.h>
+-
+-#include <netdb.h>
+-#include <sys/socket.h>
+-#include <netinet/in.h>
+-#include <arpa/inet.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++# include <iphlpapi.h>
++#else
++# include <stdlib.h>
++# include <errno.h>
++# include <limits.h>
++# include <unistd.h>
++# include <fcntl.h>
++# include <netdb.h>
++# include <sys/socket.h>
++# include <netinet/in.h>
++# include <arpa/inet.h>
++#endif
+ 
+ #include "internal.h"
+ 
+@@ -44,14 +48,14 @@
+ static void addserver(adns_state ads, struct in_addr addr) {
+   int i;
+   struct server *ss;
+-  
++
+   for (i=0; i<ads->nservers; i++) {
+     if (ads->servers[i].addr.s_addr == addr.s_addr) {
+       adns__debug(ads,-1,0,"duplicate nameserver %s ignored",inet_ntoa(addr));
+       return;
+     }
+   }
+-  
++
+   if (ads->nservers>=MAXSERVERS) {
+     adns__diag(ads,-1,0,"too many nameservers, ignoring %s",inet_ntoa(addr));
+     return;
+@@ -105,7 +109,7 @@
+ 
+ static void ccf_nameserver(adns_state ads, const char *fn, int lno, const char *buf) {
+   struct in_addr ia;
+-  
++
+   if (!inet_aton(buf,&ia)) {
+     configparseerr(ads,fn,lno,"invalid nameserver address `%s'",buf);
+     return;
+@@ -151,7 +155,7 @@
+   unsigned long initial, baselocal;
+ 
+   if (!buf) return;
+-  
++
+   ads->nsortlist= 0;
+   while (nextword(&buf,&word,&l)) {
+     if (ads->nsortlist >= MAXSORTLIST) {
+@@ -163,11 +167,11 @@
+       configparseerr(ads,fn,lno,"sortlist entry `%.*s' too long",l,word);
+       continue;
+     }
+-    
++
+     memcpy(tbuf,word,l); tbuf[l]= 0;
+     slash= strchr(tbuf,'/');
+     if (slash) *slash++= 0;
+-    
++
+     if (!inet_aton(tbuf,&base)) {
+       configparseerr(ads,fn,lno,"invalid address `%s' in sortlist",tbuf);
+       continue;
+@@ -194,7 +198,7 @@
+       }
+     } else {
+       baselocal= ntohl(base.s_addr);
+-      if (!baselocal & 0x080000000UL) /* class A */
++      if (!(baselocal & 0x080000000UL)) /* class A */
+ 	mask.s_addr= htonl(0x0ff000000UL);
+       else if ((baselocal & 0x0c0000000UL) == 0x080000000UL)
+ 	mask.s_addr= htonl(0x0ffff0000UL); /* class B */
+@@ -295,7 +299,7 @@
+   p= buf;
+   buflen--;
+   i= 0;
+-    
++
+   for (;;) { /* loop over chars */
+     if (i == buflen) {
+       adns__diag(ads,-1,0,"%s:%d: line too long, ignored",filename,lno);
+@@ -346,7 +350,7 @@
+     saveerr(ads,EINVAL);
+     return -2;
+   }
+-    
++
+   memcpy(buf,cp,l);
+   buf[l]= 0;
+   return l;
+@@ -378,7 +382,7 @@
+     while (*q && !ctype_whitespace(*q)) q++;
+     dirl= q-p;
+     for (ccip=configcommandinfos;
+-	 ccip->name && !(strlen(ccip->name)==dirl && !memcmp(ccip->name,p,q-p));
++	 ccip->name && !((int)strlen(ccip->name)==dirl && !memcmp(ccip->name,p,q-p));
+ 	 ccip++);
+     if (!ccip->name) {
+       adns__diag(ads,-1,0,"%s:%d: unknown configuration directive `%.*s'",
+@@ -401,7 +405,7 @@
+ 
+ static void readconfig(adns_state ads, const char *filename, int warnmissing) {
+   getline_ctx gl_ctx;
+-  
++
+   gl_ctx.file= fopen(filename,"r");
+   if (!gl_ctx.file) {
+     if (errno == ENOENT) {
+@@ -416,17 +420,17 @@
+   }
+ 
+   readconfiggeneric(ads,filename,gl_file,gl_ctx);
+-  
++
+   fclose(gl_ctx.file);
+ }
+ 
+ static void readconfigtext(adns_state ads, const char *text, const char *showname) {
+   getline_ctx gl_ctx;
+-  
++
+   gl_ctx.text= text;
+   readconfiggeneric(ads,showname,gl_text,gl_ctx);
+ }
+-  
++
+ static void readconfigenv(adns_state ads, const char *envvar) {
+   const char *filename;
+ 
+@@ -450,18 +454,29 @@
+ }
+ 
+ 
+-int adns__setnonblock(adns_state ads, int fd) {
++int adns__setnonblock(adns_state ads, ADNS_SOCKET fd) {
++#ifdef ADNS_JGAA_WIN32
++   unsigned long Val = 1;
++   return (ioctlsocket (fd, FIONBIO, &Val) == 0) ? 0 : -1;
++#else
+   int r;
+-  
++
+   r= fcntl(fd,F_GETFL,0); if (r<0) return errno;
+   r |= O_NONBLOCK;
+   r= fcntl(fd,F_SETFL,r); if (r<0) return errno;
+   return 0;
++#endif
+ }
+ 
+ static int init_begin(adns_state *ads_r, adns_initflags flags, FILE *diagfile) {
+   adns_state ads;
+-  
++
++#ifdef ADNS_JGAA_WIN32
++  WORD wVersionRequested = MAKEWORD( 2, 0 );
++  WSADATA wsaData;
++  int err;
++#endif
++
+   ads= malloc(sizeof(*ads)); if (!ads) return errno;
+ 
+   ads->iflags= flags;
+@@ -483,35 +498,58 @@
+   timerclear(&ads->tcptimeout);
+   ads->searchlist= 0;
+ 
++ #ifdef ADNS_JGAA_WIN32
++  err= WSAStartup( wVersionRequested, &wsaData );
++  if ( err != 0 ) {
++    if (ads->diagfile && ads->iflags & adns_if_debug)
++      fprintf(ads->diagfile,"adns: WSAStartup() failed. \n");
++    return -1;}
++  if (LOBYTE( wsaData.wVersion ) != 2 ||
++    HIBYTE( wsaData.wVersion ) != 0 ) {
++    if (ads->diagfile && ads->iflags & adns_if_debug)
++      fprintf(ads->diagfile,"adns: Need Winsock 2.0 or better!\n");
++
++    WSACleanup();
++    return -1;}
++
++  /* The WinSock DLL is acceptable. Proceed. */
++#endif
++
+   *ads_r= ads;
++
+   return 0;
+ }
+ 
+ static int init_finish(adns_state ads) {
+-  struct in_addr ia;
+   struct protoent *proto;
+   int r;
+-  
++/* Don't add loopback on ReactOS it slows down queries to non existent server */
++#ifndef __REACTOS__
++  struct in_addr ia;
+   if (!ads->nservers) {
+     if (ads->diagfile && ads->iflags & adns_if_debug)
+       fprintf(ads->diagfile,"adns: no nameservers, using localhost\n");
+     ia.s_addr= htonl(INADDR_LOOPBACK);
+     addserver(ads,ia);
+   }
+-
++#endif
+   proto= getprotobyname("udp"); if (!proto) { r= ENOPROTOOPT; goto x_free; }
++  ADNS_CLEAR_ERRNO;
+   ads->udpsocket= socket(AF_INET,SOCK_DGRAM,proto->p_proto);
++  ADNS_CAPTURE_ERRNO;
+   if (ads->udpsocket<0) { r= errno; goto x_free; }
+ 
+   r= adns__setnonblock(ads,ads->udpsocket);
+   if (r) { r= errno; goto x_closeudp; }
+-  
+   return 0;
+ 
+  x_closeudp:
+-  close(ads->udpsocket);
++  adns_socket_close(ads->udpsocket);
+  x_free:
+   free(ads);
++#ifdef ADNS_JGAA_WIN32
++  WSACleanup();
++#endif /* WIN32 */
+   return r;
+ }
+ 
+@@ -521,23 +559,47 @@
+     free(ads->searchlist);
+   }
+   free(ads);
++#ifdef ADNS_JGAA_WIN32
++  WSACleanup();
++#endif /* WIN32 */
++
+ }
+ 
+ int adns_init(adns_state *ads_r, adns_initflags flags, FILE *diagfile) {
+   adns_state ads;
+   const char *res_options, *adns_res_options;
+   int r;
+-  
++#ifdef ADNS_JGAA_WIN32
++  #define SECURE_PATH_LEN (MAX_PATH - 64)
++  char PathBuf[MAX_PATH];
++#endif
++
+   r= init_begin(&ads, flags, diagfile ? diagfile : stderr);
+   if (r) return r;
+-  
++
+   res_options= instrum_getenv(ads,"RES_OPTIONS");
+   adns_res_options= instrum_getenv(ads,"ADNS_RES_OPTIONS");
+   ccf_options(ads,"RES_OPTIONS",-1,res_options);
+   ccf_options(ads,"ADNS_RES_OPTIONS",-1,adns_res_options);
+ 
++#ifdef ADNS_JGAA_WIN32
++  GetWindowsDirectory(PathBuf, SECURE_PATH_LEN);
++  strcat(PathBuf,"\\resolv.conf");
++  readconfig(ads,PathBuf,1);
++  GetWindowsDirectory(PathBuf, SECURE_PATH_LEN);
++  strcat(PathBuf,"\\resolv-adns.conf");
++  readconfig(ads,PathBuf,0);
++  GetWindowsDirectory(PathBuf, SECURE_PATH_LEN);
++  strcat(PathBuf,"\\System32\\Drivers\\etc\\resolv.conf");
++  readconfig(ads,PathBuf,1);
++  GetWindowsDirectory(PathBuf, SECURE_PATH_LEN);
++  strcat(PathBuf,"\\System32\\Drivers\\etc\\resolv-adns.conf");
++  readconfig(ads,PathBuf,0);
++#else
+   readconfig(ads,"/etc/resolv.conf",1);
+   readconfig(ads,"/etc/resolv-adns.conf",0);
++#endif
++
+   readconfigenv(ads,"RES_CONF");
+   readconfigenv(ads,"ADNS_RES_CONF");
+ 
+@@ -594,12 +656,16 @@
+     else if (ads->output.head) adns_cancel(ads->output.head);
+     else break;
+   }
+-  close(ads->udpsocket);
+-  if (ads->tcpsocket >= 0) close(ads->tcpsocket);
++  adns_socket_close(ads->udpsocket);
++  if (ads->tcpsocket != -1) adns_socket_close(ads->tcpsocket);
+   adns__vbuf_free(&ads->tcpsend);
+   adns__vbuf_free(&ads->tcprecv);
+   freesearchlist(ads);
+   free(ads);
++#ifdef ADNS_JGAA_WIN32
++  WSACleanup();
++#endif /* WIN32 */
++
+ }
+ 
+ void adns_forallqueries_begin(adns_state ads) {
+@@ -610,7 +676,7 @@
+     ads->childw.head ? ads->childw.head :
+     ads->output.head;
+ }
+-  
++
+ adns_query adns_forallqueries_next(adns_state ads, void **context_r) {
+   adns_query qu, nqu;
+ 
+@@ -641,3 +707,14 @@
+   if (context_r) *context_r= qu->ctx.ext;
+   return qu;
+ }
++
++/* ReactOS addition */
++void adns_addserver(adns_state ads, struct in_addr addr) {
++    addserver(ads, addr);
++}
++void adns_ccf_search(adns_state ads, const char *fn, int lno, const char *buf) {
++    ccf_search(ads, fn, lno, buf);
++}
++int adns_numservers(adns_state ads) {
++    return ads->nservers;
++}
+--- a/src/transmit.c
++++ b/src/transmit.c
+@@ -10,26 +10,30 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+ #include <errno.h>
+ 
+-#include <sys/types.h>
+-#include <sys/uio.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <sys/types.h>
++# include <sys/uio.h>
++#endif
+ 
+ #include "internal.h"
+ #include "tvarith.h"
+@@ -42,12 +46,12 @@
+ static adns_status mkquery_header(adns_state ads, vbuf *vb, int *id_r, int qdlen) {
+   int id;
+   byte *rqp;
+-  
++
+   if (!adns__vbuf_ensure(vb,DNS_HDRSIZE+qdlen+4)) return adns_s_nomemory;
+ 
+   vb->used= 0;
+   MKQUERY_START(vb);
+-  
++
+   *id_r= id= (ads->nextid++) & 0x0ffff;
+   MKQUERY_ADDW(id);
+   MKQUERY_ADDB(0x01); /* QR=Q(0), OPCODE=QUERY(0000), !AA, !TC, RD */
+@@ -58,7 +62,7 @@
+   MKQUERY_ADDW(0); /* ARCOUNT=0 */
+ 
+   MKQUERY_STOP(vb);
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -70,7 +74,7 @@
+   MKQUERY_ADDW(DNS_CLASS_IN); /* QCLASS=IN */
+   MKQUERY_STOP(vb);
+   assert(vb->used <= vb->avail);
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -83,7 +87,7 @@
+   adns_status st;
+ 
+   st= mkquery_header(ads,vb,id_r,ol+2); if (st) return st;
+-  
++
+   MKQUERY_START(vb);
+ 
+   p= owner; pe= owner+ol;
+@@ -95,7 +99,8 @@
+ 	if (!(flags & adns_qf_quoteok_query)) return adns_s_querydomaininvalid;
+ 	if (ctype_digit(p[0])) {
+ 	  if (ctype_digit(p[1]) && ctype_digit(p[2])) {
+-	    c= (*p++ - '0')*100 + (*p++ - '0')*10 + (*p++ - '0');
++	    c= (p[0] - '0')*100 + (p[1] - '0')*10 + (p[2] - '0');
++	    p += 3;
+ 	    if (c >= 256) return adns_s_querydomaininvalid;
+ 	  } else {
+ 	    return adns_s_querydomaininvalid;
+@@ -119,14 +124,14 @@
+     nbytes+= ll+1;
+     if (nbytes >= DNS_MAXDOMAIN) return adns_s_querydomaintoolong;
+     MKQUERY_ADDB(ll);
+-    memcpy(rqp,label,ll); rqp+= ll;
++    memcpy(rqp,label,(size_t) ll); rqp+= ll;
+   }
+   MKQUERY_ADDB(0);
+ 
+   MKQUERY_STOP(vb);
+-  
++
+   st= mkquery_footer(vb,typei->type);
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -148,15 +153,15 @@
+     if (!lablen) break;
+     assert(lablen<255);
+     MKQUERY_ADDB(lablen);
+-    memcpy(rqp,qd_dgram+labstart,lablen);
++    memcpy(rqp,qd_dgram+labstart, (size_t) lablen);
+     rqp+= lablen;
+   }
+   MKQUERY_ADDB(0);
+ 
+   MKQUERY_STOP(vb);
+-  
++
+   st= mkquery_footer(vb,type);
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -184,15 +189,18 @@
+   if (ads->tcpsend.used) {
+     wr= 0;
+   } else {
+-    iov[0].iov_base= length;
++    iov[0].iov_base= (char*)length;
+     iov[0].iov_len= 2;
+-    iov[1].iov_base= qu->query_dgram;
++    iov[1].iov_base= (char*)qu->query_dgram;
+     iov[1].iov_len= qu->query_dglen;
+     adns__sigpipe_protect(qu->ads);
++
++    ADNS_CLEAR_ERRNO;
+     wr= writev(qu->ads->tcpsocket,iov,2);
++    ADNS_CAPTURE_ERRNO;
+     adns__sigpipe_unprotect(qu->ads);
+     if (wr < 0) {
+-      if (!(errno == EAGAIN || errno == EINTR || errno == ENOSPC ||
++      if (!(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR || errno == ENOSPC ||
+ 	    errno == ENOBUFS || errno == ENOMEM)) {
+ 	adns__tcp_broken(ads,"write",strerror(errno));
+ 	return;
+@@ -244,12 +252,14 @@
+   servaddr.sin_family= AF_INET;
+   servaddr.sin_addr= ads->servers[serv].addr;
+   servaddr.sin_port= htons(DNS_PORT);
+-  
+-  r= sendto(ads->udpsocket,qu->query_dgram,qu->query_dglen,0,
++
++  ADNS_CLEAR_ERRNO;
++  r= sendto(ads->udpsocket,(char*)qu->query_dgram,qu->query_dglen,0,
+ 	    (const struct sockaddr*)&servaddr,sizeof(servaddr));
++  ADNS_CAPTURE_ERRNO;
+   if (r<0 && errno == EMSGSIZE) { qu->retries= 0; query_usetcp(qu,now); return; }
+-  if (r<0 && errno != EAGAIN) adns__warn(ads,serv,0,"sendto failed: %s",strerror(errno));
+-  
++  if (r<0 && ((errno != EAGAIN) && (errno != EWOULDBLOCK))) adns__warn(ads,serv,0,"sendto failed: %s (%d)",strerror(errno), errno);
++
+   qu->timeout= now;
+   timevaladd(&qu->timeout,UDPRETRYMS);
+   qu->udpsent |= (1<<serv);
+--- a/src/types.c
++++ b/src/types.c
+@@ -9,28 +9,31 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+-#include <stdlib.h>
+-
+-#include <sys/types.h>
+-#include <sys/socket.h>
+-#include <netinet/in.h>
+-#include <arpa/inet.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <stdlib.h>
++# include <sys/types.h>
++# include <sys/socket.h>
++# include <netinet/in.h>
++# include <arpa/inet.h>
++#endif
+ 
+ #include "internal.h"
+ 
+@@ -92,17 +95,17 @@
+   if (cbyte >= max) return adns_s_invaliddata;
+   GET_B(cbyte,l);
+   if (cbyte+l > max) return adns_s_invaliddata;
+-  
+-  str= adns__alloc_interim(pai->qu, l+1);
++
++  str= adns__alloc_interim(pai->qu, (size_t)l+1);
+   if (!str) R_NOMEM;
+-  
++
+   str[l]= 0;
+-  memcpy(str,dgram+cbyte,l);
++  memcpy(str,dgram+cbyte,(size_t)l);
+ 
+   *len_r= l;
+   *str_r= str;
+   *cbyte_io= cbyte+l;
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -126,7 +129,7 @@
+     }
+   }
+   CSP_ADDSTR("\"");
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -199,7 +202,7 @@
+ 
+   te->i= -1;
+   te->str= 0;
+-  
++
+   *rrp= table;
+   return adns_s_ok;
+ }
+@@ -237,7 +240,7 @@
+ 
+ static adns_status pa_inaddr(const parseinfo *pai, int cbyte, int max, void *datap) {
+   struct in_addr *storeto= datap;
+-  
++
+   if (max-cbyte != 4) return adns_s_invaliddata;
+   memcpy(storeto, pai->dgram + cbyte, 4);
+   return adns_s_ok;
+@@ -246,7 +249,7 @@
+ static int search_sortlist(adns_state ads, struct in_addr ad) {
+   const struct sortlist *slp;
+   int i;
+-  
++
+   for (i=0, slp=ads->sortlist;
+        i<ads->nsortlist && !((ad.s_addr & slp->mask.s_addr) == slp->base.s_addr);
+        i++, slp++);
+@@ -255,7 +258,7 @@
+ 
+ static int dip_inaddr(adns_state ads, struct in_addr a, struct in_addr b) {
+   int ai, bi;
+-  
++
+   if (!ads->nsortlist) return 0;
+ 
+   ai= search_sortlist(ads,a);
+@@ -305,7 +308,7 @@
+   const adns_state ads= context;
+ 
+   return di_addr(ads, datap_a, datap_b);
+-}		     
++}
+ 
+ static adns_status csp_addr(vbuf *vb, const adns_rr_addr *rrp) {
+   const char *ia;
+@@ -340,18 +343,18 @@
+ 			      char **domain_r, parsedomain_flags flags) {
+   adns_status st;
+   char *dm;
+-  
++
+   st= adns__parse_domain(pai->qu->ads, pai->serv, pai->qu, &pai->qu->vb, flags,
+ 			 pai->dgram,pai->dglen, cbyte_io, max);
+   if (st) return st;
+   if (!pai->qu->vb.used) return adns_s_invaliddata;
+ 
+-  dm= adns__alloc_interim(pai->qu, pai->qu->vb.used+1);
++  dm= adns__alloc_interim(pai->qu, (size_t) pai->qu->vb.used+1);
+   if (!dm) R_NOMEM;
+ 
+   dm[pai->qu->vb.used]= 0;
+-  memcpy(dm,pai->qu->vb.buf,pai->qu->vb.used);
+-  
++  memcpy(dm,pai->qu->vb.buf, (size_t) pai->qu->vb.used);
++
+   *domain_r= dm;
+   return adns_s_ok;
+ }
+@@ -373,7 +376,7 @@
+ 
+   st= pap_domain(pai, &cbyte, max, rrp, pdf_quoteok);
+   if (st) return st;
+-  
++
+   if (cbyte != max) return adns_s_invaliddata;
+   return adns_s_ok;
+ }
+@@ -389,7 +392,7 @@
+   st= pap_domain(pai, &cbyte, max, rrp,
+ 		 pai->qu->flags & adns_qf_quoteok_anshost ? pdf_quoteok : 0);
+   if (st) return st;
+-  
++
+   if (cbyte != max) return adns_s_invaliddata;
+   return adns_s_ok;
+ }
+@@ -404,7 +407,7 @@
+   int type, class, rdlen, rdstart, ownermatched;
+   unsigned long ttl;
+   adns_status st;
+-  
++
+   for (rri=0, naddrs=-1; rri<count; rri++) {
+     st= adns__findrr_anychk(pai->qu, pai->serv, pai->dgram, pai->dglen, cbyte_io,
+ 			    &type, &class, &ttl, &rdlen, &rdstart,
+@@ -416,7 +419,7 @@
+     if (naddrs == -1) {
+       naddrs= 0;
+     }
+-    if (!adns__vbuf_ensure(&pai->qu->vb, (naddrs+1)*sizeof(adns_rr_addr))) R_NOMEM;
++    if (!adns__vbuf_ensure(&pai->qu->vb, (int) ((naddrs+1)*sizeof(adns_rr_addr)))) R_NOMEM;
+     adns__update_expires(pai->qu,ttl,pai->now);
+     st= pa_addr(pai, rdstart,rdstart+rdlen,
+ 		pai->qu->vb.buf + naddrs*sizeof(adns_rr_addr));
+@@ -492,10 +495,10 @@
+   ctx.ext= 0;
+   ctx.callback= icb_hostaddr;
+   ctx.info.hostaddr= rrp;
+-  
++
+   nflags= adns_qf_quoteok_query;
+   if (!(pai->qu->flags & adns_qf_cname_loose)) nflags |= adns_qf_cname_forbid;
+-  
++
+   st= adns__internal_submit(pai->ads, &nqu, adns__findtype(adns_r_addr),
+ 			    &pai->qu->vb, id, nflags, pai->now, &ctx);
+   if (st) return st;
+@@ -567,8 +570,8 @@
+   CSP_ADDSTR(" ");
+ 
+   errstr= adns_strerror(rrp->astatus);
+-  st= csp_qstring(vb,errstr,strlen(errstr));  if (st) return st;
+-  
++  st= csp_qstring(vb,errstr,(int)strlen(errstr));  if (st) return st;
++
+   if (rrp->naddrs >= 0) {
+     CSP_ADDSTR(" (");
+     for (i=0; i<rrp->naddrs; i++) {
+@@ -604,7 +607,7 @@
+   st= pap_domain(pai, &cbyte, max, &rrp->str,
+ 		 pai->qu->flags & adns_qf_quoteok_anshost ? pdf_quoteok : 0);
+   if (st) return st;
+-  
++
+   if (cbyte != max) return adns_s_invaliddata;
+   return adns_s_ok;
+ }
+@@ -632,7 +635,7 @@
+   rrp->i= pref;
+   st= pap_hostaddr(pai, &cbyte, max, &rrp->ha);
+   if (st) return st;
+-  
++
+   if (cbyte != max) return adns_s_invaliddata;
+   return adns_s_ok;
+ }
+@@ -699,7 +702,7 @@
+   queried= &parent->ctx.info.ptr_parent_addr;
+   for (i=0, found=cans->rrs.addr; i<cans->nrrs; i++, found++) {
+     if (queried->len == found->len &&
+-	!memcmp(&queried->addr,&found->addr,queried->len)) {
++	!memcmp(&queried->addr,&found->addr,(size_t) queried->len)) {
+       if (!parent->children.head) {
+ 	adns__query_done(parent);
+ 	return;
+@@ -715,7 +718,7 @@
+ 
+ static adns_status pa_ptr(const parseinfo *pai, int dmstart, int max, void *datap) {
+   static const char *(expectdomain[])= { DNS_INADDR_ARPA };
+-  
++
+   char **rrp= datap;
+   adns_status st;
+   adns_rr_addr *ap;
+@@ -741,25 +744,25 @@
+     for (i=0; i<4; i++) {
+       st= adns__findlabel_next(&fls,&lablen,&labstart); assert(!st);
+       if (lablen<=0 || lablen>3) return adns_s_querydomainwrong;
+-      memcpy(labbuf, pai->qu->query_dgram + labstart, lablen);  labbuf[lablen]= 0;
+-      ipv[3-i]= strtoul(labbuf,&ep,10);  if (*ep) return adns_s_querydomainwrong;
++      memcpy(labbuf, pai->qu->query_dgram + labstart, (size_t) lablen);  labbuf[lablen]= 0;
++      ipv[3-i]= (unsigned char)strtoul(labbuf,&ep,10);  if (*ep) return adns_s_querydomainwrong;
+       if (lablen>1 && pai->qu->query_dgram[labstart]=='0')
+ 	return adns_s_querydomainwrong;
+     }
+-    for (i=0; i<sizeof(expectdomain)/sizeof(*expectdomain); i++) {
++    for (i=0; i<(int)sizeof(expectdomain)/(int)sizeof(*expectdomain); i++) {
+       st= adns__findlabel_next(&fls,&lablen,&labstart); assert(!st);
+       l= strlen(expectdomain[i]);
+-      if (lablen != l || memcmp(pai->qu->query_dgram + labstart, expectdomain[i], l))
++      if (lablen != l || memcmp(pai->qu->query_dgram + labstart, expectdomain[i], (size_t)l))
+ 	return adns_s_querydomainwrong;
+     }
+     st= adns__findlabel_next(&fls,&lablen,0); assert(!st);
+     if (lablen) return adns_s_querydomainwrong;
+-    
++
+     ap->len= sizeof(struct sockaddr_in);
+     memset(&ap->addr,0,sizeof(ap->addr.inet));
+     ap->addr.inet.sin_family= AF_INET;
+     ap->addr.inet.sin_addr.s_addr=
+-      htonl((ipv[0]<<24) | (ipv[1]<<16) | (ipv[2]<<8) | (ipv[3]));
++      htonl((u_long)(ipv[0]<<24) | (ipv[1]<<16) | (ipv[2]<<8) | (ipv[3]));
+   }
+ 
+   st= adns__mkquery_frdgram(pai->ads, &pai->qu->vb, &id,
+@@ -769,7 +772,7 @@
+ 
+   ctx.ext= 0;
+   ctx.callback= icb_ptr;
+-  memset(&ctx.info,0,sizeof(ctx.info));
++  memset(&ctx.info,0,(size_t) sizeof(ctx.info));
+   st= adns__internal_submit(pai->ads, &nqu, adns__findtype(adns_r_addr),
+ 			    &pai->qu->vb, id,
+ 			    adns_qf_quoteok_query, pai->now, &ctx);
+@@ -817,7 +820,7 @@
+   }
+ 
+   if (cbyte != max) return adns_s_invaliddata;
+-  
++
+   return adns_s_ok;
+ }
+ 
+@@ -857,13 +860,13 @@
+ 
+   if (needquote || neednorm) {
+     r= adns__vbuf_ensure(vb, lablen+needquote+4); if (!r) R_NOMEM;
+-    adns__vbuf_appendq(vb,"\"",1);
++    adns__vbuf_appendq(vb,(byte*)"\"",1);
+     for (i=0, needquote=0, p= pai->dgram+labstart; i<lablen; i++, p++) {
+       c= *p;
+-      if (c == '"' || c=='\\') adns__vbuf_appendq(vb,"\\",1);
++      if (c == '"' || c=='\\') adns__vbuf_appendq(vb,(byte*)"\\",1);
+       adns__vbuf_appendq(vb,p,1);
+     }
+-    adns__vbuf_appendq(vb,"\"",1);
++    adns__vbuf_appendq(vb,(byte*)"\"",1);
+   } else {
+     r= adns__vbuf_append(vb, pai->dgram+labstart, lablen); if (!r) R_NOMEM;
+   }
+@@ -874,8 +877,8 @@
+   if (st) return st;
+ 
+  x_ok:
+-  str= adns__alloc_interim(pai->qu, vb->used+1); if (!str) R_NOMEM;
+-  memcpy(str,vb->buf,vb->used);
++  str= adns__alloc_interim(pai->qu, (size_t) vb->used+1); if (!str) R_NOMEM;
++  memcpy(str,vb->buf,(size_t) vb->used);
+   str[vb->used]= 0;
+   *mb_r= str;
+   return adns_s_ok;
+@@ -921,7 +924,7 @@
+   st= csp_domain(vb,rrp->array[1]);  if (st) return st;
+ 
+   return adns_s_ok;
+-}  
++}
+ 
+ /*
+  * _soa   (pa,mf,cs)
+@@ -941,7 +944,7 @@
+   if (st) return st;
+ 
+   if (cbyte+20 != max) return adns_s_invaliddata;
+-  
++
+   for (i=0; i<5; i++) {
+     GET_W(cbyte,msw);
+     GET_W(cbyte,lsw);
+@@ -963,7 +966,7 @@
+   char buf[20];
+   int i;
+   adns_status st;
+-  
++
+   st= csp_domain(vb,rrp->mname);  if (st) return st;
+   CSP_ADDSTR(" ");
+   st= csp_mailbox(vb,rrp->rname);  if (st) return st;
+@@ -999,7 +1002,7 @@
+ static const typeinfo typeinfos[] = {
+ /* Must be in ascending order of rrtype ! */
+ /* mem-mgmt code  rrt     fmt     member      parser      comparer    printer       */
+-  		    		     		 	     		 	       
++
+ FLAT_TYPE(a,      "A",     0,     inaddr,     pa_inaddr,  di_inaddr,  cs_inaddr     ),
+ DEEP_TYPE(ns_raw, "NS",   "raw",  str,        pa_host_raw,0,          cs_domain     ),
+ DEEP_TYPE(cname,  "CNAME", 0,     str,        pa_dom_raw, 0,          cs_domain     ),
+@@ -1009,12 +1012,12 @@
+ DEEP_TYPE(mx_raw, "MX",   "raw",  intstr,     pa_mx_raw,  di_mx_raw,  cs_inthost    ),
+ DEEP_TYPE(txt,    "TXT",   0,     manyistr,   pa_txt,     0,          cs_txt        ),
+ DEEP_TYPE(rp_raw, "RP",   "raw",  strpair,    pa_rp,      0,          cs_rp         ),
+- 		     	                                     		   	       
++
+ FLAT_TYPE(addr,   "A",  "addr",   addr,       pa_addr,    di_addr,    cs_addr       ),
+ DEEP_TYPE(ns,     "NS", "+addr",  hostaddr,   pa_hostaddr,di_hostaddr,cs_hostaddr   ),
+ DEEP_TYPE(ptr,    "PTR","checked",str,        pa_ptr,     0,          cs_domain     ),
+ DEEP_TYPE(mx,     "MX", "+addr",  inthostaddr,pa_mx,      di_mx,      cs_inthostaddr),
+- 		     	                                     		      
++
+ DEEP_TYPE(soa,    "SOA","822",    soa,        pa_soa,     0,          cs_soa        ),
+ DEEP_TYPE(rp,     "RP", "822",    strpair,    pa_rp,      0,          cs_rp         ),
+ };
+--- a/client/adh-main.c
++++ b/client/adh-main.c
+@@ -10,22 +10,27 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++# include <io.h>
++#endif
++
+ #include "adnshost.h"
+ 
+ int rcode;
+@@ -69,7 +74,7 @@
+ 
+ char *xstrsave(const char *str) {
+   char *p;
+-  
++
+   p= xmalloc(strlen(str)+1);
+   strcpy(p,str);
+   return p;
+@@ -91,12 +96,12 @@
+     { adns_r_mx,     "mx"     },
+     { adns_r_rp,     "rp"     },
+     { adns_r_addr,   "addr"   },
+-    
++
+     /* types with only one version */
+     { adns_r_cname,  "cname"  },
+     { adns_r_hinfo,  "hinfo"  },
+     { adns_r_txt,    "txt"    },
+-    
++
+     /* raw versions */
+     { adns_r_a,        "a"    },
+     { adns_r_ns_raw,   "ns-"  },
+@@ -177,7 +182,7 @@
+     query_do(arg);
+   }
+ }
+-    
++
+ static void read_stdin(void) {
+   int anydone, r;
+   char *newline, *space;
+@@ -224,18 +229,18 @@
+   int r, maxfd;
+   fd_set readfds, writefds, exceptfds;
+   const char *arg;
+-  
++
++  ensure_adns_init();
++
+   while ((arg= *++argv)) process_optarg(arg,&argv,0);
+ 
+   if (!ov_pipe && !ads) usageerr("no domains given, and -f/--pipe not used; try --help");
+ 
+-  ensure_adns_init();
+-
+   for (;;) {
+     for (;;) {
+       qu= ov_asynch ? 0 : outstanding.head ? outstanding.head->qu : 0;
+       r= adns_check(ads,&qu,&answer,&qun_v);
+-      if (r == EAGAIN) break;
++      if ((r == EAGAIN) || (r == EWOULDBLOCK)) break;
+       if (r == ESRCH) { if (!ov_pipe) goto x_quit; else break; }
+       assert(!r);
+       query_done(qun_v,answer);
+@@ -250,7 +255,9 @@
+     }
+     tv= 0;
+     adns_beforeselect(ads, &maxfd, &readfds,&writefds,&exceptfds, &tv,&tvbuf,0);
++	ADNS_CLEAR_ERRNO;
+     r= select(maxfd, &readfds,&writefds,&exceptfds, tv);
++	ADNS_CAPTURE_ERRNO;
+     if (r == -1) {
+       if (errno == EINTR) continue;
+       sysfail("select",errno);
+--- a/client/adh-opts.c
++++ b/client/adh-opts.c
+@@ -10,22 +10,26 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#endif
++
+ #include "adnshost.h"
+ 
+ int ov_env=1, ov_pipe=0, ov_asynch=0;
+@@ -44,7 +48,7 @@
+     "f", "pipe",           &ov_pipe, 1 },
+   { ot_flag,             "Allow answers to be reordered",
+     "a", "asynch",         &ov_asynch, 1 },
+-  
++
+   { ot_desconly, "answer/error output format and destination (see below):" },
+   { ot_value,            "Answers to stdout, errors as messages to stderr (default)",
+     "Fs", "fmt-simple",    &ov_format, fmt_simple },
+@@ -52,7 +56,7 @@
+     "Fi", "fmt-inline",    &ov_format, fmt_inline },
+   { ot_value,            "Fully-parseable output format (default for --asynch)",
+     "Fa", "fmt-asynch",    &ov_format, fmt_asynch },
+-  		         
++
+   { ot_desconly, "global verbosity level:" },
+   { ot_value,            "Do not print anything to stderr",
+     "Vq", "quiet",         &ov_verbose, adns_if_noerrprint },
+@@ -60,7 +64,7 @@
+     "Vn", "no-quiet",      &ov_verbose, 0 },
+   { ot_value,            "Debugging mode",
+     "Vd", "debug",         &ov_verbose, adns_if_debug },
+-  		         
++
+   { ot_desconly, "other global options:" },
+   { ot_funcarg,          "Configuration to use instead of /etc/resolv.conf",
+     0, "config",           0,0, of_config, "<config-text>" },
+@@ -98,7 +102,7 @@
+     "Dt", "show-type",    &ov_pqfr.show_type, 0 },
+   { ot_flag,             "Do not display CNAME target in output",
+     "Dc", "show-cname",    &ov_pqfr.show_cname, 0 },
+-  
++
+   { ot_desconly, "per-query TTL mode (NB TTL is minimum across all info in reply):" },
+   { ot_value,            "Show the TTL as a TTL",
+     "Tt", "ttl-ttl",       &ov_pqfr.ttl, tm_rel },
+@@ -106,7 +110,7 @@
+     "Ta", "ttl-abs",       &ov_pqfr.ttl, tm_abs },
+   { ot_value,            "Do not show the TTL (default)",
+     "Tn", "no-ttl",        &ov_pqfr.ttl, tm_none },
+-  
++
+   { ot_desconly, "per-query CNAME handling mode:" },
+   { ot_value,            "Call it an error if a CNAME is found",
+     "Cf", "cname-reject",  &ov_cname, adns_qf_cname_forbid },
+@@ -114,7 +118,7 @@
+     "Cl", "cname-loose",   &ov_cname, adns_qf_cname_loose },
+   { ot_value,            "CNAME ok for query domain, but not in RRs (default)",
+     "Cs", "cname-ok",      &ov_cname, 0 },
+-  
++
+   { ot_desconly, "asynchronous/pipe mode options:" },
+   { ot_funcarg,          "Set <id>, default is decimal sequence starting 0",
+     0, "asynch-id",        0,0, &of_asynch_id, "id" },
+@@ -133,7 +137,7 @@
+   int maxsopt, maxlopt, l;
+ 
+   maxsopt= maxlopt= 0;
+-  
++
+   for (oiap=all_optiontables; *oiap; oiap++) {
+     for (oip=*oiap; oip->type != ot_end; oip++) {
+       if (oip->type == ot_funcarg) continue;
+@@ -145,7 +149,7 @@
+       }
+     }
+   }
+-	
++
+   fputs("usage: adnshost [global-opts] [query-opts] query-domain\n"
+ 	"                             [[query-opts] query-domain ...]\n"
+ 	"       adnshost [global-opts] [query-opts] -f|--pipe\n",
+@@ -219,7 +223,7 @@
+   printf("\nEscaping domains which might start with `-':\n"
+ 	 " - %-*s Next argument is a domain, but more options may follow\n",
+ 	 maxlopt+maxsopt+3, "<domain>");
+-  
++
+   fputs("\n"
+ 	"Query domains should always be quoted according to master file format.\n"
+ 	"\n"
+--- a/client/adh-query.c
++++ b/client/adh-query.c
+@@ -10,22 +10,26 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#endif
++
+ #include "adnshost.h"
+ 
+ adns_state ads;
+@@ -36,10 +40,12 @@
+ void ensure_adns_init(void) {
+   adns_initflags initflags;
+   int r;
+-  
++
+   if (ads) return;
+ 
++#ifdef SIGPIPE
+   if (signal(SIGPIPE,SIG_IGN) == SIG_ERR) sysfail("ignore SIGPIPE",errno);
++#endif
+ 
+   initflags= adns_if_noautosys|adns_if_nosigpipe|ov_verbose;
+   if (!ov_env) initflags |= adns_if_noenv;
+@@ -58,10 +64,10 @@
+ static void prep_query(struct query_node **qun_r, int *quflags_r) {
+   struct query_node *qun;
+   char idbuf[20];
+-  
++
+   if (ov_pipe && !ads) usageerr("-f/--pipe not consistent with domains on command line");
+   ensure_adns_init();
+-  
++
+   qun= malloc(sizeof(*qun));
+   qun->pqfr= ov_pqfr;
+   if (ov_id) {
+@@ -80,10 +86,10 @@
+     (ov_qc_anshost ? adns_qf_quoteok_anshost : 0) |
+     (ov_qc_cname ? 0 : adns_qf_quoteok_cname) |
+     ov_cname,
+-    
++
+   *qun_r= qun;
+ }
+-  
++
+ void of_ptr(const struct optioninfo *oi, const char *arg, const char *arg2) {
+   struct query_node *qun;
+   int quflags, r;
+@@ -159,7 +165,7 @@
+ static void print_ttl(struct query_node *qun, adns_answer *answer) {
+   unsigned long ttl;
+   time_t now;
+-  
++
+   switch (qun->pqfr.ttl) {
+   case tm_none:
+     return;
+@@ -222,7 +228,7 @@
+   int r;
+   const char *typename, *statusstring;
+   adns_status ist;
+-  
++
+   if (ov_format == fmt_inline) {
+     if (fputs("; failed ",stdout) == EOF) outerr();
+     print_status(st,qun,answer);
+@@ -243,7 +249,7 @@
+   }
+   if (r == EOF) sysfail("write error message to stderr",errno);
+ }
+-    
++
+ void query_done(struct query_node *qun, adns_answer *answer) {
+   adns_status st, ist;
+   int rrn, nrrs;
+--- a/client/adnshost.h
++++ b/client/adnshost.h
+@@ -9,20 +9,20 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+ #ifndef ADNSHOST_H_INCLUDED
+@@ -38,10 +38,12 @@
+ #include <assert.h>
+ #include <time.h>
+ 
+-#include <sys/types.h>
+-#include <sys/socket.h>
+-#include <netinet/in.h>
+-#include <arpa/inet.h>
++#ifndef ADNS_JGAA_WIN32
++# include <sys/types.h>
++# include <sys/socket.h>
++# include <netinet/in.h>
++# include <arpa/inet.h>
++#endif
+ 
+ #include "config.h"
+ #include "adns.h"
+--- a/client/adnslogres.c
++++ b/client/adnslogres.c
+@@ -10,17 +10,17 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+  *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+@@ -30,19 +30,20 @@
+  *  subsequently.
+  */
+ 
+-static const char * const cvsid =
+-	"$Id: adnslogres.c,v 1.20 2000/09/17 14:09:02 ian Exp $";
+-
+-#include <sys/types.h>
+-#include <sys/time.h>
+-
+-#include <unistd.h>
+-#include <string.h>
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include <ctype.h>
+-#include <errno.h>
+-#include <stdarg.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++# include "getopt.h"
++#else
++# include <sys/types.h>
++# include <sys/time.h>
++# include <unistd.h>
++# include <string.h>
++# include <stdlib.h>
++# include <stdio.h>
++# include <ctype.h>
++# include <errno.h>
++# include <stdarg.h>
++#endif
+ 
+ #include "config.h"
+ #include "adns.h"
+@@ -61,7 +62,10 @@
+ 
+ /* option flags */
+ #define OPT_DEBUG 1
+-#define OPT_POLL 2
++
++#ifdef HAVE_POLL
++# define OPT_POLL 2
++#endif
+ 
+ static const char *const progname= "adnslogres";
+ static const char *config_text;
+@@ -163,7 +167,7 @@
+     aargh("fgets");
+   return NULL;
+ }
+-	
++
+ static void proclog(FILE *inf, FILE *outf, int maxpending, int opts) {
+   int eof, err, len;
+   adns_state adns;
+@@ -186,14 +190,16 @@
+ 	msg("%d in queue; checking %.*s", len,
+ 	    head->rest-head->addr, guard_null(head->addr));
+       if (eof || len >= maxpending) {
++#ifdef HAVE_POLL
+ 	if (opts & OPT_POLL)
+ 	  err= adns_wait_poll(adns, &head->query, &answer, NULL);
+ 	else
++#endif
+ 	  err= adns_wait(adns, &head->query, &answer, NULL);
+       } else {
+ 	err= adns_check(adns, &head->query, &answer, NULL);
+       }
+-      if (err == EAGAIN) break;
++      if ((err == EAGAIN) || (EWOULDBLOCK == err)) break;
+       if (err) {
+ 	fprintf(stderr, "%s: adns_wait/check: %s", progname, strerror(err));
+ 	exit(1);
+@@ -223,7 +229,9 @@
+   fputs("usage: adnslogres [<options>] [<logfile>]\n"
+ 	"       adnslogres --version|--help\n"
+ 	"options: -c <concurrency>  set max number of outstanding queries\n"
++#ifdef HAVE_POLL
+ 	"         -p                use poll(2) instead of select(2)\n"
++#endif
+ 	"         -d                turn on debugging\n"
+ 	"         -C <config>       use instead of contents of resolv.conf\n",
+ 	stdout);
+@@ -268,9 +276,11 @@
+     case 'd':
+       opts|= OPT_DEBUG;
+       break;
++#ifdef HAVE_POLL
+     case 'p':
+       opts|= OPT_POLL;
+       break;
++#endif
+     default:
+       usage();
+     }
+--- a/client/adnsresfilter.c
++++ b/client/adnsresfilter.c
+@@ -9,20 +9,20 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+ #include <stdio.h>
+@@ -86,7 +86,7 @@
+ static int nonblock(int fd, int isnonblock) {
+   int r;
+ 
+-  r= fcntl(fd,F_GETFL); 
++  r= fcntl(fd,F_GETFL);
+   if (r==-1) return -1;
+   r= fcntl(fd,F_SETFL, isnonblock ? r|O_NONBLOCK : r&~O_NONBLOCK);
+   if (r==-1) return -1;
+@@ -215,10 +215,10 @@
+ 
+ static void queueoutchar(int c) {
+   struct outqueuenode *entry;
+-  
++
+   entry= outqueue.tail;
+   if (!entry || entry->addr || entry->textlen >= peroutqueuenode) {
+-    peroutqueuenode= !peroutqueuenode || !entry || entry->addr ? 128 : 
++    peroutqueuenode= !peroutqueuenode || !entry || entry->addr ? 128 :
+       peroutqueuenode >= 1024 ? 4096 : peroutqueuenode<<2;
+     entry= xmalloc(sizeof(*entry));
+     entry->buffer= xmalloc(peroutqueuenode);
+@@ -310,7 +310,7 @@
+   void **searchfound;
+   struct outqueuenode *entry;
+   int r;
+-  
++
+   if (!newthing) {
+     newthing= xmalloc(sizeof(struct treething));
+     newthing->qu= 0;
+@@ -427,7 +427,7 @@
+ 	continue;
+       }
+       if (entry->addr->ans) {
+-	if (entry->addr->ans->nrrs) 
++	if (entry->addr->ans->nrrs)
+ 	  replacetextwithname(entry);
+ 	entry->addr= 0;
+ 	continue;
+@@ -450,8 +450,10 @@
+     }
+     if (outblocked) FD_SET(1,&writefds);
+     if (!inputeof && outqueuelen<1024) FD_SET(0,&readfds);
+-    
++
++	ADNS_CLEAR_ERRNO;
+     r= select(maxfd,&readfds,&writefds,&exceptfds,tv);
++	ADNS_CAPTURE_ERRNO;
+     if (r < 0) { if (r == EINTR) continue; else sysfail("select"); }
+ 
+     r= gettimeofday(&now,0);  if (r) sysfail("gettimeofday");
+--- a/client/adnstest.c
++++ b/client/adnstest.c
+@@ -9,29 +9,33 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+- *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
++ *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+  */
+ 
+-#include <stdio.h>
+-#include <sys/time.h>
+-#include <unistd.h>
+-#include <assert.h>
+-#include <stdlib.h>
+-#include <string.h>
+-#include <errno.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <stdio.h>
++# include <sys/time.h>
++# include <unistd.h>
++# include <assert.h>
++# include <stdlib.h>
++# include <string.h>
++# include <errno.h>
++#endif
+ 
+ #include "config.h"
+ #include "adns.h"
+@@ -45,7 +49,7 @@
+   int doneyet, found;
+   const char *fdom;
+ };
+-  
++
+ static struct myctx *mcs;
+ static adns_state ads;
+ static adns_rrtype *types_a;
+@@ -55,7 +59,7 @@
+   free(mcs);
+   free(types_a);
+   if (ads) adns_finish(ads);
+-  
++
+   exit(rc);
+ }
+ 
+@@ -64,6 +68,7 @@
+ int poll(struct pollfd *ufds, int nfds, int timeout) {
+   fputs("poll(2) not supported on this system\n",stderr);
+   quitnow(5);
++  return -1; /* compiler food */
+ }
+ #define adns_beforepoll(a,b,c,d,e) 0
+ #define adns_afterpoll(a,b,c,d) 0
+@@ -111,12 +116,12 @@
+   adns_r_mx_raw,
+   adns_r_txt,
+   adns_r_rp_raw,
+-  
++
+   adns_r_addr,
+   adns_r_ns,
+   adns_r_ptr,
+   adns_r_mx,
+-  
++
+   adns_r_soa,
+   adns_r_rp,
+ 
+@@ -190,7 +195,7 @@
+   } else {
+     usageerr("bad <initflagsnum>[,<owninitflags>]");
+   }
+-  
++
+   if (argv[0] && argv[1] && argv[1][0] == ':') {
+     for (cp= argv[1]+1, tc=1; (ch= *cp); cp++)
+       if (ch==',') tc++;
+@@ -210,7 +215,7 @@
+     types_a= 0;
+     types= defaulttypes;
+   }
+-  
++
+   if (!(argv[0] && argv[1])) usageerr("no query domains supplied");
+   fdomlist= (const char *const*)argv+1;
+ 
+@@ -220,7 +225,7 @@
+   if (!mcs) { perror("malloc mcs"); quitnow(3); }
+ 
+   setvbuf(stdout,0,_IOLBF,0);
+-  
++
+   if (initstring) {
+     r= adns_init_strcfg(&ads,
+ 			(adns_if_debug|adns_if_noautosys|adns_if_checkc_freq)
+@@ -292,22 +297,25 @@
+       mc= 0;
+     }
+ 
+-    if (strchr(owninitflags,'p')) {
+-      r= adns_wait_poll(ads,&qu,&ans,&mcr);
+-    } else {
++#ifdef HAVE_POLL
++	if (strchr(owninitflags,'p')) {
++		r= adns_wait_poll(ads,&qu,&ans,&mcr);
++    } else
++#endif
++	{
+       r= adns_wait(ads,&qu,&ans,&mcr);
+     }
+     if (r) failure_errno("wait/check",r);
+-    
++
+     if (mc) assert(mcr==mc);
+     else mc= mcr;
+     assert(qu==mc->qu);
+     assert(!mc->doneyet);
+-    
++
+     fdom_split(mc->fdom,&domain,&qflags,ownflags,sizeof(ownflags));
+ 
+     if (gettimeofday(&now,0)) { perror("gettimeofday"); quitnow(3); }
+-      
++
+     ri= adns_rr_info(ans->type, &rrtn,&fmtn,&len, 0,0);
+     fprintf(stdout, "%s flags %d type ",domain,qflags);
+     dumptype(ri,rrtn,fmtn);
+--- a/client/fanftest.c
++++ b/client/fanftest.c
+@@ -10,17 +10,17 @@
+  *  It is part of adns, which is
+  *    Copyright (C) 1997-2000 Ian Jackson <ian@davenant.greenend.org.uk>
+  *    Copyright (C) 1999-2000 Tony Finch <dot@dotat.at>
+- *  
++ *
+  *  This program is free software; you can redistribute it and/or modify
+  *  it under the terms of the GNU General Public License as published by
+  *  the Free Software Foundation; either version 2, or (at your option)
+  *  any later version.
+- *  
++ *
+  *  This program is distributed in the hope that it will be useful,
+  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  *  GNU General Public License for more details.
+- *  
++ *
+  *  You should have received a copy of the GNU General Public License
+  *  along with this program; if not, write to the Free Software Foundation,
+  *  Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+@@ -29,16 +29,16 @@
+  * modified by Ian Jackson as it was incorporated into adns.
+  */
+ 
+-static const char * const cvsid =
+-	"$Id: fanftest.c,v 1.5 2000/09/17 00:24:24 ian Exp $";
+-
+-#include <sys/types.h>
+-#include <sys/time.h>
+-
+-#include <string.h>
+-#include <stdlib.h>
+-#include <stdio.h>
+-#include <errno.h>
++#ifdef ADNS_JGAA_WIN32
++# include "adns_win32.h"
++#else
++# include <sys/types.h>
++# include <sys/time.h>
++# include <string.h>
++# include <stdlib.h>
++# include <stdio.h>
++# include <errno.h>
++#endif
+ 
+ #include "config.h"
+ #include "adns.h"

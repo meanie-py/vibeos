@@ -1,0 +1,43 @@
+# ucrtdiff — Tier 2 ucrt difftest payload.
+#
+# Grades our shipping ucrtbase.dll against the genuine Microsoft UCRT C, IN THE
+# GUEST, where both sides are Windows and `long` is 32 bits on every arch. The
+# host tier (sdk/lib/rust/ucrt-difftest) cannot reach these families at all: it
+# runs on Linux, where `long` is 64 bits, which silently mis-grades ~188 public
+# declarations including the whole strtol/atol family.
+#
+# The exe links two implementations of the same exports -- libucrt_ref.a
+# (Microsoft's objects, exports renamed ref_* by tools/ucrt_tier2_refset.py)
+# and the ucrtbase import lib -- so `ref_strtol` is Microsoft's body and
+# `strtol` is whatever we ship. Design:
+# docs/engineering/active-lanes/ucrt-tier2-difftest-design.md.
+#
+# GUI subsystem and a direct ucrtbase.dll import are both enforced by build.sh:
+# a console exe launched from explorer's startup walk gets no CSRSS console and
+# dies silently, and linking the api-ms-win-crt-* sets instead of ucrtbase.dll
+# would make the bare side stop being OUR DLL -- the harness would then grade
+# Microsoft's C against Microsoft's C and pass vacuously.
+name: ucrtdiff
+description: Tier 2 ucrt difftest — shipping ucrtbase.dll vs the genuine Microsoft C, in-guest
+
+build_hint: "tools/payloads/ucrtdiff/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/ucrtdiff/ucrtdiff-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/ucrtdiff.exe
+
+test:
+  # The drain is a READ-ITERATION count, not seconds (see procstorm's note), and
+  # the loop returns immediately whenever bytes are already waiting -- so a CHATTY
+  # payload burns iterations fast. This one emits a progress line per export plus a
+  # line per failing row, and 224 exports swept over the full corpora is a lot of
+  # both, so 3000 was plainly too low. NOTE it is NOT established that this is what
+  # ends the run: raising it to 60000 did not move the stopping point, which is still
+  # export 39. What IS established is that the harness no longer CRASHES there -- when
+  # a body really dies the system keeps logging after it (17 further lines), and since
+  # the thread-state fix the serial log instead ENDS at the last [UCRTDIFF] line (1),
+  # which is the signature of the boot being cut off rather than the payload faulting.
+  # The remaining suspect is total runtime against the VM lifetime, not this counter.
+  launch_marker: "[UCRTDIFF] done"
+  launch_drain_secs: 60000

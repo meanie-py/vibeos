@@ -210,10 +210,29 @@ def test_every_modelled_target_has_a_real_object_directory():
     builds = [b for b in builds if (b / _BUILD_STAMP).is_file()]
     if not builds:
         pytest.skip("no finished build dir in this worktree")
-    for build in builds:
-        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items():
-            d = build / obj_dir
-            assert d.is_dir(), f"{build.name}: {target} object dir does not exist at {d}"
+    # Report EVERY missing pair, not the first. A bare `assert` inside the nested loop
+    # fails on one (arch, target) at a time, so a model change that predates all three
+    # build dirs is discovered three times: research rebuilt i386, hit amd64, rebuilt
+    # that, hit arm64 -- three warm rebuilds and three queue round trips for one cause.
+    # `wine` entering OURS_ON_LINK_LINE in c474d932eb7 did exactly that.
+    missing = [
+        (build.name, target, build / obj_dir)
+        for build in builds
+        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items()
+        if not (build / obj_dir).is_dir()
+    ]
+    if missing:
+        arches = sorted({name.removeprefix("build-") for name, _, _ in missing})
+        raise AssertionError(
+            "modelled target(s) have no object directory:\n  "
+            + "\n  ".join(f"{name}: {target} -> {path}" for name, target, path in missing)
+            + "\n\nA COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT "
+            "EVERYTHING: a build dir predating a new entry in OURS_ON_LINK_LINE is stamped "
+            "and still lacks it. If this names a target that was recently added to the "
+            "model, the tree is stale rather than the model wrong.\n"
+            + "fix: "
+            + " && ".join(f"./vibeos-cli build --arch {a}" for a in arches)
+        )
 
 
 # ── the REACHABILITY check ──────────────────────────────────────────────────────────────
@@ -460,3 +479,84 @@ def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
     text = stubs.read_text(errors="replace")
     for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
         assert f"{sym}(" in text, f"{sym} no longer in ucrtbase/stubs.c — re-derive OURS_OWN_TUS"
+
+
+# ── the burn-down ratchet ────────────────────────────────────────────────────
+
+
+def test_the_recorded_ceiling_matches_what_the_tree_actually_measures():
+    """The ratchet is only meaningful if its baseline is real.
+
+    A ceiling recorded once and never re-measured decays into a number nobody
+    trusts, which is worse than no number: it still passes, so nobody looks.
+    This asserts the recorded value is the value a build actually produces —
+    and it is allowed to be HIGHER (work landed since it was recorded), never
+    lower, which is the ratchet's own rule applied to itself.
+    """
+    import yaml
+
+    doc = yaml.safe_load(vuc.TAKEOVER.read_text(encoding="utf-8"))
+    want = doc.get("burndown") or {}
+    assert want, "tools/ucrt-takeover.yaml lost its burndown ceilings"
+
+    measured_any = False
+    for arch, ceiling in want.items():
+        if not (vuc.REPO / f"build-{arch}").is_dir():
+            continue
+        from ucrt_burndown import classify
+
+        buckets, _ = classify(arch)
+        have = len(buckets["MICROSOFT"])
+        measured_any = True
+        assert have <= ceiling, (
+            f"{arch}: {have} Microsoft-backed exports exceeds the recorded ceiling "
+            f"{ceiling} — the ratchet has been breached"
+        )
+    if not measured_any:
+        import pytest
+
+        pytest.skip("no build tree in this worktree; the ratchet needs objects")
+
+
+def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_path: Path):
+    """Both directions, because the asymmetry is the design.
+
+    Failing on an improvement would bounce lanes for making the tree better —
+    and improvements arrive from OTHER lanes routinely, since any Rust body
+    that happens to answer a ucrtbase export moves this count. That is how a
+    gate gets switched off, so it must only ever fail upward.
+    """
+    if not any((vuc.REPO / f"build-{a}").is_dir() for a in ("i386", "amd64", "arm64")):
+        import pytest
+
+        pytest.skip("no build tree in this worktree; the ratchet needs objects")
+
+    import yaml
+
+    original = vuc.TAKEOVER.read_text(encoding="utf-8")
+    doc = yaml.safe_load(original)
+    arch = next(a for a in doc["burndown"] if (vuc.REPO / f"build-{a}").is_dir())
+    real = doc["burndown"][arch]
+
+    # Perturb a COPY, never the tracked file. Writing tools/ucrt-takeover.yaml in place and
+    # restoring it leaves the content clean but moves the mtime, and `vibeos-cli build`'s
+    # artifact-check compares source mtimes against the build stamp -- so a gate running this
+    # test concurrently with its own builds fails one arch at random with
+    # "build source changed since build (C/asm/cmake/spec/rc): tools/ucrt-takeover.yaml".
+    # Cost one arm64 BUILD_INCOMPLETE plus the cascade into every artifact-dependent scanner.
+    original_takeover = vuc.TAKEOVER
+    scratch = tmp_path / "ucrt-takeover.yaml"
+    vuc.TAKEOVER = scratch
+    try:
+        # Ceiling below reality -> a regression, and it must FAIL.
+        scratch.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real - 50}"))
+        fails, _ = vuc.check_burndown()
+        assert any("REGRESSED" in f and arch in f for f in fails), fails
+
+        # Ceiling above reality -> an improvement, and it must only NOTE.
+        scratch.write_text(original.replace(f"  {arch}: {real}", f"  {arch}: {real + 50}"))
+        fails, notes = vuc.check_burndown()
+        assert not fails, fails
+        assert any("fewer Microsoft-backed exports" in n for n in notes), notes
+    finally:
+        vuc.TAKEOVER = original_takeover

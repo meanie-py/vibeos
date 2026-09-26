@@ -28,21 +28,21 @@ URL: http://www.geocities.com/dborca/opengl/tc.html
 
 Title: libjpeg
 Path: dll/3rdparty/libjpeg
-Used Version: 9d
+Used Version: 10
 License: custom, BSD-like
 URL: http://www.ijg.org/
 Modifications: added .spec file
 
 Title: libpng
 Path: dll/3rdparty/libpng
-Used Version: 1.6.39
+Used Version: 1.6.51
 License: PNG Reference Library version 2
 URL: http://libpng.sourceforge.net/
 Modifications: added .spec file
 
 Title: libtiff
 Path: dll/3rdparty/libtiff
-Used Version: 4.1.0
+Used Version: 4.7.1
 License: libtiff (https://spdx.org/licenses/libtiff.html)
 URL: http://www.simplesystems.org/libtiff/
 Modifications: added .spec file
@@ -174,6 +174,12 @@ Used Version: 1.2.6
 License: BSD-3-Clause (https://opensource.org/licenses/BSD-3-Clause)
 URL: https://code.google.com/archive/p/cmediadrivers/
 
+Title: HD Audio Driver for Windows 10 / 11 with Skylake -> Raptor Lake DSP support
+Path: drivers/wdm/audio/hdaudbus
+Used Version: git commit 5477b93
+License: BSD-3-Clause (https://opensource.org/licenses/BSD-3-Clause)
+URL: https://github.com/coolstar/sklhdaudbus/tree/master
+
 Title: PCI hardware IDs database
 Path: hal/halx86/legacy/bus/pci_classes.ids
 Path: hal/halx86/legacy/bus/pci_vendors.ids
@@ -205,12 +211,6 @@ Path: sdk/lib/3rdparty/adns
 Used Version: 1.0 REV 5
 License: GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later.html)
 URL: http://www.gnu.org/software/adns/, http://adns.jgaa.com
-
-Title: CardLib
-Path: sdk/lib/3rdparty/cardlib
-Used Version: 2005-07-14
-License: "Public Domain"
-URL: https://www.catch22.net/tuts/cards/cardlib/
 
 Title: lwIP - A Lightweight TCP/IP stack
 Path: drivers/network/tcpip/lwip

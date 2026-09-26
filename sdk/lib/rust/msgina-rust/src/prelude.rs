@@ -25,7 +25,7 @@ pub struct __wine_debug_channel {
 // `enum __wine_debug_class` (wine/debug.h). c2rust expands WINE TRACE/ERR/WARN/FIXME
 // into `if (channel.flags & (1<<class)) { ros_dbg_log(class, channel, ...) }`, so the
 // anchored bodies reference these symbolically. ros_dbg_log is the libwine logger
-// (sdk/lib/3rdparty/libwine/debug.c), resolved at cohab link via msgina's `wine` lib.
+// (sdk/lib/libwine/debug.c), resolved at cohab link via msgina's `wine` lib.
 // Default channel flags for the c2rust wine-debug preamble (post-processor rewrites
 // c2rust's hardcoded `flags: !0` to this). 0 = every trace class off (silent, a single
 // flag-test per site — what normal/smoke builds want); the `wine_debug` cargo feature

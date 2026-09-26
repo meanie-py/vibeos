@@ -416,17 +416,18 @@ unsafe fn ldr_entry_from_links(links: *mut LIST_ENTRY) -> PLDR_DATA_TABLE_ENTRY 
     links as PLDR_DATA_TABLE_ENTRY
 }
 
-// IdleThread KernelTime/UserTime accessors — bindgen union layouts differ per arch.
-// Returning 0 keeps task manager's CPU usage column honest-but-uninformative; this is
-// a known approximation, matched by Sci->PageFaultCount and friends in SystemPerformanceInformation.
+// IdleThread KernelTime/UserTime. KeUpdateRunTime charges every clock tick the idle loop
+// takes to the idle thread's KernelTime, so this is the only record of idle time: reading 0
+// here made a quiet system report 100% busy (Task Manager's graph could never fall).
+// The KTHREAD is the first member of ETHREAD, so the ETHREAD accessors below apply.
 #[inline(always)]
-unsafe fn idle_thread_kernel_time(_prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
-    0
+unsafe fn idle_thread_kernel_time(prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
+    kthread_kernel_time((*prcb).IdleThread as *mut _ETHREAD)
 }
 
 #[inline(always)]
-unsafe fn idle_thread_user_time(_prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
-    0
+unsafe fn idle_thread_user_time(prcb: *mut ntkrnl_sys::ddk::_KPRCB) -> ULONG {
+    kthread_user_time((*prcb).IdleThread as *mut _ETHREAD)
 }
 
 // KTHREAD field accessors — fields buried in WaitBlock/SuspendApc overlay unions on
@@ -1592,8 +1593,12 @@ unsafe extern "C" fn QSI_SystemPoolTagInformation(Buffer: PVOID, Size: ULONG, Re
 }
 
 // Class 23
-unsafe extern "C" fn QSI_SystemInterruptInformation(Buffer: PVOID, Size: ULONG, _ReqSize: *mut ULONG) -> NTSTATUS {
-    if Size < (KeNumberProcessors as ULONG) * core::mem::size_of::<_SYSTEM_INTERRUPT_INFORMATION>() as ULONG {
+unsafe extern "C" fn QSI_SystemInterruptInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
+    // A caller that sizes its buffer from the first call's ReqSize got zero back and
+    // could never succeed (upstream feb0f56da7).
+    *ReqSize = (KeNumberProcessors as ULONG)
+        * core::mem::size_of::<_SYSTEM_INTERRUPT_INFORMATION>() as ULONG;
+    if Size < *ReqSize {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
     let ti = KeQueryTimeIncrement();
@@ -1601,7 +1606,7 @@ unsafe extern "C" fn QSI_SystemInterruptInformation(Buffer: PVOID, Size: ULONG, 
     for i in 0..KeNumberProcessors as usize {
         let Prcb = KiProcessorBlock[i];
         (*sii).ContextSwitches = KeGetContextSwitches(Prcb);
-        (*sii).DpcCount = (*Prcb).DpcData[0].DpcCount as ULONG;
+        (*sii).DpcCount = (*Prcb).DpcData[0 /* DPC_NORMAL */].DpcCount as ULONG;
         (*sii).DpcRate = (*Prcb).DpcRequestRate;
         (*sii).TimeIncrement = ti;
         (*sii).DpcBypassCount = 0;
@@ -1692,8 +1697,10 @@ unsafe extern "C" fn SSI_SystemUnloadGdiDriverInformation(Buffer: PVOID, Size: U
 
 // Class 28 Q
 unsafe extern "C" fn QSI_SystemTimeAdjustmentInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
-    if (core::mem::size_of::<_SYSTEM_QUERY_TIME_ADJUST_INFORMATION>() as ULONG) > Size {
-        *ReqSize = core::mem::size_of::<_SYSTEM_QUERY_TIME_ADJUST_INFORMATION>() as ULONG;
+    // ReqSize must be reported on SUCCESS too, and this class takes an exact size
+    // (fixed struct, no trailing array) -- upstream c6410fb0c2.
+    *ReqSize = core::mem::size_of::<_SYSTEM_QUERY_TIME_ADJUST_INFORMATION>() as ULONG;
+    if Size != *ReqSize {
         return STATUS_INFO_LENGTH_MISMATCH;
     }
     let TimeInfo = Buffer as PSYSTEM_QUERY_TIME_ADJUST_INFORMATION;

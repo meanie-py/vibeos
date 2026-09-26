@@ -3,7 +3,7 @@ FDLIBM (Sun Microsystems freely-distributable libm) — VENDORED THIRD-PARTY COD
 This tree is foreign code carried by the project. It is deliberately NOT part of the
 C -> Rust effort and does not count toward translation progress.
 
-  upstream: https://www.netlib.org/fdlibm/
+  upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
   licence:  FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 
 Registered in vendor.yaml; see that file for the reason and tools/vendored.py for the

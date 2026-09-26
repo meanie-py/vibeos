@@ -56,11 +56,31 @@ pub unsafe extern "system" fn TerminateSetupActionLog() {
     }
 }
 
-// logfile.c:92 is C-VARIADIC (and `@ varargs` in syssetup.spec, so it is an EXPORT). Stable Rust
-// can declare but not DEFINE one (`va_start` is only legal inside a c_variadic fn —
-// rust-lang/rust#44930), so the exported entry point lives in rust_varargs_shim.c: it does the
-// va_start and tail-calls this fixed-arity twin, which holds the whole translated body. `ap`
-// arrives as a `void*` because va_list is a single `char*` on all three targets.
+/// logfile.c:92 `pSetupDebugPrint`, C-VARIADIC and `@ varargs` in syssetup.spec, so an EXPORT.
+///
+/// Stable Rust cannot DEFINE a C-variadic (`c_variadic`, rust-lang#44930), so this RECEIVES
+/// the varargs the va-slots way (`va_slots_rust`, as shell32's ShellMessageBoxA and the kernel's
+/// printf family do): on all three targets a variadic call puts its arguments in the same slots
+/// as a fixed-arity call with that many parameters (i386 cdecl stack; win64 RCX-R9 then stack;
+/// arm64 x0-x7 then stack, where Windows passes varargs in integer registers), and a `va_list` is
+/// a plain pointer. The trailing slots are ordinary parameters, staged into an array a `va_list`
+/// points at. This replaced the `va_start` trampoline in rust_varargs_shim.c (2026-09-25).
+#[no_mangle]
+pub unsafe extern "C" fn pSetupDebugPrint(
+    pszFileName: PCWSTR,
+    nLineNumber: i32,
+    pszTag: PCWSTR,
+    pszMessage: PCWSTR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
+    let mut stage = va_slots_rust::stage(&[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11]);
+    pSetupDebugPrint_v(pszFileName, nLineNumber, pszTag, pszMessage,
+                       stage.as_mut_ptr() as *mut core::ffi::c_void)
+}
+
+// The body of `pSetupDebugPrint`. `ap` is the va_list itself (a single `char*` on all three
+// targets), not a pointer to one.
 #[no_mangle]
 pub unsafe extern "C" fn pSetupDebugPrint_v(
     pszFileName: PCWSTR,

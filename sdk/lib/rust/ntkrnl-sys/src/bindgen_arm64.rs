@@ -41345,6 +41345,9 @@ pub struct _ARM_LOADER_BLOCK {
     pub SecondLevelDcacheFillSize: ULONG,
     pub SecondLevelIcacheSize: ULONG,
     pub SecondLevelIcacheFillSize: ULONG,
+    pub Arm64UartBase: ULONG64,
+    pub Arm64GicDistributorBase: ULONG64,
+    pub Arm64GicCpuInterfaceBase: ULONG64,
 }
 pub type ARM_LOADER_BLOCK = _ARM_LOADER_BLOCK;
 pub type PARM_LOADER_BLOCK = *mut _ARM_LOADER_BLOCK;
@@ -79125,6 +79128,13 @@ unsafe extern "system" {
     pub fn SeInitSystem() -> BOOLEAN;
 }
 unsafe extern "system" {
+    // upstream-sync 2026-09-20: ntoskrnl/include/internal/se.h grew a trailing
+    // `_In_ KPROCESSOR_MODE AccessMode` in the 1,269-commit merge. This file was NOT
+    // regenerated, so the declaration below is hand-advanced to match the header --
+    // i.e. to exactly what the generator would now emit, not a divergence from it.
+    // The OB_SECURITY_METHOD typedef above is stale in the same way; its call sites go
+    // through ob-rust's ObpCallSecurityProcedure helper until the ddk surface is
+    // regenerated wholesale.
     pub fn SeDefaultObjectMethod(
         Object: PVOID,
         OperationType: SECURITY_OPERATION_CODE,
@@ -79134,6 +79144,7 @@ unsafe extern "system" {
         OldSecurityDescriptor: *mut PSECURITY_DESCRIPTOR,
         PoolType: POOL_TYPE,
         GenericMapping: PGENERIC_MAPPING,
+        AccessMode: KPROCESSOR_MODE,
     ) -> NTSTATUS;
 }
 unsafe extern "system" {

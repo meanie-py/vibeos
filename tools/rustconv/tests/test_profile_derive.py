@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from rustconv.profile_derive import (
+    resolve_sys_crate,
     DerivedProfile,
     Finding,
     ProfileDeriveError,
@@ -1305,3 +1306,29 @@ def test_no_file_argument_keeps_whole_module_meaning():
     wide = Finding("error", "OTHER", "y")
     res = _result_with([dead, wide])
     assert res.blocking_errors() == [dead, wide]
+
+
+def test_resolve_sys_crate_strips_every_target_role_suffix(tmp_path: Path) -> None:
+    """A CMake TARGET carries a role suffix the -sys crate does not.
+
+    msvcrt's `.c` are split across `msvcrt_shared` and `msvcrt_static`, and BOTH import
+    `msvcrt-sys`. Resolving to `ntdll-sys` instead makes every constant look absent, and
+    those findings are BLOCKING (§9.112) — so the gate that exists to catch silent
+    catch-all `match` arms becomes one that cannot be satisfied. The first fix here
+    special-cased `_static` only, which left `--target msvcrt_shared` still emitting six
+    blocking findings for constants that were present in `msvcrt-sys` and correct.
+    A partial fix was indistinguishable from no fix, so pin every shape.
+    """
+    rust = tmp_path / "sdk/lib/rust"
+    for crate in ("msvcrt-sys", "ntdll-sys", "ntkrnl-sys"):
+        (rust / crate / "src").mkdir(parents=True)
+
+    for target in ("msvcrt", "msvcrt_shared", "msvcrt_static", "msvcrt_a_b_c"):
+        assert resolve_sys_crate(tmp_path, target, usermode=True) == "msvcrt-sys", target
+
+    # A path, not just a bare name.
+    assert resolve_sys_crate(tmp_path, "dll/win32/msvcrt", usermode=True) == "msvcrt-sys"
+
+    # No own island -> the mode default, and the suffix walk must not invent a crate.
+    assert resolve_sys_crate(tmp_path, "shell32_static", usermode=True) == "ntdll-sys"
+    assert resolve_sys_crate(tmp_path, "portcls", usermode=False) == "ntkrnl-sys"

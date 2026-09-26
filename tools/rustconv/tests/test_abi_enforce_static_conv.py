@@ -423,3 +423,75 @@ def test_audit_ignores_fns_the_c_does_not_define(tmp_path: Path):
     c = _write_c(tmp_path)
     code = "unsafe fn some_rust_only_helper(x: u32) -> u32 {\n    x\n}\n"
     assert audit_abi(code, c) == []
+
+
+def test_static_system_dual_is_suppressed_once_slots_are_system_spelled(tmp_path):
+    """A `static ... CALLBACK` fn needs the per-arch twin ONLY while slots are concrete.
+
+    The dual exists because Rust compares fn-pointer ABIs nominally, so a callback could be
+    stored in a bindgen slot spelled `extern "stdcall"` on i386 only if it carried that
+    literal convention. `normalize_island_abi.py` respelled the islands `extern "system"`
+    everywhere, which retires the premise -- and leaves the dual actively WRONG where the
+    consuming typedef is one the generator itself emits as `extern "system"`: dde.cpp's
+    `pfnCommandHandler` handler table was E0308 on amd64/arm64, because the non-x86 twin is
+    `extern "C"` and Rust types that distinctly even where the ABI coincides.
+    """
+    c = tmp_path / "t.c"
+    c.write_text("static DWORD CALLBACK Handler(int a) { return 0; }\n")
+    rust = "unsafe fn Handler(a: i32) -> u32 {\n    0\n}\n"
+
+    dual = enforce_abi_from_c(rust, c, concrete_stdcall_slots=True)
+    assert '#[cfg(target_arch = "x86")]' in dual
+    assert 'extern "stdcall"' in dual
+    assert 'extern "C"' in dual
+
+    single = enforce_abi_from_c(rust, c, concrete_stdcall_slots=False)
+    assert "cfg(target_arch" not in single
+    assert 'extern "stdcall"' not in single
+    assert single.count("fn Handler") == 1
+    assert 'unsafe extern "system" fn Handler' in single
+
+    # Default is unchanged, so no existing caller silently changes shape.
+    assert enforce_abi_from_c(rust, c) == dual
+
+
+def test_concrete_stdcall_slots_is_detected_from_the_island_not_the_output(tmp_path):
+    """Scanning translated output would make the answer self-perpetuating.
+
+    A previous run's twins are themselves `extern "stdcall"`, so a whole-crate scan would
+    keep reporting True forever. Only island_*/bindgen_* files are consulted.
+    """
+    from rustconv.projects.reactos.targets import _detect_concrete_stdcall_slots
+
+    crate = tmp_path / "c"
+    (crate / "src").mkdir(parents=True)
+    # No island at all -> conservative True (the dual is wasteful, never incorrect).
+    assert _detect_concrete_stdcall_slots(crate) is True
+
+    (crate / "src" / "island_i386.rs").write_text('unsafe extern "system" { fn F(); }\n')
+    assert _detect_concrete_stdcall_slots(crate) is False
+
+    # A leftover twin in TRANSLATED output must not flip the answer back.
+    (crate / "src" / "some_module.rs").write_text('unsafe extern "stdcall" fn G() {}\n')
+    assert _detect_concrete_stdcall_slots(crate) is False
+
+    # Nor does a mention in PROSE. island_extra.rs has exactly one, in a comment explaining
+    # that lstrcpynW is now bound from the real header, and it flipped the whole crate.
+    (crate / "src" / "island_amd64.rs").write_text(
+        '// note: this used to be `unsafe extern "stdcall"` before normalisation\n'
+        'unsafe extern "system" { fn H(); }\n'
+    )
+    assert _detect_concrete_stdcall_slots(crate) is False
+
+    # But a genuinely concrete island does.
+    (crate / "src" / "bindgen_i386.rs").write_text(
+        'pub type CB = Option<unsafe extern "stdcall" fn()>;\n'
+    )
+    assert _detect_concrete_stdcall_slots(crate) is True
+
+
+def test_the_shell32_island_is_system_spelled_so_shell32_takes_the_single_form():
+    """The measurement behind the flag, against the real tree rather than a fixture."""
+    from rustconv.projects.reactos.targets import TARGETS
+
+    assert TARGETS["shell32"].concrete_stdcall_slots is False

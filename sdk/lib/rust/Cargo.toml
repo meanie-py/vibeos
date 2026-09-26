@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "schannel-tls-difftest",
     "portcls-rust",
     "sysaudio-rust",
     "sysaudio-difftest",
@@ -105,11 +106,13 @@ members = [
     # the PS/2 mouse property page. Was parked RED at 176/177/177 for want of a portable spelling
     # for width-varying parameters; crate-repair's `width_alias_cast` rule now supplies it.
     "syssetup-rust",
+    "cardlib-rust",
     "desk-rust",
     # strsafe.h's `static __inline` bounded string ops, ported ONCE. No object file in the tree
     # defines them, so every flipped module used to port the header again — four divergent
     # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
     "strsafe-rust",
+    "strsafe-difftest",
     # Receiving C varargs on stable Rust (the slot-capture technique + its measured
     # bounds), ported ONCE. Three crates need it -- freeldr-rust, kd-rust and
     # drvtrace-shim -- and the bounds are only safe because they were measured, so a
@@ -141,6 +144,12 @@ members = [
     "msvcrt-sys",
     "crt-shared-rust",
     "crt-shared-cargo",
+    # ucrtbase.dll's own surface, replacing vendored Microsoft UCRT family by
+    # family. Every symbol is declared in tools/ucrt-takeover.yaml.
+    "ucrt-rust",
+    # Grades Rust against the GENUINE vendored UCRT C, while that C still
+    # exists to be graded against. See its Cargo.toml.
+    "ucrt-difftest",
     "msvcrt-crt-rust",
     "msvcrt-crt-cargo",
     "msvcrt-difftest",
@@ -364,12 +373,14 @@ members = [
     # interfaces are DECLARE_INTERFACE_, and the island is generated in C mode so they arrive as
     # implementable `lpVtbl` vtables instead of bindgen's opaque C++ ones.
     #
-    # PARKED at 25 errors/arch (from 256) while the two v5 TUs are ground out — 11 `goto cleanup;`
-    # sites the model left as C control flow, plus L"" literals and a leaked C `static` qualifier.
-    # Membership is what puts a crate in EVERY lane's `cargo check`, so it joins on the commit
-    # that makes it green, exactly as msv1_0-rust did above. Nothing links it yet either: the
-    # subtree is not cohab-flipped, so the C still builds and no boot can regress.
-    #   "recyclebin-rust",
+    # JOINED 2026-09-19, green on i686/amd64/arm64. It was parked, and the note here said "25
+    # errors/arch (from 256)" — by the time it was picked up it was 204, because a crate nobody
+    # compiles rots exactly like an orphan module does. Read that as the argument for joining on
+    # green rather than parking near it.
+    # Nothing LINKS it yet: the shellrecyclebin subtree is not cohab-flipped, so the C still
+    # builds and no boot can regress. Membership only puts it in every lane's `cargo check`,
+    # which is what stops the rot.
+    "recyclebin-rust",
 ]
 resolver = "2"
 

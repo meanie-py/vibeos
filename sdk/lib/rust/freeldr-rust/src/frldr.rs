@@ -287,15 +287,12 @@ pub fn ASSERT<T>(_cond: T) {}
 pub unsafe fn dbgcon(c: u8) {
     core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") c, options(nostack, preserves_flags));
 }
-// arm64 — write directly to PL011 UART DR at 0x9000000 (QEMU virt). Same
-// MMIO base as arm64_debug::Rs232PortPutByte. Lets the meminit dbgcon('M'/
-// 'C'/'1'/...) trace markers escape on arm64 (previously a no-op, hiding
-// any internal progress past `[freeldr] UI initialized`).
+// ARM64 uses the same firmware-discovered UART as the serial debug path.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 pub unsafe fn dbgcon(c: u8) {
-    let uart_dr = 0x0900_0000usize as *mut u32;
-    core::ptr::write_volatile(uart_dr, c as u32);
+    extern "C" { fn Rs232PortPutByte(byte: u8); }
+    Rs232PortPutByte(c);
 }
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
 #[inline(always)]

@@ -207,7 +207,7 @@ pub unsafe extern "system" fn HalInitializeProcessor(
     // identity mapping (same pattern as Arm64UartKernelBase / fw_cfg; the
     // loader maps the GICD/GICC pages as Device — winldr_arm64.rs).
     if ProcessorNumber != 0 {
-        super::clock::gic_ensure_early_bases();
+        super::clock::gic_ensure_early_bases(LoaderBlock);
         if !super::clock::gic_percpu_init() {
             // Fail loud: an AP with no GIC CPU interface can never receive an
             // IPI — every KeIpiGenericCall would hang the sender.

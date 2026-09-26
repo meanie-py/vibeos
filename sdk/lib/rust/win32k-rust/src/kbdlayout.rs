@@ -144,6 +144,7 @@ fn HandleToUlong(h: *mut core::ffi::c_void) -> u32 {
 }
 extern "system" {
     fn SafeProbeForWrite( Address: *mut core::ffi::c_void, Length: usize, Alignment: ULONG, ) -> NTSTATUS;
+    fn SafeProbeForRead( Address: *mut core::ffi::c_void, Length: usize, Alignment: ULONG, ) -> NTSTATUS;
 }
 // co_IntSendMessage — real FASTCALL export (message.rs). i386 fastcall, cdecl else.
 #[cfg(target_arch = "x86")]
@@ -257,16 +258,19 @@ unsafe fn IntHKLtoPKL_impl(pti: PTHREADINFO, hKL: HKL) -> PKL {
     core::ptr::null_mut()
 }
 
-unsafe extern "system" fn IntGetKeyboardLayoutList(
+// Not `extern "system"` any more: `Result<UINT, NTSTATUS>` (added below to
+// propagate a write fault out of the *pHklBuff store loop) is not FFI-safe,
+// and nothing outside this file calls IntGetKeyboardLayoutList.
+unsafe fn IntGetKeyboardLayoutList(
     pWinSta: PWINSTATION_OBJECT,
     mut nBuff: ULONG,
     mut pHklBuff: *mut HKL,
-) -> UINT {
+) -> Result<UINT, NTSTATUS> {
     let mut ret: UINT = 0;
     let pFirstKL: PKL = gspklBaseLayout;
 
     if pWinSta.is_null() || pFirstKL.is_null() {
-        return 0;
+        return Ok(0);
     }
 
     let mut pKL: PKL = pFirstKL;
@@ -284,7 +288,20 @@ unsafe extern "system" fn IntGetKeyboardLayoutList(
     } else {
         loop {
             if (*pKL).dwKL_Flags & KL_UNLOAD == 0 {
-                *pHklBuff = (*pKL).hkl;
+                // Fault-protected store — this call sits inside the C's
+                // NtUserGetKeyboardLayoutList _SEH2_TRY (see the dropped-_SEH2
+                // recovery at that call site), and the raw `*pHklBuff = ...`
+                // here is what that _SEH2_TRY was actually backstopping. The
+                // range/alignment was already probed once by the caller via
+                // SafeProbeForWrite before calling in, matching the C's earlier
+                // SafeProbeForWrite; this only has to survive a page going away
+                // mid-loop.
+                let hkl: HKL = (*pKL).hkl;
+                ntkrnl_sys::probe::safe_copy_raw(
+                    pHklBuff as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(hkl) as *const core::ffi::c_void,
+                    core::mem::size_of::<HKL>(),
+                )?;
                 pHklBuff = pHklBuff.add(1);
                 ret += 1;
                 nBuff -= 1;
@@ -300,7 +317,7 @@ unsafe extern "system" fn IntGetKeyboardLayoutList(
         }
     }
 
-    ret
+    Ok(ret)
 }
 
 unsafe fn DumpKbdLayout(pKbdTbl: PKBDTABLES) {
@@ -1271,7 +1288,30 @@ pub unsafe extern "system" fn NtUserGetKeyboardLayoutList(
 
         pWinSta = IntGetProcessWindowStation(core::ptr::null_mut());
 
-        ret = IntGetKeyboardLayoutList(pWinSta, nBuff, pHklBuff);
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (win32ss/user/ntuser/kbdlayout.c, NtUserGetKeyboardLayoutList):
+        //   _SEH2_TRY {
+        //       ret = IntGetKeyboardLayoutList(pWinSta, nBuff, pHklBuff);
+        //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+        //       SetLastNtError(_SEH2_GetExceptionCode());
+        //       goto Quit;
+        //   } _SEH2_END;
+        //
+        // Shape: SetLastNtError then `goto Quit` — sets the Win32 LAST ERROR
+        // (not a returned status) and jumps to the same `Quit:` fall-through
+        // that runs on success, so `ret` is simply left at its unassigned
+        // initial value of 0 on a fault. Dropping the SetLastNtError would make
+        // a faulting call silently report success (ret=0, no last-error set)
+        // instead of surfacing the fault to GetLastError(). IntGetKeyboardLayoutList
+        // now returns Result<UINT, NTSTATUS> because it does the raw store into
+        // pHklBuff itself (see its dropped-_SEH2 recovery).
+        match IntGetKeyboardLayoutList(pWinSta, nBuff, pHklBuff) {
+            Ok(count) => ret = count,
+            Err(status) => {
+                SetLastNtError(status);
+                break 'quit;
+            }
+        }
     }
 
     UserLeave();
@@ -1297,7 +1337,64 @@ pub unsafe extern "system" fn NtUserGetKeyboardLayoutName(
             break 'cleanup;
         }
 
-        ustrNameSafe = *pustrName;
+        // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+        // C (win32ss/user/ntuser/kbdlayout.c, NtUserGetKeyboardLayoutName):
+        //   _SEH2_TRY {
+        //       ProbeForWriteUnicodeString(pustrName);
+        //       ustrNameSafe = *pustrName;
+        //       ProbeForWrite(ustrNameSafe.Buffer, ustrNameSafe.MaximumLength, 1);
+        //       ... IS_IME_HKL branch: RtlIntegerToUnicodeString ...
+        //       ... else branch: MaximumLength check + RtlAppendUnicodeToString ...
+        //       if (NT_SUCCESS(Status)) { *pustrName = ustrNameSafe; bRet = TRUE; }
+        //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+        //       SetLastNtError(_SEH2_GetExceptionCode());
+        //   } _SEH2_END;
+        //
+        // Shape: SetLastNtError then plain fall-through — the handler doesn't
+        // goto/return, it just falls out of _SEH2_TRY/_SEH2_END straight into
+        // the immediately-following `cleanup:` label, i.e. exactly the same
+        // place normal completion lands. So every fault point below sets last
+        // error and `break 'cleanup` with bRet left at its initial FALSE (0) —
+        // identical observable effect to the C's fall-through.
+        //
+        // ProbeForWriteUnicodeString(Ptr) == ProbeForWrite(Ptr, sizeof(UNICODE_STRING))
+        // per sdk/include/reactos/probe.h — "alignment of the pointers is not
+        // verified", so alignment 1 here (not the stricter align_of::<_UNICODE_STRING>()
+        // some other translated site in this crate uses for the same macro).
+        let probe_status = SafeProbeForWrite(
+            pustrName as *mut core::ffi::c_void,
+            core::mem::size_of::<_UNICODE_STRING>(),
+            1,
+        );
+        if !NT_SUCCESS(probe_status) {
+            SetLastNtError(probe_status);
+            break 'cleanup;
+        }
+
+        // `ustrNameSafe = *pustrName;` — a bare struct read of a user pointer,
+        // still inside the C's _SEH2_TRY. Fault-tolerant copy, not a plain deref.
+        if ntkrnl_sys::probe::safe_copy_raw(
+            core::ptr::addr_of_mut!(ustrNameSafe) as *mut core::ffi::c_void,
+            pustrName as *const core::ffi::c_void,
+            core::mem::size_of::<_UNICODE_STRING>(),
+        )
+        .is_err()
+        {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+            break 'cleanup;
+        }
+
+        // ProbeForWrite(ustrNameSafe.Buffer, ustrNameSafe.MaximumLength, 1) — literal
+        // alignment 1 from the C.
+        let probe_status = SafeProbeForWrite(
+            ustrNameSafe.Buffer as *mut core::ffi::c_void,
+            ustrNameSafe.MaximumLength as usize,
+            1,
+        );
+        if !NT_SUCCESS(probe_status) {
+            SetLastNtError(probe_status);
+            break 'cleanup;
+        }
 
         if IS_IME_HKL((*pKl).hkl) != 0 {
             Status = RtlIntegerToUnicodeString(
@@ -1321,8 +1418,19 @@ pub unsafe extern "system" fn NtUserGetKeyboardLayoutName(
         }
 
         if NT_SUCCESS(Status) {
-            *pustrName = ustrNameSafe;
-            bRet = 1;
+            // `*pustrName = ustrNameSafe;` — the final user-pointer write, still
+            // inside the C's _SEH2_TRY. Fault-tolerant copy, not a plain store.
+            if ntkrnl_sys::probe::safe_copy_raw(
+                pustrName as *mut core::ffi::c_void,
+                core::ptr::addr_of!(ustrNameSafe) as *const core::ffi::c_void,
+                core::mem::size_of::<_UNICODE_STRING>(),
+            )
+            .is_ok()
+            {
+                bRet = 1;
+            } else {
+                SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+            }
         }
     }
 
@@ -1370,7 +1478,86 @@ pub unsafe extern "system" fn NtUserLoadKeyboardLayoutEx(
         core::mem::size_of::<[WCHAR; KL_NAMELENGTH as usize]>() as USHORT,
     );
 
-    RtlCopyUnicodeString((&mut uszSafeKLID as *mut _UNICODE_STRING).cast(), puszKLID as *mut _UNICODE_STRING as *mut _);
+    // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
+    // C (win32ss/user/ntuser/kbdlayout.c, NtUserLoadKeyboardLayoutEx):
+    //   _SEH2_TRY {
+    //       ProbeForRead(puszKLID, sizeof(*puszKLID), 1);
+    //       ProbeForRead(puszKLID->Buffer, sizeof(puszKLID->Length), 1);
+    //       RtlCopyUnicodeString(&uszSafeKLID, puszKLID);
+    //   } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
+    //       SetLastNtError(_SEH2_GetExceptionCode());
+    //       _SEH2_YIELD(return NULL);
+    //   } _SEH2_END;
+    //
+    // Shape: SetLastNtError then an immediate `return NULL` — unlike the other
+    // two handlers in this file, this one aborts the whole syscall on the spot
+    // rather than falling through to shared cleanup (there's no Quit/cleanup
+    // label yet at this point — UserEnterExclusive() hasn't even run).
+    //
+    // Two literal ProbeForRead calls, not one: the second probes only
+    // sizeof(puszKLID->Length) == sizeof(USHORT) == 2 bytes at Buffer's address
+    // (not the whole string) — kept exactly as narrow as the C, per the
+    // "literal alignment/extent, don't round up" rule.
+    //
+    // RtlCopyUnicodeString(&uszSafeKLID, puszKLID) itself dereferences
+    // puszKLID's fields and then copies its Buffer contents — all of that sits
+    // inside the same _SEH2_TRY in the C, so it's reimplemented here with
+    // fault-tolerant primitives instead of calling the imported
+    // RtlCopyUnicodeString (which does bare reads/copies with no fault
+    // protection of its own).
+    let probe_status = SafeProbeForRead(
+        puszKLID as *mut core::ffi::c_void,
+        core::mem::size_of::<_UNICODE_STRING>(),
+        1,
+    );
+    if !NT_SUCCESS(probe_status) {
+        SetLastNtError(probe_status);
+        return core::ptr::null_mut();
+    }
+
+    let mut capturedKLID: _UNICODE_STRING = core::mem::zeroed();
+    if ntkrnl_sys::probe::safe_copy_raw(
+        core::ptr::addr_of_mut!(capturedKLID) as *mut core::ffi::c_void,
+        puszKLID as *const core::ffi::c_void,
+        core::mem::size_of::<_UNICODE_STRING>(),
+    )
+    .is_err()
+    {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+        return core::ptr::null_mut();
+    }
+
+    let probe_status = SafeProbeForRead(
+        capturedKLID.Buffer as *mut core::ffi::c_void,
+        core::mem::size_of::<USHORT>(),
+        1,
+    );
+    if !NT_SUCCESS(probe_status) {
+        SetLastNtError(probe_status);
+        return core::ptr::null_mut();
+    }
+
+    // RtlCopyUnicodeString body: Length = min(Source->Length, Dest->MaximumLength);
+    // RtlCopyMemory(Dest->Buffer, Source->Buffer, Length); Dest->Length = Length;
+    // NUL-terminate if room remains.
+    let copy_len = core::cmp::min(capturedKLID.Length, uszSafeKLID.MaximumLength) as usize;
+    if copy_len > 0
+        && ntkrnl_sys::probe::safe_copy_raw(
+            uszSafeKLID.Buffer as *mut core::ffi::c_void,
+            capturedKLID.Buffer as *const core::ffi::c_void,
+            copy_len,
+        )
+        .is_err()
+    {
+        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+        return core::ptr::null_mut();
+    }
+    uszSafeKLID.Length = copy_len as USHORT;
+    if uszSafeKLID.Length < uszSafeKLID.MaximumLength {
+        *uszSafeKLID
+            .Buffer
+            .add(copy_len / core::mem::size_of::<WCHAR>()) = 0;
+    }
 
     UserEnterExclusive();
 

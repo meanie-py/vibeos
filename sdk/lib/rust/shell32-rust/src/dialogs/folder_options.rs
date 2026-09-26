@@ -4,8 +4,8 @@
 //! One piece did NOT come across: `CMSGlobalFolderOptionsStub`, an ATL `CWindowImpl<>` whose
 //! per-instance thunk and registered window class are generated from C++ templates. It lives in
 //! `dll/win32/shell32/rust_folder_options_stub.cpp` behind a create/destroy bridge, the same
-//! shape utils.cpp uses for `CStubWindow32`; that file's header says why a Rust
-//! reimplementation would be a behaviour change rather than a port.
+//! shape utils.cpp uses for `CStubWindow32`. SUPERSEDED 2026-09-24: the class is Rust now
+//! (crate::atl_stub_windows), A/B-checked against the C++ build by tools/payloads/shelltail.
 //!
 //! This module REPLACES an earlier parked translation of the same file that was written against
 //! the retired hand-written substrate (`crate::types` / `crate::win32`) and never compiled. Both
@@ -13,6 +13,7 @@
 //!
 //! A PAID artifact — do not delete it to tidy up.
 
+use crate::atl_stub_windows::{CMSGlobalFolderOptionsStub_Create_RustBridge, CMSGlobalFolderOptionsStub_Destroy_RustBridge};
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -46,7 +47,7 @@ pub static mut g_pszShell32: LPCWSTR = G_PSZ_SHELL32_BUF.as_ptr();
 pub static mut g_pszSpace: LPCWSTR = G_PSZ_SPACE_BUF.as_ptr();
 
 /// `folder_options.cpp:92` `#define GlobalFolderOptionsClassName _T("MSGlobalFolderOptionsStub")`.
-/// Must match the name `rust_folder_options_stub.cpp` registers, or the already-open lookup in
+/// Must match the name `crate::atl_stub_windows` registers, or the already-open lookup in
 /// `ShowFolderOptionsDialog` stops finding the window and Folder Options opens a second copy.
 static GLOBAL_FOLDER_OPTIONS_CLASS_NAME: [WCHAR; 26] = [
     0x004D, 0x0053, 0x0047, 0x006C, 0x006F, 0x0062, 0x0061, 0x006C, 0x0046, 0x006F, 0x006C,
@@ -69,16 +70,6 @@ extern "system" {
     fn FolderOptionsGeneralDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
     fn FolderOptionsViewDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
     fn FolderOptionsFileTypesDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
-
-    /// `rust_folder_options_stub.cpp` — the ATL window this file cannot express. Create returns
-    /// the HWND and writes the opaque object pointer; Destroy takes the object back. The object
-    /// must outlive the call because the ATL thunk lives as long as the window does.
-    fn CMSGlobalFolderOptionsStub_Create_RustBridge(
-        dwStyle: DWORD,
-        dwExStyle: DWORD,
-        ppStub: *mut *mut c_void,
-    ) -> HWND;
-    fn CMSGlobalFolderOptionsStub_Destroy_RustBridge(pStub: *mut c_void);
 
     /// Re-declared here, shadowing the island's, so the thread procedure can be spelled
     /// `extern "system"` once rather than `#[cfg]`-duplicated per arch — the island types this

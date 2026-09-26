@@ -22,7 +22,7 @@ extern "C" {
     fn CcRosVacbDecRefCount(Vacb: PROS_VACB) -> ULONG;
     fn CcRosInitializeFileCache(FileObject: PFILE_OBJECT, FileSizes: PCC_FILE_SIZES, PinAccess: BOOLEAN, CallBacks: PCACHE_MANAGER_CALLBACKS, LazyWriterContext: PVOID) -> NTSTATUS;
     fn CcRosReleaseFileCache(FileObject: PFILE_OBJECT) -> NTSTATUS;
-    fn CcRosUnmarkDirtyVacb(Vacb: PROS_VACB, LockViews: BOOLEAN);
+    fn CcRosUnmarkDirtyVacb(Vacb: PROS_VACB, LockViews: BOOLEAN) -> BOOLEAN;
 }
 
 const VACB_MAPPING_GRANULARITY: i64 = 262144;

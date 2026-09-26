@@ -73,10 +73,17 @@ pub const E_UNEXPECTED: HRESULT = 0x8000FFFFu32 as HRESULT;
 /// `HRESULT_FROM_WIN32` (winerror.h): positive Win32 error → 0x8007xxxx; pass-through
 /// otherwise. Faithful port of `__HRESULT_FROM_WIN32`.
 #[inline]
-pub fn HRESULT_FROM_WIN32(x: LONG) -> HRESULT {
+pub fn HRESULT_FROM_WIN32(x: DWORD) -> HRESULT {
+    // winerror.h:197 `((HRESULT)(x) > 0 ? ((HRESULT)(((x) & 0xFFFF) | (FACILITY_WIN32 << 16)
+    // | 0x80000000)) : (HRESULT)(x))`. The macro is UNTYPED and its callers pass a DWORD --
+    // `GetLastError()` above all -- so the parameter is DWORD, matching `explorer-sys` and
+    // `oleaut32-rust`. Declaring it LONG made every `HRESULT_FROM_WIN32(GetLastError())` a
+    // type error, and rustc's suggested `.try_into().unwrap()` is exactly the fix this tree
+    // refuses: it turns C's silent truncation into a panic in a live service.
+    // Note the C casts to HRESULT only for the COMPARISON and uses raw `x` for the bits.
     const FACILITY_WIN32: u32 = 7;
-    if x > 0 {
-        (((x as u32) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000) as HRESULT
+    if (x as HRESULT) > 0 {
+        ((x & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000) as HRESULT
     } else {
         x as HRESULT
     }
@@ -87,7 +94,7 @@ pub fn HRESULT_FROM_WIN32(x: LONG) -> HRESULT {
 /// function preserves that, since the call sites pass `GetLastError()`.
 #[inline]
 pub fn HResultFromWin32(hr: DWORD) -> HRESULT {
-    HRESULT_FROM_WIN32(hr as LONG)
+    HRESULT_FROM_WIN32(hr)
 }
 
 /// `HRESULT_CODE` / `HRESULT_FACILITY` (winerror.h).

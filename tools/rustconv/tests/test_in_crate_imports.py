@@ -182,3 +182,37 @@ class TestPreambleDeduplication:
 
         src = "pub struct S;\n"
         assert strip_top_level_items(src, set()) == (src, [])
+
+
+def test_path_attr_module_takes_its_declared_name_not_its_location(tmp_path):
+    """`#[path = "..."] pub mod NAME;` binds NAME; the file's location is irrelevant.
+
+    shell32-rust maps `dialogs/drvdefext.rs` to `crate::drv_def_ext` and
+    `shell32/CDefView.rs` to `crate::def_view`, so that a rustconv re-run can keep
+    assembling at the C tree's path while the crate keeps its own module naming. Deriving
+    the module from the FILE PATH emitted `use crate::dialogs::drvdefext::ShellObjectCreator;`
+    into a freshly translated TU -- a module that does not exist. 36 modules in that one
+    crate are `#[path]`-mapped, so this was not a corner case.
+    """
+    from rustconv.crate_integrate import _module_path
+
+    src = tmp_path / "src"
+    (src / "dialogs").mkdir(parents=True)
+    (src / "shell32").mkdir()
+    (src / "lib.rs").write_text(
+        '#[path = "dialogs/drvdefext.rs"]\n'
+        "pub mod drv_def_ext;\n"
+        '#[path = "shell32/CDefView.rs"]\n'
+        "pub mod def_view;\n"
+        "pub mod shell_link;\n"
+    )
+    (src / "dialogs" / "drvdefext.rs").write_text("pub struct ShellObjectCreator;\n")
+    (src / "shell32" / "CDefView.rs").write_text("pub struct CDefView;\n")
+    (src / "shell_link.rs").write_text("pub struct CShellLink;\n")
+
+    assert _module_path(src / "dialogs" / "drvdefext.rs", src) == "crate::drv_def_ext"
+    assert _module_path(src / "shell32" / "CDefView.rs", src) == "crate::def_view"
+    # An ordinary module is unaffected, and so is a file no `#[path]` names.
+    assert _module_path(src / "shell_link.rs", src) == "crate::shell_link"
+    (src / "shell32" / "other.rs").write_text("pub struct Other;\n")
+    assert _module_path(src / "shell32" / "other.rs", src) == "crate::shell32::other"

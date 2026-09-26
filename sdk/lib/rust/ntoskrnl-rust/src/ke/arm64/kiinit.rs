@@ -37,7 +37,7 @@ use crate::ke::procobj::{
 };
 use crate::ke::krnlinit::KeNodeBlock;
 use crate::ARM3::sysldr::PsLoadedModuleList;
-use super::stubs::Arm64UartKernelBase;
+use super::stubs::{Arm64FwCfgPhysical, Arm64GicCpuInterfacePhysical, Arm64GicDistributorPhysical, Arm64UartKernelBase};
 
 use crate::ke::ssdt::{MainSSDT, MainSSPT};
 extern "system" {
@@ -214,12 +214,29 @@ pub unsafe extern "system" fn KiSystemStartup(
         options(nomem, nostack),
     );
 
+    // Publish the firmware-discovered platform addresses BEFORE the first debug
+    // write below — this is the earliest point they can be known, and every
+    // Arm64UartKernelBase consumer in the kernel reads this one global. The
+    // loader identity-maps the UART page, so the physical address is usable
+    // until Phase 1 swaps in an MmMapIoSpace kernel VA.
+    Arm64UartKernelBase = (*LoaderBlock).u.Arm.Arm64UartBase as PVOID;
+    Arm64GicDistributorPhysical = (*LoaderBlock).u.Arm.Arm64GicDistributorBase;
+    Arm64GicCpuInterfacePhysical = (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase;
+    // Same inference the loader makes when deciding whether to map the page.
+    const QEMU_VIRT_UART: u64 = 0x0900_0000;
+    const QEMU_VIRT_FW_CFG: u64 = 0x0902_0000;
+    Arm64FwCfgPhysical = if (*LoaderBlock).u.Arm.Arm64UartBase == QEMU_VIRT_UART {
+        QEMU_VIRT_FW_CFG
+    } else {
+        0
+    };
+
     // Direct PL011 UART write to confirm kernel entry (bypasses KD)
     {
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] KiSystemStartup entered!\r\n";
         for &b in msg {
-            core::ptr::write_volatile(uart, b as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, b);
         }
     }
 
@@ -285,7 +302,7 @@ pub unsafe extern "system" fn KiSystemStartup(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] VBAR_EL1 installed\r\n";
         for &b in msg {
-            core::ptr::write_volatile(uart, b as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, b);
         }
     }
 
@@ -301,7 +318,7 @@ pub unsafe extern "system" fn KiSystemStartup(
     {
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] pre-HAL\r\n";
-        for &b in msg { core::ptr::write_volatile(uart, b as ULONG); }
+        for &b in msg { crate::arm64_dbg::uart_putc(uart as *mut u32, b); }
     }
     ap_stage(Cpu != 0, 3);
 
@@ -394,18 +411,18 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] Entering KiIdleLoop\r\n";
         for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, ch);
         }
         // Dump KiIdleLoop function address for symbolication
         let fn_addr = KiIdleLoop as *const () as u64;
         let msg2 = b"[KERNEL] KiIdleLoop@0x";
-        for &ch in msg2.iter() { core::ptr::write_volatile(uart, ch as ULONG); }
+        for &ch in msg2.iter() { crate::arm64_dbg::uart_putc(uart as *mut u32, ch); }
         for i in (0..16).rev() {
             let nibble = ((fn_addr >> (i * 4)) & 0xF) as u8;
             let c = if nibble < 10 { b'0' + nibble } else { b'a' + nibble - 10 };
-            core::ptr::write_volatile(uart, c as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, c);
         }
-        for &ch in b"\r\n" { core::ptr::write_volatile(uart, ch as ULONG); }
+        for &ch in b"\r\n" { crate::arm64_dbg::uart_putc(uart as *mut u32, ch); }
     }
 
     KiIdleLoop();
@@ -503,7 +520,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] Calling ExpInitializeExecutive\r\n";
         for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, ch);
         }
     }
 
@@ -517,7 +534,7 @@ pub unsafe extern "system" fn KiInitializeKernel(
         let uart = Arm64UartKernelBase as *mut ULONG;
         let msg = b"[KERNEL] ExpInitializeExecutive returned!\r\n";
         for &ch in msg.iter() {
-            core::ptr::write_volatile(uart, ch as ULONG);
+            crate::arm64_dbg::uart_putc(uart as *mut u32, ch);
         }
     }
 }

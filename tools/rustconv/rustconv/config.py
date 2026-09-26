@@ -436,6 +436,12 @@ class Target:
     # here, abi_enforce emits one `stdmethod! { … }`; without it, the body is
     # duplicated under two cfgs (correct, just verbose). See abi_enforce.py.
     com_method_macro: str | None = None
+    #: True when this crate's SUBSTRATE still spells fn-pointer slots with the arch's literal
+    #: convention (`extern "stdcall"` on i386), which is what forces a translated `static`
+    #: system fn to be emitted as a per-arch `#[cfg]` twin pair. False once the substrate is
+    #: `extern "system"` throughout, where one definition serves all three arches. Detected
+    #: from the island, never assumed -- see `_detect_concrete_stdcall_slots`.
+    concrete_stdcall_slots: bool = True
     # The C++ CLASS path's two inputs, which used to be hard-coded to shell32 at the call
     # sites in __main__ — so `--cpp-com` could not run for any other module, `cpp_com_mode`
     # was False there, and with it went the class scaffold (vtable instance, _new/_delete,

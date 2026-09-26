@@ -772,7 +772,7 @@ def test_arm64_keeps_its_cpu_model_through_the_hook(tmp_path, monkeypatch):
 # --- telling a WEDGED replay from a slow one -----------------------------
 
 
-def test_trace_position_finds_the_process_reading_the_trace(tmp_path):
+def test_trace_position_finds_the_process_reading_the_trace(tmp_path, monkeypatch):
     """The probe reads /proc for whoever holds replay.bin open. If it cannot find
     the reader it must return None, not 0 — 0 would read as `consumed nothing`,
     which is a verdict, and the absence of information is not one."""
@@ -780,6 +780,13 @@ def test_trace_position_finds_the_process_reading_the_trace(tmp_path):
     trace.mkdir()
     rrfile = trace / "replay.bin"
     rrfile.write_bytes(b"x" * 4096)
+    resolve = Path.resolve
+
+    def no_fd_resolution(path, *args, **kwargs):
+        assert not str(path).startswith("/proc/"), "must not traverse unrelated fd targets"
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", no_fd_resolution)
     assert rr.trace_read_position(trace) is None
     with rrfile.open("rb") as f:
         f.read(1)
@@ -1372,3 +1379,25 @@ def test_an_unfinalised_but_provably_complete_trace_is_not_refused(tmp_path):
     stump = _replay_log(other, _insn(10) + _insn(10))
     rr.write_manifest(stump, arch="arm64", argv=[], media={})
     assert any("finalised" in w for w in rr.check_trace(stump))
+
+
+def test_report_replay_break_says_whether_it_fired(tmp_path, monkeypatch):
+    """A paused replay and a wedged one look identical from outside — frozen
+    serial, busy QEMU — so the STOP event is the only thing that tells them
+    apart."""
+    from tests.qemu.qmp_client import QmpClient
+    from tests.qemu.vm import QemuVM
+
+    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
+    monkeypatch.setenv(rr.BREAK_ENV_VAR, "200")
+
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    assert vm.report_replay_break() == ""  # nothing armed: silent
+
+    vm._arm_replay_break(rr, trace)
+    vm.qmp = QmpClient()
+    assert "did NOT fire" in vm.report_replay_break()
+
+    vm.qmp.events.append({"event": "STOP"})
+    assert vm.report_replay_break() == "[rr] replay-break FIRED: guest stopped at icount 200"

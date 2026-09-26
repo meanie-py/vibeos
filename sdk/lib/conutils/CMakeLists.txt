@@ -46,8 +46,9 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_conutils DEPENDS ${CONUTILS_RUST_LIB})
 
-add_library(conutils ${SOURCE})
+add_library(conutils STATIC ${SOURCE})
 # add_pch(conutils conutils.h SOURCE)
 add_dependencies(conutils xdk rust_conutils)
+target_include_directories(conutils INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(conutils ${PSEH_LIB} ${CONUTILS_RUST_LIB})
 add_importlibs(conutils msvcrt kernel32)

@@ -41,6 +41,29 @@
 
 // The header-derived authority: struct layouts, constants, and the Win32/shell fn surface.
 pub use crate::island::*;
+// Functions the crate defines itself are blocklisted out of the island; this is where callers
+// in other modules get their declaration. A defining module that globs the prelude still sees
+// its own definition, because a local item always shadows a glob import.
+pub use crate::own_exports_decls::*;
+// SHBindToObject is the one crate-defined function whose contract DIVERGED from the header:
+// the 2026-09 upstream sync made it `SHSTDAPI SHBindToObject(psf, pidl, pbc, riid, ppv)` —
+// stdcall, 5 args, a Vista export — while shell32-rust still defines the pre-sync internal
+// `extern "C"` (psf, pidl, riid, ppv) that every Rust caller was written against. Nothing
+// else reaches it today: it is in no arch's shell32.def (spec2def runs at 0x502 and the export
+// is -version=0x600+) and no compiled C/C++ TU calls it. So callers use the DEFINITION, and
+// adopting the new contract is owed work, not a declaration to paper over.
+// DECLARED rather than `pub use`d, like the rest of the OWN-exports block: utils.rs types it
+// against com_sys's GUID and every caller holds the island's, which is the same record under
+// two Rust names. This declaration states the DEFINITION's contract — cdecl, 4 args — which is
+// also what the pre-sync header (`EXTERN_C HRESULT SHBindToObject(psf, pidl, riid, ppv)`) said.
+extern "C" {
+    pub fn SHBindToObject(
+        psf: *mut crate::island::IShellFolder,
+        pidl: crate::island::LPCITEMIDLIST,
+        riid: *const crate::island::IID,
+        ppvObj: *mut *mut core::ffi::c_void,
+    ) -> crate::island::HRESULT;
+}
 
 // NOTHING scalar or PIDL-shaped is re-exported from `shellcom` here, and that is deliberate.
 // Cherry-picking an alias out of the hand-written substrate into an island-first module
@@ -64,6 +87,12 @@ pub use crate::shellcom::{
     IBindCtx, IBindCtxVtbl, IDataObject, IDataObjectVtbl, IEnumIDList, IEnumIDListVtbl,
     IPersistFolder, IPersistFolder3, IPersistFolder3Vtbl, IPersistFolderVtbl, IShellFolder,
     IShellFolder2, IShellFolder2Vtbl, IShellFolderVtbl, IUnknown, IUnknownVtbl,
+};
+// IShellLibrary's parameter types; see their declaration in shellcom.rs for why the island
+// does not have them.
+pub use crate::shellcom::{
+    DEFAULTSAVEFOLDERTYPE, LIBRARYFOLDERFILTER, LIBRARYOPTIONFLAGS, LIBRARYSAVEFLAGS,
+    REFFOLDERTYPEID, REFKNOWNFOLDERID,
 };
 
 // ATL's smart pointers and containers. The translated TUs use these by their C++ names, and
@@ -90,7 +119,7 @@ pub use crate::shellutils::{
 // would re-open exactly the nominal split the module header warns about.
 pub use crate::win32::{CopyMemory, HIWORD, LOWORD, ZeroMemory};
 // Crate-root `#[macro_export]` macros — text substitution, so no types to split on.
-pub use crate::{FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_VT, _countof};
+pub use crate::{FIELD_OFFSET, ImageList_AddIcon, MAKELONG, MAKEROP4, TRACE_ON, UNREFERENCED_PARAMETER, V_BSTR, V_I4, V_UI4, V_VT, _countof};
 
 // shell32-internal helpers that already have a Rust home. These are shell32's own EXPORTS —
 // the island correctly omits them, because `BLOCKLIST_FUNCS_FROM_CRATE` drops every function
@@ -113,6 +142,54 @@ extern "C" {
         lParam: crate::island::LPARAM,
         pwszTitle: crate::island::LPCWSTR,
     ) -> crate::island::HPROPSHEETPAGE;
+}
+
+/// guiddef.h `REFGUID` — C++ spells it `const GUID &`. A reference IS a pointer at the ABI,
+/// so the alias is the pointer; the island renders `REFIID` the same way.
+pub type REFGUID = *const crate::island::GUID;
+
+extern "C" {
+    /// shell32's type-library GUID. This is what ATL's
+    /// `IDispatchImpl<T, piid, plibid = &CAtlModule::m_libid, ...>` resolves `plibid` to for
+    /// every dual interface in this module, so `EnsureTILoaded` passes it to LoadRegTypeLib.
+    /// Declared here rather than per-file because three classes now need it (CFolder,
+    /// CFolderItem, CFolderItems) and `shell_dispatch.rs` had its own private copy.
+    pub static LIBID_Shell32: crate::island::GUID;
+}
+
+/// oaidl.h `DISP_E_BADINDEX` — `GetTypeInfo`/`Item` reject an out-of-range index with it.
+/// Not in the island: the DISP_E_* family lives in winerror.h behind `_OLEAUTO_H_`-style
+/// guards the island's include closure does not reach.
+pub const DISP_E_BADINDEX: crate::island::HRESULT = 0x8002_000Bu32 as crate::island::HRESULT;
+
+// oleaut32. The island renders the oaidl/oleauto TYPES but not these entry points, so the
+// automation objects (CFolder / CFolderItem / CFolderItems) had no declaration to call.
+extern "system" {
+    /// `BSTR SysAllocString(const OLECHAR *)` — allocates a BSTR copy; NULL on failure.
+    pub fn SysAllocString(psz: *const crate::island::OLECHAR) -> crate::island::BSTR;
+    /// `BSTR SysAllocStringLen(const OLECHAR *, UINT)` — allocates a BSTR of EXACTLY the
+    /// given length, so unlike SysAllocString it does not stop at an embedded NUL and does
+    /// not require the source to be NUL-terminated.
+    pub fn SysAllocStringLen(psz: *const crate::island::OLECHAR, len: crate::island::UINT)
+        -> crate::island::BSTR;
+    /// `HRESULT VariantClear(VARIANT *)` — releases whatever the variant owns and sets it
+    /// VT_EMPTY. This is what `~CComVariant` calls.
+    pub fn VariantClear(pvarg: *mut crate::island::VARIANT) -> crate::island::HRESULT;
+    /// `HRESULT VariantCopyInd(VARIANT *pvarDest, const VARIANT *pvarSrc)` — copies, and
+    /// DEREFERENCES a by-reference source (`VT_BYREF`), which plain `VariantCopy` does not.
+    pub fn VariantCopyInd(
+        pvarDest: *mut crate::island::VARIANT,
+        pvarSrc: *const crate::island::VARIANT,
+    ) -> crate::island::HRESULT;
+    /// `HRESULT LoadRegTypeLib(REFGUID, WORD, WORD, LCID, ITypeLib **)` — the registered
+    /// type library, which is how ATL's `IDispatchImpl::EnsureTILoaded` gets its ITypeInfo.
+    pub fn LoadRegTypeLib(
+        rguid: REFGUID,
+        wVerMajor: crate::island::WORD,
+        wVerMinor: crate::island::WORD,
+        lcid: crate::island::LCID,
+        pptlib: *mut *mut crate::island::ITypeLib,
+    ) -> crate::island::HRESULT;
 }
 
 /// `DLGPROC`, spelled `extern "system"` on EVERY arch.
@@ -401,6 +478,29 @@ extern "C" {
         format: *const crate::island::WCHAR,
         ...
     ) -> ::core::ffi::c_int;
+    /// msvcrt's own export of that same non-conforming form (no `count`).
+    pub fn _swprintf(
+        buffer: *mut crate::island::WCHAR,
+        format: *const crate::island::WCHAR,
+        ...
+    ) -> ::core::ffi::c_int;
+}
+
+/// winnt.h `InterlockedIncrement` / `InterlockedDecrement`: full-barrier atomic ±1 returning
+/// the NEW value. These are compiler intrinsics on amd64 and arm64 — kernel32 exports them only
+/// on i386 — so an `extern` declaration would link on one arch in three. `SeqCst` is the full
+/// barrier the Interlocked* family guarantees.
+#[inline]
+pub unsafe fn InterlockedIncrement(addend: *mut crate::island::LONG) -> crate::island::LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_add(1)
+}
+#[inline]
+pub unsafe fn InterlockedDecrement(addend: *mut crate::island::LONG) -> crate::island::LONG {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        .wrapping_sub(1)
 }
 
 // ===========================================================================================
@@ -761,6 +861,11 @@ extern "system" {
 extern "C" {
     /// msvcrt.
     pub fn free(block: *mut core::ffi::c_void);
+    /// Beside `free`, and for the same reason a translation needs it: in this tree C++
+    /// `operator new` IS malloc and `operator delete` IS free
+    /// (sdk/lib/cpprt/.../cpprt.cpp), so a faithful `new T`/`delete p` pair lowers to
+    /// these two — and must, wherever the other half of the pair is still C++.
+    pub fn malloc(size: usize) -> *mut core::ffi::c_void;
     /// `precomp.h:291`, defined in `utils.cpp`. Plain __cdecl — NOT WINAPI — so it belongs in
     /// the `extern "C"` block; `extern "system"` mangles it to `_SHELL_GetIDListTarget@8` on
     /// i386, which is the only arch that catches the mismatch.
@@ -1087,6 +1192,23 @@ macro_rules! V_BSTR {
     };
 }
 
+/// oaidl.h `V_I4(pvar)` — the `VT_I4` arm, `lVal`.
+#[macro_export]
+macro_rules! V_I4 {
+    ($v:expr) => {
+        (*($v)).n1.n2.n3.lVal
+    };
+}
+
+/// oaidl.h `V_UI4(pvar)` — the `VT_UI4` arm, `ulVal`. CFolderItems::Item reads it to take
+/// the integer index out of the caller's VARIANT.
+#[macro_export]
+macro_rules! V_UI4 {
+    ($v:expr) => {
+        (*($v)).n1.n2.n3.ulVal
+    };
+}
+
 /// shobjidl.h `IsEqualPropertyKey(a, b)` — same FMTID and same PID.
 #[inline]
 pub unsafe fn IsEqualPropertyKey(
@@ -1158,6 +1280,10 @@ extern "C" {
         -> crate::island::LPWSTR;
     pub fn _wtoi(s: crate::island::LPCWSTR) -> ::core::ffi::c_int;
     pub fn _wcsicmp(a: crate::island::LPCWSTR, b: crate::island::LPCWSTR) -> ::core::ffi::c_int;
+    /// In-place case conversion, returning its own argument. The CRT's locale-independent
+    /// conversion, NOT Win32 `CharUpperW`/`CharLowerW` — that is what the C++ calls.
+    pub fn _wcsupr(s: crate::island::LPWSTR) -> crate::island::LPWSTR;
+    pub fn _wcslwr(s: crate::island::LPWSTR) -> crate::island::LPWSTR;
 }
 
 /// wine's shell32 string shims are `#define`s onto the CRT wide entry points.
@@ -1257,23 +1383,8 @@ pub unsafe fn isspaceW(c: crate::island::WCHAR) -> crate::island::INT {
     crate::island::iswspace(c as crate::island::INT)
 }
 
-extern "C" {
-    /// `strsafe.h:515` — the bounded `swprintf`. Rust can CALL a C variadic on stable, but
-    /// there is nothing here to call: `STRSAFEAPI` is `static __inline`, so this is a PHANTOM
-    /// SYMBOL with no export, and the `extern` decl this used to be linked nowhere. It now
-    /// binds to the forwarding trampoline in `dll/win32/shell32/rust_strsafe_shim.c` — its own
-    /// TU, NOT an append to `rust_varargs_shim.c`, which deliberately includes no Windows
-    /// headers so it can hand-declare the variadic it defines —
-    /// which calls the header's own `StringCchVPrintfW` and so keeps strsafe's truncation
-    /// contract rather than reimplementing it.
-    #[link_name = "StringCchPrintfW_RustBridge"]
-    pub fn StringCchPrintfW(
-        pszDest: crate::island::LPWSTR,
-        cchDest: usize,
-        pszFormat: crate::island::LPCWSTR,
-        ...
-    ) -> crate::island::HRESULT;
-}
+// `StringCchPrintfW` is `strsafe_rust::StringCchPrintfW!`, which calls msvcrt's variadic
+// `_snwprintf` directly. It used to bind to a C trampoline, rust_strsafe_shim.c.
 
 // ── dialogs/drive.cpp residue ──────────────────────────────────────────────────────────────
 

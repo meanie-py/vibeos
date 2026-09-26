@@ -15,8 +15,12 @@ if(MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4189>)
 endif()
 
-# Internal includes
-include_directories(BEFORE inc)
+# Internal includes. ucrt_reactos/inc comes first and holds the headers ReactOS ADDED to
+# this drop (corecrt_internal_state_isolation.h) — kept outside the vendored tree so
+# sdk/lib/ucrt stays a pure Microsoft drop and a re-vendor is a copy, not a merge.
+# corecrt_internal.h:2119 includes it, which is itself one of this tree's adaptation
+# sites; see vendor.yaml's ucrt entry.
+include_directories(BEFORE inc ${REACTOS_SOURCE_DIR}/sdk/lib/ucrt_reactos/inc)
 
 if(${ARCH} STREQUAL "i386")
     include_directories(inc/i386)
@@ -64,17 +68,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR
         -Wno-uninitialized
     )
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-reorder>)
-endif()
-
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    add_compile_definitions(
-        _lrotl=___lrotl
-        _rotl=___rotl
-        _rotl64=___rotl64
-        _lrotr=___lrotr
-        _rotr=___rotr
-        _rotr64=___rotr64
-    )
 endif()
 
 include(conio/conio.cmake)

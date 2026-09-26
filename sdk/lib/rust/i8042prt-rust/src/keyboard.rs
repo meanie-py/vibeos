@@ -346,8 +346,21 @@ unsafe extern "system" fn i8042KbdDpcRoutine(
         &mut KeysTransferred,
     );
 
+    // ClassService runs outside the interrupt lock, so the ISR can append keys
+    // meanwhile. Move the untransferred tail down to the start of the buffer, as
+    // the mouse DPC does. Upstream's keyboard DPC only decremented the count: the
+    // next DPC re-delivered KeyboardBuffer[0] (a key already sent) and dropped the
+    // new one. The race showed as one Esc make delivered twice with its break lost,
+    // so Ctrl+Esc toggled the start menu open and shut.
     Irql = KeAcquireInterruptSpinLock((*PortDeviceExtension).HighestDIRQLInterrupt);
     (*DeviceExtension).KeysInBuffer -= KeysTransferred;
+    if (*DeviceExtension).KeysInBuffer != 0 && KeysTransferred != 0 {
+        core::ptr::copy(
+            (*DeviceExtension).KeyboardBuffer.add(KeysTransferred as usize),
+            (*DeviceExtension).KeyboardBuffer,
+            (*DeviceExtension).KeysInBuffer as usize,
+        );
+    }
     KeReleaseInterruptSpinLock((*PortDeviceExtension).HighestDIRQLInterrupt, Irql);
 }
 

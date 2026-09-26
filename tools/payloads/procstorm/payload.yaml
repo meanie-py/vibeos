@@ -22,12 +22,13 @@ binaries:
     dest: Profiles/All Users/Start Menu/Programs/StartUp/procstorm.exe
 
 test:
-  # NOTE launch_drain_secs is a READ-ITERATION count, not seconds: the drain
-  # loop does serial_output(timeout=1.0) per iteration, which returns
-  # immediately whenever bytes are already waiting. The kmtest sweep is quiet
-  # between tests so the two coincide there; this payload is the opposite --
-  # every spawn makes the kernel's own [PS] process tracing emit a burst, so
-  # 2400 iterations were spent in 175s and cut the storm off at 500/1000.
-  # Budget by iterations, not by wall clock. The marker ends the boot early.
+  # launch_drain_secs is WALL-CLOCK SECONDS. It used to be a read-iteration
+  # count -- serial_output(timeout=1.0) returns immediately when bytes are
+  # already waiting, so a chatty payload burned the budget in a fraction of the
+  # stated time. This payload is the chattiest there is (every spawn makes the
+  # kernel's own [PS] tracing emit a burst) and hit it first: 2400 "seconds"
+  # were spent in 175s, cutting the storm off at 500/1000. The number below was
+  # inflated to 60000 to compensate; test_payload.py now bounds the drain by the
+  # clock, so it is back to a real duration. The marker ends the boot early.
   launch_marker: "[PROCSTORM] done"
-  launch_drain_secs: 60000
+  launch_drain_secs: 1800

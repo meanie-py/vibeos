@@ -314,7 +314,11 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
         (*Adapter).NteContext = 0;
     }
 
-    if (*new_lease).options[DHO_SUBNET_MASK as usize].len != 0 {
+    // The option length is attacker-controlled (it comes off the wire from whichever
+    // host answers DHCP first) and the memcpy below targets iaddr::iabuf, which is 16
+    // bytes. A subnet mask is exactly one ULONG; anything else is malformed.
+    // Upstream-Commit: ed367320c29 (#9056)
+    if (*new_lease).options[DHO_SUBNET_MASK as usize].len == core::mem::size_of::<u32>() as _ {
         let mut netmask: iaddr = core::mem::zeroed();
         memcpy(
             (netmask.iabuf.as_mut_ptr() as *mut core::ffi::c_void) as *mut c_void,
@@ -423,7 +427,11 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
         }
     }
 
-    if (*new_lease).options[DHO_ROUTERS as usize].len != 0 {
+    // Same wire-controlled length. A router list is a whole number of ULONGs.
+    // Upstream-Commit: ed367320c29 (#9056)
+    if (*new_lease).options[DHO_ROUTERS as usize].len > 0
+        && (*new_lease).options[DHO_ROUTERS as usize].len % core::mem::size_of::<u32>() as i32 == 0
+    {
         (*Adapter).RouterMib.dwForwardDest = 0;
         (*Adapter).RouterMib.dwForwardMask = 0;
         (*Adapter).RouterMib.dwForwardMetric1 = 1;
@@ -444,19 +452,15 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
 
         if !hkey.is_null() {
             Buffer[0] = 0;
-            let len_mut = (*new_lease).options[DHO_ROUTERS as usize].len;
             let data_mut = (*new_lease).options[DHO_ROUTERS as usize].data;
-            for i in 0..len_mut {
-                let pos = strlen(Buffer.as_ptr());
-                sprintf(
-                    Buffer.as_mut_ptr().add(pos),
-                    b"%u\0".as_ptr() as *const i8,
-                    *data_mut.add((i) as usize) as u32,
-                );
-                if (i + 1) < len_mut {
-                    strcat(Buffer.as_mut_ptr(), b".\0".as_ptr() as *const i8);
-                }
-            }
+            sprintf(
+                Buffer.as_mut_ptr(),
+                b"%u.%u.%u.%u\0".as_ptr() as *const i8,
+                *data_mut.add(0) as u32,
+                *data_mut.add(1) as u32,
+                *data_mut.add(2) as u32,
+                *data_mut.add(3) as u32,
+            );
             RegSetValueExA(
                 hkey,
                 "DhcpDefaultGateway\0".as_ptr() as *const i8,

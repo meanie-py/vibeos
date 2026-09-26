@@ -1459,6 +1459,57 @@ def _detect_com_method_macro(crate: Path) -> str | None:
     return None
 
 
+def _detect_concrete_stdcall_slots(crate: Path) -> bool:
+    """Does this crate's SUBSTRATE spell fn-pointer slots `extern "stdcall"` on i386?
+
+    This decides whether a translated `static` + system function has to be emitted as a
+    per-arch `#[cfg]` twin pair. The dual exists because Rust compares fn-pointer ABIs
+    NOMINALLY -- `extern "system" fn` unifies with neither `extern "stdcall"` nor
+    `extern "C"` -- so a callback could only be stored in a concretely-spelled bindgen slot
+    if it carried that arch's literal convention.
+
+    `normalize_island_abi.py` has since respelled the islands `extern "system"` on all three
+    arches, which retires the premise: shell32-rust's `island_i386.rs` and com-sys's
+    `bindgen_i386.rs` both contain ZERO `extern "stdcall"`. Where that holds the dual is pure
+    cost, and not only line count -- only half of it is ever compiled, so a fix to one twin is
+    invisible until someone builds the other arch, and it defeats crate-repair's cross-target
+    agreement outright (`collapse_abi_twins.py` exists to fold the leftovers).
+
+    DETECTED from the island/bindgen files ONLY, never from translated output: a previous
+    run's twins are themselves `extern "stdcall"`, so scanning the whole crate would make this
+    self-perpetuating. Absent any island, the answer is the conservative True -- the dual is
+    always ABI-correct, merely wasteful.
+    """
+    src = crate / "src"
+    if not src.is_dir():
+        return True
+    # A NON-recursive glob on the two stems, not a tree walk: every island in the tree sits
+    # directly in `<crate>/src`, and this runs at import for every target.
+    islands = sorted(src.glob("island_*.rs")) + sorted(src.glob("bindgen_*.rs"))
+    if not islands:
+        return True
+    from ...crate_integrate import _without_comments
+
+    for f in islands:
+        try:
+            # Comments masked first. `island_extra.rs` mentions `unsafe extern "stdcall"` in a
+            # PROSE note explaining that lstrcpynW is now bound from the real header -- one
+            # sentence, no code, and it flipped this answer for the whole crate. A name in
+            # prose is not a use (same reason `crate_integrate` masks before its import scan).
+            if 'extern "stdcall"' in _without_comments(f.read_text(errors="replace")):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+# The TARGETS above are dict literals, evaluated at import before the detector exists, so they
+# cannot call it at their own definition point. Fill it in once here instead of hardcoding a
+# per-target answer that would rot the moment an island is respelled.
+for _target in TARGETS.values():
+    _target.concrete_stdcall_slots = _detect_concrete_stdcall_slots(_target.output_crate)
+
+
 def _find_dll_spec(name: str, source_dir: Path) -> Path | None:
     """The DLL's own .spec — the ground truth for which fns must be exported.
 
@@ -1600,10 +1651,15 @@ def _derive_sys_substrate(
 def _detect_sys_umbrella(sys_dir: Path, sys_name: str) -> str:
     """The module path the substrate re-exports its bindgen under.
 
-    Two shapes exist in-tree and both must work:
+    THREE shapes exist in-tree and all must work:
       * `ntdll-sys`  — `pub mod nt { … }`, so imports collapse to `ntdll_sys::nt::*`.
       * `msvcrt-sys` — flat `pub use bindgen_<arch>::*;` at the crate root, so they
         collapse to `msvcrt_sys::*`.
+      * `com-sys`    — `include!("bindgen_<arch>.rs")` at the crate root, which splices
+        the items in TEXTUALLY. That is flat too — the items really are crate-root
+        items, there is no module to name — but it looks nothing like a `pub use` glob,
+        so it used to fail as "cannot tell how com-sys re-exports its bindgen" and took
+        the whole `menuband` target down with it.
 
     Returns "" for the flat shape (see `collapse_sys_crate`: "" means *no umbrella
     segment*, and is distinct from None, which means "not a user-mode target at all").
@@ -1612,7 +1668,9 @@ def _detect_sys_umbrella(sys_dir: Path, sys_name: str) -> str:
     if not lib.is_file():
         raise TargetResolveError(f"--target: substrate crate `{sys_name}` has no src/lib.rs")
     src = lib.read_text(errors="replace")
-    flat = bool(re.search(r"^pub use (?:self::)?bindgen_\w+::\*\s*;", src, re.M))
+    flat = bool(re.search(r"^pub use (?:self::)?bindgen_\w+::\*\s*;", src, re.M)) or bool(
+        re.search(r'^\s*include!\("bindgen_\w+\.rs"\)\s*;', src, re.M)
+    )
     umbrellas = re.findall(r"^pub mod (\w+)\s*\{", src, re.M)
     if flat and not umbrellas:
         return ""
@@ -1659,6 +1717,7 @@ def make_user_dll_target(
         sys_umbrella=umbrella,
         system_prompt_addendum=_user_prompt_addendum(name),
         com_method_macro=_detect_com_method_macro(crate),
+        concrete_stdcall_slots=_detect_concrete_stdcall_slots(crate),
         # com_object_map stays None: a module outside shell32 has no OBJECT_ENTRY class-object
         # map, its COM classes being created by plain `*_Constructor` free functions.
         com_island_files=_derive_com_islands(crate),
@@ -1748,3 +1807,25 @@ def hal_cmake_for_c(c_path: Path) -> Path | None:
 # Switching the default re-bills nothing — the resume-cache key (preparation_namespace) is
 # built from mode + seal flags and does NOT include the model, so every banked unit still
 # replays for $0 regardless of which model bought it.
+
+
+#: The COM module-lock symbol pair each output crate calls, keyed by crate name.
+#:
+#: This is a property of the CRATE and not of the --target, because the host DLL is what
+#: defines the pair. `menuband-rust` builds a staticlib that links into BOTH shell32.dll and
+#: rshell.dll, so it needs a name the two of them agree on: shell32.cpp and
+#: base/shell/rshell/misc.cpp each define `MenuBandRustModule{Lock,Unlock}` forwarding to their
+#: own `gModule`. Emitting shell32's private `Shell32RustObject*` spelling into that crate links
+#: shell32.dll perfectly and breaks rshell.dll -- and not at once, but whenever a later cohab
+#: flip first makes an rshell-reachable object pull the offending module out of the archive.
+_MODULE_LOCK_BY_CRATE = {
+    "menuband-rust": ("MenuBandRustModuleLock", "MenuBandRustModuleUnlock"),
+}
+
+#: What a crate with no entry above gets: shell32.dll's own pair.
+_DEFAULT_MODULE_LOCK = ("Shell32RustObjectLock", "Shell32RustObjectUnlock")
+
+
+def module_lock_for_crate(crate: str | None) -> tuple[str, str]:
+    """The (lock, unlock) symbol pair the COM scaffold should call in `crate`."""
+    return _MODULE_LOCK_BY_CRATE.get(crate or "", _DEFAULT_MODULE_LOCK)

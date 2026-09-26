@@ -107,9 +107,22 @@ def ensure_toolchain(repo: Path) -> bool:
     link = repo / ".build-tools" / "llvm-mingw"
     target = None
     if link.exists():  # follows symlinks; True only if resolvable
-        target = link.resolve()
-        if target.is_absolute() and str(link.readlink()).startswith("/"):
-            return True
+        if not link.is_symlink():
+            # A REAL directory here, not a link. Restoring this tree from a 7-Zip
+            # extraction of the WSL image produced exactly that in all 8 worktrees:
+            # the archiver materialised each symlink as an empty dir. readlink() then
+            # raises EINVAL, so the function that exists to provision the toolchain
+            # died on the one state it most needed to repair. An EMPTY one is that
+            # artifact and is safe to drop; a POPULATED one is somebody's real local
+            # toolchain and is left exactly where it is.
+            try:
+                link.rmdir()
+            except OSError:
+                return any(link.iterdir())
+        else:
+            target = link.resolve()
+            if target.is_absolute() and str(link.readlink()).startswith("/"):
+                return True
     if target is None:
         parent = Path(os.environ.get("VIBEOS_ROOT", repo.resolve().parent))
         hits = sorted(parent.glob("llvm-mingw-*"))

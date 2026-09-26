@@ -38,6 +38,29 @@ from .artifacts import Run, Stage
 LOCK_DIR = Path(os.environ.get("VIBEOS_QEMU_LOCK_DIR", "/tmp/vibeos-qemu-locks"))
 
 
+def _pid_is_zombie(pid: int) -> bool:
+    """True if `pid` has exited but its parent has not reaped it yet.
+
+    `os.kill(pid, 0)` succeeds on a zombie — the pid is still in the table — so a
+    naive liveness check reads a process that is already dead as alive, and no
+    further signal will change that: only the parent can reap it. This produced a
+    "STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)" report for a QEMU
+    that had in fact died on the SIGTERM, which is a worse lie than the silent
+    success this escalation path was added to fix: it sends the reader hunting an
+    unkillable process that does not exist.
+
+    Linux-only; anywhere without /proc this returns False and the caller falls
+    back to the pid check, which is what it did before.
+    """
+    try:
+        for line in (Path("/proc") / str(pid) / "status").read_text().splitlines():
+            if line.startswith("State:"):
+                return line.split()[1] == "Z"
+    except OSError:
+        return False
+    return False
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -167,6 +190,8 @@ def kill_one(info: dict, *, dry_run: bool = False) -> str:
             os.kill(qpid, 0)
         except ProcessLookupError:
             return f"SIGTERM {what}"
+        if _pid_is_zombie(qpid):
+            return f"SIGTERM {what} (exited; awaiting reap by its parent)"
     try:
         os.kill(qpid, signal.SIGKILL)
     except ProcessLookupError:
@@ -179,6 +204,10 @@ def kill_one(info: dict, *, dry_run: bool = False) -> str:
             os.kill(qpid, 0)
         except ProcessLookupError:
             return f"SIGKILL {what} (declined SIGTERM)"
+        if _pid_is_zombie(qpid):
+            return f"SIGKILL {what} (declined SIGTERM; awaiting reap by its parent)"
+    if _pid_is_zombie(qpid):
+        return f"SIGKILL {what} (exited; awaiting reap by its parent)"
     return f"STILL ALIVE after SIGTERM+SIGKILL {what} — unkillable (D state?)"
 
 

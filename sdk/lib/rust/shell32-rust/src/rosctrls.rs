@@ -519,3 +519,109 @@ pub unsafe fn CListView_Update_body(this: *mut CListView, i: c_int) -> BOOL {
 pub unsafe fn CListView_operator_BOOL_body(hWnd: *const HWND) -> BOOL {
     (!(*hWnd).is_null()) as BOOL
 }
+
+// ---------------------------------------------------------------------------------------
+// commctrl.h list-view + image-list MACROS. Same rationale as everything above: these exist
+// only in the header, so no symbol exists to import and every TU that touches a list view
+// needs them written out. Message ids come from the island; the WPARAM/LPARAM packing is
+// kept exactly as commctrl.h writes it.
+// ---------------------------------------------------------------------------------------
+
+/// `ListView_SetItem(hwnd, pitem)` — commctrl.h. The item goes in the LPARAM.
+#[inline]
+pub unsafe fn ListView_SetItem(hwnd: HWND, pitem: *const LVITEMW) -> BOOL {
+    snd(hwnd, LVM_SETITEMW, 0, pitem as LPARAM) as BOOL
+}
+
+/// `ListView_GetItem(hwnd, pitem)` — commctrl.h.
+#[inline]
+pub unsafe fn ListView_GetItem(hwnd: HWND, pitem: *mut LVITEMW) -> BOOL {
+    snd(hwnd, LVM_GETITEMW, 0, pitem as LPARAM) as BOOL
+}
+
+/// `ListView_DeleteItem(hwnd, i)` — commctrl.h. The index is the WPARAM here, not the LPARAM.
+#[inline]
+pub unsafe fn ListView_DeleteItem(hwnd: HWND, i: c_int) -> BOOL {
+    snd(hwnd, LVM_DELETEITEM, i as WPARAM, 0) as BOOL
+}
+
+/// `ListView_SetItemState(hwnd, i, data, mask)` — commctrl.h.
+///
+/// The macro builds a STACK LVITEMW holding only `state`/`stateMask` and sends its address;
+/// `i` rides in the WPARAM. Passing the flags directly in the LPARAM would be read as a
+/// pointer, so the temporary is load-bearing rather than a convenience.
+#[inline]
+pub unsafe fn ListView_SetItemState(hwnd: HWND, i: c_int, data: UINT, mask: UINT) -> BOOL {
+    let mut item: LVITEMW = core::mem::zeroed();
+    item.state = data;
+    item.stateMask = mask;
+    snd(hwnd, LVM_SETITEMSTATE, i as WPARAM, core::ptr::addr_of_mut!(item) as LPARAM) as BOOL
+}
+
+
+/// `ListView_FindItem(hwnd, iStart, plvfi)` — commctrl.h. The START INDEX is the WPARAM and
+/// is routinely -1 ("search from the beginning"), which is why it is signed.
+#[inline]
+pub unsafe fn ListView_FindItem(hwnd: HWND, iStart: c_int, plvfi: *const LVFINDINFOW) -> c_int {
+    snd(hwnd, LVM_FINDITEMW, iStart as WPARAM, plvfi as LPARAM) as c_int
+}
+
+/// `ListView_GetItemText(hwnd, i, iSubItem, pszText, cchTextMax)` — commctrl.h.
+///
+/// The macro fills a STACK LVITEMW and calls LVM_GETITEMTEXTW; `iSubItem`, the buffer and its
+/// length travel inside that struct, not as message parameters. Only `i` is the WPARAM.
+#[inline]
+pub unsafe fn ListView_GetItemText(
+    hwnd: HWND,
+    i: c_int,
+    iSubItem: c_int,
+    pszText: LPWSTR,
+    cchTextMax: c_int,
+) -> c_int {
+    let mut item: LVITEMW = core::mem::zeroed();
+    item.iSubItem = iSubItem;
+    item.cchTextMax = cchTextMax;
+    item.pszText = pszText;
+    snd(hwnd, LVM_GETITEMTEXTW, i as WPARAM, core::ptr::addr_of_mut!(item) as LPARAM) as c_int
+}
+
+/// `ListView_DeleteAllItems(hwnd)` — commctrl.h.
+#[inline]
+pub unsafe fn ListView_DeleteAllItems(hwnd: HWND) -> BOOL {
+    snd(hwnd, LVM_DELETEALLITEMS, 0, 0) as BOOL
+}
+
+/// `ListView_EnsureVisible(hwnd, i, fPartialOK)` — commctrl.h. `fPartialOK` is the LPARAM.
+#[inline]
+pub unsafe fn ListView_EnsureVisible(hwnd: HWND, i: c_int, fPartialOK: BOOL) -> BOOL {
+    snd(hwnd, LVM_ENSUREVISIBLE, i as WPARAM, fPartialOK as LPARAM) as BOOL
+}
+
+/// `ListView_SetImageList(hwnd, himl, iImageList)` — commctrl.h. Returns the PREVIOUS list,
+/// which the caller may need to destroy; discarding it silently leaks the old image list.
+#[inline]
+pub unsafe fn ListView_SetImageList(hwnd: HWND, himl: HIMAGELIST, iImageList: c_int) -> HIMAGELIST {
+    snd(hwnd, LVM_SETIMAGELIST, iImageList as WPARAM, himl as LPARAM) as HIMAGELIST
+}
+
+/// `ListView_SortItems(hwnd, pfnCompare, lPrm)` — commctrl.h.
+///
+/// NOTE the order: the COMPARATOR goes in the LPARAM and the caller's context in the WPARAM,
+/// the opposite of nearly every other list-view message. Swapping them calls an arbitrary
+/// pointer as code.
+#[inline]
+pub unsafe fn ListView_SortItems(hwnd: HWND, pfnCompare: PFNLVCOMPARE, lPrm: LPARAM) -> BOOL {
+    snd(hwnd, LVM_SORTITEMS, lPrm as WPARAM, pfnCompare.map_or(0, |f| f as usize) as LPARAM) as BOOL
+}
+
+/// `ListView_SetExtendedListViewStyleEx(hwnd, dwMask, dw)` — commctrl.h.
+#[inline]
+pub unsafe fn ListView_SetExtendedListViewStyleEx(hwnd: HWND, dwMask: DWORD, dw: DWORD) -> DWORD {
+    snd(hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE, dwMask as WPARAM, dw as LPARAM) as DWORD
+}
+
+/// `ImageList_RemoveAll(himl)` — commctrl.h:`ImageList_Remove(himl, -1)`.
+#[inline]
+pub unsafe fn ImageList_RemoveAll(himl: HIMAGELIST) -> BOOL {
+    crate::island::ImageList_Remove(himl, -1)
+}

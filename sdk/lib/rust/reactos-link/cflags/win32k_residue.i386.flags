@@ -8,7 +8,6 @@
 -DMINGW_HAS_SECURE_API=1
 -DUSE_COMPILER_EXCEPTIONS
 -DWINVER=0x502
--D_CRT_NON_CONFORMING_SWPRINTFS
 -D_CRT_SUPPRESS_RESTRICT
 -D_GLIBCXX_HAVE_BROKEN_VSWPRINTF
 -D_M_IX86
@@ -37,12 +36,11 @@
 -I{REPO}/sdk/include/winrt
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
--I{REPO}/win32ss/.
 -I{REPO}/win32ss/include
--I{REPO}/ntoskrnl/include
 -I{REPO}/sdk/lib/3rdparty/freetype/include
 -I{REPO}/sdk/include/reactos/subsys
 -I{REPO}/sdk/include/reactos/drivers
+-std=gnu23
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=
 -pipe
@@ -53,8 +51,6 @@
 -nostdinc
 -isystem{REPO}/sdk/include/crt
 -isystem{REPO}/.build-tools/llvm-mingw/lib/clang/19/include
--Wno-microsoft
--Wno-pragma-pack
 -fno-associative-math
 -fno-builtin-stpcpy
 -gdwarf-2
@@ -63,7 +59,6 @@
 -mtune=generic
 -Wall
 -Wpointer-arith
--Wno-unknown-warning-option
 -Wno-char-subscripts
 -Wno-multichar
 -Wno-unused-value
@@ -73,9 +68,12 @@
 -Wno-unused-result
 -Wno-format
 -Wno-maybe-uninitialized
+-Wno-nonnull-compare
+-Wno-microsoft
+-Wno-pragma-pack
+-Wno-unknown-warning-option
 -O1
 -fno-optimize-sibling-calls
 -fno-omit-frame-pointer
 -mstackrealign
--std=gnu2x
 -c

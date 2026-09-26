@@ -64,9 +64,11 @@ endif()
 set_module_type(ucrtbase_winetest win32cui)
 
 target_link_libraries(ucrtbase_winetest wine oldnames ${PSEH_LIB} chkstk)
-if(NOT MSVC)
-    # Add this manually here, so it can link to ucrtbase.dll and vcstartup
-    target_link_libraries(ucrtbase_winetest -lgcc)
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    # Add this manually here, so it can link to ucrtbase.dll and vcstartup.
+    # GCC-only: clang links its own compiler-rt builtins and there is no libgcc
+    # in the pinned llvm-mingw toolchain, so `NOT MSVC` made this the ONE
+    # winetest that could not link (`lld: error: unable to find library -lgcc`).
 endif()
 
 add_importlibs(ucrtbase_winetest ucrtbase kernel32 ntdll)

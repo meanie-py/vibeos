@@ -7,7 +7,6 @@
 -DUSE_COMPILER_EXCEPTIONS
 -DWINVER=0x502
 -D_AMD64_
--D_CRT_NON_CONFORMING_SWPRINTFS
 -D_CRT_SUPPRESS_RESTRICT
 -D_GLIBCXX_HAVE_BROKEN_VSWPRINTF
 -D_M_AMD64
@@ -34,6 +33,7 @@
 -I{REPO}/sdk/include/winrt
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
+-std=gnu99
 -U_X86_
 -UWIN32
 -ffile-prefix-map={REPO}=
@@ -46,8 +46,6 @@
 -nostdinc
 -isystem{REPO}/sdk/include/crt
 -isystem{REPO}/.build-tools/llvm-mingw/lib/clang/19/include
--Wno-microsoft
--Wno-pragma-pack
 -fno-associative-math
 -fno-builtin-stpcpy
 -gdwarf-2
@@ -56,7 +54,6 @@
 -mtune=generic
 -Wall
 -Wpointer-arith
--Wno-unknown-warning-option
 -Wno-char-subscripts
 -Wno-multichar
 -Wno-unused-value
@@ -66,8 +63,10 @@
 -Wno-unused-result
 -Wno-format
 -Wno-maybe-uninitialized
+-Wno-nonnull-compare
+-Wno-microsoft
+-Wno-pragma-pack
+-Wno-unknown-warning-option
 -O1
--Wno-error
 -mcx16
--std=gnu99
 -c

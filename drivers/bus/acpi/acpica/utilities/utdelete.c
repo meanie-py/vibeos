@@ -5,7 +5,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2022, Intel Corp.
+ * Copyright (C) 2000 - 2026, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -185,7 +185,7 @@ AcpiUtDeleteInternalObj (
             /* Global Lock has extra semaphore */
 
             (void) AcpiOsDeleteSemaphore (AcpiGbl_GlobalLockSemaphore);
-            AcpiGbl_GlobalLockSemaphore = NULL;
+            AcpiGbl_GlobalLockSemaphore = ACPI_SEMAPHORE_NULL;
 
             AcpiOsDeleteMutex (Object->Mutex.OsMutex);
             AcpiGbl_GlobalLockMutex = NULL;
@@ -204,7 +204,7 @@ AcpiUtDeleteInternalObj (
             Object, Object->Event.OsSemaphore));
 
         (void) AcpiOsDeleteSemaphore (Object->Event.OsSemaphore);
-        Object->Event.OsSemaphore = NULL;
+        Object->Event.OsSemaphore = ACPI_SEMAPHORE_NULL;
         break;
 
     case ACPI_TYPE_METHOD:
@@ -466,7 +466,7 @@ AcpiUtUpdateRefCount (
             "Obj %p Type %.2X [%s] Refs %.2X [Incremented]\n",
             Object, Object->Common.Type,
             AcpiUtGetObjectTypeName (Object), NewCount));
-        Message = "Incremement";
+        Message = "Increment";
         break;
 
     case REF_DECREMENT:

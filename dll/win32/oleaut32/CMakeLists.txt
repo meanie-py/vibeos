@@ -3,8 +3,6 @@ remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 
 add_definitions(
-    -D__ROS_LONG64__
-    -DCOM_NO_WINDOWS_H
     -D_OLEAUT32_
     -DPROXY_DELEGATION
     -DWINE_REGISTER_DLL
@@ -37,6 +35,10 @@ list(APPEND SOURCE
     # varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
     # variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
     # vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
+    # thunks.c — new upstream file (asm call_method/call_float_method/
+    # call_double_method trampolines factored out of dispatch.c for
+    # DispCallFunc); declined — dispatch.rs is a full Rust replacement of
+    # DispCallFunc and doesn't call these.
     )
 
 if(MSVC)
@@ -113,6 +115,10 @@ if(MSVC)
     # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
     # Disable warning C4267: 'initializing': conversion from 'size_t' to 'BYTE', possible loss of data
     target_compile_options(oleaut32 PRIVATE /wd4146 /wd4267)
+endif()
+
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(oleaut32 PRIVATE -Wno-misleading-indentation)
 endif()
 
 add_idl_headers(oleaut32_idlheader oleaut32_oaidl.idl)

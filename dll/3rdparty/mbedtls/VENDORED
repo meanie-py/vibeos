@@ -4,7 +4,7 @@ This tree is foreign code carried by the project. It is deliberately NOT part of
 C -> Rust effort and does not count toward translation progress.
 
   upstream: https://github.com/Mbed-TLS/mbedtls
-  licence:  Apache-2.0
+  licence:  Apache-2.0 OR GPL-2.0-or-later
 
 Registered in vendor.yaml; see that file for the reason and tools/vendored.py for the
 checks. Do not translate, and do not "clean up" this tree — local edits make the next

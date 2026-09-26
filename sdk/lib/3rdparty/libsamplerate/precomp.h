@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "config.h"
-#include "float_cast.h"
 #include "common.h"
 
 #endif /* _LIBSAMPLERATE_PCH_ */

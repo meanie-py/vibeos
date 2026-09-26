@@ -1,35 +1,42 @@
-include_directories(
-    BEFORE ${CMAKE_CURRENT_SOURCE_DIR}
-    inc)
+include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR})
 
 #add_definitions(-D_DEBUG)
 
 # ============================================================================
-# uniata.sys — Rust cohabitation flip (9 .cpp -> Rust; ros_glue.cpp stays C)
+# uniata.sys — 100% Rust; the UniATA C is GONE (2026-09-20)
 # ============================================================================
-# The UniATA miniport is translated to Rust (uniata-rust, kept on disk per the
-# never-delete rule). DriverEntry + the SCSIPORT HwXxx miniport machinery + the
-# PCI/AHCI/SATA register stacks + chip-detect tables come from libuniata_rust.a;
-# the driver-private DDK types (HW_DEVICE_EXTENSION/HW_CHANNEL/HW_LU_EXTENSION/
-# ATA_REQ/IORES + the IDENTIFY/SRB/CDB layouts) come from the per-driver bindgen
-# substrate (uniata-rust/src/types_*.rs). ros_glue/ros_glue.cpp stays as the C TU
-# defining the mutable MajorVersion/MinorVersion/BuildNumber globals the Rust crate
-# references. rust_varargs_shim.c holds the ONE thing stable Rust cannot do: DEFINE the
-# C-variadic _PrintNtConsole entry point (`va_start`). It trampolines into uniata-rust's
-# _PrintNtConsole_v (which keeps the 512-byte buffer + the HalDisplayString call) and
-# forwards the va_list into ntoskrnl's _vsnprintf — so the crate builds on PLAIN STABLE
-# rustc: no bootstrap escape hatch, no nightly feature gate. Standard per-arch
-# RUST_TARGET, i386 no-SSE RUSTFLAGS. First C++-tier proof (rustconv tree-sitter-cpp).
+# The UniATA miniport is translated to Rust (uniata-rust): DriverEntry + the
+# SCSIPORT HwXxx miniport machinery + the PCI/AHCI/SATA register stacks + the
+# chip-detect tables all come from libuniata_rust.a, and the driver-private DDK
+# types (HW_DEVICE_EXTENSION/HW_CHANNEL/HW_LU_EXTENSION/ATA_REQ/IORES + the
+# IDENTIFY/SRB/CDB layouts) from the per-driver bindgen substrate that is now
+# checked in as uniata-rust/src/types_{i386,amd64,arm64}.rs.
 #
-# C bodies replaced by Rust (kept on disk per the never-delete rule):
-#   atacmd_map.cpp bm_devs.cpp id_ata.cpp id_badblock.cpp id_dma.cpp
-#   id_init.cpp id_probe.cpp id_queue.cpp id_sata.cpp
+# The 9 .cpp bodies and the 16 headers they needed were DELETED, not just
+# flipped: every one carried `Copyright (c) Alexandr A. Telyatnikov` (or
+# VorontSOFT, or Microsoft for ntddscsi.h) with the BSD warranty DISCLAIMER and
+# no "Redistribution and use ... are permitted" clause, i.e. no grant at all --
+# and id_ata.cpp's own header says the skeleton came from the NT4 DDK's
+# ATAPI.SYS. Same call the owner made for the atapi C the same day: the Rust
+# stays, the unlicensed C does not. See the PROVENANCE note at the top of
+# sdk/lib/rust/uniata-rust/src/lib.rs. This is the ONE place the never-delete
+# rule is overridden, and only for the C.
+#
+# ros_glue/ros_glue.cpp went with them. It existed solely as the data home for
+# three mutable ULONGs (MajorVersion/MinorVersion/BuildNumber); they are now
+# `#[no_mangle] pub static mut` in id_ata_part3.rs with ros_glue's own 5.2.0
+# initialisers. That also retired the stdafx.h PCH, which had no C++ TU left to
+# serve, and the `inc/` include path with it.
+#
+# rust_varargs_shim.c stays: it is ours, and it holds the ONE thing stable Rust
+# cannot do -- DEFINE the C-variadic _PrintNtConsole entry point (`va_start`).
+# It trampolines into uniata-rust's _PrintNtConsole_v (which keeps the 512-byte
+# buffer + the HalDisplayString call) and forwards the va_list into ntoskrnl's
+# _vsnprintf, so the crate builds on PLAIN STABLE rustc: no bootstrap escape
+# hatch, no nightly feature gate. Standard per-arch RUST_TARGET, i386 no-SSE
+# RUSTFLAGS. First C++-tier proof (rustconv tree-sitter-cpp).
 list(APPEND SOURCE
-    ros_glue/ros_glue.cpp
-    # Plain C (no stdafx.h): must live in SOURCE, which is add_pch's SKIP list — the
-    # uniata PCH is the C++ stdafx.h and a C TU cannot inherit it.
-    rust_varargs_shim.c
-    stdafx.h)
+    rust_varargs_shim.c)
 
 set(UNIATA_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 rust_storage_target(UNIATA_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-uniata-target" uniata-rust)
@@ -78,15 +85,31 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(uniata PRIVATE -Wno-narrowing -Wno-unused-but-set-variable)
 endif()
 
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(uniata PRIVATE -Wno-misleading-indentation)
+endif()
+
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(uniata PRIVATE -Wno-unused-const-variable)
 endif()
 
-add_pch(uniata stdafx.h SOURCE)
 set_module_type(uniata kernelmodedriver)
+target_compile_definitions(uniata PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 add_importlibs(uniata scsiport ntoskrnl hal)
 add_dependencies(uniata rust_uniata)
 target_link_libraries(uniata ${UNIATA_RUST_LIB})
 add_cd_file(TARGET uniata DESTINATION reactos/system32/drivers NO_CAB FOR all)
+# RESTORED 2026-09-20 (upstream-sync). Upstream commented this out as part of moving to
+# "uniata IS pciide when ENABLE_UNIATA is set" — see the OUTPUT_NAME rename below and
+# their new pciide_reg.inf. We do NOT set ENABLE_UNIATA, and pre-merge this tree
+# registered uniata here and pciide not at all. Losing this line unregistered the only
+# IDE bus driver we actually start: root enumeration went from 3 children to 1, the
+# CD-ROM never appeared, IopCreateArcNames FAILED, \SystemRoot was never created and
+# PsLocateSystemDll bugchecked 0x6B on i386 and amd64. arm64 boots from a ramdisk and
+# was unaffected, which is exactly why two arches failed and one did not.
 add_registry_inf(uniata_reg.inf)
 add_driver_inf(uniata uniata_comm.inf)
+
+if(ENABLE_UNIATA)
+    set_target_properties(uniata PROPERTIES OUTPUT_NAME "pciide" PDB_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+endif()

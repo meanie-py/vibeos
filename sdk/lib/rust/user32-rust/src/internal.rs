@@ -148,14 +148,6 @@ extern "system" {
     pub fn RtlIsThreadWithinLoaderCallout() -> BOOLEAN; // ntdll
 }
 
-/// `gpsi->PERUSERSERVERINFO` accessor. bindgen flattened the anon-embedded
-/// `_PERUSERSERVERINFO` (aiSysMet/argbSystem/ahbrSystem/hbrGray/dwLastRITEventTickCount…)
-/// into the tail `__bindgen_padding_0` of `tagSERVERINFO`; recover it by address.
-/// (Mirrors the private accessor in defwnd.rs; shared here for the Wave-3 files.)
-#[inline]
-pub unsafe fn gpsi_perusr() -> *const _PERUSERSERVERINFO {
-    core::ptr::addr_of!((*gpsi).__bindgen_padding_0) as *const _PERUSERSERVERINFO
-}
 
 // ─── Common Win32 word/coordinate macros (winuser.h / windef.h) ───────────────
 #[inline]

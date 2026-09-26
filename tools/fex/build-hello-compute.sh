@@ -154,6 +154,43 @@ else
     echo "[!] selfmod32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD)"
 fi
 
+# reg32.exe — the registry-view guest: Wow6432Node redirection, isolation, the
+# no-double-splice exemption, the 64-bit fallback, and the two-view delete. It
+# is the only ladder guest that links advapi32, and the only one whose failures
+# are SILENT -- a redirection bug returns SUCCESS and the wrong key.
+if [ -f "$I386_BUILD/dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a" ] && \
+   [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/reg32.exe" "$HARNESS_SRC/Reg32.c" \
+        "$I386_BUILD/dll/win32/advapi32/CMakeFiles/libadvapi32.dir/libadvapi32.a" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] reg32.exe skipped: build-i386 advapi32/kernel32 importlib missing ($I386_BUILD)"
+fi
+
+# spawn32.exe — the process-creation guest: can a 32-bit guest start another
+# 32-bit process at all. Links kernel32 only.
+#
+# Built UNCONDITIONALLY since 2026-09-19, when it first reported 0x600D and was
+# promoted into ladder.LADDER. It was opt-in twice over and both reasons are
+# spent: first it BUGCHECKed the machine (0x1E, a dropped _SEH2_EXCEPT at four
+# probe sites in ARM3/virtual.rs), then it was merely red-by-design as a
+# DIAGNOSTIC measuring an open gap. The gap is closed, so it is a parity guest
+# now and has to be present on every tree or it guards nothing -- and
+# _wow64_ladder is all-or-nothing, so an absent spawn32 costs the WHOLE ladder
+# its staging rather than just itself.
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/spawn32.exe" "$HARNESS_SRC/Spawn32.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] spawn32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/

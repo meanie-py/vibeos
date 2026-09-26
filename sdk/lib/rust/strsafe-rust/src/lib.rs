@@ -248,8 +248,27 @@ unsafe fn StringVPrintfExWorkerW(
     ppszDestEnd: *mut *mut WCHAR,
     pcchRemaining: *mut usize,
     dwFlags: DWORD,
-    mut pszFormat: *const WCHAR,
+    pszFormat: *const WCHAR,
     ap: *mut c_void,
+) -> HRESULT {
+    printf_ex_worker(pszDest, cchDest, cbDest, ppszDestEnd, pcchRemaining, dwFlags, pszFormat,
+        |d, n, f| _vsnwprintf(d, n, f, ap))
+}
+
+/// `StringVPrintfExWorkerW` with its one `_vsnwprintf` call handed in as `print(dest, cchMax,
+/// format)`, so the variadic macro (`StringCbPrintfExW!`, which calls `_snwprintf` with the
+/// arguments in place) and the `va_list` entry points share every flag and bound rule.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn printf_ex_worker(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    cbDest: usize,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+    mut pszFormat: *const WCHAR,
+    print: impl FnOnce(*mut WCHAR, usize, *const WCHAR) -> c_int,
 ) -> HRESULT {
     let mut hr: HRESULT = S_OK;
     let mut pszDestEnd: *mut WCHAR = pszDest;
@@ -278,7 +297,7 @@ unsafe fn StringVPrintfExWorkerW(
                 }
             } else {
                 let cchMax = cchDest - 1;
-                let iRet = _vsnwprintf(pszDest, cchMax, pszFormat, ap);
+                let iRet = print(pszDest, cchMax, pszFormat);
                 if iRet < 0 || (iRet as usize) > cchMax {
                     pszDestEnd = pszDest.add(cchMax);
                     cchRemaining = 1;
@@ -460,6 +479,95 @@ pub unsafe extern "system" fn StringCbCopyNExW(
             cchRemaining * core::mem::size_of::<WCHAR>() + (cbDest % core::mem::size_of::<WCHAR>());
     }
     hr
+}
+
+// ---- the printf family, called DIRECTLY: no C trampoline at all ----
+//
+// Rust cannot DEFINE a C-variadic, but CALLING one has been stable for years. So a Rust
+// caller does not need `StringCchPrintfW` to exist as a symbol (it is `static __inline` in
+// strsafe.h, a phantom), nor a per-module C shim that defines one: these macros call msvcrt's
+// variadic `_snwprintf` in place of the worker's `_vsnwprintf` and then apply
+// `StringVPrintfWorkerW`'s truncation contract through `printf_worker_finish` below. Same
+// arguments, same bounds, same HRESULTs. The argument types are checked by rustc's variadic
+// rules, which reject exactly the types C's default promotions would have widened.
+
+extern "C" {
+    /// msvcrt's `_snwprintf`: `_vsnwprintf` with the arguments in place of the `va_list`.
+    #[doc(hidden)]
+    pub fn _snwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ...) -> c_int;
+}
+
+/// strsafe.h `StringVPrintfWorkerW` after its `_vsnwprintf` call, given that call's result.
+/// `cchDest` is the caller's count, already checked to be non-zero.
+#[doc(hidden)]
+pub unsafe fn printf_worker_finish(pszDest: *mut WCHAR, cchDest: usize, iRet: c_int) -> HRESULT {
+    let cchMax = cchDest - 1;
+    if iRet < 0 || (iRet as usize) > cchMax {
+        *pszDest.add(cchMax) = 0;
+        STRSAFE_E_INSUFFICIENT_BUFFER
+    } else {
+        if (iRet as usize) == cchMax {
+            *pszDest.add(cchMax) = 0;
+        }
+        S_OK
+    }
+}
+
+/// strsafe.h `StringCchPrintfW(pszDest, cchDest, pszFormat, ...)`, written as a macro call:
+/// `StringCchPrintfW!(dest, cch, fmt, args...)`. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfW {
+    ($pszDest:expr, $cchDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH || cchDest == 0 {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            let iRet = $crate::_snwprintf(pszDest, cchDest - 1, $pszFormat as _ $(, $arg)*);
+            $crate::printf_worker_finish(pszDest, cchDest, iRet)
+        }
+    }};
+}
+
+/// strsafe.h `StringCbPrintfW`: the byte-counted form of `StringCchPrintfW!`.
+#[macro_export]
+macro_rules! StringCbPrintfW {
+    ($pszDest:expr, $cbDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {
+        $crate::StringCchPrintfW!(
+            $pszDest,
+            ($cbDest as usize) / core::mem::size_of::<$crate::WCHAR>(),
+            $pszFormat
+            $(, $arg)*
+        )
+    };
+}
+
+/// strsafe.h `StringCbPrintfExW(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags,
+/// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCbPrintfExW {
+    ($pszDest:expr, $cbDest:expr, $ppszDestEnd:expr, $pcbRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cbDest: usize = $cbDest as usize;
+        let pcbRemaining: *mut usize = $pcbRemaining as _;
+        let cchDest = cbDest / core::mem::size_of::<$crate::WCHAR>();
+        let mut cchRemaining: usize = 0;
+        let hr = if cchDest > $crate::STRSAFE_MAX_CCH {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            $crate::printf_ex_worker(
+                pszDest, cchDest, cbDest, $ppszDestEnd as _, &mut cchRemaining,
+                $dwFlags as _, $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        };
+        if (hr >= 0 || hr == $crate::STRSAFE_E_INSUFFICIENT_BUFFER) && !pcbRemaining.is_null() {
+            *pcbRemaining = cchRemaining * core::mem::size_of::<$crate::WCHAR>()
+                + (cbDest % core::mem::size_of::<$crate::WCHAR>());
+        }
+        hr
+    }};
 }
 
 // ---- the printf family: fixed-arity twins of the variadic entry points ----

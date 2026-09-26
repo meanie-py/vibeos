@@ -13,7 +13,8 @@
 # Allowed without a matching stamp:
 #   * pushes not touching master (lane branches)
 #   * deletions
-#   * docs-only deltas vs the stamped tree (docs/**, *.md)
+#   * inert-content-only deltas vs the stamped tree (.md/.txt/images — tools/docs_only.py;
+#     ONE .py or .rs in the delta means the whole push gates, comment-only or not)
 #   * VIBEOS_SKIP_GATE_CHECK=1 git push …   (escape hatch — use for emergencies
 #     and say so in your report; the point is that skipping is a CHOICE, loud
 #     and attributable, never a default)
@@ -105,8 +106,34 @@ for p in stamp_files:
     if s.get("tree"):
         valid_trees.add(s["tree"])
 
-if not valid_trees:
-    fail("no fresh green full-gate stamp found — run ./vibeos-cli gate")
+# NO EARLY BAIL ON AN EMPTY STAMP SET. This used to `fail()` right here, which made the
+# docs-only exemption below UNREACHABLE whenever no fresh gate had run -- and that was
+# latent-but-harmless only for as long as the conductor gated every batch, because a gate
+# mints a stamp. The moment the queue learned to skip the gate for a documentation-only
+# batch (queue.inert_only_batch), a docs-only train had no stamp to show and this line
+# refused the push it was about to be exempted from. Cost: the queue sat with a halted
+# train and one lane blocked for two hours.
+#
+# The remote-master exemption needs NO stamp by construction: every non-docs path in
+# origin/master was gated when IT landed. So the empty-set case is judged by the same loop
+# as everything else, and the failure message below says which situation you are in.
+
+
+# The inert-suffix predicate is SHARED with land.py's lint preflight (tools/docs_only.py),
+# so the two exemptions cannot drift apart. It replaced "under docs/ OR ends in .md": that
+# judged the DIRECTORY, and this tree has seven files under docs/ that are not documents,
+# three of them .rs. Nothing reads them today, which is a fact about this afternoon and not
+# about the rule.
+#
+# FAIL CLOSED if the import fails. A guard that cannot evaluate its own exemption must
+# demand the stamp, never grant the pass -- this hook is the last thing between an ungated
+# tree and master.
+try:
+    sys.path.insert(0, git("rev-parse", "--show-toplevel") + "/tools")
+    from docs_only import is_inert
+except Exception:  # noqa: BLE001 -- any failure here means "no exemption", by design
+    def is_inert(_path):
+        return False
 
 
 def nondocs_delta(base_tree, tree):
@@ -117,7 +144,7 @@ def nondocs_delta(base_tree, tree):
     diff = git("diff", "--name-only", base_tree, tree)
     if not diff:
         return []
-    return [p for p in diff.splitlines() if not (p.startswith("docs/") or p.endswith(".md"))]
+    return [p for p in diff.splitlines() if not is_inert(p)]
 
 
 for sha, remote_sha in updates:
@@ -138,7 +165,13 @@ for sha, remote_sha in updates:
         continue
     if any(nondocs_delta(t, tree) == [] for t in valid_trees):
         continue
-    base = remote_tree or next(iter(valid_trees))
+    base = remote_tree or (next(iter(valid_trees)) if valid_trees else "")
+    if not valid_trees:
+        fail(
+            f"push tree {tree[:12]} adds non-docs changes vs "
+            f"{base[:12] if base else 'origin/master'} and there is no fresh green "
+            f"full-gate stamp — run ./vibeos-cli gate"
+        )
     fail(
         f"push tree {tree[:12]} adds non-docs changes vs {base[:12]} without a "
         f"matching gate stamp — gate this tree (./vibeos-cli gate)"

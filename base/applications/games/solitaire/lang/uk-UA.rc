@@ -1,6 +1,6 @@
 /*
  * PROJECT:    Solitaire
- * LICENSE:    Freeware, permission to use under Public Domain
+ * LICENSE:    See COPYING in top level directory
  * FILE:       base/applications/games/solitaire/lang/uk-UA.rc
  * PURPOSE:    Ukraianian Language File for Solitaire
  * TRANSLATOR: Artem Reznikov
@@ -55,7 +55,7 @@ END
 STRINGTABLE
 BEGIN
     IDS_SOL_NAME "Косинка"
-    IDS_SOL_ABOUT "Косинка від J Brown\nCardLib версії 1.0"
+    IDS_SOL_ABOUT "Косинка"
     IDS_SOL_QUIT "Вийти з поточної гри?"
     IDS_SOL_WIN "Вітання, Ви виграли!!"
     IDS_SOL_DEAL "Роздати знову?"

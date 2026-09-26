@@ -70,12 +70,6 @@ PCM_PARTIAL_RESOURCE_LIST
 extern GET_HARDDISK_CONFIG_DATA GetHarddiskConfigurationData;
 
 typedef
-BOOLEAN
-(*FIND_PCI_BIOS)(PPCI_REGISTRY_INFO BusData);
-
-extern FIND_PCI_BIOS FindPciBios;
-
-typedef
 ULONG
 (*GET_SERIAL_PORT)(ULONG Index, PULONG Irq);
 
@@ -90,7 +84,18 @@ VOID DetectAcpiBios(PCONFIGURATION_COMPONENT_DATA SystemKey, ULONG *BusNumber);
 VOID DetectApmBios(PCONFIGURATION_COMPONENT_DATA SystemKey, ULONG *BusNumber);
 
 /* hwpci.c */
-VOID DetectPciBios(PCONFIGURATION_COMPONENT_DATA SystemKey, ULONG *BusNumber);
+typedef
+BOOLEAN
+(*DETECT_PCI_BUS)(
+    _In_ PCONFIGURATION_COMPONENT_DATA SystemKey,
+    _Inout_ PULONG BusNumber,
+    _Out_ PPCI_REGISTRY_INFO BusData);
+
+VOID
+DetectPciBus(
+    _In_ PCONFIGURATION_COMPONENT_DATA SystemKey,
+    _Inout_ PULONG BusNumber,
+    _In_ DETECT_PCI_BUS MachDetectPciBus);
 
 /* i386pnp.S */
 ULONG_PTR __cdecl PnpBiosSupported(VOID);

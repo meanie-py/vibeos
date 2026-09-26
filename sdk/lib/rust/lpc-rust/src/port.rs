@@ -6,6 +6,11 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+// Crate-local (correct ULONG_PTR, post-upstream-sync) definition -- NOT the
+// stale ULONG ntkrnl_sys::ddk::LpcpClosePort extern decl (bindgen predates the
+// merge's lpc.h ULONG_PTR fix and was never regenerated).
+use crate::close::LpcpClosePort;
+
 use ntkrnl_sys::ddk::{
 
 
@@ -15,7 +20,6 @@ use ntkrnl_sys::ddk::{
     HANDLE, KPROCESSOR_MODE,
     _LPCP_NONPAGED_PORT_QUEUE, LPCP_NONPAGED_PORT_QUEUE,
     _LPCP_PORT_OBJECT, LPCP_PORT_OBJECT,
-    LpcpClosePort,
     LpcpDeletePort,
     LpcpGetPortFromThread,
     _OBJECT_TYPE_INITIALIZER, OBJECT_TYPE_INITIALIZER,
@@ -145,7 +149,13 @@ pub unsafe extern "system" fn LpcInitSystem() -> BOOLEAN {
     object_type_initializer.GenericMapping = LpcpPortMapping;
     object_type_initializer.PoolType = PagedPool;
     object_type_initializer.UseDefaultObject = 1u8;
-    object_type_initializer.CloseProcedure = Some(LpcpClosePort);
+    // LpcpClosePort's real (C-header) signature is ULONG_PTR for the two handle
+    // counts; the stale bindgen OB_CLOSE_METHOD typedef (predates the merge's
+    // lpc.h fix, never regenerated) still says ULONG. Transmute past it, same
+    // as fltmgr's CloseProcedure does for the identical drift.
+    object_type_initializer.CloseProcedure = Some(core::mem::transmute(
+        LpcpClosePort as unsafe extern "system" fn(_, _, _, _, _),
+    ));
     object_type_initializer.DeleteProcedure = Some(LpcpDeletePort);
     object_type_initializer.ValidAccessMask = PORT_ALL_ACCESS;
     object_type_initializer.InvalidAttributes = OBJ_VALID_ATTRIBUTES & !OBJ_CASE_INSENSITIVE;
@@ -228,13 +238,27 @@ pub unsafe extern "system" fn NtImpersonateClientOfPort(
     let mut ClientContext: SECURITY_CLIENT_CONTEXT = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        ProbeForRead(
-            ClientMessage as PVOID,
-            core::mem::size_of::<PORT_MESSAGE>(),
-            core::mem::size_of::<PVOID>() as ULONG,
-        );
-        ClientId = (*(ClientMessage as *const PORT_MESSAGE)).__bindgen_anon_1.ClientId;
-        MessageId = (*(ClientMessage as *const PORT_MESSAGE)).MessageId;
+        // VALIDATE-FIRST. The C wraps this probe AND both capture reads in one
+        // `_SEH2_TRY` whose handler is `_SEH2_YIELD(return
+        // _SEH2_GetExceptionCode())` (port.c:142-152). The translation kept the
+        // probe and the reads and dropped the handler, so under DUMMY_PSEH any
+        // unprivileged caller passing a bad ClientMessage to this syscall
+        // bugchecked the box. A range check proves where a buffer IS, never that
+        // it stays mapped, so the CAPTURE has to be fault-protected too -- the MM
+        // case proved that by moving the same bugcheck one frame along into
+        // memcpy when only the probe was converted.
+        //
+        // Capturing the whole PORT_MESSAGE once is also strictly safer than the
+        // C's two separate volatile field reads: those let a hostile caller
+        // change MessageId after ClientId had been read. The probe covered
+        // sizeof(PORT_MESSAGE) either way, so this reads no more than the C did.
+        let captured: PORT_MESSAGE =
+            match ntkrnl_sys::probe::probe_read_user(ClientMessage as *const PORT_MESSAGE, PreviousMode) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
+        ClientId = captured.__bindgen_anon_1.ClientId;
+        MessageId = captured.MessageId;
     } else {
         ClientId = (*ClientMessage).__bindgen_anon_1.ClientId;
         MessageId = (*ClientMessage).MessageId;

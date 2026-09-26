@@ -562,7 +562,7 @@ pub unsafe extern "system" fn NtUserUpdateLayeredWindow(
     let mut info: UPDATELAYEREDWINDOWINFO = core::mem::zeroed();
     let mut Dst: POINT = core::mem::zeroed();
     let mut Src: POINT = core::mem::zeroed();
-    let mut Size: SIZE;
+    let mut Size: SIZE = core::mem::zeroed();
     let mut Dirty: RECT = core::mem::zeroed();
     let mut blend: BLENDFUNCTION = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
@@ -602,18 +602,26 @@ pub unsafe extern "system" fn NtUserUpdateLayeredWindow(
             EngSetLastError(ERROR_INVALID_PARAMETER);
             break 'exit;
         } else {
-            if !pptDst.is_null() {
-                Dst = *pptDst;
+            // Probes are validate-only (USE_DUMMY_PSEH); the C wrapped every probe
+            // AND every load in one _SEH2_TRY, so the loads must be the
+            // fault-tolerant copy.
+            macro_rules! grab {
+                ($dst:expr, $src:expr, $ty:ty) => {
+                    crate::copy::capture_from_user(
+                        core::ptr::addr_of_mut!($dst) as *mut core::ffi::c_void,
+                        $src as *const core::ffi::c_void,
+                        core::mem::size_of::<$ty>(),
+                    )
+                };
             }
-            if !pptSrc.is_null() {
-                Src = *pptSrc;
-            }
-            Size = *psize;
-            if !pblend.is_null() {
-                blend = *pblend;
-            }
-            if !prcDirty.is_null() {
-                Dirty = *prcDirty;
+            let ok = (pptDst.is_null() || grab!(Dst, pptDst, POINT))
+                && (pptSrc.is_null() || grab!(Src, pptSrc, POINT))
+                && grab!(Size, psize, SIZE)
+                && (pblend.is_null() || grab!(blend, pblend, BLENDFUNCTION))
+                && (prcDirty.is_null() || grab!(Dirty, prcDirty, RECT));
+            if !ok {
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                break 'exit;
             }
         }
 

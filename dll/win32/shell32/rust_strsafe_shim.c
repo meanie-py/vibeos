@@ -1,3 +1,7 @@
+/* INERT since 2026-09-24: not in CMake. Replaced by Rust: ShellMessageBoxA receives its
+ * varargs via va-slots-rust (shell32-rust/src/wine/shellord.rs), and StringCchPrintfW is
+ * strsafe_rust::StringCchPrintfW!. Kept on disk as the reference. */
+
 /* rust_strsafe_shim.c — linkage for the strsafe.h INLINES that Rust calls.
  *
  * `StringCchPrintfW` is a PHANTOM SYMBOL: strsafe.h:515 declares it `STRSAFEAPI`, which is

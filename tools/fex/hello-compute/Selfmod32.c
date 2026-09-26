@@ -316,11 +316,50 @@ rung6:
         ReportHex("[selfmod32] rung7 NtWriteVirtualMemory =", (DWORD)st);
         ReportHex("[selfmod32] rung7 bytes written =", cells[0]);
         ReportHex("[selfmod32] rung7 canary past the count cell =", cells[1]);
-        if (st < 0 || cells[0] != CODE_LEN)
+
+        /* A REFUSED write is a correct answer here, and on a JIT host it is the
+         * EXPECTED one. FEX write-protects an RWX page to detect self-modifying
+         * code, so the page really is read-only at the moment of the syscall and
+         * a kernel that refuses is honouring a real protection -- which is
+         * exactly why kernel32's WriteProcessMemory (rung 6, which passes)
+         * wraps its write in NtProtectVirtualMemory. This rung calls the syscall
+         * DIRECTLY and so gets no such wrapper.
+         *
+         * This used to read `st < 0` as failure, and that was right when the
+         * kernel was WRONG: task #76 recorded MiDoPoolCopy returning 0x00000000
+         * with 6 bytes written and the bytes unchanged -- success reported for a
+         * write that never happened, because the translated Rust had dropped the
+         * _SEH2_EXCEPT and could not observe its own copy faulting. With the
+         * probe/copy faults now observable it returns STATUS_PARTIAL_COPY with 0
+         * written, which is the truth. The rung was asserting the bug.
+         *
+         * Accepting it BLINDLY would be the other mistake, so the refusal is
+         * only accepted when the page is genuinely not writable. */
+        if (st == (LONG)0x8000000D && cells[0] == 0)   /* STATUS_PARTIAL_COPY */
+        {
+            MEMORY_BASIC_INFORMATION mbi;
+            SIZE_T got = VirtualQuery((LPCVOID)code, &mbi, sizeof(mbi));
+            ReportHex("[selfmod32] rung7 page protect =", got ? mbi.Protect : 0);
+            if (!got || (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY |
+                                        PAGE_EXECUTE_READWRITE |
+                                        PAGE_EXECUTE_WRITECOPY)))
+            {
+                Report("[selfmod32] FAIL: rung7 — refused a write to a page that "
+                       "IS writable\n");
+                ExitProcess(SM_FAIL_COUNT);
+            }
+            Report("[selfmod32] rung7 OK: kernel refused a write to an "
+                   "SMC-trapped page, which is correct\n");
+        }
+        else if (st < 0 || cells[0] != CODE_LEN)
         {
             Report("[selfmod32] FAIL: rung7 — direct NtWriteVirtualMemory failed\n");
             ExitProcess(SM_FAIL_COUNT);
         }
+
+        /* The canary is the POINT of this rung and is checked either way: a
+         * refused write must not scribble 8 bytes into the guest's 4-byte count
+         * cell any more than a successful one may. */
         if (cells[1] != 0xC0DEFACE)
         {
             Report("[selfmod32] FAIL: rung7 — *NumberOfBytesWritten wrote past "

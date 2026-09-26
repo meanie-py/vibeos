@@ -5,6 +5,7 @@ add_definitions(-D_WIN32_WINNT=0x600)
 add_definitions(
     -D_RPCRT4_
     -DCOM_NO_WINDOWS_H
+    -D_CRT_NON_CONFORMING_SWPRINTFS
     -DMSWMSG)
 
 spec2def(rpcrt4.dll rpcrt4.spec ADD_IMPORTLIB)
@@ -52,10 +53,6 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/proxy.dlldata.c
     ${CMAKE_CURRENT_BINARY_DIR}/rpcrt4_stubs.c)
 
-if(ARCH STREQUAL "arm64")
-    list(APPEND PCH_SKIP_SOURCE arm64_rpc_stubs.c)
-endif()
-
 add_library(rpcrt4 MODULE
     ${SOURCE}
     ${rpcrt4_asm}
@@ -70,16 +67,7 @@ endif()
 
 set_module_type(rpcrt4 win32dll)
 target_link_libraries(rpcrt4 wine wine_dll_register uuid ${PSEH_LIB} oldnames)
-if(ARCH STREQUAL "arm64")
-    # ARM64: llvm-dlltool converts delay-imports to regular imports.
-    # All delay-import DLLs pull in massive dependency chains that overflow
-    # csrss's stack (rpcrt4 is loaded by advapi32 → winsrv → csrss).
-    # secur32 → netapi32 → iphlpapi → dhcpcsvc (circular deps, ~6 extra DLLs).
-    # user32 is already loaded separately. Stubs in arm64_rpc_stubs.c.
-    add_delay_importlibs(rpcrt4 user32)
-else()
-    add_delay_importlibs(rpcrt4 iphlpapi wininet secur32 user32 ole32 oleaut32)
-endif()
+add_delay_importlibs(rpcrt4 iphlpapi wininet secur32 user32 ole32 oleaut32)
 add_importlibs(rpcrt4 advapi32 advapi32_vista kernel32_vista ws2_32 msvcrt kernel32 ntdll)
 add_dependencies(rpcrt4 ndr_types_header)
 add_pch(rpcrt4 precomp.h "${PCH_SKIP_SOURCE}")

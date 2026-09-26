@@ -13,21 +13,70 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::PSTR;
 
-// PL011 UART base address (QEMU virt machine).
-const PL011_UART_BASE: usize = 0x09000000;
+use crate::frldr::{EFI_SYSTEM_TABLE, EFI_ACPI_20_TABLE_GUID, RSDP_DESCRIPTOR};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+// Zero until firmware describes a supported UART. Never probe a QEMU address
+// on unknown hardware: that address can be ordinary RAM on a physical board.
+static UART_BASE: AtomicUsize = AtomicUsize::new(0);
+// The validated XSDT that answered the UART query, kept so later loader stages
+// can consult the same tables without re-walking the EFI configuration table.
+static XSDT_BASE: AtomicU64 = AtomicU64::new(0);
+
+pub fn uart_base() -> usize { UART_BASE.load(Ordering::Relaxed) }
+
+/// Physical address of the XSDT, or zero if ACPI discovery never succeeded.
+pub fn xsdt_base() -> u64 { XSDT_BASE.load(Ordering::Relaxed) }
+
+pub unsafe fn initialize(system: *mut EFI_SYSTEM_TABLE) -> bool {
+    UART_BASE.store(0, Ordering::Relaxed);
+    XSDT_BASE.store(0, Ordering::Relaxed);
+    if system.is_null() { return false; }
+    let guid = EFI_ACPI_20_TABLE_GUID;
+    for i in 0..(*system).NumberOfTableEntries {
+        let entry = &*(*system).ConfigurationTable.add(i as usize);
+        let g = &entry.VendorGuid;
+        if g.Data1 != guid.Data1 || g.Data2 != guid.Data2
+            || g.Data3 != guid.Data3 || g.Data4 != guid.Data4 { continue; }
+        let ptr = entry.VendorTable as *const RSDP_DESCRIPTOR;
+        if ptr.is_null() { continue; }
+        let rsdp = core::ptr::read_unaligned(ptr);
+        let first = core::slice::from_raw_parts(ptr.cast::<u8>(), 20);
+        if &first[..8] != b"RSD PTR " || rsdp.revision < 2
+            || first.iter().fold(0u8, |s,b| s.wrapping_add(*b)) != 0
+            || rsdp.length < core::mem::size_of::<RSDP_DESCRIPTOR>() as u32
+            || rsdp.length > 4096 { continue; }
+        let all = core::slice::from_raw_parts(ptr.cast::<u8>(), rsdp.length as usize);
+        if all.iter().fold(0u8, |s,b| s.wrapping_add(*b)) != 0 { continue; }
+        if let Some(base) = crate::arm64_serial_acpi::from_xsdt(rsdp.xsdt_physical_address) {
+            UART_BASE.store(base as usize, Ordering::Relaxed);
+            XSDT_BASE.store(rsdp.xsdt_physical_address, Ordering::Relaxed);
+            return true;
+        }
+    }
+    false
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn Rs232PortInitialize(
     _ComPort: ULONG,
     _BaudRate: ULONG,
 ) -> BOOLEAN {
-    TRUE
+    (uart_base() != 0) as BOOLEAN
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn Rs232PortPutByte(ByteToSend: UCHAR) {
-    let uart0dr = PL011_UART_BASE as *mut u32;
-    core::ptr::write_volatile(uart0dr, ByteToSend as u32);
+    let base = uart_base();
+    // EfiEntry reports discovery failure through ConOut and returns before
+    // any normal loader work. A panic before discovery must not touch MMIO.
+    if base == 0 { return; }
+    // Preserve the firmware's baud and clock settings. Wait for FIFO space.
+    let flags = (base + 0x18) as *const u32;
+    while core::ptr::read_volatile(flags) & (1 << 5) != 0 {
+        core::hint::spin_loop();
+    }
+    core::ptr::write_volatile(base as *mut u32, ByteToSend as u32);
 }
 
 // DECLSPEC_NORETURN — for(;;) in C. Variadic def is unsupported on stable;
