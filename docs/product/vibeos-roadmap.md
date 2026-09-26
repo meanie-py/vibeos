@@ -2350,8 +2350,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   **Update 2026-09-26 — it reaches i386 now, and it LIVELOCKED the merge queue.** The
   2026-09-06 entry recorded "i386/amd64 conformance PASSED in the same gate — only arm64";
   that is no longer true. Four consecutive batches went red on `conf:i386` between 00:02
-  and 00:30, and **nothing landed between 23:45 and at least 00:33** — the last green gate
-  was `20260925-234529-6v80rtj1`, the batch that landed `05c6ab03b3c1`. The i386 counts
+  and 00:30, and **nothing landed for the 45 minutes from 23:45:28 to 00:30:18** — from the
+  green gate `20260925-234529-6v80rtj1` that landed `05c6ab03b3c1` to `46f777f0d5a`.
+  **It then broke on its own, and the first version of this entry claimed otherwise.** That
+  version said "nothing landed between 23:45 and at least 00:33"; it was written at 00:34:15,
+  four minutes AFTER `46f777f0d5a` landed at 00:30:18. The error was checking whether MY
+  submission had landed (it had not, and still had not) and generalising that to "nothing
+  landed" without looking at master's tip for other lanes. The stall is therefore
+  LOAD-CORRELATED AND SELF-LIMITING, not a true livelock: as lanes drained, load fell 27.3 →
+  6.07 (1-min) and the queue started moving again without anyone touching the ratchet. That
+  is a materially better conclusion than the one it replaces, and it changes the advice —
+  wait it out rather than reaching for a lever. The i386 counts
   wander exactly as the mechanism above predicts, across four runs of essentially the same
   tree: `pass=879 fail=2` (the baseline-accepted state), then `878/3`, `876/5`, `878/3`.
   The reported "regressions" wander with them — `ExResource.c:432`, `:469`, `:570` and
@@ -2368,8 +2377,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   makes no progress.
   **What NOT to do: do not weaken the ratchet or quarantine the assertion to drain the
   queue.** The cheap correct lever is LOAD — an agent that stops adding builds and boots
-  while the queue is livelocked is doing more for it than one that keeps working. The real
-  fix is still the ExResource waiter-count race itself, which remains unowned.- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
+  while the queue is stalled is doing more for it than one that keeps working — and the
+  queue recovers by itself once load falls, so waiting is a real option.
+  **Root-caused 2026-09-26 by the msvcrt-homebrew lane, and it is the TEST, not ERESOURCE:**
+  each of `:432`, `:469`, `:570` starts a thread with a 10 ms timeout, treats
+  `STATUS_TIMEOUT` as proof it blocked, and checks the waiter count immediately — on TCG at
+  load 22-27 the new thread has not been scheduled yet, so the count is legitimately 0. Fix
+  is a bounded `WaitForWaiters()` that waits for the asserted counts and then asserts them
+  UNCHANGED, so never counting a waiter still fails. Assertions not weakened.
+  Two corrections to this entry's older text, both verified independently here: ERESOURCE
+  **is** Rust (`ex-rust/src/resource.rs`, 27 `#[no_mangle]`; `ntoskrnl/ex/resource.c` is
+  commented out of `ntos.cmake`), so the line claiming "no Rust port has taken ERESOURCE
+  over" was stale and pointed readers away from the live code. And `:409`/`:455` are NOT part
+  of this race: they read `Res->ActiveCount = 1, expected 2`, fire 129 times each on all
+  three arches, and are the baseline's two accepted failures — the test asks for the WS03
+  bookkeeping model (`ActiveCount == 2`) while the implementation is NT6-style
+  (`ActiveCount == 1`, `ActiveEntries++`) in BOTH the C (`resource.c:958-971`) and our Rust
+  (`resource.rs:651-655`). An upstream version/semantics mismatch, not a translation bug, and
+  the allowance is correct rather than masking something. I first attributed it to our
+  translation and relayed that; the refutation was one `grep -a` away (see the field manual's
+  binary-grep entry — plain grep prints NOTHING for `resource.c`).- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
   then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).
