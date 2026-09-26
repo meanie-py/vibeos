@@ -232,164 +232,177 @@ pub unsafe extern "C" fn CdCreateInternalStream(
     let mut raise_status: NTSTATUS = 0;
 
     // _SEH2_TRY block emulated with a loop and break-to-finally
-    'seh_try: {
-        loop {
-            StreamFile = IoCreateStreamFileObjectLite(
-                core::ptr::null_mut(),
-                (*(*Vcb).Vpb).RealDevice as *mut core::ffi::c_void,
-            );
-            if StreamFile.is_null() {
-                raise_status = STATUS_INSUFFICIENT_RESOURCES;
-                break;
-            }
-
-            (*StreamFile).ReadAccess = 1;
-            (*StreamFile).WriteAccess = 0;
-            (*StreamFile).DeleteAccess = 0;
-
-            (*StreamFile).SectionObjectPointer =
-                core::ptr::addr_of_mut!((*(*Fcb).FcbNonpaged).SegmentObject);
-
-            CdSetFileObject(
-                IrpContext,
-                StreamFile,
-                StreamFileOpen as u32,
-                Fcb,
-                core::ptr::null_mut(),
-            );
-
-            (*StreamFile).FileName = *Name;
-
-            CdLockVcb(IrpContext, Vcb);
-            CdIncrementReferenceCounts(IrpContext, Fcb, 2, 0);
-            CdUnlockVcb(IrpContext, Vcb);
-            DecrementReference = 1;
-
-            CcInitializeCacheMap(
-                StreamFile,
-                core::ptr::addr_of_mut!((*fcb_header(Fcb)).AllocationSize) as *mut core::ffi::c_void,
-                1,
-                core::ptr::addr_of_mut!(CdData.CacheManagerCallbacks) as *mut core::ffi::c_void,
-                Fcb as *mut core::ffi::c_void,
-            );
-
-            (*fcb_index(Fcb)).FileObject = StreamFile;
-            StreamFile = core::ptr::null_mut();
-
-            if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
-                let NewDataLength: u32;
-
-                CdInitializeDirContext(IrpContext, &mut DirContext);
-                CdInitializeDirent(IrpContext, &mut Dirent);
-                CleanupDirContext = 1;
-
-                CdLookupDirent(
-                    IrpContext,
-                    Fcb,
-                    (*fcb_index(Fcb)).StreamOffset as u32,
-                    &mut DirContext,
-                );
-
-                CdUpdateDirentFromRawDirent(
-                    IrpContext,
-                    Fcb,
-                    &DirContext,
-                    &mut Dirent,
-                );
-
-                CdUpdateDirentName(IrpContext, &mut Dirent, 0);
-
-                if Dirent.CdFileName.FileName.Buffer
-                    != CdUnicodeSelfArray.as_ptr() as *mut u16
-                {
-                    raise_status = STATUS_FILE_CORRUPT_ERROR;
-                    break;
-                }
-
-                NewDataLength = BlockAlign(
-                    Vcb,
-                    Dirent.DataLength + (*fcb_index(Fcb)).StreamOffset,
-                );
-
-                if NewDataLength == 0 {
-                    raise_status = STATUS_FILE_CORRUPT_ERROR;
-                    break;
-                }
-
-                if NewDataLength as i64 != (*fcb_header(Fcb)).FileSize.QuadPart {
-                    (*fcb_header(Fcb)).AllocationSize.QuadPart = NewDataLength as i64;
-                    (*fcb_header(Fcb)).FileSize.QuadPart = NewDataLength as i64;
-                    (*fcb_header(Fcb)).ValidDataLength.QuadPart = NewDataLength as i64;
-
-                    CcSetFileSizes(
-                        (*fcb_index(Fcb)).FileObject,
-                        core::ptr::addr_of_mut!((*fcb_header(Fcb)).AllocationSize) as *mut core::ffi::c_void,
-                    );
-
-                    CdTruncateAllocation(IrpContext, Fcb, 0);
-                    CdAddInitialAllocation(
-                        IrpContext,
-                        Fcb,
-                        Dirent.StartingOffset,        // StartingBlock: u32
-                        NewDataLength as i64,         // DataLength: i64
-                    );
-
-                    UpdateFcbSizes = 1;
-                }
-
-                if FlagOn(Dirent.DirentFlags as u32, CD_ATTRIBUTE_HIDDEN) != 0 {
-                    SetFlag(&mut (*Fcb).FileAttributes, FILE_ATTRIBUTE_HIDDEN);
-                }
-
-                CdConvertCdTimeToNtTime(
-                    IrpContext,
-                    Dirent.CdTime,
-                    core::ptr::addr_of_mut!((*Fcb).CreationTime) as *mut LARGE_INTEGER,
-                );
-
-                SetFlag(&mut (*Fcb).FcbState, FCB_STATE_INITIALIZED);
-
-                CdCleanupDirContext(IrpContext, &mut DirContext);
-                CdCleanupDirent(IrpContext, &mut Dirent);
-                CleanupDirContext = 0;
-
-                if UpdateFcbSizes != 0 {
-                    CcPurgeCacheSection(
-                        &mut (*(*Fcb).FcbNonpaged).SegmentObject
-                            as *mut _ as *mut core::ffi::c_void,
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler. Its own CdRaiseStatus calls are still deferred to raise_status below, which is equivalent.
+    let p_CleanupDirContext = core::ptr::addr_of_mut!(CleanupDirContext);
+    let p_DirContext = core::ptr::addr_of_mut!(DirContext);
+    let p_Dirent = core::ptr::addr_of_mut!(Dirent);
+    let p_StreamFile = core::ptr::addr_of_mut!(StreamFile);
+    let p_DecrementReference = core::ptr::addr_of_mut!(DecrementReference);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'seh_try: {
+                loop {
+                    StreamFile = IoCreateStreamFileObjectLite(
                         core::ptr::null_mut(),
-                        0,
-                        0,
+                        (*(*Vcb).Vpb).RealDevice as *mut core::ffi::c_void,
                     );
+                    if StreamFile.is_null() {
+                        raise_status = STATUS_INSUFFICIENT_RESOURCES;
+                        break;
+                    }
+
+                    (*StreamFile).ReadAccess = 1;
+                    (*StreamFile).WriteAccess = 0;
+                    (*StreamFile).DeleteAccess = 0;
+
+                    (*StreamFile).SectionObjectPointer =
+                        core::ptr::addr_of_mut!((*(*Fcb).FcbNonpaged).SegmentObject);
+
+                    CdSetFileObject(
+                        IrpContext,
+                        StreamFile,
+                        StreamFileOpen as u32,
+                        Fcb,
+                        core::ptr::null_mut(),
+                    );
+
+                    (*StreamFile).FileName = *Name;
+
+                    CdLockVcb(IrpContext, Vcb);
+                    CdIncrementReferenceCounts(IrpContext, Fcb, 2, 0);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    DecrementReference = 1;
+
+                    CcInitializeCacheMap(
+                        StreamFile,
+                        core::ptr::addr_of_mut!((*fcb_header(Fcb)).AllocationSize) as *mut core::ffi::c_void,
+                        1,
+                        core::ptr::addr_of_mut!(CdData.CacheManagerCallbacks) as *mut core::ffi::c_void,
+                        Fcb as *mut core::ffi::c_void,
+                    );
+
+                    (*fcb_index(Fcb)).FileObject = StreamFile;
+                    StreamFile = core::ptr::null_mut();
+
+                    if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
+                        let NewDataLength: u32;
+
+                        CdInitializeDirContext(IrpContext, &mut DirContext);
+                        CdInitializeDirent(IrpContext, &mut Dirent);
+                        CleanupDirContext = 1;
+
+                        CdLookupDirent(
+                            IrpContext,
+                            Fcb,
+                            (*fcb_index(Fcb)).StreamOffset as u32,
+                            &mut DirContext,
+                        );
+
+                        CdUpdateDirentFromRawDirent(
+                            IrpContext,
+                            Fcb,
+                            &DirContext,
+                            &mut Dirent,
+                        );
+
+                        CdUpdateDirentName(IrpContext, &mut Dirent, 0);
+
+                        if Dirent.CdFileName.FileName.Buffer
+                            != CdUnicodeSelfArray.as_ptr() as *mut u16
+                        {
+                            raise_status = STATUS_FILE_CORRUPT_ERROR;
+                            break;
+                        }
+
+                        NewDataLength = BlockAlign(
+                            Vcb,
+                            Dirent.DataLength + (*fcb_index(Fcb)).StreamOffset,
+                        );
+
+                        if NewDataLength == 0 {
+                            raise_status = STATUS_FILE_CORRUPT_ERROR;
+                            break;
+                        }
+
+                        if NewDataLength as i64 != (*fcb_header(Fcb)).FileSize.QuadPart {
+                            (*fcb_header(Fcb)).AllocationSize.QuadPart = NewDataLength as i64;
+                            (*fcb_header(Fcb)).FileSize.QuadPart = NewDataLength as i64;
+                            (*fcb_header(Fcb)).ValidDataLength.QuadPart = NewDataLength as i64;
+
+                            CcSetFileSizes(
+                                (*fcb_index(Fcb)).FileObject,
+                                core::ptr::addr_of_mut!((*fcb_header(Fcb)).AllocationSize) as *mut core::ffi::c_void,
+                            );
+
+                            CdTruncateAllocation(IrpContext, Fcb, 0);
+                            CdAddInitialAllocation(
+                                IrpContext,
+                                Fcb,
+                                Dirent.StartingOffset,        // StartingBlock: u32
+                                NewDataLength as i64,         // DataLength: i64
+                            );
+
+                            UpdateFcbSizes = 1;
+                        }
+
+                        if FlagOn(Dirent.DirentFlags as u32, CD_ATTRIBUTE_HIDDEN) != 0 {
+                            SetFlag(&mut (*Fcb).FileAttributes, FILE_ATTRIBUTE_HIDDEN);
+                        }
+
+                        CdConvertCdTimeToNtTime(
+                            IrpContext,
+                            Dirent.CdTime,
+                            core::ptr::addr_of_mut!((*Fcb).CreationTime) as *mut LARGE_INTEGER,
+                        );
+
+                        SetFlag(&mut (*Fcb).FcbState, FCB_STATE_INITIALIZED);
+
+                        CdCleanupDirContext(IrpContext, &mut DirContext);
+                        CdCleanupDirent(IrpContext, &mut Dirent);
+                        CleanupDirContext = 0;
+
+                        if UpdateFcbSizes != 0 {
+                            CcPurgeCacheSection(
+                                &mut (*(*Fcb).FcbNonpaged).SegmentObject
+                                    as *mut _ as *mut core::ffi::c_void,
+                                core::ptr::null_mut(),
+                                0,
+                                0,
+                            );
+                        }
+                    }
+
+                    break; // normal completion → fall through to finally
                 }
             }
+        },
+        |_, _| {
+            if (*p_CleanupDirContext) != 0 {
+                CdCleanupDirContext(IrpContext, &mut (*p_DirContext));
+                CdCleanupDirent(IrpContext, &mut (*p_Dirent));
+            }
 
-            break; // normal completion → fall through to finally
-        }
-    }
+            if !(*p_StreamFile).is_null() {
+                (*(*p_StreamFile)).FileName.Buffer = core::ptr::null_mut();
+                (*(*p_StreamFile)).FileName.MaximumLength = 0;
+                (*(*p_StreamFile)).FileName.Length = 0;
 
-    // _SEH2_FINALLY block
-    if CleanupDirContext != 0 {
-        CdCleanupDirContext(IrpContext, &mut DirContext);
-        CdCleanupDirent(IrpContext, &mut Dirent);
-    }
+                ObDereferenceObject((*p_StreamFile) as *mut core::ffi::c_void);
+                (*fcb_index(Fcb)).FileObject = core::ptr::null_mut();
+            }
 
-    if !StreamFile.is_null() {
-        (*StreamFile).FileName.Buffer = core::ptr::null_mut();
-        (*StreamFile).FileName.MaximumLength = 0;
-        (*StreamFile).FileName.Length = 0;
+            if (*p_DecrementReference) != 0 {
+                CdLockVcb(IrpContext, Vcb);
+                CdDecrementReferenceCounts(IrpContext, Fcb, 1, 0);
+                CdUnlockVcb(IrpContext, Vcb);
+            }
 
-        ObDereferenceObject(StreamFile as *mut core::ffi::c_void);
-        (*fcb_index(Fcb)).FileObject = core::ptr::null_mut();
-    }
+            CdUnlockFcb(IrpContext, Fcb);
+        },
+    );
 
-    if DecrementReference != 0 {
-        CdLockVcb(IrpContext, Vcb);
-        CdDecrementReferenceCounts(IrpContext, Fcb, 1, 0);
-        CdUnlockVcb(IrpContext, Vcb);
-    }
-
-    CdUnlockFcb(IrpContext, Fcb);
 
     if raise_status != 0 {
         CdRaiseStatus(IrpContext, raise_status);

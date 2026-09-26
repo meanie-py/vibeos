@@ -96,45 +96,53 @@ pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIR
     );
 
     // _SEH2_TRY block begins (just a scope)
-    Status = match (*IrpSp).Parameters.QueryVolume.FsInformationClass {
-        FileFsSizeInformation => CdQueryFsSizeInfo(
-            IrpContext,
-            (*Fcb).Vcb,
-            (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_SIZE_INFORMATION,
-            &mut Length
-        ),
-        FileFsVolumeInformation => CdQueryFsVolumeInfo(
-            IrpContext,
-            (*Fcb).Vcb,
-            (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_VOLUME_INFORMATION,
-            &mut Length
-        ),
-        FileFsDeviceInformation => CdQueryFsDeviceInfo(
-            IrpContext,
-            (*Fcb).Vcb,
-            (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_DEVICE_INFORMATION,
-            &mut Length
-        ),
-        FileFsAttributeInformation => CdQueryFsAttributeInfo(
-            IrpContext,
-            (*Fcb).Vcb,
-            (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_ATTRIBUTE_INFORMATION,
-            &mut Length
-        ),
-        #[cfg(feature = "ntddi_win8")]
-        FileFsSectorSizeInformation => CdQueryFsSectorSizeInfo(
-            IrpContext,
-            (*Fcb).Vcb,
-            (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_SECTOR_SIZE_INFORMATION,
-            &mut Length
-        ),
-        _ => Status,   // default: no-op, keep original Status
-    };
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            Status = match (*IrpSp).Parameters.QueryVolume.FsInformationClass {
+                FileFsSizeInformation => CdQueryFsSizeInfo(
+                    IrpContext,
+                    (*Fcb).Vcb,
+                    (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_SIZE_INFORMATION,
+                    &mut Length
+                ),
+                FileFsVolumeInformation => CdQueryFsVolumeInfo(
+                    IrpContext,
+                    (*Fcb).Vcb,
+                    (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_VOLUME_INFORMATION,
+                    &mut Length
+                ),
+                FileFsDeviceInformation => CdQueryFsDeviceInfo(
+                    IrpContext,
+                    (*Fcb).Vcb,
+                    (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_DEVICE_INFORMATION,
+                    &mut Length
+                ),
+                FileFsAttributeInformation => CdQueryFsAttributeInfo(
+                    IrpContext,
+                    (*Fcb).Vcb,
+                    (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_ATTRIBUTE_INFORMATION,
+                    &mut Length
+                ),
+                #[cfg(feature = "ntddi_win8")]
+                FileFsSectorSizeInformation => CdQueryFsSectorSizeInfo(
+                    IrpContext,
+                    (*Fcb).Vcb,
+                    (*Irp).AssociatedIrp.SystemBuffer as PFILE_FS_SECTOR_SIZE_INFORMATION,
+                    &mut Length
+                ),
+                _ => Status,   // default: no-op, keep original Status
+            };
 
-    (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
+            (*Irp).IoStatus.Information = ((*IrpSp).Parameters.QueryVolume.Length - Length) as _;
+        },
+        |_, _| {
+            CdReleaseVcb(IrpContext, (*Fcb).Vcb);
+        },
+    );
 
-    // _SEH2_FINALLY block — always executed
-    CdReleaseVcb(IrpContext, (*Fcb).Vcb);
 
     CdCompleteRequest(IrpContext, Irp, Status);
     return Status;

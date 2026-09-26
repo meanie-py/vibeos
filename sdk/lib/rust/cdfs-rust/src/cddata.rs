@@ -241,62 +241,75 @@ pub unsafe extern "system" fn CdFsdDispatch(
     // C: THREAD_CONTEXT ThreadContext = {0}; PIRP_CONTEXT IrpContext = NULL;
     let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
     let mut irp_context: crate::types::PIRP_CONTEXT = core::ptr::null_mut();
-    let mut wait: u8;
+    let mut wait: u8 = 0;
 
     ASSERT_OPTIONAL_IRP(Irp);
     let _ = DeviceObject;
 
     FsRtlEnterFileSystem();
 
-    // Loop until the request is completed or posted. Under DUMMY_PSEH the C
-    // _SEH2_TRY/_SEH2_EXCEPT(CdExceptionFilter)->CdProcessException arm is dead
-    // code (handlers are not invoked), so the protected body runs straight
-    // through; the body itself returns STATUS_CANT_WAIT to drive a retry.
-    let status: i32;
+    // Loop until the request is completed or posted. Each pass runs under the C's
+    // try/except (ntkrnl_sys::seh): a raise anywhere below — CdRaiseStatus,
+    // STATUS_CANT_WAIT, STATUS_VERIFY_REQUIRED, a Cc in-page error — reaches
+    // CdExceptionFilter and CdProcessException, which post, retry or complete the
+    // IRP. Under DUMMY_PSEH that arm was dead and every raise bugchecked 0x1E.
+    let mut status: i32;
     loop {
-        if irp_context.is_null() {
-            // FileObject == NULL means a mount, which is always waitable.
-            if (*IoGetCurrentIrpStackLocation(Irp)).FileObject.is_null() {
-                wait = 1;
-            } else {
-                wait = CanFsdWait(Irp);
-            }
-            irp_context = CdCreateIrpContext(Irp, wait);
-            CdSetThreadContext(irp_context, &mut thread_context as *mut THREAD_CONTEXT);
-        } else {
-            SetFlag(core::ptr::addr_of_mut!((*irp_context).Flags), IRP_CONTEXT_FLAG_MORE_PROCESSING);
-            CdCleanupIrpContext(irp_context as *mut core::ffi::c_void, 0);
-        }
-
-        let s: i32 = match (*irp_context).MajorFunction {
-            MJ_CREATE => CdCommonCreate(irp_context, Irp),
-            MJ_CLOSE => CdCommonClose(irp_context, Irp),
-            MJ_READ => {
-                if FlagOn((*irp_context).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
-                    CdCompleteMdl(irp_context, Irp)
+        let mut st = (irp_context, STATUS_SUCCESS);
+        let caught = ntkrnl_sys::seh::try_except(
+            &mut st,
+            |st| {
+                if st.0.is_null() {
+                    // FileObject == NULL means a mount, which is always waitable.
+                    if (*IoGetCurrentIrpStackLocation(Irp)).FileObject.is_null() {
+                        wait = 1;
+                    } else {
+                        wait = CanFsdWait(Irp);
+                    }
+                    st.0 = CdCreateIrpContext(Irp, wait);
+                    CdSetThreadContext(st.0, &mut thread_context as *mut THREAD_CONTEXT);
                 } else {
-                    CdCommonRead(irp_context, Irp)
+                    SetFlag(core::ptr::addr_of_mut!((*st.0).Flags), IRP_CONTEXT_FLAG_MORE_PROCESSING);
+                    CdCleanupIrpContext(st.0 as *mut core::ffi::c_void, 0);
                 }
-            }
-            MJ_WRITE => CdCommonWrite(irp_context, Irp),
-            MJ_QUERY_INFORMATION => CdCommonQueryInfo(irp_context, Irp),
-            MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, Irp),
-            MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, Irp),
-            MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, Irp),
-            MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, Irp),
-            MJ_DEVICE_CONTROL => CdCommonDevControl(irp_context, Irp),
-            MJ_LOCK_CONTROL => CdCommonLockControl(irp_context, Irp),
-            MJ_CLEANUP => CdCommonCleanup(irp_context, Irp),
-            MJ_PNP => CdCommonPnp(irp_context, Irp),
-            MJ_SHUTDOWN => CdCommonShutdown(irp_context, Irp),
-            _ => {
-                CdCompleteRequest(irp_context as *mut core::ffi::c_void, Irp, STATUS_INVALID_DEVICE_REQUEST);
-                STATUS_INVALID_DEVICE_REQUEST
-            }
+                let irp_context = st.0;
+
+                st.1 = match (*irp_context).MajorFunction {
+                    MJ_CREATE => CdCommonCreate(irp_context, Irp),
+                    MJ_CLOSE => CdCommonClose(irp_context, Irp),
+                    MJ_READ => {
+                        if FlagOn((*irp_context).MinorFunction as u32, IRP_MN_COMPLETE) != 0 {
+                            CdCompleteMdl(irp_context, Irp)
+                        } else {
+                            CdCommonRead(irp_context, Irp)
+                        }
+                    }
+                    MJ_WRITE => CdCommonWrite(irp_context, Irp),
+                    MJ_QUERY_INFORMATION => CdCommonQueryInfo(irp_context, Irp),
+                    MJ_SET_INFORMATION => CdCommonSetInfo(irp_context, Irp),
+                    MJ_QUERY_VOLUME_INFORMATION => CdCommonQueryVolInfo(irp_context, Irp),
+                    MJ_DIRECTORY_CONTROL => CdCommonDirControl(irp_context, Irp),
+                    MJ_FILE_SYSTEM_CONTROL => CdCommonFsControl(irp_context, Irp),
+                    MJ_DEVICE_CONTROL => CdCommonDevControl(irp_context, Irp),
+                    MJ_LOCK_CONTROL => CdCommonLockControl(irp_context, Irp),
+                    MJ_CLEANUP => CdCommonCleanup(irp_context, Irp),
+                    MJ_PNP => CdCommonPnp(irp_context, Irp),
+                    MJ_SHUTDOWN => CdCommonShutdown(irp_context, Irp),
+                    _ => {
+                        CdCompleteRequest(irp_context as *mut core::ffi::c_void, Irp, STATUS_INVALID_DEVICE_REQUEST);
+                        STATUS_INVALID_DEVICE_REQUEST
+                    }
+                };
+            },
+            |st, pointers| CdExceptionFilter(st.0, pointers as PEXCEPTION_POINTERS),
+        );
+        irp_context = st.0;
+        status = match caught {
+            Ok(()) => st.1,
+            Err(code) => CdProcessException(irp_context, Irp, code),
         };
 
-        if s != STATUS_CANT_WAIT {
-            status = s;
+        if status != STATUS_CANT_WAIT {
             break;
         }
     }
@@ -377,8 +390,8 @@ pub unsafe extern "C" fn CdExceptionFilter(
     let mut ExceptionCode: i32;
     let mut TestStatus: i32 = 1; // TRUE
 
-    // ASSERT_OPTIONAL_IRP_CONTEXT(IrpContext)
-    ntkrnl_sys::ASSERT!(!IrpContext.is_null());
+    // ASSERT_OPTIONAL_IRP_CONTEXT(IrpContext): NULL is legal. An exception raised
+    // inside CdCreateIrpContext reaches this filter before there is a context.
 
     let exception_record = (*ExceptionPointer).ExceptionRecord;
     ExceptionCode = (*exception_record).ExceptionCode;
@@ -395,7 +408,9 @@ pub unsafe extern "C" fn CdExceptionFilter(
         }
     }
 
-    AssertVerifyDevice(IrpContext, (*IrpContext).ExceptionStatus);
+    if !IrpContext.is_null() {
+        AssertVerifyDevice(IrpContext, (*IrpContext).ExceptionStatus);
+    }
 
     if TestStatus != 0 && FsRtlIsNtstatusExpected(ExceptionCode) == 0 {
         CdBugCheck(
@@ -427,18 +442,25 @@ pub unsafe extern "C" fn CdProcessException(
 
     ExceptionCode = (*IrpContext).ExceptionStatus;
 
-    // _SEH2_TRY / _SEH2_EXCEPT( CdExceptionFilter(...) ).  Under DUMMY_PSEH the
-    // _SEH2_EXCEPT handler is dead code, so the protected body runs straight
-    // through (children of CdFsdPostRequest can raise, which propagates).
-    if ExceptionCode == STATUS_CANT_WAIT {
-        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_FORCE_POST) != 0 {
-            ExceptionCode = CdFsdPostRequest(IrpContext, Irp);
-        }
-    } else if ExceptionCode == STATUS_VERIFY_REQUIRED
-        && FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) != 0
-        && KeAreAllApcsDisabled() != 0
-    {
-        ExceptionCode = CdFsdPostRequest(IrpContext, Irp);
+    // _SEH2_TRY / _SEH2_EXCEPT( CdExceptionFilter(...) ): CdFsdPostRequest's
+    // children can raise (Mdl allocation).
+    if let Err(code) = ntkrnl_sys::seh::try_except(
+        &mut ExceptionCode,
+        |ExceptionCode| {
+            if *ExceptionCode == STATUS_CANT_WAIT {
+                if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_FORCE_POST) != 0 {
+                    *ExceptionCode = CdFsdPostRequest(IrpContext, Irp);
+                }
+            } else if *ExceptionCode == STATUS_VERIFY_REQUIRED
+                && FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_TOP_LEVEL) != 0
+                && KeAreAllApcsDisabled() != 0
+            {
+                *ExceptionCode = CdFsdPostRequest(IrpContext, Irp);
+            }
+        },
+        |_, pointers| CdExceptionFilter(IrpContext, pointers as PEXCEPTION_POINTERS),
+    ) {
+        ExceptionCode = code;
     }
 
     if ExceptionCode == STATUS_PENDING

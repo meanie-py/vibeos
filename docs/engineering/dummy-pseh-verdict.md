@@ -252,7 +252,14 @@ Mechanical, incremental, each step independently smoke-gateable:
 2. **Same split for the probe exports**: raising `ProbeForRead/Write`
    (exintrin.rs) stay as the ABI edge; internal Rust callers move to
    `probe.rs`. Grep-audit: no internal Rust caller of a raising export.
-3. **Re-wire the translated FS filters**: cdfs/fastfat error paths call
+3. **DONE for cdfs (2026-09-26), via real SEH rather than `Result`.** `CdFsdDispatch`,
+   `CdFspDispatch`, `CdPerformVerify` and `CdProcessException` run under
+   `ntkrnl_sys::seh::try_except` with the translated `CdExceptionFilter` /
+   `CdProcessException`; all 35 `__finally` sites are `try_finally`; the four
+   `__except(EXECUTE_HANDLER)` sites (the two MDL locks, `SafeZeroMemory`, the directory
+   buffer fill) are real. appstorm's `fsraise` check forces a cdfs raise at every run.
+   **fastfat is next** (74 except / 139 finally). Original plan for reference:
+   **Re-wire the translated FS filters**: cdfs/fastfat error paths call
    `Cd/FatExceptionFilter` + `Cd/FatProcessException` **explicitly on
    `Err`** instead of via the dead `_SEH2_EXCEPT` arm; `Cd/FatRaiseStatus`
    becomes an early-return of `Err(status)` within our crates. The filter

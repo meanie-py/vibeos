@@ -5836,6 +5836,16 @@ captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A
 that keeps its frame pointer in `esi` across the call faults on the next line. Save them
 around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
 
+**Converting a module (cdfs, 2026-09-26):** the translated `__finally` is usually a
+labeled `loop { ... break; }` followed by inline cleanup. Move the loop verbatim into
+`try_finally`'s body and the cleanup into `fin`; a local the finally reads that the body
+changes is read through an `addr_of_mut!` pointer taken before the call. Check each body
+for `return` (it now leaves only the closure) and give uninitialized locals a value
+(closures cannot capture them). **Enabling the exception path makes dead code live, and
+live code must link:** cdfs's FSP retry had declared a flag constant as an extern SYMBOL
+nothing defined, which linked for months only because its status could never become
+`STATUS_CANT_WAIT` under DUMMY_PSEH, so LLVM dropped the reference.
+
 ### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
 
 **Symptom:** a syscall that worked starts returning `STATUS_DATATYPE_MISALIGNMENT`, or an
