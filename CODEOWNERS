@@ -73,9 +73,9 @@
 /vendor/libxslt/                        @ThFabba
 /sdk/include/reactos/libs/libmpg123/    @ThFabba
 /sdk/include/reactos/libs/libxml/       @ThFabba
-/sdk/lib/3rdparty/libmpg123/            @ThFabba
+/vendor/libmpg123/            @ThFabba
 /vendor/libsamplerate/        @ThFabba
-/sdk/lib/3rdparty/libxml2/              @ThFabba
+/vendor/libxml2/              @ThFabba
 
 # ACPI
 #   M:

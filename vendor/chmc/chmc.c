@@ -29,7 +29,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "../../port/port.h"
+#include "port/port.h"
 
 #ifdef _WIN32
     #include <io.h>

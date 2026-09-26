@@ -4,7 +4,7 @@ spec2def(libxslt.dll libxslt.spec ADD_IMPORTLIB)
 
 include_directories(${REACTOS_SOURCE_DIR}/vendor/libxslt/include/libxslt
                     ${REACTOS_SOURCE_DIR}/vendor/libxslt/include
-                    ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/libwin-iconv)
+                    ${REACTOS_SOURCE_DIR}/vendor/libwin-iconv)
 
 add_definitions(
     -DHAVE_CONFIG_H

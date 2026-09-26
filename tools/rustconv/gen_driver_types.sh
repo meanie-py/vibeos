@@ -894,7 +894,7 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]adns\.h' --allowlist-file '.*[/\\]dnsrslvr_c\.h'
                   --allowlist-file '.*dnsapi[/\\].*\.h' )
     EXTRA_INC=( -I"${SRC}/dll/win32/dnsapi" -I"${SRC}/build-i386/dll/win32/dnsapi"
-                -I"${SRC}/sdk/lib/3rdparty/adns/src" -I"${SRC}/sdk/lib/3rdparty/adns/adns_win32" )
+                -I"${SRC}/vendor/adns/src" -I"${SRC}/vendor/adns/adns_win32" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -DUNICODE -D_UNICODE -DNTOS_MODE_USER -DADNS_JGAA_WIN32 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;

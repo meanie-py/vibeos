@@ -6,7 +6,7 @@
 ##
 
 include_directories(BEFORE
-    ${REACTOS_SOURCE_DIR}/sdk/include/reactos/edk2
+    ${REACTOS_SOURCE_DIR}/vendor/edk2
     include
     include/arch/uefi)
 

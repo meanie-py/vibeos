@@ -1,6 +1,6 @@
 # Vendored-code relocation plan
 
-**Status (2026-09-25): destination DECIDED — `vendor/<libname>` (owner). Batch 1 moved.**
+**Status (2026-09-25): destination DECIDED — `vendor/<libname>` (owner). Batches 1–3 moved; CRT trees held for the CRT lane.**
 
 | Batch | Trees | State |
 |---|---|---|
@@ -8,9 +8,10 @@
 | 2a | standalone public headers: GL → `vendor/opengl-headers/include/GL`, `d3dkmthk.h` → `vendor/libdxg/include`, stlport's include tree → `vendor/stlport/stlport` (upstream's layout; stlport is now whole) | **moved** — the two public roots are the `VENDOR_INCLUDE_ROOTS` list in the top-level CMakeLists, appended LAST so a vendored header can never shadow an SDK one |
 | 2b | zlib, libjpeg, libpng, libtiff, libxslt — each rejoined into one `vendor/<lib>` with its headers at `vendor/<lib>/include` (libxslt at `include/libxslt`, so `<libxslt/x.h>` still resolves; msxml3 gained that root) | **moved** |
 | 2c | mbedtls + psa headers: 78 files spell `<mbedtls/…>`/`<psa/…>` through the GLOBAL `sdk/include/reactos/libs` root, so it goes with its sources in its own commit (it is also one of the expensive five) | owed |
-| 3 | CRT-coupled: `sdk/lib/crt/math/ieee754` (neighbours `#include "ieee754/ieee754.h"`), `libm_sse2`; host tool pair chmc + lzx_compress (reach out to `../../port`) | owed |
+| 3 | the rest of `sdk/lib/3rdparty` (adns, freetype, libmpg123, libwin-iconv, libxml2) + libtirpc, mesa, edk2, and the hhpcomp pair chmc + lzx_compress. edk2 was split first: `AppleGraphInfo.h` is ReactOS-authored and went to `boot/freeldr/freeldr/include/arch/uefi/`. chmc's `"../../port/port.h"` became `"port/port.h"` through a `sdk/tools` root | **moved** |
 | 4 | mstsc — split first: rdesktop's engine is vendored, the Win32 front end (connectdialog.c, settings.c, .rc) is ReactOS's | owed |
-| 5 | the expensive five, one per commit: ucrt, wdf, acpica, mbedtls, fex | owed |
+| 5 | the expensive ones, one per commit: wdf, acpica, mbedtls, fex | owed |
+| CRT | `sdk/lib/ucrt`, `sdk/lib/crt/math/ieee754`, `libm_sse2` | **held** — owner, 2026-09-26: the CRT lane is working in these trees; do not move them from here |
 
 **How a tree moves** (batch 1 established it): `git mv` to `vendor/<libname>`, then
 in the consumer `add_subdirectory(${REACTOS_SOURCE_DIR}/vendor/<libname> <old-name>)`.

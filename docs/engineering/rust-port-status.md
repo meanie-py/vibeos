@@ -175,7 +175,7 @@ no crate.
 ### Registry notes from this audit
 
 - **Mesa was unregistered third-party — REGISTERED 2026-09-24 (owner approved).**
-  `dll/opengl/mesa` (Mesa 2.6, 53,679 lines, LGPL-2.0-or-later) was in neither half of
+  `dll/opengl/mesa` (now `vendor/mesa`; Mesa 2.6, 53,679 lines, LGPL-2.0-or-later) was in neither half of
   `vendor.yaml`; `port_audit.py --check` caught it by asking what the LINK contains, which
   `--suspects` (corporate copyright holders only) structurally cannot. That ratchet sees
   only UNCLASSIFIED top-level areas: third-party code nested inside a classified directory
