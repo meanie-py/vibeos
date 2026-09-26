@@ -1,5 +1,12 @@
 # Pi 4B physical bring-up — graviton-spike
 
+> **2026-09-25: VibeOS boots to the desktop on a physical Raspberry Pi 4B.**
+> Serial shows `[WIN32K] shell ready` and `[EXPLORER] _tWinMain entered` (the same
+> marker the QEMU smoke gates on), with zero bugchecks. HDMI shows the taskbar,
+> Start button and Notepad. Built from `cf73a8d8ba3`. Evidence: bench
+> `first-desktop-20260925/` (serial.bin, manifest.json, hdmi-desktop.png). See
+> "Session 3" at the end for the three bugs between the Phase-1 stop and this.
+
 The owner changed this lane from a Graviton/KVM experiment to booting VibeOS
 **directly on an existing Raspberry Pi 4B**. No AWS resources were created.
 The immediate hardware milestone is FreeLDR entry and its menu; the eventual
@@ -471,3 +478,50 @@ from a FIFO-safe boot.
   physical `0x09000000`, which is RAM on a Pi. That only matters for the MP
   entry; the Pi `freeldr.ini` defaults to UP.
 - `pl011-rust/src/pl011.rs`: `PL011_PHYS_ADDR = 0x09000000`.
+
+### The cache bugs: from the Phase-1 stop to the desktop
+
+With FIFO-safe output the real stop was visible: serial died at the first byte
+written through the Phase-1 `MmMapIoSpace` remap of the UART.
+
+1. **`MmNonCached` mappings were cached.** freeldr programs `MAIR_EL1 =
+   0x004400FF` (slot 0 Normal-WB, 1 Device-nGnRnE, 2 Normal-NC), and
+   `MI_PAGE_DISABLE_CACHE` wrote slot 0 under a comment saying "device". So the
+   UART and the GIC were mapped as cached RAM, and stores never reached them.
+   This was the third copy of the same bit-swap: `PTE_DISABLE_CACHE` and the
+   `stubs.rs` protection table had been fixed earlier. Fixing it took the board
+   through the registry, I/O init, and the launch of SMSS into user mode.
+2. **Image pages were not visible to instruction fetch.** smss died with
+   `STATUS_ILLEGAL_INSTRUCTION` (ESR EC=0) at the first `stp` of
+   `RtlSetUnhandledExceptionFilter`. That is a zero page decoding as UDF: the
+   section page-in wrote ntdll's code through the D-cache and never cleaned it
+   to the point of unification. `MmMakeSegmentResident` now sweeps image pages.
+   **That fix alone reached the desktop.**
+3. Siblings of 2, fixed in the same pass and landed after the desktop boot:
+   `KeSweepICache(NULL, 0)` now cleans the D-cache by set/way (the loader's
+   post-relocation flush was I-cache-only), and `MmLoadSystemImage` sweeps a
+   driver before running it.
+
+All three are invisible to QEMU TCG, which models no caches. Every one of the
+seven Pi bugs so far has been a hardware property QEMU does not have (EL2 entry,
+FIFO depth, memory above one L1 entry, EL1 vectors, cacheability, I/D
+coherence), so treat "passes on QEMU" as necessary and nowhere near sufficient
+for arm64.
+
+### Netboot speed, measured
+
+The ramdisk takes ~13.5 minutes whatever the TFTP framing: 825 s lockstep,
+805 s with a 32-block window, 804 s with 8 KB blocks. The limit is Ethernet
+frames, about one per 8 ms, which fits EDK2's managed network layer polling
+the NIC on a ~10 ms timer and taking one packet per poll. Next experiment:
+iPXE, which calls the NIC driver in its own loop, and can hand the chained
+loader a virtual filesystem of downloaded files so nothing touches the SD card.
+
+### Next
+
+- Re-verify on the board with the item-3 sweeps (not yet run on hardware).
+- bootvid geometry: the boot splash is streaked and undersized, but the desktop
+  (win32k on the GOP framebuffer) renders correctly.
+- Input: USB on the Pi 4 is xHCI behind PCIe, which we have no driver for.
+- MP: the AP trampoline in `hal-rust/src/arm64/mpboot.rs` still writes to
+  `0x09000000`, which is RAM on a Pi.
