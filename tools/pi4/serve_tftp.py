@@ -107,12 +107,17 @@ def serve_file(path, addr, options):
                     packets.append(struct.pack("!HH", OP_DATA, n & 0xFFFF) + handle.read(blksize))
                 got = await_ack(sock, addr, packets, acked, top)
                 if got is None:
-                    print(f"  ! {os.path.basename(path)}: client stopped acking after block {acked}")
+                    print(
+                        f"  ! {os.path.basename(path)}: client stopped acking after block {acked}"
+                    )
                     return
                 acked = got
         elapsed = max(time.time() - started, 1e-6)
-        print(f"  = {os.path.basename(path)}: {size} bytes in {elapsed:.1f}s "
-              f"({size / elapsed / 1e6:.1f} MB/s, blksize {blksize}, window {window})", flush=True)
+        print(
+            f"  = {os.path.basename(path)}: {size} bytes in {elapsed:.1f}s "
+            f"({size / elapsed / 1e6:.1f} MB/s, blksize {blksize}, window {window})",
+            flush=True,
+        )
     finally:
         sock.close()
 
@@ -147,7 +152,7 @@ def await_ack(sock, addr, packets, acked, top):
                 # the client repeats it once per out-of-order block, so treating
                 # each as a retransmit request (and a retry) would exhaust the
                 # budget on one lost packet. Keep listening; the timeout resends.
-        except socket.timeout:
+        except TimeoutError:
             continue
     return None
 

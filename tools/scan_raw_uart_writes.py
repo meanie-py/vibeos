@@ -52,12 +52,8 @@ SANCTIONED = "sdk/lib/rust/ntoskrnl-rust/src/arm64_dbg.rs"
 WINDOW = 80
 
 BIND = re.compile(r"\blet\s+(?:mut\s+)?(\w+)\s*(?::[^=;]+)?=(?!=)")
-STORE = re.compile(
-    r"(?:^|[;{}])\s*\*(\w+)\s*=(?!=)|\bwrite_volatile\(\s*(\w+)\s*,"
-)
-DIRECT = re.compile(
-    rf"\bwrite_volatile\(\s*\(?\s*{BASE}\b|\*\s*\(\s*{BASE}\s+as\b[^)]*\)\s*=(?!=)"
-)
+STORE = re.compile(r"(?:^|[;{}])\s*\*(\w+)\s*=(?!=)|\bwrite_volatile\(\s*(\w+)\s*,")
+DIRECT = re.compile(rf"\bwrite_volatile\(\s*\(?\s*{BASE}\b|\*\s*\(\s*{BASE}\s+as\b[^)]*\)\s*=(?!=)")
 
 
 def scan_text(text: str) -> list[tuple[int, str]]:
@@ -68,7 +64,7 @@ def scan_text(text: str) -> list[tuple[int, str]]:
     for i, line in enumerate(lines):
         for m in BIND.finditer(line):
             # The initialiser may continue onto the next line (`= core::ptr::read_volatile(`).
-            init = line[m.end():] + " " + (lines[i + 1] if i + 1 < len(lines) else "")
+            init = line[m.end() :] + " " + (lines[i + 1] if i + 1 < len(lines) else "")
             latest[m.group(1)] = (i, BASE in init)
         if DIRECT.search(line):
             out.append((i + 1, BASE))
@@ -84,8 +80,12 @@ def scan_text(text: str) -> list[tuple[int, str]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--lint", action="store_true", help="findings only on stdout")
-    ap.add_argument("--root", action="append", default=None,
-                    help="directory to scan (repeatable); defaults to sdk/")
+    ap.add_argument(
+        "--root",
+        action="append",
+        default=None,
+        help="directory to scan (repeatable); defaults to sdk/",
+    )
     args = ap.parse_args()
 
     repo = Path(__file__).resolve().parent.parent
@@ -101,9 +101,11 @@ def main() -> int:
                 continue
             files += 1
             for lineno, name in scan_text(text):
-                print(f"{rel}:{lineno}: RAW_UART_STORE through `{name}` — a bare store "
-                      f"to the PL011 data register drops bytes once the FIFO is full; "
-                      f"use Arm64UartPutChar / crate::arm64_dbg::uart_putc")
+                print(
+                    f"{rel}:{lineno}: RAW_UART_STORE through `{name}` — a bare store "
+                    f"to the PL011 data register drops bytes once the FIFO is full; "
+                    f"use Arm64UartPutChar / crate::arm64_dbg::uart_putc"
+                )
                 findings += 1
     print(f"scanned {files} files naming {BASE}, {findings} findings", file=sys.stderr)
     return 0
