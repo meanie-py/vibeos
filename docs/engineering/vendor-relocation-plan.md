@@ -11,7 +11,8 @@
 | 3 | the rest of `sdk/lib/3rdparty` (adns, freetype, libmpg123, libwin-iconv, libxml2) + libtirpc, mesa, edk2, and the hhpcomp pair chmc + lzx_compress. edk2 was split first: `AppleGraphInfo.h` is ReactOS-authored and went to `boot/freeldr/freeldr/include/arch/uefi/`. chmc's `"../../port/port.h"` became `"port/port.h"` through a `sdk/tools` root | **moved** |
 | 4 | mstsc split: rdesktop's engine + Jay Sorg's Win32 UI port (and xrdp's `ssl_calls.c`, GPL-2.0-or-later, now a `license_extra`) → `vendor/rdesktop`; ReactOS's front end (`connectdialog.c` — Ged Murphy under an rdesktop banner — `settings.c`, `.rc`, `lang/`, `res/`, `precomp.h`) stays in `base/applications/mstsc`, which compiles the engine from `vendor/rdesktop` | **moved** |
 | 5a | wdf: `sdk/lib/drivers/wdf` → `vendor/wdf`, its public headers `sdk/include/wdf` → `vendor/wdf/include` (not from upstream's `src/framework`, so `wdf.patch` now says it reproduces the tree *less* `include/`). kmdf and cdrom bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
-| 5 | the expensive ones, one per commit: acpica, fex | owed |
+| 5b | acpica: `drivers/bus/acpi/acpica` → `vendor/acpica`. The acpica library stays defined in `drivers/bus/acpi/CMakeLists.txt` (its only consumer) through one `ACPICA_DIR`. HAL, acpica-sys and acpi-rust bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
+| 5 | fex | owed |
 | CRT | `sdk/lib/ucrt`, `sdk/lib/crt/math/ieee754`, `libm_sse2` | **held** — owner, 2026-09-26: the CRT lane is working in these trees; do not move them from here |
 
 **How a tree moves** (batch 1 established it): `git mv` to `vendor/<libname>`, then
@@ -38,7 +39,7 @@ with the rest of the OS.
 
 ```bash
 python3 tools/vendor_move_plan.py                 # blast radius per tree, cheapest first
-python3 tools/vendor_move_plan.py --tree drivers/bus/acpi/acpica   # every reference
+python3 tools/vendor_move_plan.py --tree external/fex   # every reference
 python3 tools/vendor_move_plan.py --json
 ```
 

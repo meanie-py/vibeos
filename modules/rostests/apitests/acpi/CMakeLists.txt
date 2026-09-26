@@ -1,5 +1,5 @@
 
-include_directories(${REACTOS_SOURCE_DIR}/drivers/bus/acpi/acpica/include)
+include_directories(${REACTOS_SOURCE_DIR}/vendor/acpica/include)
 
 list(APPEND SOURCE
     Bus_PDO_EvalMethod.c
