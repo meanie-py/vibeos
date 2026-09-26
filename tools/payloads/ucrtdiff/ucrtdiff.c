@@ -1288,6 +1288,420 @@ static void run_findfile_family(void)
 #endif
 }
 
+/* ---- output (stdio/output.cpp) -----------------------------------------
+ *
+ * The fourteen __stdio_common_v*printf* entry points, one runner each so each
+ * gets its own table row. Every case goes through a pair of variadic trampolines,
+ * one per side, so both receive the same arguments in a real va_list. The shared
+ * corpus below (PF_CORPUS) is run through every function, narrow and wide, and the
+ * positional one (PF_POSITIONAL) too: the plain and _s functions must print or
+ * reject those formats exactly as Microsoft's do.
+ *
+ * Graded per call: the return, the WHOLE buffer (prefilled, so a stray write or a
+ * missing terminator shows), errno (from a sentinel, so a RESTORED errno shows) and
+ * the invalid-parameter count. A case may only consume arguments it is given in
+ * EVERY mode the functions run it in -- legacy options, _s validation, positional
+ * scans -- which is why the string cases pass g_pf_dual, valid read either narrow
+ * or wide.
+ *
+ * The stream functions write a real file per side and grade the return, errno, the
+ * position after each call and, at the end, the whole file. */
+#include <stdio.h>
+#include <float.h>
+#include <math.h>
+
+/* All fourteen come from the one object, so one guard: once it is taken over and a
+ * plain sweep has no reference for it, the runners AND their helpers compile out
+ * (pecheck exempts the whole block, helpers included). */
+#if UCRTDIFF_REF_HAS___stdio_common_vsprintf
+int __cdecl ref___stdio_common_vsprintf(unsigned long long, char *, size_t, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vswprintf(unsigned long long, wchar_t *, size_t, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vsprintf_s(unsigned long long, char *, size_t, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vswprintf_s(unsigned long long, wchar_t *, size_t, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vsnprintf_s(unsigned long long, char *, size_t, size_t, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vsnwprintf_s(unsigned long long, wchar_t *, size_t, size_t, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vsprintf_p(unsigned long long, char *, size_t, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vswprintf_p(unsigned long long, wchar_t *, size_t, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vfprintf(unsigned long long, FILE *, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vfwprintf(unsigned long long, FILE *, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vfprintf_s(unsigned long long, FILE *, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vfwprintf_s(unsigned long long, FILE *, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vfprintf_p(unsigned long long, FILE *, const char *, _locale_t, va_list);
+int __cdecl ref___stdio_common_vfwprintf_p(unsigned long long, FILE *, const wchar_t *, _locale_t, va_list);
+FILE *__cdecl ref_fopen(const char *, const char *);
+int __cdecl ref_fclose(FILE *);
+int __cdecl ref_fflush(FILE *);
+int __cdecl ref_fseek(FILE *, long, int);
+long __cdecl ref_ftell(FILE *);
+size_t __cdecl ref_fread(void *, size_t, size_t, FILE *);
+int __cdecl ref__set_printf_count_output(int);
+
+/* The shipping side through its import pointers, as for findfile: mingw's stdio.h
+ * wraps these names in inlines of its own. */
+extern int(__cdecl *const ud___stdio_common_vsprintf)(unsigned long long, char *, size_t, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vsprintf));
+extern int(__cdecl *const ud___stdio_common_vswprintf)(unsigned long long, wchar_t *, size_t, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vswprintf));
+extern int(__cdecl *const ud___stdio_common_vsprintf_s)(unsigned long long, char *, size_t, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vsprintf_s));
+extern int(__cdecl *const ud___stdio_common_vswprintf_s)(unsigned long long, wchar_t *, size_t, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vswprintf_s));
+extern int(__cdecl *const ud___stdio_common_vsnprintf_s)(unsigned long long, char *, size_t, size_t, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vsnprintf_s));
+extern int(__cdecl *const ud___stdio_common_vsnwprintf_s)(unsigned long long, wchar_t *, size_t, size_t, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vsnwprintf_s));
+extern int(__cdecl *const ud___stdio_common_vsprintf_p)(unsigned long long, char *, size_t, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vsprintf_p));
+extern int(__cdecl *const ud___stdio_common_vswprintf_p)(unsigned long long, wchar_t *, size_t, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vswprintf_p));
+extern int(__cdecl *const ud___stdio_common_vfprintf)(unsigned long long, FILE *, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vfprintf));
+extern int(__cdecl *const ud___stdio_common_vfwprintf)(unsigned long long, FILE *, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vfwprintf));
+extern int(__cdecl *const ud___stdio_common_vfprintf_s)(unsigned long long, FILE *, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vfprintf_s));
+extern int(__cdecl *const ud___stdio_common_vfwprintf_s)(unsigned long long, FILE *, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vfwprintf_s));
+extern int(__cdecl *const ud___stdio_common_vfprintf_p)(unsigned long long, FILE *, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vfprintf_p));
+extern int(__cdecl *const ud___stdio_common_vfwprintf_p)(unsigned long long, FILE *, const wchar_t *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vfwprintf_p));
+
+/* A varargs trampoline per side: the only way to hand both a genuine va_list. */
+#define PF_TRAMP_BUF(name, ch)                                                            \
+    static int pfd_##name(unsigned long long o, ch *b, size_t n, const ch *f, ...)        \
+    { va_list ap; va_start(ap, f); int r = ud_##name(o, b, n, f, NULL, ap); va_end(ap); return r; } \
+    static int pfr_##name(unsigned long long o, ch *b, size_t n, const ch *f, ...)        \
+    { va_list ap; va_start(ap, f); int r = ref_##name(o, b, n, f, NULL, ap); va_end(ap); return r; }
+#define PF_TRAMP_SN(name, ch)                                                             \
+    static int pfd_##name(unsigned long long o, ch *b, size_t n, size_t m, const ch *f, ...) \
+    { va_list ap; va_start(ap, f); int r = ud_##name(o, b, n, m, f, NULL, ap); va_end(ap); return r; } \
+    static int pfr_##name(unsigned long long o, ch *b, size_t n, size_t m, const ch *f, ...) \
+    { va_list ap; va_start(ap, f); int r = ref_##name(o, b, n, m, f, NULL, ap); va_end(ap); return r; }
+#define PF_TRAMP_F(name, ch)                                                              \
+    static int pfd_##name(unsigned long long o, FILE *s, const ch *f, ...)                \
+    { va_list ap; va_start(ap, f); int r = ud_##name(o, s, f, NULL, ap); va_end(ap); return r; } \
+    static int pfr_##name(unsigned long long o, FILE *s, const ch *f, ...)                \
+    { va_list ap; va_start(ap, f); int r = ref_##name(o, s, f, NULL, ap); va_end(ap); return r; }
+
+PF_TRAMP_BUF(__stdio_common_vsprintf, char)
+PF_TRAMP_BUF(__stdio_common_vswprintf, wchar_t)
+PF_TRAMP_BUF(__stdio_common_vsprintf_s, char)
+PF_TRAMP_BUF(__stdio_common_vswprintf_s, wchar_t)
+PF_TRAMP_SN(__stdio_common_vsnprintf_s, char)
+PF_TRAMP_SN(__stdio_common_vsnwprintf_s, wchar_t)
+PF_TRAMP_BUF(__stdio_common_vsprintf_p, char)
+PF_TRAMP_BUF(__stdio_common_vswprintf_p, wchar_t)
+PF_TRAMP_F(__stdio_common_vfprintf, char)
+PF_TRAMP_F(__stdio_common_vfwprintf, wchar_t)
+PF_TRAMP_F(__stdio_common_vfprintf_s, char)
+PF_TRAMP_F(__stdio_common_vfwprintf_s, wchar_t)
+PF_TRAMP_F(__stdio_common_vfprintf_p, char)
+PF_TRAMP_F(__stdio_common_vfwprintf_p, wchar_t)
+
+/* Valid read narrow ("hi!") AND wide (U+6968 U+0021): %s is narrow or wide in a
+ * wide function depending on _CRT_INTERNAL_PRINTF_LEGACY_WIDE_SPECIFIERS. */
+static const unsigned short g_pf_dual_w[] = { 0x6968, 0x0021, 0, 0 };
+#define g_pf_dual ((const void *)g_pf_dual_w)
+/* %Z's counted strings: 4 bytes of the dual buffer, whichever way it is read. */
+static const struct { unsigned short len, max; const void *buf; } g_pf_z = { 4, 6, g_pf_dual_w };
+static const struct { unsigned short len, max; const void *buf; } g_pf_z_nobuf = { 4, 6, 0 };
+
+#define PF_CORPUS(X)                                                                    \
+    X("") X("hello") X("%%") X("a%%b") X("100%") X("%") X("%q") X("%5%") X("%-q")      \
+    X("%5.3q") X("%hq") X("%lq") X("%N") X("%Nd", 1) X("%Fd", 1.5) X("%F", 1.5)         \
+    X("%I") X("%Iq") X("caf\xe9 %d", 1) X("\x81\x40%d", 2)                               \
+    X("%d", 0) X("%d", -2147483647 - 1) X("%5d", 42) X("%-5d|", 42) X("%05d", -42)      \
+    X("%+d", 42) X("% d", 42) X("%+ d", 42) X("%.0d", 0) X("%.3d", 7) X("%8.3d", -7)    \
+    X("%-08d|", 7) X("%x", 0xBEEF) X("%#x", 0) X("%#x", 255) X("%#X", 255) X("%#o", 8)  \
+    X("%#o", 0) X("%o", 8) X("%u", -1) X("%i", 12) X("%*d", 5, 42) X("%-*d|", -5, 42)   \
+    X("%.*d", 4, 3) X("%.*d", -1, 3) X("%*.*d", 8, 3, 5) X("%99999999999d", 1)          \
+    X("%.99999999999d", 1) X("%300d", 1) X("%hhd", 300) X("%hd", 70000) X("%hu", -1)   \
+    X("%ld", -5L) X("%lld", -1LL) X("%llx", 0x123456789ABCDEFLL) X("%I64d", 5LL)          \
+    X("%I32d", 5) X("%Id", (intptr_t)-5) X("%Ix", (intptr_t)255) X("%zd", (size_t)42)   \
+    X("%zu", (size_t)-1) X("%td", (ptrdiff_t)-3) X("%jd", (long long)-9) X("%Ld", 1)    \
+    X("%wd", 1) X("%hld", 1) X("%lhd", 1) X("%I64", 1LL) X("%I32", 1)                   \
+    X("%c", 'A') X("%c", 0) X("%5c", 'B') X("%-3c|", 'C') X("%hc", 'D') X("%lc", 0x263A) \
+    X("%lc", 'E') X("%C", 'F') X("%wc", 'G') X("%c", 0x1E9E) X("%hc", 0xE9)             \
+    X("%s", g_pf_dual) X("%s", (char *)0) X("%10s", g_pf_dual) X("%-10s|", g_pf_dual)  \
+    X("%.1s", g_pf_dual) X("%.0s", g_pf_dual) X("%.*s", 1, g_pf_dual)                    \
+    X("%hs", "narrow") X("%ls", L"wide") X("%S", L"wide") X("%ws", L"wide")              \
+    X("%ls", (wchar_t *)0) X("%hs", (char *)0) X("%Z", &g_pf_z) X("%Z", (void *)0)       \
+    X("%Z", &g_pf_z_nobuf) X("%wZ", &g_pf_z) X("%hZ", &g_pf_z)                          \
+    X("%p", (void *)0x1234) X("%p", (void *)0) X("%20p", (void *)0xABC) X("%-20p|", (void *)1) \
+    X("%f", 0.0) X("%f", -0.0) X("%f", 1.5) X("%f", 1e300) X("%e", 12345.678)            \
+    X("%E", 1e-10) X("%g", 0.0001) X("%g", 123456789.0) X("%G", 1e-5) X("%#g", 1.0)      \
+    X("%#.0f", 3.0) X("%#.0e", 3.0) X("%.0f", 2.5) X("%.0f", 3.5) X("%.1f", 0.05)        \
+    X("%.20f", 0.1) X("%.200f", 1.0 / 3) X("%a", 1.0) X("%A", -0.5) X("%.3a", 3.14)      \
+    X("%.0a", 1.5) X("%#.0a", 1.5) X("%f", HUGE_VAL) X("%f", -HUGE_VAL) X("%f", NAN)     \
+    X("%010f", HUGE_VAL) X("%-10f|", NAN) X("%+e", 0.0) X("% g", 5.0)                     \
+    X("%010.3f", -1.5) X("%Lf", 1.5) X("%lf", 2.5) X("%.*f", 2, 3.14159) X("%e", DBL_MAX) \
+    X("%e", DBL_MIN) X("%g", 4.9e-324) X("%#x %#o %d %s|", 1, 1, 1, g_pf_dual)           \
+    X("%-+#012.4e", 6.02e23) X("%.3g", 0.0001234) X("%g", 100000.0) X("%g", 1000000.0)
+
+#define PF_POSITIONAL(X)                                                                \
+    X("%1$d %2$d", 1, 2) X("%2$d %1$d", 1, 2) X("%1$d %1$d", 7) X("%1$s %2$d", g_pf_dual, 3) \
+    X("%2$s %1$f", 1.5, g_pf_dual) X("%1$*2$d|", 5, 8) X("%1$.*2$f", 3.14159, 2)        \
+    X("%2$d", 1, 2) X("%1$d %d", 1, 2) X("%d %1$d", 1, 2) X("%0$d", 1) X("%101$d", 1)   \
+    X("%1$d %1$s", 1) X("%1$lld %2$d", 1LL, 2) X("%1$c%2$c", 'a', 'b') X("abc %1$d def", 5) \
+    X("%%%1$d", 5) X("%1$p", (void *)1) X("%1$d %1$x", 255) X("%1$d %1$lld", 1LL)          \
+    X("%1$*1$d", 3) X("%1$", 1) X("%1$-5d|", 4) X("%1$n", (int *)0) X("%3$d %1$d", 1, 2, 3)
+
+static const struct { unsigned long long opt; int size; } g_pf_cfg[] = {
+    { 0, -1 }, { 0, -2 }, { 0, 0 }, { 0, 1 }, { 0, 4 }, { 0, 12 }, { 0, 256 },
+    { 1, 256 }, { 2, 256 }, { 4, 256 }, { 8, 256 }, { 0x10, 256 }, { 0x20, 256 }, { 0x24, 256 },
+    { 1, 0 }, { 1, 1 }, { 1, 4 }, { 1, 12 }, { 2, -1 }, { 2, 0 }, { 2, 1 }, { 2, 4 },
+};
+#define PF_NCFG (sizeof(g_pf_cfg) / sizeof(g_pf_cfg[0]))
+/* The _s and _p functions: fewer option mixes, the same sizes. */
+static const struct { unsigned long long opt; int size; } g_pf_cfg_s[] = {
+    { 0, -1 }, { 0, -2 }, { 0, 0 }, { 0, 1 }, { 0, 4 }, { 0, 12 }, { 0, 256 }, { 4, 256 }, { 8, 256 },
+};
+#define PF_NCFG_S (sizeof(g_pf_cfg_s) / sizeof(g_pf_cfg_s[0]))
+/* _vsnprintf_s: (buffer count, max count); -1 is a NULL buffer. */
+static const struct { int size; size_t max; } g_pf_sn[] = {
+    { -1, 0 }, { -1, 5 }, { 256, (size_t)-1 }, { 4, (size_t)-1 }, { 1, (size_t)-1 },
+    { 4, 2 }, { 4, 3 }, { 4, 10 }, { 12, 5 }, { 256, 0 }, { 256, 300 },
+};
+#define PF_NSN (sizeof(g_pf_sn) / sizeof(g_pf_sn[0]))
+
+#define PF_ERRNO_SENTINEL 777
+
+static const char *pf_label(const char *fmt, unsigned cfg)
+{
+    static char buf[48];
+    int n = 0;
+    for (; fmt[n] && n < 36; n++)
+        buf[n] = fmt[n];
+    buf[n++] = '#';
+    buf[n++] = (char)('0' + cfg / 10 % 10);
+    buf[n++] = (char)('0' + cfg % 10);
+    buf[n] = 0;
+    return buf;
+}
+
+#define PF_RESET() do {                                                                 \
+        *_errno() = PF_ERRNO_SENTINEL; *ref__errno() = PF_ERRNO_SENTINEL;               \
+        g_iph_dll = g_iph_ref = 0;                                                      \
+    } while (0)
+
+#define PF_GRADE(fam, lbl, r1, r2, b1, b2) do {                                         \
+        grade2(fam ".ret", lbl, r1, r2);                                                \
+        grade2(fam ".buf", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));                \
+        grade2(fam ".errno", lbl, *_errno(), *ref__errno());                            \
+        grade2(fam ".iph", lbl, g_iph_dll, g_iph_ref);                                  \
+    } while (0)
+
+/* A buffer function over one format: every configuration in `cfgs`. */
+#define PF_BUF_CASE(name, fam, ch, lit, cfgs, ncfg, fmt, ...)                           \
+    for (unsigned c = 0; c < ncfg; c++) {                                               \
+        ch b1[260], b2[260];                                                            \
+        for (unsigned k = 0; k < 260; k++) b1[k] = b2[k] = (ch)'X';                     \
+        int sz = cfgs[c].size;                                                          \
+        ch *p1 = sz < 0 ? (ch *)0 : b1, *p2 = sz < 0 ? (ch *)0 : b2;                    \
+        size_t n = sz == -2 ? 12 : sz < 0 ? 0 : (size_t)sz;                             \
+        PF_RESET();                                                                     \
+        int r1 = pfd_##name(cfgs[c].opt, p1, n, lit fmt, ##__VA_ARGS__);                \
+        int r2 = pfr_##name(cfgs[c].opt, p2, n, lit fmt, ##__VA_ARGS__);                \
+        PF_GRADE(fam, pf_label(fmt, c), r1, r2, b1, b2);                                \
+    }
+
+#define PFX_VSPRINTF(fmt, ...)   { PF_BUF_CASE(__stdio_common_vsprintf, "vsprintf", char, , g_pf_cfg, PF_NCFG, fmt, ##__VA_ARGS__) }
+#define PFX_VSWPRINTF(fmt, ...)  { PF_BUF_CASE(__stdio_common_vswprintf, "vswprintf", wchar_t, L"", g_pf_cfg, PF_NCFG, fmt, ##__VA_ARGS__) }
+#define PFX_VSPRINTF_S(fmt, ...) { PF_BUF_CASE(__stdio_common_vsprintf_s, "vsprintf_s", char, , g_pf_cfg_s, PF_NCFG_S, fmt, ##__VA_ARGS__) }
+#define PFX_VSWPRINTF_S(fmt, ...) { PF_BUF_CASE(__stdio_common_vswprintf_s, "vswprintf_s", wchar_t, L"", g_pf_cfg_s, PF_NCFG_S, fmt, ##__VA_ARGS__) }
+#define PFX_VSPRINTF_P(fmt, ...) { PF_BUF_CASE(__stdio_common_vsprintf_p, "vsprintf_p", char, , g_pf_cfg_s, PF_NCFG_S, fmt, ##__VA_ARGS__) }
+#define PFX_VSWPRINTF_P(fmt, ...) { PF_BUF_CASE(__stdio_common_vswprintf_p, "vswprintf_p", wchar_t, L"", g_pf_cfg_s, PF_NCFG_S, fmt, ##__VA_ARGS__) }
+
+#define PF_SN_CASE(name, fam, ch, lit, fmt, ...)                                        \
+    for (unsigned c = 0; c < PF_NSN; c++) {                                             \
+        ch b1[260], b2[260];                                                            \
+        for (unsigned k = 0; k < 260; k++) b1[k] = b2[k] = (ch)'X';                     \
+        int sz = g_pf_sn[c].size;                                                       \
+        ch *p1 = sz < 0 ? (ch *)0 : b1, *p2 = sz < 0 ? (ch *)0 : b2;                    \
+        size_t n = sz < 0 ? 0 : (size_t)sz;                                             \
+        PF_RESET();                                                                     \
+        int r1 = pfd_##name(0, p1, n, g_pf_sn[c].max, lit fmt, ##__VA_ARGS__);          \
+        int r2 = pfr_##name(0, p2, n, g_pf_sn[c].max, lit fmt, ##__VA_ARGS__);          \
+        PF_GRADE(fam, pf_label(fmt, c), r1, r2, b1, b2);                                \
+    }
+#define PFX_VSNPRINTF_S(fmt, ...)  { PF_SN_CASE(__stdio_common_vsnprintf_s, "vsnprintf_s", char, , fmt, ##__VA_ARGS__) }
+#define PFX_VSNWPRINTF_S(fmt, ...) { PF_SN_CASE(__stdio_common_vsnwprintf_s, "vsnwprintf_s", wchar_t, L"", fmt, ##__VA_ARGS__) }
+
+/* %n needs a DIFFERENT target per side, so it cannot ride the shared corpus: both
+ * with the count output disabled (the default: the invalid-parameter path) and
+ * enabled, at each integer width. */
+#define PF_N_CASES(name, fam, ch, lit)                                                  \
+    for (int enable = 0; enable < 2; enable++) {                                        \
+        _set_printf_count_output(enable); ref__set_printf_count_output(enable);         \
+        long long n1, n2; ch b1[64], b2[64];                                            \
+        static const char *const fmts[] = { "ab%n", "ab%hhn", "ab%hn", "abc%lln", "%5d%n", "%Ln" }; \
+        for (unsigned f = 0; f < 6; f++) {                                              \
+            ch wf[16]; unsigned k = 0;                                                  \
+            for (; fmts[f][k]; k++) wf[k] = (ch)fmts[f][k];                              \
+            wf[k] = 0;                                                                  \
+            for (k = 0; k < 64; k++) b1[k] = b2[k] = (ch)'X';                           \
+            n1 = n2 = -12345; PF_RESET();                                               \
+            int r1, r2;                                                                 \
+            if (f == 4) {                                                               \
+                r1 = pfd_##name(0, b1, 64, wf, 7, &n1);                                 \
+                r2 = pfr_##name(0, b2, 64, wf, 7, &n2);                                 \
+            } else {                                                                    \
+                r1 = pfd_##name(0, b1, 64, wf, &n1);                                    \
+                r2 = pfr_##name(0, b2, 64, wf, &n2);                                    \
+            }                                                                           \
+            const char *lbl = pf_label(fmts[f], (unsigned)enable);                      \
+            PF_GRADE(fam ".n", lbl, r1, r2, b1, b2);                                    \
+            grade2(fam ".n.value", lbl, n1, n2);                                        \
+        }                                                                               \
+    }                                                                                   \
+    _set_printf_count_output(0); ref__set_printf_count_output(0);
+
+static void run_pf_vsprintf(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSPRINTF)
+    PF_POSITIONAL(PFX_VSPRINTF)
+    PF_N_CASES(__stdio_common_vsprintf, "vsprintf", char, )
+}
+static void run_pf_vswprintf(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSWPRINTF)
+    PF_POSITIONAL(PFX_VSWPRINTF)
+    PF_N_CASES(__stdio_common_vswprintf, "vswprintf", wchar_t, L"")
+}
+static void run_pf_vsprintf_s(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSPRINTF_S)
+    PF_POSITIONAL(PFX_VSPRINTF_S)
+    PF_N_CASES(__stdio_common_vsprintf_s, "vsprintf_s", char, )
+}
+static void run_pf_vswprintf_s(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSWPRINTF_S)
+    PF_POSITIONAL(PFX_VSWPRINTF_S)
+    PF_N_CASES(__stdio_common_vswprintf_s, "vswprintf_s", wchar_t, L"")
+}
+static void run_pf_vsnprintf_s(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSNPRINTF_S)
+    PF_POSITIONAL(PFX_VSNPRINTF_S)
+}
+static void run_pf_vsnwprintf_s(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSNWPRINTF_S)
+    PF_POSITIONAL(PFX_VSNWPRINTF_S)
+}
+static void run_pf_vsprintf_p(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSPRINTF_P)
+    PF_POSITIONAL(PFX_VSPRINTF_P)
+    PF_N_CASES(__stdio_common_vsprintf_p, "vsprintf_p", char, )
+}
+static void run_pf_vswprintf_p(void)
+{
+    install_counting_iph();
+    PF_CORPUS(PFX_VSWPRINTF_P)
+    PF_POSITIONAL(PFX_VSWPRINTF_P)
+    PF_N_CASES(__stdio_common_vswprintf_p, "vswprintf_p", wchar_t, L"")
+}
+
+/* ---- the stream functions ---- */
+
+static char g_pf_dir[MAX_PATH];
+
+/* A directory both sides can create files in: %TEMP%, else C:\, as ff_setup. */
+static int pf_dir(void)
+{
+    if (g_pf_dir[0])
+        return 1;
+    char probe[MAX_PATH + 32];
+    DWORD n = GetTempPathA(MAX_PATH - 32, g_pf_dir);
+    if (n && n < MAX_PATH - 32) {
+        lstrcpyA(probe, g_pf_dir); lstrcatA(probe, "ucrtdiff_pf.probe");
+        HANDLE h = CreateFileA(probe, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            CloseHandle(h);
+            return 1;
+        }
+    }
+    lstrcpyA(g_pf_dir, "C:\\");
+    return 1;
+}
+
+static const char *pf_path(const char *leaf, int side)
+{
+    static char buf[2][MAX_PATH + 48];
+    lstrcpyA(buf[side], g_pf_dir);
+    lstrcatA(buf[side], side ? "ucrtdiff_pf_ref_" : "ucrtdiff_pf_dll_");
+    lstrcatA(buf[side], leaf);
+    return buf[side];
+}
+
+/* One stream case: the return, errno, iph and where the stream stands afterwards. */
+#define PF_F_CASE(name, fam, lit, f1, f2, fmt, ...) {                                   \
+        PF_RESET();                                                                     \
+        int r1 = pfd_##name(0, f1, lit fmt, ##__VA_ARGS__);                             \
+        int r2 = pfr_##name(0, f2, lit fmt, ##__VA_ARGS__);                             \
+        const char *lbl = pf_label(fmt, 0);                                             \
+        grade2(fam ".ret", lbl, r1, r2);                                                \
+        grade2(fam ".errno", lbl, *_errno(), *ref__errno());                            \
+        grade2(fam ".iph", lbl, g_iph_dll, g_iph_ref);                                  \
+        grade2(fam ".tell", lbl, ftell(f1), ref_ftell(f2));                             \
+    }
+
+/* The whole file, read back by each side through its own CRT. */
+static unsigned char g_pf_d1[65536], g_pf_d2[65536];
+#define PF_GRADE_FILE(fam, mode, f1, f2) do {                                           \
+        fflush(f1); ref_fflush(f2);                                                     \
+        fseek(f1, 0, SEEK_SET); ref_fseek(f2, 0, SEEK_SET);                             \
+        size_t n1 = fread(g_pf_d1, 1, sizeof g_pf_d1, f1);                              \
+        size_t n2 = ref_fread(g_pf_d2, 1, sizeof g_pf_d2, f2);                          \
+        grade2(fam ".file.len", mode, (long long)n1, (long long)n2);                    \
+        grade2(fam ".file", mode, fnv(g_pf_d1, n1), fnv(g_pf_d2, n2));                  \
+    } while (0)
+
+/* Each side opens its own file in `mode`, runs the corpus through it, and the two
+ * files are compared. The Unicode-mode stream is where the narrow functions must
+ * refuse (EINVAL) and the wide ones write UTF-16; the text-mode one is where a wide
+ * function converts through the locale, character by character. */
+#define PF_STREAM_RUN(name, fam, lit, X_CORPUS, leaf, mode) do {                        \
+        FILE *f1 = fopen(pf_path(leaf, 0), mode);                                      \
+        FILE *f2 = ref_fopen(pf_path(leaf, 1), mode);                                  \
+        grade2(fam ".open", mode, f1 != 0, f2 != 0);                                   \
+        if (f1 && f2) {                                                                \
+            X_CORPUS(PFX_F_##name)                                                     \
+            PF_GRADE_FILE(fam, mode, f1, f2);                                          \
+        }                                                                              \
+        if (f1) fclose(f1);                                                            \
+        if (f2) ref_fclose(f2);                                                        \
+    } while (0)
+
+#define PFX_F___stdio_common_vfprintf(fmt, ...)    PF_F_CASE(__stdio_common_vfprintf, "vfprintf", , f1, f2, fmt, ##__VA_ARGS__)
+#define PFX_F___stdio_common_vfwprintf(fmt, ...)   PF_F_CASE(__stdio_common_vfwprintf, "vfwprintf", L"", f1, f2, fmt, ##__VA_ARGS__)
+#define PFX_F___stdio_common_vfprintf_s(fmt, ...)  PF_F_CASE(__stdio_common_vfprintf_s, "vfprintf_s", , f1, f2, fmt, ##__VA_ARGS__)
+#define PFX_F___stdio_common_vfwprintf_s(fmt, ...) PF_F_CASE(__stdio_common_vfwprintf_s, "vfwprintf_s", L"", f1, f2, fmt, ##__VA_ARGS__)
+#define PFX_F___stdio_common_vfprintf_p(fmt, ...)  PF_F_CASE(__stdio_common_vfprintf_p, "vfprintf_p", , f1, f2, fmt, ##__VA_ARGS__)
+#define PFX_F___stdio_common_vfwprintf_p(fmt, ...) PF_F_CASE(__stdio_common_vfwprintf_p, "vfwprintf_p", L"", f1, f2, fmt, ##__VA_ARGS__)
+
+/* The NULL-stream and NULL-format rejections. */
+#define PF_F_NULLS(name, fam, lit) do {                                                 \
+        PF_RESET();                                                                     \
+        int r1 = pfd_##name(0, (FILE *)0, lit "x"), r2 = pfr_##name(0, (FILE *)0, lit "x"); \
+        grade2(fam ".nullstream", "-", r1, r2);                                         \
+        grade2(fam ".nullstream.errno", "-", *_errno(), *ref__errno());                 \
+        grade2(fam ".nullstream.iph", "-", g_iph_dll, g_iph_ref);                       \
+    } while (0)
+
+#define PF_STREAM_FAMILY(name, fam, lit, X_EXTRA) do {                                  \
+        install_counting_iph();                                                         \
+        pf_dir();                                                                       \
+        PF_STREAM_RUN(name, fam, lit, PF_CORPUS, #name ".b", "w+b");                    \
+        PF_STREAM_RUN(name, fam, lit, PF_CORPUS, #name ".t", "w+t");                    \
+        PF_STREAM_RUN(name, fam, lit, X_EXTRA, #name ".u", "w+, ccs=UTF-16LE");          \
+        PF_F_NULLS(name, fam, lit);                                                     \
+    } while (0)
+
+static void run_pf_vfprintf(void)     { PF_STREAM_FAMILY(__stdio_common_vfprintf, "vfprintf", , PF_POSITIONAL); }
+static void run_pf_vfwprintf(void)    { PF_STREAM_FAMILY(__stdio_common_vfwprintf, "vfwprintf", L"", PF_POSITIONAL); }
+static void run_pf_vfprintf_s(void)   { PF_STREAM_FAMILY(__stdio_common_vfprintf_s, "vfprintf_s", , PF_POSITIONAL); }
+static void run_pf_vfwprintf_s(void)  { PF_STREAM_FAMILY(__stdio_common_vfwprintf_s, "vfwprintf_s", L"", PF_POSITIONAL); }
+static void run_pf_vfprintf_p(void)   { PF_STREAM_FAMILY(__stdio_common_vfprintf_p, "vfprintf_p", , PF_POSITIONAL); }
+static void run_pf_vfwprintf_p(void)  { PF_STREAM_FAMILY(__stdio_common_vfwprintf_p, "vfwprintf_p", L"", PF_POSITIONAL); }
+#endif /* UCRTDIFF_REF_HAS___stdio_common_vsprintf */
+
 static void run_ctype(void)
 {
     /* The full 0..255 range plus EOF: the 0x80-0xFF half is where the narrow
@@ -1626,6 +2040,16 @@ static void run_legacy(void)
 #define HAND_FN_strpbrk 0
 #endif
         HAND(strcat) HAND(strcpy) HAND(strncat) HAND(strncpy) HAND(strpbrk)
+#if UCRTDIFF_REF_HAS___stdio_common_vsprintf
+/* Keyed by the real export name, the unit the table and the takeover list speak in. */
+#define PF_HAND(name) { "__stdio_common_" #name, run_pf_##name },
+#else
+#define PF_HAND(name) { "__stdio_common_" #name, 0 },
+#endif
+        PF_HAND(vsprintf) PF_HAND(vswprintf) PF_HAND(vsprintf_s) PF_HAND(vswprintf_s)
+        PF_HAND(vsnprintf_s) PF_HAND(vsnwprintf_s) PF_HAND(vsprintf_p) PF_HAND(vswprintf_p)
+        PF_HAND(vfprintf) PF_HAND(vfwprintf) PF_HAND(vfprintf_s) PF_HAND(vfwprintf_s)
+        PF_HAND(vfprintf_p) PF_HAND(vfwprintf_p)
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
