@@ -3215,15 +3215,16 @@ pub unsafe extern "system" fn NtUserPeekMessage(
 
     if Ret != 0 {
         Status = SafeProbeForWrite(pMsg as *mut _, core::mem::size_of::<MSG>() as _, 1);
+        // The probe VALIDATES only; the copy is the access. Kept as two branches, not
+        // one condition, so the reported error is the one that actually happened --
+        // folding them reports the PROBE's status, which is SUCCESS when the copy is
+        // what faulted, and SetLastNtError(STATUS_SUCCESS) sets no error at all.
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             Ret = ((FALSE as i32));
-        } else {
-            RtlCopyMemory(
-                pMsg as *mut _,
-                core::ptr::addr_of!(Msg) as *const _,
-                core::mem::size_of::<MSG>() as _,
-            );
+        } else if !crate::copy::publish_to_user(pMsg as *mut _, core::ptr::addr_of!(Msg) as *const _, core::mem::size_of::<MSG>()) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            Ret = ((FALSE as i32));
         }
     }
 
@@ -3268,15 +3269,16 @@ pub unsafe extern "system" fn NtUserPeekMessage(
 
     if Ret != 0 {
         Status = SafeProbeForWrite(pMsg as *mut _, core::mem::size_of::<MSG>() as _, 1);
+        // The probe VALIDATES only; the copy is the access. Kept as two branches, not
+        // one condition, so the reported error is the one that actually happened --
+        // folding them reports the PROBE's status, which is SUCCESS when the copy is
+        // what faulted, and SetLastNtError(STATUS_SUCCESS) sets no error at all.
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             Ret = FALSE as BOOL;
-        } else {
-            RtlCopyMemory(
-                pMsg as *mut _,
-                core::ptr::addr_of!(Msg) as *const _,
-                core::mem::size_of::<MSG>() as _,
-            );
+        } else if !crate::copy::publish_to_user(pMsg as *mut _, core::ptr::addr_of!(Msg) as *const _, core::mem::size_of::<MSG>()) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            Ret = FALSE as BOOL;
         }
     }
 
@@ -3295,17 +3297,29 @@ pub unsafe extern "system" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BO
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpmsg, &mut Msg as *mut MSG, 1);
+    // The probe VALIDATES; it does not touch the page. Upstream has ProbeForRead and
+    // this copy inside one _SEH2_TRY, so the copy must be the fault-tolerant one.
+    if !crate::copy::capture_from_user(
+        &mut Msg as *mut MSG as *mut c_void,
+        lpmsg as *const c_void,
+        core::mem::size_of::<MSG>(),
+    ) {
+        return 0;
+    }
 
     UserEnterExclusive();
     Ret = IntCallMsgFilter(&mut Msg as *mut MSG, code);
     UserLeave();
 
     Status = SafeProbeForWrite(lpmsg as *mut _, core::mem::size_of::<MSG>().try_into().unwrap(), 1);
-    if !NT_SUCCESS(Status) {
+    if !NT_SUCCESS(Status)
+        || !crate::copy::publish_to_user(
+            lpmsg as *mut c_void,
+            &Msg as *const MSG as *const c_void,
+            core::mem::size_of::<MSG>(),
+        )
+    {
         Ret = 0;
-    } else {
-        core::ptr::copy_nonoverlapping(&Msg as *const MSG, lpmsg, 1);
     }
 
     Ret
@@ -3324,17 +3338,29 @@ pub unsafe extern "system" fn NtUserCallMsgFilter(lpmsg: LPMSG, code: INT) -> BO
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpmsg, &mut Msg as *mut MSG, 1);
+    // The probe VALIDATES; it does not touch the page. Upstream has ProbeForRead and
+    // this copy inside one _SEH2_TRY, so the copy must be the fault-tolerant one.
+    if !crate::copy::capture_from_user(
+        &mut Msg as *mut MSG as *mut c_void,
+        lpmsg as *const c_void,
+        core::mem::size_of::<MSG>(),
+    ) {
+        return 0;
+    }
 
     UserEnterExclusive();
     Ret = IntCallMsgFilter(&mut Msg as *mut MSG, code);
     UserLeave();
 
     Status = SafeProbeForWrite(lpmsg as *mut _, core::mem::size_of::<MSG>() as _, 1);
-    if !NT_SUCCESS(Status) {
+    if !NT_SUCCESS(Status)
+        || !crate::copy::publish_to_user(
+            lpmsg as *mut c_void,
+            &Msg as *const MSG as *const c_void,
+            core::mem::size_of::<MSG>(),
+        )
+    {
         Ret = 0;
-    } else {
-        core::ptr::copy_nonoverlapping(&Msg as *const MSG, lpmsg, 1);
     }
 
     Ret
@@ -3351,7 +3377,15 @@ pub unsafe extern "system" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRES
         return 0;
     }
 
-    core::ptr::copy_nonoverlapping(UnsafeMsgInfo, &mut SafeMsg, 1);
+    // Validate-only probe above; the COPY is what touches the page.
+    if !crate::copy::capture_from_user(
+        &mut SafeMsg as *mut MSG as *mut c_void,
+        UnsafeMsgInfo as *const c_void,
+        core::mem::size_of::<MSG>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return 0;
+    }
 
     UserEnterExclusive();
 
@@ -3373,7 +3407,15 @@ pub unsafe extern "system" fn NtUserDispatchMessage(UnsafeMsgInfo: PMSG) -> LRES
         return 0;
     }
 
-    core::ptr::copy_nonoverlapping(UnsafeMsgInfo, &mut SafeMsg, 1);
+    // Validate-only probe above; the COPY is what touches the page.
+    if !crate::copy::capture_from_user(
+        &mut SafeMsg as *mut MSG as *mut c_void,
+        UnsafeMsgInfo as *const c_void,
+        core::mem::size_of::<MSG>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return 0;
+    }
 
     UserEnterExclusive();
 
@@ -3396,7 +3438,15 @@ pub unsafe extern "system" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) 
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpMsg, &mut SafeMsg, 1);
+    // Validate-only probe above; the COPY is what touches the page.
+    if !crate::copy::capture_from_user(
+        &mut SafeMsg as *mut MSG as *mut c_void,
+        lpMsg as *const c_void,
+        core::mem::size_of::<MSG>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return 0;
+    }
 
     UserEnterExclusive();
     pWnd = UserGetWindowObject(SafeMsg.hwnd);
@@ -3425,7 +3475,15 @@ pub unsafe extern "system" fn NtUserTranslateMessage(lpMsg: LPMSG, flags: UINT) 
             return 0;
         }
     }
-    core::ptr::copy_nonoverlapping(lpMsg, &mut SafeMsg, 1);
+    // Validate-only probe above; the COPY is what touches the page.
+    if !crate::copy::capture_from_user(
+        &mut SafeMsg as *mut MSG as *mut c_void,
+        lpMsg as *const c_void,
+        core::mem::size_of::<MSG>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return 0;
+    }
 
     UserEnterExclusive();
     pWnd = UserGetWindowObject(SafeMsg.hwnd);
@@ -3514,14 +3572,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         core::mem::size_of::<BROADCASTPARM>().try_into().unwrap(),
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
-                        break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            &mut parm as *mut _ as *mut core::ffi::c_void,
-                            ResultInfo as *mut core::ffi::c_void,
+                    // The probe VALIDATES only; this copy is the access. One condition, so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::capture_from_user(
+                            &mut parm as *mut _ as *mut c_void,
+                            ResultInfo as *const c_void,
                             core::mem::size_of::<BROADCASTPARM>(),
-                        );
+                        )
+                    {
+                        break 'block;
                     }
                 } else {
                     break 'block;
@@ -3865,14 +3925,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     core::mem::size_of::<CALL_BACK_INFO>().try_into().unwrap(),
                     1,
                 );
-                if !NT_SUCCESS(Status) {
-                    break 'block;
-                } else {
-                    RtlCopyMemory(
-                        &mut CallBackInfo as *mut _ as *mut core::ffi::c_void,
-                        ResultInfo as *mut core::ffi::c_void,
+                // The probe VALIDATES only; this copy is the access. One condition, so a
+                // fault on the copy takes the same path a failed probe takes.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::capture_from_user(
+                        &mut CallBackInfo as *mut _ as *mut c_void,
+                        ResultInfo as *const c_void,
                         core::mem::size_of::<CALL_BACK_INFO>(),
-                    );
+                    )
+                {
+                    break 'block;
                 }
 
                 if is_pointer_message(Msg, wParam) != 0 {
@@ -3905,15 +3967,17 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         core::mem::size_of::<ULONG_PTR>().try_into().unwrap(),
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
+                    // Validate-only probe; the copy is the access. Folded into one condition so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::publish_to_user(
+                            ResultInfo as *mut c_void,
+                            &lResult as *const _ as *const c_void,
+                            core::mem::size_of::<ULONG_PTR>(),
+                        )
+                    {
                         Ret = 0;
                         break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            ResultInfo as *mut core::ffi::c_void,
-                            &lResult as *const _ as *const core::ffi::c_void,
-                            core::mem::size_of::<ULONG_PTR>(),
-                        );
                     }
                 }
             }
@@ -3925,14 +3989,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                 if ResultInfo != 0 {
                     Status =
                         SafeProbeForRead(pdsm as *mut core::ffi::c_void, core::mem::size_of::<DOSENDMESSAGE>().try_into().unwrap(), 1);
-                    if !NT_SUCCESS(Status) {
-                        break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            &mut dsm as *mut _ as *mut core::ffi::c_void,
-                            pdsm as *const core::ffi::c_void,
+                    // The probe VALIDATES only; this copy is the access. One condition, so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::capture_from_user(
+                            &mut dsm as *mut _ as *mut c_void,
+                            pdsm as *const c_void,
                             core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
+                        )
+                    {
+                        break 'block;
                     }
                 }
 
@@ -3950,15 +4016,17 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         core::mem::size_of::<DOSENDMESSAGE>().try_into().unwrap(),
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
+                    // Validate-only probe; the copy is the access. Folded into one condition so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::publish_to_user(
+                            pdsm as *mut c_void,
+                            &dsm as *const _ as *const c_void,
+                            core::mem::size_of::<DOSENDMESSAGE>(),
+                        )
+                    {
                         Ret = 0;
                         break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            pdsm as *mut core::ffi::c_void,
-                            &dsm as *const _ as *const core::ffi::c_void,
-                            core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
                     }
                 }
             }
@@ -4092,14 +4160,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     core::mem::size_of::<LRESULT>().try_into().unwrap(),
                     1,
                 );
-                if !NT_SUCCESS(Status) {
-                    Ret = 0;
-                } else {
-                    RtlCopyMemory(
-                        ResultInfo as *mut core::ffi::c_void,
-                        &lResult as *const _ as *const core::ffi::c_void,
+                // Validate-only probe; the copy is the access. Folded into one condition so a
+                // fault on the copy takes the same path a failed probe takes.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::publish_to_user(
+                        ResultInfo as *mut c_void,
+                        &lResult as *const _ as *const c_void,
                         core::mem::size_of::<LRESULT>(),
-                    );
+                    )
+                {
+                    Ret = 0;
                 }
             }
         }
@@ -4186,14 +4256,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         core::mem::size_of::<BROADCASTPARM>() as _,
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
-                        break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            &mut parm as *mut _ as *mut core::ffi::c_void,
-                            ResultInfo as *mut core::ffi::c_void,
+                    // The probe VALIDATES only; this copy is the access. One condition, so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::capture_from_user(
+                            &mut parm as *mut _ as *mut c_void,
+                            ResultInfo as *const c_void,
                             core::mem::size_of::<BROADCASTPARM>(),
-                        );
+                        )
+                    {
+                        break 'block;
                     }
                 } else {
                     break 'block;
@@ -4537,14 +4609,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     core::mem::size_of::<CALL_BACK_INFO>() as _,
                     1,
                 );
-                if !NT_SUCCESS(Status) {
-                    break 'block;
-                } else {
-                    RtlCopyMemory(
-                        &mut CallBackInfo as *mut _ as *mut core::ffi::c_void,
-                        ResultInfo as *mut core::ffi::c_void,
+                // The probe VALIDATES only; this copy is the access. One condition, so a
+                // fault on the copy takes the same path a failed probe takes.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::capture_from_user(
+                        &mut CallBackInfo as *mut _ as *mut c_void,
+                        ResultInfo as *const c_void,
                         core::mem::size_of::<CALL_BACK_INFO>(),
-                    );
+                    )
+                {
+                    break 'block;
                 }
 
                 if is_pointer_message(Msg, wParam) != 0 {
@@ -4577,15 +4651,17 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         core::mem::size_of::<ULONG_PTR>() as _,
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
+                    // Validate-only probe; the copy is the access. Folded into one condition so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::publish_to_user(
+                            ResultInfo as *mut c_void,
+                            &lResult as *const _ as *const c_void,
+                            core::mem::size_of::<ULONG_PTR>(),
+                        )
+                    {
                         Ret = 0;
                         break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            ResultInfo as *mut core::ffi::c_void,
-                            &lResult as *const _ as *const core::ffi::c_void,
-                            core::mem::size_of::<ULONG_PTR>(),
-                        );
                     }
                 }
             }
@@ -4597,14 +4673,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                 if ResultInfo != 0 {
                     Status =
                         SafeProbeForRead(pdsm as *mut core::ffi::c_void, core::mem::size_of::<DOSENDMESSAGE>() as _, 1);
-                    if !NT_SUCCESS(Status) {
-                        break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            &mut dsm as *mut _ as *mut core::ffi::c_void,
-                            pdsm as *const core::ffi::c_void,
+                    // The probe VALIDATES only; this copy is the access. One condition, so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::capture_from_user(
+                            &mut dsm as *mut _ as *mut c_void,
+                            pdsm as *const c_void,
                             core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
+                        )
+                    {
+                        break 'block;
                     }
                 }
 
@@ -4622,15 +4700,17 @@ pub unsafe extern "system" fn NtUserMessageCall(
                         core::mem::size_of::<DOSENDMESSAGE>() as _,
                         1,
                     );
-                    if !NT_SUCCESS(Status) {
+                    // Validate-only probe; the copy is the access. Folded into one condition so a
+                    // fault on the copy takes the same path a failed probe takes.
+                    if !NT_SUCCESS(Status)
+                        || !crate::copy::publish_to_user(
+                            pdsm as *mut c_void,
+                            &dsm as *const _ as *const c_void,
+                            core::mem::size_of::<DOSENDMESSAGE>(),
+                        )
+                    {
                         Ret = 0;
                         break 'block;
-                    } else {
-                        RtlCopyMemory(
-                            pdsm as *mut core::ffi::c_void,
-                            &dsm as *const _ as *const core::ffi::c_void,
-                            core::mem::size_of::<DOSENDMESSAGE>(),
-                        );
                     }
                 }
             }
@@ -4764,14 +4844,16 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     core::mem::size_of::<LRESULT>() as _,
                     1,
                 );
-                if !NT_SUCCESS(Status) {
-                    Ret = 0;
-                } else {
-                    RtlCopyMemory(
-                        ResultInfo as *mut core::ffi::c_void,
-                        &lResult as *const _ as *const core::ffi::c_void,
+                // Validate-only probe; the copy is the access. Folded into one condition so a
+                // fault on the copy takes the same path a failed probe takes.
+                if !NT_SUCCESS(Status)
+                    || !crate::copy::publish_to_user(
+                        ResultInfo as *mut c_void,
+                        &lResult as *const _ as *const c_void,
                         core::mem::size_of::<LRESULT>(),
-                    );
+                    )
+                {
+                    Ret = 0;
                 }
             }
         }

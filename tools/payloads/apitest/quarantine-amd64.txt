@@ -142,8 +142,30 @@ msvcrt_apitest.exe system
 #
 # Same guest-level wedge as the msvcrt/cmd cluster: the sweep's own 120s
 # per-subtest timeout NEVER fires, and the sweep is an ordinary user-mode
-# process — if it cannot time out its own child, it is not running either. The
-# box is dead, not the harness waiting. The wedged child emits no output at all.
+# process — if it cannot time out its own child, it is not running either.
+#
+# CORRECTED 2026-09-24: the second half of that inference was WRONG. "The box is
+# dead, not the harness waiting" is false — measured in an isolated msvcrt boot,
+# the serial kept growing 779 bytes/25s (eventlog, LSASS) while the sweep sat
+# dead for 240+ seconds. The box is ALIVE; exactly one process is stuck, and a
+# `spawned` DbgPrint added between CreateProcessA and the wait proves process
+# creation returned. That much holds.
+#
+# CORRECTED AGAIN 2026-09-25 — and this time it is MY OWN previous correction
+# being retracted, so read the roadmap entry before trusting anything here. The
+# 2026-09-24 note went on to say the stall IS a bounded wait on a process handle
+# that never expires, and to unify it with the winlogon hang as ONE bug. Both
+# claims are FALSIFIED. An isolated msvcrt boot with this quarantine DISARMED
+# (`gen_suites.py --only msvcrt_apitest.exe --ignore-quarantine`) reached
+# `[APITEST-SWEEP] done` — 55 subtests — and in that same boot:
+#   * `_wsystem` exited code=0 and `system` code=3: they PASS in isolation;
+#   * `log10` printed `TIMEOUT ... (120s) - terminated`: the bounded wait DOES
+#     expire, same call, same object type, same boot.
+# So the wedge is neither a never-expiring timeout nor self-contained, and the
+# winlogon link is unsupported. Do NOT un-quarantine these on the strength of
+# that green run: the earlier isolated boot DID stall at `_wsystem` under the
+# same restriction, so the wedge is intermittent and one clean run proves
+# nothing about the full sweep. Details: roadmap, "THE APITEST WEDGE CLUSTER".
 #
 # Each victim is simply the next unquarantined subtest, so these are positions
 # rather than named defects; quarantining one buys about ten more subtests

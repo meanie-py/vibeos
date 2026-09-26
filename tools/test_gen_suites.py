@@ -114,3 +114,74 @@ def test_without_only_nothing_changes(monkeypatch, tmp_path) -> None:
     listed = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
     assert listed == ["a_apitest.exe", "c_apitest.exe"]
     assert "RESTRICTED" not in text
+
+
+# --ignore-quarantine: reproduce a quarantined wedge.
+#
+# The trap this closes is circular and cost a wasted boot: the quarantine entry that
+# RECORDS a wedge is also what SUPPRESSES it, so `--only msvcrt_apitest.exe` on a
+# quarantined subtest booted, printed `SKIP ... _wsystem`, and completed cleanly --
+# a green run that proves nothing about the bug it was launched to reproduce.
+
+
+def test_ignore_quarantine_arms_a_quarantined_suite(monkeypatch, tmp_path) -> None:
+    build = _fake_build(tmp_path, ["a_apitest.exe", "b_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "b_apitest.exe\n", ["--ignore-quarantine"])
+    assert rc == 0
+    listed = [
+        ln
+        for ln in (tmp_path / "gen" / "apitest-suites-amd64.txt").read_text().splitlines()
+        if ln and not ln.startswith("#")
+    ]
+    assert listed == ["a_apitest.exe", "b_apitest.exe"]
+
+
+def test_ignore_quarantine_empties_the_subtest_skips(monkeypatch, tmp_path) -> None:
+    build = _fake_build(tmp_path, ["a_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "a_apitest.exe SomeSubtest\n", ["--ignore-quarantine"])
+    assert rc == 0
+    skips = [
+        ln
+        for ln in (tmp_path / "gen" / "apitest-skip-amd64.txt").read_text().splitlines()
+        if ln and not ln.startswith("#")
+    ]
+    assert skips == []
+
+
+def test_quarantine_still_applies_without_the_flag(monkeypatch, tmp_path) -> None:
+    """The flag must be the ONLY thing that disarms the quarantine."""
+    build = _fake_build(tmp_path, ["a_apitest.exe", "b_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "b_apitest.exe\n", [])
+    assert rc == 0
+    listed = [
+        ln
+        for ln in (tmp_path / "gen" / "apitest-suites-amd64.txt").read_text().splitlines()
+        if ln and not ln.startswith("#")
+    ]
+    assert listed == ["a_apitest.exe"]
+
+
+def test_ignore_quarantine_marks_the_list_as_unbankable(monkeypatch, tmp_path) -> None:
+    """Same guard --only carries: a reproduction run must not seed a baseline."""
+    build = _fake_build(tmp_path, ["a_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "a_apitest.exe Sub\n", ["--ignore-quarantine"])
+    assert rc == 0
+    text = (tmp_path / "gen" / "apitest-suites-amd64.txt").read_text()
+    assert "QUARANTINE IGNORED" in text
+    assert "do not bank a baseline" in text
+
+
+def test_ignore_quarantine_is_reported_in_the_summary(monkeypatch, tmp_path, capsys) -> None:
+    """It reached only the --only branch of the summary, so on its own it was silent."""
+    build = _fake_build(tmp_path, ["a_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "a_apitest.exe Sub\n", ["--ignore-quarantine"])
+    assert rc == 0
+    assert "QUARANTINE IGNORED" in capsys.readouterr().out
+
+
+def test_stale_quarantine_still_warns_when_ignored(monkeypatch, tmp_path, capsys) -> None:
+    """Disabling the SUBTRACTION must not disable the typo check that guards it."""
+    build = _fake_build(tmp_path, ["a_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "typo_apitest.exe\n", ["--ignore-quarantine"])
+    assert rc == 0
+    assert "typo_apitest.exe" in capsys.readouterr().err

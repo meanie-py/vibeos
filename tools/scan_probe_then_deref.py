@@ -256,7 +256,14 @@ def scan_text(
             # parameter -- the NtUserSetSysColors -> IntSetSysColors shape.
             if deref_index:
                 call = CALL.search(ln)
-                if call and call.group(1) in deref_index:
+                # A callee that is ITSELF a bulk copy is the DIRECT case handled
+                # below, not an interprocedural one. Reporting both counted every
+                # `RtlCopyMemory(probed, ...)` twice -- 281 rows for 165 real sites,
+                # and the inflated number got quoted as the size of the workload.
+                # The interprocedural rule exists for PROJECT functions that hide the
+                # deref behind a call (NtUserSetSysColors -> IntSetSysColors); for a
+                # memcpy the offending line is right there and says more.
+                if call and call.group(1) in deref_index and call.group(1) not in UNSAFE_COPIES:
                     cargs = split_args(text_of_line_call(lines, n, call.end()))
                     for pos, a in enumerate(cargs):
                         # Strip is_null() guards first. The tree's idiom is
