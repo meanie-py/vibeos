@@ -67,19 +67,15 @@
 #   M: ThFabba, Thomas Faber
 #   S: Upstream
 #   C: See media/doc/3rd Party Files.txt
-/dll/3rdparty/libjpeg/                  @ThFabba
-/dll/3rdparty/libpng/                   @ThFabba
-/dll/3rdparty/libtiff/                  @ThFabba
-/dll/3rdparty/libxslt/                  @ThFabba
-/sdk/include/reactos/libs/libjpeg/      @ThFabba
+/vendor/libjpeg/                        @ThFabba
+/vendor/libpng/                         @ThFabba
+/vendor/libtiff/                        @ThFabba
+/vendor/libxslt/                        @ThFabba
 /sdk/include/reactos/libs/libmpg123/    @ThFabba
-/sdk/include/reactos/libs/libpng/       @ThFabba
-/sdk/include/reactos/libs/libtiff/      @ThFabba
 /sdk/include/reactos/libs/libxml/       @ThFabba
-/sdk/include/reactos/libs/libxslt/      @ThFabba
-/sdk/lib/3rdparty/libmpg123/            @ThFabba
+/vendor/libmpg123/            @ThFabba
 /vendor/libsamplerate/        @ThFabba
-/sdk/lib/3rdparty/libxml2/              @ThFabba
+/vendor/libxml2/              @ThFabba
 
 # ACPI
 #   M:
@@ -247,8 +243,8 @@
 #   M: ThFabba, Thomas Faber
 #   S: Upstream
 #   C: See media/doc/3rd Party Files.txt
-/dll/3rdparty/mbedtls/              @ThFabba
-/sdk/include/reactos/libs/mbedtls/  @ThFabba
+/vendor/mbedtls/              @ThFabba
+/vendor/mbedtls/include/mbedtls/  @ThFabba
 
 # Mount Point Manager
 #   M: HeisSpiter, Heis Spiter, Pierre Schweitzer
@@ -474,8 +470,7 @@
 #   M: ThFabba, Thomas Faber
 #   S: Upstream
 #   C: See media/doc/3rd Party Files.txt
-/sdk/include/reactos/libs/zlib/ @ThFabba
-/sdk/lib/3rdparty/zlib/         @ThFabba
+/vendor/zlib/                   @ThFabba
 
 # x64 related code (keep this at the bottom)
 #   M: tkreuzer, ThePhysicist, Timo Kreuzer

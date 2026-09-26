@@ -3,7 +3,7 @@
 # .c files commented out (per-file flip, like the winsock-family crates).
 #
 # dnsapi implements DnsQuery*/DnsRecordList*/DnsNameCompare/DnsExtractRecords etc. over the
-# 3rdparty `adns` async resolver (sdk/lib/3rdparty/adns) plus a single MIDL client interface
+# 3rdparty `adns` async resolver (vendor/adns) plus a single MIDL client interface
 # (dnsrslvr_c.h — the DNS Resolver service, used only by rpc.c). The windns/adns/dnsrslvr struct
 # layouts are bindgen-GENERATED per arch into `types` by tools/rustconv/gen_driver_types.sh
 # (profile: dnsapi), not hand-transcribed. Translated with DeepSeek-reasoner (pure-LLM).

@@ -138,7 +138,7 @@ KW_TO_CONV: dict[str, str] = {
     "STDMETHODVCALLTYPE": "cdecl",  # psdk/basetyps.h:38
     "VFWAPIV": "cdecl",  # psdk/vfw.h:27
     "RPC_VAR_ENTRY": "cdecl",  # psdk/rpcndr.h:87
-    "EFIAPI": "cdecl",  # reactos/edk2/ProcessorBind.h:260
+    "EFIAPI": "cdecl",  # vendor/edk2/ProcessorBind.h:260
     # --- __fastcall ---
     "FASTCALL": "fastcall",
 }

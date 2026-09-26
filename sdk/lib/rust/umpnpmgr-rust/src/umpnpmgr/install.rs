@@ -95,12 +95,15 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
 
     UuidCreate((RandomUuid.as_mut_ptr() as *mut core::ffi::c_void).cast());
     swprintf(UuidString.as_mut_ptr(), w!("{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}") as *const u16,
-        *((RandomUuid.as_ptr() as *const u32).offset(0)),
-        *((RandomUuid.as_ptr().offset(4) as *const u16).offset(0)) as c_uint,
-        *((RandomUuid.as_ptr().offset(6) as *const u16).offset(0)) as c_uint,
-        RandomUuid[0] as c_uint, RandomUuid[1] as c_uint, RandomUuid[2] as c_uint,
-        RandomUuid[3] as c_uint, RandomUuid[4] as c_uint, RandomUuid[5] as c_uint,
-        RandomUuid[6] as c_uint, RandomUuid[7] as c_uint);
+        // RandomUuid is a byte array standing in for the C's UUID: Data1..3 are read
+        // unaligned, and Data4 is bytes 8..16 — printing bytes 0..8 again repeated the
+        // first half of every install event/pipe name (found by scan_misaligned_cast).
+        (RandomUuid.as_ptr() as *const u32).read_unaligned(),
+        (RandomUuid.as_ptr().offset(4) as *const u16).read_unaligned() as c_uint,
+        (RandomUuid.as_ptr().offset(6) as *const u16).read_unaligned() as c_uint,
+        RandomUuid[8] as c_uint, RandomUuid[9] as c_uint, RandomUuid[10] as c_uint,
+        RandomUuid[11] as c_uint, RandomUuid[12] as c_uint, RandomUuid[13] as c_uint,
+        RandomUuid[14] as c_uint, RandomUuid[15] as c_uint);
 
     ErrCode = CreatePnpInstallEventSecurity(core::ptr::addr_of_mut!(EventSd));
     if ErrCode != ERROR_SUCCESS
@@ -317,13 +320,13 @@ unsafe extern "C" fn ReadRegSzKey(
     return (ERROR_SUCCESS) as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SetupIsActive() -> u8 {
+pub unsafe extern "C" fn SetupIsActive() -> BOOL {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut regType: u32 = 0;
     let mut active: u32 = 0;
     let mut size: u32 = 0;
     let mut rc: i32;
-    let mut ret: u8 = (FALSE) as u8;
+    let mut ret: BOOL = FALSE as BOOL;
 
     rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\Setup") as LPCWSTR, 0, KEY_QUERY_VALUE, &mut hKey);
     if rc != (ERROR_SUCCESS) as i32 {

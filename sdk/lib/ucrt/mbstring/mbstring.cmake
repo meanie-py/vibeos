@@ -1,25 +1,10 @@
 
 list(APPEND UCRT_MBSTRING_SOURCES
-    mbstring/ismbalnm.cpp
-    mbstring/ismbalph.cpp
-    mbstring/ismbdgt.cpp
-    mbstring/ismbgrph.cpp
-    mbstring/ismbknj.cpp
-    mbstring/ismblgl.cpp
-    mbstring/ismblwr.cpp
-    mbstring/ismbprn.cpp
-    mbstring/ismbpunc.cpp
-    mbstring/ismbsle.cpp
-    mbstring/ismbspc.cpp
-    mbstring/ismbupr.cpp
-    mbstring/mbbtype.cpp
     mbstring/mbccpy.cpp
     mbstring/mbccpy_s.cpp
     mbstring/mbccpy_s_l.cpp
     mbstring/mbclen.cpp
-    mbstring/mbclevel.cpp
     mbstring/mbctype.cpp
-    mbstring/mbsbtype.cpp
     mbstring/mbscat_s.cpp
     mbstring/mbscat_s_l.cpp
     mbstring/mbschr.cpp
@@ -80,11 +65,6 @@ list(APPEND UCRT_MBSTRING_SOURCES
     mbstring/mbstok.cpp
     mbstring/mbstok_s.cpp
     mbstring/mbsupr.cpp
-    mbstring/mbtohira.cpp
-    mbstring/mbtokata.cpp
-    mbstring/mbtolwr.cpp
-    mbstring/mbtoupr.cpp
-    mbstring/tojisjms.cpp
     mbstring/tombbmbc.cpp
 )
 

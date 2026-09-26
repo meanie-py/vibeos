@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 250929,
+  "random_cases": 256,
+  "validity": "Genuine sdk/lib/rtl/encode.c against the shipping encode crate's FFI shims and run_decode/run_encode/generate_hash cores, selected as exact bytes. The UNICODE_STRING is valid and its Buffer holds exactly Length bytes (both functions touch only Buffer[0..Length)); MaximumLength is carried but unused. Hash is a readable/writable byte. NtQuerySystemTime is the reviewed deterministic host script in encode_host_time.{h,rs}: it covers a nonzero byte 1, a hash found at byte 2, an all-zero hash window (fallback to 1) and a failing NTSTATUS, but not real clock values. C headers are rtl-difftest's refstub. Host 64-bit layout only; no i386 claim.",
+  "c_source": "../../../../sdk/lib/rtl/encode.c",
+  "c_include_dirs": [
+    "../../../../sdk/lib/rust/rtl-difftest/refstub"
+  ],
+  "c_prelude": "encode_host_time.h",
+  "rust_source": "../../../../sdk/lib/rust/encode/src/lib.rs",
+  "rust_items": [
+    "UnicodeString",
+    "run_decode",
+    "run_encode",
+    "generate_hash",
+    "ffi::RtlRunDecodeUnicodeString",
+    "ffi::RtlRunEncodeUnicodeString"
+  ],
+  "rust_support": {
+    "host_time": "encode_host_time.rs"
+  },
+  "functions": [
+    {
+      "c": "RtlRunDecodeUnicodeString",
+      "rust": "candidate::RtlRunDecodeUnicodeString",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "hash",
+          "type": "u8",
+          "values": [
+            0,
+            1,
+            67,
+            188,
+            255
+          ],
+          "random_range": [
+            0,
+            255
+          ]
+        },
+        {
+          "name": "string",
+          "type": "bytes",
+          "c_type": "PUNICODE_STRING",
+          "rust_type": "*mut candidate::UnicodeString",
+          "record": {
+            "layout": "UNICODE_STRING",
+            "base_size": 16,
+            "fields": [
+              {
+                "name": "Length",
+                "offset": 0,
+                "type": "u16",
+                "count": 1,
+                "values": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  8,
+                  64,
+                  255
+                ]
+              },
+              {
+                "name": "MaximumLength",
+                "offset": 2,
+                "type": "u16",
+                "count": 1,
+                "values": [
+                  0,
+                  256
+                ]
+              },
+              {
+                "name": "Buffer",
+                "offset": 8,
+                "points_to": {
+                  "pointee": "text"
+                }
+              }
+            ],
+            "pointees": [
+              {
+                "name": "text",
+                "mutable": true,
+                "bytes": {
+                  "c_type": "WCHAR",
+                  "length": "Length",
+                  "align": 2
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "c": "RtlRunEncodeUnicodeString",
+      "rust": "candidate::RtlRunEncodeUnicodeString",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "hash",
+          "type": "bytes",
+          "c_type": "unsigned char *",
+          "length": 1
+        },
+        {
+          "name": "string",
+          "type": "bytes",
+          "c_type": "PUNICODE_STRING",
+          "rust_type": "*mut candidate::UnicodeString",
+          "record": {
+            "layout": "UNICODE_STRING",
+            "base_size": 16,
+            "fields": [
+              {
+                "name": "Length",
+                "offset": 0,
+                "type": "u16",
+                "count": 1,
+                "values": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  8,
+                  64,
+                  255
+                ]
+              },
+              {
+                "name": "MaximumLength",
+                "offset": 2,
+                "type": "u16",
+                "count": 1,
+                "values": [
+                  0,
+                  256
+                ]
+              },
+              {
+                "name": "Buffer",
+                "offset": 8,
+                "points_to": {
+                  "pointee": "text"
+                }
+              }
+            ],
+            "pointees": [
+              {
+                "name": "text",
+                "mutable": true,
+                "bytes": {
+                  "c_type": "WCHAR",
+                  "length": "Length",
+                  "align": 2
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "decode_seed",
+      "find": "unsafe { *ptr ^= hash | 0x43 };",
+      "replace": "unsafe { *ptr ^= hash | 0x42 };"
+    },
+    {
+      "name": "decode_stop",
+      "find": "for i in (1..len).rev() {",
+      "replace": "for i in (2..len).rev() {"
+    },
+    {
+      "name": "encode_chain",
+      "find": "unsafe { *ptr.add(i) ^= prev ^ h };",
+      "replace": "unsafe { *ptr.add(i) ^= h };"
+    },
+    {
+      "name": "hash_window",
+      "find": "for i in 1..8 {",
+      "replace": "for i in 2..8 {"
+    },
+    {
+      "name": "hash_fallback",
+      "find": "unsafe { *hash = 1 };",
+      "replace": "unsafe { *hash = 2 };"
+    },
+    {
+      "name": "status_ignored",
+      "find": "if status >= 0 {",
+      "replace": "if status >= 0 || true {"
+    },
+    {
+      "name": "encode_overread",
+      "find": "let prev = unsafe { *ptr.add(i - 1) };\n            unsafe { *ptr.add(i) ^= prev ^ h };",
+      "replace": "let prev = unsafe { *ptr.add(i + 1) };\n            unsafe { *ptr.add(i) ^= prev ^ h };",
+      "expect": "memory_fault"
+    }
+  ]
+}

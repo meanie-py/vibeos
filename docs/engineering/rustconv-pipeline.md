@@ -39,6 +39,12 @@ C source → [scanner] tree-sitter parse → [resolver] match vs ntkrnl-sys cata
 → [postprocess] safe mechanical fixes → [assembler] write crate → [checker] cargo check ×3
 ```
 
+After integration, logic that smoke never reaches is graded by `rustconv difftest-contract`:
+shipping Rust vs the genuine C on the host, with generated corpora and required mutants
+(`tools/rustconv/data/difftest/README.md`). Treat each bug it finds as a CLASS: the next
+step is a $0 static check that screens every translated body for it, so the main pass
+stops shipping that class — not just a fix at the one site.
+
 `rustconv translate` accepts HAL paths and is HAL-aware (separate
 `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is
 ~70% useful for HAL — review before integrating (memory

@@ -549,15 +549,32 @@ static void run_ctype(void)
         char w[8];
         w[0] = 'c'; w[1] = '='; w[2] = (char)('0' + (c / 100 + 256) % 10);
         w[3] = (char)('0' + (c / 10 + 256) % 10); w[4] = (char)('0' + (c + 256) % 10); w[5] = 0;
+#if UCRTDIFF_REF_HAS_tolower
         grade("tolower", w, tolower(c), rust_tolower(c), ref_tolower(c));
+#endif
+#if UCRTDIFF_REF_HAS_toupper
         grade("toupper", w, toupper(c), rust_toupper(c), ref_toupper(c));
+#endif
         /* Normalised: the is* family contracts a NONZERO value, not a specific
          * one, and MSVC returns the raw ctype bitmask. */
+        /* Each is* row only while its Microsoft reference still exists: the ctype
+         * takeover deleted them, and a plain sweep then failed to LINK. Their evidence
+         * is the MATCH rows graded by --takeover-check, as for the string family. */
+#if UCRTDIFF_REF_HAS_isalpha
         grade("isalpha", w, !!isalpha(c), !!rust_isalpha(c), !!ref_isalpha(c));
+#endif
+#if UCRTDIFF_REF_HAS_isdigit
         grade("isdigit", w, !!isdigit(c), !!rust_isdigit(c), !!ref_isdigit(c));
+#endif
+#if UCRTDIFF_REF_HAS_isspace
         grade("isspace", w, !!isspace(c), !!rust_isspace(c), !!ref_isspace(c));
+#endif
+#if UCRTDIFF_REF_HAS_isupper
         grade("isupper", w, !!isupper(c), !!rust_isupper(c), !!ref_isupper(c));
+#endif
+#if UCRTDIFF_REF_HAS_ispunct
         grade("ispunct", w, !!ispunct(c), !!rust_ispunct(c), !!ref_ispunct(c));
+#endif
     }
 }
 

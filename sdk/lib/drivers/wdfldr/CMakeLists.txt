@@ -13,8 +13,8 @@ add_library(wdfldr MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/wdfldr.def)
 
 target_include_directories(wdfldr
-    PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/shared/inc/private/common
-    ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf/kmdf/inc/private
+    PRIVATE ${REACTOS_SOURCE_DIR}/vendor/wdf/shared/inc/private/common
+    ${REACTOS_SOURCE_DIR}/vendor/wdf/kmdf/inc/private
     ${REACTOS_SOURCE_DIR}/sdk/lib/drivers/wdf_reactos/include
 )
 

@@ -53,6 +53,7 @@ members = [
     "userenv-rust",
     "netapi32-rust",
     "iphlpapi-rust",
+    "jscript-rust",
     "dnsapi-rust",
     "dhcpcsvc-rust",
     # Tier-2 network services (base/services/*). dnsrslvr + wkssvc are the SERVER halves of the

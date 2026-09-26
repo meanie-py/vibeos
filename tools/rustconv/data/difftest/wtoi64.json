@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 230927,
+  "random_cases": 128,
+  "validity": "Genuine ReactOS _wtoi64 C body and shipping cnt-rust _wtoi64 shim, wcstr_slice helper, and core_rs::radix module. Contract scaffolding maps source wchar_t to the ReactOS 16-bit uint16_t ABI and implements the source's ASCII _SPACE classification. Inputs are non-null, NUL-terminated UTF-16 strings containing only valid Unicode scalars; decimal runs are limited to 18 digits to avoid signed overflow in the C accumulator. Examples include BMP and supplementary-plane characters after the parsed number, which must stop decimal parsing. This is a host behavioral grade for the declared UTF-16/ASCII domain, not a Windows ABI or locale claim.",
+  "c_source": "../../../../sdk/lib/crt/string/wtoi64.c",
+  "c_include_dirs": ["wtoi64_include"],
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "rust_items": ["m_wtoi64::_wtoi64"],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": ["wcstr_slice"]
+    }
+  ],
+  "rust_support": {"core_rs": "radix_core.rs"},
+  "functions": [
+    {
+      "c": "_wtoi64",
+      "rust": "candidate::_wtoi64",
+      "return": "i64",
+      "c_return_type": "long long",
+      "args": [
+        {
+          "name": "str",
+          "type": "const_wstr",
+          "generator": {
+            "encoding": "utf16le",
+            "max_bytes": 50,
+            "examples": [
+              "",
+              "0",
+              "1",
+              "+42",
+              "-42",
+              " \t-17x",
+              "x",
+              "--1",
+              "12é99",
+              "12🌱99",
+              "999999999999999999",
+              "-999999999999999999"
+            ],
+            "grammar": {
+              "sequence": [
+                {"charset": " \t\n\u000b\f\r", "min": 0, "max": 3},
+                {"choice": [{"literal": ""}, {"literal": "+"}, {"literal": "-"}]},
+                {"charset": "0123456789", "min": 1, "max": 18},
+                {"choice": [{"literal": ""}, {"literal": "é"}, {"literal": "🌱"}]}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "skip_wide_input",
+      "find": "let str_s = wcstr_slice(str);",
+      "replace": "let str_s: &[u16] = &[];"
+    },
+    {
+      "name": "read_past_wide_terminator",
+      "find": "let str_s = wcstr_slice(str);",
+      "replace": "let str_s = wcstr_slice(str); core::ptr::read_volatile(str.wrapping_add(str_s.len() + 1));",
+      "expect": "memory_fault"
+    }
+  ]
+}

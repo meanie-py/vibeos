@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 928
-  amd64: 928
-  arm64: 925
+  i386: 868
+  amd64: 868
+  arm64: 865
 
 families:
   bits:
@@ -264,3 +264,149 @@ families:
       - iswupper
       - iswxdigit
       - isxdigit
+  ismbc:
+    replaces:
+      - sdk/lib/ucrt/mbstring/ismbalnm.cpp
+      - sdk/lib/ucrt/mbstring/ismbalph.cpp
+      - sdk/lib/ucrt/mbstring/ismbdgt.cpp
+      - sdk/lib/ucrt/mbstring/ismbgrph.cpp
+      - sdk/lib/ucrt/mbstring/ismbknj.cpp
+      - sdk/lib/ucrt/mbstring/ismblgl.cpp
+      - sdk/lib/ucrt/mbstring/ismblwr.cpp
+      - sdk/lib/ucrt/mbstring/ismbprn.cpp
+      - sdk/lib/ucrt/mbstring/ismbpunc.cpp
+      - sdk/lib/ucrt/mbstring/ismbsle.cpp
+      - sdk/lib/ucrt/mbstring/ismbspc.cpp
+      - sdk/lib/ucrt/mbstring/ismbupr.cpp
+      - sdk/lib/ucrt/mbstring/mbbtype.cpp
+      - sdk/lib/ucrt/mbstring/mbsbtype.cpp
+      - sdk/lib/ucrt/mbstring/mbclevel.cpp
+      - sdk/lib/ucrt/mbstring/mbtolwr.cpp
+      - sdk/lib/ucrt/mbstring/mbtoupr.cpp
+      - sdk/lib/ucrt/mbstring/mbtohira.cpp
+      - sdk/lib/ucrt/mbstring/mbtokata.cpp
+      - sdk/lib/ucrt/mbstring/tojisjms.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the shipping ucrtbase (these
+      bodies) against the genuine Microsoft objects for the 20 deleted files, 8
+      shards on FROZEN inputs (see ucrt_tier2_sweep.run_shard -- without that, shards
+      1-7 silently lost the family). 48 of the 52 graded dll=0 over every case, and
+      dll_fail=0 across the whole run, so nothing else in ucrtbase moved either.
+      The other four are recorded rather than implied. _ismbclegal and
+      _ismbclegal_l FAULT on the ref_ side at c=-1, Microsoft's own out-of-bounds
+      read (see the note), so the loop stops before grading; they are
+      lead(c >> 8) && trail(c & 0xff) over the graded _ismbb* family, the same
+      composition as _ismbcl0/1/2, which graded MATCH. _ismbcblank and
+      _ismbcblank_l were never generated: the case generator parses the
+      TOOLCHAIN's mingw-w64 headers, which do not declare them (owed, recorded in
+      docs/product/vibeos-roadmap.md). They share the ismbc! body with the graded
+      _ismbcpunct over the graded _ismbbblank_l.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies. Those are Wine's
+      contract: Wine maps _MB_CP_SBCS to codepage 20127, where UCRT keeps codepage 0
+      and answers single-byte questions from the C locale -- which is exactly why
+      _ismbcgraph/print/punct/space/symbol graded DIFF on the rust_ side at tab and
+      0xA0-0xFF while the shipping DLL matched.
+
+      Silent-if-wrong details, each transcribed: the c <= 0xFF arm returns the
+      single-byte primitive's value unnormalised (_ismbcdigit gives the raw _DIGIT
+      mask, not 1); _ismbcprint tests _CONTROL with expected=false; the multibyte
+      arm refuses a c that is two single-byte characters; _mbsbtype loops length+1
+      times and raises the invalid-parameter handler for a NUL before the requested
+      position but not at it; the Shift-JIS-only members answer 0 (or return c
+      unchanged) on every other codepage. __acrt_GetStringTypeA and
+      __acrt_LCMapStringA are still Microsoft's and are called, not replaced.
+
+      One deliberate divergence: UCRT's mbstring C gets _ismbblead_l/_ismbbtrail_l
+      as unmasked-index MACROS, so _ismbclegal(c) for c > 0xFFFF reads past the
+      257-byte table (and faults at c=-1). Ours masks to a byte. Identical for
+      every c <= 0xFFFF; undefined behaviour above it is not reproduced.
+    exports:
+      - _ismbcalnum
+      - _ismbcalnum_l
+      - _ismbcalpha
+      - _ismbcalpha_l
+      - _ismbcblank
+      - _ismbcblank_l
+      - _ismbcdigit
+      - _ismbcdigit_l
+      - _ismbcgraph
+      - _ismbcgraph_l
+      - _ismbchira
+      - _ismbchira_l
+      - _ismbckata
+      - _ismbckata_l
+      - _ismbcl0
+      - _ismbcl0_l
+      - _ismbcl1
+      - _ismbcl1_l
+      - _ismbcl2
+      - _ismbcl2_l
+      - _ismbclegal
+      - _ismbclegal_l
+      - _ismbclower
+      - _ismbclower_l
+      - _ismbcprint
+      - _ismbcprint_l
+      - _ismbcpunct
+      - _ismbcpunct_l
+      - _ismbcspace
+      - _ismbcspace_l
+      - _ismbcsymbol
+      - _ismbcsymbol_l
+      - _ismbcupper
+      - _ismbcupper_l
+      - _ismbslead
+      - _ismbslead_l
+      - _mbbtype
+      - _mbbtype_l
+      - _mbcjistojms
+      - _mbcjistojms_l
+      - _mbcjmstojis
+      - _mbcjmstojis_l
+      - _mbctohira
+      - _mbctohira_l
+      - _mbctokata
+      - _mbctokata_l
+      - _mbctolower
+      - _mbctolower_l
+      - _mbctoupper
+      - _mbctoupper_l
+      - _mbsbtype
+      - _mbsbtype_l
+  tocase:
+    replaces:
+      - sdk/lib/ucrt/convert/tolower_toupper.cpp
+      - sdk/lib/ucrt/convert/towlower.cpp
+      - sdk/lib/ucrt/convert/towupper.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft objects for the
+      three deleted files. All 10 exports graded dll=0 over every generated case,
+      plus run_ctype's hand-graded tolower/toupper rows over EOF and 0..255 (MATCH,
+      n=514); dll_fail=0 across all 5,408 cases of the run. The burn-down moves by
+      8, not 10, because it undecorates _tolower/tolower (and _toupper/toupper) to
+      one name.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: msvcrt's
+      _tolower_l/_toupper_l DIFF against UCRT at the first case, EOF, which UCRT
+      returns before resolving any locale.
+
+      Silent-if-wrong details, each transcribed: only (unsigned)c < 256 takes the
+      narrow table; the codepage lookup sets errno=EILSEQ whenever c is not a
+      lead/trail pair and maps the low byte anyway; tolower/toupper are plain ASCII
+      until a locale has ever been changed; _tolower/_toupper are unconditional
+      arithmetic; _towlower_l/_towupper_l consult _wctype's UTF-16 category before
+      the narrow map, and cover only ASCII in a UTF-8 locale. _wctype and the
+      __acrt_LCMapString* internals are still Microsoft's and are called.
+    exports:
+      - _tolower
+      - _tolower_l
+      - _toupper
+      - _toupper_l
+      - _towlower_l
+      - _towupper_l
+      - tolower
+      - toupper
+      - towlower
+      - towupper

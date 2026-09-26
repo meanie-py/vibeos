@@ -152,6 +152,24 @@ extern "system" {
         PoolType: POOL_TYPE,
         DeviceDescription: PHIDP_DEVICE_DESC,
     ) -> NTSTATUS;
+
+    // Handed out through GUID_HID_INTERFACE_HIDPARSE so a client can call the parser
+    // without importing hidparse itself (pdo.rs IRP_MN_QUERY_INTERFACE).
+    pub fn HidP_GetCaps(
+        PreparsedData: hid_sys::PHIDP_PREPARSED_DATA,
+        Capabilities: hid_sys::PHIDP_CAPS,
+    ) -> NTSTATUS;
+}
+
+// IsEqualGUIDAligned (wdm FORCEINLINE) — compares the two 8-byte halves. Kept private:
+// usbport exports a #[no_mangle] one, and two drivers must not both define that symbol.
+pub(crate) unsafe fn guid_eq(
+    a: *const ntkrnl_sys::ddk::GUID,
+    b: *const ntkrnl_sys::ddk::GUID,
+) -> bool {
+    let x = a as *const u64;
+    let y = b as *const u64;
+    *x == *y && *x.add(1) == *y.add(1)
 }
 
 // ===========================================================================

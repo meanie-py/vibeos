@@ -1535,10 +1535,10 @@ pub unsafe extern "C" fn REGION_SubtractRectFromRgn(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "fastcall" fn REGION_bCopy(dst: PREGION, src: PREGION) -> u8 { REGION_bCopy_impl(dst, src) }
+pub unsafe extern "fastcall" fn REGION_bCopy(dst: PREGION, src: PREGION) -> BOOL { REGION_bCopy_impl(dst, src) as BOOL }
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn REGION_bCopy(dst: PREGION, src: PREGION) -> u8 { REGION_bCopy_impl(dst, src) }
+pub unsafe extern "C" fn REGION_bCopy(dst: PREGION, src: PREGION) -> BOOL { REGION_bCopy_impl(dst, src) as BOOL }
 unsafe fn REGION_bCopy_impl(
     dst: PREGION,
     src: PREGION) -> u8
@@ -1554,11 +1554,11 @@ pub unsafe extern "fastcall" fn REGION_bIntersectRegion(
     newReg: PREGION,
     reg1: PREGION,
     reg2: PREGION,
-) -> u8 {
+) -> BOOL {
     if newReg.is_null() || reg1.is_null() || reg2.is_null() {
-        return 0u8;
+        return 0;
     }
-    return REGION_IntersectRegion(newReg, reg1, reg2);
+    return REGION_IntersectRegion(newReg, reg1, reg2) as BOOL;
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -1567,11 +1567,11 @@ pub unsafe extern "C" fn REGION_bIntersectRegion(
     newReg: PREGION,
     reg1: PREGION,
     reg2: PREGION,
-) -> u8 {
+) -> BOOL {
     if newReg.is_null() || reg1.is_null() || reg2.is_null() {
-        return 0u8;
+        return 0;
     }
-    return REGION_IntersectRegion(newReg, reg1, reg2);
+    return REGION_IntersectRegion(newReg, reg1, reg2) as BOOL;
 }
 
 unsafe fn REGION_bMakeSimpleFrameRgn(
@@ -2653,7 +2653,7 @@ pub unsafe extern "fastcall" fn REGION_PtInRegion(
     prgn: PREGION,
     X: i32,
     Y: i32,
-) -> BOOLEAN {
+) -> BOOL {
     let mut i: u32;
     let r: PRECT;
 
@@ -2671,13 +2671,13 @@ pub unsafe extern "fastcall" fn REGION_PtInRegion(
                 && (*r.offset(i as isize)).bottom > Y 
                 && (*r.offset(i as isize)).top <= Y 
             {
-                return 1u8;
+                return 1;
             }
             i += 1;
         }
     }
 
-    0u8
+    0
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -2686,7 +2686,7 @@ pub unsafe extern "C" fn REGION_PtInRegion(
     prgn: PREGION,
     X: i32,
     Y: i32,
-) -> BOOLEAN {
+) -> BOOL {
     let mut i: u32;
     let r: PRECT;
 
@@ -2704,13 +2704,13 @@ pub unsafe extern "C" fn REGION_PtInRegion(
                 && (*r.offset(i as isize)).bottom > Y 
                 && (*r.offset(i as isize)).top <= Y 
             {
-                return 1u8;
+                return 1;
             }
             i += 1;
         }
     }
 
-    0u8
+    0
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -2930,10 +2930,10 @@ unsafe extern "C" fn REGION_SetRectRgn(
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
-pub unsafe extern "fastcall" fn REGION_bOffsetRgn(prgn: PREGION, cx: i32, cy: i32) -> u8 { REGION_bOffsetRgn_impl(prgn, cx, cy) }
+pub unsafe extern "fastcall" fn REGION_bOffsetRgn(prgn: PREGION, cx: i32, cy: i32) -> BOOL { REGION_bOffsetRgn_impl(prgn, cx, cy) as BOOL }
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
-pub unsafe extern "C" fn REGION_bOffsetRgn(prgn: PREGION, cx: i32, cy: i32) -> u8 { REGION_bOffsetRgn_impl(prgn, cx, cy) }
+pub unsafe extern "C" fn REGION_bOffsetRgn(prgn: PREGION, cx: i32, cy: i32) -> BOOL { REGION_bOffsetRgn_impl(prgn, cx, cy) as BOOL }
 unsafe fn REGION_bOffsetRgn_impl(
     prgn: PREGION,
     cx: i32,
@@ -4508,7 +4508,7 @@ pub unsafe extern "system" fn NtGdiPtInRegion(
     y: i32,
 ) -> i32 {
     let prgn: PREGION;
-    let bResult: u8;
+    let bResult: BOOL;
 
     prgn = REGION_LockRgn(hrgn);
     if prgn.is_null() {

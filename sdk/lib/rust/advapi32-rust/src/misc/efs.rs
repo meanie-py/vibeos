@@ -39,12 +39,12 @@ pub unsafe extern "system" fn DecryptFileW(lpFileName: LPCWSTR, dwReserved: u32)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn EncryptFileA(lpFileName: LPCSTR) -> u8 {
+pub unsafe extern "system" fn EncryptFileA(lpFileName: LPCSTR) -> BOOL {
     let mut FileName: _UNICODE_STRING = core::mem::zeroed();
 
     if RtlCreateUnicodeStringFromAsciiz(&mut FileName, lpFileName) == 0 {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return 0u8;
+        return 0;
     }
 
     let ret = EncryptFileW(FileName.Buffer);
@@ -56,9 +56,9 @@ pub unsafe extern "system" fn EncryptFileA(lpFileName: LPCSTR) -> u8 {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn EncryptFileW(lpFileName: LPCWSTR) -> u8 {
+pub unsafe extern "system" fn EncryptFileW(lpFileName: LPCWSTR) -> BOOL {
     let _ = lpFileName;
-    1u8
+    1
 }
 
 #[no_mangle]

@@ -122,5 +122,5 @@ vendor-patches/*.patch -text
 # an upstream sha256 for provenance, and a recorded hash that does not match the
 # committed file is worse than no hash. Every other vendored licence file is LF
 # upstream and needs no rule; add one here if that ever stops being true.
-sdk/include/reactos/edk2/License.txt -text
+vendor/edk2/License.txt -text
 COPYING.DJ -text

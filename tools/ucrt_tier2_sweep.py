@@ -98,7 +98,13 @@ def write_table(path: Path, rows: dict[str, tuple[str, str]]) -> None:
 
 
 def run_shard(
-    arch: str, k: int, n: int, budget_ms: int, dry_run: bool, takeover_check: bool = False
+    arch: str,
+    k: int,
+    n: int,
+    budget_ms: int,
+    dry_run: bool,
+    takeover_check: bool = False,
+    reuse_inputs: bool = False,
 ) -> str:
     """Build a shard-k harness + media and boot it; return the serial text.
 
@@ -112,8 +118,17 @@ def run_shard(
     objects for the sources a takeover just deleted, while the DLL the media build
     then produces already answers those exports with our Rust. That is the one run
     that grades the SHIPPING takeover against the code it replaced.
+
+    But only the FIRST shard of such a run sees that tree: its media build is what
+    drops the deleted family's objects. So every later shard of a takeover check
+    passes `reuse_inputs`, and build.sh keeps the first shard's reference set, rust
+    set and case list -- none of which depends on the shard. Rebuilding them there
+    loses Microsoft's bodies from ref_ and, the burn-down now calling the exports
+    ours, drops them from the case list: the later shards grade less, silently.
     """
     env = dict(os.environ, UCRTDIFF_SHARD=f"{k}/{n}", UCRTDIFF_BUDGET_MS=str(budget_ms))
+    if reuse_inputs:
+        env["UCRTDIFF_REUSE_INPUTS"] = "1"
     build = ["bash", "tools/payloads/ucrtdiff/build.sh", arch]
     media = ["./vibeos-cli", "build", "--arch", arch]
     smoke = ["./vibeos-cli", "smoke", "--arch", arch, "--payload", "ucrtdiff"]
@@ -222,7 +237,13 @@ def main(argv: list[str] | None = None) -> int:
     for k in wanted:
         print(f"[sweep] shard {k}/{args.shards}")
         text = run_shard(
-            args.arch, k, args.shards, args.budget_ms, args.dry_run, args.takeover_check
+            args.arch,
+            k,
+            args.shards,
+            args.budget_ms,
+            args.dry_run,
+            args.takeover_check,
+            reuse_inputs=args.takeover_check and k != wanted[0],
         )
         rows, done = parse_serial(text)
         merged.update(rows)

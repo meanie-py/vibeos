@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 230925,
+  "random_cases": 256,
+  "validity": "Genuine ReactOS _atoi64 C source and the shipping cnt-rust _atoi64 shim, cstr_slice helper, and core_rs::radix module. NUL-terminated ASCII inputs or a NULL pointer; no locale changes. Generated decimal runs contain at most 18 digits, so the C accumulator and negative-sign application stay within signed __int64 range and UBSan can grade defined behavior. Explicit examples include malformed prefixes, stop-at-first-nondigit, whitespace/sign edges, and an embedded NUL. This does not cover non-ASCII ctype behavior, locale changes, or C's signed-overflow cases.",
+  "c_source": "../../../../sdk/lib/crt/string/atoi64.c",
+  "c_include_dirs": ["atoi64_include"],
+  "c_flags": ["-D__int64=int64_t", "-DCDECL="],
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "rust_items": ["m_atoi64::_atoi64"],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": ["cstr_slice"]
+    }
+  ],
+  "rust_support": {"core_rs": "radix_core.rs"},
+  "functions": [
+    {
+      "c": "_atoi64",
+      "rust": "candidate::_atoi64",
+      "return": "i64",
+      "args": [
+        {
+          "name": "nptr",
+          "type": "const_cstr",
+          "nullable": true,
+          "generator": {
+            "max_bytes": 24,
+            "examples": [
+              "",
+              "0",
+              "1",
+              "9",
+              "10",
+              "42",
+              "+42",
+              "-42",
+              " 42",
+              "\t\n-17x",
+              "xyz",
+              "+",
+              "-",
+              "--1",
+              "++1",
+              "0x10",
+              "007",
+              "123abc",
+              "999999999999999999",
+              "-999999999999999999",
+              "12\u0000x99"
+            ],
+            "grammar": {
+              "sequence": [
+                {"charset": " \t\n\u000b\f\r", "min": 0, "max": 3},
+                {"choice": [{"literal": ""}, {"literal": "+"}, {"literal": "-"}]},
+                {"charset": "0123456789", "min": 1, "max": 18},
+                {"choice": [{"literal": ""}, {"literal": "x"}]}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "skip_parser_input",
+      "find": "let (v, _of) = crate::core_rs::radix::parse_i64_wrapping(nptr_s);",
+      "replace": "let (v, _of) = crate::core_rs::radix::parse_i64_wrapping(&[]);"
+    },
+    {
+      "name": "wrong_return",
+      "find": "v as i64",
+      "replace": "v.wrapping_add(1) as i64"
+    },
+    {
+      "name": "read_past_terminator",
+      "find": "let nptr_s = cstr_slice(nptr);",
+      "replace": "let nptr_s = cstr_slice(nptr); if !nptr.is_null() { core::ptr::read_volatile(nptr.wrapping_add(nptr_s.len() + 1)); }",
+      "expect": "memory_fault"
+    }
+  ]
+}

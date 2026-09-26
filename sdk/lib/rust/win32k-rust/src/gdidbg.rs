@@ -592,7 +592,8 @@ pub unsafe extern "system" fn QueryEnvironmentVariable(
         }
 
         if *wcs != 0 {
-            let var_len = (wcs as usize - var_buf as usize) as u16;
+            // Bytes, as the retired gdidbg.c meant: `(wcs - var.Buffer) * sizeof(WCHAR)`.
+            let var_len = (wcs as usize - var_buf as usize) as u16; // nolint: ptr-byte-diff
             wcs = wcs.add(1);
             let val: *mut u16 = wcs;
             wcs = wcs.add(wcslen(wcs));
@@ -604,7 +605,7 @@ pub unsafe extern "system" fn QueryEnvironmentVariable(
             };
 
             if RtlEqualUnicodeString(&var_us, Name, 1) != 0 {
-                let val_byte_len = (wcs as usize - val as usize) as u16;
+                let val_byte_len = (wcs as usize - val as usize) as u16; // nolint: ptr-byte-diff
                 (*Value).Length = val_byte_len;
                 if val_byte_len <= (*Value).MaximumLength {
                     let copy_len = min_u(

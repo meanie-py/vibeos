@@ -805,6 +805,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         ),
         instr_values={
             "VIBEOS_WINETEST_SKIP": (getattr(args, "winetest_skip", "") or "").strip(),
+            "VIBEOS_WINETEST_ONLY": (getattr(args, "winetest_only", "") or "").strip(),
         },
     )
     if wrapped is None:
@@ -935,7 +936,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # (the curated list assumed a previously-full tree). Deriving from the boot
     # manifest keeps it self-maintaining; ninja dedups anything a phony target
     # already covers. x86 builds the full `livecd` DAG and needs neither.
-    targets = list(cfg.ninja_targets)
+    targets = list(dict.fromkeys([*cfg.ninja_targets, *getattr(args, "extra_target", [])]))
+    if any(not target or target.startswith("-") for target in targets):
+        run.add(Stage("targets", status="fail", detail="invalid extra Ninja target"))
+        return run.finalize(repo)
     if cfg.needs_mkramdisk:
         # Not every staged file is a ninja target (e.g. media/nls/l_intl.nls is
         # copied by an aggregate rule) — intersect with the known target list or

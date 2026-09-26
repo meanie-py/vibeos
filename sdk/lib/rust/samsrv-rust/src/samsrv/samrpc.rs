@@ -2547,7 +2547,7 @@ pub unsafe extern "system" fn SamrCreateUserInDomain(
             break 'done;
         }
 
-        *(LogonHours.as_mut_ptr() as *mut USHORT) = 168;
+        (LogonHours.as_mut_ptr() as *mut USHORT).write_unaligned(168);
         memset(&mut LogonHours[2] as *mut _ as PVOID, 0xff, 21);
 
         Status = SampSetObjectAttribute(
@@ -8865,7 +8865,7 @@ pub unsafe extern "system" fn SamrCreateUser2InDomain(
             break 'done;
         }
 
-        *(LogonHours.as_mut_ptr() as PUSHORT) = 168;
+        (LogonHours.as_mut_ptr() as PUSHORT).write_unaligned(168);
         memset(
             &mut LogonHours[2] as *mut _ as *mut ::core::ffi::c_void,
             0xff,

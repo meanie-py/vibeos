@@ -506,7 +506,7 @@ pub unsafe extern "system" fn HvpRecoverDataFromLog(
     }
 
     /* Check the dirty vector */
-    if *(DirtyVector.as_ptr() as *const u32) != HV_LOG_DIRTY_SIGNATURE {
+    if (DirtyVector.as_ptr() as *const u32).read_unaligned() != HV_LOG_DIRTY_SIGNATURE {
         if CmIsSelfHealEnabled(0 /* FALSE */) == 0 {
             return RESULT::Fail;
         }

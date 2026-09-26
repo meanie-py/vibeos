@@ -1,33 +1,37 @@
 
+# The RDP engine is rdesktop's (plus one xrdp file for the TLS calls) and
+# lives in vendor/rdesktop; the Win32 front end below is ReactOS's.
+include_directories(${REACTOS_SOURCE_DIR}/vendor/rdesktop)
+
 list(APPEND SOURCE
-    asn.c
-    bitmap.c
-    bsops.c
-    cache.c
-    channels.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/asn.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/bitmap.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/bsops.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/cache.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/channels.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/iso.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/licence.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/mcs.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/mppc.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/orders.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/pstcache.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/rdp5.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/rdp.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/secure.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/ssl_calls.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/tcp.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/uimain.c
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/win32.c
     connectdialog.c
-    iso.c
-    licence.c
-    mcs.c
-    mppc.c
-    orders.c
-    pstcache.c
-    rdp5.c
-    rdp.c
-    secure.c
     settings.c
-    ssl_calls.c
-    tcp.c
-    uimain.c
-    win32.c
-    bsops.h
-    constants.h
-    orders.h
-    proto.h
-    rdesktop.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/bsops.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/constants.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/orders.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/proto.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/rdesktop.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/types.h
+    ${REACTOS_SOURCE_DIR}/vendor/rdesktop/uimain.h
     resource.h
-    types.h
-    uimain.h
     precomp.h)
 
 add_definitions(-DWITH_SSL)

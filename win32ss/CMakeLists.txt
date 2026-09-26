@@ -29,7 +29,7 @@ endif()
 
 include_directories(
     include
-    ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/freetype/include ## HACK for ntgdi/freetype.c and related
+    ${REACTOS_SOURCE_DIR}/vendor/freetype/include ## HACK for ntgdi/freetype.c and related
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 

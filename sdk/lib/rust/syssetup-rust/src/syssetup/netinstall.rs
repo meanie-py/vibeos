@@ -599,10 +599,10 @@ unsafe extern "C" fn ScanForInfFile(
 #[no_mangle]
 pub unsafe extern "C" fn InstallNetworkComponent(
     pszComponentId: PWSTR,
-) -> u8 {
+) -> BOOL {
     let mut ComponentInfo: COMPONENT_INFO = core::mem::zeroed();
     let mut hInstanceKey: HKEY = core::ptr::null_mut();
-    let mut bResult: u8 = (FALSE) as u8;
+    let mut bResult: BOOL = FALSE;
 
     // DPRINT removed
 
@@ -707,7 +707,7 @@ pub unsafe extern "C" fn InstallNetworkComponent(
         };
     }
 
-    bResult = (TRUE) as u8;
+    bResult = (TRUE) as BOOL;
 
     if !hInstanceKey.is_null() {
         RegCloseKey(hInstanceKey);

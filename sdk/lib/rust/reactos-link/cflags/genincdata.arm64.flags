@@ -32,6 +32,8 @@
 -I{REPO}/sdk/include/winrt
 -I{REPO}/sdk/include/dxsdk
 -I{REPO}/sdk/lib/pseh/include
+-I{REPO}/vendor/opengl-headers/include
+-I{REPO}/vendor/libdxg/include
 -std=gnu99
 -ffile-prefix-map={REPO}=
 -ffile-prefix-map=../=

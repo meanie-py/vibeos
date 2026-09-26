@@ -604,7 +604,7 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
 
     The registry's other halves are ratchets — a new vendored dir fails `--check` until
     it is classified. Licences had no such ratchet, and a single `license:` field turns
-    out to be wrong on trees nobody suspected: `sdk/lib/drivers/wdf` is recorded MIT and
+    out to be wrong on trees nobody suspected: `vendor/wdf` is recorded MIT and
     carries 11 ReactOS-authored `LICENSE: GPL-2.0-or-later` headers; `external/fex` is
     recorded MIT and carries LGPL-2.1-or-later and GPL-2.0-only; `sdk/lib/ucrt` is
     recorded as Microsoft's terms and carries 5 files stamped `SPDX MIT`. Generating a

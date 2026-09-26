@@ -2,7 +2,7 @@
 // One inline wrapper per WDF API: a 1:1 translation of the <wdf.h> FORCEINLINE body
 //   ((PFN_WDFXXX) WdfFunctions[WdfXxxTableIndex])(WdfDriverGlobals, ...).
 // WdfFunctions_01017 / WdfDriverGlobals are defined by the C wdfdriverentry stub
-// (sdk/lib/drivers/wdf/wdfdriverentry) and populated at load by WdfVersionBind.
+// (sdk/lib/drivers/wdfdriverentry) and populated at load by WdfVersionBind.
 #![allow(non_snake_case, non_camel_case_types, dead_code, unused_imports)]
 #![allow(clippy::all)]
 // WDF handle/value types + PFN typedefs + index consts + the binding externs:
