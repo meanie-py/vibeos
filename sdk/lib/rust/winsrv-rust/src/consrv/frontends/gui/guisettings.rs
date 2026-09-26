@@ -21,15 +21,15 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "system" fn GuiConsoleReadUserSettings(
     _TermInfo: *mut GUI_CONSOLE_INFO,
-) -> BOOLEAN {
-    1u8
+) -> BOOL {
+    1
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn GuiConsoleWriteUserSettings(
     _TermInfo: *mut GUI_CONSOLE_INFO,
-) -> BOOLEAN {
-    1u8
+) -> BOOL {
+    1
 }
 
 #[no_mangle]

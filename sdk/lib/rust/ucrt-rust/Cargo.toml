@@ -63,4 +63,33 @@ bits = []
 # LOCALE-AWARE takeover, so it is also the first consumer of locale_update.
 ismbbyte = []
 
+# string/{i386,amd64,arm64}/ strcat strcpy strcspn strlen strncat strncpy strpbrk
+# strspn -- the first REUSED family: msvcrt's shipping bodies, which graded
+# MATCH against Microsoft's UCRT in the guest and are stateless on both sides.
+# They live in crt-portable-rust precisely so this crate never depends on
+# msvcrt-crt-rust; see that crate's Cargo.toml.
+portable-string = ["dep:crt-portable-rust", "crt-portable-rust/string"]
+
+# convert/{_ctype,_wctype,isctype,iswctype}.cpp -- the 63-export ctype family, a
+# one-for-one port over LocaleUpdate. See src/ctype.rs for why a port and not
+# msvcrt's bodies (the multibyte path differs in contract, not just plumbing).
+ctype = []
+
+# mbstring/{ismb*,mbbtype,mbsbtype,mbclevel,mbtolwr,mbtoupr,mbtohira,mbtokata,
+# tojisjms}.cpp -- the _ismbc* character-classification family and the small
+# conversions over it. A port for the same reason as ctype: msvcrt's bodies are
+# Wine's _MB_CP_SBCS=20127 contract, UCRT's is codepage 0. See src/ismbc.rs.
+ismbc = ["ctype", "ismbbyte"]
+
+# convert/{tolower_toupper,towlower,towupper}.cpp -- single-character case
+# mapping, narrow and wide. A port: msvcrt's _tolower_l/_toupper_l DIFF against
+# UCRT at EOF, the very first case. See src/tocase.rs.
+tocase = []
+
+# convert/strtox.cpp -- strtol and its 31 siblings, narrow and wide: one template,
+# __crt_strtox::parse_integer, ported with the accumulator width as a parameter.
+# A port: msvcrt's bodies are Wine's _MSVCR_VER=0 overflow contract. See src/strtox.rs.
+strtox = ["ctype"]
+
 [dependencies]
+crt-portable-rust = { path = "../crt-portable-rust", optional = true }

@@ -1044,14 +1044,20 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         HeadlessInit(LoaderBlock);
     }
 
+    // init.c: amd64 publishes the WOW64 32-bit ranges (amd64/mm.h:35-36); everyone else
+    // the native HIGHEST USER address and system range start. This stored 64-bit kernel
+    // constants truncated to ULONG on amd64 (0xFFFFFFFF and 0 — a WOW64 process was told
+    // the system range starts at address 0) and MmSystemRangeStart in both fields elsewhere.
     #[cfg(target_arch = "x86_64")]
     {
-        (*SharedUserData).Reserved1 = 0x000007FFFFFFFFFFu64 as ULONG;
-        (*SharedUserData).Reserved3 = 0xFFFF080000000000u64 as ULONG;
+        const MM_HIGHEST_USER_ADDRESS_WOW64: ULONG = 0x7FFE_FFFF;
+        const MM_SYSTEM_RANGE_START_WOW64: ULONG = 0x8000_0000;
+        (*SharedUserData).Reserved1 = MM_HIGHEST_USER_ADDRESS_WOW64;
+        (*SharedUserData).Reserved3 = MM_SYSTEM_RANGE_START_WOW64;
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
-        (*SharedUserData).Reserved1 = MmSystemRangeStart as ULONG;
+        (*SharedUserData).Reserved1 = MmHighestUserAddress as ULONG;
         (*SharedUserData).Reserved3 = MmSystemRangeStart as ULONG;
     }
 

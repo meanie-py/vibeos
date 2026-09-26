@@ -5,7 +5,7 @@
  *      pulls in bus.h, halirq.h, haldma.h, halhw.h, halp.h, mps.h, halacpi.h
  *      plus the kernel internal headers it needs (ntifs, NDK, internal/i386
  *      or internal/amd64 MM/KE).
- *   2. drivers/bus/acpi/acpica/include/acpi.h — ACPICA umbrella.  Pulls in
+ *   2. vendor/acpica/include/acpi.h — ACPICA umbrella.  Pulls in
  *      actypes, actbl, actbl1, actbl2, actbl3 with all the spec table
  *      layouts (FADT, MADT, RSDT, XSDT, SRAT, etc.).
  *
@@ -39,4 +39,4 @@
  * Pulls in actypes, actbl, actbl1/2/3, plus the OSL/AML interpreter
  * external interface declarations (acpiosxf, acpixf) — those externs
  * generate FFI we don't use, but that's harmless. */
-#include "drivers/bus/acpi/acpica/include/acpi.h"
+#include "vendor/acpica/include/acpi.h"

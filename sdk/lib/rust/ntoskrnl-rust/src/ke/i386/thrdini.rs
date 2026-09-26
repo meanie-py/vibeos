@@ -67,6 +67,8 @@ struct FXSAVE_FORMAT {
 
 extern "system" {
     static mut KeI386FxsrPresent: BOOLEAN;
+    // This file imports `_FX_SAVE_AREA` but not the PFX_SAVE_AREA alias.
+    fn Ke386SaveFpuState(SaveArea: *mut _FX_SAVE_AREA);
     fn _enable();
     fn _disable();
     fn Ke386SetLocalDescriptorTable(selector: u16);
@@ -132,6 +134,7 @@ const RPL_MASK: u32 = 3;
 const EXCEPTION_CHAIN_END: PVOID = (-1isize) as PVOID;
 const USER_MODE: i8 = 1;
 const NPX_STATE_NOT_LOADED: u8 = 0xA; // ndk/i386/asm.h
+const NPX_STATE_LOADED: u8 = 0x0; // ndk/i386/asm.h
 const KGDT_LDT: u32 = 0x48;
 const CR0_MP: ULONG_PTR = 0x00000002;
 const CR0_EM: ULONG_PTR = 0x00000004;
@@ -513,6 +516,39 @@ pub unsafe extern "fastcall" fn KiSwapContextEntry(
     _disable();
 
     Cr0 = __readcr0();
+
+    // Flush this processor's NPX ownership before the switch. The outgoing thread's
+    // FPU state lives in THESE registers, so on SMP it has to be written back to the
+    // thread's save area and local ownership dropped, or the thread resumes on another
+    // processor with its FPU state still sitting in the one it left -- silent numeric
+    // corruption, not a fault, which is why it survived so long.
+    //
+    // Ported from upstream 091855fc4f9 ("[NTOS:KE] Flush i386 NPX ownership before SMP
+    // switches", #9548), which is a BUG ORACLE hit: we translated thrdini.c before that
+    // fix existed, so our Rust carried the defect verbatim. Same sequence as the
+    // lazy-restore path in traphdlr.rs -- clear MP/EM/TS so the save cannot trap, save,
+    // then mark not-loaded.
+    #[cfg(feature = "smp")]
+    {
+        let NpxThread = (*Pcr).PrcbData.NpxThread;
+        if !NpxThread.is_null() {
+            // Upstream ASSERTs NpxThread == OldThread here. Only the thread that just
+            // ran can own this processor's FPU, so a mismatch means the ownership
+            // bookkeeping is already wrong and saving would write the wrong thread's
+            // registers into the wrong save area.
+            if NpxThread == OldThread && (*NpxThread).NpxState == NPX_STATE_LOADED {
+                __writecr0(Cr0 & !(CR0_MP | CR0_EM | CR0_TS));
+
+                let NpxSaveArea = KiGetThreadNpxArea(NpxThread);
+                Ke386SaveFpuState(NpxSaveArea);
+                (*NpxSaveArea).NpxSavedCpu = 0;
+                (*NpxThread).NpxState = NPX_STATE_NOT_LOADED;
+            }
+
+            (*Pcr).PrcbData.NpxThread = core::ptr::null_mut();
+        }
+    }
+
     NewCr0 = ((*NewThread).NpxState as ULONG_PTR)
         | (Cr0 & !(CR0_MP | CR0_EM | CR0_TS))
         | ((*KiGetThreadNpxArea(NewThread)).Cr0NpxState as ULONG_PTR);

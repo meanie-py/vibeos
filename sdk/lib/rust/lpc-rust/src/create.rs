@@ -182,12 +182,13 @@ pub unsafe extern "system" fn LpcpCreatePort(
     {
         extern "C" {
             static Arm64UartKernelBase: PVOID;
+            fn Arm64UartPutChar(c: u8);
         }
         let u = Arm64UartKernelBase as *mut ULONG;
         if !u.is_null() {
             let m = b"[LPC-CREATE] PID=\0";
             for &ch in &m[..m.len()-1] {
-                *u = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
             {
                 let pid = PsGetCurrentProcessId() as ULONG;
@@ -212,12 +213,12 @@ pub unsafe extern "system" fn LpcpCreatePort(
                     }
                 }
                 for bi in 0..pos {
-                    *u = buf[bi] as ULONG;
+                    Arm64UartPutChar(buf[bi] as u8);
                 }
             }
             let m = b" Port=\0";
             for &ch in &m[..m.len()-1] {
-                *u = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
             if !CapturedObjectName.Buffer.is_null() && CapturedObjectName.Length > 0 {
                 for ii in 0..(CapturedObjectName.Length as usize / core::mem::size_of::<WCHAR>()).min(120) {
@@ -227,16 +228,16 @@ pub unsafe extern "system" fn LpcpCreatePort(
                     } else {
                         *CapturedObjectName.Buffer.add(ii)
                     };
-                    *u = (ch & 0xFF) as ULONG;
+                    Arm64UartPutChar((ch & 0xFF) as u8);
                 }
             } else {
                 let m = b"(unnamed)\0";
                 for &ch in &m[..m.len()-1] {
-                    *u = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
-            *u = b'\r' as ULONG;
-            *u = b'\n' as ULONG;
+            Arm64UartPutChar(b'\r' as u8);
+            Arm64UartPutChar(b'\n' as u8);
         }
     }
 

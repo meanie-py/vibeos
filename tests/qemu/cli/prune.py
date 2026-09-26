@@ -24,7 +24,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import canon, maintenance, queue
+from . import canon, fsutil, maintenance, queue
 
 # Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
@@ -213,11 +213,8 @@ def classify(
 
 def _dir_size(path: Path) -> int:
     try:
-        out = subprocess.run(
-            ["du", "-s", "-B1", str(path)], capture_output=True, text=True, check=True
-        ).stdout
-        return int(out.split("\t", 1)[0])
-    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        return fsutil.disk_usage_bytes(path)
+    except OSError as exc:
         raise maintenance.MaintenanceError(f"cannot measure {path}: {exc}") from exc
 
 

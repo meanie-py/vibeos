@@ -1,0 +1,1 @@
+/* swab.c needs no declarations or behavioral host stubs. */

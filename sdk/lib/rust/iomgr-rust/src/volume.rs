@@ -54,6 +54,7 @@ extern "system" {
     fn PoVolumeDevice(DeviceObject: PDEVICE_OBJECT);
     static mut ExpInitializationPhase: u32;
     static mut Arm64UartKernelBase: usize;
+    fn Arm64UartPutChar(c: u8);
 }
 // The link_name target IoGetDevObjExtension_shim is defined extern "system" in
 // inlines.rs — the decl MUST match the shim's ABI, not IoGetDevObjExtension's.
@@ -158,7 +159,7 @@ macro_rules! ARM64_UART_TRACE {
             let uart = Arm64UartKernelBase as *mut u32;
             if !uart.is_null() {
                 for &byte in $msg {
-                    *uart = byte as u32;
+                    Arm64UartPutChar(byte as u8);
                 }
             }
         }

@@ -145,6 +145,101 @@ def _attempts_dir(repo: Path) -> Path:
     return queue_dir(repo) / "attempts"
 
 
+# ---------------------------------------------------------------------------------------
+# STOP THE LINE. A hold is one JSON file in the shared queue dir: while it exists no
+# conductor starts a batch, submissions still QUEUE (nobody loses their place, nobody
+# retry-loops), and only the holder may `land --direct`.
+#
+# WHY (2026-09-25, a whole night): mainline was red and the queue kept going. Every new
+# submission elected a conductor, every conductor gated a batch (3 cold builds + boots),
+# split it, gated the base alone, halted on BaseRed -- and the next submission started the
+# same cycle, while the load it generated turned a 10 ms test timing assumption into a
+# second, unrelated red. The fix lane's own gate queued behind that churn for hours. The
+# only way to stop it was killing conductors by hand and messaging every lane to stop
+# submitting; `wsl --shutdown` is what finally did it.
+#
+# Two kinds:
+#   * MANUAL (`land --hold REASON`): an agent stops the line to land a fix. Lasts until
+#     `land --release`; `--preempt` also stops a conductor that is mid-batch.
+#   * AUTO: the train halted on BaseRed. Pinned to the red master sha, and cleared by itself
+#     the moment origin/master moves, i.e. when a fix lands. While it stands ANY lane may
+#     `land --direct` (the fix can come from anywhere, and the direct gate proves it first).
+# ---------------------------------------------------------------------------------------
+
+HOLD_FILE = "HOLD.json"
+
+
+def hold_path(repo: Path) -> Path:
+    return queue_dir(repo) / HOLD_FILE
+
+
+def read_hold(repo: Path) -> dict | None:
+    """The raw hold record, or None. An unreadable file IS a hold -- failing open here is
+    how the line restarts under someone who stopped it."""
+    p = hold_path(repo)
+    if not p.exists():
+        return None
+    try:
+        rec = json.loads(p.read_text() or "{}")
+    except (OSError, ValueError):
+        why = f"unreadable hold file {p} -- inspect it, then `land --release`"
+        return {"lane": "?", "reason": why}
+    return rec if isinstance(rec, dict) else {"lane": "?", "reason": f"malformed {p}"}
+
+
+def set_hold(repo: Path, *, lane: str, reason: str, auto: bool = False, base: str = "") -> dict:
+    rec = {
+        "lane": lane,
+        "reason": reason,
+        "since": time.time(),
+        "auto": auto,
+        "base": base,
+        "pid": os.getpid(),
+    }
+    p = hold_path(repo)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(f".tmp{os.getpid()}")
+    tmp.write_text(json.dumps(rec, indent=2))
+    os.replace(tmp, p)  # atomic: a reader sees the old hold or the new one, never half
+    return rec
+
+
+def clear_hold(repo: Path) -> dict | None:
+    rec = read_hold(repo)
+    hold_path(repo).unlink(missing_ok=True)
+    return rec
+
+
+def effective_hold(repo: Path) -> dict | None:
+    """The hold in force, or None. An AUTO hold that is pinned to a master sha lapses as soon
+    as origin/master is somewhere else: the red base it described is gone. Reads the LOCAL
+    origin/master ref, so callers that care fetch first (drain does)."""
+    rec = read_hold(repo)
+    if rec is None:
+        return None
+    if rec.get("auto") and rec.get("base"):
+        now = git(repo, "rev-parse", "origin/master", check=False)
+        if now and now != rec["base"]:
+            clear_hold(repo)
+            return None
+    return rec
+
+
+def describe_hold(rec: dict) -> str:
+    age = max(0, int(time.time() - float(rec.get("since") or time.time())))
+    kind = "AUTO (red base)" if rec.get("auto") else f"by {rec.get('lane', '?')}"
+    return f"LINE HELD {kind}, {age // 60}m{age % 60:02d}s ago: {rec.get('reason', '')}"
+
+
+def may_land_direct(rec: dict | None, lane: str) -> bool:
+    return rec is None or bool(rec.get("auto")) or rec.get("lane") == lane
+
+
+class LineHeld(QueueError):
+    """The line is held; the conductor stops before starting a batch. Submissions stay
+    QUEUED -- this is not a verdict about anyone."""
+
+
 def begin_attempt(repo: Path, lane: str, tip: str) -> Path:
     """Record that a submit is IN PROGRESS, so a killed one leaves evidence.
 
@@ -1069,6 +1164,12 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
         if not subs:
             return batches
         git(repo, "fetch", "origin")
+        # Checked per BATCH, not per drain: a hold placed while this conductor is gating
+        # takes effect at the next batch boundary (`land --hold --preempt` for sooner).
+        held = effective_hold(repo)
+        if held:
+            log(f"queue: {describe_hold(held)} -- {len(subs)} submission(s) stay QUEUED")
+            raise LineHeld(describe_hold(held))
         # Free landings first: anything already in master leaves the queue without a gate.
         fresh = []
         for sub in subs:
@@ -1092,6 +1193,16 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
             # honest move: on a red base (or a starved host) every batch would fail for a
             # reason that has nothing to do with the lanes in it.
             log(f"queue: TRAIN HALTED — {e}")
+            if isinstance(e, BaseRed):
+                # Stop the line until master moves. Without this, every later submission
+                # elects a conductor that re-gates the same red base (the 2026-09-25 night).
+                red = git(repo, "rev-parse", "origin/master", check=False)
+                if red and read_hold(repo) is None:
+                    set_hold(repo, lane="(train)", reason=str(e)[:600], auto=True, base=red)
+                    log(
+                        f"queue: line AUTO-HELD on red master {red[:12]} -- clears itself when "
+                        "master moves; land the fix with `vibeos-cli land --direct`"
+                    )
             raise
         batches += 1
 

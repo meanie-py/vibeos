@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 230926,
+  "random_cases": 128,
+  "validity": "Genuine ReactOS _strtoi64 C source with __REACTOS__ and _LIBCNT_ host defines, plus the shipping cnt-rust _strtoi64 shim, cstr_slice helper, and core_rs::radix module. Input is a non-null NUL-terminated ASCII string and base is one of 0, 2, 3, 8, 10, 16, or 36; these avoid the source's invalid-base precondition path. The pointer-slot argument may be NULL or address a valid char* output cell. Decimal and radix text may exceed i64 and exercise the C saturating behavior. Locale is unused in this build. No non-ASCII ctype or Windows ABI behavior is claimed.",
+  "c_source": "../../../../sdk/lib/crt/string/strtoi64.c",
+  "c_include_dirs": ["strtoi64_include"],
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "rust_items": ["m_strtoi64::_strtoi64"],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": ["cstr_slice"]
+    }
+  ],
+  "rust_support": {"core_rs": "radix_core.rs"},
+  "functions": [
+    {
+      "c": "_strtoi64",
+      "rust": "candidate::_strtoi64",
+      "return": "i64",
+      "args": [
+        {
+          "name": "nptr",
+          "type": "const_cstr",
+          "generator": {
+            "max_bytes": 40,
+            "examples": [
+              "",
+              "0",
+              "00",
+              "077",
+              "0x10",
+              "0Xff",
+              "-0x8000000000000000",
+              "+42",
+              "  -42tail",
+              "xyz",
+              "0x",
+              "-",
+              "99999999999999999999999999",
+              "-99999999999999999999999999",
+              "deadBEEF",
+              "zz",
+              "101010101010101010",
+              "000000000000000000000000000000000000"
+            ],
+            "grammar": {
+              "sequence": [
+                {"charset": " \t\n\u000b\f\r", "min": 0, "max": 3},
+                {"choice": [{"literal": ""}, {"literal": "+"}, {"literal": "-"}]},
+                {
+                  "choice": [
+                    {
+                      "sequence": [
+                        {"literal": "0x"},
+                        {"charset": "0123456789abcdefABCDEF", "min": 1, "max": 24}
+                      ]
+                    },
+                    {
+                      "charset": "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                      "min": 1,
+                      "max": 24
+                    }
+                  ]
+                },
+                {"choice": [{"literal": ""}, {"literal": "tail"}]}
+              ]
+            }
+          }
+        },
+        {
+          "name": "endptr",
+          "type": "cstr_out",
+          "nullable": true,
+          "within": ["nptr"]
+        },
+        {
+          "name": "base",
+          "type": "i32",
+          "values": [0, 2, 3, 8, 10, 16, 36]
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "wrong_base",
+      "find": "parse_i64_clamped(nptr_s, base)",
+      "replace": "parse_i64_clamped(nptr_s, 10)"
+    },
+    {
+      "name": "wrong_end_pointer",
+      "find": "*endptr = nptr.add(r.end) as *mut u8;",
+      "replace": "*endptr = nptr.add(r.end + 1) as *mut u8;"
+    }
+  ]
+}

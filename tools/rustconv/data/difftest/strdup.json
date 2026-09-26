@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 240926,
+  "random_cases": 128,
+  "validity": "Genuine ReactOS sdk/lib/crt/string/strdup.c and the shipping msvcrt-crt-rust _strdup body. The host source allocates with libc malloc and releases with libc free. Inputs are NULL or bounded ASCII byte strings with arbitrary content, including embedded NUL; _strdup copies bytes only through the first NUL. Non-null returned strings must terminate within max_bytes. Host-only; this does not grade Windows heap selection or allocation-failure behavior.",
+  "c_source": "../../../../sdk/lib/crt/string/strdup.c",
+  "c_include_dirs": ["strdup_include"],
+  "rust_source": "../../../../sdk/lib/rust/msvcrt-crt-rust/src/string_l.rs",
+  "rust_items": ["_strdup"],
+  "rust_imports": [
+    "core::ffi::c_char",
+    "crate::host_c::malloc",
+    "crate::host_c::strlen",
+    "crate::host_c::strcpy"
+  ],
+  "rust_support": {"host_c": "host_c_runtime.rs"},
+  "functions": [
+    {
+      "c": "_strdup",
+      "rust": "candidate::_strdup",
+      "return": {
+        "type": "owned_cstr",
+        "nullable": true,
+        "max_bytes": 48,
+        "rust_type": "*mut core::ffi::c_char"
+      },
+      "args": [
+        {
+          "name": "str_",
+          "type": "const_cstr",
+          "nullable": true,
+          "rust_type": "*const core::ffi::c_char",
+          "generator": {
+            "max_bytes": 48,
+            "examples": [
+              "",
+              "one",
+              "A quick Brown Fox!",
+              "0123456789",
+              "[\\]^_`AZ",
+              "a\u0000tail",
+              "\u0000hidden"
+            ],
+            "grammar": {
+              "sequence": [
+                {"charset": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _-!", "min": 0, "max": 32}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "allocation_always_fails",
+      "find": "let ret = malloc(strlen(str_) + 1) as *mut c_char;",
+      "replace": "let ret: *mut c_char = core::ptr::null_mut();"
+    },
+    {
+      "name": "copy_wrong_bytes",
+      "find": "strcpy(ret, str_);",
+      "replace": "core::ptr::write_bytes(ret, b'X', strlen(str_));"
+    }
+  ]
+}

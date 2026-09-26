@@ -214,8 +214,7 @@ fi
 if [ "$JSON" -eq 1 ]; then
     hit=false
     [ "$rc" -eq 0 ] && hit=true
-    jq -n --argjson hit "$hit" --arg brk "$BRK" --argjson timeout "$TIMEOUT" \
-        '{hit: $hit, "break": $brk, timeout_secs: $timeout}'
+    vjson obj --argjson hit "$hit" --arg break "$BRK" --argjson timeout_secs "$TIMEOUT"
 fi
 
 exit $rc

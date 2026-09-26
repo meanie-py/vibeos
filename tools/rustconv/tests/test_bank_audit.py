@@ -470,6 +470,7 @@ def test_bank_module_normalizes_both_layouts():
     assert bank_module("msvcrt__file__factseal_v1__callseal_v1") == "file"
     assert bank_module("shell32__CDefView__factseal_v1__callseal_v1") == "CDefView"
     assert bank_module("plain-name") == "plain-name"
+    assert bank_module("20260919-022222-file.c-run-012345abcdef") == "file"
 
 
 def test_a_retry_is_not_a_rebuy(tmp_path):

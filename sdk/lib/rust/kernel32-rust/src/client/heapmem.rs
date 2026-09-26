@@ -957,10 +957,6 @@ pub unsafe extern "system" fn GlobalSize(hMem: HGLOBAL) -> SIZE_T {
     let mut dwSize: SIZE_T = MAXULONG_PTR;
 
     RtlLockHeap(BaseHeap);
-    let mut __exception_code: ULONG;
-    let __try_result: i32;
-    __try_result = 0;
-    __exception_code = 0;
     'seh2_try: {
         // Check if this is a simple RTL Heap Managed block
         if (hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY == 0 {
@@ -1000,11 +996,12 @@ pub unsafe extern "system" fn GlobalSize(hMem: HGLOBAL) -> SIZE_T {
             }
         }
     }
-    'seh2_except: {
-        __exception_code = EXCEPTION_EXECUTE_HANDLER;
-        // Set failure for later
-        dwSize = MAXULONG_PTR;
-    }
+    // The C's _SEH2_EXCEPT arm (`dwSize = MAXULONG_PTR`) runs only if the try body faults.
+    // Translated as a labeled block right after the try, it ran EVERY time: GlobalSize and
+    // LocalSize returned 0 with ERROR_INVALID_HANDLE for every block. The edit control sizes
+    // its undo buffer from LocalSize(...)/2 - 1, which wrapped to a 0-byte allocation it then
+    // wrote into -- dxdiag's heap corruption on amd64. Nothing raises into this frame here,
+    // so the arm is dropped rather than made conditional on a flag nothing can set.
 
     // Check if by now, we still haven't gotten any useful size
     if dwSize == MAXULONG_PTR {

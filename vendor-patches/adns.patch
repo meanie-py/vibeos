@@ -2,7 +2,7 @@
 #
 # Upstream: https://www.chiark.greenend.org.uk/~ian/adns/ftp/adns-1.0.tar.gz
 #           sha256 bed27a4ec5b71acc08333368e842a1248e83328018b582caf644985539967c5d
-# Apply from sdk/lib/3rdparty/adns/ with: patch -p1 < vendor-patches/adns.patch
+# Apply from vendor/adns/ with: patch -p1 < vendor-patches/adns.patch
 #
 # READ THIS FIRST: the delta is NOT ours. It is overwhelmingly a THIRD-PARTY WINDOWS
 # PORT that arrived already applied — "the ADNS resolver library for Windows, ported by

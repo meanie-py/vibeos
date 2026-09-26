@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import ast
 import re
-import subprocess
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
@@ -452,37 +451,32 @@ def _sdk_numeric_definitions(source_path: Path, used_words: set[str]) -> dict[st
         repo_root / f"build-{arch}" / "sdk" / "include" / "psdk"
         for arch in ("i386", "amd64", "arm64")
     ]
-    process = subprocess.run(
-        [
-            "rg",
-            "-n",
-            "--no-heading",
-            "--glob",
-            "*.h",
-            pattern,
-            *(str(root) for root in search_roots if root.is_dir()),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if process.returncode not in (0, 1):
-        return {}
+    # In Python, not an `rg` shell-out: rg exits 2 when ANY file under a root is unreadable,
+    # and that path returned {} -- every constant silently unresolved. latin-1 decodes every
+    # byte, so a stray cp1252 byte cannot make a header "binary" and drop it either.
+    candidate = re.compile(pattern)
     values: dict[str, set[str]] = defaultdict(set)
     definition = re.compile(
         r"^\s*(?:#\s*define\s+)?(?P<name>[A-Za-z_]\w*)\s*(?:=\s*|\s+)"
         r"(?P<value>0[xX][0-9A-Fa-f]+|[0-9]+)[uUlL]*\b"
     )
-    for line in process.stdout.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) != 3:
+    for root in search_roots:
+        if not root.is_dir():
             continue
-        match = definition.match(parts[2])
-        if (
-            match is not None
-            and match.group("name") in used_words
-            and match.group("name") not in {"false", "true"}
-        ):
-            values[match.group("name")].add(match.group("value"))
+        for header in sorted(root.rglob("*.h")):
+            if not header.is_file():
+                continue
+            # Line by line, as rg matched: `^\s*` must not run across blank lines.
+            for line in header.read_bytes().decode("latin-1").splitlines():
+                if not candidate.search(line):
+                    continue
+                match = definition.match(line)
+                if (
+                    match is not None
+                    and match.group("name") in used_words
+                    and match.group("name") not in {"false", "true"}
+                ):
+                    values[match.group("name")].add(match.group("value"))
     return {name: next(iter(found)) for name, found in values.items() if len(found) == 1}
 
 

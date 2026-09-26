@@ -1501,6 +1501,17 @@ pub unsafe extern "system" fn MmLoadSystemImage(
     (*ldr_entry).Flags &= !LDRP_LOAD_IN_PROGRESS;
     // LoadedImports stash skipped (field not in bindgen).
 
+    // The image was copied into system space, relocated and import-snapped
+    // through the D-cache, and is about to be executed. ARM instruction fetch
+    // does not see dirty D-cache lines, so without this a driver loaded after
+    // boot (win32k.sys, from smss) runs whatever the RAM held before. The same
+    // bug on the paging path killed smss on a Raspberry Pi 4.
+    #[cfg(target_arch = "aarch64")]
+    ntkrnl_sys::inline::ke::KeSweepICache(
+        (*ldr_entry).DllBase,
+        (*ldr_entry).SizeOfImage as ULONG_PTR,
+    );
+
     MiWriteProtectSystemImage((*ldr_entry).DllBase);
     LdrpInitSecurityCookie(ldr_entry);
 

@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+
+// Not in ntkrnl_sys::base; declared per-file, as the rest of the crate does.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 // Shadow the bindgen extern `gajBitsPerFormat: [UCHAR; 0]` (flexible-array decl —
 // indexing THAT panics unconditionally) with the real [u8; 11] definition.
 use crate::surface::gajBitsPerFormat;
@@ -1622,12 +1625,16 @@ pub unsafe extern "system" fn NtGdiPolyPatBlt(
             cRects as usize * core::mem::size_of::<PATRECT>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
+        // The probe VALIDATES only; this capture is the access, and a fault lands in
+        // Status, which is checked immediately below and frees rb.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
                 rb as *mut core::ffi::c_void,
-                pRects as *mut core::ffi::c_void,
+                pRects as *const core::ffi::c_void,
                 cRects as usize * core::mem::size_of::<PATRECT>(),
-            );
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {

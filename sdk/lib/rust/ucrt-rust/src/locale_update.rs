@@ -140,6 +140,14 @@ impl LocaleUpdate {
     pub fn mbcinfo(&self) -> *mut CrtMultibyteData {
         self.pointers.mbcinfo
     }
+
+    /// `GetLocaleT()`: the resolved pair as a `_locale_t`, for the UCRT internals
+    /// (`__acrt_GetStringTypeA` and friends) that take one. Points into `self`, so it
+    /// is valid exactly as long as this `LocaleUpdate` -- the same lifetime the C
+    /// object gives it.
+    pub fn locale_t(&mut self) -> *mut CrtLocalePointers {
+        &mut self.pointers
+    }
 }
 
 impl Drop for LocaleUpdate {

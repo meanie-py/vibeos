@@ -10,7 +10,8 @@
 #     find . -type f -exec sed -i 's/[ \t\r]*$//' {} +      # <-- NORMALIZE FIRST
 #     patch -p1 < vendor-patches/wdf.patch
 #
-# That reproduces sdk/lib/drivers/wdf byte-for-byte (verified: 0 differences, 0 fuzz,
+# That reproduces vendor/wdf (less include/, the public KMDF headers, which are
+# not from src/framework) byte-for-byte (verified: 0 differences, 0 fuzz,
 # 0 rejects), modulo the seven files that have no upstream counterpart at all —
 # CMakeLists.txt, VENDORED, reactos_special.{cpp,h}, wdf01000.rc, wdf01000_reg.inf and
 # LICENSE (which is upstream's, just from the repo root rather than from src/framework).

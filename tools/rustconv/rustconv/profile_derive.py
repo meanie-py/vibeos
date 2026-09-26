@@ -2499,6 +2499,7 @@ def derive(
     extra_inc_dirs: tuple[Path, ...] = (),
     usermode: bool | None = None,
     flipped_sources: bool = False,
+    sources: tuple[Path, ...] = (),
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -2517,6 +2518,27 @@ def derive(
         flipped_sources=flipped_sources,
     )
     module.usermode_override = usermode
+    full_tus = set(module.compiled_tus)
+    if sources:
+        selected = {(p if p.is_absolute() else repo_root / p).resolve() for p in sources}
+        unknown = selected - {p.resolve() for p in full_tus}
+        if unknown:
+            raise ProfileDeriveError(
+                "Selected sources are not proven members of this CMake target: "
+                + ", ".join(str(p) for p in sorted(unknown))
+            )
+        missing = [p for p in selected if not p.is_file()]
+        if missing:
+            raise ProfileDeriveError(f"Selected source is missing: {missing}")
+        module.entries = [e for e in module.entries if e.kind != "tu" or e.path in selected]
+        module.findings.append(
+            Finding(
+                "warn",
+                "PARTIAL_TU_SCOPE",
+                f"Explicit subset: {len(selected)}/{len(full_tus)} translation units; "
+                "this profile does not certify the other source files",
+            )
+        )
     findings = list(module.findings)
     tus = [p for p in module.compiled_tus if p.is_file()]
     if not tus:
@@ -2922,7 +2944,7 @@ def derive(
         # Compare only IN-TREE TUs: the db's build-dir entries are the generated sources
         # (MIDL/spec2def products), which the source list carries as ${CMAKE_CURRENT_BINARY_DIR}.
         db_tus = {p.resolve() for p in db.module_files if _is_within(p, module.module_dir)}
-        want = {p.resolve() for p in tus}
+        want = {p.resolve() for p in full_tus}
         missing = want - db_tus
         stale = db_tus - want
         if missing:
@@ -3524,6 +3546,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo-root", type=Path, default=None)
     ap.add_argument("--arch", default="i386", choices=ARCHES)
     ap.add_argument("--target", default=None, help="CMake target, when the file has several")
+    ap.add_argument(
+        "--source",
+        type=Path,
+        action="append",
+        default=[],
+        help="explicit TU subset, repo-relative; repeatable, membership checked",
+    )
     ap.add_argument("--emit", default="report", choices=("report", "profile", "json"))
     ap.add_argument("--allow-unresolved", action="store_true", help="demote unresolved to findings")
     ap.add_argument("--no-compile-db", action="store_true", help="ignore compile_commands.json")
@@ -3576,6 +3605,7 @@ def main(argv: list[str] | None = None) -> int:
             extra_inc_dirs=tuple(args.extra_inc),
             usermode=args.usermode,
             flipped_sources=args.flipped_sources,
+            sources=tuple(args.source),
         )
     except ProfileDeriveError as exc:
         print(f"profile_derive: FAILED\n{exc}", file=sys.stderr)

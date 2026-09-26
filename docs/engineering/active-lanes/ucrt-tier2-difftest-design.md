@@ -378,21 +378,39 @@ It is worth recording how convincing it looked: five exports, identical failure 
 a tidy shared root cause, reported as the sweep's headline finding before anyone read
 what the functions return. A cluster that neat is a reason to check the ORACLE first.
 
-### 8 LIVE divergences in the shipping ucrtbase.dll
+### The reference side needed CRT startup (2026-09-25; replaces a wrong section)
 
-These have `dll` and `rust` fail counts that are EQUAL, which means ucrtbase.dll already
-answers them with our Rust -- so they are not reuse risks, they are live today:
+This section used to read "8 LIVE divergences in the shipping ucrtbase.dll", inferred
+from `dll` and `rust` failing with equal counts on the `_ismbc*`/`_mbcto*` rows. That
+was wrong twice over: none of those exports is ours in the DLL, and the DLL was not
+diverging at all. The `ref_` side -- Microsoft's C linked privately with only the
+exports renamed -- had never run CRT startup, so its lock table was zeroed (a zeroed
+CRITICAL_SECTION reads as held, and `ref_setlocale` died STATUS_POSSIBLE_DEADLOCK) and
+its multibyte state was never set. The harness now calls the reference copy's own
+`__acrt_initialize` (internals keep their names), BEFORE the `.CRT$XI` initializers as
+real startup does. Result: `dll_fail` 20 -> 0. The DLL and the reference agree on every
+case, and every DIFF left is our Rust against Microsoft.
 
-| export (+`_l`) | fails | first bad value |
-|---|---|---|
-| `_ismbclower` | 4/40 | 223 |
-| `_mbctoupper` | 3/40 | 224 |
-| `_ismbcupper` | 2/40 | 159 |
-| `_mbctolower` | 1/40 | 192 |
+The remaining mbc DIFFs are a CONTRACT difference, not a bug: Wine's `_setmbcp` stores
+ASCII 20127 for `_MB_CP_SBCS` where Microsoft stores 0 (`mbcp: dll=0 rust=20127 ref=0`).
+They matter only if those bodies are reused for ucrtbase.
 
-The remaining ~21 DIFFs are latent (reuse would introduce them) and cluster on corpus
-values 9, 159, 160, 161 -- the codepage-dependent high range plus TAB, consistent with a
-small number of wrong ctype table entries rather than scattered logic bugs.
+## The first reuse takeover: the string family (2026-09-25)
+
+`strcat strcpy strcspn strlen strncat strncpy strpbrk strspn` -- msvcrt.dll's shipping
+Rust, moved verbatim into `crt-portable-rust` and linked by both DLLs; see the `string`
+family in `tools/ucrt-takeover.yaml`. Admission took both a Tier 2 MATCH AND
+statelessness on both sides, because Tier 2 runs in the "C" locale, where `_strlwr` and
+`atoi` also MATCH but Microsoft's consult the locale and ours do not.
+
+The durable evidence is `ucrt-tier2-table.tsv`, and the check that matters is
+`ucrt_tier2_sweep.py --takeover-check`: it builds the harness from the tree BEFORE the
+takeover (so `ref_` still holds Microsoft's objects) and boots the DLL AFTER it. All
+eight MATCH against the code they replaced, and `dll_fail=0` across all 12,866 cases --
+no other export changed behaviour either.
+
+`strnlen` is owed: Tier 2 runs on arm64, where Microsoft's `strnlen.cpp` defines
+nothing, so there is no in-guest reference for it.
 
 ### Guest-killers: what reproduces, and what does not
 

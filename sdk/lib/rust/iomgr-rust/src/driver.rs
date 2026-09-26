@@ -290,6 +290,7 @@ static DRIVER_FMT_STR: [u16; 13] = [
 #[cfg(target_arch = "aarch64")]
 extern "system" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -300,7 +301,7 @@ macro_rules! ARM64_UART_TRACE {
             if !uart.is_null() {
                 let bytes = $s.as_bytes();
                 for &b in bytes {
-                    *uart = b as ULONG;
+                    Arm64UartPutChar(b as u8);
                 }
             }
         }
@@ -862,14 +863,14 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
         if !uart.is_null() {
             let msg = b"[DRV] Loading ";
             for &b in msg {
-                *uart = b as ULONG;
+                Arm64UartPutChar(b as u8);
             }
             for i in 0..((*ModuleName).Length / 2) as usize {
-                *uart = (*(*ModuleName).Buffer.add(i) & 0x7F) as ULONG;
+                Arm64UartPutChar((*(*ModuleName).Buffer.add(i) & 0x7F) as u8);
             }
             let nl = b"\r\n";
             for &b in nl {
-                *uart = b as ULONG;
+                Arm64UartPutChar(b as u8);
             }
         }
     }
@@ -1268,16 +1269,16 @@ pub unsafe fn IopInitializeSystemDrivers() {
             if !uart.is_null() {
                 let msg = b"[SYSDRV] ZwLoadDriver: ";
                 for &b in msg {
-                    *uart = b as ULONG;
+                    Arm64UartPutChar(b as u8);
                 }
                 if !(**DriverList).Buffer.is_null() {
                     for k in 0..((**DriverList).Length / 2) as usize {
-                        *uart = (*(**DriverList).Buffer.add(k) as u8) as ULONG;
+                        Arm64UartPutChar((*(**DriverList).Buffer.add(k) as u8) as u8);
                     }
                 }
                 let nl = b"\r\n";
                 for &b in nl {
-                    *uart = b as ULONG;
+                    Arm64UartPutChar(b as u8);
                 }
             }
         }

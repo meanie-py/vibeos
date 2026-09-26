@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 999
-  amd64: 999
-  arm64: 996
+  i386: 836
+  amd64: 836
+  arm64: 833
 
 families:
   bits:
@@ -124,3 +124,348 @@ families:
       - _ismbbpunct_l
       - _ismbbtrail
       - _ismbbtrail_l
+
+  string:
+    replaces:
+      - sdk/lib/ucrt/string/i386/{strcat,strcspn,strlen,strncat,strncpy,strpbrk,strspn}.s
+      - sdk/lib/ucrt/string/amd64/{strcat,strlen,strncat,strncpy}.s
+      - sdk/lib/ucrt/string/amd64/{strcspn,strpbrk,strspn}.c
+      - sdk/lib/ucrt/string/{strcat,strcspn,strncat,strncpy,strpbrk,strspn}.c
+      - sdk/lib/ucrt/string/arm64/strlen.c
+    oracle: >
+      Tier 2, in the arm64 guest, against the genuine Microsoft UCRT objects:
+      all eight MATCH in docs/engineering/active-lanes/ucrt-tier2-table.tsv
+      (strcat/strcpy/strncat/strncpy/strpbrk by hand-written runners in
+      ucrtdiff.c that compare each side's whole destination buffer, since the
+      generator has no driver for writers or pointer returns). Also the host
+      msvcrt-difftest against the genuine msvcrt C, which still grades these
+      exact bodies because msvcrt-crt-rust links them from the same crate.
+    note: >
+      The first REUSED family: msvcrt.dll's shipping Rust, not new code. The
+      bodies moved into crt-portable-rust so ucrtbase links them without ever
+      depending on msvcrt-crt-rust, and both DLLs now carry the same objects.
+
+      Admission needed MORE than a Tier 2 MATCH. The harness runs in the "C"
+      locale, where locale-reading and locale-blind bodies agree; these nine
+      are stateless in both implementations (no errno, no locale, no
+      _MSVCR_VER branch), which is what makes the C-locale evidence general.
+      _strlwr and atoi also MATCH and are NOT here for exactly that reason.
+
+      One deliberate, documented divergence: ours treat a NULL string as ""
+      (msvcrt's shipped, net-suite-proven behaviour -- see `nz` in
+      crt-portable-rust), where Microsoft's fault. That only changes programs
+      that would otherwise have crashed.
+
+      strnlen is NOT here, and that is owed: Tier 2 runs on arm64, where
+      Microsoft's strnlen.cpp defines nothing, so there is no in-guest evidence
+      against Microsoft's body on the arches that have one. The i386 and amd64
+      bodies being replaced are hand-written assembly; the msvcrt perf gate
+      already holds these Rust bodies to single-pass parity with C.
+    exports:
+      - strcat
+      - strcpy
+      - strcspn
+      - strlen
+      - strncat
+      - strncpy
+      - strpbrk
+      - strspn
+
+  ctype:
+    replaces:
+      - sdk/lib/ucrt/convert/_ctype.cpp
+      - sdk/lib/ucrt/convert/_wctype.cpp
+      - sdk/lib/ucrt/convert/isctype.cpp
+      - sdk/lib/ucrt/convert/iswctype.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the shipping ucrtbase (these
+      bodies) against the genuine Microsoft objects for the four deleted files, over
+      the full 0..255 corpus plus edges that every single-argument ctype export gets
+      (docs/engineering/active-lanes/ucrt-tier2-table.tsv). 59 of the 63 were
+      graded that way, dll_fail=0 across all 12,121 cases of the run. The other
+      four were NOT graded directly, and that is recorded rather than implied:
+      iswctype and _iswctype_l (a wctype_t argument the generator had no kind for
+      -- added since) are the single core every one of the 26 graded isw* exports
+      runs through; _isblank_l and _iswblank_l are macros in the headers the
+      generator reads, and share fast_check / iswctype with the graded forms.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: those are Wine's
+      contract, and on the multibyte path it differs from UCRT's in substance --
+      Wine also requires c > 0 and classifies through GetStringTypeExA by LCID,
+      UCRT through __acrt_GetStringTypeA by codepage. Every export is a one-line
+      wrapper, so the port is smaller than an adapter would have been.
+
+      Silent-if-wrong details, each transcribed: isblank/iswblank answer _BLANK for
+      a literal tab first but _isblank_l does not; __iscsym casts to unsigned char
+      and __iscsymf does not; every wide _l form ignores its locale; UCRT's wint_t
+      is 16 bits. _pwctype and the __acrt_GetStringType* internals are still
+      Microsoft's and are called, not replaced.
+    exports:
+      - __isascii
+      - __iscsym
+      - __iscsymf
+      - __iswcsym
+      - __iswcsymf
+      - __toascii
+      - _isalnum_l
+      - _isalpha_l
+      - _isblank_l
+      - _iscntrl_l
+      - _isctype
+      - _isctype_l
+      - _isdigit_l
+      - _isgraph_l
+      - _isleadbyte_l
+      - _islower_l
+      - _isprint_l
+      - _ispunct_l
+      - _isspace_l
+      - _isupper_l
+      - _iswalnum_l
+      - _iswalpha_l
+      - _iswblank_l
+      - _iswcntrl_l
+      - _iswcsym_l
+      - _iswcsymf_l
+      - _iswctype_l
+      - _iswdigit_l
+      - _iswgraph_l
+      - _iswlower_l
+      - _iswprint_l
+      - _iswpunct_l
+      - _iswspace_l
+      - _iswupper_l
+      - _iswxdigit_l
+      - _isxdigit_l
+      - isalnum
+      - isalpha
+      - isblank
+      - iscntrl
+      - isdigit
+      - isgraph
+      - isleadbyte
+      - islower
+      - isprint
+      - ispunct
+      - isspace
+      - isupper
+      - iswalnum
+      - iswalpha
+      - iswascii
+      - iswblank
+      - iswcntrl
+      - iswctype
+      - iswdigit
+      - iswgraph
+      - iswlower
+      - iswprint
+      - iswpunct
+      - iswspace
+      - iswupper
+      - iswxdigit
+      - isxdigit
+  ismbc:
+    replaces:
+      - sdk/lib/ucrt/mbstring/ismbalnm.cpp
+      - sdk/lib/ucrt/mbstring/ismbalph.cpp
+      - sdk/lib/ucrt/mbstring/ismbdgt.cpp
+      - sdk/lib/ucrt/mbstring/ismbgrph.cpp
+      - sdk/lib/ucrt/mbstring/ismbknj.cpp
+      - sdk/lib/ucrt/mbstring/ismblgl.cpp
+      - sdk/lib/ucrt/mbstring/ismblwr.cpp
+      - sdk/lib/ucrt/mbstring/ismbprn.cpp
+      - sdk/lib/ucrt/mbstring/ismbpunc.cpp
+      - sdk/lib/ucrt/mbstring/ismbsle.cpp
+      - sdk/lib/ucrt/mbstring/ismbspc.cpp
+      - sdk/lib/ucrt/mbstring/ismbupr.cpp
+      - sdk/lib/ucrt/mbstring/mbbtype.cpp
+      - sdk/lib/ucrt/mbstring/mbsbtype.cpp
+      - sdk/lib/ucrt/mbstring/mbclevel.cpp
+      - sdk/lib/ucrt/mbstring/mbtolwr.cpp
+      - sdk/lib/ucrt/mbstring/mbtoupr.cpp
+      - sdk/lib/ucrt/mbstring/mbtohira.cpp
+      - sdk/lib/ucrt/mbstring/mbtokata.cpp
+      - sdk/lib/ucrt/mbstring/tojisjms.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the shipping ucrtbase (these
+      bodies) against the genuine Microsoft objects for the 20 deleted files, 8
+      shards on FROZEN inputs (see ucrt_tier2_sweep.run_shard -- without that, shards
+      1-7 silently lost the family). 48 of the 52 graded dll=0 over every case, and
+      dll_fail=0 across the whole run, so nothing else in ucrtbase moved either.
+      The other four are recorded rather than implied. _ismbclegal and
+      _ismbclegal_l FAULT on the ref_ side at c=-1, Microsoft's own out-of-bounds
+      read (see the note), so the loop stops before grading; they are
+      lead(c >> 8) && trail(c & 0xff) over the graded _ismbb* family, the same
+      composition as _ismbcl0/1/2, which graded MATCH. _ismbcblank and
+      _ismbcblank_l were never generated: the case generator parses the
+      TOOLCHAIN's mingw-w64 headers, which do not declare them (owed, recorded in
+      docs/product/vibeos-roadmap.md). They share the ismbc! body with the graded
+      _ismbcpunct over the graded _ismbbblank_l.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies. Those are Wine's
+      contract: Wine maps _MB_CP_SBCS to codepage 20127, where UCRT keeps codepage 0
+      and answers single-byte questions from the C locale -- which is exactly why
+      _ismbcgraph/print/punct/space/symbol graded DIFF on the rust_ side at tab and
+      0xA0-0xFF while the shipping DLL matched.
+
+      Silent-if-wrong details, each transcribed: the c <= 0xFF arm returns the
+      single-byte primitive's value unnormalised (_ismbcdigit gives the raw _DIGIT
+      mask, not 1); _ismbcprint tests _CONTROL with expected=false; the multibyte
+      arm refuses a c that is two single-byte characters; _mbsbtype loops length+1
+      times and raises the invalid-parameter handler for a NUL before the requested
+      position but not at it; the Shift-JIS-only members answer 0 (or return c
+      unchanged) on every other codepage. __acrt_GetStringTypeA and
+      __acrt_LCMapStringA are still Microsoft's and are called, not replaced.
+
+      One deliberate divergence: UCRT's mbstring C gets _ismbblead_l/_ismbbtrail_l
+      as unmasked-index MACROS, so _ismbclegal(c) for c > 0xFFFF reads past the
+      257-byte table (and faults at c=-1). Ours masks to a byte. Identical for
+      every c <= 0xFFFF; undefined behaviour above it is not reproduced.
+    exports:
+      - _ismbcalnum
+      - _ismbcalnum_l
+      - _ismbcalpha
+      - _ismbcalpha_l
+      - _ismbcblank
+      - _ismbcblank_l
+      - _ismbcdigit
+      - _ismbcdigit_l
+      - _ismbcgraph
+      - _ismbcgraph_l
+      - _ismbchira
+      - _ismbchira_l
+      - _ismbckata
+      - _ismbckata_l
+      - _ismbcl0
+      - _ismbcl0_l
+      - _ismbcl1
+      - _ismbcl1_l
+      - _ismbcl2
+      - _ismbcl2_l
+      - _ismbclegal
+      - _ismbclegal_l
+      - _ismbclower
+      - _ismbclower_l
+      - _ismbcprint
+      - _ismbcprint_l
+      - _ismbcpunct
+      - _ismbcpunct_l
+      - _ismbcspace
+      - _ismbcspace_l
+      - _ismbcsymbol
+      - _ismbcsymbol_l
+      - _ismbcupper
+      - _ismbcupper_l
+      - _ismbslead
+      - _ismbslead_l
+      - _mbbtype
+      - _mbbtype_l
+      - _mbcjistojms
+      - _mbcjistojms_l
+      - _mbcjmstojis
+      - _mbcjmstojis_l
+      - _mbctohira
+      - _mbctohira_l
+      - _mbctokata
+      - _mbctokata_l
+      - _mbctolower
+      - _mbctolower_l
+      - _mbctoupper
+      - _mbctoupper_l
+      - _mbsbtype
+      - _mbsbtype_l
+  tocase:
+    replaces:
+      - sdk/lib/ucrt/convert/tolower_toupper.cpp
+      - sdk/lib/ucrt/convert/towlower.cpp
+      - sdk/lib/ucrt/convert/towupper.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft objects for the
+      three deleted files. All 10 exports graded dll=0 over every generated case,
+      plus run_ctype's hand-graded tolower/toupper rows over EOF and 0..255 (MATCH,
+      n=514); dll_fail=0 across all 5,408 cases of the run. The burn-down moves by
+      8, not 10, because it undecorates _tolower/tolower (and _toupper/toupper) to
+      one name.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: msvcrt's
+      _tolower_l/_toupper_l DIFF against UCRT at the first case, EOF, which UCRT
+      returns before resolving any locale.
+
+      Silent-if-wrong details, each transcribed: only (unsigned)c < 256 takes the
+      narrow table; the codepage lookup sets errno=EILSEQ whenever c is not a
+      lead/trail pair and maps the low byte anyway; tolower/toupper are plain ASCII
+      until a locale has ever been changed; _tolower/_toupper are unconditional
+      arithmetic; _towlower_l/_towupper_l consult _wctype's UTF-16 category before
+      the narrow map, and cover only ASCII in a UTF-8 locale. _wctype and the
+      __acrt_LCMapString* internals are still Microsoft's and are called.
+    exports:
+      - _tolower
+      - _tolower_l
+      - _toupper
+      - _toupper_l
+      - _towlower_l
+      - _towupper_l
+      - tolower
+      - toupper
+      - towlower
+      - towupper
+  strtox:
+    replaces:
+      - sdk/lib/ucrt/convert/strtox.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft object. The
+      harness graded only strtol/strtoul before this change -- the generator has no
+      driver for (string, char**, base) -- so run_strtox_family/run_wcstox_family
+      now grade ALL 32: value, end offset and errno, 39 inputs (the 64-bit limits,
+      "0x"/"0X" with no digit, "-0", letters as digits, every isspace byte) at bases
+      0/8/10/16/36/2, and for the wide forms nine more inputs a narrow parser never
+      sees (fullwidth and Arabic-Indic digits, a fullwidth letter, U+3000 leading
+      space). Narrow MATCH n=9828, wide MATCH n=13824, plus the legacy
+      strtol/strtoul rows at dll=0; dll_fail=0 across all 29,146 cases of the run.
+    note: >
+      A PORT of __crt_strtox::parse_integer (corecrt_internal_strtox.h:222), the one
+      template every export in the file wraps, with the accumulator width (32 for
+      long, 64 for everything else) as a parameter. Not msvcrt's bodies: those are
+      Wine's _MSVCR_VER=0 overflow contract and DIFF against UCRT on 14 of 598 cases.
+
+      Silent-if-wrong details, each transcribed: *end is written to string first
+      and to the final position last, so a no-digit parse leaves it at string with
+      whitespace and sign unconsumed; "0x" with no hex digit is no digits at all;
+      an unsigned result negates with wraparound and only a too-large magnitude
+      sets ERANGE; wide digits include 17 Unicode decimal blocks (fullwidth,
+      Arabic-Indic, ...) and wide whitespace is iswspace, locale-independent.
+    exports:
+      - _strtoi64
+      - _strtoi64_l
+      - _strtoimax_l
+      - _strtol_l
+      - _strtoll_l
+      - _strtoui64
+      - _strtoui64_l
+      - _strtoul_l
+      - _strtoull_l
+      - _strtoumax_l
+      - _wcstoi64
+      - _wcstoi64_l
+      - _wcstoimax_l
+      - _wcstol_l
+      - _wcstoll_l
+      - _wcstoui64
+      - _wcstoui64_l
+      - _wcstoul_l
+      - _wcstoull_l
+      - _wcstoumax_l
+      - strtoimax
+      - strtol
+      - strtoll
+      - strtoul
+      - strtoull
+      - strtoumax
+      - wcstoimax
+      - wcstol
+      - wcstoll
+      - wcstoul
+      - wcstoull
+      - wcstoumax

@@ -201,6 +201,104 @@ def test_all_guests_already_seen_drains_nothing_at_all():
     assert vm.serial.reads == 0, "no read at all when nothing is outstanding"
 
 
+def test_a_staged_optional_guest_is_waited_for_before_its_launch_line():
+    """The measured race: the last parity verdict arrives, the optional guest's
+    launch line has not been printed yet, and a serial-only drain stops in that
+    gap. check() -- which asks the media -- then fails lua32 while it is running.
+    With the media answer the drain keeps reading until lua32 reports."""
+    vm = _FakeVM(
+        [
+            _all_pass(),
+            "[WINLOGON] lua32.exe (i386 Lua stress guest) created (PID 944) - waiting\n",
+            "[WINLOGON] lua32.exe exit = 0x600d (0x600D = PASS)\n",
+        ]
+    )
+    out = ladder.watch(vm, seconds=5, seen="", optional_staged=["lua32"])
+    assert "lua32.exe exit = " in out
+    assert ladder.check(out, optional_staged=["lua32"]) is None
+
+
+def test_an_optional_guest_launched_during_settle_is_still_in_flight():
+    """The settle read consumed lua32's LAUNCH line; the drain must still wait
+    for its verdict rather than looking only at the newly drained text."""
+    vm = _FakeVM([_all_pass(), "[WINLOGON] lua32.exe exit = 0x600d (0x600D = PASS)\n"])
+    seen = "[WINLOGON] lua32.exe (i386 Lua stress guest) created (PID 944) - waiting\n"
+    out = ladder.watch(vm, seconds=5, seen=seen)
+    assert "lua32.exe exit = " in out
+
+
+def test_a_sweep_holds_the_drain_open_until_it_says_complete():
+    """The measured bug: the drain ended during `user32:--list` because nothing
+    GRADED was outstanding, and the boot went green having run zero subtests.
+    Every chunk below ends at a point where the old drain would have stopped."""
+    vm = _FakeVM(
+        [
+            _all_pass() + "[WT] user32:--list: started (PID 132)\n",
+            "[WT] user32:--list: exit = 0 failure(s)\n",
+            "[WT] user32:combo: started (PID 140)\n",
+            "[WT] user32:combo: exit = 23 failure(s)\n",
+            "[WT] user32: sweep complete, 1 subtests, 0 quarantined, 47 not selected\n",
+        ]
+    )
+    out = ladder.watch(vm, seconds=5, seen="")
+    assert "sweep complete" in out
+    assert ladder.check(out) is None
+
+
+def test_a_sweep_that_never_completes_is_a_red_ladder():
+    """Its unrun subtests never printed a start line, so nothing else can see
+    them -- the unfinished sweep itself has to be the finding."""
+    text = _all_pass() + "[WT] user32:--list: started (PID 132)\n"
+    red = _red(text)
+    assert red["classification"] == "LADDER_FAIL"
+    assert any("user32:--list" in s for s in red["salient"])
+
+
+def test_a_sweep_that_listed_nothing_is_finished_not_hung():
+    text = (
+        _all_pass()
+        + "[WT] user32:--list: started (PID 132)\n"
+        + "[WT] user32: --list produced no subtest names - suite NOT swept\n"
+    )
+    assert ladder.sweeps_unfinished(text) == []
+
+
+def test_the_drain_waits_for_winlogon_to_say_it_is_done():
+    """Every graded verdict is in and nothing is in flight -- the exact state the
+    old drain stopped in, twice, one launch before the next thing started.
+    With the media's winlogon known to print PROGRAM_DONE, that state is not
+    'done'; the drain reads on until winlogon says so."""
+    vm = _FakeVM(
+        [
+            _all_pass(),
+            "[WT] user32:--list: started (PID 132)\n",
+            "[WT] user32: sweep complete, 1 subtests, 0 quarantined, 47 not selected\n",
+            ladder.PROGRAM_DONE + "\n",
+        ]
+    )
+    out = ladder.watch(vm, seconds=5, seen="", program_done_expected=True)
+    assert out.endswith(ladder.PROGRAM_DONE + "\n")
+    assert vm.serial.reads == 4
+
+
+def test_program_done_ends_the_drain_even_with_guests_missing():
+    """i386 has no WoW64 guests, so their markers never arrive. Once winlogon
+    says the graded program is over, waiting for them is waiting for nothing --
+    the drain stops, and check() reports the absence."""
+    vm = _FakeVM(["[WT] native/user32:combo: exit = 23 failure(s)\n", ladder.PROGRAM_DONE + "\n"])
+    t0 = time.monotonic()
+    ladder.watch(vm, seconds=5, seen="", program_done_expected=True)
+    assert time.monotonic() - t0 < 2, "should stop at PROGRAM_DONE, not the ceiling"
+
+
+def test_program_done_matches_what_winlogon_prints():
+    """The two halves are in different languages; pin the text across them."""
+    src = (
+        Path(__file__).resolve().parents[3] / "sdk/lib/rust/winlogon-rust/src/winlogon.rs"
+    ).read_text()
+    assert ladder.PROGRAM_DONE + "\\n" in src
+
+
 def test_a_guest_that_never_reports_still_uses_the_budget():
     """The ceiling must stay a real ceiling — a silent guest is what it is for."""
     vm = _FakeVM([_serial(hello32=0x600D)])

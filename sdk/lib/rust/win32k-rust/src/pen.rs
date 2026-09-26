@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 // bindgen models _BRUSH/_PEN as opaque (BaseObject + padding); the BRUSHBODY
@@ -426,12 +429,16 @@ pub unsafe extern "system" fn NtGdiExtCreatePen(
             (dwStyleCount as usize) * core::mem::size_of::<DWORD>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            core::ptr::copy_nonoverlapping(
-                pUnsafeStyle as *const u8,
-                pSafeStyle as *mut u8,
+        // Validate-only probe; the capture is the access. A fault lands in Status,
+        // which is checked below and frees pSafeStyle.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
+                pSafeStyle as *mut core::ffi::c_void,
+                pUnsafeStyle as *const core::ffi::c_void,
                 (dwStyleCount as usize) * core::mem::size_of::<DWORD>(),
-            );
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);

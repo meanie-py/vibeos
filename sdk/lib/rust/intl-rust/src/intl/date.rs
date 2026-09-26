@@ -15,11 +15,11 @@ pub const MAX_YEAR: i32 = 9999;
 
 pub static mut hwndEnum: HWND = core::ptr::null_mut();
 #[no_mangle]
-pub unsafe extern "C" fn isDateCompAl(alpha: u16) -> u8 {
+pub unsafe extern "C" fn isDateCompAl(alpha: u16) -> BOOL {
     if (alpha == 'y' as u16) || (alpha == 'M' as u16) || (alpha == 'd' as u16) || (alpha == ' ' as u16) {
-        return (TRUE as BOOL) as BOOLEAN;
+        return TRUE as BOOL;
     } else {
-        return (FALSE as BOOL) as BOOLEAN;
+        return FALSE as BOOL;
     }
 }
 #[no_mangle]

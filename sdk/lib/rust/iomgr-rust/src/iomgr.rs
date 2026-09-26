@@ -191,6 +191,7 @@ extern "C" {
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[no_mangle]
@@ -743,7 +744,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopInitializePlugPlayServices\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -765,7 +766,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] HalInitPnpDriver\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -780,7 +781,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] PiQueueDeviceAction\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -802,7 +803,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopInitializeBootDrivers\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -817,7 +818,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopReinitializeBootDrivers\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -832,7 +833,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] Checking ArcBootDeviceName for ramdisk...\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -844,7 +845,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] IopStartRamdisk\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
         }
@@ -857,7 +858,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] IopStartRamdisk done\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
 
@@ -865,7 +866,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] Testing ramdisk filesystem access...\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
 
                 let mut TestOa: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -892,7 +893,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart2 = Arm64UartKernelBase as *mut ULONG;
                 let msg2 = b"[IO] ZwOpenFile(ntdll.dll) start\r\n";
                 for &ch in msg2.iter() {
-                    *uart2 = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
 
                 let TestStatus = ZwOpenFile(
@@ -907,7 +908,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                     let uart3 = Arm64UartKernelBase as *mut ULONG;
                     let msg3 = b"[IO] ZwOpenFile(ntdll.dll) SUCCESS!\r\n";
                     for &ch in msg3.iter() {
-                        *uart3 = ch as ULONG;
+                        Arm64UartPutChar(ch as u8);
                     }
                     ZwClose(TestHandle);
                 } else {
@@ -917,7 +918,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                     let mut p = buf.as_ptr();
                     let mut i = 0;
                     while i < len && *p != 0 {
-                        *uart4 = *p as ULONG;
+                        Arm64UartPutChar(*p as u8);
                         p = p.add(1);
                         i += 1;
                     }
@@ -931,7 +932,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] Not a ramdisk boot\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
         }
@@ -945,7 +946,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopCreateArcNames\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -971,7 +972,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopMarkBootPartition\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -985,7 +986,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] IopMarkBootPartition failed (continuing on ARM64/MININT)\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
         }
@@ -1004,7 +1005,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] IopMarkBootPartition done\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
         }
@@ -1018,7 +1019,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopInitializeSystemDrivers\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1034,7 +1035,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopInitializeSystemDrivers done\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1047,7 +1048,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopReassignSystemRoot\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1062,7 +1063,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] IopReassignSystemRoot failed (continuing on ARM64)\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
             return 0u8;
@@ -1079,7 +1080,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopReassignSystemRoot done\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1105,7 +1106,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IoAssignDriveLetters\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1123,7 +1124,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IoAssignDriveLetters done\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1141,7 +1142,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] PsLocateSystemDll\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1156,7 +1157,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
                 let uart = Arm64UartKernelBase as *mut ULONG;
                 let msg = b"[IO] PsLocateSystemDll failed (continuing on ARM64)\r\n";
                 for &ch in msg.iter() {
-                    *uart = ch as ULONG;
+                    Arm64UartPutChar(ch as u8);
                 }
             }
         }
@@ -1173,7 +1174,7 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IoInitSystem returning TRUE\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1193,7 +1194,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopInitLookasideLists\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1241,7 +1242,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopCreateObjectTypes\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }
@@ -1258,7 +1259,7 @@ pub unsafe extern "system" fn IoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK)
             let uart = Arm64UartKernelBase as *mut ULONG;
             let msg = b"[IO] IopCreateRootDirectories\r\n";
             for &ch in msg.iter() {
-                *uart = ch as ULONG;
+                Arm64UartPutChar(ch as u8);
             }
         }
     }

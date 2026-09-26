@@ -53,6 +53,7 @@ members = [
     "userenv-rust",
     "netapi32-rust",
     "iphlpapi-rust",
+    "jscript-rust",
     "dnsapi-rust",
     "dhcpcsvc-rust",
     # Tier-2 network services (base/services/*). dnsrslvr + wkssvc are the SERVER halves of the
@@ -147,6 +148,7 @@ members = [
     # ucrtbase.dll's own surface, replacing vendored Microsoft UCRT family by
     # family. Every symbol is declared in tools/ucrt-takeover.yaml.
     "ucrt-rust",
+    "crt-portable-rust",
     # Grades Rust against the GENUINE vendored UCRT C, while that C still
     # exists to be graded against. See its Cargo.toml.
     "ucrt-difftest",

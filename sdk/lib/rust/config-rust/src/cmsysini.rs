@@ -1190,7 +1190,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
         }
 
         ValueInfo = ValueInfoBuffer.as_mut_ptr() as PKEY_VALUE_FULL_INFORMATION;
-        ControlSet = *(ValueInfoBuffer.as_ptr().offset((*ValueInfo).DataOffset as isize) as *const ULONG);
+        ControlSet = (ValueInfoBuffer.as_ptr().offset((*ValueInfo).DataOffset as isize) as *const ULONG).read_unaligned();
     }
 
     RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\System\\CurrentControlSet").as_ptr());
@@ -1291,7 +1291,7 @@ unsafe fn CmpCreateControlSet(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS 
             }
         }
 
-        *(ValueInfoBuffer.as_ptr().offset((*ValueInfo).DataOffset as isize) as *const ULONG)
+        (ValueInfoBuffer.as_ptr().offset((*ValueInfo).DataOffset as isize) as *const ULONG).read_unaligned()
     };
 
     RtlInitUnicodeString(&mut KeyName, w!("\\Registry\\Machine\\System\\CurrentControlSet\\Hardware Profiles").as_ptr());

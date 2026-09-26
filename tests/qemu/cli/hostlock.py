@@ -106,7 +106,9 @@ PROTOCOL_VERSION = 1
 
 
 def job_class() -> str:
-    """Advisory tagging only: no environment value changes admission."""
+    """The job's class, for tagging -- and for ONE admission decision: an `integration`
+    job (a landing gate) may take the boot permits `land_boot_reserve` holds back from
+    everyone else. Nothing else about admission reads it."""
     value = os.environ.get("VIBEOS_JOB_CLASS", "interactive")
     return value if value in ("interactive", "integration", "background") else "unknown"
 
@@ -144,6 +146,24 @@ def _write_meta(fd: int, meta: dict) -> None:
 # never ran the work it was queueing for (field manual §9.84) — `looks_starved` below is
 # the classifier both gate.py and smoke.py use to tell that apart from a real test failure.
 WAIT_ANNOUNCE = "[hostlock] waiting for host CPU lease"
+
+#: What each pool's wait actually MEANS, appended to WAIT_ANNOUNCE (whose text is kept
+#: as-is: `looks_starved` and its tests match on it). Before this, every pool printed
+#: "waiting for host CPU lease", so a conductor queued 73 minutes behind ANOTHER
+#: conductor's land lock read like boot-slot starvation -- and was diagnosed as such.
+POOL_WHAT = {
+    "land": "the fleet LAND LOCK -- another conductor is draining the queue",
+    "bootcpu": "a QEMU boot permit (the unreserved share; landing keeps the rest)",
+    "bootcpu-land": "a QEMU boot permit for a LANDING gate (reserved share first)",
+    "cpuheavy": "a build / native-TCG CPU permit",
+}
+
+
+def _wait_line(kind: object, pool: str | None) -> str:
+    what = POOL_WHAT.get(pool or "", f"pool {pool}" if pool else "an unqueued lock")
+    return f"{WAIT_ANNOUNCE} ({kind}; waiting on {what})..."
+
+
 ACQUIRED_ANNOUNCE = "[hostlock] lease acquired"
 
 
@@ -327,7 +347,7 @@ def _acquire_one(
             if time.monotonic() >= deadline:
                 return None
             if not announced:
-                print(f"{WAIT_ANNOUNCE} ({meta.get('kind', '?')})...", flush=True)
+                print(_wait_line(meta.get("kind", "?"), pool), flush=True)
                 announced = True
             time.sleep(_POLL)
     finally:
@@ -359,6 +379,25 @@ def _boot_lease_files(leases: int) -> list[Path]:
     return [HOSTLOCK_DIR / f"bootcpu-{i:02d}" for i in range(leases)]
 
 
+def land_boot_reserve(leases: int = DEFAULT_BOOT_LEASES) -> int:
+    """How many boot permits only a LANDING gate may take.
+
+    Before this, a conductor's gate boots came out of the same pool as every lane's own
+    smokes, payload runs and sweeps, so on a busy night the one job that unblocks the
+    whole fleet queued behind the fleet. Half the pool by default -- one full gate's
+    concurrent boots -- and never the whole of it, so lanes can always boot.
+    VIBEOS_LAND_BOOT_RESERVE overrides (0 disables).
+    """
+    want = int(os.environ.get("VIBEOS_LAND_BOOT_RESERVE", str(leases // 2)))
+    return max(0, min(want, leases - 1))
+
+
+def is_landing_job() -> bool:
+    """The conductor runs its gate with VIBEOS_JOB_CLASS=integration (queue.py), and every
+    boot under it inherits that."""
+    return job_class() == "integration"
+
+
 def acquire_boot_lease(
     kind: str,
     *,
@@ -370,8 +409,19 @@ def acquire_boot_lease(
     `cpuheavy` build pool, so a cold build's exclusive grant never excludes a windows-host
     boot (they're different scheduling domains — Windows vs WSL). Throttles boot-vs-boot
     only. Returns the held fd or None on timeout."""
+    files = _boot_lease_files(leases)
+    reserve = land_boot_reserve(leases)
+    if is_landing_job():
+        # Reserved permits first, then any other free one. Its OWN FIFO queue, so a
+        # landing boot never waits for its turn behind lane boots.
+        return _acquire_one(
+            files[leases - reserve :] + files[: leases - reserve],
+            timeout,
+            _self_meta(kind, boot_pool=True, landing=True, **extra),
+            pool="bootcpu-land",
+        )
     return _acquire_one(
-        _boot_lease_files(leases),
+        files[: leases - reserve],
         timeout,
         _self_meta(kind, boot_pool=True, **extra),
         pool="bootcpu",
@@ -467,7 +517,7 @@ def acquire_cpu_share(
             if time.monotonic() >= deadline:
                 return None
             if not announced:
-                print(f"{WAIT_ANNOUNCE} ({kind}, n={n})...", flush=True)
+                print(_wait_line(f"{kind}, n={n}", "cpuheavy"), flush=True)
                 announced = True
             time.sleep(_POLL)
     finally:
@@ -882,6 +932,11 @@ def render_status(st: dict) -> str:
         f"host broker: {'ON' if st['enabled'] else 'OFF (VIBEOS_HOST_BROKER=0)'}  —  "
         f"legacy/native(cpuheavy) {st['cpu_leases_held']}/{st['cpu_leases_total']} · "
         f"boot(windows-host) {st.get('boot_leases_held', 0)}/{st.get('boot_leases_total', 0)}"
+        + (
+            f" ({land_boot_reserve(st.get('boot_leases_total', 0))} reserved for landing)"
+            if st.get("boot_leases_total")
+            else ""
+        )
     ]
     held_cpu = [e for e in st["cpuheavy"] if e["held"]]
     if not held_cpu:
@@ -950,13 +1005,17 @@ def render_status(st: dict) -> str:
 def cmd_status(args, repo: Path) -> int:
     """`vibeos-cli host-status` — who holds the CPU lease / build-dir locks. `--json`
     feeds the wait-for-quiet poll guards agents have been hand-rolling."""
-    from . import hostjobs
+    from . import hostjobs, queue
 
     st = status()
     st["jobs"] = hostjobs.status(repo)
+    # A held line explains an idle land lock with a full queue better than anything below.
+    st["hold"] = queue.effective_hold(repo)
     if getattr(args, "json", False):
         print(json.dumps(st, indent=2))
     else:
+        if st["hold"]:
+            print(queue.describe_hold(st["hold"]))
         print(render_status(st))
         print(hostjobs.render_status(st["jobs"]))
     return 0

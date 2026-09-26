@@ -75,7 +75,16 @@ BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
 # kmt_test.h's KmtVOk emits one of these per FAILING assertion (successes are not
 # logged — `if (0/*KmtReportSuccess*/)`). `<file>:<line>` is the assertion's identity;
 # the message carries run-varying values (addresses, NTSTATUS) and is NOT part of it.
-ASSERT_FAIL = re.compile(r"^(\S+\.c:\d+): Test failed:")
+#
+# NOT anchored to the start of the line: a failure message that prints a raw WCHAR
+# (NpfsFileInfo.c:56 prints 0xFFFF) can swallow its own newline, gluing the NEXT
+# assertion onto the end of the line. Anchored, NpfsFileInfo.c:57 — which fails on
+# every boot on every arch — was seen only when the byte happened not to eat the
+# newline, and the 596-round soak marked it bistable. The file part must start at
+# a non-identifier boundary: a hex address glued straight onto a name
+# (`0x000000000012F300RtlStack.c:42`) has no recoverable boundary, so it is left
+# unmatched rather than banked as a garbage identity.
+ASSERT_FAIL = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c:\d+): Test failed:")
 
 # The floor semantics live in ratchet.py, shared with the apitest parser; only
 # the markers above are kmtest-specific. The sys.path insert is load-bearing:
@@ -136,14 +145,14 @@ def parse(log_text):
             )
             current["end_seen"] = True
             continue
-        m = ASSERT_FAIL.match(line.strip())
-        if m and current:
+        hits = ASSERT_FAIL.findall(line)
+        if hits and current:
             # Attributed to the launched test, not to the next END: a test that
             # CRASHes or TIMEOUTs never emits END, and attributing on END alone
             # would bleed its failures into whichever test ends next. That
             # misattribution is real — a 595-run arm64 soak shows ExPools.c lines
             # surfacing under ExSequencedList exactly when the run ahead died.
-            current["asserts"].add(m.group(1))
+            current["asserts"].update(hits)
             continue
         if current and ERROR.search(line):
             current["errors"] += 1

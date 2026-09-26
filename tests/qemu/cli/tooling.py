@@ -59,6 +59,10 @@ _PYTEST_SUITES = [
     # the kernel down. A parser that cannot tell a crash from a pass turns the
     # whole harness into decoration, so it gets its own oracle.
     (".", ".", "tools/test_parse_apitest_serial.py"),
+    # Every payload build.sh gates its exe on pecheck (GUI subsystem, required and
+    # forbidden imports). It replaced `objdump | grep -q` pipes that passed and failed
+    # at random under pipefail, so it must not become a new untested oracle.
+    (".", ".", "tools/payloads/test_pecheck.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
@@ -79,6 +83,7 @@ _PYTEST_SUITES = [
     # these files carry) and false negatives on the shape that actually
     # bugchecked. Both are pinned.
     (".", ".", "tools/test_scan_probe_then_deref.py"),
+    (".", ".", "tools/test_fix_probe_then_deref.py"),
     (".", ".", "tools/test_gen_suites.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
@@ -86,6 +91,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_raw_uart_writes.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_rust_storage.py"),
@@ -118,6 +124,10 @@ _PYTEST_SUITES = [
     # the core bucket moves the published coverage figure and nothing in the output says
     # so. Its build-graph cases skip when this worktree has no build-* dirs.
     (".", ".", "tools/test_port_audit.py"),
+    # Upstream triage decides which unmerged commits are BUG ORACLES. Its first draft
+    # called 31 of 65 commits oracle hits by counting winetests sources the build does not
+    # compile by configuration; the wrong number reads exactly like the right one.
+    (".", ".", "tools/test_upstream_triage.py"),
     # The vendored-code move plan is a reference list: a missed spelling (relative
     # add_subdirectory, a .cmake fragment, a ${VAR}-built path, an include root) is a
     # build that breaks after the move. Hermetic fixtures, no build dirs needed.

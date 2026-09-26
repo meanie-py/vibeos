@@ -5,7 +5,7 @@
 #           ddc5d3e0f54030e2348484fff681861a161efb4e388e20631209574e7884ad39 — but see
 #           the note on GitHub archive stability under wdf.patch: the release tag is the
 #           identifier, the round-trip below is the check.
-# Apply from drivers/bus/acpi/acpica/ with: patch -p1 < vendor-patches/acpica.patch
+# Apply from vendor/acpica/ with: patch -p1 < vendor-patches/acpica.patch
 #
 # SIX FILES, 173 LINES, all host-port shims. That is the entire ReactOS delta across a
 # 226-file, 120K-line tree. Nothing here touches ACPI table or AML parsing, bounds
