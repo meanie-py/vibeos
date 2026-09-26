@@ -6861,6 +6861,36 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### `grep` reports ZERO matches in 21 of our .c/.h files, because it decides they are binary
+
+**Symptom:** you grep a source file for a symbol you have every reason to expect and get
+nothing back. No error, no warning, exit status 1, just silence — and silence reads as "the
+symbol is not there", which is a fact about the code rather than about the tool.
+
+**Cause:** those files contain extended-ASCII bytes (an author name like `Hermès`, a
+copyright sign), so `grep` classifies them as binary and suppresses output. `file` says
+`C source, Non-ISO extended-ASCII text`. Twenty-one files in this tree are affected, and
+they are not obscure ones:
+
+- `ntoskrnl/ex/resource.c` — the whole ERESOURCE implementation, 2290 lines
+- `ntoskrnl/po/events.c`, `ntoskrnl/include/internal/i386/mm.h`
+- **the entire `sdk/lib/crt/printf/` cluster — 16 files** (`printf.c`, `vprintf_s.c`,
+  `_vsprintf_p.c`, `wprintf.c`, …), which is msvcrt's busiest neighbourhood
+- `sdk/lib/crt/time/localtime.c`, two `strsafe-difftest/refstub` headers
+
+**Fix:** `grep -a` (or `rg`, which does not do this). Refresh the list with
+`for f in $(find . -name '*.c' -o -name '*.h'); do grep -qI . "$f" || echo "$f"; done`.
+
+**The transferable part is the shape, not the flag: an IMPLAUSIBLE ZERO is a claim about
+your tool, not about the code.** Zero hits for `ActiveCount` in a 2290-line executive-resource
+implementation is not a finding, it is a malfunction — and it cost a wrong attribution that
+got relayed to another lane before the one-command check (`grep -a`) was run. The tell is
+cheap and always available: when a search returns nothing and the thing you searched for
+almost certainly exists, verify the SEARCH before you conclude anything about the subject.
+Same family as `$?` after a pipe and `sccache -s` reporting another server: a reading about
+a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
+conclusion.
+
 ### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
 
 **Symptom:** you isolate a quarantined failure to reproduce it (`--only <one suite>`), the boot
