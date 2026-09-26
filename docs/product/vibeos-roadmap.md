@@ -2346,7 +2346,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   assertions**, so the ratchet does not trip on a failure here at all; it trips only when the
   *pass count* moves (399 → 398), which is what a wedge mid-sweep does. Under load a third
   assertion flips and the sweep stops producing. Still OPEN, still not owned by the wow64 lane,
-  and still do not weaken the assertion.- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
+  and still do not weaken the assertion.
+  **Update 2026-09-26 — it reaches i386 now, and it LIVELOCKED the merge queue.** The
+  2026-09-06 entry recorded "i386/amd64 conformance PASSED in the same gate — only arm64";
+  that is no longer true. Four consecutive batches went red on `conf:i386` between 00:02
+  and 00:30, and **nothing landed between 23:45 and at least 00:33** — the last green gate
+  was `20260925-234529-6v80rtj1`, the batch that landed `05c6ab03b3c1`. The i386 counts
+  wander exactly as the mechanism above predicts, across four runs of essentially the same
+  tree: `pass=879 fail=2` (the baseline-accepted state), then `878/3`, `876/5`, `878/3`.
+  The reported "regressions" wander with them — `ExResource.c:432`, `:469`, `:570` and
+  `NpfsFileInfo.c:57` in varying combinations, 1 to 4 per batch. A deterministic regression
+  does not vary its own identity set between runs on the same tree.
+  **The trigger is measured, not guessed: host load average 27.3 (15-min 22.5) with six
+  lanes queued and a conductor gating.** That is the load-sensitivity the entry already
+  names, arriving on the second-slowest target once the host is busy enough.
+  **The queue shape makes it self-sustaining, which is the new part.** A red batch is
+  bounced, the next conductor immediately starts another 3-build + 4-boot batch, that load
+  re-trips the race, and so on — a batch every ~10 minutes, none landing. The retry logic is
+  not wrong (it classifies correctly as `CONFORMANCE_FLAKE`) and the ratchet is not wrong
+  (the assertion is asserting something true); they are simply both correct while the queue
+  makes no progress.
+  **What NOT to do: do not weaken the ratchet or quarantine the assertion to drain the
+  queue.** The cheap correct lever is LOAD — an agent that stops adding builds and boots
+  while the queue is livelocked is doing more for it than one that keeps working. The real
+  fix is still the ExResource waiter-count race itself, which remains unowned.- **Fleet disk exhaustion interrupted landing — OPEN, admission slice implemented locally**
   (2026-09-06; owner: bughunt/Codex). The shared WSL filesystem reached zero
   available bytes during `land`'s tooling preflight; the failure summary itself
   then failed with `ENOSPC`. User reclaimed space (163 GB available afterward).
