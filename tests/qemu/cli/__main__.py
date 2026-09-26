@@ -175,6 +175,18 @@ def build_parser() -> argparse.ArgumentParser:
         "entries, do not inherit them",
     )
     b.add_argument(
+        "--winetest-only",
+        default="",
+        metavar="SUBTESTS",
+        help="space-separated subtest names to RUN from --winetest-sweep, and "
+        "nothing else, e.g. 'combo'. The repro loop for one crashing subtest: "
+        "a guest sweep of user32 is ~40 minutes, one subtest is seconds. Written "
+        "into the sweep marker as `only <name>` lines; winlogon counts the rest "
+        "as 'not selected' in its completion line, apart from the quarantined, "
+        "so a narrowed sweep never reads as a whole one. Implies nothing without "
+        "--winetest-sweep",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "

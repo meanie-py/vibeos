@@ -658,19 +658,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 6 OPEN** (2026-09-25). First time the WoW64 control has run across a whole
+  REFERENCE + 5 OPEN** (2026-09-25; `combo` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
   | subtest | native i386 | WoW64 | |
   |---|---|---|---|
-  | `combo` | 23 failures | **CRASH `0xc0000094`** | guest-only, and `0xc0000094` is INTEGER_DIVIDE_BY_ZERO — a width bug shape |
+  | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
   | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
   | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
   | `monitor` | 20 failures | **23** | +3 guest-only |
   | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
   | `scroll` | 140 failures | **17** | fewer under WoW64 — NOT yet a win, see below |
   | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
+  **`combo` was win32k reading guest user32's private `HEADCOMBO` at the amd64 layout.**
+  `NtUserGetComboBoxInfo` does not ask the control; it follows the pointer in the window's
+  extra bytes into user32's own struct. A WoW64 guest's is 32-bit, so `hwndList` came from
+  16 bytes too far, the test sent `LB_GETITEMHEIGHT` to a non-window, got 0, and divided by
+  it. Fixed by reading at the OWNER's layout (`window.rs` `CaptureComboState`; same fix for
+  `NtUserGetListBoxInfo`'s `LB_DESCR.page_size`), probed and captured, which also closes an
+  unprobed kernel read: the process controls that pointer via `SetWindowLongPtr`. Verified:
+  guest 460 tests / 23 failures, native i386 the same 23, and the 28 output lines diff
+  IDENTICAL once handle values are normalized. Repro loop is now
+  `build --arch amd64 --winetest-sweep --winetest-only combo` (seconds, not a 40-min sweep).
   `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
   owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
@@ -697,8 +707,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   free-list dump whose entries mostly carry `tag=00000000`. The A/B numbers above all
   predate it and are unaffected, but the boot is not green and this is NOT attributed:
   whether 21 extra guest processes provoked it or it is the pre-existing amd64 pool flake
-  is unmeasured, and a plain non-sweep ladder boot is the cheap discriminator nobody has
-  run yet. Artifact: `/tmp/vibeos-cli/20260925-222408-xlois8r6-smoke-amd64`.
+  was unmeasured. **Discriminator run 2026-09-26: a plain non-sweep ladder boot, stock-applet
+  phase included, is clean** (no BUGCHECK;
+  `/tmp/vibeos-cli/20260926-102824-75mdh3kl-smoke-amd64`). That leans toward the sweep's
+  extra processes, but it is ONE boot and a pool flake is by nature intermittent, so it
+  lowers the prior rather than settling it. The next sweep boot is the real test.
+  (Original artifact lost to a `wsl --shutdown`.)
 
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first

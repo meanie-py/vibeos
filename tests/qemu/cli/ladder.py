@@ -627,7 +627,18 @@ def _optional_in_flight(buf: str) -> list[str]:
     return [g for g in OPTIONAL if f"{g}.exe (" in buf and f"{g}.exe exit = " not in buf]
 
 
-def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
+# winlogon prints this once, after the last GRADED guest or winetest on its arch
+# and before the ungraded stock-applet phase (winlogon.rs LadderProgramComplete).
+PROGRAM_DONE = "[WINLOGON] graded program complete"
+
+
+def watch(
+    vm,
+    seconds: float = LADDER_TIMEOUT_SECONDS,
+    seen: str = "",
+    optional_staged: list[str] | None = None,
+    program_done_expected: bool = False,
+) -> str:
     """Drain serial until every ladder guest has reported, or `seconds` elapse.
 
     `seen` is the serial the caller has ALREADY consumed. Without it this waits
@@ -638,12 +649,48 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     read, so the verdict was correct and the wait was pure waste. The caller's
     `check()` sees both halves and never noticed.
 
+    `optional_staged` is the SAME media answer `check()` grades with (see
+    media_optional_staged), and the drain must wait on it for the same reason
+    check() enforces it. An optional guest launches right AFTER the last parity
+    guest reports, so with the serial as its only source the drain saw every
+    required verdict, saw no optional guest yet, and stopped in the few lines
+    between -- then check() read the staged, launched, unreported lua32 as a
+    crash. MEASURED: spawn32's verdict at serial line 3214, lua32's launch at
+    3217, a 73s drain against a 420s ceiling, LADDER_FAIL on a guest mid-run.
+    The two halves of the ladder disagreed about what "done" means.
+
+    `program_done_expected` is the real answer to that, and the others are its
+    backstops. Inferring "done" from nothing being in flight is a race at EVERY
+    launch -- after lua32 was fixed, the same gap reopened between sqlite32 and
+    the winetest sweep. winlogon now SAYS when it is done (PROGRAM_DONE), and a
+    caller booting media this tree built -- which smoke guarantees by refusing
+    stale media -- waits for that line. The ceiling still bounds a machine that
+    never gets there.
+
     Returns only the NEWLY drained text; the caller appends it to the boot serial,
     so a BUGCHECK during the ladder still lands in full.log.
     """
     floor = drain_floor()
     need = [m for m in markers() if m not in seen]
-    if not need and not _optional_in_flight(seen) and not winetests_lost(seen) and not floor:
+    staged = list(optional_staged or [])
+
+    def outstanding(text: str) -> list[str]:
+        # Launched-and-unreported, plus staged-and-unreported: a staged guest
+        # is owed a verdict whether or not its launch line has appeared yet.
+        out = _optional_in_flight(text)
+        out += [g for g in staged if f"{g}.exe exit = " not in text and g not in out]
+        return out
+
+    if not floor and (
+        (program_done_expected and PROGRAM_DONE in seen)
+        or (
+            not program_done_expected
+            and not need
+            and not outstanding(seen)
+            and not winetests_lost(seen)
+            and not sweeps_unfinished(seen)
+        )
+    ):
         return ""  # every guest already reported before we were called
     buf = ""
     start = time.monotonic()
@@ -657,15 +704,29 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     extended: set[str] = set()
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
-        pending = _optional_in_flight(buf)
+        # `seen + buf`, as winetests_lost below: a guest launched during the
+        # settle read is in `seen`, and is still in flight.
+        pending = outstanding(seen + buf)
         running = winetests_lost(seen + buf)
-        if (
-            all(m in buf for m in need)
-            and not pending
-            and not running
-            and time.monotonic() - start >= floor
-        ):
+        sweeping = sweeps_unfinished(seen + buf)
+        # Once winlogon has SAID it is done, nothing graded can still arrive:
+        # a guest missing at that point is final, and check() grades it. So the
+        # line ends the drain by itself -- an i386 native sweep, which has no
+        # WoW64 guests to report, otherwise sat out the whole 420s ceiling
+        # after winlogon had finished.
+        if program_done_expected:
+            finished = PROGRAM_DONE in seen + buf
+        else:
+            finished = all(m in buf for m in need) and not pending and not running and not sweeping
+        if finished and time.monotonic() - start >= floor:
             break
+        # The enumeration run gets one subtest's allowance; each subtest it
+        # then starts earns its own below, so a sweep's budget grows with it.
+        for suite in sweeping:
+            key = f"{suite}:--list"
+            if key not in extended:
+                deadline += WINETEST_EXTRA_SECONDS
+                extended.add(key)
         for g in pending:
             if g not in extended:
                 deadline += OPTIONAL_EXTRA_SECONDS
@@ -734,6 +795,27 @@ def winetests_lost(text: str) -> list[str]:
     return [label for label in _WT_STARTED.findall(text) if label not in done]
 
 
+# `[WT] user32:--list: started` opens a sweep; winlogon closes it with
+# `[WT] user32: sweep complete, ...` or `[WT] user32: --list produced no subtest
+# names - suite NOT swept`. The `--list` label is kept out of _WT_STARTED on
+# purpose (it is bookkeeping, not a subtest), so nothing else sees a sweep run.
+_SWEEP_STARTED = re.compile(r"\[WT\] ([A-Za-z0-9_/]+):--list: started ")
+_SWEEP_DONE = re.compile(r"\[WT\] ([A-Za-z0-9_/]+): (?:sweep complete|--list produced no subtest)")
+
+
+def sweeps_unfinished(text: str) -> list[str]:
+    """Suites whose SWEEP started and has not said it finished.
+
+    Without this a sweep boot did not wait for its own sweep. The drain ends when
+    nothing graded is outstanding, and while `--list` runs -- and in the gap
+    between one subtest's verdict and the next one's start line -- nothing graded
+    is. MEASURED: the serial stopped mid-line during `user32:--list` and the boot
+    reported green having run zero subtests. The workaround was to remember to
+    export VIBEOS_LADDER_DRAIN_FLOOR near 2400, which is a recipe, not a tool."""
+    done = set(_SWEEP_DONE.findall(text))
+    return [s for s in _SWEEP_STARTED.findall(text) if s not in done]
+
+
 def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     """None if every ladder guest reported PASS; else a failure dict with the
     same {classification, salient} shape the smoke triage stages use.
@@ -759,6 +841,9 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     missing += [g for g in _optional_in_flight(text) if g not in missing]
 
     lost = winetests_lost(text)
+    # A sweep that never finished lost every subtest after the point it died,
+    # and only this can say so: those subtests never printed a start line.
+    lost += [f"{suite}:--list" for suite in sweeps_unfinished(text)]
 
     if not missing and not wrong and not lost:
         return None
