@@ -264,7 +264,7 @@ dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
 cnt-rust = { path = "../cnt-rust", default-features = false }
 # The string family moved out so ucrtbase can link the same bodies; see
 # crt-portable-rust/Cargo.toml. `string` keeps msvcrt.dll exporting them.
-crt-portable-rust = { path = "../crt-portable-rust", features = ["string"] }
+crt-portable-rust = { path = "../crt-portable-rust", features = ["string", "strnlen"] }
 msvcrt-sys = { path = "../msvcrt-sys" }
 
 # The `msvcrt_shared` half of this crate, split out because it is ALSO linked into

@@ -240,15 +240,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     commit = subprocess.run(
-        ["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, check=True,
-        capture_output=True, text=True,
+        ["git", "rev-parse", "--short=12", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     # A dirty tree is NOT that commit: stamping it bare would attribute rows to code
     # that never produced them. The table file itself is excluded, since writing it
     # is what this step does.
     dirty = subprocess.run(
         ["git", "status", "--porcelain", "--", ".", f":!{args.table.relative_to(ROOT)}"],
-        cwd=ROOT, check=True, capture_output=True, text=True,
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     if dirty:
         commit += "-dirty"

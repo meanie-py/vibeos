@@ -42,8 +42,10 @@ path = "src/lib.rs"
 
 [features]
 default = []
-# strcat strcpy strcspn strlen strncat strncpy strnlen strpbrk strspn
+# strcat strcpy strcspn strlen strncat strncpy strpbrk strspn
 string = []
+# strnlen, split out because only msvcrt.dll takes it (see the note in src/lib.rs).
+strnlen = ["string"]
 
 [dependencies]
 cnt-rust = { path = "../cnt-rust", default-features = false }

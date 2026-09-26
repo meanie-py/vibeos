@@ -63,8 +63,8 @@ bits = []
 # LOCALE-AWARE takeover, so it is also the first consumer of locale_update.
 ismbbyte = []
 
-# string/{i386,amd64,arm64}/ strcat strcpy strcspn strlen strncat strncpy strnlen
-# strpbrk strspn -- the first REUSED family: msvcrt's shipping bodies, which graded
+# string/{i386,amd64,arm64}/ strcat strcpy strcspn strlen strncat strncpy strpbrk
+# strspn -- the first REUSED family: msvcrt's shipping bodies, which graded
 # MATCH against Microsoft's UCRT in the guest and are stateless on both sides.
 # They live in crt-portable-rust precisely so this crate never depends on
 # msvcrt-crt-rust; see that crate's Cargo.toml.
