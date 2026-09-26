@@ -135,7 +135,22 @@ _TAGGED_LOCATION = re.compile(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+
 _TRAILING_LOCATION = re.compile(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$")
 
 
+# scan_dropped_asserts ends a finding with EVERY Rust twin's location:
+# `ex.h:1037: ExAcquirePushLockExclusive: C has 1 assert(s), Rust has 0 (a.rs:232, b.rs:753,
+# gdiobj.rs:260)`. The prefix strippers above drop the leading `ex.h:1037` and keep the list,
+# so a 3-line extern block added to gdiobj.rs moved `:260` to `:263` and `land` refused the
+# lane on 2 "new" findings that were the same two (2026-09-26). Drop the line from any source
+# location left in the key, wherever it sits.
+_INNER_LOCATION = re.compile(
+    r"(?P<f>[\w./+-]+\.(?:rs|c|h|cpp|hpp|inc|py|S|s|md|txt|cmake|spec|toml|sh)):\d+(?::\d+)?"
+)
+
+
 def _finding_key(line: str) -> str:
+    return _INNER_LOCATION.sub(r"\g<f>", _finding_key_prefix(line))
+
+
+def _finding_key_prefix(line: str) -> str:
     m = _LOCATION.match(line)
     if m:
         return f"{m.group('file')}: {line[m.end() :].strip()}"

@@ -5625,12 +5625,15 @@ def test_every_baseline_line_is_immune_to_line_drift():
     blind: list[str] = []
     for path in baselines:
         for line in path.read_text().splitlines():
-            m = loc.search(line)
-            if not line.strip() or not m:
+            if not line.strip():
                 continue
-            drifted = line[: m.start("n")] + str(int(m.group("n")) + 1000) + line[m.end("n") :]
-            if lints._finding_key(line) != lints._finding_key(drifted):
-                blind.append(f"{path.name}: {line[:110]}")
+            # EVERY location, not just the first: scan_dropped_asserts lists its Rust twins'
+            # locations after the message, and perturbing only the leading one missed them.
+            for m in loc.finditer(line):
+                drifted = line[: m.start("n")] + str(int(m.group("n")) + 1000) + line[m.end("n") :]
+                if lints._finding_key(line) != lints._finding_key(drifted):
+                    blind.append(f"{path.name}: {line[:110]}")
+                    break
     assert not blind, (
         f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
         f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
