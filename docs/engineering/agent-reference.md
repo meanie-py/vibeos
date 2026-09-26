@@ -460,7 +460,7 @@ named trap. Contract format, examples and limits: `tools/rustconv/data/difftest/
 It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, which takes
 `--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
 
-Each bug class it finds becomes a gated `check` scanner over every body. The first three
+Each bug class it finds becomes a gated `check` scanner over every body. The first four
 (all with EMPTY baselines, all run by `./vibeos-cli check`):
 
 - `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
@@ -470,8 +470,13 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   246-site review queue.
 - `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
   it unconditionally.
+- `scan_store_on_failure`: the C writes an out-param only after its last failure `return`
+  (compress.c's `out:` label), and the Rust writes it and then returns a status that can
+  fail. A store dominated by a success test, and a `*pp = NULL` (COM's rule), stay quiet.
+  Its oracle holds on ~670 of the tree's ~8,100 pointer-param stores, so a clean run means
+  something.
 
-The first and third read the C twin by function NAME through `tools/c_twin.py`. Its index
+The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
 of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
 cold build, then only changed files are re-read. Each scanner honours
 `// nolint: <tag>` on a reviewed line, with the reason written beside it.
