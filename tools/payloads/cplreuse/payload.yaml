@@ -1,0 +1,20 @@
+# cplreuse — does a DLL load hang when it reuses a VA another DLL just vacated?
+#   tools/payloads/cplreuse/build.sh <arch>
+#   VIBEOS_PAYLOAD=cplreuse ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload cplreuse
+# Loads and frees the stock applets in Control Panel's order (all link at 0x10000000); a
+# watchdog names the load that stalls.
+name: cplreuse
+description: load/free each .cpl in turn and flag a load that stops making progress
+
+build_hint: "tools/payloads/cplreuse/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/cplreuse/cplreuse-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/cplreuse.exe
+
+test:
+  launch_marker: "[CPLREUSE] done"
+  pass_marker: "[CPLREUSE] done VERDICT=PASS"
+  launch_drain_secs: 1200

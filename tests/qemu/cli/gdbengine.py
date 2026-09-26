@@ -107,8 +107,12 @@ def _gdb_arch(arch: str) -> str:
 def _kernel_image(arch: str) -> Path:
     arch = archcfg.base_arch(arch)
     kernel_dir = PROJECT_DIR / f"build-{arch}" / "ntoskrnl"
-    if smp_count() is not None:
-        return kernel_dir / "ntkrnlmp" / "ntkrnlmp.exe"
+    # Every media boots the MP kernel by default (DefaultOS=LiveCD_SMP / ReactOS_Arm64_MP since
+    # 2026-09-12), with or without VIBEOS_QEMU_SMP. Naming the UP image here loaded its DWARF at
+    # the MP kernel's base, so every symbol and struct offset in a gdb session was wrong.
+    mp = kernel_dir / "ntkrnlmp" / "ntkrnlmp.exe"
+    if mp.is_file():
+        return mp
     return kernel_dir / "ntoskrnl.exe"
 
 

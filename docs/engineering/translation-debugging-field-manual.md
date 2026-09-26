@@ -3879,6 +3879,18 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### A CComPtr guard PLUS the explicit Release it replaces: two releases per call
+`CDefView_OnCreate_body` wraps `pdt` and `ppf2` in `CppComPtrGuard` (the translation of a C++
+`CComPtr` local), then also calls `Release` on both at the end of the function, the way C code
+without smart pointers would. Every view creation dropped its FOLDER's refcount by one, and
+the fault surfaced much later and elsewhere: closing any folder window released an
+already-freed folder in browseui (`OnDestroy`, RIP 0). Nothing warns: both halves are
+individually right. Find it by looking for `Release)(X)` in a function that also has
+`CppComPtrGuard::new(addr_of_mut!(X))`, where X is not set to null afterwards (a reassignment
+right after the release, as in a CComPtr walk, is fine). Chase a use-after-free on a COM object
+with a gdb probe that logs every AddRef/Release of that object with its return addresses: the
+double release shows as two Releases from one frame.
+
 ### C++ `this` passed where an INTERFACE is expected converts; the raw Rust `this` does not
 `SFV_CREATE sfvparams = { sizeof(SFV_CREATE), this, NULL, this };` in CControlPanelFolder converts
 `this` to `IShellFolder*` for one field and to `IShellFolderViewCB*` for the other: two different
@@ -10444,6 +10456,16 @@ arches. Cause: `gen-delaylib.py` skipped only `.def` lines whose FIRST token is 
 it, so `GetProcAddress` failed. Fix: a `NONAME` export gets an ordinal INT entry
 (`IMAGE_ORDINAL_FLAG | ordinal`); `tools/test_gen_delaylib.py` pins it. To check a DLL, look for
 the function's name as a string in the importer: a NONAME import must not have one.
+
+### user32 unloaded and reloaded in one process fails DllMain (1114), then 1450 for everyone
+Symptom: a console process that `LoadLibrary`s and frees applets (`*.cpl`, all importing
+user32) gets `ERROR_DLL_INIT_FAILED` on the second, then `ERROR_NO_SYSTEM_RESOURCES` for every
+later user32 importer; on i386 one load hung. Cause: the first applet was the process's only
+user32 importer, so `FreeLibrary` unloaded user32 after it had connected to win32k. The
+thread's CLIENTINFO keeps `CI_INITTHREAD` and the PEB's `KernelCallbackTable` still points into
+the unloaded image, so the reload's `ClientThreadSetupHelper` refuses. Fix: user32 pins itself
+(`LdrAddRefDll(LDR_ADDREF_DLL_PIN)`) once DllMain succeeds. Repro:
+`tools/payloads/cplreuse`.
 
 ### A DLL "loads fine" then crashes at PC=0xFFBADD11 `[§9.44-poison]`
 Our ntdll loader intentionally **poison-snaps** missing by-name imports instead of failing the

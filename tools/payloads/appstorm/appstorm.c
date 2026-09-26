@@ -13,6 +13,7 @@
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 #define SAY(...) DbgPrint("[APPSTORM] " __VA_ARGS__)
+#include "../stackdump.h"
 
 typedef struct { const char *name; const char *exe; const char *args; } app_t;
 static const app_t apps[] = {
@@ -75,12 +76,42 @@ static void ascii(const WCHAR *w, char *o, size_t n)
     o[i] = 0;
 }
 
+static void dump_hung_thread(HWND h)
+{
+    DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
+    dump_thread(pid, tid);
+}
+
+/* Boot-time `setup -mini` installs devices and registers components for minutes after the
+ * desktop appears, with its own "Please wait" dialog. Apps launched meanwhile compete with it
+ * (a window takes past any sane timeout to answer) and its dialog sits among theirs, so wait. */
+static int setup_running(void)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    int found = 0;
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (!lstrcmpiW(pe.szExeFile, L"setup.exe"))
+                found = 1;
+        } while (!found && Process32NextW(snap, &pe));
+    CloseHandle(snap);
+    return found;
+}
+
 int main(void)
 {
     int pass = 0, fail = 0, absent = 0;
     WCHAR sysdir[MAX_PATH], windir[MAX_PATH];
     GetSystemDirectoryW(sysdir, MAX_PATH);
     GetWindowsDirectoryW(windir, MAX_PATH);
+    DWORD t0 = GetTickCount();
+    while (setup_running() && GetTickCount() - t0 < 600000)
+        Sleep(2000);
+    SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
+        (GetTickCount() - t0) / 1000);
     SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
@@ -129,12 +160,25 @@ int main(void)
             char ta[128], ca[64];
             RECT r = { 0 };
             DWORD_PTR res;
-            GetWindowTextW(got.h[i], t, 128);
+            /* A window that populates synchronously (Control Panel loads every applet on its UI
+             * thread) can take well past 5s under TCG, which is BUSY, not hung. Keep asking for up
+             * to 60s and report the wait; only a window silent that long is HUNG. */
+            DWORD asked = GetTickCount();
+            int resp = SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 5000, &res) != 0;
+            if (!resp) {
+                SAY("  win %d slow to answer, sampling:\n", i);
+                dump_hung_thread(got.h[i]);
+                while (!resp && GetTickCount() - asked < 60000)
+                    resp = SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0, SMTO_BLOCK, 5000, &res) != 0;
+                SAY("  win %d %s after %lums\n", i, resp ? "answered" : "still silent", GetTickCount() - asked);
+            }
+            /* Read these once it has answered: a window mid-load has no title yet, and
+             * InternalGetWindowText reads it without sending the window a message. */
+            InternalGetWindowText(got.h[i], t, 128);
             GetClassNameW(got.h[i], c, 64);
             GetWindowRect(got.h[i], &r);
             ascii(t, ta, sizeof ta);
             ascii(c, ca, sizeof ca);
-            int resp = SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 5000, &res) != 0;
             int small = (r.right - r.left) < 50 || (r.bottom - r.top) < 30;
             /* An error box is a dialog whose title says so, from any process. */
             if (!strcmp(ca, "#32770") && (strstr(ta, "rror") || strstr(ta, "ailed") || strstr(ta, "xception")))

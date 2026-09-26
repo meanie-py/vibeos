@@ -545,12 +545,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     IShellFolderViewCB, so the view's first `MessageSFVCB` ran `ParseDisplayName` and faulted in
     CRegFolder. appstorm on amd64: explorer-folder, Control Panel (18 applets drawn) and
     Network Connections all PASS.
-  - OPEN, amd64: closing a folder window faults at RIP 0 in
-    `browseui!CShellBrowser::OnDestroy+0x352`, `fCurrentShellFolder.Release()` through a
-    zeroed vtable. The folder was released once too often, probably by the Rust CDefView, which
-    every folder type shares.
-  - OPEN, i386: Control Panel's frame opens, but its view never fills and the window is HUNG (2
-    of 2 runs); `ncpa.cpl` opened on 1 of 2. explorer-folder PASSES on i386 too.
+  - FIXED: closing a folder window faulted at RIP 0 in `browseui!CShellBrowser::OnDestroy`
+    (`fCurrentShellFolder.Release()` on a freed folder). `CDefView_OnCreate_body` released
+    `pdt` and `ppf2` explicitly AND through their CComPtr guards, so every view creation cost
+    its folder one reference. Found with a gdb probe logging each AddRef/Release of the folder.
+  - OPEN: with that fixed, browseui warns `Unexpected RefCount > 0 (1)` for the view at close.
+    The double `pdt` release (the view's own IDropTarget) had been hiding a +1 leak on CDefView.
+  - FIXED: the i386 Control Panel "hang" was a thread busy loading applets while boot-time
+    `setup -mini` was still installing devices (7.8s to answer). appstorm now waits for setup
+    to exit and gives a slow window 60s, sampling its PC; on amd64 and i386 explorer-folder,
+    Control Panel and Network Connections all PASS with titled windows.
+  - FIXED: a process that loaded and FreeLibrary'd its only user32 importer (Control Panel's
+    applet enumeration in a console process) unloaded user32; the reload failed DllMain on the
+    thread's stale `CI_INITTHREAD` (1114), every later user32 importer failed (1450), and
+    `powercfg.cpl` hung on i386. user32 now pins itself once connected. `tools/payloads/cplreuse`
+    replays it: 12/12 loads on amd64 and i386.
   - FIXED: amd64 setup.exe faulted (RIP `0x1b85ac0`) as registration began. A gdb write-watch
     showed `LdrpManifestProberRoutine` being set by the real setter, from a SECOND kernel32
     mapped at `0x1b50000`: ucrtbase's api-set load went through a redirect that returns a bare

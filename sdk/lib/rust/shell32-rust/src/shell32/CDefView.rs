@@ -4529,13 +4529,9 @@ pub unsafe fn CDefView_OnCreate_body(this: *mut CDefView, uMsg: UINT, wParam: WP
     CDefView_UpdateStatusbar_body(this);
     CDefView_UpdateStatusbarLocation_body(this);
 
-    if !pdt.is_null() {
-        ((*((*pdt).lpVtbl)).Release)(pdt);
-    }
-    if !ppf2.is_null() {
-        ((*((*ppf2).lpVtbl)).Release)(ppf2);
-    }
-
+    // `pdt` and `ppf2` are CComPtrs in the C++: their guards release them at scope exit. An
+    // explicit Release here as well dropped the FOLDER's refcount by one per view created, and
+    // closing any folder window then released a freed folder (browseui OnDestroy, RIP 0).
     S_OK as LRESULT
 }
 

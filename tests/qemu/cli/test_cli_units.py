@@ -2221,12 +2221,15 @@ def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, 
     assert selected == [int(smp) if smp else None]
     if smp is None:
         assert "-smp" not in cmd
-        assert ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
     else:
         assert cmd[cmd.index("-smp") + 1] == smp
-        assert (
-            ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
-        )
+    # The media boots the MP kernel either way, so symbols come from it whenever it is built.
+    up = tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
+    mp = tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+    assert ge_mod._kernel_image("arm64") == up
+    mp.parent.mkdir(parents=True)
+    mp.write_bytes(b"MZ")
+    assert ge_mod._kernel_image("arm64") == mp
 
 
 def test_gdbengine_expand_verb():
