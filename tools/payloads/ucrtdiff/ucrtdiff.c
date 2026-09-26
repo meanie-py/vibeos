@@ -104,6 +104,50 @@ long long __cdecl strtoimax(const char *, char **, int);
 unsigned long long __cdecl strtoumax(const char *, char **, int);
 long long __cdecl wcstoimax(const wchar_t *, wchar_t **, int);
 unsigned long long __cdecl wcstoumax(const wchar_t *, wchar_t **, int);
+/* convert/atox.cpp and convert/xtoa.cpp, graded two-sided by run_atox_family and
+ * run_xtoa_family. The shipping-side spellings are declared too: the toolchain's
+ * headers lack some (_wtoll, _atoll_l, ...), and a missing declaration is a build
+ * error rather than a quietly ungraded row. */
+typedef void(__cdecl *ucrtdiff_iph_t)(const wchar_t *, const wchar_t *, const wchar_t *,
+                                      unsigned, uintptr_t);
+ucrtdiff_iph_t __cdecl ref__set_invalid_parameter_handler(ucrtdiff_iph_t);
+long long __cdecl _atoll_l(const char *, _locale_t);
+long long __cdecl _wtoll(const wchar_t *);
+long long __cdecl _wtoll_l(const wchar_t *, _locale_t);
+int __cdecl ref__atoi_l(const char *, _locale_t);
+long __cdecl ref__atol_l(const char *, _locale_t);
+long long __cdecl ref_atoll(const char *);
+long long __cdecl ref__atoll_l(const char *, _locale_t);
+long long __cdecl ref__atoi64(const char *);
+long long __cdecl ref__atoi64_l(const char *, _locale_t);
+int __cdecl ref__wtoi(const wchar_t *);
+int __cdecl ref__wtoi_l(const wchar_t *, _locale_t);
+long __cdecl ref__wtol(const wchar_t *);
+long __cdecl ref__wtol_l(const wchar_t *, _locale_t);
+long long __cdecl ref__wtoll(const wchar_t *);
+long long __cdecl ref__wtoll_l(const wchar_t *, _locale_t);
+long long __cdecl ref__wtoi64(const wchar_t *);
+long long __cdecl ref__wtoi64_l(const wchar_t *, _locale_t);
+char *__cdecl ref__itoa(int, char *, int);
+int __cdecl ref__itoa_s(int, char *, size_t, int);
+char *__cdecl ref__ltoa(long, char *, int);
+int __cdecl ref__ltoa_s(long, char *, size_t, int);
+char *__cdecl ref__ultoa(unsigned long, char *, int);
+int __cdecl ref__ultoa_s(unsigned long, char *, size_t, int);
+char *__cdecl ref__i64toa(long long, char *, int);
+int __cdecl ref__i64toa_s(long long, char *, size_t, int);
+char *__cdecl ref__ui64toa(unsigned long long, char *, int);
+int __cdecl ref__ui64toa_s(unsigned long long, char *, size_t, int);
+wchar_t *__cdecl ref__itow(int, wchar_t *, int);
+int __cdecl ref__itow_s(int, wchar_t *, size_t, int);
+wchar_t *__cdecl ref__ltow(long, wchar_t *, int);
+int __cdecl ref__ltow_s(long, wchar_t *, size_t, int);
+wchar_t *__cdecl ref__ultow(unsigned long, wchar_t *, int);
+int __cdecl ref__ultow_s(unsigned long, wchar_t *, size_t, int);
+wchar_t *__cdecl ref__i64tow(long long, wchar_t *, int);
+int __cdecl ref__i64tow_s(long long, wchar_t *, size_t, int);
+wchar_t *__cdecl ref__ui64tow(unsigned long long, wchar_t *, int);
+int __cdecl ref__ui64tow_s(unsigned long long, wchar_t *, size_t, int);
 int __cdecl ref_atoi(const char *);
 long __cdecl ref_atol(const char *);
 int __cdecl ref_tolower(int);
@@ -588,8 +632,12 @@ static void run_strtox(void)
             grade(with_base("strtoul.end", bases[b]), in[i], off(in[i], e1), off(in[i], e3), off(in[i], e2));
 #endif
         }
+#if UCRTDIFF_REF_HAS_atoi
         grade("atoi", in[i], atoi(in[i]), rust_atoi(in[i]), ref_atoi(in[i]));
+#endif
+#if UCRTDIFF_REF_HAS_atol
         grade("atol", in[i], atol(in[i]), rust_atol(in[i]), ref_atol(in[i]));
+#endif
     }
 }
 
@@ -747,6 +795,249 @@ static void run_wcstox_family(void)
 #endif
 #if UCRTDIFF_REF_HAS__wcstoumax_l
     STRTOX_WIDE(_wcstoumax_l, NULL);
+#endif
+}
+
+/* ---- atox / xtoa ------------------------------------------------------- */
+
+/* The _s forms' error paths call the invalid-parameter handler, and the default
+ * one fast-fails the process. Both CRT instances -- the shipping DLL and the
+ * reference set's private copy -- get a handler that only COUNTS, and the count is
+ * graded like any other output: whether a call raises the handler is contract. */
+static volatile long g_iph_dll, g_iph_ref;
+static void __cdecl iph_dll(const wchar_t *e, const wchar_t *f, const wchar_t *fl, unsigned l,
+                            uintptr_t r)
+{ (void)e; (void)f; (void)fl; (void)l; (void)r; g_iph_dll++; }
+static void __cdecl iph_ref(const wchar_t *e, const wchar_t *f, const wchar_t *fl, unsigned l,
+                            uintptr_t r)
+{ (void)e; (void)f; (void)fl; (void)l; (void)r; g_iph_ref++; }
+static void install_counting_iph(void)
+{
+    _set_invalid_parameter_handler(iph_dll);
+    ref__set_invalid_parameter_handler(iph_ref);
+}
+
+#define ATOX_ROW(fn, s, lbl, ...) do {                                              \
+        *_errno() = 0; *ref__errno() = 0;                                           \
+        long long v1 = (long long)fn(s, ##__VA_ARGS__);                             \
+        long long v2 = (long long)ref_##fn(s, ##__VA_ARGS__);                       \
+        int n1 = *_errno(), n2 = *ref__errno();                                     \
+        grade2(#fn, lbl, v1, v2);                                                   \
+        grade2(#fn ".errno", lbl, n1, n2);                                          \
+    } while (0)
+
+#define ATOX_NARROW(fn, ...)                                                         \
+    for (unsigned i = 0; i < STRTOX_N; i++)                                          \
+        ATOX_ROW(fn, g_strtox_in[i], g_strtox_in[i], ##__VA_ARGS__)
+
+#define ATOX_WIDE(fn, ...)                                                           \
+    for (unsigned i = 0; i < STRTOX_N + STRTOX_WN; i++) {                            \
+        wchar_t w[48]; const wchar_t *ws;                                            \
+        if (i < STRTOX_N) {                                                          \
+            unsigned k = 0;                                                          \
+            for (; g_strtox_in[i][k] && k < 47; k++) w[k] = (unsigned char)g_strtox_in[i][k]; \
+            w[k] = 0; ws = w;                                                        \
+        } else {                                                                     \
+            ws = g_strtox_win[i - STRTOX_N];                                         \
+        }                                                                            \
+        ATOX_ROW(fn, ws, label_idx(i), ##__VA_ARGS__);                               \
+    }
+
+static void run_atox_family(void)
+{
+    install_counting_iph();
+#if UCRTDIFF_REF_HAS_atoi
+    ATOX_NARROW(atoi);
+#endif
+#if UCRTDIFF_REF_HAS__atoi_l
+    ATOX_NARROW(_atoi_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_atol
+    ATOX_NARROW(atol);
+#endif
+#if UCRTDIFF_REF_HAS__atol_l
+    ATOX_NARROW(_atol_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS_atoll
+    ATOX_NARROW(atoll);
+#endif
+#if UCRTDIFF_REF_HAS__atoll_l
+    ATOX_NARROW(_atoll_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__atoi64
+    ATOX_NARROW(_atoi64);
+#endif
+#if UCRTDIFF_REF_HAS__atoi64_l
+    ATOX_NARROW(_atoi64_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__wtoi
+    ATOX_WIDE(_wtoi);
+#endif
+#if UCRTDIFF_REF_HAS__wtoi_l
+    ATOX_WIDE(_wtoi_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__wtol
+    ATOX_WIDE(_wtol);
+#endif
+#if UCRTDIFF_REF_HAS__wtol_l
+    ATOX_WIDE(_wtol_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__wtoll
+    ATOX_WIDE(_wtoll);
+#endif
+#if UCRTDIFF_REF_HAS__wtoll_l
+    ATOX_WIDE(_wtoll_l, NULL);
+#endif
+#if UCRTDIFF_REF_HAS__wtoi64
+    ATOX_WIDE(_wtoi64);
+#endif
+#if UCRTDIFF_REF_HAS__wtoi64_l
+    ATOX_WIDE(_wtoi64_l, NULL);
+#endif
+    /* NULL: the invalid-parameter path, EINVAL, and 0. */
+#if UCRTDIFF_REF_HAS_atoi
+    g_iph_dll = g_iph_ref = 0;
+    ATOX_ROW(atoi, (const char *)0, "NULL");
+    grade2("atoi.iph", "NULL", g_iph_dll, g_iph_ref);
+#endif
+#if UCRTDIFF_REF_HAS__wtoi64
+    g_iph_dll = g_iph_ref = 0;
+    ATOX_ROW(_wtoi64, (const wchar_t *)0, "NULL");
+    grade2("_wtoi64.iph", "NULL", g_iph_dll, g_iph_ref);
+#endif
+}
+
+/* FNV-1a over the WHOLE buffer, not just up to the NUL: a too-small _s call leaves
+ * digits after the cleared buffer[0], and that is observable. */
+static long long fnv(const void *p, size_t n)
+{
+    const unsigned char *b = (const unsigned char *)p;
+    unsigned long long h = 1469598103934665603ULL;
+    while (n--) { h ^= *b++; h *= 1099511628211ULL; }
+    return (long long)h;
+}
+
+static const long long g_xtoa_vals[] = {
+    0, 1, -1, 7, 9, 10, 35, 36, 255, -255, 2147483647LL, -2147483647LL - 1,
+    2147483648LL, 4294967295LL, 1234567890, -1234567890, 0x7FFFFFFFFFFFFFFFLL,
+    -0x7FFFFFFFFFFFFFFFLL - 1, (long long)0xDEADBEEFCAFEBABEULL, 1000000007LL,
+};
+#define XTOA_VN (sizeof(g_xtoa_vals) / sizeof(g_xtoa_vals[0]))
+static const int g_xtoa_radix[] = { 2, 8, 10, 16, 36, 3 };
+/* _s only: invalid radices are part of its contract. The plain forms never check
+ * the radix -- 0 divides by zero -- so they are not asked. */
+static const int g_xtoa_radix_s[] = { 2, 10, 16, 36, 0, 1, 37 };
+static const size_t g_xtoa_counts[] = { 0, 1, 2, 3, 5, 9, 11, 33, 66 };
+
+#define XTOA_PLAIN(ch, T, fn) do {                                                  \
+        for (unsigned i = 0; i < XTOA_VN; i++)                                      \
+            for (unsigned r = 0; r < 6; r++) {                                      \
+                ch b1[80], b2[80];                                                  \
+                for (unsigned k = 0; k < 80; k++) b1[k] = b2[k] = (ch)'X';          \
+                ch *p1 = fn((T)g_xtoa_vals[i], b1, g_xtoa_radix[r]);                \
+                ch *p2 = ref_##fn((T)g_xtoa_vals[i], b2, g_xtoa_radix[r]);          \
+                grade2(with_base(#fn, g_xtoa_radix[r]), label_idx(i),               \
+                       fnv(b1, sizeof b1), fnv(b2, sizeof b2));                     \
+                grade2(with_base(#fn ".ret", g_xtoa_radix[r]), label_idx(i),        \
+                       p1 == b1, p2 == b2);                                         \
+            }                                                                       \
+    } while (0)
+
+#define XTOA_S(ch, T, fn) do {                                                      \
+        for (unsigned i = 0; i < XTOA_VN; i++)                                      \
+            for (unsigned r = 0; r < 7; r++)                                        \
+                for (unsigned c = 0; c < 9; c++) {                                  \
+                    ch b1[80], b2[80];                                              \
+                    for (unsigned k = 0; k < 80; k++) b1[k] = b2[k] = (ch)'X';      \
+                    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;    \
+                    int r1 = fn((T)g_xtoa_vals[i], b1, g_xtoa_counts[c], g_xtoa_radix_s[r]); \
+                    int r2 = ref_##fn((T)g_xtoa_vals[i], b2, g_xtoa_counts[c], g_xtoa_radix_s[r]); \
+                    const char *lbl = label_idx(i * 10 + c);                       \
+                    grade2(with_base(#fn, g_xtoa_radix_s[r]), lbl,                   \
+                           fnv(b1, sizeof b1), fnv(b2, sizeof b2));                 \
+                    grade2(with_base(#fn ".ret", g_xtoa_radix_s[r]), lbl, r1, r2);  \
+                    grade2(with_base(#fn ".errno", g_xtoa_radix_s[r]), lbl,         \
+                           *_errno(), *ref__errno());                               \
+                    grade2(with_base(#fn ".iph", g_xtoa_radix_s[r]), lbl,           \
+                           g_iph_dll, g_iph_ref);                                   \
+                }                                                                   \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;                \
+        int r1 = fn((T)1, (ch *)0, 10, 10);                                         \
+        int r2 = ref_##fn((T)1, (ch *)0, 10, 10);                                   \
+        grade2(#fn ".null.ret", "NULL", r1, r2);                                    \
+        grade2(#fn ".null.errno", "NULL", *_errno(), *ref__errno());                \
+        grade2(#fn ".null.iph", "NULL", g_iph_dll, g_iph_ref);                      \
+    } while (0)
+
+static void run_xtoa_family(void)
+{
+    install_counting_iph();
+#if UCRTDIFF_REF_HAS__itoa
+    XTOA_PLAIN(char, int, _itoa);
+#endif
+#if UCRTDIFF_REF_HAS__ltoa
+    XTOA_PLAIN(char, long, _ltoa);
+#endif
+#if UCRTDIFF_REF_HAS__ultoa
+    XTOA_PLAIN(char, unsigned long, _ultoa);
+#endif
+#if UCRTDIFF_REF_HAS__i64toa
+    XTOA_PLAIN(char, long long, _i64toa);
+#endif
+#if UCRTDIFF_REF_HAS__ui64toa
+    XTOA_PLAIN(char, unsigned long long, _ui64toa);
+#endif
+#if UCRTDIFF_REF_HAS__itow
+    XTOA_PLAIN(wchar_t, int, _itow);
+#endif
+#if UCRTDIFF_REF_HAS__ltow
+    XTOA_PLAIN(wchar_t, long, _ltow);
+#endif
+#if UCRTDIFF_REF_HAS__ultow
+    XTOA_PLAIN(wchar_t, unsigned long, _ultow);
+#endif
+#if UCRTDIFF_REF_HAS__i64tow
+    XTOA_PLAIN(wchar_t, long long, _i64tow);
+#endif
+#if UCRTDIFF_REF_HAS__ui64tow
+    XTOA_PLAIN(wchar_t, unsigned long long, _ui64tow);
+#endif
+}
+
+/* Split from the plain forms only to keep each legacy export well inside
+ * UCRTDIFF_EXPORT_TIMEOUT_MS: 10 exports x 20 values x 7 radices x 9 counts. */
+static void run_xtoa_s_family(void)
+{
+    install_counting_iph();
+#if UCRTDIFF_REF_HAS__itoa_s
+    XTOA_S(char, int, _itoa_s);
+#endif
+#if UCRTDIFF_REF_HAS__ltoa_s
+    XTOA_S(char, long, _ltoa_s);
+#endif
+#if UCRTDIFF_REF_HAS__ultoa_s
+    XTOA_S(char, unsigned long, _ultoa_s);
+#endif
+#if UCRTDIFF_REF_HAS__i64toa_s
+    XTOA_S(char, long long, _i64toa_s);
+#endif
+#if UCRTDIFF_REF_HAS__ui64toa_s
+    XTOA_S(char, unsigned long long, _ui64toa_s);
+#endif
+#if UCRTDIFF_REF_HAS__itow_s
+    XTOA_S(wchar_t, int, _itow_s);
+#endif
+#if UCRTDIFF_REF_HAS__ltow_s
+    XTOA_S(wchar_t, long, _ltow_s);
+#endif
+#if UCRTDIFF_REF_HAS__ultow_s
+    XTOA_S(wchar_t, unsigned long, _ultow_s);
+#endif
+#if UCRTDIFF_REF_HAS__i64tow_s
+    XTOA_S(wchar_t, long long, _i64tow_s);
+#endif
+#if UCRTDIFF_REF_HAS__ui64tow_s
+    XTOA_S(wchar_t, unsigned long long, _ui64tow_s);
 #endif
 }
 
@@ -1055,6 +1346,9 @@ static void run_legacy(void)
         { "legacy:strtox", run_strtox },
         { "legacy:strtox-family", run_strtox_family },
         { "legacy:wcstox-family", run_wcstox_family },
+        { "legacy:atox-family", run_atox_family },
+        { "legacy:xtoa-family", run_xtoa_family },
+        { "legacy:xtoa_s-family", run_xtoa_s_family },
         { "legacy:ctype", run_ctype },
         { "legacy:string", run_string },
 #define HAND(name) { #name, HAND_FN_##name },

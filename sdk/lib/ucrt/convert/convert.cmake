@@ -2,7 +2,6 @@
 list(APPEND UCRT_CONVERT_SOURCES
     convert/atof.cpp
     convert/atoldbl.cpp
-    convert/atox.cpp
     convert/c16rtomb.cpp
     convert/c32rtomb.cpp
     convert/cfout.cpp
@@ -25,7 +24,6 @@ list(APPEND UCRT_CONVERT_SOURCES
     convert/wctomb.cpp
     convert/wctrans.cpp
     convert/wctype.cpp
-    convert/xtoa.cpp
     convert/_fptostr.cpp
     convert/_mbslen.cpp
 )

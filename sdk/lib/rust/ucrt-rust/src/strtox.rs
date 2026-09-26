@@ -52,7 +52,7 @@ extern "C" {
 }
 
 /// The two character types the template is instantiated for.
-trait Char: Copy + Eq {
+pub(crate) trait Char: Copy + Eq {
     fn code(self) -> u32;
     /// `parse_digit`: the digit value, or `u32::MAX` (the C's `(unsigned)-1`).
     fn digit(self) -> u32;
@@ -137,7 +137,7 @@ unsafe fn invalid_parameter() {
 /// `parse_integer_from_string` + `parse_integer`, for an accumulator of `bits`
 /// (32 or 64) bits. The result is the accumulator's bit pattern, which each
 /// export reinterprets as its own type, as the C's `static_cast<Integer>` does.
-unsafe fn parse<C: Char>(
+pub(crate) unsafe fn parse<C: Char>(
     string: *const C,
     end: *mut *const C,
     mut base: c_int,

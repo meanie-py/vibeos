@@ -91,5 +91,12 @@ tocase = []
 # A port: msvcrt's bodies are Wine's _MSVCR_VER=0 overflow contract. See src/strtox.rs.
 strtox = ["ctype"]
 
+# convert/atox.cpp -- atoi and its 15 siblings: the strtox template at base 10
+# with no end pointer, so a call into src/strtox.rs.
+atox = ["strtox"]
+
+# convert/xtoa.cpp -- _itoa and its 19 siblings, plain and _s, narrow and wide.
+xtoa = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

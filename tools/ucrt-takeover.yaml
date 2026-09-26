@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 836
-  amd64: 836
-  arm64: 833
+  i386: 800
+  amd64: 800
+  arm64: 797
 
 families:
   bits:
@@ -469,3 +469,77 @@ families:
       - wcstoul
       - wcstoull
       - wcstoumax
+  atox:
+    replaces:
+      - sdk/lib/ucrt/convert/atox.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs. The
+      generator graded these on a 7-string corpus (and _wtoll not at all: the
+      toolchain headers lack it), so run_atox_family grades all 16 two-sided on
+      value AND errno over the strtox corpus -- the 32/64-bit limits, whitespace,
+      signs, letters -- plus Unicode digits for the wide forms and NULL through a
+      counting invalid-parameter handler: MATCH n=1398, dll_fail=0 for the run.
+    note: >
+      Every export in atox.cpp is parse_integer_from_string<T>(string, nullptr, 10,
+      locale) -- the strtox template at base 10 with no end pointer -- so each is a
+      call into the strtox port. It inherits UCRT's atoi contract with it: atoi
+      saturates at INT_MIN/INT_MAX with ERANGE (it parses as 32-bit long), and a
+      NULL string raises the invalid-parameter handler and returns 0 with EINVAL.
+    exports:
+      - _atoi64
+      - _atoi64_l
+      - _atoi_l
+      - _atol_l
+      - _atoll_l
+      - _wtoi
+      - _wtoi64
+      - _wtoi64_l
+      - _wtoi_l
+      - _wtol
+      - _wtol_l
+      - _wtoll
+      - _wtoll_l
+      - atoi
+      - atol
+      - atoll
+  xtoa:
+    replaces:
+      - sdk/lib/ucrt/convert/xtoa.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs. The
+      harness graded none of xtoa.cpp before; run_xtoa_family and
+      run_xtoa_s_family grade all 20 two-sided on the WHOLE 80-element buffer
+      (FNV over every byte, so digits left behind a cleared buffer[0] count), the
+      return value, errno and invalid-parameter handler calls: 20 values across
+      both widths at radices 2/3/8/10/16/36 for the plain forms, and for _s also
+      radix 0/1/37, counts 0..66 and a NULL buffer. Plain MATCH n=2400, _s MATCH
+      n=50430; dll_fail=0 across all 59,170 cases of the run.
+    note: >
+      A PORT of common_xtox (the digit loop) and common_xtox_s (the checked front
+      end), with the width a parameter. Silent-if-wrong details, each transcribed:
+      only radix 10 is ever signed (_itoa(-1, b, 16) is "ffffffff"); digits above 9
+      are lowercase; _s clears buffer[0] before its size and radix checks but after
+      its NULL/zero-count checks; a too-small _s buffer is found inside the digit
+      loop, so the digits written stay behind buffer[0]; the plain forms never check
+      the radix (0 divides by zero, 1 never terminates -- in the C and here alike).
+    exports:
+      - _itoa
+      - _itoa_s
+      - _ltoa
+      - _ltoa_s
+      - _ultoa
+      - _ultoa_s
+      - _i64toa
+      - _i64toa_s
+      - _ui64toa
+      - _ui64toa_s
+      - _itow
+      - _itow_s
+      - _ltow
+      - _ltow_s
+      - _ultow
+      - _ultow_s
+      - _i64tow
+      - _i64tow_s
+      - _ui64tow
+      - _ui64tow_s
