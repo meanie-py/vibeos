@@ -495,6 +495,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
+  blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
+  `./vibeos-cli check-tooling` with
+  `bindgen: refusing output in another worktree: /tmp`, which is
+  `tools/bindgen-stage.sh`'s ancestry walk deciding that `/tmp/.git` exists. Run on its own
+  the same file is 11/11, and the very next full `check-tooling` was 69/69, so the guard is
+  reacting to something transient rather than to the test's own tmpdir — **what creates a
+  `/tmp/.git` is NOT identified**, and no such path exists at rest. Same class as the two
+  load-sensitive tests below: the cheap discriminator is running the single file, and it
+  should be run before believing a lane broke this.
+  It is not free to ignore: this is a `land` PREFLIGHT, so a transient failure rejects the
+  submission of whichever lane happens to hit it.
+
 - **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
   probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
   The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
