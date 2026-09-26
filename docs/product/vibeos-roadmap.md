@@ -598,7 +598,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   submission of whichever lane happens to hit it.
 
 - **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
-  probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
+  probe-then-raw-access leads the entry below already lists as OPEN. FIXED** (2026-09-26,
+  `d295a7227d3` + `79b1a131ad7`). All 24 user32 subtests now sweep to completion with zero
+  quarantined and zero BUGCHECKs. Four distinct faults, not three -- fixing `win`'s
+  `NtUserFlashWindowEx` merely uncovered a second one behind it at `win32k.sys+0x91F6E`,
+  which disassembles to an INLINED ProbeForWrite followed by `movl %eax, (%edi)`:
+  `ONEPARAM_ROUTINE_GETPROCDEFLAYOUT`'s `*pdwLayout = ppi->dwLayout` in
+  `NtUserCallOneParam`. `scan_probe_then_deref.py` had reported that file clean because the
+  probe is on `Param` and the store goes through `pdwLayout = Param as PDWORD` -- an ALIAS.
+  One assignment hid a live unprivileged kernel crash from the tool written to enumerate
+  this exact class; the scanner now propagates taint across such casts (+8 leads elsewhere).
+  `input` was correctly filed as a different shape and is a different shape: there is no raw
+  dereference in the function at all. It hands a UNICODE_STRING whose `Buffer` is a user
+  pointer to `RtlIntegerToUnicodeString` / `RtlAppendUnicodeToString`, which write through it
+  with a bare `RtlCopyMemory`, so the fault lands INSIDE ntoskrnl with our frame as the
+  caller. Fixed by building into a kernel buffer and publishing, the way
+  `NtUserLoadKeyboardLayoutEx` in the same file already does for the read direction.
+  The original diagnosis, kept because the reasoning was sound and one part of it was wrong:
   The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
   anywhere) found all three; each one blinds every subtest after it, so they had to be
   quarantined one at a time to see the next:
@@ -1178,12 +1194,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernel memory. **The capture is in the syscall, not the helper** — `IntSetSysColors` is also
   reachable with kernel pointers, so protecting it there would have been wrong.
 
-- **The probe-then-raw-access class is CLEAR in win32k: `scan_probe_then_deref.py` reports
-  0 leads** (2026-09-25). The first sweep cleared the 108 syntactic-`*p` leads across 31 files
-  on 2026-09-23; fixing the scanner's blind spots then opened the bulk-copy and
-  interprocedural half, and **that is now closed too — 165 → 0 across a further 26 files.**
-  All three arches build and all three boot to the desktop (`_tWinMain entered` + `shell ready`
-  in every serial).
+- **The probe-then-raw-access class in win32k is CLOSED except two sites:
+  `scan_probe_then_deref.py` reports 2 leads, both the same defect** (2026-09-26, measured on
+  the merged tree). Two lanes worked this class in parallel and their counts have to be read
+  together: 108 syntactic-`*p` leads were cleared across 31 files on 2026-09-23; fixing the
+  scanner's blind spots then opened the bulk-copy and interprocedural half (165 leads, a
+  further 26 files); the auto-fixer took its share down to 69 refusals and the hand sweep took
+  the rest to 0 on its own scanner. Re-running the merged scanner over the merged tree gives
+  the real number: **2**, and they are the ime atomics below. Earlier "0 leads" and
+  "69 remaining" in this registry were each true of one lane's tree and are superseded by that
+  measurement. All three arches build and boot to the desktop (`_tWinMain entered` +
+  `shell ready`).
+
+  **Still OPEN, and now actually FLAGGED by the scanner** (it used to miss them):
+  `InterlockedIncrement`/`Decrement` on a user counter — ime's `nCntInIMEProc` at
+  `ime.rs:3120` and `:3137`, where the C had a `_SEH2_TRY` per access. There is **no
+  protected primitive for this at all**: an atomic RMW cannot be routed through
+  `KmProtectedCopyMemory`, because the read-modify-write has to fault as one unit rather than
+  copy in and out. Closing them means writing a `KmProtected` atomic next to
+  `KmProtectedCopyMemory` — a native-SEH shim on amd64/arm64, an exception-table entry for the
+  `lock` instruction on i386 — plus a self-test twin so the per-boot oracle covers it.
+  Restoring a probe there would look like a fix and would not be one.
 
   Two of the scanner's own numbers along the way were wrong in the direction that reads as more
   work, not less, and both are pinned by tests now: `RtlCopyMemory` was reported by both the
@@ -1201,10 +1232,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtGdiCreateDIBitmapInternal` forwarded a raw `pbmi` to a callee that dereferences it outside
   the probe — a hole **upstream has too**, so not a translation divergence.
 
-  **Still OPEN from this class, and NOT covered by the scanner's 0:** `InterlockedIncrement`
-  on a user counter (ime's `nCntInIMEProc`, where the C had a `_SEH2_TRY` per access) has **no
-  protected primitive at all** — it needs a `KmProtected` atomic in `kmsafecopy.c` on three
-  arches. Restoring a probe there would look like a fix and would not be one.
+  This class got worked down by TWO lanes independently, in the same week, without either
+  knowing: upstream-sync's `21b349ccb63` ("70 more probe-then-raw-copy sites") and the other
+  lane's `66fa9466bbc` (62 sites) overlapped heavily and collided as a merge conflict in
+  `message.rs`/`stretchblt.rs`/`winpos.rs`, where both had written the same `capture_from_user`
+  call with different line wrapping. Resolved in master's favour at every conflicting site,
+  then re-scanned to prove nothing unique was dropped. **The duplicated effort is the lesson,
+  not the merge:** a scanner that prints a lead list is an invitation for two lanes to work
+  it at once, and nothing in the list says who holds it. The three BUGCHECKs above were NOT
+  duplicated -- `NtUserFlashWindowEx`, `NtUserGetKeyboardLayoutName` and the two
+  `NtUserCallOneParam` aliases were untouched on master -- which is the useful signal: the
+  reproducer-driven sites and the list-driven sites barely intersect.
+  The mechanization (`tools/fix_probe_then_deref.py`):
+  `tools/fix_probe_then_deref.py` is the counterpart to the scanner. It never invents an
+  error path -- it replays the probe's OWN failure block, which is the only reason a rewrite
+  of 62 kernel syscall entry points is safe to automate at all: no new semantics are
+  introduced anywhere. What it REFUSES is the part worth reading, and each guard is a wrong
+  rewrite it emitted first (three of the four BUILD CLEANLY and are silently wrong on the
+  error path):
+  the positive form `if NT_SUCCESS(s) { <copy> }` has no failure block -- its body IS the
+  copy; a failure block belonging to an EARLIER probe is the wrong error path, not a smaller
+  one; a block whose transfer predates work the site now depends on (the tell is a reassigned
+  status or an acquired resource, NOT line distance -- distance refused one out-parameter of
+  `NtUserGetLayeredWindowAttributes` while fixing the two above it); and a multi-line probe
+  inside the condition, where the brace scan scoops the probe's arguments up as the error
+  body. Pinned in `tools/test_fix_probe_then_deref.py`, one test per wrong rewrite.
+  Leads the fixer refuses are listed rather than silently dropped; each needs a human to
+  decide what its cleanup does, and at most of them the answer is
+  `Status = STATUS_ACCESS_VIOLATION` plus fall-through.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).

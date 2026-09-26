@@ -3682,8 +3682,19 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                     break 'block;
                                 } else {
                                     retparam = ResultInfo as PBROADCASTPARM;
-                                    (*retparam).hDesk = hDesk;
-                                    (*retparam).hWnd = hwndDenied;
+                                    // The probe VALIDATES only; these two STORES are the access, so they
+                                    // take the same exit the failed probe takes. `retparam` is a second
+                                    // NAME for the probed user pointer -- which is exactly what hid this
+                                    // site from the scanner until it learned to follow the alias.
+                                    if !crate::copy::write_user(core::ptr::addr_of_mut!((*retparam).hDesk), hDesk)
+                                        || !crate::copy::write_user(
+                                            core::ptr::addr_of_mut!((*retparam).hWnd),
+                                            hwndDenied,
+                                        )
+                                    {
+                                        Status = STATUS_ACCESS_VIOLATION;
+                                        break 'block;
+                                    }
                                 }
                                 if Ret == 0 {
                                     break 'block;
@@ -3849,8 +3860,19 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                 break 'block;
                             } else {
                                 retparam = ResultInfo as PBROADCASTPARM;
-                                (*retparam).hDesk = hDesk;
-                                (*retparam).hWnd = hwndDenied;
+                                // The probe VALIDATES only; these two STORES are the access, so they
+                                // take the same exit the failed probe takes. `retparam` is a second
+                                // NAME for the probed user pointer -- which is exactly what hid this
+                                // site from the scanner until it learned to follow the alias.
+                                if !crate::copy::write_user(core::ptr::addr_of_mut!((*retparam).hDesk), hDesk)
+                                    || !crate::copy::write_user(
+                                        core::ptr::addr_of_mut!((*retparam).hWnd),
+                                        hwndDenied,
+                                    )
+                                {
+                                    Status = STATUS_ACCESS_VIOLATION;
+                                    break 'block;
+                                }
                             }
                         }
                     } else if (parm.flags & BSF_POSTMESSAGE) != 0 {
@@ -4366,8 +4388,19 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                     break 'block;
                                 } else {
                                     retparam = ResultInfo as PBROADCASTPARM;
-                                    (*retparam).hDesk = hDesk;
-                                    (*retparam).hWnd = hwndDenied;
+                                    // The probe VALIDATES only; these two STORES are the access, so they
+                                    // take the same exit the failed probe takes. `retparam` is a second
+                                    // NAME for the probed user pointer -- which is exactly what hid this
+                                    // site from the scanner until it learned to follow the alias.
+                                    if !crate::copy::write_user(core::ptr::addr_of_mut!((*retparam).hDesk), hDesk)
+                                        || !crate::copy::write_user(
+                                            core::ptr::addr_of_mut!((*retparam).hWnd),
+                                            hwndDenied,
+                                        )
+                                    {
+                                        Status = STATUS_ACCESS_VIOLATION;
+                                        break 'block;
+                                    }
                                 }
                                 if Ret == 0 {
                                     break 'block;
@@ -4533,8 +4566,19 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                 break 'block;
                             } else {
                                 retparam = ResultInfo as PBROADCASTPARM;
-                                (*retparam).hDesk = hDesk;
-                                (*retparam).hWnd = hwndDenied;
+                                // The probe VALIDATES only; these two STORES are the access, so they
+                                // take the same exit the failed probe takes. `retparam` is a second
+                                // NAME for the probed user pointer -- which is exactly what hid this
+                                // site from the scanner until it learned to follow the alias.
+                                if !crate::copy::write_user(core::ptr::addr_of_mut!((*retparam).hDesk), hDesk)
+                                    || !crate::copy::write_user(
+                                        core::ptr::addr_of_mut!((*retparam).hWnd),
+                                        hwndDenied,
+                                    )
+                                {
+                                    Status = STATUS_ACCESS_VIOLATION;
+                                    break 'block;
+                                }
                             }
                         }
                     } else if (parm.flags & BSF_POSTMESSAGE) != 0 {
