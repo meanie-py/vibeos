@@ -1734,15 +1734,15 @@ pub unsafe extern "system" fn NtGdiGetDeviceWidth(hdc: HDC) -> LONG {
     Ret
 }
 #[no_mangle]
-pub unsafe extern "system" fn NtGdiMirrorWindowOrg(hdc: HDC) -> u8 {
+pub unsafe extern "system" fn NtGdiMirrorWindowOrg(hdc: HDC) -> BOOL {
     let dc: PDC = DC_LockDc(hdc);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
     IntMirrorWindowOrg(dc);
     DC_UnlockDc(dc);
-    1u8
+    1
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiSetSizeDevice(

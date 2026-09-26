@@ -425,7 +425,7 @@ unsafe extern "C" fn TrimNonPrintableProd(DmiString: PCHAR) -> BOOL {
     return TrimNonPrintable(DmiString);
 }
 #[no_mangle]
-pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
+pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> BOOL {
     static LongNames: SyncTable<[VENDOR_LONG_NAME; 25]> = SyncTable([
         VENDOR_LONG_NAME { pwLongName: w!("ASUSTeK") as PCWSTR, pwShortName: w!("ASUS") as PCWSTR },
         VENDOR_LONG_NAME { pwLongName: w!("First International Computer") as PCWSTR, pwShortName: w!("FIC") as PCWSTR },
@@ -522,7 +522,7 @@ pub unsafe extern "C" fn GetSystemName(pBuf: PWSTR, cchBuf: usize) -> u8 {
 
     SMBiosBuf = LoadSMBiosData(DmiStrings.as_mut_ptr());
     if SMBiosBuf.is_null() {
-        return (FALSE) as u8;
+        return FALSE as BOOL;
     }
 
     TrimNonPrintable(DmiStrings[(SYS_VENDOR) as usize]);

@@ -68,8 +68,12 @@ every translated body. **Owed, in order:**
      `GetConsoleInputExeNameW` returned 0 on success, so the A export never filled its
      buffer; ntoskrnl `MiMapViewOfDataSection` had dropped the view-size range checks and
      aligned the offset after sizing from it, and ARM3's `RtlLongLongSub` could not fail.
-2. `tools/scan_bool_width.py` (unwired) reports 202 findings on 2026-09-26 — the BOOLEAN-
-   return-widened-to-i32 class that broke fastfat and mountmgr. Untriaged.
+2. ~~`scan_bool_width` triage~~ DONE 2026-09-26, and now GATED (empty baseline). The 202
+   findings were 25 Rust DEFINITIONS returning u8/BOOLEAN where C says BOOL (the decls were
+   right). A new definition-vs-C-twin mode found 31 more that no Rust decl pointed at —
+   exports only C calls. All 56 widened to BOOL (61 bodies: win32k's REGION_* and
+   GreSetBrushOrg have per-arch cfg twins, which the scanner now also compares);
+   userenv's local decls narrowed `OpenEventW`/`CreateMutexW`'s BOOL params to u8 too.
 3. Also unwired and worth a pass: `scan_sibling_drift.py`, `scan_arch_cfg.py` (see
    agent-reference "Triage scanners that are NOT wired into `check`").
 

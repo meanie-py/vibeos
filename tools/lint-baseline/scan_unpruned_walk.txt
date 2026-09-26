@@ -36,7 +36,6 @@ tools/rustconv/rustconv/migrate_guards_ts.py:351: unpruned rust walk: rs_files =
 tools/rustconv/rustconv/projects/reactos/targets.py:1453: unpruned rust walk: for f in src.rglob("*.rs"):
 tools/rustconv/tests/test_export_audit.py:343: unpruned rust walk: fns = scan_rust_fns(sorted(OLE32_RUST.rglob("*.rs")))
 tools/scan_arch_cfg.py:95: unpruned rust walk: for path in root.rglob("*.rs"):
-tools/scan_bool_width.py:50: unpruned rust walk: for f in RUST_ROOT.rglob("*.rs"):
 tools/scan_nightly_surface.py:60: unpruned rust walk: Why not `root.rglob("*.rs")` with a `"/target/" in str(p)` filter (which is what
 tools/test_build_invalidation.py:142: unpruned build walk: for path in self.build.rglob("*"):
 tools/test_source_walk.py:17: unpruned rust walk: expected = sorted(p for p in tmp_path.rglob("*.rs") if "target" not in p.parts)

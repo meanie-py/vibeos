@@ -394,6 +394,14 @@ Same family, three positions, all silent on the arch where the widths happen to 
   BAD_POOL_HEADER. **Declare booleans `u8`.** When callers disagree and you own the impl, fix
   the *definition* to return zero-extended `u32` (forces `movzbl`, valid for both). A fn
   DEFINED `-> i32` with BOOLEAN callers is safe (AL is the low byte).
+- **Return, the other way round: the DEFINITION is the narrow side.** `BOOL` is `int`, not
+  `BOOLEAN`. A translation that returns `u8` where the C says `BOOL` is wrong for every C
+  caller and every header-generated decl at once — which is why `scan_bool_width`'s 202
+  "wide decl" findings were really 25 wrong definitions (userenv's profile getters, win32k
+  `REGION_*`/`NtGdi*`, advapi32 `EncryptFile*`), and 31 more narrow exports only C called
+  had no Rust decl to point at. The same crates tend to narrow `BOOL` PARAMETERS in their
+  local extern decls too (userenv `OpenEventW(…, bInheritHandle: u8, …)`). Take the width
+  from the C prototype, never from a sibling Rust decl. Gated both ways by `scan_bool_width`.
 - **u32 def vs i64 decl.** i386 returns i64 in **EDX:EAX**; a u32 callee leaves EDX garbage.
   cdfs `SectorTruncate` returned `0x1_00000000`, which flowed through CcMapData into a spurious
   `>= FileSize` → zero-filled page → 0x1E STATUS_DISK_CORRUPT_ERROR.

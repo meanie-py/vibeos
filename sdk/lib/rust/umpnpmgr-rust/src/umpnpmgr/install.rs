@@ -320,13 +320,13 @@ unsafe extern "C" fn ReadRegSzKey(
     return (ERROR_SUCCESS) as i32;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SetupIsActive() -> u8 {
+pub unsafe extern "C" fn SetupIsActive() -> BOOL {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut regType: u32 = 0;
     let mut active: u32 = 0;
     let mut size: u32 = 0;
     let mut rc: i32;
-    let mut ret: u8 = (FALSE) as u8;
+    let mut ret: BOOL = FALSE as BOOL;
 
     rc = RegOpenKeyExW(HKEY_LOCAL_MACHINE, w!("SYSTEM\\Setup") as LPCWSTR, 0, KEY_QUERY_VALUE, &mut hKey);
     if rc != (ERROR_SUCCESS) as i32 {

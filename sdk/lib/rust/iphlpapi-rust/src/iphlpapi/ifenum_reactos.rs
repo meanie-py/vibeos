@@ -45,8 +45,8 @@ pub unsafe extern "C" fn tdiGetMibForIfEntity(
     STATUS_SUCCESS
 }
 #[no_mangle]
-pub unsafe extern "C" fn isInterface(if_maybe: *mut TDIEntityID) -> u8 {
-    ((*if_maybe).tei_entity == IF_ENTITY) as u8
+pub unsafe extern "C" fn isInterface(if_maybe: *mut TDIEntityID) -> BOOL {
+    ((*if_maybe).tei_entity == IF_ENTITY) as BOOL
 }
 #[no_mangle]
 pub unsafe extern "C" fn isLoopback(tcpFile: HANDLE, loop_maybe: *mut _TDIEntityID) -> i32 {
