@@ -9710,6 +9710,19 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   first truly idle moment was fatal. Fix: `wfi`. What found it: sampling the tick's health from
   IRQ entry, user traps AND the idle loop, and all three staying silent — "the CPU is in
   none of those places" was the answer. Do not use WFE without an explicit `SEV` protocol.
+- **Non-shareable PTEs: cross-core atomics silently lose updates.** Symptom: the MP kernel on
+  4 cores hung in `KeIpiGenericCall` with `Count=2` though all three targets had executed their
+  `fetch_sub` (another run: the call completed with the wrong result set). Cause: `ValidKernelPte`
+  and `MmProtectToPteMask` left SH (bits [9:8]) at 0b00, so every page the memory manager mapped
+  was Non-shareable; v8.0 LDXR/STXR from different cores on such memory need not be coherent.
+  TCG makes every atomic atomic. Fix: SH = Inner Shareable on all Normal memory (stubs.rs mask,
+  `arm/init.rs` templates, the hyperspace template). Mapping one PA with two shareabilities is
+  itself a bug, so fix every template, not just the one that bit.
+- **Secondary cores arrive at EL2, via SMC.** The PSCI conduit is the FADT's to state
+  (`ARM_BOOT_ARCH`: QEMU says HVC, TF-A on a Pi says SMC; the wrong one jumps into dead vectors),
+  and TF-A starts a `CPU_ON` core at NS-EL2 whenever EL2 exists. The AP trampoline
+  (`hal-rust/src/arm64/mpboot.rs`) reads both from ACPI and drops to EL1 exactly as the loader
+  does for the boot CPU.
 - **PL011 FIFO overrun.** A bare store to the data register drops bytes once the 16–32 byte
   FIFO fills; TCG drains instantly. Serial "stopped" mid-line and was misread as the kernel
   stopping. Every debug byte goes through `Arm64UartPutChar` (TXFF-bounded); enforced by
