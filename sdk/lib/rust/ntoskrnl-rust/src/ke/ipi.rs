@@ -628,10 +628,10 @@ pub unsafe extern "system" fn KiIpiServiceRoutine(
 // KiIpiGenericCallTarget once it finishes calling Function) clears its own
 // bit. Waiting for TargetSet to reach 0 is therefore the correct completion
 // signal.
-#[cfg(not(target_arch = "x86_64"))]
 /// Fail loud when a KeIpiGenericCall wait goes on far too long: print every
 /// processor's IPI state instead of spinning silently forever. This is what
 /// located the lost arrival decrement on a Raspberry Pi 4 (non-shareable PTEs).
+#[cfg(not(target_arch = "x86_64"))]
 #[cfg(feature = "smp")]
 unsafe fn ipi_wait_report(which: &[u8], count: u32) {
     let me = KeGetCurrentPrcb();
@@ -659,6 +659,7 @@ unsafe fn ipi_wait_report(which: &[u8], count: u32) {
     }
 }
 
+#[cfg(not(target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "system" fn KeIpiGenericCall(
     Function: PKIPI_BROADCAST_WORKER,

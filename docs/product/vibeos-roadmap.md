@@ -496,6 +496,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. OPEN, being worked**
+  (2026-09-26, lane graviton-spike). `smoke --arch arm64 --smp 4` fails
+  `SMP_AP_NOT_SCHEDULING` for CPU 2 and 3 on unchanged master (3/3); CPU 1 schedules,
+  amd64 `-smp 4` passes. Same on a physical Raspberry Pi 4. Leading theory: process
+  affinity captured before the later APs published their `KeActiveProcessors` bit.
+- **Notepad's menu bar renders blank. OPEN** (seen 2026-09-26). The `File Edit Format
+  View Help` bar is an empty strip, on arm64 QEMU and on a Raspberry Pi 4 alike (the
+  smoke screenshot shows it too), while the title bar, status bar and taskbar draw
+  text fine. Not investigated.
 - **`test_payload_launched` misses a launch marker that IS in its own serial log. OPEN,
   owed** (2026-09-25). `smoke --arch i386 --payload oldcrt`: the payload's
   `payload/i386-uefi_serial.log` carries `[OLDCRT] done PASS` at byte 78,018, pytest
