@@ -5899,6 +5899,55 @@ different question, racily).
   line window (stretchblt's three adjacent copies blamed each other's pointers), and treat
   `p.is_null()` as a test rather than a use (the tree's `if !p.is_null() { &SafeLocal } else
   { null }` passes a *kernel* local, which was 3 of the first 4 interprocedural hits).
+- **A FIFTH false negative, and the one that hid a live crash: the probed pointer under
+  another NAME.** The scanner tracks the probed identifier, so
+  `pdwLayout = Param as PDWORD; *pdwLayout = ...` after probing `Param` reported nothing --
+  one assignment made an unprivileged kernel crash invisible to the tool built to enumerate
+  exactly this class. It is not a corner case; it is how the whole `ONEPARAM_ROUTINE` family
+  is written, and `GETPROCDEFLAYOUT` was reachable from `NtUserCallOneParam`. Taint now
+  propagates across `x = <tainted> as T;` (+8 leads). Note also that the probe may be
+  INLINED by LTO, so the disassembly shows the alignment test and `MmUserProbeAddress`
+  compare rather than a call -- recognising that shape in a trap frame is how this one was
+  found.
+- **The unprotected access can be one frame OUT, with no raw dereference in your function at
+  all.** `NtUserGetKeyboardLayoutName` hands a UNICODE_STRING whose `Buffer` is a user pointer
+  to `RtlIntegerToUnicodeString` / `RtlAppendUnicodeToString`, and *those* write through it
+  with a bare `RtlCopyMemory`. The fault lands inside ntoskrnl with your frame merely as the
+  caller, which is why it does not look like the usual shape and why no scanner sees it. The C
+  got away with it because the whole sequence sat in one `_SEH2_TRY`. Build into a kernel
+  buffer and publish -- and publish the NUL too, since callers scan for it.
+- **The fix is mechanizable, and `tools/fix_probe_then_deref.py` does 62 of them, but what it
+  REFUSES is the transferable part.** It never invents an error path: it replays the probe's
+  own failure block, three lines up, so the rewrite adds no semantics. That is sound only
+  while nothing since has changed what the block MEANS, and line distance is the wrong proxy
+  for that -- it refused one out-parameter of `NtUserGetLayeredWindowAttributes` while fixing
+  the two directly above it. The two real invalidators: the tested status has been reassigned
+  since, or a resource has been acquired that the transfer does not release
+  (`NtUserGetObjectInformation` is both -- replaying its `break 'exit` leaks two referenced
+  objects AND returns success after a faulted write). Also refuse the POSITIVE form
+  `if NT_SUCCESS(s) { <copy> }`, which has no failure block at all -- its body IS the copy,
+  and matching on the bare name proposes replaying the copy as its own error path.
+- **Error-path suites find these, and the wine conformance sweep is the cheapest one we have.**
+  Three user32 subtests BUGCHECKed i386 0x1E (`win`, `msg`, `input`); each is one of the shapes
+  above, and fixing the first fault in `win` merely uncovered the next one behind it. A suite
+  that runs to completion after a fix is the oracle; a suite you quarantined is not.
+- **A scanner exclusion that is correct in general can still be a blind spot in
+  particular.** `scan_probe_then_deref.py` skips any line containing `addr_of!`/`addr_of_mut!`,
+  and it is right to: computing an address does not load, and it is the idiom the probes
+  themselves use, so without the skip every correct probe reports itself. But
+  `InterlockedIncrement(addr_of_mut!((*pimeui).nCntInIMEProc))` never lets the address escape
+  the line -- the callee IS the access -- so the skip hid two live unprotected writes to user
+  memory in `ime.rs` while the tool reported the whole class clear. Zero is a claim like any
+  other: when a scanner reaches it, the useful next question is which shapes it cannot express,
+  not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
+  accessing intrinsic before taking it.
+- **An atomic on user memory has no protected form yet.** `capture_from_user`/`publish_to_user`
+  cannot express a read-modify-write: capture -> mutate -> publish loses the atomicity, and
+  silently weakening a concurrency guarantee to buy fault-tolerance is the wrong trade. The
+  primitive needed is a `KmProtected` atomic beside `KmProtectedCopyMemory` -- a native-SEH
+  shim on amd64/arm64, an exception-table entry for the `lock` instruction on i386 (§9.123) --
+  with a self-test twin, because an unproven protection is worse than a documented gap.
+
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
   `NtUserSetSysColors` and hand the callee kernel memory.

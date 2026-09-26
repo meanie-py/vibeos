@@ -489,7 +489,10 @@ pub unsafe extern "system" fn NtUserCallOneParam(
                     Result = 0;
                 } else {
                     pptl = Param as PPOINTL;
-                    core::ptr::write_volatile(pptl, (*gpsi_per_user()).ptCursor);
+                    if !crate::copy::write_user(pptl, (*gpsi_per_user()).ptCursor) {
+                        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+                        Result = 0;
+                    }
                 }
             }
         }
@@ -533,7 +536,14 @@ pub unsafe extern "system" fn NtUserCallOneParam(
                     Result = 0;
                 } else {
                     pdwLayout = Param as PDWORD;
-                    core::ptr::write_volatile(pdwLayout, (*ppi).dwLayout as DWORD);
+                    // Validate-only probe (USE_DUMMY_PSEH) + a raw store. The C
+                    // had both inside one _SEH2_TRY. user32:win passes an
+                    // unmapped Param and this store BUGCHECKs 0x1E -- it is the
+                    // fault that was hiding behind NtUserFlashWindowEx's.
+                    if !crate::copy::write_user(pdwLayout, (*ppi).dwLayout as DWORD) {
+                        SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+                        Result = 0;
+                    }
                 }
             }
         }

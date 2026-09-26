@@ -2010,7 +2010,9 @@ pub unsafe extern "system" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
                 break 'exit;
             }
         }
-        // The probe VALIDATES only; this capture is the access, and takes the same exit.
+        // The probe VALIDATES only; this capture is the access, and takes the same
+        // exit. Not theoretical: the wine user32:win subtest passes an unmapped
+        // pfwi here, and the plain RtlCopyMemory this replaced BUGCHECKed 0x1E.
         if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(finfo) as *mut core::ffi::c_void,
             pfwi as *const core::ffi::c_void,

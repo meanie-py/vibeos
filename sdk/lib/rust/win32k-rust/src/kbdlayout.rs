@@ -1396,11 +1396,35 @@ pub unsafe extern "system" fn NtUserGetKeyboardLayoutName(
             break 'cleanup;
         }
 
+        // ustrNameSafe.Buffer is a USER pointer, and RtlIntegerToUnicodeString /
+        // RtlAppendUnicodeToString write through it with a bare RtlCopyMemory and
+        // no fault protection of their own -- so a probed-but-unmapped Buffer
+        // faults INSIDE ntoskrnl, with our frame as the caller and nothing to
+        // catch it. That is why this one does not look like the usual
+        // probe-then-raw-deref: there is no raw deref in this function at all,
+        // the unprotected access is one frame out. The C had the whole sequence
+        // in one _SEH2_TRY. Build into a kernel buffer and publish, exactly as
+        // NtUserLoadKeyboardLayoutEx below already does for the read direction.
+        // Found by the wine user32:input subtest.
+        let mut KernelName: [WCHAR; KL_NAMELENGTH as usize] = [0; KL_NAMELENGTH as usize];
+        let mut ustrNameKernel: _UNICODE_STRING = core::mem::zeroed();
+        RtlInitEmptyUnicodeString(
+            (&mut ustrNameKernel as *mut _UNICODE_STRING).cast(),
+            KernelName.as_mut_ptr(),
+            // Keep the caller's MaximumLength as the limit so an undersized
+            // buffer still yields the C's STATUS_BUFFER_OVERFLOW rather than
+            // silently succeeding; clamp to the kernel buffer we actually own.
+            core::cmp::min(
+                ustrNameSafe.MaximumLength as usize,
+                core::mem::size_of::<[WCHAR; KL_NAMELENGTH as usize]>(),
+            ) as USHORT,
+        );
+
         if IS_IME_HKL((*pKl).hkl) != 0 {
             Status = RtlIntegerToUnicodeString(
                 HandleToUlong((*pKl).hkl as *mut core::ffi::c_void),
                 16,
-                (&mut ustrNameSafe as *mut _UNICODE_STRING).cast(),
+                (&mut ustrNameKernel as *mut _UNICODE_STRING).cast(),
             );
         } else {
             if (ustrNameSafe.MaximumLength as usize)
@@ -1410,14 +1434,30 @@ pub unsafe extern "system" fn NtUserGetKeyboardLayoutName(
                 break 'cleanup;
             }
 
-            ustrNameSafe.Length = 0;
+            ustrNameKernel.Length = 0;
             Status = RtlAppendUnicodeToString(
-                (&mut ustrNameSafe as *mut _UNICODE_STRING).cast(),
+                (&mut ustrNameKernel as *mut _UNICODE_STRING).cast(),
                 (*(*pKl).spkf).awchKF.as_ptr(),
             );
         }
 
         if NT_SUCCESS(Status) {
+            // Both Rtl routines NUL-terminate when MaximumLength leaves room, and
+            // every caller of GetKeyboardLayoutName scans for that NUL -- so
+            // publish the terminator too, not just Length bytes.
+            let cbPublish = core::cmp::min(
+                ustrNameKernel.MaximumLength as usize,
+                ustrNameKernel.Length as usize + core::mem::size_of::<WCHAR>(),
+            );
+            if !crate::copy::publish_to_user(
+                ustrNameSafe.Buffer as *mut core::ffi::c_void,
+                ustrNameKernel.Buffer as *const core::ffi::c_void,
+                cbPublish,
+            ) {
+                SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+                break 'cleanup;
+            }
+            ustrNameSafe.Length = ustrNameKernel.Length;
             // `*pustrName = ustrNameSafe;` — the final user-pointer write, still
             // inside the C's _SEH2_TRY. Fault-tolerant copy, not a plain store.
             if ntkrnl_sys::probe::safe_copy_raw(
