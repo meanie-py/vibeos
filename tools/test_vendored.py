@@ -165,6 +165,39 @@ def test_stale_stamp_fails(tmp_path):
     assert any("STALE" in p for p in vendored.check(reg))
 
 
+def test_a_single_file_tree_is_registered_without_a_stamp(tmp_path):
+    """Upstream vendors a few loose files into ReactOS-authored directories (setup's
+    treelist.c, the libdxg d3dkmthk.h). They must be registrable, must own exactly their
+    own path and not their neighbours, and must not demand a VENDORED stamp -- there is
+    no directory of theirs to put one in, and one in the parent would claim the parent.
+    """
+    _write(
+        tmp_path,
+        """
+        containers: []
+        trees:
+          - path: app/tree.c
+            name: Tree
+            reason: test
+            headers:
+              - app/tree.h
+    """,
+    )
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "tree.c").write_text("int a;\nint b;\n")
+    (tmp_path / "app" / "tree.h").write_text("int a;\n")
+    (tmp_path / "app" / "main.c").write_text("int main;\n")
+    reg = vendored.load(tmp_path)
+    assert vendored.check(reg) == []
+    assert vendored.write_stamps(reg) == []
+    assert reg.is_vendored("app/tree.c") and reg.is_vendored("app/tree.h")
+    assert not reg.is_vendored("app/main.c")
+    assert not reg.is_vendored("app/tree.cpp")
+    assert reg.loc_path("app/tree.c") == 2
+    (tmp_path / "app" / "tree.h").unlink()
+    assert any("header path does not exist" in p for p in vendored.check(reg))
+
+
 def test_duplicate_path_is_a_registry_error(tmp_path):
     _write(
         tmp_path,

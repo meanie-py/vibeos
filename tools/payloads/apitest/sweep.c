@@ -199,13 +199,50 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
         return -1;
     }
 
+    /*
+     * Which side of CreateProcess did a wedge happen on?
+     *
+     * The wedge cluster (msvcrt system/_wsystem/atexit/static_construct, cmd
+     * attrib/exit/pushd, kernel32, ntdll, user32 VirtualKey/WndProc) shows the
+     * `launch` line and then nothing -- no `exit`, and critically no
+     * `TIMEOUT ... (120s) - terminated` even though EVERY wait below is bounded
+     * (120s child, +10s after the kill, 15s pump join). The sweep should advance
+     * within ~145s whatever the child does, so it is not executing.
+     *
+     * FOUR candidates live in this span, and only the last is covered by a timer.
+     * An earlier pass called the bounded wait the answer on the grounds that
+     * "every wait below is bounded" -- true, but the span also holds two calls
+     * that are not waits and are not bounded either, and that argument silently
+     * skipped them:
+     *   - CreateProcessA never returns.      Nothing bounds it.
+     *   - CloseHandle(wr) never returns.     Nothing bounds it.
+     *   - CreateThread never returns.        Nothing bounds it.
+     *   - WaitForSingleObject's timeout never fires. This one was ACCUSED and
+     *     ACQUITTED: an isolated boot of this suite with the quarantine disarmed
+     *     printed `TIMEOUT ... log10 (120s) - terminated`, so the bounded wait
+     *     does expire -- same call, same object type, same boot. It is listed
+     *     because it can still fail INTERMITTENTLY, not because it is the answer.
+     *
+     * Three prints split all four for the cost of three DbgPrints. Read the last
+     * line a wedged suite reached:
+     *   (no spawned) -> CreateProcessA        (spawned) -> CloseHandle
+     *   (closed)     -> CreateThread          (waiting) -> the wait itself
+     * Only `waiting` with no following `exit`/`TIMEOUT` indicts the timeout, and
+     * that is the only one of the four that is a kernel timer bug rather than a
+     * call that is simply allowed to block. The other three are calls that are
+     * ALLOWED to block, so hitting one of those is a lead, not a verdict.
+     */
+    DbgPrint("[APITEST-SWEEP] spawned %s pid=%lu\n", suite, (unsigned long)pi.dwProcessId);
+
     /* Drop OUR copy of the write end or the pump blocks forever after the child
      * exits: a pipe stays open as long as any writer handle lives. */
     CloseHandle(wr);
+    DbgPrint("[APITEST-SWEEP] closed  %s\n", suite);
 
     ctx->Read = rd;
     thread = CreateThread(NULL, 0, pump, ctx, 0, NULL);
 
+    DbgPrint("[APITEST-SWEEP] waiting %s (%lums)\n", suite, (unsigned long)timeout_ms);
     wait = WaitForSingleObject(pi.hProcess, timeout_ms);
     if (wait == WAIT_TIMEOUT)
     {

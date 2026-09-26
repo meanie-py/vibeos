@@ -667,12 +667,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
   - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
     import that does not resolve; arm64 too).
-  - amd64 flake, OPEN: 1 of 5 conformance runs bugchecked 0x1E `c000009a` raised by
-    `FsRtlAllocatePoolWithTag` (a raise-on-failure pool allocation from a driver at
-    `fffff80003cbb22b`) during the `ZwAllocateVirtualMemory` kmtest. That run's WOW64 test app
-    was repainting in a loop (6.8K `StretchDIBits`, serial 192K lines). The loop predates the
-    registration fix, and so do its run-to-run swings of 60-3.4K calls. Artifact:
-    `/tmp/vibeos-cli/20260925-182151-b9nppk9s-conformance-amd64`.
+  - FIXED: amd64 bugchecks under long GUI runs: 0x1E `c000009a` from a pool allocation, and
+    0x1E `c0000005` in win32k (`REGION_Delete(NULL)` from `IntSelectClipRgn` and
+    `VIS_ComputeVisibleRegion`). All one bug. `NtUserFindExistingCursorIcon` had a stray
+    capture of the module name INTO the resource-name slot, so no LR_SHARED icon ever matched
+    (IDC_ARROW looked up 4139 times, never found). Each LoadCursor/LoadIcon made a new icon + two
+    bitmaps and leaked a pool string; a repainting WOW64 app reached the 10K GDI quota, region
+    allocations returned NULL, and the pool ran dry. Found by counting create vs delete per
+    handle type in the WOW64 syscall trace, then logging the icon-cache calls
+    (`[WOW64-CURICON]`).
+  - OPEN, harness: `smoke --payload rpmprobe` on amd64 FAILED with "`[RPMPROBE] done` never
+    appeared" although the serial file has it (line 4201, byte 236K, `VERDICT=PASS`). Boot
+    output was 78K bytes; the drain then ran its whole 600s budget over a 39.8MB serial (WOW64
+    trace) without matching. The file shows `shell ready` three times for one payload run, so the
+    `ready` snapshot restore is the first suspect: the reader may be following a timeline the
+    marker is not in. Read the serial for the verdict until this is fixed.
+  - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
+    `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
     that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
     it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
@@ -859,6 +870,76 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   special-cased to infinity at all -- it looks like a finite stand-in for `-HUGE_VAL`
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
+
+- **THE APITEST WEDGE CLUSTER: the "bounded `WaitForSingleObject` that never times out"
+  root cause is FALSIFIED. The timeout DOES fire. OPEN, and back to un-attributed**
+  (2026-09-24, corrected 2026-09-25).
+
+  The previous entry here claimed the cluster was a 120s `WaitForSingleObject` failing to
+  expire, and unified it with the winlogon hang as one kernel bug. **One isolated boot
+  with the quarantine disarmed refuted it**, and the refutation was one command away the
+  whole time:
+
+      $ gen_suites.py --arch amd64 --only msvcrt_apitest.exe --ignore-quarantine
+      $ characterize.py --arch amd64 --rounds 1 --only msvcrt_apitest.exe --ignore-quarantine
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe _wsystem code=0          <- PASSES
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe system  code=3           <- PASSES
+      [APITEST-SWEEP] TIMEOUT msvcrt_apitest.exe log10 (120s) - terminated <- TIMEOUT FIRES
+      [APITEST-SWEEP] done total=1 launched=1 subtests=55 failstart=0 timeouts=1
+
+  **`log10` is the control the earlier run had and did not use.** It is the same
+  `WaitForSingleObject(pi.hProcess, 120000)`, on the same object type, in the same boot,
+  and it expired on schedule. A bounded wait that demonstrably times out 120s after a
+  hung child cannot also be the mechanism that never times out.
+
+  What survives from the earlier investigation, and what does not:
+
+  - **FALSIFIED — "the wait never expires".** `log10` times out in the same boot. The
+    argument was "`sweep.c` bounds every wait, so it must advance within ~145s"; that is
+    true of the *waits* but the stalled span also holds `CloseHandle(wr)` and
+    `CreateThread`, which are not waits and are not bounded either. The reasoning
+    enumerated two candidates and there were four.
+  - **FALSIFIED — "the wedge is SELF-CONTAINED".** Isolated msvcrt with every quarantine
+    entry ARMED reaches `[APITEST-SWEEP] done`: 55 subtests, 3 bad, 4m49s. The wedge needs
+    something the isolated run lacks — cross-suite residue, or it is a rare race. Note the
+    earlier isolated boot *did* stall at `_wsystem` under the same restriction, so it is
+    intermittent, which is also why one green isolated run must not un-quarantine anything.
+  - **UNSUPPORTED — the unification with the winlogon hang.** That rested entirely on the
+    shared never-expiring-wait mechanism. Same call and same object type is a shared
+    *predicate*, not a shared cause; the winlogon entry itself asked whether it was "a
+    coincidence or the link" and the answer is still unknown. They are two entries again.
+  - **STANDS — the box is ALIVE while the sweep is stuck.** The serial grew 779 bytes in
+    25s (eventlog, LSASS) during the stall. That measurement is independent of the wait
+    hypothesis and still overturns `quarantine-amd64.txt`'s "the box is dead, not the
+    harness waiting". It is one stuck process, not a dead guest.
+  - **STANDS — `CreateProcessA` returned.** The `spawned` line printed in the observed
+    stall, so process creation is excluded from that instance.
+
+  **Next:** the stall is somewhere in `spawned` → `closed` → `waiting` → the wait, and
+  `sweep.c` now prints all three, so the next occurrence localises itself with no new
+  build. Do NOT go looking at timer insertion/expiry first: the whole chain
+  (`KeWaitForSingleObject`, `KxSetTimerForThreadWait`, `KiComputeDueTime`,
+  `KiInsertTimerTable`, `KiComputeTimerTableIndex`, `KiCheckForTimerExpiration`,
+  `KiTimerExpiration`, `KiTimerListExpire`) was read against the C it was translated from
+  and is faithful, and upstream has made **zero** commits to `ntoskrnl/ke/` or
+  `ntoskrnl/ob/` since the fork, so the bug oracle is silent here too. One known latent
+  quirk, shared with upstream and therefore not our regression: `TIMER_TABLE_SIZE` is 512
+  while `DISPATCHER_HEADER.Hand` is a `UCHAR`, so hands 256-511 truncate on store and
+  `KiRemoveEntryTimer` does its bucket-empty bookkeeping against the wrong slot.
+
+  Proximate context, offered as context and NOT as a cause: `_wsystem`'s grandchild fails
+  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE` just before the stall — but that
+  message is AMBIENT (counted 11-16 times in all 42 archived serials including healthy
+  ones), so its position there is suggestive only.
+
+  **Method note, because this cost a wrong root cause in the repo:** the refuting artifact
+  was a run I was already going to do, and I wrote the conclusion first. The specific trap
+  was circular and is now closed in the tool: the quarantine entry that RECORDS a wedge is
+  also what SUPPRESSES it, so `--only msvcrt_apitest.exe` printed `SKIP ... _wsystem` and
+  completed clean — a green run that proves nothing about the bug it was launched to
+  reproduce. `gen_suites.py --ignore-quarantine` (and `characterize.py --only /
+  --ignore-quarantine`, which implies `--no-quarantine`) exist so that reproducing a
+  quarantined wedge does not mean hand-editing the file that records it.
 
 - **`NtGdiCreateBitmap` BUGCHECKed 0x1E in a naked `memcpy`. FIXED 2026-09-24**, verified
   by boot (`exit win32u_apitest.exe NtGdiCreateBitmap code=2` — real test failures, no
@@ -1554,13 +1635,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
   passes both before and after, so `scan_invented_constants` does not catch a wrong bare
   hex in an `as NTSTATUS` cast.
-  **ONE THING STILL OPEN, left visible rather than made to look handled:**
-  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
-  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
-  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
-  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
-  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
-  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
+  **FIXED 2026-09-25:** `MiDoMappedCopy` now calls `MiProbeAndLockPagesStatus`, the
+  status-returning body of `MmProbeAndLockPages` (the export still raises). Its page touch is
+  fault-protected (it had been a bare, non-volatile read), and two `MmAccessFault` failure
+  paths no longer release the PFN/working-set lock a second time. appstorm's stack dumper
+  bugchecked amd64 through this; `tools/payloads/rpmprobe` pins it on amd64 and i386.
 
 - **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
   REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps

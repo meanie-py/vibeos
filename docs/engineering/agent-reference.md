@@ -697,6 +697,16 @@ QUESTIONS, deliberately not gate findings: whether a driver framework this OS sh
 translation target is a judgement call, and auto-excluding on a copyright grep would
 shrink the denominator silently, which is the failure the registry exists to prevent.
 
+### Moving vendored code — `tools/vendor_move_plan.py`
+
+```bash
+python3 tools/vendor_move_plan.py                       # blast radius per tree, cheapest first
+python3 tools/vendor_move_plan.py --tree <vendored path> # every reference to one tree
+```
+
+Lists every reference that pins a vendored tree to its path — relative CMake, `.cmake`
+fragments, bindgen scripts, include-root consumers, and paths built from variables —
+before anyone runs `git mv`. Plan and hazards: `docs/engineering/vendor-relocation-plan.md`.
 ### Static Analysis Tools
 
 ```bash

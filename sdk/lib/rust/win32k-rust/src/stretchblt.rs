@@ -838,43 +838,24 @@ pub unsafe extern "system" fn NtGdiEngStretchBlt(
         }
         if !NT_SUCCESS(Status) {
             return 0;
-        } else {
-            if !crate::copy::capture_from_user(
-                &mut ca as *mut _ as *mut core::ffi::c_void,
-                pca as *const core::ffi::c_void,
-                core::mem::size_of::<COLORADJUSTMENT>(),
-            ) {
-                return 0;
-            }
-            pca_local = &mut ca;
-            if !crate::copy::capture_from_user(
-                &mut lBrushOrigin as *mut _ as *mut core::ffi::c_void,
-                BrushOrigin as *const core::ffi::c_void,
-                core::mem::size_of::<POINTL>(),
-            ) {
-                return 0;
-            }
-            if !crate::copy::capture_from_user(
-                &mut rclDest as *mut _ as *mut core::ffi::c_void,
-                prclDest as *const core::ffi::c_void,
-                core::mem::size_of::<RECTL>(),
-            ) {
-                return 0;
-            }
-            if !crate::copy::capture_from_user(
-                &mut rclSrc as *mut _ as *mut core::ffi::c_void,
-                prclSrc as *const core::ffi::c_void,
-                core::mem::size_of::<RECTL>(),
-            ) {
-                return 0;
-            }
-            if !crate::copy::capture_from_user(
-                &mut lMaskOrigin as *mut _ as *mut core::ffi::c_void,
-                MaskOrigin as *const core::ffi::c_void,
-                core::mem::size_of::<POINTL>(),
-            ) {
-                return 0;
-            }
+        }
+        // The probes above VALIDATE only. Each capture is the access, so every one
+        // of them has to be the protected copy and take the probe-failure exit.
+        if !crate::copy::capture_from_user(&mut ca as *mut _ as *mut core::ffi::c_void, pca as *const core::ffi::c_void, core::mem::size_of::<COLORADJUSTMENT>()) {
+            return 0;
+        }
+        pca_local = &mut ca;
+        if !crate::copy::capture_from_user(&mut lBrushOrigin as *mut _ as *mut core::ffi::c_void, BrushOrigin as *const core::ffi::c_void, core::mem::size_of::<POINTL>()) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(&mut rclDest as *mut _ as *mut core::ffi::c_void, prclDest as *const core::ffi::c_void, core::mem::size_of::<RECTL>()) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(&mut rclSrc as *mut _ as *mut core::ffi::c_void, prclSrc as *const core::ffi::c_void, core::mem::size_of::<RECTL>()) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(&mut lMaskOrigin as *mut _ as *mut core::ffi::c_void, MaskOrigin as *const core::ffi::c_void, core::mem::size_of::<POINTL>()) {
+            return 0;
         }
     } else {
         Status = SafeProbeForRead(BrushOrigin as *const core::ffi::c_void, core::mem::size_of::<POINTL>(), 1);
@@ -889,35 +870,20 @@ pub unsafe extern "system" fn NtGdiEngStretchBlt(
         }
         if !NT_SUCCESS(Status) {
             return 0;
-        } else {
-            if !crate::copy::capture_from_user(
-                &mut lBrushOrigin as *mut _ as *mut core::ffi::c_void,
-                BrushOrigin as *const core::ffi::c_void,
-                core::mem::size_of::<POINTL>(),
-            ) {
-                return 0;
-            }
-            if !crate::copy::capture_from_user(
-                &mut rclDest as *mut _ as *mut core::ffi::c_void,
-                prclDest as *const core::ffi::c_void,
-                core::mem::size_of::<RECTL>(),
-            ) {
-                return 0;
-            }
-            if !crate::copy::capture_from_user(
-                &mut rclSrc as *mut _ as *mut core::ffi::c_void,
-                prclSrc as *const core::ffi::c_void,
-                core::mem::size_of::<RECTL>(),
-            ) {
-                return 0;
-            }
-            if !crate::copy::capture_from_user(
-                &mut lMaskOrigin as *mut _ as *mut core::ffi::c_void,
-                MaskOrigin as *const core::ffi::c_void,
-                core::mem::size_of::<POINTL>(),
-            ) {
-                return 0;
-            }
+        }
+        // The probes above VALIDATE only. Each capture is the access, so every one
+        // of them has to be the protected copy and take the probe-failure exit.
+        if !crate::copy::capture_from_user(&mut lBrushOrigin as *mut _ as *mut core::ffi::c_void, BrushOrigin as *const core::ffi::c_void, core::mem::size_of::<POINTL>()) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(&mut rclDest as *mut _ as *mut core::ffi::c_void, prclDest as *const core::ffi::c_void, core::mem::size_of::<RECTL>()) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(&mut rclSrc as *mut _ as *mut core::ffi::c_void, prclSrc as *const core::ffi::c_void, core::mem::size_of::<RECTL>()) {
+            return 0;
+        }
+        if !crate::copy::capture_from_user(&mut lMaskOrigin as *mut _ as *mut core::ffi::c_void, MaskOrigin as *const core::ffi::c_void, core::mem::size_of::<POINTL>()) {
+            return 0;
         }
         pca_local = core::ptr::null_mut();
     }

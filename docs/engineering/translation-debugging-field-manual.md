@@ -5119,6 +5119,21 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
+  an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
+  resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
+  shared-icon cache never matched and every `LoadCursor`/`LoadIcon(LR_SHARED)` made a new icon,
+  two bitmaps and a leaked pool string. The damage surfaced far away: GDI quota exhaustion, NULL
+  regions deleted in win32k, pool exhaustion bugchecks. The tell in a trace is a lookup
+  repeated with identical arguments that never hits (IDC_ARROW 4139 times). Diff each function's
+  sequence of capture/probe calls against the C as a list; a statement the C does not have is
+  easy to read past because it looks like its neighbour.
+- **A `goto Cleanup` that skips a release becomes a second release.** In the C
+  `MmProbeAndLockPages`, a failed `MmAccessFault` jumps to `Cleanup:`, past the lock release at
+  `CleanupWithLock:`, because the lock was dropped before the call. The Rust inlined the
+  cleanup at each site and included the release both times, releasing the PFN lock or the
+  working-set pushlock that this thread no longer held. When translating label-based cleanup,
+  map each `goto` to the LABEL it names, not to the whole cleanup tail.
 - **A local deviation that changes WHAT a function returns but not what it CLAIMS.** Our
   `LdrpApplyFileNameRedirection` emits an api-set's host as a BARE name (`kernel32.dll`,
   resolved by the search path) where stock ReactOS builds `NtSystemRoot\System32\<host>`, but
@@ -6860,6 +6875,40 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
+
+**Symptom:** you isolate a quarantined failure to reproduce it (`--only <one suite>`), the boot
+comes back clean, and you conclude something about the bug from that — that it needs residue from
+the other suites, that it is fixed, that it is self-contained. The run never exercised it: the
+quarantine entry that told you *which* subtest wedges is also what tells the harness to skip it,
+so the serial says `SKIP <subtest>` and the sweep sails past.
+
+**Cause:** the record of a defect and the suppression of it are the same file. Anything that reads
+that file to build the worklist — a skip list, a lint baseline, a disabled-test registry, an
+`ignore` glob — inherits the property that *asking about the bug removes it from the question*.
+The green result is not wrong, it is vacuous, and nothing in the output distinguishes "ran and
+passed" from "never ran" unless you go looking for the SKIP line.
+
+**Fix:** give the generator an explicit disarm (`gen_suites.py --ignore-quarantine`, plumbed
+through `characterize.py --only / --ignore-quarantine`) and make the disarmed run mark its own
+artifacts unbankable, exactly as `--only` already does. Hand-editing the suppression file works
+once and is how you forget to put it back. Two corollaries:
+
+- **Disable the SUBTRACTION, not the CHECKS.** The first draft cleared the quarantine sets before
+  the staleness comparison, which silently disabled the typo check that guards the file — the same
+  "filter applied upstream of the checks that describe the build" mistake `--only` made. A test
+  caught it asserting the opposite of what the code did.
+- **A disarmed reproduction must not write back to the file it disarmed**, or the round that
+  reproduces the wedge re-appends the entry it was launched to remove (`--ignore-quarantine`
+  implies `--no-quarantine`).
+
+**And look for the CONTROL already in the run before publishing a mechanism.** The same boot that
+was supposed to prove "a bounded `WaitForSingleObject` never times out" contained
+`TIMEOUT ... log10 (120s) - terminated` — the identical call on the identical object type,
+expiring on schedule. A mechanism that claims a primitive is broken is refuted by any healthy use
+of that primitive in the same artifact, and a sweep over dozens of subtests almost always contains
+one. Grep for it before writing the entry; it is cheaper than the retraction.
 
 ### A timeout measured in ITERATIONS shrinks as the guest gets chattier — and the driver above blames the test
 

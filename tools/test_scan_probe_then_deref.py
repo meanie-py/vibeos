@@ -273,3 +273,36 @@ pub unsafe extern "system" fn NtGdiThing(pUnsafeBits: LPBYTE) -> HBITMAP {
     got = leads_interproc(src)
     assert got, "the bulk-copy-in-callee shape must be reported"
     assert any("Helper" in row[2] for row in got), got
+
+
+def test_a_bulk_copy_callee_is_reported_once_not_twice() -> None:
+    """RtlCopyMemory is in UNSAFE_COPIES *and* derefs its args, so both the direct
+    and the interprocedural rule fired on the same site. 281 rows for 165 real
+    sites -- and the inflated 281 got quoted as the size of the remaining work."""
+    src = """
+pub unsafe fn f(p: *mut u8) {
+    SafeProbeForRead(p as _, 8, 1);
+    RtlCopyMemory(dst, p, 8);
+}
+"""
+    rows = leads_interproc(src)
+    assert len(rows) == 1, rows
+    # and the one kept is the line itself, which is what you need to fix it
+    assert "RtlCopyMemory" in rows[0][2]
+    assert "passed to" not in rows[0][2]
+
+
+def test_a_project_callee_is_still_reported_interprocedurally() -> None:
+    """The dedupe must not silence the case the rule exists for: a deref hidden
+    behind a project function (the NtUserSetSysColors -> IntSetSysColors shape)."""
+    src = """
+pub unsafe fn IntSetSysColors(a: *const u32) {
+    let _x = *a;
+}
+pub unsafe fn g(p: *const u32) {
+    SafeProbeForRead(p as _, 8, 1);
+    IntSetSysColors(p);
+}
+"""
+    rows = leads_interproc(src)
+    assert any("passed to IntSetSysColors()" in r[2] for r in rows), rows

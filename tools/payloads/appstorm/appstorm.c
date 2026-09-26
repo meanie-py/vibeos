@@ -69,6 +69,21 @@ static int new_windows(const wset_t *before, wset_t *out)
     return out->n;
 }
 
+static int is_real(HWND h)
+{
+    RECT r;
+    return GetWindowRect(h, &r) && r.right - r.left >= 50 && r.bottom - r.top >= 30 && r.left > -30000;
+}
+
+static int has_real_window(const wset_t *before, wset_t *got)
+{
+    new_windows(before, got);
+    for (int i = 0; i < got->n; i++)
+        if (is_real(got->h[i]))
+            return 1;
+    return 0;
+}
+
 static void ascii(const WCHAR *w, char *o, size_t n)
 {
     size_t i = 0;
@@ -132,6 +147,21 @@ int main(void)
             absent++;
             continue;
         }
+#ifdef APPSTORM_PAGEHEAP
+        /* Debug page heap for the app (IFEO GlobalFlag = FLG_HEAP_PAGE_ALLOCS): a heap overrun
+         * then faults AT the corrupting store instead of in a later RtlFreeHeap. */
+        {
+            char key[300];
+            HKEY hk;
+            DWORD flag = 0x02000000;
+            wsprintfA(key, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s", a->exe);
+            if (!RegCreateKeyExA(HKEY_LOCAL_MACHINE, key, 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, NULL)) {
+                RegSetValueExA(hk, "GlobalFlag", 0, REG_DWORD, (const BYTE *)&flag, sizeof flag);
+                RegCloseKey(hk);
+                SAY("pageheap on for %s\n", a->exe);
+            }
+        }
+#endif
         ExpandEnvironmentStringsA(a->args, args, MAX_PATH);
         snprintf(cmd, sizeof cmd, "\"%s\" %s", path, args);
         wset_t before, got;
@@ -148,7 +178,10 @@ int main(void)
         DWORD t0 = GetTickCount();
         /* No early out on process exit: control.exe exits as soon as it has started the
          * applet's rundll32, so a gone launcher says nothing about the window. */
-        while (!new_windows(&before, &got) && GetTickCount() - t0 < 30000)
+        /* Wait for a REAL window, not just the first new one: an applet's rundll32 shows its
+         * hidden 166x24 host window at -32000,-32000 long before the dialog when the machine is
+         * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000)
             Sleep(250);
         Sleep(3000);
         new_windows(&before, &got);
