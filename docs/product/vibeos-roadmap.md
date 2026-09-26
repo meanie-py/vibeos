@@ -495,6 +495,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`test_payload_launched` misses a launch marker that IS in its own serial log. OPEN,
+  owed** (2026-09-25). `smoke --arch i386 --payload oldcrt`: the payload's
+  `payload/i386-uefi_serial.log` carries `[OLDCRT] done PASS` at byte 78,018, pytest
+  reported `Boot complete (70445 bytes)` and then `drain-end: budget` -- 300s of draining
+  without matching the marker -- and failed the run
+  (`/tmp/vibeos-cli/20260925-210919-beje4luf-smoke-i386`). ucrtdiff showed a relative
+  the same day: pytest never finished after `[UCRTDIFF] done` reached its log, and the
+  main thread sat in `poll`. Read and ruled out, NOT reproduced: `read_until` and
+  `read_until_idle` both leave `_pos` correct (the settle's TimeoutError path does not
+  consume), and the drainer appends the same text to `_buf` that it tees to the file.
+  So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
+  payload's verdict must be read from its serial log, not from the smoke exit code.
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
   instruction and printed NOTHING on serial, while the boot itself reached

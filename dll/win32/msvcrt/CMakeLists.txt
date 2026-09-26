@@ -168,10 +168,12 @@ add_dependencies(msvcrt_static psdk asm)
 
 spec2def(msvcrt.dll msvcrt.spec ADD_IMPORTLIB)
 
-add_library(msvcrt MODULE
-    ${CMAKE_CURRENT_BINARY_DIR}/msvcrt_stubs.c
-    ${CMAKE_CURRENT_BINARY_DIR}/msvcrt.def
-    msvcrt.rc
+# The `...` entry-point shells over the Rust engines, built ONCE with this directory's
+# flags and linked by every CRT DLL that takes the Rust cohab (msvcrt, msvcrt20,
+# msvcrt40, crtdll -- see msvcrt_rust_cohab.cmake). An OBJECT library, so its
+# objects are module objects in each consumer and win first-match over
+# msvcrt_static's archive members, exactly as when they were msvcrt's own sources.
+add_library(msvcrt_rust_shims OBJECT
     # The printf `...` shells, as va_start trampolines over the Rust engine.
     # In the MODULE and not in msvcrt_static ON PURPOSE: module objects are
     # resolved before any archive member, so these win first-match over
@@ -205,6 +207,14 @@ add_library(msvcrt MODULE
     # `_vcprintf_l`, `_vcwprintf` and `_vcwprintf_l` are console.c's own exports, and are
     # Rust in console.rs.
     rust_console_varargs_shim.c
+)
+target_compile_definitions(msvcrt_rust_shims PRIVATE _MSVCR_VER=0)
+add_dependencies(msvcrt_rust_shims psdk)
+
+add_library(msvcrt MODULE
+    ${CMAKE_CURRENT_BINARY_DIR}/msvcrt_stubs.c
+    ${CMAKE_CURRENT_BINARY_DIR}/msvcrt.def
+    msvcrt.rc
 )
 
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)
@@ -245,7 +255,8 @@ elseif(ARCH STREQUAL "arm64")
     set(MSVCRT_RUST_ENV "")
 endif()
 
-set(MSVCRT_CRT_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libmsvcrt_crt_cargo.a")
+include(msvcrt_rust_cohab.cmake)
+set(MSVCRT_CRT_RUST_LIB "${MSVCRT_RUST_COHAB_LIB}")
 # Every crate whose code lands in libmsvcrt_crt_cargo.a -- the path-dependency
 # closure of msvcrt-crt-cargo. A crate missing here compiles into the archive but
 # never triggers its rebuild (a stale archive, no error); crt-portable-rust was
@@ -278,7 +289,6 @@ add_custom_command(
     COMMENT "Building Rust msvcrt CRT-body cohab (${MSVCRT_RUST_TARGET})"
 )
 add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
-add_dependencies(msvcrt rust_msvcrt_crt)
 
 # msvcrt_crt_rust under --whole-archive so ALL its symbols are DEFINED before
 # the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
@@ -286,9 +296,8 @@ add_dependencies(msvcrt rust_msvcrt_crt)
 # drags in its own copy of the flipped functions, which would otherwise win
 # first-match. --whole-archive forces the Rust defs in first; the C copies then
 # become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
-target_link_libraries(msvcrt
-    -Wl,--whole-archive ${MSVCRT_CRT_RUST_LIB} -Wl,--no-whole-archive
-    msvcrt_static crtmath dbgrpt vcruntime wine chkstk ${PSEH_LIB})
+link_msvcrt_rust_cohab(msvcrt)
+target_link_libraries(msvcrt msvcrt_static crtmath dbgrpt vcruntime wine chkstk ${PSEH_LIB})
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()

@@ -578,7 +578,7 @@ def test_rebuild_lists_match_the_crate_closure() -> None:
 def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
     """Control: a list that drops a closure crate must be reported -- a gate nobody
     has watched fail is a gate nobody knows works."""
-    for cmake, var, _root in vuc.REBUILD_LISTS:
+    for cmake, _var, _root in vuc.REBUILD_LISTS:
         src = (vuc.REPO / cmake).read_text()
         dst = tmp_path / cmake
         dst.parent.mkdir(parents=True, exist_ok=True)

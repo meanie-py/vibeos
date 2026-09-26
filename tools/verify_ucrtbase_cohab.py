@@ -332,8 +332,7 @@ def check_rebuild_lists(repo: Path | None = None, ws: Path | None = None) -> lis
             )
         for crate in sorted(listed - want):
             findings.append(
-                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. "
-                f"fix: remove it"
+                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. fix: remove it"
             )
     return findings
 
@@ -717,9 +716,7 @@ def check_burndown() -> tuple[list[str], list[str]]:
 
 
 def main() -> int:
-    findings = (
-        check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
-    )
+    findings = check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
     bd_fails, bd_notes = check_burndown()
     findings += bd_fails
     for f in findings:
