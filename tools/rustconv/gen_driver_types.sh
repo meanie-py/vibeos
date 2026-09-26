@@ -116,7 +116,7 @@ case "$DRIVER" in
                   --allowlist-file '.*acpi_drivers\.h' --allowlist-file '.*[/\\]list\.h' )
     VER_DEFS=( -DWINVER=0x603 -D_WIN32_WINNT=0x603 -DNTDDI_VERSION=0x06030000
                -DACPI_USE_LOCAL_CACHE -DACPI_USE_SYSTEM_INTTYPES )
-    EXTRA_INC=( -I"${SRC}/drivers/bus/acpi/acpica/include" )
+    EXTRA_INC=( -I"${SRC}/vendor/acpica/include" )
     SYS_CRATES=( "acpica-sys:acpica-sys/src" )
     ;;
   classpnp)

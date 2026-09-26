@@ -80,10 +80,10 @@ MIT License
 
 - Upstream: https://github.com/acpica/acpica
 - Version: 0x20260408
-- In this tree: `drivers/bus/acpi/acpica`
+- In this tree: `vendor/acpica`
 - Licence: BSD-3-Clause OR GPL-2.0
 - Modified by us: yes, see `vendor-patches/acpica.patch`
-- Grant reproduced from: `drivers/bus/acpi/acpica/include/acpi.h (header comment)`
+- Grant reproduced from: `vendor/acpica/include/acpi.h (header comment)`
 
 ```
 Name: acpi.h - Master public include file used to interface to ACPICA
