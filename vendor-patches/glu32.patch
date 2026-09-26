@@ -2,13 +2,13 @@
 #
 # Upstream: https://gitlab.freedesktop.org/mesa/glu at tag glu-9.0.1
 #           (a GIT TAG, not a release tarball — see WHY 9.0.1 below)
-# Apply from dll/opengl/glu32/src/ with: patch -p1 < vendor-patches/glu32.patch
+# Apply from vendor/glu/src/ with: patch -p1 < vendor-patches/glu32.patch
 #
 # 127 of the 194 vendored files appear here and that number is almost entirely noise.
 # 122 of them differ ONLY by `#include` lines being commented out; allow that one
 # substitution and exactly FIVE files carry real content changes. Read the five first.
 #
-# dll/opengl/glu32/include/ is NOT in this patch because it is byte-identical to
+# vendor/glu/include/ is NOT in this patch because it is byte-identical to
 # upstream. The file sets match exactly in both directions: 194 files, no additions,
 # no omissions, no upstream directory skipped.
 #

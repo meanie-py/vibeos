@@ -8159,8 +8159,12 @@ pub unsafe extern "system" fn NtGdiGetCharWidthW(
             return 0;
         }
         Status = SafeProbeForRead((UnSafepwc as *const core::ffi::c_void as _), pwcSize as usize, 1);
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(Safepwc as *mut core::ffi::c_void, UnSafepwc as *const core::ffi::c_void, pwcSize as usize);
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(Safepwc as *mut core::ffi::c_void, UnSafepwc as *const core::ffi::c_void, pwcSize as usize)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 
@@ -8302,8 +8306,12 @@ pub unsafe extern "system" fn NtGdiGetCharWidthW(
             return 0;
         }
         Status = SafeProbeForRead(UnSafepwc as *const core::ffi::c_void as _ , pwcSize as usize, 1);
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(Safepwc as *mut core::ffi::c_void, UnSafepwc as *const core::ffi::c_void, pwcSize as usize);
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(Safepwc as *mut core::ffi::c_void, UnSafepwc as *const core::ffi::c_void, pwcSize as usize)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 
@@ -8535,8 +8543,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphIndicesW(
         }
 
         Status = SafeProbeForRead(UnSafepwc as *mut c_void, pwcSize as usize, 1);
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(Safepwc as *mut _, UnSafepwc as *const _, (pwcSize as SIZE_T as _));
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(Safepwc as *mut _, UnSafepwc as *const _, pwcSize as SIZE_T as _)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -8561,12 +8573,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphIndicesW(
             ((cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                UnSafepgi as *mut _,
-                Buffer as *const _,
-                ((cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _),
-            );
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(UnSafepgi as *mut _, Buffer as *const _, ((cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _))
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 
@@ -8711,8 +8723,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphIndicesW(
         }
 
         Status = SafeProbeForRead(UnSafepwc as *mut c_void, pwcSize as usize, 1);
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(Safepwc as *mut _, UnSafepwc as *const _, pwcSize as SIZE_T as _ );
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(Safepwc as *mut _, UnSafepwc as *const _, pwcSize as SIZE_T as _)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -8737,12 +8753,12 @@ pub unsafe extern "system" fn NtGdiGetGlyphIndicesW(
             (cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _ ,
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
-                UnSafepgi as *mut _,
-                Buffer as *const _,
-                (cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _ ,
-            );
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(UnSafepgi as *mut _, Buffer as *const _, (cwc as usize * core::mem::size_of::<WORD>()) as SIZE_T as _)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 
@@ -8810,12 +8826,26 @@ pub unsafe extern "system" fn NtGdiExtTextOutW(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForRead(UnsafeDx as PVOID, DxSize as usize, 1);
         }
+        // Validate-only probes; the copies are the access. Either one faulting lands in
+        // Status, which is checked below and frees Buffer before returning.
         if NT_SUCCESS(Status) {
             SafeString = (Buffer as usize + DxSize as usize) as PCWCH;
-            RtlCopyMemory(SafeString as *mut c_void, UnsafeString as *const c_void, StringSize as usize);
-            if !UnsafeDx.is_null() {
+            if !crate::copy::capture_from_user(
+                SafeString as *mut c_void,
+                UnsafeString as *const c_void,
+                StringSize as usize,
+            ) {
+                Status = STATUS_ACCESS_VIOLATION;
+            }
+            if NT_SUCCESS(Status) && !UnsafeDx.is_null() {
                 SafeDx = Buffer as *mut INT;
-                RtlCopyMemory(SafeDx as *mut c_void, UnsafeDx as *const c_void, DxSize as usize);
+                if !crate::copy::capture_from_user(
+                    SafeDx as *mut c_void,
+                    UnsafeDx as *const c_void,
+                    DxSize as usize,
+                ) {
+                    Status = STATUS_ACCESS_VIOLATION;
+                }
             }
         }
         if !NT_SUCCESS(Status) {
@@ -8910,8 +8940,12 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
             return 0;
         }
         Status = SafeProbeForRead(UnSafepwch as PVOID, pwchSize as usize, 1);
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(Safepwch as *mut c_void, UnSafepwch as *const c_void, pwchSize as usize);
+        // Validate-only probe; the copy is the access. A copy fault lands in Status,
+        // which is checked below -- upstream's _SEH2_EXCEPT does exactly this.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(Safepwch as *mut c_void, UnSafepwch as *const c_void, pwchSize as usize)
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
     }
 

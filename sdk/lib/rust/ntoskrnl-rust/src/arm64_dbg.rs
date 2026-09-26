@@ -47,6 +47,18 @@ pub unsafe fn uart_putc(base: *mut u32, c: u8) {
     core::ptr::write_volatile(base, c as u32);
 }
 
+/// `uart_putc_default` for the kernel's other crates (iomgr, se, ps, lpc, ...),
+/// which cannot name this module. Every debug byte on arm64 goes through here:
+/// a bare store to the data register is silently dropped once the transmit FIFO
+/// is full, which QEMU's instantly-draining PL011 never shows. On a physical
+/// Pi 4 it cut every Phase-1 trace line down to its first `[`, so the last
+/// readable line of a hang was not the last thing the kernel said.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn Arm64UartPutChar(c: u8) {
+    uart_putc_default(c);
+}
+
 /// `uart_putc` against the kernel's current debug UART base.
 #[inline(always)]
 pub unsafe fn uart_putc_default(c: u8) {

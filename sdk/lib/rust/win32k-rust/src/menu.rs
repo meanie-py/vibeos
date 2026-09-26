@@ -6,6 +6,9 @@ use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
 use core::ffi::c_void;
 
+// Not in ntkrnl_sys::base; declared per-file, as the rest of the crate does.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // LOWORD/HIWORD/MAKELPARAM/MAKEWPARAM (minwindef.h).
 #[inline(always)]
 fn LOWORD(l: DWORD) -> DWORD { l & 0xffff }
@@ -6927,10 +6930,11 @@ pub unsafe extern "system" fn NtUserGetTitleBarInfo(
                 break 'exit;
             }
         }
-        if !crate::copy::capture_n(
-            &mut bartitleinfo as *mut TITLEBARINFO,
-            bti,
-            1,
+        // The probe VALIDATES only; this capture is the access, and takes the same exit.
+        if !crate::copy::capture_from_user(
+            &mut bartitleinfo as *mut TITLEBARINFO as *mut core::ffi::c_void,
+            bti as *const core::ffi::c_void,
+            core::mem::size_of::<TITLEBARINFO>(),
         ) {
             EngSetLastError(ERROR_INVALID_PARAMETER);
             break 'exit;
@@ -6946,15 +6950,17 @@ pub unsafe extern "system" fn NtUserGetTitleBarInfo(
             core::mem::size_of::<TITLEBARINFO>() as _,
             1,
         );
-        if !NT_SUCCESS(Status) {
+        // The probe VALIDATES only; this publish is the access. Both faults clear
+        // retValue, which is what the caller reads.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::publish_to_user(
+                bti as *mut core::ffi::c_void,
+                &bartitleinfo as *const TITLEBARINFO as *const core::ffi::c_void,
+                core::mem::size_of::<TITLEBARINFO>(),
+            )
+        {
             EngSetLastError(ERROR_INVALID_PARAMETER);
             retValue = 0u8;
-        } else {
-            core::ptr::copy_nonoverlapping(
-                &bartitleinfo as *const TITLEBARINFO,
-                bti,
-                1,
-            );
         }
     }
 
@@ -7178,12 +7184,16 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
             core::mem::size_of::<MENUBARINFO>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
+        // The probe VALIDATES only; this publish is the access, and a fault lands in
+        // Status, which is checked immediately below.
+        if NT_SUCCESS(Status)
+            && !crate::copy::publish_to_user(
                 pmbi as *mut core::ffi::c_void,
                 core::ptr::addr_of!(kmbi) as *const core::ffi::c_void,
-                (core::mem::size_of::<MENUBARINFO>() as u32),
-            );
+                core::mem::size_of::<MENUBARINFO>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -7343,12 +7353,16 @@ pub unsafe extern "system" fn NtUserGetMenuBarInfo(
             core::mem::size_of::<MENUBARINFO>(),
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
+        // The probe VALIDATES only; this publish is the access, and a fault lands in
+        // Status, which is checked immediately below.
+        if NT_SUCCESS(Status)
+            && !crate::copy::publish_to_user(
                 pmbi as *mut core::ffi::c_void,
                 core::ptr::addr_of!(kmbi) as *const core::ffi::c_void,
-                core::mem::size_of::<MENUBARINFO>() as SIZE_T,
-            );
+                core::mem::size_of::<MENUBARINFO>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -7660,12 +7674,16 @@ pub unsafe extern "system" fn NtUserDrawMenuBarTemp(
             core::mem::size_of::<RECT>() as ULONG,
             core::mem::size_of::<ULONG>() as ULONG,
         );
-        if NT_SUCCESS(Status) {
-            core::ptr::copy_nonoverlapping(
-                pRect as *const RECT,
-                &mut Rect as *mut RECT,
-                1,
-            );
+        // The probe VALIDATES only; this capture is the access, and a fault lands in
+        // Status, which is checked immediately below.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
+                &mut Rect as *mut RECT as *mut core::ffi::c_void,
+                pRect as *const core::ffi::c_void,
+                core::mem::size_of::<RECT>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if Status != STATUS_SUCCESS as NTSTATUS {
@@ -7715,12 +7733,16 @@ pub unsafe extern "system" fn NtUserDrawMenuBarTemp(
             core::mem::size_of::<RECT>() as _,
             core::mem::size_of::<ULONG>() as ULONG,
         );
-        if NT_SUCCESS(Status) {
-            core::ptr::copy_nonoverlapping(
-                pRect as *const RECT,
-                &mut Rect as *mut RECT,
-                1,
-            );
+        // The probe VALIDATES only; this capture is the access, and a fault lands in
+        // Status, which is checked immediately below.
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
+                &mut Rect as *mut RECT as *mut core::ffi::c_void,
+                pRect as *const core::ffi::c_void,
+                core::mem::size_of::<RECT>(),
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if Status != STATUS_SUCCESS as NTSTATUS {

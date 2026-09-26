@@ -3,6 +3,9 @@ use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
 use ntkrnl_sys::base::{STATUS_SUCCESS, NT_SUCCESS};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // ExAllocatePoolZero is a FORCEINLINE (xdk/exfuncs.h) — alloc then zero, no symbol.
 #[inline(always)]
 unsafe fn ExAllocatePoolZero_rs(pool: POOL_TYPE, n: usize, tag: u32) -> PVOID {
@@ -198,16 +201,15 @@ pub unsafe extern "system" fn NtGdiExtEscape(
                 SetLastNtError(Status);
                 Result = 0;
                 break 'exit;
-            } else {
-                if !crate::copy::capture_from_user(
-                    SafeInData as *mut core::ffi::c_void,
-                    UnsafeInData as *const core::ffi::c_void,
-                    InSize as usize,
-                ) {
-                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
-                    Result = 0;
-                    break 'exit;
-                }
+            } else if !crate::copy::capture_from_user(
+                SafeInData,
+                UnsafeInData as *const core::ffi::c_void,
+                InSize as usize,
+            ) {
+                // Validate-only probe; the capture is the access, same exit.
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                Result = 0;
+                break 'exit;
             }
         }
 
@@ -239,8 +241,20 @@ pub unsafe extern "system" fn NtGdiExtEscape(
             SafeOutData,
         ) as INT;
 
-        if OutSize != 0 && !UnsafeOutData.is_null() && !SafeOutData.is_null() {
-            RtlCopyMemory(UnsafeOutData as *mut core::ffi::c_void, SafeOutData, OutSize as usize);
+        // Validate-only probe earlier; this publish is the access. A fault means the
+        // caller's output buffer went away, so report failure rather than claim the
+        // escape's result was delivered.
+        if OutSize != 0
+            && !UnsafeOutData.is_null()
+            && !SafeOutData.is_null()
+            && !crate::copy::publish_to_user(
+                UnsafeOutData as *mut core::ffi::c_void,
+                SafeOutData as *const core::ffi::c_void,
+                OutSize as usize,
+            )
+        {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            Result = 0;
         }
     }
 

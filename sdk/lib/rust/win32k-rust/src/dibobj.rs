@@ -8,6 +8,8 @@ use crate::dib_helpers::abs;
 
 // File-local, matching copy.rs / safe_user_io.rs in this crate.
 const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000D_u32 as NTSTATUS;
+const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009A_u32 as NTSTATUS;
 
 // ---- pool tags + small helpers ----
 // C: win32ss/user/ntuser/tags.h `#define TAG_DIB ' BID'` (big-endian).
@@ -524,7 +526,7 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
     YSrc: i32,
     StartScan: u32,
     mut ScanLines: u32,
-    Bits: LPBYTE,
+    mut Bits: LPBYTE,
     mut bmi: LPBITMAPINFO,
     ColorUse: u32,
     cjMaxBits: u32,
@@ -533,6 +535,8 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
     _hcmXform: *mut core::ffi::c_void,
 ) -> i32 {
     let mut ret: i32;
+    // Kernel copy of the caller's pixel bits; see the capture below.
+    let mut pjBitsSafe: PBYTE = core::ptr::null_mut();
     let mut pDC: PDC = core::ptr::null_mut();
     let mut hSourceBitmap: HBITMAP = core::ptr::null_mut();
     let mut hMaskBitmap: HBITMAP = core::ptr::null_mut();
@@ -568,19 +572,40 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
         if NT_SUCCESS(Status) {
             Status = SafeProbeForRead(Bits as *const core::ffi::c_void, cjMaxBits as usize, 1);
         }
-        if !NT_SUCCESS(Status) {
-            ret = 0;
-            break 'exit;
-        } else {
-            if !crate::copy::capture_from_user(
+        // The probes VALIDATE only; this capture is the access. Once it succeeds `bmi`
+        // names the KERNEL copy, so every later (*bmi) read is a kernel load.
+        if !NT_SUCCESS(Status)
+            || !crate::copy::capture_from_user(
                 pbmiSafe as *mut core::ffi::c_void,
                 bmi as *const core::ffi::c_void,
                 cjMaxInfo as usize,
+            )
+        {
+            ret = 0;
+            break 'exit;
+        }
+        bmi = pbmiSafe;
+
+        // `Bits` was probed above, but the probe only validates. Both consumers below
+        // read it directly out of the caller's page -- GreCreateBitmapEx as the pixel
+        // buffer, and IntGdiCreateMaskFromRLE by WALKING the RLE stream, which is a
+        // length-driven walk over user memory. Capture once and hand the copy to both.
+        if cjMaxBits != 0 && !Bits.is_null() {
+            pjBitsSafe = ExAllocatePoolWithTag(PagedPool, cjMaxBits as _, TAG_DIB) as PBYTE;
+            if pjBitsSafe.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                ret = 0;
+                break 'exit;
+            }
+            if !crate::copy::capture_from_user(
+                pjBitsSafe as *mut core::ffi::c_void,
+                Bits as *const core::ffi::c_void,
+                cjMaxBits as usize,
             ) {
                 ret = 0;
                 break 'exit;
             }
-            bmi = pbmiSafe;
+            Bits = pjBitsSafe as _;
         }
 
         if YDest < 0 {
@@ -730,6 +755,9 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
     if !hMaskBitmap.is_null() { EngDeleteSurface(hMaskBitmap as HSURF); }
     if !pDC.is_null() { DC_UnlockDc(pDC); }
     ExFreePoolWithTag(pbmiSafe as *mut core::ffi::c_void, u32::from_le_bytes(*b"GTmp"));
+    if !pjBitsSafe.is_null() {
+        ExFreePoolWithTag(pjBitsSafe as *mut core::ffi::c_void, TAG_DIB);
+    }
 
     ret
 }
@@ -1207,6 +1235,7 @@ pub unsafe extern "system" fn NtGdiGetDIBitsInternal(
             }
         }
 
+        // The probe VALIDATES only; this capture is the access, and takes the same exit.
         if !crate::copy::capture_from_user(
             pbmiSafe as *mut core::ffi::c_void,
             pbmi as *const core::ffi::c_void,
@@ -1246,11 +1275,16 @@ pub unsafe extern "system" fn NtGdiGetDIBitsInternal(
                 cjMaxInfo = infoSize;
             }
             ProbeForWrite(pbmi as *mut _, cjMaxInfo as usize, 1);
-            if !crate::copy::capture_from_user(
+            // The probe VALIDATES only; this publish is the access. There is no Status
+            // in this function -- iResult IS the return value, so a fault has to clear
+            // it rather than report success for bits that were never written out.
+            if !crate::copy::publish_to_user(
                 pbmi as *mut core::ffi::c_void,
                 pbmiSafe as *const core::ffi::c_void,
                 cjMaxInfo as usize,
             ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                iResult = 0;
                 break 'cleanup;
             }
         }
@@ -1337,9 +1371,10 @@ pub unsafe extern "system" fn NtGdiStretchDIBitsInternal(
         }
     }
 
-    if !crate::copy::capture_n(
-        pbmiSafe as *mut u8,
-        pbmi as *const u8,
+    // The probe VALIDATES only; this capture is the access, and takes the same exit.
+    if !crate::copy::capture_from_user(
+        pbmiSafe as *mut core::ffi::c_void,
+        pbmi as *const core::ffi::c_void,
         cjMaxInfo as usize,
     ) {
         ExFreePoolWithTag(pbmiSafe as *mut core::ffi::c_void, TAG_GBMI);
@@ -1382,9 +1417,10 @@ pub unsafe extern "system" fn NtGdiStretchDIBitsInternal(
                 return 0;
             }
         }
-        if !crate::copy::capture_n(
-            pvBits,
-            pjInit,
+        // The probe VALIDATES only; this capture is the access, and takes the same exit.
+        if !crate::copy::capture_from_user(
+            pvBits as *mut core::ffi::c_void,
+            pjInit as *const core::ffi::c_void,
             cjMaxBits as usize,
         ) {
             ExFreePoolWithTag(pvBits as *mut core::ffi::c_void, TAG_DIB);
@@ -1698,6 +1734,7 @@ pub unsafe extern "system" fn NtGdiCreateDIBitmapInternal(
 ) -> HBITMAP {
     let mut Status: i32 = STATUS_SUCCESS;
     let mut safeBits: PBYTE = core::ptr::null_mut();
+    let mut pbmiSafe: LPBITMAPINFO = core::ptr::null_mut();
     let mut hbmResult: HBITMAP = core::ptr::null_mut();
     let mut fInit = fInit;
 
@@ -1726,16 +1763,48 @@ pub unsafe extern "system" fn NtGdiCreateDIBitmapInternal(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             break 'cleanup;
-        } else {
-            if !pjInit.is_null() && (fInit & CBM_INIT) != 0 {
-                if !crate::copy::capture_n(
-                    safeBits,
-                    pjInit,
-                    cjMaxBits as usize,
-                ) {
-                    SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
-                    break 'cleanup;
-                }
+        }
+
+        // The probes above VALIDATE only; this capture is the access.
+        if !pjInit.is_null()
+            && (fInit & CBM_INIT) != 0
+            && !crate::copy::capture_from_user(
+                safeBits as *mut core::ffi::c_void,
+                pjInit as *const core::ffi::c_void,
+                cjMaxBits as usize,
+            )
+        {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            break 'cleanup;
+        }
+
+        // `pbmi` must be CAPTURED, not forwarded. GreCreateDIBitmapInternal reads the
+        // header and the colour table out of it, and it was being handed the caller's
+        // raw pointer -- OUTSIDE the probe, so a fault there has no handler and takes
+        // the machine down from user mode. Upstream has the same hole: it probes pbmi
+        // inside the _SEH2_TRY and then passes the user pointer to the same callee
+        // after the _SEH2_END, so this is not a translation divergence but a bug we
+        // inherited and are not obliged to keep.
+        if !pbmi.is_null() {
+            // A bitmap-info pointer with a zero declared maximum has nothing that can
+            // be validated or copied, so there is no safe way to honour it.
+            if cjMaxInitInfo == 0 {
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                break 'cleanup;
+            }
+            pbmiSafe =
+                ExAllocatePoolWithTag(PagedPool, cjMaxInitInfo as _, TAG_DIB) as LPBITMAPINFO;
+            if pbmiSafe.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                break 'cleanup;
+            }
+            if !crate::copy::capture_from_user(
+                pbmiSafe as *mut core::ffi::c_void,
+                pbmi as *const core::ffi::c_void,
+                cjMaxInitInfo as usize,
+            ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                break 'cleanup;
             }
         }
 
@@ -1745,7 +1814,7 @@ pub unsafe extern "system" fn NtGdiCreateDIBitmapInternal(
             cy,
             fInit,
             safeBits,
-            pbmi,
+            pbmiSafe,
             iUsage,
             fl,
             cjMaxBits,
@@ -1755,6 +1824,9 @@ pub unsafe extern "system" fn NtGdiCreateDIBitmapInternal(
 
     if !safeBits.is_null() {
         ExFreePoolWithTag(safeBits as *mut core::ffi::c_void, TAG_DIB);
+    }
+    if !pbmiSafe.is_null() {
+        ExFreePoolWithTag(pbmiSafe as *mut core::ffi::c_void, TAG_DIB);
     }
     hbmResult
 }
@@ -1876,18 +1948,81 @@ pub unsafe extern "system" fn NtGdiCreateDIBSection(
     if NT_SUCCESS(Status) {
         Status = SafeProbeForRead(bmi as *const core::ffi::c_void, biSize as usize, 1);
     }
+
+    // CAPTURE the header, then compute its full extent from the COPY. The third probe
+    // used `DIB_BitmapInfoSize(bmi, ..)`, which walks the caller's buffer to work out
+    // how long it is -- so the length used to validate user memory was itself read out
+    // of that same unvalidated user memory, and the walk was a raw read with no handler
+    // behind it. Deriving the extent from a kernel copy removes both: the walk cannot
+    // fault, and the size cannot change between the call that computes it and the probe
+    // that trusts it. `biSize` bounds this first capture and was validated above.
+    let mut pbmiFull: LPBITMAPINFO = core::ptr::null_mut();
     if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(
-            bmi as *const core::ffi::c_void,
-            DIB_BitmapInfoSize(bmi, Usage as u16) as usize,
-            1,
-        );
+        if (biSize as usize) < core::mem::size_of::<BITMAPCOREHEADER>() {
+            Status = STATUS_INVALID_PARAMETER;
+        } else {
+            let hdr = ExAllocatePoolWithTag(PagedPool, biSize as _, TAG_DIB) as LPBITMAPINFO;
+            if hdr.is_null() {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+            } else {
+                if !crate::copy::capture_from_user(
+                    hdr as *mut core::ffi::c_void,
+                    bmi as *const core::ffi::c_void,
+                    biSize as usize,
+                ) {
+                    Status = STATUS_ACCESS_VIOLATION;
+                }
+                // The palette-dependent extent, computed from the kernel copy.
+                let full = if NT_SUCCESS(Status) {
+                    DIB_BitmapInfoSize(hdr, Usage as u16)
+                } else {
+                    0
+                };
+                if NT_SUCCESS(Status) && full <= 0 {
+                    Status = STATUS_INVALID_PARAMETER;
+                }
+                if NT_SUCCESS(Status) {
+                    let full = full as usize;
+                    if full <= biSize as usize {
+                        // Nothing beyond the header to fetch; reuse what we have.
+                        pbmiFull = hdr;
+                    } else {
+                        pbmiFull =
+                            ExAllocatePoolWithTag(PagedPool, full as _, TAG_DIB) as LPBITMAPINFO;
+                        if pbmiFull.is_null() {
+                            Status = STATUS_INSUFFICIENT_RESOURCES;
+                        } else {
+                            Status =
+                                SafeProbeForRead(bmi as *const core::ffi::c_void, full, 1);
+                            if NT_SUCCESS(Status)
+                                && !crate::copy::capture_from_user(
+                                    pbmiFull as *mut core::ffi::c_void,
+                                    bmi as *const core::ffi::c_void,
+                                    full,
+                                )
+                            {
+                                Status = STATUS_ACCESS_VIOLATION;
+                            }
+                        }
+                    }
+                }
+                if pbmiFull != hdr {
+                    ExFreePoolWithTag(hdr as *mut core::ffi::c_void, TAG_DIB);
+                }
+            }
+        }
     }
 
     if !NT_SUCCESS(Status) {
+        if !pbmiFull.is_null() {
+            ExFreePoolWithTag(pbmiFull as *mut core::ffi::c_void, TAG_DIB);
+        }
         SetLastNtError(Status);
         return core::ptr::null_mut();
     }
+
+    // Everything downstream reads the KERNEL copy from here on.
+    let bmi = pbmiFull;
 
     if hDC.is_null() {
         hDC = NtGdiCreateCompatibleDC(core::ptr::null_mut());
@@ -1913,6 +2048,8 @@ pub unsafe extern "system" fn NtGdiCreateDIBSection(
     if bDesktopDC != 0 {
         NtGdiDeleteObjectApp(hDC as *mut core::ffi::c_void);
     }
+
+    ExFreePoolWithTag(bmi as *mut core::ffi::c_void, TAG_DIB);
 
     hbitmap
 }

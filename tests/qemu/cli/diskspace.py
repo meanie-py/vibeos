@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
-from . import cachecfg, hostlock
+from . import cachecfg, fsutil, hostlock
 
 GIB = 1024**3
 # MEASURED, not guessed (2026-09-11, fleet stopped, sampled every 20s across a cold
@@ -305,10 +305,7 @@ def status(repo: Path, *, sizes: bool = False) -> dict:
         footprints = []
         for path in paths:
             if path.is_dir():
-                cp = subprocess.run(
-                    ["du", "-s", "-B1", str(path)], capture_output=True, text=True, check=True
-                )
-                footprints.append({"path": str(path), "bytes": int(cp.stdout.split()[0])})
+                footprints.append({"path": str(path), "bytes": fsutil.disk_usage_bytes(path)})
         result["footprints"] = footprints
     return result
 

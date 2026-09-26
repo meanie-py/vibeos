@@ -2520,7 +2520,7 @@ pub unsafe extern "C" fn ARM64_UART_TRACE(msg: *const u8) {
         if u.is_null() { return; }
         let mut p = msg;
         while *p != 0 {
-            core::ptr::write_volatile(u, *p as u32);
+            crate::arm64_dbg::uart_putc_default(*p as u8);
             p = p.add(1);
         }
     }
@@ -2542,16 +2542,16 @@ pub unsafe extern "C" fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys
         if u.is_null() { return; }
         let mut p = prefix;
         while *p != 0 {
-            core::ptr::write_volatile(u, *p as u32);
+            crate::arm64_dbg::uart_putc_default(*p as u8);
             p = p.add(1);
         }
-        core::ptr::write_volatile(u, b'0' as u32);
-        core::ptr::write_volatile(u, b'x' as u32);
+        crate::arm64_dbg::uart_putc_default(b'0' as u8);
+        crate::arm64_dbg::uart_putc_default(b'x' as u8);
         let nibbles = (core::mem::size_of::<ntkrnl_sys::base::ULONG_PTR>() * 2) as i32;
         let mut i = nibbles - 1;
         while i >= 0 {
             let nib = ((val >> (i * 4)) & 0xF) as usize;
-            core::ptr::write_volatile(u, HEX[nib] as u32);
+            crate::arm64_dbg::uart_putc_default(HEX[nib] as u8);
             i -= 1;
         }
     }

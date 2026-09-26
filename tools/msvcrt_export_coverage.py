@@ -49,7 +49,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 NM = REPO / ".build-tools/llvm-mingw/bin/llvm-nm"
-SPEC = REPO / "dll/win32/msvcrt/msvcrt.spec"
+#: Every CRT DLL built from msvcrt_static that links the Rust cohab
+#: (dll/win32/msvcrt/msvcrt_rust_cohab.cmake). msvcrt20/msvcrt40/crtdll are i386-only.
+DLLS = ("msvcrt", "msvcrt20", "msvcrt40", "crtdll")
 RUST_SRC = REPO / "sdk/lib/rust/msvcrt-crt-rust/src"
 
 #: Where the still-C remainder comes from, so the output says WHOSE lane each one is
@@ -126,8 +128,11 @@ CATEGORIES: list[tuple[str, object]] = [
 ]
 
 
-def defined(path: Path) -> set[str]:
-    """Global symbols an archive or object DEFINES, undecorated of `@N`."""
+def defined(path: Path, i386: bool = False) -> set[str]:
+    """Global symbols an archive or object DEFINES, undecorated of `@N` -- and, on
+    i386, of the one leading underscore every C symbol carries there. Without that
+    the i386 figure read ~0% (`_strlen` never matched `strlen`); nobody saw it because
+    the tool had only ever been run for its amd64 default."""
     out = subprocess.run(
         [str(NM), "--defined-only", str(path)], capture_output=True, text=True
     ).stdout
@@ -135,14 +140,17 @@ def defined(path: Path) -> set[str]:
     for line in out.splitlines():
         parts = line.split()
         if len(parts) >= 3 and parts[1] in ("T", "D", "B", "R"):
-            syms.add(parts[2].split("@")[0])
+            name = parts[2].split("@")[0]
+            if i386 and name.startswith("_"):
+                name = name[1:]
+            syms.add(name)
     return syms
 
 
-def parse_spec() -> tuple[list[tuple[str, str]], int, int, int]:
+def parse_spec(spec: Path) -> tuple[list[tuple[str, str]], int, int, int]:
     impls: list[tuple[str, str]] = []
     stubs = forwards = cxx = 0
-    for raw in SPEC.read_text().splitlines():
+    for raw in spec.read_text().splitlines():
         line = raw.split("#")[0].strip()
         if not line:
             continue
@@ -175,9 +183,21 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", default="amd64", choices=["i386", "amd64", "arm64"])
     ap.add_argument("--list", action="store_true", help="print the still-C names per category")
+    ap.add_argument(
+        "--dll",
+        default="msvcrt",
+        choices=DLLS,
+        help="which CRT DLL's export table to measure (all link the same Rust archive)",
+    )
     args = ap.parse_args()
 
     build = REPO / f"build-{args.arch}/dll/win32/msvcrt"
+    dll_build = REPO / f"build-{args.arch}/dll/win32/{args.dll}"
+    if not (dll_build / "CMakeFiles" / f"{args.dll}.dir").is_dir():
+        sys.exit(
+            f"FAIL: {args.dll} is not built for {args.arch} (msvcrt20/msvcrt40/crtdll are "
+            f"i386-only).\nfix: ./vibeos-cli build --arch {args.arch}"
+        )
     archive = build / "libmsvcrt_crt_cargo.a"
     if not archive.is_file():
         sys.exit(
@@ -186,28 +206,69 @@ def main() -> int:
         )
     # Staleness is the failure this refuses to produce quietly: an archive older than the
     # Rust it is supposed to contain reports the PREVIOUS wave's coverage as this one's.
-    newest = max((p.stat().st_mtime for p in RUST_SRC.rglob("*.rs")), default=0.0)
+    # EVERY crate compiled into the archive, not just msvcrt-crt-rust: the string family
+    # lives in crt-portable-rust, and a watch on one crate reported a stale archive fresh.
+    sys.path.insert(0, str(REPO / "tools"))
+    import verify_ucrtbase_cohab as vuc
+    from source_walk import source_files
+
+    crates = vuc._closure("msvcrt-crt-cargo")
+    newest = max(
+        (p.stat().st_mtime for c in crates for p in source_files(vuc.WS / c / "src")),
+        default=0.0,
+    )
     if newest > archive.stat().st_mtime:
         sys.exit(
             f"FAIL: {archive.relative_to(REPO)} is OLDER than msvcrt-crt-rust's sources — "
             f"the figure would be the previous wave's.\nfix: ./vibeos-cli build --arch {args.arch}"
         )
 
-    rust = defined(archive)
+    i386 = args.arch == "i386"
+    rust = defined(archive, i386)
     # The `...` entry points: C trampolines in the MODULE target over Rust `_v*` twins.
     # They are part of the flip — stable Rust cannot define a C-variadic function — so an
     # export they carry is Rust-backed even though the symbol lives in a .c.obj.
-    shims = sorted((build / "CMakeFiles/msvcrt.dir").glob("rust_*shim.c.obj"))
+    # Every object comes from the DLL's REAL link line, never a directory glob: ninja
+    # leaves objects behind when a source moves, and the shims did move (out of
+    # msvcrt.dir into the msvcrt_rust_shims object library). Globbing counted those
+    # stale copies as the DLL's own C and knocked msvcrt's figure down.
+    import ucrt_tier2_refset as refset
+
+    link = refset.link_line(REPO / f"build-{args.arch}", args.dll).split()
+    objs = [REPO / f"build-{args.arch}" / t for t in link if t.endswith(".obj")]
+    # The `...` shells: C trampolines over Rust `_v*` twins, part of the flip because
+    # stable Rust cannot define a C-variadic function.
+    shims = [o for o in objs if "msvcrt_rust_shims.dir" in str(o)]
+    if not shims:
+        sys.exit(
+            f"FAIL: {args.dll}'s link line carries no msvcrt_rust_shims objects -- without "
+            f"them every `...` export reads as still-C.\nfix: ./vibeos-cli build --arch "
+            + args.arch
+        )
     for obj in shims:
-        rust |= defined(obj)
+        rust |= defined(obj, i386)
 
-    impls, stubs, forwards, cxx = parse_spec()
+    # A DLL's OWN module objects (crtdll's dllmain.c, msvcrt20.c) come first on its link
+    # line and win first-match over the archive, so a name they define is answered by
+    # that C whatever the archive also holds. The spec-generated stubs are excluded:
+    # they back only `-stub` entries, which are not counted.
+    own: set[str] = set()
+    for obj in objs:
+        if f"{args.dll}.dir" in str(obj) and not obj.name.endswith("_stubs.c.obj"):
+            own |= defined(obj, i386)
+
+    spec = REPO / f"dll/win32/{args.dll}/{args.dll}.spec"
+    impls, stubs, forwards, cxx = parse_spec(spec)
     if not impls:
-        sys.exit("FAIL: parsed 0 implemented exports out of msvcrt.spec — the parser is broken")
-    backed = [e for e, i in impls if i in rust or e in rust]
-    missing = sorted(e for e, i in impls if not (i in rust or e in rust))
+        sys.exit(f"FAIL: parsed 0 implemented exports out of {spec.name} — the parser is broken")
 
-    print(f"msvcrt.dll export coverage ({args.arch}, {len(shims)} varargs shim TUs)")
+    def is_rust(e: str, i: str) -> bool:
+        return (i in rust or e in rust) and not (i in own or e in own)
+
+    backed = [e for e, i in impls if is_rust(e, i)]
+    missing = sorted(e for e, i in impls if not is_rust(e, i))
+
+    print(f"{args.dll}.dll export coverage ({args.arch}, {len(shims)} varargs shim TUs)")
     print(
         f"  {len(backed)} of {len(impls)} implemented C exports Rust-backed "
         f"— {100 * len(backed) // len(impls)}%"

@@ -6,7 +6,7 @@ add_definitions(
     -DSORTING)
 
 include_directories(
-    schilytools/include
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/include
     reactos
     ${REACTOS_BINARY_DIR}/sdk/include)
 
@@ -17,67 +17,67 @@ include_directories(
 # Reference: http://opensource.stackexchange.com/questions/2094
 
 add_library(libmdigest
-    schilytools/libmdigest/sha3.c)
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libmdigest/sha3.c)
 
 add_library(libschily
-    schilytools/libschily/stdio/cvmod.c
-    schilytools/libschily/stdio/dat.c
-    schilytools/libschily/stdio/fcons.c
-    schilytools/libschily/stdio/ffileread.c
-    schilytools/libschily/stdio/fgetline.c
-    schilytools/libschily/stdio/fileopen.c
-    schilytools/libschily/stdio/filewrite.c
-    schilytools/libschily/stdio/flag.c
-    schilytools/libschily/stdio/niwrite.c
-    schilytools/libschily/astoll.c
-    schilytools/libschily/checkerr.c
-    schilytools/libschily/comerr.c
-    schilytools/libschily/dirent.c
-    schilytools/libschily/eaccess.c
-    schilytools/libschily/error.c
-    schilytools/libschily/fconv.c
-    schilytools/libschily/fillbytes.c
-    schilytools/libschily/fnmatch.c
-    schilytools/libschily/format.c
-    schilytools/libschily/getargs.c
-    schilytools/libschily/geterrno.c
-    schilytools/libschily/getexecpath.c
-    schilytools/libschily/gettimeofday.c
-    schilytools/libschily/gid.c
-    schilytools/libschily/jsprintf.c
-    schilytools/libschily/jssnprintf.c
-    schilytools/libschily/match.c
-    schilytools/libschily/mem.c
-    schilytools/libschily/movebytes.c
-    schilytools/libschily/raisecond.c
-    schilytools/libschily/saveargs.c
-    schilytools/libschily/searchinpath.c
-    schilytools/libschily/seterrno.c
-    schilytools/libschily/streql.c
-    schilytools/libschily/strlcat.c
-    schilytools/libschily/strlcpy.c
-    schilytools/libschily/uid.c
-    schilytools/libschily/zerobytes.c)
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/cvmod.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/dat.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/fcons.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/ffileread.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/fgetline.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/fileopen.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/filewrite.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/flag.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/stdio/niwrite.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/astoll.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/checkerr.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/comerr.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/dirent.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/eaccess.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/error.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/fconv.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/fillbytes.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/fnmatch.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/format.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/getargs.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/geterrno.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/getexecpath.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/gettimeofday.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/gid.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/jsprintf.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/jssnprintf.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/match.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/mem.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/movebytes.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/raisecond.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/saveargs.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/searchinpath.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/seterrno.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/streql.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/strlcat.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/strlcpy.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/uid.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libschily/zerobytes.c)
 
 add_library(libsiconv
-    schilytools/libsiconv/sic_nls.c)
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/libsiconv/sic_nls.c)
 target_link_libraries(libsiconv libschily)
 
 add_host_tool(mkisofs
-    schilytools/mkisofs/boot.c
-    schilytools/mkisofs/eltorito.c
-    schilytools/mkisofs/hash.c
-    schilytools/mkisofs/inode.c
-    schilytools/mkisofs/isonum.c
-    schilytools/mkisofs/joliet.c
-    schilytools/mkisofs/match.c
-    schilytools/mkisofs/mkisofs.c
-    schilytools/mkisofs/multi.c
-    schilytools/mkisofs/name.c
-    schilytools/mkisofs/rock.c
-    schilytools/mkisofs/stream.c
-    schilytools/mkisofs/tree.c
-    schilytools/mkisofs/write.c)
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/boot.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/eltorito.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/hash.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/inode.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/isonum.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/joliet.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/match.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/mkisofs.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/multi.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/name.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/rock.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/stream.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/tree.c
+    ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/write.c)
 target_link_libraries(mkisofs libmdigest libschily libsiconv)
 
 if(MSVC)

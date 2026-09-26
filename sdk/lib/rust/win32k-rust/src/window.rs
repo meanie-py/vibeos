@@ -3698,13 +3698,15 @@ unsafe extern "system" fn ProbeAndCaptureLargeString(
             }
         }
 
-        if !crate::copy::capture_n(
-            pvBuffer as *mut u8,
-            lstrTemp.Buffer as *const u8,
+        // Validate-only probe above; this capture is the access and takes its exit,
+        // including the free, and reports a status the way that path does.
+        if !crate::copy::capture_from_user(
+            pvBuffer as *mut core::ffi::c_void,
+            lstrTemp.Buffer as *const core::ffi::c_void,
             lstrTemp.Length as usize,
         ) {
             ExFreePoolWithTag(pvBuffer, TAG_STRING);
-            return ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _;
+            return STATUS_ACCESS_VIOLATION;
         }
     }
 

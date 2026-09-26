@@ -797,17 +797,22 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
     // where the buffer is, never that it stays mapped.
     Status = SafeProbeForRead(UnsafePoints as *const c_void, points_bytes, 1);
 
-    if NT_SUCCESS(Status) {
-        core::ptr::copy_nonoverlapping(
-            UnsafeCounts,
-            SafeCounts,
-            Count as usize,
-        );
-        core::ptr::copy_nonoverlapping(
-            UnsafePoints,
-            SafePoints,
-            nPoints as usize,
-        );
+    // The probes VALIDATE only -- which is exactly what the comment above says a range
+    // check cannot do about staying mapped. These two copies ARE the access, so they go
+    // through the protected path and a fault lands in Status, checked just below.
+    // `points_bytes` and the counts length are the same byte counts the probes used.
+    if NT_SUCCESS(Status)
+        && (!crate::copy::capture_from_user(
+            SafeCounts as *mut c_void,
+            UnsafeCounts as *const c_void,
+            (Count as usize) * core::mem::size_of::<u32>(),
+        ) || !crate::copy::capture_from_user(
+            SafePoints as *mut c_void,
+            UnsafePoints as *const c_void,
+            points_bytes,
+        ))
+    {
+        Status = STATUS_ACCESS_VIOLATION;
     }
 
     if !NT_SUCCESS(Status) {
@@ -1493,29 +1498,22 @@ pub unsafe extern "system" fn NtGdiGradientFill(
     if NT_SUCCESS(Status) {
         Status = SafeProbeForRead(pMesh as *const c_void, cbMesh as usize, 1);
     }
-    if !NT_SUCCESS(Status) {
-        ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
-        SetLastNtError(Status);
-        return 0;
-    } else {
-        if !crate::copy::capture_from_user(
-            SafeVertex as PVOID as *mut core::ffi::c_void,
-            pVertex as PVOID as *const core::ffi::c_void,
+    // The probes VALIDATE only; both copies are the access and take the same exit.
+    if !NT_SUCCESS(Status)
+        || !crate::copy::capture_from_user(
+            SafeVertex as *mut c_void,
+            pVertex as *const c_void,
             cbVertex as usize,
-        ) {
-            ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
-            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
-            return 0;
-        }
-        if !crate::copy::capture_from_user(
-            SafeMesh as *mut core::ffi::c_void,
-            pMesh as *const core::ffi::c_void,
+        )
+        || !crate::copy::capture_from_user(
+            SafeMesh as *mut c_void,
+            pMesh as *const c_void,
             cbMesh as usize,
-        ) {
-            ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
-            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
-            return 0;
-        }
+        )
+    {
+        ExFreePoolWithTag(SafeVertex as PVOID, TAG_SHAPE);
+        SetLastNtError(if NT_SUCCESS(Status) { STATUS_ACCESS_VIOLATION } else { Status });
+        return 0;
     }
 
     bRet = GreGradientFill(hdc, SafeVertex, nVertex, SafeMesh, nMesh, ulMode);

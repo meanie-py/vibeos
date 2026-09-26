@@ -310,31 +310,24 @@ def parse_repr_c_structs(content: str) -> dict[str, list[str]]:
 # =============================================================================
 
 
-def find_c_source(struct_name: str) -> Path | None:
-    """grep win32ss for `struct <name>` definition; prefer .c then .h."""
+def _first_struct_definition(tag: str, roots: list[Path]) -> Path | None:
+    """First `.c` (then `.h`) file under `roots` holding `struct <tag> {`.
+
+    In Python, not a `grep -rl` shell-out: those sat under `except Exception: continue`,
+    so a missing or failing grep read as "no definition anywhere" -- a silent skip of the
+    very struct being verified. latin-1 decodes every byte, so no file is ever "binary"."""
+    want = re.compile(rf"struct {re.escape(tag)}\s*\{{")
     for ext in ("*.c", "*.h"):
-        try:
-            r = subprocess.run(
-                [
-                    "grep",
-                    "-rl",
-                    rf"struct {struct_name}\b",
-                    str(REACTOS / "win32ss"),
-                    "--include",
-                    ext,
-                ],
-                capture_output=True,
-                text=True,
-            )
-        except Exception:
-            continue
-        files = [f for f in r.stdout.strip().split("\n") if f]
-        # prefer a file that has the *typedef* form (full definition w/ body)
-        for f in files:
-            txt = Path(f).read_text(errors="ignore")
-            if re.search(rf"struct {re.escape(struct_name)}\s*\{{", txt):
-                return Path(f)
+        for root in roots:
+            for f in sorted(root.rglob(ext)):
+                if f.is_file() and want.search(f.read_bytes().decode("latin-1")):
+                    return f
     return None
+
+
+def find_c_source(struct_name: str) -> Path | None:
+    """The win32ss file defining `struct <name>` (with a body); prefer .c then .h."""
+    return _first_struct_definition(struct_name, [REACTOS / "win32ss"])
 
 
 def _typedef_end(src_text: str, struct_name: str) -> int | None:
@@ -957,19 +950,9 @@ def find_c_source_driver(struct_name: str, cfg: dict):
     roots = [REACTOS / cfg["driver_dir"], REACTOS / "sdk/include"]
     for tag in candidates:
         for root in roots:
-            for ext in ("*.c", "*.h"):
-                try:
-                    r = subprocess.run(
-                        ["grep", "-rl", rf"struct {tag}\b", str(root), "--include", ext],
-                        capture_output=True,
-                        text=True,
-                    )
-                except Exception:
-                    continue
-                for f in [x for x in r.stdout.strip().split("\n") if x]:
-                    txt = Path(f).read_text(errors="ignore")
-                    if re.search(rf"struct {re.escape(tag)}\s*\{{", txt):
-                        return Path(f), tag
+            hit = _first_struct_definition(tag, [root])
+            if hit:
+                return hit, tag
     return None
 
 

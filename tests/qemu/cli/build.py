@@ -557,17 +557,37 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
     cmake scan prunes them and they get the cargo threshold instead. See
     tools/dedup-build-cache.sh SAFETY for history."""
 
-    def _cargo_roots(root: Path) -> list[Path]:
+    # In-process walks, not `find` shell-outs. Those ran under a 300 s timeout each, their
+    # failures degraded to "skip the check" (a cargo-root scan that failed returned [] and
+    # quietly un-pruned every nested target dir), and a `find` over a large tree outlived
+    # a killed parent as an orphan. os.scandir yields the inode from the dirent for free.
+    def _files(root: Path, prune: frozenset[str] = frozenset()):
+        stack = [str(root)]
+        while stack:
+            d = stack.pop()
+            try:
+                it = os.scandir(d)
+            except OSError:
+                continue  # vanished mid-walk or unreadable: find would warn and go on too
+            with it:
+                for e in it:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            if e.path not in prune:
+                                stack.append(e.path)
+                        elif e.is_file(follow_symlinks=False):
+                            yield e
+                    except OSError:
+                        continue
+
+    def _nlink(e) -> int:
         try:
-            cp = subprocess.run(
-                ["find", str(root), "-name", "CACHEDIR.TAG"],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return []
-        dirs = sorted(Path(ln).parent for ln in cp.stdout.splitlines() if ln.strip())
+            return e.stat(follow_symlinks=False).st_nlink
+        except OSError:
+            return 1
+
+    def _cargo_roots(root: Path) -> list[Path]:
+        dirs = sorted(Path(e.path).parent for e in _files(root) if e.name == "CACHEDIR.TAG")
         # keep only top-most roots (cargo stamps per-triple subdirs too)
         tops: list[Path] = []
         for d in dirs:
@@ -575,47 +595,28 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
                 tops.append(d)
         return tops
 
-    def _probe_cmd(root: Path, links: str, prune: list[Path], *, all_hits: bool) -> list[str]:
-        cmd: list[str] = ["find", str(root)]
-        for p in prune:
-            cmd += ["-path", str(p), "-prune", "-o"]
-        cmd += ["-type", "f", "-links", links, "-print"]
-        if not all_hits:
-            cmd += ["-quit"]
-        return cmd
+    def _multi_linked(root: Path, over: int, prune: list[Path]):
+        """Files under `root` with more than `over` links (find's `-links +N`)."""
+        skip = frozenset(str(p) for p in prune)
+        return (e.path for e in _files(root, skip) if _nlink(e) > over)
 
-    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
-        try:
-            cp = subprocess.run(
-                _probe_cmd(root, links, prune, all_hits=False),
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except (OSError, subprocess.SubprocessError):
-            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return None
-        return cp.stdout.strip() or None
+    def _probe(root: Path, over: int, prune: list[Path]) -> str | None:
+        return next(_multi_linked(root, over, prune), None)
 
-    def _probe_all(root: Path, links: str, prune: list[Path]) -> list[str]:
-        try:
-            cp = subprocess.run(
-                _probe_cmd(root, links, prune, all_hits=True),
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except (OSError, subprocess.SubprocessError):
-            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return []
-        return [ln for ln in cp.stdout.splitlines() if ln.strip()][:200]
+    def _probe_all(root: Path, over: int, prune: list[Path]) -> list[str]:
+        out: list[str] = []
+        for path in _multi_linked(root, over, prune):
+            out.append(path)
+            if len(out) == 200:
+                break
+        return out
 
     def _foreign_links(cands: list[str]) -> list[str]:
         """Filter multi-link cargo files down to the ones whose links are NOT
         all inside this worktree. Cargo's incremental sessions legitimately
         hardlink metadata.rmeta into deps/ (nlink = 1 + N session dirs, all
         in-tree), so nlink>2 alone is NOT the dedup signature — a link path
-        OUTSIDE the worktree is. One find walk accounts every candidate inode."""
+        OUTSIDE the worktree is. One walk accounts every candidate inode."""
         infos: dict[int, list] = {}
         for h in cands:
             try:
@@ -625,35 +626,25 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
             infos.setdefault(st.st_ino, [st.st_nlink, h])
         if not infos:
             return []
-        cond: list[str] = []
-        for ino in infos:
-            cond += ["-inum", str(ino), "-o"]
-        cmd = ["find", str(repo), "-type", "f", "(", *cond[:-1], ")", "-printf", "%i\n"]
-        try:
-            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        except (OSError, subprocess.SubprocessError):
-            # Accounting failed — fail SAFE (treat as foreign; a spurious
-            # refusal is recoverable, a corrupted sibling build is not).
-            return [h for _, h in infos.values()]
         seen: dict[int, int] = {}
-        for ln in cp.stdout.splitlines():
-            if ln.strip().isdigit():
-                ino = int(ln)
+        for e in _files(repo):
+            ino = e.inode()
+            if ino in infos:
                 seen[ino] = seen.get(ino, 0) + 1
         return [h for ino, (nlink, h) in infos.items() if seen.get(ino, 0) < nlink]
 
     hits: list[str] = []
     if build_dir.is_dir():
         nested_cargo = _cargo_roots(build_dir)
-        hit = _probe(build_dir, "+1", nested_cargo)  # cmake outputs: any sharing is foreign
+        hit = _probe(build_dir, 1, nested_cargo)  # cmake outputs: any sharing is foreign
         if hit:
             hits.append(f"{hit} (links 2+ in a cmake tree)")
         for c in nested_cargo:
-            for f in _foreign_links(_probe_all(c, "+2", [])):
+            for f in _foreign_links(_probe_all(c, 2, [])):
                 hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     ws = repo / "sdk" / "lib" / "rust" / "target"
     if ws.is_dir():
-        for f in _foreign_links(_probe_all(ws, "+2", [])):
+        for f in _foreign_links(_probe_all(ws, 2, [])):
             hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     if not hits:
         return True

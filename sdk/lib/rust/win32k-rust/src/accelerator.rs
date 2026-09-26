@@ -504,12 +504,13 @@ pub unsafe extern "system" fn NtUserTranslateAccelerator(
                 break 'cleanup;
             }
         }
+        // Validate-only probe above; this capture is the access and takes its exit.
         if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(Message) as *mut core::ffi::c_void,
             pUnsafeMessage as *const core::ffi::c_void,
             core::mem::size_of::<MSG>(),
         ) {
-            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
             break 'cleanup;
         }
 
@@ -599,12 +600,13 @@ pub unsafe extern "system" fn NtUserTranslateAccelerator(
                 break 'cleanup;
             }
         }
+        // Validate-only probe above; this capture is the access and takes its exit.
         if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!(Message) as *mut core::ffi::c_void,
             pUnsafeMessage as *const core::ffi::c_void,
             core::mem::size_of::<MSG>(),
         ) {
-            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as _);
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
             break 'cleanup;
         }
 

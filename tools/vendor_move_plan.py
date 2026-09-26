@@ -31,7 +31,10 @@ WHAT EACH COLUMN MEANS
   registry  vendor.yaml, vendor-patches/, THIRD-PARTY-NOTICES.md, upstream's ledger.
             Mechanical, and `vendored.py` regenerates the generated ones.
   docs      prose. Should change; nothing breaks if it lags.
-  source    C/C++ OUTSIDE the tree spelling a path into it (a relative #include).
+  source    C/C++ OUTSIDE the tree reaching into it: by full path, or by a quoted
+            #include that resolves into the tree from the including file's directory
+            (`sdk/lib/crt/math/*.c` says `#include "ieee754/ieee754.h"`). The relative
+            form was missed by the first cut and only surfaced reading the build refs.
   include   code reaching a header tree under sdk/include through an INCLUDE ROOT
             (`#include <GL/gl.h>`). It never spells the tree's path, so a path grep
             reports zero -- the first cut of this tool did, for GL and d3dkmthk.h. These
@@ -181,6 +184,7 @@ def _category(rel: str) -> str:
     return "tooling"
 
 
+_INCLUDE_ANY_QUOTED = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
 _ANY_INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^">]+)[">]', re.M)
 
 
@@ -268,6 +272,16 @@ def plan(repo: Path = REPO) -> list[Plan]:
                 by_path[tpath].refs["include"].add(rel)
 
         if owner is None:
+            if is_code:
+                here = rel.rsplit("/", 1)[0] if "/" in rel else ""
+                for inc in _INCLUDE_ANY_QUOTED.findall(text):
+                    tgt = os.path.normpath(os.path.join(here, inc)).replace(os.sep, "/")
+                    if tgt.startswith(".."):
+                        continue
+                    for pre, tpath in needles:
+                        if _inside(tgt, [pre]):
+                            by_path[tpath].refs["source"].add(rel)
+                            break
             continue
         # Outbound: the tree's own files reaching out by relative path.
         tpre = prefixes[owner]

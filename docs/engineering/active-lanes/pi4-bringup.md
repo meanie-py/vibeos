@@ -1,5 +1,12 @@
 # Pi 4B physical bring-up — graviton-spike
 
+> **2026-09-25: VibeOS boots to the desktop on a physical Raspberry Pi 4B.**
+> Serial shows `[WIN32K] shell ready` and `[EXPLORER] _tWinMain entered` (the same
+> marker the QEMU smoke gates on), with zero bugchecks. HDMI shows the taskbar,
+> Start button and Notepad. Built from `cf73a8d8ba3`. Evidence: bench
+> `first-desktop-20260925/` (serial.bin, manifest.json, hdmi-desktop.png). See
+> "Session 3" at the end for the three bugs between the Phase-1 stop and this.
+
 The owner changed this lane from a Graviton/KVM experiment to booting VibeOS
 **directly on an existing Raspberry Pi 4B**. No AWS resources were created.
 The immediate hardware milestone is FreeLDR entry and its menu; the eventual
@@ -382,6 +389,8 @@ boot.**
 
 ### Next, in order
 
+(Superseded 2026-09-25: see "Session 3" below. Item 1's premise was wrong.)
+
 1. **Why serial dies at the Phase-1 UART remap.** Output stops within
    `MmInitSystem(1)`/the `MmMapIoSpace` remap of the PL011 in `ex-rust/init.rs`,
    and `[PHASE1] UART remapped to kernel VA` never appears. Cheapest probe: skip
@@ -428,3 +437,91 @@ latest build. And the BCM2711 watchdog (`PM_WDOG`/`PM_RSTC` at 0xFE100024 /
 0xFE10001C, password 0x5A000000) maxes at ~16s, so it can only be armed right
 before a known-risky step and disarmed at kernel entry - long enough to turn
 "halts forever" into "reboots", not long enough to cover a 3-minute ramdisk load.
+
+## Session 3 (2026-09-25) — the bench runs itself; the "last line" was not the last line
+
+### Bench
+
+The bench is now driven entirely from the host: a Shelly smart plug switches the
+Pi's power (`tools/pi4/power.sh`), so `tools/pi4/netboot.sh` does power-cycle ->
+splash -> Shell -> TFTP -> boot with nobody at the bench. All bench tooling moved
+into the repo under `tools/pi4/`. The serial listener and TFTP server used to
+exist only on the bench machine's D: drive. The standing how-to is
+`docs/engineering/pi4-bench.md`; this file keeps the findings.
+
+Current master (1,540 commits past session 2) reproduced the session-2 stop
+exactly on the first hands-free boot.
+
+### Serial output was being truncated, not stopping
+
+The raw bytes around the Phase-1 stop read
+
+    [MM] MmArmInitSystem returning TRUE\r\n[E[\n[[[KERNEL] ExpInitializeExecutive returned!
+    [PHASE1] ObInitSystem\r\n[PHASE1] ExI[[[[[[[MM1] MiCreateMemoryEvent LowMem
+
+Each `[` is a whole trace line cut to its first byte. `ARM64_UART_TRACE`, which
+every ex-rust `uart_trace!` goes through, stored bytes straight into the PL011
+data register. Session 2's FIFO fix covered `kiinit`/`trap` only. The same bare
+store had 87 private copies in 13 files across ntoskrnl, iomgr, se, ps and lpc.
+All of them now go through `Arm64UartPutChar` (exported from `arm64_dbg.rs`),
+and `tools/scan_raw_uart_writes.py` gates new ones (baseline empty; it finds
+all 87 on the old tree).
+
+So session 2's "serial stops at `MiInitializeMemoryEvents done`" located
+nothing. Whole Phase-1 lines were being lost, and the remap-failure theory
+(next step 1 above) was built on that. The hang location has to be re-read
+from a FIFO-safe boot.
+
+### Other QEMU-virt constants still live (not yet on the boot path)
+
+- `hal-rust/src/arm64/mpboot.rs`: the AP trampoline writes a trace byte to
+  physical `0x09000000`, which is RAM on a Pi. That only matters for the MP
+  entry; the Pi `freeldr.ini` defaults to UP.
+- `pl011-rust/src/pl011.rs`: `PL011_PHYS_ADDR = 0x09000000`.
+
+### The cache bugs: from the Phase-1 stop to the desktop
+
+With FIFO-safe output the real stop was visible: serial died at the first byte
+written through the Phase-1 `MmMapIoSpace` remap of the UART.
+
+1. **`MmNonCached` mappings were cached.** freeldr programs `MAIR_EL1 =
+   0x004400FF` (slot 0 Normal-WB, 1 Device-nGnRnE, 2 Normal-NC), and
+   `MI_PAGE_DISABLE_CACHE` wrote slot 0 under a comment saying "device". So the
+   UART and the GIC were mapped as cached RAM, and stores never reached them.
+   This was the third copy of the same bit-swap: `PTE_DISABLE_CACHE` and the
+   `stubs.rs` protection table had been fixed earlier. Fixing it took the board
+   through the registry, I/O init, and the launch of SMSS into user mode.
+2. **Image pages were not visible to instruction fetch.** smss died with
+   `STATUS_ILLEGAL_INSTRUCTION` (ESR EC=0) at the first `stp` of
+   `RtlSetUnhandledExceptionFilter`. That is a zero page decoding as UDF: the
+   section page-in wrote ntdll's code through the D-cache and never cleaned it
+   to the point of unification. `MmMakeSegmentResident` now sweeps image pages.
+   **That fix alone reached the desktop.**
+3. Siblings of 2, fixed in the same pass and landed after the desktop boot:
+   `KeSweepICache(NULL, 0)` now cleans the D-cache by set/way (the loader's
+   post-relocation flush was I-cache-only), and `MmLoadSystemImage` sweeps a
+   driver before running it.
+
+All three are invisible to QEMU TCG, which models no caches. Every one of the
+seven Pi bugs so far has been a hardware property QEMU does not have (EL2 entry,
+FIFO depth, memory above one L1 entry, EL1 vectors, cacheability, I/D
+coherence), so treat "passes on QEMU" as necessary and nowhere near sufficient
+for arm64.
+
+### Netboot speed, measured
+
+The ramdisk takes ~13.5 minutes whatever the TFTP framing: 825 s lockstep,
+805 s with a 32-block window, 804 s with 8 KB blocks. The limit is Ethernet
+frames, about one per 8 ms, which fits EDK2's managed network layer polling
+the NIC on a ~10 ms timer and taking one packet per poll. Next experiment:
+iPXE, which calls the NIC driver in its own loop, and can hand the chained
+loader a virtual filesystem of downloaded files so nothing touches the SD card.
+
+### Next
+
+- Re-verify on the board with the item-3 sweeps (not yet run on hardware).
+- bootvid geometry: the boot splash is streaked and undersized, but the desktop
+  (win32k on the GOP framebuffer) renders correctly.
+- Input: USB on the Pi 4 is xHCI behind PCIe, which we have no driver for.
+- MP: the AP trampoline in `hal-rust/src/arm64/mpboot.rs` still writes to
+  `0x09000000`, which is RAM on a Pi.

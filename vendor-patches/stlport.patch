@@ -2,7 +2,7 @@
 #
 # Upstream: https://sourceforge.net/projects/stlport/files/STLport/STLport-5.2.1/STLport-5.2.1.tar.bz2
 #           sha256 755b007b982c4545086c43affc8ed32c0acd577ee206eb1f6967e250c3546fc9
-# Apply from sdk/lib/3rdparty/stlport/ for the a/... paths, and from
+# Apply from vendor/stlport/ for the a/... paths, and from
 # sdk/include/c++/stlport/ for the a/stlport/... paths (see SPLIT TREE below).
 #
 # Version 5.2.1, from sdk/include/c++/stlport/stl/_stlport_version.h
@@ -13,7 +13,7 @@
 # no upstream left to track.
 #
 # SPLIT TREE — this caught us out, and vendor.yaml did not record it:
-#   sdk/lib/3rdparty/stlport      src/, build/, doc/, etc/, test/  (the library sources)
+#   vendor/stlport                src/, build/, doc/, etc/, test/  (the library sources)
 #   sdk/include/c++/stlport       326 files = upstream's top-level stlport/ include tree
 # The second directory was NOT registered in vendor.yaml at all until 2026-09-20. It is
 # not a copy of the first; it is the other half of the same drop.

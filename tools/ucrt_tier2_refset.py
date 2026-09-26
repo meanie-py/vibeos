@@ -68,8 +68,8 @@ def _tool(name: str) -> str:
     return found
 
 
-def link_line(build: Path) -> str:
-    """ucrtbase's real link command, straight from ninja.
+def link_line(build: Path, target: str = "ucrtbase") -> str:
+    """A target's real link command (ucrtbase's by default), straight from ninja.
 
     This is the authority for which objects make the shipping DLL. Reconstructing it by
     hand -- globbing the object directory -- inherits stale objects ninja left behind.
@@ -86,7 +86,7 @@ def link_line(build: Path) -> str:
                 str(build),
                 "-t",
                 "commands",
-                "ucrtbase",
+                target,
             ],
             capture_output=True,
             text=True,
@@ -94,15 +94,15 @@ def link_line(build: Path) -> str:
             cwd=REPO,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RefsetError(f"could not ask ninja for ucrtbase's link line: {exc}") from exc
+        raise RefsetError(f"could not ask ninja for {target}'s link line: {exc}") from exc
     if res.returncode != 0:
         raise RefsetError(
-            f"ninja -t commands ucrtbase failed in {build} (exit {res.returncode}):\n"
+            f"ninja -t commands {target} failed in {build} (exit {res.returncode}):\n"
             f"{res.stderr.strip()[:2000]}"
         )
     lines = [ln for ln in res.stdout.splitlines() if ln.strip()]
     if not lines:
-        raise RefsetError(f"ninja produced no commands for ucrtbase in {build}")
+        raise RefsetError(f"ninja produced no commands for {target} in {build}")
     return lines[-1]
 
 

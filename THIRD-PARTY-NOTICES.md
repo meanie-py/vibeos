@@ -48,9 +48,9 @@ This product includes third-party software. **This file is GENERATED** from `ven
 
 - Upstream: Microsoft Windows-driver-samples
 - Version: unknown
-- In this tree: `drivers/wdm/audio/drivers/ac97`
+- In this tree: `vendor/ac97`
 - Licence: MIT
-- Grant reproduced from: `drivers/wdm/audio/drivers/ac97/license.txt`
+- Grant reproduced from: `vendor/ac97/license.txt`
 
 ```
 MIT License
@@ -528,9 +528,9 @@ Used in trigonometric argument reduction
 
 - Upstream: https://code.google.com/archive/p/cmediadrivers/
 - Version: 1.2.6
-- In this tree: `drivers/wdm/audio/drivers/CMIDriver`
+- In this tree: `vendor/cmidriver`
 - Licence: BSD-3-Clause
-- Grant reproduced from: `drivers/wdm/audio/drivers/CMIDriver/adapter.cpp (header comment)`
+- Grant reproduced from: `vendor/cmidriver/adapter.cpp (header comment)`
 
 ```
 Copyright (c) 2006-2008 dogbert <dogber1@gmail.com>
@@ -590,11 +590,11 @@ Copyright(C) 2010 Alex Andreotti <alex.andreotti@gmail.com>
 
 - Upstream: https://github.com/dosfstools/dosfstools
 - Version: 4.1
-- In this tree: `sdk/lib/fslib/vfatlib/check`
+- In this tree: `vendor/dosfstools`
 - Licence: GPL-3.0-or-later
 - Also contains: LGPL-2.1-or-later — byteswap.h and byteswap1.h are GNU C Library headers ("This file is part of the GNU C Library", FSF 1997-2003) that dosfstools carries for portability. Two headers, no bodies.
 
-- Grant reproduced from: `sdk/lib/fslib/vfatlib/check/COPYING`
+- Grant reproduced from: `vendor/dosfstools/COPYING`
 
 ```
 GNU GENERAL PUBLIC LICENSE
@@ -1277,9 +1277,9 @@ Public License instead of this License.  But first, please read
 
 - Upstream: unknown
 - Version: unknown
-- In this tree: `dll/3rdparty/dxtn`
+- In this tree: `vendor/dxtn`
 - Licence: MIT
-- Grant reproduced from: `dll/3rdparty/dxtn/txc_compress_dxtn.c (header comment)`
+- Grant reproduced from: `vendor/dxtn/txc_compress_dxtn.c (header comment)`
 
 ```
 libtxc_dxtn
@@ -3111,9 +3111,9 @@ be appreciated.
 
 - Upstream: https://libsndfile.github.io/libsamplerate/
 - Version: 0.2.2
-- In this tree: `sdk/lib/3rdparty/libsamplerate`
+- In this tree: `vendor/libsamplerate`
 - Licence: BSD-2-Clause
-- Grant reproduced from: `sdk/lib/3rdparty/libsamplerate/COPYING`
+- Grant reproduced from: `vendor/libsamplerate/COPYING`
 
 ```
 Copyright (c) 2012-2016, Erik de Castro Lopo <erikd@mega-nerd.com>
@@ -4455,9 +4455,9 @@ Revision 1.6  1996/09/25 03:22:53  brianp
 
 - Upstream: https://github.com/microsoft/compiler-tests
 - Version: unknown
-- In this tree: `modules/rostests/apitests/compiler/ms`
+- In this tree: `vendor/ms-compiler-tests`
 - Licence: MIT
-- Grant reproduced from: `modules/rostests/apitests/compiler/ms/LICENSE.TXT`
+- Grant reproduced from: `vendor/ms-compiler-tests/LICENSE.TXT`
 
 ```
 The MIT License (MIT)
@@ -4564,7 +4564,7 @@ rdesktop: A Remote Desktop Protocol client.
 
 - Upstream: https://github.com/rdesktop/rdesktop
 - Version: 1.8.3
-- In this tree: `modules/rosapps/applications/net/tsclient`
+- In this tree: `vendor/tsclient`
 - Licence: GPL-3.0-or-later
 - Grant reproduced from: `base/applications/mstsc/rdesktop.h (header comment)`
 
@@ -4591,11 +4591,11 @@ rdesktop: A Remote Desktop Protocol client.
 
 - Upstream: https://sourceforge.net/projects/schilytools/
 - Version: schily-2017-09-07
-- In this tree: `sdk/tools/mkisofs/schilytools`
+- In this tree: `vendor/schilytools`
 - Licence: CDDL-1.0
 - Also contains: GPL-2.0-or-later — mkisofs itself is Eric Youngdale's GPL program that Schily maintains: its sources say "either version 2, or (at your option) any later version" (and four say "version 2" only), while the schily libraries carry the CDDL. A host tool, so nothing here reaches the shipped image.
 
-- Grant reproduced from: `sdk/tools/mkisofs/schilytools/CDDL.Schily.txt`
+- Grant reproduced from: `vendor/schilytools/CDDL.Schily.txt`
 
 ```
 COMMON DEVELOPMENT AND DISTRIBUTION LICENSE Version 1.0
@@ -4980,13 +4980,13 @@ in Berlin Germany.
 
 - Upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed with Mesa. No release stamp in the drop; see review.
 - Version: glu-9.0.1 (Mesa git tag, not a release tarball)
-- In this tree: `dll/opengl/glu32/src`, `dll/opengl/glu32/include`
+- In this tree: `vendor/glu`
 - Licence: SGI-B-2.0
 - Also contains: LGPL-2.0-or-later — include/GL/glu_mangle.h is not SGI's — it is Mesa 3.0, Copyright (C) 1995-1998 Brian Paul, under the GNU Library General Public License v2 or later. One file, a symbol-mangling header, but a copyleft licence sitting inside a permissive drop is exactly the shape this registry exists to make visible.
 
 - Also contains: SGI-B-1.1 — The 73 .cc implementation files under src/libnurbs/{interface,internals,nurbtess} carry SGI Free Software License B **Version 1.1**, a distinct earlier licence, not the Version 2.0 the other 117 files carry. Inherited from Mesa, 0% ours.
 - Modified by us: yes, see `vendor-patches/glu32.patch`
-- Grant reproduced from: `dll/opengl/glu32/include/GL/glu.h (header comment)`
+- Grant reproduced from: `vendor/glu/include/GL/glu.h (header comment)`
 
 ```
 SGI FREE SOFTWARE LICENSE B (Version 2.0, Sept. 18, 2008)
@@ -5022,10 +5022,10 @@ Silicon Graphics, Inc.
 
 - Upstream: http://www.stlport.org/
 - Version: 5.2.1
-- In this tree: `sdk/lib/3rdparty/stlport`, `sdk/include/c++/stlport`
+- In this tree: `vendor/stlport`, `sdk/include/c++/stlport`
 - Licence: STLport licence (permissive)
 - Modified by us: yes, see `vendor-patches/stlport.patch`
-- Grant reproduced from: `sdk/lib/3rdparty/stlport/README`
+- Grant reproduced from: `vendor/stlport/README`
 
 ```
 **********************************************************************
@@ -5098,9 +5098,9 @@ This software is being distributed under the following terms:
 
 - Upstream: https://github.com/sebkirche/treelist
 - Version: ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668))
-- In this tree: `base/setup/reactos/treelist.c`, `base/setup/reactos/treelist.h`
+- In this tree: `vendor/treelist`
 - Licence: GPL-3.0-or-later
-- Grant reproduced from: `base/setup/reactos/treelist.c (header comment)`
+- Grant reproduced from: `vendor/treelist/treelist.c (header comment)`
 
 ```
 PROJECT:     ReactOS GUI first stage setup application
@@ -5144,9 +5144,9 @@ Version:	2.04
 
 - Upstream: virtio-win
 - Version: unknown
-- In this tree: `sdk/lib/drivers/virtio`
+- In this tree: `vendor/virtio`
 - Licence: BSD-3-Clause
-- Grant reproduced from: `sdk/lib/drivers/virtio/LICENSE`
+- Grant reproduced from: `vendor/virtio/LICENSE`
 
 ```
 Copyright 2009-2017 Red Hat, Inc. and/or its affiliates.
@@ -5185,9 +5185,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - Upstream: https://github.com/virtio-win/kvm-guest-drivers-windows (NetKVM/NDIS5)
 - Version: git commit 5e01b36
-- In this tree: `drivers/network/dd/netkvm`
+- In this tree: `vendor/netkvm`
 - Licence: BSD-3-Clause
-- Grant reproduced from: `drivers/network/dd/netkvm/Common/ParaNdis-VirtIO.c (header comment)`
+- Grant reproduced from: `vendor/netkvm/Common/ParaNdis-VirtIO.c (header comment)`
 
 ```
 This file contains NDIS driver VirtIO callbacks
