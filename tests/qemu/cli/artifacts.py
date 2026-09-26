@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -21,18 +22,87 @@ ARTIFACT_ROOT = Path(os.environ.get("VIBEOS_ARTIFACT_ROOT", "/tmp/vibeos-cli"))
 
 
 def create_run_dir(command: str, arch: str, ts: int | None = None) -> Path:
-    """Atomically allocate a private directory, including for same-second runs."""
+    """Atomically allocate a private directory, including for same-second runs.
+
+    Also seeds the INTERRUPTED MARKER (see `write_interrupted_marker`). Done here
+    because this is the one choke point every run dir passes through -- `Run`
+    takes it, and so do the commands that build their own summary by hand
+    (conformance).
+    """
     ts = ts if ts is not None else int(time.time())
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(ts))
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     # Keep the date prefix and command/arch suffix for existing artifact scans.
     # A random component also separates us from older lanes using bare seconds.
-    return Path(
+    run_dir = Path(
         tempfile.mkdtemp(prefix=f"{stamp}-", suffix=f"-{command}-{arch}", dir=ARTIFACT_ROOT)
     )
+    write_interrupted_marker(run_dir, command, arch)
+    return run_dir
+
+
+def write_interrupted_marker(run_dir: Path, command: str, arch: str) -> None:
+    """Write a summary.json that says INCOMPLETE, before the work starts.
+
+    A run that is SIGKILLed -- by the host's memory reaper, by a broad-kill, by
+    the machine going away -- never reaches finalize(), so it never writes a
+    verdict. Until now that left an artifact dir holding a full.log full of green
+    stage lines and NO summary.json, and a caller whose exit status is not the
+    work's (a pipeline's last stage, a backgrounded shell's `echo`) reads that as
+    a pass. A reaped process must not look successful to its caller.
+
+    Absence cannot carry that meaning, because absence is overloaded three ways:
+    the run is still going, the run was killed, or the directory was never a run
+    at all. So the claim is made POSITIVELY at creation and overwritten by
+    finalize(). Whatever is on disk is then always a true statement about the run:
+    INCOMPLETE until a verdict exists, and a verdict once one does.
+
+    This is the same shape as `.vibeos-build-stamp.json` (written at the END of a
+    successful build, so its presence means "finished") turned inside out: there
+    the positive claim is completion, here it is incompletion. Both exist so that
+    no consumer has to infer a run's state from an exit code it may not have.
+    """
+    try:
+        (run_dir / "summary.json").write_text(
+            json.dumps(
+                {
+                    "run_id": run_dir.name,
+                    "command": command,
+                    "arch": arch,
+                    "verdict": "INCOMPLETE",
+                    "classification": "RUN_INTERRUPTED",
+                    "incomplete": True,
+                    "pid": os.getpid(),
+                    "started_epoch": time.time(),
+                    "note": (
+                        "This run never reached finalize(): it was killed, or it is still "
+                        "running. Either way it has no verdict and must not be read as one."
+                    ),
+                },
+                indent=2,
+            )
+        )
+    except OSError:
+        # Never fail a run over its own bookkeeping. The pre-existing behaviour
+        # (no summary at all) is what callers already handle.
+        pass
+
+
+def is_incomplete(summary: dict) -> bool:
+    """True for an interrupted-run marker: a summary that carries no verdict.
+
+    Callers that already have a good "no verdict" path (gate's SMOKE_NO_SUMMARY,
+    which keeps the child's console and its exit code) should route markers into
+    it rather than treating INCOMPLETE as an ordinary red -- the marker says less
+    than that path already knows.
+    """
+    return bool(summary.get("incomplete"))
 
 
 FARM_DIR = Path.home() / "vibeos-flake-farm"
+
+# Commands whose ledger rows carry a flake signature (see `Run._ledger_append`).
+BOOT_COMMANDS = frozenset({"smoke", "gate", "boot"})
 
 
 def _sha12(path: Path) -> str | None:
@@ -105,7 +175,8 @@ def preserve_failure(
         if not serials:
             return None  # not a boot-bearing run; nothing to preserve
         mp = any("ntkrnlmp.exe" in s.read_text(errors="replace") for s in serials)
-        dst = FARM_DIR / "fails" / "auto" / f"{run_dir.name}-{classification or 'FAIL'}"
+        tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", classification or "FAIL").strip("_")
+        dst = FARM_DIR / "fails" / "auto" / f"{run_dir.name}-{tag}"
         dst.mkdir(parents=True, exist_ok=True)
         for src in serials:
             shutil.copy2(src, dst / src.name)
@@ -113,6 +184,11 @@ def preserve_failure(
             src = run_dir / name
             if src.is_file():
                 shutil.copy2(src, dst / name)
+        # A conformance round's parsed results: without them a later parser fix
+        # cannot re-grade history (NpfsFileInfo.c:57's "passes" were parser misses,
+        # and the files that would prove it were in /tmp).
+        for src in run_dir.glob("*-results.txt"):
+            shutil.copy2(src, dst / src.name)
         for shot in run_dir.glob("*.png"):
             shutil.copy2(shot, dst / shot.name)
         manifest = {
@@ -203,6 +279,65 @@ class Stage:
     status: str = "ok"  # ok | warn | fail | skip
     detail: str = ""  # one-line, shown in summary
     salient: list = field(default_factory=list)  # key lines for the summary
+
+
+def ledger_append(
+    repo: Path | None,
+    *,
+    cmd: str,
+    arch: str,
+    verdict: str,
+    classification: str = "",
+    duration_ms: int = 0,
+    extra: dict | None = None,
+) -> None:
+    """T3 (fleet-isolation program): durable outcome ledger. /tmp run dirs die on
+    reboot, and gate verdicts are point samples — the ledger under VIBEOS_ROOT
+    survives both, so `vibeos-cli health` can show trailing per-arch PASS RATES
+    (a 100%→20% arch regression becomes visible data within a day even when
+    individual gates roll green). One JSON line per run; O_APPEND keeps
+    concurrent lanes' writes whole. Never fails the run.
+
+    Module-level, not a `Run` method, because a command does not have to use
+    `Run` to have an outcome worth keeping. `conformance` builds its summary by
+    hand, so for the project's whole history it wrote ZERO rows here — 19,711
+    ledger rows across build/smoke/check/gate/farm/land and not one conformance
+    verdict. Its round records went to `~/vibeos-flake-farm/` instead, which is
+    outside the tree the backups cover: when the box was rebuilt on 2026-09-14
+    the shared ledger came back and the flake farm did not, taking a 201-run
+    arm64 census with it. The command whose verdicts we most wanted counted over
+    time was the only one absent from the record that survives.
+    """
+    try:
+        if repo is None:
+            return
+        from . import cachecfg  # local import: avoid a cycle at module load
+
+        root = cachecfg.vibeos_root(repo)
+        if not root.is_dir():
+            return
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        ).stdout.strip()
+        row = {
+            "ts": int(time.time()),
+            "cmd": cmd,
+            "arch": arch,
+            "verdict": verdict,
+            "classification": classification,
+            "duration_ms": duration_ms,
+            "head": head,
+            "worktree": Path(repo).name,
+            **(extra or {}),
+        }
+        with open(root / "vibeos-ledger.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass  # the ledger is telemetry; it must never break a build/smoke
 
 
 class Run:
@@ -327,42 +462,36 @@ class Run:
         return 0 if self.verdict in ("OK", "WARN") else 1
 
     def _ledger_append(self, repo: Path | None, summary: dict, dur: float) -> None:
-        """T3 (fleet-isolation program): durable outcome ledger. /tmp run dirs
-        die on reboot, and gate verdicts are point samples — the ledger under
-        VIBEOS_ROOT survives both, so `vibeos-cli health` can show trailing
-        per-arch PASS RATES (a 100%→20% arch regression becomes visible data
-        within a day even when individual gates roll green). One JSON line per
-        finalized run; O_APPEND keeps concurrent lanes' writes whole. Never
-        fails the run."""
-        try:
-            if repo is None:
-                return
-            from . import cachecfg  # local import: avoid a cycle at module load
+        """Delegates to the module-level `ledger_append`. See its docstring for why
+        that is not a method: a command does not have to use `Run` to have an
+        outcome worth keeping, and `conformance` does not.
 
-            root = cachecfg.vibeos_root(repo)
-            if not root.is_dir():
-                return
-            head = subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=repo,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            ).stdout.strip()
-            row = {
-                "ts": int(time.time()),
-                "cmd": self.command,
-                "arch": self.arch,
-                "verdict": self.verdict,
-                "classification": self.classification,
-                "duration_ms": int(dur * 1000),
-                "head": head,
-                "worktree": Path(repo).name,
-            }
-            with open(root / "vibeos-ledger.jsonl", "a") as f:
-                f.write(json.dumps(row) + "\n")
-        except Exception:
-            pass  # the ledger is telemetry; it must never break a build/smoke
+        A boot's row carries enough to NAME its failure after /tmp is gone: the
+        signature, the preserved-evidence dir, and whether the tree was dirty (a
+        lane iterating on uncommitted edits otherwise reads as a flaky commit).
+        `vibeos-cli flake-report` is the reader."""
+        extra: dict = {"run_id": summary.get("run_id")}
+        if self.command in BOOT_COMMANDS and repo is not None:
+            from . import flakes
+
+            extra["dirty"] = _is_dirty(repo)
+            if "runs" in summary:
+                extra["boots"] = summary.get("runs")
+                extra["passes"] = summary.get("passes")
+            sig = flakes.run_signature(summary)
+            if sig:
+                extra["sig"] = sig
+            if summary.get("preserved"):
+                extra["preserved"] = summary["preserved"]
+        ledger_append(
+            repo,
+            cmd=self.command,
+            arch=self.arch,
+            verdict=self.verdict,
+            classification=self.classification,
+            duration_ms=int(dur * 1000),
+            extra=extra,
+        )
 
     def _glyph(self, st: Stage) -> str:
         return {"ok": "✓", "warn": "⚠", "fail": "✗", "skip": "·"}.get(st.status, "?")

@@ -77,6 +77,45 @@ static void snapshot_pids(void)
     CloseHandle(snap);
 }
 
+/* Single-instance apps (osk) exit at once when a copy is already up, and winlogon's stock-app
+ * check leaves one running. Whether it was still alive decided osk's verdict, so every run was
+ * a coin flip. Give each app a fresh start instead. explorer.exe is the shell: never touch it. */
+static void end_prior_instances(const char *exe)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    WCHAR wexe[MAX_PATH];
+    DWORD parent = 0;
+    HANDLE snap;
+    if (!lstrcmpiA(exe, "explorer.exe"))
+        return;
+    MultiByteToWideChar(CP_ACP, 0, exe, -1, wexe, MAX_PATH);
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    /* Never our own launcher: arm64 starts appstorm from a cmd.exe, and cmd is on the list. */
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (pe.th32ProcessID == GetCurrentProcessId())
+                parent = pe.th32ParentProcessID;
+        } while (Process32NextW(snap, &pe));
+    pe.dwSize = sizeof pe;
+    if (Process32FirstW(snap, &pe))
+        do {
+            HANDLE h;
+            if (lstrcmpiW(pe.szExeFile, wexe) || pe.th32ProcessID == parent
+                || pe.th32ProcessID == GetCurrentProcessId())
+                continue;
+            h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pe.th32ProcessID);
+            if (!h)
+                continue;
+            SAY("  ended prior %s pid=%lu\n", exe, pe.th32ProcessID);
+            TerminateProcess(h, 0);
+            WaitForSingleObject(h, 5000);
+            CloseHandle(h);
+        } while (Process32NextW(snap, &pe));
+    CloseHandle(snap);
+}
+
 static int prior_pid(DWORD pid)
 {
     for (int i = 0; i < n_prior; i++)
@@ -158,6 +197,41 @@ static int setup_running(void)
     return found;
 }
 
+/* A cdfs raise, end to end. An empty name part (";1") makes CdInitializeEnumeration raise
+ * STATUS_INVALID_PARAMETER inside CdQueryDirectory, which holds the directory's FCB. With a
+ * real handler (ntkrnl_sys::seh) the query fails ERROR_INVALID_PARAMETER and the finally has
+ * released the FCB; kernel32 then closes the directory, and cdfs cleanup takes that FCB
+ * exclusively, so a leaked lock hangs right here. Under DUMMY_PSEH the raise was a 0x1E.
+ * Only meaningful where the Windows directory is on cdfs (the livecd). */
+static int fs_raise_check(const WCHAR *windir)
+{
+    WCHAR vol[4] = { windir[0], L':', L'\\', 0 }, fsw[16] = L"", pat[MAX_PATH];
+    char fs[16];
+    WIN32_FIND_DATAW fd;
+    HANDLE h, h2;
+    DWORD err;
+    int ok;
+
+    GetVolumeInformationW(vol, NULL, 0, NULL, NULL, NULL, fsw, 16);
+    ascii(fsw, fs, sizeof fs);
+    if (lstrcmpiW(fsw, L"CDFS")) {
+        SAY("fsraise SKIP fs=%s\n", fs);
+        return 1;
+    }
+    wsprintfW(pat, L"%s\\;1", windir);
+    h = FindFirstFileW(pat, &fd);
+    err = GetLastError();
+    if (h != INVALID_HANDLE_VALUE)
+        FindClose(h);
+    wsprintfW(pat, L"%s\\*", windir);
+    h2 = FindFirstFileW(pat, &fd);
+    if (h2 != INVALID_HANDLE_VALUE)
+        FindClose(h2);
+    ok = h == INVALID_HANDLE_VALUE && err == ERROR_INVALID_PARAMETER && h2 != INVALID_HANDLE_VALUE;
+    SAY("fsraise %s err=%lu followup=%d\n", ok ? "PASS" : "FAIL", err, h2 != INVALID_HANDLE_VALUE);
+    return ok;
+}
+
 int main(void)
 {
     int pass = 0, fail = 0, absent = 0;
@@ -170,6 +244,7 @@ int main(void)
     SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
         (GetTickCount() - t0) / 1000);
     SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
+    fs_raise_check(windir) ? pass++ : fail++;
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
         const app_t *a = &apps[k];
@@ -207,6 +282,7 @@ int main(void)
         ExpandEnvironmentStringsA(a->args, args, MAX_PATH);
         snprintf(cmd, sizeof cmd, "\"%s\" %s", path, args);
         wset_t before, got;
+        end_prior_instances(a->exe);
         snapshot(&before);
         snapshot_pids();
         STARTUPINFOA si = { sizeof si };

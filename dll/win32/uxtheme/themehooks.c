@@ -17,6 +17,20 @@ BOOL g_bThemeHooksActive = FALSE;
 PWND_DATA ThemeGetWndData(HWND hWnd)
 {
     PWND_DATA pwndData;
+    DWORD ProcessId;
+
+    /* The WND_DATA pointer is a heap address in the process that OWNS the
+     * window, and the property holding it is visible to every process. A
+     * cross-process call (SetScrollInfo on another process's window) used to
+     * read the owner's pointer and dereference it here, in the wrong address
+     * space: wine's user32:scroll write_process child faulted in
+     * ThemeSetScrollInfo, died with 0x80, and winetest reported that as "128
+     * failures in child process". ThemeDestroyWndData below always had this
+     * guard; the getter never did. NULL sends every caller down its existing
+     * unthemed default path, which is right: the owner paints its own window. */
+    GetWindowThreadProcessId(hWnd, &ProcessId);
+    if (ProcessId != GetCurrentProcessId())
+        return NULL;
 
     pwndData = (PWND_DATA)GetPropW(hWnd, (LPCWSTR)MAKEINTATOM(atWndContext));
     if(pwndData == NULL)
@@ -585,8 +599,10 @@ INT WINAPI ThemeSetScrollInfo(HWND hWnd, int fnBar, LPCSCROLLINFO lpsi, BOOL bRe
 
     pwndData = ThemeGetWndData(hWnd);
 
+    /* Default path passes the CALLER's struct. It used to jump past the copy
+     * below and hand user32 `siout` uninitialized. */
     if (!pwndData)
-        goto dodefault;
+        return g_user32ApiHook.SetScrollInfo(hWnd, fnBar, lpsi, bRedraw);
 
     if (pwndData->hthemeScrollbar)
         IsThemed = TRUE;
@@ -595,7 +611,6 @@ INT WINAPI ThemeSetScrollInfo(HWND hWnd, int fnBar, LPCSCROLLINFO lpsi, BOOL bRe
     if (IsThemed)
         siout.fMask |= SIF_THEMED;
 
-dodefault:
     return g_user32ApiHook.SetScrollInfo(hWnd, fnBar, lpsiout, bRedraw);
 }
 

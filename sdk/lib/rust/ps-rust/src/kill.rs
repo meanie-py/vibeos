@@ -504,7 +504,12 @@ pub unsafe extern "system" fn PspDeleteThread(object_body: PVOID) {
 
 unsafe fn PspExitThread(exit_status: NTSTATUS) {
     ARM64_UART_TRACE(b"[PS] PspExitThread entered\r\n\0".as_ptr() as PCSTR);
-    #[cfg(target_arch = "x86_64")]
+    // i386 too: it is the NATIVE control of the WoW64 winetest A/B, and without
+    // this it was the one arch that could not say how a process ended. A winetest
+    // reports a child's EXIT CODE as its failure count, so native user32:scroll's
+    // "128 failures in child process" could not be told apart from a child dying
+    // with 0x80 -- the guest side, on amd64, would have said which.
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
     {
         let _proc = ntkrnl_sys::ps::PsGetCurrentProcess();
         let _img = (*((_proc) as *mut _EPROCESS)).ImageFileName.as_ptr();

@@ -1,186 +1,190 @@
+# ACPICA itself is vendored at vendor/acpica; the acpica library is still
+# defined here, beside the ReactOS driver glue that is its only consumer.
+set(ACPICA_DIR ${REACTOS_SOURCE_DIR}/vendor/acpica)
+
 
 include_directories(
     include
-    acpica/include)
+    ${ACPICA_DIR}/include)
 
 if(ARCH STREQUAL "amd64")
     add_definitions(-DWIN64)
 endif()
 
 list(APPEND ACPICA_SOURCE
-    acpica/dispatcher/dsargs.c
-    acpica/dispatcher/dscontrol.c
-    acpica/dispatcher/dsdebug.c
-    acpica/dispatcher/dsfield.c
-    acpica/dispatcher/dsinit.c
-    acpica/dispatcher/dsmethod.c
-    acpica/dispatcher/dsmthdat.c
-    acpica/dispatcher/dsobject.c
-    acpica/dispatcher/dsopcode.c
-    acpica/dispatcher/dspkginit.c
-    acpica/dispatcher/dsutils.c
-    acpica/dispatcher/dswexec.c
-    acpica/dispatcher/dswload.c
-    acpica/dispatcher/dswload2.c
-    acpica/dispatcher/dswscope.c
-    acpica/dispatcher/dswstate.c
-    acpica/events/evevent.c
-    acpica/events/evglock.c
-    acpica/events/evgpe.c
-    acpica/events/evgpeblk.c
-    acpica/events/evgpeinit.c
-    acpica/events/evgpeutil.c
-    acpica/events/evhandler.c
-    acpica/events/evmisc.c
-    acpica/events/evregion.c
-    acpica/events/evrgnini.c
-    acpica/events/evsci.c
-    acpica/events/evxface.c
-    acpica/events/evxfevnt.c
-    acpica/events/evxfgpe.c
-    acpica/events/evxfregn.c
-    acpica/executer/exconcat.c
-    acpica/executer/exconfig.c
-    acpica/executer/exconvrt.c
-    acpica/executer/excreate.c
-    acpica/executer/exdebug.c
-    # acpica/executer/exdump.c
-    acpica/executer/exfield.c
-    acpica/executer/exfldio.c
-    acpica/executer/exmisc.c
-    acpica/executer/exmutex.c
-    acpica/executer/exnames.c
-    acpica/executer/exoparg1.c
-    acpica/executer/exoparg2.c
-    acpica/executer/exoparg3.c
-    acpica/executer/exoparg6.c
-    acpica/executer/exprep.c
-    acpica/executer/exregion.c
-    acpica/executer/exresnte.c
-    acpica/executer/exresolv.c
-    acpica/executer/exresop.c
-    acpica/executer/exserial.c
-    acpica/executer/exstore.c
-    acpica/executer/exstoren.c
-    acpica/executer/exstorob.c
-    acpica/executer/exsystem.c
-    acpica/executer/extrace.c
-    acpica/executer/exutils.c
-    acpica/hardware/hwacpi.c
-    acpica/hardware/hwesleep.c
-    acpica/hardware/hwgpe.c
-    acpica/hardware/hwpci.c
-    acpica/hardware/hwregs.c
-    acpica/hardware/hwsleep.c
-    acpica/hardware/hwtimer.c
-    acpica/hardware/hwvalid.c
-    acpica/hardware/hwxface.c
-    acpica/hardware/hwxfsleep.c
-    acpica/namespace/nsaccess.c
-    acpica/namespace/nsalloc.c
-    acpica/namespace/nsarguments.c
-    acpica/namespace/nsconvert.c
-    # acpica/namespace/nsdump.c
-    # acpica/namespace/nsdumpdv.c
-    acpica/namespace/nseval.c
-    acpica/namespace/nsinit.c
-    acpica/namespace/nsload.c
-    acpica/namespace/nsnames.c
-    acpica/namespace/nsobject.c
-    acpica/namespace/nsparse.c
-    acpica/namespace/nspredef.c
-    acpica/namespace/nsprepkg.c
-    acpica/namespace/nsrepair.c
-    acpica/namespace/nsrepair2.c
-    acpica/namespace/nssearch.c
-    acpica/namespace/nsutils.c
-    acpica/namespace/nswalk.c
-    acpica/namespace/nsxfeval.c
-    acpica/namespace/nsxfname.c
-    acpica/namespace/nsxfobj.c
-    acpica/parser/psargs.c
-    acpica/parser/psloop.c
-    acpica/parser/psobject.c
-    acpica/parser/psopcode.c
-    acpica/parser/psopinfo.c
-    acpica/parser/psparse.c
-    acpica/parser/psscope.c
-    acpica/parser/pstree.c
-    acpica/parser/psutils.c
-    acpica/parser/pswalk.c
-    acpica/parser/psxface.c
-    acpica/resources/rsaddr.c
-    acpica/resources/rscalc.c
-    acpica/resources/rscreate.c
-    # acpica/resources/rsdump.c
-    # acpica/resources/rsdumpinfo.c
-    acpica/resources/rsinfo.c
-    acpica/resources/rsio.c
-    acpica/resources/rsirq.c
-    acpica/resources/rslist.c
-    acpica/resources/rsmemory.c
-    acpica/resources/rsmisc.c
-    acpica/resources/rsserial.c
-    acpica/resources/rsutils.c
-    acpica/resources/rsxface.c
-    acpica/tables/tbdata.c
-    acpica/tables/tbfadt.c
-    acpica/tables/tbfind.c
-    acpica/tables/tbinstal.c
-    acpica/tables/tbprint.c
-    acpica/tables/tbutils.c
-    acpica/tables/tbxface.c
-    acpica/tables/tbxfload.c
-    acpica/tables/tbxfroot.c
-    acpica/utilities/utaddress.c
-    acpica/utilities/utalloc.c
-    acpica/utilities/utascii.c
-    acpica/utilities/utbuffer.c
-    acpica/utilities/utcache.c
-    acpica/utilities/utcksum.c
-    # acpica/utilities/utclib.c
-    acpica/utilities/utcopy.c
-    # acpica/utilities/utdebug.c
-    acpica/utilities/utdecode.c
-    acpica/utilities/utdelete.c
-    acpica/utilities/uterror.c
-    acpica/utilities/uteval.c
-    # acpica/utilities/utfileio.c
-    acpica/utilities/uthex.c
-    acpica/utilities/utids.c
-    acpica/utilities/utinit.c
-    acpica/utilities/utlock.c
-    acpica/utilities/utmath.c
-    acpica/utilities/utmisc.c
-    acpica/utilities/utmutex.c
-    acpica/utilities/utnonansi.c
-    acpica/utilities/utobject.c
-    acpica/utilities/utosi.c
-    acpica/utilities/utownerid.c
-    acpica/utilities/utpredef.c
-    # acpica/utilities/utprint.c
-    # acpica/utilities/utresdecode.c
-    acpica/utilities/utresrc.c
-    acpica/utilities/utstate.c
-    acpica/utilities/utstring.c
-    acpica/utilities/utstrtoul64.c
-    acpica/utilities/utstrsuppt.c
-    # acpica/utilities/utuuid.c
-    acpica/utilities/uttrack.c
-    acpica/utilities/utxface.c
-    acpica/utilities/utxferror.c
-    acpica/utilities/utxfinit.c
-    acpica/utilities/utxfmutex.c)
+    ${ACPICA_DIR}/dispatcher/dsargs.c
+    ${ACPICA_DIR}/dispatcher/dscontrol.c
+    ${ACPICA_DIR}/dispatcher/dsdebug.c
+    ${ACPICA_DIR}/dispatcher/dsfield.c
+    ${ACPICA_DIR}/dispatcher/dsinit.c
+    ${ACPICA_DIR}/dispatcher/dsmethod.c
+    ${ACPICA_DIR}/dispatcher/dsmthdat.c
+    ${ACPICA_DIR}/dispatcher/dsobject.c
+    ${ACPICA_DIR}/dispatcher/dsopcode.c
+    ${ACPICA_DIR}/dispatcher/dspkginit.c
+    ${ACPICA_DIR}/dispatcher/dsutils.c
+    ${ACPICA_DIR}/dispatcher/dswexec.c
+    ${ACPICA_DIR}/dispatcher/dswload.c
+    ${ACPICA_DIR}/dispatcher/dswload2.c
+    ${ACPICA_DIR}/dispatcher/dswscope.c
+    ${ACPICA_DIR}/dispatcher/dswstate.c
+    ${ACPICA_DIR}/events/evevent.c
+    ${ACPICA_DIR}/events/evglock.c
+    ${ACPICA_DIR}/events/evgpe.c
+    ${ACPICA_DIR}/events/evgpeblk.c
+    ${ACPICA_DIR}/events/evgpeinit.c
+    ${ACPICA_DIR}/events/evgpeutil.c
+    ${ACPICA_DIR}/events/evhandler.c
+    ${ACPICA_DIR}/events/evmisc.c
+    ${ACPICA_DIR}/events/evregion.c
+    ${ACPICA_DIR}/events/evrgnini.c
+    ${ACPICA_DIR}/events/evsci.c
+    ${ACPICA_DIR}/events/evxface.c
+    ${ACPICA_DIR}/events/evxfevnt.c
+    ${ACPICA_DIR}/events/evxfgpe.c
+    ${ACPICA_DIR}/events/evxfregn.c
+    ${ACPICA_DIR}/executer/exconcat.c
+    ${ACPICA_DIR}/executer/exconfig.c
+    ${ACPICA_DIR}/executer/exconvrt.c
+    ${ACPICA_DIR}/executer/excreate.c
+    ${ACPICA_DIR}/executer/exdebug.c
+    # ${ACPICA_DIR}/executer/exdump.c
+    ${ACPICA_DIR}/executer/exfield.c
+    ${ACPICA_DIR}/executer/exfldio.c
+    ${ACPICA_DIR}/executer/exmisc.c
+    ${ACPICA_DIR}/executer/exmutex.c
+    ${ACPICA_DIR}/executer/exnames.c
+    ${ACPICA_DIR}/executer/exoparg1.c
+    ${ACPICA_DIR}/executer/exoparg2.c
+    ${ACPICA_DIR}/executer/exoparg3.c
+    ${ACPICA_DIR}/executer/exoparg6.c
+    ${ACPICA_DIR}/executer/exprep.c
+    ${ACPICA_DIR}/executer/exregion.c
+    ${ACPICA_DIR}/executer/exresnte.c
+    ${ACPICA_DIR}/executer/exresolv.c
+    ${ACPICA_DIR}/executer/exresop.c
+    ${ACPICA_DIR}/executer/exserial.c
+    ${ACPICA_DIR}/executer/exstore.c
+    ${ACPICA_DIR}/executer/exstoren.c
+    ${ACPICA_DIR}/executer/exstorob.c
+    ${ACPICA_DIR}/executer/exsystem.c
+    ${ACPICA_DIR}/executer/extrace.c
+    ${ACPICA_DIR}/executer/exutils.c
+    ${ACPICA_DIR}/hardware/hwacpi.c
+    ${ACPICA_DIR}/hardware/hwesleep.c
+    ${ACPICA_DIR}/hardware/hwgpe.c
+    ${ACPICA_DIR}/hardware/hwpci.c
+    ${ACPICA_DIR}/hardware/hwregs.c
+    ${ACPICA_DIR}/hardware/hwsleep.c
+    ${ACPICA_DIR}/hardware/hwtimer.c
+    ${ACPICA_DIR}/hardware/hwvalid.c
+    ${ACPICA_DIR}/hardware/hwxface.c
+    ${ACPICA_DIR}/hardware/hwxfsleep.c
+    ${ACPICA_DIR}/namespace/nsaccess.c
+    ${ACPICA_DIR}/namespace/nsalloc.c
+    ${ACPICA_DIR}/namespace/nsarguments.c
+    ${ACPICA_DIR}/namespace/nsconvert.c
+    # ${ACPICA_DIR}/namespace/nsdump.c
+    # ${ACPICA_DIR}/namespace/nsdumpdv.c
+    ${ACPICA_DIR}/namespace/nseval.c
+    ${ACPICA_DIR}/namespace/nsinit.c
+    ${ACPICA_DIR}/namespace/nsload.c
+    ${ACPICA_DIR}/namespace/nsnames.c
+    ${ACPICA_DIR}/namespace/nsobject.c
+    ${ACPICA_DIR}/namespace/nsparse.c
+    ${ACPICA_DIR}/namespace/nspredef.c
+    ${ACPICA_DIR}/namespace/nsprepkg.c
+    ${ACPICA_DIR}/namespace/nsrepair.c
+    ${ACPICA_DIR}/namespace/nsrepair2.c
+    ${ACPICA_DIR}/namespace/nssearch.c
+    ${ACPICA_DIR}/namespace/nsutils.c
+    ${ACPICA_DIR}/namespace/nswalk.c
+    ${ACPICA_DIR}/namespace/nsxfeval.c
+    ${ACPICA_DIR}/namespace/nsxfname.c
+    ${ACPICA_DIR}/namespace/nsxfobj.c
+    ${ACPICA_DIR}/parser/psargs.c
+    ${ACPICA_DIR}/parser/psloop.c
+    ${ACPICA_DIR}/parser/psobject.c
+    ${ACPICA_DIR}/parser/psopcode.c
+    ${ACPICA_DIR}/parser/psopinfo.c
+    ${ACPICA_DIR}/parser/psparse.c
+    ${ACPICA_DIR}/parser/psscope.c
+    ${ACPICA_DIR}/parser/pstree.c
+    ${ACPICA_DIR}/parser/psutils.c
+    ${ACPICA_DIR}/parser/pswalk.c
+    ${ACPICA_DIR}/parser/psxface.c
+    ${ACPICA_DIR}/resources/rsaddr.c
+    ${ACPICA_DIR}/resources/rscalc.c
+    ${ACPICA_DIR}/resources/rscreate.c
+    # ${ACPICA_DIR}/resources/rsdump.c
+    # ${ACPICA_DIR}/resources/rsdumpinfo.c
+    ${ACPICA_DIR}/resources/rsinfo.c
+    ${ACPICA_DIR}/resources/rsio.c
+    ${ACPICA_DIR}/resources/rsirq.c
+    ${ACPICA_DIR}/resources/rslist.c
+    ${ACPICA_DIR}/resources/rsmemory.c
+    ${ACPICA_DIR}/resources/rsmisc.c
+    ${ACPICA_DIR}/resources/rsserial.c
+    ${ACPICA_DIR}/resources/rsutils.c
+    ${ACPICA_DIR}/resources/rsxface.c
+    ${ACPICA_DIR}/tables/tbdata.c
+    ${ACPICA_DIR}/tables/tbfadt.c
+    ${ACPICA_DIR}/tables/tbfind.c
+    ${ACPICA_DIR}/tables/tbinstal.c
+    ${ACPICA_DIR}/tables/tbprint.c
+    ${ACPICA_DIR}/tables/tbutils.c
+    ${ACPICA_DIR}/tables/tbxface.c
+    ${ACPICA_DIR}/tables/tbxfload.c
+    ${ACPICA_DIR}/tables/tbxfroot.c
+    ${ACPICA_DIR}/utilities/utaddress.c
+    ${ACPICA_DIR}/utilities/utalloc.c
+    ${ACPICA_DIR}/utilities/utascii.c
+    ${ACPICA_DIR}/utilities/utbuffer.c
+    ${ACPICA_DIR}/utilities/utcache.c
+    ${ACPICA_DIR}/utilities/utcksum.c
+    # ${ACPICA_DIR}/utilities/utclib.c
+    ${ACPICA_DIR}/utilities/utcopy.c
+    # ${ACPICA_DIR}/utilities/utdebug.c
+    ${ACPICA_DIR}/utilities/utdecode.c
+    ${ACPICA_DIR}/utilities/utdelete.c
+    ${ACPICA_DIR}/utilities/uterror.c
+    ${ACPICA_DIR}/utilities/uteval.c
+    # ${ACPICA_DIR}/utilities/utfileio.c
+    ${ACPICA_DIR}/utilities/uthex.c
+    ${ACPICA_DIR}/utilities/utids.c
+    ${ACPICA_DIR}/utilities/utinit.c
+    ${ACPICA_DIR}/utilities/utlock.c
+    ${ACPICA_DIR}/utilities/utmath.c
+    ${ACPICA_DIR}/utilities/utmisc.c
+    ${ACPICA_DIR}/utilities/utmutex.c
+    ${ACPICA_DIR}/utilities/utnonansi.c
+    ${ACPICA_DIR}/utilities/utobject.c
+    ${ACPICA_DIR}/utilities/utosi.c
+    ${ACPICA_DIR}/utilities/utownerid.c
+    ${ACPICA_DIR}/utilities/utpredef.c
+    # ${ACPICA_DIR}/utilities/utprint.c
+    # ${ACPICA_DIR}/utilities/utresdecode.c
+    ${ACPICA_DIR}/utilities/utresrc.c
+    ${ACPICA_DIR}/utilities/utstate.c
+    ${ACPICA_DIR}/utilities/utstring.c
+    ${ACPICA_DIR}/utilities/utstrtoul64.c
+    ${ACPICA_DIR}/utilities/utstrsuppt.c
+    # ${ACPICA_DIR}/utilities/utuuid.c
+    ${ACPICA_DIR}/utilities/uttrack.c
+    ${ACPICA_DIR}/utilities/utxface.c
+    ${ACPICA_DIR}/utilities/utxferror.c
+    ${ACPICA_DIR}/utilities/utxfinit.c
+    ${ACPICA_DIR}/utilities/utxfmutex.c)
 
 list(APPEND ACPICA_PCH_SKIP_SOURCE
-    acpica/utilities/utexcep.c
-    acpica/utilities/utglobal.c)
+    ${ACPICA_DIR}/utilities/utexcep.c
+    ${ACPICA_DIR}/utilities/utglobal.c)
 
 add_library(acpica
     ${ACPICA_SOURCE}
     ${ACPICA_PCH_SKIP_SOURCE})
 
-add_pch(acpica acpica/include/acpi.h "${ACPICA_PCH_SKIP_SOURCE}")
+add_pch(acpica ${ACPICA_DIR}/include/acpi.h "${ACPICA_PCH_SKIP_SOURCE}")
 set_target_properties(acpica PROPERTIES COMPILE_DEFINITIONS "ACPI_USE_LOCAL_CACHE;ACPI_USE_SYSTEM_INTTYPES")
 add_dependencies(acpica bugcodes xdk)
 

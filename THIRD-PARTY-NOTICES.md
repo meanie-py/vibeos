@@ -80,10 +80,10 @@ MIT License
 
 - Upstream: https://github.com/acpica/acpica
 - Version: 0x20260408
-- In this tree: `drivers/bus/acpi/acpica`
+- In this tree: `vendor/acpica`
 - Licence: BSD-3-Clause OR GPL-2.0
 - Modified by us: yes, see `vendor-patches/acpica.patch`
-- Grant reproduced from: `drivers/bus/acpi/acpica/include/acpi.h (header comment)`
+- Grant reproduced from: `vendor/acpica/include/acpi.h (header comment)`
 
 ```
 Name: acpi.h - Master public include file used to interface to ACPICA
@@ -1373,7 +1373,7 @@ Modified by Naohiko Shimizu/Tokai University, Japan 1997/08/26,
 
 - Upstream: https://github.com/FEX-Emu/FEX
 - Version: FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08)
-- In this tree: `external/fex`
+- In this tree: `vendor/fex`
 - Licence: MIT
 - Also contains: Apache-2.0 WITH LLVM-exception — External/code-format-helper/code-format-helper.py and External/unordered_dense/test/third-party/FuzzedDataProvider.h, which is LLVM's and carries the LLVM-exception — a WITH clause the first pass dropped. FEX is a vendored tree that itself vendors: its External/ is a second registry we do not maintain, so those licences surface here rather than upstream.
 
@@ -1383,7 +1383,7 @@ Modified by Naohiko Shimizu/Tokai University, Japan 1997/08/26,
 
 - Also contains: LGPL-2.1-or-later — Wine-derived headers FEX carries for its Windows build: Source/Windows/include/{winternl.h,winnt.h} and Source/Windows/include/wine/{unixlib.h,debug.h}.
 
-- Grant reproduced from: `external/fex/LICENSE`
+- Grant reproduced from: `vendor/fex/LICENSE`
 
 ```
 MIT License

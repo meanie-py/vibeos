@@ -7,7 +7,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FEX_SRC="$REPO_ROOT/external/fex"
+FEX_SRC="$REPO_ROOT/vendor/fex"
 FEX_BUILD="${1:-$REPO_ROOT/build-fex-arm64}"
 HARNESS_SRC="$REPO_ROOT/tools/fex/hello-compute"
 HARNESS_BUILD="${2:-$REPO_ROOT/build-fex-hello}"

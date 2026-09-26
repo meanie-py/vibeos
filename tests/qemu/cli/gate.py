@@ -67,7 +67,7 @@ from pathlib import Path
 
 from . import archcfg, hostdisk, hostlock, lints
 from . import ladder as ladder_mod
-from .artifacts import Run, Stage
+from .artifacts import Run, Stage, is_incomplete
 
 # A failure with one of these classifications is a *documented* flake or an
 # environment failure — safe to retry. Anything else (a BUGCHECK, a Rust panic,
@@ -159,8 +159,8 @@ def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
             "seconds": dt,
             "run_dir": str(root),
             "salient": (
-                f"smoke --arch {arch} exited {proc.returncode} after {dt:.1f}s without writing "
-                f"a summary.json — it died before the boot could return a verdict. "
+                f"smoke --arch {arch} exited {proc.returncode} after {dt:.1f}s without "
+                f"recording a verdict — it died before the boot could return one. "
                 f"Last output: {_last_words(console)}  (full: {root / 'smoke-console.log'})"
             ),
         }
@@ -201,6 +201,13 @@ def _read_summary(root: Path) -> dict:
     try:
         data = json.loads(hits[-1].read_text())
     except (OSError, ValueError):
+        return {}
+    if is_incomplete(data):
+        # An interrupted-run MARKER, not a verdict: the child was killed before it
+        # could finalize. Report it as "no summary" so the branch below fires -- that
+        # path keeps the child's exit code and its last console words, which is
+        # strictly more than the marker says. The marker's job is to stop a caller
+        # reading a half-written run dir as a pass, not to replace this diagnosis.
         return {}
     data["_dir"] = str(hits[-1].parent)
     return data

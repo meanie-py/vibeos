@@ -79,6 +79,9 @@ extern "fastcall" {
 extern "C" {
     fn ObfDereferenceObject(Object: PVOID) -> isize;
 }
+extern "C" {
+    fn DbgPrint(Format: *const i8, ...) -> u32;
+}
 
 /// ObDereferenceObject — macro alias for ObfDereferenceObject.
 #[inline(always)]
@@ -1020,6 +1023,49 @@ pub unsafe extern "C" fn DC_UnlockDc(pdc: PDC) {
     GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*pdc).BaseObject) as POBJ);
 }
 
+/// Who filled the handle table: live entries by type, by owning process, and the top owner's
+/// types. A full table is always a leak, and the object that finally fails to insert is rarely
+/// the one leaking.
+unsafe fn dbg_census_full_table() {
+    let mut by_type = [0u32; 32];
+    let mut owners = [(0u32, 0u32); 16];
+    let mut top_types = [0u32; 32];
+    let end = core::cmp::min(gulFirstUnused, GDI_HANDLE_COUNT);
+    for i in RESERVE_ENTRIES_COUNT..end {
+        let pentry = gpentHmgr.offset(i as isize);
+        let objt = ((*pentry).Objt & 0x1f) as usize;
+        if objt == GDIObjType_DEF_TYPE as usize {
+            continue;
+        }
+        by_type[objt] += 1;
+        let owner = (*pentry).ObjectOwner.ulObj & !1;
+        if let Some(slot) = owners.iter_mut().find(|s| s.1 == 0 || s.0 == owner) {
+            *slot = (owner, slot.1 + 1);
+        }
+    }
+    let top = owners.iter().max_by_key(|s| s.1).map(|s| s.0).unwrap_or(0);
+    for i in RESERVE_ENTRIES_COUNT..end {
+        let pentry = gpentHmgr.offset(i as isize);
+        if (*pentry).ObjectOwner.ulObj & !1 == top {
+            top_types[((*pentry).Objt & 0x1f) as usize] += 1;
+        }
+    }
+    DbgPrint(b"[GDI-CENSUS] handle table full, firstUnused=%lu\n\0".as_ptr() as *const i8, gulFirstUnused);
+    for (t, c) in by_type.iter().enumerate() {
+        if *c != 0 {
+            DbgPrint(b"[GDI-CENSUS]   type %02x: %lu\n\0".as_ptr() as *const i8, t as u32, *c);
+        }
+    }
+    for (pid, c) in owners.iter().filter(|s| s.1 != 0) {
+        DbgPrint(b"[GDI-CENSUS]   owner pid %lx: %lu\n\0".as_ptr() as *const i8, *pid, *c);
+    }
+    for (t, c) in top_types.iter().enumerate() {
+        if *c != 0 {
+            DbgPrint(b"[GDI-CENSUS]   top owner %lx type %02x: %lu\n\0".as_ptr() as *const i8, top, t as u32, *c);
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GDIOBJ_hInsertObject(
     pobj: POBJ,
@@ -1031,6 +1077,16 @@ pub unsafe extern "system" fn GDIOBJ_hInsertObject(
 
     pentry = ENTRY_pentPopFreeEntry();
     if pentry.is_null() {
+        /* The C's DPRINT1. A full handle table makes every Create* return NULL, and callers like
+         * co_WinPosSetWindowPos use the result unchecked; say so before they fault. */
+        static FULL: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let n = FULL.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if n < 3 {
+            DbgPrint(b"GDIOBJ: Could not get a free entry.\n\0".as_ptr() as *const i8);
+        }
+        if n == 0 {
+            dbg_census_full_table();
+        }
         return core::ptr::null_mut();
     }
 

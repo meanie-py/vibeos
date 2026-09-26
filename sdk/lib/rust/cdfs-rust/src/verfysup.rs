@@ -182,88 +182,71 @@ pub unsafe extern "C" fn CdPerformVerify(
         as *mut VOLUME_DEVICE_OBJECT;
     Vcb = core::ptr::addr_of_mut!((*Vdo).Vcb);
 
-    // SEH_TRY block: we approximate with a guarded region via macros/functions
-    _SEH2_TRY();
+    // try { ... } except (CdExceptionFilter) { Status = CdProcessException(...) } — a real
+    // handler now (ntkrnl_sys::seh). The body may complete the IRP (REPARSE) and clear
+    // Irp/IrpContext, so the handler reads them back from the shared state.
+    let mut st = (IrpContext, Irp, Status);
+    let caught = ntkrnl_sys::seh::try_except(
+        &mut st,
+        |st| {
+            // Send verify FSCTL to the underlying device
+            st.2 = IoVerifyVolume(DeviceToVerify, CdOperationIsDasdOpen(st.0));
 
-    // -------- try body --------
-    // Send verify FSCTL to the underlying device
-    Status = IoVerifyVolume(DeviceToVerify, CdOperationIsDasdOpen(IrpContext));
+            // Acquire shared Vcb for stable VcbCondition
+            CdAcquireVcbShared(st.0, Vcb, 0); // FALSE -> 0
 
-    // Acquire shared Vcb for stable VcbCondition
-    CdAcquireVcbShared(IrpContext, Vcb, 0); // FALSE -> 0
+            // Check verify result and current VcbCondition
+            if (st.2 == STATUS_WRONG_VOLUME) && ((*Vcb).VcbCondition == VcbMounted) {
+                st.2 = STATUS_SUCCESS;
+            } else if (st.2 == STATUS_SUCCESS) && ((*Vcb).VcbCondition != VcbMounted) {
+                // Volume is not mounted (some other volume is on device)
+                st.2 = STATUS_WRONG_VOLUME;
+            }
 
-    // Check verify result and current VcbCondition
-    if (Status == STATUS_WRONG_VOLUME) && ((*Vcb).VcbCondition == VcbMounted) {
-        Status = STATUS_SUCCESS;
-    } else if (Status == STATUS_SUCCESS) && ((*Vcb).VcbCondition != VcbMounted) {
-        // Volume is not mounted (some other volume is on device)
-        Status = STATUS_WRONG_VOLUME;
+            // If Vcb suggests dismount, call CdCheckForDismount; otherwise release Vcb
+            if (((*Vcb).VcbCondition == VcbNotMounted)
+                || ((*Vcb).VcbCondition == VcbInvalid)
+                || ((*Vcb).VcbCondition == VcbDismountInProgress))
+                && ((*Vcb).VcbReference <= CDFS_RESIDUAL_REFERENCE as i32)
+            {
+                CdReleaseVcb(st.0, Vcb);
+                CdAcquireCdData(st.0);
+                CdCheckForDismount(st.0, Vcb, 0); // FALSE
+                CdReleaseCdData(st.0);
+            } else {
+                CdReleaseVcb(st.0, Vcb);
+            }
+
+            // If create succeeded and verify ok, complete with REPARSE
+            if ((*st.0).MajorFunction == IRP_MJ_CREATE)
+                && (*(*IrpSp).FileObject).RelatedFileObject.is_null()
+                && (st.2 == STATUS_SUCCESS || st.2 == STATUS_WRONG_VOLUME)
+            {
+                (*st.1).IoStatus.Information = IO_REMOUNT as _;
+                CdCompleteRequest(st.0, st.1, STATUS_REPARSE);
+                st.2 = STATUS_REPARSE;
+                st.1 = core::ptr::null_mut();
+                st.0 = core::ptr::null_mut();
+            }
+            // Else if there's an error and the Irp still exists, raise/hard error
+            else if !st.1.is_null() && !NT_SUCCESS(st.2) {
+                if IoIsErrorUserInduced(st.2) != 0 {
+                    IoSetHardErrorOrVerifyDevice(st.1, DeviceToVerify);
+                }
+                CdNormalizeAndRaiseStatus(st.0, st.2);
+            }
+
+            // If we still have an IrpContext, post request
+            if !st.0.is_null() {
+                st.2 = CdFsdPostRequest(st.0, st.1);
+            }
+        },
+        |st, pointers| CdExceptionFilter(st.0, pointers as _),
+    );
+    (IrpContext, Irp, Status) = st;
+    if let Err(code) = caught {
+        Status = CdProcessException(IrpContext, Irp, code);
     }
-
-    // If Vcb suggests dismount, call CdCheckForDismount; otherwise release Vcb
-    if (((*Vcb).VcbCondition == VcbNotMounted)
-        || ((*Vcb).VcbCondition == VcbInvalid)
-        || ((*Vcb).VcbCondition == VcbDismountInProgress))
-        && ((*Vcb).VcbReference <= CDFS_RESIDUAL_REFERENCE as i32)
-    {
-        CdReleaseVcb(IrpContext, Vcb);
-        CdAcquireCdData(IrpContext);
-        CdCheckForDismount(IrpContext, Vcb, 0); // FALSE
-        CdReleaseCdData(IrpContext);
-    } else {
-        CdReleaseVcb(IrpContext, Vcb);
-    }
-
-    // If create succeeded and verify ok, complete with REPARSE
-    if ((*IrpContext).MajorFunction == IRP_MJ_CREATE)
-        && (*(*IrpSp).FileObject).RelatedFileObject.is_null()
-        && (Status == STATUS_SUCCESS || Status == STATUS_WRONG_VOLUME)
-    {
-        (*Irp).IoStatus.Information = IO_REMOUNT as _;
-        CdCompleteRequest(IrpContext, Irp, STATUS_REPARSE);
-        Status = STATUS_REPARSE;
-        Irp = core::ptr::null_mut();
-        IrpContext = core::ptr::null_mut();
-    }
-    // Else if there's an error and Irp still exists, raise/hard error
-    else if !Irp.is_null() && !NT_SUCCESS(Status) {
-        if IoIsErrorUserInduced(Status) != 0 {
-            IoSetHardErrorOrVerifyDevice(Irp, DeviceToVerify);
-        }
-        CdNormalizeAndRaiseStatus(IrpContext, Status);
-    }
-
-    // If we still have an IrpContext, post request
-    if !IrpContext.is_null() {
-        Status = CdFsdPostRequest(IrpContext, Irp);
-    }
-
-    // -------- end try body --------
-
-    // SEH_EXCEPT block: catch exception, process it, and update Status.
-    // DUMMY_PSEH: never EVALUATE the filter expression eagerly — C evaluates a
-    // filter only while an exception is live. CdExceptionFilter derefs the
-    // exception pointers, and _SEH2_GetExceptionInformation() returns null
-    // here, so the eager call is a provable null-deref that LLVM folds into
-    // `ud2` for every path reaching this line (both CdPerformVerify boot ud2s
-    // — field manual §9.103).
-    _SEH2_EXCEPT(0);
-    if false {
-        CdExceptionFilter(IrpContext, _SEH2_GetExceptionInformation());
-    }
-    {
-        // DUMMY_PSEH: there is no exception unwind — a raise bugchecks rather than
-        // transferring control here, so this _SEH2_EXCEPT handler is dead code on
-        // every reachable path. The grind emitted it as an UNCONDITIONAL bare block,
-        // which ran CdProcessException(IrpContext, Irp, 0) on the SUCCESS path — after
-        // the try body had already completed the IRP (REPARSE: Irp/IrpContext NULL)
-        // or handed it off via CdFsdPostRequest — causing a NULL-deref / double-
-        // complete. Gate it so it runs only on a real (never-occurring) exception.
-        if false {
-            Status = CdProcessException(IrpContext, Irp, _SEH2_GetExceptionCode());
-        }
-    }
-    _SEH2_END();
 
     Status
 }

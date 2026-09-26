@@ -295,108 +295,116 @@ pub unsafe extern "C" fn CdNonCachedRead(
     }
 
     // _SEH2_TRY / _SEH2_FINALLY emulation
-    let result = {
-        'try_block: loop {
-            // main do-while loop
-            loop {
-                // Zero the IoRuns array — write_bytes counts ELEMENTS, so cast to
-                // *mut u8 to zero the byte count (else size_of² byte overflow).
-                core::ptr::write_bytes(IoRuns.as_mut_ptr() as *mut u8, 0, core::mem::size_of::<[IO_RUN; MAX_PARALLEL_IOS as usize]>());
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_CleanupRunCount = core::ptr::addr_of_mut!(CleanupRunCount);
+    let p_IoRuns = core::ptr::addr_of_mut!(IoRuns);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            {
+                'try_block: loop {
+                    // main do-while loop
+                    loop {
+                        // Zero the IoRuns array — write_bytes counts ELEMENTS, so cast to
+                        // *mut u8 to zero the byte count (else size_of² byte overflow).
+                        core::ptr::write_bytes(IoRuns.as_mut_ptr() as *mut u8, 0, core::mem::size_of::<[IO_RUN; MAX_PARALLEL_IOS as usize]>());
 
-                Unaligned = CdPrepareBuffers(
-                    IrpContext,
-                    irp,
-                    Fcb,
-                    UserBuffer,
-                    UserBufferOffset,
-                    CurrentOffset,
-                    RemainingByteCount,
-                    IoRuns.as_mut_ptr(),
-                    &mut CleanupRunCount,
-                    &mut ThisByteCount,
-                );
-                // CdPrepareBuffers returns CANT_WAIT (sentinel, != 0/1) when it hits an
-                // unaligned run on a non-wait request. Propagate so CdCommonRead posts.
-                // CleanupRunCount was written via &mut before the sentinel return, so the
-                // FINALLY below cleans up any partial run.
-                if Unaligned == STATUS_CANT_WAIT {
-                    Status = STATUS_CANT_WAIT;
-                    break 'try_block;
-                }
-                RunCount = CleanupRunCount;
+                        Unaligned = CdPrepareBuffers(
+                            IrpContext,
+                            irp,
+                            Fcb,
+                            UserBuffer,
+                            UserBufferOffset,
+                            CurrentOffset,
+                            RemainingByteCount,
+                            IoRuns.as_mut_ptr(),
+                            &mut CleanupRunCount,
+                            &mut ThisByteCount,
+                        );
+                        // CdPrepareBuffers returns CANT_WAIT (sentinel, != 0/1) when it hits an
+                        // unaligned run on a non-wait request. Propagate so CdCommonRead posts.
+                        // CleanupRunCount was written via &mut before the sentinel return, so the
+                        // FINALLY below cleans up any partial run.
+                        if Unaligned == STATUS_CANT_WAIT {
+                            Status = STATUS_CANT_WAIT;
+                            break 'try_block;
+                        }
+                        RunCount = CleanupRunCount;
 
-                // Async request with insufficient entries
-                if (ThisByteCount < RemainingByteCount) && ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
-                    // DUMMY_PSEH: return CANT_WAIT instead of raising; posted by CdCommonRead.
-                    Status = STATUS_CANT_WAIT;
-                    break 'try_block;
-                }
+                        // Async request with insufficient entries
+                        if (ThisByteCount < RemainingByteCount) && ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) == 0 {
+                            // DUMMY_PSEH: return CANT_WAIT instead of raising; posted by CdCommonRead.
+                            Status = STATUS_CANT_WAIT;
+                            break 'try_block;
+                        }
 
-                // Entire I/O in a single run
-                if (RunCount == 1) && (Unaligned == 0) && (FirstPass != 0) {
-                    CdSingleAsync(IrpContext, &mut IoRuns[0] as *mut IO_RUN, Fcb);
-                    CleanupRunCount = 0;
+                        // Entire I/O in a single run
+                        if (RunCount == 1) && (Unaligned == 0) && (FirstPass != 0) {
+                            CdSingleAsync(IrpContext, &mut IoRuns[0] as *mut IO_RUN, Fcb);
+                            CleanupRunCount = 0;
 
-                    if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0  {
-                        CdWaitSync(IrpContext);
-                        Status = (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status;
-                    } else {
-                        (*IrpContext).Flags &= !IRP_CONTEXT_FLAG_ALLOC_IO;
-                        Status = STATUS_PENDING;
+                            if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0  {
+                                CdWaitSync(IrpContext);
+                                Status = (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status;
+                            } else {
+                                (*IrpContext).Flags &= !IRP_CONTEXT_FLAG_ALLOC_IO;
+                                Status = STATUS_PENDING;
+                            }
+                            break 'try_block; // try_return
+                        }
+
+                        // Multiple I/O runs
+                        CdMultipleAsync(IrpContext, Fcb, RunCount, IoRuns.as_mut_ptr());
+
+                        if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 {
+                            CdWaitSync(IrpContext);
+                            Status = (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status;
+
+                            if (Status as i32) < 0 { // !NT_SUCCESS
+                                break 'try_block; // try_return
+                            }
+
+                            if Unaligned != 0
+                                && CdFinishBuffers(IrpContext, IoRuns.as_mut_ptr(), RunCount, 0, 0) != 0
+                            {
+                                FlushIoBuffers = 1;
+                            }
+                            CleanupRunCount = 0;
+
+                            RemainingByteCount -= ThisByteCount;
+                            CurrentOffset += ThisByteCount as i64;
+                            UserBuffer = (UserBuffer as *mut u8).add(ThisByteCount as usize) as *mut core::ffi::c_void;
+                            UserBufferOffset += ThisByteCount;
+                        } else {
+                            (*IrpContext).Flags &= !IRP_CONTEXT_FLAG_ALLOC_IO;
+                            CleanupRunCount = 0;
+                            Status = STATUS_PENDING;
+                            break 'try_block; // try_return, unreachable break ignored
+                        }
+
+                        FirstPass = 0;
+                        if RemainingByteCount == 0 {
+                            break;
+                        }
                     }
-                    break 'try_block; // try_return
-                }
 
-                // Multiple I/O runs
-                CdMultipleAsync(IrpContext, Fcb, RunCount, IoRuns.as_mut_ptr());
-
-                if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 {
-                    CdWaitSync(IrpContext);
-                    Status = (*(*IrpContext).Irp).IoStatus.__bindgen_anon_1.Status;
-
-                    if (Status as i32) < 0 { // !NT_SUCCESS
-                        break 'try_block; // try_return
+                    // Flush hardware cache if needed (after normal loop completion)
+                    if FlushIoBuffers != 0 {
+                        let mdl = (*(*IrpContext).Irp).MdlAddress;
+                        KeFlushIoBuffers(mdl, 1, 0);
                     }
-
-                    if Unaligned != 0
-                        && CdFinishBuffers(IrpContext, IoRuns.as_mut_ptr(), RunCount, 0, 0) != 0
-                    {
-                        FlushIoBuffers = 1;
-                    }
-                    CleanupRunCount = 0;
-
-                    RemainingByteCount -= ThisByteCount;
-                    CurrentOffset += ThisByteCount as i64;
-                    UserBuffer = (UserBuffer as *mut u8).add(ThisByteCount as usize) as *mut core::ffi::c_void;
-                    UserBufferOffset += ThisByteCount;
-                } else {
-                    (*IrpContext).Flags &= !IRP_CONTEXT_FLAG_ALLOC_IO;
-                    CleanupRunCount = 0;
-                    Status = STATUS_PENDING;
-                    break 'try_block; // try_return, unreachable break ignored
+                    break; // normal exit of try block
                 }
-
-                FirstPass = 0;
-                if RemainingByteCount == 0 {
-                    break;
-                }
+            };
+        },
+        |_, _| {
+            if (*p_CleanupRunCount) != 0 {
+                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), (*p_CleanupRunCount), 1, 0);
             }
+        },
+    );
 
-            // Flush hardware cache if needed (after normal loop completion)
-            if FlushIoBuffers != 0 {
-                let mdl = (*(*IrpContext).Irp).MdlAddress;
-                KeFlushIoBuffers(mdl, 1, 0);
-            }
-            break; // normal exit of try block
-        }
-    };
-
-    // _SEH2_FINALLY
-    if CleanupRunCount != 0 {
-        CdFinishBuffers(IrpContext, IoRuns.as_mut_ptr(), CleanupRunCount, 1, 0);
-    }
-
-    let _ = result;
     Status // return Status from the try block
 }
 #[no_mangle]
@@ -415,7 +423,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
 
     let mut status: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
     let mut local_riff_header: RIFF_HEADER = core::mem::zeroed();
-    let riff_header: *mut RIFF_HEADER;
+    let mut riff_header: *mut RIFF_HEADER = core::ptr::null_mut();
     let mut raw_reads: [RAW_READ_INFO; MAX_PARALLEL_IOS] = core::mem::zeroed();
     let mut io_runs: [IO_RUN; MAX_PARALLEL_IOS] = core::mem::zeroed();
     let mut run_count: u32 = 0;
@@ -427,7 +435,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
     let mut this_byte_count: u32 = 0;
     let mut address: u32 = 0;
     let mut trying_yellowbook_mode2: i32 = 0;
-    let mut track_mode: TRACK_MODE_TYPE;
+    let mut track_mode: TRACK_MODE_TYPE = core::mem::zeroed();
 
     PAGED_CODE();
 
@@ -441,185 +449,196 @@ pub unsafe extern "C" fn CdNonCachedXARead(
 
     CdMapUserBuffer(irp_context, core::ptr::addr_of_mut!(user_buffer));
 
-    'try_body: loop {
-        if current_offset < core::mem::size_of::<RIFF_HEADER>() as i64 {
-            if FlagOn((*fcb).FcbState, FCB_STATE_DA_FILE) != 0 {
-                if FlagOn((*(*fcb).Vcb).VcbState, VCB_STATE_AUDIO_DISK) != 0 {
-                    let audio_play_header: *mut AUDIO_PLAY_HEADER = core::ptr::addr_of_mut!(local_riff_header) as *mut AUDIO_PLAY_HEADER;
-                    let mut track_data: *const TRACK_DATA = (core::ptr::addr_of!((*(*(*fcb).Vcb).CdromToc).TrackData) as *const TRACK_DATA)
-                        .add((*fcb).XAFileNumber as usize);
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_cleanup_run_count = core::ptr::addr_of_mut!(cleanup_run_count);
+    let p_io_runs = core::ptr::addr_of_mut!(io_runs);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'try_body: loop {
+                if current_offset < core::mem::size_of::<RIFF_HEADER>() as i64 {
+                    if FlagOn((*fcb).FcbState, FCB_STATE_DA_FILE) != 0 {
+                        if FlagOn((*(*fcb).Vcb).VcbState, VCB_STATE_AUDIO_DISK) != 0 {
+                            let audio_play_header: *mut AUDIO_PLAY_HEADER = core::ptr::addr_of_mut!(local_riff_header) as *mut AUDIO_PLAY_HEADER;
+                            let mut track_data: *const TRACK_DATA = (core::ptr::addr_of!((*(*(*fcb).Vcb).CdromToc).TrackData) as *const TRACK_DATA)
+                                .add((*fcb).XAFileNumber as usize);
 
-                    ntkrnl_sys::rtl::RtlCopyMemory(
-                        audio_play_header as *mut core::ffi::c_void,
-                        core::ptr::addr_of!(CdAudioPlayHeader) as *const core::ffi::c_void,
-                        core::mem::size_of::<AUDIO_PLAY_HEADER>(),
-                    );
+                            ntkrnl_sys::rtl::RtlCopyMemory(
+                                audio_play_header as *mut core::ffi::c_void,
+                                core::ptr::addr_of!(CdAudioPlayHeader) as *const core::ffi::c_void,
+                                core::mem::size_of::<AUDIO_PLAY_HEADER>(),
+                            );
 
-                    (*audio_play_header).DiskID = (*(*(*fcb).Vcb).Vpb).SerialNumber;
-                    (*audio_play_header).TrackNumber = (*track_data).TrackNumber as u16;
+                            (*audio_play_header).DiskID = (*(*(*fcb).Vcb).Vpb).SerialNumber;
+                            (*audio_play_header).TrackNumber = (*track_data).TrackNumber as u16;
 
-                    SwapCopyUchar4(core::ptr::addr_of_mut!(address), core::ptr::addr_of!((*track_data).Address) as *mut u8);
-                    CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).TrackAddress) as *mut u8);
+                            SwapCopyUchar4(core::ptr::addr_of_mut!(address), core::ptr::addr_of!((*track_data).Address) as *mut u8);
+                            CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).TrackAddress) as *mut u8);
 
-                    SwapCopyUchar4(
-                        core::ptr::addr_of_mut!((*audio_play_header).StartingSector),
-                        core::ptr::addr_of!((*track_data).Address) as *mut u8,
-                    );
+                            SwapCopyUchar4(
+                                core::ptr::addr_of_mut!((*audio_play_header).StartingSector),
+                                core::ptr::addr_of!((*track_data).Address) as *mut u8,
+                            );
 
-                    track_data = (core::ptr::addr_of!((*(*(*fcb).Vcb).CdromToc).TrackData) as *const TRACK_DATA)
-                        .add((*fcb).XAFileNumber as usize + 1);
+                            track_data = (core::ptr::addr_of!((*(*(*fcb).Vcb).CdromToc).TrackData) as *const TRACK_DATA)
+                                .add((*fcb).XAFileNumber as usize + 1);
 
-                    SwapCopyUchar4(
-                        core::ptr::addr_of_mut!((*audio_play_header).SectorCount),
-                        core::ptr::addr_of!((*track_data).Address) as *mut u8,
-                    );
+                            SwapCopyUchar4(
+                                core::ptr::addr_of_mut!((*audio_play_header).SectorCount),
+                                core::ptr::addr_of!((*track_data).Address) as *mut u8,
+                            );
 
-                    if (*audio_play_header).SectorCount < (*audio_play_header).StartingSector {
-                        (*audio_play_header).SectorCount = 0;
+                            if (*audio_play_header).SectorCount < (*audio_play_header).StartingSector {
+                                (*audio_play_header).SectorCount = 0;
+                            } else {
+                                (*audio_play_header).SectorCount -= (*audio_play_header).StartingSector;
+                            }
+
+                            address = (*audio_play_header).SectorCount - 150;
+                            CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).TrackLength) as *mut u8);
+
+                            this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
+
+                            ntkrnl_sys::rtl::RtlCopyMemory(
+                                user_buffer,
+                                (audio_play_header as *mut u8)
+                                    .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
+                                    as *const core::ffi::c_void,
+                                this_byte_count as usize,
+                            );
+                        } else {
+                            riff_header = core::ptr::addr_of_mut!(local_riff_header);
+
+                            ntkrnl_sys::rtl::RtlCopyMemory(
+                                riff_header as *mut core::ffi::c_void,
+                                core::ptr::addr_of!(CdXAAudioPhileHeader) as *const core::ffi::c_void,
+                                core::mem::size_of::<RIFF_HEADER>(),
+                            );
+
+                            (*riff_header).ChunkSize += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart as i32;
+                            (*riff_header).RawSectors += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart;
+
+                            this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
+
+                            ntkrnl_sys::rtl::RtlCopyMemory(
+                                user_buffer,
+                                (riff_header as *mut u8)
+                                    .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
+                                    as *const core::ffi::c_void,
+                                this_byte_count as usize,
+                            );
+                        }
                     } else {
-                        (*audio_play_header).SectorCount -= (*audio_play_header).StartingSector;
+                        NT_ASSERT(FlagOn((*fcb).FcbState, FCB_STATE_MODE2_FILE | FCB_STATE_MODE2FORM2_FILE));
+
+                        riff_header = core::ptr::addr_of_mut!(local_riff_header);
+
+                        ntkrnl_sys::rtl::RtlCopyMemory(
+                            riff_header as *mut core::ffi::c_void,
+                            core::ptr::addr_of!(CdXAFileHeader) as *const core::ffi::c_void,
+                            core::mem::size_of::<RIFF_HEADER>(),
+                        );
+
+                        (*riff_header).ChunkSize += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart as i32;
+                        (*riff_header).RawSectors += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart;
+                        (*riff_header).Attributes = (*fcb).XAAttributes as u16;
+                        (*riff_header).FileNumber = (*fcb).XAFileNumber as u8;
+
+                        this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
+
+                        ntkrnl_sys::rtl::RtlCopyMemory(
+                            user_buffer,
+                            (riff_header as *mut u8)
+                                .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
+                                as *const core::ffi::c_void,
+                            this_byte_count as usize,
+                        );
                     }
 
-                    address = (*audio_play_header).SectorCount - 150;
-                    CdLbnToMmSsFf(address, core::ptr::addr_of_mut!((*audio_play_header).TrackLength) as *mut u8);
-
-                    this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
-
-                    ntkrnl_sys::rtl::RtlCopyMemory(
-                        user_buffer,
-                        (audio_play_header as *mut u8)
-                            .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
-                            as *const core::ffi::c_void,
-                        this_byte_count as usize,
-                    );
-                } else {
-                    riff_header = core::ptr::addr_of_mut!(local_riff_header);
-
-                    ntkrnl_sys::rtl::RtlCopyMemory(
-                        riff_header as *mut core::ffi::c_void,
-                        core::ptr::addr_of!(CdXAAudioPhileHeader) as *const core::ffi::c_void,
-                        core::mem::size_of::<RIFF_HEADER>(),
-                    );
-
-                    (*riff_header).ChunkSize += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart as i32;
-                    (*riff_header).RawSectors += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart;
-
-                    this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
-
-                    ntkrnl_sys::rtl::RtlCopyMemory(
-                        user_buffer,
-                        (riff_header as *mut u8)
-                            .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
-                            as *const core::ffi::c_void,
-                        this_byte_count as usize,
-                    );
+                    user_buffer = (user_buffer as *mut u8).add(this_byte_count as usize) as *mut core::ffi::c_void;
+                    user_buffer_offset += this_byte_count;
+                    current_offset += this_byte_count as i64;
+                    remaining_byte_count -= this_byte_count;
                 }
-            } else {
-                NT_ASSERT(FlagOn((*fcb).FcbState, FCB_STATE_MODE2_FILE | FCB_STATE_MODE2FORM2_FILE));
 
-                riff_header = core::ptr::addr_of_mut!(local_riff_header);
+                track_mode = CdFileTrackMode(fcb);
 
-                ntkrnl_sys::rtl::RtlCopyMemory(
-                    riff_header as *mut core::ffi::c_void,
-                    core::ptr::addr_of!(CdXAFileHeader) as *const core::ffi::c_void,
-                    core::mem::size_of::<RIFF_HEADER>(),
-                );
+                while remaining_byte_count != 0 {
+                    if trying_yellowbook_mode2 == 0 {
+                        ntkrnl_sys::rtl::RtlZeroMemory(
+                            io_runs.as_mut_ptr() as *mut core::ffi::c_void,
+                            core::mem::size_of_val(&io_runs),
+                        );
+                        ntkrnl_sys::rtl::RtlZeroMemory(
+                            raw_reads.as_mut_ptr() as *mut core::ffi::c_void,
+                            core::mem::size_of_val(&raw_reads),
+                        );
 
-                (*riff_header).ChunkSize += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart as i32;
-                (*riff_header).RawSectors += (*fcb).__bindgen_anon_1.Header.as_ref().FileSize.__bindgen_anon_1.LowPart;
-                (*riff_header).Attributes = (*fcb).XAAttributes as u16;
-                (*riff_header).FileNumber = (*fcb).XAFileNumber as u8;
-
-                this_byte_count = core::mem::size_of::<RIFF_HEADER>() as u32 - current_offset as u32;
-
-                ntkrnl_sys::rtl::RtlCopyMemory(
-                    user_buffer,
-                    (riff_header as *mut u8)
-                        .add(core::mem::size_of::<RIFF_HEADER>() - this_byte_count as usize )
-                        as *const core::ffi::c_void,
-                    this_byte_count as usize,
-                );
-            }
-
-            user_buffer = (user_buffer as *mut u8).add(this_byte_count as usize) as *mut core::ffi::c_void;
-            user_buffer_offset += this_byte_count;
-            current_offset += this_byte_count as i64;
-            remaining_byte_count -= this_byte_count;
-        }
-
-        track_mode = CdFileTrackMode(fcb);
-
-        while remaining_byte_count != 0 {
-            if trying_yellowbook_mode2 == 0 {
-                ntkrnl_sys::rtl::RtlZeroMemory(
-                    io_runs.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&io_runs),
-                );
-                ntkrnl_sys::rtl::RtlZeroMemory(
-                    raw_reads.as_mut_ptr() as *mut core::ffi::c_void,
-                    core::mem::size_of_val(&raw_reads),
-                );
-
-                CdPrepareXABuffers(
-                    irp_context,
-                    (*irp_context).Irp,
-                    fcb,
-                    user_buffer,
-                    user_buffer_offset,
-                    current_offset,
-                    remaining_byte_count,
-                    io_runs.as_mut_ptr(),
-                    core::ptr::addr_of_mut!(cleanup_run_count),
-                    core::ptr::addr_of_mut!(this_byte_count),
-                );
-            }
-
-            if cleanup_run_count != 0 {
-                run_count = cleanup_run_count;
-
-                CdMultipleXAAsync(irp_context, run_count, io_runs.as_mut_ptr(), raw_reads.as_mut_ptr(), track_mode);
-                CdWaitSync(irp_context);
-
-                status = (*(*irp_context).Irp).IoStatus.__bindgen_anon_1.Status;
-
-                if !ntkrnl_sys::base::NT_SUCCESS(status) {
-                    if trying_yellowbook_mode2 == 0
-                        && FlagOn((*fcb).FcbState, FCB_STATE_MODE2FORM2_FILE) != 0
-                    {
-                        trying_yellowbook_mode2 = 1;
-                        track_mode = YellowMode2;
-                        (*(*irp_context).__bindgen_anon_1.IoContext).Status = ntkrnl_sys::base::STATUS_SUCCESS;
-                        continue;
+                        CdPrepareXABuffers(
+                            irp_context,
+                            (*irp_context).Irp,
+                            fcb,
+                            user_buffer,
+                            user_buffer_offset,
+                            current_offset,
+                            remaining_byte_count,
+                            io_runs.as_mut_ptr(),
+                            core::ptr::addr_of_mut!(cleanup_run_count),
+                            core::ptr::addr_of_mut!(this_byte_count),
+                        );
                     }
 
-                    break 'try_body;
+                    if cleanup_run_count != 0 {
+                        run_count = cleanup_run_count;
+
+                        CdMultipleXAAsync(irp_context, run_count, io_runs.as_mut_ptr(), raw_reads.as_mut_ptr(), track_mode);
+                        CdWaitSync(irp_context);
+
+                        status = (*(*irp_context).Irp).IoStatus.__bindgen_anon_1.Status;
+
+                        if !ntkrnl_sys::base::NT_SUCCESS(status) {
+                            if trying_yellowbook_mode2 == 0
+                                && FlagOn((*fcb).FcbState, FCB_STATE_MODE2FORM2_FILE) != 0
+                            {
+                                trying_yellowbook_mode2 = 1;
+                                track_mode = YellowMode2;
+                                (*(*irp_context).__bindgen_anon_1.IoContext).Status = ntkrnl_sys::base::STATUS_SUCCESS;
+                                continue;
+                            }
+
+                            break 'try_body;
+                        }
+
+                        cleanup_run_count = 0;
+
+                        if trying_yellowbook_mode2 != 0 {
+                            SetFlag(core::ptr::addr_of_mut!((*fcb).FcbState), FCB_STATE_MODE2_FILE);
+                            ClearFlag(core::ptr::addr_of_mut!((*fcb).FcbState), FCB_STATE_MODE2FORM2_FILE);
+                            trying_yellowbook_mode2 = 0;
+                        }
+
+                        CdFinishBuffers(irp_context, io_runs.as_mut_ptr(), run_count, 0, 1);
+                    }
+
+                    remaining_byte_count -= this_byte_count;
+                    current_offset += this_byte_count as i64;
+                    user_buffer = (user_buffer as *mut u8).add(this_byte_count as usize) as *mut core::ffi::c_void;
+                    user_buffer_offset += this_byte_count;
                 }
 
-                cleanup_run_count = 0;
+                KeFlushIoBuffers((*(*irp_context).Irp).MdlAddress, 1, 0);
 
-                if trying_yellowbook_mode2 != 0 {
-                    SetFlag(core::ptr::addr_of_mut!((*fcb).FcbState), FCB_STATE_MODE2_FILE);
-                    ClearFlag(core::ptr::addr_of_mut!((*fcb).FcbState), FCB_STATE_MODE2FORM2_FILE);
-                    trying_yellowbook_mode2 = 0;
-                }
-
-                CdFinishBuffers(irp_context, io_runs.as_mut_ptr(), run_count, 0, 1);
+                break 'try_body;
             }
+        },
+        |_, _| {
+            if (*p_cleanup_run_count) != 0 {
+                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), (*p_cleanup_run_count), 1, 0);
+            }
+        },
+    );
 
-            remaining_byte_count -= this_byte_count;
-            current_offset += this_byte_count as i64;
-            user_buffer = (user_buffer as *mut u8).add(this_byte_count as usize) as *mut core::ffi::c_void;
-            user_buffer_offset += this_byte_count;
-        }
-
-        KeFlushIoBuffers((*(*irp_context).Irp).MdlAddress, 1, 0);
-
-        break 'try_body;
-    }
-
-    if cleanup_run_count != 0 {
-        CdFinishBuffers(irp_context, io_runs.as_mut_ptr(), cleanup_run_count, 1, 0);
-    }
 
     status
 }
@@ -759,34 +778,28 @@ pub unsafe extern "C" fn CdCreateUserMdl(
         //  deallocate the Mdl and return the appropriate "expected" status.
         //
 
-        _SEH2_TRY();
-        {
-            MmProbeAndLockPages(
-                Mdl,
-                (*(*IrpContext).Irp).RequestorMode,
-                IoWriteAccess,
-            );
-            Status = STATUS_SUCCESS;
-        }
-        _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER as i32);
-        // DUMMY_PSEH: MmProbeAndLockPages either succeeds (Status=SUCCESS) or
-        // bugchecks (never returns here). The _SEH2_EXCEPT handler is dead code
-        // on the only reachable (success) path, so it MUST be gated — the LLM
-        // grind emitted it as an unconditional bare block, which freed the
-        // freshly-locked MDL and nulled Irp->MdlAddress out from under the
-        // in-flight read IRP, crashing cdrom.sys in MmGetMdlVirtualAddress of a
-        // freed/NULL MDL (BUGCHECK 0x1E). Only run the handler on real failure.
-        if Status != STATUS_SUCCESS {
-            Status = _SEH2_GetExceptionCode();
+        match ntkrnl_sys::seh::try_except(
+            &mut (),
+            |_| {
+                MmProbeAndLockPages(Mdl, (*(*IrpContext).Irp).RequestorMode, IoWriteAccess);
+            },
+            |_, _| EXCEPTION_EXECUTE_HANDLER as i32,
+        ) {
+            Ok(()) => Status = STATUS_SUCCESS,
+            Err(code) => {
+                // A real handler now (ntkrnl_sys::seh). Under DUMMY_PSEH this arm was
+                // gated by hand on Status, because the grind emitted it as an
+                // unconditional block that freed the freshly locked MDL (cdrom.sys 0x1E).
+                Status = code;
 
-            IoFreeMdl(Mdl);
-            (*(*IrpContext).Irp).MdlAddress = core::ptr::null_mut();
+                IoFreeMdl(Mdl);
+                (*(*IrpContext).Irp).MdlAddress = core::ptr::null_mut();
 
-            if FsRtlIsNtstatusExpected(Status) == 0 {
-                Status = STATUS_INVALID_USER_BUFFER;
+                if FsRtlIsNtstatusExpected(Status) == 0 {
+                    Status = STATUS_INVALID_USER_BUFFER;
+                }
             }
         }
-        _SEH2_END();
     }
 
     //
@@ -821,7 +834,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrlEx(
     const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
     const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32; // ntstatus.h STATUS_VERIFY_REQUIRED (grind fabricated 0xC0000020)
 
-    let mut Status: i32;
+    let mut Status: i32 = core::mem::zeroed();
     let Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut LocalIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -1376,20 +1389,20 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     let mut Remaining: u32 = SectorsFromBytes((*Run).DiskByteCount);
     let mut UserBuffer: *mut u8 = (*Run).TransferBuffer as *mut u8;
 
-    let mut Status: i32;
-    let mut Found: u32;
-    let mut BufferSectorOffset: u32;
-    let mut StartBlock: u32;
+    let mut Status: i32 = core::mem::zeroed();
+    let mut Found: u32 = core::mem::zeroed();
+    let mut BufferSectorOffset: u32 = core::mem::zeroed();
+    let mut StartBlock: u32 = core::mem::zeroed();
     let mut EndBlock: u32 = 0; // filled by SwapCopyUchar4 in the reactos TOC branch
     let mut Blocks: u32 = 0;
 
-    let mut IrpSp: *mut IO_STACK_LOCATION;
+    let mut IrpSp: *mut IO_STACK_LOCATION = core::mem::zeroed();
     let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
 
-    let mut TrackData: *mut TRACK_DATA;
+    let mut TrackData: *mut TRACK_DATA = core::mem::zeroed();
 
     let _Index: u32;
-    let mut Buffer: *mut CD_SECTOR_CACHE_CHUNK;
+    let mut Buffer: *mut CD_SECTOR_CACHE_CHUNK = core::mem::zeroed();
     let mut Result: u8 = 0;
 
     // PAGED_CODE() expansion
@@ -1397,163 +1410,167 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
 
     CdAcquireCacheForRead(IrpContext);
 
-    'outer: loop {
-        if (*Vcb).SectorCacheBuffer.is_null() {
-            CdRaiseStatus(IrpContext, STATUS_VERIFY_REQUIRED);
-        }
-
-        while Remaining != 0 {
-            Buffer = core::ptr::null_mut();
-
-            for Index in 0..CD_SEC_CACHE_CHUNKS {
-                let chunk = &(*Vcb).SecCacheChunks[Index as usize];
-                if chunk.BaseLbn != u32::MAX && chunk.BaseLbn <= Lbn && chunk.BaseLbn + CD_SEC_CHUNK_BLOCKS > Lbn {
-                    Buffer = chunk as *const CD_SECTOR_CACHE_CHUNK as *mut CD_SECTOR_CACHE_CHUNK;
-                    break;
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            'outer: loop {
+                if (*Vcb).SectorCacheBuffer.is_null() {
+                    CdRaiseStatus(IrpContext, STATUS_VERIFY_REQUIRED);
                 }
-            }
 
-            if !Buffer.is_null() {
-                BufferSectorOffset = Lbn - (*Buffer).BaseLbn;
-                Found = Min(CD_SEC_CHUNK_BLOCKS - BufferSectorOffset, Remaining);
+                while Remaining != 0 {
+                    Buffer = core::ptr::null_mut();
 
-                core::ptr::copy_nonoverlapping(
-                    (*Buffer).Buffer.add(BytesFromSectors(BufferSectorOffset) as usize) as *const u8,
-                    UserBuffer,
-                    BytesFromSectors(Found) as usize,
-                );
+                    for Index in 0..CD_SEC_CACHE_CHUNKS {
+                        let chunk = &(*Vcb).SecCacheChunks[Index as usize];
+                        if chunk.BaseLbn != u32::MAX && chunk.BaseLbn <= Lbn && chunk.BaseLbn + CD_SEC_CHUNK_BLOCKS > Lbn {
+                            Buffer = chunk as *const CD_SECTOR_CACHE_CHUNK as *mut CD_SECTOR_CACHE_CHUNK;
+                            break;
+                        }
+                    }
 
-                Remaining -= Found;
-                UserBuffer = UserBuffer.add(BytesFromSectors(Found) as usize);
-                Lbn += Found;
-                continue;
-            }
+                    if !Buffer.is_null() {
+                        BufferSectorOffset = Lbn - (*Buffer).BaseLbn;
+                        Found = Min(CD_SEC_CHUNK_BLOCKS - BufferSectorOffset, Remaining);
 
-            CdReleaseCache(IrpContext);
-            CdAcquireCacheForUpdate(IrpContext);
+                        core::ptr::copy_nonoverlapping(
+                            (*Buffer).Buffer.add(BytesFromSectors(BufferSectorOffset) as usize) as *const u8,
+                            UserBuffer,
+                            BytesFromSectors(Found) as usize,
+                        );
 
-            Buffer = &mut (*Vcb).SecCacheChunks[(*Vcb).SecCacheLRUChunkIndex as usize] as *mut CD_SECTOR_CACHE_CHUNK;
+                        Remaining -= Found;
+                        UserBuffer = UserBuffer.add(BytesFromSectors(Found) as usize);
+                        Lbn += Found;
+                        continue;
+                    }
 
-            StartBlock = Lbn - ((Lbn - 16) % CD_SEC_CHUNK_BLOCKS);
+                    CdReleaseCache(IrpContext);
+                    CdAcquireCacheForUpdate(IrpContext);
 
-            #[cfg(feature = "reactos")]
-            if !(*Vcb).CdromToc.is_null() {
-                TrackData = &(*Vcb).CdromToc.as_ref().unwrap().TrackData[((*Vcb).CdromToc.as_ref().unwrap().LastTrack
-                    - (*Vcb).CdromToc.as_ref().unwrap().FirstTrack
-                    + 1) as usize] as *const TRACK_DATA as *mut TRACK_DATA;
+                    Buffer = &mut (*Vcb).SecCacheChunks[(*Vcb).SecCacheLRUChunkIndex as usize] as *mut CD_SECTOR_CACHE_CHUNK;
 
-                SwapCopyUchar4(core::ptr::addr_of_mut!(EndBlock), core::ptr::addr_of!((*TrackData).Address) as *const u8 as *mut u8);
+                    StartBlock = Lbn - ((Lbn - 16) % CD_SEC_CHUNK_BLOCKS);
 
-                Blocks = EndBlock - StartBlock;
+                    #[cfg(feature = "reactos")]
+                    if !(*Vcb).CdromToc.is_null() {
+                        TrackData = &(*Vcb).CdromToc.as_ref().unwrap().TrackData[((*Vcb).CdromToc.as_ref().unwrap().LastTrack
+                            - (*Vcb).CdromToc.as_ref().unwrap().FirstTrack
+                            + 1) as usize] as *const TRACK_DATA as *mut TRACK_DATA;
 
-                if Blocks > CD_SEC_CHUNK_BLOCKS {
-                    Blocks = CD_SEC_CHUNK_BLOCKS;
-                }
-            }
-            #[cfg(not(feature = "reactos"))]
-            {
-                Blocks = CD_SEC_CHUNK_BLOCKS;
-            }
+                        SwapCopyUchar4(core::ptr::addr_of_mut!(EndBlock), core::ptr::addr_of!((*TrackData).Address) as *const u8 as *mut u8);
 
-            if 0 == Blocks || Lbn < 16 {
-                CdRaiseStatus(IrpContext, STATUS_INVALID_PARAMETER);
-            }
+                        Blocks = EndBlock - StartBlock;
 
-            IoReuseIrp((*Vcb).SectorCacheIrp, 0i32);
-            KeClearEvent(core::ptr::addr_of_mut!((*Vcb).SectorCacheEvent) as *mut c_void);
-            (*(*Vcb).SectorCacheIrp).Tail.Overlay.Thread = PsGetCurrentThread() as *mut _ETHREAD;
+                        if Blocks > CD_SEC_CHUNK_BLOCKS {
+                            Blocks = CD_SEC_CHUNK_BLOCKS;
+                        }
+                    }
+                    #[cfg(not(feature = "reactos"))]
+                    {
+                        Blocks = CD_SEC_CHUNK_BLOCKS;
+                    }
 
-            IrpSp = IoGetNextIrpStackLocation((*Vcb).SectorCacheIrp);
-            (*IrpSp).MajorFunction = IRP_MJ_READ as u8;
+                    if 0 == Blocks || Lbn < 16 {
+                        CdRaiseStatus(IrpContext, STATUS_INVALID_PARAMETER);
+                    }
 
-            IoAllocateMdl(
-                (*Buffer).Buffer as *mut core::ffi::c_void,
-                BytesFromSectors(Blocks),
-                0,
-                0,
-                (*Vcb).SectorCacheIrp,
-            );
+                    IoReuseIrp((*Vcb).SectorCacheIrp, 0i32);
+                    KeClearEvent(core::ptr::addr_of_mut!((*Vcb).SectorCacheEvent) as *mut c_void);
+                    (*(*Vcb).SectorCacheIrp).Tail.Overlay.Thread = PsGetCurrentThread() as *mut _ETHREAD;
 
-            if (*(*Vcb).SectorCacheIrp).MdlAddress.is_null() {
-                (*IrpContext).Irp.as_mut().unwrap().IoStatus.Information = 0;
-                CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
-            }
+                    IrpSp = IoGetNextIrpStackLocation((*Vcb).SectorCacheIrp);
+                    (*IrpSp).MajorFunction = IRP_MJ_READ as u8;
 
-            // Inner SEH: try { MmProbeAndLockPages } except { cleanup }
-            {
-                // In Rust we cannot natively catch SEH. We keep the handler's code
-                // in a block that is never reached as a marker that it exists.
-                // A real SEH-aware implementation would replace this with proper macros.
-                MmProbeAndLockPages(
-                    (*(*Vcb).SectorCacheIrp).MdlAddress,
-                    0i8,
-                    IoWriteAccess as u32,
-                );
+                    IoAllocateMdl(
+                        (*Buffer).Buffer as *mut core::ffi::c_void,
+                        BytesFromSectors(Blocks),
+                        0,
+                        0,
+                        (*Vcb).SectorCacheIrp,
+                    );
 
-                // The following is the exception handler logic.
-                // It would run only if an exception were caught.
-                // We place it inside a dead code block for preservation.
-                if false {
+                    if (*(*Vcb).SectorCacheIrp).MdlAddress.is_null() {
+                        (*IrpContext).Irp.as_mut().unwrap().IoStatus.Information = 0;
+                        CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
+                    }
+
+                    // try { MmProbeAndLockPages } except (EXECUTE_HANDLER) { free the MDL } — the
+                    // NULL MdlAddress check below then raises INSUFFICIENT_RESOURCES.
+                    if ntkrnl_sys::seh::try_except(
+                        &mut (),
+                        |_| {
+                            MmProbeAndLockPages((*(*Vcb).SectorCacheIrp).MdlAddress, 0i8, IoWriteAccess as u32);
+                        },
+                        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+                    )
+                    .is_err()
+                    {
+                        IoFreeMdl((*(*Vcb).SectorCacheIrp).MdlAddress);
+                        (*(*Vcb).SectorCacheIrp).MdlAddress = core::ptr::null_mut();
+                    }
+
+                    if (*(*Vcb).SectorCacheIrp).MdlAddress.is_null() {
+                        CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
+                    }
+
+                    (*Buffer).BaseLbn = u32::MAX;
+
+                    (*IrpSp).Parameters.Read.Length = BytesFromSectors(Blocks);
+                    (*IrpSp).Parameters.Read.ByteOffset.QuadPart = LlBytesFromSectors(StartBlock);
+
+                    IoSetCompletionRoutine(
+                        (*Vcb).SectorCacheIrp,
+                        core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSyncCompletionRoutine as usize),
+                        &mut (*Vcb).SectorCacheEvent as *mut KEVENT as *mut core::ffi::c_void,
+                        1,
+                        1,
+                        1,
+                    );
+
+                    (*(*Vcb).SectorCacheIrp).UserIosb = &mut Iosb as *mut _IO_STATUS_BLOCK;
+
+                    Status = IoCallDriver((*Vcb).TargetDeviceObject, (*Vcb).SectorCacheIrp);
+
+                    if STATUS_PENDING == Status {
+                        KeWaitForSingleObject(
+                            &(*Vcb).SectorCacheEvent as *const KEVENT as *mut core::ffi::c_void,
+                            _KWAIT_REASON_Executive,
+                            0i8,
+                            0,
+                            core::ptr::null_mut(),
+                        );
+                        Status = (*(*Vcb).SectorCacheIrp).IoStatus.__bindgen_anon_1.Status;
+                    }
+
+                    (*(*Vcb).SectorCacheIrp).UserIosb = core::ptr::null_mut();
+
+                    MmUnlockPages((*(*Vcb).SectorCacheIrp).MdlAddress);
                     IoFreeMdl((*(*Vcb).SectorCacheIrp).MdlAddress);
                     (*(*Vcb).SectorCacheIrp).MdlAddress = core::ptr::null_mut();
+
+                    if !NT_SUCCESS(Status) {
+                        // try_leave(Status): Result stays FALSE; the finally releases the cache.
+                        break 'outer;
+                    }
+
+                    (*Buffer).BaseLbn = StartBlock;
+                    (*Vcb).SecCacheLRUChunkIndex = ((*Vcb).SecCacheLRUChunkIndex + 1) % CD_SEC_CACHE_CHUNKS;
+
+                    CdConvertCacheToShared(IrpContext);
                 }
+
+                Result = 1;
+                break 'outer;
             }
+        },
+        |_, _| {
+            CdReleaseCache(IrpContext);
+        },
+    );
 
-            if (*(*Vcb).SectorCacheIrp).MdlAddress.is_null() {
-                CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
-            }
-
-            (*Buffer).BaseLbn = u32::MAX;
-
-            (*IrpSp).Parameters.Read.Length = BytesFromSectors(Blocks);
-            (*IrpSp).Parameters.Read.ByteOffset.QuadPart = LlBytesFromSectors(StartBlock);
-
-            IoSetCompletionRoutine(
-                (*Vcb).SectorCacheIrp,
-                core::mem::transmute::<_, PIO_COMPLETION_ROUTINE>(CdSyncCompletionRoutine as usize),
-                &mut (*Vcb).SectorCacheEvent as *mut KEVENT as *mut core::ffi::c_void,
-                1,
-                1,
-                1,
-            );
-
-            (*(*Vcb).SectorCacheIrp).UserIosb = &mut Iosb as *mut _IO_STATUS_BLOCK;
-
-            Status = IoCallDriver((*Vcb).TargetDeviceObject, (*Vcb).SectorCacheIrp);
-
-            if STATUS_PENDING == Status {
-                KeWaitForSingleObject(
-                    &(*Vcb).SectorCacheEvent as *const KEVENT as *mut core::ffi::c_void,
-                    _KWAIT_REASON_Executive,
-                    0i8,
-                    0,
-                    core::ptr::null_mut(),
-                );
-                Status = (*(*Vcb).SectorCacheIrp).IoStatus.__bindgen_anon_1.Status;
-            }
-
-            (*(*Vcb).SectorCacheIrp).UserIosb = core::ptr::null_mut();
-
-            MmUnlockPages((*(*Vcb).SectorCacheIrp).MdlAddress);
-            IoFreeMdl((*(*Vcb).SectorCacheIrp).MdlAddress);
-            (*(*Vcb).SectorCacheIrp).MdlAddress = core::ptr::null_mut();
-
-            if !NT_SUCCESS(Status) {
-                CdReleaseCache(IrpContext);
-                return 0;
-            }
-
-            (*Buffer).BaseLbn = StartBlock;
-            (*Vcb).SecCacheLRUChunkIndex = ((*Vcb).SecCacheLRUChunkIndex + 1) % CD_SEC_CACHE_CHUNKS;
-
-            CdConvertCacheToShared(IrpContext);
-        }
-
-        Result = 1;
-        break 'outer;
-    }
-
-    CdReleaseCache(IrpContext);
     Result
 }
 
@@ -1567,7 +1584,7 @@ pub unsafe extern "C" fn CdMultipleAsync(
     // PAGED_CODE();
 
     let mut CompletionRoutine: PIO_COMPLETION_ROUTINE;
-    let mut IrpSp: *mut IO_STACK_LOCATION;
+    let mut IrpSp: *mut IO_STACK_LOCATION = core::mem::zeroed();
     let mut Mdl: *mut MDL;
     let mut Irp: *mut IRP;
     let MasterIrp: *mut IRP;
@@ -1719,7 +1736,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     RawReads: *mut RAW_READ_INFO,
     TrackMode: TRACK_MODE_TYPE,
 ) {
-    let mut IrpSp: *mut IO_STACK_LOCATION;
+    let mut IrpSp: *mut IO_STACK_LOCATION = core::mem::zeroed();
     let mut Mdl: PMDL;
     let mut Irp: PIRP;
     let MasterIrp: PIRP;
@@ -2216,7 +2233,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
     // PAGED_CODE();
 
     let mut Event: KEVENT = core::mem::zeroed();
-    let mut Status: NTSTATUS;
+    let mut Status: NTSTATUS = core::mem::zeroed();
     let NextIrpSp: PIO_STACK_LOCATION = IoGetNextIrpStackLocation(Irp);
 
     core::ptr::copy_nonoverlapping(

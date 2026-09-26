@@ -49,6 +49,7 @@ NtQueryDirectoryFile
 NtQueryFullAttributesFile
 NtQueryInformationProcess
 NtQueryInformationThread
+NtQueryObject
 NtQuerySymbolicLinkObject
 NtQuerySystemInformation
 NtQueryVirtualMemory

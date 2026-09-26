@@ -467,23 +467,23 @@ pub unsafe extern "C" fn CdInitializeVcb(
     // FsRtlNotifyInitializeSync( &Vcb->NotifySync );
     FsRtlNotifyInitializeSync(core::ptr::addr_of_mut!((*Vcb).NotifySync));
 
-    // _SEH2_TRY / _SEH2_FINALLY block transformed
-    {
-        // _SEH2_TRY
-        {
+    // try { allocate the swap VPB (raises on failure) } finally { if (AbnormalTermination())
+    // undo the notify sync } — a real __finally (ntkrnl_sys::seh), so the abnormal arm runs.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
             (*Vcb).SwapVpb = FsRtlAllocatePoolWithTag(
                 CdNonPagedPool,
                 core::mem::size_of::<VPB>() as ULONG,
                 TAG_VPB,
             ) as *mut _;
-        }
-        // _SEH2_FINALLY
-        {
-            if _SEH2_AbnormalTermination() != 0 {
+        },
+        |_, abnormal| {
+            if abnormal {
                 FsRtlNotifyUninitializeSync(core::ptr::addr_of_mut!((*Vcb).NotifySync));
             }
-        }
-    } // _SEH2_END
+        },
+    );
 
     // RtlZeroMemory( Vcb->SwapVpb, sizeof( VPB ) );
     core::ptr::write_bytes(
@@ -587,279 +587,288 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
     let mut PathEntry: PATH_ENTRY = core::mem::zeroed();
     let mut McbEntry: *mut CD_MCB_ENTRY = core::ptr::null_mut();
 
-    // _SEH2_TRY
-    {
-        // Block size and masks
-        (*Vcb).BlockSize = if !RawIsoVd.is_null() {
-            CdRvdBlkSz(RawIsoVd, (*Vcb).VcbState)
-        } else {
-            SECTOR_SIZE
-        };
-
-        if (*Vcb).BlockSize != SECTOR_SIZE {
-            if UnlockVcb {
-                CdUnlockVcb(IrpContext, Vcb);
-                UnlockVcb = false;
-            }
-            CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
-        }
-
-        let block_size = (*Vcb).BlockSize;
-        (*Vcb).BlocksPerSector = SECTOR_SIZE / block_size;
-        (*Vcb).BlockMask = block_size - 1;
-        (*Vcb).BlockInverseMask = !(*Vcb).BlockMask;
-        (*Vcb).BlockToSectorShift = 0;
-        (*Vcb).BlockToByteShift = SECTOR_SHIFT;
-
-        if !RawIsoVd.is_null() {
-            // ISO volume descriptor present
-            CdLockVcb(IrpContext, Vcb);
-            UnlockVcb = true;
-
-            let path_table_fcb = CdCreateFcb(
-                IrpContext,
-                *(core::ptr::addr_of!(FileId) as *const FILE_ID),
-                CDFS_NTC_FCB_PATH_TABLE,
-                core::ptr::null_mut(),
-            );
-            (*Vcb).PathTableFcb = path_table_fcb;
-            CdIncrementReferenceCounts(IrpContext, path_table_fcb, 1, 1);
-            CdUnlockVcb(IrpContext, Vcb);
-            UnlockVcb = false;
-
-            StartingBlock = CdRvdPtLoc(RawIsoVd, (*Vcb).VcbState);
-            ByteCount = CdRvdPtSz(RawIsoVd, (*Vcb).VcbState);
-
-            let stream_offset = BytesFromBlocks(
-                Vcb,
-                SectorBlockOffset(Vcb, StartingBlock),
-            );
-            (*fcb_idx(path_table_fcb)).StreamOffset = stream_offset;
-            (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = (stream_offset + ByteCount) as LONGLONG;
-            (*fcb_hdr(path_table_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(path_table_fcb)).FileSize.QuadPart;
-            (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart =
-                LlSectorAlign((*fcb_hdr(path_table_fcb)).FileSize.QuadPart);
-
-            CdLockFcb(IrpContext, path_table_fcb);
-            CdAddInitialAllocation(
-                IrpContext,
-                path_table_fcb,
-                StartingBlock,
-                (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart, // DataLength: i64
-            );
-            CdUnlockFcb(IrpContext, path_table_fcb);
-
-            (*fcb_hdr(path_table_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
-            (*path_table_fcb).FcbState |= FCB_STATE_INITIALIZED;
-            CdCreateInternalStream(
-                IrpContext,
-                Vcb,
-                path_table_fcb,
-                &raw const CdInternalStreamNames[0],
-            );
-
-            // Root index
-            CdLockVcb(IrpContext, Vcb);
-            UnlockVcb = true;
-            let root_index_fcb = CdCreateFcb(
-                IrpContext,
-                *(core::ptr::addr_of!(FileId) as *const FILE_ID),
-                CDFS_NTC_FCB_INDEX,
-                core::ptr::null_mut(),
-            );
-            (*Vcb).RootIndexFcb = root_index_fcb;
-            CdIncrementReferenceCounts(IrpContext, root_index_fcb, 1, 1);
-            CdUnlockVcb(IrpContext, Vcb);
-            UnlockVcb = false;
-
-            CdSetFidPathTableOffset(
-                &raw mut (*root_index_fcb).FileId,
-                (*fcb_idx(path_table_fcb)).StreamOffset as i64,
-            );
-            CdFidSetDirectory(&raw mut (*root_index_fcb).FileId);
-
-            RawDirent = CdRvdDirent(RawIsoVd, (*Vcb).VcbState) as *mut RAW_DIRENT;
-            CopyUchar4(
-                &raw mut PathEntry.DiskOffset,
-                core::ptr::addr_of!((*RawDirent).FileLoc) as *const u8,
-            );
-            PathEntry.DiskOffset += (*RawDirent).XarLen as u32;
-            PathEntry.Ordinal = 1;
-            PathEntry.PathTableOffset = (*fcb_idx(path_table_fcb)).StreamOffset;
-
-            CdInitializeFcbFromPathEntry(
-                IrpContext,
-                root_index_fcb,
-                core::ptr::null_mut(),
-                &raw mut PathEntry,
-            );
-
-            CdCreateInternalStream(
-                IrpContext,
-                Vcb,
-                root_index_fcb,
-                &raw const CdInternalStreamNames[1],
-            );
-
-            // Volume dasd
-            CdLockVcb(IrpContext, Vcb);
-            UnlockVcb = true;
-            let volume_dasd_fcb = CdCreateFcb(
-                IrpContext,
-                *(core::ptr::addr_of!(FileId) as *const FILE_ID),
-                CDFS_NTC_FCB_DATA,
-                core::ptr::null_mut(),
-            );
-            (*Vcb).VolumeDasdFcb = volume_dasd_fcb;
-            CdIncrementReferenceCounts(IrpContext, volume_dasd_fcb, 1, 1);
-            CdUnlockVcb(IrpContext, Vcb);
-            UnlockVcb = false;
-
-            StartingBlock = CdRvdVolSz(RawIsoVd, (*Vcb).VcbState);
-            (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart = LlBytesFromBlocks(Vcb, StartingBlock);
-            (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
-            (*fcb_hdr(volume_dasd_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
-
-            CdLockFcb(IrpContext, volume_dasd_fcb);
-            McbEntry = core::ptr::addr_of!((*volume_dasd_fcb).Mcb.McbArray) as *mut CD_MCB_ENTRY;
-            (*McbEntry).FileOffset = 0;
-            (*McbEntry).DiskOffset = 0;
-            (*McbEntry).ByteCount = (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart;
-            (*McbEntry).DataBlockByteCount = (*McbEntry).ByteCount;
-            (*McbEntry).TotalBlockByteCount = (*McbEntry).ByteCount;
-            (*volume_dasd_fcb).Mcb.CurrentEntryCount = 1;
-            CdUnlockFcb(IrpContext, volume_dasd_fcb);
-
-            (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
-            (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
-            (*volume_dasd_fcb).FcbState |= FCB_STATE_INITIALIZED;
-
-            // Check for XA disc
-            if ((*Vcb).VcbState & (VCB_STATE_ISO | VCB_STATE_JOLIET)) != 0
-                && RtlEqualMemory(
-                    core::ptr::addr_of!(CdXaId) as *const core::ffi::c_void,
-                    ((RawIsoVd as usize) + 0x400) as *const core::ffi::c_void,
-                    8,
-                ) != 0
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_UnlockVcb = core::ptr::addr_of_mut!(UnlockVcb);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            // _SEH2_TRY
             {
-                (*Vcb).VcbState |= VCB_STATE_CDXA;
+                // Block size and masks
+                (*Vcb).BlockSize = if !RawIsoVd.is_null() {
+                    CdRvdBlkSz(RawIsoVd, (*Vcb).VcbState)
+                } else {
+                    SECTOR_SIZE
+                };
+
+                if (*Vcb).BlockSize != SECTOR_SIZE {
+                    if UnlockVcb {
+                        CdUnlockVcb(IrpContext, Vcb);
+                        UnlockVcb = false;
+                    }
+                    CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
+                }
+
+                let block_size = (*Vcb).BlockSize;
+                (*Vcb).BlocksPerSector = SECTOR_SIZE / block_size;
+                (*Vcb).BlockMask = block_size - 1;
+                (*Vcb).BlockInverseMask = !(*Vcb).BlockMask;
+                (*Vcb).BlockToSectorShift = 0;
+                (*Vcb).BlockToByteShift = SECTOR_SHIFT;
+
+                if !RawIsoVd.is_null() {
+                    // ISO volume descriptor present
+                    CdLockVcb(IrpContext, Vcb);
+                    UnlockVcb = true;
+
+                    let path_table_fcb = CdCreateFcb(
+                        IrpContext,
+                        *(core::ptr::addr_of!(FileId) as *const FILE_ID),
+                        CDFS_NTC_FCB_PATH_TABLE,
+                        core::ptr::null_mut(),
+                    );
+                    (*Vcb).PathTableFcb = path_table_fcb;
+                    CdIncrementReferenceCounts(IrpContext, path_table_fcb, 1, 1);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    UnlockVcb = false;
+
+                    StartingBlock = CdRvdPtLoc(RawIsoVd, (*Vcb).VcbState);
+                    ByteCount = CdRvdPtSz(RawIsoVd, (*Vcb).VcbState);
+
+                    let stream_offset = BytesFromBlocks(
+                        Vcb,
+                        SectorBlockOffset(Vcb, StartingBlock),
+                    );
+                    (*fcb_idx(path_table_fcb)).StreamOffset = stream_offset;
+                    (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = (stream_offset + ByteCount) as LONGLONG;
+                    (*fcb_hdr(path_table_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(path_table_fcb)).FileSize.QuadPart;
+                    (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart =
+                        LlSectorAlign((*fcb_hdr(path_table_fcb)).FileSize.QuadPart);
+
+                    CdLockFcb(IrpContext, path_table_fcb);
+                    CdAddInitialAllocation(
+                        IrpContext,
+                        path_table_fcb,
+                        StartingBlock,
+                        (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart, // DataLength: i64
+                    );
+                    CdUnlockFcb(IrpContext, path_table_fcb);
+
+                    (*fcb_hdr(path_table_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
+                    (*path_table_fcb).FcbState |= FCB_STATE_INITIALIZED;
+                    CdCreateInternalStream(
+                        IrpContext,
+                        Vcb,
+                        path_table_fcb,
+                        &raw const CdInternalStreamNames[0],
+                    );
+
+                    // Root index
+                    CdLockVcb(IrpContext, Vcb);
+                    UnlockVcb = true;
+                    let root_index_fcb = CdCreateFcb(
+                        IrpContext,
+                        *(core::ptr::addr_of!(FileId) as *const FILE_ID),
+                        CDFS_NTC_FCB_INDEX,
+                        core::ptr::null_mut(),
+                    );
+                    (*Vcb).RootIndexFcb = root_index_fcb;
+                    CdIncrementReferenceCounts(IrpContext, root_index_fcb, 1, 1);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    UnlockVcb = false;
+
+                    CdSetFidPathTableOffset(
+                        &raw mut (*root_index_fcb).FileId,
+                        (*fcb_idx(path_table_fcb)).StreamOffset as i64,
+                    );
+                    CdFidSetDirectory(&raw mut (*root_index_fcb).FileId);
+
+                    RawDirent = CdRvdDirent(RawIsoVd, (*Vcb).VcbState) as *mut RAW_DIRENT;
+                    CopyUchar4(
+                        &raw mut PathEntry.DiskOffset,
+                        core::ptr::addr_of!((*RawDirent).FileLoc) as *const u8,
+                    );
+                    PathEntry.DiskOffset += (*RawDirent).XarLen as u32;
+                    PathEntry.Ordinal = 1;
+                    PathEntry.PathTableOffset = (*fcb_idx(path_table_fcb)).StreamOffset;
+
+                    CdInitializeFcbFromPathEntry(
+                        IrpContext,
+                        root_index_fcb,
+                        core::ptr::null_mut(),
+                        &raw mut PathEntry,
+                    );
+
+                    CdCreateInternalStream(
+                        IrpContext,
+                        Vcb,
+                        root_index_fcb,
+                        &raw const CdInternalStreamNames[1],
+                    );
+
+                    // Volume dasd
+                    CdLockVcb(IrpContext, Vcb);
+                    UnlockVcb = true;
+                    let volume_dasd_fcb = CdCreateFcb(
+                        IrpContext,
+                        *(core::ptr::addr_of!(FileId) as *const FILE_ID),
+                        CDFS_NTC_FCB_DATA,
+                        core::ptr::null_mut(),
+                    );
+                    (*Vcb).VolumeDasdFcb = volume_dasd_fcb;
+                    CdIncrementReferenceCounts(IrpContext, volume_dasd_fcb, 1, 1);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    UnlockVcb = false;
+
+                    StartingBlock = CdRvdVolSz(RawIsoVd, (*Vcb).VcbState);
+                    (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart = LlBytesFromBlocks(Vcb, StartingBlock);
+                    (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
+                    (*fcb_hdr(volume_dasd_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
+
+                    CdLockFcb(IrpContext, volume_dasd_fcb);
+                    McbEntry = core::ptr::addr_of!((*volume_dasd_fcb).Mcb.McbArray) as *mut CD_MCB_ENTRY;
+                    (*McbEntry).FileOffset = 0;
+                    (*McbEntry).DiskOffset = 0;
+                    (*McbEntry).ByteCount = (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart;
+                    (*McbEntry).DataBlockByteCount = (*McbEntry).ByteCount;
+                    (*McbEntry).TotalBlockByteCount = (*McbEntry).ByteCount;
+                    (*volume_dasd_fcb).Mcb.CurrentEntryCount = 1;
+                    CdUnlockFcb(IrpContext, volume_dasd_fcb);
+
+                    (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
+                    (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
+                    (*volume_dasd_fcb).FcbState |= FCB_STATE_INITIALIZED;
+
+                    // Check for XA disc
+                    if ((*Vcb).VcbState & (VCB_STATE_ISO | VCB_STATE_JOLIET)) != 0
+                        && RtlEqualMemory(
+                            core::ptr::addr_of!(CdXaId) as *const core::ffi::c_void,
+                            ((RawIsoVd as usize) + 0x400) as *const core::ffi::c_void,
+                            8,
+                        ) != 0
+                    {
+                        (*Vcb).VcbState |= VCB_STATE_CDXA;
+                    }
+                } else if ((*Vcb).VcbState & VCB_STATE_AUDIO_DISK) != 0 {
+                    // Audio disk branch
+                    CdLockVcb(IrpContext, Vcb);
+                    UnlockVcb = true;
+
+                    let path_table_fcb = CdCreateFcb(
+                        IrpContext,
+                        *(core::ptr::addr_of!(FileId) as *const FILE_ID),
+                        CDFS_NTC_FCB_PATH_TABLE,
+                        core::ptr::null_mut(),
+                    );
+                    (*Vcb).PathTableFcb = path_table_fcb;
+                    CdIncrementReferenceCounts(IrpContext, path_table_fcb, 1, 1);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    UnlockVcb = false;
+
+                    let dir_id_offset = core::mem::offset_of!(RAW_PATH_ISO, DirId) as LONGLONG;
+                    (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = dir_id_offset + 2;
+                    (*fcb_hdr(path_table_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(path_table_fcb)).FileSize.QuadPart;
+                    (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart =
+                        LlSectorAlign((*fcb_hdr(path_table_fcb)).FileSize.QuadPart);
+                    (*fcb_hdr(path_table_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
+                    (*path_table_fcb).FcbState |= FCB_STATE_INITIALIZED;
+                    CdCreateInternalStream(
+                        IrpContext,
+                        Vcb,
+                        path_table_fcb,
+                        &raw const CdInternalStreamNames[0],
+                    );
+
+                    // Root index
+                    CdLockVcb(IrpContext, Vcb);
+                    UnlockVcb = true;
+                    let root_index_fcb = CdCreateFcb(
+                        IrpContext,
+                        *(core::ptr::addr_of!(FileId) as *const FILE_ID),
+                        CDFS_NTC_FCB_INDEX,
+                        core::ptr::null_mut(),
+                    );
+                    (*Vcb).RootIndexFcb = root_index_fcb;
+                    CdIncrementReferenceCounts(IrpContext, root_index_fcb, 1, 1);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    UnlockVcb = false;
+
+                    CdSetFidPathTableOffset(
+                        &raw mut (*root_index_fcb).FileId,
+                        (*fcb_idx(path_table_fcb)).StreamOffset as i64,
+                    );
+                    CdFidSetDirectory(&raw mut (*root_index_fcb).FileId);
+
+                    core::ptr::write_bytes(
+                        &raw mut PathEntry as *mut u8,
+                        0,
+                        core::mem::size_of::<PATH_ENTRY>(),
+                    );
+                    PathEntry.Ordinal = 1;
+                    PathEntry.PathTableOffset = (*fcb_idx(path_table_fcb)).StreamOffset;
+
+                    CdInitializeFcbFromPathEntry(
+                        IrpContext,
+                        root_index_fcb,
+                        core::ptr::null_mut(),
+                        &raw mut PathEntry,
+                    );
+
+                    let mut root_directory_size = ((*Vcb).TrackCount + 2) * CdAudioDirentSize;
+                    root_directory_size = SectorAlign(root_directory_size);
+                    let root_size = root_directory_size as LONGLONG;
+                    (*fcb_hdr(root_index_fcb)).AllocationSize.QuadPart = root_size;
+                    (*fcb_hdr(root_index_fcb)).ValidDataLength.QuadPart = root_size;
+                    (*fcb_hdr(root_index_fcb)).FileSize.QuadPart = root_size;
+                    (*root_index_fcb).FcbState |= FCB_STATE_INITIALIZED;
+
+                    CdCreateInternalStream(
+                        IrpContext,
+                        Vcb,
+                        root_index_fcb,
+                        &raw const CdInternalStreamNames[1],
+                    );
+
+                    // Volume dasd
+                    CdLockVcb(IrpContext, Vcb);
+                    UnlockVcb = true;
+                    let volume_dasd_fcb = CdCreateFcb(
+                        IrpContext,
+                        *(core::ptr::addr_of!(FileId) as *const FILE_ID),
+                        CDFS_NTC_FCB_DATA,
+                        core::ptr::null_mut(),
+                    );
+                    (*Vcb).VolumeDasdFcb = volume_dasd_fcb;
+                    CdIncrementReferenceCounts(IrpContext, volume_dasd_fcb, 1, 1);
+                    CdUnlockVcb(IrpContext, Vcb);
+                    UnlockVcb = false;
+
+                    (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
+                    (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
+                    (*volume_dasd_fcb).FcbState |= FCB_STATE_INITIALIZED;
+
+                    (*(*Vcb).Vpb).VolumeLabelLength = CdAudioLabelLength as u16;
+                    core::ptr::copy_nonoverlapping(
+                        core::ptr::addr_of!(CdAudioLabel) as *const u8,
+                        (*(*Vcb).Vpb).VolumeLabel.as_mut_ptr() as *mut u8,
+                        CdAudioLabelLength as usize,
+                    );
+
+                    let serial = CdTocSerial(IrpContext, (*Vcb).CdromToc);
+                    (*(*Vcb).Vpb).SerialNumber = serial;
+
+                    (*Vcb).VcbState |= VCB_STATE_ISO;
+                }
             }
-        } else if ((*Vcb).VcbState & VCB_STATE_AUDIO_DISK) != 0 {
-            // Audio disk branch
-            CdLockVcb(IrpContext, Vcb);
-            UnlockVcb = true;
+        },
+        |_, _| {
+            if (*p_UnlockVcb) {
+                CdUnlockVcb(IrpContext, Vcb);
+            }
+        },
+    );
 
-            let path_table_fcb = CdCreateFcb(
-                IrpContext,
-                *(core::ptr::addr_of!(FileId) as *const FILE_ID),
-                CDFS_NTC_FCB_PATH_TABLE,
-                core::ptr::null_mut(),
-            );
-            (*Vcb).PathTableFcb = path_table_fcb;
-            CdIncrementReferenceCounts(IrpContext, path_table_fcb, 1, 1);
-            CdUnlockVcb(IrpContext, Vcb);
-            UnlockVcb = false;
-
-            let dir_id_offset = core::mem::offset_of!(RAW_PATH_ISO, DirId) as LONGLONG;
-            (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = dir_id_offset + 2;
-            (*fcb_hdr(path_table_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(path_table_fcb)).FileSize.QuadPart;
-            (*fcb_hdr(path_table_fcb)).AllocationSize.QuadPart =
-                LlSectorAlign((*fcb_hdr(path_table_fcb)).FileSize.QuadPart);
-            (*fcb_hdr(path_table_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
-            (*path_table_fcb).FcbState |= FCB_STATE_INITIALIZED;
-            CdCreateInternalStream(
-                IrpContext,
-                Vcb,
-                path_table_fcb,
-                &raw const CdInternalStreamNames[0],
-            );
-
-            // Root index
-            CdLockVcb(IrpContext, Vcb);
-            UnlockVcb = true;
-            let root_index_fcb = CdCreateFcb(
-                IrpContext,
-                *(core::ptr::addr_of!(FileId) as *const FILE_ID),
-                CDFS_NTC_FCB_INDEX,
-                core::ptr::null_mut(),
-            );
-            (*Vcb).RootIndexFcb = root_index_fcb;
-            CdIncrementReferenceCounts(IrpContext, root_index_fcb, 1, 1);
-            CdUnlockVcb(IrpContext, Vcb);
-            UnlockVcb = false;
-
-            CdSetFidPathTableOffset(
-                &raw mut (*root_index_fcb).FileId,
-                (*fcb_idx(path_table_fcb)).StreamOffset as i64,
-            );
-            CdFidSetDirectory(&raw mut (*root_index_fcb).FileId);
-
-            core::ptr::write_bytes(
-                &raw mut PathEntry as *mut u8,
-                0,
-                core::mem::size_of::<PATH_ENTRY>(),
-            );
-            PathEntry.Ordinal = 1;
-            PathEntry.PathTableOffset = (*fcb_idx(path_table_fcb)).StreamOffset;
-
-            CdInitializeFcbFromPathEntry(
-                IrpContext,
-                root_index_fcb,
-                core::ptr::null_mut(),
-                &raw mut PathEntry,
-            );
-
-            let mut root_directory_size = ((*Vcb).TrackCount + 2) * CdAudioDirentSize;
-            root_directory_size = SectorAlign(root_directory_size);
-            let root_size = root_directory_size as LONGLONG;
-            (*fcb_hdr(root_index_fcb)).AllocationSize.QuadPart = root_size;
-            (*fcb_hdr(root_index_fcb)).ValidDataLength.QuadPart = root_size;
-            (*fcb_hdr(root_index_fcb)).FileSize.QuadPart = root_size;
-            (*root_index_fcb).FcbState |= FCB_STATE_INITIALIZED;
-
-            CdCreateInternalStream(
-                IrpContext,
-                Vcb,
-                root_index_fcb,
-                &raw const CdInternalStreamNames[1],
-            );
-
-            // Volume dasd
-            CdLockVcb(IrpContext, Vcb);
-            UnlockVcb = true;
-            let volume_dasd_fcb = CdCreateFcb(
-                IrpContext,
-                *(core::ptr::addr_of!(FileId) as *const FILE_ID),
-                CDFS_NTC_FCB_DATA,
-                core::ptr::null_mut(),
-            );
-            (*Vcb).VolumeDasdFcb = volume_dasd_fcb;
-            CdIncrementReferenceCounts(IrpContext, volume_dasd_fcb, 1, 1);
-            CdUnlockVcb(IrpContext, Vcb);
-            UnlockVcb = false;
-
-            (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
-            (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
-            (*volume_dasd_fcb).FcbState |= FCB_STATE_INITIALIZED;
-
-            (*(*Vcb).Vpb).VolumeLabelLength = CdAudioLabelLength as u16;
-            core::ptr::copy_nonoverlapping(
-                core::ptr::addr_of!(CdAudioLabel) as *const u8,
-                (*(*Vcb).Vpb).VolumeLabel.as_mut_ptr() as *mut u8,
-                CdAudioLabelLength as usize,
-            );
-
-            let serial = CdTocSerial(IrpContext, (*Vcb).CdromToc);
-            (*(*Vcb).Vpb).SerialNumber = serial;
-
-            (*Vcb).VcbState |= VCB_STATE_ISO;
-        }
-    }
-
-    // _SEH2_FINALLY
-    if UnlockVcb {
-        CdUnlockVcb(IrpContext, Vcb);
-    }
     // _SEH2_END
 }
 #[no_mangle]
@@ -1032,107 +1041,115 @@ pub unsafe extern "C" fn CdInitializeFcbFromFileContext(
     FileContext: *mut FILE_ENUM_CONTEXT
 ) {
     let ThisDirent: *mut DIRENT = core::ptr::addr_of_mut!((*(*FileContext).InitialDirent).Dirent);
-    let mut CurrentCompoundDirent: *mut COMPOUND_DIRENT;
+    let mut CurrentCompoundDirent: *mut COMPOUND_DIRENT = core::mem::zeroed();
     let mut CurrentFileOffset: i64 = 0;
     let mut CurrentMcbEntryOffset: u32 = 0;
 
     CdLockFcb(IrpContext, Fcb);
 
-    // try block start
-    (*fcb_hdr(Fcb)).Resource = core::ptr::addr_of_mut!((*(*IrpContext).Vcb).FileResource);
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            // try block start
+            (*fcb_hdr(Fcb)).Resource = core::ptr::addr_of_mut!((*(*IrpContext).Vcb).FileResource);
 
-    (*fcb_hdr(Fcb)).FileSize.QuadPart = (*FileContext).FileSize;
-    (*fcb_hdr(Fcb)).ValidDataLength.QuadPart = (*FileContext).FileSize;
+            (*fcb_hdr(Fcb)).FileSize.QuadPart = (*FileContext).FileSize;
+            (*fcb_hdr(Fcb)).ValidDataLength.QuadPart = (*FileContext).FileSize;
 
-    (*fcb_hdr(Fcb)).AllocationSize.QuadPart = LlBlockAlign((*Fcb).Vcb, (*FileContext).FileSize);
+            (*fcb_hdr(Fcb)).AllocationSize.QuadPart = LlBlockAlign((*Fcb).Vcb, (*FileContext).FileSize);
 
-    (*Fcb).FileAttributes |= FILE_ATTRIBUTE_READONLY;
-    if ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_HIDDEN as u8) != 0 {
-        (*Fcb).FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
-    }
+            (*Fcb).FileAttributes |= FILE_ATTRIBUTE_READONLY;
+            if ((*ThisDirent).DirentFlags & CD_ATTRIBUTE_HIDDEN as u8) != 0 {
+                (*Fcb).FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
+            }
 
-    CdConvertCdTimeToNtTime(
-        IrpContext,
-        (*ThisDirent).CdTime,
-        core::ptr::addr_of_mut!((*Fcb).CreationTime) as *mut LARGE_INTEGER,
+            CdConvertCdTimeToNtTime(
+                IrpContext,
+                (*ThisDirent).CdTime,
+                core::ptr::addr_of_mut!((*Fcb).CreationTime) as *mut LARGE_INTEGER,
+            );
+
+            if (*ThisDirent).ExtentType != Form1Data {
+                if (*ThisDirent).ExtentType == Mode2Form2Data {
+                    (*Fcb).FcbState |= FCB_STATE_MODE2FORM2_FILE;
+                } else {
+                    (*Fcb).FcbState |= FCB_STATE_DA_FILE;
+                }
+                (*Fcb).XAAttributes = (*ThisDirent).XAAttributes;
+                (*Fcb).XAFileNumber = (*ThisDirent).XAFileNumber;
+            }
+
+            CurrentCompoundDirent = (*FileContext).InitialDirent;
+
+            loop {
+                CdAddAllocationFromDirent(
+                    IrpContext,
+                    Fcb,
+                    CurrentMcbEntryOffset,
+                    CurrentFileOffset,
+                    core::ptr::addr_of_mut!((*CurrentCompoundDirent).Dirent),
+                );
+
+                if ((*CurrentCompoundDirent).Dirent.DirentFlags & CD_ATTRIBUTE_MULTI as u8) == 0 {
+                    break;
+                }
+
+                CurrentFileOffset += (*CurrentCompoundDirent).Dirent.DataLength as i64;
+                CurrentMcbEntryOffset += 1;
+
+                if CdLookupNextDirent(
+                    IrpContext,
+                    ParentFcb,
+                    core::ptr::addr_of_mut!((*CurrentCompoundDirent).DirContext),
+                    core::ptr::addr_of!((*(*FileContext).CurrentDirent).DirContext),
+                ) == 0
+                {
+                    CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+                }
+
+                CurrentCompoundDirent = (*FileContext).CurrentDirent;
+
+                CdUpdateDirentFromRawDirent(
+                    IrpContext,
+                    ParentFcb,
+                    core::ptr::addr_of!((*CurrentCompoundDirent).DirContext),
+                    core::ptr::addr_of_mut!((*CurrentCompoundDirent).Dirent),
+                );
+            }
+
+            (*Fcb).FcbState |= FCB_STATE_INITIALIZED;
+
+            (*Fcb).ParentFcb = ParentFcb;
+
+            InsertTailList(
+                core::ptr::addr_of_mut!((*fcb_idx(ParentFcb)).FcbQueue),
+                core::ptr::addr_of_mut!((*Fcb).FcbLinks),
+            );
+
+            CdIncrementReferenceCounts(IrpContext, ParentFcb, 1, 1);
+
+            {
+                // CdInsertFcbTable expanded
+                let mut key: FCB_TABLE_ELEMENT = core::mem::zeroed();
+                key.Fcb = Fcb;
+                key.FileId = (*Fcb).FileId;
+                RtlInsertElementGenericTable(
+                    core::ptr::addr_of_mut!((*(*Fcb).Vcb).FcbTable),
+                    &mut key as *mut FCB_TABLE_ELEMENT as *mut core::ffi::c_void,
+                    core::mem::size_of::<FCB_TABLE_ELEMENT>() as u32,
+                    core::ptr::null_mut(),
+                );
+            }
+
+            (*Fcb).FcbState |= FCB_STATE_IN_FCB_TABLE;
+        },
+        |_, _| {
+            CdUnlockFcb(IrpContext, Fcb);
+        },
     );
 
-    if (*ThisDirent).ExtentType != Form1Data {
-        if (*ThisDirent).ExtentType == Mode2Form2Data {
-            (*Fcb).FcbState |= FCB_STATE_MODE2FORM2_FILE;
-        } else {
-            (*Fcb).FcbState |= FCB_STATE_DA_FILE;
-        }
-        (*Fcb).XAAttributes = (*ThisDirent).XAAttributes;
-        (*Fcb).XAFileNumber = (*ThisDirent).XAFileNumber;
-    }
-
-    CurrentCompoundDirent = (*FileContext).InitialDirent;
-
-    loop {
-        CdAddAllocationFromDirent(
-            IrpContext,
-            Fcb,
-            CurrentMcbEntryOffset,
-            CurrentFileOffset,
-            core::ptr::addr_of_mut!((*CurrentCompoundDirent).Dirent),
-        );
-
-        if ((*CurrentCompoundDirent).Dirent.DirentFlags & CD_ATTRIBUTE_MULTI as u8) == 0 {
-            break;
-        }
-
-        CurrentFileOffset += (*CurrentCompoundDirent).Dirent.DataLength as i64;
-        CurrentMcbEntryOffset += 1;
-
-        if CdLookupNextDirent(
-            IrpContext,
-            ParentFcb,
-            core::ptr::addr_of_mut!((*CurrentCompoundDirent).DirContext),
-            core::ptr::addr_of!((*(*FileContext).CurrentDirent).DirContext),
-        ) == 0
-        {
-            CdRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
-        }
-
-        CurrentCompoundDirent = (*FileContext).CurrentDirent;
-
-        CdUpdateDirentFromRawDirent(
-            IrpContext,
-            ParentFcb,
-            core::ptr::addr_of!((*CurrentCompoundDirent).DirContext),
-            core::ptr::addr_of_mut!((*CurrentCompoundDirent).Dirent),
-        );
-    }
-
-    (*Fcb).FcbState |= FCB_STATE_INITIALIZED;
-
-    (*Fcb).ParentFcb = ParentFcb;
-
-    InsertTailList(
-        core::ptr::addr_of_mut!((*fcb_idx(ParentFcb)).FcbQueue),
-        core::ptr::addr_of_mut!((*Fcb).FcbLinks),
-    );
-
-    CdIncrementReferenceCounts(IrpContext, ParentFcb, 1, 1);
-
-    {
-        // CdInsertFcbTable expanded
-        let mut key: FCB_TABLE_ELEMENT = core::mem::zeroed();
-        key.Fcb = Fcb;
-        key.FileId = (*Fcb).FileId;
-        RtlInsertElementGenericTable(
-            core::ptr::addr_of_mut!((*(*Fcb).Vcb).FcbTable),
-            &mut key as *mut FCB_TABLE_ELEMENT as *mut core::ffi::c_void,
-            core::mem::size_of::<FCB_TABLE_ELEMENT>() as u32,
-            core::ptr::null_mut(),
-        );
-    }
-
-    (*Fcb).FcbState |= FCB_STATE_IN_FCB_TABLE;
-
-    // try block end, finally block
-    CdUnlockFcb(IrpContext, Fcb);
 }
 
 const CDFS_NTC_CCB: u32 = 0x0307; // nodetype.h CDFS_NTC_CCB
@@ -1233,7 +1250,7 @@ pub unsafe extern "C" fn CdTeardownStructures(
     let Vcb: *mut VCB = (*StartingFcb).Vcb;
     let mut CurrentFcb: *mut FCB = StartingFcb;
     let mut AcquiredCurrentFcb: u8 = 0;
-    let mut ParentFcb: *mut FCB;
+    let mut ParentFcb: *mut FCB = core::mem::zeroed();
 
     PAGED_CODE();
 
@@ -1247,65 +1264,74 @@ pub unsafe extern "C" fn CdTeardownStructures(
     SetFlag(&mut (*top_level).Flags, IRP_CONTEXT_FLAG_IN_TEARDOWN);
 
     // _SEH2_TRY
-    {
-        loop {
-            if SafeNodeType(CurrentFcb) != CDFS_NTC_FCB_DATA
-                && (*CurrentFcb).FcbUserReference == 0
-                && !(*fcb_idx(CurrentFcb)).FileObject.is_null()
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_AcquiredCurrentFcb = core::ptr::addr_of_mut!(AcquiredCurrentFcb);
+    let p_CurrentFcb = core::ptr::addr_of_mut!(CurrentFcb);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
             {
-                CdDeleteInternalStream(IrpContext, CurrentFcb);
-            }
+                loop {
+                    if SafeNodeType(CurrentFcb) != CDFS_NTC_FCB_DATA
+                        && (*CurrentFcb).FcbUserReference == 0
+                        && !(*fcb_idx(CurrentFcb)).FileObject.is_null()
+                    {
+                        CdDeleteInternalStream(IrpContext, CurrentFcb);
+                    }
 
-            if (*CurrentFcb).FcbReference != 0 {
-                break;
-            }
+                    if (*CurrentFcb).FcbReference != 0 {
+                        break;
+                    }
 
-            ParentFcb = (*CurrentFcb).ParentFcb;
+                    ParentFcb = (*CurrentFcb).ParentFcb;
 
-            if !ParentFcb.is_null() {
-                CdAcquireFcbExclusive(IrpContext, ParentFcb, 0);
-            }
+                    if !ParentFcb.is_null() {
+                        CdAcquireFcbExclusive(IrpContext, ParentFcb, 0);
+                    }
 
-            CdLockVcb(IrpContext, Vcb);
+                    CdLockVcb(IrpContext, Vcb);
 
-            if (*CurrentFcb).FcbReference != 0 {
-                CdUnlockVcb(IrpContext, Vcb);
-                if !ParentFcb.is_null() {
-                    CdReleaseFcb(IrpContext, ParentFcb);
+                    if (*CurrentFcb).FcbReference != 0 {
+                        CdUnlockVcb(IrpContext, Vcb);
+                        if !ParentFcb.is_null() {
+                            CdReleaseFcb(IrpContext, ParentFcb);
+                        }
+                        break;
+                    }
+
+                    if !ParentFcb.is_null() {
+                        CdRemovePrefix(IrpContext, CurrentFcb);
+                        RemoveEntryList(core::ptr::addr_of_mut!((*CurrentFcb).FcbLinks));
+                        CdDecrementReferenceCounts(IrpContext, ParentFcb, 1, 1);
+                    }
+
+                    if FlagOn((*CurrentFcb).FcbState, FCB_STATE_IN_FCB_TABLE) != 0 {
+                        CdDeleteFcbTable(IrpContext, CurrentFcb);
+                        ClearFlag(&mut (*CurrentFcb).FcbState, FCB_STATE_IN_FCB_TABLE);
+                    }
+
+                    CdUnlockVcb(IrpContext, Vcb);
+                    CdDeleteFcb(IrpContext, CurrentFcb);
+
+                    CurrentFcb = ParentFcb;
+                    AcquiredCurrentFcb = 1;
+
+                    if CurrentFcb.is_null() {
+                        break;
+                    }
                 }
-                break;
+            }
+        },
+        |_, _| {
+            if (*p_AcquiredCurrentFcb) != 0 && !(*p_CurrentFcb).is_null() {
+                CdReleaseFcb(IrpContext, (*p_CurrentFcb));
             }
 
-            if !ParentFcb.is_null() {
-                CdRemovePrefix(IrpContext, CurrentFcb);
-                RemoveEntryList(core::ptr::addr_of_mut!((*CurrentFcb).FcbLinks));
-                CdDecrementReferenceCounts(IrpContext, ParentFcb, 1, 1);
-            }
+            ClearFlag(&mut (*(*IrpContext).TopLevel).Flags, IRP_CONTEXT_FLAG_IN_TEARDOWN);
+        },
+    );
 
-            if FlagOn((*CurrentFcb).FcbState, FCB_STATE_IN_FCB_TABLE) != 0 {
-                CdDeleteFcbTable(IrpContext, CurrentFcb);
-                ClearFlag(&mut (*CurrentFcb).FcbState, FCB_STATE_IN_FCB_TABLE);
-            }
-
-            CdUnlockVcb(IrpContext, Vcb);
-            CdDeleteFcb(IrpContext, CurrentFcb);
-
-            CurrentFcb = ParentFcb;
-            AcquiredCurrentFcb = 1;
-
-            if CurrentFcb.is_null() {
-                break;
-            }
-        }
-    }
-    // _SEH2_FINALLY
-    {
-        if AcquiredCurrentFcb != 0 && !CurrentFcb.is_null() {
-            CdReleaseFcb(IrpContext, CurrentFcb);
-        }
-
-        ClearFlag(&mut (*(*IrpContext).TopLevel).Flags, IRP_CONTEXT_FLAG_IN_TEARDOWN);
-    }
     // _SEH2_END
 
     *RemovedStartingFcb = (CurrentFcb != StartingFcb) as u8;

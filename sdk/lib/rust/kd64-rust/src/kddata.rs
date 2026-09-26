@@ -24,19 +24,6 @@ use ntkrnl_sys::ddk::{
     _LOCK_OPERATION_IoWriteAccess, _WORK_QUEUE_TYPE_DelayedWorkQueue,
 };
 
-#[cfg(not(target_arch = "x86"))]
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn KdpStub(
-        TrapFrame: PKTRAP_FRAME,
-        ExceptionFrame: PKEXCEPTION_FRAME,
-        ExceptionRecord: PEXCEPTION_RECORD,
-        ContextRecord: PCONTEXT,
-        PreviousMode: KPROCESSOR_MODE,
-        SecondChanceException: BOOLEAN,
-    ) -> BOOLEAN;
-}
-
 extern "system" {
     fn RtlpBreakWithStatusInstruction();
     static mut PsLoadedModuleList: LIST_ENTRY;

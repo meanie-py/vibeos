@@ -730,8 +730,6 @@ pub unsafe extern "system" fn KeTrapFrameToContext(
     }
 }
 
-#[cfg(target_arch = "x86")]
-
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn KeInvalidAccessAllowed(TrapInformation: PVOID) -> BOOLEAN {
@@ -966,6 +964,28 @@ pub unsafe extern "system" fn KiDispatchException(
             }
         }
 
+        // Second chance is a process death, and it must be named HERE: csrss's
+        // exception port usually "handles" it by TerminateProcess(client, 0x80),
+        // the forward below returns nonzero, and the "Kill" print further down is
+        // never reached. amd64 has had this tripwire for months; i386 did not, so
+        // the native control of the WoW64 winetest A/B saw its user32:scroll
+        // child die as an anonymous exit 0x80 -- which winetest then reported as
+        // "128 failures in child process".
+        {
+            extern "system" {
+                fn PsGetCurrentProcess() -> *mut core::ffi::c_void;
+                fn PsGetProcessImageFileName(p: *mut core::ffi::c_void) -> *const u8;
+            }
+            crate::dbg_print!(
+                b"[KI-EXC] %.16s second chance: code=0x%lx addr=%p eip=%p P0=%lx P1=%lx\n\0",
+                PsGetProcessImageFileName(PsGetCurrentProcess()),
+                (*ExceptionRecord).ExceptionCode as u32,
+                (*ExceptionRecord).ExceptionAddress,
+                (*TrapFrame).Eip as *const u8,
+                (*ExceptionRecord).ExceptionInformation[0] as u32,
+                (*ExceptionRecord).ExceptionInformation[1] as u32,
+            );
+        }
         if DbgkForwardException(ExceptionRecord, 1u8, 1u8) != 0 {
             return;
         } else if DbgkForwardException(ExceptionRecord, 0u8, 1u8) != 0 {
@@ -1059,8 +1079,6 @@ pub unsafe extern "system" fn KiDispatchExceptionFromTrapFrame(
 
     KiEoiHelper(TrapFrame);
 }
-
-#[cfg(target_arch = "x86")]
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]

@@ -629,11 +629,10 @@ unsafe fn TEXT_NextLineW(
 
         j_in_seg = (j - seg_j) as u32;
         max_seg_width = width - plen;
-        #[cfg(target_pointer_width = "32")]
-        #[cfg(target_pointer_width = "64")]
-        #[cfg(not(target_os = "windows"))]
-
-        #[cfg(target_os = "windows")]
+        // text.c:761 — `#ifdef _WIN32_K` (the kernel build of this shared file) measures with
+        // GreGetTextExtentExW. This was four STACKED cfgs (32-bit AND 64-bit AND windows AND
+        // not-windows), which AND together to false: the measurement compiled in on no arch,
+        // so num_fit/size kept their initial values and every line-fit decision was blind.
         GreGetTextExtentExW(
             hdc,
             dest.offset(seg_j as isize),
@@ -643,16 +642,6 @@ unsafe fn TEXT_NextLineW(
             core::ptr::null_mut(),
             &mut size,
             0,
-        );
-        #[cfg(not(target_os = "windows"))]
-        GetTextExtentExPointW(
-            hdc,
-            dest.offset(seg_j as isize),
-            j_in_seg as i32,
-            max_seg_width,
-            &mut num_fit,
-            core::ptr::null_mut(),
-            &mut size,
         );
 
         word_broken = 0;

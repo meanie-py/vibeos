@@ -434,6 +434,11 @@ RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system
 # creates its v5/v6 activation contexts from %windir%\winsxs\manifests, and apps whose
 # manifest asks for Common-Controls 6.0 resolve it here. Without it every
 # CreateActCtxW in comctl32 failed on arm64.
+# %SystemRoot%\TEMP: hivesys.inf points the system TEMP/TMP there, and x86 setup
+# creates it, but nothing made it on the arm64 ramdisk -- so every app writing a
+# temp file failed with ERROR_PATH_NOT_FOUND (found by the ucrt Tier 2 findfile
+# fixture, whose CreateDirectoryW under %TEMP% failed with error 3).
+mdir -i "$RAMDISK_IMG" ::/reactos/TEMP >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" ::/reactos/TEMP
 SXS_CC="microsoft.windows.common-controls_6595b64144ccf1df"
 for d in winsxs winsxs/manifests \
          "winsxs/arm64_${SXS_CC}_5.82.2600.2982_none_deadbeef" \

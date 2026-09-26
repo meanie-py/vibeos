@@ -1586,7 +1586,7 @@ pub unsafe extern "system" fn KeBugCheckEx(
         BugCheckParameter4 as PVOID,
     );
     KiBannerDone = 1; // WithTf must not re-print (Ex -> WithTf path)
-    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
     if BugCheckCode == 0x1E && BugCheckParameter3 > 0x80000000 {
         i386_trap_frame_backtrace(BugCheckParameter3);
     }
@@ -1630,7 +1630,7 @@ pub unsafe extern "system" fn KeBugCheckEx(
         // ATTEMPTED_WRITE_TO_READONLY_MEMORY, 0x1E-family) pass TrapInformation
         // as P3, not a PC — the real faulting PC is inside that KTRAP_FRAME.
         // Extract and symbolicate it too (bindgen field access, not a raw offset).
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
         if (BugCheckCode == 0x50 || BugCheckCode == 0xBE || BugCheckCode == 0x7E || BugCheckCode == 0x1E)
             && BugCheckParameter3 > 0xFFFF800000000000
         {
@@ -1795,7 +1795,7 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
         lr
     };
     // Debugcon: dump return address so we can identify the caller
-    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
     {
         let retaddr: u32;
         core::arch::asm!(

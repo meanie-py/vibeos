@@ -1044,14 +1044,20 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         HeadlessInit(LoaderBlock);
     }
 
+    // init.c: amd64 publishes the WOW64 32-bit ranges (amd64/mm.h:35-36); everyone else
+    // the native HIGHEST USER address and system range start. This stored 64-bit kernel
+    // constants truncated to ULONG on amd64 (0xFFFFFFFF and 0 — a WOW64 process was told
+    // the system range starts at address 0) and MmSystemRangeStart in both fields elsewhere.
     #[cfg(target_arch = "x86_64")]
     {
-        (*SharedUserData).Reserved1 = 0x000007FFFFFFFFFFu64 as ULONG;
-        (*SharedUserData).Reserved3 = 0xFFFF080000000000u64 as ULONG;
+        const MM_HIGHEST_USER_ADDRESS_WOW64: ULONG = 0x7FFE_FFFF;
+        const MM_SYSTEM_RANGE_START_WOW64: ULONG = 0x8000_0000;
+        (*SharedUserData).Reserved1 = MM_HIGHEST_USER_ADDRESS_WOW64;
+        (*SharedUserData).Reserved3 = MM_SYSTEM_RANGE_START_WOW64;
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
-        (*SharedUserData).Reserved1 = MmSystemRangeStart as ULONG;
+        (*SharedUserData).Reserved1 = MmHighestUserAddress as ULONG;
         (*SharedUserData).Reserved3 = MmSystemRangeStart as ULONG;
     }
 
@@ -1693,6 +1699,48 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             fn SehPocRun();
         }
         SehPocRun();
+    }
+
+    // Per-boot tripwire for ntkrnl_sys::seh (ntoskrnl/sehtry.c): real try/except and
+    // try/finally around RUST bodies, on all three arches. A raise two Rust frames
+    // below must run the finally (abnormal) during the unwind and then land in the
+    // outer handler with its code; the normal path must run the finally once, not
+    // abnormal. i386 is the new ground here: its catch is a hand-built fs:[0] frame.
+    {
+        use ntkrnl_sys::seh::*;
+        const CODE: i32 = 0xE0DEAD02u32 as i32;
+        let mut trace: u32 = 0;
+        let caught = try_except(
+            &mut trace,
+            |t| {
+                try_finally(
+                    t,
+                    |t| {
+                        *t |= 1;
+                        ExRaiseStatus(CODE);
+                    },
+                    |t, abnormal| *t |= if abnormal { 2 } else { 4 },
+                )
+            },
+            |_, pointers| {
+                if exception_code(pointers) == CODE {
+                    EXCEPTION_EXECUTE_HANDLER
+                } else {
+                    EXCEPTION_CONTINUE_SEARCH
+                }
+            },
+        );
+        let mut normal: u32 = 0;
+        try_finally(&mut normal, |t| *t |= 1, |t, abnormal| *t |= if abnormal { 2 } else { 4 });
+        let pass = caught == Err(CODE) && trace == 3 && normal == 5;
+        crate::dbg_print!(
+            b"[SEH-TRY] rust try/except+finally: caught=%d code=0x%x trace=%u normal=%u (%s)\n\0",
+            caught.is_err() as i32,
+            caught.err().unwrap_or(0),
+            trace,
+            normal,
+            if pass { b"PASS\0".as_ptr() } else { b"FAIL\0".as_ptr() }
+        );
     }
 
     // Per-boot tripwire for the FAULT-TOLERANT COPY (ntoskrnl/kmsafecopy.c).

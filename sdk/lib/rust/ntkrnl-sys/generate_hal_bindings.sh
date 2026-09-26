@@ -61,7 +61,7 @@ run_bindgen() {
         -DDBG=1 -DWINVER=0x502 -D_WIN32_WINNT=0x502 \
         -I"${BUILD_DIR}/ntoskrnl" \
         -I"${SRC}/hal/halx86/include" \
-        -I"${SRC}/drivers/bus/acpi/acpica/include" \
+        -I"${SRC}/vendor/acpica/include" \
         -I"${SRC}/ntoskrnl" \
         -I"${SRC}/sdk/include" \
         -I"${SRC}/sdk/include/ddk" \

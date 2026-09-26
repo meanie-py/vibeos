@@ -211,157 +211,172 @@ pub unsafe extern "C" fn CdCommonCleanup(
     //  Use a try-finally to facilitate cleanup.
     //
 
-    {
-        //
-        //  Case on the type of open that we are trying to cleanup.
-        //
-
-        match TypeOfOpen {
-            UserDirectoryOpen => {
+    // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+    // inside the body still runs the cleanup on its way to the handler.
+    let p_SendUnlockNotification = core::ptr::addr_of_mut!(SendUnlockNotification);
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            {
                 //
-                //  Check if we need to complete any dir notify Irps on this file object.
-                //
-
-                FsRtlNotifyCleanup(
-                    (*Vcb).NotifySync,
-                    core::ptr::addr_of_mut!((*Vcb).DirNotifyList),
-                    Ccb as *mut c_void,
-                );
-            }
-            UserFileOpen => {
-                //
-                //  Coordinate the cleanup operation with the oplock state.
-                //  Oplock cleanup operations can always cleanup immediately so no
-                //  need to check for STATUS_PENDING.
+                //  Case on the type of open that we are trying to cleanup.
                 //
 
-                FsRtlCheckOplock(
-                    CdGetFcbOplock(Fcb),
-                    Irp,
-                    IrpContext as *mut c_void,
-                    None as POPLOCK_WAIT_COMPLETE_ROUTINE,
-                    None as POPLOCK_FS_PREPOST_IRP,
-                );
+                match TypeOfOpen {
+                    UserDirectoryOpen => {
+                        //
+                        //  Check if we need to complete any dir notify Irps on this file object.
+                        //
 
-                //
-                //  Unlock all outstanding file locks.
-                //
+                        FsRtlNotifyCleanup(
+                            (*Vcb).NotifySync,
+                            core::ptr::addr_of_mut!((*Vcb).DirNotifyList),
+                            Ccb as *mut c_void,
+                        );
+                    }
+                    UserFileOpen => {
+                        //
+                        //  Coordinate the cleanup operation with the oplock state.
+                        //  Oplock cleanup operations can always cleanup immediately so no
+                        //  need to check for STATUS_PENDING.
+                        //
 
-                let fcb_data = &(*Fcb).__bindgen_anon_2 as *const _ as *const FCB_DATA;
-                if !(*fcb_data).FileLock.is_null() {
-                    FsRtlFastUnlockAll(
-                        (*fcb_data).FileLock,
-                        FileObject,
-                        IoGetRequestorProcess(Irp),
-                        core::ptr::null_mut(),
-                    );
+                        FsRtlCheckOplock(
+                            CdGetFcbOplock(Fcb),
+                            Irp,
+                            IrpContext as *mut c_void,
+                            None as POPLOCK_WAIT_COMPLETE_ROUTINE,
+                            None as POPLOCK_FS_PREPOST_IRP,
+                        );
+
+                        //
+                        //  Unlock all outstanding file locks.
+                        //
+
+                        let fcb_data = &(*Fcb).__bindgen_anon_2 as *const _ as *const FCB_DATA;
+                        if !(*fcb_data).FileLock.is_null() {
+                            FsRtlFastUnlockAll(
+                                (*fcb_data).FileLock,
+                                FileObject,
+                                IoGetRequestorProcess(Irp),
+                                core::ptr::null_mut(),
+                            );
+                        }
+
+                        //
+                        //  Cleanup the cache map.
+                        //
+
+                        CcUninitializeCacheMap(FileObject, core::ptr::null_mut(), core::ptr::null_mut());
+
+                        //
+                        //  Check the fast io state.
+                        //
+
+                        CdLockFcb(IrpContext, Fcb);
+                        (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
+                        CdUnlockFcb(IrpContext, Fcb);
+                    }
+                    UserVolumeOpen => { }
+                    _ => {
+                        CdBugCheck(TypeOfOpen, 0, 0);
+                    }
                 }
 
                 //
-                //  Cleanup the cache map.
+                //  Now lock the Vcb in order to modify the fields in the in-memory
+                //  structures.
                 //
 
-                CcUninitializeCacheMap(FileObject, core::ptr::null_mut(), core::ptr::null_mut());
+                CdLockVcb(IrpContext, Vcb);
 
                 //
-                //  Check the fast io state.
+                //  Decrement the cleanup counts in the Vcb and Fcb.
                 //
 
-                CdLockFcb(IrpContext, Fcb);
-                (*Fcb).__bindgen_anon_1.Header.as_mut().IsFastIoPossible = CdIsFastIoPossible(Fcb);
-                CdUnlockFcb(IrpContext, Fcb);
+                CdDecrementCleanupCounts(IrpContext, Fcb);
+
+                //
+                //  If the cleanup count hit zero and the volume is not mounted, we
+                //  will want to try to spark teardown.
+                //
+
+                AttemptTeardown = ((*Vcb).VcbCleanup == 0 && (*Vcb).VcbCondition == VcbNotMounted) as u8;
+
+                //
+                //  If this file object has locked the volume then perform the unlock operation.
+                //  We do this regardless of explicit or implicit (no share DASD open) lock.
+                //
+
+                if FileObject == (*Vcb).VolumeLockFileObject {
+                    NT_ASSERT((FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED)) as _);
+
+                    IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(SavedIrql));
+
+                    // ClearFlag macro inlined: Vpb->Flags is USHORT (u16), shim ClearFlag takes *mut u32.
+                    (*(*Vcb).Vpb).Flags &= !(VPB_LOCKED as u16);
+                    ClearFlag(
+                        core::ptr::addr_of_mut!((*Vcb).VcbState),
+                        VCB_STATE_LOCKED,
+                    );
+                    (*Vcb).VolumeLockFileObject = core::ptr::null_mut();
+                    SendUnlockNotification = 1;
+
+                    IoReleaseVpbSpinLock(SavedIrql);
+                }
+
+                CdUnlockVcb(IrpContext, Vcb);
+
+                //
+                //  We must clean up the share access at this time, since we may not
+                //  get a Close call for awhile if the file was mapped through this
+                //  File Object.
+                //
+
+                IoRemoveShareAccess(
+                    FileObject,
+                    core::ptr::addr_of_mut!((*Fcb).ShareAccess),
+                );
             }
-            UserVolumeOpen => { }
-            _ => {
-                CdBugCheck(TypeOfOpen, 0, 0);
+        },
+        |_, _| {
+            CdReleaseFcb(IrpContext, Fcb);
+
+            if (*p_SendUnlockNotification) != 0 {
+                FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
             }
-        }
+        },
+    );
 
-        //
-        //  Now lock the Vcb in order to modify the fields in the in-memory
-        //  structures.
-        //
-
-        CdLockVcb(IrpContext, Vcb);
-
-        //
-        //  Decrement the cleanup counts in the Vcb and Fcb.
-        //
-
-        CdDecrementCleanupCounts(IrpContext, Fcb);
-
-        //
-        //  If the cleanup count hit zero and the volume is not mounted, we
-        //  will want to try to spark teardown.
-        //
-
-        AttemptTeardown = ((*Vcb).VcbCleanup == 0 && (*Vcb).VcbCondition == VcbNotMounted) as u8;
-
-        //
-        //  If this file object has locked the volume then perform the unlock operation.
-        //  We do this regardless of explicit or implicit (no share DASD open) lock.
-        //
-
-        if FileObject == (*Vcb).VolumeLockFileObject {
-            NT_ASSERT((FlagOn((*Vcb).VcbState, VCB_STATE_LOCKED)) as _);
-
-            IoAcquireVpbSpinLock(core::ptr::addr_of_mut!(SavedIrql));
-
-            // ClearFlag macro inlined: Vpb->Flags is USHORT (u16), shim ClearFlag takes *mut u32.
-            (*(*Vcb).Vpb).Flags &= !(VPB_LOCKED as u16);
-            ClearFlag(
-                core::ptr::addr_of_mut!((*Vcb).VcbState),
-                VCB_STATE_LOCKED,
-            );
-            (*Vcb).VolumeLockFileObject = core::ptr::null_mut();
-            SendUnlockNotification = 1;
-
-            IoReleaseVpbSpinLock(SavedIrql);
-        }
-
-        CdUnlockVcb(IrpContext, Vcb);
-
-        //
-        //  We must clean up the share access at this time, since we may not
-        //  get a Close call for awhile if the file was mapped through this
-        //  File Object.
-        //
-
-        IoRemoveShareAccess(
-            FileObject,
-            core::ptr::addr_of_mut!((*Fcb).ShareAccess),
-        );
-    }
-
-    //
-    //  finally block
-    //
-
-    CdReleaseFcb(IrpContext, Fcb);
-
-    if SendUnlockNotification != 0 {
-        FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
-    }
 
     //
     //  If the cleanup hit zero on an unmounted volume, spark teardown — purge the
     //  volume (generates closes). The grind dropped this whole block (cleanup.c:332).
-    //  DUMMY_PSEH: the _SEH2_FINALLY runs inline. Pre-acquire CdData since the purges
-    //  generate closes that may acquire CdData during teardown.
+    //  Pre-acquire CdData since the purges generate closes that may acquire CdData
+    //  during teardown.
     //
     if AttemptTeardown != 0 {
         CdAcquireCdData(IrpContext);
 
-        CdAcquireVcbExclusive(IrpContext, Vcb, 0 /* FALSE */);
-        VcbAcquired = 1;
+        // try { ... } finally { ... }: a real __finally (ntkrnl_sys::seh), so a raise
+        // inside the body still runs the cleanup on its way to the handler.
+        let p_VcbAcquired = core::ptr::addr_of_mut!(VcbAcquired);
+        ntkrnl_sys::seh::try_finally(
+            &mut (),
+            |_| {
+                CdAcquireVcbExclusive(IrpContext, Vcb, 0 /* FALSE */);
+                VcbAcquired = 1;
 
-        CdPurgeVolume(IrpContext, Vcb, 0 /* FALSE */);
+                CdPurgeVolume(IrpContext, Vcb, 0 /* FALSE */);
+            },
+            |_, _| {
+                if (*p_VcbAcquired) != 0 {
+                    CdReleaseVcb(IrpContext, Vcb);
+                }
+                CdReleaseCdData(IrpContext);
+            },
+        );
 
-        // _SEH2_FINALLY
-        if VcbAcquired != 0 {
-            CdReleaseVcb(IrpContext, Vcb);
-        }
-        CdReleaseCdData(IrpContext);
     }
 
     CdCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);

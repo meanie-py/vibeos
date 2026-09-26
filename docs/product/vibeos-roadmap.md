@@ -425,6 +425,36 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
+## 11. Retire MSVC support — Size: M
+
+**MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
+clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
+MSVC build, and everything that exists only for it is dead weight here: code nothing
+compiles, CMake branches nothing takes, and tests of a compiler we do not use.
+Deliberately deferred, not urgent. Measured 2026-09-26:
+
+- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
+  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
+  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
+  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
+  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
+- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
+- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
+  non-MSVC arm. 29 of those files are rostests.
+- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
+  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
+- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
+  Many are portability guards that also select the clang path, so read each one; do not
+  delete by regex.
+
+**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
+from a file upstream still edits becomes a merge conflict on the next sync. So take the
+self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
+`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
+files we already own or have translated.
+
+---
+
 ## Check-back ledger — owed items from closed docs/lanes (opened 2026-07-10)
 
 When a plan/quest/handoff doc closes, its *outstanding* items land here (one line + a
@@ -671,18 +701,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 5 OPEN** (2026-09-25; `combo` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
+  REFERENCE, ALL SEVEN RESOLVED except `uitools`** (2026-09-25; `combo`, `winstation`,
+  `scroll`, `dde` FIXED and `monitor` no longer diverging, 2026-09-26, see below;
+  `uitools` is the known discarded GDI batch). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
   | subtest | native i386 | WoW64 | |
   |---|---|---|---|
   | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
-  | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
-  | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
-  | `monitor` | 20 failures | **23** | +3 guest-only |
+  | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
+  | `dde` | ~~TIMED OUT~~ **24** | ~~CRASH `0xc0000005`~~ **24** | **FIXED 2026-09-26**; the guest now PASSES one assertion native fails (929) |
+  | `monitor` | 20 failures | ~~23~~ **20** | **NO LONGER DIVERGES 2026-09-26** — cause unattributed, see below |
   | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
-  | `scroll` | 140 failures | **17** | fewer under WoW64 — NOT yet a win, see below |
+  | `scroll` | ~~140~~ **14** | ~~17~~ **14** | FIXED 2026-09-26 on BOTH sides; now identical line for line |
   | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
   **`combo` was win32k reading guest user32's private `HEADCOMBO` at the amd64 layout.**
   `NtUserGetComboBoxInfo` does not ask the control; it follows the pointer in the window's
@@ -694,8 +726,48 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   guest 460 tests / 23 failures, native i386 the same 23, and the 28 output lines diff
   IDENTICAL once handle values are normalized. Repro loop is now
   `build --arch amd64 --winetest-sweep --winetest-only combo` (seconds, not a 40-min sweep).
+  **`winstation` was three bugs stacked.** (1) `NtUserCreateDesktop` had no marshaller, and
+  its loud refusal returned a non-zero status that the guest read as a valid `HDESK`. (2)
+  Behind it, `NtQueryObject` was a flat thunk, so `ObjectNameInformation` came back in the
+  host's 16-byte `UNICODE_STRING` layout and the test dereferenced a junk `Name.Buffer`.
+  That one affects every guest: kernel32 (`dosdev`, `GetFinalPathNameByHandle`) and
+  advapi32's HKCR code ask for object names too. (3) `EnumWindowStations` failing with
+  `ERROR_INTERNAL_ERROR` was NOT the seam: win32k sized its fallback buffer from a
+  `NtQueryDirectoryObject` NULL/0 query, which reports bytes written rather than bytes needed,
+  and only a 64-bit kernel's 32-byte entries overflow into that path. Now 13 failures on
+  both sides. Two differences remain, neither attributable: the foreground-window asserts
+  (a timing-sensitive loop, failing on both sides at different iterations) and 1054
+  (`WM_NCHITTEST` on an invisible desktop), which native never reached because its child
+  launch failed first with `CreateProcessA` error 2 on `argv[0]`. FIXED the same day:
+  winlogon passed a bare exe name as argv[0], and an lpApplicationName resolves against
+  the CWD only. The guest had worked by accident, via WoW64's system32 -> syswow64
+  redirection. With full paths, 1054 fails on BOTH sides (not the seam), and only one
+  foreground-loop iteration differs.
+  **`monitor` re-measured 2026-09-26: 20 and 20**, and the assertion lists match line for line
+  except one native-only `WaitForSingleObject returned 102` (3181), a native timing miss.
+  The +3 does not reproduce, and WHICH three assertions they were was never recorded (the
+  09-25 log died with `/tmp`), so the fix cannot be attributed: that day's `NtQueryObject`
+  marshaller and the upstream merges since are both candidates, and neither is proven.
+  Record per-assertion diffs, not counts, or a disappearing divergence cannot be explained.
+  **`dde` was three things, and the middle one was never about DDE.** (1) The DDE
+  post/get user callbacks (13/14) had no WoW64 bridge: `[WOW64CB] callback 13 NEEDS
+  64->32 MARSHALLER`, so every cross-process DDE data message failed to post. (2) With
+  the bridge in, the posted `WM_DDE_DATA` still carried `lParam 0`, because the guest's
+  `PackDDElParam` got NULL from `GlobalLock` on a handle `GlobalAlloc` had just returned.
+  kernel32 fills `SystemRangeStart` at startup with
+  `NtQuerySystemInformation(SystemRangeStartInformation, &x, 4)`, which the WoW64
+  marshaller passed through to a host that answers 8 bytes. It failed
+  `STATUS_INFO_LENGTH_MISMATCH` in EVERY guest (19 per boot), left the value 0, and
+  `GlobalLock`'s `hMem >= SystemRangeStart` then refused every FIXED global in every
+  32-bit process. Class 50 is now marshalled (0x80000000, matching the guest's
+  0x7FFEFFFF user ceiling). (3) Found on the way: gui32 had improved to a full `0x600D`
+  (desktop readback now works) and the ladder failed it for not being the soft-pass
+  `0x600E`. The queue's integration tree does not stage the guests, so only lanes saw
+  it; `ladder.ALSO_ACCEPTED` now names the upgrade. Now 24 on both sides; against a quiet
+  native run the guest differs only by PASSING 929, plus one extra trailing byte in the
+  2510 failure both sides share.
   `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
-  owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  owed item (since paid: the guest batch is executed as of 2026-09-26; re-run `uitools`). `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
   correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
   `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
@@ -704,8 +776,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   says executing them needs four 32-bit record layouts and names `GDIBSPATBLT.hbrush`
   first; this is that record. It also says the discard "costs no drawing that was not
   already dropped" — true, and now known to cost a conformance assertion as well.
-  **`scroll` 140 -> 17 must not be read as an improvement until someone diffs the
-  assertions.** A conformance suite reporting fewer failures usually means it stopped
+  **`scroll` diffed 2026-09-26, and the 140 -> 17 was neither a win nor a loss.** The whole
+  gap is the `write_process` child: native's reports "128 failures in child process" with
+  its output invisible, the guest's runs 12 tests with 2 failures (905/911). The parents
+  differ by exactly three guest-only failures, 161/170/179 (`GetScrollPos(SB_CTL)` wrong
+  after a `SetScrollPos` that worked). FIXED: guest user32 read the control's `SBCALC` as
+  `pwnd as PSBWND`, i.e. off the end of its 32-bit WND SNAPSHOT instead of the window's real
+  extra bytes. It now goes through `wnd_extra_base` (scrollbar.rs `SBCalcOf`), the fix M11
+  made for EDIT. Guest now 14. **The native 140 was a crash, not 140 failures**: winetest
+  reports a child's EXIT CODE as its failure count, and native's `write_process` child
+  died with `0x80` (csrss terminating a second-chance exception). i386 could not show it,
+  since it had neither the `[EXIT-THR]` trace nor the second-chance `[KI-EXC]` tripwire amd64
+  has had for months. Both are now on i386, and the first run named
+  `uxtheme!ThemeSetScrollInfo`: `ThemeGetWndData` returned the OWNER's heap pointer for
+  another process's window (the property is global, the pointer is not), and
+  `ThemeDestroyWndData` had always guarded this while the getter never did. Also fixed: its
+  default path passed an uninitialized `SCROLLINFO`. Native 140 -> 14, identical to the
+  guest line for line, 905/911 included. Also fixed: i386 `wow64_unsupported` fired in
+  NATIVE processes ("SBINFO ... results will be garbage" on bare i386), a false alarm now
+  gated on `IsWow64()`.
+  **The original caution stands as method:** a conformance suite reporting fewer failures
+  usually means it stopped asking. A conformance suite reporting fewer failures usually means it stopped
   asking, not that we got better, and the byte counts (896 native vs 1271 guest) do not
   settle it either way.
   Cost, for budgeting a wider sweep: most subtests are under 3s natively; the outliers are
@@ -818,6 +909,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     trace) without matching. The file shows `shell ready` three times for one payload run, so the
     `ready` snapshot restore is the first suspect: the reader may be following a timeline the
     marker is not in. Read the serial for the verdict until this is fixed.
+  - ADDRESSED, pending recurrence (2026-09-26): cdfs now has real exception handling
+    (`ntkrnl_sys::seh`), so a `STATUS_CANT_WAIT` raise reaches `CdProcessException` and is
+    retried or posted instead of bugchecking. Original report: BUGCHECK 0x1E `0xC00000D8` (`STATUS_CANT_WAIT`) during
+    boot, in the WoW64 `async32` guest's overlapped `ReadFile` right after
+    `[async32] start`, before appstorm launched. `RtlRaiseStatus(0xC00000D8)`, which is the
+    field manual's "DUMMY_PSEH defeats cdfs's raise->catch->post async model" class: a
+    non-blocking read that has to wait raises, and the catch that would post it to a worker
+    never runs. The `[RAISE]` dump held only stack residue, so the raiser (cdfs or Cc) is
+    unconfirmed. Run `/tmp/vibeos-cli/20260926-110052-gc3j9quv-smoke-amd64`. Not seen in any
+    other serial log on disk.
+  - FIXED, harness (a different miss): an amd64 appstorm sweep with 38/38 PASS failed "output
+    lacks `[APPSTORM] done VERDICT=PASS`", and the tail it quoted was `[APPSTORM] done VER`.
+    `drain_for_marker` returned as soon as the launch marker (a PREFIX of the verdict line)
+    appeared, even mid-line. It now finishes the line, bounded at 10s.
   - FIXED: the pushlock `ASSERT FAILED: (*WaitBlock).Signaled != 0` (pushlock.rs 495/643, on
     UP i386 too) was a false positive: the waker's DBG-only `Signaled = 1` was compiled out
     while the ASSERT was live. appstorm i386 38/38 with 0 assertions (was 4).
@@ -835,13 +940,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     close. mkhive now takes `-a:<arch>`, like setup. arm64 got a `Windows ARM64` environment and a
     winprint destination as well, but its ramdisk does not ship spoolsv yet.
     amd64 appstorm: 38/38.
-  - OPEN, amd64, intermittent (1 in 4 sweeps): during `explorer-folder`, win32k logged
-    `failed to free. pvAlloc=0` ~8,100 times (`GdiPoolFree(NULL)`), then BUGCHECK 0x1E in
-    `REGION_bOffsetRgn` on a NULL region created in `co_WinPosSetWindowPos`. That call site is
-    unchecked in the C as well, so exhaustion is the root, and a NULL free is a caller bug the C
-    asserts against. `GdiPoolFree` now prints `[GDIPOOL] NULL free from <pc>` backtraces for the
-    first three: symbolize them with `vibeos-cli sym --module win32k.sys`. Run
-    `/tmp/vibeos-cli/20260926-024703-5punrico-smoke-amd64`. The same run had `osk` with no window.
+  - FIXED: amd64 BUGCHECK 0x1E in `REGION_bOffsetRgn` from `co_WinPosSetWindowPos`, after
+    ~8,000 `failed to free. pvAlloc=0` lines (2 of 3 appstorm sweeps once `--repeat` soaked the
+    payload). A GDI handle leak: a census at the first failed insert showed all 65,536 entries
+    live, ~63,000 of them REGIONS owned by `osk.exe`, the WoW64 i386 osk winlogon starts and
+    leaves running. Its gdi32 deletes regions through the TEB32 GDI batch, which
+    `NtGdiFlushUserBatch` reset without executing, so none was ever deleted; once the table
+    filled, every Create* returned NULL. The NULL frees were only pens failing to insert.
+    Fixed by executing the guest batch (see the WoW64 GDI-batch entry). `GDIOBJ_hInsertObject`
+    now says `Could not get a free entry` as the C did, and dumps `[GDI-CENSUS]` by type and
+    owner once. Harness side note: appstorm's own `osk` FAILs with `windows=0` because
+    winlogon's instance holds the single-instance mutex, not because osk is broken.
   - FIXED: dxdiag's heap corruption (`RtlpRemoveFreeBlock`, amd64). kernel32-rust `GlobalSize`
     ran its translated `_SEH2_EXCEPT` arm unconditionally, so GlobalSize/LocalSize returned 0
     for EVERY block on every arch. The edit control sizes its undo buffer from
@@ -2116,12 +2225,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   survivors being `fault32`/`thread32`'s own deliberate test faults. Zero faults remain
   anywhere in user32's range.
 
-  **Owed, logged loudly rather than silently:** the batched commands are RESET, not
-  executed. Executing them needs the 32-bit record layouts, which differ only by four
-  HANDLE widths (`GDIBSPATBLT.hbrush`, `GDIBSTEXTOUT.hlfntNew`, `GDIBSOBJECT.hgdiobj`,
-  `PATRECT.hBrush` in `GDIBSPPATBLT`; the other three record types are already identical).
-  Costs no drawing that was not already dropped, since the flush never ran for a guest at
-  all. A `[GDIBATCH] ... cmds DISCARDED` line fires once per guest.
+  **The owed half is PAID (2026-09-26):** the guest batch is now EXECUTED, not reset.
+  `flush_guest_batch()` in `win32k-rust/src/gdibatch.rs` widens each i386 record into a
+  kernel scratch buffer (sign-extending the four HANDLE fields, as the generated thunks do)
+  and runs it through the native executor. "Costs no drawing that was not already dropped"
+  turned out to be the wrong cost to count: gdi32's `DeleteObject` on a region or brush with
+  a user attribute is itself batched (`GdiBCDelRgn`/`GdiBCDelObj`), so every such delete was
+  dropped and its handle leaked. See the osk entry under Known bugs.
 
   **Why `--ladder` could not see any of this for a week**, which is the reusable part:
   `ladder.watch()` stops draining once every GRADED guest reports, and the stock applets
@@ -3660,6 +3770,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     affecting three call sites (ExPools.c:175, IoDeviceObject_drv.c:198/206), but it is a
     CONFORMANCE TEST change that will move many arm64 assertions at once and wants a
     deliberate arm64 re-seed — owner's call, not a drive-by.
+    **CLOSED 2026-09-13 — fixed, re-seeded, and confirmed.** Owner approved and scoped the
+    rule that had been holding it: a build-flag / arch-gate correction is not a semantic
+    change to a conformance test and needs no approval; approval is for changes to what a test
+    MEANS in a direction that favours us, i.e. that would pass here and fail on real Windows.
+    The three `#ifdef _M_AMD64` in `kmt_test_kernel.h`'s `POOL_HEADER` are now `#ifdef _WIN64`
+    (real Windows' header is 16 bytes on every 64-bit target; the union's `ProcessBilled`
+    pointer forces it). arm64 ExPools: `pass=14 fail=4` `{119,135,178,210}` ->
+    `pass=17 fail=1` `{210}`, stable across four boots — **identical to amd64's baseline row**,
+    which is the real confirmation: the two 64-bit arches now agree. `:210` is the shared
+    64-bit 2GB-quota case, not this bug. Baseline re-seeded with `--only ExPools`, and the
+    stale `:176`/`:178`/`:181` marks removed — they described the misread, so keeping them
+    would have left the floor tolerating a failure that can no longer occur. A
+    `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now guards the struct; restoring
+    `_M_AMD64` fails it at compile time on arm64, so this was verified as a discriminator
+    rather than assumed. Six weeks of "arm64 kernel lead" was a one-word arch gate.
+    **A PREDICTION, recorded before it can be confirmed.** The fleet-wide census
+    (`5255a32d74e4`, 196 real gate runs) counts ExPools as the LARGEST single contributor to
+    arm64 conformance redness at 30 distinct batches. That census predates this fix, so the
+    next one must show ExPools dropping out of the top of that list. If it does not, the fix
+    is not what closed it and this entry is wrong -- which is the point of writing the
+    prediction down while it is still falsifiable rather than noting the agreement afterwards.
     **Confirmed against the toolchain, not just read out of the headers.** `_WIN64` IS a
     clang builtin: `.build-tools/llvm-mingw/bin/clang -target <t> -dM -E </dev/null` gives it
     for both `aarch64-w64-mingw32` and `x86_64-w64-mingw32` and not for `i686-w64-mingw32`.
@@ -3881,6 +4012,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     floors with no `assert?` anywhere**, so this is exactly the case the ratchet quest warned
     about — an intermittent that never fired during the 15 seeding boots is indistinguishable
     from a regression on any single sweep.
+    **DIAGNOSED 2026-09-13, from source, at zero machine cost — and it is a TIMING DEADLINE,
+    not an npfs defect.** Now 2 hits in 8 arm64 rounds the same day (~25%, so not rare after
+    all — the "did not recur in 9 sweeps" above was luck). Both hits are the identical
+    identity, `assert NpfsConnect.c:109`, and that line is
+    `ok_bool_true(Okay, "CheckConnectPipe returned")` for the SECOND client connect.
+    `CheckConnectPipe(..., 100)` -> `TriggerWork` -> `WaitForWork` (`NpfsHelpers.c:692-707`)
+    is a **relative 100 ms** `KeWaitForSingleObject`, and it returns FALSE *only* on
+    `STATUS_TIMEOUT`. **The discriminator is the neighbour, and it is the ExPools lesson
+    inverted:** `:110` (`ok_eq_hex(Status, STATUS_PIPE_NOT_AVAILABLE)`) PASSES on the same
+    run, and `Status` held `STATUS_SUCCESS` going in from the `:97` connect — so the worker
+    thread did signal, wrote the CORRECT status, and merely did it later than 100 ms. There an
+    assertion that passed on garbage hid a defect; here an assertion that passed on good data
+    proves the work was right. **Deliberately NOT baselined and NOT widened.** Widening a
+    timeout is the classic weaken-the-test move, and baselining it would bury the one thing
+    that might be real: 100 ms for a thread wake plus a pipe connect is generous even under
+    TCG, so exceeding it may be genuine scheduler latency in our kernel rather than an
+    over-tight suite deadline. **Those two are not separable by more sweeps** — the pass/fail
+    bit saturates at "over 100 ms" either way. The discriminator is the ACTUAL delay, which
+    needs an instrument (record the wait's elapsed time on the timeout path), not more boots.
+    That is the next step whenever this is picked up; do not re-soak it.
     **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
     (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate ASKS for the
     WoW64 ladder (`gate_argv=['--ladder']`, previously silently empty), so `LADDER_FAIL` is a

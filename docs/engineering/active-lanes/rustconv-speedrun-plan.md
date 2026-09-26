@@ -74,8 +74,58 @@ every translated body. **Owed, in order:**
    exports only C calls. All 56 widened to BOOL (61 bodies: win32k's REGION_* and
    GreSetBrushOrg have per-arch cfg twins, which the scanner now also compares);
    userenv's local decls narrowed `OpenEventW`/`CreateMutexW`'s BOOL params to u8 too.
-3. Also unwired and worth a pass: `scan_sibling_drift.py`, `scan_arch_cfg.py` (see
-   agent-reference "Triage scanners that are NOT wired into `check`").
+3. ~~`scan_sibling_drift` / `scan_arch_cfg` pass~~ DONE 2026-09-26.
+   - sibling_drift: still the same 65 candidates hand-read on 09-20 (`WSPSelect` stays
+     listed after its fix, by design). The 19 in files changed since were re-read: no bug.
+   - arch_cfg: 2,825 sites vs 2,453 at the July audit; path-free diff against that tree
+     (`git archive 2607142dce2`) left 507 new, of which the 133 in the risky shapes
+     (single-64-bit-arch gates, `not(aarch64)`, smp-per-arch) and the 27 that exclude only
+     arm64 were read. Three bugs:
+     `ex/init.rs` SharedUserData Reserved1/3 (amd64 stored truncated 64-bit constants, 0
+     for the WOW64 system range start; elsewhere Reserved1 got SystemRangeStart, not
+     HighestUserAddress); user32 `GetClassLongA/W` `_WIN64` gated amd64-only (new gated
+     class — now the general `scan_cfg_vs_c`, see below); and a fourth, stale copy of arm64 SMP `SYNCH_LEVEL` = 2 in
+     `ke-inlines` that the July-25 fix missed (dead under smp today, now 12).
+   - Then mechanized: `scan_cfg_vs_c` (gated, empty baseline) evaluates every in-body arch
+     cfg and every C `#if` in the twin (arch macros, `_WIN64`, `_MI_PAGING_LEVELS`) to arch
+     sets and flags a Rust set that splits arches the C keeps together. Of 1,648 in-body
+     arch cfgs: 438 agree with the C mechanically, 548 are ABI/layout spellings or
+     per-arch file twins, 77 mix in non-arch features, and ~650 have no C arch `#if` to
+     compare against — the Rust-only cfgs, still a reading job. First run flagged 54; the
+     rule refinements (arm64-unaware C, paging levels, file twins, bindgen layout) left 15,
+     all Rust-only diagnostics / bring-up allowances, now `nolint`ed with reasons. Only
+     real hit: GetClassLongA/W, already fixed. Supersedes the one-day `scan_win64_cfg`.
+   - The ~650 Rust-only in-body cfgs the tool cannot decide (`--worklist`) went to three
+     read-only Sonnet reviewers (664 sites after removing the 37 July had cleared); every
+     claimed bug was re-verified against the C before any edit. 596 LEGIT. Fixed:
+     win32k `TEXT_NextLineW` measured no text on ANY arch (four stacked cfgs AND to
+     false) — which led to 8 more dead stacked-cfg items (orphans of deleted fastcall
+     twins), now a second gated check in `scan_cfg_vs_c`; smlib `SmConnectToSm` (an
+     `NTDDI_VERSION < VISTA` test mistranslated as pointer width); `PsLocateSystemDll`
+     (arm64 skipped four bugchecks the C makes on every arch); `KeSetSystemAffinityThread`
+     (`CONFIG_SMP` translated as `not(x86)`); two `MiResolveTransitionFault` diagnostics
+     widened. Rejected after checking: `MmRequestPageMemoryConsumer`'s amd64 yield is the
+     deliberate 97d678e72ef boot-stall fix (now commented at the site).
+   - Owed from that audit: `KeSetTimeIncrement`'s amd64-only SharedUserData zeroing (does
+     arm64 carry the same dormant boot hang? instrument before changing); arm64
+     shortcuts `MiGetPfnEntry` (skips the PFN-bitmap NULL check), generictable's
+     arm64-only splay-walk loop guard, `MiBalancerThreadInner` (arm64 `break`s where x86
+     bugchecks NO_PAGES_AVAILABLE); 29 win32k x86/not(x86) arms with identical calls
+     (cosmetic). Tool gap: map C `CONFIG_SMP` to `feature = "smp"` so the thrdobj class
+     is mechanical too. Reports: scratchpad `cfgaudit/shard_{A,B,C}.report.tsv` (not kept).
+   - Correction (conformance lane caught it): two of the "revived" dead items were dead ON
+     PURPOSE. i386 `RtlPrefetchMemoryNonTemporal` is owned by rtlk's prefetch_asm.rs (a
+     `ret` that kiinit patches to NOP); the revived empty stub won the link under
+     `--allow-multiple-definition` and i386 kmtest RtlMemoryKM bugchecked 0x1E, EIP=0
+     (e50515abfab rejected). arm64 `RtlUshortByteSwap` duplicated the byteswap crate. Both
+     deleted instead; dead-cfg output now says to look for another provider first.
+   - Owed, tooling: `scan_duplicate_symbols` only compares `#[no_mangle]` names ACROSS
+     crates, so a same-crate duplicate or a `global_asm!` `.globl` label vs a Rust fn is
+     invisible (25 such names today, most presumably per-arch splits — needs an
+     arch-aware check, cfg + module gating, before it can gate).
+   - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
+     `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
+     body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.
 
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 

@@ -383,6 +383,22 @@ pub unsafe extern "C" fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTS
     loop {}
 }
 
+/// read.c/write.c `SafeZeroMemory(IC, AT, BYTE_COUNT)`: zero part of the caller's buffer,
+/// turning a fault on it into `CdRaiseStatus(STATUS_INVALID_USER_BUFFER)`. Expanded to a
+/// bare RtlZeroMemory, a bad user buffer would reach CdExceptionFilter as an access
+/// violation, which it treats as unexpected and bugchecks on.
+pub unsafe fn SafeZeroMemory(IrpContext: *mut IRP_CONTEXT, At: *mut core::ffi::c_void, ByteCount: usize) {
+    const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as i32;
+    let caught = ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| ntkrnl_sys::rtl::RtlZeroMemory(At, ByteCount),
+        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+    );
+    if caught.is_err() {
+        CdRaiseStatus(IrpContext, STATUS_INVALID_USER_BUFFER);
+    }
+}
+
 // cd.h integer/pointer helper macros (generic; safe central shims).
 //   BlockAlign(V,L) = ((V)+(L-1)) & ~(L-1)   ; LlBlockAlign is the i64 form.
 //   Add2Ptr(P,I)    = (PUCHAR)(P) + (I)
