@@ -7,6 +7,13 @@ direction) and [kernel-exception-handling.md](archive/kernel-exception-handling.
 
 ## The verdict
 
+> **Update 2026-09-26:** Rust kernel code now has real `try_except`/`try_finally`
+> (`ntkrnl_sys::seh` over `ntoskrnl/sehtry.c`: native SEH on amd64/arm64, a hand-built
+> `fs:[0]` frame on i386). That changes step 3 below: the FS drivers' raise model can be
+> wired to its already-translated filters as written, instead of converting every raise
+> site to `Result`. Cc/Mm in-page raises, which no `Result` conversion inside cdfs could
+> reach, are caught the same way.
+
 **Keep DUMMY_PSEH as the *default* compile mode for C; give Rust code the
 three semantics PSEH provided, idiomatically. Kernel-mode catch is no
 longer impossible — this lane made it work (see the PoC below) — so
@@ -172,7 +179,7 @@ Empirically re-tested on our exact llvm-mingw clang 19.1.7 (2026-07-06):
 
 So on amd64 (and, pending the ×3 gate, arm64) **native SEH is now a
 working, validated option** — for **C**. What keeps it from being *the*
-answer: (a) **Rust cannot consume it** — Rust has no `__try`; giving Rust
+answer: (a) **Rust cannot consume it** *(superseded 2026-09-26: it can, one frame down, through C trampolines; `ntkrnl_sys::seh`, `ntoskrnl/sehtry.c`, all three arches incl. i386, boot-tested by `[SEH-TRY]`)* — Rust has no `__try`; giving Rust
 catch semantics still requires the trap-to-panic bridge, which is the
 expensive deferred project — so the ~36 Rust raise sites and the dead FS
 filters need the `Result` conversion regardless; (b) i386 native SEH does

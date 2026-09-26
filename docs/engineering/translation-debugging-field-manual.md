@@ -5817,6 +5817,25 @@ runs other agents' builds and QEMUs).
 
 ## SEH, PSEH & exception handling
 
+### Rust code CAN have real `__try/__except` and `__finally`: `ntkrnl_sys::seh`
+
+**Symptom:** a translated FS/driver path raises by design (`CdRaiseStatus`,
+`STATUS_CANT_WAIT`, a Cc in-page error) and bugchecks 0x1E, because its `_SEH2_EXCEPT` arm
+is dead under DUMMY_PSEH.
+
+**Fix:** `ntkrnl_sys::seh::{try_except, try_finally}` call the Rust body through C
+trampolines (`ntoskrnl/sehtry.c`, exported as `RtlSehTryExcept`/`RtlSehTryFinally`) that
+own a real handler: native SEH on amd64/arm64, a hand-built `fs:[0]` frame on i386. Rust
+frames carry `.pdata`, so the unwind walks through them. `fin` runs during the unwind with
+the stack intact, which is where a translated `__finally` that released a lock must go;
+left inline after the try body, it is skipped on the exception path. Closures must not
+capture anything that needs `Drop`. `[SEH-TRY] ... (PASS)` at boot proves it per arch.
+
+**i386 trap, found building it:** `RtlUnwind` returns through `ZwContinue` on a CONTEXT
+captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A C handler
+that keeps its frame pointer in `esi` across the call faults on the next line. Save them
+around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
+
 ### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
 
 **Symptom:** a syscall that worked starts returning `STATUS_DATATYPE_MISALIGNMENT`, or an
