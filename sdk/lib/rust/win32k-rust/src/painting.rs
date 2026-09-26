@@ -2003,11 +2003,20 @@ pub unsafe extern "system" fn NtUserFlashWindowEx(pfwi: PFLASHWINFO) -> BOOL {
                 break 'exit;
             }
         }
-        RtlCopyMemory(
-            core::ptr::addr_of_mut!(finfo) as *mut _,
-            pfwi as *mut _,
-            core::mem::size_of::<FLASHWINFO>() as _,
-        );
+        // The probe above is validate-ONLY (USE_DUMMY_PSEH): it range-checks
+        // against MmUserProbeAddress and never touches the page. The C had the
+        // probe and this copy inside one _SEH2_TRY, so the ACCESS is what has
+        // to be fault-tolerant -- a plain RtlCopyMemory here lets any caller
+        // bugcheck 0x1E with an unmapped pfwi. Found by the wine user32:win
+        // subtest, which does exactly that.
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(finfo) as *mut core::ffi::c_void,
+            pfwi as *const core::ffi::c_void,
+            core::mem::size_of::<FLASHWINFO>(),
+        ) {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+            break 'exit;
+        }
 
         pWnd = ValidateHwndNoErr(finfo.hwnd);
         if pWnd.is_null()

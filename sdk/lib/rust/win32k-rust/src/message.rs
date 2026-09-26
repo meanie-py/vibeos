@@ -3218,12 +3218,17 @@ pub unsafe extern "system" fn NtUserPeekMessage(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             Ret = ((FALSE as i32));
-        } else {
-            RtlCopyMemory(
-                pMsg as *mut _,
-                core::ptr::addr_of!(Msg) as *const _,
-                core::mem::size_of::<MSG>() as _,
-            );
+        } else if !crate::copy::publish_to_user(
+            // Validate-only probe (USE_DUMMY_PSEH) + a raw store is not what the
+            // C's single _SEH2_TRY gave us: an unmapped pMsg passes the range
+            // check and faults on the write. The wine user32:msg subtest passes
+            // one and bugchecks 0x1E here.
+            pMsg as *mut core::ffi::c_void,
+            core::ptr::addr_of!(Msg) as *const core::ffi::c_void,
+            core::mem::size_of::<MSG>(),
+        ) {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+            Ret = ((FALSE as i32));
         }
     }
 
@@ -3271,12 +3276,17 @@ pub unsafe extern "system" fn NtUserPeekMessage(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             Ret = FALSE as BOOL;
-        } else {
-            RtlCopyMemory(
-                pMsg as *mut _,
-                core::ptr::addr_of!(Msg) as *const _,
-                core::mem::size_of::<MSG>() as _,
-            );
+        } else if !crate::copy::publish_to_user(
+            // Validate-only probe (USE_DUMMY_PSEH) + a raw store is not what the
+            // C's single _SEH2_TRY gave us: an unmapped pMsg passes the range
+            // check and faults on the write. The wine user32:msg subtest passes
+            // one and bugchecks 0x1E here.
+            pMsg as *mut core::ffi::c_void,
+            core::ptr::addr_of!(Msg) as *const core::ffi::c_void,
+            core::mem::size_of::<MSG>(),
+        ) {
+            SetLastNtError(ntkrnl_sys::probe::STATUS_ACCESS_VIOLATION as NTSTATUS);
+            Ret = FALSE as BOOL;
         }
     }
 
