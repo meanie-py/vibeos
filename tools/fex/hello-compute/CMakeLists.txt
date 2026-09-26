@@ -1,15 +1,15 @@
 # FEX rung-2 "hello compute" harness — standalone native-arm64 PE that links the
-# PREBUILT vendored FEXCore static archives (external/fex, built out-of-band by
+# PREBUILT vendored FEXCore static archives (vendor/fex, built out-of-band by
 # tools/fex/build-fex.sh). Kept OUT of the ReactOS cmake graph, same as the FEX
 # vendor build. Configure with the same mingw toolchain + these cache vars:
-#   FEX_SRC   = <repo>/external/fex
+#   FEX_SRC   = <repo>/vendor/fex
 #   FEX_BUILD = <the FEX build dir produced by build-fex.sh>
 # See tools/fex/build-hello-compute.sh for the exact invocation.
 cmake_minimum_required(VERSION 3.14)
 project(fex_hello_compute CXX)
 
 if(NOT FEX_SRC OR NOT FEX_BUILD)
-  message(FATAL_ERROR "Set -DFEX_SRC=<external/fex> and -DFEX_BUILD=<fex build dir>")
+  message(FATAL_ERROR "Set -DFEX_SRC=<vendor/fex> and -DFEX_BUILD=<fex build dir>")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
