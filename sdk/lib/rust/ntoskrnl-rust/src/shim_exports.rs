@@ -2518,11 +2518,13 @@ pub unsafe extern "C" fn ARM64_UART_TRACE(msg: *const u8) {
             core::ptr::addr_of!(crate::ke::arm64::stubs::Arm64UartKernelBase),
         ) as *mut u32;
         if u.is_null() { return; }
+        let daif = crate::arm64_dbg::uart_line_lock();
         let mut p = msg;
         while *p != 0 {
             crate::arm64_dbg::uart_putc_default(*p as u8);
             p = p.add(1);
         }
+        crate::arm64_dbg::uart_line_unlock(daif);
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -2540,6 +2542,7 @@ pub unsafe extern "C" fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys
             core::ptr::addr_of!(crate::ke::arm64::stubs::Arm64UartKernelBase),
         ) as *mut u32;
         if u.is_null() { return; }
+        let daif = crate::arm64_dbg::uart_line_lock();
         let mut p = prefix;
         while *p != 0 {
             crate::arm64_dbg::uart_putc_default(*p as u8);
@@ -2554,6 +2557,7 @@ pub unsafe extern "C" fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys
             crate::arm64_dbg::uart_putc_default(HEX[nib] as u8);
             i -= 1;
         }
+        crate::arm64_dbg::uart_line_unlock(daif);
     }
     #[cfg(not(target_arch = "aarch64"))]
     {

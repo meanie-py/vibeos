@@ -674,25 +674,17 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                     Line[Got] = *Buf.add(i as usize);
                     Got += 1;
                 }
-                // One message reaches the UART whole. Without this lock every
-                // CPU's prints shredded each other byte by byte (four cores on
-                // a Raspberry Pi 4, and -smp 4), which is how the smoke's
-                // per-CPU "scheduling live" markers went missing. IRQs are
-                // masked in this handler, so the lock cannot be re-entered.
-                static DBGPRINT_LOCK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
-                while DBGPRINT_LOCK
-                    .compare_exchange_weak(false, true, core::sync::atomic::Ordering::Acquire, core::sync::atomic::Ordering::Relaxed)
-                    .is_err()
-                {
-                    core::hint::spin_loop();
-                }
+                // One message reaches the UART whole (see uart_line_lock):
+                // without it every CPU's prints shredded each other byte by
+                // byte, which is how the smoke's per-CPU markers went missing.
+                let daif = crate::arm64_dbg::uart_line_lock();
                 for &c in &Line[..Got] {
                     if c == b'\n' {
                         crate::arm64_dbg::uart_putc_default(b'\r' as u8);
                     }
                     crate::arm64_dbg::uart_putc_default(c as u8);
                 }
-                DBGPRINT_LOCK.store(false, core::sync::atomic::Ordering::Release);
+                crate::arm64_dbg::uart_line_unlock(daif);
             }
 
             (*TrapFrame).Pc += 4;
