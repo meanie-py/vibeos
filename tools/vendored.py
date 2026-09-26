@@ -314,8 +314,13 @@ class Registry:
         return sum(self.loc_path(p, suffixes) for p in tree.prefixes[:1])
 
     def loc_path(self, rel: str, suffixes: tuple[str, ...] = _SRC_SUFFIXES) -> int:
-        """Source lines under one repo-relative directory."""
+        """Source lines under one repo-relative directory, or in one registered file."""
         root = self.repo / rel
+        if root.is_file():
+            try:
+                return root.read_text(errors="replace").count("\n")
+            except OSError:
+                return 0
         if not root.is_dir():
             return 0
         total = 0
@@ -1182,7 +1187,7 @@ def check(reg: Registry) -> list[str]:
     registered = {t.path for t in reg.trees}
 
     for t in reg.trees:
-        if not (reg.repo / t.path).is_dir():
+        if not (reg.repo / t.path).exists():
             problems.append(f"{t.name}: registered path does not exist: {t.path}")
         if t.license_file and not (reg.repo / t.license_file).is_file():
             problems.append(f"{t.name}: license_file does not exist: {t.license_file}")
@@ -1208,14 +1213,21 @@ def check(reg: Registry) -> list[str]:
             elif not pf.read_text(errors="replace").strip():
                 problems.append(f"{t.name}: patch is empty: {t.patch}")
         for h in t.headers:
-            if not (reg.repo / h).is_dir():
-                problems.append(f"{t.name}: header dir does not exist: {h}")
+            if not (reg.repo / h).exists():
+                problems.append(f"{t.name}: header path does not exist: {h}")
         _, err = reg.resolve_version(t)
         if err:
             problems.append(err)
         # The stamp is a generated artifact, so it gets a drift check like every other
         # one in this repo. A stamp naming the wrong upstream is worse than none: it is
         # the copy a reader trusts because it is sitting right there in the directory.
+        #
+        # A SINGLE-FILE tree gets no stamp: there is no directory to put one in, and a
+        # stamp beside it in the parent would claim the parent's other files. Upstream
+        # ReactOS vendors a few loose files (setup's treelist.c, the libdxg header) and
+        # they still need registering; this entry is their only marker until they move.
+        if (reg.repo / t.path).is_file():
+            continue
         stamp = reg.repo / t.path / _STAMP_NAME
         want = _STAMP_TEMPLATE.format(name=t.name, upstream=t.upstream, license=t.license)
         if not stamp.is_file():

@@ -163,3 +163,34 @@ def test_live_nm_is_NOT_used_without_an_explicit_module(tmp_path, monkeypatch):
         lambda *a: (_ for _ in ()).throw(AssertionError("must not nm on an ambiguous address")),
     )
     assert "ambiguous" in symbolize.resolve(repo, "amd64", 0x180017C18)
+
+
+def _copies(tmp_path: Path, contents: list[bytes]) -> Path:
+    mods = []
+    for i, data in enumerate(contents):
+        rel = f"build-amd64/copy{i}/browseui.dll"
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_bytes(data)
+        mods.append(f"{0x7FF62000000:016x}\t{0x7FF62100000:016x}\tbrowseui.dll\t{rel}\tshared")
+    return _index(tmp_path, mods, [])
+
+
+def test_byte_identical_copies_are_one_module(tmp_path, monkeypatch):
+    # browseui.dll is staged twice (dll/win32/browseui and base/shell/filebrowser). Two index
+    # rows for the SAME bytes are not an ambiguity, and refusing them hid a crash's caller.
+    repo = _copies(tmp_path, [b"same", b"same"])
+    seen = []
+
+    def _live(_repo, _arch, mod, _addr):
+        seen.append(mod.path)
+        return ("OnDestroy", 0x7FF62047050, "-")
+
+    monkeypatch.setattr(symbolize, "lookup_symbol_live", _live)
+    out = symbolize.resolve(repo, "amd64", 0x7FF620473A2)
+    assert "browseui.dll!OnDestroy+0x352" in out
+    assert len(seen) == 1
+
+
+def test_different_copies_on_one_base_stay_ambiguous(tmp_path):
+    repo = _copies(tmp_path, [b"one", b"two"])
+    assert "ambiguous" in symbolize.resolve(repo, "amd64", 0x7FF620473A2)

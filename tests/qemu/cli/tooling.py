@@ -67,6 +67,7 @@ _PYTEST_SUITES = [
     # distinguishes the two implementations.
     (".", ".", "tools/test_payload_drain.py"),
     (".", ".", "tools/test_wine_registry_resources.py"),
+    (".", ".", "tools/test_gen_delaylib.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
     # quarantine INNOCENT tests -- it blamed seven for a drain bug, and four more
     # for the VM watchdog on the very next run after that was fixed. Raising
@@ -117,6 +118,10 @@ _PYTEST_SUITES = [
     # the core bucket moves the published coverage figure and nothing in the output says
     # so. Its build-graph cases skip when this worktree has no build-* dirs.
     (".", ".", "tools/test_port_audit.py"),
+    # The vendored-code move plan is a reference list: a missed spelling (relative
+    # add_subdirectory, a .cmake fragment, a ${VAR}-built path, an include root) is a
+    # build that breaks after the move. Hermetic fixtures, no build dirs needed.
+    (".", ".", "tools/test_vendor_move_plan.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),

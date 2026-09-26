@@ -13,6 +13,7 @@
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 #define SAY(...) DbgPrint("[APPSTORM] " __VA_ARGS__)
+#include "../stackdump.h"
 
 typedef struct { const char *name; const char *exe; const char *args; } app_t;
 static const app_t apps[] = {
@@ -68,11 +69,51 @@ static int new_windows(const wset_t *before, wset_t *out)
     return out->n;
 }
 
+static int is_real(HWND h)
+{
+    RECT r;
+    return GetWindowRect(h, &r) && r.right - r.left >= 50 && r.bottom - r.top >= 30 && r.left > -30000;
+}
+
+static int has_real_window(const wset_t *before, wset_t *got)
+{
+    new_windows(before, got);
+    for (int i = 0; i < got->n; i++)
+        if (is_real(got->h[i]))
+            return 1;
+    return 0;
+}
+
 static void ascii(const WCHAR *w, char *o, size_t n)
 {
     size_t i = 0;
     for (; w[i] && i + 1 < n; i++) o[i] = (w[i] >= 32 && w[i] < 127) ? (char)w[i] : '?';
     o[i] = 0;
+}
+
+static void dump_hung_thread(HWND h)
+{
+    DWORD pid = 0, tid = GetWindowThreadProcessId(h, &pid);
+    dump_thread(pid, tid);
+}
+
+/* Boot-time `setup -mini` installs devices and registers components for minutes after the
+ * desktop appears, with its own "Please wait" dialog. Apps launched meanwhile compete with it
+ * (a window takes past any sane timeout to answer) and its dialog sits among theirs, so wait. */
+static int setup_running(void)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    int found = 0;
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (!lstrcmpiW(pe.szExeFile, L"setup.exe"))
+                found = 1;
+        } while (!found && Process32NextW(snap, &pe));
+    CloseHandle(snap);
+    return found;
 }
 
 int main(void)
@@ -81,6 +122,11 @@ int main(void)
     WCHAR sysdir[MAX_PATH], windir[MAX_PATH];
     GetSystemDirectoryW(sysdir, MAX_PATH);
     GetWindowsDirectoryW(windir, MAX_PATH);
+    DWORD t0 = GetTickCount();
+    while (setup_running() && GetTickCount() - t0 < 600000)
+        Sleep(2000);
+    SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
+        (GetTickCount() - t0) / 1000);
     SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
@@ -101,6 +147,21 @@ int main(void)
             absent++;
             continue;
         }
+#ifdef APPSTORM_PAGEHEAP
+        /* Debug page heap for the app (IFEO GlobalFlag = FLG_HEAP_PAGE_ALLOCS): a heap overrun
+         * then faults AT the corrupting store instead of in a later RtlFreeHeap. */
+        {
+            char key[300];
+            HKEY hk;
+            DWORD flag = 0x02000000;
+            wsprintfA(key, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s", a->exe);
+            if (!RegCreateKeyExA(HKEY_LOCAL_MACHINE, key, 0, NULL, 0, KEY_SET_VALUE, NULL, &hk, NULL)) {
+                RegSetValueExA(hk, "GlobalFlag", 0, REG_DWORD, (const BYTE *)&flag, sizeof flag);
+                RegCloseKey(hk);
+                SAY("pageheap on for %s\n", a->exe);
+            }
+        }
+#endif
         ExpandEnvironmentStringsA(a->args, args, MAX_PATH);
         snprintf(cmd, sizeof cmd, "\"%s\" %s", path, args);
         wset_t before, got;
@@ -117,7 +178,10 @@ int main(void)
         DWORD t0 = GetTickCount();
         /* No early out on process exit: control.exe exits as soon as it has started the
          * applet's rundll32, so a gone launcher says nothing about the window. */
-        while (!new_windows(&before, &got) && GetTickCount() - t0 < 30000)
+        /* Wait for a REAL window, not just the first new one: an applet's rundll32 shows its
+         * hidden 166x24 host window at -32000,-32000 long before the dialog when the machine is
+         * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000)
             Sleep(250);
         Sleep(3000);
         new_windows(&before, &got);
@@ -129,12 +193,25 @@ int main(void)
             char ta[128], ca[64];
             RECT r = { 0 };
             DWORD_PTR res;
-            GetWindowTextW(got.h[i], t, 128);
+            /* A window that populates synchronously (Control Panel loads every applet on its UI
+             * thread) can take well past 5s under TCG, which is BUSY, not hung. Keep asking for up
+             * to 60s and report the wait; only a window silent that long is HUNG. */
+            DWORD asked = GetTickCount();
+            int resp = SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 5000, &res) != 0;
+            if (!resp) {
+                SAY("  win %d slow to answer, sampling:\n", i);
+                dump_hung_thread(got.h[i]);
+                while (!resp && GetTickCount() - asked < 60000)
+                    resp = SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0, SMTO_BLOCK, 5000, &res) != 0;
+                SAY("  win %d %s after %lums\n", i, resp ? "answered" : "still silent", GetTickCount() - asked);
+            }
+            /* Read these once it has answered: a window mid-load has no title yet, and
+             * InternalGetWindowText reads it without sending the window a message. */
+            InternalGetWindowText(got.h[i], t, 128);
             GetClassNameW(got.h[i], c, 64);
             GetWindowRect(got.h[i], &r);
             ascii(t, ta, sizeof ta);
             ascii(c, ca, sizeof ca);
-            int resp = SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0, SMTO_ABORTIFHUNG, 5000, &res) != 0;
             int small = (r.right - r.left) < 50 || (r.bottom - r.top) < 30;
             /* An error box is a dialog whose title says so, from any process. */
             if (!strcmp(ca, "#32770") && (strstr(ta, "rror") || strstr(ta, "ailed") || strstr(ta, "xception")))

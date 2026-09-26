@@ -655,6 +655,11 @@ pub unsafe extern "system" fn Init(UserCon: PUSERCONNECT) -> BOOL {
     NT_SUCCESS(Status) as BOOL
 }
 
+const LDR_ADDREF_DLL_PIN: ULONG = 1;
+extern "system" {
+    fn LdrAddRefDll(Flags: ULONG, BaseAddress: PVOID) -> NTSTATUS;
+}
+
 unsafe fn Cleanup() {
     UnloadAppInitDlls();
     DeleteCriticalSection(core::ptr::addr_of_mut!(U32AccelCacheLock));
@@ -706,6 +711,13 @@ pub unsafe extern "system" fn DllMain(
                     return 0;
                 }
             }
+
+            // Once connected, user32 must stay: the PEB's KernelCallbackTable points into it and
+            // the thread's CLIENTINFO keeps CI_INITTHREAD. Unloaded by a FreeLibrary (a .cpl
+            // was the only user32 importer) and reloaded, ClientThreadSetupHelper saw
+            // CI_INITTHREAD and failed DllMain, and every later user32 importer failed to load
+            // (1114, then 1450) — Control Panel's applet enumeration in a console process.
+            LdrAddRefDll(LDR_ADDREF_DLL_PIN, hDll);
         }
 
         DLL_PROCESS_DETACH => {

@@ -507,6 +507,86 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   consume), and the drainer appends the same text to `_buf` that it tees to the file.
   So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
   payload's verdict must be read from its serial log, not from the smoke exit code.
+- **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
+  blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
+  `./vibeos-cli check-tooling` with
+  `bindgen: refusing output in another worktree: /tmp`, which is
+  `tools/bindgen-stage.sh`'s ancestry walk deciding that `/tmp/.git` exists. Run on its own
+  the same file is 11/11, and the very next full `check-tooling` was 69/69, so the guard is
+  reacting to something transient rather than to the test's own tmpdir — **what creates a
+  `/tmp/.git` is NOT identified**, and no such path exists at rest. Same class as the two
+  load-sensitive tests below: the cheap discriminator is running the single file, and it
+  should be run before believing a lane broke this.
+  It is not free to ignore: this is a `land` PREFLIGHT, so a transient failure rejects the
+  submission of whichever lane happens to hit it.
+
+- **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
+  probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
+  The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
+  anywhere) found all three; each one blinds every subtest after it, so they had to be
+  quarantined one at a time to see the next:
+  | subtest | BUGCHECK PC | lead |
+  |---|---|---|
+  | `win` | `NtUserFlashWindowEx+0x6f` | `painting.rs:2006` — probed `pfwi`, then `RtlCopyMemory` off it |
+  | `msg` | `NtUserPeekMessage+0xf3` | `message.rs:3275` — probed `pMsg`, then `RtlCopyMemory` into it |
+  | `input` | PC in ntoskrnl, `NtUserGetKeyboardLayoutName+0x158` as caller | not characterized |
+  **What this changes is the priority, not the inventory.** The 152 bulk-copy leads below are
+  already known and already open; what they lacked was any evidence they were reachable. Two
+  are now demonstrated machine-killers, reached by a stock Wine subtest doing nothing exotic.
+  A scanner count is audit debt; a reproducer is a bug.
+  `input` is a different shape and should not be assumed to be the same one: its PC is in
+  ntoskrnl rather than win32k, and it follows a run of
+  `(win32k-rust/src/keyboard.rs:1689) err: Cannot copy key state` — the `capture_from_user`
+  of the 256-byte key-state array failing repeatedly, which is the SAFE helper, not a raw
+  access.
+  Repro: `build --arch i386 --rostests` once for the binary, then
+  `build --arch i386 --winetest-sweep` and boot `smoke --arch i386 --ladder` with
+  `VIBEOS_LADDER_DRAIN_FLOOR=1500`. Add `--winetest-skip "input msg"` to get past the first
+  two.
+
+- **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
+  REFERENCE + 6 OPEN** (2026-09-25). First time the WoW64 control has run across a whole
+  suite instead of two subtests. Same 21 subtests both sides, same quarantine
+  (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
+  Seventeen matching is the control doing its job; those are OUR user32, not the seam.
+  | subtest | native i386 | WoW64 | |
+  |---|---|---|---|
+  | `combo` | 23 failures | **CRASH `0xc0000094`** | guest-only, and `0xc0000094` is INTEGER_DIVIDE_BY_ZERO — a width bug shape |
+  | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
+  | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
+  | `monitor` | 20 failures | **23** | +3 guest-only |
+  | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
+  | `scroll` | 140 failures | **17** | fewer under WoW64 — NOT yet a win, see below |
+  | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
+  `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
+  owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
+  correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
+  `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
+  `NtGdiPatBlt` and no brush select at all**. Both are batched, the batch is reset rather
+  than executed, the fill never happens and `GetPixel` returns white. The GDI-batch entry
+  says executing them needs four 32-bit record layouts and names `GDIBSPATBLT.hbrush`
+  first; this is that record. It also says the discard "costs no drawing that was not
+  already dropped" — true, and now known to cost a conformance assertion as well.
+  **`scroll` 140 -> 17 must not be read as an improvement until someone diffs the
+  assertions.** A conformance suite reporting fewer failures usually means it stopped
+  asking, not that we got better, and the byte counts (896 native vs 1271 guest) do not
+  settle it either way.
+  Cost, for budgeting a wider sweep: most subtests are under 3s natively; the outliers are
+  `dde` 180s (the timeout itself), `sysparams` 128s, `class` 21s, `clipboard` 20s,
+  `monitor` 14s. Under WoW64 the same suite is roughly 3x that — `class` 115s, `sysparams`
+  80s, `clipboard` 73s — so a 21-subtest guest sweep needs a drain floor near 2400s.
+  Repro: `build --arch <a> --winetest-sweep --winetest-skip "input msg win"` on both
+  arches, then `smoke --arch amd64 --ladder` and `smoke --arch i386 --ladder`.
+  **Stated because it would otherwise read as a green run: the amd64 sweep boot FAILED.**
+  `BUGCHECK 0x19 (BAD_POOL_HEADER, param1 0xa)` at serial line 996885 — 348k lines AFTER
+  `sweep complete` at 648787 — during the stock-applet phase with doom running, with a
+  free-list dump whose entries mostly carry `tag=00000000`. The A/B numbers above all
+  predate it and are unaffected, but the boot is not green and this is NOT attributed:
+  whether 21 extra guest processes provoked it or it is the pre-existing amd64 pool flake
+  is unmeasured, and a plain non-sweep ladder boot is the cheap discriminator nobody has
+  run yet. Artifact: `/tmp/vibeos-cli/20260925-222408-xlois8r6-smoke-amd64`.
+
 - **arm64 media did not stage ucrtbase.dll, so no arm64 process could import it. FIXED**
   (2026-09-23). Symptom: an exe importing ucrtbase.dll never reached its first
   instruction and printed NOTHING on serial, while the boot itself reached
@@ -550,9 +630,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   process names read `svchost.e`). The kmtest sweep now waits for setup's PnP device-install
   burst (~25-35s, measured) before its first test: started inside it, the load-sensitive tests
   failed on every attempt. Still open:
-  - Folder windows opened from another process never appear (`explorer.exe <path>`, Control
-    Panel, `ncpa.cpl`). On amd64 `filebrowser.exe` faults in
-    `shell32!CRegFolder::ParseDisplayName+0x26`.
+  - FIXED: folder windows opened from another process never appeared (`explorer.exe <path>`,
+    Control Panel, `ncpa.cpl`). Two bugs. (1) `gen-delaylib.py` bound browseui's `NONAME` export
+    `SHOnCWMCommandLine` by name, so explorer's `CWM_COMMANDLINE` handler raised `0xc06d007f`
+    (all arches). (2) CControlPanelFolder handed its IShellFolder2 pointer to the view as the
+    IShellFolderViewCB, so the view's first `MessageSFVCB` ran `ParseDisplayName` and faulted in
+    CRegFolder. appstorm on amd64: explorer-folder, Control Panel (18 applets drawn) and
+    Network Connections all PASS.
+  - FIXED: closing a folder window faulted at RIP 0 in `browseui!CShellBrowser::OnDestroy`
+    (`fCurrentShellFolder.Release()` on a freed folder). `CDefView_OnCreate_body` released
+    `pdt` and `ppf2` explicitly AND through their CComPtr guards, so every view creation cost
+    its folder one reference. Found with a gdb probe logging each AddRef/Release of the folder.
+  - OPEN: with that fixed, browseui warns `Unexpected RefCount > 0 (1)` for the view at close.
+    The double `pdt` release (the view's own IDropTarget) had been hiding a +1 leak on CDefView.
+  - FIXED: the i386 Control Panel "hang" was a thread busy loading applets while boot-time
+    `setup -mini` was still installing devices (7.8s to answer). appstorm now waits for setup
+    to exit and gives a slow window 60s, sampling its PC; on amd64 and i386 explorer-folder,
+    Control Panel and Network Connections all PASS with titled windows.
+  - FIXED: a process that loaded and FreeLibrary'd its only user32 importer (Control Panel's
+    applet enumeration in a console process) unloaded user32; the reload failed DllMain on the
+    thread's stale `CI_INITTHREAD` (1114), every later user32 importer failed (1450), and
+    `powercfg.cpl` hung on i386. user32 now pins itself once connected. `tools/payloads/cplreuse`
+    replays it: 12/12 loads on amd64 and i386.
   - FIXED: amd64 setup.exe faulted (RIP `0x1b85ac0`) as registration began. A gdb write-watch
     showed `LdrpManifestProberRoutine` being set by the real setter, from a SECOND kernel32
     mapped at `0x1b50000`: ucrtbase's api-set load went through a redirect that returns a bare
@@ -564,12 +663,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
   - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
     import that does not resolve; arm64 too).
-  - amd64 flake, OPEN: 1 of 5 conformance runs bugchecked 0x1E `c000009a` raised by
-    `FsRtlAllocatePoolWithTag` (a raise-on-failure pool allocation from a driver at
-    `fffff80003cbb22b`) during the `ZwAllocateVirtualMemory` kmtest. That run's WOW64 test app
-    was repainting in a loop (6.8K `StretchDIBits`, serial 192K lines). The loop predates the
-    registration fix, and so do its run-to-run swings of 60-3.4K calls. Artifact:
-    `/tmp/vibeos-cli/20260925-182151-b9nppk9s-conformance-amd64`.
+  - FIXED: amd64 bugchecks under long GUI runs: 0x1E `c000009a` from a pool allocation, and
+    0x1E `c0000005` in win32k (`REGION_Delete(NULL)` from `IntSelectClipRgn` and
+    `VIS_ComputeVisibleRegion`). All one bug. `NtUserFindExistingCursorIcon` had a stray
+    capture of the module name INTO the resource-name slot, so no LR_SHARED icon ever matched
+    (IDC_ARROW looked up 4139 times, never found). Each LoadCursor/LoadIcon made a new icon + two
+    bitmaps and leaked a pool string; a repainting WOW64 app reached the 10K GDI quota, region
+    allocations returned NULL, and the pool ran dry. Found by counting create vs delete per
+    handle type in the WOW64 syscall trace, then logging the icon-cache calls
+    (`[WOW64-CURICON]`).
+  - OPEN, harness: `smoke --payload rpmprobe` on amd64 FAILED with "`[RPMPROBE] done` never
+    appeared" although the serial file has it (line 4201, byte 236K, `VERDICT=PASS`). Boot
+    output was 78K bytes; the drain then ran its whole 600s budget over a 39.8MB serial (WOW64
+    trace) without matching. The file shows `shell ready` three times for one payload run, so the
+    `ready` snapshot restore is the first suspect: the reader may be following a timeline the
+    marker is not in. Read the serial for the verdict until this is fixed.
+  - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
+    `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
     that read the idle thread's KernelTime/UserTime were placeholders returning 0. They now read
     it, and cpuprof on i386 shows 10000ms idle per 10s once the PnP burst ends.
@@ -756,6 +866,76 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   special-cased to infinity at all -- it looks like a finite stand-in for `-HUGE_VAL`
   rather than a sign or rounding problem. `log10.c:49` in the apitest is the assertion.
   Separate from, and simpler than, the wedge that follows it (below).
+
+- **THE APITEST WEDGE CLUSTER: the "bounded `WaitForSingleObject` that never times out"
+  root cause is FALSIFIED. The timeout DOES fire. OPEN, and back to un-attributed**
+  (2026-09-24, corrected 2026-09-25).
+
+  The previous entry here claimed the cluster was a 120s `WaitForSingleObject` failing to
+  expire, and unified it with the winlogon hang as one kernel bug. **One isolated boot
+  with the quarantine disarmed refuted it**, and the refutation was one command away the
+  whole time:
+
+      $ gen_suites.py --arch amd64 --only msvcrt_apitest.exe --ignore-quarantine
+      $ characterize.py --arch amd64 --rounds 1 --only msvcrt_apitest.exe --ignore-quarantine
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe _wsystem code=0          <- PASSES
+      [APITEST-SWEEP] exit    msvcrt_apitest.exe system  code=3           <- PASSES
+      [APITEST-SWEEP] TIMEOUT msvcrt_apitest.exe log10 (120s) - terminated <- TIMEOUT FIRES
+      [APITEST-SWEEP] done total=1 launched=1 subtests=55 failstart=0 timeouts=1
+
+  **`log10` is the control the earlier run had and did not use.** It is the same
+  `WaitForSingleObject(pi.hProcess, 120000)`, on the same object type, in the same boot,
+  and it expired on schedule. A bounded wait that demonstrably times out 120s after a
+  hung child cannot also be the mechanism that never times out.
+
+  What survives from the earlier investigation, and what does not:
+
+  - **FALSIFIED — "the wait never expires".** `log10` times out in the same boot. The
+    argument was "`sweep.c` bounds every wait, so it must advance within ~145s"; that is
+    true of the *waits* but the stalled span also holds `CloseHandle(wr)` and
+    `CreateThread`, which are not waits and are not bounded either. The reasoning
+    enumerated two candidates and there were four.
+  - **FALSIFIED — "the wedge is SELF-CONTAINED".** Isolated msvcrt with every quarantine
+    entry ARMED reaches `[APITEST-SWEEP] done`: 55 subtests, 3 bad, 4m49s. The wedge needs
+    something the isolated run lacks — cross-suite residue, or it is a rare race. Note the
+    earlier isolated boot *did* stall at `_wsystem` under the same restriction, so it is
+    intermittent, which is also why one green isolated run must not un-quarantine anything.
+  - **UNSUPPORTED — the unification with the winlogon hang.** That rested entirely on the
+    shared never-expiring-wait mechanism. Same call and same object type is a shared
+    *predicate*, not a shared cause; the winlogon entry itself asked whether it was "a
+    coincidence or the link" and the answer is still unknown. They are two entries again.
+  - **STANDS — the box is ALIVE while the sweep is stuck.** The serial grew 779 bytes in
+    25s (eventlog, LSASS) during the stall. That measurement is independent of the wait
+    hypothesis and still overturns `quarantine-amd64.txt`'s "the box is dead, not the
+    harness waiting". It is one stuck process, not a dead guest.
+  - **STANDS — `CreateProcessA` returned.** The `spawned` line printed in the observed
+    stall, so process creation is excluded from that instance.
+
+  **Next:** the stall is somewhere in `spawned` → `closed` → `waiting` → the wait, and
+  `sweep.c` now prints all three, so the next occurrence localises itself with no new
+  build. Do NOT go looking at timer insertion/expiry first: the whole chain
+  (`KeWaitForSingleObject`, `KxSetTimerForThreadWait`, `KiComputeDueTime`,
+  `KiInsertTimerTable`, `KiComputeTimerTableIndex`, `KiCheckForTimerExpiration`,
+  `KiTimerExpiration`, `KiTimerListExpire`) was read against the C it was translated from
+  and is faithful, and upstream has made **zero** commits to `ntoskrnl/ke/` or
+  `ntoskrnl/ob/` since the fork, so the bug oracle is silent here too. One known latent
+  quirk, shared with upstream and therefore not our regression: `TIMER_TABLE_SIZE` is 512
+  while `DISPATCHER_HEADER.Hand` is a `UCHAR`, so hands 256-511 truncate on store and
+  `KiRemoveEntryTimer` does its bucket-empty bookkeeping against the wrong slot.
+
+  Proximate context, offered as context and NOT as a cause: `_wsystem`'s grandchild fails
+  `co_UserCreateWindowEx(ConsoleWindowClass): NCCREATE` just before the stall — but that
+  message is AMBIENT (counted 11-16 times in all 42 archived serials including healthy
+  ones), so its position there is suggestive only.
+
+  **Method note, because this cost a wrong root cause in the repo:** the refuting artifact
+  was a run I was already going to do, and I wrote the conclusion first. The specific trap
+  was circular and is now closed in the tool: the quarantine entry that RECORDS a wedge is
+  also what SUPPRESSES it, so `--only msvcrt_apitest.exe` printed `SKIP ... _wsystem` and
+  completed clean — a green run that proves nothing about the bug it was launched to
+  reproduce. `gen_suites.py --ignore-quarantine` (and `characterize.py --only /
+  --ignore-quarantine`, which implies `--no-quarantine`) exist so that reproducing a
+  quarantined wedge does not mean hand-editing the file that records it.
 
 - **`NtGdiCreateBitmap` BUGCHECKed 0x1E in a naked `memcpy`. FIXED 2026-09-24**, verified
   by boot (`exit win32u_apitest.exe NtGdiCreateBitmap code=2` — real test failures, no
@@ -1434,13 +1614,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `STATUS_PARTIAL_COPY`; the guest reports `ERROR_PARTIAL_COPY` (299). `vibeos-cli check`
   passes both before and after, so `scan_invented_constants` does not catch a wrong bare
   hex in an `as NTSTATUS` cast.
-  **ONE THING STILL OPEN, left visible rather than made to look handled:**
-  `MiDoMappedCopy` calls `MmProbeAndLockPages` inside the same C `_SEH2_TRY`, and it
-  **raises by design** on pages it cannot lock. Validate-first cannot reach that, and
-  `dummy-pseh-verdict.md` lists it under "software exceptions raised by design" as THE open
-  gap, needing a `try_` Result variant at the callee that does not exist (no such symbol in
-  `ntkrnl-sys`). That path can still BUGCHECK, and the code says so at the call site.
-  **Remaining work is the `try_`-variant mechanism, not this function. Unowned.**
+  **FIXED 2026-09-25:** `MiDoMappedCopy` now calls `MiProbeAndLockPagesStatus`, the
+  status-returning body of `MmProbeAndLockPages` (the export still raises). Its page touch is
+  fault-protected (it had been a bare, non-volatile read), and two `MmAccessFault` failure
+  paths no longer release the PFN/working-set lock a second time. appstorm's stack dumper
+  bugchecked amd64 through this; `tools/payloads/rpmprobe` pins it on amd64 and i386.
 
 - **`test_nested_cargo_deps` is load-sensitive and bounces `land` preflights —
   REPRODUCED, OPEN** (2026-09-19). **Three independent observations, three DIFFERENT steps

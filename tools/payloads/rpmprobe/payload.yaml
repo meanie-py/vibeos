@@ -1,0 +1,18 @@
+# rpmprobe — Read/WriteProcessMemory across the end of committed memory must fail, not bugcheck.
+#   tools/payloads/rpmprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=rpmprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload rpmprobe
+name: rpmprobe
+description: ReadProcessMemory/WriteProcessMemory over an uncommitted page returns an error
+
+build_hint: "tools/payloads/rpmprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/rpmprobe/rpmprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/rpmprobe.exe
+
+test:
+  launch_marker: "[RPMPROBE] done"
+  pass_marker: "[RPMPROBE] done VERDICT=PASS"
+  launch_drain_secs: 600

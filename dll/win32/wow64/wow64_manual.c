@@ -3816,6 +3816,24 @@ static NTSTATUS Wow64Manual_NtUserCreateWindowStation(ULONG *a)
     return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
 }
 
+/* Shared-icon cache diagnosis: a WOW64 app whose LR_SHARED icons never match re-creates them on
+ * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. */
+static void Wow64pTraceCurIcon(const char *What, ULONG Mod32, ULONG Rsrc32, LONG *Param,
+                               ULONG Flags, ULONG Ret)
+{
+    WOW64_UNICODE_STRING32_M *M = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Mod32;
+    WOW64_UNICODE_STRING32_M *R = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Rsrc32;
+    DbgPrint("[WOW64-CURICON] %s mod=%.*S rsrc=%s%.*S%s id=%lx len=%u flags=%lx param=%ld,%ld,%ld ret=%lx\n",
+             What,
+             M && M->Buffer ? (int)(M->Length / 2) : 0, M && M->Buffer ? (PWSTR)(ULONG_PTR)M->Buffer : L"",
+             R && R->Buffer >= 0x10000 ? "\"" : "",
+             R && R->Buffer >= 0x10000 ? (int)(R->Length / 2) : 0,
+             R && R->Buffer >= 0x10000 ? (PWSTR)(ULONG_PTR)R->Buffer : L"",
+             R && R->Buffer >= 0x10000 ? "\"" : "",
+             R ? (ULONG)R->Buffer : 0, R ? R->Length : 0, Flags,
+             Param ? Param[0] : -1, Param ? Param[1] : -1, Param ? Param[2] : -1, Ret);
+}
+
 /* NtUserFindExistingCursorIcon(pustrModule, pustrRsrc, param):
  * two UNICODE_STRINGs widen; param (FINDEXISTINGCURICONPARAM = 3 LONGs) is flat
  * and identical 32/64, so its guest pointer passes straight through. */
@@ -3827,6 +3845,8 @@ static NTSTATUS Wow64Manual_NtUserFindExistingCursorIcon(ULONG *a)
     Ret = NtUserFindExistingCursorIcon(Wow64pUS32to64(a[0], &Mod64),
                                        Wow64pUS32to64(a[1], &Rsrc64),
                                        (PVOID)(ULONG_PTR)a[2]);
+    Wow64pTraceCurIcon("FindExisting", a[0], a[1], a[2] ? ((LONG *)(ULONG_PTR)a[2]) : NULL, 0,
+                       (ULONG)(ULONG_PTR)Ret);
     return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
 }
 
@@ -3893,6 +3913,7 @@ static NTSTATUS Wow64Manual_NtUserSetCursorIconData(ULONG *a)
                      "frame arrays not re-marshalled (owed)\n");
     }
 
+    Wow64pTraceCurIcon("SetData", a[1], a[2], NULL, C32 ? C32->CURSORF_flags : 0xffffffff, a[0]);
     return NtUserSetCursorIconData((HANDLE)(LONG_PTR)(LONG)a[0],
                                    Wow64pUS32to64(a[1], &Mod64),
                                    Wow64pUS32to64(a[2], &Rsrc64),

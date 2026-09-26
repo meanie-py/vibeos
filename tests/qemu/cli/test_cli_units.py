@@ -2221,12 +2221,15 @@ def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, 
     assert selected == [int(smp) if smp else None]
     if smp is None:
         assert "-smp" not in cmd
-        assert ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
     else:
         assert cmd[cmd.index("-smp") + 1] == smp
-        assert (
-            ge_mod._kernel_image("arm64") == tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
-        )
+    # The media boots the MP kernel either way, so symbols come from it whenever it is built.
+    up = tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
+    mp = tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
+    assert ge_mod._kernel_image("arm64") == up
+    mp.parent.mkdir(parents=True)
+    mp.write_bytes(b"MZ")
+    assert ge_mod._kernel_image("arm64") == mp
 
 
 def test_gdbengine_expand_verb():
@@ -4585,6 +4588,57 @@ def test_sticky_kmtests_reconfigures_a_dir_that_lacks_it(monkeypatch, tmp_path):
     )
     build_mod._maybe_canonize(run, repo, bd, "i386", {}, sticky_on=("ENABLE_ROSTESTS_KMTESTS",))
     assert cmds == [["cmake", "-DENABLE_ROSTESTS_KMTESTS=ON", "."]], cmds
+
+
+def test_a_string_only_instr_change_still_reconfigures(monkeypatch, tmp_path):
+    # The bug this exists for: the "is anything stale" decision looked only at
+    # BOOL flags, so a build whose bools were already at target skipped the
+    # reconfigure entirely and the new string value was never applied. The build
+    # reported success and the winetest quarantine silently did nothing.
+    cache = "VIBEOS_WINETEST_SWEEP:BOOL=ON\nVIBEOS_WINETEST_SKIP:UNINITIALIZED=\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cache, canonical=True)
+    build_mod._maybe_canonize(
+        run,
+        repo,
+        bd,
+        "i386",
+        {"VIBEOS_WINETEST_SWEEP": True},
+        instr_values={"VIBEOS_WINETEST_SKIP": "input"},
+    )
+    assert any("-DVIBEOS_WINETEST_SKIP=input" in c for c in cmds), cmds
+
+
+def test_an_unchanged_string_instr_value_reconfigures_nothing(monkeypatch, tmp_path):
+    # The other direction: re-passing the same quarantine must not cost a
+    # reconfigure, or every sweep build pays one for nothing.
+    cache = "VIBEOS_WINETEST_SWEEP:BOOL=ON\nVIBEOS_WINETEST_SKIP:UNINITIALIZED=input\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cache, canonical=True)
+    build_mod._maybe_canonize(
+        run,
+        repo,
+        bd,
+        "i386",
+        {"VIBEOS_WINETEST_SWEEP": True},
+        instr_values={"VIBEOS_WINETEST_SKIP": "input"},
+    )
+    assert cmds == [], cmds
+
+
+def test_clearing_the_quarantine_is_not_a_no_op(monkeypatch, tmp_path):
+    # "" and OFF are different answers. A build that stops passing
+    # --winetest-skip must reconfigure the value away, or the next sweep keeps
+    # subtracting subtests nobody asked it to.
+    cache = "VIBEOS_WINETEST_SWEEP:BOOL=ON\nVIBEOS_WINETEST_SKIP:UNINITIALIZED=input\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cache, canonical=True)
+    build_mod._maybe_canonize(
+        run,
+        repo,
+        bd,
+        "i386",
+        {"VIBEOS_WINETEST_SWEEP": True},
+        instr_values={"VIBEOS_WINETEST_SKIP": ""},
+    )
+    assert any("-DVIBEOS_WINETEST_SKIP=" in c for c in cmds), cmds
 
 
 def test_sticky_kmtests_is_one_directional_unlike_instr_flags(monkeypatch, tmp_path):

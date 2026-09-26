@@ -145,6 +145,29 @@ def build_parser() -> argparse.ArgumentParser:
         "Build one target with ninja and stage it as a payload instead",
     )
     b.add_argument(
+        "--winetest-sweep",
+        action="store_true",
+        help="stage the winetest SWEEP marker, so winlogon runs EVERY subtest "
+        "of each staged Wine conformance suite instead of the two hand-picked "
+        "ones (user32:wsprintf, user32:class). Enumerated from the binary via "
+        "`--list`, one guest process per subtest, so a sweep costs minutes and "
+        "is deliberately off the gate's path. Needs the suites to exist: an "
+        "i386 `build --rostests` first, then this on the arch whose media you "
+        "will boot. RECONCILED, not sticky",
+    )
+    b.add_argument(
+        "--winetest-skip",
+        default="",
+        metavar="SUBTESTS",
+        help="space-separated subtest names to QUARANTINE from --winetest-sweep, "
+        "e.g. 'input dde'. A subtest that BUGCHECKs the machine blinds every one "
+        "after it in the sweep, so the list is how a sweep gets past a known "
+        "crasher. Written into the sweep marker as `skip <name>` lines; winlogon "
+        "logs each as QUARANTINED so an absent subtest never reads as a pass. "
+        "Same discipline as tools/payloads/apitest/quarantine-amd64.txt: re-derive "
+        "entries, do not inherit them",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "

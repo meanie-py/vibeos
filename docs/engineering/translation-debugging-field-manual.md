@@ -3879,6 +3879,29 @@ own callers (they are `_body`-suffixed there, so they do not clash).
 wholesale. Anything hand-written that both halves need (header-inline ports, constants the
 island lacks, externs) belongs in a THIRD, hand-owned file that no run writes.
 
+### A CComPtr guard PLUS the explicit Release it replaces: two releases per call
+`CDefView_OnCreate_body` wraps `pdt` and `ppf2` in `CppComPtrGuard` (the translation of a C++
+`CComPtr` local), then also calls `Release` on both at the end of the function, the way C code
+without smart pointers would. Every view creation dropped its FOLDER's refcount by one, and
+the fault surfaced much later and elsewhere: closing any folder window released an
+already-freed folder in browseui (`OnDestroy`, RIP 0). Nothing warns: both halves are
+individually right. Find it by looking for `Release)(X)` in a function that also has
+`CppComPtrGuard::new(addr_of_mut!(X))`, where X is not set to null afterwards (a reassignment
+right after the release, as in a CComPtr walk, is fine). Chase a use-after-free on a COM object
+with a gdb probe that logs every AddRef/Release of that object with its return addresses: the
+double release shows as two Releases from one frame.
+
+### C++ `this` passed where an INTERFACE is expected converts; the raw Rust `this` does not
+`SFV_CREATE sfvparams = { sizeof(SFV_CREATE), this, NULL, this };` in CControlPanelFolder converts
+`this` to `IShellFolder*` for one field and to `IShellFolderViewCB*` for the other: two different
+addresses under multiple inheritance. The translation wrote `psfvcb: this`, the object's start,
+which is its FIRST vtable (IShellFolder2). The view's `MessageSFVCB` (slot 3) then ran
+`ParseDisplayName` with four arguments instead of seven, and the stack-garbage `ppidl` faulted
+inside CRegFolder, two frames from the bug. Fix: `addr_of_mut!((*this).IShellFolderViewCB_iface)`.
+The tell is a callee that is a real method of the right OBJECT but the wrong INTERFACE. Grep the
+C++ for `this` in an initializer or argument whose declared type is an interface other than the
+class's first base.
+
 ### Wiring a `--cpp-com` class: five deterministic-layer gaps, all fixed FREE and RETROACTIVELY
 
 **Symptom.** The class translates clean — every worker accepted, no audit findings — and then
@@ -5096,6 +5119,21 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
+  an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
+  resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
+  shared-icon cache never matched and every `LoadCursor`/`LoadIcon(LR_SHARED)` made a new icon,
+  two bitmaps and a leaked pool string. The damage surfaced far away: GDI quota exhaustion, NULL
+  regions deleted in win32k, pool exhaustion bugchecks. The tell in a trace is a lookup
+  repeated with identical arguments that never hits (IDC_ARROW 4139 times). Diff each function's
+  sequence of capture/probe calls against the C as a list; a statement the C does not have is
+  easy to read past because it looks like its neighbour.
+- **A `goto Cleanup` that skips a release becomes a second release.** In the C
+  `MmProbeAndLockPages`, a failed `MmAccessFault` jumps to `Cleanup:`, past the lock release at
+  `CleanupWithLock:`, because the lock was dropped before the call. The Rust inlined the
+  cleanup at each site and included the release both times, releasing the PFN lock or the
+  working-set pushlock that this thread no longer held. When translating label-based cleanup,
+  map each `goto` to the LABEL it names, not to the whole cleanup tail.
 - **A local deviation that changes WHAT a function returns but not what it CLAIMS.** Our
   `LdrpApplyFileNameRedirection` emits an api-set's host as a BARE name (`kernel32.dll`,
   resolved by the search path) where stock ReactOS builds `NtSystemRoot\System32\<host>`, but
@@ -6805,6 +6843,40 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
+
+**Symptom:** you isolate a quarantined failure to reproduce it (`--only <one suite>`), the boot
+comes back clean, and you conclude something about the bug from that — that it needs residue from
+the other suites, that it is fixed, that it is self-contained. The run never exercised it: the
+quarantine entry that told you *which* subtest wedges is also what tells the harness to skip it,
+so the serial says `SKIP <subtest>` and the sweep sails past.
+
+**Cause:** the record of a defect and the suppression of it are the same file. Anything that reads
+that file to build the worklist — a skip list, a lint baseline, a disabled-test registry, an
+`ignore` glob — inherits the property that *asking about the bug removes it from the question*.
+The green result is not wrong, it is vacuous, and nothing in the output distinguishes "ran and
+passed" from "never ran" unless you go looking for the SKIP line.
+
+**Fix:** give the generator an explicit disarm (`gen_suites.py --ignore-quarantine`, plumbed
+through `characterize.py --only / --ignore-quarantine`) and make the disarmed run mark its own
+artifacts unbankable, exactly as `--only` already does. Hand-editing the suppression file works
+once and is how you forget to put it back. Two corollaries:
+
+- **Disable the SUBTRACTION, not the CHECKS.** The first draft cleared the quarantine sets before
+  the staleness comparison, which silently disabled the typo check that guards the file — the same
+  "filter applied upstream of the checks that describe the build" mistake `--only` made. A test
+  caught it asserting the opposite of what the code did.
+- **A disarmed reproduction must not write back to the file it disarmed**, or the round that
+  reproduces the wedge re-appends the entry it was launched to remove (`--ignore-quarantine`
+  implies `--no-quarantine`).
+
+**And look for the CONTROL already in the run before publishing a mechanism.** The same boot that
+was supposed to prove "a bounded `WaitForSingleObject` never times out" contained
+`TIMEOUT ... log10 (120s) - terminated` — the identical call on the identical object type,
+expiring on schedule. A mechanism that claims a primitive is broken is refuted by any healthy use
+of that primitive in the same artifact, and a sweep over dozens of subtests almost always contains
+one. Grep for it before writing the entry; it is cheaper than the retraction.
 
 ### A timeout measured in ITERATIONS shrinks as the guest gets chattier — and the driver above blames the test
 
@@ -10424,6 +10496,25 @@ descriptors by shape (`wow64-closure.py` `delay_imports_of`: attributes 1, four 
 three zero DWORDs, a module name at the name RVA). That works on stripped copies too, where the
 `___DELAY_DESC_*` symbols are gone. Also on arm64: the IAT must be 8-aligned, or the stubs'
 `ldr x16, [x16, :lo12:__imp_X]` fails the link with "misaligned ldr/str offset".
+
+### A delay import of a `NONAME` export raises 0xc06d007f at its first call
+Symptom: explorer raised `0xc06d007f` from `__delayLoadHelper2`, and every folder window opened
+from another process (`explorer.exe <path>`, Control Panel, `ncpa.cpl`) never appeared, on all
+arches. Cause: `gen-delaylib.py` skipped only `.def` lines whose FIRST token is `@N`; a line
+`SHOnCWMCommandLine @127 NONAME` (browseui) was bound BY NAME, and the DLL exports no name for
+it, so `GetProcAddress` failed. Fix: a `NONAME` export gets an ordinal INT entry
+(`IMAGE_ORDINAL_FLAG | ordinal`); `tools/test_gen_delaylib.py` pins it. To check a DLL, look for
+the function's name as a string in the importer: a NONAME import must not have one.
+
+### user32 unloaded and reloaded in one process fails DllMain (1114), then 1450 for everyone
+Symptom: a console process that `LoadLibrary`s and frees applets (`*.cpl`, all importing
+user32) gets `ERROR_DLL_INIT_FAILED` on the second, then `ERROR_NO_SYSTEM_RESOURCES` for every
+later user32 importer; on i386 one load hung. Cause: the first applet was the process's only
+user32 importer, so `FreeLibrary` unloaded user32 after it had connected to win32k. The
+thread's CLIENTINFO keeps `CI_INITTHREAD` and the PEB's `KernelCallbackTable` still points into
+the unloaded image, so the reload's `ClientThreadSetupHelper` refuses. Fix: user32 pins itself
+(`LdrAddRefDll(LDR_ADDREF_DLL_PIN)`) once DllMain succeeds. Repro:
+`tools/payloads/cplreuse`.
 
 ### A DLL "loads fine" then crashes at PC=0xFFBADD11 `[§9.44-poison]`
 Our ntdll loader intentionally **poison-snaps** missing by-name imports instead of failing the
