@@ -304,11 +304,11 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
         core::ptr::null_mut(),
     );
 
-    // _SEH2_TRY (DUMMY_PSEH: try body runs inline, finally always runs after)
-    {
+    // _SEH2_TRY / _SEH2_FINALLY: the finally unpins on the raise paths too.
+    let p_dirent_bcb = core::ptr::addr_of_mut!(dirent_bcb);
+    crate::seh::try_finally(&mut (), |_| {
         // If we didn't find the Dirent, something is terribly wrong.
-        if dirent_bcb.is_null() || dirent_byte_offset != (*Fcb).DirentOffsetWithinDirectory {
-            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
+        if (*p_dirent_bcb).is_null() || dirent_byte_offset != (*Fcb).DirentOffsetWithinDirectory {
             FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
         }
 
@@ -323,7 +323,6 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
             NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == (*Fcb).DirentOffsetWithinDirectory) as i32);
 
             if (*Fcb).LfnOffsetWithinDirectory != (*Fcb).DirentOffsetWithinDirectory {
-                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
                 FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
             }
 
@@ -348,10 +347,10 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
 
             NT_ASSERT((status == STATUS_SUCCESS) as i32);
         }
-    }
-
-    // _SEH2_FINALLY
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
+    }, |_, _abnormal| {
+        // _SEH2_FINALLY
+        FatUnpinBcb(IrpContext, p_dirent_bcb as *mut *mut core::ffi::c_void);
+    });
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatSetFullFileNameInFcb(
@@ -376,10 +375,9 @@ pub unsafe extern "system" fn FatSetFullFileNameInFcb(
             TAG_FILENAME_BUFFER,
         ) as *mut u16;
 
-        // SEH emulation: try / finally
-        let mut abormal = true;
-        {
-            // ---- try block ----
+        // _SEH2_TRY / _SEH2_FINALLY
+        let p_lfn = core::ptr::addr_of_mut!(Lfn);
+        crate::seh::try_finally(&mut (), |_| {
             // First pass: accumulate PathLength, possibly break
             while TmpFcb != (*(*Fcb).Vcb).RootDcb {
                 if (TmpFcb != Fcb) && !(*TmpFcb).FullFileName.Buffer.is_null() {
@@ -426,17 +424,17 @@ pub unsafe extern "system" fn FatSetFullFileNameInFcb(
                 FatGetUnicodeNameFromFcb(
                     IrpContext,
                     TmpFcb,
-                    &mut Lfn,
+                    p_lfn,
                 );
 
                 TmpBuffer = TmpBuffer.offset(
-                    -(Lfn.Length as isize / core::mem::size_of::<u16>() as isize),
+                    -((*p_lfn).Length as isize / core::mem::size_of::<u16>() as isize),
                 );
 
                 core::ptr::copy_nonoverlapping(
-                    Lfn.Buffer as *const u8,
+                    (*p_lfn).Buffer as *const u8,
                     TmpBuffer as *mut u8,
-                    Lfn.Length as usize,
+                    (*p_lfn).Length as usize,
                 );
 
                 TmpBuffer = TmpBuffer.offset(-1);
@@ -444,19 +442,15 @@ pub unsafe extern "system" fn FatSetFullFileNameInFcb(
 
                 TmpFcb = (*TmpFcb).ParentDcb;
             }
-
-            // Normal completion: no SEH abnormal termination
-            abormal = false;
-        }
-
-        // ---- finally block ----
-        if abormal {
-            if !(*Fcb).FullFileName.Buffer.is_null() {
-                ExFreePool((*Fcb).FullFileName.Buffer as *mut c_void);
-                (*Fcb).FullFileName.Buffer = core::ptr::null_mut();
+        }, |_, abnormal| {
+            if abnormal {
+                if !(*Fcb).FullFileName.Buffer.is_null() {
+                    ExFreePool((*Fcb).FullFileName.Buffer as *mut c_void);
+                    (*Fcb).FullFileName.Buffer = core::ptr::null_mut();
+                }
             }
-        }
-        ExFreePool(Lfn.Buffer as *mut c_void);
+            ExFreePool((*p_lfn).Buffer as *mut c_void);
+        });
     }
 }
 
@@ -513,7 +507,7 @@ pub unsafe extern "system" fn FatSelectNames(
         let mut Dirent: *mut DIRENT = core::ptr::null_mut();
         let mut Bcb: *mut BCB = core::ptr::null_mut();
         let mut ByteOffset: u32 = 0;
-        let mut Status: i32;
+        let mut Status: i32 = 0;
 
         GenerateShortName = 1;
 
@@ -528,11 +522,12 @@ pub unsafe extern "system" fn FatSelectNames(
             core::mem::size_of::<GENERATE_NAME_CONTEXT>(),
         );
 
-        // _SEH2_TRY
-        {
+        // _SEH2_TRY / _SEH2_FINALLY
+        let p_bcb = core::ptr::addr_of_mut!(Bcb);
+        crate::seh::try_finally(&mut (), |_| {
             loop {
                 FatUnpinBcb(
-                    IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+                    IrpContext as *mut IRP_CONTEXT, p_bcb as *mut *mut core::ffi::c_void);
 
                 if TrySuggestedShortName != 0 {
                     ShortUnicodeName.Length = (*SuggestedShortName).Length;
@@ -561,19 +556,20 @@ pub unsafe extern "system" fn FatSelectNames(
                     Parent,
                     ShortName,
                     &mut Dirent as *mut *mut DIRENT as *mut *mut c_void,
-                    &mut Bcb as *mut *mut BCB as *mut *mut c_void,
+                    p_bcb as *mut *mut c_void,
                     &mut ByteOffset as *mut u32 as *mut c_void,
                 );
 
-                if Bcb.is_null() {
+                if (*p_bcb).is_null() {
                     // _SEH2_LEAVE
                     break;
                 }
             }
-        }
-        // _SEH2_FINALLY
-        FatUnpinBcb(
-            IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+        }, |_, _abnormal| {
+            // _SEH2_FINALLY
+            FatUnpinBcb(
+                IrpContext as *mut IRP_CONTEXT, p_bcb as *mut *mut core::ffi::c_void);
+        });
         // _SEH2_END
     } else {
         if ShortName != OemName {

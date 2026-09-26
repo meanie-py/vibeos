@@ -15,10 +15,6 @@ use crate::glue::{DEBUG_TRACE_FSP_DISPATCHER};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "system" {
-    fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
-    fn _SEH2_GetExceptionCode() -> u32;
-    fn FatExceptionFilter(IrpContext: *mut IRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS) -> i32;
-    fn FatProcessException(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, ExceptionCode: u32);
     fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> u32;
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -100,12 +96,15 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
 
         major_function = (*irp_context).MajorFunction;
 
-        // SEH2 try/except block — USE_DUMMY_PSEH means the except handler is dead code;
-        // emulate by running the try body directly (no unwinding in kernel).
-        {
+        // _SEH2_TRY { switch } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...)) { FatProcessException }
+        let p_status = addr_of_mut!(status);
+        let p_vcb_deleted = addr_of_mut!(vcb_deleted);
+        let p_vol_do = addr_of_mut!(vol_do);
+        let caught = crate::seh::fat_try_except(core::ptr::addr_of!(irp_context), || {
+            let status = &mut *p_status;
             match major_function {
                 n if n == ntkrnl_sys::constants::IRP_MJ_CREATE => {
-                    status = FatCommonCreate(irp_context, irp);
+                    *status = FatCommonCreate(irp_context, irp);
                 }
                 n if n == ntkrnl_sys::constants::IRP_MJ_CLOSE => {
                     let mut vcb: *mut VCB = core::ptr::null_mut();
@@ -117,20 +116,20 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
                         addr_of_mut!(fcb),
                         addr_of_mut!(ccb),
                     );
-                    status = FatCommonClose(
+                    *status = FatCommonClose(
                         vcb,
                         fcb,
                         ccb,
                         type_of_open,
                         1u8, // TRUE
                         1u8, // TRUE
-                        addr_of_mut!(vcb_deleted),
+                        p_vcb_deleted,
                     );
-                    if vcb_deleted != 0 {
-                        vol_do = core::ptr::null_mut();
+                    if *p_vcb_deleted != 0 {
+                        *p_vol_do = core::ptr::null_mut();
                     }
-                    NT_ASSERT((status == ntkrnl_sys::base::STATUS_SUCCESS) as i32);
-                    FatCompleteRequest(irp_context, irp, status);
+                    NT_ASSERT((*status == ntkrnl_sys::base::STATUS_SUCCESS) as i32);
+                    FatCompleteRequest(irp_context, irp, *status);
                 }
                 n if n == ntkrnl_sys::constants::IRP_MJ_READ => {
                     FatCommonRead(irp_context, irp);
@@ -188,6 +187,12 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
                     );
                 }
             }
+        });
+        if let Err(code) = caught {
+            // We had some trouble trying to perform the requested operation, so
+            // abort the I/O request with the error status from the exception code.
+            let _ = crate::fatdata::FatProcessException(irp_context, irp, code);
+            exception_completed_irp = 1;
         }
 
         IoSetTopLevelIrp(core::ptr::null_mut());

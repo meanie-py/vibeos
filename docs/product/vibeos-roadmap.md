@@ -2178,6 +2178,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   event, not the loudest one" shape the stock-app NULL cascade below needs. This is a LEAD from
   reading raisers, NOT an observed stack: nothing has yet confirmed the fault goes through
   fastfat at all.
+  **2026-09-26: the BUGCHECK arm should now be a failed request.** fastfat runs on real SEH
+  (dummy-pseh-verdict.md step 3), so a `FatVerifyFcb`/`FatVerifyVcb` raise reaches
+  `FatExceptionFilter` as an expected status and `FatProcessException` fails the Irp instead
+  of the raise finding no handler. The lead above still stands: if sqlite32 now opens and
+  gets `STATUS_FILE_INVALID` back, the first `FcbBad` transition is the bug to chase.
 
   **Ordering consequence, now fixed:** this guest can take the whole boot down, so anything
   winlogon launches after it loses its verdict silently. That is exactly what happened when

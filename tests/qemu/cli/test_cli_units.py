@@ -9833,3 +9833,56 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
     vm.save_snapshot("ready")
     vm.restore_snapshot("ready")  # the autouse fixture, before the first test
     assert "[UCRTDIFF] done" in vm._boot_output
+
+
+def _load_payload_compile():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[3] / "tools" / "payloads" / "compile.py"
+    spec = importlib.util.spec_from_file_location("payload_compile_ut", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
+    """A payload exe older than its .c must be rebuilt by the build's payload stage, not
+    staged as-is (appstorm's fastfat raise check booted as the old binary)."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "build.sh").write_text('echo built > "$(dirname "$0")/demo-$1.exe"\n')
+    exe = d / "demo-arm64.exe"
+    exe.write_text("old")
+    (d / "demo.c").write_text("int main(void){return 0;}")
+    os.utime(exe, (1_000_000, 1_000_000))
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.stale_binaries("demo", "arm64") == [exe.resolve()]
+    assert pc.ensure_built(["demo"], "arm64") == ["demo"]
+    assert exe.read_text().strip() == "built"
+    assert pc.stale_binaries("demo", "arm64") == []
+    assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
+
+
+def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "build.sh").write_text("echo nope >&2; exit 3\n")
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+    with pytest.raises(SystemExit):
+        pc.ensure_built(["demo"], "i386")

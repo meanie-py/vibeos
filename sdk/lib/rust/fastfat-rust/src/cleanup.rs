@@ -7,18 +7,6 @@ use core::ffi::c_void;
 use core::ffi::{CStr};
 use core::ptr;
 use core::slice;
-// DUMMY_PSEH: SEH try/except is dead code in no_std; provide no-op stubs.
-#[allow(non_camel_case_types)]
-struct AssertUnwindSafe<F>(F);
-type UnwindErr = core::convert::Infallible;
-#[inline(always)]
-fn catch_unwind<F: FnOnce() -> R, R>(f: AssertUnwindSafe<F>) -> Result<R, UnwindErr> {
-    Ok((f.0)())
-}
-#[inline(always)]
-fn resume_unwind(_payload: UnwindErr) -> ! {
-    unreachable!()
-}
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::dirsup::{FatUpdateDirentFromFcb};
 use crate::types::{CCB_FLAG_COMPLETE_DISMOUNT, CCB_FLAG_DELETE_ON_CLOSE, CCB_FLAG_DENY_DEFRAG, DELETE_CONTEXT, FAT_BUG_CHECK_CLEANUP, FCB_STATE_DELAY_CLOSE, FCB_STATE_DELETE_ON_CLOSE, FCB_STATE_DENY_DEFRAG, FCB_STATE_FLUSH_FAT, FCB_STATE_PAGING_FILE, FCB_STATE_TRUNCATE_ON_CLOSE, FatLargeZero, IRP_CONTEXT, PCCB, PFCB, PIRP_CONTEXT, PVCB, VCB, VCB_STATE_FLAG_DEFERRED_FLUSH, VCB_STATE_FLAG_LOCKED, VCB_STATE_FLAG_SHUTDOWN, VCB_STATE_FLAG_WRITE_PROTECTED, _TYPE_OF_OPEN as TYPE_OF_OPEN, _TYPE_OF_OPEN_DirectoryFile as DirectoryFile, _TYPE_OF_OPEN_EaFile as EaFile, _TYPE_OF_OPEN_UnopenedFileObject as UnopenedFileObject, _TYPE_OF_OPEN_UserDirectoryOpen as UserDirectoryOpen, _TYPE_OF_OPEN_UserFileOpen as UserFileOpen, _TYPE_OF_OPEN_UserVolumeOpen as UserVolumeOpen, _TYPE_OF_OPEN_VirtualVolumeFile as VirtualVolumeFile, _VCB_CONDITION_VcbGood as VcbGood};
@@ -52,7 +40,6 @@ extern "system" {
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatResetExceptionState(IrpContext: PIRP_CONTEXT);
-    fn _SEH2_AbnormalTermination() -> BOOLEAN;
     fn FsRtlNotifyCleanup(Sync: *mut c_void, List: *mut c_void, Context: *mut c_void);
     fn FsRtlNotifyFullChangeDirectory( Sync: *mut c_void, List: *mut c_void, Context: *mut c_void, FullDirectoryName: *const c_void, WatchTree: BOOLEAN, IgnoreBuffer: BOOLEAN, CompletionFilter: u32, NotifyIrp: PIRP, TraverseCallback: *const c_void, SubjectContext: *const c_void, );
     fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32);
@@ -99,8 +86,17 @@ pub const Dbg: u32 = DEBUG_TRACE_CLEANUP;
 // Forward declarations for unknown external symbols
 
 // Gap function expansions (macros)
-const EXCEPTION_EXECUTE_HANDLER: i32 = 1;
-const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
+use crate::seh::{EXCEPTION_CONTINUE_SEARCH, EXCEPTION_EXECUTE_HANDLER};
+
+/// `FsRtlIsNtstatusExpected(_SEH2_GetExceptionCode()) ? EXCEPTION_EXECUTE_HANDLER :
+/// EXCEPTION_CONTINUE_SEARCH`, the filter of every "cannot turn back" try here.
+unsafe fn expected_status_filter(pointers: *mut c_void) -> i32 {
+    if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers)) != 0 {
+        EXCEPTION_EXECUTE_HANDLER
+    } else {
+        EXCEPTION_CONTINUE_SEARCH
+    }
+}
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_PENDING: NTSTATUS = 0x103;
 const TRUE: BOOLEAN = 1;
@@ -135,10 +131,18 @@ pub unsafe extern "system" fn FatFsdCleanup(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
 
-    // DUMMY_PSEH: EXCEPT handler dead → try body only.
-    {
-        IrpContext = FatCreateIrpContext(Irp, 1);
-        Status = FatCommonCleanup((IrpContext).cast(), Irp);
+    // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter( IrpContext, ... ))
+    let p_ic = core::ptr::addr_of_mut!(IrpContext);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    if let Err(code) = crate::seh::fat_try_except(p_ic as *const *mut c_void, || {
+        *p_ic = FatCreateIrpContext(Irp, 1);
+        *p_status = FatCommonCleanup((*p_ic).cast(), Irp);
+    }) {
+        //  We had some trouble trying to perform the requested
+        //  operation, so we'll abort the I/O request with
+        //  the error status that we get back from the
+        //  execption code
+        Status = FatProcessException(IrpContext, Irp, code);
     }
 
     if TopLevel != 0 {
@@ -262,32 +266,26 @@ pub unsafe extern "system" fn FatCommonCleanup(
     }
 
     if Fcb != ptr::null_mut() {
-        // SEH2: TRY { TRY { FatVerifyFcb } EXCEPT { ... } } FINALLY { ... }
-        let mut abnormal_termination = false;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let inner_result = catch_unwind(AssertUnwindSafe(|| {
+        //  Stop any raises from FatVerifyFcb, unless it is REAL bad.
+        crate::seh::try_finally(&mut (), |_| {
+            if crate::seh::try_except(&mut (), |_| {
                 FatVerifyFcb(IrpContext, Fcb);
-            }));
-            match inner_result {
-                Ok(()) => {},
-                Err(err) => { let _ = err; unreachable!() }
+            }, |_, p| expected_status_filter(p)).is_err() {
+                FatResetExceptionState(IrpContext);
             }
-        }));
-        // FINALLY
-        if abnormal_termination {
-            if AcquiredFcb != FALSE { FatReleaseFcb(IrpContext, Fcb); }
-            if AcquiredVcb != FALSE { FatReleaseVcb(IrpContext, Vcb); }
-        }
-        // re-raise if needed
-        if let Err(err) = result {
-            resume_unwind(err);
-        }
+        }, |_, abnormal| {
+            if abnormal {
+                //  We will be raising out of here.
+                if AcquiredFcb != FALSE { FatReleaseFcb(IrpContext, Fcb); }
+                if AcquiredVcb != FALSE { FatReleaseVcb(IrpContext, Vcb); }
+            }
+        });
     }
 
-    // Main SEH_TRY block (from global section)
-    // We'll wrap the whole rest of the function in a catch_unwind with finally handling
-    let mut main_abnormal = false;
-    let main_result = catch_unwind(AssertUnwindSafe(|| {
+    // _SEH2_TRY { ... } _SEH2_FINALLY { ... }
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_send_unlock = core::ptr::addr_of_mut!(SendUnlockNotification);
+    crate::seh::try_finally(&mut (), |_| {
 
         // The big try code
         #[cfg(ntddi_ge_ntddi_win8)]
@@ -295,7 +293,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
             && FatIsFileOplockable(Fcb) != 0
             && (NodeType(Fcb as *const c_void) != FAT_NTC_DCB || FatIsDirectoryEmpty(IrpContext, Fcb) != 0)
         {
-            let mut Status: NTSTATUS = FsRtlCheckOplockEx(
+            *p_status = FsRtlCheckOplockEx(
                 FatGetFcbOplock(Fcb),
                 Irp,
                 OPLOCK_FLAG_CLOSING_DELETE_ON_CLOSE,
@@ -303,22 +301,12 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 FatOplockComplete as *const c_void,
                 FatPrePostIrp as *const c_void,
             );
-            if Status != STATUS_SUCCESS {
-                if Status == STATUS_PENDING {
+            if *p_status != STATUS_SUCCESS {
+                if *p_status == STATUS_PENDING {
                     SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_CLEANUP_BREAKING_OPLOCK);
-                    // try_return Status; -> we can just set Status and goto exit.
-                    // We'll simulate a return to the finally and then return.
-                    // We'll set a status and break to a label.
-                    // For simplicity, we'll break with a flag.
-                    // We'll use a mutable status variable and a label.
-                    // We'll rewrite to use a status variable and then break out.
-                    // However, we must preserve control flow exactly. We'll use a loop{ break } pattern.
-                    'try_exit: loop {
-                        // finally will run after catch_unwind exits
-                        return Status;
-                    }
+                    return; // try_return( Status )
                 } else {
-                    FatNormalizeAndRaiseStatus(IrpContext, Status);
+                    FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                 }
             }
         }
@@ -340,7 +328,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 }
                 if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 && (*Vcb).FileObjectWithVcbLocked == FileObject {
                     FatAutoUnlock(IrpContext, Vcb);
-                    SendUnlockNotification = TRUE;
+                    *p_send_unlock = TRUE;
                 }
                 ShareAccess = core::ptr::addr_of!((*Vcb).ShareAccess) as *mut c_void;
             }
@@ -378,12 +366,12 @@ pub unsafe extern "system" fn FatCommonCleanup(
                         if FatIsDirectoryEmpty(IrpContext, Fcb) == 0 {
                             ClearFlag(&mut (*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
                         } else {
-                            let mut DeleteContext = DELETE_CONTEXT {
-                                FileSize: 0,
-                                FirstClusterOfFile: 0,
-                            };
-                            // _SEH2_TRY block inside
-                            let inner_seh_result = catch_unwind(AssertUnwindSafe(|| {
+                            //  Even if something goes wrong, we cannot turn back!
+                            if crate::seh::try_except(&mut (), |_| {
+                                let mut DeleteContext = DELETE_CONTEXT {
+                                    FileSize: 0,
+                                    FirstClusterOfFile: 0,
+                                };
                                 DeleteContext.FileSize = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
                                 DeleteContext.FirstClusterOfFile = (*Fcb).FirstClusterOfFile;
 
@@ -404,10 +392,8 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                         FILE_ACTION_REMOVED,
                                     );
                                 }
-                            }));
-                            match inner_seh_result {
-                                Ok(()) => {},
-                                Err(err) => { let _ = err; unreachable!() }
+                            }, |_, p| expected_status_filter(p)).is_err() {
+                                FatResetExceptionState(IrpContext);
                             }
 
                             FatRemoveNames(IrpContext, Fcb);
@@ -482,12 +468,10 @@ pub unsafe extern "system" fn FatCommonCleanup(
                             (*Fcb).ValidDataToDisk = 0;
                             ExReleaseResourceLite(((*Fcb).Header.PagingIoResource).cast());
 
-                            let seh1 = catch_unwind(AssertUnwindSafe(|| {
+                            if crate::seh::try_except(&mut (), |_| {
                                 FatSetFileSizeInDirent(IrpContext, Fcb, ptr::null());
-                            }));
-                            match seh1 {
-                                Ok(()) => {},
-                                Err(err) => { let _ = err; unreachable!() }
+                            }, |_, p| expected_status_filter(p)).is_err() {
+                                FatResetExceptionState(IrpContext);
                             }
 
                             (*Fcb).FcbState |= FCB_STATE_TRUNCATE_ON_CLOSE;
@@ -500,7 +484,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                     ValidDataLength = (*Fcb).ValidDataToDisk;
                                 }
                                 if ValidDataLength < (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart {
-                                    let seh2 = catch_unwind(AssertUnwindSafe(|| {
+                                    if crate::seh::try_except(&mut (), |_| {
                                         let _ = FatZeroData(
                                             IrpContext, Vcb, FileObject,
                                             ValidDataLength as i32,
@@ -517,17 +501,15 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                                 core::ptr::addr_of!((*Fcb).Header.AllocationSize) as *const c_void,
                                             );
                                         }
-                                    }));
-                                    match seh2 {
-                                        Ok(()) => {},
-                                        Err(err) => { let _ = err; unreachable!() }
+                                    }, |_, p| expected_status_filter(p)).is_err() {
+                                        FatResetExceptionState(IrpContext);
                                     }
                                 }
                             }
                         }
 
-                        // SEH_TRY around truncate and delete logic
-                        let seh3 = catch_unwind(AssertUnwindSafe(|| {
+                        // _SEH2_TRY around truncate and delete logic
+                        if crate::seh::try_except(&mut (), |_| {
                             if FlagOn((*Fcb).FcbState, FCB_STATE_TRUNCATE_ON_CLOSE) != 0 {
                                 DebugTrace(0, Dbg, b"truncate file allocation\n\0".as_ptr() as *const i8, 0);
                                 if (*Vcb).VcbCondition == VcbGood {
@@ -538,7 +520,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                 }
                                 // LocalTruncateSize = FileSize
                                 LocalTruncateSize = (*Fcb).Header.FileSize;
-                                TruncateSize = &LocalTruncateSize;
+                                TruncateSize = core::ptr::addr_of!(LocalTruncateSize);
                                 (*Fcb).FcbState &= !FCB_STATE_TRUNCATE_ON_CLOSE;
                             }
 
@@ -554,10 +536,8 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                     FILE_ACTION_REMOVED,
                                 );
                             }
-                        }));
-                        match seh3 {
-                            Ok(()) => {},
-                            Err(err) => { let _ = err; unreachable!() }
+                        }, |_, p| expected_status_filter(p)).is_err() {
+                            FatResetExceptionState(IrpContext);
                         }
 
                         if FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0 {
@@ -630,59 +610,44 @@ pub unsafe extern "system" fn FatCommonCleanup(
         }
 
         SetFlag(&mut (*FileObject).Flags as *mut u32, FO_CLEANUP_COMPLETE);
-        Status = STATUS_SUCCESS;
+        *p_status = STATUS_SUCCESS;
         FatUnpinRepinnedBcbs(IrpContext);
 
         if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_DEFERRED_FLUSH) != 0
             && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) == 0
         {
             if TypeOfOpen == UserFileOpen && FlagOn((*FileObject).Flags, FO_FILE_MODIFIED) != 0 {
-                Status = FatFlushFile(IrpContext, Fcb, Flush);
+                *p_status = FatFlushFile(IrpContext, Fcb, Flush);
             }
 
-            if NT_SUCCESS(Status) && Fcb != ptr::null_mut() && FatIsFat12(Vcb) == 0 && FlagOn((*Fcb).FcbState, FCB_STATE_FLUSH_FAT) != 0 {
-                Status = FatFlushFat(IrpContext, Vcb);
+            if NT_SUCCESS(*p_status) && Fcb != ptr::null_mut() && FatIsFat12(Vcb) == 0 && FlagOn((*Fcb).FcbState, FCB_STATE_FLUSH_FAT) != 0 {
+                *p_status = FatFlushFat(IrpContext, Vcb);
 
-                if NT_SUCCESS(Status) && (*Fcb).ParentDcb != ptr::null_mut() {
-                    Status = FatFlushFile(IrpContext, (*Fcb).ParentDcb, Flush);
+                if NT_SUCCESS(*p_status) && (*Fcb).ParentDcb != ptr::null_mut() {
+                    *p_status = FatFlushFile(IrpContext, (*Fcb).ParentDcb, Flush);
                 }
             }
 
-            if !NT_SUCCESS(Status) {
-                FatNormalizeAndRaiseStatus(IrpContext, Status);
+            if !NT_SUCCESS(*p_status) {
+                FatNormalizeAndRaiseStatus(IrpContext, *p_status);
             }
         }
-
-        #[cfg(ntddi_ge_ntddi_win8)]
-        'try_exit: loop { break; }
-    })); // end catch_unwind for main try
-
-    // FINALLY block execution
-    {
-        DebugTrace(0, Dbg, b"FatCommonCleanup Unwind\n\0".as_ptr() as *const i8, 0);
+    }, |_, abnormal| {
+        // DebugUnwind( FatCommonCleanup );
         if AcquiredFcb != 0 { FatReleaseFcb(IrpContext, Fcb); }
         if AcquiredVcb != 0 { FatReleaseVcb(IrpContext, Vcb); }
-        if SendUnlockNotification != 0 {
+        if *p_send_unlock != 0 {
             FsRtlNotifyVolumeEvent(FileObject, FSRTL_VOLUME_UNLOCK);
         }
-    }
 
-    // After finally, determine control flow
-    match main_result {
-        Ok(()) => {}
-        Err(err) => {
-            // Abnormal termination
-            main_abnormal = true;
-            resume_unwind(err);
+        //  If this is a normal termination then complete the request
+        if !abnormal && *p_status != STATUS_PENDING {
+            FatCompleteRequest(IrpContext, Irp, *p_status);
         }
-    }
 
-    // If not abnormal termination and Status != STATUS_PENDING, complete request
-    if !main_abnormal && Status != STATUS_PENDING {
-        FatCompleteRequest(IrpContext, Irp, Status);
-    }
+        DebugTrace(-1, Dbg, b"FatCommonCleanup -> %08lx\n\0".as_ptr() as *const i8, *p_status as usize);
+    });
 
-    DebugTrace(-1, Dbg, b"FatCommonCleanup -> %08lx\n\0".as_ptr() as *const i8, Status as usize);
     return Status;
 }
 #[no_mangle]
