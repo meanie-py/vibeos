@@ -561,6 +561,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the drift was tail padding. That was wrong, and I had not yet run the offset verifier
   when I wrote it.)
 
+  **Sizing the owed regen: it is probably SMALL, because severity and blast radius are
+  inversely correlated here.** Consumer files outside the generated files themselves --
+  `KPRCB` 22, `KIPCR` 16, `RTL_BSD_DATA` 15, `EJOB` 6, `PS_JOB_TOKEN_FILTER` 5,
+  `IO_BUS_TYPE_GUID_LIST` 2, `ARBITER_ALTERNATIVE` 0 (66 references total). The two with the
+  most consumers are exactly the two that drifted only at the tail, so regenerating them
+  APPENDS fields and leaves every existing access at its current offset; the one with
+  offset-0 drift has 2 references. So "touches every crate that names those structs"
+  overstates it: the mechanical risk concentrates in a handful of files. Do it as its own
+  change anyway -- with all three arches regenerable, which needs the
+  `generate_bindings.sh` stub removed first.
+
 - **`test_payload_launched` misses a launch marker that IS in its own serial log. OPEN,
   owed** (2026-09-25). `smoke --arch i386 --payload oldcrt`: the payload's
   `payload/i386-uefi_serial.log` carries `[OLDCRT] done PASS` at byte 78,018, pytest
