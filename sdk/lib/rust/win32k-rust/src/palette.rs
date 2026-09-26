@@ -668,15 +668,15 @@ pub unsafe extern "system" fn NtGdiResizePalette(hpal: HPALETTE, Entries: UINT) 
 pub unsafe extern "system" fn NtGdiGetColorAdjustment(
     hdc: HDC,
     pca: LPCOLORADJUSTMENT,
-) -> u8 {
-    0u8
+) -> BOOL {
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiSetColorAdjustment(
     hdc: HDC,
     pca: LPCOLORADJUSTMENT,
-) -> u8 {
-    0u8
+) -> BOOL {
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetNearestColor(hDC: HDC, mut Color: COLORREF) -> COLORREF {

@@ -848,7 +848,7 @@ pub unsafe extern "system" fn IKsFilter_fnGetStruct(iface: *mut IKsFilter) -> PK
 #[no_mangle]
 pub unsafe extern "system" fn IKsFilter_fnDoAllNecessaryPinsExist(
     iface: *mut IKsFilter,
-) -> BOOLEAN {
+) -> BOOL {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCHAR,
         b"IKsFilter_fnDoAllNecessaryPinsExist\0".as_ptr() as *const i8,
@@ -856,7 +856,7 @@ pub unsafe extern "system" fn IKsFilter_fnDoAllNecessaryPinsExist(
             .as_ptr() as *const i8,
         469i32,
     );
-    return 0u8;
+    return 0;
 }
 #[no_mangle]
 pub unsafe extern "system" fn IKsFilter_fnCreateNode(
@@ -981,14 +981,14 @@ pub unsafe extern "system" fn IKsFilter_fnReprepareProcessPipeSection(
     iface: *mut IKsFilter,
     PipeSection: *mut KSPROCESSPIPESECTION,
     Data: PULONG,
-) -> BOOLEAN {
+) -> BOOL {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCHAR,
         b"IKsFilter_fnReprepareProcessPipeSection\0".as_ptr() as PCHAR,
         b"drivers/ksfilter/ks/filter.c\0".as_ptr() as PCHAR,
         599i32,
     );
-    return 0u8;
+    return 0;
 }
 
 #[no_mangle]
@@ -1008,7 +1008,7 @@ pub unsafe extern "system" fn IKsFilter_fnDeliverResetState(
 #[no_mangle]
 pub unsafe extern "system" fn IKsFilter_fnIsFrameHolding(
     iface: *mut IKsFilter,
-) -> BOOLEAN {
+) -> BOOL {
     DbgPrint(
         b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCHAR,
         b"IKsFilter_fnIsFrameHolding\0".as_ptr() as *const i8,
@@ -1016,7 +1016,7 @@ pub unsafe extern "system" fn IKsFilter_fnIsFrameHolding(
             .as_ptr() as *const i8,
         618i32,
     );
-    return 0u8;
+    return 0;
 }
 
 #[no_mangle]

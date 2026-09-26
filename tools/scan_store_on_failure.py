@@ -54,10 +54,10 @@ from tools.c_twin import (
     CIndex,
     Func,
     blank_rust,
-    crate_of,
     match_brace,
     prefer,
     rust_functions,
+    same_module,
 )
 from tools.scan_dropped_null_guard import (
     GEN_MARKERS,
@@ -356,18 +356,6 @@ def _through_callee(p: str, twin: Func, index: CIndex, depth: int) -> tuple[str,
     return None
 
 
-def _words(s: str) -> set[str]:
-    return set(re.split(r"[^a-z0-9]+", s.lower())) - {"", "rust", "sys", "src", "lib", "sdk"}
-
-
-def _same_module(rust_path: Path, twin: Func) -> bool:
-    try:
-        rel = twin.path.relative_to(REPO)
-    except ValueError:
-        rel = twin.path
-    return bool(_words(crate_of(rust_path)) & _words(str(rel)))
-
-
 @dataclass
 class Site:
     path: Path
@@ -476,7 +464,7 @@ def main() -> int:
     for s in sites:
         # The twin must share a CRATE word with the Rust path: a common file stem is not
         # enough (win32k's main.rs `DriverEntry` is not drivers/bus/acpi/main.c's).
-        twins: list[Func] = [t for t in prefer(s.path, index.get(s.fn)) if _same_module(s.path, t)]
+        twins: list[Func] = [t for t in prefer(s.path, index.get(s.fn)) if same_module(s.path, t)]
         if not twins:
             continue
         cname = c_name_for(s.params, s.index, c_param_names(twins[0].params))
