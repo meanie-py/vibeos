@@ -3817,10 +3817,15 @@ static NTSTATUS Wow64Manual_NtUserCreateWindowStation(ULONG *a)
 }
 
 /* Shared-icon cache diagnosis: a WOW64 app whose LR_SHARED icons never match re-creates them on
- * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. */
+ * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. Behind the
+ * syscall-trace switch: a line per icon lookup is ~1500 lines a sweep once the cache works. */
+extern ULONG Wow64TraceSyscalls;
+
 static void Wow64pTraceCurIcon(const char *What, ULONG Mod32, ULONG Rsrc32, LONG *Param,
                                ULONG Flags, ULONG Ret)
 {
+    if (!Wow64TraceSyscalls)
+        return;
     WOW64_UNICODE_STRING32_M *M = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Mod32;
     WOW64_UNICODE_STRING32_M *R = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Rsrc32;
     DbgPrint("[WOW64-CURICON] %s mod=%.*S rsrc=%s%.*S%s id=%lx len=%u flags=%lx param=%ld,%ld,%ld ret=%lx\n",

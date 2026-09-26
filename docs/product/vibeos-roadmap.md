@@ -684,8 +684,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - FIXED: amd64 app sweeps were starved, not failing. `Wow64TraceSyscalls` was still 1, and
     every amd64 boot runs user32_winetest under WoW64, so the serial reached ~40MB and apps
     missed their window timeouts (then the run was reaped). Off: serial 2.2MB, 17 min, 36/38.
-  - OPEN, amd64: `sysdm.cpl` and `powercfg.cpl` open but do not close (appstorm
-    close=TIMEOUT).
+  - NOT REPRODUCING (2026-09-26), amd64: `sysdm.cpl` and `powercfg.cpl` open but did not close
+    (appstorm close=TIMEOUT). Both closed in three sweeps after the WoW64 trace went off and master
+    was merged. appstorm now dumps every thread of a process that ignores WM_CLOSE, so a return
+    brings its stacks.
+  - FIXED: the amd64 print spooler never started. localspl failed `_OpenEnvironment` with 1805,
+    because the `Windows x64` environment is in `[AddReg.NTamd64]`, which mkhive (the livecd hive
+    builder) never applied. Under dummy PSEH, every winspool RPC to the dead spooler then ended in
+    `RpcRaiseException` → `ExitProcess(1)`, so wordpad died before its window and winver died on
+    close. mkhive now takes `-a:<arch>`, like setup. arm64 got a `Windows ARM64` environment and a
+    winprint destination as well, but its ramdisk does not ship spoolsv yet.
+    amd64 appstorm: 38/38.
+  - OPEN, amd64, intermittent (1 in 4 sweeps): during `explorer-folder`, win32k logged
+    `failed to free. pvAlloc=0` ~8,100 times (`GdiPoolFree(NULL)`), then BUGCHECK 0x1E in
+    `REGION_bOffsetRgn` on a NULL region created in `co_WinPosSetWindowPos`. That call site is
+    unchecked in the C as well, so exhaustion is the root, and a NULL free is a caller bug the C
+    asserts against. `GdiPoolFree` now prints `[GDIPOOL] NULL free from <pc>` backtraces for the
+    first three: symbolize them with `vibeos-cli sym --module win32k.sys`. Run
+    `/tmp/vibeos-cli/20260926-024703-5punrico-smoke-amd64`. The same run had `osk` with no window.
   - FIXED: dxdiag's heap corruption (`RtlpRemoveFreeBlock`, amd64). kernel32-rust `GlobalSize`
     ran its translated `_SEH2_EXCEPT` arm unconditionally, so GlobalSize/LocalSize returned 0
     for EVERY block on every arch. The edit control sizes its undo buffer from

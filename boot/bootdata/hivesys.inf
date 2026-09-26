@@ -1401,6 +1401,11 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64","Director
 HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64\Print Processors",,0x00000010
 HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64\Print Processors\winprint","Driver",,"winprint.dll"
 
+[AddReg.NTarm64]
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM64","Directory",,"arm64"
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM64\Print Processors",,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM64\Print Processors\winprint","Driver",,"winprint.dll"
+
 [AddReg]
 
 HKLM,"SYSTEM\CurrentControlSet\Control\Print\Monitors",,0x00000010

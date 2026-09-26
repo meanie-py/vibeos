@@ -487,11 +487,28 @@ registry_callback(HINF hInf, PCWSTR Section, BOOL Delete)
 }
 
 
+/* The arch decoration for [AddReg.NT<arch>]: set by mkhive -a:<arch>, NULL when not given. */
+PCSTR InfArch = NULL;
+
+/* Build "<Base>.NT<InfArch>" as a WCHAR string (WCHAR is 16-bit here, not the host wchar_t). */
+static VOID
+decorated_section(PCWSTR Base, PWCHAR Out, size_t cchOut)
+{
+    size_t n = 0;
+    PCSTR p;
+
+    while (*Base && n + 1 < cchOut) Out[n++] = *Base++;
+    for (p = ".NT"; *p && n + 1 < cchOut; ++p) Out[n++] = (WCHAR)*p;
+    for (p = InfArch; *p && n + 1 < cchOut; ++p) Out[n++] = (WCHAR)*p;
+    Out[n] = 0;
+}
+
 BOOL
 ImportRegistryFile(PCHAR FileName)
 {
     HINF hInf;
     ULONG ErrorLine;
+    WCHAR Section[64];
 
     /* Load inf file from install media. */
     if (InfHostOpenFile(&hInf, FileName, 0, &ErrorLine) != 0)
@@ -512,6 +529,28 @@ ImportRegistryFile(PCHAR FileName)
         DPRINT1("registry_callback() for AddReg failed\n");
         InfHostCloseFile(hInf);
         return FALSE;
+    }
+
+    /* Then the arch-decorated sections, as setup does (base/setup/lib/registry.c): without
+     * them the livecd hive silently lacked every [AddReg.NTamd64] key, e.g. the "Windows x64"
+     * print environment, so localspl refused to load and the amd64 spooler never started. */
+    if (InfArch)
+    {
+        decorated_section(DelReg, Section, sizeof(Section) / sizeof(Section[0]));
+        if (!registry_callback(hInf, Section, TRUE))
+        {
+            DPRINT1("registry_callback() for DelReg.NT%s failed\n", InfArch);
+            InfHostCloseFile(hInf);
+            return FALSE;
+        }
+
+        decorated_section(AddReg, Section, sizeof(Section) / sizeof(Section[0]));
+        if (!registry_callback(hInf, Section, FALSE))
+        {
+            DPRINT1("registry_callback() for AddReg.NT%s failed\n", InfArch);
+            InfHostCloseFile(hInf);
+            return FALSE;
+        }
     }
 
     InfHostCloseFile(hInf);
