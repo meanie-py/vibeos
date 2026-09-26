@@ -543,7 +543,19 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
 #: either: a weak undefined never pulls an archive member, so it came back NULL even
 #: while the object was right there. So the question "does the reference have it"
 #: is answered HERE, from the archive, as a macro the harness compiles against.
-HAND_GRADED = ("strcat", "strcpy", "strncat", "strncpy", "strpbrk")
+HAND_GRADED = (
+    "strcat",
+    "strcpy",
+    "strncat",
+    "strncpy",
+    "strpbrk",
+    # run_ctype's is* rows: the ctype takeover deleted their Microsoft objects.
+    "isalpha",
+    "isdigit",
+    "isspace",
+    "isupper",
+    "ispunct",
+)
 
 
 def emit_refs(arch: str) -> str:

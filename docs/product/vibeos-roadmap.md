@@ -573,8 +573,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   change anyway -- with all three arches regenerable, which needs the
   `generate_bindings.sh` stub removed first.
 
-- **`test_payload_launched` misses a launch marker that IS in its own serial log. OPEN,
-  owed** (2026-09-25). `smoke --arch i386 --payload oldcrt`: the payload's
+- **`test_payload_launched` misses a launch marker that IS in its own serial log.
+  ROOT-CAUSED + FIXED 2026-09-26: `restore_snapshot`'s flush ate it.** A fast payload
+  finishes inside the settle window; a CHATTY one never lets serial go idle, so the settle
+  timed out and kept none of its window (unconsumed, as read below -- correctly); the
+  `ready` snapshot was taken with the payload already done; then the first test's
+  `restore_vm` ran `restore_snapshot`, whose `read_available` flush discarded the unread
+  bytes, marker included, and rewound the guest past the payload's exit so it never printed
+  it again. Reproduced live on a ucrtdiff shard (marker at 02:28, pytest still draining at
+  02:57). Fix: `QemuVM._absorb_pending()` moves pre-snapshot output into `_boot_output` on
+  the settle timeout and before `savevm`; unit-tested both ways. Original report
+  (2026-09-25): `smoke --arch i386 --payload oldcrt`: the payload's
   `payload/i386-uefi_serial.log` carries `[OLDCRT] done PASS` at byte 78,018, pytest
   reported `Boot complete (70445 bytes)` and then `drain-end: budget` -- 300s of draining
   without matching the marker -- and failed the run
