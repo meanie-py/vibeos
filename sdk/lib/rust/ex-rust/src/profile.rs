@@ -15,7 +15,7 @@ use ntkrnl_sys::ddk::{
     KPROFILE_SOURCE, KeInitializeMutex, KeInitializeProfile, KeQueryIntervalProfile,
     KeQueryPerformanceCounter, KeReleaseMutex, KeSetIntervalProfile, KeStartProfile,
     KeStopProfile, KeWaitForSingleObject, LARGE_INTEGER, MmMapLockedPages,
-    MmProbeAndLockPages, MmUnlockPages, MmUnmapLockedPages,
+    MmUnlockPages, MmUnmapLockedPages, PMDL, KPROCESSOR_MODE, LOCK_OPERATION,
     OBJECT_TYPE_INITIALIZER, ObCreateObject, ObCreateObjectType, ObInsertObject,
     ObReferenceObjectByHandle, PEPROFILE, PHANDLE, PKPROFILE, PLARGE_INTEGER,
     POBJECT_TYPE, RtlInitUnicodeString,
@@ -48,6 +48,8 @@ macro_rules! w {
 
 extern "system" {
     static SeSystemProfilePrivilege: LUID;
+    // ARM3/mdlsup.rs: MmProbeAndLockPages returning the status instead of raising it.
+    fn MmTryProbeAndLockPages(Mdl: PMDL, AccessMode: KPROCESSOR_MODE, Operation: LOCK_OPERATION) -> NTSTATUS;
 }
 
 const TAG_PROFILE: ULONG = 0x666f7250;
@@ -388,10 +390,10 @@ pub unsafe extern "system" fn NtStartProfile(ProfileHandle: HANDLE) -> NTSTATUS 
         core::ptr::null_mut(),
     );
 
-    let probe_result = {
-        MmProbeAndLockPages((*Profile).Mdl, PreviousMode, _LOCK_OPERATION_IoWriteAccess);
-        STATUS_SUCCESS
-    };
+    // The C caught MmProbeAndLockPages' raise in _SEH2_TRY and ran the cleanup below. With a
+    // raising call and a hard-coded STATUS_SUCCESS, that arm was dead: a bad profile buffer
+    // bugchecked and leaked the mutex, the profile reference and the KPROFILE.
+    let probe_result = MmTryProbeAndLockPages((*Profile).Mdl, PreviousMode, _LOCK_OPERATION_IoWriteAccess);
 
     if probe_result < 0 {
         KeReleaseMutex(core::ptr::addr_of_mut!(ExpProfileMutex), 0u8);

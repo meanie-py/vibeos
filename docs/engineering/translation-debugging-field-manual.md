@@ -5119,6 +5119,21 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
+  an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
+  resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
+  shared-icon cache never matched and every `LoadCursor`/`LoadIcon(LR_SHARED)` made a new icon,
+  two bitmaps and a leaked pool string. The damage surfaced far away: GDI quota exhaustion, NULL
+  regions deleted in win32k, pool exhaustion bugchecks. The tell in a trace is a lookup
+  repeated with identical arguments that never hits (IDC_ARROW 4139 times). Diff each function's
+  sequence of capture/probe calls against the C as a list; a statement the C does not have is
+  easy to read past because it looks like its neighbour.
+- **A `goto Cleanup` that skips a release becomes a second release.** In the C
+  `MmProbeAndLockPages`, a failed `MmAccessFault` jumps to `Cleanup:`, past the lock release at
+  `CleanupWithLock:`, because the lock was dropped before the call. The Rust inlined the
+  cleanup at each site and included the release both times, releasing the PFN lock or the
+  working-set pushlock that this thread no longer held. When translating label-based cleanup,
+  map each `goto` to the LABEL it names, not to the whole cleanup tail.
 - **A local deviation that changes WHAT a function returns but not what it CLAIMS.** Our
   `LdrpApplyFileNameRedirection` emits an api-set's host as a BARE name (`kernel32.dll`,
   resolved by the search path) where stock ReactOS builds `NtSystemRoot\System32\<host>`, but
