@@ -71,10 +71,9 @@ NtUserDrawCaptionTemp
 NtUserLoadKeyboardLayoutEx
 NtUserEnumDisplaySettings
 NtUserEnumDisplayDevices
-# CreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES), so it has
-# NO dispatch entry yet and hits the loud WOW64_AUTOMARSHAL_UNIMPL stub (clean
-# error, not a bugcheck) instead of the silent-wrong flat thunk. Add a
-# marshaller when a guest reaches it.
+# CreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES). A guest
+# reached it (user32:winstation); marshaller in wow64_manual.c beside its
+# Open/CreateWindowStation siblings.
 NtUserCreateDesktop
 # GetIconInfo: ICONINFO's HBITMAPs widen and both strings are IN/OUT. Guest
 # GetIconInfo/CopyImage reached it (user32:class); marshaller in wow64_manual.c.
