@@ -2374,8 +2374,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   started another 3-build/4-boot gate, re-creating the load. Fix: `WaitForWaiters()` waits
   (bounded, ~5 s) for the counts the test is about to assert, then asserts them UNCHANGED; an
   implementation that never counts a waiter still fails, one that over-counts fails at once.
-  Separate and NOT this: `NpfsFileInfo.c:57` is deterministic (`IoStatusBlock.Information = 158,
-  expected 154`, every time) -- a real 4-byte discrepancy in the npfs query, still OPEN.
+  The two ExResource failures the baseline KEEPS (`:441`/`:488`, renumbered from 409/455 by the
+  helper) are NT6 `ActiveCount` bookkeeping checked against the test's WS03 branch -- upstream
+  semantics, accepted, not this race.
+- **`NpfsFileInfo.c:57` "bistable" — ROOT-CAUSED 2026-09-26: the conformance PARSER, not npfs.**
+  npfs returns `Information = 158` (Windows: 154 -- it subtracts the padded
+  `sizeof(FILE_NAME_INFORMATION)`, 8, where Windows uses `FIELD_OFFSET(.., FileName)`, 4; upstream
+  C does the same) on EVERY boot, EVERY arch. But `:56`'s message prints a raw `0xFFFF` WCHAR that
+  often eats its newline, gluing `:57` onto the end of the line, and `parse_kmtest_serial.py`
+  matched identities only at the line start. So `:57` surfaced on some boots; the 596-round soak
+  banked it `assert?` on amd64/arm64, and the i386 seeding never saw it at all -- until a quiet
+  host flipped the byte and i386 went "NEW failing" in the gate. Parser now finds identities
+  anywhere on a line; `:57` is a stable `assert` on all three arches. The 4-byte npfs divergence
+  itself is real Windows-vs-ReactOS behaviour and still OWED.
 - **`conformance:arm64` wedges on an ExResource waiter-count race — OPEN, NOT a code regression**
   (2026-09-06, found by the wow64-amd64 lane, NOT owned by it). Two independent arm64 runs on
   the same tree both failed the kmtest sweep, and the line number MOVED between them:

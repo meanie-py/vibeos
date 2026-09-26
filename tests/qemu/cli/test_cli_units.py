@@ -7675,6 +7675,26 @@ def test_failing_assertions_are_parsed_and_round_trip_through_the_baseline():
     assert P.compare(results, base) == []
 
 
+def test_an_assertion_glued_onto_the_previous_line_is_still_seen():
+    """NpfsFileInfo.c:56 prints a raw 0xFFFF WCHAR that can eat its own newline,
+    gluing :57 onto the end of it. Anchored to the line start, :57 — which fails
+    on every boot — was seen only on some, and got banked as bistable. A hex
+    address glued straight onto a name has no recoverable boundary, so that one
+    must NOT become a garbage identity."""
+    P = _parser()
+    glued = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed:",
+        "IoDeviceObject_drv.c:206: Test failed: x = \ufffd NpfsFileInfo.c:57: Test failed:"
+        " y = 0x000000000012F300RtlStack.c:42: Test failed:",
+    )
+    results, _, _ = P.parse(glued)
+    assert results[0]["asserts"] == {
+        "IoDeviceObject_drv.c:198",
+        "IoDeviceObject_drv.c:206",
+        "NpfsFileInfo.c:57",
+    }
+
+
 def _round_trip(P, text):
     import tempfile
 
