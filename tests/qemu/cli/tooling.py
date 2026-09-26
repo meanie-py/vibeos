@@ -79,6 +79,7 @@ _PYTEST_SUITES = [
     # these files carry) and false negatives on the shape that actually
     # bugchecked. Both are pinned.
     (".", ".", "tools/test_scan_probe_then_deref.py"),
+    (".", ".", "tools/test_fix_probe_then_deref.py"),
     (".", ".", "tools/test_gen_suites.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only

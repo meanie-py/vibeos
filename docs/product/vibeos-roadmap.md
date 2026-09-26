@@ -521,7 +521,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   submission of whichever lane happens to hit it.
 
 - **THREE user32 winetest subtests BUGCHECK i386 0x1E, and two of them land on
-  probe-then-raw-access leads the entry below already lists as OPEN. OPEN** (2026-09-25).
+  probe-then-raw-access leads the entry below already lists as OPEN. FIXED** (2026-09-26,
+  `d295a7227d3` + `79b1a131ad7`). All 24 user32 subtests now sweep to completion with zero
+  quarantined and zero BUGCHECKs. Four distinct faults, not three -- fixing `win`'s
+  `NtUserFlashWindowEx` merely uncovered a second one behind it at `win32k.sys+0x91F6E`,
+  which disassembles to an INLINED ProbeForWrite followed by `movl %eax, (%edi)`:
+  `ONEPARAM_ROUTINE_GETPROCDEFLAYOUT`'s `*pdwLayout = ppi->dwLayout` in
+  `NtUserCallOneParam`. `scan_probe_then_deref.py` had reported that file clean because the
+  probe is on `Param` and the store goes through `pdwLayout = Param as PDWORD` -- an ALIAS.
+  One assignment hid a live unprivileged kernel crash from the tool written to enumerate
+  this exact class; the scanner now propagates taint across such casts (+8 leads elsewhere).
+  `input` was correctly filed as a different shape and is a different shape: there is no raw
+  dereference in the function at all. It hands a UNICODE_STRING whose `Buffer` is a user
+  pointer to `RtlIntegerToUnicodeString` / `RtlAppendUnicodeToString`, which write through it
+  with a bare `RtlCopyMemory`, so the fault lands INSIDE ntoskrnl with our frame as the
+  caller. Fixed by building into a kernel buffer and publishing, the way
+  `NtUserLoadKeyboardLayoutEx` in the same file already does for the read direction.
+  The original diagnosis, kept because the reasoning was sound and one part of it was wrong:
   The first sweep of a whole conformance suite (`--winetest-sweep`, native i386, no WoW64
   anywhere) found all three; each one blinds every subtest after it, so they had to be
   quarantined one at a time to see the next:
@@ -1099,8 +1115,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 - **The probe-then-raw-access class is CLEARED in win32k as of 2026-09-23** — all 108 leads
   `tools/scan_probe_then_deref.py` reported are fixed across 31 files, plus ~30 more that the
   scanner's own `break`-at-first-hit was hiding. Built on all three arches, amd64 boots to
-  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class,
-  which are OPEN:** 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
+  desktop. **But fixing the scanner's blind spots opened 160 MORE leads of the same class**
+  (since worked down to 69 -- see below): 152 where the access is a bulk copy (`RtlCopyMemory(&mut local, p, n)` and
   the `write_volatile` / `copy_nonoverlapping` spellings) rather than a syntactic `*p`, and 8
   genuinely interprocedural. Heaviest: `message.rs` 22, `font.rs` 20, `hook.rs` 11,
   `stretchblt.rs` 9, `dibobj.rs` 9. Two shapes inside that set need more than a copy call:
@@ -1108,6 +1124,49 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   memory → publish once, and `InterlockedIncrement` on a user counter (ime's `nCntInIMEProc`,
   where the C had a `_SEH2_TRY` per access) has **no protected primitive at all** — it needs a
   `KmProtected` atomic in `kmsafecopy.c` on three arches, which is owed and not yet written.
+  **Every COPY-shaped lead is closed as of 2026-09-26, and TWO atomic ones are open.** The
+  last 8 copy leads were the alias shape (`retparam = ResultInfo as PBROADCASTPARM` followed
+  by two raw field stores, four times over in `message.rs`), hand-fixed because the fixer
+  refuses an aliased access by design. Then the scanner hit zero -- and zero was the wrong
+  answer, which is the lesson: it skips any line containing `addr_of_mut!`, correctly, because
+  taking an address is not a load. But `InterlockedIncrement(addr_of_mut!((*pimeui).
+  nCntInIMEProc))` never lets that address escape -- the callee IS the access -- so ime.rs's
+  two sites were invisible while the tool reported the class clear. The scanner now flags an
+  `Interlocked*` on a probed pointer (and finds exactly those two, tree-wide, with no false
+  positives, which is independent confirmation the rest really is clear). **They remain
+  UNFIXED and are the last of the class**: there is no protected atomic to route them
+  through, so closing them means writing a `KmProtected` atomic next to
+  `KmProtectedCopyMemory` -- native-SEH shim on amd64/arm64, an exception-table entry for
+  the `lock` instruction on i386 -- plus a self-test twin so the per-boot oracle covers it.
+  It got there by TWO lanes independently, in the
+  same week, without either
+  knowing: upstream-sync's `21b349ccb63` ("70 more probe-then-raw-copy sites") and this
+  lane's `66fa9466bbc` (62 sites) overlapped heavily and collided as a merge conflict in
+  `message.rs`/`stretchblt.rs`/`winpos.rs`, where both had written the same `capture_from_user`
+  call with different line wrapping. Resolved in master's favour at every conflicting site,
+  then re-scanned to prove nothing unique was dropped. **The duplicated effort is the lesson,
+  not the merge:** a scanner that prints a lead list is an invitation for two lanes to work
+  it at once, and nothing in the list says who holds it. The three BUGCHECKs above were NOT
+  duplicated -- `NtUserFlashWindowEx`, `NtUserGetKeyboardLayoutName` and the two
+  `NtUserCallOneParam` aliases were untouched on master -- which is the useful signal: the
+  reproducer-driven sites and the list-driven sites barely intersect.
+  The mechanization (`tools/fix_probe_then_deref.py`):
+  `tools/fix_probe_then_deref.py` is the counterpart to the scanner. It never invents an
+  error path -- it replays the probe's OWN failure block, which is the only reason a rewrite
+  of 62 kernel syscall entry points is safe to automate at all: no new semantics are
+  introduced anywhere. What it REFUSES is the part worth reading, and each guard is a wrong
+  rewrite it emitted first (three of the four BUILD CLEANLY and are silently wrong on the
+  error path):
+  the positive form `if NT_SUCCESS(s) { <copy> }` has no failure block -- its body IS the
+  copy; a failure block belonging to an EARLIER probe is the wrong error path, not a smaller
+  one; a block whose transfer predates work the site now depends on (the tell is a reassigned
+  status or an acquired resource, NOT line distance -- distance refused one out-parameter of
+  `NtUserGetLayeredWindowAttributes` while fixing the two above it); and a multi-line probe
+  inside the condition, where the brace scan scoops the probe's arguments up as the error
+  body. Pinned in `tools/test_fix_probe_then_deref.py`, one test per wrong rewrite.
+  The 69 remaining leads are listed by the tool as refusals, not silently dropped; each needs
+  a human to decide what its cleanup does, and the answer at most of them is
+  `Status = STATUS_ACCESS_VIOLATION` plus fall-through.
 
 - **winlogon stops dead after a guest exits, and a 60-SECOND WaitForSingleObject timeout
   never fires. OPEN, and it invalidates the amd64 `--ladder` verdict** (2026-09-21).

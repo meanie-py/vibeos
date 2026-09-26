@@ -343,3 +343,35 @@ pub unsafe fn f(p: *mut FOO) {
 }
 """
     assert leads_interproc(src) == []
+
+
+def test_an_interlocked_on_a_probed_pointer_IS_a_lead() -> None:
+    """The exception to the rule above, and the reason it is not a contradiction.
+
+    `addr_of_mut!` is skipped because computing an address cannot fault. But here
+    the address never escapes the line: `InterlockedIncrement` dereferences it, so
+    the callee IS the access. Skipping the whole line for containing `addr_of_mut!`
+    hid ime.rs's two live unprotected writes to user memory while the scanner
+    reported the entire class clear.
+    """
+    src = """
+pub unsafe fn f(p: *mut FOO) {
+    SafeProbeForRead(p as _, 8, 1);
+    InterlockedIncrement(core::ptr::addr_of_mut!((*p).nCount));
+}
+"""
+    hits = leads_interproc(src)
+    assert len(hits) == 1, hits
+    assert "InterlockedIncrement" in hits[0][2]
+
+
+def test_an_interlocked_on_an_UNPROBED_pointer_is_not_a_lead() -> None:
+    """The rule is scoped to probed (user) pointers. Interlocked ops on kernel
+    memory are the overwhelming majority in the tree, and flagging those would
+    bury the two real ones in noise."""
+    src = """
+pub unsafe fn f(p: *mut FOO) {
+    InterlockedIncrement(core::ptr::addr_of_mut!((*p).nCount));
+}
+"""
+    assert leads_interproc(src) == []
