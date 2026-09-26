@@ -39,9 +39,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 876
-  amd64: 876
-  arm64: 873
+  i386: 868
+  amd64: 868
+  arm64: 865
 
 families:
   bits:
@@ -374,3 +374,39 @@ families:
       - _mbctoupper_l
       - _mbsbtype
       - _mbsbtype_l
+  tocase:
+    replaces:
+      - sdk/lib/ucrt/convert/tolower_toupper.cpp
+      - sdk/lib/ucrt/convert/towlower.cpp
+      - sdk/lib/ucrt/convert/towupper.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft objects for the
+      three deleted files. All 10 exports graded dll=0 over every generated case,
+      plus run_ctype's hand-graded tolower/toupper rows over EOF and 0..255 (MATCH,
+      n=514); dll_fail=0 across all 5,408 cases of the run. The burn-down moves by
+      8, not 10, because it undecorates _tolower/tolower (and _toupper/toupper) to
+      one name.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: msvcrt's
+      _tolower_l/_toupper_l DIFF against UCRT at the first case, EOF, which UCRT
+      returns before resolving any locale.
+
+      Silent-if-wrong details, each transcribed: only (unsigned)c < 256 takes the
+      narrow table; the codepage lookup sets errno=EILSEQ whenever c is not a
+      lead/trail pair and maps the low byte anyway; tolower/toupper are plain ASCII
+      until a locale has ever been changed; _tolower/_toupper are unconditional
+      arithmetic; _towlower_l/_towupper_l consult _wctype's UTF-16 category before
+      the narrow map, and cover only ASCII in a UTF-8 locale. _wctype and the
+      __acrt_LCMapString* internals are still Microsoft's and are called.
+    exports:
+      - _tolower
+      - _tolower_l
+      - _toupper
+      - _toupper_l
+      - _towlower_l
+      - _towupper_l
+      - tolower
+      - toupper
+      - towlower
+      - towupper
