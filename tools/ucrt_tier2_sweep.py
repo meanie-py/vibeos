@@ -224,6 +224,13 @@ def main(argv: list[str] | None = None) -> int:
         "still has Microsoft's objects for sources a takeover just deleted (see run_shard)",
     )
     ap.add_argument(
+        "--reuse-inputs",
+        action="store_true",
+        help="EVERY shard reuses the reference set, rust set and case list already on "
+        "disk -- to re-run some shards of a takeover check after its first shard's media "
+        "build has dropped the family's objects (a fresh --takeover-check would lose them)",
+    )
+    ap.add_argument(
         "--table",
         type=Path,
         default=TABLE,
@@ -243,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
             args.budget_ms,
             args.dry_run,
             args.takeover_check,
-            reuse_inputs=args.takeover_check and k != wanted[0],
+            reuse_inputs=args.reuse_inputs or (args.takeover_check and k != wanted[0]),
         )
         rows, done = parse_serial(text)
         merged.update(rows)
