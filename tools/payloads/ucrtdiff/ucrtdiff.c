@@ -549,8 +549,12 @@ static void run_ctype(void)
         char w[8];
         w[0] = 'c'; w[1] = '='; w[2] = (char)('0' + (c / 100 + 256) % 10);
         w[3] = (char)('0' + (c / 10 + 256) % 10); w[4] = (char)('0' + (c + 256) % 10); w[5] = 0;
+#if UCRTDIFF_REF_HAS_tolower
         grade("tolower", w, tolower(c), rust_tolower(c), ref_tolower(c));
+#endif
+#if UCRTDIFF_REF_HAS_toupper
         grade("toupper", w, toupper(c), rust_toupper(c), ref_toupper(c));
+#endif
         /* Normalised: the is* family contracts a NONZERO value, not a specific
          * one, and MSVC returns the raw ctype bitmask. */
         /* Each is* row only while its Microsoft reference still exists: the ctype

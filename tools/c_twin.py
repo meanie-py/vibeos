@@ -73,6 +73,7 @@ class Func:
     body: str  # blanked text from `{` to the matching `}`, inclusive
     body_start: int  # offset of `{` in the (blanked) file text
     params: str  # blanked parameter list, without the parens
+    ret: str = ""  # C only: the declared return type's last word (`BOOL`), `*` for a pointer
 
 
 _RS_FN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{]*>)?\s*\(")
@@ -100,9 +101,30 @@ def rust_functions(text: str, path: Path) -> list[Func]:
                 body=text[brace:end],
                 body_start=brace,
                 params=text[m.end() : close],
+                ret=_c_return_type(text, m.start()),
             )
         )
     return out
+
+
+# Calling-convention / linkage / SAL noise between a C return type and the function name.
+_C_DECOR = re.compile(
+    r"(?:WINAPIV?|NTAPI|APIENTRY|FASTCALL|STDCALL|CALLBACK|PASCAL|CDECL|EXTERN_C|NTSYSAPI|"
+    r"NTKERNELAPI|NTHALAPI|W32KAPI|DECLSPEC_\w+|INIT_FUNCTION|CODE_SEG|static|inline|extern|"
+    r"__\w+|_\w+_|_In\w*|_Out\w*|_Must_\w+|_Success_|_Check_return_|_IRQL_\w+)"
+)
+
+
+def _c_return_type(text: str, name_at: int) -> str:
+    """The last word of the return type before a definition's name, or `*` when the
+    function returns a pointer. `text` is blanked, so comments are already spaces."""
+    lo = max(text.rfind(";", 0, name_at), text.rfind("}", 0, name_at), text.rfind("{", 0, name_at))
+    seg = text[lo + 1 : name_at]
+    # Drop preprocessor lines (`#include`, `#define X`) that sit between definitions.
+    seg = "\n".join(ln for ln in seg.split("\n") if not ln.lstrip().startswith("#"))
+    seg = re.sub(r"\([^()]*\)", " ", seg)  # CODE_SEG("INIT"), _In_reads_(n)
+    words = [w for w in re.findall(r"[A-Za-z_]\w*|\*", seg) if not _C_DECOR.fullmatch(w)]
+    return words[-1] if words else ""
 
 
 def enclosing(funcs: list[Func], at: int) -> Func | None:
@@ -164,9 +186,30 @@ def c_functions(text: str, path: Path, names: set[str]) -> list[Func]:
                 body=text[j:end],
                 body_start=j,
                 params=text[m.end() : close],
+                ret=_c_return_type(text, m.start()),
             )
         )
     return out
+
+
+# Calling-convention / linkage / SAL noise between a C return type and the function name.
+_C_DECOR = re.compile(
+    r"(?:WINAPIV?|NTAPI|APIENTRY|FASTCALL|STDCALL|CALLBACK|PASCAL|CDECL|EXTERN_C|NTSYSAPI|"
+    r"NTKERNELAPI|NTHALAPI|W32KAPI|DECLSPEC_\w+|INIT_FUNCTION|CODE_SEG|static|inline|extern|"
+    r"__\w+|_\w+_|_In\w*|_Out\w*|_Must_\w+|_Success_|_Check_return_|_IRQL_\w+)"
+)
+
+
+def _c_return_type(text: str, name_at: int) -> str:
+    """The last word of the return type before a definition's name, or `*` when the
+    function returns a pointer. `text` is blanked, so comments are already spaces."""
+    lo = max(text.rfind(";", 0, name_at), text.rfind("}", 0, name_at), text.rfind("{", 0, name_at))
+    seg = text[lo + 1 : name_at]
+    # Drop preprocessor lines (`#include`, `#define X`) that sit between definitions.
+    seg = "\n".join(ln for ln in seg.split("\n") if not ln.lstrip().startswith("#"))
+    seg = re.sub(r"\([^()]*\)", " ", seg)  # CODE_SEG("INIT"), _In_reads_(n)
+    words = [w for w in re.findall(r"[A-Za-z_]\w*|\*", seg) if not _C_DECOR.fullmatch(w)]
+    return words[-1] if words else ""
 
 
 INDEX_PATH = REPO / "tools" / ".cache" / "c_twin_defs.json"
@@ -343,6 +386,26 @@ def affinity(rust_path: Path, twin: Func) -> int:
     except ValueError:
         rel = twin.path
     return len(words & set(re.split(r"[^a-z0-9]+", str(rel).lower())))
+
+
+def _words(s: str) -> set[str]:
+    return set(re.split(r"[^a-z0-9]+", s.lower())) - {"", "rust", "sys", "src", "lib", "sdk"}
+
+
+def same_module(rust_path: Path, twin: Func) -> bool:
+    """The twin shares a CRATE word with the Rust path. Stricter than affinity(): a shared
+    file stem is not enough — win32k's main.rs `DriverEntry` is not drivers/bus/acpi's."""
+    try:
+        rel = twin.path.relative_to(REPO)
+    except ValueError:
+        rel = twin.path
+    crate = _words(crate_of(rust_path))
+    crate |= {a for w in crate for a in _CRATE_ALIASES.get(w, ())}
+    return bool(crate & _words(str(rel)))
+
+
+# Crates whose C lives under a tree that does not carry the crate's name.
+_CRATE_ALIASES = {"win32k": ("win32ss",), "ntoskrnl": ("ntoskrnl",), "hal": ("halx86", "hal")}
 
 
 def prefer(rust_path: Path, twins: list[Func]) -> list[Func]:

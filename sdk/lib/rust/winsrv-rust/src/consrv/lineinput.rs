@@ -8,7 +8,7 @@ use winsrv_sys::winsrv::*;
 // GetType/GetConsoleInputBufferMode are bindgen-resolved.
 extern "C" {
     // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
- fn HistoryFindEntryByPrefix( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Prefix: *const _UNICODE_STRING, EntryFound: *mut _UNICODE_STRING, ) -> u8;
+ fn HistoryFindEntryByPrefix( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Prefix: *const _UNICODE_STRING, EntryFound: *mut _UNICODE_STRING, ) -> BOOL;
 }
 extern "C" {
     // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
@@ -24,7 +24,7 @@ extern "C" {
 }
 extern "C" {
     // history.rs defines the History* helpers cdecl (§9.30 cc-match rule)
- fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> u8;
+ fn HistoryRecallHistory( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Offset: i32, Entry: *mut _UNICODE_STRING, ) -> BOOL;
 }
 extern "system" {
     pub fn HistoryAddEntry( Console: PCONSRV_CONSOLE, ExeName: PUNICODE_STRING, Entry: *const _UNICODE_STRING, );

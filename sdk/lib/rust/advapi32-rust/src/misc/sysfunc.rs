@@ -377,7 +377,7 @@ pub unsafe extern "system" fn SystemFunction029(a: INT, b: INT) -> INT {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SystemFunction030(b1: LPCVOID, b2: LPCVOID) -> u8 {
+pub unsafe extern "system" fn SystemFunction030(b1: LPCVOID, b2: LPCVOID) -> BOOL {
     if memcmp(b1, b2, 0x10) == 0 {
         1
     } else {
@@ -407,8 +407,8 @@ pub unsafe extern "system" fn SystemFunction034(a: INT, b: INT) -> INT {
     34
 }
 #[no_mangle]
-pub unsafe extern "system" fn SystemFunction035(lpszDllFilePath: LPCSTR) -> u8 {
-    1u8
+pub unsafe extern "system" fn SystemFunction035(lpszDllFilePath: LPCSTR) -> BOOL {
+    1
 }
 
 #[no_mangle]

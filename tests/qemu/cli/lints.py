@@ -642,12 +642,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     #     unconditionally (rtl compress, ole32, mlang, msvcrt, fastfat).
     #   store_on_failure: the C writes an out-param only after its last failure return,
     #     the Rust writes it and then returns a status that can fail (rtl compress).
-    # All four were driven to zero before wiring; baselines are EMPTY.
+    #   bool_width (older, wired 2026-09-26): a u8/BOOLEAN return where the other side
+    #     reads a BOOL — 56 definitions across userenv, win32k, shell32, winsrv, ks, msvcrt.
+    # All were driven to zero before wiring; baselines are EMPTY.
     for lint_name in (
         "scan_ptr_byte_diff",
         "scan_misaligned_cast",
         "scan_dropped_null_guard",
         "scan_store_on_failure",
+        "scan_bool_width",
     ):
         script = repo / "tools" / f"{lint_name}.py"
         specs.append(

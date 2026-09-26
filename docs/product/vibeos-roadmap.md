@@ -658,14 +658,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 5 OPEN** (2026-09-25; `combo` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
+  REFERENCE + 4 OPEN** (2026-09-25; `combo` and `winstation` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
   | subtest | native i386 | WoW64 | |
   |---|---|---|---|
   | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
-  | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
+  | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
   | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
   | `monitor` | 20 failures | **23** | +3 guest-only |
   | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
@@ -681,6 +681,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   guest 460 tests / 23 failures, native i386 the same 23, and the 28 output lines diff
   IDENTICAL once handle values are normalized. Repro loop is now
   `build --arch amd64 --winetest-sweep --winetest-only combo` (seconds, not a 40-min sweep).
+  **`winstation` was three bugs stacked.** (1) `NtUserCreateDesktop` had no marshaller, and
+  its loud refusal returned a non-zero status that the guest read as a valid `HDESK`. (2)
+  Behind it, `NtQueryObject` was a flat thunk, so `ObjectNameInformation` came back in the
+  host's 16-byte `UNICODE_STRING` layout and the test dereferenced a junk `Name.Buffer`.
+  That one affects every guest: kernel32 (`dosdev`, `GetFinalPathNameByHandle`) and
+  advapi32's HKCR code ask for object names too. (3) `EnumWindowStations` failing with
+  `ERROR_INTERNAL_ERROR` was NOT the seam: win32k sized its fallback buffer from a
+  `NtQueryDirectoryObject` NULL/0 query, which reports bytes written rather than bytes needed,
+  and only a 64-bit kernel's 32-byte entries overflow into that path. Now 13 failures on
+  both sides. Two differences remain, neither attributable: the foreground-window asserts
+  (a timing-sensitive loop, failing on both sides at different iterations) and 1054
+  (`WM_NCHITTEST` on an invisible desktop), which native never reaches because its child
+  launch fails first with `CreateProcessA` error 2 on `argv[0]`. That makes the NATIVE
+  control's gap the thing to fix before 1054 can be judged.
   `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
   owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32

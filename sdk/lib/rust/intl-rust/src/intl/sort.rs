@@ -21,10 +21,10 @@ unsafe extern "system" fn SortTestEnumProc(lpLocale: PWSTR) -> BOOL {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn IsSortPageNeeded(lcid: LCID) -> u8 {
+pub unsafe extern "C" fn IsSortPageNeeded(lcid: LCID) -> BOOL {
     if lcid == MAKELCID!(MAKELANGID!(LANG_SPANISH, SUBLANG_SPANISH), SORT_DEFAULT) ||
         lcid == MAKELCID!(MAKELANGID!(LANG_SPANISH, SUBLANG_SPANISH_MODERN), SORT_DEFAULT) {
-        return (TRUE as BOOL) as BOOLEAN;
+        return TRUE as BOOL;
     }
 
     userLcid = lcid;
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn IsSortPageNeeded(lcid: LCID) -> u8 {
 
     EnumSystemLocalesW(Some(SortTestEnumProc), LCID_ALTERNATE_SORTS);
 
-    return (bSortPage) as u8;
+    return bSortPage;
 }
 unsafe extern "system" fn SortEnumProc(lpLocale: LPTSTR) -> BOOL {
     let mut lcid: LCID;
