@@ -1,7 +1,7 @@
 
 if (MSVC OR ARCH STREQUAL "i386")
     #FIXME _setjmp definitions in CRT headers is wrong
-    add_subdirectory(ms)
+    add_subdirectory(${REACTOS_SOURCE_DIR}/vendor/ms-compiler-tests ms)
     list(APPEND SOURCE ms_seh.c)
 endif()
 
