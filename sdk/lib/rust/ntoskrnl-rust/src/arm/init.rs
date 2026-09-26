@@ -128,10 +128,15 @@ fn MiAddressToPxeOffset(va: PVOID) -> ULONG {
 pub static mut ValidKernelPde: MMPTE = unsafe { core::mem::transmute(
     PTE_VALID as ULONG_PTR | PTE_NOT_LARGE_PAGE | PTE_READWRITE | PTE_ACCESSED
 ) };
+// Inner Shareable (SH = 0b11, bits [9:8]): without it every page the memory
+// manager maps is Non-shareable, and cross-core atomics on it are not atomic on
+// real hardware (see MmProtectToPteMask in ke/arm64/stubs.rs).
+#[cfg(target_arch = "aarch64")]
+const PTE_SH_INNER: ULONG_PTR = 0x300;
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
 pub static mut ValidKernelPte: MMPTE = unsafe { core::mem::transmute(
-    PTE_VALID as ULONG_PTR | PTE_NOT_LARGE_PAGE | PTE_READWRITE | PTE_ACCESSED | PTE_ENABLE_CACHE
+    PTE_VALID as ULONG_PTR | PTE_NOT_LARGE_PAGE | PTE_READWRITE | PTE_ACCESSED | PTE_ENABLE_CACHE | PTE_SH_INNER
 ) };
 
 #[cfg(target_arch = "aarch64")]
@@ -142,7 +147,7 @@ pub static mut ValidKernelPdeLocal: MMPTE = unsafe { core::mem::transmute(
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
 pub static mut ValidKernelPteLocal: MMPTE = unsafe { core::mem::transmute(
-    PTE_VALID as ULONG_PTR | PTE_NOT_LARGE_PAGE | PTE_READWRITE | PTE_ACCESSED | PTE_ENABLE_CACHE
+    PTE_VALID as ULONG_PTR | PTE_NOT_LARGE_PAGE | PTE_READWRITE | PTE_ACCESSED | PTE_ENABLE_CACHE | PTE_SH_INNER
 ) };
 
 #[cfg(target_arch = "aarch64")]
@@ -324,6 +329,10 @@ unsafe fn MiInitializePageTable() {
     // But actually for the template PTE it's simpler to set the full mask:
     TmplPte.Long |= PTE_READWRITE;
     TmplPte.Long |= PTE_ACCESSED;
+    // Same attributes as every other mapping of normal memory: a page zeroed
+    // through a Non-shareable hyperspace alias and then used through its
+    // Inner Shareable pool mapping is a mismatched-attribute alias.
+    TmplPte.Long |= PTE_SH_INNER;
     HyperTemplatePte = TmplPte;
 
     PointerPxe = MiAddressToPxe(MiSystemViewStart);

@@ -606,6 +606,287 @@ pub unsafe extern "C" fn GdiFlushUserBatch(dc: PDC, pHdr: PGDIBATCHHDR) -> ULONG
     GdiFlushUserBatch_impl(dc, pHdr)
 }
 
+// ── WoW64 guest batch ─────────────────────────────────────────────────────
+//
+// A 32-bit guest's gdi32 writes i386 records into TEB32. They were reset and
+// DROPPED until this translation existed, and that was not only lost drawing:
+// gdi32's DeleteObject on a region or brush with a user attribute is a batched
+// GdiBCDelRgn/GdiBCDelObj, so every such delete leaked its handle. osk.exe
+// repaints continuously and filled all 64K GDI handles with regions in a few
+// minutes, after which every Create* returned NULL and co_WinPosSetWindowPos
+// bugchecked 0x1E offsetting one.
+//
+// The i386 layouts differ from these only by HANDLE width (and the alignment it
+// forces): GDIBSPATBLT.hbrush, PATRECT.hBrush, GDIBSTEXTOUT.hlfntNew and
+// GDIBSOBJECT.hgdiobj. ExtTextOut, SetBrushOrg and ExtSelClipRgn carry no
+// pointer-sized field and copy through unchanged. Each record is widened into a
+// kernel scratch buffer — which also stops the guest rewriting it mid-flush —
+// and handed to the same executor as a native batch. Handles are sign-extended
+// like every generated win32k thunk's.
+
+#[cfg(not(target_arch = "x86"))]
+mod guest32 {
+    use win32k_sys::win32k::{GDIBATCHHDR, POINTL, RECTL};
+
+    #[repr(C)]
+    pub struct PatBlt {
+        pub gbHdr: GDIBATCHHDR,
+        pub nXLeft: i32,
+        pub nYLeft: i32,
+        pub nWidth: i32,
+        pub nHeight: i32,
+        pub hbrush: u32,
+        pub dwRop: u32,
+        pub crForegroundClr: u32,
+        pub crBackgroundClr: u32,
+        pub crBrushClr: u32,
+        pub IcmBrushColor: i32,
+        pub ptlViewportOrg: POINTL,
+        pub ulForegroundClr: u32,
+        pub ulBackgroundClr: u32,
+        pub ulBrushClr: u32,
+    }
+
+    #[repr(C)]
+    pub struct PatRect {
+        pub r: RECTL,
+        pub hBrush: u32,
+    }
+
+    #[repr(C)]
+    pub struct PolyPatBlt {
+        pub gbHdr: GDIBATCHHDR,
+        pub rop4: u32,
+        pub Mode: u32,
+        pub Count: u32,
+        pub crForegroundClr: u32,
+        pub crBackgroundClr: u32,
+        pub crBrushClr: u32,
+        pub ulForegroundClr: u32,
+        pub ulBackgroundClr: u32,
+        pub ulBrushClr: u32,
+        pub ptlViewportOrg: POINTL,
+        pub pRect: [PatRect; 1],
+    }
+
+    #[repr(C)]
+    pub struct TextOut {
+        pub gbHdr: GDIBATCHHDR,
+        pub crForegroundClr: u32,
+        pub crBackgroundClr: u32,
+        pub lBkMode: i32,
+        pub ulForegroundClr: u32,
+        pub ulBackgroundClr: u32,
+        pub x: i32,
+        pub y: i32,
+        pub Options: u32,
+        pub Rect: RECTL,
+        pub iCS_CP: u32,
+        pub cbCount: u32,
+        pub Size: u32,
+        pub hlfntNew: u32,
+        pub flTextAlign: u32,
+        pub ptlViewportOrg: POINTL,
+        pub Buffer: [u32; 1],
+    }
+
+    #[repr(C)]
+    pub struct Object {
+        pub gbHdr: GDIBATCHHDR,
+        pub hgdiobj: u32,
+    }
+
+    // sizeof() as the i386 compiler lays them out, which is what the guest wrote.
+    const _: () = assert!(core::mem::size_of::<PatBlt>() == 64);
+    const _: () = assert!(core::mem::size_of::<PatRect>() == 20);
+    const _: () = assert!(core::mem::offset_of!(PolyPatBlt, pRect) == 48);
+    const _: () = assert!(core::mem::offset_of!(TextOut, Buffer) == 80);
+    const _: () = assert!(core::mem::size_of::<Object>() == 8);
+}
+
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+fn guest_handle(h: u32) -> HANDLE {
+    h as i32 as isize as HANDLE
+}
+
+/// Widen one i386 batch record at `src` (its header `Size` bytes, already
+/// bounds-checked against the batch buffer) into `dst`. Returns false for a
+/// record that cannot be translated, which ends the flush.
+#[cfg(not(target_arch = "x86"))]
+unsafe fn widen_guest_record(src: *const u8, src_size: usize, dst: *mut u8, dst_cap: usize) -> bool {
+    use core::mem::{offset_of, size_of};
+    let hdr = src as *const GDIBATCHHDR;
+    let cmd = (*hdr).Cmd as u16 as ULONG;
+    let out_size: usize;
+
+    match cmd {
+        _GDIBATCHCMD_GdiBCPatBlt => {
+            if src_size < size_of::<guest32::PatBlt>() || size_of::<GDIBSPATBLT>() > dst_cap {
+                return false;
+            }
+            let g = src as *const guest32::PatBlt;
+            let n = dst as *mut GDIBSPATBLT;
+            out_size = size_of::<GDIBSPATBLT>();
+            (*n).nXLeft = (*g).nXLeft;
+            (*n).nYLeft = (*g).nYLeft;
+            (*n).nWidth = (*g).nWidth;
+            (*n).nHeight = (*g).nHeight;
+            (*n).hbrush = guest_handle((*g).hbrush);
+            (*n).dwRop = (*g).dwRop;
+            (*n).crForegroundClr = (*g).crForegroundClr;
+            (*n).crBackgroundClr = (*g).crBackgroundClr;
+            (*n).crBrushClr = (*g).crBrushClr;
+            (*n).IcmBrushColor = (*g).IcmBrushColor;
+            (*n).ptlViewportOrg = (*g).ptlViewportOrg;
+            (*n).ulForegroundClr = (*g).ulForegroundClr;
+            (*n).ulBackgroundClr = (*g).ulBackgroundClr;
+            (*n).ulBrushClr = (*g).ulBrushClr;
+        }
+        _GDIBATCHCMD_GdiBCPolyPatBlt => {
+            let head = offset_of!(guest32::PolyPatBlt, pRect);
+            if src_size < head {
+                return false;
+            }
+            let g = src as *const guest32::PolyPatBlt;
+            let count = (*g).Count as usize;
+            if head + count * size_of::<guest32::PatRect>() > src_size {
+                return false;
+            }
+            out_size = offset_of!(GDIBSPPATBLT, pRect) + count * size_of::<PATRECT>();
+            if out_size > dst_cap {
+                return false;
+            }
+            let n = dst as *mut GDIBSPPATBLT;
+            (*n).rop4 = (*g).rop4;
+            (*n).Mode = (*g).Mode;
+            (*n).Count = (*g).Count;
+            (*n).crForegroundClr = (*g).crForegroundClr;
+            (*n).crBackgroundClr = (*g).crBackgroundClr;
+            (*n).crBrushClr = (*g).crBrushClr;
+            (*n).ulForegroundClr = (*g).ulForegroundClr;
+            (*n).ulBackgroundClr = (*g).ulBackgroundClr;
+            (*n).ulBrushClr = (*g).ulBrushClr;
+            (*n).ptlViewportOrg = (*g).ptlViewportOrg;
+            let gr = (*g).pRect.as_ptr();
+            let nr = (*n).pRect.as_mut_ptr();
+            for i in 0..count {
+                (*nr.add(i)).r = (*gr.add(i)).r;
+                (*nr.add(i)).hBrush = guest_handle((*gr.add(i)).hBrush) as HBRUSH;
+            }
+        }
+        _GDIBATCHCMD_GdiBCTextOut => {
+            let head = offset_of!(guest32::TextOut, Buffer);
+            if src_size < head {
+                return false;
+            }
+            // The Dx array and the string follow the fixed part; both are
+            // 4-byte units with no pointers, so they move as one block.
+            let tail = src_size - head;
+            out_size = offset_of!(GDIBSTEXTOUT, __bindgen_anon_1) + tail;
+            if out_size > dst_cap {
+                return false;
+            }
+            let g = src as *const guest32::TextOut;
+            let n = dst as *mut GDIBSTEXTOUT;
+            (*n).crForegroundClr = (*g).crForegroundClr;
+            (*n).crBackgroundClr = (*g).crBackgroundClr;
+            (*n).lBkMode = (*g).lBkMode;
+            (*n).ulForegroundClr = (*g).ulForegroundClr;
+            (*n).ulBackgroundClr = (*g).ulBackgroundClr;
+            (*n).x = (*g).x;
+            (*n).y = (*g).y;
+            (*n).Options = (*g).Options;
+            (*n).Rect = (*g).Rect;
+            (*n).iCS_CP = (*g).iCS_CP;
+            (*n).cbCount = (*g).cbCount;
+            (*n).Size = (*g).Size;
+            (*n).hlfntNew = guest_handle((*g).hlfntNew);
+            (*n).flTextAlign = (*g).flTextAlign;
+            (*n).ptlViewportOrg = (*g).ptlViewportOrg;
+            core::ptr::copy_nonoverlapping(
+                src.add(head),
+                dst.add(offset_of!(GDIBSTEXTOUT, __bindgen_anon_1)),
+                tail,
+            );
+        }
+        _GDIBATCHCMD_GdiBCSelObj | _GDIBATCHCMD_GdiBCDelRgn | _GDIBATCHCMD_GdiBCDelObj => {
+            if src_size < size_of::<guest32::Object>() || size_of::<GDIBSOBJECT>() > dst_cap {
+                return false;
+            }
+            let g = src as *const guest32::Object;
+            let n = dst as *mut GDIBSOBJECT;
+            out_size = size_of::<GDIBSOBJECT>();
+            (*n).hgdiobj = guest_handle((*g).hgdiobj);
+        }
+        _GDIBATCHCMD_GdiBCExtTextOut
+        | _GDIBATCHCMD_GdiBCSetBrushOrg
+        | _GDIBATCHCMD_GdiBCExtSelClipRgn => {
+            if src_size > dst_cap {
+                return false;
+            }
+            out_size = src_size;
+            core::ptr::copy_nonoverlapping(src, dst, src_size);
+        }
+        _ => return false,
+    }
+
+    let nhdr = dst as *mut GDIBATCHHDR;
+    (*nhdr).Cmd = (*hdr).Cmd;
+    (*nhdr).Size = out_size as SHORT;
+    true
+}
+
+/// NtGdiFlushUserBatch for a WoW64 guest: execute its TEB32 batch, then reset it.
+#[cfg(not(target_arch = "x86"))]
+unsafe fn flush_guest_batch() {
+    let teb32 = crate::wow64::Wow64CurrentTeb32();
+    if teb32.is_null() {
+        return;
+    }
+    let batch = core::ptr::addr_of_mut!((*teb32).GdiTebBatch);
+    let count = (*teb32).GdiBatchCount;
+    let buf = (*batch).Buffer.as_ptr() as *const u8;
+    let buf_len = core::mem::size_of_val(&(*batch).Buffer);
+
+    if count > 0 && count <= (GDIBATCHBUFSIZE / 4) {
+        let hDC = guest_handle((*batch).HDC) as HDC;
+        let mut pDC: PDC = core::ptr::null_mut();
+        if GDI_HANDLE_GET_TYPE(hDC as HANDLE) == GDILoObjType_GDILoObjType_LO_DC_TYPE as ULONG_PTR
+            && GreIsHandleValid(hDC as HGDIOBJ) != 0
+        {
+            pDC = DC_LockDc(hDC);
+        }
+
+        // Widest record: a batch-filling PolyPatBlt, whose 20-byte PATRECTs grow to 24.
+        let mut scratch = [0u64; 256];
+        let dst = scratch.as_mut_ptr() as *mut u8;
+        let mut off = 0usize;
+        for _ in 0..count {
+            if off + core::mem::size_of::<GDIBATCHHDR>() > buf_len {
+                break;
+            }
+            let size = (*(buf.add(off) as *const GDIBATCHHDR)).Size as u16 as usize;
+            if size < core::mem::size_of::<GDIBATCHHDR>() || off + size > buf_len {
+                break;
+            }
+            if !widen_guest_record(buf.add(off), size, dst, core::mem::size_of_val(&scratch)) {
+                break;
+            }
+            GdiFlushUserBatch_impl(pDC, dst as PGDIBATCHHDR);
+            off += size;
+        }
+
+        if !pDC.is_null() {
+            DC_UnlockDc(pDC);
+        }
+    }
+
+    (*batch).Offset = 0;
+    (*batch).HDC = 0;
+    (*teb32).GdiBatchCount = 0;
+}
+
 // ── NtGdiFlush ─────────────────────────────────────────────────────────────
 // Flushes the calling thread's current batch.
 // stdcall: _NtGdiFlush@0
@@ -624,25 +905,10 @@ pub unsafe extern "system" fn NtGdiFlush() -> NTSTATUS {
 pub unsafe extern "system" fn NtGdiFlushUserBatch() -> NTSTATUS {
     let pTeb = NtCurrentTeb() as *mut ntkrnl_sys::ddk::_TEB;
 
-    // A WoW64 guest batches into its TEB32, never this one, so the loop below
-    // would read a batch it did not write. Worse, leaving TEB32's Offset and
-    // GdiBatchCount un-reset is what lets gdi32 walk its writes out of
-    // GdiTebBatch.Buffer and onto CLIENTINFO.pDeskInfo (field manual §9.41,
-    // second occurrence; MEASURED Offset=0x508 from the buffer base, which is
-    // pDeskInfo exactly).
-    //
-    // Reset the guest's batch so the overflow cannot happen. The batched
-    // commands are NOT executed -- interpreting them needs the 32-bit record
-    // layouts, which differ from these by the width of their HANDLE fields
-    // (GDIBSPATBLT.hbrush, GDIBSTEXTOUT.hlfntNew, GDIBSOBJECT.hgdiobj,
-    // PATRECT.hBrush inside GDIBSPPATBLT; the other three record types are
-    // already layout-identical). That is the follow-up, tracked in the
-    // roadmap. This changes NO drawing behaviour versus today, because today
-    // the flush never runs for a guest at all and those commands are dropped
-    // anyway -- it only stops the memory corruption. It is LOUD rather than
-    // silent so the dropped work cannot be forgotten.
+    // A WoW64 guest batches into its TEB32, never this one.
+    #[cfg(not(target_arch = "x86"))]
     if crate::wow64::IsWow64Process() {
-        crate::wow64::Wow64ResetGuestGdiBatch();
+        flush_guest_batch();
         return STATUS_SUCCESS;
     }
 

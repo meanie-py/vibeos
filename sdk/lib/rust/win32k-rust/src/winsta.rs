@@ -1816,52 +1816,61 @@ unsafe fn BuildWindowStationNameList_impl(
     }
 
     if Buffer.is_null() {
-        Status = ZwQueryDirectoryObject(
-            DirectoryHandle,
-            core::ptr::null_mut(),
-            0,
-            0u8,
-            1u8,
-            &mut Context,
-            &mut ReturnLength,
-        );
-        if !NT_SUCCESS(Status) {
-            ZwClose(DirectoryHandle);
-            return Status;
-        }
-
-        BufferSize = ReturnLength;
-        Buffer = ExAllocatePoolWithTag(PagedPool, BufferSize as _, TAG_WINSTA) as *mut core::ffi::c_char;
-        if Buffer.is_null() {
-            ZwClose(DirectoryHandle);
-            return STATUS_NO_MEMORY;
-        }
-
-        Context = 0;
-        Status = ZwQueryDirectoryObject(
-            DirectoryHandle,
-            Buffer as PVOID,
-            BufferSize,
-            0u8,
-            1u8,
-            &mut Context,
-            &mut ReturnLength,
-        );
-        if !NT_SUCCESS(Status)
-            || STATUS_NO_MORE_ENTRIES
-                != ZwQueryDirectoryObject(
-                    DirectoryHandle,
-                    core::ptr::null_mut(),
-                    0,
-                    0u8,
-                    0u8,
-                    &mut Context,
-                    core::ptr::null_mut(),
-                )
-        {
+        // Grow and retry. The C sized this buffer with one NULL/0 query and
+        // trusted its ReturnLength -- but in multi-entry mode a too-small buffer
+        // answers STATUS_MORE_ENTRIES with ReturnLength = bytes WRITTEN, which
+        // for a zero-length buffer is just the terminator (Windows' contract and
+        // ObpQueryDirectoryObject's alike). So the fetch got a 32-byte buffer,
+        // came back with more entries, and this returned STATUS_INTERNAL_ERROR:
+        // EnumWindowStations failed with ERROR_INTERNAL_ERROR. Only on 64-bit
+        // kernels, which is why it read as a WoW64 bug: an entry is two
+        // UNICODE_STRINGs, 16 bytes on i386 and 32 on amd64, so three window
+        // stations fit InitialBuffer on i386 and overflow it on amd64.
+        BufferSize = 2 * core::mem::size_of_val(&InitialBuffer) as ULONG;
+        loop {
+            Buffer = ExAllocatePoolWithTag(PagedPool, BufferSize as _, TAG_WINSTA) as *mut core::ffi::c_char;
+            if Buffer.is_null() {
+                ZwClose(DirectoryHandle);
+                return STATUS_NO_MEMORY;
+            }
+            Context = 0;
+            Status = ZwQueryDirectoryObject(
+                DirectoryHandle,
+                Buffer as PVOID,
+                BufferSize,
+                0u8,
+                1u8,
+                &mut Context,
+                &mut ReturnLength,
+            );
+            // STATUS_MORE_ENTRIES is a SUCCESS code, so "it all fit" is exact
+            // success plus nothing left to read.
+            if Status == STATUS_SUCCESS
+                && STATUS_NO_MORE_ENTRIES
+                    == ZwQueryDirectoryObject(
+                        DirectoryHandle,
+                        core::ptr::null_mut(),
+                        0,
+                        0u8,
+                        0u8,
+                        &mut Context,
+                        core::ptr::null_mut(),
+                    )
+            {
+                break;
+            }
             ExFreePoolWithTag(Buffer as PVOID, TAG_WINSTA);
-            ZwClose(DirectoryHandle);
-            return if NT_SUCCESS(Status) { STATUS_INTERNAL_ERROR } else { Status };
+            if !NT_SUCCESS(Status) {
+                ZwClose(DirectoryHandle);
+                return Status;
+            }
+            // A window-station directory past 1 MB is not a directory we
+            // mis-sized; say so rather than grow without bound.
+            if BufferSize >= 0x10_0000 {
+                ZwClose(DirectoryHandle);
+                return STATUS_INTERNAL_ERROR;
+            }
+            BufferSize *= 2;
         }
     }
 

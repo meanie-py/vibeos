@@ -525,6 +525,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. OPEN, being worked**
+  (2026-09-26, lane graviton-spike). `smoke --arch arm64 --smp 4` fails
+  `SMP_AP_NOT_SCHEDULING` for CPU 2 and 3 on unchanged master (3/3); CPU 1 schedules,
+  amd64 `-smp 4` passes. Same on a physical Raspberry Pi 4. Leading theory: process
+  affinity captured before the later APs published their `KeActiveProcessors` bit.
+- **Notepad's menu bar renders blank. OPEN** (seen 2026-09-26). The `File Edit Format
+  View Help` bar is an empty strip, on arm64 QEMU and on a Raspberry Pi 4 alike (the
+  smoke screenshot shows it too), while the title bar, status bar and taskbar draw
+  text fine. Not investigated.
 - **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
   would have caught it were broken by one cause and both exited 0. OPEN, owed**
   (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs
@@ -658,14 +667,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 5 OPEN** (2026-09-25; `combo` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
+  REFERENCE + 4 OPEN** (2026-09-25; `combo` and `winstation` FIXED 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
   | subtest | native i386 | WoW64 | |
   |---|---|---|---|
   | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
-  | `winstation` | 14 failures | **CRASH `0xc0000005`** | guest-only |
+  | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
   | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
   | `monitor` | 20 failures | **23** | +3 guest-only |
   | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
@@ -681,8 +690,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   guest 460 tests / 23 failures, native i386 the same 23, and the 28 output lines diff
   IDENTICAL once handle values are normalized. Repro loop is now
   `build --arch amd64 --winetest-sweep --winetest-only combo` (seconds, not a 40-min sweep).
+  **`winstation` was three bugs stacked.** (1) `NtUserCreateDesktop` had no marshaller, and
+  its loud refusal returned a non-zero status that the guest read as a valid `HDESK`. (2)
+  Behind it, `NtQueryObject` was a flat thunk, so `ObjectNameInformation` came back in the
+  host's 16-byte `UNICODE_STRING` layout and the test dereferenced a junk `Name.Buffer`.
+  That one affects every guest: kernel32 (`dosdev`, `GetFinalPathNameByHandle`) and
+  advapi32's HKCR code ask for object names too. (3) `EnumWindowStations` failing with
+  `ERROR_INTERNAL_ERROR` was NOT the seam: win32k sized its fallback buffer from a
+  `NtQueryDirectoryObject` NULL/0 query, which reports bytes written rather than bytes needed,
+  and only a 64-bit kernel's 32-byte entries overflow into that path. Now 13 failures on
+  both sides. Two differences remain, neither attributable: the foreground-window asserts
+  (a timing-sensitive loop, failing on both sides at different iterations) and 1054
+  (`WM_NCHITTEST` on an invisible desktop), which native never reaches because its child
+  launch fails first with `CreateProcessA` error 2 on `argv[0]`. That makes the NATIVE
+  control's gap the thing to fix before 1054 can be judged.
   `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
-  owed item. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  owed item (since paid: the guest batch is executed as of 2026-09-26; re-run `uitools`). `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
   correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
   `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
@@ -805,6 +828,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     trace) without matching. The file shows `shell ready` three times for one payload run, so the
     `ready` snapshot restore is the first suspect: the reader may be following a timeline the
     marker is not in. Read the serial for the verdict until this is fixed.
+  - OPEN, amd64, 1 sighting (2026-09-26): BUGCHECK 0x1E `0xC00000D8` (`STATUS_CANT_WAIT`) during
+    boot, in the WoW64 `async32` guest's overlapped `ReadFile` right after
+    `[async32] start`, before appstorm launched. `RtlRaiseStatus(0xC00000D8)`, which is the
+    field manual's "DUMMY_PSEH defeats cdfs's raise->catch->post async model" class: a
+    non-blocking read that has to wait raises, and the catch that would post it to a worker
+    never runs. The `[RAISE]` dump held only stack residue, so the raiser (cdfs or Cc) is
+    unconfirmed. Run `/tmp/vibeos-cli/20260926-110052-gc3j9quv-smoke-amd64`. Not seen in any
+    other serial log on disk.
+  - FIXED, harness (a different miss): an amd64 appstorm sweep with 38/38 PASS failed "output
+    lacks `[APPSTORM] done VERDICT=PASS`", and the tail it quoted was `[APPSTORM] done VER`.
+    `drain_for_marker` returned as soon as the launch marker (a PREFIX of the verdict line)
+    appeared, even mid-line. It now finishes the line, bounded at 10s.
   - FIXED: the pushlock `ASSERT FAILED: (*WaitBlock).Signaled != 0` (pushlock.rs 495/643, on
     UP i386 too) was a false positive: the waker's DBG-only `Signaled = 1` was compiled out
     while the ASSERT was live. appstorm i386 38/38 with 0 assertions (was 4).
@@ -822,13 +857,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     close. mkhive now takes `-a:<arch>`, like setup. arm64 got a `Windows ARM64` environment and a
     winprint destination as well, but its ramdisk does not ship spoolsv yet.
     amd64 appstorm: 38/38.
-  - OPEN, amd64, intermittent (1 in 4 sweeps): during `explorer-folder`, win32k logged
-    `failed to free. pvAlloc=0` ~8,100 times (`GdiPoolFree(NULL)`), then BUGCHECK 0x1E in
-    `REGION_bOffsetRgn` on a NULL region created in `co_WinPosSetWindowPos`. That call site is
-    unchecked in the C as well, so exhaustion is the root, and a NULL free is a caller bug the C
-    asserts against. `GdiPoolFree` now prints `[GDIPOOL] NULL free from <pc>` backtraces for the
-    first three: symbolize them with `vibeos-cli sym --module win32k.sys`. Run
-    `/tmp/vibeos-cli/20260926-024703-5punrico-smoke-amd64`. The same run had `osk` with no window.
+  - FIXED: amd64 BUGCHECK 0x1E in `REGION_bOffsetRgn` from `co_WinPosSetWindowPos`, after
+    ~8,000 `failed to free. pvAlloc=0` lines (2 of 3 appstorm sweeps once `--repeat` soaked the
+    payload). A GDI handle leak: a census at the first failed insert showed all 65,536 entries
+    live, ~63,000 of them REGIONS owned by `osk.exe`, the WoW64 i386 osk winlogon starts and
+    leaves running. Its gdi32 deletes regions through the TEB32 GDI batch, which
+    `NtGdiFlushUserBatch` reset without executing, so none was ever deleted; once the table
+    filled, every Create* returned NULL. The NULL frees were only pens failing to insert.
+    Fixed by executing the guest batch (see the WoW64 GDI-batch entry). `GDIOBJ_hInsertObject`
+    now says `Could not get a free entry` as the C did, and dumps `[GDI-CENSUS]` by type and
+    owner once. Harness side note: appstorm's own `osk` FAILs with `windows=0` because
+    winlogon's instance holds the single-instance mutex, not because osk is broken.
   - FIXED: dxdiag's heap corruption (`RtlpRemoveFreeBlock`, amd64). kernel32-rust `GlobalSize`
     ran its translated `_SEH2_EXCEPT` arm unconditionally, so GlobalSize/LocalSize returned 0
     for EVERY block on every arch. The edit control sizes its undo buffer from
@@ -2103,12 +2142,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   survivors being `fault32`/`thread32`'s own deliberate test faults. Zero faults remain
   anywhere in user32's range.
 
-  **Owed, logged loudly rather than silently:** the batched commands are RESET, not
-  executed. Executing them needs the 32-bit record layouts, which differ only by four
-  HANDLE widths (`GDIBSPATBLT.hbrush`, `GDIBSTEXTOUT.hlfntNew`, `GDIBSOBJECT.hgdiobj`,
-  `PATRECT.hBrush` in `GDIBSPPATBLT`; the other three record types are already identical).
-  Costs no drawing that was not already dropped, since the flush never ran for a guest at
-  all. A `[GDIBATCH] ... cmds DISCARDED` line fires once per guest.
+  **The owed half is PAID (2026-09-26):** the guest batch is now EXECUTED, not reset.
+  `flush_guest_batch()` in `win32k-rust/src/gdibatch.rs` widens each i386 record into a
+  kernel scratch buffer (sign-extending the four HANDLE fields, as the generated thunks do)
+  and runs it through the native executor. "Costs no drawing that was not already dropped"
+  turned out to be the wrong cost to count: gdi32's `DeleteObject` on a region or brush with
+  a user attribute is itself batched (`GdiBCDelRgn`/`GdiBCDelObj`), so every such delete was
+  dropped and its handle leaked. See the osk entry under Known bugs.
 
   **Why `--ladder` could not see any of this for a week**, which is the reusable part:
   `ladder.watch()` stops draining once every GRADED guest reports, and the stock applets

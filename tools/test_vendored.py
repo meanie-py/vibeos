@@ -38,7 +38,7 @@ def test_the_committed_registry_registers_the_trees_that_motivated_it():
     # named; mbedtls was the largest omission from the tuple this replaced.
     for p in (
         "sdk/lib/ucrt",
-        "drivers/bus/acpi/acpica",
+        "vendor/acpica",
         "vendor/freetype",
         "vendor/mbedtls",
     ):

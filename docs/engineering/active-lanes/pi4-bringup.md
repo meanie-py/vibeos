@@ -575,3 +575,32 @@ killing a `debug start` VM when the tool call that launched it exited (pass
 - Input: xHCI behind PCIe; nothing drives it yet.
 - MP on the board: the AP trampoline (`hal-rust/src/arm64/mpboot.rs`) still
   writes `0x09000000`, which is RAM on a Pi.
+
+## Session 5 (2026-09-26 midday) — SMP: four cores to the desktop
+
+The Pi now boots the MP kernel (`ntkrnlmp.exe` + `halmp.dll`) on all four cores
+to the desktop, ~96 s from power-on, and that is the bench default
+(`PI4_KERNEL=up` for the UP pair). Three hardware-only bugs, in order found:
+
+1. **PSCI conduit and core list were QEMU's.** `mpboot.rs` hard-coded `hvc` and a
+   flat MPIDR walk, and its trampoline traced to `0x09000000` (RAM on a Pi, with
+   the MMU off). It now reads FADT `ARM_BOOT_ARCH` (Pi: `0x1`, PSCI via SMC) and
+   the MADT GICC MPIDRs, and traces to the loader's PL011.
+2. **Secondaries arrive at EL2.** TF-A starts a `CPU_ON` core at NS-EL2; the
+   trampoline now drops to EL1 like `Arm64DropToEl1`. Before: PSCI SUCCESS, AP
+   never signalled.
+3. **Non-shareable PTEs.** All four cores online, then `KeIpiGenericCall` hung:
+   a bounded-wait report showed `Count=2` with all three targets past their
+   `fetch_sub`. SH was 0b00 on every MM-created page. Now Inner Shareable.
+
+Also: `KiIpiSendPacket` asserted `IRQL == SYNCH_LEVEL` although every caller
+sends at DISPATCH (it fired on every generic call, QEMU included); now `>=
+DISPATCH`. Each CPU prints a `[GIC] CPUn percpu` readback, and a stuck
+`KeIpiGenericCall` prints every processor's IPI state instead of spinning.
+
+### Open
+
+- CPUs 2 and 3 never report `scheduling live` (and on the Pi not `clock tick
+  live` either) before the desktop marker. QEMU `smoke --smp 4` fails the same
+  way on unchanged master (3/3 before this work), so it predates it; next up.
+- A long MP soak on the board (the UP desktop has run for hours).

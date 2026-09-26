@@ -59,15 +59,15 @@ containers:
 
 trees:
   # ── ACPI ────────────────────────────────────────────────────────────────
-  - path: drivers/bus/acpi/acpica
+  - path: vendor/acpica
     name: ACPICA
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
-    license_ref: drivers/bus/acpi/acpica/include/acpi.h
+    license_ref: vendor/acpica/include/acpi.h
     modified: yes  # 7 host-port files; the other 219 differ only by licence FORM
     patch: vendor-patches/acpica.patch
     version:
-      file: drivers/bus/acpi/acpica/include/acpixf.h
+      file: vendor/acpica/include/acpixf.h
       pattern: '#define ACPI_CA_VERSION\s+(0x[0-9A-Fa-f]+)'
     review: >
       BUMPED 20221020 -> 20260408 ON 2026-09-20, three and a half years, and the patch

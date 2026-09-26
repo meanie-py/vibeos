@@ -9903,6 +9903,19 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   first truly idle moment was fatal. Fix: `wfi`. What found it: sampling the tick's health from
   IRQ entry, user traps AND the idle loop, and all three staying silent — "the CPU is in
   none of those places" was the answer. Do not use WFE without an explicit `SEV` protocol.
+- **Non-shareable PTEs: cross-core atomics silently lose updates.** Symptom: the MP kernel on
+  4 cores hung in `KeIpiGenericCall` with `Count=2` though all three targets had executed their
+  `fetch_sub` (another run: the call completed with the wrong result set). Cause: `ValidKernelPte`
+  and `MmProtectToPteMask` left SH (bits [9:8]) at 0b00, so every page the memory manager mapped
+  was Non-shareable; v8.0 LDXR/STXR from different cores on such memory need not be coherent.
+  TCG makes every atomic atomic. Fix: SH = Inner Shareable on all Normal memory (stubs.rs mask,
+  `arm/init.rs` templates, the hyperspace template). Mapping one PA with two shareabilities is
+  itself a bug, so fix every template, not just the one that bit.
+- **Secondary cores arrive at EL2, via SMC.** The PSCI conduit is the FADT's to state
+  (`ARM_BOOT_ARCH`: QEMU says HVC, TF-A on a Pi says SMC; the wrong one jumps into dead vectors),
+  and TF-A starts a `CPU_ON` core at NS-EL2 whenever EL2 exists. The AP trampoline
+  (`hal-rust/src/arm64/mpboot.rs`) reads both from ACPI and drops to EL1 exactly as the loader
+  does for the boot CPU.
 - **PL011 FIFO overrun.** A bare store to the data register drops bytes once the 16–32 byte
   FIFO fills; TCG drains instantly. Serial "stopped" mid-line and was misread as the kernel
   stopping. Every debug byte goes through `Arm64UartPutChar` (TXFF-bounded); enforced by
@@ -10343,6 +10356,34 @@ control's extra bytes, and the raw deref it replaced was an unprobed kernel read
 back to the caller. `window.rs` `CaptureComboState` / `CaptureListBoxPageSize`, with the
 guest offsets pinned by `const` asserts. **Grep for the class:** `as PWND2` in win32k. Any
 cast of a `WND` to a struct that extends past it reads client-owned extra bytes.
+
+### A "guest-only" failure in the WoW64 A/B can be a 64-BIT KERNEL failure
+**Symptom.** A winetest assertion fails under WoW64 and passes on native i386, so it gets filed
+as a seam bug, but no marshaller is involved: the arguments cross flat and are correct.
+**Cause.** The A/B control is native **i386**, so it differs from the guest in two ways, not
+one: the seam, and the width of the *kernel*. `user32:winstation`'s `EnumWindowStations`
+failure was win32k sizing a directory listing wrong. That code path only runs when the
+entries overflow a 256-byte stack buffer, and an `OBJECT_DIRECTORY_INFORMATION` entry is
+16 bytes on i386 and 32 on amd64. Three window stations fit on i386 and overflow on amd64.
+**Fix.** Before blaming the seam, ask whether the failing path depends on `sizeof` anything
+pointer-bearing on the KERNEL side. The discriminator is a native amd64 caller, not a
+better thunk. The underlying bug there was a real API-contract mistake: in multi-entry mode,
+`NtQueryDirectoryObject` with a too-small buffer returns `STATUS_MORE_ENTRIES` and reports
+the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
+the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
+
+### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
+**Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
+the call succeeded, dying several calls later somewhere unrelated.
+**Cause.** The refusal is loud in the serial log but not to the caller. It returns
+`WOW64_STATUS_INVALID_SYSTEM_SERVICE` as the syscall's value, which a caller expecting an
+`HDESK`/`HWND`/`BOOL` reads as a valid non-zero result. `user32:winstation` passed its
+`desk != 0` check on `NtUserCreateDesktop`'s refusal, and crashed three calls later on junk
+from a query against that fake handle. No single failure value fixes this: some NtUser
+calls return an NTSTATUS, where 0 means success.
+**Fix.** Treat a `NEEDS MANUAL MARSHALLER` line as the root cause of whatever the guest does
+next, and write the marshaller. When triaging a guest crash, grep its serial for that line
+before reading the crash site.
 
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
@@ -10849,6 +10890,16 @@ win32k is the largest single flip surface and its failures are stereotyped:
   "which offset", and a WoW64 guest writes the one the kernel does not read by default.**
   Any kernel path that reads a TEB field a 32-bit guest also writes needs the same
   treatment; `wow64_teb32()` (amd64) and `KiWow64GdiBatchCount()` (arm64) are the shape.
+  **Its third face (2026-09-26) is a GDI HANDLE LEAK, not corruption.** The 09-20 fix reset
+  the guest batch without executing it, on the reasoning that it dropped no drawing that was
+  not already dropped. But the batch is not only drawing: gdi32's `DeleteObject` on a region
+  or brush with a user attribute is a batched `GdiBCDelRgn`/`GdiBCDelObj`. Symptom: after
+  minutes of uptime, thousands of `failed to free. pvAlloc=0`, then a 0x1E on a NULL region
+  (every Create* fails once the 64K table is full; the NULL frees are the pens that failed
+  to insert). A `[GDI-CENSUS]` dump at the first failed insert named ~63K regions owned by a
+  WoW64 osk. Fix: execute the guest batch by widening each i386 record
+  (`flush_guest_batch()`, `gdibatch.rs`). **A "discard" of a command queue discards every
+  command kind in it: enumerate them before calling one harmless.**
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**

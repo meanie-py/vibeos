@@ -115,12 +115,22 @@ stage() {
     done
     mkdir -p "$BENCH/payload/EFI/BOOT"
     cp "$efi" "$BENCH/payload/EFI/BOOT/BOOTAA64.EFI"
-    cp "$HERE/freeldr.ini" "$BENCH/payload/freeldr.ini"
+    # The MP pair (ntkrnlmp.exe + halmp.dll) is the default; PI4_KERNEL=up boots
+    # the UP pair instead. Only the staged copy's DefaultOS= changes; the sed
+    # keeps the CRLF line ending.
+    case "${PI4_KERNEL:-mp}" in
+        mp) cp "$HERE/freeldr.ini" "$BENCH/payload/freeldr.ini" ;;
+        up) sed 's/^DefaultOS=ReactOS_Arm64_MP\(\r\{0,1\}\)$/DefaultOS=ReactOS_Arm64_UP\1/' \
+                "$HERE/freeldr.ini" > "$BENCH/payload/freeldr.ini"
+            grep -q '^DefaultOS=ReactOS_Arm64_UP' "$BENCH/payload/freeldr.ini" || {
+                echo "pi4-bench: could not flip DefaultOS to the UP entry" >&2; return 1; } ;;
+        *) echo "pi4-bench: PI4_KERNEL must be up or mp" >&2; return 1 ;;
+    esac
     cp "$img" "$BENCH/payload/ramdisk.img"
     # sanboot payload: the QEMU boot image (loader + ramdisk) with the Pi's
     # freeldr.ini, which iPXE serves to the board as a block device.
     cp "$REPO/qemu/boot.img" "$BENCH/payload/boot.img.tmp"
-    mcopy -o -i "$BENCH/payload/boot.img.tmp" "$HERE/freeldr.ini" ::/freeldr.ini
+    mcopy -o -i "$BENCH/payload/boot.img.tmp" "$BENCH/payload/freeldr.ini" ::/freeldr.ini
     mv -f "$BENCH/payload/boot.img.tmp" "$BENCH/payload/boot.img"
     printf '#!ipxe\necho [ipxe] sanboot http://%s:%s/boot.img\ndhcp\nsanboot http://%s:%s/boot.img\n' \
         "$HOST_IP" "$HTTP_PORT" "$HOST_IP" "$HTTP_PORT" > "$BENCH/payload/autoexec.ipxe"
@@ -143,7 +153,7 @@ def sha(p):
 git = lambda *a: subprocess.check_output(['git', '-C', repo, *a], text=True).strip()
 files = [{'path': r, 'bytes': (payload / r).stat().st_size, 'sha256': sha(payload / r)}
          for r in ('EFI/BOOT/BOOTAA64.EFI', 'freeldr.ini', 'ramdisk.img', 'boot.img', 'autoexec.ipxe')]
-m = {'status': 'STAGED', 'staged': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
+m = {'status': 'STAGED', 'kernel': __import__('os').environ.get('PI4_KERNEL', 'mp'), 'staged': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
      'source_head': git('rev-parse', 'HEAD'),
      'source_dirty': bool(git('status', '--porcelain', '--untracked-files=no')),
      'files': files}

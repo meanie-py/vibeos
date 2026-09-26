@@ -42,7 +42,7 @@ run_bindgen() {
         "${EXTRA[@]}" \
         -DDBG=1 -DWINVER=0x502 -D_WIN32_WINNT=0x502 \
         -I"${ACPI_DIR}/include" \
-        -I"${ACPI_DIR}/acpica/include" \
+        -I"${SRC}/vendor/acpica/include" \
         -I"${BUILD_DIR}/ntoskrnl" \
         -I"${SRC}/ntoskrnl" \
         -I"${SRC}/sdk/include" \

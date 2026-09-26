@@ -984,19 +984,19 @@ drivers/base/nmidebug/CMakeLists.txt	1	# as in the bootvid/kdcom cargo cuts. nmi
 drivers/base/nmidebug/CMakeLists.txt	1	# nmidebug.c is translated to Rust (sdk/lib/rust/nmidebug-rust, kept on disk per
 drivers/base/null/CMakeLists.txt	1	# (null.rc) is dropped, exactly as in the bootvid/kdcom cargo cuts. null.c/null.rc
 drivers/base/null/CMakeLists.txt	1	# null.c is translated to Rust (sdk/lib/rust/null-rust, kept on disk per the
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/executer/exdump.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/namespace/nsdump.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/namespace/nsdumpdv.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/resources/rsdump.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/resources/rsdumpinfo.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utclib.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utdebug.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utfileio.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utprint.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utresdecode.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utuuid.c
 drivers/bus/acpi/CMakeLists.txt	1	# C-variadic AcpiOsPrintf stays C (acpi_printf_shim.c → Rust AcpiOsVprintf).
 drivers/bus/acpi/CMakeLists.txt	1	# acpi-rust — OSL (osl.c) Rust cohabitation flip. Mirrors processr/pl011: a
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/executer/exdump.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/namespace/nsdump.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/namespace/nsdumpdv.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/resources/rsdump.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/resources/rsdumpinfo.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utclib.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utdebug.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utfileio.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utprint.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utresdecode.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utuuid.c
 drivers/bus/acpi/CMakeLists.txt	1	# acpienum.c -> acpienum.rs (Phase 3b)
 drivers/bus/acpi/CMakeLists.txt	1	# busmgr/bus.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/bus.rs, Phase 3a:
 drivers/bus/acpi/CMakeLists.txt	1	# busmgr/button.c -> button.rs
