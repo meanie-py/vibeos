@@ -5868,6 +5868,38 @@ different question, racily).
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
   `NtUserSetSysColors` and hand the callee kernel memory.
+- **The same scanner then failed the OTHER way twice, and a false POSITIVE about this class is
+  worse than a miss** — it hides the correct fix and mis-states how much work is left. (a) The
+  `addr_of!`/`addr_of_mut!` skip, there so that taking a probed struct's *field address* is not
+  read as a load, ran BEFORE the taint-end check and `continue`d past it. But
+  `prcl = core::ptr::addr_of_mut!(rclLocal);` IS the idiom for the correct fix — capture into a
+  kernel local, then repoint the name at it — so every site fixed that way kept reporting, and an
+  already-correct `NtUserClipCursor` was reported as a live defect on both arches. Ordering the
+  taint-end check first dropped 95 → 85 leads with no source change. (b) `RtlCopyMemory` is in
+  `UNSAFE_COPIES` *and* dereferences its arguments, so the direct rule and the interprocedural
+  rule both fired on every site: 281 rows for 165 real defects, and the inflated 281 was quoted
+  as the size of the remaining work. A callee that is itself a bulk copy is the direct case;
+  exclude it from the interprocedural pass and keep that pass for a deref hidden behind a
+  *project* function. **Both directions of a lead-count error are silent, so pin each with a
+  test: one that a repoint-to-kernel-local ends the taint, one that a site is reported once.**
+- **Fixing this class in bulk: `RtlCopyMemory` batches, `copy_nonoverlapping` does NOT.**
+  `RtlCopyMemory(dst, src, bytes)` matches the copy helpers argument-for-argument, so a
+  mechanical rewrite is safe. `core::ptr::copy_nonoverlapping(src, dst, ELEMENT COUNT)` is
+  reversed AND counts elements, so the same rewrite emits swapped pointers with a length of
+  `1` — it fails on the pointer types where it is lucky and silently truncates where it is not.
+  A generic pass over both was written and thrown away for exactly this; convert that spelling
+  by hand. And `write_volatile` is a third spelling: one DWORD into the caller's page is the
+  same unprotected touch, and one word is enough to take the machine.
+- **A length read OUT OF the buffer being validated is a DOUBLE FETCH, not just an
+  unprotected read.** `NtGdiCreateDIBSection` probed `bmi` for
+  `DIB_BitmapInfoSize(bmi, Usage)` bytes — a function that WALKS the caller's buffer to work out
+  how long it is. So the walk was an unprotected read, *and* the size could change between the
+  call that computed it and the probe that trusted it. The shape recurs wherever a header
+  declares its own extent (`biSize`, `cbSize`, RLE streams). **Fix: capture the header bounded
+  by an already-validated field, compute the extent from the KERNEL copy, then capture the full
+  buffer and pass the copy downstream.** Validating the captured bytes instead of the caller's
+  also closes the check-then-copy window for free — which is why `font.rs` now captures before
+  calling `IntCheckFontPathNames` rather than after.
 - **Read-modify-write of user memory has no protected primitive, and `|=` hides it.** A field
   store is a publish, but `(*pcbi).stateButton |= FLAG` and `set_fDefault(1)` on a user bitfield
   are a load AND a store; capture the struct, mutate in kernel memory, publish once.
