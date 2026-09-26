@@ -136,11 +136,16 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
             and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")]
     srcs += list(PAYLOADS_DIR.glob("*.h"))
     newest = max((p.stat().st_mtime for p in srcs), default=0.0)
+    resolved_srcs = {p.resolve() for p in srcs}
     out = []
     for b in spec["binaries"]:
         src = (REPO / str(b["src"]).format(arch=arch)).resolve()
         # Only binaries built from this payload's own directory (never a shared artifact
         # like a build-dir DLL, which ninja owns).
+        # A `binaries` entry that is itself a committed source (kmtest's
+        # kmtest-tests-<arch>.txt) is data, not a build output: build.sh never writes it.
+        if src in resolved_srcs:
+            continue
         if pdir.resolve() in src.parents and (not src.is_file() or src.stat().st_mtime < newest):
             out.append(src)
     return out
