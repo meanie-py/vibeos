@@ -9916,6 +9916,8 @@ def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatc
     monkeypatch.setattr(pc, "REPO", tmp_path)
     assert pc.stale_binaries("demo", "amd64") == []
     assert pc.ensure_built(["demo"], "amd64") == []
+
+
 def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):
     """The banner said win32k.sys+0x1234 and triage resolved 0x400000+0x1234 in
     the NTOSKRNL index -- some kernel symbol always sorts below any address, so
