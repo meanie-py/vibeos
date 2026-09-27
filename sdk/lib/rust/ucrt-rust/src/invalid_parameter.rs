@@ -308,10 +308,12 @@ pub unsafe extern "C" fn _invoke_watson(
             STATUS_INVALID_CRUNTIME_PARAMETER,
             EXCEPTION_NONCONTINUABLE,
         );
-        TerminateProcess(GetCurrentProcess(), STATUS_INVALID_CRUNTIME_PARAMETER);
-        // The C's `UNREACHABLE;` (__assume(0)): terminating the CURRENT process
-        // does not return.
-        core::hint::unreachable_unchecked()
+        // The C's `UNREACHABLE;` after this call: terminating the CURRENT process
+        // does not return. Looping on the call itself says so without an empty
+        // spin or an unchecked assumption -- were it ever to return, it retries.
+        loop {
+            TerminateProcess(GetCurrentProcess(), STATUS_INVALID_CRUNTIME_PARAMETER);
+        }
     }
     #[cfg(target_arch = "aarch64")]
     {
