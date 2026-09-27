@@ -171,3 +171,54 @@ HRESULT Bind(IShellFolder *psf)
         "    ((*(*psf).lpVtbl).Release)(psf);\n    SearchPathW(null())\n}\n"
     )
     assert _run(tmp_path, c, rust) == {}
+
+
+def test_version_guards_fold_so_win8_blocks_are_not_owed(tmp_path):
+    """fastfat's FatMountVolume: IoVolumeDeviceToGuid sits under NTDDI_VERSION > NTDDI_WIN8."""
+    c = """
+VOID Mount(PVCB v)
+{
+#if (NTDDI_VERSION > NTDDI_WIN8)
+    IoVolumeDeviceToGuid(v);
+#endif
+    Work(v);
+}
+"""
+    rust = "pub unsafe fn Mount(v: PVCB) { Work(v); }\n"
+    pins = {"NTDDI_VERSION": 0x05020100, "NTDDI_WIN8": 0x06020000}
+    cf = tmp_path / "m.c"
+    cf.write_text(c)
+    rf = tmp_path / "m.rs"
+    rf.write_text(rust)
+    assert audit([cf], [rf], tmp_path, pins=pins) == []
+    # Without the pins the guard is undecidable, so the call reads as owed.
+    assert audit([cf], [rf], tmp_path)[0].dropped == ["IoVolumeDeviceToGuid"]
+
+
+def test_an_abnormal_termination_only_block_is_dead_under_dummy_pseh(tmp_path):
+    """pseh2.h's DUMMY arm defines _SEH2_AbnormalTermination() as (0); `|| !NT_SUCCESS`
+    keeps the block live."""
+    c = """
+VOID Open(PFCB f, NTSTATUS s)
+{
+    _SEH2_TRY { Work(f); } _SEH2_FINALLY {
+        if (_SEH2_AbnormalTermination()) { FatDeleteFcb(f); }
+        if (_SEH2_AbnormalTermination() || !NT_SUCCESS(s)) { FatDeleteCcb(f); }
+    } _SEH2_END;
+}
+"""
+    rust = "pub unsafe fn Open(f: PFCB, s: NTSTATUS) { Work(f); }\n"
+    assert _run(tmp_path, c, rust)["Open"].dropped == ["FatDeleteCcb"]
+
+
+def test_macros_defined_in_the_c_file_and_dbg_wrappers_resolve(tmp_path):
+    """allocsup.c defines FatReserveClusters itself; dbgbitmap.h renames RtlSetBits."""
+    c = """
+VOID Alloc(PVCB v, ULONG i, ULONG n)
+{
+    FatReserveClusters(v, i, n);
+}
+"""
+    macros = {"FatReserveClusters": "{ NT_ASSERT(Check(n)); RtlSetBitsDbg(&v->Map, i - 2, n); }"}
+    rust = "pub unsafe fn Alloc(v: PVCB, i: u32, n: u32) { RtlSetBits(map(v), i - 2, n); }\n"
+    assert _run(tmp_path, c, rust, macros=macros) == {}

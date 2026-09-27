@@ -74,11 +74,19 @@ pub unsafe extern "system" fn FatFsdPnp(
 
         Status = FatCommonPnp(IrpContext, Irp);
     }
-    // _SEH2_EXCEPT and _SEH2_FINALLY not present in provided source;
-    // original function would have included cleanup and return after SEH.
-    // Transliterating the visible body as-is.
+    // (The _SEH2_EXCEPT handler is dead under DUMMY_PSEH.)
 
-    return Status;
+    // The translation stopped here -- its source was truncated before this tail (found by
+    // `rustconv body-audit`) -- so every PnP IRP left the thread inside the critical region
+    // FsRtlEnterFileSystem opened, kernel APCs disabled for good, and a stale top-level IRP.
+    if TopLevel != 0 {
+        ntkrnl_sys::ddk::IoSetTopLevelIrp(core::ptr::null_mut());
+    }
+    crate::ddk_shims::FsRtlExitFileSystem();
+
+    DebugTrace(-1, Dbg, b"FatFsdPnp -> %08lx\n\0".as_ptr() as *const i8, Status);
+    let _ = VolumeDeviceObject;
+    Status
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatCommonPnp(

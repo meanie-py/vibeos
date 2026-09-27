@@ -2636,6 +2636,11 @@ pub unsafe extern "system" fn FatLockVolumeInternal(
     // pass is not redundant: releasing the Vcb lets the first wait make progress, and
     // work can be queued behind it, so the C does the whole dance again.
     FatPurgeReferencedFileObjects(IrpContext, (*Vcb).RootDcb, Flush);
+    // Close the EA file's internal stream (fsctrl.c keeps this between the purge and the
+    // release). It was dropped, so a FAT12/16 volume carrying an `EA DATA. SF` kept one
+    // more Vpb reference than the lock check below allows: FSCTL_LOCK_VOLUME, and the
+    // dismount/format paths behind it, failed ACCESS_DENIED. Found by `rustconv body-audit`.
+    FatCloseEaFile(IrpContext, Vcb, 1);
     FatReleaseVcb(IrpContext, Vcb);
     Status = CcWaitForCurrentLazyWriterActivity();
     FatAcquireExclusiveVcb(IrpContext, Vcb);

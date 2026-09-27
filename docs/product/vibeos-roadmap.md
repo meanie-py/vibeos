@@ -581,28 +581,37 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
-- **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26).
-  Crates translated before call sealing (fastfat, cdrom and the other early DeepSeek lanes)
-  were never checked for dropped calls. `rustconv body-audit --all` (about a minute, $0)
-  pairs every flipped-out C function with its Rust: 130 modules, 38 clean, **11 silent
-  stubs**, 316 `high` (state-changing callee missing), 1118 `medium`, 211 `low`. Leads, not
-  verdicts: read each against the C. Confirmed real so far:
-  - shell32 `SHUpdateImageW`/`SHUpdateImageA` are EMPTY (the C notifies the shell,
-    `SHChangeNotify`, that a cached icon changed).
-  - classpnp `ClasspScanForSpecialInRegistry` is EMPTY (per-device registry hack flags are
-    never read).
-  - kernel32 `BaseComputeProcessSearchPath` skips the C's `SafeDllSearchMode` registry read
-    and always uses the default order.
-  - fastfat `FatCreateNewDirent` (FIXED, entry above).
-  Checked and FALSE: shell32 `ILFindChild` (matches the `__REACTOS__` arm), cdrom
-  `DeviceEvtFileClose` (delegates to live C glue), hal `HalpQueryPciRegistryInfo` (cfg twin),
-  fastfat `FatAddToWorkque`. Remaining silent stubs to read: wlansvc `_RpcEnumInterfaces`,
-  netcfgx `INetCfgComponentControl_fnApplyPnpChanges`, condrv `ConDrvDispatch`, win32k
-  `NtUserGetRawInputDeviceInfo`, and gdi32's five `EMFDRV_*` (live C glue stubs: metafile
-  recording of PatBlt/StretchDIBits/ExtTextOut/... does nothing). fastfat's first `high`
-  leads: `FatQueueClose`, `FatCommonCreate`/`FatOpenExistingFile` failure cleanup,
-  `FatVerifyVolume`, `FatMountVolume`. Re-translate (with sealing) only what the audit and a
-  reading of the C confirm.
+- **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
+  updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
+  early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
+  (about a minute, $0) pairs every flipped-out C function with its Rust: 130 modules, 46
+  clean, **9 silent stubs**, 249 `high` (state-changing callee missing), 988 `medium`, 110
+  `low`. Leads, not verdicts: read each against the C. FIXED from the audit so far:
+  - fastfat `FatCreateNewDirent` never marked new dirents used (entry above).
+  - fastfat `FatFsdPnp` stopped at `return Status` (its source was truncated): every PnP
+    IRP left the thread inside `FsRtlEnterFileSystem`'s critical region, kernel APCs
+    disabled for good, plus a stale top-level IRP.
+  - fastfat `FatLockVolumeInternal` dropped `FatCloseEaFile`: a FAT12/16 volume with an
+    `EA DATA. SF` kept an extra Vpb reference, so FSCTL_LOCK_VOLUME failed ACCESS_DENIED.
+  - shell32 `SHUpdateImageW`/`A` and `SHHandleUpdateImage` had taken Wine's `#else` FIXME
+    arm: icon changes were never announced or decoded.
+  - classpnp `ClasspScanForSpecialInRegistry` was empty: registry quirk bits never applied.
+  - kernel32 `BaseComputeProcessSearchPath` ignored `SafeProcessSearchMode` and
+    `SetSearchPathMode()`.
+  Checked and FALSE (each became a rule in the tool): shell32 `ILFindChild` (dead `#else`
+  arm), cdrom `DeviceEvtFileClose` (delegates to live C glue), hal
+  `HalpQueryPciRegistryInfo` (cfg twin), fastfat `FatAddToWorkque` (macro expansion),
+  `FatAllocate/DeallocateDiskSpace` (macros defined in the .c), `FatCommonCreate`'s
+  `if (_SEH2_AbnormalTermination())` unwinds (dead under DUMMY_PSEH), `FatMountVolume`'s
+  `NTDDI_VERSION > NTDDI_WIN8` block. Checked, divergent but benign: fastfat
+  `FatConstructNamesInFcb` stores an extended-character LFN Unicode-only, skipping the
+  C's OEM round-trip attempt (no leak).
+  Remaining silent stubs to read: wlansvc `_RpcEnumInterfaces`, netcfgx
+  `INetCfgComponentControl_fnApplyPnpChanges`, condrv `ConDrvDispatch`, win32k
+  `NtUserGetRawInputDeviceInfo`, gdi32's five `EMFDRV_*` (live C glue stubs). Larger
+  fastfat leads: `FatProcessException` (70 Rust lines vs 144 C; reachable through the
+  Rust SEH emulation), `FatVerifyVolume`, `FatCommonShutdown`. Re-translate (with
+  sealing) only what the audit and a reading of the C confirm.
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal

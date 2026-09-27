@@ -66,7 +66,7 @@ _IGNORED = re.compile(
     r"__analysis_assume|__assume|UNIMPLEMENTED|DBGCHK\w*|WPP_\w+|DoTraceMessage|_Pragma|"
     r"except|GetExceptionCode|GetExceptionInformation|_exception_code|_exception_info|"
     r"ULongToPtr|PtrToUlong|PtrToUshort|UlongToPtr|LongToPtr|PtrToLong|HandleToUlong|"
-    r"UlongToHandle|IntToPtr|PtrToInt|debugstr_\w+|wine_dbgstr_\w+|wine_dbg_sprintf|"
+    r"UlongToHandle|IntToPtr|PtrToInt|NT_SUCCESS|NT_ERROR|NT_WARNING|NT_INFORMATION|debugstr_\w+|wine_dbgstr_\w+|wine_dbg_sprintf|"
     r"pdump|pcheck|FIXME_\w*|TRACE_\w*|WARN_\w*|ERR_\w*|MAKEINTRESOURCE[AW]?|SUCCEEDED|FAILED|"
     r"HRESULT_FROM_WIN32|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
 )
@@ -167,6 +167,25 @@ class Finding:
     dropped: list[str] = field(default_factory=list)
 
 
+def _blank_ignored_calls(text: str) -> str:
+    """Blank the argument lists of ignored calls, preserving offsets.
+
+    `NT_ASSERT(KeAreApcsDisabled())` asks nothing of a release build, so the calls inside an
+    assertion's (or a trace's) arguments are not owed by the translation either.
+    """
+    out = list(text)
+    for m in _CALL_RE.finditer(text):
+        if not _IGNORED.match(m.group(1)):
+            continue
+        close = _matching(text, m.end() - 1, "(", ")")
+        if close is None:
+            continue
+        for pos in range(m.end(), close):
+            if out[pos] != "\n":
+                out[pos] = " "
+    return "".join(out)
+
+
 def _line_of(text: str, pos: int) -> int:
     return text.count("\n", 0, pos) + 1
 
@@ -182,6 +201,105 @@ def _matching(text: str, open_idx: int, opener: str, closer: str) -> int | None:
             if depth == 0:
                 return pos
     return None
+
+
+# `if (_SEH2_AbnormalTermination()) { ... }` with NOTHING else in the condition. Under
+# DUMMY_PSEH (pseh2.h's `_USE_DUMMY_PSEH` arm) the macro is `(0)`, so the block is compiled and
+# never entered -- fastfat's create.c failure-unwind blocks (FatDeleteFcb, FatDeleteCcb) are all
+# this shape. `_SEH2_AbnormalTermination() || !NT_SUCCESS(Status)` stays live and owed.
+_ABNORMAL_ONLY_RE = re.compile(r"\bif\s*\(\s*(?:_SEH2_)?AbnormalTermination\s*\(\s*\)\s*\)\s*\{")
+
+
+def _abnormal_only_spans(masked: str) -> list[tuple[int, int]]:
+    spans = []
+    for m in _ABNORMAL_ONLY_RE.finditer(masked):
+        end = _matching(masked, m.end() - 1, "{", "}")
+        if end is not None:
+            spans.append((m.start(), end))
+    return spans
+
+
+# ---- version guards ---------------------------------------------------------------------
+# `#if (NTDDI_VERSION > NTDDI_WIN8)` has a macro on BOTH sides, which dead_regions' evaluator
+# (NAME op LITERAL) cannot decide, so Win8+ blocks read as live and their calls as owed:
+# fastfat's FatMountVolume "dropped" IoVolumeDeviceToGuid, compiled out at our profile. The
+# tree pins `-D_WIN32_WINNT=0x502` (top-level CMakeLists), which sdkddkver.h turns into
+# NTDDI_WS03SP1; a module's own `-D_WIN32_WINNT=`/`-DNTDDI_VERSION=` overrides it.
+_VERSION_DEFINE_RE = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]+(0[xX][0-9a-fA-F]+)",
+    re.M,
+)
+_COND_LINE_RE = re.compile(r"^([ \t]*#[ \t]*(?:if|elif))\b(.*)$")
+
+
+def version_pins(module_dir: Path, repo: Path) -> dict[str, int]:
+    pins: dict[str, int] = {}
+    ddk = repo / "sdk" / "include" / "psdk" / "sdkddkver.h"
+    if ddk.is_file():
+        for name, value in _VERSION_DEFINE_RE.findall(ddk.read_text(errors="replace")):
+            pins.setdefault(name, int(value, 16))
+    cml = (module_dir / "CMakeLists.txt").read_text(errors="replace")
+    winnt = re.search(r"-D_WIN32_WINNT=(0[xX][0-9a-fA-F]+)", cml)
+    ntddi = re.search(r"-DNTDDI_VERSION=(0[xX][0-9a-fA-F]+)", cml)
+    pins["_WIN32_WINNT"] = int(winnt.group(1), 16) if winnt else 0x502
+    pins["WINVER"] = pins["_WIN32_WINNT"]
+    if ntddi:
+        pins["NTDDI_VERSION"] = int(ntddi.group(1), 16)
+    elif pins["_WIN32_WINNT"] == 0x502:
+        pins["NTDDI_VERSION"] = pins.get("NTDDI_WS03SP1", 0x05020100)  # sdkddkver.h:153
+    else:
+        pins["NTDDI_VERSION"] = pins["_WIN32_WINNT"] << 16
+    return pins
+
+
+def _fold(expr: str) -> bool | None:
+    """Evaluate an all-numeric `#if` expression, or None when anything symbolic is left."""
+    import ast
+
+    expr = expr.split("//")[0].replace("&&", " and ").replace("||", " or ")
+    expr = re.sub(r"!(?!=)", " not ", expr)
+    expr = re.sub(r"(0[xX][0-9a-fA-F]+|\d+)[uUlL]+", r"\1", expr)
+    try:
+        tree = ast.parse(expr.strip(), mode="eval")
+    except SyntaxError:
+        return None
+    allowed = (
+        ast.Expression,
+        ast.BoolOp,
+        ast.And,
+        ast.Or,
+        ast.UnaryOp,
+        ast.Not,
+        ast.Compare,
+        ast.Constant,
+        ast.Eq,
+        ast.NotEq,
+        ast.Lt,
+        ast.LtE,
+        ast.Gt,
+        ast.GtE,
+    )
+    if not all(isinstance(n, allowed) for n in ast.walk(tree)):
+        return None
+    return bool(eval(compile(tree, "<if>", "eval")))  # literal-only AST, checked above
+
+
+def pin_version_guards(text: str, pins: dict[str, int]) -> str:
+    """Rewrite decidable version `#if`s to `#if 0`/`#if 1`, keeping every line in place."""
+    if not pins:
+        return text
+    names = re.compile(
+        r"\b(" + "|".join(map(re.escape, sorted(pins, key=len, reverse=True))) + r")\b"
+    )
+    out = []
+    for line in text.split("\n"):
+        m = _COND_LINE_RE.match(line)
+        if m and names.search(m.group(2)):
+            folded = _fold(names.sub(lambda n: hex(pins[n.group(1)]), m.group(2)))
+            if folded is not None:
+                line = f"{m.group(1)} {int(folded)}"
+        out.append(line)
+    return "\n".join(out)
 
 
 def _dbg_lines(text: str) -> set[int]:
@@ -215,14 +333,14 @@ class CBody:
     required: set[str]
 
 
-def c_bodies(path: Path) -> dict[str, CBody]:
+def c_bodies(path: Path, pins: dict[str, int] | None = None) -> dict[str, CBody]:
     """Each function this .c DEFINES, with the callees its LIVE body must perform."""
-    text = path.read_text(encoding="utf-8", errors="replace")
-    masked = mask_code(text)
+    text = pin_version_guards(path.read_text(encoding="utf-8", errors="replace"), pins or {})
+    masked = _blank_ignored_calls(mask_code(text))
     dead = never_compiled_lines(text)
     masked_lines = masked.splitlines()
     optional_lines = dead | _dbg_lines(text)
-    except_spans = dummy_pseh_except_spans(text, masked)
+    except_spans = dummy_pseh_except_spans(text, masked) + _abnormal_only_spans(masked)
     directive = directive_spans(text)
     out: dict[str, CBody] = {}
     for name in c_functions(text):
@@ -276,9 +394,14 @@ _MACRO_INCLUDE_DIRS = (
 
 
 def macro_table(module_dir: Path, repo: Path) -> dict[str, str]:
-    """name -> body of every function-like `#define` visible to the module (first wins)."""
+    """name -> body of every function-like `#define` visible to the module (first wins).
+
+    The module's own `.c` files count: fastfat defines FatReserveClusters, FatFreeClusters and
+    FatLockFreeClusterBitMap as macros at the top of allocsup.c, and without them every
+    open-coded `RtlSetBits` / `ExAcquireFastMutexUnsafe` read as a dropped call.
+    """
     table: dict[str, str] = {}
-    headers = sorted(source_files(module_dir, "*.h"))
+    headers = sorted(source_files(module_dir, "*.h")) + sorted(source_files(module_dir, "*.c"))
     for d in _MACRO_INCLUDE_DIRS:
         if (repo / d).is_dir():
             headers += sorted(source_files(repo / d, "*.h"))
@@ -298,7 +421,7 @@ def macro_table(module_dir: Path, repo: Path) -> dict[str, str]:
             while body.rstrip().endswith("\\") and i + 1 < len(lines):
                 i += 1
                 body = body.rstrip()[:-1] + " " + lines[i]
-            table.setdefault(m.group(1), mask_code(body))
+            table.setdefault(m.group(1), _blank_ignored_calls(mask_code(body)))
             i += 1
     return table
 
@@ -308,7 +431,7 @@ def _macro_calls(name: str, macros: dict[str, str], depth: int = 3) -> set[str] 
     if name not in macros:
         return None
     out: set[str] = set()
-    for callee in set(_CALL_RE.findall(macros[name])):
+    for callee in set(_CALL_RE.findall(_blank_ignored_calls(macros[name]))):
         if callee in _C_KEYWORDS or callee == name or _IGNORED.match(callee):
             continue
         inner = _macro_calls(callee, macros, depth - 1) if depth else None
@@ -411,6 +534,9 @@ _COM_MACRO = re.compile(r"^I[A-Z]\w*?_(\w+)$")
 def _kept(callee: str, rust: str, idents: set[str]) -> bool:
     if callee in idents or _snake(callee) in idents:
         return True
+    # dbgbitmap.h's RtlSetBitsDbg & co. wrap the plain call with release-invisible checks.
+    if callee.endswith("Dbg") and _kept(callee[:-3], rust, idents):
+        return True
     # A/W generic names resolve to one of their variants.
     if callee + "W" in idents or callee + "A" in idents:
         return True
@@ -441,13 +567,14 @@ def audit(
     *,
     glue_c: list[Path] | None = None,
     macros: dict[str, str] | None = None,
+    pins: dict[str, int] | None = None,
 ) -> list[Finding]:
     """`glue_c`: C the build still compiles (cohab shims). A Rust body that delegates to one
     of its functions has not dropped that work, so those bodies join the helper pool."""
     macros = macros or {}
     c_all: dict[str, CBody] = {}
     for f in c_files:
-        c_all.update(c_bodies(f))
+        c_all.update(c_bodies(f, pins))
     idx = rust_index(rust_srcs)
     for f in glue_c or []:
         text = f.read_text(encoding="utf-8", errors="replace")
@@ -606,7 +733,9 @@ def main(argv: list[str] | None = None) -> int:
         macros = macro_table(module, repo)
         found = [
             f
-            for f in audit(c_files, srcs, repo, glue_c=glue, macros=macros)
+            for f in audit(
+                c_files, srcs, repo, glue_c=glue, macros=macros, pins=version_pins(module, repo)
+            )
             if SEVERITY_ORDER.index(f.severity) <= cutoff
         ]
         key = str(module.relative_to(repo))
