@@ -2712,7 +2712,40 @@ pub unsafe extern "system" fn SHFindFiles(
         > 32) as BOOL
 }
 
-/// SHUpdateImageW [SHELL32.192] (stub)
+use crate::prelude::{
+    GetCurrentProcessId, SHChangeNotify, StrCpyNW, StrCpyNXW, SHCNE_UPDATEIMAGE, SHCNF_IDLIST,
+};
+// Upstream's is a FIXME stub too (stubs.cpp:413), so the cross-process path matches the C.
+use crate::shell32::stubs::SHLookupIconIndexW;
+
+// undocshell.h:179-199, inside `#include <pshpack1.h>`: the two SHCNE_UPDATEIMAGE payloads
+// SHUpdateImageW sends and SHHandleUpdateImage decodes. Not in any bindgen island.
+#[repr(C, packed)]
+struct SHCNF_UPDATEIMAGE_DATA_1 {
+    cbSize: u16,
+    iIndex: INT,
+    iEffective: INT,
+    uFlags: UINT,
+    iEffective2: INT,
+    terminator: u16,
+}
+
+#[repr(C, packed)]
+struct SHCNF_UPDATEIMAGE_DATA_2 {
+    cbOffset: u16,
+    iIndex: INT,
+    iEffectiveImageIndex: INT,
+    uFlags: UINT,
+    dwProcessId: DWORD,
+    szHashItem: [u16; MAX_PATH as usize],
+    terminator: u16,
+}
+
+// All three were empty/-1 bodies: the translation took the Wine `#else` FIXME arm instead of
+// the `#ifdef __REACTOS__` one (found by `rustconv body-audit`). So an icon change was never
+// announced, and a receiver could never resolve one.
+
+/// SHUpdateImageW [SHELL32.192]
 #[no_mangle]
 pub unsafe extern "system" fn SHUpdateImageW(
     pszHashItem: LPCWSTR,
@@ -2720,9 +2753,38 @@ pub unsafe extern "system" fn SHUpdateImageW(
     uFlags: UINT,
     iImageIndex: c_int,
 ) {
+    // If iImageIndex == -1 (undetermined), it falls back to the default value of 1.
+    let effective = if iImageIndex == -1 { 1 } else { iImageIndex };
+
+    let item1 = SHCNF_UPDATEIMAGE_DATA_1 {
+        cbSize: core::mem::size_of::<SHCNF_UPDATEIMAGE_DATA_1>() as u16,
+        iIndex,
+        iEffective: effective,
+        uFlags,
+        iEffective2: effective,
+        terminator: 0,
+    };
+
+    let mut item2: SHCNF_UPDATEIMAGE_DATA_2 = core::mem::zeroed();
+    let hash = (&raw mut item2.szHashItem).cast::<u16>();
+    let end = StrCpyNXW(hash, pszHashItem, MAX_PATH as c_int);
+    *end = 0;
+    item2.cbOffset = (end as usize - (&raw const item2) as usize) as u16;
+    item2.iIndex = iIndex;
+    item2.iEffectiveImageIndex = effective;
+    item2.uFlags = uFlags;
+    item2.dwProcessId = GetCurrentProcessId();
+    item2.terminator = 0;
+
+    SHChangeNotify(
+        SHCNE_UPDATEIMAGE as LONG,
+        SHCNF_IDLIST as UINT,
+        (&raw const item1).cast(),
+        (&raw const item2).cast(),
+    );
 }
 
-/// SHUpdateImageA [SHELL32.191] (stub)
+/// SHUpdateImageA [SHELL32.191]
 #[no_mangle]
 pub unsafe extern "system" fn SHUpdateImageA(
     pszHashItem: LPCSTR,
@@ -2730,12 +2792,26 @@ pub unsafe extern "system" fn SHUpdateImageA(
     uFlags: UINT,
     iImageIndex: INT,
 ) {
+    let mut hash = [0u16; MAX_PATH as usize];
+    SHAnsiToUnicode(pszHashItem, hash.as_mut_ptr(), hash.len() as INT);
+    SHUpdateImageW(hash.as_ptr(), iIndex, uFlags, iImageIndex);
 }
 
-/// SHHandleUpdateImage (stub)
+/// SHHandleUpdateImage
 #[no_mangle]
 pub unsafe extern "system" fn SHHandleUpdateImage(pidlExtra: PCIDLIST_ABSOLUTE) -> INT {
-    -1
+    if pidlExtra.is_null() {
+        return -1;
+    }
+    // UNALIGNED in the C: the payload rides in a pidl, so read it unaligned.
+    let data = core::ptr::read_unaligned(pidlExtra as *const SHCNF_UPDATEIMAGE_DATA_2);
+    if data.dwProcessId == GetCurrentProcessId() {
+        return data.iEffectiveImageIndex;
+    }
+    let mut hash = [0u16; MAX_PATH as usize];
+    let src = data.szHashItem;
+    StrCpyNW(hash.as_mut_ptr(), src.as_ptr(), hash.len() as c_int);
+    SHLookupIconIndexW(hash.as_ptr(), data.iIndex, data.uFlags)
 }
 
 /// SHObjectProperties
