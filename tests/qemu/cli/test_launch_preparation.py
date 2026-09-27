@@ -145,3 +145,30 @@ def test_cleanup_protects_preparing_vm_without_a_qemu_process(tmp_path, monkeypa
     assert str(staging) in result["protected"]
     assert (staging / "private.qcow2").read_bytes() == b"preparing"
     assert machine._proc is None
+
+
+@pytest.mark.parametrize(
+    ("config", "env", "attached"),
+    [
+        (vm.Amd64UefiConfig, None, True),  # default ON: the only disk any smoke boots with
+        (vm.Amd64UefiConfig, "0", False),
+        (vm.I386UefiConfig, None, False),  # opt-in until its post-mount BUGCHECK is fixed
+        (vm.I386UefiConfig, "1", True),
+        (vm.Arm64Config, "1", False),  # no IDE on arm64
+    ],
+)
+def test_temp_disk_policy(config, env, attached, tmp_path, monkeypatch):
+    """The scratch-TEMP disk is also the smoke's only hard disk, and the classpnp
+    disk path hung every boot that had one for months because nothing attached
+    one. The default is the regression guard, so pin it."""
+    if env is None:
+        monkeypatch.delenv("VIBEOS_QEMU_TEMP_DISK", raising=False)
+    else:
+        monkeypatch.setenv("VIBEOS_QEMU_TEMP_DISK", env)
+    made = []
+    monkeypatch.setattr(vm, "make_temp_disk", lambda p: made.append(p))
+    args = vm.QemuVM(config(), tmp_path)._temp_disk_args()
+    assert bool(args) == attached and bool(made) == attached
+    if attached:
+        assert "ide-hd,drive=tempdisk" in args
+        assert not any("bootindex" in a for a in args), "must never boot ahead of the CD"

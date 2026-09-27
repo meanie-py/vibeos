@@ -45,52 +45,63 @@ pub unsafe extern "system" fn ClassCompleteRequest(
     Irp: PIRP,
     PriorityBoost: CCHAR,
 ) {
-    let commonExtension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
-    let mut removeTrackingList: PRTL_GENERIC_TABLE = core::ptr::null_mut();
-    let mut searchDataBlock: REMOVE_TRACKING_BLOCK = REMOVE_TRACKING_BLOCK {
-        Tag: core::ptr::null_mut(),
-        TimeLocked: LARGE_INTEGER { QuadPart: 0 },
-        File: core::ptr::null(),
-        Line: 0,
-    };
-    let mut foundTrackingBlock: PREMOVE_TRACKING_BLOCK = core::ptr::null_mut();
-    let mut oldIrql: KIRQL = 0;
+    // The whole tracking check is `#if DBG` in lock.c, and it has to be here too:
+    // a release build never initializes the lock -- ClasspInitializeRemoveTracking
+    // stores C's `(ULONG_PTR)-1` marker in it, which a spinlock reads as HELD -- so
+    // acquiring it unconditionally spun forever at DISPATCH_LEVEL on the first
+    // client IRP any classpnp disk completed. Every hard disk hung the boot in
+    // DiskInitFdo's MBR read; smoke never attaches one, so nothing noticed.
+    #[cfg(debug_assertions)]
+    {
+        let commonExtension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;
+        let mut removeTrackingList: PRTL_GENERIC_TABLE = core::ptr::null_mut();
+        let mut searchDataBlock: REMOVE_TRACKING_BLOCK = REMOVE_TRACKING_BLOCK {
+            Tag: core::ptr::null_mut(),
+            TimeLocked: LARGE_INTEGER { QuadPart: 0 },
+            File: core::ptr::null(),
+            Line: 0,
+        };
+        let mut foundTrackingBlock: PREMOVE_TRACKING_BLOCK = core::ptr::null_mut();
+        let mut oldIrql: KIRQL = 0;
 
-    KeAcquireSpinLock(
-        (&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(),
-        &raw mut oldIrql,
-    );
+        KeAcquireSpinLock(
+            (&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(),
+            &raw mut oldIrql,
+        );
 
-    removeTrackingList = ((*commonExtension).RemoveTrackingList).cast();
+        removeTrackingList = ((*commonExtension).RemoveTrackingList).cast();
 
-    if !removeTrackingList.is_null() {
-        searchDataBlock.Tag = Irp as PVOID;
-        foundTrackingBlock = RtlLookupElementGenericTable(
-            removeTrackingList,
-            &raw mut searchDataBlock as PVOID,
-        ) as PREMOVE_TRACKING_BLOCK;
+        if !removeTrackingList.is_null() {
+            searchDataBlock.Tag = Irp as PVOID;
+            foundTrackingBlock = RtlLookupElementGenericTable(
+                removeTrackingList,
+                &raw mut searchDataBlock as PVOID,
+            ) as PREMOVE_TRACKING_BLOCK;
 
-        if !foundTrackingBlock.is_null() {
-            TracePrint(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_LOCK,
-                b">>>>>ClassCompleteRequest: Irp %p completed while still holding the remove lock\n\0"
-                    .as_ptr() as PCSTR,
-                Irp,
-            );
-            TracePrint(
-                TRACE_LEVEL_ERROR,
-                TRACE_FLAG_LOCK,
-                b">>>>>ClassCompleteRequest: Lock acquired in file %s on line %d\n\0"
-                    .as_ptr() as PCSTR,
-                (*foundTrackingBlock).File,
-                (*foundTrackingBlock).Line,
-            );
-            NT_ASSERT(0);
+            if !foundTrackingBlock.is_null() {
+                TracePrint(
+                    TRACE_LEVEL_ERROR,
+                    TRACE_FLAG_LOCK,
+                    b">>>>>ClassCompleteRequest: Irp %p completed while still holding the remove lock\n\0"
+                        .as_ptr() as PCSTR,
+                    Irp,
+                );
+                TracePrint(
+                    TRACE_LEVEL_ERROR,
+                    TRACE_FLAG_LOCK,
+                    b">>>>>ClassCompleteRequest: Lock acquired in file %s on line %d\n\0"
+                        .as_ptr() as PCSTR,
+                    (*foundTrackingBlock).File,
+                    (*foundTrackingBlock).Line,
+                );
+                NT_ASSERT(0);
+            }
         }
-    }
 
-    KeReleaseSpinLock((&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(), oldIrql);
+        KeReleaseSpinLock((&raw mut (*commonExtension).RemoveTrackingSpinlock).cast(), oldIrql);
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = DeviceObject;
 
     IoCompleteRequest(Irp, PriorityBoost);
 }

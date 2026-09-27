@@ -31,6 +31,7 @@ ExPools
 ExPushLock
 # UN-QUARANTINED 2026-07-16: fixed by task #10 (arm64 kernel-mode SEH resume, §9.69).
 ExResource
+ExResourceBounded
 ExSequencedList
 ExSingleList
 ExUuid

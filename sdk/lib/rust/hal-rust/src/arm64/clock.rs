@@ -49,6 +49,8 @@ const GICD_ISACTIVER: usize = 0x300;
 const GICD_IPRIORITYR: usize = 0x400;
 /// Interrupt processor targets, 1 byte per interrupt (SPIs only; SGIs/PPIs RO).
 const GICD_ITARGETSR: usize = 0x800;
+/// Trigger configuration, 2 bits per interrupt (bit 1 of each: 1 = edge).
+const GICD_ICFGR: usize = 0xC00;
 /// Software-generated interrupt register (write-only; the SGI/IPI doorbell).
 const GICD_SGIR: usize = 0xF00;
 
@@ -196,7 +198,7 @@ extern "system" {
 /// Enable a device interrupt line (SPI) in the GIC distributor at the GIC
 /// priority derived from its IRQL, routed to CPU0, then set-enable. No-op
 /// until the GIC is mapped (clock init).
-pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8) {
+pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8, level: bool) {
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 || intid as usize >= 1020 {
         return;
@@ -211,6 +213,19 @@ pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8) {
     // SPIs (>=32) need an explicit CPU target; SGI/PPI target registers are RO.
     if id >= 32 {
         core::ptr::write_volatile((gicd + GICD_ITARGETSR + id) as *mut u8, 0x01u8);
+        // A level-sensitive line must be configured level: as edge, a line that
+        // stays asserted after its ISR runs never interrupts again. QEMU resets
+        // every SPI to level; real firmware need not leave them that way.
+        // Latched lines keep the firmware's setting, as nothing on arm64 asks
+        // for edge yet.
+        if level {
+            let reg = GICD_ICFGR + (id / 16) * 4;
+            let bit = 1u32 << ((id % 16) * 2 + 1);
+            let v = mmio_read(gicd, reg);
+            if v & bit != 0 {
+                mmio_write(gicd, reg, v & !bit);
+            }
+        }
     }
     mmio_write(gicd, GICD_ISENABLER + (id / 32) * 4, 1u32 << (id % 32));
 }

@@ -490,6 +490,16 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   compare (Rust-only cfgs — those still need reading). Per-function, not per-block, so a
   Rust-only block in a function with an unrelated C `#if` is flagged: read, then `nolint`.
 
+`scan_duplicate_symbols` (also EMPTY-baselined) is the link-level one. Every PE links with
+`--allow-multiple-definition`, so two definitions of one symbol resolve by archive order and
+nothing warns. It models what each binary links (`tools/rust_link_model.py`: the crates a
+`*-cargo/build.rs` names, their path-dep closure, Cargo feature resolution, `if arch == …`
+blocks, every definition's full cfg, and `global_asm!` `.globl` labels) and reports a name
+defined twice on one arch. i386 decoration counts: cdecl `_X`, stdcall `_X@N` and fastcall
+`@X@N` are different symbols. C objects are out of its scope. To check a finding against the
+bytes, `llvm-nm --defined-only` the archives under
+`sdk/lib/rust/target/<binary>-<crate>-rustlib/<triple>/release/`.
+
 The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
 of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
 cold build, then only changed files are re-read. Each scanner honours

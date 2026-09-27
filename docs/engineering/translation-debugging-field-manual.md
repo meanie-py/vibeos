@@ -118,6 +118,17 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `extern "system"` breaks the fastcall members (`IofCallDriver`, `IofCompleteRequest`,
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
+6. **A cdecl CALLBACK in an NTAPI slot: the CALLER returns into its own arguments.** The
+   callee does not pop what stdcall says it pops, so the caller's `ret` takes an argument as
+   its return address. Symptom: BUGCHECK 0x1E with EIP in **no module**, in pool right next to
+   a device object, and a return address just past `IofCompleteRequest` two words above ESP.
+   classpnp's `ClasspSendSynchronousCompletion` was `extern "C"` and registered through
+   `transmute::<unsafe extern "C" fn(..), _>(f)`: rustc checks the source type against the
+   fn (so it agrees it is cdecl) and the inferred target re-types it. Every hard disk's first
+   synchronous SRB crashed i386 (2026-09-26); 64-bit has one convention and was fine.
+   `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
+   an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
+   bugcheck print every stack word that lands in a module; the bad call's caller is there.
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -966,8 +977,9 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   froze inside explorer's taskbar `OnCreate` (two of the captured names,
   `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
   `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
-  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
-  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  **`scan_duplicate_symbols` does not catch this** — it models Rust definitions and
+  `global_asm!` labels, not C/C++ objects, and the dangerous direction here is Rust shadowing
+  C++ across the cohab boundary. Get the capture set before you
   wire anything, with `llvm-nm --defined-only` over both sides:
   `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
   awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
@@ -2353,6 +2365,17 @@ just a label.
   — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
   unchecked literal for another.
 
+### An invented term in a length computation
+usbccgp's `USBCCGP_PDOSelectConfiguration` came out of translation as `Hdr.Length -
+offset_of!(Interface) - 16`; the C is `Hdr.Length - FIELD_OFFSET(..., Interface.Length)`, with
+no 16. The remaining length never reached 0, so the loop read an interface record past the end
+of the URB, and every composite-device function after the first failed to start with
+`STATUS_INVALID_PARAMETER` ("interface 0 is not in this function"). The first function passed
+or failed depending on what memory followed the URB. Found on the Pi 4 with a composite HID
+device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not have is an
+invented value, the same class as an invented constant; diff the expression, not just the
+names.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -3710,6 +3733,21 @@ a decision to take deliberately, not to reach for because a module will not tran
 ## Dropped, degraded & silently-rewritten translation output
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
+
+### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
+
+**Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
+lockdep report. classpnp: every hard disk hung the boot inside `DiskInitFdo`'s MBR read.
+
+**Cause:** the C keeps a debug-only structure behind `#if DBG` in BOTH its initializer and
+its users, and the non-DBG initializer stores a marker instead: `RemoveTrackingSpinlock =
+(ULONG_PTR)-1`. The translation kept the marker under `cfg(not(debug_assertions))` but lost
+the `#if DBG` around one user, `ClassCompleteRequest`, which then acquired a spinlock whose
+value reads as HELD and spun forever.
+
+**Fix:** gate the user exactly as the C does (`cfg(debug_assertions)`). When an initializer
+has a debug arm and a release arm, grep every use of the field it initializes: each one
+must sit behind the same gate, or read the release marker as "absent".
 
 ### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
 **Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
@@ -6722,6 +6760,15 @@ as it stood before the fix it names `sam` and `security` outright. Scoped to the
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
 
+**The loader has the same blind spot for boot drivers** (2026-09-26). A Start=0 service whose
+`.sys` is not on the ramdisk (usbccgp was never staged on arm64) is dropped from the boot driver
+list with only a trace-channel `ERR` nobody sees on UEFI, so the kernel never hears of it. The
+symptom is two steps away: a composite USB device matched `USB#COMPOSITE` in the
+CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The loader now prints
+`[FLDR] boot driver not loaded, dropped from the boot driver list: <path>`. On arm64 that list
+is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
+carries; read it when a device binds to nothing.
+
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
 the same commit. A payload-less build still autostarted `kmtest-sweep.exe`, plus a
@@ -6907,6 +6954,9 @@ it only ever asks "was this attempt red", never "red the same way" — which is 
 intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
 ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
 already captured at `gate.py:314`.
+Renamed `CONFORMANCE_RED` on 2026-09-26, owner-approved: the word now says what was observed
+(the ratchet failed) and not a cause. That fixes the invitation to requeue, not the missing
+discriminator above — the label is still a constant.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
@@ -11133,6 +11183,15 @@ win32k is the largest single flip surface and its failures are stereotyped:
   filled, suspect the transfer-mode flag.**
 - **The first keystroke BUGCHECKs 0x1E** `[§9.38]` if the i8042prt DPC calls kbdclass
   `ClassService` as `extern "C"` — it is NTAPI stdcall on i386.
+- **arm64 USB input reached kbdclass and stopped there** (2026-09-26, first seen on the Pi 4).
+  `[KBDCLASS] first key delivered` printed, the desktop saw nothing. win32k's RIT opens exactly
+  `\Device\KeyboardClass0` and `\Device\PointerClass0`, and arm64input created both names
+  unconditionally for its virtio-input devices, so kbdclass/mouclass fell back to `...Class1`,
+  which nobody reads. The QEMU xHCI gate had only ever checked the kbdclass marker. Fix:
+  arm64input claims the names only when it finds virtio-input; the RIT now prints which driver
+  owns each device it opens and `[WIN32K] RIT first keyboard input`, the marker that proves the
+  desktop got a key. **A delivery marker proves delivery to the layer that prints it, and no
+  further.**
 - **winlogon 0xF4 on the first FAILING user-mode callback** `[§9.39]` — i386
   `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the
   user-ESP restore. The `'seh` block must yield `Result<NTSTATUS, NTSTATUS>` so the two are
@@ -11421,6 +11480,17 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### `ASSERT FAILED: MDL_MAPPED_TO_SYSTEM_VA == 0 at iomgr-rust/src/iomdl.rs` on every USB transfer
+- **Symptom:** the assert prints repeatedly once USB devices enumerate (seen on QEMU xHCI
+  boots, some amd64 smokes and the Pi 4); nothing fails outright.
+- **Cause:** `ntkrnl-sys`'s `driver_ddk::MmGetSystemAddressForMdlSafe` mapped the MDL on
+  every call. The WDK inline returns `MappedSystemVa` when the MDL is already mapped or
+  describes nonpaged pool. So every call leaked a system mapping, overwrote
+  `MappedSystemVa`, and the MDL was freed still mapped. usbport calls it per transfer, and
+  kbdclass, mouclass, hidclass, fastfat, afd and others use the same copy.
+- **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
+  crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
 
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing

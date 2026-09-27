@@ -891,6 +891,50 @@ pub unsafe extern "system" fn MiniportOpenEndpoint(
     return MpStatus;
 }
 
+
+/// A USB 2.0 miniport addresses a device by its USB address and, for a
+/// split transaction, its TT hub. An xHCI controller addresses it by where it
+/// sits: root port, route string (one nibble per hub below the root port,
+/// nearest first) and, for a low/full-speed device below a high-speed hub,
+/// that hub and the hub port leading to the device. usbxhci reads this from
+/// fields every other miniport leaves alone:
+///   Reserved3: route string (bits 0..19) | root port (bits 24..31)
+///   Reserved6: TT port (bits 0..7) | TT hub's USB address (bits 8..15), 0 if none
+unsafe fn USBPORT_SetXhciTopology(
+    DeviceHandle: PUSBPORT_DEVICE_HANDLE,
+    EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES,
+) {
+    const DEVICE_HANDLE_FLAG_ROOTHUB: ULONG = 0x00000002;
+    let low_or_full = (*DeviceHandle).DeviceSpeed != UsbHighSpeed;
+    let mut hub_ports = [0u32; 5];
+    let mut depth = 0usize;
+    let mut root_port = 0u32;
+    let mut tt: u32 = 0;
+    let mut dh = DeviceHandle;
+    while !dh.is_null() && (*dh).Flags & DEVICE_HANDLE_FLAG_ROOTHUB == 0 {
+        let hub = (*dh).HubDeviceHandle;
+        let port = (*dh).PortNumber as u32;
+        if hub.is_null() || (*hub).Flags & DEVICE_HANDLE_FLAG_ROOTHUB != 0 {
+            root_port = port;
+            break;
+        }
+        if low_or_full && tt == 0 && (*hub).DeviceSpeed == UsbHighSpeed {
+            tt = (port & 0xFF) | (((*hub).DeviceAddress as u32 & 0xFF) << 8);
+        }
+        if depth < hub_ports.len() {
+            hub_ports[depth] = port.min(15);
+            depth += 1;
+        }
+        dh = hub;
+    }
+    let mut route = 0u32;
+    for (tier, &port) in hub_ports[..depth].iter().rev().enumerate() {
+        route |= port << (4 * tier);
+    }
+    (*EndpointProperties).Reserved3 = route | (root_port << 24);
+    (*EndpointProperties).Reserved6 = tt;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_OpenPipe(
     FdoDevice: PDEVICE_OBJECT,
@@ -1007,6 +1051,7 @@ pub unsafe extern "system" fn USBPORT_OpenPipe(
     }
 
     (*EndpointProperties).PortNumber = (*DeviceHandle).PortNumber;
+    USBPORT_SetXhciTopology(DeviceHandle, EndpointProperties);
 
     match (*EndpointDescriptor).bmAttributes as u32 & (USB_ENDPOINT_TYPE_MASK as u32) {
         USB_ENDPOINT_TYPE_CONTROL => {

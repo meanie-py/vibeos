@@ -98,6 +98,29 @@ def test_graded_rows_must_be_imported_unless_compiled_out(tmp_path):
     assert pecheck.main([*args, "--refs-header", str(refs)]) == 0
 
 
+def test_a_compiled_out_block_exempts_its_helpers_too(tmp_path):
+    # A family's runners and the non-graded ref_ helpers they use sit in one guarded
+    # block; once the family's reference is gone the whole block is compiled out, and
+    # the harness no longer imports the helper's DLL twin either.
+    p = _write(tmp_path, imports={"ucrtbase.dll": ["strlen"]})
+    src = tmp_path / "h.c"
+    src.write_text(
+        "int __cdecl ref_strlen(const char*);\n"
+        "#if UCRTDIFF_REF_HAS_vsprintf\n"
+        "int __cdecl ref_vsprintf(char*);\n"
+        "FILE *__cdecl ref_fopen(const char*, const char*);\n"
+        "#else\n"
+        "int __cdecl ref_strlen(const char*);\n"
+        "#endif\n"
+    )
+    refs = tmp_path / "refs.h"
+    args = [str(p), "--tag", "t", "--graded-from", "ucrtbase.dll", "--graded-decls", str(src)]
+    refs.write_text("#define UCRTDIFF_REF_HAS_vsprintf 1\n")
+    assert pecheck.main([*args, "--refs-header", str(refs)]) == 1  # live: fopen demanded
+    refs.write_text("#define UCRTDIFF_REF_HAS_vsprintf 0\n")
+    assert pecheck.main([*args, "--refs-header", str(refs)]) == 0
+
+
 def test_an_unreadable_image_fails_loud(tmp_path):
     p = tmp_path / "x.exe"
     p.write_bytes(b"not a pe")

@@ -28,7 +28,6 @@ list(APPEND UCRT_STDIO_SOURCES
     stdio/input.cpp
     stdio/ncommode.cpp
     stdio/openfile.cpp
-    stdio/output.cpp
     stdio/printf_count_output.cpp
     stdio/puts.cpp
     stdio/putw.cpp

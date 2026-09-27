@@ -42270,7 +42270,7 @@ unsafe extern "system" {
         PhysicalDeviceObject: *mut _DEVICE_OBJECT,
     ) -> NTSTATUS;
 }
-unsafe extern "C" {
+unsafe extern "system" {
     pub fn ClasspSendSynchronousCompletion(
         DeviceObject: *mut _DEVICE_OBJECT,
         Irp: *mut _IRP,
