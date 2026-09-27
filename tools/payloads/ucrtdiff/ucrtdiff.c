@@ -44,6 +44,8 @@ char *__cdecl ref_setlocale(int, const char *);
 char *__cdecl rust_setlocale(int, const char *);
 int __cdecl ref__setmbcp(int);
 int __cdecl rust__setmbcp(int);
+int __cdecl rust__getmbcp(void);
+int __cdecl ref__getmbcp(void);
 
 /* The renamed genuine-Microsoft bodies. Declared by hand because no header can
  * name them -- which is the point: a `#define foo ref_foo` prelude would rewrite
@@ -2078,6 +2080,436 @@ static void run_st__fstat64i32(void) { install_counting_iph(); ST_FSTAT_RUN(_fst
 static void run_st__fstat64(void)    { install_counting_iph(); ST_FSTAT_RUN(_fstat64, _stat64); }
 #endif /* UCRTDIFF_REF_HAS__stat64 */
 
+/* ---- locale (the locale/ directory and mbstring/mbctype.cpp) ---------------
+ *
+ * The locale takeover is graded as ONE family: its pieces call each other's
+ * internals, so it is deleted and checked together. Every runner walks a corpus
+ * of locale names through BOTH sides' setlocale -- legacy names, BCP-47 tags with
+ * and without code pages, bare code pages, compound LC_ strings, junk -- and after
+ * each grades what its own export reports: the return, errno and handler count
+ * for setlocale itself; the lconv, code pages, locale names, ctype tables and
+ * multibyte tables for the accessors. strftime/wcsftime/strcoll/_stricoll/_strlwr
+ * ride along under setlocale's row: they are still Microsoft's on both sides, but
+ * they read the locale data each side's setlocale built, so they grade the
+ * initializers end to end. Each runner leaves both sides back in "C". */
+#include <locale.h>
+#include <mbctype.h>
+#include <time.h>
+
+#if UCRTDIFF_REF_HAS_setlocale
+char *__cdecl ref_setlocale(int, const char *);
+wchar_t *__cdecl ref__wsetlocale(int, const wchar_t *);
+_locale_t __cdecl ref__create_locale(int, const char *);
+_locale_t __cdecl ref__wcreate_locale(int, const wchar_t *);
+void __cdecl ref__free_locale(_locale_t);
+_locale_t __cdecl ref__get_current_locale(void);
+int __cdecl ref__configthreadlocale(int);
+struct lconv *__cdecl ref_localeconv(void);
+unsigned int __cdecl ref____lc_codepage_func(void);
+unsigned int __cdecl ref____lc_collate_cp_func(void);
+wchar_t **__cdecl ref____lc_locale_name_func(void);
+int __cdecl ref____mb_cur_max_func(void);
+int __cdecl ref____mb_cur_max_l_func(_locale_t);
+const unsigned short *__cdecl ref___pctype_func(void);
+const unsigned short *__cdecl ref___pwctype_func(void);
+int __cdecl ref__getmbcp(void);
+int __cdecl ref__setmbcp(int);
+unsigned char *__cdecl ref___p__mbctype(void);
+unsigned char *__cdecl ref___p__mbcasemap(void);
+int __cdecl ref___initialize_lconv_for_unsigned_char(void);
+extern const unsigned short ref__wctype[];
+size_t __cdecl ref_strftime(char *, size_t, const char *, const struct tm *);
+size_t __cdecl ref_wcsftime(wchar_t *, size_t, const wchar_t *, const struct tm *);
+int __cdecl ref_strcoll(const char *, const char *);
+int __cdecl ref__stricoll(const char *, const char *);
+char *__cdecl ref__strlwr(char *);
+unsigned char *__cdecl ref__mbsupr(unsigned char *);
+
+extern char *(__cdecl *const ud_setlocale)(int, const char *) __asm__(UD_IMP(setlocale));
+extern wchar_t *(__cdecl *const ud__wsetlocale)(int, const wchar_t *) __asm__(UD_IMP(_wsetlocale));
+extern _locale_t(__cdecl *const ud__create_locale)(int, const char *) __asm__(UD_IMP(_create_locale));
+extern _locale_t(__cdecl *const ud__wcreate_locale)(int, const wchar_t *) __asm__(UD_IMP(_wcreate_locale));
+extern void(__cdecl *const ud__free_locale)(_locale_t) __asm__(UD_IMP(_free_locale));
+extern _locale_t(__cdecl *const ud__get_current_locale)(void) __asm__(UD_IMP(_get_current_locale));
+extern int(__cdecl *const ud__configthreadlocale)(int) __asm__(UD_IMP(_configthreadlocale));
+extern struct lconv *(__cdecl *const ud_localeconv)(void) __asm__(UD_IMP(localeconv));
+extern unsigned int(__cdecl *const ud____lc_codepage_func)(void) __asm__(UD_IMP(___lc_codepage_func));
+extern unsigned int(__cdecl *const ud____lc_collate_cp_func)(void) __asm__(UD_IMP(___lc_collate_cp_func));
+extern wchar_t **(__cdecl *const ud____lc_locale_name_func)(void) __asm__(UD_IMP(___lc_locale_name_func));
+extern int(__cdecl *const ud____mb_cur_max_func)(void) __asm__(UD_IMP(___mb_cur_max_func));
+extern int(__cdecl *const ud____mb_cur_max_l_func)(_locale_t) __asm__(UD_IMP(___mb_cur_max_l_func));
+extern const unsigned short *(__cdecl *const ud___pctype_func)(void) __asm__(UD_IMP(__pctype_func));
+extern const unsigned short *(__cdecl *const ud___pwctype_func)(void) __asm__(UD_IMP(__pwctype_func));
+extern int(__cdecl *const ud__getmbcp)(void) __asm__(UD_IMP(_getmbcp));
+extern int(__cdecl *const ud__setmbcp)(int) __asm__(UD_IMP(_setmbcp));
+extern unsigned char *(__cdecl *const ud___p__mbctype)(void) __asm__(UD_IMP(__p__mbctype));
+extern unsigned char *(__cdecl *const ud___p__mbcasemap)(void) __asm__(UD_IMP(__p__mbcasemap));
+extern int(__cdecl *const ud___initialize_lconv_for_unsigned_char)(void) __asm__(UD_IMP(__initialize_lconv_for_unsigned_char));
+/* A DATA export: the import slot holds the table's address. */
+extern const unsigned short *const ud__wctype __asm__(UD_IMP(_wctype));
+extern size_t(__cdecl *const ud_strftime)(char *, size_t, const char *, const struct tm *) __asm__(UD_IMP(strftime));
+extern size_t(__cdecl *const ud_wcsftime)(wchar_t *, size_t, const wchar_t *, const struct tm *) __asm__(UD_IMP(wcsftime));
+extern int(__cdecl *const ud_strcoll)(const char *, const char *) __asm__(UD_IMP(strcoll));
+extern int(__cdecl *const ud__stricoll)(const char *, const char *) __asm__(UD_IMP(_stricoll));
+extern char *(__cdecl *const ud__strlwr)(char *) __asm__(UD_IMP(_strlwr));
+extern unsigned char *(__cdecl *const ud__mbsupr)(unsigned char *) __asm__(UD_IMP(_mbsupr));
+
+static const char *const g_loc_names[] = {
+    "C", "", "English_United States.1252", "English", "american", "american_usa", "ENU",
+    "German_Germany.1252", "german", "de-DE", "de-DE.utf8", "en-US.UTF-8", "en-US.utf-8",
+    "en-US.xyz-8", ".utf8", ".UTF-8", ".1252", ".932", ".65001", ".", "ja-JP",
+    "Japanese_Japan.932", "chs", "zh-Hans-CN", "zh-CN.936", "ko-KR", "fr-FR", "French_France",
+    ".ACP", ".OCP", ".acp", "_Germany", "english-us", "English_United States.utf8",
+    "french-canadian", "spanish-modern", "swiss", "French_Belgium", "english.65000",
+    "english.99999", "tr-TR", "Turkish_Turkey.1254", "ar-SA", "th-TH", "zh-TW", "xx-XX", "junk", "english_united-states", "de_DE", "C.UTF-8",
+    "LC_COLLATE=C;LC_CTYPE=German_Germany.1252;LC_MONETARY=C;LC_NUMERIC=C;LC_TIME=C",
+    "LC_CTYPE=de-DE;LC_BOGUS=x", "LC_NUMERIC=fr-FR", "LC_MONETARY=de-DE;LC_NUMERIC=C", "LC_=;", "LC_CTYPE=", "LC_TIME;x",
+};
+enum { LOC_NNAMES = sizeof(g_loc_names) / sizeof(g_loc_names[0]) };
+
+static long long loc_hs(const char *s) { return s ? fnv(s, strlen(s) + 1) : -1; }
+static long long loc_hw(const wchar_t *s) { return s ? fnv(s, (wcslen(s) + 1) * sizeof(wchar_t)) : -1; }
+
+/* What one side's accessors report, component by component. */
+enum {
+    LS_LCONV, LS_CP, LS_COLLATE_CP, LS_NAMES, LS_MB_CUR_MAX, LS_PCTYPE, LS_PWCTYPE,
+    LS_MBCP, LS_MBCTYPE, LS_MBCASEMAP, LS_STRFTIME, LS_WCSFTIME, LS_STRCOLL, LS_STRLWR,
+    LS_MBSUPR, LS_N
+};
+static const char *const g_ls_names[LS_N] = {
+    "lconv", "codepage", "collate_cp", "locale_names", "mb_cur_max", "pctype", "pwctype",
+    "mbcp", "mbctype", "mbcasemap", "strftime", "wcsftime", "strcoll", "strlwr", "mbsupr",
+};
+
+#define LOC_DEFINE_SNAP(side)                                                              \
+    static void loc_snap_##side(long long *h)                                              \
+    {                                                                                      \
+        struct lconv *l = side##localeconv();                                              \
+        long long a = 0;                                                                   \
+        if (l) {                                                                           \
+            const char *n[] = { l->decimal_point, l->thousands_sep, l->grouping,          \
+                l->int_curr_symbol, l->currency_symbol, l->mon_decimal_point,              \
+                l->mon_thousands_sep, l->mon_grouping, l->positive_sign, l->negative_sign }; \
+            const wchar_t *w[] = { l->_W_decimal_point, l->_W_thousands_sep,             \
+                l->_W_int_curr_symbol, l->_W_currency_symbol, l->_W_mon_decimal_point,     \
+                l->_W_mon_thousands_sep, l->_W_positive_sign, l->_W_negative_sign };       \
+            for (int i = 0; i < 10; i++) a = a * 31 + loc_hs(n[i]);                        \
+            for (int i = 0; i < 8; i++) a = a * 31 + loc_hw(w[i]);                         \
+            a = a * 31 + fnv(&l->int_frac_digits, 8);                                      \
+        }                                                                                  \
+        h[LS_LCONV] = l ? a : -1;                                                          \
+        h[LS_CP] = side##___lc_codepage_func();                                            \
+        h[LS_COLLATE_CP] = side##___lc_collate_cp_func();                                  \
+        wchar_t **names = side##___lc_locale_name_func();                                  \
+        a = 0;                                                                             \
+        for (int i = 0; i < 6; i++) a = a * 31 + loc_hw(names ? names[i] : 0);             \
+        h[LS_NAMES] = a;                                                                   \
+        h[LS_MB_CUR_MAX] = side##___mb_cur_max_func();                                     \
+        const unsigned short *pc = side##__pctype_func();                                  \
+        h[LS_PCTYPE] = pc ? fnv(pc - 127, 383 * sizeof(unsigned short)) : -1;              \
+        const unsigned short *pw = side##__pwctype_func();                                 \
+        h[LS_PWCTYPE] = pw ? fnv(pw, 256 * sizeof(unsigned short)) : -1;                   \
+        h[LS_MBCP] = side##_getmbcp();                                                     \
+        h[LS_MBCTYPE] = fnv(side##__p__mbctype(), 257);                                    \
+        h[LS_MBCASEMAP] = fnv(side##__p__mbcasemap(), 256);                                \
+        static const struct tm t = { 5, 4, 15, 6, 8, 126, 0, 248, 0 };                     \
+        static const char *const fmts[] = { "%a|%A|%b|%B|%p", "%c", "%x", "%X", "%#x",     \
+                                            "%#c", "%Ec|%Ex" };                            \
+        char buf[512];                                                                     \
+        a = 0;                                                                             \
+        for (int i = 0; i < 7; i++) {                                                      \
+            memset(buf, 'X', sizeof buf);                                                  \
+            size_t r = side##strftime(buf, sizeof buf, fmts[i], &t);                       \
+            a = a * 31 + (long long)r;                                                     \
+            a = a * 31 + fnv(buf, r + 1);                                                  \
+        }                                                                                  \
+        h[LS_STRFTIME] = a;                                                                \
+        wchar_t wbuf[256];                                                                 \
+        for (int k = 0; k < 256; k++) wbuf[k] = L'X';                                     \
+        size_t wr = side##wcsftime(wbuf, 256, L"%a|%A|%b|%B|%p|%c|%x|%X", &t);             \
+        h[LS_WCSFTIME] = (long long)wr * 31 + fnv(wbuf, (wr + 1) * sizeof(wchar_t));       \
+        static const char *const coll[][2] = { { "a", "B" }, { "apple", "Apple" },         \
+            { "\xe4", "b" }, { "co-op", "coop" }, { "", "" }, { "\xe9t\xe9", "ete" },      \
+            { "\x81\x40", "\x82\xa0" } };                                                  \
+        a = 0;                                                                             \
+        for (int i = 0; i < 7; i++) {                                                      \
+            int c = side##strcoll(coll[i][0], coll[i][1]);                                 \
+            int d = side##_stricoll(coll[i][0], coll[i][1]);                               \
+            a = a * 9 + (c > 0) - (c < 0);                                                 \
+            a = a * 9 + (d > 0) - (d < 0);                                                 \
+        }                                                                                  \
+        h[LS_STRCOLL] = a;                                                                 \
+        char low[] = "ABC\xc0\xc4\xc9\xd6\xdc\xdd\xde\xff\x8a\x8c";                        \
+        side##_strlwr(low);                                                                \
+        h[LS_STRLWR] = fnv(low, sizeof low);                                               \
+        unsigned char up[] = "abc\x82\xa0\x82\xa1xyz\x81\x40\xe0\xe0";                     \
+        side##_mbsupr(up);                                                                 \
+        h[LS_MBSUPR] = fnv(up, sizeof up);                                                 \
+    }
+LOC_DEFINE_SNAP(ud_)
+LOC_DEFINE_SNAP(ref_)
+
+/* Put both sides into `name` for `cat`; grade the returns when `row` is set. */
+static void loc_set_both(const char *row, int cat, const char *name, const char *lbl)
+{
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    char *r1 = ud_setlocale(cat, name), *r2 = ref_setlocale(cat, name);
+    if (row) {
+        char what[96];
+        lstrcpyA(what, row);
+        grade2(what, lbl, loc_hs(r1), loc_hs(r2));
+        lstrcatA(what, ".errno");
+        grade2(what, lbl, *_errno(), *ref__errno());
+        lstrcpyA(what, row); lstrcatA(what, ".iph");
+        grade2(what, lbl, g_iph_dll, g_iph_ref);
+    }
+}
+
+static void loc_reset(void)
+{
+    ud_setlocale(LC_ALL, "C"); ref_setlocale(LC_ALL, "C");
+}
+
+static const char *loc_label(int cat, size_t i)
+{
+    static char buf[24];
+    lstrcpyA(buf, label_idx(i));
+    buf[5] = '/'; buf[6] = (char)('0' + (cat + 10) % 10); buf[7] = 0;
+    if (cat < 0) buf[6] = 'm';
+    return buf;
+}
+
+/* Every component after every LC_ALL setting, under `row`: the accessor rows
+ * grade their own component, setlocale grades them all. */
+static void loc_walk(const char *row, int only)
+{
+    for (size_t i = 0; i < LOC_NNAMES; i++) {
+        loc_set_both(0, LC_ALL, g_loc_names[i], 0);
+        /* What each name resolved to, on serial: a corpus the guest's NLS cannot
+         * resolve would MATCH as NULL on both sides and prove nothing, so the table
+         * must never be read without this. */
+        if (only < 0)
+            DbgPrint("[UCRTDIFF] locale %s: \"%s\" -> \"%s\" cp=%u mb=%d\n", label_idx(i),
+                     g_loc_names[i], ud_setlocale(LC_ALL, NULL) ? ud_setlocale(LC_ALL, NULL) : "(null)",
+                     ud____lc_codepage_func(), ud____mb_cur_max_func());
+        long long h1[LS_N], h2[LS_N];
+        loc_snap_ud_(h1);
+        loc_snap_ref_(h2);
+        for (int c = 0; c < LS_N; c++) {
+            if (only >= 0 && c != only)
+                continue;
+            char what[96];
+            lstrcpyA(what, row); lstrcatA(what, "."); lstrcatA(what, g_ls_names[c]);
+            grade2(what, label_idx(i), h1[c], h2[c]);
+        }
+    }
+    loc_reset();
+}
+
+static void run_loc_setlocale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i < LOC_NNAMES; i++)
+            loc_set_both("setlocale", cat, g_loc_names[i], loc_label(cat, i));
+        loc_set_both("setlocale", cat, NULL, loc_label(cat, LOC_NNAMES));
+        loc_reset();
+    }
+    /* Query after a mixed setting: the compound string, and setting it back. */
+    loc_set_both(0, LC_CTYPE, "de-DE", 0);
+    loc_set_both(0, LC_TIME, "ja-JP", 0);
+    loc_set_both("setlocale", LC_ALL, NULL, "mixed");
+    {
+        char saved[1024];
+        char *q = ud_setlocale(LC_ALL, NULL);
+        lstrcpynA(saved, q ? q : "", sizeof saved);
+        loc_reset();
+        loc_set_both("setlocale", LC_ALL, saved, "restore");
+        loc_set_both("setlocale", LC_ALL, NULL, "restored");
+    }
+    loc_reset();
+    loc_walk("setlocale", -1);
+}
+
+static void run_loc__wsetlocale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i <= LOC_NNAMES; i++) {
+            wchar_t w[256];
+            const wchar_t *wp = w;
+            if (i < LOC_NNAMES)
+                MultiByteToWideChar(CP_ACP, 0, g_loc_names[i], -1, w, 256);
+            else
+                wp = 0;
+            *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+            wchar_t *r1 = ud__wsetlocale(cat, wp), *r2 = ref__wsetlocale(cat, wp);
+            const char *lbl = loc_label(cat, i);
+            grade2("_wsetlocale", lbl, loc_hw(r1), loc_hw(r2));
+            grade2("_wsetlocale.errno", lbl, *_errno(), *ref__errno());
+            grade2("_wsetlocale.iph", lbl, g_iph_dll, g_iph_ref);
+        }
+        loc_reset();
+    }
+}
+
+/* A _locale_t's contents, read through the pinned layout: the public head, the
+ * six category strings, and the ctype table. */
+static long long loc_hash_locale_t(_locale_t l)
+{
+    if (!l)
+        return -1;
+    const char *li = (const char *)l->locinfo;
+    const size_t P = sizeof(void *);
+    const size_t cat0 = P == 8 ? 32 : 28;
+    long long a = 0;
+    for (int i = 0; i < 6; i++)
+        a = a * 31 + loc_hw(*(wchar_t *const *)(li + cat0 + (size_t)i * 4 * P + P));
+    const unsigned short *pc = *(const unsigned short *const *)li;
+    a = a * 31 + (pc ? fnv(pc - 127, 383 * sizeof(unsigned short)) : -1);
+    a = a * 31 + fnv(li + P, 8); /* _locale_mb_cur_max, _locale_lc_codepage */
+    const unsigned char *mb = (const unsigned char *)l->mbcinfo;
+    a = a * 31 + (mb ? fnv(mb + 4, 4 + 4 + 12 + 257 + 256) : -1);
+    return a;
+}
+
+static void run_loc__create_locale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i <= LOC_NNAMES; i++) {
+            const char *n = i < LOC_NNAMES ? g_loc_names[i] : 0;
+            const char *lbl = loc_label(cat, i);
+            *_errno() = 0; *ref__errno() = 0;
+            _locale_t l1 = ud__create_locale(cat, n), l2 = ref__create_locale(cat, n);
+            grade2("_create_locale", lbl, loc_hash_locale_t(l1), loc_hash_locale_t(l2));
+            grade2("_create_locale.errno", lbl, *_errno(), *ref__errno());
+            if (l1 && l2)
+                grade2("_create_locale.mb_cur_max_l", lbl, ud____mb_cur_max_l_func(l1),
+                       ref____mb_cur_max_l_func(l2));
+            ud__free_locale(l1);
+            ref__free_locale(l2);
+        }
+    }
+}
+
+static void run_loc__wcreate_locale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i <= LOC_NNAMES; i++) {
+            wchar_t w[256];
+            const wchar_t *wp = w;
+            if (i < LOC_NNAMES)
+                MultiByteToWideChar(CP_ACP, 0, g_loc_names[i], -1, w, 256);
+            else
+                wp = 0;
+            const char *lbl = loc_label(cat, i);
+            *_errno() = 0; *ref__errno() = 0;
+            _locale_t l1 = ud__wcreate_locale(cat, wp), l2 = ref__wcreate_locale(cat, wp);
+            grade2("_wcreate_locale", lbl, loc_hash_locale_t(l1), loc_hash_locale_t(l2));
+            grade2("_wcreate_locale.errno", lbl, *_errno(), *ref__errno());
+            ud__free_locale(l1);
+            ref__free_locale(l2);
+        }
+    }
+}
+
+static void run_loc__get_current_locale(void)
+{
+    install_counting_iph();
+    for (size_t i = 0; i < LOC_NNAMES; i++) {
+        loc_set_both(0, LC_ALL, g_loc_names[i], 0);
+        _locale_t l1 = ud__get_current_locale(), l2 = ref__get_current_locale();
+        grade2("_get_current_locale", label_idx(i), loc_hash_locale_t(l1), loc_hash_locale_t(l2));
+        /* Still valid after the global locale moves on. */
+        loc_reset();
+        grade2("_get_current_locale.after", label_idx(i), loc_hash_locale_t(l1),
+               loc_hash_locale_t(l2));
+        grade2("___mb_cur_max_l_func", label_idx(i), ud____mb_cur_max_l_func(l1),
+               ref____mb_cur_max_l_func(l2));
+        ud__free_locale(l1);
+        ref__free_locale(l2);
+    }
+    ud__free_locale(0);
+    ref__free_locale(0);
+    grade2("_free_locale.null", "-", 0, 0);
+}
+
+static void run_loc__configthreadlocale(void)
+{
+    install_counting_iph();
+    static const int args[] = { 0, 1, 0, 2, 0, 3, 0, -2, 0, 1, 1, 2, 2, 0 };
+    for (size_t i = 0; i < sizeof args / sizeof args[0]; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__configthreadlocale(args[i]), r2 = ref__configthreadlocale(args[i]);
+        grade2("_configthreadlocale", label_idx(i), r1, r2);
+        grade2("_configthreadlocale.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_configthreadlocale.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    /* A per-thread locale: this thread changes, the global copy does not. */
+    ud__configthreadlocale(1); ref__configthreadlocale(1);
+    loc_set_both("_configthreadlocale.setlocale", LC_ALL, "de-DE", "perthread");
+    ud__configthreadlocale(2); ref__configthreadlocale(2);
+    grade2("_configthreadlocale.global_cp", "-", ud____lc_codepage_func(), ref____lc_codepage_func());
+    loc_reset();
+}
+
+static void run_loc_localeconv(void) { install_counting_iph(); loc_walk("localeconv", LS_LCONV); }
+static void run_loc____lc_codepage_func(void) { loc_walk("___lc_codepage_func", LS_CP); }
+static void run_loc____lc_collate_cp_func(void) { loc_walk("___lc_collate_cp_func", LS_COLLATE_CP); }
+static void run_loc____lc_locale_name_func(void) { loc_walk("___lc_locale_name_func", LS_NAMES); }
+static void run_loc____mb_cur_max_func(void) { loc_walk("___mb_cur_max_func", LS_MB_CUR_MAX); }
+static void run_loc___pctype_func(void) { loc_walk("__pctype_func", LS_PCTYPE); }
+static void run_loc___pwctype_func(void) { loc_walk("__pwctype_func", LS_PWCTYPE); }
+static void run_loc___p__mbctype(void) { loc_walk("__p__mbctype", LS_MBCTYPE); }
+static void run_loc___p__mbcasemap(void) { loc_walk("__p__mbcasemap", LS_MBCASEMAP); }
+
+static void run_loc__wctype(void)
+{
+    grade2("_wctype", "table", fnv(ud__wctype, 258 * sizeof(unsigned short)),
+           fnv(ref__wctype, 258 * sizeof(unsigned short)));
+}
+
+/* _setmbcp's own row (the generated one grades only its return): every code page
+ * kind, then what the multibyte accessors see. */
+static void run_loc__setmbcp(void)
+{
+    install_counting_iph();
+    /* 932 then 65001 keeps 932's lead flags (the UTF-8 path clears only the first
+     * few entries); 1252 twice takes the no-op path. */
+    static const int cps[] = { 0, -2, -3, -4, 932, 936, 949, 950, 1252, 1250, 65001, 20127,
+                               437, 12345, -5, -1, 1361, 65000, 65536 + 1252, 932, 65001,
+                               1252, 1252, 0 };
+    int orig1 = ud__getmbcp(), orig2 = ref__getmbcp();
+    grade2("_setmbcp+tables.orig", "-", orig1, orig2);
+    for (size_t i = 0; i < sizeof cps / sizeof cps[0]; i++) {
+        const char *lbl = label_idx(i);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__setmbcp(cps[i]), r2 = ref__setmbcp(cps[i]);
+        grade2("_setmbcp+tables", lbl, r1, r2);
+        grade2("_setmbcp+tables.errno", lbl, *_errno(), *ref__errno());
+        grade2("_setmbcp+tables.iph", lbl, g_iph_dll, g_iph_ref);
+        grade2("_setmbcp+tables.getmbcp", lbl, ud__getmbcp(), ref__getmbcp());
+        grade2("_setmbcp+tables.mbctype", lbl, fnv(ud___p__mbctype(), 257), fnv(ref___p__mbctype(), 257));
+        grade2("_setmbcp+tables.mbcasemap", lbl, fnv(ud___p__mbcasemap(), 256),
+               fnv(ref___p__mbcasemap(), 256));
+        unsigned char up1[] = "abc\x82\xa0\x82\xa1xyz\x81\x40\xe0\xe0\xa4", up2[sizeof up1];
+        memcpy(up2, up1, sizeof up1);
+        ud__mbsupr(up1); ref__mbsupr(up2);
+        grade2("_setmbcp+tables.mbsupr", lbl, fnv(up1, sizeof up1), fnv(up2, sizeof up2));
+    }
+    ud__setmbcp(orig1); ref__setmbcp(orig2);
+}
+
+static void run_loc___initialize_lconv_for_unsigned_char(void)
+{
+    grade2("__initialize_lconv_for_unsigned_char", "ret", ud___initialize_lconv_for_unsigned_char(),
+           ref___initialize_lconv_for_unsigned_char());
+    loc_walk("__initialize_lconv_for_unsigned_char", LS_LCONV);
+}
+#endif /* UCRTDIFF_REF_HAS_setlocale */
+
 static void run_ctype(void)
 {
     /* The full 0..255 range plus EOF: the 0x80-0xFF half is where the narrow
@@ -2442,6 +2874,20 @@ static void run_legacy(void)
         ST_HAND(_stat32) ST_HAND(_stat32i64) ST_HAND(_stat64i32) ST_HAND(_stat64)
         ST_HAND(_wstat32) ST_HAND(_wstat32i64) ST_HAND(_wstat64i32) ST_HAND(_wstat64)
         ST_HAND(_fstat32) ST_HAND(_fstat32i64) ST_HAND(_fstat64i32) ST_HAND(_fstat64)
+#if UCRTDIFF_REF_HAS_setlocale
+#define LOC_HAND(name) { #name, run_loc_##name },
+#define LOC_HAND_AS(row, name) { row, run_loc_##name },
+#else
+#define LOC_HAND(name) { #name, 0 },
+#define LOC_HAND_AS(row, name) { row, 0 },
+#endif
+        LOC_HAND(setlocale) LOC_HAND(_wsetlocale) LOC_HAND(_create_locale)
+        LOC_HAND(_wcreate_locale) LOC_HAND(_get_current_locale) LOC_HAND(_configthreadlocale)
+        LOC_HAND(localeconv) LOC_HAND(___lc_codepage_func) LOC_HAND(___lc_collate_cp_func)
+        LOC_HAND(___lc_locale_name_func) LOC_HAND(___mb_cur_max_func) LOC_HAND(__pctype_func)
+        LOC_HAND(__pwctype_func) LOC_HAND(__p__mbctype) LOC_HAND(__p__mbcasemap) LOC_HAND(_wctype)
+        LOC_HAND_AS("_setmbcp+tables", _setmbcp)
+        LOC_HAND(__initialize_lconv_for_unsigned_char)
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
@@ -2553,8 +2999,12 @@ static int ucrtdiff_main(void)
      * nothing of its own. The last "->" line on serial names it. */
     DbgPrint("[UCRTDIFF] -> dll setlocale\n");
     setlocale(LC_ALL, "C");
+    /* The reference's locale exists only while the locale takeover's Microsoft
+     * objects do: once taken over, a plain sweep has no ref_ side to align. */
+#if UCRTDIFF_REF_HAS_setlocale
     DbgPrint("[UCRTDIFF] -> ref setlocale\n");
     ref_setlocale(LC_ALL, "C");
+#endif
     DbgPrint("[UCRTDIFF] -> rust setlocale\n");
     rust_setlocale(LC_ALL, "C");
     DbgPrint("[UCRTDIFF] -> setmbcp\n");
@@ -2565,7 +3015,9 @@ static int ucrtdiff_main(void)
      * (the process exited STATUS_POSSIBLE_DEADLOCK, 0xC0000194, right here) -- with
      * a line per call, the last line on serial names which one. */
     DbgPrint("[UCRTDIFF] setmbcp(0) dll rc=%d\n", _setmbcp(0));
+#if UCRTDIFF_REF_HAS_setlocale
     DbgPrint("[UCRTDIFF] setmbcp(0) ref rc=%d\n", ref__setmbcp(0));
+#endif
     DbgPrint("[UCRTDIFF] setmbcp(0) rust rc=%d\n", rust__setmbcp(0));
 
     /* The old diagnostic, kept as the PROOF the alignment took. If these three ever
@@ -2577,8 +3029,12 @@ static int ucrtdiff_main(void)
      * against a different codepage on each side, and the resulting "divergences" say
      * nothing about our code. The design doc listed this as NOT VERIFIED; print it, so
      * the table can never again be read without knowing which case holds. */
+#if UCRTDIFF_REF_HAS_setlocale
     DbgPrint("[UCRTDIFF] mbcp: dll=%d rust=%d ref=%d\n",
              _getmbcp(), rust__getmbcp(), ref__getmbcp());
+#else
+    DbgPrint("[UCRTDIFF] mbcp: dll=%d rust=%d ref=(taken over)\n", _getmbcp(), rust__getmbcp());
+#endif
 
     run_generated();
     run_legacy();

@@ -1,10 +1,19 @@
 # ucrt Tier 2 verdicts -- written by tools/ucrt_tier2_sweep.py, do not hand-edit.
 # export	verdict (+ counts)	commit graded at
+___lc_codepage_func	MATCH n=57	6d598db62320-dirty
+___lc_collate_cp_func	MATCH n=57	6d598db62320-dirty
+___lc_locale_name_func	MATCH n=57	6d598db62320-dirty
+___mb_cur_max_func	MATCH n=57	6d598db62320-dirty
+__initialize_lconv_for_unsigned_char	MATCH n=58	6d598db62320-dirty
 __isascii	MATCH n=40	686d118764bb-dirty
 __iscsym	MATCH n=40	686d118764bb-dirty
 __iscsymf	MATCH n=40	686d118764bb-dirty
 __iswcsym	MATCH n=40	686d118764bb-dirty
 __iswcsymf	MATCH n=40	686d118764bb-dirty
+__p__mbcasemap	MATCH n=57	6d598db62320-dirty
+__p__mbctype	MATCH n=57	6d598db62320-dirty
+__pctype_func	MATCH n=57	6d598db62320-dirty
+__pwctype_func	MATCH n=57	6d598db62320-dirty
 __stdio_common_vfprintf	MATCH n=1272	02eab588f368-dirty
 __stdio_common_vfprintf_p	MATCH n=1272	02eab588f368-dirty
 __stdio_common_vfprintf_s	MATCH n=1272	02eab588f368-dirty
@@ -20,15 +29,18 @@ __stdio_common_vswprintf	MATCH n=15196	02eab588f368-dirty
 __stdio_common_vswprintf_p	MATCH n=6252	02eab588f368-dirty
 __stdio_common_vswprintf_s	MATCH n=6252	02eab588f368-dirty
 __toascii	MATCH n=40	686d118764bb-dirty
-_abs64	MATCH n=40	7f390dc2c487-dirty
+_abs64	MATCH n=40	6d598db62320-dirty
 _atoi64	MATCH n=7	e67f13c02b0a-dirty
 _atoi64_l	MATCH n=7	e67f13c02b0a-dirty
 _atoi_l	MATCH n=7	e67f13c02b0a-dirty
 _atol_l	MATCH n=7	e67f13c02b0a-dirty
+_configthreadlocale	MATCH n=46	6d598db62320-dirty
+_create_locale	MATCH n=1255	6d598db62320-dirty
 _fstat32	MATCH n=105	7f390dc2c487-dirty
 _fstat32i64	MATCH n=105	7f390dc2c487-dirty
 _fstat64	MATCH n=105	7f390dc2c487-dirty
 _fstat64i32	MATCH n=105	7f390dc2c487-dirty
+_get_current_locale	MATCH n=172	6d598db62320-dirty
 _getmbcp	DIFF rust=1 dll=0 of 1 first=_getmbcp:()	7f390dc2c487-dirty
 _isalnum_l	MATCH n=40	686d118764bb-dirty
 _isalpha_l	MATCH n=40	686d118764bb-dirty
@@ -73,8 +85,8 @@ _ismbcupper	MATCH n=40	febc967f24d6-dirty
 _ismbcupper_l	MATCH n=40	febc967f24d6-dirty
 _ismbslead	MATCH n=49	febc967f24d6-dirty
 _ismbslead_l	MATCH n=49	febc967f24d6-dirty
-_ismbstrail	MATCH n=49	7f390dc2c487-dirty
-_ismbstrail_l	MATCH n=49	7f390dc2c487-dirty
+_ismbstrail	MATCH n=49	6d598db62320-dirty
+_ismbstrail_l	MATCH n=49	6d598db62320-dirty
 _isprint_l	MATCH n=40	686d118764bb-dirty
 _ispunct_l	MATCH n=40	686d118764bb-dirty
 _isspace_l	MATCH n=40	686d118764bb-dirty
@@ -93,60 +105,61 @@ _iswspace_l	MATCH n=40	686d118764bb-dirty
 _iswupper_l	MATCH n=40	686d118764bb-dirty
 _iswxdigit_l	MATCH n=40	686d118764bb-dirty
 _isxdigit_l	MATCH n=40	686d118764bb-dirty
-_mbbtombc	MATCH n=40	7f390dc2c487-dirty
-_mbbtombc_l	MATCH n=40	7f390dc2c487-dirty
+_mbbtombc	MATCH n=40	6d598db62320-dirty
+_mbbtombc_l	MATCH n=40	6d598db62320-dirty
 _mbbtype	MATCH n=64	febc967f24d6-dirty
 _mbbtype_l	MATCH n=64	febc967f24d6-dirty
 _mbcjistojms	MATCH n=40	febc967f24d6-dirty
 _mbcjistojms_l	MATCH n=40	febc967f24d6-dirty
 _mbcjmstojis	MATCH n=40	febc967f24d6-dirty
 _mbcjmstojis_l	MATCH n=40	febc967f24d6-dirty
-_mbclen	MATCH n=7	7f390dc2c487-dirty
-_mbclen_l	MATCH n=7	7f390dc2c487-dirty
+_mbclen	MATCH n=7	6d598db62320-dirty
+_mbclen_l	MATCH n=7	6d598db62320-dirty
 _mbctohira	MATCH n=40	febc967f24d6-dirty
 _mbctohira_l	MATCH n=40	febc967f24d6-dirty
 _mbctokata	MATCH n=40	febc967f24d6-dirty
 _mbctokata_l	MATCH n=40	febc967f24d6-dirty
 _mbctolower	MATCH n=40	febc967f24d6-dirty
 _mbctolower_l	MATCH n=40	febc967f24d6-dirty
-_mbctombb	MATCH n=40	7f390dc2c487-dirty
-_mbctombb_l	MATCH n=40	7f390dc2c487-dirty
+_mbctombb	MATCH n=40	6d598db62320-dirty
+_mbctombb_l	MATCH n=40	6d598db62320-dirty
 _mbctoupper	MATCH n=40	febc967f24d6-dirty
 _mbctoupper_l	MATCH n=40	febc967f24d6-dirty
-_mblen_l	MATCH n=56	7f390dc2c487-dirty
+_mblen_l	MATCH n=56	6d598db62320-dirty
 _mbsbtype	DIFF rust=37 dll=0 of 56 first=_mbsbtype:i=000	febc967f24d6-dirty
 _mbsbtype_l	DIFF rust=37 dll=0 of 56 first=_mbsbtype_l:i=000	febc967f24d6-dirty
-_mbscmp	MATCH n=49	7f390dc2c487-dirty
-_mbscmp_l	MATCH n=49	7f390dc2c487-dirty
-_mbscspn	MATCH n=49	7f390dc2c487-dirty
-_mbscspn_l	MATCH n=49	7f390dc2c487-dirty
-_mbsicmp	MATCH n=49	7f390dc2c487-dirty
-_mbsicmp_l	MATCH n=49	7f390dc2c487-dirty
-_mbslen	MATCH n=7	7f390dc2c487-dirty
-_mbslen_l	MATCH n=7	7f390dc2c487-dirty
-_mbsnbcmp	MATCH n=392	7f390dc2c487-dirty
-_mbsnbcmp_l	MATCH n=392	7f390dc2c487-dirty
-_mbsnbcnt	MATCH n=56	7f390dc2c487-dirty
-_mbsnbcnt_l	MATCH n=56	7f390dc2c487-dirty
-_mbsnccnt	MATCH n=56	7f390dc2c487-dirty
-_mbsnccnt_l	MATCH n=56	7f390dc2c487-dirty
-_mbsncmp	MATCH n=392	7f390dc2c487-dirty
-_mbsncmp_l	MATCH n=392	7f390dc2c487-dirty
-_mbsnextc	MATCH n=7	7f390dc2c487-dirty
-_mbsnextc_l	MATCH n=7	7f390dc2c487-dirty
-_mbsnlen	MATCH n=56	7f390dc2c487-dirty
-_mbsnlen_l	MATCH n=56	7f390dc2c487-dirty
-_mbsspn	MATCH n=49	7f390dc2c487-dirty
-_mbsspn_l	MATCH n=49	7f390dc2c487-dirty
-_mbstrlen	MATCH n=7	7f390dc2c487-dirty
-_mbstrlen_l	MATCH n=7	7f390dc2c487-dirty
+_mbscmp	MATCH n=49	6d598db62320-dirty
+_mbscmp_l	MATCH n=49	6d598db62320-dirty
+_mbscspn	MATCH n=49	6d598db62320-dirty
+_mbscspn_l	MATCH n=49	6d598db62320-dirty
+_mbsicmp	MATCH n=49	6d598db62320-dirty
+_mbsicmp_l	MATCH n=49	6d598db62320-dirty
+_mbslen	MATCH n=7	6d598db62320-dirty
+_mbslen_l	MATCH n=7	6d598db62320-dirty
+_mbsnbcmp	MATCH n=392	6d598db62320-dirty
+_mbsnbcmp_l	MATCH n=392	6d598db62320-dirty
+_mbsnbcnt	MATCH n=56	6d598db62320-dirty
+_mbsnbcnt_l	MATCH n=56	6d598db62320-dirty
+_mbsnccnt	MATCH n=56	6d598db62320-dirty
+_mbsnccnt_l	MATCH n=56	6d598db62320-dirty
+_mbsncmp	MATCH n=392	6d598db62320-dirty
+_mbsncmp_l	MATCH n=392	6d598db62320-dirty
+_mbsnextc	MATCH n=7	6d598db62320-dirty
+_mbsnextc_l	MATCH n=7	6d598db62320-dirty
+_mbsnlen	MATCH n=56	6d598db62320-dirty
+_mbsnlen_l	MATCH n=56	6d598db62320-dirty
+_mbsspn	MATCH n=49	6d598db62320-dirty
+_mbsspn_l	MATCH n=49	6d598db62320-dirty
+_mbstrlen	MATCH n=7	6d598db62320-dirty
+_mbstrlen_l	MATCH n=7	6d598db62320-dirty
 _setmbcp	DIFF rust=1 dll=0 of 40 first=_setmbcp:i=002	7f390dc2c487-dirty
+_setmbcp+tables	MATCH n=169	6d598db62320-dirty
 _stat32	MATCH n=195	7f390dc2c487-dirty
 _stat32i64	MATCH n=195	7f390dc2c487-dirty
 _stat64	MATCH n=200	7f390dc2c487-dirty
 _stat64i32	MATCH n=195	7f390dc2c487-dirty
-_stricmp	MATCH n=49	7f390dc2c487-dirty
-_stricmp_l	MATCH n=49	7f390dc2c487-dirty
+_stricmp	MATCH n=49	6d598db62320-dirty
+_stricmp_l	MATCH n=49	6d598db62320-dirty
 _strtod_l	MATCH n=456	02eab588f368-dirty
 _strtof_l	MATCH n=456	02eab588f368-dirty
 _strtold_l	MATCH n=456	02eab588f368-dirty
@@ -156,13 +169,16 @@ _toupper	MATCH n=40	f88f7caf6bb7-dirty
 _toupper_l	DIFF rust=1 dll=0 of 40 first=_toupper_l:i=000	f88f7caf6bb7-dirty
 _towlower_l	MATCH n=40	f88f7caf6bb7-dirty
 _towupper_l	MATCH n=40	f88f7caf6bb7-dirty
-_wcsicmp	MATCH n=49	7f390dc2c487-dirty
-_wcsicmp_l	MATCH n=49	7f390dc2c487-dirty
-_wcsnicmp	MATCH n=392	7f390dc2c487-dirty
-_wcsnicmp_l	MATCH n=392	7f390dc2c487-dirty
+_wcreate_locale	MATCH n=928	6d598db62320-dirty
+_wcsicmp	MATCH n=49	6d598db62320-dirty
+_wcsicmp_l	MATCH n=49	6d598db62320-dirty
+_wcsnicmp	MATCH n=392	6d598db62320-dirty
+_wcsnicmp_l	MATCH n=392	6d598db62320-dirty
 _wcstod_l	MATCH n=484	02eab588f368-dirty
 _wcstof_l	MATCH n=484	02eab588f368-dirty
 _wcstold_l	MATCH n=484	02eab588f368-dirty
+_wctype	MATCH n=1	6d598db62320-dirty
+_wsetlocale	MATCH n=1392	6d598db62320-dirty
 _wstat32	MATCH n=195	7f390dc2c487-dirty
 _wstat32i64	MATCH n=195	7f390dc2c487-dirty
 _wstat64	MATCH n=195	7f390dc2c487-dirty
@@ -176,7 +192,7 @@ _wtol_l	MATCH n=7	e67f13c02b0a-dirty
 atoi	MATCH n=7	e67f13c02b0a-dirty
 atol	MATCH n=7	e67f13c02b0a-dirty
 atoll	NORUST dll=MATCH n=7	e67f13c02b0a-dirty
-btowc	MATCH n=40	7f390dc2c487-dirty
+btowc	MATCH n=40	6d598db62320-dirty
 isalnum	MATCH n=40	686d118764bb-dirty
 isalpha	MATCH n=40	686d118764bb-dirty
 isblank	MATCH n=40	686d118764bb-dirty
@@ -203,24 +219,26 @@ iswspace	MATCH n=40	686d118764bb-dirty
 iswupper	MATCH n=40	686d118764bb-dirty
 iswxdigit	MATCH n=40	686d118764bb-dirty
 isxdigit	MATCH n=40	686d118764bb-dirty
-legacy:atox-family	NOCASES	7f390dc2c487-dirty
-legacy:ctype	NOCASES	7f390dc2c487-dirty
-legacy:findfile-family	NOCASES	7f390dc2c487-dirty
-legacy:string	MATCH n=363	7f390dc2c487-dirty
-legacy:strtox	NOCASES	7f390dc2c487-dirty
-legacy:strtox-family	NOCASES	7f390dc2c487-dirty
-legacy:wcstox-family	NOCASES	7f390dc2c487-dirty
-legacy:xtoa-family	NOCASES	7f390dc2c487-dirty
-legacy:xtoa_s-family	NOCASES	7f390dc2c487-dirty
-llabs	NORUST dll=MATCH n=40	7f390dc2c487-dirty
-mblen	MATCH n=56	7f390dc2c487-dirty
+legacy:atox-family	NOCASES	6d598db62320-dirty
+legacy:ctype	NOCASES	6d598db62320-dirty
+legacy:findfile-family	NOCASES	6d598db62320-dirty
+legacy:string	MATCH n=363	6d598db62320-dirty
+legacy:strtox	NOCASES	6d598db62320-dirty
+legacy:strtox-family	NOCASES	6d598db62320-dirty
+legacy:wcstox-family	NOCASES	6d598db62320-dirty
+legacy:xtoa-family	NOCASES	6d598db62320-dirty
+legacy:xtoa_s-family	NOCASES	6d598db62320-dirty
+llabs	NORUST dll=MATCH n=40	6d598db62320-dirty
+localeconv	MATCH n=57	6d598db62320-dirty
+mblen	MATCH n=56	6d598db62320-dirty
+setlocale	MATCH n=2256	6d598db62320-dirty
 strcat	MATCH n=64	af738a3b14e7-dirty
-strcmp	MATCH n=49	7f390dc2c487-dirty
+strcmp	MATCH n=49	6d598db62320-dirty
 strcpy	MATCH n=8	af738a3b14e7-dirty
 strcspn	MATCH n=49	af738a3b14e7-dirty
 strlen	MATCH n=7	af738a3b14e7-dirty
 strncat	MATCH n=448	af738a3b14e7-dirty
-strncmp	MATCH n=392	7f390dc2c487-dirty
+strncmp	MATCH n=392	6d598db62320-dirty
 strncpy	MATCH n=56	af738a3b14e7-dirty
 strpbrk	MATCH n=64	af738a3b14e7-dirty
 strspn	MATCH n=49	af738a3b14e7-dirty
@@ -231,9 +249,9 @@ tolower	MATCH n=40	f88f7caf6bb7-dirty
 toupper	MATCH n=40	f88f7caf6bb7-dirty
 towlower	MATCH n=40	f88f7caf6bb7-dirty
 towupper	MATCH n=40	f88f7caf6bb7-dirty
-wcscspn	MATCH n=49	7f390dc2c487-dirty
-wcsspn	MATCH n=49	7f390dc2c487-dirty
+wcscspn	MATCH n=49	6d598db62320-dirty
+wcsspn	MATCH n=49	6d598db62320-dirty
 wcstod	MATCH n=484	02eab588f368-dirty
 wcstof	MATCH n=484	02eab588f368-dirty
 wcstold	MATCH n=484	02eab588f368-dirty
-wctob	MATCH n=40	7f390dc2c487-dirty
+wctob	MATCH n=40	6d598db62320-dirty

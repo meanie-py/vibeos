@@ -119,5 +119,15 @@ strtod = ["strtox"]
 # findfile's path conversion and time helpers. See src/stat.rs.
 stat = ["findfile"]
 
+# The locale takeover (sdk/lib/ucrt/locale/*, mbstring/mbctype.cpp), split into
+# pieces that call each other only through src/locale_abi.rs, so each can land
+# as soon as its own C files can be deleted. See locale_abi.rs for which C file
+# each replaces.
+locale-data = []
+locale-init = []
+mbctype = []
+qualified-locale = []
+setlocale = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

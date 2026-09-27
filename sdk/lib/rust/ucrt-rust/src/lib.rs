@@ -47,6 +47,20 @@ pub mod strtod;
 #[cfg(feature = "stat")]
 pub mod stat;
 
+// The locale takeover, in pieces that share `locale_abi` (see its table).
+#[cfg(feature = "locale-data")]
+pub mod locale_data;
+#[cfg(feature = "locale-init")]
+pub mod locale_init;
+#[cfg(feature = "locale-init")]
+pub mod nls_wrappers;
+#[cfg(feature = "mbctype")]
+pub mod mbctype;
+#[cfg(feature = "qualified-locale")]
+pub mod qualified_locale;
+#[cfg(feature = "setlocale")]
+pub mod setlocale;
+
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
 #[cfg(feature = "portable-string")]
@@ -56,6 +70,7 @@ extern crate crt_portable_rust;
 // compile-time assertions pinning it. Gating it would mean the pins only hold
 // when some other family happens to be on.
 pub mod locale;
+pub mod locale_abi;
 pub mod locale_update;
 pub mod ptd;
 pub mod ptd_host;

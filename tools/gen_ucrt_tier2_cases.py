@@ -689,6 +689,8 @@ HAND_GRADED = (
     "_fstat32i64",
     "_fstat64i32",
     "_fstat64",
+    # run_loc_* (locale/*.cpp, mbstring/mbctype.cpp): one family, one guard.
+    "setlocale",
 )
 
 

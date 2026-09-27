@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 745
-  amd64: 745
-  arm64: 742
+  i386: 723
+  amd64: 723
+  arm64: 720
 
 families:
   bits:
@@ -723,3 +723,89 @@ families:
       - _wstat32i64
       - _wstat64
       - _wstat64i32
+
+  locale:
+    replaces:
+      - sdk/lib/ucrt/locale/CompareStringA.cpp
+      - sdk/lib/ucrt/locale/CompareStringW.cpp
+      - sdk/lib/ucrt/locale/ctype.cpp
+      - sdk/lib/ucrt/locale/GetLocaleInfoA.cpp
+      - sdk/lib/ucrt/locale/getqloc_downlevel.cpp
+      - sdk/lib/ucrt/locale/GetStringTypeA.cpp
+      - sdk/lib/ucrt/locale/get_qualified_locale.cpp
+      - sdk/lib/ucrt/locale/glstatus.cpp
+      - sdk/lib/ucrt/locale/initctype.cpp
+      - sdk/lib/ucrt/locale/initmon.cpp
+      - sdk/lib/ucrt/locale/initnum.cpp
+      - sdk/lib/ucrt/locale/inittime.cpp
+      - sdk/lib/ucrt/locale/lcidtoname_downlevel.cpp
+      - sdk/lib/ucrt/locale/LCMapStringA.cpp
+      - sdk/lib/ucrt/locale/LCMapStringW.cpp
+      - sdk/lib/ucrt/locale/lconv_unsigned_char_initialization.cpp
+      - sdk/lib/ucrt/locale/localeconv.cpp
+      - sdk/lib/ucrt/locale/locale_refcounting.cpp
+      - sdk/lib/ucrt/locale/locale_update.cpp
+      - sdk/lib/ucrt/locale/nlsdata.cpp
+      - sdk/lib/ucrt/locale/setlocale.cpp
+      - sdk/lib/ucrt/locale/wsetlocale.cpp
+      - sdk/lib/ucrt/mbstring/mbctype.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, graded as ONE family (the
+      pieces call each other's internals, so they are deleted together): 57
+      locale names -- legacy names and abbreviations, BCP-47 tags with and
+      without code pages, bare code pages, compound LC_ strings, junk -- through
+      setlocale on both sides for every category and NULL, then each accessor's
+      view after every LC_ALL setting (lconv narrow+wide, both code pages,
+      mb_cur_max, the six locale names, pctype/pwctype, mbctype/mbcasemap, and
+      strftime/wcsftime/strcoll/_stricoll/_strlwr/_mbsupr, still Microsoft's on
+      both sides but reading each side's locale data). Plus _create_locale and
+      _wcreate_locale per category with the resulting _locale_t read through the
+      pinned layout, _get_current_locale before and after the global locale
+      moves, _configthreadlocale including a per-thread locale, and _setmbcp over
+      24 code-page steps (932 then 65001, 1252 twice) with its tables. All 18 rows
+      MATCH, dll_fail=0: setlocale n=2256, _wsetlocale 1392, _create_locale 1255,
+      _wcreate_locale 928, _get_current_locale 172, _setmbcp+tables 169 -- 6,934
+      cases. Serial prints what each name resolved to; the guest resolves real
+      locales (German/French/Spanish/Swiss names, de-DE, fr-FR, .OCP -> 437).
+      Two guest limits, identical on Microsoft's side: ReactOS's
+      IsValidLocaleName accepts junk ("junk", "xx-XX"), and LC_CTYPE never
+      leaves 1252 -- .utf8, .932, ja-JP and every UTF-8 tag fail that category
+      -- so setlocale's multibyte/UTF-8 ctype paths are not reached in the guest.
+    note: >
+      A PORT, in five pieces that call each other only through locale_abi.rs,
+      which declares every internal the remaining ~160 ucrt objects call by C
+      name: locale_data (tables and statics, byte- and relocation-compared
+      against Microsoft's objects on all three arches by
+      tools/compare_coff_data.py), locale_init (the four category initializers)
+      and nls_wrappers (the ANSI NLS wrappers), mbctype and qualified_locale
+      (their tables compared the same way), and setlocale (setlocale/_wsetlocale,
+      the _locale_t lifecycle, reference counting, the _LocaleUpdate hooks).
+      Every layout is pinned in locale.rs against offsets measured with the
+      build's own flags. Microsoft's quirks are transcribed and commented, among
+      them: "xyz-8" is UTF-8 for a BCP-47 tag (operator precedence), the UTF-8
+      _setmbcp path clears only the first few mbctype entries, "kok"/"kok-IN" are
+      unreachable by name (the table is out of sort order), and
+      __acrt_GetLocaleInfoA writes a pointer-sized NULL before every result.
+    exports:
+      - ___lc_codepage_func
+      - ___lc_collate_cp_func
+      - ___lc_locale_name_func
+      - ___mb_cur_max_func
+      - ___mb_cur_max_l_func
+      - __initialize_lconv_for_unsigned_char
+      - __p__mbcasemap
+      - __p__mbctype
+      - __pctype_func
+      - __pwctype_func
+      - _configthreadlocale
+      - _create_locale
+      - _free_locale
+      - _get_current_locale
+      - _getmbcp
+      - _mbcasemap
+      - _setmbcp
+      - _wcreate_locale
+      - _wctype
+      - _wsetlocale
+      - localeconv
+      - setlocale
