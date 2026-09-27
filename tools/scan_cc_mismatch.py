@@ -233,6 +233,11 @@ def convention_facts(src: str):
             continue
         block_line = src.count("\n", 0, m.start())
         for d in DECL_FN_RE.finditer(body):
+            # A commented-out line is not a declaration: section.rs keeps
+            # `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block, and reading
+            # it made KeRaiseIrql look declared two ways.
+            if "//" in body[body.rfind("\n", 0, d.start()) + 1 : d.start()]:
+                continue
             line = block_line + body.count("\n", 0, d.start()) + 1
             text = lines[line - 1] if line - 1 < len(lines) else ""
             declarations.append((decl_symbol(d), cc, line, text))
@@ -252,6 +257,7 @@ def scan_crate(crate_src: str) -> list[str]:
     out = []
     for name, dd in decls.items():
         if name not in defs:
+            out.extend(decl_split_findings(name, dd))
             continue
         defcc = {NORM_I386.get(cc, cc) for cc, excluded in defs[name] if not excluded}
         if not defcc:
@@ -266,6 +272,33 @@ def scan_crate(crate_src: str) -> list[str]:
                     f'{rel}: [CC_MISMATCH] {name} declared extern "{cc}" '
                     f"but defined {sorted(defcc)} in-crate (i386 UB-fold risk)"
                 )
+    return out
+
+
+def decl_split_findings(name: str, dd: list[tuple[str, str, int]]) -> list[str]:
+    """[DECL_CC_SPLIT]: one crate declares an UNDEFINED symbol under two i386 conventions.
+
+    rustc keeps one LLVM declaration per symbol per crate, so every call site whose own view
+    disagrees with the surviving one is UB. On i386 it need not fold to ud2 -- fastfat's
+    fileinfo.rs declared IoGetCurrentIrpStackLocation "system" while cachesup/create/dirctrl
+    said "C": fileinfo's calls went to the cdecl thunk with stdcall's "callee pops" bookkeeping,
+    esp came back 4 bytes off, and the next esp-relative load read a garbage pointer
+    (BUGCHECK 0x50 writing a file on FAT). The existing check needs an in-crate DEFINITION to
+    judge against; this class needs none -- two answers to one question are already wrong.
+    One line per declaring file and spelling, so the baseline keys stay stable."""
+    ccs = {NORM_I386.get(cc, cc) for cc, _p, _l in dd}
+    if len(ccs) < 2:
+        return []
+    seen, out = set(), []
+    for cc, path, _line in dd:
+        rel = os.path.relpath(path, REPO)
+        if (rel, cc) in seen:
+            continue
+        seen.add((rel, cc))
+        out.append(
+            f'{rel}: [DECL_CC_SPLIT] {name} declared extern "{cc}" here; the crate also '
+            f"declares it {sorted(ccs - {NORM_I386.get(cc, cc)})} (i386 esp/UB risk)"
+        )
     return out
 
 

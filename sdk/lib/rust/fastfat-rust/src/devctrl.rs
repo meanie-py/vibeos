@@ -14,7 +14,14 @@ use crate::ddk_shims::{IO_COMPLETION_ROUTINE, IoIs32bitProcess};
 use crate::glue::{STATUS_MORE_PROCESSING_REQUIRED};
 
 extern "system" {
-    } extern "C" { fn DebugTrace(Level: i32, Flags: u32, Format: *const i8, ...); } extern "system" {
+    } extern "C" { fn DebugTrace(Level: i32, Flags: u32, Format: *const i8, ...); } extern "C" {
+    // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
+    // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
+    // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
+    // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
+    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: FatCompletionRoutine, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8); // body returns VOID (wdm) — NTSTATUS ret was decl drift
+}
+extern "system" {
     fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> u32;
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -25,7 +32,6 @@ extern "system" {
     fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
-    fn IoSetCompletionRoutine(Irp: *mut IRP, Routine: FatCompletionRoutine, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8); // body returns VOID (wdm) — NTSTATUS ret was decl drift
     fn PAGED_CODE();
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;

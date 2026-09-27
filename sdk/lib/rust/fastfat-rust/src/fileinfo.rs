@@ -180,8 +180,14 @@ extern "system" {
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...); } extern "system" {
+    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...); }
+extern "C" {
+    // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
+    // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
+    // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
+    // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
     fn IoGetCurrentIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
+} extern "system" {
     fn FatIsFastIoPossible(Fcb: *mut FCB) -> BOOLEAN;
 }
 

@@ -70,6 +70,7 @@ HELPER_FILES = [
     "triage-bugcheck.py",
     "walk-waitlist.py",
     "list-threads.py",
+    "who-holds.py",  # after list-threads.py + dump-thread.py: uses their offset tables
     "sample-pc.py",
     "run-until-bp.py",
     # DWARF-free decoders over VIBEOS_DEBUG_BLOCK (sync-instrumentation §5):
@@ -94,6 +95,7 @@ _VERB_MAP = {
     "pool-tag": "pool-tag {rest}",
     "identify-object": "identify-object {rest}",
     "list-threads": "list-threads {rest}",
+    "who-holds": "who-holds {rest}",
     "sample-pc": "sample-pc {rest}",
     "symbolicate-pc": "info symbol {rest}",
     "regs-raw": "info registers {rest}",
