@@ -530,6 +530,18 @@ unsafe fn WinLdrLoadBootDrivers(
             ERR(
                 b"Cannot load boot driver '%wZ'!\n\0".as_ptr() as PCSTR, (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize,
             );
+            // ERR is a trace channel nobody sees on UEFI; the kernel then never
+            // hears of the driver, and a device that needs it just sits there.
+            // (DbgPrint takes no arguments here, so narrow the path by hand.)
+            let path = &(*BootDriver).FilePath;
+            let mut name = [0u8; 128];
+            let n = ((path.Length / 2) as usize).min(name.len() - 1);
+            for i in 0..n {
+                name[i] = (*path.Buffer.add(i) & 0x7F) as u8;
+            }
+            DbgPrint(b"[FLDR] boot driver not loaded, dropped from the boot driver list: \0".as_ptr() as *const i8);
+            DbgPrint(name.as_ptr() as *const i8);
+            DbgPrint(b"\n\0".as_ptr() as *const i8);
             #[cfg(not(feature = "uefi"))]
             UiMessageBox(
                 b"Cannot load boot driver '%wZ'!\0".as_ptr() as PCSTR,

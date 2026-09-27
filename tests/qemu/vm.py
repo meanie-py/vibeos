@@ -965,8 +965,17 @@ def make_temp_disk(out: Path) -> None:
     )
     sectors = TEMP_DISK_MB * 2048 - _TEMP_PART_START
     subprocess.run(
-        ["mkfs.fat", "-F", "16", "-n", "VIBEOSTEMP", "--offset", str(_TEMP_PART_START),
-         str(raw), str(sectors // 2)],
+        [
+            "mkfs.fat",
+            "-F",
+            "16",
+            "-n",
+            "VIBEOSTEMP",
+            "--offset",
+            str(_TEMP_PART_START),
+            str(raw),
+            str(sectors // 2),
+        ],
         check=True,
         capture_output=True,
     )
@@ -982,6 +991,33 @@ def make_temp_disk(out: Path) -> None:
         capture_output=True,
     )
     raw.unlink()
+
+
+def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
+    """The \\TEMP disk policy, shared by every launcher (QemuVM, `gdb start`).
+
+    One decision, because a launcher that reimplements it drifts: the gdb engine
+    hand-mirrored the smoke command line, never learned this disk, and so could not
+    reproduce the one crash that only happens with it attached.
+    """
+    if not arch.startswith(("i386", "amd64")):
+        return []
+    # Default ON: it is also the only hard disk any x86 smoke attaches, and the
+    # disk path stayed broken for months without a single red because nothing
+    # exercised it -- classpnp's ClassCompleteRequest spun on a never-initialized
+    # lock (every boot with a disk hung), and on i386 fastfat's DriverEntry
+    # returned into its caller's stack the first time a FAT volume loaded it.
+    # `VIBEOS_QEMU_TEMP_DISK=0` opts out.
+    if os.environ.get("VIBEOS_QEMU_TEMP_DISK", "1").strip() in ("0", "false", "no"):
+        return []
+    disk = out_dir / "tempdisk.qcow2"
+    make_temp_disk(disk)
+    return [
+        "-drive",
+        f"file={disk},format=qcow2,if=none,id=tempdisk",
+        "-device",
+        "ide-hd,drive=tempdisk",
+    ]
 
 
 def _free_tcp_port() -> int:
@@ -1596,25 +1632,7 @@ class QemuVM:
         BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
-        if not self.config.arch.startswith(("i386", "amd64")):
-            return []
-        # Default ON for amd64: it is also the only hard disk any smoke attaches,
-        # and the classpnp disk path hung every boot that had one
-        # (ClassCompleteRequest spinning on a never-initialized lock) for months
-        # without a single red, because nothing exercised it. `=0` opts out.
-        # i386 is opt-in (`=1`) until its post-mount BUGCHECK 0x1E is fixed
-        # (roadmap bug registry: "i386 with a hard disk attached").
-        default = "1" if self.config.arch.startswith("amd64") else "0"
-        if os.environ.get("VIBEOS_QEMU_TEMP_DISK", default).strip() in ("0", "false", "no"):
-            return []
-        disk = self.scratch_path.parent / "tempdisk.qcow2"
-        make_temp_disk(disk)
-        return [
-            "-drive",
-            f"file={disk},format=qcow2,if=none,id=tempdisk",
-            "-device",
-            "ide-hd,drive=tempdisk",
-        ]
+        return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed

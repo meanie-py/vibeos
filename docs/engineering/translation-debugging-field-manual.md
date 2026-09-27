@@ -90,8 +90,8 @@ Prefer importing from `ntkrnl_sys::ddk` over hand-declaring: bindgen carries the
 convention, including fastcall. **Never trust a header that omits `NTAPI`** — `internal/mm.h`
 declares `MmDeleteVirtualMapping` without it and the symbol is stdcall anyway `[§9.107]`.
 
-### The five ways a convention mismatch manifests
-The same root produces five distinct symptoms; knowing which you're looking at saves the hunt.
+### The seven ways a convention mismatch manifests
+The same root produces seven distinct symptoms; knowing which you're looking at saves the hunt.
 1. **`ud2` after the call / folded success path.** The callsite's ABI contradiction lets LLVM
    prove the continuation unreachable → `unreachable` → BUGCHECK 0x1E `0xC000001D`. Cascades:
    one classpnp sweep folded ~46 functions from 76 decl↔def mismatches, and the cohab link
@@ -129,6 +129,19 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
    an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
    bugcheck print every stack word that lands in a module; the bad call's caller is there.
+7. **A bare cdecl name ALIASED onto a stdcall body: the CALLEE's caller returns into ITS
+   caller's stack.** `.set _KeInitializeSpinLock, _KeInitializeSpinLock@4` makes the bare
+   name link, but the body does `ret 4` and the cdecl caller then pops the same 4 bytes
+   again, so ESP ends every call N bytes high. A caller with an ESP-relative epilogue
+   restores its registers from the wrong slots. fastfat's DriverEntry made two such calls
+   (+8): it popped its own return address into EBX and its DriverObject into EBP, and
+   `ret 8` jumped to RegistryPath, a UNICODE_STRING on `IopInitializeDriverModule`'s
+   stack. Symptom: BUGCHECK 0x1E/0x7F with EIP **on the stack** a few dozen bytes above
+   ESP, the trap frame's EBX equal to a return address, and EBP in pool. The fix is a real
+   thunk (re-push N bytes, call `_X@N`, `ret`), not an alias; an alias is sound only for
+   `@0`. `tools/scan_cdecl_alias.py` flags `.set _X, _X@N` with N > 0. Binary check for the
+   same drift: `calll <_X@N>` immediately followed by `addl $N, %esp` that is NOT an
+   epilogue. i386 only, and only when a FAT volume made fs_rec load fastfat (2026-09-26).
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -2365,6 +2378,26 @@ just a label.
   — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
   unchecked literal for another.
 
+### An invented term in a length computation
+usbccgp's `USBCCGP_PDOSelectConfiguration` came out of translation as `Hdr.Length -
+offset_of!(Interface) - 16`; the C is `Hdr.Length - FIELD_OFFSET(..., Interface.Length)`, with
+no 16. The remaining length never reached 0, so the loop read an interface record past the end
+of the URB, and every composite-device function after the first failed to start with
+`STATUS_INVALID_PARAMETER` ("interface 0 is not in this function"). The first function passed
+or failed depending on what memory followed the URB. Found on the Pi 4 with a composite HID
+device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not have is an
+invented value, the same class as an invented constant; diff the expression, not just the
+names.**
+
+### A facility's own SUCCESS code translated as a bare `0`
+hidparser's `HidParser_UsageAndPageListDifference` ended `return HIDP_STATUS_SUCCESS;` in the
+C and `0` in the Rust. `HIDP_STATUS_SUCCESS` is `0x00110000`, not `STATUS_SUCCESS`, so kbdhid's
+check on it asserted on every keyboard report (a burst of `ASSERT FAILED: _s ==
+hid_sys::HIDP_STATUS_SUCCESS at kbdhid-rust/src/read.rs` whenever a key moved). Any caller that
+tests with `NT_SUCCESS` would not notice, which is why it survived. **When a subsystem defines its
+own success status (HIDP_, USBD_, NDIS_, SCARD_...), grep the translation for bare `0` returns in
+functions whose C returns it.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -4244,6 +4277,17 @@ already been met the note is describing a bug, not a plan.
   no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
   under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
   declarations and only the second is a variable.
+- **A body can lose its TAIL with nothing to show for it.** fastfat's `FatCreateNewDirent`
+  (translated before call sealing existed) returned right after its allocation logic; the
+  orphaned-LFN check, the "dirents really unused" verify and `RtlSetBits` on the free-dirent
+  bitmap were all gone. It compiled, mounted and passed smoke on three arches for months,
+  because the missing bit only matters on the NEXT create that reuses deleted slots — which
+  could then be handed a live entry and overwrite another file's dirent. The one objection
+  was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
+  translation, diff each paired function's C callee set against its Rust body. A
+  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
+  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
+  each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
@@ -6748,6 +6792,15 @@ gates the invariant statically: every hive `add_cd_file` stages into `reactos/sy
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
+**The loader has the same blind spot for boot drivers** (2026-09-26). A Start=0 service whose
+`.sys` is not on the ramdisk (usbccgp was never staged on arm64) is dropped from the boot driver
+list with only a trace-channel `ERR` nobody sees on UEFI, so the kernel never hears of it. The
+symptom is two steps away: a composite USB device matched `USB#COMPOSITE` in the
+CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The loader now prints
+`[FLDR] boot driver not loaded, dropped from the boot driver list: <path>`. On arm64 that list
+is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
+carries; read it when a device binds to nothing.
 
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
@@ -11205,6 +11258,15 @@ win32k is the largest single flip surface and its failures are stereotyped:
   filled, suspect the transfer-mode flag.**
 - **The first keystroke BUGCHECKs 0x1E** `[§9.38]` if the i8042prt DPC calls kbdclass
   `ClassService` as `extern "C"` — it is NTAPI stdcall on i386.
+- **arm64 USB input reached kbdclass and stopped there** (2026-09-26, first seen on the Pi 4).
+  `[KBDCLASS] first key delivered` printed, the desktop saw nothing. win32k's RIT opens exactly
+  `\Device\KeyboardClass0` and `\Device\PointerClass0`, and arm64input created both names
+  unconditionally for its virtio-input devices, so kbdclass/mouclass fell back to `...Class1`,
+  which nobody reads. The QEMU xHCI gate had only ever checked the kbdclass marker. Fix:
+  arm64input claims the names only when it finds virtio-input; the RIT now prints which driver
+  owns each device it opens and `[WIN32K] RIT first keyboard input`, the marker that proves the
+  desktop got a key. **A delivery marker proves delivery to the layer that prints it, and no
+  further.**
 - **winlogon 0xF4 on the first FAILING user-mode callback** `[§9.39]` — i386
   `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the
   user-ESP restore. The `'seh` block must yield `Result<NTSTATUS, NTSTATUS>` so the two are
@@ -11493,6 +11555,17 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### `ASSERT FAILED: MDL_MAPPED_TO_SYSTEM_VA == 0 at iomgr-rust/src/iomdl.rs` on every USB transfer
+- **Symptom:** the assert prints repeatedly once USB devices enumerate (seen on QEMU xHCI
+  boots, some amd64 smokes and the Pi 4); nothing fails outright.
+- **Cause:** `ntkrnl-sys`'s `driver_ddk::MmGetSystemAddressForMdlSafe` mapped the MDL on
+  every call. The WDK inline returns `MappedSystemVa` when the MDL is already mapped or
+  describes nonpaged pool. So every call leaked a system mapping, overwrote
+  `MappedSystemVa`, and the MDL was freed still mapped. usbport calls it per transfer, and
+  kbdclass, mouclass, hidclass, fastfat, afd and others use the same copy.
+- **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
+  crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
 
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing

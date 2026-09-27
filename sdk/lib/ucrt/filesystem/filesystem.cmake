@@ -8,7 +8,6 @@ list(APPEND UCRT_FILESYSTEM_SOURCES
     filesystem/rename.cpp
     filesystem/rmdir.cpp
     filesystem/splitpath.cpp
-    filesystem/stat.cpp
     filesystem/unlink.cpp
     filesystem/waccess.cpp
     filesystem/wchmod.cpp

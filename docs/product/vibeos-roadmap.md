@@ -491,8 +491,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 ### Owed work (moved from closed docs)
 - [ ] **Input unification migration** *(input-architecture, roadmap §10a)*: USB HID as the
   default smoke input transport ×3 arches; retire `arm64input` + `i8042prt` (or demote to
-  explicit fallback). The usbxhci gap is closing: the driver exists and types in QEMU
-  (2026-09-26, `docs/engineering/usbxhci-design.md`); the Pi 4 is its next milestone.
+  explicit fallback). The usbxhci gap is closed: USB HID is the Pi 4's keyboard and mouse
+  (2026-09-26, `docs/engineering/usbxhci-design.md`), and arm64input now yields
+  `KeyboardClass0`/`PointerClass0` to kbdclass/mouclass wherever it finds no virtio-input.
 - [ ] **Warm-build driver-relink infra bug** *(input lane)*: warm `vibeos-cli build` doesn't
   relink driver `.sys` after an `ntkrnl-sys` edit — false-fresh family; cost 3 debug rounds.
 - [ ] **KD continuation** *(windbg handoff)*: amd64 same-CPL `int 2Dh` machine-frame
@@ -556,16 +557,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — OPEN**
-  (2026-09-26). `VIBEOS_QEMU_TEMP_DISK=1 ./vibeos-cli smoke --arch i386`: the disk now
-  starts and fastfat mounts it (the two classpnp fixes in the user32 A/B "Class-test"
-  entry below), then around desktop start
-  `0x1E (0xc000001d, EIP in no module)` with EIP on the stack a few dozen bytes above ESP:
-  another return through a corrupted frame, i386-only, on the FAT/disk path. The stack scan
-  shows only stale words (`IopInitializePlugPlayServices`, `fastfat.sys+0`).
-  `scan_fnptr_abi_transmute` and a sweep of every `abi_cast!` and typed transmute find
-  nothing else on that path, so the next step is a GDB session breaking on the fault.
-  amd64 boots clean with the same disk and runs the winetests against it.
+- **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
+  (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
+  volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's
+  stack. `rust_cohab_forceinline.c` bridged the bare cdecl names of eight wdm FORCEINLINE
+  helpers (`KeInitializeSpinLock`, `ExInitializeFastMutex`, the `Io*IrpStackLocation`
+  family, `IoSetCompletionRoutine`) to their stdcall bodies with `.set _X, _X@N` ALIASES,
+  so every cdecl call popped its arguments twice. DriverEntry made two (+8 bytes): its
+  ESP-relative epilogue popped the return address into EBX and DriverObject into EBP, and
+  `ret 8` jumped to RegistryPath on `IopInitializeDriverModule`'s stack. Every register in
+  the trap frame matches that arithmetic. Fixed with real cdecl->stdcall thunks;
+  `scan_cdecl_alias` (in `check`, baseline empty) forbids the alias shape, and the field
+  manual's convention-mismatch list has it as manifestation 7. Verified: `smoke --arch i386
+  --repeat 3` with the disk, 3/3, `C:\TEMP` found each boot. The disk is now attached by
+  default on i386 as well. Found with a gdb probe once two tool gaps were closed: `gdb
+  start` never attached the disk (now shares `vm.temp_disk_args`), and triage resolved
+  i386 MP faults against the UP kernel (the loader names ntkrnlmp `ntoskrnl.exe`).
+- **fastfat never marked a new directory entry as used — FIXED** (2026-09-26). Seen as
+  an i386 `FatDeleteDirent` ASSERT (`FreeDirentBitmap` bits not set, twice per boot), but
+  the cause was on every arch: the Rust `FatCreateNewDirent` had lost the tail of the C
+  (`dirsup.c:414-534`) — the orphaned-LFN check, the "dirents really are unused" verify, and
+  `RtlSetBits` on the free-dirent bitmap. So every new dirent stayed FREE in memory, and a
+  later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
+  entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
+  smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **fastfat pre-seal translation audit: other bodies may have lost statements — OPEN**
+  (2026-09-26). fastfat was translated before call sealing, so nothing checks that a Rust
+  body kept its C's calls. A throwaway per-function callee diff over all 356 paired
+  functions reports 441 missing names in 163 functions; most are macro expansions or
+  DUMMY_PSEH-dead finally blocks (e.g. `FatAddToWorkque` is equivalent). Leads worth reading
+  first: `FatQueueClose` (62 Rust lines vs 272 C), `FatCommonCreate`/`FatOpenExistingFile`
+  (no `FatDeleteFcb`/`FatDeleteCcb`/`FatDeleteDirent` failure cleanup),
+  `FatMountVolume` (`CcSetAdditionalCacheAttributesEx`). `FatInvalidateVolumes` and
+  `FatCommonSetEa` are LOUD stubs (bugcheck / `STATUS_INVALID_DEVICE_REQUEST`), not drops.
+  Method in the field manual: "A body can lose its TAIL with nothing to show for it".
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
@@ -574,10 +599,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   arm64 `KeAcquireSpinLockRaiseToDpc` only raised IRQL and never took the lock, which
   under real concurrency corrupted the PFN lists (`0x4E`). `smoke --smp 4` 3/3, and the
   Pi runs four cores to the desktop.
-- **Notepad's menu bar renders blank. OPEN** (seen 2026-09-26). The `File Edit Format
-  View Help` bar is an empty strip, on arm64 QEMU and on a Raspberry Pi 4 alike (the
-  smoke screenshot shows it too), while the title bar, status bar and taskbar draw
-  text fine. Not investigated.
+- **Notepad's menu bar renders blank. FIXED on master, cause not traced** (seen
+  2026-09-26 morning on arm64 QEMU and the Pi). The same evening the Pi drew the full
+  `File Edit Format View Help` bar on build `f5abd8cee6a4`; the fix came in with a
+  master merge and was not identified.
 - **`ntkrnl-sys` had DRIFTED from the C headers on all three arches, and three tools that
   would have caught it were broken by one cause and all three exited 0. FIXED 2026-09-26**
   -- regenerated, plus the one translation the stale island had been hiding (below). i386
@@ -781,9 +806,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE, ALL SEVEN RESOLVED except `uitools`** (2026-09-25; `combo`, `winstation`,
-  `scroll`, `dde` FIXED and `monitor` no longer diverging, 2026-09-26, see below;
-  `uitools` is the known discarded GDI batch). First time the WoW64 control has run across a whole
+  REFERENCE, ALL SEVEN RESOLVED** (2026-09-25; `combo`, `winstation`,
+  `scroll`, `dde`, `uitools` FIXED and `monitor` no longer diverging, 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
@@ -793,7 +817,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
   | `dde` | ~~TIMED OUT~~ **24** | ~~CRASH `0xc0000005`~~ **24** | **FIXED 2026-09-26**; the guest now PASSES one assertion native fails (929) |
   | `monitor` | 20 failures | ~~23~~ **20** | **NO LONGER DIVERGES 2026-09-26** — cause unattributed, see below |
-  | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
+  | `uitools` | 0 failures | ~~1~~ **0** | **FIXED 2026-09-26** — executing the guest GDI batch; 42 tests both sides |
   | `scroll` | ~~140~~ **14** | ~~17~~ **14** | FIXED 2026-09-26 on BOTH sides; now identical line for line |
   | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
   **`combo` was win32k reading guest user32's private `HEADCOMBO` at the amd64 layout.**
@@ -846,8 +870,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it; `ladder.ALSO_ACCEPTED` now names the upgrade. Now 24 on both sides; against a quiet
   native run the guest differs only by PASSING 929, plus one extra trailing byte in the
   2510 failure both sides share.
-  `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
-  owed item (since paid: the guest batch is executed as of 2026-09-26; re-run `uitools`). `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  **`uitools` FIXED 2026-09-26: guest 42 tests, 0 failures, same as native**, re-measured
+  with `build --arch amd64 --winetest-sweep --winetest-only uitools` once the guest batch
+  was executed rather than reset. The diagnosis, kept because it was the first measured
+  cost of the discard: it was the discarded guest GDI batch. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
   correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
   `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no

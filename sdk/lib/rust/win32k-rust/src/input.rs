@@ -377,6 +377,16 @@ pub unsafe extern "system" fn RawInputThreadMain() {
 
     PoRequestShutdownEvent(&mut ShutdownEvent);
 
+    extern "C" {
+        fn DbgPrint(Format: *const u8, ...) -> u32;
+    }
+    // One line per device when it opens (or first fails to): which transport
+    // feeds the desktop is otherwise invisible, and a class device nobody opens
+    // drops every key without a trace.
+    let mut mou_open_logged = false;
+    let mut kbd_open_logged = false;
+    let mut first_kbd_logged = false;
+    let mut first_mou_logged = false;
     loop {
         if ghMouseDevice.is_null() {
             Status = OpenInputDevice(
@@ -386,7 +396,12 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             );
             if NT_SUCCESS(Status) {
                 cMaxWaitObjects += 1;
+                DbgPrint(b"[WIN32K] RIT opened \\Device\\PointerClass0 (driver %wZ)\n\0".as_ptr(),
+                    &(*(*(*pMouDevice).DeviceObject).DriverObject).DriverName as *const _);
+            } else if !mou_open_logged {
+                DbgPrint(b"[WIN32K] RIT cannot open \\Device\\PointerClass0 yet: 0x%x\n\0".as_ptr(), Status as u32);
             }
+            mou_open_logged = true;
         }
         if ghKeyboardDevice.is_null() {
             Status = OpenInputDevice(
@@ -394,7 +409,13 @@ pub unsafe extern "system" fn RawInputThreadMain() {
                 &mut pKbdDevice,
                 wide_str!("\\Device\\KeyboardClass0"),
             );
+            if !NT_SUCCESS(Status) && !kbd_open_logged {
+                DbgPrint(b"[WIN32K] RIT cannot open \\Device\\KeyboardClass0 yet: 0x%x\n\0".as_ptr(), Status as u32);
+            }
+            kbd_open_logged = true;
             if NT_SUCCESS(Status) {
+                DbgPrint(b"[WIN32K] RIT opened \\Device\\KeyboardClass0 (driver %wZ)\n\0".as_ptr(),
+                    &(*(*(*pKbdDevice).DeviceObject).DriverObject).DriverName as *const _);
                 cMaxWaitObjects += 1;
                 UserInitKeyboard(ghKeyboardDevice);
                 UserEnterExclusive();
@@ -491,6 +512,11 @@ pub unsafe extern "system" fn RawInputThreadMain() {
         }
 
         if NT_SUCCESS(MouStatus) && MouStatus != STATUS_PENDING {
+            if !first_mou_logged {
+                first_mou_logged = true;
+                DbgPrint(b"[WIN32K] RIT first mouse input flags=0x%x x=%d y=%d\n\0".as_ptr(),
+                    MouseInput.Flags as u32, MouseInput.LastX, MouseInput.LastY);
+            }
             IntLastInputTick(1);
 
             UserEnterExclusive();
@@ -501,6 +527,11 @@ pub unsafe extern "system" fn RawInputThreadMain() {
         }
 
         if NT_SUCCESS(KbdStatus) && KbdStatus != STATUS_PENDING {
+            if !first_kbd_logged {
+                first_kbd_logged = true;
+                DbgPrint(b"[WIN32K] RIT first keyboard input sc=0x%x flags=0x%x\n\0".as_ptr(),
+                    KeyInput.MakeCode as u32, KeyInput.Flags as u32);
+            }
             IntLastInputTick(1);
 
             UserEnterExclusive();
@@ -512,9 +543,6 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             static mut RIT_KBDERR_TRACE: u32 = 0;
             if RIT_KBDERR_TRACE < 8 {
                 RIT_KBDERR_TRACE += 1;
-                extern "C" {
-                    fn DbgPrint(Format: *const u8, ...) -> u32;
-                }
                 DbgPrint(
                     b"[WIN32K] RIT kbd read FAILED status=0x%x\n\0".as_ptr(),
                     KbdStatus as u32,

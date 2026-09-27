@@ -5,10 +5,15 @@ Raspberry Pi 4 (whose only host ports are behind a VL805 xHCI) and on modern PCs
 which often have no EHCI at all. `docs/product/driver-roadmap.md` rates xHCI
 **Critical**.
 
-**Status (2026-09-26): M1-M3 done in QEMU.** `usbxhci.sys` (`sdk/lib/rust/usbxhci-rust`,
-`drivers/usb/usbxhci`) brings the controller up, enumerates a USB keyboard and mouse on
-their own slots, and a keystroke reaches kbdclass through it, on arm64 at `-smp 1` and
-`-smp 4`. Rig: `VIBEOS_QEMU_XHCI=1` (below). Next: M4, the Pi.
+**Status (2026-09-26): M1-M4 done.** `usbxhci.sys` (`sdk/lib/rust/usbxhci-rust`,
+`drivers/usb/usbxhci`) brings the controller up, enumerates USB keyboards and mice, and
+their input reaches the desktop. That holds in QEMU on arm64 at `-smp 1` and `-smp 4`
+(rig: `VIBEOS_QEMU_XHCI=1`, below). It also holds **on a physical Raspberry Pi 4**:
+- **The path:** the VL805 → the board's VIA USB 2.0 hub → a Pico 2 W composite device.
+- **The proof:** text typed on the Pico appears in Notepad, and the Pico's absolute
+  pointer clicks land where aimed.
+
+See "The Pi, as built" below.
 
 ## Where it plugs in
 
@@ -107,29 +112,63 @@ sees a USB2 root hub.
   SetEndpointStatus(RUN). Abort turns a TD into No-Ops and moves the dequeue
   pointer past it when it was next.
 
+### The Pi, as built
+
+- **Publishing XHC0.** No ACPI bus driver runs on arm64. Instead the HAL's own PnP
+  root (`hal-rust/src/arm64/pnpdd.rs`, the arm64 counterpart of x86's `halpnpdd`)
+  enumerates the ACPI-only devices that `arm64/acpi.rs` finds in the DSDT/SSDTs.
+  - **Recognition:** it matches `_HID` and reads the constant AML without evaluating
+    methods.
+  - **Fixup:** the one method result it cannot compute (the `_CRS` method grows
+    Len from 1 to 0x1000) becomes a 4 KiB minimum window.
+  - **XHC0's resources:** `ACPI\PNP0D10` with MMIO `0x6_0000_0000` + 4 KiB and GSIV
+    175, level-triggered.
+  - **Binding:** CDDB `ACPI#PNP0D10` → usbxhci.
+  - **On QEMU** the root has no children.
+- **Its PCI face.** usbport treats every parent as a PCI function. The child PDO
+  serves `BUS_INTERFACE_STANDARD` from the real config window that `_INI`'s
+  OperationRegion names (`0xFD508000`, VL805 1106:3483), bus 1 device 0.
+  - **The `_INI` write:** at enumeration it writes COMMAND = memory + bus master +
+    INTx-disable; usbxhci unmasks INTx after its reset, as on PCI.
+  - **Trigger mode:** the HAL now programs level-triggered SPIs level in GICD_ICFGR.
+- **Topology.** usbport's miniport interface carries only the immediate parent port
+  and the TT hub's address. `USBPORT_SetXhciTopology` walks the device-handle chain
+  and passes the rest in fields other miniports ignore:
+  - the root port and route string, in `Reserved3`;
+  - the TT hub and TT port, in `Reserved6`.
+
+  The slot context then gets the route string, the root port, and Parent Hub Slot /
+  Parent Port for a low- or full-speed device below a high-speed hub. A hub's slot
+  gets Hub, port count and TT think time from its hub descriptor (usbxhci recognises
+  the reply by its type byte; usbhub first asks with wValue 0).
+- **VL805 firmware.** StartController's HCRST did not lose it: after the reset the
+  controller runs and enumerates without the VideoCore mailbox reload Linux uses
+  after a PCIe link reset. We never reset the link.
+- **Non-coherent DMA** (`_CCA 0`) works on the hardware, using the explicit cache
+  maintenance in `hw.rs` and the private payload arena (`usbxhci-review.md`).
+
 ### Not yet (tracked, in rough order)
 
-1. **M4, the Pi**: publish XHC0's MMIO/IRQ from the loader; `_INI`'s command-register
-   write; the VL805 firmware question. Rings/contexts use explicit cache
-   maintenance (`hw.rs`); payloads now DMA through private page-isolated common
-   buffers, cleaned before handoff and invalidated before copying IN bytes back.
-   Physical non-coherent DMA still needs Pi validation. See `usbxhci-review.md`.
-2. **Devices behind hubs.** The slot context always says "root port, route string 0";
-   usbport's endpoint properties do not carry the parent hub, so this needs usbport to
-   hand the miniport the topology.
-3. **Interrupt polling interval.** Endpoints open with usbport's Period (32 ms for
+1. **Interrupt polling interval.** Endpoints open with usbport's Period (32 ms for
    usb-kbd), not the descriptor's bInterval; fine for typing, sluggish for a mouse.
-4. **SuperSpeed ports** (a USB 3 root hub), bulk-heavy devices (usbstor), isochronous.
-5. **Slot reclamation.** A removed device's slot is freed when the next device appears
-   on the same root port, not at removal.
+2. **SuperSpeed ports** (a USB 3 root hub, SuperSpeed hubs), bulk-heavy devices
+   (usbstor), isochronous. USB 2.0 hubs and TT work.
+3. **Slot reclamation.** usbport does not tell the miniport about removals. A
+   removed device's slot is freed when usbport reuses its address (SET_ADDRESS) or a
+   new device appears at the same place, not at removal. Unplug and replug across hub
+   ports works on the Pi. An endpoint command failing on an unplugged device (its
+   endpoints halt with split-transaction errors) affects only that device, unless
+   the endpoint context still says Running.
 
 ### Rig
 
 `VIBEOS_QEMU_XHCI=1` adds `qemu-xhci` (pinned to PCI slot 8) with `usb-kbd` and
 `usb-mouse`, and on arm64 drops the virtio keyboard/mouse. QEMU gives host input to
 the most recently activated handler, and virtio-input activates after usb-kbd, so it
-would take every keystroke. Proof of the USB path: `[KBDHID] read completion` then
-`[KBDCLASS] first key delivered` after `input-send-event`.
+would take every keystroke. Proof of the USB path: `[KBDHID] read completion`,
+`[KBDCLASS] first key delivered` and `[WIN32K] RIT first keyboard input` after
+`input-send-event`. The last one matters: kbdclass delivering a key does not mean the
+desktop reads that class device (arm64input used to own `KeyboardClass0`).
 
 ## Per-arch facts
 
@@ -155,13 +194,9 @@ would take every keystroke. Proof of the USB path: `[KBDHID] read completion` th
     `6` (memory space + bus master) to its command register. Nothing on arm64
     runs AML, so we must do this ourselves.
 
-  **arm64 VibeOS has no ACPI bus driver** (`acpi.sys` is not staged), so nothing
-  creates that device today. Plan, cheapest first: the loader already walks
-  ACPI for the GIC and UART; teach it to find `PNP0D10` in the SSDTs (a fixed
-  byte pattern, no AML interpreter needed for a node this simple) and hand the
-  kernel its MMIO/IRQ, with the `_INI` command-register write done by the
-  driver's start path. The general answer, `acpi.sys` (ACPICA) on arm64, is a
-  separate and much larger job.
+  **arm64 VibeOS has no ACPI bus driver** (`acpi.sys` is not staged), so the HAL
+  publishes this device itself; see "The Pi, as built". The general answer,
+  `acpi.sys` (ACPICA) on arm64, is a separate and much larger job.
 
 ## Risks worth naming now
 

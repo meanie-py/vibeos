@@ -362,21 +362,42 @@ __asm__(".globl __int2c\n"
 #endif
 
 /* i386 dual-decoration bridge: the bindgen ddk substrate models these FORCEINLINE
- * helpers as `extern "C"` (bare), but other fastfat modules hand-declare them
- * `extern "system"` (@N). -mrtd makes our definitions @N; add a bare alias so the
- * `ddk`-imported references resolve to the same impl. (__int2c: bridge the
- * underscore/stdcall-arity gap between the asm symbol and the Rust @0 reference.) */
+ * helpers as `extern "C"` (bare, caller pops), but other fastfat modules
+ * hand-declare them `extern "system"` (@N, callee pops), and -mrtd makes our
+ * definitions @N. The bare name therefore needs a real cdecl THUNK, not a symbol
+ * alias of the bare name onto `_X@4` resolves the link but hands a cdecl caller a body that
+ * pops its argument a second time. fastfat's DriverEntry calls two of these, so on
+ * i386 it returned with ESP 8 bytes high, popped its own return address into EBX
+ * and `ret`-ed into its RegistryPath argument on the caller's stack -- BUGCHECK
+ * 0x1E with EIP on the stack, the first time a FAT volume made fs_rec load it.
+ * An alias is only sound for @0, where the two conventions are the same code.
+ *
+ * The thunk re-pushes the N bytes of arguments (each `pushl N(%esp)` fetches the
+ * next-lower argument, since the push itself moved ESP by 4), calls the stdcall
+ * body, which pops the copies, and returns leaving the caller's own to the caller.
+ * (__int2c: bridge the underscore/stdcall-arity gap between the asm symbol and the
+ * Rust @0 reference.) */
 #if defined(__i386__)
 __asm__(
-    ".globl _ExInitializeFastMutex\n        .set _ExInitializeFastMutex, _ExInitializeFastMutex@4\n"
-    ".globl _IoGetCurrentIrpStackLocation\n .set _IoGetCurrentIrpStackLocation, _IoGetCurrentIrpStackLocation@4\n"
-    ".globl _IoGetNextIrpStackLocation\n    .set _IoGetNextIrpStackLocation, _IoGetNextIrpStackLocation@4\n"
-    ".globl _IoMarkIrpPending\n             .set _IoMarkIrpPending, _IoMarkIrpPending@4\n"
-    ".globl _IoSetCompletionRoutine\n       .set _IoSetCompletionRoutine, _IoSetCompletionRoutine@24\n"
-    ".globl _IoSetNextIrpStackLocation\n    .set _IoSetNextIrpStackLocation, _IoSetNextIrpStackLocation@4\n"
-    ".globl _IoCopyCurrentIrpStackLocationToNext\n .set _IoCopyCurrentIrpStackLocationToNext, _IoCopyCurrentIrpStackLocationToNext@4\n"
-    ".globl _IoSkipCurrentIrpStackLocation\n       .set _IoSkipCurrentIrpStackLocation, _IoSkipCurrentIrpStackLocation@4\n"
-    ".globl _KeInitializeSpinLock\n               .set _KeInitializeSpinLock, _KeInitializeSpinLock@4\n"
+    ".text\n"
+    ".macro CDECL_TO_STDCALL name, bytes\n"
+    "    .globl _\\name\n"
+    "_\\name:\n"
+    "    .rept \\bytes / 4\n"
+    "    pushl \\bytes(%esp)\n"
+    "    .endr\n"
+    "    call _\\name\\()@\\bytes\n"
+    "    ret\n"
+    ".endm\n"
+    "CDECL_TO_STDCALL ExInitializeFastMutex, 4\n"
+    "CDECL_TO_STDCALL IoGetCurrentIrpStackLocation, 4\n"
+    "CDECL_TO_STDCALL IoGetNextIrpStackLocation, 4\n"
+    "CDECL_TO_STDCALL IoMarkIrpPending, 4\n"
+    "CDECL_TO_STDCALL IoSetCompletionRoutine, 24\n"
+    "CDECL_TO_STDCALL IoSetNextIrpStackLocation, 4\n"
+    "CDECL_TO_STDCALL IoCopyCurrentIrpStackLocationToNext, 4\n"
+    "CDECL_TO_STDCALL IoSkipCurrentIrpStackLocation, 4\n"
+    "CDECL_TO_STDCALL KeInitializeSpinLock, 4\n"
     ".globl ___int2c@0\n                    .set ___int2c@0, __int2c\n");
 #endif
 

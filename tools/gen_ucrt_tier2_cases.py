@@ -675,6 +675,20 @@ HAND_GRADED = (
     "_wcstod_l",
     "wcstold",
     "_wcstold_l",
+    # run_st_* (filesystem/stat.cpp): graded against a real fixture directory,
+    # devices and pipes, whole records compared.
+    "_stat32",
+    "_stat32i64",
+    "_stat64i32",
+    "_stat64",
+    "_wstat32",
+    "_wstat32i64",
+    "_wstat64i32",
+    "_wstat64",
+    "_fstat32",
+    "_fstat32i64",
+    "_fstat64i32",
+    "_fstat64",
 )
 
 

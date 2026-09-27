@@ -933,7 +933,10 @@ pub unsafe extern "system" fn HidParser_UsageAndPageListDifference(
         );
     }
 
-    0
+    // HIDP_STATUS_SUCCESS (0x00110000), as the C returns, not STATUS_SUCCESS:
+    // kbdhid checks for exactly that code, and the bare 0 translated here made
+    // it assert on every keyboard report.
+    HIDP_STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "system" fn HidParser_GetSpecificButtonCaps(

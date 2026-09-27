@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..vm import PROJECT_DIR, get_arch_config, smp_count, tripwire_args
+from ..vm import PROJECT_DIR, get_arch_config, smp_count, temp_disk_args, tripwire_args
 from . import archcfg
 
 RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
@@ -233,6 +233,9 @@ def _build_windows_cmd(
         ),
     ]
     scratch_dev = be.stage_media_paths(scratch_dev, staging)
+    # The same \\TEMP disk smoke attaches: a debug boot that differs from the smoke
+    # it is reproducing cannot reproduce a disk-path crash at all.
+    temp_dev = be.stage_media_paths(temp_disk_args(arch, staging), staging)
     smp = smp_count()
 
     cmd = [
@@ -248,6 +251,7 @@ def _build_windows_cmd(
         *(["-S"] if gdb_wait else []),
         *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(debugcon)}"]),
         *scratch_dev,
+        *temp_dev,
         *(["-smp", str(smp)] if smp is not None else []),
         *tripwire_args(),
         *arch_args,
