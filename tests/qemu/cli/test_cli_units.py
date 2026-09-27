@@ -2456,6 +2456,51 @@ def test_gdbengine_all_helper_files_exist():
     assert args.count("-ex") == len(ge_mod.HELPER_FILES)
 
 
+def test_gdbengine_run_until_relocates_before_breaking(tmp_path, monkeypatch):
+    """A run parked at reset has no kernel mapped: `run-until --break KeBugCheckEx` used to
+    arm the PE link address (0x49f942) and never fire. The base comes from the guest's own
+    [KRNLBASE] line, and the boot is resumed until it prints one."""
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
+    serial = tmp_path / "serial.log"
+    serial.write_text("")
+    run = ge_mod.DebugRun(
+        run_id="r",
+        arch="amd64",
+        backend="native",
+        gdb_host="h",
+        gdb_port=1,
+        serial_log=str(serial),
+        kernel_image="k",
+    )
+    calls = []
+
+    def fake_gdb(r, verb_ex, *, timeout, relocate=True):
+        calls.append((list(verb_ex), relocate, r.kernel_runtime_base))
+        if not verb_ex:  # the resume-only session: the guest boots and prints its base
+            serial.write_text("[KRNLBASE] ntoskrnl runtime base=FFFFF80042190000\n")
+        return "=== BREAKPOINT HIT ==="
+
+    monkeypatch.setattr(ge_mod, "_run_gdb", fake_gdb)
+    monkeypatch.setattr(ge_mod.time, "sleep", lambda s: None)
+    assert "BREAKPOINT HIT" in ge_mod.run_until(run, "KeBugCheckEx", timeout=5)
+    assert calls[0] == ([], False, "")
+    assert calls[1][2] == "0xfffff80042190000" and calls[1][1] is True
+    assert ge_mod.DebugRun.load("r").kernel_runtime_base == "0xfffff80042190000"
+
+    # Never printed: refuse to arm an unrelocated breakpoint rather than time out silently.
+    run2 = ge_mod.DebugRun(
+        run_id="r2",
+        arch="amd64",
+        backend="native",
+        gdb_host="h",
+        gdb_port=1,
+        serial_log=str(tmp_path / "empty.log"),
+        kernel_image="k",
+    )
+    monkeypatch.setattr(ge_mod, "wait_for", lambda r, p, timeout: False)
+    assert "BREAKPOINT NOT SET" in ge_mod.run_until(run2, "KeBugCheckEx", timeout=5)
+
+
 def test_gdbengine_manifest_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
     run = ge_mod.DebugRun(
@@ -2617,6 +2662,8 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
 
     monkeypatch.setattr(ge_mod, "_run_gdb", fake_run_gdb)
     run = ge_mod.DebugRun.__new__(ge_mod.DebugRun)
+    run.kernel_runtime_base = "0xfffff80042190000"  # already relocated: no resume session
+    run.arch = "amd64"  # symbol names are undecorated there
     out = ge_mod.run_until(run, "KeBugCheckEx", timeout=30, then=["bt 10", "triage-bugcheck"])
     ex = captured["ex"]
     assert "break KeBugCheckEx" in ex and "bounded-continue 30" in ex
@@ -7989,6 +8036,18 @@ def test_ninja_did_work_counts_edges_not_just_dirtiness():
     # progress lines only count at the start of a line -- a compiler diagnostic
     # that happens to quote one must not inflate the count
     assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
+
+
+def test_build_classifier_reports_a_timeout_as_a_timeout():
+    """Exit 124 is the runner's stage timeout. A slow build's output is mostly warnings,
+    and "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL."""
+    warning = (
+        "warning: `CreateFileW` redeclared with a different signature\n129 |   error: c_int,\n"
+    )
+    cls, _ = build_mod._classify_build_failure(warning + "cargo", "", 124)
+    assert cls == "BUILD_TIMEOUT"
+    cls, _ = build_mod._classify_build_failure("error[E0308]: mismatched types\n", "", 1)
+    assert cls == "CARGO_CHECK_FAIL"
 
 
 def test_link_classifier_does_not_mistake_duplicate_symbol_WARNINGS_for_the_failure():

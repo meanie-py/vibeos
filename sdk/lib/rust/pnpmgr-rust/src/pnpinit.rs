@@ -566,6 +566,18 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>(),
     );
     ExInitializeFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    // Upstream a7f658e3221: the GUIDs live in their own array, 8 slots to start.
+    (*PnpBusTypeGuidList).AllocatedCount = 8;
+    (*PnpBusTypeGuidList).GuidCount = 0;
+    (*PnpBusTypeGuidList).Guids = ExAllocatePoolWithTag(
+        PagedPool,
+        8 * core::mem::size_of::<ntkrnl_sys::ddk::GUID>(),
+        crate::pnpmgr::TAG_PNP_GUIDS,
+    ) as *mut ntkrnl_sys::ddk::GUID;
+    if (*PnpBusTypeGuidList).Guids.is_null() {
+        KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, STATUS_NO_MEMORY as _, 0, 0, 0);
+    }
+    core::ptr::write_bytes((*PnpBusTypeGuidList).Guids, 0, 8);
 
     PiQueueDeviceAction(Pdo, PiActionEnumRootDevices, core::ptr::null_mut(), core::ptr::null_mut());
 

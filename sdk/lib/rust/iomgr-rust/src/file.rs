@@ -2026,8 +2026,8 @@ pub unsafe extern "system" fn IopCloseFile(
     Process: PEPROCESS,
     ObjectBody: PVOID,
     GrantedAccess: ACCESS_MASK,
-    HandleCount: ULONG_PTR,
-    SystemHandleCount: ULONG_PTR,
+    HandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
     let Process = opaque_ptr(Process);
     let ObjectBody = opaque_ptr(ObjectBody);

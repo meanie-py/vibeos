@@ -684,10 +684,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
   `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
   audit and a reading of the C confirm.
-  Seen while regenerating, not fixed: the kernel's ntkrnl-sys `KPRCB` lacks the
-  ReactOS-tail `StartCycles`/`CycleTime` pair the NDK headers now declare (upstream
-  `144fe39589b`), so `FeatureBitsHigh` sits at a different offset for Rust than for any C
-  compiled against the headers. No live C reads those fields today.
+  **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
+  the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
+  `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
+  `pack(1)` layout — upstream-sync wave-2 finding 19(b), which was INCONCLUSIVE), the
+  arbiter's 64-bit `Length`/`Alignment`, `RTL_BSD_DATA` (three new items, ported into
+  `BsdItemTable`), `EPROCESS`/`ETHREAD`'s `CycleTime` tails, `IO_BUS_TYPE_GUID_LIST`,
+  `KIPCR`. The NT6 OB callbacks (`07217d32458`) no longer need the transmutes ob, iomgr,
+  config and lpc carried past the old typedefs, and bindgen 0.73 now places a union's
+  bitfields (`RTL_BALANCED_NODE`'s `Red`/`Balance`) at bit 0 as C does. Nothing caught
+  the drift because `verify_offsets` was not gated and could not run on arm64 at all;
+  `check_committed_drift` now regenerates the size/offset asserts in every gate (`check --strict`).
+  The regen also let `scan_const_vs_island` see amd64 `MI_NUMBER_SYSTEM_PTES = 22000 * 22`
+  (upstream `4cba65d760a`, #8613) against the Rust's 22000. Baselined, not ported: that MM
+  layout change spans i386/amd64 init and is upstream-sync's (phase-4 review queue).
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal

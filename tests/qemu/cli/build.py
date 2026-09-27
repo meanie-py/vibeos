@@ -73,9 +73,15 @@ def source_date_epoch(repo: Path) -> str | None:
     return ts if cp.returncode == 0 and ts.isdigit() else None
 
 
-def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
+def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
+    # The runner turns a stage timeout into exit 124 (artifacts.Run.run). Classify it
+    # before scanning the text: a slow build's log is full of warnings, and
+    # "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL
+    # (2026-09-27, a bindgen regen emitting 8,285 warnings per ntkrnl-sys compile).
+    if rc == 124:
+        return "BUILD_TIMEOUT", ["stage hit its time budget; the build did not fail, it was killed"]
     # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
     # as a defect in the diff, which is exactly the wrong cause. It cost four
@@ -1004,7 +1010,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=1800,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1055,7 +1061,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=3600,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1108,7 +1114,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if "unknown target" in blob.lower():
             run.add(Stage(f"opt:{target}", status="skip", detail="absent from ninja graph"))
             continue
-        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "")
+        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "", cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1144,7 +1150,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=1800,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(

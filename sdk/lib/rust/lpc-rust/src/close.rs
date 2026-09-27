@@ -236,8 +236,8 @@ pub unsafe extern "system" fn LpcpClosePort(
     _Process: PEPROCESS,
     Object: PVOID,
     _GrantedAccess: ACCESS_MASK,
-    _ProcessHandleCount: ULONG_PTR,
-    SystemHandleCount: ULONG_PTR,
+    _ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
     let _Process = opaque_ptr(_Process);
     let Object = opaque_ptr(Object);

@@ -548,6 +548,9 @@ def build_parser() -> argparse.ArgumentParser:
     gst = gdbsub.add_parser("start", help="launch a detached debug QEMU + gdbstub")
     gst.add_argument("arch", choices=ACCEPTED_ARCHES)
     gst.add_argument("--wait", action="store_true", help="halt at reset (-S) for boot-from-zero")
+    gst.add_argument(
+        "--tripwire", default="", help="kernel debug knobs, as smoke --tripwire (SPECIALPOOL=Tag)"
+    )
     gst.set_defaults(fn=gdb_mod.cmd_start)
 
     gp = gdbsub.add_parser(
