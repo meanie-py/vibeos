@@ -189,9 +189,11 @@ tools/pi4/pico.sh pointer click 16384 16384 # absolute, 0..32767 per axis
 ```
 
 The token file is created by the bench owner; agents pass its path and never
-read it. The Pico is powered by the Pi, so it reboots with every power cycle
-and is on Wi-Fi ~12.5 s after power-on: too late for the UEFI F1 window, which
-stays on serial.
+read it. Since 2026-09-27 the Pico is also fed 5 V on VSYS through a rectifier
+diode, besides the Pi's USB. It stays up and on Wi-Fi across a `power.sh cycle`:
+`uptime` keeps counting, `usb` shows the suspend, and UEFI re-enumerates it
+~10 s in. Before that it rebooted with the Pi and joined Wi-Fi too late for the
+UEFI F1 window. Driving F1 from the Pico is untested; serial works.
 
 The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
 - **Configuration:** VibeOS configures it, and `usb` then shows `mounted=True`,
