@@ -557,19 +557,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Hardware faults in a Rust try body: amd64 + i386 — arm64 OPEN** (2026-09-26).
-  The per-boot `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3, an access
-  violation and a pool-tracker int3, each under try_finally inside try_except) passes on
-  amd64 and i386 and is compiled only there. **i386 FIXED:** a kernel-mode int3 is
-  dispatched with interrupts still disabled (KiDebugHandler re-enables them only for user
-  traps) and the hand-built catch in ntoskrnl/sehtry.c resumes by `__builtin_longjmp`, which
-  restores no flags, so the next page fault bugchecked 0x0A with P2 = -1 (KiTrap0E's "IF was
-  off" verdict). `RtlSehTryExcept` now records IF at try entry and restores it on the catch.
-  **arm64 OPEN:** `trace=13` — the body ran straight past both, so the brk is consumed without
-  dispatch and a kernel-mode read of VA 0x10 returns instead of faulting. Software raises
-  (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; this gap is for hardware
-  faults (MmProbeAndLockPages on a bad user buffer is the one fastfat relies on, and fastfat
-  is arm64's system volume). Repro: add aarch64 to the block's cfg and boot.
+- **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
+  access-violation case OPEN (handed to the Pi4 lane)** (2026-09-27). The per-boot
+  `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation
+  and a pool-tracker breakpoint, each under try_finally inside try_except) runs everywhere.
+  **i386 FIXED:** a kernel-mode int3 is dispatched with interrupts still disabled and the
+  hand-built catch in ntoskrnl/sehtry.c resumed by `__builtin_longjmp`, which restores no
+  flags, so the next page fault bugchecked 0x0A with P2 = -1; `RtlSehTryExcept` now records
+  IF at try entry and restores it on the catch. **arm64 brk FIXED:** every kernel brk was
+  skipped in the trap handler, because DbgBreakPoint and DebugService shared `brk #0xF000`
+  and only x0 told them apart. DebugService now uses `#0xF002` (Windows ARM64's service
+  immediate), a kernel `#0xF000` is dispatched as STATUS_BREAKPOINT, and an unhandled one
+  steps past the brk and continues (the amd64 policy). User-mode brk is still skipped, and
+  `#0xF001` (assertion) is unchanged. **arm64 AV OPEN:** VA 0x10 is mapped: the loader's
+  low identity map stays live (PAR_EL1 for 0x10 = PA page 0, TTBR0 == TTBR1), so a kernel
+  NULL read returns flash contents instead of faulting. The fix is to unmap at least the
+  0-64K guard once the kernel no longer needs loader identity VAs. It is with the Pi4 lane,
+  because on the Pi4 PA 0 holds the armstub spin table and hal-rust mpboot.rs may use it
+  through that map. The self-test skips the AV case on arm64 and says so; drop the skip
+  when it lands.
 - **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
   (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
   gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0

@@ -1134,6 +1134,14 @@ pub unsafe extern "system" fn KiDispatchException(
             }
         }
 
+        // An unhandled kernel breakpoint (DbgBreakPoint with no debugger and no
+        // __except that wants it) steps past the brk and continues, as amd64 does
+        // for an int3. PC is still AT the brk (ELR for a synchronous exception).
+        if (*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT {
+            (*TrapFrame).Pc += 4;
+            return;
+        }
+
         if (*ExceptionRecord).ExceptionCode == STATUS_ACCESS_VIOLATION
             && (*ExceptionRecord).NumberParameters >= 2
             // The probe fixup below is for data accesses only. Skipping an

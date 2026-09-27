@@ -1730,12 +1730,9 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // boot with a disk attached caught a DbgBreakPoint (the pool tracker's PoolHitTag
     // break) and the unwind from that trap faulted inside the unwinder, re-dispatched,
     // and looped until the stack overflowed (0x7F/8).
-    // amd64 only, and that is a KNOWN GAP, not a pass: on i386 a caught int3 leaves IRQL
-    // at HIGH (the next fault bugchecks 0x0A with IRQL 0xff), and on arm64 the brk is
-    // never dispatched and a kernel read of 0x10 does not fault at all. Both are open in
-    // the roadmap bug registry ("hardware faults in a Rust try body"); widen this cfg as
-    // each is fixed.
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    // arm64 skips the access-violation case, a KNOWN GAP and not a pass: the loader's
+    // low identity map is still live, so a kernel read of VA 0x10 does not fault (roadmap
+    // bug registry, "hardware faults in a Rust try body").
     {
         use ntkrnl_sys::seh::*;
         extern "system" {
@@ -1767,7 +1764,10 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             (r, trace)
         };
         let (bp, bp_trace) = run(0);
-        let (av, av_trace) = run(1);
+        // arm64: VA 0x10 is still mapped (the loader's low identity map), so the read
+        // cannot fault there yet. Skipped, and printed as skipped, until it is unmapped.
+        let av_applies = !cfg!(target_arch = "aarch64");
+        let (av, av_trace) = if av_applies { run(1) } else { (Ok(()), 0) };
         // The exact fastfat path: the int3 comes from deep in the pool tracker
         // (ExAllocatePoolWithTag -> ExpInsertPoolTracker, key == PoolHitTag).
         let mut hit = Err(0);
@@ -1787,14 +1787,15 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             }
         }
         let pass = bp == Err(STATUS_BREAKPOINT) && bp_trace == 3
-            && av == Err(STATUS_ACCESS_VIOLATION) && av_trace == 3
+            && (!av_applies || (av == Err(STATUS_ACCESS_VIOLATION) && av_trace == 3))
             && hit == Err(STATUS_BREAKPOINT);
         crate::dbg_print!(
-            b"[SEH-TRY] rust hw faults: int3=0x%x trace=%u av=0x%x trace=%u pooltrack=0x%x (%s)\n\0",
+            b"[SEH-TRY] rust hw faults: int3=0x%x trace=%u av=0x%x trace=%u%s pooltrack=0x%x (%s)\n\0",
             bp.err().unwrap_or(0),
             bp_trace,
             av.err().unwrap_or(0),
             av_trace,
+            if av_applies { b"\0".as_ptr() } else { b" (av skipped: low VA mapped)\0".as_ptr() },
             hit.err().unwrap_or(0),
             if pass { b"PASS\0".as_ptr() } else { b"FAIL\0".as_ptr() }
         );
