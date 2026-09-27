@@ -61,6 +61,23 @@ pub mod qualified_locale;
 #[cfg(feature = "setlocale")]
 pub mod setlocale;
 
+#[cfg(feature = "exec")]
+pub mod exec;
+#[cfg(feature = "atof")]
+pub mod atof;
+#[cfg(feature = "ctime")]
+pub mod ctime;
+#[cfg(feature = "timeset")]
+pub mod timeset;
+#[cfg(feature = "argv-data")]
+pub mod argv_data;
+#[cfg(feature = "align")]
+pub mod align;
+#[cfg(feature = "invalid-parameter")]
+pub mod invalid_parameter;
+#[cfg(feature = "lowio-open")]
+pub mod lowio_open;
+
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
 #[cfg(feature = "portable-string")]
@@ -69,6 +86,7 @@ extern crate crt_portable_rust;
 // Always compiled: it defines no symbols, only UCRT's locale layout and the
 // compile-time assertions pinning it. Gating it would mean the pins only hold
 // when some other family happens to be on.
+pub mod force_include;
 pub mod locale;
 pub mod locale_abi;
 pub mod locale_update;

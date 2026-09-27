@@ -287,26 +287,160 @@ def build_rustset(arch: str, out: Path) -> tuple[int, int]:
     return 1, len(rules)
 
 
+#: Our ucrtbase Rust archive, for the reference side's MISSING INTERNALS.
+UCRT_RUST_ARCHIVE = Path("dll/win32/ucrtbase/libcrt_shared_cargo.a")
+
+#: COFF/linker bookkeeping, not code: renaming these breaks the object.
+_BOOKKEEPING = (".refptr.", "@feat.", ".weak.", "__imp_")
+
+
+def undefined_symbols(objs: list[Path]) -> set[str]:
+    """Every symbol the objects reference but do not themselves define."""
+    nm = _tool("llvm-nm")
+    res = subprocess.run(
+        [nm, "--undefined-only", *(str(o) for o in objs)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-nm --undefined-only failed: {res.stderr.strip()[:1000]}")
+    out = set()
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[-2] in ("U", "w", "v"):
+            out.add(parts[-1])
+    return out - defined_symbols(objs)
+
+
+def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
+    """Our Rust's copies of the INTERNALS the reference set calls but no longer has.
+
+    A takeover deletes a Microsoft file whose non-exported internals other Microsoft
+    files still call: after the locale takeover, `strnicol.cpp` calls
+    `__acrt_CompareStringA`, the `_LocaleUpdate` hooks, the locale statics. In the
+    shipping DLL those calls land on our Rust. On the reference side nothing answered
+    them, and the harness stopped linking.
+
+    So the reference side gets those internals from our Rust archive -- and ONLY those.
+    Every symbol the archive DEFINES is renamed `ours_*` except the ones the reference
+    objects need, so nothing else can collide with, or shadow, Microsoft's code (or the
+    DLL's plain names the harness calls). Every export the archive CALLS is renamed to
+    the reference instance's `ref_*` copy where Microsoft's C defines one, so our
+    internals run inside the reference CRT instance, not across into the DLL's.
+
+    During a takeover check the deleted C is back on the link line, the reference set
+    defines those internals itself, and nothing here is needed: the archive is linked
+    as an archive, so no member is pulled.
+    """
+    build = REPO / f"build-{arch}"
+    src = build / UCRT_RUST_ARCHIVE
+    if not src.is_file():
+        raise RefsetError(f"{src} not found -- fix: ./vibeos-cli build --arch {arch}")
+    ref = out.parent / "libucrt_ref.a"
+    if not ref.is_file():
+        raise RefsetError(f"{ref} not found -- build the ucrt side first")
+
+    ref_defined = defined_symbols([ref])
+    needed_by_ref = undefined_symbols([ref])
+    rust_defined = defined_symbols([src])
+    rust_undefined = undefined_symbols([src])
+
+    # Exports the reference set defines, as `ref_*`: settled per arch exactly as
+    # rename_rules does, by reading the renamed names back out of the reference set.
+    ref_exports = {d[len("ref_"):] for d in ref_defined if d.startswith("ref_")}
+    ref_exports |= {"_" + d[len("_ref_"):] for d in ref_defined if d.startswith("_ref_")}
+
+    def bookkeeping(sym: str) -> bool:
+        return sym.startswith(_BOOKKEEPING) or sym.startswith("$")
+
+    # Function EXPORTS stay out even when the reference set calls them by plain name
+    # (an earlier takeover removed Microsoft's copy): the import library resolves
+    # those to the shipping DLL, as it always has, and a local definition here would
+    # also shadow the harness's own plain-name calls. DATA exports are the exception
+    # -- the import library carries only their `__imp_` slot, so a plain data
+    # reference from Microsoft's C has nothing else to bind to.
+    from export_census import parse_spec
+
+    exports = set(parse_spec(SPEC, arch))
+    data_exports = {
+        line.split()[-1]
+        for line in SPEC.read_text(errors="replace").splitlines()
+        if line.startswith("@") and " extern " in f" {line} "
+    }
+    underscored = sum(1 for e in exports if f"_{e}" in rust_defined) > sum(
+        1 for e in exports if e in rust_defined
+    )
+    dec = "_" if underscored else ""
+    function_exports = {f"{dec}{e}" for e in exports - data_exports}
+
+    needed = {
+        s
+        for s in (needed_by_ref & rust_defined)
+        if not bookkeeping(s) and s not in function_exports
+    }
+    rules = []
+    for sym in sorted(rust_defined):
+        if sym in needed or bookkeeping(sym):
+            continue
+        rules.append((sym, f"ours_{sym}"))
+    for sym in sorted(rust_undefined):
+        if bookkeeping(sym) or sym not in ref_exports:
+            continue
+        # i386 decorates: `_strlen` -> `_ref_strlen`.
+        to = f"_ref_{sym[1:]}" if sym.startswith("_") and f"_ref_{sym[1:]}" in ref_defined else f"ref_{sym}"
+        if to in ref_defined:
+            rules.append((sym, to))
+
+    objcopy = _tool("llvm-objcopy")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    mapfile = out.parent / f".{out.stem}-redefine.txt"
+    mapfile.write_text("".join(f"{a} {b}\n" for a, b in rules))
+    if out.exists():
+        out.unlink()
+    res = subprocess.run(
+        [objcopy, f"--redefine-syms={mapfile}", str(src), str(out)],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-objcopy failed on {src}: {res.stderr.strip()[:500]}")
+    return len(needed), len(rules)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--arch", required=True, choices=["i386", "amd64", "arm64"])
     ap.add_argument(
         "--side",
         default="ucrt",
-        choices=["ucrt", "msvcrt-rust"],
+        choices=["ucrt", "msvcrt-rust", "ucrt-internals"],
         help="ucrt: genuine Microsoft C -> ref_* (default). "
-        "msvcrt-rust: our existing msvcrt Rust bodies -> rust_*",
+        "msvcrt-rust: our existing msvcrt Rust bodies -> rust_*. "
+        "ucrt-internals: our ucrtbase Rust, only for internals the reference set lacks",
     )
     ap.add_argument(
         "--out", type=Path, help="output archive (default: build-<arch>/libucrt_<side>.a)"
     )
     args = ap.parse_args(argv)
 
-    default_name = {"ucrt": "libucrt_ref.a", "msvcrt-rust": "libucrt_rust.a"}[args.side]
+    default_name = {
+        "ucrt": "libucrt_ref.a",
+        "msvcrt-rust": "libucrt_rust.a",
+        "ucrt-internals": "libucrt_ours.a",
+    }[args.side]
     out = args.out or (REPO / f"build-{args.arch}" / default_name)
     try:
         if args.side == "ucrt":
             nobj, nsym = build_refset(args.arch, out)
+        elif args.side == "ucrt-internals":
+            nneed, nsym = build_internals_set(args.arch, out)
+            print(
+                f"ucrt-tier2-refset {args.arch} [ucrt-internals]: {nneed} internal(s) the "
+                f"reference set lacks, {nsym} symbols renamed -> {out}"
+            )
+            return 0
         else:
             nobj, nsym = build_rustset(args.arch, out)
     except RefsetError as exc:

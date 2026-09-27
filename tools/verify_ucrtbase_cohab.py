@@ -763,8 +763,59 @@ def check_burndown() -> tuple[list[str], list[str]]:
     return fails, notes
 
 
+#: Initializers nothing in this tree has ever force-included, so their absence is the
+#: baseline, not a loss: fma3 is Microsoft's x64 FMA3 math switch, and ReactOS's
+#: ucrtbase never linked it (no `_CRT_LINKER_FORCE_INCLUDE` for it exists anywhere).
+UNREFERENCED_INITIALIZERS = frozenset({"__acrt_tran_fma3_initializer"})
+
+_CRTALLOC_SYM = re.compile(r'_CRTALLOC\("\.CRT\$X[^"]*"\)\s*\w+\s+const\s+(\w+)\s*=')
+
+
+def check_force_includes(repo: Path | None = None) -> list[str]:
+    """Every CRT startup/shutdown hook must still be pulled into ucrtbase.
+
+    `sdk/lib/ucrt/initializers/*.cpp` each define a pointer in `.CRT$XIC`/`.CRT$XPX`
+    that nothing calls by name; the C file that needs it carries
+    `_CRT_LINKER_FORCE_INCLUDE(<sym>)`, a `/include:` directive, instead. Delete that
+    file in a takeover and the directive goes with it: the member is never linked and
+    the hook silently stops running, with no build or link error. The locale takeover
+    dropped two this way (the locale terminator and the multibyte initializer) and
+    graded green, because nothing graded runs at process startup or exit.
+
+    So each hook must still be named by a `_CRT_LINKER_FORCE_INCLUDE` in the remaining
+    C, or by `force_include!` in ucrt-rust (src/force_include.rs).
+    """
+    repo = REPO if repo is None else repo
+    init_dir = repo / "sdk" / "lib" / "ucrt" / "initializers"
+    hooks = set()
+    for f in sorted(init_dir.glob("*.cpp")):
+        hooks.update(_CRTALLOC_SYM.findall(f.read_text(errors="replace")))
+    text = []
+    for root, pattern in (
+        (repo / "sdk" / "lib" / "ucrt", "*.cpp"),
+        (repo / "sdk" / "lib" / "rust" / "ucrt-rust" / "src", "*.rs"),
+    ):
+        for f in root.rglob(pattern):
+            if init_dir not in f.parents:
+                text.append(f.read_text(errors="replace"))
+    blob = "\n".join(text)
+    findings = []
+    for sym in sorted(hooks - UNREFERENCED_INITIALIZERS):
+        if not re.search(rf"(_CRT_LINKER_FORCE_INCLUDE|force_include!)\(\s*{sym}\s*\)", blob):
+            findings.append(
+                f"ucrt initializer `{sym}` is force-included by nothing: its archive member "
+                f"will not be linked and the hook will never run. A takeover deleted the C "
+                f"file that carried `_CRT_LINKER_FORCE_INCLUDE({sym})`. fix: add "
+                f"`crate::force_include!({sym});` to the Rust module that replaced it"
+            )
+    return findings
+
+
 def main() -> int:
-    findings = check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
+    findings = (
+        check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
+        + check_force_includes()
+    )
     bd_fails, bd_notes = check_burndown()
     findings += bd_fails
     for f in findings:

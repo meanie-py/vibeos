@@ -129,5 +129,28 @@ mbctype = []
 qualified-locale = []
 setlocale = []
 
+# The second fan-out batch (one module each; see the module docs).
+# exec/spawnl.cpp, spawnlp.cpp, spawnv.cpp, spawnvp.cpp -- the 32 _spawn*/_exec* exports
+exec = []
+# convert/atof.cpp -- atof, _wtof, _atoflt, _atodbl and their _l forms
+atof = ["strtod"]
+# time/ctime.cpp -- _ctime32/64, _wctime32/64 and their _s forms
+ctime = []
+# time/timeset.cpp -- _daylight/_dstbias/_timezone/_tzname and their getters
+timeset = []
+# startup/argv_data.cpp -- __argc/__argv/_acmdln/_pgmptr and their accessors
+argv-data = []
+# heap/align.cpp -- the eight _aligned_* allocators
+align = []
+# misc/invalid_parameter.cpp -- the invalid-parameter handler machinery and _invoke_watson
+invalid-parameter = []
+# lowio/open.cpp -- _open/_sopen/_wopen/_wsopen and their _s/_dispatch forms
+lowio-open = ["findfile"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
+# `VaArgs`: reading C varargs on stable. The `...` entry points themselves are
+# three-line va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c, which
+# also supplies the va_arg pullers this crate's extern block names. varargs-rust has
+# no dependencies of its own, so this edge cannot reach msvcrt-crt-rust.
+varargs-rust = { path = "../varargs-rust" }

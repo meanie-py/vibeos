@@ -49,6 +49,9 @@ use core::ffi::{c_char, c_int, c_long, c_uint, c_void};
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use core::sync::atomic::{AtomicI32, Ordering};
 
+// wsetlocale.cpp carried `_CRT_LINKER_FORCE_INCLUDE(__acrt_locale_terminator)`; see force_include.rs.
+crate::force_include!(__acrt_locale_terminator);
+
 const EINVAL: c_int = 22;
 const ERANGE: c_int = 34;
 const ENOMEM: c_int = 12;

@@ -631,3 +631,32 @@ def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monk
     assert why and "isalpha" in why and "different tree" in why
     monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "isalpha"})
     assert vuc.burndown_stale("arm64") is None
+
+
+def _initializer_tree(tmp_path: Path, replaced_by_rust: bool) -> Path:
+    init = tmp_path / "sdk" / "lib" / "ucrt" / "initializers"
+    init.mkdir(parents=True)
+    (init / "timeset_initializer.cpp").write_text(
+        'extern "C" _CRTALLOC(".CRT$XIC")  _PIFV const __acrt_timeset_initializer = __acrt_initialize_timeset;\n'
+    )
+    src = tmp_path / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "timeset.rs").write_text(
+        "crate::force_include!(__acrt_timeset_initializer);\n" if replaced_by_rust else "// nothing\n"
+    )
+    return tmp_path
+
+
+def test_a_hook_whose_force_include_was_deleted_is_caught(tmp_path: Path):
+    # The positive control is the real loss: timeset.cpp deleted, its
+    # `_CRT_LINKER_FORCE_INCLUDE(__acrt_timeset_initializer)` gone with it.
+    findings = vuc.check_force_includes(_initializer_tree(tmp_path, replaced_by_rust=False))
+    assert len(findings) == 1 and "__acrt_timeset_initializer" in findings[0]
+
+
+def test_a_rust_force_include_satisfies_it(tmp_path: Path):
+    assert vuc.check_force_includes(_initializer_tree(tmp_path, replaced_by_rust=True)) == []
+
+
+def test_the_real_tree_force_includes_every_hook():
+    assert vuc.check_force_includes() == []

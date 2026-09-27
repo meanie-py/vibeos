@@ -67,6 +67,9 @@ use core::ffi::{c_int, c_long, c_uint, c_void};
 use core::ptr::{addr_of, addr_of_mut, null, null_mut};
 use core::sync::atomic::{AtomicI32, Ordering};
 
+// mbctype.cpp carried `_CRT_LINKER_FORCE_INCLUDE(__acrt_multibyte_initializer)`; see force_include.rs.
+crate::force_include!(__acrt_multibyte_initializer);
+
 // ── constants (sdk/include/ucrt/mbctype.h, winnls.h, corecrt_wctype.h) ─────
 
 /// mbctype.h:42-45, 49-50 -- the `_mbctype[]` bits.
