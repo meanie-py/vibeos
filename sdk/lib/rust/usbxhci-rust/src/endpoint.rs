@@ -332,6 +332,11 @@ unsafe fn configure_endpoint(x: &mut XhciExtension, ep: &XhciEndpoint, add: bool
     let icc = in_ctx(x, 0);
     if add {
         *icc.add(1) = 1 | (1 << ep.dci);
+        // usbport opens a SELECT_INTERFACE's new pipes before it closes the old
+        // ones, so the DCI can still be live: Drop and Add together replace it.
+        if !x.eps[slot as usize][ep.dci as usize].is_null() {
+            *icc.add(0) = 1 << ep.dci;
+        }
         let s = &mut x.slots[slot as usize];
         s.max_dci = s.max_dci.max(ep.dci);
     } else {
@@ -801,6 +806,11 @@ pub unsafe extern "system" fn XHCI_CloseEndpoint(xhciExtension: PVOID, xhciEndpo
         // Keep the slot: usbport closes EP0 to re-open it at the new address.
         x.slots[slot].ep0_open = false;
         set_event_endpoint(x, slot, 1, core::ptr::null_mut());
+        return;
+    }
+    // A pipe superseded by a later open of the same DCI (SELECT_INTERFACE):
+    // the controller already runs the replacement, so dropping would kill it.
+    if x.eps[slot][ep.dci as usize] != ep as *mut XhciEndpoint {
         return;
     }
     set_event_endpoint(x, slot, ep.dci as usize, core::ptr::null_mut());

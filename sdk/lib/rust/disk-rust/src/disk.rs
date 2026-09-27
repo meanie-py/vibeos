@@ -10799,7 +10799,7 @@ pub unsafe extern "C" fn DiskIoctlIsWritable(
             core::arch::asm!("int 0x2C");
             #[cfg(target_arch = "aarch64")]
             core::arch::asm!("brk #0xF001");
-            loop {}
+            // NT_ASSERT resumes after the break; no spin.
         }
     }
     if KeGetCurrentIrql() as i32 >= DISPATCH_LEVEL as i32 {
@@ -10815,7 +10815,7 @@ pub unsafe extern "C" fn DiskIoctlIsWritable(
             core::arch::asm!("int 0x2C");
             #[cfg(target_arch = "aarch64")]
             core::arch::asm!("brk #0xF001");
-            loop {}
+            // NT_ASSERT resumes after the break; no spin.
         }
         return STATUS_INVALID_LEVEL;
     }
@@ -10925,7 +10925,7 @@ pub unsafe extern "C" fn DiskIoctlIsWritable(
                 core::arch::asm!("int 0x2C");
                 #[cfg(target_arch = "aarch64")]
                 core::arch::asm!("brk #0xF001");
-                loop {}
+                // NT_ASSERT resumes after the break; no spin.
             }
             if !srb.is_null() {
                 ExFreePool(srb as *mut core::ffi::c_void);

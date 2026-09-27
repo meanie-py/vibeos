@@ -6297,7 +6297,9 @@ sweep.**
   the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
   suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
-  the macro expands to.
+  the macro expands to. `NT_ASSERT` breaks and then *continues*: disk.sys had three
+  `brk #0xF001; loop {}` sites, which the arm64 build's driver sweep reports as unexpected
+  branch-to-self spins, but only once the driver is in the mkramdisk staging list.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
   masquerades as a hang.
 
