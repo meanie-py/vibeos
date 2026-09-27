@@ -115,6 +115,53 @@ CHARDEV_CONNECT_ERROR = "Failed to connect to '"
 BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR, CHARDEV_CONNECT_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
 
+# The usbstor rig's stick (VIBEOS_QEMU_USB_DISK=1): an MBR disk, one FAT16
+# partition at 1 MiB labelled USB_STICK_LABEL, holding USB_STICK_FILE.
+USB_STICK_LABEL = "VIBESTICK"
+USB_STICK_FILE = "VIBEOS.TXT"
+USB_STICK_TEXT = b"hello from the usb stick\r\n"
+_USB_STICK_MIB = 64
+
+
+def make_usb_stick_image(path: Path) -> None:
+    """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy)."""
+    part_offset = 1 << 20
+    part_bytes = (_USB_STICK_MIB << 20) - part_offset
+    with tempfile.TemporaryDirectory() as td:
+        part = Path(td) / "part.img"
+        payload = Path(td) / USB_STICK_FILE
+        payload.write_bytes(USB_STICK_TEXT)
+        subprocess.run(
+            ["mkfs.fat", "-F", "16", "-n", USB_STICK_LABEL, "-C", str(part), str(part_bytes >> 10)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["mcopy", "-i", str(part), str(payload), f"::/{USB_STICK_FILE}"],
+            check=True,
+            capture_output=True,
+        )
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("wb") as f:
+            f.truncate(_USB_STICK_MIB << 20)
+            f.seek(part_offset)
+            f.write(part.read_bytes())
+        subprocess.run(
+            ["sfdisk", "--no-reread", "--no-tell-kernel", str(tmp)],
+            input=f"label: dos\nstart=2048, type=06\n".encode(),
+            check=True,
+            capture_output=True,
+        )
+        # qcow2, not raw: the rigs snapshot the VM (savevm), and QEMU refuses
+        # while any writable drive lacks snapshot support.
+        subprocess.run(
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(tmp), str(path)],
+            check=True,
+            capture_output=True,
+        )
+        tmp.unlink()
+
+
 # freeldr's boot-entry selector, as it appears verbatim inside the livecd ISO.
 # The x86 media has always carried BOTH flavors — [LiveCD_SMP] (/KERNEL=ntkrnlmp.exe
 # /HAL=halmp.dll) ships in every livecd.ini and all four binaries are staged — but
@@ -1498,6 +1545,22 @@ class QemuVM:
         `Pci(0x2,0x0)` path saved in efivars, and UEFI falls through to PXE."""
         if not self._xhci_enabled():
             return []
+        # The stick's -device comes after the controller that owns its bus; only
+        # its -drive rides with the staged disk args (_usb_disk_args). It sits
+        # behind a usb-hub: usb-storage can do SuperSpeed, so attached directly
+        # QEMU puts it on a USB3 root port, and usbxhci drives only the USB2
+        # ports. The hub is full speed, so this also exercises the TT path the
+        # Pi's VIA hub uses.
+        stick = (
+            [
+                "-device",
+                "usb-hub,bus=xhci.0,port=3,id=uhub",
+                "-device",
+                "usb-storage,bus=xhci.0,port=3.1,drive=usbstor0,id=ustick",
+            ]
+            if self._usb_disk_enabled()
+            else []
+        )
         return [
             "-device",
             "qemu-xhci,id=xhci,addr=0x8",
@@ -1505,6 +1568,7 @@ class QemuVM:
             "usb-kbd,bus=xhci.0,id=ukbd",
             "-device",
             "usb-mouse,bus=xhci.0,id=umouse",
+            *stick,
         ]
 
     def _without_virtio_input(self, args: list[str]) -> list[str]:
@@ -1531,25 +1595,28 @@ class QemuVM:
             i += 1
         return out
 
+    def _usb_disk_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() in ("1", "true", "yes")
+
     def _usb_disk_args(self) -> list[str]:
-        """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
-        by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
-        path lives beside scratch_path so the windows-host backend stages it like any
-        other media (route through be.stage_media_paths there, same as scratch)."""
-        if os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() not in ("1", "true", "yes"):
+        """VIBEOS_QEMU_USB_DISK=1 attaches a usb-storage stick (usbstor bring-up rig):
+        on the xHCI controller when VIBEOS_QEMU_XHCI=1 is also set (the device itself
+        is added by _xhci_args), otherwise on its own EHCI controller. The stick is a
+        64M MBR disk with one FAT16 partition holding USB_STICK_FILE, so a guest
+        that mounts it has something known to read back. The image lives beside
+        scratch_path so the windows-host backend stages it like any other media."""
+        if not self._usb_disk_enabled():
             return []
         usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
         if not usb_disk.exists():
-            subprocess.run(
-                ["qemu-img", "create", "-f", "qcow2", str(usb_disk), "64M"],
-                check=True,
-                capture_output=True,
-            )
+            make_usb_stick_image(usb_disk)
+        drive = ["-drive", f"file={usb_disk},format=qcow2,if=none,id=usbstor0"]
+        if self._xhci_enabled():
+            return drive
         return [
             "-device",
             "usb-ehci,id=xehci",
-            "-drive",
-            f"file={usb_disk},format=qcow2,if=none,id=usbstor0",
+            *drive,
             "-device",
             "usb-storage,bus=xehci.0,drive=usbstor0",
         ]

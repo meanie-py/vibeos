@@ -5185,6 +5185,13 @@ suspect call kept it failing; eighty made it green.
   compiled out, so every contended wait printed `ASSERT FAILED: (*WaitBlock).Signaled != 0`
   with a correct wake. Any field written only under `cfg(debug_assertions)` and read by an
   `ASSERT!` is a false positive waiting for its first execution; write it unconditionally.
+  **The mirror image hangs instead:** a DBG block left UNGATED beside a gated initializer.
+  classpnp's `ClasspInitializeRemoveTracking` took its non-DBG arm under
+  `cfg(debug_assertions)` and stored the C's "tracking off" sentinel, `-1`, in
+  `RemoveTrackingSpinlock`; `ClassCompleteRequest`'s DBG check had no gate and acquired it.
+  The first completed read off a USB stick spun forever in `KeAcquireSpinLockRaiseToDpc`
+  (lock word `0xFFFF…`, no holder). Gate every block of one `#if DBG` family the same way;
+  a spinlock whose value is all ones is a sentinel, not a holder.
 - **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
   an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
   resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
@@ -6245,7 +6252,9 @@ sweep.**
   the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
   suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
-  the macro expands to.
+  the macro expands to. `NT_ASSERT` breaks and then *continues*: disk.sys had three
+  `brk #0xF001; loop {}` sites, which the arm64 build's driver sweep reports as unexpected
+  branch-to-self spins, but only once the driver is in the mkramdisk staging list.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
   masquerades as a hang.
 
