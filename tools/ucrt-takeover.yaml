@@ -33,15 +33,16 @@
 # and it is regularly caused by ANOTHER lane landing a Rust body that happens to
 # cover a ucrtbase export; failing on "better than recorded" would bounce lanes
 # for improving the tree, which is how a gate gets switched off. A decrease
-# prints a note asking for `tools/vendored.py --write-burndown` instead.
+# prints a note asking for the ceiling below to be lowered by hand, to what
+# `python3 tools/ucrt_burndown.py --arch <a>` reports as MICROSOFT.
 #
 # arm64 sits below the other two because a few exports are `-arch=!arm64` in the
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 757
-  amd64: 757
-  arm64: 754
+  i386: 745
+  amd64: 745
+  arm64: 742
 
 families:
   bits:
@@ -674,3 +675,51 @@ families:
       - wcstod
       - wcstof
       - wcstold
+
+  stat:
+    replaces:
+      - sdk/lib/ucrt/filesystem/stat.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export against
+      a REAL fixture directory (read-only, .EXE/.cmd/.com, a 2040 date past the
+      32-bit time_t, a subdirectory) built on the guest's system drive. The path
+      forms take 36 paths each -- the fixture with and without trailing slashes,
+      sub\. and sub\.., missing files, "C:\", "C:/", bare "C:", "C:.", "\",
+      ".", "", a missing drive, NUL, CON, "\\x" -- plus NULL path and record;
+      _stat64 adds a narrow path CP_ACP cannot map. _fstat takes each side's own
+      descriptor for a disk file, NUL, a pipe with and without data, a closed
+      one, the standard handles, -1/-2/-3 and out-of-range values. Graded: the
+      return, errno, _doserrno, the invalid-parameter count and the whole record
+      (prefilled, so padding shows). All twelve MATCH, dll_fail=0: the path
+      forms n=195 (_stat64 n=200), _fstat n=105 -- 2,380 cases. Not reached: a
+      real UNC share (no network in the guest) and a file over 2 GB (the
+      EOVERFLOW arm), both transcribed.
+    note: >
+      A PORT. Every path is wide underneath; the narrow forms convert through
+      findfile's __acrt_get_utf8_acp_compatibility_codepage converter. The four
+      record layouts are one generic struct, pinned against offsets measured with
+      the target compiler on all three arches; _fstat reads osfile/osfhnd from
+      the lowio record at measured offsets (stdio_layout.rs).
+
+      Silent-if-wrong details, each transcribed: a zero FILETIME is the FALLBACK
+      (0 for the write time, the write time for the other two), not -1; a 32-bit
+      st_size refuses a file over LONG_MAX with EOVERFLOW and a zeroed record,
+      where _findfirst32 truncates; a pipe's size is PeekNamedPipe's count through
+      a 32-bit _off_t; unopenable roots (C:\, \\server\share\) are fabricated as
+      directories dated 1980-01-01; a bare "X:" is ENOENT even when it opens; a
+      failed narrow conversion leaves the record untouched; _fstat(-2) is EBADF
+      without the handler. The Win32 calls, _wfullpath, _getdrive,
+      __loctotime*_t and the lowio lock are called, not replaced.
+    exports:
+      - _fstat32
+      - _fstat32i64
+      - _fstat64
+      - _fstat64i32
+      - _stat32
+      - _stat32i64
+      - _stat64
+      - _stat64i32
+      - _wstat32
+      - _wstat32i64
+      - _wstat64
+      - _wstat64i32

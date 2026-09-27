@@ -79,6 +79,33 @@ mod handle {
     pub const HANDLE_UNICODE_BYTE: usize = if WIDE { 61 } else { 45 };
 }
 
+/// `_osfile(fh)` / `_osfhnd(fh)`: the UNCHECKED accessors, for a descriptor
+/// the caller has already range-checked against `_nhandle`. `osfhnd` follows
+/// the `CRITICAL_SECTION` (24 / 40 bytes); `osfile` follows the 8-aligned
+/// `startpos`, one byte before `textmode`.
+pub mod lowio {
+    use super::{handle, IOINFO_ARRAY_ELTS, IOINFO_L2E, __pioinfo};
+    use core::ffi::c_int;
+
+    const WIDE: bool = cfg!(target_pointer_width = "64");
+    const HANDLE_OSFHND_OFFSET: usize = if WIDE { 40 } else { 24 };
+    const HANDLE_OSFILE_OFFSET: usize = if WIDE { 56 } else { 40 };
+    const _: () = assert!(HANDLE_OSFILE_OFFSET + 1 == handle::HANDLE_TEXTMODE_OFFSET);
+
+    unsafe fn pioinfo(fh: c_int) -> *const u8 {
+        let array = __pioinfo[(fh >> IOINFO_L2E) as usize];
+        array.add((fh & (IOINFO_ARRAY_ELTS - 1)) as usize * handle::HANDLE_DATA_SIZE)
+    }
+
+    pub unsafe fn osfile(fh: c_int) -> u8 {
+        *pioinfo(fh).add(HANDLE_OSFILE_OFFSET)
+    }
+
+    pub unsafe fn osfhnd(fh: c_int) -> isize {
+        (pioinfo(fh).add(HANDLE_OSFHND_OFFSET) as *const isize).read()
+    }
+}
+
 extern "C" {
     /// `__crt_lowio_handle_data* __pioinfo[IOINFO_ARRAYS]` (lowio/ioinit.cpp).
     static __pioinfo: [*mut u8; 128];
