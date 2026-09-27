@@ -695,6 +695,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   bitfields (`RTL_BALANCED_NODE`'s `Red`/`Balance`) at bit 0 as C does. Nothing caught
   the drift because `verify_offsets` was not gated and could not run on arm64 at all;
   `check_committed_drift` now regenerates the size/offset asserts in every gate (`check --strict`).
+  The regen also let `scan_const_vs_island` see amd64 `MI_NUMBER_SYSTEM_PTES = 22000 * 22`
+  (upstream `4cba65d760a`, #8613) against the Rust's 22000. Baselined, not ported: that MM
+  layout change spans i386/amd64 init and is upstream-sync's (phase-4 review queue).
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
