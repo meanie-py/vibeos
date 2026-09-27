@@ -570,6 +570,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; this gap is for hardware
   faults (MmProbeAndLockPages on a bad user buffer is the one fastfat relies on, and fastfat
   is arm64's system volume). Repro: add aarch64 to the block's cfg and boot.
+  **VA 0x10 half FIXED (2026-09-27):** it read physical page 0 through FreeLDR's never-torn-
+  down identity map. `MmFreeLoaderBlock` now unmaps VA 0-64K (`MiUnmapLowGuardArm64`;
+  serial `[MM] arm64: low guard ... MmIsAddressValid(0x10)=0`, QEMU and Pi 4). The brk
+  half is the shell32 lane's.
 - **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
   (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
   gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0
