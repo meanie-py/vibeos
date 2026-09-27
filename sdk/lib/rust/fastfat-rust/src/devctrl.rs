@@ -6,7 +6,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation, KEVENT, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::fatdata::{FatExceptionFilter};
+// (FatExceptionFilter reached via crate::seh::fat_try_except)
 use crate::types::{CCB, FCB, IRP_CONTEXT, PIRP_CONTEXT, PVOLUME_DEVICE_OBJECT, VCB};
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, IO_STACK_LOCATION, IRP};
 use crate::ddk_shims::{IO_COMPLETION_ROUTINE, IoIs32bitProcess};
@@ -34,8 +34,6 @@ extern "system" {
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
     fn UNREFERENCED_PARAMETER(p: PVOLUME_DEVICE_OBJECT);
-    fn _SEH2_TRY();                      // SEH2 prolog placeholder fn _SEH2_END();                      // SEH2 epilog placeholder fn _SEH2_EXCEPT(filter: BOOLEAN) -> BOOLEAN; // SEH2 except guard fn _SEH2_GetExceptionCode() -> NTSTATUS;
-    fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void; // EXCEPTION_POINTERS* fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> BOOLEAN;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: NTSTATUS) -> NTSTATUS;
 }
 
@@ -182,8 +180,8 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     VolumeDeviceObject: PVOLUME_DEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
-    let IrpContext: PIRP_CONTEXT;
+    let mut Status: NTSTATUS = 0;
+    let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
     const Dbg: u32 = 0; // placeholder for DEBUG_TRACE_DEVCTRL
@@ -194,32 +192,14 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
 
-    // SEH2 helper declarations – they are C functions (or system ABI) expected at link time
-    extern "system" {
-        fn _SEH2_TRY();
-        fn _SEH2_END();
-        fn _SEH2_EXCEPT(filter: BOOLEAN) -> BOOLEAN;
-        fn _SEH2_GetExceptionCode() -> u32;
-        fn _SEH2_GetExceptionInformation() -> *mut core::ffi::c_void;
-    }
-
-    unsafe { _SEH2_TRY(); }
-    IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
-    Status = FatCommonDeviceControl(IrpContext, Irp);
-    unsafe { _SEH2_END(); }
-
-    if unsafe {
-        _SEH2_EXCEPT((FatExceptionFilter(
-            IrpContext,
-            _SEH2_GetExceptionInformation().cast(),
-        )) as u8)
-    } != 0
-    {
-        Status = FatProcessException(
-            IrpContext,
-            Irp,
-            unsafe { _SEH2_GetExceptionCode() as i32 },
-        );
+    // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...)) { FatProcessException }
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
+    if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const PIRP_CONTEXT, || {
+        *p_irp_context = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
+        *p_status = FatCommonDeviceControl(*p_irp_context, Irp);
+    }) {
+        Status = FatProcessException(IrpContext, Irp, code);
     }
 
     if TopLevel != 0 {

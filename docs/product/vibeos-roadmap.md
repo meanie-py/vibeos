@@ -557,6 +557,38 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Hardware faults in a Rust try body: amd64 + i386 — arm64 OPEN** (2026-09-26).
+  The per-boot `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3, an access
+  violation and a pool-tracker int3, each under try_finally inside try_except) passes on
+  amd64 and i386 and is compiled only there. **i386 FIXED:** a kernel-mode int3 is
+  dispatched with interrupts still disabled (KiDebugHandler re-enables them only for user
+  traps) and the hand-built catch in ntoskrnl/sehtry.c resumes by `__builtin_longjmp`, which
+  restores no flags, so the next page fault bugchecked 0x0A with P2 = -1 (KiTrap0E's "IF was
+  off" verdict). `RtlSehTryExcept` now records IF at try entry and restores it on the catch.
+  **arm64 OPEN:** `trace=13` — the body ran straight past both, so the brk is consumed without
+  dispatch and a kernel-mode read of VA 0x10 returns instead of faulting. Software raises
+  (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; this gap is for hardware
+  faults (MmProbeAndLockPages on a bad user buffer is the one fastfat relies on, and fastfat
+  is arm64's system volume). Repro: add aarch64 to the block's cfg and boot.
+- **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
+  (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
+  gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0
+  (the translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
+  `PoolHitTag`'s default, so `ExpInsertPoolTracker` hit its `DbgBreakPoint`. Under dummy
+  PSEH nothing caught that int3 and the boot went on; now `FatExceptionFilter` takes it
+  (BREAKPOINT is an "expected" status) and the unwind faulted inside `rtl_except`
+  (`SetRegFromStackValue`), re-dispatched, and repeated: the stack is
+  `KiDispatchException -> RtlDispatchException -> __C_specific_handler -> RtlpUnwindInternal
+  -> PageFaultReturn` about 20 times over. Fixed: that tag, `TAG_EA_SET_HEADER` in easup,
+  `TAG_SCSIPORT` in scsiport and `DISK_TAG_SMART` in diskwmi (a sweep of every kernel
+  crate for a literal-0 tag). **Not explained:** the same int3 raised from kernel Rust
+  frames unwinds fine (the per-boot `[SEH-TRY] rust hw faults ... pooltrack=` case), so
+  the bad unwind is specific to a frame in `fastfat.sys` (374 of its functions use
+  `SET_FPREG` with a non-zero frame offset). Repro: put a tag-0 allocation back in
+  `FatAllocateCloseContext` and boot amd64. Two tool gaps found on the way: `gdb start`
+  now attaches the same TEMP disk as smoke (it did not, so the crash could not be
+  reproduced under gdb), and `gdb run-until --break KeBugCheckEx` still sets the
+  breakpoint at the unrelocated link address (`0x49f942`) and never fires.
 - **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
   (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
   volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's
@@ -2226,6 +2258,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   event, not the loudest one" shape the stock-app NULL cascade below needs. This is a LEAD from
   reading raisers, NOT an observed stack: nothing has yet confirmed the fault goes through
   fastfat at all.
+  **2026-09-26: the BUGCHECK arm should now be a failed request.** fastfat runs on real SEH
+  (dummy-pseh-verdict.md step 3), so a `FatVerifyFcb`/`FatVerifyVcb` raise reaches
+  `FatExceptionFilter` as an expected status and `FatProcessException` fails the Irp instead
+  of the raise finding no handler. The lead above still stands: if sqlite32 now opens and
+  gets `STATUS_FILE_INVALID` back, the first `FcbBad` transition is the bug to chase.
 
   **Ordering consequence, now fixed:** this guest can take the whole boot down, so anything
   winlogon launches after it loses its verdict silently. That is exactly what happened when

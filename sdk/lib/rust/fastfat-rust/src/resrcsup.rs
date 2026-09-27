@@ -17,7 +17,6 @@ extern "system" {
     fn FlagOn(Flags: u32, Flag: u32) -> u8;
     fn ExAcquireResourceSharedLite(Resource: *mut ERESOURCE, Wait: u8) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn _SEH2_AbnormalTermination() -> u8;
     fn NT_ASSERT(condition: i32);
     fn NodeType(fcb: *mut FCB) -> u32;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
@@ -81,11 +80,14 @@ pub unsafe extern "system" fn FatAcquireExclusiveVcb_Real(
     ) != 0
     {
         if NoOpCheck == 0 {
-            // SEH2_TRY / SEH2_FINALLY expansion (no_std: use _SEH2_AbnormalTermination)
-            FatVerifyOperationIsLegal(IrpContext);
-            if _SEH2_AbnormalTermination() != 0 {
-                FatReleaseVcb(IrpContext, Vcb);
-            }
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
+                FatVerifyOperationIsLegal(IrpContext);
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseVcb(IrpContext, Vcb);
+                }
+            });
         }
         return 1; // TRUE
     }
@@ -99,10 +101,14 @@ pub unsafe extern "system" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb:
         BooleanFlagOn((*( IrpContext as *mut IRP_CONTEXT )).Flags, IRP_CONTEXT_FLAG_WAIT),
     ) != 0
     {
-        FatVerifyOperationIsLegal(IrpContext as *mut IRP_CONTEXT);
-        if _SEH2_AbnormalTermination() != 0 {
-            FatReleaseVcb(IrpContext as *mut IRP_CONTEXT, Vcb);
-        }
+        // _SEH2_TRY / _SEH2_FINALLY
+        crate::seh::try_finally(&mut (), |_| {
+            FatVerifyOperationIsLegal(IrpContext as *mut IRP_CONTEXT);
+        }, |_, abnormal| {
+            if abnormal {
+                FatReleaseVcb(IrpContext as *mut IRP_CONTEXT, Vcb);
+            }
+        });
         return 1;
     }
     0
@@ -143,7 +149,14 @@ pub unsafe extern "system" fn FatAcquireExclusiveFcb(
                 FatReleaseFcb(IrpContext, Fcb);
                 continue;
             }
-            FatVerifyOperationIsLegal(IrpContext);
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
+                FatVerifyOperationIsLegal(IrpContext);
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            });
             return 1;
         } else {
             return 0;
@@ -178,14 +191,14 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
                 FatReleaseFcb(IrpContext, Fcb);
                 continue;
             }
-            let mut _abnormal = true;
-            {
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
                 FatVerifyOperationIsLegal(IrpContext);
-                _abnormal = false;
-            }
-            if _abnormal {
-                FatReleaseFcb(IrpContext, Fcb);
-            }
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            });
             return 1;
         } else {
             return 0;
@@ -230,10 +243,14 @@ pub unsafe extern "system" fn FatAcquireSharedFcbWaitForEx(
                 continue 'RetryFcbSharedWaitEx;
             }
 
-            FatVerifyOperationIsLegal(IrpContext);
-            if _SEH2_AbnormalTermination() != 0 {
-                FatReleaseFcb(IrpContext, Fcb);
-            }
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
+                FatVerifyOperationIsLegal(IrpContext);
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            });
 
             return 1;
         } else {

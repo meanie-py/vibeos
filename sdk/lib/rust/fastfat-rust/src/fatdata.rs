@@ -312,8 +312,36 @@ pub unsafe extern "system" fn FatProcessException(
     Irp: *mut IRP,
     ExceptionCode: NTSTATUS,
 ) -> NTSTATUS {
-    let mut Vcb: *mut VCB = core::ptr::null_mut();
-    let mut IrpSp: *mut IO_STACK_LOCATION;
+    // Hand-translated from fatdata.c: the generated body stopped after the post
+    // decision and never completed the Irp, performed the verify, raised the
+    // popup, or marked a corrupt volume dirty. That was invisible while no
+    // handler ever ran; with real SEH every caught raise comes through here.
+    const STATUS_PENDING: NTSTATUS = 0x00000103;
+    const STATUS_FILE_LOCK_CONFLICT: NTSTATUS = 0xC0000054u32 as i32;
+    const STATUS_DRIVER_INTERNAL_ERROR: NTSTATUS = 0xC0000183u32 as i32;
+    const STATUS_DISK_CORRUPT_ERROR: NTSTATUS = 0xC0000032u32 as i32;
+    const STATUS_FILE_CORRUPT_ERROR_: NTSTATUS = 0xC0000102u32 as i32;
+    const STATUS_EA_CORRUPT_ERROR: NTSTATUS = 0xC0000053u32 as i32;
+    const STATUS_INVALID_EA_NAME: NTSTATUS = 0x80000013u32 as i32;
+    const STATUS_EA_LIST_INCONSISTENT: NTSTATUS = 0x80000014u32 as i32;
+    const STATUS_NO_EAS_ON_FILE: NTSTATUS = 0xC0000052u32 as i32;
+    const FSRTL_CACHE_TOP_LEVEL_IRP: usize = 2;
+    const VolumeDirty: i32 = 1;
+    const VolumeDirtyWithSurfaceTest: i32 = 2;
+    use crate::types::{_VCB_CONDITION_VcbGood as VcbGood, IRP_CONTEXT_FLAG_DISABLE_POPUPS,
+        VCB_STATE_FLAG_MOUNTED_DIRTY};
+    extern "system" {
+        fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
+        fn FatDeviceIsFatFsdo(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
+        fn FatPerformVerify(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Device: PDEVICE_OBJECT) -> NTSTATUS;
+        fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, VolumeState: i32);
+        fn FatAcquireExclusiveVcb_Real(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, NoOpCheck: BOOLEAN) -> BOOLEAN;
+        fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
+    }
+    use ntkrnl_sys::ddk::{IoGetDeviceToVerify, IoRaiseHardError, IoSetDeviceToVerify,
+        PsGetCurrentThread};
+
+    let mut TransitionState: i32 = VolumeDirty;
     let mut SavedFlags: u32 = 0;
 
     // PAGED_CODE();
@@ -321,7 +349,7 @@ pub unsafe extern "system" fn FatProcessException(
     DebugTrace(0, Dbg as u32, b"FatProcessException\n\0".as_ptr() as *const i8, 0);
 
     // If there is not an irp context, we must have had insufficient resources.
-    if (IrpContext as *mut u8).is_null() {
+    if IrpContext.is_null() {
         FatCompleteRequest(core::ptr::null_mut(), Irp, ExceptionCode);
         return ExceptionCode;
     }
@@ -330,39 +358,199 @@ pub unsafe extern "system" fn FatProcessException(
     let mut ExceptionCode = (*IrpContext).ExceptionStatus;
     FatResetExceptionState(IrpContext);
 
-    // If this is an Mdl write request, then take care of the Mdl here.
-    if (*IrpContext).MajorFunction as u32 == IRP_MJ_WRITE &&
-        FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_COMPLETE_MDL) == (IRP_MN_COMPLETE_MDL) as i32 &&
-        !(*Irp).MdlAddress.is_null()
+    // If this is an Mdl write request, then take care of the Mdl here so that
+    // things get cleaned up properly.
+    if (*IrpContext).MajorFunction as u32 == IRP_MJ_WRITE
+        && ((*IrpContext).MinorFunction as u32 & IRP_MN_COMPLETE_MDL) == IRP_MN_COMPLETE_MDL
+        && !(*Irp).MdlAddress.is_null()
     {
         let LocalIrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
         CcMdlWriteAbort((*LocalIrpSp).FileObject, (*Irp).MdlAddress);
         (*Irp).MdlAddress = core::ptr::null_mut();
     }
 
-    // Try block (SEH_TRY expanded to plain block)
-    {
-        SavedFlags = (*IrpContext).Flags;
+    // If we are going to post the request we may have to lock down the user's
+    // buffer, so do it under a try-except that fails the request if that fails.
+    // Also unpin any repinned Bcbs, protected by the same filter.
+    let ic = IrpContext;
+    let p_code = core::ptr::addr_of_mut!(ExceptionCode);
+    let p_saved = core::ptr::addr_of_mut!(SavedFlags);
+    let caught = crate::seh::fat_try_except(core::ptr::addr_of!(ic), || {
+        *p_saved = (*IrpContext).Flags;
 
         // Make sure we don't try to write through Bcbs
-        SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH);
+        (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH;
 
         FatUnpinRepinnedBcbs(IrpContext);
 
-        (*IrpContext).Flags = SavedFlags;
+        (*IrpContext).Flags = *p_saved;
 
-        // If we will have to post the request, do it here.
-        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_RECURSIVE_CALL) == 0 &&
-            (((ExceptionCode == STATUS_VERIFY_REQUIRED) && KeAreAllApcsDisabled() != 0) ||
-             (ExceptionCode == STATUS_CANT_WAIT))
+        // If we will have to post the request, do it here. The last thing
+        // FatPrePostIrp does is mark the Irp pending, so we must return PENDING.
+        // A verify cannot be done at APC level: it waits for Io to complete.
+        if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_RECURSIVE_CALL) == 0
+            && (((*p_code == STATUS_VERIFY_REQUIRED) && KeAreAllApcsDisabled() != 0)
+                || (*p_code == STATUS_CANT_WAIT))
         {
-            ExceptionCode = FatFsdPostRequest(IrpContext, Irp);
+            *p_code = FatFsdPostRequest(IrpContext, Irp);
+        }
+    });
+    if caught.is_err() {
+        ExceptionCode = (*IrpContext).ExceptionStatus;
+        (*IrpContext).ExceptionStatus = 0;
+        (*IrpContext).Flags = SavedFlags;
+    }
+
+    // If we posted the request, just return here.
+    if ExceptionCode == STATUS_PENDING {
+        return ExceptionCode;
+    }
+
+    (*Irp).IoStatus.__bindgen_anon_1.Status = ExceptionCode;
+
+    // If this request is not a "top-level" irp, just complete it.
+    if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_RECURSIVE_CALL) != 0 {
+        // With a cache operation above us, commute verify to a lock conflict so
+        // it is retried instead of failing with an unaesthetic error.
+        if IoGetTopLevelIrp() as usize == FSRTL_CACHE_TOP_LEVEL_IRP
+            && ExceptionCode == STATUS_VERIFY_REQUIRED
+        {
+            ExceptionCode = STATUS_FILE_LOCK_CONFLICT;
+        }
+
+        FatCompleteRequest(IrpContext, Irp, ExceptionCode);
+        return ExceptionCode;
+    }
+
+    if IoIsErrorUserInduced(ExceptionCode) != 0 {
+        // Error conditions that can be caused by, and possibly resolved by, the user.
+        if ExceptionCode == STATUS_VERIFY_REQUIRED {
+            DebugTrace(0, Dbg as u32, b"Perform Verify Operation\n\0".as_ptr() as *const i8, 0);
+
+            // We are at the top level file system entry point: clear the device to
+            // verify out of the thread local storage.
+            let mut Device = IoGetDeviceToVerify((*Irp).Tail.Overlay.Thread);
+            IoSetDeviceToVerify((*Irp).Tail.Overlay.Thread, core::ptr::null_mut());
+
+            if Device.is_null() {
+                Device = IoGetDeviceToVerify(PsGetCurrentThread());
+                IoSetDeviceToVerify(PsGetCurrentThread(), core::ptr::null_mut());
+            }
+
+            // Some storage drivers set invalid non-NULL devices to verify, so the
+            // C ignores the thread's and uses our real device object instead.
+            if !(*IrpContext).Vcb.is_null() {
+                Device = (*(*(*IrpContext).Vcb).Vpb).RealDevice;
+            } else {
+                // For FSCTLs IrpContext->Vcb may not be populated.
+                Device = (*IrpContext).RealDevice;
+            }
+
+            if Device.is_null() {
+                ExceptionCode = STATUS_DRIVER_INTERNAL_ERROR;
+                FatCompleteRequest(IrpContext, Irp, ExceptionCode);
+                return ExceptionCode;
+            }
+
+            // FatPerformVerify() will do the right thing with the Irp.
+            return FatPerformVerify(IrpContext, Irp, Device);
+        }
+
+        // The other user induced conditions generate an error unless they have
+        // been disabled for this request.
+        if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_DISABLE_POPUPS) != 0 {
+            FatCompleteRequest(IrpContext, Irp, ExceptionCode);
+            return ExceptionCode;
+        }
+
+        // Generate a pop-up.
+        let IrpFileObject = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
+        let Vpb: PVPB = if !IrpFileObject.is_null() {
+            (*IrpFileObject).Vpb
+        } else {
+            core::ptr::null_mut()
+        };
+
+        // The device to verify is either in my thread local storage or that of
+        // the thread that owns the Irp.
+        let mut Thread: PETHREAD = (*Irp).Tail.Overlay.Thread;
+        let mut RealDevice = IoGetDeviceToVerify(Thread);
+
+        if RealDevice.is_null() {
+            Thread = PsGetCurrentThread();
+            RealDevice = IoGetDeviceToVerify(Thread);
+        }
+
+        if !(*IrpContext).Vcb.is_null() {
+            RealDevice = (*(*(*IrpContext).Vcb).Vpb).RealDevice;
+        } else {
+            RealDevice = (*IrpContext).RealDevice;
+        }
+
+        if RealDevice.is_null() {
+            FatCompleteRequest(IrpContext, Irp, ExceptionCode);
+            return ExceptionCode;
+        }
+
+        // IoRaiseHardError usually queues an APC to the caller's thread but may
+        // complete the request immediately, so the Irp must be marked pending first.
+        ntkrnl_sys::inline::tier1::IoMarkIrpPending(Irp);
+        IoRaiseHardError(Irp, Vpb, RealDevice);
+
+        // We are handing control back to the caller: reset the saved device.
+        IoSetDeviceToVerify(Thread, core::ptr::null_mut());
+
+        // Io completes or resubmits the Irp; either way the IrpContext is ours.
+        FatDeleteIrpContext(IrpContext);
+        return STATUS_PENDING;
+    }
+
+    // A run of the mill error.
+    let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
+    let Vcb: *mut VCB = (*IrpContext).Vcb;
+
+    // An unknown Vcb means the error was raised during a mount, before a full Vcb
+    // existed, and was really handled there.
+    if !Vcb.is_null() {
+        if FatDeviceIsFatFsdo((*IrpSp).DeviceObject) == 0
+            && ExceptionCode < 0
+            && crate::ddk_shims::FsRtlIsTotalDeviceFailure(ExceptionCode) == 0
+        {
+            TransitionState = VolumeDirtyWithSurfaceTest;
+        }
+
+        // A STATUS_FILE_CORRUPT or similar error means nastiness out on the media:
+        // mark the volume permanently dirty.
+        if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_DISABLE_POPUPS) == 0
+            && (TransitionState == VolumeDirtyWithSurfaceTest
+                || ExceptionCode == STATUS_FILE_CORRUPT_ERROR_
+                || ExceptionCode == STATUS_DISK_CORRUPT_ERROR
+                || ExceptionCode == STATUS_EA_CORRUPT_ERROR
+                || ExceptionCode == STATUS_INVALID_EA_NAME
+                || ExceptionCode == STATUS_EA_LIST_INCONSISTENT
+                || ExceptionCode == STATUS_NO_EAS_ON_FILE)
+        {
+            (*Vcb).VcbState |= VCB_STATE_FLAG_MOUNTED_DIRTY;
+            (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
+
+            // Do the "dirty" work, ignoring any error. Take the Vcb to synchronize
+            // against the verify path tearing things down, since we dropped all
+            // synchronization when backing up due to the exception.
+            FatAcquireExclusiveVcb_Real(IrpContext, Vcb, 1);
+
+            let _ = crate::seh::fat_try_except(core::ptr::addr_of!(ic), || {
+                if (*Vcb).VcbCondition == VcbGood {
+                    FatMarkVolume(IrpContext, Vcb, TransitionState);
+                }
+            });
+
+            FatReleaseVcb(IrpContext, Vcb);
         }
     }
 
-    // The original C function appears to have more after the SEH block (like _SEH2_EXCEPT and a return).
-    // For compilation we return ExceptionCode.
-    return ExceptionCode;
+    FatCompleteRequest(IrpContext, Irp, ExceptionCode);
+
+    ExceptionCode
 }
 
 #[no_mangle]
@@ -521,11 +709,12 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
         fcb_acquired = 1;
     }
 
-    // Simulate _SEH2_TRY with a loop; exception handler (void) is ignored.
-    'cleanup: loop {
+    // _SEH2_TRY / _SEH2_FINALLY
+    let p_results = core::ptr::addr_of_mut!(results);
+    crate::seh::try_finally(&mut (), |_| {
         if (*fcb).FcbCondition != FcbGood {
             // try_return(Results); // Results is FALSE at this point
-            break 'cleanup;
+            return;
         }
 
         (*buffer).FileAttributes = 0;
@@ -555,15 +744,14 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
         (*io_status).__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*io_status).Information = core::mem::size_of::<FILE_BASIC_INFORMATION>() as _;
 
-        results = 1;
-        break;
-    }
-
-    // _SEH2_FINALLY
-    if fcb_acquired != 0 {
-        ExReleaseResourceLite((*fcb).Header.Resource);
-    }
-    FsRtlExitFileSystem();
+        *p_results = 1;
+    }, |_, _abnormal| {
+        // _SEH2_FINALLY
+        if fcb_acquired != 0 {
+            ExReleaseResourceLite((*fcb).Header.Resource);
+        }
+        FsRtlExitFileSystem();
+    });
 
     results
 }
@@ -612,20 +800,22 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
         fcb_acquired = 0;
     }
 
-    // _SEH2_TRY /
-    loop {
+    // _SEH2_TRY / _SEH2_FINALLY
+    let p_results = core::ptr::addr_of_mut!(Results);
+    crate::seh::try_finally(&mut (), |_| {
         if (*Fcb).FcbCondition != FcbGood {
             // try_return(Results) – results already false
-            break;
+            return;
         }
 
         (*Buffer).NumberOfLinks = 1;
         (*Buffer).DeletePending = BooleanFlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
 
         if NodeType(Fcb as *mut core::ffi::c_void) == FAT_NTC_FCB {
-            if (*Fcb).Header.AllocationSize.QuadPart == 0x7fffffffffffffff_i64 {
+            // FCB_LOOKUP_ALLOCATIONSIZE_HINT is ((LONGLONG) -1), not MAXLONGLONG.
+            if (*Fcb).Header.AllocationSize.QuadPart == -1_i64 {
                 // try_return(Results)
-                break;
+                return;
             }
             (*Buffer).AllocationSize = (*Fcb).Header.AllocationSize;
             (*Buffer).EndOfFile = (*Fcb).Header.FileSize;
@@ -638,14 +828,14 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
 
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*IoStatus).Information = core::mem::size_of::<FILE_STANDARD_INFORMATION>() as _;
-        Results = 1;
-        break;
-    }
-    // _SEH2_FINALLY
-    if fcb_acquired != 0 {
-        ExReleaseResourceLite((*Fcb).Header.Resource);
-    }
-    FsRtlExitFileSystem();
+        *p_results = 1;
+    }, |_, _abnormal| {
+        // _SEH2_FINALLY
+        if fcb_acquired != 0 {
+            ExReleaseResourceLite((*Fcb).Header.Resource);
+        }
+        FsRtlExitFileSystem();
+    });
 
     Results
 }
@@ -716,10 +906,11 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
         FcbAcquired = 1;
     }
 
-    // SEH_TRY block
-    'try_body: {
+    // _SEH2_TRY / _SEH2_FINALLY
+    let p_results = core::ptr::addr_of_mut!(Results);
+    crate::seh::try_finally(&mut (), |_| {
         if (*Fcb).FcbCondition != FcbGood {
-            break 'try_body; // try_return(Results)
+            return; // try_return(Results)
         }
 
         // ChangeTime default
@@ -751,7 +942,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
         if NodeType(Fcb as *mut core::ffi::c_void) == FAT_NTC_FCB {
             if (*Fcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
-                break 'try_body; // try_return(Results)
+                return; // try_return(Results)
             }
             (*Buffer).AllocationSize = (*Fcb).Header.AllocationSize;
             (*Buffer).EndOfFile = (*Fcb).Header.FileSize;
@@ -762,15 +953,14 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
         (*IoStatus).__bindgen_anon_1.Status = STATUS_SUCCESS;
         (*IoStatus).Information = core::mem::size_of::<FILE_NETWORK_OPEN_INFORMATION>() as _;
-        Results = 1; // TRUE
-    }
-    // try_exit: (label before finally – no extra code needed)
-
-    // _SEH2_FINALLY:
-    if FcbAcquired != 0 {
-        ExReleaseResourceLite((*Fcb).Header.Resource);
-    }
-    FsRtlExitFileSystem();
+        *p_results = 1; // TRUE
+    }, |_, _abnormal| {
+        // _SEH2_FINALLY:
+        if FcbAcquired != 0 {
+            ExReleaseResourceLite((*Fcb).Header.Resource);
+        }
+        FsRtlExitFileSystem();
+    });
 
     Results
 }

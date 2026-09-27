@@ -48,7 +48,6 @@ extern "system" {
     fn FatLookupFileAllocation( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, StartingVbo: u32, NextLbo: *mut i64, NextByteCount: *mut u32, NextIsAllocated: *mut u8, EndOnMax: *mut u8, p: *mut c_void, );
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn KeFlushIoBuffers(Mdl: *mut MDL, ReadOperation: i32, DmaOperation: i32);
-    fn _SEH2_AbnormalTermination() -> u8;
 }
 extern "system" {
     fn FatBugCheck(a: u32, b: u32, c: u32) -> !;
@@ -60,21 +59,16 @@ extern "system" {
     fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn DebugUnwind(function: *const core::ffi::c_void);
     fn FatLowLevelReadWrite( IrpContext: *mut IRP_CONTEXT, DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, Vcb: *mut VCB, ) -> i32; // returns NTSTATUS but (VOID) cast fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
-    fn _SEH2_TRY();
-    fn _SEH2_FINALLY();
-    fn _SEH2_END();
     fn MmUnlockPages(mdl: PMDL);
     fn FsRtlUpdateDiskCounters(read: u64, write: u64);
     fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> BOOLEAN;
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> u32;
-    fn FatExceptionFilter(p1: *mut core::ffi::c_void, p2: *mut core::ffi::c_void) -> i32;
     fn _Analysis_assume_(expr: bool);
     fn DbgBreakPoint();
     } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
-    fn SafeMmProbeAndLockPages( Mdl: *mut MDL, AccessMode: KPROCESSOR_MODE, Operation: LOCK_OPERATION, ) -> i32;
 
     fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
@@ -267,12 +261,17 @@ pub unsafe extern "system" fn FatMultiAsyncCompletionRoutine(
         ExFreePool(Context as *mut c_void);
 
         if PostRequest {
-            // DUMMY_PSEH: _SEH2_EXCEPT handler is dead code — run the try body.
-            let IrpContext =
-                FatCreateIrpContext(Irp, 1) as *mut crate::types::IRP_CONTEXT;
-            (*IrpContext).Flags &= !crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL;
-            FatFsdPostRequest(IrpContext as *mut IRP_CONTEXT, Irp);
-            Status = crate::glue::STATUS_MORE_PROCESSING_REQUIRED;
+            // _SEH2_EXCEPT(FatExceptionFilter(NULL, ..)): if we failed to post
+            // the IRP, we just have to return the failure to the user.
+            let NoIrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
+            let p_status = addr_of_mut!(Status);
+            let _ = crate::seh::fat_try_except(addr_of!(NoIrpContext), || {
+                let IrpContext =
+                    FatCreateIrpContext(Irp, 1) as *mut crate::types::IRP_CONTEXT;
+                (*IrpContext).Flags &= !crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL;
+                FatFsdPostRequest(IrpContext as *mut IRP_CONTEXT, Irp);
+                *p_status = crate::glue::STATUS_MORE_PROCESSING_REQUIRED;
+            });
         }
     }
 
@@ -405,19 +404,25 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
         FatRaiseStatus(irp_context, STATUS_INSUFFICIENT_RESOURCES);
     }
 
-    _SEH2_TRY();
-    MmProbeAndLockPages(mdl, KernelMode, (IoWriteAccess) as u32);
-    _SEH2_FINALLY();
-    if _SEH2_AbnormalTermination() != 0 {
-        IoFreeMdl(mdl);
-        (*irp).MdlAddress = saved_mdl;
-    }
-    _SEH2_END();
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            MmProbeAndLockPages(mdl, KernelMode, (IoWriteAccess) as u32);
+        },
+        |_, abnormal| {
+            if abnormal {
+                IoFreeMdl(mdl);
+                (*irp).MdlAddress = saved_mdl;
+            }
+        },
+    );
 
+    // Context is IrpContext->FatIoContext itself (the completion routine
+    // reads it as a PFAT_IO_CONTEXT), not the address of the field.
     IoSetCompletionRoutine(
         (irp).cast(),
         as_completion_routine(FatSingleSyncCompletionRoutine),
-        &raw const (*irp_context).FatIoContext as *mut c_void,
+        (*irp_context).FatIoContext as *mut c_void,
         1u8,
         1u8,
         1u8,
@@ -442,14 +447,19 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
 
     FatIoCallDriverCount += 1;
 
-    _SEH2_TRY();
-    IoCallDriver((*vcb).TargetDeviceObject, (irp).cast());
-    FatWaitSync(irp_context);
-    _SEH2_FINALLY();
-    MmUnlockPages(mdl);
-    IoFreeMdl(mdl);
-    (*irp).MdlAddress = saved_mdl;
-    _SEH2_END();
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            // FatLowLevelReadWrite is IoCallDriver.
+            IoCallDriver((*vcb).TargetDeviceObject, (irp).cast());
+            FatWaitSync(irp_context);
+        },
+        |_, _abnormal| {
+            MmUnlockPages(mdl);
+            IoFreeMdl(mdl);
+            (*irp).MdlAddress = saved_mdl;
+        },
+    );
 
     if FatDiskAccountingEnabled != 0 {
         #[cfg(ntddi_ge_win8)]
@@ -1050,17 +1060,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
         DebugTrace(0, (Dbg) as i32, b"Passing 1 Irp on to Disk Driver\n\0".as_ptr() as *const i8, 0);
 
 
-        // try-finally block (inlined)
         FatSingleAsync(IrpContext, (*FcbOrDcb).Vcb, NextLbo as i64, ByteCount, Irp);
-        // The finally block does nothing because io_runs_ptr is not heap-allocated here.
-        // We still need the structure, so we keep it as a dummy.
-        {
-            let mut stack_io_runs: [IO_RUN; FAT_MAX_IO_RUNS_ON_STACK] = core::mem::zeroed();
-            let io_runs_ptr = stack_io_runs.as_mut_ptr();
-            if io_runs_ptr != stack_io_runs.as_mut_ptr() {
-                ExFreePool(io_runs_ptr as *mut core::ffi::c_void);
-            }
-        }
     } else {
         let mut LastLbo: u64 = 0;
         let mut LastByteCount: u32 = 0;
@@ -1149,11 +1149,19 @@ pub unsafe extern "system" fn FatNonCachedIo(
             );
         }
 
-        DebugTrace(0, (Dbg) as i32, b"Passing Multiple Irps on to Disk Driver\n\0".as_ptr() as *const i8, 0);
-        FatMultipleAsync(IrpContext, ((*FcbOrDcb).Vcb).cast(), Irp, NextRun, io_runs_ptr);
-        if io_runs_ptr != stack_io_runs.as_mut_ptr() {
-            ExFreePool(io_runs_ptr as *mut core::ffi::c_void);
-        }
+        let p_stack_io_runs = stack_io_runs.as_mut_ptr();
+        crate::seh::try_finally(
+            &mut (),
+            |_| {
+                DebugTrace(0, (Dbg) as i32, b"Passing Multiple Irps on to Disk Driver\n\0".as_ptr() as *const i8, 0);
+                FatMultipleAsync(IrpContext, ((*FcbOrDcb).Vcb).cast(), Irp, NextRun, io_runs_ptr);
+            },
+            |_, _abnormal| {
+                if io_runs_ptr != p_stack_io_runs {
+                    ExFreePool(io_runs_ptr as *mut core::ffi::c_void);
+                }
+            },
+        );
     }
 
     if Wait == 0 {
@@ -1188,15 +1196,15 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
     let mut NextByteCount: u32 = 0;
     let mut NextIsAllocated: u8 = 0;
     let mut SectorSize: u32;
-    let mut BytesToCopy: u32;
+    let mut BytesToCopy: u32 = 0;
     let mut OriginalByteCount: u32;
     let mut OriginalStartingVbo: u32;
     let mut EndOnMax: u8 = 0;
     let mut UserBuffer: *mut u8;
     let mut DiskBuffer: *mut u8 = core::ptr::null_mut();
-    let mut Mdl: *mut MDL;
-    let mut SavedMdl: *mut MDL;
-    let mut SavedUserBuffer: *mut c_void;
+    let mut Mdl: *mut MDL = core::ptr::null_mut();
+    let mut SavedMdl: *mut MDL = core::ptr::null_mut();
+    let mut SavedUserBuffer: *mut c_void = core::ptr::null_mut();
 
     // PAGED_CODE();
     PAGED_CODE();
@@ -1223,159 +1231,154 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
         TAG_IO_BUFFER,
     ) as *mut u8;
 
-    'outer: loop {
-        'try_exit: loop {
-            // Beginning alignment handling
-            if (StartingVbo & (SectorSize - 1)) != 0 {
-                let mut Hole: u32;
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            'try_exit: {
+                    // Beginning alignment handling
+                    if (StartingVbo & (SectorSize - 1)) != 0 {
+                        let mut Hole: u32;
 
-                FatLookupFileAllocation(
-                    IrpContext,
-                    FcbOrDcb,
-                    StartingVbo,
-                    core::ptr::addr_of_mut!(NextLbo),
-                    core::ptr::addr_of_mut!(NextByteCount),
-                    core::ptr::addr_of_mut!(NextIsAllocated),
-                    core::ptr::addr_of_mut!(EndOnMax),
-                    core::ptr::null_mut(),
-                );
+                        FatLookupFileAllocation(
+                            IrpContext,
+                            FcbOrDcb,
+                            StartingVbo,
+                            core::ptr::addr_of_mut!(NextLbo),
+                            core::ptr::addr_of_mut!(NextByteCount),
+                            core::ptr::addr_of_mut!(NextIsAllocated),
+                            core::ptr::addr_of_mut!(EndOnMax),
+                            core::ptr::null_mut(),
+                        );
 
-                if NextIsAllocated == 0 {
-                    FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
-                    FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR as i32);
-                }
+                        if NextIsAllocated == 0 {
+                            FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
+                            FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR as i32);
+                        }
 
-                FatSingleNonAlignedSync(
-                    IrpContext,
-                    ((*FcbOrDcb).Vcb).cast(),
-                    DiskBuffer,
-                    NextLbo & !((SectorSize as i64) - 1),
-                    SectorSize,
-                    Irp,
-                );
+                        FatSingleNonAlignedSync(
+                            IrpContext,
+                            ((*FcbOrDcb).Vcb).cast(),
+                            DiskBuffer,
+                            NextLbo & !((SectorSize as i64) - 1),
+                            SectorSize,
+                            Irp,
+                        );
 
-                if !NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
-                    break 'try_exit;
-                }
+                        if !NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
+                            break 'try_exit;
+                        }
 
-                Hole = StartingVbo & (SectorSize - 1);
-                BytesToCopy = if ByteCount >= SectorSize - Hole {
-                    SectorSize - Hole
-                } else {
-                    ByteCount
-                };
+                        Hole = StartingVbo & (SectorSize - 1);
+                        BytesToCopy = if ByteCount >= SectorSize - Hole {
+                            SectorSize - Hole
+                        } else {
+                            ByteCount
+                        };
 
-                core::ptr::copy_nonoverlapping(
-                    DiskBuffer.add(Hole as usize),
-                    UserBuffer,
-                    BytesToCopy as usize,
-                );
+                        core::ptr::copy_nonoverlapping(
+                            DiskBuffer.add(Hole as usize),
+                            UserBuffer,
+                            BytesToCopy as usize,
+                        );
 
-                StartingVbo += BytesToCopy;
-                ByteCount -= BytesToCopy;
+                        StartingVbo += BytesToCopy;
+                        ByteCount -= BytesToCopy;
 
-                if ByteCount == 0 {
-                    break 'try_exit;
-                }
+                        if ByteCount == 0 {
+                            break 'try_exit;
+                        }
+                    }
+
+                    // Assert sector alignment of remaining range start
+                    NT_ASSERT(((StartingVbo & (SectorSize - 1)) == 0) as i32);
+
+                    // Tail alignment handling
+                    if (ByteCount & (SectorSize - 1)) != 0 {
+                        let LastSectorVbo: u32 = StartingVbo + (ByteCount & !(SectorSize - 1));
+
+                        FatLookupFileAllocation(
+                            IrpContext,
+                            FcbOrDcb,
+                            LastSectorVbo,
+                            core::ptr::addr_of_mut!(NextLbo),
+                            core::ptr::addr_of_mut!(NextByteCount),
+                            core::ptr::addr_of_mut!(NextIsAllocated),
+                            core::ptr::addr_of_mut!(EndOnMax),
+                            core::ptr::null_mut(),
+                        );
+
+                        if NextIsAllocated == 0 {
+                            FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
+                            FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR as i32);
+                        }
+
+                        FatSingleNonAlignedSync(
+                            IrpContext,
+                            ((*FcbOrDcb).Vcb).cast(),
+                            DiskBuffer,
+                            NextLbo,
+                            SectorSize,
+                            Irp,
+                        );
+
+                        if !NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
+                            break 'try_exit;
+                        }
+
+                        BytesToCopy = ByteCount & (SectorSize - 1);
+                        UserBuffer = UserBuffer.add((LastSectorVbo - OriginalStartingVbo) as usize);
+                        core::ptr::copy_nonoverlapping(
+                            DiskBuffer,
+                            UserBuffer,
+                            BytesToCopy as usize,
+                        );
+
+                        ByteCount -= BytesToCopy;
+                        if ByteCount == 0 {
+                            break 'try_exit;
+                        }
+                    }
+
+                    // Assert both start and count are sector aligned
+                    NT_ASSERT((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
+
+                    SavedMdl = ((*(Irp as *mut _IRP)).MdlAddress).cast();
+                    (*(Irp as *mut _IRP)).MdlAddress = core::ptr::null_mut();
+                    SavedUserBuffer = (*(Irp as *mut _IRP)).UserBuffer;
+                    (*(Irp as *mut _IRP)).UserBuffer = (MmGetMdlVirtualAddress(SavedMdl) as *mut u8)
+                        .add((StartingVbo - OriginalStartingVbo) as usize) as *mut c_void;
+
+                    Mdl = IoAllocateMdl((*(Irp as *mut _IRP)).UserBuffer, ByteCount, 0, 0, (Irp).cast()).cast() ;
+                    if Mdl.is_null() {
+                        (*(Irp as *mut _IRP)).MdlAddress = (SavedMdl).cast();
+                        (*(Irp as *mut _IRP)).UserBuffer = SavedUserBuffer;
+                        FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES as i32);
+                    }
+
+                    IoBuildPartialMdl(SavedMdl, Mdl, (*(Irp as *mut _IRP)).UserBuffer, ByteCount);
+
+                    crate::seh::try_finally(
+                        &mut (),
+                        |_| {
+                            FatNonCachedIo(IrpContext, Irp, FcbOrDcb, StartingVbo, ByteCount, ByteCount, 0);
+                        },
+                        |_, _abnormal| {
+                            IoFreeMdl((*(Irp as *mut _IRP)).MdlAddress);
+                            (*(Irp as *mut _IRP)).MdlAddress = (SavedMdl).cast();
+                            (*(Irp as *mut _IRP)).UserBuffer = SavedUserBuffer;
+                        },
+                    );
             }
-
-            // Assert sector alignment of remaining range start
-            NT_ASSERT(((StartingVbo & (SectorSize - 1)) == 0) as i32);
-
-            // Tail alignment handling
-            if (ByteCount & (SectorSize - 1)) != 0 {
-                let LastSectorVbo: u32 = StartingVbo + (ByteCount & !(SectorSize - 1));
-
-                FatLookupFileAllocation(
-                    IrpContext,
-                    FcbOrDcb,
-                    LastSectorVbo,
-                    core::ptr::addr_of_mut!(NextLbo),
-                    core::ptr::addr_of_mut!(NextByteCount),
-                    core::ptr::addr_of_mut!(NextIsAllocated),
-                    core::ptr::addr_of_mut!(EndOnMax),
-                    core::ptr::null_mut(),
-                );
-
-                if NextIsAllocated == 0 {
-                    FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
-                    FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR as i32);
-                }
-
-                FatSingleNonAlignedSync(
-                    IrpContext,
-                    ((*FcbOrDcb).Vcb).cast(),
-                    DiskBuffer,
-                    NextLbo,
-                    SectorSize,
-                    Irp,
-                );
-
-                if !NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
-                    break 'try_exit;
-                }
-
-                BytesToCopy = ByteCount & (SectorSize - 1);
-                UserBuffer = UserBuffer.add((LastSectorVbo - OriginalStartingVbo) as usize);
-                core::ptr::copy_nonoverlapping(
-                    DiskBuffer,
-                    UserBuffer,
-                    BytesToCopy as usize,
-                );
-
-                ByteCount -= BytesToCopy;
-                if ByteCount == 0 {
-                    break 'try_exit;
-                }
-            }
-
-            // Assert both start and count are sector aligned
-            NT_ASSERT((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
-
-            SavedMdl = ((*(Irp as *mut _IRP)).MdlAddress).cast();
-            (*(Irp as *mut _IRP)).MdlAddress = core::ptr::null_mut();
-            SavedUserBuffer = (*(Irp as *mut _IRP)).UserBuffer;
-            (*(Irp as *mut _IRP)).UserBuffer = (MmGetMdlVirtualAddress(SavedMdl) as *mut u8)
-                .add((StartingVbo - OriginalStartingVbo) as usize) as *mut c_void;
-
-            Mdl = IoAllocateMdl((*(Irp as *mut _IRP)).UserBuffer, ByteCount, 0, 0, (Irp).cast()).cast() ;
-            if Mdl.is_null() {
-                (*(Irp as *mut _IRP)).MdlAddress = (SavedMdl).cast();
-                (*(Irp as *mut _IRP)).UserBuffer = SavedUserBuffer;
-                FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES as i32);
-            }
-
-            IoBuildPartialMdl(SavedMdl, Mdl, (*(Irp as *mut _IRP)).UserBuffer, ByteCount);
-
-            // Inner SEH block (try / finally)
-            // _SEH2_TRY
-            {
-                FatNonCachedIo(IrpContext, Irp, FcbOrDcb, StartingVbo, ByteCount, ByteCount, 0);
-            }
-            // _SEH2_FINALLY
-            {
-                IoFreeMdl((*(Irp as *mut _IRP)).MdlAddress);
-                (*(Irp as *mut _IRP)).MdlAddress = (SavedMdl).cast();
-                (*(Irp as *mut _IRP)).UserBuffer = SavedUserBuffer;
-            }
-            // _SEH2_END
-
-            // Normal exit from try block
-            break 'try_exit;
-        }
-
-        // Outer finally block
-        {
+        },
+        |_, abnormal| {
             ExFreePool(DiskBuffer as *mut c_void);
 
-            if _SEH2_AbnormalTermination() == 0 && NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
+            if !abnormal && NT_SUCCESS((*(Irp as *mut _IRP)).IoStatus.__bindgen_anon_1.Status) {
                 (*(Irp as *mut _IRP)).IoStatus.Information = (OriginalByteCount as u32) as _;
                 KeFlushIoBuffers(((*(Irp as *mut _IRP)).MdlAddress).cast(), 1, 0);
             }
-        }
-
-        break 'outer;
-    }
+        },
+    );
 
     DebugTrace(-1, (Dbg) as i32, b"FatNonCachedNonAlignedRead -> VOID\n\0".as_ptr() as *const i8, 0usize);
 }
@@ -1389,16 +1392,15 @@ pub unsafe extern "system" fn FatMultipleAsync(
     IoRuns: *mut IO_RUN,
 ) {
     // local variables
-    let mut Irp: PIRP;
+    let mut Irp: PIRP = core::ptr::null_mut();
     let mut IrpSp: PIO_STACK_LOCATION;
-    let mut Mdl: PMDL;
+    let mut Mdl: PMDL = core::ptr::null_mut();
     let mut Wait: i32;               /* BOOLEAN */
     let mut Context: PFAT_IO_CONTEXT;
     let mut IsAWrite: i32 = 0;       /* BOOLEAN */
     let mut Length: u32 = 0;
     let mut UnwindRunCount: u32 = 0;
     let mut ExceptionExpected: i32 = 1; // TRUE
-    let mut i: u32;
 
     // PAGED_CODE(); // not needed in translation
 
@@ -1415,7 +1417,7 @@ pub unsafe extern "system" fn FatMultipleAsync(
     }
 
     // Set up things according to whether this is truly async.
-    Wait = BooleanFlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WAIT) as i32;
+    Wait = BooleanFlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT) as i32;
     Context = (*(IrpContext as *mut _IRP_CONTEXT)).FatIoContext;
 
     // Finish initializing Context, for use in Read/Write Multiple Asynch.
@@ -1425,183 +1427,176 @@ pub unsafe extern "system" fn FatMultipleAsync(
     IsAWrite = ((*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction == (IRP_MJ_WRITE) as u8) as i32;
     Length = (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length;
 
-    // SEH2_TRY block (simulated with loop and break for early exit)
-    let mut abnormal_termination: i32 = 0;
-    {
-        // _SEH2_TRY
-        'try_scope: loop {
-            // Iterate through the runs, doing everything that can fail
-            UnwindRunCount = 0;
-            while UnwindRunCount < MultipleIrpCount {
-                // Create an associated IRP, making sure there is one stack entry for us, as well.
-                (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).SavedIrp = core::ptr::null_mut::<IRP>();
-                Irp = IoMakeAssociatedIrp(
-                    MasterIrp as *mut _IRP,
-                    ((*(*((Vcb as *mut _VCB))).TargetDeviceObject).StackSize + 1) as i8,
-                );
-                if Irp.is_null() {
-                    // FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
-                    abnormal_termination = 1;
-                    break 'try_scope;
-                }
-                (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).SavedIrp = Irp;
+    // _SEH2_TRY { .. } _SEH2_FINALLY { unwind the associated Irps on a raise }
+    let p_unwind_run_count = addr_of_mut!(UnwindRunCount);
+    let p_exception_expected = addr_of_mut!(ExceptionExpected);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+        // Iterate through the runs, doing everything that can fail
+        (*p_unwind_run_count) = 0;
+        while (*p_unwind_run_count) < MultipleIrpCount {
+            // Create an associated IRP, making sure there is one stack entry for us, as well.
+            (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).SavedIrp = core::ptr::null_mut::<IRP>();
+            Irp = IoMakeAssociatedIrp(
+                MasterIrp as *mut _IRP,
+                ((*(*((Vcb as *mut _VCB))).TargetDeviceObject).StackSize + 1) as i8,
+            );
+            if Irp.is_null() {
+                FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
+            }
+            (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).SavedIrp = Irp;
 
-                // Allocate and build a partial Mdl for the request.
-                Mdl = IoAllocateMdl(
-                    ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Offset as isize) as *mut core::ffi::c_void,
-                    (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount,
-                    0,   // FALSE
-                    0,   // FALSE
-                    Irp,
-                );
-                if Mdl.is_null() {
-                    // FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
-                    abnormal_termination = 1;
-                    break 'try_scope;
-                }
-
-                // Sanity Check (NT_ASSERT)
-                // NT_ASSERT( Mdl == Irp->MdlAddress );
-
-                IoBuildPartialMdl(
-                    (*(MasterIrp as *mut _IRP)).MdlAddress,
-                    Mdl,
-                    ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Offset as isize) as *mut core::ffi::c_void,
-                    (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount,
-                );
-
-                // Get the first IRP stack location in the associated Irp
-                IoSetNextIrpStackLocation(Irp);
-                IrpSp = IoGetCurrentIrpStackLocation(Irp);
-
-                // Setup the Stack location to describe our read.
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Vbo as i64;
-
-                // Set up the completion routine
-                IoSetCompletionRoutine(
-                    Irp,
-                    if Wait != 0 {
-                        as_completion_routine(FatMultiSyncCompletionRoutine)
-                    } else {
-                        as_completion_routine(FatMultiAsyncCompletionRoutine)
-                    },
-                    Context as *mut core::ffi::c_void,
-                    1, // TRUE
-                    1, // TRUE
-                    1, // TRUE
-                );
-
-                // Setup the next IRP stack location in the associated Irp for the disk driver beneath us.
-                IrpSp = IoGetNextIrpStackLocation(Irp);
-
-                // Setup the Stack location to do a read from the disk driver.
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).ByteCount;
-                (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).Lbo;
-
-                // If this Irp is the result of a WriteThrough operation, tell the device to write it through.
-                if FlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WRITE_THROUGH) != 0 {
-                    (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_WRITE_THROUGH as u8;
-                }
-
-                // If this I/O requires override verify, bypass the verify logic.
-                if FlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
-                    (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
-                }
-
-                UnwindRunCount += 1;
+            // Allocate and build a partial Mdl for the request.
+            Mdl = IoAllocateMdl(
+                ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).Offset as isize) as *mut core::ffi::c_void,
+                (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).ByteCount,
+                0,   // FALSE
+                0,   // FALSE
+                Irp,
+            );
+            if Mdl.is_null() {
+                FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
             }
 
-            // Now we no longer expect an exception. If the driver raises, we must bugcheck.
-            ExceptionExpected = 0;
+            // Sanity Check (NT_ASSERT)
+            // NT_ASSERT( Mdl == Irp->MdlAddress );
 
-            // We only need to set the associated IRP count in the master irp to make it a master IRP.
-            // But we set the count to one more than our caller requested, because we do not want the I/O system
-            // to complete the I/O. We also set our own count.
-            (*(Context as *mut _FAT_IO_CONTEXT)).IrpCount = MultipleIrpCount as i32;
-            (*(MasterIrp as *mut _IRP)).AssociatedIrp.IrpCount = (MultipleIrpCount) as i32;
+            IoBuildPartialMdl(
+                (*(MasterIrp as *mut _IRP)).MdlAddress,
+                Mdl,
+                ((*(MasterIrp as *mut _IRP)).UserBuffer as *mut u8).offset((*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).Offset as isize) as *mut core::ffi::c_void,
+                (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).ByteCount,
+            );
 
-            if Wait != 0 {
-                (*(MasterIrp as *mut _IRP)).AssociatedIrp.IrpCount += 1;
-            } else if FlagOn((*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as u32, 3) != 0 {
-                // For async requests if we acquired locks, transition the lock owners to an object,
-                // since when we return this thread could go away before request completion, and the
-                // resource package may try to boost priority.
-                if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource.is_null() {
-                    ExSetResourceOwnerPointer(
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource,
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
-                    );
-                }
-                if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource2.is_null() {
-                    ExSetResourceOwnerPointer(
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource2,
-                        (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
-                    );
-                }
+            // Get the first IRP stack location in the associated Irp
+            IoSetNextIrpStackLocation(Irp);
+            IrpSp = IoGetCurrentIrpStackLocation(Irp);
+
+            // Setup the Stack location to describe our read.
+            (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
+            (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).ByteCount;
+            (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).Vbo as i64;
+
+            // Set up the completion routine
+            IoSetCompletionRoutine(
+                Irp,
+                if Wait != 0 {
+                    as_completion_routine(FatMultiSyncCompletionRoutine)
+                } else {
+                    as_completion_routine(FatMultiAsyncCompletionRoutine)
+                },
+                Context as *mut core::ffi::c_void,
+                1, // TRUE
+                1, // TRUE
+                1, // TRUE
+            );
+
+            // Setup the next IRP stack location in the associated Irp for the disk driver beneath us.
+            IrpSp = IoGetNextIrpStackLocation(Irp);
+
+            // Setup the Stack location to do a read from the disk driver.
+            (*(IrpSp as *mut _IO_STACK_LOCATION)).MajorFunction = (*(IrpContext as *mut _IRP_CONTEXT)).MajorFunction;
+            (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.Length = (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).ByteCount;
+            (*(IrpSp as *mut _IO_STACK_LOCATION)).Parameters.Read.ByteOffset.QuadPart = (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).Lbo;
+
+            // If this Irp is the result of a WriteThrough operation, tell the device to write it through.
+            if FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH) != 0 {
+                (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_WRITE_THROUGH as u8;
             }
 
-            // Back up a copy of the IrpContext flags for later use in async completion.
-            (*(Context as *mut _FAT_IO_CONTEXT)).IrpContextFlags = (*(IrpContext as *mut _IRP_CONTEXT)).Flags;
-
-            // Now that all the dangerous work is done, issue the read requests
-            UnwindRunCount = 0;
-            while UnwindRunCount < MultipleIrpCount {
-                Irp = (*(IoRuns as *mut IO_RUN).offset(UnwindRunCount as isize)).SavedIrp;
-                DebugDoit({ FatIoCallDriverCount += 1; });
-
-                // If IoCallDriver returns an error, it has completed the Irp and the error will be
-                // caught by our completion routines and dealt with as a normal IO error.
-                FatLowLevelReadWrite(
-                    IrpContext,
-                    (*(Vcb as *mut _VCB)).TargetDeviceObject,
-                    Irp,
-                    Vcb,
-                );
-
-                UnwindRunCount += 1;
+            // If this I/O requires override verify, bypass the verify logic.
+            if FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
+                (*(IrpSp as *mut _IO_STACK_LOCATION)).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
             }
 
-            // We just issued an IO to the storage stack, update the counters indicating so.
-            if FatDiskAccountingEnabled != 0 {
-                FatUpdateIOCountersPCW(IsAWrite as u32, Length as u64);
-            }
-
-            break 'try_scope; // normal exit from try block
+            (*p_unwind_run_count) += 1;
         }
-    } // end of try scope
 
-    // _SEH2_FINALLY block
-    {
-        DebugUnwind(FatMultipleAsync as *const core::ffi::c_void);
+        // Now we no longer expect an exception. If the driver raises, we must bugcheck.
+        (*p_exception_expected) = 0;
 
-        if abnormal_termination != 0 {
-            // If the driver raised, we are hosed. He is not supposed to raise, and it is impossible
-            // for us to figure out how to clean up.
-            if ExceptionExpected == 0 {
-                // NT_ASSERT( ExceptionExpected );
-                FatBugCheck(0, 0, 0);
+        // We only need to set the associated IRP count in the master irp to make it a master IRP.
+        // But we set the count to one more than our caller requested, because we do not want the I/O system
+        // to complete the I/O. We also set our own count.
+        (*(Context as *mut _FAT_IO_CONTEXT)).IrpCount = MultipleIrpCount as i32;
+        (*(MasterIrp as *mut _IRP)).AssociatedIrp.IrpCount = (MultipleIrpCount) as i32;
+
+        if Wait != 0 {
+            (*(MasterIrp as *mut _IRP)).AssociatedIrp.IrpCount += 1;
+        } else if FlagOn((*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as u32, 3) != 0 {
+            // For async requests if we acquired locks, transition the lock owners to an object,
+            // since when we return this thread could go away before request completion, and the
+            // resource package may try to boost priority.
+            if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource.is_null() {
+                ExSetResourceOwnerPointer(
+                    (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource,
+                    (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
+                );
             }
+            if !(*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource2.is_null() {
+                ExSetResourceOwnerPointer(
+                    (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().Resource2,
+                    (*(Context as *mut _FAT_IO_CONTEXT)).Wait.Async.as_ref().ResourceThreadId as *mut core::ffi::c_void,
+                );
+            }
+        }
 
-            // Unwind: free resources of runs up to and including the failed one
-            i = 0;
-            while i <= UnwindRunCount {
-                Irp = (*(IoRuns as *mut IO_RUN).offset(i as isize)).SavedIrp;
-                if !Irp.is_null() {
-                    if !(*Irp).MdlAddress.is_null() {
-                        IoFreeMdl((*Irp).MdlAddress);
+        // Back up a copy of the IrpContext flags for later use in async completion.
+        (*(Context as *mut _FAT_IO_CONTEXT)).IrpContextFlags = (*(IrpContext as *mut _IRP_CONTEXT)).Flags;
+
+        // Now that all the dangerous work is done, issue the read requests
+        (*p_unwind_run_count) = 0;
+        while (*p_unwind_run_count) < MultipleIrpCount {
+            Irp = (*(IoRuns as *mut IO_RUN).offset((*p_unwind_run_count) as isize)).SavedIrp;
+            DebugDoit({ FatIoCallDriverCount += 1; });
+
+            // If IoCallDriver returns an error, it has completed the Irp and the error will be
+            // caught by our completion routines and dealt with as a normal IO error.
+            FatLowLevelReadWrite(
+                IrpContext,
+                (*(Vcb as *mut _VCB)).TargetDeviceObject,
+                Irp,
+                Vcb,
+            );
+
+            (*p_unwind_run_count) += 1;
+        }
+
+        // We just issued an IO to the storage stack, update the counters indicating so.
+        if FatDiskAccountingEnabled != 0 {
+            FatUpdateIOCountersPCW(IsAWrite as u32, Length as u64);
+        }
+        },
+        |_, abnormal| {
+            DebugUnwind(FatMultipleAsync as *const core::ffi::c_void);
+
+            if abnormal {
+                // If the driver raised, we are hosed. He is not supposed to raise, and it is impossible
+                // for us to figure out how to clean up.
+                if *p_exception_expected == 0 {
+                    // NT_ASSERT( ExceptionExpected );
+                    FatBugCheck(0, 0, 0);
+                }
+
+                // Unwind: free resources of runs up to and including the failed one
+                let mut i: u32 = 0;
+                while i <= *p_unwind_run_count {
+                    let Irp: PIRP = (*(IoRuns as *mut IO_RUN).offset(i as isize)).SavedIrp;
+                    if !Irp.is_null() {
+                        if !(*Irp).MdlAddress.is_null() {
+                            IoFreeMdl((*Irp).MdlAddress);
+                        }
+                        IoFreeIrp(Irp);
                     }
-                    IoFreeIrp(Irp);
+                    i += 1;
                 }
-                i += 1;
             }
-        }
 
-        // And return to our caller
-        DebugTrace(-1, 0, b"FatMultipleAsync -> VOID\n\0".as_ptr() as *const i8, 0);
-    }
+            // And return to our caller
+            DebugTrace(-1, 0, b"FatMultipleAsync -> VOID\n\0".as_ptr() as *const i8, 0);
+        },
+    );
     // _SEH2_END
     return;
 }
@@ -1867,17 +1862,16 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     ExFreePool(Context as *mut c_void);
 
     if PostRequest != 0 {
-        let mut IrpContext: *mut crate::types::_IRP_CONTEXT = core::ptr::null_mut();
-
-        // _SEH2_TRY: use a block expression to emulate exception handling;
-        // on exception the NOTHING handler does nothing (same as C code).
-        let _try_result = (|| {
-            IrpContext = FatCreateIrpContext(Irp, 1);
+        // _SEH2_EXCEPT(FatExceptionFilter(NULL, ..)) { NOTHING }: if we failed
+        // to post the IRP, we just have to return the failure to the user.
+        let NoIrpContext: *mut crate::types::_IRP_CONTEXT = core::ptr::null_mut();
+        let p_status = addr_of_mut!(Status);
+        let _ = crate::seh::fat_try_except(addr_of!(NoIrpContext), || {
+            let IrpContext = FatCreateIrpContext(Irp, 1);
             ClearFlag(addr_of_mut!((*IrpContext).Flags), crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL);
             FatFsdPostRequest(IrpContext, Irp);
-            Status = STATUS_MORE_PROCESSING_REQUIRED;
-        })();
-        // EXCEPT NOTHING: any exception is swallowed (DUMMY_PSEH)
+            *p_status = STATUS_MORE_PROCESSING_REQUIRED;
+        });
     }
 
     DebugTrace(
@@ -1914,12 +1908,14 @@ pub unsafe extern "system" fn FatLockUserBuffer(
                 FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
             }
 
-            let status = SafeMmProbeAndLockPages(
-                Mdl,
-                (*Irp).RequestorMode,
-                Operation,
+            let caught = crate::seh::try_except(
+                &mut (),
+                |_| {
+                    MmProbeAndLockPages(Mdl, (*Irp).RequestorMode as _, Operation as _);
+                },
+                |_, _pointers| crate::seh::EXCEPTION_EXECUTE_HANDLER,
             );
-            if status != 0 {
+            if let Err(status) = caught {
                 IoFreeMdl(Mdl);
                 (*Irp).MdlAddress = core::ptr::null_mut();
                 FatRaiseStatus(
@@ -1980,15 +1976,22 @@ pub unsafe extern "system" fn FatBufferUserBuffer(
 
         (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
 
-        core::ptr::copy_nonoverlapping(
-            (*Irp).AssociatedIrp.SystemBuffer as *const u8,
-            UserBuffer,
-            BufferLength as usize,
+        // RtlCopyMemory(SystemBuffer <- UserBuffer) under
+        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER). (The translation had the copy
+        // reversed, overwriting the caller's buffer with uninitialized pool.)
+        let SystemBuffer = (*Irp).AssociatedIrp.SystemBuffer as *mut u8;
+        let caught = crate::seh::try_except(
+            &mut (),
+            |_| {
+                core::ptr::copy_nonoverlapping(
+                    UserBuffer as *const u8,
+                    SystemBuffer,
+                    BufferLength as usize,
+                );
+            },
+            |_, _pointers| crate::seh::EXCEPTION_EXECUTE_HANDLER,
         );
-
-        if false {
-            let Status: NTSTATUS;
-            Status = 0;
+        if let Err(Status) = caught {
             FatRaiseStatus(
                 IrpContext,
                 if FsRtlIsNtstatusExpected(Status) != 0 {

@@ -904,7 +904,23 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     stamped = _payload_compile.write_stamp(build_dir)
     if stamped:
-        run.add(Stage("payloads", status="ok", detail=",".join(stamped)))
+        # A payload binary older than its source would boot the old test: rebuild it
+        # here, where the media step is about to stage it. compile.py dies loudly on a
+        # failed build; surface that as a classified build failure.
+        import contextlib
+        import io
+
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                rebuilt = _payload_compile.ensure_built(stamped, arch)
+        except SystemExit:
+            why = [ln for ln in err.getvalue().strip().splitlines() if ln.strip()]
+            run.classification = "PAYLOAD_BUILD_FAIL"
+            run.add(Stage("payloads", status="fail", detail=",".join(stamped), salient=why[:6]))
+            return run.finalize(repo)
+        detail = ",".join(stamped) + (f" (rebuilt {','.join(rebuilt)})" if rebuilt else "")
+        run.add(Stage("payloads", status="ok", detail=detail))
 
     if cold:
         _clean(run, repo, arch)

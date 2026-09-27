@@ -81,7 +81,6 @@ extern "system" {
     fn CollectReadStats(Vcb: *mut VCB, OpenType: TYPE_OF_OPEN, ByteCount: ULONG);
     fn ExGetCurrentResourceThread() -> *mut ERESOURCE_THREAD;
     fn PsUpdateDiskCounters(Process: *mut _EPROCESS, ReadBytes: u64, WriteBytes: u64, ReadCount: u32, WriteCount: u32, Flags: u32);
-    fn SafeZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
     fn CcCopyReadEx(FileObject: *mut FILE_OBJECT, FileOffset: *mut LARGE_INTEGER, Length: ULONG, Wait: BOOLEAN, Buffer: *mut core::ffi::c_void, IoStatus: *mut _IO_STATUS_BLOCK, Thread: *mut _ETHREAD) -> BOOLEAN;
     fn FatPagingFileIo(Irp: PIRP, Fcb: *mut FCB);
     fn FatDeviceIsFatFsdo(device_object: *mut core::ffi::c_void) -> u8; // BOOLEAN fn NodeType(ptr: *mut core::ffi::c_void) -> u16;
@@ -89,8 +88,6 @@ extern "system" {
     fn IoSetTopLevelIrp(irp: PIRP);
     fn NodeType(Fcb: PFCB) -> u32;
     fn NT_ASSERT(condition: i32);
-    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: i32);
-    fn FatExceptionFilter(IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void) -> i32;
 }
 
 extern "system" {
@@ -133,8 +130,22 @@ const TAG_FAT_IO_CONTEXT: u32 = u32::from_be_bytes(*b"XtaF");
 const FAT_NTC_FCB: u16 = 0x0502; // FAT NTC FCB node type
 const FCB_STATE_PAGING_FILE: u32 = 0x04; // bit 5
 const IRP_MN_COMPLETE: u32 = 0x04;
-const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8_u32 as i32; // NTSTATUS
+
+// read.c `SafeZeroMemory`: a try-except around RtlZeroMemory that turns a fault
+// on the user buffer into STATUS_INVALID_USER_BUFFER (the macro's implicit
+// IrpContext is passed explicitly).
+unsafe fn SafeZeroMemory(IrpContext: *mut IRP_CONTEXT, At: *mut core::ffi::c_void, ByteCount: usize) {
+    if crate::seh::try_except(
+        &mut (),
+        |_| {
+            core::ptr::write_bytes(At as *mut u8, 0, ByteCount);
+        },
+        |_, _pointers| crate::seh::EXCEPTION_EXECUTE_HANDLER,
+    ).is_err() {
+        FatRaiseStatus(IrpContext, STATUS_INVALID_USER_BUFFER);
+    }
+}
 
 #[repr(C)]
 struct PAGING_FILE_OVERFLOW_PACKET {
@@ -143,8 +154,7 @@ struct PAGING_FILE_OVERFLOW_PACKET {
 }
 
 // FatFsdRead — hand-reconstructed from read.c (its DeepSeek translation dropped;
-// the assembled orphan was corrupted). DUMMY_PSEH: TRY/EXCEPT → body only, the
-// EXCEPT handler (FatProcessException) is dead code; try_return → break 'try_exit.
+// the assembled orphan was corrupted).
 #[no_mangle]
 pub unsafe extern "system" fn FatFsdRead(
     VolumeDeviceObject: *mut VOLUME_DEVICE_OBJECT,
@@ -195,24 +205,30 @@ pub unsafe extern "system" fn FatFsdRead(
         }
     }
 
-    'try_exit: {
-        TopLevel = FatIsIrpTopLevel(Irp) as BOOLEAN;
-        IrpContext = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32) as *mut IRP_CONTEXT;
+    // _SEH2_TRY { .. } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ..)) { FatProcessException }
+    let p_top_level = core::ptr::addr_of_mut!(TopLevel);
+    let p_ic = core::ptr::addr_of_mut!(IrpContext);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    if let Err(code) = crate::seh::fat_try_except(core::ptr::addr_of!(IrpContext), || {
+        *p_top_level = FatIsIrpTopLevel(Irp) as BOOLEAN;
+        *p_ic = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32) as *mut IRP_CONTEXT;
+        let IrpContext = *p_ic;
 
         //  An Mdl complete request must not go through common read.
         if FlagOn(((*IrpContext).MinorFunction as u8) as u32, IRP_MN_COMPLETE) != 0 {
-            Status = FatCompleteMdl(IrpContext, Irp);
-            break 'try_exit; // try_return
+            *p_status = FatCompleteMdl(IrpContext, Irp);
+            return; // try_return
         }
 
         //  Not enough stack → hand off to the stack-overflow thread.
         if (IoGetRemainingStackSize() as usize) < (OVERFLOW_READ_THRESHHOLD as usize) {
-            Status = FatPostStackOverflowRead(IrpContext, Irp, Fcb);
-            break 'try_exit; // try_return
+            *p_status = FatPostStackOverflowRead(IrpContext, Irp, Fcb);
+            return; // try_return
         }
 
-        Status = FatCommonRead(IrpContext, Irp);
-        // try_exit: NOTHING;
+        *p_status = FatCommonRead(IrpContext, Irp);
+    }) {
+        Status = crate::fatdata::FatProcessException(IrpContext, Irp, code);
     }
 
     if TopLevel != 0 {
@@ -260,8 +276,19 @@ pub unsafe extern "system" fn FatStackOverflowRead(
         (*Vcb).VerifyThread = (KeGetCurrentThread()).cast();
     }
 
-    // SEH try block — DUMMY_PSEH: except handler is dead code; call body directly.
-    FatCommonRead(IrpContext, (*IrpContext).OriginatingIrp);
+    // Do the read operation protected by a try-except clause
+    let ic = IrpContext;
+    if let Err(code) = crate::seh::fat_try_except(core::ptr::addr_of!(ic), || {
+        FatCommonRead(IrpContext, (*IrpContext).OriginatingIrp);
+    }) {
+        let mut ExceptionCode: NTSTATUS = code;
+        if ExceptionCode == STATUS_FILE_DELETED {
+            ExceptionCode = STATUS_END_OF_FILE;
+            (*IrpContext).ExceptionStatus = ExceptionCode;
+            (*(*IrpContext).OriginatingIrp).IoStatus.Information = 0;
+        }
+        crate::fatdata::FatProcessException(IrpContext, (*IrpContext).OriginatingIrp, ExceptionCode);
+    }
 
     if !SavedVerifyThread.is_null() {
         NT_ASSERT(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as i32);
@@ -329,8 +356,10 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
         vcb = (*Fcb).Vcb;
     }
 
-    // _SEH2_TRY block
-    {
+    let p_event = &raw mut event;
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
         FatPrePostIrp(IrpContext, Irp);
 
         if (*vcb).VerifyThread as *mut core::ffi::c_void
@@ -342,23 +371,24 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
 
         FsRtlPostStackOverflow(
             IrpContext as *mut core::ffi::c_void,
-            &raw mut event,
+            p_event,
             FatStackOverflowRead as *const () as *const core::ffi::c_void,
         );
 
         KeWaitForSingleObject(
-            (&raw mut event).cast(),
+            p_event.cast(),
             Executive as KWAIT_REASON,
             KernelMode as KPROCESSOR_MODE,
             0,                        // FALSE
             core::ptr::null_mut(),    // NULL
         );
-    }
-
-    // _SEH2_FINALLY – always release resource if acquired
-    if !resource.is_null() {
-        ExReleaseResourceLite(resource);
-    }
+        },
+        |_, _abnormal| {
+            if !resource.is_null() {
+                ExReleaseResourceLite(resource);
+            }
+        },
+    );
 
     return STATUS_PENDING;
 }
@@ -499,12 +529,18 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
             if FlagOn((*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE) == 0 {
                 ExAcquireResourceExclusiveLite(&raw mut (*Vcb).Resource, 1);
 
-                // SEH2_TRY / SEH2_FINALLY for flush (DUMMY_PSEH: try body inline,
-                // finally (release) runs unconditionally).
-                if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 {
-                    FatFlushVolume(IrpContext, Vcb, Flush);
-                }
-                ExReleaseResourceLite(&raw mut (*Vcb).Resource);
+                crate::seh::try_finally(
+                    &mut (),
+                    |_| {
+                        // If the volume isn't locked, flush it.
+                        if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) == 0 {
+                            FatFlushVolume(IrpContext, Vcb, Flush);
+                        }
+                    },
+                    |_, _abnormal| {
+                        ExReleaseResourceLite(&raw mut (*Vcb).Resource);
+                    },
+                );
                 SetFlag(&raw mut (*Ccb).Flags, CCB_FLAG_DASD_FLUSH_DONE);
             }
 
@@ -575,351 +611,361 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
         return STATUS_END_OF_FILE;
     }
 
-    // Outer SEH2_TRY with finally block (DUMMY_PSEH: run try body inline;
-    // the _SEH2_FINALLY below runs unconditionally; no abnormal-unwind path).
-    'try_blk: loop {
-            if TypeOfOpen == UserFileOpen {
-                let mut FileSize: ULONG;
-                let mut ValidDataLength: ULONG;
+    // _SEH2_TRY { .. try_exit: .. } _SEH2_FINALLY { .. }
+    let p_irp = core::ptr::addr_of_mut!(Irp);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_post_irp = core::ptr::addr_of_mut!(PostIrp);
+    let p_fcb_or_dcb_acquired = core::ptr::addr_of_mut!(FcbOrDcbAcquired);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            'try_blk: loop {
+                    if TypeOfOpen == UserFileOpen {
+                        let mut FileSize: ULONG;
+                        let mut ValidDataLength: ULONG;
 
-                DebugTrace(0, Dbg, b"Type of read is user file open\n\0".as_ptr() as *const i8, 0);
+                        DebugTrace(0, Dbg, b"Type of read is user file open\n\0".as_ptr() as *const i8, 0);
 
-                if PagingIo == 0 && NonCachedIo != 0
-                    && !(*FileObject).SectionObjectPointer.is_null()
-                    && !(*(*FileObject).SectionObjectPointer).DataSectionObject.is_null() {
+                        if PagingIo == 0 && NonCachedIo != 0
+                            && !(*FileObject).SectionObjectPointer.is_null()
+                            && !(*(*FileObject).SectionObjectPointer).DataSectionObject.is_null() {
 
-                    let mut IoStatus: IO_STATUS_BLOCK = core::mem::zeroed();
+                            let mut IoStatus: IO_STATUS_BLOCK = core::mem::zeroed();
 
-                    // #ifndef REDUCE_SYNCHRONIZATION
-                    if FatAcquireExclusiveFcb(IrpContext, FcbOrDcb) == 0 {
-                        PostIrp = 1;
-                        break 'try_blk;
-                    }
-                    ExAcquireResourceExclusiveLite((*FcbOrDcb).Header.PagingIoResource, 1);
+                            // #ifndef REDUCE_SYNCHRONIZATION
+                            if FatAcquireExclusiveFcb(IrpContext, FcbOrDcb) == 0 {
+                                (*p_post_irp) = 1;
+                                break 'try_blk;
+                            }
+                            ExAcquireResourceExclusiveLite((*FcbOrDcb).Header.PagingIoResource, 1);
 
-                    CcFlushCache((*FileObject).SectionObjectPointer,
-                                 &raw mut StartingByte,
-                                 ByteCount,
-                                 &raw mut IoStatus);
+                            CcFlushCache((*FileObject).SectionObjectPointer,
+                                         &raw mut StartingByte,
+                                         ByteCount,
+                                         &raw mut IoStatus);
 
-                    ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
-                    FatReleaseFcb(IrpContext, FcbOrDcb);
+                            ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
+                            FatReleaseFcb(IrpContext, FcbOrDcb);
 
-                    if !NT_SUCCESS(IoStatus.__bindgen_anon_1.Status) {
-                        Status = IoStatus.__bindgen_anon_1.Status;
-                        break 'try_blk;
-                    }
+                            if !NT_SUCCESS(IoStatus.__bindgen_anon_1.Status) {
+                                (*p_status) = IoStatus.__bindgen_anon_1.Status;
+                                break 'try_blk;
+                            }
 
-                    ExAcquireResourceExclusiveLite((*FcbOrDcb).Header.PagingIoResource, 1);
-                    ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
-                }
-
-                if PagingIo != 0 {
-                    if ExAcquireResourceSharedLite((*FcbOrDcb).Header.PagingIoResource, 1) == 0 {
-                        DebugTrace(0, Dbg, b"Cannot acquire FcbOrDcb = %p shared without waiting\n\0".as_ptr() as *const i8, FcbOrDcb);
-                        PostIrp = 1;
-                        break 'try_blk;
-                    }
-                    if Wait == 0 {
-                        (*(*IrpContext).FatIoContext).Wait.Async.as_mut().Resource = (*FcbOrDcb).Header.PagingIoResource;
-                    }
-                } else {
-                    if Wait == 0 && NonCachedIo != 0 {
-                        if FatAcquireSharedFcbWaitForEx(IrpContext, FcbOrDcb) == 0 {
-                            DebugTrace(0, Dbg, b"Cannot acquire FcbOrDcb = %p shared without waiting\n\0".as_ptr() as *const i8, FcbOrDcb);
-                            PostIrp = 1;
-                            break 'try_blk;
+                            ExAcquireResourceExclusiveLite((*FcbOrDcb).Header.PagingIoResource, 1);
+                            ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
                         }
-                        (*(*IrpContext).FatIoContext).Wait.Async.as_mut().Resource = (*FcbOrDcb).Header.Resource;
-                    } else {
-                        if FatAcquireSharedFcb(IrpContext, FcbOrDcb) == 0 {
-                            DebugTrace(0, Dbg, b"Cannot acquire FcbOrDcb = %p shared without waiting\n\0".as_ptr() as *const i8, FcbOrDcb);
-                            PostIrp = 1;
-                            break 'try_blk;
-                        }
-                    }
-                }
 
-                FcbOrDcbAcquired = 1;
-                FatVerifyFcb(IrpContext, FcbOrDcb);
-
-                if PagingIo == 0 {
-                    Status = FsRtlCheckOplock(FatGetFcbOplock(FcbOrDcb) as *mut core::ffi::c_void,
-                                              Irp,
-                                              IrpContext as *mut core::ffi::c_void,
-                                              FatOplockComplete as *const core::ffi::c_void,
-                                              FatPrePostIrp as *const core::ffi::c_void);
-
-                    if Status != STATUS_SUCCESS {
-                        OplockPostIrp = 1;
-                        PostIrp = 1;
-                        break 'try_blk; // NOTHING
-                    }
-
-                    (*FcbOrDcb).Header.IsFastIoPossible = FatIsFastIoPossible(FcbOrDcb);
-
-                    if PagingIo == 0 &&
-                       FsRtlCheckLockForReadAccess((&raw const (*FcbOrDcb).Specific.Fcb.as_ref().FileLock) as *const core::ffi::c_void, Irp) == 0 {
-                        Status = STATUS_FILE_LOCK_CONFLICT;
-                        break 'try_blk;
-                    }
-                }
-
-                FileSize = (*FcbOrDcb).Header.FileSize.u.LowPart;
-                ValidDataLength = (*FcbOrDcb).Header.ValidDataLength.u.LowPart;
-
-                if StartingVbo >= FileSize {
-                    DebugTrace(0, Dbg, b"End of File\n\0".as_ptr() as *const i8, 0);
-                    Status = STATUS_END_OF_FILE;
-                    break 'try_blk;
-                }
-
-                if ByteCount > FileSize - StartingVbo {
-                    ByteCount = FileSize - StartingVbo;
-                    RequestedByteCount = ByteCount;
-                    if NonCachedIo != 0 && Wait == 0 {
-                        (*(*IrpContext).FatIoContext).Wait.Async.as_mut().RequestedByteCount = RequestedByteCount;
-                    }
-                }
-
-                if NonCachedIo != 0 {
-                    let mut SectorSize: ULONG;
-                    let mut BytesToRead: ULONG;
-
-                    DebugTrace(0, Dbg, b"Non cached read.\n\0".as_ptr() as *const i8, 0);
-                    SectorSize = (*Vcb).Bpb.BytesPerSector as ULONG;
-
-                    if ValidDataLength < (*FcbOrDcb).ValidDataToDisk {
-                        ValidDataLength = (*FcbOrDcb).ValidDataToDisk;
-                    }
-
-                    if StartingVbo + ByteCount > ValidDataLength {
-                        SystemBuffer = FatMapUserBuffer(IrpContext, Irp);
-
-                        if StartingVbo < ValidDataLength {
-                            let ZeroingOffset = ((ValidDataLength - StartingVbo) + (SectorSize - 1)) & !(SectorSize - 1);
-                            if ByteCount > ZeroingOffset {
-                                SafeZeroMemory((SystemBuffer as *mut u8).add(ZeroingOffset as usize) as *mut core::ffi::c_void, (ByteCount - ZeroingOffset) as usize);
+                        if PagingIo != 0 {
+                            if ExAcquireResourceSharedLite((*FcbOrDcb).Header.PagingIoResource, 1) == 0 {
+                                DebugTrace(0, Dbg, b"Cannot acquire FcbOrDcb = %p shared without waiting\n\0".as_ptr() as *const i8, FcbOrDcb);
+                                (*p_post_irp) = 1;
+                                break 'try_blk;
+                            }
+                            if Wait == 0 {
+                                (*(*IrpContext).FatIoContext).Wait.Async.as_mut().Resource = (*FcbOrDcb).Header.PagingIoResource;
                             }
                         } else {
-                            SafeZeroMemory(SystemBuffer, ByteCount as usize);
-                            (*Irp).IoStatus.Information = ByteCount as _;
-                            Status = STATUS_SUCCESS;
+                            if Wait == 0 && NonCachedIo != 0 {
+                                if FatAcquireSharedFcbWaitForEx(IrpContext, FcbOrDcb) == 0 {
+                                    DebugTrace(0, Dbg, b"Cannot acquire FcbOrDcb = %p shared without waiting\n\0".as_ptr() as *const i8, FcbOrDcb);
+                                    (*p_post_irp) = 1;
+                                    break 'try_blk;
+                                }
+                                (*(*IrpContext).FatIoContext).Wait.Async.as_mut().Resource = (*FcbOrDcb).Header.Resource;
+                            } else {
+                                if FatAcquireSharedFcb(IrpContext, FcbOrDcb) == 0 {
+                                    DebugTrace(0, Dbg, b"Cannot acquire FcbOrDcb = %p shared without waiting\n\0".as_ptr() as *const i8, FcbOrDcb);
+                                    (*p_post_irp) = 1;
+                                    break 'try_blk;
+                                }
+                            }
+                        }
+
+                        (*p_fcb_or_dcb_acquired) = 1;
+                        FatVerifyFcb(IrpContext, FcbOrDcb);
+
+                        if PagingIo == 0 {
+                            (*p_status) = FsRtlCheckOplock(FatGetFcbOplock(FcbOrDcb) as *mut core::ffi::c_void,
+                                                      *p_irp,
+                                                      IrpContext as *mut core::ffi::c_void,
+                                                      FatOplockComplete as *const core::ffi::c_void,
+                                                      FatPrePostIrp as *const core::ffi::c_void);
+
+                            if (*p_status) != STATUS_SUCCESS {
+                                OplockPostIrp = 1;
+                                (*p_post_irp) = 1;
+                                break 'try_blk; // NOTHING
+                            }
+
+                            (*FcbOrDcb).Header.IsFastIoPossible = FatIsFastIoPossible(FcbOrDcb);
+
+                            if PagingIo == 0 &&
+                               FsRtlCheckLockForReadAccess((&raw const (*FcbOrDcb).Specific.Fcb.as_ref().FileLock) as *const core::ffi::c_void, *p_irp) == 0 {
+                                (*p_status) = STATUS_FILE_LOCK_CONFLICT;
+                                break 'try_blk;
+                            }
+                        }
+
+                        FileSize = (*FcbOrDcb).Header.FileSize.u.LowPart;
+                        ValidDataLength = (*FcbOrDcb).Header.ValidDataLength.u.LowPart;
+
+                        if StartingVbo >= FileSize {
+                            DebugTrace(0, Dbg, b"End of File\n\0".as_ptr() as *const i8, 0);
+                            (*p_status) = STATUS_END_OF_FILE;
                             break 'try_blk;
+                        }
+
+                        if ByteCount > FileSize - StartingVbo {
+                            ByteCount = FileSize - StartingVbo;
+                            RequestedByteCount = ByteCount;
+                            if NonCachedIo != 0 && Wait == 0 {
+                                (*(*IrpContext).FatIoContext).Wait.Async.as_mut().RequestedByteCount = RequestedByteCount;
+                            }
+                        }
+
+                        if NonCachedIo != 0 {
+                            let mut SectorSize: ULONG;
+                            let mut BytesToRead: ULONG;
+
+                            DebugTrace(0, Dbg, b"Non cached read.\n\0".as_ptr() as *const i8, 0);
+                            SectorSize = (*Vcb).Bpb.BytesPerSector as ULONG;
+
+                            if ValidDataLength < (*FcbOrDcb).ValidDataToDisk {
+                                ValidDataLength = (*FcbOrDcb).ValidDataToDisk;
+                            }
+
+                            if StartingVbo + ByteCount > ValidDataLength {
+                                SystemBuffer = FatMapUserBuffer(IrpContext, *p_irp);
+
+                                if StartingVbo < ValidDataLength {
+                                    let ZeroingOffset = ((ValidDataLength - StartingVbo) + (SectorSize - 1)) & !(SectorSize - 1);
+                                    if ByteCount > ZeroingOffset {
+                                        SafeZeroMemory(IrpContext, (SystemBuffer as *mut u8).add(ZeroingOffset as usize) as *mut core::ffi::c_void, (ByteCount - ZeroingOffset) as usize);
+                                    }
+                                } else {
+                                    SafeZeroMemory(IrpContext, SystemBuffer, ByteCount as usize);
+                                    (*(*p_irp)).IoStatus.Information = ByteCount as _;
+                                    (*p_status) = STATUS_SUCCESS;
+                                    break 'try_blk;
+                                }
+                            }
+
+                            ByteCount = if ValidDataLength - StartingVbo < ByteCount { ValidDataLength - StartingVbo } else { ByteCount };
+                            BytesToRead = (ByteCount + (SectorSize - 1)) & !(SectorSize - 1);
+
+                            if (StartingVbo & (SectorSize - 1)) != 0 || BytesToRead > (*IrpSp).Parameters.Read.Length {
+                                if Wait == 0 {
+                                    (*p_post_irp) = 1;
+                                    break 'try_blk;
+                                }
+                                FatNonCachedNonAlignedRead(IrpContext,
+                                                           *p_irp,
+                                                           FcbOrDcb,
+                                                           StartingVbo,
+                                                           ByteCount);
+                                // prefast suppress
+                                BytesToRead = ByteCount;
+                            } else {
+                                if FatNonCachedIo(IrpContext,
+                                                  *p_irp,
+                                                  FcbOrDcb,
+                                                  StartingVbo,
+                                                  BytesToRead,
+                                                  ByteCount,
+                                                  0) == STATUS_PENDING {
+
+                                    (*IrpContext).FatIoContext = core::ptr::null_mut();
+                                    (*p_irp) = core::ptr::null_mut();
+                                    (*p_status) = STATUS_PENDING;
+                                    break 'try_blk;
+                                }
+                            }
+
+                            (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
+                            if !NT_SUCCESS(*p_status) {
+                                NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                                FatNormalizeAndRaiseStatus(IrpContext, *p_status);
+                            } else {
+                                NT_ASSERT(((*(*p_irp)).IoStatus.Information == BytesToRead as _) as i32);
+                                (*(*p_irp)).IoStatus.Information = RequestedByteCount as _;
+                            }
+
+                            break 'try_blk; // try_return(*p_status) effectively ends the loop
+                        } else {
+                            // Cached case
+                            if (*FileObject).PrivateCacheMap.is_null() {
+                                DebugTrace(0, Dbg, b"Initialize cache mapping.\n\0".as_ptr() as *const i8, 0);
+
+                                if (*FcbOrDcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
+                                    FatLookupFileAllocationSize(IrpContext, FcbOrDcb);
+                                }
+                                if FileSize > (*FcbOrDcb).Header.AllocationSize.u.LowPart {
+                                    FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
+                                    FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+                                }
+
+                                FatInitializeCacheMap(FileObject,
+                                                      &raw mut (*FcbOrDcb).Header.AllocationSize as *mut CC_FILE_SIZES,
+                                                      0,
+                                                      &raw mut FatData.CacheManagerCallbacks,
+                                                      FcbOrDcb);
+                                CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
+                            }
+
+                            DebugTrace(0, Dbg, b"Cached read.\n\0".as_ptr() as *const i8, 0);
+
+                            if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) == 0 {
+                                SystemBuffer = FatMapUserBuffer(IrpContext, *p_irp);
+
+                                // CcCopyReadEx or fallback to CcCopyRead
+                                #[cfg(ntddi_win8)]
+                                let copy_result = CcCopyReadEx(FileObject,
+                                                               &raw mut StartingByte,
+                                                               ByteCount,
+                                                               Wait,
+                                                               SystemBuffer,
+                                                               &raw mut (*(*p_irp)).IoStatus,
+                                                               (*(*p_irp)).Tail.Overlay.Thread);
+                                #[cfg(not(ntddi_win8))]
+                                let copy_result = CcCopyRead(FileObject,
+                                                             &raw mut StartingByte,
+                                                             ByteCount,
+                                                             Wait,
+                                                             SystemBuffer,
+                                                             &raw mut (*(*p_irp)).IoStatus);
+
+                                if copy_result == 0 {
+                                    DebugTrace(0, Dbg, b"Cached Read could not wait\n\0".as_ptr() as *const i8, 0);
+                                    (*p_post_irp) = 1;
+                                    break 'try_blk;
+                                }
+
+                                (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
+                                NT_ASSERT(NT_SUCCESS(*p_status) as i32);
+                                break 'try_blk; // try_return(*p_status)
+                            } else {
+                                DebugTrace(0, Dbg, b"MDL read.\n\0".as_ptr() as *const i8, 0);
+                                NT_ASSERT((Wait != 0) as i32);
+                                CcMdlRead(FileObject,
+                                          &raw mut StartingByte,
+                                          ByteCount,
+                                          &raw mut (*(*p_irp)).MdlAddress,
+                                          &raw mut (*(*p_irp)).IoStatus);
+                                (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
+                                NT_ASSERT(NT_SUCCESS(*p_status) as i32);
+                                break 'try_blk;
+                            }
                         }
                     }
 
-                    ByteCount = if ValidDataLength - StartingVbo < ByteCount { ValidDataLength - StartingVbo } else { ByteCount };
-                    BytesToRead = (ByteCount + (SectorSize - 1)) & !(SectorSize - 1);
+                    if TypeOfOpen == DirectoryFile || TypeOfOpen == EaFile {
+                        let mut SectorSize: ULONG;
+                        SectorSize = (*Vcb).Bpb.BytesPerSector as ULONG;
 
-                    if (StartingVbo & (SectorSize - 1)) != 0 || BytesToRead > (*IrpSp).Parameters.Read.Length {
-                        if Wait == 0 {
-                            PostIrp = 1;
+                        NT_ASSERT((NonCachedIo != 0 && PagingIo != 0) as i32);
+                        NT_ASSERT((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
+
+                        if StartingVbo >= (*FcbOrDcb).Header.AllocationSize.u.LowPart {
+                            DebugTrace(0, Dbg, b"PagingIo dirent started beyond EOF.\n\0".as_ptr() as *const i8, 0);
+                            (*(*p_irp)).IoStatus.Information = 0;
+                            (*p_status) = STATUS_SUCCESS;
                             break 'try_blk;
                         }
-                        FatNonCachedNonAlignedRead(IrpContext,
-                                                   Irp,
-                                                   FcbOrDcb,
-                                                   StartingVbo,
-                                                   ByteCount);
-                        // prefast suppress
-                        BytesToRead = ByteCount;
-                    } else {
+
+                        if StartingVbo + ByteCount > (*FcbOrDcb).Header.AllocationSize.u.LowPart {
+                            DebugTrace(0, Dbg, b"PagingIo dirent extending beyond EOF.\n\0".as_ptr() as *const i8, 0);
+                            ByteCount = (*FcbOrDcb).Header.AllocationSize.u.LowPart - StartingVbo;
+                        }
+
                         if FatNonCachedIo(IrpContext,
-                                          Irp,
+                                          *p_irp,
                                           FcbOrDcb,
                                           StartingVbo,
-                                          BytesToRead,
+                                          ByteCount,
                                           ByteCount,
                                           0) == STATUS_PENDING {
-
                             (*IrpContext).FatIoContext = core::ptr::null_mut();
-                            Irp = core::ptr::null_mut();
-                            Status = STATUS_PENDING;
-                            break 'try_blk;
-                        }
-                    }
-
-                    Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                    if !NT_SUCCESS(Status) {
-                        NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED)) as i32);
-                        FatNormalizeAndRaiseStatus(IrpContext, Status);
-                    } else {
-                        NT_ASSERT(((*Irp).IoStatus.Information == BytesToRead as _) as i32);
-                        (*Irp).IoStatus.Information = RequestedByteCount as _;
-                    }
-
-                    break 'try_blk; // try_return(Status) effectively ends the loop
-                } else {
-                    // Cached case
-                    if (*FileObject).PrivateCacheMap.is_null() {
-                        DebugTrace(0, Dbg, b"Initialize cache mapping.\n\0".as_ptr() as *const i8, 0);
-
-                        if (*FcbOrDcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
-                            FatLookupFileAllocationSize(IrpContext, FcbOrDcb);
-                        }
-                        if FileSize > (*FcbOrDcb).Header.AllocationSize.u.LowPart {
-                            FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
-                            FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
-                        }
-
-                        FatInitializeCacheMap(FileObject,
-                                              &raw mut (*FcbOrDcb).Header.AllocationSize as *mut CC_FILE_SIZES,
-                                              0,
-                                              &raw mut FatData.CacheManagerCallbacks,
-                                              FcbOrDcb);
-                        CcSetReadAheadGranularity(FileObject, READ_AHEAD_GRANULARITY);
-                    }
-
-                    DebugTrace(0, Dbg, b"Cached read.\n\0".as_ptr() as *const i8, 0);
-
-                    if FlagOn((*IrpContext).MinorFunction as u32, IRP_MN_MDL) == 0 {
-                        SystemBuffer = FatMapUserBuffer(IrpContext, Irp);
-
-                        // CcCopyReadEx or fallback to CcCopyRead
-                        #[cfg(ntddi_win8)]
-                        let copy_result = CcCopyReadEx(FileObject,
-                                                       &raw mut StartingByte,
-                                                       ByteCount,
-                                                       Wait,
-                                                       SystemBuffer,
-                                                       &raw mut (*Irp).IoStatus,
-                                                       (*Irp).Tail.Overlay.Thread);
-                        #[cfg(not(ntddi_win8))]
-                        let copy_result = CcCopyRead(FileObject,
-                                                     &raw mut StartingByte,
-                                                     ByteCount,
-                                                     Wait,
-                                                     SystemBuffer,
-                                                     &raw mut (*Irp).IoStatus);
-
-                        if copy_result == 0 {
-                            DebugTrace(0, Dbg, b"Cached Read could not wait\n\0".as_ptr() as *const i8, 0);
-                            PostIrp = 1;
+                            (*p_irp) = core::ptr::null_mut();
+                            (*p_status) = STATUS_PENDING;
                             break 'try_blk;
                         }
 
-                        Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                        NT_ASSERT(NT_SUCCESS(Status) as i32);
-                        break 'try_blk; // try_return(Status)
-                    } else {
-                        DebugTrace(0, Dbg, b"MDL read.\n\0".as_ptr() as *const i8, 0);
-                        NT_ASSERT((Wait != 0) as i32);
-                        CcMdlRead(FileObject,
-                                  &raw mut StartingByte,
-                                  ByteCount,
-                                  &raw mut (*Irp).MdlAddress,
-                                  &raw mut (*Irp).IoStatus);
-                        Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                        NT_ASSERT(NT_SUCCESS(Status) as i32);
+                        (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
+                        if !NT_SUCCESS(*p_status) {
+                            NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                            FatNormalizeAndRaiseStatus(IrpContext, *p_status);
+                        } else {
+                            NT_ASSERT(((*(*p_irp)).IoStatus.Information == ByteCount as _) as i32);
+                        }
+
                         break 'try_blk;
                     }
-                }
+
+                    if TypeOfOpen == UserDirectoryOpen {
+                        DebugTrace(0, Dbg, b"CommonRead -> STATUS_INVALID_PARAMETER\n\0".as_ptr() as *const i8, 0);
+                        (*p_status) = STATUS_INVALID_PARAMETER;
+                        break 'try_blk;
+                    }
+
+                    DebugDump(b"Illegal TypeOfOpen\n\0".as_ptr() as *const u8, 0, FcbOrDcb as *mut core::ffi::c_void);
+                    FatBugCheck(TypeOfOpen as ULONG_PTR, FcbOrDcb as ULONG_PTR, 0);
+                    #[allow(unreachable_code)]
+                    { break 'try_blk; } // never reached
             }
 
-            if TypeOfOpen == DirectoryFile || TypeOfOpen == EaFile {
-                let mut SectorSize: ULONG;
-                SectorSize = (*Vcb).Bpb.BytesPerSector as ULONG;
+            // try_exit: NOTHING equivalent
+            if !(*p_irp).is_null() {
+                if (*p_post_irp) == 0 {
+                    let ActualBytesRead: ULONG;
+                    DebugTrace(0, Dbg, b"Completing request with status = %08lx\n\0".as_ptr() as *const i8, *p_status);
+                    DebugTrace(0, Dbg, b"                   Information = %08lx\n\0".as_ptr() as *const i8, (*(*p_irp)).IoStatus.Information);
 
-                NT_ASSERT((NonCachedIo != 0 && PagingIo != 0) as i32);
-                NT_ASSERT((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
+                    ActualBytesRead = (*(*p_irp)).IoStatus.Information as ULONG;
 
-                if StartingVbo >= (*FcbOrDcb).Header.AllocationSize.u.LowPart {
-                    DebugTrace(0, Dbg, b"PagingIo dirent started beyond EOF.\n\0".as_ptr() as *const i8, 0);
-                    (*Irp).IoStatus.Information = 0;
-                    Status = STATUS_SUCCESS;
-                    break 'try_blk;
-                }
+                    if SynchronousIo != 0 && PagingIo == 0 {
+                        (*FileObject).CurrentByteOffset.u.LowPart = StartingVbo + (if NT_ERROR(*p_status) != 0 { 0 } else { ActualBytesRead });
+                    }
 
-                if StartingVbo + ByteCount > (*FcbOrDcb).Header.AllocationSize.u.LowPart {
-                    DebugTrace(0, Dbg, b"PagingIo dirent extending beyond EOF.\n\0".as_ptr() as *const i8, 0);
-                    ByteCount = (*FcbOrDcb).Header.AllocationSize.u.LowPart - StartingVbo;
-                }
-
-                if FatNonCachedIo(IrpContext,
-                                  Irp,
-                                  FcbOrDcb,
-                                  StartingVbo,
-                                  ByteCount,
-                                  ByteCount,
-                                  0) == STATUS_PENDING {
-                    (*IrpContext).FatIoContext = core::ptr::null_mut();
-                    Irp = core::ptr::null_mut();
-                    Status = STATUS_PENDING;
-                    break 'try_blk;
-                }
-
-                Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                if !NT_SUCCESS(Status) {
-                    NT_ASSERT((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED)) as i32);
-                    FatNormalizeAndRaiseStatus(IrpContext, Status);
+                    if NT_SUCCESS(*p_status) && PagingIo == 0 {
+                        SetFlag(&raw mut (*FileObject).Flags, FO_FILE_FAST_IO_READ);
+                    }
                 } else {
-                    NT_ASSERT(((*Irp).IoStatus.Information == ByteCount as _) as i32);
+                    DebugTrace(0, Dbg, b"Passing request to Fsp\n\0".as_ptr() as *const i8, 0);
+                    if OplockPostIrp == 0 {
+                        (*p_status) = FatFsdPostRequest(IrpContext, *p_irp);
+                    }
+                }
+            }
+        },
+        |_, abnormal| {
+            if *p_fcb_or_dcb_acquired != 0 && !(*p_irp).is_null() {
+                if PagingIo != 0 {
+                    ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
+                } else {
+                    FatReleaseFcb(core::ptr::null_mut(), FcbOrDcb);
+                }
+            }
+
+            if *p_post_irp == 0 {
+                if FlagOn((*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT) != 0 {
+                    if !(*(*IrpContext).FatIoContext).ZeroMdl.is_null() {
+                        IoFreeMdl((*(*IrpContext).FatIoContext).ZeroMdl);
+                    }
+                    ClearFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT);
+                    (*IrpContext).FatIoContext = core::ptr::null_mut();
                 }
 
-                break 'try_blk;
+                if !abnormal {
+                    FatCompleteRequest(IrpContext, *p_irp, *p_status);
+                }
             }
 
-            if TypeOfOpen == UserDirectoryOpen {
-                DebugTrace(0, Dbg, b"CommonRead -> STATUS_INVALID_PARAMETER\n\0".as_ptr() as *const i8, 0);
-                Status = STATUS_INVALID_PARAMETER;
-                break 'try_blk;
-            }
+            DebugTrace(-1, Dbg, b"CommonRead -> %08lx\n\0".as_ptr() as *const i8, *p_status);
+        },
+    );
 
-            DebugDump(b"Illegal TypeOfOpen\n\0".as_ptr() as *const u8, 0, FcbOrDcb as *mut core::ffi::c_void);
-            FatBugCheck(TypeOfOpen as ULONG_PTR, FcbOrDcb as ULONG_PTR, 0);
-            #[allow(unreachable_code)]
-            { break 'try_blk; } // never reached
-    }
-
-    // try_exit: NOTHING equivalent
-    if !Irp.is_null() {
-        if PostIrp == 0 {
-            let ActualBytesRead: ULONG;
-            DebugTrace(0, Dbg, b"Completing request with status = %08lx\n\0".as_ptr() as *const i8, Status);
-            DebugTrace(0, Dbg, b"                   Information = %08lx\n\0".as_ptr() as *const i8, (*Irp).IoStatus.Information);
-
-            ActualBytesRead = (*Irp).IoStatus.Information as ULONG;
-
-            if SynchronousIo != 0 && PagingIo == 0 {
-                (*FileObject).CurrentByteOffset.u.LowPart = StartingVbo + (if NT_ERROR(Status) != 0 { 0 } else { ActualBytesRead });
-            }
-
-            if NT_SUCCESS(Status) && PagingIo == 0 {
-                SetFlag(&raw mut (*FileObject).Flags, FO_FILE_FAST_IO_READ);
-            }
-        } else {
-            DebugTrace(0, Dbg, b"Passing request to Fsp\n\0".as_ptr() as *const i8, 0);
-            if OplockPostIrp == 0 {
-                Status = FatFsdPostRequest(IrpContext, Irp);
-            }
-        }
-    }
-
-    // _SEH2_FINALLY block — runs unconditionally (DUMMY_PSEH).
-    if FcbOrDcbAcquired != 0 && !Irp.is_null() {
-        if PagingIo != 0 {
-            ExReleaseResourceLite((*FcbOrDcb).Header.PagingIoResource);
-        } else {
-            FatReleaseFcb(core::ptr::null_mut(), FcbOrDcb);
-        }
-    }
-
-    if PostIrp == 0 {
-        if FlagOn((*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT) != 0 {
-            if !(*(*IrpContext).FatIoContext).ZeroMdl.is_null() {
-                IoFreeMdl((*(*IrpContext).FatIoContext).ZeroMdl);
-            }
-            ClearFlag(&raw mut (*IrpContext).Flags, IRP_CONTEXT_STACK_IO_CONTEXT);
-            (*IrpContext).FatIoContext = core::ptr::null_mut();
-        }
-
-        FatCompleteRequest(IrpContext, Irp, Status);
-    }
-
-    DebugTrace(-1, Dbg, b"CommonRead -> %08lx\n\0".as_ptr() as *const i8, Status);
-
-    Status // return final Status
+    Status
 }
 
 // ============================================================================

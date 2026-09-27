@@ -54,7 +54,6 @@ extern "system" {
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn IoInitializePriorityInfo(PriorityInfo: *mut _IO_PRIORITY_INFO);
     fn IoRetrievePriorityInfo( Irp: *mut IRP, FileObject: *mut FILE_OBJECT, Thread: *mut core::ffi::c_void, PriorityInfo: *mut _IO_PRIORITY_INFO, ) -> NTSTATUS;
-    fn _SEH2_AbnormalTermination() -> u8;
     fn FatRemoveMcbEntry(vcb: *mut VCB, mcb: *mut core::ffi::c_void, start: u32, end: u32);
     fn FatVcbAcquiredExclusive(irp: *mut IRP_CONTEXT, vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
@@ -245,14 +244,17 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     (*IrpContext).PinCount += 1;
     DbgDoit(((*IrpContext).PinCount) as u32);
 
-    if Zero != 0 {
-        RtlZeroMemory(*Buffer, ByteCount as usize);
-    }
-    FatSetDirtyBcb(IrpContext, *Bcb as *mut c_void, Vcb, Reversible as u8);
-
-    if _SEH2_AbnormalTermination() != 0 {
-        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-    }
+    // _SEH2_TRY / _SEH2_FINALLY
+    crate::seh::try_finally(&mut (), |_| {
+        if Zero != 0 {
+            RtlZeroMemory(*Buffer, ByteCount as usize);
+        }
+        FatSetDirtyBcb(IrpContext, *Bcb as *mut c_void, Vcb, Reversible as u8);
+    }, |_, abnormal| {
+        if abnormal {
+            FatUnpinBcb(IrpContext, Bcb as *mut *mut core::ffi::c_void);
+        }
+    });
 
     DebugTrace(
         -1i32,
@@ -427,8 +429,11 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
     let mut byte_count: u32 = ByteCount;
     let mut zero_flag: u8 = Zero;
 
-    // _SEH2_TRY (USE_DUMMY_PSEH: finally is always non-abnormal, execute inline)
-    {
+    // _SEH2_TRY / _SEH2_FINALLY
+    let p_local_bcb = core::ptr::addr_of_mut!(local_bcb);
+    let p_unwind_alloc = core::ptr::addr_of_mut!(unwind_we_allocated_disk_space);
+    let p_initial_allocation = core::ptr::addr_of_mut!(initial_allocation);
+    crate::seh::try_finally(&mut (), |_| {
         if (StartingVbo as i64 + byte_count as i64) > (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart as i64 {
             if NodeType(*Dcb) == FAT_NTC_ROOT_DCB && FatIsFat32((**Dcb).Vcb) == 0 {
                 FatRaiseStatus(*IrpContext, STATUS_DISK_FULL);
@@ -441,7 +446,7 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
                 0,
             );
 
-            initial_allocation = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
+            *p_initial_allocation = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
 
             FatAddFileAllocation(
                 *IrpContext,
@@ -450,7 +455,7 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
                 StartingVbo + byte_count,
             );
 
-            unwind_we_allocated_disk_space = 1;
+            *p_unwind_alloc = 1;
 
             (**Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
 
@@ -462,14 +467,14 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
             FatCheckFreeDirentBitmap(*IrpContext, *Dcb);
 
             zero_flag = 1;
-            vbo.QuadPart = initial_allocation as i64;
-            byte_count = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - initial_allocation;
+            vbo.QuadPart = *p_initial_allocation as i64;
+            byte_count = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - *p_initial_allocation;
         }
 
         while byte_count > 0 {
             let bytes_to_pin: u32;
 
-            local_bcb = core::ptr::null_mut();
+            *p_local_bcb = core::ptr::null_mut();
 
             if vbo.QuadPart > (StartingVbo as i64 + initial_request as i64) {
                 mapping_granularity = VACB_MAPPING_GRANULARITY;
@@ -489,7 +494,7 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
                 &mut vbo,
                 bytes_to_pin,
                 BooleanFlagOn((**IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32,
-                &mut local_bcb,
+                p_local_bcb,
                 &mut local_buffer,
             ) == 0 {
                 FatRaiseStatus(*IrpContext, STATUS_CANT_WAIT);
@@ -497,7 +502,7 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
 
             if (*Buffer).is_null() {
                 *Buffer = local_buffer;
-                *Bcb = local_bcb;
+                *Bcb = *p_local_bcb;
             }
 
             (**IrpContext).PinCount += 1;
@@ -505,42 +510,39 @@ pub unsafe extern "system" fn FatPrepareWriteDirectoryFile(
 
             if zero_flag != 0 {
                 core::ptr::write_bytes(local_buffer as *mut u8, 0, bytes_to_pin as usize);
-                CcSetDirtyPinnedData(local_bcb, core::ptr::null_mut());
+                CcSetDirtyPinnedData(*p_local_bcb, core::ptr::null_mut());
             }
 
             byte_count -= bytes_to_pin;
             vbo.QuadPart += bytes_to_pin as i64;
 
-            if *Bcb != local_bcb {
-                FatRepinBcb(*IrpContext, local_bcb);
-                FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!(local_bcb) as *mut *mut core::ffi::c_void);
+            if *Bcb != *p_local_bcb {
+                FatRepinBcb(*IrpContext, *p_local_bcb);
+                FatUnpinBcb(*IrpContext, p_local_bcb as *mut *mut core::ffi::c_void);
             }
         }
 
         FatSetDirtyBcb(*IrpContext, *Bcb, (**Dcb).Vcb, Reversible);
         *Status = STATUS_SUCCESS as i32;
-    }
+    }, |_, abnormal| {
+        DebugUnwind(b"FatPrepareWriteDirectoryFile\0".as_ptr() as *const i8);
 
-    DebugUnwind(b"FatPrepareWriteDirectoryFile\0".as_ptr() as *const i8);
+        if abnormal {
+            if *Bcb != *p_local_bcb {
+                FatUnpinBcb(*IrpContext, p_local_bcb as *mut *mut core::ffi::c_void);
+            }
+            FatUnpinBcb(*IrpContext, Bcb as *mut *mut core::ffi::c_void);
 
-    // _SEH2_FINALLY: with USE_DUMMY_PSEH, abnormal termination is always false
-    let abnormal = _SEH2_AbnormalTermination() != 0;
-
-    if abnormal {
-        if *Bcb != local_bcb {
-            FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!(local_bcb) as *mut *mut core::ffi::c_void);
+            if *p_unwind_alloc != 0 {
+                FatTruncateFileAllocation(*IrpContext, *Dcb, *p_initial_allocation);
+                (**Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
+                CcSetFileSizes(
+                    (**Dcb).Specific.Dcb.as_ref().DirectoryFile,
+                    core::ptr::addr_of!((**Dcb).Header.AllocationSize) as *const CC_FILE_SIZES as PCC_FILE_SIZES,
+                );
+            }
         }
-        FatUnpinBcb(*IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-
-        if unwind_we_allocated_disk_space != 0 {
-            FatTruncateFileAllocation(*IrpContext, *Dcb, initial_allocation);
-            (**Dcb).Header.FileSize.__bindgen_anon_1.LowPart = (**Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart;
-            CcSetFileSizes(
-                (**Dcb).Specific.Dcb.as_ref().DirectoryFile,
-                core::ptr::addr_of!((**Dcb).Header.AllocationSize) as *const CC_FILE_SIZES as PCC_FILE_SIZES,
-            );
-        }
-    }
+    });
 
     DebugTrace(
         -1,
@@ -661,16 +663,17 @@ pub unsafe extern "system" fn FatOpenDirectoryFile(
         let mut DirectoryFileObject: *mut FILE_OBJECT = core::ptr::null_mut();
         FatAcquireDirectoryFileMutex((*Dcb).Vcb);
 
-        // _SEH2_TRY expansion: try block with finally using trailing code
-        {
+        // _SEH2_TRY / _SEH2_FINALLY
+        let p_dfo = core::ptr::addr_of_mut!(DirectoryFileObject);
+        crate::seh::try_finally(&mut (), |_| {
             if (*Dcb).Specific.Dcb.as_ref().DirectoryFile.is_null() {
                 let RealDevice: *mut DEVICE_OBJECT = (*(*Dcb).Vcb).CurrentDevice;
 
-                DirectoryFileObject = IoCreateStreamFileObject(core::ptr::null_mut(), RealDevice);
+                *p_dfo = IoCreateStreamFileObject(core::ptr::null_mut(), RealDevice);
                 FatPreallocateCloseContext((*Dcb).Vcb);
 
                 FatSetFileObject(
-                    DirectoryFileObject,
+                    *p_dfo,
                     DirectoryFile,
                     Dcb as *mut c_void,
                     core::ptr::null_mut(),
@@ -687,27 +690,27 @@ pub unsafe extern "system" fn FatOpenDirectoryFile(
                     );
                 }
 
-                (*DirectoryFileObject).SectionObjectPointer =
+                (**p_dfo).SectionObjectPointer =
                     &raw mut (*(*Dcb).NonPaged).SectionObjectPointers as *mut _;
 
-                (*DirectoryFileObject).ReadAccess = 1;
-                (*DirectoryFileObject).WriteAccess = 1;
-                (*DirectoryFileObject).DeleteAccess = 1;
+                (**p_dfo).ReadAccess = 1;
+                (**p_dfo).WriteAccess = 1;
+                (**p_dfo).DeleteAccess = 1;
 
                 InterlockedIncrement(
                     &raw mut (*Dcb).Specific.Dcb.as_mut().DirectoryFileOpenCount as *mut i32,
                 );
 
-                (*Dcb).Specific.Dcb.as_mut().DirectoryFile = DirectoryFileObject;
+                (*Dcb).Specific.Dcb.as_mut().DirectoryFile = *p_dfo;
                 // Success - clear the pointer so finally doesn't dereference
-                DirectoryFileObject = core::ptr::null_mut();
+                *p_dfo = core::ptr::null_mut();
             }
-        }
-        // _SEH2_FINALLY expansion:
-        FatReleaseDirectoryFileMutex((*Dcb).Vcb);
-        if !DirectoryFileObject.is_null() {
-            ObDereferenceObject(DirectoryFileObject as *mut core::ffi::c_void);
-        }
+        }, |_, _abnormal| {
+            FatReleaseDirectoryFileMutex((*Dcb).Vcb);
+            if !(*p_dfo).is_null() {
+                ObDereferenceObject(*p_dfo as *mut core::ffi::c_void);
+            }
+        });
     }
 
     if (*(*Dcb).Specific.Dcb.as_ref().DirectoryFile).PrivateCacheMap.is_null() {
@@ -743,8 +746,8 @@ pub unsafe extern "system" fn FatOpenEaFile(
 
     EaFileObject = IoCreateStreamFileObject(core::ptr::null_mut(), RealDevice);
 
-    // _SEH2_TRY
-    {
+    // _SEH2_TRY / _SEH2_FINALLY
+    crate::seh::try_finally(&mut (), |_| {
         FatPreallocateCloseContext((*IrpContext).Vcb);
 
         FatSetFileObject(EaFileObject, EaFile, EaFcb as *mut c_void, core::ptr::null_mut());
@@ -767,18 +770,19 @@ pub unsafe extern "system" fn FatOpenEaFile(
             EaFileObject,
             core::ptr::addr_of!((*EaFcb).Header.AllocationSize) as *const CC_FILE_SIZES as *mut CC_FILE_SIZES,
             1,
-            core::ptr::addr_of!(FatData.CacheManagerNoOpCallbacks) as *const CACHE_MANAGER_CALLBACKS as *mut CACHE_MANAGER_CALLBACKS,
-            (*EaFcb).Vcb as *mut c_void,
+            // C: &FatData.CacheManagerCallbacks with the EaFcb as the lazy-write context
+            // (was mistranslated as the NoOp callbacks + the Vcb).
+            core::ptr::addr_of!(FatData.CacheManagerCallbacks) as *const CACHE_MANAGER_CALLBACKS as *mut CACHE_MANAGER_CALLBACKS,
+            EaFcb as *mut c_void,
         );
 
         CcSetAdditionalCacheAttributes(EaFileObject, 1, 1);
-    }
-    // _SEH2_FINALLY
-    {
-        if _SEH2_AbnormalTermination() != 0 {
+    }, |_, abnormal| {
+        // _SEH2_FINALLY
+        if abnormal {
             ObDereferenceObject(EaFileObject as *mut c_void);
         }
-    }
+    });
     // _SEH2_END
 
     DebugTrace(
