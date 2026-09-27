@@ -583,8 +583,18 @@ unsafe fn construct_environment_block<C: Chr>(envp: *const *const C) -> Result<*
     }
 
     // Find the first "=X:=..." per-drive current-directory variable.
+    //
+    // DIVERGES from Microsoft's C, deliberately: its loop is
+    // `while (*it != '=') it += tcslen(it) + 1;` with no stop at the block's
+    // terminating empty string, so an environment with NO per-drive variable is
+    // scanned past its end until some later string happens to start with '='.
+    // Windows always has one (`=C:=C:\...`), so the read never runs out there;
+    // ReactOS does not always create them, and the guest grader hit it as an
+    // access violation looping at a heap page end. Stopping at the empty string
+    // means "no per-drive variables" (cwd_count 0 below), which is what the C
+    // computes whenever its read stays in bounds.
     let mut it = os_environment;
-    while *it != C::ascii(b'=') {
+    while *it != C::zero() && *it != C::ascii(b'=') {
         it = it.add(C::len(it) + 1);
     }
     let first_cwd = it;

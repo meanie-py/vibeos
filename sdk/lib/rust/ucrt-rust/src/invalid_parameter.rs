@@ -309,7 +309,9 @@ pub unsafe extern "C" fn _invoke_watson(
             EXCEPTION_NONCONTINUABLE,
         );
         TerminateProcess(GetCurrentProcess(), STATUS_INVALID_CRUNTIME_PARAMETER);
-        loop {}
+        // The C's `UNREACHABLE;` (__assume(0)): terminating the CURRENT process
+        // does not return.
+        core::hint::unreachable_unchecked()
     }
     #[cfg(target_arch = "aarch64")]
     {

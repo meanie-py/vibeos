@@ -4633,6 +4633,13 @@ static int spv_setup(void)
     lstrcatW(g_spv_noext_w, L"\\System32\\cmd");
     WideCharToMultiByte(CP_ACP, 0, g_spv_full_w, -1, g_spv_full_n, (int)sizeof g_spv_full_n, NULL, NULL);
     WideCharToMultiByte(CP_ACP, 0, g_spv_noext_w, -1, g_spv_noext_n, (int)sizeof g_spv_noext_n, NULL, NULL);
+    /* The `e` forms copy the per-drive "=X:=" variables out of the OS environment,
+     * and Microsoft's scan for the first one has no stop at the block's end: with
+     * none present it reads past the block until something starts with '='
+     * (ours stops -- see exec.rs). Windows always has one; ReactOS may not. Give
+     * the process one, as Windows would, so both sides take the defined path and
+     * the grade does not depend on heap layout. */
+    SetEnvironmentVariableW(L"=C:", L"C:\\");
     g_spv_ready = 1;
     return 1;
 }

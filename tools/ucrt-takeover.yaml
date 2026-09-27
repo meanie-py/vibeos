@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 723
-  amd64: 723
-  arm64: 720
+  i386: 634
+  amd64: 634
+  arm64: 631
 
 families:
   bits:
@@ -811,6 +811,7 @@ families:
       - setlocale
 
   exec:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/exec/spawnl.cpp
       - sdk/lib/ucrt/exec/spawnlp.cpp
@@ -818,7 +819,15 @@ families:
       - sdk/lib/ucrt/exec/spawnvp.cpp
       - sdk/lib/ucrt/exec/cenvarg.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: all 32 forms: validation
+      (NULL/empty name and argv, bad mode), a real _P_WAIT spawn of cmd.exe /c exit
+      7 by full path and by PATH search, extension probing, explicit vs inherited
+      environments, 17- and 65-argument lists (the capture's heap growth); the _exec
+      forms on their validation paths only (a real one replaces the grader). The `e`
+      forms first failed as a fault loop: Microsoft's scan for the first "=X:"
+      variable never stops at the block's end, ReactOS may have none; ours stops
+      (exec.rs), and the grader gives the process one, as Windows does. All MATCH,
+      dll_fail=0 -- 736 cases.
     note: >
       A PORT (src/exec.rs). The 16 variadic l-forms (_spawnl.._wexeclpe) are
       va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c over Rust `_v`
@@ -846,10 +855,13 @@ families:
       - _wspawnvpe
 
   align:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/heap/align.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: sizes, power-of-two and invalid
+      alignments, offsets, realloc/recalloc growth and shrink with contents,
+      _aligned_msize, NULL. All MATCH, dll_fail=0 -- 156 cases.
     note: >
       A PORT (src/align.rs); the header word before each aligned block is bit-
       identical, since memory crosses between sides.
@@ -864,10 +876,14 @@ families:
       - _aligned_recalloc
 
   invalid_parameter:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/misc/invalid_parameter.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: set/get round trips, thread-local
+      vs global precedence, NULL resets, and a real CRT caller (_aligned_malloc with
+      a bad alignment) firing exactly the installed handler on each side. All MATCH,
+      dll_fail=0 -- 11 cases.
     note: >
       A PORT (src/invalid_parameter.rs). The handler is stored XOR __security_cookie
       (__crt_fast_encode_pointer in this tree). __acrt_call_reportfault is LIVE on
@@ -887,10 +903,16 @@ families:
       - _set_thread_local_invalid_parameter_handler
 
   open:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/lowio/open.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: every export incl. the four
+      variadic ones through the shim: BOM writing for
+      _O_U8TEXT/_O_U16TEXT/_O_WTEXT/_O_TEXT/_O_BINARY read back from outside,
+      _O_EXCL, bad share/pmode, NULL path/pfh. (The BOM runner first bugchecked the
+      guest in fastfat -- identically with Microsoft's code on both sides; fixed by
+      master's fastfat SEH, bf8bbd0d86c). All MATCH, dll_fail=0 -- 57 cases.
     note: >
       A PORT (src/lowio_open.rs). The four variadic entry points
       (_open/_wopen/_sopen/_wsopen) are shim trampolines over Rust `_v` twins; they
@@ -902,10 +924,13 @@ families:
       - _wsopen_s
 
   atof:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/convert/atof.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: the strtod-block corpus through
+      all eight: result bits, errno, handler count, and the _CRT_FLOAT/_CRT_DOUBLE
+      out-structs with their return codes. All MATCH, dll_fail=0 -- 500 cases.
     note: >
       A PORT (src/atof.rs) over the graded strtod parser.
     exports:
@@ -919,10 +944,13 @@ families:
       - atof
 
   ctime:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/time/ctime.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: time_t values incl. negative, 0,
+      2^31-1 and past it, out-of-range, and the _s forms with NULL and short
+      buffers. All MATCH, dll_fail=0 -- 187 cases.
     note: >
       A PORT (src/ctime.rs); _localtime*_s and asctime_s/_wasctime_s are called, not
       replaced.
@@ -937,10 +965,12 @@ families:
       - _wctime64_s
 
   timeset:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/time/timeset.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: each getter's value and errno,
+      NULL arguments, and the tzname buffers. All MATCH, dll_fail=0 -- 47 cases.
     note: >
       A PORT (src/timeset.rs). The globals start at 0 and are set by
       __acrt_initialize_timeset (dual_state_global's constructor), byte- and
@@ -958,10 +988,12 @@ families:
       - _get_tzname
 
   argv_data:
+    provenance: ucrt-port
     replaces:
       - sdk/lib/ucrt/startup/argv_data.cpp
     oracle: >
-      Tier 2 --takeover-check, in the arm64 guest: PENDING.
+      Tier 2 --takeover-check, in the arm64 guest: each accessor's pointed-to value
+      on both CRT instances. All MATCH, dll_fail=0 -- 26 cases.
     note: >
       A PORT (src/argv_data.rs); the data globals byte- and relocation-compared
       against Microsoft's object on all three arches.
