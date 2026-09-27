@@ -622,7 +622,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - fastfat `FatCreateNewDirent` never marked new dirents used (entry above).
   - fastfat `FatFsdPnp` stopped at `return Status` (its source was truncated): every PnP
     IRP left the thread inside `FsRtlEnterFileSystem`'s critical region, kernel APCs
-    disabled for good, plus a stale top-level IRP.
+    disabled for good, plus a stale top-level IRP. Fixed independently the same day by the
+    fastfat real-SEH lane (`bf8bbd0d86c`), whose version is the one in the tree.
   - fastfat `FatLockVolumeInternal` dropped `FatCloseEaFile`: a FAT12/16 volume with an
     `EA DATA. SF` kept an extra Vpb reference, so FSCTL_LOCK_VOLUME failed ACCESS_DENIED.
   - shell32 `SHUpdateImageW`/`A` and `SHHandleUpdateImage` had taken Wine's `#else` FIXME
@@ -640,10 +641,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   C's OEM round-trip attempt (no leak).
   Remaining silent stubs to read: wlansvc `_RpcEnumInterfaces`, netcfgx
   `INetCfgComponentControl_fnApplyPnpChanges`, condrv `ConDrvDispatch`, win32k
-  `NtUserGetRawInputDeviceInfo`, gdi32's five `EMFDRV_*` (live C glue stubs). Larger
-  fastfat leads: `FatProcessException` (70 Rust lines vs 144 C; reachable through the
-  Rust SEH emulation), `FatVerifyVolume`, `FatCommonShutdown`. Re-translate (with
-  sealing) only what the audit and a reading of the C confirm.
+  `NtUserGetRawInputDeviceInfo`, gdi32's five `EMFDRV_*` (live C glue stubs); condrv
+  `ConDrvDispatch` is FALSE (the C only traces). `FatProcessException` was completed by the
+  real-SEH lane; fastfat is now 4 `high`, cdfs 4. A crate on real SEH (`ntkrnl_sys::seh`)
+  owes its except handlers and `AbnormalTermination` unwinds, and the audit now detects
+  that per crate instead of assuming DUMMY_PSEH everywhere. Re-translate (with sealing)
+  only what the audit and a reading of the C confirm.
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal

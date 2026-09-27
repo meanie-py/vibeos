@@ -333,14 +333,21 @@ class CBody:
     required: set[str]
 
 
-def c_bodies(path: Path, pins: dict[str, int] | None = None) -> dict[str, CBody]:
+def c_bodies(
+    path: Path, pins: dict[str, int] | None = None, real_seh: bool = False
+) -> dict[str, CBody]:
     """Each function this .c DEFINES, with the callees its LIVE body must perform."""
     text = pin_version_guards(path.read_text(encoding="utf-8", errors="replace"), pins or {})
     masked = _blank_ignored_calls(mask_code(text))
     dead = never_compiled_lines(text)
     masked_lines = masked.splitlines()
     optional_lines = dead | _dbg_lines(text)
-    except_spans = dummy_pseh_except_spans(text, masked) + _abnormal_only_spans(masked)
+    # Under DUMMY_PSEH an except handler and an AbnormalTermination-only unwind never run, so
+    # a port that omits them matches the shipped C. A crate on REAL SEH (fastfat, cdfs:
+    # ntkrnl_sys::seh trampolines) runs both, and then they are owed like any other code.
+    except_spans = (
+        [] if real_seh else dummy_pseh_except_spans(text, masked) + _abnormal_only_spans(masked)
+    )
     directive = directive_spans(text)
     out: dict[str, CBody] = {}
     for name in c_functions(text):
@@ -473,6 +480,16 @@ def rust_definitions_all(text: str) -> list[tuple[str, str]]:
     return out
 
 
+_REAL_SEH_RE = re.compile(r"ntkrnl_sys::seh\b|\bfat_try_except\b|\bseh::try_(?:except|finally)\b")
+
+
+def uses_real_seh(rust_srcs: list[Path]) -> bool:
+    """Does this crate run its handlers (the ntkrnl_sys::seh trampolines)?"""
+    return any(
+        _REAL_SEH_RE.search(f.read_text(encoding="utf-8", errors="replace")) for f in rust_srcs
+    )
+
+
 @dataclass
 class RustIndex:
     bodies: dict[str, str]  # masked (comment/literal-free) body text per fn name
@@ -568,13 +585,16 @@ def audit(
     glue_c: list[Path] | None = None,
     macros: dict[str, str] | None = None,
     pins: dict[str, int] | None = None,
+    real_seh: bool | None = None,
 ) -> list[Finding]:
     """`glue_c`: C the build still compiles (cohab shims). A Rust body that delegates to one
     of its functions has not dropped that work, so those bodies join the helper pool."""
     macros = macros or {}
     c_all: dict[str, CBody] = {}
+    if real_seh is None:
+        real_seh = uses_real_seh(rust_srcs)
     for f in c_files:
-        c_all.update(c_bodies(f, pins))
+        c_all.update(c_bodies(f, pins, real_seh))
     idx = rust_index(rust_srcs)
     for f in glue_c or []:
         text = f.read_text(encoding="utf-8", errors="replace")

@@ -222,3 +222,23 @@ VOID Alloc(PVCB v, ULONG i, ULONG n)
     macros = {"FatReserveClusters": "{ NT_ASSERT(Check(n)); RtlSetBitsDbg(&v->Map, i - 2, n); }"}
     rust = "pub unsafe fn Alloc(v: PVCB, i: u32, n: u32) { RtlSetBits(map(v), i - 2, n); }\n"
     assert _run(tmp_path, c, rust, macros=macros) == {}
+
+
+def test_a_crate_on_real_seh_owes_its_handlers_and_unwinds(tmp_path):
+    """fastfat moved to the ntkrnl_sys::seh trampolines: its except handlers now run."""
+    c = """
+VOID Open(PFCB f)
+{
+    _SEH2_TRY { Work(f); } _SEH2_FINALLY {
+        if (_SEH2_AbnormalTermination()) { FatDeleteFcb(f); }
+    } _SEH2_END;
+}
+"""
+    rust = "pub unsafe fn Open(f: PFCB) { Work(f); }\n"
+    cf = tmp_path / "o.c"
+    cf.write_text(c)
+    rf = tmp_path / "o.rs"
+    rf.write_text(rust)
+    assert audit([cf], [rf], tmp_path) == []
+    rf.write_text("use ntkrnl_sys::seh::try_finally;\n" + rust)
+    assert audit([cf], [rf], tmp_path)[0].dropped == ["FatDeleteFcb"]
