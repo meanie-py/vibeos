@@ -3,6 +3,8 @@
 #
 #   tools/pi4/netboot.sh [--no-power]                       # sanboot (default, ~100 s to desktop)
 #   tools/pi4/netboot.sh --card [--no-launch] [--ramdisk]   # old path: TFTP onto the SD card
+#   tools/pi4/netboot.sh --shell                            # stop at the UEFI Shell prompt; drive it
+#                                                           # with tools/pi4/serial-send.sh
 #
 # Power-cycles the board through the bench's smart plug (power.sh), catches the
 # firmware splash (a ~5 second window that is easy to miss by hand -
@@ -29,6 +31,7 @@ LAUNCH=1
 POWER=1
 RAMDISK=0
 SANBOOT=1
+SHELL_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --no-launch) LAUNCH=0 ;;
@@ -39,7 +42,10 @@ for arg in "$@"; do
         --ramdisk) RAMDISK=1; SANBOOT=0 ;;
         --card) SANBOOT=0 ;;
         --sanboot) SANBOOT=1 ;;
-        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk]" >&2; exit 2 ;;
+        # Power-cycle into the firmware's UEFI Shell and stop there: for reading
+        # bench media (the card, a USB stick) with a second FAT implementation.
+        --shell) SHELL_ONLY=1 ;;
+        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk] | --shell [--no-power]" >&2; exit 2 ;;
     esac
 done
 
@@ -126,6 +132,10 @@ print(card[0].lower())
 }
 CARD=$(card_fs "$mark") || { log "cannot tell which Shell filesystem is the SD card; refusing to write"; exit 1; }
 log "SD card is $CARD: in the Shell mapping table"
+if [ "$SHELL_ONLY" -eq 1 ]; then
+    log "at the Shell prompt (--shell); send commands with tools/pi4/serial-send.sh"
+    exit 0
+fi
 
 log "in the Shell, bringing up DHCP on eth0"
 mark=$(size)
