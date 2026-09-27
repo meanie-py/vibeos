@@ -79,6 +79,23 @@ wrapper header defines:
 - `#define __int64 long long` — type alias needed by various headers
 - `#define __wfi()/__yield() ((void)0)` — ARM64 intrinsic stubs
 
+**A generator that last ran before the upstream merge may not run at all.** win32k-sys's
+broke four ways, all silently until someone needed a new type (the raw-input port,
+2026-09-27): its flags came from a `main.c` compile rule that vanished when win32k went
+Rust-only (it now reads the `win32k_residue` TUs); FreeType 2.10.4 deleted the
+`internal/internal.h` its wrapper included; `vcruntime/intrin.h` now declares `__wfi`/`__yield`,
+so the `#define __yield() ((void)0)` stubs break the arm64 parse; and bindgen ≥ 0.72 emits
+`__BindgenOpaqueArray`, which the old postprocessor regex cut in half, leaving
+`bindgen_common.rs` on a dangling attribute. The other islands carry the same wrapper lines
+and will hit the last three on their next regen.
+
+**Cast macros vanish.** bindgen emits no constant for `#define OBJID_CLIENT ((LONG)0xFFFFFFFC)`,
+winuser.h's spelling since the merge, so a regen silently drops every `OBJID_*`.
+`--clang-macro-fallback` fixes it and takes hours on the win32k header set (it reparses per
+macro). win32k-sys instead dumps `clang -dM -E` beside each run, and
+`postprocess_bindgen.recover_cast_macros` emits the integer-literal casts to integer
+typedefs the island already has (38 per arch).
+
 ### Limitations
 
 - **FORCEINLINE functions** (e.g., `KeGetCurrentIrql` on amd64) appear as extern declarations but have no exported symbol — must be hand-written or provided via overlay

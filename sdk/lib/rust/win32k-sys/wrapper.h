@@ -18,9 +18,9 @@
 #ifndef __int64
 #define __int64 long long
 #endif
-/* ARM64 intrinsic stubs (ntkrnl-sys pattern) */
-#define __wfi() ((void)0)
-#define __yield() ((void)0)
+/* ARM64: vcruntime/intrin.h declares __wfi/__yield as `void f(void)` since the upstream
+   merge, so the old `#define __yield() ((void)0)` stubs now break the parse ("too many
+   arguments provided to function-like macro invocation") and are not needed. */
 #undef FORCEINLINE
 #define FORCEINLINE
 
@@ -38,7 +38,9 @@
 #ifndef FT2_BUILD_LIBRARY
 #define FT2_BUILD_LIBRARY
 #endif
-#include <freetype/internal/internal.h>
+/* FreeType 2.10.4 (upstream #8671) deleted internal/internal.h, which only defined the
+   FT_INTERNAL_* include-path macros; ft2build.h brings the public FT_*_H macros used below. */
+#include <ft2build.h>
 #include FT_GLYPH_H
 #include FT_BITMAP_H
 #include FT_OUTLINE_H

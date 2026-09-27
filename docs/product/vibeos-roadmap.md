@@ -639,14 +639,39 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NTDDI_VERSION > NTDDI_WIN8` block. Checked, divergent but benign: fastfat
   `FatConstructNamesInFcb` stores an extended-character LFN Unicode-only, skipping the
   C's OEM round-trip attempt (no leak).
-  Remaining silent stubs to read: wlansvc `_RpcEnumInterfaces`, netcfgx
-  `INetCfgComponentControl_fnApplyPnpChanges`, condrv `ConDrvDispatch`, win32k
-  `NtUserGetRawInputDeviceInfo`, gdi32's five `EMFDRV_*` (live C glue stubs); condrv
-  `ConDrvDispatch` is FALSE (the C only traces). `FatProcessException` was completed by the
-  real-SEH lane; fastfat is now 4 `high`, cdfs 4. A crate on real SEH (`ntkrnl_sys::seh`)
-  owes its except handlers and `AbnormalTermination` unwinds, and the audit now detects
-  that per crate instead of assuming DUMMY_PSEH everywhere. Re-translate (with sealing)
-  only what the audit and a reading of the C confirm.
+  `FatProcessException` was completed by the real-SEH lane. A crate on real SEH
+  (`ntkrnl_sys::seh`) owes its except handlers and `AbnormalTermination` unwinds, and the
+  audit now detects that per crate instead of assuming DUMMY_PSEH everywhere.
+  **Second pass (2026-09-27): 48 clean, 2 silent stubs, 195 `high`** (was 46 / 9 / 249).
+  The silent stubs split into two classes. First, **upstream work that landed on C already
+  flipped to Rust**, which nothing re-ports:
+  - win32k raw input: upstream #9498 added `rawinput.c` plus a device list in `input.c`
+    after ntuser went Rust-only, so `GetRawInputDeviceList` and `GetRawInputDeviceInfoW`
+    (forwarded straight to the syscalls by user32.spec) always reported no devices. Ported
+    (`win32k-rust/src/rawinput.rs`, the list in `input.rs`, user32's
+    `GetRawInputDeviceInfoA`/`GetRawInputBuffer`). This needed the win32k-sys island
+    regenerated, whose generator had broken four ways (`rust-in-kernel.md`).
+  - gdi32 `GetCharWidth*`/`GetGlyphIndicesA` lacked the DC validation of upstream #8690 and
+    #8747, found by upstream-sync (`upstream-sync-diff-shape-wave2.md`) and never applied:
+    a stale or non-DC handle went straight to the syscall. Ported; the ntgdi (kernel) half
+    of both commits stays with upstream-sync.
+  - netcfgx `ApplyPnpChanges` is one face of upstream's nine-commit `tcpipconf_notify.c`
+    rewrite (adapter list instead of `pCurrentConfig`), tracked by upstream-sync as the
+    "netcfgx cluster". OPEN there.
+  Second, faithful stubs the audit misread, now rules in the tool: wlansvc
+  `_RpcEnumInterfaces` (its body sits under a commented-out `GET_IF_ENTRY2_IMPLEMENTED`);
+  gdi32's `EMFDRV_*` (Wine's old `enhmfdrv/` is on disk but in no CMake list, and the live
+  `emfdrv.c` stubs replacing it are FIXME by design; a name defined by live C is no
+  longer a translation pair). Further rules: `NTDDI_VISTA`-style version aliases (fastfat
+  `FatOpenVolume`), an inline-expanded `IoSetCompletionRoutine` (`FatSingleAsync`), and a
+  nested macro the Rust calls by name (`FatUnpinBcb`, `CdFreePool`,
+  `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
+  `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
+  audit and a reading of the C confirm.
+  Seen while regenerating, not fixed: the kernel's ntkrnl-sys `KPRCB` lacks the
+  ReactOS-tail `StartCycles`/`CycleTime` pair the NDK headers now declare (upstream
+  `144fe39589b`), so `FeatureBitsHigh` sits at a different offset for Rust than for any C
+  compiled against the headers. No live C reads those fields today.
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
