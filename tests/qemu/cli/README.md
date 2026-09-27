@@ -560,6 +560,13 @@ RUN=$(./vibeos-cli gdb start amd64 | grep run-id | awk '{print $3}')
 ./vibeos-cli gdb stop $RUN
 ```
 
+**Breakpoint addresses on i386 come from `ntkrnlmp.exe`, not `ntoskrnl.exe`.** The fleet
+boots the MP kernel (`[FLDR] load ...\ntkrnlmp.exe`) and the loader lists it under the
+NAME `ntoskrnl.exe`, so `ntoskrnl.exe+RVA` in a banner is an ntkrnlmp RVA. Addresses taken
+from `build-i386/ntoskrnl/ntoskrnl.exe` are a different link: the breakpoints are accepted
+and silently never fire. Runtime address = `[KRNLBASE]` base + (nm address - 0x400000).
+`gdb start`/`probe` attach the same `\TEMP` IDE disk smoke does (`vm.temp_disk_args`).
+
 For MP debugging, prefix `gdb start` with `VIBEOS_QEMU_SMP=1` (or the desired
 vCPU count). The launcher selects MP media, passes `-smp`, and records
 `ntkrnlmp.exe` as the symbol image. One vCPU still selects the MP kernel.

@@ -467,10 +467,11 @@ def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     reloc = None if mod_off else kernel_relocation(arch, serial)
     if mod_off:
         pc = hex(_PE_IMAGE_BASE + mod_off[1])
-        mp = mod_off[0].lower() == "ntkrnlmp.exe"
-    else:
-        # freeldr announces which kernel it loaded, so read it off the serial.
-        mp = "ntkrnlmp.exe" in serial
+    # freeldr announces which kernel it loaded, so read it off the serial. The
+    # banner's module name cannot say: the loader lists ntkrnlmp.exe under the
+    # name ntoskrnl.exe, so an MP fault read "ntoskrnl.exe+RVA" and resolved
+    # against the UP binary -- a different link, and a confidently wrong symbol.
+    mp = "ntkrnlmp.exe" in serial or bool(mod_off and mod_off[0].lower() == "ntkrnlmp.exe")
     return _resolve_addr(repo, arch, pc, mp=mp, reloc=reloc)
 
 

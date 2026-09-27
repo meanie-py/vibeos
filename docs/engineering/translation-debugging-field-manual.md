@@ -90,8 +90,8 @@ Prefer importing from `ntkrnl_sys::ddk` over hand-declaring: bindgen carries the
 convention, including fastcall. **Never trust a header that omits `NTAPI`** — `internal/mm.h`
 declares `MmDeleteVirtualMapping` without it and the symbol is stdcall anyway `[§9.107]`.
 
-### The five ways a convention mismatch manifests
-The same root produces five distinct symptoms; knowing which you're looking at saves the hunt.
+### The seven ways a convention mismatch manifests
+The same root produces seven distinct symptoms; knowing which you're looking at saves the hunt.
 1. **`ud2` after the call / folded success path.** The callsite's ABI contradiction lets LLVM
    prove the continuation unreachable → `unreachable` → BUGCHECK 0x1E `0xC000001D`. Cascades:
    one classpnp sweep folded ~46 functions from 76 decl↔def mismatches, and the cohab link
@@ -129,6 +129,19 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
    an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
    bugcheck print every stack word that lands in a module; the bad call's caller is there.
+7. **A bare cdecl name ALIASED onto a stdcall body: the CALLEE's caller returns into ITS
+   caller's stack.** `.set _KeInitializeSpinLock, _KeInitializeSpinLock@4` makes the bare
+   name link, but the body does `ret 4` and the cdecl caller then pops the same 4 bytes
+   again, so ESP ends every call N bytes high. A caller with an ESP-relative epilogue
+   restores its registers from the wrong slots. fastfat's DriverEntry made two such calls
+   (+8): it popped its own return address into EBX and its DriverObject into EBP, and
+   `ret 8` jumped to RegistryPath, a UNICODE_STRING on `IopInitializeDriverModule`'s
+   stack. Symptom: BUGCHECK 0x1E/0x7F with EIP **on the stack** a few dozen bytes above
+   ESP, the trap frame's EBX equal to a return address, and EBP in pool. The fix is a real
+   thunk (re-push N bytes, call `_X@N`, `ret`), not an alias; an alias is sound only for
+   `@0`. `tools/scan_cdecl_alias.py` flags `.set _X, _X@N` with N > 0. Binary check for the
+   same drift: `calll <_X@N>` immediately followed by `addl $N, %esp` that is NOT an
+   epilogue. i386 only, and only when a FAT volume made fs_rec load fastfat (2026-09-26).
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,

@@ -598,6 +598,21 @@ pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
 }
 """
 
+# scan_cdecl_alias. Seeded from fastfat's rust_cohab_forceinline.c (2026-09-26): the
+# bare cdecl name aliased onto the stdcall body double-pops the arguments. The GOOD side
+# keeps an @0 alias (sound: both conventions are the same code) and a real thunk.
+_CDECL_ALIAS_BAD = r"""
+__asm__(".globl _KeInitializeSpinLock\n"
+        ".set _KeInitializeSpinLock, _KeInitializeSpinLock@4\n");
+"""
+_CDECL_ALIAS_GOOD = r"""
+__asm__(".globl _KeGetCurrentProcessorNumber\n"
+        ".set _KeGetCurrentProcessorNumber, _KeGetCurrentProcessorNumber@0");
+__asm__(".globl _KeInitializeSpinLock\n_KeInitializeSpinLock:\n"
+        " pushl 4(%esp)\n call _KeInitializeSpinLock@4\n ret\n");
+"""
+
+
 # scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
 # Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
 # and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
@@ -1902,6 +1917,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_cdecl_alias",
+        script="tools/scan_cdecl_alias.py",
+        argv=["--lint"],
+        bad={"bridge.c": _CDECL_ALIAS_BAD},
+        good={"bridge.c": _CDECL_ALIAS_GOOD},
     ),
     Control(
         name="scan_wide_byte_copy",
