@@ -4257,6 +4257,17 @@ already been met the note is describing a bug, not a plan.
   no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
   under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
   declarations and only the second is a variable.
+- **A body can lose its TAIL with nothing to show for it.** fastfat's `FatCreateNewDirent`
+  (translated before call sealing existed) returned right after its allocation logic; the
+  orphaned-LFN check, the "dirents really unused" verify and `RtlSetBits` on the free-dirent
+  bitmap were all gone. It compiled, mounted and passed smoke on three arches for months,
+  because the missing bit only matters on the NEXT create that reuses deleted slots — which
+  could then be handed a live entry and overwrite another file's dirent. The one objection
+  was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
+  translation, diff each paired function's C callee set against its Rust body. A
+  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
+  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
+  each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list

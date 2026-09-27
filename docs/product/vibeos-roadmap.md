@@ -572,12 +572,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   default on i386 as well. Found with a gdb probe once two tool gaps were closed: `gdb
   start` never attached the disk (now shares `vm.temp_disk_args`), and triage resolved
   i386 MP faults against the UP kernel (the loader names ntkrnlmp `ntoskrnl.exe`).
-- **i386 fastfat: `FatDeleteDirent` ASSERT fires twice per boot — OPEN** (2026-09-26).
-  `FreeDirentBitmap` bits for the dirent being deleted are not set
-  (`fastfat-rust/src/dirsup.rs:510`, a faithful port of `dirsup.c:952`). i386 only; amd64
-  runs the same disk and never prints it. Non-fatal (release ASSERT prints). Visible only
-  since the fix above: fastfat never survived loading on i386 before. Look at the bitmap
-  bookkeeping in `FatCreateNewDirent`/directory init on i386 first.
+- **fastfat never marked a new directory entry as used — FIXED** (2026-09-26). Seen as
+  an i386 `FatDeleteDirent` ASSERT (`FreeDirentBitmap` bits not set, twice per boot), but
+  the cause was on every arch: the Rust `FatCreateNewDirent` had lost the tail of the C
+  (`dirsup.c:414-534`) — the orphaned-LFN check, the "dirents really are unused" verify, and
+  `RtlSetBits` on the free-dirent bitmap. So every new dirent stayed FREE in memory, and a
+  later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
+  entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
+  smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **fastfat pre-seal translation audit: other bodies may have lost statements — OPEN**
+  (2026-09-26). fastfat was translated before call sealing, so nothing checks that a Rust
+  body kept its C's calls. A throwaway per-function callee diff over all 356 paired
+  functions reports 441 missing names in 163 functions; most are macro expansions or
+  DUMMY_PSEH-dead finally blocks (e.g. `FatAddToWorkque` is equivalent). Leads worth reading
+  first: `FatQueueClose` (62 Rust lines vs 272 C), `FatCommonCreate`/`FatOpenExistingFile`
+  (no `FatDeleteFcb`/`FatDeleteCcb`/`FatDeleteDirent` failure cleanup),
+  `FatMountVolume` (`CcSetAdditionalCacheAttributesEx`). `FatInvalidateVolumes` and
+  `FatCommonSetEa` are LOUD stubs (bugcheck / `STATUS_INVALID_DEVICE_REQUEST`), not drops.
+  Method in the field manual: "A body can lose its TAIL with nothing to show for it".
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
