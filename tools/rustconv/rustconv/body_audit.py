@@ -98,6 +98,8 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "RtlCompareMemory": (r"memcmp", r"==", r"iter\(\)"),
     "IsEqualGUID": (r"==", r"memcmp", r"RtlCompareMemory", r"IsEqualGUID"),
     "InlineIsEqualGUID": (r"==", r"IsEqualGUID"),
+    # wdm.h FORCEINLINE: three stores into the next stack location (fastfat's FatSingleAsync).
+    "IoSetCompletionRoutine": (r"\.CompletionRoutine\s*=",),
     "KeAcquireSpinLock": (r"KeAcquireSpinLock\w*", r"KfAcquireSpinLock"),
     "KeReleaseSpinLock": (r"KeReleaseSpinLock\w*", r"KfReleaseSpinLock"),
     "KeRaiseIrql": (r"KfRaiseIrql", r"KeRaiseIrql\w*"),
@@ -225,6 +227,11 @@ def _abnormal_only_spans(masked: str) -> list[tuple[int, int]]:
 # fastfat's FatMountVolume "dropped" IoVolumeDeviceToGuid, compiled out at our profile. The
 # tree pins `-D_WIN32_WINNT=0x502` (top-level CMakeLists), which sdkddkver.h turns into
 # NTDDI_WS03SP1; a module's own `-D_WIN32_WINNT=`/`-DNTDDI_VERSION=` overrides it.
+_VERSION_ALIAS_RE = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]+"
+    r"((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]*(?://.*)?$",
+    re.M,
+)
 _VERSION_DEFINE_RE = re.compile(
     r"^[ \t]*#[ \t]*define[ \t]+((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]+(0[xX][0-9a-fA-F]+)",
     re.M,
@@ -236,8 +243,13 @@ def version_pins(module_dir: Path, repo: Path) -> dict[str, int]:
     pins: dict[str, int] = {}
     ddk = repo / "sdk" / "include" / "psdk" / "sdkddkver.h"
     if ddk.is_file():
-        for name, value in _VERSION_DEFINE_RE.findall(ddk.read_text(errors="replace")):
+        text = ddk.read_text(errors="replace")
+        for name, value in _VERSION_DEFINE_RE.findall(text):
             pins.setdefault(name, int(value, 16))
+        # `#define NTDDI_VISTA NTDDI_WIN6`: an alias guards fastfat's FatOpenVolume Vista block.
+        for name, target in _VERSION_ALIAS_RE.findall(text):
+            if target in pins:
+                pins.setdefault(name, pins[target])
     cml = (module_dir / "CMakeLists.txt").read_text(errors="replace")
     winnt = re.search(r"-D_WIN32_WINNT=(0[xX][0-9a-fA-F]+)", cml)
     ntddi = re.search(r"-DNTDDI_VERSION=(0[xX][0-9a-fA-F]+)", cml)
@@ -249,7 +261,34 @@ def version_pins(module_dir: Path, repo: Path) -> dict[str, int]:
         pins["NTDDI_VERSION"] = pins.get("NTDDI_WS03SP1", 0x05020100)  # sdkddkver.h:153
     else:
         pins["NTDDI_VERSION"] = pins["_WIN32_WINNT"] << 16
+    pins.update(disabled_switches(module_dir, cml))
     return pins
+
+
+_COMMENTED_DEFINE_RE = re.compile(r"^[ \t]*//[ \t]*#[ \t]*define[ \t]+(\w+)", re.M)
+
+
+def disabled_switches(module_dir: Path, cml: str) -> dict[str, int]:
+    """Feature switches the module turns OFF by commenting out their only `#define`.
+
+    wlansvc's rpcserver.c has `//#define GET_IF_ENTRY2_IMPLEMENTED 1` and guards the real
+    _RpcEnumInterfaces body with `#if GET_IF_ENTRY2_IMPLEMENTED`: an undefined name in `#if`
+    is 0, so the build compiles the UNIMPLEMENTED arm and a stub Rust body is faithful.
+    Pinned to 0 only when no live `#define` of it exists in the module and no `-D` sets it.
+    """
+    texts = [
+        p.read_text(encoding="utf-8", errors="replace")
+        for pat in ("*.c", "*.h")
+        for p in source_files(module_dir, pat)
+    ]
+    off = {name for t in texts for name in _COMMENTED_DEFINE_RE.findall(t)}
+    out: dict[str, int] = {}
+    for name in sorted(off):
+        live = re.compile(rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}\b", re.M)
+        if re.search(rf"-D{re.escape(name)}\b", cml) or any(live.search(t) for t in texts):
+            continue
+        out[name] = 0
+    return out
 
 
 def _fold(expr: str) -> bool | None:
@@ -433,15 +472,20 @@ def macro_table(module_dir: Path, repo: Path) -> dict[str, str]:
     return table
 
 
-def _macro_calls(name: str, macros: dict[str, str], depth: int = 3) -> set[str] | None:
-    """The real function calls a macro expands to (None: not a macro)."""
+def _macro_lost(name: str, macros: dict[str, str], kept, depth: int = 3) -> set[str] | None:
+    """The real calls a macro expands to that `kept` rejects (None: not a macro).
+
+    A nested macro the Rust calls by name counts as kept as a whole: fastfat's Rust
+    expands `FatReadDirent` inline and calls `FatUnpinBcb`, a cohab FUNCTION standing in
+    for the `FatUnpinBcb` -> `CcUnpinData` macro, so its CcUnpinData was never lost.
+    """
     if name not in macros:
         return None
     out: set[str] = set()
     for callee in set(_CALL_RE.findall(_blank_ignored_calls(macros[name]))):
-        if callee in _C_KEYWORDS or callee == name or _IGNORED.match(callee):
+        if callee in _C_KEYWORDS or callee == name or _IGNORED.match(callee) or kept(callee):
             continue
-        inner = _macro_calls(callee, macros, depth - 1) if depth else None
+        inner = _macro_lost(callee, macros, kept, depth - 1) if depth else None
         if inner is None:
             out.add(callee)
         else:
@@ -610,9 +654,14 @@ def audit(
                 idx.bodies[name] = masked[m.end() - 1 : end + 1]
                 idx.files.setdefault(name, f)
     c_names = set(c_all)
+    live_c = {name for name, f in idx.files.items() if f.suffix == ".c"}
     findings: list[Finding] = []
     for name in sorted(c_all):
-        if name not in idx.bodies:
+        # A name whose only definition is live C was superseded by C, not translated: gdi32
+        # keeps Wine's old enhmfdrv/*.c on disk out of every CMake list, and the live emfdrv.c
+        # EMFDRV_* bodies that replaced them are FIXME stubs by design (recording moved to
+        # emfdc.c). Glue bodies stay in the index as helpers a Rust body may delegate to.
+        if name not in idx.bodies or name in live_c:
             continue
         cb = c_all[name]
         rust = _effective(name, idx, c_names)
@@ -622,11 +671,11 @@ def audit(
         for c in sorted(cb.required):
             if _kept(c, rust, idents):
                 continue
-            expansion = _macro_calls(c, macros)
-            if expansion is not None:
+            lost_set = _macro_lost(c, macros, lambda x, r=rust, i=idents: _kept(x, r, i))
+            if lost_set is not None:
                 # A macro is kept when every real call it expands to is; a pure one
                 # (SetFlag, FlagOn, ARGUMENT_PRESENT) makes none and cannot be dropped.
-                lost = sorted(x for x in expansion if not _kept(x, rust, idents))
+                lost = sorted(lost_set)
                 if not lost:
                     continue
                 c = f"{c}(->{','.join(lost)})"

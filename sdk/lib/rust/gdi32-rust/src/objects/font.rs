@@ -65,6 +65,7 @@ struct CPINFO {
 extern "system" {
     fn SetLastError(dwErrCode: DWORD);
     fn GdiSetLastError(dwErrCode: DWORD); // misc.rs (WINAPI)
+    fn GdiValidateHandle(hobj: HGDIOBJ) -> BOOL; // objects/gdiobj.c
     // kernel32
     fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: SIZE_T) -> LPVOID;
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
@@ -137,6 +138,16 @@ extern "system" {
         FilePart: *mut PWSTR,
         Reserved: PVOID,
     ) -> BOOLEAN;
+}
+
+// `(GDI_HANDLE_GET_TYPE(hdc) != GDI_OBJECT_TYPE_DC) || !GdiValidateHandle(hdc)`, negated: the
+// DC check upstream's GetCharWidth / GetGlyphIndices rewrites (#8690, #8747) put in front of
+// every width and glyph-index query, so a stale or non-DC handle fails with
+// ERROR_INVALID_PARAMETER instead of reaching the syscall.
+#[inline]
+unsafe fn is_live_dc(hdc: HDC) -> bool {
+    GDI_HANDLE_GET_TYPE(hdc as HGDIOBJ) == GDI_OBJECT_TYPE_DC as usize
+        && GdiValidateHandle(hdc as HGDIOBJ) != 0
 }
 
 // RtlULongMult — __forceinline from ntintsafe.h (NOT an ntdll export), so reimplement
@@ -1101,7 +1112,9 @@ pub unsafe extern "system" fn GetCharWidthFloatW(
     pxBuffer: PFLOAT,
 ) -> BOOL {
     // DPRINT("GetCharWidthsFloatW\n");
-    if pxBuffer.is_null() || (iFirstChar > iLastChar) {
+    if pxBuffer.is_null() || (iFirstChar > iLastChar) || (iLastChar >> 16) != 0 /* HIWORD */
+        || !is_live_dc(hdc)
+    {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
@@ -1126,7 +1139,9 @@ pub unsafe extern "system" fn GetCharWidthW(
     lpBuffer: LPINT,
 ) -> BOOL {
     // DPRINT("GetCharWidthsW\n");
-    if lpBuffer.is_null() || (iFirstChar > iLastChar) {
+    if lpBuffer.is_null() || (iFirstChar > iLastChar) || (iLastChar >> 16) != 0 /* HIWORD */
+        || !is_live_dc(hdc)
+    {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
@@ -1151,7 +1166,9 @@ pub unsafe extern "system" fn GetCharWidth32W(
     lpBuffer: LPINT,
 ) -> BOOL {
     // DPRINT("GetCharWidths32W\n");
-    if lpBuffer.is_null() || (iFirstChar > iLastChar) {
+    if lpBuffer.is_null() || (iFirstChar > iLastChar) || (iLastChar >> 16) != 0 /* HIWORD */
+        || !is_live_dc(hdc)
+    {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
@@ -1208,6 +1225,11 @@ pub unsafe extern "system" fn GetCharWidthA(
 
     // DPRINT("GetCharWidthsA\n");
 
+    if lpBuffer.is_null() || !is_live_dc(hdc) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
     str_ = FONT_GetCharsByRangeA(hdc, iFirstChar, iLastChar, &mut count);
     if str_.is_null() {
         return FALSE;
@@ -1252,6 +1274,11 @@ pub unsafe extern "system" fn GetCharWidth32A(
 
     // DPRINT("GetCharWidths32A\n");
 
+    if lpBuffer.is_null() || !is_live_dc(hdc) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
     str_ = FONT_GetCharsByRangeA(hdc, iFirstChar, iLastChar, &mut count);
     if str_.is_null() {
         return FALSE;
@@ -1295,6 +1322,11 @@ pub unsafe extern "system" fn GetCharWidthFloatA(
     let ret: BOOL;
 
     // DPRINT("GetCharWidthsFloatA\n");
+
+    if pxBuffer.is_null() || !is_live_dc(hdc) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
 
     str_ = FONT_GetCharsByRangeA(hdc, iFirstChar, iLastChar, &mut count);
     if str_.is_null() {
@@ -1429,7 +1461,7 @@ pub unsafe extern "system" fn GetCharWidthI(
     lpBuffer: LPINT,
 ) -> BOOL {
     // DPRINT("GetCharWidthsI\n");
-    if lpBuffer.is_null() || (pgi.is_null() && (giFirst == MAXUSHORT as UINT)) {
+    if lpBuffer.is_null() || (pgi.is_null() && (giFirst >> 16) != 0 /* HIWORD */) {
         // Cannot be at max.
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -1487,6 +1519,11 @@ pub unsafe extern "system" fn GetGlyphIndicesA(
     let Ret: DWORD;
     let lpstrW: *mut WCHAR;
     let mut countW: INT = 0;
+
+    if count > 0 && !is_live_dc(hdc) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return GDI_ERROR;
+    }
 
     lpstrW = FONT_mbtowc(hdc, lpstr, count, &mut countW, core::ptr::null_mut());
 
