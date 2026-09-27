@@ -272,10 +272,15 @@ const EXCEPTION_NONCONTINUABLE: u32 = 0x1;
 /// re-dispatch, not `__fastfail`'s own calling convention for the code
 /// register, which is NOT independently confirmed in this tree; flagged in
 /// the batch report). Diverges: the instruction terminates the process.
+///
+/// On x86 this is NOT declared `noreturn`: LLVM plants a `ud2` trap after a
+/// noreturn asm block, which `scan_ud2` rightly refuses as an unexplained trap
+/// in shipping code. `int 0x29` ends the process, so the caller's fall-through
+/// (the report-fault path, as when fast-fail is unavailable) is never reached.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-unsafe fn fastfail(code: u32) -> ! {
-    core::arch::asm!("int 0x29", in("ecx") code, options(noreturn));
+unsafe fn fastfail(code: u32) {
+    core::arch::asm!("int 0x29", in("ecx") code, options(nomem, nostack));
 }
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
