@@ -232,6 +232,11 @@ def _build_windows_cmd(
             ]
         ),
     ]
+    # The smoke's writable FAT \\TEMP disk (amd64 default), so a debug boot mounts the
+    # same volumes as the run it reproduces.
+    from ..vm import temp_disk_args
+
+    scratch_dev += temp_disk_args(arch, staging)
     scratch_dev = be.stage_media_paths(scratch_dev, staging)
     smp = smp_count()
 

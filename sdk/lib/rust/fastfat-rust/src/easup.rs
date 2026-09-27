@@ -2151,7 +2151,9 @@ pub unsafe extern "system" fn FatAppendPackedEa(
         Temp = FsRtlAllocatePoolWithTag(
             ntkrnl_sys::mm::PagedPool,
             NewAllocationSize,
-            0u32, // TAG_EA_SET_HEADER
+            // nodetype.h TAG_EA_SET_HEADER ('etaF'); 0 was PoolHitTag's default, a
+            // DbgBreakPoint in the pool tracker on every EA-set grow.
+            u32::from_le_bytes(*b"Fate"),
         );
 
         OldAllocationSize = *AllocationLength + size_of_ea_set_header;

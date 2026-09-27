@@ -557,6 +557,38 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Hardware faults in a Rust try body: amd64 only — i386 and arm64 OPEN** (2026-09-26).
+  The per-boot `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3, an access
+  violation and a pool-tracker int3, each under try_finally inside try_except) passes on
+  amd64 and is compiled only there, because elsewhere it failed. **i386:** the int3 is
+  caught (right code, finally runs abnormally), but the next fault then bugchecks 0x0A
+  with IRQL 0xff, so catching a breakpoint through the hand-built fs:[0] frame
+  (ntoskrnl/sehtry.c) leaves IRQL raised, likely the KD stub's raise before dispatch never
+  undone by our longjmp; the AV run also reported the previous code (0x80000003).
+  **arm64:** `trace=13` — the body ran straight past both, so the brk is consumed without
+  dispatch and a kernel-mode read of VA 0x10 returns instead of faulting. Software raises
+  (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; these gaps are for
+  hardware faults (MmProbeAndLockPages on a bad user buffer is the one fastfat and cdfs
+  rely on). Repro: drop the `#[cfg(target_arch = "x86_64")]` on the block and boot.
+- **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
+  (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
+  gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0
+  (the translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
+  `PoolHitTag`'s default, so `ExpInsertPoolTracker` hit its `DbgBreakPoint`. Under dummy
+  PSEH nothing caught that int3 and the boot went on; now `FatExceptionFilter` takes it
+  (BREAKPOINT is an "expected" status) and the unwind faulted inside `rtl_except`
+  (`SetRegFromStackValue`), re-dispatched, and repeated: the stack is
+  `KiDispatchException -> RtlDispatchException -> __C_specific_handler -> RtlpUnwindInternal
+  -> PageFaultReturn` about 20 times over. Fixed: that tag, `TAG_EA_SET_HEADER` in easup,
+  `TAG_SCSIPORT` in scsiport and `DISK_TAG_SMART` in diskwmi (a sweep of every kernel
+  crate for a literal-0 tag). **Not explained:** the same int3 raised from kernel Rust
+  frames unwinds fine (the per-boot `[SEH-TRY] rust hw faults ... pooltrack=` case), so
+  the bad unwind is specific to a frame in `fastfat.sys` (374 of its functions use
+  `SET_FPREG` with a non-zero frame offset). Repro: put a tag-0 allocation back in
+  `FatAllocateCloseContext` and boot amd64. Two tool gaps found on the way: `gdb start`
+  now attaches the same TEMP disk as smoke (it did not, so the crash could not be
+  reproduced under gdb), and `gdb run-until --break KeBugCheckEx` still sets the
+  breakpoint at the unrelocated link address (`0x49f942`) and never fires.
 - **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — OPEN**
   (2026-09-26). `VIBEOS_QEMU_TEMP_DISK=1 ./vibeos-cli smoke --arch i386`: the disk now
   starts and fastfat mounts it (the two classpnp fixes in the user32 A/B "Class-test"

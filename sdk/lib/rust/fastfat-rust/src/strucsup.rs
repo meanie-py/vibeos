@@ -2314,7 +2314,10 @@ pub unsafe extern "system" fn FatPreallocateCloseContext(
     CloseContext = FsRtlAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<CLOSE_CONTEXT>() as u32,
-        0x00000000, // TAG_FAT_CLOSE_CONTEXT
+        // nodetype.h TAG_FAT_CLOSE_CONTEXT ('xtaF'). The translation had 0, which is
+        // PoolHitTag's default, so every close-context allocation hit the pool
+        // tracker's DbgBreakPoint.
+        u32::from_le_bytes(*b"Fatx"),
     ) as *mut CLOSE_CONTEXT;
 
     ExInterlockedPushEntrySList(

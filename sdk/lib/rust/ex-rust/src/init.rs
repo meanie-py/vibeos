@@ -1743,6 +1743,81 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         );
     }
 
+    // The same, for HARDWARE exceptions out of a Rust body: an int3 and an access
+    // violation, each under a finally, caught by an outer except. fastfat's first real-SEH
+    // boot with a disk attached caught a DbgBreakPoint (the pool tracker's PoolHitTag
+    // break) and the unwind from that trap faulted inside the unwinder, re-dispatched,
+    // and looped until the stack overflowed (0x7F/8).
+    // amd64 only, and that is a KNOWN GAP, not a pass: on i386 a caught int3 leaves IRQL
+    // at HIGH (the next fault bugchecks 0x0A with IRQL 0xff), and on arm64 the brk is
+    // never dispatched and a kernel read of 0x10 does not fault at all. Both are open in
+    // the roadmap bug registry ("hardware faults in a Rust try body"); widen this cfg as
+    // each is fixed.
+    #[cfg(target_arch = "x86_64")]
+    {
+        use ntkrnl_sys::seh::*;
+        extern "system" {
+            fn DbgBreakPoint();
+        }
+        const STATUS_BREAKPOINT: i32 = 0x80000003u32 as i32;
+        const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005u32 as i32;
+        let run = |which: u32| -> (Result<(), i32>, u32) {
+            let mut trace: u32 = 0;
+            let r = try_except(
+                &mut trace,
+                |t| {
+                    try_finally(
+                        t,
+                        |t| {
+                            *t |= 1;
+                            if which == 0 {
+                                DbgBreakPoint();
+                            } else {
+                                core::ptr::read_volatile(0x10 as *const u32);
+                            }
+                            *t |= 8; // must not run
+                        },
+                        |t, abnormal| *t |= if abnormal { 2 } else { 4 },
+                    )
+                },
+                |_, _| EXCEPTION_EXECUTE_HANDLER,
+            );
+            (r, trace)
+        };
+        let (bp, bp_trace) = run(0);
+        let (av, av_trace) = run(1);
+        // The exact fastfat path: the int3 comes from deep in the pool tracker
+        // (ExAllocatePoolWithTag -> ExpInsertPoolTracker, key == PoolHitTag).
+        let mut hit = Err(0);
+        {
+            const SEH_TEST_POOL_TAG: u32 = u32::from_le_bytes(*b"SehT");
+            let saved = crate::pool::globals::PoolHitTag;
+            crate::pool::globals::PoolHitTag = SEH_TEST_POOL_TAG;
+            let mut p: PVOID = core::ptr::null_mut();
+            hit = try_except(
+                &mut p,
+                |p| *p = ExAllocatePoolWithTag(NonPagedPool, 32, SEH_TEST_POOL_TAG),
+                |_, _| EXCEPTION_EXECUTE_HANDLER,
+            );
+            crate::pool::globals::PoolHitTag = saved;
+            if !p.is_null() {
+                ExFreePoolWithTag(p, SEH_TEST_POOL_TAG);
+            }
+        }
+        let pass = bp == Err(STATUS_BREAKPOINT) && bp_trace == 3
+            && av == Err(STATUS_ACCESS_VIOLATION) && av_trace == 3
+            && hit == Err(STATUS_BREAKPOINT);
+        crate::dbg_print!(
+            b"[SEH-TRY] rust hw faults: int3=0x%x trace=%u av=0x%x trace=%u pooltrack=0x%x (%s)\n\0",
+            bp.err().unwrap_or(0),
+            bp_trace,
+            av.err().unwrap_or(0),
+            av_trace,
+            hit.err().unwrap_or(0),
+            if pass { b"PASS\0".as_ptr() } else { b"FAIL\0".as_ptr() }
+        );
+    }
+
     // Per-boot tripwire for the FAULT-TOLERANT COPY (ntoskrnl/kmsafecopy.c).
     // SehPocRun above only proves a *software* raise dispatches; safe_copy_* depends
     // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->

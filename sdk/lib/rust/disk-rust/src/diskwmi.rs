@@ -1439,7 +1439,9 @@ pub unsafe extern "C" fn DiskReadFailurePredictData(
             outBuffer = ExAllocatePoolWithTag(
                 0, // NonPagedPool (unknown constant)
                 outBufferSize as usize,
-                0, // DISK_TAG_SMART (unknown constant)
+                // disk.h DISK_TAG_SMART ('aDcS'); 0 is PoolHitTag's default and breaks into
+                // the pool tracker's DbgBreakPoint.
+                DISK_TAG_SMART,
             ) as *mut u8;
 
             if !outBuffer.is_null() {

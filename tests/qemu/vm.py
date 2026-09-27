@@ -924,6 +924,32 @@ TEMP_DISK_MB = 64
 _TEMP_PART_START = 2048  # sectors; the conventional 1 MiB alignment
 
 
+def temp_disk_args(arch: str, directory: Path) -> list[str]:
+    """QEMU args for the writable FAT \\TEMP disk (see QemuVM._temp_disk_args), built in
+    `directory`. Shared with the gdb launcher so a debug boot sees the SAME disks as the
+    smoke it is reproducing: without it, a crash on the first write to C:\\TEMP (fastfat
+    real-SEH, 2026-09-26) could not be reproduced under gdb at all."""
+    if not arch.startswith(("i386", "amd64")):
+        return []
+    # Default ON for amd64: it is also the only hard disk any smoke attaches,
+    # and the classpnp disk path hung every boot that had one
+    # (ClassCompleteRequest spinning on a never-initialized lock) for months
+    # without a single red, because nothing exercised it. `=0` opts out.
+    # i386 is opt-in (`=1`) until its post-mount BUGCHECK 0x1E is fixed
+    # (roadmap bug registry: "i386 with a hard disk attached").
+    default = "1" if arch.startswith("amd64") else "0"
+    if os.environ.get("VIBEOS_QEMU_TEMP_DISK", default).strip() in ("0", "false", "no"):
+        return []
+    disk = directory / "tempdisk.qcow2"
+    make_temp_disk(disk)
+    return [
+        "-drive",
+        f"file={disk},format=qcow2,if=none,id=tempdisk",
+        "-device",
+        "ide-hd,drive=tempdisk",
+    ]
+
+
 def make_temp_disk(out: Path) -> None:
     """MBR + one FAT16 partition with an empty \\TEMP, converted to qcow2.
 
@@ -1588,25 +1614,7 @@ class QemuVM:
         BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
-        if not self.config.arch.startswith(("i386", "amd64")):
-            return []
-        # Default ON for amd64: it is also the only hard disk any smoke attaches,
-        # and the classpnp disk path hung every boot that had one
-        # (ClassCompleteRequest spinning on a never-initialized lock) for months
-        # without a single red, because nothing exercised it. `=0` opts out.
-        # i386 is opt-in (`=1`) until its post-mount BUGCHECK 0x1E is fixed
-        # (roadmap bug registry: "i386 with a hard disk attached").
-        default = "1" if self.config.arch.startswith("amd64") else "0"
-        if os.environ.get("VIBEOS_QEMU_TEMP_DISK", default).strip() in ("0", "false", "no"):
-            return []
-        disk = self.scratch_path.parent / "tempdisk.qcow2"
-        make_temp_disk(disk)
-        return [
-            "-drive",
-            f"file={disk},format=qcow2,if=none,id=tempdisk",
-            "-device",
-            "ide-hd,drive=tempdisk",
-        ]
+        return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
