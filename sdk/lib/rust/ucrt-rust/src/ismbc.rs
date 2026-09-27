@@ -77,32 +77,14 @@ const _MBC_ILLEGAL: c_int = -1;
 const _KANJI_CP: c_int = 932;
 
 const CT_CTYPE1: u32 = 0x0001;
+use crate::locale_abi::{__acrt_GetStringTypeA, __acrt_LCMapStringA};
+
 const LCMAP_LOWERCASE: u32 = 0x0100;
 const LCMAP_UPPERCASE: u32 = 0x0200;
 const EINVAL: c_int = 22;
 const EILSEQ: c_int = 42;
 
 extern "C" {
-    fn __acrt_GetStringTypeA(
-        locale: *mut CrtLocalePointers,
-        info_type: u32,
-        src: *const u8,
-        cch: c_int,
-        char_type: *mut u16,
-        code_page: c_int,
-        error: c_int,
-    ) -> c_int;
-    fn __acrt_LCMapStringA(
-        locale: *mut CrtLocalePointers,
-        locale_name: *const u16,
-        map_flags: u32,
-        src: *const u8,
-        cch_src: c_int,
-        dest: *mut u8,
-        cch_dest: c_int,
-        code_page: c_int,
-        error: c_int,
-    ) -> c_int;
     fn _errno() -> *mut c_int;
     fn _invalid_parameter_noinfo();
 }
@@ -126,7 +108,7 @@ unsafe fn multibyte_check_type(
     let code_page = (*mb).mbcodepage;
     let bytes = [((c >> 8) & 0xff) as u8, (c & 0xff) as u8];
     let mut ctypes = [0u16; 2];
-    if __acrt_GetStringTypeA(locale, CT_CTYPE1, bytes.as_ptr(), 2, ctypes.as_mut_ptr(), code_page, 1)
+    if __acrt_GetStringTypeA(locale, CT_CTYPE1, bytes.as_ptr().cast(), 2, ctypes.as_mut_ptr(), code_page, 1)
         == 0
     {
         return 0;
@@ -366,9 +348,9 @@ unsafe fn mbc_case(c: u32, locale: *mut CrtLocalePointers, map: u32, from_bit: u
             l,
             (*mb).mblocalename,
             map,
-            val.as_ptr(),
+            val.as_ptr().cast(),
             2,
-            ret.as_mut_ptr(),
+            ret.as_mut_ptr().cast(),
             2,
             (*mb).mbcodepage,
             1,

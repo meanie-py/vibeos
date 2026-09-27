@@ -9,6 +9,16 @@
 //!
 //! Progress: `python3 tools/ucrt_burndown.py --arch i386`.
 #![no_std]
+// LOAD-BEARING, as in msvcrt-crt-rust and crt-portable-rust: this crate now
+// defines strcmp, wcscpy, wcscat, _memccpy and friends -- the very symbols
+// LLVM's loop-idiom pass rewrites compare/copy/scan loops INTO. Without this,
+// such a body can compile to a call to itself. `_strrev`'s NUL scan was
+// measured becoming a call to strlen on all three targets.
+#![no_builtins]
+// Each module declares the ucrt C it still calls in its own `extern` block, so
+// two modules can disagree about one C function's signature and both compile.
+// One of them is then wrong at the ABI, silently. Make that an error.
+#![deny(clashing_extern_declarations)]
 
 #[cfg(feature = "bits")]
 pub mod bits;
@@ -77,6 +87,12 @@ pub mod align;
 pub mod invalid_parameter;
 #[cfg(feature = "lowio-open")]
 pub mod lowio_open;
+#[cfg(feature = "mbstring")]
+pub mod mbstring;
+#[cfg(feature = "string-ops")]
+pub mod string_ops;
+#[cfg(feature = "time")]
+pub mod time;
 
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.

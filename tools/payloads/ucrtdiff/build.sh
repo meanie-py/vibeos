@@ -80,6 +80,12 @@ for A in $ARCHES; do
     python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side ucrt-internals
     [ -s "$OURS" ] || { echo "[ucrtdiff] FAIL($A): $OURS missing"; exit 1; }
     fi
+    # ref_X for a function export a takeover removed from the reference set: an alias of
+    # our Rust copy in the reference instance (see build_internals_set). The file may be
+    # empty, but it must exist -- a missing one means the internals set is stale.
+    [ -f "$B/libucrt_ours.refalias" ] || { echo "[ucrtdiff] FAIL($A): $B/libucrt_ours.refalias missing -- rebuild without UCRTDIFF_REUSE_INPUTS"; exit 1; }
+    REFALIAS=()
+    while IFS= read -r a; do [ -n "$a" ] && REFALIAS+=("-Wl,-Xlink=-alternatename:$a"); done < "$B/libucrt_ours.refalias"
 
     # The ucrtbase IMPORT LIB is what makes the bare side resolve to our shipping
     # DLL. It is a normal build target, but only gets built when something links
@@ -127,6 +133,7 @@ for A in $ARCHES; do
     "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" "$HERE/stubs.c" \
         -DUCRTDIFF_SHARD_K="$SHARD_K" -DUCRTDIFF_SHARD_N="$SHARD_N" \
         -DUCRTDIFF_BUDGET_MS="$BUDGET_MS" \
+        "${REFALIAS[@]}" \
         -Wl,--start-group \
         "$REF" \
         "$RUST" \

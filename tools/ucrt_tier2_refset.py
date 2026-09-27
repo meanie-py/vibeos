@@ -410,6 +410,43 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     )
     if res.returncode != 0:
         raise RefsetError(f"llvm-objcopy failed on {src}: {res.stderr.strip()[:500]}")
+
+    # Function exports a takeover REMOVED from the reference set. Left alone, Microsoft's
+    # plain-name calls to them bind through the import library to the shipping DLL: after
+    # the invalid_parameter takeover, all 174 of the reference side's
+    # `_invalid_parameter_noinfo` calls reported to the DLL's handler, so every row's iph
+    # count was charged to the wrong side. And the harness's own `ref_X` calls to one
+    # (`ref__set_invalid_parameter_handler` to install the counter) stopped linking. Both
+    # belong to the reference INSTANCE, which for a taken-over export is now our Rust
+    # copy: rebind the reference objects' calls to `ours_X`, and give the harness
+    # `ref_X` as an alias of it (build.sh reads the alias file). None of these exports is
+    # graded -- the harness's UCRTDIFF_REF_HAS_X guards read the reference archive, which
+    # still lacks them.
+    ours_defined = {b for _, b in rules}
+    reroute = sorted(
+        s
+        for s in needed_by_ref
+        if s in function_exports and s not in ref_defined and f"ours_{s}" in ours_defined
+    )
+    if reroute:
+        ref_map = out.parent / f".{ref.stem}-reroute.txt"
+        ref_map.write_text("".join(f"{s} ours_{s}\n" for s in reroute))
+        tmp = ref.with_suffix(".rerouted.a")
+        res = subprocess.run(
+            [objcopy, f"--redefine-syms={ref_map}", str(ref), str(tmp)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if res.returncode != 0:
+            raise RefsetError(f"llvm-objcopy failed on {ref}: {res.stderr.strip()[:500]}")
+        tmp.replace(ref)
+    aliases = sorted(
+        (f"{dec}ref_{e}", f"ours_{dec}{e}")
+        for e in exports - data_exports
+        if f"{dec}{e}" not in ref_exports and f"ours_{dec}{e}" in ours_defined
+    )
+    (out.parent / f"{out.stem}.refalias").write_text("".join(f"{a}={b}\n" for a, b in aliases))
     return len(needed), len(rules)
 
 

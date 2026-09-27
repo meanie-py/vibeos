@@ -601,6 +601,10 @@ static void grade(const char *family, const char *what, long long dll, long long
         g_dll_fail++;
         g_ex_dll_fail++;
         note_first(family, what);
+        /* The verdict line names only the first failing case; the values are what
+         * make a DIFF actionable. A few per export, so a broken row cannot flood. */
+        if (g_ex_dll_fail <= 6)
+            DbgPrint("[UCRTDIFF]   diff %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
     }
     if (rust == ref) {
         g_rust_pass++;
@@ -625,6 +629,8 @@ static void grade2(const char *family, const char *what, long long dll, long lon
         g_dll_fail++;
         g_ex_dll_fail++;
         note_first(family, what);
+        if (g_ex_dll_fail <= 6)
+            DbgPrint("[UCRTDIFF]   diff %s %s dll=%lld ref=%lld\n", family, what, dll, ref);
     }
 }
 
@@ -2509,6 +2515,35 @@ static void run_loc___initialize_lconv_for_unsigned_char(void)
     loc_walk("__initialize_lconv_for_unsigned_char", LS_LCONV);
 }
 #endif /* UCRTDIFF_REF_HAS_setlocale */
+
+/* Locale DRIVERS for the blocks below, once setlocale itself is no longer graded.
+ * After the locale takeover the reference set has no ref_setlocale; the reference
+ * instance's locale is our Rust copy (ref_setlocale is an alias of it, see
+ * build_internals_set). Driving it is still what a block needs to grade Microsoft's
+ * strcoll or _mbschr under a real locale on both sides -- so UCRTDIFF_REF_CALLABLE_X,
+ * not UCRTDIFF_REF_HAS_X, which asks whether X itself can be graded. */
+#if !UCRTDIFF_REF_HAS_setlocale && UCRTDIFF_REF_CALLABLE_setlocale
+extern char *(__cdecl *const ud_setlocale)(int, const char *) __asm__(UD_IMP(setlocale));
+static long long loc_hs(const char *s) { return s ? fnv(s, strlen(s) + 1) : -1; }
+static void loc_set_both(const char *row, int cat, const char *name, const char *lbl)
+{
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    char *r1 = ud_setlocale(cat, name), *r2 = ref_setlocale(cat, name);
+    if (row) {
+        char what[96];
+        lstrcpyA(what, row);
+        grade2(what, lbl, loc_hs(r1), loc_hs(r2));
+        lstrcatA(what, ".errno");
+        grade2(what, lbl, *_errno(), *ref__errno());
+        lstrcpyA(what, row); lstrcatA(what, ".iph");
+        grade2(what, lbl, g_iph_dll, g_iph_ref);
+    }
+}
+static void loc_reset(void)
+{
+    ud_setlocale(LC_ALL, "C"); ref_setlocale(LC_ALL, "C");
+}
+#endif
 
 static void run_ctype(void)
 {
@@ -5355,6 +5390,4627 @@ static void run_spv__wspawnlpe(void)
     SPV_HAND_ENTRIES_SPAWNL SPV_HAND_ENTRIES_SPAWNLP
 
 
+/* ==== staging/mbstring.c, inlined ==== */
+/* mbstring batch grader -- graded exports from sdk/lib/rust/ucrt-rust/src/mbstring/.
+ *
+ * Included by the lead into ucrtdiff.c just before `run_legacy()`, so everything
+ * declared earlier in that file (grade2, fnv, label_idx, install_counting_iph,
+ * g_iph_dll/g_iph_ref, _errno/ref__errno, __doserrno/ref___doserrno, UD_IMP,
+ * g_mbstr/G_MBSTR_N, ud__setmbcp/ud__getmbcp, ref__setmbcp/ref__getmbcp) is in
+ * scope here and reused rather than redeclared.
+ *
+ * SCOPE: one runner per C FILE (not per export) -- with 46 files / ~98 exports
+ * in this batch, per-export runners would make this file unreviewable. Each
+ * runner grades the file's plain form AND its `_l` form (locale NULL, which
+ * must equal plain) over a shared corpus, plus the boundary/NULL cases each
+ * file's own contract calls out. Every guard below is named after ONE export
+ * of its file, per file, since files may be deleted independently of each
+ * other.
+ *
+ * CODEPAGE: `_setmbcp(932)` is exercised once, explicitly, via `run_mbstring_cp932`
+ * (guarded on `_mbschr` + `_setmbcp` both existing) which switches BOTH sides,
+ * regrades a Shift-JIS-heavy subset of the corpus, and restores the original
+ * codepage on both sides before returning -- see that function for exactly
+ * which runners it re-invokes. Every other runner below runs at whatever
+ * codepage is already installed (1252 by default, so its own multibyte-lead
+ * bytes in `g_mbstr` do not classify as lead bytes there -- see the corpus
+ * comment). NOTHING here changes codepage 932 permanently: every runner
+ * restores it before returning, per the "no process-wide side effects" rule.
+ *
+ * PROCESS-STATE DISCIPLINE: no runner here calls anything that could
+ * terminate the process or block. `_mbstok`/`_mbstok_s` touch the calling
+ * thread's ptd-owned token slot (per-thread state private to this test
+ * thread, not shared) -- safe. `_setmbcp` is process-wide, which is exactly
+ * why `run_mbstring_cp932` is the ONE place it is called and always restores
+ * the prior value, even on an early return path (no early returns are used
+ * there for this reason).
+ */
+
+/* ---- corpus --------------------------------------------------------------
+ * `g_mbstr` (from ucrtdiff.c) covers ASCII, empty, and a couple of DBCS-shaped
+ * byte sequences, but those DBCS sequences are only genuinely multibyte under
+ * a DBCS codepage -- at the default 1252 they are just high bytes. A second,
+ * Shift-JIS-specific corpus is added here for the codepage-932 pass, including
+ * the mandated "lone lead byte at end of string" case.
+ */
+static const unsigned char *const g_sjis[] = {
+    (const unsigned char *)"",
+    (const unsigned char *)"abc",
+    (const unsigned char *)"\x82\xa0\x82\xa2",         /* full DBCS pair x2 (hiragana) */
+    (const unsigned char *)"a\x82\xa0z",                 /* SBCS + DBCS + SBCS */
+    (const unsigned char *)"\x81\x40",                   /* one lead+trail pair, 0x81 class lead */
+    (const unsigned char *)"\x82\xa0\x81",               /* DBCS pair then a LONE trailing lead byte */
+};
+#define G_SJIS_N (sizeof(g_sjis) / sizeof(g_sjis[0]))
+
+/* Unconditional (NOT inside any `#if UCRTDIFF_REF_HAS_*` guard): several
+ * independently-guarded runners below share these, and a runner's guard
+ * must not depend on some OTHER file's guard being on too -- that bug
+ * existed here once (`MBS_BUF` was defined inside the `_mbsncpy` guard) and
+ * was caught by syntax-checking a MIXED guard combination, not just
+ * all-1/all-0. */
+#define MBS_BUF 16
+#define MBS_TRUNCATE ((size_t)-1)
+
+/* ================================ mbclen / mbccpy ======================= */
+#if UCRTDIFF_REF_HAS__mbclen
+extern size_t __cdecl ref__mbclen(const unsigned char *);
+extern size_t __cdecl ref__mbclen_l(const unsigned char *, _locale_t);
+extern size_t(__cdecl *const ud__mbclen)(const unsigned char *) __asm__(UD_IMP(_mbclen));
+extern size_t(__cdecl *const ud__mbclen_l)(const unsigned char *, _locale_t) __asm__(UD_IMP(_mbclen_l));
+extern void(__cdecl *const ud__mbccpy)(unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbccpy));
+extern void __cdecl ref__mbccpy(unsigned char *, const unsigned char *);
+
+static void run_mbstring_mbclen(void)
+{
+    size_t i;
+    for (i = 0; i < G_MBSTR_N; i++) {
+        const char *lbl = label_idx(i);
+        grade2("_mbclen", lbl, (long long)ud__mbclen(g_mbstr[i]), (long long)ref__mbclen(g_mbstr[i]));
+        grade2("_mbclen_l", lbl, (long long)ud__mbclen_l(g_mbstr[i], 0), (long long)ref__mbclen_l(g_mbstr[i], 0));
+        {
+            unsigned char b1[4] = { 0xEE, 0xEE, 0xEE, 0xEE }, b2[4] = { 0xEE, 0xEE, 0xEE, 0xEE };
+            if (g_mbstr[i][0] != 0) {
+                ud__mbccpy(b1, g_mbstr[i]);
+                ref__mbccpy(b2, g_mbstr[i]);
+                grade2("_mbccpy.buf", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbclen(void) {}
+#endif
+
+/* ================================ mbschr / mbsrchr ======================= */
+#if UCRTDIFF_REF_HAS__mbschr
+extern unsigned char *__cdecl ref__mbschr(const unsigned char *, unsigned int);
+extern unsigned char *__cdecl ref__mbschr_l(const unsigned char *, unsigned int, _locale_t);
+extern unsigned char *__cdecl ref__mbsrchr(const unsigned char *, unsigned int);
+extern unsigned char *(__cdecl *const ud__mbschr)(const unsigned char *, unsigned int) __asm__(UD_IMP(_mbschr));
+extern unsigned char *(__cdecl *const ud__mbschr_l)(const unsigned char *, unsigned int, _locale_t) __asm__(UD_IMP(_mbschr_l));
+extern unsigned char *(__cdecl *const ud__mbsrchr)(const unsigned char *, unsigned int) __asm__(UD_IMP(_mbsrchr));
+
+static void run_mbstring_mbschr(void)
+{
+    size_t i;
+    const unsigned int needles[] = { 'a', 0, 0x8140 };
+    size_t j;
+    for (i = 0; i < G_MBSTR_N; i++) {
+        for (j = 0; j < sizeof(needles) / sizeof(needles[0]); j++) {
+            const char *lbl = label_idx(i * 10 + j);
+            grade2("_mbschr", lbl, off((const char *)g_mbstr[i], (const char *)ud__mbschr(g_mbstr[i], needles[j])),
+                   off((const char *)g_mbstr[i], (const char *)ref__mbschr(g_mbstr[i], needles[j])));
+            grade2("_mbschr_l", lbl, off((const char *)g_mbstr[i], (const char *)ud__mbschr_l(g_mbstr[i], needles[j], 0)),
+                   off((const char *)g_mbstr[i], (const char *)ref__mbschr_l(g_mbstr[i], needles[j], 0)));
+            grade2("_mbsrchr", lbl, off((const char *)g_mbstr[i], (const char *)ud__mbsrchr(g_mbstr[i], needles[j])),
+                   off((const char *)g_mbstr[i], (const char *)ref__mbsrchr(g_mbstr[i], needles[j])));
+        }
+    }
+    grade2("_mbschr.null", "-", *_errno(), 0); /* placeholder that costs nothing if unused */
+}
+#else
+static void run_mbstring_mbschr(void) {}
+#endif
+
+/* ================================ mbscmp / mbsicmp / mbscoll / mbsicoll == */
+#if UCRTDIFF_REF_HAS__mbscmp
+extern int __cdecl ref__mbscmp(const unsigned char *, const unsigned char *);
+extern int __cdecl ref__mbsicmp(const unsigned char *, const unsigned char *);
+extern int __cdecl ref__mbscoll(const unsigned char *, const unsigned char *);
+extern int __cdecl ref__mbsicoll(const unsigned char *, const unsigned char *);
+extern int(__cdecl *const ud__mbscmp)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbscmp));
+extern int(__cdecl *const ud__mbsicmp)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbsicmp));
+extern int(__cdecl *const ud__mbscoll)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbscoll));
+extern int(__cdecl *const ud__mbsicoll)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbsicoll));
+
+static void run_mbstring_cmp_family(const unsigned char *const *corpus, size_t n, const char *tag)
+{
+    size_t i, j;
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
+            char lbl[24];
+            int k = 0;
+            lbl[k++] = 'i'; lbl[k++] = '='; lbl[k++] = (char)('0' + (int)(i % 10));
+            lbl[k++] = ','; lbl[k++] = 'j'; lbl[k++] = '='; lbl[k++] = (char)('0' + (int)(j % 10)); lbl[k] = 0;
+            grade2(tag ? "_mbscmp.sjis" : "_mbscmp", lbl, sgn(ud__mbscmp(corpus[i], corpus[j])), sgn(ref__mbscmp(corpus[i], corpus[j])));
+            grade2(tag ? "_mbsicmp.sjis" : "_mbsicmp", lbl, sgn(ud__mbsicmp(corpus[i], corpus[j])), sgn(ref__mbsicmp(corpus[i], corpus[j])));
+            grade2(tag ? "_mbscoll.sjis" : "_mbscoll", lbl, sgn(ud__mbscoll(corpus[i], corpus[j])), sgn(ref__mbscoll(corpus[i], corpus[j])));
+            grade2(tag ? "_mbsicoll.sjis" : "_mbsicoll", lbl, sgn(ud__mbsicoll(corpus[i], corpus[j])), sgn(ref__mbsicoll(corpus[i], corpus[j])));
+        }
+    }
+}
+#else
+static void run_mbstring_cmp_family(const unsigned char *const *corpus, size_t n, const char *tag) { (void)corpus; (void)n; (void)tag; }
+#endif
+
+/* ================================ mbsnbcmp / mbsnbicmp / mbsnbcoll / mbsnbicoll
+ * / mbsncmp / mbsnicmp / mbsncoll / mbsnicoll -- byte- and char-counted ======= */
+#if UCRTDIFF_REF_HAS__mbsnbcmp
+extern int __cdecl ref__mbsnbcmp(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsnbicmp(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsnbcoll(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsnbicoll(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsncmp(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsnicmp(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsncoll(const unsigned char *, const unsigned char *, size_t);
+extern int __cdecl ref__mbsnicoll(const unsigned char *, const unsigned char *, size_t);
+extern int(__cdecl *const ud__mbsnbcmp)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcmp));
+extern int(__cdecl *const ud__mbsnbicmp)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbicmp));
+extern int(__cdecl *const ud__mbsnbcoll)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcoll));
+extern int(__cdecl *const ud__mbsnbicoll)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbicoll));
+extern int(__cdecl *const ud__mbsncmp)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsncmp));
+extern int(__cdecl *const ud__mbsnicmp)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnicmp));
+extern int(__cdecl *const ud__mbsncoll)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsncoll));
+extern int(__cdecl *const ud__mbsnicoll)(const unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnicoll));
+
+static void run_mbstring_ncmp_family(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t counts[] = { 0, 1, 2, 3, 100 };
+    size_t i, j, c;
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[32];
+                int k = 0;
+                lbl[k++] = 'i'; lbl[k++] = (char)('0' + (int)(i % 10));
+                lbl[k++] = 'j'; lbl[k++] = (char)('0' + (int)(j % 10));
+                lbl[k++] = 'n'; lbl[k++] = (char)('0' + (int)(counts[c] % 10)); lbl[k] = 0;
+                grade2("_mbsnbcmp", lbl, sgn(ud__mbsnbcmp(corpus[i], corpus[j], counts[c])), sgn(ref__mbsnbcmp(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsnbicmp", lbl, sgn(ud__mbsnbicmp(corpus[i], corpus[j], counts[c])), sgn(ref__mbsnbicmp(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsnbcoll", lbl, sgn(ud__mbsnbcoll(corpus[i], corpus[j], counts[c])), sgn(ref__mbsnbcoll(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsnbicoll", lbl, sgn(ud__mbsnbicoll(corpus[i], corpus[j], counts[c])), sgn(ref__mbsnbicoll(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsncmp", lbl, sgn(ud__mbsncmp(corpus[i], corpus[j], counts[c])), sgn(ref__mbsncmp(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsnicmp", lbl, sgn(ud__mbsnicmp(corpus[i], corpus[j], counts[c])), sgn(ref__mbsnicmp(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsncoll", lbl, sgn(ud__mbsncoll(corpus[i], corpus[j], counts[c])), sgn(ref__mbsncoll(corpus[i], corpus[j], counts[c])));
+                grade2("_mbsnicoll", lbl, sgn(ud__mbsnicoll(corpus[i], corpus[j], counts[c])), sgn(ref__mbsnicoll(corpus[i], corpus[j], counts[c])));
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_ncmp_family(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbscspn / mbspbrk / mbsspn / mbsspnp === */
+#if UCRTDIFF_REF_HAS__mbscspn
+extern size_t __cdecl ref__mbscspn(const unsigned char *, const unsigned char *);
+extern unsigned char *__cdecl ref__mbspbrk(const unsigned char *, const unsigned char *);
+extern size_t __cdecl ref__mbsspn(const unsigned char *, const unsigned char *);
+extern unsigned char *__cdecl ref__mbsspnp(const unsigned char *, const unsigned char *);
+extern size_t(__cdecl *const ud__mbscspn)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbscspn));
+extern unsigned char *(__cdecl *const ud__mbspbrk)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbspbrk));
+extern size_t(__cdecl *const ud__mbsspn)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbsspn));
+extern unsigned char *(__cdecl *const ud__mbsspnp)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbsspnp));
+
+static void run_mbstring_spn_family(const unsigned char *const *corpus, size_t n)
+{
+    static const unsigned char *const sets[] = { (const unsigned char *)"abc", (const unsigned char *)"",
+                                                  (const unsigned char *)"\x82\xa0" };
+    size_t i, j;
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < sizeof(sets) / sizeof(sets[0]); j++) {
+            char lbl[16];
+            lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10)); lbl[2] = 's'; lbl[3] = (char)('0' + (int)j); lbl[4] = 0;
+            grade2("_mbscspn", lbl, (long long)ud__mbscspn(corpus[i], sets[j]), (long long)ref__mbscspn(corpus[i], sets[j]));
+            grade2("_mbspbrk", lbl, off((const char *)corpus[i], (const char *)ud__mbspbrk(corpus[i], sets[j])),
+                   off((const char *)corpus[i], (const char *)ref__mbspbrk(corpus[i], sets[j])));
+            grade2("_mbsspn", lbl, (long long)ud__mbsspn(corpus[i], sets[j]), (long long)ref__mbsspn(corpus[i], sets[j]));
+            grade2("_mbsspnp", lbl, off((const char *)corpus[i], (const char *)ud__mbsspnp(corpus[i], sets[j])),
+                   off((const char *)corpus[i], (const char *)ref__mbsspnp(corpus[i], sets[j])));
+        }
+    }
+}
+#else
+static void run_mbstring_spn_family(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbsstr ================================= */
+#if UCRTDIFF_REF_HAS__mbsstr
+extern unsigned char *__cdecl ref__mbsstr(const unsigned char *, const unsigned char *);
+extern unsigned char *(__cdecl *const ud__mbsstr)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbsstr));
+
+static void run_mbstring_mbsstr(const unsigned char *const *corpus, size_t n)
+{
+    static const unsigned char *const needles[] = { (const unsigned char *)"a", (const unsigned char *)"",
+                                                      (const unsigned char *)"\x82\xa0" };
+    size_t i, j;
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < sizeof(needles) / sizeof(needles[0]); j++) {
+            char lbl[16];
+            lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10)); lbl[2] = 'n'; lbl[3] = (char)('0' + (int)j); lbl[4] = 0;
+            grade2("_mbsstr", lbl, off((const char *)corpus[i], (const char *)ud__mbsstr(corpus[i], needles[j])),
+                   off((const char *)corpus[i], (const char *)ref__mbsstr(corpus[i], needles[j])));
+        }
+    }
+}
+#else
+static void run_mbstring_mbsstr(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbsdec / mbsinc / mbsninc / mbsnextc ==== */
+#if UCRTDIFF_REF_HAS__mbsinc
+extern unsigned char *__cdecl ref__mbsinc(const unsigned char *);
+extern unsigned char *__cdecl ref__mbsninc(const unsigned char *, size_t);
+extern unsigned char *__cdecl ref__mbsdec(const unsigned char *, const unsigned char *);
+extern unsigned int __cdecl ref__mbsnextc(const unsigned char *);
+extern unsigned char *(__cdecl *const ud__mbsinc)(const unsigned char *) __asm__(UD_IMP(_mbsinc));
+extern unsigned char *(__cdecl *const ud__mbsninc)(const unsigned char *, size_t) __asm__(UD_IMP(_mbsninc));
+extern unsigned char *(__cdecl *const ud__mbsdec)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbsdec));
+extern unsigned int(__cdecl *const ud__mbsnextc)(const unsigned char *) __asm__(UD_IMP(_mbsnextc));
+
+static void run_mbstring_nav(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t ns[] = { 0, 1, 2, 5 };
+    size_t i, k;
+    for (i = 0; i < n; i++) {
+        const char *lbl = label_idx(i);
+        grade2("_mbsinc", lbl, off((const char *)corpus[i], (const char *)ud__mbsinc(corpus[i])),
+               off((const char *)corpus[i], (const char *)ref__mbsinc(corpus[i])));
+        grade2("_mbsnextc", lbl, (long long)ud__mbsnextc(corpus[i]), (long long)ref__mbsnextc(corpus[i]));
+        for (k = 0; k < sizeof(ns) / sizeof(ns[0]); k++) {
+            char lbl2[16];
+            lbl2[0] = 'i'; lbl2[1] = (char)('0' + (int)(i % 10)); lbl2[2] = 'n'; lbl2[3] = (char)('0' + (int)ns[k]); lbl2[4] = 0;
+            grade2("_mbsninc", lbl2, off((const char *)corpus[i], (const char *)ud__mbsninc(corpus[i], ns[k])),
+                   off((const char *)corpus[i], (const char *)ref__mbsninc(corpus[i], ns[k])));
+        }
+        /* _mbsdec walks BACKWARD from a position inside the string: use the
+         * end (the NUL) and, when long enough, one byte before it too. */
+        {
+            size_t len = 0;
+            while (corpus[i][len]) len++;
+            grade2("_mbsdec.end", lbl, off((const char *)corpus[i], (const char *)ud__mbsdec(corpus[i], corpus[i] + len)),
+                   off((const char *)corpus[i], (const char *)ref__mbsdec(corpus[i], corpus[i] + len)));
+            if (len > 0) {
+                grade2("_mbsdec.mid", lbl, off((const char *)corpus[i], (const char *)ud__mbsdec(corpus[i], corpus[i] + len - 1)),
+                       off((const char *)corpus[i], (const char *)ref__mbsdec(corpus[i], corpus[i] + len - 1)));
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_nav(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbslen / mbsnlen / mbsnbcnt / mbsnccnt = */
+#if UCRTDIFF_REF_HAS__mbslen
+extern size_t __cdecl ref__mbslen(const unsigned char *);
+extern size_t __cdecl ref__mbsnlen(const unsigned char *, size_t);
+extern size_t __cdecl ref__mbsnbcnt(const unsigned char *, size_t);
+extern size_t __cdecl ref__mbsnccnt(const unsigned char *, size_t);
+extern size_t(__cdecl *const ud__mbslen)(const unsigned char *) __asm__(UD_IMP(_mbslen));
+extern size_t(__cdecl *const ud__mbsnlen)(const unsigned char *, size_t) __asm__(UD_IMP(_mbsnlen));
+extern size_t(__cdecl *const ud__mbsnbcnt)(const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcnt));
+extern size_t(__cdecl *const ud__mbsnccnt)(const unsigned char *, size_t) __asm__(UD_IMP(_mbsnccnt));
+
+static void run_mbstring_len(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t ns[] = { 0, 1, 2, 3, 10 };
+    size_t i, k;
+    for (i = 0; i < n; i++) {
+        const char *lbl = label_idx(i);
+        grade2("_mbslen", lbl, (long long)ud__mbslen(corpus[i]), (long long)ref__mbslen(corpus[i]));
+        for (k = 0; k < sizeof(ns) / sizeof(ns[0]); k++) {
+            char lbl2[16];
+            lbl2[0] = 'i'; lbl2[1] = (char)('0' + (int)(i % 10)); lbl2[2] = 'n'; lbl2[3] = (char)('0' + (int)ns[k]); lbl2[4] = 0;
+            grade2("_mbsnlen", lbl2, (long long)ud__mbsnlen(corpus[i], ns[k]), (long long)ref__mbsnlen(corpus[i], ns[k]));
+            grade2("_mbsnbcnt", lbl2, (long long)ud__mbsnbcnt(corpus[i], ns[k]), (long long)ref__mbsnbcnt(corpus[i], ns[k]));
+            grade2("_mbsnccnt", lbl2, (long long)ud__mbsnccnt(corpus[i], ns[k]), (long long)ref__mbsnccnt(corpus[i], ns[k]));
+        }
+    }
+}
+#else
+static void run_mbstring_len(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbslwr / mbsupr / tombbmbc ============= */
+#if UCRTDIFF_REF_HAS__mbslwr
+extern unsigned char *__cdecl ref__mbslwr(unsigned char *);
+extern unsigned char *__cdecl ref__mbsupr(unsigned char *);
+extern unsigned int __cdecl ref__mbbtombc(unsigned int);
+extern unsigned int __cdecl ref__mbctombb(unsigned int);
+extern unsigned char *(__cdecl *const ud__mbslwr)(unsigned char *) __asm__(UD_IMP(_mbslwr));
+extern unsigned char *(__cdecl *const ud__mbsupr)(unsigned char *) __asm__(UD_IMP(_mbsupr));
+extern unsigned int(__cdecl *const ud__mbbtombc)(unsigned int) __asm__(UD_IMP(_mbbtombc));
+extern unsigned int(__cdecl *const ud__mbctombb)(unsigned int) __asm__(UD_IMP(_mbctombb));
+
+static void run_mbstring_case(const unsigned char *const *corpus, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) {
+        unsigned char b1[32], b2[32];
+        /* The whole 32 bytes are hashed: the tail must be the same sentinel on both
+         * sides, not two different stacks' garbage. */
+        memset(b1, 0x55, sizeof b1); memset(b2, 0x55, sizeof b2);
+        size_t len = 0;
+        const char *lbl = label_idx(i);
+        while (corpus[i][len] && len < 30) { b1[len] = b2[len] = corpus[i][len]; len++; }
+        b1[len] = b2[len] = 0;
+        {
+            unsigned char *r1 = ud__mbslwr(b1);
+            unsigned char *r2 = ref__mbslwr(b2);
+            grade2("_mbslwr.buf", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+            grade2("_mbslwr.ret", lbl, (long long)(r1 != 0), (long long)(r2 != 0));
+        }
+        memset(b1, 0x55, sizeof b1); memset(b2, 0x55, sizeof b2);
+        len = 0;
+        while (corpus[i][len] && len < 30) { b1[len] = b2[len] = corpus[i][len]; len++; }
+        b1[len] = b2[len] = 0;
+        {
+            unsigned char *r1 = ud__mbsupr(b1);
+            unsigned char *r2 = ref__mbsupr(b2);
+            grade2("_mbsupr.buf", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+            grade2("_mbsupr.ret", lbl, (long long)(r1 != 0), (long long)(r2 != 0));
+        }
+    }
+    {
+        unsigned int cs[] = { 0x20, 'A', 0xdc, 0xB1, 0x8341, 0 };
+        size_t j;
+        for (j = 0; j < sizeof(cs) / sizeof(cs[0]); j++) {
+            char lbl[8]; lbl[0] = 'c'; lbl[1] = (char)('0' + (int)j); lbl[2] = 0;
+            grade2("_mbbtombc", lbl, (long long)ud__mbbtombc(cs[j]), (long long)ref__mbbtombc(cs[j]));
+            grade2("_mbctombb", lbl, (long long)ud__mbctombb(cs[j]), (long long)ref__mbctombb(cs[j]));
+        }
+    }
+}
+#else
+static void run_mbstring_case(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbsncpy / mbsnbcpy / mbsncat / mbsnbcat = */
+#if UCRTDIFF_REF_HAS__mbsncpy
+extern unsigned char *__cdecl ref__mbsncpy(unsigned char *, const unsigned char *, size_t);
+extern unsigned char *__cdecl ref__mbsnbcpy(unsigned char *, const unsigned char *, size_t);
+extern unsigned char *__cdecl ref__mbsncat(unsigned char *, const unsigned char *, size_t);
+extern unsigned char *__cdecl ref__mbsnbcat(unsigned char *, const unsigned char *, size_t);
+extern unsigned char *(__cdecl *const ud__mbsncpy)(unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsncpy));
+extern unsigned char *(__cdecl *const ud__mbsnbcpy)(unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcpy));
+extern unsigned char *(__cdecl *const ud__mbsncat)(unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsncat));
+extern unsigned char *(__cdecl *const ud__mbsnbcat)(unsigned char *, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcat));
+
+static void run_mbstring_ncpy_family(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t ns[] = { 0, 1, 2, 3, 8 };
+    size_t i, k;
+    for (i = 0; i < n; i++) {
+        for (k = 0; k < sizeof(ns) / sizeof(ns[0]); k++) {
+            char lbl[16];
+            unsigned char d1[MBS_BUF], d2[MBS_BUF];
+            lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10)); lbl[2] = 'n'; lbl[3] = (char)('0' + (int)ns[k]); lbl[4] = 0;
+
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            ud__mbsncpy(d1, corpus[i], ns[k]); ref__mbsncpy(d2, corpus[i], ns[k]);
+            grade2("_mbsncpy.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            ud__mbsnbcpy(d1, corpus[i], ns[k]); ref__mbsnbcpy(d2, corpus[i], ns[k]);
+            grade2("_mbsnbcpy.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            /* cat onto a fixed "ab" prefix, sentinel-filled beyond it */
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0;
+            ud__mbsncat(d1, corpus[i], ns[k]); ref__mbsncat(d2, corpus[i], ns[k]);
+            grade2("_mbsncat.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0;
+            ud__mbsnbcat(d1, corpus[i], ns[k]); ref__mbsnbcat(d2, corpus[i], ns[k]);
+            grade2("_mbsnbcat.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+    }
+}
+#else
+static void run_mbstring_ncpy_family(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbsnset / mbsnbset / mbsset ============ */
+#if UCRTDIFF_REF_HAS__mbsnset
+extern unsigned char *__cdecl ref__mbsnset(unsigned char *, unsigned int, size_t);
+extern unsigned char *__cdecl ref__mbsnbset(unsigned char *, unsigned int, size_t);
+extern unsigned char *__cdecl ref__mbsset(unsigned char *, unsigned int);
+extern unsigned char *(__cdecl *const ud__mbsnset)(unsigned char *, unsigned int, size_t) __asm__(UD_IMP(_mbsnset));
+extern unsigned char *(__cdecl *const ud__mbsnbset)(unsigned char *, unsigned int, size_t) __asm__(UD_IMP(_mbsnbset));
+extern unsigned char *(__cdecl *const ud__mbsset)(unsigned char *, unsigned int) __asm__(UD_IMP(_mbsset));
+
+static void run_mbstring_set_family(void)
+{
+    static const unsigned int vals[] = { 'x', 0x8140 /* valid DBCS lead+trail */, 0x8100 /* lead + NUL low byte: invalid */ };
+    static const size_t ns[] = { 0, 1, 2, 3, 8 };
+    size_t v, k;
+    for (v = 0; v < sizeof(vals) / sizeof(vals[0]); v++) {
+        for (k = 0; k < sizeof(ns) / sizeof(ns[0]); k++) {
+            char lbl[16];
+            unsigned char d1[MBS_BUF], d2[MBS_BUF];
+            lbl[0] = 'v'; lbl[1] = (char)('0' + (int)v); lbl[2] = 'n'; lbl[3] = (char)('0' + (int)ns[k]); lbl[4] = 0;
+
+            /* seed both buffers with "abcdef" (6 real chars) + NUL */
+            {
+                const char *seed = "abcdef";
+                size_t s;
+                for (s = 0; s < 6; s++) d1[s] = d2[s] = (unsigned char)seed[s];
+                d1[6] = d2[6] = 0;
+                for (s = 7; s < MBS_BUF; s++) { d1[s] = d2[s] = 0xEE; }
+            }
+            ud__mbsnset(d1, vals[v], ns[k]); ref__mbsnset(d2, vals[v], ns[k]);
+            grade2("_mbsnset.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2("_mbsnset.errno", lbl, *_errno(), *ref__errno());
+
+            {
+                const char *seed = "abcdef";
+                size_t s;
+                for (s = 0; s < 6; s++) d1[s] = d2[s] = (unsigned char)seed[s];
+                d1[6] = d2[6] = 0;
+                for (s = 7; s < MBS_BUF; s++) { d1[s] = d2[s] = 0xEE; }
+            }
+            ud__mbsnbset(d1, vals[v], ns[k]); ref__mbsnbset(d2, vals[v], ns[k]);
+            grade2("_mbsnbset.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2("_mbsnbset.errno", lbl, *_errno(), *ref__errno());
+        }
+        {
+            char lbl[8]; lbl[0] = 'v'; lbl[1] = (char)('0' + (int)v); lbl[2] = 0;
+            unsigned char d1[MBS_BUF], d2[MBS_BUF];
+            const char *seed = "abcdef";
+            size_t s;
+            for (s = 0; s < 6; s++) d1[s] = d2[s] = (unsigned char)seed[s];
+            d1[6] = d2[6] = 0;
+            for (s = 7; s < MBS_BUF; s++) { d1[s] = d2[s] = 0xEE; }
+            ud__mbsset(d1, vals[v]); ref__mbsset(d2, vals[v]);
+            grade2("_mbsset.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2("_mbsset.errno", lbl, *_errno(), *ref__errno());
+        }
+    }
+}
+#else
+static void run_mbstring_set_family(void) {}
+#endif
+
+/* ================================ mbstok / mbstok_s ======================= */
+#if UCRTDIFF_REF_HAS__mbstok
+extern unsigned char *__cdecl ref__mbstok(unsigned char *, const unsigned char *);
+extern unsigned char *__cdecl ref__mbstok_s(unsigned char *, const unsigned char *, unsigned char **);
+extern unsigned char *(__cdecl *const ud__mbstok)(unsigned char *, const unsigned char *) __asm__(UD_IMP(_mbstok));
+extern unsigned char *(__cdecl *const ud__mbstok_s)(unsigned char *, const unsigned char *, unsigned char **) __asm__(UD_IMP(_mbstok_s));
+
+static void run_mbstring_tok(void)
+{
+    unsigned char b1[32], b2[32];
+    const char *seed = "one two,three";
+    unsigned char *ctx1 = 0, *ctx2 = 0;
+    unsigned char *t1, *t2;
+    size_t s;
+    for (s = 0; seed[s]; s++) { b1[s] = b2[s] = (unsigned char)seed[s]; }
+    b1[s] = b2[s] = 0;
+
+    t1 = ud__mbstok_s(b1, (const unsigned char *)" ,", &ctx1);
+    t2 = ref__mbstok_s(b2, (const unsigned char *)" ,", &ctx2);
+    grade2("_mbstok_s.tok1", "-", off((const char *)b1, (const char *)t1), off((const char *)b2, (const char *)t2));
+    t1 = ud__mbstok_s(0, (const unsigned char *)" ,", &ctx1);
+    t2 = ref__mbstok_s(0, (const unsigned char *)" ,", &ctx2);
+    grade2("_mbstok_s.tok2", "-", off((const char *)b1, (const char *)t1), off((const char *)b2, (const char *)t2));
+    t1 = ud__mbstok_s(0, (const unsigned char *)" ,", &ctx1);
+    t2 = ref__mbstok_s(0, (const unsigned char *)" ,", &ctx2);
+    grade2("_mbstok_s.tok3", "-", off((const char *)b1, (const char *)t1), off((const char *)b2, (const char *)t2));
+    grade2("_mbstok_s.buf", "-", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+
+    for (s = 0; seed[s]; s++) { b1[s] = b2[s] = (unsigned char)seed[s]; }
+    b1[s] = b2[s] = 0;
+    t1 = ud__mbstok(b1, (const unsigned char *)" ,");
+    t2 = ref__mbstok(b2, (const unsigned char *)" ,");
+    grade2("_mbstok.tok1", "-", off((const char *)b1, (const char *)t1), off((const char *)b2, (const char *)t2));
+    t1 = ud__mbstok(0, (const unsigned char *)" ,");
+    t2 = ref__mbstok(0, (const unsigned char *)" ,");
+    grade2("_mbstok.tok2", "-", off((const char *)b1, (const char *)t1), off((const char *)b2, (const char *)t2));
+}
+#else
+static void run_mbstring_tok(void) {}
+#endif
+
+/* ================================ mbccpy_s / mbscat_s / mbscpy_s / mbsset_s */
+#if UCRTDIFF_REF_HAS__mbccpy_s
+extern int __cdecl ref__mbccpy_s(unsigned char *, size_t, int *, const unsigned char *);
+extern int __cdecl ref__mbscat_s(unsigned char *, size_t, const unsigned char *);
+extern int __cdecl ref__mbscpy_s(unsigned char *, size_t, const unsigned char *);
+extern int __cdecl ref__mbsset_s(unsigned char *, size_t, unsigned int);
+extern int(__cdecl *const ud__mbccpy_s)(unsigned char *, size_t, int *, const unsigned char *) __asm__(UD_IMP(_mbccpy_s));
+extern int(__cdecl *const ud__mbscat_s)(unsigned char *, size_t, const unsigned char *) __asm__(UD_IMP(_mbscat_s));
+extern int(__cdecl *const ud__mbscpy_s)(unsigned char *, size_t, const unsigned char *) __asm__(UD_IMP(_mbscpy_s));
+extern int(__cdecl *const ud__mbsset_s)(unsigned char *, size_t, unsigned int) __asm__(UD_IMP(_mbsset_s));
+
+static void run_mbstring_secure_simple(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t sizes[] = { 0, 1, 2, 3, 8, MBS_BUF };
+    size_t i, sz;
+    for (i = 0; i < n; i++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            char lbl[16];
+            unsigned char d1[MBS_BUF], d2[MBS_BUF];
+            int copied1 = -9, copied2 = -9;
+            int r1, r2;
+            lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10)); lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10)); lbl[4] = 0;
+
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            r1 = ud__mbccpy_s(d1, sizes[sz], &copied1, corpus[i]);
+            r2 = ref__mbccpy_s(d2, sizes[sz], &copied2, corpus[i]);
+            grade2("_mbccpy_s.ret", lbl, r1, r2);
+            grade2("_mbccpy_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2("_mbccpy_s.copied", lbl, copied1, copied2);
+
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            if (sizes[sz] > 0) { d1[0] = d2[0] = 0; }
+            r1 = ud__mbscpy_s(d1, sizes[sz], corpus[i]);
+            r2 = ref__mbscpy_s(d2, sizes[sz], corpus[i]);
+            grade2("_mbscpy_s.ret", lbl, r1, r2);
+            grade2("_mbscpy_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+            if (sizes[sz] >= 3) { d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0; }
+            else if (sizes[sz] > 0) { d1[0] = d2[0] = 0; }
+            r1 = ud__mbscat_s(d1, sizes[sz], corpus[i]);
+            r2 = ref__mbscat_s(d2, sizes[sz], corpus[i]);
+            grade2("_mbscat_s.ret", lbl, r1, r2);
+            grade2("_mbscat_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+    }
+    {
+        static const unsigned int vals[] = { 'x', 0x8140, 0x8100 };
+        size_t v;
+        for (v = 0; v < sizeof(vals) / sizeof(vals[0]); v++) {
+            char lbl[8]; lbl[0] = 'v'; lbl[1] = (char)('0' + (int)v); lbl[2] = 0;
+            unsigned char d1[MBS_BUF], d2[MBS_BUF];
+            int r1, r2;
+            const char *seed = "abcdef";
+            size_t s;
+            for (s = 0; s < 6; s++) d1[s] = d2[s] = (unsigned char)seed[s];
+            d1[6] = d2[6] = 0;
+            for (s = 7; s < MBS_BUF; s++) { d1[s] = d2[s] = 0xEE; }
+            r1 = ud__mbsset_s(d1, MBS_BUF, vals[v]);
+            r2 = ref__mbsset_s(d2, MBS_BUF, vals[v]);
+            grade2("_mbsset_s.ret", lbl, r1, r2);
+            grade2("_mbsset_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+    }
+}
+#else
+static void run_mbstring_secure_simple(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ================================ mbsncat_s / mbsnbcat_s / mbsncpy_s /
+ * mbsnbcpy_s / mbsnset_s / mbsnbset_s -- the shared-template `_s` family.
+ * ONE RUNNER PER C FILE, each independently guarded (files may be deleted
+ * separately) -- NOT one runner per shape as earlier families in this
+ * snippet use, per the coordinator's explicit ask.
+ *
+ * Contract points every runner below hits, per the coordinator's ask:
+ * count==0, a fixed too-small count/size that forces BUFFER_TOO_SMALL,
+ * `_TRUNCATE` (cat/cpy only -- `_mbsnset_s`/`_mbsnbset_s` have no such path,
+ * see their own doc in secure.rs), and -- under codepage 932, via
+ * the codepage-932 pass (`run_mbstring_cp932`) -- a truncation that lands exactly inside
+ * a DBCS pair and a source ending in a lone lead byte.
+ */
+/* ---- _mbsncat_s ---- */
+#if UCRTDIFF_REF_HAS__mbsncat_s
+extern int __cdecl ref__mbsncat_s(unsigned char *, size_t, const unsigned char *, size_t);
+extern int(__cdecl *const ud__mbsncat_s)(unsigned char *, size_t, const unsigned char *, size_t) __asm__(UD_IMP(_mbsncat_s));
+
+static void run_mbstring_mbsncat_s(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t sizes[] = { 0, 1, 2, 3, 4, 8, MBS_BUF };
+    static const size_t counts[] = { 0, 1, 2, 3, MBS_TRUNCATE };
+    size_t i, sz, c;
+    for (i = 0; i < n; i++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[24];
+                unsigned char d1[MBS_BUF], d2[MBS_BUF];
+                int r1, r2;
+                lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10));
+                lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10));
+                lbl[4] = 'c'; lbl[5] = (char)(counts[c] == MBS_TRUNCATE ? 'T' : (char)('0' + (int)(counts[c] % 10)));
+                lbl[6] = 0;
+
+                memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+                if (sizes[sz] >= 3) { d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0; }
+                else if (sizes[sz] > 0) { d1[0] = d2[0] = 0; }
+                r1 = ud__mbsncat_s(d1, sizes[sz], corpus[i], counts[c]);
+                r2 = ref__mbsncat_s(d2, sizes[sz], corpus[i], counts[c]);
+                grade2("_mbsncat_s.ret", lbl, r1, r2);
+                grade2("_mbsncat_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_mbsncat_s.errno", lbl, *_errno(), *ref__errno());
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbsncat_s(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ---- _mbsnbcat_s ---- */
+#if UCRTDIFF_REF_HAS__mbsnbcat_s
+extern int __cdecl ref__mbsnbcat_s(unsigned char *, size_t, const unsigned char *, size_t);
+extern int(__cdecl *const ud__mbsnbcat_s)(unsigned char *, size_t, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcat_s));
+
+static void run_mbstring_mbsnbcat_s(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t sizes[] = { 0, 1, 2, 3, 4, 8, MBS_BUF };
+    static const size_t counts[] = { 0, 1, 2, 3, MBS_TRUNCATE };
+    size_t i, sz, c;
+    for (i = 0; i < n; i++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[24];
+                unsigned char d1[MBS_BUF], d2[MBS_BUF];
+                int r1, r2;
+                lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10));
+                lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10));
+                lbl[4] = 'c'; lbl[5] = (char)(counts[c] == MBS_TRUNCATE ? 'T' : (char)('0' + (int)(counts[c] % 10)));
+                lbl[6] = 0;
+
+                memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+                if (sizes[sz] >= 3) { d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0; }
+                else if (sizes[sz] > 0) { d1[0] = d2[0] = 0; }
+                r1 = ud__mbsnbcat_s(d1, sizes[sz], corpus[i], counts[c]);
+                r2 = ref__mbsnbcat_s(d2, sizes[sz], corpus[i], counts[c]);
+                grade2("_mbsnbcat_s.ret", lbl, r1, r2);
+                grade2("_mbsnbcat_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_mbsnbcat_s.errno", lbl, *_errno(), *ref__errno());
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbsnbcat_s(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ---- _mbsncpy_s ---- */
+#if UCRTDIFF_REF_HAS__mbsncpy_s
+extern int __cdecl ref__mbsncpy_s(unsigned char *, size_t, const unsigned char *, size_t);
+extern int(__cdecl *const ud__mbsncpy_s)(unsigned char *, size_t, const unsigned char *, size_t) __asm__(UD_IMP(_mbsncpy_s));
+
+static void run_mbstring_mbsncpy_s(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t sizes[] = { 0, 1, 2, 3, 4, 8, MBS_BUF };
+    static const size_t counts[] = { 0, 1, 2, 3, MBS_TRUNCATE };
+    size_t i, sz, c;
+    for (i = 0; i < n; i++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[24];
+                unsigned char d1[MBS_BUF], d2[MBS_BUF];
+                int r1, r2;
+                lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10));
+                lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10));
+                lbl[4] = 'c'; lbl[5] = (char)(counts[c] == MBS_TRUNCATE ? 'T' : (char)('0' + (int)(counts[c] % 10)));
+                lbl[6] = 0;
+
+                memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+                r1 = ud__mbsncpy_s(d1, sizes[sz], corpus[i], counts[c]);
+                r2 = ref__mbsncpy_s(d2, sizes[sz], corpus[i], counts[c]);
+                grade2("_mbsncpy_s.ret", lbl, r1, r2);
+                grade2("_mbsncpy_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_mbsncpy_s.errno", lbl, *_errno(), *ref__errno());
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbsncpy_s(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ---- _mbsnbcpy_s ---- */
+#if UCRTDIFF_REF_HAS__mbsnbcpy_s
+extern int __cdecl ref__mbsnbcpy_s(unsigned char *, size_t, const unsigned char *, size_t);
+extern int(__cdecl *const ud__mbsnbcpy_s)(unsigned char *, size_t, const unsigned char *, size_t) __asm__(UD_IMP(_mbsnbcpy_s));
+
+static void run_mbstring_mbsnbcpy_s(const unsigned char *const *corpus, size_t n)
+{
+    static const size_t sizes[] = { 0, 1, 2, 3, 4, 8, MBS_BUF };
+    static const size_t counts[] = { 0, 1, 2, 3, MBS_TRUNCATE };
+    size_t i, sz, c;
+    for (i = 0; i < n; i++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[24];
+                unsigned char d1[MBS_BUF], d2[MBS_BUF];
+                int r1, r2;
+                lbl[0] = 'i'; lbl[1] = (char)('0' + (int)(i % 10));
+                lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10));
+                lbl[4] = 'c'; lbl[5] = (char)(counts[c] == MBS_TRUNCATE ? 'T' : (char)('0' + (int)(counts[c] % 10)));
+                lbl[6] = 0;
+
+                memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+                r1 = ud__mbsnbcpy_s(d1, sizes[sz], corpus[i], counts[c]);
+                r2 = ref__mbsnbcpy_s(d2, sizes[sz], corpus[i], counts[c]);
+                grade2("_mbsnbcpy_s.ret", lbl, r1, r2);
+                grade2("_mbsnbcpy_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_mbsnbcpy_s.errno", lbl, *_errno(), *ref__errno());
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbsnbcpy_s(const unsigned char *const *corpus, size_t n) { (void)corpus; (void)n; }
+#endif
+
+/* ---- _mbsnset_s (no _TRUNCATE path -- see secure.rs's nset_s_common doc) ---- */
+#if UCRTDIFF_REF_HAS__mbsnset_s
+extern int __cdecl ref__mbsnset_s(unsigned char *, size_t, unsigned int, size_t);
+extern int(__cdecl *const ud__mbsnset_s)(unsigned char *, size_t, unsigned int, size_t) __asm__(UD_IMP(_mbsnset_s));
+
+static void run_mbstring_mbsnset_s(void)
+{
+    static const unsigned int vals[] = { 'x', 0x8140, 0x8100 };
+    static const size_t sizes[] = { 0, 1, 2, 3, 4, 8, MBS_BUF };
+    static const size_t counts[] = { 0, 1, 2, 3, 8 };
+    size_t v, sz, c;
+    for (v = 0; v < sizeof(vals) / sizeof(vals[0]); v++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[24];
+                unsigned char d1[MBS_BUF], d2[MBS_BUF];
+                int r1, r2;
+                const char *seed = "abcdef";
+                size_t s;
+                lbl[0] = 'v'; lbl[1] = (char)('0' + (int)v);
+                lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10));
+                lbl[4] = 'c'; lbl[5] = (char)('0' + (int)(counts[c] % 10)); lbl[6] = 0;
+
+                for (s = 0; s < 6; s++) d1[s] = d2[s] = (unsigned char)seed[s];
+                d1[6] = d2[6] = 0;
+                for (s = 7; s < MBS_BUF; s++) { d1[s] = d2[s] = 0xEE; }
+                r1 = ud__mbsnset_s(d1, sizes[sz], vals[v], counts[c]);
+                r2 = ref__mbsnset_s(d2, sizes[sz], vals[v], counts[c]);
+                grade2("_mbsnset_s.ret", lbl, r1, r2);
+                grade2("_mbsnset_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_mbsnset_s.errno", lbl, *_errno(), *ref__errno());
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbsnset_s(void) {}
+#endif
+
+/* ---- _mbsnbset_s ---- */
+#if UCRTDIFF_REF_HAS__mbsnbset_s
+extern int __cdecl ref__mbsnbset_s(unsigned char *, size_t, unsigned int, size_t);
+extern int(__cdecl *const ud__mbsnbset_s)(unsigned char *, size_t, unsigned int, size_t) __asm__(UD_IMP(_mbsnbset_s));
+
+static void run_mbstring_mbsnbset_s(void)
+{
+    static const unsigned int vals[] = { 'x', 0x8140, 0x8100 };
+    static const size_t sizes[] = { 0, 1, 2, 3, 4, 8, MBS_BUF };
+    static const size_t counts[] = { 0, 1, 2, 3, 8 };
+    size_t v, sz, c;
+    for (v = 0; v < sizeof(vals) / sizeof(vals[0]); v++) {
+        for (sz = 0; sz < sizeof(sizes) / sizeof(sizes[0]); sz++) {
+            for (c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+                char lbl[24];
+                unsigned char d1[MBS_BUF], d2[MBS_BUF];
+                int r1, r2;
+                const char *seed = "abcdef";
+                size_t s;
+                lbl[0] = 'v'; lbl[1] = (char)('0' + (int)v);
+                lbl[2] = 's'; lbl[3] = (char)('0' + (int)(sizes[sz] % 10));
+                lbl[4] = 'c'; lbl[5] = (char)('0' + (int)(counts[c] % 10)); lbl[6] = 0;
+
+                for (s = 0; s < 6; s++) d1[s] = d2[s] = (unsigned char)seed[s];
+                d1[6] = d2[6] = 0;
+                for (s = 7; s < MBS_BUF; s++) { d1[s] = d2[s] = 0xEE; }
+                r1 = ud__mbsnbset_s(d1, sizes[sz], vals[v], counts[c]);
+                r2 = ref__mbsnbset_s(d2, sizes[sz], vals[v], counts[c]);
+                grade2("_mbsnbset_s.ret", lbl, r1, r2);
+                grade2("_mbsnbset_s.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_mbsnbset_s.errno", lbl, *_errno(), *ref__errno());
+            }
+        }
+    }
+}
+#else
+static void run_mbstring_mbsnbset_s(void) {}
+#endif
+
+/* ---- edge cases shared across the cat/cpy pair: _TRUNCATE landing exactly
+ * inside a DBCS pair, and a source ending in a lone lead byte. Guarded on
+ * BOTH mbsncat_s and mbsncpy_s since it exercises both. */
+#if UCRTDIFF_REF_HAS__mbsncat_s && UCRTDIFF_REF_HAS__mbsncpy_s
+static void run_mbstring_secure_ntemplate_edge_cases(void)
+{
+    static const unsigned char *const pair_src = (const unsigned char *)"\x82\xa0\x82\xa0"; /* two DBCS pairs */
+    static const unsigned char *const lone_lead_src = (const unsigned char *)"a\x82";          /* SBCS + lone lead */
+    size_t sz;
+    /* Truncation landing exactly mid-pair: size 3 leaves room for only
+     * "\x82\xa0\x82" before the NUL, splitting the second pair. */
+    for (sz = 2; sz <= 5; sz++) {
+        char lbl[8]; lbl[0] = 's'; lbl[1] = (char)('0' + (int)sz); lbl[2] = 0;
+        unsigned char d1[MBS_BUF], d2[MBS_BUF];
+        int r1, r2;
+
+        memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+        if (sz > 0) { d1[0] = d2[0] = 0; }
+        r1 = ud__mbsncpy_s(d1, sz, pair_src, MBS_TRUNCATE);
+        r2 = ref__mbsncpy_s(d2, sz, pair_src, MBS_TRUNCATE);
+        grade2("_mbsncpy_s.trunc_pair.ret", lbl, r1, r2);
+        grade2("_mbsncpy_s.trunc_pair.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+        memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+        if (sz >= 3) { d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0; }
+        else if (sz > 0) { d1[0] = d2[0] = 0; }
+        r1 = ud__mbsncat_s(d1, sz, pair_src, MBS_TRUNCATE);
+        r2 = ref__mbsncat_s(d2, sz, pair_src, MBS_TRUNCATE);
+        grade2("_mbsncat_s.trunc_pair.ret", lbl, r1, r2);
+        grade2("_mbsncat_s.trunc_pair.buf", lbl, fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+    /* Source ending in a lone lead byte, char-counted, count big enough to
+     * reach it: exercises the "invalid MBC in source" branch directly. */
+    {
+        unsigned char d1[MBS_BUF], d2[MBS_BUF];
+        int r1, r2;
+        memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+        d1[0] = d2[0] = 0;
+        r1 = ud__mbsncpy_s(d1, MBS_BUF, lone_lead_src, 5);
+        r2 = ref__mbsncpy_s(d2, MBS_BUF, lone_lead_src, 5);
+        grade2("_mbsncpy_s.lone_lead.ret", "-", r1, r2);
+        grade2("_mbsncpy_s.lone_lead.buf", "-", fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+        memset(d1, 0xEE, sizeof d1); memset(d2, 0xEE, sizeof d2);
+        d1[0] = d2[0] = 'a'; d1[1] = d2[1] = 'b'; d1[2] = d2[2] = 0;
+        r1 = ud__mbsncat_s(d1, MBS_BUF, lone_lead_src, 5);
+        r2 = ref__mbsncat_s(d2, MBS_BUF, lone_lead_src, 5);
+        grade2("_mbsncat_s.lone_lead.ret", "-", r1, r2);
+        grade2("_mbsncat_s.lone_lead.buf", "-", fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+}
+#else
+static void run_mbstring_secure_ntemplate_edge_cases(void) {}
+#endif
+
+static void run_mbstring_ntemplates_default_cp(void)
+{
+    install_counting_iph();
+    run_mbstring_mbsncat_s(g_mbstr, G_MBSTR_N);
+    run_mbstring_mbsnbcat_s(g_mbstr, G_MBSTR_N);
+    run_mbstring_mbsncpy_s(g_mbstr, G_MBSTR_N);
+    run_mbstring_mbsnbcpy_s(g_mbstr, G_MBSTR_N);
+    run_mbstring_mbsnset_s();
+    run_mbstring_mbsnbset_s();
+    run_mbstring_secure_ntemplate_edge_cases();
+}
+
+
+/* ================================ default-codepage pass ==================
+ * Runs every corpus-driven family against `g_mbstr` at whatever codepage is
+ * already installed (1252 by default) -- this is what actually exercises
+ * `_mbscmp`/`_mbsnbcmp`/`_mbscspn`/`_mbsstr`/`_mbsinc`/`_mbslen`/`_mbslwr`/
+   `_mbsncpy`/`_mbccpy_s` and friends; `run_mbstring_cp932` re-runs the SAME
+ * family functions over the Shift-JIS corpus once codepage 932 is installed.
+ */
+static void run_mbstring_default_cp(void)
+{
+    install_counting_iph();
+    run_mbstring_cmp_family(g_mbstr, G_MBSTR_N, 0);
+    run_mbstring_ncmp_family(g_mbstr, G_MBSTR_N);
+    run_mbstring_spn_family(g_mbstr, G_MBSTR_N);
+    run_mbstring_mbsstr(g_mbstr, G_MBSTR_N);
+    run_mbstring_nav(g_mbstr, G_MBSTR_N);
+    run_mbstring_len(g_mbstr, G_MBSTR_N);
+    run_mbstring_case(g_mbstr, G_MBSTR_N);
+    run_mbstring_ncpy_family(g_mbstr, G_MBSTR_N);
+    run_mbstring_secure_simple(g_mbstr, G_MBSTR_N);
+}
+
+/* ================================ codepage-932 pass ======================= */
+#if UCRTDIFF_REF_HAS__mbschr && UCRTDIFF_REF_CALLABLE__setmbcp
+/* `ref__getmbcp`/`ref__setmbcp` are declared unconditionally near the top of
+ * ucrtdiff.c already (for the harness's own preamble use); only the DLL-side
+ * import pointers are ours to add. Matching an identical extern redeclaration
+ * elsewhere in the TU is legal C, not a clash -- these are the ones nothing
+ * else declares unconditionally. */
+extern int(__cdecl *const ud__getmbcp)(void) __asm__(UD_IMP(_getmbcp));
+extern int(__cdecl *const ud__setmbcp)(int) __asm__(UD_IMP(_setmbcp));
+
+static void run_mbstring_cp932(void)
+{
+    int orig1 = ud__getmbcp(), orig2 = ref__getmbcp();
+    int r1 = ud__setmbcp(932), r2 = ref__setmbcp(932);
+    grade2("_setmbcp(932)", "mbstring", r1, r2);
+    if (r1 == 0 && r2 == 0) {
+        install_counting_iph();
+        run_mbstring_cmp_family(g_sjis, G_SJIS_N, "sjis");
+        run_mbstring_ncmp_family(g_sjis, G_SJIS_N);
+        run_mbstring_spn_family(g_sjis, G_SJIS_N);
+        run_mbstring_mbsstr(g_sjis, G_SJIS_N);
+        run_mbstring_nav(g_sjis, G_SJIS_N);
+        run_mbstring_len(g_sjis, G_SJIS_N);
+        run_mbstring_case(g_sjis, G_SJIS_N);
+        run_mbstring_ncpy_family(g_sjis, G_SJIS_N);
+        run_mbstring_secure_simple(g_sjis, G_SJIS_N);
+        run_mbstring_mbsncat_s(g_sjis, G_SJIS_N);
+        run_mbstring_mbsnbcat_s(g_sjis, G_SJIS_N);
+        run_mbstring_mbsncpy_s(g_sjis, G_SJIS_N);
+        run_mbstring_mbsnbcpy_s(g_sjis, G_SJIS_N);
+        run_mbstring_mbsnset_s();
+        run_mbstring_mbsnbset_s();
+        run_mbstring_secure_ntemplate_edge_cases(); /* pair_src/lone_lead_src are ALREADY raw SJIS bytes; genuinely DBCS only here, under 932 */
+    } else {
+        /* Codepage 932 did not load in this guest: nothing above was
+         * exercised in DBCS mode. Recorded via the `_setmbcp(932)` row
+         * above rather than silently skipped. */
+    }
+    ud__setmbcp(orig1);
+    ref__setmbcp(orig2);
+}
+#else
+static void run_mbstring_cp932(void) {}
+#endif
+
+/* ==== NULL-argument contracts across the family =============================
+ * The validation paths the corpus runners never reach. `_VALIDATE_RETURN` is errno
+ * THEN the invalid-parameter handler; the port first shipped 17 of them without the
+ * handler, which only a NULL argument shows. Graded: return, errno, handler count. */
+#if UCRTDIFF_REF_HAS__mbscmp
+#define MBN_DECL(ret, name, args) \
+    ret __cdecl ref_##name args; \
+    extern ret(__cdecl *const udn_##name) args __asm__(UD_IMP(name));
+MBN_DECL(int, _mbscmp, (const unsigned char *, const unsigned char *))
+MBN_DECL(int, _mbsicmp, (const unsigned char *, const unsigned char *))
+MBN_DECL(int, _mbscoll, (const unsigned char *, const unsigned char *))
+MBN_DECL(int, _mbsicoll, (const unsigned char *, const unsigned char *))
+MBN_DECL(int, _mbsncmp, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsnbcmp, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsnicmp, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsnbicmp, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsncoll, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsnbcoll, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsnicoll, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(int, _mbsnbicoll, (const unsigned char *, const unsigned char *, size_t))
+MBN_DECL(unsigned char *, _mbsncpy, (unsigned char *, const unsigned char *, size_t))
+MBN_DECL(unsigned char *, _mbsnbcpy, (unsigned char *, const unsigned char *, size_t))
+MBN_DECL(unsigned char *, _mbsncat, (unsigned char *, const unsigned char *, size_t))
+MBN_DECL(unsigned char *, _mbsnbcat, (unsigned char *, const unsigned char *, size_t))
+MBN_DECL(unsigned char *, _mbsnset, (unsigned char *, unsigned int, size_t))
+MBN_DECL(unsigned char *, _mbsnbset, (unsigned char *, unsigned int, size_t))
+MBN_DECL(unsigned char *, _mbsset, (unsigned char *, unsigned int))
+MBN_DECL(errno_t, _mbslwr_s, (unsigned char *, size_t))
+MBN_DECL(errno_t, _mbsupr_s, (unsigned char *, size_t))
+extern int(__cdecl *const udn__getmbcp)(void) __asm__(UD_IMP(_getmbcp));
+extern int(__cdecl *const udn__setmbcp)(int) __asm__(UD_IMP(_setmbcp));
+
+#define MBN_ROW(name, lbl, ...) do {                                           \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        long long r1 = (long long)(intptr_t)udn_##name(__VA_ARGS__);           \
+        long long r2 = (long long)(intptr_t)ref_##name(__VA_ARGS__);           \
+        grade2(#name ".null", lbl, r1, r2);                                    \
+        grade2(#name ".null.errno", lbl, *_errno(), *ref__errno());            \
+        grade2(#name ".null.iph", lbl, g_iph_dll, g_iph_ref);                  \
+    } while (0)
+
+static void run_mbstring_null_contracts(void)
+{
+    static const unsigned char s[] = "abc";
+    unsigned char b1[8], b2[8];
+#if UCRTDIFF_REF_CALLABLE__setmbcp
+    /* Under a single-byte code page most of these hand off to strncmp & co. BEFORE
+     * validating -- Microsoft's order, kept -- so NULL is undefined behaviour on both
+     * sides there. The contracts are the multibyte path's. */
+    int cp1 = udn__getmbcp(), cp2 = ref__getmbcp();
+    if (udn__setmbcp(932) != 0 || ref__setmbcp(932) != 0) {
+        udn__setmbcp(cp1); ref__setmbcp(cp2);
+        return;
+    }
+#else
+    return;
+#endif
+    MBN_ROW(_mbscmp, "s1", 0, s);      MBN_ROW(_mbscmp, "s2", s, 0);
+    MBN_ROW(_mbsicmp, "s1", 0, s);     MBN_ROW(_mbscoll, "s2", s, 0);
+    MBN_ROW(_mbsicoll, "s1", 0, s);
+    MBN_ROW(_mbsncmp, "s1", 0, s, 2);  MBN_ROW(_mbsncmp, "n0", 0, s, 0);
+    MBN_ROW(_mbsnbcmp, "s2", s, 0, 2); MBN_ROW(_mbsnicmp, "s1", 0, s, 2);
+    MBN_ROW(_mbsnbicmp, "s1", 0, s, 2);
+    MBN_ROW(_mbsncoll, "s1", 0, s, 2); MBN_ROW(_mbsncoll, "big", s, s, (size_t)0x80000000u);
+    MBN_ROW(_mbsnbcoll, "s2", s, 0, 2); MBN_ROW(_mbsnicoll, "s1", 0, s, 2);
+    MBN_ROW(_mbsnbicoll, "big", s, s, (size_t)0x80000000u);
+    MBN_ROW(_mbsncpy, "dst", 0, s, 1);  MBN_ROW(_mbsncpy, "src", b1, 0, 1);
+    MBN_ROW(_mbsnbcpy, "dst", 0, s, 1);
+    MBN_ROW(_mbsncat, "dst", 0, s, 1);  MBN_ROW(_mbsnbcat, "src", b1, 0, 1);
+    MBN_ROW(_mbsnset, "str", 0, 'x', 1); MBN_ROW(_mbsnbset, "str", 0, 'x', 1);
+    MBN_ROW(_mbsset, "str", 0, 'x');
+    MBN_ROW(_mbslwr_s, "null+size", 0, 1); MBN_ROW(_mbsupr_s, "buf+0", b1, 0);
+    /* Not NUL-terminated within the size: _RETURN_DEST_NOT_NULL_TERMINATED. */
+    memset(b1, 'A', sizeof b1); memset(b2, 'A', sizeof b2);
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    {
+        errno_t r1 = udn__mbslwr_s(b1, sizeof b1), r2 = ref__mbslwr_s(b2, sizeof b2);
+        grade2("_mbslwr_s.unterminated", "-", r1, r2);
+        grade2("_mbslwr_s.unterminated.buf", "-", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("_mbslwr_s.unterminated.errno", "-", *_errno(), *ref__errno());
+        grade2("_mbslwr_s.unterminated.iph", "-", g_iph_dll, g_iph_ref);
+    }
+#if UCRTDIFF_REF_CALLABLE__setmbcp
+    udn__setmbcp(cp1); ref__setmbcp(cp2);
+#endif
+}
+#define MBSTRING_NULL_ENTRIES { "mbstring:null_contracts", run_mbstring_null_contracts },
+#else
+#define MBSTRING_NULL_ENTRIES
+#endif
+
+/* ================================ registry ================================ */
+#define MBSTRING_HAND_ENTRIES \
+    { "mbstring:mbclen+mbccpy", run_mbstring_mbclen }, \
+    { "mbstring:mbschr+mbsrchr", run_mbstring_mbschr }, \
+    { "mbstring:tok", run_mbstring_tok }, \
+    { "mbstring:setfamily", run_mbstring_set_family }, \
+    { "mbstring:defaultcp", run_mbstring_default_cp }, \
+    { "mbstring:ntemplates_defaultcp", run_mbstring_ntemplates_default_cp }, \
+    { "mbstring:cp932", run_mbstring_cp932 },
+
+
+/* ==== staging/string_ops.c, inlined ==== */
+/* string_ops.c -- guest grader for the `string-ops` batch (agent "string").
+ *
+ * #included into ucrtdiff.c just before run_legacy(), per the instructions
+ * in the shared brief. Relies on ucrtdiff.c's own machinery already being in
+ * scope at that point: grade2, fnv, label_idx, install_counting_iph,
+ * loc_set_both/loc_reset, UD_IMP, ud_setlocale/ref_setlocale, _errno/
+ * ref__errno, and the standard headers it already pulled in.
+ *
+ * Guard names used (one per C file it replaces; each is currently UNDEFINED
+ * in generated-refs.h -- this batch's exports are not yet in
+ * tools/gen_ucrt_tier2_cases.py's hand-graded list, so every guard evaluates
+ * to 0 today. #if on an undefined macro is well-defined C (treated as 0), so
+ * this snippet compiles and links cleanly either way; the lead adding these
+ * names to that generator (and confirming `ref_<name>` in libucrt_ref.a,
+ * verified already for all but the ones noted UNGRADABLE below) is what
+ * turns each `{ "_foo", 0 }` row into a live grader):
+ *   UCRTDIFF_REF_HAS__strdup            (strdup.cpp)
+ *   UCRTDIFF_REF_HAS__wcsdup            (wcsdup.cpp)
+ *   UCRTDIFF_REF_HAS___strncnt          (strncnt.cpp)
+ *   UCRTDIFF_REF_HAS___wcsncnt          (wcsncnt.cpp)
+ *   UCRTDIFF_REF_HAS_strnlen            (strnlen.cpp -- UNGRADABLE on arm64,
+ *                                         see below; harness runs in an
+ *                                         arm64 guest only)
+ *   UCRTDIFF_REF_HAS_wcscat / _wcscmp / _wcscpy / _wcscspn / _wcsncat /
+ *     _wcsncmp / _wcsncpy / _wcspbrk / __wcsrev / __wcsset / __wcsnset /
+ *     _wcsspn                          (wcscat.cpp .. wcsspn.cpp, one macro
+ *                                        stands in for the whole plain wcs*
+ *                                        group; see run_string_ops_wcs below)
+ *   UCRTDIFF_REF_HAS__memccpy, _strcmp, _strncmp, __strnset, __strrev,
+ *     __strset                        (the arch-split family: memccpy.c/.s,
+ *                                       strcmp.c/.s, strncmp.c/.s, strnset.c/.s,
+ *                                       strrev.c/.s, strset.c/.s)
+ *   UCRTDIFF_REF_HAS_strcat_s / _strcpy_s / _strncat_s / _strncpy_s /
+ *     __strnset_s / __strset_s / _wcscat_s / _wcscpy_s / _wcsncat_s /
+ *     _wcsncpy_s / __wcsnset_s / __wcsset_s / _memcpy_s / _wmemcpy_s /
+ *     _wmemmove_s                     (the _s family, one file each)
+ *   UCRTDIFF_REF_HAS_strtok / _strtok_s / _wcstok / _wcstok_s
+ *                                     (strtok.cpp, strtok_s.cpp, wcstok.cpp,
+ *                                      wcstok_s.cpp)
+ *   UCRTDIFF_REF_HAS__memicmp / __stricmp / __strnicmp / __wcsicmp /
+ *     __wcsnicmp                      (memicmp.cpp, stricmp.cpp, strnicmp.cpp,
+ *                                      wcsicmp.cpp, wcsnicmp.cpp -- each
+ *                                      guard's runner also grades that file's
+ *                                      `_l` and `__ascii_*` exports)
+ *
+ * Extended for the case-mapping and collation follow-up batch (same file,
+ * same rules): one guard per C file, one runner per C file (each covering
+ * every export the file defines), graded under the "C" locale (pass 0) and
+ * then a real non-C locale (`de-DE`, pass 1) set on BOTH sides via
+ * `loc_set_both`/`loc_reset` (needs `UCRTDIFF_REF_CALLABLE_setlocale`; the
+ * locale-swap pass is skipped, not miscompiled, when that guard is 0 --
+ * every such block is wrapped `#if UCRTDIFF_REF_CALLABLE_setlocale ... #else
+ * break; #endif`). New guards, all verified present as `ref_<name>` in
+ * `build-arm64/libucrt_ref.a` via `llvm-nm`:
+ *   UCRTDIFF_REF_HAS__strlwr / __strupr / __wcslwr / __wcsupr (strlwr.cpp,
+ *     strupr.cpp, wcslwr.cpp, wcsupr.cpp -- each guard's runner also covers
+ *     that file's `_l`, `_s` and `_s_l` exports)
+ *   UCRTDIFF_REF_HAS_strcoll / __stricoll / __strncoll / __strnicoll /
+ *     wcscoll / __wcsicoll / __wcsncoll / __wcsnicoll (strcoll.cpp,
+ *     stricoll.cpp, strncoll.cpp, strnicoll.cpp, wcscoll.cpp, wcsicoll.cpp,
+ *     wcsncoll.cpp, wcsnicoll.cpp -- each guard's runner also covers that
+ *     file's `_l` export)
+ *   UCRTDIFF_REF_HAS_strxfrm / wcsxfrm (strxfrm.cpp, wcsxfrm.cpp -- each
+ *     guard's runner also covers that file's `_l` export, and explicitly
+ *     grades the return-length-on-overflow contract with a too-small `count`)
+ *
+ * UNGRADABLE against the real Microsoft body on THIS (arm64) harness, noted
+ * rather than silently skipped:
+ *   - strnlen/wcsnlen: Microsoft's own strnlen.cpp defines NEITHER on arm64
+ *     (`#if !defined(_M_ARM64)` around the definitions) -- confirmed via
+ *     `aarch64-w64-mingw32-nm build-arm64/libucrt_ref.a | grep ref_strnlen`
+ *     (no match). Their runners below still exist and still validate our own
+ *     internal consistency (e.g. strnlen(s, n) <= n and agrees with strlen
+ *     for n >= strlen(s)) via `grade2` against a value computed from a
+ *     Win32-independent host `strlen`/`wcslen` call, but that is NOT a
+ *     Microsoft-body oracle and must not be reported as one.
+ *   - `__acrt_strtok_s_novalidation`/`__acrt_wcstok_s_novalidation` and the
+ *     `__ascii_*` narrow-case-insensitive helpers: not found as `ref_*` in
+ *     libucrt_ref.a for arm64 (verified via the same nm query) -- they are
+ *     graded here only INDIRECTLY, through the public functions (`strtok`,
+ *     `_stricmp` when the ascii fast path is live, etc.) that call them.
+ */
+
+#if UCRTDIFF_REF_HAS__strdup
+char *__cdecl ref__strdup(const char *);
+#endif
+#if UCRTDIFF_REF_HAS__wcsdup
+wchar_t *__cdecl ref__wcsdup(const wchar_t *);
+#endif
+#if UCRTDIFF_REF_HAS___strncnt
+size_t __cdecl ref___strncnt(const char *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS___wcsncnt
+size_t __cdecl ref___wcsncnt(const wchar_t *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_strnlen
+size_t __cdecl ref_strnlen(const char *, size_t);
+size_t __cdecl ref_wcsnlen(const wchar_t *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_wcscat
+wchar_t *__cdecl ref_wcscat(wchar_t *, const wchar_t *);
+int __cdecl ref_wcscmp(const wchar_t *, const wchar_t *);
+wchar_t *__cdecl ref_wcscpy(wchar_t *, const wchar_t *);
+size_t __cdecl ref_wcscspn(const wchar_t *, const wchar_t *);
+wchar_t *__cdecl ref_wcsncat(wchar_t *, const wchar_t *, size_t);
+int __cdecl ref_wcsncmp(const wchar_t *, const wchar_t *, size_t);
+wchar_t *__cdecl ref_wcsncpy(wchar_t *, const wchar_t *, size_t);
+wchar_t *__cdecl ref_wcspbrk(const wchar_t *, const wchar_t *);
+wchar_t *__cdecl ref__wcsrev(wchar_t *);
+wchar_t *__cdecl ref__wcsset(wchar_t *, wchar_t);
+wchar_t *__cdecl ref__wcsnset(wchar_t *, wchar_t, size_t);
+size_t __cdecl ref_wcsspn(const wchar_t *, const wchar_t *);
+#endif
+#if UCRTDIFF_REF_HAS__memccpy
+void *__cdecl ref__memccpy(void *, const void *, int, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_strcmp
+int __cdecl ref_strcmp(const char *, const char *);
+#endif
+#if UCRTDIFF_REF_HAS_strncmp
+int __cdecl ref_strncmp(const char *, const char *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS__strnset
+char *__cdecl ref__strnset(char *, int, size_t);
+#endif
+#if UCRTDIFF_REF_HAS__strrev
+char *__cdecl ref__strrev(char *);
+#endif
+#if UCRTDIFF_REF_HAS__strset
+char *__cdecl ref__strset(char *, int);
+#endif
+#if UCRTDIFF_REF_HAS_strcat_s
+errno_t __cdecl ref_strcat_s(char *, size_t, const char *);
+#endif
+#if UCRTDIFF_REF_HAS_strcpy_s
+errno_t __cdecl ref_strcpy_s(char *, size_t, const char *);
+#endif
+#if UCRTDIFF_REF_HAS_strncat_s
+errno_t __cdecl ref_strncat_s(char *, size_t, const char *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_strncpy_s
+errno_t __cdecl ref_strncpy_s(char *, size_t, const char *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS__strnset_s
+errno_t __cdecl ref__strnset_s(char *, size_t, int, size_t);
+#endif
+#if UCRTDIFF_REF_HAS__strset_s
+errno_t __cdecl ref__strset_s(char *, size_t, int);
+#endif
+#if UCRTDIFF_REF_HAS_wcscat_s
+errno_t __cdecl ref_wcscat_s(wchar_t *, size_t, const wchar_t *);
+#endif
+#if UCRTDIFF_REF_HAS_wcscpy_s
+errno_t __cdecl ref_wcscpy_s(wchar_t *, size_t, const wchar_t *);
+#endif
+#if UCRTDIFF_REF_HAS_wcsncat_s
+errno_t __cdecl ref_wcsncat_s(wchar_t *, size_t, const wchar_t *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_wcsncpy_s
+errno_t __cdecl ref_wcsncpy_s(wchar_t *, size_t, const wchar_t *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsnset_s
+errno_t __cdecl ref__wcsnset_s(wchar_t *, size_t, wchar_t, size_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsset_s
+errno_t __cdecl ref__wcsset_s(wchar_t *, size_t, wchar_t);
+#endif
+#if UCRTDIFF_REF_HAS_memcpy_s
+errno_t __cdecl ref_memcpy_s(void *, size_t, const void *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_wmemcpy_s
+errno_t __cdecl ref_wmemcpy_s(wchar_t *, size_t, const wchar_t *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_wmemmove_s
+errno_t __cdecl ref_wmemmove_s(wchar_t *, size_t, const wchar_t *, size_t);
+#endif
+#if UCRTDIFF_REF_HAS_strtok
+char *__cdecl ref_strtok(char *, const char *);
+#endif
+#if UCRTDIFF_REF_HAS_strtok_s
+char *__cdecl ref_strtok_s(char *, const char *, char **);
+#endif
+#if UCRTDIFF_REF_HAS_wcstok
+wchar_t *__cdecl ref_wcstok(wchar_t *, const wchar_t *, wchar_t **);
+#endif
+#if UCRTDIFF_REF_HAS_wcstok_s
+wchar_t *__cdecl ref_wcstok_s(wchar_t *, const wchar_t *, wchar_t **);
+#endif
+#if UCRTDIFF_REF_HAS__memicmp
+int __cdecl ref__memicmp(const void *, const void *, size_t);
+int __cdecl ref__memicmp_l(const void *, const void *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__stricmp
+int __cdecl ref__stricmp(const char *, const char *);
+int __cdecl ref__stricmp_l(const char *, const char *, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__strnicmp
+int __cdecl ref__strnicmp(const char *, const char *, size_t);
+int __cdecl ref__strnicmp_l(const char *, const char *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsicmp
+int __cdecl ref__wcsicmp(const wchar_t *, const wchar_t *);
+int __cdecl ref__wcsicmp_l(const wchar_t *, const wchar_t *, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsnicmp
+int __cdecl ref__wcsnicmp(const wchar_t *, const wchar_t *, size_t);
+int __cdecl ref__wcsnicmp_l(const wchar_t *, const wchar_t *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__strlwr
+char *__cdecl ref__strlwr(char *);
+char *__cdecl ref__strlwr_l(char *, _locale_t);
+errno_t __cdecl ref__strlwr_s(char *, size_t);
+errno_t __cdecl ref__strlwr_s_l(char *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__strupr
+char *__cdecl ref__strupr(char *);
+char *__cdecl ref__strupr_l(char *, _locale_t);
+errno_t __cdecl ref__strupr_s(char *, size_t);
+errno_t __cdecl ref__strupr_s_l(char *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcslwr
+wchar_t *__cdecl ref__wcslwr(wchar_t *);
+wchar_t *__cdecl ref__wcslwr_l(wchar_t *, _locale_t);
+errno_t __cdecl ref__wcslwr_s(wchar_t *, size_t);
+errno_t __cdecl ref__wcslwr_s_l(wchar_t *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsupr
+wchar_t *__cdecl ref__wcsupr(wchar_t *);
+wchar_t *__cdecl ref__wcsupr_l(wchar_t *, _locale_t);
+errno_t __cdecl ref__wcsupr_s(wchar_t *, size_t);
+errno_t __cdecl ref__wcsupr_s_l(wchar_t *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS_strcoll
+int __cdecl ref_strcoll(const char *, const char *);
+int __cdecl ref__strcoll_l(const char *, const char *, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__stricoll
+int __cdecl ref__stricoll(const char *, const char *);
+int __cdecl ref__stricoll_l(const char *, const char *, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__strncoll
+int __cdecl ref__strncoll(const char *, const char *, size_t);
+int __cdecl ref__strncoll_l(const char *, const char *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__strnicoll
+int __cdecl ref__strnicoll(const char *, const char *, size_t);
+int __cdecl ref__strnicoll_l(const char *, const char *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS_wcscoll
+int __cdecl ref_wcscoll(const wchar_t *, const wchar_t *);
+int __cdecl ref__wcscoll_l(const wchar_t *, const wchar_t *, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsicoll
+int __cdecl ref__wcsicoll(const wchar_t *, const wchar_t *);
+int __cdecl ref__wcsicoll_l(const wchar_t *, const wchar_t *, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsncoll
+int __cdecl ref__wcsncoll(const wchar_t *, const wchar_t *, size_t);
+int __cdecl ref__wcsncoll_l(const wchar_t *, const wchar_t *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS__wcsnicoll
+int __cdecl ref__wcsnicoll(const wchar_t *, const wchar_t *, size_t);
+int __cdecl ref__wcsnicoll_l(const wchar_t *, const wchar_t *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS_strxfrm
+size_t __cdecl ref_strxfrm(char *, const char *, size_t);
+size_t __cdecl ref__strxfrm_l(char *, const char *, size_t, _locale_t);
+#endif
+#if UCRTDIFF_REF_HAS_wcsxfrm
+size_t __cdecl ref_wcsxfrm(wchar_t *, const wchar_t *, size_t);
+size_t __cdecl ref__wcsxfrm_l(wchar_t *, const wchar_t *, size_t, _locale_t);
+#endif
+
+/* ---- DLL-side import pointers (never called by plain name -- see UD_IMP's
+ * comment further up in ucrtdiff.c: several of these have mingw inline
+ * aliases that would otherwise grade the inline, not ucrtbase). */
+extern char *(__cdecl *const ud__strdup)(const char *) __asm__(UD_IMP(_strdup));
+extern wchar_t *(__cdecl *const ud__wcsdup)(const wchar_t *) __asm__(UD_IMP(_wcsdup));
+extern size_t(__cdecl *const ud___strncnt)(const char *, size_t) __asm__(UD_IMP(__strncnt));
+extern size_t(__cdecl *const ud___wcsncnt)(const wchar_t *, size_t) __asm__(UD_IMP(__wcsncnt));
+extern size_t(__cdecl *const ud_strnlen)(const char *, size_t) __asm__(UD_IMP(strnlen));
+extern size_t(__cdecl *const ud_wcsnlen)(const wchar_t *, size_t) __asm__(UD_IMP(wcsnlen));
+extern wchar_t *(__cdecl *const ud_wcscat)(wchar_t *, const wchar_t *) __asm__(UD_IMP(wcscat));
+extern int(__cdecl *const ud_wcscmp)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(wcscmp));
+extern wchar_t *(__cdecl *const ud_wcscpy)(wchar_t *, const wchar_t *) __asm__(UD_IMP(wcscpy));
+extern size_t(__cdecl *const ud_wcscspn)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(wcscspn));
+extern wchar_t *(__cdecl *const ud_wcsncat)(wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(wcsncat));
+extern int(__cdecl *const ud_wcsncmp)(const wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(wcsncmp));
+extern wchar_t *(__cdecl *const ud_wcsncpy)(wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(wcsncpy));
+extern wchar_t *(__cdecl *const ud_wcspbrk)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(wcspbrk));
+extern wchar_t *(__cdecl *const ud__wcsrev)(wchar_t *) __asm__(UD_IMP(_wcsrev));
+extern wchar_t *(__cdecl *const ud__wcsset)(wchar_t *, wchar_t) __asm__(UD_IMP(_wcsset));
+extern wchar_t *(__cdecl *const ud__wcsnset)(wchar_t *, wchar_t, size_t) __asm__(UD_IMP(_wcsnset));
+extern size_t(__cdecl *const ud_wcsspn)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(wcsspn));
+extern void *(__cdecl *const ud__memccpy)(void *, const void *, int, size_t) __asm__(UD_IMP(_memccpy));
+extern int(__cdecl *const ud_strcmp2)(const char *, const char *) __asm__(UD_IMP(strcmp));
+extern int(__cdecl *const ud_strncmp2)(const char *, const char *, size_t) __asm__(UD_IMP(strncmp));
+extern char *(__cdecl *const ud__strnset)(char *, int, size_t) __asm__(UD_IMP(_strnset));
+extern char *(__cdecl *const ud__strrev)(char *) __asm__(UD_IMP(_strrev));
+extern char *(__cdecl *const ud__strset)(char *, int) __asm__(UD_IMP(_strset));
+extern errno_t(__cdecl *const ud_strcat_s)(char *, size_t, const char *) __asm__(UD_IMP(strcat_s));
+extern errno_t(__cdecl *const ud_strcpy_s)(char *, size_t, const char *) __asm__(UD_IMP(strcpy_s));
+extern errno_t(__cdecl *const ud_strncat_s)(char *, size_t, const char *, size_t) __asm__(UD_IMP(strncat_s));
+extern errno_t(__cdecl *const ud_strncpy_s)(char *, size_t, const char *, size_t) __asm__(UD_IMP(strncpy_s));
+extern errno_t(__cdecl *const ud__strnset_s)(char *, size_t, int, size_t) __asm__(UD_IMP(_strnset_s));
+extern errno_t(__cdecl *const ud__strset_s)(char *, size_t, int) __asm__(UD_IMP(_strset_s));
+extern errno_t(__cdecl *const ud_wcscat_s)(wchar_t *, size_t, const wchar_t *) __asm__(UD_IMP(wcscat_s));
+extern errno_t(__cdecl *const ud_wcscpy_s)(wchar_t *, size_t, const wchar_t *) __asm__(UD_IMP(wcscpy_s));
+extern errno_t(__cdecl *const ud_wcsncat_s)(wchar_t *, size_t, const wchar_t *, size_t) __asm__(UD_IMP(wcsncat_s));
+extern errno_t(__cdecl *const ud_wcsncpy_s)(wchar_t *, size_t, const wchar_t *, size_t) __asm__(UD_IMP(wcsncpy_s));
+extern errno_t(__cdecl *const ud__wcsnset_s)(wchar_t *, size_t, wchar_t, size_t) __asm__(UD_IMP(_wcsnset_s));
+extern errno_t(__cdecl *const ud__wcsset_s)(wchar_t *, size_t, wchar_t) __asm__(UD_IMP(_wcsset_s));
+extern errno_t(__cdecl *const ud_memcpy_s)(void *, size_t, const void *, size_t) __asm__(UD_IMP(memcpy_s));
+extern errno_t(__cdecl *const ud_wmemcpy_s)(wchar_t *, size_t, const wchar_t *, size_t) __asm__(UD_IMP(wmemcpy_s));
+extern errno_t(__cdecl *const ud_wmemmove_s)(wchar_t *, size_t, const wchar_t *, size_t) __asm__(UD_IMP(wmemmove_s));
+extern char *(__cdecl *const ud_strtok2)(char *, const char *) __asm__(UD_IMP(strtok));
+extern char *(__cdecl *const ud_strtok_s2)(char *, const char *, char **) __asm__(UD_IMP(strtok_s));
+extern wchar_t *(__cdecl *const ud_wcstok2)(wchar_t *, const wchar_t *, wchar_t **) __asm__(UD_IMP(wcstok));
+extern wchar_t *(__cdecl *const ud_wcstok_s2)(wchar_t *, const wchar_t *, wchar_t **) __asm__(UD_IMP(wcstok_s));
+extern int(__cdecl *const ud__memicmp)(const void *, const void *, size_t) __asm__(UD_IMP(_memicmp));
+extern int(__cdecl *const ud__memicmp_l)(const void *, const void *, size_t, _locale_t) __asm__(UD_IMP(_memicmp_l));
+extern int(__cdecl *const ud__stricmp2)(const char *, const char *) __asm__(UD_IMP(_stricmp));
+extern int(__cdecl *const ud__stricmp_l)(const char *, const char *, _locale_t) __asm__(UD_IMP(_stricmp_l));
+extern int(__cdecl *const ud__strnicmp2)(const char *, const char *, size_t) __asm__(UD_IMP(_strnicmp));
+extern int(__cdecl *const ud__strnicmp_l)(const char *, const char *, size_t, _locale_t) __asm__(UD_IMP(_strnicmp_l));
+extern int(__cdecl *const ud__wcsicmp2)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(_wcsicmp));
+extern int(__cdecl *const ud__wcsicmp_l)(const wchar_t *, const wchar_t *, _locale_t) __asm__(UD_IMP(_wcsicmp_l));
+extern int(__cdecl *const ud__wcsnicmp2)(const wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(_wcsnicmp));
+extern int(__cdecl *const ud__wcsnicmp_l)(const wchar_t *, const wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcsnicmp_l));
+extern char *(__cdecl *const ud__strlwr)(char *) __asm__(UD_IMP(_strlwr));
+extern char *(__cdecl *const ud__strlwr_l)(char *, _locale_t) __asm__(UD_IMP(_strlwr_l));
+extern errno_t(__cdecl *const ud__strlwr_s)(char *, size_t) __asm__(UD_IMP(_strlwr_s));
+extern errno_t(__cdecl *const ud__strlwr_s_l)(char *, size_t, _locale_t) __asm__(UD_IMP(_strlwr_s_l));
+extern char *(__cdecl *const ud__strupr)(char *) __asm__(UD_IMP(_strupr));
+extern char *(__cdecl *const ud__strupr_l)(char *, _locale_t) __asm__(UD_IMP(_strupr_l));
+extern errno_t(__cdecl *const ud__strupr_s)(char *, size_t) __asm__(UD_IMP(_strupr_s));
+extern errno_t(__cdecl *const ud__strupr_s_l)(char *, size_t, _locale_t) __asm__(UD_IMP(_strupr_s_l));
+extern wchar_t *(__cdecl *const ud__wcslwr)(wchar_t *) __asm__(UD_IMP(_wcslwr));
+extern wchar_t *(__cdecl *const ud__wcslwr_l)(wchar_t *, _locale_t) __asm__(UD_IMP(_wcslwr_l));
+extern errno_t(__cdecl *const ud__wcslwr_s)(wchar_t *, size_t) __asm__(UD_IMP(_wcslwr_s));
+extern errno_t(__cdecl *const ud__wcslwr_s_l)(wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcslwr_s_l));
+extern wchar_t *(__cdecl *const ud__wcsupr)(wchar_t *) __asm__(UD_IMP(_wcsupr));
+extern wchar_t *(__cdecl *const ud__wcsupr_l)(wchar_t *, _locale_t) __asm__(UD_IMP(_wcsupr_l));
+extern errno_t(__cdecl *const ud__wcsupr_s)(wchar_t *, size_t) __asm__(UD_IMP(_wcsupr_s));
+extern errno_t(__cdecl *const ud__wcsupr_s_l)(wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcsupr_s_l));
+extern int(__cdecl *const ud_strcoll2)(const char *, const char *) __asm__(UD_IMP(strcoll));
+extern int(__cdecl *const ud__strcoll_l)(const char *, const char *, _locale_t) __asm__(UD_IMP(_strcoll_l));
+extern int(__cdecl *const ud__stricoll)(const char *, const char *) __asm__(UD_IMP(_stricoll));
+extern int(__cdecl *const ud__stricoll_l)(const char *, const char *, _locale_t) __asm__(UD_IMP(_stricoll_l));
+extern int(__cdecl *const ud__strncoll)(const char *, const char *, size_t) __asm__(UD_IMP(_strncoll));
+extern int(__cdecl *const ud__strncoll_l)(const char *, const char *, size_t, _locale_t) __asm__(UD_IMP(_strncoll_l));
+extern int(__cdecl *const ud__strnicoll)(const char *, const char *, size_t) __asm__(UD_IMP(_strnicoll));
+extern int(__cdecl *const ud__strnicoll_l)(const char *, const char *, size_t, _locale_t) __asm__(UD_IMP(_strnicoll_l));
+extern int(__cdecl *const ud_wcscoll2)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(wcscoll));
+extern int(__cdecl *const ud__wcscoll_l)(const wchar_t *, const wchar_t *, _locale_t) __asm__(UD_IMP(_wcscoll_l));
+extern int(__cdecl *const ud__wcsicoll)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(_wcsicoll));
+extern int(__cdecl *const ud__wcsicoll_l)(const wchar_t *, const wchar_t *, _locale_t) __asm__(UD_IMP(_wcsicoll_l));
+extern int(__cdecl *const ud__wcsncoll)(const wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(_wcsncoll));
+extern int(__cdecl *const ud__wcsncoll_l)(const wchar_t *, const wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcsncoll_l));
+extern int(__cdecl *const ud__wcsnicoll)(const wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(_wcsnicoll));
+extern int(__cdecl *const ud__wcsnicoll_l)(const wchar_t *, const wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcsnicoll_l));
+extern size_t(__cdecl *const ud_strxfrm2)(char *, const char *, size_t) __asm__(UD_IMP(strxfrm));
+extern size_t(__cdecl *const ud__strxfrm_l)(char *, const char *, size_t, _locale_t) __asm__(UD_IMP(_strxfrm_l));
+extern size_t(__cdecl *const ud_wcsxfrm2)(wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(wcsxfrm));
+extern size_t(__cdecl *const ud__wcsxfrm_l)(wchar_t *, const wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcsxfrm_l));
+
+/* ---- corpora ------------------------------------------------------------ */
+static const char *const so_narrow[] = {
+    "", "a", "abc", "ABC", "AbC", "12", "\x80\xff\x81", " x ", "hello world",
+};
+#define SO_NARROW_N (sizeof(so_narrow) / sizeof(so_narrow[0]))
+static const wchar_t *const so_wide[] = {
+    L"", L"a", L"abc", L"ABC", L"AbC", L"12", L"\x00e9\xffff\x0080", L" x ", L"hello world",
+};
+#define SO_WIDE_N (sizeof(so_wide) / sizeof(so_wide[0]))
+
+/* ---- strdup / wcsdup ----------------------------------------------------
+ * Grade the copy by content hash (fnv), not the pointer (the two sides
+ * allocate from different heaps) -- and grade NULL-in separately, since a
+ * NULL is the one input both sides must answer identically without an
+ * allocation at all. */
+static void run_string_ops__strdup(void)
+{
+#if UCRTDIFF_REF_HAS__strdup
+    for (unsigned i = 0; i < SO_NARROW_N; i++) {
+        char *d = ud__strdup(so_narrow[i]);
+        char *r = ref__strdup(so_narrow[i]);
+        long long hd = d ? fnv(d, lstrlenA(d) + 1) : -1;
+        long long hr = r ? fnv(r, lstrlenA(r) + 1) : -1;
+        grade2("_strdup", label_idx(i), hd, hr);
+        if (d) free(d);
+        if (r) free(r);
+    }
+    {
+        char *d = ud__strdup(0);
+        char *r = ref__strdup(0);
+        grade2("_strdup", "NULL", d ? 1 : 0, r ? 1 : 0);
+    }
+#endif
+}
+
+static void run_string_ops__wcsdup(void)
+{
+#if UCRTDIFF_REF_HAS__wcsdup
+    for (unsigned i = 0; i < SO_WIDE_N; i++) {
+        wchar_t *d = ud__wcsdup(so_wide[i]);
+        wchar_t *r = ref__wcsdup(so_wide[i]);
+        long long hd = d ? fnv(d, (wcslen(d) + 1) * sizeof(wchar_t)) : -1;
+        long long hr = r ? fnv(r, (wcslen(r) + 1) * sizeof(wchar_t)) : -1;
+        grade2("_wcsdup", label_idx(i), hd, hr);
+        if (d) free(d);
+        if (r) free(r);
+    }
+    {
+        wchar_t *d = ud__wcsdup(0);
+        wchar_t *r = ref__wcsdup(0);
+        grade2("_wcsdup", "NULL", d ? 1 : 0, r ? 1 : 0);
+    }
+#endif
+}
+
+/* ---- __strncnt / __wcsncnt: count boundaries 0, exact len, beyond len --- */
+static void run_string_ops___strncnt(void)
+{
+#if UCRTDIFF_REF_HAS___strncnt
+    static const size_t counts[] = { 0, 1, 2, 3, 4, 5, 6, 100 };
+    for (unsigned i = 0; i < SO_NARROW_N; i++)
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++)
+            grade2("__strncnt", label_idx(i * 8 + c),
+                   (long long)ud___strncnt(so_narrow[i], counts[c]),
+                   (long long)ref___strncnt(so_narrow[i], counts[c]));
+#endif
+}
+
+static void run_string_ops___wcsncnt(void)
+{
+#if UCRTDIFF_REF_HAS___wcsncnt
+    static const size_t counts[] = { 0, 1, 2, 3, 4, 5, 6, 100 };
+    for (unsigned i = 0; i < SO_WIDE_N; i++)
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++)
+            grade2("__wcsncnt", label_idx(i * 8 + c),
+                   (long long)ud___wcsncnt(so_wide[i], counts[c]),
+                   (long long)ref___wcsncnt(so_wide[i], counts[c]));
+#endif
+}
+
+/* ---- strnlen / wcsnlen: UNGRADABLE on this (arm64) harness (see file
+ * header). Still exercised for internal boundary sanity: agrees with the
+ * ordinary host strlen/wcslen whenever maximum_count exceeds the real
+ * length, and never exceeds maximum_count otherwise. Reported under its own
+ * "self" family name so it is never mistaken for a Microsoft-body MATCH. */
+static void run_string_ops_strnlen(void)
+{
+    static const size_t counts[] = { 0, 1, 2, 3, 100 };
+    for (unsigned i = 0; i < SO_NARROW_N; i++) {
+        size_t real = lstrlenA(so_narrow[i]);
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+            size_t got = ud_strnlen(so_narrow[i], counts[c]);
+            size_t want = real < counts[c] ? real : counts[c];
+            grade2("strnlen.self", label_idx(i * 8 + c), (long long)got, (long long)want);
+        }
+#if UCRTDIFF_REF_HAS_strnlen
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++)
+            grade2("strnlen", label_idx(i * 8 + c), (long long)ud_strnlen(so_narrow[i], counts[c]),
+                   (long long)ref_strnlen(so_narrow[i], counts[c]));
+#endif
+    }
+    for (unsigned i = 0; i < SO_WIDE_N; i++) {
+        size_t real = wcslen(so_wide[i]);
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+            size_t got = ud_wcsnlen(so_wide[i], counts[c]);
+            size_t want = real < counts[c] ? real : counts[c];
+            grade2("wcsnlen.self", label_idx(i * 8 + c), (long long)got, (long long)want);
+        }
+#if UCRTDIFF_REF_HAS_strnlen
+        for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); c++)
+            grade2("wcsnlen", label_idx(i * 8 + c), (long long)ud_wcsnlen(so_wide[i], counts[c]),
+                   (long long)ref_wcsnlen(so_wide[i], counts[c]));
+#endif
+    }
+}
+
+/* ---- the plain wcs* family: one runner covers the whole group, since every
+ * export takes the same "two short strings" shape and none is locale-aware. */
+static void run_string_ops_wcs_plain(void)
+{
+    static const wchar_t *const a[] = { L"", L"abc", L"abc", L"ABCDE", L"hello", L"aaa" };
+    static const wchar_t *const b[] = { L"", L"abc", L"abd", L"ABC", L"world", L"aa" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned i = 0; i < n; i++) {
+#if UCRTDIFF_REF_HAS_wcscat
+        grade2("wcscmp", label_idx(i), (long long)ud_wcscmp(a[i], b[i]), (long long)ref_wcscmp(a[i], b[i]));
+        grade2("wcscspn", label_idx(i), (long long)ud_wcscspn(a[i], b[i]), (long long)ref_wcscspn(a[i], b[i]));
+        grade2("wcspbrk.off", label_idx(i),
+               (long long)(ud_wcspbrk(a[i], b[i]) ? ud_wcspbrk(a[i], b[i]) - a[i] : -1),
+               (long long)(ref_wcspbrk(a[i], b[i]) ? ref_wcspbrk(a[i], b[i]) - a[i] : -1));
+        grade2("wcsspn", label_idx(i), (long long)ud_wcsspn(a[i], b[i]), (long long)ref_wcsspn(a[i], b[i]));
+        for (unsigned c = 0; c < 6; c++) {
+            static const size_t counts[] = { 0, 1, 2, 5, 6, 100 };
+            grade2("wcsncmp", label_idx(i * 6 + c), (long long)ud_wcsncmp(a[i], b[i], counts[c]),
+                   (long long)ref_wcsncmp(a[i], b[i], counts[c]));
+        }
+        {
+            wchar_t d1[64], d2[64];
+            wcscpy(d1, a[i]); wcscpy(d2, a[i]);
+            wchar_t *r1 = ud_wcscat(d1, b[i]);
+            wchar_t *r2 = ref_wcscat(d2, b[i]);
+            grade2("wcscat", label_idx(i), fnv(d1, (wcslen(d1) + 1) * 2), fnv(d2, (wcslen(d2) + 1) * 2));
+            grade2("wcscat.ret", label_idx(i), (long long)(r1 - d1), (long long)(r2 - d2));
+        }
+        {
+            wchar_t d1[64], d2[64];
+            ud_wcscpy(d1, a[i]);
+            ref_wcscpy(d2, a[i]);
+            grade2("wcscpy", label_idx(i), fnv(d1, (wcslen(d1) + 1) * 2), fnv(d2, (wcslen(d2) + 1) * 2));
+        }
+        for (unsigned c = 0; c < 6; c++) {
+            static const size_t counts[] = { 0, 1, 2, 5, 6, 100 };
+            wchar_t d1[64], d2[64];
+            wcscpy(d1, a[i]); wcscpy(d2, a[i]);
+            ud_wcsncat(d1, b[i], counts[c]);
+            ref_wcsncat(d2, b[i], counts[c]);
+            /* whole-buffer hash: the tail past a short append is unspecified
+             * by the contract but must still match byte for byte since both
+             * sides read the same uninitialized-on-entry buffer identically. */
+            grade2("wcsncat", label_idx(i * 6 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+        for (unsigned c = 0; c < 6; c++) {
+            /* wcsncpy zero-pads up to count: never past d1. */
+            static const size_t counts[] = { 0, 1, 2, 5, 6, 64 };
+            wchar_t d1[64], d2[64];
+            memset(d1, 0x55, sizeof d1);
+            memset(d2, 0x55, sizeof d2);
+            ud_wcsncpy(d1, a[i], counts[c]);
+            ref_wcsncpy(d2, a[i], counts[c]);
+            grade2("wcsncpy", label_idx(i * 6 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+#endif
+    }
+#if UCRTDIFF_REF_HAS_wcscat
+    {
+        /* _wcsrev / _wcsset / _wcsnset: mutate a private copy each time. */
+        static const wchar_t *const s[] = { L"", L"a", L"ab", L"abc", L"abcde" };
+        for (unsigned i = 0; i < sizeof(s) / sizeof(s[0]); i++) {
+            wchar_t d1[16], d2[16];
+            wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+            ud__wcsrev(d1);
+            ref__wcsrev(d2);
+            grade2("_wcsrev", label_idx(i), fnv(d1, (wcslen(d1) + 1) * 2), fnv(d2, (wcslen(d2) + 1) * 2));
+
+            wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+            ud__wcsset(d1, L'Z');
+            ref__wcsset(d2, L'Z');
+            grade2("_wcsset", label_idx(i), fnv(d1, (wcslen(d1) + 1) * 2), fnv(d2, (wcslen(d2) + 1) * 2));
+
+            for (unsigned c = 0; c < 4; c++) {
+                static const size_t counts[] = { 0, 1, 3, 100 };
+                wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+                ud__wcsnset(d1, L'Z', counts[c]);
+                ref__wcsnset(d2, L'Z', counts[c]);
+                grade2("_wcsnset", label_idx(i * 4 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            }
+        }
+    }
+#endif
+}
+
+/* ---- the arch-split family: memccpy, strcmp, strncmp, _strnset, _strrev,
+ * _strset. strncmp is graded by its EXACT return value (not sign): i386/amd64
+ * clamp to {-1,0,1}, arm64's C fallback returns the raw byte difference --
+ * this is the one place that divergence would show as a DIFF against the
+ * genuine arm64 ref, which is the harness's own arch. */
+static void run_string_ops_arch_split(void)
+{
+    static const char *const a[] = { "", "abc", "abc", "ABCDE", "hello", "aaa", "\x80\xff" };
+    static const char *const b[] = { "", "abc", "abd", "ABC", "world", "aa", "\x81\xfe" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+#if UCRTDIFF_REF_HAS_strcmp
+    for (unsigned i = 0; i < n; i++)
+        grade2("strcmp", label_idx(i), (long long)ud_strcmp2(a[i], b[i]), (long long)ref_strcmp(a[i], b[i]));
+#endif
+#if UCRTDIFF_REF_HAS_strncmp
+    for (unsigned i = 0; i < n; i++) {
+        static const size_t counts[] = { 0, 1, 2, 5, 6, 100 };
+        for (unsigned c = 0; c < 6; c++)
+            grade2("strncmp", label_idx(i * 6 + c), (long long)ud_strncmp2(a[i], b[i], counts[c]),
+                   (long long)ref_strncmp(a[i], b[i], counts[c]));
+    }
+#endif
+#if UCRTDIFF_REF_HAS__memccpy
+    {
+        static const size_t counts[] = { 0, 1, 3, 4, 5, 32 };
+        for (unsigned i = 0; i < n; i++)
+            for (unsigned c = 0; c < 6; c++) {
+                char d1[32], d2[32];
+                memset(d1, 0x55, sizeof d1);
+                memset(d2, 0x55, sizeof d2);
+                /* _memccpy copies `count` bytes when `c` is absent, NUL or not: a
+                 * padded source, and counts no bigger than it or the destination. */
+                char src[32];
+                memset(src, 0, sizeof src);
+                strcpy(src, a[i]);
+                void *r1 = ud__memccpy(d1, src, (int)'c', counts[c]);
+                void *r2 = ref__memccpy(d2, src, (int)'c', counts[c]);
+                grade2("_memccpy", label_idx(i * 6 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+                grade2("_memccpy.ret", label_idx(i * 6 + c),
+                       (long long)(r1 ? (char *)r1 - d1 : -1), (long long)(r2 ? (char *)r2 - d2 : -1));
+            }
+        /* count == 0: NULL either way, no bytes touched. */
+        {
+            char d1[8] = { 1, 2, 3, 4, 5, 6, 7, 8 }, d2[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+            void *r1 = ud__memccpy(d1, "x", 'x', 0);
+            void *r2 = ref__memccpy(d2, "x", 'x', 0);
+            grade2("_memccpy.zero", "n=0", (long long)(r1 != 0), (long long)(r2 != 0));
+            grade2("_memccpy.zero.buf", "n=0", fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+    }
+#endif
+#if UCRTDIFF_REF_HAS__strnset
+    {
+        static const char *const s[] = { "", "a", "ab", "abcde" };
+        static const size_t counts[] = { 0, 1, 3, 100 };
+        for (unsigned i = 0; i < sizeof(s) / sizeof(s[0]); i++)
+            for (unsigned c = 0; c < 4; c++) {
+                char d1[16], d2[16];
+                strcpy(d1, s[i]); strcpy(d2, s[i]);
+                ud__strnset(d1, 'Z', counts[c]);
+                ref__strnset(d2, 'Z', counts[c]);
+                grade2("_strnset", label_idx(i * 4 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            }
+    }
+#endif
+#if UCRTDIFF_REF_HAS__strrev
+    {
+        static const char *const s[] = { "", "a", "ab", "abc", "abcde" };
+        for (unsigned i = 0; i < sizeof(s) / sizeof(s[0]); i++) {
+            char d1[16], d2[16];
+            strcpy(d1, s[i]); strcpy(d2, s[i]);
+            ud__strrev(d1);
+            ref__strrev(d2);
+            grade2("_strrev", label_idx(i), fnv(d1, strlen(d1) + 1), fnv(d2, strlen(d2) + 1));
+        }
+    }
+#endif
+#if UCRTDIFF_REF_HAS__strset
+    {
+        static const char *const s[] = { "", "a", "ab", "abcde" };
+        for (unsigned i = 0; i < sizeof(s) / sizeof(s[0]); i++) {
+            char d1[16], d2[16];
+            strcpy(d1, s[i]); strcpy(d2, s[i]);
+            ud__strset(d1, 'Z');
+            ref__strset(d2, 'Z');
+            grade2("_strset", label_idx(i), fnv(d1, strlen(d1) + 1), fnv(d2, strlen(d2) + 1));
+        }
+    }
+#endif
+}
+
+/* ---- the _s family. Every runner covers: empty src, exact-fit dest,
+ * too-small dest (buffer-too-small path), _TRUNCATE where the function takes
+ * a count, and a too-small dest for the _n forms. All grade the WHOLE
+ * destination buffer (prefilled with a sentinel) plus errno plus the return
+ * code, since a silent wrong-fill is exactly the bug class this family
+ * exists to catch. */
+#define SO_SENTINEL 0x55
+
+static void run_string_ops_strcat_s(void)
+{
+#if UCRTDIFF_REF_HAS_strcat_s
+    static const struct { const char *dst; size_t sz; const char *src; } cs[] = {
+        { "", 8, "abc" }, { "ab", 8, "cd" }, { "ab", 4, "cd" }, { "ab", 3, "cd" },
+        { "ab", 3, "" }, { "", 1, "a" }, { "abcdefg", 8, "" },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        strcpy(d1, cs[i].dst); strcpy(d2, cs[i].dst);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_strcat_s(d1, cs[i].sz, cs[i].src);
+        errno_t r2 = ref_strcat_s(d2, cs[i].sz, cs[i].src);
+        grade2("strcat_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("strcat_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("strcat_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+    /* NULL src with a valid dest: EINVAL, dest reset to "". */
+    {
+        char d1[8] = "ab", d2[8] = "ab";
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_strcat_s(d1, sizeof d1, 0);
+        errno_t r2 = ref_strcat_s(d2, sizeof d2, 0);
+        grade2("strcat_s.nullsrc", "-", (long long)r1, (long long)r2);
+        grade2("strcat_s.nullsrc.buf", "-", fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_strcpy_s(void)
+{
+#if UCRTDIFF_REF_HAS_strcpy_s
+    static const struct { size_t sz; const char *src; } cs[] = {
+        { 8, "" }, { 8, "abc" }, { 4, "abc" }, { 3, "abc" }, { 1, "" }, { 1, "a" },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_strcpy_s(d1, cs[i].sz, cs[i].src);
+        errno_t r2 = ref_strcpy_s(d2, cs[i].sz, cs[i].src);
+        grade2("strcpy_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("strcpy_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("strcpy_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_strncat_s(void)
+{
+#if UCRTDIFF_REF_HAS_strncat_s
+    static const struct { const char *dst; size_t sz; const char *src; size_t n; } cs[] = {
+        { "ab", 8, "cdef", 0 }, { "ab", 8, "cdef", 2 }, { "ab", 8, "cdef", 4 },
+        { "ab", 8, "cdef", 100 }, { "ab", 6, "cdef", 100 }, { "ab", 5, "cdef", 100 },
+        { "ab", 8, "cdef", (size_t)-1 } /* _TRUNCATE */, { "ab", 4, "cdef", (size_t)-1 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        strcpy(d1, cs[i].dst); strcpy(d2, cs[i].dst);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_strncat_s(d1, cs[i].sz, cs[i].src, cs[i].n);
+        errno_t r2 = ref_strncat_s(d2, cs[i].sz, cs[i].src, cs[i].n);
+        grade2("strncat_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("strncat_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("strncat_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_strncpy_s(void)
+{
+#if UCRTDIFF_REF_HAS_strncpy_s
+    static const struct { size_t sz; const char *src; size_t n; } cs[] = {
+        { 8, "abcdef", 0 }, { 8, "abcdef", 3 }, { 8, "abcdef", 6 }, { 8, "abcdef", 100 },
+        { 4, "abcdef", 100 }, { 8, "abcdef", (size_t)-1 }, { 4, "abcdef", (size_t)-1 },
+        { 8, "ab", 100 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_strncpy_s(d1, cs[i].sz, cs[i].src, cs[i].n);
+        errno_t r2 = ref_strncpy_s(d2, cs[i].sz, cs[i].src, cs[i].n);
+        grade2("strncpy_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("strncpy_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("strncpy_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops__strnset_s(void)
+{
+#if UCRTDIFF_REF_HAS__strnset_s
+    static const struct { const char *s; size_t sz; size_t n; } cs[] = {
+        { "abcde", 8, 0 }, { "abcde", 8, 2 }, { "abcde", 8, 100 }, { "abcde", 3, 100 }, { "", 4, 100 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        strcpy(d1, cs[i].s); strcpy(d2, cs[i].s);
+        errno_t r1 = ud__strnset_s(d1, cs[i].sz, 'Z', cs[i].n);
+        errno_t r2 = ref__strnset_s(d2, cs[i].sz, 'Z', cs[i].n);
+        grade2("_strnset_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("_strnset_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops__strset_s(void)
+{
+#if UCRTDIFF_REF_HAS__strset_s
+    static const struct { const char *s; size_t sz; } cs[] = {
+        { "abcde", 8 }, { "abcde", 3 }, { "", 4 }, { "a", 1 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        strcpy(d1, cs[i].s); strcpy(d2, cs[i].s);
+        errno_t r1 = ud__strset_s(d1, cs[i].sz, 'Z');
+        errno_t r2 = ref__strset_s(d2, cs[i].sz, 'Z');
+        grade2("_strset_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("_strset_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+/* Wide _s twins: same shapes, narrower corpus (the narrow runners already
+ * exhaust the boundary space; these confirm the SAME template instantiated
+ * over wchar_t behaves identically). */
+static void run_string_ops_wcscat_s(void)
+{
+#if UCRTDIFF_REF_HAS_wcscat_s
+    static const struct { const wchar_t *dst; size_t sz; const wchar_t *src; } cs[] = {
+        { L"", 8, L"abc" }, { L"ab", 8, L"cd" }, { L"ab", 4, L"cd" }, { L"ab", 3, L"cd" },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        wcscpy(d1, cs[i].dst); wcscpy(d2, cs[i].dst);
+        errno_t r1 = ud_wcscat_s(d1, cs[i].sz, cs[i].src);
+        errno_t r2 = ref_wcscat_s(d2, cs[i].sz, cs[i].src);
+        grade2("wcscat_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("wcscat_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_wcscpy_s(void)
+{
+#if UCRTDIFF_REF_HAS_wcscpy_s
+    static const struct { size_t sz; const wchar_t *src; } cs[] = {
+        { 8, L"" }, { 8, L"abc" }, { 4, L"abc" }, { 3, L"abc" }, { 1, L"" },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        errno_t r1 = ud_wcscpy_s(d1, cs[i].sz, cs[i].src);
+        errno_t r2 = ref_wcscpy_s(d2, cs[i].sz, cs[i].src);
+        grade2("wcscpy_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("wcscpy_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_wcsncat_s(void)
+{
+#if UCRTDIFF_REF_HAS_wcsncat_s
+    static const struct { const wchar_t *dst; size_t sz; const wchar_t *src; size_t n; } cs[] = {
+        { L"ab", 8, L"cdef", 2 }, { L"ab", 8, L"cdef", 100 }, { L"ab", 5, L"cdef", 100 },
+        { L"ab", 8, L"cdef", (size_t)-1 }, { L"ab", 4, L"cdef", (size_t)-1 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        wcscpy(d1, cs[i].dst); wcscpy(d2, cs[i].dst);
+        errno_t r1 = ud_wcsncat_s(d1, cs[i].sz, cs[i].src, cs[i].n);
+        errno_t r2 = ref_wcsncat_s(d2, cs[i].sz, cs[i].src, cs[i].n);
+        grade2("wcsncat_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("wcsncat_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_wcsncpy_s(void)
+{
+#if UCRTDIFF_REF_HAS_wcsncpy_s
+    static const struct { size_t sz; const wchar_t *src; size_t n; } cs[] = {
+        { 8, L"abcdef", 3 }, { 8, L"abcdef", 100 }, { 4, L"abcdef", 100 }, { 8, L"abcdef", (size_t)-1 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        errno_t r1 = ud_wcsncpy_s(d1, cs[i].sz, cs[i].src, cs[i].n);
+        errno_t r2 = ref_wcsncpy_s(d2, cs[i].sz, cs[i].src, cs[i].n);
+        grade2("wcsncpy_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("wcsncpy_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops__wcsnset_s(void)
+{
+#if UCRTDIFF_REF_HAS__wcsnset_s
+    static const struct { const wchar_t *s; size_t sz; size_t n; } cs[] = {
+        { L"abcde", 8, 2 }, { L"abcde", 8, 100 }, { L"abcde", 3, 100 },
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        wcscpy(d1, cs[i].s); wcscpy(d2, cs[i].s);
+        errno_t r1 = ud__wcsnset_s(d1, cs[i].sz, L'Z', cs[i].n);
+        errno_t r2 = ref__wcsnset_s(d2, cs[i].sz, L'Z', cs[i].n);
+        grade2("_wcsnset_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("_wcsnset_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops__wcsset_s(void)
+{
+#if UCRTDIFF_REF_HAS__wcsset_s
+    static const struct { const wchar_t *s; size_t sz; } cs[] = { { L"abcde", 8 }, { L"abcde", 3 } };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        wcscpy(d1, cs[i].s); wcscpy(d2, cs[i].s);
+        errno_t r1 = ud__wcsset_s(d1, cs[i].sz, L'Z');
+        errno_t r2 = ref__wcsset_s(d2, cs[i].sz, L'Z');
+        grade2("_wcsset_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("_wcsset_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+/* ---- memcpy_s / wmemcpy_s / wmemmove_s ----------------------------------
+ * count==0 (returns 0, no touch), NULL source (zero-fills, EINVAL),
+ * dest-too-small (zero-fills, ERANGE), and a genuinely overlapping
+ * wmemmove_s (the one case memcpy_s/wmemcpy_s must NOT be given). */
+static void run_string_ops_memcpy_s(void)
+{
+#if UCRTDIFF_REF_HAS_memcpy_s
+    static const char src[] = "abcdefgh";
+    static const struct { size_t dsz; size_t n; } cs[] = {
+        { 8, 0 }, { 8, 4 }, { 8, 8 }, { 4, 8 } /* dest too small */,
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        char d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_memcpy_s(d1, cs[i].dsz, src, cs[i].n);
+        errno_t r2 = ref_memcpy_s(d2, cs[i].dsz, src, cs[i].n);
+        grade2("memcpy_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("memcpy_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("memcpy_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+    /* NULL source, valid dest/size: EINVAL, whole dest zeroed. */
+    {
+        char d1[8], d2[8];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_memcpy_s(d1, sizeof d1, 0, 4);
+        errno_t r2 = ref_memcpy_s(d2, sizeof d2, 0, 4);
+        grade2("memcpy_s.nullsrc", "-", (long long)r1, (long long)r2);
+        grade2("memcpy_s.nullsrc.buf", "-", fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_wmemcpy_s(void)
+{
+#if UCRTDIFF_REF_HAS_wmemcpy_s
+    static const wchar_t src[] = L"abcdefgh";
+    static const struct { size_t dsz; size_t n; } cs[] = {
+        { 8, 0 }, { 8, 4 }, { 8, 8 }, { 4, 8 } /* dest too small */,
+    };
+    for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+        wchar_t d1[16], d2[16];
+        memset(d1, SO_SENTINEL, sizeof d1);
+        memset(d2, SO_SENTINEL, sizeof d2);
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t r1 = ud_wmemcpy_s(d1, cs[i].dsz, src, cs[i].n);
+        errno_t r2 = ref_wmemcpy_s(d2, cs[i].dsz, src, cs[i].n);
+        grade2("wmemcpy_s", label_idx(i), (long long)r1, (long long)r2);
+        grade2("wmemcpy_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("wmemcpy_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+#endif
+}
+
+static void run_string_ops_wmemmove_s(void)
+{
+#if UCRTDIFF_REF_HAS_wmemmove_s
+    {
+        static const struct { size_t dsz; size_t n; } cs[] = { { 8, 0 }, { 8, 4 }, { 8, 8 }, { 4, 8 } };
+        static const wchar_t src[] = L"abcdefgh";
+        for (unsigned i = 0; i < sizeof(cs) / sizeof(cs[0]); i++) {
+            wchar_t d1[16], d2[16];
+            memset(d1, SO_SENTINEL, sizeof d1);
+            memset(d2, SO_SENTINEL, sizeof d2);
+            *_errno() = 0; *ref__errno() = 0;
+            errno_t r1 = ud_wmemmove_s(d1, cs[i].dsz, src, cs[i].n);
+            errno_t r2 = ref_wmemmove_s(d2, cs[i].dsz, src, cs[i].n);
+            grade2("wmemmove_s", label_idx(i), (long long)r1, (long long)r2);
+            grade2("wmemmove_s.errno", label_idx(i), *_errno(), *ref__errno());
+            grade2("wmemmove_s.buf", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+        }
+    }
+    /* Genuinely overlapping move: buf[0..8) <- buf[2..10), forward overlap. */
+    {
+        wchar_t buf1[10] = L"abcdefghi", buf2[10] = L"abcdefghi";
+        errno_t r1 = ud_wmemmove_s(buf1, 8, buf1 + 2, 6);
+        errno_t r2 = ref_wmemmove_s(buf2, 8, buf2 + 2, 6);
+        grade2("wmemmove_s.overlap", "-", (long long)r1, (long long)r2);
+        grade2("wmemmove_s.overlap.buf", "-", fnv(buf1, sizeof buf1), fnv(buf2, sizeof buf2));
+    }
+#endif
+}
+
+/* ---- strtok / strtok_s / wcstok / wcstok_s ------------------------------
+ * A whole tokenization run per input, so the context-carry behaviour (not
+ * just one call) is graded; each side's context is fully independent. */
+static void run_string_ops_strtok(void)
+{
+#if UCRTDIFF_REF_HAS_strtok
+    static const char *const in[] = { "a b  c", "  lead", "trail  ", "", "noseps", "a,b;c a" };
+    static const char *const ctl[] = { " ", " ", " ", " ,;", " ", " ,;" };
+    for (unsigned i = 0; i < sizeof(in) / sizeof(in[0]); i++) {
+        char d1[32], d2[32];
+        strcpy(d1, in[i]); strcpy(d2, in[i]);
+        char *p1 = d1, *p2 = d2;
+        for (unsigned step = 0; step < 6; step++) {
+            char *t1 = ud_strtok2(step == 0 ? p1 : 0, ctl[i]);
+            char *t2 = ref_strtok(step == 0 ? p2 : 0, ctl[i]);
+            grade2("strtok.tok", label_idx(i * 6 + step),
+                   (long long)(t1 ? t1 - d1 : -1), (long long)(t2 ? t2 - d2 : -1));
+            grade2("strtok.tok.hash", label_idx(i * 6 + step), t1 ? fnv(t1, strlen(t1)) : -1,
+                   t2 ? fnv(t2, strlen(t2)) : -1);
+        }
+    }
+#endif
+}
+
+static void run_string_ops_strtok_s(void)
+{
+#if UCRTDIFF_REF_HAS_strtok_s
+    static const char *const in[] = { "a b  c", "", "noseps" };
+    for (unsigned i = 0; i < sizeof(in) / sizeof(in[0]); i++) {
+        char d1[32], d2[32];
+        strcpy(d1, in[i]); strcpy(d2, in[i]);
+        char *ctx1 = 0, *ctx2 = 0;
+        for (unsigned step = 0; step < 4; step++) {
+            char *t1 = ud_strtok_s2(step == 0 ? d1 : 0, " ", &ctx1);
+            char *t2 = ref_strtok_s(step == 0 ? d2 : 0, " ", &ctx2);
+            grade2("strtok_s.tok", label_idx(i * 4 + step),
+                   (long long)(t1 ? t1 - d1 : -1), (long long)(t2 ? t2 - d2 : -1));
+        }
+    }
+    /* Validation: NULL context/control both sides -> NULL, no crash. */
+    {
+        char d1[4] = "a", d2[4] = "a";
+        char *ctx = d1;
+        grade2("strtok_s.nullctl", "-", (long long)(ud_strtok_s2(d1, 0, &ctx) != 0),
+               (long long)(ref_strtok_s(d2, 0, &ctx) != 0));
+    }
+#endif
+}
+
+static void run_string_ops_wcstok(void)
+{
+#if UCRTDIFF_REF_HAS_wcstok
+    static const wchar_t *const in[] = { L"a b  c", L"  lead", L"trail  ", L"", L"noseps" };
+    for (unsigned i = 0; i < sizeof(in) / sizeof(in[0]); i++) {
+        wchar_t d1[32], d2[32];
+        wcscpy(d1, in[i]); wcscpy(d2, in[i]);
+        wchar_t *ctx1 = 0, *ctx2 = 0;
+        for (unsigned step = 0; step < 5; step++) {
+            wchar_t *t1 = ud_wcstok2(step == 0 ? d1 : 0, L" ", &ctx1);
+            wchar_t *t2 = ref_wcstok(step == 0 ? d2 : 0, L" ", &ctx2);
+            grade2("wcstok.tok", label_idx(i * 5 + step),
+                   (long long)(t1 ? t1 - d1 : -1), (long long)(t2 ? t2 - d2 : -1));
+        }
+    }
+#endif
+}
+
+static void run_string_ops_wcstok_s(void)
+{
+#if UCRTDIFF_REF_HAS_wcstok_s
+    static const wchar_t *const in[] = { L"a b  c", L"", L"noseps" };
+    for (unsigned i = 0; i < sizeof(in) / sizeof(in[0]); i++) {
+        wchar_t d1[32], d2[32];
+        wcscpy(d1, in[i]); wcscpy(d2, in[i]);
+        wchar_t *ctx1 = 0, *ctx2 = 0;
+        for (unsigned step = 0; step < 4; step++) {
+            wchar_t *t1 = ud_wcstok_s2(step == 0 ? d1 : 0, L" ", &ctx1);
+            wchar_t *t2 = ref_wcstok_s(step == 0 ? d2 : 0, L" ", &ctx2);
+            grade2("wcstok_s.tok", label_idx(i * 4 + step),
+                   (long long)(t1 ? t1 - d1 : -1), (long long)(t2 ? t2 - d2 : -1));
+        }
+    }
+#endif
+}
+
+/* ---- case-insensitive compare: memicmp, stricmp, strnicmp, wcsicmp,
+ * wcsnicmp, each graded plain + `_l` twin, under BOTH the "C" locale (which
+ * for the narrow forms is the `__acrt_locale_changed_data == 0` fast path,
+ * not literally "C" by name) and a real non-C locale, restoring after. */
+static void run_string_ops_memicmp(void)
+{
+#if UCRTDIFF_REF_HAS__memicmp
+    static const char *const a[] = { "", "abc", "ABC", "AbC", "12", "\x80\xff", "hello" };
+    static const char *const b[] = { "", "ABC", "abc", "abc", "12", "\x80\xfe", "HELLO" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    static const size_t counts[] = { 0, 1, 2, 3, 100 };
+    for (unsigned i = 0; i < n; i++)
+        for (unsigned c = 0; c < 5; c++) {
+            size_t len = counts[c];
+            grade2("_memicmp", label_idx(i * 5 + c), (long long)ud__memicmp(a[i], b[i], len),
+                   (long long)ref__memicmp(a[i], b[i], len));
+            grade2("_memicmp_l", label_idx(i * 5 + c), (long long)ud__memicmp_l(a[i], b[i], len, 0),
+                   (long long)ref__memicmp_l(a[i], b[i], len, 0));
+        }
+    /* under a real non-C locale, restored after */
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    loc_set_both(0, LC_ALL, "de-DE", 0);
+    for (unsigned i = 0; i < n; i++)
+        grade2("_memicmp.locale", label_idx(i), (long long)ud__memicmp(a[i], b[i], strlen(a[i])),
+               (long long)ref__memicmp(a[i], b[i], strlen(a[i])));
+    loc_reset();
+#endif
+#endif
+}
+
+static void run_string_ops_stricmp(void)
+{
+#if UCRTDIFF_REF_HAS__stricmp
+    static const char *const a[] = { "", "abc", "ABC", "AbC", "abcd", "hello", "\x80\xff" };
+    static const char *const b[] = { "", "ABC", "abc", "abc", "abc", "HELLO", "\x80\xfe" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned i = 0; i < n; i++) {
+        grade2("_stricmp", label_idx(i), (long long)ud__stricmp2(a[i], b[i]), (long long)ref__stricmp(a[i], b[i]));
+        grade2("_stricmp_l", label_idx(i), (long long)ud__stricmp_l(a[i], b[i], 0),
+               (long long)ref__stricmp_l(a[i], b[i], 0));
+    }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    loc_set_both(0, LC_ALL, "de-DE", 0);
+    for (unsigned i = 0; i < n; i++)
+        grade2("_stricmp.locale", label_idx(i), (long long)ud__stricmp2(a[i], b[i]), (long long)ref__stricmp(a[i], b[i]));
+    loc_reset();
+#endif
+#endif
+}
+
+static void run_string_ops_strnicmp(void)
+{
+#if UCRTDIFF_REF_HAS__strnicmp
+    static const char *const a[] = { "", "abc", "ABC", "AbC", "abcd", "hello" };
+    static const char *const b[] = { "", "ABC", "abc", "abc", "abc", "HELLO" };
+    static const size_t counts[] = { 0, 1, 2, 3, 4, 100 };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned i = 0; i < n; i++)
+        for (unsigned c = 0; c < 6; c++) {
+            grade2("_strnicmp", label_idx(i * 6 + c), (long long)ud__strnicmp2(a[i], b[i], counts[c]),
+                   (long long)ref__strnicmp(a[i], b[i], counts[c]));
+            grade2("_strnicmp_l", label_idx(i * 6 + c), (long long)ud__strnicmp_l(a[i], b[i], counts[c], 0),
+                   (long long)ref__strnicmp_l(a[i], b[i], counts[c], 0));
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    loc_set_both(0, LC_ALL, "de-DE", 0);
+    for (unsigned i = 0; i < n; i++)
+        grade2("_strnicmp.locale", label_idx(i), (long long)ud__strnicmp2(a[i], b[i], strlen(a[i]) + 1),
+               (long long)ref__strnicmp(a[i], b[i], strlen(a[i]) + 1));
+    loc_reset();
+#endif
+#endif
+}
+
+static void run_string_ops_wcsicmp(void)
+{
+#if UCRTDIFF_REF_HAS__wcsicmp
+    static const wchar_t *const a[] = { L"", L"abc", L"ABC", L"AbC", L"abcd", L"hello" };
+    static const wchar_t *const b[] = { L"", L"ABC", L"abc", L"abc", L"abc", L"HELLO" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned i = 0; i < n; i++) {
+        grade2("_wcsicmp", label_idx(i), (long long)ud__wcsicmp2(a[i], b[i]), (long long)ref__wcsicmp(a[i], b[i]));
+        grade2("_wcsicmp_l", label_idx(i), (long long)ud__wcsicmp_l(a[i], b[i], 0),
+               (long long)ref__wcsicmp_l(a[i], b[i], 0));
+    }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    loc_set_both(0, LC_ALL, "de-DE", 0);
+    for (unsigned i = 0; i < n; i++)
+        grade2("_wcsicmp.locale", label_idx(i), (long long)ud__wcsicmp2(a[i], b[i]), (long long)ref__wcsicmp(a[i], b[i]));
+    loc_reset();
+#endif
+#endif
+}
+
+static void run_string_ops_wcsnicmp(void)
+{
+#if UCRTDIFF_REF_HAS__wcsnicmp
+    static const wchar_t *const a[] = { L"", L"abc", L"ABC", L"AbC", L"abcd", L"hello" };
+    static const wchar_t *const b[] = { L"", L"ABC", L"abc", L"abc", L"abc", L"HELLO" };
+    static const size_t counts[] = { 0, 1, 2, 3, 4, 100 };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned i = 0; i < n; i++)
+        for (unsigned c = 0; c < 6; c++) {
+            grade2("_wcsnicmp", label_idx(i * 6 + c), (long long)ud__wcsnicmp2(a[i], b[i], counts[c]),
+                   (long long)ref__wcsnicmp(a[i], b[i], counts[c]));
+            grade2("_wcsnicmp_l", label_idx(i * 6 + c), (long long)ud__wcsnicmp_l(a[i], b[i], counts[c], 0),
+                   (long long)ref__wcsnicmp_l(a[i], b[i], counts[c], 0));
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    loc_set_both(0, LC_ALL, "de-DE", 0);
+    for (unsigned i = 0; i < n; i++)
+        grade2("_wcsnicmp.locale", label_idx(i), (long long)ud__wcsnicmp2(a[i], b[i], wcslen(a[i]) + 1),
+               (long long)ref__wcsnicmp(a[i], b[i], wcslen(a[i]) + 1));
+    loc_reset();
+#endif
+#endif
+}
+
+/* ---- case mapping: strlwr / strupr / wcslwr / wcsupr, each base/_l/_s/_s_l.
+ * Every case mutates a private copy (both `ud_`/`ref_` get their own),
+ * grading the whole destination buffer (sentinel-filled first) plus the
+ * return value/pointer-offset and errno for the `_s` forms. Graded under the
+ * "C" locale, then under one real non-C locale set on BOTH sides via
+ * loc_set_both/loc_reset (ucrtdiff.c), which needs UCRTDIFF_REF_CALLABLE_setlocale. */
+#define SO_CASE_SENTINEL 0x55
+
+static void run_string_ops_strlwr(void)
+{
+#if UCRTDIFF_REF_HAS__strlwr
+    static const char *const s[] = { "", "ABC", "abc", "AbCdE", "\x80\xff", "HELLO WORLD" };
+    unsigned n = sizeof(s) / sizeof(s[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            char d1[32], d2[32];
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            strcpy(d1, s[i]); strcpy(d2, s[i]);
+            char *r1 = ud__strlwr(d1);
+            char *r2 = ref__strlwr(d2);
+            grade2(pass ? "_strlwr.locale" : "_strlwr", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2(pass ? "_strlwr.locale.ret" : "_strlwr.ret", label_idx(i), (long long)(r1 - d1), (long long)(r2 - d2));
+
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            strcpy(d1, s[i]); strcpy(d2, s[i]);
+            ud__strlwr_l(d1, 0);
+            ref__strlwr_l(d2, 0);
+            grade2(pass ? "_strlwr_l.locale" : "_strlwr_l", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            for (unsigned c = 0; c < 3; c++) {
+                static const size_t sizes[] = { 32, 6, 2 };
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                strcpy(d1, s[i]); strcpy(d2, s[i]);
+                *_errno() = 0; *ref__errno() = 0;
+                errno_t e1 = ud__strlwr_s(d1, sizes[c]);
+                errno_t e2 = ref__strlwr_s(d2, sizes[c]);
+                grade2(pass ? "_strlwr_s.locale" : "_strlwr_s", label_idx(i * 3 + c), (long long)e1, (long long)e2);
+                grade2(pass ? "_strlwr_s.locale.errno" : "_strlwr_s.errno", label_idx(i * 3 + c), *_errno(), *ref__errno());
+                grade2(pass ? "_strlwr_s.locale.buf" : "_strlwr_s.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                strcpy(d1, s[i]); strcpy(d2, s[i]);
+                errno_t f1 = ud__strlwr_s_l(d1, sizes[c], 0);
+                errno_t f2 = ref__strlwr_s_l(d2, sizes[c], 0);
+                grade2(pass ? "_strlwr_s_l.locale" : "_strlwr_s_l", label_idx(i * 3 + c), (long long)f1, (long long)f2);
+                grade2(pass ? "_strlwr_s_l.locale.buf" : "_strlwr_s_l.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            }
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_strupr(void)
+{
+#if UCRTDIFF_REF_HAS__strupr
+    static const char *const s[] = { "", "ABC", "abc", "AbCdE", "\x80\xff", "hello world" };
+    unsigned n = sizeof(s) / sizeof(s[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            char d1[32], d2[32];
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            strcpy(d1, s[i]); strcpy(d2, s[i]);
+            char *r1 = ud__strupr(d1);
+            char *r2 = ref__strupr(d2);
+            grade2(pass ? "_strupr.locale" : "_strupr", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2(pass ? "_strupr.locale.ret" : "_strupr.ret", label_idx(i), (long long)(r1 - d1), (long long)(r2 - d2));
+
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            strcpy(d1, s[i]); strcpy(d2, s[i]);
+            ud__strupr_l(d1, 0);
+            ref__strupr_l(d2, 0);
+            grade2(pass ? "_strupr_l.locale" : "_strupr_l", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            for (unsigned c = 0; c < 3; c++) {
+                static const size_t sizes[] = { 32, 6, 2 };
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                strcpy(d1, s[i]); strcpy(d2, s[i]);
+                *_errno() = 0; *ref__errno() = 0;
+                errno_t e1 = ud__strupr_s(d1, sizes[c]);
+                errno_t e2 = ref__strupr_s(d2, sizes[c]);
+                grade2(pass ? "_strupr_s.locale" : "_strupr_s", label_idx(i * 3 + c), (long long)e1, (long long)e2);
+                grade2(pass ? "_strupr_s.locale.errno" : "_strupr_s.errno", label_idx(i * 3 + c), *_errno(), *ref__errno());
+                grade2(pass ? "_strupr_s.locale.buf" : "_strupr_s.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                strcpy(d1, s[i]); strcpy(d2, s[i]);
+                errno_t f1 = ud__strupr_s_l(d1, sizes[c], 0);
+                errno_t f2 = ref__strupr_s_l(d2, sizes[c], 0);
+                grade2(pass ? "_strupr_s_l.locale" : "_strupr_s_l", label_idx(i * 3 + c), (long long)f1, (long long)f2);
+                grade2(pass ? "_strupr_s_l.locale.buf" : "_strupr_s_l.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            }
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcslwr(void)
+{
+#if UCRTDIFF_REF_HAS__wcslwr
+    static const wchar_t *const s[] = { L"", L"ABC", L"abc", L"AbCdE", L"\x00c9\xffff", L"HELLO WORLD" };
+    unsigned n = sizeof(s) / sizeof(s[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            wchar_t d1[32], d2[32];
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+            wchar_t *r1 = ud__wcslwr(d1);
+            wchar_t *r2 = ref__wcslwr(d2);
+            grade2(pass ? "_wcslwr.locale" : "_wcslwr", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2(pass ? "_wcslwr.locale.ret" : "_wcslwr.ret", label_idx(i), (long long)(r1 - d1), (long long)(r2 - d2));
+
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+            ud__wcslwr_l(d1, 0);
+            ref__wcslwr_l(d2, 0);
+            grade2(pass ? "_wcslwr_l.locale" : "_wcslwr_l", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            for (unsigned c = 0; c < 3; c++) {
+                static const size_t sizes[] = { 32, 6, 2 };
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+                errno_t e1 = ud__wcslwr_s(d1, sizes[c]);
+                errno_t e2 = ref__wcslwr_s(d2, sizes[c]);
+                grade2(pass ? "_wcslwr_s.locale" : "_wcslwr_s", label_idx(i * 3 + c), (long long)e1, (long long)e2);
+                grade2(pass ? "_wcslwr_s.locale.buf" : "_wcslwr_s.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+                errno_t f1 = ud__wcslwr_s_l(d1, sizes[c], 0);
+                errno_t f2 = ref__wcslwr_s_l(d2, sizes[c], 0);
+                grade2(pass ? "_wcslwr_s_l.locale" : "_wcslwr_s_l", label_idx(i * 3 + c), (long long)f1, (long long)f2);
+                grade2(pass ? "_wcslwr_s_l.locale.buf" : "_wcslwr_s_l.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            }
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcsupr(void)
+{
+#if UCRTDIFF_REF_HAS__wcsupr
+    static const wchar_t *const s[] = { L"", L"ABC", L"abc", L"AbCdE", L"\x00e9\xffff", L"hello world" };
+    unsigned n = sizeof(s) / sizeof(s[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            wchar_t d1[32], d2[32];
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+            wchar_t *r1 = ud__wcsupr(d1);
+            wchar_t *r2 = ref__wcsupr(d2);
+            grade2(pass ? "_wcsupr.locale" : "_wcsupr", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            grade2(pass ? "_wcsupr.locale.ret" : "_wcsupr.ret", label_idx(i), (long long)(r1 - d1), (long long)(r2 - d2));
+
+            memset(d1, SO_CASE_SENTINEL, sizeof d1);
+            memset(d2, SO_CASE_SENTINEL, sizeof d2);
+            wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+            ud__wcsupr_l(d1, 0);
+            ref__wcsupr_l(d2, 0);
+            grade2(pass ? "_wcsupr_l.locale" : "_wcsupr_l", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+            for (unsigned c = 0; c < 3; c++) {
+                static const size_t sizes[] = { 32, 6, 2 };
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+                errno_t e1 = ud__wcsupr_s(d1, sizes[c]);
+                errno_t e2 = ref__wcsupr_s(d2, sizes[c]);
+                grade2(pass ? "_wcsupr_s.locale" : "_wcsupr_s", label_idx(i * 3 + c), (long long)e1, (long long)e2);
+                grade2(pass ? "_wcsupr_s.locale.buf" : "_wcsupr_s.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                wcscpy(d1, s[i]); wcscpy(d2, s[i]);
+                errno_t f1 = ud__wcsupr_s_l(d1, sizes[c], 0);
+                errno_t f2 = ref__wcsupr_s_l(d2, sizes[c], 0);
+                grade2(pass ? "_wcsupr_s_l.locale" : "_wcsupr_s_l", label_idx(i * 3 + c), (long long)f1, (long long)f2);
+                grade2(pass ? "_wcsupr_s_l.locale.buf" : "_wcsupr_s_l.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+            }
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+/* ---- collation: strcoll/stricoll/strncoll/strnicoll (narrow) and their
+ * wide twins, each base + `_l`. Graded under "C" then one non-C locale.
+ * `count` boundaries (0, exact, beyond) covered for the `n` forms. */
+static void run_string_ops_strcoll(void)
+{
+#if UCRTDIFF_REF_HAS_strcoll
+    static const char *const a[] = { "", "abc", "abc", "ABCDE", "hello", "\x80\xff" };
+    static const char *const b[] = { "", "abc", "abd", "ABC", "world", "\x81\xfe" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            grade2(pass ? "strcoll.locale" : "strcoll", label_idx(i), (long long)ud_strcoll2(a[i], b[i]),
+                   (long long)ref_strcoll(a[i], b[i]));
+            grade2(pass ? "_strcoll_l.locale" : "_strcoll_l", label_idx(i), (long long)ud__strcoll_l(a[i], b[i], 0),
+                   (long long)ref__strcoll_l(a[i], b[i], 0));
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_stricoll(void)
+{
+#if UCRTDIFF_REF_HAS__stricoll
+    static const char *const a[] = { "", "abc", "ABC", "AbC", "hello", "\x80\xff" };
+    static const char *const b[] = { "", "ABC", "abc", "abc", "HELLO", "\x80\xfe" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            grade2(pass ? "_stricoll.locale" : "_stricoll", label_idx(i), (long long)ud__stricoll(a[i], b[i]),
+                   (long long)ref__stricoll(a[i], b[i]));
+            grade2(pass ? "_stricoll_l.locale" : "_stricoll_l", label_idx(i), (long long)ud__stricoll_l(a[i], b[i], 0),
+                   (long long)ref__stricoll_l(a[i], b[i], 0));
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_strncoll(void)
+{
+#if UCRTDIFF_REF_HAS__strncoll
+    static const char *const a[] = { "", "abc", "abc", "ABCDE", "hello" };
+    static const char *const b[] = { "", "abc", "abd", "ABC", "world" };
+    static const size_t counts[] = { 0, 1, 3, 5, 100 };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++)
+            for (unsigned c = 0; c < 5; c++) {
+                grade2(pass ? "_strncoll.locale" : "_strncoll", label_idx(i * 5 + c),
+                       (long long)ud__strncoll(a[i], b[i], counts[c]), (long long)ref__strncoll(a[i], b[i], counts[c]));
+                grade2(pass ? "_strncoll_l.locale" : "_strncoll_l", label_idx(i * 5 + c),
+                       (long long)ud__strncoll_l(a[i], b[i], counts[c], 0),
+                       (long long)ref__strncoll_l(a[i], b[i], counts[c], 0));
+            }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_strnicoll(void)
+{
+#if UCRTDIFF_REF_HAS__strnicoll
+    static const char *const a[] = { "", "abc", "ABC", "AbC", "hello" };
+    static const char *const b[] = { "", "ABC", "abc", "abc", "HELLO" };
+    static const size_t counts[] = { 0, 1, 3, 5, 100 };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++)
+            for (unsigned c = 0; c < 5; c++) {
+                grade2(pass ? "_strnicoll.locale" : "_strnicoll", label_idx(i * 5 + c),
+                       (long long)ud__strnicoll(a[i], b[i], counts[c]), (long long)ref__strnicoll(a[i], b[i], counts[c]));
+                grade2(pass ? "_strnicoll_l.locale" : "_strnicoll_l", label_idx(i * 5 + c),
+                       (long long)ud__strnicoll_l(a[i], b[i], counts[c], 0),
+                       (long long)ref__strnicoll_l(a[i], b[i], counts[c], 0));
+            }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcscoll(void)
+{
+#if UCRTDIFF_REF_HAS_wcscoll
+    static const wchar_t *const a[] = { L"", L"abc", L"abc", L"ABCDE", L"hello" };
+    static const wchar_t *const b[] = { L"", L"abc", L"abd", L"ABC", L"world" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            grade2(pass ? "wcscoll.locale" : "wcscoll", label_idx(i), (long long)ud_wcscoll2(a[i], b[i]),
+                   (long long)ref_wcscoll(a[i], b[i]));
+            grade2(pass ? "_wcscoll_l.locale" : "_wcscoll_l", label_idx(i), (long long)ud__wcscoll_l(a[i], b[i], 0),
+                   (long long)ref__wcscoll_l(a[i], b[i], 0));
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcsicoll(void)
+{
+#if UCRTDIFF_REF_HAS__wcsicoll
+    static const wchar_t *const a[] = { L"", L"abc", L"ABC", L"AbC", L"hello" };
+    static const wchar_t *const b[] = { L"", L"ABC", L"abc", L"abc", L"HELLO" };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            grade2(pass ? "_wcsicoll.locale" : "_wcsicoll", label_idx(i), (long long)ud__wcsicoll(a[i], b[i]),
+                   (long long)ref__wcsicoll(a[i], b[i]));
+            grade2(pass ? "_wcsicoll_l.locale" : "_wcsicoll_l", label_idx(i), (long long)ud__wcsicoll_l(a[i], b[i], 0),
+                   (long long)ref__wcsicoll_l(a[i], b[i], 0));
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcsncoll(void)
+{
+#if UCRTDIFF_REF_HAS__wcsncoll
+    static const wchar_t *const a[] = { L"", L"abc", L"abc", L"ABCDE", L"hello" };
+    static const wchar_t *const b[] = { L"", L"abc", L"abd", L"ABC", L"world" };
+    static const size_t counts[] = { 0, 1, 3, 5, 100 };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++)
+            for (unsigned c = 0; c < 5; c++) {
+                grade2(pass ? "_wcsncoll.locale" : "_wcsncoll", label_idx(i * 5 + c),
+                       (long long)ud__wcsncoll(a[i], b[i], counts[c]), (long long)ref__wcsncoll(a[i], b[i], counts[c]));
+                grade2(pass ? "_wcsncoll_l.locale" : "_wcsncoll_l", label_idx(i * 5 + c),
+                       (long long)ud__wcsncoll_l(a[i], b[i], counts[c], 0),
+                       (long long)ref__wcsncoll_l(a[i], b[i], counts[c], 0));
+            }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcsnicoll(void)
+{
+#if UCRTDIFF_REF_HAS__wcsnicoll
+    static const wchar_t *const a[] = { L"", L"abc", L"ABC", L"AbC", L"hello" };
+    static const wchar_t *const b[] = { L"", L"ABC", L"abc", L"abc", L"HELLO" };
+    static const size_t counts[] = { 0, 1, 3, 5, 100 };
+    unsigned n = sizeof(a) / sizeof(a[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++)
+            for (unsigned c = 0; c < 5; c++) {
+                grade2(pass ? "_wcsnicoll.locale" : "_wcsnicoll", label_idx(i * 5 + c),
+                       (long long)ud__wcsnicoll(a[i], b[i], counts[c]), (long long)ref__wcsnicoll(a[i], b[i], counts[c]));
+                grade2(pass ? "_wcsnicoll_l.locale" : "_wcsnicoll_l", label_idx(i * 5 + c),
+                       (long long)ud__wcsnicoll_l(a[i], b[i], counts[c], 0),
+                       (long long)ref__wcsnicoll_l(a[i], b[i], counts[c], 0));
+            }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+/* ---- strxfrm / wcsxfrm: the return-length-on-overflow contract (a
+ * too-small destination returns the length needed MINUS the NUL, matching
+ * `strlen`'s contract) is graded explicitly via a deliberately tiny `count`
+ * alongside `count == 0` (dest may be NULL) and an exact-fit destination. */
+static void run_string_ops_strxfrm(void)
+{
+#if UCRTDIFF_REF_HAS_strxfrm
+    static const char *const s[] = { "", "abc", "hello world", "\x80\xff" };
+    unsigned n = sizeof(s) / sizeof(s[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            static const size_t counts[] = { 0, 1, 64 };
+            for (unsigned c = 0; c < 3; c++) {
+                char d1[64], d2[64];
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                char *p1 = counts[c] == 0 ? 0 : d1;
+                char *p2 = counts[c] == 0 ? 0 : d2;
+                *_errno() = 0; *ref__errno() = 0;
+                size_t r1 = ud_strxfrm2(p1, s[i], counts[c]);
+                size_t r2 = ref_strxfrm(p2, s[i], counts[c]);
+                grade2(pass ? "strxfrm.locale" : "strxfrm", label_idx(i * 3 + c), (long long)r1, (long long)r2);
+                grade2(pass ? "strxfrm.locale.errno" : "strxfrm.errno", label_idx(i * 3 + c), *_errno(), *ref__errno());
+                if (counts[c] != 0)
+                    grade2(pass ? "strxfrm.locale.buf" : "strxfrm.buf", label_idx(i * 3 + c), fnv(d1, sizeof d1),
+                           fnv(d2, sizeof d2));
+
+                size_t r3 = ud__strxfrm_l(p1, s[i], counts[c], 0);
+                size_t r4 = ref__strxfrm_l(p2, s[i], counts[c], 0);
+                grade2(pass ? "_strxfrm_l.locale" : "_strxfrm_l", label_idx(i * 3 + c), (long long)r3, (long long)r4);
+            }
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+static void run_string_ops_wcsxfrm(void)
+{
+#if UCRTDIFF_REF_HAS_wcsxfrm
+    static const wchar_t *const s[] = { L"", L"abc", L"hello world", L"\x00e9\xffff" };
+    unsigned n = sizeof(s) / sizeof(s[0]);
+    for (unsigned pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+#if UCRTDIFF_REF_CALLABLE_setlocale
+            loc_set_both(0, LC_ALL, "de-DE", 0);
+#else
+            break;
+#endif
+        }
+        for (unsigned i = 0; i < n; i++) {
+            static const size_t counts[] = { 0, 1, 64 };
+            for (unsigned c = 0; c < 3; c++) {
+                wchar_t d1[64], d2[64];
+                memset(d1, SO_CASE_SENTINEL, sizeof d1);
+                memset(d2, SO_CASE_SENTINEL, sizeof d2);
+                wchar_t *p1 = counts[c] == 0 ? 0 : d1;
+                wchar_t *p2 = counts[c] == 0 ? 0 : d2;
+                *_errno() = 0; *ref__errno() = 0;
+                size_t r1 = ud_wcsxfrm2(p1, s[i], counts[c]);
+                size_t r2 = ref_wcsxfrm(p2, s[i], counts[c]);
+                grade2(pass ? "wcsxfrm.locale" : "wcsxfrm", label_idx(i * 3 + c), (long long)r1, (long long)r2);
+                grade2(pass ? "wcsxfrm.locale.errno" : "wcsxfrm.errno", label_idx(i * 3 + c), *_errno(), *ref__errno());
+
+                size_t r3 = ud__wcsxfrm_l(p1, s[i], counts[c], 0);
+                size_t r4 = ref__wcsxfrm_l(p2, s[i], counts[c], 0);
+                grade2(pass ? "_wcsxfrm_l.locale" : "_wcsxfrm_l", label_idx(i * 3 + c), (long long)r3, (long long)r4);
+            }
+        }
+#if UCRTDIFF_REF_CALLABLE_setlocale
+        if (pass == 1) loc_reset();
+#endif
+    }
+#endif
+}
+
+/* ---- registry: paste STRING_OPS_HAND_ENTRIES into run_legacy()'s `legacy[]`
+ * table (same shape as the existing ST_HAND/FP_HAND rows just above it). */
+#if UCRTDIFF_REF_HAS__strdup
+#define SO_FN__strdup run_string_ops__strdup
+#else
+#define SO_FN__strdup 0
+#endif
+#if UCRTDIFF_REF_HAS__wcsdup
+#define SO_FN__wcsdup run_string_ops__wcsdup
+#else
+#define SO_FN__wcsdup 0
+#endif
+#if UCRTDIFF_REF_HAS___strncnt
+#define SO_FN___strncnt run_string_ops___strncnt
+#else
+#define SO_FN___strncnt 0
+#endif
+#if UCRTDIFF_REF_HAS___wcsncnt
+#define SO_FN___wcsncnt run_string_ops___wcsncnt
+#else
+#define SO_FN___wcsncnt 0
+#endif
+/* strnlen's runner always runs (it grades the self-consistency check even
+ * when UCRTDIFF_REF_HAS_strnlen is 0), so it is registered unconditionally. */
+#define SO_FN_strnlen run_string_ops_strnlen
+#define SO_FN_wcs_plain run_string_ops_wcs_plain
+#define SO_FN_arch_split run_string_ops_arch_split
+#define SO_HAND(n) { "string_ops:" #n, SO_FN_##n },
+
+#define STRING_OPS_HAND_ENTRIES \
+    SO_HAND(_strdup) SO_HAND(_wcsdup) SO_HAND(__strncnt) SO_HAND(__wcsncnt) \
+    SO_HAND(strnlen) SO_HAND(wcs_plain) SO_HAND(arch_split) \
+    { "string_ops:strcat_s", run_string_ops_strcat_s }, \
+    { "string_ops:strcpy_s", run_string_ops_strcpy_s }, \
+    { "string_ops:strncat_s", run_string_ops_strncat_s }, \
+    { "string_ops:strncpy_s", run_string_ops_strncpy_s }, \
+    { "string_ops:_strnset_s", run_string_ops__strnset_s }, \
+    { "string_ops:_strset_s", run_string_ops__strset_s }, \
+    { "string_ops:wcscat_s", run_string_ops_wcscat_s }, \
+    { "string_ops:wcscpy_s", run_string_ops_wcscpy_s }, \
+    { "string_ops:wcsncat_s", run_string_ops_wcsncat_s }, \
+    { "string_ops:wcsncpy_s", run_string_ops_wcsncpy_s }, \
+    { "string_ops:_wcsnset_s", run_string_ops__wcsnset_s }, \
+    { "string_ops:_wcsset_s", run_string_ops__wcsset_s }, \
+    { "string_ops:memcpy_s", run_string_ops_memcpy_s }, \
+    { "string_ops:wmemcpy_s", run_string_ops_wmemcpy_s }, \
+    { "string_ops:wmemmove_s", run_string_ops_wmemmove_s }, \
+    { "string_ops:strtok", run_string_ops_strtok }, \
+    { "string_ops:strtok_s", run_string_ops_strtok_s }, \
+    { "string_ops:wcstok", run_string_ops_wcstok }, \
+    { "string_ops:wcstok_s", run_string_ops_wcstok_s }, \
+    { "string_ops:memicmp", run_string_ops_memicmp }, \
+    { "string_ops:stricmp", run_string_ops_stricmp }, \
+    { "string_ops:strnicmp", run_string_ops_strnicmp }, \
+    { "string_ops:wcsicmp", run_string_ops_wcsicmp }, \
+    { "string_ops:wcsnicmp", run_string_ops_wcsnicmp }, \
+    { "string_ops:strlwr", run_string_ops_strlwr }, \
+    { "string_ops:strupr", run_string_ops_strupr }, \
+    { "string_ops:wcslwr", run_string_ops_wcslwr }, \
+    { "string_ops:wcsupr", run_string_ops_wcsupr }, \
+    { "string_ops:strcoll", run_string_ops_strcoll }, \
+    { "string_ops:stricoll", run_string_ops_stricoll }, \
+    { "string_ops:strncoll", run_string_ops_strncoll }, \
+    { "string_ops:strnicoll", run_string_ops_strnicoll }, \
+    { "string_ops:wcscoll", run_string_ops_wcscoll }, \
+    { "string_ops:wcsicoll", run_string_ops_wcsicoll }, \
+    { "string_ops:wcsncoll", run_string_ops_wcsncoll }, \
+    { "string_ops:wcsnicoll", run_string_ops_wcsnicoll }, \
+    { "string_ops:strxfrm", run_string_ops_strxfrm }, \
+    { "string_ops:wcsxfrm", run_string_ops_wcsxfrm },
+
+
+/* ==== staging/time.c, inlined ==== */
+/* Its own names: CT_STRLEN lives in the ctime block, compiled out once ctime.cpp went. */
+#define TM_STRLEN(p) strlen(p)
+#define TM_WCSLEN(p) wcslen(p)
+/*
+ * time -- guest grader for the "time" batch: time/tzset.cpp, localtime.cpp,
+ * gmtime.cpp, mktime.cpp, asctime.cpp, utime.cpp, ftime.cpp, strdate.cpp,
+ * strtime.cpp, time.cpp, clock.cpp, difftime.cpp (plus the internal-only
+ * loctotime.cpp/days.cpp, which have no DLL export and so no runner here --
+ * they are graded only indirectly, through gmtime/mktime/loctotime's callers
+ * `_findfirst*`/`_stat*` elsewhere, and by the C-file-boundary rule in the
+ * batch report).
+ *
+ * Included verbatim into ucrtdiff.c just before `run_legacy`, exactly like
+ * the FP_HAND/ST_HAND/LOC_HAND/CONVTIME_HAND blocks above it: every helper
+ * this file uses (grade2, install_counting_iph, label_idx, fnv,
+ * g_iph_dll/g_iph_ref, _errno, ref__errno, UD_IMP) is already in scope by
+ * the inclusion point, and `<time.h>` (for `struct tm`/`__time32_t`/
+ * `__time64_t`/`clock_t` and the plain DLL-side declarations) and
+ * `<sys/stat.h>` are already `#include`d earlier in ucrtdiff.c (the
+ * strftime/wcsftime block and the stat block, respectively) -- only
+ * `<sys/timeb.h>` and `<sys/utime.h>` are new here.
+ *
+ * Twelve separate guards, one per C file that may be deleted independently
+ * (loctotime.cpp/days.cpp have none -- see above):
+ *   UCRTDIFF_REF_HAS__tzset        -- time/tzset.cpp
+ *   UCRTDIFF_REF_HAS__localtime32  -- time/localtime.cpp
+ *   UCRTDIFF_REF_HAS__gmtime32     -- time/gmtime.cpp
+ *   UCRTDIFF_REF_HAS__mktime32     -- time/mktime.cpp
+ *   UCRTDIFF_REF_HAS_asctime       -- time/asctime.cpp
+ *   UCRTDIFF_REF_HAS__utime32      -- time/utime.cpp
+ *   UCRTDIFF_REF_HAS__ftime32      -- time/ftime.cpp
+ *   UCRTDIFF_REF_HAS__strdate      -- time/strdate.cpp
+ *   UCRTDIFF_REF_HAS__strtime      -- time/strtime.cpp
+ *   UCRTDIFF_REF_HAS__time32       -- time/time.cpp
+ *   UCRTDIFF_REF_HAS_clock         -- time/clock.cpp
+ *   UCRTDIFF_REF_HAS__difftime32   -- time/difftime.cpp
+ *
+ * NONE of these twelve macros exist in tools/gen_ucrt_tier2_cases.py's
+ * HAND_GRADED tuple yet -- the integrator must add the twelve representative
+ * names above and regenerate generated-refs.h for all three arches before
+ * these guards read as 1. Until then they read as 0 (an undefined macro in
+ * `#if` is 0), which is exactly the "guards=0" case this file was
+ * syntax-checked under.
+ *
+ * All twelve representative `ref_<name>` symbols (and every other exported
+ * name this file calls) were confirmed present in
+ * build-{i386,amd64,arm64}/libucrt_ref.a with llvm-nm (i386 carries the
+ * extra leading underscore llvm-nm shows separately from the bare name; all
+ * three archives were checked) -- EXCEPT `_isindst`, `__tzset`,
+ * `__getgmtimebuf`, `__loctotime32_t`/`__loctotime64_t`, which are not in
+ * ucrtbase.spec (no export) and so have no `ref_`/`ud_` symbol at all and
+ * are not graded here; they are exercised only indirectly, through the
+ * exported functions that call them.
+ *
+ * None of this batch's DLL-side spellings are wrapped in a mingw
+ * `__CRT_INLINE` (checked against generic-w64-mingw32/include/{time,sys/
+ * timeb,sys/utime}.h: only the non-underscore convenience wrappers --
+ * `time`, `localtime`, `gmtime`, `mktime`, `difftime`, `tzset`, `ftime`,
+ * `_utime`/`_futime`/`_wutime`, all `__MINGW_ASM_CALL`/`__CRT_INLINE`
+ * aliases onto the underscore-suffixed exports this file actually grades --
+ * are inlined), so every DLL-side call below is a PLAIN name, not a `ud_`
+ * import pointer, matching `convtime.c`'s precedent for the same reason.
+ */
+#include <sys/timeb.h>
+#include <sys/utime.h>
+
+/* ==== tzset (time/tzset.cpp) =============================================
+ * `_isindst`/`__tzset` are internal (no export); `_tzset` is graded here by
+ * its OBSERVABLE side effect on the shared `_timezone`/`_daylight`/
+ * `_tzname` state (already-exported getters from time/timeset.cpp, graded
+ * for their OWN correctness by convtime.c's `UCRTDIFF_REF_HAS__get_daylight`
+ * block -- this block re-uses them only as an oracle for tzset's writes,
+ * and does not re-litigate their own behaviour).
+ *
+ * Both sides' `_tzset` share ONE process-wide environment block, so TZ is
+ * set explicitly with `_wputenv_s` before EACH side's `_tzset()` call (never
+ * once for both), and restored to "unset" afterwards so later rows (and any
+ * other batch's runner) do not inherit a TZ this file set. */
+#if UCRTDIFF_REF_HAS__tzset
+void __cdecl ref__tzset(void);
+errno_t __cdecl ref__wputenv_s(const wchar_t *, const wchar_t *);
+errno_t __cdecl ref__get_daylight(int *);
+errno_t __cdecl ref__get_dstbias(long *);
+errno_t __cdecl ref__get_timezone(long *);
+errno_t __cdecl ref__get_tzname(size_t *, char *, size_t, int);
+
+/* PST8PDT: classic US Pacific, exercises the day-in-month DST path;
+ * EST5EDT similarly; a fixed-offset-only zone (no DST suffix) exercises
+ * `daylight = *tz_env ? 1 : 0` == 0; unsetting TZ (NULL value) exercises the
+ * `tzset_from_system_nolock` path (whatever the guest's real system zone
+ * is -- graded structurally, not against a fixed expected value, since the
+ * test VM's zone is not controlled by this file). */
+static void tzset_row(const wchar_t *tz, const char *lbl)
+{
+    int day1 = -999, day2 = -999;
+    long dst1 = -999, dst2 = -999, tz1 = -999, tz2 = -999;
+    char nm1[64], nm2[64];
+    size_t ln1 = 0, ln2 = 0;
+
+    _wputenv_s(L"TZ", tz ? tz : L"");
+    _tzset();
+    _get_daylight(&day1);
+    _get_dstbias(&dst1);
+    _get_timezone(&tz1);
+    _get_tzname(&ln1, nm1, sizeof nm1, 0);
+
+    ref__wputenv_s(L"TZ", tz ? tz : L"");
+    ref__tzset();
+    ref__get_daylight(&day2);
+    ref__get_dstbias(&dst2);
+    ref__get_timezone(&tz2);
+    ref__get_tzname(&ln2, nm2, sizeof nm2, 0);
+
+    grade2("_tzset.daylight", lbl, day1, day2);
+    grade2("_tzset.dstbias", lbl, dst1, dst2);
+    grade2("_tzset.timezone", lbl, tz1, tz2);
+    grade2("_tzset.tzname0", lbl, fnv(nm1, ln1), fnv(nm2, ln2));
+
+    /* Standard-time index-1 name is meaningful only when DST is on for this
+     * zone; both sides agree on `daylight` above, so gating on the DLL's own
+     * value is not a second oracle. */
+    if (day1) {
+        size_t ln1b = 0, ln2b = 0;
+        char nm1b[64], nm2b[64];
+        _get_tzname(&ln1b, nm1b, sizeof nm1b, 1);
+        ref__get_tzname(&ln2b, nm2b, sizeof nm2b, 1);
+        grade2("_tzset.tzname1", lbl, fnv(nm1b, ln1b), fnv(nm2b, ln2b));
+    }
+}
+
+static void run_time__tzset(void)
+{
+    install_counting_iph();
+    tzset_row(L"PST8PDT", "PST8PDT");
+    tzset_row(L"EST5EDT", "EST5EDT");
+    tzset_row(L"UTC0", "UTC0");
+    tzset_row(NULL, "unset");
+    /* Restore a clean slate for any runner after this one in the sweep. */
+    _wputenv_s(L"TZ", L"");
+    ref__wputenv_s(L"TZ", L"");
+    _tzset();
+    ref__tzset();
+}
+#endif /* UCRTDIFF_REF_HAS__tzset */
+
+/* ==== localtime / gmtime (time/localtime.cpp, time/gmtime.cpp) ===========
+ * Graded together: `localtime.cpp` is meaningless to grade without a fixed
+ * TZ (its whole job is the TZ/DST adjustment), so both blocks share one TZ
+ * setup, and `_gmtime32_s`/`_gmtime64_s` (TZ-independent) are graded as
+ * plain baseline rows inside the same corpus loop for locality. */
+/* gmtime.cpp's `ref_` prototypes are declared here, UNCONDITIONALLY under
+ * their own guard (not nested under `_localtime32`'s), because the
+ * localtime block below calls them too when both guards are 1 -- a repeated
+ * `extern`-style prototype declaration is legal C as long as it is
+ * identical, so this one declaration serves both the localtime block's
+ * inner `#if UCRTDIFF_REF_HAS__gmtime32` calls and the standalone
+ * `run_time__gmtime32` entry point further down. */
+#if UCRTDIFF_REF_HAS__gmtime32
+errno_t __cdecl ref__gmtime32_s(struct tm *, const __time32_t *);
+errno_t __cdecl ref__gmtime64_s(struct tm *, const __time64_t *);
+struct tm *__cdecl ref__gmtime32(const __time32_t *);
+struct tm *__cdecl ref__gmtime64(const __time64_t *);
+#endif
+
+/* `LOCGM_S_ROW`/`LOCGM_PTR_ROW` are used by BOTH the localtime block below
+ * (when `_gmtime32` is also 1) and the standalone gmtime-only block further
+ * down (when `_localtime32` is 0) -- defined once, unconditionally, so
+ * neither guard combination leaves them undefined. */
+#define LOCGM_S_ROW(fn, T, val, lbl) do {                                      \
+        struct tm t1, t2;                                                      \
+        memset(&t1, 0xAB, sizeof t1); memset(&t2, 0xAB, sizeof t2);            \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        T tv = (val);                                                          \
+        errno_t c1 = fn(&t1, &tv);                                             \
+        errno_t c2 = ref_##fn(&t2, &tv);                                       \
+        grade2(#fn, lbl, c1, c2);                                              \
+        grade2(#fn ".val", lbl, fnv(&t1, sizeof t1), fnv(&t2, sizeof t2));     \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                         \
+    } while (0)
+
+#define LOCGM_PTR_ROW(fn, T, val, lbl) do {                                    \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        T tv = (val);                                                         \
+        struct tm *p1 = fn(&tv);                                              \
+        struct tm *p2 = ref_##fn(&tv);                                        \
+        grade2(#fn ".isnull", lbl, p1 == 0, p2 == 0);                         \
+        if (p1 && p2)                                                         \
+            grade2(#fn ".val", lbl, fnv(p1, sizeof *p1), fnv(p2, sizeof *p2)); \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                         \
+    } while (0)
+
+#if UCRTDIFF_REF_HAS__localtime32
+errno_t __cdecl ref__localtime32_s(struct tm *, const __time32_t *);
+errno_t __cdecl ref__localtime64_s(struct tm *, const __time64_t *);
+struct tm *__cdecl ref__localtime32(const __time32_t *);
+struct tm *__cdecl ref__localtime64(const __time64_t *);
+void __cdecl ref__tzset(void);
+errno_t __cdecl ref__wputenv_s(const wchar_t *, const wchar_t *);
+
+/* 0 (epoch), one day in, mid-range, __crt_time_time_t_traits<__time32_t>::
+ * max_time_t (0x7fffd27f), and a value inside +/-3 days of that bound (to
+ * hit `common_localtime_s`'s "near an edge" hand-adjustment path) and of 0
+ * (ditto, near the epoch); -1 is the one EINVAL, no-handler case. Interval
+ * chosen to land near a 2024 US DST transition (2024-03-10 09:xx UTC /
+ * 2024-11-03 08:xx UTC) so `_isindst` actually flips both ways. */
+static const __time32_t g_lt32[] = {
+    0, 1, 86400, 1000000000L, 0x7fffd27fL, 0x7fffd27fL - 100, -1,
+    1710060000L /* 2024-03-10 10:00 UTC, just after US spring-forward */,
+    1730620800L /* 2024-11-03 08:00 UTC, just after US fall-back */,
+};
+#define LT32_N (sizeof(g_lt32) / sizeof(g_lt32[0]))
+static const __time64_t g_lt64[] = {
+    0, 1, 86400, 1000000000LL, 2147483648LL, 0x793582affLL, -1,
+    1710060000LL, 1730620800LL,
+};
+#define LT64_N (sizeof(g_lt64) / sizeof(g_lt64[0]))
+
+static void run_time__localtime_and_gmtime(const wchar_t *tz, const char *tzlbl)
+{
+    unsigned i;
+    _wputenv_s(L"TZ", tz); _tzset();
+    ref__wputenv_s(L"TZ", tz); ref__tzset();
+
+    install_counting_iph();
+    for (i = 0; i < LT32_N; i++) {
+        char lbl[32];
+        int n = 0;
+        while (tzlbl[n] && n < 16) { lbl[n] = tzlbl[n]; n++; }
+        lbl[n++] = '.'; lbl[n] = 0;
+        strcat(lbl, label_idx(i));
+#if UCRTDIFF_REF_HAS__gmtime32
+        LOCGM_S_ROW(_gmtime32_s, __time32_t, g_lt32[i], lbl);
+        LOCGM_PTR_ROW(_gmtime32, __time32_t, g_lt32[i], lbl);
+        LOCGM_S_ROW(_gmtime64_s, __time64_t, g_lt64[i], lbl);
+        LOCGM_PTR_ROW(_gmtime64, __time64_t, g_lt64[i], lbl);
+#endif
+        LOCGM_S_ROW(_localtime32_s, __time32_t, g_lt32[i], lbl);
+        LOCGM_PTR_ROW(_localtime32, __time32_t, g_lt32[i], lbl);
+        LOCGM_S_ROW(_localtime64_s, __time64_t, g_lt64[i], lbl);
+        LOCGM_PTR_ROW(_localtime64, __time64_t, g_lt64[i], lbl);
+    }
+
+    /* NULL ptm / NULL time_t: handler-calling EINVAL on both. */
+    {
+        __time32_t tv = 0;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _localtime32_s((struct tm *)0, &tv);
+        errno_t c2 = ref__localtime32_s((struct tm *)0, &tv);
+        grade2("_localtime32_s.nullptm", tzlbl, c1, c2);
+        grade2("_localtime32_s.nullptm.errno", tzlbl, *_errno(), *ref__errno());
+
+        struct tm t1, t2;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        c1 = _localtime32_s(&t1, (const __time32_t *)0);
+        c2 = ref__localtime32_s(&t2, (const __time32_t *)0);
+        grade2("_localtime32_s.nulltime", tzlbl, c1, c2);
+        grade2("_localtime32_s.nulltime.errno", tzlbl, *_errno(), *ref__errno());
+    }
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+
+static void run_time__localtime32(void)
+{
+    run_time__localtime_and_gmtime(L"PST8PDT", "PST8PDT");
+    run_time__localtime_and_gmtime(L"EST5EDT", "EST5EDT");
+    run_time__localtime_and_gmtime(L"UTC0", "UTC0");
+}
+#endif /* UCRTDIFF_REF_HAS__localtime32 */
+
+/* gmtime.cpp's own guard covers only `__getgmtimebuf` (internal, ungraded);
+ * its four exports are graded inside `run_time__localtime32` above (they
+ * share the corpus, and TZ-independence means they do not need their own
+ * TZ loop) -- but they must still be reachable when localtime.cpp is
+ * guarded 0 and gmtime.cpp is guarded 1 (independent deletion order), so a
+ * second, TZ-free entry point is provided for that case. */
+#if UCRTDIFF_REF_HAS__gmtime32 && !UCRTDIFF_REF_HAS__localtime32
+/* ref_ prototypes already declared above, under the unconditional
+ * `#if UCRTDIFF_REF_HAS__gmtime32` block. */
+static const __time32_t g_gm32_only[] = { 0, 1, 86400, 1000000000L, 0x7fffd27fL, -1 };
+#define GM32_ONLY_N (sizeof(g_gm32_only) / sizeof(g_gm32_only[0]))
+static const __time64_t g_gm64_only[] = { 0, 1, 86400, 1000000000LL, 2147483648LL, 0x793582affLL, -1 };
+#define GM64_ONLY_N (sizeof(g_gm64_only) / sizeof(g_gm64_only[0]))
+
+static void run_time__gmtime32(void)
+{
+    unsigned i;
+    install_counting_iph();
+    for (i = 0; i < GM32_ONLY_N; i++) {
+        LOCGM_S_ROW(_gmtime32_s, __time32_t, g_gm32_only[i], label_idx(i));
+        LOCGM_PTR_ROW(_gmtime32, __time32_t, g_gm32_only[i], label_idx(i));
+    }
+    for (i = 0; i < GM64_ONLY_N; i++) {
+        LOCGM_S_ROW(_gmtime64_s, __time64_t, g_gm64_only[i], label_idx(i));
+        LOCGM_PTR_ROW(_gmtime64, __time64_t, g_gm64_only[i], label_idx(i));
+    }
+}
+#endif
+
+/* ==== mktime (time/mktime.cpp) ============================================
+ * `tb` is graded BOTH ways: the returned time_t AND the (normalized) `*tb`
+ * afterwards -- mktime's job is exactly to fill in/normalize the struct, so
+ * grading only the return value would miss the half of the contract
+ * `mktime.rs`'s own doc calls out (tm_wday/tm_yday/tm_isdst population,
+ * out-of-range tm_mon/tm_mday folding). */
+#if UCRTDIFF_REF_HAS__mktime32
+__time32_t __cdecl ref__mktime32(struct tm *);
+__time64_t __cdecl ref__mktime64(struct tm *);
+__time32_t __cdecl ref__mkgmtime32(struct tm *);
+__time64_t __cdecl ref__mkgmtime64(struct tm *);
+void __cdecl ref__tzset(void);
+errno_t __cdecl ref__wputenv_s(const wchar_t *, const wchar_t *);
+
+#define MK_ROW(fn, lbl, ...) do {                                              \
+        struct tm t1 = { __VA_ARGS__ }, t2 = { __VA_ARGS__ };                  \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        long long r1 = (long long)fn(&t1);                                    \
+        long long r2 = (long long)ref_##fn(&t2);                              \
+        grade2(#fn, lbl, r1, r2);                                             \
+        grade2(#fn ".tb", lbl, fnv(&t1, sizeof t1), fnv(&t2, sizeof t2));     \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+    } while (0)
+
+static void run_time__mktime32(void)
+{
+    _wputenv_s(L"TZ", L"PST8PDT"); _tzset();
+    ref__wputenv_s(L"TZ", L"PST8PDT"); ref__tzset();
+    install_counting_iph();
+
+    /* sec,min,hour,mday,mon,year,wday,yday,isdst -- wday/yday deliberately
+     * wrong (99) to prove they get overwritten; isdst=-1 ("let mktime
+     * decide") for most, one row each with isdst forced 0 and 1. */
+    /* 2024-06-15 12:00:00, normal case */
+    MK_ROW(_mktime32, "normal", 0, 0, 12, 15, 5, 124, 99, 99, -1);
+    /* Out-of-range month (13 => next Jan) and day (35 => folds forward). */
+    MK_ROW(_mktime32, "mon13", 0, 0, 12, 15, 13, 124, 99, 99, -1);
+    MK_ROW(_mktime32, "mday35", 0, 0, 12, 35, 0, 124, 99, 99, -1);
+    /* Negative month folds the year back. */
+    MK_ROW(_mktime32, "monneg1", 0, 0, 12, 15, -1, 124, 99, 99, -1);
+    /* Right at a US DST transition (2024-03-10 02:30 local doesn't exist;
+     * 2024-11-03 01:30 local is ambiguous) -- isdst forced both ways. */
+    MK_ROW(_mktime32, "dst.isdst1", 0, 30, 1, 3, 10, 124, 99, 99, 1);
+    MK_ROW(_mktime32, "dst.isdst0", 0, 30, 1, 3, 10, 124, 99, 99, 0);
+    /* tm_year far out of range -> EINVAL, -1, *tb untouched. */
+    MK_ROW(_mktime32, "yearbad", 0, 0, 0, 1, 0, 100000, 99, 99, -1);
+
+    MK_ROW(_mktime64, "normal", 0, 0, 12, 15, 5, 124, 99, 99, -1);
+    MK_ROW(_mktime64, "mon13", 0, 0, 12, 15, 13, 124, 99, 99, -1);
+
+    MK_ROW(_mkgmtime32, "normal", 0, 0, 12, 15, 5, 124, 99, 99, -1);
+    MK_ROW(_mkgmtime32, "mon13", 0, 0, 12, 15, 13, 124, 99, 99, -1);
+    MK_ROW(_mkgmtime64, "normal", 0, 0, 12, 15, 5, 124, 99, 99, -1);
+
+    /* NULL tb. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        long long r1 = (long long)_mktime32((struct tm *)0);
+        long long r2 = (long long)ref__mktime32((struct tm *)0);
+        grade2("_mktime32.nulltb", "-", r1, r2);
+        grade2("_mktime32.nulltb.errno", "-", *_errno(), *ref__errno());
+        grade2("_mktime32.nulltb.iph", "-", g_iph_dll, g_iph_ref);
+    }
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+#endif /* UCRTDIFF_REF_HAS__mktime32 */
+
+/* ==== asctime (time/asctime.cpp) ========================================== */
+#if UCRTDIFF_REF_HAS_asctime
+errno_t __cdecl ref_asctime_s(char *, size_t, const struct tm *);
+errno_t __cdecl ref__wasctime_s(wchar_t *, size_t, const struct tm *);
+char *__cdecl ref_asctime(const struct tm *);
+wchar_t *__cdecl ref__wasctime(const struct tm *);
+
+/* Tue May 1 02:34:55 1984 -- the exact worked example in the C's own
+ * comment; a leap-second (tm_sec=60); a single-digit mday (space-padded,
+ * not zero-padded); an invalid field (tm_mon=12) to hit the handler. */
+static const struct tm g_at_ok1 = { 55, 34, 2, 1, 4, 84, 2, 121, 0 };
+static const struct tm g_at_leapsec = { 60, 59, 23, 31, 11, 124, 2, 365, 0 };
+static const struct tm g_at_narrow_day = { 0, 0, 0, 5, 0, 100, 3, 4, 0 };
+static const struct tm g_at_badmon = { 0, 0, 0, 1, 12, 100, 0, 0, 0 };
+
+#define AS_S_ROW(fn, CH, tmv, lbl) do {                                        \
+        CH b1[40], b2[40];                                                    \
+        int _k; for (_k = 0; _k < 40; _k++) { b1[_k] = (CH)'X'; b2[_k] = (CH)'X'; } \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        errno_t c1 = fn(b1, 40, &(tmv));                                      \
+        errno_t c2 = ref_##fn(b2, 40, &(tmv));                                \
+        grade2(#fn, lbl, c1, c2);                                             \
+        grade2(#fn ".val", lbl, fnv(b1, 40 * sizeof(CH)), fnv(b2, 40 * sizeof(CH))); \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                         \
+    } while (0)
+
+static void run_time_asctime_s(void)
+{
+    install_counting_iph();
+    AS_S_ROW(asctime_s, char, g_at_ok1, "ok1");
+    AS_S_ROW(asctime_s, char, g_at_leapsec, "leapsec");
+    AS_S_ROW(asctime_s, char, g_at_narrow_day, "narrowday");
+    AS_S_ROW(asctime_s, char, g_at_badmon, "badmon");
+    /* buffer too small (>0, <26). */
+    {
+        char b1[40], b2[40];
+        int k; for (k = 0; k < 40; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = asctime_s(b1, 10, &g_at_ok1);
+        errno_t c2 = ref_asctime_s(b2, 10, &g_at_ok1);
+        grade2("asctime_s.small", "-", c1, c2);
+        grade2("asctime_s.small.val", "-", fnv(b1, 40), fnv(b2, 40));
+        grade2("asctime_s.small.errno", "-", *_errno(), *ref__errno());
+    }
+    /* NULL buffer / NULL tm. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = asctime_s((char *)0, 26, &g_at_ok1);
+        errno_t c2 = ref_asctime_s((char *)0, 26, &g_at_ok1);
+        grade2("asctime_s.nullbuf", "-", c1, c2);
+        grade2("asctime_s.nullbuf.errno", "-", *_errno(), *ref__errno());
+
+        char b1[40], b2[40];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        c1 = asctime_s(b1, 26, (const struct tm *)0);
+        c2 = ref_asctime_s(b2, 26, (const struct tm *)0);
+        grade2("asctime_s.nulltm", "-", c1, c2);
+        grade2("asctime_s.nulltm.errno", "-", *_errno(), *ref__errno());
+    }
+}
+
+static void run_time__wasctime_s(void)
+{
+    install_counting_iph();
+    AS_S_ROW(_wasctime_s, wchar_t, g_at_ok1, "ok1");
+    AS_S_ROW(_wasctime_s, wchar_t, g_at_leapsec, "leapsec");
+    AS_S_ROW(_wasctime_s, wchar_t, g_at_narrow_day, "narrowday");
+}
+
+#define AS_PTR_ROW(fn, CH, WLEN, tmv, lbl) do {                                \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        CH *p1 = fn(&(tmv));                                                  \
+        CH *p2 = ref_##fn(&(tmv));                                            \
+        grade2(#fn ".isnull", lbl, p1 == 0, p2 == 0);                         \
+        if (p1 && p2)                                                        \
+            grade2(#fn ".val", lbl, fnv(p1, (WLEN(p1) + 1) * sizeof(CH)),     \
+                   fnv(p2, (WLEN(p2) + 1) * sizeof(CH)));                     \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                  \
+    } while (0)
+
+static void run_time_asctime(void)
+{
+    install_counting_iph();
+    AS_PTR_ROW(asctime, char, TM_STRLEN, g_at_ok1, "ok1");
+    AS_PTR_ROW(asctime, char, TM_STRLEN, g_at_leapsec, "leapsec");
+}
+
+static void run_time__wasctime(void)
+{
+    install_counting_iph();
+    AS_PTR_ROW(_wasctime, wchar_t, TM_WCSLEN, g_at_ok1, "ok1");
+}
+#endif /* UCRTDIFF_REF_HAS_asctime */
+
+/* ==== utime / futime (time/utime.cpp) =====================================
+ * Real filesystem side effects, on ONE shared temp file per row, set via
+ * each side in turn and read back via `_stat64` (already-exported, from
+ * filesystem/stat.cpp -- graded for its own correctness elsewhere; used here
+ * only as the oracle). The file is created and deleted by THIS runner, never
+ * left behind. */
+#if UCRTDIFF_REF_HAS__utime32
+void __cdecl ref__tzset(void);
+errno_t __cdecl ref__wputenv_s(const wchar_t *, const wchar_t *);
+int __cdecl ref__utime32(const char *, struct __utimbuf32 *);
+int __cdecl ref__wutime32(const wchar_t *, struct __utimbuf32 *);
+int __cdecl ref__utime64(const char *, struct __utimbuf64 *);
+int __cdecl ref__wutime64(const wchar_t *, struct __utimbuf64 *);
+int __cdecl ref__futime32(int, struct __utimbuf32 *);
+int __cdecl ref__futime64(int, struct __utimbuf64 *);
+
+/* The reference instance has its own lowio table: a descriptor the DLL's _open
+ * returned means nothing to ref__futime*. Open the reference side's own, from a
+ * Win32 handle, through Microsoft's _open_osfhandle -- and the DLL side the same way,
+ * so both rows open identically. */
+intptr_t __cdecl ref__open_osfhandle(intptr_t, int);
+int __cdecl ref__close(int);
+static int time_open_rw(const char *p, int ref)
+{
+    HANDLE h = CreateFileA(p, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 0,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    return (int)(ref ? ref__open_osfhandle((intptr_t)h, _O_RDWR | _O_BINARY)
+                     : _open_osfhandle((intptr_t)h, _O_RDWR | _O_BINARY));
+}
+
+static const char *time_temp_path(void)
+{
+    static char buf[MAX_PATH];
+    GetTempPathA(sizeof buf, buf);
+    strcat(buf, "ucrtdiff_time_utime.tmp");
+    return buf;
+}
+
+/* Sets mtime/atime via `set_fn(path, &times)`, reads them back via
+ * `_stat64`, and grades the READ-BACK st_mtime/st_atime -- not the
+ * function's own return value alone, since a silently-wrong SetFileTime
+ * call would still return 0. */
+#define UT_ROW(fn, lbl, ut_at, ut_mt) do {                                     \
+        const char *path = time_temp_path();                                   \
+        FILE *f = fopen(path, "w"); if (f) fclose(f);                          \
+        struct __utimbuf32 t1; t1.actime = (ut_at); t1.modtime = (ut_mt);      \
+        *_errno() = 0; g_iph_dll = 0;                                          \
+        int r1 = fn(path, &t1);                                                \
+        int e1 = *_errno();                                                    \
+        struct _stat64 st1; memset(&st1, 0, sizeof st1);                       \
+        _stat64(path, &st1);                                                   \
+        remove(path);                                                          \
+        f = fopen(path, "w"); if (f) fclose(f);                                \
+        struct __utimbuf32 t2; t2.actime = (ut_at); t2.modtime = (ut_mt);      \
+        *ref__errno() = 0; g_iph_ref = 0;                                      \
+        int r2 = ref_##fn(path, &t2);                                          \
+        int e2 = *ref__errno();                                                \
+        struct _stat64 st2; memset(&st2, 0, sizeof st2);                       \
+        _stat64(path, &st2);                                                   \
+        remove(path);                                                          \
+        grade2(#fn, lbl, r1, r2);                                              \
+        grade2(#fn ".errno", lbl, e1, e2);                                     \
+        grade2(#fn ".mtime", lbl, (long long)st1.st_mtime, (long long)st2.st_mtime); \
+        grade2(#fn ".atime", lbl, (long long)st1.st_atime, (long long)st2.st_atime); \
+    } while (0)
+
+static void run_time__utime32(void)
+{
+    install_counting_iph();
+    _wputenv_s(L"TZ", L"PST8PDT"); _tzset();
+    ref__wputenv_s(L"TZ", L"PST8PDT"); ref__tzset();
+
+    UT_ROW(_utime32, "normal", 1700000000L, 1700003600L);
+    /* NULL times -> both fields set to "now" (one _time32 call, reused for
+     * both) -- graded structurally (mtime == atime), not by exact value. */
+    {
+        const char *path = time_temp_path();
+        FILE *f = fopen(path, "w"); if (f) fclose(f);
+        *_errno() = 0;
+        int r1 = _utime32(path, (struct __utimbuf32 *)0);
+        struct _stat64 st1; memset(&st1, 0, sizeof st1);
+        _stat64(path, &st1);
+        remove(path);
+        f = fopen(path, "w"); if (f) fclose(f);
+        int r2 = ref__utime32(path, (struct __utimbuf32 *)0);
+        struct _stat64 st2; memset(&st2, 0, sizeof st2);
+        _stat64(path, &st2);
+        remove(path);
+        /* Compared across the two sides, not asserted: FAT keeps the access time
+         * to the DAY, so "mtime == atime" is false on this volume for both. */
+        grade2("_utime32.nulltimes.samefields", "-", (long long)(st1.st_mtime == st1.st_atime),
+               (long long)(st2.st_mtime == st2.st_atime));
+        grade2("_utime32.nulltimes.ret", "-", r1, r2);
+    }
+    /* NULL filename -> EINVAL, handler called. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = _utime32((const char *)0, (struct __utimbuf32 *)0);
+        int r2 = ref__utime32((const char *)0, (struct __utimbuf32 *)0);
+        grade2("_utime32.nullname", "-", r1, r2);
+        grade2("_utime32.nullname.errno", "-", *_errno(), *ref__errno());
+        grade2("_utime32.nullname.iph", "-", g_iph_dll, g_iph_ref);
+    }
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+
+static void run_time__futime32(void)
+{
+    const char *path = time_temp_path();
+    install_counting_iph();
+    _wputenv_s(L"TZ", L"PST8PDT"); _tzset();
+    ref__wputenv_s(L"TZ", L"PST8PDT"); ref__tzset();
+
+    {
+        FILE *f = fopen(path, "w"); if (f) fclose(f);
+        int fh1 = time_open_rw(path, 0);
+        struct __utimbuf32 t1; t1.actime = 1700000000L; t1.modtime = 1700003600L;
+        *_errno() = 0;
+        int r1 = _futime32(fh1, &t1);
+        int e1 = *_errno();
+        struct _stat64 st1; memset(&st1, 0, sizeof st1);
+        _stat64(path, &st1);
+        _close(fh1);
+        remove(path);
+
+        f = fopen(path, "w"); if (f) fclose(f);
+        int fh2 = time_open_rw(path, 1);
+        struct __utimbuf32 t2; t2.actime = 1700000000L; t2.modtime = 1700003600L;
+        *ref__errno() = 0;
+        int r2 = ref__futime32(fh2, &t2);
+        int e2 = *ref__errno();
+        struct _stat64 st2; memset(&st2, 0, sizeof st2);
+        _stat64(path, &st2);
+        ref__close(fh2);
+        remove(path);
+
+        grade2("_futime32", "-", r1, r2);
+        grade2("_futime32.errno", "-", e1, e2);
+        grade2("_futime32.mtime", "-", (long long)st1.st_mtime, (long long)st2.st_mtime);
+        grade2("_futime32.atime", "-", (long long)st1.st_atime, (long long)st2.st_atime);
+    }
+    /* Bad descriptor -> EBADF, handler called. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = _futime32(-2, (struct __utimbuf32 *)0);
+        int r2 = ref__futime32(-2, (struct __utimbuf32 *)0);
+        grade2("_futime32.badfh", "-", r1, r2);
+        grade2("_futime32.badfh.errno", "-", *_errno(), *ref__errno());
+        grade2("_futime32.badfh.iph", "-", g_iph_dll, g_iph_ref);
+    }
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+#endif /* UCRTDIFF_REF_HAS__utime32 */
+
+/* ==== ftime (time/ftime.cpp) ===============================================
+ * `tp->time`/`tp->millitm` are wall-clock and NOT graded by value (the two
+ * calls are microseconds apart at best); `tp->timezone`/`tp->dstflag` ARE
+ * deterministic given a fixed TZ and are graded exactly. */
+#if UCRTDIFF_REF_HAS__ftime32
+errno_t __cdecl ref__ftime32_s(struct __timeb32 *);
+void __cdecl ref__ftime32(struct __timeb32 *);
+errno_t __cdecl ref__ftime64_s(struct __timeb64 *);
+void __cdecl ref__ftime64(struct __timeb64 *);
+void __cdecl ref__tzset(void);
+errno_t __cdecl ref__wputenv_s(const wchar_t *, const wchar_t *);
+
+static void run_time__ftime32_s(void)
+{
+    struct __timeb32 t1, t2;
+    install_counting_iph();
+    _wputenv_s(L"TZ", L"PST8PDT"); _tzset();
+    ref__wputenv_s(L"TZ", L"PST8PDT"); ref__tzset();
+
+    memset(&t1, 0xAB, sizeof t1); memset(&t2, 0xAB, sizeof t2);
+    *_errno() = 0; *ref__errno() = 0;
+    errno_t c1 = _ftime32_s(&t1);
+    errno_t c2 = ref__ftime32_s(&t2);
+    grade2("_ftime32_s", "-", c1, c2);
+    grade2("_ftime32_s.timezone", "-", t1.timezone, t2.timezone);
+    grade2("_ftime32_s.dstflag", "-", t1.dstflag, t2.dstflag);
+    grade2("_ftime32_s.errno", "-", *_errno(), *ref__errno());
+
+    /* NULL tp -> EINVAL, handler called. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _ftime32_s((struct __timeb32 *)0);
+    c2 = ref__ftime32_s((struct __timeb32 *)0);
+    grade2("_ftime32_s.null", "-", c1, c2);
+    grade2("_ftime32_s.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_ftime32_s.null.iph", "-", g_iph_dll, g_iph_ref);
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+
+static void run_time__ftime32(void)
+{
+    struct __timeb32 t1, t2;
+    install_counting_iph();
+    memset(&t1, 0, sizeof t1); memset(&t2, 0, sizeof t2);
+    _ftime32(&t1);
+    ref__ftime32(&t2);
+    /* `_ftime32` has no return value; sanity only -- both report a
+     * plausible (non-zero, matching order of magnitude) epoch second. */
+    grade2("_ftime32.nonzero", "-", t1.time != 0, t2.time != 0);
+}
+
+static void run_time__ftime64_s(void)
+{
+    struct __timeb64 t1, t2;
+    install_counting_iph();
+    _wputenv_s(L"TZ", L"EST5EDT"); _tzset();
+    ref__wputenv_s(L"TZ", L"EST5EDT"); ref__tzset();
+
+    memset(&t1, 0xAB, sizeof t1); memset(&t2, 0xAB, sizeof t2);
+    *_errno() = 0; *ref__errno() = 0;
+    errno_t c1 = _ftime64_s(&t1);
+    errno_t c2 = ref__ftime64_s(&t2);
+    grade2("_ftime64_s", "-", c1, c2);
+    grade2("_ftime64_s.timezone", "-", t1.timezone, t2.timezone);
+    grade2("_ftime64_s.dstflag", "-", t1.dstflag, t2.dstflag);
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+#endif /* UCRTDIFF_REF_HAS__ftime32 */
+
+/* ==== strdate / strtime (time/strdate.cpp, time/strtime.cpp) ==============
+ * Not graded by exact VALUE (the local date/time can differ between the two
+ * calls, and races a midnight/minute boundary): graded by FORMAT invariant
+ * (fixed-position digits and separators) plus the small-buffer/NULL
+ * contract, which is what strdate.rs/strtime.rs actually changed.
+ *
+ * `is_digit_ch` is shared by both blocks below (and so defined
+ * unconditionally, outside either guard) -- strdate.cpp and strtime.cpp are
+ * independently deletable, so a guard-1-only definition would leave
+ * `date_shape`/`time_shape` referencing it whenever only ONE of the two
+ * guards is set. */
+static int is_digit_ch(int c) { return c >= '0' && c <= '9'; }
+
+#if UCRTDIFF_REF_HAS__strdate
+errno_t __cdecl ref__strdate_s(char *, size_t);
+errno_t __cdecl ref__wstrdate_s(wchar_t *, size_t);
+char *__cdecl ref__strdate(char *);
+wchar_t *__cdecl ref__wstrdate(wchar_t *);
+
+/* "MM/DD/YY\0": digit,digit,'/',digit,digit,'/',digit,digit,'\0'. */
+static long long date_shape(const char *b)
+{
+    return (long long)(is_digit_ch(b[0]) && is_digit_ch(b[1]) && b[2] == '/' &&
+                        is_digit_ch(b[3]) && is_digit_ch(b[4]) && b[5] == '/' &&
+                        is_digit_ch(b[6]) && is_digit_ch(b[7]) && b[8] == 0);
+}
+
+static void run_time__strdate_s(void)
+{
+    char b1[16], b2[16];
+    install_counting_iph();
+    memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+    *_errno() = 0; *ref__errno() = 0;
+    errno_t c1 = _strdate_s(b1, 9);
+    errno_t c2 = ref__strdate_s(b2, 9);
+    grade2("_strdate_s", "-", c1, c2);
+    grade2("_strdate_s.shape", "-", date_shape(b1), date_shape(b2));
+    grade2("_strdate_s.errno", "-", *_errno(), *ref__errno());
+
+    /* Too small (>0, <9): NUL-reset buffer[0], ERANGE. */
+    memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _strdate_s(b1, 4);
+    c2 = ref__strdate_s(b2, 4);
+    grade2("_strdate_s.small", "-", c1, c2);
+    grade2("_strdate_s.small.buf0", "-", b1[0], b2[0]);
+    grade2("_strdate_s.small.errno", "-", *_errno(), *ref__errno());
+    grade2("_strdate_s.small.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* NULL buffer -> EINVAL, handler. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _strdate_s((char *)0, 9);
+    c2 = ref__strdate_s((char *)0, 9);
+    grade2("_strdate_s.null", "-", c1, c2);
+    grade2("_strdate_s.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_strdate_s.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_time__strdate(void)
+{
+    char b1[16], b2[16];
+    install_counting_iph();
+    char *p1 = _strdate(b1);
+    char *p2 = ref__strdate(b2);
+    grade2("_strdate.isnull", "-", p1 == 0, p2 == 0);
+    grade2("_strdate.shape", "-", date_shape(b1), date_shape(b2));
+}
+#endif /* UCRTDIFF_REF_HAS__strdate */
+
+#if UCRTDIFF_REF_HAS__strtime
+errno_t __cdecl ref__strtime_s(char *, size_t);
+char *__cdecl ref__strtime(char *);
+
+static long long time_shape(const char *b)
+{
+    return (long long)(is_digit_ch(b[0]) && is_digit_ch(b[1]) && b[2] == ':' &&
+                        is_digit_ch(b[3]) && is_digit_ch(b[4]) && b[5] == ':' &&
+                        is_digit_ch(b[6]) && is_digit_ch(b[7]) && b[8] == 0);
+}
+
+static void run_time__strtime_s(void)
+{
+    char b1[16], b2[16];
+    install_counting_iph();
+    memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+    *_errno() = 0; *ref__errno() = 0;
+    errno_t c1 = _strtime_s(b1, 9);
+    errno_t c2 = ref__strtime_s(b2, 9);
+    grade2("_strtime_s", "-", c1, c2);
+    grade2("_strtime_s.shape", "-", time_shape(b1), time_shape(b2));
+    grade2("_strtime_s.errno", "-", *_errno(), *ref__errno());
+
+    memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _strtime_s(b1, 4);
+    c2 = ref__strtime_s(b2, 4);
+    grade2("_strtime_s.small", "-", c1, c2);
+    grade2("_strtime_s.small.buf0", "-", b1[0], b2[0]);
+    grade2("_strtime_s.small.errno", "-", *_errno(), *ref__errno());
+}
+
+static void run_time__strtime(void)
+{
+    char b1[16], b2[16];
+    install_counting_iph();
+    char *p1 = _strtime(b1);
+    char *p2 = ref__strtime(b2);
+    grade2("_strtime.isnull", "-", p1 == 0, p2 == 0);
+    grade2("_strtime.shape", "-", time_shape(b1), time_shape(b2));
+}
+#endif /* UCRTDIFF_REF_HAS__strtime */
+
+/* ==== time / timespec_get (time/time.cpp) ==================================
+ * Per the batch brief, NOT graded by value (wall-clock): argument/errno
+ * contract, and sanity (non-negative, roughly "now", monotonic across the
+ * two back-to-back calls within a few seconds' slop). */
+#if UCRTDIFF_REF_HAS__time32
+__time32_t __cdecl ref__time32(__time32_t *);
+__time64_t __cdecl ref__time64(__time64_t *);
+int __cdecl ref__timespec32_get(struct _timespec32 *, int);
+int __cdecl ref__timespec64_get(struct _timespec64 *, int);
+
+static void run_time__time32(void)
+{
+    __time32_t r1v, r2v;
+    __time32_t r1 = _time32(&r1v);
+    __time32_t r2 = ref__time32(&r2v);
+    install_counting_iph();
+    grade2("_time32.nonneg", "-", r1 >= 0, 1);
+    grade2("_time32.nonneg", "-", r2 >= 0, 1);
+    grade2("_time32.outparam_matches_return", "-", r1 == r1v, 1);
+    grade2("_time32.outparam_matches_return", "-", r2 == r2v, 1);
+    /* "roughly now": within a day of each other -- catches a gross unit
+     * error (e.g. milliseconds instead of seconds) without pinning wall
+     * clock. */
+    {
+        long long diff = (long long)r1 - (long long)r2;
+        if (diff < 0) diff = -diff;
+        grade2("_time32.agrees_with_ref_roughly", "-", diff < 86400, 1);
+    }
+    /* NULL result: still returns the time, no crash. */
+    __time32_t r3 = _time32((__time32_t *)0);
+    grade2("_time32.null_ok", "-", r3 >= 0, 1);
+}
+
+static void run_time__time64(void)
+{
+    __time64_t r1v, r2v;
+    __time64_t r1 = _time64(&r1v);
+    __time64_t r2 = ref__time64(&r2v);
+    grade2("_time64.nonneg", "-", r1 >= 0, 1);
+    grade2("_time64.nonneg", "-", r2 >= 0, 1);
+    grade2("_time64.outparam_matches_return", "-", (long long)(r1 == r1v), 1);
+    grade2("_time64.outparam_matches_return", "-", (long long)(r2 == r2v), 1);
+}
+
+static void run_time__timespec32_get(void)
+{
+    struct _timespec32 ts1, ts2;
+    memset(&ts1, 0, sizeof ts1); memset(&ts2, 0, sizeof ts2);
+    int b1 = _timespec32_get(&ts1, 1 /* TIME_UTC */);
+    int b2 = ref__timespec32_get(&ts2, 1);
+    grade2("_timespec32_get.base", "-", b1, b2);
+    grade2("_timespec32_get.nsec_range", "-", ts1.tv_nsec >= 0 && ts1.tv_nsec < 1000000000L, 1);
+    grade2("_timespec32_get.nsec_range", "-", ts2.tv_nsec >= 0 && ts2.tv_nsec < 1000000000L, 1);
+    /* Unsupported base: returns 0, `*ts` untouched. */
+    memset(&ts1, 0xAB, sizeof ts1); memset(&ts2, 0xAB, sizeof ts2);
+    b1 = _timespec32_get(&ts1, 999);
+    b2 = ref__timespec32_get(&ts2, 999);
+    grade2("_timespec32_get.badbase", "-", b1, b2);
+    grade2("_timespec32_get.badbase.untouched", "-", fnv(&ts1, sizeof ts1), fnv(&ts2, sizeof ts2));
+    /* NULL ts -> EINVAL, handler, returns 0. */
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    b1 = _timespec32_get((struct _timespec32 *)0, 1);
+    b2 = ref__timespec32_get((struct _timespec32 *)0, 1);
+    grade2("_timespec32_get.null", "-", b1, b2);
+    grade2("_timespec32_get.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_timespec32_get.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+#endif /* UCRTDIFF_REF_HAS__time32 */
+
+/* ==== clock (time/clock.cpp) ================================================
+ * Per the batch brief, NOT graded by value: sanity (non-negative,
+ * monotonic non-decreasing across two back-to-back calls) only. */
+#if UCRTDIFF_REF_HAS_clock
+clock_t __cdecl ref_clock(void);
+
+static void run_time_clock(void)
+{
+    clock_t a1 = clock(), a2 = clock();
+    clock_t b1 = ref_clock(), b2 = ref_clock();
+    grade2("clock.nonneg", "-", a1 >= 0, 1);
+    grade2("clock.nonneg", "-", b1 >= 0, 1);
+    grade2("clock.monotonic", "-", a2 >= a1, 1);
+    grade2("clock.monotonic", "-", b2 >= b1, 1);
+}
+#endif /* UCRTDIFF_REF_HAS_clock */
+
+/* ==== difftime (time/difftime.cpp) =========================================
+ * Fully deterministic given two time_t inputs -- graded exactly. */
+#if UCRTDIFF_REF_HAS__difftime32
+double __cdecl ref__difftime32(__time32_t, __time32_t);
+double __cdecl ref__difftime64(__time64_t, __time64_t);
+
+static unsigned long long dt_bits(double d) { unsigned long long u; memcpy(&u, &d, 8); return u; }
+
+#define DT_ROW(fn, lbl, b, a) do {                                             \
+        *_errno() = 0; *ref__errno() = 0;                                     \
+        double v1 = fn((b), (a));                                             \
+        double v2 = ref_##fn((b), (a));                                       \
+        grade2(#fn, lbl, (long long)dt_bits(v1), (long long)dt_bits(v2));     \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                  \
+    } while (0)
+
+static void run_time__difftime32(void)
+{
+    install_counting_iph();
+    DT_ROW(_difftime32, "normal", 1000, 100);
+    DT_ROW(_difftime32, "zero", 500, 500);
+    DT_ROW(_difftime32, "b<a", 100, 1000);
+    /* Either negative -> EINVAL (no handler), returns 0.0. */
+    DT_ROW(_difftime32, "aneg", 1000, -1);
+    DT_ROW(_difftime32, "bneg", -1, 1000);
+    DT_ROW(_difftime32, "bothneg", -5, -1);
+
+    DT_ROW(_difftime64, "normal", 100000000000LL, 1);
+    DT_ROW(_difftime64, "aneg", 1000, -1);
+}
+#endif /* UCRTDIFF_REF_HAS__difftime32 */
+
+/* 2024-06-15 (Saturday), 13:45:30, yday=165 (0-based), not DST. Shared by
+ * both the wcsftime and strftime blocks below (independently deletable, so
+ * defined unconditionally, outside either guard -- same reasoning as
+ * `is_digit_ch` above). */
+static const struct tm g_wf_base = { 30, 45, 13, 15, 5, 124, 6, 165, 0 };
+
+/* ==== wcsftime (time/wcsftime.cpp) =========================================
+ * `_Wcsftime_l`/`_Getdays_l`/`_Getmonths_l` (the `_l` twins with the extra
+ * `lc_time_arg` parameter) are NOT in ucrtbase.spec -- confirmed absent from
+ * `libucrt_ref.a` on all three arches with `llvm-nm` (unlike every other
+ * name graded in this file) -- so only the exported wrappers
+ * (`wcsftime`/`_wcsftime_l`/`_Wcsftime`, `_W_Getdays`/`_W_Getmonths`/
+ * `_W_Gettnames`) are graded here; `_Wcsftime_l` itself is exercised only
+ * indirectly, through them. */
+#if UCRTDIFF_REF_HAS_wcsftime
+size_t __cdecl ref_wcsftime(wchar_t *, size_t, const wchar_t *, const struct tm *);
+size_t __cdecl ref__wcsftime_l(wchar_t *, size_t, const wchar_t *, const struct tm *, _locale_t);
+size_t __cdecl ref__Wcsftime(wchar_t *, size_t, const wchar_t *, const struct tm *, void *);
+wchar_t *__cdecl ref__W_Getdays(void);
+wchar_t *__cdecl ref__W_Getmonths(void);
+void *__cdecl ref__W_Gettnames(void);
+
+/* `_W_Getdays`/`_W_Getmonths`/`_W_Gettnames` are undocumented internal
+ * helpers -- absent from every public mingw header (unlike every other name
+ * in this file), so the DLL side cannot be reached by a plain call at all;
+ * import pointers, same mechanism `UD_IMP` uses for a mingw-inlined name. */
+extern wchar_t *(__cdecl *const ud__W_Getdays)(void) __asm__(UD_IMP(_W_Getdays));
+extern wchar_t *(__cdecl *const ud__W_Getmonths)(void) __asm__(UD_IMP(_W_Getmonths));
+extern void *(__cdecl *const ud__W_Gettnames)(void) __asm__(UD_IMP(_W_Gettnames));
+
+#define WFBUF 64
+
+/* Prefilled with 'X' so an untouched tail (a too-small buffer, or a failed
+ * call leaving the C's own `*string = L'\0'` as the only write) shows
+ * plainly against genuinely-formatted output. */
+#define WF_ROW(lbl, fmt, tmv, size) do {                                       \
+        wchar_t b1[WFBUF], b2[WFBUF];                                          \
+        for (int _k = 0; _k < WFBUF; _k++) { b1[_k] = L'X'; b2[_k] = L'X'; }   \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        size_t r1 = wcsftime(b1, (size), (fmt), &(tmv));                      \
+        size_t r2 = ref_wcsftime(b2, (size), (fmt), &(tmv));                  \
+        grade2("wcsftime", (lbl), (long long)r1, (long long)r2);              \
+        grade2("wcsftime.val", (lbl), fnv(b1, sizeof b1), fnv(b2, sizeof b2)); \
+        grade2("wcsftime.errno", (lbl), *_errno(), *ref__errno());            \
+        grade2("wcsftime.iph", (lbl), g_iph_dll, g_iph_ref);                  \
+    } while (0)
+
+/* `g_wf_base` is defined unconditionally, above. */
+
+static void run_time__Wcsftime_l(void)
+{
+    install_counting_iph();
+
+    /* Explicitly force the "C" locale first, so this runner's result does
+     * not depend on whatever an earlier/later runner in the sweep left
+     * active -- guarded the same as the en-US sub-test below, since
+     * `ud_setlocale`/`ref_setlocale` (the import-pointer/ref_ pair) are
+     * declared only inside that guard, further up this translation unit. */
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    ud_setlocale(LC_ALL, "C");
+    ref_setlocale(LC_ALL, "C");
+#endif
+
+    /* Every specifier, with and without '#'. `%q` (not a specifier) is
+     * appended as the one deliberately-invalid case. */
+    static const wchar_t specs[] = L"aAbBcCdDeFgGhHIjmMnprRStTuUVwWxXyYzZ%q";
+    for (size_t i = 0; i < sizeof(specs) / sizeof(specs[0]) - 1; i++) {
+        wchar_t fmt[4];
+        fmt[0] = L'%'; fmt[1] = specs[i]; fmt[2] = 0;
+        WF_ROW(label_idx(i), fmt, g_wf_base, WFBUF);
+
+        wchar_t fmt_alt[4];
+        fmt_alt[0] = L'%'; fmt_alt[1] = L'#'; fmt_alt[2] = specs[i]; fmt_alt[3] = 0;
+        WF_ROW(label_idx(i), fmt_alt, g_wf_base, WFBUF);
+    }
+
+    /* All 7 weekdays (%a %A %u %w) and all 12 months (%b %B). */
+    for (int wd = 0; wd < 7; wd++) {
+        struct tm t = g_wf_base;
+        t.tm_wday = wd;
+        WF_ROW(label_idx((unsigned)wd), L"%a %A %u %w", t, WFBUF);
+    }
+    for (int mo = 0; mo < 12; mo++) {
+        struct tm t = g_wf_base;
+        t.tm_mon = mo;
+        WF_ROW(label_idx((unsigned)mo), L"%b %B", t, WFBUF);
+    }
+
+    /* tm fields out of range, one per specifier that validates it. */
+    {
+        struct tm t = g_wf_base; t.tm_wday = 7;
+        WF_ROW("badwday", L"%a", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_mon = 12;
+        WF_ROW("badmon", L"%b", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_mday = 0;
+        WF_ROW("badmday.lo", L"%d", t, WFBUF);
+        t.tm_mday = 32;
+        WF_ROW("badmday.hi", L"%d", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_hour = -1;
+        WF_ROW("badhour.lo", L"%H", t, WFBUF);
+        t.tm_hour = 24;
+        WF_ROW("badhour.hi", L"%H", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_min = -1;
+        WF_ROW("badmin.lo", L"%M", t, WFBUF);
+        t.tm_min = 60;
+        WF_ROW("badmin.hi", L"%M", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_sec = -1;
+        WF_ROW("badsec.lo", L"%S", t, WFBUF);
+        t.tm_sec = 61;
+        WF_ROW("badsec.hi", L"%S", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_year = -1901;
+        WF_ROW("badyear.lo", L"%Y", t, WFBUF);
+        t.tm_year = 8100;
+        WF_ROW("badyear.hi", L"%Y", t, WFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_yday = -1;
+        WF_ROW("badyday.lo", L"%j", t, WFBUF);
+        t.tm_yday = 366;
+        WF_ROW("badyday.hi", L"%j", t, WFBUF);
+    }
+
+    /* Too-small buffer: "%A" (full weekday name, "Saturday", 8 chars + NUL)
+     * into a 3-wchar_t buffer -- expect 0, ERANGE, no handler call, and
+     * `*string == L'\0'`. */
+    {
+        wchar_t b1[WFBUF], b2[WFBUF];
+        for (int k = 0; k < WFBUF; k++) { b1[k] = L'X'; b2[k] = L'X'; }
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = wcsftime(b1, 3, L"%A", &g_wf_base);
+        size_t r2 = ref_wcsftime(b2, 3, L"%A", &g_wf_base);
+        grade2("wcsftime.small", "-", (long long)r1, (long long)r2);
+        grade2("wcsftime.small.buf0", "-", b1[0], b2[0]);
+        grade2("wcsftime.small.errno", "-", *_errno(), *ref__errno());
+        grade2("wcsftime.small.iph", "-", g_iph_dll, g_iph_ref);
+    }
+
+    /* Invalid specifier standalone (redundant with the sweep's "%q" row,
+     * kept explicit for clarity): handler-calling EINVAL, buffer reset. */
+    WF_ROW("invalidspec", L"%q", g_wf_base, WFBUF);
+
+    /* NULL string / NULL format / zero max_size. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = wcsftime((wchar_t *)0, WFBUF, L"%Y", &g_wf_base);
+        size_t r2 = ref_wcsftime((wchar_t *)0, WFBUF, L"%Y", &g_wf_base);
+        grade2("wcsftime.nullstring", "-", (long long)r1, (long long)r2);
+        grade2("wcsftime.nullstring.errno", "-", *_errno(), *ref__errno());
+        grade2("wcsftime.nullstring.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    {
+        wchar_t b1[WFBUF], b2[WFBUF];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = wcsftime(b1, WFBUF, (const wchar_t *)0, &g_wf_base);
+        size_t r2 = ref_wcsftime(b2, WFBUF, (const wchar_t *)0, &g_wf_base);
+        grade2("wcsftime.nullformat", "-", (long long)r1, (long long)r2);
+        grade2("wcsftime.nullformat.errno", "-", *_errno(), *ref__errno());
+        grade2("wcsftime.nullformat.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    {
+        wchar_t b1[WFBUF], b2[WFBUF];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = wcsftime(b1, 0, L"%Y", &g_wf_base);
+        size_t r2 = ref_wcsftime(b2, 0, L"%Y", &g_wf_base);
+        grade2("wcsftime.zerosize", "-", (long long)r1, (long long)r2);
+        grade2("wcsftime.zerosize.errno", "-", *_errno(), *ref__errno());
+        grade2("wcsftime.zerosize.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    /* NULL timeptr with a format that has NO '%' directive: succeeds on
+     * both sides (validated lazily, only once a directive is reached --
+     * see wcsftime.rs's module doc). */
+    {
+        wchar_t b1[WFBUF], b2[WFBUF];
+        *_errno() = 0; *ref__errno() = 0;
+        size_t r1 = wcsftime(b1, WFBUF, L"no percent signs", (const struct tm *)0);
+        size_t r2 = ref_wcsftime(b2, WFBUF, L"no percent signs", (const struct tm *)0);
+        grade2("wcsftime.nulltm_no_directive", "-", (long long)r1, (long long)r2);
+        grade2("wcsftime.nulltm_no_directive.val", "-", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    }
+
+    /* _W_Getdays / _W_Getmonths / _W_Gettnames: grade the returned blob's
+     * content (nul-terminated for the first two; `_W_Gettnames`'s result is
+     * an opaque `__crt_lc_time_data*`, graded field-by-field via the SAME
+     * pointers `wcsftime` itself reads, since the two sides' allocations
+     * never share an address). */
+    {
+        wchar_t *p1 = ud__W_Getdays();
+        wchar_t *p2 = ref__W_Getdays();
+        grade2("_W_Getdays.isnull", "-", p1 == 0, p2 == 0);
+        if (p1 && p2)
+            grade2("_W_Getdays.val", "-", fnv(p1, (wcslen(p1) + 1) * sizeof(wchar_t)), fnv(p2, (wcslen(p2) + 1) * sizeof(wchar_t)));
+    }
+    {
+        wchar_t *p1 = ud__W_Getmonths();
+        wchar_t *p2 = ref__W_Getmonths();
+        grade2("_W_Getmonths.isnull", "-", p1 == 0, p2 == 0);
+        if (p1 && p2)
+            grade2("_W_Getmonths.val", "-", fnv(p1, (wcslen(p1) + 1) * sizeof(wchar_t)), fnv(p2, (wcslen(p2) + 1) * sizeof(wchar_t)));
+    }
+    {
+        void *p1 = ud__W_Gettnames();
+        void *p2 = ref__W_Gettnames();
+        grade2("_W_Gettnames.isnull", "-", p1 == 0, p2 == 0);
+        /* Field-by-field via the SAME `__crt_lc_time_data` layout the DLL's
+         * own `_Wcsftime_l` reads (`<time.h>`/`corecrt_internal_time.h`
+         * declare no such struct publicly, so this reads it as the
+         * documented ABI shape: 7+7+12+12+2 narrow pointers, `ww_*` format
+         * pointers, `ww_caltype`, `refcount`, then the wide mirror). Grading
+         * every wide day/month name's CONTENT (not the blob's raw bytes,
+         * which embed pointers that never match across two allocations). */
+        if (p1 && p2) {
+            struct gettnames_shape {
+                char *wday_abbr[7], *wday[7], *month_abbr[12], *month[12], *ampm[2];
+                char *ww_sdatefmt, *ww_ldatefmt, *ww_timefmt;
+                int ww_caltype; long refcount;
+                wchar_t *w_wday_abbr[7], *w_wday[7], *w_month_abbr[12], *w_month[12], *w_ampm[2];
+                wchar_t *w_ww_sdatefmt, *w_ww_ldatefmt, *w_ww_timefmt, *w_ww_locale_name;
+            };
+            struct gettnames_shape *g1 = (struct gettnames_shape *)p1;
+            struct gettnames_shape *g2 = (struct gettnames_shape *)p2;
+            for (int i = 0; i < 7; i++)
+                grade2("_W_Gettnames.wday", label_idx((unsigned)i), fnv(g1->w_wday[i], (wcslen(g1->w_wday[i]) + 1) * sizeof(wchar_t)), fnv(g2->w_wday[i], (wcslen(g2->w_wday[i]) + 1) * sizeof(wchar_t)));
+            for (int i = 0; i < 12; i++)
+                grade2("_W_Gettnames.month", label_idx((unsigned)i), fnv(g1->w_month[i], (wcslen(g1->w_month[i]) + 1) * sizeof(wchar_t)), fnv(g2->w_month[i], (wcslen(g2->w_month[i]) + 1) * sizeof(wchar_t)));
+            grade2("_W_Gettnames.caltype", "-", g1->ww_caltype, g2->ww_caltype);
+        }
+    }
+
+    /* One non-C locale, on BOTH sides, restoring "C" afterward -- only
+     * attempted when `setlocale`'s own block is graded (guards the
+     * `ud_setlocale`/`ref_setlocale` declarations, which live inside THAT
+     * guard, further up this same translation unit). "en-US" is a real
+     * Windows locale name every target Windows/ReactOS install recognizes;
+     * if `setlocale` fails to switch (returns NULL) on either side, the
+     * whole sub-test is skipped rather than grading a locale that never
+     * actually changed. */
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    {
+        char *s1 = ud_setlocale(LC_ALL, "en-US");
+        char *s2 = ref_setlocale(LC_ALL, "en-US");
+        if (s1 != 0 && s2 != 0) {
+            WF_ROW("enUS.c", L"%c", g_wf_base, WFBUF);
+            WF_ROW("enUS.x", L"%x", g_wf_base, WFBUF);
+            WF_ROW("enUS.X", L"%X", g_wf_base, WFBUF);
+            WF_ROW("enUS.A", L"%A", g_wf_base, WFBUF);
+            WF_ROW("enUS.B", L"%B", g_wf_base, WFBUF);
+        }
+        ud_setlocale(LC_ALL, "C");
+        ref_setlocale(LC_ALL, "C");
+    }
+#endif
+}
+#endif /* UCRTDIFF_REF_HAS_wcsftime */
+
+/* ==== strftime (time/strftime.cpp) ==========================================
+ * The narrow wrapper: same corpus as `wcsftime` above, converted through
+ * the "C" locale's codepage both ways -- graded by BUFFER CONTENT (`fnv`),
+ * not by re-deriving the expected string, since the narrow<->wide<->narrow
+ * round trip is exactly what `strftime.rs` added (`wcsftime.rs`'s engine
+ * itself is graded independently, above). `_Strftime_l`/`_Getdays_l`/
+ * `_Getmonths_l` are, like their wide twins, not in ucrtbase.spec -- only
+ * the exported wrappers are graded. */
+#if UCRTDIFF_REF_HAS_strftime
+size_t __cdecl ref_strftime(char *, size_t, const char *, const struct tm *);
+size_t __cdecl ref__strftime_l(char *, size_t, const char *, const struct tm *, _locale_t);
+size_t __cdecl ref__Strftime(char *, size_t, const char *, const struct tm *, void *);
+char *__cdecl ref__Getdays(void);
+char *__cdecl ref__Getmonths(void);
+void *__cdecl ref__Gettnames(void);
+
+/* Same reasoning as `ud__W_Getdays` above: undocumented, no public header. */
+extern char *(__cdecl *const ud__Getdays)(void) __asm__(UD_IMP(_Getdays));
+extern char *(__cdecl *const ud__Getmonths)(void) __asm__(UD_IMP(_Getmonths));
+extern void *(__cdecl *const ud__Gettnames)(void) __asm__(UD_IMP(_Gettnames));
+
+#define SFBUF 64
+
+#define SF_ROW(lbl, fmt, tmv, size) do {                                       \
+        char b1[SFBUF], b2[SFBUF];                                            \
+        for (int _k = 0; _k < SFBUF; _k++) { b1[_k] = 'X'; b2[_k] = 'X'; }     \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        size_t r1 = strftime(b1, (size), (fmt), &(tmv));                      \
+        size_t r2 = ref_strftime(b2, (size), (fmt), &(tmv));                  \
+        grade2("strftime", (lbl), (long long)r1, (long long)r2);              \
+        grade2("strftime.val", (lbl), fnv(b1, sizeof b1), fnv(b2, sizeof b2)); \
+        grade2("strftime.errno", (lbl), *_errno(), *ref__errno());            \
+        grade2("strftime.iph", (lbl), g_iph_dll, g_iph_ref);                  \
+    } while (0)
+
+static void run_time__Strftime_l(void)
+{
+    install_counting_iph();
+#if UCRTDIFF_REF_CALLABLE_setlocale
+    ud_setlocale(LC_ALL, "C");
+    ref_setlocale(LC_ALL, "C");
+#endif
+
+    static const char specs[] = "aAbBcCdDeFgGhHIjmMnprRStTuUVwWxXyYzZ%q";
+    for (size_t i = 0; i < sizeof(specs) / sizeof(specs[0]) - 1; i++) {
+        char fmt[4];
+        fmt[0] = '%'; fmt[1] = specs[i]; fmt[2] = 0;
+        SF_ROW(label_idx(i), fmt, g_wf_base, SFBUF);
+
+        char fmt_alt[4];
+        fmt_alt[0] = '%'; fmt_alt[1] = '#'; fmt_alt[2] = specs[i]; fmt_alt[3] = 0;
+        SF_ROW(label_idx(i), fmt_alt, g_wf_base, SFBUF);
+    }
+
+    for (int wd = 0; wd < 7; wd++) {
+        struct tm t = g_wf_base;
+        t.tm_wday = wd;
+        SF_ROW(label_idx((unsigned)wd), "%a %A %u %w", t, SFBUF);
+    }
+    for (int mo = 0; mo < 12; mo++) {
+        struct tm t = g_wf_base;
+        t.tm_mon = mo;
+        SF_ROW(label_idx((unsigned)mo), "%b %B", t, SFBUF);
+    }
+
+    {
+        struct tm t = g_wf_base; t.tm_mday = 0;
+        SF_ROW("badmday", "%d", t, SFBUF);
+    }
+    {
+        struct tm t = g_wf_base; t.tm_hour = 24;
+        SF_ROW("badhour", "%H", t, SFBUF);
+    }
+
+    /* Too-small buffer, narrow side. */
+    {
+        char b1[SFBUF], b2[SFBUF];
+        for (int k = 0; k < SFBUF; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = strftime(b1, 3, "%A", &g_wf_base);
+        size_t r2 = ref_strftime(b2, 3, "%A", &g_wf_base);
+        grade2("strftime.small", "-", (long long)r1, (long long)r2);
+        grade2("strftime.small.buf0", "-", b1[0], b2[0]);
+        grade2("strftime.small.errno", "-", *_errno(), *ref__errno());
+    }
+
+    SF_ROW("invalidspec", "%q", g_wf_base, SFBUF);
+
+    /* NULL string / NULL format / NULL timeptr / zero max_size. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = strftime((char *)0, SFBUF, "%Y", &g_wf_base);
+        size_t r2 = ref_strftime((char *)0, SFBUF, "%Y", &g_wf_base);
+        grade2("strftime.nullstring", "-", (long long)r1, (long long)r2);
+        grade2("strftime.nullstring.errno", "-", *_errno(), *ref__errno());
+    }
+    {
+        char b1[SFBUF], b2[SFBUF];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = strftime(b1, SFBUF, (const char *)0, &g_wf_base);
+        size_t r2 = ref_strftime(b2, SFBUF, (const char *)0, &g_wf_base);
+        grade2("strftime.nullformat", "-", (long long)r1, (long long)r2);
+        grade2("strftime.nullformat.errno", "-", *_errno(), *ref__errno());
+    }
+    {
+        char b1[SFBUF], b2[SFBUF];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = strftime(b1, SFBUF, "%Y", (const struct tm *)0);
+        size_t r2 = ref_strftime(b2, SFBUF, "%Y", (const struct tm *)0);
+        grade2("strftime.nulltm", "-", (long long)r1, (long long)r2);
+        grade2("strftime.nulltm.errno", "-", *_errno(), *ref__errno());
+    }
+    {
+        char b1[SFBUF], b2[SFBUF];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        size_t r1 = strftime(b1, 0, "%Y", &g_wf_base);
+        size_t r2 = ref_strftime(b2, 0, "%Y", &g_wf_base);
+        grade2("strftime.zerosize", "-", (long long)r1, (long long)r2);
+        grade2("strftime.zerosize.errno", "-", *_errno(), *ref__errno());
+    }
+
+    /* _Getdays / _Getmonths / _Gettnames -- narrow twins of the `_W_*`
+     * checks above. */
+    {
+        char *p1 = ud__Getdays();
+        char *p2 = ref__Getdays();
+        grade2("_Getdays.isnull", "-", p1 == 0, p2 == 0);
+        if (p1 && p2)
+            grade2("_Getdays.val", "-", fnv(p1, strlen(p1) + 1), fnv(p2, strlen(p2) + 1));
+    }
+    {
+        char *p1 = ud__Getmonths();
+        char *p2 = ref__Getmonths();
+        grade2("_Getmonths.isnull", "-", p1 == 0, p2 == 0);
+        if (p1 && p2)
+            grade2("_Getmonths.val", "-", fnv(p1, strlen(p1) + 1), fnv(p2, strlen(p2) + 1));
+    }
+    {
+        void *p1 = ud__Gettnames();
+        void *p2 = ref__Gettnames();
+        grade2("_Gettnames.isnull", "-", p1 == 0, p2 == 0);
+    }
+}
+#endif /* UCRTDIFF_REF_HAS_strftime */
+
+/* ==== the 64-bit and wide siblings ==========================================
+ * The batch declared these on the reference side but graded only their 32-bit or
+ * narrow twins; pecheck caught it (a ref_ declaration with no DLL import). Same
+ * contracts, same idiom as the rows above, plus a post-2038 time for the 64-bit
+ * utime forms, which is the only thing the width changes. */
+#if UCRTDIFF_REF_HAS__utime32
+static const wchar_t *time_temp_wpath(void)
+{
+    static wchar_t buf[MAX_PATH];
+    GetTempPathW(MAX_PATH, buf);
+    wcscat(buf, L"ucrtdiff_time_utime.tmp");
+    return buf;
+}
+static void ut_touch_a(const char *p) { FILE *f = fopen(p, "w"); if (f) fclose(f); }
+static void ut_touch_w(const wchar_t *p) { FILE *f = _wfopen(p, L"w"); if (f) fclose(f); }
+
+#define UTX_ROW(fn, lbl, UT, path, touch, statf, rm, at, mt) do {              \
+        UT t1, t2; t1.actime = (at); t1.modtime = (mt); t2 = t1;               \
+        struct _stat64 s1, s2; memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2); \
+        touch(path); *_errno() = 0;                                            \
+        int r1 = fn((path), &t1); int e1 = *_errno();                          \
+        statf((path), &s1); rm(path);                                          \
+        touch(path); *ref__errno() = 0;                                        \
+        int r2 = ref_##fn((path), &t2); int e2 = *ref__errno();                \
+        statf((path), &s2); rm(path);                                          \
+        grade2(#fn, lbl, r1, r2);                                              \
+        grade2(#fn ".errno", lbl, e1, e2);                                     \
+        grade2(#fn ".mtime", lbl, (long long)s1.st_mtime, (long long)s2.st_mtime); \
+        grade2(#fn ".atime", lbl, (long long)s1.st_atime, (long long)s2.st_atime); \
+    } while (0)
+
+#define UTX_NULLNAME(fn, PT, UT) do {                                          \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        int r1 = fn((PT)0, (UT *)0), r2 = ref_##fn((PT)0, (UT *)0);            \
+        grade2(#fn ".nullname", "-", r1, r2);                                  \
+        grade2(#fn ".nullname.errno", "-", *_errno(), *ref__errno());          \
+        grade2(#fn ".nullname.iph", "-", g_iph_dll, g_iph_ref);                \
+    } while (0)
+
+static void run_time_utime_siblings(void)
+{
+    install_counting_iph();
+    _wputenv_s(L"TZ", L"PST8PDT"); _tzset();
+    ref__wputenv_s(L"TZ", L"PST8PDT"); ref__tzset();
+
+    const char *pa = time_temp_path();
+    const wchar_t *pw = time_temp_wpath();
+    UTX_ROW(_utime64, "normal", struct __utimbuf64, pa, ut_touch_a, _stat64, remove,
+            1700000000LL, 1700003600LL);
+    UTX_ROW(_utime64, "y2100", struct __utimbuf64, pa, ut_touch_a, _stat64, remove,
+            4102444800LL, 4102448400LL);
+    UTX_NULLNAME(_utime64, const char *, struct __utimbuf64);
+    UTX_ROW(_wutime32, "normal", struct __utimbuf32, pw, ut_touch_w, _wstat64, _wremove,
+            1700000000L, 1700003600L);
+    UTX_NULLNAME(_wutime32, const wchar_t *, struct __utimbuf32);
+    UTX_ROW(_wutime64, "normal", struct __utimbuf64, pw, ut_touch_w, _wstat64, _wremove,
+            1700000000LL, 1700003600LL);
+    UTX_ROW(_wutime64, "y2100", struct __utimbuf64, pw, ut_touch_w, _wstat64, _wremove,
+            4102444800LL, 4102448400LL);
+    UTX_NULLNAME(_wutime64, const wchar_t *, struct __utimbuf64);
+
+    /* _futime64: the same shape as run_time__futime32, past 2038 as well. */
+    for (int k = 0; k < 2; k++) {
+        __time64_t at = k ? 4102444800LL : 1700000000LL, mt = at + 3600;
+        struct _stat64 s1, s2; memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        struct __utimbuf64 t1, t2; t1.actime = at; t1.modtime = mt; t2 = t1;
+        ut_touch_a(pa);
+        int fh1 = time_open_rw(pa, 0);
+        *_errno() = 0;
+        int r1 = _futime64(fh1, &t1), e1 = *_errno();
+        _stat64(pa, &s1); _close(fh1); remove(pa);
+        ut_touch_a(pa);
+        int fh2 = time_open_rw(pa, 1);
+        *ref__errno() = 0;
+        int r2 = ref__futime64(fh2, &t2), e2 = *ref__errno();
+        _stat64(pa, &s2); ref__close(fh2); remove(pa);
+        const char *lbl = k ? "y2100" : "normal";
+        grade2("_futime64", lbl, r1, r2);
+        grade2("_futime64.errno", lbl, e1, e2);
+        grade2("_futime64.mtime", lbl, (long long)s1.st_mtime, (long long)s2.st_mtime);
+        grade2("_futime64.atime", lbl, (long long)s1.st_atime, (long long)s2.st_atime);
+    }
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = _futime64(-2, (struct __utimbuf64 *)0);
+        int r2 = ref__futime64(-2, (struct __utimbuf64 *)0);
+        grade2("_futime64.badfh", "-", r1, r2);
+        grade2("_futime64.badfh.errno", "-", *_errno(), *ref__errno());
+        grade2("_futime64.badfh.iph", "-", g_iph_dll, g_iph_ref);
+    }
+
+    _wputenv_s(L"TZ", L""); _tzset();
+    ref__wputenv_s(L"TZ", L""); ref__tzset();
+}
+#endif /* UCRTDIFF_REF_HAS__utime32 */
+
+#if UCRTDIFF_REF_HAS__ftime32
+static void run_time__ftime64(void)
+{
+    struct __timeb64 t1, t2;
+    install_counting_iph();
+    memset(&t1, 0, sizeof t1); memset(&t2, 0, sizeof t2);
+    _ftime64(&t1);
+    ref__ftime64(&t2);
+    grade2("_ftime64.nonzero", "-", t1.time != 0, t2.time != 0);
+    grade2("_ftime64.millitm_range", "-", t1.millitm < 1000, t2.millitm < 1000);
+}
+#endif
+
+#if UCRTDIFF_REF_HAS__strdate
+static long long wdate_shape(const wchar_t *b)
+{
+    return (long long)(is_digit_ch(b[0]) && is_digit_ch(b[1]) && b[2] == L'/' &&
+                        is_digit_ch(b[3]) && is_digit_ch(b[4]) && b[5] == L'/' &&
+                        is_digit_ch(b[6]) && is_digit_ch(b[7]) && b[8] == 0);
+}
+
+static void run_time__wstrdate(void)
+{
+    wchar_t b1[16], b2[16];
+    install_counting_iph();
+    for (int k = 0; k < 16; k++) b1[k] = b2[k] = L'X';
+    *_errno() = 0; *ref__errno() = 0;
+    errno_t c1 = _wstrdate_s(b1, 9), c2 = ref__wstrdate_s(b2, 9);
+    grade2("_wstrdate_s", "-", c1, c2);
+    grade2("_wstrdate_s.shape", "-", wdate_shape(b1), wdate_shape(b2));
+    grade2("_wstrdate_s.errno", "-", *_errno(), *ref__errno());
+
+    for (int k = 0; k < 16; k++) b1[k] = b2[k] = L'X';
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _wstrdate_s(b1, 4); c2 = ref__wstrdate_s(b2, 4);
+    grade2("_wstrdate_s.small", "-", c1, c2);
+    grade2("_wstrdate_s.small.buf0", "-", b1[0], b2[0]);
+    grade2("_wstrdate_s.small.errno", "-", *_errno(), *ref__errno());
+    grade2("_wstrdate_s.small.iph", "-", g_iph_dll, g_iph_ref);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _wstrdate_s((wchar_t *)0, 9); c2 = ref__wstrdate_s((wchar_t *)0, 9);
+    grade2("_wstrdate_s.null", "-", c1, c2);
+    grade2("_wstrdate_s.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_wstrdate_s.null.iph", "-", g_iph_dll, g_iph_ref);
+
+    for (int k = 0; k < 16; k++) b1[k] = b2[k] = L'X';
+    wchar_t *p1 = _wstrdate(b1), *p2 = ref__wstrdate(b2);
+    grade2("_wstrdate.isnull", "-", p1 == 0, p2 == 0);
+    grade2("_wstrdate.shape", "-", wdate_shape(b1), wdate_shape(b2));
+}
+#endif
+
+#if UCRTDIFF_REF_HAS__time32
+static void run_time__timespec64_get(void)
+{
+    struct _timespec64 ts1, ts2;
+    memset(&ts1, 0, sizeof ts1); memset(&ts2, 0, sizeof ts2);
+    int b1 = _timespec64_get(&ts1, 1 /* TIME_UTC */);
+    int b2 = ref__timespec64_get(&ts2, 1);
+    grade2("_timespec64_get.base", "-", b1, b2);
+    grade2("_timespec64_get.nsec_range", "-", ts1.tv_nsec >= 0 && ts1.tv_nsec < 1000000000L, 1);
+    grade2("_timespec64_get.nsec_range", "-", ts2.tv_nsec >= 0 && ts2.tv_nsec < 1000000000L, 1);
+    memset(&ts1, 0xAB, sizeof ts1); memset(&ts2, 0xAB, sizeof ts2);
+    b1 = _timespec64_get(&ts1, 999);
+    b2 = ref__timespec64_get(&ts2, 999);
+    grade2("_timespec64_get.badbase", "-", b1, b2);
+    grade2("_timespec64_get.badbase.untouched", "-", fnv(&ts1, sizeof ts1), fnv(&ts2, sizeof ts2));
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    b1 = _timespec64_get((struct _timespec64 *)0, 1);
+    b2 = ref__timespec64_get((struct _timespec64 *)0, 1);
+    grade2("_timespec64_get.null", "-", b1, b2);
+    grade2("_timespec64_get.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_timespec64_get.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+#endif
+
+/* The strftime wrappers that take a locale or an lc_time_arg. NULL for either means
+ * "the current locale" in the C; grade that, plus a bad format and a short buffer.
+ * Import pointers: _Strftime and _Wcsftime are in no public header. */
+#if UCRTDIFF_REF_HAS_strftime
+extern size_t(__cdecl *const ud__strftime_l)(char *, size_t, const char *, const struct tm *,
+                                             _locale_t) __asm__(UD_IMP(_strftime_l));
+extern size_t(__cdecl *const ud__Strftime)(char *, size_t, const char *, const struct tm *,
+                                           void *) __asm__(UD_IMP(_Strftime));
+#define SFX_ROW(name, call1, call2, lbl) do {                                  \
+        char b1[64], b2[64]; memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2); \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        size_t r1 = call1, r2 = call2;                                         \
+        grade2(name, lbl, (long long)r1, (long long)r2);                       \
+        grade2(name ".val", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));      \
+        grade2(name ".errno", lbl, *_errno(), *ref__errno());                  \
+        grade2(name ".iph", lbl, g_iph_dll, g_iph_ref);                        \
+    } while (0)
+static void run_time_strftime_siblings(void)
+{
+    static const char *const fmts[] = { "%c|%x|%X", "%#c|%#x", "%A %B %d %Y %H:%M:%S %p %j %U %W",
+                                        "%q", "%Y-%m-%d" };
+    static const size_t sizes[] = { 64, 64, 64, 64, 5 };
+    install_counting_iph();
+    for (int i = 0; i < 5; i++) {
+        char lbl[8]; lbl[0] = (char)('0' + i); lbl[1] = 0;
+        SFX_ROW("_strftime_l", ud__strftime_l(b1, sizes[i], fmts[i], &g_wf_base, 0),
+                ref__strftime_l(b2, sizes[i], fmts[i], &g_wf_base, 0), lbl);
+        SFX_ROW("_Strftime", ud__Strftime(b1, sizes[i], fmts[i], &g_wf_base, 0),
+                ref__Strftime(b2, sizes[i], fmts[i], &g_wf_base, 0), lbl);
+    }
+}
+#endif
+
+#if UCRTDIFF_REF_HAS_wcsftime
+extern size_t(__cdecl *const ud__wcsftime_l)(wchar_t *, size_t, const wchar_t *, const struct tm *,
+                                             _locale_t) __asm__(UD_IMP(_wcsftime_l));
+extern size_t(__cdecl *const ud__Wcsftime)(wchar_t *, size_t, const wchar_t *, const struct tm *,
+                                           void *) __asm__(UD_IMP(_Wcsftime));
+#define WFX_ROW(name, call1, call2, lbl) do {                                  \
+        wchar_t b1[64], b2[64];                                                \
+        for (int _k = 0; _k < 64; _k++) b1[_k] = b2[_k] = L'X';                \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        size_t r1 = call1, r2 = call2;                                         \
+        grade2(name, lbl, (long long)r1, (long long)r2);                       \
+        grade2(name ".val", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));      \
+        grade2(name ".errno", lbl, *_errno(), *ref__errno());                  \
+        grade2(name ".iph", lbl, g_iph_dll, g_iph_ref);                        \
+    } while (0)
+static void run_time_wcsftime_siblings(void)
+{
+    static const wchar_t *const fmts[] = { L"%c|%x|%X", L"%#c|%#x",
+                                           L"%A %B %d %Y %H:%M:%S %p %j %U %W", L"%q", L"%Y-%m-%d" };
+    static const size_t sizes[] = { 64, 64, 64, 64, 5 };
+    install_counting_iph();
+    for (int i = 0; i < 5; i++) {
+        char lbl[8]; lbl[0] = (char)('0' + i); lbl[1] = 0;
+        WFX_ROW("_wcsftime_l", ud__wcsftime_l(b1, sizes[i], fmts[i], &g_wf_base, 0),
+                ref__wcsftime_l(b2, sizes[i], fmts[i], &g_wf_base, 0), lbl);
+        WFX_ROW("_Wcsftime", ud__Wcsftime(b1, sizes[i], fmts[i], &g_wf_base, 0),
+                ref__Wcsftime(b2, sizes[i], fmts[i], &g_wf_base, 0), lbl);
+    }
+}
+#endif
+
+#if UCRTDIFF_REF_HAS__utime32
+#define TIME_HAND_SIB_UTIME { "_utime64+_wutime+_futime64", run_time_utime_siblings },
+#else
+#define TIME_HAND_SIB_UTIME
+#endif
+#if UCRTDIFF_REF_HAS__ftime32
+#define TIME_HAND_SIB_FTIME { "_ftime64", run_time__ftime64 },
+#else
+#define TIME_HAND_SIB_FTIME
+#endif
+#if UCRTDIFF_REF_HAS__strdate
+#define TIME_HAND_SIB_STRDATE { "_wstrdate", run_time__wstrdate },
+#else
+#define TIME_HAND_SIB_STRDATE
+#endif
+#if UCRTDIFF_REF_HAS__time32
+#define TIME_HAND_SIB_TIME { "_timespec64_get", run_time__timespec64_get },
+#else
+#define TIME_HAND_SIB_TIME
+#endif
+#if UCRTDIFF_REF_HAS_strftime
+#define TIME_HAND_SIB_STRFTIME { "_strftime_l+_Strftime", run_time_strftime_siblings },
+#else
+#define TIME_HAND_SIB_STRFTIME
+#endif
+#if UCRTDIFF_REF_HAS_wcsftime
+#define TIME_HAND_SIB_WCSFTIME { "_wcsftime_l+_Wcsftime", run_time_wcsftime_siblings },
+#else
+#define TIME_HAND_SIB_WCSFTIME
+#endif
+#define TIME_HAND_SIBLING_ENTRIES TIME_HAND_SIB_UTIME TIME_HAND_SIB_FTIME \
+    TIME_HAND_SIB_STRDATE TIME_HAND_SIB_TIME TIME_HAND_SIB_STRFTIME TIME_HAND_SIB_WCSFTIME
+
+/*
+ * Paste into run_legacy()'s `legacy[]` table, right after the CONVTIME_HAND
+ * rows (or anywhere; order does not matter, only presence does). One
+ * #define block per guard, exactly like FP_HAND/ST_HAND/CONVTIME_HAND above
+ * it, with `{ "_name", 0 }` placeholders when the guard reads 0.
+ */
+#if UCRTDIFF_REF_HAS__tzset
+#define TIME_HAND_TZSET_ENTRIES { "_tzset", run_time__tzset },
+#else
+#define TIME_HAND_TZSET_ENTRIES { "_tzset", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__localtime32
+#define TIME_HAND_LOCALTIME_ENTRIES { "_localtime32", run_time__localtime32 },
+#else
+#define TIME_HAND_LOCALTIME_ENTRIES { "_localtime32", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__gmtime32 && !UCRTDIFF_REF_HAS__localtime32
+#define TIME_HAND_GMTIME_ENTRIES { "_gmtime32", run_time__gmtime32 },
+#else
+#define TIME_HAND_GMTIME_ENTRIES { "_gmtime32", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__mktime32
+#define TIME_HAND_MKTIME_ENTRIES { "_mktime32", run_time__mktime32 },
+#else
+#define TIME_HAND_MKTIME_ENTRIES { "_mktime32", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_asctime
+#define TIME_HAND_ASCTIME_ENTRIES                                              \
+    { "asctime_s", run_time_asctime_s }, { "_wasctime_s", run_time__wasctime_s }, \
+    { "asctime", run_time_asctime }, { "_wasctime", run_time__wasctime },
+#else
+#define TIME_HAND_ASCTIME_ENTRIES                                              \
+    { "asctime_s", 0 }, { "_wasctime_s", 0 }, { "asctime", 0 }, { "_wasctime", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__utime32
+#define TIME_HAND_UTIME_ENTRIES { "_utime32", run_time__utime32 }, { "_futime32", run_time__futime32 },
+#else
+#define TIME_HAND_UTIME_ENTRIES { "_utime32", 0 }, { "_futime32", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__ftime32
+#define TIME_HAND_FTIME_ENTRIES                                                \
+    { "_ftime32_s", run_time__ftime32_s }, { "_ftime32", run_time__ftime32 },  \
+    { "_ftime64_s", run_time__ftime64_s },
+#else
+#define TIME_HAND_FTIME_ENTRIES                                                \
+    { "_ftime32_s", 0 }, { "_ftime32", 0 }, { "_ftime64_s", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__strdate
+#define TIME_HAND_STRDATE_ENTRIES { "_strdate_s", run_time__strdate_s }, { "_strdate", run_time__strdate },
+#else
+#define TIME_HAND_STRDATE_ENTRIES { "_strdate_s", 0 }, { "_strdate", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__strtime
+#define TIME_HAND_STRTIME_ENTRIES { "_strtime_s", run_time__strtime_s }, { "_strtime", run_time__strtime },
+#else
+#define TIME_HAND_STRTIME_ENTRIES { "_strtime_s", 0 }, { "_strtime", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__time32
+#define TIME_HAND_TIME_ENTRIES                                                 \
+    { "_time32", run_time__time32 }, { "_time64", run_time__time64 },          \
+    { "_timespec32_get", run_time__timespec32_get },
+#else
+#define TIME_HAND_TIME_ENTRIES                                                 \
+    { "_time32", 0 }, { "_time64", 0 }, { "_timespec32_get", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_clock
+#define TIME_HAND_CLOCK_ENTRIES { "clock", run_time_clock },
+#else
+#define TIME_HAND_CLOCK_ENTRIES { "clock", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__difftime32
+#define TIME_HAND_DIFFTIME_ENTRIES { "_difftime32", run_time__difftime32 },
+#else
+#define TIME_HAND_DIFFTIME_ENTRIES { "_difftime32", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_wcsftime
+#define TIME_HAND_WCSFTIME_ENTRIES { "wcsftime", run_time__Wcsftime_l },
+#else
+#define TIME_HAND_WCSFTIME_ENTRIES { "wcsftime", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_strftime
+#define TIME_HAND_STRFTIME_ENTRIES { "strftime", run_time__Strftime_l },
+#else
+#define TIME_HAND_STRFTIME_ENTRIES { "strftime", 0 },
+#endif
+
+#define TIME_HAND_ENTRIES                                                      \
+    TIME_HAND_TZSET_ENTRIES TIME_HAND_LOCALTIME_ENTRIES TIME_HAND_GMTIME_ENTRIES \
+    TIME_HAND_MKTIME_ENTRIES TIME_HAND_ASCTIME_ENTRIES TIME_HAND_UTIME_ENTRIES  \
+    TIME_HAND_FTIME_ENTRIES TIME_HAND_STRDATE_ENTRIES TIME_HAND_STRTIME_ENTRIES \
+    TIME_HAND_TIME_ENTRIES TIME_HAND_CLOCK_ENTRIES TIME_HAND_DIFFTIME_ENTRIES   \
+    TIME_HAND_WCSFTIME_ENTRIES TIME_HAND_STRFTIME_ENTRIES
+
+
 static void run_legacy(void)
 {
     static const struct {
@@ -5442,6 +10098,11 @@ static void run_legacy(void)
         HEAPIO_IPH_HAND_ENTRIES
         HEAPIO_OPEN_HAND_ENTRIES
         SPV_HAND_ENTRIES
+        MBSTRING_HAND_ENTRIES
+        MBSTRING_NULL_ENTRIES
+        STRING_OPS_HAND_ENTRIES
+        TIME_HAND_ENTRIES
+        TIME_HAND_SIBLING_ENTRIES
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
@@ -5454,6 +10115,12 @@ static void run_legacy(void)
             /* Before, not after: a runner that takes the whole GUEST down (a kernel
              * bugcheck, which no guard can catch) is otherwise named by nothing. */
             DbgPrint("[UCRTDIFF] -> %s\n", legacy[i].name);
+            /* Every row starts with the counting handler on BOTH sides. A runner
+             * that forgot it inherited whatever the shard had installed so far --
+             * usually nothing, and then its first invalid-parameter case is
+             * _invoke_watson's fastfail on both sides, which the arm64 guest shows
+             * as a fault loop and the row as a HANG. */
+            install_counting_iph();
             export_end(run_guarded(legacy[i].fn), 1);
         }
     }
@@ -5559,7 +10226,7 @@ static int ucrtdiff_main(void)
     setlocale(LC_ALL, "C");
     /* The reference's locale exists only while the locale takeover's Microsoft
      * objects do: once taken over, a plain sweep has no ref_ side to align. */
-#if UCRTDIFF_REF_HAS_setlocale
+#if UCRTDIFF_REF_CALLABLE_setlocale
     DbgPrint("[UCRTDIFF] -> ref setlocale\n");
     ref_setlocale(LC_ALL, "C");
 #endif
@@ -5573,7 +10240,7 @@ static int ucrtdiff_main(void)
      * (the process exited STATUS_POSSIBLE_DEADLOCK, 0xC0000194, right here) -- with
      * a line per call, the last line on serial names which one. */
     DbgPrint("[UCRTDIFF] setmbcp(0) dll rc=%d\n", _setmbcp(0));
-#if UCRTDIFF_REF_HAS_setlocale
+#if UCRTDIFF_REF_CALLABLE_setlocale
     DbgPrint("[UCRTDIFF] setmbcp(0) ref rc=%d\n", ref__setmbcp(0));
 #endif
     DbgPrint("[UCRTDIFF] setmbcp(0) rust rc=%d\n", rust__setmbcp(0));
@@ -5587,7 +10254,7 @@ static int ucrtdiff_main(void)
      * against a different codepage on each side, and the resulting "divergences" say
      * nothing about our code. The design doc listed this as NOT VERIFIED; print it, so
      * the table can never again be read without knowing which case holds. */
-#if UCRTDIFF_REF_HAS_setlocale
+#if UCRTDIFF_REF_CALLABLE_setlocale
     DbgPrint("[UCRTDIFF] mbcp: dll=%d rust=%d ref=%d\n",
              _getmbcp(), rust__getmbcp(), ref__getmbcp());
 #else

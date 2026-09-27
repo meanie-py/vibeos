@@ -127,7 +127,7 @@ extern "C" {
     fn _wfullpath(buf: *mut u16, path: *const u16, size: usize) -> *mut u16;
     fn _getdrive() -> c_int;
     fn _wcsicmp(a: *const u16, b: *const u16) -> c_int;
-    fn wcsrchr(s: *const u16, c: u16) -> *const u16;
+    fn wcsrchr(s: *const u16, c: u16) -> *mut u16;
     fn wcspbrk(s: *const u16, set: *const u16) -> *const u16;
     fn wcslen(s: *const u16) -> usize;
     fn free(p: *mut c_void);
