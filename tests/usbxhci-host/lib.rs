@@ -207,6 +207,9 @@ mod tests {
             ep.count = 0;
             x.eps[1][1] = core::ptr::null_mut();
             x.eps[1][3] = &mut *ep;
+            // The controller still reports the endpoint Running: it may be moving
+            // data through the ring usbport frees when Close returns.
+            set_ep_state(&mut x, 1, 3, 1);
             *x.evt_va = hw::Trb {
                 param_lo: 0x3000, param_hi: 0, status: hw::CC_TRB << 24,
                 control: (hw::TRB_EV_COMMAND_COMPLETION << hw::TRB_TYPE_SHIFT) | 1,
@@ -215,6 +218,89 @@ mod tests {
             assert!(x.failed.load(Ordering::Acquire));
             assert_eq!(hw::rd32(x.op, hw::USBCMD) & hw::USBCMD_RS, 0);
             assert!(x.eps[1][3].is_null());
+        }
+    }
+
+    /// Endpoint Context state as the controller would write it (6.2.3).
+    unsafe fn set_ep_state(x: &mut controller::XhciExtension, slot: usize, dci: usize, state: u32) {
+        let c = x.va.add(controller::SLOTS_OFFSET + (slot - 1) * 2 * controller::PAGE + dci * x.ctx_size as usize);
+        *(c as *mut u32) = state;
+    }
+
+    unsafe fn ring_va(ep: &endpoint::XhciEndpoint) -> *const hw::Trb {
+        (*ep.ring).va
+    }
+
+    unsafe fn context_memory(x: &mut controller::XhciExtension) -> Vec<u64> {
+        let mut common = vec![0u64; controller::COMMON_BUFFER_SIZE / 8];
+        x.va = common.as_mut_ptr() as *mut u8;
+        x.input_ctx_va = x.va.add(controller::PAGE);
+        x.ctx_size = 32;
+        x.slots[1].in_use = true;
+        x.slots[1].max_dci = 3;
+        common
+    }
+
+    #[test]
+    fn unplugged_device_abort_stays_with_that_device() {
+        // A low/full-speed device below a hub was unplugged: its endpoint halted
+        // on a split transaction error, so Stop Endpoint answers Context State
+        // Error. Nothing can DMA; the controller and every other device live on.
+        unsafe {
+            let (mut x, mut ep, mut td) = event_fixture();
+            let _memory = controller_memory(&mut x);
+            let _ctx = context_memory(&mut x);
+            let mut ring = Box::new(Page([0; 4096]));
+            ep.own_ring.init(ring.0.as_mut_ptr(), 0x1000);
+            ep.ring = &mut ep.own_ring;
+            hw::wr32(x.op, hw::USBSTS, 0);
+            set_ep_state(&mut x, 1, 1, 2);
+            *x.evt_va = hw::Trb {
+                param_lo: 0x3000, param_hi: 0, status: hw::CC_CONTEXT_STATE << 24,
+                control: (hw::TRB_EV_COMMAND_COMPLETION << hw::TRB_TYPE_SHIFT) | 1,
+            };
+            let mut completed = 99;
+            endpoint::XHCI_AbortTransfer(&mut *x as *mut _ as _, &mut *ep as *mut _ as _,
+                                         &mut *td as *mut _ as _, &mut completed);
+            assert!(!x.failed.load(Ordering::Acquire));
+            assert!(ep.halted);
+            assert_eq!(ep.count, 0);
+            assert_eq!(completed, 0);
+            // The aborted TD's TRBs became No-Ops for when the endpoint is reset.
+            assert_eq!(((*ring_va(&ep)).control >> hw::TRB_TYPE_SHIFT) & 0x3F, 8);
+        }
+    }
+
+    #[test]
+    fn failed_drop_of_a_halted_endpoint_stays_with_that_device() {
+        unsafe {
+            let (mut x, mut ep, _td) = event_fixture();
+            let _memory = controller_memory(&mut x);
+            let _ctx = context_memory(&mut x);
+            hw::wr32(x.op, hw::USBSTS, 0);
+            ep.dci = 3;
+            ep.count = 0;
+            x.eps[1][1] = core::ptr::null_mut();
+            x.eps[1][3] = &mut *ep;
+            set_ep_state(&mut x, 1, 3, 2);
+            *x.evt_va = hw::Trb {
+                param_lo: 0x3000, param_hi: 0, status: hw::CC_TRB << 24,
+                control: (hw::TRB_EV_COMMAND_COMPLETION << hw::TRB_TYPE_SHIFT) | 1,
+            };
+            endpoint::XHCI_CloseEndpoint(&mut *x as *mut _ as _, &mut *ep as *mut _ as _, 0);
+            assert!(!x.failed.load(Ordering::Acquire));
+            assert!(x.eps[1][3].is_null());
+        }
+    }
+
+    #[test]
+    fn split_transaction_error_halts_the_endpoint() {
+        unsafe {
+            let (mut x, ep, td) = event_fixture();
+            endpoint::on_transfer_event(&mut x, 0x1010, hw::CC_SPLIT_TRANSACTION << 24,
+                                        (1 << 24) | (1 << 16));
+            assert!(td.done.load(Ordering::SeqCst));
+            assert!(ep.halted);
         }
     }
 

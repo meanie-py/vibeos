@@ -9961,6 +9961,21 @@ def test_the_kernel_flavor_comes_from_the_banner_module(tmp_path, monkeypatch):
     assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x3788)
 
 
+def test_an_mp_kernel_listed_as_ntoskrnl_still_resolves_against_ntkrnlmp(tmp_path, monkeypatch):
+    """The loader lists ntkrnlmp.exe under the name ntoskrnl.exe, so the i386 banner
+    reads `ntoskrnl.exe+RVA` on an MP boot. Keying the flavor on that name alone
+    resolved every i386 MP fault against the UP binary; freeldr's load line decides."""
+    serial = (
+        "[FLDR] load multi(0)disk(0)cdrom(0)\\reactos\\system32\\ntkrnlmp.exe\n"
+        "***   P2 = ntoskrnl.exe+0x1262d8\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
+    )
+    got = {}
+    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0x805eb2d8")
+    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
+    triage.symbolicate_pc(tmp_path, "i386", serial)
+    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x1262D8)
+
+
 def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatch):
     """amd64 stages build-i386's SysWOW64 set at configure time. Built BESIDE a
     cold i386 build it read a tree with no kernel32.dll and failed its closure

@@ -90,8 +90,8 @@ Prefer importing from `ntkrnl_sys::ddk` over hand-declaring: bindgen carries the
 convention, including fastcall. **Never trust a header that omits `NTAPI`** — `internal/mm.h`
 declares `MmDeleteVirtualMapping` without it and the symbol is stdcall anyway `[§9.107]`.
 
-### The five ways a convention mismatch manifests
-The same root produces five distinct symptoms; knowing which you're looking at saves the hunt.
+### The seven ways a convention mismatch manifests
+The same root produces seven distinct symptoms; knowing which you're looking at saves the hunt.
 1. **`ud2` after the call / folded success path.** The callsite's ABI contradiction lets LLVM
    prove the continuation unreachable → `unreachable` → BUGCHECK 0x1E `0xC000001D`. Cascades:
    one classpnp sweep folded ~46 functions from 76 decl↔def mismatches, and the cohab link
@@ -129,6 +129,19 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
    an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
    bugcheck print every stack word that lands in a module; the bad call's caller is there.
+7. **A bare cdecl name ALIASED onto a stdcall body: the CALLEE's caller returns into ITS
+   caller's stack.** `.set _KeInitializeSpinLock, _KeInitializeSpinLock@4` makes the bare
+   name link, but the body does `ret 4` and the cdecl caller then pops the same 4 bytes
+   again, so ESP ends every call N bytes high. A caller with an ESP-relative epilogue
+   restores its registers from the wrong slots. fastfat's DriverEntry made two such calls
+   (+8): it popped its own return address into EBX and its DriverObject into EBP, and
+   `ret 8` jumped to RegistryPath, a UNICODE_STRING on `IopInitializeDriverModule`'s
+   stack. Symptom: BUGCHECK 0x1E/0x7F with EIP **on the stack** a few dozen bytes above
+   ESP, the trap frame's EBX equal to a return address, and EBP in pool. The fix is a real
+   thunk (re-push N bytes, call `_X@N`, `ret`), not an alias; an alias is sound only for
+   `@0`. `tools/scan_cdecl_alias.py` flags `.set _X, _X@N` with N > 0. Binary check for the
+   same drift: `calll <_X@N>` immediately followed by `addl $N, %esp` that is NOT an
+   epilogue. i386 only, and only when a FAT volume made fs_rec load fastfat (2026-09-26).
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -2376,6 +2389,15 @@ device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not
 invented value, the same class as an invented constant; diff the expression, not just the
 names.**
 
+### A facility's own SUCCESS code translated as a bare `0`
+hidparser's `HidParser_UsageAndPageListDifference` ended `return HIDP_STATUS_SUCCESS;` in the
+C and `0` in the Rust. `HIDP_STATUS_SUCCESS` is `0x00110000`, not `STATUS_SUCCESS`, so kbdhid's
+check on it asserted on every keyboard report (a burst of `ASSERT FAILED: _s ==
+hid_sys::HIDP_STATUS_SUCCESS at kbdhid-rust/src/read.rs` whenever a key moved). Any caller that
+tests with `NT_SUCCESS` would not notice, which is why it survived. **When a subsystem defines its
+own success status (HIDP_, USBD_, NDIS_, SCARD_...), grep the translation for bare `0` returns in
+functions whose C returns it.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -4255,6 +4277,17 @@ already been met the note is describing a bug, not a plan.
   no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
   under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
   declarations and only the second is a variable.
+- **A body can lose its TAIL with nothing to show for it.** fastfat's `FatCreateNewDirent`
+  (translated before call sealing existed) returned right after its allocation logic; the
+  orphaned-LFN check, the "dirents really unused" verify and `RtlSetBits` on the free-dirent
+  bitmap were all gone. It compiled, mounted and passed smoke on three arches for months,
+  because the missing bit only matters on the NEXT create that reuses deleted slots — which
+  could then be handed a live entry and overwrite another file's dirent. The one objection
+  was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
+  translation, diff each paired function's C callee set against its Rust body. A
+  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
+  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
+  each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list

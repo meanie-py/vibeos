@@ -54,14 +54,14 @@ const INVALID_HANDLE_VALUE: isize = -1;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct FileTime {
-    low: u32,
-    high: u32,
+pub(crate) struct FileTime {
+    pub(crate) low: u32,
+    pub(crate) high: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct SystemTime {
+pub(crate) struct SystemTime {
     year: u16,
     month: u16,
     day_of_week: u16,
@@ -99,8 +99,8 @@ extern "system" {
     fn FindNextFileW(handle: Handle, data: *mut Win32FindDataW) -> c_int;
     fn FindClose(handle: Handle) -> c_int;
     fn GetLastError() -> u32;
-    fn FileTimeToSystemTime(ft: *const FileTime, st: *mut SystemTime) -> c_int;
-    fn SystemTimeToTzSpecificLocalTime(
+    pub(crate) fn FileTimeToSystemTime(ft: *const FileTime, st: *mut SystemTime) -> c_int;
+    pub(crate) fn SystemTimeToTzSpecificLocalTime(
         tz: *const c_void,
         utc: *const SystemTime,
         local: *mut SystemTime,
@@ -180,7 +180,7 @@ pin!(WFindData32i64, 544, 16, 24);
 pin!(WFindData64i32, 560, 32, 36);
 pin!(WFindData64, 560, 32, 40);
 
-trait CrtTime: Copy {
+pub(crate) trait CrtTime: Copy {
     const INVALID: Self;
     unsafe fn from_local(st: &SystemTime) -> Self;
 }
@@ -310,7 +310,7 @@ unsafe fn next_wide<T: CrtTime, S: FileSize>(handle: isize, result: *mut FindDat
 }
 
 /// `__acrt_get_utf8_acp_compatibility_codepage`
-unsafe fn file_codepage() -> u32 {
+pub(crate) unsafe fn file_codepage() -> u32 {
     let lu = LocaleUpdate::new(null_mut());
     if (*(*lu.locinfo()).public_ref()).locale_lc_codepage == CP_UTF8 {
         return CP_UTF8;
@@ -323,7 +323,7 @@ unsafe fn file_codepage() -> u32 {
 }
 
 /// A heap buffer that frees itself -- the `__crt_internal_win32_buffer` role.
-struct Buf<C>(*mut C);
+pub(crate) struct Buf<C>(pub(crate) *mut C);
 impl<C> Drop for Buf<C> {
     fn drop(&mut self) {
         if !self.0.is_null() {
@@ -349,7 +349,7 @@ unsafe fn os_errno() -> c_int {
 
 /// `__acrt_mbs_to_wcs_cp`. `Ok(None)` for a NULL input, as the C's
 /// `set_to_nullptr`.
-unsafe fn mbs_to_wcs(s: *const u8, cp: u32) -> Result<Option<Buf<u16>>, c_int> {
+pub(crate) unsafe fn mbs_to_wcs(s: *const u8, cp: u32) -> Result<Option<Buf<u16>>, c_int> {
     if s.is_null() {
         return Ok(None);
     }

@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsClear, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DELETE_CONTEXT, DIRENT, FAT8DOT3, FAT_BUG_CHECK_DIRSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, IRP_CONTEXT, LFN_DIRENT, PFCB, VCB};
@@ -286,6 +286,13 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             );
         }
     }
+
+    // The three blocks below were dropped from the translation, and the last one
+    // is load-bearing: without RtlSetBits every new dirent stayed FREE in the
+    // in-memory bitmap, so a later create that searches for deleted dirents
+    // (RtlFindClearBits, the "hard case" above) could be handed one that is in use
+    // and overwrite a live file's directory entry. FatDeleteDirent's
+    // AreBitsSet ASSERT is where it showed, twice per i386 boot. (dirsup.c:414-534)
 
     //
     //  If we are only requesting a single dirent, and we did not get the

@@ -153,8 +153,12 @@ sees a USB2 root hub.
    usb-kbd), not the descriptor's bInterval; fine for typing, sluggish for a mouse.
 2. **SuperSpeed ports** (a USB 3 root hub, SuperSpeed hubs), bulk-heavy devices
    (usbstor), isochronous. USB 2.0 hubs and TT work.
-3. **Slot reclamation.** A removed device's slot is freed when the next device appears
-   on the same root port, not at removal.
+3. **Slot reclamation.** usbport does not tell the miniport about removals. A
+   removed device's slot is freed when usbport reuses its address (SET_ADDRESS) or a
+   new device appears at the same place, not at removal. Unplug and replug across hub
+   ports works on the Pi. An endpoint command failing on an unplugged device (its
+   endpoints halt with split-transaction errors) affects only that device, unless
+   the endpoint context still says Running.
 
 ### Rig
 

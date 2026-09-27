@@ -886,6 +886,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A bare cdecl i386 symbol ALIASED (`.set _X, _X@N`) onto a stdcall body: links,
+    # then every cdecl call pops the arguments twice. fastfat's DriverEntry drifted
+    # ESP by 8 and returned into its caller's stack (BUGCHECK 0x1E) the first time a
+    # FAT volume loaded it on i386. Only @0 is sound. Baseline EMPTY.
+    sca = repo / "tools" / "scan_cdecl_alias.py"
+    specs.append(
+        (
+            "scan_cdecl_alias",
+            [py, str(sca), "--lint"] if sca.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A C byte count (RtlCopyMemory) kept as the ELEMENT count of a u16-typed
     # core::ptr::copy moves twice the bytes. fastfat's FatQueryDirectory copied
     # every long name at double length and faulted on arm64 once winsxs names

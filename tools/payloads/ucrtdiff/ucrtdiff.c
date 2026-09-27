@@ -1841,6 +1841,243 @@ static void run_fp_wcstold(void)   { FP_WIDE(wcstold); }
 static void run_fp__wcstold_l(void){ FP_WIDE(_wcstold_l, NULL); }
 #endif /* UCRTDIFF_REF_HAS_strtod */
 
+/* ---- stat (filesystem/stat.cpp) ------------------------------------------
+ *
+ * The twelve _stat/_wstat/_fstat entry points, one runner each. Every path in
+ * ST_PATHS goes through every path function, narrow and wide: files in a fixture
+ * directory (read-only, executable extensions, a 2040 timestamp that a 32-bit
+ * time cannot hold), the directory itself with and without a slash, missing
+ * files, roots that cannot be opened and are fabricated, a bare "C:", devices.
+ * Graded per call: the return, errno, _doserrno, the handler count and the WHOLE
+ * record, prefilled with 'X' so padding and untouched bytes show.
+ *
+ * _fstat gets a descriptor per side from that side's own lowio table: a disk
+ * file, NUL, a pipe with and without data, the standard handles, a closed one and
+ * the out-of-range and _NO_CONSOLE_FILENO values. */
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#if UCRTDIFF_REF_HAS__stat64
+int __cdecl ref__stat32(const char *, struct _stat32 *);
+int __cdecl ref__stat32i64(const char *, struct _stat32i64 *);
+int __cdecl ref__stat64i32(const char *, struct _stat64i32 *);
+int __cdecl ref__stat64(const char *, struct _stat64 *);
+int __cdecl ref__wstat32(const wchar_t *, struct _stat32 *);
+int __cdecl ref__wstat32i64(const wchar_t *, struct _stat32i64 *);
+int __cdecl ref__wstat64i32(const wchar_t *, struct _stat64i32 *);
+int __cdecl ref__wstat64(const wchar_t *, struct _stat64 *);
+int __cdecl ref__fstat32(int, struct _stat32 *);
+int __cdecl ref__fstat32i64(int, struct _stat32i64 *);
+int __cdecl ref__fstat64i32(int, struct _stat64i32 *);
+int __cdecl ref__fstat64(int, struct _stat64 *);
+unsigned long *__cdecl ref___doserrno(void);
+int __cdecl ref__wopen(const wchar_t *, int, ...);
+int __cdecl ref__close(int);
+int __cdecl ref__pipe(int *, unsigned, int);
+int __cdecl ref__write(int, const void *, unsigned);
+
+/* Through the import pointers: mingw's sys/stat.h maps several of these names
+ * onto inlines and onto each other. */
+extern int(__cdecl *const ud__stat32)(const char *, struct _stat32 *) __asm__(UD_IMP(_stat32));
+extern int(__cdecl *const ud__stat32i64)(const char *, struct _stat32i64 *) __asm__(UD_IMP(_stat32i64));
+extern int(__cdecl *const ud__stat64i32)(const char *, struct _stat64i32 *) __asm__(UD_IMP(_stat64i32));
+extern int(__cdecl *const ud__stat64)(const char *, struct _stat64 *) __asm__(UD_IMP(_stat64));
+extern int(__cdecl *const ud__wstat32)(const wchar_t *, struct _stat32 *) __asm__(UD_IMP(_wstat32));
+extern int(__cdecl *const ud__wstat32i64)(const wchar_t *, struct _stat32i64 *) __asm__(UD_IMP(_wstat32i64));
+extern int(__cdecl *const ud__wstat64i32)(const wchar_t *, struct _stat64i32 *) __asm__(UD_IMP(_wstat64i32));
+extern int(__cdecl *const ud__wstat64)(const wchar_t *, struct _stat64 *) __asm__(UD_IMP(_wstat64));
+extern int(__cdecl *const ud__fstat32)(int, struct _stat32 *) __asm__(UD_IMP(_fstat32));
+extern int(__cdecl *const ud__fstat32i64)(int, struct _stat32i64 *) __asm__(UD_IMP(_fstat32i64));
+extern int(__cdecl *const ud__fstat64i32)(int, struct _stat64i32 *) __asm__(UD_IMP(_fstat64i32));
+extern int(__cdecl *const ud__fstat64)(int, struct _stat64 *) __asm__(UD_IMP(_fstat64));
+
+static wchar_t g_st_dir[MAX_PATH];
+
+/* The fixture, under the first base that takes it (as findfile's): a sibling
+ * directory built with findfile's file maker. */
+static int st_try_base(const wchar_t *base)
+{
+    lstrcpyW(g_ff_dir, base);
+    size_t n = (size_t)lstrlenW(g_ff_dir);
+    if (n && g_ff_dir[n - 1] != L'\\')
+        lstrcatW(g_ff_dir, L"\\");
+    lstrcatW(g_ff_dir, L"ucrtdiff_st");
+    if (!CreateDirectoryW(g_ff_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+        DbgPrint("[UCRTDIFF] stat fixture: CreateDirectoryW(%ls) failed, error %lu\n",
+                 g_ff_dir, GetLastError());
+        return 0;
+    }
+    wchar_t sub[MAX_PATH];
+    lstrcpyW(sub, g_ff_dir); lstrcatW(sub, L"\\sub");
+    CreateDirectoryW(sub, NULL);
+    int ok = ff_make_file(L"plain.txt", 5, 2001, FILE_ATTRIBUTE_NORMAL)
+        && ff_make_file(L"ro.txt", 7, 2001, FILE_ATTRIBUTE_READONLY)
+        && ff_make_file(L"prog.EXE", 1, 2001, FILE_ATTRIBUTE_NORMAL)
+        && ff_make_file(L"run.cmd", 1, 2001, FILE_ATTRIBUTE_NORMAL)
+        && ff_make_file(L"x.bat.txt", 1, 2001, FILE_ATTRIBUTE_NORMAL)
+        && ff_make_file(L"t2040.com", 1234, 2040, FILE_ATTRIBUTE_NORMAL);
+    if (ok) {
+        lstrcpyW(g_st_dir, g_ff_dir);
+        DbgPrint("[UCRTDIFF] stat fixture: built under %ls\n", g_st_dir);
+    }
+    return ok;
+}
+
+static int st_setup(void)
+{
+    wchar_t base[MAX_PATH];
+    DWORD n = GetTempPathW(MAX_PATH - 32, base);
+    if (n && n < MAX_PATH - 32 && st_try_base(base))
+        return 1;
+    return st_try_base(L"C:\\");
+}
+
+/* Relative to the fixture when they start with '|', else as written. */
+static const wchar_t *const g_st_paths[] = {
+    L"|", L"|\\", L"|/", L"|\\plain.txt", L"|/plain.txt", L"|\\ro.txt", L"|\\prog.EXE",
+    L"|\\run.cmd", L"|\\x.bat.txt", L"|\\t2040.com", L"|\\sub", L"|\\sub\\",
+    L"|\\sub\\.", L"|\\sub\\..", L"|\\nothere", L"|\\nothere\\x", L"|\\plain.txt\\",
+    L"C:\\", L"C:/", L"c:\\", L"C:", L"C:.", L"\\", L"/", L".", L"..", L"", L"Z:\\", L"Z:",
+    L"NUL", L"CON", L"nothere", L"//", L"\\\\", L"\\\\x", L"a.exe",
+};
+enum { ST_NPATHS = sizeof(g_st_paths) / sizeof(g_st_paths[0]) };
+
+static void st_path(size_t i, wchar_t *w, char *n)
+{
+    const wchar_t *p = g_st_paths[i];
+    if (p[0] == L'|') {
+        lstrcpyW(w, g_st_dir);
+        lstrcatW(w, p + 1);
+    } else {
+        lstrcpyW(w, p);
+    }
+    WideCharToMultiByte(CP_ACP, 0, w, -1, n, MAX_PATH * 2, NULL, NULL);
+}
+
+#define ST_ROW(fn, lbl, T, CALL_DLL, CALL_REF) do {                                  \
+        struct T d1, d2;                                                             \
+        memset(&d1, 'X', sizeof d1); memset(&d2, 'X', sizeof d2);                    \
+        *_errno() = 0; *ref__errno() = 0;                                            \
+        *__doserrno() = 0; *ref___doserrno() = 0;                                    \
+        g_iph_dll = g_iph_ref = 0;                                                   \
+        int r1 = CALL_DLL, r2 = CALL_REF;                                            \
+        grade2(#fn, lbl, r1, r2);                                                    \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                         \
+        grade2(#fn ".doserrno", lbl, (long long)*__doserrno(), (long long)*ref___doserrno()); \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                               \
+        grade2(#fn ".rec", lbl, fnv(&d1, sizeof d1), fnv(&d2, sizeof d2));           \
+    } while (0)
+
+/* NULL path and NULL record, then every path. `P` is the path of the right width. */
+#define ST_PATH_RUN(fn, T, ch, P) do {                                               \
+        if (!st_setup()) {                                                           \
+            grade2(#fn ".fixture", "setup", 0, 1); /* fail loud */                   \
+            return;                                                                  \
+        }                                                                            \
+        wchar_t wp[MAX_PATH];                                                        \
+        char np[MAX_PATH * 2];                                                       \
+        ST_ROW(fn, "NULL", T, ud_##fn((const ch *)0, &d1), ref_##fn((const ch *)0, &d2)); \
+        st_path(3, wp, np);                                                          \
+        ST_ROW(fn, "nullrec", T, ud_##fn(P, (struct T *)0), ref_##fn(P, (struct T *)0)); \
+        ST_ROW(fn, "NULL+nullrec", T, ud_##fn((const ch *)0, (struct T *)0),         \
+               ref_##fn((const ch *)0, (struct T *)0));                              \
+        for (size_t i = 0; i < ST_NPATHS; i++) {                                     \
+            st_path(i, wp, np);                                                      \
+            ST_ROW(fn, label_idx(i), T, ud_##fn(P, &d1), ref_##fn(P, &d2));          \
+        }                                                                            \
+    } while (0)
+
+#define ST_NARROW(fn, T) ST_PATH_RUN(fn, T, char, np)
+#define ST_WIDE(fn, T) ST_PATH_RUN(fn, T, wchar_t, wp)
+
+static void run_st__stat32(void)    { install_counting_iph(); ST_NARROW(_stat32, _stat32); }
+static void run_st__stat32i64(void) { install_counting_iph(); ST_NARROW(_stat32i64, _stat32i64); }
+static void run_st__stat64i32(void) { install_counting_iph(); ST_NARROW(_stat64i32, _stat64i32); }
+static void run_st__stat64(void)    { install_counting_iph(); ST_NARROW(_stat64, _stat64);
+    /* Narrow only: a byte CP_ACP has no mapping for fails the conversion, and
+     * the record is left as it was. */
+    ST_ROW(_stat64, "unmapped", _stat64, ud__stat64("\x81\x8d\x8f\x90\x9d", &d1),
+           ref__stat64("\x81\x8d\x8f\x90\x9d", &d2));
+}
+static void run_st__wstat32(void)    { install_counting_iph(); ST_WIDE(_wstat32, _stat32); }
+static void run_st__wstat32i64(void) { install_counting_iph(); ST_WIDE(_wstat32i64, _stat32i64); }
+static void run_st__wstat64i32(void) { install_counting_iph(); ST_WIDE(_wstat64i32, _stat64i32); }
+static void run_st__wstat64(void)    { install_counting_iph(); ST_WIDE(_wstat64, _stat64); }
+
+/* One descriptor kind per side. Each side opens from its own lowio table, so the
+ * two descriptors are graded as numbers too: _fstat reports a device's or pipe's
+ * descriptor in st_dev. */
+enum { STF_FILE, STF_NUL, STF_PIPE_DATA, STF_PIPE_EMPTY, STF_CLOSED, STF_N_OPENED };
+
+static int stf_open(int kind, int ref, int *other)
+{
+    wchar_t path[MAX_PATH];
+    int fds[2];
+    int fd = -1;
+    *other = -1;
+    switch (kind) {
+    case STF_FILE:
+    case STF_CLOSED:
+        lstrcpyW(path, g_st_dir); lstrcatW(path, L"\\t2040.com");
+        fd = ref ? ref__wopen(path, _O_RDONLY) : _wopen(path, _O_RDONLY);
+        if (kind == STF_CLOSED && fd >= 0) {
+            if (ref) ref__close(fd); else _close(fd);
+        }
+        return fd;
+    case STF_NUL:
+        return ref ? ref__wopen(L"NUL", _O_RDWR) : _wopen(L"NUL", _O_RDWR);
+    case STF_PIPE_DATA:
+    case STF_PIPE_EMPTY:
+        if ((ref ? ref__pipe(fds, 256, _O_BINARY) : _pipe(fds, 256, _O_BINARY)) != 0)
+            return -1;
+        if (kind == STF_PIPE_DATA) {
+            if (ref) ref__write(fds[1], "abc", 3); else _write(fds[1], "abc", 3);
+        }
+        *other = fds[1];
+        return fds[0];
+    }
+    return fd;
+}
+
+static void stf_close(int fd, int other, int ref)
+{
+    if (ref) {
+        if (fd >= 0) ref__close(fd);
+        if (other >= 0) ref__close(other);
+    } else {
+        if (fd >= 0) _close(fd);
+        if (other >= 0) _close(other);
+    }
+}
+
+#define ST_FSTAT_RUN(fn, T) do {                                                     \
+        if (!st_setup()) {                                                           \
+            grade2(#fn ".fixture", "setup", 0, 1);                                   \
+            return;                                                                  \
+        }                                                                            \
+        static const char *const kinds[] = { "file", "nul", "pipe+data", "pipe", "closed" }; \
+        for (int k = 0; k < STF_N_OPENED; k++) {                                     \
+            int o1, o2;                                                              \
+            int f1 = stf_open(k, 0, &o1), f2 = stf_open(k, 1, &o2);                  \
+            grade2(#fn ".fd", kinds[k], f1, f2);                                     \
+            ST_ROW(fn, kinds[k], T, ud_##fn(f1, &d1), ref_##fn(f2, &d2));            \
+            if (k != STF_CLOSED) {                                                   \
+                ST_ROW(fn, "nullrec", T, ud_##fn(f1, (struct T *)0), ref_##fn(f2, (struct T *)0)); \
+                stf_close(f1, o1, 0); stf_close(f2, o2, 1);                          \
+            }                                                                        \
+        }                                                                            \
+        static const int fixed[] = { 0, 1, 2, -1, -2, -3, 2047, 8191, 8192, 100000 }; \
+        for (size_t i = 0; i < sizeof fixed / sizeof fixed[0]; i++)                  \
+            ST_ROW(fn, label_idx(i), T, ud_##fn(fixed[i], &d1), ref_##fn(fixed[i], &d2)); \
+        ST_ROW(fn, "-2+nullrec", T, ud_##fn(-2, (struct T *)0), ref_##fn(-2, (struct T *)0)); \
+    } while (0)
+
+static void run_st__fstat32(void)    { install_counting_iph(); ST_FSTAT_RUN(_fstat32, _stat32); }
+static void run_st__fstat32i64(void) { install_counting_iph(); ST_FSTAT_RUN(_fstat32i64, _stat32i64); }
+static void run_st__fstat64i32(void) { install_counting_iph(); ST_FSTAT_RUN(_fstat64i32, _stat64i32); }
+static void run_st__fstat64(void)    { install_counting_iph(); ST_FSTAT_RUN(_fstat64, _stat64); }
+#endif /* UCRTDIFF_REF_HAS__stat64 */
+
 static void run_ctype(void)
 {
     /* The full 0..255 range plus EOF: the 0x80-0xFF half is where the narrow
@@ -2197,6 +2434,14 @@ static void run_legacy(void)
         FP_HAND(strtof) FP_HAND(_strtof_l) FP_HAND(strtod) FP_HAND(_strtod_l)
         FP_HAND(strtold) FP_HAND(_strtold_l) FP_HAND(wcstof) FP_HAND(_wcstof_l)
         FP_HAND(wcstod) FP_HAND(_wcstod_l) FP_HAND(wcstold) FP_HAND(_wcstold_l)
+#if UCRTDIFF_REF_HAS__stat64
+#define ST_HAND(name) { #name, run_st_##name },
+#else
+#define ST_HAND(name) { #name, 0 },
+#endif
+        ST_HAND(_stat32) ST_HAND(_stat32i64) ST_HAND(_stat64i32) ST_HAND(_stat64)
+        ST_HAND(_wstat32) ST_HAND(_wstat32i64) ST_HAND(_wstat64i32) ST_HAND(_wstat64)
+        ST_HAND(_fstat32) ST_HAND(_fstat32i64) ST_HAND(_fstat64i32) ST_HAND(_fstat64)
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {

@@ -115,5 +115,9 @@ output = ["strtox"]
 # strtox for its character trait.
 strtod = ["strtox"]
 
+# filesystem/stat.cpp -- _stat/_wstat/_fstat, all 12, in four record layouts. Shares
+# findfile's path conversion and time helpers. See src/stat.rs.
+stat = ["findfile"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

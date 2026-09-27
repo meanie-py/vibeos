@@ -270,7 +270,7 @@ unsafe fn enable_slot(x: &mut XhciExtension) -> Option<u32> {
 unsafe fn disable_slot(x: &mut XhciExtension, slot: u32) {
     let r = command(x, 0, 0, (TRB_DISABLE_SLOT << TRB_TYPE_SHIFT) | (slot << 24));
     if r.code != CC_SUCCESS && !x.failed.load(Ordering::Acquire) {
-        fail_controller(x);
+        device_command_failed(x, slot, 0, TRB_DISABLE_SLOT, r.code);
     }
     core::ptr::write_volatile(x.dcbaa.add(slot as usize), 0);
     dma_clean(x.dcbaa.add(slot as usize) as *const u8, 8);
@@ -408,9 +408,10 @@ unsafe fn resume_point(ep: &XhciEndpoint) -> (u32, u32) {
 /// pointer past the transfer that failed.
 unsafe fn recover(x: &mut XhciExtension, ep: &mut XhciEndpoint) -> bool {
     let cc = ep_command(x, ep, TRB_RESET_ENDPOINT);
-    if cc != CC_SUCCESS {
-        xlog!("slot %u ep %u: Reset Endpoint failed, cc %u", ep.slot, ep.dci, cc);
-        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+    // Context State Error: the endpoint was not halted after all (a Stop won
+    // the race); the dequeue move below is still what it needs.
+    if cc != CC_SUCCESS && !(cc == CC_CONTEXT_STATE && ep_state(x, ep) != EP_STATE_HALTED) {
+        device_command_failed(x, ep.slot, ep.dci, TRB_RESET_ENDPOINT, cc);
         return false;
     }
     let mut irql: KIRQL = 0;
@@ -419,8 +420,7 @@ unsafe fn recover(x: &mut XhciExtension, ep: &mut XhciEndpoint) -> bool {
     KeReleaseSpinLock(&mut ep.lock, irql);
     let cc2 = set_dequeue(x, ep, idx, cyc);
     if cc2 != CC_SUCCESS {
-        xlog!("slot %u ep %u: Set TR Dequeue failed, cc %u", ep.slot, ep.dci, cc2);
-        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+        device_command_failed(x, ep.slot, ep.dci, TRB_SET_TR_DEQUEUE, cc2);
         return false;
     }
     ep.halted = false;
@@ -448,7 +448,7 @@ fn usbd_status(cc: u32) -> USBD_STATUS {
         CC_SUCCESS | CC_SHORT_PACKET => USBD_STATUS_SUCCESS,
         CC_STALL => USBD_STATUS_STALL_PID,
         CC_BABBLE => USBD_STATUS_BABBLE_DETECTED,
-        CC_USB_TRANSACTION => USBD_STATUS_XACT_ERROR,
+        CC_USB_TRANSACTION | CC_SPLIT_TRANSACTION => USBD_STATUS_XACT_ERROR,
         CC_DATA_BUFFER => USBD_STATUS_DATA_BUFFER_ERROR,
         CC_TRB => USBD_STATUS_INTERNAL_HC_ERROR,
         0 => USBD_STATUS_DEV_NOT_RESPONDING,
@@ -456,9 +456,60 @@ fn usbd_status(cc: u32) -> USBD_STATUS {
     }
 }
 
-/// Completion codes after which the controller has halted the endpoint (4.8.3).
+/// Completion codes after which the controller has halted the endpoint (4.8.3,
+/// 4.10.2). A split transaction error is what a low/full-speed device below a
+/// hub produces once it is unplugged.
 fn halts(cc: u32) -> bool {
-    matches!(cc, CC_STALL | CC_BABBLE | CC_USB_TRANSACTION | CC_TRB)
+    matches!(cc, CC_STALL | CC_BABBLE | CC_USB_TRANSACTION | CC_SPLIT_TRANSACTION | CC_TRB)
+}
+
+const EP_STATE_RUNNING: u32 = 1;
+const EP_STATE_HALTED: u32 = 2;
+const EP_STATE_ERROR: u32 = 4;
+
+/// The controller's own view of an endpoint: Endpoint Context state (6.2.3),
+/// 0 disabled, 1 running, 2 halted, 3 stopped, 4 error. With no context memory
+/// to read, say Running: callers treat that as "may still be doing DMA".
+unsafe fn ep_state(x: &XhciExtension, ep: &XhciEndpoint) -> u32 {
+    if x.va.is_null() || ep.slot == 0 {
+        return EP_STATE_RUNNING;
+    }
+    let c = out_ctx(x, ep.slot, ep.dci);
+    dma_invalidate(c as *const u8, x.ctx_size as usize);
+    core::ptr::read_volatile(c) & 7
+}
+
+/// An endpoint or slot command failed. That is a statement about one device
+/// (typically one that was just unplugged, whose endpoint the controller has
+/// already halted), not about the controller: the controller is dead only if it
+/// says so in USBSTS, or a command never completes (`command` handles that).
+/// Failing the whole controller here once took every other device on the bus
+/// down with an unplugged keyboard.
+unsafe fn device_command_failed(x: &mut XhciExtension, slot: u32, dci: u32, trb: u32, cc: u32) {
+    let sts = rd32(x.op, USBSTS);
+    if sts & (USBSTS_HCH | USBSTS_HCE | USBSTS_HSE) != 0 {
+        xlog!("slot %u ep %u: command %u failed, cc %u, and the controller stopped (USBSTS %x)", slot, dci, trb, cc, sts);
+        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+        return;
+    }
+    xlog!("slot %u ep %u: command %u failed, cc %u; this device only", slot, dci, trb, cc);
+}
+
+/// A command meant to take an endpoint's transfers back (Stop Endpoint, Set TR
+/// Dequeue, dropping it) failed. Its buffers go back to usbport when we return,
+/// so everything turns on whether the controller can still be moving data
+/// through it: if its context says Running, the only safe answer is to stop the
+/// whole controller, as before. Anything else (halted, as for a device unplugged
+/// mid-transfer; stopped; disabled) cannot DMA, so only this endpoint is done.
+unsafe fn endpoint_command_failed(x: &mut XhciExtension, ep: &mut XhciEndpoint, trb: u32, cc: u32) {
+    let state = ep_state(x, ep);
+    if state == EP_STATE_RUNNING {
+        xlog!("slot %u ep %u: command %u failed, cc %u, endpoint still running; stopping the controller", ep.slot, ep.dci, trb, cc);
+        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+        return;
+    }
+    device_command_failed(x, ep.slot, ep.dci, trb, cc);
+    ep.halted = true;
 }
 
 /// Record a Transfer Event against the transfer it belongs to. Runs inside the
@@ -755,8 +806,7 @@ pub unsafe extern "system" fn XHCI_CloseEndpoint(xhciExtension: PVOID, xhciEndpo
     set_event_endpoint(x, slot, ep.dci as usize, core::ptr::null_mut());
     let cc = configure_endpoint(x, ep, false);
     if cc != CC_SUCCESS {
-        xlog!("slot %u: Configure Endpoint (drop dci %u) failed, cc %u", slot as u32, ep.dci, cc);
-        if !x.failed.load(Ordering::Acquire) { fail_controller(x); }
+        endpoint_command_failed(x, ep, TRB_CONFIGURE_ENDPOINT, cc);
     }
 }
 
@@ -834,6 +884,17 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
         if ep.dci == 1 && request_type == 0x00 && request == 0x05 {
             // SET_ADDRESS: the controller addresses the device itself.
             let slot = ep.slot;
+            // usbport reuses an address only after the device that held it was
+            // removed, and it does not tell the miniport about removals. A slot
+            // still holding this address is that removed device's: free it, or
+            // the re-open at this address finds the dead slot first (a keyboard
+            // unplugged from one hub port and plugged into another hung there).
+            for s in 1..=MAX_SLOTS as u32 {
+                if s != slot && x.slots[s as usize].in_use && x.slots[s as usize].usb_address == w_value {
+                    xlog!("slot %u: address %u reused by usbport; freeing the removed device's slot", s, w_value);
+                    disable_slot(x, s);
+                }
+            }
             let cc = address_device(x, slot, false);
             let (ctx_va, _) = dev_ctx(x, slot);
             dma_invalidate(ctx_va, x.ctx_size as usize);
@@ -1026,8 +1087,14 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
     let mut was_done = (*target).done.load(Ordering::SeqCst);
 
     if !was_done && !ep.halted {
-        if ep_command(x, ep, TRB_STOP_ENDPOINT) != CC_SUCCESS && !x.failed.load(Ordering::Acquire) {
-            fail_controller(x);
+        let cc = ep_command(x, ep, TRB_STOP_ENDPOINT);
+        if cc == CC_CONTEXT_STATE && matches!(ep_state(x, ep), EP_STATE_HALTED | EP_STATE_ERROR) {
+            // Already halted (e.g. its device was unplugged and the last transfer
+            // errored): nothing is running, so the TD can be unlinked as it is,
+            // and the next submit's recover() resets the endpoint.
+            ep.halted = true;
+        } else if cc != CC_SUCCESS {
+            endpoint_command_failed(x, ep, TRB_STOP_ENDPOINT, cc);
         }
     }
 
@@ -1079,8 +1146,9 @@ pub unsafe extern "system" fn XHCI_AbortTransfer(
     KeReleaseSpinLock(&mut ep.lock, irql);
 
     if move_dequeue && !ep.halted {
-        if set_dequeue(x, ep, idx, cyc) != CC_SUCCESS && !x.failed.load(Ordering::Acquire) {
-            fail_controller(x);
+        let cc = set_dequeue(x, ep, idx, cyc);
+        if cc != CC_SUCCESS {
+            endpoint_command_failed(x, ep, TRB_SET_TR_DEQUEUE, cc);
         }
     }
     finish_payload(ep, &mut *target);

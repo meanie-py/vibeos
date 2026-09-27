@@ -135,9 +135,11 @@ pub const CC_USB_TRANSACTION: u32 = 4;
 pub const CC_TRB: u32 = 5;
 pub const CC_STALL: u32 = 6;
 pub const CC_SHORT_PACKET: u32 = 13;
+pub const CC_CONTEXT_STATE: u32 = 19;
 pub const CC_STOPPED: u32 = 26;
 pub const CC_STOPPED_LENGTH_INVALID: u32 = 27;
 pub const CC_STOPPED_SHORT_PACKET: u32 = 28;
+pub const CC_SPLIT_TRANSACTION: u32 = 36;
 
 #[inline]
 pub const fn trb_type(control: u32) -> u32 {
