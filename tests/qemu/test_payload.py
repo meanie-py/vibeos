@@ -193,6 +193,8 @@ def drain_for_marker(
     idle_secs: float = 0.0,
     now: Any = time.monotonic,
     on_output: Any = None,
+    on_silence: Any = None,
+    silence_secs: float = 0.0,
 ) -> tuple[str, str]:
     """Drain serial until `marker` appears, `fail_marker` appears, or
     `budget_secs` of WALL CLOCK elapse.
@@ -210,9 +212,15 @@ def drain_for_marker(
     truncating every run mid-sweep. The expensive part was not the truncation but
     the ATTRIBUTION: the driver above blamed whichever subtest was in flight when
     the harness stopped reading, and quarantined innocent tests as crashers.
+
+    `on_silence(seconds_silent)` is called every `silence_secs` of an unbroken
+    serial silence, without ending the drain: a guest that goes quiet and then
+    RECOVERS leaves no hang capture, and its vCPUs can only be read during the
+    quiet.
     """
     deadline = now() + budget_secs
     last_progress = now()
+    next_silence = silence_secs
     line_deadline = None
     while True:
         if marker in output:
@@ -233,12 +241,52 @@ def drain_for_marker(
             return output, "budget"
         if idle_secs and now() - last_progress >= idle_secs:
             return output, "idle"
+        if on_silence is not None and silence_secs and now() - last_progress >= next_silence:
+            on_silence(now() - last_progress)
+            next_silence += silence_secs
         chunk = read(timeout=1.0)
         if chunk:
             output += chunk
             last_progress = now()
+            next_silence = silence_secs
             if on_output is not None:
                 on_output(output)
+
+
+class SilenceSampler:
+    """Where every vCPU is while the payload is silent, appended to
+    silence-samples.txt in the run's artifact dir. Unlike save_hang_state this
+    ends nothing: it exists for the stall that recovers. arm64 kmtest goes
+    silent for ~95 s inside NpfsConnect on every round -- the guest clock keeps
+    ticking but not one thread, the 10 s census watchdog included, is scheduled
+    -- and then carries on, so no hang path ever fires and the culprit PC is
+    only readable during the silence. Never raises."""
+
+    def __init__(self, vm: Any, limit: int = 12) -> None:
+        self.vm, self.limit, self.taken = vm, limit, 0
+
+    def __call__(self, silent_for: float) -> None:
+        if self.taken >= self.limit:
+            return
+        self.taken += 1
+        try:
+            state = self.vm.capture_cpu_state()
+        except Exception as exc:
+            state = f"<capture failed: {exc!r}>\n"
+        try:
+            from .cli.triage import cpu_pcs
+
+            pcs = " ".join(f"CPU#{i}=0x{pc}" for i, pc in cpu_pcs(state)) or "?"
+        except Exception:
+            pcs = "?"
+        head = f"=== silence sample #{self.taken}: serial silent {silent_for:.0f}s  pcs: {pcs} ===\n"
+        print(f"[payload] {head.strip()}", flush=True)
+        dest = Path(self.vm.artifact_dir or self.vm.work_dir) / "silence-samples.txt"
+        try:
+            with dest.open("a") as fh:
+                fh.write(head + state + "\n")
+        except OSError:
+            pass
 
 
 class ShotTaker:
@@ -305,6 +353,8 @@ def test_payload_launched(vm: QemuVM, arch: str, payload: str, spec: dict[str, A
             float(t.get("launch_drain_secs", 30)),
             float(t.get("launch_idle_secs", 0)),
             on_output=shooter,
+            on_silence=SilenceSampler(vm),
+            silence_secs=float(t.get("silence_sample_secs", 0)),
         )
         # Printed so a DRIVER above can tell WHY the boot stopped. "idle" is the
         # one reason that positively implicates the guest: the payload went

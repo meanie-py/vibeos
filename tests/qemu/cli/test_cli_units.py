@@ -1476,6 +1476,48 @@ def test_the_drain_does_not_wait_forever_for_a_line_that_never_ends():
     assert why == "marker" and out == "[APPSTORM] done VER"
 
 
+def test_a_silence_that_recovers_is_sampled_without_ending_the_drain():
+    # 45 s of silence, then the guest carries on to the marker: samples at 20
+    # and 40, re-armed by the output, and the drain still ends on the marker.
+    from tests.qemu import test_payload as payload_mod
+
+    t = {"now": 0.0}
+    feed = {45.0: "back\n", 50.0: "[KMTEST-SWEEP] done total=1\n"}
+    seen = []
+
+    def read(timeout):
+        t["now"] += 1.0
+        return feed.get(t["now"], "")
+
+    out, why = payload_mod.drain_for_marker(
+        read, "", "[KMTEST-SWEEP] done", "", 600,
+        now=lambda: t["now"], on_silence=seen.append, silence_secs=20.0,
+    )
+    assert why == "marker" and "back" in out
+    assert [round(x) for x in seen] == [20, 40]
+
+
+def test_the_silence_sampler_writes_its_capture_and_never_raises(tmp_path):
+    from tests.qemu import test_payload as payload_mod
+
+    class VM:
+        artifact_dir, work_dir = tmp_path, tmp_path
+        calls = 0
+
+        def capture_cpu_state(self):
+            VM.calls += 1
+            if VM.calls == 2:
+                raise RuntimeError("monitor gone")
+            return "=== info registers -a ===\nCPU#0\n PC=ffff800004012345 X00=0\n"
+
+    sampler = payload_mod.SilenceSampler(VM(), limit=2)
+    for silent in (20.0, 40.0, 60.0):
+        sampler(silent)
+    text = (tmp_path / "silence-samples.txt").read_text()
+    assert "silence sample #1: serial silent 20s" in text and "ffff800004012345" in text
+    assert "#2" in text and "capture failed" in text and "#3" not in text
+
+
 def test_a_drained_out_payload_captures_the_hang_before_it_fails():
     # The gap this closes: a sweep that BOOTS and then wedges never enters
     # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
