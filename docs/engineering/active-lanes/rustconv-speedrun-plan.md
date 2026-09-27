@@ -134,9 +134,22 @@ every translated body. **Owed, in order:**
      gone. Deliberate, `nolint`ed with reasons: arbiter's amd64 `KeGetCurrentIrql` (same
      `mov cr8` body) and freeldr's six CRT overrides (as freeldr.c overrides libcntpr).
      Baseline empty.
-   - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
-     `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
-     body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.
+   - DONE, the remaining arch-cfg sites: 576 unread candidates (scan_arch_cfg minus July's
+     set minus last round's 664) went to three read-only Sonnet reviewers; every non-LEGIT
+     claim was re-checked against the C. 557 LEGIT. Fixed: kdbg amd64 `bt` walked the i386
+     EBP chain and never called its own RtlVirtualUnwind `GetNextFrame` (kdb_cli.c has a
+     separate amd64 body); ob symlink `CreationTime` read the INTERRUPT clock on 64-bit;
+     `SystemExceptionInformation.FloatingEmulationCount` was 0 on arm64 (C gates only
+     32-bit ARM); six empty `#[cfg(x86)] {}` blocks in ExpInitializeExecutive phase 1.
+     Deliberate, left: kernel32 WoW64 CSR leniency (already nolint'd), SharedUserData
+     ImageNumber WoW64 range, kdbg absent on arm64.
+   - Owed: iomgr `IopInitializeSystemDrivers` arm64 loads only netstack/afd/npfs instead
+     of the CmGetSystemDriverList loop (works around ZwLoadDriver hanging on
+     ramdisk-absent services) — a BRINGUP-SHORTCUT that needs the hang root-caused.
+   - DONE, tooling: scan_cfg_vs_c now has a UP/SMP axis (C `CONFIG_SMP` = Rust
+     `feature = "smp"`). First find: KeBugCheckWithTf's CPU freeze was gated on x86/x86_64
+     (C: `#ifdef CONFIG_SMP`) — ran in UP kernels, never on arm64 SMP. Now
+     `feature = "smp"`; arm64's KxFreezeExecution is still an empty stub (owed).
 
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 

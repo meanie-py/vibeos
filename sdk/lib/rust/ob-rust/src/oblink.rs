@@ -65,21 +65,16 @@ extern "C" {
     static mut IoDeviceObjectType: POBJECT_TYPE;
 }
 
-// KeQuerySystemTime: real function on i386, macro on amd64/arm64.
-// On amd64/arm64 it reads SharedSystemTime. We declare it extern on i386
-// and provide a stub on other architectures that calls KeQueryInterruptTime.
+// KeQuerySystemTime: real function on i386, macro on amd64/arm64 reading
+// SharedUserData->SystemTime (xdk/amd64/ke.h). This used to read the INTERRUPT time
+// (uptime) there, so symbolic links got an uptime-derived CreationTime on 64-bit.
 #[cfg(target_arch = "x86")]
 extern "system" {
     fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER);
 }
 
 #[cfg(not(target_arch = "x86"))]
-#[inline]
-unsafe fn KeQuerySystemTime(CurrentTime: PLARGE_INTEGER) {
-    // On amd64/arm64, KeQuerySystemTime is a macro reading SharedSystemTime.
-    // We approximate via KeQueryInterruptTime which is always available.
-    (*CurrentTime).QuadPart = KeQueryInterruptTime() as i64;
-}
+use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 
 // ============================================================================
 // Inline probe helpers (C macros in probe.h)
