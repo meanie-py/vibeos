@@ -37,6 +37,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import tree_sitter_rust
+from tools.source_walk import source_files
 from tree_sitter import Language, Parser
 
 from .c_defs import c_functions, compiled_tus
@@ -277,10 +278,10 @@ _MACRO_INCLUDE_DIRS = (
 def macro_table(module_dir: Path, repo: Path) -> dict[str, str]:
     """name -> body of every function-like `#define` visible to the module (first wins)."""
     table: dict[str, str] = {}
-    headers = sorted(module_dir.rglob("*.h"))
+    headers = sorted(source_files(module_dir, "*.h"))
     for d in _MACRO_INCLUDE_DIRS:
         if (repo / d).is_dir():
-            headers += sorted((repo / d).rglob("*.h"))
+            headers += sorted(source_files(repo / d, "*.h"))
     for h in headers:
         lines = h.read_text(encoding="utf-8", errors="replace").splitlines()
         i = 0
@@ -521,7 +522,7 @@ def module_inputs(
         live = {p.resolve() for p in compiled_tus(module_dir, repo, arch=arch)}
     c_files = [
         p
-        for p in sorted(module_dir.rglob("*.c"))
+        for p in sorted(source_files(module_dir, "*.c"))
         if p.resolve() not in live and not p.name.startswith("rust_")
     ]
     glue = sorted(p for p in live if p.is_relative_to(module_dir.resolve()))
@@ -529,7 +530,7 @@ def module_inputs(
     srcs: list[Path] = []
     for crate in module_rust_crates(module_dir, workspace):
         if (crate / "src").is_dir():
-            srcs.extend(sorted((crate / "src").rglob("*.rs")))
+            srcs.extend(sorted(source_files(crate / "src", "*.rs")))
     return c_files, srcs, glue
 
 
@@ -540,7 +541,7 @@ def all_modules(repo: Path) -> list[Path]:
     """Every dir whose CMakeLists links a Rust crate (cheap text test, resolved later)."""
     out = []
     for root in _AUDIT_ROOTS:
-        for cml in sorted((repo / root).rglob("CMakeLists.txt")):
+        for cml in sorted(source_files(repo / root, "CMakeLists.txt")):
             text = cml.read_text(encoding="utf-8", errors="replace")
             if "rust_crate_sources(" in text or "add_cargo_" in text:
                 out.append(cml.parent)
