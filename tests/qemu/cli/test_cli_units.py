@@ -1490,8 +1490,14 @@ def test_a_silence_that_recovers_is_sampled_without_ending_the_drain():
         return feed.get(t["now"], "")
 
     out, why = payload_mod.drain_for_marker(
-        read, "", "[KMTEST-SWEEP] done", "", 600,
-        now=lambda: t["now"], on_silence=seen.append, silence_secs=20.0,
+        read,
+        "",
+        "[KMTEST-SWEEP] done",
+        "",
+        600,
+        now=lambda: t["now"],
+        on_silence=seen.append,
+        silence_secs=20.0,
     )
     assert why == "marker" and "back" in out
     assert [round(x) for x in seen] == [20, 40]

@@ -279,7 +279,9 @@ class SilenceSampler:
             pcs = " ".join(f"CPU#{i}=0x{pc}" for i, pc in cpu_pcs(state)) or "?"
         except Exception:
             pcs = "?"
-        head = f"=== silence sample #{self.taken}: serial silent {silent_for:.0f}s  pcs: {pcs} ===\n"
+        head = (
+            f"=== silence sample #{self.taken}: serial silent {silent_for:.0f}s  pcs: {pcs} ===\n"
+        )
         print(f"[payload] {head.strip()}", flush=True)
         dest = Path(self.vm.artifact_dir or self.vm.work_dir) / "silence-samples.txt"
         try:

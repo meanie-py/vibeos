@@ -303,7 +303,8 @@ def test_conformance_strips_every_host_stamp_the_tee_writes(tmp_path):
     from . import conformance
 
     guest = "".join(
-        f"[KMTEST:BEGIN T{i}]\r\nT{i}.c:{i}: Test failed: x\r\n[KMTEST:END T{i} pass={i} fail=1 skip=0]\n"
+        f"[KMTEST:BEGIN T{i}]\r\nT{i}.c:{i}: Test failed: x\r\n"
+        f"[KMTEST:END T{i} pass={i} fail=1 skip=0]\n"
         for i in range(40)
     )
     tee = SerialClient.__new__(SerialClient)
