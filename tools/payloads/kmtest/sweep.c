@@ -209,6 +209,11 @@ int main(void)
             GetExitCodeProcess(pi.hProcess, &code);
             DbgPrint("[KMTEST-SWEEP] exit %s code=%lu\n", line, code);
         }
+        /* Diagnostic: the GUEST clock at each test boundary. The harness stamps
+         * the same line with HOST seconds, so the pair shows where guest time
+         * drifts from real time or leaps (arm64 NpfsConnect saw a worker "wake
+         * 150 s late" in a round no longer than its clean siblings). */
+        DbgPrint("[KMTEST-SWEEP] clock %s guest_ms=%lu\n", line, GetTickCount());
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
     }
