@@ -159,7 +159,16 @@ iPXE notes: use `ipxe.efi`, not `snponly.efi`. snponly only drives the NIC it
 was loaded from, and loaded from the card it sees none. Chaining a UEFI Shell
 from iPXE exposes iPXE's downloaded images as a volume, and in that shell the
 mapping shifts: the iPXE volume becomes `FS0:` and the card `FS1:`. Find the
-card by its `HD(1,MBR,...)` device path, never by number.
+card by its `HD(1,MBR,...)` device path, never by number. A USB stick with a FAT
+partition shifts it too, in the firmware's own Shell: a Ventoy stick's `VTOYEFI`
+mapped as `FS0:` and `netboot.sh`, then hardcoding `fs0:`, wrote the loader onto
+the stick. It now takes the one filesystem whose device path has no `USB(` from
+the Shell's startup mapping table (the card's is `VenHw(100C2CFA-…)`), and
+refuses to write when it cannot find exactly one.
+`netboot.sh --shell` power-cycles into the Shell and stops there, for reading
+bench media with a second FAT implementation (`tools/pi4/serial-send.sh
+'type fs0:\FILE'`); that is how a file VibeOS wrote to a stick was checked
+after a power cycle.
 
 Every staged payload carries a `manifest.json` with the commit it came from and
 whether the tree was dirty. Tie each board result to that, never to "what was on

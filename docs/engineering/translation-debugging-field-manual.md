@@ -4284,10 +4284,9 @@ already been met the note is describing a bug, not a plan.
   because the missing bit only matters on the NEXT create that reuses deleted slots — which
   could then be handed a live entry and overwrite another file's dirent. The one objection
   was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
-  translation, diff each paired function's C callee set against its Rust body. A
-  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
-  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
-  each lead against the C.
+  translation run `rustconv body-audit <module>` (or `--all`): it diffs each paired
+  function's live C callees against its Rust body and ranks silent stubs and dropped
+  state-changing calls first. A lead generator, not a gate: read each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
@@ -6297,7 +6296,9 @@ sweep.**
   the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
   suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
-  the macro expands to.
+  the macro expands to. `NT_ASSERT` breaks and then *continues*: disk.sys had three
+  `brk #0xF001; loop {}` sites, which the arm64 build's driver sweep reports as unexpected
+  branch-to-self spins, but only once the driver is in the mkramdisk staging list.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
   masquerades as a hang.
 
@@ -10241,6 +10242,11 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **A PTE attribute the MAIR doesn't mean.** `MI_PAGE_DISABLE_CACHE` set x86 PCD bits that
   selected MAIR slot 0 (Normal WB) on arm64, so the UART and GIC were cached. TCG ignores
   memory attributes. Fixed in `mm.rs` to AttrIndx 1 (Device) / 2 (Normal-NC).
+  The flip side: a caller that disables caching on **RAM**, where x86 PCD only means
+  "don't pollute the cache", now gets Device memory. `MiMapPagesInZeroSpace` did, and the
+  first `dc zva` in `KeZeroPages` alignment-faulted in `MmZeroPageThread` on a Raspberry
+  Pi 4 (BUGCHECK 0x1E, 0x80000002, ESR DFSC 0x21) while QEMU booted green. RAM stays
+  Normal WB on arm64; Device-mapping it also aliases the page's WB mappings.
 - **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
   the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
   invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
@@ -10407,6 +10413,24 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **Desktop timer freeze = three stacked bugs** `[§9.21]`: `KeDelayExecutionThread` was still a
   busy-yield bring-up stub, explorer's main thread spun on a stuck `QS_PAINT` wake bit, and
   DISPATCH software-interrupt delivery was unimplemented.
+- **Serial silent for ~95 s with the guest clock still ticking, then everything due fires at
+  once** (a 10 s census missing nine scans, 30 s waits timing out together) — **arm64 had no
+  preemption.** The DISPATCH softint expired timers but parked the woken thread in
+  `Prcb->NextThread`, and only the idle loop or a voluntary wait ever switched to it;
+  `QuantumEnd` was never read. So a thread that never blocks kept the CPU — here the
+  **priority-0 zero-page thread**, clearing the free list after kmtest MmSection, once per
+  arm64 conformance round. Fix: `KfLowerIrql` calls `KiDispatchPreemptArm64` on the crossing
+  under DISPATCH (x86's DPC-interrupt tail). Three traps on the way:
+  - It must decline when IRQs are masked.
+  - The preempted thread must restore its own DAIF on resume. The first cut let the zero
+    thread come back masked from an SVC-wait swap, and it froze the box: 63 s of host time,
+    0.4 s of guest time.
+  - `KeZeroPages` went through the CRT's byte-at-a-time memset, ~12 ms per 32-page batch under
+    TCG, and every timer waited that long for the next crossing. It is `dc zva` now.
+
+  **Tell it from a dead clock** by stamping serial with host time (conformance does this
+  always) and reading `silence-samples.txt`, which the payload drain writes during any 20 s
+  quiet that later recovers.
 - **Desktop never repaints** `[§9.23]`: `gpdeskInputDesktop` stranded on the *Winlogon* desktop,
   and `SystemTime` was never seeded from the RTC (the "query the clock" block was dropped —
   arm64 needs the PL031 at `0x0901_0000`).

@@ -182,7 +182,7 @@ pub unsafe extern "C" fn USBSTOR_FdoHandleStartDevice(
 
     Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     if !NT_SUCCESS(Status) {
-        // DPRINT1("USBSTOR_FdoHandleStartDevice Lower device failed to start %x\n", Status);
+        DbgPrint(b"USBSTOR_FdoHandleStartDevice Lower device failed to start %x\n\0".as_ptr() as *const i8, Status as u32);
         return Status;
     }
 
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn USBSTOR_FdoHandleStartDevice(
     // first get device & configuration & string descriptor
     Status = USBSTOR_GetDescriptors(DeviceObject);
     if !NT_SUCCESS(Status) {
-        // DPRINT1("USBSTOR_FdoHandleStartDevice failed to get device descriptor with %x\n", Status);
+        DbgPrint(b"USBSTOR_FdoHandleStartDevice failed to get device descriptor with %x\n\0".as_ptr() as *const i8, Status as u32);
         return Status;
     }
 
@@ -232,32 +232,32 @@ pub unsafe extern "C" fn USBSTOR_FdoHandleStartDevice(
 
     // DPRINT("bInterfaceSubClass %x\n", InterfaceDesc->bInterfaceSubClass);
     if (*InterfaceDesc).bInterfaceProtocol as i32 != USB_PROTOCOL_BULK as i32 {
-        // DPRINT1("USB Device is not a bulk only device and is not currently supported\n");
+        DbgPrint(b"USB Device is not a bulk only device and is not currently supported\n\0".as_ptr() as *const i8);
         return STATUS_NOT_SUPPORTED;
     }
 
     if (*InterfaceDesc).bInterfaceSubClass as i32 == USB_SUBCLASS_UFI as i32 {
-        // DPRINT1("USB Floppy devices are not supported\n");
+        DbgPrint(b"USB Floppy devices are not supported\n\0".as_ptr() as *const i8);
         return STATUS_NOT_SUPPORTED;
     }
 
     // now select an interface
     Status = USBSTOR_SelectConfigurationAndInterface(DeviceObject, DeviceExtension);
     if !NT_SUCCESS(Status) {
-        // DPRINT1("USBSTOR_FdoHandleStartDevice failed to select configuration / interface with %x\n", Status);
+        DbgPrint(b"USBSTOR_FdoHandleStartDevice failed to select configuration / interface with %x\n\0".as_ptr() as *const i8, Status as u32);
         return Status;
     }
 
     // check if we got a bulk in + bulk out endpoint
     Status = USBSTOR_GetPipeHandles(DeviceExtension);
     if !NT_SUCCESS(Status) {
-        // DPRINT1("USBSTOR_FdoHandleStartDevice no pipe handles %x\n", Status);
+        DbgPrint(b"USBSTOR_FdoHandleStartDevice no pipe handles %x\n\0".as_ptr() as *const i8, Status as u32);
         return Status;
     }
 
     Status = USBSTOR_GetMaxLUN((*DeviceExtension).LowerDeviceObject, DeviceExtension);
     if !NT_SUCCESS(Status) {
-        // DPRINT1("USBSTOR_FdoHandleStartDevice failed to get max lun %x\n", Status);
+        DbgPrint(b"USBSTOR_FdoHandleStartDevice failed to get max lun %x\n\0".as_ptr() as *const i8, Status as u32);
         return Status;
     }
 
@@ -266,7 +266,7 @@ pub unsafe extern "C" fn USBSTOR_FdoHandleStartDevice(
         Status = USBSTOR_CreatePDO(DeviceObject, Index);
 
         if !NT_SUCCESS(Status) {
-            // DPRINT1("USBSTOR_FdoHandleStartDevice USBSTOR_CreatePDO failed for Index %lu with Status %x\n", Index, Status);
+            DbgPrint(b"USBSTOR_FdoHandleStartDevice USBSTOR_CreatePDO failed for Index %lu with Status %x\n\0".as_ptr() as *const i8, Index as u32, Status as u32);
             return Status;
         }
 

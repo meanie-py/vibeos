@@ -527,10 +527,97 @@ pub unsafe extern "system" fn BasepComputeProcessPath(
     PathBuffer
 }
 
+// L"SafeProcessSearchMode", NUL-terminated.
+static SAFE_PROCESS_SEARCH_MODE_W: [u16; 22] = {
+    let s = b"SafeProcessSearchMode\0";
+    let mut w = [0u16; 22];
+    let mut i = 0;
+    while i < 22 {
+        w[i] = s[i] as u16;
+        i += 1;
+    }
+    w
+};
+
+// path.c BaseComputeProcessSearchPath. The translation had collapsed this to a fixed
+// BaseProcessOrder, which equals the Default row, so the registry's SafeProcessSearchMode
+// AND SetSearchPathMode() were both ignored: a process that asked for safe search mode
+// still searched the current directory ahead of the system directories. Found by
+// `rustconv body-audit`.
 #[no_mangle]
 pub unsafe extern "system" fn BaseComputeProcessSearchPath() -> LPWSTR {
+    use core::sync::atomic::Ordering;
+    // BASE_SEARCH_PATH_INVALID_FLAGS, as SetSearchPathMode's static spells it.
+    const INVALID: i32 = !0x18001i32;
+    const ENABLE_SAFE: i32 = BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE as i32;
+    const DISABLE_SAFE: i32 = BASE_SEARCH_PATH_DISABLE_SAFE_SEARCHMODE as i32;
+
+    let mut current = BasepSearchPathModeFlags.load(Ordering::SeqCst);
+    // No flag is set: read it from the registry.
+    if current == INVALID {
+        let key_name = _UNICODE_STRING {
+            Length: (core::mem::size_of::<[u16; 67]>() - core::mem::size_of::<u16>()) as u16,
+            MaximumLength: core::mem::size_of::<[u16; 67]>() as u16,
+            Buffer: &SESSION_MANAGER_KEY_W as *const [u16; 67] as *mut u16,
+        };
+        let mut value_name = _UNICODE_STRING {
+            Length: (core::mem::size_of::<[u16; 22]>() - core::mem::size_of::<u16>()) as u16,
+            MaximumLength: core::mem::size_of::<[u16; 22]>() as u16,
+            Buffer: &SAFE_PROCESS_SEARCH_MODE_W as *const [u16; 22] as *mut u16,
+        };
+        let mut object_attributes = _OBJECT_ATTRIBUTES {
+            Length: core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32,
+            RootDirectory: core::ptr::null_mut(),
+            ObjectName: &key_name as *const _UNICODE_STRING as *mut _UNICODE_STRING,
+            Attributes: OBJ_CASE_INSENSITIVE,
+            SecurityDescriptor: core::ptr::null_mut(),
+            SecurityQualityOfService: core::ptr::null_mut(),
+        };
+        const BUF: usize =
+            core::mem::offset_of!(KEY_VALUE_PARTIAL_INFORMATION, Data) + core::mem::size_of::<u32>();
+        let mut partial = [0u8; BUF];
+        let mut key: HANDLE = core::ptr::null_mut();
+        let mut result_length: u32 = 0;
+        if NT_SUCCESS(NtOpenKey(&mut key, KEY_QUERY_VALUE, &mut object_attributes)) {
+            let status = NtQueryValueKey(
+                key,
+                &mut value_name,
+                KeyValuePartialInformation,
+                partial.as_mut_ptr() as PVOID,
+                BUF as u32,
+                &mut result_length,
+            );
+            if NT_SUCCESS(status) && result_length as usize == BUF {
+                let info = partial.as_ptr() as *const KEY_VALUE_PARTIAL_INFORMATION;
+                let value = core::ptr::read_unaligned((&raw const (*info).Data) as *const u32);
+                // 0 means disabled and 1 means enabled.
+                current = if value == 1 { ENABLE_SAFE } else { DISABLE_SAFE };
+            }
+            NtClose(key);
+        }
+        // Fall back to the default if the registry could not say.
+        if current == INVALID {
+            current = DISABLE_SAFE;
+        }
+        // Publish it, unless someone (SetSearchPathMode) got there first.
+        if let Err(old) = BasepSearchPathModeFlags.compare_exchange(
+            INVALID,
+            current,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            current = old;
+        }
+    }
+
+    let placement = if current & ENABLE_SAFE != 0 {
+        BaseCurrentDirPlacementSafe
+    } else {
+        BaseCurrentDirPlacementDefault
+    };
+    // Compute the path using the default process order.
     BasepComputeProcessPath(
-        &raw mut BaseProcessOrder as PBASE_SEARCH_PATH_TYPE,
+        &raw mut BaseDllOrderCurrent[placement as usize] as PBASE_SEARCH_PATH_TYPE,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     )

@@ -159,6 +159,15 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"
     "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
     "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"
+    # USB mass storage: usbstor -> disk (classpnp) with the partmgr class filter,
+    # and mountmgr for drive letters. The hive already names all of these as boot
+    # drivers; without the files the loader drops them and a stick enumerates
+    # with no driver.
+    "$BUILD_DIR/drivers/usb/usbstor/usbstor.sys"
+    "$BUILD_DIR/drivers/storage/class/classpnp/classpnp.sys"
+    "$BUILD_DIR/drivers/storage/class/disk/disk.sys"
+    "$BUILD_DIR/drivers/storage/partmgr/partmgr.sys"
+    "$BUILD_DIR/drivers/storage/mountmgr/mountmgr.sys"
     "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
     "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
     "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"
@@ -417,6 +426,11 @@ RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/d
 RMC "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"           ::/reactos/system32/drivers/usbxhci.sys
 RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
 RMC "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"           ::/reactos/system32/drivers/usbccgp.sys
+RMC "$BUILD_DIR/drivers/usb/usbstor/usbstor.sys"           ::/reactos/system32/drivers/usbstor.sys
+RMC "$BUILD_DIR/drivers/storage/class/classpnp/classpnp.sys" ::/reactos/system32/drivers/classpnp.sys
+RMC "$BUILD_DIR/drivers/storage/class/disk/disk.sys"       ::/reactos/system32/drivers/disk.sys
+RMC "$BUILD_DIR/drivers/storage/partmgr/partmgr.sys"       ::/reactos/system32/drivers/partmgr.sys
+RMC "$BUILD_DIR/drivers/storage/mountmgr/mountmgr.sys"     ::/reactos/system32/drivers/mountmgr.sys
 RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
 RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys
 RMC "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"             ::/reactos/system32/drivers/hidusb.sys

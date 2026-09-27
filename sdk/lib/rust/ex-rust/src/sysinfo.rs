@@ -1769,8 +1769,8 @@ unsafe extern "C" fn QSI_SystemExceptionInformation(Buffer: PVOID, Size: ULONG, 
         if !Prcb.is_null() {
             AlignmentFixupCount += (*Prcb).KeAlignmentFixupCount;
             ExceptionDispatchCount += (*Prcb).KeExceptionDispatchCount;
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            { FloatingEmulationCount += (*Prcb).KeFloatingEmulationCount; }
+            // sysinfo.c: `#ifndef _M_ARM` (32-bit ARM) — arm64 counts it too.
+            FloatingEmulationCount += (*Prcb).KeFloatingEmulationCount;
         }
     }
     let ei = Buffer as PSYSTEM_EXCEPTION_INFORMATION;
