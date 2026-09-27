@@ -4087,8 +4087,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     round ran `KeStartAllProcessors: 1 processor(s) online` (so not cross-CPU clock skew,
     and not the CPUs-2/3 bug). A ready kernel thread did not run for ~150 s on ONE CPU.
     Evidence: `/tmp/vibeos-cli/20260926-175208-lvwp5qhv-conformance-arm64/` (preserved to
-    `~/vibeos-flake-farm/fails/auto/`). Next: what held the CPU for those 150 s — the
-    flight recorder and census around that line, not more sweeps.
+    `~/vibeos-flake-farm/fails/auto/`).
+    **ROOT-CAUSED 2026-09-26: arm64 had no preemption, and the zero-page thread held the
+    CPU.** Host-stamped serial (conformance now stamps every round) showed the stall in
+    EVERY arm64 round, not only the failing one: ~95 s inside NpfsConnect with the guest
+    clock ticking and nothing scheduled. The 150 s round just had a worker item straddling
+    it. vCPU samples taken during the quiet (`silence-samples.txt`) sat in
+    `MmZeroPageThread` -> byte-wise `memset`. arm64's DISPATCH softint parked readied threads
+    in `Prcb->NextThread` and never switched to them, so the priority-0 thread ran until the
+    free list was empty. Fixed on `conformance-ratchet` (arm64 `KiDispatchPreemptArm64` from
+    `KfLowerIrql`, DAIF restored on resume, `KeZeroPages` via `dc zva`). arm64 conformance
+    rounds went from 175-255 s to 72-107 s, with zero silences, zero kmtest AWAIT timeouts,
+    smoke 3/3 and the ratchet holding. **Owed:** the arm64-only ReadySummary recheck in
+    `ke/wait.rs` and `ke/thrdschd.rs` (×2) existed because there was no preemption.
+    Instrument it for dead, then remove (archive/arm64-interrupts-quest.md). Preemption at
+    IRQ exit (a spinner that never crosses DISPATCH) is still absent (§9.19 hazard).
     **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
     test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
     `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;
