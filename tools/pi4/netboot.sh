@@ -59,8 +59,10 @@ state = json.loads((bench / 'serial-current.json').read_text())
 if state.get('status') != 'LISTENING':
     sys.exit('capture listener is not LISTENING: ' + str(state.get('status')))
 d = state['directory']
-# The listener records a Windows path; this script reads it from WSL.
-print(pathlib.Path(d.replace('D:\\home', '/mnt/d/home').replace('\\', '/')) / 'serial.bin')
+# Capture-RpiSerial.ps1 records a Windows path; pico_serial.py a WSL one.
+if not d.startswith('/'):
+    d = d.replace('D:\\home', '/mnt/d/home').replace('\\', '/')
+print(pathlib.Path(d) / 'serial.bin')
 PY
 }
 
