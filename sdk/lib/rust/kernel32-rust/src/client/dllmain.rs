@@ -241,7 +241,7 @@ pub unsafe extern "system" fn DllMain(
                 // x86 under WOW64: same leniency — 64-bit csrss refuses the
                 // 32-bit CSR_API_CONNECTINFO until the CSR-LPC-32 thunk layer
                 // exists. Native i386 keeps the strict terminate.
-                #[cfg(target_arch = "x86")]
+                #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (CSRSS-less WOW64/arm64 bring-up allowance, no C counterpart)
                 {
                     if BaseRunningUnderWow64() {
                         DbgPrint(
@@ -253,7 +253,7 @@ pub unsafe extern "system" fn DllMain(
                         return FALSE;
                     }
                 }
-                #[cfg(not(any(target_arch = "aarch64", target_arch = "x86")))]
+                #[cfg(not(any(target_arch = "aarch64", target_arch = "x86")))] // nolint: cfg-vs-c (CSRSS-less WOW64/arm64 bring-up allowance, no C counterpart)
                 {
                     NtTerminateProcess(NtCurrentProcess(), Status);
                     return FALSE;
@@ -273,14 +273,14 @@ pub unsafe extern "system" fn DllMain(
                 // x86 under WOW64 (no CSRSS connection yet): synthesize the
                 // same minimal static-server-data fallback the arm64 native
                 // bring-up uses instead of asserting on the NULL PEB field.
-                #[cfg(target_arch = "x86")]
+                #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (CSRSS-less WOW64/arm64 bring-up allowance, no C counterpart)
                 let Wow64NoCsr = (*Peb).ReadOnlyStaticServerData.is_null()
                     && BaseRunningUnderWow64();
-                #[cfg(not(target_arch = "x86"))]
+                #[cfg(not(target_arch = "x86"))] // nolint: cfg-vs-c (CSRSS-less WOW64/arm64 bring-up allowance, no C counterpart)
                 let Wow64NoCsr = false;
 
                 if Wow64NoCsr {
-                    #[cfg(target_arch = "x86")]
+                    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (CSRSS-less WOW64/arm64 bring-up allowance, no C counterpart)
                     {
                         DbgPrint(
                             b"WOW64: ReadOnlyStaticServerData not available, using fallback\n\0"

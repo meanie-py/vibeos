@@ -43,6 +43,7 @@ extern crate rtl_sysvol;
 extern crate rtl_rxact;
 extern crate rtl_error;
 extern crate rtl_heappage;
+#[cfg(feature = "heaplist")]
 extern crate rtl_heapuser;
 extern crate time;
 

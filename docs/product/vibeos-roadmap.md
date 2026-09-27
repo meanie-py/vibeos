@@ -425,6 +425,36 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
+## 11. Retire MSVC support — Size: M
+
+**MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
+clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
+MSVC build, and everything that exists only for it is dead weight here: code nothing
+compiles, CMake branches nothing takes, and tests of a compiler we do not use.
+Deliberately deferred, not urgent. Measured 2026-09-26:
+
+- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
+  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
+  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
+  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
+  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
+- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
+- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
+  non-MSVC arm. 29 of those files are rostests.
+- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
+  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
+- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
+  Many are portability guards that also select the clang path, so read each one; do not
+  delete by regex.
+
+**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
+from a file upstream still edits becomes a merge conflict on the next sync. So take the
+self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
+`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
+files we already own or have translated.
+
+---
+
 ## Check-back ledger — owed items from closed docs/lanes (opened 2026-07-10)
 
 When a plan/quest/handoff doc closes, its *outstanding* items land here (one line + a
@@ -461,7 +491,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 ### Owed work (moved from closed docs)
 - [ ] **Input unification migration** *(input-architecture, roadmap §10a)*: USB HID as the
   default smoke input transport ×3 arches; retire `arm64input` + `i8042prt` (or demote to
-  explicit fallback); usbxhci driver gap for real hardware.
+  explicit fallback). The usbxhci gap is closed: USB HID is the Pi 4's keyboard and mouse
+  (2026-09-26, `docs/engineering/usbxhci-design.md`), and arm64input now yields
+  `KeyboardClass0`/`PointerClass0` to kbdclass/mouclass wherever it finds no virtio-input.
 - [ ] **Warm-build driver-relink infra bug** *(input lane)*: warm `vibeos-cli build` doesn't
   relink driver `.sys` after an `ntkrnl-sys` edit — false-fresh family; cost 3 debug rounds.
 - [ ] **KD continuation** *(windbg handoff)*: amd64 same-CPL `int 2Dh` machine-frame
@@ -525,15 +557,52 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. OPEN, being worked**
-  (2026-09-26, lane graviton-spike). `smoke --arch arm64 --smp 4` fails
-  `SMP_AP_NOT_SCHEDULING` for CPU 2 and 3 on unchanged master (3/3); CPU 1 schedules,
-  amd64 `-smp 4` passes. Same on a physical Raspberry Pi 4. Leading theory: process
-  affinity captured before the later APs published their `KeActiveProcessors` bit.
-- **Notepad's menu bar renders blank. OPEN** (seen 2026-09-26). The `File Edit Format
-  View Help` bar is an empty strip, on arm64 QEMU and on a Raspberry Pi 4 alike (the
-  smoke screenshot shows it too), while the title bar, status bar and taskbar draw
-  text fine. Not investigated.
+- **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
+  (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
+  volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's
+  stack. `rust_cohab_forceinline.c` bridged the bare cdecl names of eight wdm FORCEINLINE
+  helpers (`KeInitializeSpinLock`, `ExInitializeFastMutex`, the `Io*IrpStackLocation`
+  family, `IoSetCompletionRoutine`) to their stdcall bodies with `.set _X, _X@N` ALIASES,
+  so every cdecl call popped its arguments twice. DriverEntry made two (+8 bytes): its
+  ESP-relative epilogue popped the return address into EBX and DriverObject into EBP, and
+  `ret 8` jumped to RegistryPath on `IopInitializeDriverModule`'s stack. Every register in
+  the trap frame matches that arithmetic. Fixed with real cdecl->stdcall thunks;
+  `scan_cdecl_alias` (in `check`, baseline empty) forbids the alias shape, and the field
+  manual's convention-mismatch list has it as manifestation 7. Verified: `smoke --arch i386
+  --repeat 3` with the disk, 3/3, `C:\TEMP` found each boot. The disk is now attached by
+  default on i386 as well. Found with a gdb probe once two tool gaps were closed: `gdb
+  start` never attached the disk (now shares `vm.temp_disk_args`), and triage resolved
+  i386 MP faults against the UP kernel (the loader names ntkrnlmp `ntoskrnl.exe`).
+- **fastfat never marked a new directory entry as used — FIXED** (2026-09-26). Seen as
+  an i386 `FatDeleteDirent` ASSERT (`FreeDirentBitmap` bits not set, twice per boot), but
+  the cause was on every arch: the Rust `FatCreateNewDirent` had lost the tail of the C
+  (`dirsup.c:414-534`) — the orphaned-LFN check, the "dirents really are unused" verify, and
+  `RtlSetBits` on the free-dirent bitmap. So every new dirent stayed FREE in memory, and a
+  later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
+  entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
+  smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **fastfat pre-seal translation audit: other bodies may have lost statements — OPEN**
+  (2026-09-26). fastfat was translated before call sealing, so nothing checks that a Rust
+  body kept its C's calls. A throwaway per-function callee diff over all 356 paired
+  functions reports 441 missing names in 163 functions; most are macro expansions or
+  DUMMY_PSEH-dead finally blocks (e.g. `FatAddToWorkque` is equivalent). Leads worth reading
+  first: `FatQueueClose` (62 Rust lines vs 272 C), `FatCommonCreate`/`FatOpenExistingFile`
+  (no `FatDeleteFcb`/`FatDeleteCcb`/`FatDeleteDirent` failure cleanup),
+  `FatMountVolume` (`CcSetAdditionalCacheAttributesEx`). `FatInvalidateVolumes` and
+  `FatCommonSetEa` are LOUD stubs (bugcheck / `STATUS_INVALID_DEVICE_REQUEST`), not drops.
+  Method in the field manual: "A body can lose its TAIL with nothing to show for it".
+- **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
+  `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
+  `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
+  processor was CPU 0; and the System process kept the affinity captured before the APs
+  started, where NT widens it with `KeSetAffinityProcess`. Fixing them exposed a third:
+  arm64 `KeAcquireSpinLockRaiseToDpc` only raised IRQL and never took the lock, which
+  under real concurrency corrupted the PFN lists (`0x4E`). `smoke --smp 4` 3/3, and the
+  Pi runs four cores to the desktop.
+- **Notepad's menu bar renders blank. FIXED on master, cause not traced** (seen
+  2026-09-26 morning on arm64 QEMU and the Pi). The same evening the Pi drew the full
+  `File Edit Format View Help` bar on build `f5abd8cee6a4`; the fix came in with a
+  master merge and was not identified.
 - **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
   would have caught it were broken by one cause and both exited 0. OPEN, owed**
   (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs
@@ -667,8 +736,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE + 1 OPEN** (2026-09-25; `combo`, `winstation`, `scroll` FIXED and `monitor` no
-  longer diverging, 2026-09-26, see below; `dde` remains, plus `uitools`' known GDI batch). First time the WoW64 control has run across a whole
+  REFERENCE, ALL SEVEN RESOLVED** (2026-09-25; `combo`, `winstation`,
+  `scroll`, `dde`, `uitools` FIXED and `monitor` no longer diverging, 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
@@ -676,9 +745,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   |---|---|---|---|
   | `combo` | 23 failures | ~~CRASH `0xc0000094`~~ **23 failures** | **FIXED 2026-09-26** — a width bug, as the shape said; now identical assertion-for-assertion |
   | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
-  | `dde` | TIMED OUT | **CRASH `0xc0000005`** | both bad, differently |
+  | `dde` | ~~TIMED OUT~~ **24** | ~~CRASH `0xc0000005`~~ **24** | **FIXED 2026-09-26**; the guest now PASSES one assertion native fails (929) |
   | `monitor` | 20 failures | ~~23~~ **20** | **NO LONGER DIVERGES 2026-09-26** — cause unattributed, see below |
-  | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
+  | `uitools` | 0 failures | ~~1~~ **0** | **FIXED 2026-09-26** — executing the guest GDI batch; 42 tests both sides |
   | `scroll` | ~~140~~ **14** | ~~17~~ **14** | FIXED 2026-09-26 on BOTH sides; now identical line for line |
   | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
   **`combo` was win32k reading guest user32's private `HEADCOMBO` at the amd64 layout.**
@@ -714,8 +783,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   09-25 log died with `/tmp`), so the fix cannot be attributed: that day's `NtQueryObject`
   marshaller and the upstream merges since are both candidates, and neither is proven.
   Record per-assertion diffs, not counts, or a disappearing divergence cannot be explained.
-  `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
-  owed item (since paid: the guest batch is executed as of 2026-09-26; re-run `uitools`). `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  **`dde` was three things, and the middle one was never about DDE.** (1) The DDE
+  post/get user callbacks (13/14) had no WoW64 bridge: `[WOW64CB] callback 13 NEEDS
+  64->32 MARSHALLER`, so every cross-process DDE data message failed to post. (2) With
+  the bridge in, the posted `WM_DDE_DATA` still carried `lParam 0`, because the guest's
+  `PackDDElParam` got NULL from `GlobalLock` on a handle `GlobalAlloc` had just returned.
+  kernel32 fills `SystemRangeStart` at startup with
+  `NtQuerySystemInformation(SystemRangeStartInformation, &x, 4)`, which the WoW64
+  marshaller passed through to a host that answers 8 bytes. It failed
+  `STATUS_INFO_LENGTH_MISMATCH` in EVERY guest (19 per boot), left the value 0, and
+  `GlobalLock`'s `hMem >= SystemRangeStart` then refused every FIXED global in every
+  32-bit process. Class 50 is now marshalled (0x80000000, matching the guest's
+  0x7FFEFFFF user ceiling). (3) Found on the way: gui32 had improved to a full `0x600D`
+  (desktop readback now works) and the ladder failed it for not being the soft-pass
+  `0x600E`. The queue's integration tree does not stage the guests, so only lanes saw
+  it; `ladder.ALSO_ACCEPTED` now names the upgrade. Now 24 on both sides; against a quiet
+  native run the guest differs only by PASSING 929, plus one extra trailing byte in the
+  2510 failure both sides share.
+  **`uitools` FIXED 2026-09-26: guest 42 tests, 0 failures, same as native**, re-measured
+  with `build --arch amd64 --winetest-sweep --winetest-only uitools` once the guest batch
+  was executed rather than reset. The diagnosis, kept because it was the first measured
+  cost of the discard: it was the discarded guest GDI batch. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
   correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
   `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
@@ -857,7 +945,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     trace) without matching. The file shows `shell ready` three times for one payload run, so the
     `ready` snapshot restore is the first suspect: the reader may be following a timeline the
     marker is not in. Read the serial for the verdict until this is fixed.
-  - OPEN, amd64, 1 sighting (2026-09-26): BUGCHECK 0x1E `0xC00000D8` (`STATUS_CANT_WAIT`) during
+  - ADDRESSED, pending recurrence (2026-09-26): cdfs now has real exception handling
+    (`ntkrnl_sys::seh`), so a `STATUS_CANT_WAIT` raise reaches `CdProcessException` and is
+    retried or posted instead of bugchecking. Original report: BUGCHECK 0x1E `0xC00000D8` (`STATUS_CANT_WAIT`) during
     boot, in the WoW64 `async32` guest's overlapped `ReadFile` right after
     `[async32] start`, before appstorm launched. `RtlRaiseStatus(0xC00000D8)`, which is the
     field manual's "DUMMY_PSEH defeats cdfs's raise->catch->post async model" class: a
@@ -1324,15 +1414,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   measurement. All three arches build and boot to the desktop (`_tWinMain entered` +
   `shell ready`).
 
-  **Still OPEN, and now actually FLAGGED by the scanner** (it used to miss them):
-  `InterlockedIncrement`/`Decrement` on a user counter — ime's `nCntInIMEProc` at
-  `ime.rs:3120` and `:3137`, where the C had a `_SEH2_TRY` per access. There is **no
-  protected primitive for this at all**: an atomic RMW cannot be routed through
-  `KmProtectedCopyMemory`, because the read-modify-write has to fault as one unit rather than
-  copy in and out. Closing them means writing a `KmProtected` atomic next to
-  `KmProtectedCopyMemory` — a native-SEH shim on amd64/arm64, an exception-table entry for the
-  `lock` instruction on i386 — plus a self-test twin so the per-boot oracle covers it.
-  Restoring a probe there would look like a fix and would not be one.
+  **The last two, the ime atomics, are FIXED (2026-09-26).** ime's `nCntInIMEProc`
+  `InterlockedIncrement`/`Decrement` on a user counter had a `_SEH2_TRY` per access in the C,
+  and no protected primitive could express them: an atomic RMW routed through
+  `KmProtectedCopyMemory` stops being atomic. `KmProtectedInterlockedAdd` now sits beside it —
+  native SEH in `ntoskrnl/kmsafecopy.c` on amd64/arm64, and on i386 a second extable key (the
+  `lock xadd`) in `ke/i386/safecopy.rs`. Its self-test twin prints
+  `[KMSAFECOPY] fault-tolerant interlocked add: valid=1 landed=1 invalid_caught=1 (PASS)` on
+  all three arches, and `scan_probe_then_deref` reports 0 leads.
 
   Two of the scanner's own numbers along the way were wrong in the direction that reads as more
   work, not less, and both are pinned by tests now: `RtlCopyMemory` was reported by both the
@@ -1454,11 +1543,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
     `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
     bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
-  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
-    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
-    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
-    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
-    not attached on i386. OPEN (harness).
+  - **Class-test 0xc0150010 (ENVIRONMENTAL) — FIXED on amd64 2026-09-26.** The winetest
+    wrote its manifest to `GetTempPathA` = `X:\reactos\TEMP`, read-only on the livecd. The
+    harness now attaches a FAT disk holding `\TEMP` (`vm.py _temp_disk_args`, default ON for
+    amd64) and winlogon points the winetest children's TEMP/TMP at `C:\TEMP` when it exists.
+    Guest `user32:class` now runs to completion (32 failures) instead of crashing. Attaching
+    that disk found two classpnp bugs that had hung or crashed EVERY boot with a hard disk:
+    `ClassCompleteRequest` spinning on a lock the release build never initializes, and a cdecl
+    `ClasspSendSynchronousCompletion` in an NTAPI slot (i386). i386 stays opt-in
+    (`VIBEOS_QEMU_TEMP_DISK=1`) until the bug below is fixed.
   - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
     exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
     its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.

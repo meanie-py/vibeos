@@ -150,13 +150,15 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/input/arm64input/arm64input.sys"
     "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"
     # PCI + USB + HID input stack (input-unification: EHCI-on-PCIe -> usbport ->
-    # usbhub -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass). The
+    # usbhub [-> usbccgp for composite devices] -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass; xHCI via usbxhci). The
     # PCI root devnode is seeded by hivesys_arm64.inf (Root\*PNP0A03).
     "$BUILD_DIR/drivers/bus/pci/pci.sys"
     "$BUILD_DIR/drivers/usb/usbd/usbd.sys"
     "$BUILD_DIR/drivers/usb/usbport/usbport.sys"
     "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"
+    "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"
     "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
+    "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"
     "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
     "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
     "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"
@@ -412,7 +414,9 @@ RMC "$BUILD_DIR/drivers/bus/pci/pci.sys"                   ::/reactos/system32/d
 RMC "$BUILD_DIR/drivers/usb/usbd/usbd.sys"                 ::/reactos/system32/drivers/usbd.sys
 RMC "$BUILD_DIR/drivers/usb/usbport/usbport.sys"           ::/reactos/system32/drivers/usbport.sys
 RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/drivers/usbehci.sys
+RMC "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"           ::/reactos/system32/drivers/usbxhci.sys
 RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
+RMC "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"           ::/reactos/system32/drivers/usbccgp.sys
 RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
 RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys
 RMC "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"             ::/reactos/system32/drivers/hidusb.sys
@@ -432,6 +436,11 @@ RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system
 # creates its v5/v6 activation contexts from %windir%\winsxs\manifests, and apps whose
 # manifest asks for Common-Controls 6.0 resolve it here. Without it every
 # CreateActCtxW in comctl32 failed on arm64.
+# %SystemRoot%\TEMP: hivesys.inf points the system TEMP/TMP there, and x86 setup
+# creates it, but nothing made it on the arm64 ramdisk -- so every app writing a
+# temp file failed with ERROR_PATH_NOT_FOUND (found by the ucrt Tier 2 findfile
+# fixture, whose CreateDirectoryW under %TEMP% failed with error 3).
+mdir -i "$RAMDISK_IMG" ::/reactos/TEMP >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" ::/reactos/TEMP
 SXS_CC="microsoft.windows.common-controls_6595b64144ccf1df"
 for d in winsxs winsxs/manifests \
          "winsxs/arm64_${SXS_CC}_5.82.2600.2982_none_deadbeef" \

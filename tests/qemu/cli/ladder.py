@@ -53,6 +53,24 @@ from pathlib import Path
 # paths share nothing below wow64.dll. arm64-only extras (fexprobe,
 # wow64probe) are reported when seen but are not required, so this table stays
 # the definition of parity rather than of "whatever arm64 happens to stage".
+# A verdict BETTER than the one a rung is graded on. gui32's 0x600E means "drew,
+# but GetPixel readback mismatched" -- the soft pass it earned when desktop
+# readback did not work. Once readback started working it exited 0x600D, a full
+# PASS, and an exact-match grade failed the rung for improving: LADDER_FAIL
+# "gui32.exe exit = 0x600d (want 0x600e)" on a tree whose gui32 log said
+# "PASS: 32-bit GDI drew on the host desktop and read it back". Its source never
+# changed; the OS got better. The graded value stays 0x600E so an arch where
+# readback still mismatches stays green; this names the upgrade.
+ALSO_ACCEPTED: dict[str, frozenset[int]] = {
+    "gui32": frozenset({0x600D}),
+}
+
+
+def verdict_ok(guest: str, got: int, want: int) -> bool:
+    """`got` satisfies a rung graded `want`: exactly, or a named upgrade."""
+    return got == want or got in ALSO_ACCEPTED.get(guest, frozenset())
+
+
 LADDER: dict[str, int] = {
     "hello32": 0x600D,
     "gui32": 0x600E,
@@ -318,6 +336,44 @@ def stale_guests(repo: Path) -> list[str]:
             continue
         out.extend(_newer_than(repo, guest, exe, srcs))
     return out
+
+
+# What the guest builder links against. Every graded guest imports kernel32, and
+# the builder skips a guest (it does not fail) when its importlib is missing -- so
+# without this probe a tree with no build-i386 would "refresh" into a partial set,
+# which is the all-or-nothing hole `gate_decision` reports.
+GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+
+
+def guests_to_refresh(repo: Path) -> list[str]:
+    """Graded guests the builder must (re)make: absent, or older than a source.
+
+    Only the set the builder owns -- LADDER + DIAGNOSTIC in build-fex-hello/.
+    The OPTIONAL stress guests come from their own fetching build.sh and are
+    deliberately NOT built on anyone's behalf.
+    """
+    out: list[str] = []
+    stale = stale_guests(repo)
+    for guest in [*LADDER, *DIAGNOSTIC]:
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if guest in LADDER and not exe.is_file():
+            out.append(f"{guest} (absent)")
+        else:
+            out.extend(s for s in stale if s.startswith(f"{guest} ("))
+    return out
+
+
+def refresh_blocker(repo: Path) -> str | None:
+    """Why the guests cannot be built in this tree, or None if they can."""
+    if not (repo / GUEST_TOOLCHAIN).is_file():
+        return f"no i386 toolchain at {GUEST_TOOLCHAIN}"
+    if not (repo / GUEST_PREREQ).is_file():
+        return (
+            "no build-i386 importlibs to link the guests against — "
+            "build i386 first: ./vibeos-cli build --arch i386"
+        )
+    return None
 
 
 def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[str]:
@@ -588,13 +644,19 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
             False,
             f"{len(built)}/{len(staged_guests())} ladder guests built — {absent} missing, and "
             f"staging is all-or-nothing, so NOTHING is staged; build the guests with: "
-            f"tools/fex/build-hello-compute.sh",
+            + (
+                f"{GUEST_BUILDER}"
+                if uses_ramdisk(arch)
+                else f"./vibeos-cli build --arch {arch} (it runs {GUEST_BUILDER})"
+            ),
         )
     if built:
         fix = (
             "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
             if uses_ramdisk(arch)
-            else f"touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch {arch}"
+            # The build restages by itself now: the guests are configure
+            # dependencies, so the next build reconfigures on their creation.
+            else f"./vibeos-cli build --arch {arch}"
         )
         return (
             [],
@@ -607,7 +669,8 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
         [],
         False,
         f"no staged {STAGED_DIR}/ guest in this arch's media manifest — "
-        f"WoW64 guests NOT checked by this gate",
+        f"WoW64 guests NOT checked by this gate"
+        + ("" if uses_ramdisk(arch) else " (the amd64 build's wow64-guests stage says why)"),
     )
 
 
@@ -826,7 +889,11 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     for and must not read as absent."""
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
-    wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
+    wrong = [
+        (g, seen[g], want)
+        for g, want in LADDER.items()
+        if g in seen and not verdict_ok(g, seen[g], want)
+    ]
     # An optional guest is ignored when absent and enforced when present: the
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
@@ -874,7 +941,7 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
 def summary(text: str) -> str:
     """One-line roll-up for the stage detail."""
     seen = verdicts(text)
-    ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
+    ok = sum(1 for g, want in LADDER.items() if g in seen and verdict_ok(g, seen[g], want))
     extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
     wt = {f"{k}={v}" for k, v in winetests(text).items()}

@@ -63,6 +63,7 @@ trees:
   # ── ACPI ────────────────────────────────────────────────────────────────
   - path: vendor/acpica
     name: ACPICA
+    translate: keep
     upstream: https://github.com/acpica/acpica
     license: BSD-3-Clause OR GPL-2.0  # Intel dual-licence
     license_ref: vendor/acpica/include/acpi.h
@@ -152,6 +153,7 @@ trees:
   # ── the kernel/user driver framework ────────────────────────────────────
   - path: vendor/wdf
     name: Windows Driver Frameworks (KMDF/UMDF)
+    translate: planned
     upstream: https://github.com/microsoft/Windows-Driver-Frameworks
     license: MIT  # upstream relicensed the WDF sources to MIT in 2017
     license_file: vendor/wdf/LICENSE
@@ -317,6 +319,7 @@ trees:
   # ── Microsoft's compiler conformance tests ──────────────────────────────
   - path: vendor/ms-compiler-tests
     name: Microsoft compiler-tests (EH/SEH)
+    translate: keep
     upstream: https://github.com/microsoft/compiler-tests
     license: MIT
     license_file: vendor/ms-compiler-tests/LICENSE.TXT
@@ -332,6 +335,7 @@ trees:
   # ── AMD's libm, under crtmath ───────────────────────────────────────────
   - path: sdk/lib/crt/math/libm_sse2
     name: AMD LibM for Windows
+    translate: planned
     upstream: https://github.com/amd/win-libm
     license: MIT
     license_ref: sdk/lib/crt/math/libm_sse2/L2_by_pi_bits.c
@@ -397,6 +401,7 @@ trees:
 
   - path: sdk/lib/crt/math/ieee754
     name: FDLIBM (Sun Microsystems freely-distributable libm)
+    translate: planned
     upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
     license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
     license_ref: sdk/lib/crt/math/ieee754/j0_y0.c
@@ -458,6 +463,7 @@ trees:
       claimed by this path-based entry.
   - path: sdk/lib/ucrt
     name: Microsoft UCRT
+    translate: planned
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
     license: Microsoft (see the Windows SDK licence terms)
     license_note: >
@@ -591,6 +597,7 @@ trees:
 
   - path: vendor/fex
     name: FEX-Emu
+    translate: keep
     upstream: https://github.com/FEX-Emu/FEX
     license: MIT
     license_extra:
@@ -627,6 +634,7 @@ trees:
   # ── SGI's GLU under glu32.dll ───────────────────────────────────────────
   - path: vendor/mesa
     name: Mesa 3-D graphics library
+    translate: planned
     upstream: https://gitlab.freedesktop.org/mesa/mesa (historical; this drop predates git)
     license: LGPL-2.0-or-later
     license_ref: vendor/mesa/context.c
@@ -670,6 +678,7 @@ trees:
 
   - path: vendor/glu
     name: SGI GLU (OpenGL Utility Library)
+    translate: planned
     upstream: SGI OpenGL Sample Implementation — the `glu` component, as redistributed
       with Mesa. No release stamp in the drop; see review.
     license: SGI-B-2.0
@@ -787,6 +796,7 @@ trees:
   # ── sdk/lib/3rdparty ────────────────────────────────────────────────────
   - path: vendor/freetype
     name: FreeType
+    translate: keep
     staleness: >
       AUDITED 2026-09-20: ours 2.10.0 (2019-03), current upstream 2.14.3 — about five years
       and a dozen-plus CVEs behind. NOT, however, exposed to the headline one:
@@ -877,6 +887,7 @@ trees:
 
   - path: vendor/zlib
     name: zlib
+    translate: keep
     upstream: https://zlib.net/
     license: Zlib
     license_file: vendor/zlib/LICENSE
@@ -952,6 +963,7 @@ trees:
 
   - path: vendor/libxml2
     name: libxml2
+    translate: keep
     staleness: >
       AUDITED 2026-09-20, BUMPED 2.12.8 -> 2.13.9 the same day. Current upstream is
       2.15.4 and we are deliberately one minor line behind it, for one identified
@@ -1049,6 +1061,7 @@ trees:
 
   - path: vendor/adns
     name: adns
+    translate: planned
     staleness: >
       AUDITED 2026-09-20: ours 1.0, current 1.7.0 — a DNS parser handling untrusted network
       input, roughly 25 years behind. Bumping is NOT a copy: our tree is GNU adns 1.0 plus a
@@ -1112,6 +1125,7 @@ trees:
 
   - path: vendor/libmpg123
     name: libmpg123
+    translate: keep
     upstream: https://www.mpg123.de/
     license: LGPL-2.1
     license_file: vendor/libmpg123/COPYING
@@ -1205,6 +1219,7 @@ trees:
 
   - path: vendor/libsamplerate
     name: libsamplerate
+    translate: planned
     upstream: https://libsndfile.github.io/libsamplerate/
     license: BSD-2-Clause
     license_file: vendor/libsamplerate/COPYING
@@ -1301,6 +1316,7 @@ trees:
 
   - path: vendor/libwin-iconv
     name: win-iconv
+    translate: planned
     upstream: https://github.com/win-iconv/win-iconv
     license: Unlicense OR MIT
     license_ref: vendor/libwin-iconv/win_iconv.c
@@ -1348,6 +1364,13 @@ trees:
 
   - path: vendor/stlport
     name: STLport
+    translate: keep
+    translate_note: >
+      Owner, 2026-09-26: DEAD CODE. A C++ standard library wired up only for MSVC builds
+      (sdk/cmake/msvc.cmake's cppstl), and MSVC is not a supported toolchain here -- the
+      clang/llvm-mingw build uses the toolchain's libstdc++ and compiles none of this.
+      A STATIC lib, so nothing outside the tree could depend on it either. Deletion
+      proposed; not a translation target either way.
     upstream: http://www.stlport.org/
     license: STLport licence (permissive)
     license_file: vendor/stlport/README
@@ -1423,6 +1446,7 @@ trees:
 
   - path: vendor/ac97
     name: AC'97 audio sample driver
+    translate: planned
     upstream: Microsoft Windows-driver-samples
     license: MIT
     license_file: vendor/ac97/license.txt
@@ -1444,6 +1468,7 @@ trees:
 
   - path: vendor/edk2
     name: EDK2 / TianoCore headers
+    translate: keep
     upstream: TianoCore EDK II
     license: BSD-2-Clause
     license_file: vendor/edk2/License.txt
@@ -1483,6 +1508,7 @@ trees:
 
   - path: vendor/virtio
     name: VirtIO driver library
+    translate: planned
     upstream: virtio-win
     license: BSD-3-Clause
     license_file: vendor/virtio/LICENSE
@@ -1497,6 +1523,7 @@ trees:
 
   - path: vendor/mbedtls
     name: Mbed TLS
+    translate: keep
     upstream: https://github.com/Mbed-TLS/mbedtls
     license: Apache-2.0 OR GPL-2.0-or-later
     license_file: vendor/mbedtls/LICENSE
@@ -1589,6 +1616,7 @@ trees:
 
   - path: vendor/libjpeg
     name: libjpeg
+    translate: keep
     upstream: https://ijg.org/
     license: IJG
     license_file: vendor/libjpeg/README
@@ -1653,6 +1681,7 @@ trees:
 
   - path: vendor/libpng
     name: libpng
+    translate: keep
     staleness: >
       AUDITED 2026-09-20: was 1.6.39 (2022-11), nineteen patch releases behind on an image
       parser reachable from untrusted input. BUMPED to 1.6.58 the same day.
@@ -1685,6 +1714,7 @@ trees:
 
   - path: vendor/libtiff
     name: libtiff
+    translate: keep
     upstream: http://www.libtiff.org/
     license: libtiff (BSD-like)
     license_ref: vendor/libtiff/tif_open.c
@@ -1756,6 +1786,7 @@ trees:
 
   - path: vendor/libxslt
     name: libxslt
+    translate: keep
     upstream: https://gitlab.gnome.org/GNOME/libxslt
     license: MIT
     license_file: vendor/libxslt/Copyright
@@ -1790,6 +1821,10 @@ trees:
 
   - path: vendor/libtirpc
     name: libtirpc
+    translate: planned
+    translate_note: >
+      Bump to upstream's newest release FIRST, then translate that -- not the
+      0.2.1-era drop we carry.
     staleness: >
       AUDITED 2026-09-20: ours is 0.2.1 (2011), not the 0.1.11 the registry used to claim —
       see the review for why the VERSION file lies. Current upstream is 1.3.8, so this is
@@ -1859,6 +1894,7 @@ trees:
 
   - path: vendor/dxtn
     name: dxtn (S3TC)
+    translate: planned
     upstream: unknown
     license: MIT
     license_ref: vendor/dxtn/txc_compress_dxtn.c
@@ -1896,6 +1932,7 @@ trees:
 
   - path: vendor/dosfstools
     name: dosfstools (fsck.fat)
+    translate: keep
     upstream: https://github.com/dosfstools/dosfstools
     license: GPL-3.0-or-later
     license_file: vendor/dosfstools/COPYING
@@ -1917,6 +1954,7 @@ trees:
 
   - path: vendor/cmidriver
     name: C-Media CMI8738/8768 WDM audio driver
+    translate: planned
     upstream: https://code.google.com/archive/p/cmediadrivers/
     license: BSD-3-Clause
     license_ref: vendor/cmidriver/adapter.cpp
@@ -1932,6 +1970,7 @@ trees:
 
   - path: vendor/netkvm
     name: VirtIO NetKVM guest driver (NDIS 5)
+    translate: planned
     upstream: https://github.com/virtio-win/kvm-guest-drivers-windows (NetKVM/NDIS5)
     license: BSD-3-Clause
     license_ref: vendor/netkvm/Common/ParaNdis-VirtIO.c
@@ -1947,6 +1986,7 @@ trees:
 
   - path: vendor/rdesktop
     name: rdesktop (as mstsc.exe)
+    translate: planned
     upstream: https://github.com/rdesktop/rdesktop
     license: GPL-3.0-or-later
     license_ref: vendor/rdesktop/rdesktop.h
@@ -1970,6 +2010,7 @@ trees:
 
   - path: vendor/tsclient
     name: rdesktop (rosapps tsclient)
+    translate: keep
     upstream: https://github.com/rdesktop/rdesktop
     license: GPL-3.0-or-later
     license_ref: vendor/rdesktop/rdesktop.h
@@ -1987,6 +2028,7 @@ trees:
 
   - path: vendor/treelist
     name: TreeList control
+    translate: planned
     upstream: https://github.com/sebkirche/treelist
     license: GPL-3.0-or-later
     license_ref: vendor/treelist/treelist.c
@@ -2002,6 +2044,7 @@ trees:
 
   - path: vendor/libdxg
     name: libdxg D3DKMT thunk header
+    translate: keep
     upstream: https://github.com/microsoft/libdxg
     license: MIT
     license_ref: vendor/libdxg/include/d3dkmthk.h
@@ -2015,6 +2058,7 @@ trees:
 
   - path: vendor/opengl-headers
     name: OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
+    translate: keep
     upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
     license: MIT
     license_ref: vendor/opengl-headers/include/GL/gl.h
@@ -2037,6 +2081,7 @@ trees:
 
   - path: vendor/chmc
     name: chmc (CHM compiler)
+    translate: keep
     upstream: https://sourceforge.net/projects/chmc/
     license: GPL-3.0-or-later
     license_ref: vendor/chmc/chmc.c
@@ -2050,6 +2095,7 @@ trees:
 
   - path: vendor/lzx_compress
     name: lzx_compress (LZX encoder)
+    translate: keep
     upstream: https://sourceforge.net/projects/chmc/
     license: LGPL-2.1-or-later
     license_ref: vendor/lzx_compress/lzx_layer.c
@@ -2065,6 +2111,7 @@ trees:
 
   - path: vendor/schilytools
     name: Schily Tools (mkisofs)
+    translate: keep
     upstream: https://sourceforge.net/projects/schilytools/
     license: CDDL-1.0
     license_file: vendor/schilytools/CDDL.Schily.txt

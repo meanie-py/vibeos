@@ -33,15 +33,16 @@
 # and it is regularly caused by ANOTHER lane landing a Rust body that happens to
 # cover a ucrtbase export; failing on "better than recorded" would bounce lanes
 # for improving the tree, which is how a gate gets switched off. A decrease
-# prints a note asking for `tools/vendored.py --write-burndown` instead.
+# prints a note asking for the ceiling below to be lowered by hand, to what
+# `python3 tools/ucrt_burndown.py --arch <a>` reports as MICROSOFT.
 #
 # arm64 sits below the other two because a few exports are `-arch=!arm64` in the
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 836
-  amd64: 836
-  arm64: 833
+  i386: 745
+  amd64: 745
+  arm64: 742
 
 families:
   bits:
@@ -469,3 +470,256 @@ families:
       - wcstoul
       - wcstoull
       - wcstoumax
+  atox:
+    replaces:
+      - sdk/lib/ucrt/convert/atox.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs. The
+      generator graded these on a 7-string corpus (and _wtoll not at all: the
+      toolchain headers lack it), so run_atox_family grades all 16 two-sided on
+      value AND errno over the strtox corpus -- the 32/64-bit limits, whitespace,
+      signs, letters -- plus Unicode digits for the wide forms and NULL through a
+      counting invalid-parameter handler: MATCH n=1398, dll_fail=0 for the run.
+    note: >
+      Every export in atox.cpp is parse_integer_from_string<T>(string, nullptr, 10,
+      locale) -- the strtox template at base 10 with no end pointer -- so each is a
+      call into the strtox port. It inherits UCRT's atoi contract with it: atoi
+      saturates at INT_MIN/INT_MAX with ERANGE (it parses as 32-bit long), and a
+      NULL string raises the invalid-parameter handler and returns 0 with EINVAL.
+    exports:
+      - _atoi64
+      - _atoi64_l
+      - _atoi_l
+      - _atol_l
+      - _atoll_l
+      - _wtoi
+      - _wtoi64
+      - _wtoi64_l
+      - _wtoi_l
+      - _wtol
+      - _wtol_l
+      - _wtoll
+      - _wtoll_l
+      - atoi
+      - atol
+      - atoll
+  xtoa:
+    replaces:
+      - sdk/lib/ucrt/convert/xtoa.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs. The
+      harness graded none of xtoa.cpp before; run_xtoa_family and
+      run_xtoa_s_family grade all 20 two-sided on the WHOLE 80-element buffer
+      (FNV over every byte, so digits left behind a cleared buffer[0] count), the
+      return value, errno and invalid-parameter handler calls: 20 values across
+      both widths at radices 2/3/8/10/16/36 for the plain forms, and for _s also
+      radix 0/1/37, counts 0..66 and a NULL buffer. Plain MATCH n=2400, _s MATCH
+      n=50430; dll_fail=0 across all 59,170 cases of the run.
+    note: >
+      A PORT of common_xtox (the digit loop) and common_xtox_s (the checked front
+      end), with the width a parameter. Silent-if-wrong details, each transcribed:
+      only radix 10 is ever signed (_itoa(-1, b, 16) is "ffffffff"); digits above 9
+      are lowercase; _s clears buffer[0] before its size and radix checks but after
+      its NULL/zero-count checks; a too-small _s buffer is found inside the digit
+      loop, so the digits written stay behind buffer[0]; the plain forms never check
+      the radix (0 divides by zero, 1 never terminates -- in the C and here alike).
+    exports:
+      - _itoa
+      - _itoa_s
+      - _ltoa
+      - _ltoa_s
+      - _ultoa
+      - _ultoa_s
+      - _i64toa
+      - _i64toa_s
+      - _ui64toa
+      - _ui64toa_s
+      - _itow
+      - _itow_s
+      - _ltow
+      - _ltow_s
+      - _ultow
+      - _ultow_s
+      - _i64tow
+      - _i64tow_s
+      - _ui64tow
+      - _ui64tow_s
+  findfile:
+    replaces:
+      - sdk/lib/ucrt/filesystem/findfile.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, against a REAL directory the
+      harness builds: an empty file, a 1234-byte file dated 2001, a read-only
+      file, a hidden one with spaces in its name, a subdirectory, and a file dated
+      2040 (past the 32-bit time_t, so the __time32_t forms must answer -1). All 16
+      first/next forms walk 9 patterns (wildcards, an exact name, no match, a
+      missing directory, "", NULL) on both sides, each record compared byte for
+      byte, plus errno and invalid-parameter counts; the NULL-record and 0/-1
+      handle paths; and each side closes its own handles with its own _findclose.
+      MATCH n=816, dll_fail=0. The DLL side is called through its IMPORT POINTER:
+      the toolchain's io.h inlines _findfirst64i32/_findnext64i32 over
+      _findfirst64, which pecheck caught -- a call by name graded mingw, not us.
+    note: >
+      A PORT. Every search is wide underneath; the narrow forms convert the pattern
+      and the found name through __acrt_get_utf8_acp_compatibility_codepage. The
+      eight record layouts are one generic struct, pinned by compile-time asserts
+      against offsets measured with the target compiler on all three arches.
+
+      Silent-if-wrong details, each transcribed: FILE_ATTRIBUTE_NORMAL reads back
+      as 0; a zero FILETIME (or one the OS cannot convert) is -1, and times are
+      LOCAL; a 32-bit size is the low word only; the narrow forms leak the find
+      handle when the found name does not convert back (returning -1 having opened
+      it); a NULL narrow pattern fails in the wide check, after the conversion;
+      _findclose on a bad handle is a quiet EINVAL, never the invalid-parameter
+      handler. The Win32 calls, __loctotime*_t, the conversion thunks and
+      strcpy_s/wcscpy_s are called, not replaced.
+    exports:
+      - _findclose
+      - _findfirst32
+      - _findfirst32i64
+      - _findfirst64
+      - _findfirst64i32
+      - _findnext32
+      - _findnext32i64
+      - _findnext64
+      - _findnext64i32
+      - _wfindfirst32
+      - _wfindfirst32i64
+      - _wfindfirst64
+      - _wfindfirst64i32
+      - _wfindnext32
+      - _wfindnext32i64
+      - _wfindnext64
+      - _wfindnext64i32
+
+  output:
+    replaces:
+      - sdk/lib/ucrt/stdio/output.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export, each
+      through a pair of variadic trampolines so both sides get a genuine va_list.
+      A 142-format corpus (literals, every flag/width/precision/length, %c/%s/%Z
+      narrow and wide, %p, the float conversions through inf/nan/DBL_MAX and a
+      precision past the inline buffer, and the malformed formats the two
+      transition tables disagree on) plus a 28-format positional corpus, through every
+      function; the buffer functions across option bits and buffer sizes
+      including NULL and too-small, _vsnprintf_s across count/max pairs, %n
+      disabled and enabled at each width; the stream functions into a real file
+      per side in binary, text and UTF-16LE modes. Graded: return, the whole
+      buffer or file, errno from a sentinel, and the invalid-parameter count.
+      All fourteen MATCH, dll_fail=0. Regraded with the strtod takeover (the
+      reference restored for it) after a 28-format positional corpus added the
+      no-whitespace width/position cases: vsprintf/vswprintf n=15196 each,
+      vsnprintf_s/vsnwprintf_s n=7568, the _s and _p buffer forms n=6252, the six
+      stream forms n=1272 each -- 78,168 cases.
+    note: >
+      A PORT of Microsoft's processor, not msvcrt's engine: UCRT's printf is a
+      table-driven state machine with a standard and a validation table (the
+      _s/_p functions), and they disagree on malformed formats that Wine's parser
+      matches neither way. The three base classes are one runtime Base. Errno goes
+      through a layout-identical __crt_cached_ptd_host (ptd_host.rs), because the
+      C's errno semantics are the cache's: the handler sees the OLD errno, and
+      guards restore the cache. __acrt_fp_format, _wctomb_internal,
+      _mbtowc_internal, the _fputc/_fputwc_nolock_internal writes and the
+      temporary-buffering hooks are called, not replaced.
+    exports:
+      - __stdio_common_vfprintf
+      - __stdio_common_vfprintf_p
+      - __stdio_common_vfprintf_s
+      - __stdio_common_vfwprintf
+      - __stdio_common_vfwprintf_p
+      - __stdio_common_vfwprintf_s
+      - __stdio_common_vsnprintf_s
+      - __stdio_common_vsnwprintf_s
+      - __stdio_common_vsprintf
+      - __stdio_common_vsprintf_p
+      - __stdio_common_vsprintf_s
+      - __stdio_common_vswprintf
+      - __stdio_common_vswprintf_p
+      - __stdio_common_vswprintf_s
+
+  strtod:
+    replaces:
+      - sdk/lib/ucrt/convert/strtod.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export over a
+      ~120-string corpus -- boundaries of both types (DBL_MAX and one past it,
+      the smallest normals and denormals, the round-to-even halfway points,
+      float's overflow edge), exact 53-bit ties, a mantissa longer than the
+      768 digits the parser keeps with the deciding digit after them, clamped
+      exponents, every spelling of inf/nan/nan(snan)/nan(ind), hex floats with
+      and without digits, and malformed tails -- plus, for the wide forms,
+      Unicode decimal digits. Graded: the result's BITS, the end offset, errno
+      from a sentinel, the invalid-parameter count, and NULL. All twelve MATCH,
+      dll_fail=0: the narrow forms n=456 each, the wide n=484 -- 5,640 cases.
+      Before the guest: 604,046 random and edge conversions matched Rust's own
+      correctly-rounded parse::<f64>/<f32> bit for bit on the host.
+    note: >
+      A PORT of the parser and the big-integer conversion in
+      corecrt_internal_strtox.h and corecrt_internal_big_integer.h. msvcrt's
+      fpnum.rs is Wine's _MSVCR_VER=0 contract (no hex floats, no inf/nan words,
+      no strtof). Built entirely from bits, so i386's no-SSE rule holds. The
+      powers-of-ten table is computed by a const fn, checked element for element
+      against Microsoft's packed literal. Rounding consults fegetround() exactly
+      where the C does -- today ucrtbase's generated stub, round-to-nearest.
+    exports:
+      - _strtod_l
+      - _strtof_l
+      - _strtold_l
+      - _wcstod_l
+      - _wcstof_l
+      - _wcstold_l
+      - strtod
+      - strtof
+      - strtold
+      - wcstod
+      - wcstof
+      - wcstold
+
+  stat:
+    replaces:
+      - sdk/lib/ucrt/filesystem/stat.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export against
+      a REAL fixture directory (read-only, .EXE/.cmd/.com, a 2040 date past the
+      32-bit time_t, a subdirectory) built on the guest's system drive. The path
+      forms take 36 paths each -- the fixture with and without trailing slashes,
+      sub\. and sub\.., missing files, "C:\", "C:/", bare "C:", "C:.", "\",
+      ".", "", a missing drive, NUL, CON, "\\x" -- plus NULL path and record;
+      _stat64 adds a narrow path CP_ACP cannot map. _fstat takes each side's own
+      descriptor for a disk file, NUL, a pipe with and without data, a closed
+      one, the standard handles, -1/-2/-3 and out-of-range values. Graded: the
+      return, errno, _doserrno, the invalid-parameter count and the whole record
+      (prefilled, so padding shows). All twelve MATCH, dll_fail=0: the path
+      forms n=195 (_stat64 n=200), _fstat n=105 -- 2,380 cases. Not reached: a
+      real UNC share (no network in the guest) and a file over 2 GB (the
+      EOVERFLOW arm), both transcribed.
+    note: >
+      A PORT. Every path is wide underneath; the narrow forms convert through
+      findfile's __acrt_get_utf8_acp_compatibility_codepage converter. The four
+      record layouts are one generic struct, pinned against offsets measured with
+      the target compiler on all three arches; _fstat reads osfile/osfhnd from
+      the lowio record at measured offsets (stdio_layout.rs).
+
+      Silent-if-wrong details, each transcribed: a zero FILETIME is the FALLBACK
+      (0 for the write time, the write time for the other two), not -1; a 32-bit
+      st_size refuses a file over LONG_MAX with EOVERFLOW and a zeroed record,
+      where _findfirst32 truncates; a pipe's size is PeekNamedPipe's count through
+      a 32-bit _off_t; unopenable roots (C:\, \\server\share\) are fabricated as
+      directories dated 1980-01-01; a bare "X:" is ENOENT even when it opens; a
+      failed narrow conversion leaves the record untouched; _fstat(-2) is EBADF
+      without the handler. The Win32 calls, _wfullpath, _getdrive,
+      __loctotime*_t and the lowio lock are called, not replaced.
+    exports:
+      - _fstat32
+      - _fstat32i64
+      - _fstat64
+      - _fstat64i32
+      - _stat32
+      - _stat32i64
+      - _stat64
+      - _stat64i32
+      - _wstat32
+      - _wstat32i64
+      - _wstat64
+      - _wstat64i32

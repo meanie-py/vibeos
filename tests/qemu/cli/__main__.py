@@ -188,6 +188,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--winetest-sweep",
     )
     b.add_argument(
+        "--no-wow64-stage",
+        action="store_true",
+        help="amd64: build the media WITHOUT the SysWOW64 set. The staging "
+        "snapshots build-i386 at configure time, so an amd64 build running "
+        "beside a cold i386 one reads a half-cleaned tree and fails its import "
+        "closure. `gate` passes this when it builds both, then restages amd64 "
+        "once i386 is done. RECONCILED, not sticky",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "
@@ -401,6 +410,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="with --hold: also stop a detached conductor mid-batch (its batch stays queued)",
     )
     la.add_argument("--release", action="store_true", help="lift the hold and wake the queue")
+    la.add_argument(
+        "--cold",
+        action="store_true",
+        help="submit even though no build has seen this tree (its gate compiles from "
+        "scratch and can hold the queue for hours; report every use)",
+    )
+    la.add_argument(
+        "--evict",
+        metavar="REASON",
+        help="under your own --hold: kick every OTHER lane's queued submissions back to them "
+        "(verdict `evicted`, with REASON) so the line is clear for your fix",
+    )
+    la.add_argument(
+        "--withdraw",
+        action="store_true",
+        help="take THIS lane's queued submissions out of line (one already being gated is "
+        "left alone); resubmit with a plain `land` when ready",
+    )
     la.add_argument(
         "--queue-timeout",
         type=float,

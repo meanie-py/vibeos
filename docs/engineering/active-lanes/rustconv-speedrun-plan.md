@@ -84,8 +84,56 @@ every translated body. **Owed, in order:**
      `ex/init.rs` SharedUserData Reserved1/3 (amd64 stored truncated 64-bit constants, 0
      for the WOW64 system range start; elsewhere Reserved1 got SystemRangeStart, not
      HighestUserAddress); user32 `GetClassLongA/W` `_WIN64` gated amd64-only (new gated
-     class, `scan_win64_cfg`); and a fourth, stale copy of arm64 SMP `SYNCH_LEVEL` = 2 in
+     class — now the general `scan_cfg_vs_c`, see below); and a fourth, stale copy of arm64 SMP `SYNCH_LEVEL` = 2 in
      `ke-inlines` that the July-25 fix missed (dead under smp today, now 12).
+   - Then mechanized: `scan_cfg_vs_c` (gated, empty baseline) evaluates every in-body arch
+     cfg and every C `#if` in the twin (arch macros, `_WIN64`, `_MI_PAGING_LEVELS`) to arch
+     sets and flags a Rust set that splits arches the C keeps together. Of 1,648 in-body
+     arch cfgs: 438 agree with the C mechanically, 548 are ABI/layout spellings or
+     per-arch file twins, 77 mix in non-arch features, and ~650 have no C arch `#if` to
+     compare against — the Rust-only cfgs, still a reading job. First run flagged 54; the
+     rule refinements (arm64-unaware C, paging levels, file twins, bindgen layout) left 15,
+     all Rust-only diagnostics / bring-up allowances, now `nolint`ed with reasons. Only
+     real hit: GetClassLongA/W, already fixed. Supersedes the one-day `scan_win64_cfg`.
+   - The ~650 Rust-only in-body cfgs the tool cannot decide (`--worklist`) went to three
+     read-only Sonnet reviewers (664 sites after removing the 37 July had cleared); every
+     claimed bug was re-verified against the C before any edit. 596 LEGIT. Fixed:
+     win32k `TEXT_NextLineW` measured no text on ANY arch (four stacked cfgs AND to
+     false) — which led to 8 more dead stacked-cfg items (orphans of deleted fastcall
+     twins), now a second gated check in `scan_cfg_vs_c`; smlib `SmConnectToSm` (an
+     `NTDDI_VERSION < VISTA` test mistranslated as pointer width); `PsLocateSystemDll`
+     (arm64 skipped four bugchecks the C makes on every arch); `KeSetSystemAffinityThread`
+     (`CONFIG_SMP` translated as `not(x86)`); two `MiResolveTransitionFault` diagnostics
+     widened. Rejected after checking: `MmRequestPageMemoryConsumer`'s amd64 yield is the
+     deliberate 97d678e72ef boot-stall fix (now commented at the site).
+   - Owed from that audit: `KeSetTimeIncrement`'s amd64-only SharedUserData zeroing (does
+     arm64 carry the same dormant boot hang? instrument before changing); arm64
+     shortcuts `MiGetPfnEntry` (skips the PFN-bitmap NULL check), generictable's
+     arm64-only splay-walk loop guard, `MiBalancerThreadInner` (arm64 `break`s where x86
+     bugchecks NO_PAGES_AVAILABLE); 29 win32k x86/not(x86) arms with identical calls
+     (cosmetic). Tool gap: map C `CONFIG_SMP` to `feature = "smp"` so the thrdobj class
+     is mechanical too. Reports: scratchpad `cfgaudit/shard_{A,B,C}.report.tsv` (not kept).
+   - Correction (conformance lane caught it): two of the "revived" dead items were dead ON
+     PURPOSE. i386 `RtlPrefetchMemoryNonTemporal` is owned by rtlk's prefetch_asm.rs (a
+     `ret` that kiinit patches to NOP); the revived empty stub won the link under
+     `--allow-multiple-definition` and i386 kmtest RtlMemoryKM bugchecked 0x1E, EIP=0
+     (e50515abfab rejected). arm64 `RtlUshortByteSwap` duplicated the byteswap crate. Both
+     deleted instead; dead-cfg output now says to look for another provider first.
+   - DONE, tooling: `scan_duplicate_symbols` rebuilt on `tools/rust_link_model.py`. It is
+     per binary, per arch and feature-resolved, and it sees `global_asm!` labels, so the
+     prefetch shape is a positive control. The first honest run had 230 pairs; model fixes
+     (build.rs cfgs, per-binary features, `if arch` link blocks, i386 decoration classes,
+     `#[cfg(any())] // comment`) brought that to 21. All 21 were confirmed with `llvm-nm` in
+     the built archives. Fixed:
+     classpnp's four Ke/Io shims duplicated ntoskrnl-vista-rust, and its
+     `KeSetCoalescableTimer` was a `0` stub. The kernel exported a CAS spin stub over
+     rtl-sync's real SRW locks on amd64/arm64 (callers: `RtlAddFunctionTable` & co.).
+     i386's local-only asm `KeInvalidateTlbEntry` shadowed the SMP-shootdown one by archive
+     order alone. rtl-heapuser (user-mode PEB heap list) is now a `heaplist` feature the
+     kernels leave off. rtlk's `KeGetPcr` and ntoskrnl's `RtlFillMemoryUlong` duplicates are
+     gone. Deliberate, `nolint`ed with reasons: arbiter's amd64 `KeGetCurrentIrql` (same
+     `mov cr8` body) and freeldr's six CRT overrides (as freeldr.c overrides libcntpr).
+     Baseline empty.
    - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
      `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
      body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.

@@ -299,6 +299,21 @@ def test_program_done_matches_what_winlogon_prints():
     assert ladder.PROGRAM_DONE + "\\n" in src
 
 
+def test_gui32_improving_to_a_full_pass_is_not_a_red_rung():
+    """The measured false red: desktop GetPixel readback started working, gui32
+    exited 0x600D instead of its graded soft-pass 0x600E, and the ladder failed
+    it for passing better."""
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    text = _serial(**others) + _serial(gui32=0x600D)
+    assert ladder.check(text) is None
+
+
+def test_gui32_still_fails_on_a_real_error_code():
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    text = _serial(**others) + _serial(gui32=0xBAD1)
+    assert _red(text)["classification"] == "LADDER_FAIL"
+
+
 def test_a_guest_that_never_reports_still_uses_the_budget():
     """The ceiling must stay a real ceiling — a silent guest is what it is for."""
     vm = _FakeVM([_serial(hello32=0x600D)])
@@ -343,7 +358,11 @@ def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
     assert extra == [] and not staged
     assert "BUILT but none is staged" in why
     # The remedy must match THIS media's staging mechanism, not the other arch's.
-    assert "wow64cpu/CMakeLists.txt" in why and "VIBEOS_FEX" not in why
+    assert "./vibeos-cli build --arch amd64" in why and "VIBEOS_FEX" not in why
+    # No `touch` recipe any more: the guests are configure dependencies, so the
+    # plain build restages them. A remedy that still said touch would be a rule
+    # with no command behind it.
+    assert "touch" not in why
 
 
 def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
@@ -1001,3 +1020,96 @@ def test_a_winetest_started_in_the_settle_read_is_still_waited_for(monkeypatch):
     out = ladder.watch(vm, seconds=0.01, seen=_all_pass() + started)
     assert _WT_RED in out
     assert vm.serial.reads == 2
+
+
+# ── the amd64 build makes its own guests ────────────────────────────────────
+# The merge queue's integration tree had no build-fex-hello/, so every batch
+# skipped the ladder "not staged" and no WoW64 regression could ever red a
+# queue gate. `build --arch amd64` now builds what is absent or stale.
+
+
+def _buildable(repo: Path) -> None:
+    for rel in (ladder.GUEST_TOOLCHAIN, ladder.GUEST_PREREQ):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_bytes(b"")
+
+
+def test_a_fresh_tree_has_nothing_to_refresh(tmp_path):
+    """A rebuilt guest re-runs the amd64 configure, so refreshing a current set
+    would cost every build a reconfigure for nothing."""
+    assert ladder.guests_to_refresh(_built_tree(tmp_path)) == []
+
+
+def test_absent_and_stale_guests_are_both_refreshed(tmp_path):
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    os.utime(repo / ladder.GUEST_SOURCE["spawn32"], (_T0, _T0))
+    todo = ladder.guests_to_refresh(repo)
+    assert "reg32 (absent)" in todo
+    assert any(t.startswith("spawn32 (") for t in todo)
+    assert len(todo) == 2
+
+
+def test_refresh_names_what_it_is_missing(tmp_path):
+    repo = _built_tree(tmp_path)
+    assert "toolchain" in (ladder.refresh_blocker(repo) or "")
+    (repo / ladder.GUEST_TOOLCHAIN).parent.mkdir(parents=True)
+    (repo / ladder.GUEST_TOOLCHAIN).write_bytes(b"")
+    assert "--arch i386" in (ladder.refresh_blocker(repo) or "")
+    _buildable(repo)
+    assert ladder.refresh_blocker(repo) is None
+
+
+class _FakeRun:
+    def __init__(self):
+        self.stages = []
+        self.classification = None
+
+    def add(self, stage):
+        self.stages.append(stage)
+
+    def run(self, cmd, cwd=None, env=None, stage=None, timeout=None):
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+def test_build_stage_fails_loud_when_the_builder_leaves_guests_behind(tmp_path):
+    """The builder SKIPS a guest whose importlib is missing and still exits 0 --
+    so exit status alone would call a partial set built, and the all-or-nothing
+    staging would then quietly stage none of it."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    (repo / ladder.GUEST_BUILDER).write_text("echo '[!] reg32.exe skipped'\n")
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is False
+    assert run.classification == "GUEST_BUILD_FAIL"
+    assert "reg32 (absent)" in run.stages[-1].detail
+
+
+def test_build_stage_builds_then_reports_ok(tmp_path):
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    (repo / ladder.GUEST_BUILDER).write_text("printf MZ > build-fex-hello/reg32.exe\n")
+    # Rewriting the builder makes it newer than every guest -- all stale -- which
+    # is right for the real script and wrong for this fixture.
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is True
+    assert run.stages[-1].status == "ok" and "reg32" in run.stages[-1].detail
+
+
+def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
+    """Not this build's failure -- amd64 media is complete without guests -- but
+    the stage that could have built them says why it did not."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is True
+    assert run.stages[-1].status == "skip" and "toolchain" in run.stages[-1].detail

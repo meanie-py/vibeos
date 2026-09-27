@@ -450,31 +450,11 @@ pub unsafe extern "C" fn KeLowerIrql(new_irql: KIRQL) {
 
 // KeGetCurrentThread — provided by ke/thrdobj.rs, not needed here.
 
-// --- SRW Lock stubs (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlAcquireSRWLockExclusive(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlAcquireSRWLockExclusive(srw_lock)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlReleaseSRWLockExclusive(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlReleaseSRWLockExclusive(srw_lock)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlAcquireSRWLockShared(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlAcquireSRWLockShared(srw_lock)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlReleaseSRWLockShared(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlReleaseSRWLockShared(srw_lock)
-}
+// --- SRW locks: NOT here. rtl-sync (srw.rs, the translation of ReactOS srw.c) is the
+// one provider. A CAS spin-lock stub used to be exported from this file under the same
+// four names; --allow-multiple-definition let it shadow rtl-sync's on amd64/arm64, so the
+// kernel ran a lock whose word encoding differs from the one rtl-sync's condition
+// variables read. scan_duplicate_symbols gates a second provider now.
 
 // --- Tier 1 globals ---
 
@@ -2439,11 +2419,8 @@ mod ke_amd64_exports {
         ntkrnl_sys::inline::ke_amd64::KiSendEOI()
     }
 
-    #[no_mangle]
-    pub unsafe extern "system" fn RtlFillMemoryUlong(dest: ntkrnl_sys::base::PVOID, length: usize, pattern: ntkrnl_sys::base::ULONG) {
-    let dest = opaque_ptr(dest);
-        ntkrnl_sys::inline::ke_amd64::RtlFillMemoryUlong(dest, length, pattern)
-    }
+    // RtlFillMemoryUlong: the `mem` crate (rtl/mem.c) is its one amd64 provider. A
+    // `rep stosd` copy here used to shadow it via --allow-multiple-definition.
 }
 
 // ============================================================================

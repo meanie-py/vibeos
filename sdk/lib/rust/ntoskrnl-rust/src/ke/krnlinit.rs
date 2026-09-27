@@ -314,10 +314,6 @@ pub unsafe extern "system" fn KeInitSystem() -> BOOLEAN {
     }
 
     KiInitMachineDependent();
-    // DBG: ~L~ after KiInitMachineDependent returns
-    #[cfg(target_arch = "x86")]
-    {
-    }
     1u8
 }
 

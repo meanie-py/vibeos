@@ -90,8 +90,8 @@ Prefer importing from `ntkrnl_sys::ddk` over hand-declaring: bindgen carries the
 convention, including fastcall. **Never trust a header that omits `NTAPI`** — `internal/mm.h`
 declares `MmDeleteVirtualMapping` without it and the symbol is stdcall anyway `[§9.107]`.
 
-### The five ways a convention mismatch manifests
-The same root produces five distinct symptoms; knowing which you're looking at saves the hunt.
+### The seven ways a convention mismatch manifests
+The same root produces seven distinct symptoms; knowing which you're looking at saves the hunt.
 1. **`ud2` after the call / folded success path.** The callsite's ABI contradiction lets LLVM
    prove the continuation unreachable → `unreachable` → BUGCHECK 0x1E `0xC000001D`. Cascades:
    one classpnp sweep folded ~46 functions from 76 decl↔def mismatches, and the cohab link
@@ -118,6 +118,30 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `extern "system"` breaks the fastcall members (`IofCallDriver`, `IofCompleteRequest`,
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
+6. **A cdecl CALLBACK in an NTAPI slot: the CALLER returns into its own arguments.** The
+   callee does not pop what stdcall says it pops, so the caller's `ret` takes an argument as
+   its return address. Symptom: BUGCHECK 0x1E with EIP in **no module**, in pool right next to
+   a device object, and a return address just past `IofCompleteRequest` two words above ESP.
+   classpnp's `ClasspSendSynchronousCompletion` was `extern "C"` and registered through
+   `transmute::<unsafe extern "C" fn(..), _>(f)`: rustc checks the source type against the
+   fn (so it agrees it is cdecl) and the inferred target re-types it. Every hard disk's first
+   synchronous SRB crashed i386 (2026-09-26); 64-bit has one convention and was fine.
+   `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
+   an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
+   bugcheck print every stack word that lands in a module; the bad call's caller is there.
+7. **A bare cdecl name ALIASED onto a stdcall body: the CALLEE's caller returns into ITS
+   caller's stack.** `.set _KeInitializeSpinLock, _KeInitializeSpinLock@4` makes the bare
+   name link, but the body does `ret 4` and the cdecl caller then pops the same 4 bytes
+   again, so ESP ends every call N bytes high. A caller with an ESP-relative epilogue
+   restores its registers from the wrong slots. fastfat's DriverEntry made two such calls
+   (+8): it popped its own return address into EBX and its DriverObject into EBP, and
+   `ret 8` jumped to RegistryPath, a UNICODE_STRING on `IopInitializeDriverModule`'s
+   stack. Symptom: BUGCHECK 0x1E/0x7F with EIP **on the stack** a few dozen bytes above
+   ESP, the trap frame's EBX equal to a return address, and EBP in pool. The fix is a real
+   thunk (re-push N bytes, call `_X@N`, `ret`), not an alias; an alias is sound only for
+   `@0`. `tools/scan_cdecl_alias.py` flags `.set _X, _X@N` with N > 0. Binary check for the
+   same drift: `calll <_X@N>` immediately followed by `addl $N, %esp` that is NOT an
+   epilogue. i386 only, and only when a FAT volume made fs_rec load fastfat (2026-09-26).
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -966,8 +990,9 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   froze inside explorer's taskbar `OnCreate` (two of the captured names,
   `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
   `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
-  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
-  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  **`scan_duplicate_symbols` does not catch this** — it models Rust definitions and
+  `global_asm!` labels, not C/C++ objects, and the dangerous direction here is Rust shadowing
+  C++ across the cohab boundary. Get the capture set before you
   wire anything, with `llvm-nm --defined-only` over both sides:
   `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
   awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
@@ -2353,6 +2378,17 @@ just a label.
   — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
   unchecked literal for another.
 
+### An invented term in a length computation
+usbccgp's `USBCCGP_PDOSelectConfiguration` came out of translation as `Hdr.Length -
+offset_of!(Interface) - 16`; the C is `Hdr.Length - FIELD_OFFSET(..., Interface.Length)`, with
+no 16. The remaining length never reached 0, so the loop read an interface record past the end
+of the URB, and every composite-device function after the first failed to start with
+`STATUS_INVALID_PARAMETER` ("interface 0 is not in this function"). The first function passed
+or failed depending on what memory followed the URB. Found on the Pi 4 with a composite HID
+device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not have is an
+invented value, the same class as an invented constant; diff the expression, not just the
+names.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -3711,6 +3747,21 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
+
+**Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
+lockdep report. classpnp: every hard disk hung the boot inside `DiskInitFdo`'s MBR read.
+
+**Cause:** the C keeps a debug-only structure behind `#if DBG` in BOTH its initializer and
+its users, and the non-DBG initializer stores a marker instead: `RemoveTrackingSpinlock =
+(ULONG_PTR)-1`. The translation kept the marker under `cfg(not(debug_assertions))` but lost
+the `#if DBG` around one user, `ClassCompleteRequest`, which then acquired a spinlock whose
+value reads as HELD and spun forever.
+
+**Fix:** gate the user exactly as the C does (`cfg(debug_assertions)`). When an initializer
+has a debug arm and a release arm, grep every use of the field it initializes: each one
+must sit behind the same gate, or read the release marker as "absent".
+
 ### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
 **Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
 that meant no `Interface\{iid}\ProxyStubClsid32` anywhere, so `CoGetPSClsid` failed with
@@ -4217,6 +4268,17 @@ already been met the note is describing a bug, not a plan.
   no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
   under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
   declarations and only the second is a variable.
+- **A body can lose its TAIL with nothing to show for it.** fastfat's `FatCreateNewDirent`
+  (translated before call sealing existed) returned right after its allocation logic; the
+  orphaned-LFN check, the "dirents really unused" verify and `RtlSetBits` on the free-dirent
+  bitmap were all gone. It compiled, mounted and passed smoke on three arches for months,
+  because the missing bit only matters on the NEXT create that reuses deleted slots — which
+  could then be handed a live entry and overwrite another file's dirent. The one objection
+  was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
+  translation, diff each paired function's C callee set against its Rust body. A
+  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
+  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
+  each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
@@ -4937,8 +4999,17 @@ and check each against the C: a per-arch cfg is *legitimate* only where the C br
 amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
 user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
 truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
-Spell it `target_pointer_width = "64"`. Gated by `scan_win64_cfg` (C twin says `_WIN64` and
-names no specific arch).
+Spell it `target_pointer_width = "64"`. Same family: `#if (NTDDI_VERSION < NTDDI_VISTA)`
+came back as pointer width in smlib's `SmConnectToSm` (the version is 0x502 on every arch).
+Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg against the arch sets the C
+twin's own `#if`s draw.
+
+**Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
+`#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
+`#[cfg(not(target_arch = "x86"))]` into "never". win32k's `TEXT_NextLineW` measured no text
+on any arch this way (four stacked cfgs), and eight more items were silently compiled out
+everywhere. It links, because whatever else provides or never calls the symbol keeps it
+linking. Gated by `scan_cfg_vs_c`'s dead-cfg check.
 
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
@@ -5824,6 +5895,35 @@ runs other agents' builds and QEMUs).
 
 ## SEH, PSEH & exception handling
 
+### Rust code CAN have real `__try/__except` and `__finally`: `ntkrnl_sys::seh`
+
+**Symptom:** a translated FS/driver path raises by design (`CdRaiseStatus`,
+`STATUS_CANT_WAIT`, a Cc in-page error) and bugchecks 0x1E, because its `_SEH2_EXCEPT` arm
+is dead under DUMMY_PSEH.
+
+**Fix:** `ntkrnl_sys::seh::{try_except, try_finally}` call the Rust body through C
+trampolines (`ntoskrnl/sehtry.c`, exported as `RtlSehTryExcept`/`RtlSehTryFinally`) that
+own a real handler: native SEH on amd64/arm64, a hand-built `fs:[0]` frame on i386. Rust
+frames carry `.pdata`, so the unwind walks through them. `fin` runs during the unwind with
+the stack intact, which is where a translated `__finally` that released a lock must go;
+left inline after the try body, it is skipped on the exception path. Closures must not
+capture anything that needs `Drop`. `[SEH-TRY] ... (PASS)` at boot proves it per arch.
+
+**i386 trap, found building it:** `RtlUnwind` returns through `ZwContinue` on a CONTEXT
+captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A C handler
+that keeps its frame pointer in `esi` across the call faults on the next line. Save them
+around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
+
+**Converting a module (cdfs, 2026-09-26):** the translated `__finally` is usually a
+labeled `loop { ... break; }` followed by inline cleanup. Move the loop verbatim into
+`try_finally`'s body and the cleanup into `fin`; a local the finally reads that the body
+changes is read through an `addr_of_mut!` pointer taken before the call. Check each body
+for `return` (it now leaves only the closure) and give uninitialized locals a value
+(closures cannot capture them). **Enabling the exception path makes dead code live, and
+live code must link:** cdfs's FSP retry had declared a flag constant as an extern SYMBOL
+nothing defined, which linked for months only because its status could never become
+`STATUS_CANT_WAIT` under DUMMY_PSEH, so LLVM dropped the reference.
+
 ### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
 
 **Symptom:** a syscall that worked starts returning `STATUS_DATATYPE_MISALIGNMENT`, or an
@@ -5976,12 +6076,13 @@ different question, racily).
   other: when a scanner reaches it, the useful next question is which shapes it cannot express,
   not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
   accessing intrinsic before taking it.
-- **An atomic on user memory has no protected form yet.** `capture_from_user`/`publish_to_user`
-  cannot express a read-modify-write: capture -> mutate -> publish loses the atomicity, and
-  silently weakening a concurrency guarantee to buy fault-tolerance is the wrong trade. The
-  primitive needed is a `KmProtected` atomic beside `KmProtectedCopyMemory` -- a native-SEH
-  shim on amd64/arm64, an exception-table entry for the `lock` instruction on i386 (§9.123) --
-  with a self-test twin, because an unproven protection is worse than a documented gap.
+- **An atomic on user memory needs its own protected primitive.** `capture_from_user`/
+  `publish_to_user` cannot express a read-modify-write: capture -> mutate -> publish loses the
+  atomicity, and silently weakening a concurrency guarantee to buy fault-tolerance is the wrong
+  trade. Use `copy::interlocked_add_user` (ntoskrnl's `KmProtectedInterlockedAdd`: a native-SEH
+  shim on amd64/arm64, a second extable key for the `lock xadd` on i386 (§9.123)). Its self-test
+  asserts the add LANDED in memory as well as returned, because a primitive that returns the
+  right sum without storing it would pass a return-value-only check.
 
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
@@ -6542,6 +6643,24 @@ output path; CMake's OLD CMP0116 policy passes it through without normalization.
 output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
 fixture proves a nested-header-only constant/layout edit then stays stale.
 
+### A configure dependency on a file that does not exist yet is silently dropped
+
+**Symptom:** a file admitted by `if(EXISTS)` at configure time (a WoW64 guest, a stress
+binary) is built later, the next build is green, and the file is still not on the media.
+`CMAKE_CONFIGURE_DEPENDS` names it, and the dependency was meant to re-run configure the
+moment it appeared.
+
+**Cause:** CMake (3.28, measured) omits a configure dependency whose path does not exist
+from `build.ninja` entirely, so nothing ever watches for its creation. The dependency only
+works for files that were already there, which is exactly the case that does not need it.
+The merge queue's integration tree was configured before it had any guests and never
+graded the WoW64 ladder in consequence.
+
+**Fix:** depend on the file if it exists, otherwise on its nearest EXISTING ancestor
+directory. Creating an entry bumps that directory's mtime, which ninja sees, and an
+unchanged directory costs no spurious reconfigure (`dll/win32/wow64cpu/CMakeLists.txt`).
+Verify with `grep <path> build-<arch>/build.ninja` — a missing path means CMake dropped it.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
@@ -6664,6 +6783,15 @@ gates the invariant statically: every hive `add_cd_file` stages into `reactos/sy
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
+**The loader has the same blind spot for boot drivers** (2026-09-26). A Start=0 service whose
+`.sys` is not on the ramdisk (usbccgp was never staged on arm64) is dropped from the boot driver
+list with only a trace-channel `ERR` nobody sees on UEFI, so the kernel never hears of it. The
+symptom is two steps away: a composite USB device matched `USB#COMPOSITE` in the
+CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The loader now prints
+`[FLDR] boot driver not loaded, dropped from the boot driver list: <path>`. On arm64 that list
+is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
+carries; read it when a device binds to nothing.
 
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
@@ -10553,6 +10681,20 @@ better thunk. The underlying bug there was a real API-contract mistake: in multi
 the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
 the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
 
+### A pointer-sized OUT from `NtQuerySystemInformation` is 4 bytes in the guest
+**Symptom.** A 32-bit guest's `GlobalLock` returns NULL on a handle `GlobalAlloc` returned a
+moment earlier, but only for FIXED (non-moveable) memory. Anything built on it degrades
+silently: `PackDDElParam` returned 0, so every packed DDE `lParam` went out as 0.
+**Cause.** kernel32 fills `SystemRangeStart` once, with
+`NtQuerySystemInformation(SystemRangeStartInformation, &x, sizeof(ULONG_PTR))`. That is 4
+bytes in the guest, and the host kernel answers a `ULONG_PTR`, 8 bytes. The WoW64 marshaller
+passed the class through, the query failed `STATUS_INFO_LENGTH_MISMATCH`, and nobody checked
+the status. The value stayed 0, so `hMem >= SystemRangeStart` refused every pointer. The
+serial said it every boot: `class=50 passthrough => c0000004 (len=4)`.
+**Fix.** Marshal the class (`wow64_manual.c`), answering from the guest's own address-space
+limit. **Grep the boot for `passthrough => c0000004`**: a length mismatch on a passthrough
+class is this bug for whichever class it names.
+
 ### A winetest's "N failures in child process" can be a child that DIED
 **Symptom.** A suite reports a huge failure count (native `user32:scroll`: 140), but the
 printed failures account for a handful, and one child printed nothing at all.
@@ -11065,6 +11207,15 @@ win32k is the largest single flip surface and its failures are stereotyped:
   filled, suspect the transfer-mode flag.**
 - **The first keystroke BUGCHECKs 0x1E** `[§9.38]` if the i8042prt DPC calls kbdclass
   `ClassService` as `extern "C"` — it is NTAPI stdcall on i386.
+- **arm64 USB input reached kbdclass and stopped there** (2026-09-26, first seen on the Pi 4).
+  `[KBDCLASS] first key delivered` printed, the desktop saw nothing. win32k's RIT opens exactly
+  `\Device\KeyboardClass0` and `\Device\PointerClass0`, and arm64input created both names
+  unconditionally for its virtio-input devices, so kbdclass/mouclass fell back to `...Class1`,
+  which nobody reads. The QEMU xHCI gate had only ever checked the kbdclass marker. Fix:
+  arm64input claims the names only when it finds virtio-input; the RIT now prints which driver
+  owns each device it opens and `[WIN32K] RIT first keyboard input`, the marker that proves the
+  desktop got a key. **A delivery marker proves delivery to the layer that prints it, and no
+  further.**
 - **winlogon 0xF4 on the first FAILING user-mode callback** `[§9.39]` — i386
   `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the
   user-ESP restore. The `'seh` block must yield `Result<NTSTATUS, NTSTATUS>` so the two are
@@ -11353,6 +11504,48 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### `ASSERT FAILED: MDL_MAPPED_TO_SYSTEM_VA == 0 at iomgr-rust/src/iomdl.rs` on every USB transfer
+- **Symptom:** the assert prints repeatedly once USB devices enumerate (seen on QEMU xHCI
+  boots, some amd64 smokes and the Pi 4); nothing fails outright.
+- **Cause:** `ntkrnl-sys`'s `driver_ddk::MmGetSystemAddressForMdlSafe` mapped the MDL on
+  every call. The WDK inline returns `MappedSystemVa` when the MDL is already mapped or
+  describes nonpaged pool. So every call leaked a system mapping, overwrote
+  `MappedSystemVa`, and the MDL was freed still mapped. usbport calls it per transfer, and
+  kbdclass, mouclass, hidclass, fastfat, afd and others use the same copy.
+- **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
+  crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
+
+### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
+- **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
+  N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
+  INTID in a register. Seen 2026-09-26 bringing up `usbxhci` (INTID 35, the xHCI INTx).
+- **Cause:** a **level-triggered line that no ISR claims fires forever.** The HAL EOIs it,
+  the line is still asserted, it re-fires at once, and the CPU never runs anything else. The
+  message does not mean "no ISR connected": it also prints when the connected ISR returned
+  FALSE. Two ways to get there, both hit the same day:
+  1. **The device was already asserting when its vector was enabled.** Firmware can hand
+     over a controller mid-flight (UEFI's own USB stack ran the xHCI and left it with
+     interrupts on), and the driver cannot quiet hardware it has not mapped yet.
+  2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
+     connects the interrupt, calls the miniport's StartController, and only *then* sets
+     the flags its ISR wrapper checks. A StartController that enables controller
+     interrupts and issues a command gets its completion interrupt declined.
+- **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
+  COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
+  the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
+  IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
+  device family, ask "can this line be asserted before my ISR says yes?"
+
+### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
+- **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
+  immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
+  starts.
+- **Cause:** the arm64 boot disk is `virtio-blk-pci` (`if=virtio` on `virt`), and the
+  efivars shipped with the harness save Boot0001 as `PciRoot(0x0)/Pci(0x2,0x0)`. A new PCI
+  device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
+  now names the new device. UEFI skips it silently and falls through to network boot.
+- **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op

@@ -1817,6 +1817,36 @@ unsafe fn TryStartWow64StockApp(Name: *const u16, Label: *const i8, TimeoutMs: D
  * this for testgui; a conformance suite needs it more, not less, because it
  * asserts against real Windows rather than against us. arm64 gets it the day
  * it stages a winetest. */
+/*
+ * Point TEMP/TMP at a writable scratch volume, when the harness attached one.
+ *
+ * The livecd's only volume is the CD, so the inherited TEMP is X:\reactos\TEMP
+ * and every conformance test that writes a scratch file fails on the MEDIA, not
+ * on the OS -- user32:class's activation-context manifest was the measured case
+ * (0xc0150010 on both sides of the WoW64 A/B). The harness attaches a FAT disk
+ * holding \TEMP (tests/qemu/vm.py _temp_disk_args); when it is there, the
+ * winetest children -- which inherit our environment -- write to it instead.
+ * Absent, nothing changes. Only winlogon's own environment is touched, and
+ * only just before the first winetest, so nothing launched earlier sees it.
+ */
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn WinetestScratchTemp() {
+    static mut DONE: bool = false;
+    if DONE {
+        return;
+    }
+    DONE = true;
+    let Temp = wstr!("C:\\TEMP");
+    let Attr = GetFileAttributesW(Temp.as_ptr());
+    if Attr == 0xFFFF_FFFF || Attr & FILE_ATTRIBUTE_DIRECTORY == 0 {
+        DbgPrint(b"[WT] no scratch volume - TEMP stays on the read-only CD\n\0".as_ptr() as *const i8);
+        return;
+    }
+    SetEnvironmentVariableW(wstr!("TEMP").as_ptr(), Temp.as_ptr());
+    SetEnvironmentVariableW(wstr!("TMP").as_ptr(), Temp.as_ptr());
+    DbgPrint(b"[WT] TEMP/TMP -> C:\\TEMP (writable scratch volume)\n\0".as_ptr() as *const i8);
+}
+
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn TryStartWinetest(
     Dir: *const u16,
@@ -1858,6 +1888,7 @@ unsafe fn TryStartWinetest(
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged -- silent no-op, like every other optional guest
     }
+    WinetestScratchTemp();
     /* Not in a kmtest conformance boot. Its sweep grades timing-sensitive
      * kernel tests (ExFastMutex, ExResource) against a banked baseline, and a
      * tree built with --rostests staged the winetest into that media too:
@@ -2705,7 +2736,7 @@ pub unsafe extern "system" fn WinMain(
      * spawns, so i386 never reaches the desktop. Until that MM deadlock is
      * fixed, i386 keeps the pre-existing behavior (no layout -> app keys dead,
      * tracked); the boot-to-desktop North Star wins over interactive input. */
-    #[cfg(not(target_arch = "x86"))]
+    #[cfg(not(target_arch = "x86"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         if InitKeyboardLayouts() == 0 {
             DbgPrint(
@@ -2891,7 +2922,7 @@ pub unsafe extern "system" fn WinMain(
      * KiUserExceptionDispatcher -> ntdll dispatch -> __except delivery
      * end-to-end. amd64/arm64 only (native clang SEH does not lower on
      * i386), matching sehtest's cmake gate. */
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         let mut Si: STARTUPINFOW = zeroed();
         let mut Pi: PROCESS_INFORMATION = zeroed();
@@ -3345,7 +3376,7 @@ pub unsafe extern "system" fn WinMain(
      * always (its window doubles as regression coverage for the callback
      * marshallers); doom is the demo rung, same mutual-occlusion rule as
      * arm64. See wow64-plan.md Phase E. */
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         /* Full arm64-parity probe ladder (each is a silent no-op unless its
          * guest is staged): loader → GDI → window/callbacks → file I/O →
@@ -3565,7 +3596,7 @@ pub unsafe extern "system" fn WinMain(
      * winetest, so this needs no staging change at all -- an i386
      * `build --rostests` is the whole opt-in, and a tree without one finds no
      * file and says nothing. */
-    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
         let mut Skips: [u8; 2048] = [0; 2048];
         if WinetestSweepRequested(Skips.as_mut_ptr(), Skips.len()) {

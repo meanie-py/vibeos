@@ -1542,6 +1542,18 @@ pub unsafe extern "system" fn DriverEntry(
     (*DriverObject).MajorFunction[0x03] = Some(InputRead);
     (*DriverObject).MajorFunction[0x0E] = Some(InputDeviceControl);
 
+    // Claim the class-device names only for virtio input we can actually serve.
+    // win32k reads exactly \Device\KeyboardClass0 and \Device\PointerClass0; on a
+    // machine without virtio-input (a Raspberry Pi, QEMU with USB input only)
+    // those names belong to kbdclass/mouclass, which the USB HID stack feeds.
+    // Taking them anyway left every USB keystroke delivered to a class device
+    // nothing reads.
+    VirtioScanDevices();
+    if VirtioInputCount == 0 {
+        DbgPrint(b"[ARM64INPUT] no virtio-input device: KeyboardClass0/PointerClass0 left to kbdclass/mouclass\n\0".as_ptr() as _);
+        return STATUS_SUCCESS;
+    }
+
     let n_kbd_dev = wsz!(b"\\Device\\KeyboardClass0");
     RtlInitUnicodeString(&mut DeviceName, n_kbd_dev.as_ptr());
     Status = IoCreateDevice(
@@ -1624,8 +1636,7 @@ pub unsafe extern "system" fn DriverEntry(
 
     DbgPrint(b"[ARM64INPUT] \\Device\\PointerClass0 created\n\0".as_ptr() as _);
 
-    VirtioScanDevices();
-    if VirtioInputCount > 0 && VirtioConnectInterrupts() != 0 {
+    if VirtioConnectInterrupts() != 0 {
         DbgPrint(b"[ARM64INPUT] interrupt mode: all devices on GIC IRQs, no poll thread\n\0"
             .as_ptr() as _);
         // Software-pend the first device's line: `[GIC] selftest ... DELIVERED`
@@ -1635,7 +1646,7 @@ pub unsafe extern "system" fn DriverEntry(
             fn HalSelfTestGicSpiArm64(intid: u32);
         }
         HalSelfTestGicSpiArm64(VIRTIO_MMIO_INTID_BASE + VirtioInputs[0].Slot);
-    } else if VirtioInputCount > 0 {
+    } else {
         // Fallback: no usable interrupt routing — poll as before.
         VirtioPollRunning = 1u8;
         Status = PsCreateSystemThread(

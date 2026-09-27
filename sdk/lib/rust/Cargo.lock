@@ -2690,6 +2690,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "usbxhci-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "user32-rust"
 version = "0.1.0"
 dependencies = [

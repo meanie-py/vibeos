@@ -2779,7 +2779,7 @@ pub unsafe extern "system" fn LdrpInit(
              * on serial or kills smss, which the arm64 smoke catches. Results:
              * docs/engineering/fex-bringup-plan.md rung 0e. arm64 only (the
              * shim is arch-gated in ntdll-cargo/build.rs). */
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(target_arch = "aarch64")] // nolint: cfg-vs-c (arm64 SEH probe (fex-bringup-plan rung 0e), Rust-only)
             {
                 const SEH_POC_U_ARMED: bool = true;
                 let pp = (*Peb).ProcessParameters;

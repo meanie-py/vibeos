@@ -549,7 +549,7 @@ pub unsafe extern "system" fn KiIpiServiceRoutine(
         // Known gap vs NT (accepted until i386 gets an NMI path): a CPU
         // parked at IPI_LEVEL (e.g. inside a generic-call worker) can't take
         // 0xE1 and freezes only after it returns below IPI_LEVEL.
-        #[cfg(target_arch = "x86")]
+        #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (i386 IPI freeze handler (SMP), Rust-only)
         {
             if !TrapFrame.is_null()
                 && core::ptr::read_volatile(core::ptr::addr_of!((*Prcb).IpiFrozen))

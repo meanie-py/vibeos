@@ -64,7 +64,17 @@ def _tree(tmp_path: Path, monkeypatch) -> Path:
     (root / OBJ_DIR / "math.c.obj").write_text("")
     (root / SHIM_DIR / "shim.c.obj").write_text("")
     (root / ARCHIVE).write_text("")  # written last => newest => fresh
+    # ninja is the one other impure edge. The fixture models a FRESH tree -- every object
+    # on disk is on the link line -- so it answers from the directories at call time; the
+    # stale-object controls below replace it with a link line that leaves files out.
+    monkeypatch.setattr(mod, "_link_inputs", _fresh_link_inputs)
     return root
+
+
+def _fresh_link_inputs(build: Path, fam: dict) -> tuple[list[Path], list[Path]]:
+    direct = sorted((build / SHIM_DIR.split("/", 1)[1]).rglob("*.obj"))
+    members = sorted((build / OBJ_DIR.split("/", 1)[1]).rglob("*.obj"))
+    return direct, members
 
 
 def _stub_symbols(monkeypatch, table: dict[str, dict[str, list[tuple[str, str]]]]) -> None:
@@ -226,6 +236,47 @@ def test_a_module_that_is_not_flipped_is_not_checked(tmp_path, monkeypatch):
 
 
 # --- refusals: the two ways this tool must decline to render a verdict ---------------------
+
+
+def test_a_stale_object_on_disk_is_not_a_provider(tmp_path, monkeypatch):
+    """The msvcrt shim split left stale copies in msvcrt.dir in every build dir configured
+    before it. A directory glob counted them as providers; only the link line decides. Here
+    the stale file defines exactly the symbol the flipped twin exports -- and it must still
+    be a finding, because nothing links that file."""
+    root = _tree(tmp_path, monkeypatch)
+    (root / SHIM_DIR / "stale_old_shim.c.obj").write_text("")
+    fresh = _fresh_link_inputs
+    monkeypatch.setattr(
+        mod,
+        "_link_inputs",
+        lambda build, fam: (
+            [o for o in fresh(build, fam)[0] if o.name != "stale_old_shim.c.obj"],
+            fresh(build, fam)[1],
+        ),
+    )
+    _stub_symbols(
+        monkeypatch,
+        {
+            "math.c.obj": {"defined": [("T", "_MSVCRT__rotl64")]},
+            "stale_old_shim.c.obj": {"defined": [("T", "_MSVCRT__rotl64")]},
+            "shim.c.obj": {"undefined": [("U", "_MSVCRT__rotl64")]},
+        },
+    )
+    assert any("_MSVCRT__rotl64" in f for f in _run(root))
+
+
+def test_a_stale_twin_that_links_into_nothing_is_not_checked(tmp_path, monkeypatch):
+    """A flipped module's C object that is on disk but NOT a member of the static library
+    (its source moved or stopped compiling) must not be judged -- it is not what links."""
+    root = _tree(tmp_path, monkeypatch)
+    (root / "dll/win32/msvcrt/math.c").write_text("")  # the source still exists
+    monkeypatch.setattr(
+        mod,
+        "_link_inputs",
+        lambda build, fam: ([build / SHIM_DIR.split("/", 1)[1] / "shim.c.obj"], []),
+    )
+    _stub_symbols(monkeypatch, {"math.c.obj": {"defined": [("T", "_MSVCRT__rotl64")]}})
+    assert _run(root) == []
 
 
 def test_a_stale_archive_is_refused_not_reported(tmp_path, monkeypatch):

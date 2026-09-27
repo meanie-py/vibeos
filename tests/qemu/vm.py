@@ -920,6 +920,85 @@ def _unique_launch_port(picker: Callable[[], int]) -> int:
     raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
 
 
+TEMP_DISK_MB = 64
+_TEMP_PART_START = 2048  # sectors; the conventional 1 MiB alignment
+
+
+def make_temp_disk(out: Path) -> None:
+    """MBR + one FAT16 partition with an empty \\TEMP, converted to qcow2.
+
+    Built fresh per boot: it is scratch, and a disk that carried files from an
+    earlier run would let a test pass on leftovers.
+    """
+    raw = out.with_suffix(".img")
+    raw.unlink(missing_ok=True)
+    with open(raw, "wb") as f:
+        f.truncate(TEMP_DISK_MB * 1024 * 1024)
+    # type 6 = FAT16 (>32M); bootable flag off -- nothing should ever boot this.
+    subprocess.run(
+        ["sfdisk", "--quiet", str(raw)],
+        input=f"start={_TEMP_PART_START}, type=6\n",
+        text=True,
+        check=True,
+        capture_output=True,
+    )
+    sectors = TEMP_DISK_MB * 2048 - _TEMP_PART_START
+    subprocess.run(
+        [
+            "mkfs.fat",
+            "-F",
+            "16",
+            "-n",
+            "VIBEOSTEMP",
+            "--offset",
+            str(_TEMP_PART_START),
+            str(raw),
+            str(sectors // 2),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["mmd", "-i", f"{raw}@@{_TEMP_PART_START * 512}", "::/TEMP"],
+        check=True,
+        capture_output=True,
+    )
+    out.unlink(missing_ok=True)
+    subprocess.run(
+        ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(raw), str(out)],
+        check=True,
+        capture_output=True,
+    )
+    raw.unlink()
+
+
+def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
+    """The \\TEMP disk policy, shared by every launcher (QemuVM, `gdb start`).
+
+    One decision, because a launcher that reimplements it drifts: the gdb engine
+    hand-mirrored the smoke command line, never learned this disk, and so could not
+    reproduce the one crash that only happens with it attached.
+    """
+    if not arch.startswith(("i386", "amd64")):
+        return []
+    # Default ON: it is also the only hard disk any x86 smoke attaches, and the
+    # disk path stayed broken for months without a single red because nothing
+    # exercised it -- classpnp's ClassCompleteRequest spun on a never-initialized
+    # lock (every boot with a disk hung), and on i386 fastfat's DriverEntry
+    # returned into its caller's stack the first time a FAT volume loaded it.
+    # `VIBEOS_QEMU_TEMP_DISK=0` opts out.
+    if os.environ.get("VIBEOS_QEMU_TEMP_DISK", "1").strip() in ("0", "false", "no"):
+        return []
+    disk = out_dir / "tempdisk.qcow2"
+    make_temp_disk(disk)
+    return [
+        "-drive",
+        f"file={disk},format=qcow2,if=none,id=tempdisk",
+        "-device",
+        "ide-hd,drive=tempdisk",
+    ]
+
+
 def _free_tcp_port() -> int:
     """Pick a currently-free TCP port for a slirp hostfwd rule.
 
@@ -1486,6 +1565,67 @@ class QemuVM:
             return []
         return shlex.split(raw)
 
+    def _xhci_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_XHCI", "").strip() in ("1", "true", "yes")
+
+    def _xhci_args(self) -> list[str]:
+        """VIBEOS_QEMU_XHCI=1 attaches a qemu-xhci controller with a USB keyboard
+        and mouse (usbxhci bring-up rig, docs/engineering/usbxhci-design.md).
+
+        The controller is pinned to PCI slot 8. Left to auto-assignment it takes
+        the first free slot, which shifts arm64's virtio-blk-pci boot disk off the
+        `Pci(0x2,0x0)` path saved in efivars, and UEFI falls through to PXE."""
+        if not self._xhci_enabled():
+            return []
+        return [
+            "-device",
+            "qemu-xhci,id=xhci,addr=0x8",
+            "-device",
+            "usb-kbd,bus=xhci.0,id=ukbd",
+            "-device",
+            "usb-mouse,bus=xhci.0,id=umouse",
+        ]
+
+    def _without_virtio_input(self, args: list[str]) -> list[str]:
+        """Drop arm64's virtio keyboard/mouse when the xHCI rig is on.
+
+        QEMU sends host input to the most recently ACTIVATED handler. usb-kbd
+        activates when it is created; virtio-input activates later, when the
+        guest driver starts it, and so would take every keystroke meant for USB.
+        (`input-send-event`'s `device` argument cannot pick one: it names a
+        display console, and QEMU aborts looking it up with -display none.)"""
+        if not self._xhci_enabled():
+            return args
+        out: list[str] = []
+        i = 0
+        while i < len(args):
+            if (
+                args[i] == "-device"
+                and i + 1 < len(args)
+                and args[i + 1].startswith(("virtio-keyboard-device", "virtio-mouse-device"))
+            ):
+                i += 2
+                continue
+            out.append(args[i])
+            i += 1
+        return out
+
+    def _temp_disk_args(self) -> list[str]:
+        """A writable FAT volume holding \\TEMP, for x86 boots that run winetests.
+
+        The livecd's only volume is the CD, so `GetTempPath` is X:\\reactos\\TEMP --
+        read-only -- and any conformance test that writes a scratch file fails on
+        the harness rather than on the OS (user32:class's manifest is the measured
+        case: 0xc0150010 on both sides of the WoW64 A/B). winlogon points the
+        winetest children's TEMP here when it finds C:\\TEMP (winlogon.rs).
+
+        IDE, not virtio: x86 has no virtio-blk driver, and uniata already serves
+        the CD. Partitioned, not a superfloppy: FreeLDR crashes on an unpartitioned
+        BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
+        No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
+        """
+        return temp_disk_args(self.config.arch, self.scratch_path.parent)
+
     def _usb_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
         by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
@@ -1701,8 +1841,8 @@ class QemuVM:
             check=True,
             capture_output=True,
         )
-        arch = self.config.prepare_args(self.work_dir)
-        disks = [*self._scratch_device_args(), *self._usb_disk_args()]
+        arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
+        disks = [*self._scratch_device_args(), *self._usb_disk_args(), *self._temp_disk_args()]
         self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
         self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
 
@@ -1721,6 +1861,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",
@@ -1820,6 +1961,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",

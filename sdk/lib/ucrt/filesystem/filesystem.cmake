@@ -2,14 +2,12 @@
 list(APPEND UCRT_FILESYSTEM_SOURCES
     filesystem/access.cpp
     filesystem/chmod.cpp
-    filesystem/findfile.cpp
     filesystem/fullpath.cpp
     filesystem/makepath.cpp
     filesystem/mkdir.cpp
     filesystem/rename.cpp
     filesystem/rmdir.cpp
     filesystem/splitpath.cpp
-    filesystem/stat.cpp
     filesystem/unlink.cpp
     filesystem/waccess.cpp
     filesystem/wchmod.cpp

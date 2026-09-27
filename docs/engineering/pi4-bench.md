@@ -165,6 +165,46 @@ Every staged payload carries a `manifest.json` with the commit it came from and
 whether the tree was dirty. Tie each board result to that, never to "what was on
 the card".
 
+## USB input: the Pico
+
+A Pico 2 W running the picousb firmware (`D:\home\Projects\picousb`) sits in a
+Pi USB port. It presents a boot keyboard, boot mouse, mass storage and an
+absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
+did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
+in the script header):
+
+```bash
+tools/pi4/pico.sh usb                       # mounted / resets / per-endpoint completions
+tools/pi4/pico.sh type 'hello' --delay 30
+tools/pi4/pico.sh pointer click 16384 16384 # absolute, 0..32767 per axis
+```
+
+The token file is created by the bench owner; agents pass its path and never
+read it. The Pico is powered by the Pi, so it reboots with every power cycle
+and is on Wi-Fi ~12.5 s after power-on: too late for the UEFI F1 window, which
+stays on serial.
+
+The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
+- **Configuration:** VibeOS configures it, and `usb` then shows `mounted=True`,
+  `set_config=2` and growing completions.
+- **Typing:** `type` lands in the focused window.
+- **Pointer:** `pointer click x y` goes where aimed. The pointer spans the whole
+  1920x1080 screen, so pixel = value × 1920 / 32768 (and × 1080 / 32768 for y).
+  Notepad's text area is around `pointer click 8000 12000`.
+- **Chords:** modifiers come first, e.g. `key CTRL ESC`.
+
+What proves each layer, on serial:
+
+| Layer | Serial line |
+|---|---|
+| Controller | `[XHCI] controller running` |
+| Hub | `slot 1: hub, 4 ports`, the board's VIA hub |
+| Pico | `port 1 route 3: new device ... tt slot 1 port 3` |
+| Desktop | `[WIN32K] RIT first keyboard input` |
+
+Before this (build `f5abd8cee6a4`), UEFI configured the Pico and a bus reset at
+hand-over unmounted it for good.
+
 ## Firmware facts worth knowing
 
 - `acpiview -s DBG2` / `-s APIC` in the UEFI Shell show what the loader will

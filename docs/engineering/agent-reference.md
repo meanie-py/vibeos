@@ -49,6 +49,7 @@ fast-forwards `master` to exactly the commit it gated. N ready lanes therefore c
 ```bash
 ./vibeos-cli land                  # submit (and train the batch if nobody else is)
 ./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land --withdraw       # take MY queued submission out of line (not ready / would gate cold)
 ./vibeos-cli land --direct         # opt out: gate and push this lane alone
 ./vibeos-cli land --drain          # train without submitting (orphan recovery)
 ```
@@ -461,7 +462,7 @@ It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, wh
 `--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
 
 Each bug class it finds becomes a gated `check` scanner over every body. The first four, plus
-`scan_bool_width` and `scan_win64_cfg` (all with EMPTY baselines, all run by `./vibeos-cli check`):
+`scan_bool_width` and `scan_cfg_vs_c` (all with EMPTY baselines, all run by `./vibeos-cli check`):
 
 - `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
   `a - b` counted ELEMENTS. The fix is `a.offset_from(b)`.
@@ -480,8 +481,24 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   Two directions: a Rust extern DECL wider than the Rust definition, and an exported Rust
   DEFINITION narrower than its C twin (every C caller) or than its own per-arch cfg twin.
   Its 202 findings were 25 wrong definitions, not 202 wrong decls; 56 in all.
-- `scan_win64_cfg`: the C's `#ifdef _WIN64` translated as `target_arch = "x86_64"`, which
-  hands arm64 the 32-bit path. The fix is `target_pointer_width = "64"`.
+- `scan_cfg_vs_c`: a per-arch `#[cfg]` inside a function whose arch set the C twin's own
+  `#if`s never draw (arch macros, `_WIN64`, `_MI_PAGING_LEVELS` all evaluate to arch sets).
+  `_WIN64` spelled `target_arch = "x86_64"` hands arm64 the 32-bit path; the fix is
+  `target_pointer_width = "64"`. Where the C never names arm64, only the x86/x86_64 line
+  is judged (upstream's `#else` lumps arm64 with i386). `--stats` shows how the in-body
+  population splits: ~440 agree with the C mechanically, ~650 have no C arch `#if` to
+  compare (Rust-only cfgs — those still need reading). Per-function, not per-block, so a
+  Rust-only block in a function with an unrelated C `#if` is flagged: read, then `nolint`.
+
+`scan_duplicate_symbols` (also EMPTY-baselined) is the link-level one. Every PE links with
+`--allow-multiple-definition`, so two definitions of one symbol resolve by archive order and
+nothing warns. It models what each binary links (`tools/rust_link_model.py`: the crates a
+`*-cargo/build.rs` names, their path-dep closure, Cargo feature resolution, `if arch == …`
+blocks, every definition's full cfg, and `global_asm!` `.globl` labels) and reports a name
+defined twice on one arch. i386 decoration counts: cdecl `_X`, stdcall `_X@N` and fastcall
+`@X@N` are different symbols. C objects are out of its scope. To check a finding against the
+bytes, `llvm-nm --defined-only` the archives under
+`sdk/lib/rust/target/<binary>-<crate>-rustlib/<triple>/release/`.
 
 The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
 of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s

@@ -256,6 +256,31 @@ unsafe fn FdoEnumerateDevices(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
                 }
             }
 
+            // xHCI early quiesce: mask the controller's INTx (COMMAND bit 10,
+            // Interrupt Disable) until its driver has reset it. Firmware can hand
+            // over an xHCI still asserting its level-triggered line (UEFI's own
+            // USB stack ran it), and usbport connects the interrupt before it
+            // starts the miniport, so an unmaskable line storms the CPU before
+            // anyone can quiet the controller. usbxhci clears the bit after its
+            // reset. Linux does the equivalent in quirk_usb_handoff_xhci.
+            // PdoStartDevice ORs its enables into this cached Command, so the
+            // bit survives device start.
+            if pci_config.Header.BaseClass == PCI_CLASS_SERIAL_BUS_CTLR
+                && pci_config.Header.SubClass == 0x03
+                && pci_config.Header.ProgIf == 0x30
+            {
+                let mut command: u16 = pci_config.Header.Command | 0x0400;
+                pci_config.Header.Command = command;
+                HalSetBusDataByOffset(
+                    PCI_CONFIGURATION,
+                    (*device_extension).BusNumber,
+                    slot_number.u.AsULONG,
+                    &mut command as *mut u16 as *mut core::ffi::c_void,
+                    0x04, // FIELD_OFFSET(PCI_COMMON_HEADER, Command)
+                    2,
+                );
+            }
+
             let mut device: PPCI_DEVICE = core::ptr::null_mut();
             let status =
                 FdoLocateChildDevice(&mut device, device_extension, slot_number, &pci_config);

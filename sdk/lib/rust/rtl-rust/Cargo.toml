@@ -11,7 +11,12 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [features]
-default = ["kernel"]
+default = ["kernel", "heaplist"]
+# heapuser.c: the PEB process-heap list (RtlpAdd/RemoveHeapToProcessList,
+# RtlInitializeHeapManager). USER-MODE only, as in C: the kernel's versions are
+# libsupp.c's (rtlk-rust). ntoskrnl/ntkrnlmp ask for rtl-rust without it; before
+# that, --allow-multiple-definition picked the kernel's copy by archive order alone.
+heaplist = ["dep:rtl-heapuser"]
 kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel", "rtl-sync/kernel", "rtl-diag/kernel", "rtl-except/kernel", "rtl-misc/kernel"]
 
 [dependencies]
@@ -52,5 +57,5 @@ rtl-sysvol   = { path = "../rtl-sysvol" }
 rtl-rxact    = { path = "../rtl-rxact" }
 rtl-error    = { path = "../rtl-error" }
 rtl-heappage = { path = "../rtl-heappage", features = ["cabi"] }
-rtl-heapuser = { path = "../rtl-heapuser", features = ["cabi"] }
+rtl-heapuser = { path = "../rtl-heapuser", features = ["cabi"], optional = true }
 time         = { path = "../time" }

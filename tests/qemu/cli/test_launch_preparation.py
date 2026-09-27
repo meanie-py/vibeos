@@ -145,3 +145,41 @@ def test_cleanup_protects_preparing_vm_without_a_qemu_process(tmp_path, monkeypa
     assert str(staging) in result["protected"]
     assert (staging / "private.qcow2").read_bytes() == b"preparing"
     assert machine._proc is None
+
+
+@pytest.mark.parametrize(
+    ("config", "env", "attached"),
+    [
+        (vm.Amd64UefiConfig, None, True),  # default ON: the only disk any smoke boots with
+        (vm.Amd64UefiConfig, "0", False),
+        (vm.I386UefiConfig, None, True),  # default ON since fastfat's i386 DriverEntry fix
+        (vm.I386UefiConfig, "0", False),
+        (vm.Arm64Config, "1", False),  # no IDE on arm64
+    ],
+)
+def test_temp_disk_policy(config, env, attached, tmp_path, monkeypatch):
+    """The scratch-TEMP disk is also the smoke's only hard disk, and the disk path
+    stayed broken for months (classpnp hung every boot; i386 fastfat returned into
+    its caller's stack) because nothing attached one. The default is the regression
+    guard, so pin it."""
+    if env is None:
+        monkeypatch.delenv("VIBEOS_QEMU_TEMP_DISK", raising=False)
+    else:
+        monkeypatch.setenv("VIBEOS_QEMU_TEMP_DISK", env)
+    made = []
+    monkeypatch.setattr(vm, "make_temp_disk", lambda p: made.append(p))
+    args = vm.QemuVM(config(), tmp_path)._temp_disk_args()
+    assert bool(args) == attached and bool(made) == attached
+    if attached:
+        assert "ide-hd,drive=tempdisk" in args
+        assert not any("bootindex" in a for a in args), "must never boot ahead of the CD"
+
+
+@pytest.mark.parametrize("arch", ["i386", "i386-uefi", "amd64", "amd64-uefi"])
+def test_gdb_launches_share_the_smoke_disk_policy(arch, tmp_path, monkeypatch):
+    """`gdb start` builds its own QEMU command line. It once omitted this disk, so a
+    debug boot could not reproduce the disk-only i386 crash it was started to catch.
+    Both launchers now call vm.temp_disk_args with the arch spelling they hold."""
+    monkeypatch.delenv("VIBEOS_QEMU_TEMP_DISK", raising=False)
+    monkeypatch.setattr(vm, "make_temp_disk", lambda p: None)
+    assert "ide-hd,drive=tempdisk" in vm.temp_disk_args(arch, tmp_path)

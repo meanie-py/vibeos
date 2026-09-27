@@ -1701,6 +1701,48 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         SehPocRun();
     }
 
+    // Per-boot tripwire for ntkrnl_sys::seh (ntoskrnl/sehtry.c): real try/except and
+    // try/finally around RUST bodies, on all three arches. A raise two Rust frames
+    // below must run the finally (abnormal) during the unwind and then land in the
+    // outer handler with its code; the normal path must run the finally once, not
+    // abnormal. i386 is the new ground here: its catch is a hand-built fs:[0] frame.
+    {
+        use ntkrnl_sys::seh::*;
+        const CODE: i32 = 0xE0DEAD02u32 as i32;
+        let mut trace: u32 = 0;
+        let caught = try_except(
+            &mut trace,
+            |t| {
+                try_finally(
+                    t,
+                    |t| {
+                        *t |= 1;
+                        ExRaiseStatus(CODE);
+                    },
+                    |t, abnormal| *t |= if abnormal { 2 } else { 4 },
+                )
+            },
+            |_, pointers| {
+                if exception_code(pointers) == CODE {
+                    EXCEPTION_EXECUTE_HANDLER
+                } else {
+                    EXCEPTION_CONTINUE_SEARCH
+                }
+            },
+        );
+        let mut normal: u32 = 0;
+        try_finally(&mut normal, |t| *t |= 1, |t, abnormal| *t |= if abnormal { 2 } else { 4 });
+        let pass = caught == Err(CODE) && trace == 3 && normal == 5;
+        crate::dbg_print!(
+            b"[SEH-TRY] rust try/except+finally: caught=%d code=0x%x trace=%u normal=%u (%s)\n\0",
+            caught.is_err() as i32,
+            caught.err().unwrap_or(0),
+            trace,
+            normal,
+            if pass { b"PASS\0".as_ptr() } else { b"FAIL\0".as_ptr() }
+        );
+    }
+
     // Per-boot tripwire for the FAULT-TOLERANT COPY (ntoskrnl/kmsafecopy.c).
     // SehPocRun above only proves a *software* raise dispatches; safe_copy_* depends
     // on a real HARDWARE page fault being caught (KiPageFault -> MmAccessFault ->

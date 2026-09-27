@@ -272,11 +272,20 @@ pub unsafe fn ExInterlockedInsertTailList(
 #[cfg(not(target_arch = "x86"))]
 pub use crate::ddk::ExInterlockedInsertTailList;
 
-// MmGetSystemAddressForMdlSafe is a FORCEINLINE (wdm.h) that maps an MDL into
-// system space via MmMapLockedPagesSpecifyCache with MmCached + the given
-// priority. Drivers call it with (Mdl, Priority).
+// MmGetSystemAddressForMdlSafe is a FORCEINLINE (wdm.h): an MDL that is already
+// mapped, or that describes nonpaged pool (MmBuildMdlForNonPagedPool), already
+// has its system address in MappedSystemVa; only otherwise does it map, via
+// MmMapLockedPagesSpecifyCache with MmCached + the given priority. Mapping
+// unconditionally (as this once did) leaks a system mapping on every call and
+// overwrites MappedSystemVa, and the MDL is later freed still mapped - usbport
+// calls it per transfer, so every USB poll leaked one.
 #[inline(always)]
 pub unsafe fn MmGetSystemAddressForMdlSafe(Mdl: PMDL, Priority: _MM_PAGE_PRIORITY) -> PVOID {
+    const MDL_MAPPED_TO_SYSTEM_VA: i16 = 0x0001;
+    const MDL_SOURCE_IS_NONPAGED_POOL: i16 = 0x0004;
+    if (*Mdl).MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+        return (*Mdl).MappedSystemVa;
+    }
     // MmCached == 1 (MEMORY_CACHING_TYPE). BugCheckOnFailure = 0 (FALSE).
     MmMapLockedPagesSpecifyCache(
         Mdl,

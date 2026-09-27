@@ -798,6 +798,12 @@ doing.
    `skip` with a reason when it declines, so an unstaged tree is silent rather
    than red. With FEX staging going default-on (above), arm64 stops being the
    conditional case.
+   **The merge queue was that unstaged tree** — its integration worktree had no
+   `build-fex-hello/`, so every batch skipped the amd64 ladder. Fixed 2026-09-26:
+   `build --arch amd64` builds absent/stale guests itself (`wow64-guests` stage, a
+   loud skip when there is no `build-i386` to link against), and the staging
+   CMake depends on each guest's nearest existing directory, because CMake drops a
+   configure dependency on a file that does not exist yet.
 2. **Measure guest `CreateProcess`** on today's tree. Gate item between "runs
    applets" and "runs an installer".
 3. **Registry redirection.** A silent wrong answer outranks a missing feature.

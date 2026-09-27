@@ -447,9 +447,14 @@ def command(args, repo: Path) -> int:
             raise CheckpointError("Checkpoint store must be outside Windows temporary staging")
         if any(
             os.environ.get(key)
-            for key in ("VIBEOS_QEMU_RR", "VIBEOS_QEMU_USB_DISK", "VIBEOS_QEMU_EXTRA_ARGS")
+            for key in (
+                "VIBEOS_QEMU_RR",
+                "VIBEOS_QEMU_USB_DISK",
+                "VIBEOS_QEMU_XHCI",
+                "VIBEOS_QEMU_EXTRA_ARGS",
+            )
         ):
-            raise CheckpointError("Unset RR, USB_DISK and EXTRA_ARGS for checkpoint commands")
+            raise CheckpointError("Unset RR, USB_DISK, XHCI and EXTRA_ARGS for checkpoint commands")
         if args.checkpoint_verb == "capture":
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.name):
                 raise CheckpointError("Name must contain only letters, digits, _, . and -")

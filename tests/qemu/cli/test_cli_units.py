@@ -4092,7 +4092,7 @@ def test_gate_cohab_gap_blocks_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gate_mod,
         "_build_once",
-        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+        lambda repo, run, arch, args, **kw: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
     )
     monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
     monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
@@ -4124,7 +4124,7 @@ def test_gate_cohab_needs_both_a_build_and_the_lint_opt_in(tmp_path, monkeypatch
     monkeypatch.setattr(
         gate_mod,
         "_build_once",
-        lambda repo, run, arch, args: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
+        lambda repo, run, arch, args, **kw: {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01},
     )
     ran: list = []
     monkeypatch.setattr(gate_mod, "_cohab_once", lambda *a, **k: ran.append(1))
@@ -4359,7 +4359,7 @@ def test_gate_runs_source_once_after_build_matrix_and_requires_every_partition(
     early_started = threading.Event()
     builds_done = threading.Event()
 
-    def build(repo, run, arch, args):
+    def build(repo, run, arch, args, **kw):
         assert early_started.wait(5), "early source checks must not wait for builds"
         built.add(arch)
         if len(built) == 3:
@@ -5530,8 +5530,12 @@ def test_gate_builds_are_submitted_concurrently(tmp_path, monkeypatch):
     lock = threading.Lock()
     barrier = threading.Barrier(3, timeout=10)
 
-    def fake_build(repo, run, arch, args):
+    def fake_build(repo, run, arch, args, **kw):
         nonlocal live, peak
+        if kw.get("restage"):
+            # The amd64 WoW64 restage runs AFTER i386 by design, so it is not
+            # part of the concurrent phase this test measures.
+            return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
         with lock:
             live += 1
             peak = max(peak, live)
@@ -5570,7 +5574,7 @@ def test_gate_failed_build_skips_that_arch_but_others_still_smoke(tmp_path, monk
     monkeypatch.setattr(
         gate_mod,
         "_build_once",
-        lambda repo, run, arch, args: {
+        lambda repo, run, arch, args, **kw: {
             "arch": arch,
             "ok": arch != "arm64",
             "exit": 0 if arch != "arm64" else 1,
@@ -5907,6 +5911,253 @@ def test_queue_resolve_always_leaves_a_verdict(queue_repo):
     assert not q_mod.git_ok(repo, "rev-parse", "--verify", sub.ref)
 
 
+def test_withdraw_takes_only_this_lanes_submissions_out_of_line(queue_repo):
+    """upstream-sync (2026-09-26) could not step aside: its cold gate sat at the head of the
+    queue for ~80 minutes. Withdrawing must remove ITS submissions and leave a verdict, and
+    must not touch anyone else's place in line."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wd")
+    withdrawn, busy = q_mod.withdraw(repo, lane="lane-a")
+    assert [s.seq for s in withdrawn] == [subs[0].seq] and busy == []
+    assert [s.lane for s in q_mod.pending(repo)] == ["lane-b"]
+    rec = q_mod.results(repo, lane="lane-a")[0]
+    assert rec["outcome"] == "withdrawn"
+    assert not q_mod.git_ok(repo, "rev-parse", "--verify", subs[0].ref)
+
+
+def test_withdraw_leaves_a_submission_that_is_already_being_gated(queue_repo):
+    """Its merge is in the tree being gated; pulling it out would push a tree nobody gated."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wf")
+    assert q_mod.take(repo, [subs[0]]) == [subs[0]]
+    withdrawn, busy = q_mod.withdraw(repo, lane="lane-a")
+    assert withdrawn == [] and [s.seq for s in busy] == [subs[0].seq]
+    assert len(q_mod.pending(repo)) == 2
+    q_mod.release_inflight(repo, [subs[0]])
+    assert q_mod.read_inflight(repo) == {}
+
+
+def test_evict_kicks_back_every_other_lane_and_keeps_mine(queue_repo):
+    repo, _ = queue_repo
+    a, bsub = _two_queued(repo, "ev")
+    evicted, busy = q_mod.evict(repo, reason="merge origin/master and resubmit", keep_lane="lane-a")
+    assert [s.seq for s in evicted] == [bsub.seq] and busy == []
+    assert [s.seq for s in q_mod.pending(repo)] == [a.seq]
+    rec = q_mod.results(repo, lane="lane-b")[0]
+    assert rec["outcome"] == "evicted" and "merge origin/master" in rec["reason"]
+
+
+def test_evict_leaves_what_a_live_conductor_is_gating(queue_repo):
+    repo, _ = queue_repo
+    _, bsub = _two_queued(repo, "ei")
+    q_mod.take(repo, [bsub])
+    evicted, busy = q_mod.evict(repo, reason="r", keep_lane="lane-a")
+    assert evicted == [] and [s.seq for s in busy] == [bsub.seq]
+
+
+def test_land_evict_refuses_unless_this_lane_holds_the_line(queue_repo, tmp_path, monkeypatch):
+    """Eviction mid-drain would race a conductor taking a batch; and clearing everyone's
+    work must be a deliberate, visible act, which is what holding the line is."""
+    repo, _ = queue_repo
+    _two_queued(repo, "eh")
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    monkeypatch.setattr(q_mod, "lane_id", lambda r: "lane-me")
+    assert land_mod._evict(types.SimpleNamespace(evict="clear"), repo) != 0
+    assert len(q_mod.pending(repo)) == 2
+    q_mod.set_hold(repo, lane="lane-me", reason="landing the fix")
+    assert land_mod._evict(types.SimpleNamespace(evict="clear"), repo) == 0
+    assert q_mod.pending(repo) == []
+
+
+def test_take_drops_what_was_withdrawn_after_the_queue_was_read(queue_repo):
+    """The conductor reads the queue, then takes a batch. A withdrawal in between must win:
+    the conductor must not gate (and land) something its lane has stepped back from."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wt")
+    q_mod.withdraw(repo, lane="lane-a")
+    assert [s.seq for s in q_mod.take(repo, subs)] == [subs[1].seq]
+
+
+def test_a_dead_conductors_inflight_record_does_not_block_a_withdrawal(queue_repo, monkeypatch):
+    """A conductor killed mid-batch leaves INFLIGHT.json behind. Its submissions are still
+    queued and will be redone, so they must be withdrawable, not stuck as 'being gated'."""
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "wz")
+    q_mod.take(repo, [subs[0]])
+    monkeypatch.setattr(q_mod, "_pid_alive", lambda pid, since=None: False)
+    withdrawn, busy = q_mod.withdraw(repo, lane="lane-a")
+    assert [s.seq for s in withdrawn] == [subs[0].seq] and busy == []
+
+
+class _Train:
+    """Doubles for one pipelined drain: records what each car was merged onto, gated as,
+    and judged with. `landed` decides whether the lead car reached master whole."""
+
+    def __init__(self, monkeypatch, tmp_path, *, lead_ok=True, landed=True, follow_conflict=None):
+        self.events: list[str] = []
+        self.onto: dict[str, str] = {}
+        self.judged: dict[str, bool] = {}
+        self.landed = landed
+        wts = {0: tmp_path / "int-1", 1: tmp_path / "int-2"}
+        for w in wts.values():
+            w.mkdir(exist_ok=True)
+        monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r, slot=0: wts[slot])
+
+        def prepare(repo, wt, subs, log, *, onto="origin/master", defer_conflicts=False):
+            name = wt.name
+            self.onto[name] = onto
+            conflicted = [s for s in subs if s.lane == follow_conflict]
+            if conflicted and not defer_conflicts:
+                raise AssertionError("a follower's conflict must be deferred")
+            merged = [s for s in subs if s not in conflicted]
+            res = q_mod.BatchResult(
+                ok=False, tip=f"tip-{name}", merged=merged, conflicted=conflicted
+            )
+            return res, merged
+
+        def gate(wt, log, retries=2):
+            time.sleep(0.05)
+            self.events.append(f"gated {wt.name}")
+            ok = lead_ok if wt.name == "int-1" else True
+            return q_mod.GateVerdict(ok, "" if ok else "BUGCHECK", "/tmp/art", "")
+
+        def judge(repo, wt, subs, res, verdict, log, *, retries=2, base):
+            self.events.append(f"judged {wt.name}")
+            self.judged[wt.name] = verdict.ok
+
+        monkeypatch.setattr(q_mod, "prepare_car", prepare)
+        monkeypatch.setattr(q_mod, "gate_car", gate)
+        monkeypatch.setattr(q_mod, "judge_car", judge)
+        monkeypatch.setattr(q_mod, "_landed_exactly", lambda repo, tip: self.landed)
+
+
+def test_pipeline_gates_the_next_car_on_top_of_the_car_ahead(queue_repo, monkeypatch, tmp_path):
+    """The merge train: while car A gates, car B is merged onto A's tip and gated too, so
+    B's verdict is about exactly the master A will leave behind."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pl")
+    t = _Train(monkeypatch, tmp_path)
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert t.onto == {"int-1": "origin/master", "int-2": "tip-int-1"}
+    assert sorted(e for e in t.events if e.startswith("gated")) == ["gated int-1", "gated int-2"]
+    judged = [e for e in t.events if e.startswith("judged")]
+    assert judged == ["judged int-1", "judged int-2"], "A must be judged (pushed) before B"
+
+
+def test_pipeline_discards_the_followers_verdict_when_the_car_ahead_did_not_land(
+    queue_repo, monkeypatch, tmp_path
+):
+    """B was gated against master+A. If A is red (split, partly landed, requeued), that
+    tree never exists, so B must be neither landed nor rejected -- it stays queued."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pd")
+    t = _Train(monkeypatch, tmp_path, lead_ok=False, landed=False)
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert "gated int-2" in t.events, "the follower's gate still has to finish (joined)"
+    assert "judged int-2" not in t.events
+    assert [s.seq for s in q_mod.pending(repo)] == [lead.seq, follow.seq]
+
+
+def test_a_followers_conflict_with_an_unlanded_car_is_not_held_against_it(
+    queue_repo, monkeypatch, tmp_path
+):
+    """B conflicting with A's code is only a real conflict if A lands."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pc")
+    _Train(monkeypatch, tmp_path, landed=False, follow_conflict="lane-b")
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert follow.seq in [s.seq for s in q_mod.pending(repo)]
+    assert q_mod.results(repo, lane="lane-b") == []
+
+
+def test_a_followers_conflict_is_rejected_once_the_car_ahead_is_on_master(
+    queue_repo, monkeypatch, tmp_path
+):
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pr")
+    t = _Train(monkeypatch, tmp_path, landed=True, follow_conflict="lane-b")
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    rec = q_mod.results(repo, lane="lane-b")[0]
+    assert rec["outcome"] == "rejected" and rec["classification"] == "CONFLICT"
+    assert "judged int-2" not in t.events, "nothing was left to judge in car B"
+
+
+def test_a_starved_pipelined_gate_requeues_the_follower_without_halting(
+    queue_repo, monkeypatch, tmp_path
+):
+    """Two gates at once contend for the host. A follower whose gate could not render a
+    verdict goes again later as a lead; it must not stop a train whose lead just landed."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "pi")
+    t = _Train(monkeypatch, tmp_path)
+
+    def gate(wt, log, retries=2):
+        ok = wt.name == "int-1"
+        return q_mod.GateVerdict(ok, "" if ok else "HOST_STARVED", "/tmp/art", "")
+
+    monkeypatch.setattr(q_mod, "gate_car", gate)
+    q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert "judged int-2" not in t.events
+    assert follow.seq in [s.seq for s in q_mod.pending(repo)]
+
+
+def test_a_halting_lead_still_joins_the_followers_gate(queue_repo, monkeypatch, tmp_path):
+    """No gate may outlive the conductor: the next one resets the same worktree."""
+    repo, _ = queue_repo
+    lead, follow = _two_queued(repo, "ph")
+    t = _Train(monkeypatch, tmp_path)
+
+    def judge(repo, wt, subs, res, verdict, log, *, retries=2, base):
+        raise q_mod.Inconclusive("host starved")
+
+    monkeypatch.setattr(q_mod, "judge_car", judge)
+    with pytest.raises(q_mod.Inconclusive):
+        q_mod._pipelined(repo, [lead], [follow], lambda m: None, retries=0)
+    assert "gated int-2" in t.events
+
+
+def test_drain_pipelines_the_second_car_and_releases_both(queue_repo, monkeypatch, tmp_path):
+    repo, _ = queue_repo
+    subs = _two_queued(repo, "pq")
+    monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r, slot=0: tmp_path)
+    seen = []
+
+    def pipelined(repo_, lead, follower, log, *, retries):
+        seen.append(([s.lane for s in lead], [s.lane for s in follower]))
+        assert set(q_mod.read_inflight(repo_)) == {s.seq for s in subs}
+        for s in lead + follower:
+            q_mod.resolve(repo_, s, outcome="landed", landed_as="x")
+
+    monkeypatch.setattr(q_mod, "_pipelined", pipelined)
+    q_mod.drain(repo, lambda m: None, cap=1, depth=2)
+    assert seen == [(["lane-a"], ["lane-b"])]
+    assert q_mod.read_inflight(repo) == {}
+
+
+def test_depth_one_is_the_serial_train(queue_repo, monkeypatch, tmp_path):
+    repo, _ = queue_repo
+    _two_queued(repo, "ps")
+    monkeypatch.setattr(q_mod, "ensure_integration_worktree", lambda r, slot=0: tmp_path)
+    monkeypatch.setattr(q_mod, "_pipelined", lambda *a, **k: pytest.fail("pipelined at depth 1"))
+    batches = []
+
+    def serial(repo_, wt, subs, log, *, retries=2, base=None):
+        batches.append([s.lane for s in subs])
+        for s in subs:
+            q_mod.resolve(repo_, s, outcome="landed", landed_as="x")
+
+    monkeypatch.setattr(q_mod, "land_subset", serial)
+    q_mod.drain(repo, lambda m: None, cap=1, depth=1)
+    assert batches == [["lane-a"], ["lane-b"]]
+
+
+def test_a_second_integration_tree_is_protected_from_prune_too():
+    assert q_mod.is_integration_dirname("vibeos-integration")
+    assert q_mod.is_integration_dirname("vibeos-integration-2")
+    assert not q_mod.is_integration_dirname("vibeos-integration-x")
+    assert not q_mod.is_integration_dirname("vibeos-integrations")
+
+
 def test_queue_conflicting_submission_is_bounced_not_resolved(queue_repo, monkeypatch):
     """A conflict is the lane's intent to reconcile, never the conductor's to guess. The rest
     of the batch must still proceed."""
@@ -5962,7 +6213,7 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
 
     gated: list[tuple[str, ...]] = []
 
-    def fake_build(repo_, wt_, batch, log):
+    def fake_build(repo_, wt_, batch, log, **_k):
         return q_mod.BatchResult(ok=False, tip="t" * 40, merged=list(batch), conflicted=[])
 
     def fake_gate(wt_, log, retries=2):
@@ -5973,7 +6224,7 @@ def test_queue_red_batch_splits_and_spares_the_innocent(queue_repo, monkeypatch)
             ok, "" if ok else "BUGCHECK", "/tmp/art", "smoke:amd64: BUGCHECK 0x50"
         )
 
-    def tracking_build(repo_, wt_, batch, log):
+    def tracking_build(repo_, wt_, batch, log, **_k):
         gated.append(tuple(s.lane for s in batch))
         return fake_build(repo_, wt_, batch, log)
 
@@ -6035,7 +6286,7 @@ def _stamp_scenario(repo, monkeypatch, *, lanes=("a", "b"), dirt="", stages=None
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod,
@@ -6209,7 +6460,7 @@ def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch)
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="f" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod,
@@ -6691,7 +6942,7 @@ def test_queue_red_base_rejects_nobody_and_halts_the_train(queue_repo, monkeypat
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="e" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="e" * 40, merged=list(b)),
     )
     # EVERYTHING is red, base included — the honest verdict is "not their fault".
     monkeypatch.setattr(
@@ -6721,7 +6972,7 @@ def test_queue_red_base_still_convicts_a_fault_the_base_passes(queue_repo, monke
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
     )
     seen = []
 
@@ -6766,7 +7017,7 @@ def test_queue_red_base_does_not_convict_a_SMOKE_fault_it_happens_to_pass(queue_
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="9" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="9" * 40, merged=list(b)),
     )
     seen = []
 
@@ -6801,7 +7052,7 @@ def test_queue_red_base_does_not_convict_a_stage_the_base_never_ran(queue_repo, 
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="8" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="8" * 40, merged=list(b)),
     )
     seen = []
 
@@ -6830,7 +7081,7 @@ def test_queue_red_batch_with_green_base_rejects_the_guilty(queue_repo, monkeypa
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="d" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod,
@@ -6871,7 +7122,7 @@ def test_queue_inconclusive_gate_requeues_instead_of_rejecting(queue_repo, monke
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="c" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="c" * 40, merged=list(b)),
     )
     gates = []
     monkeypatch.setattr(
@@ -6897,7 +7148,7 @@ def test_queue_empty_classification_is_inconclusive(queue_repo, monkeypatch):
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="b" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="b" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
         q_mod, "gate_batch", lambda w, log, retries=2: q_mod.GateVerdict(False, "", "", "")
@@ -6917,7 +7168,7 @@ def test_queue_rejection_names_what_it_was_gated_against(queue_repo, monkeypatch
     monkeypatch.setattr(
         q_mod,
         "build_batch",
-        lambda r, w, b, log: q_mod.BatchResult(ok=False, tip="a" * 40, merged=list(b)),
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="a" * 40, merged=list(b)),
     )
     # full batch red; first half green (lands); second half red (genuinely rejected)
     seen = []
@@ -7771,14 +8022,19 @@ def test_ladder_all_pass_is_clean():
     assert ladder_mod.summary(_ladder_log()).startswith(f"{n}/{n} guests PASS")
 
 
-def test_ladder_gui32_pass_code_is_600e_not_600d():
+def test_ladder_gui32_pass_code_is_600e_and_600d_is_an_upgrade():
     """gui32 is the GDI/draw rung and reports its own verdict code. Asserting a
     blanket 0x600D would make the check permanently red for a healthy boot --
-    which is how a gate gets disabled."""
+    which is how a gate gets disabled. So it is GRADED on 0x600E (drew, readback
+    mismatched). But 0x600D is Gui32.c's GUI32_PASS -- drew AND read it back --
+    and this test used to demand that be red; once desktop readback started
+    working, that turned the rung red for improving. It is accepted as a named
+    upgrade (ladder.ALSO_ACCEPTED); a real error code still fails."""
     from tests.qemu.cli import ladder as ladder_mod
 
     assert ladder_mod.LADDER["gui32"] == 0x600E
-    bad = ladder_mod.check(_ladder_log({"gui32": 0x600D}))
+    assert ladder_mod.check(_ladder_log({"gui32": 0x600D})) is None
+    bad = ladder_mod.check(_ladder_log({"gui32": 0xBAD1}))
     assert bad is not None and "gui32" in bad["salient"][0]
 
 
@@ -9178,6 +9434,50 @@ def test_source_lint_preflight_fails_OPEN_on_a_scanner_error(tmp_path, monkeypat
     assert [s.status for s in run.stages] == ["ok", "warn"]
 
 
+def test_a_crashed_scanner_does_not_excuse_a_real_finding_beside_it(tmp_path, monkeypatch):
+    """2026-09-26: msvcrt-homebrew's source-deferred partition reported
+    `scan_const_contradictions: 4 new` next to a marshalgen crash (stale build dir). The
+    partition classified as SCANNER_ERROR, the preflight failed open, and the finding
+    rode into the queue three times. Fail open for the CRASH only."""
+    run = _src_lint_run(tmp_path)
+    _stub_src_lint_once(
+        land_mod,
+        monkeypatch,
+        {
+            "source-early": _src_lint_result(True),
+            "source-deferred": _src_lint_result(
+                False, classification="SCANNER_ERROR", salient="marshalgen", exit_code=1
+            ),
+        },
+    )
+    part = run.dir / "preflight-lint-source-deferred" / "x-check-source-deferred-all"
+    part.mkdir(parents=True)
+    (part / "summary.json").write_text(
+        json.dumps(
+            {
+                "stages": [
+                    {
+                        "name": "scan_const_contradictions",
+                        "status": "fail",
+                        "detail": "4 new",
+                        "salient": ["sdk/lib/rust/ucrt-rust/src/findfile.rs: ENOENT = 0x2"],
+                    },
+                    {
+                        "name": "marshalgen_audit",
+                        "status": "fail",
+                        "detail": "SCANNER_ERROR: scanner did not complete; coverage unavailable",
+                    },
+                ]
+            }
+        )
+    )
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._source_lint_preflight(tmp_path, run, _SrcLintArgs())
+    msg = str(ei.value)
+    assert "scan_const_contradictions: 4 new" in msg and "ENOENT" in msg
+    assert "marshalgen_audit" not in msg
+
+
 def test_source_lint_preflight_honours_skip_lint(tmp_path, monkeypatch):
     run = _src_lint_run(tmp_path)
 
@@ -9538,3 +9838,100 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
     vm.save_snapshot("ready")
     vm.restore_snapshot("ready")  # the autouse fixture, before the first test
     assert "[UCRTDIFF] done" in vm._boot_output
+
+
+def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):
+    """The banner said win32k.sys+0x1234 and triage resolved 0x400000+0x1234 in
+    the NTOSKRNL index -- some kernel symbol always sorts below any address, so
+    that named a real-looking, wrong function. A driver RVA goes to the driver's
+    own symbols, and an unindexed driver says so instead of guessing."""
+    serial = (
+        "*** BUGCHECK: 0x0000003B (0xc0000005, 0xfffff96000011234, 0x0, 0x0)\n"
+        "***   P2 = win32k.sys+0x1234\n"
+    )
+    called = []
+    monkeypatch.setattr(triage, "_resolve_addr", lambda *a, **k: called.append(a) or "KERNEL")
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert called == []
+    assert out is not None and "win32k.sys+0x1234" in out and "not in the amd64 user index" in out
+
+    (tmp_path / "qemu").mkdir()
+    (tmp_path / "qemu" / "modules-amd64.tsv").write_text(
+        "0000000000010000\t0000000000672000\twin32k.sys\tbuild-amd64/win32ss/win32k.sys\tshared\n"
+    )
+    seen = {}
+
+    def _resolve(repo, arch, addr, want_module=None):
+        seen.update(addr=addr, want=want_module)
+        return "win32k.sys!Foo+0x4"
+
+    from tests.qemu.cli import symbolize
+
+    monkeypatch.setattr(symbolize, "resolve", _resolve)
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert seen == {"addr": 0x10000 + 0x1234, "want": "win32k.sys"}
+    assert out is not None and out.endswith("win32k.sys!Foo+0x4")
+
+
+def test_the_kernel_flavor_comes_from_the_banner_module(tmp_path, monkeypatch):
+    serial = "***   P2 = ntkrnlmp.exe+0x3788\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
+    got = {}
+    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0xfffff80042193788")
+    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
+    triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x3788)
+
+
+def test_an_mp_kernel_listed_as_ntoskrnl_still_resolves_against_ntkrnlmp(tmp_path, monkeypatch):
+    """The loader lists ntkrnlmp.exe under the name ntoskrnl.exe, so the i386 banner
+    reads `ntoskrnl.exe+RVA` on an MP boot. Keying the flavor on that name alone
+    resolved every i386 MP fault against the UP binary; freeldr's load line decides."""
+    serial = (
+        "[FLDR] load multi(0)disk(0)cdrom(0)\\reactos\\system32\\ntkrnlmp.exe\n"
+        "***   P2 = ntoskrnl.exe+0x1262d8\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
+    )
+    got = {}
+    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0x805eb2d8")
+    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
+    triage.symbolicate_pc(tmp_path, "i386", serial)
+    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x1262D8)
+
+
+def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatch):
+    """amd64 stages build-i386's SysWOW64 set at configure time. Built BESIDE a
+    cold i386 build it read a tree with no kernel32.dll and failed its closure
+    (merge queue, 2026-09-26). So the concurrent amd64 build defers the staging,
+    a warm restage runs after i386, and amd64 smokes only on the restaged media."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    order: list = []
+    lock = threading.Lock()
+
+    def build(repo, run, arch, args, defer_wow64=False, restage=False):
+        with lock:
+            order.append((arch, defer_wow64, restage))
+        if arch == "i386":
+            time.sleep(0.2)  # i386 finishes LAST: the restage must still wait for it
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    smoked: list = []
+    base_smoke = _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+
+    def smoke(repo, arch, root, extra):
+        with lock:
+            smoked.append((arch, [o for o in order if o[2]]))
+        return base_smoke(repo, arch, root, extra)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_smoke_once", smoke)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(ok=True))
+    gate_mod.gate(_gate_args(no_build=False, no_net=True), tmp_path)
+
+    assert ("amd64", True, False) in order, "the concurrent amd64 build must defer staging"
+    restages = [o for o in order if o[2]]
+    assert restages == [("amd64", False, True)]
+    assert order.index(restages[0]) > order.index(("i386", False, False))
+    amd64_smoke = [s for s in smoked if s[0] == "amd64"]
+    assert amd64_smoke and amd64_smoke[0][1] == restages, "amd64 smoked before its restage"

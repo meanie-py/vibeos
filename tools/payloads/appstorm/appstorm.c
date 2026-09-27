@@ -197,6 +197,41 @@ static int setup_running(void)
     return found;
 }
 
+/* A cdfs raise, end to end. An empty name part (";1") makes CdInitializeEnumeration raise
+ * STATUS_INVALID_PARAMETER inside CdQueryDirectory, which holds the directory's FCB. With a
+ * real handler (ntkrnl_sys::seh) the query fails ERROR_INVALID_PARAMETER and the finally has
+ * released the FCB; kernel32 then closes the directory, and cdfs cleanup takes that FCB
+ * exclusively, so a leaked lock hangs right here. Under DUMMY_PSEH the raise was a 0x1E.
+ * Only meaningful where the Windows directory is on cdfs (the livecd). */
+static int fs_raise_check(const WCHAR *windir)
+{
+    WCHAR vol[4] = { windir[0], L':', L'\\', 0 }, fsw[16] = L"", pat[MAX_PATH];
+    char fs[16];
+    WIN32_FIND_DATAW fd;
+    HANDLE h, h2;
+    DWORD err;
+    int ok;
+
+    GetVolumeInformationW(vol, NULL, 0, NULL, NULL, NULL, fsw, 16);
+    ascii(fsw, fs, sizeof fs);
+    if (lstrcmpiW(fsw, L"CDFS")) {
+        SAY("fsraise SKIP fs=%s\n", fs);
+        return 1;
+    }
+    wsprintfW(pat, L"%s\\;1", windir);
+    h = FindFirstFileW(pat, &fd);
+    err = GetLastError();
+    if (h != INVALID_HANDLE_VALUE)
+        FindClose(h);
+    wsprintfW(pat, L"%s\\*", windir);
+    h2 = FindFirstFileW(pat, &fd);
+    if (h2 != INVALID_HANDLE_VALUE)
+        FindClose(h2);
+    ok = h == INVALID_HANDLE_VALUE && err == ERROR_INVALID_PARAMETER && h2 != INVALID_HANDLE_VALUE;
+    SAY("fsraise %s err=%lu followup=%d\n", ok ? "PASS" : "FAIL", err, h2 != INVALID_HANDLE_VALUE);
+    return ok;
+}
+
 int main(void)
 {
     int pass = 0, fail = 0, absent = 0;
@@ -209,6 +244,7 @@ int main(void)
     SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
         (GetTickCount() - t0) / 1000);
     SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
+    fs_raise_check(windir) ? pass++ : fail++;
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
         const app_t *a = &apps[k];

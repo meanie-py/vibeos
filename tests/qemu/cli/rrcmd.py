@@ -51,6 +51,7 @@ DEFAULT_ROOT = Path(os.environ.get("VIBEOS_RR_ROOT", Path.home() / "vibeos-rr"))
 _PINNED_ENV = (
     "VIBEOS_QEMU_SMP",
     "VIBEOS_QEMU_USB_DISK",
+    "VIBEOS_QEMU_XHCI",
     "VIBEOS_QEMU_EXTRA_ARGS",
     "VIBEOS_TRIPWIRE",
     "VIBEOS_UP_DEFAULT_BOOT",

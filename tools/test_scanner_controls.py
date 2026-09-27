@@ -414,7 +414,7 @@ pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
 """,
 }
 
-# scan_win64_cfg. user32 before the fix: class.c's `#ifdef _WIN64` index check was
+# scan_cfg_vs_c. user32 before the fix: class.c's `#ifdef _WIN64` index check was
 # translated as amd64-only, so arm64 returned a truncated pointer for GCLP_* indices.
 _WIN64_CFG_BAD = """\
 pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
@@ -431,6 +431,22 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
 }
 """
 _WIN64_CFG_GOOD = _WIN64_CFG_BAD.replace('target_arch = "x86_64"', 'target_pointer_width = "64"')
+
+# The same scanner's no-C half: an orphaned cfg (its fastcall twin deleted) stacked onto
+# the next item ANDs to "never", compiling RtlPrefetchMemoryNonTemporal out on every arch.
+_DEAD_CFG_BAD = """\
+#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+"""
+_DEAD_CFG_GOOD = """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+#[cfg(all(target_arch = "x86_64", target_os = "windows"))]
+pub fn allowed() {}
+"""
 
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
@@ -582,6 +598,21 @@ pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
 }
 """
 
+# scan_cdecl_alias. Seeded from fastfat's rust_cohab_forceinline.c (2026-09-26): the
+# bare cdecl name aliased onto the stdcall body double-pops the arguments. The GOOD side
+# keeps an @0 alias (sound: both conventions are the same code) and a real thunk.
+_CDECL_ALIAS_BAD = r"""
+__asm__(".globl _KeInitializeSpinLock\n"
+        ".set _KeInitializeSpinLock, _KeInitializeSpinLock@4\n");
+"""
+_CDECL_ALIAS_GOOD = r"""
+__asm__(".globl _KeGetCurrentProcessorNumber\n"
+        ".set _KeGetCurrentProcessorNumber, _KeGetCurrentProcessorNumber@0");
+__asm__(".globl _KeInitializeSpinLock\n_KeInitializeSpinLock:\n"
+        " pushl 4(%esp)\n call _KeInitializeSpinLock@4\n ret\n");
+"""
+
+
 # scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
 # Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
 # and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
@@ -592,6 +623,18 @@ pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(InitFrontEnd as *const ())) };
 """
+# Second shape (classpnp 2026-09-26): the source type SAYS extern "C", so rustc
+# agrees with the fn, and the inferred target re-types it for an NTAPI slot.
+_FNABI_BAD_TYPED = """\
+pub unsafe extern "C" fn Done(d: *mut u8, i: *mut u8, c: *mut u8) -> i32 { 0 }
+pub unsafe fn f(irp: *mut u8) {
+    IoSetCompletionRoutine(
+        irp,
+        Some(core::mem::transmute::<unsafe extern "C" fn(*mut u8, *mut u8, P) -> i32, _>(Done)),
+        core::ptr::null_mut(), 1, 1, 1,
+    );
+}
+"""
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -600,6 +643,9 @@ extern "system" {
 }
 pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+pub unsafe extern "C" fn cexit(code: i32) -> ! { loop {} }
+pub static EXIT: unsafe extern "C" fn(i32) =
+    unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
 """
 
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
@@ -1542,6 +1588,67 @@ pub unsafe fn SaveViewState_body(this: *mut T) -> HRESULT {
 """
 
 
+# scan_duplicate_symbols. 88b04bf7f86: reviving an orphan-cfg'd empty Rust stub put a
+# second i386 `@RtlPrefetchMemoryNonTemporal@8` in the crate whose global_asm! already
+# defines it. rustc can't see into the assembler and --allow-multiple-definition picked
+# the stub: BUGCHECK 0x1E in kmtest RtlMemoryKM. The GOOD tree carries the three shapes
+# that must stay quiet: the stub gated off x86, smp/not-smp feature twins, and a cdecl
+# asm label beside a stdcall Rust fn of the same name (two different i386 symbols).
+_DUP_CARGO = """\
+[package]
+name = "rtlk-rust"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[features]
+smp = []
+"""
+_DUP_ASM = """\
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".globl @RtlPrefetchMemoryNonTemporal@8",
+    "@RtlPrefetchMemoryNonTemporal@8:",
+    "    ret",
+    ".globl _KeGetPcr",
+    "_KeGetPcr:",
+    "    ret",
+);
+"""
+_DUP_BAD = {
+    "rtlk-rust/Cargo.toml": _DUP_CARGO,
+    "rtlk-rust/src/lib.rs": "mod prefetch_asm;\nmod misc;\n",
+    "rtlk-rust/src/prefetch_asm.rs": _DUP_ASM,
+    "rtlk-rust/src/misc.rs": """\
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+""",
+}
+_DUP_GOOD = {
+    "rtlk-rust/Cargo.toml": _DUP_CARGO,
+    "rtlk-rust/src/lib.rs": (
+        'mod prefetch_asm;\n#[cfg(not(target_arch = "x86"))]\nmod misc;\nmod lock;\n'
+    ),
+    "rtlk-rust/src/prefetch_asm.rs": _DUP_ASM,
+    "rtlk-rust/src/misc.rs": """\
+#[no_mangle]
+pub unsafe extern "C" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+""",
+    "rtlk-rust/src/lock.rs": """\
+#[cfg(feature = "smp")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KxAcquireSpinLock(l: *mut usize) { spin(l) }
+#[cfg(not(feature = "smp"))]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KxAcquireSpinLock(_l: *mut usize) {}
+#[no_mangle]
+pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
+""",
+}
+
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_dropped_asserts",
@@ -1735,11 +1842,24 @@ CONTROLS: list[Control] = [
         good=_BOOL_WIDTH_GOOD,
     ),
     Control(
-        name="scan_win64_cfg",
-        script="tools/scan_win64_cfg.py",
+        name="scan_duplicate_symbols",
+        script="tools/scan_duplicate_symbols.py",
         argv=["--lint"],
-        bad={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD},
-        good={"rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD},
+        bad=_DUP_BAD,
+        good=_DUP_GOOD,
+    ),
+    Control(
+        name="scan_cfg_vs_c",
+        script="tools/scan_cfg_vs_c.py",
+        argv=["--lint"],
+        bad={
+            "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD,
+            "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_BAD,
+        },
+        good={
+            "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD,
+            "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_GOOD,
+        },
     ),
     Control(
         name="scan_bitwise_not_bool",
@@ -1795,8 +1915,15 @@ CONTROLS: list[Control] = [
         name="scan_fnptr_abi_transmute",
         script="tools/scan_fnptr_abi_transmute.py",
         argv=["--lint"],
-        bad={"bad.rs": _FNABI_BAD},
+        bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_cdecl_alias",
+        script="tools/scan_cdecl_alias.py",
+        argv=["--lint"],
+        bad={"bridge.c": _CDECL_ALIAS_BAD},
+        good={"bridge.c": _CDECL_ALIAS_GOOD},
     ),
     Control(
         name="scan_wide_byte_copy",
@@ -1949,7 +2076,6 @@ UNCOVERED: dict[str, str] = {
         "each negative control is a shape that made an earlier draft useless (45 findings "
         "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
-    "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_invented_constants": (
         "needs the real tree on BOTH sides: the self-labelled Rust const and the C module "
