@@ -676,6 +676,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same scanner, other oracle: a hand copy whose value matches NO bindgen island's value
+    # for that name. A lone invented copy is invisible above (it has nothing of ours to
+    # disagree with); fsrtl's swapped GenericEqual/GreaterThan was exactly that, and hung
+    # every file open on a FAT volume. Stock is mixed (freeldr's ARC status codes share
+    # errno NAMES) → baseline gates NEW only, and is the triage queue.
+    specs.append(
+        (
+            "scan_const_vs_island",
+            [py, str(scc), "--vs-island"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The ORACLE-BEARING half, and the half the above is blind to by construction:
     # a constant with exactly ONE definition in the tree cannot contradict itself,
     # so a lone wrong value is invisible there forever. This one needs no inference
@@ -1035,6 +1047,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_arg_side_effects",
             [py, str(ase)] if ase.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A committed resource object whose TYPE is a string spelling an RT_* name: llvm-rc's
+    # reading of a keyword it lacks (MESSAGETABLE). The cargo-linked kernel and ntdll ship
+    # such blobs, generated out of band, and a stale one hid every message table in the OS
+    # (FormatMessage failed, notepad's error box read "5") behind green gates. Baseline EMPTY.
+    srn = repo / "tools" / "scan_res_named_types.py"
+    specs.append(
+        (
+            "scan_res_named_types",
+            [py, str(srn)] if srn.is_file() else ["MISSING"],
             "stdout",
         )
     )

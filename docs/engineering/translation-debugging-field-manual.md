@@ -1157,6 +1157,17 @@ was ntoskrnl-only, so a whole driver fleet carried live bombs. The five shapes:
 `cdrom.sys` carried **100** ud2 sites, all on paths boot never hits — which is exactly why
 master was green.
 
+**A sixth shape does not fold at all: two DECLARATIONS, no definition.** fastfat's
+`fileinfo.rs` declared the cdecl cohab thunk `IoGetCurrentIrpStackLocation` as `"system"` while
+`cachesup`/`create`/`dirctrl` said `"C"`. rustc keeps one declaration per symbol per crate, so
+fileinfo's call bound to `_IoGetCurrentIrpStackLocation` (cdecl, caller pops) but was compiled
+with stdcall's bookkeeping (callee pops): `push; call` and no `add esp`, then locals read at
+offsets that assume the pop. `esp` came back 4 bytes off and the next esp-relative load read a
+garbage pointer: i386 BUGCHECK 0x50, P1 nonsense, in a closure body right after the helper
+call, only when notepad saved a file to FAT. The tell in the disassembly is a cdecl call with
+no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
+definition: two answers to one question are already wrong).
+
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
 
@@ -11510,6 +11521,18 @@ introduced at any heap exit — it is an external stray write.**
   kmtest-sweep.exe`. The guest hung inside the taskbar's OnCreate, so explorer never processed
   the StartUp folder that launches the sweep. Zero tests, nothing runnable, `HLT=1` — the whole
   chain, from one absent line.
+- **A user thread stuck in `NtCreateFile` (or any call into a filesystem) is usually queued
+  behind someone else's ERESOURCE: find the OWNER, not the waiter.** `gdb inspect <run>
+  list-threads` → take the `WrResource` thread's ETHREAD → `gdb inspect <run> who-holds
+  <addr>` names the resource, its owner thread, and the code addresses on the owner's kernel
+  stack. The 2026-09-27 amd64 appstorm hang read as "explorer's folder window hangs" and was
+  fsrtl: a wordpad close spun forever in `FsRtlUninitializeFileLock` (a swapped
+  `GenericEqual` constant made every lock undeletable) while fastfat held the volume resource.
+  Two traps the verb now handles: **`WaitReason` and `WaitBlockList` survive the wake**, so a
+  terminated thread still "waits" on its last object (only a wait block still linked on the
+  object's `WaitListHead` is live — an exited hello32 read as a lost wakeup until that check
+  existed); and a DPC-preempted spinner shows `WrDispatchInt`, with its interrupted RIP in the
+  KTRAP_FRAME that `KiDpcInterrupt` left on its stack.
 - **Get a KNOWN-GOOD CONTROL on the same host before believing any number in a hang log.**
   This is what makes the above affordable, and both halves of that same investigation needed it:
   "77% of serial is one error" and "72 threads parked >20s" each read as damning, and a green

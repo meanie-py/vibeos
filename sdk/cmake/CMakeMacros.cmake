@@ -42,10 +42,18 @@ function(add_message_headers _type)
         set(_source_file ${CMAKE_CURRENT_SOURCE_DIR}/${_file})    ## ${_file_name}.mc
         utf16le_convert(${_source_file} ${_converted_file} nobom)
         macro_mc(${_flag} ${_converted_file})
+        if(MSVC)
+            set(_rc_fixup)
+        else()
+            # llvm-rc reads MESSAGETABLE as a type NAME; see mc_rc_numeric_type.cmake.
+            set(_rc_fixup COMMAND ${CMAKE_COMMAND} -DRC_FILE=${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
+                -P ${REACTOS_SOURCE_DIR}/sdk/cmake/mc_rc_numeric_type.cmake)
+        endif()
         add_custom_command(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.h ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
             COMMAND ${COMMAND_MC}
-            DEPENDS "${_converted_file}")
+            ${_rc_fixup}
+            DEPENDS "${_converted_file}" ${REACTOS_SOURCE_DIR}/sdk/cmake/mc_rc_numeric_type.cmake)
         set_source_files_properties(
             ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.h ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
             PROPERTIES GENERATED TRUE)

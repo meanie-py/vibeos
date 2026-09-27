@@ -5,7 +5,7 @@
 # Each app gets a screenshot, shot-NN-<name>.png in the run's artifact dir (shot_prefix below),
 # and a "[APPSTORM] app <name> PASS|FAIL ..." line; FAIL = no window, hung, crashed, error box.
 name: appstorm
-description: launch ~38 stock apps and applets, check each window, screenshot it, close it
+description: launch ~40 stock apps and applets, check each window, screenshot it, close it; then scripted scenarios
 
 build_hint: "tools/payloads/appstorm/build.sh {arch}"
 

@@ -557,8 +557,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 QEMU cannot reproduce app bugs the Pi shows** (OPEN, 2026-09-27). The QEMU
+  arm64 boot uses the hand-curated ramdisk in `qemu/mkramdisk.sh` (140 MB): notepad, cmd,
+  testgui and a few more, but no calc/regedit/control/iexplore -- appstorm reports 36 of 43
+  entries ABSENT there. The Pi image carries them, which is why its iexplore/My Computer
+  failures have no QEMU arm64 repro. Staging the stock apps into the ramdisk (and growing
+  it) closes the gap. Owner: unassigned.
+- **89 hand-written constants disagree with every bindgen island value** (OPEN work queue,
+  2026-09-27). `tools/lint-baseline/scan_const_vs_island.txt`; mixed stock -- freeldr's ARC
+  status codes share errno NAMES legitimately -- but it includes likely real bugs of the
+  class that hung FAT (fsrtl's swapped GenericEqual): fastfat `IRP_MN_COMPLETE_MDL = 3`
+  (C: 6), kernel32 `LC_*`, cdfs/fastfat `MDL_PARTIAL_HAS_BEEN_MAPPED = 4` (C: 0x20). Burn
+  down against the C headers; NEW entries already fail `vibeos-cli check`.
 - **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
-  access-violation case OPEN (handed to the Pi4 lane)** (2026-09-27). The per-boot
+  access violation too** (2026-09-27). The per-boot
   `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation
   and a pool-tracker breakpoint, each under try_finally inside try_except) runs everywhere.
   **i386 FIXED:** a kernel-mode int3 is dispatched with interrupts still disabled and the
@@ -569,13 +581,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and only x0 told them apart. DebugService now uses `#0xF002` (Windows ARM64's service
   immediate), a kernel `#0xF000` is dispatched as STATUS_BREAKPOINT, and an unhandled one
   steps past the brk and continues (the amd64 policy). User-mode brk is still skipped, and
-  `#0xF001` (assertion) is unchanged. **arm64 AV OPEN:** VA 0x10 is mapped: the loader's
-  low identity map stays live (PAR_EL1 for 0x10 = PA page 0, TTBR0 == TTBR1), so a kernel
-  NULL read returns flash contents instead of faulting. The fix is to unmap at least the
-  0-64K guard once the kernel no longer needs loader identity VAs. It is with the Pi4 lane,
-  because on the Pi4 PA 0 holds the armstub spin table and hal-rust mpboot.rs may use it
-  through that map. The self-test skips the AV case on arm64 and says so; drop the skip
-  when it lands.
+  `#0xF001` (assertion) is unchanged. **arm64 AV FIXED (2026-09-27):** VA 0x10 read physical page 0 through FreeLDR's
+  never-torn-down identity map. `MmFreeLoaderBlock` now unmaps VA 0-64K
+  (`MiUnmapLowGuardArm64`; serial `[MM] arm64: low guard ... MmIsAddressValid(0x10)=0`,
+  QEMU and Pi 4). The Pi4 spin table was not a reason to keep it: APs start by PSCI CPU_ON
+  with their own identity map, and hal-rust never touches PA 0xd8-0xf0.
 - **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
   (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
   gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0

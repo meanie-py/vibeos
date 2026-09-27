@@ -61,10 +61,10 @@ def _decode_tag(tag_bytes: int) -> str | None:
 
 
 def _try_decode(header_addr: int) -> dict | None:
-    ulong1 = _read_u32(header_addr)
+    ulong1 = _pt_read_u32(header_addr)
     if ulong1 is None:
         return None
-    pool_tag = _read_u32(header_addr + 4)
+    pool_tag = _pt_read_u32(header_addr + 4)
     if pool_tag is None:
         return None
 
