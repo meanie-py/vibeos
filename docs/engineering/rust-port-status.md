@@ -1960,7 +1960,9 @@ Essentially the entire boot/smoke driver fleet is Rust. **Two drivers are from-s
 Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack) and `usbxhci.sys`
 (the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26; it
 drives the Raspberry Pi 4's VL805;
-`docs/engineering/usbxhci-design.md`).**
+`docs/engineering/usbxhci-design.md`).** USB mass storage on arm64 (usbstor → classpnp/disk
+→ partmgr → mountmgr → fastfat, all Rust bodies) is first boot-exercised by the xHCI rig's
+stick test, 2026-09-26; before that none of those five was staged on arm64.
 Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —
 `guid.c`/data-TU/stub — so ~90–100% each): all storage class/port/ide
 (uniata, scsiport, classpnp, disk, cdrom, ramdisk, storport, storahci, **buslogic**,

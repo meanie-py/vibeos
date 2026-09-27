@@ -15,6 +15,11 @@ their input reaches the desktop. That holds in QEMU on arm64 at `-smp 1` and `-s
 
 See "The Pi, as built" below.
 
+**USB storage (bulk) works too:** in QEMU a stick behind a hub is read and written from
+the desktop (usbstor → disk → partmgr → mountmgr → fastfat, drive `D:`), and on the Pi
+usbstor and disk.sys bind to the Pico's mass-storage interface. A stick in a blue port
+still needs SuperSpeed (not yet, below).
+
 ## Where it plugs in
 
 The USB stack above the host controller is ReactOS's USB 2.0-era design, already
@@ -112,6 +117,15 @@ sees a USB2 root hub.
   SetEndpointStatus(RUN). Abort turns a TD into No-Ops and moves the dequeue
   pointer past it when it was next.
 
+- **SELECT_INTERFACE replaces live pipes.** usbport opens the new interface's pipes
+  before it closes the old ones, on the same DCIs. So an open whose DCI is still held
+  sets Drop and Add together (4.6.6's replace), and closing a pipe that no longer owns
+  its DCI touches nothing: dropping it would disable the replacement, and the first
+  bulk transfer then never completes. usbstor does exactly this at start.
+- **Storage on arm64** needed its drivers staged (usbstor, classpnp, disk, partmgr,
+  mountmgr). The hive already named them as boot drivers, so without the files the
+  loader dropped them and a stick enumerated with no driver.
+
 ### The Pi, as built
 
 - **Publishing XHC0.** No ACPI bus driver runs on arm64. Instead the HAL's own PnP
@@ -151,10 +165,18 @@ sees a USB2 root hub.
 
 1. **Interrupt polling interval.** Endpoints open with usbport's Period (32 ms for
    usb-kbd), not the descriptor's bInterval; fine for typing, sluggish for a mouse.
-2. **SuperSpeed ports** (a USB 3 root hub, SuperSpeed hubs), bulk-heavy devices
-   (usbstor), isochronous. USB 2.0 hubs and TT work.
-3. **Slot reclamation.** A removed device's slot is freed when the next device appears
-   on the same root port, not at removal.
+2. **SuperSpeed ports** (a USB 3 root hub, SuperSpeed hubs), isochronous. USB 2.0
+   hubs and TT work, and so does bulk. On the Pi a USB 3 stick links up on the VIA
+   hub's SuperSpeed half at cold boot (the hub's USB 3 side hangs off VL805 root
+   ports 2-5), so it is invisible until this lands; plugged in while VibeOS runs it
+   came in over USB 2 once. In QEMU `usb-storage` attached directly to `qemu-xhci`
+   also lands on a USB 3 port, which is why the rig puts it behind a hub.
+3. **Slot reclamation.** usbport does not tell the miniport about removals. A
+   removed device's slot is freed when usbport reuses its address (SET_ADDRESS) or a
+   new device appears at the same place, not at removal. Unplug and replug across hub
+   ports works on the Pi. An endpoint command failing on an unplugged device (its
+   endpoints halt with split-transaction errors) affects only that device, unless
+   the endpoint context still says Running.
 
 ### Rig
 
@@ -165,6 +187,12 @@ would take every keystroke. Proof of the USB path: `[KBDHID] read completion`,
 `[KBDCLASS] first key delivered` and `[WIN32K] RIT first keyboard input` after
 `input-send-event`. The last one matters: kbdclass delivering a key does not mean the
 desktop reads that class device (arm64input used to own `KeyboardClass0`).
+
+`VIBEOS_QEMU_USB_DISK=1` on top adds a `usb-hub` with a `usb-storage` stick behind it:
+a 64 MiB MBR disk with one FAT16 partition, `VIBESTICK`, holding `VIBEOS.TXT`
+(`make_usb_stick_image` in `tests/qemu/vm.py`). `test_usb_stick_read_and_write` has the
+desktop copy that file to `D:\COPY.TXT` and reads the copy back from the image on the
+host.
 
 ## Per-arch facts
 
