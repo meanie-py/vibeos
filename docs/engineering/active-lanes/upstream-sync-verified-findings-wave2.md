@@ -724,6 +724,11 @@ to introduce it, because nothing here is ever typed as `ULONG`/`u32`. **REFUTED*
 fix.
 
 ### (b) PS_JOB_TOKEN_FILTER pack(1) leaking into EJOB, and (c) ARM64 STACK_TRACE_DATABASE padding — INCONCLUSIVE
+
+**(b) RESOLVED 2026-09-27: it WAS frozen in.** `tools/verify_offsets.py` against today's
+headers put `EJOB.UIRestrictionsClass` at 248 where the committed island had 245 (the odd
+offsets are the leaked `pack(1)`), and `PS_JOB_TOKEN_FILTER` likewise. Fixed by
+regenerating ntkrnl-sys; see the roadmap's body-audit entry.
 Both are C **struct-layout** bugs (`#include <pshpack1.h>` / `<poppack.h>` placement, and
 `#ifdef _M_AMD64` vs `#ifdef _WIN64` in header-only C_ASSERTs). Our Rust does not compile these
 headers; struct layouts come from `sdk/lib/rust/ntkrnl-sys/src/bindgen_{amd64,arm64,i386}.rs`,

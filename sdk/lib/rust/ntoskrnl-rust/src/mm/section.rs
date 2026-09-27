@@ -1132,7 +1132,7 @@ unsafe fn MmpDeleteSectionInner(ObjectBody: PVOID) {
 
 unsafe extern "system" fn MmpCloseSection(
     _Process: PEPROCESS, _Object: PVOID, _GrantedAccess: ACCESS_MASK,
-    _ProcessHandleCount: ULONG, _SystemHandleCount: ULONG
+    _ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR, _SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR
 ) {}
 
 #[no_mangle]
