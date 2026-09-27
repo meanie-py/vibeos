@@ -10243,6 +10243,11 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **A PTE attribute the MAIR doesn't mean.** `MI_PAGE_DISABLE_CACHE` set x86 PCD bits that
   selected MAIR slot 0 (Normal WB) on arm64, so the UART and GIC were cached. TCG ignores
   memory attributes. Fixed in `mm.rs` to AttrIndx 1 (Device) / 2 (Normal-NC).
+  The flip side: a caller that disables caching on **RAM**, where x86 PCD only means
+  "don't pollute the cache", now gets Device memory. `MiMapPagesInZeroSpace` did, and the
+  first `dc zva` in `KeZeroPages` alignment-faulted in `MmZeroPageThread` on a Raspberry
+  Pi 4 (BUGCHECK 0x1E, 0x80000002, ESR DFSC 0x21) while QEMU booted green. RAM stays
+  Normal WB on arm64; Device-mapping it also aliases the page's WB mappings.
 - **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
   the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
   invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
