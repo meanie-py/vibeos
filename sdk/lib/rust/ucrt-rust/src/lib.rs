@@ -93,6 +93,8 @@ pub mod mbstring;
 pub mod string_ops;
 #[cfg(feature = "time")]
 pub mod time;
+#[cfg(feature = "stdio")]
+pub mod stdio;
 
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
