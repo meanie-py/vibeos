@@ -813,7 +813,10 @@ def check_force_includes(repo: Path | None = None) -> list[str]:
 
 def main() -> int:
     findings = (
-        check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
+        check_structure()
+        + check_extern_crates()
+        + check_rebuild_lists()
+        + check_archive()
         + check_force_includes()
     )
     bd_fails, bd_notes = check_burndown()

@@ -348,8 +348,8 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
 
     # Exports the reference set defines, as `ref_*`: settled per arch exactly as
     # rename_rules does, by reading the renamed names back out of the reference set.
-    ref_exports = {d[len("ref_"):] for d in ref_defined if d.startswith("ref_")}
-    ref_exports |= {"_" + d[len("_ref_"):] for d in ref_defined if d.startswith("_ref_")}
+    ref_exports = {d[len("ref_") :] for d in ref_defined if d.startswith("ref_")}
+    ref_exports |= {"_" + d[len("_ref_") :] for d in ref_defined if d.startswith("_ref_")}
 
     def bookkeeping(sym: str) -> bool:
         return sym.startswith(_BOOKKEEPING) or sym.startswith("$")
@@ -388,7 +388,11 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
         if bookkeeping(sym) or sym not in ref_exports:
             continue
         # i386 decorates: `_strlen` -> `_ref_strlen`.
-        to = f"_ref_{sym[1:]}" if sym.startswith("_") and f"_ref_{sym[1:]}" in ref_defined else f"ref_{sym}"
+        to = (
+            f"_ref_{sym[1:]}"
+            if sym.startswith("_") and f"_ref_{sym[1:]}" in ref_defined
+            else f"ref_{sym}"
+        )
         if to in ref_defined:
             rules.append((sym, to))
 

@@ -637,12 +637,15 @@ def _initializer_tree(tmp_path: Path, replaced_by_rust: bool) -> Path:
     init = tmp_path / "sdk" / "lib" / "ucrt" / "initializers"
     init.mkdir(parents=True)
     (init / "timeset_initializer.cpp").write_text(
-        'extern "C" _CRTALLOC(".CRT$XIC")  _PIFV const __acrt_timeset_initializer = __acrt_initialize_timeset;\n'
+        'extern "C" _CRTALLOC(".CRT$XIC")  _PIFV const __acrt_timeset_initializer'
+        " = __acrt_initialize_timeset;\n"
     )
     src = tmp_path / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
     src.mkdir(parents=True)
     (src / "timeset.rs").write_text(
-        "crate::force_include!(__acrt_timeset_initializer);\n" if replaced_by_rust else "// nothing\n"
+        "crate::force_include!(__acrt_timeset_initializer);\n"
+        if replaced_by_rust
+        else "// nothing\n"
     )
     return tmp_path
 
