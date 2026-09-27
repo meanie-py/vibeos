@@ -690,6 +690,14 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
                 Some(s) => s,
                 None => return MP_STATUS_NO_RESOURCES,
             };
+            // A device on a root port has its speed in PORTSC, which also
+            // knows SuperSpeed; usbport says high speed for those (roothub.rs).
+            let port_speed = if route == 0 {
+                crate::roothub::read_portsc(x, root_port as u16).map_or(0, |v| (v & PORTSC_SPEED_MASK) >> PORTSC_SPEED_SHIFT)
+            } else {
+                0
+            };
+            let speed = if port_speed != 0 { port_speed } else { psi(p.DeviceSpeed as u32) };
             let (ctx_va, ctx_pa) = dev_ctx(x, slot);
             core::ptr::write_bytes(ctx_va, 0, PAGE);
             dma_clean(ctx_va, PAGE);
@@ -703,8 +711,15 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
             st.tt_port = tt_port;
             st.hub_ports = 0;
             st.hub_ttt = 0;
-            st.speed = psi(p.DeviceSpeed as u32);
-            st.ep0_mps = if p.MaxPacketSize != 0 { p.MaxPacketSize } else { 8 };
+            st.speed = speed;
+            // SuperSpeed EP0 is always 512 bytes (USB 3.2 9.6.1).
+            st.ep0_mps = if speed == SPEED_SUPER {
+                512
+            } else if p.MaxPacketSize != 0 {
+                p.MaxPacketSize
+            } else {
+                8
+            };
             st.max_dci = 1;
             st.ep0_ring.init(ctx_va.add(PAGE), ctx_pa + PAGE as u64);
             core::ptr::write_volatile(x.dcbaa.add(slot as usize), ctx_pa);
