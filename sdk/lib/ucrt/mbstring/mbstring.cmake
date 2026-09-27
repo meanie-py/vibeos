@@ -4,7 +4,6 @@ list(APPEND UCRT_MBSTRING_SOURCES
     mbstring/mbccpy_s.cpp
     mbstring/mbccpy_s_l.cpp
     mbstring/mbclen.cpp
-    mbstring/mbctype.cpp
     mbstring/mbscat_s.cpp
     mbstring/mbscat_s_l.cpp
     mbstring/mbschr.cpp

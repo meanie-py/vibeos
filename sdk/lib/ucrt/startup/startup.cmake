@@ -1,7 +1,6 @@
 
 list(APPEND UCRT_STARTUP_SOURCES
     startup/abort.cpp
-    startup/argv_data.cpp
     startup/argv_parsing.cpp
     startup/argv_wildcards.cpp
     startup/argv_winmain.cpp

@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 745
-  amd64: 745
-  arm64: 742
+  i386: 634
+  amd64: 634
+  arm64: 631
 
 families:
   bits:
@@ -723,3 +723,287 @@ families:
       - _wstat32i64
       - _wstat64
       - _wstat64i32
+
+  locale:
+    replaces:
+      - sdk/lib/ucrt/locale/CompareStringA.cpp
+      - sdk/lib/ucrt/locale/CompareStringW.cpp
+      - sdk/lib/ucrt/locale/ctype.cpp
+      - sdk/lib/ucrt/locale/GetLocaleInfoA.cpp
+      - sdk/lib/ucrt/locale/getqloc_downlevel.cpp
+      - sdk/lib/ucrt/locale/GetStringTypeA.cpp
+      - sdk/lib/ucrt/locale/get_qualified_locale.cpp
+      - sdk/lib/ucrt/locale/glstatus.cpp
+      - sdk/lib/ucrt/locale/initctype.cpp
+      - sdk/lib/ucrt/locale/initmon.cpp
+      - sdk/lib/ucrt/locale/initnum.cpp
+      - sdk/lib/ucrt/locale/inittime.cpp
+      - sdk/lib/ucrt/locale/lcidtoname_downlevel.cpp
+      - sdk/lib/ucrt/locale/LCMapStringA.cpp
+      - sdk/lib/ucrt/locale/LCMapStringW.cpp
+      - sdk/lib/ucrt/locale/lconv_unsigned_char_initialization.cpp
+      - sdk/lib/ucrt/locale/localeconv.cpp
+      - sdk/lib/ucrt/locale/locale_refcounting.cpp
+      - sdk/lib/ucrt/locale/locale_update.cpp
+      - sdk/lib/ucrt/locale/nlsdata.cpp
+      - sdk/lib/ucrt/locale/setlocale.cpp
+      - sdk/lib/ucrt/locale/wsetlocale.cpp
+      - sdk/lib/ucrt/mbstring/mbctype.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, graded as ONE family (the
+      pieces call each other's internals, so they are deleted together): 57
+      locale names -- legacy names and abbreviations, BCP-47 tags with and
+      without code pages, bare code pages, compound LC_ strings, junk -- through
+      setlocale on both sides for every category and NULL, then each accessor's
+      view after every LC_ALL setting (lconv narrow+wide, both code pages,
+      mb_cur_max, the six locale names, pctype/pwctype, mbctype/mbcasemap, and
+      strftime/wcsftime/strcoll/_stricoll/_strlwr/_mbsupr, still Microsoft's on
+      both sides but reading each side's locale data). Plus _create_locale and
+      _wcreate_locale per category with the resulting _locale_t read through the
+      pinned layout, _get_current_locale before and after the global locale
+      moves, _configthreadlocale including a per-thread locale, and _setmbcp over
+      24 code-page steps (932 then 65001, 1252 twice) with its tables. All 18 rows
+      MATCH, dll_fail=0: setlocale n=2256, _wsetlocale 1392, _create_locale 1255,
+      _wcreate_locale 928, _get_current_locale 172, _setmbcp+tables 169 -- 6,934
+      cases. Serial prints what each name resolved to; the guest resolves real
+      locales (German/French/Spanish/Swiss names, de-DE, fr-FR, .OCP -> 437).
+      Two guest limits, identical on Microsoft's side: ReactOS's
+      IsValidLocaleName accepts junk ("junk", "xx-XX"), and LC_CTYPE never
+      leaves 1252 -- .utf8, .932, ja-JP and every UTF-8 tag fail that category
+      -- so setlocale's multibyte/UTF-8 ctype paths are not reached in the guest.
+    note: >
+      A PORT, in five pieces that call each other only through locale_abi.rs,
+      which declares every internal the remaining ~160 ucrt objects call by C
+      name: locale_data (tables and statics, byte- and relocation-compared
+      against Microsoft's objects on all three arches by
+      tools/compare_coff_data.py), locale_init (the four category initializers)
+      and nls_wrappers (the ANSI NLS wrappers), mbctype and qualified_locale
+      (their tables compared the same way), and setlocale (setlocale/_wsetlocale,
+      the _locale_t lifecycle, reference counting, the _LocaleUpdate hooks).
+      Every layout is pinned in locale.rs against offsets measured with the
+      build's own flags. Microsoft's quirks are transcribed and commented, among
+      them: "xyz-8" is UTF-8 for a BCP-47 tag (operator precedence), the UTF-8
+      _setmbcp path clears only the first few mbctype entries, "kok"/"kok-IN" are
+      unreachable by name (the table is out of sort order), and
+      __acrt_GetLocaleInfoA writes a pointer-sized NULL before every result.
+    exports:
+      - ___lc_codepage_func
+      - ___lc_collate_cp_func
+      - ___lc_locale_name_func
+      - ___mb_cur_max_func
+      - ___mb_cur_max_l_func
+      - __initialize_lconv_for_unsigned_char
+      - __p__mbcasemap
+      - __p__mbctype
+      - __pctype_func
+      - __pwctype_func
+      - _configthreadlocale
+      - _create_locale
+      - _free_locale
+      - _get_current_locale
+      - _getmbcp
+      - _mbcasemap
+      - _setmbcp
+      - _wcreate_locale
+      - _wctype
+      - _wsetlocale
+      - localeconv
+      - setlocale
+
+  exec:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/exec/spawnl.cpp
+      - sdk/lib/ucrt/exec/spawnlp.cpp
+      - sdk/lib/ucrt/exec/spawnv.cpp
+      - sdk/lib/ucrt/exec/spawnvp.cpp
+      - sdk/lib/ucrt/exec/cenvarg.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: all 32 forms: validation
+      (NULL/empty name and argv, bad mode), a real _P_WAIT spawn of cmd.exe /c exit
+      7 by full path and by PATH search, extension probing, explicit vs inherited
+      environments, 17- and 65-argument lists (the capture's heap growth); the _exec
+      forms on their validation paths only (a real one replaces the grader). The `e`
+      forms first failed as a fault loop: Microsoft's scan for the first "=X:"
+      variable never stops at the block's end, ReactOS may have none; ours stops
+      (exec.rs), and the grader gives the process one, as Windows does. All MATCH,
+      dll_fail=0 -- 736 cases.
+    note: >
+      A PORT (src/exec.rs). The 16 variadic l-forms (_spawnl.._wexeclpe) are
+      va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c over Rust `_v`
+      twins -- C in the ucrtbase module, so not listed here (this list is what the
+      Rust archive defines); the argv capture is Rust over varargs-rust's VaArgs.
+      Kept: the first heap growth in __acrt_capture_*_argv passes element counts to
+      memcpy_s as byte counts, so only 4/8 of the first 64 pointers survive --
+      Microsoft's bug, identical in the reference.
+    exports:
+      - _execv
+      - _execve
+      - _execvp
+      - _execvpe
+      - _spawnv
+      - _spawnve
+      - _spawnvp
+      - _spawnvpe
+      - _wexecv
+      - _wexecve
+      - _wexecvp
+      - _wexecvpe
+      - _wspawnv
+      - _wspawnve
+      - _wspawnvp
+      - _wspawnvpe
+
+  align:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/heap/align.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: sizes, power-of-two and invalid
+      alignments, offsets, realloc/recalloc growth and shrink with contents,
+      _aligned_msize, NULL. All MATCH, dll_fail=0 -- 156 cases.
+    note: >
+      A PORT (src/align.rs); the header word before each aligned block is bit-
+      identical, since memory crosses between sides.
+    exports:
+      - _aligned_free
+      - _aligned_malloc
+      - _aligned_msize
+      - _aligned_offset_malloc
+      - _aligned_offset_realloc
+      - _aligned_offset_recalloc
+      - _aligned_realloc
+      - _aligned_recalloc
+
+  invalid_parameter:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/misc/invalid_parameter.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: set/get round trips, thread-local
+      vs global precedence, NULL resets, and a real CRT caller (_aligned_malloc with
+      a bad alignment) firing exactly the installed handler on each side. All MATCH,
+      dll_fail=0 -- 11 cases.
+    note: >
+      A PORT (src/invalid_parameter.rs). The handler is stored XOR __security_cookie
+      (__crt_fast_encode_pointer in this tree). __acrt_call_reportfault is LIVE on
+      i386 (only amd64's KiInit sets PF_FASTFAIL_AVAILABLE): an i386 global_asm!
+      entry stub snapshots registers/segments/flags and the caller's Eip/Esp/Ebp as
+      the C's inline asm and intrinsics do; amd64 unwinds RtlCaptureContext two
+      frames to the same caller Rip/Rsp. CONTEXT/EXCEPTION_RECORD sizes and offsets
+      measured.
+    exports:
+      - _get_invalid_parameter_handler
+      - _get_thread_local_invalid_parameter_handler
+      - _invalid_parameter
+      - _invalid_parameter_noinfo
+      - _invalid_parameter_noinfo_noreturn
+      - _invoke_watson
+      - _set_invalid_parameter_handler
+      - _set_thread_local_invalid_parameter_handler
+
+  open:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/lowio/open.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: every export incl. the four
+      variadic ones through the shim: BOM writing for
+      _O_U8TEXT/_O_U16TEXT/_O_WTEXT/_O_TEXT/_O_BINARY read back from outside,
+      _O_EXCL, bad share/pmode, NULL path/pfh. (The BOM runner first bugchecked the
+      guest in fastfat -- identically with Microsoft's code on both sides; fixed by
+      master's fastfat SEH, bf8bbd0d86c). All MATCH, dll_fail=0 -- 57 cases.
+    note: >
+      A PORT (src/lowio_open.rs). The four variadic entry points
+      (_open/_wopen/_sopen/_wsopen) are shim trampolines over Rust `_v` twins; they
+      read pmode unconditionally, as the C does.
+    exports:
+      - _sopen_dispatch
+      - _sopen_s
+      - _wsopen_dispatch
+      - _wsopen_s
+
+  atof:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/convert/atof.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the strtod-block corpus through
+      all eight: result bits, errno, handler count, and the _CRT_FLOAT/_CRT_DOUBLE
+      out-structs with their return codes. All MATCH, dll_fail=0 -- 500 cases.
+    note: >
+      A PORT (src/atof.rs) over the graded strtod parser.
+    exports:
+      - _atodbl
+      - _atodbl_l
+      - _atof_l
+      - _atoflt
+      - _atoflt_l
+      - _wtof
+      - _wtof_l
+      - atof
+
+  ctime:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/time/ctime.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: time_t values incl. negative, 0,
+      2^31-1 and past it, out-of-range, and the _s forms with NULL and short
+      buffers. All MATCH, dll_fail=0 -- 187 cases.
+    note: >
+      A PORT (src/ctime.rs); _localtime*_s and asctime_s/_wasctime_s are called, not
+      replaced.
+    exports:
+      - _ctime32
+      - _ctime32_s
+      - _ctime64
+      - _ctime64_s
+      - _wctime32
+      - _wctime32_s
+      - _wctime64
+      - _wctime64_s
+
+  timeset:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/time/timeset.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: each getter's value and errno,
+      NULL arguments, and the tzname buffers. All MATCH, dll_fail=0 -- 47 cases.
+    note: >
+      A PORT (src/timeset.rs). The globals start at 0 and are set by
+      __acrt_initialize_timeset (dual_state_global's constructor), byte- and
+      relocation-compared against Microsoft's object; timeset.cpp's
+      _CRT_LINKER_FORCE_INCLUDE(__acrt_timeset_initializer) is carried by
+      force_include!.
+    exports:
+      - __daylight
+      - __dstbias
+      - __timezone
+      - __tzname
+      - _get_daylight
+      - _get_dstbias
+      - _get_timezone
+      - _get_tzname
+
+  argv_data:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/startup/argv_data.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: each accessor's pointed-to value
+      on both CRT instances. All MATCH, dll_fail=0 -- 26 cases.
+    note: >
+      A PORT (src/argv_data.rs); the data globals byte- and relocation-compared
+      against Microsoft's object on all three arches.
+    exports:
+      - __p___argc
+      - __p___argv
+      - __p___wargv
+      - __p__acmdln
+      - __p__pgmptr
+      - __p__wcmdln
+      - __p__wpgmptr
+      - _get_pgmptr
+      - _get_wpgmptr

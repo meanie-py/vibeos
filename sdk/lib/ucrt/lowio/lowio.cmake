@@ -13,7 +13,6 @@ list(APPEND UCRT_LOWIO_SOURCES
     lowio/locking.cpp
     lowio/lseek.cpp
     lowio/mktemp.cpp
-    lowio/open.cpp
     lowio/osfinfo.cpp
     lowio/read.cpp
     lowio/setmode.cpp

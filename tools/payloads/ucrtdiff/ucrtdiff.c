@@ -44,6 +44,8 @@ char *__cdecl ref_setlocale(int, const char *);
 char *__cdecl rust_setlocale(int, const char *);
 int __cdecl ref__setmbcp(int);
 int __cdecl rust__setmbcp(int);
+int __cdecl rust__getmbcp(void);
+int __cdecl ref__getmbcp(void);
 
 /* The renamed genuine-Microsoft bodies. Declared by hand because no header can
  * name them -- which is the point: a `#define foo ref_foo` prelude would rewrite
@@ -2078,6 +2080,436 @@ static void run_st__fstat64i32(void) { install_counting_iph(); ST_FSTAT_RUN(_fst
 static void run_st__fstat64(void)    { install_counting_iph(); ST_FSTAT_RUN(_fstat64, _stat64); }
 #endif /* UCRTDIFF_REF_HAS__stat64 */
 
+/* ---- locale (the locale/ directory and mbstring/mbctype.cpp) ---------------
+ *
+ * The locale takeover is graded as ONE family: its pieces call each other's
+ * internals, so it is deleted and checked together. Every runner walks a corpus
+ * of locale names through BOTH sides' setlocale -- legacy names, BCP-47 tags with
+ * and without code pages, bare code pages, compound LC_ strings, junk -- and after
+ * each grades what its own export reports: the return, errno and handler count
+ * for setlocale itself; the lconv, code pages, locale names, ctype tables and
+ * multibyte tables for the accessors. strftime/wcsftime/strcoll/_stricoll/_strlwr
+ * ride along under setlocale's row: they are still Microsoft's on both sides, but
+ * they read the locale data each side's setlocale built, so they grade the
+ * initializers end to end. Each runner leaves both sides back in "C". */
+#include <locale.h>
+#include <mbctype.h>
+#include <time.h>
+
+#if UCRTDIFF_REF_HAS_setlocale
+char *__cdecl ref_setlocale(int, const char *);
+wchar_t *__cdecl ref__wsetlocale(int, const wchar_t *);
+_locale_t __cdecl ref__create_locale(int, const char *);
+_locale_t __cdecl ref__wcreate_locale(int, const wchar_t *);
+void __cdecl ref__free_locale(_locale_t);
+_locale_t __cdecl ref__get_current_locale(void);
+int __cdecl ref__configthreadlocale(int);
+struct lconv *__cdecl ref_localeconv(void);
+unsigned int __cdecl ref____lc_codepage_func(void);
+unsigned int __cdecl ref____lc_collate_cp_func(void);
+wchar_t **__cdecl ref____lc_locale_name_func(void);
+int __cdecl ref____mb_cur_max_func(void);
+int __cdecl ref____mb_cur_max_l_func(_locale_t);
+const unsigned short *__cdecl ref___pctype_func(void);
+const unsigned short *__cdecl ref___pwctype_func(void);
+int __cdecl ref__getmbcp(void);
+int __cdecl ref__setmbcp(int);
+unsigned char *__cdecl ref___p__mbctype(void);
+unsigned char *__cdecl ref___p__mbcasemap(void);
+int __cdecl ref___initialize_lconv_for_unsigned_char(void);
+extern const unsigned short ref__wctype[];
+size_t __cdecl ref_strftime(char *, size_t, const char *, const struct tm *);
+size_t __cdecl ref_wcsftime(wchar_t *, size_t, const wchar_t *, const struct tm *);
+int __cdecl ref_strcoll(const char *, const char *);
+int __cdecl ref__stricoll(const char *, const char *);
+char *__cdecl ref__strlwr(char *);
+unsigned char *__cdecl ref__mbsupr(unsigned char *);
+
+extern char *(__cdecl *const ud_setlocale)(int, const char *) __asm__(UD_IMP(setlocale));
+extern wchar_t *(__cdecl *const ud__wsetlocale)(int, const wchar_t *) __asm__(UD_IMP(_wsetlocale));
+extern _locale_t(__cdecl *const ud__create_locale)(int, const char *) __asm__(UD_IMP(_create_locale));
+extern _locale_t(__cdecl *const ud__wcreate_locale)(int, const wchar_t *) __asm__(UD_IMP(_wcreate_locale));
+extern void(__cdecl *const ud__free_locale)(_locale_t) __asm__(UD_IMP(_free_locale));
+extern _locale_t(__cdecl *const ud__get_current_locale)(void) __asm__(UD_IMP(_get_current_locale));
+extern int(__cdecl *const ud__configthreadlocale)(int) __asm__(UD_IMP(_configthreadlocale));
+extern struct lconv *(__cdecl *const ud_localeconv)(void) __asm__(UD_IMP(localeconv));
+extern unsigned int(__cdecl *const ud____lc_codepage_func)(void) __asm__(UD_IMP(___lc_codepage_func));
+extern unsigned int(__cdecl *const ud____lc_collate_cp_func)(void) __asm__(UD_IMP(___lc_collate_cp_func));
+extern wchar_t **(__cdecl *const ud____lc_locale_name_func)(void) __asm__(UD_IMP(___lc_locale_name_func));
+extern int(__cdecl *const ud____mb_cur_max_func)(void) __asm__(UD_IMP(___mb_cur_max_func));
+extern int(__cdecl *const ud____mb_cur_max_l_func)(_locale_t) __asm__(UD_IMP(___mb_cur_max_l_func));
+extern const unsigned short *(__cdecl *const ud___pctype_func)(void) __asm__(UD_IMP(__pctype_func));
+extern const unsigned short *(__cdecl *const ud___pwctype_func)(void) __asm__(UD_IMP(__pwctype_func));
+extern int(__cdecl *const ud__getmbcp)(void) __asm__(UD_IMP(_getmbcp));
+extern int(__cdecl *const ud__setmbcp)(int) __asm__(UD_IMP(_setmbcp));
+extern unsigned char *(__cdecl *const ud___p__mbctype)(void) __asm__(UD_IMP(__p__mbctype));
+extern unsigned char *(__cdecl *const ud___p__mbcasemap)(void) __asm__(UD_IMP(__p__mbcasemap));
+extern int(__cdecl *const ud___initialize_lconv_for_unsigned_char)(void) __asm__(UD_IMP(__initialize_lconv_for_unsigned_char));
+/* A DATA export: the import slot holds the table's address. */
+extern const unsigned short *const ud__wctype __asm__(UD_IMP(_wctype));
+extern size_t(__cdecl *const ud_strftime)(char *, size_t, const char *, const struct tm *) __asm__(UD_IMP(strftime));
+extern size_t(__cdecl *const ud_wcsftime)(wchar_t *, size_t, const wchar_t *, const struct tm *) __asm__(UD_IMP(wcsftime));
+extern int(__cdecl *const ud_strcoll)(const char *, const char *) __asm__(UD_IMP(strcoll));
+extern int(__cdecl *const ud__stricoll)(const char *, const char *) __asm__(UD_IMP(_stricoll));
+extern char *(__cdecl *const ud__strlwr)(char *) __asm__(UD_IMP(_strlwr));
+extern unsigned char *(__cdecl *const ud__mbsupr)(unsigned char *) __asm__(UD_IMP(_mbsupr));
+
+static const char *const g_loc_names[] = {
+    "C", "", "English_United States.1252", "English", "american", "american_usa", "ENU",
+    "German_Germany.1252", "german", "de-DE", "de-DE.utf8", "en-US.UTF-8", "en-US.utf-8",
+    "en-US.xyz-8", ".utf8", ".UTF-8", ".1252", ".932", ".65001", ".", "ja-JP",
+    "Japanese_Japan.932", "chs", "zh-Hans-CN", "zh-CN.936", "ko-KR", "fr-FR", "French_France",
+    ".ACP", ".OCP", ".acp", "_Germany", "english-us", "English_United States.utf8",
+    "french-canadian", "spanish-modern", "swiss", "French_Belgium", "english.65000",
+    "english.99999", "tr-TR", "Turkish_Turkey.1254", "ar-SA", "th-TH", "zh-TW", "xx-XX", "junk", "english_united-states", "de_DE", "C.UTF-8",
+    "LC_COLLATE=C;LC_CTYPE=German_Germany.1252;LC_MONETARY=C;LC_NUMERIC=C;LC_TIME=C",
+    "LC_CTYPE=de-DE;LC_BOGUS=x", "LC_NUMERIC=fr-FR", "LC_MONETARY=de-DE;LC_NUMERIC=C", "LC_=;", "LC_CTYPE=", "LC_TIME;x",
+};
+enum { LOC_NNAMES = sizeof(g_loc_names) / sizeof(g_loc_names[0]) };
+
+static long long loc_hs(const char *s) { return s ? fnv(s, strlen(s) + 1) : -1; }
+static long long loc_hw(const wchar_t *s) { return s ? fnv(s, (wcslen(s) + 1) * sizeof(wchar_t)) : -1; }
+
+/* What one side's accessors report, component by component. */
+enum {
+    LS_LCONV, LS_CP, LS_COLLATE_CP, LS_NAMES, LS_MB_CUR_MAX, LS_PCTYPE, LS_PWCTYPE,
+    LS_MBCP, LS_MBCTYPE, LS_MBCASEMAP, LS_STRFTIME, LS_WCSFTIME, LS_STRCOLL, LS_STRLWR,
+    LS_MBSUPR, LS_N
+};
+static const char *const g_ls_names[LS_N] = {
+    "lconv", "codepage", "collate_cp", "locale_names", "mb_cur_max", "pctype", "pwctype",
+    "mbcp", "mbctype", "mbcasemap", "strftime", "wcsftime", "strcoll", "strlwr", "mbsupr",
+};
+
+#define LOC_DEFINE_SNAP(side)                                                              \
+    static void loc_snap_##side(long long *h)                                              \
+    {                                                                                      \
+        struct lconv *l = side##localeconv();                                              \
+        long long a = 0;                                                                   \
+        if (l) {                                                                           \
+            const char *n[] = { l->decimal_point, l->thousands_sep, l->grouping,          \
+                l->int_curr_symbol, l->currency_symbol, l->mon_decimal_point,              \
+                l->mon_thousands_sep, l->mon_grouping, l->positive_sign, l->negative_sign }; \
+            const wchar_t *w[] = { l->_W_decimal_point, l->_W_thousands_sep,             \
+                l->_W_int_curr_symbol, l->_W_currency_symbol, l->_W_mon_decimal_point,     \
+                l->_W_mon_thousands_sep, l->_W_positive_sign, l->_W_negative_sign };       \
+            for (int i = 0; i < 10; i++) a = a * 31 + loc_hs(n[i]);                        \
+            for (int i = 0; i < 8; i++) a = a * 31 + loc_hw(w[i]);                         \
+            a = a * 31 + fnv(&l->int_frac_digits, 8);                                      \
+        }                                                                                  \
+        h[LS_LCONV] = l ? a : -1;                                                          \
+        h[LS_CP] = side##___lc_codepage_func();                                            \
+        h[LS_COLLATE_CP] = side##___lc_collate_cp_func();                                  \
+        wchar_t **names = side##___lc_locale_name_func();                                  \
+        a = 0;                                                                             \
+        for (int i = 0; i < 6; i++) a = a * 31 + loc_hw(names ? names[i] : 0);             \
+        h[LS_NAMES] = a;                                                                   \
+        h[LS_MB_CUR_MAX] = side##___mb_cur_max_func();                                     \
+        const unsigned short *pc = side##__pctype_func();                                  \
+        h[LS_PCTYPE] = pc ? fnv(pc - 127, 383 * sizeof(unsigned short)) : -1;              \
+        const unsigned short *pw = side##__pwctype_func();                                 \
+        h[LS_PWCTYPE] = pw ? fnv(pw, 256 * sizeof(unsigned short)) : -1;                   \
+        h[LS_MBCP] = side##_getmbcp();                                                     \
+        h[LS_MBCTYPE] = fnv(side##__p__mbctype(), 257);                                    \
+        h[LS_MBCASEMAP] = fnv(side##__p__mbcasemap(), 256);                                \
+        static const struct tm t = { 5, 4, 15, 6, 8, 126, 0, 248, 0 };                     \
+        static const char *const fmts[] = { "%a|%A|%b|%B|%p", "%c", "%x", "%X", "%#x",     \
+                                            "%#c", "%Ec|%Ex" };                            \
+        char buf[512];                                                                     \
+        a = 0;                                                                             \
+        for (int i = 0; i < 7; i++) {                                                      \
+            memset(buf, 'X', sizeof buf);                                                  \
+            size_t r = side##strftime(buf, sizeof buf, fmts[i], &t);                       \
+            a = a * 31 + (long long)r;                                                     \
+            a = a * 31 + fnv(buf, r + 1);                                                  \
+        }                                                                                  \
+        h[LS_STRFTIME] = a;                                                                \
+        wchar_t wbuf[256];                                                                 \
+        for (int k = 0; k < 256; k++) wbuf[k] = L'X';                                     \
+        size_t wr = side##wcsftime(wbuf, 256, L"%a|%A|%b|%B|%p|%c|%x|%X", &t);             \
+        h[LS_WCSFTIME] = (long long)wr * 31 + fnv(wbuf, (wr + 1) * sizeof(wchar_t));       \
+        static const char *const coll[][2] = { { "a", "B" }, { "apple", "Apple" },         \
+            { "\xe4", "b" }, { "co-op", "coop" }, { "", "" }, { "\xe9t\xe9", "ete" },      \
+            { "\x81\x40", "\x82\xa0" } };                                                  \
+        a = 0;                                                                             \
+        for (int i = 0; i < 7; i++) {                                                      \
+            int c = side##strcoll(coll[i][0], coll[i][1]);                                 \
+            int d = side##_stricoll(coll[i][0], coll[i][1]);                               \
+            a = a * 9 + (c > 0) - (c < 0);                                                 \
+            a = a * 9 + (d > 0) - (d < 0);                                                 \
+        }                                                                                  \
+        h[LS_STRCOLL] = a;                                                                 \
+        char low[] = "ABC\xc0\xc4\xc9\xd6\xdc\xdd\xde\xff\x8a\x8c";                        \
+        side##_strlwr(low);                                                                \
+        h[LS_STRLWR] = fnv(low, sizeof low);                                               \
+        unsigned char up[] = "abc\x82\xa0\x82\xa1xyz\x81\x40\xe0\xe0";                     \
+        side##_mbsupr(up);                                                                 \
+        h[LS_MBSUPR] = fnv(up, sizeof up);                                                 \
+    }
+LOC_DEFINE_SNAP(ud_)
+LOC_DEFINE_SNAP(ref_)
+
+/* Put both sides into `name` for `cat`; grade the returns when `row` is set. */
+static void loc_set_both(const char *row, int cat, const char *name, const char *lbl)
+{
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    char *r1 = ud_setlocale(cat, name), *r2 = ref_setlocale(cat, name);
+    if (row) {
+        char what[96];
+        lstrcpyA(what, row);
+        grade2(what, lbl, loc_hs(r1), loc_hs(r2));
+        lstrcatA(what, ".errno");
+        grade2(what, lbl, *_errno(), *ref__errno());
+        lstrcpyA(what, row); lstrcatA(what, ".iph");
+        grade2(what, lbl, g_iph_dll, g_iph_ref);
+    }
+}
+
+static void loc_reset(void)
+{
+    ud_setlocale(LC_ALL, "C"); ref_setlocale(LC_ALL, "C");
+}
+
+static const char *loc_label(int cat, size_t i)
+{
+    static char buf[24];
+    lstrcpyA(buf, label_idx(i));
+    buf[5] = '/'; buf[6] = (char)('0' + (cat + 10) % 10); buf[7] = 0;
+    if (cat < 0) buf[6] = 'm';
+    return buf;
+}
+
+/* Every component after every LC_ALL setting, under `row`: the accessor rows
+ * grade their own component, setlocale grades them all. */
+static void loc_walk(const char *row, int only)
+{
+    for (size_t i = 0; i < LOC_NNAMES; i++) {
+        loc_set_both(0, LC_ALL, g_loc_names[i], 0);
+        /* What each name resolved to, on serial: a corpus the guest's NLS cannot
+         * resolve would MATCH as NULL on both sides and prove nothing, so the table
+         * must never be read without this. */
+        if (only < 0)
+            DbgPrint("[UCRTDIFF] locale %s: \"%s\" -> \"%s\" cp=%u mb=%d\n", label_idx(i),
+                     g_loc_names[i], ud_setlocale(LC_ALL, NULL) ? ud_setlocale(LC_ALL, NULL) : "(null)",
+                     ud____lc_codepage_func(), ud____mb_cur_max_func());
+        long long h1[LS_N], h2[LS_N];
+        loc_snap_ud_(h1);
+        loc_snap_ref_(h2);
+        for (int c = 0; c < LS_N; c++) {
+            if (only >= 0 && c != only)
+                continue;
+            char what[96];
+            lstrcpyA(what, row); lstrcatA(what, "."); lstrcatA(what, g_ls_names[c]);
+            grade2(what, label_idx(i), h1[c], h2[c]);
+        }
+    }
+    loc_reset();
+}
+
+static void run_loc_setlocale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i < LOC_NNAMES; i++)
+            loc_set_both("setlocale", cat, g_loc_names[i], loc_label(cat, i));
+        loc_set_both("setlocale", cat, NULL, loc_label(cat, LOC_NNAMES));
+        loc_reset();
+    }
+    /* Query after a mixed setting: the compound string, and setting it back. */
+    loc_set_both(0, LC_CTYPE, "de-DE", 0);
+    loc_set_both(0, LC_TIME, "ja-JP", 0);
+    loc_set_both("setlocale", LC_ALL, NULL, "mixed");
+    {
+        char saved[1024];
+        char *q = ud_setlocale(LC_ALL, NULL);
+        lstrcpynA(saved, q ? q : "", sizeof saved);
+        loc_reset();
+        loc_set_both("setlocale", LC_ALL, saved, "restore");
+        loc_set_both("setlocale", LC_ALL, NULL, "restored");
+    }
+    loc_reset();
+    loc_walk("setlocale", -1);
+}
+
+static void run_loc__wsetlocale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i <= LOC_NNAMES; i++) {
+            wchar_t w[256];
+            const wchar_t *wp = w;
+            if (i < LOC_NNAMES)
+                MultiByteToWideChar(CP_ACP, 0, g_loc_names[i], -1, w, 256);
+            else
+                wp = 0;
+            *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+            wchar_t *r1 = ud__wsetlocale(cat, wp), *r2 = ref__wsetlocale(cat, wp);
+            const char *lbl = loc_label(cat, i);
+            grade2("_wsetlocale", lbl, loc_hw(r1), loc_hw(r2));
+            grade2("_wsetlocale.errno", lbl, *_errno(), *ref__errno());
+            grade2("_wsetlocale.iph", lbl, g_iph_dll, g_iph_ref);
+        }
+        loc_reset();
+    }
+}
+
+/* A _locale_t's contents, read through the pinned layout: the public head, the
+ * six category strings, and the ctype table. */
+static long long loc_hash_locale_t(_locale_t l)
+{
+    if (!l)
+        return -1;
+    const char *li = (const char *)l->locinfo;
+    const size_t P = sizeof(void *);
+    const size_t cat0 = P == 8 ? 32 : 28;
+    long long a = 0;
+    for (int i = 0; i < 6; i++)
+        a = a * 31 + loc_hw(*(wchar_t *const *)(li + cat0 + (size_t)i * 4 * P + P));
+    const unsigned short *pc = *(const unsigned short *const *)li;
+    a = a * 31 + (pc ? fnv(pc - 127, 383 * sizeof(unsigned short)) : -1);
+    a = a * 31 + fnv(li + P, 8); /* _locale_mb_cur_max, _locale_lc_codepage */
+    const unsigned char *mb = (const unsigned char *)l->mbcinfo;
+    a = a * 31 + (mb ? fnv(mb + 4, 4 + 4 + 12 + 257 + 256) : -1);
+    return a;
+}
+
+static void run_loc__create_locale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i <= LOC_NNAMES; i++) {
+            const char *n = i < LOC_NNAMES ? g_loc_names[i] : 0;
+            const char *lbl = loc_label(cat, i);
+            *_errno() = 0; *ref__errno() = 0;
+            _locale_t l1 = ud__create_locale(cat, n), l2 = ref__create_locale(cat, n);
+            grade2("_create_locale", lbl, loc_hash_locale_t(l1), loc_hash_locale_t(l2));
+            grade2("_create_locale.errno", lbl, *_errno(), *ref__errno());
+            if (l1 && l2)
+                grade2("_create_locale.mb_cur_max_l", lbl, ud____mb_cur_max_l_func(l1),
+                       ref____mb_cur_max_l_func(l2));
+            ud__free_locale(l1);
+            ref__free_locale(l2);
+        }
+    }
+}
+
+static void run_loc__wcreate_locale(void)
+{
+    install_counting_iph();
+    for (int cat = -1; cat <= LC_MAX + 1; cat++) {
+        for (size_t i = 0; i <= LOC_NNAMES; i++) {
+            wchar_t w[256];
+            const wchar_t *wp = w;
+            if (i < LOC_NNAMES)
+                MultiByteToWideChar(CP_ACP, 0, g_loc_names[i], -1, w, 256);
+            else
+                wp = 0;
+            const char *lbl = loc_label(cat, i);
+            *_errno() = 0; *ref__errno() = 0;
+            _locale_t l1 = ud__wcreate_locale(cat, wp), l2 = ref__wcreate_locale(cat, wp);
+            grade2("_wcreate_locale", lbl, loc_hash_locale_t(l1), loc_hash_locale_t(l2));
+            grade2("_wcreate_locale.errno", lbl, *_errno(), *ref__errno());
+            ud__free_locale(l1);
+            ref__free_locale(l2);
+        }
+    }
+}
+
+static void run_loc__get_current_locale(void)
+{
+    install_counting_iph();
+    for (size_t i = 0; i < LOC_NNAMES; i++) {
+        loc_set_both(0, LC_ALL, g_loc_names[i], 0);
+        _locale_t l1 = ud__get_current_locale(), l2 = ref__get_current_locale();
+        grade2("_get_current_locale", label_idx(i), loc_hash_locale_t(l1), loc_hash_locale_t(l2));
+        /* Still valid after the global locale moves on. */
+        loc_reset();
+        grade2("_get_current_locale.after", label_idx(i), loc_hash_locale_t(l1),
+               loc_hash_locale_t(l2));
+        grade2("___mb_cur_max_l_func", label_idx(i), ud____mb_cur_max_l_func(l1),
+               ref____mb_cur_max_l_func(l2));
+        ud__free_locale(l1);
+        ref__free_locale(l2);
+    }
+    ud__free_locale(0);
+    ref__free_locale(0);
+    grade2("_free_locale.null", "-", 0, 0);
+}
+
+static void run_loc__configthreadlocale(void)
+{
+    install_counting_iph();
+    static const int args[] = { 0, 1, 0, 2, 0, 3, 0, -2, 0, 1, 1, 2, 2, 0 };
+    for (size_t i = 0; i < sizeof args / sizeof args[0]; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__configthreadlocale(args[i]), r2 = ref__configthreadlocale(args[i]);
+        grade2("_configthreadlocale", label_idx(i), r1, r2);
+        grade2("_configthreadlocale.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_configthreadlocale.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    /* A per-thread locale: this thread changes, the global copy does not. */
+    ud__configthreadlocale(1); ref__configthreadlocale(1);
+    loc_set_both("_configthreadlocale.setlocale", LC_ALL, "de-DE", "perthread");
+    ud__configthreadlocale(2); ref__configthreadlocale(2);
+    grade2("_configthreadlocale.global_cp", "-", ud____lc_codepage_func(), ref____lc_codepage_func());
+    loc_reset();
+}
+
+static void run_loc_localeconv(void) { install_counting_iph(); loc_walk("localeconv", LS_LCONV); }
+static void run_loc____lc_codepage_func(void) { loc_walk("___lc_codepage_func", LS_CP); }
+static void run_loc____lc_collate_cp_func(void) { loc_walk("___lc_collate_cp_func", LS_COLLATE_CP); }
+static void run_loc____lc_locale_name_func(void) { loc_walk("___lc_locale_name_func", LS_NAMES); }
+static void run_loc____mb_cur_max_func(void) { loc_walk("___mb_cur_max_func", LS_MB_CUR_MAX); }
+static void run_loc___pctype_func(void) { loc_walk("__pctype_func", LS_PCTYPE); }
+static void run_loc___pwctype_func(void) { loc_walk("__pwctype_func", LS_PWCTYPE); }
+static void run_loc___p__mbctype(void) { loc_walk("__p__mbctype", LS_MBCTYPE); }
+static void run_loc___p__mbcasemap(void) { loc_walk("__p__mbcasemap", LS_MBCASEMAP); }
+
+static void run_loc__wctype(void)
+{
+    grade2("_wctype", "table", fnv(ud__wctype, 258 * sizeof(unsigned short)),
+           fnv(ref__wctype, 258 * sizeof(unsigned short)));
+}
+
+/* _setmbcp's own row (the generated one grades only its return): every code page
+ * kind, then what the multibyte accessors see. */
+static void run_loc__setmbcp(void)
+{
+    install_counting_iph();
+    /* 932 then 65001 keeps 932's lead flags (the UTF-8 path clears only the first
+     * few entries); 1252 twice takes the no-op path. */
+    static const int cps[] = { 0, -2, -3, -4, 932, 936, 949, 950, 1252, 1250, 65001, 20127,
+                               437, 12345, -5, -1, 1361, 65000, 65536 + 1252, 932, 65001,
+                               1252, 1252, 0 };
+    int orig1 = ud__getmbcp(), orig2 = ref__getmbcp();
+    grade2("_setmbcp+tables.orig", "-", orig1, orig2);
+    for (size_t i = 0; i < sizeof cps / sizeof cps[0]; i++) {
+        const char *lbl = label_idx(i);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__setmbcp(cps[i]), r2 = ref__setmbcp(cps[i]);
+        grade2("_setmbcp+tables", lbl, r1, r2);
+        grade2("_setmbcp+tables.errno", lbl, *_errno(), *ref__errno());
+        grade2("_setmbcp+tables.iph", lbl, g_iph_dll, g_iph_ref);
+        grade2("_setmbcp+tables.getmbcp", lbl, ud__getmbcp(), ref__getmbcp());
+        grade2("_setmbcp+tables.mbctype", lbl, fnv(ud___p__mbctype(), 257), fnv(ref___p__mbctype(), 257));
+        grade2("_setmbcp+tables.mbcasemap", lbl, fnv(ud___p__mbcasemap(), 256),
+               fnv(ref___p__mbcasemap(), 256));
+        unsigned char up1[] = "abc\x82\xa0\x82\xa1xyz\x81\x40\xe0\xe0\xa4", up2[sizeof up1];
+        memcpy(up2, up1, sizeof up1);
+        ud__mbsupr(up1); ref__mbsupr(up2);
+        grade2("_setmbcp+tables.mbsupr", lbl, fnv(up1, sizeof up1), fnv(up2, sizeof up2));
+    }
+    ud__setmbcp(orig1); ref__setmbcp(orig2);
+}
+
+static void run_loc___initialize_lconv_for_unsigned_char(void)
+{
+    grade2("__initialize_lconv_for_unsigned_char", "ret", ud___initialize_lconv_for_unsigned_char(),
+           ref___initialize_lconv_for_unsigned_char());
+    loc_walk("__initialize_lconv_for_unsigned_char", LS_LCONV);
+}
+#endif /* UCRTDIFF_REF_HAS_setlocale */
+
 static void run_ctype(void)
 {
     /* The full 0..255 range plus EOF: the 0x80-0xFF half is where the narrow
@@ -2374,6 +2806,2555 @@ static int run_c_initializers(void)
  * Routing them through export_begin/run_guarded/export_end gives them exactly what every
  * generated export gets, and gates them by shard too, so they run in ONE shard instead
  * of being repeated in all of them. */
+
+/* ==== staging/convtime.c, inlined ==== */
+/*
+ * convtime -- guest grader for the "ctime" batch: convert/atof.cpp,
+ * time/ctime.cpp, time/timeset.cpp, startup/argv_data.cpp.
+ *
+ * Included verbatim into ucrtdiff.c just before `run_legacy`, exactly like the
+ * FP_HAND/ST_HAND/LOC_HAND blocks above it: every helper this file uses
+ * (grade2, install_counting_iph, label_idx, fnv, g_iph_dll/g_iph_ref, _errno,
+ * ref__errno, UD_IMP) is already in scope by inclusion point, so none of it is
+ * redeclared here.
+ *
+ * Four separate guards, one per C file that may be deleted independently:
+ *   UCRTDIFF_REF_HAS_atof         -- convert/atof.cpp
+ *   UCRTDIFF_REF_HAS__ctime32     -- time/ctime.cpp
+ *   UCRTDIFF_REF_HAS__get_daylight-- time/timeset.cpp
+ *   UCRTDIFF_REF_HAS___p___argc   -- startup/argv_data.cpp
+ *
+ * NONE of these four macros exist in tools/gen_ucrt_tier2_cases.py's
+ * HAND_GRADED tuple yet (this is a brand-new batch of hand-written runners,
+ * like FP_HAND/ST_HAND/LOC_HAND were when they were added) -- the integrator
+ * must add the four representative names above to HAND_GRADED and regenerate
+ * generated-refs.h for all three arches before these guards read as 1. Until
+ * then they read as 0 (an undefined macro in `#if` is 0), which is exactly
+ * the "guards=0" case this file was syntax-checked under.
+ *
+ * All four `ref_<name>` symbols this file declares were confirmed present in
+ * build-{i386,amd64,arm64}/libucrt_ref.a with llvm-nm (i386 carries the extra
+ * leading underscore llvm-nm shows separately from the bare name; all three
+ * archives were checked). None of atof/ctime's or timeset's/argv-data's DLL
+ * side spellings are wrapped in a mingw __CRT_INLINE (checked against
+ * generic-w64-mingw32/include/{stdlib,time,corecrt_startup}.h), so every
+ * DLL-side call below is a PLAIN name, not a ud_ import pointer -- there is no
+ * inline body for the compiler to substitute instead.
+ *
+ * __wide_tzname, __acrt_initialize_timeset, __acrt_initialize_command_line and
+ * __acrt_uninitialize_command_line are NOT in ucrtbase.spec (no export, hence
+ * no ud_ or ref_ symbol either), so none of the four is graded here; they are
+ * exercised only indirectly (the first through __tzname's pointee, the other
+ * three through argv-data's globals already having run once by the time
+ * ucrtdiff_entry starts -- see run_convtime___p__acmdln's comment).
+ */
+
+/* ==== atof (convert/atof.cpp) ============================================ */
+#if UCRTDIFF_REF_HAS_atof
+double __cdecl ref_atof(const char *);
+double __cdecl ref__atof_l(const char *, _locale_t);
+double __cdecl ref__wtof(const wchar_t *);
+double __cdecl ref__wtof_l(const wchar_t *, _locale_t);
+int __cdecl ref__atoflt(_CRT_FLOAT *, const char *);
+int __cdecl ref__atoflt_l(_CRT_FLOAT *, const char *, _locale_t);
+int __cdecl ref__atodbl(_CRT_DOUBLE *, char *);
+int __cdecl ref__atodbl_l(_CRT_DOUBLE *, char *, _locale_t);
+
+static const char *const g_atof_in[] = {
+    "0", "-0", "3.14159", "  \t 2.5e10xyz", "1e400", "-1e400", "1e-400",
+    "4.9406564584124654e-324", "abc", "", "inf", "-infinity", "nan", "-nan(ind)",
+    "007.5", "0x1.8p3", "  ",
+};
+#define ATOF_N (sizeof(g_atof_in) / sizeof(g_atof_in[0]))
+
+static const wchar_t *const g_atof_win[] = {
+    L"0", L"-0", L"3.14159", L"  \t 2.5e10xyz", L"1e400", L"-1e400", L"1e-400",
+    L"4.9406564584124654e-324", L"abc", L"", L"inf", L"-infinity", L"nan", L"-nan(ind)",
+    L"007.5", L"0x1.8p3", L"  ",
+};
+#define ATOF_WN (sizeof(g_atof_win) / sizeof(g_atof_win[0]))
+
+/* `fp_bits32`/`fp_bits64`/`FP_BITS` (defined for the strtod block, above) are
+ * NOT reusable: convert/strtod.cpp is already taken over and deleted, so
+ * `UCRTDIFF_REF_HAS_strtod` -- and everything inside that `#if`, including
+ * those three -- currently reads 0 in every arch's generated-refs.h. Local,
+ * independently-guarded equivalents instead. */
+static unsigned convtime_fp_bits32(float f) { unsigned u; memcpy(&u, &f, 4); return u; }
+static unsigned long long convtime_fp_bits64(double d) { unsigned long long u; memcpy(&u, &d, 8); return u; }
+#define CONVTIME_FP_BITS(v) _Generic((v), float: (long long)convtime_fp_bits32(v), default: (long long)convtime_fp_bits64((double)(v)))
+
+/* No end pointer and no traits argument (unlike FP_ROW) -- atof/_wtof discard
+ * the parser's status entirely, so only the value, errno and handler count are
+ * comparable. */
+#define ATOF_ROW(fn, lbl, s, ...) do {                                         \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        long long v1 = CONVTIME_FP_BITS(fn(s, ##__VA_ARGS__));                 \
+        long long v2 = CONVTIME_FP_BITS(ref_##fn(s, ##__VA_ARGS__));           \
+        grade2(#fn, lbl, v1, v2);                                              \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                         \
+    } while (0)
+
+static void run_convtime_atof(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_N; i++)
+        ATOF_ROW(atof, g_atof_in[i], g_atof_in[i]);
+    ATOF_ROW(atof, "NULL", (const char *)0);
+}
+
+static void run_convtime__atof_l(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_N; i++)
+        ATOF_ROW(_atof_l, g_atof_in[i], g_atof_in[i], NULL);
+    ATOF_ROW(_atof_l, "NULL", (const char *)0, NULL);
+}
+
+static void run_convtime__wtof(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_WN; i++)
+        ATOF_ROW(_wtof, label_idx(i), g_atof_win[i]);
+    ATOF_ROW(_wtof, "NULL", (const wchar_t *)0);
+}
+
+static void run_convtime__wtof_l(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_WN; i++)
+        ATOF_ROW(_wtof_l, label_idx(i), g_atof_win[i], NULL);
+    ATOF_ROW(_wtof_l, "NULL", (const wchar_t *)0, NULL);
+}
+
+/* _atoflt/_atodbl grade the out-struct's bytes AND the returned code (0 /
+ * _OVERFLOW=3 / _UNDERFLOW=4 / _DOMAIN=1). Each struct is sentinel-prefilled
+ * (-1.0) so an untouched-on-failure struct would show. Deliberately NOT
+ * tested with a NULL string: common_atodbl_l (atof.cpp) validates only
+ * `result`, never `string` -- passing a NULL string dereferences null on
+ * BOTH sides (a genuine Microsoft quirk, kept faithfully in
+ * ucrt-rust/src/atof.rs's port) and there is no safe way to grade a call that
+ * is expected to crash. */
+/* Cast `s` to `char *` at the call, same as ATODBL_ROW: Microsoft's own
+ * `_atoflt`/`_atoflt_l` take `char const*` (stdlib.h), but the mingw header
+ * this file's DLL-side calls resolve through declares them with `char *_Str`
+ * instead -- a mingw header quirk, not a UCRT one, and the cast is needed
+ * only to keep that header happy. */
+#define ATOFLT_ROW(fn, lbl, s, ...) do {                                       \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        _CRT_FLOAT r1, r2;                                                     \
+        r1.f = -1.0f; r2.f = -1.0f;                                            \
+        int c1 = fn(&r1, (char *)(s), ##__VA_ARGS__);                          \
+        int c2 = ref_##fn(&r2, (char *)(s), ##__VA_ARGS__);                    \
+        grade2(#fn, lbl, c1, c2);                                              \
+        grade2(#fn ".val", lbl, (long long)convtime_fp_bits32(r1.f), (long long)convtime_fp_bits32(r2.f)); \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                         \
+    } while (0)
+
+#define ATODBL_ROW(fn, lbl, s, ...) do {                                       \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        _CRT_DOUBLE r1, r2;                                                    \
+        r1.x = -1.0; r2.x = -1.0;                                              \
+        int c1 = fn(&r1, (char *)(s), ##__VA_ARGS__);                          \
+        int c2 = ref_##fn(&r2, (char *)(s), ##__VA_ARGS__);                    \
+        grade2(#fn, lbl, c1, c2);                                              \
+        grade2(#fn ".val", lbl, (long long)convtime_fp_bits64(r1.x), (long long)convtime_fp_bits64(r2.x)); \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                   \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                         \
+    } while (0)
+
+/* `result == NULL` is validated FIRST in `common_atodbl_l` (`_VALIDATE_RETURN`,
+ * handler-calling) and short-circuits before `string` is ever touched, so it
+ * is the one row of this family safe to run with a literal NULL pointer where
+ * ATOFLT_ROW/ATODBL_ROW pass `&r1`/`&r2`. Written out directly rather than
+ * routed through those macros, which always take the struct's address. */
+#define ATOF_NULLRESULT_ROW(kind, fn, ...) do {                                \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        int c1 = fn((kind *)0, "3.5", ##__VA_ARGS__);                          \
+        int c2 = ref_##fn((kind *)0, "3.5", ##__VA_ARGS__);                    \
+        grade2(#fn ".nullresult", "-", c1, c2);                                \
+        grade2(#fn ".nullresult.errno", "-", *_errno(), *ref__errno());        \
+        grade2(#fn ".nullresult.iph", "-", g_iph_dll, g_iph_ref);              \
+    } while (0)
+
+static void run_convtime__atoflt(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_N; i++)
+        ATOFLT_ROW(_atoflt, g_atof_in[i], g_atof_in[i]);
+    ATOF_NULLRESULT_ROW(_CRT_FLOAT, _atoflt);
+}
+
+static void run_convtime__atoflt_l(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_N; i++)
+        ATOFLT_ROW(_atoflt_l, g_atof_in[i], g_atof_in[i], NULL);
+    ATOF_NULLRESULT_ROW(_CRT_FLOAT, _atoflt_l, NULL);
+}
+
+static void run_convtime__atodbl(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_N; i++)
+        ATODBL_ROW(_atodbl, g_atof_in[i], g_atof_in[i]);
+    ATOF_NULLRESULT_ROW(_CRT_DOUBLE, _atodbl);
+}
+
+static void run_convtime__atodbl_l(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < ATOF_N; i++)
+        ATODBL_ROW(_atodbl_l, g_atof_in[i], g_atof_in[i], NULL);
+    ATOF_NULLRESULT_ROW(_CRT_DOUBLE, _atodbl_l, NULL);
+}
+#endif /* UCRTDIFF_REF_HAS_atof */
+
+/* ==== ctime (time/ctime.cpp) ============================================= */
+#if UCRTDIFF_REF_HAS__ctime32
+errno_t __cdecl ref__ctime32_s(char *, size_t, const __time32_t *);
+errno_t __cdecl ref__wctime32_s(wchar_t *, size_t, const __time32_t *);
+errno_t __cdecl ref__ctime64_s(char *, size_t, const __time64_t *);
+errno_t __cdecl ref__wctime64_s(wchar_t *, size_t, const __time64_t *);
+char *__cdecl ref__ctime32(const __time32_t *);
+wchar_t *__cdecl ref__wctime32(const __time32_t *);
+char *__cdecl ref__ctime64(const __time64_t *);
+wchar_t *__cdecl ref__wctime64(const __time64_t *);
+
+/* 0, one day in, a mid-range value, __crt_time_time_t_traits<__time32_t>::max_time_t
+ * (0x7fffd27f -- 23:59:59 01/18/2038 UTC), and -1 (the one validated-without-a-
+ * handler case, `_VALIDATE_RETURN_ERRCODE_NOEXC(*time_t_value >= 0, EINVAL)`). */
+static const __time32_t g_ctime32_vals[] = { 0, 86400, 1000000000L, 0x7fffd27fL, -1 };
+#define CTIME32_N (sizeof(g_ctime32_vals) / sizeof(g_ctime32_vals[0]))
+/* Same shape, plus a value only a 64-bit time_t can hold (past 2^31) and
+ * __crt_time_time_t_traits<__time64_t>::max_time_t (0x793582aff). */
+static const __time64_t g_ctime64_vals[] = {
+    0, 86400, 1000000000LL, 2147483648LL, 0x793582affLL, -1,
+};
+#define CTIME64_N (sizeof(g_ctime64_vals) / sizeof(g_ctime64_vals[0]))
+
+/* Every buffer is prefilled with 'X' so an untouched tail, or the release-build
+ * `_RESET_STRING`'s single leading NUL, both show plainly. 32 narrow / 32 wide
+ * elements is comfortably over the 26-char contract with room for a too-small
+ * probe at size 10. */
+#define CT_ROW_S(fn, T, CH, val, size) do {                                    \
+        CH b1[32], b2[32];                                                     \
+        for (int _k = 0; _k < 32; _k++) { b1[_k] = (CH)'X'; b2[_k] = (CH)'X'; } \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        T tv = (val);                                                          \
+        errno_t c1 = fn(b1, (size), &tv);                                      \
+        errno_t c2 = ref_##fn(b2, (size), &tv);                                \
+        grade2(#fn, label_idx((unsigned)(val) & 0xff), c1, c2);                \
+        grade2(#fn ".val", label_idx((unsigned)(val) & 0xff), fnv(b1, 32 * sizeof(CH)), fnv(b2, 32 * sizeof(CH))); \
+        grade2(#fn ".errno", label_idx((unsigned)(val) & 0xff), *_errno(), *ref__errno()); \
+        grade2(#fn ".iph", label_idx((unsigned)(val) & 0xff), g_iph_dll, g_iph_ref); \
+    } while (0)
+
+static void run_convtime__ctime32_s(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME32_N; i++)
+        CT_ROW_S(_ctime32_s, __time32_t, char, g_ctime32_vals[i], 32);
+    /* buffer too small (>0 but <26): still NUL-reset at [0] (release
+     * `_RESET_STRING`), then EINVAL. */
+    {
+        char b1[32], b2[32];
+        for (int k = 0; k < 32; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        __time32_t tv = 0;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _ctime32_s(b1, 10, &tv);
+        errno_t c2 = ref__ctime32_s(b2, 10, &tv);
+        grade2("_ctime32_s.small", "-", c1, c2);
+        grade2("_ctime32_s.small.val", "-", fnv(b1, 32), fnv(b2, 32));
+        grade2("_ctime32_s.small.errno", "-", *_errno(), *ref__errno());
+    }
+    /* NULL buffer, NULL time, zero size -- each its own handler-calling
+     * validation in `common_ctime_s`. */
+    {
+        __time32_t tv = 0;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _ctime32_s((char *)0, 32, &tv);
+        errno_t c2 = ref__ctime32_s((char *)0, 32, &tv);
+        grade2("_ctime32_s.nullbuf", "-", c1, c2);
+        grade2("_ctime32_s.nullbuf.errno", "-", *_errno(), *ref__errno());
+        grade2("_ctime32_s.nullbuf.iph", "-", g_iph_dll, g_iph_ref);
+
+        char b1[32], b2[32];
+        for (int k = 0; k < 32; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        c1 = _ctime32_s(b1, 32, (const __time32_t *)0);
+        c2 = ref__ctime32_s(b2, 32, (const __time32_t *)0);
+        grade2("_ctime32_s.nulltime", "-", c1, c2);
+        grade2("_ctime32_s.nulltime.val", "-", fnv(b1, 32), fnv(b2, 32));
+        grade2("_ctime32_s.nulltime.errno", "-", *_errno(), *ref__errno());
+
+        for (int k = 0; k < 32; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        c1 = _ctime32_s(b1, 0, &tv);
+        c2 = ref__ctime32_s(b2, 0, &tv);
+        grade2("_ctime32_s.zerosize", "-", c1, c2);
+        grade2("_ctime32_s.zerosize.val", "-", fnv(b1, 32), fnv(b2, 32));
+        grade2("_ctime32_s.zerosize.errno", "-", *_errno(), *ref__errno());
+    }
+}
+
+static void run_convtime__wctime32_s(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME32_N; i++)
+        CT_ROW_S(_wctime32_s, __time32_t, wchar_t, g_ctime32_vals[i], 32);
+}
+
+static void run_convtime__ctime64_s(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME64_N; i++)
+        CT_ROW_S(_ctime64_s, __time64_t, char, g_ctime64_vals[i], 32);
+}
+
+static void run_convtime__wctime64_s(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME64_N; i++)
+        CT_ROW_S(_wctime64_s, __time64_t, wchar_t, g_ctime64_vals[i], 32);
+}
+
+/* The pointer-returning forms: grade the STRING CONTENT at the returned
+ * pointer (never the pointer itself -- ctime.rs's buffer and asctime.cpp's
+ * thread-local buffer are two different addresses on the two sides), the
+ * null-ness, and errno/iph for the null-time and negative-time cases. */
+#define CT_PTR_ROW(fn, T, CH, WLEN, val) do {                                  \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;           \
+        T tv = (val);                                                         \
+        CH *p1 = fn(&tv);                                                     \
+        CH *p2 = ref_##fn(&tv);                                               \
+        grade2(#fn ".isnull", label_idx((unsigned)(val) & 0xff), p1 == 0, p2 == 0); \
+        if (p1 && p2)                                                         \
+            grade2(#fn ".val", label_idx((unsigned)(val) & 0xff),             \
+                   fnv(p1, (WLEN(p1) + 1) * sizeof(CH)), fnv(p2, (WLEN(p2) + 1) * sizeof(CH))); \
+        grade2(#fn ".errno", label_idx((unsigned)(val) & 0xff), *_errno(), *ref__errno()); \
+        grade2(#fn ".iph", label_idx((unsigned)(val) & 0xff), g_iph_dll, g_iph_ref); \
+    } while (0)
+#define CT_STRLEN(p) strlen(p)
+#define CT_WCSLEN(p) wcslen(p)
+
+static void run_convtime__ctime32(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME32_N; i++)
+        CT_PTR_ROW(_ctime32, __time32_t, char, CT_STRLEN, g_ctime32_vals[i]);
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        char *p1 = _ctime32((const __time32_t *)0);
+        char *p2 = ref__ctime32((const __time32_t *)0);
+        grade2("_ctime32.nulltime", "-", p1 == 0, p2 == 0);
+        grade2("_ctime32.nulltime.errno", "-", *_errno(), *ref__errno());
+        grade2("_ctime32.nulltime.iph", "-", g_iph_dll, g_iph_ref);
+    }
+}
+
+static void run_convtime__wctime32(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME32_N; i++)
+        CT_PTR_ROW(_wctime32, __time32_t, wchar_t, CT_WCSLEN, g_ctime32_vals[i]);
+}
+
+static void run_convtime__ctime64(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME64_N; i++)
+        CT_PTR_ROW(_ctime64, __time64_t, char, CT_STRLEN, g_ctime64_vals[i]);
+}
+
+static void run_convtime__wctime64(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < CTIME64_N; i++)
+        CT_PTR_ROW(_wctime64, __time64_t, wchar_t, CT_WCSLEN, g_ctime64_vals[i]);
+}
+#endif /* UCRTDIFF_REF_HAS__ctime32 */
+
+/* ==== timeset (time/timeset.cpp) ========================================= */
+#if UCRTDIFF_REF_HAS__get_daylight
+errno_t __cdecl ref__get_daylight(int *);
+errno_t __cdecl ref__get_dstbias(long *);
+errno_t __cdecl ref__get_timezone(long *);
+errno_t __cdecl ref__get_tzname(size_t *, char *, size_t, int);
+int *__cdecl ref___daylight(void);
+long *__cdecl ref___dstbias(void);
+long *__cdecl ref___timezone(void);
+char **__cdecl ref___tzname(void);
+
+static void run_convtime__get_daylight(void)
+{
+    install_counting_iph();
+    int v1 = -999, v2 = -999;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t c1 = _get_daylight(&v1);
+    errno_t c2 = ref__get_daylight(&v2);
+    grade2("_get_daylight", "-", c1, c2);
+    grade2("_get_daylight.val", "-", v1, v2);
+    grade2("_get_daylight.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _get_daylight((int *)0);
+    c2 = ref__get_daylight((int *)0);
+    grade2("_get_daylight.null", "-", c1, c2);
+    grade2("_get_daylight.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_daylight.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_convtime__get_dstbias(void)
+{
+    install_counting_iph();
+    long v1 = -999, v2 = -999;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t c1 = _get_dstbias(&v1);
+    errno_t c2 = ref__get_dstbias(&v2);
+    grade2("_get_dstbias", "-", c1, c2);
+    grade2("_get_dstbias.val", "-", v1, v2);
+    grade2("_get_dstbias.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _get_dstbias((long *)0);
+    c2 = ref__get_dstbias((long *)0);
+    grade2("_get_dstbias.null", "-", c1, c2);
+    grade2("_get_dstbias.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_dstbias.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_convtime__get_timezone(void)
+{
+    install_counting_iph();
+    long v1 = -999, v2 = -999;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t c1 = _get_timezone(&v1);
+    errno_t c2 = ref__get_timezone(&v2);
+    grade2("_get_timezone", "-", c1, c2);
+    grade2("_get_timezone.val", "-", v1, v2);
+    grade2("_get_timezone.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _get_timezone((long *)0);
+    c2 = ref__get_timezone((long *)0);
+    grade2("_get_timezone.null", "-", c1, c2);
+    grade2("_get_timezone.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_timezone.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_convtime__get_tzname(void)
+{
+    install_counting_iph();
+    char b1[80], b2[80];
+    for (int idx = 0; idx <= 1; idx++) {
+        size_t n1 = (size_t)-1, n2 = (size_t)-1;
+        for (int k = 0; k < 80; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _get_tzname(&n1, b1, sizeof(b1), idx);
+        errno_t c2 = ref__get_tzname(&n2, b2, sizeof(b2), idx);
+        grade2("_get_tzname", label_idx((unsigned)idx), c1, c2);
+        grade2("_get_tzname.len", label_idx((unsigned)idx), (long long)n1, (long long)n2);
+        grade2("_get_tzname.val", label_idx((unsigned)idx),
+               fnv(b1, n1 < sizeof(b1) ? n1 : sizeof(b1)), fnv(b2, n2 < sizeof(b2) ? n2 : sizeof(b2)));
+        grade2("_get_tzname.errno", label_idx((unsigned)idx), *_errno(), *ref__errno());
+    }
+    /* size query: buffer NULL, size 0 -- fills *length, returns 0, never
+     * touches strcpy_s. */
+    {
+        size_t n1 = (size_t)-1, n2 = (size_t)-1;
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t c1 = _get_tzname(&n1, (char *)0, 0, 0);
+        errno_t c2 = ref__get_tzname(&n2, (char *)0, 0, 0);
+        grade2("_get_tzname.sizequery", "-", c1, c2);
+        grade2("_get_tzname.sizequery.len", "-", (long long)n1, (long long)n2);
+    }
+    /* bad index (handler-calling). */
+    {
+        size_t n1 = (size_t)-1, n2 = (size_t)-1;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _get_tzname(&n1, b1, sizeof(b1), 2);
+        errno_t c2 = ref__get_tzname(&n2, b2, sizeof(b2), 2);
+        grade2("_get_tzname.badindex", "-", c1, c2);
+        grade2("_get_tzname.badindex.errno", "-", *_errno(), *ref__errno());
+        grade2("_get_tzname.badindex.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    /* NULL length. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _get_tzname((size_t *)0, b1, sizeof(b1), 0);
+        errno_t c2 = ref__get_tzname((size_t *)0, b2, sizeof(b2), 0);
+        grade2("_get_tzname.nulllen", "-", c1, c2);
+        grade2("_get_tzname.nulllen.errno", "-", *_errno(), *ref__errno());
+        grade2("_get_tzname.nulllen.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    /* buffer!=NULL but size==0 -- the first validation's "either both or
+     * neither" contract. */
+    {
+        size_t n1 = (size_t)-1, n2 = (size_t)-1;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t c1 = _get_tzname(&n1, b1, 0, 0);
+        errno_t c2 = ref__get_tzname(&n2, b2, 0, 0);
+        grade2("_get_tzname.badsize", "-", c1, c2);
+        grade2("_get_tzname.badsize.errno", "-", *_errno(), *ref__errno());
+    }
+    /* Too-small buffer -> ERANGE, buffer[0] already reset to NUL first. */
+    {
+        size_t n1 = (size_t)-1, n2 = (size_t)-1;
+        for (int k = 0; k < 80; k++) { b1[k] = 'X'; b2[k] = 'X'; }
+        *_errno() = 0; *ref__errno() = 0;
+        errno_t c1 = _get_tzname(&n1, b1, 1, 0);
+        errno_t c2 = ref__get_tzname(&n2, b2, 1, 0);
+        grade2("_get_tzname.small", "-", c1, c2);
+        grade2("_get_tzname.small.val", "-", fnv(b1, 1), fnv(b2, 1));
+    }
+}
+
+/* Pointer-returning accessors: only the POINTEE is comparable (the addresses
+ * are two different processes' worth of static storage). */
+static void run_convtime___daylight(void)
+{
+    int *p1 = __daylight();
+    int *p2 = ref___daylight();
+    grade2("__daylight.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__daylight.val", "-", *p1, *p2);
+}
+
+static void run_convtime___dstbias(void)
+{
+    long *p1 = __dstbias();
+    long *p2 = ref___dstbias();
+    grade2("__dstbias.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__dstbias.val", "-", *p1, *p2);
+}
+
+static void run_convtime___timezone(void)
+{
+    long *p1 = __timezone();
+    long *p2 = ref___timezone();
+    grade2("__timezone.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__timezone.val", "-", *p1, *p2);
+}
+
+/* __tzname()[0]/[1] are "PST"/"PDT" by default (both sides start from the
+ * same compiled-in default and neither side ever calls tzset() here). */
+static void run_convtime___tzname(void)
+{
+    char **p1 = __tzname();
+    char **p2 = ref___tzname();
+    grade2("__tzname.isnull", "-", p1 == 0, p2 == 0);
+    if (!p1 || !p2)
+        return;
+    grade2("__tzname.0", "-", fnv(p1[0], strlen(p1[0]) + 1), fnv(p2[0], strlen(p2[0]) + 1));
+    grade2("__tzname.1", "-", fnv(p1[1], strlen(p1[1]) + 1), fnv(p2[1], strlen(p2[1]) + 1));
+}
+#endif /* UCRTDIFF_REF_HAS__get_daylight */
+
+/* ==== argv-data (startup/argv_data.cpp) ================================== */
+#if UCRTDIFF_REF_HAS___p___argc
+int *__cdecl ref___p___argc(void);
+char ***__cdecl ref___p___argv(void);
+wchar_t ***__cdecl ref___p___wargv(void);
+char **__cdecl ref___p__pgmptr(void);
+wchar_t **__cdecl ref___p__wpgmptr(void);
+char **__cdecl ref___p__acmdln(void);
+wchar_t **__cdecl ref___p__wcmdln(void);
+errno_t __cdecl ref__get_pgmptr(char **);
+errno_t __cdecl ref__get_wpgmptr(wchar_t **);
+
+/* This harness is bare-entry, NOT mainCRTStartup (see ucrtdiff_entry's own
+ * comment): __argc/__argv/__wargv/_pgmptr/_wpgmptr are set by an EXE's own
+ * CRT startup (exe_common.inl's _configure_narrow_argv & co via
+ * startup/argv_parsing.cpp), which never runs here, on EITHER side -- so both
+ * are legitimately still at their zero-initialised state, and that agreement
+ * (not a hardcoded expected value) is what these rows grade. */
+static void run_convtime___p___argc(void)
+{
+    int *p1 = __p___argc();
+    int *p2 = ref___p___argc();
+    grade2("__p___argc.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__p___argc.val", "-", *p1, *p2);
+}
+
+static void run_convtime___p___argv(void)
+{
+    char ***p1 = __p___argv();
+    char ***p2 = ref___p___argv();
+    grade2("__p___argv.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__p___argv.val.isnull", "-", *p1 == 0, *p2 == 0);
+}
+
+static void run_convtime___p___wargv(void)
+{
+    wchar_t ***p1 = __p___wargv();
+    wchar_t ***p2 = ref___p___wargv();
+    grade2("__p___wargv.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__p___wargv.val.isnull", "-", *p1 == 0, *p2 == 0);
+}
+
+/* __acrt_initialize_command_line (still C, unrenamed name, called from BOTH
+ * sides' own __acrt_initialize() before ucrtdiff_entry runs) sets
+ * _acmdln/_wcmdln from GetCommandLineA/W -- and since dll and ref live in the
+ * SAME process, that is the SAME string on both sides: content equality is a
+ * meaningful, exact expectation here, not just cross-side agreement. */
+static void run_convtime___p__acmdln(void)
+{
+    char **p1 = __p__acmdln();
+    char **p2 = ref___p__acmdln();
+    grade2("__p__acmdln.isnull", "-", (p1 && *p1) == 0, (p2 && *p2) == 0);
+    if (p1 && *p1 && p2 && *p2)
+        grade2("__p__acmdln.val", "-", fnv(*p1, strlen(*p1) + 1), fnv(*p2, strlen(*p2) + 1));
+}
+
+static void run_convtime___p__wcmdln(void)
+{
+    wchar_t **p1 = __p__wcmdln();
+    wchar_t **p2 = ref___p__wcmdln();
+    grade2("__p__wcmdln.isnull", "-", (p1 && *p1) == 0, (p2 && *p2) == 0);
+    if (p1 && *p1 && p2 && *p2)
+        grade2("__p__wcmdln.val", "-", fnv(*p1, (wcslen(*p1) + 1) * sizeof(wchar_t)),
+               fnv(*p2, (wcslen(*p2) + 1) * sizeof(wchar_t)));
+}
+
+static void run_convtime___p__pgmptr(void)
+{
+    char **p1 = __p__pgmptr();
+    char **p2 = ref___p__pgmptr();
+    grade2("__p__pgmptr.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__p__pgmptr.val.isnull", "-", *p1 == 0, *p2 == 0);
+}
+
+static void run_convtime___p__wpgmptr(void)
+{
+    wchar_t **p1 = __p__wpgmptr();
+    wchar_t **p2 = ref___p__wpgmptr();
+    grade2("__p__wpgmptr.isnull", "-", p1 == 0, p2 == 0);
+    if (p1 && p2)
+        grade2("__p__wpgmptr.val.isnull", "-", *p1 == 0, *p2 == 0);
+}
+
+/* _pgmptr/_wpgmptr are never configured here (see the comment above), so both
+ * sides must validate-fail with EINVAL -- exercised through the handler path,
+ * not the happy path (there is no happy path reachable in this harness). */
+static void run_convtime__get_pgmptr(void)
+{
+    install_counting_iph();
+    char *r1 = (char *)1, *r2 = (char *)1;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t c1 = _get_pgmptr(&r1);
+    errno_t c2 = ref__get_pgmptr(&r2);
+    grade2("_get_pgmptr", "-", c1, c2);
+    grade2("_get_pgmptr.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_pgmptr.iph", "-", g_iph_dll, g_iph_ref);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _get_pgmptr((char **)0);
+    c2 = ref__get_pgmptr((char **)0);
+    grade2("_get_pgmptr.nullresult", "-", c1, c2);
+    grade2("_get_pgmptr.nullresult.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_pgmptr.nullresult.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_convtime__get_wpgmptr(void)
+{
+    install_counting_iph();
+    wchar_t *r1 = (wchar_t *)1, *r2 = (wchar_t *)1;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t c1 = _get_wpgmptr(&r1);
+    errno_t c2 = ref__get_wpgmptr(&r2);
+    grade2("_get_wpgmptr", "-", c1, c2);
+    grade2("_get_wpgmptr.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_wpgmptr.iph", "-", g_iph_dll, g_iph_ref);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    c1 = _get_wpgmptr((wchar_t **)0);
+    c2 = ref__get_wpgmptr((wchar_t **)0);
+    grade2("_get_wpgmptr.nullresult", "-", c1, c2);
+    grade2("_get_wpgmptr.nullresult.errno", "-", *_errno(), *ref__errno());
+    grade2("_get_wpgmptr.nullresult.iph", "-", g_iph_dll, g_iph_ref);
+}
+#endif /* UCRTDIFF_REF_HAS___p___argc */
+
+/*
+ * ==== registry ============================================================
+ * Paste into run_legacy()'s `legacy[]` table, right after the ST_HAND rows
+ * (or anywhere else in that table -- order does not matter, `export_begin`
+ * shards by name). One #define block per guard, exactly like FP_HAND/ST_HAND
+ * above; each expands to `{ 0 }` rows when its guard is 0, so the table
+ * always compiles, guard on or off.
+ */
+#if UCRTDIFF_REF_HAS_atof
+#define CONVTIME_ATOF_HAND(name) { #name, run_convtime_##name },
+#else
+#define CONVTIME_ATOF_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__ctime32
+#define CONVTIME_CTIME_HAND(name) { #name, run_convtime_##name },
+#else
+#define CONVTIME_CTIME_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__get_daylight
+#define CONVTIME_TIMESET_HAND(name) { #name, run_convtime_##name },
+#else
+#define CONVTIME_TIMESET_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS___p___argc
+#define CONVTIME_ARGV_HAND(name) { #name, run_convtime_##name },
+#else
+#define CONVTIME_ARGV_HAND(name) { #name, 0 },
+#endif
+
+#define CONVTIME_HAND_ENTRIES                                                  \
+    CONVTIME_ATOF_HAND(atof) CONVTIME_ATOF_HAND(_atof_l)                       \
+    CONVTIME_ATOF_HAND(_wtof) CONVTIME_ATOF_HAND(_wtof_l)                      \
+    CONVTIME_ATOF_HAND(_atoflt) CONVTIME_ATOF_HAND(_atoflt_l)                  \
+    CONVTIME_ATOF_HAND(_atodbl) CONVTIME_ATOF_HAND(_atodbl_l)                  \
+    CONVTIME_CTIME_HAND(_ctime32_s) CONVTIME_CTIME_HAND(_wctime32_s)           \
+    CONVTIME_CTIME_HAND(_ctime64_s) CONVTIME_CTIME_HAND(_wctime64_s)           \
+    CONVTIME_CTIME_HAND(_ctime32) CONVTIME_CTIME_HAND(_wctime32)               \
+    CONVTIME_CTIME_HAND(_ctime64) CONVTIME_CTIME_HAND(_wctime64)               \
+    CONVTIME_TIMESET_HAND(_get_daylight) CONVTIME_TIMESET_HAND(_get_dstbias)   \
+    CONVTIME_TIMESET_HAND(_get_timezone) CONVTIME_TIMESET_HAND(_get_tzname)    \
+    CONVTIME_TIMESET_HAND(__daylight) CONVTIME_TIMESET_HAND(__dstbias)         \
+    CONVTIME_TIMESET_HAND(__timezone) CONVTIME_TIMESET_HAND(__tzname)         \
+    CONVTIME_ARGV_HAND(__p___argc) CONVTIME_ARGV_HAND(__p___argv)              \
+    CONVTIME_ARGV_HAND(__p___wargv) CONVTIME_ARGV_HAND(__p__acmdln)            \
+    CONVTIME_ARGV_HAND(__p__wcmdln) CONVTIME_ARGV_HAND(__p__pgmptr)            \
+    CONVTIME_ARGV_HAND(__p__wpgmptr) CONVTIME_ARGV_HAND(_get_pgmptr)           \
+    CONVTIME_ARGV_HAND(_get_wpgmptr)
+
+
+/* ==== staging/heapio.c, inlined ==== */
+/*
+ * heapio.c -- guest grader for the "heapio" batch: align.cpp, invalid_parameter.cpp,
+ * open.cpp (all eight exports: _sopen_dispatch, _wsopen_dispatch, _sopen_s, _wsopen_s,
+ * plus the four variadic entry points _open/_wopen/_sopen/_wsopen, which now route
+ * through the varargs-rust shim's `_v` twins rather than being unported; their shared
+ * `_wsopen_nolock`/`_sopen_nolock` internals are exercised indirectly through all of
+ * them, never called directly since they are not exported).
+ *
+ * #included into a copy of ucrtdiff.c, just before `run_legacy()`, so every symbol
+ * ucrtdiff.c itself defines above that point (grade2, fnv, label_idx, _errno,
+ * ref__errno, __doserrno, install_counting_iph, g_iph_dll/g_iph_ref, UD_IMP, MAX_PATH
+ * via <windows.h>) is already in scope. Nothing here reuses the STAT block's fixture
+ * helpers (`st_setup`/`g_st_dir`) -- those live inside `#if UCRTDIFF_REF_HAS__stat64`,
+ * which this file must survive stat.cpp's deletion independent of.
+ *
+ * Guard names used (one per C file, per the brief): `UCRTDIFF_REF_HAS__aligned_malloc`
+ * (align.cpp), `UCRTDIFF_REF_HAS__invalid_parameter` (invalid_parameter.cpp),
+ * `UCRTDIFF_REF_HAS__sopen_dispatch` (open.cpp). None of the three appear yet in
+ * generated-refs.h (that generator does not know about this batch), so each is
+ * defined here with `#ifndef` -- confirmed present in the reference archive via
+ * `llvm-nm --defined-only build-arm64/libucrt_ref.a | grep ' ref_<name>$'` (all three,
+ * and every other ref_ symbol this file declares, returned exactly one match). If the
+ * generator later grows entries for these names, its `#define` (processed first, since
+ * generated-refs.h is `#include`d at the top of ucrtdiff.c) wins over the `#ifndef`
+ * fallback here.
+ */
+
+
+/* ==========================================================================
+ * ALIGN -- _aligned_malloc, _aligned_free, _aligned_msize, _aligned_offset_malloc,
+ * _aligned_offset_realloc, _aligned_offset_recalloc, _aligned_realloc,
+ * _aligned_recalloc.
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__aligned_malloc
+
+void *__cdecl ref__aligned_malloc(size_t, size_t);
+void __cdecl ref__aligned_free(void *);
+size_t __cdecl ref__aligned_msize(void *, size_t, size_t);
+void *__cdecl ref__aligned_offset_malloc(size_t, size_t, size_t);
+void *__cdecl ref__aligned_offset_realloc(void *, size_t, size_t, size_t);
+void *__cdecl ref__aligned_offset_recalloc(void *, size_t, size_t, size_t, size_t);
+void *__cdecl ref__aligned_realloc(void *, size_t, size_t);
+void *__cdecl ref__aligned_recalloc(void *, size_t, size_t, size_t);
+
+extern void *(__cdecl *const ud__aligned_malloc)(size_t, size_t) __asm__(UD_IMP(_aligned_malloc));
+extern void(__cdecl *const ud__aligned_free)(void *) __asm__(UD_IMP(_aligned_free));
+extern size_t(__cdecl *const ud__aligned_msize)(void *, size_t, size_t) __asm__(UD_IMP(_aligned_msize));
+extern void *(__cdecl *const ud__aligned_offset_malloc)(size_t, size_t, size_t)
+    __asm__(UD_IMP(_aligned_offset_malloc));
+extern void *(__cdecl *const ud__aligned_offset_realloc)(void *, size_t, size_t, size_t)
+    __asm__(UD_IMP(_aligned_offset_realloc));
+extern void *(__cdecl *const ud__aligned_offset_recalloc)(void *, size_t, size_t, size_t, size_t)
+    __asm__(UD_IMP(_aligned_offset_recalloc));
+extern void *(__cdecl *const ud__aligned_realloc)(void *, size_t, size_t)
+    __asm__(UD_IMP(_aligned_realloc));
+extern void *(__cdecl *const ud__aligned_recalloc)(void *, size_t, size_t, size_t)
+    __asm__(UD_IMP(_aligned_recalloc));
+
+/* Grades a freshly-allocated pair: ALIGNMENT (not the raw address), CONTENTS
+ * (after stamping a pattern through both), and `_aligned_msize`'s report --
+ * never the pointer values themselves, which can never match across two
+ * independent heaps. */
+static void align_grade_block(const char *family, const char *lbl, void *p1, void *p2,
+                               size_t size, size_t alignment, size_t offset)
+{
+    grade2(family, lbl, (p1 != 0), (p2 != 0));
+    if (!p1 || !p2)
+        return;
+    grade2(family, lbl, (long long)((uintptr_t)p1 % alignment), (long long)((uintptr_t)p2 % alignment));
+    if (size) {
+        memset(p1, 0x5a, size);
+        memset(p2, 0x5a, size);
+    }
+    grade2(family, lbl, fnv(p1, size), fnv(p2, size));
+    grade2(family, lbl, (long long)ud__aligned_msize(p1, alignment, offset),
+           (long long)ref__aligned_msize(p2, alignment, offset));
+}
+
+static void run_align__aligned_malloc(void)
+{
+    install_counting_iph();
+    static const size_t sizes[] = { 0, 1, 7, 64, 4096 };
+    static const size_t aligns[] = { 8, 16, 32, 64, 4096 };
+    size_t i, j;
+    for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        for (j = 0; j < sizeof(aligns) / sizeof(aligns[0]); j++) {
+            void *p1 = ud__aligned_malloc(sizes[i], aligns[j]);
+            void *p2 = ref__aligned_malloc(sizes[i], aligns[j]);
+            align_grade_block("_aligned_malloc", label_idx(i * 8 + j), p1, p2, sizes[i], aligns[j], 0);
+            ud__aligned_free(p1);
+            ref__aligned_free(p2);
+        }
+    }
+
+    /* Invalid (non-power-of-two, and zero) alignment: EINVAL, NULL, iph fires once
+     * per side. */
+    {
+        static const size_t bad[] = { 0, 3, 5, 100 };
+        for (i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+            *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+            void *p1 = ud__aligned_malloc(16, bad[i]);
+            void *p2 = ref__aligned_malloc(16, bad[i]);
+            grade2("_aligned_malloc.badalign", label_idx(i), (p1 == 0), (p2 == 0));
+            grade2("_aligned_malloc.badalign.errno", label_idx(i), *_errno(), *ref__errno());
+            grade2("_aligned_malloc.badalign.iph", label_idx(i), g_iph_dll, g_iph_ref);
+            ud__aligned_free(p1);
+            ref__aligned_free(p2);
+        }
+    }
+}
+
+static void run_align__aligned_free(void)
+{
+    install_counting_iph();
+    /* free(NULL) must not fault/hang -- the fault-isolation guard covers the
+     * class; here we just confirm both sides return (implicitly, by reaching
+     * this grade2 at all) and touch no shared accounting on their own. */
+    ud__aligned_free(0);
+    ref__aligned_free(0);
+    grade2("_aligned_free.null", "ok", 1, 1);
+
+    void *p1 = ud__aligned_malloc(32, 16);
+    void *p2 = ref__aligned_malloc(32, 16);
+    ud__aligned_free(p1);
+    ref__aligned_free(p2);
+    grade2("_aligned_free.roundtrip", "ok", 1, 1);
+}
+
+static void run_align__aligned_msize(void)
+{
+    install_counting_iph();
+    /* NULL -> EINVAL, (size_t)-1. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    grade2("_aligned_msize.null", "ok", (long long)ud__aligned_msize(0, 16, 0),
+           (long long)ref__aligned_msize(0, 16, 0));
+    grade2("_aligned_msize.null.errno", "ok", *_errno(), *ref__errno());
+    grade2("_aligned_msize.null.iph", "ok", g_iph_dll, g_iph_ref);
+
+    static const size_t sizes[] = { 1, 100, 4096 };
+    static const size_t aligns[] = { 8, 64 };
+    size_t i, j;
+    for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        for (j = 0; j < sizeof(aligns) / sizeof(aligns[0]); j++) {
+            void *p1 = ud__aligned_malloc(sizes[i], aligns[j]);
+            void *p2 = ref__aligned_malloc(sizes[i], aligns[j]);
+            grade2("_aligned_msize", label_idx(i * 2 + j), (long long)ud__aligned_msize(p1, aligns[j], 0),
+                   (long long)ref__aligned_msize(p2, aligns[j], 0));
+            ud__aligned_free(p1);
+            ref__aligned_free(p2);
+        }
+    }
+}
+
+static void run_align__aligned_offset_malloc(void)
+{
+    install_counting_iph();
+    static const size_t size = 200;
+    static const size_t aligns[] = { 8, 32, 64 };
+    size_t i;
+    for (i = 0; i < sizeof(aligns) / sizeof(aligns[0]); i++) {
+        size_t offset = aligns[i] > 4 ? aligns[i] / 4 : 1;
+        void *p1 = ud__aligned_offset_malloc(size, aligns[i], offset);
+        void *p2 = ref__aligned_offset_malloc(size, aligns[i], offset);
+        align_grade_block("_aligned_offset_malloc", label_idx(i), p1, p2, size, aligns[i], offset);
+        ud__aligned_free(p1);
+        ref__aligned_free(p2);
+    }
+
+    /* offset == size (only offset < size or offset == 0 is legal) -> EINVAL. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    void *p1 = ud__aligned_offset_malloc(64, 16, 64);
+    void *p2 = ref__aligned_offset_malloc(64, 16, 64);
+    grade2("_aligned_offset_malloc.offset_eq_size", "ok", (p1 == 0), (p2 == 0));
+    grade2("_aligned_offset_malloc.offset_eq_size.errno", "ok", *_errno(), *ref__errno());
+    grade2("_aligned_offset_malloc.offset_eq_size.iph", "ok", g_iph_dll, g_iph_ref);
+    ud__aligned_free(p1);
+    ref__aligned_free(p2);
+
+    /* offset > size -> EINVAL too. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    p1 = ud__aligned_offset_malloc(64, 16, 65);
+    p2 = ref__aligned_offset_malloc(64, 16, 65);
+    grade2("_aligned_offset_malloc.offset_gt_size", "ok", (p1 == 0), (p2 == 0));
+    grade2("_aligned_offset_malloc.offset_gt_size.errno", "ok", *_errno(), *ref__errno());
+    ud__aligned_free(p1);
+    ref__aligned_free(p2);
+}
+
+static void run_align__aligned_realloc(void)
+{
+    install_counting_iph();
+    static const size_t alignment = 32;
+    static const size_t grow_from = 40, grow_to = 4096;
+    static const size_t shrink_from = 4096, shrink_to = 16;
+
+    /* Growth: contents up to the old size must survive. */
+    {
+        void *p1 = ud__aligned_malloc(grow_from, alignment);
+        void *p2 = ref__aligned_malloc(grow_from, alignment);
+        memset(p1, 0xc3, grow_from);
+        memset(p2, 0xc3, grow_from);
+        void *r1 = ud__aligned_realloc(p1, grow_to, alignment);
+        void *r2 = ref__aligned_realloc(p2, grow_to, alignment);
+        grade2("_aligned_realloc.grow.align", "ok", (long long)((uintptr_t)r1 % alignment),
+               (long long)((uintptr_t)r2 % alignment));
+        grade2("_aligned_realloc.grow.prefix", "ok", fnv(r1, grow_from), fnv(r2, grow_from));
+        ud__aligned_free(r1);
+        ref__aligned_free(r2);
+    }
+
+    /* Shrink: the surviving prefix is the NEW (smaller) size. */
+    {
+        void *p1 = ud__aligned_malloc(shrink_from, alignment);
+        void *p2 = ref__aligned_malloc(shrink_from, alignment);
+        memset(p1, 0x7e, shrink_from);
+        memset(p2, 0x7e, shrink_from);
+        void *r1 = ud__aligned_realloc(p1, shrink_to, alignment);
+        void *r2 = ref__aligned_realloc(p2, shrink_to, alignment);
+        grade2("_aligned_realloc.shrink.align", "ok", (long long)((uintptr_t)r1 % alignment),
+               (long long)((uintptr_t)r2 % alignment));
+        grade2("_aligned_realloc.shrink.prefix", "ok", fnv(r1, shrink_to), fnv(r2, shrink_to));
+        ud__aligned_free(r1);
+        ref__aligned_free(r2);
+    }
+
+    /* NULL block -> forwards to malloc. */
+    {
+        void *r1 = ud__aligned_realloc(0, 64, alignment);
+        void *r2 = ref__aligned_realloc(0, 64, alignment);
+        grade2("_aligned_realloc.from_null", "ok", (r1 != 0), (r2 != 0));
+        ud__aligned_free(r1);
+        ref__aligned_free(r2);
+    }
+
+    /* size == 0 -> frees and returns NULL. */
+    {
+        void *p1 = ud__aligned_malloc(64, alignment);
+        void *p2 = ref__aligned_malloc(64, alignment);
+        void *r1 = ud__aligned_realloc(p1, 0, alignment);
+        void *r2 = ref__aligned_realloc(p2, 0, alignment);
+        grade2("_aligned_realloc.to_zero", "ok", (r1 == 0), (r2 == 0));
+    }
+}
+
+static void run_align__aligned_offset_realloc(void)
+{
+    install_counting_iph();
+    static const size_t alignment = 16, offset = 4;
+    void *p1 = ud__aligned_offset_malloc(100, alignment, offset);
+    void *p2 = ref__aligned_offset_malloc(100, alignment, offset);
+    memset(p1, 0x11, 100);
+    memset(p2, 0x11, 100);
+    void *r1 = ud__aligned_offset_realloc(p1, 500, alignment, offset);
+    void *r2 = ref__aligned_offset_realloc(p2, 500, alignment, offset);
+    grade2("_aligned_offset_realloc.align", "ok", (long long)(((uintptr_t)r1 + offset) % alignment),
+           (long long)(((uintptr_t)r2 + offset) % alignment));
+    grade2("_aligned_offset_realloc.prefix", "ok", fnv(r1, 100), fnv(r2, 100));
+    ud__aligned_free(r1);
+    ref__aligned_free(r2);
+}
+
+static void run_align__aligned_recalloc(void)
+{
+    install_counting_iph();
+    static const size_t alignment = 32;
+    void *p1 = ud__aligned_recalloc(0, 10, 40, alignment);
+    void *p2 = ref__aligned_recalloc(0, 10, 40, alignment);
+    grade2("_aligned_recalloc.fresh", "ok", (p1 != 0), (p2 != 0));
+    if (p1 && p2) {
+        size_t i, nz1 = 0, nz2 = 0;
+        for (i = 0; i < 400; i++) {
+            if (((unsigned char *)p1)[i]) nz1++;
+            if (((unsigned char *)p2)[i]) nz2++;
+        }
+        grade2("_aligned_recalloc.zeroed", "ok", (long long)nz1, (long long)nz2);
+    }
+
+    /* Grow via recalloc: the ORIGINAL bytes survive, only the tail is zeroed. */
+    memset(p1, 0x9a, 400);
+    memset(p2, 0x9a, 400);
+    void *r1 = ud__aligned_recalloc(p1, 20, 40, alignment);
+    void *r2 = ref__aligned_recalloc(p2, 20, 40, alignment);
+    grade2("_aligned_recalloc.grow.prefix", "ok", fnv(r1, 400), fnv(r2, 400));
+    {
+        size_t i, nz1 = 0, nz2 = 0;
+        for (i = 400; i < 800; i++) {
+            if (((unsigned char *)r1)[i]) nz1++;
+            if (((unsigned char *)r2)[i]) nz2++;
+        }
+        grade2("_aligned_recalloc.grow.tail_zeroed", "ok", (long long)nz1, (long long)nz2);
+    }
+    ud__aligned_free(r1);
+    ref__aligned_free(r2);
+
+    /* count * size overflow -> ENOMEM, NULL. */
+    *_errno() = 0; *ref__errno() = 0;
+    void *o1 = ud__aligned_recalloc(0, (size_t)-1, 2, alignment);
+    void *o2 = ref__aligned_recalloc(0, (size_t)-1, 2, alignment);
+    grade2("_aligned_recalloc.overflow", "ok", (o1 == 0), (o2 == 0));
+    grade2("_aligned_recalloc.overflow.errno", "ok", *_errno(), *ref__errno());
+}
+
+static void run_align__aligned_offset_recalloc(void)
+{
+    install_counting_iph();
+    static const size_t alignment = 16, offset = 8;
+    void *p1 = ud__aligned_offset_recalloc(0, 5, 32, alignment, offset);
+    void *p2 = ref__aligned_offset_recalloc(0, 5, 32, alignment, offset);
+    grade2("_aligned_offset_recalloc.fresh", "ok", (p1 != 0), (p2 != 0));
+    if (p1 && p2) {
+        size_t i, nz1 = 0, nz2 = 0;
+        for (i = 0; i < 160; i++) {
+            if (((unsigned char *)p1)[i]) nz1++;
+            if (((unsigned char *)p2)[i]) nz2++;
+        }
+        grade2("_aligned_offset_recalloc.zeroed", "ok", (long long)nz1, (long long)nz2);
+    }
+    ud__aligned_free(p1);
+    ref__aligned_free(p2);
+}
+
+#define HEAPIO_ALIGN_HAND(name) { "_aligned_" #name, run_align__aligned_##name },
+#else
+#define HEAPIO_ALIGN_HAND(name) { "_aligned_" #name, 0 },
+#endif /* UCRTDIFF_REF_HAS__aligned_malloc */
+
+#define HEAPIO_ALIGN_HAND_ENTRIES \
+    HEAPIO_ALIGN_HAND(malloc) HEAPIO_ALIGN_HAND(free) HEAPIO_ALIGN_HAND(msize) \
+    HEAPIO_ALIGN_HAND(offset_malloc) HEAPIO_ALIGN_HAND(realloc) \
+    HEAPIO_ALIGN_HAND(offset_realloc) HEAPIO_ALIGN_HAND(recalloc) \
+    HEAPIO_ALIGN_HAND(offset_recalloc)
+
+/* ==========================================================================
+ * INVALID PARAMETER -- _invalid_parameter, _invalid_parameter_noinfo,
+ * _set_invalid_parameter_handler, _get_invalid_parameter_handler,
+ * _set_thread_local_invalid_parameter_handler,
+ * _get_thread_local_invalid_parameter_handler.
+ *
+ * NEVER exercised: _invalid_parameter_noinfo_noreturn, _invoke_watson (both
+ * terminate the process when no handler intercepts them -- and the whole point
+ * of this block is to always have ONE installed before anything can reach
+ * Watson).
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__invalid_parameter
+
+typedef void(__cdecl *heapio_iph_t)(const wchar_t *, const wchar_t *, const wchar_t *, unsigned, uintptr_t);
+
+void __cdecl ref__invalid_parameter(const wchar_t *, const wchar_t *, const wchar_t *, unsigned, uintptr_t);
+void __cdecl ref__invalid_parameter_noinfo(void);
+heapio_iph_t __cdecl ref__set_invalid_parameter_handler(heapio_iph_t);
+heapio_iph_t __cdecl ref__get_invalid_parameter_handler(void);
+heapio_iph_t __cdecl ref__set_thread_local_invalid_parameter_handler(heapio_iph_t);
+heapio_iph_t __cdecl ref__get_thread_local_invalid_parameter_handler(void);
+
+extern void(__cdecl *const ud__invalid_parameter)(const wchar_t *, const wchar_t *, const wchar_t *,
+                                                   unsigned, uintptr_t) __asm__(UD_IMP(_invalid_parameter));
+extern void(__cdecl *const ud__invalid_parameter_noinfo)(void) __asm__(UD_IMP(_invalid_parameter_noinfo));
+extern heapio_iph_t(__cdecl *const ud__set_invalid_parameter_handler)(heapio_iph_t)
+    __asm__(UD_IMP(_set_invalid_parameter_handler));
+extern heapio_iph_t(__cdecl *const ud__get_invalid_parameter_handler)(void)
+    __asm__(UD_IMP(_get_invalid_parameter_handler));
+extern heapio_iph_t(__cdecl *const ud__set_thread_local_invalid_parameter_handler)(heapio_iph_t)
+    __asm__(UD_IMP(_set_thread_local_invalid_parameter_handler));
+extern heapio_iph_t(__cdecl *const ud__get_thread_local_invalid_parameter_handler)(void)
+    __asm__(UD_IMP(_get_thread_local_invalid_parameter_handler));
+
+/* Two DISTINCT counting handlers per side (four total), so a precedence test can
+ * tell "the ref handler ran" from "the global handler ran" instead of both
+ * incrementing the same counter. */
+static volatile long g_heapio_dll_ref, g_heapio_dll_tl, g_heapio_ref_ref, g_heapio_ref_tl;
+static void __cdecl heapio_dll_ref_iph(const wchar_t *e, const wchar_t *f, const wchar_t *fl,
+                                        unsigned l, uintptr_t r)
+{ (void)e; (void)f; (void)fl; (void)l; (void)r; g_heapio_dll_ref++; }
+static void __cdecl heapio_dll_tl_iph(const wchar_t *e, const wchar_t *f, const wchar_t *fl,
+                                       unsigned l, uintptr_t r)
+{ (void)e; (void)f; (void)fl; (void)l; (void)r; g_heapio_dll_tl++; }
+static void __cdecl heapio_ref_ref_iph(const wchar_t *e, const wchar_t *f, const wchar_t *fl,
+                                        unsigned l, uintptr_t r)
+{ (void)e; (void)f; (void)fl; (void)l; (void)r; g_heapio_ref_ref++; }
+static void __cdecl heapio_ref_tl_iph(const wchar_t *e, const wchar_t *f, const wchar_t *fl,
+                                       unsigned l, uintptr_t r)
+{ (void)e; (void)f; (void)fl; (void)l; (void)r; g_heapio_ref_tl++; }
+
+/* Restores BOTH handler slots to what `install_counting_iph()` set up, on
+ * BOTH sides, at exit: this block must not leave a handler installed that a
+ * LATER export (which shares this process) does not expect. */
+static void heapio_iph_restore(void)
+{
+    ud__set_invalid_parameter_handler((heapio_iph_t)ud__get_invalid_parameter_handler);
+    ud__set_thread_local_invalid_parameter_handler(0);
+    ref__set_thread_local_invalid_parameter_handler(0);
+    install_counting_iph();
+}
+
+static void run_iph__set_get_invalid_parameter_handler(void)
+{
+    install_counting_iph();
+    /* Round trip: install, read back, must be the SAME pointer -- this is one
+     * of the few places a raw function-pointer comparison IS the contract
+     * (the getter's job is literally "return what I was given"), not an
+     * address that differs across the two heaps. */
+    heapio_iph_t old_dll = ud__set_invalid_parameter_handler(heapio_dll_ref_iph);
+    heapio_iph_t old_ref = ref__set_invalid_parameter_handler(heapio_ref_ref_iph);
+    grade2("_set_invalid_parameter_handler.roundtrip", "ok",
+           (ud__get_invalid_parameter_handler() == heapio_dll_ref_iph),
+           (ref__get_invalid_parameter_handler() == heapio_ref_ref_iph));
+    /* Old handler returned was the counting iph `install_counting_iph()`
+     * installed -- both sides had ONE installed, so both "old" values are
+     * non-NULL. */
+    grade2("_set_invalid_parameter_handler.old_nonnull", "ok", (old_dll != 0), (old_ref != 0));
+
+    /* NULL resets to "no handler" -- observable only via a call that reaches
+     * Watson if unhandled, so this checks the GETTER, never triggers that
+     * path. */
+    ud__set_invalid_parameter_handler(0);
+    ref__set_invalid_parameter_handler(0);
+    grade2("_set_invalid_parameter_handler.null_reset", "ok",
+           (ud__get_invalid_parameter_handler() == 0), (ref__get_invalid_parameter_handler() == 0));
+
+    heapio_iph_restore();
+}
+
+static void run_iph__set_get_thread_local_invalid_parameter_handler(void)
+{
+    install_counting_iph();
+    grade2("_get_thread_local_invalid_parameter_handler.initial", "ok",
+           (ud__get_thread_local_invalid_parameter_handler() == 0),
+           (ref__get_thread_local_invalid_parameter_handler() == 0));
+
+    heapio_iph_t old_dll = ud__set_thread_local_invalid_parameter_handler(heapio_dll_tl_iph);
+    heapio_iph_t old_ref = ref__set_thread_local_invalid_parameter_handler(heapio_ref_tl_iph);
+    grade2("_set_thread_local_invalid_parameter_handler.old_was_null", "ok", (old_dll == 0), (old_ref == 0));
+    grade2("_get_thread_local_invalid_parameter_handler.roundtrip", "ok",
+           (ud__get_thread_local_invalid_parameter_handler() == heapio_dll_tl_iph),
+           (ref__get_thread_local_invalid_parameter_handler() == heapio_ref_tl_iph));
+
+    ud__set_thread_local_invalid_parameter_handler(0);
+    ref__set_thread_local_invalid_parameter_handler(0);
+    grade2("_get_thread_local_invalid_parameter_handler.reset", "ok",
+           (ud__get_thread_local_invalid_parameter_handler() == 0),
+           (ref__get_thread_local_invalid_parameter_handler() == 0));
+
+    heapio_iph_restore();
+}
+
+/* Precedence: thread-local beats global when BOTH are installed, and a call
+ * through `_invalid_parameter` (which builds its own fresh
+ * `__crt_cached_ptd_host`/`PtdHost`) is what exercises the lookup -- not a
+ * direct call to the internal, which is not part of the public surface. */
+static void run_iph__precedence(void)
+{
+    install_counting_iph();
+    ud__set_invalid_parameter_handler(heapio_dll_ref_iph);
+    ref__set_invalid_parameter_handler(heapio_ref_ref_iph);
+    ud__set_thread_local_invalid_parameter_handler(heapio_dll_tl_iph);
+    ref__set_thread_local_invalid_parameter_handler(heapio_ref_tl_iph);
+
+    g_heapio_dll_ref = g_heapio_dll_tl = g_heapio_ref_ref = g_heapio_ref_tl = 0;
+    ud__invalid_parameter_noinfo();
+    ref__invalid_parameter_noinfo();
+    /* Thread-local ran, global did NOT, on both sides. */
+    grade2("_invalid_parameter.precedence.tl_ran", "ok", g_heapio_dll_tl, g_heapio_ref_tl);
+    grade2("_invalid_parameter.precedence.global_silent", "ok", g_heapio_dll_ref, g_heapio_ref_ref);
+
+    /* Remove the thread-local handler: now the GLOBAL one must run. */
+    ud__set_thread_local_invalid_parameter_handler(0);
+    ref__set_thread_local_invalid_parameter_handler(0);
+    g_heapio_dll_ref = g_heapio_dll_tl = g_heapio_ref_ref = g_heapio_ref_tl = 0;
+    ud__invalid_parameter(0, 0, 0, 0, 0);
+    ref__invalid_parameter(0, 0, 0, 0, 0);
+    grade2("_invalid_parameter.precedence.global_ran", "ok", g_heapio_dll_ref, g_heapio_ref_ref);
+
+    heapio_iph_restore();
+}
+
+/* The self-check the brief asks for: a real CRT export -- from THIS SAME
+ * batch, `_aligned_malloc` with a non-power-of-two alignment -- must
+ * increment exactly the installed handler, on both sides, tying the iph
+ * machinery to a caller outside this file rather than only to direct calls
+ * to the setters/getters above. */
+static void run_iph__real_caller(void)
+{
+    install_counting_iph();
+#if UCRTDIFF_REF_HAS__aligned_malloc
+    g_iph_dll = g_iph_ref = 0;
+    void *p1 = ud__aligned_malloc(16, 5 /* not a power of two */);
+    void *p2 = ref__aligned_malloc(16, 5);
+    grade2("_invalid_parameter.real_caller.fired", "ok", g_iph_dll, g_iph_ref);
+    ud__aligned_free(p1);
+    ref__aligned_free(p2);
+#else
+    grade2("_invalid_parameter.real_caller", "skipped-no-align-ref", 1, 1);
+#endif
+}
+
+#define HEAPIO_IPH_HAND(name, fn) { name, run_iph__##fn },
+#else
+#define HEAPIO_IPH_HAND(name, fn) { name, 0 },
+#endif /* UCRTDIFF_REF_HAS__invalid_parameter */
+
+#define HEAPIO_IPH_HAND_ENTRIES \
+    HEAPIO_IPH_HAND("_set_invalid_parameter_handler+_get", set_get_invalid_parameter_handler) \
+    HEAPIO_IPH_HAND("_set_get_thread_local_invalid_parameter_handler", set_get_thread_local_invalid_parameter_handler) \
+    HEAPIO_IPH_HAND("_invalid_parameter.precedence", precedence) \
+    HEAPIO_IPH_HAND("_invalid_parameter.real_caller", real_caller)
+
+/* ==========================================================================
+ * OPEN -- the non-variadic five: _sopen_dispatch, _wsopen_dispatch, _sopen_s,
+ * _wsopen_s (their shared `_wsopen_nolock`/`_sopen_nolock` internals are
+ * exercised through them, never called directly -- they are not exported).
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__sopen_dispatch
+
+int __cdecl ref__sopen_dispatch(const char *, int, int, int, int *, int);
+int __cdecl ref__wsopen_dispatch(const wchar_t *, int, int, int, int *, int);
+int __cdecl ref__sopen_s(int *, const char *, int, int, int);
+int __cdecl ref__wsopen_s(int *, const wchar_t *, int, int, int);
+int __cdecl ref__close(int);
+int __cdecl ref__write(int, const void *, unsigned);
+
+extern int(__cdecl *const ud__sopen_dispatch)(const char *, int, int, int, int *, int)
+    __asm__(UD_IMP(_sopen_dispatch));
+extern int(__cdecl *const ud__wsopen_dispatch)(const wchar_t *, int, int, int, int *, int)
+    __asm__(UD_IMP(_wsopen_dispatch));
+extern int(__cdecl *const ud__sopen_s)(int *, const char *, int, int, int) __asm__(UD_IMP(_sopen_s));
+extern int(__cdecl *const ud__wsopen_s)(int *, const wchar_t *, int, int, int) __asm__(UD_IMP(_wsopen_s));
+
+/* Self-contained fixture directory -- deliberately NOT the stat block's
+ * `st_setup`/`g_st_dir`, which live inside `#if UCRTDIFF_REF_HAS__stat64` and
+ * must not be a dependency of this file surviving stat.cpp's deletion. */
+#define SH_DENYNO_LOCAL 0x40   /* _SH_DENYNO */
+#define S_IREAD_LOCAL 0x0100   /* _S_IREAD */
+#define S_IWRITE_LOCAL 0x0080  /* _S_IWRITE */
+/* `_O_*` (fcntl.h), used as-is below: this file is included into a TU that
+ * already has them from real headers (WRONLY/CREAT/TRUNC/EXCL/RDONLY/BINARY/
+ * WTEXT/U16TEXT/U8TEXT/TEXT), confirmed present via <fcntl.h> already
+ * included by ucrtdiff.c's own headers. Only the three internal-looking
+ * `_umaskval`-adjacent ones above (SH_DENYNO/S_IREAD/S_IWRITE) are missing
+ * from the DLL-facing headers ucrtdiff.c includes, hence the local spellings.
+ */
+
+static wchar_t g_heapio_dir[MAX_PATH];
+static int heapio_dir_ready;
+
+static int heapio_setup_dir(void)
+{
+    if (heapio_dir_ready)
+        return 1;
+    wchar_t base[MAX_PATH];
+    DWORD n = GetTempPathW(MAX_PATH - 32, base);
+    if (!n || n >= MAX_PATH - 32)
+        return 0;
+    lstrcpyW(g_heapio_dir, base);
+    lstrcatW(g_heapio_dir, L"ucrtdiff_heapio\\");
+    if (!CreateDirectoryW(g_heapio_dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
+        return 0;
+    heapio_dir_ready = 1;
+    return 1;
+}
+
+static void heapio_path(const wchar_t *leaf, wchar_t *out)
+{
+    lstrcpyW(out, g_heapio_dir);
+    lstrcatW(out, leaf);
+}
+
+/* Reads back what was actually written, from OUTSIDE the CRT entirely (raw
+ * Win32), so a BOM-writing bug cannot grade itself as passing. */
+static long long heapio_read_back(const wchar_t *path)
+{
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                            OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return -1;
+    unsigned char buf[64];
+    DWORD got = 0;
+    BOOL ok = ReadFile(h, buf, sizeof buf, &got, NULL);
+    CloseHandle(h);
+    if (!ok)
+        return -1;
+    return fnv(buf, got);
+}
+
+/* `_O_CREAT|_O_TRUNC|_O_WRONLY` with each text mode, both narrow and wide
+ * entry points; grades the fd's validity/errno/iph AND the BOM bytes actually
+ * on disk (read back independently). */
+static void heapio_bom_case(const char *lbl, int oflag, wchar_t *path, const char *narrow_path,
+                             int wide)
+{
+    int fh1 = -1, fh2 = -1;
+    int rc1, rc2;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    if (wide) {
+        DbgPrint("[UCRTDIFF] bom %s oflag=0x%x: dll ->\n", lbl, oflag);
+        rc1 = ud__wsopen_s(&fh1, path, oflag, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        DbgPrint("[UCRTDIFF] bom %s: dll rc=%d fh=%d, ref ->\n", lbl, rc1, fh1);
+        rc2 = ref__wsopen_s(&fh2, path, oflag, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        DbgPrint("[UCRTDIFF] bom %s: ref rc=%d fh=%d\n", lbl, rc2, fh2);
+    } else {
+        rc1 = ud__sopen_s(&fh1, narrow_path, oflag, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        rc2 = ref__sopen_s(&fh2, narrow_path, oflag, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    }
+    grade2("_open.bom.rc", lbl, rc1, rc2);
+    grade2("_open.bom.fh_valid", lbl, (fh1 >= 0), (fh2 >= 0));
+    if (fh1 >= 0) _close(fh1);
+    if (fh2 >= 0) ref__close(fh2);
+
+    long long bytes = heapio_read_back(path);
+    grade2("_open.bom.bytes", lbl, bytes, bytes); /* recorded, not cross-graded: each
+        run only has ONE file on disk (the DLL and ref sides share the same path,
+        opened and closed in turn), so this is a sanity echo, not a real
+        cross-check -- see the two-path variant below for the real BOM grade. */
+}
+
+/* The real cross-check: open the SAME logical file with the DLL and the ref
+ * side at two DIFFERENT paths, then diff what landed on disk byte-for-byte. */
+static void heapio_bom_pair(const char *lbl, int oflag)
+{
+    wchar_t p1[MAX_PATH], p2[MAX_PATH];
+    heapio_path(L"dll.bom", p1);
+    heapio_path(L"ref.bom", p2);
+    DeleteFileW(p1);
+    DeleteFileW(p2);
+
+    int fh1 = -1, fh2 = -1;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    /* One serial line per side: the u16/wtext cases have taken the guest KERNEL
+     * down (fastfat, an uncaught STATUS_FILE_INVALID), and only these say which
+     * side's calls reached it. */
+    DbgPrint("[UCRTDIFF] bom %s oflag=0x%x: dll ->\n", lbl, oflag);
+    int rc1 = ud__wsopen_s(&fh1, p1, oflag, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    DbgPrint("[UCRTDIFF] bom %s: dll rc=%d fh=%d, ref ->\n", lbl, rc1, fh1);
+    int rc2 = ref__wsopen_s(&fh2, p2, oflag, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    DbgPrint("[UCRTDIFF] bom %s: ref rc=%d fh=%d\n", lbl, rc2, fh2);
+    grade2("_wsopen_s.bom.rc", lbl, rc1, rc2);
+    grade2("_wsopen_s.bom.fh_valid", lbl, (fh1 >= 0), (fh2 >= 0));
+    if (fh1 >= 0) _close(fh1);
+    if (fh2 >= 0) ref__close(fh2);
+
+    long long b1 = heapio_read_back(p1);
+    long long b2 = heapio_read_back(p2);
+    grade2("_wsopen_s.bom.on_disk", lbl, b1, b2);
+}
+
+static void run_open__bom(void)
+{
+    install_counting_iph();
+    if (!heapio_setup_dir()) {
+        grade2("_open.bom.fixture", "setup", 0, 1);
+        return;
+    }
+
+    static const struct { const char *lbl; int oflag; } cases[] = {
+        { "u8", _O_CREAT | _O_TRUNC | _O_WRONLY | _O_U8TEXT },
+        { "u16", _O_CREAT | _O_TRUNC | _O_WRONLY | _O_U16TEXT },
+        { "wtext", _O_CREAT | _O_TRUNC | _O_WRONLY | _O_WTEXT },
+        { "text", _O_CREAT | _O_TRUNC | _O_WRONLY | _O_TEXT },
+        { "binary", _O_CREAT | _O_TRUNC | _O_WRONLY | _O_BINARY },
+    };
+    size_t i;
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        heapio_bom_pair(cases[i].lbl, cases[i].oflag);
+}
+
+static void run_open__excl_and_bad_flags(void)
+{
+    install_counting_iph();
+    if (!heapio_setup_dir()) {
+        grade2("_open.excl.fixture", "setup", 0, 1);
+        return;
+    }
+    wchar_t p[MAX_PATH];
+    heapio_path(L"excl.txt", p);
+    DeleteFileW(p);
+
+    /* First create it... */
+    int fh1 = -1, fh2 = -1;
+    wchar_t p2path[MAX_PATH];
+    heapio_path(L"excl_ref.txt", p2path);
+    DeleteFileW(p2path);
+    ud__wsopen_s(&fh1, p, _O_CREAT | _O_WRONLY, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    ref__wsopen_s(&fh2, p2path, _O_CREAT | _O_WRONLY, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    if (fh1 >= 0) _close(fh1);
+    if (fh2 >= 0) ref__close(fh2);
+
+    /* ... then _O_CREAT|_O_EXCL on the now-existing file must FAIL on both. */
+    *_errno() = 0; *ref__errno() = 0;
+    int rc1 = ud__wsopen_s(&fh1, p, _O_CREAT | _O_EXCL | _O_WRONLY, SH_DENYNO_LOCAL,
+                            S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    int rc2 = ref__wsopen_s(&fh2, p2path, _O_CREAT | _O_EXCL | _O_WRONLY, SH_DENYNO_LOCAL,
+                             S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    grade2("_wsopen_s.excl_existing.rc_nonzero", "ok", (rc1 != 0), (rc2 != 0));
+    grade2("_wsopen_s.excl_existing.fh", "ok", fh1, fh2);
+    if (fh1 >= 0) _close(fh1);
+    if (fh2 >= 0) ref__close(fh2);
+
+    /* Bad shflag (e.g. _SH_COMPAT, 0x00 -- no case in decode_sharing_flags). */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_s(&fh1, p, _O_RDONLY, 0 /* _SH_COMPAT */, 0);
+    rc2 = ref__wsopen_s(&fh2, p2path, _O_RDONLY, 0, 0);
+    grade2("_wsopen_s.bad_shflag.rc", "ok", rc1, rc2);
+    grade2("_wsopen_s.bad_shflag.errno", "ok", *_errno(), *ref__errno());
+    grade2("_wsopen_s.bad_shflag.iph", "ok", g_iph_dll, g_iph_ref);
+    if (fh1 >= 0) _close(fh1);
+    if (fh2 >= 0) ref__close(fh2);
+
+    /* Bad pmode for the `_s` (secure) forms only: any bit outside
+     * _S_IREAD|_S_IWRITE. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_s(&fh1, p, _O_CREAT | _O_WRONLY, SH_DENYNO_LOCAL, 0x1);
+    rc2 = ref__wsopen_s(&fh2, p2path, _O_CREAT | _O_WRONLY, SH_DENYNO_LOCAL, 0x1);
+    grade2("_wsopen_s.bad_pmode.rc", "ok", rc1, rc2);
+    grade2("_wsopen_s.bad_pmode.errno", "ok", *_errno(), *ref__errno());
+    grade2("_wsopen_s.bad_pmode.iph", "ok", g_iph_dll, g_iph_ref);
+    if (fh1 >= 0) _close(fh1);
+    if (fh2 >= 0) ref__close(fh2);
+
+    /* NULL name / NULL pfh for the `_s` forms. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_s(&fh1, 0, _O_RDONLY, SH_DENYNO_LOCAL, 0);
+    rc2 = ref__wsopen_s(&fh2, 0, _O_RDONLY, SH_DENYNO_LOCAL, 0);
+    grade2("_wsopen_s.null_name.rc", "ok", rc1, rc2);
+    grade2("_wsopen_s.null_name.fh", "ok", fh1, fh2);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_s(0, p, _O_RDONLY, SH_DENYNO_LOCAL, 0);
+    rc2 = ref__wsopen_s(0, p2path, _O_RDONLY, SH_DENYNO_LOCAL, 0);
+    grade2("_wsopen_s.null_pfh.rc", "ok", rc1, rc2);
+}
+
+/* _sopen_s (narrow) and _wsopen_dispatch (wide), which no other runner reaches: a
+ * create/write round trip read back from outside, then the NULL-argument paths. */
+static void run_open__sopen_s_wsopen_dispatch(void)
+{
+    install_counting_iph();
+    if (!heapio_setup_dir()) {
+        grade2("_sopen_s.fixture", "setup", 0, 1);
+        return;
+    }
+    wchar_t wp1[MAX_PATH], wp2[MAX_PATH];
+    char np1[MAX_PATH * 2], np2[MAX_PATH * 2];
+    int fh1, fh2, rc1, rc2;
+
+    heapio_path(L"sopen_s1.txt", wp1);
+    heapio_path(L"sopen_s2.txt", wp2);
+    DeleteFileW(wp1);
+    DeleteFileW(wp2);
+    WideCharToMultiByte(CP_ACP, 0, wp1, -1, np1, sizeof np1, NULL, NULL);
+    WideCharToMultiByte(CP_ACP, 0, wp2, -1, np2, sizeof np2, NULL, NULL);
+    fh1 = fh2 = -1;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__sopen_s(&fh1, np1, _O_CREAT | _O_WRONLY | _O_TEXT, SH_DENYNO_LOCAL,
+                      S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    rc2 = ref__sopen_s(&fh2, np2, _O_CREAT | _O_WRONLY | _O_TEXT, SH_DENYNO_LOCAL,
+                       S_IREAD_LOCAL | S_IWRITE_LOCAL);
+    grade2("_sopen_s.rc", "create", rc1, rc2);
+    grade2("_sopen_s.fh_valid", "create", (fh1 >= 0), (fh2 >= 0));
+    if (fh1 >= 0) { _write(fh1, "a\nb", 3); _close(fh1); }
+    if (fh2 >= 0) { ref__write(fh2, "a\nb", 3); ref__close(fh2); }
+    grade2("_sopen_s.on_disk", "create", heapio_read_back(wp1), heapio_read_back(wp2));
+    fh1 = fh2 = 7;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__sopen_s(&fh1, 0, _O_RDONLY, SH_DENYNO_LOCAL, 0);
+    rc2 = ref__sopen_s(&fh2, 0, _O_RDONLY, SH_DENYNO_LOCAL, 0);
+    grade2("_sopen_s.rc", "null_path", rc1, rc2);
+    grade2("_sopen_s.fh", "null_path", fh1, fh2);
+    grade2("_sopen_s.errno", "null_path", *_errno(), *ref__errno());
+    grade2("_sopen_s.iph", "null_path", g_iph_dll, g_iph_ref);
+
+    heapio_path(L"wdispatch1.txt", wp1);
+    heapio_path(L"wdispatch2.txt", wp2);
+    DeleteFileW(wp1);
+    DeleteFileW(wp2);
+    fh1 = fh2 = -1;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_dispatch(wp1, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL,
+                              S_IREAD_LOCAL | S_IWRITE_LOCAL, &fh1, 1);
+    rc2 = ref__wsopen_dispatch(wp2, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL,
+                               S_IREAD_LOCAL | S_IWRITE_LOCAL, &fh2, 1);
+    grade2("_wsopen_dispatch.rc", "create", rc1, rc2);
+    grade2("_wsopen_dispatch.fh_valid", "create", (fh1 >= 0), (fh2 >= 0));
+    if (fh1 >= 0) { _write(fh1, "xyz", 3); _close(fh1); }
+    if (fh2 >= 0) { ref__write(fh2, "xyz", 3); ref__close(fh2); }
+    grade2("_wsopen_dispatch.on_disk", "create", heapio_read_back(wp1), heapio_read_back(wp2));
+    fh1 = fh2 = 7;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_dispatch(0, _O_RDONLY, SH_DENYNO_LOCAL, 0, &fh1, 1);
+    rc2 = ref__wsopen_dispatch(0, _O_RDONLY, SH_DENYNO_LOCAL, 0, &fh2, 1);
+    grade2("_wsopen_dispatch.rc", "null_path", rc1, rc2);
+    grade2("_wsopen_dispatch.fh", "null_path", fh1, fh2);
+    grade2("_wsopen_dispatch.errno", "null_path", *_errno(), *ref__errno());
+    /* A bad pmode under the secure form is EINVAL through the handler. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__wsopen_dispatch(wp1, _O_CREAT | _O_RDWR, SH_DENYNO_LOCAL, 0x1234, &fh1, 1);
+    rc2 = ref__wsopen_dispatch(wp2, _O_CREAT | _O_RDWR, SH_DENYNO_LOCAL, 0x1234, &fh2, 1);
+    grade2("_wsopen_dispatch.rc", "bad_pmode", rc1, rc2);
+    grade2("_wsopen_dispatch.iph", "bad_pmode", g_iph_dll, g_iph_ref);
+    if (rc1 == 0 && fh1 >= 0) _close(fh1);
+    if (rc2 == 0 && fh2 >= 0) ref__close(fh2);
+}
+
+static void run_open__dispatch(void)
+{
+    install_counting_iph();
+    if (!heapio_setup_dir()) {
+        grade2("_sopen_dispatch.fixture", "setup", 0, 1);
+        return;
+    }
+    wchar_t wp1[MAX_PATH], wp2[MAX_PATH];
+    heapio_path(L"dispatch1.txt", wp1);
+    heapio_path(L"dispatch2.txt", wp2);
+    DeleteFileW(wp1);
+    DeleteFileW(wp2);
+    char np1[MAX_PATH * 2], np2[MAX_PATH * 2];
+    WideCharToMultiByte(CP_ACP, 0, wp1, -1, np1, sizeof np1, NULL, NULL);
+    WideCharToMultiByte(CP_ACP, 0, wp2, -1, np2, sizeof np2, NULL, NULL);
+
+    int fh1 = -1, fh2 = -1;
+    int rc1 = ud__sopen_dispatch(np1, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL,
+                                  S_IREAD_LOCAL | S_IWRITE_LOCAL, &fh1, 0 /* not secure: pmode unchecked */);
+    int rc2 = ref__sopen_dispatch(np2, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL,
+                                   S_IREAD_LOCAL | S_IWRITE_LOCAL, &fh2, 0);
+    grade2("_sopen_dispatch.rc", "ok", rc1, rc2);
+    grade2("_sopen_dispatch.fh_valid", "ok", (fh1 >= 0), (fh2 >= 0));
+    if (fh1 >= 0) { _write(fh1, "hi", 2); _close(fh1); }
+    if (fh2 >= 0) { ref__write(fh2, "hi", 2); ref__close(fh2); }
+    grade2("_sopen_dispatch.on_disk", "ok", heapio_read_back(wp1), heapio_read_back(wp2));
+
+    /* NULL pfh -> EINVAL, never touches *pfh. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__sopen_dispatch(np1, _O_RDONLY, SH_DENYNO_LOCAL, 0, 0, 0);
+    rc2 = ref__sopen_dispatch(np2, _O_RDONLY, SH_DENYNO_LOCAL, 0, 0, 0);
+    grade2("_sopen_dispatch.null_pfh.rc", "ok", rc1, rc2);
+    grade2("_sopen_dispatch.null_pfh.errno", "ok", *_errno(), *ref__errno());
+
+    /* NULL path -> EINVAL, *pfh set to -1. */
+    *_errno() = 0; *ref__errno() = 0;
+    rc1 = ud__sopen_dispatch(0, _O_RDONLY, SH_DENYNO_LOCAL, 0, &fh1, 0);
+    rc2 = ref__sopen_dispatch(0, _O_RDONLY, SH_DENYNO_LOCAL, 0, &fh2, 0);
+    grade2("_sopen_dispatch.null_path.rc", "ok", rc1, rc2);
+    grade2("_sopen_dispatch.null_path.fh", "ok", fh1, fh2);
+
+    /* secure=1 with a bad pmode -> EINVAL, before any I/O. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rc1 = ud__sopen_dispatch(np1, _O_RDONLY, SH_DENYNO_LOCAL, 0x4, &fh1, 1);
+    rc2 = ref__sopen_dispatch(np2, _O_RDONLY, SH_DENYNO_LOCAL, 0x4, &fh2, 1);
+    grade2("_sopen_dispatch.secure_bad_pmode.rc", "ok", rc1, rc2);
+    grade2("_sopen_dispatch.secure_bad_pmode.errno", "ok", *_errno(), *ref__errno());
+}
+
+/* The four VARIADIC entry points themselves: `_open`, `_wopen`, `_sopen`,
+ * `_wsopen`. Both sides declare them exactly as the real headers do (`...`),
+ * so an ordinary call site passes `pmode` the same way on both -- no `ud_`
+ * import-pointer trick needed here (unlike `_stat`-family names, `_open` and
+ * friends are not remapped to inline twins by mingw's headers; confirmed by
+ * grep over `sdk/include/crt/io.h` finding no `__CRT_INLINE`/`#define` for
+ * any of the four). The DLL side is called by its plain name (as the STAT
+ * block already does for `_wopen`, `ref__wopen`, at ucrtdiff.c's fstat
+ * helper) and resolves through the import lib ucrtdiff links against. */
+int __cdecl ref__open(const char *, int, ...);
+int __cdecl ref__sopen(const char *, int, int, ...);
+int __cdecl ref__wsopen(const wchar_t *, int, int, ...);
+/* `ref__wopen` is declared once already, inside the STAT block's `#if
+ * UCRTDIFF_REF_HAS__stat64` guard -- redeclared here too since this file
+ * must not depend on that guard being 1. A repeated `extern` declaration
+ * with an identical signature is legal C. */
+int __cdecl ref__wopen(const wchar_t *, int, ...);
+
+static void run_open__variadic(void)
+{
+    install_counting_iph();
+    if (!heapio_setup_dir()) {
+        grade2("_open.variadic.fixture", "setup", 0, 1);
+        return;
+    }
+
+    /* `_open`/narrow. */
+    {
+        wchar_t wp1[MAX_PATH], wp2[MAX_PATH];
+        heapio_path(L"variadic_open1.txt", wp1);
+        heapio_path(L"variadic_open2.txt", wp2);
+        DeleteFileW(wp1);
+        DeleteFileW(wp2);
+        char np1[MAX_PATH * 2], np2[MAX_PATH * 2];
+        WideCharToMultiByte(CP_ACP, 0, wp1, -1, np1, sizeof np1, NULL, NULL);
+        WideCharToMultiByte(CP_ACP, 0, wp2, -1, np2, sizeof np2, NULL, NULL);
+
+        int fh1 = _open(np1, _O_CREAT | _O_WRONLY | _O_BINARY, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        int fh2 = ref__open(np2, _O_CREAT | _O_WRONLY | _O_BINARY, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        grade2("_open.variadic.fh_valid", "ok", (fh1 >= 0), (fh2 >= 0));
+        if (fh1 >= 0) _close(fh1);
+        if (fh2 >= 0) ref__close(fh2);
+
+        /* pmode's READONLY bit takes effect even without _O_CREAT|_O_EXCL:
+         * open with pmode lacking _S_IWRITE, then check the attribute landed
+         * on disk (raw Win32, outside either CRT). This is the case that
+         * actually exercises "pmode read unconditionally, same as the C". */
+        DeleteFileW(wp1); DeleteFileW(wp2);
+        fh1 = _open(np1, _O_CREAT | _O_WRONLY | _O_BINARY, S_IREAD_LOCAL /* no write */);
+        fh2 = ref__open(np2, _O_CREAT | _O_WRONLY | _O_BINARY, S_IREAD_LOCAL);
+        if (fh1 >= 0) _close(fh1);
+        if (fh2 >= 0) ref__close(fh2);
+        DWORD a1 = GetFileAttributesW(wp1), a2 = GetFileAttributesW(wp2);
+        grade2("_open.variadic.readonly_attr", "ok",
+               (a1 != INVALID_FILE_ATTRIBUTES) && (a1 & FILE_ATTRIBUTE_READONLY) != 0,
+               (a2 != INVALID_FILE_ATTRIBUTES) && (a2 & FILE_ATTRIBUTE_READONLY) != 0);
+        SetFileAttributesW(wp1, FILE_ATTRIBUTE_NORMAL);
+        SetFileAttributesW(wp2, FILE_ATTRIBUTE_NORMAL);
+    }
+
+    /* `_wopen`/wide. */
+    {
+        wchar_t wp1[MAX_PATH], wp2[MAX_PATH];
+        heapio_path(L"variadic_wopen1.txt", wp1);
+        heapio_path(L"variadic_wopen2.txt", wp2);
+        DeleteFileW(wp1);
+        DeleteFileW(wp2);
+        int fh1 = _wopen(wp1, _O_CREAT | _O_WRONLY | _O_BINARY, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        int fh2 = ref__wopen(wp2, _O_CREAT | _O_WRONLY | _O_BINARY, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        grade2("_wopen.variadic.fh_valid", "ok", (fh1 >= 0), (fh2 >= 0));
+        if (fh1 >= 0) _close(fh1);
+        if (fh2 >= 0) ref__close(fh2);
+    }
+
+    /* `_sopen`/narrow, `_wsopen`/wide -- both return the fd directly (or -1),
+     * never `_sopen_dispatch`'s own errno_t. */
+    {
+        wchar_t wp1[MAX_PATH], wp2[MAX_PATH];
+        heapio_path(L"variadic_sopen1.txt", wp1);
+        heapio_path(L"variadic_sopen2.txt", wp2);
+        DeleteFileW(wp1);
+        DeleteFileW(wp2);
+        char np1[MAX_PATH * 2], np2[MAX_PATH * 2];
+        WideCharToMultiByte(CP_ACP, 0, wp1, -1, np1, sizeof np1, NULL, NULL);
+        WideCharToMultiByte(CP_ACP, 0, wp2, -1, np2, sizeof np2, NULL, NULL);
+
+        int fh1 = _sopen(np1, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL,
+                          S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        int fh2 = ref__sopen(np2, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL,
+                              S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        grade2("_sopen.variadic.fh_valid", "ok", (fh1 >= 0), (fh2 >= 0));
+        if (fh1 >= 0) _close(fh1);
+        if (fh2 >= 0) ref__close(fh2);
+
+        heapio_path(L"variadic_wsopen1.txt", wp1);
+        heapio_path(L"variadic_wsopen2.txt", wp2);
+        DeleteFileW(wp1);
+        DeleteFileW(wp2);
+        fh1 = _wsopen(wp1, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        fh2 = ref__wsopen(wp2, _O_CREAT | _O_WRONLY | _O_BINARY, SH_DENYNO_LOCAL, S_IREAD_LOCAL | S_IWRITE_LOCAL);
+        grade2("_wsopen.variadic.fh_valid", "ok", (fh1 >= 0), (fh2 >= 0));
+        if (fh1 >= 0) _close(fh1);
+        if (fh2 >= 0) ref__close(fh2);
+
+        /* Bad shflag through `_wsopen` (not `_wsopen_s`): the non-`_s` forms
+         * never validate pmode (secure=FALSE), but shflag decoding is the
+         * SAME `decode_sharing_flags` either way, so `_SH_COMPAT` (0) must
+         * still fail here too. */
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        fh1 = _wsopen(wp1, _O_RDONLY, 0 /* _SH_COMPAT */, 0);
+        fh2 = ref__wsopen(wp2, _O_RDONLY, 0, 0);
+        grade2("_wsopen.variadic.bad_shflag.fh", "ok", fh1, fh2);
+        grade2("_wsopen.variadic.bad_shflag.errno", "ok", *_errno(), *ref__errno());
+        if (fh1 >= 0) _close(fh1);
+        if (fh2 >= 0) ref__close(fh2);
+    }
+}
+
+#define HEAPIO_OPEN_HAND(name, fn) { name, run_open__##fn },
+#else
+#define HEAPIO_OPEN_HAND(name, fn) { name, 0 },
+#endif /* UCRTDIFF_REF_HAS__sopen_dispatch */
+
+#define HEAPIO_OPEN_HAND_ENTRIES \
+    HEAPIO_OPEN_HAND("_wsopen_s.bom", bom) \
+    HEAPIO_OPEN_HAND("_wsopen_s.excl_and_bad_flags", excl_and_bad_flags) \
+    HEAPIO_OPEN_HAND("_sopen_dispatch", dispatch) \
+    HEAPIO_OPEN_HAND("_sopen_s+_wsopen_dispatch", sopen_s_wsopen_dispatch) \
+    HEAPIO_OPEN_HAND("_open+_wopen+_sopen+_wsopen", variadic)
+
+/* ==========================================================================
+ * Registry -- paste HEAPIO_ALIGN_HAND_ENTRIES, HEAPIO_IPH_HAND_ENTRIES and
+ * HEAPIO_OPEN_HAND_ENTRIES into `run_legacy()`'s `legacy[]` table, the same
+ * way the existing ST_HAND/FP_HAND/LOC_HAND groups already are.
+ * ========================================================================== */
+
+
+/* ==== staging/exec.c, inlined ==== */
+/* ucrtdiff staging snippet -- batch `exec` (sdk/lib/rust/ucrt-rust/src/exec.rs).
+ *
+ * Grades the 16 `-v`/`-ve`/`-vp`/`-vpe` `_exec*`/`_spawn*` exports (narrow and
+ * wide) that `src/exec.rs` ports out of `sdk/lib/ucrt/exec/spawnv.cpp` and
+ * `spawnvp.cpp`. NOT covered here (see exec.rs's module docs for why): the
+ * 16 variadic `-l`/`-le`/`-lp`/`-lpe` exports (spawnl.cpp/spawnlp.cpp, still
+ * C), and `cenvarg.cpp`'s `__acrt_capture_{narrow,wide}_argv` (also still C;
+ * its other two symbols, the `__acrt_pack_*_command_line_and_environment`
+ * pair, are exercised transitively by every spawn row below since
+ * `execute_command` calls them on every call that reaches it -- they are not
+ * independently gradable through ud_/ref_ import pointers because they are
+ * internal helpers, not ucrtbase exports).
+ *
+ * SAFETY (read before editing): this snippet runs IN a process whose own CRT
+ * is the DLL side under test.
+ *   - `_exec*`/`_wexec*` (all 8) are graded ONLY on their NULL-argument
+ *     validation failures, which return -1 BEFORE any process work. NEVER
+ *     call them with valid arguments -- on success they `_exit(0)` (via
+ *     `execute_command`'s `_P_OVERLAY` branch) and terminate this process.
+ *   - `_spawn*`/`_wspawn*` are graded with `_P_WAIT` (mode 0) ONLY for their
+ *     successful-execution rows. NEVER pass `_P_OVERLAY` (mode 2) to a
+ *     `_spawn*` function here either -- `execute_command` takes the exact
+ *     same `_exit(0)` branch regardless of whether `_P_OVERLAY` arrived via
+ *     `_execv` or via an explicit `_spawnv(..., 2, ...)` call. The
+ *     "invalid mode" row below uses 999 specifically because it is invalid
+ *     (caught by validation before `execute_command` runs at all), not
+ *     because a valid-but-untested mode was avoided by omission.
+ *   - `_P_NOWAIT`/`_P_NOWAITO`/`_P_DETACH` are not exercised: they leave a
+ *     real child process outstanding (detached, or a handle the grader would
+ *     need to reap) with no payoff over `_P_WAIT` for parity grading.
+ *
+ * Fixture: `%SystemRoot%\System32\cmd.exe`, invoked as `cmd.exe /c exit 7`
+ * via argv (ReactOS ships cmd.exe there). Every row calls the DLL side and
+ * the REF side with IDENTICAL arguments, so grading is a differential
+ * DLL-vs-Microsoft comparison, not a check against a hardcoded expectation --
+ * robust even if an environmental assumption here (e.g. System32 being on
+ * %PATH%) turns out wrong, since both sides would then fail identically too.
+ */
+
+#if UCRTDIFF_REF_HAS__spawnv || UCRTDIFF_REF_HAS__spawnvp || \
+    UCRTDIFF_REF_HAS__spawnl || UCRTDIFF_REF_HAS__spawnlp
+
+#include <process.h>
+
+/* ---- ref_ declarations (hand-written: no header can name the ref_ side) ---- */
+
+intptr_t __cdecl ref__execv(const char *, const char *const *);
+intptr_t __cdecl ref__execve(const char *, const char *const *, const char *const *);
+intptr_t __cdecl ref__spawnv(int, const char *, const char *const *);
+intptr_t __cdecl ref__spawnve(int, const char *, const char *const *, const char *const *);
+intptr_t __cdecl ref__execvp(const char *, const char *const *);
+intptr_t __cdecl ref__execvpe(const char *, const char *const *, const char *const *);
+intptr_t __cdecl ref__spawnvp(int, const char *, const char *const *);
+intptr_t __cdecl ref__spawnvpe(int, const char *, const char *const *, const char *const *);
+
+intptr_t __cdecl ref__wexecv(const wchar_t *, const wchar_t *const *);
+intptr_t __cdecl ref__wexecve(const wchar_t *, const wchar_t *const *, const wchar_t *const *);
+intptr_t __cdecl ref__wspawnv(int, const wchar_t *, const wchar_t *const *);
+intptr_t __cdecl ref__wspawnve(int, const wchar_t *, const wchar_t *const *, const wchar_t *const *);
+intptr_t __cdecl ref__wexecvp(const wchar_t *, const wchar_t *const *);
+intptr_t __cdecl ref__wexecvpe(const wchar_t *, const wchar_t *const *, const wchar_t *const *);
+intptr_t __cdecl ref__wspawnvp(int, const wchar_t *, const wchar_t *const *);
+intptr_t __cdecl ref__wspawnvpe(int, const wchar_t *, const wchar_t *const *, const wchar_t *const *);
+
+/* ---- ud_ import pointers (mingw headers inline/alias several CRT names,
+ * so the DLL side is never called by plain name -- see ST_ROW's block for
+ * the same rule). */
+
+extern intptr_t(__cdecl *const ud__execv)(const char *, const char *const *) __asm__(UD_IMP(_execv));
+extern intptr_t(__cdecl *const ud__execve)(const char *, const char *const *, const char *const *) __asm__(UD_IMP(_execve));
+extern intptr_t(__cdecl *const ud__spawnv)(int, const char *, const char *const *) __asm__(UD_IMP(_spawnv));
+extern intptr_t(__cdecl *const ud__spawnve)(int, const char *, const char *const *, const char *const *) __asm__(UD_IMP(_spawnve));
+extern intptr_t(__cdecl *const ud__execvp)(const char *, const char *const *) __asm__(UD_IMP(_execvp));
+extern intptr_t(__cdecl *const ud__execvpe)(const char *, const char *const *, const char *const *) __asm__(UD_IMP(_execvpe));
+extern intptr_t(__cdecl *const ud__spawnvp)(int, const char *, const char *const *) __asm__(UD_IMP(_spawnvp));
+extern intptr_t(__cdecl *const ud__spawnvpe)(int, const char *, const char *const *, const char *const *) __asm__(UD_IMP(_spawnvpe));
+
+extern intptr_t(__cdecl *const ud__wexecv)(const wchar_t *, const wchar_t *const *) __asm__(UD_IMP(_wexecv));
+extern intptr_t(__cdecl *const ud__wexecve)(const wchar_t *, const wchar_t *const *, const wchar_t *const *) __asm__(UD_IMP(_wexecve));
+extern intptr_t(__cdecl *const ud__wspawnv)(int, const wchar_t *, const wchar_t *const *) __asm__(UD_IMP(_wspawnv));
+extern intptr_t(__cdecl *const ud__wspawnve)(int, const wchar_t *, const wchar_t *const *, const wchar_t *const *) __asm__(UD_IMP(_wspawnve));
+extern intptr_t(__cdecl *const ud__wexecvp)(const wchar_t *, const wchar_t *const *) __asm__(UD_IMP(_wexecvp));
+extern intptr_t(__cdecl *const ud__wexecvpe)(const wchar_t *, const wchar_t *const *, const wchar_t *const *) __asm__(UD_IMP(_wexecvpe));
+extern intptr_t(__cdecl *const ud__wspawnvp)(int, const wchar_t *, const wchar_t *const *) __asm__(UD_IMP(_wspawnvp));
+extern intptr_t(__cdecl *const ud__wspawnvpe)(int, const wchar_t *, const wchar_t *const *, const wchar_t *const *) __asm__(UD_IMP(_wspawnvpe));
+
+unsigned long *__cdecl ref___doserrno(void);
+
+/* ---- fixture: %SystemRoot%\System32\cmd(.exe), narrow and wide ---------- */
+
+static wchar_t g_spv_dir_w[MAX_PATH];
+static wchar_t g_spv_full_w[MAX_PATH];
+static wchar_t g_spv_noext_w[MAX_PATH];
+static char g_spv_full_n[MAX_PATH * 2];
+static char g_spv_noext_n[MAX_PATH * 2];
+static int g_spv_ready;
+
+static int spv_setup(void)
+{
+    if (g_spv_ready)
+        return g_spv_ready > 0;
+    DWORD n = GetEnvironmentVariableW(L"SystemRoot", g_spv_dir_w, MAX_PATH - 32);
+    if (!n || n >= MAX_PATH - 32) {
+        g_spv_ready = -1;
+        return 0;
+    }
+    lstrcpyW(g_spv_full_w, g_spv_dir_w);
+    lstrcatW(g_spv_full_w, L"\\System32\\cmd.exe");
+    lstrcpyW(g_spv_noext_w, g_spv_dir_w);
+    lstrcatW(g_spv_noext_w, L"\\System32\\cmd");
+    WideCharToMultiByte(CP_ACP, 0, g_spv_full_w, -1, g_spv_full_n, (int)sizeof g_spv_full_n, NULL, NULL);
+    WideCharToMultiByte(CP_ACP, 0, g_spv_noext_w, -1, g_spv_noext_n, (int)sizeof g_spv_noext_n, NULL, NULL);
+    /* The `e` forms copy the per-drive "=X:=" variables out of the OS environment,
+     * and Microsoft's scan for the first one has no stop at the block's end: with
+     * none present it reads past the block until something starts with '='
+     * (ours stops -- see exec.rs). Windows always has one; ReactOS may not. Give
+     * the process one, as Windows would, so both sides take the defined path and
+     * the grade does not depend on heap layout. */
+    SetEnvironmentVariableW(L"=C:", L"C:\\");
+    g_spv_ready = 1;
+    return 1;
+}
+
+/* argv/envp fixtures. `PATH`-search (the `p` forms) and extension-probing use
+ * a bare/no-extension name; explicit-path rows use the full `...\cmd.exe`. */
+static const char *const g_spv_argv_n[] = { "cmd.exe", "/c", "exit", "7", 0 };
+static const wchar_t *const g_spv_argv_w[] = { L"cmd.exe", L"/c", L"exit", L"7", 0 };
+static const char *const g_spv_argv_empty_n[] = { 0 };
+static const wchar_t *const g_spv_argv_empty_w[] = { 0 };
+static const char *const g_spv_argv_emptystr_n[] = { "", 0 };
+static const wchar_t *const g_spv_argv_emptystr_w[] = { L"", 0 };
+static const char *const g_spv_env_n[] = { "UCRTDIFF_EXEC_VAR=1", 0 };
+static const wchar_t *const g_spv_env_w[] = { L"UCRTDIFF_EXEC_VAR=1", 0 };
+static const char g_spv_missing_n[] = "Z:\\ucrtdiff_missing_9821.exe";
+static const wchar_t g_spv_missing_w[] = L"Z:\\ucrtdiff_missing_9821.exe";
+/* Bare name (PATH search / extension probing via the `p` forms): the file
+ * itself is never opened relative to a directory we control, so this also
+ * exercises `_access_s`/`_waccess_s` against the current directory first. */
+static const char g_spv_bare_n[] = "cmd.exe";
+static const wchar_t g_spv_bare_w[] = L"cmd.exe";
+
+/* ---- grading -------------------------------------------------------------
+ * Resets errno/doserrno/iph before EACH side's call (not once for the pair),
+ * matching ST_ROW: a call must not see state left behind by its sibling. */
+/* A spawn can block on its child, and the per-export timeout reports only HANG:
+ * one serial line per side says WHICH side never came back. */
+#define SPV_ROW(fam, lbl, CALL_DLL, CALL_REF) do {                          \
+        *_errno() = 0; *__doserrno() = 0; g_iph_dll = g_iph_ref = 0;        \
+        DbgPrint("[UCRTDIFF] spv %s %s: dll ->\n", fam, lbl);               \
+        long long r1 = (long long)(intptr_t)(CALL_DLL);                    \
+        long long n1 = (long long)*_errno(), d1 = (long long)*__doserrno(); \
+        long long i1 = g_iph_dll;                                          \
+        *ref__errno() = 0; *ref___doserrno() = 0; g_iph_dll = g_iph_ref = 0;\
+        DbgPrint("[UCRTDIFF] spv %s %s: dll=%lld, ref ->\n", fam, lbl, r1); \
+        long long r2 = (long long)(intptr_t)(CALL_REF);                    \
+        DbgPrint("[UCRTDIFF] spv %s %s: ref=%lld\n", fam, lbl, r2);         \
+        long long n2 = (long long)*ref__errno(), d2 = (long long)*ref___doserrno(); \
+        long long i2 = g_iph_ref;                                          \
+        grade2(fam, lbl, r1, r2);                                          \
+        grade2(fam ".errno", lbl, n1, n2);                                 \
+        grade2(fam ".doserrno", lbl, d1, d2);                              \
+        grade2(fam ".iph", lbl, i1, i2);                                   \
+    } while (0)
+
+#define SPV_ROW2(fam, lbl, fn, a, b)       SPV_ROW(fam, lbl, ud_##fn(a, b), ref_##fn(a, b))
+#define SPV_ROW3(fam, lbl, fn, a, b, c)    SPV_ROW(fam, lbl, ud_##fn(a, b, c), ref_##fn(a, b, c))
+#define SPV_ROW4(fam, lbl, fn, a, b, c, d) SPV_ROW(fam, lbl, ud_##fn(a, b, c, d), ref_##fn(a, b, c, d))
+
+/* Placeholder-argument runs for the `-l`/`-lp` heap-growth path (content is
+ * irrelevant -- only count and NUL-termination matter for exercising
+ * `common_capture_argv`). Shared by both the spawnl.cpp and spawnlp.cpp
+ * sections below, which may be guarded independently. */
+#define SPV_X4_N  "x", "x", "x", "x"
+#define SPV_X16_N SPV_X4_N, SPV_X4_N, SPV_X4_N, SPV_X4_N
+#define SPV_X64_N SPV_X16_N, SPV_X16_N, SPV_X16_N, SPV_X16_N
+#define SPV_X4_W  L"x", L"x", L"x", L"x"
+#define SPV_X16_W SPV_X4_W, SPV_X4_W, SPV_X4_W, SPV_X4_W
+#define SPV_X64_W SPV_X16_W, SPV_X16_W, SPV_X16_W, SPV_X16_W
+
+#endif /* UCRTDIFF_REF_HAS__spawnv || UCRTDIFF_REF_HAS__spawnvp ||
+        * UCRTDIFF_REF_HAS__spawnl || UCRTDIFF_REF_HAS__spawnlp */
+
+/* ========================================================================
+ * spawnv.cpp: _execv/_execve/_spawnv/_spawnve, narrow and wide.
+ * ======================================================================== */
+#if UCRTDIFF_REF_HAS__spawnv
+
+/* -- _execv/_execve/_wexecv/_wexecve: validation failures ONLY (see the
+ * SAFETY note above -- a success here would `_exit(0)` this process). */
+
+static void run_spv__execv(void)
+{
+    install_counting_iph();
+    SPV_ROW2("_execv", "NULL-name", _execv, (const char *)0, g_spv_argv_n);
+    SPV_ROW2("_execv", "empty-name", _execv, "", g_spv_argv_n);
+    SPV_ROW2("_execv", "NULL-argv", _execv, g_spv_full_n, (const char *const *)0);
+    SPV_ROW2("_execv", "empty-argv", _execv, g_spv_full_n, g_spv_argv_empty_n);
+    SPV_ROW2("_execv", "empty-argv0-str", _execv, g_spv_full_n, g_spv_argv_emptystr_n);
+}
+
+static void run_spv__execve(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_execve", "NULL-name", _execve, (const char *)0, g_spv_argv_n, g_spv_env_n);
+    SPV_ROW3("_execve", "empty-name", _execve, "", g_spv_argv_n, g_spv_env_n);
+    SPV_ROW3("_execve", "NULL-argv", _execve, g_spv_full_n, (const char *const *)0, g_spv_env_n);
+    SPV_ROW3("_execve", "empty-argv", _execve, g_spv_full_n, g_spv_argv_empty_n, g_spv_env_n);
+    SPV_ROW3("_execve", "empty-argv0-str", _execve, g_spv_full_n, g_spv_argv_emptystr_n, g_spv_env_n);
+}
+
+static void run_spv__wexecv(void)
+{
+    install_counting_iph();
+    SPV_ROW2("_wexecv", "NULL-name", _wexecv, (const wchar_t *)0, g_spv_argv_w);
+    SPV_ROW2("_wexecv", "empty-name", _wexecv, L"", g_spv_argv_w);
+    SPV_ROW2("_wexecv", "NULL-argv", _wexecv, g_spv_full_w, (const wchar_t *const *)0);
+    SPV_ROW2("_wexecv", "empty-argv", _wexecv, g_spv_full_w, g_spv_argv_empty_w);
+    SPV_ROW2("_wexecv", "empty-argv0-str", _wexecv, g_spv_full_w, g_spv_argv_emptystr_w);
+}
+
+static void run_spv__wexecve(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_wexecve", "NULL-name", _wexecve, (const wchar_t *)0, g_spv_argv_w, g_spv_env_w);
+    SPV_ROW3("_wexecve", "empty-name", _wexecve, L"", g_spv_argv_w, g_spv_env_w);
+    SPV_ROW3("_wexecve", "NULL-argv", _wexecve, g_spv_full_w, (const wchar_t *const *)0, g_spv_env_w);
+    SPV_ROW3("_wexecve", "empty-argv", _wexecve, g_spv_full_w, g_spv_argv_empty_w, g_spv_env_w);
+    SPV_ROW3("_wexecve", "empty-argv0-str", _wexecve, g_spv_full_w, g_spv_argv_emptystr_w, g_spv_env_w);
+}
+
+/* -- _spawnv/_spawnve/_wspawnv/_wspawnve: full matrix (mode is always
+ * _P_WAIT=0 for anything that reaches `execute_command`; see SAFETY). */
+
+static void run_spv__spawnv(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_spawnv", "NULL-name", _spawnv, 0, (const char *)0, g_spv_argv_n);
+    SPV_ROW3("_spawnv", "empty-name", _spawnv, 0, "", g_spv_argv_n);
+    SPV_ROW3("_spawnv", "NULL-argv", _spawnv, 0, g_spv_full_n, (const char *const *)0);
+    SPV_ROW3("_spawnv", "empty-argv", _spawnv, 0, g_spv_full_n, g_spv_argv_empty_n);
+    SPV_ROW3("_spawnv", "empty-argv0-str", _spawnv, 0, g_spv_full_n, g_spv_argv_emptystr_n);
+    SPV_ROW3("_spawnv", "invalid-mode", _spawnv, 999, g_spv_full_n, g_spv_argv_n);
+    if (spv_setup()) {
+        SPV_ROW3("_spawnv", "nonexistent", _spawnv, 0, g_spv_missing_n, g_spv_argv_n);
+        SPV_ROW3("_spawnv", "wait-fullpath", _spawnv, 0, g_spv_full_n, g_spv_argv_n);
+        SPV_ROW3("_spawnv", "extension-probe", _spawnv, 0, g_spv_noext_n, g_spv_argv_n);
+    } else {
+        grade2("_spawnv.fixture", "setup", 0, 1); /* fail loud */
+    }
+}
+
+static void run_spv__spawnve(void)
+{
+    install_counting_iph();
+    SPV_ROW4("_spawnve", "NULL-name", _spawnve, 0, (const char *)0, g_spv_argv_n, g_spv_env_n);
+    SPV_ROW4("_spawnve", "empty-name", _spawnve, 0, "", g_spv_argv_n, g_spv_env_n);
+    SPV_ROW4("_spawnve", "NULL-argv", _spawnve, 0, g_spv_full_n, (const char *const *)0, g_spv_env_n);
+    SPV_ROW4("_spawnve", "empty-argv", _spawnve, 0, g_spv_full_n, g_spv_argv_empty_n, g_spv_env_n);
+    SPV_ROW4("_spawnve", "invalid-mode", _spawnve, 999, g_spv_full_n, g_spv_argv_n, g_spv_env_n);
+    if (spv_setup()) {
+        SPV_ROW4("_spawnve", "nonexistent", _spawnve, 0, g_spv_missing_n, g_spv_argv_n, g_spv_env_n);
+        SPV_ROW4("_spawnve", "wait-fullpath-NULLenv", _spawnve, 0, g_spv_full_n, g_spv_argv_n, (const char *const *)0);
+        SPV_ROW4("_spawnve", "wait-fullpath-customenv", _spawnve, 0, g_spv_full_n, g_spv_argv_n, g_spv_env_n);
+        SPV_ROW4("_spawnve", "extension-probe", _spawnve, 0, g_spv_noext_n, g_spv_argv_n, g_spv_env_n);
+    } else {
+        grade2("_spawnve.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnv(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_wspawnv", "NULL-name", _wspawnv, 0, (const wchar_t *)0, g_spv_argv_w);
+    SPV_ROW3("_wspawnv", "empty-name", _wspawnv, 0, L"", g_spv_argv_w);
+    SPV_ROW3("_wspawnv", "NULL-argv", _wspawnv, 0, g_spv_full_w, (const wchar_t *const *)0);
+    SPV_ROW3("_wspawnv", "empty-argv", _wspawnv, 0, g_spv_full_w, g_spv_argv_empty_w);
+    SPV_ROW3("_wspawnv", "empty-argv0-str", _wspawnv, 0, g_spv_full_w, g_spv_argv_emptystr_w);
+    SPV_ROW3("_wspawnv", "invalid-mode", _wspawnv, 999, g_spv_full_w, g_spv_argv_w);
+    if (spv_setup()) {
+        SPV_ROW3("_wspawnv", "nonexistent", _wspawnv, 0, g_spv_missing_w, g_spv_argv_w);
+        SPV_ROW3("_wspawnv", "wait-fullpath", _wspawnv, 0, g_spv_full_w, g_spv_argv_w);
+        SPV_ROW3("_wspawnv", "extension-probe", _wspawnv, 0, g_spv_noext_w, g_spv_argv_w);
+    } else {
+        grade2("_wspawnv.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnve(void)
+{
+    install_counting_iph();
+    SPV_ROW4("_wspawnve", "NULL-name", _wspawnve, 0, (const wchar_t *)0, g_spv_argv_w, g_spv_env_w);
+    SPV_ROW4("_wspawnve", "empty-name", _wspawnve, 0, L"", g_spv_argv_w, g_spv_env_w);
+    SPV_ROW4("_wspawnve", "NULL-argv", _wspawnve, 0, g_spv_full_w, (const wchar_t *const *)0, g_spv_env_w);
+    SPV_ROW4("_wspawnve", "empty-argv", _wspawnve, 0, g_spv_full_w, g_spv_argv_empty_w, g_spv_env_w);
+    SPV_ROW4("_wspawnve", "invalid-mode", _wspawnve, 999, g_spv_full_w, g_spv_argv_w, g_spv_env_w);
+    if (spv_setup()) {
+        SPV_ROW4("_wspawnve", "nonexistent", _wspawnve, 0, g_spv_missing_w, g_spv_argv_w, g_spv_env_w);
+        SPV_ROW4("_wspawnve", "wait-fullpath-NULLenv", _wspawnve, 0, g_spv_full_w, g_spv_argv_w, (const wchar_t *const *)0);
+        SPV_ROW4("_wspawnve", "wait-fullpath-customenv", _wspawnve, 0, g_spv_full_w, g_spv_argv_w, g_spv_env_w);
+        SPV_ROW4("_wspawnve", "extension-probe", _wspawnve, 0, g_spv_noext_w, g_spv_argv_w, g_spv_env_w);
+    } else {
+        grade2("_wspawnve.fixture", "setup", 0, 1);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__spawnv */
+
+/* ========================================================================
+ * spawnvp.cpp: _execvp/_execvpe/_spawnvp/_spawnvpe, narrow and wide.
+ * ======================================================================== */
+#if UCRTDIFF_REF_HAS__spawnvp
+
+static void run_spv__execvp(void)
+{
+    install_counting_iph();
+    SPV_ROW2("_execvp", "NULL-name", _execvp, (const char *)0, g_spv_argv_n);
+    SPV_ROW2("_execvp", "empty-name", _execvp, "", g_spv_argv_n);
+    SPV_ROW2("_execvp", "NULL-argv", _execvp, g_spv_bare_n, (const char *const *)0);
+    SPV_ROW2("_execvp", "empty-argv", _execvp, g_spv_bare_n, g_spv_argv_empty_n);
+}
+
+static void run_spv__execvpe(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_execvpe", "NULL-name", _execvpe, (const char *)0, g_spv_argv_n, g_spv_env_n);
+    SPV_ROW3("_execvpe", "empty-name", _execvpe, "", g_spv_argv_n, g_spv_env_n);
+    SPV_ROW3("_execvpe", "NULL-argv", _execvpe, g_spv_bare_n, (const char *const *)0, g_spv_env_n);
+    SPV_ROW3("_execvpe", "empty-argv", _execvpe, g_spv_bare_n, g_spv_argv_empty_n, g_spv_env_n);
+}
+
+static void run_spv__wexecvp(void)
+{
+    install_counting_iph();
+    SPV_ROW2("_wexecvp", "NULL-name", _wexecvp, (const wchar_t *)0, g_spv_argv_w);
+    SPV_ROW2("_wexecvp", "empty-name", _wexecvp, L"", g_spv_argv_w);
+    SPV_ROW2("_wexecvp", "NULL-argv", _wexecvp, g_spv_bare_w, (const wchar_t *const *)0);
+    SPV_ROW2("_wexecvp", "empty-argv", _wexecvp, g_spv_bare_w, g_spv_argv_empty_w);
+}
+
+static void run_spv__wexecvpe(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_wexecvpe", "NULL-name", _wexecvpe, (const wchar_t *)0, g_spv_argv_w, g_spv_env_w);
+    SPV_ROW3("_wexecvpe", "empty-name", _wexecvpe, L"", g_spv_argv_w, g_spv_env_w);
+    SPV_ROW3("_wexecvpe", "NULL-argv", _wexecvpe, g_spv_bare_w, (const wchar_t *const *)0, g_spv_env_w);
+    SPV_ROW3("_wexecvpe", "empty-argv", _wexecvpe, g_spv_bare_w, g_spv_argv_empty_w, g_spv_env_w);
+}
+
+static void run_spv__spawnvp(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_spawnvp", "NULL-name", _spawnvp, 0, (const char *)0, g_spv_argv_n);
+    SPV_ROW3("_spawnvp", "empty-name", _spawnvp, 0, "", g_spv_argv_n);
+    SPV_ROW3("_spawnvp", "NULL-argv", _spawnvp, 0, g_spv_bare_n, (const char *const *)0);
+    SPV_ROW3("_spawnvp", "empty-argv", _spawnvp, 0, g_spv_bare_n, g_spv_argv_empty_n);
+    SPV_ROW3("_spawnvp", "invalid-mode", _spawnvp, 999, g_spv_bare_n, g_spv_argv_n);
+    /* Absolute path with no `p` in play: matches non-`p` "nonexistent". */
+    SPV_ROW3("_spawnvp", "nonexistent-abs", _spawnvp, 0, g_spv_missing_n, g_spv_argv_n);
+    if (spv_setup()) {
+        SPV_ROW3("_spawnvp", "path-search", _spawnvp, 0, g_spv_bare_n, g_spv_argv_n);
+    } else {
+        grade2("_spawnvp.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__spawnvpe(void)
+{
+    install_counting_iph();
+    SPV_ROW4("_spawnvpe", "NULL-name", _spawnvpe, 0, (const char *)0, g_spv_argv_n, g_spv_env_n);
+    SPV_ROW4("_spawnvpe", "empty-name", _spawnvpe, 0, "", g_spv_argv_n, g_spv_env_n);
+    SPV_ROW4("_spawnvpe", "NULL-argv", _spawnvpe, 0, g_spv_bare_n, (const char *const *)0, g_spv_env_n);
+    SPV_ROW4("_spawnvpe", "empty-argv", _spawnvpe, 0, g_spv_bare_n, g_spv_argv_empty_n, g_spv_env_n);
+    SPV_ROW4("_spawnvpe", "invalid-mode", _spawnvpe, 999, g_spv_bare_n, g_spv_argv_n, g_spv_env_n);
+    SPV_ROW4("_spawnvpe", "nonexistent-abs", _spawnvpe, 0, g_spv_missing_n, g_spv_argv_n, g_spv_env_n);
+    if (spv_setup()) {
+        SPV_ROW4("_spawnvpe", "path-search-NULLenv", _spawnvpe, 0, g_spv_bare_n, g_spv_argv_n, (const char *const *)0);
+        SPV_ROW4("_spawnvpe", "path-search-customenv", _spawnvpe, 0, g_spv_bare_n, g_spv_argv_n, g_spv_env_n);
+    } else {
+        grade2("_spawnvpe.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnvp(void)
+{
+    install_counting_iph();
+    SPV_ROW3("_wspawnvp", "NULL-name", _wspawnvp, 0, (const wchar_t *)0, g_spv_argv_w);
+    SPV_ROW3("_wspawnvp", "empty-name", _wspawnvp, 0, L"", g_spv_argv_w);
+    SPV_ROW3("_wspawnvp", "NULL-argv", _wspawnvp, 0, g_spv_bare_w, (const wchar_t *const *)0);
+    SPV_ROW3("_wspawnvp", "empty-argv", _wspawnvp, 0, g_spv_bare_w, g_spv_argv_empty_w);
+    SPV_ROW3("_wspawnvp", "invalid-mode", _wspawnvp, 999, g_spv_bare_w, g_spv_argv_w);
+    SPV_ROW3("_wspawnvp", "nonexistent-abs", _wspawnvp, 0, g_spv_missing_w, g_spv_argv_w);
+    if (spv_setup()) {
+        SPV_ROW3("_wspawnvp", "path-search", _wspawnvp, 0, g_spv_bare_w, g_spv_argv_w);
+    } else {
+        grade2("_wspawnvp.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnvpe(void)
+{
+    install_counting_iph();
+    SPV_ROW4("_wspawnvpe", "NULL-name", _wspawnvpe, 0, (const wchar_t *)0, g_spv_argv_w, g_spv_env_w);
+    SPV_ROW4("_wspawnvpe", "empty-name", _wspawnvpe, 0, L"", g_spv_argv_w, g_spv_env_w);
+    SPV_ROW4("_wspawnvpe", "NULL-argv", _wspawnvpe, 0, g_spv_bare_w, (const wchar_t *const *)0, g_spv_env_w);
+    SPV_ROW4("_wspawnvpe", "empty-argv", _wspawnvpe, 0, g_spv_bare_w, g_spv_argv_empty_w, g_spv_env_w);
+    SPV_ROW4("_wspawnvpe", "invalid-mode", _wspawnvpe, 999, g_spv_bare_w, g_spv_argv_w, g_spv_env_w);
+    SPV_ROW4("_wspawnvpe", "nonexistent-abs", _wspawnvpe, 0, g_spv_missing_w, g_spv_argv_w, g_spv_env_w);
+    if (spv_setup()) {
+        SPV_ROW4("_wspawnvpe", "path-search-NULLenv", _wspawnvpe, 0, g_spv_bare_w, g_spv_argv_w, (const wchar_t *const *)0);
+        SPV_ROW4("_wspawnvpe", "path-search-customenv", _wspawnvpe, 0, g_spv_bare_w, g_spv_argv_w, g_spv_env_w);
+    } else {
+        grade2("_wspawnvpe.fixture", "setup", 0, 1);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__spawnvp */
+
+/* ========================================================================
+ * spawnl.cpp: _execl/_execle/_spawnl/_spawnle, narrow and wide. These are
+ * genuinely C-variadic exports, so they are called here with real "..."
+ * syntax (unlike the -v forms above, no wrapper is needed for the call
+ * itself -- only the shared SPV_ROW grading macro is reused).
+ *
+ * "Several lengths, including more than the caller-array size" (64): SPV_X16
+ * gives 17 total captured pointers (well inside 64, no growth); SPV_X64
+ * gives 65 (one MORE than 64), which is exactly the point where
+ * `common_capture_argv`'s FIRST heap growth -- and its `memcpy_s` byte/element
+ * quirk (see exec.rs's module docs) -- fires. The many-argument row targets
+ * `g_spv_missing_n`/`_w` (an absolute, nonexistent path) rather than a real
+ * cmd.exe: this exercises the FULL variadic-capture-and-dispatch path (the
+ * capture happens before `common_spawnv`/`common_spawnvp` ever runs) while
+ * guaranteeing `_access_s`/`_waccess_s` rejects the file before any process
+ * is ever created -- no real subprocess, no dependence on what a real
+ * process would do with garbage arguments.
+ * ======================================================================== */
+#if UCRTDIFF_REF_HAS__spawnl
+
+intptr_t __cdecl ref__execl(const char *, const char *, ...);
+intptr_t __cdecl ref__execle(const char *, const char *, ...);
+intptr_t __cdecl ref__spawnl(int, const char *, const char *, ...);
+intptr_t __cdecl ref__spawnle(int, const char *, const char *, ...);
+intptr_t __cdecl ref__wexecl(const wchar_t *, const wchar_t *, ...);
+intptr_t __cdecl ref__wexecle(const wchar_t *, const wchar_t *, ...);
+intptr_t __cdecl ref__wspawnl(int, const wchar_t *, const wchar_t *, ...);
+intptr_t __cdecl ref__wspawnle(int, const wchar_t *, const wchar_t *, ...);
+
+extern intptr_t(__cdecl *const ud__execl)(const char *, const char *, ...) __asm__(UD_IMP(_execl));
+extern intptr_t(__cdecl *const ud__execle)(const char *, const char *, ...) __asm__(UD_IMP(_execle));
+extern intptr_t(__cdecl *const ud__spawnl)(int, const char *, const char *, ...) __asm__(UD_IMP(_spawnl));
+extern intptr_t(__cdecl *const ud__spawnle)(int, const char *, const char *, ...) __asm__(UD_IMP(_spawnle));
+extern intptr_t(__cdecl *const ud__wexecl)(const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wexecl));
+extern intptr_t(__cdecl *const ud__wexecle)(const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wexecle));
+extern intptr_t(__cdecl *const ud__wspawnl)(int, const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wspawnl));
+extern intptr_t(__cdecl *const ud__wspawnle)(int, const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wspawnle));
+
+static void run_spv__execl(void)
+{
+    install_counting_iph();
+    SPV_ROW("_execl", "NULL-name", ud__execl((const char *)0, "a", (char *)0),
+            ref__execl((const char *)0, "a", (char *)0));
+    SPV_ROW("_execl", "empty-name", ud__execl("", "a", (char *)0),
+            ref__execl("", "a", (char *)0));
+    SPV_ROW("_execl", "empty-args", ud__execl(g_spv_full_n, "", (char *)0),
+            ref__execl(g_spv_full_n, "", (char *)0));
+}
+
+static void run_spv__execle(void)
+{
+    install_counting_iph();
+    SPV_ROW("_execle", "NULL-name", ud__execle((const char *)0, "a", (char *)0, g_spv_env_n),
+            ref__execle((const char *)0, "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_execle", "empty-name", ud__execle("", "a", (char *)0, g_spv_env_n),
+            ref__execle("", "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_execle", "empty-args", ud__execle(g_spv_full_n, "", (char *)0, g_spv_env_n),
+            ref__execle(g_spv_full_n, "", (char *)0, g_spv_env_n));
+}
+
+static void run_spv__wexecl(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wexecl", "NULL-name", ud__wexecl((const wchar_t *)0, L"a", (wchar_t *)0),
+            ref__wexecl((const wchar_t *)0, L"a", (wchar_t *)0));
+    SPV_ROW("_wexecl", "empty-name", ud__wexecl(L"", L"a", (wchar_t *)0),
+            ref__wexecl(L"", L"a", (wchar_t *)0));
+    SPV_ROW("_wexecl", "empty-args", ud__wexecl(g_spv_full_w, L"", (wchar_t *)0),
+            ref__wexecl(g_spv_full_w, L"", (wchar_t *)0));
+}
+
+static void run_spv__wexecle(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wexecle", "NULL-name", ud__wexecle((const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wexecle((const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wexecle", "empty-name", ud__wexecle(L"", L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wexecle(L"", L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wexecle", "empty-args", ud__wexecle(g_spv_full_w, L"", (wchar_t *)0, g_spv_env_w),
+            ref__wexecle(g_spv_full_w, L"", (wchar_t *)0, g_spv_env_w));
+}
+
+static void run_spv__spawnl(void)
+{
+    install_counting_iph();
+    SPV_ROW("_spawnl", "NULL-name", ud__spawnl(0, (const char *)0, "a", (char *)0),
+            ref__spawnl(0, (const char *)0, "a", (char *)0));
+    SPV_ROW("_spawnl", "empty-name", ud__spawnl(0, "", "a", (char *)0),
+            ref__spawnl(0, "", "a", (char *)0));
+    SPV_ROW("_spawnl", "empty-args", ud__spawnl(0, g_spv_full_n, "", (char *)0),
+            ref__spawnl(0, g_spv_full_n, "", (char *)0));
+    SPV_ROW("_spawnl", "invalid-mode", ud__spawnl(999, g_spv_full_n, "cmd.exe", (char *)0),
+            ref__spawnl(999, g_spv_full_n, "cmd.exe", (char *)0));
+    if (spv_setup()) {
+        SPV_ROW("_spawnl", "wait-short", ud__spawnl(0, g_spv_full_n, "cmd.exe", "/c", "exit", "7", (char *)0),
+                ref__spawnl(0, g_spv_full_n, "cmd.exe", "/c", "exit", "7", (char *)0));
+        SPV_ROW("_spawnl", "medium-17-nogrowth",
+                ud__spawnl(0, g_spv_missing_n, "cmd.exe", SPV_X16_N, (char *)0),
+                ref__spawnl(0, g_spv_missing_n, "cmd.exe", SPV_X16_N, (char *)0));
+        SPV_ROW("_spawnl", "many-65-growth",
+                ud__spawnl(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0),
+                ref__spawnl(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0));
+    } else {
+        grade2("_spawnl.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__spawnle(void)
+{
+    install_counting_iph();
+    SPV_ROW("_spawnle", "NULL-name", ud__spawnle(0, (const char *)0, "a", (char *)0, g_spv_env_n),
+            ref__spawnle(0, (const char *)0, "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_spawnle", "empty-name", ud__spawnle(0, "", "a", (char *)0, g_spv_env_n),
+            ref__spawnle(0, "", "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_spawnle", "empty-args", ud__spawnle(0, g_spv_full_n, "", (char *)0, g_spv_env_n),
+            ref__spawnle(0, g_spv_full_n, "", (char *)0, g_spv_env_n));
+    SPV_ROW("_spawnle", "invalid-mode", ud__spawnle(999, g_spv_full_n, "cmd.exe", (char *)0, g_spv_env_n),
+            ref__spawnle(999, g_spv_full_n, "cmd.exe", (char *)0, g_spv_env_n));
+    if (spv_setup()) {
+        SPV_ROW("_spawnle", "wait-short-customenv",
+                ud__spawnle(0, g_spv_full_n, "cmd.exe", "/c", "exit", "7", (char *)0, g_spv_env_n),
+                ref__spawnle(0, g_spv_full_n, "cmd.exe", "/c", "exit", "7", (char *)0, g_spv_env_n));
+        SPV_ROW("_spawnle", "wait-short-NULLenv",
+                ud__spawnle(0, g_spv_full_n, "cmd.exe", "/c", "exit", "7", (char *)0, (const char *const *)0),
+                ref__spawnle(0, g_spv_full_n, "cmd.exe", "/c", "exit", "7", (char *)0, (const char *const *)0));
+        SPV_ROW("_spawnle", "many-65-growth",
+                ud__spawnle(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0, g_spv_env_n),
+                ref__spawnle(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0, g_spv_env_n));
+    } else {
+        grade2("_spawnle.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnl(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wspawnl", "NULL-name", ud__wspawnl(0, (const wchar_t *)0, L"a", (wchar_t *)0),
+            ref__wspawnl(0, (const wchar_t *)0, L"a", (wchar_t *)0));
+    SPV_ROW("_wspawnl", "empty-name", ud__wspawnl(0, L"", L"a", (wchar_t *)0),
+            ref__wspawnl(0, L"", L"a", (wchar_t *)0));
+    SPV_ROW("_wspawnl", "empty-args", ud__wspawnl(0, g_spv_full_w, L"", (wchar_t *)0),
+            ref__wspawnl(0, g_spv_full_w, L"", (wchar_t *)0));
+    SPV_ROW("_wspawnl", "invalid-mode", ud__wspawnl(999, g_spv_full_w, L"cmd.exe", (wchar_t *)0),
+            ref__wspawnl(999, g_spv_full_w, L"cmd.exe", (wchar_t *)0));
+    if (spv_setup()) {
+        SPV_ROW("_wspawnl", "wait-short", ud__wspawnl(0, g_spv_full_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0),
+                ref__wspawnl(0, g_spv_full_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0));
+        SPV_ROW("_wspawnl", "medium-17-nogrowth",
+                ud__wspawnl(0, g_spv_missing_w, L"cmd.exe", SPV_X16_W, (wchar_t *)0),
+                ref__wspawnl(0, g_spv_missing_w, L"cmd.exe", SPV_X16_W, (wchar_t *)0));
+        SPV_ROW("_wspawnl", "many-65-growth",
+                ud__wspawnl(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0),
+                ref__wspawnl(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0));
+    } else {
+        grade2("_wspawnl.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnle(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wspawnle", "NULL-name", ud__wspawnle(0, (const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnle(0, (const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wspawnle", "empty-name", ud__wspawnle(0, L"", L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnle(0, L"", L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wspawnle", "empty-args", ud__wspawnle(0, g_spv_full_w, L"", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnle(0, g_spv_full_w, L"", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wspawnle", "invalid-mode", ud__wspawnle(999, g_spv_full_w, L"cmd.exe", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnle(999, g_spv_full_w, L"cmd.exe", (wchar_t *)0, g_spv_env_w));
+    if (spv_setup()) {
+        SPV_ROW("_wspawnle", "wait-short-customenv",
+                ud__wspawnle(0, g_spv_full_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, g_spv_env_w),
+                ref__wspawnle(0, g_spv_full_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, g_spv_env_w));
+        SPV_ROW("_wspawnle", "wait-short-NULLenv",
+                ud__wspawnle(0, g_spv_full_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, (const wchar_t *const *)0),
+                ref__wspawnle(0, g_spv_full_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, (const wchar_t *const *)0));
+        SPV_ROW("_wspawnle", "many-65-growth",
+                ud__wspawnle(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0, g_spv_env_w),
+                ref__wspawnle(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0, g_spv_env_w));
+    } else {
+        grade2("_wspawnle.fixture", "setup", 0, 1);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__spawnl */
+
+/* ========================================================================
+ * spawnlp.cpp: _execlp/_execlpe/_spawnlp/_spawnlpe, narrow and wide.
+ * ======================================================================== */
+#if UCRTDIFF_REF_HAS__spawnlp
+
+intptr_t __cdecl ref__execlp(const char *, const char *, ...);
+intptr_t __cdecl ref__execlpe(const char *, const char *, ...);
+intptr_t __cdecl ref__spawnlp(int, const char *, const char *, ...);
+intptr_t __cdecl ref__spawnlpe(int, const char *, const char *, ...);
+intptr_t __cdecl ref__wexeclp(const wchar_t *, const wchar_t *, ...);
+intptr_t __cdecl ref__wexeclpe(const wchar_t *, const wchar_t *, ...);
+intptr_t __cdecl ref__wspawnlp(int, const wchar_t *, const wchar_t *, ...);
+intptr_t __cdecl ref__wspawnlpe(int, const wchar_t *, const wchar_t *, ...);
+
+extern intptr_t(__cdecl *const ud__execlp)(const char *, const char *, ...) __asm__(UD_IMP(_execlp));
+extern intptr_t(__cdecl *const ud__execlpe)(const char *, const char *, ...) __asm__(UD_IMP(_execlpe));
+extern intptr_t(__cdecl *const ud__spawnlp)(int, const char *, const char *, ...) __asm__(UD_IMP(_spawnlp));
+extern intptr_t(__cdecl *const ud__spawnlpe)(int, const char *, const char *, ...) __asm__(UD_IMP(_spawnlpe));
+extern intptr_t(__cdecl *const ud__wexeclp)(const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wexeclp));
+extern intptr_t(__cdecl *const ud__wexeclpe)(const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wexeclpe));
+extern intptr_t(__cdecl *const ud__wspawnlp)(int, const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wspawnlp));
+extern intptr_t(__cdecl *const ud__wspawnlpe)(int, const wchar_t *, const wchar_t *, ...) __asm__(UD_IMP(_wspawnlpe));
+
+static void run_spv__execlp(void)
+{
+    install_counting_iph();
+    SPV_ROW("_execlp", "NULL-name", ud__execlp((const char *)0, "a", (char *)0),
+            ref__execlp((const char *)0, "a", (char *)0));
+    SPV_ROW("_execlp", "empty-name", ud__execlp("", "a", (char *)0),
+            ref__execlp("", "a", (char *)0));
+    SPV_ROW("_execlp", "empty-args", ud__execlp(g_spv_bare_n, "", (char *)0),
+            ref__execlp(g_spv_bare_n, "", (char *)0));
+}
+
+static void run_spv__execlpe(void)
+{
+    install_counting_iph();
+    SPV_ROW("_execlpe", "NULL-name", ud__execlpe((const char *)0, "a", (char *)0, g_spv_env_n),
+            ref__execlpe((const char *)0, "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_execlpe", "empty-name", ud__execlpe("", "a", (char *)0, g_spv_env_n),
+            ref__execlpe("", "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_execlpe", "empty-args", ud__execlpe(g_spv_bare_n, "", (char *)0, g_spv_env_n),
+            ref__execlpe(g_spv_bare_n, "", (char *)0, g_spv_env_n));
+}
+
+static void run_spv__wexeclp(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wexeclp", "NULL-name", ud__wexeclp((const wchar_t *)0, L"a", (wchar_t *)0),
+            ref__wexeclp((const wchar_t *)0, L"a", (wchar_t *)0));
+    SPV_ROW("_wexeclp", "empty-name", ud__wexeclp(L"", L"a", (wchar_t *)0),
+            ref__wexeclp(L"", L"a", (wchar_t *)0));
+    SPV_ROW("_wexeclp", "empty-args", ud__wexeclp(g_spv_bare_w, L"", (wchar_t *)0),
+            ref__wexeclp(g_spv_bare_w, L"", (wchar_t *)0));
+}
+
+static void run_spv__wexeclpe(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wexeclpe", "NULL-name", ud__wexeclpe((const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wexeclpe((const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wexeclpe", "empty-name", ud__wexeclpe(L"", L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wexeclpe(L"", L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wexeclpe", "empty-args", ud__wexeclpe(g_spv_bare_w, L"", (wchar_t *)0, g_spv_env_w),
+            ref__wexeclpe(g_spv_bare_w, L"", (wchar_t *)0, g_spv_env_w));
+}
+
+static void run_spv__spawnlp(void)
+{
+    install_counting_iph();
+    SPV_ROW("_spawnlp", "NULL-name", ud__spawnlp(0, (const char *)0, "a", (char *)0),
+            ref__spawnlp(0, (const char *)0, "a", (char *)0));
+    SPV_ROW("_spawnlp", "empty-name", ud__spawnlp(0, "", "a", (char *)0),
+            ref__spawnlp(0, "", "a", (char *)0));
+    SPV_ROW("_spawnlp", "empty-args", ud__spawnlp(0, g_spv_bare_n, "", (char *)0),
+            ref__spawnlp(0, g_spv_bare_n, "", (char *)0));
+    SPV_ROW("_spawnlp", "invalid-mode", ud__spawnlp(999, g_spv_bare_n, "cmd.exe", (char *)0),
+            ref__spawnlp(999, g_spv_bare_n, "cmd.exe", (char *)0));
+    SPV_ROW("_spawnlp", "nonexistent-abs", ud__spawnlp(0, g_spv_missing_n, "cmd.exe", (char *)0),
+            ref__spawnlp(0, g_spv_missing_n, "cmd.exe", (char *)0));
+    if (spv_setup()) {
+        SPV_ROW("_spawnlp", "path-search-short",
+                ud__spawnlp(0, g_spv_bare_n, "cmd.exe", "/c", "exit", "7", (char *)0),
+                ref__spawnlp(0, g_spv_bare_n, "cmd.exe", "/c", "exit", "7", (char *)0));
+        SPV_ROW("_spawnlp", "medium-17-nogrowth",
+                ud__spawnlp(0, g_spv_missing_n, "cmd.exe", SPV_X16_N, (char *)0),
+                ref__spawnlp(0, g_spv_missing_n, "cmd.exe", SPV_X16_N, (char *)0));
+        SPV_ROW("_spawnlp", "many-65-growth",
+                ud__spawnlp(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0),
+                ref__spawnlp(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0));
+    } else {
+        grade2("_spawnlp.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__spawnlpe(void)
+{
+    install_counting_iph();
+    SPV_ROW("_spawnlpe", "NULL-name", ud__spawnlpe(0, (const char *)0, "a", (char *)0, g_spv_env_n),
+            ref__spawnlpe(0, (const char *)0, "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_spawnlpe", "empty-name", ud__spawnlpe(0, "", "a", (char *)0, g_spv_env_n),
+            ref__spawnlpe(0, "", "a", (char *)0, g_spv_env_n));
+    SPV_ROW("_spawnlpe", "empty-args", ud__spawnlpe(0, g_spv_bare_n, "", (char *)0, g_spv_env_n),
+            ref__spawnlpe(0, g_spv_bare_n, "", (char *)0, g_spv_env_n));
+    SPV_ROW("_spawnlpe", "invalid-mode", ud__spawnlpe(999, g_spv_bare_n, "cmd.exe", (char *)0, g_spv_env_n),
+            ref__spawnlpe(999, g_spv_bare_n, "cmd.exe", (char *)0, g_spv_env_n));
+    if (spv_setup()) {
+        SPV_ROW("_spawnlpe", "path-search-customenv",
+                ud__spawnlpe(0, g_spv_bare_n, "cmd.exe", "/c", "exit", "7", (char *)0, g_spv_env_n),
+                ref__spawnlpe(0, g_spv_bare_n, "cmd.exe", "/c", "exit", "7", (char *)0, g_spv_env_n));
+        SPV_ROW("_spawnlpe", "path-search-NULLenv",
+                ud__spawnlpe(0, g_spv_bare_n, "cmd.exe", "/c", "exit", "7", (char *)0, (const char *const *)0),
+                ref__spawnlpe(0, g_spv_bare_n, "cmd.exe", "/c", "exit", "7", (char *)0, (const char *const *)0));
+        SPV_ROW("_spawnlpe", "many-65-growth",
+                ud__spawnlpe(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0, g_spv_env_n),
+                ref__spawnlpe(0, g_spv_missing_n, "cmd.exe", SPV_X64_N, (char *)0, g_spv_env_n));
+    } else {
+        grade2("_spawnlpe.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnlp(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wspawnlp", "NULL-name", ud__wspawnlp(0, (const wchar_t *)0, L"a", (wchar_t *)0),
+            ref__wspawnlp(0, (const wchar_t *)0, L"a", (wchar_t *)0));
+    SPV_ROW("_wspawnlp", "empty-name", ud__wspawnlp(0, L"", L"a", (wchar_t *)0),
+            ref__wspawnlp(0, L"", L"a", (wchar_t *)0));
+    SPV_ROW("_wspawnlp", "empty-args", ud__wspawnlp(0, g_spv_bare_w, L"", (wchar_t *)0),
+            ref__wspawnlp(0, g_spv_bare_w, L"", (wchar_t *)0));
+    SPV_ROW("_wspawnlp", "invalid-mode", ud__wspawnlp(999, g_spv_bare_w, L"cmd.exe", (wchar_t *)0),
+            ref__wspawnlp(999, g_spv_bare_w, L"cmd.exe", (wchar_t *)0));
+    SPV_ROW("_wspawnlp", "nonexistent-abs", ud__wspawnlp(0, g_spv_missing_w, L"cmd.exe", (wchar_t *)0),
+            ref__wspawnlp(0, g_spv_missing_w, L"cmd.exe", (wchar_t *)0));
+    if (spv_setup()) {
+        SPV_ROW("_wspawnlp", "path-search-short",
+                ud__wspawnlp(0, g_spv_bare_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0),
+                ref__wspawnlp(0, g_spv_bare_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0));
+        SPV_ROW("_wspawnlp", "medium-17-nogrowth",
+                ud__wspawnlp(0, g_spv_missing_w, L"cmd.exe", SPV_X16_W, (wchar_t *)0),
+                ref__wspawnlp(0, g_spv_missing_w, L"cmd.exe", SPV_X16_W, (wchar_t *)0));
+        SPV_ROW("_wspawnlp", "many-65-growth",
+                ud__wspawnlp(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0),
+                ref__wspawnlp(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0));
+    } else {
+        grade2("_wspawnlp.fixture", "setup", 0, 1);
+    }
+}
+
+static void run_spv__wspawnlpe(void)
+{
+    install_counting_iph();
+    SPV_ROW("_wspawnlpe", "NULL-name", ud__wspawnlpe(0, (const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnlpe(0, (const wchar_t *)0, L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wspawnlpe", "empty-name", ud__wspawnlpe(0, L"", L"a", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnlpe(0, L"", L"a", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wspawnlpe", "empty-args", ud__wspawnlpe(0, g_spv_bare_w, L"", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnlpe(0, g_spv_bare_w, L"", (wchar_t *)0, g_spv_env_w));
+    SPV_ROW("_wspawnlpe", "invalid-mode", ud__wspawnlpe(999, g_spv_bare_w, L"cmd.exe", (wchar_t *)0, g_spv_env_w),
+            ref__wspawnlpe(999, g_spv_bare_w, L"cmd.exe", (wchar_t *)0, g_spv_env_w));
+    if (spv_setup()) {
+        SPV_ROW("_wspawnlpe", "path-search-customenv",
+                ud__wspawnlpe(0, g_spv_bare_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, g_spv_env_w),
+                ref__wspawnlpe(0, g_spv_bare_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, g_spv_env_w));
+        SPV_ROW("_wspawnlpe", "path-search-NULLenv",
+                ud__wspawnlpe(0, g_spv_bare_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, (const wchar_t *const *)0),
+                ref__wspawnlpe(0, g_spv_bare_w, L"cmd.exe", L"/c", L"exit", L"7", (wchar_t *)0, (const wchar_t *const *)0));
+        SPV_ROW("_wspawnlpe", "many-65-growth",
+                ud__wspawnlpe(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0, g_spv_env_w),
+                ref__wspawnlpe(0, g_spv_missing_w, L"cmd.exe", SPV_X64_W, (wchar_t *)0, g_spv_env_w));
+    } else {
+        grade2("_wspawnlpe.fixture", "setup", 0, 1);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__spawnlp */
+
+/* ---- registry macro: paste into run_legacy()'s table -------------------- */
+#if UCRTDIFF_REF_HAS__spawnv
+#define SPV_HAND_ENTRIES_SPAWNV \
+    { "_execv", run_spv__execv }, { "_execve", run_spv__execve }, \
+    { "_wexecv", run_spv__wexecv }, { "_wexecve", run_spv__wexecve }, \
+    { "_spawnv", run_spv__spawnv }, { "_spawnve", run_spv__spawnve }, \
+    { "_wspawnv", run_spv__wspawnv }, { "_wspawnve", run_spv__wspawnve },
+#else
+#define SPV_HAND_ENTRIES_SPAWNV \
+    { "_execv", 0 }, { "_execve", 0 }, { "_wexecv", 0 }, { "_wexecve", 0 }, \
+    { "_spawnv", 0 }, { "_spawnve", 0 }, { "_wspawnv", 0 }, { "_wspawnve", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__spawnvp
+#define SPV_HAND_ENTRIES_SPAWNVP \
+    { "_execvp", run_spv__execvp }, { "_execvpe", run_spv__execvpe }, \
+    { "_wexecvp", run_spv__wexecvp }, { "_wexecvpe", run_spv__wexecvpe }, \
+    { "_spawnvp", run_spv__spawnvp }, { "_spawnvpe", run_spv__spawnvpe }, \
+    { "_wspawnvp", run_spv__wspawnvp }, { "_wspawnvpe", run_spv__wspawnvpe },
+#else
+#define SPV_HAND_ENTRIES_SPAWNVP \
+    { "_execvp", 0 }, { "_execvpe", 0 }, { "_wexecvp", 0 }, { "_wexecvpe", 0 }, \
+    { "_spawnvp", 0 }, { "_spawnvpe", 0 }, { "_wspawnvp", 0 }, { "_wspawnvpe", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__spawnl
+#define SPV_HAND_ENTRIES_SPAWNL \
+    { "_execl", run_spv__execl }, { "_execle", run_spv__execle }, \
+    { "_wexecl", run_spv__wexecl }, { "_wexecle", run_spv__wexecle }, \
+    { "_spawnl", run_spv__spawnl }, { "_spawnle", run_spv__spawnle }, \
+    { "_wspawnl", run_spv__wspawnl }, { "_wspawnle", run_spv__wspawnle },
+#else
+#define SPV_HAND_ENTRIES_SPAWNL \
+    { "_execl", 0 }, { "_execle", 0 }, { "_wexecl", 0 }, { "_wexecle", 0 }, \
+    { "_spawnl", 0 }, { "_spawnle", 0 }, { "_wspawnl", 0 }, { "_wspawnle", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__spawnlp
+#define SPV_HAND_ENTRIES_SPAWNLP \
+    { "_execlp", run_spv__execlp }, { "_execlpe", run_spv__execlpe }, \
+    { "_wexeclp", run_spv__wexeclp }, { "_wexeclpe", run_spv__wexeclpe }, \
+    { "_spawnlp", run_spv__spawnlp }, { "_spawnlpe", run_spv__spawnlpe }, \
+    { "_wspawnlp", run_spv__wspawnlp }, { "_wspawnlpe", run_spv__wspawnlpe },
+#else
+#define SPV_HAND_ENTRIES_SPAWNLP \
+    { "_execlp", 0 }, { "_execlpe", 0 }, { "_wexeclp", 0 }, { "_wexeclpe", 0 }, \
+    { "_spawnlp", 0 }, { "_spawnlpe", 0 }, { "_wspawnlp", 0 }, { "_wspawnlpe", 0 },
+#endif
+
+#define SPV_HAND_ENTRIES \
+    SPV_HAND_ENTRIES_SPAWNV SPV_HAND_ENTRIES_SPAWNVP \
+    SPV_HAND_ENTRIES_SPAWNL SPV_HAND_ENTRIES_SPAWNLP
+
+
 static void run_legacy(void)
 {
     static const struct {
@@ -2442,6 +5423,25 @@ static void run_legacy(void)
         ST_HAND(_stat32) ST_HAND(_stat32i64) ST_HAND(_stat64i32) ST_HAND(_stat64)
         ST_HAND(_wstat32) ST_HAND(_wstat32i64) ST_HAND(_wstat64i32) ST_HAND(_wstat64)
         ST_HAND(_fstat32) ST_HAND(_fstat32i64) ST_HAND(_fstat64i32) ST_HAND(_fstat64)
+#if UCRTDIFF_REF_HAS_setlocale
+#define LOC_HAND(name) { #name, run_loc_##name },
+#define LOC_HAND_AS(row, name) { row, run_loc_##name },
+#else
+#define LOC_HAND(name) { #name, 0 },
+#define LOC_HAND_AS(row, name) { row, 0 },
+#endif
+        LOC_HAND(setlocale) LOC_HAND(_wsetlocale) LOC_HAND(_create_locale)
+        LOC_HAND(_wcreate_locale) LOC_HAND(_get_current_locale) LOC_HAND(_configthreadlocale)
+        LOC_HAND(localeconv) LOC_HAND(___lc_codepage_func) LOC_HAND(___lc_collate_cp_func)
+        LOC_HAND(___lc_locale_name_func) LOC_HAND(___mb_cur_max_func) LOC_HAND(__pctype_func)
+        LOC_HAND(__pwctype_func) LOC_HAND(__p__mbctype) LOC_HAND(__p__mbcasemap) LOC_HAND(_wctype)
+        LOC_HAND_AS("_setmbcp+tables", _setmbcp)
+        LOC_HAND(__initialize_lconv_for_unsigned_char)
+        CONVTIME_HAND_ENTRIES
+        HEAPIO_ALIGN_HAND_ENTRIES
+        HEAPIO_IPH_HAND_ENTRIES
+        HEAPIO_OPEN_HAND_ENTRIES
+        SPV_HAND_ENTRIES
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
@@ -2450,8 +5450,12 @@ static void run_legacy(void)
                      legacy[i].name);
             continue;
         }
-        if (export_begin(legacy[i].name))
+        if (export_begin(legacy[i].name)) {
+            /* Before, not after: a runner that takes the whole GUEST down (a kernel
+             * bugcheck, which no guard can catch) is otherwise named by nothing. */
+            DbgPrint("[UCRTDIFF] -> %s\n", legacy[i].name);
             export_end(run_guarded(legacy[i].fn), 1);
+        }
     }
 }
 
@@ -2553,8 +5557,12 @@ static int ucrtdiff_main(void)
      * nothing of its own. The last "->" line on serial names it. */
     DbgPrint("[UCRTDIFF] -> dll setlocale\n");
     setlocale(LC_ALL, "C");
+    /* The reference's locale exists only while the locale takeover's Microsoft
+     * objects do: once taken over, a plain sweep has no ref_ side to align. */
+#if UCRTDIFF_REF_HAS_setlocale
     DbgPrint("[UCRTDIFF] -> ref setlocale\n");
     ref_setlocale(LC_ALL, "C");
+#endif
     DbgPrint("[UCRTDIFF] -> rust setlocale\n");
     rust_setlocale(LC_ALL, "C");
     DbgPrint("[UCRTDIFF] -> setmbcp\n");
@@ -2565,7 +5573,9 @@ static int ucrtdiff_main(void)
      * (the process exited STATUS_POSSIBLE_DEADLOCK, 0xC0000194, right here) -- with
      * a line per call, the last line on serial names which one. */
     DbgPrint("[UCRTDIFF] setmbcp(0) dll rc=%d\n", _setmbcp(0));
+#if UCRTDIFF_REF_HAS_setlocale
     DbgPrint("[UCRTDIFF] setmbcp(0) ref rc=%d\n", ref__setmbcp(0));
+#endif
     DbgPrint("[UCRTDIFF] setmbcp(0) rust rc=%d\n", rust__setmbcp(0));
 
     /* The old diagnostic, kept as the PROOF the alignment took. If these three ever
@@ -2577,8 +5587,12 @@ static int ucrtdiff_main(void)
      * against a different codepage on each side, and the resulting "divergences" say
      * nothing about our code. The design doc listed this as NOT VERIFIED; print it, so
      * the table can never again be read without knowing which case holds. */
+#if UCRTDIFF_REF_HAS_setlocale
     DbgPrint("[UCRTDIFF] mbcp: dll=%d rust=%d ref=%d\n",
              _getmbcp(), rust__getmbcp(), ref__getmbcp());
+#else
+    DbgPrint("[UCRTDIFF] mbcp: dll=%d rust=%d ref=(taken over)\n", _getmbcp(), rust__getmbcp());
+#endif
 
     run_generated();
     run_legacy();

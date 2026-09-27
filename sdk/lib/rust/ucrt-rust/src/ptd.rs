@@ -29,18 +29,10 @@ use core::ffi::{c_int, c_long, c_uint, c_ushort, c_void};
 /// between `_putch_buffer` and `_putch_buffer_used` (6 bytes, 5 used + 1 pad).
 pub const MB_LEN_MAX: usize = 5;
 
-/// `__crt_qualified_locale_data`, embedded BY VALUE and deliberately opaque.
-///
-/// Its internals are not needed by anything we are implementing, and pinning a
-/// layout nobody reads is a maintenance cost with no benefit — but its SIZE is
-/// load-bearing, because every field after it shifts if it is wrong. So it is
-/// carried as a pointer-aligned block of exactly the measured width: 764 bytes
-/// on 32-bit (191 words), 776 on 64-bit (97 words). Both divide exactly, which
-/// is itself a check on the measurement.
-#[cfg(target_pointer_width = "32")]
-pub type QualifiedLocaleData = [usize; 191];
-#[cfg(target_pointer_width = "64")]
-pub type QualifiedLocaleData = [usize; 97];
+/// `__crt_qualified_locale_data`, embedded BY VALUE. Opaque here until the
+/// locale takeover needed its fields; now the real struct, pinned in
+/// `locale.rs` at the same 764 / 776 bytes this block was measured at.
+pub use crate::locale::QualifiedLocaleData;
 
 /// UCRT's `struct __acrt_ptd` (`sdk/lib/ucrt/inc/corecrt_internal.h:864`).
 ///
@@ -73,7 +65,7 @@ pub struct AcrtPtd {
     pub multibyte_info: *mut crate::locale::CrtMultibyteData,
     pub locale_info: *mut crate::locale::CrtLocaleData,
     pub setloc_data: QualifiedLocaleData,
-    pub setloc_downlevel_data: *mut c_void,
+    pub setloc_downlevel_data: *mut crate::locale::QualifiedLocaleDataDownlevel,
     pub own_locale: c_int,
     pub putch_buffer: [u8; MB_LEN_MAX],
     pub putch_buffer_used: c_ushort,

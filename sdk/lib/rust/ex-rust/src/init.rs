@@ -1730,12 +1730,8 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // boot with a disk attached caught a DbgBreakPoint (the pool tracker's PoolHitTag
     // break) and the unwind from that trap faulted inside the unwinder, re-dispatched,
     // and looped until the stack overflowed (0x7F/8).
-    // amd64 only, and that is a KNOWN GAP, not a pass: on i386 a caught int3 leaves IRQL
-    // at HIGH (the next fault bugchecks 0x0A with IRQL 0xff), and on arm64 the brk is
-    // never dispatched and a kernel read of 0x10 does not fault at all. Both are open in
-    // the roadmap bug registry ("hardware faults in a Rust try body"); widen this cfg as
-    // each is fixed.
-    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+    // Runs after MmFreeLoaderBlock, so on arm64 the loader's low identity map is gone and
+    // VA 0x10 faults like it does on x86.
     {
         use ntkrnl_sys::seh::*;
         extern "system" {

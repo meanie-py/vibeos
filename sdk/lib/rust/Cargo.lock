@@ -2550,6 +2550,7 @@ name = "ucrt-rust"
 version = "0.1.0"
 dependencies = [
  "crt-portable-rust",
+ "varargs-rust",
 ]
 
 [[package]]

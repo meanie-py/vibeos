@@ -9,7 +9,6 @@ list(APPEND UCRT_MISC_SOURCES
     misc/exception_filter.cpp
     misc/getcwd.cpp
     misc/getpid.cpp
-    misc/invalid_parameter.cpp
     misc/is_wctype.cpp
     misc/perror.cpp
     misc/resetstk.cpp

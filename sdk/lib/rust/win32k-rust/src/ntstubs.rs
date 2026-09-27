@@ -406,23 +406,6 @@ pub unsafe extern "system" fn NtUserGetRawInputData(
     0
 }
 #[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputDeviceInfo(
-    hDevice: HANDLE,
-    uiCommand: UINT,
-    pData: LPVOID,
-    pcbSize: PUINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputDeviceList(
-    pRawInputDeviceList: PRAWINPUTDEVICELIST,
-    puiNumDevices: PUINT,
-    cbSize: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
 pub unsafe extern "system" fn NtUserGetRegisteredRawInputDevices(
     pRawInputDevices: PRAWINPUTDEVICE,
     puiNumDevices: PUINT,

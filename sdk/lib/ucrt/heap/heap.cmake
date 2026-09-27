@@ -1,6 +1,5 @@
 
 list(APPEND UCRT_HEAP_SOURCES
-    heap/align.cpp
     heap/calloc.cpp
     heap/calloc_base.cpp
     heap/expand.cpp
