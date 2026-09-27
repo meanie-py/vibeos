@@ -35,6 +35,7 @@ i386/amd64/arm64 variants of one name do not flag each other; what remains is
 Usage:
     python3 tools/scan_const_contradictions.py            # full report
     python3 tools/scan_const_contradictions.py --lint     # terse (CLI baseline gate)
+    python3 tools/scan_const_contradictions.py --vs-island  # hand copy vs EVERY bindgen value
 
 Suppress a verified-legitimate divergence on the declaring line:
 
@@ -217,9 +218,61 @@ def contradictions(decls) -> list[tuple[str, str, int]]:
     return sorted(set(out))
 
 
+# `pub const NAME: T = VALUE;` as bindgen writes it -- the island's transcript of a C header.
+ISLAND_FILE_RE = re.compile(r"(?:^|/)(?:hal_)?bindgen_[a-z0-9_]+\.rs$")
+ISLAND_CONST_RE = re.compile(
+    r"^\s*pub const ([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^=]+=\s*(-?(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*))\s*;"
+)
+
+
+def island_values() -> dict[str, set[int]]:
+    """name -> every value the bindgen islands give it (all crates, all arches)."""
+    out: dict[str, set[int]] = defaultdict(set)
+    for path in sorted(source_files(RUST_ROOT)):
+        if "/target/" in str(path) or not ISLAND_FILE_RE.search(str(path)):
+            continue
+        for line in path.read_text(errors="replace").splitlines():
+            m = ISLAND_CONST_RE.match(line)
+            if m:
+                try:
+                    out[m.group(1)].add(int(m.group(2).replace("_", ""), 0))
+                except ValueError:
+                    pass
+    return out
+
+
+def island_disagreements(decls, island) -> list[tuple[str, str, int]]:
+    """[(name, file, value)]: a hand copy whose value is NONE of the islands' values.
+
+    The contradiction check above needs TWO hand copies to disagree, so a single invented
+    copy of a header constant is invisible to it -- and bindgen islands are skipped as
+    inputs because they can differ across crates. fsrtl's filelock.rs carried exactly that:
+    the only hand copy of _RTL_GENERIC_COMPARE_RESULTS_GenericEqual/GreaterThan, with the
+    two values SWAPPED against every island. Overlapping lock ranges compared as "greater",
+    RtlDeleteElementGenericTable never found a lock, FsRtlUninitializeFileLock spun forever
+    holding fastfat's volume resource, and every later open on C: hung. Matching ANY island
+    value keeps the cross-crate case (uniata's private ATA_FLAGS_DATA_IN) quiet; what is
+    left disagrees with every C header we transcribe."""
+    out = []
+    for name, sites in decls.items():
+        vals = island.get(name)
+        if not vals:
+            continue
+        for rel, val, _arch in sites:
+            if not any(
+                (val & MASK32) == (v & MASK32) or (val & MASK64) == (v & MASK64) for v in vals
+            ):
+                out.append((name, rel, val))
+    return sorted(set(out))
+
+
 def main() -> int:
     lint = "--lint" in sys.argv
     decls = collect()
+    if "--vs-island" in sys.argv:
+        for name, rel, val in island_disagreements(decls, island_values()):
+            print(f"{rel}: {name} = {render_value(val)} [VS_ISLAND]")
+        return 0
     hits = contradictions(decls)
 
     names = sorted({h[0] for h in hits})

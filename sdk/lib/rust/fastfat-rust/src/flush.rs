@@ -20,7 +20,15 @@ extern "system" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn PAGED_CODE();
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "C" {
+    // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
+    // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
+    // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
+    // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
+    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
+    fn IoSetCompletionRoutine( Irp: PIRP, Routine: PIO_COMPLETION_ROUTINE, Context: *mut core::ffi::c_void, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
+}
+extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn SetFlag(flags: *mut u32, flag: u32);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -50,9 +58,7 @@ extern "system" {
     fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
     fn DebugUnwind(name: *const i8);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
-    fn IoSetCompletionRoutine( Irp: PIRP, Routine: PIO_COMPLETION_ROUTINE, Context: *mut core::ffi::c_void, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn IoIsSystemThread(Thread: PETHREAD) -> BOOLEAN;
     fn PsGetCurrentThread() -> PETHREAD;

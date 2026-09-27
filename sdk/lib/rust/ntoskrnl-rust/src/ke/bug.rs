@@ -1614,8 +1614,10 @@ pub unsafe extern "system" fn KeBugCheckEx(
         BugCheckParameter4 as PVOID,
     );
     KiBannerDone = 1; // WithTf must not re-print (Ex -> WithTf path)
+    // 0x50/0xBE pass MmAccessFault's TrapInformation as P3 too (ARM3/pagfault.rs). Without
+    // this an i386 0x50 printed four bare numbers: P3 is a stack address, in no module.
     #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
-    if BugCheckCode == 0x1E && BugCheckParameter3 > 0x80000000 {
+    if matches!(BugCheckCode, 0x1E | 0x50 | 0xBE) && BugCheckParameter3 > 0x80000000 {
         i386_trap_frame_backtrace(BugCheckParameter3);
     }
     // Self-symbolicate: any parameter that lands inside a loaded image prints

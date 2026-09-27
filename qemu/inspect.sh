@@ -91,6 +91,7 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/triage-bugcheck.py"
     -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
     -ex "source $GDB_HELPERS_DIR/list-threads.py"
+    -ex "source $GDB_HELPERS_DIR/who-holds.py"
     -ex "source $GDB_HELPERS_DIR/sample-pc.py"
 )
 

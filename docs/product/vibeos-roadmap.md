@@ -557,6 +557,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 QEMU cannot reproduce app bugs the Pi shows** (OPEN, 2026-09-27). The QEMU
+  arm64 boot uses the hand-curated ramdisk in `qemu/mkramdisk.sh` (140 MB): notepad, cmd,
+  testgui and a few more, but no calc/regedit/control/iexplore -- appstorm reports 36 of 43
+  entries ABSENT there. The Pi image carries them, which is why its iexplore/My Computer
+  failures have no QEMU arm64 repro. Staging the stock apps into the ramdisk (and growing
+  it) closes the gap. Owner: unassigned.
+- **89 hand-written constants disagree with every bindgen island value** (OPEN work queue,
+  2026-09-27). `tools/lint-baseline/scan_const_vs_island.txt`; mixed stock -- freeldr's ARC
+  status codes share errno NAMES legitimately -- but it includes likely real bugs of the
+  class that hung FAT (fsrtl's swapped GenericEqual): fastfat `IRP_MN_COMPLETE_MDL = 3`
+  (C: 6), kernel32 `LC_*`, cdfs/fastfat `MDL_PARTIAL_HAS_BEEN_MAPPED = 4` (C: 0x20). Burn
+  down against the C headers; NEW entries already fail `vibeos-cli check`.
 - **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
   access-violation case OPEN (handed to the Pi4 lane)** (2026-09-27). The per-boot
   `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation

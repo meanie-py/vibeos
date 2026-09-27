@@ -2093,6 +2093,17 @@ UNCOVERED: dict[str, str] = {
         "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
+    "scan_const_vs_island": (
+        "needs the whole tree's bindgen islands as its oracle. The decision, "
+        "island_disagreements(), is a pure function over two dicts, driven in "
+        "tools/test_scan_const_vs_island.py with the fsrtl swap as the positive control."
+    ),
+    "scan_res_named_types": (
+        "reads COMMITTED binary resource objects (git ls-files '*.res'), not Rust source, so "
+        "a source fixture dir has nothing to offer it. The parser is driven directly in "
+        "tools/test_scan_res_named_types.py with synthetic COFF objects: a string-typed "
+        "MESSAGETABLE fires, the integer type 11 and a genuinely custom string type do not."
+    ),
     "scan_invented_constants": (
         "needs the real tree on BOTH sides: the self-labelled Rust const and the C module "
         "that crate translates. A synthetic fixture would only prove the regex fires. Its "
@@ -2375,6 +2386,43 @@ def test_cc_mismatch_fixer_is_alive(tmp_path: Path):
     assert 'extern "stdcall" {' in text, text
     # ...and the fix must actually settle the lint it was written to settle.
     assert not cc.scan_crate(str(src)), cc.scan_crate(str(src))
+
+
+def test_cc_mismatch_flags_one_undefined_symbol_declared_two_ways(tmp_path: Path):
+    """[DECL_CC_SPLIT]: no in-crate definition, two i386 conventions across the crate.
+
+    The fastfat shape, spelled as it shipped: fileinfo.rs said "system" for the cdecl
+    IoGetCurrentIrpStackLocation thunk, on a line that also opens and closes another block,
+    while the other files said "C". The one-view-per-crate fold left esp 4 bytes off after
+    every fileinfo call (i386 BUGCHECK 0x50 saving a file). Both sides must be reported."""
+    cc = _cc_mod()
+    files = {
+        "src/cachesup.rs": (
+            'extern "C" {\n    fn IoGetCurrentIrpStackLocation(irp: *mut u8) -> *mut u8;\n}\n'
+        ),
+        "src/fileinfo.rs": (
+            'extern "system" {\n    fn FatX(a: u32);\n'
+            '    } extern "C" { fn KdPrintEx(c: u32, ...); } extern "system" {\n'
+            "    fn IoGetCurrentIrpStackLocation(Irp: *mut u8) -> *mut u8;\n}\n"
+        ),
+    }
+    hits = cc.scan_crate(str(_materialize(tmp_path, files) / "src"))
+    split = [h for h in hits if "DECL_CC_SPLIT" in h and "IoGetCurrentIrpStackLocation" in h]
+    assert any("cachesup.rs" in h for h in split) and any("fileinfo.rs" in h for h in split), hits
+
+
+def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):
+    """section.rs keeps `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block
+    next to a live extern "C" one. A comment is not a declaration: no split, no mismatch."""
+    cc = _cc_mod()
+    files = {
+        "src/section.rs": (
+            'extern "C" {\n    fn KeRaiseIrql(n: u8, o: *mut u8);\n}\n'
+            'extern "system" {\n    // DUPLICATE: fn KeRaiseIrql(n: u8, o: *mut u8);\n}\n'
+        ),
+    }
+    hits = cc.scan_crate(str(_materialize(tmp_path, files) / "src"))
+    assert not hits, hits
 
 
 def test_cc_mismatch_pairs_on_the_symbol_not_the_rust_identifier(tmp_path: Path):

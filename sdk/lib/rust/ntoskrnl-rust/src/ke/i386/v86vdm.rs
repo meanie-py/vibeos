@@ -27,7 +27,6 @@ extern "system" {
     fn VdmDispatchBop(TrapFrame: PKTRAP_FRAME);
     fn KiGetThreadNpxArea(Thread: PETHREAD) -> PVOID;
     fn KiSetTebBase(Pcr: PKPCR, Teb: PVOID);
-    fn Ki386BiosCallReturnAddress();
     fn KiFillTrapFrameDebug(TrapFrame: PKTRAP_FRAME);
     fn Ki386SetupAndExitToV86Mode(VdmTeb: PTEB);
     fn KiComputeIopmOffset(MapNumber: ULONG) -> USHORT;
