@@ -884,6 +884,17 @@ pub unsafe extern "system" fn XHCI_SubmitTransfer(
         if ep.dci == 1 && request_type == 0x00 && request == 0x05 {
             // SET_ADDRESS: the controller addresses the device itself.
             let slot = ep.slot;
+            // usbport reuses an address only after the device that held it was
+            // removed, and it does not tell the miniport about removals. A slot
+            // still holding this address is that removed device's: free it, or
+            // the re-open at this address finds the dead slot first (a keyboard
+            // unplugged from one hub port and plugged into another hung there).
+            for s in 1..=MAX_SLOTS as u32 {
+                if s != slot && x.slots[s as usize].in_use && x.slots[s as usize].usb_address == w_value {
+                    xlog!("slot %u: address %u reused by usbport; freeing the removed device's slot", s, w_value);
+                    disable_slot(x, s);
+                }
+            }
             let cc = address_device(x, slot, false);
             let (ctx_va, _) = dev_ctx(x, slot);
             dma_invalidate(ctx_va, x.ctx_size as usize);
