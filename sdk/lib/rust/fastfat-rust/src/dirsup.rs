@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsClear, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DELETE_CONTEXT, DIRENT, FAT8DOT3, FAT_BUG_CHECK_DIRSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, IRP_CONTEXT, LFN_DIRENT, PFCB, VCB};
@@ -285,6 +285,86 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
         }
     }
+
+    // The three blocks below were dropped from the translation, and the last one
+    // is load-bearing: without RtlSetBits every new dirent stayed FREE in the
+    // in-memory bitmap, so a later create that searches for deleted dirents
+    // (RtlFindClearBits, the "hard case" above) could be handed one that is in use
+    // and overwrite a live file's directory entry. FatDeleteDirent's
+    // AreBitsSet ASSERT is where it showed, twice per i386 boot. (dirsup.c:414-534)
+
+    // If we are only requesting a single dirent, and we did not get the first
+    // dirent in a directory, then check that the preceding dirent is not an
+    // orphaned LFN. If it is, then mark it deleted, reducing the possibility of
+    // an accidental pairing. Only do this in Chicago mode.
+    // FatReadDirent reports through an i32 whatever NTSTATUS is on this arch.
+    let mut read_status: i32 = 0;
+    Bcb = core::ptr::null_mut();
+    let first_usable = if NodeType((ParentDirectory).cast()) == (FAT_NTC_ROOT_DCB as u32) {
+        0
+    } else {
+        2 * (core::mem::size_of::<DIRENT>() as u32)
+    };
+    if FatData.ChicagoMode() != 0 && DirentsNeeded == 1 && ByteOffset > first_usable {
+        FatReadDirent(
+            IrpContext,
+            ParentDirectory,
+            ByteOffset - (core::mem::size_of::<DIRENT>() as u32),
+            &mut Bcb,
+            &mut Dirent,
+            &mut read_status,
+        );
+        if read_status != 0 || (*Dirent).FileName[0] == FAT_DIRENT_NEVER_USED {
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+            FatPopUpFileCorrupt(IrpContext, ParentDirectory);
+            FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+        }
+        if (*Dirent).Attributes == FAT_DIRENT_ATTR_LFN && (*Dirent).FileName[0] != FAT_DIRENT_DELETED {
+            // Pin it, mark it, and set it dirty.
+            FatPinMappedData(
+                IrpContext,
+                ParentDirectory,
+                ByteOffset - (core::mem::size_of::<DIRENT>() as u32),
+                (core::mem::size_of::<DIRENT>() as u32),
+                &mut Bcb,
+            );
+            (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
+            FatSetDirtyBcb(IrpContext, Bcb, (*ParentDirectory).Vcb, 1);
+            let bitmap = core::ptr::addr_of_mut!((*ParentDirectory).Specific.Dcb.as_mut().FreeDirentBitmap);
+            ntkrnl_sys::ASSERT!(
+                RtlAreBitsSet(bitmap.cast(), (ByteOffset - (core::mem::size_of::<DIRENT>() as u32)) / (core::mem::size_of::<DIRENT>() as u32), DirentsNeeded) != 0
+            );
+            RtlClearBits(bitmap.cast(), (ByteOffset - (core::mem::size_of::<DIRENT>() as u32)) / (core::mem::size_of::<DIRENT>() as u32), DirentsNeeded);
+        }
+        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+    }
+
+    // Check that the dirents are in fact unused.
+    Bcb = core::ptr::null_mut();
+    for i in 0..DirentsNeeded {
+        FatReadDirent(
+            IrpContext,
+            ParentDirectory,
+            ByteOffset + i * (core::mem::size_of::<DIRENT>() as u32),
+            &mut Bcb,
+            &mut Dirent,
+            &mut read_status,
+        );
+        if read_status != 0
+            || ((*Dirent).FileName[0] != FAT_DIRENT_NEVER_USED
+                && (*Dirent).FileName[0] != FAT_DIRENT_DELETED)
+        {
+            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+            FatPopUpFileCorrupt(IrpContext, ParentDirectory);
+            FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+        }
+    }
+    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+
+    // Set the bits in the bitmap and move the unused dirent VBO.
+    let bitmap = core::ptr::addr_of_mut!((*ParentDirectory).Specific.Dcb.as_mut().FreeDirentBitmap);
+    ntkrnl_sys::ASSERT!(RtlAreBitsClear(bitmap.cast(), ByteOffset / (core::mem::size_of::<DIRENT>() as u32), DirentsNeeded) != 0);
+    RtlSetBits(bitmap.cast(), ByteOffset / (core::mem::size_of::<DIRENT>() as u32), DirentsNeeded);
 
     (*ParentDirectory).Specific.Dcb.as_mut().UnusedDirentVbo = UnusedVbo;
     (*ParentDirectory).Specific.Dcb.as_mut().DeletedDirentHint = DeletedHint;

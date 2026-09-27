@@ -51,9 +51,15 @@ ExPools OK pass=17 fail=1 skip=0 exit=0
     assert ExPools.c:210
     assert? ExPools.c:176
     assert? ExPools.c:181
-ExResource OK pass=879 fail=2 skip=0 exit=0
-    assert ExResource.c:441
-    assert ExResource.c:488
+ExResource OK pass=845 fail=2 skip=0 exit=0
+    assert ExResource.c:456
+    assert? ExResource.c:480
+    assert ExResource.c:503
+    assert? ExResource.c:518
+    assert? ExResource.c:620
+ExResourceBounded OK pass=879 fail=2 skip=0 exit=0
+    assert ExResource.c:456
+    assert ExResource.c:503
 ExSequencedList OK pass=0 fail=0 skip=0 exit=0
 ExSingleList OK pass=240 fail=12 skip=0 exit=0
 ExUuid OK pass=3000 fail=0 skip=0 exit=0

@@ -66,11 +66,43 @@ core::arch::global_asm!(
     "ret",
 );
 
+// The atomic twin: `KmProtectedInterlockedAdd(Addend, Value, Result)`, cdecl,
+// same ABI as the native-SEH version in kmsafecopy.c. A read-modify-write on user
+// memory cannot be expressed as a copy (capture -> mutate -> publish is not
+// atomic), so the `lock xadd` itself is the second extable key. A fault on it is
+// precise -- nothing was written -- and reports Eip at the lock prefix, which is
+// the label.
+//
+// Stack on entry:  [esp]=ret [esp+4]=Addend [esp+8]=Value [esp+12]=Result
+core::arch::global_asm!(
+    ".text",
+    ".global _KmProtectedInterlockedAdd",
+    "_KmProtectedInterlockedAdd:",
+    "mov ecx, [esp+4]", // Addend
+    "mov eax, [esp+8]", // Value
+    "mov edx, eax",
+    ".global _KmpProtectedXaddFaultPc",
+    "_KmpProtectedXaddFaultPc:",
+    "lock xadd [ecx], eax", // eax = old value
+    "add eax, edx",         // new value, as InterlockedAdd returns it
+    "mov ecx, [esp+12]",    // Result is kernel memory; only the xadd is protected
+    "mov [ecx], eax",
+    "mov eax, 1",
+    "ret",
+    ".global _KmpProtectedXaddFixup",
+    "_KmpProtectedXaddFixup:",
+    "xor eax, eax",
+    "ret",
+);
+
 extern "C" {
-    /// Address of the `rep movsb` above — the sole extable key.
+    /// Address of the `rep movsb` above — an extable key.
     static KmpProtectedCopyFaultPc: u8;
     /// Address of the failure landing pad.
     static KmpProtectedCopyFixup: u8;
+    /// Address of the `lock xadd` — the other extable key.
+    static KmpProtectedXaddFaultPc: u8;
+    static KmpProtectedXaddFixup: u8;
 }
 
 /// The exception table lookup, consulted by `KiTrap0EHandler` on a kernel-mode
@@ -83,11 +115,15 @@ extern "C" {
 /// swallow a fault it does not own.
 #[inline]
 pub unsafe fn KiFixupProtectedCopy(TrapFrame: PKTRAP_FRAME) -> bool {
-    let fault_pc = core::ptr::addr_of!(KmpProtectedCopyFaultPc) as ULONG;
-    if (*TrapFrame).Eip != fault_pc {
+    let eip = (*TrapFrame).Eip;
+    let fixup = if eip == core::ptr::addr_of!(KmpProtectedCopyFaultPc) as ULONG {
+        core::ptr::addr_of!(KmpProtectedCopyFixup)
+    } else if eip == core::ptr::addr_of!(KmpProtectedXaddFaultPc) as ULONG {
+        core::ptr::addr_of!(KmpProtectedXaddFixup)
+    } else {
         return false;
-    }
-    (*TrapFrame).Eip = core::ptr::addr_of!(KmpProtectedCopyFixup) as ULONG;
+    };
+    (*TrapFrame).Eip = fixup as ULONG;
     true
 }
 
@@ -143,5 +179,38 @@ pub unsafe extern "C" fn KmSafeCopySelfTest() -> i32 {
         },
     );
 
+    (ok != 0 && KmSafeAtomicSelfTest() != 0) as i32
+}
+
+/// The atomic's twin of the copy test above, printing the same line the
+/// kmsafecopy.c version does. `landed` is the assertion a copy does not need:
+/// the add must be visible IN MEMORY, not merely returned.
+unsafe fn KmSafeAtomicSelfTest() -> i32 {
+    extern "C" {
+        fn KmProtectedInterlockedAdd(addend: *mut i32, value: i32, result: *mut i32) -> i32;
+        fn DbgPrint(fmt: *const u8, ...) -> ULONG;
+    }
+
+    let mut counter: i32 = 41;
+    let mut result: i32 = 0;
+    let mut junk: i32 = 0;
+
+    let good = KmProtectedInterlockedAdd(core::ptr::addr_of_mut!(counter), 1, &mut result);
+    let landed = (core::ptr::read_volatile(core::ptr::addr_of!(counter)) == 42 && result == 42) as i32;
+    let bad = KmProtectedInterlockedAdd(0x1 as *mut i32, 1, &mut junk);
+
+    let ok = (good == 1 && landed == 1 && bad == 0) as i32;
+    DbgPrint(
+        b"[KMSAFECOPY] fault-tolerant interlocked add: valid=%d landed=%d invalid_caught=%d (%s)\n\0"
+            .as_ptr(),
+        good,
+        landed,
+        (bad == 0) as i32,
+        if ok != 0 {
+            b"PASS\0".as_ptr()
+        } else {
+            b"FAIL\0".as_ptr()
+        },
+    );
     ok
 }

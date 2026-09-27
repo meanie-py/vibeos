@@ -1525,7 +1525,7 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
     crate::dbg_print!(b"***   TrapFrame Eip=%p Ebp=%p Esp=%p\n\0",
         eip as ULONG_PTR as PVOID, ebp as ULONG_PTR as PVOID,
         core::ptr::addr_of!((*tf).HardwareEsp) as PVOID);
-    unsafe fn ksym(pc: u32) {
+    unsafe fn ksym(pc: u32) -> bool {
         let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
         let mut in_kernel: BOOLEAN = 0;
         let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
@@ -1537,11 +1537,38 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
             crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
                 pc as ULONG_PTR as PVOID, ansi.as_ptr(),
                 (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
+            true
         } else {
             crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
+            false
         }
     }
-    ksym(eip);
+    if !ksym(eip) {
+        // EIP outside every module means a call through a bad pointer, and then
+        // EBP is whatever the garbage "function" left -- the chain below walks
+        // nothing. The CALLER's return address is still on the stack, at or near
+        // the trap's ESP (kernel-mode: the address of HardwareEsp). Print every
+        // word there that lands in a module; the first is usually the bad call.
+        crate::dbg_print!(b"***   EIP is in no module; stack words that are code addresses:\n\0");
+        let sp = core::ptr::addr_of!((*tf).HardwareEsp) as u32;
+        let mut i = 0u32;
+        while i < 32 {
+            let at = sp + i * 4;
+            if MmIsAddressValid(at as ULONG_PTR as PVOID) == 0 {
+                break;
+            }
+            let w = core::ptr::read_volatile(at as *const u32);
+            let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+            let mut in_kernel: BOOLEAN = 0;
+            if w > 0x1000
+                && !KiPcToFileHeader(w as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel).is_null()
+            {
+                crate::dbg_print!(b"***   [esp+%02lx]\n\0", (i * 4) as ULONG);
+                ksym(w);
+            }
+            i += 1;
+        }
+    }
     // EBP-chain backtrace (frame-pointer builds; bail on bad links)
     let mut bp = ebp;
     let mut n = 0;
@@ -1552,7 +1579,7 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
         }
         let ret = core::ptr::read_volatile((bp + 4) as *const u32);
         if ret < 0x1000 { break; }
-        ksym(ret);
+        let _ = ksym(ret);
         let next = core::ptr::read_volatile(bp as *const u32);
         if next <= bp { break; }
         bp = next;

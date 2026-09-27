@@ -18,7 +18,9 @@ Here the import table is read directly. Every failure is a nonzero exit with a m
 --graded-from is ucrtdiff's check: every `__cdecl ref_<name>(` declared in SRC.c must be
 imported from DLL by <name> -- a row whose "ours" side got inlined or constant-folded would
 otherwise grade the compiler instead of our DLL. A name the refs header marks
-`#define UCRTDIFF_REF_HAS_<name> 0` is compiled out, and so exempt.
+`#define UCRTDIFF_REF_HAS_<name> 0` is compiled out, and so exempt -- and so is every
+declaration inside an `#if UCRTDIFF_REF_HAS_<name>` block for such a name, since that
+block is compiled out too (a family's helpers, e.g. the ref_fopen its stream runners use).
 """
 
 from __future__ import annotations
@@ -32,6 +34,35 @@ from pathlib import Path
 
 class PEError(Exception):
     pass
+
+
+def compiled_in(src: str, off_refs: set[str]) -> str:
+    """`src` without the lines an `#if UCRTDIFF_REF_HAS_<name>` for an OFF name removes.
+
+    Only those conditions are evaluated; every other `#if` is taken as live, which is the
+    conservative direction -- a declaration is only ever exempted by a guard we can read.
+    """
+    kept = []
+    stack: list[tuple[bool, bool]] = []  # (this branch live, is a REF_HAS guard)
+    for line in src.splitlines():
+        d = line.strip()
+        m = re.match(r"#\s*if\s+UCRTDIFF_REF_HAS_(\w+)\s*$", d)
+        if m:
+            stack.append((m.group(1) not in off_refs, True))
+            continue
+        if re.match(r"#\s*if(n?def)?\b", d):
+            stack.append((True, False))
+            continue
+        if re.match(r"#\s*else\b", d) and stack:
+            live, guard = stack[-1]
+            stack[-1] = (not live if guard else live, guard)
+            continue
+        if re.match(r"#\s*endif\b", d) and stack:
+            stack.pop()
+            continue
+        if all(live for live, _ in stack):
+            kept.append(line)
+    return "\n".join(kept)
 
 
 def parse(path: Path) -> tuple[int, dict[str, list[str]]]:
@@ -128,13 +159,13 @@ def main(argv: list[str]) -> int:
         if a.graded_decls is None:
             return fail("--graded-from needs --graded-decls")
         have = set(imports.get(dlls.get(a.graded_from.lower(), ""), []))
-        src = a.graded_decls.read_text(errors="replace")
-        wanted = sorted(set(re.findall(r"__cdecl\s+\*?ref_([A-Za-z_][A-Za-z0-9_]*)\s*\(", src)))
         off_refs: set[str] = set()
         if a.refs_header is not None and a.refs_header.exists():
             off_refs = set(
                 re.findall(r"^#define UCRTDIFF_REF_HAS_(\w+) 0$", a.refs_header.read_text(), re.M)
             )
+        src = compiled_in(a.graded_decls.read_text(errors="replace"), off_refs)
+        wanted = sorted(set(re.findall(r"__cdecl\s+\*?ref_([A-Za-z_][A-Za-z0-9_]*)\s*\(", src)))
         missing = [n for n in wanted if n not in off_refs and n not in have]
         if missing:
             print(f"[{a.tag}]   those rows would grade the compiler, not our DLL")

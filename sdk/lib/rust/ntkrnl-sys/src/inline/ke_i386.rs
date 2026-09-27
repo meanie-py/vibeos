@@ -301,13 +301,10 @@ core::arch::global_asm!(
     "  str ax",
     "  ret",
 
-    // TLB entry invalidate — KeInvalidateTlbEntry(Address) (cdecl, used as
-    // extern "C" by the Rust ARM3 paths)
-    ".globl _KeInvalidateTlbEntry",
-    "_KeInvalidateTlbEntry:",
-    "  mov eax, [esp+4]",
-    "  invlpg [eax]",
-    "  ret",
+    // KeInvalidateTlbEntry is NOT here: ntoskrnl-rust's shim_exports.rs is its one
+    // provider, and it also does the SMP remote shootdown. A local-only `invlpg`
+    // label used to sit here under the same name; which one the kernel got was
+    // decided by archive order alone.
 
     // KiCpuId(CpuInfo*, Function) — i386 NTAPI/stdcall, fills 4-ULONG buffer
     ".globl _KiCpuId@8",

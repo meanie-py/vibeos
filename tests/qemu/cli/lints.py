@@ -886,6 +886,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A bare cdecl i386 symbol ALIASED (`.set _X, _X@N`) onto a stdcall body: links,
+    # then every cdecl call pops the arguments twice. fastfat's DriverEntry drifted
+    # ESP by 8 and returned into its caller's stack (BUGCHECK 0x1E) the first time a
+    # FAT volume loaded it on i386. Only @0 is sound. Baseline EMPTY.
+    sca = repo / "tools" / "scan_cdecl_alias.py"
+    specs.append(
+        (
+            "scan_cdecl_alias",
+            [py, str(sca), "--lint"] if sca.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A C byte count (RtlCopyMemory) kept as the ELEMENT count of a u16-typed
     # core::ptr::copy moves twice the bytes. fastfat's FatQueryDirectory copied
     # every long name at double length and faulted on arm64 once winsxs names
@@ -1026,14 +1038,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
-    # link into the kernel PE are masked by --allow-multiple-definition (which is
-    # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
-    # drop the flag, so we FREEZE its masked set and gate NEW cross-crate
-    # collisions — the IsEqualGUID-class near-miss where a translation re-defines
-    # a symbol another crate already owns. Baseline = accepted deliberate cohab
-    # (today: arbiter's amd64 KeGetCurrentIrql). See the tool docstring +
-    # docs/engineering/allow-multiple-definition-ratchet.md.
+    # Two definitions of one exported symbol, live on the same arch in the same
+    # binary. Every PE links with --allow-multiple-definition (load-bearing: each
+    # Rust staticlib graph carries its own panic runtime), so a duplicate resolves
+    # by archive order, silently. Models each binary's crate closure, Cargo
+    # features and per-arch cfg, and sees global_asm! labels — the i386 prefetch
+    # stub that crashed kmtest (88b04bf7f86) was a Rust fn beside its own crate's
+    # asm label. Baseline is EMPTY = a hard 0-gate. See the tool docstring.
     sds = repo / "tools" / "scan_duplicate_symbols.py"
     specs.append(
         (

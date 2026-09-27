@@ -119,8 +119,8 @@ extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
 }
 unsafe extern "system" {
-    fn KeQueryHighestNodeNumber() -> u32;
-    fn KeGetCurrentNodeNumber() -> u32;
+    fn KeQueryHighestNodeNumber() -> USHORT;
+    fn KeGetCurrentNodeNumber() -> USHORT;
     fn IoQueueWorkItemEx(io_work_item: PIO_WORKITEM, worker_routine: *const c_void, queue_type: u32, context: PVOID);
 }
 #[no_mangle]
@@ -197,7 +197,7 @@ pub unsafe extern "C" fn InitializeTransferPackets(Fdo: PDEVICE_OBJECT) -> NTSTA
     (*fdoData).HwMaxXferLen = core::cmp::max((*fdoData).HwMaxXferLen, PAGE_SIZE as ULONG);
 
     // Allocate per-node free packet lists
-    arraySize = (KeQueryHighestNodeNumber() + 1) as ULONG;
+    arraySize = KeQueryHighestNodeNumber() as ULONG + 1;
     (*fdoData).FreeTransferPacketsLists = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
         (core::mem::size_of::<PNL_SLIST_HEADER>() as SIZE_T).wrapping_mul(arraySize as SIZE_T),
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn DestroyAllTransferPackets(Fdo: PDEVICE_OBJECT) {
             __int2c();
         }
 
-        let arraySize = KeQueryHighestNodeNumber() + 1;
+        let arraySize = KeQueryHighestNodeNumber() as ULONG + 1;
         let mut index = 0u32;
         while index < arraySize {
             let mut pkt = DequeueFreeTransferPacketEx(Fdo, 0u8, index) as *mut TRANSFER_PACKET;

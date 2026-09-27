@@ -368,9 +368,11 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
 }
 #[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {}
-#[no_mangle] pub unsafe extern "system" fn KeGetCurrentNodeNumber() -> u16 { 0 }
-#[no_mangle] pub unsafe extern "system" fn KeQueryHighestNodeNumber() -> u32 { 0 }
-#[no_mangle] pub unsafe extern "system" fn KeSetCoalescableTimer(t: PVOID, due: LARGE_INTEGER, period: u32, tol: u32, dpc: PVOID) -> u8 { 0 }
+// KeGetCurrentNodeNumber / KeQueryHighestNodeNumber / KeSetCoalescableTimer and
+// IoQueueWorkItemEx come from ntoskrnl-vista-rust, which classpnp-cargo links on every
+// arch (as C classpnp links libntoskrnl_vista.a). Copies here were duplicate definitions
+// that --allow-multiple-definition resolved silently; this crate's KeSetCoalescableTimer
+// was a `0` stub that never armed the timer. scan_duplicate_symbols gates it now.
 
 // ============================ classp.h FORCEINLINE helpers ============================
 // These are header inlines the C calls as functions; cohab needs the crate to provide
@@ -494,61 +496,6 @@ use core::sync::atomic::{AtomicI32, Ordering};
     let _ = Dev;
     0
 }
-// IoQueueWorkItemEx is NOT exported by ReactOS ntoskrnl (only IoQueueWorkItem exists).
-// FAITHFUL trampoline (2026-07-07): the old shim forwarded straight to IoQueueWorkItem,
-// silently calling the 3-arg IO_WORKITEM_ROUTINE_EX with the 2-arg ABI — the routine's
-// IoWorkItem parameter was garbage R8 (in practice the CURRENT ETHREAD), and
-// CleanupTransferPacketToWorkingSetSizeWorker then IoFreeWorkItem'd it →
-// ExFreePool(current thread) → pool corruption BUGCHECKs on every USB mass-storage
-// write burst. The "off the boot path" assumption died the day writes worked.
-struct IoQueueWorkItemExCtx {
-    routine: unsafe extern "system" fn(PVOID, PVOID, ntkrnl_sys::ddk::PIO_WORKITEM),
-    context: PVOID,
-    work_item: ntkrnl_sys::ddk::PIO_WORKITEM,
-}
-
-unsafe extern "system" fn IoQueueWorkItemExTrampoline(
-    DeviceObject: ntkrnl_sys::ddk::PDEVICE_OBJECT,
-    Context: PVOID,
-) {
-    let ctx = Context as *mut IoQueueWorkItemExCtx;
-    let IoQueueWorkItemExCtx { routine, context, work_item } = core::ptr::read(ctx);
-    ntkrnl_sys::ddk::ExFreePool(ctx as PVOID);
-    routine(DeviceObject as PVOID, context, work_item);
-}
-
-#[no_mangle] pub unsafe extern "system" fn IoQueueWorkItemEx(
-    IoWorkItem: ntkrnl_sys::ddk::PIO_WORKITEM,
-    WorkerRoutine: *const core::ffi::c_void,
-    QueueType: u32,
-    Context: PVOID,
-) {
-    let ctx = ntkrnl_sys::ddk::ExAllocatePoolWithTag(
-        ntkrnl_sys::ddk::_POOL_TYPE_NonPagedPool,
-        core::mem::size_of::<IoQueueWorkItemExCtx>() as _,
-        u32::from_ne_bytes(*b"IWEx"),
-    ) as *mut IoQueueWorkItemExCtx;
-    if ctx.is_null() {
-        // Allocation failure: drop the trim request. The routine also releases the
-        // remove lock + frees the work item, so leak-on-failure is the lesser evil;
-        // fail LOUD so it's visible.
-        ntkrnl_sys::driver_ddk::DbgPrint(
-            b"[CLASSPNP] IoQueueWorkItemEx: ctx alloc FAILED - dropping work item\n\0".as_ptr() as _);
-        return;
-    }
-    core::ptr::write(ctx, IoQueueWorkItemExCtx {
-        routine: core::mem::transmute(WorkerRoutine),
-        context: Context,
-        work_item: IoWorkItem,
-    });
-    ntkrnl_sys::ddk::IoQueueWorkItem(
-        IoWorkItem,
-        core::mem::transmute(IoQueueWorkItemExTrampoline as unsafe extern "system" fn(_, _)),
-        QueueType as _,
-        ctx as PVOID,
-    );
-}
-
 // SET_FLAG(Flags, Flag) macro: *Flags |= Flag. Genuinely undefined (a C macro) — the i386 fold
 // hid the caller; amd64's live ref surfaced it. write_volatile to keep it captures(none)-safe.
 #[no_mangle] pub unsafe extern "C" fn SET_FLAG(Flags: *mut u32, Flag: u32) {

@@ -557,6 +557,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
+  (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
+  volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's
+  stack. `rust_cohab_forceinline.c` bridged the bare cdecl names of eight wdm FORCEINLINE
+  helpers (`KeInitializeSpinLock`, `ExInitializeFastMutex`, the `Io*IrpStackLocation`
+  family, `IoSetCompletionRoutine`) to their stdcall bodies with `.set _X, _X@N` ALIASES,
+  so every cdecl call popped its arguments twice. DriverEntry made two (+8 bytes): its
+  ESP-relative epilogue popped the return address into EBX and DriverObject into EBP, and
+  `ret 8` jumped to RegistryPath on `IopInitializeDriverModule`'s stack. Every register in
+  the trap frame matches that arithmetic. Fixed with real cdecl->stdcall thunks;
+  `scan_cdecl_alias` (in `check`, baseline empty) forbids the alias shape, and the field
+  manual's convention-mismatch list has it as manifestation 7. Verified: `smoke --arch i386
+  --repeat 3` with the disk, 3/3, `C:\TEMP` found each boot. The disk is now attached by
+  default on i386 as well. Found with a gdb probe once two tool gaps were closed: `gdb
+  start` never attached the disk (now shares `vm.temp_disk_args`), and triage resolved
+  i386 MP faults against the UP kernel (the loader names ntkrnlmp `ntoskrnl.exe`).
+- **fastfat never marked a new directory entry as used — FIXED** (2026-09-26). Seen as
+  an i386 `FatDeleteDirent` ASSERT (`FreeDirentBitmap` bits not set, twice per boot), but
+  the cause was on every arch: the Rust `FatCreateNewDirent` had lost the tail of the C
+  (`dirsup.c:414-534`) — the orphaned-LFN check, the "dirents really are unused" verify, and
+  `RtlSetBits` on the free-dirent bitmap. So every new dirent stayed FREE in memory, and a
+  later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
+  entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
+  smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **fastfat pre-seal translation audit: other bodies may have lost statements — OPEN**
+  (2026-09-26). fastfat was translated before call sealing, so nothing checks that a Rust
+  body kept its C's calls. A throwaway per-function callee diff over all 356 paired
+  functions reports 441 missing names in 163 functions; most are macro expansions or
+  DUMMY_PSEH-dead finally blocks (e.g. `FatAddToWorkque` is equivalent). Leads worth reading
+  first: `FatQueueClose` (62 Rust lines vs 272 C), `FatCommonCreate`/`FatOpenExistingFile`
+  (no `FatDeleteFcb`/`FatDeleteCcb`/`FatDeleteDirent` failure cleanup),
+  `FatMountVolume` (`CcSetAdditionalCacheAttributesEx`). `FatInvalidateVolumes` and
+  `FatCommonSetEa` are LOUD stubs (bugcheck / `STATUS_INVALID_DEVICE_REQUEST`), not drops.
+  Method in the field manual: "A body can lose its TAIL with nothing to show for it".
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
@@ -702,9 +736,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   two.
 
 - **The user32 winetest A/B, whole suite, both sides: 17 identical and 7 guest-only.
-  REFERENCE, ALL SEVEN RESOLVED except `uitools`** (2026-09-25; `combo`, `winstation`,
-  `scroll`, `dde` FIXED and `monitor` no longer diverging, 2026-09-26, see below;
-  `uitools` is the known discarded GDI batch). First time the WoW64 control has run across a whole
+  REFERENCE, ALL SEVEN RESOLVED** (2026-09-25; `combo`, `winstation`,
+  `scroll`, `dde`, `uitools` FIXED and `monitor` no longer diverging, 2026-09-26, see below). First time the WoW64 control has run across a whole
   suite instead of two subtests. Same 21 subtests both sides, same quarantine
   (`input msg win`, all three BUGCHECK — see above), so the columns are comparable.
   Seventeen matching is the control doing its job; those are OUR user32, not the seam.
@@ -714,7 +747,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   | `winstation` | 13 failures | ~~CRASH `0xc0000005`~~ **13 failures** | **FIXED 2026-09-26** — three bugs, one of them not WoW64's; see below |
   | `dde` | ~~TIMED OUT~~ **24** | ~~CRASH `0xc0000005`~~ **24** | **FIXED 2026-09-26**; the guest now PASSES one assertion native fails (929) |
   | `monitor` | 20 failures | ~~23~~ **20** | **NO LONGER DIVERGES 2026-09-26** — cause unattributed, see below |
-  | `uitools` | 0 failures | **1** | guest-only; ROOT-CAUSED, see below |
+  | `uitools` | 0 failures | ~~1~~ **0** | **FIXED 2026-09-26** — executing the guest GDI batch; 42 tests both sides |
   | `scroll` | ~~140~~ **14** | ~~17~~ **14** | FIXED 2026-09-26 on BOTH sides; now identical line for line |
   | `dialog` | **CRASH `0xc0000005`** | 78 failures | the NATIVE side is worse; this one is not the seam's |
   **`combo` was win32k reading guest user32's private `HEADCOMBO` at the amd64 layout.**
@@ -767,8 +800,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it; `ladder.ALSO_ACCEPTED` now names the upgrade. Now 24 on both sides; against a quiet
   native run the guest differs only by PASSING 929, plus one extra trailing byte in the
   2510 failure both sides share.
-  `uitools` is the discarded guest GDI batch, and it is the first measured cost of that
-  owed item (since paid: the guest batch is executed as of 2026-09-26; re-run `uitools`). `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
+  **`uitools` FIXED 2026-09-26: guest 42 tests, 0 failures, same as native**, re-measured
+  with `build --arch amd64 --winetest-sweep --winetest-only uitools` once the guest batch
+  was executed rather than reset. The diagnosis, kept because it was the first measured
+  cost of the discard: it was the discarded guest GDI batch. `uitools.c:58` does `SelectObject(GetStockObject(BLACK_BRUSH))` then
   `FillRect(hdc, &r, NULL)` — a NULL brush means "use the DC's current brush", so user32
   correctly goes straight to `PatBlt(PATCOPY)`. The traced syscalls for that subtest show
   `NtGdiGetStockObject`, `NtGdiCreateBitmap`, `NtGdiSelectBitmap`, `NtGdiGetPixel` — and **no
@@ -1379,15 +1414,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   measurement. All three arches build and boot to the desktop (`_tWinMain entered` +
   `shell ready`).
 
-  **Still OPEN, and now actually FLAGGED by the scanner** (it used to miss them):
-  `InterlockedIncrement`/`Decrement` on a user counter — ime's `nCntInIMEProc` at
-  `ime.rs:3120` and `:3137`, where the C had a `_SEH2_TRY` per access. There is **no
-  protected primitive for this at all**: an atomic RMW cannot be routed through
-  `KmProtectedCopyMemory`, because the read-modify-write has to fault as one unit rather than
-  copy in and out. Closing them means writing a `KmProtected` atomic next to
-  `KmProtectedCopyMemory` — a native-SEH shim on amd64/arm64, an exception-table entry for the
-  `lock` instruction on i386 — plus a self-test twin so the per-boot oracle covers it.
-  Restoring a probe there would look like a fix and would not be one.
+  **The last two, the ime atomics, are FIXED (2026-09-26).** ime's `nCntInIMEProc`
+  `InterlockedIncrement`/`Decrement` on a user counter had a `_SEH2_TRY` per access in the C,
+  and no protected primitive could express them: an atomic RMW routed through
+  `KmProtectedCopyMemory` stops being atomic. `KmProtectedInterlockedAdd` now sits beside it —
+  native SEH in `ntoskrnl/kmsafecopy.c` on amd64/arm64, and on i386 a second extable key (the
+  `lock xadd`) in `ke/i386/safecopy.rs`. Its self-test twin prints
+  `[KMSAFECOPY] fault-tolerant interlocked add: valid=1 landed=1 invalid_caught=1 (PASS)` on
+  all three arches, and `scan_probe_then_deref` reports 0 leads.
 
   Two of the scanner's own numbers along the way were wrong in the direction that reads as more
   work, not less, and both are pinned by tests now: `RtlCopyMemory` was reported by both the
@@ -1509,11 +1543,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
     `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
     bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
-  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
-    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
-    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
-    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
-    not attached on i386. OPEN (harness).
+  - **Class-test 0xc0150010 (ENVIRONMENTAL) — FIXED on amd64 2026-09-26.** The winetest
+    wrote its manifest to `GetTempPathA` = `X:\reactos\TEMP`, read-only on the livecd. The
+    harness now attaches a FAT disk holding `\TEMP` (`vm.py _temp_disk_args`, default ON for
+    amd64) and winlogon points the winetest children's TEMP/TMP at `C:\TEMP` when it exists.
+    Guest `user32:class` now runs to completion (32 failures) instead of crashing. Attaching
+    that disk found two classpnp bugs that had hung or crashed EVERY boot with a hard disk:
+    `ClassCompleteRequest` spinning on a lock the release build never initializes, and a cdecl
+    `ClasspSendSynchronousCompletion` in an NTAPI slot (i386). i386 stays opt-in
+    (`VIBEOS_QEMU_TEMP_DISK=1`) until the bug below is fixed.
   - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
     exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
     its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
@@ -1753,7 +1791,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (1.6.39 -> 1.6.58) and the zlib audit are DONE.
 
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
-  more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
+  more than the retries. LABEL FIXED 2026-09-26; the discriminator is still OPEN** (2026-09-19).
+  Renamed `CONFORMANCE_RED` (owner-approved) — it names the observation, not a cause. It
+  recurred the day of the rename: `rustconv-speedrun` @ `e50515abfab5` was rejected
+  "CONFORMANCE_FLAKE, 3 attempts" for an i386 BUGCHECK 0x1E identical on all 9 surviving
+  rounds (an un-gated empty stub shadowing a self-patching asm routine). What is still owed is
+  the signature diff below: the final verdict still cannot say "reproduced identically". Verbatim from `land-status`:
 
         REJECTED: shell32-com @ 3607b8d766e0 (CONFORMANCE_FLAKE)
                   conformance:i386: CONFORMANCE_FLAKE, 3 attempts
@@ -4033,6 +4076,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     bit saturates at "over 100 ms" either way. The discriminator is the ACTUAL delay, which
     needs an instrument (record the wait's elapsed time on the timeout path), not more boots.
     That is the next step whenever this is picked up; do not re-soak it.
+    **INSTRUMENTED 2026-09-26 (`66668384be1`, diagnostic only) — and the first catch is a
+    SCHEDULER STARVATION, not a slow pipe.** `[NPFS-LATE]` stamps trigger / worker-woke /
+    work-done and prints when an item finishes past its caller's deadline. arm64 round 3 of
+    3 at that commit regressed NpfsConnect harder than ever recorded (pass 679 -> 606, fail
+    0 -> 73) and printed `work done 149890 ms after trigger (deadline 100 ms): woke +149890
+    ms, work 0 ms`, followed immediately by `[CENSUS] wait profile: 29 thread(s) parked
+    >20s`. Two artifact readings were checked and ruled out: it was the FIRST late item of
+    the test on a fresh worker (so not a previous diagnostic print still running), and the
+    round ran `KeStartAllProcessors: 1 processor(s) online` (so not cross-CPU clock skew,
+    and not the CPUs-2/3 bug). A ready kernel thread did not run for ~150 s on ONE CPU.
+    Evidence: `/tmp/vibeos-cli/20260926-175208-lvwp5qhv-conformance-arm64/` (preserved to
+    `~/vibeos-flake-farm/fails/auto/`). Next: what held the CPU for those 150 s — the
+    flight recorder and census around that line, not more sweeps.
+    **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
+    test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
+    `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;
+    a large `work` on a clean run is by design.
     **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
     (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate ASKS for the
     WoW64 ladder (`gate_argv=['--ladder']`, previously silently empty), so `LADDER_FAIL` is a

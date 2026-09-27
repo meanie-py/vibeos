@@ -115,6 +115,36 @@ foreach(_f ${_wow64_ladder})
         message(STATUS "WOW64 E4: ${_f} missing — syswow64 NOT staged on livecd (WoW64 probes will no-op)")
     endif()
 endforeach()
+# `vibeos-cli build --no-wow64-stage`: the caller is rebuilding build-i386
+# concurrently (a gate), so the closure below would snapshot a half-cleaned tree
+# -- measured: `UNRESOLVED import kernel32.dll` and a FATAL configure, because
+# --clean deletes the cargo-built kernel32.dll. The gate restages afterwards.
+option(VIBEOS_WOW64_NO_STAGE "Defer SysWOW64 staging (a concurrent i386 build is running)" OFF)
+if(VIBEOS_WOW64_NO_STAGE)
+    set(_wow64_guest_ok FALSE)
+    message(STATUS "WOW64 E4: staging DEFERRED (VIBEOS_WOW64_NO_STAGE) — syswow64 NOT staged on this build")
+endif()
+# Every guest is admitted by an `if(EXISTS)` evaluated at CONFIGURE time, so
+# BUILDING one does not make the next build stage it -- the cached configure
+# still says it was absent, and the guest then reads as "did not run" rather
+# than "was never staged". Depending on the paths was the first fix, and it
+# does not work for the case it was for: CMake silently DROPS a configure
+# dependency on a file that does not exist (measured, cmake 3.28: the path is
+# absent from build.ninja), so creation re-ran nothing. The merge queue's
+# integration tree sat in exactly that state -- configured before its guests
+# existed, staging none of them forever after.
+#
+# So depend on the file when it exists, and otherwise on its nearest EXISTING
+# ancestor directory: creating an entry bumps that directory's mtime, which
+# ninja sees. Outside `if(_wow64_guest_ok)` on purpose -- the refused case is
+# the one that needs it.
+foreach(_f ${_wow64_ladder} ${_wow64_extras})
+    set(_dep ${_f})
+    while(NOT EXISTS ${_dep})
+        get_filename_component(_dep ${_dep} DIRECTORY)
+    endwhile()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_dep})
+endforeach()
 set(_wow64_extras_present "")
 foreach(_f ${_wow64_extras})
     if(EXISTS ${_f})
@@ -131,16 +161,6 @@ if(_wow64_guest_ok)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
                  ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                  ${REACTOS_SOURCE_DIR}/media/inf/nettcpip.inf)
-    # Same hazard, other input: every optional guest is admitted by an
-    # `if(EXISTS)` evaluated at CONFIGURE time, so BUILDING one (sqlite32,
-    # lua32, doom) does not make the next `vibeos-cli build` stage it -- the
-    # cached configure still says it was absent. Measured 2026-09-20: built
-    # all three, rebuilt amd64 green, and none of them reached the livecd.
-    # That silence is the expensive part, because the guest then reports no
-    # verdict and reads as "did not run" rather than "was never staged".
-    # Depending on the paths makes their CREATION re-run configure.
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-                 ${_wow64_extras})
     execute_process(
         COMMAND python3 ${REACTOS_SOURCE_DIR}/tools/fex/wow64-closure.py
                 --build-dir ${REACTOS_SOURCE_DIR}/build-i386

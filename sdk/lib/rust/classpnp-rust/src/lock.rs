@@ -45,11 +45,12 @@ pub unsafe extern "system" fn ClassCompleteRequest(
     Irp: PIRP,
     PriorityBoost: CCHAR,
 ) {
-    // `#if DBG` in the C. This crate gates every DBG remove-tracking block on
-    // debug_assertions, and ClasspInitializeRemoveTracking's non-DBG arm stores
-    // -1 in RemoveTrackingSpinlock ("tracking off"). Acquiring that sentinel
-    // spins forever, which is what the ungated copy of this block did at the
-    // first completed read.
+    // The whole tracking check is `#if DBG` in lock.c, and it has to be here too:
+    // a release build never initializes the lock -- ClasspInitializeRemoveTracking
+    // stores C's `(ULONG_PTR)-1` marker in it, which a spinlock reads as HELD -- so
+    // acquiring it unconditionally spun forever at DISPATCH_LEVEL on the first
+    // client IRP any classpnp disk completed. Every hard disk hung the boot in
+    // DiskInitFdo's MBR read; smoke never attaches one, so nothing noticed.
     #[cfg(debug_assertions)]
     {
         let commonExtension = (*DeviceObject).DeviceExtension as PCOMMON_DEVICE_EXTENSION;

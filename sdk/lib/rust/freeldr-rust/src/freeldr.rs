@@ -203,14 +203,21 @@ pub unsafe extern "C" fn BootMain(CmdLine: PCCH) {
 // ============================================================================
 // wctomb / mbtowc / iswctype — stubs that bypass the CRT's 144 KB wctype
 // table. All public in C (no `static`); export as cdecl.
+//
+// These and pow/log/log10 below are DELIBERATE second definitions: cnt-rust
+// (linked after this crate) defines the real ones. In C, freeldr.c's object
+// always beat the libcntpr archive member; here freeldr-rust's archive comes
+// first on the uefildr/rosload link line, which is what keeps them winning.
 // ============================================================================
 
+// nolint: duplicate-symbol (overrides cnt-rust's wctomb on purpose, as freeldr.c overrides libcntpr)
 #[no_mangle]
 pub unsafe extern "C" fn wctomb(mbchar: *mut i8, wchar: wchar_t) -> i32 {
     *mbchar = wchar as i8;
     1
 }
 
+// nolint: duplicate-symbol (overrides cnt-rust's mbtowc on purpose, as freeldr.c overrides libcntpr)
 #[no_mangle]
 pub unsafe extern "C" fn mbtowc(
     wchar: *mut wchar_t,
@@ -221,6 +228,7 @@ pub unsafe extern "C" fn mbtowc(
     1
 }
 
+// nolint: duplicate-symbol (overrides cnt-rust's iswctype on purpose, as freeldr.c overrides libcntpr)
 #[no_mangle]
 pub unsafe extern "C" fn iswctype(wc: wint_t, wctypeFlags: wctype_t) -> i32 {
     _isctype(wc as i32, wctypeFlags as i32)
@@ -236,18 +244,21 @@ macro_rules! debugbreak { () => { core::arch::asm!("int3", options(nomem, nostac
 #[cfg(target_arch = "aarch64")]
 macro_rules! debugbreak { () => { core::arch::asm!("brk #0xF000", options(nomem, nostack, preserves_flags)); } }
 
+// nolint: duplicate-symbol (overrides cnt-rust's pow on purpose, as freeldr.c overrides libcntpr)
 #[no_mangle]
 pub unsafe extern "C" fn pow(_x: f64, _y: f64) -> f64 {
     debugbreak!();
     0.0
 }
 
+// nolint: duplicate-symbol (overrides cnt-rust's log on purpose, as freeldr.c overrides libcntpr)
 #[no_mangle]
 pub unsafe extern "C" fn log(_x: f64) -> f64 {
     debugbreak!();
     0.0
 }
 
+// nolint: duplicate-symbol (overrides cnt-rust's log10 on purpose, as freeldr.c overrides libcntpr)
 #[no_mangle]
 pub unsafe extern "C" fn log10(_x: f64) -> f64 {
     debugbreak!();

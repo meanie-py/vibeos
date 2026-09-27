@@ -37,6 +37,16 @@ pub mod xtoa;
 #[cfg(feature = "findfile")]
 pub mod findfile;
 
+#[cfg(feature = "output")]
+pub mod output;
+
+#[cfg(feature = "strtod")]
+pub mod big_integer;
+#[cfg(feature = "strtod")]
+pub mod strtod;
+#[cfg(feature = "stat")]
+pub mod stat;
+
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
 #[cfg(feature = "portable-string")]
@@ -48,6 +58,8 @@ extern crate crt_portable_rust;
 pub mod locale;
 pub mod locale_update;
 pub mod ptd;
+pub mod ptd_host;
+pub mod stdio_layout;
 
 // Captured ground truth, not yet consumed by any body. Both are DATA ONLY --
 // no `#[no_mangle]`, so they take over nothing and the cohab gate has nothing

@@ -17,7 +17,6 @@ list(APPEND UCRT_CONVERT_SOURCES
     convert/mbrtowc.cpp
     convert/mbstowcs.cpp
     convert/mbtowc.cpp
-    convert/strtod.cpp
     convert/swab.cpp
     convert/wcrtomb.cpp
     convert/wcstombs.cpp
