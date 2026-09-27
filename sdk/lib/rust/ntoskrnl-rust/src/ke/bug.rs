@@ -104,8 +104,7 @@ extern "system" {
     fn HalHaltSystem();
     fn HeadlessDispatch(Command: ULONG, InputBuffer: PVOID, InputBufferSize: SIZE_T, OutputBuffer: PVOID, OutputBufferSize: PSIZE_T);
     fn KeGetTrapFramePc(TrapFrame: PKTRAP_FRAME) -> ULONG_PTR;
-    #[cfg(target_arch = "x86")] fn KxFreezeExecution();
-    #[cfg(target_arch = "x86_64")] fn KxFreezeExecution();
+    #[cfg(feature = "smp")] fn KxFreezeExecution();
 }
 extern "C" {
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
@@ -896,11 +895,11 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
         );
         // i386: symbolicate TrapFrame.Eip + walk the EBP chain — a PC=0 bugcheck
         // is otherwise unattributable (nothing to symbolicate at the fault).
-        #[cfg(target_arch = "x86")]
+        #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (Rust-only diagnostic; not the C's CONFIG_SMP block)
         if !TrapFrame.is_null() {
             i386_trap_frame_backtrace(TrapFrame as ULONG_PTR);
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (Rust-only diagnostic; not the C's CONFIG_SMP block)
         if !TrapFrame.is_null() {
             let rip = (*(TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rip as u64;
             if rip > 0xFFFF800000000000 {
@@ -1290,7 +1289,9 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
 
     if InterlockedDecrement(&mut KeBugCheckCount as *mut _ as *mut LONG) == 0 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        // bug.c: `#ifdef CONFIG_SMP` — the SMP kernel on every arch, never the UP one.
+        // This was gated on x86/x86_64, which froze in UP builds and never on arm64 SMP.
+        #[cfg(feature = "smp")]
         {
             KeBugCheckOwner = (*Prcb).Number as ULONG;
             KxFreezeExecution();

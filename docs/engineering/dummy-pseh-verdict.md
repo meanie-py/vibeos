@@ -258,7 +258,22 @@ Mechanical, incremental, each step independently smoke-gateable:
    `CdProcessException`; all 35 `__finally` sites are `try_finally`; the four
    `__except(EXECUTE_HANDLER)` sites (the two MDL locks, `SafeZeroMemory`, the directory
    buffer fill) are real. appstorm's `fsraise` check forces a cdfs raise at every run.
-   **fastfat is next** (74 except / 139 finally). Original plan for reference:
+   **DONE for fastfat (2026-09-26)**, the same way: `crate::seh` (fastfat-rust/src/seh.rs)
+   adds `fat_try_except`, which takes the ADDRESS of the IrpContext local because the FSD
+   entry points assign it inside the body, and moves `FatRaiseStatus` /
+   `FatNormalizeAndRaiseStatus` / `FatResetExceptionState` from C stubs into Rust so they
+   set `IrpContext->ExceptionStatus` as the macros do (the filter keys on it).
+   `FatProcessException` and `FatPerformVerify` were hand-retranslated: the first never
+   completed the Irp, the second took its arguments as pointer-to-pointer. 207 of 215 C try
+   sites converted; many finallys regained abnormal-unwind code the translation had
+   dropped, and ~40 unrelated translation bugs surfaced in the converted regions were fixed
+   (see the commit). appstorm's `fsraise` now forces a fastfat raise on arm64
+   (`FatNotifyChangeDirectory` on a delete-pending directory -> STATUS_DELETE_PENDING).
+   **Owed:** the other 8 sites live in `FatQueryRetrievalPointers`, `FatGetVolumeBitmap`
+   and `FatGetRetrievalPointers`, which were never translated and are still
+   `STUB_BUGCHECK`s in `drivers/filesystems/fastfat/rust_cohab_stub.c` (as is
+   `FatInvalidateVolumes`); convert them when they are translated.
+   Original plan for reference:
    **Re-wire the translated FS filters**: cdfs/fastfat error paths call
    `Cd/FatExceptionFilter` + `Cd/FatProcessException` **explicitly on
    `Err`** instead of via the dead `_SEH2_EXCEPT` arm; `Cd/FatRaiseStatus`

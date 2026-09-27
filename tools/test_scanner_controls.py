@@ -432,6 +432,20 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
 """
 _WIN64_CFG_GOOD = _WIN64_CFG_BAD.replace('target_arch = "x86_64"', 'target_pointer_width = "64"')
 
+# Its UP/SMP axis. bug.c freezes the other CPUs under `#ifdef CONFIG_SMP`; the Rust gated
+# that on an ARCH, so it froze in UP builds and never on arm64 SMP. `feature = "smp"` is
+# how Rust spells CONFIG_SMP (ntkrnlmp).
+_SMP_CFG_BAD = """\
+pub unsafe extern "system" fn KeBugCheckWithTf(BugCheckCode: u32, TrapFrame: PVOID) {
+    #[cfg(target_arch = "x86")]
+    {
+        KxFreezeExecution();
+    }
+    KiDisplayBlueScreen(BugCheckCode);
+}
+"""
+_SMP_CFG_GOOD = _SMP_CFG_BAD.replace('target_arch = "x86"', 'feature = "smp"')
+
 # The same scanner's no-C half: an orphaned cfg (its fastcall twin deleted) stacked onto
 # the next item ANDs to "never", compiling RtlPrefetchMemoryNonTemporal out on every arch.
 _DEAD_CFG_BAD = """\
@@ -1853,10 +1867,12 @@ CONTROLS: list[Control] = [
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
         bad={
+            "rust/ntoskrnl-rust/src/ke/bug.rs": _SMP_CFG_BAD,
             "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD,
             "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_BAD,
         },
         good={
+            "rust/ntoskrnl-rust/src/ke/bug.rs": _SMP_CFG_GOOD,
             "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD,
             "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_GOOD,
         },

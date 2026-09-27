@@ -169,7 +169,14 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
                 long *ExceptionCode)
 {
     volatile SEH_FRAME Frame;
+    volatile unsigned long EFlags;
 
+    /* A kernel-mode int3 is dispatched with interrupts still disabled (KiDebugHandler
+     * only re-enables them for user traps), and __builtin_longjmp restores no flags, so
+     * the catch below would resume with IF=0 and the next page fault bugchecks
+     * IRQL_NOT_LESS_OR_EQUAL with IRQL -1. amd64 gets EFlags back from the unwound
+     * context; here the try records IF and the catch puts it back. */
+    __asm__ __volatile__("pushfl\n\tpopl %0" : "=r"(EFlags));
     Frame.Handler = (void *)SehExceptHandler;
     Frame.Filter = Filter;
     Frame.FilterContext = FilterContext;
@@ -177,6 +184,8 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
     Frame.Next = SehGetList();
     if (__builtin_setjmp((void **)Frame.JmpBuf)) {
         /* The handler already unlinked Frame. */
+        if (EFlags & 0x200 /* EFLAGS_INTERRUPT_MASK */)
+            __asm__ __volatile__("sti" ::: "memory");
         if (ExceptionCode)
             *ExceptionCode = Frame.Code;
         return 1;

@@ -484,7 +484,8 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
 - `scan_cfg_vs_c`: a per-arch `#[cfg]` inside a function whose arch set the C twin's own
   `#if`s never draw (arch macros, `_WIN64`, `_MI_PAGING_LEVELS` all evaluate to arch sets).
   `_WIN64` spelled `target_arch = "x86_64"` hands arm64 the 32-bit path; the fix is
-  `target_pointer_width = "64"`. Where the C never names arm64, only the x86/x86_64 line
+  `target_pointer_width = "64"`. C `CONFIG_SMP` is Rust `feature = "smp"`; that line too is
+  judged only where the C draws it. Where the C never names arm64, only the x86/x86_64 line
   is judged (upstream's `#else` lumps arm64 with i386). `--stats` shows how the in-body
   population splits: ~440 agree with the C mechanically, ~650 have no C arch `#if` to
   compare (Rust-only cfgs — those still need reading). Per-function, not per-block, so a

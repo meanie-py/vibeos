@@ -324,19 +324,10 @@ VOID FatDeleteResource(PERESOURCE Resource)
  * bindgen struct. The old stub here wrote at a GUESSED offset (+344) and
  * left the real VcbCondition untouched. */
 
-VOID FatNormalizeAndRaiseStatus(PIRP_CONTEXT IrpContext, NTSTATUS Status)
-{
-    (void)IrpContext;
-    ExRaiseStatus(FsRtlNormalizeNtstatus(Status, STATUS_UNEXPECTED_IO_ERROR));
-}
-
-VOID FatRaiseStatus(PIRP_CONTEXT IrpContext, NTSTATUS Status)
-{
-    (void)IrpContext;
-    ExRaiseStatus(Status);
-}
-
-VOID FatResetExceptionState(PIRP_CONTEXT IrpContext) { (void)IrpContext; }
+/* FatRaiseStatus / FatNormalizeAndRaiseStatus / FatResetExceptionState live in
+ * fastfat-rust/src/seh.rs: the fatprocs.h macros record the status in
+ * IrpContext->ExceptionStatus, which FatExceptionFilter and FatProcessException
+ * read, and these stubs could not reach the field. */
 VOID __cdecl FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext; }
 
 /* NOTE: IO/EX/KE/Ob/FsRtl FORCEINLINE wrappers are in rust_cohab_forceinline.c */
@@ -472,12 +463,6 @@ NTSTATUS IoRetrievePriorityInfo(PIRP a, PFILE_OBJECT b, PETHREAD c, PVOID d)
 {
     (void)a;(void)b;(void)c;
     IoInitializePriorityInfo(d);
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS SafeMmProbeAndLockPages(PMDL Mdl, KPROCESSOR_MODE Mode, LOCK_OPERATION Op)
-{
-    MmProbeAndLockPages(Mdl, Mode, Op);
     return STATUS_SUCCESS;
 }
 
