@@ -557,19 +557,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Hardware faults in a Rust try body: amd64 only — i386 and arm64 OPEN** (2026-09-26).
+- **Hardware faults in a Rust try body: amd64 + i386 — arm64 OPEN** (2026-09-26).
   The per-boot `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3, an access
   violation and a pool-tracker int3, each under try_finally inside try_except) passes on
-  amd64 and is compiled only there, because elsewhere it failed. **i386:** the int3 is
-  caught (right code, finally runs abnormally), but the next fault then bugchecks 0x0A
-  with IRQL 0xff, so catching a breakpoint through the hand-built fs:[0] frame
-  (ntoskrnl/sehtry.c) leaves IRQL raised, likely the KD stub's raise before dispatch never
-  undone by our longjmp; the AV run also reported the previous code (0x80000003).
-  **arm64:** `trace=13` — the body ran straight past both, so the brk is consumed without
+  amd64 and i386 and is compiled only there. **i386 FIXED:** a kernel-mode int3 is
+  dispatched with interrupts still disabled (KiDebugHandler re-enables them only for user
+  traps) and the hand-built catch in ntoskrnl/sehtry.c resumes by `__builtin_longjmp`, which
+  restores no flags, so the next page fault bugchecked 0x0A with P2 = -1 (KiTrap0E's "IF was
+  off" verdict). `RtlSehTryExcept` now records IF at try entry and restores it on the catch.
+  **arm64 OPEN:** `trace=13` — the body ran straight past both, so the brk is consumed without
   dispatch and a kernel-mode read of VA 0x10 returns instead of faulting. Software raises
-  (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; these gaps are for
-  hardware faults (MmProbeAndLockPages on a bad user buffer is the one fastfat and cdfs
-  rely on). Repro: drop the `#[cfg(target_arch = "x86_64")]` on the block and boot.
+  (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; this gap is for hardware
+  faults (MmProbeAndLockPages on a bad user buffer is the one fastfat relies on, and fastfat
+  is arm64's system volume). Repro: add aarch64 to the block's cfg and boot.
 - **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
   (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
   gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0

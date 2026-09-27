@@ -1753,7 +1753,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     // never dispatched and a kernel read of 0x10 does not fault at all. Both are open in
     // the roadmap bug registry ("hardware faults in a Rust try body"); widen this cfg as
     // each is fixed.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
     {
         use ntkrnl_sys::seh::*;
         extern "system" {
