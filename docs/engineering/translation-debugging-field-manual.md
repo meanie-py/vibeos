@@ -10409,6 +10409,24 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **Desktop timer freeze = three stacked bugs** `[§9.21]`: `KeDelayExecutionThread` was still a
   busy-yield bring-up stub, explorer's main thread spun on a stuck `QS_PAINT` wake bit, and
   DISPATCH software-interrupt delivery was unimplemented.
+- **Serial silent for ~95 s with the guest clock still ticking, then everything due fires at
+  once** (a 10 s census missing nine scans, 30 s waits timing out together) — **arm64 had no
+  preemption.** The DISPATCH softint expired timers but parked the woken thread in
+  `Prcb->NextThread`, and only the idle loop or a voluntary wait ever switched to it;
+  `QuantumEnd` was never read. So a thread that never blocks kept the CPU — here the
+  **priority-0 zero-page thread**, clearing the free list after kmtest MmSection, once per
+  arm64 conformance round. Fix: `KfLowerIrql` calls `KiDispatchPreemptArm64` on the crossing
+  under DISPATCH (x86's DPC-interrupt tail). Three traps on the way:
+  - It must decline when IRQs are masked.
+  - The preempted thread must restore its own DAIF on resume. The first cut let the zero
+    thread come back masked from an SVC-wait swap, and it froze the box: 63 s of host time,
+    0.4 s of guest time.
+  - `KeZeroPages` went through the CRT's byte-at-a-time memset, ~12 ms per 32-page batch under
+    TCG, and every timer waited that long for the next crossing. It is `dc zva` now.
+
+  **Tell it from a dead clock** by stamping serial with host time (conformance does this
+  always) and reading `silence-samples.txt`, which the payload drain writes during any 20 s
+  quiet that later recovers.
 - **Desktop never repaints** `[§9.23]`: `gpdeskInputDesktop` stranded on the *Winlogon* desktop,
   and `SystemTime` was never seeded from the RTC (the "query the clock" block was dropped —
   arm64 needs the PL031 at `0x0901_0000`).
