@@ -1033,6 +1033,24 @@ pub unsafe extern "system" fn USBPORT_GetTt(
     return TtExtension;
 }
 
+
+/// EP0's max packet size from a device descriptor's first 8 bytes, or None if
+/// it is not a legal value. USB 3 devices (bcdUSB >= 3.00, attached SuperSpeed)
+/// give it as a power of two, and 9 (512 bytes) is the only legal one; USB 2
+/// devices give bytes. The C accepts only the USB 2 form, which refused every
+/// SuperSpeed device once usbxhci exposed its USB3 ports.
+unsafe fn USBPORT_Ep0MaxPacketSize(Descriptor: *const USB_DEVICE_DESCRIPTOR) -> Option<USHORT> {
+    let bcd = core::ptr::read_unaligned(core::ptr::addr_of!((*Descriptor).bcdUSB));
+    let raw = (*Descriptor).bMaxPacketSize0;
+    if bcd >= 0x0300 {
+        return if raw == 9 { Some(512) } else { None };
+    }
+    match raw {
+        8 | 16 | 32 | 64 => Some(raw as USHORT),
+        _ => None,
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_CreateDevice(
     pUsbdDeviceHandle: *mut PUSB_DEVICE_HANDLE,
@@ -1245,11 +1263,7 @@ pub unsafe extern "system" fn USBPORT_CreateDevice(
             {
                 MaxPacketSize = (*DeviceHandle).DeviceDescriptor.bMaxPacketSize0;
 
-                if MaxPacketSize == 8
-                    || MaxPacketSize == 16
-                    || MaxPacketSize == 32
-                    || MaxPacketSize == 64
-                {
+                if USBPORT_Ep0MaxPacketSize(core::ptr::addr_of!((*DeviceHandle).DeviceDescriptor)).is_some() {
                     USBPORT_AddDeviceHandle(FdoDevice, DeviceHandle);
 
                     *pUsbdDeviceHandle = (DeviceHandle as *mut c_void);
@@ -1445,7 +1459,8 @@ pub unsafe extern "system" fn USBPORT_InitializeDevice(
         Endpoint = (*DeviceHandle).PipeHandle.Endpoint;
 
         (*Endpoint).EndpointProperties.TotalMaxPacketSize =
-            (*DeviceHandle).DeviceDescriptor.bMaxPacketSize0 as USHORT;
+            USBPORT_Ep0MaxPacketSize(core::ptr::addr_of!((*DeviceHandle).DeviceDescriptor))
+                .unwrap_or((*DeviceHandle).DeviceDescriptor.bMaxPacketSize0 as USHORT);
         (*Endpoint).EndpointProperties.DeviceAddress = DeviceAddress;
 
         Status = USBPORT_ReopenPipe(FdoDevice, Endpoint);
@@ -1482,11 +1497,7 @@ pub unsafe extern "system" fn USBPORT_InitializeDevice(
 
             MaxPacketSize = (*DeviceHandle).DeviceDescriptor.bMaxPacketSize0;
 
-            if !(MaxPacketSize == 8
-                || MaxPacketSize == 16
-                || MaxPacketSize == 32
-                || MaxPacketSize == 64)
-            {
+            if USBPORT_Ep0MaxPacketSize(core::ptr::addr_of!((*DeviceHandle).DeviceDescriptor)).is_none() {
                 Status = STATUS_DEVICE_DATA_ERROR;
                 break 'exit_error;
             }

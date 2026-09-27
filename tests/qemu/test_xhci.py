@@ -90,7 +90,7 @@ def test_xhci_mouse_delivery(vm: QemuVM) -> None:
 
 
 # US-layout qcodes for the characters the stick test types.
-_QCODE = {" ": ["spc"], ":": ["shift", "semicolon"], "\\": ["backslash"], ".": ["dot"], "/": ["slash"]}
+_QCODE = {" ": ["spc"], ":": ["shift", "semicolon"], "\\": ["backslash"], ".": ["dot"], "/": ["slash"], "&": ["shift", "7"]}
 
 
 def _tap(vm: QemuVM, keys: list[str]) -> None:
@@ -132,18 +132,21 @@ def test_usb_stick_read_and_write(vm: QemuVM) -> None:
         pytest.skip("requires VIBEOS_QEMU_USB_DISK=1 (the stick)")
     serial = vm._boot_output + vm.serial_output(timeout=1)
     assert "(drv \\Driver\\usbstor)" in serial, serial[-6000:]
-    image = vm.scratch_path.parent / "usbdisk.qcow2"
+    # Two sticks (vm.py): one behind a full-speed hub, one SuperSpeed on a USB3
+    # root port. They are the volumes after the boot ramdisk (C:), in whichever
+    # order they arrive, so copy on both D: and E: and expect a copy on each.
+    assert "speed 4" in serial, "no SuperSpeed device was addressed:\n" + serial[-6000:]
+    images = [vm.scratch_path.parent / "usbdisk.qcow2", vm.scratch_path.parent / "usbdisk-ss.qcow2"]
     _tap(vm, ["meta_l", "r"])
     time.sleep(3)
-    # The stick is the first volume after the boot ramdisk (C:), so D:.
-    _type(vm, f"cmd /c copy D:\\{USB_STICK_FILE} D:\\COPY.TXT")
+    _type(vm, f"cmd /c copy D:\\{USB_STICK_FILE} D:\\COPY.TXT & copy E:\\{USB_STICK_FILE} E:\\COPY.TXT")
     _tap(vm, ["ret"])
-    copied = None
+    copied: list[bytes | None] = [None, None]
     deadline = time.monotonic() + 60
-    while time.monotonic() < deadline and copied is None:
+    while time.monotonic() < deadline and None in copied:
         serial += vm.serial_output(timeout=2)
         assert not any(marker in serial for marker in _FATAL_MARKERS), serial[-4000:]
-        copied = _stick_file(image, "COPY.TXT")
+        copied = [_stick_file(image, "COPY.TXT") for image in images]
     vm.screendump(vm.work_dir / "xhci-stick.ppm")
-    assert copied == USB_STICK_TEXT, f"COPY.TXT on the stick: {copied!r}\n{serial[-6000:]}"
+    assert copied == [USB_STICK_TEXT, USB_STICK_TEXT], f"COPY.TXT on (hub, SuperSpeed): {copied!r}\n{serial[-6000:]}"
     assert vm.qmp.execute("query-status")["return"]["status"] == "running"

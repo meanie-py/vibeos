@@ -1624,18 +1624,19 @@ class QemuVM:
         `Pci(0x2,0x0)` path saved in efivars, and UEFI falls through to PXE."""
         if not self._xhci_enabled():
             return []
-        # The stick's -device comes after the controller that owns its bus; only
-        # its -drive rides with the staged disk args (_usb_disk_args). It sits
-        # behind a usb-hub: usb-storage can do SuperSpeed, so attached directly
-        # QEMU puts it on a USB3 root port, and usbxhci drives only the USB2
-        # ports. The hub is full speed, so this also exercises the TT path the
-        # Pi's VIA hub uses.
+        # The sticks' -devices come after the controller that owns their bus;
+        # only their -drives ride with the staged disk args (_usb_disk_args).
+        # Two sticks, two paths: one behind a usb-hub (full speed, the hub path
+        # the Pi's VIA hub uses), and one attached directly, which QEMU puts on
+        # a USB3 root port at SuperSpeed because usb-storage can do SuperSpeed.
         stick = (
             [
                 "-device",
                 "usb-hub,bus=xhci.0,port=3,id=uhub",
                 "-device",
                 "usb-storage,bus=xhci.0,port=3.1,drive=usbstor0,id=ustick",
+                "-device",
+                "usb-storage,bus=xhci.0,drive=usbstor1,id=ustick_ss",
             ]
             if self._usb_disk_enabled()
             else []
@@ -1694,9 +1695,10 @@ class QemuVM:
         return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:
-        """VIBEOS_QEMU_USB_DISK=1 attaches a usb-storage stick (usbstor bring-up rig):
-        on the xHCI controller when VIBEOS_QEMU_XHCI=1 is also set (the device itself
-        is added by _xhci_args), otherwise on its own EHCI controller. The stick is a
+        """VIBEOS_QEMU_USB_DISK=1 attaches usb-storage sticks (usbstor bring-up rig):
+        with VIBEOS_QEMU_XHCI=1 two on the xHCI controller, one behind a hub and one
+        SuperSpeed (the devices themselves are added by _xhci_args), otherwise one
+        on its own EHCI controller. The stick is a
         64M MBR disk with one FAT16 partition holding USB_STICK_FILE, so a guest
         that mounts it has something known to read back. The image lives beside
         scratch_path so the windows-host backend stages it like any other media."""
@@ -1707,7 +1709,10 @@ class QemuVM:
             make_usb_stick_image(usb_disk)
         drive = ["-drive", f"file={usb_disk},format=qcow2,if=none,id=usbstor0"]
         if self._xhci_enabled():
-            return drive
+            ss_disk = self.scratch_path.parent / "usbdisk-ss.qcow2"
+            if not ss_disk.exists():
+                make_usb_stick_image(ss_disk)
+            return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",
             "usb-ehci,id=xehci",
