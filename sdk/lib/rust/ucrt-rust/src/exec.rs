@@ -182,7 +182,7 @@ extern "C" {
         process_info: *mut ProcessInformation,
     ) -> i32;
 
-    fn strlen(s: *const u8) -> usize;
+    fn strlen(s: *const core::ffi::c_char) -> usize;
     fn strrchr(s: *const u8, c: c_int) -> *mut u8;
     fn strchr(s: *const u8, c: c_int) -> *mut u8;
     fn strcpy_s(dst: *mut u8, destsz: usize, src: *const u8) -> c_int;
@@ -360,7 +360,7 @@ impl Chr for u8 {
     }
 
     unsafe fn len(s: *const Self) -> usize {
-        strlen(s)
+        strlen(s.cast())
     }
     unsafe fn rchr(s: *const Self, c: u8) -> *mut Self {
         strrchr(s, c as c_int)

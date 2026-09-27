@@ -147,6 +147,14 @@ invalid-parameter = []
 # lowio/open.cpp -- _open/_sopen/_wopen/_wsopen and their _s/_dispatch forms
 lowio-open = ["findfile"]
 
+# The third fan-out batch (one directory module each; see the module docs).
+# mbstring/*.cpp -- the _mbs*/_mbc* string family, plain, _l and _s
+mbstring = ["ismbc", "mbctype"]
+# string/*.cpp and string/<arch>/*.s -- str*/wcs*/mem* not already in portable-string
+string-ops = []
+# time/*.cpp -- tzset, localtime/gmtime/mktime, strftime/wcsftime, asctime, utime, ftime...
+time = ["timeset"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
 # `VaArgs`: reading C varargs on stable. The `...` entry points themselves are

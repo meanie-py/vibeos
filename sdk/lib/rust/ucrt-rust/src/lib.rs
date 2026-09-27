@@ -9,6 +9,10 @@
 //!
 //! Progress: `python3 tools/ucrt_burndown.py --arch i386`.
 #![no_std]
+// Each module declares the ucrt C it still calls in its own `extern` block, so
+// two modules can disagree about one C function's signature and both compile.
+// One of them is then wrong at the ABI, silently. Make that an error.
+#![deny(clashing_extern_declarations)]
 
 #[cfg(feature = "bits")]
 pub mod bits;
@@ -77,6 +81,12 @@ pub mod align;
 pub mod invalid_parameter;
 #[cfg(feature = "lowio-open")]
 pub mod lowio_open;
+#[cfg(feature = "mbstring")]
+pub mod mbstring;
+#[cfg(feature = "string-ops")]
+pub mod string_ops;
+#[cfg(feature = "time")]
+pub mod time;
 
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.

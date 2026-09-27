@@ -64,7 +64,7 @@ const _TZ_STRINGS_SIZE: usize = 64;
 extern "C" {
     fn _errno() -> *mut c_int;
     fn _invalid_parameter_noinfo();
-    fn strlen(s: *const u8) -> usize;
+    fn strlen(s: *const core::ffi::c_char) -> usize;
     fn strcpy_s(dst: *mut u8, size: usize, src: *const u8) -> c_int;
 }
 
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn _get_tzname(length: *mut usize, buffer: *mut u8, size_i
     }
 
     let name = TZNAME_ROW[index as usize];
-    *length = strlen(name) + 1;
+    *length = strlen(name.cast()) + 1;
 
     if buffer.is_null() {
         return 0;

@@ -204,7 +204,7 @@ extern "system" {
         name: *const u16,
         access: u32,
         share: u32,
-        sa: *mut SecurityAttributes,
+        sa: *mut c_void,
         disposition: u32,
         flags: u32,
         template: Handle,
@@ -469,7 +469,7 @@ unsafe fn decode_options(oflag: c_int, shflag: c_int, pmode: c_int) -> FileOptio
 }
 
 unsafe fn create_file(path: *const u16, sa: *mut SecurityAttributes, o: &FileOptions) -> Handle {
-    CreateFileW(path, o.access, o.share, sa, o.create, o.flags | o.attributes, null_mut())
+    CreateFileW(path, o.access, o.share, sa.cast(), o.create, o.flags | o.attributes, null_mut())
 }
 
 // ── BOM / text-mode configuration ───────────────────────────────────────────

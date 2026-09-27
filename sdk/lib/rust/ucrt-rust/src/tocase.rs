@@ -26,6 +26,7 @@
 //!   table covers only ASCII.
 
 use crate::locale::CrtLocalePointers;
+use crate::locale_abi::__acrt_LCMapStringA;
 use crate::locale_update::LocaleUpdate;
 use core::ffi::{c_int, c_long};
 
@@ -46,17 +47,6 @@ extern "C" {
     static __acrt_locale_changed_data: c_long;
     /// `locale/ctype.cpp` — the wide ctype table, starting at WEOF (so index `c + 1`).
     static _wctype: [u16; 257];
-    fn __acrt_LCMapStringA(
-        locale: *mut CrtLocalePointers,
-        locale_name: *const u16,
-        map_flags: u32,
-        src: *const u8,
-        cch_src: c_int,
-        dest: *mut u8,
-        cch_dest: c_int,
-        code_page: c_int,
-        error: c_int,
-    ) -> c_int;
     fn __acrt_LCMapStringW(
         locale_name: *const u16,
         map_flags: u32,
@@ -89,9 +79,9 @@ unsafe fn win_lookup(c: c_int, map_flag: u32, locale: *mut CrtLocalePointers) ->
         locale,
         (*locinfo).locale_name[LOCALE_NAME_CTYPE],
         map_flag,
-        in_buffer.as_ptr(),
+        in_buffer.as_ptr().cast(),
         in_count,
-        out_buffer.as_mut_ptr(),
+        out_buffer.as_mut_ptr().cast(),
         3,
         public.locale_lc_codepage as c_int,
         1,

@@ -33,20 +33,13 @@ const _ALPHA: c_int = 0x0100 | _UPPER | _LOWER;
 const CT_CTYPE1: u32 = 0x0001;
 const WEOF: u16 = 0xFFFF;
 
+use crate::locale_abi::__acrt_GetStringTypeA;
+
 extern "C" {
     static __acrt_locale_changed_data: core::ffi::c_long;
     /// Microsoft's wide ctype table (`locale/ctype.cpp`), 256 entries from 0. Read,
     /// not replaced: it is data, and taking it over belongs with that file.
     static _pwctype: *const u16;
-    fn __acrt_GetStringTypeA(
-        locale: *mut CrtLocalePointers,
-        info_type: u32,
-        src: *const u8,
-        cch: c_int,
-        char_type: *mut u16,
-        code_page: c_int,
-        error: c_int,
-    ) -> c_int;
     fn __acrt_GetStringTypeW(info_type: u32, src: *const u16, cch: c_int, char_type: *mut u16)
         -> c_int;
 }
@@ -110,7 +103,7 @@ pub unsafe extern "C" fn _isctype_l(c: c_int, mask: c_int, locale: *mut CrtLocal
     if __acrt_GetStringTypeA(
         lu.locale_t(),
         CT_CTYPE1,
-        buffer.as_ptr(),
+        buffer.as_ptr().cast(),
         len,
         character_type.as_mut_ptr(),
         code_page,
