@@ -188,6 +188,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--winetest-sweep",
     )
     b.add_argument(
+        "--no-wow64-stage",
+        action="store_true",
+        help="amd64: build the media WITHOUT the SysWOW64 set. The staging "
+        "snapshots build-i386 at configure time, so an amd64 build running "
+        "beside a cold i386 one reads a half-cleaned tree and fails its import "
+        "closure. `gate` passes this when it builds both, then restages amd64 "
+        "once i386 is done. RECONCILED, not sticky",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "

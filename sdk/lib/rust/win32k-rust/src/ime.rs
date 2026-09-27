@@ -3116,8 +3116,16 @@ unsafe fn IntSendMessageToUI_impl(
             break 'quit;
         }
 
-        // Increment the recursion count of the IME procedure.
-        InterlockedIncrement(core::ptr::addr_of_mut!((*pimeui).nCntInIMEProc));
+        // Increment the recursion count of the IME procedure. The C had a
+        // _SEH2_TRY around each counter update that logged and skipped the send;
+        // the counter is in user memory, so the RMW goes through the protected
+        // atomic (a plain InterlockedIncrement on a freed IMEUI bugchecks).
+        if crate::copy::interlocked_add_user(core::ptr::addr_of_mut!((*pimeui).nCntInIMEProc) as *mut i32, 1)
+            .is_none()
+        {
+            ERR!("Exception in IntSendMessageToUI: %p\n", pimeui);
+            break 'quit;
+        }
 
         // Detach from the process if necessary
         if bDifferent != 0 {
@@ -3134,7 +3142,11 @@ unsafe fn IntSendMessageToUI_impl(
         }
 
         // Decrement the recursion count of the IME procedure
-        InterlockedDecrement(core::ptr::addr_of_mut!((*pimeui).nCntInIMEProc));
+        if crate::copy::interlocked_add_user(core::ptr::addr_of_mut!((*pimeui).nCntInIMEProc) as *mut i32, -1)
+            .is_none()
+        {
+            ERR!("Exception in IntSendMessageToUI: %p\n", pimeui);
+        }
     }
 
     // Detach from the process if necessary

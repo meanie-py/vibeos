@@ -119,10 +119,21 @@ every translated body. **Owed, in order:**
      `--allow-multiple-definition` and i386 kmtest RtlMemoryKM bugchecked 0x1E, EIP=0
      (e50515abfab rejected). arm64 `RtlUshortByteSwap` duplicated the byteswap crate. Both
      deleted instead; dead-cfg output now says to look for another provider first.
-   - Owed, tooling: `scan_duplicate_symbols` only compares `#[no_mangle]` names ACROSS
-     crates, so a same-crate duplicate or a `global_asm!` `.globl` label vs a Rust fn is
-     invisible (25 such names today, most presumably per-arch splits — needs an
-     arch-aware check, cfg + module gating, before it can gate).
+   - DONE, tooling: `scan_duplicate_symbols` rebuilt on `tools/rust_link_model.py`. It is
+     per binary, per arch and feature-resolved, and it sees `global_asm!` labels, so the
+     prefetch shape is a positive control. The first honest run had 230 pairs; model fixes
+     (build.rs cfgs, per-binary features, `if arch` link blocks, i386 decoration classes,
+     `#[cfg(any())] // comment`) brought that to 21. All 21 were confirmed with `llvm-nm` in
+     the built archives. Fixed:
+     classpnp's four Ke/Io shims duplicated ntoskrnl-vista-rust, and its
+     `KeSetCoalescableTimer` was a `0` stub. The kernel exported a CAS spin stub over
+     rtl-sync's real SRW locks on amd64/arm64 (callers: `RtlAddFunctionTable` & co.).
+     i386's local-only asm `KeInvalidateTlbEntry` shadowed the SMP-shootdown one by archive
+     order alone. rtl-heapuser (user-mode PEB heap list) is now a `heaplist` feature the
+     kernels leave off. rtlk's `KeGetPcr` and ntoskrnl's `RtlFillMemoryUlong` duplicates are
+     gone. Deliberate, `nolint`ed with reasons: arbiter's amd64 `KeGetCurrentIrql` (same
+     `mov cr8` body) and freeldr's six CRT overrides (as freeldr.c overrides libcntpr).
+     Baseline empty.
    - Not read yet, and still owed: the remaining ~350 new sites — 249 are `x86` /
      `not(x86)` calling-convention twins (sibling_drift's arch-gate mode diffs those
      body-to-body), 73 are the inclusive `any(x86_64, aarch64)` shape.

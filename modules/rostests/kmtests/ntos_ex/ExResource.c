@@ -356,7 +356,16 @@ StartThread(
     return KeWaitForSingleObject(&ThreadData->OutEvent, Executive, KernelMode, FALSE, Timeout);
 }
 
-/* A thread started with a 10ms timeout that "should block" has only been GIVEN 10ms --
+/* THIS FILE BUILDS TWO TESTS. `ExResource` is the test as written, and it is EXPECTED to
+ * fail intermittently at the three waiter-count checks marked "EXPECTED FLAKE" below.
+ * `ExResourceBounded` (ExResourceBounded.c, which #includes this file with
+ * KMT_EXRESOURCE_BOUNDED defined) is the same test with SETTLE_WAITERS enabled. Project
+ * policy: a test whose LOGIC is wrong is duplicated and the original kept as an expected
+ * failure, never edited in place -- so the original stays a record of what the suite
+ * asserts, and the ratchet's floor for it (tools/conformance-baseline) marks those three
+ * identities `assert?` with a pass floor 34 below the bounded twin's (1 + 1 + 32 rounds).
+ *
+ * A thread started with a 10ms timeout that "should block" has only been GIVEN 10ms --
  * STATUS_TIMEOUT says it did not acquire in that time, not that it has reached the
  * resource's wait yet. Under load (TCG, a busy host) a freshly created thread may not
  * have been scheduled at all, and the waiter-count check that follows then reads 0.
@@ -368,6 +377,7 @@ StartThread(
  * then assert them unchanged. This removes the scheduling assumption and nothing else:
  * an implementation that never counts the waiter still fails, after the bound instead
  * of after 10ms, and one that over-counts fails at once. */
+#ifdef KMT_EXRESOURCE_BOUNDED
 static
 VOID
 WaitForWaiters(
@@ -387,6 +397,11 @@ WaitForWaiters(
         KeDelayExecutionThread(KernelMode, FALSE, &Delay);
     }
 }
+#define SETTLE_WAITERS(Res, Exclusive, Shared) WaitForWaiters(Res, Exclusive, Shared)
+#else
+/* The test as written: no settling, so the 10ms scheduling assumption stands. */
+#define SETTLE_WAITERS(Res, Exclusive, Shared) ((void)0)
+#endif
 
 static
 VOID
@@ -461,8 +476,8 @@ TestResourceWithThreads(
     /* as above, but this time it should block */
     Status = StartThread(&ThreadDataExclusive, &Timeout, TRUE, TRUE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
-    WaitForWaiters(Res, 1LU, 0LU);
-    CheckResourceStatus(Res, FALSE, 0LU, 1LU, 0LU);
+    SETTLE_WAITERS(Res, 1LU, 0LU);
+    CheckResourceStatus(Res, FALSE, 0LU, 1LU, 0LU); /* EXPECTED FLAKE in ExResource (10ms assumption); strict in ExResourceBounded */
     ok_eq_int(Res->ActiveCount, 1);
 
     /* now try another shared one -- it should fail */
@@ -499,8 +514,8 @@ TestResourceWithThreads(
     /* block another shared one */
     Status = StartThread(&ThreadDataShared2, &Timeout, TRUE, TRUE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
-    WaitForWaiters(Res, 1LU, 1LU);
-    CheckResourceStatus(Res, FALSE, 0LU, 1LU, 1LU);
+    SETTLE_WAITERS(Res, 1LU, 1LU);
+    CheckResourceStatus(Res, FALSE, 0LU, 1LU, 1LU); /* EXPECTED FLAKE in ExResource (10ms assumption); strict in ExResourceBounded */
     ok_eq_int(Res->ActiveCount, 1);
 
     /* finish the very first one */
@@ -601,8 +616,8 @@ TestSharedReleasePreemption(
         ok_bool_true(ExAcquireResourceExclusiveLite(Res, TRUE), "exclusive acquire");
         Status = StartThread(&Waiter, &Timeout, TRUE, TRUE);
         ok_eq_hex(Status, STATUS_TIMEOUT);
-        WaitForWaiters(Res, 0LU, 1LU);
-        ok_eq_ulong(ExGetSharedWaiterCount(Res), 1);
+        SETTLE_WAITERS(Res, 0LU, 1LU);
+        ok_eq_ulong(ExGetSharedWaiterCount(Res), 1); /* EXPECTED FLAKE in ExResource (10ms assumption); strict in ExResourceBounded */
         KeSetPriorityThread(Waiter.Thread, LOW_REALTIME_PRIORITY);
 
         ExReleaseResourceForThreadLite(Res, (ULONG_PTR)KeGetCurrentThread());
@@ -615,7 +630,11 @@ TestSharedReleasePreemption(
     }
 }
 
+#ifdef KMT_EXRESOURCE_BOUNDED
+START_TEST(ExResourceBounded)
+#else
 START_TEST(ExResource)
+#endif
 {
     NTSTATUS Status;
     ERESOURCE Res;

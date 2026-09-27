@@ -25,16 +25,15 @@ pub extern "C" fn rust_eh_personality() {}
 // ref cannot back-resolve to the kernel's (earlier, unpulled) definition. arbiter
 // therefore needs its OWN amd64 definition, kept here.
 //
-// NOTE (--allow-multiple-definition ratchet): the source-level dup scanner
-// (tools/scan_duplicate_symbols.py) flags this as an arbiter+ntoskrnl collision,
-// but it is NOT a real masked duplicate — the kernel's shim_exports copy is never
-// pulled (nothing references the out-of-line symbol on the kernel side; it's
-// inlined), so only this def links. It stays in the ratchet baseline as an
-// accepted source-level entry. Deleting it breaks the amd64 link (KeGetCurrentIrql
-// undefined). arm64 resolves via the kernel's exported helper, so no shim needed.
+// NOTE: ntoskrnl-rust's shim_exports.rs defines the same amd64 symbol, and both
+// objects are in the kernel archives (llvm-nm, 2026-09-26). Both bodies are the
+// same `mov cr8` read, so either winning is correct. Deleting this one breaks the
+// amd64 link (KeGetCurrentIrql undefined for arbiter's own callers). arm64
+// resolves via the kernel's exported helper, so no shim needed.
 // CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
 // shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
 // driver-fleet bomb class).
+// nolint: duplicate-symbol (same `mov cr8` body as ntoskrnl's; see NOTE above)
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn KeGetCurrentIrql() -> u8 {

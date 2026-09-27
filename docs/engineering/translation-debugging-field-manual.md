@@ -118,6 +118,17 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `extern "system"` breaks the fastcall members (`IofCallDriver`, `IofCompleteRequest`,
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
+6. **A cdecl CALLBACK in an NTAPI slot: the CALLER returns into its own arguments.** The
+   callee does not pop what stdcall says it pops, so the caller's `ret` takes an argument as
+   its return address. Symptom: BUGCHECK 0x1E with EIP in **no module**, in pool right next to
+   a device object, and a return address just past `IofCompleteRequest` two words above ESP.
+   classpnp's `ClasspSendSynchronousCompletion` was `extern "C"` and registered through
+   `transmute::<unsafe extern "C" fn(..), _>(f)`: rustc checks the source type against the
+   fn (so it agrees it is cdecl) and the inferred target re-types it. Every hard disk's first
+   synchronous SRB crashed i386 (2026-09-26); 64-bit has one convention and was fine.
+   `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
+   an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
+   bugcheck print every stack word that lands in a module; the bad call's caller is there.
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -966,8 +977,9 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   froze inside explorer's taskbar `OnCreate` (two of the captured names,
   `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
   `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
-  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
-  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  **`scan_duplicate_symbols` does not catch this** — it models Rust definitions and
+  `global_asm!` labels, not C/C++ objects, and the dangerous direction here is Rust shadowing
+  C++ across the cohab boundary. Get the capture set before you
   wire anything, with `llvm-nm --defined-only` over both sides:
   `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
   awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
@@ -3711,6 +3723,21 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
+
+**Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
+lockdep report. classpnp: every hard disk hung the boot inside `DiskInitFdo`'s MBR read.
+
+**Cause:** the C keeps a debug-only structure behind `#if DBG` in BOTH its initializer and
+its users, and the non-DBG initializer stores a marker instead: `RemoveTrackingSpinlock =
+(ULONG_PTR)-1`. The translation kept the marker under `cfg(not(debug_assertions))` but lost
+the `#if DBG` around one user, `ClassCompleteRequest`, which then acquired a spinlock whose
+value reads as HELD and spun forever.
+
+**Fix:** gate the user exactly as the C does (`cfg(debug_assertions)`). When an initializer
+has a debug arm and a release arm, grep every use of the field it initializes: each one
+must sit behind the same gate, or read the release marker as "absent".
+
 ### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
 **Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
 that meant no `Interface\{iid}\ProxyStubClsid32` anywhere, so `CoGetPSClsid` failed with
@@ -6014,12 +6041,13 @@ different question, racily).
   other: when a scanner reaches it, the useful next question is which shapes it cannot express,
   not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
   accessing intrinsic before taking it.
-- **An atomic on user memory has no protected form yet.** `capture_from_user`/`publish_to_user`
-  cannot express a read-modify-write: capture -> mutate -> publish loses the atomicity, and
-  silently weakening a concurrency guarantee to buy fault-tolerance is the wrong trade. The
-  primitive needed is a `KmProtected` atomic beside `KmProtectedCopyMemory` -- a native-SEH
-  shim on amd64/arm64, an exception-table entry for the `lock` instruction on i386 (§9.123) --
-  with a self-test twin, because an unproven protection is worse than a documented gap.
+- **An atomic on user memory needs its own protected primitive.** `capture_from_user`/
+  `publish_to_user` cannot express a read-modify-write: capture -> mutate -> publish loses the
+  atomicity, and silently weakening a concurrency guarantee to buy fault-tolerance is the wrong
+  trade. Use `copy::interlocked_add_user` (ntoskrnl's `KmProtectedInterlockedAdd`: a native-SEH
+  shim on amd64/arm64, a second extable key for the `lock xadd` on i386 (§9.123)). Its self-test
+  asserts the add LANDED in memory as well as returned, because a primitive that returns the
+  right sum without storing it would pass a return-value-only check.
 
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
@@ -6580,6 +6608,24 @@ output path; CMake's OLD CMP0116 policy passes it through without normalization.
 output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
 fixture proves a nested-header-only constant/layout edit then stays stale.
 
+### A configure dependency on a file that does not exist yet is silently dropped
+
+**Symptom:** a file admitted by `if(EXISTS)` at configure time (a WoW64 guest, a stress
+binary) is built later, the next build is green, and the file is still not on the media.
+`CMAKE_CONFIGURE_DEPENDS` names it, and the dependency was meant to re-run configure the
+moment it appeared.
+
+**Cause:** CMake (3.28, measured) omits a configure dependency whose path does not exist
+from `build.ninja` entirely, so nothing ever watches for its creation. The dependency only
+works for files that were already there, which is exactly the case that does not need it.
+The merge queue's integration tree was configured before it had any guests and never
+graded the WoW64 ladder in consequence.
+
+**Fix:** depend on the file if it exists, otherwise on its nearest EXISTING ancestor
+directory. Creating an entry bumps that directory's mtime, which ninja sees, and an
+unchanged directory costs no spurious reconfigure (`dll/win32/wow64cpu/CMakeLists.txt`).
+Verify with `grep <path> build-<arch>/build.ninja` — a missing path means CMake dropped it.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
@@ -6888,6 +6934,9 @@ it only ever asks "was this attempt red", never "red the same way" — which is 
 intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
 ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
 already captured at `gate.py:314`.
+Renamed `CONFORMANCE_RED` on 2026-09-26, owner-approved: the word now says what was observed
+(the ratchet failed) and not a cause. That fixes the invitation to requeue, not the missing
+discriminator above — the label is still a constant.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a

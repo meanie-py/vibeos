@@ -280,3 +280,17 @@ def test_every_gated_boot_path_launches_through_the_retry():
     assert "launch_with_retry(" in body
     assert "vm.start()" not in body
     assert "launch_with_retry(" in inspect.getsource(smoke._boot_vm)
+
+
+def test_no_build_refuses_media_without_the_sweep(tmp_path):
+    """A plain build's media boots to a desktop with no sweep; --no-build on it drained
+    30 min per arch and banked fake lost boots. The payload stamp answers first."""
+    import json as _json
+
+    from .conformance import SUITE, media_payload_gap
+
+    assert "missing" in (media_payload_gap(tmp_path) or "")
+    (tmp_path / "payload-selection.json").write_text(_json.dumps({"payloads": []}))
+    assert "not" in (media_payload_gap(tmp_path) or "")
+    (tmp_path / "payload-selection.json").write_text(_json.dumps({"payloads": [SUITE]}))
+    assert media_payload_gap(tmp_path) is None

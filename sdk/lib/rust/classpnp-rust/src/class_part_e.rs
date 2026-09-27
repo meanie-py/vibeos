@@ -118,8 +118,15 @@ pub unsafe extern "C" fn ClasspTransferPacketGetNumberOfRetriesDone(
 }
 
 // class.c:10925  ClasspSendSynchronousCompletion (IO completion routine)
+//
+// NTAPI, like every IO_COMPLETION_ROUTINE (the C says so explicitly). It was
+// `extern "C"`: on i386 the I/O manager calls it stdcall and expects it to pop
+// its 12 bytes, it did not, and IofCompleteRequest returned through its own
+// arguments into pool -- BUGCHECK 0x1E at a "<no module>" EIP beside the disk PDO
+// on the first synchronous SRB of any hard disk. 64-bit has one convention,
+// which is why only i386 crashed.
 #[no_mangle]
-pub unsafe extern "C" fn ClasspSendSynchronousCompletion(
+pub unsafe extern "system" fn ClasspSendSynchronousCompletion(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: PVOID,

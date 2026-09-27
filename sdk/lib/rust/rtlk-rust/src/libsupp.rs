@@ -32,8 +32,9 @@ use ntkrnl_sys::ddk::PUNWIND_HISTORY_TABLE;
 use ntkrnl_sys::ddk::PKPCR;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
-/// i386 KeGetPcr — reads KPCR pointer from fs:0x1C (SelfPcr field).
-#[no_mangle]
+/// i386 KeGetPcr — reads KPCR pointer from fs:0x1C (SelfPcr field). A private
+/// helper, not an export: ntkrnl-sys's `global_asm!` owns the `_KeGetPcr` symbol on
+/// i386, and a `#[no_mangle]` here made two providers of it in the kernel link.
 #[cfg(target_arch = "x86")]
 #[inline(always)]
 pub unsafe extern "C" fn KeGetPcr() -> PKPCR {

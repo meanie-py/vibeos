@@ -750,6 +750,7 @@
 # NOT `-private`: spec2def skips private exports when generating the IMPORT LIB
 # (spec2def.c:750), so win32k.sys would fail to link against it.
 @ cdecl KmProtectedCopyMemory(ptr ptr long)
+@ cdecl KmProtectedInterlockedAdd(ptr long ptr)
 @ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
 @ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall LdrAccessResource(ptr ptr ptr ptr)

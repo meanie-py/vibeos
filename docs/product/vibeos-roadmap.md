@@ -556,6 +556,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — OPEN**
+  (2026-09-26). `VIBEOS_QEMU_TEMP_DISK=1 ./vibeos-cli smoke --arch i386`: the disk now
+  starts and fastfat mounts it (the two classpnp fixes in the user32 A/B "Class-test"
+  entry below), then around desktop start
+  `0x1E (0xc000001d, EIP in no module)` with EIP on the stack a few dozen bytes above ESP:
+  another return through a corrupted frame, i386-only, on the FAT/disk path. The stack scan
+  shows only stale words (`IopInitializePlugPlayServices`, `fastfat.sys+0`).
+  `scan_fnptr_abi_transmute` and a sweep of every `abi_cast!` and typed transmute find
+  nothing else on that path, so the next step is a GDB session breaking on the fault.
+  amd64 boots clean with the same disk and runs the winetests against it.
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
@@ -1448,15 +1458,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   measurement. All three arches build and boot to the desktop (`_tWinMain entered` +
   `shell ready`).
 
-  **Still OPEN, and now actually FLAGGED by the scanner** (it used to miss them):
-  `InterlockedIncrement`/`Decrement` on a user counter — ime's `nCntInIMEProc` at
-  `ime.rs:3120` and `:3137`, where the C had a `_SEH2_TRY` per access. There is **no
-  protected primitive for this at all**: an atomic RMW cannot be routed through
-  `KmProtectedCopyMemory`, because the read-modify-write has to fault as one unit rather than
-  copy in and out. Closing them means writing a `KmProtected` atomic next to
-  `KmProtectedCopyMemory` — a native-SEH shim on amd64/arm64, an exception-table entry for the
-  `lock` instruction on i386 — plus a self-test twin so the per-boot oracle covers it.
-  Restoring a probe there would look like a fix and would not be one.
+  **The last two, the ime atomics, are FIXED (2026-09-26).** ime's `nCntInIMEProc`
+  `InterlockedIncrement`/`Decrement` on a user counter had a `_SEH2_TRY` per access in the C,
+  and no protected primitive could express them: an atomic RMW routed through
+  `KmProtectedCopyMemory` stops being atomic. `KmProtectedInterlockedAdd` now sits beside it —
+  native SEH in `ntoskrnl/kmsafecopy.c` on amd64/arm64, and on i386 a second extable key (the
+  `lock xadd`) in `ke/i386/safecopy.rs`. Its self-test twin prints
+  `[KMSAFECOPY] fault-tolerant interlocked add: valid=1 landed=1 invalid_caught=1 (PASS)` on
+  all three arches, and `scan_probe_then_deref` reports 0 leads.
 
   Two of the scanner's own numbers along the way were wrong in the direction that reads as more
   work, not less, and both are pinned by tests now: `RtlCopyMemory` was reported by both the
@@ -1578,11 +1587,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **SxS (FIXED).** `CreateActCtxW` failed about 130 times per x86 boot. rtl-actctx queried
     `FileEndOfFileInformation`, which is a SET-only class on NT (upstream ReactOS has the same
     bug; Wine allows the query). It now uses `FileStandardInformation`, and the count is 0.
-  - **Class-test 0xc0150010 (ENVIRONMENTAL).** The winetest writes its manifest to
-    `GetTempPathA` = `X:\reactos\TEMP`, which is read-only on the livecd. That activation
-    fails, and the later deactivation gets `STATUS_SXS_INVALID_DEACTIVATION`. It needs a
-    writable scratch volume in the harness; the qcow2 is a savevm disk and is deliberately
-    not attached on i386. OPEN (harness).
+  - **Class-test 0xc0150010 (ENVIRONMENTAL) — FIXED on amd64 2026-09-26.** The winetest
+    wrote its manifest to `GetTempPathA` = `X:\reactos\TEMP`, read-only on the livecd. The
+    harness now attaches a FAT disk holding `\TEMP` (`vm.py _temp_disk_args`, default ON for
+    amd64) and winlogon points the winetest children's TEMP/TMP at `C:\TEMP` when it exists.
+    Guest `user32:class` now runs to completion (32 failures) instead of crashing. Attaching
+    that disk found two classpnp bugs that had hung or crashed EVERY boot with a hard disk:
+    `ClassCompleteRequest` spinning on a lock the release build never initializes, and a cdecl
+    `ClasspSendSynchronousCompletion` in an NTAPI slot (i386). i386 stays opt-in
+    (`VIBEOS_QEMU_TEMP_DISK=1`) until the bug below is fixed.
   - **arm64 winsxs enabled.** comctl32 had no arm64 `ARCH` or manifests. Staging them
     exposed a fastfat byte-vs-u16 copy that BUGCHECKed 0x50 at smss. That bug and six more of
     its shape (cmvalche, mountmgr, iomgr) are fixed, and `scan_wide_byte_copy` gates the class.
@@ -1822,7 +1835,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (1.6.39 -> 1.6.58) and the zlib audit are DONE.
 
 - **A deterministic failure was classified `CONFORMANCE_FLAKE`, and the wrong LABEL cost
-  more than the retries. UNOWNED** (2026-09-19). Verbatim from `land-status`:
+  more than the retries. LABEL FIXED 2026-09-26; the discriminator is still OPEN** (2026-09-19).
+  Renamed `CONFORMANCE_RED` (owner-approved) — it names the observation, not a cause. It
+  recurred the day of the rename: `rustconv-speedrun` @ `e50515abfab5` was rejected
+  "CONFORMANCE_FLAKE, 3 attempts" for an i386 BUGCHECK 0x1E identical on all 9 surviving
+  rounds (an un-gated empty stub shadowing a self-patching asm routine). What is still owed is
+  the signature diff below: the final verdict still cannot say "reproduced identically". Verbatim from `land-status`:
 
         REJECTED: shell32-com @ 3607b8d766e0 (CONFORMANCE_FLAKE)
                   conformance:i386: CONFORMANCE_FLAKE, 3 attempts
@@ -4102,6 +4120,23 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     bit saturates at "over 100 ms" either way. The discriminator is the ACTUAL delay, which
     needs an instrument (record the wait's elapsed time on the timeout path), not more boots.
     That is the next step whenever this is picked up; do not re-soak it.
+    **INSTRUMENTED 2026-09-26 (`66668384be1`, diagnostic only) — and the first catch is a
+    SCHEDULER STARVATION, not a slow pipe.** `[NPFS-LATE]` stamps trigger / worker-woke /
+    work-done and prints when an item finishes past its caller's deadline. arm64 round 3 of
+    3 at that commit regressed NpfsConnect harder than ever recorded (pass 679 -> 606, fail
+    0 -> 73) and printed `work done 149890 ms after trigger (deadline 100 ms): woke +149890
+    ms, work 0 ms`, followed immediately by `[CENSUS] wait profile: 29 thread(s) parked
+    >20s`. Two artifact readings were checked and ruled out: it was the FIRST late item of
+    the test on a fresh worker (so not a previous diagnostic print still running), and the
+    round ran `KeStartAllProcessors: 1 processor(s) online` (so not cross-CPU clock skew,
+    and not the CPUs-2/3 bug). A ready kernel thread did not run for ~150 s on ONE CPU.
+    Evidence: `/tmp/vibeos-cli/20260926-175208-lvwp5qhv-conformance-arm64/` (preserved to
+    `~/vibeos-flake-farm/fails/auto/`). Next: what held the CPU for those 150 s — the
+    flight recorder and census around that line, not more sweeps.
+    **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
+    test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
+    `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;
+    a large `work` on a clean run is by design.
     **Scope, so this table is not misread:** the 3-in-9 is the rate for a **conformance sweep**
     (`conformance:<arch>`), not for a gate. Since `9f73d184fea1` an arm64 gate ASKS for the
     WoW64 ladder (`gate_argv=['--ladder']`, previously silently empty), so `LADDER_FAIL` is a

@@ -608,6 +608,18 @@ pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(InitFrontEnd as *const ())) };
 """
+# Second shape (classpnp 2026-09-26): the source type SAYS extern "C", so rustc
+# agrees with the fn, and the inferred target re-types it for an NTAPI slot.
+_FNABI_BAD_TYPED = """\
+pub unsafe extern "C" fn Done(d: *mut u8, i: *mut u8, c: *mut u8) -> i32 { 0 }
+pub unsafe fn f(irp: *mut u8) {
+    IoSetCompletionRoutine(
+        irp,
+        Some(core::mem::transmute::<unsafe extern "C" fn(*mut u8, *mut u8, P) -> i32, _>(Done)),
+        core::ptr::null_mut(), 1, 1, 1,
+    );
+}
+"""
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -616,6 +628,9 @@ extern "system" {
 }
 pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+pub unsafe extern "C" fn cexit(code: i32) -> ! { loop {} }
+pub static EXIT: unsafe extern "C" fn(i32) =
+    unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
 """
 
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
@@ -1558,6 +1573,67 @@ pub unsafe fn SaveViewState_body(this: *mut T) -> HRESULT {
 """
 
 
+# scan_duplicate_symbols. 88b04bf7f86: reviving an orphan-cfg'd empty Rust stub put a
+# second i386 `@RtlPrefetchMemoryNonTemporal@8` in the crate whose global_asm! already
+# defines it. rustc can't see into the assembler and --allow-multiple-definition picked
+# the stub: BUGCHECK 0x1E in kmtest RtlMemoryKM. The GOOD tree carries the three shapes
+# that must stay quiet: the stub gated off x86, smp/not-smp feature twins, and a cdecl
+# asm label beside a stdcall Rust fn of the same name (two different i386 symbols).
+_DUP_CARGO = """\
+[package]
+name = "rtlk-rust"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[features]
+smp = []
+"""
+_DUP_ASM = """\
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".globl @RtlPrefetchMemoryNonTemporal@8",
+    "@RtlPrefetchMemoryNonTemporal@8:",
+    "    ret",
+    ".globl _KeGetPcr",
+    "_KeGetPcr:",
+    "    ret",
+);
+"""
+_DUP_BAD = {
+    "rtlk-rust/Cargo.toml": _DUP_CARGO,
+    "rtlk-rust/src/lib.rs": "mod prefetch_asm;\nmod misc;\n",
+    "rtlk-rust/src/prefetch_asm.rs": _DUP_ASM,
+    "rtlk-rust/src/misc.rs": """\
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+""",
+}
+_DUP_GOOD = {
+    "rtlk-rust/Cargo.toml": _DUP_CARGO,
+    "rtlk-rust/src/lib.rs": (
+        'mod prefetch_asm;\n#[cfg(not(target_arch = "x86"))]\nmod misc;\nmod lock;\n'
+    ),
+    "rtlk-rust/src/prefetch_asm.rs": _DUP_ASM,
+    "rtlk-rust/src/misc.rs": """\
+#[no_mangle]
+pub unsafe extern "C" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+""",
+    "rtlk-rust/src/lock.rs": """\
+#[cfg(feature = "smp")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KxAcquireSpinLock(l: *mut usize) { spin(l) }
+#[cfg(not(feature = "smp"))]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KxAcquireSpinLock(_l: *mut usize) {}
+#[no_mangle]
+pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
+""",
+}
+
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_dropped_asserts",
@@ -1751,6 +1827,13 @@ CONTROLS: list[Control] = [
         good=_BOOL_WIDTH_GOOD,
     ),
     Control(
+        name="scan_duplicate_symbols",
+        script="tools/scan_duplicate_symbols.py",
+        argv=["--lint"],
+        bad=_DUP_BAD,
+        good=_DUP_GOOD,
+    ),
+    Control(
         name="scan_cfg_vs_c",
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
@@ -1817,7 +1900,7 @@ CONTROLS: list[Control] = [
         name="scan_fnptr_abi_transmute",
         script="tools/scan_fnptr_abi_transmute.py",
         argv=["--lint"],
-        bad={"bad.rs": _FNABI_BAD},
+        bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
     ),
     Control(
@@ -1971,7 +2054,6 @@ UNCOVERED: dict[str, str] = {
         "each negative control is a shape that made an earlier draft useless (45 findings "
         "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
-    "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
     "scan_invented_constants": (
         "needs the real tree on BOTH sides: the self-labelled Rust const and the C module "
