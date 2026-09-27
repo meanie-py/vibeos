@@ -1563,10 +1563,33 @@ pub unsafe extern "system" fn KeFlushCurrentTb() {
     core::arch::asm!("isb", options(nomem, nostack));
 }
 
+/// Zero whole pages with `dc zva` (one cache-line block per instruction), the
+/// arm64 page-clear idiom. The C stub (and this port, until now) went through
+/// RtlZeroMemory to the CRT's byte-at-a-time memset: 128 KB per zero-page-
+/// thread batch took ~12 ms under TCG, and since arm64 acts on a timer only at
+/// an IRQL crossing, every short wait that fell while the zero thread ran paid
+/// that batch as extra latency (kmtest KeEvent's 1000-iteration scheduling
+/// test went 12 s -> 45 s once the zero thread became preemptible).
+/// Falls back to RtlZeroMemory only when the CPU prohibits DC ZVA (DCZID.DZP)
+/// or the range is not whole blocks -- callers pass page-aligned pages.
 #[no_mangle]
 pub unsafe extern "system" fn KeZeroPages(Address: PVOID, Size: ULONG) {
     let Address = opaque_ptr(Address);
-    RtlZeroMemory(Address, Size as usize);
+    let dczid: u64;
+    core::arch::asm!("mrs {0}, dczid_el0", out(reg) dczid, options(nomem, nostack, preserves_flags));
+    let block = 4usize << (dczid & 0xF);
+    let (start, size) = (Address as usize, Size as usize);
+    if dczid & (1 << 4) != 0 || start % block != 0 || size % block != 0 {
+        RtlZeroMemory(Address, size);
+        return;
+    }
+    let mut p = start;
+    while p < start + size {
+        core::arch::asm!("dc zva, {0}", in(reg) p, options(nostack, preserves_flags));
+        p += block;
+    }
+    // The zeroed page is about to be handed out, possibly to another CPU.
+    core::arch::asm!("dsb ish", options(nostack, preserves_flags));
 }
 
 // LDT_ENTRY doesn't exist on ARM64 — use ULONG64 placeholder for this stub

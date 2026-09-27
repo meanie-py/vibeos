@@ -203,6 +203,65 @@ static int setup_running(void)
  * released the FCB; kernel32 then closes the directory, and cdfs cleanup takes that FCB
  * exclusively, so a leaked lock hangs right here. Under DUMMY_PSEH the raise was a 0x1E.
  * Only meaningful where the Windows directory is on cdfs (the livecd). */
+/* fastfat: FatNotifyChangeDirectory raises STATUS_DELETE_PENDING (FatRaiseStatus) on a
+ * directory whose disposition is set. With dead PSEH that raise bugchecked 0x1E; with real
+ * SEH, FatFsdDirectoryControl catches it and the request fails with ERROR_ACCESS_DENIED.
+ * The follow-up proves the volume and its locks survived the unwind. */
+static int fat_raise_check(const WCHAR *windir)
+{
+    typedef LONG (WINAPI *set_info_t)(HANDLE, void *, void *, ULONG, int);
+    set_info_t set_info = (set_info_t)GetProcAddress(GetModuleHandleA("ntdll.dll"),
+                                                     "NtSetInformationFile");
+    WCHAR dir[MAX_PATH], pat[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    ULONG_PTR iosb[2];
+    BOOLEAN del = TRUE;
+    char buf[512];
+    OVERLAPPED ov = { 0 };
+    DWORD got = 0, err, wait;
+    HANDLE h, h2;
+    LONG st;
+    int ok;
+
+    wsprintfW(dir, L"%s\\Temp\\fsraise%lu", windir, GetCurrentProcessId());
+    if (!CreateDirectoryW(dir, NULL)) {
+        SAY("fsraise FAIL mkdir gle=%lu\n", GetLastError());
+        return 0;
+    }
+    h = CreateFileW(dir, DELETE | FILE_LIST_DIRECTORY | SYNCHRONIZE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        SAY("fsraise FAIL open gle=%lu\n", GetLastError());
+        RemoveDirectoryW(dir);
+        return 0;
+    }
+    /* FileDispositionInformation (13): sets FCB_STATE_DELETE_ON_CLOSE right away. */
+    st = set_info(h, iosb, &del, sizeof del, 13);
+    ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    SetLastError(0);
+    if (ReadDirectoryChangesW(h, buf, sizeof buf, FALSE, FILE_NOTIFY_CHANGE_FILE_NAME, NULL, &ov,
+                              NULL)) {
+        /* Queued instead of raising: the check failed, but don't leave it pending. */
+        wait = WaitForSingleObject(ov.hEvent, 2000);
+        err = wait == WAIT_OBJECT_0 && !GetOverlappedResult(h, &ov, &got, FALSE) ? GetLastError() : 0;
+        CancelIo(h);
+    } else {
+        err = GetLastError();
+    }
+    CloseHandle(ov.hEvent);
+    CloseHandle(h); /* deletes the directory */
+    wsprintfW(pat, L"%s\\*", windir);
+    h2 = FindFirstFileW(pat, &fd);
+    if (h2 != INVALID_HANDLE_VALUE)
+        FindClose(h2);
+    ok = st == 0 && err == ERROR_ACCESS_DENIED && h2 != INVALID_HANDLE_VALUE &&
+         GetFileAttributesW(dir) == INVALID_FILE_ATTRIBUTES;
+    SAY("fsraise %s fs=FAT disp=0x%lx err=%lu followup=%d\n", ok ? "PASS" : "FAIL",
+        (unsigned long)st, err, h2 != INVALID_HANDLE_VALUE);
+    return ok;
+}
+
 static int fs_raise_check(const WCHAR *windir)
 {
     WCHAR vol[4] = { windir[0], L':', L'\\', 0 }, fsw[16] = L"", pat[MAX_PATH];
@@ -214,6 +273,8 @@ static int fs_raise_check(const WCHAR *windir)
 
     GetVolumeInformationW(vol, NULL, 0, NULL, NULL, NULL, fsw, 16);
     ascii(fsw, fs, sizeof fs);
+    if (!lstrcmpiW(fsw, L"FAT") || !lstrcmpiW(fsw, L"FAT32"))
+        return fat_raise_check(windir);
     if (lstrcmpiW(fsw, L"CDFS")) {
         SAY("fsraise SKIP fs=%s\n", fs);
         return 1;

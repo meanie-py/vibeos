@@ -134,10 +134,9 @@ pub unsafe extern "system" fn FatFsdClose(
         SetFlag(&mut (*Ccb).Flags, CCB_FLAG_READ_ONLY);
     }
 
-    // -------------------------------------------------------------------
-    // SEH block (USE_DUMMY_PSEH: execute body inline; except handler is dead code)
-    // -------------------------------------------------------------------
-    {
+    // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter( NULL, ... ))
+    let null_ic: *mut IRP_CONTEXT = core::ptr::null_mut();
+    if let Err(code) = crate::seh::fat_try_except(core::ptr::addr_of!(null_ic), || {
         let mut CloseContext: *mut CLOSE_CONTEXT = core::ptr::null_mut();
 
         let Wait = if TopLevel != 0
@@ -232,6 +231,11 @@ pub unsafe extern "system" fn FatFsdClose(
         }
 
         FatCompleteRequest(core::ptr::null_mut::<core::ffi::c_void>(), Irp, Status);
+    }) {
+        //  We had some trouble trying to perform the requested
+        //  operation, so we'll abort the I/O request with the
+        //  error status that we get back from the exception code.
+        Status = FatProcessException(core::ptr::null_mut(), Irp, code);
     }
 
     if TopLevel != 0 {
@@ -341,10 +345,12 @@ pub unsafe extern "system" fn FatFspClose(
 
         LastVcb = CurrentVcb;
 
-        // SEH2 try block – exception handler does nothing, so we execute the body directly
-        // (Exception filter and NOTHING; handler are omitted.)
-        {
-            FreeContext = (*CloseContext).Free;
+        // Call the common Close routine.  Protected in a try {} except {}
+        let null_ic: *mut IRP_CONTEXT = core::ptr::null_mut();
+        let p_free_context = core::ptr::addr_of_mut!(FreeContext);
+        let _ = crate::seh::fat_try_except(core::ptr::addr_of!(null_ic), || {
+            *p_free_context = (*CloseContext).Free;
+            let FreeContext = *p_free_context;
 
             // Determine the CCB pointer to pass to FatCommonClose
             let ccb: *mut CCB = if FreeContext != 0 {
@@ -365,7 +371,7 @@ pub unsafe extern "system" fn FatFspClose(
                 TopLevel,
                 core::ptr::null_mut(), // VcbDeleted OPTIONAL
             );
-        } // SEH2_END (implicitly)
+        }); // _SEH2_EXCEPT: ignore anything we expect (NOTHING)
 
         // If the close context came from pool, free it
         if FreeContext != 0 {
@@ -566,7 +572,7 @@ pub unsafe extern "system" fn FatCommonClose(
     VcbDeleted: *mut BOOLEAN,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut ParentDcb: PDCB;
+    let mut ParentDcb: PDCB = core::ptr::null_mut();
     let mut RecursiveClose: BOOLEAN;
     let mut LocalVcbDeleted: BOOLEAN;
     let mut IrpContext: IRP_CONTEXT = core::mem::zeroed();
@@ -618,7 +624,12 @@ pub unsafe extern "system" fn FatCommonClose(
         (*Vcb).OpenFileCount += 1;
     }
 
-    'try_loop: loop {
+    let p_ic = core::ptr::addr_of_mut!(IrpContext);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_local_vcb_deleted = core::ptr::addr_of_mut!(LocalVcbDeleted);
+
+    // _SEH2_TRY { ... } _SEH2_FINALLY { ... }
+    crate::seh::try_finally(&mut (), |_| 'try_loop: loop {
         match TypeOfOpen {
             __n if __n == VirtualVolumeFile as u32 => {
                 DebugTrace(0, Dbg, b"Close VirtualVolumeFile\n\0".as_ptr() as *const i8, 0);
@@ -630,7 +641,7 @@ pub unsafe extern "system" fn FatCommonClose(
                     let ptr = core::ptr::addr_of_mut!((*Vcb).ResidualOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
                 }
-                Status = STATUS_SUCCESS;
+                *p_status = STATUS_SUCCESS;
                 break 'try_loop;
             }
             __n if __n == UserVolumeOpen as u32 => {
@@ -638,8 +649,8 @@ pub unsafe extern "system" fn FatCommonClose(
                 (*Vcb).DirectAccessOpenCount -= 1;
                 (*Vcb).OpenFileCount -= 1;
                 if ((*Ccb).Flags & CCB_FLAG_READ_ONLY) != 0 { (*Vcb).ReadOnlyCount -= 1; }
-                FatDeleteCcb(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(Ccb));
-                Status = STATUS_SUCCESS;
+                FatDeleteCcb(p_ic, core::ptr::addr_of_mut!(Ccb));
+                *p_status = STATUS_SUCCESS;
                 break 'try_loop;
             }
             __n if __n == EaFile as u32 => {
@@ -652,7 +663,7 @@ pub unsafe extern "system" fn FatCommonClose(
                     let ptr = core::ptr::addr_of_mut!((*Vcb).ResidualOpenCount) as *mut i32;
                     InterlockedDecrement(ptr);
                 }
-                Status = STATUS_SUCCESS;
+                *p_status = STATUS_SUCCESS;
                 break 'try_loop;
             }
             __n if __n == DirectoryFile as u32 => {
@@ -671,7 +682,7 @@ pub unsafe extern "system" fn FatCommonClose(
                     InterlockedDecrement(ptr);
                 }
                 if RecursiveClose != 0 {
-                    Status = STATUS_SUCCESS;
+                    *p_status = STATUS_SUCCESS;
                     break 'try_loop;
                 }
             }
@@ -694,7 +705,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 (*Fcb).OpenCount -= 1;
                 (*Vcb).OpenFileCount -= 1;
                 if ((*Ccb).Flags & CCB_FLAG_READ_ONLY) != 0 { (*Vcb).ReadOnlyCount -= 1; }
-                FatDeleteCcb(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(Ccb));
+                FatDeleteCcb(p_ic, core::ptr::addr_of_mut!(Ccb));
             }
             _ => {
                 FatBugCheck(TypeOfOpen, 0, 0);
@@ -710,7 +721,7 @@ pub unsafe extern "system" fn FatCommonClose(
         {
             ParentDcb = (*Fcb).ParentDcb;
             (*Vcb).VcbState |= VCB_STATE_FLAG_DELETED_FCB;
-            FatDeleteFcb(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(Fcb));
+            FatDeleteFcb(p_ic, core::ptr::addr_of_mut!(Fcb));
 
             while ((*ParentDcb).Header.NodeTypeCode == (FAT_NTC_DCB) as i16) &&
                     IsListEmpty(core::ptr::addr_of!((*ParentDcb).Specific.Dcb.as_ref().ParentDcbQueue)) &&
@@ -727,50 +738,51 @@ pub unsafe extern "system" fn FatCommonClose(
                     let mut CurrentDcb: PDCB = ParentDcb;
                     ParentDcb = (*CurrentDcb).ParentDcb;
                     (*Vcb).VcbState |= VCB_STATE_FLAG_DELETED_FCB;
-                    FatDeleteFcb(core::ptr::addr_of_mut!(IrpContext), core::ptr::addr_of_mut!(CurrentDcb));
+                    FatDeleteFcb(p_ic, core::ptr::addr_of_mut!(CurrentDcb));
                 } else {
                     break;
                 }
             }
         }
 
-        Status = STATUS_SUCCESS;
+        *p_status = STATUS_SUCCESS;
         break 'try_loop;
-    }
+    }, |_, _abnormal| {
+        DebugUnwind(b"FatCommonClose\0".as_ptr() as *const i8);
 
-    DebugUnwind(b"FatCommonClose\0".as_ptr() as *const i8);
-
-    if RecursiveClose == 0 {
-        if (*Vcb).OpenFileCount == 1 &&
-            (*Vcb).VcbCondition != VcbGood &&
-            ((*Vcb).VcbState & VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS) == 0 &&
-            !VcbDeleted.is_null() &&
-            TopLevel != 0
-        {
-            FatReleaseVcb(core::ptr::addr_of_mut!(IrpContext), Vcb);
-            IrpContext.Flags |= IRP_CONTEXT_FLAG_WAIT;
-            FatAcquireExclusiveGlobal(core::ptr::addr_of_mut!(IrpContext));
-            FatAcquireExclusiveVcb(core::ptr::addr_of_mut!(IrpContext), Vcb);
-            (*Vcb).OpenFileCount -= 1;
-            LocalVcbDeleted = FatCheckForDismount(core::ptr::addr_of_mut!(IrpContext), Vcb, 0);
-            FatReleaseGlobal(core::ptr::addr_of_mut!(IrpContext));
-            if !VcbDeleted.is_null() {
-                *VcbDeleted = LocalVcbDeleted;
+        if RecursiveClose == 0 {
+            if (*Vcb).OpenFileCount == 1 &&
+                (*Vcb).VcbCondition != VcbGood &&
+                ((*Vcb).VcbState & VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS) == 0 &&
+                !VcbDeleted.is_null() &&
+                TopLevel != 0
+            {
+                FatReleaseVcb(p_ic, Vcb);
+                (*p_ic).Flags |= IRP_CONTEXT_FLAG_WAIT;
+                FatAcquireExclusiveGlobal(p_ic);
+                FatAcquireExclusiveVcb(p_ic, Vcb);
+                (*Vcb).OpenFileCount -= 1;
+                *p_local_vcb_deleted = FatCheckForDismount(p_ic, Vcb, 0);
+                FatReleaseGlobal(p_ic);
+                if !VcbDeleted.is_null() {
+                    *VcbDeleted = *p_local_vcb_deleted;
+                }
+            } else {
+                (*Vcb).OpenFileCount -= 1;
             }
-        } else {
-            (*Vcb).OpenFileCount -= 1;
+
+            if *p_local_vcb_deleted == 0 {
+                (*Vcb).VcbState &= !VCB_STATE_FLAG_CLOSE_IN_PROGRESS;
+            }
         }
 
-        if LocalVcbDeleted == 0 {
-            (*Vcb).VcbState &= !VCB_STATE_FLAG_CLOSE_IN_PROGRESS;
+        if *p_local_vcb_deleted == 0 {
+            FatReleaseVcb(p_ic, Vcb);
         }
-    }
 
-    if LocalVcbDeleted == 0 {
-        FatReleaseVcb(core::ptr::addr_of_mut!(IrpContext), Vcb);
-    }
+        DebugTrace(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, *p_status as i32);
+    });
 
-    DebugTrace(-1, Dbg, b"FatCommonClose -> %08lx\n\0".as_ptr() as *const i8, Status as i32);
     Status
 }
 

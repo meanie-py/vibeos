@@ -557,6 +557,38 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Hardware faults in a Rust try body: amd64 + i386 — arm64 OPEN** (2026-09-26).
+  The per-boot `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3, an access
+  violation and a pool-tracker int3, each under try_finally inside try_except) passes on
+  amd64 and i386 and is compiled only there. **i386 FIXED:** a kernel-mode int3 is
+  dispatched with interrupts still disabled (KiDebugHandler re-enables them only for user
+  traps) and the hand-built catch in ntoskrnl/sehtry.c resumes by `__builtin_longjmp`, which
+  restores no flags, so the next page fault bugchecked 0x0A with P2 = -1 (KiTrap0E's "IF was
+  off" verdict). `RtlSehTryExcept` now records IF at try entry and restores it on the catch.
+  **arm64 OPEN:** `trace=13` — the body ran straight past both, so the brk is consumed without
+  dispatch and a kernel-mode read of VA 0x10 returns instead of faulting. Software raises
+  (ExRaiseStatus, FatRaiseStatus) are caught on all three arches; this gap is for hardware
+  faults (MmProbeAndLockPages on a bad user buffer is the one fastfat relies on, and fastfat
+  is arm64's system volume). Repro: add aarch64 to the block's cfg and boot.
+- **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
+  (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
+  gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0
+  (the translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
+  `PoolHitTag`'s default, so `ExpInsertPoolTracker` hit its `DbgBreakPoint`. Under dummy
+  PSEH nothing caught that int3 and the boot went on; now `FatExceptionFilter` takes it
+  (BREAKPOINT is an "expected" status) and the unwind faulted inside `rtl_except`
+  (`SetRegFromStackValue`), re-dispatched, and repeated: the stack is
+  `KiDispatchException -> RtlDispatchException -> __C_specific_handler -> RtlpUnwindInternal
+  -> PageFaultReturn` about 20 times over. Fixed: that tag, `TAG_EA_SET_HEADER` in easup,
+  `TAG_SCSIPORT` in scsiport and `DISK_TAG_SMART` in diskwmi (a sweep of every kernel
+  crate for a literal-0 tag). **Not explained:** the same int3 raised from kernel Rust
+  frames unwinds fine (the per-boot `[SEH-TRY] rust hw faults ... pooltrack=` case), so
+  the bad unwind is specific to a frame in `fastfat.sys` (374 of its functions use
+  `SET_FPREG` with a non-zero frame offset). Repro: put a tag-0 allocation back in
+  `FatAllocateCloseContext` and boot amd64. Two tool gaps found on the way: `gdb start`
+  now attaches the same TEMP disk as smoke (it did not, so the crash could not be
+  reproduced under gdb), and `gdb run-until --break KeBugCheckEx` still sets the
+  breakpoint at the unrelocated link address (`0x49f942`) and never fires.
 - **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
   (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
   volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's
@@ -2226,6 +2258,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   event, not the loudest one" shape the stock-app NULL cascade below needs. This is a LEAD from
   reading raisers, NOT an observed stack: nothing has yet confirmed the fault goes through
   fastfat at all.
+  **2026-09-26: the BUGCHECK arm should now be a failed request.** fastfat runs on real SEH
+  (dummy-pseh-verdict.md step 3), so a `FatVerifyFcb`/`FatVerifyVcb` raise reaches
+  `FatExceptionFilter` as an expected status and `FatProcessException` fails the Irp instead
+  of the raise finding no handler. The lead above still stands: if sqlite32 now opens and
+  gets `STATUS_FILE_INVALID` back, the first `FcbBad` transition is the bug to chase.
 
   **Ordering consequence, now fixed:** this guest can take the whole boot down, so anything
   winlogon launches after it loses its verdict silently. That is exactly what happened when
@@ -4087,8 +4124,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     round ran `KeStartAllProcessors: 1 processor(s) online` (so not cross-CPU clock skew,
     and not the CPUs-2/3 bug). A ready kernel thread did not run for ~150 s on ONE CPU.
     Evidence: `/tmp/vibeos-cli/20260926-175208-lvwp5qhv-conformance-arm64/` (preserved to
-    `~/vibeos-flake-farm/fails/auto/`). Next: what held the CPU for those 150 s — the
-    flight recorder and census around that line, not more sweeps.
+    `~/vibeos-flake-farm/fails/auto/`).
+    **ROOT-CAUSED 2026-09-26: arm64 had no preemption, and the zero-page thread held the
+    CPU.** Host-stamped serial (conformance now stamps every round) showed the stall in
+    EVERY arm64 round, not only the failing one: ~95 s inside NpfsConnect with the guest
+    clock ticking and nothing scheduled. The 150 s round just had a worker item straddling
+    it. vCPU samples taken during the quiet (`silence-samples.txt`) sat in
+    `MmZeroPageThread` -> byte-wise `memset`. arm64's DISPATCH softint parked readied threads
+    in `Prcb->NextThread` and never switched to them, so the priority-0 thread ran until the
+    free list was empty. Fixed on `conformance-ratchet` (arm64 `KiDispatchPreemptArm64` from
+    `KfLowerIrql`, DAIF restored on resume, `KeZeroPages` via `dc zva`). arm64 conformance
+    rounds went from 175-255 s to 72-107 s, with zero silences, zero kmtest AWAIT timeouts,
+    smoke 3/3 and the ratchet holding. **Owed:** the arm64-only ReadySummary recheck in
+    `ke/wait.rs` and `ke/thrdschd.rs` (×2) existed because there was no preemption.
+    Instrument it for dead, then remove (archive/arm64-interrupts-quest.md). Preemption at
+    IRQ exit (a spinner that never crosses DISPATCH) is still absent (§9.19 hazard).
     **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
     test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
     `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;
