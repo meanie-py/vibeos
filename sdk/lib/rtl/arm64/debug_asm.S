@@ -7,17 +7,21 @@
 
 .text
 
-/* ULONG NTAPI DebugService(ULONG Service, PVOID Arg1, PVOID Arg2, PVOID Arg3, PVOID Arg4) */
+/* ULONG NTAPI DebugService(ULONG Service, PVOID Arg1, PVOID Arg2, PVOID Arg3, PVOID Arg4)
+ *
+ * brk #0xF002 is Windows ARM64's debug-service immediate; #0xF000 is a real breakpoint
+ * (DbgBreakPoint). They used to share #0xF000 and the trap handler told them apart by
+ * x0 alone, so the kernel could never dispatch a breakpoint as STATUS_BREAKPOINT. */
 .globl DebugService
 DebugService:
-    brk #0xF000
+    brk #0xF002
     mov x0, #0
     ret
 
 /* VOID NTAPI DebugService2(PVOID Arg1, PVOID Arg2, ULONG Service) */
 .globl DebugService2
 DebugService2:
-    brk #0xF000
+    brk #0xF002
     ret
 
 /* VOID DbgBreakPoint(VOID) */
