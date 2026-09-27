@@ -887,6 +887,9 @@ extern "system" {
     /// drain, in normal thread context. Called below when the soft IRQL
     /// crosses under DISPATCH_LEVEL with the DISPATCH bit pended.
     fn KiDispatchSoftwareIntArm64();
+    /// ntoskrnl export (ke/dpc.rs): quantum end / switch to Prcb->NextThread,
+    /// entered at DISPATCH on a crossing under it — x86's DPC-interrupt tail.
+    fn KiDispatchPreemptArm64();
 }
 
 unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQL) {
@@ -1035,6 +1038,28 @@ pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
             && halp_cpu_state().soft_int_pending.load(Ordering::SeqCst) != 0
         {
             HalpDispatchSoftwareInterrupts(OldIrql, NewIrql);
+        }
+
+        // Preemption point: on x86 this crossing is where the DPC interrupt
+        // fires and switches to a readied higher-priority thread; arm64 had no
+        // equivalent, so a thread that never blocked held the CPU forever
+        // (the zero-page thread stalled every arm64 kmtest round ~95 s). Only
+        // in thread context (not inside an IRQ window) and never while our own
+        // softint drain is still running — a switch there would leave
+        // soft_int_in_progress set under whichever thread runs next, and every
+        // lower on this CPU would skip delivery until we were resumed. The
+        // kernel side declines when IRQs are masked, on the idle thread, and
+        // inside a DPC. Re-read the CPU state: after the switch we may resume
+        // on another CPU.
+        if OldIrql >= DISPATCH_LEVEL && NewIrql < DISPATCH_LEVEL {
+            let cpu = halp_cpu_state();
+            if cpu.interrupt_context_depth.load(Ordering::SeqCst) == 0
+                && cpu.soft_int_in_progress.load(Ordering::SeqCst) == 0
+            {
+                halp_set_irql(DISPATCH_LEVEL);
+                KiDispatchPreemptArm64();
+                halp_set_irql(NewIrql);
+            }
         }
     }
 }

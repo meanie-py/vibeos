@@ -29,6 +29,7 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
 pub mod types;
 pub mod glue;       // harvested #define consts
 pub mod ddk_shims;  // macro/FORCEINLINE shims
+pub mod seh;        // real __try/__except/__finally (ntkrnl_sys::seh)
 
 // CD-ROM TOC structures (from ntddcdrm.h), used by FatScanForDataTrack.
 #[repr(C)]

@@ -46,6 +46,9 @@ pub const PORTSC_PR: u32 = 1 << 4;
 pub const PORTSC_PLS_SHIFT: u32 = 5;
 pub const PORTSC_PLS_MASK: u32 = 0xF << 5;
 pub const PORTSC_PP: u32 = 1 << 9;
+/// PORTSC.PLS values (5.4.8) for USB3 links that only a warm reset leaves.
+pub const PLS_INACTIVE: u32 = 6;
+pub const PLS_COMPLIANCE: u32 = 10;
 pub const PORTSC_SPEED_SHIFT: u32 = 10;
 pub const PORTSC_SPEED_MASK: u32 = 0xF << 10;
 pub const PORTSC_LWS: u32 = 1 << 16;
@@ -56,6 +59,8 @@ pub const PORTSC_OCC: u32 = 1 << 20;
 pub const PORTSC_PRC: u32 = 1 << 21;
 pub const PORTSC_PLC: u32 = 1 << 22;
 pub const PORTSC_CEC: u32 = 1 << 23;
+/// Warm Port Reset (USB3 ports only; RW1S).
+pub const PORTSC_WPR: u32 = 1 << 31;
 pub const PORTSC_CHANGE_BITS: u32 =
     PORTSC_CSC | PORTSC_PEC | PORTSC_WRC | PORTSC_OCC | PORTSC_PRC | PORTSC_PLC | PORTSC_CEC;
 /// The bits that read back as state and may be written back unchanged: read-only
@@ -135,9 +140,11 @@ pub const CC_USB_TRANSACTION: u32 = 4;
 pub const CC_TRB: u32 = 5;
 pub const CC_STALL: u32 = 6;
 pub const CC_SHORT_PACKET: u32 = 13;
+pub const CC_CONTEXT_STATE: u32 = 19;
 pub const CC_STOPPED: u32 = 26;
 pub const CC_STOPPED_LENGTH_INVALID: u32 = 27;
 pub const CC_STOPPED_SHORT_PACKET: u32 = 28;
+pub const CC_SPLIT_TRANSACTION: u32 = 36;
 
 #[inline]
 pub const fn trb_type(control: u32) -> u32 {

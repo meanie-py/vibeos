@@ -1367,7 +1367,17 @@ unsafe fn GetNextFrame(
     FunctionEntry = RtlLookupFunctionEntry((*Context).Rip, &mut ImageBase, core::ptr::null_mut());
     if FunctionEntry == core::ptr::null_mut()
     {
-        (*Context).Rip = *((*Context).Rsp as *const DWORD64);
+        // Leaf function: pop the return address. The C reads it under _SEH2_TRY and
+        // returns FALSE on a fault; there is no SEH here, so read it the safe way.
+        let mut Rip: DWORD64 = 0;
+        if !NT_SUCCESS(KdbpSafeReadMemory(
+            core::ptr::addr_of_mut!(Rip) as PVOID,
+            (*Context).Rsp as PVOID,
+            core::mem::size_of::<DWORD64>(),
+        )) {
+            return 0u8;
+        }
+        (*Context).Rip = Rip;
         (*Context).Rsp += core::mem::size_of::<DWORD64>() as u64;
         return 1u8;
     }
@@ -1385,13 +1395,44 @@ unsafe fn GetNextFrame(
 
     1u8
 }
-#[cfg(not(target_arch = "x86_64"))]
-unsafe fn GetNextFrame(
-    _Context: PCONTEXT) -> BOOLEAN
-{
+/// amd64 `bt`: kdb_cli.c:1267 — unwind with RtlVirtualUnwind via GetNextFrame. amd64
+/// code keeps no frame-pointer chain, so the i386 EBP chase below (which this crate used
+/// to run on amd64 too, leaving GetNextFrame dead) stops after a frame or walks garbage.
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn KdbpCmdBackTrace(
+    _Argc: ULONG,
+    _Argv: *mut PCHAR,
+) -> BOOLEAN {
+    let mut Context: CONTEXT = *KdbCurrentTrapFrame;
+
+    crate::kdbp_print!(b"Frames:\n\0");
+    loop {
+        crate::kdbp_print!(b"[%p] \0", Context.Rsp as PVOID);
+
+        if KdbSymPrintAddress(Context.Rip as PVOID, core::ptr::addr_of_mut!(Context)) == 0 {
+            crate::kdbp_print!(b"<%p>\0", Context.Rip as PVOID);
+        }
+        crate::kdbp_print!(b"\n\0");
+
+        if KdbOutputAborted != 0 {
+            break;
+        }
+
+        if GetNextFrame(core::ptr::addr_of_mut!(Context)) == 0 {
+            crate::kdbp_print!(b"Couldn't get next frame\n\0");
+            break;
+        }
+        if Context.Rip == 0 || Context.Rsp == 0 {
+            break;
+        }
+    }
+
     1u8
 }
 
+/// i386 `bt` (kdb_cli.c:1304): EBP frame chase plus the nested-TSS backlink walk.
+#[cfg(not(target_arch = "x86_64"))]
 #[no_mangle]
 pub unsafe extern "C" fn KdbpCmdBackTrace(
     Argc: ULONG,

@@ -7,16 +7,16 @@ use ntkrnl_sys::ddk::{CcPurgeCacheSection, _KWAIT_REASON_Executive, _IO_STATUS_B
 use core::ffi::c_void;
 use core::mem::offset_of;
 // resolve_imports.py: explicit kernel/private-type imports
-use crate::fatdata::{FatExceptionFilter, FatIsIrpTopLevel, FatProcessException};
+use crate::fatdata::{FatIsIrpTopLevel, FatProcessException};
 use crate::strucsup::{FatCreateIrpContext};
-use crate::types::{FatData, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_WAIT, IRP_CONTEXT_FLAG_WRITE_THROUGH, PVOLUME_DEVICE_OBJECT, VCB, VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_SHUTDOWN, _VCB_CONDITION_VcbGood as VcbGood};
+use crate::types::{FatData, FatDiskFileSystemDeviceObject, FatCdromFileSystemDeviceObject, IRP_CONTEXT, IRP_CONTEXT_FLAG_DISABLE_POPUPS, IRP_CONTEXT_FLAG_WAIT, IRP_CONTEXT_FLAG_WRITE_THROUGH, PVOLUME_DEVICE_OBJECT, VCB, VCB_STATE_FLAG_MOUNTED_DIRTY, VCB_STATE_FLAG_SHUTDOWN, _VCB_CONDITION_VcbGood as VcbGood};
 use ntkrnl_sys::ddk::{IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{DEBUG_TRACE_SHUTDOWN};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::ddk_shims::{FsRtlEnterFileSystem};
 // resolve_imports.py: explicit kernel/private-type imports
-use ntkrnl_sys::ddk::{EXCEPTION_POINTERS, PDEVICE_OBJECT};
+use ntkrnl_sys::ddk::{PDEVICE_OBJECT, IoUnregisterFileSystem, IoDeleteDevice};
 
 type FAT_FLUSH_TYPE = i32;
 type VOLUME_CONDITION = i32;
@@ -25,9 +25,7 @@ const VolumeClean: VOLUME_CONDITION = 0; // FAT_VOLUME_STATE::VolumeClean
 
 extern "system" {
     fn PAGED_CODE();
-    } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
-    fn _SEH2_GetExceptionInformation() -> *mut c_void;
-}
+    } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); }
 
 extern "system" {
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
@@ -36,11 +34,12 @@ extern "system" {
     fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, operation: u32);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
+    fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
+    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: u32) -> u32;
     fn FlagOn(flags: u32, mask: u32) -> BOOLEAN;
     fn NT_ASSERT(condition: BOOLEAN);
     fn FsRtlExitFileSystem();
-    fn _SEH2_GetExceptionCode() -> u32;
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
 
@@ -70,26 +69,18 @@ pub unsafe extern "system" fn FatFsdShutdown(
 
     TopLevel = (FatIsIrpTopLevel(Irp)) as u8;
 
-    // Mechanical translation of _SEH2_TRY / _SEH2_EXCEPT / _SEH2_END.
-    // The exception filter and handler are preserved even though no actual
-    // exception is raised in this transliteration; a later SEH-enabled
-    // wrapper can replace this block with true platform SEH.
-    {
-        // _SEH2_TRY block
-        IrpContext = FatCreateIrpContext(Irp, 1);   // TRUE → 1
-        Status = FatCommonShutdown(IrpContext, Irp);
-
-        // Exception-handling dead code retained for correctness.
-        #[allow(unreachable_code)]
-        {
-            // This block never executes, but its contents match the C struct.
-            let _ = Status; // suppress unused warning
-            let info = _SEH2_GetExceptionInformation() as *mut EXCEPTION_POINTERS;
-            if FatExceptionFilter(IrpContext, info) != 0 {
-                Status =
-                    FatProcessException(IrpContext, Irp, (_SEH2_GetExceptionCode()) as i32);
-            }
-        }
+    // _SEH2_TRY / _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...))
+    let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const *mut IRP_CONTEXT, || {
+        *p_irp_context = FatCreateIrpContext(Irp, 1);   // TRUE → 1
+        *p_status = FatCommonShutdown(*p_irp_context, Irp);
+    }) {
+        //  We had some trouble trying to perform the requested
+        //  operation, so we'll abort the I/O request with
+        //  the error status that we get back from the
+        //  execption code
+        Status = FatProcessException(IrpContext, Irp, code);
     }
 
     if TopLevel != 0 {
@@ -113,11 +104,7 @@ pub unsafe extern "system" fn FatCommonShutdown(
 ) -> NTSTATUS {
 
     let mut event: KEVENT = core::mem::zeroed();
-    let mut links: PLIST_ENTRY;
-    let mut vcb: *mut VCB;
-    let mut new_irp: *mut IRP;
     let mut iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut vcb_deleted: BOOLEAN;
 
     // SetFlag(IrpContext->Flags, DISABLE_POPUPS | WRITE_THROUGH)
     (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DISABLE_POPUPS | IRP_CONTEXT_FLAG_WRITE_THROUGH;
@@ -132,13 +119,16 @@ pub unsafe extern "system" fn FatCommonShutdown(
 
     FatAcquireExclusiveGlobal(IrpContext);
 
-    // Outer _SEH2_TRY (no handler) — just an unsafe block
-    {
+    let p_event = core::ptr::addr_of_mut!(event);
+    let p_iosb = core::ptr::addr_of_mut!(iosb);
+
+    // _SEH2_TRY / _SEH2_FINALLY
+    crate::seh::try_finally(&mut (), |_| {
         let vcb_queue_ptr: *const LIST_ENTRY = core::ptr::addr_of!(FatData.VcbQueue);
-        links = (*vcb_queue_ptr).Flink;
+        let mut links: PLIST_ENTRY = (*vcb_queue_ptr).Flink;
 
         while links as *const LIST_ENTRY != vcb_queue_ptr {
-            vcb = (links as *mut u8).offset(-(core::mem::offset_of!(VCB, VcbLinks) as isize)) as *mut VCB;
+            let vcb: *mut VCB = (links as *mut u8).offset(-(core::mem::offset_of!(VCB, VcbLinks) as isize)) as *mut VCB;
 
             links = (*links).Flink;
 
@@ -151,8 +141,8 @@ pub unsafe extern "system" fn FatCommonShutdown(
 
             FatAcquireExclusiveVolume(IrpContext, vcb);
 
-            // Inner _SEH2_TRY (flush volume) — USE_DUMMY_PSEH: no real exception dispatch
-            {
+            // _SEH2_TRY / _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): flush the volume
+            if crate::seh::try_except(&mut (), |_| {
                 FatFlushVolume(IrpContext, vcb, (Flush) as _);
 
                 if ((*vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
@@ -165,50 +155,66 @@ pub unsafe extern "system" fn FatCommonShutdown(
 
                     FatMarkVolume(IrpContext, vcb, (VolumeClean) as _);
                 }
+            }, |_, _| crate::seh::EXCEPTION_EXECUTE_HANDLER).is_err() {
+                FatResetExceptionState(IrpContext);
             }
 
-            // Outer _SEH2_TRY (send shutdown IRP) — USE_DUMMY_PSEH: no real exception dispatch
-            {
-                new_irp = IoBuildSynchronousFsdRequest(
+            //  Even if the flush raised, send the shutdown irp to the target
+            //  device so it can flush its cache.
+            // _SEH2_TRY / _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+            if crate::seh::try_except(&mut (), |_| {
+                let new_irp: *mut IRP = IoBuildSynchronousFsdRequest(
                     IRP_MJ_SHUTDOWN as u32,
                     (*vcb).TargetDeviceObject,
                     core::ptr::null_mut(),
                     0,
                     core::ptr::null_mut(),
-                    &mut event,
-                    &mut iosb,
+                    p_event,
+                    p_iosb,
                 );
 
                 if !new_irp.is_null() {
                     if NT_SUCCESS(IoCallDriver((*vcb).TargetDeviceObject, new_irp)) {
                         KeWaitForSingleObject(
-                            &mut event as *mut KEVENT as *mut c_void,
+                            p_event as *mut c_void,
                             _KWAIT_REASON_Executive,
                             0i8,
                             0, // FALSE
                             core::ptr::null_mut(),
                         );
 
-                        KeClearEvent(&mut event);
+                        KeClearEvent(p_event);
                     }
                 }
+            }, |_, _| crate::seh::EXCEPTION_EXECUTE_HANDLER).is_err() {
+                FatResetExceptionState(IrpContext);
             }
 
             // SetFlag(Vcb->VcbState, VCB_STATE_FLAG_SHUTDOWN)
             (*vcb).VcbState |= VCB_STATE_FLAG_SHUTDOWN;
 
-            vcb_deleted = FatCheckForDismount(IrpContext, vcb, 0); // FALSE
+            let vcb_deleted: BOOLEAN = FatCheckForDismount(IrpContext, vcb, 0); // FALSE
 
             if vcb_deleted == 0 {
                 FatReleaseVolume(IrpContext, vcb);
             }
         } // while
-    } // outer _SEH2_TRY (no handler)
+    }, |_, _| {
+        FatReleaseGlobal(IrpContext);
 
-    // Return success (assumed from typical shutdown pattern)
-    0 // STATUS_SUCCESS
+        //  Unregister the file system.
+        IoUnregisterFileSystem(FatDiskFileSystemDeviceObject);
+        IoUnregisterFileSystem(FatCdromFileSystemDeviceObject);
+        IoDeleteDevice(FatDiskFileSystemDeviceObject);
+        IoDeleteDevice(FatCdromFileSystemDeviceObject);
+
+        FatCompleteRequest(IrpContext, Irp, STATUS_SUCCESS);
+    });
+
+    DebugTrace(-1, Dbg, b"FatFsdShutdown -> STATUS_SUCCESS\n\0".as_ptr() as *const i8, 0);
+
+    STATUS_SUCCESS
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

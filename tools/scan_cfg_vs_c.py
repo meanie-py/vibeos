@@ -10,10 +10,13 @@ notices: July's audit found the PXE 4-level cluster this way by reading 2,453 si
 user32's GetClassLongA/W (arm64 got the 32-bit index handling) was found by reading again.
 This makes the comparison mechanical wherever the C has a conditional to compare against.
 
-HOW. Arch universe U = {x86, x86_64, aarch64}.
+HOW. Universe U = {x86, x86_64, aarch64} x {UP, SMP}: C `CONFIG_SMP` and Rust
+`feature = "smp"` (ntkrnlmp) select the SMP half. bug.c freezes the other CPUs under
+`#ifdef CONFIG_SMP`; the Rust had gated it on x86/x86_64 — frozen in UP builds, never on
+arm64 SMP. The SMP line is judged only where the C draws it, like arm64 below.
   1. For each Rust fn body carrying `#[cfg(...)]` sites, evaluate each predicate to a
      subset of U (`target_arch`, `target_pointer_width`, `not`/`any`/`all`). A predicate
-     that mentions anything else (`feature`, `target_os`, `debug_assertions`) is UNKNOWN
+     that mentions anything else (another `feature`, `target_os`, `debug_assertions`) is UNKNOWN
      and skipped: this tool never guesses.
   2. The C function of the same name (tools/c_twin.py, same module): evaluate every
      `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else` branch in its body the same way
@@ -68,8 +71,20 @@ from tools.source_walk import source_files
 
 REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
-U = frozenset({"x86", "x86_64", "aarch64"})
-X86ONLY = frozenset({"x86", "x86_64"})
+ARCHES = ("x86", "x86_64", "aarch64")
+
+
+def lift(arches: set[str] | frozenset[str]) -> frozenset[str]:
+    """An arch set as points of U: each arch in both its UP and its SMP (`/mp`) build."""
+    return frozenset(a + k for a in arches for k in ("", "/mp"))
+
+
+# The universe is arch x {UP, SMP}: C `CONFIG_SMP` and Rust `feature = "smp"` pick the
+# `/mp` points (ntkrnlmp). thrdobj.rs once gated an SMP-only step on an ARCH instead.
+U = lift(set(ARCHES))
+MP = frozenset(p for p in U if p.endswith("/mp"))
+X86ONLY = lift({"x86", "x86_64"})
+_C_SMP_AWARE = re.compile(r"\bCONFIG_SMP\b")
 _C_ARM64_AWARE = re.compile(
     r"_M_ARM64|_ARM64_|__aarch64__|_WIN64|_M_ARM\b|_ARM_\b|__arm__|_MI_PAGING_LEVELS"
 )
@@ -103,10 +118,12 @@ def rust_set(pred: str) -> frozenset[str] | None:
     m = re.fullmatch(r'target_arch\s*=\s*"(\w+)"', p)
     if m:
         a = _RS_ARCH.get(m.group(1))
-        return frozenset(a) if a is not None else None
+        return lift(a) if a is not None else None
     m = re.fullmatch(r'target_pointer_width\s*=\s*"(\d+)"', p)
     if m:
-        return frozenset({"x86_64", "aarch64"} if m.group(1) == "64" else {"x86"})
+        return lift({"x86_64", "aarch64"} if m.group(1) == "64" else {"x86"})
+    if re.fullmatch(r'feature\s*=\s*"smp"', p):
+        return MP
     m = re.fullmatch(r"(not|any|all)\s*\((.*)\)", p, re.S)
     if m:
         parts = [rust_set(a) for a in _split_args(m.group(2))]
@@ -124,14 +141,13 @@ def rust_set(pred: str) -> frozenset[str] | None:
 # --- C conditionals ---------------------------------------------------------------------
 
 _C_ARCH = {
-    **dict.fromkeys(("_M_IX86", "_X86_", "__i386__", "i386", "_M_I386"), frozenset({"x86"})),
-    **dict.fromkeys(
-        ("_M_AMD64", "_AMD64_", "__x86_64__", "_M_X64", "__amd64__"), frozenset({"x86_64"})
-    ),
-    **dict.fromkeys(("_M_ARM64", "_ARM64_", "__aarch64__"), frozenset({"aarch64"})),
+    **dict.fromkeys(("_M_IX86", "_X86_", "__i386__", "i386", "_M_I386"), lift({"x86"})),
+    **dict.fromkeys(("_M_AMD64", "_AMD64_", "__x86_64__", "_M_X64", "__amd64__"), lift({"x86_64"})),
+    **dict.fromkeys(("_M_ARM64", "_ARM64_", "__aarch64__"), lift({"aarch64"})),
     **dict.fromkeys(("_M_ARM", "_ARM_", "__arm__"), frozenset()),
-    "_WIN64": {"x86_64", "aarch64"},
-    "_WIN32": set(U),
+    "_WIN64": lift({"x86_64", "aarch64"}),
+    "_WIN32": U,
+    "CONFIG_SMP": MP,
 }
 # Per-arch NUMERIC macros a condition may compare: `#if (_MI_PAGING_LEVELS >= 4)` is an arch
 # test in disguise (internal/{i386,amd64,arm64}/mm.h; i386 is 3 only under _X86PAE_, which
@@ -187,7 +203,7 @@ def c_set(expr: str) -> frozenset[str] | None:
             n = take()
             if not n.isdigit():
                 raise ValueError
-            return frozenset(a for a, v in _C_ARCH_VALUE[t].items() if _CMP[op](v, int(n)))
+            return lift({a for a, v in _C_ARCH_VALUE[t].items() if _CMP[op](v, int(n))})
         a = _C_ARCH.get(t)
         return frozenset(a) if a is not None else None
 
@@ -346,6 +362,16 @@ def stacked_dead(f: Path, raw: str) -> list[tuple[Path, int, list[str]]]:
     return out
 
 
+def _show(points: frozenset[str]) -> list[str]:
+    """`x86` for both builds of an arch, `x86 (SMP)` / `x86 (UP)` for one of them."""
+    out = []
+    for a in ARCHES:
+        up, mp = a in points, a + "/mp" in points
+        if up or mp:
+            out.append(a if up and mp else f"{a} ({'SMP' if mp else 'UP'})")
+    return out
+
+
 def _wl(f: Path, ln: int, cat: str, name: str, pred: str, twin: Func | None, nxt: str) -> str:
     code = " ".join(nxt.split())[:120]
     c = f"{_rel(twin.path)}:{twin.line}" if twin else "-"
@@ -388,7 +414,7 @@ def main() -> int:
             body = raw[fn.body_start : fn.body_start + len(fn.body)]
             for off, pred, nxt in rust_cfgs(body):
                 s = rust_set(pred)
-                if "target_arch" not in pred and "target_pointer_width" not in pred:
+                if not re.search(r'target_arch|target_pointer_width|feature\s*=\s*"smp"', pred):
                     continue
                 n["cfg"] += 1
                 if s is None or s in (U, frozenset()):
@@ -431,13 +457,17 @@ def main() -> int:
         # translation putting aarch64 with amd64 (4-level paging, 64-bit) is exceeding the
         # C, not drifting from it. Judge only the x86/x86_64 line there.
         universe = U if any(_C_ARM64_AWARE.search(t) for _, t in branches) else X86ONLY
+        # Likewise the UP/SMP line: judged only where the C draws it. A Rust-only SMP step
+        # in a function whose C never says CONFIG_SMP is a Rust choice, not a split.
+        if not any(_C_SMP_AWARE.search(t) for _, t in branches):
+            universe -= MP
         cut = splits(s & universe, atoms([b & universe for b, _ in branches], universe))
         if cut is None:
             n["agrees"] += 1
             continue
         n["flagged"] += 1
         evidence = next((t for b, t in branches if b == cut or (cut <= b)), branches[0][1])
-        findings.append((_rel(f), ln, fn.name, pred, sorted(s), sorted(cut), evidence))
+        findings.append((_rel(f), ln, fn.name, pred, _show(s), _show(cut), evidence))
     dead = [d for f, raw in parsed for d in stacked_dead(f, raw)]
     for rel, ln, preds in dead:
         if lint:

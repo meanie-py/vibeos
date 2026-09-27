@@ -27,6 +27,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -35,6 +36,26 @@ from pathlib import Path
 from . import artifacts, flakes
 
 SUITE = "kmtest"
+# Every conformance round stamps its live serial with host seconds
+# (VIBEOS_SERIAL_TIMESTAMPS, tee-only), and every reader here strips the stamp
+# back off before parsing. The stamp is the only witness to how GUEST time
+# relates to HOST time: arm64 NpfsConnect's "worker woke 150 s late" arrived in
+# a round no longer than its clean siblings, so the 150 s was the guest clock
+# leaping, not a thread waiting -- and nothing in an unstamped log can say which.
+# The tee stamps after "\r" as well as "\n", so a CRLF split across two reads
+# puts a stamp between the pair -- hence the lookbehind.
+_HOST_STAMP = re.compile(r"(?:^|(?<=\r))\[\+ *\d+\.\d+\] ", re.M)
+
+
+def read_serial(path: Path) -> str:
+    """A conformance serial log with the host-time stamps removed, and then
+    newlines normalised exactly as `read_text` would -- stripping has to come
+    first, or a CR/stamp/LF split reads as two line ends."""
+    with Path(path).open(errors="replace", newline="") as fh:
+        raw = fh.read()
+    return _HOST_STAMP.sub("", raw).replace("\r\n", "\n").replace("\r", "\n")
+
+
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
 
@@ -487,7 +508,7 @@ def _seed_asserts_from_rounds(args, repo: Path) -> int:
         logs = sorted(run_dir.glob("*_serial.log")) if run_dir.is_dir() else []
         if not logs:
             continue
-        results, _done, _bug = parser.parse(logs[0].read_text(errors="replace"))
+        results, _done, _bug = parser.parse(read_serial(logs[0]))
         if results:
             rounds.append(results)
     if len(rounds) < 3:
@@ -608,6 +629,7 @@ def _conformance_once(args, repo: Path) -> int:
     # unrelated later runs — which is exactly what happened to the arm64 MP
     # wedge, leaving a run dir with serial and nothing else.
     env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
+    env["VIBEOS_SERIAL_TIMESTAMPS"] = "1"  # see read_serial
     sweep_cmd = [
         sys.executable,
         "-m",
@@ -648,7 +670,7 @@ def _conformance_once(args, repo: Path) -> int:
     if not log_path.is_file():
         print(f"[conformance] no serial log at {log_path} — did the guest boot?", file=sys.stderr)
         return 2
-    serial_text = log_path.read_text(errors="replace")
+    serial_text = read_serial(log_path)
     results, done_line, bugcheck = parser.parse(serial_text)
 
     lines = [parser.fmt(r) for r in results]
@@ -855,7 +877,7 @@ def _conformance_once(args, repo: Path) -> int:
     # months filed under one heading.
     serial_text = ""
     try:
-        serial_text = Path(summary["serial_log"]).read_text(errors="replace")
+        serial_text = read_serial(Path(summary["serial_log"]))
     except Exception:
         pass
     shape = round_shape(bugcheck, results, done_line, regressions, serial_text)

@@ -426,8 +426,8 @@ pub unsafe extern "system" fn FatForceCacheMiss(
 
     ClearFlag(&mut (*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB);
 
-    // SEH try block
-    {
+    // _SEH2_TRY { ... } _SEH2_FINALLY { ... }
+    crate::seh::try_finally(&mut (), |_| {
         if (FlushType as u32) != 0 {
             let _ = FatFlushFile(IrpContext, Fcb, FlushType as u32);
         }
@@ -473,10 +473,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
                 );
             }
         }
-    }
-
-    // Finally block
-    {
+    }, |_, _abnormal| {
         //
         //  If we purging a directory file object, release all the Fcb
         //  resources that we acquired above.  The Dcb cannot have vanished
@@ -512,7 +509,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
 
             FatReleaseFcb(IrpContext, Fcb);
         }
-    }
+    });
 }
 
 

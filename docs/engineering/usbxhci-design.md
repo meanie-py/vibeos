@@ -15,6 +15,11 @@ their input reaches the desktop. That holds in QEMU on arm64 at `-smp 1` and `-s
 
 See "The Pi, as built" below.
 
+**USB storage and SuperSpeed work too.** In QEMU two sticks, one behind a hub and one
+SuperSpeed on a USB3 root port, are read and written from the desktop (usbstor → disk →
+partmgr → mountmgr → fastfat). On the Pi a USB 3 stick in a blue port enumerates at
+SuperSpeed on a VL805 root port, and its FAT partition's files show in Explorer.
+
 ## Where it plugs in
 
 The USB stack above the host controller is ReactOS's USB 2.0-era design, already
@@ -112,6 +117,27 @@ sees a USB2 root hub.
   SetEndpointStatus(RUN). Abort turns a TD into No-Ops and moves the dequeue
   pointer past it when it was next.
 
+- **SELECT_INTERFACE replaces live pipes.** usbport opens the new interface's pipes
+  before it closes the old ones, on the same DCIs. So an open whose DCI is still held
+  sets Drop and Add together (4.6.6's replace), and closing a pipe that no longer owns
+  its DCI touches nothing: dropping it would disable the replacement, and the first
+  bulk transfer then never completes. usbstor does exactly this at start.
+- **Storage on arm64** needed its drivers staged (usbstor, classpnp, disk, partmgr,
+  mountmgr). The hive already named them as boot drivers, so without the files the
+  loader dropped them and a stick enumerated with no driver.
+
+- **SuperSpeed on root ports.** usbport's root hub numbers the USB2-protocol ports
+  first and the USB3-protocol ports after them, and reports a SuperSpeed port as high
+  speed, the fastest usbhub knows. The slot takes the real speed from PORTSC, with EP0
+  at 512 bytes. usbport now reads `bMaxPacketSize0` as an exponent for a `bcdUSB >= 3.00`
+  device (9 = 512); the C accepted 8/16/32/64 only and refused every SuperSpeed device.
+  usbport's descriptor walks already skip the SuperSpeed endpoint companions. A link
+  in SS.Inactive or Compliance gets a warm reset (WPR) where usbhub asks for a reset.
+  On the Pi this is enough: the VL805 drives the blue ports' SuperSpeed lanes on its
+  own root ports 2-5, and the VIA hub (2109:3431) is USB 2 only, on root port 1.
+  Parking the USB3 ports in SS.Disabled instead, so USB 3 devices fall back to USB 2,
+  does not work there: the VL805 (xHCI 1.0) keeps a U0 link in U0 after the PLS write.
+
 ### The Pi, as built
 
 - **Publishing XHC0.** No ACPI bus driver runs on arm64. Instead the HAL's own PnP
@@ -151,10 +177,16 @@ sees a USB2 root hub.
 
 1. **Interrupt polling interval.** Endpoints open with usbport's Period (32 ms for
    usb-kbd), not the descriptor's bInterval; fine for typing, sluggish for a mouse.
-2. **SuperSpeed ports** (a USB 3 root hub, SuperSpeed hubs), bulk-heavy devices
-   (usbstor), isochronous. USB 2.0 hubs and TT work.
-3. **Slot reclamation.** A removed device's slot is freed when the next device appears
-   on the same root port, not at removal.
+2. **SuperSpeed hubs** (usbhub has no USB 3 hub support: 0x2A descriptor,
+   SET_HUB_DEPTH, the SuperSpeed port status layout), bulk streams and bursts
+   (MaxBurst is 0), isochronous. SuperSpeed devices on root ports, USB 2.0 hubs and
+   TT work.
+3. **Slot reclamation.** usbport does not tell the miniport about removals. A
+   removed device's slot is freed when usbport reuses its address (SET_ADDRESS) or a
+   new device appears at the same place, not at removal. Unplug and replug across hub
+   ports works on the Pi. An endpoint command failing on an unplugged device (its
+   endpoints halt with split-transaction errors) affects only that device, unless
+   the endpoint context still says Running.
 
 ### Rig
 
@@ -165,6 +197,13 @@ would take every keystroke. Proof of the USB path: `[KBDHID] read completion`,
 `[KBDCLASS] first key delivered` and `[WIN32K] RIT first keyboard input` after
 `input-send-event`. The last one matters: kbdclass delivering a key does not mean the
 desktop reads that class device (arm64input used to own `KeyboardClass0`).
+
+`VIBEOS_QEMU_USB_DISK=1` on top adds two `usb-storage` sticks: one behind a `usb-hub`
+(full speed) and one attached directly, which QEMU puts on a USB3 port at SuperSpeed.
+Each is a 64 MiB MBR disk with one FAT16 partition, `VIBESTICK`, holding `VIBEOS.TXT`
+(`make_usb_stick_image` in `tests/qemu/vm.py`). `test_usb_stick_read_and_write` has the
+desktop copy that file to `COPY.TXT` on `D:` and `E:` and reads both copies back from the
+images on the host.
 
 ## Per-arch facts
 

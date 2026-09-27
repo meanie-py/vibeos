@@ -1476,6 +1476,54 @@ def test_the_drain_does_not_wait_forever_for_a_line_that_never_ends():
     assert why == "marker" and out == "[APPSTORM] done VER"
 
 
+def test_a_silence_that_recovers_is_sampled_without_ending_the_drain():
+    # 45 s of silence, then the guest carries on to the marker: samples at 20
+    # and 40, re-armed by the output, and the drain still ends on the marker.
+    from tests.qemu import test_payload as payload_mod
+
+    t = {"now": 0.0}
+    feed = {45.0: "back\n", 50.0: "[KMTEST-SWEEP] done total=1\n"}
+    seen = []
+
+    def read(timeout):
+        t["now"] += 1.0
+        return feed.get(t["now"], "")
+
+    out, why = payload_mod.drain_for_marker(
+        read,
+        "",
+        "[KMTEST-SWEEP] done",
+        "",
+        600,
+        now=lambda: t["now"],
+        on_silence=seen.append,
+        silence_secs=20.0,
+    )
+    assert why == "marker" and "back" in out
+    assert [round(x) for x in seen] == [20, 40]
+
+
+def test_the_silence_sampler_writes_its_capture_and_never_raises(tmp_path):
+    from tests.qemu import test_payload as payload_mod
+
+    class VM:
+        artifact_dir, work_dir = tmp_path, tmp_path
+        calls = 0
+
+        def capture_cpu_state(self):
+            VM.calls += 1
+            if VM.calls == 2:
+                raise RuntimeError("monitor gone")
+            return "=== info registers -a ===\nCPU#0\n PC=ffff800004012345 X00=0\n"
+
+    sampler = payload_mod.SilenceSampler(VM(), limit=2)
+    for silent in (20.0, 40.0, 60.0):
+        sampler(silent)
+    text = (tmp_path / "silence-samples.txt").read_text()
+    assert "silence sample #1: serial silent 20s" in text and "ffff800004012345" in text
+    assert "#2" in text and "capture failed" in text and "#3" not in text
+
+
 def test_a_drained_out_payload_captures_the_hang_before_it_fails():
     # The gap this closes: a sweep that BOOTS and then wedges never enters
     # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
@@ -9838,6 +9886,85 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
     vm.save_snapshot("ready")
     vm.restore_snapshot("ready")  # the autouse fixture, before the first test
     assert "[UCRTDIFF] done" in vm._boot_output
+
+
+def _load_payload_compile():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[3] / "tools" / "payloads" / "compile.py"
+    spec = importlib.util.spec_from_file_location("payload_compile_ut", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
+    """A payload exe older than its .c must be rebuilt by the build's payload stage, not
+    staged as-is (appstorm's fastfat raise check booted as the old binary)."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "build.sh").write_text('echo built > "$(dirname "$0")/demo-$1.exe"\n')
+    exe = d / "demo-arm64.exe"
+    exe.write_text("old")
+    (d / "demo.c").write_text("int main(void){return 0;}")
+    os.utime(exe, (1_000_000, 1_000_000))
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.stale_binaries("demo", "arm64") == [exe.resolve()]
+    assert pc.ensure_built(["demo"], "arm64") == ["demo"]
+    assert exe.read_text().strip() == "built"
+    assert pc.stale_binaries("demo", "arm64") == []
+    assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
+
+
+def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "build.sh").write_text("echo nope >&2; exit 3\n")
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+    with pytest.raises(SystemExit):
+        pc.ensure_built(["demo"], "i386")
+
+
+def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
+    """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
+    writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n"
+        "  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+        "  - src: tools/payloads/demo/list-{arch}.txt\n    dest: list.txt\n"
+    )
+    (d / "build.sh").write_text('echo built > "$(dirname "$0")/demo-$1.exe"\n')
+    lst = d / "list-amd64.txt"
+    lst.write_text("a\n")
+    os.utime(lst, (1_000_000, 1_000_000))  # older than build.sh
+    exe = d / "demo-amd64.exe"
+    exe.write_text("fresh")
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+    assert pc.stale_binaries("demo", "amd64") == []
+    assert pc.ensure_built(["demo"], "amd64") == []
 
 
 def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):
