@@ -2389,6 +2389,15 @@ device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not
 invented value, the same class as an invented constant; diff the expression, not just the
 names.**
 
+### A facility's own SUCCESS code translated as a bare `0`
+hidparser's `HidParser_UsageAndPageListDifference` ended `return HIDP_STATUS_SUCCESS;` in the
+C and `0` in the Rust. `HIDP_STATUS_SUCCESS` is `0x00110000`, not `STATUS_SUCCESS`, so kbdhid's
+check on it asserted on every keyboard report (a burst of `ASSERT FAILED: _s ==
+hid_sys::HIDP_STATUS_SUCCESS at kbdhid-rust/src/read.rs` whenever a key moved). Any caller that
+tests with `NT_SUCCESS` would not notice, which is why it survived. **When a subsystem defines its
+own success status (HIDP_, USBD_, NDIS_, SCARD_...), grep the translation for bare `0` returns in
+functions whose C returns it.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
