@@ -121,6 +121,37 @@ def test_a_compiled_out_block_exempts_its_helpers_too(tmp_path):
     assert pecheck.main([*args, "--refs-header", str(refs)]) == 0
 
 
+def test_compound_and_continued_guards_are_evaluated():
+    # The spawn block's guard is a four-way `||` continued over two lines; read as "some
+    # other #if" it stayed live after every one of its files was taken over.
+    src = (
+        "#if UCRTDIFF_REF_HAS__spawnv || UCRTDIFF_REF_HAS__spawnvp || \\\n"
+        "    UCRTDIFF_REF_HAS__spawnl\n"
+        "int __cdecl ref__spawnv(int);\n"
+        "#endif\n"
+        "#if UCRTDIFF_REF_HAS__mbschr && UCRTDIFF_REF_CALLABLE__setmbcp\n"
+        "int __cdecl ref__mbschr(int);\n"
+        "#elif UCRTDIFF_REF_HAS__mbsrchr\n"
+        "int __cdecl ref__mbsrchr(int);\n"
+        "#else\n"
+        "int __cdecl ref_neither(int);\n"
+        "#endif\n"
+        "#if defined(FOO) && UCRTDIFF_REF_HAS__spawnv\n"
+        "int __cdecl ref_unreadable(int);\n"
+        "#endif\n"
+    )
+    off = {"_spawnv", "_spawnvp", "_spawnl", "_mbschr"}
+    kept = pecheck.compiled_in(src, off)
+    assert "ref__spawnv" not in kept
+    assert "ref__mbschr" not in kept
+    assert "ref__mbsrchr" in kept and "ref_neither" not in kept
+    assert "ref_unreadable" in kept  # not a pure REF guard: taken as live
+    kept = pecheck.compiled_in(src, off | {"_mbsrchr"})
+    assert "ref__mbsrchr" not in kept and "ref_neither" in kept
+    kept = pecheck.compiled_in(src, {"_spawnvp"})
+    assert "ref__spawnv" in kept and "ref__mbschr" in kept and "ref_neither" not in kept
+
+
 def test_an_unreadable_image_fails_loud(tmp_path):
     p = tmp_path / "x.exe"
     p.write_bytes(b"not a pe")

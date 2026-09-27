@@ -703,7 +703,99 @@ HAND_GRADED = (
     "_spawnvp",
     "_spawnl",
     "_spawnlp",
+    # The third fan-out batch: mbstring/*.cpp, one guard per C file.
+    "_mbccpy_s",
+    "_mbclen",
+    "_mbschr",
+    "_mbscmp",
+    "_mbscspn",
+    "_mbsinc",
+    "_mbslen",
+    "_mbslwr",
+    "_mbsnbcat_s",
+    "_mbsnbcmp",
+    "_mbsnbcpy_s",
+    "_mbsnbset_s",
+    "_mbsncat_s",
+    "_mbsncpy",
+    "_mbsncpy_s",
+    "_mbsnset",
+    "_mbsnset_s",
+    "_mbsstr",
+    "_mbstok",
+    "_setmbcp",
+    # The third fan-out batch: string/*.cpp and string/<arch>/*.s, one guard per C file.
+    "__strncnt",
+    "__wcsncnt",
+    "_memccpy",
+    "_memicmp",
+    "_strdup",
+    "_stricmp",
+    "_stricoll",
+    "_strlwr",
+    "_strncoll",
+    "_strnicmp",
+    "_strnicoll",
+    "_strnset",
+    "_strnset_s",
+    "_strrev",
+    "_strset",
+    "_strset_s",
+    "_strupr",
+    "_wcsdup",
+    "_wcsicmp",
+    "_wcsicoll",
+    "_wcslwr",
+    "_wcsncoll",
+    "_wcsnicmp",
+    "_wcsnicoll",
+    "_wcsnset_s",
+    "_wcsset_s",
+    "_wcsupr",
+    "memcpy_s",
+    "strcat_s",
+    "strcmp",
+    "strcoll",
+    "strcpy_s",
+    "strncat_s",
+    "strncmp",
+    "strncpy_s",
+    "strnlen",
+    "strtok",
+    "strtok_s",
+    "strxfrm",
+    "wcscat",
+    "wcscat_s",
+    "wcscoll",
+    "wcscpy_s",
+    "wcsncat_s",
+    "wcsncpy_s",
+    "wcstok",
+    "wcstok_s",
+    "wcsxfrm",
+    "wmemcpy_s",
+    "wmemmove_s",
+    # The third fan-out batch: time/*.cpp, one guard per C file.
+    "_difftime32",
+    "_ftime32",
+    "_gmtime32",
+    "_localtime32",
+    "_mktime32",
+    "_strdate",
+    "_strtime",
+    "_time32",
+    "_tzset",
+    "_utime32",
+    "asctime",
+    "clock",
+    "strftime",
+    "wcsftime",
 )
+
+
+#: Exports the harness calls on the reference side only to DRIVE state (set a locale, a
+#: multibyte code page) for other rows. See emit_refs.
+REF_DRIVERS = ("setlocale", "_setmbcp", "_getmbcp")
 
 
 def emit_refs(arch: str) -> str:
@@ -714,6 +806,17 @@ def emit_refs(arch: str) -> str:
     ]
     for name in HAND_GRADED:
         lines.append(f"#define UCRTDIFF_REF_HAS_{name} {int(name in have)}")
+    # CALLABLE: the harness can call ref_<name> to put the reference instance into a
+    # state, either Microsoft's copy or -- once a takeover removed it -- the alias of
+    # our Rust copy that build_internals_set writes. Never a grade.
+    alias_file = REPO / f"build-{arch}" / "libucrt_ours.refalias"
+    aliased = set()
+    if alias_file.is_file():
+        for line in alias_file.read_text().splitlines():
+            ref_name = line.split("=", 1)[0]
+            aliased.add(ref_name.split("ref_", 1)[1] if "ref_" in ref_name else ref_name)
+    for name in REF_DRIVERS:
+        lines.append(f"#define UCRTDIFF_REF_CALLABLE_{name} {int(name in have or name in aliased)}")
     return "\n".join(lines) + "\n"
 
 

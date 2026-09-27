@@ -83,13 +83,10 @@ include(internal/internal.cmake)
 include(locale/locale.cmake)
 include(lowio/lowio.cmake)
 include(math/math.cmake)
-include(mbstring/mbstring.cmake)
 include(misc/misc.cmake)
 include(startup/startup.cmake)
 include(stdio/stdio.cmake)
 include(stdlib/stdlib.cmake)
-include(string/string.cmake)
-include(time/time.cmake)
 
 # TODO: build a _DEBUG version
 add_library(ucrt OBJECT
@@ -106,13 +103,10 @@ add_library(ucrt OBJECT
     ${UCRT_LOCALE_SOURCES}
     ${UCRT_LOWIO_SOURCES}
     ${UCRT_MATH_SOURCES}
-    ${UCRT_MBSTRING_SOURCES}
     ${UCRT_MISC_SOURCES}
     ${UCRT_STARTUP_SOURCES}
     ${UCRT_STDIO_SOURCES}
     ${UCRT_STDLIB_SOURCES}
-    ${UCRT_STRING_SOURCES}
-    ${UCRT_TIME_SOURCES}
     ${UCRT_VCRUNTIME_SOURCES}
 )
 

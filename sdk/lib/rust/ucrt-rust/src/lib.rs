@@ -9,6 +9,12 @@
 //!
 //! Progress: `python3 tools/ucrt_burndown.py --arch i386`.
 #![no_std]
+// LOAD-BEARING, as in msvcrt-crt-rust and crt-portable-rust: this crate now
+// defines strcmp, wcscpy, wcscat, _memccpy and friends -- the very symbols
+// LLVM's loop-idiom pass rewrites compare/copy/scan loops INTO. Without this,
+// such a body can compile to a call to itself. `_strrev`'s NUL scan was
+// measured becoming a call to strlen on all three targets.
+#![no_builtins]
 // Each module declares the ucrt C it still calls in its own `extern` block, so
 // two modules can disagree about one C function's signature and both compile.
 // One of them is then wrong at the ABI, silently. Make that an error.
