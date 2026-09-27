@@ -48,6 +48,7 @@ from .bank_audit import audit as bank_audit
 from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
+from .body_audit import main as body_audit_main
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
     CallSealError,
@@ -4818,6 +4819,17 @@ def cmd_extern_audit(args):
         run_extern_audit(json_output=args.json)
 
 
+def cmd_body_audit(args):
+    """Did each pre-seal translated body keep what its C body does? (lead generator)"""
+    argv = [str(m) for m in args.modules]
+    if args.all:
+        argv.append("--all")
+    if args.json:
+        argv.append("--json")
+    argv += ["--limit", str(args.limit), "--min-severity", args.min_severity]
+    return body_audit_main(argv)
+
+
 def cmd_bank_audit(args):
     """Report paid translation output that never made it into the tree."""
     responses = Path(args.responses) if args.responses else RUSTCONV_RESPONSES_DIR
@@ -5688,6 +5700,24 @@ def main():
         "--dry-run", action="store_true", help="Show what --fix would change without writing"
     )
 
+    # body-audit
+    p = sub.add_parser(
+        "body-audit",
+        help="Per function: C callees a translated Rust body no longer performs",
+    )
+    p.add_argument(
+        "modules", nargs="*", help="module source dirs, e.g. drivers/filesystems/fastfat"
+    )
+    p.add_argument("--all", action="store_true", help="every module that links a Rust crate")
+    p.add_argument("--json", action="store_true", help="JSON output")
+    p.add_argument("--limit", type=int, default=0, help="at most N findings per module")
+    p.add_argument(
+        "--min-severity",
+        default="stub-loud",
+        choices=("stub-silent", "high", "medium", "low", "stub-loud"),
+        help="hide findings ranked below this",
+    )
+
     # bank-audit
     p = sub.add_parser(
         "bank-audit",
@@ -5747,6 +5777,7 @@ def main():
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
         "bank-audit": cmd_bank_audit,
+        "body-audit": cmd_body_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
     }

@@ -4275,10 +4275,9 @@ already been met the note is describing a bug, not a plan.
   because the missing bit only matters on the NEXT create that reuses deleted slots — which
   could then be handed a live entry and overwrite another file's dirent. The one objection
   was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
-  translation, diff each paired function's C callee set against its Rust body. A
-  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
-  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
-  each lead against the C.
+  translation run `rustconv body-audit <module>` (or `--all`): it diffs each paired
+  function's live C callees against its Rust body and ranks silent stubs and dropped
+  state-changing calls first. A lead generator, not a gate: read each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list

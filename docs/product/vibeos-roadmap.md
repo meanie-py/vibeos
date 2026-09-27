@@ -581,16 +581,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
-- **fastfat pre-seal translation audit: other bodies may have lost statements — OPEN**
-  (2026-09-26). fastfat was translated before call sealing, so nothing checks that a Rust
-  body kept its C's calls. A throwaway per-function callee diff over all 356 paired
-  functions reports 441 missing names in 163 functions; most are macro expansions or
-  DUMMY_PSEH-dead finally blocks (e.g. `FatAddToWorkque` is equivalent). Leads worth reading
-  first: `FatQueueClose` (62 Rust lines vs 272 C), `FatCommonCreate`/`FatOpenExistingFile`
-  (no `FatDeleteFcb`/`FatDeleteCcb`/`FatDeleteDirent` failure cleanup),
-  `FatMountVolume` (`CcSetAdditionalCacheAttributesEx`). `FatInvalidateVolumes` and
-  `FatCommonSetEa` are LOUD stubs (bugcheck / `STATUS_INVALID_DEVICE_REQUEST`), not drops.
-  Method in the field manual: "A body can lose its TAIL with nothing to show for it".
+- **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26).
+  Crates translated before call sealing (fastfat, cdrom and the other early DeepSeek lanes)
+  were never checked for dropped calls. `rustconv body-audit --all` (about a minute, $0)
+  pairs every flipped-out C function with its Rust: 130 modules, 38 clean, **11 silent
+  stubs**, 316 `high` (state-changing callee missing), 1118 `medium`, 211 `low`. Leads, not
+  verdicts: read each against the C. Confirmed real so far:
+  - shell32 `SHUpdateImageW`/`SHUpdateImageA` are EMPTY (the C notifies the shell,
+    `SHChangeNotify`, that a cached icon changed).
+  - classpnp `ClasspScanForSpecialInRegistry` is EMPTY (per-device registry hack flags are
+    never read).
+  - kernel32 `BaseComputeProcessSearchPath` skips the C's `SafeDllSearchMode` registry read
+    and always uses the default order.
+  - fastfat `FatCreateNewDirent` (FIXED, entry above).
+  Checked and FALSE: shell32 `ILFindChild` (matches the `__REACTOS__` arm), cdrom
+  `DeviceEvtFileClose` (delegates to live C glue), hal `HalpQueryPciRegistryInfo` (cfg twin),
+  fastfat `FatAddToWorkque`. Remaining silent stubs to read: wlansvc `_RpcEnumInterfaces`,
+  netcfgx `INetCfgComponentControl_fnApplyPnpChanges`, condrv `ConDrvDispatch`, win32k
+  `NtUserGetRawInputDeviceInfo`, and gdi32's five `EMFDRV_*` (live C glue stubs: metafile
+  recording of PatBlt/StretchDIBits/ExtTextOut/... does nothing). fastfat's first `high`
+  leads: `FatQueueClose`, `FatCommonCreate`/`FatOpenExistingFile` failure cleanup,
+  `FatVerifyVolume`, `FatMountVolume`. Re-translate (with sealing) only what the audit and a
+  reading of the C confirm.
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
