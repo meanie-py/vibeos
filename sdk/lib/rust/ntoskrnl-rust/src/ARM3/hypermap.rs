@@ -115,8 +115,17 @@ pub unsafe extern "system" fn MiMapPagesInZeroSpace(
     PointerPte = PointerPte.add((Offset + 1) as usize);
     TempPte = ValidKernelPte;
 
-    MI_PAGE_DISABLE_CACHE(&mut TempPte);
-    MI_PAGE_WRITE_THROUGH(&mut TempPte);
+    // x86 zeroes through an uncached mapping to spare the cache; PCD/PWT keep
+    // ordinary memory semantics. On arm64 MI_PAGE_DISABLE_CACHE selects DEVICE
+    // memory, which is not that: RAM mapped Device while the same page is Normal
+    // write-back elsewhere is a mismatched-attribute alias, and Device faults
+    // `dc zva` (KeZeroPages) with an alignment fault, which a Raspberry Pi 4
+    // raised on every boot (QEMU TCG does not check). Zero through Normal WB.
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        MI_PAGE_DISABLE_CACHE(&mut TempPte);
+        MI_PAGE_WRITE_THROUGH(&mut TempPte);
+    }
 
     ntkrnl_sys::ASSERT!(Pfn1 as ULONG_PTR != LIST_HEAD);
     while Pfn1 as ULONG_PTR != LIST_HEAD {

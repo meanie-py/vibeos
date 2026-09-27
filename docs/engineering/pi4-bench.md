@@ -165,6 +165,10 @@ mapped as `FS0:` and `netboot.sh`, then hardcoding `fs0:`, wrote the loader onto
 the stick. It now takes the one filesystem whose device path has no `USB(` from
 the Shell's startup mapping table (the card's is `VenHw(100C2CFA-…)`), and
 refuses to write when it cannot find exactly one.
+`netboot.sh --shell` power-cycles into the Shell and stops there, for reading
+bench media with a second FAT implementation (`tools/pi4/serial-send.sh
+'type fs0:\FILE'`); that is how a file VibeOS wrote to a stick was checked
+after a power cycle.
 
 Every staged payload carries a `manifest.json` with the commit it came from and
 whether the tree was dirty. Tie each board result to that, never to "what was on
