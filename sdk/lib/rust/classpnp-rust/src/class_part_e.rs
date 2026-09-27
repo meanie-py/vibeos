@@ -285,13 +285,90 @@ pub unsafe extern "C" fn ClasspIsPortable(
     STATUS_SUCCESS
 }
 
-// class.c:12651  ClasspScanForSpecialInRegistry — boot-safe no-op (HackFlags default 0 = no
-// device quirks). Full path reads Classpnp\HackFlags from the device instance key; OWED.
+// classp.h:114 `CLASSP_REG_HACK_VALUE_NAME (L"HackMask")`. The bindgen island lowered it to a
+// NARROW b"HackMask\0" (the L was dropped), which RtlQueryRegistryValues would read as a
+// 4-character wide name, so the wide spelling lives here.
+const CLASSP_REG_HACK_VALUE_NAME_W: [u16; 9] = [
+    b'H' as u16, b'a' as u16, b'c' as u16, b'k' as u16, b'M' as u16, b'a' as u16, b's' as u16,
+    b'k' as u16, 0,
+];
+
+// class.c:12651  ClasspScanForSpecialInRegistry: per-device quirk bits the class installer
+// seeds under <device instance>\Classpnp\HackMask, OR-ed into PrivateFdoData->HackFlags.
+// This was an empty body (found by `rustconv body-audit`), so a device whose INF asked for a
+// quirk -- e.g. FDO_HACK_GESN_IS_BAD for a drive that hangs on GESN -- silently never got it.
 #[no_mangle]
 pub unsafe extern "C" fn ClasspScanForSpecialInRegistry(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
 ) {
-    let _ = FdoExtension;
+    use ntkrnl_sys::ddk::{
+        IoOpenDeviceRegistryKey, RtlInitUnicodeString, RtlQueryRegistryValues, ZwOpenKey,
+        ZwClose, RTL_QUERY_REGISTRY_TABLE, _OBJECT_ATTRIBUTES, _UNICODE_STRING,
+    };
+    let mut device_parameter_handle: HANDLE = core::ptr::null_mut();
+    let mut class_parameter_handle: HANDLE = core::ptr::null_mut();
+    let mut device_hacks: u32 = 0;
+
+    'cleanup: {
+        let status = IoOpenDeviceRegistryKey(
+            (*FdoExtension).LowerPdo,
+            1, // PLUGPLAY_REGKEY_DEVICE
+            KEY_WRITE,
+            &mut device_parameter_handle,
+        );
+        if !NT_SUCCESS(status) {
+            break 'cleanup;
+        }
+
+        let mut subkey_name: _UNICODE_STRING = core::mem::zeroed();
+        RtlInitUnicodeString(&mut subkey_name, CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR);
+        // InitializeObjectAttributes
+        let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+        object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
+        object_attributes.RootDirectory = device_parameter_handle;
+        object_attributes.ObjectName = &mut subkey_name;
+        object_attributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE) as u32;
+
+        let status = ZwOpenKey(&mut class_parameter_handle, KEY_READ, &mut object_attributes);
+        if !NT_SUCCESS(status) {
+            break 'cleanup;
+        }
+
+        let mut query_table: [RTL_QUERY_REGISTRY_TABLE; 2] = core::mem::zeroed();
+        query_table[0].Flags = (RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK) as u32;
+        query_table[0].Name = CLASSP_REG_HACK_VALUE_NAME_W.as_ptr() as PWSTR;
+        query_table[0].EntryContext = (&raw mut device_hacks).cast();
+        // (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD; the shift is 24.
+        query_table[0].DefaultType = ((REG_DWORD as u32) << 24) | (REG_DWORD as u32);
+        query_table[0].DefaultData = (&raw mut device_hacks).cast();
+        query_table[0].DefaultLength = 0;
+
+        let status = RtlQueryRegistryValues(
+            RTL_REGISTRY_HANDLE,
+            class_parameter_handle as PWSTR,
+            query_table.as_mut_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if !NT_SUCCESS(status) {
+            break 'cleanup;
+        }
+
+        // Remove unknown values and save.
+        device_hacks &= !(FDO_HACK_INVALID_FLAGS as u32);
+        // HackFlags is ULONG_PTR: u32 or u64 by island, so let the field's type drive the widen.
+        unsafe fn set_flags<T: From<u32> + core::ops::BitOr<Output = T> + Copy>(p: *mut T, v: u32) {
+            *p = *p | T::from(v);
+        }
+        set_flags(&raw mut (*(*FdoExtension).PrivateFdoData).HackFlags, device_hacks);
+    }
+
+    if !device_parameter_handle.is_null() {
+        ZwClose(device_parameter_handle);
+    }
+    if !class_parameter_handle.is_null() {
+        ZwClose(class_parameter_handle);
+    }
 }
 
 // class.c:12507  ClasspInitializeHotplugInfo — boot-safe minimal: zero the struct + set Size.
