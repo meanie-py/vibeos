@@ -61,9 +61,20 @@ pub struct Slot {
     pub usb_address: u32,
     /// Address the controller assigned (informational).
     pub hw_address: u32,
-    /// usbport root port and xHCI Protocol Speed ID.
-    pub port: u32,
+    /// Where the device sits (usbport's root port numbering, the route string
+    /// below it) and its xHCI Protocol Speed ID.
+    pub root_port: u32,
+    pub route: u32,
     pub speed: u32,
+    /// For a low/full-speed device below a high-speed hub: that hub's slot and
+    /// the hub port leading here (Slot Context "Parent Hub Slot ID"/"Parent
+    /// Port Number"), else 0.
+    pub tt_slot: u32,
+    pub tt_port: u32,
+    /// Set once the device's hub descriptor has been seen: bNbrPorts and the
+    /// TT think time, applied to the Slot Context by the next Configure Endpoint.
+    pub hub_ports: u32,
+    pub hub_ttt: u32,
     pub ep0_mps: u32,
     /// Highest DCI with a configured endpoint (Slot Context "Context Entries").
     pub max_dci: u32,
@@ -221,13 +232,25 @@ unsafe fn write_ep_ctx(c: *mut u32, ep_type: u32, mps: u32, interval: u32, ring_
     *c.add(4) = avg_len | (esit << 16);
 }
 
-/// Fill the input Slot Context for a device on a root port.
+/// Fill the input Slot Context (6.2.2).
 unsafe fn write_slot_ctx(x: &XhciExtension, s: &Slot) {
     let c = in_ctx(x, 1);
-    *c.add(0) = (s.speed << 20) | (s.max_dci.max(1) << 27);
-    *c.add(1) = crate::roothub::hw_port(x, s.port as u16) << 16;
-    *c.add(2) = 0;
+    *c.add(0) = s.route | (s.speed << 20) | (s.max_dci.max(1) << 27);
+    *c.add(1) = crate::roothub::hw_port(x, s.root_port as u16) << 16;
+    *c.add(2) = s.tt_slot | (s.tt_port << 8);
     *c.add(3) = 0;
+    apply_hub_fields(c, s);
+}
+
+/// Hub, Number of Ports and TT Think Time for a slot known to be a hub. A
+/// high-speed hub's controller-side TT handling (split transactions for the
+/// low/full-speed devices below it) depends on them.
+unsafe fn apply_hub_fields(c: *mut u32, s: &Slot) {
+    if s.hub_ports != 0 {
+        *c.add(0) |= 1 << 26;
+        *c.add(1) = (*c.add(1) & 0x00FF_FFFF) | (s.hub_ports << 24);
+        *c.add(2) = (*c.add(2) & !(3 << 16)) | (s.hub_ttt << 16);
+    }
 }
 
 // ---- commands (each takes the command lock around the shared input context) ----
@@ -331,6 +354,7 @@ unsafe fn configure_endpoint(x: &mut XhciExtension, ep: &XhciEndpoint, add: bool
     }
     *sc.add(0) = (*sc.add(0) & !(0x1F << 27)) | (x.slots[slot as usize].max_dci << 27);
     *sc.add(3) = 0; // slot state/address are output-only
+    apply_hub_fields(sc, &x.slots[slot as usize]);
 
     if add {
         let p = &ep.props;
@@ -577,12 +601,32 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
     if ep.dci == 1 {
         let slot;
         if addr == 0 {
-            // A new device on root port p.PortNumber. A slot whose default pipe is
-            // closed and that sat on the same port belongs to the device that was
-            // there before (or to this one's previous attempt): free it.
+            // A new device; usbport says where (see USBPORT_SetXhciTopology).
+            let root_port = p.Reserved3 >> 24;
+            let route = p.Reserved3 & 0xF_FFFF;
+            let tt_hub = (p.Reserved6 >> 8) & 0xFF;
+            let tt_port = p.Reserved6 & 0xFF;
+            if root_port == 0 {
+                xlog!("new device (port %u): usbport gave no root port", p.PortNumber as u32);
+                return MP_STATUS_ERROR;
+            }
+            let tt_slot = if tt_hub == 0 {
+                0
+            } else {
+                match (1..=MAX_SLOTS as u32).find(|&s| x.slots[s as usize].in_use && x.slots[s as usize].usb_address == tt_hub) {
+                    Some(s) => s,
+                    None => {
+                        xlog!("new device below hub %u: no slot has that address", tt_hub);
+                        return MP_STATUS_ERROR;
+                    }
+                }
+            };
+            // A slot whose default pipe is closed and that sat at the same place
+            // belongs to the device that was there before (or to this one's
+            // previous attempt): free it.
             for s in 1..=MAX_SLOTS as u32 {
                 let st = &x.slots[s as usize];
-                if st.in_use && !st.ep0_open && st.port == p.PortNumber as u32 {
+                if st.in_use && !st.ep0_open && st.root_port == root_port && st.route == route {
                     disable_slot(x, s);
                 }
             }
@@ -597,7 +641,12 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
             st.in_use = true;
             st.usb_address = 0;
             st.hw_address = 0;
-            st.port = p.PortNumber as u32;
+            st.root_port = root_port;
+            st.route = route;
+            st.tt_slot = tt_slot;
+            st.tt_port = tt_port;
+            st.hub_ports = 0;
+            st.hub_ttt = 0;
             st.speed = psi(p.DeviceSpeed as u32);
             st.ep0_mps = if p.MaxPacketSize != 0 { p.MaxPacketSize } else { 8 };
             st.max_dci = 1;
@@ -607,11 +656,12 @@ pub unsafe extern "system" fn XHCI_OpenEndpoint(
 
             let cc = address_device(x, slot, true);
             if cc != CC_SUCCESS {
-                xlog!("port %u: Address Device (BSR) failed, cc %u", p.PortNumber as u32, cc);
+                xlog!("port %u route %x: Address Device (BSR) failed, cc %u", root_port, route, cc);
                 disable_slot(x, slot);
                 return MP_STATUS_ERROR;
             }
-            xlog!("port %u: new device, slot %u, speed %u, mps %u", p.PortNumber as u32, slot, x.slots[slot as usize].speed, x.slots[slot as usize].ep0_mps);
+            xlog!("port %u route %x: new device, slot %u, speed %u, mps %u, tt slot %u port %u",
+                root_port, route, slot, x.slots[slot as usize].speed, x.slots[slot as usize].ep0_mps, tt_slot, tt_port);
         } else {
             slot = match (1..=MAX_SLOTS as u32).find(|&s| x.slots[s as usize].in_use && x.slots[s as usize].usb_address == addr) {
                 Some(s) => s,
@@ -905,6 +955,26 @@ pub unsafe extern "system" fn XHCI_SubmitIsoTransfer(
     MP_STATUS_NOT_SUPPORTED
 }
 
+/// usbhub reads a hub's class descriptor before opening its status-change
+/// endpoint; remember what the Slot Context needs from it.
+unsafe fn note_hub_descriptor(x: &mut XhciExtension, slot: u32, td: &XhciTransfer) {
+    let setup = core::ptr::read_unaligned(&(*td.params).SetupPacket as *const _ as *const [u8; 8]);
+    // Class GET_DESCRIPTOR, device-to-host. usbhub first asks with descriptor
+    // type 0 (which many hubs accept), then 0x29, so identify the reply by its
+    // own bDescriptorType (0x29, USB 2.0 hub) rather than by wValue.
+    if setup[0] != 0xA0 || setup[1] != 0x06 || td.transferred < 5 || td.caller_va.is_null() {
+        return;
+    }
+    let d = td.caller_va;
+    if *d.add(1) != 0x29 {
+        return;
+    }
+    let st = &mut x.slots[slot as usize];
+    st.hub_ports = *d.add(2) as u32;
+    st.hub_ttt = ((u16::from_le_bytes([*d.add(3), *d.add(4)]) >> 5) & 3) as u32;
+    xlog!("slot %u: hub, %u ports, TT think time %u", slot, st.hub_ports, st.hub_ttt);
+}
+
 /// Hand every finished transfer, in order, back to usbport.
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_PollEndpoint(xhciExtension: PVOID, xhciEndpoint: PVOID) {
@@ -931,6 +1001,8 @@ pub unsafe extern "system" fn XHCI_PollEndpoint(xhciExtension: PVOID, xhciEndpoi
         let status = usbd_status(td.cc);
         if status != USBD_STATUS_SUCCESS {
             xlog!("slot %u ep %u: transfer failed, cc %u", ep.slot, ep.dci, td.cc);
+        } else if ep.dci == 1 {
+            note_hub_descriptor(ext_of(xhciExtension), ep.slot, td);
         }
         if let Some(f) = p.UsbPortCompleteTransfer {
             f(xhciExtension, xhciEndpoint, td.params as PVOID, status, td.transferred);

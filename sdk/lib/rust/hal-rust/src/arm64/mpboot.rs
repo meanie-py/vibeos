@@ -248,59 +248,7 @@ const GICC_FLAGS: usize = 12; // u32, bit 0 = enabled
 const GICC_MPIDR: usize = 68; // u64
 const GICC_MIN_LENGTH: usize = 76;
 
-/// Map `len` bytes of firmware table memory (ordinary RAM: cached is correct,
-/// and ACPI fields are unaligned, which Device memory would fault on).
-unsafe fn map_table(pa: u64, len: usize) -> *const u8 {
-    let mut phys: ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
-    phys.QuadPart = pa as i64;
-    ddk::MmMapIoSpace(phys, len as ddk::SIZE_T, ddk::_MEMORY_CACHING_TYPE_MmCached) as *const u8
-}
-unsafe fn unmap_table(va: *const u8, len: usize) {
-    ddk::MmUnmapIoSpace(va as ddk::PVOID, len as ddk::SIZE_T);
-}
-#[inline]
-unsafe fn rd<T: Copy>(base: *const u8, off: usize) -> T {
-    core::ptr::read_unaligned(base.add(off) as *const T)
-}
-
-/// Call `f(signature, table)` for each table the XSDT lists.
-unsafe fn for_each_table(xsdt_pa: u64, mut f: impl FnMut(&[u8; 4], *const u8, usize)) -> bool {
-    let hdr = map_table(xsdt_pa, 36);
-    if hdr.is_null() {
-        return false;
-    }
-    let ok = rd::<[u8; 4]>(hdr, 0) == *b"XSDT";
-    let xlen = rd::<u32>(hdr, 4) as usize;
-    unmap_table(hdr, 36);
-    if !ok || xlen < 36 {
-        return false;
-    }
-    let xsdt = map_table(xsdt_pa, xlen);
-    if xsdt.is_null() {
-        return false;
-    }
-    for i in 0..(xlen - 36) / 8 {
-        let pa = rd::<u64>(xsdt, 36 + i * 8);
-        let th = map_table(pa, 36);
-        if th.is_null() {
-            continue;
-        }
-        let sig = rd::<[u8; 4]>(th, 0);
-        let len = rd::<u32>(th, 4) as usize;
-        unmap_table(th, 36);
-        if len < 36 {
-            continue;
-        }
-        let t = map_table(pa, len);
-        if t.is_null() {
-            continue;
-        }
-        f(&sig, t, len);
-        unmap_table(t, len);
-    }
-    unmap_table(xsdt, xlen);
-    true
-}
+use super::acpi::{for_each_table, rd};
 
 /// Fill PLATFORM from the firmware's FADT and MADT. Returns false (and says
 /// why) when the firmware did not describe PSCI or any secondary core: this

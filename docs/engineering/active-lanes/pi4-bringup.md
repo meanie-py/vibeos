@@ -623,5 +623,31 @@ four cores.
 ### Open
 
 - A long MP soak on the board (the UP desktop has run for hours).
-- Input: `usbxhci.sys` now types in QEMU (`docs/engineering/usbxhci-design.md`);
-  the Pi's VL805 is its milestone M4.
+
+## Session 6 (2026-09-26 evening) — USB keyboard and mouse on the Pi
+
+A Pico 2 W in a Pi USB port is now the board's keyboard and mouse: text typed
+through it appears in Notepad and its absolute pointer clicks land where aimed
+(bench doc, "USB input: the Pico"). Getting there took seven fixes, each found by
+reading the next silent layer:
+
+1. **XHC0 had no devnode.** The arm64 HAL gained a PnP root that publishes
+   ACPI-only devices (`hal-rust/src/arm64/{acpi,pnpdd}.rs`); XHC0 becomes
+   `ACPI\PNP0D10` with its MMIO, IRQ and a PCI config interface. The controller
+   came up first try (VL805 1106:3483, 16 slots, 5 ports).
+2. **The Pico sits behind the board's VIA USB 2.0 hub**, so its full-speed
+   transfers failed with completion code 36 (split transaction error).
+   usbport now passes the route string, root port and TT to usbxhci.
+3. **`MmGetSystemAddressForMdlSafe` mapped on every call.** It leaked a system
+   mapping per USB transfer (the `MDL_MAPPED_TO_SYSTEM_VA` asserts).
+4. **usbccgp was never on the arm64 ramdisk**, and the loader drops a missing
+   boot driver silently. It now says so.
+5. **usbccgp's select-configuration loop had an invented `- 16`**, so every
+   composite function after the first failed to start.
+6. **arm64input owned `KeyboardClass0`/`PointerClass0`** even with no virtio
+   device, so kbdclass accepted every key into a device nobody read. It now
+   claims the names only for virtio input it finds.
+7. **The hub flag** (Hub, ports, TT think time) now reaches the hub's slot
+   context; usbhub's first hub-descriptor request uses wValue 0.
+
+Field manual entries cover 3-6.

@@ -183,6 +183,7 @@ pub unsafe extern "system" fn HalInitSystem(
 ) -> ddk::BOOLEAN {
     unsafe {
         if BootPhase == 0 {
+            super::pnpdd::register(LoaderBlock);
             HalpCurrentTimeIncrement = 100000;
             HalpNextTimeIncrement = 100000;
             HalpNextIntervalCount = 0;
@@ -306,7 +307,7 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     if Vector as usize >= 1020 {
         return FALSE;
     }
-    super::clock::enable_gic_interrupt(Vector as u32, Irql);
+    super::clock::enable_gic_interrupt(Vector as u32, Irql, InterruptMode == ddk::_KINTERRUPT_MODE_LevelSensitive);
     TRUE
 }
 

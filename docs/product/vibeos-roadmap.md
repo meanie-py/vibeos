@@ -491,8 +491,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 ### Owed work (moved from closed docs)
 - [ ] **Input unification migration** *(input-architecture, roadmap §10a)*: USB HID as the
   default smoke input transport ×3 arches; retire `arm64input` + `i8042prt` (or demote to
-  explicit fallback). The usbxhci gap is closing: the driver exists and types in QEMU
-  (2026-09-26, `docs/engineering/usbxhci-design.md`); the Pi 4 is its next milestone.
+  explicit fallback). The usbxhci gap is closed: USB HID is the Pi 4's keyboard and mouse
+  (2026-09-26, `docs/engineering/usbxhci-design.md`), and arm64input now yields
+  `KeyboardClass0`/`PointerClass0` to kbdclass/mouclass wherever it finds no virtio-input.
 - [ ] **Warm-build driver-relink infra bug** *(input lane)*: warm `vibeos-cli build` doesn't
   relink driver `.sys` after an `ntkrnl-sys` edit — false-fresh family; cost 3 debug rounds.
 - [ ] **KD continuation** *(windbg handoff)*: amd64 same-CPL `int 2Dh` machine-frame
@@ -574,10 +575,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   arm64 `KeAcquireSpinLockRaiseToDpc` only raised IRQL and never took the lock, which
   under real concurrency corrupted the PFN lists (`0x4E`). `smoke --smp 4` 3/3, and the
   Pi runs four cores to the desktop.
-- **Notepad's menu bar renders blank. OPEN** (seen 2026-09-26). The `File Edit Format
-  View Help` bar is an empty strip, on arm64 QEMU and on a Raspberry Pi 4 alike (the
-  smoke screenshot shows it too), while the title bar, status bar and taskbar draw
-  text fine. Not investigated.
+- **Notepad's menu bar renders blank. FIXED on master, cause not traced** (seen
+  2026-09-26 morning on arm64 QEMU and the Pi). The same evening the Pi drew the full
+  `File Edit Format View Help` bar on build `f5abd8cee6a4`; the fix came in with a
+  master merge and was not identified.
 - **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
   would have caught it were broken by one cause and both exited 0. OPEN, owed**
   (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs

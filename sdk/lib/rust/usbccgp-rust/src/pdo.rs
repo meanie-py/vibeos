@@ -833,9 +833,13 @@ pub unsafe extern "C" fn USBCCGP_PDOSelectConfiguration(
         return STATUS_SUCCESS;
     }
 
-    // available buffer length
-    Length = ((*(*Urb).__bindgen_anon_1.UrbSelectConfiguration.as_ref()).Hdr.Length as i32
-        - core::mem::offset_of!(_URB_SELECT_CONFIGURATION, Interface) as i32 - 16) as ULONG;
+    // available buffer length: FIELD_OFFSET(_URB_SELECT_CONFIGURATION,
+    // Interface.Length), and Length is the interface record's first field. (The
+    // translation once subtracted a further 16 here, so the count never reached
+    // 0 and the loop went on to read past the URB: every composite function
+    // but the first failed to start with STATUS_INVALID_PARAMETER.)
+    Length = ((*(*Urb).__bindgen_anon_1.UrbSelectConfiguration.as_ref()).Hdr.Length as usize)
+        .saturating_sub(core::mem::offset_of!(_URB_SELECT_CONFIGURATION, Interface)) as ULONG;
 
     //
     // check all interfaces
@@ -872,6 +876,8 @@ pub unsafe extern "C" fn USBCCGP_PDOSelectConfiguration(
             //
             // invalid parameter
             //
+            ntkrnl_sys::driver_ddk::DbgPrint(b"[USBCCGP] select config: interface %u is not in this function (%u interfaces)\n\0".as_ptr() as *const i8,
+                (*InterfaceInformation).InterfaceNumber as u32, (*(*PDODeviceExtension).FunctionDescriptor).NumberOfInterfaces as u32);
             return STATUS_INVALID_PARAMETER;
         }
 
@@ -1047,7 +1053,9 @@ pub unsafe extern "C" fn USBCCGP_PDOSelectConfiguration(
             FreeItem(NewUrb as PVOID);
         }
 
-        if Length == 0 {
+        // The C loops while Length != 0; also stop at a remainder too short to
+        // hold another interface record, rather than read one past the URB.
+        if (Length as usize) < core::mem::offset_of!(USBD_INTERFACE_INFORMATION, Pipes) {
             break;
         }
     }
