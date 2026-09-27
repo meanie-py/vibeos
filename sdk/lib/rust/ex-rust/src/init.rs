@@ -1403,34 +1403,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     if KeInitSystem() == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 2, 0);
     }
-    #[cfg(target_arch = "x86")]
-    {
-    }
     uart_trace!("[PHASE1] KdInitSystem");
     if KdInitSystem(ExpInitializationPhase, KeLoaderBlock) == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 3, 0);
-    }
-    #[cfg(target_arch = "x86")]
-    {
     }
     uart_trace!("[PHASE1] SeInitSystem");
     if SeInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::SECURITY1_INITIALIZATION_FAILED);
     }
-    #[cfg(target_arch = "x86")]
-    {
-    }
     InbvUpdateProgressBar(10);
-    #[cfg(target_arch = "x86")]
-    {
-    }
     uart_trace!("[PHASE1] ExpCreateSystemRootLink");
     Status = ExpCreateSystemRootLink(LoaderBlock);
     if Status < 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
-    }
-    #[cfg(target_arch = "x86")]
-    {
     }
 
     uart_trace!("[PHASE1] MmInitSystem(1)");
@@ -1438,9 +1423,6 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         KeBugCheck(ntkrnl_sys::bugcodes::MEMORY1_INITIALIZATION_FAILED);
     }
     // DBG: after MmInitSystem(1)
-    #[cfg(target_arch = "x86")]
-    {
-    }
 
     #[cfg(target_arch = "aarch64")]
     {
