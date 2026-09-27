@@ -47,6 +47,7 @@ for A in $ARCHES; do
 
     REF="$B/libucrt_ref.a"
     RUST="$B/libucrt_rust.a"
+    OURS="$B/libucrt_ours.a"
     # UCRTDIFF_REUSE_INPUTS=1 keeps the reference set, the rust set and the case list
     # from the previous run instead of rebuilding them. None of the three depends on
     # the shard (only the -D flags below do), and a TAKEOVER CHECK needs them frozen:
@@ -55,7 +56,7 @@ for A in $ARCHES; do
     # bodies from ref_ AND (the burn-down now calling those exports ours) drop the
     # exports from the case list -- every later shard grading less, with no error.
     if [ "${UCRTDIFF_REUSE_INPUTS:-0}" = "1" ]; then
-        for f in "$REF" "$RUST" "$HERE/generated.inc" "$HERE/generated-refs.h"; do
+        for f in "$REF" "$RUST" "$OURS" "$HERE/generated.inc" "$HERE/generated-refs.h"; do
             [ -s "$f" ] || { echo "[ucrtdiff] FAIL($A): UCRTDIFF_REUSE_INPUTS=1 but $f is missing"; exit 1; }
         done
         echo "[ucrtdiff] $A: REUSING the reference set, rust set and case list (frozen)"
@@ -71,6 +72,13 @@ for A in $ARCHES; do
     echo "[ucrtdiff] building the $A msvcrt-rust set"
     python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side msvcrt-rust
     [ -s "$RUST" ] || { echo "[ucrtdiff] FAIL($A): $RUST missing"; exit 1; }
+
+    # The internals a takeover moved to Rust that the REMAINING Microsoft objects still
+    # call (the locale hooks, __acrt_CompareStringA...). Only those keep their names;
+    # see build_internals_set.
+    echo "[ucrtdiff] building the $A reference-internals set"
+    python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side ucrt-internals
+    [ -s "$OURS" ] || { echo "[ucrtdiff] FAIL($A): $OURS missing"; exit 1; }
     fi
 
     # The ucrtbase IMPORT LIB is what makes the bare side resolve to our shipping
@@ -122,6 +130,7 @@ for A in $ARCHES; do
         -Wl,--start-group \
         "$REF" \
         "$RUST" \
+        "$OURS" \
         "$IMPLIB" \
         "$B/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" \
         "$B/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a" \

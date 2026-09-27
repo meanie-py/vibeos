@@ -1,6 +1,5 @@
 
 list(APPEND UCRT_CONVERT_SOURCES
-    convert/atof.cpp
     convert/atoldbl.cpp
     convert/c16rtomb.cpp
     convert/c32rtomb.cpp

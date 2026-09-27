@@ -689,6 +689,20 @@ HAND_GRADED = (
     "_fstat32i64",
     "_fstat64i32",
     "_fstat64",
+    # run_loc_* (locale/*.cpp, mbstring/mbctype.cpp): one family, one guard.
+    "setlocale",
+    # The second fan-out batch: one guard per C file (tools/payloads/ucrtdiff/staging/).
+    "atof",
+    "_ctime32",
+    "_get_daylight",
+    "__p___argc",
+    "_aligned_malloc",
+    "_invalid_parameter",
+    "_sopen_dispatch",
+    "_spawnv",
+    "_spawnvp",
+    "_spawnl",
+    "_spawnlp",
 )
 
 

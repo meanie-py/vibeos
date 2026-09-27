@@ -18,8 +18,12 @@ RES="${TOOLCHAIN}/lib/clang/19/include"
 OUT_DIR="${SCRIPT_DIR}/src"
 WRAPPER="${SCRIPT_DIR}/wrapper.h"
 
-# The ninja build statement we lift DEFINES/INCLUDES/FLAGS from.
-NINJA_RULE='win32k.dir/user/ntuser/main.c.obj:'
+# The ninja build statement we lift DEFINES/INCLUDES/FLAGS from. win32k.sys is
+# cargo-linked now and has no C compile of its own; the C residue archive
+# (win32ss/CMakeLists.txt, `win32k_residue`) compiles with the same include dirs,
+# defines and pch, so its TUs carry the flag set. The old `win32k.dir/…/main.c`
+# rule vanished with the C tree and left this generator unable to run at all.
+NINJA_RULE='win32k_residue.dir/user/ntuser/main_rust_shims.c.obj:'
 
 # Type allowlist '.+' (struct field types chain everywhere — need all).
 # Function allowlist covers the win32k-internal naming families; the
@@ -63,7 +67,14 @@ run_bindgen() {
         -- -ferror-limit=0 -Wno-everything $SANITIZED $DEFINES $INCLUDES \
         -isystem "$RES" --target="${TARGET}"
 
-    python3 "${SCRIPT_DIR}/postprocess_bindgen.py" "$RAW" "$ARCH" "$FINAL"
+    # bindgen emits no constant for a cast macro (`#define OBJID_CLIENT ((LONG)0xFFFFFFFC)`,
+    # winuser.h's spelling since the upstream merge); the preprocessor's final macro table
+    # lets the postprocessor recover the integer-literal casts. One -E pass, seconds.
+    local MACROS="/tmp/win32k_bindgen_${ARCH}_macros.h"
+    "${TOOLCHAIN}/bin/clang" -dM -E -x c "$WRAPPER" -ferror-limit=0 -Wno-everything \
+        $SANITIZED $DEFINES $INCLUDES -isystem "$RES" --target="${TARGET}" > "$MACROS"
+
+    python3 "${SCRIPT_DIR}/postprocess_bindgen.py" "$RAW" "$ARCH" "$FINAL" --macro-dump "$MACROS"
 }
 
 run_bindgen i386  i686-pc-windows-gnu

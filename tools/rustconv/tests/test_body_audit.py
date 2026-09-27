@@ -242,3 +242,83 @@ VOID Open(PFCB f)
     assert audit([cf], [rf], tmp_path) == []
     rf.write_text("use ntkrnl_sys::seh::try_finally;\n" + rust)
     assert audit([cf], [rf], tmp_path)[0].dropped == ["FatDeleteFcb"]
+
+
+def test_a_dead_c_file_superseded_by_live_c_is_not_a_translation(tmp_path):
+    """gdi32: Wine's enhmfdrv/bitblt.c sits unbuilt beside the live emfdrv.c stub it lost to."""
+    c = "BOOL EMFDRV_PatBlt(PHYSDEV d)\n{\n    EMFDRV_WriteRecord(d);\n    EMFDRV_UpdateBBox(d);\n}\n"
+    glue = "BOOL EMFDRV_PatBlt(WINEDC *dc)\n{\n    return TRUE;\n}\n"
+    assert _run(tmp_path, c, "pub fn unrelated() {}\n", glue=glue) == {}
+
+
+def test_a_commented_out_feature_switch_pins_its_guard_off(tmp_path):
+    """wlansvc: `//#define GET_IF_ENTRY2_IMPLEMENTED 1` leaves the UNIMPLEMENTED arm live."""
+    from rustconv.body_audit import disabled_switches
+
+    c = """//#define GET_IF_ENTRY2_IMPLEMENTED 1
+//#define ALSO_ON 1
+#define ALSO_ON 1
+DWORD Enum(PVOID p)
+{
+#if GET_IF_ENTRY2_IMPLEMENTED
+    GetIfEntry2(p);
+#else
+    UNIMPLEMENTED;
+#endif
+    return 0;
+}
+"""
+    (tmp_path / "rpc.c").write_text(c)
+    pins = disabled_switches(tmp_path, "")
+    assert pins == {"GET_IF_ENTRY2_IMPLEMENTED": 0}
+    rf = tmp_path / "rpc.rs"
+    rf.write_text("pub unsafe fn Enum(p: PVOID) -> u32 { 0 }\n")
+    assert audit([tmp_path / "rpc.c"], [rf], tmp_path, pins=pins) == []
+    assert audit([tmp_path / "rpc.c"], [rf], tmp_path)[0].dropped == ["GetIfEntry2"]
+
+
+def test_version_aliases_pin_and_an_inlined_completion_routine_is_kept(tmp_path):
+    """fastfat: FatOpenVolume's `NTDDI_VISTA` guard; FatSingleAsync's hand-expanded
+    IoSetCompletionRoutine."""
+    from rustconv.body_audit import version_pins
+
+    inc = tmp_path / "sdk" / "include" / "psdk"
+    inc.mkdir(parents=True)
+    (inc / "sdkddkver.h").write_text(
+        "#define NTDDI_WIN6 0x06000000\n#define NTDDI_VISTA NTDDI_WIN6\n"
+        "#define NTDDI_WS03SP1 0x05020100\n"
+    )
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "CMakeLists.txt").write_text("")
+    pins = version_pins(mod, tmp_path)
+    assert pins["NTDDI_VISTA"] == 0x06000000
+    c = """
+VOID Open(PIRP Irp)
+{
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+    FsRtlAreVolumeStartupApplicationsComplete();
+#endif
+    IoSetCompletionRoutine(Irp, Done, 0, TRUE, TRUE, TRUE);
+}
+"""
+    cf = mod / "o.c"
+    cf.write_text(c)
+    rf = mod / "o.rs"
+    rf.write_text("pub unsafe fn Open(Irp: PIRP) { (*sp).CompletionRoutine = Some(Done); }\n")
+    assert audit([cf], [rf], tmp_path, pins=pins) == []
+
+
+def test_a_nested_macro_called_by_name_keeps_what_it_expands_to(tmp_path):
+    """fastfat's FatLocateDirent expands FatReadDirent inline and calls the cohab FUNCTION
+    FatUnpinBcb, which stands in for the FatUnpinBcb -> CcUnpinData macro."""
+    c = "VOID Locate(PBCB *b)\n{\n    FatReadDirent(b);\n}\n"
+    macros = {
+        "FatReadDirent": "{ FatUnpinBcb(b); FatReadDirectoryFile(b); }",
+        "FatUnpinBcb": "{ CcUnpinData(b); }",
+    }
+    rust = "pub unsafe fn Locate(b: *mut PBCB) { FatUnpinBcb(b); FatReadDirectoryFile(b); }\n"
+    assert _run(tmp_path, c, rust, macros=macros) == {}
+    rust_lost = "pub unsafe fn Locate(b: *mut PBCB) { FatReadDirectoryFile(b); }\n"
+    got = _run(tmp_path, c, rust_lost, macros=macros)["Locate"]
+    assert got.dropped == ["FatReadDirent(->CcUnpinData)"]
