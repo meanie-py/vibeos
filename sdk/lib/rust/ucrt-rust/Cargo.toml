@@ -168,6 +168,15 @@ stdio-files = ["stdio"]
 # input.cpp and corecrt_internal_stdio_input.h: the scanf engine.
 stdio-input = ["stdio", "strtox", "strtod"]
 
+# The sixth fan-out batch (one directory module each; see the module docs).
+# convert/ -- the rest: mbrtowc/wcrtomb/mbstowcs/wcstombs/wctomb/mblen/mbtowc,
+# c16/c32 conversions, fcvt/gcvt, atoldbl, _mbslen family, swab, wctrans
+convert-rest = ["strtod"]
+# misc/ -- errno/strerror/perror, cwd and drives, signal/terminate, beep, pid, systime
+misc = []
+# filesystem/ -- makepath/splitpath, access, fullpath, unlink/rename, mkdir/rmdir, chmod
+filesystem = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
 # `VaArgs`: reading C varargs on stable. The `...` entry points themselves are
