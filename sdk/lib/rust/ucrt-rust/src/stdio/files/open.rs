@@ -34,8 +34,8 @@ use crate::stdio::{allocate_stream, free_stream, Stream};
 use crate::stdio_layout::flags::STREAM_ALLOCATED;
 
 const EINVAL: c_int = 22;
-const EBADF: c_int = 9;
-const EMFILE: c_int = 24;
+const ERRNO_EBADF: c_int = 9;
+const CRT_EMFILE: c_int = 24;
 
 const SH_DENYNO: c_int = 0x40;
 const SH_SECURE: c_int = 0x80;
@@ -145,7 +145,7 @@ unsafe fn common_fsopen<P: OpenChar>(file_name: P, mode: P, share_flag: c_int) -
     // Obtain a free stream. Note that the stream is returned locked.
     let stream = allocate_stream();
     if !stream.valid() {
-        *_errno() = EMFILE;
+        *_errno() = CRT_EMFILE;
         return null_mut();
     }
 
@@ -211,7 +211,7 @@ unsafe fn common_freopen<P: OpenChar>(result: *mut *mut c_void, file_name: P, mo
     // We do not currently support changing just the mode of an already-open
     // stream (a null file_name in C11); this is a hard failure.
     if file_name.is_null() {
-        return invalid_errcode_noexc(EBADF);
+        return invalid_errcode_noexc(ERRNO_EBADF);
     }
     if mode.is_null() {
         return invalid_errcode(EINVAL);
@@ -286,14 +286,14 @@ unsafe fn common_fdopen<P: OpenChar>(fh: c_int, mode: P) -> *mut c_void {
 
     // _CHECK_FH_RETURN: no handler call, errno only.
     if fh as isize == crate::stdio::NO_CONSOLE_FILENO {
-        *_errno() = EBADF;
+        *_errno() = ERRNO_EBADF;
         return null_mut();
     }
     if !(fh >= 0 && (fh as u32) < (_nhandle as u32)) {
-        return invalid_ret(EBADF);
+        return invalid_ret(ERRNO_EBADF);
     }
     if super::raw_lowio::osfile_unchecked(fh) & FOPEN == 0 {
-        return invalid_ret(EBADF);
+        return invalid_ret(ERRNO_EBADF);
     }
 
     let parsed = parse_mode(mode);
@@ -303,7 +303,7 @@ unsafe fn common_fdopen<P: OpenChar>(fh: c_int, mode: P) -> *mut c_void {
 
     let stream = allocate_stream();
     if !stream.valid() {
-        *_errno() = EMFILE;
+        *_errno() = CRT_EMFILE;
         return null_mut();
     }
 
