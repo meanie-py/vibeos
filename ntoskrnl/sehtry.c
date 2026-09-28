@@ -42,9 +42,23 @@ unsigned char __cdecl
 RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *FilterContext,
                 long *ExceptionCode)
 {
+#if defined(__aarch64__)
+    /* arm64 dispatches a kernel fault with IRQs masked (the sync-exception path keeps
+     * DAIF as the exception entry left it), and the except block resumes on a CONTEXT
+     * captured during that dispatch, so it would carry on masked: a synchronously
+     * completed IRP's completion APC then cannot run before IoCallDriver returns (the
+     * amd64 fastfat stack-event corruption). Record I at try entry and put it back,
+     * as the i386 path below does with IF. amd64 fixes this at the trap instead. */
+    volatile unsigned long Daif;
+    __asm__ __volatile__("mrs %0, daif" : "=r"(Daif));
+#endif
     __try {
         Body(BodyContext);
     } __except (Filter ? Filter(FilterContext, _exception_info()) : 1) {
+#if defined(__aarch64__)
+        if (!(Daif & 0x80 /* PSTATE.I */))
+            __asm__ __volatile__("msr daifclr, #2" ::: "memory");
+#endif
         if (ExceptionCode)
             *ExceptionCode = _exception_code();
         return 1;

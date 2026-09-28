@@ -598,7 +598,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   without waiting. The APC ran later and set a KEVENT in a dead frame, overwriting the
   retry's saved RBP. The next dispatch walked into that value and looped.
   `KiBreakpointTrap` and `KiGeneralProtectionFault` now dispatch with the trapped frame's IF
-  (as `KiPageFault` already did). With the tag-0 repro restored, the boot survives and the
+  (as `KiPageFault` already did). The new check found the same bug on arm64 (`irqs=1/0`),
+  where the sync-exception path keeps DAIF masked on purpose. There `RtlSehTryExcept`
+  restores PSTATE.I on the catch, as the i386 catch already restored IF. Native C
+  `__try`/`__except` on arm64 still resumes masked; the trap-level fix is owed to the arm64
+  lanes. With the tag-0 repro restored, the boot survives and the
   retried mount succeeds. The per-boot `[SEH-TRY] rust hw faults` test now checks IRQs
   after each catch (`irqs=1/1`), and smoke fails any self-test `(FAIL)` line
   (`SELFTEST_FAIL`); until then nothing read those verdicts. Found with `gdb probe`, whose

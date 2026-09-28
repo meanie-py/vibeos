@@ -1743,10 +1743,18 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         // fastfat's next synchronous IRP left its IopCompleteRequest APC pending
         // until after the caller's stack event was gone.
         fn irqs_on() -> bool {
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            // Spell the width: Intel-syntax `pushf` assembles to the 16-bit `pushfw` on
+            // i386, and the 32-bit pop then leaves ESP two bytes off.
+            #[cfg(target_arch = "x86")]
             {
                 let flags: usize;
-                unsafe { core::arch::asm!("pushf", "pop {}", out(reg) flags) };
+                unsafe { core::arch::asm!("pushfd", "pop {}", out(reg) flags) };
+                flags & 0x200 != 0
+            }
+            #[cfg(target_arch = "x86_64")]
+            {
+                let flags: usize;
+                unsafe { core::arch::asm!("pushfq", "pop {}", out(reg) flags) };
                 flags & 0x200 != 0
             }
             #[cfg(target_arch = "aarch64")]
