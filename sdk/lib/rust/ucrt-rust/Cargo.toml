@@ -155,6 +155,19 @@ string-ops = []
 # time/*.cpp -- tzset, localtime/gmtime/mktime, strftime/wcsftime, asctime, utime, ftime...
 time = ["timeset"]
 
+# The stdio batch (sdk/lib/ucrt/stdio/*). `stdio` is the stream core --
+# _file.cpp, stream.cpp and the header-inline __crt_stdio_stream -- and the three
+# pieces over it call one another by the C names (see src/stdio/mod.rs).
+stdio = []
+# _getbuf/_freebuf/_sftbuf/_filbuf/_flsbuf, the character I/O (fgetc..putws,
+# ungetc/ungetwc, getw/putw, gets/fgets/puts/fputs), and the temp-name family.
+stdio-bufio = ["stdio"]
+# openfile/fopen/freopen/fdopen/fclose/closeall, fflush, fread/fwrite,
+# fseek/ftell/fgetpos/fsetpos/rewind, setbuf/setvbuf, and the small accessors.
+stdio-files = ["stdio"]
+# input.cpp and corecrt_internal_stdio_input.h: the scanf engine.
+stdio-input = ["stdio", "strtox", "strtod"]
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
 # `VaArgs`: reading C varargs on stable. The `...` entry points themselves are

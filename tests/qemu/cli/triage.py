@@ -18,6 +18,10 @@ _BUGCHECK = re.compile(
     r"BugCheck\s+(0x[0-9A-Fa-f]+)|\*\*\*\s*(?:STOP|BUGCHECK):?\s*(0x[0-9A-Fa-f]+)"
 )
 _RUST_PANIC = re.compile(r"RUST PANIC HIT.*?PANIC LOC:\s*(\S+)", re.S)
+# Per-boot self-tests (`[SEH-TRY] ... (PASS)`, `[KMSAFECOPY] ... (FAIL)`, ...) print
+# a verdict nothing read: amd64 dispatched a kernel int3 with interrupts off for
+# weeks while its except block ran, which only fastfat's stack corruption exposed.
+_SELFTEST_FAIL = re.compile(r"\[[A-Z][A-Z0-9_-]*\][^\n]*?\(FAIL\)")
 _RUST_PANIC2 = re.compile(r"panicked at\s+'([^']*)',\s*(\S+)")
 # Kernel-mode Rust panic: the kernel-rust/rtl-rust panic handlers emit
 # `PANIC:<file>:<line>` to debugcon (port 0xE9) ONLY — serial goes silent, so
@@ -215,6 +219,13 @@ def post_boot_check(serial: str, debugcon_raw: str | None = None) -> dict | None
             "salient": salient + _flake_note(flake),
             "known_flake": flake["name"] if flake else None,
             **fields,
+        }
+    st = _SELFTEST_FAIL.search(serial)
+    if st:
+        return {
+            "classification": "SELFTEST_FAIL",
+            "salient": [f"boot self-test failed: {st.group(0)[:160]}"],
+            "known_flake": None,
         }
     return None
 

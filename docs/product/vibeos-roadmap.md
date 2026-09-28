@@ -599,25 +599,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`MiUnmapLowGuardArm64`; serial `[MM] arm64: low guard ... MmIsAddressValid(0x10)=0`,
   QEMU and Pi 4). The Pi4 spin table was not a reason to keep it: APs start by PSCI CPU_ON
   with their own identity map, and hal-rust never touches PA 0xd8-0xf0.
-- **amd64: an exception unwound through a fastfat frame looped until the stack overflowed
-  (0x7F/8) — TRIGGER FIXED, UNWIND CAUSE OPEN** (2026-09-26). fastfat's first real-SEH
-  gate with the C:\TEMP disk attached: `FatAllocateCloseContext` allocated with pool tag 0
-  (the translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
-  `PoolHitTag`'s default, so `ExpInsertPoolTracker` hit its `DbgBreakPoint`. Under dummy
-  PSEH nothing caught that int3 and the boot went on; now `FatExceptionFilter` takes it
-  (BREAKPOINT is an "expected" status) and the unwind faulted inside `rtl_except`
-  (`SetRegFromStackValue`), re-dispatched, and repeated: the stack is
-  `KiDispatchException -> RtlDispatchException -> __C_specific_handler -> RtlpUnwindInternal
-  -> PageFaultReturn` about 20 times over. Fixed: that tag, `TAG_EA_SET_HEADER` in easup,
-  `TAG_SCSIPORT` in scsiport and `DISK_TAG_SMART` in diskwmi (a sweep of every kernel
-  crate for a literal-0 tag). **Not explained:** the same int3 raised from kernel Rust
-  frames unwinds fine (the per-boot `[SEH-TRY] rust hw faults ... pooltrack=` case), so
-  the bad unwind is specific to a frame in `fastfat.sys` (374 of its functions use
-  `SET_FPREG` with a non-zero frame offset). Repro: put a tag-0 allocation back in
-  `FatAllocateCloseContext` and boot amd64. Two tool gaps found on the way: `gdb start`
-  now attaches the same TEMP disk as smoke (it did not, so the crash could not be
-  reproduced under gdb), and `gdb run-until --break KeBugCheckEx` still sets the
-  breakpoint at the unrelocated link address (`0x49f942`) and never fires.
+- **amd64: an exception caught in fastfat looped until the stack overflowed (0x7F/8) —
+  FIXED** (2026-09-27). The trigger was `FatPreallocateCloseContext`'s pool tag 0 (the
+  translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
+  `PoolHitTag`'s default and hit the pool tracker's `DbgBreakPoint`. That tag was fixed on
+  2026-09-26, along with a sweep of every kernel crate for a literal-0 tag. The unwinder was
+  innocent. `KiBreakpointTrap` dispatched a kernel int3 with IF=0, and the except block that
+  caught it resumed with interrupts still off. FatMountVolume's retry then sent
+  `IOCTL_DISK_GET_PARTITION_INFO_EX`: it completed synchronously, but its
+  `IopCompleteRequest` APC (a self-IPI) could not fire, so `FatPerformDevIoCtrl` returned
+  without waiting. The APC ran later and set a KEVENT in a dead frame, overwriting the
+  retry's saved RBP. The next dispatch walked into that value and looped.
+  `KiBreakpointTrap` and `KiGeneralProtectionFault` now dispatch with the trapped frame's IF
+  (as `KiPageFault` already did). The new check found the same bug on arm64 (`irqs=1/0`),
+  where the sync-exception path keeps DAIF masked on purpose. There `RtlSehTryExcept`
+  restores PSTATE.I on the catch, as the i386 catch already restored IF. Native C
+  `__try`/`__except` on arm64 still resumes masked; the trap-level fix is owed to the arm64
+  lanes. With the tag-0 repro restored, the boot survives and the
+  retried mount succeeds. The per-boot `[SEH-TRY] rust hw faults` test now checks IRQs
+  after each catch (`irqs=1/1`), and smoke fails any self-test `(FAIL)` line
+  (`SELFTEST_FAIL`); until then nothing read those verdicts. Found with `gdb probe`, whose
+  hardware watchpoint armed at function entry named `KeSetEvent` as the writer.
 - **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
   (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
   volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's

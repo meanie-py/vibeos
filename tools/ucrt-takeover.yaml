@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 381
-  amd64: 381
-  arm64: 380
+  i386: 277
+  amd64: 277
+  arm64: 276
 
 families:
   bits:
@@ -1304,3 +1304,129 @@ families:
       - clock
       - strftime
       - wcsftime
+
+  stdio:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/stdio/ (all 48 .cpp)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: each side on its own temp files and
+      its own standard streams (freopen'd, since the harness has no console), with
+      file contents read back through Win32 ReadFile; open modes valid and invalid,
+      text/binary round trips across the 4 KiB buffer, seek/tell (past 4 GiB for the
+      64-bit forms), ungetc, the _nolock and wide forms, tmpfile/_tempnam by shape,
+      and a scanf corpus through __stdio_common_vsscanf/vswscanf/vfscanf/vfwscanf.
+      All MATCH, dll_fail=0 -- 9,816 cases over 59 rows.
+    note: >
+      A PORT, in four parts (src/stdio/): the stream core (_file.cpp, stream.cpp,
+      the header-inline __crt_stdio_stream) written first, then buffering and
+      character I/O, open/close/position, and the scanf engine
+      (corecrt_internal_stdio_input.h, which stays: conio/cscanf.cpp still
+      includes it). The whole __crt_stdio_stream_data record is pinned
+      (src/stdio_layout.rs); the stream flags are STREAM_* because msvcrt's _IO*
+      values differ. The pieces call one another by the C names.
+    exports:
+      - __stdio_common_vfscanf
+      - __stdio_common_vfwscanf
+      - __stdio_common_vsscanf
+      - __stdio_common_vswscanf
+      - __acrt_iob_func
+      - __p__commode
+      - _fclose_nolock
+      - _fcloseall
+      - _fdopen
+      - _fflush_nolock
+      - _fgetc_nolock
+      - _fgetchar
+      - _fgetwc_nolock
+      - _fgetwchar
+      - _fileno
+      - _flushall
+      - _fputc_nolock
+      - _fputchar
+      - _fputwc_nolock
+      - _fputwchar
+      - _fread_nolock
+      - _fread_nolock_s
+      - _fseek_nolock
+      - _fseeki64
+      - _fseeki64_nolock
+      - _fsopen
+      - _ftell_nolock
+      - _ftelli64
+      - _ftelli64_nolock
+      - _fwrite_nolock
+      - _get_printf_count_output
+      - _get_stream_buffer_pointers
+      - _getc_nolock
+      - _getmaxstdio
+      - _getw
+      - _getwc_nolock
+      - _getws
+      - _getws_s
+      - _lock_file
+      - _putc_nolock
+      - _putw
+      - _putwc_nolock
+      - _putws
+      - _rmtmp
+      - _set_printf_count_output
+      - _setmaxstdio
+      - _tempnam
+      - _ungetc_nolock
+      - _ungetwc_nolock
+      - _unlock_file
+      - _wfdopen
+      - _wfopen
+      - _wfopen_s
+      - _wfreopen
+      - _wfreopen_s
+      - _wfsopen
+      - _wtempnam
+      - _wtmpnam
+      - _wtmpnam_s
+      - clearerr
+      - clearerr_s
+      - fclose
+      - feof
+      - ferror
+      - fflush
+      - fgetc
+      - fgetpos
+      - fgets
+      - fgetwc
+      - fgetws
+      - fopen
+      - fopen_s
+      - fputc
+      - fputs
+      - fputwc
+      - fputws
+      - fread
+      - fread_s
+      - freopen
+      - freopen_s
+      - fseek
+      - fsetpos
+      - ftell
+      - fwrite
+      - getc
+      - getchar
+      - gets
+      - gets_s
+      - getwc
+      - getwchar
+      - putc
+      - putchar
+      - puts
+      - putwc
+      - putwchar
+      - rewind
+      - setbuf
+      - setvbuf
+      - tmpfile
+      - tmpfile_s
+      - tmpnam
+      - tmpnam_s
+      - ungetc
+      - ungetwc

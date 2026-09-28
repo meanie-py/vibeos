@@ -5941,6 +5941,26 @@ captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A
 that keeps its frame pointer in `esi` across the call faults on the next line. Save them
 around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
 
+**amd64 trap: the catch resumed with interrupts OFF.** Symptom: fastfat caught a kernel
+int3 in `FatMountVolume`, retried the mount, and the retry's dispatch walked into garbage
+(saved RBP `0x00000001_xxxxxxxx`) until the stack overflowed (0x7F/8). Nothing was wrong
+with the unwinder. `KiBreakpointTrap` (and `KiGeneralProtectionFault`) dispatched a
+kernel-mode fault with IF=0, and `RtlUnwindEx` resumes the except block on a CONTEXT
+captured during dispatch, so the thread carried on with interrupts disabled. The next
+`FatPerformDevIoCtrl` IRP completed synchronously, but its `IopCompleteRequest` APC is a
+self-IPI that cannot fire with IF=0. So `IoCallDriver` returned without waiting and the APC
+ran seconds later, `KeSetEvent`-ing a stack KEVENT whose frame was gone. Fix: dispatch with
+the trapped frame's IF, as `KiPageFault` already did. arm64 had it too (`irqs=1/0`).
+There the sync-exception path keeps DAIF masked by design, so instead `RtlSehTryExcept`
+records PSTATE.I at try entry and restores it on the catch, as i386's hand-built catch
+already did. `[SEH-TRY] rust hw faults ... irqs=1/1`
+checks it on each boot, and smoke fails any `(FAIL)` self-test line (`SELFTEST_FAIL`). The
+general move for "a stack slot changed and nobody wrote it": `gdb probe` with a hardware
+`watch -l` armed at the owning function's entry names the writer on the first try.
+Aside: in Rust `asm!` (Intel syntax) a bare `pushf` assembles to the 16-bit `pushfw` on
+i386. Paired with a 32-bit `pop`, it left ESP two bytes off, and every local printed as
+garbage. Write `pushfd`/`pushfq`.
+
 **Converting a module (cdfs, 2026-09-26):** the translated `__finally` is usually a
 labeled `loop { ... break; }` followed by inline cleanup. Move the loop verbatim into
 `try_finally`'s body and the cleanup into `fin`; a local the finally reads that the body

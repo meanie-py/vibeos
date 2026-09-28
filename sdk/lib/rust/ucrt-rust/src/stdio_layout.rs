@@ -1,21 +1,50 @@
-//! The two stdio/lowio records the formatted-output family reads directly:
-//! UCRT's `FILE` (`__crt_stdio_stream_data`) and a lowio handle
-//! (`__crt_lowio_handle_data`).
+//! The stdio and lowio records Rust reads directly: UCRT's `FILE`
+//! (`__crt_stdio_stream_data`, whole, with the stream state flags) and a lowio
+//! handle (`__crt_lowio_handle_data`, only the fields read here).
 //!
-//! Only the fields a caller here actually reads are named; the rest is carried
-//! as padding of the measured size, so a wrong guess cannot hide behind a field
-//! nobody touches. Offsets were measured with the build's own compiler flags on
-//! all three targets and are asserted on every build, for the same reason as
-//! `ptd.rs`: the headers they came from are vendored source that is going away.
+//! Offsets were measured with the build's own compiler flags on all three
+//! targets and are asserted on every build, for the same reason as `ptd.rs`:
+//! the headers they came from are vendored source that is going away. Always
+//! compiled, like `locale.rs`: it defines no symbols, and its pins must hold.
 
 use core::ffi::{c_char, c_int, c_long};
+
+/// The stream state flags (corecrt_internal_stdio.h's anonymous `enum : long`).
+/// Distinct from msvcrt's `_IO*` values -- `_IOEOF` is 0x10 there, 0x08 here -- so
+/// they carry a `STREAM_` prefix rather than the C names.
+pub mod flags {
+    use core::ffi::c_long;
+    pub const STREAM_READ: c_long = 0x0001;
+    pub const STREAM_WRITE: c_long = 0x0002;
+    pub const STREAM_UPDATE: c_long = 0x0004;
+    pub const STREAM_EOF: c_long = 0x0008;
+    pub const STREAM_ERROR: c_long = 0x0010;
+    pub const STREAM_CTRLZ: c_long = 0x0020;
+    pub const STREAM_BUFFER_CRT: c_long = 0x0040;
+    pub const STREAM_BUFFER_USER: c_long = 0x0080;
+    pub const STREAM_BUFFER_SETVBUF: c_long = 0x0100;
+    pub const STREAM_BUFFER_STBUF: c_long = 0x0200;
+    pub const STREAM_BUFFER_NONE: c_long = 0x0400;
+    pub const STREAM_COMMIT: c_long = 0x0800;
+    pub const STREAM_STRING: c_long = 0x1000;
+    pub const STREAM_ALLOCATED: c_long = 0x2000;
+}
 
 /// `_IOSTRING` (corecrt_internal_stdio.h): the stream is backed by a caller's
 /// string, not a file -- `sprintf`'s fake FILE, and `_vsnprintf(NULL, 0, ...)`'s
 /// counting-only one, which has a null `_base`.
-pub const IOSTRING: c_long = 0x1000;
+pub const IOSTRING: c_long = flags::STREAM_STRING;
 
-/// `__crt_stdio_stream_data`, through its public `FILE*`.
+/// `CRITICAL_SECTION`, opaque: 24 bytes on i386, 40 on the 64-bit targets.
+#[repr(C)]
+pub struct CriticalSection([usize; if cfg!(target_pointer_width = "64") { 5 } else { 6 }]);
+
+impl CriticalSection {
+    pub const ZERO: Self = CriticalSection([0; if cfg!(target_pointer_width = "64") { 5 } else { 6 }]);
+}
+
+/// `__crt_stdio_stream_data`, through its public `FILE*` (the union's `_ptr`
+/// member is the `FILE`).
 #[repr(C)]
 pub struct StreamData {
     pub ptr: *mut c_char,
@@ -23,6 +52,10 @@ pub struct StreamData {
     pub cnt: c_int,
     pub flags: c_long,
     pub file: c_long,
+    pub charbuf: c_int,
+    pub bufsiz: c_int,
+    pub tmpfname: *mut c_char,
+    pub lock: CriticalSection,
 }
 
 impl StreamData {
@@ -49,6 +82,11 @@ mod pinned_stream {
     pin_stream!(cnt, 8);
     pin_stream!(flags, 12);
     pin_stream!(file, 16);
+    pin_stream!(charbuf, 20);
+    pin_stream!(bufsiz, 24);
+    pin_stream!(tmpfname, 28);
+    pin_stream!(lock, 32);
+    const _: () = assert!(core::mem::size_of::<StreamData>() == 56);
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -59,6 +97,11 @@ mod pinned_stream {
     pin_stream!(cnt, 16);
     pin_stream!(flags, 20);
     pin_stream!(file, 24);
+    pin_stream!(charbuf, 28);
+    pin_stream!(bufsiz, 32);
+    pin_stream!(tmpfname, 40);
+    pin_stream!(lock, 48);
+    const _: () = assert!(core::mem::size_of::<StreamData>() == 88);
 }
 
 /// `__crt_lowio_text_mode::ansi` -- the other two are utf8 (1) and utf16le (2).
