@@ -48,8 +48,11 @@ extern "C" {
 
 // ── the parse result ──────────────────────────────────────────────────────────
 
+/// `floating_point_parse_result`. Crate-visible, with [`parse_floating_point_string`],
+/// for a caller that assembles a type of its own -- `_atoldbl`'s `_LDBL12`, as in the
+/// C, where the assembly step is an overload chosen by type.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ParseResult {
+pub(crate) enum ParseResult {
     DecimalDigits,
     HexadecimalDigits,
     Zero,
@@ -78,10 +81,10 @@ const MINIMUM_TEMPORARY_DECIMAL_EXPONENT: i32 = -5200;
 /// big-endian digit values (base 10, or 16 for a hex float with a base-2
 /// exponent).
 pub(crate) struct FloatingPointString {
-    exponent: i32,
-    mantissa_count: u32,
-    mantissa: [u8; 768],
-    is_negative: bool,
+    pub(crate) exponent: i32,
+    pub(crate) mantissa_count: u32,
+    pub(crate) mantissa: [u8; 768],
+    pub(crate) is_negative: bool,
 }
 
 // ── the result type ───────────────────────────────────────────────────────────
@@ -764,6 +767,24 @@ fn write_result(parse_result: ParseResult, fp: &FloatingPointString, t: &Traits,
     }
 }
 
+/// The scanning half of `parse_floating_point` over a C string, without the
+/// type-specific assembly: the classification and the digit string, with `*end`
+/// written as [`parse_floating_point`] writes it.
+pub(crate) unsafe fn parse_floating_point_string<C: Char>(
+    locale: *mut CrtLocalePointers,
+    string: *const C,
+    end: *mut *const C,
+    zero: C,
+) -> (ParseResult, FloatingPointString) {
+    let mut source = Source { p: string };
+    let mut fp = FloatingPointString { exponent: 0, mantissa_count: 0, mantissa: [0; 768], is_negative: false };
+    let parse_result = parse_from_source(locale, &mut source, &mut fp, zero);
+    if !end.is_null() {
+        *end = source.p;
+    }
+    (parse_result, fp)
+}
+
 /// `parse_floating_point` over a C string. The source's end pointer is written
 /// on construction (the start) and again from its final position.
 pub(crate) unsafe fn parse_floating_point<C: Char>(
@@ -774,14 +795,9 @@ pub(crate) unsafe fn parse_floating_point<C: Char>(
     t: &Traits,
     out: &mut u64,
 ) -> Status {
-    let mut source = Source { p: string };
     // `fp_string` is deliberately uninitialised in the C: only the fields a
     // successful parse writes are read.
-    let mut fp = FloatingPointString { exponent: 0, mantissa_count: 0, mantissa: [0; 768], is_negative: false };
-    let parse_result = parse_from_source(locale, &mut source, &mut fp, zero);
-    if !end.is_null() {
-        *end = source.p;
-    }
+    let (parse_result, fp) = parse_floating_point_string(locale, string, end, zero);
     write_result(parse_result, &fp, t, out)
 }
 
