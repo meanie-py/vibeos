@@ -711,3 +711,22 @@ def test_extern_system_and_crt_names_pass(tmp_path: Path):
 
 def test_the_real_tree_declares_no_win32_api_extern_c():
     assert vuc.check_win32_abi() == []
+
+
+def test_a_winapi_crt_thunk_declared_extern_c_is_caught(tmp_path: Path):
+    # The real one: misc/small.rs bound `___acrt_SetThreadStackGuarantee`; the header
+    # declares it WINAPI, and only the i386 link said so. A __cdecl thunk passes.
+    inc = tmp_path / "sdk" / "lib" / "ucrt" / "inc"
+    inc.mkdir(parents=True)
+    (inc / "corecrt_internal.h").write_text(
+        "BOOL WINAPI __acrt_SetThreadStackGuarantee(PULONG);\n"
+        "int __cdecl __acrt_MultiByteToWideChar(UINT);\n"
+    )
+    body = (
+        'extern "C" {\n'
+        "    fn __acrt_SetThreadStackGuarantee(size: *mut u32) -> c_int;\n"
+        "    fn __acrt_MultiByteToWideChar(cp: u32) -> c_int;\n"
+        "}\n"
+    )
+    findings = vuc.check_win32_abi(_rust_src(tmp_path, body))
+    assert len(findings) == 1 and "__acrt_SetThreadStackGuarantee" in findings[0]

@@ -14081,6 +14081,4059 @@ static void run_sc2_vfwscanf(void)
 #define STDIO_INPUT_MORE_HAND_ENTRIES
 #endif
 
+/* ==== staging/convert_rest.c, inlined ==== */
+/*
+ * convert_rest -- guest grader for the `convert-rest` batch.
+ *
+ * Covers, one guard per C file (see mod.rs for which ones share a guard with
+ * which exports):
+ *   UCRTDIFF_REF_HAS_mblen       -- mblen.cpp        (mblen, _mblen_l)
+ *   UCRTDIFF_REF_HAS_mbtowc      -- mbtowc.cpp        (mbtowc, _mbtowc_l)
+ *   UCRTDIFF_REF_HAS_wctomb      -- wctomb.cpp        (wctomb, _wctomb_l, wctomb_s)
+ *   UCRTDIFF_REF_HAS_mbrtowc     -- mbrtowc.cpp       (mbrtowc, mbrlen, btowc)
+ *   UCRTDIFF_REF_HAS_wcrtomb     -- wcrtomb.cpp       (wcrtomb, wcrtomb_s, wctob)
+ *   UCRTDIFF_REF_HAS_c16rtomb    -- c16rtomb.cpp      (c16rtomb)
+ *   UCRTDIFF_REF_HAS_c32rtomb    -- c32rtomb.cpp      (c32rtomb)
+ *   UCRTDIFF_REF_HAS_mbrtoc16    -- mbrtoc16.cpp      (mbrtoc16)
+ *   UCRTDIFF_REF_HAS_mbrtoc32    -- mbrtoc32.cpp      (mbrtoc32)
+ *   UCRTDIFF_REF_HAS__swab       -- swab.cpp          (_swab)
+ *   UCRTDIFF_REF_HAS_wctrans     -- wctrans.cpp       (wctrans, towctrans)
+ *   UCRTDIFF_REF_HAS__mbstrlen   -- _mbslen.cpp       (_mbstrlen, _mbstrlen_l,
+ *                                                       _mbstrnlen, _mbstrnlen_l)
+ *   UCRTDIFF_REF_HAS__ismbstrail -- ismbstr.cpp       (_ismbstrail, _ismbstrail_l)
+ *   UCRTDIFF_REF_HAS_mbstowcs    -- mbstowcs.cpp      (mbstowcs, _mbstowcs_l,
+ *                                                       mbstowcs_s, _mbstowcs_s_l)
+ *   UCRTDIFF_REF_HAS_wcstombs    -- wcstombs.cpp      (wcstombs, _wcstombs_l,
+ *                                                       wcstombs_s, _wcstombs_s_l)
+ *   UCRTDIFF_REF_HAS__fcvt       -- fcvt.cpp          (_fcvt, _fcvt_s, _ecvt, _ecvt_s)
+ *   UCRTDIFF_REF_HAS__gcvt       -- gcvt.cpp          (_gcvt, _gcvt_s)
+ *   UCRTDIFF_REF_HAS__atoldbl    -- atoldbl.cpp       (_atoldbl, _atoldbl_l)
+ *
+ * Locale posture: the guest boots in the "C" locale and this snippet never
+ * calls setlocale, so `mblen`/`mbtowc`/`wctomb`/`mbrtowc`/`wcrtomb` are
+ * graded only on the locale-independent paths they take from "C": the
+ * `locale_name[LC_CTYPE] == NULL` fast path (ASCII passthrough) and the
+ * NULL-argument / invalid-parameter validation paths. `c16rtomb`/`c32rtomb`/
+ * `mbrtoc16`/`mbrtoc32` are graded fully (multi-byte UTF-8 sequences,
+ * surrogates, overlong/invalid encodings) since the C hard-codes UTF-8 for
+ * them regardless of locale (the `// TODO: Bug 13307590` in every one of
+ * those four .cpp files). `_ismbstrail` is graded under "C" too, where
+ * `mbcinfo->ismbcodepage == 0` makes it a real, always-0 code path -- not a
+ * skip.
+ */
+#include <wchar.h>
+#include <uchar.h>
+#include <errno.h>
+#include <float.h>
+#include <math.h>
+#include <stdlib.h>
+
+/* ---- ref_ prototypes (checked present in libucrt_ref.a via llvm-nm) ------ */
+
+#if UCRTDIFF_REF_HAS_mblen
+int __cdecl ref_mblen(const char *, size_t);
+int __cdecl ref__mblen_l(const char *, size_t, _locale_t);
+extern int(__cdecl *const ud_mblen)(const char *, size_t) __asm__(UD_IMP(mblen));
+extern int(__cdecl *const ud__mblen_l)(const char *, size_t, _locale_t) __asm__(UD_IMP(_mblen_l));
+#endif
+
+#if UCRTDIFF_REF_HAS_mbtowc
+int __cdecl ref_mbtowc(wchar_t *, const char *, size_t);
+int __cdecl ref__mbtowc_l(wchar_t *, const char *, size_t, _locale_t);
+extern int(__cdecl *const ud_mbtowc)(wchar_t *, const char *, size_t) __asm__(UD_IMP(mbtowc));
+extern int(__cdecl *const ud__mbtowc_l)(wchar_t *, const char *, size_t, _locale_t) __asm__(UD_IMP(_mbtowc_l));
+#endif
+
+#if UCRTDIFF_REF_HAS_wctomb
+int __cdecl ref_wctomb(char *, wchar_t);
+int __cdecl ref__wctomb_l(char *, wchar_t, _locale_t);
+errno_t __cdecl ref_wctomb_s(int *, char *, size_t, wchar_t);
+extern int(__cdecl *const ud_wctomb)(char *, wchar_t) __asm__(UD_IMP(wctomb));
+extern int(__cdecl *const ud__wctomb_l)(char *, wchar_t, _locale_t) __asm__(UD_IMP(_wctomb_l));
+extern errno_t(__cdecl *const ud_wctomb_s)(int *, char *, size_t, wchar_t) __asm__(UD_IMP(wctomb_s));
+#endif
+
+#if UCRTDIFF_REF_HAS_mbrtowc
+size_t __cdecl ref_mbrtowc(wchar_t *, const char *, size_t, mbstate_t *);
+size_t __cdecl ref_mbrlen(const char *, size_t, mbstate_t *);
+wint_t __cdecl ref_btowc(int);
+extern size_t(__cdecl *const ud_mbrtowc)(wchar_t *, const char *, size_t, mbstate_t *) __asm__(UD_IMP(mbrtowc));
+extern size_t(__cdecl *const ud_mbrlen)(const char *, size_t, mbstate_t *) __asm__(UD_IMP(mbrlen));
+extern wint_t(__cdecl *const ud_btowc)(int) __asm__(UD_IMP(btowc));
+#endif
+
+#if UCRTDIFF_REF_HAS_wcrtomb
+size_t __cdecl ref_wcrtomb(char *, wchar_t, mbstate_t *);
+errno_t __cdecl ref_wcrtomb_s(size_t *, char *, size_t, wchar_t, mbstate_t *);
+int __cdecl ref_wctob(wint_t);
+extern size_t(__cdecl *const ud_wcrtomb)(char *, wchar_t, mbstate_t *) __asm__(UD_IMP(wcrtomb));
+extern errno_t(__cdecl *const ud_wcrtomb_s)(size_t *, char *, size_t, wchar_t, mbstate_t *) __asm__(UD_IMP(wcrtomb_s));
+extern int(__cdecl *const ud_wctob)(wint_t) __asm__(UD_IMP(wctob));
+#endif
+
+#if UCRTDIFF_REF_HAS_c16rtomb
+size_t __cdecl ref_c16rtomb(char *, char16_t, mbstate_t *);
+extern size_t(__cdecl *const ud_c16rtomb)(char *, char16_t, mbstate_t *) __asm__(UD_IMP(c16rtomb));
+#endif
+
+#if UCRTDIFF_REF_HAS_c32rtomb
+size_t __cdecl ref_c32rtomb(char *, char32_t, mbstate_t *);
+extern size_t(__cdecl *const ud_c32rtomb)(char *, char32_t, mbstate_t *) __asm__(UD_IMP(c32rtomb));
+#endif
+
+#if UCRTDIFF_REF_HAS_mbrtoc16
+size_t __cdecl ref_mbrtoc16(char16_t *, const char *, size_t, mbstate_t *);
+extern size_t(__cdecl *const ud_mbrtoc16)(char16_t *, const char *, size_t, mbstate_t *) __asm__(UD_IMP(mbrtoc16));
+#endif
+
+#if UCRTDIFF_REF_HAS_mbrtoc32
+size_t __cdecl ref_mbrtoc32(char32_t *, const char *, size_t, mbstate_t *);
+extern size_t(__cdecl *const ud_mbrtoc32)(char32_t *, const char *, size_t, mbstate_t *) __asm__(UD_IMP(mbrtoc32));
+#endif
+
+#if UCRTDIFF_REF_HAS__swab
+void __cdecl ref__swab(char *, char *, int);
+extern void(__cdecl *const ud__swab)(char *, char *, int) __asm__(UD_IMP(_swab));
+#endif
+
+#if UCRTDIFF_REF_HAS_wctrans
+wint_t __cdecl ref_towctrans(wint_t, wctrans_t);
+wctrans_t __cdecl ref_wctrans(const char *);
+extern wint_t(__cdecl *const ud_towctrans)(wint_t, wctrans_t) __asm__(UD_IMP(towctrans));
+extern wctrans_t(__cdecl *const ud_wctrans)(const char *) __asm__(UD_IMP(wctrans));
+#endif
+
+#if UCRTDIFF_REF_HAS__mbstrlen
+size_t __cdecl ref__mbstrlen(const char *);
+size_t __cdecl ref__mbstrlen_l(const char *, _locale_t);
+size_t __cdecl ref__mbstrnlen(const char *, size_t);
+size_t __cdecl ref__mbstrnlen_l(const char *, size_t, _locale_t);
+extern size_t(__cdecl *const ud__mbstrlen)(const char *) __asm__(UD_IMP(_mbstrlen));
+extern size_t(__cdecl *const ud__mbstrlen_l)(const char *, _locale_t) __asm__(UD_IMP(_mbstrlen_l));
+extern size_t(__cdecl *const ud__mbstrnlen)(const char *, size_t) __asm__(UD_IMP(_mbstrnlen));
+extern size_t(__cdecl *const ud__mbstrnlen_l)(const char *, size_t, _locale_t) __asm__(UD_IMP(_mbstrnlen_l));
+#endif
+
+#if UCRTDIFF_REF_HAS__ismbstrail
+int __cdecl ref__ismbstrail(const unsigned char *, const unsigned char *);
+int __cdecl ref__ismbstrail_l(const unsigned char *, const unsigned char *, _locale_t);
+extern int(__cdecl *const ud__ismbstrail)(const unsigned char *, const unsigned char *) __asm__(UD_IMP(_ismbstrail));
+extern int(__cdecl *const ud__ismbstrail_l)(const unsigned char *, const unsigned char *, _locale_t) __asm__(UD_IMP(_ismbstrail_l));
+#endif
+
+#if UCRTDIFF_REF_HAS_mbstowcs
+size_t __cdecl ref_mbstowcs(wchar_t *, const char *, size_t);
+size_t __cdecl ref__mbstowcs_l(wchar_t *, const char *, size_t, _locale_t);
+errno_t __cdecl ref_mbstowcs_s(size_t *, wchar_t *, size_t, const char *, size_t);
+errno_t __cdecl ref__mbstowcs_s_l(size_t *, wchar_t *, size_t, const char *, size_t, _locale_t);
+extern size_t(__cdecl *const ud_mbstowcs)(wchar_t *, const char *, size_t) __asm__(UD_IMP(mbstowcs));
+extern size_t(__cdecl *const ud__mbstowcs_l)(wchar_t *, const char *, size_t, _locale_t) __asm__(UD_IMP(_mbstowcs_l));
+extern errno_t(__cdecl *const ud_mbstowcs_s)(size_t *, wchar_t *, size_t, const char *, size_t) __asm__(UD_IMP(mbstowcs_s));
+extern errno_t(__cdecl *const ud__mbstowcs_s_l)(size_t *, wchar_t *, size_t, const char *, size_t, _locale_t) __asm__(UD_IMP(_mbstowcs_s_l));
+#endif
+
+#if UCRTDIFF_REF_HAS_wcstombs
+size_t __cdecl ref_wcstombs(char *, const wchar_t *, size_t);
+size_t __cdecl ref__wcstombs_l(char *, const wchar_t *, size_t, _locale_t);
+errno_t __cdecl ref_wcstombs_s(size_t *, char *, size_t, const wchar_t *, size_t);
+errno_t __cdecl ref__wcstombs_s_l(size_t *, char *, size_t, const wchar_t *, size_t, _locale_t);
+extern size_t(__cdecl *const ud_wcstombs)(char *, const wchar_t *, size_t) __asm__(UD_IMP(wcstombs));
+extern size_t(__cdecl *const ud__wcstombs_l)(char *, const wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcstombs_l));
+extern errno_t(__cdecl *const ud_wcstombs_s)(size_t *, char *, size_t, const wchar_t *, size_t) __asm__(UD_IMP(wcstombs_s));
+extern errno_t(__cdecl *const ud__wcstombs_s_l)(size_t *, char *, size_t, const wchar_t *, size_t, _locale_t) __asm__(UD_IMP(_wcstombs_s_l));
+#endif
+
+#if UCRTDIFF_REF_HAS__fcvt
+char *__cdecl ref__fcvt(double, int, int *, int *);
+errno_t __cdecl ref__fcvt_s(char *, size_t, double, int, int *, int *);
+char *__cdecl ref__ecvt(double, int, int *, int *);
+errno_t __cdecl ref__ecvt_s(char *, size_t, double, int, int *, int *);
+extern char *(__cdecl *const ud__fcvt)(double, int, int *, int *) __asm__(UD_IMP(_fcvt));
+extern errno_t(__cdecl *const ud__fcvt_s)(char *, size_t, double, int, int *, int *) __asm__(UD_IMP(_fcvt_s));
+extern char *(__cdecl *const ud__ecvt)(double, int, int *, int *) __asm__(UD_IMP(_ecvt));
+extern errno_t(__cdecl *const ud__ecvt_s)(char *, size_t, double, int, int *, int *) __asm__(UD_IMP(_ecvt_s));
+#endif
+
+#if UCRTDIFF_REF_HAS__gcvt
+char *__cdecl ref__gcvt(double, int, char *);
+errno_t __cdecl ref__gcvt_s(char *, size_t, double, int);
+extern char *(__cdecl *const ud__gcvt)(double, int, char *) __asm__(UD_IMP(_gcvt));
+extern errno_t(__cdecl *const ud__gcvt_s)(char *, size_t, double, int) __asm__(UD_IMP(_gcvt_s));
+#endif
+
+#if UCRTDIFF_REF_HAS__atoldbl
+int __cdecl ref__atoldbl(_LDOUBLE *, char *);
+int __cdecl ref__atoldbl_l(_LDOUBLE *, char *, _locale_t);
+extern int(__cdecl *const ud__atoldbl)(_LDOUBLE *, char *) __asm__(UD_IMP(_atoldbl));
+extern int(__cdecl *const ud__atoldbl_l)(_LDOUBLE *, char *, _locale_t) __asm__(UD_IMP(_atoldbl_l));
+#endif
+
+/* ---- mblen ---------------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS_mblen
+static void run_cvtrest_mblen(void)
+{
+    static const struct { const char *s; size_t n; } rows[] = {
+        { "A", 1 }, { "", 1 }, { "z", 0 }, { "\x80", 1 }, { "\xff", 1 },
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        *_errno() = 0; *ref__errno() = 0;
+        int v1 = ud_mblen(rows[i].s, rows[i].n);
+        int v2 = ref_mblen(rows[i].s, rows[i].n);
+        grade2("mblen", label_idx(i), v1, v2);
+        grade2("mblen.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    /* NULL string: "0 length" per the doc, no validation, no iph. */
+    *_errno() = 0; *ref__errno() = 0;
+    grade2("mblen.null", "s", ud_mblen(NULL, 5), ref_mblen(NULL, 5));
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    int v1 = ud__mblen_l("Q", 1, NULL);
+    int v2 = ref__mblen_l("Q", 1, NULL);
+    grade2("_mblen_l", "Q/NULL-locale", v1, v2);
+    grade2("_mblen_l.iph", "Q/NULL-locale", g_iph_dll, g_iph_ref);
+}
+#endif
+
+/* ---- mbtowc / wctomb (round trip under the "C" locale) -------------------- */
+#if UCRTDIFF_REF_HAS_mbtowc
+static void run_cvtrest_mbtowc(void)
+{
+    static const char corpus[] = { 'A', '\0', (char)0x80, (char)0xff, 'z' };
+    for (size_t i = 0; i < sizeof(corpus); i++) {
+        wchar_t w1 = 0xdead, w2 = 0xdead;
+        *_errno() = 0; *ref__errno() = 0;
+        int v1 = ud_mbtowc(&w1, &corpus[i], 1);
+        int v2 = ref_mbtowc(&w2, &corpus[i], 1);
+        grade2("mbtowc", label_idx(i), v1, v2);
+        grade2("mbtowc.wc", label_idx(i), w1, w2);
+        grade2("mbtowc.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    /* NULL string resets shift state and returns 0 on both. */
+    grade2("mbtowc.null", "s", ud_mbtowc(NULL, NULL, 0), ref_mbtowc(NULL, NULL, 0));
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    wchar_t w1 = 0, w2 = 0;
+    int v1 = ud__mbtowc_l(&w1, "Z", 1, NULL);
+    int v2 = ref__mbtowc_l(&w2, "Z", 1, NULL);
+    grade2("_mbtowc_l", "Z/NULL-locale", v1, v2);
+    grade2("_mbtowc_l.wc", "Z/NULL-locale", w1, w2);
+    grade2("_mbtowc_l.iph", "Z/NULL-locale", g_iph_dll, g_iph_ref);
+}
+#endif
+
+#if UCRTDIFF_REF_HAS_wctomb
+static void run_cvtrest_wctomb(void)
+{
+    static const wchar_t corpus[] = { L'A', 0, 0x0080, 0x00ff, 0x0100, 0xffff };
+    for (size_t i = 0; i < sizeof(corpus) / sizeof(corpus[0]); i++) {
+        char b1[8], b2[8];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        *_errno() = 0; *ref__errno() = 0;
+        int v1 = ud_wctomb(b1, corpus[i]);
+        int v2 = ref_wctomb(b2, corpus[i]);
+        grade2("wctomb", label_idx(i), v1, v2);
+        grade2("wctomb.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("wctomb.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    /* destination == NULL, count == 0: "is this state-dependent" query. */
+    grade2("wctomb.state-query", "null/0", ud_wctomb(NULL, L'A'), ref_wctomb(NULL, L'A'));
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    int rv1 = -99, rv2 = -99;
+    char c1[8], c2[8];
+    memset(c1, 'X', sizeof c1); memset(c2, 'X', sizeof c2);
+    errno_t e1 = ud_wctomb_s(&rv1, c1, sizeof c1, L'Q');
+    errno_t e2 = ref_wctomb_s(&rv2, c2, sizeof c2, L'Q');
+    grade2("wctomb_s", "Q", e1, e2);
+    grade2("wctomb_s.rv", "Q", rv1, rv2);
+    grade2("wctomb_s.buf", "Q", fnv(c1, sizeof c1), fnv(c2, sizeof c2));
+    grade2("wctomb_s.iph", "Q", g_iph_dll, g_iph_ref);
+
+    char l1[8], l2[8];
+    memset(l1, 'X', sizeof l1); memset(l2, 'X', sizeof l2);
+    *_errno() = 0; *ref__errno() = 0;
+    int lv1 = ud__wctomb_l(l1, L'Z', NULL);
+    int lv2 = ref__wctomb_l(l2, L'Z', NULL);
+    grade2("_wctomb_l", "Z/NULL-locale", lv1, lv2);
+    grade2("_wctomb_l.buf", "Z/NULL-locale", fnv(l1, sizeof l1), fnv(l2, sizeof l2));
+    grade2("_wctomb_l.errno", "Z/NULL-locale", *_errno(), *ref__errno());
+}
+#endif
+
+/* ---- mbrtowc / wcrtomb ----------------------------------------------------- */
+#if UCRTDIFF_REF_HAS_mbrtowc
+static void run_cvtrest_mbrtowc(void)
+{
+    static const char corpus[] = { 'A', '\0', (char)0x80, (char)0xff };
+    for (size_t i = 0; i < sizeof(corpus); i++) {
+        mbstate_t s1, s2;
+        memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        wchar_t w1 = 0xdead, w2 = 0xdead;
+        *_errno() = 0; *ref__errno() = 0;
+        size_t v1 = ud_mbrtowc(&w1, &corpus[i], 1, &s1);
+        size_t v2 = ref_mbrtowc(&w2, &corpus[i], 1, &s2);
+        grade2("mbrtowc", label_idx(i), (long long)v1, (long long)v2);
+        grade2("mbrtowc.wc", label_idx(i), w1, w2);
+        grade2("mbrtowc.state", label_idx(i), fnv(&s1, sizeof s1), fnv(&s2, sizeof s2));
+        grade2("mbrtowc.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    grade2("mbrtowc.null-s", "0/1", (long long)ud_mbrtowc(NULL, NULL, 1, NULL),
+           (long long)ref_mbrtowc(NULL, NULL, 1, NULL));
+
+    for (size_t i = 0; i < sizeof(corpus); i++) {
+        grade2("mbrlen", label_idx(i), (long long)ud_mbrlen(&corpus[i], 1, NULL),
+               (long long)ref_mbrlen(&corpus[i], 1, NULL));
+    }
+
+    grade2("btowc", "A", ud_btowc('A'), ref_btowc('A'));
+    grade2("btowc.eof", "EOF", ud_btowc(EOF), ref_btowc(EOF));
+    grade2("btowc.hi", "0x80", ud_btowc(0x80), ref_btowc(0x80));
+}
+#endif
+
+#if UCRTDIFF_REF_HAS_wcrtomb
+static void run_cvtrest_wcrtomb(void)
+{
+    static const wchar_t corpus[] = { L'A', 0, 0x0080, 0x0100 };
+    for (size_t i = 0; i < sizeof(corpus) / sizeof(corpus[0]); i++) {
+        mbstate_t s1, s2;
+        memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        char b1[8], b2[8];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        *_errno() = 0; *ref__errno() = 0;
+        size_t v1 = ud_wcrtomb(b1, corpus[i], &s1);
+        size_t v2 = ref_wcrtomb(b2, corpus[i], &s2);
+        grade2("wcrtomb", label_idx(i), (long long)v1, (long long)v2);
+        grade2("wcrtomb.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("wcrtomb.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    size_t rv1 = 0xdead, rv2 = 0xdead;
+    char c1[8], c2[8];
+    memset(c1, 'X', sizeof c1); memset(c2, 'X', sizeof c2);
+    errno_t e1 = ud_wcrtomb_s(&rv1, c1, sizeof c1, L'Q', NULL);
+    errno_t e2 = ref_wcrtomb_s(&rv2, c2, sizeof c2, L'Q', NULL);
+    grade2("wcrtomb_s", "Q", e1, e2);
+    grade2("wcrtomb_s.rv", "Q", (long long)rv1, (long long)rv2);
+    grade2("wcrtomb_s.buf", "Q", fnv(c1, sizeof c1), fnv(c2, sizeof c2));
+    grade2("wcrtomb_s.iph", "Q", g_iph_dll, g_iph_ref);
+
+    grade2("wctob", "A", ud_wctob(L'A'), ref_wctob(L'A'));
+    grade2("wctob.weof", "WEOF", ud_wctob(WEOF), ref_wctob(WEOF));
+    grade2("wctob.hi", "0x100", ud_wctob(0x100), ref_wctob(0x100));
+}
+#endif
+
+/* ---- the UTF-8-always engines: c16/c32 rtomb / mbrto ---------------------- */
+#if UCRTDIFF_REF_HAS_c32rtomb
+static void run_cvtrest_c32rtomb(void)
+{
+    static const char32_t corpus[] = {
+        0, 'A', 0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xd800 /* surrogate: invalid */,
+        0xdfff /* surrogate: invalid */, 0xe000, 0xffff, 0x10000, 0x10ffff,
+        0x110000 /* out of range: invalid */,
+    };
+    for (size_t i = 0; i < sizeof(corpus) / sizeof(corpus[0]); i++) {
+        mbstate_t s1, s2;
+        memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        char b1[8], b2[8];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        *_errno() = 0; *ref__errno() = 0;
+        size_t v1 = ud_c32rtomb(b1, corpus[i], &s1);
+        size_t v2 = ref_c32rtomb(b2, corpus[i], &s2);
+        grade2("c32rtomb", label_idx(i), (long long)v1, (long long)v2);
+        grade2("c32rtomb.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("c32rtomb.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    /* s == NULL: equivalent to encoding U+0000 into an internal buffer. */
+    mbstate_t s1, s2;
+    memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+    grade2("c32rtomb.null-s", "0", (long long)ud_c32rtomb(NULL, 0, &s1),
+           (long long)ref_c32rtomb(NULL, 0, &s2));
+}
+#endif
+
+#if UCRTDIFF_REF_HAS_mbrtoc32
+static void run_cvtrest_mbrtoc32(void)
+{
+    /* Each row: bytes, length to feed. Covers ASCII, 2/3/4-byte sequences,
+     * a truncated 3-byte sequence (INCOMPLETE), an invalid continuation
+     * byte, an overlong 2-byte encoding of NUL, and a lone continuation
+     * byte (bad lead byte). */
+    static const struct { const char *s; size_t n; } rows[] = {
+        { "A", 1 }, { "\0", 1 }, { "\xc2\x80", 2 }, { "\xe2\x82\xac", 3 },
+        { "\xf0\x9f\x92\xa9", 4 }, { "\xe2\x82", 2 } /* incomplete */,
+        { "\xe2\x82\xff", 3 } /* bad continuation */,
+        { "\xc0\x80", 2 } /* overlong NUL */, { "\x80", 1 } /* bad lead */,
+        { "\xed\xa0\x80", 3 } /* encoded surrogate: invalid */,
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        mbstate_t s1, s2;
+        memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        char32_t c1 = 0xdeadbeef, c2 = 0xdeadbeef;
+        *_errno() = 0; *ref__errno() = 0;
+        size_t v1 = ud_mbrtoc32(&c1, rows[i].s, rows[i].n, &s1);
+        size_t v2 = ref_mbrtoc32(&c2, rows[i].s, rows[i].n, &s2);
+        grade2("mbrtoc32", label_idx(i), (long long)v1, (long long)v2);
+        grade2("mbrtoc32.c32", label_idx(i), (long long)c1, (long long)c2);
+        grade2("mbrtoc32.state", label_idx(i), fnv(&s1, sizeof s1), fnv(&s2, sizeof s2));
+        grade2("mbrtoc32.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    /* Feed the truncated sequence across two calls, restartably. */
+    mbstate_t s1, s2;
+    memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+    char32_t c1 = 0, c2 = 0;
+    size_t p1 = ud_mbrtoc32(&c1, "\xe2\x82", 2, &s1);
+    size_t p2 = ref_mbrtoc32(&c2, "\xe2\x82", 2, &s2);
+    grade2("mbrtoc32.partial1", "eur", (long long)p1, (long long)p2);
+    size_t q1 = ud_mbrtoc32(&c1, "\xac", 1, &s1);
+    size_t q2 = ref_mbrtoc32(&c2, "\xac", 1, &s2);
+    grade2("mbrtoc32.partial2", "eur", (long long)q1, (long long)q2);
+    grade2("mbrtoc32.partial2.c32", "eur", (long long)c1, (long long)c2);
+}
+#endif
+
+#if UCRTDIFF_REF_HAS_c16rtomb
+static void run_cvtrest_c16rtomb(void)
+{
+    static const char16_t corpus[] = { 0, u'A', 0x0080, 0xffff };
+    for (size_t i = 0; i < sizeof(corpus) / sizeof(corpus[0]); i++) {
+        mbstate_t s1, s2;
+        memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        char b1[8], b2[8];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        size_t v1 = ud_c16rtomb(b1, corpus[i], &s1);
+        size_t v2 = ref_c16rtomb(b2, corpus[i], &s2);
+        grade2("c16rtomb", label_idx(i), (long long)v1, (long long)v2);
+        grade2("c16rtomb.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    }
+    /* A valid surrogate pair split across two calls. */
+    mbstate_t s1, s2;
+    memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+    char b1[8], b2[8];
+    memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+    size_t h1 = ud_c16rtomb(b1, 0xd83d, &s1); /* high surrogate */
+    size_t h2 = ref_c16rtomb(b2, 0xd83d, &s2);
+    grade2("c16rtomb.high", "pair", (long long)h1, (long long)h2);
+    size_t l1 = ud_c16rtomb(b1, 0xde00, &s1); /* low surrogate */
+    size_t l2 = ref_c16rtomb(b2, 0xde00, &s2);
+    grade2("c16rtomb.low", "pair", (long long)l1, (long long)l2);
+    grade2("c16rtomb.low.buf", "pair", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    /* A lone low surrogate (no preceding high) is illegal. */
+    mbstate_t s3, s4;
+    memset(&s3, 0, sizeof s3); memset(&s4, 0, sizeof s4);
+    *_errno() = 0; *ref__errno() = 0;
+    size_t bad1 = ud_c16rtomb(b1, 0xde00, &s3);
+    size_t bad2 = ref_c16rtomb(b2, 0xde00, &s4);
+    grade2("c16rtomb.lone-low", "bad", (long long)bad1, (long long)bad2);
+    grade2("c16rtomb.lone-low.errno", "bad", *_errno(), *ref__errno());
+}
+#endif
+
+#if UCRTDIFF_REF_HAS_mbrtoc16
+static void run_cvtrest_mbrtoc16(void)
+{
+    static const struct { const char *s; size_t n; } rows[] = {
+        { "A", 1 }, { "\0", 1 }, { "\xc2\x80", 2 },
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        mbstate_t s1, s2;
+        memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+        char16_t c1 = 0xdead, c2 = 0xdead;
+        size_t v1 = ud_mbrtoc16(&c1, rows[i].s, rows[i].n, &s1);
+        size_t v2 = ref_mbrtoc16(&c2, rows[i].s, rows[i].n, &s2);
+        grade2("mbrtoc16", label_idx(i), (long long)v1, (long long)v2);
+        grade2("mbrtoc16.c16", label_idx(i), c1, c2);
+    }
+    /* A 4-byte UTF-8 sequence (SMP) decodes to a surrogate pair across two
+     * calls, the second driven purely by state (`s` argument unused). */
+    mbstate_t s1, s2;
+    memset(&s1, 0, sizeof s1); memset(&s2, 0, sizeof s2);
+    char16_t hi1 = 0, hi2 = 0;
+    size_t r1 = ud_mbrtoc16(&hi1, "\xf0\x9f\x92\xa9", 4, &s1);
+    size_t r2 = ref_mbrtoc16(&hi2, "\xf0\x9f\x92\xa9", 4, &s2);
+    grade2("mbrtoc16.smp-high", "poop", (long long)r1, (long long)r2);
+    grade2("mbrtoc16.smp-high.c16", "poop", hi1, hi2);
+    char16_t lo1 = 0, lo2 = 0;
+    size_t r3 = ud_mbrtoc16(&lo1, "", 0, &s1);
+    size_t r4 = ref_mbrtoc16(&lo2, "", 0, &s2);
+    grade2("mbrtoc16.smp-low", "poop", (long long)r3, (long long)r4);
+    grade2("mbrtoc16.smp-low.c16", "poop", lo1, lo2);
+}
+#endif
+
+/* ---- swab ------------------------------------------------------------------ */
+#if UCRTDIFF_REF_HAS__swab
+static void run_cvtrest_swab(void)
+{
+    static const struct { int n; } rows[] = { { 0 }, { 1 }, { 2 }, { 5 }, { 6 } };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char src[8] = "ABCDEFGH";
+        char d1[8], d2[8];
+        memset(d1, 'X', sizeof d1); memset(d2, 'X', sizeof d2);
+        ud__swab(src, d1, rows[i].n);
+        ref__swab(src, d2, rows[i].n);
+        grade2("_swab", label_idx(i), fnv(d1, sizeof d1), fnv(d2, sizeof d2));
+    }
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    *_errno() = 0; *ref__errno() = 0;
+    ud__swab(NULL, NULL, 2);
+    int iph1 = g_iph_dll, err1 = *_errno();
+    g_iph_dll = g_iph_ref = 0; *_errno() = 0; *ref__errno() = 0;
+    ref__swab(NULL, NULL, 2);
+    grade2("_swab.null.iph", "NULL", iph1, g_iph_ref);
+    grade2("_swab.null.errno", "NULL", err1, *ref__errno());
+}
+#endif
+
+/* ---- wctrans / towctrans ---------------------------------------------------- */
+#if UCRTDIFF_REF_HAS_wctrans
+static void run_cvtrest_wctrans(void)
+{
+    static const char *names[] = { "tolower", "toupper", "bogus", "" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        wctrans_t v1 = ud_wctrans(names[i]);
+        wctrans_t v2 = ref_wctrans(names[i]);
+        grade2("wctrans", names[i][0] ? names[i] : "empty", v1, v2);
+    }
+    static const wint_t chars[] = { L'A', L'a', L'5', 0x100 };
+    wctrans_t lo1 = ud_wctrans("tolower"), lo2 = ref_wctrans("tolower");
+    wctrans_t up1 = ud_wctrans("toupper"), up2 = ref_wctrans("toupper");
+    for (size_t i = 0; i < sizeof(chars) / sizeof(chars[0]); i++) {
+        grade2("towctrans.lower", label_idx(i), ud_towctrans(chars[i], lo1),
+               ref_towctrans(chars[i], lo2));
+        grade2("towctrans.upper", label_idx(i), ud_towctrans(chars[i], up1),
+               ref_towctrans(chars[i], up2));
+        /* value 0 (unrecognised name) falls through to towlower. */
+        grade2("towctrans.zero", label_idx(i), ud_towctrans(chars[i], 0),
+               ref_towctrans(chars[i], 0));
+    }
+}
+#endif
+
+/* ---- _mbstrlen family -------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__mbstrlen
+static void run_cvtrest_mbstrlen(void)
+{
+    static const char *rows[] = { "", "hello", "a\0b", "\x80\x80\x80" };
+    static const size_t lens[] = { 0, 5, 3, 3 };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        grade2("_mbstrlen", label_idx(i), (long long)ud__mbstrlen(rows[i]),
+               (long long)ref__mbstrlen(rows[i]));
+        grade2("_mbstrnlen", label_idx(i), (long long)ud__mbstrnlen(rows[i], lens[i]),
+               (long long)ref__mbstrnlen(rows[i], lens[i]));
+        grade2("_mbstrnlen.short", label_idx(i),
+               (long long)ud__mbstrnlen(rows[i], lens[i] > 1 ? lens[i] - 1 : 0),
+               (long long)ref__mbstrnlen(rows[i], lens[i] > 1 ? lens[i] - 1 : 0));
+    }
+    grade2("_mbstrlen_l", "hi/NULL-locale", (long long)ud__mbstrlen_l("hi", NULL),
+           (long long)ref__mbstrlen_l("hi", NULL));
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    *_errno() = 0; *ref__errno() = 0;
+    long long v1 = (long long)ud__mbstrnlen_l(NULL, 5, NULL);
+    int e1 = *_errno(), i1 = g_iph_dll;
+    g_iph_dll = g_iph_ref = 0; *_errno() = 0; *ref__errno() = 0;
+    long long v2 = (long long)ref__mbstrnlen_l(NULL, 5, NULL);
+    grade2("_mbstrnlen_l.null", "NULL", v1, v2);
+    grade2("_mbstrnlen_l.null.errno", "NULL", e1, *ref__errno());
+    grade2("_mbstrnlen_l.null.iph", "NULL", i1, g_iph_ref);
+}
+#endif
+
+/* ---- _ismbstrail family ------------------------------------------------------ */
+#if UCRTDIFF_REF_HAS__ismbstrail
+static void run_cvtrest_ismbstrail(void)
+{
+    static const unsigned char str[] = "hello world";
+    for (size_t i = 0; i <= sizeof(str) - 1; i++) {
+        grade2("_ismbstrail", label_idx(i), ud__ismbstrail(str, str + i),
+               ref__ismbstrail(str, str + i));
+    }
+    grade2("_ismbstrail_l", "0/NULL-locale", ud__ismbstrail_l(str, str, NULL),
+           ref__ismbstrail_l(str, str, NULL));
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    *_errno() = 0; *ref__errno() = 0;
+    int v1 = ud__ismbstrail_l(NULL, str, NULL);
+    int e1 = *_errno(), i1 = g_iph_dll;
+    g_iph_dll = g_iph_ref = 0; *_errno() = 0; *ref__errno() = 0;
+    int v2 = ref__ismbstrail_l(NULL, str, NULL);
+    grade2("_ismbstrail_l.null", "NULL", v1, v2);
+    grade2("_ismbstrail_l.null.errno", "NULL", e1, *ref__errno());
+    grade2("_ismbstrail_l.null.iph", "NULL", i1, g_iph_ref);
+}
+#endif
+
+/* ---- mbstowcs family --------------------------------------------------------
+ *
+ * Graded under the "C" locale (the guest boot default -- this snippet never
+ * calls setlocale, same posture as the rest of this file). NOTE: in "C",
+ * `_mbstowcs_l_helper`'s fast path (`locale_name[LC_CTYPE] == NULL`) does a
+ * bare byte->wchar cast with NO validation, so there is no reachable
+ * "invalid sequence" case for mbstowcs here -- every byte value is legal.
+ * That asymmetry with wcstombs (which DOES validate high wchars even in "C")
+ * is itself part of what these rows are grading: both sides must agree that
+ * mbstowcs never fails on 0x80..0xff while wcstombs fails on anything > 0xff. */
+#if UCRTDIFF_REF_HAS_mbstowcs
+static void run_cvtrest_mbstowcs(void)
+{
+    static const char *strs[] = { "hello", "", "high\x80\xff bytes" };
+    for (size_t i = 0; i < sizeof(strs) / sizeof(strs[0]); i++) {
+        /* NULL destination: count-only. */
+        grade2("mbstowcs.count-only", label_idx(i), (long long)ud_mbstowcs(NULL, strs[i], 0),
+               (long long)ref_mbstowcs(NULL, strs[i], 0));
+
+        size_t need = strlen(strs[i]);
+        /* Exact fit: n == the string's length (no room for a NUL, so the
+         * destination is not required to be terminated -- mbstowcs' own
+         * contract, unlike the _s form). */
+        wchar_t w1[32], w2[32];
+        memset(w1, 'X', sizeof w1); memset(w2, 'X', sizeof w2);
+        size_t c1 = ud_mbstowcs(w1, strs[i], need);
+        size_t c2 = ref_mbstowcs(w2, strs[i], need);
+        grade2("mbstowcs.exact", label_idx(i), (long long)c1, (long long)c2);
+        grade2("mbstowcs.exact.buf", label_idx(i), fnv(w1, sizeof w1), fnv(w2, sizeof w2));
+
+        /* Room to spare: NUL-terminated, return excludes the NUL. */
+        memset(w1, 'X', sizeof w1); memset(w2, 'X', sizeof w2);
+        c1 = ud_mbstowcs(w1, strs[i], need + 4);
+        c2 = ref_mbstowcs(w2, strs[i], need + 4);
+        grade2("mbstowcs.roomy", label_idx(i), (long long)c1, (long long)c2);
+        grade2("mbstowcs.roomy.buf", label_idx(i), fnv(w1, sizeof w1), fnv(w2, sizeof w2));
+
+        /* Too small: n < need, so the destination fills with the first n
+         * chars and is NOT NUL-terminated. */
+        if (need > 1) {
+            memset(w1, 'X', sizeof w1); memset(w2, 'X', sizeof w2);
+            c1 = ud_mbstowcs(w1, strs[i], need - 1);
+            c2 = ref_mbstowcs(w2, strs[i], need - 1);
+            grade2("mbstowcs.short", label_idx(i), (long long)c1, (long long)c2);
+            grade2("mbstowcs.short.buf", label_idx(i), fnv(w1, sizeof w1), fnv(w2, sizeof w2));
+        }
+    }
+
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    *_errno() = 0; *ref__errno() = 0;
+    long long n1 = (long long)ud_mbstowcs(NULL, NULL, 4);
+    int e1 = *_errno(), i1 = g_iph_dll;
+    g_iph_dll = g_iph_ref = 0; *_errno() = 0; *ref__errno() = 0;
+    long long n2 = (long long)ref_mbstowcs(NULL, NULL, 4);
+    grade2("mbstowcs.null-src", "NULL", n1, n2);
+    grade2("mbstowcs.null-src.errno", "NULL", e1, *ref__errno());
+    grade2("mbstowcs.null-src.iph", "NULL", i1, g_iph_ref);
+
+    grade2("_mbstowcs_l", "hi/NULL-locale", (long long)ud__mbstowcs_l(NULL, "hi", 0, NULL),
+           (long long)ref__mbstowcs_l(NULL, "hi", 0, NULL));
+
+    /* mbstowcs_s: exact fit (retsize == sizeInWords + NUL -- fits exactly). */
+    {
+        wchar_t w1[16], w2[16];
+        memset(w1, 'X', sizeof w1); memset(w2, 'X', sizeof w2);
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_mbstowcs_s(&rc1, w1, 6, "hello", _TRUNCATE);
+        errno_t e2s = ref_mbstowcs_s(&rc2, w2, 6, "hello", _TRUNCATE);
+        grade2("mbstowcs_s.exact", "hello", e1s, e2s);
+        grade2("mbstowcs_s.exact.rc", "hello", (long long)rc1, (long long)rc2);
+        grade2("mbstowcs_s.exact.buf", "hello", fnv(w1, sizeof w1), fnv(w2, sizeof w2));
+    }
+    /* Too small, WITHOUT _TRUNCATE: ERANGE, buffer reset to all zero, iph fires. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        wchar_t w1[4], w2[4];
+        memset(w1, 'X', sizeof w1); memset(w2, 'X', sizeof w2);
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_mbstowcs_s(&rc1, w1, 4, "hello", 5);
+        int i1s = g_iph_dll;
+        errno_t e2s = ref_mbstowcs_s(&rc2, w2, 4, "hello", 5);
+        grade2("mbstowcs_s.toosmall", "hello", e1s, e2s);
+        grade2("mbstowcs_s.toosmall.rc", "hello", (long long)rc1, (long long)rc2);
+        grade2("mbstowcs_s.toosmall.buf", "hello", fnv(w1, sizeof w1), fnv(w2, sizeof w2));
+        grade2("mbstowcs_s.toosmall.iph", "hello", i1s, g_iph_ref);
+    }
+    /* Too small, WITH _TRUNCATE: STRUNCATE, buffer holds a NUL-terminated
+     * prefix, no iph. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        wchar_t w1[4], w2[4];
+        memset(w1, 'X', sizeof w1); memset(w2, 'X', sizeof w2);
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_mbstowcs_s(&rc1, w1, 4, "hello", _TRUNCATE);
+        int i1s = g_iph_dll;
+        errno_t e2s = ref_mbstowcs_s(&rc2, w2, 4, "hello", _TRUNCATE);
+        grade2("mbstowcs_s.truncate", "hello", e1s, e2s);
+        grade2("mbstowcs_s.truncate.rc", "hello", (long long)rc1, (long long)rc2);
+        grade2("mbstowcs_s.truncate.buf", "hello", fnv(w1, sizeof w1), fnv(w2, sizeof w2));
+        grade2("mbstowcs_s.truncate.iph", "hello", i1s, g_iph_ref);
+    }
+    /* EINVAL: dst non-NULL but sizeInWords == 0. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        wchar_t dummy;
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_mbstowcs_s(&rc1, &dummy, 0, "hi", 2);
+        int i1s = g_iph_dll;
+        errno_t e2s = ref_mbstowcs_s(&rc2, &dummy, 0, "hi", 2);
+        grade2("mbstowcs_s.einval", "hi", e1s, e2s);
+        grade2("mbstowcs_s.einval.iph", "hi", i1s, g_iph_ref);
+    }
+
+    {
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud__mbstowcs_s_l(&rc1, NULL, 0, "hi", 0, NULL);
+        errno_t e2s = ref__mbstowcs_s_l(&rc2, NULL, 0, "hi", 0, NULL);
+        grade2("_mbstowcs_s_l", "hi/NULL-locale", e1s, e2s);
+        grade2("_mbstowcs_s_l.rc", "hi/NULL-locale", (long long)rc1, (long long)rc2);
+    }
+}
+#endif
+
+/* ---- wcstombs family -------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS_wcstombs
+static void run_cvtrest_wcstombs(void)
+{
+    static const wchar_t *strs[] = { L"hello", L"", L"abc" };
+    for (size_t i = 0; i < sizeof(strs) / sizeof(strs[0]); i++) {
+        grade2("wcstombs.count-only", label_idx(i), (long long)ud_wcstombs(NULL, strs[i], 0),
+               (long long)ref_wcstombs(NULL, strs[i], 0));
+
+        size_t need = wcslen(strs[i]);
+        char b1[32], b2[32];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        size_t c1 = ud_wcstombs(b1, strs[i], need);
+        size_t c2 = ref_wcstombs(b2, strs[i], need);
+        grade2("wcstombs.exact", label_idx(i), (long long)c1, (long long)c2);
+        grade2("wcstombs.exact.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        c1 = ud_wcstombs(b1, strs[i], need + 4);
+        c2 = ref_wcstombs(b2, strs[i], need + 4);
+        grade2("wcstombs.roomy", label_idx(i), (long long)c1, (long long)c2);
+        grade2("wcstombs.roomy.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+
+        if (need > 1) {
+            memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+            c1 = ud_wcstombs(b1, strs[i], need - 1);
+            c2 = ref_wcstombs(b2, strs[i], need - 1);
+            grade2("wcstombs.short", label_idx(i), (long long)c1, (long long)c2);
+            grade2("wcstombs.short.buf", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        }
+    }
+
+    /* Invalid sequence: even in "C", a wchar > 0xff is EILSEQ. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        *_errno() = 0; *ref__errno() = 0;
+        char b1[8], b2[8];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        long long v1 = (long long)ud_wcstombs(b1, L"a\x0100z", 8);
+        int e1 = *_errno();
+        long long v2 = (long long)ref_wcstombs(b2, L"a\x0100z", 8);
+        grade2("wcstombs.invalid", "hi-wchar", v1, v2);
+        grade2("wcstombs.invalid.errno", "hi-wchar", e1, *ref__errno());
+        grade2("wcstombs.invalid.buf", "hi-wchar", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    }
+    /* Same, count-only (dst == NULL). */
+    {
+        *_errno() = 0; *ref__errno() = 0;
+        long long v1 = (long long)ud_wcstombs(NULL, L"a\x0100z", 0);
+        int e1 = *_errno();
+        long long v2 = (long long)ref_wcstombs(NULL, L"a\x0100z", 0);
+        grade2("wcstombs.invalid.count-only", "hi-wchar", v1, v2);
+        grade2("wcstombs.invalid.count-only.errno", "hi-wchar", e1, *ref__errno());
+    }
+
+    grade2("_wcstombs_l", "hi/NULL-locale", (long long)ud__wcstombs_l(NULL, L"hi", 0, NULL),
+           (long long)ref__wcstombs_l(NULL, L"hi", 0, NULL));
+
+    /* wcstombs_s: exact fit. */
+    {
+        char b1[16], b2[16];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_wcstombs_s(&rc1, b1, 6, L"hello", _TRUNCATE);
+        errno_t e2s = ref_wcstombs_s(&rc2, b2, 6, L"hello", _TRUNCATE);
+        grade2("wcstombs_s.exact", "hello", e1s, e2s);
+        grade2("wcstombs_s.exact.rc", "hello", (long long)rc1, (long long)rc2);
+        grade2("wcstombs_s.exact.buf", "hello", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    }
+    /* Too small, without _TRUNCATE: ERANGE. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        char b1[4], b2[4];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_wcstombs_s(&rc1, b1, 4, L"hello", 5);
+        int i1s = g_iph_dll;
+        errno_t e2s = ref_wcstombs_s(&rc2, b2, 4, L"hello", 5);
+        grade2("wcstombs_s.toosmall", "hello", e1s, e2s);
+        grade2("wcstombs_s.toosmall.rc", "hello", (long long)rc1, (long long)rc2);
+        grade2("wcstombs_s.toosmall.buf", "hello", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("wcstombs_s.toosmall.iph", "hello", i1s, g_iph_ref);
+    }
+    /* Too small, WITH _TRUNCATE: STRUNCATE. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        char b1[4], b2[4];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_wcstombs_s(&rc1, b1, 4, L"hello", _TRUNCATE);
+        int i1s = g_iph_dll;
+        errno_t e2s = ref_wcstombs_s(&rc2, b2, 4, L"hello", _TRUNCATE);
+        grade2("wcstombs_s.truncate", "hello", e1s, e2s);
+        grade2("wcstombs_s.truncate.rc", "hello", (long long)rc1, (long long)rc2);
+        grade2("wcstombs_s.truncate.buf", "hello", fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("wcstombs_s.truncate.iph", "hello", i1s, g_iph_ref);
+    }
+    /* EINVAL: dst non-NULL but sizeInBytes == 0. */
+    {
+        char dummy;
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud_wcstombs_s(&rc1, &dummy, 0, L"hi", 2);
+        errno_t e2s = ref_wcstombs_s(&rc2, &dummy, 0, L"hi", 2);
+        grade2("wcstombs_s.einval", "hi", e1s, e2s);
+    }
+
+    {
+        size_t rc1 = 0xdead, rc2 = 0xdead;
+        errno_t e1s = ud__wcstombs_s_l(&rc1, NULL, 0, L"hi", 0, NULL);
+        errno_t e2s = ref__wcstombs_s_l(&rc2, NULL, 0, L"hi", 0, NULL);
+        grade2("_wcstombs_s_l", "hi/NULL-locale", e1s, e2s);
+        grade2("_wcstombs_s_l.rc", "hi/NULL-locale", (long long)rc1, (long long)rc2);
+    }
+}
+#endif
+
+/* ---- fcvt / ecvt family ------------------------------------------------------
+ *
+ * Corpus covers: zero, negative zero, an ordinary negative, a subnormal,
+ * DBL_MAX, +-inf, NaN, and a value that rounds UP across a digit boundary at
+ * 1 requested digit (0.95 -> "1", decpt bumps by one -- the classic
+ * off-by-one this family's callers get wrong). Graded as the string
+ * (`fnv` over the whole buffer, sentinel-filled so untouched tail bytes
+ * show), `*decimal_point`, and `*sign`. */
+#if UCRTDIFF_REF_HAS__fcvt
+static void run_cvtrest_fcvt(void)
+{
+    static const struct { double v; int digits; } rows[] = {
+        { 0.0, 5 }, { -0.0, 5 }, { -123.456, 3 }, { 5e-320 /* subnormal */, 5 },
+        { DBL_MAX, 2 }, { 0.95, 1 }, { 9.995, 2 }, { 1.0, 0 }, { 1.0, -3 },
+        { 123456.789, 40 } /* huge ndigits */,
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[512], b2[512];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        int dp1 = -999, dp2 = -999, sg1 = -999, sg2 = -999;
+        char *r1 = ud__fcvt(rows[i].v, rows[i].digits, &dp1, &sg1);
+        char *r2 = ref__fcvt(rows[i].v, rows[i].digits, &dp2, &sg2);
+        grade2("_fcvt.str", label_idx(i), fnv(r1, strlen(r1) + 1), fnv(r2, strlen(r2) + 1));
+        grade2("_fcvt.decpt", label_idx(i), dp1, dp2);
+        grade2("_fcvt.sign", label_idx(i), sg1, sg2);
+    }
+    {
+        /* inf / nan go through the same STRFLT machinery but produce a fixed
+         * "1#INF"/"1#QNAN"-style string rather than digits; decpt/sign still
+         * matter (sign distinguishes +inf from -inf). */
+        int dp1, dp2, sg1, sg2;
+        char *r1 = ud__fcvt(INFINITY, 5, &dp1, &sg1);
+        char *r2 = ref__fcvt(INFINITY, 5, &dp2, &sg2);
+        grade2("_fcvt.inf.str", "inf", fnv(r1, strlen(r1) + 1), fnv(r2, strlen(r2) + 1));
+        grade2("_fcvt.inf.decpt", "inf", dp1, dp2);
+        grade2("_fcvt.inf.sign", "inf", sg1, sg2);
+        r1 = ud__fcvt(-INFINITY, 5, &dp1, &sg1);
+        r2 = ref__fcvt(-INFINITY, 5, &dp2, &sg2);
+        grade2("_fcvt.ninf.str", "-inf", fnv(r1, strlen(r1) + 1), fnv(r2, strlen(r2) + 1));
+        grade2("_fcvt.ninf.sign", "-inf", sg1, sg2);
+        double nan_v = NAN;
+        r1 = ud__fcvt(nan_v, 5, &dp1, &sg1);
+        r2 = ref__fcvt(nan_v, 5, &dp2, &sg2);
+        grade2("_fcvt.nan.str", "nan", fnv(r1, strlen(r1) + 1), fnv(r2, strlen(r2) + 1));
+    }
+
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[512], b2[512];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        int dp1 = -999, dp2 = -999, sg1 = -999, sg2 = -999;
+        errno_t e1 = ud__fcvt_s(b1, sizeof b1, rows[i].v, rows[i].digits, &dp1, &sg1);
+        errno_t e2 = ref__fcvt_s(b2, sizeof b2, rows[i].v, rows[i].digits, &dp2, &sg2);
+        grade2("_fcvt_s", label_idx(i), e1, e2);
+        grade2("_fcvt_s.str", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("_fcvt_s.decpt", label_idx(i), dp1, dp2);
+        grade2("_fcvt_s.sign", label_idx(i), sg1, sg2);
+    }
+    /* Buffer-size error: too small for even the sign+overflow+NUL minimum. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        char b1[2], b2[2];
+        int dp1, dp2, sg1, sg2;
+        errno_t e1 = ud__fcvt_s(b1, sizeof b1, 123.456, 10, &dp1, &sg1);
+        int i1 = g_iph_dll;
+        errno_t e2 = ref__fcvt_s(b2, sizeof b2, 123.456, 10, &dp2, &sg2);
+        grade2("_fcvt_s.toosmall", "123.456/10", e1, e2);
+        grade2("_fcvt_s.toosmall.iph", "123.456/10", i1, g_iph_ref);
+    }
+    /* EINVAL: null buffer / zero count / null out-params. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        int dp, sg;
+        errno_t e1 = ud__fcvt_s(NULL, 8, 1.0, 2, &dp, &sg);
+        int i1 = g_iph_dll;
+        errno_t e2 = ref__fcvt_s(NULL, 8, 1.0, 2, &dp, &sg);
+        grade2("_fcvt_s.null-buf", "1.0", e1, e2);
+        grade2("_fcvt_s.null-buf.iph", "1.0", i1, g_iph_ref);
+    }
+
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        int dp1 = -999, dp2 = -999, sg1 = -999, sg2 = -999;
+        char *r1 = ud__ecvt(rows[i].v, rows[i].digits, &dp1, &sg1);
+        char *r2 = ref__ecvt(rows[i].v, rows[i].digits, &dp2, &sg2);
+        grade2("_ecvt.str", label_idx(i), fnv(r1, strlen(r1) + 1), fnv(r2, strlen(r2) + 1));
+        grade2("_ecvt.decpt", label_idx(i), dp1, dp2);
+        grade2("_ecvt.sign", label_idx(i), sg1, sg2);
+    }
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[512], b2[512];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        int dp1 = -999, dp2 = -999, sg1 = -999, sg2 = -999;
+        errno_t e1 = ud__ecvt_s(b1, sizeof b1, rows[i].v, rows[i].digits, &dp1, &sg1);
+        errno_t e2 = ref__ecvt_s(b2, sizeof b2, rows[i].v, rows[i].digits, &dp2, &sg2);
+        grade2("_ecvt_s", label_idx(i), e1, e2);
+        grade2("_ecvt_s.str", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("_ecvt_s.decpt", label_idx(i), dp1, dp2);
+        grade2("_ecvt_s.sign", label_idx(i), sg1, sg2);
+    }
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        char b1[2], b2[2];
+        int dp1, dp2, sg1, sg2;
+        errno_t e1 = ud__ecvt_s(b1, sizeof b1, 123.456, 10, &dp1, &sg1);
+        int i1 = g_iph_dll;
+        errno_t e2 = ref__ecvt_s(b2, sizeof b2, 123.456, 10, &dp2, &sg2);
+        grade2("_ecvt_s.toosmall", "123.456/10", e1, e2);
+        grade2("_ecvt_s.toosmall.iph", "123.456/10", i1, g_iph_ref);
+    }
+}
+#endif
+
+/* ---- gcvt --------------------------------------------------------------------
+ *
+ * Same corpus philosophy as fcvt/ecvt, but `_gcvt`'s `precision` is
+ * significant digits (not digits-after-point), and it picks E or F format
+ * per-value -- so the corpus includes values that land on each side of that
+ * choice (`magnitude < -1 || magnitude > precision - 1`). */
+#if UCRTDIFF_REF_HAS__gcvt
+static void run_cvtrest_gcvt(void)
+{
+    static const struct { double v; int precision; } rows[] = {
+        { 0.0, 5 }, { -0.0, 5 }, { -123.456, 4 }, { 5e-320, 5 }, { DBL_MAX, 3 },
+        { 0.95, 1 }, { 9.995, 3 }, { 1.0, 1 }, { 100000.0, 3 } /* forces E format */,
+        { 0.0001, 3 } /* forces E format the other way */,
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[512], b2[512];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        *_errno() = 0; *ref__errno() = 0;
+        char *r1 = ud__gcvt(rows[i].v, rows[i].precision, b1);
+        char *r2 = ref__gcvt(rows[i].v, rows[i].precision, b2);
+        grade2("_gcvt.str", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("_gcvt.ret-null", label_idx(i), r1 == NULL, r2 == NULL);
+        grade2("_gcvt.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[512], b2[512];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        errno_t e1 = ud__gcvt_s(b1, sizeof b1, rows[i].v, rows[i].precision);
+        errno_t e2 = ref__gcvt_s(b2, sizeof b2, rows[i].v, rows[i].precision);
+        grade2("_gcvt_s", label_idx(i), e1, e2);
+        grade2("_gcvt_s.str", label_idx(i), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    }
+    /* Buffer-size error: precision >= buffer_count. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        char b1[4], b2[4];
+        errno_t e1 = ud__gcvt_s(b1, sizeof b1, 123.456, 10);
+        int i1 = g_iph_dll;
+        errno_t e2 = ref__gcvt_s(b2, sizeof b2, 123.456, 10);
+        grade2("_gcvt_s.toosmall", "123.456/10", e1, e2);
+        grade2("_gcvt_s.toosmall.iph", "123.456/10", i1, g_iph_ref);
+    }
+    /* EINVAL: null buffer. */
+    {
+        install_counting_iph();
+        g_iph_dll = g_iph_ref = 0;
+        errno_t e1 = ud__gcvt_s(NULL, 8, 1.0, 3);
+        int i1 = g_iph_dll;
+        errno_t e2 = ref__gcvt_s(NULL, 8, 1.0, 3);
+        grade2("_gcvt_s.null-buf", "1.0", e1, e2);
+        grade2("_gcvt_s.null-buf.iph", "1.0", i1, g_iph_ref);
+    }
+}
+#endif
+
+/* ---- atoldbl -----------------------------------------------------------------
+ *
+ * Corpus: ordinary decimal values, a many-digit mantissa (past
+ * `LD_MAX_MAN_LEN` = 24, to exercise the rounding-digit path), huge/tiny
+ * decimal exponents (over/underflow -- both the scanner's own +-5200 cutoff
+ * and, for a value inside that range whose BINARY exponent still overflows
+ * the 80-bit format, `common_convert_to_ldbl12`'s own overflow check), hex
+ * floats, every inf/nan spelling the scanner recognises, leading whitespace
+ * and signs, and no-digits input. Graded as the 10-byte `_LDOUBLE` result
+ * (`fnv` over the whole struct -- no sentinel needed, `_atoldbl_l` always
+ * writes all 10 bytes) plus the return code. */
+#if UCRTDIFF_REF_HAS__atoldbl
+static void run_cvtrest_atoldbl(void)
+{
+    static char *rows[] = {
+        "0", "-0", "1", "-1", "3.14159", "2.5", "100000", "0.0001",
+        "123456789012345678901234567890123456789.5" /* > LD_MAX_MAN_LEN digits */,
+        "1e300", "1e-300", "1e5200" /* overflow: scanner's own cutoff */,
+        "1e-5200" /* underflow: scanner's own cutoff */,
+        "1e4950" /* likely overflow at the _LDBL12 binary-exponent level, still < 5200 decimal */,
+        "1e-4950" /* likely underflow at the _LDBL12 level */,
+        "0x1.8p3" /* hex float = 12.0 */, "0x1p-1" /* hex float = 0.5 */,
+        "0x1.fffffep+127" /* hex float, large */,
+        "inf", "-inf", "infinity", "-infinity", "nan", "-nan", "nan(123)",
+        "  42" /* leading whitespace */, "+42" /* leading plus */, "-42",
+        "" /* no digits */, "abc" /* no digits */, "   " /* whitespace only */,
+        "+", "-", ".", "1.", ".5", "5.",
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char buf1[64], buf2[64];
+        lstrcpyA(buf1, rows[i]);
+        lstrcpyA(buf2, rows[i]);
+        _LDOUBLE d1, d2;
+        memset(&d1, 'X', sizeof d1);
+        memset(&d2, 'X', sizeof d2);
+        int r1 = ud__atoldbl(&d1, buf1);
+        int r2 = ref__atoldbl(&d2, buf2);
+        grade2("_atoldbl.ret", label_idx(i), r1, r2);
+        grade2("_atoldbl.bytes", label_idx(i), fnv(&d1, sizeof d1), fnv(&d2, sizeof d2));
+    }
+
+    /* _atoldbl_l with a NULL locale (same as _atoldbl, through the other
+     * entry point). */
+    {
+        char buf1[32] = "2.71828", buf2[32] = "2.71828";
+        _LDOUBLE d1, d2;
+        memset(&d1, 'X', sizeof d1);
+        memset(&d2, 'X', sizeof d2);
+        int r1 = ud__atoldbl_l(&d1, buf1, NULL);
+        int r2 = ref__atoldbl_l(&d2, buf2, NULL);
+        grade2("_atoldbl_l", "e/NULL-locale", r1, r2);
+        grade2("_atoldbl_l.bytes", "e/NULL-locale", fnv(&d1, sizeof d1), fnv(&d2, sizeof d2));
+    }
+}
+#endif
+
+/* ---- registry macro: paste into run_legacy()'s table ---------------------- */
+#if UCRTDIFF_REF_HAS_mblen
+#define CVTREST_HAND_ENTRY_mblen { "cvtrest_mblen", run_cvtrest_mblen },
+#else
+#define CVTREST_HAND_ENTRY_mblen { "cvtrest_mblen", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_mbtowc
+#define CVTREST_HAND_ENTRY_mbtowc { "cvtrest_mbtowc", run_cvtrest_mbtowc },
+#else
+#define CVTREST_HAND_ENTRY_mbtowc { "cvtrest_mbtowc", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_wctomb
+#define CVTREST_HAND_ENTRY_wctomb { "cvtrest_wctomb", run_cvtrest_wctomb },
+#else
+#define CVTREST_HAND_ENTRY_wctomb { "cvtrest_wctomb", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_mbrtowc
+#define CVTREST_HAND_ENTRY_mbrtowc { "cvtrest_mbrtowc", run_cvtrest_mbrtowc },
+#else
+#define CVTREST_HAND_ENTRY_mbrtowc { "cvtrest_mbrtowc", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_wcrtomb
+#define CVTREST_HAND_ENTRY_wcrtomb { "cvtrest_wcrtomb", run_cvtrest_wcrtomb },
+#else
+#define CVTREST_HAND_ENTRY_wcrtomb { "cvtrest_wcrtomb", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_c32rtomb
+#define CVTREST_HAND_ENTRY_c32rtomb { "cvtrest_c32rtomb", run_cvtrest_c32rtomb },
+#else
+#define CVTREST_HAND_ENTRY_c32rtomb { "cvtrest_c32rtomb", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_mbrtoc32
+#define CVTREST_HAND_ENTRY_mbrtoc32 { "cvtrest_mbrtoc32", run_cvtrest_mbrtoc32 },
+#else
+#define CVTREST_HAND_ENTRY_mbrtoc32 { "cvtrest_mbrtoc32", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_c16rtomb
+#define CVTREST_HAND_ENTRY_c16rtomb { "cvtrest_c16rtomb", run_cvtrest_c16rtomb },
+#else
+#define CVTREST_HAND_ENTRY_c16rtomb { "cvtrest_c16rtomb", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_mbrtoc16
+#define CVTREST_HAND_ENTRY_mbrtoc16 { "cvtrest_mbrtoc16", run_cvtrest_mbrtoc16 },
+#else
+#define CVTREST_HAND_ENTRY_mbrtoc16 { "cvtrest_mbrtoc16", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__swab
+#define CVTREST_HAND_ENTRY_swab { "cvtrest_swab", run_cvtrest_swab },
+#else
+#define CVTREST_HAND_ENTRY_swab { "cvtrest_swab", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_wctrans
+#define CVTREST_HAND_ENTRY_wctrans { "cvtrest_wctrans", run_cvtrest_wctrans },
+#else
+#define CVTREST_HAND_ENTRY_wctrans { "cvtrest_wctrans", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__mbstrlen
+#define CVTREST_HAND_ENTRY_mbstrlen { "cvtrest_mbstrlen", run_cvtrest_mbstrlen },
+#else
+#define CVTREST_HAND_ENTRY_mbstrlen { "cvtrest_mbstrlen", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__ismbstrail
+#define CVTREST_HAND_ENTRY_ismbstrail { "cvtrest_ismbstrail", run_cvtrest_ismbstrail },
+#else
+#define CVTREST_HAND_ENTRY_ismbstrail { "cvtrest_ismbstrail", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_mbstowcs
+#define CVTREST_HAND_ENTRY_mbstowcs { "cvtrest_mbstowcs", run_cvtrest_mbstowcs },
+#else
+#define CVTREST_HAND_ENTRY_mbstowcs { "cvtrest_mbstowcs", 0 },
+#endif
+#if UCRTDIFF_REF_HAS_wcstombs
+#define CVTREST_HAND_ENTRY_wcstombs { "cvtrest_wcstombs", run_cvtrest_wcstombs },
+#else
+#define CVTREST_HAND_ENTRY_wcstombs { "cvtrest_wcstombs", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__fcvt
+#define CVTREST_HAND_ENTRY_fcvt { "cvtrest_fcvt", run_cvtrest_fcvt },
+#else
+#define CVTREST_HAND_ENTRY_fcvt { "cvtrest_fcvt", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__gcvt
+#define CVTREST_HAND_ENTRY_gcvt { "cvtrest_gcvt", run_cvtrest_gcvt },
+#else
+#define CVTREST_HAND_ENTRY_gcvt { "cvtrest_gcvt", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__atoldbl
+#define CVTREST_HAND_ENTRY_atoldbl { "cvtrest_atoldbl", run_cvtrest_atoldbl },
+#else
+#define CVTREST_HAND_ENTRY_atoldbl { "cvtrest_atoldbl", 0 },
+#endif
+
+#define CONVERT_REST_HAND_ENTRIES \
+    CVTREST_HAND_ENTRY_mblen \
+    CVTREST_HAND_ENTRY_mbtowc \
+    CVTREST_HAND_ENTRY_wctomb \
+    CVTREST_HAND_ENTRY_mbrtowc \
+    CVTREST_HAND_ENTRY_wcrtomb \
+    CVTREST_HAND_ENTRY_c32rtomb \
+    CVTREST_HAND_ENTRY_mbrtoc32 \
+    CVTREST_HAND_ENTRY_c16rtomb \
+    CVTREST_HAND_ENTRY_mbrtoc16 \
+    CVTREST_HAND_ENTRY_swab \
+    CVTREST_HAND_ENTRY_wctrans \
+    CVTREST_HAND_ENTRY_mbstrlen \
+    CVTREST_HAND_ENTRY_ismbstrail \
+    CVTREST_HAND_ENTRY_mbstowcs \
+    CVTREST_HAND_ENTRY_wcstombs \
+    CVTREST_HAND_ENTRY_fcvt \
+    CVTREST_HAND_ENTRY_gcvt \
+    CVTREST_HAND_ENTRY_atoldbl
+
+
+/* ==== staging/misc.c, inlined ==== */
+/*
+ * misc -- guest grader for the "misc" batch: errno.cpp, _strerr.cpp,
+ * strerror.cpp, syserr.cpp, perror.cpp, wperror.cpp, getcwd.cpp, chdir.cpp,
+ * drive.cpp, drivemap.cpp, drivfree.cpp, signal.cpp, terminate.cpp,
+ * exception_filter.cpp, slbeep.cpp, systime.cpp, getpid.cpp, is_wctype.cpp,
+ * resetstk.cpp, set_error_mode.cpp, seterrm.cpp.
+ *
+ * Included verbatim into ucrtdiff.c just before `run_legacy`, exactly like
+ * the other staged batches inlined above it: every helper this file uses
+ * (grade2, install_counting_iph, label_idx, fnv, sd_path, g_iph_dll/g_iph_ref,
+ * _errno, ref__errno, UD_IMP) is already in scope by inclusion point, so none
+ * of it is redeclared here.
+ *
+ * One guard per C file, since each may be deleted independently:
+ *   UCRTDIFF_REF_HAS__errno            -- errno.cpp
+ *   UCRTDIFF_REF_HAS___sys_nerr        -- syserr.cpp
+ *   UCRTDIFF_REF_HAS_strerror          -- strerror.cpp
+ *   UCRTDIFF_REF_HAS__strerror         -- _strerr.cpp
+ *   UCRTDIFF_REF_HAS_perror            -- perror.cpp
+ *   UCRTDIFF_REF_HAS__wperror          -- wperror.cpp
+ *   UCRTDIFF_REF_HAS__getcwd           -- getcwd.cpp
+ *   UCRTDIFF_REF_HAS__chdir            -- chdir.cpp
+ *   UCRTDIFF_REF_HAS__getdrive         -- drive.cpp
+ *   UCRTDIFF_REF_HAS__getdrives        -- drivemap.cpp
+ *   UCRTDIFF_REF_HAS__getdiskfree      -- drivfree.cpp
+ *   UCRTDIFF_REF_HAS_signal            -- signal.cpp
+ *   UCRTDIFF_REF_HAS_set_terminate     -- terminate.cpp
+ *   UCRTDIFF_REF_HAS__seh_filter_exe   -- exception_filter.cpp
+ *   UCRTDIFF_REF_HAS__sleep            -- slbeep.cpp
+ *   UCRTDIFF_REF_HAS__getsystime       -- systime.cpp
+ *   UCRTDIFF_REF_HAS__getpid           -- getpid.cpp
+ *   UCRTDIFF_REF_HAS_is_wctype         -- is_wctype.cpp
+ *   UCRTDIFF_REF_HAS__resetstkoflw     -- resetstk.cpp
+ *   UCRTDIFF_REF_HAS__set_error_mode   -- set_error_mode.cpp
+ *   UCRTDIFF_REF_HAS__seterrormode     -- seterrm.cpp
+ *
+ * All ref_<name> symbols this file declares were confirmed present in
+ * build-{i386,amd64,arm64}/libucrt_ref.a with llvm-nm, EXCEPT
+ * `__acrt_errno_from_os_error` and `__acrt_get_sigabrt_handler`, which are
+ * not exported by ucrtbase (no ucrtbase.spec entry) and so are never
+ * declared or graded here.
+ *
+ * DANGEROUS STATE, called out per-block below:
+ *   - `_chdir`/`_wchdir` change the process's real current directory --
+ *     saved with GetCurrentDirectoryW and restored after every use.
+ *   - `_chdrive` changes the process's real current drive -- same
+ *     save/restore via the saved full path (which is drive-qualified).
+ *   - `_setsystime` changes the MACHINE'S WALL CLOCK, not just process
+ *     state. It is graded by round-tripping the CURRENT time right back
+ *     through itself (so each call is a near no-op, off by at most the
+ *     handful of milliseconds between the initial read and the round-trip),
+ *     and the original captured value is restored via `SetLocalTime`
+ *     unconditionally at the end of the block, even if a grade fails.
+ *   - `_seterrormode`/`_set_error_mode` touch process-wide (not per-CRT)
+ *     state; both are restored to their original value at the end.
+ *   - `signal`/`raise` are graded only for `SIGTERM` (a "runtime-only"
+ *     signal not tied to a console-control handler) and `SIGFPE` (the
+ *     exception-table path), NEVER left installed as `SIG_DFL` before a
+ *     `raise` (which would `_exit(3)` the harness) -- a real handler that
+ *     counts its own invocations is installed first, and the original
+ *     action (`SIG_DFL`, matching process start) is restored after.
+ *   - `_resetstkoflw` manipulates the calling thread's own guard page; both
+ *     sides call it on the SAME real thread stack (there is only one), which
+ *     is exactly what it is meant to tolerate (idempotent re-arming) -- only
+ *     the return codes are compared, never memory layout.
+ */
+
+/* ==== errno.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS__errno
+unsigned long *__cdecl ref___doserrno(void);
+errno_t __cdecl ref__set_errno(int);
+errno_t __cdecl ref__get_errno(int *);
+errno_t __cdecl ref__set_doserrno(unsigned long);
+errno_t __cdecl ref__get_doserrno(unsigned long *);
+
+extern int *(__cdecl *const ud__errno)(void) __asm__(UD_IMP(_errno));
+extern unsigned long *(__cdecl *const ud___doserrno)(void) __asm__(UD_IMP(__doserrno));
+extern errno_t(__cdecl *const ud__set_errno)(int) __asm__(UD_IMP(_set_errno));
+extern errno_t(__cdecl *const ud__get_errno)(int *) __asm__(UD_IMP(_get_errno));
+extern errno_t(__cdecl *const ud__set_doserrno)(unsigned long) __asm__(UD_IMP(_set_doserrno));
+extern errno_t(__cdecl *const ud__get_doserrno)(unsigned long *) __asm__(UD_IMP(_get_doserrno));
+
+static void run_misc__errno_roundtrip(void)
+{
+    install_counting_iph();
+    ud__set_errno(0);
+    ref__set_errno(0);
+
+    int r1 = ud__set_errno(17);
+    int r2 = ref__set_errno(17);
+    grade2("_set_errno.ret", "17", r1, r2);
+    grade2("_set_errno.value", "17", *ud__errno(), *ref__errno());
+
+    int out1 = -999, out2 = -999;
+    int g1 = ud__get_errno(&out1);
+    int g2 = ref__get_errno(&out2);
+    grade2("_get_errno.ret", "after17", g1, g2);
+    grade2("_get_errno.value", "after17", out1, out2);
+
+    /* NULL result: EINVAL back, errno untouched, no handler. */
+    g1 = ud__get_errno(0);
+    g2 = ref__get_errno(0);
+    grade2("_get_errno.ret", "NULL", g1, g2);
+    grade2("_get_errno.errno_unchanged", "NULL", *ud__errno(), *ref__errno());
+
+    ud__set_errno(0);
+    ref__set_errno(0);
+}
+
+static void run_misc__doserrno_roundtrip(void)
+{
+    install_counting_iph();
+    ud__set_doserrno(0);
+    ref__set_doserrno(0);
+
+    int r1 = ud__set_doserrno(1816);
+    int r2 = ref__set_doserrno(1816);
+    grade2("_set_doserrno.ret", "1816", r1, r2);
+    grade2("_set_doserrno.value", "1816", (long long)*ud___doserrno(), (long long)*ref___doserrno());
+
+    unsigned long out1 = 0xFFFFFFFF, out2 = 0xFFFFFFFF;
+    int g1 = ud__get_doserrno(&out1);
+    int g2 = ref__get_doserrno(&out2);
+    grade2("_get_doserrno.ret", "after1816", g1, g2);
+    grade2("_get_doserrno.value", "after1816", (long long)out1, (long long)out2);
+
+    g1 = ud__get_doserrno(0);
+    g2 = ref__get_doserrno(0);
+    grade2("_get_doserrno.ret", "NULL", g1, g2);
+
+    ud__set_doserrno(0);
+    ref__set_doserrno(0);
+}
+
+/* `__acrt_errno_map_os_error`/`_ptd` and `__acrt_errno_from_os_error` are not
+ * ucrtbase exports (no `ref_` symbol -- confirmed with llvm-nm), so they are
+ * ungraded directly here; the errno<->OS-error MAPPING TABLE they hold is
+ * exercised indirectly through every other function in this file that maps a
+ * real Win32 failure (`_getdiskfree`, `_chdir`, `_getdrive`'s heap path), and
+ * through the many external callers outside this batch that already do the
+ * same. */
+#define MISC_ERRNO_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_ERRNO_HAND(name) { #name, 0 },
+#endif
+
+/* ==== syserr.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS___sys_nerr
+int *__cdecl ref___sys_nerr(void);
+char **__cdecl ref___sys_errlist(void);
+
+extern int *(__cdecl *const ud___sys_nerr)(void) __asm__(UD_IMP(__sys_nerr));
+extern char **(__cdecl *const ud___sys_errlist)(void) __asm__(UD_IMP(__sys_errlist));
+
+static void run_misc___sys_nerr(void)
+{
+    install_counting_iph();
+    grade2("__sys_nerr", "-", *ud___sys_nerr(), *ref___sys_nerr());
+}
+
+static void run_misc___sys_errlist(void)
+{
+    install_counting_iph();
+    char **l1 = ud___sys_errlist();
+    char **l2 = ref___sys_errlist();
+    int n1 = *ud___sys_nerr();
+    /* Walk indices 0..n1 (inclusive -- `_sys_nerr` IS a valid index, the
+     * catch-all "Unknown error" entry) comparing STRING CONTENT, since the
+     * two sides' pointer values are never equal (separate images). */
+    for (int i = 0; i <= n1 && i <= 60; i++) {
+        long long h1 = l1[i] ? fnv(l1[i], strlen(l1[i]) + 1) : -1;
+        long long h2 = l2[i] ? fnv(l2[i], strlen(l2[i]) + 1) : -1;
+        grade2("__sys_errlist[i]", label_idx((size_t)i), h1, h2);
+    }
+}
+
+#define MISC_SYSERR_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SYSERR_HAND(name) { #name, 0 },
+#endif
+
+/* ==== strerror.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS_strerror
+char *__cdecl ref_strerror(int);
+wchar_t *__cdecl ref__wcserror(int);
+errno_t __cdecl ref_strerror_s(char *, size_t, int);
+errno_t __cdecl ref__wcserror_s(wchar_t *, size_t, int);
+
+extern char *(__cdecl *const ud_strerror)(int) __asm__(UD_IMP(strerror));
+extern wchar_t *(__cdecl *const ud__wcserror)(int) __asm__(UD_IMP(_wcserror));
+extern errno_t(__cdecl *const ud_strerror_s)(char *, size_t, int) __asm__(UD_IMP(strerror_s));
+extern errno_t(__cdecl *const ud__wcserror_s)(wchar_t *, size_t, int) __asm__(UD_IMP(_wcserror_s));
+
+static const int g_misc_errnos[] = { 0, 1, 2, 13, 22, 34, 42, 43, 100, 140, 141, -1, 9999 };
+#define MISC_ERRNOS_N (sizeof(g_misc_errnos) / sizeof(g_misc_errnos[0]))
+
+static void run_misc_strerror(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < MISC_ERRNOS_N; i++) {
+        int e = g_misc_errnos[i];
+        char *s1 = ud_strerror(e);
+        char *s2 = ref_strerror(e);
+        long long h1 = s1 ? fnv(s1, strlen(s1) + 1) : -1;
+        long long h2 = s2 ? fnv(s2, strlen(s2) + 1) : -1;
+        grade2("strerror", label_idx((size_t)i), h1, h2);
+    }
+}
+
+static void run_misc__wcserror(void)
+{
+    install_counting_iph();
+    for (unsigned i = 0; i < MISC_ERRNOS_N; i++) {
+        int e = g_misc_errnos[i];
+        wchar_t *s1 = ud__wcserror(e);
+        wchar_t *s2 = ref__wcserror(e);
+        long long h1 = s1 ? fnv(s1, (wcslen(s1) + 1) * sizeof(wchar_t)) : -1;
+        long long h2 = s2 ? fnv(s2, (wcslen(s2) + 1) * sizeof(wchar_t)) : -1;
+        grade2("_wcserror", label_idx((size_t)i), h1, h2);
+    }
+}
+
+static void run_misc_strerror_s(void)
+{
+    install_counting_iph();
+    char b1[8], b2[8];
+    memset(b1, 0x5A, sizeof(b1));
+    memset(b2, 0x5A, sizeof(b2));
+    DbgPrint("[UCRTDIFF]   . strerror_s trunc dll\n");
+    int r1 = ud_strerror_s(b1, sizeof(b1), 12 /* ENOMEM: "Not enough space" -- longer than 8 */);
+    DbgPrint("[UCRTDIFF]   . strerror_s trunc ref\n");
+    int r2 = ref_strerror_s(b2, sizeof(b2), 12);
+    grade2("strerror_s.ret", "trunc", r1, r2);
+    grade2("strerror_s.buf", "trunc", fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+
+    /* NULL/zero-size: EINVAL back through the handler, errno set, no write. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    DbgPrint("[UCRTDIFF]   . strerror_s null dll\n");
+    r1 = ud_strerror_s(0, 8, 0);
+    DbgPrint("[UCRTDIFF]   . strerror_s null ref\n");
+    r2 = ref_strerror_s(0, 8, 0);
+    grade2("strerror_s.ret", "NULLbuf", r1, r2);
+    grade2("strerror_s.errno", "NULLbuf", *_errno(), *ref__errno());
+    grade2("strerror_s.iph", "NULLbuf", g_iph_dll, g_iph_ref);
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    DbgPrint("[UCRTDIFF]   . strerror_s zero dll\n");
+    r1 = ud_strerror_s(b1, 0, 0);
+    DbgPrint("[UCRTDIFF]   . strerror_s zero ref\n");
+    r2 = ref_strerror_s(b2, 0, 0);
+    grade2("strerror_s.ret", "zerosize", r1, r2);
+    grade2("strerror_s.errno", "zerosize", *_errno(), *ref__errno());
+    grade2("strerror_s.iph", "zerosize", g_iph_dll, g_iph_ref);
+}
+
+static void run_misc__wcserror_s(void)
+{
+    install_counting_iph();
+    wchar_t b1[8], b2[8];
+    wmemset(b1, 0x5A5A, 8);
+    wmemset(b2, 0x5A5A, 8);
+    int r1 = ud__wcserror_s(b1, 8, 12);
+    int r2 = ref__wcserror_s(b2, 8, 12);
+    grade2("_wcserror_s.ret", "trunc", r1, r2);
+    grade2("_wcserror_s.buf", "trunc", fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+
+    r1 = ud__wcserror_s(0, 8, 0);
+    r2 = ref__wcserror_s(0, 8, 0);
+    grade2("_wcserror_s.ret", "NULLbuf", r1, r2);
+}
+
+#define MISC_STRERROR_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_STRERROR_HAND(name) { #name, 0 },
+#endif
+
+/* ==== _strerr.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS__strerror
+char *__cdecl ref__strerror(const char *);
+wchar_t *__cdecl ref___wcserror(const wchar_t *);
+errno_t __cdecl ref__strerror_s(char *, size_t, const char *);
+errno_t __cdecl ref___wcserror_s(wchar_t *, size_t, const wchar_t *);
+
+extern char *(__cdecl *const ud__strerror)(const char *) __asm__(UD_IMP(_strerror));
+extern wchar_t *(__cdecl *const ud___wcserror)(const wchar_t *) __asm__(UD_IMP(__wcserror));
+extern errno_t(__cdecl *const ud__strerror_s)(char *, size_t, const char *) __asm__(UD_IMP(_strerror_s));
+extern errno_t(__cdecl *const ud___wcserror_s)(wchar_t *, size_t, const wchar_t *) __asm__(UD_IMP(__wcserror_s));
+
+static void run_misc__strerror(void)
+{
+    install_counting_iph();
+    static const char *const msgs[] = { 0, "", "custom prefix" };
+    for (unsigned i = 0; i < 3; i++) {
+        *_errno() = 12; /* ENOMEM, arbitrary non-zero */
+        *ref__errno() = 12;
+        char *s1 = ud__strerror(msgs[i]);
+        char *s2 = ref__strerror(msgs[i]);
+        long long h1 = s1 ? fnv(s1, strlen(s1) + 1) : -1;
+        long long h2 = s2 ? fnv(s2, strlen(s2) + 1) : -1;
+        grade2("_strerror", label_idx(i), h1, h2);
+    }
+}
+
+static void run_misc___wcserror(void)
+{
+    install_counting_iph();
+    static const wchar_t *const msgs[] = { 0, L"", L"custom prefix" };
+    for (unsigned i = 0; i < 3; i++) {
+        *_errno() = 12;
+        *ref__errno() = 12;
+        wchar_t *s1 = ud___wcserror(msgs[i]);
+        wchar_t *s2 = ref___wcserror(msgs[i]);
+        long long h1 = s1 ? fnv(s1, (wcslen(s1) + 1) * sizeof(wchar_t)) : -1;
+        long long h2 = s2 ? fnv(s2, (wcslen(s2) + 1) * sizeof(wchar_t)) : -1;
+        grade2("__wcserror", label_idx(i), h1, h2);
+    }
+}
+
+static void run_misc__strerror_s(void)
+{
+    install_counting_iph();
+    char b1[16], b2[16];
+    memset(b1, 0x5A, sizeof(b1));
+    memset(b2, 0x5A, sizeof(b2));
+    *_errno() = 2;
+    *ref__errno() = 2;
+    int r1 = ud__strerror_s(b1, sizeof(b1), "pfx");
+    int r2 = ref__strerror_s(b2, sizeof(b2), "pfx");
+    grade2("_strerror_s.ret", "pfx", r1, r2);
+    grade2("_strerror_s.buf", "pfx", fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+
+    r1 = ud__strerror_s(0, 8, "x");
+    r2 = ref__strerror_s(0, 8, "x");
+    grade2("_strerror_s.ret", "NULLbuf", r1, r2);
+}
+
+static void run_misc___wcserror_s(void)
+{
+    install_counting_iph();
+    wchar_t b1[16], b2[16];
+    wmemset(b1, 0x5A5A, 16);
+    wmemset(b2, 0x5A5A, 16);
+    *_errno() = 2;
+    *ref__errno() = 2;
+    int r1 = ud___wcserror_s(b1, 16, L"pfx");
+    int r2 = ref___wcserror_s(b2, 16, L"pfx");
+    grade2("__wcserror_s.ret", "pfx", r1, r2);
+    grade2("__wcserror_s.buf", "pfx", fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+}
+
+#define MISC_LEGACY_STRERR_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_LEGACY_STRERR_HAND(name) { #name, 0 },
+#endif
+
+/* ==== perror.cpp / wperror.cpp ============================================== */
+/* Both graded together: `_wperror` with a real prefix delegates straight into
+ * `perror`, so grading `_wperror` alone would never exercise `perror` at all
+ * if perror.cpp were somehow gone but wperror.cpp weren't -- they are listed
+ * as two files/guards per the batch, but `_wperror`'s OWN rows only run under
+ * BOTH guards, since a working `_wperror` needs a working `perror` to call. */
+#if UCRTDIFF_REF_HAS_perror
+void __cdecl ref_perror(const char *);
+extern void (__cdecl *const ud_perror)(const char *) __asm__(UD_IMP(perror));
+
+/* perror writes to lowio fd 2 with _write, not through a FILE, so it is fd 2 that
+ * is pointed at the file -- each side through ITS OWN lowio table, the same way on
+ * both. The harness has no console, so fd 2 may not be open at all: _dup(2) then
+ * fails, and restoring means closing it again. Self-contained: the stdio blocks'
+ * freopen helpers compile out with stdio's guards. */
+intptr_t __cdecl ref__open_osfhandle(intptr_t, int);
+int __cdecl ref__dup(int);
+int __cdecl ref__dup2(int, int);
+int __cdecl ref__close(int);
+static int misc_fd2_saved[2] = { -1, -1 };
+static int misc_redirect_stderr_side(const char *path, int ref)
+{
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    int fd = (int)(ref ? ref__open_osfhandle((intptr_t)h, _O_WRONLY | _O_BINARY)
+                       : _open_osfhandle((intptr_t)h, _O_WRONLY | _O_BINARY));
+    if (fd < 0) { CloseHandle(h); return -1; }
+    misc_fd2_saved[ref] = ref ? ref__dup(2) : _dup(2);
+    int r = ref ? ref__dup2(fd, 2) : _dup2(fd, 2);
+    if (ref) ref__close(fd); else _close(fd);
+    return r == 0 ? 0 : -1;
+}
+static void misc_restore_stderr_side(int ref)
+{
+    int saved = misc_fd2_saved[ref];
+    if (saved >= 0) {
+        if (ref) { ref__dup2(saved, 2); ref__close(saved); } else { _dup2(saved, 2); _close(saved); }
+    } else {
+        if (ref) ref__close(2); else _close(2);
+    }
+    misc_fd2_saved[ref] = -1;
+}
+static int misc_redirect_stderr_dll(const char *path) { return misc_redirect_stderr_side(path, 0); }
+static void misc_restore_stderr_dll(void) { misc_restore_stderr_side(0); }
+static int misc_redirect_stderr_ref(const char *path) { return misc_redirect_stderr_side(path, 1); }
+static void misc_restore_stderr_ref(void) { misc_restore_stderr_side(1); }
+
+static long long misc_slurp_hash(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    char buf[512];
+    size_t n = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    return fnv(buf, n);
+}
+
+static void run_misc_perror(void)
+{
+    install_counting_iph();
+    const char *leaf1 = "perror_dll.txt", *leaf2 = "perror_ref.txt";
+    *_errno() = 2; /* ENOENT */
+    *ref__errno() = 2;
+
+    int s1 = misc_redirect_stderr_dll(sd_path(leaf1, 0));
+    int s2 = misc_redirect_stderr_ref(sd_path(leaf2, 1));
+    grade2("perror.redirect", "-", s1, s2);
+    if (s1 == 0) { ud_perror("my prefix"); misc_restore_stderr_dll(); }
+    if (s2 == 0) { ref_perror("my prefix"); misc_restore_stderr_ref(); }
+    if (s1 == 0 && s2 == 0) {
+        grade2("perror.output", "prefix", misc_slurp_hash(sd_path(leaf1, 0)), misc_slurp_hash(sd_path(leaf2, 1)));
+    }
+    DeleteFileA(sd_path(leaf1, 0));
+    DeleteFileA(sd_path(leaf2, 1));
+
+    /* NULL/empty prefix: only the system message. */
+    s1 = misc_redirect_stderr_dll(sd_path(leaf1, 0));
+    s2 = misc_redirect_stderr_ref(sd_path(leaf2, 1));
+    if (s1 == 0) { ud_perror((const char *)0); misc_restore_stderr_dll(); }
+    if (s2 == 0) { ref_perror((const char *)0); misc_restore_stderr_ref(); }
+    if (s1 == 0 && s2 == 0) {
+        grade2("perror.output", "NULL", misc_slurp_hash(sd_path(leaf1, 0)), misc_slurp_hash(sd_path(leaf2, 1)));
+    }
+    DeleteFileA(sd_path(leaf1, 0));
+    DeleteFileA(sd_path(leaf2, 1));
+}
+
+#define MISC_PERROR_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_PERROR_HAND(name) { #name, 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__wperror
+void __cdecl ref__wperror(const wchar_t *);
+extern void (__cdecl *const ud__wperror)(const wchar_t *) __asm__(UD_IMP(_wperror));
+
+static void run_misc__wperror(void)
+{
+#if UCRTDIFF_REF_HAS_perror
+    install_counting_iph();
+    const char *leaf1 = "wperror_dll.txt", *leaf2 = "wperror_ref.txt";
+    *_errno() = 13; /* EACCES */
+    *ref__errno() = 13;
+
+    int s1 = misc_redirect_stderr_dll(sd_path(leaf1, 0));
+    int s2 = misc_redirect_stderr_ref(sd_path(leaf2, 1));
+    if (s1 == 0) { ud__wperror(L"wide prefix"); misc_restore_stderr_dll(); }
+    if (s2 == 0) { ref__wperror(L"wide prefix"); misc_restore_stderr_ref(); }
+    if (s1 == 0 && s2 == 0) {
+        grade2("_wperror.output", "prefix", misc_slurp_hash(sd_path(leaf1, 0)), misc_slurp_hash(sd_path(leaf2, 1)));
+    }
+    DeleteFileA(sd_path(leaf1, 0));
+    DeleteFileA(sd_path(leaf2, 1));
+#else
+    /* `perror.cpp` is gone -- `_wperror`'s own redirect helpers above are not
+     * compiled in this configuration (they live in the `perror` guard), so
+     * there is nothing safe to grade against without duplicating them; this
+     * batch never deletes one file without the other in the same run, so the
+     * gap is only theoretical. */
+    (void)0;
+#endif
+}
+
+#define MISC_WPERROR_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_WPERROR_HAND(name) { #name, 0 },
+#endif
+
+/* ==== getcwd.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__getcwd
+unsigned long *__cdecl ref___doserrno(void);
+char *__cdecl ref__getcwd(char *, int);
+wchar_t *__cdecl ref__wgetcwd(wchar_t *, int);
+char *__cdecl ref__getdcwd(int, char *, int);
+wchar_t *__cdecl ref__wgetdcwd(int, wchar_t *, int);
+void __cdecl ref_free(void *);
+
+extern char *(__cdecl *const ud__getcwd)(char *, int) __asm__(UD_IMP(_getcwd));
+extern wchar_t *(__cdecl *const ud__wgetcwd)(wchar_t *, int) __asm__(UD_IMP(_wgetcwd));
+extern char *(__cdecl *const ud__getdcwd)(int, char *, int) __asm__(UD_IMP(_getdcwd));
+extern wchar_t *(__cdecl *const ud__wgetdcwd)(int, wchar_t *, int) __asm__(UD_IMP(_wgetdcwd));
+
+static void run_misc__getcwd(void)
+{
+    install_counting_iph();
+    char b1[512], b2[512];
+    memset(b1, 0x5A, sizeof(b1));
+    memset(b2, 0x5A, sizeof(b2));
+    char *r1 = ud__getcwd(b1, sizeof(b1));
+    char *r2 = ref__getcwd(b2, sizeof(b2));
+    grade2("_getcwd.nonnull", "userbuf", r1 != 0, r2 != 0);
+    if (r1 && r2) grade2("_getcwd.content", "userbuf", fnv(b1, strlen(b1) + 1), fnv(b2, strlen(b2) + 1));
+
+    /* Auto-allocate. */
+    char *a1 = ud__getcwd(0, 0 /* max_length ignored when buffer is NULL only
+                                  in the sense the C still validates >= 0;
+                                  0 means "size the buffer exactly" */);
+    char *a2 = ref__getcwd(0, 0);
+    grade2("_getcwd.autoalloc.nonnull", "-", a1 != 0, a2 != 0);
+    if (a1 && a2) grade2("_getcwd.autoalloc.content", "-", fnv(a1, strlen(a1) + 1), fnv(a2, strlen(a2) + 1));
+    if (a1) free(a1);
+    if (a2) ref_free(a2);
+
+    /* Too-small buffer: ERANGE, NULL back. */
+    char tiny1[2], tiny2[2];
+    r1 = ud__getcwd(tiny1, sizeof(tiny1));
+    r2 = ref__getcwd(tiny2, sizeof(tiny2));
+    grade2("_getcwd.toosmall.ret", "-", r1 == 0, r2 == 0);
+    grade2("_getcwd.toosmall.errno", "-", *_errno(), *ref__errno());
+
+    /* Negative max_length: EINVAL via the invalid-parameter handler. */
+    g_iph_dll = g_iph_ref = 0;
+    r1 = ud__getcwd(b1, -1);
+    r2 = ref__getcwd(b2, -1);
+    grade2("_getcwd.negative.ret", "-", r1 == 0, r2 == 0);
+    grade2("_getcwd.negative.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_misc__wgetcwd(void)
+{
+    install_counting_iph();
+    wchar_t b1[512], b2[512];
+    wmemset(b1, 0x5A5A, 512);
+    wmemset(b2, 0x5A5A, 512);
+    wchar_t *r1 = ud__wgetcwd(b1, 512);
+    wchar_t *r2 = ref__wgetcwd(b2, 512);
+    grade2("_wgetcwd.nonnull", "-", r1 != 0, r2 != 0);
+    if (r1 && r2) grade2("_wgetcwd.content", "-", fnv(b1, (wcslen(b1) + 1) * sizeof(wchar_t)), fnv(b2, (wcslen(b2) + 1) * sizeof(wchar_t)));
+}
+
+static void run_misc__getdcwd(void)
+{
+    install_counting_iph();
+    char b1[512], b2[512];
+    /* Drive 0 = default; matches `_getcwd`. */
+    char *r1 = ud__getdcwd(0, b1, sizeof(b1));
+    char *r2 = ref__getdcwd(0, b2, sizeof(b2));
+    grade2("_getdcwd.default.nonnull", "-", r1 != 0, r2 != 0);
+    if (r1 && r2) grade2("_getdcwd.default.content", "-", fnv(b1, strlen(b1) + 1), fnv(b2, strlen(b2) + 1));
+
+    /* Out-of-range drive: EACCES, doserrno=ERROR_INVALID_DRIVE, via the
+     * handler. */
+    g_iph_dll = g_iph_ref = 0;
+    r1 = ud__getdcwd(99, b1, sizeof(b1));
+    r2 = ref__getdcwd(99, b2, sizeof(b2));
+    grade2("_getdcwd.baddrive.ret", "-", r1 == 0, r2 == 0);
+    grade2("_getdcwd.baddrive.errno", "-", *_errno(), *ref__errno());
+    grade2("_getdcwd.baddrive.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_getdcwd.baddrive.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_misc__wgetdcwd(void)
+{
+    install_counting_iph();
+    wchar_t b1[512], b2[512];
+    wchar_t *r1 = ud__wgetdcwd(0, b1, 512);
+    wchar_t *r2 = ref__wgetdcwd(0, b2, 512);
+    grade2("_wgetdcwd.default.nonnull", "-", r1 != 0, r2 != 0);
+}
+
+#define MISC_GETCWD_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_GETCWD_HAND(name) { #name, 0 },
+#endif
+
+/* ==== chdir.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__chdir
+unsigned long *__cdecl ref___doserrno(void);
+int __cdecl ref__chdir(const char *);
+int __cdecl ref__wchdir(const wchar_t *);
+
+extern int (__cdecl *const ud__chdir)(const char *) __asm__(UD_IMP(_chdir));
+extern int (__cdecl *const ud__wchdir)(const wchar_t *) __asm__(UD_IMP(_wchdir));
+
+static void run_misc__chdir(void)
+{
+    install_counting_iph();
+    wchar_t saved[MAX_PATH];
+    DWORD saved_len = GetCurrentDirectoryW(MAX_PATH, saved);
+    grade2("_chdir.precondition", "-", saved_len > 0, saved_len > 0);
+
+    /* "." is always a valid, harmless target -- doesn't actually move the
+     * cwd, so nothing needs restoring for THIS row, but the NULL-path row
+     * below never changes it either; restored unconditionally anyway in case
+     * a future edit adds a real move. */
+    int r1 = ud__chdir(".");
+    int r2 = ref__chdir(".");
+    grade2("_chdir.dot.ret", "-", r1, r2);
+
+    /* NULL path: EINVAL, doserrno cleared to 0 first. */
+    g_iph_dll = g_iph_ref = 0;
+    *__doserrno() = 999;
+    *ref___doserrno() = 999;
+    r1 = ud__chdir((const char *)0);
+    r2 = ref__chdir((const char *)0);
+    grade2("_chdir.null.ret", "-", r1, r2);
+    grade2("_chdir.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_chdir.null.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_chdir.null.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* Nonexistent directory: maps GetLastError, -1. */
+    r1 = ud__chdir("Z:\\this_should_not_exist_ucrtdiff");
+    r2 = ref__chdir("Z:\\this_should_not_exist_ucrtdiff");
+    grade2("_chdir.bad.ret", "-", r1, r2);
+    grade2("_chdir.bad.errno", "-", *_errno(), *ref__errno());
+
+    SetCurrentDirectoryW(saved);
+}
+
+static void run_misc__wchdir(void)
+{
+    install_counting_iph();
+    wchar_t saved[MAX_PATH];
+    GetCurrentDirectoryW(MAX_PATH, saved);
+
+    int r1 = ud__wchdir(L".");
+    int r2 = ref__wchdir(L".");
+    grade2("_wchdir.dot.ret", "-", r1, r2);
+
+    r1 = ud__wchdir((const wchar_t *)0);
+    r2 = ref__wchdir((const wchar_t *)0);
+    grade2("_wchdir.null.ret", "-", r1, r2);
+    grade2("_wchdir.null.errno", "-", *_errno(), *ref__errno());
+
+    SetCurrentDirectoryW(saved);
+}
+
+#define MISC_CHDIR_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_CHDIR_HAND(name) { #name, 0 },
+#endif
+
+/* ==== drive.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__getdrive
+int __cdecl ref__getdrive(void);
+int __cdecl ref__chdrive(int);
+
+extern int (__cdecl *const ud__getdrive)(void) __asm__(UD_IMP(_getdrive));
+extern int (__cdecl *const ud__chdrive)(int) __asm__(UD_IMP(_chdrive));
+
+static void run_misc__getdrive(void)
+{
+    install_counting_iph();
+    int d1 = ud__getdrive();
+    int d2 = ref__getdrive();
+    grade2("_getdrive", "-", d1, d2);
+}
+
+static void run_misc__chdrive(void)
+{
+    install_counting_iph();
+    wchar_t saved[MAX_PATH];
+    GetCurrentDirectoryW(MAX_PATH, saved);
+    int orig_drive = ud__getdrive();
+
+    /* Re-select the CURRENT drive -- a harmless no-op move, restored via the
+     * saved full (drive-qualified) path unconditionally afterward regardless
+     * of what either side did. */
+    int r1 = ud__chdrive(orig_drive);
+    int r2 = ref__chdrive(orig_drive);
+    grade2("_chdrive.current.ret", "-", r1, r2);
+
+    /* Out of 1..26 range: EACCES, doserrno=ERROR_INVALID_DRIVE, via handler. */
+    g_iph_dll = g_iph_ref = 0;
+    r1 = ud__chdrive(0);
+    r2 = ref__chdrive(0);
+    grade2("_chdrive.zero.ret", "-", r1, r2);
+    grade2("_chdrive.zero.errno", "-", *_errno(), *ref__errno());
+    grade2("_chdrive.zero.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_chdrive.zero.iph", "-", g_iph_dll, g_iph_ref);
+
+    r1 = ud__chdrive(99);
+    r2 = ref__chdrive(99);
+    grade2("_chdrive.toobig.ret", "-", r1, r2);
+
+    SetCurrentDirectoryW(saved);
+}
+
+#define MISC_DRIVE_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_DRIVE_HAND(name) { #name, 0 },
+#endif
+
+/* ==== drivemap.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS__getdrives
+unsigned long __cdecl ref__getdrives(void);
+extern unsigned long (__cdecl *const ud__getdrives)(void) __asm__(UD_IMP(_getdrives));
+
+static void run_misc__getdrives(void)
+{
+    install_counting_iph();
+    unsigned long r1 = ud__getdrives();
+    unsigned long r2 = ref__getdrives();
+    /* Both call the SAME Win32 `GetLogicalDrives` with no argument
+     * conversion at all, so this should be bit-identical, not just
+     * "nonzero". */
+    grade2("_getdrives", "-", (long long)r1, (long long)r2);
+}
+
+#define MISC_DRIVEMAP_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_DRIVEMAP_HAND(name) { #name, 0 },
+#endif
+
+/* ==== drivfree.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS__getdiskfree
+struct misc_diskfree_t { unsigned total_clusters, avail_clusters, sectors_per_cluster, bytes_per_sector; };
+unsigned __cdecl ref__getdiskfree(unsigned, struct misc_diskfree_t *);
+extern unsigned (__cdecl *const ud__getdiskfree)(unsigned, struct misc_diskfree_t *) __asm__(UD_IMP(_getdiskfree));
+
+static void run_misc__getdiskfree(void)
+{
+    install_counting_iph();
+    struct misc_diskfree_t r1, r2;
+    memset(&r1, 0xAA, sizeof(r1));
+    memset(&r2, 0xAA, sizeof(r2));
+    /* Drive 0 = current drive -- always valid. */
+    unsigned e1 = ud__getdiskfree(0, &r1);
+    unsigned e2 = ref__getdiskfree(0, &r2);
+    grade2("_getdiskfree.err", "-", (long long)e1, (long long)e2);
+    if (e1 == 0 && e2 == 0) {
+        /* Free/total cluster COUNTS can drift between the two sequential
+         * calls on a live filesystem, so grade the STABLE geometry fields
+         * only (bytes_per_sector, sectors_per_cluster), not the free/total
+         * counts. */
+        grade2("_getdiskfree.sectors_per_cluster", "-", (long long)r1.sectors_per_cluster, (long long)r2.sectors_per_cluster);
+        grade2("_getdiskfree.bytes_per_sector", "-", (long long)r1.bytes_per_sector, (long long)r2.bytes_per_sector);
+    }
+
+    /* NULL result / drive > 26: EINVAL via handler, ERROR_INVALID_PARAMETER
+     * (87) return, no `_doserrno` involvement. */
+    g_iph_dll = g_iph_ref = 0;
+    e1 = ud__getdiskfree(0, 0);
+    e2 = ref__getdiskfree(0, 0);
+    grade2("_getdiskfree.nullresult.err", "-", (long long)e1, (long long)e2);
+    grade2("_getdiskfree.nullresult.iph", "-", g_iph_dll, g_iph_ref);
+
+    g_iph_dll = g_iph_ref = 0;
+    e1 = ud__getdiskfree(99, &r1);
+    e2 = ref__getdiskfree(99, &r2);
+    grade2("_getdiskfree.baddrive.err", "-", (long long)e1, (long long)e2);
+    grade2("_getdiskfree.baddrive.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define MISC_DRIVFREE_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_DRIVFREE_HAND(name) { #name, 0 },
+#endif
+
+/* ==== getpid.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__getpid
+int __cdecl ref__getpid(void);
+extern int (__cdecl *const ud__getpid)(void) __asm__(UD_IMP(_getpid));
+
+static void run_misc__getpid(void)
+{
+    install_counting_iph();
+    /* Both sides run IN the same process, so both must report the SAME pid. */
+    grade2("_getpid", "-", ud__getpid(), ref__getpid());
+}
+
+#define MISC_GETPID_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_GETPID_HAND(name) { #name, 0 },
+#endif
+
+/* ==== is_wctype.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS_is_wctype
+int __cdecl ref_is_wctype(unsigned short, unsigned short);
+extern int (__cdecl *const ud_is_wctype)(unsigned short, unsigned short) __asm__(UD_IMP(is_wctype));
+
+static void run_misc_is_wctype(void)
+{
+    install_counting_iph();
+    /* _ALPHA=0x0103, _DIGIT=0x0004, _SPACE=0x0008 (ctype.h masks) -- plain
+     * literals here since this file never includes <ctype.h>'s wctype
+     * macros. */
+    static const struct { unsigned short c, mask; } rows[] = {
+        { L'A', 0x0103 }, { L'5', 0x0004 }, { L' ', 0x0008 }, { L'!', 0x0103 }, { 0, 0x0103 },
+    };
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        int r1 = ud_is_wctype(rows[i].c, rows[i].mask);
+        int r2 = ref_is_wctype(rows[i].c, rows[i].mask);
+        grade2("is_wctype", label_idx(i), r1 != 0, r2 != 0);
+    }
+}
+
+#define MISC_ISWCTYPE_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_ISWCTYPE_HAND(name) { #name, 0 },
+#endif
+
+/* ==== resetstk.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS__resetstkoflw
+int __cdecl ref__resetstkoflw(void);
+extern int (__cdecl *const ud__resetstkoflw)(void) __asm__(UD_IMP(_resetstkoflw));
+
+static void run_misc__resetstkoflw(void)
+{
+    install_counting_iph();
+    /* Both calls re-arm the SAME real thread's guard page -- idempotent by
+     * design (that's the whole point of the function), so calling it twice
+     * in a row is exactly the "recover from a stack overflow that already
+     * happened" scenario it exists for. Only the return code (0/1) is
+     * graded, never any memory content. */
+    int r1 = ud__resetstkoflw();
+    int r2 = ref__resetstkoflw();
+    grade2("_resetstkoflw", "-", r1 != 0, r2 != 0);
+}
+
+#define MISC_RESETSTK_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_RESETSTK_HAND(name) { #name, 0 },
+#endif
+
+/* ==== set_error_mode.cpp ===================================================== */
+#if UCRTDIFF_REF_HAS__set_error_mode
+int __cdecl ref__set_error_mode(int);
+extern int (__cdecl *const ud__set_error_mode)(int) __asm__(UD_IMP(_set_error_mode));
+
+static void run_misc__set_error_mode(void)
+{
+    install_counting_iph();
+    /* _REPORT_ERRMODE=3: read back WITHOUT changing -- do this FIRST on each
+     * side to capture and restore the true original value. */
+    int orig1 = ud__set_error_mode(3);
+    int orig2 = ref__set_error_mode(3);
+    grade2("_set_error_mode.report", "-", orig1, orig2);
+
+    int old1 = ud__set_error_mode(1 /* _OUT_TO_STDERR */);
+    int old2 = ref__set_error_mode(1);
+    grade2("_set_error_mode.set.old", "-", old1, old2);
+    grade2("_set_error_mode.report_after", "-", ud__set_error_mode(3), ref__set_error_mode(3));
+
+    /* Invalid mode: EINVAL via handler, -1 back, mode unchanged. */
+    g_iph_dll = g_iph_ref = 0;
+    int bad1 = ud__set_error_mode(999);
+    int bad2 = ref__set_error_mode(999);
+    grade2("_set_error_mode.bad.ret", "-", bad1, bad2);
+    grade2("_set_error_mode.bad.iph", "-", g_iph_dll, g_iph_ref);
+    grade2("_set_error_mode.report_unchanged", "-", ud__set_error_mode(3), ref__set_error_mode(3));
+
+    ud__set_error_mode(orig1);
+    ref__set_error_mode(orig2);
+}
+
+#define MISC_SETERRMODE_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SETERRMODE_HAND(name) { #name, 0 },
+#endif
+
+/* ==== seterrm.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS__seterrormode
+void __cdecl ref__seterrormode(int);
+extern void (__cdecl *const ud__seterrormode)(int) __asm__(UD_IMP(_seterrormode));
+
+static void run_misc__seterrormode(void)
+{
+    install_counting_iph();
+    /* Process-wide Win32 state (`SetErrorMode`), not per-CRT -- captured with
+     * the real Win32 `SetErrorMode`'s own read-back idiom (calling it with
+     * its own current value, which Win32 defines as returning the OLD value
+     * unchanged) so this restores exactly, on the actual shared OS state,
+     * regardless of which side's call last touched it. */
+    unsigned int orig = SetErrorMode(0);
+    SetErrorMode(orig);
+
+    /* Neither side returns anything to grade -- `_seterrormode` is `void`.
+     * Grade only that the call doesn't fault and doesn't touch errno or the
+     * invalid-parameter handler (the C body is an unconditional, unvalidated
+     * passthrough). */
+    *_errno() = 0;
+    *ref__errno() = 0;
+    ud__seterrormode(SEM_FAILCRITICALERRORS);
+    unsigned int after1 = SetErrorMode(orig); /* reads back DLL's write, restores */
+    ref__seterrormode(SEM_FAILCRITICALERRORS);
+    unsigned int after2 = SetErrorMode(orig); /* reads back ref's write, restores */
+    grade2("_seterrormode.effective", "-", (long long)after1, (long long)after2);
+    grade2("_seterrormode.errno_untouched", "-", *_errno(), *ref__errno());
+    grade2("_seterrormode.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define MISC_SETERRM_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SETERRM_HAND(name) { #name, 0 },
+#endif
+
+/* ==== slbeep.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__sleep
+void __cdecl ref__sleep(unsigned long);
+void __cdecl ref__beep(unsigned, unsigned);
+extern void (__cdecl *const ud__sleep)(unsigned long) __asm__(UD_IMP(_sleep));
+extern void (__cdecl *const ud__beep)(unsigned, unsigned) __asm__(UD_IMP(_beep));
+
+static void run_misc__sleep(void)
+{
+    install_counting_iph();
+    /* `_SLEEP_MINIMUM` (0) is bumped to 1ms internally either way -- the
+     * shortest delay this can be graded with is deliberately used so this
+     * row costs ~2ms, not a real sleep. Nothing to compare but "didn't
+     * fault, didn't touch errno/iph". */
+    *_errno() = 0;
+    *ref__errno() = 0;
+    ud__sleep(0);
+    ref__sleep(0);
+    grade2("_sleep.errno_untouched", "-", *_errno(), *ref__errno());
+    grade2("_sleep.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_misc__beep(void)
+{
+    install_counting_iph();
+    /* `Beep(0, 0)` is a documented no-op-ish call (invalid frequency),
+     * returns quickly without an audible tone either way. */
+    *_errno() = 0;
+    *ref__errno() = 0;
+    ud__beep(0, 0);
+    ref__beep(0, 0);
+    grade2("_beep.errno_untouched", "-", *_errno(), *ref__errno());
+    grade2("_beep.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define MISC_SLBEEP_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SLBEEP_HAND(name) { #name, 0 },
+#endif
+
+/* ==== systime.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS__getsystime
+struct misc_tm { int tm_sec, tm_min, tm_hour, tm_mday, tm_mon, tm_year, tm_wday, tm_yday, tm_isdst; };
+unsigned __cdecl ref__getsystime(struct misc_tm *);
+unsigned __cdecl ref__setsystime(struct misc_tm *, unsigned);
+extern unsigned (__cdecl *const ud__getsystime)(struct misc_tm *) __asm__(UD_IMP(_getsystime));
+extern unsigned (__cdecl *const ud__setsystime)(struct misc_tm *, unsigned) __asm__(UD_IMP(_setsystime));
+
+static void run_misc__getsystime(void)
+{
+    install_counting_iph();
+    struct misc_tm t1, t2;
+    memset(&t1, 0xAA, sizeof(t1));
+    memset(&t2, 0xAA, sizeof(t2));
+    unsigned ms1 = ud__getsystime(&t1);
+    unsigned ms2 = ref__getsystime(&t2);
+    /* The wall clock ticks between the two calls, so exact equality is not
+     * expected -- grade the FIELDS THAT CANNOT DRIFT within one test run:
+     * year/month/day (a run never crosses midnight on a real machine in
+     * practice, and if it somehow did, this row would simply fail loudly
+     * rather than silently pass, which is the correct behaviour for a
+     * genuinely flaky boundary). `tm_isdst` must be exactly -1 on both. */
+    grade2("_getsystime.year", "-", t1.tm_year, t2.tm_year);
+    grade2("_getsystime.mon", "-", t1.tm_mon, t2.tm_mon);
+    grade2("_getsystime.mday", "-", t1.tm_mday, t2.tm_mday);
+    grade2("_getsystime.isdst", "-", t1.tm_isdst, t2.tm_isdst);
+    grade2("_getsystime.isdst_is_neg1", "-", t1.tm_isdst == -1, t2.tm_isdst == -1);
+    (void)ms1; (void)ms2; /* milliseconds: inherently racy, not graded */
+
+    /* NULL result: EINVAL via handler, 0 back. */
+    g_iph_dll = g_iph_ref = 0;
+    unsigned r1 = ud__getsystime(0);
+    unsigned r2 = ref__getsystime(0);
+    grade2("_getsystime.null.ret", "-", r1, r2);
+    grade2("_getsystime.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+/* `_setsystime` writes the MACHINE'S WALL CLOCK -- see the file header
+ * comment. Graded ONLY as a round-trip through the value just read, on each
+ * side in turn, with the ORIGINAL value restored unconditionally at the end
+ * regardless of what either grade found. The net effect on the visible clock
+ * is bounded by the few milliseconds this whole block takes to run. */
+static void run_misc__setsystime(void)
+{
+    install_counting_iph();
+    struct misc_tm orig;
+    unsigned orig_ms = ud__getsystime(&orig);
+
+    struct misc_tm t = orig;
+    unsigned e1 = ud__setsystime(&t, orig_ms);
+    struct misc_tm t2 = orig;
+    unsigned e2 = ref__setsystime(&t2, orig_ms);
+    grade2("_setsystime.roundtrip.err", "-", (long long)e1, (long long)e2);
+
+    /* NULL source: ERROR_INVALID_PARAMETER (87), no crash, no clock write. */
+    e1 = ud__setsystime(0, 0);
+    e2 = ref__setsystime(0, 0);
+    grade2("_setsystime.null.err", "-", (long long)e1, (long long)e2);
+
+    struct misc_tm restore = orig;
+    ud__setsystime(&restore, orig_ms);
+}
+
+#define MISC_SYSTIME_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SYSTIME_HAND(name) { #name, 0 },
+#endif
+
+/* ==== signal.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS_signal
+typedef void (__cdecl *misc_sig_t)(int);
+misc_sig_t __cdecl ref_signal(int, misc_sig_t);
+int __cdecl ref_raise(int);
+int *__cdecl ref___fpecode(void);
+
+extern misc_sig_t(__cdecl *const ud_signal)(int, misc_sig_t) __asm__(UD_IMP(signal));
+extern int (__cdecl *const ud_raise)(int) __asm__(UD_IMP(raise));
+extern int *(__cdecl *const ud___fpecode)(void) __asm__(UD_IMP(__fpecode));
+
+#define MISC_SIGTERM 15
+#define MISC_SIGFPE 8
+#define MISC_SIG_DFL ((misc_sig_t)0)
+#define MISC_SIG_GET ((misc_sig_t)2)
+
+static volatile int g_misc_sig_dll_hits, g_misc_sig_ref_hits, g_misc_sig_last;
+static void __cdecl misc_sig_handler_dll(int signum) { g_misc_sig_dll_hits++; g_misc_sig_last = signum; }
+static void __cdecl misc_sig_handler_ref(int signum) { g_misc_sig_ref_hits++; g_misc_sig_last = signum; }
+
+static void run_misc_signal(void)
+{
+    install_counting_iph();
+
+    /* SIGTERM: console-independent, global action. Query first (SIG_GET must
+     * not install anything), then install, then verify the OLD value read
+     * back is what SIG_GET just reported, then restore SIG_DFL. */
+    misc_sig_t q1 = ud_signal(MISC_SIGTERM, MISC_SIG_GET);
+    misc_sig_t q2 = ref_signal(MISC_SIGTERM, MISC_SIG_GET);
+    grade2("signal.SIGTERM.get_is_dfl", "-", q1 == MISC_SIG_DFL, q2 == MISC_SIG_DFL);
+
+    misc_sig_t old1 = ud_signal(MISC_SIGTERM, misc_sig_handler_dll);
+    misc_sig_t old2 = ref_signal(MISC_SIGTERM, misc_sig_handler_ref);
+    grade2("signal.SIGTERM.old", "-", old1 == q1, old2 == q2);
+
+    misc_sig_t now1 = ud_signal(MISC_SIGTERM, MISC_SIG_GET);
+    misc_sig_t now2 = ref_signal(MISC_SIGTERM, MISC_SIG_GET);
+    grade2("signal.SIGTERM.installed", "-", now1 == misc_sig_handler_dll, now2 == misc_sig_handler_ref);
+
+    ud_signal(MISC_SIGTERM, MISC_SIG_DFL);
+    ref_signal(MISC_SIGTERM, MISC_SIG_DFL);
+
+    /* Bogus signal number: EINVAL, SIG_ERR back. */
+    g_iph_dll = g_iph_ref = 0;
+    misc_sig_t bad1 = ud_signal(0x7fffffff, MISC_SIG_DFL);
+    misc_sig_t bad2 = ref_signal(0x7fffffff, MISC_SIG_DFL);
+    grade2("signal.badsig.iserr", "-", bad1 == (misc_sig_t)(intptr_t)-1, bad2 == (misc_sig_t)(intptr_t)-1);
+    grade2("signal.badsig.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* SIGFPE: exception-table path, per-thread. Same shape as SIGTERM. */
+    misc_sig_t fq1 = ud_signal(MISC_SIGFPE, MISC_SIG_GET);
+    misc_sig_t fq2 = ref_signal(MISC_SIGFPE, MISC_SIG_GET);
+    grade2("signal.SIGFPE.get_is_dfl", "-", fq1 == MISC_SIG_DFL, fq2 == MISC_SIG_DFL);
+    misc_sig_t fold1 = ud_signal(MISC_SIGFPE, misc_sig_handler_dll);
+    misc_sig_t fold2 = ref_signal(MISC_SIGFPE, misc_sig_handler_ref);
+    grade2("signal.SIGFPE.old", "-", fold1 == fq1, fold2 == fq2);
+    ud_signal(MISC_SIGFPE, MISC_SIG_DFL);
+    ref_signal(MISC_SIGFPE, MISC_SIG_DFL);
+}
+
+static void run_misc_raise(void)
+{
+    install_counting_iph();
+
+    /* Install a counting handler FIRST -- raising with SIG_DFL installed
+     * would `_exit(3)` the harness. Restored to SIG_DFL after. */
+    ud_signal(MISC_SIGTERM, misc_sig_handler_dll);
+    g_misc_sig_dll_hits = 0;
+    g_misc_sig_last = 0;
+    int r1 = ud_raise(MISC_SIGTERM);
+    grade2("raise.SIGTERM.ret", "dll", r1, 0);
+    grade2("raise.SIGTERM.hit", "dll", g_misc_sig_dll_hits, 1);
+    grade2("raise.SIGTERM.signum", "dll", g_misc_sig_last, MISC_SIGTERM);
+    /* Handler is auto-reset to SIG_DFL after firing (see the module doc) --
+     * reinstall before checking the ref side, or the SECOND raise would
+     * `_exit`. */
+    misc_sig_t after1 = ud_signal(MISC_SIGTERM, MISC_SIG_GET);
+    grade2("raise.SIGTERM.autoreset", "dll", after1 == MISC_SIG_DFL, 1);
+    ud_signal(MISC_SIGTERM, MISC_SIG_DFL);
+
+    ref_signal(MISC_SIGTERM, misc_sig_handler_ref);
+    g_misc_sig_ref_hits = 0;
+    g_misc_sig_last = 0;
+    int r2 = ref_raise(MISC_SIGTERM);
+    grade2("raise.SIGTERM.ret", "ref", r2, 0);
+    grade2("raise.SIGTERM.hit", "ref", g_misc_sig_ref_hits, 1);
+    misc_sig_t after2 = ref_signal(MISC_SIGTERM, MISC_SIG_GET);
+    grade2("raise.SIGTERM.autoreset", "ref", after2 == MISC_SIG_DFL, 1);
+    ref_signal(MISC_SIGTERM, MISC_SIG_DFL);
+
+    /* SIGFPE: also grade `__fpecode()`'s value while inside the handler is
+     * not attempted here (would need the handler to read it back into a
+     * global, adding real complexity for a single extra field) -- graded
+     * only that `raise` succeeds and fires exactly once, and that
+     * `__fpecode()` reads back `_FPE_EXPLICITGEN` (0x8c) immediately after
+     * `raise` returns (the C restores the OLD value after the handler runs,
+     * so this is really checking the RESTORE, not the in-handler value). */
+    ud_signal(MISC_SIGFPE, misc_sig_handler_dll);
+    g_misc_sig_dll_hits = 0;
+    int fr1 = ud_raise(MISC_SIGFPE);
+    int fpe1 = *ud___fpecode();
+    grade2("raise.SIGFPE.ret", "dll", fr1, 0);
+    grade2("raise.SIGFPE.hit", "dll", g_misc_sig_dll_hits, 1);
+    ud_signal(MISC_SIGFPE, MISC_SIG_DFL);
+
+    ref_signal(MISC_SIGFPE, misc_sig_handler_ref);
+    g_misc_sig_ref_hits = 0;
+    int fr2 = ref_raise(MISC_SIGFPE);
+    int fpe2 = *ref___fpecode();
+    grade2("raise.SIGFPE.ret", "ref", fr2, 0);
+    grade2("raise.SIGFPE.hit", "ref", g_misc_sig_ref_hits, 1);
+    grade2("raise.SIGFPE.fpecode_restored", "-", fpe1, fpe2);
+    ref_signal(MISC_SIGFPE, MISC_SIG_DFL);
+
+    /* Invalid signal number: EINVAL, -1. */
+    g_iph_dll = g_iph_ref = 0;
+    int b1 = ud_raise(0x7fffffff);
+    int b2 = ref_raise(0x7fffffff);
+    grade2("raise.badsig.ret", "-", b1, b2);
+    grade2("raise.badsig.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define MISC_SIGNAL_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SIGNAL_HAND(name) { #name, 0 },
+#endif
+
+/* ==== terminate.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS_set_terminate
+typedef void (__cdecl *misc_term_t)(void);
+misc_term_t __cdecl ref_set_terminate(misc_term_t);
+misc_term_t __cdecl ref__get_terminate(void);
+
+extern misc_term_t(__cdecl *const ud_set_terminate)(misc_term_t) __asm__(UD_IMP(set_terminate));
+extern misc_term_t(__cdecl *const ud__get_terminate)(void) __asm__(UD_IMP(_get_terminate));
+
+static void __cdecl misc_term_handler_dll(void) {}
+static void __cdecl misc_term_handler_ref(void) {}
+
+/* `terminate()` itself is NEVER called -- see the file header and
+ * `terminate.rs`'s module doc for why (no SEH catch-all in `#![no_std]`
+ * Rust). Only `set_terminate`/`_get_terminate` are graded. */
+static void run_misc_set_terminate(void)
+{
+    install_counting_iph();
+
+    /* Default handler is NULL internally (substituted with `abort` when
+     * read) -- `_get_terminate` never returns NULL itself, so the very
+     * first read on each side is whatever the CRT defaulted to; save it to
+     * restore at the end. */
+    misc_term_t orig1 = ud__get_terminate();
+    misc_term_t orig2 = ref__get_terminate();
+    grade2("_get_terminate.initial_nonnull", "-", orig1 != 0, orig2 != 0);
+
+    misc_term_t old1 = ud_set_terminate(misc_term_handler_dll);
+    misc_term_t old2 = ref_set_terminate(misc_term_handler_ref);
+    grade2("set_terminate.old", "-", old1 == orig1, old2 == orig2);
+
+    misc_term_t now1 = ud__get_terminate();
+    misc_term_t now2 = ref__get_terminate();
+    grade2("_get_terminate.after_set", "-", now1 == misc_term_handler_dll, now2 == misc_term_handler_ref);
+
+    ud_set_terminate(orig1);
+    ref_set_terminate(orig2);
+}
+
+#define MISC_TERMINATE_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_TERMINATE_HAND(name) { #name, 0 },
+#endif
+
+/* ==== exception_filter.cpp ==================================================== */
+#if UCRTDIFF_REF_HAS__seh_filter_exe
+int __cdecl ref__seh_filter_exe(unsigned long, void *);
+int __cdecl ref__seh_filter_dll(unsigned long, void *);
+extern int (__cdecl *const ud__seh_filter_exe)(unsigned long, void *) __asm__(UD_IMP(_seh_filter_exe));
+extern int (__cdecl *const ud__seh_filter_dll)(unsigned long, void *) __asm__(UD_IMP(_seh_filter_dll));
+
+/* Graded ONLY with an exception code that has NO handler installed (no
+ * `signal()` call for SIGFPE/SIGILL/SIGSEGV precedes this, and the code
+ * itself is not one of the twelve the table recognises at all) -- the single
+ * safe, side-effect-free path through `_seh_filter_exe`/`_dll`: both must
+ * return `EXCEPTION_CONTINUE_SEARCH` (0) without invoking anything.
+ * Deliberately NOT graded: any code the table DOES recognise (would call
+ * through a real or `SIG_DFL` function pointer, risking `_exit`/a fault if
+ * anything about the per-thread table state is unexpected), and
+ * `_seh_filter_dll`'s one real branch (the MSVC C++ EH code
+ * `0xE06D7363`), since exercising it means either forwarding to
+ * `_seh_filter_exe` with that recognised code (not in the table either, so
+ * it also degenerates to `EXCEPTION_CONTINUE_SEARCH` -- graded below) or
+ * constructing a genuine C++ exception, which is out of scope for a C
+ * harness. */
+static void run_misc__seh_filter_exe(void)
+{
+    install_counting_iph();
+    unsigned long unknown_code = 0x12345678;
+    int r1 = ud__seh_filter_exe(unknown_code, 0);
+    int r2 = ref__seh_filter_exe(unknown_code, 0);
+    grade2("_seh_filter_exe.unknown", "-", r1, r2);
+
+    /* The MSVC C++ EH code, forwarded by `_seh_filter_dll` -- not in the
+     * exception-action table either (it's a C signal table, not a C++ one),
+     * so this too degenerates to CONTINUE_SEARCH on both sides. */
+    unsigned long eh_code = 0xE06D7363;
+    int r3 = ud__seh_filter_dll(eh_code, 0);
+    int r4 = ref__seh_filter_dll(eh_code, 0);
+    grade2("_seh_filter_dll.cppeh", "-", r3, r4);
+
+    int r5 = ud__seh_filter_dll(unknown_code, 0);
+    int r6 = ref__seh_filter_dll(unknown_code, 0);
+    grade2("_seh_filter_dll.unknown", "-", r5, r6);
+}
+
+#define MISC_SEHFILTER_HAND(name) { #name, run_misc_##name },
+#else
+#define MISC_SEHFILTER_HAND(name) { #name, 0 },
+#endif
+
+/* ==== registry ================================================================ */
+#define MISC_HAND_ENTRIES                                                     \
+    MISC_ERRNO_HAND(_errno_roundtrip) MISC_ERRNO_HAND(_doserrno_roundtrip)     \
+    MISC_SYSERR_HAND(__sys_nerr) MISC_SYSERR_HAND(__sys_errlist)               \
+    MISC_STRERROR_HAND(strerror) MISC_STRERROR_HAND(_wcserror)                \
+    MISC_STRERROR_HAND(strerror_s) MISC_STRERROR_HAND(_wcserror_s)            \
+    MISC_LEGACY_STRERR_HAND(_strerror) MISC_LEGACY_STRERR_HAND(__wcserror)     \
+    MISC_LEGACY_STRERR_HAND(_strerror_s) MISC_LEGACY_STRERR_HAND(__wcserror_s) \
+    MISC_PERROR_HAND(perror) MISC_WPERROR_HAND(_wperror)                      \
+    MISC_GETCWD_HAND(_getcwd) MISC_GETCWD_HAND(_wgetcwd)                      \
+    MISC_GETCWD_HAND(_getdcwd) MISC_GETCWD_HAND(_wgetdcwd)                    \
+    MISC_CHDIR_HAND(_chdir) MISC_CHDIR_HAND(_wchdir)                          \
+    MISC_DRIVE_HAND(_getdrive) MISC_DRIVE_HAND(_chdrive)                      \
+    MISC_DRIVEMAP_HAND(_getdrives) MISC_DRIVFREE_HAND(_getdiskfree)           \
+    MISC_GETPID_HAND(_getpid) MISC_ISWCTYPE_HAND(is_wctype)                   \
+    MISC_RESETSTK_HAND(_resetstkoflw) MISC_SETERRMODE_HAND(_set_error_mode)   \
+    MISC_SETERRM_HAND(_seterrormode)                                          \
+    MISC_SLBEEP_HAND(_sleep) MISC_SLBEEP_HAND(_beep)                         \
+    MISC_SYSTIME_HAND(_getsystime) MISC_SYSTIME_HAND(_setsystime)             \
+    MISC_SIGNAL_HAND(signal) MISC_SIGNAL_HAND(raise)                          \
+    MISC_TERMINATE_HAND(set_terminate) MISC_SEHFILTER_HAND(_seh_filter_exe)
+
+
+/* ==== staging/filesystem.c, inlined ==== */
+/* ==== staging/filesystem.c, inlined ====
+ *
+ * filesystem.c -- guest grader for the "filesystem" batch
+ * (sdk/lib/rust/ucrt-rust/src/filesystem/): makepath/splitpath, access,
+ * fullpath, unlink/rename, mkdir/rmdir, chmod -- all 26 exports of
+ * sdk/lib/ucrt/filesystem/{makepath,splitpath,access,waccess,fullpath,
+ * unlink,wunlink,chmod,wchmod,mkdir,wmkdir,rename,wrename,rmdir,wrmdir}.cpp.
+ *
+ * #included into a copy of ucrtdiff.c, just before `run_legacy()`, so every
+ * symbol ucrtdiff.c itself defines above that point (grade2, fnv, label_idx,
+ * _errno, ref__errno, install_counting_iph, g_iph_dll/g_iph_ref, UD_IMP,
+ * sd_path/sd_dir, MAX_PATH etc via <windows.h>) is already in scope.
+ *
+ * Guard names, one per C file (a file can be deleted independent of its
+ * siblings): UCRTDIFF_REF_HAS__makepath, UCRTDIFF_REF_HAS__splitpath,
+ * UCRTDIFF_REF_HAS__access, UCRTDIFF_REF_HAS__waccess,
+ * UCRTDIFF_REF_HAS__fullpath, UCRTDIFF_REF_HAS_remove (unlink.cpp -- it
+ * defines both `remove` and `_unlink`; `remove` is the representative
+ * export), UCRTDIFF_REF_HAS__wremove (wunlink.cpp), UCRTDIFF_REF_HAS__chmod,
+ * UCRTDIFF_REF_HAS__wchmod, UCRTDIFF_REF_HAS__mkdir, UCRTDIFF_REF_HAS__wmkdir,
+ * UCRTDIFF_REF_HAS_rename, UCRTDIFF_REF_HAS__wrename,
+ * UCRTDIFF_REF_HAS__rmdir, UCRTDIFF_REF_HAS__wrmdir. None of the 15 appear
+ * yet in generated-refs.h (that generator does not know about this batch),
+ * so each is defined here with `#ifndef` -- confirmed present in the
+ * reference archive via `llvm-nm --defined-only build-arm64/libucrt_ref.a |
+ * grep ' ref_<name>$'` (all 26 exports, one match each). If the generator
+ * later grows entries for these names, its `#define` (processed first, since
+ * generated-refs.h is `#include`d at the top of ucrtdiff.c) wins over the
+ * `#ifndef` fallback here.
+ *
+ * Every fixture lives under the guest temp dir via the existing, unconditional
+ * `sd_path(leaf, side)` (one physical file/dir per SIDE, so the DLL and the
+ * ref archive never touch the same inode) -- never the printf block's
+ * `pf_path`, which compiles out with its own guard. The shared fixture
+ * helpers below (`fs_write_file`, `fs_clear_readonly`, `fs_to_wide`,
+ * `struct fs_fixture`, `fs_build_fixture`, `fs_cleanup_fixture`) are
+ * themselves UNCONDITIONAL, exactly like `sd_path`: several of the 15 guards
+ * below use them, and each guard can flip to 0 independently of the others
+ * as its own C file is deleted, so none of this shared plumbing may live
+ * inside any single one of them.
+ *
+ * Every filesystem effect this file itself performs to build/tear down a
+ * fixture goes through plain Win32 (CreateFileA/DeleteFileA/
+ * CreateDirectoryA/RemoveDirectoryA/GetFileAttributesA/SetFileAttributesA),
+ * never through an export under test -- a fixture must not depend on the
+ * code being graded, and file-system effects are verified independently of
+ * both CRTs the same way (also per the brief).
+ *
+ * Process state: none of these exports touch cwd, environment, locale, TZ,
+ * code page, signal handlers or error mode, so there is nothing to save and
+ * restore here. `_fullpath`'s empty/NULL-path case reads the process's REAL
+ * current directory (shared with every other test in the process) but never
+ * writes it.
+ */
+
+#ifndef UCRTDIFF_REF_HAS__makepath
+#define UCRTDIFF_REF_HAS__makepath 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__splitpath
+#define UCRTDIFF_REF_HAS__splitpath 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__access
+#define UCRTDIFF_REF_HAS__access 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__waccess
+#define UCRTDIFF_REF_HAS__waccess 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__fullpath
+#define UCRTDIFF_REF_HAS__fullpath 1
+#endif
+#ifndef UCRTDIFF_REF_HAS_remove
+#define UCRTDIFF_REF_HAS_remove 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__wremove
+#define UCRTDIFF_REF_HAS__wremove 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__chmod
+#define UCRTDIFF_REF_HAS__chmod 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__wchmod
+#define UCRTDIFF_REF_HAS__wchmod 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__mkdir
+#define UCRTDIFF_REF_HAS__mkdir 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__wmkdir
+#define UCRTDIFF_REF_HAS__wmkdir 1
+#endif
+#ifndef UCRTDIFF_REF_HAS_rename
+#define UCRTDIFF_REF_HAS_rename 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__wrename
+#define UCRTDIFF_REF_HAS__wrename 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__rmdir
+#define UCRTDIFF_REF_HAS__rmdir 1
+#endif
+#ifndef UCRTDIFF_REF_HAS__wrmdir
+#define UCRTDIFF_REF_HAS__wrmdir 1
+#endif
+
+/* ---- shared fixture helpers (UNCONDITIONAL -- see the header comment) ---- */
+
+static void fs_to_wide(const char *ansi, wchar_t *out, int cap)
+{
+    if (!ansi) { out[0] = 0; return; }
+    if (!MultiByteToWideChar(CP_ACP, 0, ansi, -1, out, cap))
+        out[0] = 0;
+}
+
+static void fs_write_file(const char *path, const void *data, DWORD len)
+{
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    DWORD written;
+    WriteFile(h, data, len, &written, NULL);
+    CloseHandle(h);
+}
+
+static void fs_clear_readonly(const char *path)
+{
+    DWORD a = GetFileAttributesA(path);
+    if (a != INVALID_FILE_ATTRIBUTES)
+        SetFileAttributesA(path, a & ~FILE_ATTRIBUTE_READONLY);
+}
+
+/* "<what>.i=NNN", so a diff names both the fixture kind and the mode index
+ * -- `label_idx`'s own buffer only encodes `i` mod 1000, so passing distinct
+ * thousands per fixture kind (as an earlier draft of this file did) collapses
+ * different kinds to the SAME label instead of keeping them apart. Used by
+ * both the ACCESS and WACCESS blocks (two different guards), so this stays
+ * unconditional rather than living in either one. */
+/* `_S_IWRITE` (sys/stat.h) -- the only bit `_chmod`/`_wchmod` looks at. Used
+ * by both the CHMOD and WCHMOD blocks (two different guards), hence
+ * unconditional. */
+#define FS_S_IWRITE 0x0080
+
+static const char *fs_lbl(const char *what, size_t i)
+{
+    static char buf[40];
+    int n = 0;
+    while (what[n] && n < 24) { buf[n] = what[n]; n++; }
+    buf[n++] = '.';
+    const char *idx = label_idx(i);
+    int j = 0;
+    while (idx[j] && n < (int)sizeof(buf) - 1) buf[n++] = idx[j++];
+    buf[n] = 0;
+    return buf;
+}
+
+/* One physical set of fixtures per SIDE (0 = the DLL under test, 1 = the
+ * reference archive), built fresh by every runner that needs them and torn
+ * down at the end of that runner -- cheap enough (a handful of small files)
+ * that runners do not need to share a single global fixture. */
+struct fs_fixture {
+    char plain[MAX_PATH * 2];   /* an ordinary writable, non-empty file */
+    char ro[MAX_PATH * 2];      /* a read-only file */
+    char dir[MAX_PATH * 2];     /* an empty directory */
+    char dir_ne[MAX_PATH * 2];  /* a non-empty directory (one child file) */
+    char missing[MAX_PATH * 2]; /* a path guaranteed not to exist */
+};
+
+static void fs_build_fixture(int side, struct fs_fixture *fx)
+{
+    lstrcpyA(fx->plain, sd_path("fs_plain.txt", side));
+    fs_clear_readonly(fx->plain);
+    fs_write_file(fx->plain, "hello", 5);
+    SetFileAttributesA(fx->plain, FILE_ATTRIBUTE_NORMAL);
+
+    lstrcpyA(fx->ro, sd_path("fs_ro.txt", side));
+    fs_clear_readonly(fx->ro);
+    fs_write_file(fx->ro, "hello", 5);
+    SetFileAttributesA(fx->ro, FILE_ATTRIBUTE_READONLY);
+
+    lstrcpyA(fx->dir, sd_path("fs_dir", side));
+    RemoveDirectoryA(fx->dir); /* stale from an earlier run */
+    CreateDirectoryA(fx->dir, NULL);
+
+    lstrcpyA(fx->dir_ne, sd_path("fs_dir_ne", side));
+    CreateDirectoryA(fx->dir_ne, NULL);
+    {
+        char child[MAX_PATH * 2 + 16];
+        lstrcpyA(child, fx->dir_ne);
+        lstrcatA(child, "\\child.txt");
+        fs_write_file(child, "x", 1);
+    }
+
+    lstrcpyA(fx->missing, sd_path("fs_missing.txt", side));
+    DeleteFileA(fx->missing);
+}
+
+static void fs_cleanup_fixture(struct fs_fixture *fx)
+{
+    fs_clear_readonly(fx->ro);
+    DeleteFileA(fx->plain);
+    DeleteFileA(fx->ro);
+    RemoveDirectoryA(fx->dir);
+    {
+        char child[MAX_PATH * 2 + 16];
+        lstrcpyA(child, fx->dir_ne);
+        lstrcatA(child, "\\child.txt");
+        DeleteFileA(child);
+    }
+    RemoveDirectoryA(fx->dir_ne);
+}
+
+/* ==========================================================================
+ * MAKEPATH -- _makepath, _wmakepath, _makepath_s, _wmakepath_s
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__makepath
+
+void __cdecl ref__makepath(char *, const char *, const char *, const char *, const char *);
+void __cdecl ref__wmakepath(wchar_t *, const wchar_t *, const wchar_t *, const wchar_t *, const wchar_t *);
+errno_t __cdecl ref__makepath_s(char *, size_t, const char *, const char *, const char *, const char *);
+errno_t __cdecl ref__wmakepath_s(wchar_t *, size_t, const wchar_t *, const wchar_t *, const wchar_t *,
+                                  const wchar_t *);
+
+extern void (__cdecl *const ud__makepath)(char *, const char *, const char *, const char *, const char *)
+    __asm__(UD_IMP(_makepath));
+extern void (__cdecl *const ud__wmakepath)(wchar_t *, const wchar_t *, const wchar_t *, const wchar_t *,
+                                            const wchar_t *) __asm__(UD_IMP(_wmakepath));
+extern errno_t (__cdecl *const ud__makepath_s)(char *, size_t, const char *, const char *, const char *,
+                                                const char *) __asm__(UD_IMP(_makepath_s));
+extern errno_t (__cdecl *const ud__wmakepath_s)(wchar_t *, size_t, const wchar_t *, const wchar_t *,
+                                                 const wchar_t *, const wchar_t *) __asm__(UD_IMP(_wmakepath_s));
+
+#define FS_MP_BUF 512
+
+struct fs_mp_case { const char *drv, *dir, *nam, *ext; };
+static const struct fs_mp_case g_fs_mp[] = {
+    { NULL, NULL, NULL, NULL },                                    /* i=000: everything absent */
+    { "", "", "", "" },                                            /* i=001: everything empty */
+    { "C", "dir", "file", "txt" },                                 /* i=002: no leading/trailing seps, no dot ext */
+    { NULL, "dir/sub/", "file", ".txt" },                          /* i=003: trailing '/', dotted ext */
+    { "c", "\\", "name", NULL },                                   /* i=004: dir is already just a separator */
+    { NULL, NULL, "file.name", NULL },                             /* i=005: dot lives in the filename, no ext at all */
+    { "D", "very\\long\\dir\\here", "longfilename", "extension" }, /* i=006: sized for the boundary tests below */
+};
+#define FS_MP_N (sizeof(g_fs_mp) / sizeof(g_fs_mp[0]))
+
+struct fs_mp_wcase { const wchar_t *drv, *dir, *nam, *ext; };
+static const struct fs_mp_wcase g_fs_mpw[] = {
+    { NULL, NULL, NULL, NULL },
+    { L"", L"", L"", L"" },
+    { L"C", L"dir", L"file", L"txt" },
+    { NULL, L"dir/sub/", L"file", L".txt" },
+    { L"c", L"\\", L"name", NULL },
+    { NULL, NULL, L"file.name", NULL },
+    { L"D", L"very\\long\\dir\\here", L"longfilename", L"extension" },
+};
+
+static void run_fs__makepath(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_MP_N; i++) {
+        char bud[FS_MP_BUF], bur[FS_MP_BUF];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        ud__makepath(bud, g_fs_mp[i].drv, g_fs_mp[i].dir, g_fs_mp[i].nam, g_fs_mp[i].ext);
+        ref__makepath(bur, g_fs_mp[i].drv, g_fs_mp[i].dir, g_fs_mp[i].nam, g_fs_mp[i].ext);
+        grade2("_makepath", label_idx(i), fnv(bud, sizeof bud), fnv(bur, sizeof bur));
+    }
+}
+
+static void run_fs__wmakepath(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_MP_N; i++) {
+        wchar_t bud[FS_MP_BUF], bur[FS_MP_BUF];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        ud__wmakepath(bud, g_fs_mpw[i].drv, g_fs_mpw[i].dir, g_fs_mpw[i].nam, g_fs_mpw[i].ext);
+        ref__wmakepath(bur, g_fs_mpw[i].drv, g_fs_mpw[i].dir, g_fs_mpw[i].nam, g_fs_mpw[i].ext);
+        grade2("_wmakepath", label_idx(i), fnv(bud, sizeof bud), fnv(bur, sizeof bur));
+    }
+}
+
+#define FS_MPS_ROW(fn, lbl, bud, bur, cnt, c) do {                                  \
+        memset(bud, 0xEE, sizeof(bud));                                            \
+        memset(bur, 0xEE, sizeof(bur));                                            \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;                \
+        errno_t rd_ = ud_##fn(bud, cnt, (c).drv, (c).dir, (c).nam, (c).ext);        \
+        errno_t rr_ = ref_##fn(bur, cnt, (c).drv, (c).dir, (c).nam, (c).ext);       \
+        grade2(#fn, lbl, rd_, rr_);                                                 \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                       \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                             \
+        grade2(#fn ".buf", lbl, fnv(bud, sizeof(bud)), fnv(bur, sizeof(bur)));     \
+    } while (0)
+
+static void run_fs__makepath_s(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_MP_N; i++) {
+        char bud[FS_MP_BUF], bur[FS_MP_BUF];
+        FS_MPS_ROW(_makepath_s, label_idx(i), bud, bur, FS_MP_BUF, g_fs_mp[i]);
+    }
+
+    /* Boundary: measure the real length with a generous buffer (the DLL's own
+     * answer, since both sides must agree on it anyway), then try exactly
+     * that many characters (fits) and one fewer (ERANGE through the handler,
+     * buffer reset to ""). */
+    {
+        char probe[FS_MP_BUF];
+        memset(probe, 0xEE, sizeof probe);
+        ud__makepath(probe, g_fs_mp[6].drv, g_fs_mp[6].dir, g_fs_mp[6].nam, g_fs_mp[6].ext);
+        size_t need = strlen(probe) + 1;
+        char bud[FS_MP_BUF], bur[FS_MP_BUF];
+        FS_MPS_ROW(_makepath_s, "exact", bud, bur, need, g_fs_mp[6]);
+        FS_MPS_ROW(_makepath_s, "toosmall", bud, bur, need - 1, g_fs_mp[6]);
+    }
+
+    /* NULL buffer / zero count: EINVAL through the handler, before anything
+     * else is even looked at. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rd = ud__makepath_s(NULL, FS_MP_BUF, "C", "d", "f", "e");
+        errno_t rr = ref__makepath_s(NULL, FS_MP_BUF, "C", "d", "f", "e");
+        grade2("_makepath_s.nullbuf", "-", rd, rr);
+        grade2("_makepath_s.nullbuf.errno", "-", *_errno(), *ref__errno());
+        grade2("_makepath_s.nullbuf.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    {
+        char bud[FS_MP_BUF], bur[FS_MP_BUF];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rd = ud__makepath_s(bud, 0, "C", "d", "f", "e");
+        errno_t rr = ref__makepath_s(bur, 0, "C", "d", "f", "e");
+        grade2("_makepath_s.zerocount", "-", rd, rr);
+        grade2("_makepath_s.zerocount.errno", "-", *_errno(), *ref__errno());
+        grade2("_makepath_s.zerocount.iph", "-", g_iph_dll, g_iph_ref);
+    }
+}
+
+static void run_fs__wmakepath_s(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_MP_N; i++) {
+        wchar_t bud[FS_MP_BUF], bur[FS_MP_BUF];
+        FS_MPS_ROW(_wmakepath_s, label_idx(i), bud, bur, FS_MP_BUF, g_fs_mpw[i]);
+    }
+    {
+        wchar_t probe[FS_MP_BUF];
+        memset(probe, 0xEE, sizeof probe);
+        ud__wmakepath(probe, g_fs_mpw[6].drv, g_fs_mpw[6].dir, g_fs_mpw[6].nam, g_fs_mpw[6].ext);
+        size_t need = (size_t)lstrlenW(probe) + 1;
+        wchar_t bud[FS_MP_BUF], bur[FS_MP_BUF];
+        FS_MPS_ROW(_wmakepath_s, "exact", bud, bur, need, g_fs_mpw[6]);
+        FS_MPS_ROW(_wmakepath_s, "toosmall", bud, bur, need - 1, g_fs_mpw[6]);
+    }
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rd = ud__wmakepath_s(NULL, FS_MP_BUF, L"C", L"d", L"f", L"e");
+        errno_t rr = ref__wmakepath_s(NULL, FS_MP_BUF, L"C", L"d", L"f", L"e");
+        grade2("_wmakepath_s.nullbuf", "-", rd, rr);
+        grade2("_wmakepath_s.nullbuf.errno", "-", *_errno(), *ref__errno());
+        grade2("_wmakepath_s.nullbuf.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    {
+        wchar_t bud[FS_MP_BUF], bur[FS_MP_BUF];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rd = ud__wmakepath_s(bud, 0, L"C", L"d", L"f", L"e");
+        errno_t rr = ref__wmakepath_s(bur, 0, L"C", L"d", L"f", L"e");
+        grade2("_wmakepath_s.zerocount", "-", rd, rr);
+        grade2("_wmakepath_s.zerocount.errno", "-", *_errno(), *ref__errno());
+        grade2("_wmakepath_s.zerocount.iph", "-", g_iph_dll, g_iph_ref);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__makepath */
+
+/* ==========================================================================
+ * SPLITPATH -- _splitpath, _wsplitpath, _splitpath_s, _wsplitpath_s
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__splitpath
+
+errno_t __cdecl ref__splitpath_s(const char *, char *, size_t, char *, size_t, char *, size_t, char *, size_t);
+errno_t __cdecl ref__wsplitpath_s(const wchar_t *, wchar_t *, size_t, wchar_t *, size_t, wchar_t *, size_t,
+                                   wchar_t *, size_t);
+void __cdecl ref__splitpath(const char *, char *, char *, char *, char *);
+void __cdecl ref__wsplitpath(const wchar_t *, wchar_t *, wchar_t *, wchar_t *, wchar_t *);
+
+extern errno_t (__cdecl *const ud__splitpath_s)(const char *, char *, size_t, char *, size_t, char *, size_t,
+                                                 char *, size_t) __asm__(UD_IMP(_splitpath_s));
+extern errno_t (__cdecl *const ud__wsplitpath_s)(const wchar_t *, wchar_t *, size_t, wchar_t *, size_t, wchar_t *,
+                                                  size_t, wchar_t *, size_t) __asm__(UD_IMP(_wsplitpath_s));
+extern void (__cdecl *const ud__splitpath)(const char *, char *, char *, char *, char *)
+    __asm__(UD_IMP(_splitpath));
+extern void (__cdecl *const ud__wsplitpath)(const wchar_t *, wchar_t *, wchar_t *, wchar_t *, wchar_t *)
+    __asm__(UD_IMP(_wsplitpath));
+
+static const char *const g_fs_sp[] = {
+    "",                            /* i=00: empty */
+    "C:",                          /* i=01: drive only */
+    "C:\\",                        /* i=02: drive + root */
+    "C:/",                         /* i=03: drive + root, forward slash */
+    "C:\\dir\\sub\\file.ext",      /* i=04: the usual shape */
+    "C:/dir/file.ext",             /* i=05: forward slashes throughout */
+    "\\dir\\",                     /* i=06: no drive, trailing separator */
+    "\\\\server\\share\\file.txt", /* i=07: UNC-shaped (no real drive letter) */
+    "file.tar.gz",                 /* i=08: two dots -- last one wins */
+    ".hidden",                     /* i=09: leading dot, no separator before it */
+    "noext.",                      /* i=10: trailing dot, empty extension */
+    "subdir\\file",                /* i=11: relative, no extension */
+    "file.txt",                    /* i=12: filename + extension, no dir */
+    "\\.txt",                      /* i=13: dot right after the only separator */
+    "relative.name",               /* i=14: no separator at all */
+    "C:nodir",                     /* i=15: drive with no root marker */
+    "\\",                          /* i=16: root only */
+    ".",                           /* i=17: dot alone (no separator before it) */
+    "..",                          /* i=18: dot-dot */
+};
+#define FS_SP_N (sizeof(g_fs_sp) / sizeof(g_fs_sp[0]))
+
+static const wchar_t *const g_fs_spw[] = {
+    L"", L"C:", L"C:\\", L"C:/", L"C:\\dir\\sub\\file.ext", L"C:/dir/file.ext", L"\\dir\\",
+    L"\\\\server\\share\\file.txt", L"file.tar.gz", L".hidden", L"noext.", L"subdir\\file",
+    L"file.txt", L"\\.txt", L"relative.name", L"C:nodir", L"\\", L".", L"..",
+};
+
+/* Generous fixed sizes for the main sweep -- every corpus entry above fits
+ * comfortably, so this exercises the PARSING, not the bounds checks (those
+ * get their own explicit rows below). */
+#define FS_SP_DBUF 8
+#define FS_SP_XBUF 64
+
+#define FS_SP_ROW(fn, lbl, CALL_DLL, CALL_REF) do {                                 \
+        char dd[FS_SP_DBUF], rd[FS_SP_DBUF];                                       \
+        char dD[FS_SP_XBUF], rD[FS_SP_XBUF];                                       \
+        char dF[FS_SP_XBUF], rF[FS_SP_XBUF];                                       \
+        char dE[FS_SP_XBUF], rE[FS_SP_XBUF];                                       \
+        memset(dd, 0xEE, sizeof dd); memset(rd, 0xEE, sizeof rd);                  \
+        memset(dD, 0xEE, sizeof dD); memset(rD, 0xEE, sizeof rD);                  \
+        memset(dF, 0xEE, sizeof dF); memset(rF, 0xEE, sizeof rF);                  \
+        memset(dE, 0xEE, sizeof dE); memset(rE, 0xEE, sizeof rE);                  \
+        CALL_DLL; CALL_REF;                                                        \
+        grade2(#fn ".drive", lbl, fnv(dd, sizeof dd), fnv(rd, sizeof rd));         \
+        grade2(#fn ".dir", lbl, fnv(dD, sizeof dD), fnv(rD, sizeof rD));           \
+        grade2(#fn ".fname", lbl, fnv(dF, sizeof dF), fnv(rF, sizeof rF));         \
+        grade2(#fn ".ext", lbl, fnv(dE, sizeof dE), fnv(rE, sizeof rE));           \
+    } while (0)
+
+static void run_fs__splitpath(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_SP_N; i++)
+        FS_SP_ROW(_splitpath, label_idx(i), ud__splitpath(g_fs_sp[i], dd, dD, dF, dE),
+                  ref__splitpath(g_fs_sp[i], rd, rD, rF, rE));
+}
+
+static void run_fs__wsplitpath(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_SP_N; i++) {
+        wchar_t wdd[FS_SP_DBUF], wrd[FS_SP_DBUF];
+        wchar_t wdD[FS_SP_XBUF], wrD[FS_SP_XBUF];
+        wchar_t wdF[FS_SP_XBUF], wrF[FS_SP_XBUF];
+        wchar_t wdE[FS_SP_XBUF], wrE[FS_SP_XBUF];
+        memset(wdd, 0xEE, sizeof wdd); memset(wrd, 0xEE, sizeof wrd);
+        memset(wdD, 0xEE, sizeof wdD); memset(wrD, 0xEE, sizeof wrD);
+        memset(wdF, 0xEE, sizeof wdF); memset(wrF, 0xEE, sizeof wrF);
+        memset(wdE, 0xEE, sizeof wdE); memset(wrE, 0xEE, sizeof wrE);
+        ud__wsplitpath(g_fs_spw[i], wdd, wdD, wdF, wdE);
+        ref__wsplitpath(g_fs_spw[i], wrd, wrD, wrF, wrE);
+        grade2("_wsplitpath.drive", label_idx(i), fnv(wdd, sizeof wdd), fnv(wrd, sizeof wrd));
+        grade2("_wsplitpath.dir", label_idx(i), fnv(wdD, sizeof wdD), fnv(wrD, sizeof wrD));
+        grade2("_wsplitpath.fname", label_idx(i), fnv(wdF, sizeof wdF), fnv(wrF, sizeof wrF));
+        grade2("_wsplitpath.ext", label_idx(i), fnv(wdE, sizeof wdE), fnv(wrE, sizeof wrE));
+    }
+}
+
+#define FS_SPS_ROW(fn, lbl, dcnt, Dcnt, fcnt, ecnt, CALL_DLL, CALL_REF) do {         \
+        char dd[dcnt], rd[dcnt];                                                   \
+        char dD[Dcnt], rD[Dcnt];                                                   \
+        char dF[fcnt], rF[fcnt];                                                   \
+        char dE[ecnt], rE[ecnt];                                                   \
+        memset(dd, 0xEE, sizeof dd); memset(rd, 0xEE, sizeof rd);                  \
+        memset(dD, 0xEE, sizeof dD); memset(rD, 0xEE, sizeof rD);                  \
+        memset(dF, 0xEE, sizeof dF); memset(rF, 0xEE, sizeof rF);                  \
+        memset(dE, 0xEE, sizeof dE); memset(rE, 0xEE, sizeof rE);                  \
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;                \
+        errno_t rr1_ = CALL_DLL;                                                   \
+        errno_t rr2_ = CALL_REF;                                                   \
+        grade2(#fn, lbl, rr1_, rr2_);                                              \
+        grade2(#fn ".errno", lbl, *_errno(), *ref__errno());                      \
+        grade2(#fn ".iph", lbl, g_iph_dll, g_iph_ref);                            \
+        grade2(#fn ".drive", lbl, fnv(dd, sizeof dd), fnv(rd, sizeof rd));         \
+        grade2(#fn ".dir", lbl, fnv(dD, sizeof dD), fnv(rD, sizeof rD));           \
+        grade2(#fn ".fname", lbl, fnv(dF, sizeof dF), fnv(rF, sizeof rF));         \
+        grade2(#fn ".ext", lbl, fnv(dE, sizeof dE), fnv(rE, sizeof rE));           \
+    } while (0)
+
+static void run_fs__splitpath_s(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_SP_N; i++)
+        FS_SPS_ROW(_splitpath_s, label_idx(i), 8, 64, 64, 64,
+                   ud__splitpath_s(g_fs_sp[i], dd, sizeof dd, dD, sizeof dD, dF, sizeof dF, dE, sizeof dE),
+                   ref__splitpath_s(g_fs_sp[i], rd, sizeof rd, rD, sizeof rD, rF, sizeof rF, rE, sizeof rE));
+
+    /* NULL path: EINVAL through the handler, every requested buffer reset. */
+    FS_SPS_ROW(_splitpath_s, "NULLpath", 8, 64, 64, 64,
+               ud__splitpath_s(NULL, dd, sizeof dd, dD, sizeof dD, dF, sizeof dF, dE, sizeof dE),
+               ref__splitpath_s(NULL, rd, sizeof rd, rD, sizeof rD, rF, sizeof rF, rE, sizeof rE));
+
+    /* Shape mismatch: a non-NULL pointer with a zero count is EINVAL too. */
+    FS_SPS_ROW(_splitpath_s, "shape.dir0", 8, 64, 64, 64,
+               ud__splitpath_s(g_fs_sp[4], dd, sizeof dd, dD, 0, dF, sizeof dF, dE, sizeof dE),
+               ref__splitpath_s(g_fs_sp[4], rd, sizeof rd, rD, 0, rF, sizeof rF, rE, sizeof rE));
+
+    /* Per-component ERANGE, direct (no handler): a real 2-char drive ("C:")
+     * needs count >= 3; a real directory/filename/extension needs count >
+     * its own length. g_fs_sp[4] = "C:\dir\sub\file.ext" has all four. */
+    FS_SPS_ROW(_splitpath_s, "toosmall.drive", 2, 64, 64, 64,
+               ud__splitpath_s(g_fs_sp[4], dd, sizeof dd, dD, sizeof dD, dF, sizeof dF, dE, sizeof dE),
+               ref__splitpath_s(g_fs_sp[4], rd, sizeof rd, rD, sizeof rD, rF, sizeof rF, rE, sizeof rE));
+    FS_SPS_ROW(_splitpath_s, "toosmall.dir", 8, 4, 64, 64,
+               ud__splitpath_s(g_fs_sp[4], dd, sizeof dd, dD, sizeof dD, dF, sizeof dF, dE, sizeof dE),
+               ref__splitpath_s(g_fs_sp[4], rd, sizeof rd, rD, sizeof rD, rF, sizeof rF, rE, sizeof rE));
+    FS_SPS_ROW(_splitpath_s, "toosmall.fname", 8, 64, 2, 64,
+               ud__splitpath_s(g_fs_sp[4], dd, sizeof dd, dD, sizeof dD, dF, sizeof dF, dE, sizeof dE),
+               ref__splitpath_s(g_fs_sp[4], rd, sizeof rd, rD, sizeof rD, rF, sizeof rF, rE, sizeof rE));
+    FS_SPS_ROW(_splitpath_s, "toosmall.ext", 8, 64, 64, 2,
+               ud__splitpath_s(g_fs_sp[4], dd, sizeof dd, dD, sizeof dD, dF, sizeof dF, dE, sizeof dE),
+               ref__splitpath_s(g_fs_sp[4], rd, sizeof rd, rD, sizeof rD, rF, sizeof rF, rE, sizeof rE));
+}
+
+static void run_fs__wsplitpath_s(void)
+{
+    install_counting_iph();
+    size_t i;
+    for (i = 0; i < FS_SP_N; i++) {
+        wchar_t dd[8], rd[8], dD[64], rD[64], dF[64], rF[64], dE[64], rE[64];
+        memset(dd, 0xEE, sizeof dd); memset(rd, 0xEE, sizeof rd);
+        memset(dD, 0xEE, sizeof dD); memset(rD, 0xEE, sizeof rD);
+        memset(dF, 0xEE, sizeof dF); memset(rF, 0xEE, sizeof rF);
+        memset(dE, 0xEE, sizeof dE); memset(rE, 0xEE, sizeof rE);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rr1 = ud__wsplitpath_s(g_fs_spw[i], dd, 8, dD, 64, dF, 64, dE, 64);
+        errno_t rr2 = ref__wsplitpath_s(g_fs_spw[i], rd, 8, rD, 64, rF, 64, rE, 64);
+        grade2("_wsplitpath_s", label_idx(i), rr1, rr2);
+        grade2("_wsplitpath_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_wsplitpath_s.iph", label_idx(i), g_iph_dll, g_iph_ref);
+        grade2("_wsplitpath_s.drive", label_idx(i), fnv(dd, sizeof dd), fnv(rd, sizeof rd));
+        grade2("_wsplitpath_s.dir", label_idx(i), fnv(dD, sizeof dD), fnv(rD, sizeof rD));
+        grade2("_wsplitpath_s.fname", label_idx(i), fnv(dF, sizeof dF), fnv(rF, sizeof rF));
+        grade2("_wsplitpath_s.ext", label_idx(i), fnv(dE, sizeof dE), fnv(rE, sizeof rE));
+    }
+    /* NULL path and one representative too-small case, mirroring the narrow
+     * side's coverage above. */
+    {
+        wchar_t dd[8], rd[8], dD[64], rD[64], dF[64], rF[64], dE[64], rE[64];
+        memset(dd, 0xEE, sizeof dd); memset(rd, 0xEE, sizeof rd);
+        memset(dD, 0xEE, sizeof dD); memset(rD, 0xEE, sizeof rD);
+        memset(dF, 0xEE, sizeof dF); memset(rF, 0xEE, sizeof rF);
+        memset(dE, 0xEE, sizeof dE); memset(rE, 0xEE, sizeof rE);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rr1 = ud__wsplitpath_s(NULL, dd, 8, dD, 64, dF, 64, dE, 64);
+        errno_t rr2 = ref__wsplitpath_s(NULL, rd, 8, rD, 64, rF, 64, rE, 64);
+        grade2("_wsplitpath_s", "NULLpath", rr1, rr2);
+        grade2("_wsplitpath_s.errno", "NULLpath", *_errno(), *ref__errno());
+        grade2("_wsplitpath_s.iph", "NULLpath", g_iph_dll, g_iph_ref);
+    }
+    {
+        wchar_t dd[2], rd[2], dD[64], rD[64], dF[64], rF[64], dE[64], rE[64];
+        memset(dd, 0xEE, sizeof dd); memset(rd, 0xEE, sizeof rd);
+        memset(dD, 0xEE, sizeof dD); memset(rD, 0xEE, sizeof rD);
+        memset(dF, 0xEE, sizeof dF); memset(rF, 0xEE, sizeof rF);
+        memset(dE, 0xEE, sizeof dE); memset(rE, 0xEE, sizeof rE);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t rr1 = ud__wsplitpath_s(g_fs_spw[4], dd, 2, dD, 64, dF, 64, dE, 64);
+        errno_t rr2 = ref__wsplitpath_s(g_fs_spw[4], rd, 2, rD, 64, rF, 64, rE, 64);
+        grade2("_wsplitpath_s", "toosmall.drive", rr1, rr2);
+        grade2("_wsplitpath_s.errno", "toosmall.drive", *_errno(), *ref__errno());
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__splitpath */
+
+/* ==========================================================================
+ * ACCESS -- _access, _access_s
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__access
+
+errno_t __cdecl ref__access_s(const char *, int);
+int __cdecl ref__access(const char *, int);
+
+extern errno_t (__cdecl *const ud__access_s)(const char *, int) __asm__(UD_IMP(_access_s));
+extern int (__cdecl *const ud__access)(const char *, int) __asm__(UD_IMP(_access));
+
+static void fs_access_s_row(const char *lbl, const char *pd, const char *pr, int mode)
+{
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t rd = ud__access_s(pd, mode);
+    errno_t rr = ref__access_s(pr, mode);
+    grade2("_access_s", lbl, rd, rr);
+    grade2("_access_s.errno", lbl, *_errno(), *ref__errno());
+    grade2("_access_s.iph", lbl, g_iph_dll, g_iph_ref);
+}
+
+static void run_fs__access_s(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    /* 0/2/4/6 are the only valid modes; the rest must be EINVAL on both
+     * sides, identically. */
+    static const int modes[] = { 0, 2, 4, 6, 1, 3, 5, 7, -1, 8 };
+    size_t i;
+    for (i = 0; i < sizeof(modes) / sizeof(modes[0]); i++) {
+        fs_access_s_row(fs_lbl("plain", i), fd.plain, fr.plain, modes[i]);
+        fs_access_s_row(fs_lbl("ro", i), fd.ro, fr.ro, modes[i]);
+        fs_access_s_row(fs_lbl("dir", i), fd.dir, fr.dir, modes[i]);
+        fs_access_s_row(fs_lbl("missing", i), fd.missing, fr.missing, modes[i]);
+    }
+
+    /* NULL path forwards straight to _waccess_s(NULL, mode). */
+    fs_access_s_row("nullpath", NULL, NULL, 0);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+static void run_fs__access(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__access(fd.ro, 2);
+    int rr = ref__access(fr.ro, 2);
+    grade2("_access", "ro.write", rd, rr);
+    grade2("_access.errno", "ro.write", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rd = ud__access(fd.plain, 0);
+    rr = ref__access(fr.plain, 0);
+    grade2("_access", "plain.exist", rd, rr);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rd = ud__access(fd.missing, 0);
+    rr = ref__access(fr.missing, 0);
+    grade2("_access", "missing", rd, rr);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rd = ud__access(fd.dir, 6);
+    rr = ref__access(fr.dir, 6);
+    grade2("_access", "dir.readwrite", rd, rr);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__access */
+
+/* ==========================================================================
+ * WACCESS -- _waccess, _waccess_s
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__waccess
+
+errno_t __cdecl ref__waccess_s(const wchar_t *, int);
+int __cdecl ref__waccess(const wchar_t *, int);
+unsigned long *__cdecl ref___doserrno(void);
+
+extern errno_t (__cdecl *const ud__waccess_s)(const wchar_t *, int) __asm__(UD_IMP(_waccess_s));
+extern int (__cdecl *const ud__waccess)(const wchar_t *, int) __asm__(UD_IMP(_waccess));
+
+static void fs_waccess_s_row(const char *lbl, const wchar_t *pd, const wchar_t *pr, int mode)
+{
+    *_errno() = 0; *ref__errno() = 0; *__doserrno() = 0; *ref___doserrno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t rd = ud__waccess_s(pd, mode);
+    errno_t rr = ref__waccess_s(pr, mode);
+    grade2("_waccess_s", lbl, rd, rr);
+    grade2("_waccess_s.errno", lbl, *_errno(), *ref__errno());
+    grade2("_waccess_s.doserrno", lbl, (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_waccess_s.iph", lbl, g_iph_dll, g_iph_ref);
+}
+
+static void run_fs__waccess_s(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+    wchar_t wd_plain[MAX_PATH * 2], wr_plain[MAX_PATH * 2];
+    wchar_t wd_ro[MAX_PATH * 2], wr_ro[MAX_PATH * 2];
+    wchar_t wd_dir[MAX_PATH * 2], wr_dir[MAX_PATH * 2];
+    wchar_t wd_missing[MAX_PATH * 2], wr_missing[MAX_PATH * 2];
+    fs_to_wide(fd.plain, wd_plain, MAX_PATH * 2); fs_to_wide(fr.plain, wr_plain, MAX_PATH * 2);
+    fs_to_wide(fd.ro, wd_ro, MAX_PATH * 2); fs_to_wide(fr.ro, wr_ro, MAX_PATH * 2);
+    fs_to_wide(fd.dir, wd_dir, MAX_PATH * 2); fs_to_wide(fr.dir, wr_dir, MAX_PATH * 2);
+    fs_to_wide(fd.missing, wd_missing, MAX_PATH * 2); fs_to_wide(fr.missing, wr_missing, MAX_PATH * 2);
+
+    static const int modes[] = { 0, 2, 4, 6, 1, 3, 5, 7, -1, 8 };
+    size_t i;
+    for (i = 0; i < sizeof(modes) / sizeof(modes[0]); i++) {
+        fs_waccess_s_row(fs_lbl("plain", i), wd_plain, wr_plain, modes[i]);
+        fs_waccess_s_row(fs_lbl("ro", i), wd_ro, wr_ro, modes[i]);
+        fs_waccess_s_row(fs_lbl("dir", i), wd_dir, wr_dir, modes[i]);
+        fs_waccess_s_row(fs_lbl("missing", i), wd_missing, wr_missing, modes[i]);
+    }
+
+    /* NULL: EINVAL, doserrno cleared, through the handler -- the return
+     * value IS EINVAL here (unlike `_wchmod`'s NULL check, which returns a
+     * bare -1). */
+    fs_waccess_s_row("NULL", NULL, NULL, 0);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+static void run_fs__waccess(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+    wchar_t wd_ro[MAX_PATH * 2], wr_ro[MAX_PATH * 2];
+    fs_to_wide(fd.ro, wd_ro, MAX_PATH * 2);
+    fs_to_wide(fr.ro, wr_ro, MAX_PATH * 2);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__waccess(wd_ro, 2);
+    int rr = ref__waccess(wr_ro, 2);
+    grade2("_waccess", "ro.write", rd, rr);
+    grade2("_waccess.errno", "ro.write", *_errno(), *ref__errno());
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__waccess */
+
+/* ==========================================================================
+ * FULLPATH -- _fullpath, _wfullpath
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__fullpath
+
+char *__cdecl ref__fullpath(char *, const char *, size_t);
+wchar_t *__cdecl ref__wfullpath(wchar_t *, const wchar_t *, size_t);
+void __cdecl ref_free(void *);
+
+extern char *(__cdecl *const ud__fullpath)(char *, const char *, size_t) __asm__(UD_IMP(_fullpath));
+extern wchar_t *(__cdecl *const ud__wfullpath)(wchar_t *, const wchar_t *, size_t) __asm__(UD_IMP(_wfullpath));
+
+/* Both sides observe the SAME real process cwd (this file never changes it),
+ * so a relative path, an empty path and NULL all resolve to byte-identical
+ * text on both sides -- graded as strings (fnv over the NUL-terminated
+ * content each side reports, not the whole sentinel-filled buffer, since a
+ * shorter result on one side would otherwise compare stale sentinel bytes
+ * against stale sentinel bytes and hide a real mismatch in the used prefix
+ * only by accident). */
+static long long fs_fnv_str(const char *s) { return s ? fnv(s, strlen(s)) : -1; }
+static long long fs_fnv_wstr(const wchar_t *s) { return s ? fnv(s, (size_t)lstrlenW(s) * sizeof(wchar_t)) : -1; }
+
+static void run_fs__fullpath(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    static const char *const rels[] = { NULL, "", ".", "sub\\file.txt", "sub/file.txt", "..\\x" };
+    size_t i;
+    for (i = 0; i < sizeof(rels) / sizeof(rels[0]); i++) {
+        char bud[MAX_PATH * 2], bur[MAX_PATH * 2];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        char *pd = ud__fullpath(bud, rels[i], sizeof bud);
+        char *pr = ref__fullpath(bur, rels[i], sizeof bur);
+        grade2("_fullpath.buf", label_idx(i), fs_fnv_str(pd), fs_fnv_str(pr));
+        grade2("_fullpath.nonnull", label_idx(i), pd != NULL, pr != NULL);
+    }
+
+    /* An absolute path already naming the fixture file -- should resolve to
+     * (near enough) itself. */
+    {
+        char bud[MAX_PATH * 2], bur[MAX_PATH * 2];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        char *pd = ud__fullpath(bud, fd.plain, sizeof bud);
+        char *pr = ref__fullpath(bur, fr.plain, sizeof bur);
+        grade2("_fullpath.abs.nonnull", "-", pd != NULL, pr != NULL);
+    }
+
+    /* Too-small caller buffer: never grows, ERANGE, NULL back. */
+    {
+        char probe[MAX_PATH * 2];
+        memset(probe, 0xEE, sizeof probe);
+        ud__fullpath(probe, "sub\\file.txt", sizeof probe);
+        size_t need = strlen(probe) + 1;
+        char bud[MAX_PATH * 2], bur[MAX_PATH * 2];
+        memset(bud, 0xEE, sizeof bud); memset(bur, 0xEE, sizeof bur);
+        *_errno() = 0; *ref__errno() = 0;
+        char *pd = ud__fullpath(bud, "sub\\file.txt", need - 1);
+        char *pr = ref__fullpath(bur, "sub\\file.txt", need - 1);
+        grade2("_fullpath.toosmall", "-", pd != NULL, pr != NULL);
+        grade2("_fullpath.toosmall.errno", "-", *_errno(), *ref__errno());
+    }
+
+    /* NULL user buffer: allocates, sized exactly. Freed with `free`/`ref_free`
+     * (the allocating side's own heap) so the process's own heap accounting
+     * is not left leaking or corrupted. */
+    {
+        char *pd = ud__fullpath(NULL, "sub\\file.txt", 0);
+        char *pr = ref__fullpath(NULL, "sub\\file.txt", 0);
+        grade2("_fullpath.alloc.nonnull", "-", pd != NULL, pr != NULL);
+        grade2("_fullpath.alloc.buf", "-", fs_fnv_str(pd), fs_fnv_str(pr));
+        if (pd) free(pd);
+        if (pr) ref_free(pr);
+    }
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+static void run_fs__wfullpath(void)
+{
+    install_counting_iph();
+    static const wchar_t *const rels[] = { NULL, L"", L".", L"sub\\file.txt", L"sub/file.txt", L"..\\x" };
+    size_t i;
+    for (i = 0; i < sizeof(rels) / sizeof(rels[0]); i++) {
+        wchar_t bud[MAX_PATH * 2], bur[MAX_PATH * 2];
+        memset(bud, 0xEE, sizeof bud);
+        memset(bur, 0xEE, sizeof bur);
+        wchar_t *pd = ud__wfullpath(bud, rels[i], MAX_PATH * 2);
+        wchar_t *pr = ref__wfullpath(bur, rels[i], MAX_PATH * 2);
+        grade2("_wfullpath.buf", label_idx(i), fs_fnv_wstr(pd), fs_fnv_wstr(pr));
+        grade2("_wfullpath.nonnull", label_idx(i), pd != NULL, pr != NULL);
+    }
+
+    {
+        wchar_t probe[MAX_PATH * 2];
+        memset(probe, 0xEE, sizeof probe);
+        ud__wfullpath(probe, L"sub\\file.txt", MAX_PATH * 2);
+        size_t need = (size_t)lstrlenW(probe) + 1;
+        wchar_t bud[MAX_PATH * 2], bur[MAX_PATH * 2];
+        memset(bud, 0xEE, sizeof bud); memset(bur, 0xEE, sizeof bur);
+        *_errno() = 0; *ref__errno() = 0;
+        wchar_t *pd = ud__wfullpath(bud, L"sub\\file.txt", need - 1);
+        wchar_t *pr = ref__wfullpath(bur, L"sub\\file.txt", need - 1);
+        grade2("_wfullpath.toosmall", "-", pd != NULL, pr != NULL);
+        grade2("_wfullpath.toosmall.errno", "-", *_errno(), *ref__errno());
+    }
+
+    {
+        wchar_t *pd = ud__wfullpath(NULL, L"sub\\file.txt", 0);
+        wchar_t *pr = ref__wfullpath(NULL, L"sub\\file.txt", 0);
+        grade2("_wfullpath.alloc.nonnull", "-", pd != NULL, pr != NULL);
+        grade2("_wfullpath.alloc.buf", "-", fs_fnv_wstr(pd), fs_fnv_wstr(pr));
+        if (pd) free(pd);
+        if (pr) ref_free(pr);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__fullpath */
+
+/* ==========================================================================
+ * UNLINK -- remove, _unlink
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS_remove
+
+int __cdecl ref_remove(const char *);
+int __cdecl ref__unlink(const char *);
+unsigned long *__cdecl ref___doserrno(void);
+
+extern int (__cdecl *const ud_remove)(const char *) __asm__(UD_IMP(remove));
+extern int (__cdecl *const ud__unlink)(const char *) __asm__(UD_IMP(_unlink));
+
+static void fs_remove_row(const char *fn_ud_is_remove, const char *lbl, const char *pd, const char *pr, int use_unlink)
+{
+    *_errno() = 0; *ref__errno() = 0; *__doserrno() = 0; *ref___doserrno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = use_unlink ? ud__unlink(pd) : ud_remove(pd);
+    int rr = use_unlink ? ref__unlink(pr) : ref_remove(pr);
+    grade2(fn_ud_is_remove, lbl, rd, rr);
+    grade2("remove.errno", lbl, *_errno(), *ref__errno());
+    grade2("remove.doserrno", lbl, (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("remove.iph", lbl, g_iph_dll, g_iph_ref);
+}
+
+static void run_fs_remove(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    fs_remove_row("remove", "plain", fd.plain, fr.plain, 0);
+    grade2("remove.gone", "plain", GetFileAttributesA(fd.plain) == INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(fr.plain) == INVALID_FILE_ATTRIBUTES);
+
+    /* DeleteFileW refuses a read-only file outright (Windows, not UCRT). */
+    fs_remove_row("remove", "readonly", fd.ro, fr.ro, 0);
+
+    /* A directory cannot be removed with DeleteFileW. */
+    fs_remove_row("remove", "dir", fd.dir, fr.dir, 0);
+
+    fs_remove_row("remove", "missing", fd.missing, fr.missing, 0);
+    fs_remove_row("remove", "NULL", NULL, NULL, 0);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+static void run_fs__unlink(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    fs_remove_row("_unlink", "plain", fd.plain, fr.plain, 1);
+    grade2("_unlink.gone", "plain", GetFileAttributesA(fd.plain) == INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(fr.plain) == INVALID_FILE_ATTRIBUTES);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS_remove */
+
+/* ==========================================================================
+ * WUNLINK -- _wremove, _wunlink
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__wremove
+
+int __cdecl ref__wremove(const wchar_t *);
+int __cdecl ref__wunlink(const wchar_t *);
+unsigned long *__cdecl ref___doserrno(void);
+
+extern int (__cdecl *const ud__wremove)(const wchar_t *) __asm__(UD_IMP(_wremove));
+extern int (__cdecl *const ud__wunlink)(const wchar_t *) __asm__(UD_IMP(_wunlink));
+
+static void fs_wremove_row(const char *lbl, const wchar_t *pd, const wchar_t *pr, int use_unlink)
+{
+    *_errno() = 0; *ref__errno() = 0; *__doserrno() = 0; *ref___doserrno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = use_unlink ? ud__wunlink(pd) : ud__wremove(pd);
+    int rr = use_unlink ? ref__wunlink(pr) : ref__wremove(pr);
+    grade2("_wremove", lbl, rd, rr);
+    grade2("_wremove.errno", lbl, *_errno(), *ref__errno());
+    grade2("_wremove.doserrno", lbl, (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_wremove.iph", lbl, g_iph_dll, g_iph_ref);
+}
+
+static void run_fs__wremove(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+    wchar_t wd_plain[MAX_PATH * 2], wr_plain[MAX_PATH * 2];
+    wchar_t wd_ro[MAX_PATH * 2], wr_ro[MAX_PATH * 2];
+    wchar_t wd_dir[MAX_PATH * 2], wr_dir[MAX_PATH * 2];
+    wchar_t wd_missing[MAX_PATH * 2], wr_missing[MAX_PATH * 2];
+    fs_to_wide(fd.plain, wd_plain, MAX_PATH * 2); fs_to_wide(fr.plain, wr_plain, MAX_PATH * 2);
+    fs_to_wide(fd.ro, wd_ro, MAX_PATH * 2); fs_to_wide(fr.ro, wr_ro, MAX_PATH * 2);
+    fs_to_wide(fd.dir, wd_dir, MAX_PATH * 2); fs_to_wide(fr.dir, wr_dir, MAX_PATH * 2);
+    fs_to_wide(fd.missing, wd_missing, MAX_PATH * 2); fs_to_wide(fr.missing, wr_missing, MAX_PATH * 2);
+
+    fs_wremove_row("plain", wd_plain, wr_plain, 0);
+    fs_wremove_row("readonly", wd_ro, wr_ro, 0);
+    fs_wremove_row("dir", wd_dir, wr_dir, 0);
+    fs_wremove_row("missing", wd_missing, wr_missing, 0);
+    fs_wremove_row("NULL", NULL, NULL, 0);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+static void run_fs__wunlink(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+    wchar_t wd_plain[MAX_PATH * 2], wr_plain[MAX_PATH * 2];
+    fs_to_wide(fd.plain, wd_plain, MAX_PATH * 2);
+    fs_to_wide(fr.plain, wr_plain, MAX_PATH * 2);
+    fs_wremove_row("plain", wd_plain, wr_plain, 1);
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__wremove */
+
+/* ==========================================================================
+ * CHMOD -- _chmod
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__chmod
+
+int __cdecl ref__chmod(const char *, int);
+
+extern int (__cdecl *const ud__chmod)(const char *, int) __asm__(UD_IMP(_chmod));
+
+static void run_fs__chmod(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    /* Clear _S_IWRITE -> sets FILE_ATTRIBUTE_READONLY. Verified with Win32,
+     * independent of either CRT. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__chmod(fd.plain, 0);
+    int rr = ref__chmod(fr.plain, 0);
+    grade2("_chmod.clear", "-", rd, rr);
+    grade2("_chmod.clear.errno", "-", *_errno(), *ref__errno());
+    grade2("_chmod.clear.readonly", "-",
+           (GetFileAttributesA(fd.plain) & FILE_ATTRIBUTE_READONLY) != 0,
+           (GetFileAttributesA(fr.plain) & FILE_ATTRIBUTE_READONLY) != 0);
+
+    /* Set _S_IWRITE -> clears FILE_ATTRIBUTE_READONLY again. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    rd = ud__chmod(fd.plain, FS_S_IWRITE);
+    rr = ref__chmod(fr.plain, FS_S_IWRITE);
+    grade2("_chmod.set", "-", rd, rr);
+    grade2("_chmod.set.readonly", "-",
+           (GetFileAttributesA(fd.plain) & FILE_ATTRIBUTE_READONLY) != 0,
+           (GetFileAttributesA(fr.plain) & FILE_ATTRIBUTE_READONLY) != 0);
+
+    /* Every other mode bit is ignored -- setting only bit 0x1 (no _S_IWRITE)
+     * behaves exactly like mode 0. */
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__chmod(fd.plain, 0x1);
+    rr = ref__chmod(fr.plain, 0x1);
+    grade2("_chmod.otherbits", "-", rd, rr);
+    grade2("_chmod.otherbits.readonly", "-",
+           (GetFileAttributesA(fd.plain) & FILE_ATTRIBUTE_READONLY) != 0,
+           (GetFileAttributesA(fr.plain) & FILE_ATTRIBUTE_READONLY) != 0);
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__chmod(fd.missing, 0);
+    rr = ref__chmod(fr.missing, 0);
+    grade2("_chmod.missing", "-", rd, rr);
+    grade2("_chmod.missing.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__chmod(NULL, 0);
+    rr = ref__chmod(NULL, 0);
+    grade2("_chmod.NULL", "-", rd, rr);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__chmod */
+
+/* ==========================================================================
+ * WCHMOD -- _wchmod
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__wchmod
+
+int __cdecl ref__wchmod(const wchar_t *, int);
+unsigned long *__cdecl ref___doserrno(void);
+
+extern int (__cdecl *const ud__wchmod)(const wchar_t *, int) __asm__(UD_IMP(_wchmod));
+
+static void run_fs__wchmod(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+    wchar_t wd_plain[MAX_PATH * 2], wr_plain[MAX_PATH * 2];
+    wchar_t wd_missing[MAX_PATH * 2], wr_missing[MAX_PATH * 2];
+    fs_to_wide(fd.plain, wd_plain, MAX_PATH * 2); fs_to_wide(fr.plain, wr_plain, MAX_PATH * 2);
+    fs_to_wide(fd.missing, wd_missing, MAX_PATH * 2); fs_to_wide(fr.missing, wr_missing, MAX_PATH * 2);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__wchmod(wd_plain, 0);
+    int rr = ref__wchmod(wr_plain, 0);
+    grade2("_wchmod.clear", "-", rd, rr);
+    grade2("_wchmod.clear.readonly", "-",
+           (GetFileAttributesA(fd.plain) & FILE_ATTRIBUTE_READONLY) != 0,
+           (GetFileAttributesA(fr.plain) & FILE_ATTRIBUTE_READONLY) != 0);
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wchmod(wd_plain, FS_S_IWRITE);
+    rr = ref__wchmod(wr_plain, FS_S_IWRITE);
+    grade2("_wchmod.set", "-", rd, rr);
+    grade2("_wchmod.set.readonly", "-",
+           (GetFileAttributesA(fd.plain) & FILE_ATTRIBUTE_READONLY) != 0,
+           (GetFileAttributesA(fr.plain) & FILE_ATTRIBUTE_READONLY) != 0);
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wchmod(wd_missing, 0);
+    rr = ref__wchmod(wr_missing, 0);
+    grade2("_wchmod.missing", "-", rd, rr);
+    grade2("_wchmod.missing.errno", "-", *_errno(), *ref__errno());
+
+    /* NULL: `_VALIDATE_CLEAR_OSSERR_RETURN(path != NULL, EINVAL, -1)` -- a
+     * bare -1, not EINVAL (unlike `_waccess_s`'s own NULL check). Both sides'
+     * `_doserrno` are poisoned first so a real CLEAR is what makes them
+     * agree at 0 -- never graded against a hardcoded constant. */
+    *_errno() = 0; *ref__errno() = 0;
+    *__doserrno() = 0xdeadbeef; *ref___doserrno() = 0xdeadbeef;
+    g_iph_dll = g_iph_ref = 0;
+    rd = ud__wchmod(NULL, 0);
+    rr = ref__wchmod(NULL, 0);
+    grade2("_wchmod.NULL", "-", rd, rr);
+    grade2("_wchmod.NULL.errno", "-", *_errno(), *ref__errno());
+    grade2("_wchmod.NULL.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_wchmod.NULL.iph", "-", g_iph_dll, g_iph_ref);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__wchmod */
+
+/* ==========================================================================
+ * MKDIR -- _mkdir
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__mkdir
+
+int __cdecl ref__mkdir(const char *);
+
+extern int (__cdecl *const ud__mkdir)(const char *) __asm__(UD_IMP(_mkdir));
+
+static void run_fs__mkdir(void)
+{
+    install_counting_iph();
+    char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
+    lstrcpyA(nd, sd_path("fs_newdir", 0));
+    lstrcpyA(nr, sd_path("fs_newdir", 1));
+    RemoveDirectoryA(nd);
+    RemoveDirectoryA(nr);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__mkdir(nd);
+    int rr = ref__mkdir(nr);
+    grade2("_mkdir.new", "-", rd, rr);
+    grade2("_mkdir.new.errno", "-", *_errno(), *ref__errno());
+    grade2("_mkdir.new.exists", "-",
+           (GetFileAttributesA(nd) & FILE_ATTRIBUTE_DIRECTORY) != 0,
+           (GetFileAttributesA(nr) & FILE_ATTRIBUTE_DIRECTORY) != 0);
+
+    /* Already exists -> EEXIST-shaped failure on both sides. */
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__mkdir(nd);
+    rr = ref__mkdir(nr);
+    grade2("_mkdir.exists", "-", rd, rr);
+    grade2("_mkdir.exists.errno", "-", *_errno(), *ref__errno());
+
+    /* An existing FILE at that path also fails to become a directory. */
+    {
+        struct fs_fixture fd, fr;
+        fs_build_fixture(0, &fd);
+        fs_build_fixture(1, &fr);
+        *_errno() = 0; *ref__errno() = 0;
+        rd = ud__mkdir(fd.plain);
+        rr = ref__mkdir(fr.plain);
+        grade2("_mkdir.overfile", "-", rd, rr);
+        grade2("_mkdir.overfile.errno", "-", *_errno(), *ref__errno());
+        fs_cleanup_fixture(&fd);
+        fs_cleanup_fixture(&fr);
+    }
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__mkdir(NULL);
+    rr = ref__mkdir(NULL);
+    grade2("_mkdir.NULL", "-", rd, rr);
+
+    RemoveDirectoryA(nd);
+    RemoveDirectoryA(nr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__mkdir */
+
+/* ==========================================================================
+ * WMKDIR -- _wmkdir
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__wmkdir
+
+int __cdecl ref__wmkdir(const wchar_t *);
+
+extern int (__cdecl *const ud__wmkdir)(const wchar_t *) __asm__(UD_IMP(_wmkdir));
+
+static void run_fs__wmkdir(void)
+{
+    install_counting_iph();
+    char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
+    wchar_t wnd[MAX_PATH * 2], wnr[MAX_PATH * 2];
+    lstrcpyA(nd, sd_path("fs_wnewdir", 0));
+    lstrcpyA(nr, sd_path("fs_wnewdir", 1));
+    RemoveDirectoryA(nd);
+    RemoveDirectoryA(nr);
+    fs_to_wide(nd, wnd, MAX_PATH * 2);
+    fs_to_wide(nr, wnr, MAX_PATH * 2);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__wmkdir(wnd);
+    int rr = ref__wmkdir(wnr);
+    grade2("_wmkdir.new", "-", rd, rr);
+    grade2("_wmkdir.new.exists", "-",
+           (GetFileAttributesA(nd) & FILE_ATTRIBUTE_DIRECTORY) != 0,
+           (GetFileAttributesA(nr) & FILE_ATTRIBUTE_DIRECTORY) != 0);
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wmkdir(wnd);
+    rr = ref__wmkdir(wnr);
+    grade2("_wmkdir.exists", "-", rd, rr);
+    grade2("_wmkdir.exists.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wmkdir(NULL);
+    rr = ref__wmkdir(NULL);
+    grade2("_wmkdir.NULL", "-", rd, rr);
+
+    RemoveDirectoryA(nd);
+    RemoveDirectoryA(nr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__wmkdir */
+
+/* ==========================================================================
+ * RENAME -- rename
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS_rename
+
+int __cdecl ref_rename(const char *, const char *);
+
+extern int (__cdecl *const ud_rename)(const char *, const char *) __asm__(UD_IMP(rename));
+
+/* A rename that reaches fastfat's rename path bugchecks the arm64 guest (0x23 from
+ * FatBugCheckExceptionFilter; the access violation is in RtlCopyUnicodeString under
+ * fastfat-rust's FatSetRenameInfo) -- ANY rename of an existing file, a never-seen
+ * target name included, so it is not the tunnel cache. Microsoft's _wrename and ours
+ * make the identical MoveFileExW(old, new, MOVEFILE_COPY_ALLOWED) call. Until the
+ * kernel is fixed, the cases that reach that path are SKIPPED, loudly; the ones that
+ * fail in kernel32 before it (missing source, NULL names) are graded. Set to 0 when
+ * the known-bugs entry "rename bugchecks fastfat" is closed. */
+#ifndef UCRTDIFF_FAT_RENAME_BUGCHECKS
+#define UCRTDIFF_FAT_RENAME_BUGCHECKS 1
+#endif
+
+static void run_fs_rename(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
+    /* A target name this volume has never held: a just-deleted name is what FAT's
+     * tunnel cache answers, and a rename onto one currently bugchecks the guest
+     * (0x23, fastfat's rename path; see the known-bugs registry). */
+    char leaf_u[64];
+    wsprintfA(leaf_u, "fs_renamed_%lu.txt", GetTickCount());
+    lstrcpyA(nd, sd_path(leaf_u, 0));
+    lstrcpyA(nr, sd_path(leaf_u, 1));
+    DeleteFileA(nd);
+    DeleteFileA(nr);
+
+#if UCRTDIFF_FAT_RENAME_BUGCHECKS
+    DbgPrint("[UCRTDIFF]   SKIP rename fresh/overexisting: a real rename bugchecks the guest (fastfat, known bug)\n");
+    int rd, rr;
+#else
+    /* Rename onto a fresh name: succeeds, old gone, new exists. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    DbgPrint("[UCRTDIFF]   . ud_rename line %d\n", __LINE__);
+    int rd = ud_rename(fd.plain, nd);
+    DbgPrint("[UCRTDIFF]   . ref_rename line %d\n", __LINE__);
+    int rr = ref_rename(fr.plain, nr);
+    grade2("rename.fresh", "-", rd, rr);
+    grade2("rename.fresh.errno", "-", *_errno(), *ref__errno());
+    grade2("rename.fresh.oldgone", "-", GetFileAttributesA(fd.plain) == INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(fr.plain) == INVALID_FILE_ATTRIBUTES);
+    grade2("rename.fresh.newexists", "-", GetFileAttributesA(nd) != INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(nr) != INVALID_FILE_ATTRIBUTES);
+
+    /* Rename ONTO an existing different file: MoveFileExW without
+     * MOVEFILE_REPLACE_EXISTING fails -- the target must survive untouched. */
+    *_errno() = 0; *ref__errno() = 0;
+    DbgPrint("[UCRTDIFF]   . ud_rename line %d\n", __LINE__);
+    rd = ud_rename(nd, fd.ro);
+    DbgPrint("[UCRTDIFF]   . ref_rename line %d\n", __LINE__);
+    rr = ref_rename(nr, fr.ro);
+    grade2("rename.overexisting", "-", rd, rr);
+    grade2("rename.overexisting.errno", "-", *_errno(), *ref__errno());
+    grade2("rename.overexisting.survives", "-", GetFileAttributesA(nd) != INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(nr) != INVALID_FILE_ATTRIBUTES);
+
+#endif
+    /* Missing source. */
+    *_errno() = 0; *ref__errno() = 0;
+    DbgPrint("[UCRTDIFF]   . ud_rename line %d\n", __LINE__);
+    rd = ud_rename(fd.missing, nd);
+    DbgPrint("[UCRTDIFF]   . ref_rename line %d\n", __LINE__);
+    rr = ref_rename(fr.missing, nr);
+    grade2("rename.missingsrc", "-", rd, rr);
+    grade2("rename.missingsrc.errno", "-", *_errno(), *ref__errno());
+
+    /* NULL name: no pre-check, converts to a NULL wide pointer through the
+     * same path as a real string, `errno` re-assigned from the conversion's
+     * own return before -1. */
+    *_errno() = 0; *ref__errno() = 0;
+    DbgPrint("[UCRTDIFF]   . ud_rename line %d\n", __LINE__);
+    rd = ud_rename(NULL, nd);
+    DbgPrint("[UCRTDIFF]   . ref_rename line %d\n", __LINE__);
+    rr = ref_rename(NULL, nr);
+    grade2("rename.NULLsrc", "-", rd, rr);
+    grade2("rename.NULLsrc.errno", "-", *_errno(), *ref__errno());
+
+    DeleteFileA(nd);
+    DeleteFileA(nr);
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS_rename */
+
+/* ==========================================================================
+ * WRENAME -- _wrename
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__wrename
+
+int __cdecl ref__wrename(const wchar_t *, const wchar_t *);
+
+extern int (__cdecl *const ud__wrename)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(_wrename));
+
+static void run_fs__wrename(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
+    /* A target name this volume has never held: a just-deleted name is what FAT's
+     * tunnel cache answers, and a rename onto one currently bugchecks the guest
+     * (0x23, fastfat's rename path; see the known-bugs registry). */
+    char leaf_u[64];
+    wsprintfA(leaf_u, "fs_wrenamed_%lu.txt", GetTickCount());
+    lstrcpyA(nd, sd_path(leaf_u, 0));
+    lstrcpyA(nr, sd_path(leaf_u, 1));
+    DeleteFileA(nd);
+    DeleteFileA(nr);
+
+    wchar_t wd_plain[MAX_PATH * 2], wr_plain[MAX_PATH * 2];
+    wchar_t wnd[MAX_PATH * 2], wnr[MAX_PATH * 2];
+    wchar_t wd_ro[MAX_PATH * 2], wr_ro[MAX_PATH * 2];
+    fs_to_wide(fd.plain, wd_plain, MAX_PATH * 2); fs_to_wide(fr.plain, wr_plain, MAX_PATH * 2);
+    fs_to_wide(nd, wnd, MAX_PATH * 2); fs_to_wide(nr, wnr, MAX_PATH * 2);
+    fs_to_wide(fd.ro, wd_ro, MAX_PATH * 2); fs_to_wide(fr.ro, wr_ro, MAX_PATH * 2);
+
+#if UCRTDIFF_FAT_RENAME_BUGCHECKS
+    DbgPrint("[UCRTDIFF]   SKIP _wrename fresh/overexisting: a real rename bugchecks the guest (fastfat, known bug)\n");
+    int rd, rr;
+#else
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    DbgPrint("[UCRTDIFF]   . ud__wrename line %d\n", __LINE__);
+    int rd = ud__wrename(wd_plain, wnd);
+    DbgPrint("[UCRTDIFF]   . ref__wrename line %d\n", __LINE__);
+    int rr = ref__wrename(wr_plain, wnr);
+    grade2("_wrename.fresh", "-", rd, rr);
+    grade2("_wrename.fresh.newexists", "-", GetFileAttributesA(nd) != INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(nr) != INVALID_FILE_ATTRIBUTES);
+
+    *_errno() = 0; *ref__errno() = 0;
+    DbgPrint("[UCRTDIFF]   . ud__wrename line %d\n", __LINE__);
+    rd = ud__wrename(wnd, wd_ro);
+    DbgPrint("[UCRTDIFF]   . ref__wrename line %d\n", __LINE__);
+    rr = ref__wrename(wnr, wr_ro);
+    grade2("_wrename.overexisting", "-", rd, rr);
+    grade2("_wrename.overexisting.errno", "-", *_errno(), *ref__errno());
+    grade2("_wrename.overexisting.survives", "-", GetFileAttributesA(nd) != INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(nr) != INVALID_FILE_ATTRIBUTES);
+
+#endif
+    /* Missing source: fails in kernel32 before any rename IRP. */
+    {
+        wchar_t wd_miss[MAX_PATH * 2], wr_miss[MAX_PATH * 2];
+        fs_to_wide(fd.missing, wd_miss, MAX_PATH * 2); fs_to_wide(fr.missing, wr_miss, MAX_PATH * 2);
+        *_errno() = 0; *ref__errno() = 0;
+        int md = ud__wrename(wd_miss, wnd);
+        int mr = ref__wrename(wr_miss, wnr);
+        grade2("_wrename.missingsrc", "-", md, mr);
+        grade2("_wrename.missingsrc.errno", "-", *_errno(), *ref__errno());
+    }
+    *_errno() = 0; *ref__errno() = 0;
+    DbgPrint("[UCRTDIFF]   . ud__wrename line %d\n", __LINE__);
+    rd = ud__wrename(NULL, wnd);
+    DbgPrint("[UCRTDIFF]   . ref__wrename line %d\n", __LINE__);
+    rr = ref__wrename(NULL, wnr);
+    grade2("_wrename.NULLsrc", "-", rd, rr);
+    grade2("_wrename.NULLsrc.errno", "-", *_errno(), *ref__errno());
+
+    DeleteFileA(nd);
+    DeleteFileA(nr);
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__wrename */
+
+/* ==========================================================================
+ * RMDIR -- _rmdir
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__rmdir
+
+int __cdecl ref__rmdir(const char *);
+
+extern int (__cdecl *const ud__rmdir)(const char *) __asm__(UD_IMP(_rmdir));
+
+static void run_fs__rmdir(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+
+    /* Empty directory: succeeds. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__rmdir(fd.dir);
+    int rr = ref__rmdir(fr.dir);
+    grade2("_rmdir.empty", "-", rd, rr);
+    grade2("_rmdir.empty.errno", "-", *_errno(), *ref__errno());
+    grade2("_rmdir.empty.gone", "-", GetFileAttributesA(fd.dir) == INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(fr.dir) == INVALID_FILE_ATTRIBUTES);
+
+    /* Non-empty directory: ENOTEMPTY-shaped failure, directory survives. */
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__rmdir(fd.dir_ne);
+    rr = ref__rmdir(fr.dir_ne);
+    grade2("_rmdir.nonempty", "-", rd, rr);
+    grade2("_rmdir.nonempty.errno", "-", *_errno(), *ref__errno());
+    grade2("_rmdir.nonempty.survives", "-", GetFileAttributesA(fd.dir_ne) != INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(fr.dir_ne) != INVALID_FILE_ATTRIBUTES);
+
+    /* A plain file cannot be removed as a directory. */
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__rmdir(fd.plain);
+    rr = ref__rmdir(fr.plain);
+    grade2("_rmdir.file", "-", rd, rr);
+    grade2("_rmdir.file.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__rmdir(fd.missing);
+    rr = ref__rmdir(fr.missing);
+    grade2("_rmdir.missing", "-", rd, rr);
+    grade2("_rmdir.missing.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__rmdir(NULL);
+    rr = ref__rmdir(NULL);
+    grade2("_rmdir.NULL", "-", rd, rr);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__rmdir */
+
+/* ==========================================================================
+ * WRMDIR -- _wrmdir
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__wrmdir
+
+int __cdecl ref__wrmdir(const wchar_t *);
+
+extern int (__cdecl *const ud__wrmdir)(const wchar_t *) __asm__(UD_IMP(_wrmdir));
+
+static void run_fs__wrmdir(void)
+{
+    install_counting_iph();
+    struct fs_fixture fd, fr;
+    fs_build_fixture(0, &fd);
+    fs_build_fixture(1, &fr);
+    wchar_t wd_dir[MAX_PATH * 2], wr_dir[MAX_PATH * 2];
+    wchar_t wd_dir_ne[MAX_PATH * 2], wr_dir_ne[MAX_PATH * 2];
+    wchar_t wd_missing[MAX_PATH * 2], wr_missing[MAX_PATH * 2];
+    fs_to_wide(fd.dir, wd_dir, MAX_PATH * 2); fs_to_wide(fr.dir, wr_dir, MAX_PATH * 2);
+    fs_to_wide(fd.dir_ne, wd_dir_ne, MAX_PATH * 2); fs_to_wide(fr.dir_ne, wr_dir_ne, MAX_PATH * 2);
+    fs_to_wide(fd.missing, wd_missing, MAX_PATH * 2); fs_to_wide(fr.missing, wr_missing, MAX_PATH * 2);
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int rd = ud__wrmdir(wd_dir);
+    int rr = ref__wrmdir(wr_dir);
+    grade2("_wrmdir.empty", "-", rd, rr);
+    grade2("_wrmdir.empty.gone", "-", GetFileAttributesA(fd.dir) == INVALID_FILE_ATTRIBUTES,
+           GetFileAttributesA(fr.dir) == INVALID_FILE_ATTRIBUTES);
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wrmdir(wd_dir_ne);
+    rr = ref__wrmdir(wr_dir_ne);
+    grade2("_wrmdir.nonempty", "-", rd, rr);
+    grade2("_wrmdir.nonempty.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wrmdir(wd_missing);
+    rr = ref__wrmdir(wr_missing);
+    grade2("_wrmdir.missing", "-", rd, rr);
+    grade2("_wrmdir.missing.errno", "-", *_errno(), *ref__errno());
+
+    *_errno() = 0; *ref__errno() = 0;
+    rd = ud__wrmdir(NULL);
+    rr = ref__wrmdir(NULL);
+    grade2("_wrmdir.NULL", "-", rd, rr);
+
+    fs_cleanup_fixture(&fd);
+    fs_cleanup_fixture(&fr);
+}
+
+#endif /* UCRTDIFF_REF_HAS__wrmdir */
+
+/* ==========================================================================
+ * registry -- paste into run_legacy()'s `legacy[]` table (anywhere; order
+ * does not matter, `export_begin` shards by name). One #define block per
+ * guard, exactly like FP_HAND/ST_HAND/CONVTIME_HAND -- each expands to
+ * `{ ..., 0 }` rows when its guard is 0, so the table always compiles.
+ * ========================================================================== */
+#if UCRTDIFF_REF_HAS__makepath
+#define FS_MAKEPATH_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_MAKEPATH_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__splitpath
+#define FS_SPLITPATH_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_SPLITPATH_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__access
+#define FS_ACCESS_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_ACCESS_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__waccess
+#define FS_WACCESS_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_WACCESS_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__fullpath
+#define FS_FULLPATH_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_FULLPATH_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS_remove
+#define FS_UNLINK_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_UNLINK_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__wremove
+#define FS_WUNLINK_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_WUNLINK_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__chmod
+#define FS_CHMOD_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_CHMOD_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__wchmod
+#define FS_WCHMOD_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_WCHMOD_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__mkdir
+#define FS_MKDIR_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_MKDIR_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__wmkdir
+#define FS_WMKDIR_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_WMKDIR_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS_rename
+#define FS_RENAME_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_RENAME_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__wrename
+#define FS_WRENAME_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_WRENAME_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__rmdir
+#define FS_RMDIR_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_RMDIR_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__wrmdir
+#define FS_WRMDIR_HAND(name) { #name, run_fs_##name },
+#else
+#define FS_WRMDIR_HAND(name) { #name, 0 },
+#endif
+
+#define FILESYSTEM_HAND_ENTRIES                                                \
+    FS_MAKEPATH_HAND(_makepath) FS_MAKEPATH_HAND(_wmakepath)                   \
+    FS_MAKEPATH_HAND(_makepath_s) FS_MAKEPATH_HAND(_wmakepath_s)               \
+    FS_SPLITPATH_HAND(_splitpath) FS_SPLITPATH_HAND(_wsplitpath)               \
+    FS_SPLITPATH_HAND(_splitpath_s) FS_SPLITPATH_HAND(_wsplitpath_s)           \
+    FS_ACCESS_HAND(_access) FS_ACCESS_HAND(_access_s)                         \
+    FS_WACCESS_HAND(_waccess) FS_WACCESS_HAND(_waccess_s)                     \
+    FS_FULLPATH_HAND(_fullpath) FS_FULLPATH_HAND(_wfullpath)                  \
+    FS_UNLINK_HAND(remove) FS_UNLINK_HAND(_unlink)                            \
+    FS_WUNLINK_HAND(_wremove) FS_WUNLINK_HAND(_wunlink)                       \
+    FS_CHMOD_HAND(_chmod)                                                     \
+    FS_WCHMOD_HAND(_wchmod)                                                   \
+    FS_MKDIR_HAND(_mkdir)                                                     \
+    FS_WMKDIR_HAND(_wmkdir)                                                   \
+    FS_RENAME_HAND(rename)                                                    \
+    FS_WRENAME_HAND(_wrename)                                                 \
+    FS_RMDIR_HAND(_rmdir)                                                     \
+    FS_WRMDIR_HAND(_wrmdir)
+
+
 static void run_legacy(void)
 {
     static const struct {
@@ -14179,6 +18232,9 @@ static void run_legacy(void)
         BUFIO_MORE_HAND_ENTRIES
         STDIO_FILES_MORE_HAND_ENTRIES
         STDIO_INPUT_MORE_HAND_ENTRIES
+        CONVERT_REST_HAND_ENTRIES
+        MISC_HAND_ENTRIES
+        FILESYSTEM_HAND_ENTRIES
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {

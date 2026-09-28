@@ -813,6 +813,8 @@ def check_force_includes(repo: Path | None = None) -> list[str]:
 
 _EXTERN_C_BLOCK = re.compile(r'extern\s+"C"\s*\{(.*?)\n\s*\}', re.S)
 _PASCAL_FN = re.compile(r"\bfn\s+([A-Z][A-Za-z0-9]*)\s*\(")
+_ANY_FN = re.compile(r"\bfn\s+(\w+)\s*\(")
+_WINAPI_DECL = re.compile(r"\b(?:WINAPI|APIENTRY|NTAPI|__stdcall)\s+(\w+)\s*\(")
 
 
 def check_win32_abi(repo: Path | None = None) -> list[str]:
@@ -821,15 +823,23 @@ def check_win32_abi(repo: Path | None = None) -> list[str]:
     WINAPI is stdcall on i386, so `extern "C" { fn ReadFile(...) }` binds `_ReadFile`
     where kernel32 exports `_ReadFile@20`. It links on amd64 and arm64 (one calling
     convention) and fails only on i386 -- after an arm64 grade has already passed, and
-    then only as an undefined symbol that stops the WOW64 closure on amd64 too. Three
+    then only as an undefined symbol that stops the WOW64 closure on amd64 too. Four
     ports have shipped this. Win32 names are PascalCase and CRT names are not, so a
-    PascalCase function in an `extern "C"` block is the tell.
+    PascalCase function in an `extern "C"` block is one tell; the CRT's own `__acrt_*`
+    Win32 thunks are not PascalCase and are mixed (`__acrt_SetThreadStackGuarantee` is
+    WINAPI, `__acrt_MultiByteToWideChar` is __cdecl), so for those the header's
+    WINAPI is the other.
     """
     repo = REPO if repo is None else repo
+    winapi: set[str] = set()
+    for h in sorted((repo / "sdk" / "lib" / "ucrt" / "inc").glob("*.h")):
+        winapi.update(_WINAPI_DECL.findall(h.read_text(errors="replace")))
     findings = []
     for f in sorted(source_files(repo / "sdk" / "lib" / "rust" / "ucrt-rust" / "src")):
         for block in _EXTERN_C_BLOCK.finditer(f.read_text(errors="replace")):
-            for name in _PASCAL_FN.findall(block.group(1)):
+            names = set(_PASCAL_FN.findall(block.group(1)))
+            names |= {n for n in _ANY_FN.findall(block.group(1)) if n in winapi}
+            for name in sorted(names):
                 findings.append(
                     f'{f.relative_to(repo)}: `{name}` is declared in an `extern "C"` block; '
                     f'a Win32 API is stdcall on i386. fix: move it to `extern "system"`'

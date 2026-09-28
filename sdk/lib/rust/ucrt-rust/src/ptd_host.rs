@@ -199,6 +199,11 @@ impl PtdHost {
         &mut self.current_errno
     }
 
+    /// `get_doserrno()`: the cached `_doserrno`, as `errno()` is for errno.
+    pub fn doserrno(&mut self) -> &mut Cached<c_ulong> {
+        &mut self.current_doserrno
+    }
+
     /// `_UCRT_VALIDATE_RETURN`'s failure arm: record `err` in the cache, then
     /// invoke the handler -- which therefore still sees the OLD errno.
     pub unsafe fn invalid_parameter(&mut self, err: c_int) {

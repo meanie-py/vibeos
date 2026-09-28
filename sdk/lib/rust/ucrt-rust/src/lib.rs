@@ -95,6 +95,12 @@ pub mod string_ops;
 pub mod time;
 #[cfg(feature = "stdio")]
 pub mod stdio;
+#[cfg(feature = "convert-rest")]
+pub mod convert_rest;
+#[cfg(feature = "misc")]
+pub mod misc;
+#[cfg(feature = "filesystem")]
+pub mod filesystem;
 
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.

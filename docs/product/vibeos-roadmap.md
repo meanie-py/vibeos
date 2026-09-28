@@ -557,6 +557,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **rename bugchecks fastfat on arm64** (OPEN, 2026-09-28). Any `MoveFileExW` rename of an
+  existing file in the guest temp dir -- a never-seen target name included, so not the tunnel
+  cache -- bugchecks 0x23 through `FatBugCheckExceptionFilter`; the access violation is in
+  `RtlCopyUnicodeString` (`rtl-strings/src/cabi/mod.rs`, symbolized against `ntkrnlmp.exe`,
+  the default MP kernel) under fastfat-rust's `FatSetRenameInfo` (`fileinfo.rs`, three
+  `RtlCopyUnicodeString(&NewNameCopy, ...)` sites). Found by the ucrtbase Tier-2 grader:
+  Microsoft's `_wrename` and ours make the identical `MoveFileExW(old, new,
+  MOVEFILE_COPY_ALLOWED)`, and the first one called bugchecks. Repro: a same-directory rename
+  of a freshly written file. The grader skips the rename cases that reach the IRP, behind
+  `UCRTDIFF_FAT_RENAME_BUGCHECKS` in `tools/payloads/ucrtdiff/ucrtdiff.c` -- set it to 0 when
+  this closes. Still reproduces after d98aba47853 (fastfat top-level IRP fix), 2026-09-28.
+  Owner: unassigned (fastfat/kernel lane).
 - **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
   the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
   so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:

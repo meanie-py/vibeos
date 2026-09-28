@@ -75,7 +75,6 @@ include(convert/convert.cmake)
 include(dll/dll.cmake)
 include(env/env.cmake)
 include(exec/exec.cmake)
-include(filesystem/filesystem.cmake)
 include(float/float.cmake)
 include(heap/heap.cmake)
 include(initializers/initializers.cmake)
@@ -94,7 +93,6 @@ add_library(ucrt OBJECT
     ${UCRT_DLL_SOURCES}
     ${UCRT_ENV_SOURCES}
     ${UCRT_EXEC_SOURCES}
-    ${UCRT_FILESYSTEM_SOURCES}
     ${UCRT_FLOAT_SOURCES}
     ${UCRT_HEAP_SOURCES}
     ${UCRT_INITIALIZERS_SOURCES}

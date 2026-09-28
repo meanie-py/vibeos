@@ -342,7 +342,7 @@ impl<C> Buf<C> {
 }
 
 /// `__acrt_convert_wcs_mbs_cp`'s failure arm: map the OS error, return errno.
-unsafe fn os_errno() -> c_int {
+pub(crate) unsafe fn os_errno() -> c_int {
     __acrt_errno_map_os_error(GetLastError());
     *_errno()
 }
@@ -371,7 +371,7 @@ pub(crate) unsafe fn mbs_to_wcs(s: *const u8, cp: u32) -> Result<Option<Buf<u16>
 }
 
 /// `__acrt_wcs_to_mbs_cp` over a non-NULL name.
-unsafe fn wcs_to_mbs(s: *const u16, cp: u32) -> Result<Buf<u8>, c_int> {
+pub(crate) unsafe fn wcs_to_mbs(s: *const u16, cp: u32) -> Result<Buf<u8>, c_int> {
     if *s == 0 {
         let b = Buf::<u8>::alloc(1)?;
         *b.0 = 0;
