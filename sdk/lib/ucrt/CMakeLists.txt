@@ -85,7 +85,6 @@ include(lowio/lowio.cmake)
 include(math/math.cmake)
 include(misc/misc.cmake)
 include(startup/startup.cmake)
-include(stdio/stdio.cmake)
 include(stdlib/stdlib.cmake)
 
 # TODO: build a _DEBUG version
@@ -105,7 +104,6 @@ add_library(ucrt OBJECT
     ${UCRT_MATH_SOURCES}
     ${UCRT_MISC_SOURCES}
     ${UCRT_STARTUP_SOURCES}
-    ${UCRT_STDIO_SOURCES}
     ${UCRT_STDLIB_SOURCES}
     ${UCRT_VCRUNTIME_SOURCES}
 )
