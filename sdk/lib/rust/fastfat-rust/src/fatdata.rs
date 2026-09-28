@@ -139,7 +139,7 @@ pub static mut FatBreakOnInterestingIrpCompletion: NTSTATUS = 0;
 
 // Constants – values from Windows headers
 const IRP_MJ_WRITE: u32 = 4;
-const IRP_MN_COMPLETE_MDL: u32 = 0x3;
+const IRP_MN_COMPLETE_MDL: u32 = 0x6; // iotypes.h:4437 IRP_MN_COMPLETE(4) | IRP_MN_MDL(2) (was 0x3 = MDL|DPC)
 const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016_u32 as i32;
 const APC_LEVEL: u32 = 1;
 const STATUS_CANT_WAIT: NTSTATUS = 0xC00000D8_u32 as i32;

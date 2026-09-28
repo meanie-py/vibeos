@@ -178,7 +178,12 @@ pub const SE_SECURITY_PRIVILEGE: u32 = 8;
 pub static mut FatSecurityPrivilege: LUID = LUID { LowPart: SE_SECURITY_PRIVILEGE, HighPart: 0 };
 
 const IRP_CONTEXT_FLAG_SWAPPED_STACK: u32 = 0x00100000;
-const KERNEL_STACK_SIZE: u32 = 0x8000;
+// ke.h KERNEL_STACK_SIZE is per-arch (was a flat 0x8000): x86/ke.h:218 12288,
+// amd64/ke.h:182 and arm64/ke.h:49 0xC000. (rust_cohab_fat.c's callout shim ignores it.)
+#[cfg(target_arch = "x86")]
+const KERNEL_STACK_SIZE: u32 = 0x3000;
+#[cfg(not(target_arch = "x86"))]
+const KERNEL_STACK_SIZE: u32 = 0xC000;
 
 const FILE_OPEN: u32 = 1;
 const FILE_OPEN_IF: u32 = 3;

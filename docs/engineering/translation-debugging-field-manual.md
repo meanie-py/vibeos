@@ -1524,7 +1524,15 @@ types.
   lost-wakeup wedge, "BAD gate", and BSOD roulette from one root. Fix with a
   `#[repr(C, align(16))]` newtype. **Sweep for any C type carrying an alignment attribute.**
 - **Nested `_HEAD` structs flatten into `__bindgen_padding_0`.** `THRDESKHEAD`/`THROBJHEAD`
-  lose `head.h` (offset 0 → `addr_of!` cast) and `head.pti` (a padding index). Derive the
+  lose `head.h` and `head.pti`. Read them through the typed head —
+  `(*(p as *const _HEAD)).h`, `(*(p as *const _THROBJHEAD)).pti` — **never by indexing the
+  padding array**: its ELEMENT type is bindgen's choice. A win32k-sys regeneration turned
+  `[u64; 3]` into `[u8; 24]`, user32's `head.__bindgen_padding_0[2]` became one byte of the
+  handle, `IntCallMessageProc` saw a thread mismatch on every window, and every posted
+  message it dispatched was dropped as ERROR_MESSAGE_SYNC_ONLY: no app closed on WM_CLOSE,
+  on any arch, and every gate stayed green (appstorm found it; `scan_bindgen_padding_index`
+  gates it now). Taking the padding's *address* is layout-stable. When you must hand-derive
+  an offset instead, derive the
   offset from the real field sequence and the target's alignment — **do not blanket-apply
   `2*usize`**: head-pti is `2 * size_of::<usize>()` (8/16), but `PROCESSINFO.W32PF_flags`
   after `{PEPROCESS; DWORD}` has no tail padding and is `size_of::<usize>() + 4` (8/12). A

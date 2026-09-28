@@ -49,4 +49,22 @@ runid_qmp_socket()    { echo "$RUNS_DIR/$1/qmp.sock"; }
 runid_serial_socket() { echo "$RUNS_DIR/$1/serial.sock"; }
 runid_serial_log()    { echo "$RUNS_DIR/$1/serial.log"; }
 runid_gdb_log()       { echo "$RUNS_DIR/$1/gdb.log"; }
+
+# runid_kernel_image <run-id> — the kernel image freeldr ACTUALLY loaded for this run, from
+# its "[FLDR] load ...\<image>" serial line; the manifest's guess until that line exists.
+# The UP and MP kernels are separate images whose data symbols sit 0x4000 apart, so a gdb
+# session on the wrong one reads every global from the wrong address: PsLoadedModuleList
+# "held" a physical-looking 0x52229358 and lm/who-holds walked garbage on an MP arm64 boot.
+runid_kernel_image() {
+    local manifest serial loaded
+    manifest="$(manifest_get "$1" kernel_image)"
+    serial="$(runid_serial_log "$1")"
+    loaded="$(grep -a -o -m1 -E 'FLDR\] load .*\\(ntoskrnl|ntkrnlmp)\.exe' "$serial" 2>/dev/null \
+              | grep -o -E '(ntoskrnl|ntkrnlmp)\.exe$')"
+    case "$loaded" in
+        ntkrnlmp.exe) arch_kernel_image "$(manifest_get "$1" arch)" mp ;;
+        ntoskrnl.exe) arch_kernel_image "$(manifest_get "$1" arch)" up ;;
+        *) echo "$manifest" ;;
+    esac
+}
 runid_pid_file()      { echo "$RUNS_DIR/$1/pid"; }

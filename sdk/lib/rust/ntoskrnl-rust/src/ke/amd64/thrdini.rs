@@ -66,8 +66,10 @@ struct KKINIT_FRAME {
 
 const INITIAL_MXCSR: ULONG = 0x1f80;
 const INITIAL_FPCSR: USHORT = 0x27f;
-const KF_XSTATE: u64 = 1 << 25;
-const KF_XSAVES: u64 = 1 << 26;
+// ndk/amd64/ketypes.h: the bits amd64 cpu.rs KiGetFeatureBits actually sets. These were
+// 1 << 25 / 1 << 26, bits nothing sets, so a new thread never got an XSAVE-format FPU area.
+const KF_XSTATE: u64 = 0x0080_0000;
+const KF_XSAVES: u64 = 0x0000_0040_0000_0000;
 const XSTATE_MASK_LEGACY_FLOATING_POINT: u64 = 1 << 0;
 const RPL_MASK: USHORT = 3;
 const CONTEXT_AMD64: ULONG = 0x00100000;

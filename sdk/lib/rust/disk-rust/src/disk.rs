@@ -943,7 +943,7 @@ pub unsafe extern "C" fn DiskCreateFdo(
     const STATUS_OBJECT_NAME_EXISTS: i32 = 0x40000000u32 as i32;
     const STATUS_SUCCESS: i32 = 0;
     const STATUS_UNSUCCESSFUL: i32 = 0xC0000001u32 as i32;
-    const DIRECTORY_ALL_ACCESS: u32 = 0x000F01FF;
+    const DIRECTORY_ALL_ACCESS: u32 = 0x000F000F; // obtypes.h: STANDARD_RIGHTS_REQUIRED | 0xF (was 0xF01FF)
     const APC_LEVEL: u32 = 1;
     const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 

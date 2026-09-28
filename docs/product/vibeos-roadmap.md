@@ -557,18 +557,31 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **arm64 QEMU cannot reproduce app bugs the Pi shows** (OPEN, 2026-09-27). The QEMU
-  arm64 boot uses the hand-curated ramdisk in `qemu/mkramdisk.sh` (140 MB): notepad, cmd,
-  testgui and a few more, but no calc/regedit/control/iexplore -- appstorm reports 36 of 43
-  entries ABSENT there. The Pi image carries them, which is why its iexplore/My Computer
-  failures have no QEMU arm64 repro. Staging the stock apps into the ramdisk (and growing
-  it) closes the gap. Owner: unassigned.
-- **89 hand-written constants disagree with every bindgen island value** (OPEN work queue,
-  2026-09-27). `tools/lint-baseline/scan_const_vs_island.txt`; mixed stock -- freeldr's ARC
-  status codes share errno NAMES legitimately -- but it includes likely real bugs of the
-  class that hung FAT (fsrtl's swapped GenericEqual): fastfat `IRP_MN_COMPLETE_MDL = 3`
-  (C: 6), kernel32 `LC_*`, cdfs/fastfat `MDL_PARTIAL_HAS_BEEN_MAPPED = 4` (C: 0x20). Burn
-  down against the C headers; NEW entries already fail `vibeos-cli check`.
+- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
+  the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
+  so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:
+  wordpad/devmgmt/dxdiag/rapps exit 0x6BA (RPC_S_SERVER_UNAVAILABLE: the ramdisk has no
+  spoolsv and no PlugPlay service -- a service needs its registry config staged, not just
+  the binary); charmap and eventvwr open no window; cpl-appwiz and cpl-ncpa open no window.
+  iexplore still faults (0xC0000005) after `failed to register CLSID_InternetExplorer:
+  80004002` even with actxprxy staged -- and ieframe dereferencing the NULL its failed
+  registration left is a bug of its own. That is the Pi's "internet browser died". On i386
+  `cpl-appwiz` opens no window either: control -> rundll32 -> rapps runs, but rapps exits 0
+  at once where amd64's shows "Add/Remove Programs". amd64 is 43/43. Owner: shell32-com lane.
+- **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
+  win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
+  `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a
+  thread mismatch on every window and dropped every posted message it dispatched. No app
+  closed on WM_CLOSE on any arch; every gate stayed green because appstorm scored a close
+  timeout as PASS (it fails now). `scan_bindgen_padding_index` gates the class.
+- **Hand-written constants vs the bindgen islands** (DONE 2026-09-27). All 89
+  `scan_const_vs_island` entries triaged: 28 real bugs fixed (among them winsrv's
+  IsConsoleMode calling NtUserCreateMenu, amd64 MAX_SYSCALL_PARAM_SIZE, smss's RESERVE_1MB
+  setting NX, fastfat/cdfs MDL flags, TOKEN_HAS_ADMIN_GROUP), the legitimate ones (freeldr's
+  ARC codes, driver-local ERROR levels) carry a `nolint` with their reason. The baseline is
+  empty: any new disagreement fails `vibeos-cli check`. Still owed from the sweep: fastfat's
+  `KeExpandKernelStackAndCalloutEx` extern takes `StackSize: u32` where the C has SIZE_T
+  (harmless while the shim ignores it).
 - **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
   access violation too** (2026-09-27). The per-boot
   `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation

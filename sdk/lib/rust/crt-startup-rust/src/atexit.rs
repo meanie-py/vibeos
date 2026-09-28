@@ -11,7 +11,7 @@ use crate::misc::{_decode_pointer, _encode_pointer};
 use crate::winapi::*;
 use core::ffi::c_void;
 
-const _EXIT_LOCK1: i32 = 8;
+const _EXIT_LOCK1: i32 = 8; // nolint: const-contradiction (startup/atonexit.c:18 `#define _EXIT_LOCK1 8`, mingw value; msvcrt mtdll.h has 13)
 
 #[no_mangle]
 pub static mut __onexitbegin: *mut Pvfv = core::ptr::null_mut();

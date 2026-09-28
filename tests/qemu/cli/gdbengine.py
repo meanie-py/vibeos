@@ -97,6 +97,7 @@ _VERB_MAP = {
     "identify-object": "identify-object {rest}",
     "list-threads": "list-threads {rest}",
     "who-holds": "who-holds {rest}",
+    "stack-scan": "stack-scan {rest}",
     "sample-pc": "sample-pc {rest}",
     "symbolicate-pc": "info symbol {rest}",
     "regs-raw": "info registers {rest}",

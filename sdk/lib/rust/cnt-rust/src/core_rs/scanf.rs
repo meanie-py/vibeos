@@ -151,7 +151,7 @@ pub fn scanf_engine<E: Elem, S: Sink>(
     format: &[E],
     sink: &mut S,
 ) -> i32 {
-    const EOF: u32 = 0; // _EOF_ == 0 for STRING
+    const EOF: u32 = 0; // nolint: const-contradiction (this is scanf.h:69 `#define _EOF_ 0` for STRING, not stdio EOF=-1)
     if format.is_empty() {
         return 0; // C: if (!*format) return 0;
     }

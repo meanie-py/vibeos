@@ -207,11 +207,15 @@ unsafe fn icx_base(p: LPINPUTCONTEXTDX) -> LPINPUTCONTEXT {
     p as LPINPUTCONTEXT
 }
 
-// ── THRDESKHEAD.pti is the 3rd machine-word of THROBJHEAD (HANDLE h; DWORD cLockObj;
-//   PTHREADINFO pti), flattened by bindgen into head.__bindgen_padding_0[2].
+// ── THRDESKHEAD begins with THROBJHEAD { HANDLE h; DWORD cLockObj; PTHREADINFO pti; }.
+// Read through the typed head, never an index into bindgen's __bindgen_padding_0: its
+// ELEMENT type is the generator's choice. The 2026-09-27 regeneration turned [u64; 3]
+// into [u8; 24], `[2]` became one byte of the handle, and every posted message dispatched
+// through IntCallMessageProc was dropped as ERROR_MESSAGE_SYNC_ONLY (no app closed on
+// WM_CLOSE) with every build still green.
 #[inline]
 unsafe fn head_pti(pWnd: PWND) -> usize {
-    (*pWnd).head.__bindgen_padding_0[2] as usize
+    (*(pWnd as *const _THROBJHEAD)).pti as usize
 }
 
 // ───────────────────────────────────────────────────────────────────────────

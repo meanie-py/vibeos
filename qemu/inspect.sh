@@ -65,7 +65,7 @@ manifest_exists "$RUN_ID" || die "no such run-id: $RUN_ID"
 
 ARCH="$(manifest_get "$RUN_ID" arch)"
 GDB_PORT="$(manifest_get "$RUN_ID" gdb_port)"
-KERNEL="$(manifest_get "$RUN_ID" kernel_image)"
+KERNEL="$(runid_kernel_image "$RUN_ID")"
 
 [ -n "$GDB_PORT" ] && [ "$GDB_PORT" != "null" ] || die \
     "run-id $RUN_ID has no gdb_port — restart with --gdb"
@@ -155,6 +155,16 @@ case "$COMMAND" in
         ;;
     list-threads)
         EX_ARGS+=(-ex "list-threads")
+        ;;
+    who-holds)
+        ADDR="${ARGS[0]:-}"
+        [ -n "$ADDR" ] || die "who-holds requires a KTHREAD address"
+        EX_ARGS+=(-ex "who-holds $ADDR")
+        ;;
+    stack-scan)
+        ADDR="${ARGS[0]:-}"
+        [ -n "$ADDR" ] || die "stack-scan requires a KTHREAD address"
+        EX_ARGS+=(-ex "stack-scan $ADDR")
         ;;
     sample-pc)
         # Single sample (one $pc + current-process read).  Use sample-pc.sh

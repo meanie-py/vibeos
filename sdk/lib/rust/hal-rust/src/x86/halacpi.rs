@@ -151,7 +151,7 @@ const MACHINE_TYPE_MCA: u32 = 2;
 // simply doesn't exist. Only the SIPI target itself must be <1MB; the SMP
 // identity-map page-table scratch (HalpApPtScratch below) allocates
 // separately with a 4GB cap.
-const HALP_LOW_STUB_SIZE_IN_PAGES: PFN_COUNT = 1;
+const HALP_LOW_STUB_SIZE_IN_PAGES: PFN_COUNT = 1; // nolint: const-contradiction (deliberate UEFI divergence from halp.h:65/67 (5 amd64 / 3 x86), see above)
 
 // SMP (smp-bringup M2): 3 pages of PDPT/PD/PT scratch smp_processor.rs uses
 // to identity-map the low stub (VA==PA) around the SIPI window — the boot
