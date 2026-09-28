@@ -567,7 +567,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   MOVEFILE_COPY_ALLOWED)`, and the first one called bugchecks. Repro: a same-directory rename
   of a freshly written file. The grader skips the rename cases that reach the IRP, behind
   `UCRTDIFF_FAT_RENAME_BUGCHECKS` in `tools/payloads/ucrtdiff/ucrtdiff.c` -- set it to 0 when
-  this closes. Owner: unassigned (fastfat/kernel lane).
+  this closes. Still reproduces after d98aba47853 (fastfat top-level IRP fix), 2026-09-28.
+  Owner: unassigned (fastfat/kernel lane).
 - **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
   the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
   so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:
