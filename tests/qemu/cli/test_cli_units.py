@@ -1656,6 +1656,13 @@ def test_triage_post_boot_check():
     # user-mode panic in the settle window
     r3 = triage.post_boot_check("_tWinMain entered\npanicked at 'oops', tray.rs:7\n")
     assert r3 is not None and r3["classification"] == "RUST_PANIC"
+    # a per-boot self-test that printed FAIL is a failed boot, however far it got
+    r4 = triage.post_boot_check(
+        "[SEH-TRY] rust hw faults: int3=0x80000003 irqs=1/0 (FAIL)\n_tWinMain entered\n"
+    )
+    assert r4 is not None and r4["classification"] == "SELFTEST_FAIL"
+    assert "irqs=1/0" in r4["salient"][0]
+    assert triage.post_boot_check("[SEH-TRY] rust hw faults: irqs=1/1 (PASS)\n") is None
 
 
 # --- artifacts: summary.json is the machine-true verdict -------------------
