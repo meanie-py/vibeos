@@ -293,6 +293,9 @@ UCRT_RUST_ARCHIVE = Path("dll/win32/ucrtbase/libcrt_shared_cargo.a")
 #: COFF/linker bookkeeping, not code: renaming these breaks the object.
 _BOOKKEEPING = (".refptr.", "@feat.", ".weak.", "__imp_")
 
+# Non-exported internals tools/payloads/ucrtdiff/ucrtdiff.c calls by plain name.
+HARNESS_INTERNALS = ("__acrt_initialize",)
+
 
 def undefined_symbols(objs: list[Path]) -> set[str]:
     """Every symbol the objects reference but do not themselves define."""
@@ -378,6 +381,15 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
         s
         for s in (needed_by_ref & rust_defined)
         if not bookkeeping(s) and s not in function_exports
+    }
+    # Internals the HARNESS calls by plain name to drive the reference instance
+    # (`init_ref_crt`'s `__acrt_initialize`). Once their C is deleted no reference
+    # object asks for them, so the rule above would rename them away -- but the
+    # reference instance still has to be started, now by our copy.
+    needed |= {
+        f"{dec}{s}"
+        for s in HARNESS_INTERNALS
+        if f"{dec}{s}" in rust_defined and f"{dec}{s}" not in ref_defined
     }
     rules = []
     for sym in sorted(rust_defined):

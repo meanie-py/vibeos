@@ -176,6 +176,23 @@ convert-rest = ["strtod"]
 misc = []
 # filesystem/ -- makepath/splitpath, access, fullpath, unlink/rename, mkdir/rmdir, chmod
 filesystem = ["findfile"]
+# lowio/ -- the handle table (ioinit, osfinfo) is the core in src/lowio/mod.rs;
+# the rest of the directory are submodules over it, calling one another by C name.
+lowio = ["stdio"]
+# conio/ -- console I/O, cprintf/cscanf, _pipe/_popen.
+conio = ["lowio", "output", "stdio-input"]
+# env/ -- the environment tables, getenv/putenv/setenv, searchenv.
+env = []
+# exec/{wait,system,getproc,loaddll}.cpp -- the rest of exec (spawn is `exec`).
+exec-rest = ["exec"]
+# internal/{locks,shared_initialization,per_thread_data}.cpp + startup/initterm.cpp:
+# the lock table, the per-thread data block, and the initializer-table loops.
+internal-core = []
+# heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
+heap = []
+# stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
+# string/ stragglers (memcpy_s, strnlen).
+stdlib = []
 
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

@@ -101,6 +101,20 @@ pub mod convert_rest;
 pub mod misc;
 #[cfg(feature = "filesystem")]
 pub mod filesystem;
+#[cfg(feature = "lowio")]
+pub mod lowio;
+#[cfg(feature = "conio")]
+pub mod conio;
+#[cfg(feature = "env")]
+pub mod env;
+#[cfg(feature = "exec-rest")]
+pub mod exec_rest;
+#[cfg(feature = "internal-core")]
+pub mod internal;
+#[cfg(feature = "heap")]
+pub mod heap;
+#[cfg(feature = "stdlib")]
+pub mod stdlib;
 
 // Named, not just depended on: a staticlib drops a dependency nothing references,
 // and its #[no_mangle] bodies never reach libcrt_shared_cargo.a.
