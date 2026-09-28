@@ -679,3 +679,35 @@ def test_a_rust_force_include_satisfies_it(tmp_path: Path):
 
 def test_the_real_tree_force_includes_every_hook():
     assert vuc.check_force_includes() == []
+
+
+def _rust_src(tmp_path: Path, body: str) -> Path:
+    src = tmp_path / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "m.rs").write_text(body)
+    return tmp_path
+
+
+def test_a_win32_api_declared_extern_c_is_caught(tmp_path: Path):
+    # The real one: stdio/files/raw_lowio.rs bound `_ReadFile`, kernel32 exports
+    # `_ReadFile@20`, and only the i386 link said so.
+    body = (
+        'extern "C" {\n'
+        "    fn _read_nolock(fh: c_int) -> c_int;\n"
+        "    fn ReadFile(h: isize) -> i32;\n"
+        "}\n"
+    )
+    findings = vuc.check_win32_abi(_rust_src(tmp_path, body))
+    assert len(findings) == 1 and "`ReadFile`" in findings[0]
+
+
+def test_extern_system_and_crt_names_pass(tmp_path: Path):
+    body = (
+        'extern "C" {\n    fn _read_nolock(fh: c_int) -> c_int;\n}\n'
+        'extern "system" {\n    fn ReadFile(h: isize) -> i32;\n}\n'
+    )
+    assert vuc.check_win32_abi(_rust_src(tmp_path, body)) == []
+
+
+def test_the_real_tree_declares_no_win32_api_extern_c():
+    assert vuc.check_win32_abi() == []
