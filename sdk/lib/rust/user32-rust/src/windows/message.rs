@@ -295,10 +295,15 @@ unsafe fn DesktopPtrToUser(p: PVOID) -> PVOID {
     // Single definition lives in crate::wow64.
     crate::wow64::desktop_ptr_to_user(p)
 }
-/// `Wnd->head.pti` — bindgen put `pti` at `_THRDESKHEAD.__bindgen_padding_0[2]`.
+/// `Wnd->head.pti`: THRDESKHEAD begins with THROBJHEAD { HEAD; PTHREADINFO pti; }.
+// Read through the typed head, never an index into bindgen's __bindgen_padding_0: its
+// ELEMENT type is the generator's choice. The 2026-09-27 regeneration turned [u64; 3]
+// into [u8; 24], `[2]` became one byte of the handle, and every posted message dispatched
+// through IntCallMessageProc was dropped as ERROR_MESSAGE_SYNC_ONLY (no app closed on
+// WM_CLOSE) with every build still green.
 #[inline]
 unsafe fn wnd_pti(pWnd: PWND) -> PTHREADINFO {
-    (*pWnd).head.__bindgen_padding_0[2] as PTHREADINFO
+    (*(pWnd as *const _THROBJHEAD)).pti
 }
 /// user32p.h `IMM_FN(ImmTranslateMessage)` — gImmApiEntries entry #46 (index 45).
 #[inline]

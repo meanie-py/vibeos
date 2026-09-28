@@ -114,7 +114,7 @@ extern "C" {
 const TAG_KNMI: ULONG = 0x494D4E4B;
 
 const RT_MESSAGETABLE: ULONG = 11;
-const RESOURCE_DATA_LEVEL: ULONG = 0;
+const RESOURCE_DATA_LEVEL: ULONG = 3; // ndk/ldrtypes.h:33 (type/name/language -> data entry)
 const LANG_NEUTRAL: USHORT = 0;
 const SUBLANG_NEUTRAL: USHORT = 0;
 

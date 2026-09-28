@@ -179,8 +179,8 @@ const FO_SYNCHRONOUS_IO: u32 = 0x02;
 const FO_FILE_MODIFIED: u32 = 0x1000;
 const FO_WRITE_THROUGH: u32 = 0x10;
 
-const FSRTL_CACHE_TOP_LEVEL_IRP: i64 = 0x02; // -2
-const FSRTL_MAX_TOP_LEVEL_IRP_FLAG: u64 = 0xFFFF; // placeholder
+const FSRTL_CACHE_TOP_LEVEL_IRP: i64 = 0x02; // fsrtltypes.h
+const FSRTL_MAX_TOP_LEVEL_IRP_FLAG: u64 = 0xFFFF; // fsrtltypes.h ((LONG_PTR)0xFFFF)
 
 const FILE_WRITE_TO_END_OF_FILE: i32 = -1;
 

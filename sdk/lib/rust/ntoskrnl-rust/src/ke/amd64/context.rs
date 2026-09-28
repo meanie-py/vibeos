@@ -16,20 +16,24 @@ const KGDT64_R3_CMTEB: u16 = 0x50;
 const RPL_MASK: u16 = 3;
 
 const CONTEXT_AMD64: u32 = 0x00100000;
-const CONTEXT_INTEGER: u32 = 0x00000002;
-const CONTEXT_FLOATING_POINT: u32 = 0x00000008;
+const CONTEXT_INTEGER: u32 = 0x00100002;
+const CONTEXT_FLOATING_POINT: u32 = 0x00100008;
 // CONTEXT_AMD64 (0x100000) | flag bits -- winnt_old.h:1351-1363. Dropping the arch
 // base leaves a mask that still matches well-formed same-arch ContextFlags by luck
 // (the discriminating bits are the low ones), but accepts a context record carrying
 // a DIFFERENT arch base, which is exactly what WoW64 hands the 64-bit side.
 const CONTEXT_CONTROL: u32 = 0x00100001;
-const CONTEXT_SEGMENTS: u32 = 0x00000004;
+// The arch bit is inert in the `!= 0` tests below (both bodies strip CONTEXT_AMD64
+// first, exactly as context.c does), so these carry it purely to match the header.
+const CONTEXT_SEGMENTS: u32 = 0x00100004;
 const CONTEXT_DEBUG_REGISTERS: u32 = 0x00100010;
 
 const EFLAGS_USER_SANITIZE: u32 = 0x003F4DD7;
 const EFLAGS_INTERRUPT_MASK: u32 = 0x00000200;
 
-const MAX_SYSCALL_PARAM_SIZE: u64 = 0x28;
+// ndk/amd64/ketypes.h:377 `(16 * 8)`: trap.S's KiSystemCallEntry64 allocates exactly
+// this much below the KTRAP_FRAME, so it is where the unwind target frame starts.
+const MAX_SYSCALL_PARAM_SIZE: u64 = 0x80;
 
 extern "system" {
     static MmHighestUserAddress: *mut core::ffi::c_void;

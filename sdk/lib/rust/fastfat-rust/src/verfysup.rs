@@ -277,7 +277,9 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
 extern "system" {
 }
 
-const FSRTL_FSP_TOP_LEVEL_IRP: *mut core::ffi::c_void = usize::MAX as *mut core::ffi::c_void;
+// fsrtltypes.h value; a wrong copy of these flags leaks a bogus top-level IRP that
+// FatCommonWrite then dereferences (see resrcsup.rs FSRTL_CACHE_TOP_LEVEL_IRP).
+const FSRTL_FSP_TOP_LEVEL_IRP: *mut core::ffi::c_void = 0x01 as *mut core::ffi::c_void;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 // VCB_CONDITION is 1-based (bindgen ground truth: VcbGood=1, VcbNotMounted=2, VcbBad=3).
 // The old 0-based guesses made FatVerifyVcb treat a GOOD vcb as NOT-MOUNTED.

@@ -732,28 +732,31 @@ pub type PFS_MOUNT = unsafe extern "C" fn(ULONG) -> *const DEVVTBL;
 unsafe impl Sync for DEVVTBL {}
 
 // arc.h _ARC_CODES — sequential from 0. ARC_STATUS is ULONG (ddk).
+// These are the ARC status codes, NOT POSIX errno: sdk/include/reactos/arc/arc.h:30-54
+// #undefs the errno names and re-declares them as this enum (EIO=8, ENOEXEC=15, ...),
+// so they intentionally differ from errno.h's values in the islands.
 pub const ESUCCESS: ULONG = 0;
-pub const E2BIG: ULONG = 1;
-pub const EACCES: ULONG = 2;
-pub const EAGAIN: ULONG = 3;
-pub const EBADF: ULONG = 4;
-pub const EBUSY: ULONG = 5;
-pub const EFAULT: ULONG = 6;
+pub const E2BIG: ULONG = 1; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EACCES: ULONG = 2; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EAGAIN: ULONG = 3; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EBADF: ULONG = 4; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EBUSY: ULONG = 5; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EFAULT: ULONG = 6; // nolint: const-contradiction (ARC_STATUS, arc.h)
 pub const EINVAL: ULONG = 7;  // nolint: const-contradiction (ARC_STATUS enumerator; arc.h #undefs the C EINVAL)
-pub const EIO: ULONG = 8;
-pub const EISDIR: ULONG = 9;
-pub const EMFILE: ULONG = 10;
-pub const EMLINK: ULONG = 11;
-pub const ENAMETOOLONG: ULONG = 12;
-pub const ENODEV: ULONG = 13;
+pub const EIO: ULONG = 8; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EISDIR: ULONG = 9; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EMFILE: ULONG = 10; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EMLINK: ULONG = 11; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const ENAMETOOLONG: ULONG = 12; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const ENODEV: ULONG = 13; // nolint: const-contradiction (ARC_STATUS, arc.h)
 pub const ENOENT: ULONG = 14; // nolint: const-contradiction (ARC_STATUS enumerator; arc.h #undefs the C ENOENT)
-pub const ENOEXEC: ULONG = 15;
+pub const ENOEXEC: ULONG = 15; // nolint: const-contradiction (ARC_STATUS, arc.h)
 pub const ENOMEM: ULONG = 16; // nolint: const-contradiction (ARC_STATUS enumerator; arc.h #undefs the C ENOMEM)
-pub const ENOSPC: ULONG = 17;
-pub const ENOTDIR: ULONG = 18;
-pub const ENOTTY: ULONG = 19;
-pub const ENXIO: ULONG = 20;
-pub const EROFS: ULONG = 21;
+pub const ENOSPC: ULONG = 17; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const ENOTDIR: ULONG = 18; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const ENOTTY: ULONG = 19; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const ENXIO: ULONG = 20; // nolint: const-contradiction (ARC_STATUS, arc.h)
+pub const EROFS: ULONG = 21; // nolint: const-contradiction (ARC_STATUS, arc.h)
 pub const EMAXIMUM: ULONG = 22;
 pub type SEEKMODE = u32;
 pub const SeekAbsolute: u32 = 0;

@@ -10,6 +10,8 @@ set pagination off
 # parse and 0xfffffa80... literals overflow ("integers of more than 8 bytes"). An explicit
 # language is never switched by later symbol loads.
 set language c
+# A helper that raises should say where: the default prints only the message.
+set python print-stack full
 set confirm off
 set print pretty on
 set print elements 256

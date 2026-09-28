@@ -2098,6 +2098,12 @@ UNCOVERED: dict[str, str] = {
         "island_disagreements(), is a pure function over two dicts, driven in "
         "tools/test_scan_const_vs_island.py with the fsrtl swap as the positive control."
     ),
+    "scan_bindgen_padding_index": (
+        "a regex over single source lines with no tree model, so a fixture dir would only "
+        "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
+        "with the user32 wnd_pti read as the positive control and address-of/offset_of "
+        "uses (layout-stable) as negatives, and asserts the real tree is clean."
+    ),
     "scan_res_named_types": (
         "reads COMMITTED binary resource objects (git ls-files '*.res'), not Rust source, so "
         "a source fixture dir has nothing to offer it. The parser is driven directly in "

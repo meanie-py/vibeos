@@ -598,6 +598,25 @@ RMC "$BUILD_DIR/dll/win32/samsrv/samsrv.dll"                   ::/reactos/system
 # with ExitStatus=0xC0000135 (STATUS_DLL_NOT_FOUND) propagated as its exit code.
 RMC "$BUILD_DIR/dll/win32/msv1_0/msv1_0.dll"                   ::/reactos/system32/msv1_0.dll
 
+# The stock apps and control-panel applets (qemu/ramdisk-apps.txt), with their whole
+# import closure, at their livecd destinations. Derived, not hand-listed: before this the
+# ramdisk carried notepad/cmd/explorer only and appstorm found 36 of 43 apps ABSENT on
+# arm64. `vibeos-cli build --arch arm64` builds the closure; ramdisk_apps.py HARD-FAILS on
+# an unbuilt or unresolvable member rather than stage a half-bound module. Modules staged
+# by hand above are left out of its list, so the curated copy stays authoritative.
+echo "[*] Staging stock apps (qemu/ramdisk-apps.txt closure)..."
+APPS_LST="$BUILD_DIR/boot/ramdisk-apps.lst"
+python3 "$PROJECT_DIR/tools/ramdisk_apps.py" --stage --build-dir "$BUILD_DIR" > "$APPS_LST" || {
+    echo "[!] ramdisk app closure is incomplete (see above) -- run ./vibeos-cli build --arch arm64"
+    exit 1
+}
+python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$APPS_LST" --out "$APPS_LST.stripped" \
+    --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY" || exit 1
+while IFS='=' read -r dest src; do
+    [ -n "$dest" ] || continue
+    mcopy -o -i "$RAMDISK_IMG" "$src" "::/$dest"
+done < "$APPS_LST.stripped"
+
 KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
 if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
     echo "[*] Staging kmtest corpus..."

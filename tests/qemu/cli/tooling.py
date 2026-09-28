@@ -92,6 +92,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
+    (".", ".", "tools/test_scan_bindgen_padding_index.py"),
+    (".", ".", "tools/test_ramdisk_apps.py"),
     (".", ".", "tools/test_scan_const_vs_island.py"),
     (".", ".", "tools/test_scan_raw_uart_writes.py"),
     (".", ".", "tools/test_lint_facts.py"),

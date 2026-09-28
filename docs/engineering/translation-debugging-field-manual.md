@@ -1524,7 +1524,15 @@ types.
   lost-wakeup wedge, "BAD gate", and BSOD roulette from one root. Fix with a
   `#[repr(C, align(16))]` newtype. **Sweep for any C type carrying an alignment attribute.**
 - **Nested `_HEAD` structs flatten into `__bindgen_padding_0`.** `THRDESKHEAD`/`THROBJHEAD`
-  lose `head.h` (offset 0 → `addr_of!` cast) and `head.pti` (a padding index). Derive the
+  lose `head.h` and `head.pti`. Read them through the typed head —
+  `(*(p as *const _HEAD)).h`, `(*(p as *const _THROBJHEAD)).pti` — **never by indexing the
+  padding array**: its ELEMENT type is bindgen's choice. A win32k-sys regeneration turned
+  `[u64; 3]` into `[u8; 24]`, user32's `head.__bindgen_padding_0[2]` became one byte of the
+  handle, `IntCallMessageProc` saw a thread mismatch on every window, and every posted
+  message it dispatched was dropped as ERROR_MESSAGE_SYNC_ONLY: no app closed on WM_CLOSE,
+  on any arch, and every gate stayed green (appstorm found it; `scan_bindgen_padding_index`
+  gates it now). Taking the padding's *address* is layout-stable. When you must hand-derive
+  an offset instead, derive the
   offset from the real field sequence and the target's alignment — **do not blanket-apply
   `2*usize`**: head-pti is `2 * size_of::<usize>()` (8/16), but `PROCESSINFO.W32PF_flags`
   after `{PEPROCESS; DWORD}` has no tail padding and is `size_of::<usize>() + 4` (8/12). A
@@ -2450,6 +2458,13 @@ A 770-entry baseline is a work queue, not a defect list, and working it alphabet
 the effort on the harmless majority. The severity of a wrong constant is predicted by one
 question: *is there a second site that must produce the same number?* Rank the queue by it.
 
+- **A rendezvous pair can live inside ONE file, as function-local shadows.** fastfat's
+  resrcsup.rs defined `FSRTL_CACHE_TOP_LEVEL_IRP` four times (-2, 2, -1, 1; the C is 0x02),
+  each Acquire/Release pair setting one value and testing another. FatReleaseForCcFlush
+  never recognised the -2 FatAcquireForCcFlush set, the bogus top-level IRP leaked, and the
+  next FatCommonWrite took it for a real IRP and faulted (BUGCHECK 0x23 on arm64, kmtest
+  ZwCreateSection). Pointer-typed flags (`(-2isize) as *mut IRP`) were invisible to
+  `scan_const_contradictions` until its value parser learned the cast forms.
 - **Rendezvous pairs — fix first.** Alloc↔free (`ExAllocatePoolWithTag`/`ExFreePoolWithTag`),
   write↔compare (a signature stamped at init and tested later), set↔test (a flag written by one
   file and masked by another), request↔dispatch (a function code the caller sends and the

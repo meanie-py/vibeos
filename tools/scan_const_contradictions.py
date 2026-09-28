@@ -84,13 +84,23 @@ NOLINT_RE = re.compile(r"//\s*nolint(?::\s*const-contradiction\b|\s*$|:?\s*\()")
 # tag-check. Both spellings stay legal: `from_le_bytes(*b"HwDc")` and
 # `from_be_bytes(*b"cDwH")` are the same number, so compare the VALUE, never the
 # spelling.
+# The value may also be a pointer-typed flag: `(-2isize) as *mut IRP`, `0x02 as PIRP`. Those
+# were invisible here, and fastfat carried FSRTL_CACHE_TOP_LEVEL_IRP four ways (-2, 2, -1,
+# 1): each Acquire/Release pair set one value and tested another, a bogus top-level IRP
+# leaked, and FatCommonWrite dereferenced it (BUGCHECK 0x23 on arm64).
+_INT_LIT = r"(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*)(?:_?(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize))?"
 CONST_RE = re.compile(
     r"^\s*(?:pub\s*(?:\([^)]*\)\s*)?)?(?:const|static)\s+([A-Z_][A-Z0-9_]*)\s*:\s*[^=]+=\s*"
-    r"(!?\s*(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*)"
-    r"|u32::from_(?:le|be)_bytes\(\*b\"[^\"]{4}\"\))\s*"
-    r"(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)?"
-    r"\s*(?:as\s+[\w:]+\s*)?;"
+    r"(!?\s*"
+    + _INT_LIT
+    + r"|\(\s*-?\s*"
+    + _INT_LIT
+    + r"\s*\)|-\s*"
+    + _INT_LIT
+    + r"|u32::from_(?:le|be)_bytes\(\*b\"[^\"]{4}\"\))\s*"
+    r"(?:as\s+(?:\*\s*(?:mut|const)\s+)?[\w:]+\s*)*;"
 )
+_SUFFIX_RE = re.compile(r"_?(?:u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$")
 
 FOURCC_RE = re.compile(r'u32::from_(le|be)_bytes\(\*b"([^"]{4})"\)')
 
@@ -105,7 +115,8 @@ def parse_value(raw: str) -> int | None:
     """
     if (fc := FOURCC_RE.search(raw)) is not None:
         return int.from_bytes(fc.group(2).encode(), "little" if fc.group(1) == "le" else "big")
-    raw = raw.replace("_", "").replace(" ", "")
+    raw = raw.replace(" ", "").strip("()")
+    raw = _SUFFIX_RE.sub("", raw).replace("_", "")
     invert = raw.startswith("!")
     if invert:
         raw = raw[1:]
@@ -197,6 +208,12 @@ def disagrees(vals: set[int]) -> bool:
     widths keeps the real ones — `!0xff` vs `!1usize` differ either way — at the
     cost of forgiving a spelled-out literal that matches the NOT at 32 bits.
     """
+    # A 16-bit quantity spelled both ways: VARIANT_TRUE is `-1` and `0xFFFF`, WEOF is `!0`
+    # and `0xFFFF`. Only when every spelled-out value fits in 16 bits, so a real
+    # 0x10000-vs-0 disagreement is never forgiven.
+    sixteen = all(v <= 0xFFFF for v in vals if v >= 0) and any(v < 0 for v in vals)
+    if sixteen and len({v & 0xFFFF for v in vals}) == 1:
+        return False
     return len({v & MASK32 for v in vals}) > 1 and len({v & MASK64 for v in vals}) > 1
 
 

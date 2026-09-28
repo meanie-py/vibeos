@@ -7,7 +7,8 @@ extern "system" {
     pub fn NtUserCallNoParam(Routine: u32) -> ULONG_PTR;
 }
 
-const NOPARAM_ROUTINE_ISCONSOLEMODE: u32 = 0;
+// win32ss/include/ntuser.h:3606 = 0xffff0001; routine 0 is NOPARAM_ROUTINE_CREATEMENU.
+use winsrv_sys::winsrv::NOPARAM_ROUTINE_ISCONSOLEMODE;
 const UserThreadUseActiveDesktop: u32 = 0;
 const UserThreadRestoreDesktop: u32 = 1;
 const UserThreadInitiateShutdown: u32 = 2;

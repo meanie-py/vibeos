@@ -42,7 +42,9 @@ const NotificationEvent: ULONG = 0;
 const OriginalApcEnvironment: ULONG = 0;
 
 #[cfg(target_arch = "x86")]
-const CONTEXT_EXTENDED_REGISTERS: u32 = 0x00000020;
+// xdk/winnt_old.h: CONTEXT_i386 | 0x20. The bare bit let the `(f & X) == X` tests below
+// accept a context with no (or a foreign) arch base.
+const CONTEXT_EXTENDED_REGISTERS: u32 = 0x00010020;
 
 #[inline]
 unsafe fn UlongToPtr(value: ULONG) -> PVOID {

@@ -1062,6 +1062,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # An index into a bindgen `__bindgen_padding_N` array to reach a member bindgen could
+    # not name. Its element type is the generator's choice: a regeneration turned
+    # THRDESKHEAD's [u64; 3] into [u8; 24], user32's `head.__bindgen_padding_0[2]` became one
+    # byte of the handle, and every posted message went undispatched. Baseline EMPTY.
+    sbp = repo / "tools" / "scan_bindgen_padding_index.py"
+    specs.append(
+        (
+            "scan_bindgen_padding_index",
+            [py, str(sbp)] if sbp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Two definitions of one exported symbol, live on the same arch in the same
     # binary. Every PE links with --allow-multiple-definition (load-bearing: each
     # Rust staticlib graph carries its own panic runtime), so a duplicate resolves

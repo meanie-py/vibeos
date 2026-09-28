@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -324,6 +325,57 @@ def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
     except (OSError, subprocess.SubprocessError):
         return set()
     return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
+
+
+def _build_ramdisk_apps(run: Run, repo: Path, build_dir: Path, wrap, env, args) -> bool:
+    """Build the arm64 ramdisk's stock apps and their import closure (tools/ramdisk_apps.py).
+
+    The closure is read from BUILT binaries' import tables, so each round of newly built
+    modules can name the next round's imports: repeat until the tool asks for nothing.
+    A fresh tree converges in four rounds (apps -> dnsapi & co -> d3dwine -> opengl32); a
+    warm one asks for nothing on the first."""
+    tool = [sys.executable, str(repo / "tools" / "ramdisk_apps.py"), "--build-dir", str(build_dir)]
+    built: list[str] = []
+    for _round in range(8):
+        cp = subprocess.run([*tool, "--targets"], capture_output=True, text=True, cwd=repo)
+        if cp.returncode != 0:
+            run.add(
+                Stage(
+                    "ramdisk-apps",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail="closure unresolvable",
+                    salient=cp.stderr.splitlines()[-4:],
+                )
+            )
+            return False
+        todo = [t for t in cp.stdout.split() if t not in built]
+        if not todo:
+            run.add(Stage("ramdisk-apps", status="ok", detail=f"{len(built)} built"))
+            return True
+        built += todo
+        cp = run.run(
+            wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *todo]),
+            cwd=build_dir,
+            env=env,
+            stage="ramdisk-apps",
+            timeout=3600,
+        )
+        if cp.returncode != 0:
+            cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
+            run.classification = cls
+            run.add(
+                Stage(
+                    "ramdisk-apps",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail=cls,
+                    salient=salient or ["see full log"],
+                )
+            )
+            return False
+    run.add(Stage("ramdisk-apps", status="fail", detail="closure did not converge in 8 rounds"))
+    return False
 
 
 def build(args, repo: Path) -> int:
@@ -1074,6 +1126,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
+
+    if cfg.needs_mkramdisk and not _build_ramdisk_apps(run, repo, build_dir, wrap, build_env, args):
+        return run.finalize(repo)
 
     # --- flag→artifact verification (T1.2): requested features must PROVE
     # themselves in the output; unrequested ones must be absent. ---

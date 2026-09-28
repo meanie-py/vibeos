@@ -136,6 +136,54 @@ static int prior_pid(DWORD pid)
     return 0;
 }
 
+/* The process appstorm launched for the current entry (0 between entries). A new window
+ * counts only if its process is that one, a descendant (control.exe -> rundll32), or the
+ * shell (a folder window lives in explorer). Anything else started concurrently -- the
+ * amd64 image's WoW64 guest ladder opens 32-bit calc and sol mid-run -- was scored as the
+ * app under test, and its close timeouts failed mspaint and wordpad. */
+static DWORD launch_root;
+/* Every process seen descending from launch_root, accumulated across polls: appwiz's
+ * rundll32 starts rapps and exits, and a parent walk from rapps then dead-ends. */
+static DWORD family[64];
+static int nfamily;
+
+static int in_family(DWORD pid)
+{
+    for (int i = 0; i < nfamily; i++)
+        if (family[i] == pid)
+            return 1;
+    return 0;
+}
+
+static void grow_family(void)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    for (int grew = 1; grew && nfamily < 64;) {
+        PROCESSENTRY32W pe = { sizeof pe };
+        grew = 0;
+        for (BOOL k = Process32FirstW(snap, &pe); k && nfamily < 64; k = Process32NextW(snap, &pe))
+            if (in_family(pe.th32ParentProcessID) && !in_family(pe.th32ProcessID)) {
+                family[nfamily++] = pe.th32ProcessID;
+                grew = 1;
+            }
+    }
+    CloseHandle(snap);
+}
+
+static int from_launch(DWORD pid)
+{
+    DWORD shell = 0;
+    if (!launch_root)
+        return 1;
+    GetWindowThreadProcessId(GetShellWindow(), &shell);
+    if (pid == shell)
+        return 1;
+    grow_family();
+    return in_family(pid);
+}
+
 static int new_windows(const wset_t *before, wset_t *out)
 {
     wset_t now;
@@ -144,7 +192,8 @@ static int new_windows(const wset_t *before, wset_t *out)
     for (int i = 0; i < now.n; i++) {
         DWORD pid = 0;
         GetWindowThreadProcessId(now.h[i], &pid);
-        if (!contains(before, now.h[i]) && pid != GetCurrentProcessId() && !prior_pid(pid))
+        if (!contains(before, now.h[i]) && pid != GetCurrentProcessId() && !prior_pid(pid)
+            && from_launch(pid))
             out->h[out->n++] = now.h[i];
     }
     return out->n;
@@ -620,6 +669,9 @@ int main(void)
             fail++;
             continue;
         }
+        launch_root = pi.dwProcessId;
+        family[0] = launch_root;
+        nfamily = 1;
         WaitForInputIdle(pi.hProcess, 20000);
         /* Wait for a window, then let it finish drawing. */
         DWORD t0 = GetTickCount();
@@ -698,7 +750,9 @@ int main(void)
             for (int j = 0; j < npids; j++) seen |= pids[j] == pid;
             if (pid && !seen) pids[npids++] = pid;
         }
-        for (int i = 0; i < got.n; i++) PostMessageW(got.h[i], WM_CLOSE, 0, 0);
+        for (int i = 0; i < got.n; i++)
+            if (!PostMessageW(got.h[i], WM_CLOSE, 0, 0))
+                SAY("  PostMessage(WM_CLOSE) to %p failed, error %lu\n", (void *)got.h[i], GetLastError());
         DWORD rc = 0;
         const char *close = "OK";
         for (int j = 0; j < npids; j++) {
@@ -707,6 +761,46 @@ int main(void)
             if (!h) continue;
             if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) {
                 SAY("  close timeout pid=%lu, threads:\n", pids[j]);
+                /* Every top-level window the process owns NOW: a modal box the close raised
+                 * (a "save changes?" prompt) was created after the snapshot above. */
+                {
+                    wset_t now;
+                    snapshot(&now);
+                    for (int k = 0; k < now.n; k++) {
+                        DWORD wp = 0;
+                        WCHAR wc[64] = L"", wt[128] = L"";
+                        char ac[64], at[128];
+                        GetWindowThreadProcessId(now.h[k], &wp);
+                        if (wp != pids[j]) continue;
+                        GetClassNameW(now.h[k], wc, 64);
+                        InternalGetWindowText(now.h[k], wt, 128);
+                        ascii(wc, ac, sizeof ac);
+                        ascii(wt, at, sizeof at);
+                        SAY("  owns %p class=%s title=\"%s\" visible=%d\n", (void *)now.h[k], ac, at,
+                            IsWindowVisible(now.h[k]));
+                    }
+                }
+                /* Which half failed: a window still alive whose thread answers a sent message
+                 * never got (or ignored) the posted WM_CLOSE; a destroyed window means the
+                 * app closed and its exit path is what hung. */
+                for (int i = 0; i < got.n; i++) {
+                    DWORD wpid = 0;
+                    DWORD_PTR r = 0;
+                    GetWindowThreadProcessId(got.h[i], &wpid);
+                    if (wpid != pids[j]) continue;
+                    SAY("  window %p alive=%d visible=%d answers=%d\n", (void *)got.h[i],
+                        IsWindow(got.h[i]), IsWindowVisible(got.h[i]),
+                        IsWindow(got.h[i]) && SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0,
+                                                                  SMTO_ABORTIFHUNG, 2000, &r) != 0);
+                    /* A SENT close runs the window procedure synchronously: if that destroys
+                     * the window, the posted one was lost; if not, the close itself fails. */
+                    if (IsWindow(got.h[i])) {
+                        LRESULT sent = SendMessageTimeoutW(got.h[i], WM_CLOSE, 0, 0,
+                                                           SMTO_ABORTIFHUNG, 3000, &r);
+                        SAY("  sent WM_CLOSE: returned=%d window_after=%d\n", sent != 0,
+                            IsWindow(got.h[i]));
+                    }
+                }
                 dump_process(pids[j]);
                 TerminateProcess(h, 1);
                 close = "TIMEOUT";
@@ -719,12 +813,15 @@ int main(void)
          * (ke/amd64/except.rs). dxdiag died that way and was scored PASS. */
         int crashed = ((rc & 0xC0000000u) == 0xC0000000u && rc != 0xC000013Au) || rc == 0x80;
         int shell = shell_check(a->name);
-        int good = ok && !hung && !errbox && !crashed && shell;
+        /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
+         * timing out on close (a lost PostMessage) scored PASS here until this counted. */
+        int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
         SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s\n",
             a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED");
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+        launch_root = 0;
         Sleep(1500);
     }
     for (unsigned k = 0; k < sizeof scenarios / sizeof scenarios[0]; k++) {

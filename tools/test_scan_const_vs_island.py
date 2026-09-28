@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools import scan_const_contradictions as scc
 from tools.scan_const_contradictions import island_disagreements
 
 FSRTL = "sdk/lib/rust/fsrtl-rust/src/filelock.rs"
@@ -38,3 +39,25 @@ def test_a_not_mask_matches_its_32_bit_spelling():
     """`!0x0` and 0xFFFFFFFF are one 32-bit value; widths must not invent a finding."""
     decls = {"EXCEPTION_CHAIN_END": [("a.rs", ~0, "common")]}
     assert island_disagreements(decls, {"EXCEPTION_CHAIN_END": {0xFFFFFFFF}}) == []
+
+
+def test_pointer_cast_flag_constants_are_read():
+    # fastfat carried FSRTL_CACHE_TOP_LEVEL_IRP as `(-2isize) as *mut IRP` and as
+    # `0x02 as *mut IRP`; neither form was parsed, so the four-way disagreement was invisible.
+    cases = {
+        "const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = (-2isize) as *mut IRP;": -2,
+        "const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = 0x02 as *mut IRP;": 2,
+        "    const FSRTL_FSP_TOP_LEVEL_IRP: PIRP = 1 as PIRP;": 1,
+        "const MM_SYSLDR_NO_IMPORTS: usize = (-2isize) as usize;": -2,
+        "const X: u32 = 0x10u32;": 16,
+    }
+    for line, want in cases.items():
+        m = scc.CONST_RE.match(line)
+        assert m, line
+        assert scc.parse_value(m.group(2)) == want, line
+
+
+def test_sixteen_bit_spellings_agree_but_wide_values_do_not():
+    assert not scc.disagrees({-1, 0xFFFF})  # VARIANT_TRUE spelled both ways
+    assert scc.disagrees({2, -2})  # the fastfat bug
+    assert scc.disagrees({0x10000, 0})  # never forgiven by the 16-bit rule

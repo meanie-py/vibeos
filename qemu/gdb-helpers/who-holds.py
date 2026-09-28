@@ -43,8 +43,30 @@ def _wh_waitblocklist_off() -> int:
     raise gdb.GdbError(f"who-holds: dump-thread.py has no WaitBlockList offset for {_lt_arch()}")  # noqa: F821
 
 
+def _wh_list_head(symbol: str) -> int:
+    """A kernel LIST_ENTRY global's runtime address, validated by Flink->Blink == head.
+
+    The relocated symbol is right on amd64 and wrong on arm64 (a Rust-owned data symbol in
+    a different address space, as list-threads.py found for PsActiveProcessHead), so fall
+    back to the debugger data block's copy, which the kernel fills with the real address."""
+    mask = (1 << (8 * _wh_ptr_size())) - 1
+    tried = []
+    for expr in (
+        f"(unsigned long long)&{symbol}",
+        f"(unsigned long long)((struct KDDEBUGGER_DATA64_FULL *)&KdDebuggerDataBlock)->{symbol}",
+    ):
+        try:
+            head = int(gdb.parse_and_eval(expr)) & mask
+            if head and _wh_ptr(_wh_ptr(head) + _wh_ptr_size()) == head:
+                return head
+            tried.append(f"{expr} = {head:#x} (not a list head)")
+        except (gdb.error, gdb.MemoryError, OverflowError) as e:
+            tried.append(f"{expr}: {e}")
+    raise gdb.GdbError(f"who-holds: cannot locate {symbol}: " + "; ".join(tried))
+
+
 def _wh_modules() -> list[tuple[int, int, str]]:
-    head = int(gdb.parse_and_eval("(unsigned long long)&PsLoadedModuleList"))
+    head = _wh_list_head("PsLoadedModuleList")
     base_off = _wh_off("_LDR_DATA_TABLE_ENTRY.DllBase")
     size_off = _wh_off("_LDR_DATA_TABLE_ENTRY.SizeOfImage")
     name_off = _wh_off("_LDR_DATA_TABLE_ENTRY.BaseDllName")
@@ -71,6 +93,49 @@ def _wh_find_resource(obj: int) -> int | None:
             return cur
         cur, n = _wh_ptr(cur), n + 1
     return None
+
+
+def _wh_stack_scan(thread: int, mods: list[tuple[int, int, str]] | None = None) -> None:
+    """Print every value on `thread`'s saved kernel stack that points into a loaded module.
+
+    A parked thread's frames are not walkable from gdb (its registers live in the switch
+    frame, not the CPU), but its return addresses are all on the stack between KernelStack
+    and InitialStack, so a module-range filter recovers the call chain, stale slots and all."""
+    ps = _wh_ptr_size()
+    mods = mods if mods is not None else _wh_modules()
+
+    def where(v: int) -> str | None:
+        for base, size, name in mods:
+            if base <= v < base + size:
+                return f"{name}+{v - base:#x}"
+        return None
+
+    stack = _wh_ptr(thread + _wh_off("_KTHREAD.KernelStack"))
+    top = _wh_ptr(thread + _wh_off("_KTHREAD.InitialStack"))
+    gdb.write(
+        f"thread {thread:#x} kernel stack {stack:#x}..{top:#x}, code addresses "
+        "(symbolize with llvm-symbolizer against the named module):\n"
+    )
+    for addr in range(stack, min(top, stack + 0x3000), ps):
+        try:
+            v = _wh_ptr(addr)
+        except gdb.MemoryError:
+            break
+        m = where(v)
+        if m and not m.endswith("+0x0"):
+            gdb.write(f"  [{addr - stack:#06x}] {v:#x} {m}\n")
+
+
+class StackScanCmd(gdb.Command):
+    """stack-scan <KTHREAD>: module-resident values on a parked thread's kernel stack."""
+
+    def __init__(self):
+        super().__init__("stack-scan", gdb.COMMAND_USER)
+
+    def invoke(self, arg: str, from_tty: bool) -> None:
+        if not arg.strip():
+            raise gdb.GdbError("usage: stack-scan <KTHREAD address>")
+        _wh_stack_scan(int(gdb.parse_and_eval(arg.strip())))
 
 
 class WhoHoldsCmd(gdb.Command):
@@ -136,20 +201,8 @@ class WhoHoldsCmd(gdb.Command):
                 "signal the waiter) or a stale waiter count\n"
             )
             return
-        stack = _wh_ptr(owner + _wh_off("_KTHREAD.KernelStack"))
-        top = _wh_ptr(owner + _wh_off("_KTHREAD.InitialStack"))
-        gdb.write(
-            f"owner {owner:#x} kernel stack {stack:#x}..{top:#x}, code addresses "
-            "(symbolize with llvm-symbolizer against the named module):\n"
-        )
-        for addr in range(stack, min(top, stack + 0x3000), ps):
-            try:
-                v = _wh_ptr(addr)
-            except gdb.MemoryError:
-                break
-            m = where(v)
-            if m and not m.endswith("+0x0"):
-                gdb.write(f"  [{addr - stack:#06x}] {v:#x} {m}\n")
+        _wh_stack_scan(owner, mods)
 
 
 WhoHoldsCmd()
+StackScanCmd()

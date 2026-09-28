@@ -10,7 +10,7 @@
 //   (winspool.h) are NOT in the win32k_sys bindgen surface — reproduced locally as
 //   `#[repr(C)]` structs (faithful field/offset layout). `UMPDEV` is only ever cast-to and
 //   read (Sig + pdi5Info); it is never instantiated here, so the trailing `apfn[INDEX_LAST]`
-//   array size (winddi.h INDEX_LAST = 103 on the newest NTDDI) is layout-immaterial.
+//   array size (winddi.h INDEX_LAST = 93 at the tree's NTDDI) is layout-immaterial.
 // NEEDS-IMPORT: constants absent from win32k_sys bindgen, reproduced as local consts with
 //   psdk values: PDEV_UMPD_ID (0xFEDCBA98, gdi32p.h), LOAD_LIBRARY_AS_DATAFILE (0x2,
 //   winbase.h). `MAKEINTRESOURCEW` (a winuser.h macro) reimplemented as a local inline.
@@ -62,9 +62,10 @@ pub type DRIVER_INFO_5W = _DRIVER_INFO_5W;
 pub type PDRIVER_INFO_5W = *mut _DRIVER_INFO_5W;
 
 // ── gdi32p.h _UMPDEV (not in win32k_sys bindgen) ──────────────────────────────
-// winddi.h INDEX_LAST = 103 (newest NTDDI). UMPDEV is only ever cast-to / read here
-// (Sig + pdi5Info), never instantiated, so apfn's exact extent is layout-immaterial.
-const INDEX_LAST: usize = 103;
+// winddi.h:526 INDEX_LAST = 93 at the tree's NTDDI (_WIN32_WINNT=0x502, pre-Vista; 103 is
+// the Win7 value). UMPDEV is only ever cast-to / read here (Sig + pdi5Info), never
+// instantiated, so apfn's exact extent is layout-immaterial — but match gdi32p.h anyway.
+const INDEX_LAST: usize = 93;
 #[repr(C)]
 pub struct _UMPDEV {
     pub Sig: DWORD_PTR, // Init with PDEV_UMPD_ID
