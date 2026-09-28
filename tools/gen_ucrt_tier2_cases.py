@@ -525,7 +525,7 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
     # export, or when the harness's own deadline has passed. Emitting the call inside
     # the `if` is what keeps sharding and the deadline in ONE place -- the driver
     # stays a flat list and neither concern leaks into the generated bodies.
-    out += ["static void run_generated(void)", "{", "    int outcome;", ""]
+    out += ["static void run_generated(void)", "{"] + (["    int outcome;", ""] if rows else [])
     for _e, name, _kinds, has_rust in rows:
         out.append(f'    if (export_begin("{name}")) {{')
         out.append(f"        outcome = run_guarded(ucrtdiff_run_{name});")
@@ -544,6 +544,9 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
 #: while the object was right there. So the question "does the reference have it"
 #: is answered HERE, from the archive, as a macro the harness compiles against.
 HAND_GRADED = (
+    # stdlib batch: rand.cpp (rand, srand). Hand-graded; still QUARANTINED from the
+    # generated sweep, where it once took a boot down.
+    "rand",
     # exec_rest batch (hand-graded in ucrtdiff.c).
     "_cwait",
     "_getdllprocaddr",
@@ -1021,8 +1024,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"gen-ucrt-tier2-cases: FAIL ({args.arch}): {exc}", file=sys.stderr)
         return 1
     if not rows:
-        print(f"gen-ucrt-tier2-cases: FAIL ({args.arch}): selected nothing", file=sys.stderr)
-        return 1
+        # Not an error any more: the burn-down has taken every export this generator
+        # can drive (the abs/div family was the last), so what is left of the Microsoft
+        # side is graded by the hand-written runners alone. The harness still fails a
+        # shard that grades nothing at all ("no cases ran"), so this cannot hide a
+        # broken selection behind an empty but green run.
+        print(f"gen-ucrt-tier2-cases ({args.arch}): no generator-drivable exports left", file=sys.stderr)
 
     if args.stats:
         hist = collections.Counter("_".join(k) or "VOID" for _e, _n, k, _r in rows)

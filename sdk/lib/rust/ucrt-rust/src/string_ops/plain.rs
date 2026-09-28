@@ -71,7 +71,6 @@ use core::ffi::{c_char, c_int, c_void};
 extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn strlen(s: *const c_char) -> usize;
-    fn wcslen(s: *const u16) -> usize;
 }
 
 /// `_strdup` (strdup.cpp, release build -- the `_DEBUG` arm is not built here).
@@ -169,6 +168,19 @@ pub unsafe extern "C" fn wcsnlen(string: *const u16, maximum_count: usize) -> us
     ((it as usize) - (string as usize)) / 2
 }
 
+/// `wcslen` (strnlen.cpp `common_strnlen<unbounded>`). Microsoft builds this one
+/// from strnlen.cpp everywhere but arm64, where `string/arm64/wcslen.s` stands in;
+/// neither is built here, and between the string takeover deleting strnlen.cpp and
+/// this port the export silently resolved to ntdll's through the import library.
+#[no_mangle]
+pub unsafe extern "C" fn wcslen(string: *const u16) -> usize {
+    let mut it = string;
+    while *it != 0 {
+        it = core::hint::black_box(it.add(1)); // black_box: this IS the idiom.
+    }
+    ((it as usize) - (string as usize)) / 2
+}
+
 // ---------------------------------------------------------------------------
 // Plain wcs* family (wcscat.cpp, wcscmp.cpp, wcscpy.cpp, wcscspn.cpp,
 // wcsncat.cpp, wcsncmp.cpp, wcsncpy.cpp, wcspbrk.cpp, wcsrev.cpp, wcsset.cpp,
@@ -181,7 +193,7 @@ pub unsafe extern "C" fn wcscat(destination: *mut u16, source: *const u16) -> *m
     let mut d = destination;
     while *d != 0 {
         // black_box: the find-the-NUL half is the `wcslen` idiom; `wcslen` is
-        // out of scope for this file (imported elsewhere) but the idiom
+        // defined above, and the idiom
         // recognizer does not care which exported name it targets.
         d = core::hint::black_box(d.add(1));
     }

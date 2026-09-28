@@ -532,6 +532,34 @@ pub unsafe extern "C" fn memcpy_s(
     0
 }
 
+/// `memmove_s` (corecrt_memcpy_s.h, compiled out of line by the deleted
+/// memcpy_s.cpp). Unlike `memcpy_s` it does NOT zero the destination on failure:
+/// the three checks run in order and each one alone returns. Missing from the
+/// string takeover, so the export resolved to msvcrt.dll's through the import
+/// library until this port.
+#[no_mangle]
+pub unsafe extern "C" fn memmove_s(
+    destination: *mut c_void,
+    destination_size: usize,
+    source: *const c_void,
+    source_size: usize,
+) -> ErrnoT {
+    if source_size == 0 {
+        return 0;
+    }
+    if validate(!destination.is_null(), EINVAL).is_none() {
+        return EINVAL;
+    }
+    if validate(!source.is_null(), EINVAL).is_none() {
+        return EINVAL;
+    }
+    if validate(destination_size >= source_size, ERANGE).is_none() {
+        return ERANGE;
+    }
+    memmove(destination, source, source_size);
+    0
+}
+
 /// `wmemcpy_s` (wmemcpy_s.cpp). Element counts, not bytes; the zero-fill on
 /// failure is `size_in_elements` wide chars (`wmemset(dest, 0, n)`), done here
 /// with `write_bytes` over `size_in_elements * 2` bytes -- exactly what the

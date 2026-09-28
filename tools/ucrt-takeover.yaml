@@ -1604,3 +1604,200 @@ families:
       - _wunlink
       - remove
       - rename
+  lowio:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/lowio/ (all 21 .cpp)
+    oracle: >
+      ORACLE_lowio
+    note: >
+      A PORT (src/lowio/): the handle table (ioinit, osfinfo) is the core in mod.rs, the rest one submodule per file or family over it.
+    exports:
+      - __p__fmode
+      - _chsize
+      - _chsize_s
+      - _close
+      - _commit
+      - _creat
+      - _dup
+      - _dup2
+      - _eof
+      - _filelength
+      - _filelengthi64
+      - _get_fmode
+      - _get_osfhandle
+      - _isatty
+      - _locking
+      - _lseek
+      - _lseeki64
+      - _mktemp
+      - _mktemp_s
+      - _open_osfhandle
+      - _read
+      - _set_fmode
+      - _setmode
+      - _tell
+      - _telli64
+      - _umask
+      - _umask_s
+      - _wcreat
+      - _wmktemp
+      - _wmktemp_s
+      - _write
+  conio:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/conio/ (all 14 .cpp)
+    oracle: >
+      ORACLE_conio
+    note: >
+      A PORT (src/conio/). _cprintf/_cscanf drive the printf and scanf engines already in Rust (output.rs, stdio/input).
+    exports:
+      - __conio_common_vcscanf
+      - __conio_common_vcwscanf
+      - _cgets
+      - _cgets_s
+      - _cgetws
+      - _cgetws_s
+      - _cputs
+      - _cputws
+      - _getch
+      - _getch_nolock
+      - _getche
+      - _getche_nolock
+      - _getwch
+      - _getwch_nolock
+      - _getwche
+      - _getwche_nolock
+      - _kbhit
+      - _pclose
+      - _pipe
+      - _popen
+      - _putch
+      - _putch_nolock
+      - _putwch
+      - _putwch_nolock
+      - _ungetch
+      - _ungetch_nolock
+      - _ungetwch
+      - _ungetwch_nolock
+      - _wpopen
+  env:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/env/ (all 7 .cpp)
+    oracle: >
+      ORACLE_env
+    note: >
+      A PORT (src/env/): the four environment tables keep their C names; narrow and wide share one implementation generic over the character width.
+    exports:
+      - __dcrt_get_wide_environment_from_os
+      - __dcrt_initial_narrow_environment
+      - __p__environ
+      - __p__wenviron
+      - _dupenv_s
+      - _get_initial_narrow_environment
+      - _get_initial_wide_environment
+      - _initialize_narrow_environment
+      - _initialize_wide_environment
+      - _putenv
+      - _putenv_s
+      - _searchenv
+      - _searchenv_s
+      - _wdupenv_s
+      - _wgetenv
+      - _wgetenv_s
+      - _wputenv
+      - _wputenv_s
+      - _wsearchenv
+      - _wsearchenv_s
+      - getenv
+      - getenv_s
+  exec_rest:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/exec/{wait,system,getproc,loaddll}.cpp
+    oracle: >
+      ORACLE_exec_rest
+    note: >
+      A PORT (src/exec_rest/), over exec.rs's spawn machinery.
+    exports:
+      - _cwait
+      - _getdllprocaddr
+      - _loaddll
+      - _unloaddll
+      - _wsystem
+      - system
+  heap:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/heap/ (all 17 release .cpp; debug_heap*.cpp were never built)
+    oracle: >
+      ORACLE_heap
+    note: >
+      A PORT (src/heap/): the allocator every other part of ucrtbase calls, over __acrt_heap = GetProcessHeap().
+    exports:
+      - _callnewh
+      - _calloc_base
+      - _expand
+      - _free_base
+      - _get_heap_handle
+      - _heapchk
+      - _heapmin
+      - _heapwalk
+      - _malloc_base
+      - _msize
+      - _query_new_handler
+      - _query_new_mode
+      - _realloc_base
+      - _recalloc
+      - _set_new_handler
+      - _set_new_mode
+      - calloc
+      - free
+      - malloc
+      - realloc
+  stdlib:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/stdlib/ (all 18 .cpp)
+    oracle: >
+      ORACLE_stdlib
+    note: >
+      A PORT (src/stdlib/): Microsoft's qsort one-for-one, comparator call sequence included (graded on the host against the C as well).
+    exports:
+      - _abs64
+      - _lfind
+      - _lfind_s
+      - _lsearch
+      - _lsearch_s
+      - abs
+      - bsearch
+      - bsearch_s
+      - div
+      - imaxabs
+      - imaxdiv
+      - labs
+      - ldiv
+      - llabs
+      - lldiv
+      - qsort
+      - qsort_s
+      - rand
+      - rand_s
+      - srand
+  internal_core:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/internal/{initialization,locks,per_thread_data,shared_initialization}.cpp, startup/initterm.cpp, dll/appcrt_dllmain.cpp, initializers/ (all)
+    oracle: >
+      ORACLE_internal_core
+    note: >
+      A PORT (src/internal/): the CRT bootstrap -- DllMain, the initializer table, the lock table, per-thread data and the .CRT$XI*/XP* entries. ucrt is a CMake OBJECT library, so the C initializers had to go in the same change or every entry would have run twice.
+    exports:
+      - __threadhandle
+      - __threadid
+      - _initterm
+      - _initterm_e
+      - _lock_locales
+      - _unlock_locales

@@ -569,6 +569,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `UCRTDIFF_FAT_RENAME_BUGCHECKS` in `tools/payloads/ucrtdiff/ucrtdiff.c` -- set it to 0 when
   this closes. Still reproduces after d98aba47853 (fastfat top-level IRP fix), 2026-09-28.
   Owner: unassigned (fastfat/kernel lane).
+- **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
+  (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
+  control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
+  import library and ucrtbase ships a forward into msvcrt.dll. Found by
+  `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
+  (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
+  Owner: ucrt-rust lane.
 - **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
   the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
   so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:

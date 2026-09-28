@@ -787,6 +787,11 @@ def check_force_includes(repo: Path | None = None) -> list[str]:
     """
     repo = REPO if repo is None else repo
     init_dir = repo / "sdk" / "lib" / "ucrt" / "initializers"
+    # Once the initializers themselves are Rust (src/internal/init.rs, `#[used]`
+    # statics in the --whole-archive'd crate) there is no member left to fail to
+    # pull: every hook is linked unconditionally. Nothing to check.
+    if not init_dir.is_dir():
+        return []
     hooks = set()
     for f in sorted(init_dir.glob("*.cpp")):
         hooks.update(_CRTALLOC_SYM.findall(f.read_text(errors="replace")))
@@ -847,6 +852,97 @@ def check_win32_abi(repo: Path | None = None) -> list[str]:
     return findings
 
 
+#: Exports ucrtbase.dll is ALLOWED to answer with an import of the same name. Every
+#: other name it both exports and imports is a body a takeover lost: the string
+#: takeover deleted memcpy_s.cpp and strnlen.cpp, their memmove_s and wcslen were
+#: never ported, and the link quietly resolved both through the msvcrt/ntdll import
+#: libraries -- ucrtbase shipped a forward to msvcrt.dll with no error anywhere.
+EXPORT_IMPORT_ALLOWED = {
+    # The compiler-intrinsic string primitives: this tree has always taken them
+    # from ntdll (add_importlibs(ucrtbase kernel32 ntdll)), which exports the same
+    # contracts. Measured 2026-09-28 on all three arches.
+    **dict.fromkeys(
+        ("memchr", "memcmp", "memcpy", "memmove", "memset", "strchr", "strrchr", "strstr",
+         "wcschr", "wcsrchr", "wcsstr"),
+        "ntdll.dll",
+    ),
+    # OWED, arm64 only: the x87/SSE control-word family has no arm64 body in this
+    # tree (sdk/lib/crt builds them for i386/amd64 only), so arm64's resolve to
+    # msvcrt.dll's. Tracked in the roadmap's known-bugs registry.
+    **dict.fromkeys(("_clearfp", "_control87", "_controlfp", "_statusfp"), "msvcrt.dll"),
+}
+
+
+def _pe_exports_imports(dll: Path) -> tuple[set[str], dict[str, str]] | None:
+    """(export names, import name -> dll) of a PE, or None if objdump cannot read it."""
+    for objdump in (str(REPO / ".build-tools/llvm-mingw/bin/llvm-objdump"), "llvm-objdump"):
+        try:
+            res = subprocess.run([objdump, "-p", str(dll)], capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if res.returncode != 0:
+            continue
+        exports: set[str] = set()
+        imports: dict[str, str] = {}
+        section, dll_name = None, None
+        for line in res.stdout.splitlines():
+            m = re.match(r"\s*DLL Name: (\S+)", line)
+            if m:
+                section, dll_name = "imp", m.group(1)
+                continue
+            if line.startswith("Export Table"):
+                section = "exp"
+                continue
+            if section == "imp" and dll_name:
+                m = re.match(r"\s+\d+\s+(\S+)$", line)
+                if m:
+                    imports.setdefault(m.group(1), dll_name)
+            elif section == "exp":
+                m = re.match(r"\s+\d+\s+0x[0-9a-fA-F]+\s+(\S+)$", line)
+                if m:
+                    exports.add(m.group(1))
+        return exports, imports
+    return None
+
+
+def check_export_imports(repo: Path | None = None) -> tuple[list[str], list[str]]:
+    """No ucrtbase export may be answered by an import of the same name.
+
+    Reads the LINKED dll, not the sources: the failure it exists for is invisible in
+    source (the body is simply gone) and at link time (an import library satisfies
+    the reference). Returns (failures, notes); an arch without a current build is a
+    note, never a pass or a failure.
+    """
+    repo = REPO if repo is None else repo
+    fails: list[str] = []
+    notes: list[str] = []
+    for arch in ("i386", "amd64", "arm64"):
+        dll = repo / f"build-{arch}" / "dll" / "win32" / "ucrtbase" / "ucrtbase.dll"
+        if not dll.is_file():
+            notes.append(f"note: export/import check: {arch} not measured -- no {dll.relative_to(repo)}")
+            continue
+        stale = burndown_stale(arch) if repo == REPO else None
+        if stale:
+            notes.append(f"note: export/import check: {arch} not measured -- {stale}")
+            continue
+        got = _pe_exports_imports(dll)
+        if got is None:
+            fails.append(f"ucrtbase {arch}: no usable llvm-objdump; cannot read {dll}")
+            continue
+        exports, imports = got
+        for name in sorted(exports & imports.keys()):
+            if EXPORT_IMPORT_ALLOWED.get(name) == imports[name].lower():
+                continue
+            fails.append(
+                f"ucrtbase {arch}: `{name}` is exported but answered by an import from "
+                f"{imports[name]} -- no object on the link line defines it, so the import "
+                f"library did. A takeover deleted its body without porting it. fix: port it "
+                f"into ucrt-rust (or, if the forward is deliberate, add it to "
+                f"EXPORT_IMPORT_ALLOWED with the reason)"
+            )
+    return fails, notes
+
+
 def main() -> int:
     findings = (
         check_structure()
@@ -858,6 +954,9 @@ def main() -> int:
     )
     bd_fails, bd_notes = check_burndown()
     findings += bd_fails
+    ei_fails, ei_notes = check_export_imports()
+    findings += ei_fails
+    bd_notes += ei_notes
     for f in findings:
         print(f)
     # Notes last, so a green run ends on the number going down -- which is the
