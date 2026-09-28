@@ -872,7 +872,9 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 
 
 const IRP_MJ_READ: u8 = 3;
-const FSRTL_MOD_WRITE_TOP_LEVEL_IRP: *mut core::ffi::c_void = 1 as *mut core::ffi::c_void;
+// fsrtltypes.h value; a wrong copy of these flags leaks a bogus top-level IRP that
+// FatCommonWrite then dereferences (see resrcsup.rs FSRTL_CACHE_TOP_LEVEL_IRP).
+const FSRTL_MOD_WRITE_TOP_LEVEL_IRP: *mut core::ffi::c_void = 0x03 as *mut core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "system" fn FatUpdateDiskStats(
     IrpContext: *mut IRP_CONTEXT,

@@ -223,7 +223,10 @@ const PiActionEnumDeviceTree: ULONG = 0;
 const PiActionEnumRootDevices: ULONG = 1;
 const PiActionAddBootDevices: ULONG = 3;
 const MAXIMUM_FILENAME_LENGTH: usize = 256;
-const MM_SYSLDR_NO_IMPORTS: usize = 0xFFFFFFFF;
+// mm.h: ((PVOID)(ULONG_PTR)-2). This was 0xFFFFFFFF -- a 32-bit -1, i.e. neither sentinel
+// on 64-bit -- so an image whose imports were never resolved kept a LoadedImports the unload
+// path does not recognise as a sentinel and would walk as an import list.
+const MM_SYSLDR_NO_IMPORTS: usize = (-2isize) as usize;
 const KeyBasicInformation: ULONG = 0;
 
 static FILESYSTEM_ROOT_NAME: &[u16] = &[

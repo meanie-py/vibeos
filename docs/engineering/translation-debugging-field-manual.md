@@ -2458,6 +2458,13 @@ A 770-entry baseline is a work queue, not a defect list, and working it alphabet
 the effort on the harmless majority. The severity of a wrong constant is predicted by one
 question: *is there a second site that must produce the same number?* Rank the queue by it.
 
+- **A rendezvous pair can live inside ONE file, as function-local shadows.** fastfat's
+  resrcsup.rs defined `FSRTL_CACHE_TOP_LEVEL_IRP` four times (-2, 2, -1, 1; the C is 0x02),
+  each Acquire/Release pair setting one value and testing another. FatReleaseForCcFlush
+  never recognised the -2 FatAcquireForCcFlush set, the bogus top-level IRP leaked, and the
+  next FatCommonWrite took it for a real IRP and faulted (BUGCHECK 0x23 on arm64, kmtest
+  ZwCreateSection). Pointer-typed flags (`(-2isize) as *mut IRP`) were invisible to
+  `scan_const_contradictions` until its value parser learned the cast forms.
 - **Rendezvous pairs — fix first.** Alloc↔free (`ExAllocatePoolWithTag`/`ExFreePoolWithTag`),
   write↔compare (a signature stamped at init and tested later), set↔test (a flag written by one
   file and masked by another), request↔dispatch (a function code the caller sends and the

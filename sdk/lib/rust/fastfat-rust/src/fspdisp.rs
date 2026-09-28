@@ -47,7 +47,9 @@ pub const Dbg: u32 = DEBUG_TRACE_FSP_DISPATCHER;
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000002;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 const IRP_CONTEXT_FLAG_IN_FSP: u32 = 0x0200;
 const IRP_CONTEXT_FLAG_RECURSIVE_CALL: u32 = 0x00000010;
-const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = (-1isize) as *mut IRP;
+// fsrtltypes.h value; a wrong copy of these flags leaks a bogus top-level IRP that
+// FatCommonWrite then dereferences (see resrcsup.rs FSRTL_CACHE_TOP_LEVEL_IRP).
+const FSRTL_FSP_TOP_LEVEL_IRP: *mut IRP = 0x01 as *mut IRP;
 #[no_mangle]
 pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     // PAGED_CODE();

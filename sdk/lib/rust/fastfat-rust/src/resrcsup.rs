@@ -51,7 +51,13 @@ use ntkrnl_sys::ddk::ERESOURCE;
 const IRP_NOCACHE: u32 = 0x01;
 
 const FAT_NTC_FCB: u32 = 0x0502; // TODO: correct value
-const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = (-2isize) as *mut IRP;
+// fsrtltypes.h: #define FSRTL_CACHE_TOP_LEVEL_IRP (0x02), used as (PIRP). ONE definition for
+// the file: it used to carry four (-2, 2, -1, 1), so each Acquire/Release pair set one value
+// and tested for another. FatReleaseForCcFlush never recognised FatAcquireForCcFlush's -2,
+// left it as the thread's top-level IRP, and the next FatCommonWrite on that thread took
+// -2 for a real IRP (it is > FSRTL_MAX_TOP_LEVEL_IRP_FLAG unsigned) and faulted reading its
+// NodeType: BUGCHECK 0x23 in kmtest ZwCreateSection on arm64.
+const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = 0x02 as *mut IRP;
 
 
 
@@ -268,7 +274,6 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
 
     // Local constants that would normally come from headers
     const FAT_NTC_FCB: u32 = 0x0502; // TODO: actual value unknown
-    const FSRTL_CACHE_TOP_LEVEL_IRP: isize = 0x02;
 
     let fcb_ptr = Fcb as *mut FCB;
 
@@ -395,8 +400,6 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
 
 #[no_mangle]
 pub unsafe extern "system" fn FatReleaseFcbFromReadAhead(Fcb: *mut core::ffi::c_void) {
-    // FSRTL_CACHE_TOP_LEVEL_IRP is ((PIRP)LONG_PTR_MAX)
-    const FSRTL_CACHE_TOP_LEVEL_IRP: PIRP = (-1_isize) as PIRP;
 
     // PAGED_CODE() – normally a no-op in non‑checked builds; left as-is.
     let top_irp = IoGetTopLevelIrp();
@@ -468,7 +471,6 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
     file_object: *mut FILE_OBJECT,
     device_object: *mut DEVICE_OBJECT,
 ) -> i32 {
-    const FSRTL_CACHE_TOP_LEVEL_IRP: *mut core::ffi::c_void = 1 as *mut core::ffi::c_void;
 
     let mut vcb: *mut VCB = core::ptr::null_mut();
     let mut fcb: *mut FCB = core::ptr::null_mut();
@@ -480,7 +482,7 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
 
     let _ = device_object;
 
-    if (ntkrnl_sys::ddk::IoGetTopLevelIrp() as *mut core::ffi::c_void) == FSRTL_CACHE_TOP_LEVEL_IRP {
+    if (ntkrnl_sys::ddk::IoGetTopLevelIrp() as *mut core::ffi::c_void) == FSRTL_CACHE_TOP_LEVEL_IRP as *mut core::ffi::c_void {
         ntkrnl_sys::ddk::IoSetTopLevelIrp(core::ptr::null_mut());
     }
 
