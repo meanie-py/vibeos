@@ -175,7 +175,7 @@ convert-rest = ["strtod"]
 # misc/ -- errno/strerror/perror, cwd and drives, signal/terminate, beep, pid, systime
 misc = []
 # filesystem/ -- makepath/splitpath, access, fullpath, unlink/rename, mkdir/rmdir, chmod
-filesystem = []
+filesystem = ["findfile"]
 
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }

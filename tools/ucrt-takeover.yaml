@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 277
-  amd64: 277
-  arm64: 276
+  i386: 163
+  amd64: 163
+  arm64: 162
 
 families:
   bits:
@@ -1430,3 +1430,177 @@ families:
       - tmpnam_s
       - ungetc
       - ungetwc
+
+  convert_rest:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/convert/ -- the rest (19 .cpp: mbrtowc, wcrtomb, mbstowcs, wcstombs, wctomb, mbtowc, mblen, _mbslen, ismbstr, c16/c32rtomb, mbrtoc16/32, fcvt, gcvt, atoldbl, swab, wctrans, common_utf8)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the multibyte conversions over ASCII,
+      high-byte and invalid corpora (the "C" locale fast paths and the UTF-8 engine of
+      c16/c32 in full), the _s forms' truncate/too-small/EINVAL matrix, fcvt/ecvt/gcvt
+      over a double corpus graded as strings plus decpt and sign, and _atoldbl's 10-byte
+      results over a decimal/hex/inf/nan corpus. All MATCH, dll_fail=0 -- 928 cases.
+      The grade found four port bugs, all fixed: _fcvt's sign read as nonzero (the C
+      stores the CHARACTER '-' or ' '); _RESET_STRING ported as a whole-buffer zero
+      (seven sites -- and _gcvt passes (size_t)-1 >> 1 as its size); and _gcvt passing
+      0x1 for _CRT_INTERNAL_PRINTF_LEGACY_THREE_DIGIT_EXPONENTS (1 << 4).
+    note: >
+      A PORT (src/convert_rest/). _atoldbl assembles its _LDBL12 from strtod.rs's scan
+      (parse_floating_point_string), as the C's type-overloaded assembly does. The
+      float-formatting engine (cvt, cfout, fp_flags, _fptostr) and wctype.cpp stay C.
+      __crt_mbstring::__mbsrtowcs_utf8 keeps its C++ mangled name: lowio/write.cpp
+      calls it.
+    exports:
+      - _atoldbl
+      - _atoldbl_l
+      - _ecvt
+      - _ecvt_s
+      - _fcvt
+      - _fcvt_s
+      - _gcvt
+      - _gcvt_s
+      - _ismbstrail
+      - _ismbstrail_l
+      - _mblen_l
+      - _mbstowcs_l
+      - _mbstowcs_s_l
+      - _mbstrlen
+      - _mbstrlen_l
+      - _mbstrnlen
+      - _mbstrnlen_l
+      - _mbtowc_l
+      - _swab
+      - _wcstombs_l
+      - _wcstombs_s_l
+      - _wctomb_l
+      - _wctomb_s_l
+      - btowc
+      - c16rtomb
+      - c32rtomb
+      - mblen
+      - mbrlen
+      - mbrtoc16
+      - mbrtoc32
+      - mbrtowc
+      - mbsrtowcs
+      - mbsrtowcs_s
+      - mbstowcs
+      - mbstowcs_s
+      - mbtowc
+      - towctrans
+      - wcrtomb
+      - wcrtomb_s
+      - wcsrtombs
+      - wcsrtombs_s
+      - wcstombs
+      - wcstombs_s
+      - wctob
+      - wctomb
+      - wctomb_s
+      - wctrans
+
+  misc:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/misc/ (21 .cpp; crtmbox.cpp and the debug-only dbgrpt files stay)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: errno/doserrno and the OS-error map,
+      the error-message table and strerror/_strerror/perror families (stderr redirected
+      per side through each side's own lowio fd 2), cwd and drives (the OS cwd saved
+      and restored), signal/raise with installed-then-restored handlers, set_terminate,
+      the error-mode and time getters/setters. All MATCH, dll_fail=0 -- 207 cases. The
+      grade found four validation paths missing the invalid-parameter handler call
+      (strerror_s, _wcserror_s, _strerror_s, __wcserror_s, _get_doserrno), fixed.
+    note: >
+      A PORT (src/misc/). terminate()'s __try/__except around the handler compiles to
+      nothing under this build's dummy SEH, so the Rust has none either.
+    exports:
+      - __doserrno
+      - __fpecode
+      - __pxcptinfoptrs
+      - __sys_errlist
+      - __sys_nerr
+      - __wcserror
+      - __wcserror_s
+      - _beep
+      - _chdir
+      - _chdrive
+      - _errno
+      - _get_doserrno
+      - _get_errno
+      - _get_terminate
+      - _getcwd
+      - _getdcwd
+      - _getdiskfree
+      - _getdrive
+      - _getdrives
+      - _getpid
+      - _getsystime
+      - _resetstkoflw
+      - _seh_filter_dll
+      - _seh_filter_exe
+      - _set_doserrno
+      - _set_errno
+      - _set_error_mode
+      - _seterrormode
+      - _setsystime
+      - _sleep
+      - _strerror
+      - _strerror_s
+      - _wchdir
+      - _wcserror
+      - _wcserror_s
+      - _wgetcwd
+      - _wgetdcwd
+      - _wperror
+      - is_wctype
+      - perror
+      - raise
+      - set_terminate
+      - signal
+      - strerror
+      - strerror_s
+      - terminate
+
+  filesystem:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/filesystem/ (all 15 .cpp)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: makepath/splitpath and their _s forms
+      over a large path corpus, access modes, _fullpath with NULL and short buffers,
+      unlink/remove/mkdir/rmdir/chmod effects checked through Win32, errno and
+      _doserrno. All MATCH, dll_fail=0 -- 999 cases. rename/_wrename are graded only on
+      the paths that fail in kernel32 (missing source, NULL): a real rename bugchecks
+      the arm64 guest in fastfat (known-bugs registry, "rename bugchecks fastfat"), and
+      ours makes Microsoft's identical MoveFileExW call.
+    note: >
+      A PORT (src/filesystem/), over findfile.rs's narrow/wide path conversion.
+    exports:
+      - _access
+      - _access_s
+      - _chmod
+      - _fullpath
+      - _makepath
+      - _makepath_s
+      - _mkdir
+      - _rmdir
+      - _splitpath
+      - _splitpath_s
+      - _unlink
+      - _waccess
+      - _waccess_s
+      - _wchmod
+      - _wfullpath
+      - _wmakepath
+      - _wmakepath_s
+      - _wmkdir
+      - _wremove
+      - _wrename
+      - _wrmdir
+      - _wsplitpath
+      - _wsplitpath_s
+      - _wunlink
+      - remove
+      - rename
