@@ -290,12 +290,14 @@ def _rebase(path: Path, repo: Path = REPO) -> Path:
 
 
 def _newest_cmake_mtime(repo: Path) -> float:
+    """Prune build-*/.git/target BEFORE descending. rglob walked into them and filtered
+    after: a concurrent build deleting build-amd64/rust-shared-3-target mid-walk raised
+    FileNotFoundError and failed a merge-queue gate as TOOLING_FAIL."""
     newest = 0.0
-    for p in repo.rglob("CMakeLists.txt"):
-        parts = p.parts
-        if any(x.startswith("build-") or x in (".git", "target") for x in parts):
-            continue
-        newest = max(newest, p.stat().st_mtime)
+    for parent, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith("build-") and d not in (".git", "target")]
+        if "CMakeLists.txt" in files:
+            newest = max(newest, (Path(parent) / "CMakeLists.txt").stat().st_mtime)
     return newest
 
 

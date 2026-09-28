@@ -427,7 +427,10 @@ pub unsafe extern "system" fn FatAcquireForCcFlush(
     let _ = DeviceObject;
 
     // NT_ASSERT( IoGetTopLevelIrp() != (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP );
-    ntkrnl_sys::ASSERT!(!IoGetTopLevelIrp().is_null() && IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
+    // Only that: a NULL top-level IRP is legal here -- the next line handles it -- and the
+    // `!is_null() &&` this once carried fired BUGCHECK 0x23 on arm64 when kmtest's
+    // ZwCreateSection flushed with no top-level IRP set.
+    ntkrnl_sys::ASSERT!(IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
 
     if IoGetTopLevelIrp().is_null() {
         IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP);
