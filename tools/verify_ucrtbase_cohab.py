@@ -827,7 +827,7 @@ def check_win32_abi(repo: Path | None = None) -> list[str]:
     """
     repo = REPO if repo is None else repo
     findings = []
-    for f in sorted((repo / "sdk" / "lib" / "rust" / "ucrt-rust" / "src").rglob("*.rs")):
+    for f in sorted(source_files(repo / "sdk" / "lib" / "rust" / "ucrt-rust" / "src")):
         for block in _EXTERN_C_BLOCK.finditer(f.read_text(errors="replace")):
             for name in _PASCAL_FN.findall(block.group(1)):
                 findings.append(
