@@ -17,6 +17,13 @@
 //!   the current state index is always 0. `__acrt_getptd_noexit_explicit` is
 //!   still exported (unmangled: the header declares it `extern "C"`) because
 //!   the ptd-propagation header's inline code calls it.
+//! * The lock and per-thread-data entry points are `#[inline(never)]`, as they
+//!   are out-of-line calls into their own TU in the C. Their state (the lock
+//!   table, the FLS index) is private, so an inlined copy is a caller reading it
+//!   directly: the Tier-2 harness makes our code defer to Microsoft's instance by
+//!   SYMBOL during a takeover check, and an inlined `__acrt_getptd` in our
+//!   `__acrt_initialize_multibyte` read our never-allocated FLS index, got no
+//!   ptd, and aborted inside Microsoft's startup.
 //! * `_rand_state` starts at 1 and `_own_locale` at `_GLOBAL_LOCALE_BIT`; the
 //!   signal action table pointer starts at the SHARED table, and is only freed
 //!   when a thread has replaced it with its own copy.
@@ -72,6 +79,7 @@ static mut ACRT_LOCK_TABLE: [CriticalSection; ACRT_LOCK_COUNT] = [const { Critic
 static mut ACRT_LOCKS_INITIALIZED: c_uint = 0;
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_initialize_locks() -> bool {
     for i in 0..ACRT_LOCK_COUNT {
         if __acrt_InitializeCriticalSectionEx(addr_of_mut!(ACRT_LOCK_TABLE[i]), CORECRT_SPINCOUNT, 0) == 0 {
@@ -84,6 +92,7 @@ pub unsafe extern "C" fn __acrt_initialize_locks() -> bool {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_uninitialize_locks(_terminating: bool) -> bool {
     let mut i = ACRT_LOCKS_INITIALIZED;
     while i > 0 {
@@ -95,11 +104,13 @@ pub unsafe extern "C" fn __acrt_uninitialize_locks(_terminating: bool) -> bool {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_lock(lock: c_int) {
     EnterCriticalSection(addr_of_mut!(ACRT_LOCK_TABLE[lock as usize]));
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_unlock(lock: c_int) {
     LeaveCriticalSection(addr_of_mut!(ACRT_LOCK_TABLE[lock as usize]));
 }
@@ -227,6 +238,7 @@ fn flsindex() -> u32 {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_initialize_ptd() -> bool {
     let index = __acrt_FlsAlloc(Some(destroy_fls));
     ACRT_FLSINDEX.store(index, Ordering::Relaxed);
@@ -241,6 +253,7 @@ pub unsafe extern "C" fn __acrt_initialize_ptd() -> bool {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_uninitialize_ptd(_terminating: bool) -> bool {
     if flsindex() != FLS_OUT_OF_INDEXES {
         __acrt_FlsFree(flsindex());
@@ -379,6 +392,7 @@ unsafe fn internal_getptd_noexit(global_state_index: usize) -> *mut AcrtPtd {
 
 /// The caller already holds a `__crt_scoped_get_last_error_reset`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_getptd_noexit_explicit(
     _last_error_reset: *const c_void,
     global_state_index: usize,
@@ -387,6 +401,7 @@ pub unsafe extern "C" fn __acrt_getptd_noexit_explicit(
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_getptd_noexit() -> *mut AcrtPtd {
     let last_error = GetLastError();
     let ptd = internal_getptd_noexit(0);
@@ -395,6 +410,7 @@ pub unsafe extern "C" fn __acrt_getptd_noexit() -> *mut AcrtPtd {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_getptd() -> *mut AcrtPtd {
     let ptd = __acrt_getptd_noexit();
     if ptd.is_null() {
@@ -404,6 +420,7 @@ pub unsafe extern "C" fn __acrt_getptd() -> *mut AcrtPtd {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_getptd_head() -> *mut AcrtPtd {
     let head = internal_get_ptd_head();
     if head.is_null() {
@@ -413,6 +430,7 @@ pub unsafe extern "C" fn __acrt_getptd_head() -> *mut AcrtPtd {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_freeptd() {
     let head = try_get_ptd_head();
     if head.is_null() {
