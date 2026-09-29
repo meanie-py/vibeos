@@ -544,6 +544,16 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
 #: while the object was right there. So the question "does the reference have it"
 #: is answered HERE, from the archive, as a macro the harness compiles against.
 HAND_GRADED = (
+    # thunkcvt batch (hand-graded in ucrtdiff.c).
+    "wctype",
+    # argv batch (hand-graded in ucrtdiff.c).
+    "_configure_narrow_argv",
+    "_get_narrow_winmain_command_line",
+    "_query_app_type",
+    # startup batch (hand-graded in ucrtdiff.c).
+    "_beginthreadex",
+    "_initialize_onexit_table",
+    "_set_abort_behavior",
     # stdlib batch: rand.cpp (rand, srand). Hand-graded; still QUARANTINED from the
     # generated sweep, where it once took a boot down.
     "rand",
@@ -968,6 +978,11 @@ HAND_GRADED = (
 )
 
 
+#: Non-exported INTERNALS the harness grades directly on the reference side (the
+#: float-formatting engine): the reference archive keeps them under their plain
+#: names, so their guard asks for the plain name, not a `ref_` one.
+REF_INTERNALS = ("__acrt_fp_format", "__acrt_fltout", "__acrt_fp_strflt_to_string")
+
 #: Exports the harness calls on the reference side only to DRIVE state (set a locale, a
 #: multibyte code page) for other rows. See emit_refs.
 REF_DRIVERS = (
@@ -993,6 +1008,9 @@ def emit_refs(arch: str) -> str:
     ]
     for name in HAND_GRADED:
         lines.append(f"#define UCRTDIFF_REF_HAS_{name} {int(name in have)}")
+    plain = _renamed_exports(arch, "libucrt_ref.a", ("_",) if arch == "i386" else ("",))
+    for name in REF_INTERNALS:
+        lines.append(f"#define UCRTDIFF_REF_HAS_{name} {int(name in plain)}")
     # CALLABLE: the harness can call ref_<name> to put the reference instance into a
     # state, either Microsoft's copy or -- once a takeover removed it -- the alias of
     # our Rust copy that build_internals_set writes. Never a grade.

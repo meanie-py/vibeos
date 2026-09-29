@@ -112,7 +112,6 @@ add_dependencies(ucrtbase rust_ucrt_shared)
 # its own copies of the ones it does, which would then win first-match. Forcing the Rust
 # defs in first makes the C copies the ignored duplicates.
 target_link_libraries(ucrtbase
-    ucrt
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
     msvcrt_shared
     crtmath

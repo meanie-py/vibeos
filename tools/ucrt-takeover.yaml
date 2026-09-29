@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 25
-  amd64: 25
-  arm64: 25
+  i386: 0
+  amd64: 0
+  arm64: 0
 
 families:
   bits:
@@ -1809,3 +1809,77 @@ families:
       - _initterm_e
       - _lock_locales
       - _unlock_locales
+  startup:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/startup/{exit,onexit,abort,assert,thread}.cpp
+    oracle: >
+      ORACLE_startup
+    note: >
+      A PORT (src/startup/). _assert/_wassert are naked entry stubs that append their own return address (no _ReturnAddress() on stable Rust).
+    exports:
+      - _Exit
+      - _assert
+      - _beginthread
+      - _beginthreadex
+      - _c_exit
+      - _cexit
+      - _crt_at_quick_exit
+      - _crt_atexit
+      - _endthread
+      - _endthreadex
+      - _execute_onexit_table
+      - _exit
+      - _initialize_onexit_table
+      - _register_onexit_function
+      - _register_thread_local_exe_atexit_callback
+      - _set_abort_behavior
+      - _wassert
+      - abort
+      - exit
+      - quick_exit
+  argv_errors:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/startup/{argv_parsing,argv_wildcards,argv_winmain}.cpp, internal/{report_runtime_error,win_policies,peb_access}.cpp, misc/crtmbox.cpp
+    oracle: >
+      ORACLE_argv_errors
+    note: >
+      A PORT (src/argv/), over the globals in argv_data.rs.
+    exports:
+      - _configure_narrow_argv
+      - _configure_wide_argv
+      - _get_narrow_winmain_command_line
+      - _get_wide_winmain_command_line
+      - _query_app_type
+      - _set_app_type
+  cvt:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/convert/{cvt,cfout,_fptostr,fp_flags,wctype}.cpp
+    oracle: >
+      ORACLE_cvt
+    note: >
+      A PORT (src/cvt/): the float formatting engine. Also compared on the host against the Microsoft cvt/cfout/_fptostr C: 21,194,818 cases on x86_64, 0 differences. Fixes the amd64 ABI slip in fcvt.rs/gcvt.rs (the C __acrt_fltout took a struct-wrapped double, passed in RCX).
+    exports:
+      - wctype
+  winapi_thunks:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/internal/winapi_thunks.cpp and the six internal/*A.cpp narrow wrappers
+    oracle: >
+      ORACLE_winapi_thunks
+    note: >
+      A PORT (src/winapi_thunks/). Nothing here is an export; every graded row and every boot runs on it.
+    exports:
+      []
+  ucrt_reactos:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt_reactos/ (ReactOS glue, MIT: math/matherr.cpp, locale/*.c)
+    oracle: >
+      ORACLE_ucrt_reactos
+    note: >
+      A PORT (src/ucrt_reactos.rs) of ReactOS code, not Microsoft code: provenance ucrt-port only because it lived beside the UCRT and read its internal headers.
+    exports:
+      - __setusermatherr
