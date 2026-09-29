@@ -319,31 +319,45 @@ def undefined_symbols(objs: list[Path]) -> set[str]:
 
 
 _IMAGE_SYM_CLASS_EXTERNAL = 2
+_IMAGE_SCN_LNK_NRELOC_OVFL = 0x01000000
 
 
 def _undefine_symbols(archive: Path, names: set[str]) -> None:
-    """Turn every EXTERNAL definition of NAMES in ARCHIVE's COFF members into an
-    undefined reference (section 0, value 0), then rebuild the archive index.
+    """Make every EXTERNAL definition of NAMES in ARCHIVE's COFF members answer nothing,
+    so each reference to the name -- in the same object included -- binds to whoever
+    else defines it. Then rebuild the archive index.
 
-    The body stays in its section, unreachable; every reference to the name -- in the
-    same object included -- now binds to whoever else defines it. Refuses anything it
-    does not fully understand (bigobj members, a matching symbol with aux records)
-    rather than leaving a half-patched archive.
+    Not by turning the definition into an undefined symbol in place: Rust puts each
+    function in its own COMDAT section whose LEADER is that symbol, and a leaderless
+    COMDAT is a link error ("associative comdat ... has invalid reference"). So the
+    old entry keeps leading its section under a dead name, a NEW undefined symbol
+    takes the real name, and every relocation that named the old entry is pointed at
+    the new one. Refuses anything it does not fully understand (bigobj, a layout with
+    data after the symbol table) rather than writing a half-patched archive.
     """
-    data = bytearray(archive.read_bytes())
+    data = archive.read_bytes()
     if not data.startswith(b"!<arch>\n"):
         raise RefsetError(f"{archive}: not an ar archive")
+    out = bytearray(b"!<arch>\n")
     patched = 0
     pos = 8
     while pos + 60 <= len(data):
-        hdr = bytes(data[pos : pos + 60])
+        hdr = bytearray(data[pos : pos + 60])
         size = int(hdr[48:58].decode().strip())
         name = hdr[0:16].decode(errors="replace").strip()
-        body = pos + 60
-        if name not in ("/", "//", "/SYM64/") and size >= 20:
-            patched += _undefine_in_coff(data, body, size, names, archive)
-        pos = body + size + (size & 1)
-    archive.write_bytes(bytes(data))
+        body = data[pos + 60 : pos + 60 + size]
+        if name in ("/", "/SYM64/"):
+            # The old symbol index: its offsets die with the resize. Dropped here and
+            # rebuilt by llvm-ranlib below (which kept a stale one when it was present).
+            pos += 60 + size + (size & 1)
+            continue
+        if name != "//" and size >= 20:
+            body, n = _undefine_in_coff(body, names, archive)
+            patched += n
+            hdr[48:58] = str(len(body)).ljust(10).encode()
+        out += hdr + body + (b"\n" if len(body) & 1 else b"")
+        pos += 60 + size + (size & 1)
+    archive.write_bytes(bytes(out))
     res = subprocess.run([_tool("llvm-ranlib"), str(archive)], capture_output=True, text=True, timeout=600)
     if res.returncode != 0:
         raise RefsetError(f"llvm-ranlib failed on {archive}: {res.stderr.strip()[:500]}")
@@ -351,33 +365,68 @@ def _undefine_symbols(archive: Path, names: set[str]) -> None:
         raise RefsetError(f"{archive}: none of {len(names)} deferred symbols found to undefine")
 
 
-def _undefine_in_coff(data: bytearray, off: int, size: int, names: set[str], archive: Path) -> int:
-    machine, nsec = struct.unpack_from("<HH", data, off)
+def _undefine_in_coff(obj: bytes, names: set[str], archive: Path) -> tuple[bytes, int]:
+    machine, nsec = struct.unpack_from("<HH", obj, 0)
     if machine == 0 and nsec == 0xFFFF:
-        raise RefsetError(f"{archive}: bigobj member at {off}; _undefine_symbols does not handle it")
-    symtab, nsyms = struct.unpack_from("<II", data, off + 8)
+        raise RefsetError(f"{archive}: bigobj member; _undefine_symbols does not handle it")
+    symtab, nsyms = struct.unpack_from("<II", obj, 8)
+    (opt_size,) = struct.unpack_from("<H", obj, 16)
     if symtab == 0 or nsyms == 0:
-        return 0
-    strtab = off + symtab + nsyms * 18
-    count = 0
-    i = 0
-    while i < nsyms:
-        rec = off + symtab + i * 18
-        raw = bytes(data[rec : rec + 8])
+        return obj, 0
+    strtab = symtab + nsyms * 18
+    (strtab_size,) = struct.unpack_from("<I", obj, strtab)
+    if strtab + strtab_size != len(obj):
+        raise RefsetError(f"{archive}: a COFF member has data after its string table; refusing")
+
+    def sym_name(rec: int) -> str:
+        raw = obj[rec : rec + 8]
         if raw[:4] == b"\0\0\0\0":
             (soff,) = struct.unpack_from("<I", raw, 4)
-            end = data.index(b"\0", strtab + soff)
-            sym = bytes(data[strtab + soff : end]).decode(errors="replace")
-        else:
-            sym = raw.rstrip(b"\0").decode(errors="replace")
-        _value, secnum, _typ, sclass, naux = struct.unpack_from("<IhHBB", data, rec + 8)
-        if sym in names and sclass == _IMAGE_SYM_CLASS_EXTERNAL and secnum > 0:
-            if naux:
-                raise RefsetError(f"{archive}: `{sym}` carries {naux} aux record(s); refusing to undefine")
-            struct.pack_into("<Ih", data, rec + 8, 0, 0)
-            count += 1
+            return obj[strtab + soff : obj.index(b"\0", strtab + soff)].decode(errors="replace")
+        return raw.rstrip(b"\0").decode(errors="replace")
+
+    retarget: dict[int, int] = {}
+    new_syms = bytearray()
+    new_strs = bytearray()
+    body = bytearray(obj[:strtab])
+    i = 0
+    while i < nsyms:
+        rec = symtab + i * 18
+        _v, secnum, typ, sclass, naux = struct.unpack_from("<IhHBB", obj, rec + 8)
+        name = sym_name(rec)
+        if name in names and sclass == _IMAGE_SYM_CLASS_EXTERNAL and secnum > 0:
+            # Old entry: renamed dead, still defines (and leads) its section.
+            dead = f"__ucrtdiff_deferred_{name}".encode() + b"\0"
+            body[rec : rec + 8] = struct.pack("<II", 0, strtab_size + len(new_strs))
+            new_strs += dead
+            # New entry: the real name, undefined.
+            real = obj[rec : rec + 8]
+            retarget[i] = nsyms + len(retarget)
+            new_syms += real + struct.pack("<IhHBB", 0, 0, typ, _IMAGE_SYM_CLASS_EXTERNAL, 0)
         i += 1 + naux
-    return count
+    if not retarget:
+        return obj, 0
+    for s in range(nsec):
+        sh = 20 + opt_size + s * 40
+        (reloc_ptr,) = struct.unpack_from("<I", obj, sh + 24)
+        (nreloc,) = struct.unpack_from("<H", obj, sh + 32)
+        (chars,) = struct.unpack_from("<I", obj, sh + 36)
+        (raw_ptr,) = struct.unpack_from("<I", obj, sh + 20)
+        if reloc_ptr >= symtab or raw_ptr >= symtab:
+            raise RefsetError(f"{archive}: section data after the symbol table; refusing")
+        first = 0
+        if chars & _IMAGE_SCN_LNK_NRELOC_OVFL:
+            (nreloc,) = struct.unpack_from("<I", obj, reloc_ptr)
+            first = 1
+        for r in range(first, nreloc):
+            at = reloc_ptr + r * 10 + 4
+            (idx,) = struct.unpack_from("<I", obj, at)
+            if idx in retarget:
+                struct.pack_into("<I", body, at, retarget[idx])
+    struct.pack_into("<I", body, 12, nsyms + len(retarget))
+    strtab_new = struct.pack("<I", strtab_size + len(new_strs)) + obj[strtab + 4 :] + bytes(new_strs)
+    return bytes(body) + bytes(new_syms) + strtab_new, len(retarget)
+
 
 def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     """Our Rust's copies of the INTERNALS the reference set calls but no longer has.
