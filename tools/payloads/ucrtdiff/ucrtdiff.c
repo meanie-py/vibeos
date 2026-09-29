@@ -23567,6 +23567,27 @@ static void run_legacy(void)
 
 static int ucrtdiff_main(void);
 
+/* Startup has no fault guard: a fault or a CRT deadlock (0xC0000194 from a
+ * CRITICAL_SECTION nobody initialized) inside a reference instance's
+ * __acrt_initialize ended the process with nothing but its exit code, three times
+ * in one batch. This reports where, then lets the exception continue unchanged. */
+static LONG CALLBACK ucrtdiff_startup_veh(EXCEPTION_POINTERS *ep)
+{
+    DbgPrint("[UCRTDIFF] startup exception %08lx at %p\n",
+             (unsigned long)ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
+#if defined(__aarch64__) || defined(_M_ARM64)
+    {
+        void **fp = (void **)ep->ContextRecord->Fp;
+        DbgPrint("[UCRTDIFF]   pc=%p lr=%p\n", (void *)ep->ContextRecord->Pc, (void *)ep->ContextRecord->Lr);
+        for (int i = 0; i < 24 && fp && ((ULONG_PTR)fp & 7) == 0; i++) {
+            DbgPrint("[UCRTDIFF]   frame %d ret=%p\n", i, fp[1]);
+            fp = (void **)fp[0];
+        }
+    }
+#endif
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 void ucrtdiff_entry(void);
 void ucrtdiff_entry(void)
 {
@@ -23580,6 +23601,7 @@ void ucrtdiff_entry(void)
      * it pulls in reference objects that register XI initializers of their own, and
      * those allocate -- run first, ref__calloc_base called HeapAlloc on a NULL
      * __acrt_heap and the process died in RtlAllocateHeap. */
+    void *startup_veh = AddVectoredExceptionHandler(1, ucrtdiff_startup_veh);
     if (!init_ref_crt()) {
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         ExitProcess(1);
@@ -23588,6 +23610,8 @@ void ucrtdiff_entry(void)
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         ExitProcess(1);
     }
+    if (startup_veh)
+        RemoveVectoredExceptionHandler(startup_veh);
     rc = ucrtdiff_main();
     ExitProcess((UINT)rc);
 }
