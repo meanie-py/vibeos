@@ -317,7 +317,6 @@ def undefined_symbols(objs: list[Path]) -> set[str]:
     return out - defined_symbols(objs)
 
 
-
 _IMAGE_SYM_CLASS_EXTERNAL = 2
 _IMAGE_SCN_LNK_NRELOC_OVFL = 0x01000000
 
@@ -358,7 +357,9 @@ def _undefine_symbols(archive: Path, names: set[str]) -> None:
         out += hdr + body + (b"\n" if len(body) & 1 else b"")
         pos += 60 + size + (size & 1)
     archive.write_bytes(bytes(out))
-    res = subprocess.run([_tool("llvm-ranlib"), str(archive)], capture_output=True, text=True, timeout=600)
+    res = subprocess.run(
+        [_tool("llvm-ranlib"), str(archive)], capture_output=True, text=True, timeout=600
+    )
     if res.returncode != 0:
         raise RefsetError(f"llvm-ranlib failed on {archive}: {res.stderr.strip()[:500]}")
     if patched == 0:
@@ -424,7 +425,9 @@ def _undefine_in_coff(obj: bytes, names: set[str], archive: Path) -> tuple[bytes
             if idx in retarget:
                 struct.pack_into("<I", body, at, retarget[idx])
     struct.pack_into("<I", body, 12, nsyms + len(retarget))
-    strtab_new = struct.pack("<I", strtab_size + len(new_strs)) + obj[strtab + 4 :] + bytes(new_strs)
+    strtab_new = (
+        struct.pack("<I", strtab_size + len(new_strs)) + obj[strtab + 4 :] + bytes(new_strs)
+    )
     return bytes(body) + bytes(new_syms) + strtab_new, len(retarget)
 
 
@@ -503,6 +506,7 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
         for s in HARNESS_INTERNALS
         if f"{dec}{s}" in rust_defined and f"{dec}{s}" not in ref_defined
     }
+
     def ref_name(sym: str) -> str | None:
         """The reference instance's name for export SYM, if it defines one."""
         # i386 decorates: `_strlen` -> `_ref_strlen`.

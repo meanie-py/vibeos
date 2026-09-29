@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 163
-  amd64: 163
-  arm64: 162
+  i386: 25
+  amd64: 25
+  arm64: 25
 
 families:
   bits:
@@ -1144,7 +1144,7 @@ families:
       forms under "C" and under de-DE set on both sides. All MATCH, dll_fail=0 --
       2,621 cases. The grade found wcsncpy writing one pad L'\0' too few (fixed).
     note: >
-      A PORT (src/string_ops/). One body per export on every arch; the per-arch asm differences are kept where observable: strncmp's result is clamped to -1/0/1 on i386/amd64 but the raw difference on arm64, and wcscmp is clamped while wcsncmp is not. The SSE2/AVX2 strnlen variants are the same function, so the scalar path serves all.
+      A PORT (src/string_ops/). One body per export on every arch; the per-arch asm differences are kept where observable: strncmp's result is clamped to -1/0/1 on i386/amd64 but the raw difference on arm64, and wcscmp is clamped while wcsncmp is not. The SSE2/AVX2 strnlen variants are the same function, so the scalar path serves all. memmove_s and wcslen were MISSED by this takeover (no body, answered through the msvcrt/ntdll import libraries until 2026-09-28) and added then, UNGRADED in the guest: wcslen's C is not in the reference set on any arch, and memmove_s is the header's three checks in order. verify_ucrtbase_cohab's export/import check now catches the class.
     exports:
       - __strncnt
       - __wcsncnt
@@ -1204,6 +1204,7 @@ families:
       - _wcsupr_s_l
       - _wcsxfrm_l
       - memcpy_s
+      - memmove_s
       - strcat_s
       - strcmp
       - strcoll
@@ -1222,6 +1223,7 @@ families:
       - wcscpy
       - wcscpy_s
       - wcscspn
+      - wcslen
       - wcsncat
       - wcsncat_s
       - wcsncmp
@@ -1609,7 +1611,7 @@ families:
     replaces:
       - sdk/lib/ucrt/lowio/ (all 21 .cpp)
     oracle: >
-      ORACLE_lowio
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. Every export MATCH, graded through each side's own fds on private files: text/binary and the three text modes, CRLF at buffer edges, Ctrl-Z, pipes, invalid fds, seek/size/lock/dup/umask/mktemp. Skipped, loudly: _mktemp's occupied-name cases (they bugcheck fastfat -- known-bugs "fastfat bugchecks in FsRtlCheckOplock") and _locking's held-lock retry (~18 s, beyond the per-export timeout).
     note: >
       A PORT (src/lowio/): the handle table (ioinit, osfinfo) is the core in mod.rs, the rest one submodule per file or family over it.
     exports:
@@ -1649,11 +1651,17 @@ families:
     replaces:
       - sdk/lib/ucrt/conio/ (all 14 .cpp)
     oracle: >
-      ORACLE_conio
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. The printf/scanf entry points and the pushback-driven input paths MATCH; the harness has no console, so output rows grade the no-console failure on both sides and input never reads the console. _pipe/_popen/_pclose MATCH with cmd.exe children.
     note: >
       A PORT (src/conio/). _cprintf/_cscanf drive the printf and scanf engines already in Rust (output.rs, stdio/input).
     exports:
+      - __conio_common_vcprintf
+      - __conio_common_vcprintf_p
+      - __conio_common_vcprintf_s
       - __conio_common_vcscanf
+      - __conio_common_vcwprintf
+      - __conio_common_vcwprintf_p
+      - __conio_common_vcwprintf_s
       - __conio_common_vcwscanf
       - _cgets
       - _cgets_s
@@ -1687,7 +1695,7 @@ families:
     replaces:
       - sdk/lib/ucrt/env/ (all 7 .cpp)
     oracle: >
-      ORACLE_env
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH on unique per-side variables (created and removed), including the lazily-built other-width table and _putenv deletion.
     note: >
       A PORT (src/env/): the four environment tables keep their C names; narrow and wide share one implementation generic over the character width.
     exports:
@@ -1718,7 +1726,7 @@ families:
     replaces:
       - sdk/lib/ucrt/exec/{wait,system,getproc,loaddll}.cpp
     oracle: >
-      ORACLE_exec_rest
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH: _cwait on cmd.exe children, system(NULL), _loaddll/_getdllprocaddr/_unloaddll on kernel32.
     note: >
       A PORT (src/exec_rest/), over exec.rs's spawn machinery.
     exports:
@@ -1733,7 +1741,7 @@ families:
     replaces:
       - sdk/lib/ucrt/heap/ (all 17 release .cpp; debug_heap*.cpp were never built)
     oracle: >
-      ORACLE_heap
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH: NULL/ENOMEM/_HEAP_MAXREQ paths, _msize/_expand/_recalloc contents, the new-handler retry loop (saved and restored).
     note: >
       A PORT (src/heap/): the allocator every other part of ucrtbase calls, over __acrt_heap = GetProcessHeap().
     exports:
@@ -1762,7 +1770,7 @@ families:
     replaces:
       - sdk/lib/ucrt/stdlib/ (all 18 .cpp)
     oracle: >
-      ORACLE_stdlib
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH, qsort/bsearch/lfind/lsearch graded on the comparator CALL SEQUENCE; also compared against Microsoft's C on the host (5,952 cases).
     note: >
       A PORT (src/stdlib/): Microsoft's qsort one-for-one, comparator call sequence included (graded on the host against the C as well).
     exports:
@@ -1791,7 +1799,7 @@ families:
     replaces:
       - sdk/lib/ucrt/internal/{initialization,locks,per_thread_data,shared_initialization}.cpp, startup/initterm.cpp, dll/appcrt_dllmain.cpp, initializers/ (all)
     oracle: >
-      ORACLE_internal_core
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. No export here is gradable in isolation (_initterm*, __threadid, _lock_locales); the bootstrap is what every graded row and every boot runs on, three arches.
     note: >
       A PORT (src/internal/): the CRT bootstrap -- DllMain, the initializer table, the lock table, per-thread data and the .CRT$XI*/XP* entries. ucrt is a CMake OBJECT library, so the C initializers had to go in the same change or every entry would have run twice.
     exports:

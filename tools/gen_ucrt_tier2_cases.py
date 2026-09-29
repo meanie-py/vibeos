@@ -971,9 +971,17 @@ HAND_GRADED = (
 #: Exports the harness calls on the reference side only to DRIVE state (set a locale, a
 #: multibyte code page) for other rows. See emit_refs.
 REF_DRIVERS = (
-    "setlocale", "_setmbcp", "_getmbcp",
+    "setlocale",
+    "_setmbcp",
+    "_getmbcp",
     # conio's _pipe round trip drives each side's own lowio.
-    "_close", "_read", "_write", "_setmode", "_get_osfhandle", "_get_fmode", "_set_fmode",
+    "_close",
+    "_read",
+    "_write",
+    "_setmode",
+    "_get_osfhandle",
+    "_get_fmode",
+    "_set_fmode",
 )
 
 
@@ -1029,7 +1037,10 @@ def main(argv: list[str] | None = None) -> int:
         # side is graded by the hand-written runners alone. The harness still fails a
         # shard that grades nothing at all ("no cases ran"), so this cannot hide a
         # broken selection behind an empty but green run.
-        print(f"gen-ucrt-tier2-cases ({args.arch}): no generator-drivable exports left", file=sys.stderr)
+        print(
+            f"gen-ucrt-tier2-cases ({args.arch}): no generator-drivable exports left",
+            file=sys.stderr,
+        )
 
     if args.stats:
         hist = collections.Counter("_".join(k) or "VOID" for _e, _n, k, _r in rows)

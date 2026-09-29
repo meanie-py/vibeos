@@ -124,10 +124,15 @@ def test_undefine_turns_a_definition_into_a_reference(tmp_path: Path):
     src = tmp_path / "a.c"
     src.write_text("int foo(void) { return 1; }\nint bar(void) { return foo() + 1; }\n")
     obj, lib = tmp_path / "a.o", tmp_path / "liba.a"
-    subprocess.run([str(_MINGW / "aarch64-w64-mingw32-clang"), "-O0", "-c", str(src), "-o", str(obj)], check=True)
+    subprocess.run(
+        [str(_MINGW / "aarch64-w64-mingw32-clang"), "-O0", "-c", str(src), "-o", str(obj)],
+        check=True,
+    )
     subprocess.run([str(_MINGW / "llvm-ar"), "rcs", str(lib), str(obj)], check=True)
     refset._undefine_symbols(lib, {"foo"})
-    nm = subprocess.run([str(_MINGW / "llvm-nm"), str(lib)], capture_output=True, text=True, check=True).stdout
+    nm = subprocess.run(
+        [str(_MINGW / "llvm-nm"), str(lib)], capture_output=True, text=True, check=True
+    ).stdout
     assert " U foo" in nm and " T bar" in nm and " T foo" not in nm
 
 

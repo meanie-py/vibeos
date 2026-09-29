@@ -218,11 +218,19 @@ def prebuild_from(arch: str, rev: str) -> None:
     otherwise discard the caller's uncommitted work there.
     """
     dirty = subprocess.run(
-        ["git", "status", "--porcelain", "--", UCRT_TREE], cwd=ROOT, capture_output=True, text=True, check=True
+        ["git", "status", "--porcelain", "--", UCRT_TREE],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     if dirty:
-        raise SystemExit(f"--takeover-from: {UCRT_TREE} has uncommitted changes; commit them first:\n{dirty}")
-    subprocess.run(["git", "restore", f"--source={rev}", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True)
+        raise SystemExit(
+            f"--takeover-from: {UCRT_TREE} has uncommitted changes; commit them first:\n{dirty}"
+        )
+    subprocess.run(
+        ["git", "restore", f"--source={rev}", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True
+    )
     try:
         init = ROOT / UCRT_TREE / "initializers"
         if init.is_dir():
@@ -234,14 +242,18 @@ def prebuild_from(arch: str, rev: str) -> None:
         )
         cml.write_text(text)
         print(f"[sweep] pre-build with {UCRT_TREE} from {rev}")
-        proc = subprocess.run(["./vibeos-cli", "build", "--arch", arch], cwd=ROOT, capture_output=True, text=True)
+        proc = subprocess.run(
+            ["./vibeos-cli", "build", "--arch", arch], cwd=ROOT, capture_output=True, text=True
+        )
         print((proc.stdout or "") + (proc.stderr or ""), end="")
         if proc.returncode != 0:
             raise SystemExit(f"--takeover-from: pre-build failed (rc={proc.returncode})")
     finally:
         # HEAD's tracked files back, and every file the restore created removed. The
         # tree was clean when we started, so both are exactly our own changes.
-        subprocess.run(["git", "restore", "--source=HEAD", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True)
+        subprocess.run(
+            ["git", "restore", "--source=HEAD", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True
+        )
         subprocess.run(["git", "clean", "-fdq", "--", UCRT_TREE], cwd=ROOT, check=True)
 
 

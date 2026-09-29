@@ -745,7 +745,10 @@ def test_an_export_answered_by_an_import_is_caught(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         vuc,
         "_pe_exports_imports",
-        lambda dll: ({"memmove_s", "memcpy", "malloc"}, {"memmove_s": "msvcrt.dll", "memcpy": "ntdll.dll"}),
+        lambda dll: (
+            {"memmove_s", "memcpy", "malloc"},
+            {"memmove_s": "msvcrt.dll", "memcpy": "ntdll.dll"},
+        ),
     )
     fails, _notes = vuc.check_export_imports(tmp_path)
     assert len(fails) == 1 and "`memmove_s`" in fails[0] and "msvcrt.dll" in fails[0]
@@ -753,7 +756,9 @@ def test_an_export_answered_by_an_import_is_caught(tmp_path: Path, monkeypatch):
 
 def test_an_allowlisted_forward_passes_only_from_its_named_dll(tmp_path: Path, monkeypatch):
     _fake_dll(tmp_path, "arm64")
-    monkeypatch.setattr(vuc, "_pe_exports_imports", lambda dll: ({"memcpy"}, {"memcpy": "msvcrt.dll"}))
+    monkeypatch.setattr(
+        vuc, "_pe_exports_imports", lambda dll: ({"memcpy"}, {"memcpy": "msvcrt.dll"})
+    )
     fails, _notes = vuc.check_export_imports(tmp_path)
     assert len(fails) == 1, "memcpy is allowed from ntdll, not from msvcrt"
 

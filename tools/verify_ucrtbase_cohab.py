@@ -862,8 +862,19 @@ EXPORT_IMPORT_ALLOWED = {
     # from ntdll (add_importlibs(ucrtbase kernel32 ntdll)), which exports the same
     # contracts. Measured 2026-09-28 on all three arches.
     **dict.fromkeys(
-        ("memchr", "memcmp", "memcpy", "memmove", "memset", "strchr", "strrchr", "strstr",
-         "wcschr", "wcsrchr", "wcsstr"),
+        (
+            "memchr",
+            "memcmp",
+            "memcpy",
+            "memmove",
+            "memset",
+            "strchr",
+            "strrchr",
+            "strstr",
+            "wcschr",
+            "wcsrchr",
+            "wcsstr",
+        ),
         "ntdll.dll",
     ),
     # OWED, arm64 only: the x87/SSE control-word family has no arm64 body in this
@@ -877,7 +888,9 @@ def _pe_exports_imports(dll: Path) -> tuple[set[str], dict[str, str]] | None:
     """(export names, import name -> dll) of a PE, or None if objdump cannot read it."""
     for objdump in (str(REPO / ".build-tools/llvm-mingw/bin/llvm-objdump"), "llvm-objdump"):
         try:
-            res = subprocess.run([objdump, "-p", str(dll)], capture_output=True, text=True, timeout=120)
+            res = subprocess.run(
+                [objdump, "-p", str(dll)], capture_output=True, text=True, timeout=120
+            )
         except (OSError, subprocess.TimeoutExpired):
             continue
         if res.returncode != 0:
@@ -919,7 +932,9 @@ def check_export_imports(repo: Path | None = None) -> tuple[list[str], list[str]
     for arch in ("i386", "amd64", "arm64"):
         dll = repo / f"build-{arch}" / "dll" / "win32" / "ucrtbase" / "ucrtbase.dll"
         if not dll.is_file():
-            notes.append(f"note: export/import check: {arch} not measured -- no {dll.relative_to(repo)}")
+            notes.append(
+                f"note: export/import check: {arch} not measured -- no {dll.relative_to(repo)}"
+            )
             continue
         stale = burndown_stale(arch) if repo == REPO else None
         if stale:
