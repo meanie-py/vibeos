@@ -204,6 +204,33 @@ UCRT_TREE = "sdk/lib/ucrt"
 #: `add_subdirectory(ucrt)` that builds it (see `_restore_subdirectory`).
 RESTORED = (UCRT_TREE, "sdk/lib/ucrt_reactos")
 SDK_LIB_CMAKE = "sdk/lib/CMakeLists.txt"
+UCRTBASE_CMAKE = "dll/win32/ucrtbase/CMakeLists.txt"
+
+
+def _restore_ucrt_link(rev: str) -> bool:
+    """Put `ucrt` back on ucrtbase's link line if REV linked it and HEAD does not:
+    tools/ucrt_tier2_refset.py finds the reference objects BY that link line. The
+    pre-build's DLL then carries the C beside the whole-archived Rust, which wins
+    every symbol; it is never booted, only read."""
+    old = subprocess.run(
+        ["git", "show", f"{rev}:{UCRTBASE_CMAKE}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    head = "target_link_libraries(ucrtbase\n"
+    linked = head + "    ucrt\n"
+    path = ROOT / UCRTBASE_CMAKE
+    cur = path.read_text()
+    if linked not in old or linked in cur:
+        return False
+    if head not in cur:
+        raise SystemExit(
+            f"--takeover-from: cannot place `ucrt` on the link line in {UCRTBASE_CMAKE}"
+        )
+    path.write_text(cur.replace(head, linked, 1))
+    return True
 
 
 def _restore_subdirectory(rev: str) -> bool:
@@ -249,7 +276,7 @@ def prebuild_from(arch: str, rev: str) -> None:
     Refuses to start on a dirty tree under any path it restores: putting HEAD back
     afterwards would otherwise discard the caller's uncommitted work there.
     """
-    paths = [*RESTORED, SDK_LIB_CMAKE]
+    paths = [*RESTORED, SDK_LIB_CMAKE, UCRTBASE_CMAKE]
     dirty = subprocess.run(
         ["git", "status", "--porcelain", "--", *paths],
         cwd=ROOT,
@@ -266,6 +293,7 @@ def prebuild_from(arch: str, rev: str) -> None:
     )
     try:
         _restore_subdirectory(rev)
+        _restore_ucrt_link(rev)
         init = ROOT / UCRT_TREE / "initializers"
         if init.is_dir():
             shutil.rmtree(init)
