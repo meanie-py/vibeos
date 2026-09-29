@@ -2758,25 +2758,9 @@ unsigned char __cdecl msvcrt_init_locale(void);
  * __acrt_initialize_multibyte either. */
 unsigned char __cdecl __acrt_initialize(void); /* C++ `bool`: one byte, same ABI */
 
-#if UCRTDIFF_OURS_BOOTSTRAP
-/* A takeover check: Microsoft's bootstrap starts the reference instance, but the
- * internals it no longer has come from our Rust, whose locks and heap are OUR
- * copies (renamed ours_*). Only our bootstrap initializes those; without it the
- * first __acrt_lock they take waits on a zeroed CRITICAL_SECTION and ntdll raises
- * STATUS_POSSIBLE_DEADLOCK. See UCRTDIFF_OURS_BOOTSTRAP in gen_ucrt_tier2_cases.py. */
-unsigned char __cdecl ours_acrt_initialize(void)
-    __asm__("ours_" UD_STR(__USER_LABEL_PREFIX__) "__acrt_initialize");
-#endif
 
 static int init_ref_crt(void)
 {
-#if UCRTDIFF_OURS_BOOTSTRAP
-    if (!ours_acrt_initialize()) {
-        DbgPrint("[UCRTDIFF] FATAL: our Rust bootstrap (ours___acrt_initialize) failed\n");
-        return 0;
-    }
-    DbgPrint("[UCRTDIFF] ours bootstrap initialized\n");
-#endif
     if (!__acrt_initialize()) {
         DbgPrint("[UCRTDIFF] FATAL: the reference UCRT's __acrt_initialize failed\n");
         return 0;

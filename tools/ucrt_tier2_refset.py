@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -317,47 +318,66 @@ def undefined_symbols(objs: list[Path]) -> set[str]:
 
 
 
-#: `.CRT$X*` section names as they appear in the Rust archive's COFF members, and the
-#: same-length names that take them out of the linker's `$`-sorted CRT tables. llvm-objcopy
-#: has no --rename-section for COFF, so the bytes are patched: the two 8-byte names sit
-#: inline in their section headers, the 9-byte one in the member's string table. Same
-#: length keeps every offset valid; `.rdata$...` merges into plain read-only data.
-_CRT_SECTION_RENAMES = ((b".CRT$XPXA", b".rdata$ZA"), (b".CRT$XIC", b".rdata$Z"), (b".CRT$XPX", b".rdata$Y"))
+_IMAGE_SYM_CLASS_EXTERNAL = 2
 
 
-def _inert_crt_sections(archive: Path) -> None:
-    """Make every CRT initializer/terminator entry in ARCHIVE plain data.
+def _undefine_symbols(archive: Path, names: set[str]) -> None:
+    """Turn every EXTERNAL definition of NAMES in ARCHIVE's COFF members into an
+    undefined reference (section 0, value 0), then rebuild the archive index.
 
-    Checked, not trusted: each name's byte count must be one or two per section
-    `llvm-objdump -h` reports by that name (header, plus the section symbol when the
-    name is inline), or this refuses (a stray match
-    in some other byte string would otherwise corrupt the archive silently).
+    The body stays in its section, unreachable; every reference to the name -- in the
+    same object included -- now binds to whoever else defines it. Refuses anything it
+    does not fully understand (bigobj members, a matching symbol with aux records)
+    rather than leaving a half-patched archive.
     """
-    listing = subprocess.run(
-        [_tool("llvm-objdump"), "-h", str(archive)], capture_output=True, text=True, timeout=600
-    ).stdout
-    names = [ln.split()[1] for ln in listing.splitlines() if len(ln.split()) > 1]
-    data = archive.read_bytes()
-    for old, new in _CRT_SECTION_RENAMES:
-        assert len(old) == len(new)
-        want = names.count(old.decode())
-        if want == 0 and old not in data:
-            continue
-        # `.CRT$XPX` is a prefix of `.CRT$XPXA`, which is patched first.
-        # Each section's name appears in its header AND as the section's own static
-        # symbol; a long name's two uses share one string-table entry.
-        got = data.count(old)
-        if want == 0 or got not in (want, 2 * want):
-            raise RefsetError(
-                f"{archive}: {old.decode()} occurs {got} times in the bytes but names {want} "
-                f"sections; refusing to patch blind"
-            )
-        data = data.replace(old, new)
-    leftover = [n for n in names if n.startswith(".CRT$")]
-    unknown = sorted(set(leftover) - {o.decode() for o, _ in _CRT_SECTION_RENAMES})
-    if unknown:
-        raise RefsetError(f"{archive}: unhandled CRT sections {unknown}; add them to _CRT_SECTION_RENAMES")
-    archive.write_bytes(data)
+    data = bytearray(archive.read_bytes())
+    if not data.startswith(b"!<arch>\n"):
+        raise RefsetError(f"{archive}: not an ar archive")
+    patched = 0
+    pos = 8
+    while pos + 60 <= len(data):
+        hdr = bytes(data[pos : pos + 60])
+        size = int(hdr[48:58].decode().strip())
+        name = hdr[0:16].decode(errors="replace").strip()
+        body = pos + 60
+        if name not in ("/", "//", "/SYM64/") and size >= 20:
+            patched += _undefine_in_coff(data, body, size, names, archive)
+        pos = body + size + (size & 1)
+    archive.write_bytes(bytes(data))
+    res = subprocess.run([_tool("llvm-ranlib"), str(archive)], capture_output=True, text=True, timeout=600)
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-ranlib failed on {archive}: {res.stderr.strip()[:500]}")
+    if patched == 0:
+        raise RefsetError(f"{archive}: none of {len(names)} deferred symbols found to undefine")
+
+
+def _undefine_in_coff(data: bytearray, off: int, size: int, names: set[str], archive: Path) -> int:
+    machine, nsec = struct.unpack_from("<HH", data, off)
+    if machine == 0 and nsec == 0xFFFF:
+        raise RefsetError(f"{archive}: bigobj member at {off}; _undefine_symbols does not handle it")
+    symtab, nsyms = struct.unpack_from("<II", data, off + 8)
+    if symtab == 0 or nsyms == 0:
+        return 0
+    strtab = off + symtab + nsyms * 18
+    count = 0
+    i = 0
+    while i < nsyms:
+        rec = off + symtab + i * 18
+        raw = bytes(data[rec : rec + 8])
+        if raw[:4] == b"\0\0\0\0":
+            (soff,) = struct.unpack_from("<I", raw, 4)
+            end = data.index(b"\0", strtab + soff)
+            sym = bytes(data[strtab + soff : end]).decode(errors="replace")
+        else:
+            sym = raw.rstrip(b"\0").decode(errors="replace")
+        _value, secnum, _typ, sclass, naux = struct.unpack_from("<IhHBB", data, rec + 8)
+        if sym in names and sclass == _IMAGE_SYM_CLASS_EXTERNAL and secnum > 0:
+            if naux:
+                raise RefsetError(f"{archive}: `{sym}` carries {naux} aux record(s); refusing to undefine")
+            struct.pack_into("<Ih", data, rec + 8, 0, 0)
+            count += 1
+        i += 1 + naux
+    return count
 
 def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     """Our Rust's copies of the INTERNALS the reference set calls but no longer has.
@@ -434,9 +454,39 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
         for s in HARNESS_INTERNALS
         if f"{dec}{s}" in rust_defined and f"{dec}{s}" not in ref_defined
     }
+    def ref_name(sym: str) -> str | None:
+        """The reference instance's name for export SYM, if it defines one."""
+        # i386 decorates: `_strlen` -> `_ref_strlen`.
+        to = (
+            f"_ref_{sym[1:]}"
+            if sym.startswith("_") and f"_ref_{sym[1:]}" in ref_defined
+            else f"ref_{sym}"
+        )
+        return to if to in ref_defined else None
+
+    # DEFERRED: what the reference set defines ITSELF, our archive defines too, and our
+    # copy must therefore not answer -- the internal state (lock table, per-thread data,
+    # heap handle) and the exports Microsoft's C still has. Under a takeover check that
+    # is the whole bootstrap and the batch being graded. Renaming our copies `ours_*`
+    # made them a SECOND instance: our `_errno` (the reference side's, since the misc
+    # takeover) read our per-thread block while Microsoft's lowio set errno in its own,
+    # so every errno row read 0 on the reference side. Instead our definitions become
+    # undefined references (`_undefine_symbols` below; llvm-objcopy cannot do that for
+    # COFF), and our code calls Microsoft's -- plain internals by name, exports by
+    # their `ref_*` name.
+    deferred_plain = {s for s in rust_defined & ref_defined if not bookkeeping(s)}
+    deferred_exports = {
+        s: to
+        for s in rust_defined
+        if not bookkeeping(s) and s not in deferred_plain and (to := ref_name(s)) is not None
+    }
+
     rules = []
     for sym in sorted(rust_defined):
-        if sym in needed or bookkeeping(sym):
+        if sym in needed or bookkeeping(sym) or sym in deferred_plain:
+            continue
+        if sym in deferred_exports:
+            rules.append((sym, deferred_exports[sym]))
             continue
         rules.append((sym, f"ours_{sym}"))
         # The mingw indirection to a renamed symbol follows it. `.refptr.X` is a
@@ -451,13 +501,8 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     for sym in sorted(rust_undefined):
         if bookkeeping(sym) or sym not in ref_exports:
             continue
-        # i386 decorates: `_strlen` -> `_ref_strlen`.
-        to = (
-            f"_ref_{sym[1:]}"
-            if sym.startswith("_") and f"_ref_{sym[1:]}" in ref_defined
-            else f"ref_{sym}"
-        )
-        if to in ref_defined:
+        to = ref_name(sym)
+        if to is not None:
             rules.append((sym, to))
 
     objcopy = _tool("llvm-objcopy")
@@ -482,8 +527,9 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     )
     if res.returncode != 0:
         raise RefsetError(f"llvm-objcopy failed on {src}: {res.stderr.strip()[:500]}")
-    if f"{dec}__acrt_initialize" in ref_defined:
-        _inert_crt_sections(out)
+    undefine = deferred_plain | set(deferred_exports.values())
+    if undefine:
+        _undefine_symbols(out, undefine)
 
     # Function exports a takeover REMOVED from the reference set. Left alone, Microsoft's
     # plain-name calls to them bind through the import library to the shipping DLL: after
