@@ -557,18 +557,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **rename bugchecks fastfat on arm64** (OPEN, 2026-09-28). Any `MoveFileExW` rename of an
-  existing file in the guest temp dir -- a never-seen target name included, so not the tunnel
-  cache -- bugchecks 0x23 through `FatBugCheckExceptionFilter`; the access violation is in
-  `RtlCopyUnicodeString` (`rtl-strings/src/cabi/mod.rs`, symbolized against `ntkrnlmp.exe`,
-  the default MP kernel) under fastfat-rust's `FatSetRenameInfo` (`fileinfo.rs`, three
-  `RtlCopyUnicodeString(&NewNameCopy, ...)` sites). Found by the ucrtbase Tier-2 grader:
-  Microsoft's `_wrename` and ours make the identical `MoveFileExW(old, new,
-  MOVEFILE_COPY_ALLOWED)`, and the first one called bugchecks. Repro: a same-directory rename
-  of a freshly written file. The grader skips the rename cases that reach the IRP, behind
-  `UCRTDIFF_FAT_RENAME_BUGCHECKS` in `tools/payloads/ucrtdiff/ucrtdiff.c` -- set it to 0 when
-  this closes. Still reproduces after d98aba47853 (fastfat top-level IRP fix), 2026-09-28.
+- **fastfat bugchecks in `FsRtlCheckOplock` on arm64** (OPEN, 2026-09-28; was "rename bugchecks
+  fastfat"). An access violation caught by `FatBugCheckExceptionFilter` becomes bugcheck 0x23.
+  P1 is always `0x100c0` because the Rust `FatBugCheck` is one out-of-line function, so it does
+  not identify the site. P4, the faulting PC, is `ntoskrnl.exe+0x11EBD8`, which is
+  `FsRtlCheckOplock+0x2c` in the current `ntkrnlmp.exe` (the default MP kernel). An earlier
+  symbolization against an older build read `RtlCopyUnicodeString` under
+  `FatSetRenameInfo`. Two triggers so far, both found by the ucrtbase Tier-2 grader:
+  - any `MoveFileExW` rename of an existing file in the guest temp dir, a never-seen target
+    name included (so not the tunnel cache);
+  - `_mktemp`'s grader creating and deleting a run of files: four shards out of four, 2026-09-28.
+
+  The grader skips the cases that reach it, behind `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` in
+  `tools/payloads/ucrtdiff/ucrtdiff.c`; set it to 0 when this closes. Still reproduces after
+  d98aba47853 (fastfat top-level IRP fix).
   Owner: unassigned (fastfat/kernel lane).
+- **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
+  (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
+  control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
+  import library and ucrtbase ships a forward into msvcrt.dll. Found by
+  `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
+  (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
+  Owner: ucrt-rust lane.
 - **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
   the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
   so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:

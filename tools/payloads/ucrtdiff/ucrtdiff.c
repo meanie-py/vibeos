@@ -423,6 +423,19 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
  * wrong verdict.
  */
 #define UCRTDIFF_EXPORT_TIMEOUT_MS 8000
+/* _locking's held-lock case is Microsoft's ten one-second retries, per side: ~18 s,
+ * which no export fits inside the timeout above. Skipped (the lock/unlock contract
+ * around it is still graded); the retry loop is owed a longer-budget runner. */
+#ifndef LOWIO_SKIP_SLOW_LOCK
+#define LOWIO_SKIP_SLOW_LOCK 1
+#endif
+/* The guest's fastfat bugchecks (0x23, an access violation at FsRtlCheckOplock+0x2c)
+ * on some file operations: any rename, and _mktemp's create/delete run. The cases
+ * that reach it are skipped while this is 1; see the comment at run_fs_rename and
+ * the roadmap's known-bugs entry. */
+#ifndef UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
+#define UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 1
+#endif
 
 /* ---- sharding and the harness's own deadline --------------------------
  *
@@ -2757,6 +2770,7 @@ unsigned char __cdecl msvcrt_init_locale(void);
  * also why the ref_ side's multibyte state never matched the DLL's: no
  * __acrt_initialize_multibyte either. */
 unsigned char __cdecl __acrt_initialize(void); /* C++ `bool`: one byte, same ABI */
+
 
 static int init_ref_crt(void)
 {
@@ -17757,10 +17771,13 @@ extern int (__cdecl *const ud_rename)(const char *, const char *) __asm__(UD_IMP
  * make the identical MoveFileExW(old, new, MOVEFILE_COPY_ALLOWED) call. Until the
  * kernel is fixed, the cases that reach that path are SKIPPED, loudly; the ones that
  * fail in kernel32 before it (missing source, NULL names) are graded. Set to 0 when
- * the known-bugs entry "rename bugchecks fastfat" is closed. */
-#ifndef UCRTDIFF_FAT_RENAME_BUGCHECKS
-#define UCRTDIFF_FAT_RENAME_BUGCHECKS 1
-#endif
+ * the known-bugs entry "fastfat bugchecks in FsRtlCheckOplock" is closed.
+ *
+ * Batch 7 found the same fault (same P4, FsRtlCheckOplock+0x2c in the current
+ * ntkrnlmp.exe) with no rename at all: _mktemp's grader creating and deleting a
+ * run of files bugchecked four shards out of four. So the switch also skips those
+ * cases (lw_mk_occupy). */
+/* (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS is defined at the top of the file.) */
 
 static void run_fs_rename(void)
 {
@@ -17780,7 +17797,7 @@ static void run_fs_rename(void)
     DeleteFileA(nd);
     DeleteFileA(nr);
 
-#if UCRTDIFF_FAT_RENAME_BUGCHECKS
+#if UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
     DbgPrint("[UCRTDIFF]   SKIP rename fresh/overexisting: a real rename bugchecks the guest (fastfat, known bug)\n");
     int rd, rr;
 #else
@@ -17872,7 +17889,7 @@ static void run_fs__wrename(void)
     fs_to_wide(nd, wnd, MAX_PATH * 2); fs_to_wide(nr, wnr, MAX_PATH * 2);
     fs_to_wide(fd.ro, wd_ro, MAX_PATH * 2); fs_to_wide(fr.ro, wr_ro, MAX_PATH * 2);
 
-#if UCRTDIFF_FAT_RENAME_BUGCHECKS
+#if UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
     DbgPrint("[UCRTDIFF]   SKIP _wrename fresh/overexisting: a real rename bugchecks the guest (fastfat, known bug)\n");
     int rd, rr;
 #else
@@ -18134,6 +18151,5311 @@ static void run_fs__wrmdir(void)
     FS_WRMDIR_HAND(_wrmdir)
 
 
+/* ---- heap: inlined from staging/heap.c ---- */
+/*
+ * heap.c -- guest grader for the `heap` batch: every release-build file of
+ * sdk/lib/ucrt/heap/ (UCRT_HEAP_SOURCES), now sdk/lib/rust/ucrt-rust/src/heap/.
+ *
+ * #included into a copy of ucrtdiff.c just before `run_legacy()`, so grade2, fnv,
+ * label_idx, _errno/ref__errno, install_counting_iph, g_iph_dll/g_iph_ref and UD_IMP
+ * are in scope. Nothing from another block is used.
+ *
+ * Guards, ONE PER C FILE (each names an export that file defines; all confirmed with
+ * `llvm-nm --defined-only build-arm64/libucrt_ref.a | grep ' ref_<name>$'`):
+ *   malloc.cpp       UCRTDIFF_REF_HAS_malloc
+ *   malloc_base.cpp  UCRTDIFF_REF_HAS__malloc_base
+ *   calloc.cpp       UCRTDIFF_REF_HAS_calloc
+ *   calloc_base.cpp  UCRTDIFF_REF_HAS__calloc_base
+ *   realloc.cpp      UCRTDIFF_REF_HAS_realloc
+ *   realloc_base.cpp UCRTDIFF_REF_HAS__realloc_base
+ *   free.cpp         UCRTDIFF_REF_HAS_free
+ *   free_base.cpp    UCRTDIFF_REF_HAS__free_base
+ *   msize.cpp        UCRTDIFF_REF_HAS__msize
+ *   expand.cpp       UCRTDIFF_REF_HAS__expand
+ *   recalloc.cpp     UCRTDIFF_REF_HAS__recalloc
+ *   heapchk.cpp      UCRTDIFF_REF_HAS__heapchk
+ *   heapmin.cpp      UCRTDIFF_REF_HAS__heapmin
+ *   heapwalk.cpp     UCRTDIFF_REF_HAS__heapwalk
+ *   heap_handle.cpp  UCRTDIFF_REF_HAS__get_heap_handle
+ *   new_handler.cpp  UCRTDIFF_REF_HAS__set_new_handler
+ *   new_mode.cpp     UCRTDIFF_REF_HAS__set_new_mode
+ * (`_msize_base`, `_expand_base`, `_recalloc_base` are not ucrtbase exports and have
+ * no ref_ twin; they are graded through `_msize`/`_expand`/`_recalloc`.)
+ *
+ * Neutral measuring: block sizes are read with HeapSize(GetProcessHeap()) rather than
+ * either side's `_msize`, so no block depends on msize.cpp's guard. UCRT's heap IS the
+ * process heap on both sides (`__acrt_heap = GetProcessHeap()`), so pointer VALUES
+ * never match across sides and are never graded -- only NULL-ness, sizes, contents,
+ * errno and handler counts. Each side's blocks are freed by that side: the DLL's with
+ * its `free`, the reference's with `ref_free` while free.cpp is still in the reference
+ * set and otherwise with `HeapFree(GetProcessHeap())` -- which is ref `_free_base`'s
+ * whole body (heap-mismatch recovery is compiled out).
+ *
+ * Process state: the new handler and new mode are process-wide. The retry-loop
+ * subtests set both on BOTH sides and restore the previous values before returning
+ * (the setters return the old ones). Nothing else here changes process state.
+ * Huge requests (_HEAP_MAXREQ exactly) reach HeapAlloc/HeapReAlloc and must FAIL
+ * there; they are well past the 2 GB (32-bit) / 47-bit (64-bit) address space.
+ */
+
+
+/* ---- shared, guard-free helpers ------------------------------------------ */
+
+/* _HEAP_MAXREQ, spelled out rather than taken from whichever malloc.h is in scope. */
+#define HP_MAXREQ ((size_t)(sizeof(void *) == 8 ? 0xFFFFFFFFFFFFFFE0ULL : 0xFFFFFFE0ULL))
+#define HP_ERRNO_SENTINEL 0x5e5e
+
+/* The DLL side's free: always imported, whatever the reference set still holds. */
+extern void(__cdecl *const hp_ud_free)(void *) __asm__(UD_IMP(free));
+
+#if UCRTDIFF_REF_HAS_free
+void __cdecl ref_free(void *);
+#define HP_REF_FREE(p) ref_free(p)
+#else
+#define HP_REF_FREE(p) ((p) ? (void)HeapFree(GetProcessHeap(), 0, (p)) : (void)0)
+#endif
+
+static __attribute__((unused)) void hp_reset(void)
+{
+    *_errno() = HP_ERRNO_SENTINEL;
+    *ref__errno() = HP_ERRNO_SENTINEL;
+    g_iph_dll = g_iph_ref = 0;
+}
+
+/* The heap's own size for a block, -1 for NULL. */
+static __attribute__((unused)) long long hp_bsize(void *p)
+{
+    return p ? (long long)HeapSize(GetProcessHeap(), 0, p) : -1;
+}
+
+/* errno + handler count after a row; `fam` must be a string literal. */
+#define HP_TAIL(fam, lbl)                                                        \
+    do {                                                                         \
+        grade2(fam ".errno", lbl, *_errno(), *ref__errno());                     \
+        grade2(fam ".iph", lbl, g_iph_dll, g_iph_ref);                           \
+    } while (0)
+
+/* A pair of freshly returned blocks: NULL-ness and heap size. */
+#define HP_BLOCK(fam, lbl, p1, p2)                                               \
+    do {                                                                         \
+        grade2(fam ".null", lbl, (p1) == 0, (p2) == 0);                          \
+        grade2(fam ".size", lbl, hp_bsize(p1), hp_bsize(p2));                    \
+    } while (0)
+
+static const size_t hp_sizes[] = { 0, 1, 2, 7, 8, 15, 16, 17, 100, 4096, 16384, 16385, 65536, 1u << 20 };
+#define HP_NSIZES (sizeof(hp_sizes) / sizeof(hp_sizes[0]))
+
+/* Requests that fail _HEAP_MAXREQ validation (ENOMEM, no handler) and one that
+ * passes it but fails in HeapAlloc (ENOMEM from the retry loop's else-arm). */
+static const size_t hp_huge[] = { (size_t)-1, (size_t)-2, 0, 0 };
+static __attribute__((unused)) size_t hp_huge_at(size_t i)
+{
+    if (i == 2) return HP_MAXREQ + 1;
+    if (i == 3) return HP_MAXREQ;
+    return hp_huge[i];
+}
+#define HP_NHUGE 4
+
+/* Counting new handlers, one per side: nonzero ("retry") for the first
+ * `hp_nh_ok` calls, then 0. They record the size they were called with. */
+static volatile long hp_nh_calls_dll, hp_nh_calls_ref, hp_nh_ok;
+static volatile size_t hp_nh_size_dll, hp_nh_size_ref;
+static __attribute__((unused)) int __cdecl hp_nh_dll(size_t n)
+{
+    hp_nh_size_dll = n;
+    return ++hp_nh_calls_dll <= hp_nh_ok;
+}
+static __attribute__((unused)) int __cdecl hp_nh_ref(size_t n)
+{
+    hp_nh_size_ref = n;
+    return ++hp_nh_calls_ref <= hp_nh_ok;
+}
+typedef int(__cdecl *hp_pnh_t)(size_t);
+
+/* ---- the retry loop: needs BOTH new_handler.cpp and new_mode.cpp -------- */
+#if UCRTDIFF_REF_HAS__set_new_handler && UCRTDIFF_REF_HAS__set_new_mode
+#define HP_RETRY_LIVE 1
+hp_pnh_t __cdecl ref__set_new_handler(hp_pnh_t);
+int __cdecl ref__set_new_mode(int);
+extern hp_pnh_t(__cdecl *const ud__set_new_handler)(hp_pnh_t) __asm__(UD_IMP(_set_new_handler));
+extern int(__cdecl *const ud__set_new_mode)(int) __asm__(UD_IMP(_set_new_mode));
+
+static hp_pnh_t hp_saved_h_dll, hp_saved_h_ref;
+static int hp_saved_m_dll, hp_saved_m_ref;
+
+/* Installs the counting handlers with new mode 1 on both sides, saving what
+ * was there. Always paired with hp_retry_end() in the same runner. */
+static __attribute__((unused)) void hp_retry_begin(long ok)
+{
+    hp_saved_h_dll = ud__set_new_handler(hp_nh_dll);
+    hp_saved_h_ref = ref__set_new_handler(hp_nh_ref);
+    hp_saved_m_dll = ud__set_new_mode(1);
+    hp_saved_m_ref = ref__set_new_mode(1);
+    hp_nh_calls_dll = hp_nh_calls_ref = 0;
+    hp_nh_size_dll = hp_nh_size_ref = 0;
+    hp_nh_ok = ok;
+}
+static __attribute__((unused)) void hp_retry_end(void)
+{
+    ud__set_new_mode(hp_saved_m_dll);
+    ref__set_new_mode(hp_saved_m_ref);
+    ud__set_new_handler(hp_saved_h_dll);
+    ref__set_new_handler(hp_saved_h_ref);
+}
+#define HP_NH_GRADE(fam, lbl)                                                    \
+    do {                                                                         \
+        grade2(fam ".nh.calls", lbl, hp_nh_calls_dll, hp_nh_calls_ref);          \
+        grade2(fam ".nh.size", lbl, (long long)hp_nh_size_dll,                   \
+               (long long)hp_nh_size_ref);                                       \
+    } while (0)
+#else
+#define HP_RETRY_LIVE 0
+#endif
+
+/* ---- malloc.cpp / malloc_base.cpp ---------------------------------------- */
+
+/* One runner body for `malloc` and `_malloc_base`: every size (0 -> a 1-byte
+ * block), the oversize requests, and -- when the new-handler files are live --
+ * the retry loop: an allocation HeapAlloc refuses calls the handler once per
+ * retry with the ADJUSTED size, then ENOMEM. */
+#define HP_MALLOC_RUN(fn, fam)                                                   \
+    static void run_heap_##fn(void)                                              \
+    {                                                                            \
+        size_t i;                                                                \
+        install_counting_iph();                                                  \
+        for (i = 0; i < HP_NSIZES; i++) {                                        \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(hp_sizes[i]);                                     \
+            void *p2 = ref_##fn(hp_sizes[i]);                                    \
+            HP_BLOCK(fam, label_idx(i), p1, p2);                                 \
+            HP_TAIL(fam, label_idx(i));                                          \
+            hp_ud_free(p1);                                                      \
+            HP_REF_FREE(p2);                                                     \
+        }                                                                        \
+        for (i = 0; i < HP_NHUGE; i++) {                                         \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(hp_huge_at(i));                                   \
+            void *p2 = ref_##fn(hp_huge_at(i));                                  \
+            grade2(fam ".huge.null", label_idx(i), p1 == 0, p2 == 0);            \
+            HP_TAIL(fam ".huge", label_idx(i));                                  \
+            hp_ud_free(p1);                                                      \
+            HP_REF_FREE(p2);                                                     \
+        }                                                                        \
+        HP_MALLOC_RETRY(fn, fam)                                                 \
+    }
+
+#if HP_RETRY_LIVE
+#define HP_MALLOC_RETRY(fn, fam)                                                 \
+    {                                                                            \
+        static const long oks[] = { 0, 1, 3 };                                   \
+        size_t k;                                                                \
+        for (k = 0; k < 3; k++) {                                                \
+            hp_retry_begin(oks[k]);                                              \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(HP_MAXREQ);                                       \
+            long c1 = hp_nh_calls_dll;                                           \
+            void *p2 = ref_##fn(HP_MAXREQ);                                      \
+            int e1 = *_errno(), e2 = *ref__errno();                              \
+            hp_retry_end();                                                      \
+            grade2(fam ".retry.null", label_idx(k), p1 == 0, p2 == 0);           \
+            grade2(fam ".retry.errno", label_idx(k), e1, e2);                    \
+            grade2(fam ".retry.calls", label_idx(k), c1, hp_nh_calls_ref);       \
+            HP_NH_GRADE(fam ".retry", label_idx(k));                             \
+            hp_ud_free(p1);                                                      \
+            HP_REF_FREE(p2);                                                     \
+        }                                                                        \
+        /* A request that succeeds never consults the handler, even size 0. */   \
+        hp_retry_begin(5);                                                       \
+        void *q1 = ud_##fn(0);                                                   \
+        void *q2 = ref_##fn(0);                                                  \
+        hp_retry_end();                                                          \
+        grade2(fam ".retry.ok.null", "0", q1 == 0, q2 == 0);                     \
+        HP_NH_GRADE(fam ".retry.ok", "0");                                       \
+        hp_ud_free(q1);                                                          \
+        HP_REF_FREE(q2);                                                         \
+    }
+#else
+#define HP_MALLOC_RETRY(fn, fam)
+#endif
+
+#if UCRTDIFF_REF_HAS_malloc
+void *__cdecl ref_malloc(size_t);
+extern void *(__cdecl *const ud_malloc)(size_t) __asm__(UD_IMP(malloc));
+HP_MALLOC_RUN(malloc, "malloc")
+#define HEAP_E_malloc { "malloc", run_heap_malloc },
+#else
+#define HEAP_E_malloc { "malloc", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__malloc_base
+void *__cdecl ref__malloc_base(size_t);
+extern void *(__cdecl *const ud__malloc_base)(size_t) __asm__(UD_IMP(_malloc_base));
+HP_MALLOC_RUN(_malloc_base, "_malloc_base")
+#define HEAP_E__malloc_base { "_malloc_base", run_heap__malloc_base },
+#else
+#define HEAP_E__malloc_base { "_malloc_base", 0 },
+#endif
+
+/* ---- calloc.cpp / calloc_base.cpp ---------------------------------------- */
+
+static const size_t hp_cc[][2] = {
+    { 0, 0 }, { 0, 5 }, { 5, 0 }, { 1, 1 }, { 3, 7 }, { 10, 10 }, { 3, 1000 }, { 4096, 4 },
+    { 1, 65536 }, { 16, 16385 },
+};
+#define HP_NCC (sizeof(hp_cc) / sizeof(hp_cc[0]))
+
+/* Contents are hashed over the heap's WHOLE block (HEAP_ZERO_MEMORY zeroes the
+ * rounded size); the overflow check is `_HEAP_MAXREQ / count >= size` (NOEXC). */
+#define HP_CALLOC_RUN(fn, fam)                                                   \
+    static void run_heap_##fn(void)                                              \
+    {                                                                            \
+        size_t i;                                                                \
+        install_counting_iph();                                                  \
+        for (i = 0; i < HP_NCC; i++) {                                           \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(hp_cc[i][0], hp_cc[i][1]);                        \
+            void *p2 = ref_##fn(hp_cc[i][0], hp_cc[i][1]);                       \
+            HP_BLOCK(fam, label_idx(i), p1, p2);                                 \
+            HP_TAIL(fam, label_idx(i));                                          \
+            if (p1 && p2 && hp_bsize(p1) == hp_bsize(p2))                        \
+                grade2(fam ".zero", label_idx(i), fnv(p1, (size_t)hp_bsize(p1)), \
+                       fnv(p2, (size_t)hp_bsize(p2)));                           \
+            hp_ud_free(p1);                                                      \
+            HP_REF_FREE(p2);                                                     \
+        }                                                                        \
+        {                                                                        \
+            const size_t ov[][2] = {                                             \
+                { 2, HP_MAXREQ / 2 + 1 }, { (size_t)-1, 2 }, { 2, (size_t)-1 },  \
+                { HP_MAXREQ, 2 }, { 1, HP_MAXREQ + 1 }, { 1, HP_MAXREQ },        \
+                { HP_MAXREQ, 1 }, { 0, (size_t)-1 }, { (size_t)-1, 0 },          \
+            };                                                                   \
+            for (i = 0; i < sizeof(ov) / sizeof(ov[0]); i++) {                   \
+                hp_reset();                                                      \
+                void *p1 = ud_##fn(ov[i][0], ov[i][1]);                          \
+                void *p2 = ref_##fn(ov[i][0], ov[i][1]);                         \
+                HP_BLOCK(fam ".ovf", label_idx(i), p1, p2);                      \
+                HP_TAIL(fam ".ovf", label_idx(i));                               \
+                hp_ud_free(p1);                                                  \
+                HP_REF_FREE(p2);                                                 \
+            }                                                                    \
+        }                                                                        \
+        HP_CALLOC_RETRY(fn, fam)                                                 \
+    }
+
+#if HP_RETRY_LIVE
+#define HP_CALLOC_RETRY(fn, fam)                                                 \
+    {                                                                            \
+        static const long oks[] = { 0, 2 };                                      \
+        size_t k;                                                                \
+        for (k = 0; k < 2; k++) {                                                \
+            hp_retry_begin(oks[k]);                                              \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(1, HP_MAXREQ);                                    \
+            void *p2 = ref_##fn(1, HP_MAXREQ);                                   \
+            int e1 = *_errno(), e2 = *ref__errno();                              \
+            hp_retry_end();                                                      \
+            grade2(fam ".retry.null", label_idx(k), p1 == 0, p2 == 0);           \
+            grade2(fam ".retry.errno", label_idx(k), e1, e2);                    \
+            HP_NH_GRADE(fam ".retry", label_idx(k));                             \
+            hp_ud_free(p1);                                                      \
+            HP_REF_FREE(p2);                                                     \
+        }                                                                        \
+    }
+#else
+#define HP_CALLOC_RETRY(fn, fam)
+#endif
+
+#if UCRTDIFF_REF_HAS_calloc
+void *__cdecl ref_calloc(size_t, size_t);
+extern void *(__cdecl *const ud_calloc)(size_t, size_t) __asm__(UD_IMP(calloc));
+HP_CALLOC_RUN(calloc, "calloc")
+#define HEAP_E_calloc { "calloc", run_heap_calloc },
+#else
+#define HEAP_E_calloc { "calloc", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__calloc_base
+void *__cdecl ref__calloc_base(size_t, size_t);
+extern void *(__cdecl *const ud__calloc_base)(size_t, size_t) __asm__(UD_IMP(_calloc_base));
+HP_CALLOC_RUN(_calloc_base, "_calloc_base")
+#define HEAP_E__calloc_base { "_calloc_base", run_heap__calloc_base },
+#else
+#define HEAP_E__calloc_base { "_calloc_base", 0 },
+#endif
+
+/* ---- realloc.cpp / realloc_base.cpp -------------------------------------- */
+
+/* Fixture blocks come straight from the process heap (neutral) and are
+ * stamped with a pattern; each side reallocs ITS OWN copy. */
+static __attribute__((unused)) void *hp_fixture(size_t n, unsigned char pat)
+{
+    void *p = HeapAlloc(GetProcessHeap(), 0, n ? n : 1);
+    if (p) memset(p, pat, n ? n : 1);
+    return p;
+}
+
+static const size_t hp_rr[][2] = {
+    { 40, 4096 }, { 4096, 16 }, { 16, 16 }, { 1, 2 }, { 100, 99 }, { 16384, 16385 },
+    { 64, 1u << 20 }, { 1u << 20, 64 },
+};
+#define HP_NRR (sizeof(hp_rr) / sizeof(hp_rr[0]))
+
+#define HP_REALLOC_RUN(fn, fam)                                                  \
+    static void run_heap_##fn(void)                                              \
+    {                                                                            \
+        size_t i;                                                                \
+        install_counting_iph();                                                  \
+        /* grow / shrink: the surviving prefix is min(old, new) */               \
+        for (i = 0; i < HP_NRR; i++) {                                           \
+            size_t keep = hp_rr[i][0] < hp_rr[i][1] ? hp_rr[i][0] : hp_rr[i][1];  \
+            void *f1 = hp_fixture(hp_rr[i][0], 0xc3);                            \
+            void *f2 = hp_fixture(hp_rr[i][0], 0xc3);                            \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(f1, hp_rr[i][1]);                                 \
+            void *p2 = ref_##fn(f2, hp_rr[i][1]);                                \
+            HP_BLOCK(fam, label_idx(i), p1, p2);                                 \
+            HP_TAIL(fam, label_idx(i));                                          \
+            if (p1 && p2)                                                        \
+                grade2(fam ".prefix", label_idx(i), fnv(p1, keep), fnv(p2, keep)); \
+            hp_ud_free(p1 ? p1 : f1);                                            \
+            HP_REF_FREE(p2 ? p2 : f2);                                           \
+        }                                                                        \
+        /* NULL block == malloc(size), size 0 included */                       \
+        for (i = 0; i < 4; i++) {                                                \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(0, hp_sizes[i * 3]);                              \
+            void *p2 = ref_##fn(0, hp_sizes[i * 3]);                             \
+            HP_BLOCK(fam ".null_block", label_idx(i), p1, p2);                   \
+            HP_TAIL(fam ".null_block", label_idx(i));                            \
+            hp_ud_free(p1);                                                      \
+            HP_REF_FREE(p2);                                                     \
+        }                                                                        \
+        /* size 0 frees and returns NULL, errno untouched */                     \
+        {                                                                        \
+            void *f1 = hp_fixture(32, 1), *f2 = hp_fixture(32, 1);               \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(f1, 0);                                           \
+            void *p2 = ref_##fn(f2, 0);                                          \
+            grade2(fam ".zero.null", "0", p1 == 0, p2 == 0);                     \
+            HP_TAIL(fam ".zero", "0");                                           \
+        }                                                                        \
+        /* oversize: NULL + ENOMEM, the original block intact and still ours */  \
+        for (i = 0; i < HP_NHUGE; i++) {                                         \
+            void *f1 = hp_fixture(48, 0x7e), *f2 = hp_fixture(48, 0x7e);         \
+            if (!f1 || !f2) continue;                                            \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(f1, hp_huge_at(i));                               \
+            void *p2 = ref_##fn(f2, hp_huge_at(i));                              \
+            grade2(fam ".huge.null", label_idx(i), p1 == 0, p2 == 0);            \
+            HP_TAIL(fam ".huge", label_idx(i));                                  \
+            grade2(fam ".huge.orig", label_idx(i), fnv(f1, 48), fnv(f2, 48));    \
+            hp_ud_free(p1 ? p1 : f1);                                            \
+            HP_REF_FREE(p2 ? p2 : f2);                                           \
+        }                                                                        \
+        HP_REALLOC_RETRY(fn, fam)                                                \
+    }
+
+#if HP_RETRY_LIVE
+#define HP_REALLOC_RETRY(fn, fam)                                                \
+    {                                                                            \
+        static const long oks[] = { 0, 2 };                                      \
+        size_t k;                                                                \
+        for (k = 0; k < 2; k++) {                                                \
+            void *f1 = hp_fixture(24, 9), *f2 = hp_fixture(24, 9);               \
+            if (!f1 || !f2) continue;                                            \
+            hp_retry_begin(oks[k]);                                              \
+            hp_reset();                                                          \
+            void *p1 = ud_##fn(f1, HP_MAXREQ);                                   \
+            void *p2 = ref_##fn(f2, HP_MAXREQ);                                  \
+            int e1 = *_errno(), e2 = *ref__errno();                              \
+            hp_retry_end();                                                      \
+            grade2(fam ".retry.null", label_idx(k), p1 == 0, p2 == 0);           \
+            grade2(fam ".retry.errno", label_idx(k), e1, e2);                    \
+            HP_NH_GRADE(fam ".retry", label_idx(k));                             \
+            hp_ud_free(p1 ? p1 : f1);                                            \
+            HP_REF_FREE(p2 ? p2 : f2);                                           \
+        }                                                                        \
+    }
+#else
+#define HP_REALLOC_RETRY(fn, fam)
+#endif
+
+#if UCRTDIFF_REF_HAS_realloc
+void *__cdecl ref_realloc(void *, size_t);
+extern void *(__cdecl *const ud_realloc)(void *, size_t) __asm__(UD_IMP(realloc));
+HP_REALLOC_RUN(realloc, "realloc")
+#define HEAP_E_realloc { "realloc", run_heap_realloc },
+#else
+#define HEAP_E_realloc { "realloc", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__realloc_base
+void *__cdecl ref__realloc_base(void *, size_t);
+extern void *(__cdecl *const ud__realloc_base)(void *, size_t) __asm__(UD_IMP(_realloc_base));
+HP_REALLOC_RUN(_realloc_base, "_realloc_base")
+#define HEAP_E__realloc_base { "_realloc_base", run_heap__realloc_base },
+#else
+#define HEAP_E__realloc_base { "_realloc_base", 0 },
+#endif
+
+/* ---- free.cpp / free_base.cpp -------------------------------------------- */
+
+/* NULL is a no-op (errno untouched); a live block is released with errno
+ * untouched; and the block really is gone (HeapValidate on the heap stays OK and
+ * a fresh allocation of the same size succeeds). */
+#define HP_FREE_RUN(fn, fam)                                                     \
+    static void run_heap_##fn(void)                                              \
+    {                                                                            \
+        size_t i;                                                                \
+        install_counting_iph();                                                  \
+        hp_reset();                                                              \
+        ud_##fn(0);                                                              \
+        ref_##fn(0);                                                             \
+        HP_TAIL(fam ".null", "0");                                               \
+        for (i = 0; i < HP_NSIZES; i++) {                                        \
+            void *f1 = hp_fixture(hp_sizes[i], 0x11);                            \
+            void *f2 = hp_fixture(hp_sizes[i], 0x11);                            \
+            if (!f1 || !f2) continue;                                            \
+            hp_reset();                                                          \
+            ud_##fn(f1);                                                         \
+            ref_##fn(f2);                                                        \
+            HP_TAIL(fam, label_idx(i));                                          \
+        }                                                                        \
+        grade2(fam ".heapok", "0", HeapValidate(GetProcessHeap(), 0, 0) != 0,    \
+               HeapValidate(GetProcessHeap(), 0, 0) != 0);                       \
+    }
+
+#if UCRTDIFF_REF_HAS_free
+#define ud_free hp_ud_free /* the one import slot, declared at the top */
+HP_FREE_RUN(free, "free")
+#define HEAP_E_free { "free", run_heap_free },
+#else
+#define HEAP_E_free { "free", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__free_base
+void __cdecl ref__free_base(void *);
+extern void(__cdecl *const ud__free_base)(void *) __asm__(UD_IMP(_free_base));
+HP_FREE_RUN(_free_base, "_free_base")
+#define HEAP_E__free_base { "_free_base", run_heap__free_base },
+#else
+#define HEAP_E__free_base { "_free_base", 0 },
+#endif
+
+/* ---- msize.cpp ----------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__msize
+size_t __cdecl ref__msize(void *);
+extern size_t(__cdecl *const ud__msize)(void *) __asm__(UD_IMP(_msize));
+
+static void run_heap__msize(void)
+{
+    size_t i;
+    install_counting_iph();
+    /* NULL: EINVAL WITH the handler, (size_t)-1. */
+    hp_reset();
+    grade2("_msize.nullret", "0", (long long)ud__msize(0), (long long)ref__msize(0));
+    HP_TAIL("_msize.null", "0");
+    for (i = 0; i < HP_NSIZES; i++) {
+        void *f1 = hp_fixture(hp_sizes[i], 0), *f2 = hp_fixture(hp_sizes[i], 0);
+        if (!f1 || !f2) continue;
+        hp_reset();
+        grade2("_msize", label_idx(i), (long long)ud__msize(f1), (long long)ref__msize(f2));
+        HP_TAIL("_msize", label_idx(i));
+        HeapFree(GetProcessHeap(), 0, f1);
+        HeapFree(GetProcessHeap(), 0, f2);
+    }
+}
+#define HEAP_E__msize { "_msize", run_heap__msize },
+#else
+#define HEAP_E__msize { "_msize", 0 },
+#endif
+
+/* ---- expand.cpp ---------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__expand
+void *__cdecl ref__expand(void *, size_t);
+extern void *(__cdecl *const ud__expand)(void *, size_t) __asm__(UD_IMP(_expand));
+
+static void run_heap__expand(void)
+{
+    /* (old, new): shrinks (incl. to 0 -> 1 byte, and inside/outside the 16 KB LFH
+     * limit), same size, and an in-place growth no heap can grant. A SMALL growth
+     * is deliberately absent: whether it fits in place depends on the block's
+     * neighbours, which differ between the two sides' fixtures. */
+    static const size_t ex[][2] = {
+        { 4096, 16 }, { 64, 0 }, { 64, 64 }, { 16384, 100 }, { 16385, 100 }, { 1u << 20, 4096 },
+        { 64, 1u << 22 }, { 100, 1 },
+    };
+    size_t i;
+    install_counting_iph();
+
+    hp_reset();
+    {
+        void *p1 = ud__expand(0, 16), *p2 = ref__expand(0, 16);
+        grade2("_expand.nullblock.null", "0", p1 == 0, p2 == 0);
+        HP_TAIL("_expand.nullblock", "0");
+    }
+    for (i = 0; i < sizeof(ex) / sizeof(ex[0]); i++) {
+        void *f1 = hp_fixture(ex[i][0], 0x3c), *f2 = hp_fixture(ex[i][0], 0x3c);
+        if (!f1 || !f2) continue;
+        size_t keep = ex[i][0] < ex[i][1] ? ex[i][0] : (ex[i][1] ? ex[i][1] : 1);
+        hp_reset();
+        SetLastError(0);
+        void *p1 = ud__expand(f1, ex[i][1]);
+        SetLastError(0);
+        void *p2 = ref__expand(f2, ex[i][1]);
+        grade2("_expand.null", label_idx(i), p1 == 0, p2 == 0);
+        grade2("_expand.inplace", label_idx(i), p1 == f1, p2 == f2);
+        HP_TAIL("_expand", label_idx(i));
+        grade2("_expand.size", label_idx(i), hp_bsize(f1), hp_bsize(f2));
+        grade2("_expand.prefix", label_idx(i), fnv(f1, keep), fnv(f2, keep));
+        hp_ud_free(f1);
+        HP_REF_FREE(f2);
+    }
+    /* Oversize: ENOMEM without the handler, block untouched. */
+    for (i = 0; i < HP_NHUGE - 1; i++) {
+        void *f1 = hp_fixture(32, 0x5a), *f2 = hp_fixture(32, 0x5a);
+        if (!f1 || !f2) continue;
+        hp_reset();
+        void *p1 = ud__expand(f1, hp_huge_at(i));
+        void *p2 = ref__expand(f2, hp_huge_at(i));
+        grade2("_expand.huge.null", label_idx(i), p1 == 0, p2 == 0);
+        HP_TAIL("_expand.huge", label_idx(i));
+        grade2("_expand.huge.size", label_idx(i), hp_bsize(f1), hp_bsize(f2));
+        hp_ud_free(f1);
+        HP_REF_FREE(f2);
+    }
+}
+#define HEAP_E__expand { "_expand", run_heap__expand },
+#else
+#define HEAP_E__expand { "_expand", 0 },
+#endif
+
+/* ---- recalloc.cpp -------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__recalloc
+void *__cdecl ref__recalloc(void *, size_t, size_t);
+extern void *(__cdecl *const ud__recalloc)(void *, size_t, size_t) __asm__(UD_IMP(_recalloc));
+
+static void run_heap__recalloc(void)
+{
+    /* (old count, old size) -> (new count, new size). The zero fill starts at the
+     * OLD HeapSize, so the fixture stamps its whole heap block first. */
+    static const size_t rc[][4] = {
+        { 2, 8, 16, 8 }, { 3, 5, 3, 50 }, { 100, 1, 10, 1 }, { 1, 1, 1, 1 }, { 7, 3, 7, 300 },
+        { 1, 16384, 2, 16384 },
+    };
+    size_t i;
+    install_counting_iph();
+    for (i = 0; i < sizeof(rc) / sizeof(rc[0]); i++) {
+        size_t oldn = rc[i][0] * rc[i][1], newn = rc[i][2] * rc[i][3];
+        void *f1 = hp_fixture(oldn, 0xaa), *f2 = hp_fixture(oldn, 0xaa);
+        if (!f1 || !f2) continue;
+        memset(f1, 0xaa, (size_t)hp_bsize(f1));
+        memset(f2, 0xaa, (size_t)hp_bsize(f2));
+        hp_reset();
+        void *p1 = ud__recalloc(f1, rc[i][2], rc[i][3]);
+        void *p2 = ref__recalloc(f2, rc[i][2], rc[i][3]);
+        HP_BLOCK("_recalloc", label_idx(i), p1, p2);
+        HP_TAIL("_recalloc", label_idx(i));
+        if (p1 && p2)
+            grade2("_recalloc.contents", label_idx(i), fnv(p1, newn), fnv(p2, newn));
+        hp_ud_free(p1 ? p1 : f1);
+        HP_REF_FREE(p2 ? p2 : f2);
+    }
+    /* NULL block: a fresh zeroed block (old size 0). */
+    hp_reset();
+    {
+        void *p1 = ud__recalloc(0, 5, 7), *p2 = ref__recalloc(0, 5, 7);
+        HP_BLOCK("_recalloc.nullblock", "0", p1, p2);
+        HP_TAIL("_recalloc.nullblock", "0");
+        if (p1 && p2)
+            grade2("_recalloc.nullblock.zero", "0", fnv(p1, 35), fnv(p2, 35));
+        hp_ud_free(p1);
+        HP_REF_FREE(p2);
+    }
+    /* count*size == 0 on a live block: realloc(p, 0) frees it, NULL back. */
+    {
+        void *f1 = hp_fixture(40, 1), *f2 = hp_fixture(40, 1);
+        hp_reset();
+        void *p1 = ud__recalloc(f1, 0, 9), *p2 = ref__recalloc(f2, 0, 9);
+        grade2("_recalloc.zero.null", "0", p1 == 0, p2 == 0);
+        HP_TAIL("_recalloc.zero", "0");
+    }
+    /* Overflow: `_HEAP_MAXREQ / count >= size` fails -> ENOMEM, block untouched. */
+    {
+        const size_t ov[][2] = {
+            { 2, HP_MAXREQ / 2 + 1 }, { (size_t)-1, 2 }, { 1, HP_MAXREQ + 1 }, { 3, (size_t)-1 },
+        };
+        for (i = 0; i < sizeof(ov) / sizeof(ov[0]); i++) {
+            void *f1 = hp_fixture(16, 0x42), *f2 = hp_fixture(16, 0x42);
+            if (!f1 || !f2) continue;
+            hp_reset();
+            void *p1 = ud__recalloc(f1, ov[i][0], ov[i][1]);
+            void *p2 = ref__recalloc(f2, ov[i][0], ov[i][1]);
+            grade2("_recalloc.ovf.null", label_idx(i), p1 == 0, p2 == 0);
+            HP_TAIL("_recalloc.ovf", label_idx(i));
+            grade2("_recalloc.ovf.orig", label_idx(i), fnv(f1, 16), fnv(f2, 16));
+            hp_ud_free(p1 ? p1 : f1);
+            HP_REF_FREE(p2 ? p2 : f2);
+        }
+    }
+}
+#define HEAP_E__recalloc { "_recalloc", run_heap__recalloc },
+#else
+#define HEAP_E__recalloc { "_recalloc", 0 },
+#endif
+
+/* ---- heapchk.cpp / heapmin.cpp ------------------------------------------- */
+#if UCRTDIFF_REF_HAS__heapchk
+int __cdecl ref__heapchk(void);
+extern int(__cdecl *const ud__heapchk)(void) __asm__(UD_IMP(_heapchk));
+static void run_heap__heapchk(void)
+{
+    install_counting_iph();
+    hp_reset();
+    grade2("_heapchk", "0", ud__heapchk(), ref__heapchk());
+    HP_TAIL("_heapchk", "0");
+}
+#define HEAP_E__heapchk { "_heapchk", run_heap__heapchk },
+#else
+#define HEAP_E__heapchk { "_heapchk", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__heapmin
+int __cdecl ref__heapmin(void);
+extern int(__cdecl *const ud__heapmin)(void) __asm__(UD_IMP(_heapmin));
+static void run_heap__heapmin(void)
+{
+    install_counting_iph();
+    hp_reset();
+    grade2("_heapmin", "0", ud__heapmin(), ref__heapmin());
+    HP_TAIL("_heapmin", "0");
+}
+#define HEAP_E__heapmin { "_heapmin", run_heap__heapmin },
+#else
+#define HEAP_E__heapmin { "_heapmin", 0 },
+#endif
+
+/* ---- heapwalk.cpp -------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__heapwalk
+/* _HEAPINFO, spelled out: { int* _pentry; size_t _size; int _useflag; }. */
+typedef struct { int *pentry; size_t size; int useflag; } hp_heapinfo_t;
+int __cdecl ref__heapwalk(hp_heapinfo_t *);
+extern int(__cdecl *const ud__heapwalk)(hp_heapinfo_t *) __asm__(UD_IMP(_heapwalk));
+
+#define HP_WALK_MAX 48
+static int hp_walk_st[2][HP_WALK_MAX];
+static long long hp_walk_sz[2][HP_WALK_MAX];
+static uintptr_t hp_walk_p[2][HP_WALK_MAX];
+static int hp_walk_uf[2][HP_WALK_MAX];
+
+/* Walks the (shared) process heap from the start with one side, recording each
+ * step. Both sides walk the SAME heap, and nothing between the two walks
+ * allocates, so the entry sequence -- pointers included -- must be identical. */
+static int hp_walk(int side)
+{
+    hp_heapinfo_t hi;
+    int n = 0;
+    hi.pentry = 0; hi.size = 0x5a5a; hi.useflag = 0x77;
+    while (n < HP_WALK_MAX) {
+        int st = side ? ref__heapwalk(&hi) : ud__heapwalk(&hi);
+        hp_walk_st[side][n] = st;
+        hp_walk_sz[side][n] = (long long)hi.size;
+        hp_walk_p[side][n] = (uintptr_t)hi.pentry;
+        hp_walk_uf[side][n] = hi.useflag;
+        n++;
+        if (st != -2 /* _HEAPOK */)
+            break;
+    }
+    return n;
+}
+
+static void run_heap__heapwalk(void)
+{
+    install_counting_iph();
+    /* NULL entry: _HEAPBADPTR, EINVAL, handler. */
+    hp_reset();
+    grade2("_heapwalk.null", "0", ud__heapwalk(0), ref__heapwalk(0));
+    HP_TAIL("_heapwalk.null", "0");
+
+    hp_reset();
+    {
+        int n1 = hp_walk(0), n2 = hp_walk(1), i;
+        grade2("_heapwalk.steps", "0", n1, n2);
+        for (i = 0; i < n1 && i < n2; i++) {
+            grade2("_heapwalk.status", label_idx((size_t)i), hp_walk_st[0][i], hp_walk_st[1][i]);
+            grade2("_heapwalk.size", label_idx((size_t)i), hp_walk_sz[0][i], hp_walk_sz[1][i]);
+            grade2("_heapwalk.pentry", label_idx((size_t)i), (long long)hp_walk_p[0][i],
+                   (long long)hp_walk_p[1][i]);
+            grade2("_heapwalk.useflag", label_idx((size_t)i), hp_walk_uf[0][i], hp_walk_uf[1][i]);
+        }
+        HP_TAIL("_heapwalk.walk", "0");
+    }
+
+    /* Resuming from a pointer that is not a heap block, flagged _USEDENTRY:
+     * HeapValidate refuses it -> _HEAPBADNODE, the record untouched. */
+    {
+        static int not_a_block[64];
+        hp_heapinfo_t h1, h2;
+        h1.pentry = h2.pentry = &not_a_block[32];
+        h1.size = h2.size = 0x1234;
+        h1.useflag = h2.useflag = 1; /* _USEDENTRY */
+        hp_reset();
+        grade2("_heapwalk.badnode", "0", ud__heapwalk(&h1), ref__heapwalk(&h2));
+        HP_TAIL("_heapwalk.badnode", "0");
+        grade2("_heapwalk.badnode.rec", "0", fnv(&h1, sizeof h1), fnv(&h2, sizeof h2));
+    }
+}
+#define HEAP_E__heapwalk { "_heapwalk", run_heap__heapwalk },
+#else
+#define HEAP_E__heapwalk { "_heapwalk", 0 },
+#endif
+
+/* ---- heap_handle.cpp ----------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__get_heap_handle
+intptr_t __cdecl ref__get_heap_handle(void);
+extern intptr_t(__cdecl *const ud__get_heap_handle)(void) __asm__(UD_IMP(_get_heap_handle));
+static void run_heap__get_heap_handle(void)
+{
+    install_counting_iph();
+    hp_reset();
+    /* Both CRTs use the one process heap: the handles must be EQUAL. */
+    grade2("_get_heap_handle", "0", (long long)ud__get_heap_handle(), (long long)ref__get_heap_handle());
+    HP_TAIL("_get_heap_handle", "0");
+}
+#define HEAP_E__get_heap_handle { "_get_heap_handle", run_heap__get_heap_handle },
+#else
+#define HEAP_E__get_heap_handle { "_get_heap_handle", 0 },
+#endif
+
+/* ---- new_handler.cpp ----------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__set_new_handler
+hp_pnh_t __cdecl ref__set_new_handler(hp_pnh_t);
+hp_pnh_t __cdecl ref__query_new_handler(void);
+int __cdecl ref__callnewh(size_t);
+extern hp_pnh_t(__cdecl *const ud__set_new_handler)(hp_pnh_t) __asm__(UD_IMP(_set_new_handler));
+extern hp_pnh_t(__cdecl *const ud__query_new_handler)(void) __asm__(UD_IMP(_query_new_handler));
+extern int(__cdecl *const ud__callnewh)(size_t) __asm__(UD_IMP(_callnewh));
+
+/* The handler a side had on entry, compared as "which handler" rather than by
+ * value: NULL, ours (this side's counting handler), or something else. */
+static int hp_which(hp_pnh_t h, hp_pnh_t mine)
+{
+    return h == 0 ? 0 : (h == mine ? 1 : 2);
+}
+
+static void run_heap__set_new_handler(void)
+{
+    install_counting_iph();
+    hp_reset();
+    hp_pnh_t old1 = ud__set_new_handler(hp_nh_dll);
+    hp_pnh_t old2 = ref__set_new_handler(hp_nh_ref);
+    grade2("_set_new_handler.initial", "0", hp_which(old1, hp_nh_dll), hp_which(old2, hp_nh_ref));
+    /* Setting returns the (decoded) previous handler: ours now. */
+    hp_pnh_t mid1 = ud__set_new_handler(hp_nh_dll);
+    hp_pnh_t mid2 = ref__set_new_handler(hp_nh_ref);
+    grade2("_set_new_handler.returns_prev", "0", hp_which(mid1, hp_nh_dll), hp_which(mid2, hp_nh_ref));
+    /* NULL clears it. */
+    hp_pnh_t n1 = ud__set_new_handler(0);
+    hp_pnh_t n2 = ref__set_new_handler(0);
+    grade2("_set_new_handler.clear", "0", hp_which(n1, hp_nh_dll), hp_which(n2, hp_nh_ref));
+    hp_pnh_t z1 = ud__set_new_handler(old1);
+    hp_pnh_t z2 = ref__set_new_handler(old2);
+    grade2("_set_new_handler.cleared", "0", hp_which(z1, hp_nh_dll), hp_which(z2, hp_nh_ref));
+    HP_TAIL("_set_new_handler", "0");
+}
+
+static void run_heap__query_new_handler(void)
+{
+    install_counting_iph();
+    hp_reset();
+    hp_pnh_t q1 = ud__query_new_handler(), q2 = ref__query_new_handler();
+    grade2("_query_new_handler.initial", "0", hp_which(q1, hp_nh_dll), hp_which(q2, hp_nh_ref));
+    hp_pnh_t old1 = ud__set_new_handler(hp_nh_dll);
+    hp_pnh_t old2 = ref__set_new_handler(hp_nh_ref);
+    q1 = ud__query_new_handler();
+    q2 = ref__query_new_handler();
+    grade2("_query_new_handler.set", "0", hp_which(q1, hp_nh_dll), hp_which(q2, hp_nh_ref));
+    ud__set_new_handler(old1);
+    ref__set_new_handler(old2);
+    q1 = ud__query_new_handler();
+    q2 = ref__query_new_handler();
+    grade2("_query_new_handler.restored", "0", q1 == old1, q2 == old2);
+    HP_TAIL("_query_new_handler", "0");
+}
+
+static void run_heap__callnewh(void)
+{
+    static const long oks[] = { 0, 1 };
+    static const size_t sizes[] = { 0, 1, 12345, (size_t)-1 };
+    size_t i, k;
+    install_counting_iph();
+    hp_pnh_t old1 = ud__set_new_handler(0);
+    hp_pnh_t old2 = ref__set_new_handler(0);
+    /* No handler: 0, nothing called. */
+    hp_reset();
+    grade2("_callnewh.none", "0", ud__callnewh(100), ref__callnewh(100));
+    HP_TAIL("_callnewh.none", "0");
+    ud__set_new_handler(hp_nh_dll);
+    ref__set_new_handler(hp_nh_ref);
+    for (k = 0; k < 2; k++) {
+        for (i = 0; i < 4; i++) {
+            hp_nh_calls_dll = hp_nh_calls_ref = 0;
+            hp_nh_size_dll = hp_nh_size_ref = 0x77;
+            hp_nh_ok = oks[k];
+            hp_reset();
+            int r1 = ud__callnewh(sizes[i]);
+            int r2 = ref__callnewh(sizes[i]);
+            grade2("_callnewh.ret", label_idx(k * 4 + i), r1, r2);
+            grade2("_callnewh.calls", label_idx(k * 4 + i), hp_nh_calls_dll, hp_nh_calls_ref);
+            grade2("_callnewh.size", label_idx(k * 4 + i), (long long)hp_nh_size_dll,
+                   (long long)hp_nh_size_ref);
+            HP_TAIL("_callnewh", label_idx(k * 4 + i));
+        }
+    }
+    ud__set_new_handler(old1);
+    ref__set_new_handler(old2);
+}
+#define HEAP_E_NEW_HANDLER                                                       \
+    { "_set_new_handler", run_heap__set_new_handler },                           \
+    { "_query_new_handler", run_heap__query_new_handler },                       \
+    { "_callnewh", run_heap__callnewh },
+#else
+#define HEAP_E_NEW_HANDLER                                                       \
+    { "_set_new_handler", 0 }, { "_query_new_handler", 0 }, { "_callnewh", 0 },
+#endif
+
+/* ---- new_mode.cpp -------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS__set_new_mode
+int __cdecl ref__set_new_mode(int);
+int __cdecl ref__query_new_mode(void);
+extern int(__cdecl *const ud__set_new_mode)(int) __asm__(UD_IMP(_set_new_mode));
+extern int(__cdecl *const ud__query_new_mode)(void) __asm__(UD_IMP(_query_new_mode));
+
+static void run_heap__set_new_mode(void)
+{
+    static const int modes[] = { 1, 1, 0, 2, -1, 0x7fffffff, (int)0x80000000, 0 };
+    size_t i;
+    install_counting_iph();
+    int save1 = ud__query_new_mode(), save2 = ref__query_new_mode();
+    for (i = 0; i < sizeof(modes) / sizeof(modes[0]); i++) {
+        hp_reset();
+        int r1 = ud__set_new_mode(modes[i]);
+        int r2 = ref__set_new_mode(modes[i]);
+        grade2("_set_new_mode", label_idx(i), r1, r2);
+        HP_TAIL("_set_new_mode", label_idx(i));
+        grade2("_set_new_mode.now", label_idx(i), ud__query_new_mode(), ref__query_new_mode());
+    }
+    ud__set_new_mode(save1);
+    ref__set_new_mode(save2);
+}
+
+static void run_heap__query_new_mode(void)
+{
+    install_counting_iph();
+    int save1 = ud__query_new_mode(), save2 = ref__query_new_mode();
+    grade2("_query_new_mode.initial", "0", save1, save2);
+    hp_reset();
+    ud__set_new_mode(1);
+    ref__set_new_mode(1);
+    grade2("_query_new_mode.one", "0", ud__query_new_mode(), ref__query_new_mode());
+    HP_TAIL("_query_new_mode", "0");
+    ud__set_new_mode(save1);
+    ref__set_new_mode(save2);
+    grade2("_query_new_mode.restored", "0", ud__query_new_mode(), ref__query_new_mode());
+}
+#define HEAP_E_NEW_MODE                                                          \
+    { "_set_new_mode", run_heap__set_new_mode },                                 \
+    { "_query_new_mode", run_heap__query_new_mode },
+#else
+#define HEAP_E_NEW_MODE { "_set_new_mode", 0 }, { "_query_new_mode", 0 },
+#endif
+
+/* ---- registry: paste HEAP_HAND_ENTRIES into run_legacy()'s legacy[] ------- */
+#define HEAP_HAND_ENTRIES                                                        \
+    HEAP_E_malloc HEAP_E__malloc_base HEAP_E_calloc HEAP_E__calloc_base          \
+    HEAP_E_realloc HEAP_E__realloc_base HEAP_E_free HEAP_E__free_base            \
+    HEAP_E__msize HEAP_E__expand HEAP_E__recalloc HEAP_E__heapchk HEAP_E__heapmin \
+    HEAP_E__heapwalk HEAP_E__get_heap_handle HEAP_E_NEW_HANDLER HEAP_E_NEW_MODE
+
+
+/* ---- stdlib: inlined from staging/stdlib.c ---- */
+/*
+ * stdlib.c -- guest grader for the `stdlib` batch: the 18 remaining files of
+ * sdk/lib/ucrt/stdlib/ (UCRT_STDLIB_SOURCES), now sdk/lib/rust/ucrt-rust/src/stdlib/.
+ *
+ * #included into a copy of ucrtdiff.c just before `run_legacy()`, so grade2, fnv,
+ * label_idx, _errno/ref__errno, install_counting_iph, g_iph_dll/g_iph_ref and UD_IMP
+ * are in scope. Nothing from another block is used.
+ *
+ * Guards, ONE PER C FILE (each an export that file defines; all confirmed with
+ * `llvm-nm --defined-only build-arm64/libucrt_ref.a | grep ' ref_<name>$'`):
+ *   abs.cpp UCRTDIFF_REF_HAS_abs (abs, _abs64)   labs.cpp    UCRTDIFF_REF_HAS_labs
+ *   llabs.cpp UCRTDIFF_REF_HAS_llabs             imaxabs.cpp UCRTDIFF_REF_HAS_imaxabs
+ *   div.cpp UCRTDIFF_REF_HAS_div                 ldiv.cpp    UCRTDIFF_REF_HAS_ldiv
+ *   lldiv.cpp UCRTDIFF_REF_HAS_lldiv             imaxdiv.cpp UCRTDIFF_REF_HAS_imaxdiv
+ *   rand.cpp UCRTDIFF_REF_HAS_rand (rand, srand) rand_s.cpp  UCRTDIFF_REF_HAS_rand_s
+ *   qsort.cpp UCRTDIFF_REF_HAS_qsort             qsort_s.cpp UCRTDIFF_REF_HAS_qsort_s
+ *   bsearch.cpp UCRTDIFF_REF_HAS_bsearch         bsearch_s.cpp UCRTDIFF_REF_HAS_bsearch_s
+ *   lfind.cpp UCRTDIFF_REF_HAS__lfind            lfind_s.cpp UCRTDIFF_REF_HAS__lfind_s
+ *   lsearch.cpp UCRTDIFF_REF_HAS__lsearch        lsearch_s.cpp UCRTDIFF_REF_HAS__lsearch_s
+ *
+ * The comparator-driven exports are graded on their COMPARATOR CALL SEQUENCE, not
+ * just the result: a recording comparator folds every (a, b) it is handed -- as
+ * element indices relative to the array under test, the key as -2 -- into a running
+ * hash and a count, per side. Callers observe that sequence (side effects, and any
+ * comparator that is not a strict weak order), so it is contract.
+ *
+ * NOTE: tools/gen_ucrt_tier2_cases.py QUARANTINES `rand` from the generated sweep
+ * (2026-09-23: it took a boot down once, timing-dependently). These runners call it
+ * from the runner thread like any other export; if that recurs, hold the two rand
+ * entries out of the table rather than the whole block.
+ *
+ * Process state: `srand` changes the calling thread's rand state on each side (the
+ * runner's own thread, which exits afterwards); both are left seeded with 1, the
+ * value a fresh thread starts from. Nothing else here changes process state. The
+ * trapping divisions (x / 0, MIN / -1) are graded on arm64 ONLY, where `sdiv` does
+ * not trap; on x86 they raise #DE on both sides by design and would end the run.
+ */
+
+
+/* ---- shared, guard-free helpers ------------------------------------------ */
+
+#define SL_ERRNO_SENTINEL 0x5151
+
+static __attribute__((unused)) void sl_reset(void)
+{
+    *_errno() = SL_ERRNO_SENTINEL;
+    *ref__errno() = SL_ERRNO_SENTINEL;
+    g_iph_dll = g_iph_ref = 0;
+}
+
+#define SL_TAIL(fam, lbl)                                                        \
+    do {                                                                         \
+        grade2(fam ".errno", lbl, *_errno(), *ref__errno());                     \
+        grade2(fam ".iph", lbl, g_iph_dll, g_iph_ref);                           \
+    } while (0)
+
+/* The recording comparator. Elements start with an `int` key; the rest of the
+ * element (a tag, padding) is never read. Modes: 0 = ascending by key;
+ * 1 = INCONSISTENT -- the answer comes from a counter-seeded LCG, so the result
+ * depends entirely on the call sequence (memory-safe for this algorithm: every
+ * scan is bounded by lo/hi/mid, not by the answers). */
+static const char *sl_base;
+static const void *sl_key;
+static size_t sl_width;
+static unsigned long long sl_h;
+static long sl_n;
+static int sl_mode;
+static unsigned sl_lcg;
+static int sl_ctx_bad;
+static int sl_ctx_tag;
+
+static __attribute__((unused)) void sl_begin(const void *base, size_t width, const void *key, int mode)
+{
+    sl_base = (const char *)base;
+    sl_width = width;
+    sl_key = key;
+    sl_mode = mode;
+    sl_h = 1469598103934665603ULL;
+    sl_n = 0;
+    sl_lcg = 12345;
+    sl_ctx_bad = 0;
+}
+
+static __attribute__((unused)) long long sl_idx(const void *p)
+{
+    if (p == 0) return -1;
+    if (p == sl_key) return -2;
+    return (long long)(((const char *)p - sl_base) / (long long)sl_width);
+}
+
+/* The key: an int at offset 0, or the single byte of a 1-byte element. */
+static __attribute__((unused)) int sl_val(const void *p)
+{
+    if (!p) return 7;
+    if (sl_width < 4 && p != sl_key) return *(const unsigned char *)p;
+    return *(const int *)p;
+}
+
+static __attribute__((unused)) int __cdecl sl_cmp(const void *a, const void *b)
+{
+    long long ia = sl_idx(a), ib = sl_idx(b);
+    sl_h = (sl_h ^ (unsigned long long)ia) * 1099511628211ULL;
+    sl_h = (sl_h ^ (unsigned long long)ib) * 1099511628211ULL;
+    sl_n++;
+    if (sl_mode == 1) {
+        sl_lcg = sl_lcg * 1103515245u + 12345u;
+        return (int)((sl_lcg >> 16) % 3) - 1;
+    }
+    int x = sl_val(a), y = sl_val(b);
+    return (x > y) - (x < y);
+}
+
+static __attribute__((unused)) int __cdecl sl_cmp_s(void *ctx, const void *a, const void *b)
+{
+    if (ctx != &sl_ctx_tag)
+        sl_ctx_bad++;
+    return sl_cmp(a, b);
+}
+
+typedef int(__cdecl *sl_cmp_t)(const void *, const void *);
+typedef int(__cdecl *sl_cmp_s_t)(void *, const void *, const void *);
+
+/* Deterministic corpus fill: `pat` selects the shape, element i gets its key at
+ * offset 0 and (when width >= 8) its ORIGINAL index at offset 4, so the final
+ * buffer reveals the full permutation even among equal keys. */
+static __attribute__((unused)) void sl_fill(unsigned char *buf, size_t n, size_t width, int pat)
+{
+    unsigned s = 777u + (unsigned)pat * 31u + (unsigned)n;
+    size_t i;
+    memset(buf, 0xee, n * width);
+    for (i = 0; i < n; i++) {
+        int k;
+        s = s * 1103515245u + 12345u;
+        switch (pat) {
+        case 0: k = (int)((s >> 8) % 1000); break;          /* random */
+        case 1: k = (int)i; break;                           /* sorted */
+        case 2: k = (int)(n - i); break;                     /* reversed */
+        case 3: k = 5; break;                                /* all equal */
+        case 4: k = (int)(i % 3); break;                     /* few distinct */
+        case 5: k = (int)(i < n / 2 ? i : n - i); break;     /* organ pipe */
+        default: k = (int)((s >> 8) % 10); break;            /* random, many dups */
+        }
+        if (width >= 4) {
+            memcpy(buf + i * width, &k, sizeof k);
+            if (width >= 8) {
+                int t = (int)i;
+                memcpy(buf + i * width + 4, &t, sizeof t);
+            }
+        } else {
+            buf[i * width] = (unsigned char)k;
+        }
+    }
+}
+
+#define SL_MAXN 1000
+#define SL_MAXW 12
+static unsigned char sl_buf1[SL_MAXN * SL_MAXW + 64], sl_buf2[SL_MAXN * SL_MAXW + 64];
+
+static const size_t sl_ns[] = { 0, 1, 2, 3, 5, 8, 9, 10, 16, 17, 31, 64, 100, 257, 1000 };
+#define SL_NNS (sizeof(sl_ns) / sizeof(sl_ns[0]))
+
+/* ---- abs.cpp / labs.cpp / llabs.cpp / imaxabs.cpp ------------------------ */
+
+static const long long sl_absv[] = {
+    0, 1, -1, 2, -2, 100, -100, 0x7fffffffLL, -0x7fffffffLL, -0x80000000LL,
+    0x7fffffffffffffffLL, -0x7fffffffffffffffLL, (-0x7fffffffffffffffLL - 1), 0x80000000LL,
+    -0x80000001LL, 0x100000000LL,
+};
+#define SL_NABS (sizeof(sl_absv) / sizeof(sl_absv[0]))
+
+#define SL_ABS_RUN(fn, T)                                                        \
+    static void run_stdlib_##fn(void)                                            \
+    {                                                                            \
+        size_t i;                                                                \
+        install_counting_iph();                                                  \
+        for (i = 0; i < SL_NABS; i++) {                                          \
+            T v = (T)sl_absv[i];                                                 \
+            sl_reset();                                                          \
+            grade2(#fn, label_idx(i), (long long)ud_##fn(v), (long long)ref_##fn(v)); \
+            SL_TAIL(#fn, label_idx(i));                                          \
+        }                                                                        \
+    }
+
+#if UCRTDIFF_REF_HAS_abs
+int __cdecl ref_abs(int);
+long long __cdecl ref__abs64(long long);
+extern int(__cdecl *const ud_abs)(int) __asm__(UD_IMP(abs));
+extern long long(__cdecl *const ud__abs64)(long long) __asm__(UD_IMP(_abs64));
+SL_ABS_RUN(abs, int)
+SL_ABS_RUN(_abs64, long long)
+#define SL_E_abs { "abs", run_stdlib_abs }, { "_abs64", run_stdlib__abs64 },
+#else
+#define SL_E_abs { "abs", 0 }, { "_abs64", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_labs
+long __cdecl ref_labs(long);
+extern long(__cdecl *const ud_labs)(long) __asm__(UD_IMP(labs));
+SL_ABS_RUN(labs, long)
+#define SL_E_labs { "labs", run_stdlib_labs },
+#else
+#define SL_E_labs { "labs", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_llabs
+long long __cdecl ref_llabs(long long);
+extern long long(__cdecl *const ud_llabs)(long long) __asm__(UD_IMP(llabs));
+SL_ABS_RUN(llabs, long long)
+#define SL_E_llabs { "llabs", run_stdlib_llabs },
+#else
+#define SL_E_llabs { "llabs", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_imaxabs
+long long __cdecl ref_imaxabs(long long);
+extern long long(__cdecl *const ud_imaxabs)(long long) __asm__(UD_IMP(imaxabs));
+SL_ABS_RUN(imaxabs, long long)
+#define SL_E_imaxabs { "imaxabs", run_stdlib_imaxabs },
+#else
+#define SL_E_imaxabs { "imaxabs", 0 },
+#endif
+
+/* ---- div.cpp / ldiv.cpp / lldiv.cpp / imaxdiv.cpp ------------------------ */
+
+/* The four result structs, spelled out (same layout as div_t & co, so the same
+ * return convention: registers for the 8-byte ones, hidden pointer for the 16-byte
+ * ones on x86, X0:X1 on arm64). */
+typedef struct { int quot, rem; } sl_div_t;
+typedef struct { long quot, rem; } sl_ldiv_t;
+typedef struct { long long quot, rem; } sl_lldiv_t;
+
+static const long long sl_divp[][2] = {
+    { 7, 2 }, { -7, 2 }, { 7, -2 }, { -7, -2 }, { 0, 5 }, { 5, 1 }, { 5, -1 }, { 1, 7 },
+    { -1, 7 }, { 100, 10 }, { 0x7fffffff, 1 }, { 0x7fffffff, -1 }, { -0x80000000LL, 1 },
+    { -0x80000000LL, 2 }, { -0x80000000LL, 0x7fffffff }, { 0x7fffffff, -0x80000000LL },
+    { 123456789, -1000 }, { -3, 4 },
+    /* 64-bit-only magnitudes (the 32-bit forms see them truncated, identically) */
+    { 0x123456789abcLL, 0x1000 }, { -0x7fffffffffffffffLL, 3 }, { (-0x7fffffffffffffffLL - 1), 2 },
+    { (-0x7fffffffffffffffLL - 1), 0x7fffffffffffffffLL }, { 0x7fffffffffffffffLL, -7 },
+#if defined(__aarch64__)
+    /* sdiv: x / 0 == 0 (so rem == x), MIN / -1 == MIN (rem 0). x86 traps. */
+    { 5, 0 }, { -5, 0 }, { 0, 0 }, { -0x80000000LL, -1 }, { (-0x7fffffffffffffffLL - 1), -1 },
+#endif
+};
+#define SL_NDIV (sizeof(sl_divp) / sizeof(sl_divp[0]))
+
+/* MIN / -1 must stay in the width under test: a 32-bit form given the 64-bit
+ * MIN pair sees (0, -1) after truncation, which is harmless; skip pairs whose
+ * truncated divisor is 0 or whose truncated pair is (MIN, -1) off arm64. */
+static __attribute__((unused)) int sl_div_ok32(long long n, long long d)
+{
+#if defined(__aarch64__)
+    (void)n; (void)d;
+    return 1;
+#else
+    int ni = (int)n, di = (int)d;
+    return di != 0 && !(ni == (int)0x80000000 && di == -1);
+#endif
+}
+static __attribute__((unused)) int sl_div_ok64(long long n, long long d)
+{
+#if defined(__aarch64__)
+    (void)n; (void)d;
+    return 1;
+#else
+    return d != 0 && !(n == (-0x7fffffffffffffffLL - 1) && d == -1);
+#endif
+}
+
+#define SL_DIV_RUN(fn, ST, T, OK)                                                \
+    static void run_stdlib_##fn(void)                                            \
+    {                                                                            \
+        size_t i;                                                                \
+        install_counting_iph();                                                  \
+        for (i = 0; i < SL_NDIV; i++) {                                          \
+            T n = (T)sl_divp[i][0], d = (T)sl_divp[i][1];                        \
+            if (!OK((long long)n, (long long)d)) continue;                       \
+            sl_reset();                                                          \
+            ST r1 = ud_##fn(n, d);                                               \
+            ST r2 = ref_##fn(n, d);                                              \
+            grade2(#fn ".quot", label_idx(i), (long long)r1.quot, (long long)r2.quot); \
+            grade2(#fn ".rem", label_idx(i), (long long)r1.rem, (long long)r2.rem);    \
+            SL_TAIL(#fn, label_idx(i));                                          \
+        }                                                                        \
+    }
+
+#if UCRTDIFF_REF_HAS_div
+sl_div_t __cdecl ref_div(int, int);
+extern sl_div_t(__cdecl *const ud_div)(int, int) __asm__(UD_IMP(div));
+SL_DIV_RUN(div, sl_div_t, int, sl_div_ok32)
+#define SL_E_div { "div", run_stdlib_div },
+#else
+#define SL_E_div { "div", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_ldiv
+sl_ldiv_t __cdecl ref_ldiv(long, long);
+extern sl_ldiv_t(__cdecl *const ud_ldiv)(long, long) __asm__(UD_IMP(ldiv));
+SL_DIV_RUN(ldiv, sl_ldiv_t, long, sl_div_ok32)
+#define SL_E_ldiv { "ldiv", run_stdlib_ldiv },
+#else
+#define SL_E_ldiv { "ldiv", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_lldiv
+sl_lldiv_t __cdecl ref_lldiv(long long, long long);
+extern sl_lldiv_t(__cdecl *const ud_lldiv)(long long, long long) __asm__(UD_IMP(lldiv));
+SL_DIV_RUN(lldiv, sl_lldiv_t, long long, sl_div_ok64)
+#define SL_E_lldiv { "lldiv", run_stdlib_lldiv },
+#else
+#define SL_E_lldiv { "lldiv", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_imaxdiv
+sl_lldiv_t __cdecl ref_imaxdiv(long long, long long);
+extern sl_lldiv_t(__cdecl *const ud_imaxdiv)(long long, long long) __asm__(UD_IMP(imaxdiv));
+SL_DIV_RUN(imaxdiv, sl_lldiv_t, long long, sl_div_ok64)
+#define SL_E_imaxdiv { "imaxdiv", run_stdlib_imaxdiv },
+#else
+#define SL_E_imaxdiv { "imaxdiv", 0 },
+#endif
+
+/* ---- rand.cpp ------------------------------------------------------------ */
+#if UCRTDIFF_REF_HAS_rand
+void __cdecl ref_srand(unsigned);
+int __cdecl ref_rand(void);
+extern void(__cdecl *const ud_srand)(unsigned) __asm__(UD_IMP(srand));
+extern int(__cdecl *const ud_rand)(void) __asm__(UD_IMP(rand));
+
+static const unsigned sl_seeds[] = { 0, 1, 2, 42, 12345, 0x7fffffffu, 0x80000000u, 0xffffffffu };
+
+/* Each side keeps its own per-thread state, so the two sequences run
+ * independently: seed both, then draw from both. */
+static void sl_rand_seq(const char *fam, size_t si)
+{
+    unsigned long long h1 = 1469598103934665603ULL, h2 = h1;
+    int i;
+    for (i = 0; i < 1000; i++) {
+        int a = ud_rand(), b = ref_rand();
+        if (i < 6)
+            grade2(fam, label_idx(si * 10 + (size_t)i), a, b);
+        h1 = (h1 ^ (unsigned)a) * 1099511628211ULL;
+        h2 = (h2 ^ (unsigned)b) * 1099511628211ULL;
+    }
+    grade2("rand.seq1000", label_idx(si), (long long)h1, (long long)h2);
+}
+
+static void run_stdlib_rand(void)
+{
+    size_t si;
+    install_counting_iph();
+    for (si = 0; si < sizeof(sl_seeds) / sizeof(sl_seeds[0]); si++) {
+        sl_reset();
+        ud_srand(sl_seeds[si]);
+        ref_srand(sl_seeds[si]);
+        sl_rand_seq("rand", si);
+        SL_TAIL("rand", label_idx(si));
+    }
+    ud_srand(1);
+    ref_srand(1);
+}
+
+static void run_stdlib_srand(void)
+{
+    install_counting_iph();
+    /* Re-seeding restarts the sequence: two identical seeds, same draws. */
+    sl_reset();
+    ud_srand(99);
+    ref_srand(99);
+    int a1 = ud_rand(), b1 = ref_rand();
+    ud_srand(99);
+    ref_srand(99);
+    int a2 = ud_rand(), b2 = ref_rand();
+    grade2("srand.first", "0", a1, b1);
+    grade2("srand.reseed", "0", a1 == a2, b1 == b2);
+    SL_TAIL("srand", "0");
+    ud_srand(1);
+    ref_srand(1);
+    sl_rand_seq("srand.one", 0);
+    ud_srand(1);
+    ref_srand(1);
+}
+#define SL_E_rand { "rand", run_stdlib_rand }, { "srand", run_stdlib_srand },
+#else
+#define SL_E_rand { "rand", 0 }, { "srand", 0 },
+#endif
+
+/* ---- rand_s.cpp ---------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS_rand_s
+int __cdecl ref_rand_s(unsigned *);
+extern int(__cdecl *const ud_rand_s)(unsigned *) __asm__(UD_IMP(rand_s));
+static void run_stdlib_rand_s(void)
+{
+    unsigned v1, v2;
+    int i;
+    install_counting_iph();
+    /* NULL: _VALIDATE_RETURN_ERRCODE -> EINVAL returned AND in errno, handler. */
+    sl_reset();
+    grade2("rand_s.null", "0", ud_rand_s(0), ref_rand_s(0));
+    SL_TAIL("rand_s.null", "0");
+    /* Valid: 0, errno untouched. The value is random on both sides and is not
+     * compared; that it was WRITTEN is (a 2^-32 chance of a false DIFF). */
+    for (i = 0; i < 8; i++) {
+        v1 = v2 = 0xa5a5a5a5u;
+        sl_reset();
+        grade2("rand_s", label_idx((size_t)i), ud_rand_s(&v1), ref_rand_s(&v2));
+        SL_TAIL("rand_s", label_idx((size_t)i));
+        grade2("rand_s.written", label_idx((size_t)i), v1 != 0xa5a5a5a5u, v2 != 0xa5a5a5a5u);
+    }
+}
+#define SL_E_rand_s { "rand_s", run_stdlib_rand_s },
+#else
+#define SL_E_rand_s { "rand_s", 0 },
+#endif
+
+/* ---- qsort.cpp / qsort_s.cpp --------------------------------------------- */
+
+/* One qsort call per side on identical copies; grades the sorted buffer (whole,
+ * sentinel tail included), the comparator call count and the call-sequence hash. */
+#define SL_QS_CASE(fam, lbl, CALL1, CALL2, n, width, pat, mode)                  \
+    do {                                                                         \
+        long long h1, c1, x1;                                                    \
+        sl_fill(sl_buf1, (n), (width), (pat));                                   \
+        sl_fill(sl_buf2, (n), (width), (pat));                                   \
+        memset(sl_buf1 + (n) * (width), 0xdd, 64);                               \
+        memset(sl_buf2 + (n) * (width), 0xdd, 64);                               \
+        sl_reset();                                                              \
+        sl_begin(sl_buf1, (width), 0, (mode));                                   \
+        CALL1;                                                                   \
+        h1 = (long long)sl_h; c1 = sl_n; x1 = sl_ctx_bad;                        \
+        sl_begin(sl_buf2, (width), 0, (mode));                                   \
+        CALL2;                                                                   \
+        grade2(fam ".buf", lbl, fnv(sl_buf1, (n) * (width) + 64),                \
+               fnv(sl_buf2, (n) * (width) + 64));                                \
+        grade2(fam ".ncmp", lbl, c1, sl_n);                                      \
+        grade2(fam ".seq", lbl, h1, (long long)sl_h);                            \
+        grade2(fam ".ctx", lbl, x1, sl_ctx_bad);                                 \
+        SL_TAIL(fam, lbl);                                                       \
+    } while (0)
+
+/* Validation, in the C's order: base || num == 0, width > 0, comp. */
+static const struct { int nullbase; size_t num, width; int nullcmp; } sl_qsv[] = {
+    { 1, 3, 4, 0 }, { 1, 0, 4, 0 }, { 0, 3, 0, 0 }, { 0, 3, 4, 1 }, { 0, 1, 4, 1 },
+    { 0, 0, 4, 1 }, { 1, 0, 0, 0 }, { 1, 3, 0, 1 }, { 0, 0, 0, 0 },
+};
+#define SL_NQSV (sizeof(sl_qsv) / sizeof(sl_qsv[0]))
+
+#define SL_QS_BODY(fam, CALLFMT1, CALLFMT2)                                      \
+    {                                                                            \
+        static const size_t widths[] = { 8, 4, 1, 12 };                          \
+        size_t ni, pat, wi, lblc = 0;                                            \
+        install_counting_iph();                                                  \
+        for (ni = 0; ni < SL_NNS; ni++)                                          \
+            for (pat = 0; pat < 7; pat++) {                                      \
+                size_t n = sl_ns[ni];                                            \
+                SL_QS_CASE(fam, label_idx(lblc++ % 1000),                        \
+                           CALLFMT1(sl_buf1, n, 8), CALLFMT2(sl_buf2, n, 8),     \
+                           n, (size_t)8, (int)pat, 0);                           \
+            }                                                                    \
+        for (wi = 1; wi < 4; wi++)                                               \
+            for (ni = 0; ni < SL_NNS; ni++) {                                    \
+                size_t n = sl_ns[ni], w = widths[wi];                            \
+                SL_QS_CASE(fam ".w", label_idx(lblc++ % 1000),                   \
+                           CALLFMT1(sl_buf1, n, w), CALLFMT2(sl_buf2, n, w),     \
+                           n, w, 0, 0);                                          \
+            }                                                                    \
+        /* An inconsistent comparator: the outcome IS the call sequence. */      \
+        for (ni = 0; ni < SL_NNS && sl_ns[ni] <= 257; ni++)                      \
+            for (pat = 0; pat < 7; pat += 3) {                                   \
+                size_t n = sl_ns[ni];                                            \
+                SL_QS_CASE(fam ".incons", label_idx(lblc++ % 1000),              \
+                           CALLFMT1(sl_buf1, n, 8), CALLFMT2(sl_buf2, n, 8),     \
+                           n, (size_t)8, (int)pat, 1);                           \
+            }                                                                    \
+        for (ni = 0; ni < SL_NQSV; ni++) {                                       \
+            void *b1 = sl_qsv[ni].nullbase ? 0 : (void *)sl_buf1;                \
+            void *b2 = sl_qsv[ni].nullbase ? 0 : (void *)sl_buf2;                \
+            size_t n = sl_qsv[ni].num, w = sl_qsv[ni].width;                     \
+            int nc = sl_qsv[ni].nullcmp;                                         \
+            sl_fill(sl_buf1, 3, 4, 2);                                           \
+            sl_fill(sl_buf2, 3, 4, 2);                                           \
+            sl_reset();                                                          \
+            sl_begin(sl_buf1, 4, 0, 0);                                          \
+            SL_QSV_CALL1(b1, n, w, nc);                                          \
+            long long c1 = sl_n;                                                 \
+            sl_begin(sl_buf2, 4, 0, 0);                                          \
+            SL_QSV_CALL2(b2, n, w, nc);                                          \
+            grade2(fam ".inval.ncmp", label_idx(ni), c1, sl_n);                  \
+            grade2(fam ".inval.buf", label_idx(ni), fnv(sl_buf1, 12), fnv(sl_buf2, 12)); \
+            SL_TAIL(fam ".inval", label_idx(ni));                                \
+        }                                                                        \
+    }
+
+#if UCRTDIFF_REF_HAS_qsort
+void __cdecl ref_qsort(void *, size_t, size_t, sl_cmp_t);
+extern void(__cdecl *const ud_qsort)(void *, size_t, size_t, sl_cmp_t) __asm__(UD_IMP(qsort));
+#define SL_QA1(b, n, w) ud_qsort((b), (n), (w), sl_cmp)
+#define SL_QA2(b, n, w) ref_qsort((b), (n), (w), sl_cmp)
+#define SL_QSV_CALL1(b, n, w, nc) ud_qsort((b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+#define SL_QSV_CALL2(b, n, w, nc) ref_qsort((b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+static void run_stdlib_qsort(void) SL_QS_BODY("qsort", SL_QA1, SL_QA2)
+#undef SL_QSV_CALL1
+#undef SL_QSV_CALL2
+#define SL_E_qsort { "qsort", run_stdlib_qsort },
+#else
+#define SL_E_qsort { "qsort", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_qsort_s
+void __cdecl ref_qsort_s(void *, size_t, size_t, sl_cmp_s_t, void *);
+extern void(__cdecl *const ud_qsort_s)(void *, size_t, size_t, sl_cmp_s_t, void *)
+    __asm__(UD_IMP(qsort_s));
+#define SL_QB1(b, n, w) ud_qsort_s((b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_QB2(b, n, w) ref_qsort_s((b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_QSV_CALL1(b, n, w, nc) ud_qsort_s((b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+#define SL_QSV_CALL2(b, n, w, nc) ref_qsort_s((b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+static void run_stdlib_qsort_s(void) SL_QS_BODY("qsort_s", SL_QB1, SL_QB2)
+#undef SL_QSV_CALL1
+#undef SL_QSV_CALL2
+#define SL_E_qsort_s { "qsort_s", run_stdlib_qsort_s },
+#else
+#define SL_E_qsort_s { "qsort_s", 0 },
+#endif
+
+/* ---- bsearch.cpp / bsearch_s.cpp ----------------------------------------- */
+
+/* Sorted arrays (keys 0,2,4,... and a duplicate-heavy one), every key from -1 to
+ * 2n+1: the returned element, the call count and the call sequence. Plus the
+ * validation rows and the NULL-base/num-0 case (valid: NULL, no handler). */
+#define SL_BS_BODY(fam, C1, C2)                                                  \
+    {                                                                            \
+        static const size_t ns[] = { 0, 1, 2, 3, 4, 7, 8, 15, 16, 33 };          \
+        size_t ni, lblc = 0;                                                     \
+        int dup;                                                                 \
+        install_counting_iph();                                                  \
+        for (dup = 0; dup < 2; dup++)                                            \
+            for (ni = 0; ni < sizeof(ns) / sizeof(ns[0]); ni++) {                \
+                size_t n = ns[ni], i;                                            \
+                int key;                                                         \
+                for (i = 0; i < n; i++) {                                        \
+                    int k = dup ? (int)(i / 3) * 2 : (int)i * 2;                 \
+                    memcpy(sl_buf1 + i * 8, &k, 4);                              \
+                    memcpy(sl_buf2 + i * 8, &k, 4);                              \
+                }                                                                \
+                for (key = -1; key <= (int)(2 * n + 1); key++) {                 \
+                    sl_reset();                                                  \
+                    sl_begin(sl_buf1, 8, &key, 0);                               \
+                    void *r1 = C1(&key, sl_buf1, n, 8);                          \
+                    long long i1 = sl_idx(r1), c1 = sl_n, h1 = (long long)sl_h;  \
+                    sl_begin(sl_buf2, 8, &key, 0);                               \
+                    void *r2 = C2(&key, sl_buf2, n, 8);                          \
+                    const char *lbl = label_idx(lblc++ % 1000);                  \
+                    grade2(fam ".idx", lbl, i1, sl_idx(r2));                     \
+                    grade2(fam ".ncmp", lbl, c1, sl_n);                          \
+                    grade2(fam ".seq", lbl, h1, (long long)sl_h);                \
+                    SL_TAIL(fam, lbl);                                           \
+                }                                                                \
+            }                                                                    \
+        /* NULL key is allowed (never dereferenced by bsearch itself). */        \
+        {                                                                        \
+            int k = 7;                                                           \
+            memcpy(sl_buf1, &k, 4); memcpy(sl_buf2, &k, 4);                      \
+            sl_reset();                                                          \
+            sl_begin(sl_buf1, 8, 0, 0);                                          \
+            long long i1 = sl_idx(C1(0, sl_buf1, 1, 8));                         \
+            sl_begin(sl_buf2, 8, 0, 0);                                          \
+            grade2(fam ".nullkey", "0", i1, sl_idx(C2(0, sl_buf2, 1, 8)));       \
+            SL_TAIL(fam ".nullkey", "0");                                        \
+        }                                                                        \
+        for (ni = 0; ni < SL_NQSV; ni++) {                                       \
+            int key = 2;                                                         \
+            void *b1 = sl_qsv[ni].nullbase ? 0 : (void *)sl_buf1;                \
+            void *b2 = sl_qsv[ni].nullbase ? 0 : (void *)sl_buf2;                \
+            sl_reset();                                                          \
+            sl_begin(sl_buf1, 4, &key, 0);                                       \
+            void *r1 = SL_BSV_CALL1(&key, b1, sl_qsv[ni].num, sl_qsv[ni].width, sl_qsv[ni].nullcmp); \
+            long long c1 = sl_n;                                                 \
+            sl_begin(sl_buf2, 4, &key, 0);                                       \
+            void *r2 = SL_BSV_CALL2(&key, b2, sl_qsv[ni].num, sl_qsv[ni].width, sl_qsv[ni].nullcmp); \
+            grade2(fam ".inval.null", label_idx(ni), r1 == 0, r2 == 0);          \
+            grade2(fam ".inval.ncmp", label_idx(ni), c1, sl_n);                  \
+            SL_TAIL(fam ".inval", label_idx(ni));                                \
+        }                                                                        \
+    }
+
+#if UCRTDIFF_REF_HAS_bsearch
+void *__cdecl ref_bsearch(const void *, const void *, size_t, size_t, sl_cmp_t);
+extern void *(__cdecl *const ud_bsearch)(const void *, const void *, size_t, size_t, sl_cmp_t)
+    __asm__(UD_IMP(bsearch));
+#define SL_BA1(k, b, n, w) ud_bsearch((k), (b), (n), (w), sl_cmp)
+#define SL_BA2(k, b, n, w) ref_bsearch((k), (b), (n), (w), sl_cmp)
+#define SL_BSV_CALL1(k, b, n, w, nc) ud_bsearch((k), (b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+#define SL_BSV_CALL2(k, b, n, w, nc) ref_bsearch((k), (b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+static void run_stdlib_bsearch(void) SL_BS_BODY("bsearch", SL_BA1, SL_BA2)
+#undef SL_BSV_CALL1
+#undef SL_BSV_CALL2
+#define SL_E_bsearch { "bsearch", run_stdlib_bsearch },
+#else
+#define SL_E_bsearch { "bsearch", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS_bsearch_s
+void *__cdecl ref_bsearch_s(const void *, const void *, size_t, size_t, sl_cmp_s_t, void *);
+extern void *(__cdecl *const ud_bsearch_s)(const void *, const void *, size_t, size_t, sl_cmp_s_t,
+                                           void *) __asm__(UD_IMP(bsearch_s));
+#define SL_BB1(k, b, n, w) ud_bsearch_s((k), (b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_BB2(k, b, n, w) ref_bsearch_s((k), (b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_BSV_CALL1(k, b, n, w, nc) ud_bsearch_s((k), (b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+#define SL_BSV_CALL2(k, b, n, w, nc) ref_bsearch_s((k), (b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+static void run_stdlib_bsearch_s(void) SL_BS_BODY("bsearch_s", SL_BB1, SL_BB2)
+#undef SL_BSV_CALL1
+#undef SL_BSV_CALL2
+#define SL_E_bsearch_s { "bsearch_s", run_stdlib_bsearch_s },
+#else
+#define SL_E_bsearch_s { "bsearch_s", 0 },
+#endif
+
+/* ---- lfind.cpp / lfind_s.cpp / lsearch.cpp / lsearch_s.cpp --------------- */
+
+/* Validation rows for the linear searches, in the C's order: key, num,
+ * base (|| *num == 0 for _lfind only), width, compare. */
+static const struct { int nullkey, nullnum, nullbase; unsigned num; unsigned width; int nullcmp; } sl_lv[] = {
+    { 1, 0, 0, 3, 4, 0 }, { 0, 1, 0, 3, 4, 0 }, { 0, 0, 1, 3, 4, 0 }, { 0, 0, 1, 0, 4, 0 },
+    { 0, 0, 0, 3, 0, 0 }, { 0, 0, 0, 3, 4, 1 }, { 1, 1, 1, 0, 0, 1 }, { 0, 0, 1, 0, 0, 0 },
+};
+#define SL_NLV (sizeof(sl_lv) / sizeof(sl_lv[0]))
+
+/* The linear searches over an unsorted, duplicate-bearing array: every key
+ * present and absent, several counts; for _lsearch the appended element, the
+ * grown count and the whole buffer (sentinel tail) are graded too. */
+#define SL_LS_BODY(fam, C1, C2, V1, V2)                                          \
+    {                                                                            \
+        static const unsigned ns[] = { 0, 1, 2, 5, 9, 20 };                      \
+        size_t ni, lblc = 0;                                                     \
+        install_counting_iph();                                                  \
+        for (ni = 0; ni < sizeof(ns) / sizeof(ns[0]); ni++) {                    \
+            int key;                                                             \
+            for (key = -1; key <= 8; key++) {                                    \
+                unsigned n1 = ns[ni], n2 = ns[ni];                               \
+                sl_fill(sl_buf1, n1, 8, 6);                                      \
+                sl_fill(sl_buf2, n2, 8, 6);                                      \
+                memset(sl_buf1 + n1 * 8, 0xdd, 64);                              \
+                memset(sl_buf2 + n2 * 8, 0xdd, 64);                              \
+                sl_reset();                                                      \
+                sl_begin(sl_buf1, 8, &key, 0);                                   \
+                void *r1 = C1(&key, sl_buf1, &n1, 8);                            \
+                long long i1 = sl_idx(r1), c1 = sl_n, h1 = (long long)sl_h;      \
+                sl_begin(sl_buf2, 8, &key, 0);                                   \
+                void *r2 = C2(&key, sl_buf2, &n2, 8);                            \
+                const char *lbl = label_idx(lblc++ % 1000);                      \
+                grade2(fam ".idx", lbl, i1, sl_idx(r2));                         \
+                grade2(fam ".num", lbl, n1, n2);                                 \
+                grade2(fam ".ncmp", lbl, c1, sl_n);                              \
+                grade2(fam ".seq", lbl, h1, (long long)sl_h);                    \
+                grade2(fam ".buf", lbl, fnv(sl_buf1, ns[ni] * 8 + 64),           \
+                       fnv(sl_buf2, ns[ni] * 8 + 64));                           \
+                SL_TAIL(fam, lbl);                                               \
+            }                                                                    \
+        }                                                                        \
+        for (ni = 0; ni < SL_NLV; ni++) {                                        \
+            int key = 3;                                                         \
+            unsigned n1 = sl_lv[ni].num, n2 = sl_lv[ni].num;                     \
+            sl_fill(sl_buf1, 3, 4, 6);                                           \
+            sl_fill(sl_buf2, 3, 4, 6);                                           \
+            memset(sl_buf1 + 12, 0xdd, 16);                                      \
+            memset(sl_buf2 + 12, 0xdd, 16);                                      \
+            sl_reset();                                                          \
+            sl_begin(sl_buf1, 4, &key, 0);                                       \
+            void *r1 = V1(sl_lv[ni].nullkey ? 0 : &key, sl_lv[ni].nullbase ? 0 : sl_buf1, \
+                          sl_lv[ni].nullnum ? 0 : &n1, sl_lv[ni].width, sl_lv[ni].nullcmp); \
+            long long c1 = sl_n;                                                 \
+            sl_begin(sl_buf2, 4, &key, 0);                                       \
+            void *r2 = V2(sl_lv[ni].nullkey ? 0 : &key, sl_lv[ni].nullbase ? 0 : sl_buf2, \
+                          sl_lv[ni].nullnum ? 0 : &n2, sl_lv[ni].width, sl_lv[ni].nullcmp); \
+            grade2(fam ".inval.null", label_idx(ni), r1 == 0, r2 == 0);          \
+            grade2(fam ".inval.num", label_idx(ni), n1, n2);                     \
+            grade2(fam ".inval.ncmp", label_idx(ni), c1, sl_n);                  \
+            grade2(fam ".inval.buf", label_idx(ni), fnv(sl_buf1, 28), fnv(sl_buf2, 28)); \
+            SL_TAIL(fam ".inval", label_idx(ni));                                \
+        }                                                                        \
+    }
+
+#if UCRTDIFF_REF_HAS__lfind
+void *__cdecl ref__lfind(const void *, const void *, unsigned *, unsigned, sl_cmp_t);
+extern void *(__cdecl *const ud__lfind)(const void *, const void *, unsigned *, unsigned, sl_cmp_t)
+    __asm__(UD_IMP(_lfind));
+#define SL_LFA1(k, b, n, w) ud__lfind((k), (b), (n), (w), sl_cmp)
+#define SL_LFA2(k, b, n, w) ref__lfind((k), (b), (n), (w), sl_cmp)
+#define SL_LFV1(k, b, n, w, nc) ud__lfind((k), (b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+#define SL_LFV2(k, b, n, w, nc) ref__lfind((k), (b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+static void run_stdlib__lfind(void) SL_LS_BODY("_lfind", SL_LFA1, SL_LFA2, SL_LFV1, SL_LFV2)
+#define SL_E__lfind { "_lfind", run_stdlib__lfind },
+#else
+#define SL_E__lfind { "_lfind", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__lfind_s
+void *__cdecl ref__lfind_s(const void *, const void *, unsigned *, size_t, sl_cmp_s_t, void *);
+extern void *(__cdecl *const ud__lfind_s)(const void *, const void *, unsigned *, size_t, sl_cmp_s_t,
+                                          void *) __asm__(UD_IMP(_lfind_s));
+#define SL_LFB1(k, b, n, w) ud__lfind_s((k), (b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_LFB2(k, b, n, w) ref__lfind_s((k), (b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_LFBV1(k, b, n, w, nc) ud__lfind_s((k), (b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+#define SL_LFBV2(k, b, n, w, nc) ref__lfind_s((k), (b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+static void run_stdlib__lfind_s(void) SL_LS_BODY("_lfind_s", SL_LFB1, SL_LFB2, SL_LFBV1, SL_LFBV2)
+#define SL_E__lfind_s { "_lfind_s", run_stdlib__lfind_s },
+#else
+#define SL_E__lfind_s { "_lfind_s", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__lsearch
+void *__cdecl ref__lsearch(const void *, void *, unsigned *, unsigned, sl_cmp_t);
+extern void *(__cdecl *const ud__lsearch)(const void *, void *, unsigned *, unsigned, sl_cmp_t)
+    __asm__(UD_IMP(_lsearch));
+#define SL_LSA1(k, b, n, w) ud__lsearch((k), (b), (n), (w), sl_cmp)
+#define SL_LSA2(k, b, n, w) ref__lsearch((k), (b), (n), (w), sl_cmp)
+#define SL_LSV1(k, b, n, w, nc) ud__lsearch((k), (b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+#define SL_LSV2(k, b, n, w, nc) ref__lsearch((k), (b), (n), (w), (nc) ? (sl_cmp_t)0 : sl_cmp)
+static void run_stdlib__lsearch(void) SL_LS_BODY("_lsearch", SL_LSA1, SL_LSA2, SL_LSV1, SL_LSV2)
+#define SL_E__lsearch { "_lsearch", run_stdlib__lsearch },
+#else
+#define SL_E__lsearch { "_lsearch", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__lsearch_s
+void *__cdecl ref__lsearch_s(const void *, void *, unsigned *, size_t, sl_cmp_s_t, void *);
+extern void *(__cdecl *const ud__lsearch_s)(const void *, void *, unsigned *, size_t, sl_cmp_s_t,
+                                            void *) __asm__(UD_IMP(_lsearch_s));
+#define SL_LSB1(k, b, n, w) ud__lsearch_s((k), (b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_LSB2(k, b, n, w) ref__lsearch_s((k), (b), (n), (w), sl_cmp_s, &sl_ctx_tag)
+#define SL_LSBV1(k, b, n, w, nc) ud__lsearch_s((k), (b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+#define SL_LSBV2(k, b, n, w, nc) ref__lsearch_s((k), (b), (n), (w), (nc) ? (sl_cmp_s_t)0 : sl_cmp_s, &sl_ctx_tag)
+static void run_stdlib__lsearch_s(void) SL_LS_BODY("_lsearch_s", SL_LSB1, SL_LSB2, SL_LSBV1, SL_LSBV2)
+#define SL_E__lsearch_s { "_lsearch_s", run_stdlib__lsearch_s },
+#else
+#define SL_E__lsearch_s { "_lsearch_s", 0 },
+#endif
+
+/* ---- registry: paste STDLIB_HAND_ENTRIES into run_legacy()'s legacy[] ----- */
+#define STDLIB_HAND_ENTRIES                                                      \
+    SL_E_abs SL_E_labs SL_E_llabs SL_E_imaxabs SL_E_div SL_E_ldiv SL_E_lldiv     \
+    SL_E_imaxdiv SL_E_rand SL_E_rand_s SL_E_qsort SL_E_qsort_s SL_E_bsearch      \
+    SL_E_bsearch_s SL_E__lfind SL_E__lfind_s SL_E__lsearch SL_E__lsearch_s
+
+
+/* ---- lowio: inlined from staging/lowio.c ---- */
+/*
+ * staging/lowio.c -- guest grader for the rest of `lowio/`
+ * (sdk/lib/rust/ucrt-rust/src/lowio/{read,write,lseek,close,dup,chsize,setmode,
+ * mktemp,small}.rs): every export of write.cpp read.cpp lseek.cpp mktemp.cpp
+ * chsize.cpp setmode.cpp locking.cpp dup2.cpp close.cpp dup.cpp umask.cpp
+ * filelength.cpp eof.cpp txtmode.cpp creat.cpp commit.cpp isatty.cpp
+ * telli64.cpp tell.cpp.
+ *
+ * One guard per C file (each is deleted on its own), named after one export of
+ * that file:
+ *   write.cpp      UCRTDIFF_REF_HAS__write        _write
+ *   read.cpp       UCRTDIFF_REF_HAS__read         _read
+ *   lseek.cpp      UCRTDIFF_REF_HAS__lseek        _lseek, _lseeki64
+ *   mktemp.cpp     UCRTDIFF_REF_HAS__mktemp       _mktemp, _wmktemp, _mktemp_s, _wmktemp_s
+ *   chsize.cpp     UCRTDIFF_REF_HAS__chsize       _chsize, _chsize_s
+ *   setmode.cpp    UCRTDIFF_REF_HAS__setmode      _setmode, _set_fmode, _get_fmode
+ *   locking.cpp    UCRTDIFF_REF_HAS__locking      _locking
+ *   dup2.cpp       UCRTDIFF_REF_HAS__dup2         _dup2
+ *   close.cpp      UCRTDIFF_REF_HAS__close        _close
+ *   dup.cpp        UCRTDIFF_REF_HAS__dup          _dup
+ *   umask.cpp      UCRTDIFF_REF_HAS__umask        _umask, _umask_s
+ *   filelength.cpp UCRTDIFF_REF_HAS__filelength   _filelength, _filelengthi64
+ *   eof.cpp        UCRTDIFF_REF_HAS__eof          _eof
+ *   txtmode.cpp    UCRTDIFF_REF_HAS___p__fmode    __p__fmode
+ *   creat.cpp      UCRTDIFF_REF_HAS__creat        _creat, _wcreat
+ *   commit.cpp     UCRTDIFF_REF_HAS__commit       _commit
+ *   isatty.cpp     UCRTDIFF_REF_HAS__isatty       _isatty
+ *   telli64.cpp    UCRTDIFF_REF_HAS__telli64      _telli64
+ *   tell.cpp       UCRTDIFF_REF_HAS__tell         _tell
+ *
+ * Fixtures. Each side works on its OWN files (`sd_path("lw_<leaf>", side)`),
+ * wrapped into its OWN lowio table with that side's `_open_osfhandle`, and closes
+ * them with its own `_close`. File contents, sizes and positions are read back
+ * with Win32 on a separate handle / the handle the CRT was given, independently
+ * of both CRTs. Pipes (CreatePipe; all data written and the write end CLOSED
+ * before any read, so no read can block) and the NUL device (FILE_TYPE_CHAR, so
+ * FDEV) give the non-seekable paths. The harness has no console, so the console
+ * paths (ReadConsoleW, the double-translated writes) are not reachable here.
+ *
+ * Helpers from other lowio files (`_open_osfhandle`, `_close`, `_setmode`,
+ * `_read`, `_write`, `_get_osfhandle`, `_get_fmode`) are used for SETUP only,
+ * always on both sides; once their own C file is taken over the reference name
+ * resolves to our Rust copy through the refalias, which is still the ref side's
+ * own table.
+ *
+ * Process state: `_fmode` and the umask are saved and restored on both sides
+ * inside their runners. fds 0/1/2 are never used. `_dup2` grows each side's
+ * table to fd 4000 once (permanent, harmless). `_locking`'s _LK_LOCK conflict
+ * case costs ~9 s per side (Microsoft retries ten times, a second apart);
+ * compile with -DLOWIO_SKIP_SLOW_LOCK to leave it out.
+ */
+
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+
+#if UCRTDIFF_REF_HAS__write || UCRTDIFF_REF_HAS__read || UCRTDIFF_REF_HAS__lseek ||           \
+    UCRTDIFF_REF_HAS__mktemp || UCRTDIFF_REF_HAS__chsize || UCRTDIFF_REF_HAS__setmode ||       \
+    UCRTDIFF_REF_HAS__locking || UCRTDIFF_REF_HAS__dup2 || UCRTDIFF_REF_HAS__close ||          \
+    UCRTDIFF_REF_HAS__dup || UCRTDIFF_REF_HAS__umask || UCRTDIFF_REF_HAS__filelength ||        \
+    UCRTDIFF_REF_HAS__eof || UCRTDIFF_REF_HAS___p__fmode || UCRTDIFF_REF_HAS__creat ||         \
+    UCRTDIFF_REF_HAS__commit || UCRTDIFF_REF_HAS__isatty || UCRTDIFF_REF_HAS__telli64 ||       \
+    UCRTDIFF_REF_HAS__tell
+#define LW_ANY 1
+#else
+#define LW_ANY 0
+#endif
+
+#if LW_ANY
+/* ==== shared fixture helpers (compiled when any lowio guard is on) ==== */
+int *__cdecl ref__errno(void);
+unsigned long *__cdecl ref___doserrno(void);
+intptr_t __cdecl ref__open_osfhandle(intptr_t, int);
+int __cdecl ref__close(int);
+extern intptr_t(__cdecl *const ud__open_osfhandle)(intptr_t, int) __asm__(UD_IMP(_open_osfhandle));
+extern int(__cdecl *const ud__close)(int) __asm__(UD_IMP(_close));
+
+#define LW_UNUSED __attribute__((unused))
+#define LW_N(a) (int)(sizeof(a) / sizeof((a)[0]))
+#define LW_BAD_FD 8000 /* above any table either side has grown to (but below _NHANDLE_) */
+
+LW_UNUSED static void lw_reset(void)
+{
+    *_errno() = 0;
+    *ref__errno() = 0;
+    *__doserrno() = 0;
+    *ref___doserrno() = 0;
+    g_iph_dll = g_iph_ref = 0;
+}
+
+/* Return, errno, _doserrno and the handler count of one call on each side. Each
+ * side's errno is read straight after its own call. */
+#define LW_ROW(fam, lbl, CALL_DLL, CALL_REF) do {                                   \
+        lw_reset();                                                                  \
+        long long lw_r1_ = (long long)(CALL_DLL);                                    \
+        long long lw_e1_ = *_errno(), lw_d1_ = (long long)*__doserrno();             \
+        long long lw_i1_ = g_iph_dll;                                                \
+        long long lw_r2_ = (long long)(CALL_REF);                                    \
+        long long lw_e2_ = *ref__errno(), lw_d2_ = (long long)*ref___doserrno();     \
+        grade2(fam, lbl, lw_r1_, lw_r2_);                                            \
+        grade2(fam ".errno", lbl, lw_e1_, lw_e2_);                                   \
+        grade2(fam ".doserrno", lbl, lw_d1_, lw_d2_);                                \
+        grade2(fam ".iph", lbl, lw_i1_, g_iph_ref);                                  \
+    } while (0)
+
+/* The same for a call returning a NEW fd: the fd is kept in v1/v2, and graded
+ * as "valid" (0) or its failure value, since the two tables number differently. */
+#define LW_ROW_FD(fam, lbl, v1, CALL_DLL, v2, CALL_REF)                             \
+    LW_ROW(fam, lbl, ((v1) = (CALL_DLL)) >= 0 ? 0 : (v1), ((v2) = (CALL_REF)) >= 0 ? 0 : (v2))
+
+LW_UNUSED static const char *lw_lbl(const char *lbl, int i)
+{
+    static char b[96];
+    int n;
+    lstrcpynA(b, lbl, 80);
+    n = lstrlenA(b);
+    b[n++] = '#';
+    if (i >= 10)
+        b[n++] = (char)('0' + (i / 10) % 10);
+    b[n++] = (char)('0' + i % 10);
+    b[n] = 0;
+    return b;
+}
+
+LW_UNUSED static const char *lw_path(const char *leaf, int side)
+{
+    static char b[2][MAX_PATH + 64];
+    char l[64];
+    lstrcpyA(l, "lw_");
+    lstrcpynA(l + 3, leaf, 56);
+    lstrcpyA(b[side], sd_path(l, side));
+    return b[side];
+}
+
+LW_UNUSED static void lw_wpath(const char *leaf, int side, wchar_t *out, int cap)
+{
+    const char *p = lw_path(leaf, side);
+    int i;
+    for (i = 0; p[i] && i < cap - 1; i++)
+        out[i] = (wchar_t)(unsigned char)p[i];
+    out[i] = 0;
+}
+
+LW_UNUSED static void lw_del(const char *leaf, int side)
+{
+    SetFileAttributesA(lw_path(leaf, side), FILE_ATTRIBUTE_NORMAL);
+    DeleteFileA(lw_path(leaf, side));
+}
+
+/* Creates (or truncates) the side's file with exactly these bytes. */
+LW_UNUSED static int lw_put(const char *leaf, int side, const void *data, DWORD n)
+{
+    DWORD w = 0;
+    BOOL ok = TRUE;
+    HANDLE h;
+    SetFileAttributesA(lw_path(leaf, side), FILE_ATTRIBUTE_NORMAL);
+    h = CreateFileA(lw_path(leaf, side), GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, CREATE_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    if (n)
+        ok = WriteFile(h, data, n, &w, 0);
+    CloseHandle(h);
+    return ok && w == n;
+}
+
+LW_UNUSED static HANDLE lw_h(const char *leaf, int side, DWORD access)
+{
+    return CreateFileA(lw_path(leaf, side), access,
+                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING,
+                       FILE_ATTRIBUTE_NORMAL, 0);
+}
+
+/* The side's _open_osfhandle; the CRT owns the handle from here on. */
+LW_UNUSED static int lw_wrap(int side, HANDLE h, int flags)
+{
+    int fd;
+    if (h == INVALID_HANDLE_VALUE || h == 0)
+        return -1;
+    fd = side ? (int)ref__open_osfhandle((intptr_t)h, flags) : (int)ud__open_osfhandle((intptr_t)h, flags);
+    if (fd < 0)
+        CloseHandle(h);
+    return fd;
+}
+
+/* Opens the side's existing file; *ph (optional) gets the OS handle, which
+ * stays usable for position reads until the fd is closed. */
+LW_UNUSED static int lw_open(const char *leaf, int side, DWORD access, int flags, HANDLE *ph)
+{
+    HANDLE h = lw_h(leaf, side, access);
+    if (ph)
+        *ph = h;
+    return lw_wrap(side, h, flags);
+}
+
+/* A fresh file with `data` on each side, opened read/write with `flags`. */
+LW_UNUSED static void lw_open2(const char *leaf, const void *data, DWORD n, DWORD access, int flags,
+                               int fd[2], HANDLE h[2])
+{
+    int s;
+    for (s = 0; s < 2; s++) {
+        HANDLE hh = INVALID_HANDLE_VALUE;
+        fd[s] = lw_put(leaf, s, data, n) ? lw_open(leaf, s, access, flags, &hh) : -1;
+        if (h)
+            h[s] = hh;
+    }
+}
+
+LW_UNUSED static void lw_close(int side, int fd)
+{
+    if (fd < 0)
+        return;
+    if (side)
+        ref__close(fd);
+    else
+        ud__close(fd);
+}
+
+LW_UNUSED static void lw_close2(int fd[2])
+{
+    lw_close(0, fd[0]);
+    lw_close(1, fd[1]);
+    fd[0] = fd[1] = -1;
+}
+
+/* The NUL device (FILE_TYPE_CHAR -> FDEV) wrapped on one side. */
+LW_UNUSED static int lw_nul(int side, DWORD access, int flags)
+{
+    HANDLE h = CreateFileA("NUL", access, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+    return lw_wrap(side, h, flags);
+}
+
+/* A pipe's read end holding exactly `data`, write end already closed. */
+LW_UNUSED static int lw_pipe(int side, const void *data, DWORD n, int flags)
+{
+    HANDLE r = 0, w = 0;
+    DWORD wr = 0;
+    if (!CreatePipe(&r, &w, 0, 0))
+        return -1;
+    if (n)
+        WriteFile(w, data, n, &wr, 0);
+    CloseHandle(w);
+    return lw_wrap(side, r, flags);
+}
+
+LW_UNUSED static long long lw_pos(HANDLE h)
+{
+    LARGE_INTEGER z, p;
+    z.QuadPart = 0;
+    p.QuadPart = -7;
+    if (h == INVALID_HANDLE_VALUE || !SetFilePointerEx(h, z, &p, FILE_CURRENT))
+        return -9;
+    return p.QuadPart;
+}
+
+LW_UNUSED static void lw_setpos(HANDLE h, long long pos)
+{
+    LARGE_INTEGER p;
+    p.QuadPart = pos;
+    SetFilePointerEx(h, p, 0, FILE_BEGIN);
+}
+
+/* Size and content hash of the side's file, read with Win32. */
+LW_UNUSED static long long lw_size(const char *leaf, int side)
+{
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    if (!GetFileAttributesExA(lw_path(leaf, side), GetFileExInfoStandard, &a))
+        return -1;
+    return ((long long)a.nFileSizeHigh << 32) | a.nFileSizeLow;
+}
+
+LW_UNUSED static long long lw_hash(const char *leaf, int side)
+{
+    static unsigned char buf[16384];
+    DWORD n = 0;
+    HANDLE h = lw_h(leaf, side, GENERIC_READ);
+    if (h == INVALID_HANDLE_VALUE)
+        return -1;
+    ReadFile(h, buf, sizeof buf, &n, 0);
+    CloseHandle(h);
+    return fnv(buf, n);
+}
+
+/* Grades the two sides' files (size + bytes). */
+#define LW_FILES(fam, lbl, leaf) do {                                                \
+        grade2(fam ".size", lbl, lw_size(leaf, 0), lw_size(leaf, 1));                 \
+        grade2(fam ".bytes", lbl, lw_hash(leaf, 0), lw_hash(leaf, 1));                \
+    } while (0)
+
+/* An fd number that WAS valid on each side and is now closed. */
+LW_UNUSED static void lw_closed_fds(int fd[2])
+{
+    lw_open2("closed", "x", 1, GENERIC_READ | GENERIC_WRITE, 0, fd, 0);
+    lw_close(0, fd[0]);
+    lw_close(1, fd[1]);
+}
+#endif /* LW_ANY */
+
+/* Every row family below runs its invalid-fd set with this. */
+#define LW_BADFDS(fam, CALL_DLL_OF, CALL_REF_OF) do {                                \
+        int lw_cf_[2];                                                               \
+        LW_ROW(fam, "fd=-1", CALL_DLL_OF(-1), CALL_REF_OF(-1));                      \
+        LW_ROW(fam, "fd=-2", CALL_DLL_OF(-2), CALL_REF_OF(-2));                      \
+        LW_ROW(fam, "fd=-7", CALL_DLL_OF(-7), CALL_REF_OF(-7));                      \
+        LW_ROW(fam, "fd=big", CALL_DLL_OF(LW_BAD_FD), CALL_REF_OF(LW_BAD_FD));       \
+        LW_ROW(fam, "fd=max", CALL_DLL_OF(0x7fffffff), CALL_REF_OF(0x7fffffff));     \
+        lw_closed_fds(lw_cf_);                                                       \
+        LW_ROW(fam, "fd=closed", CALL_DLL_OF(lw_cf_[0]), CALL_REF_OF(lw_cf_[1]));    \
+    } while (0)
+
+/* ==== write.cpp ======================================================== */
+#if UCRTDIFF_REF_HAS__write
+int __cdecl ref__write(int, const void *, unsigned);
+int __cdecl ref__setmode(int, int);
+extern int(__cdecl *const ud__write)(int, const void *, unsigned) __asm__(UD_IMP(_write));
+extern int(__cdecl *const ud__setmode)(int, int) __asm__(UD_IMP(_setmode));
+
+/* One write on a fresh file per side: `seed` is the file's prior content,
+ * `flags` goes to _open_osfhandle, `mode` (if non-zero) to _setmode. */
+static void lw_write_case(const char *lbl, const char *seed, int flags, int mode, DWORD access,
+                          const void *data, unsigned n)
+{
+    int fd[2];
+    lw_open2("w", seed, (DWORD)lstrlenA(seed), access, flags, fd, 0);
+    if (mode) {
+        ud__setmode(fd[0], mode);
+        ref__setmode(fd[1], mode);
+    }
+    LW_ROW("_write", lbl, ud__write(fd[0], data, n), ref__write(fd[1], data, n));
+    lw_close2(fd);
+    LW_FILES("_write", lbl, "w");
+}
+
+#define LW_W_DLL(fd) ud__write(fd, "ab", 2)
+#define LW_W_REF(fd) ref__write(fd, "ab", 2)
+
+static void run_lowio__write(void)
+{
+    static char big[6000];
+    static wchar_t wbig[2000];
+    static char lfs[5200];
+    const wchar_t w1[] = L"ab\ncd\n";
+    const wchar_t w8[] = L"h\x00e9\n\x20ac\xd83d\xde00!";
+    DWORD rw = GENERIC_READ | GENERIC_WRITE;
+    int i, fd[2];
+    install_counting_iph();
+    for (i = 0; i < (int)sizeof big; i++)
+        big[i] = (i % 7 == 6) ? '\n' : (char)('a' + i % 26);
+    for (i = 0; i < (int)(sizeof wbig / sizeof wbig[0]); i++)
+        wbig[i] = (i % 5 == 4) ? L'\n' : (i % 11 == 3) ? (wchar_t)0x4e2d
+                  : (i % 13 == 6) ? (wchar_t)0xd83d : (i % 13 == 7) ? (wchar_t)0xde00 : (wchar_t)(L'a' + i % 26);
+    for (i = 0; i < (int)sizeof lfs; i++)
+        lfs[i] = '\n';
+
+    lw_write_case("bin", "", 0, 0, rw, "a\nb\r\nc\x1a", 7);
+    lw_write_case("text", "", _O_TEXT, 0, rw, "l1\nl2\n\n", 7);
+    lw_write_case("text-noLF", "", _O_TEXT, 0, rw, "plain", 5);
+    lw_write_case("text-big", "", _O_TEXT, 0, rw, big, sizeof big);
+    lw_write_case("text-allLF", "", _O_TEXT, 0, rw, lfs, sizeof lfs);
+    lw_write_case("text-5119", "", _O_TEXT, 0, rw, big, 5119);
+    lw_write_case("text-mode", "", 0, _O_TEXT, rw, "x\ny\n", 4);
+    lw_write_case("u16", "", 0, _O_U16TEXT, rw, w1, 12);
+    lw_write_case("u16-odd", "", 0, _O_U16TEXT, rw, w1, 3);
+    lw_write_case("u16-big", "", 0, _O_U16TEXT, rw, wbig, sizeof wbig);
+    lw_write_case("wtext", "", 0, _O_WTEXT, rw, w1, 12);
+    lw_write_case("u8", "", 0, _O_U8TEXT, rw, w8, 14);
+    lw_write_case("u8-odd", "", 0, _O_U8TEXT, rw, w8, 5);
+    lw_write_case("u8-big", "", 0, _O_U8TEXT, rw, wbig, sizeof wbig);
+    lw_write_case("append", "seed\n", _O_APPEND | _O_TEXT, 0, rw, "x\n", 2);
+    lw_write_case("append-bin", "seed", _O_APPEND, 0, rw, "yz", 2);
+    lw_write_case("zero", "keep", 0, 0, rw, "abc", 0);
+    lw_write_case("null", "keep", 0, 0, rw, 0, 4);
+    lw_write_case("null0", "keep", 0, 0, rw, 0, 0);
+    lw_write_case("rdonly", "keep", 0, 0, GENERIC_READ, "abc", 3);
+    lw_write_case("rdonly-text", "keep", _O_TEXT, 0, GENERIC_READ, "a\nb", 3);
+
+    /* A UTF-8 handle switched to binary keeps its textmode: odd counts still fail. */
+    lw_open2("w", "", 0, rw, 0, fd, 0);
+    ud__setmode(fd[0], _O_U8TEXT); ref__setmode(fd[1], _O_U8TEXT);
+    ud__setmode(fd[0], _O_BINARY); ref__setmode(fd[1], _O_BINARY);
+    LW_ROW("_write", "u8->bin-odd", ud__write(fd[0], "abc", 3), ref__write(fd[1], "abc", 3));
+    LW_ROW("_write", "u8->bin-even", ud__write(fd[0], "a\nbc", 4), ref__write(fd[1], "a\nbc", 4));
+    lw_close2(fd);
+    LW_FILES("_write", "u8->bin", "w");
+
+    /* The NUL device: FDEV, and a leading Ctrl-Z. */
+    fd[0] = lw_nul(0, GENERIC_WRITE, _O_TEXT); fd[1] = lw_nul(1, GENERIC_WRITE, _O_TEXT);
+    LW_ROW("_write", "nul-text", ud__write(fd[0], "a\nb", 3), ref__write(fd[1], "a\nb", 3));
+    LW_ROW("_write", "nul-ctrlz", ud__write(fd[0], "\x1a", 1), ref__write(fd[1], "\x1a", 1));
+    ud__setmode(fd[0], _O_U16TEXT); ref__setmode(fd[1], _O_U16TEXT);
+    LW_ROW("_write", "nul-u16", ud__write(fd[0], w1, 12), ref__write(fd[1], w1, 12));
+    lw_close2(fd);
+
+    /* Several writes appending through one fd (the position carries). */
+    lw_open2("w", "", 0, rw, _O_TEXT, fd, 0);
+    for (i = 0; i < 4; i++)
+        LW_ROW("_write", lw_lbl("seq", i), ud__write(fd[0], "q\n", 2), ref__write(fd[1], "q\n", 2));
+    lw_close2(fd);
+    LW_FILES("_write", "seq", "w");
+
+    LW_BADFDS("_write", LW_W_DLL, LW_W_REF);
+    lw_del("w", 0); lw_del("w", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__write */
+
+/* ==== read.cpp ========================================================= */
+#if UCRTDIFF_REF_HAS__read
+int __cdecl ref__read(int, void *, unsigned);
+int __cdecl ref__setmode(int, int);
+extern int(__cdecl *const ud__read)(int, void *, unsigned) __asm__(UD_IMP(_read));
+extern int(__cdecl *const ud__setmode)(int, int) __asm__(UD_IMP(_setmode));
+
+#define LW_RBUF 8192
+static unsigned char g_lw_rb[2][LW_RBUF];
+
+/* Reads `counts` in turn from fd[0]/fd[1], grading each call, the whole
+ * sentinel-filled buffer, and (when h is given) the OS position. */
+static void lw_reads(const char *lbl, int fd[2], HANDLE h[2], const unsigned *counts, int ncounts)
+{
+    int i;
+    for (i = 0; i < ncounts; i++) {
+        const char *l;
+        memset(g_lw_rb[0], 0xA5, LW_RBUF);
+        memset(g_lw_rb[1], 0xA5, LW_RBUF);
+        l = lw_lbl(lbl, i);
+        LW_ROW("_read", l, ud__read(fd[0], g_lw_rb[0], counts[i]), ref__read(fd[1], g_lw_rb[1], counts[i]));
+        l = lw_lbl(lbl, i);
+        grade2("_read.buf", l, fnv(g_lw_rb[0], LW_RBUF), fnv(g_lw_rb[1], LW_RBUF));
+        if (h)
+            grade2("_read.pos", l, lw_pos(h[0]), lw_pos(h[1]));
+    }
+}
+
+/* A file holding `data`, opened with `flags` then `mode` (and `mode2`), read. */
+static void lw_read_case(const char *lbl, const void *data, DWORD n, int flags, int mode, int mode2,
+                         DWORD access, const unsigned *counts, int ncounts)
+{
+    int fd[2];
+    HANDLE h[2];
+    lw_open2("r", data, n, access, flags, fd, h);
+    if (mode) { ud__setmode(fd[0], mode); ref__setmode(fd[1], mode); }
+    if (mode2) { ud__setmode(fd[0], mode2); ref__setmode(fd[1], mode2); }
+    lw_reads(lbl, fd, h, counts, ncounts);
+    lw_close2(fd);
+}
+
+/* The same over a pipe (write end closed; nothing can block). */
+static void lw_read_pipe(const char *lbl, const void *data, DWORD n, int flags, int mode,
+                         const unsigned *counts, int ncounts)
+{
+    int fd[2];
+    fd[0] = lw_pipe(0, data, n, flags);
+    fd[1] = lw_pipe(1, data, n, flags);
+    if (mode) { ud__setmode(fd[0], mode); ref__setmode(fd[1], mode); }
+    lw_reads(lbl, fd, 0, counts, ncounts);
+    lw_close2(fd);
+}
+
+#define LW_R_DLL(fd) ud__read(fd, g_lw_rb[0], 4)
+#define LW_R_REF(fd) ref__read(fd, g_lw_rb[1], 4)
+
+static void run_lowio__read(void)
+{
+    static const unsigned c64[] = { 64 }, c64x2[] = { 64, 64 }, c3x5[] = { 3, 3, 3, 3, 3 };
+    static const unsigned c1x8[] = { 1, 1, 1, 1, 1, 1, 1, 1 }, c3x2[] = { 3, 3 };
+    static const unsigned c4x5[] = { 4, 4, 4, 4, 4 }, c8x4[] = { 8, 8, 8, 8 };
+    static const unsigned c3[] = { 3 }, c5[] = { 5 }, c0[] = { 0 }, cbig[] = { 0x80000000u };
+    static const unsigned c3_10[] = { 3, 10 }, c4[] = { 4 }, c4x2[] = { 4, 4 }, c6x3[] = { 6, 6, 6 };
+    static const unsigned char u16[] = { 0xff, 0xfe, 'a', 0, '\r', 0, '\n', 0, 'b', 0, '\r', 0,
+                                         'x', 0, 0x1a, 0, 'z', 0 };
+    static const unsigned char u16crlf[] = { 'a', 0, 'b', 0, '\r', 0, '\n', 0, 'c', 0, '\r', 0 };
+    static const unsigned char u16crb[] = { 'a', 0, '\r', 0, 'b', 0 };
+    static const char u8s[] = "h\xc3\xa9\r\n\xe2\x82\xac\xf0\x9f\x98\x80!";
+    DWORD rw = GENERIC_READ | GENERIC_WRITE;
+    int fd[2];
+    install_counting_iph();
+
+    lw_read_case("bin", "a\r\nb\x1a c\n", 8, 0, 0, 0, rw, c64, 1);
+    lw_read_case("text", "a\r\nb\r\n\x1a c", 9, _O_TEXT, 0, 0, rw, c64x2, 2);
+    lw_read_case("text-lf-first", "\nab", 3, _O_TEXT, 0, 0, rw, c64, 1);
+    lw_read_case("cr-edge", "ab\r\ncd\r\n", 8, _O_TEXT, 0, 0, rw, c3x5, LW_N(c3x5));
+    lw_read_case("one-byte", "\r\n\r\nx\r", 6, _O_TEXT, 0, 0, rw, c1x8, LW_N(c1x8));
+    lw_read_case("lone-cr-eof", "ab\r", 3, _O_TEXT, 0, 0, rw, c3x2, 2);
+    lw_read_case("cr-x", "ab\rx", 4, _O_TEXT, 0, 0, rw, c3x2, 2);
+    lw_read_case("cr-cr", "a\r\r\nb", 5, _O_TEXT, 0, 0, rw, c64, 1);
+    lw_read_case("u16", u16, sizeof u16, 0, _O_U16TEXT, 0, rw, c64x2, 2);
+    lw_read_case("u16-small", u16crlf, sizeof u16crlf, 0, _O_U16TEXT, 0, rw, c4x5, LW_N(c4x5));
+    lw_read_case("u16-odd", u16, sizeof u16, 0, _O_U16TEXT, 0, rw, c3, 1);
+    lw_read_case("wtext", u16, sizeof u16, 0, _O_WTEXT, 0, rw, c64, 1);
+    lw_read_case("u8", u8s, sizeof u8s - 1, 0, _O_U8TEXT, 0, rw, c64, 1);
+    lw_read_case("u8-small", u8s, sizeof u8s - 1, 0, _O_U8TEXT, 0, rw, c8x4, LW_N(c8x4));
+    lw_read_case("u8-tiny", u8s, sizeof u8s - 1, 0, _O_U8TEXT, 0, rw, c4x5, LW_N(c4x5));
+    lw_read_case("u8-6", u8s, sizeof u8s - 1, 0, _O_U8TEXT, 0, rw, c6x3, LW_N(c6x3));
+    lw_read_case("u8-inc", "ab\xe2\x82", 4, 0, _O_U8TEXT, 0, rw, c64x2, 2);
+    lw_read_case("u8-trail3", "\xc3\x80\x80", 3, 0, _O_U8TEXT, 0, rw, c64, 1);
+    lw_read_case("u8-eilseq", "a\x80\x80\x80\x80\x80", 6, 0, _O_U8TEXT, 0, rw, c64, 1);
+    lw_read_case("u8-badcont", "a\xc3\xff", 3, 0, _O_U8TEXT, 0, rw, c64, 1);
+    lw_read_case("u8-bom", "\xef\xbb\xbfhi", 5, 0, _O_U8TEXT, 0, rw, c64, 1);
+    lw_read_case("u8-odd", u8s, sizeof u8s - 1, 0, _O_U8TEXT, 0, rw, c5, 1);
+    lw_read_case("u8-ctrlz", "a\r\n\x1a" "b", 5, 0, _O_U8TEXT, 0, rw, c64x2, 2);
+    lw_read_case("u8->bin", "abcd", 4, 0, _O_U8TEXT, _O_BINARY, rw, c64, 1);
+    lw_read_case("text->bin", "a\r\nb", 4, _O_TEXT, _O_BINARY, 0, rw, c64, 1);
+    lw_read_case("zero", "abc", 3, 0, 0, 0, rw, c0, 1);
+    lw_read_case("count>INT_MAX", "abc", 3, 0, 0, 0, rw, cbig, 1);
+    lw_read_case("wronly", "abc", 3, 0, 0, 0, GENERIC_WRITE, c64, 1);
+    lw_read_case("empty", "", 0, _O_TEXT, 0, 0, rw, c64, 1);
+
+    /* NULL buffer: an error only when there is something to read. */
+    lw_open2("r", "abc", 3, rw, 0, fd, 0);
+    LW_ROW("_read", "null", ud__read(fd[0], 0, 4), ref__read(fd[1], 0, 4));
+    LW_ROW("_read", "null0", ud__read(fd[0], 0, 0), ref__read(fd[1], 0, 0));
+    lw_close2(fd);
+
+    /* Pipes: FPIPE, the lookahead, ERROR_BROKEN_PIPE as EOF. */
+    lw_read_pipe("pipe-bin", "a\r\nb", 4, 0, 0, c64x2, 2);
+    lw_read_pipe("pipe-cr", "ab\rc", 4, _O_TEXT, 0, c3_10, 2);
+    lw_read_pipe("pipe-cr2", "ab\rcd", 5, _O_TEXT, 0, c3_10, 2);
+    lw_read_pipe("pipe-crlf", "ab\r\nc", 5, _O_TEXT, 0, c3_10, 2);
+    lw_read_pipe("pipe-ctrlz", "a\x1a" "b", 3, _O_TEXT, 0, c64x2, 2);
+    /* Only the FIRST read after a UTF-8 park is deterministic: the next one
+     * translates from past the parked bytes into uninitialised heap (MS quirk). */
+    lw_read_pipe("pipe-u8", "ab\xe2\x82\xac", 5, 0, _O_U8TEXT, c4, 1);
+    lw_read_pipe("pipe-u16", u16crlf, sizeof u16crlf, 0, _O_U16TEXT, c4x5, LW_N(c4x5));
+    lw_read_pipe("pipe-u16-la", u16crb, sizeof u16crb, 0, _O_U16TEXT, c4x2, 2);
+
+    /* The NUL device reads nothing. */
+    fd[0] = lw_nul(0, GENERIC_READ, _O_TEXT); fd[1] = lw_nul(1, GENERIC_READ, _O_TEXT);
+    lw_reads("nul", fd, 0, c64, 1);
+    lw_close2(fd);
+
+    LW_BADFDS("_read", LW_R_DLL, LW_R_REF);
+    lw_del("r", 0); lw_del("r", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__read */
+
+/* ==== lseek.cpp ======================================================== */
+#if UCRTDIFF_REF_HAS__lseek
+long __cdecl ref__lseek(int, long, int);
+__int64 __cdecl ref__lseeki64(int, __int64, int);
+int __cdecl ref__read(int, void *, unsigned);
+extern long(__cdecl *const ud__lseek)(int, long, int) __asm__(UD_IMP(_lseek));
+extern __int64(__cdecl *const ud__lseeki64)(int, __int64, int) __asm__(UD_IMP(_lseeki64));
+extern int(__cdecl *const ud__read)(int, void *, unsigned) __asm__(UD_IMP(_read));
+
+#define LW_LS_DLL(fd) ud__lseek(fd, 1, SEEK_SET)
+#define LW_LS_REF(fd) ref__lseek(fd, 1, SEEK_SET)
+#define LW_LS64_DLL(fd) ud__lseeki64(fd, 1, SEEK_SET)
+#define LW_LS64_REF(fd) ref__lseeki64(fd, 1, SEEK_SET)
+
+static char g_lw_hundred[100];
+
+static void run_lowio__lseek(void)
+{
+    static const struct { long off; int whence; const char *lbl; } seq[] = {
+        { 0, SEEK_SET, "set0" }, { 10, SEEK_SET, "set10" }, { 5, SEEK_CUR, "cur5" },
+        { -3, SEEK_END, "end-3" }, { 0, SEEK_END, "end0" }, { 1000, SEEK_SET, "past-end" },
+        { -1, SEEK_SET, "set-1" }, { -5000, SEEK_CUR, "cur-neg" }, { 0, 3, "whence3" },
+        { 0, -1, "whence-1" }, { 0x7fffffffL, SEEK_SET, "LONG_MAX" }, { 1, SEEK_CUR, "LONG_MAX+1" },
+        { -1, SEEK_CUR, "back" }, { 0, SEEK_CUR, "cur0" },
+    };
+    int fd[2], i;
+    HANDLE h[2];
+    char b1[8], b2[8];
+    install_counting_iph();
+    memset(g_lw_hundred, 'k', sizeof g_lw_hundred);
+    lw_open2("ls", g_lw_hundred, sizeof g_lw_hundred, GENERIC_READ | GENERIC_WRITE, 0, fd, h);
+    for (i = 0; i < LW_N(seq); i++) {
+        LW_ROW("_lseek", seq[i].lbl, ud__lseek(fd[0], seq[i].off, seq[i].whence),
+               ref__lseek(fd[1], seq[i].off, seq[i].whence));
+        grade2("_lseek.pos", seq[i].lbl, lw_pos(h[0]), lw_pos(h[1]));
+    }
+    /* Beyond LONG_MAX: EINVAL, and the position goes back to where it was. */
+    lw_setpos(h[0], 0x80000005LL); lw_setpos(h[1], 0x80000005LL);
+    LW_ROW("_lseek", ">LONG_MAX", ud__lseek(fd[0], 0, SEEK_CUR), ref__lseek(fd[1], 0, SEEK_CUR));
+    grade2("_lseek.pos", ">LONG_MAX", lw_pos(h[0]), lw_pos(h[1]));
+    lw_close2(fd);
+
+    /* A seek clears the Ctrl-Z EOF flag. */
+    lw_open2("ls", "a\x1a" "b", 3, GENERIC_READ | GENERIC_WRITE, _O_TEXT, fd, h);
+    LW_ROW("_lseek", "ctrlz-read1", ud__read(fd[0], b1, 8), ref__read(fd[1], b2, 8));
+    LW_ROW("_lseek", "ctrlz-read2", ud__read(fd[0], b1, 8), ref__read(fd[1], b2, 8));
+    LW_ROW("_lseek", "ctrlz-seek", ud__lseek(fd[0], 0, SEEK_SET), ref__lseek(fd[1], 0, SEEK_SET));
+    LW_ROW("_lseek", "ctrlz-read3", ud__read(fd[0], b1, 8), ref__read(fd[1], b2, 8));
+    /* A FAILED seek leaves the flag set. */
+    LW_ROW("_lseek", "ctrlz-read4", ud__read(fd[0], b1, 8), ref__read(fd[1], b2, 8));
+    LW_ROW("_lseek", "ctrlz-badseek", ud__lseek(fd[0], -9, SEEK_SET), ref__lseek(fd[1], -9, SEEK_SET));
+    LW_ROW("_lseek", "ctrlz-read5", ud__read(fd[0], b1, 8), ref__read(fd[1], b2, 8));
+    lw_close2(fd);
+
+    /* A pipe cannot seek. */
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_lseek", "pipe", ud__lseek(fd[0], 0, SEEK_CUR), ref__lseek(fd[1], 0, SEEK_CUR));
+    lw_close2(fd);
+
+    LW_BADFDS("_lseek", LW_LS_DLL, LW_LS_REF);
+    lw_del("ls", 0); lw_del("ls", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+
+static void run_lowio__lseeki64(void)
+{
+    static const struct { __int64 off; int whence; const char *lbl; } seq[] = {
+        { 0, SEEK_SET, "set0" }, { 10, SEEK_SET, "set10" }, { 5, SEEK_CUR, "cur5" },
+        { -3, SEEK_END, "end-3" }, { 0, SEEK_END, "end0" }, { 0x100000000LL, SEEK_SET, "4G" },
+        { 0x7fffffffLL + 9, SEEK_SET, ">LONG_MAX" }, { -1, SEEK_SET, "set-1" },
+        { -0x200000000LL, SEEK_CUR, "cur-neg" }, { 0, 3, "whence3" }, { 1, SEEK_CUR, "cur1" },
+        { 0, SEEK_CUR, "cur0" },
+    };
+    int fd[2], i;
+    HANDLE h[2];
+    install_counting_iph();
+    memset(g_lw_hundred, 'k', sizeof g_lw_hundred);
+    lw_open2("ls", g_lw_hundred, sizeof g_lw_hundred, GENERIC_READ | GENERIC_WRITE, 0, fd, h);
+    for (i = 0; i < LW_N(seq); i++) {
+        LW_ROW("_lseeki64", seq[i].lbl, ud__lseeki64(fd[0], seq[i].off, seq[i].whence),
+               ref__lseeki64(fd[1], seq[i].off, seq[i].whence));
+        grade2("_lseeki64.pos", seq[i].lbl, lw_pos(h[0]), lw_pos(h[1]));
+    }
+    lw_close2(fd);
+    fd[0] = lw_nul(0, GENERIC_READ, 0); fd[1] = lw_nul(1, GENERIC_READ, 0);
+    LW_ROW("_lseeki64", "nul", ud__lseeki64(fd[0], 5, SEEK_SET), ref__lseeki64(fd[1], 5, SEEK_SET));
+    lw_close2(fd);
+    LW_BADFDS("_lseeki64", LW_LS64_DLL, LW_LS64_REF);
+    lw_del("ls", 0); lw_del("ls", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__lseek */
+
+/* ==== tell.cpp / telli64.cpp =========================================== */
+#if UCRTDIFF_REF_HAS__tell
+long __cdecl ref__tell(int);
+extern long(__cdecl *const ud__tell)(int) __asm__(UD_IMP(_tell));
+
+static void run_lowio__tell(void)
+{
+    static const long long at[] = { 0, 7, 100, 0x7fffffffLL, 0x80000000LL, 0x100000003LL };
+    int fd[2], i;
+    HANDLE h[2];
+    install_counting_iph();
+    lw_open2("tl", "0123456789", 10, GENERIC_READ | GENERIC_WRITE, 0, fd, h);
+    for (i = 0; i < LW_N(at); i++) {
+        lw_setpos(h[0], at[i]); lw_setpos(h[1], at[i]);
+        LW_ROW("_tell", lw_lbl("at", i), ud__tell(fd[0]), ref__tell(fd[1]));
+        grade2("_tell.pos", lw_lbl("at", i), lw_pos(h[0]), lw_pos(h[1]));
+    }
+    lw_close2(fd);
+    LW_BADFDS("_tell", ud__tell, ref__tell);
+    lw_del("tl", 0); lw_del("tl", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif
+
+#if UCRTDIFF_REF_HAS__telli64
+__int64 __cdecl ref__telli64(int);
+extern __int64(__cdecl *const ud__telli64)(int) __asm__(UD_IMP(_telli64));
+
+static void run_lowio__telli64(void)
+{
+    static const long long at[] = { 0, 7, 100, 0x7fffffffLL, 0x80000000LL, 0x100000003LL };
+    int fd[2], i;
+    HANDLE h[2];
+    install_counting_iph();
+    lw_open2("tl64", "0123456789", 10, GENERIC_READ | GENERIC_WRITE, 0, fd, h);
+    for (i = 0; i < LW_N(at); i++) {
+        lw_setpos(h[0], at[i]); lw_setpos(h[1], at[i]);
+        LW_ROW("_telli64", lw_lbl("at", i), ud__telli64(fd[0]), ref__telli64(fd[1]));
+    }
+    lw_close2(fd);
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_telli64", "pipe", ud__telli64(fd[0]), ref__telli64(fd[1]));
+    lw_close2(fd);
+    LW_BADFDS("_telli64", ud__telli64, ref__telli64);
+    lw_del("tl64", 0); lw_del("tl64", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif
+
+/* ==== chsize.cpp ======================================================= */
+#if UCRTDIFF_REF_HAS__chsize
+int __cdecl ref__chsize(int, long);
+int __cdecl ref__chsize_s(int, __int64);
+int __cdecl ref__setmode(int, int);
+int __cdecl ref__write(int, const void *, unsigned);
+extern int(__cdecl *const ud__chsize)(int, long) __asm__(UD_IMP(_chsize));
+extern int(__cdecl *const ud__chsize_s)(int, __int64) __asm__(UD_IMP(_chsize_s));
+extern int(__cdecl *const ud__setmode)(int, int) __asm__(UD_IMP(_setmode));
+extern int(__cdecl *const ud__write)(int, const void *, unsigned) __asm__(UD_IMP(_write));
+
+#define LW_CH_DLL(fd) ud__chsize(fd, 5)
+#define LW_CH_REF(fd) ref__chsize(fd, 5)
+#define LW_CHS_DLL(fd) ud__chsize_s(fd, 5)
+#define LW_CHS_REF(fd) ref__chsize_s(fd, 5)
+
+/* `sizes` applied in turn to one text-mode file (position parked at 4). */
+#define LW_CHSIZE_RUN(fam, UD, REF, T) do {                                          \
+        static const T sizes[] = { 5000, 4096, 8193, 3, 3, 0, 12, -1 };              \
+        int fd[2], i;                                                                \
+        HANDLE h[2];                                                                 \
+        install_counting_iph();                                                      \
+        lw_open2("ch", "0123456789", 10, GENERIC_READ | GENERIC_WRITE, _O_TEXT, fd, h); \
+        lw_setpos(h[0], 4); lw_setpos(h[1], 4);                                      \
+        for (i = 0; i < LW_N(sizes); i++) {                                          \
+            LW_ROW(fam, lw_lbl("size", i), UD(fd[0], sizes[i]), REF(fd[1], sizes[i])); \
+            grade2(fam ".pos", lw_lbl("size", i), lw_pos(h[0]), lw_pos(h[1]));       \
+            LW_FILES(fam, lw_lbl("size", i), "ch");                                  \
+        }                                                                            \
+        /* The mode is forced to binary for the zero-fill and put back after. */     \
+        ud__setmode(fd[0], _O_U16TEXT); ref__setmode(fd[1], _O_U16TEXT);             \
+        LW_ROW(fam, "u16-grow", UD(fd[0], 40), REF(fd[1], 40));                      \
+        LW_ROW(fam, "u16-after", ud__write(fd[0], "abc", 3), ref__write(fd[1], "abc", 3)); \
+        LW_FILES(fam, "u16-grow", "ch");                                             \
+        lw_close2(fd);                                                               \
+        /* Read-only: growing fails in the zero-write, shrinking in SetEndOfFile. */ \
+        lw_open2("ch", "0123456789", 10, GENERIC_READ, 0, fd, h);                    \
+        LW_ROW(fam, "rdonly-grow", UD(fd[0], 50), REF(fd[1], 50));                   \
+        LW_ROW(fam, "rdonly-shrink", UD(fd[0], 2), REF(fd[1], 2));                   \
+        LW_ROW(fam, "rdonly-same", UD(fd[0], 10), REF(fd[1], 10));                   \
+        grade2(fam ".pos", "rdonly", lw_pos(h[0]), lw_pos(h[1]));                    \
+        lw_close2(fd);                                                               \
+        LW_FILES(fam, "rdonly", "ch");                                               \
+        fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);             \
+        LW_ROW(fam, "pipe", UD(fd[0], 1), REF(fd[1], 1));                            \
+        lw_close2(fd);                                                               \
+        lw_del("ch", 0); lw_del("ch", 1);                                            \
+    } while (0)
+
+static void run_lowio__chsize(void)
+{
+    LW_CHSIZE_RUN("_chsize", ud__chsize, ref__chsize, long);
+    LW_BADFDS("_chsize", LW_CH_DLL, LW_CH_REF);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+
+static void run_lowio__chsize_s(void)
+{
+    LW_CHSIZE_RUN("_chsize_s", ud__chsize_s, ref__chsize_s, __int64);
+    LW_BADFDS("_chsize_s", LW_CHS_DLL, LW_CHS_REF);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__chsize */
+
+/* ==== setmode.cpp ====================================================== */
+#if UCRTDIFF_REF_HAS__setmode
+int __cdecl ref__setmode(int, int);
+int __cdecl ref__set_fmode(int);
+int __cdecl ref__get_fmode(int *);
+extern int(__cdecl *const ud__setmode)(int, int) __asm__(UD_IMP(_setmode));
+extern int(__cdecl *const ud__set_fmode)(int) __asm__(UD_IMP(_set_fmode));
+extern int(__cdecl *const ud__get_fmode)(int *) __asm__(UD_IMP(_get_fmode));
+
+#define LW_SM_DLL(fd) ud__setmode(fd, _O_BINARY)
+#define LW_SM_REF(fd) ref__setmode(fd, _O_BINARY)
+
+static void run_lowio__setmode(void)
+{
+    static const int modes[] = { _O_TEXT, _O_BINARY, _O_U8TEXT, _O_BINARY, _O_TEXT, _O_U16TEXT,
+                                 _O_WTEXT, _O_U8TEXT, _O_TEXT, 0x1234, _O_TEXT | _O_BINARY, 0,
+                                 _O_U16TEXT, _O_BINARY, _O_BINARY };
+    int fd[2], i;
+    install_counting_iph();
+    lw_open2("sm", "", 0, GENERIC_READ | GENERIC_WRITE, 0, fd, 0);
+    for (i = 0; i < LW_N(modes); i++)
+        LW_ROW("_setmode", lw_lbl("mode", i), ud__setmode(fd[0], modes[i]), ref__setmode(fd[1], modes[i]));
+    lw_close2(fd);
+    fd[0] = lw_nul(0, GENERIC_READ, _O_TEXT); fd[1] = lw_nul(1, GENERIC_READ, _O_TEXT);
+    LW_ROW("_setmode", "nul", ud__setmode(fd[0], _O_U8TEXT), ref__setmode(fd[1], _O_U8TEXT));
+    lw_close2(fd);
+    /* The mode is validated before the handle. */
+    LW_ROW("_setmode", "badmode+badfd", ud__setmode(-1, 7), ref__setmode(-1, 7));
+    LW_ROW("_setmode", "badmode-2", ud__setmode(-2, 7), ref__setmode(-2, 7));
+    LW_BADFDS("_setmode", LW_SM_DLL, LW_SM_REF);
+    lw_del("sm", 0); lw_del("sm", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+
+static void run_lowio__set_fmode(void)
+{
+    static const int modes[] = { _O_BINARY, _O_TEXT, _O_WTEXT, _O_U8TEXT, _O_U16TEXT, 0, -1, _O_BINARY };
+    int save1 = 0, save2 = 0, i, g1, g2;
+    install_counting_iph();
+    ud__get_fmode(&save1);
+    ref__get_fmode(&save2);
+    for (i = 0; i < LW_N(modes); i++) {
+        LW_ROW("_set_fmode", lw_lbl("mode", i), ud__set_fmode(modes[i]), ref__set_fmode(modes[i]));
+        g1 = g2 = 0x55;
+        ud__get_fmode(&g1);
+        ref__get_fmode(&g2);
+        grade2("_set_fmode.now", lw_lbl("mode", i), g1, g2);
+    }
+    ud__set_fmode(save1);
+    ref__set_fmode(save2);
+}
+
+static void run_lowio__get_fmode(void)
+{
+    int save1 = 0, save2 = 0, g1, g2;
+    install_counting_iph();
+    ud__get_fmode(&save1);
+    ref__get_fmode(&save2);
+    ud__set_fmode(_O_BINARY);
+    ref__set_fmode(_O_BINARY);
+    g1 = g2 = 0x55;
+    LW_ROW("_get_fmode", "binary", ud__get_fmode(&g1), ref__get_fmode(&g2));
+    grade2("_get_fmode.val", "binary", g1, g2);
+    ud__set_fmode(_O_TEXT);
+    ref__set_fmode(_O_TEXT);
+    g1 = g2 = 0x55;
+    LW_ROW("_get_fmode", "text", ud__get_fmode(&g1), ref__get_fmode(&g2));
+    grade2("_get_fmode.val", "text", g1, g2);
+    LW_ROW("_get_fmode", "NULL", ud__get_fmode(0), ref__get_fmode(0));
+    ud__set_fmode(save1);
+    ref__set_fmode(save2);
+}
+#endif /* UCRTDIFF_REF_HAS__setmode */
+
+/* ==== txtmode.cpp ====================================================== */
+#if UCRTDIFF_REF_HAS___p__fmode
+int *__cdecl ref___p__fmode(void);
+int __cdecl ref__get_fmode(int *);
+extern int *(__cdecl *const ud___p__fmode)(void) __asm__(UD_IMP(__p__fmode));
+extern int(__cdecl *const ud__get_fmode)(int *) __asm__(UD_IMP(_get_fmode));
+
+/* Grades through the pointer and against the same side's _get_fmode; the
+ * startup value is not graded (the reference instance's .CRT$XIC initializer
+ * need not have run in this process). */
+static void run_lowio___p__fmode(void)
+{
+    int *p1, *p2, save1, save2, g1 = 0x55, g2 = 0x55;
+    install_counting_iph();
+    lw_reset();
+    p1 = ud___p__fmode();
+    p2 = ref___p__fmode();
+    grade2("__p__fmode.nonnull", "", p1 != 0, p2 != 0);
+    grade2("__p__fmode.stable", "", ud___p__fmode() == p1, ref___p__fmode() == p2);
+    grade2("__p__fmode.errno", "", *_errno(), *ref__errno());
+    grade2("__p__fmode.iph", "", g_iph_dll, g_iph_ref);
+    if (!p1 || !p2)
+        return;
+    save1 = *p1;
+    save2 = *p2;
+    *p1 = _O_BINARY;
+    *p2 = _O_BINARY;
+    ud__get_fmode(&g1);
+    ref__get_fmode(&g2);
+    grade2("__p__fmode.get", "binary", g1, g2);
+    *p1 = _O_TEXT;
+    *p2 = _O_TEXT;
+    g1 = g2 = 0x55;
+    ud__get_fmode(&g1);
+    ref__get_fmode(&g2);
+    grade2("__p__fmode.get", "text", g1, g2);
+    grade2("__p__fmode.val", "text", *ud___p__fmode(), *ref___p__fmode());
+    *p1 = save1;
+    *p2 = save2;
+}
+#endif /* UCRTDIFF_REF_HAS___p__fmode */
+
+/* ==== locking.cpp ====================================================== */
+#if UCRTDIFF_REF_HAS__locking
+int __cdecl ref__locking(int, int, long);
+extern int(__cdecl *const ud__locking)(int, int, long) __asm__(UD_IMP(_locking));
+
+static char g_lw_lk[100];
+#define LW_LK_UNLCK 0
+#define LW_LK_LOCK 1
+#define LW_LK_NBLCK 2
+#define LW_LK_RLCK 3
+#define LW_LK_NBRLCK 4
+#define LW_LOCK_DLL(fd) ud__locking(fd, LW_LK_NBLCK, 1)
+#define LW_LOCK_REF(fd) ref__locking(fd, LW_LK_NBLCK, 1)
+
+static void run_lowio__locking(void)
+{
+    static const struct { long long at; int mode; long n; const char *lbl; } seq[] = {
+        { 0, LW_LK_NBLCK, 10, "nblck" },
+        { 0, LW_LK_NBLCK, 10, "nblck-again" },
+        { 5, LW_LK_NBRLCK, 2, "nbrlck-overlap" },
+        { 50, LW_LK_NBRLCK, 10, "nbrlck" },
+        { 50, LW_LK_UNLCK, 10, "unlck" },
+        { 50, LW_LK_UNLCK, 10, "unlck-again" },
+        { 20, 7, 4, "mode7" },
+        { 20, 9, 4, "mode9-overlap" },
+        { 30, LW_LK_NBLCK, -1, "neg" },
+        { 30, LW_LK_NBLCK, 0, "zero" },
+        { 0x100000000LL, LW_LK_NBLCK, 5, "4G" },
+        { 0x100000000LL, LW_LK_UNLCK, 5, "4G-unlck" },
+        { 60, LW_LK_LOCK, 3, "lock-free" },
+        { 60, LW_LK_UNLCK, 3, "lock-free-unlck" },
+#ifndef LOWIO_SKIP_SLOW_LOCK
+        { 0, LW_LK_LOCK, 10, "lock-held" }, /* ten tries, ~9 s per side */
+#endif
+        { 0, LW_LK_UNLCK, 10, "cleanup0" },
+        { 20, LW_LK_UNLCK, 4, "cleanup20" },
+    };
+    int fd[2], i;
+    HANDLE h[2];
+    install_counting_iph();
+    memset(g_lw_lk, 'L', sizeof g_lw_lk);
+    lw_open2("lk", g_lw_lk, sizeof g_lw_lk, GENERIC_READ | GENERIC_WRITE, 0, fd, h);
+    for (i = 0; i < LW_N(seq); i++) {
+        lw_setpos(h[0], seq[i].at); lw_setpos(h[1], seq[i].at);
+        LW_ROW("_locking", seq[i].lbl, ud__locking(fd[0], seq[i].mode, seq[i].n),
+               ref__locking(fd[1], seq[i].mode, seq[i].n));
+        grade2("_locking.pos", seq[i].lbl, lw_pos(h[0]), lw_pos(h[1]));
+    }
+    lw_close2(fd);
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_locking", "pipe", ud__locking(fd[0], LW_LK_NBLCK, 1), ref__locking(fd[1], LW_LK_NBLCK, 1));
+    lw_close2(fd);
+    LW_BADFDS("_locking", LW_LOCK_DLL, LW_LOCK_REF);
+    lw_del("lk", 0); lw_del("lk", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__locking */
+
+/* ==== dup.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS__dup
+int __cdecl ref__dup(int);
+int __cdecl ref__setmode(int, int);
+int __cdecl ref__write(int, const void *, unsigned);
+intptr_t __cdecl ref__get_osfhandle(int);
+extern int(__cdecl *const ud__dup)(int) __asm__(UD_IMP(_dup));
+extern int(__cdecl *const ud__setmode)(int, int) __asm__(UD_IMP(_setmode));
+extern int(__cdecl *const ud__write)(int, const void *, unsigned) __asm__(UD_IMP(_write));
+extern intptr_t(__cdecl *const ud__get_osfhandle)(int) __asm__(UD_IMP(_get_osfhandle));
+
+static long long lw_inherit(intptr_t h)
+{
+    DWORD f = 0x55;
+    if (!GetHandleInformation((HANDLE)h, &f))
+        return -1;
+    return f & HANDLE_FLAG_INHERIT;
+}
+
+static void run_lowio__dup(void)
+{
+    int fd[2], d[2] = { -1, -1 };
+    install_counting_iph();
+
+    /* Text mode and the UTF-16 mode are copied; the copy is inheritable. */
+    lw_open2("dp", "", 0, GENERIC_READ | GENERIC_WRITE, _O_NOINHERIT | _O_TEXT, fd, 0);
+    ud__setmode(fd[0], _O_U16TEXT); ref__setmode(fd[1], _O_U16TEXT);
+    LW_ROW_FD("_dup", "file", d[0], ud__dup(fd[0]), d[1], ref__dup(fd[1]));
+    grade2("_dup.distinct", "file", d[0] != fd[0], d[1] != fd[1]);
+    grade2("_dup.inherit", "file", lw_inherit(ud__get_osfhandle(d[0])), lw_inherit(ref__get_osfhandle(d[1])));
+    LW_ROW("_dup", "odd-via-dup", ud__write(d[0], "abc", 3), ref__write(d[1], "abc", 3));
+    LW_ROW("_dup", "write-via-dup", ud__write(d[0], L"x\n", 4), ref__write(d[1], L"x\n", 4));
+    LW_ROW("_dup", "write-via-orig", ud__write(fd[0], L"y", 2), ref__write(fd[1], L"y", 2));
+    lw_close2(d);
+    LW_ROW("_dup", "orig-after-close", ud__write(fd[0], L"z", 2), ref__write(fd[1], L"z", 2));
+    lw_close2(fd);
+    LW_FILES("_dup", "file", "dp");
+
+    /* A pipe and the NUL device dup too. */
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW_FD("_dup", "pipe", d[0], ud__dup(fd[0]), d[1], ref__dup(fd[1]));
+    lw_close2(d);
+    lw_close2(fd);
+    fd[0] = lw_nul(0, GENERIC_READ, 0); fd[1] = lw_nul(1, GENERIC_READ, 0);
+    LW_ROW_FD("_dup", "nul", d[0], ud__dup(fd[0]), d[1], ref__dup(fd[1]));
+    lw_close2(d);
+    lw_close2(fd);
+
+    LW_BADFDS("_dup", ud__dup, ref__dup);
+    lw_del("dp", 0); lw_del("dp", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__dup */
+
+/* ==== dup2.cpp ========================================================= */
+#if UCRTDIFF_REF_HAS__dup2
+int __cdecl ref__dup2(int, int);
+int __cdecl ref__write(int, const void *, unsigned);
+extern int(__cdecl *const ud__dup2)(int, int) __asm__(UD_IMP(_dup2));
+extern int(__cdecl *const ud__write)(int, const void *, unsigned) __asm__(UD_IMP(_write));
+
+#define LW_HIGH_FD 4000
+#define LW_D2_DLL(fd) ud__dup2(fd, fd)
+#define LW_D2_REF(fd) ref__dup2(fd, fd)
+
+static void run_lowio__dup2(void)
+{
+    int a[2], b[2], c[2];
+    install_counting_iph();
+    lw_open2("d2a", "AAAA", 4, GENERIC_READ | GENERIC_WRITE, 0, a, 0);
+    lw_open2("d2b", "BBBB", 4, GENERIC_READ | GENERIC_WRITE, _O_TEXT, b, 0);
+
+    /* Over an OPEN target: the target is closed, then becomes a copy of a
+     * (binary, so no CR), writing at a's shared file position (0). */
+    LW_ROW("_dup2", "over-open", ud__dup2(a[0], b[0]), ref__dup2(a[1], b[1]));
+    LW_ROW("_dup2", "write-via-target", ud__write(b[0], "z\n", 2), ref__write(b[1], "z\n", 2));
+    LW_ROW("_dup2", "self", ud__dup2(a[0], a[0]), ref__dup2(a[1], a[1]));
+    /* A target past the end of the table: the table grows to reach it. */
+    LW_ROW("_dup2", "high", ud__dup2(a[0], LW_HIGH_FD), ref__dup2(a[1], LW_HIGH_FD));
+    LW_ROW("_dup2", "write-via-high", ud__write(LW_HIGH_FD, "h", 1), ref__write(LW_HIGH_FD, "h", 1));
+    lw_close(0, LW_HIGH_FD);
+    lw_close(1, LW_HIGH_FD);
+    LW_ROW("_dup2", "tgt=-1", ud__dup2(a[0], -1), ref__dup2(a[1], -1));
+    LW_ROW("_dup2", "tgt=-2", ud__dup2(a[0], -2), ref__dup2(a[1], -2));
+    LW_ROW("_dup2", "tgt=NHANDLE", ud__dup2(a[0], 8192), ref__dup2(a[1], 8192));
+    LW_ROW("_dup2", "tgt=max", ud__dup2(a[0], 0x7fffffff), ref__dup2(a[1], 0x7fffffff));
+    LW_ROW("_dup2", "src=-2,tgt=-2", ud__dup2(-2, -2), ref__dup2(-2, -2));
+    lw_closed_fds(c);
+    LW_ROW("_dup2", "src=closed", ud__dup2(c[0], b[0]), ref__dup2(c[1], b[1]));
+    /* A closed target is simply (re)opened as the copy. */
+    LW_ROW("_dup2", "tgt=closed", ud__dup2(a[0], c[0]), ref__dup2(a[1], c[1]));
+    LW_ROW("_dup2", "write-via-closed", ud__write(c[0], "c", 1), ref__write(c[1], "c", 1));
+    lw_close2(c);
+    lw_close2(b);
+    lw_close2(a);
+    LW_FILES("_dup2", "a", "d2a");
+    LW_FILES("_dup2", "b", "d2b");
+    LW_BADFDS("_dup2", LW_D2_DLL, LW_D2_REF);
+    lw_del("d2a", 0); lw_del("d2a", 1);
+    lw_del("d2b", 0); lw_del("d2b", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__dup2 */
+
+/* ==== close.cpp ======================================================== */
+#if UCRTDIFF_REF_HAS__close
+extern int(__cdecl *const ud__close)(int) __asm__(UD_IMP(_close));
+
+static void run_lowio__close(void)
+{
+    int fd[2];
+    install_counting_iph();
+    lw_open2("cl", "x", 1, GENERIC_READ | GENERIC_WRITE, 0, fd, 0);
+    LW_ROW("_close", "file", ud__close(fd[0]), ref__close(fd[1]));
+    LW_ROW("_close", "twice", ud__close(fd[0]), ref__close(fd[1]));
+    /* The handle really went: the file can now be opened exclusively. */
+    {
+        HANDLE x0 = CreateFileA(lw_path("cl", 0), GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+        HANDLE x1 = CreateFileA(lw_path("cl", 1), GENERIC_READ, 0, 0, OPEN_EXISTING, 0, 0);
+        grade2("_close.released", "file", x0 != INVALID_HANDLE_VALUE, x1 != INVALID_HANDLE_VALUE);
+        if (x0 != INVALID_HANDLE_VALUE) CloseHandle(x0);
+        if (x1 != INVALID_HANDLE_VALUE) CloseHandle(x1);
+    }
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_close", "pipe", ud__close(fd[0]), ref__close(fd[1]));
+    fd[0] = lw_nul(0, GENERIC_READ, 0); fd[1] = lw_nul(1, GENERIC_READ, 0);
+    LW_ROW("_close", "nul", ud__close(fd[0]), ref__close(fd[1]));
+    LW_ROW("_close", "fd=-1", ud__close(-1), ref__close(-1));
+    LW_ROW("_close", "fd=-2", ud__close(-2), ref__close(-2));
+    LW_ROW("_close", "fd=big", ud__close(LW_BAD_FD), ref__close(LW_BAD_FD));
+    LW_ROW("_close", "fd=max", ud__close(0x7fffffff), ref__close(0x7fffffff));
+    lw_del("cl", 0); lw_del("cl", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__close */
+
+/* ==== commit.cpp ======================================================= */
+#if UCRTDIFF_REF_HAS__commit
+int __cdecl ref__commit(int);
+extern int(__cdecl *const ud__commit)(int) __asm__(UD_IMP(_commit));
+
+static void run_lowio__commit(void)
+{
+    int fd[2];
+    install_counting_iph();
+    lw_open2("cm", "x", 1, GENERIC_READ | GENERIC_WRITE, 0, fd, 0);
+    LW_ROW("_commit", "rw", ud__commit(fd[0]), ref__commit(fd[1]));
+    lw_close2(fd);
+    lw_open2("cm", "x", 1, GENERIC_READ, 0, fd, 0);
+    LW_ROW("_commit", "rdonly", ud__commit(fd[0]), ref__commit(fd[1]));
+    lw_close2(fd);
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_commit", "pipe-read-end", ud__commit(fd[0]), ref__commit(fd[1]));
+    lw_close2(fd);
+    LW_BADFDS("_commit", ud__commit, ref__commit);
+    lw_del("cm", 0); lw_del("cm", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__commit */
+
+/* ==== isatty.cpp ======================================================= */
+#if UCRTDIFF_REF_HAS__isatty
+int __cdecl ref__isatty(int);
+extern int(__cdecl *const ud__isatty)(int) __asm__(UD_IMP(_isatty));
+
+static void run_lowio__isatty(void)
+{
+    int fd[2];
+    install_counting_iph();
+    lw_open2("tt", "x", 1, GENERIC_READ, 0, fd, 0);
+    LW_ROW("_isatty", "file", ud__isatty(fd[0]), ref__isatty(fd[1]));
+    lw_close2(fd);
+    fd[0] = lw_nul(0, GENERIC_READ, 0); fd[1] = lw_nul(1, GENERIC_READ, 0);
+    LW_ROW("_isatty", "nul", ud__isatty(fd[0]), ref__isatty(fd[1]));
+    lw_close2(fd);
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_isatty", "pipe", ud__isatty(fd[0]), ref__isatty(fd[1]));
+    lw_close2(fd);
+    /* FOPEN is not checked: a closed, in-range fd is simply "not a tty". */
+    LW_BADFDS("_isatty", ud__isatty, ref__isatty);
+    lw_del("tt", 0); lw_del("tt", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__isatty */
+
+/* ==== umask.cpp ======================================================== */
+#if UCRTDIFF_REF_HAS__umask
+int __cdecl ref__umask(int);
+int __cdecl ref__umask_s(int, int *);
+extern int(__cdecl *const ud__umask)(int) __asm__(UD_IMP(_umask));
+extern int(__cdecl *const ud__umask_s)(int, int *) __asm__(UD_IMP(_umask_s));
+
+static void run_lowio__umask(void)
+{
+    static const int masks[] = { _S_IWRITE, _S_IREAD, _S_IREAD | _S_IWRITE, 0xFFFF, -1, 0x1FF, 0 };
+    int save1, save2, i;
+    install_counting_iph();
+    save1 = ud__umask(0);
+    save2 = ref__umask(0);
+    for (i = 0; i < LW_N(masks); i++)
+        LW_ROW("_umask", lw_lbl("mask", i), ud__umask(masks[i]), ref__umask(masks[i]));
+    ud__umask(save1);
+    ref__umask(save2);
+}
+
+static void run_lowio__umask_s(void)
+{
+    static const int masks[] = { _S_IWRITE, _S_IREAD, 0x1FF, _S_IREAD | _S_IWRITE, -1, 0, 0x8000 };
+    int save1 = 0, save2 = 0, o1, o2, i;
+    install_counting_iph();
+    ud__umask_s(0, &save1);
+    ref__umask_s(0, &save2);
+    for (i = 0; i < LW_N(masks); i++) {
+        o1 = o2 = 0x5555;
+        LW_ROW("_umask_s", lw_lbl("mask", i), ud__umask_s(masks[i], &o1), ref__umask_s(masks[i], &o2));
+        grade2("_umask_s.old", lw_lbl("mask", i), o1, o2);
+    }
+    LW_ROW("_umask_s", "NULL", ud__umask_s(_S_IWRITE, 0), ref__umask_s(_S_IWRITE, 0));
+    LW_ROW("_umask_s", "NULL-bad", ud__umask_s(0x1FF, 0), ref__umask_s(0x1FF, 0));
+    ud__umask_s(save1, &o1);
+    ref__umask_s(save2, &o2);
+}
+#endif /* UCRTDIFF_REF_HAS__umask */
+
+/* ==== eof.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS__eof
+int __cdecl ref__eof(int);
+extern int(__cdecl *const ud__eof)(int) __asm__(UD_IMP(_eof));
+
+static void run_lowio__eof(void)
+{
+    static const long long at[] = { 0, 2, 3, 10 };
+    int fd[2], i;
+    HANDLE h[2];
+    install_counting_iph();
+    lw_open2("ef", "abc", 3, GENERIC_READ, 0, fd, h);
+    for (i = 0; i < LW_N(at); i++) {
+        lw_setpos(h[0], at[i]); lw_setpos(h[1], at[i]);
+        LW_ROW("_eof", lw_lbl("at", i), ud__eof(fd[0]), ref__eof(fd[1]));
+        grade2("_eof.pos", lw_lbl("at", i), lw_pos(h[0]), lw_pos(h[1]));
+    }
+    lw_close2(fd);
+    lw_open2("ef", "", 0, GENERIC_READ, 0, fd, h);
+    LW_ROW("_eof", "empty", ud__eof(fd[0]), ref__eof(fd[1]));
+    lw_close2(fd);
+    fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);
+    LW_ROW("_eof", "pipe", ud__eof(fd[0]), ref__eof(fd[1]));
+    lw_close2(fd);
+    fd[0] = lw_nul(0, GENERIC_READ, 0); fd[1] = lw_nul(1, GENERIC_READ, 0);
+    LW_ROW("_eof", "nul", ud__eof(fd[0]), ref__eof(fd[1]));
+    lw_close2(fd);
+    LW_BADFDS("_eof", ud__eof, ref__eof);
+    lw_del("ef", 0); lw_del("ef", 1);
+    lw_del("closed", 0); lw_del("closed", 1);
+}
+#endif /* UCRTDIFF_REF_HAS__eof */
+
+/* ==== filelength.cpp =================================================== */
+#if UCRTDIFF_REF_HAS__filelength
+long __cdecl ref__filelength(int);
+__int64 __cdecl ref__filelengthi64(int);
+extern long(__cdecl *const ud__filelength)(int) __asm__(UD_IMP(_filelength));
+extern __int64(__cdecl *const ud__filelengthi64)(int) __asm__(UD_IMP(_filelengthi64));
+
+static char g_lw_fl[5000];
+
+#define LW_FILELENGTH_RUN(fam, UD, REF) do {                                         \
+        int fd[2];                                                                   \
+        HANDLE h[2];                                                                 \
+        install_counting_iph();                                                      \
+        memset(g_lw_fl, 'f', sizeof g_lw_fl);                                        \
+        lw_open2("fl", g_lw_fl, sizeof g_lw_fl, GENERIC_READ, 0, fd, h);             \
+        lw_setpos(h[0], 7); lw_setpos(h[1], 7);                                      \
+        LW_ROW(fam, "5000@7", UD(fd[0]), REF(fd[1]));                                \
+        grade2(fam ".pos", "5000@7", lw_pos(h[0]), lw_pos(h[1]));                    \
+        lw_setpos(h[0], 5000); lw_setpos(h[1], 5000);                                \
+        LW_ROW(fam, "5000@end", UD(fd[0]), REF(fd[1]));                              \
+        grade2(fam ".pos", "5000@end", lw_pos(h[0]), lw_pos(h[1]));                  \
+        lw_setpos(h[0], 0x80000001LL); lw_setpos(h[1], 0x80000001LL);                \
+        LW_ROW(fam, "5000@2G", UD(fd[0]), REF(fd[1]));                               \
+        grade2(fam ".pos", "5000@2G", lw_pos(h[0]), lw_pos(h[1]));                   \
+        lw_close2(fd);                                                               \
+        lw_open2("fl", "", 0, GENERIC_READ, 0, fd, h);                               \
+        LW_ROW(fam, "empty", UD(fd[0]), REF(fd[1]));                                 \
+        lw_close2(fd);                                                               \
+        fd[0] = lw_pipe(0, "ab", 2, 0); fd[1] = lw_pipe(1, "ab", 2, 0);             \
+        LW_ROW(fam, "pipe", UD(fd[0]), REF(fd[1]));                                  \
+        lw_close2(fd);                                                               \
+        LW_BADFDS(fam, UD, REF);                                                     \
+        lw_del("fl", 0); lw_del("fl", 1);                                            \
+        lw_del("closed", 0); lw_del("closed", 1);                                    \
+    } while (0)
+
+static void run_lowio__filelength(void) { LW_FILELENGTH_RUN("_filelength", ud__filelength, ref__filelength); }
+static void run_lowio__filelengthi64(void)
+{
+    LW_FILELENGTH_RUN("_filelengthi64", ud__filelengthi64, ref__filelengthi64);
+}
+#endif /* UCRTDIFF_REF_HAS__filelength */
+
+/* ==== creat.cpp ======================================================== */
+#if UCRTDIFF_REF_HAS__creat
+int __cdecl ref__creat(const char *, int);
+int __cdecl ref__wcreat(const wchar_t *, int);
+extern int(__cdecl *const ud__creat)(const char *, int) __asm__(UD_IMP(_creat));
+extern int(__cdecl *const ud__wcreat)(const wchar_t *, int) __asm__(UD_IMP(_wcreat));
+
+static long long lw_attr(const char *leaf, int side)
+{
+    return (long long)GetFileAttributesA(lw_path(leaf, side)) & (FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_DIRECTORY);
+}
+
+/* Paths of both widths for one side. `nodir` points into a missing directory. */
+static void lw_cpath(const char *leaf, int side, int nodir, char *n, wchar_t *w)
+{
+    int i;
+    lstrcpyA(n, lw_path(nodir ? "nodir" : leaf, side));
+    if (nodir) {
+        lstrcatA(n, "\\");
+        lstrcatA(n, leaf);
+    }
+    for (i = 0; n[i]; i++)
+        w[i] = (wchar_t)(unsigned char)n[i];
+    w[i] = 0;
+}
+
+#define LW_CREAT_RUN(fam, WIDE) do {                                                 \
+        static const struct { const char *lbl; const char *seed; int pmode; int nodir; } cs[] = { \
+            { "new", 0, _S_IREAD | _S_IWRITE, 0 },                                   \
+            { "existing", "hello", _S_IREAD | _S_IWRITE, 0 },                        \
+            { "readonly-new", 0, _S_IREAD, 0 },                                      \
+            { "readonly-again", 0, _S_IREAD | _S_IWRITE, 0 },                        \
+            { "pmode0", 0, 0, 0 },                                                   \
+            { "nodir", 0, _S_IREAD | _S_IWRITE, 1 },                                 \
+        };                                                                           \
+        char n1[MAX_PATH + 64], n2[MAX_PATH + 64];                                   \
+        wchar_t w1[MAX_PATH + 64], w2[MAX_PATH + 64];                                \
+        int i, f1 = -1, f2 = -1;                                                     \
+        install_counting_iph();                                                      \
+        for (i = 0; i < LW_N(cs); i++) {                                             \
+            if (i != 3) { lw_del("cr", 0); lw_del("cr", 1); }                        \
+            if (cs[i].seed) { lw_put("cr", 0, cs[i].seed, 5); lw_put("cr", 1, cs[i].seed, 5); } \
+            lw_cpath("cr", 0, cs[i].nodir, n1, w1);                                  \
+            lw_cpath("cr", 1, cs[i].nodir, n2, w2);                                  \
+            if (WIDE)                                                                \
+                LW_ROW_FD(fam, cs[i].lbl, f1, ud__wcreat(w1, cs[i].pmode), f2, ref__wcreat(w2, cs[i].pmode)); \
+            else                                                                     \
+                LW_ROW_FD(fam, cs[i].lbl, f1, ud__creat(n1, cs[i].pmode), f2, ref__creat(n2, cs[i].pmode)); \
+            lw_close(0, f1);                                                         \
+            lw_close(1, f2);                                                         \
+            if (!cs[i].nodir) {                                                      \
+                LW_FILES(fam, cs[i].lbl, "cr");                                      \
+                grade2(fam ".attr", cs[i].lbl, lw_attr("cr", 0), lw_attr("cr", 1));  \
+            }                                                                        \
+        }                                                                            \
+        if (WIDE)                                                                    \
+            LW_ROW(fam, "NULL", ud__wcreat(0, _S_IWRITE), ref__wcreat(0, _S_IWRITE)); \
+        else                                                                         \
+            LW_ROW(fam, "NULL", ud__creat(0, _S_IWRITE), ref__creat(0, _S_IWRITE));  \
+        lw_del("cr", 0); lw_del("cr", 1);                                            \
+    } while (0)
+
+static void run_lowio__creat(void) { LW_CREAT_RUN("_creat", 0); }
+static void run_lowio__wcreat(void) { LW_CREAT_RUN("_wcreat", 1); }
+#endif /* UCRTDIFF_REF_HAS__creat */
+
+/* ==== mktemp.cpp ======================================================= */
+#if UCRTDIFF_REF_HAS__mktemp
+char *__cdecl ref__mktemp(char *);
+wchar_t *__cdecl ref__wmktemp(wchar_t *);
+int __cdecl ref__mktemp_s(char *, size_t);
+int __cdecl ref__wmktemp_s(wchar_t *, size_t);
+extern char *(__cdecl *const ud__mktemp)(char *) __asm__(UD_IMP(_mktemp));
+extern wchar_t *(__cdecl *const ud__wmktemp)(wchar_t *) __asm__(UD_IMP(_wmktemp));
+extern int(__cdecl *const ud__mktemp_s)(char *, size_t) __asm__(UD_IMP(_mktemp_s));
+extern int(__cdecl *const ud__wmktemp_s)(wchar_t *, size_t) __asm__(UD_IMP(_wmktemp_s));
+
+#define LW_MK_CAP 320
+/* Both sides' templates live in their own directory-prefixed buffers; the two
+ * prefixes ("...ucrtdiff_sd_dll_lw_" / "...ucrtdiff_sd_ref_lw_") have the same
+ * length, so everything from `g_lw_mk_off` on is comparable byte for byte. */
+static char g_lw_mk[2][LW_MK_CAP];
+static wchar_t g_lw_wmk[2][LW_MK_CAP];
+static int g_lw_mk_off;
+
+/* Template `leaf` for both sides (leaf "" + raw != 0: the bare string `raw`). */
+static void lw_mk_set(const char *leaf, const char *raw)
+{
+    int s, i;
+    for (s = 0; s < 2; s++) {
+        memset(g_lw_mk[s], 'Q', LW_MK_CAP);
+        for (i = 0; i < LW_MK_CAP; i++)
+            g_lw_wmk[s][i] = L'Q';
+        lstrcpyA(g_lw_mk[s], raw ? raw : lw_path(leaf, s));
+        for (i = 0; g_lw_mk[s][i]; i++)
+            g_lw_wmk[s][i] = (wchar_t)(unsigned char)g_lw_mk[s][i];
+        g_lw_wmk[s][i] = 0;
+    }
+    g_lw_mk_off = raw ? 0 : lstrlenA(lw_path("", 0));
+}
+
+#define LW_MK_GRADE(fam, lbl) do {                                                   \
+        grade2(fam ".buf", lbl, fnv(g_lw_mk[0] + g_lw_mk_off, LW_MK_CAP - g_lw_mk_off), \
+               fnv(g_lw_mk[1] + g_lw_mk_off, LW_MK_CAP - g_lw_mk_off));                \
+        grade2(fam ".wbuf", lbl,                                                       \
+               fnv(g_lw_wmk[0] + g_lw_mk_off, (LW_MK_CAP - g_lw_mk_off) * sizeof(wchar_t)), \
+               fnv(g_lw_wmk[1] + g_lw_mk_off, (LW_MK_CAP - g_lw_mk_off) * sizeof(wchar_t))); \
+    } while (0)
+
+/* The name mktemp would generate for `leaf` (6 trailing X's) with `letter`:
+ * the thread id's low five digits, preceded by the letter. */
+static void lw_mk_name(const char *leaf, char letter, char *out)
+{
+    unsigned id = GetCurrentThreadId();
+    int n, i;
+    lstrcpyA(out, leaf);
+    n = lstrlenA(out);
+    for (i = 0; i < 5; i++) {
+        out[n - 1 - i] = (char)('0' + id % 10);
+        id /= 10;
+    }
+    out[n - 6] = letter;
+}
+
+static void lw_mk_occupy(const char *leaf, const char *letters, int create)
+{
+    char name[64];
+    int s, i;
+    for (i = 0; letters[i]; i++) {
+        lw_mk_name(leaf, letters[i], name);
+        for (s = 0; s < 2; s++) {
+            if (create)
+                lw_put(name, s, "o", 1);
+            else
+                lw_del(name, s);
+        }
+    }
+}
+
+static const char g_lw_az[] = "abcdefghijklmnopqrstuvwxyz";
+
+/* The shared case list for the four exports. KIND: 0 _mktemp, 1 _wmktemp,
+ * 2 _mktemp_s, 3 _wmktemp_s. `size` < 0 means "strlen + 1". */
+#define LW_MK_CALL(KIND, s, size)                                                    \
+    ((KIND) == 0 ? (long long)((s ? ref__mktemp(g_lw_mk[1]) : ud__mktemp(g_lw_mk[0])) == g_lw_mk[s]) \
+     : (KIND) == 1 ? (long long)((s ? ref__wmktemp(g_lw_wmk[1]) : ud__wmktemp(g_lw_wmk[0])) == g_lw_wmk[s]) \
+     : (KIND) == 2 ? (long long)(s ? ref__mktemp_s(g_lw_mk[1], (size) < 0 ? (size_t)lstrlenA(g_lw_mk[1]) + 1 : (size_t)(size)) \
+                                   : ud__mktemp_s(g_lw_mk[0], (size) < 0 ? (size_t)lstrlenA(g_lw_mk[0]) + 1 : (size_t)(size))) \
+     : (long long)(s ? ref__wmktemp_s(g_lw_wmk[1], (size) < 0 ? (size_t)lstrlenA(g_lw_mk[1]) + 1 : (size_t)(size)) \
+                     : ud__wmktemp_s(g_lw_wmk[0], (size) < 0 ? (size_t)lstrlenA(g_lw_mk[0]) + 1 : (size_t)(size))))
+
+#define LW_MK_CASE(fam, KIND, lbl, leaf, raw, size) do {                             \
+        lw_mk_set(leaf, raw);                                                        \
+        LW_ROW(fam, lbl, LW_MK_CALL(KIND, 0, size), LW_MK_CALL(KIND, 1, size));      \
+        LW_MK_GRADE(fam, lbl);                                                       \
+    } while (0)
+
+#define LW_MKTEMP_RUN(fam, KIND) do {                                                \
+        install_counting_iph();                                                      \
+        LW_MK_CASE(fam, KIND, "basic", "mkaXXXXXX", 0, -1);                          \
+        LW_MK_CASE(fam, KIND, "sevenX", "mkbXXXXXXX", 0, -1);                        \
+        LW_MK_CASE(fam, KIND, "fiveX", "mkcXXXXX", 0, -1);                           \
+        LW_MK_CASE(fam, KIND, "midX", "mkXXXXXXd", 0, -1);                           \
+        LW_MK_CASE(fam, KIND, "short", "", "XXXXX", -1);                             \
+        LW_MK_CASE(fam, KIND, "bare6", "", "XXXXXX", -1);                            \
+        LW_MK_CASE(fam, KIND, "empty", "", "", -1);                                  \
+        /* errno is restored to its value on entry after the _access_s probes. */    \
+        lw_mk_set("mkeXXXXXX", 0);                                                   \
+        lw_reset();                                                                  \
+        *_errno() = 77; *ref__errno() = 77;                                          \
+        {                                                                            \
+            long long r1 = LW_MK_CALL(KIND, 0, -1);                                  \
+            long long e1 = *_errno();                                                \
+            long long r2 = LW_MK_CALL(KIND, 1, -1);                                  \
+            grade2(fam, "errno-kept", r1, r2);                                       \
+            grade2(fam ".errno", "errno-kept", e1, *ref__errno());                   \
+        }                                                                            \
+        /* 'a' taken: the letter moves on to 'b'. All 26 taken: EEXIST, no     \
+         * handler, template reset. Both create and delete real files, which    \
+         * bugchecks the guest today (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS). */   \
+        if (!UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS) {                                    \
+            lw_mk_occupy("mkfXXXXXX", "a", 1);                                       \
+            LW_MK_CASE(fam, KIND, "a-taken", "mkfXXXXXX", 0, -1);                    \
+            lw_mk_occupy("mkfXXXXXX", "a", 0);                                       \
+            lw_mk_occupy("mkgXXXXXX", g_lw_az, 1);                                   \
+            LW_MK_CASE(fam, KIND, "exhausted", "mkgXXXXXX", 0, -1);                  \
+            lw_mk_occupy("mkgXXXXXX", g_lw_az, 0);                                   \
+        } else {                                                                     \
+            DbgPrint("[UCRTDIFF]   SKIP %s occupied-name cases: fastfat bugchecks (known bug)\n", fam); \
+        }                                                                            \
+        if ((KIND) >= 2) {                                                           \
+            LW_MK_CASE(fam, KIND, "size=len", "mkhXXXXXX", 0, (long)lstrlenA(lw_path("mkhXXXXXX", 0))); \
+            LW_MK_CASE(fam, KIND, "size=0", "mkhXXXXXX", 0, 0);                      \
+            LW_MK_CASE(fam, KIND, "size=big", "mkhXXXXXX", 0, LW_MK_CAP);            \
+            LW_MK_CASE(fam, KIND, "size=7", "", "abXXXXXX", 7);                      \
+            LW_ROW(fam, "NULL", (KIND) == 2 ? ud__mktemp_s(0, 10) : ud__wmktemp_s(0, 10), \
+                   (KIND) == 2 ? ref__mktemp_s(0, 10) : ref__wmktemp_s(0, 10));      \
+            LW_ROW(fam, "NULL0", (KIND) == 2 ? ud__mktemp_s(0, 0) : ud__wmktemp_s(0, 0), \
+                   (KIND) == 2 ? ref__mktemp_s(0, 0) : ref__wmktemp_s(0, 0));        \
+        } else {                                                                     \
+            LW_ROW(fam, "NULL", (KIND) == 0 ? (long long)(ud__mktemp(0) == 0) : (long long)(ud__wmktemp(0) == 0), \
+                   (KIND) == 0 ? (long long)(ref__mktemp(0) == 0) : (long long)(ref__wmktemp(0) == 0)); \
+        }                                                                            \
+    } while (0)
+
+static void run_lowio__mktemp(void) { LW_MKTEMP_RUN("_mktemp", 0); }
+static void run_lowio__wmktemp(void) { LW_MKTEMP_RUN("_wmktemp", 1); }
+static void run_lowio__mktemp_s(void) { LW_MKTEMP_RUN("_mktemp_s", 2); }
+static void run_lowio__wmktemp_s(void) { LW_MKTEMP_RUN("_wmktemp_s", 3); }
+#endif /* UCRTDIFF_REF_HAS__mktemp */
+
+/* ==== registry: paste LOWIO_HAND_ENTRIES into run_legacy()'s legacy[] ==== */
+#if UCRTDIFF_REF_HAS__write
+#define LOWIO_HAND_WRITE_ENTRIES { "_write", run_lowio__write },
+#else
+#define LOWIO_HAND_WRITE_ENTRIES { "_write", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__read
+#define LOWIO_HAND_READ_ENTRIES { "_read", run_lowio__read },
+#else
+#define LOWIO_HAND_READ_ENTRIES { "_read", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__lseek
+#define LOWIO_HAND_LSEEK_ENTRIES { "_lseek", run_lowio__lseek }, { "_lseeki64", run_lowio__lseeki64 },
+#else
+#define LOWIO_HAND_LSEEK_ENTRIES { "_lseek", 0 }, { "_lseeki64", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__tell
+#define LOWIO_HAND_TELL_ENTRIES { "_tell", run_lowio__tell },
+#else
+#define LOWIO_HAND_TELL_ENTRIES { "_tell", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__telli64
+#define LOWIO_HAND_TELLI64_ENTRIES { "_telli64", run_lowio__telli64 },
+#else
+#define LOWIO_HAND_TELLI64_ENTRIES { "_telli64", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__chsize
+#define LOWIO_HAND_CHSIZE_ENTRIES { "_chsize", run_lowio__chsize }, { "_chsize_s", run_lowio__chsize_s },
+#else
+#define LOWIO_HAND_CHSIZE_ENTRIES { "_chsize", 0 }, { "_chsize_s", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__setmode
+#define LOWIO_HAND_SETMODE_ENTRIES                                                   \
+    { "_setmode", run_lowio__setmode }, { "_set_fmode", run_lowio__set_fmode },      \
+    { "_get_fmode", run_lowio__get_fmode },
+#else
+#define LOWIO_HAND_SETMODE_ENTRIES { "_setmode", 0 }, { "_set_fmode", 0 }, { "_get_fmode", 0 },
+#endif
+#if UCRTDIFF_REF_HAS___p__fmode
+#define LOWIO_HAND_TXTMODE_ENTRIES { "__p__fmode", run_lowio___p__fmode },
+#else
+#define LOWIO_HAND_TXTMODE_ENTRIES { "__p__fmode", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__locking
+#define LOWIO_HAND_LOCKING_ENTRIES { "_locking", run_lowio__locking },
+#else
+#define LOWIO_HAND_LOCKING_ENTRIES { "_locking", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__dup
+#define LOWIO_HAND_DUP_ENTRIES { "_dup", run_lowio__dup },
+#else
+#define LOWIO_HAND_DUP_ENTRIES { "_dup", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__dup2
+#define LOWIO_HAND_DUP2_ENTRIES { "_dup2", run_lowio__dup2 },
+#else
+#define LOWIO_HAND_DUP2_ENTRIES { "_dup2", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__close
+#define LOWIO_HAND_CLOSE_ENTRIES { "_close", run_lowio__close },
+#else
+#define LOWIO_HAND_CLOSE_ENTRIES { "_close", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__commit
+#define LOWIO_HAND_COMMIT_ENTRIES { "_commit", run_lowio__commit },
+#else
+#define LOWIO_HAND_COMMIT_ENTRIES { "_commit", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__isatty
+#define LOWIO_HAND_ISATTY_ENTRIES { "_isatty", run_lowio__isatty },
+#else
+#define LOWIO_HAND_ISATTY_ENTRIES { "_isatty", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__umask
+#define LOWIO_HAND_UMASK_ENTRIES { "_umask", run_lowio__umask }, { "_umask_s", run_lowio__umask_s },
+#else
+#define LOWIO_HAND_UMASK_ENTRIES { "_umask", 0 }, { "_umask_s", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__eof
+#define LOWIO_HAND_EOF_ENTRIES { "_eof", run_lowio__eof },
+#else
+#define LOWIO_HAND_EOF_ENTRIES { "_eof", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__filelength
+#define LOWIO_HAND_FILELENGTH_ENTRIES                                                \
+    { "_filelength", run_lowio__filelength }, { "_filelengthi64", run_lowio__filelengthi64 },
+#else
+#define LOWIO_HAND_FILELENGTH_ENTRIES { "_filelength", 0 }, { "_filelengthi64", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__creat
+#define LOWIO_HAND_CREAT_ENTRIES { "_creat", run_lowio__creat }, { "_wcreat", run_lowio__wcreat },
+#else
+#define LOWIO_HAND_CREAT_ENTRIES { "_creat", 0 }, { "_wcreat", 0 },
+#endif
+#if UCRTDIFF_REF_HAS__mktemp
+#define LOWIO_HAND_MKTEMP_ENTRIES                                                    \
+    { "_mktemp", run_lowio__mktemp }, { "_wmktemp", run_lowio__wmktemp },            \
+    { "_mktemp_s", run_lowio__mktemp_s }, { "_wmktemp_s", run_lowio__wmktemp_s },
+#else
+#define LOWIO_HAND_MKTEMP_ENTRIES { "_mktemp", 0 }, { "_wmktemp", 0 }, { "_mktemp_s", 0 }, { "_wmktemp_s", 0 },
+#endif
+
+#define LOWIO_HAND_ENTRIES                                                           \
+    LOWIO_HAND_WRITE_ENTRIES LOWIO_HAND_READ_ENTRIES LOWIO_HAND_LSEEK_ENTRIES        \
+    LOWIO_HAND_TELL_ENTRIES LOWIO_HAND_TELLI64_ENTRIES LOWIO_HAND_CHSIZE_ENTRIES     \
+    LOWIO_HAND_SETMODE_ENTRIES LOWIO_HAND_TXTMODE_ENTRIES LOWIO_HAND_LOCKING_ENTRIES \
+    LOWIO_HAND_DUP_ENTRIES LOWIO_HAND_DUP2_ENTRIES LOWIO_HAND_CLOSE_ENTRIES          \
+    LOWIO_HAND_COMMIT_ENTRIES LOWIO_HAND_ISATTY_ENTRIES LOWIO_HAND_UMASK_ENTRIES     \
+    LOWIO_HAND_EOF_ENTRIES LOWIO_HAND_FILELENGTH_ENTRIES LOWIO_HAND_CREAT_ENTRIES    \
+    LOWIO_HAND_MKTEMP_ENTRIES
+
+
+/* ---- conio: inlined from staging/conio.c ---- */
+/* ==== staging/conio.c ======================================================
+ *
+ * Guest grader for the "conio" batch: sdk/lib/ucrt/conio/ (all of it). One
+ * guard per C file that exports anything:
+ *   UCRTDIFF_REF_HAS__getch                    getch.cpp
+ *   UCRTDIFF_REF_HAS__getwch                   getwch.cpp
+ *   UCRTDIFF_REF_HAS__putch                    putch.cpp
+ *   UCRTDIFF_REF_HAS__putwch                   putwch.cpp
+ *   UCRTDIFF_REF_HAS__cputs                    cputs.cpp
+ *   UCRTDIFF_REF_HAS__cputws                   cputws.cpp
+ *   UCRTDIFF_REF_HAS__cgets                    cgets.cpp
+ *   UCRTDIFF_REF_HAS__cgetws                   cgetws.cpp
+ *   UCRTDIFF_REF_HAS___conio_common_vcprintf   cprintf.cpp
+ *   UCRTDIFF_REF_HAS___conio_common_vcscanf    cscanf.cpp (also needs _getch
+ *                                              and _getwch: it is fed through
+ *                                              the push-back buffers)
+ *   UCRTDIFF_REF_HAS__pipe                     pipe.cpp
+ *   UCRTDIFF_REF_HAS__popen                    popen.cpp
+ * initcon.cpp/initconin.cpp export nothing; they are graded through every
+ * console call below (the cached handle, the failed open).
+ *
+ * THE CONSOLE. The harness is a GUI-subsystem process with NO console, and
+ * this block never allocates one (AllocConsole would repoint the process's
+ * std handles for good). Output rows therefore grade the no-console failure
+ * path on both sides. INPUT is never read from a console: every row that
+ * could reach ReadConsole first proves there is no console to reach (it opens
+ * CONIN$/CONOUT$ itself and finds nothing) and is skipped otherwise, so no
+ * row can block. What input rows do grade is fed through the push-back
+ * buffers (_ungetch/_ungetwch), which _getch, _getwch and the cscanf engine
+ * consume WITHOUT touching the console; the buffers are drained before and
+ * after each such row.
+ *
+ * PROCESS STATE. Last-error is preset identically before any call whose errno
+ * comes from GetLastError. _pipe rows create pipes per side and (when the
+ * UCRTDIFF_REF_CALLABLE_ lowio drivers are available) close them; the global
+ * _fmode is saved and restored around the one row that changes it. _popen
+ * rows run only `cmd.exe /c exit N`, only when cmd.exe is present, and each is
+ * waited for by its own _pclose.
+ */
+
+#if UCRTDIFF_REF_HAS__getch || UCRTDIFF_REF_HAS__getwch || UCRTDIFF_REF_HAS__cgets || \
+    UCRTDIFF_REF_HAS__cgetws || UCRTDIFF_REF_HAS___conio_common_vcscanf
+/* 1 when this process has no console to read from or write to. */
+static int cn_no_console(void)
+{
+    HANDLE h = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                           OPEN_EXISTING, 0, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        CloseHandle(h);
+        return 0;
+    }
+    h = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        CloseHandle(h);
+        return 0;
+    }
+    return 1;
+}
+#endif
+
+/* ==== getch.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS__getch
+unsigned long *__cdecl ref___doserrno(void);
+int __cdecl ref__getch(void);
+int __cdecl ref__getche(void);
+int __cdecl ref__getch_nolock(void);
+int __cdecl ref__getche_nolock(void);
+int __cdecl ref__kbhit(void);
+int __cdecl ref__ungetch(int);
+int __cdecl ref__ungetch_nolock(int);
+extern int (__cdecl *const ud__getch)(void) __asm__(UD_IMP(_getch));
+extern int (__cdecl *const ud__getche)(void) __asm__(UD_IMP(_getche));
+extern int (__cdecl *const ud__getch_nolock)(void) __asm__(UD_IMP(_getch_nolock));
+extern int (__cdecl *const ud__getche_nolock)(void) __asm__(UD_IMP(_getche_nolock));
+extern int (__cdecl *const ud__kbhit)(void) __asm__(UD_IMP(_kbhit));
+extern int (__cdecl *const ud__ungetch)(int) __asm__(UD_IMP(_ungetch));
+extern int (__cdecl *const ud__ungetch_nolock)(int) __asm__(UD_IMP(_ungetch_nolock));
+
+/* Empty one side's narrow push-back (FIFO, at most three). Only called with
+ * no console, where _getch on an empty buffer returns EOF at once. Returns a
+ * hash of what was drained, so leftovers are graded too. */
+static long long cn_drain(int ref)
+{
+    long long h = 17;
+    for (int i = 0; i < 4; i++) {
+        int c = ref ? ref__getch() : ud__getch();
+        h = h * 131 + c;
+        if (c == EOF) break;
+    }
+    return h;
+}
+
+static void run_conio__ungetch(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return; /* see the header: never read a console */
+    cn_drain(0); cn_drain(1);
+    /* Three deep: the fourth fails; EOF itself is refused. */
+    static const int pushes[] = { 'a', 'b', 'c', 'd' };
+    for (unsigned i = 0; i < 4; i++)
+        grade2("_ungetch.ret", label_idx(i), ud__ungetch(pushes[i]), ref__ungetch(pushes[i]));
+    grade2("_ungetch.kbhit", "full", ud__kbhit(), ref__kbhit());
+    /* FIFO order; a partly-read buffer is still "full" until emptied. */
+    grade2("_ungetch.getch", "first", ud__getch(), ref__getch());
+    grade2("_ungetch.getch", "second", ud__getch(), ref__getch());
+    grade2("_ungetch.ret", "while-draining", ud__ungetch('x'), ref__ungetch('x'));
+    grade2("_ungetch.getch", "third", ud__getch(), ref__getch());
+    grade2("_ungetch.getch", "empty", ud__getch(), ref__getch());
+    grade2("_ungetch.kbhit", "empty", ud__kbhit(), ref__kbhit());
+    grade2("_ungetch.ret", "EOF", ud__ungetch(EOF), ref__ungetch(EOF));
+    /* The int is stored as is, not masked to a byte. */
+    grade2("_ungetch.ret", "0x1FF", ud__ungetch(0x1FF), ref__ungetch(0x1FF));
+    grade2("_ungetch.getch", "0x1FF", ud__getch(), ref__getch());
+    grade2("_ungetch.drain", "-", cn_drain(0), cn_drain(1));
+}
+
+static void run_conio__ungetch_nolock(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    cn_drain(0); cn_drain(1);
+    grade2("_ungetch_nolock.ret", "q", ud__ungetch_nolock('q'), ref__ungetch_nolock('q'));
+    grade2("_ungetch_nolock.getch_nolock", "q", ud__getch_nolock(), ref__getch_nolock());
+    grade2("_ungetch_nolock.getch_nolock", "empty", ud__getch_nolock(), ref__getch_nolock());
+}
+
+static void run_conio__getch(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    cn_drain(0); cn_drain(1);
+    /* No push-back, no console: EOF, with the input handle cached invalid. */
+    *_errno() = 0; *ref__errno() = 0;
+    SetLastError(ERROR_INVALID_HANDLE);
+    int r1 = ud__getch();
+    SetLastError(ERROR_INVALID_HANDLE);
+    int r2 = ref__getch();
+    grade2("_getch.noconsole.ret", "-", r1, r2);
+    grade2("_getch.noconsole.errno", "-", *_errno(), *ref__errno());
+    r1 = ud__getch_nolock();
+    r2 = ref__getch_nolock();
+    grade2("_getch_nolock.noconsole.ret", "-", r1, r2);
+}
+
+static void run_conio__getche(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    cn_drain(0); cn_drain(1);
+    /* A pushed-back character comes back without an echo attempt. */
+    ud__ungetch('e'); ref__ungetch('e');
+    grade2("_getche.pushback", "-", ud__getche(), ref__getche());
+    grade2("_getche.empty", "-", ud__getche(), ref__getche());
+    ud__ungetch('f'); ref__ungetch('f');
+    grade2("_getche_nolock.pushback", "-", ud__getche_nolock(), ref__getche_nolock());
+    grade2("_getche_nolock.empty", "-", ud__getche_nolock(), ref__getche_nolock());
+}
+
+static void run_conio__kbhit(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    cn_drain(0); cn_drain(1);
+    grade2("_kbhit.empty", "-", ud__kbhit(), ref__kbhit());
+    ud__ungetch('k'); ref__ungetch('k');
+    grade2("_kbhit.pushback", "-", ud__kbhit(), ref__kbhit());
+    grade2("_kbhit.drain", "-", cn_drain(0), cn_drain(1));
+}
+
+#define CONIO_GETCH_HAND                                                        \
+    { "_ungetch", run_conio__ungetch }, { "_ungetch_nolock", run_conio__ungetch_nolock }, \
+    { "_getch", run_conio__getch }, { "_getche", run_conio__getche },           \
+    { "_kbhit", run_conio__kbhit },
+#else
+#define CONIO_GETCH_HAND                                                        \
+    { "_ungetch", 0 }, { "_ungetch_nolock", 0 }, { "_getch", 0 }, { "_getche", 0 }, { "_kbhit", 0 },
+#endif
+
+/* ==== getwch.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS__getwch
+wint_t __cdecl ref__getwch(void);
+wint_t __cdecl ref__getwche(void);
+wint_t __cdecl ref__getwch_nolock(void);
+wint_t __cdecl ref__getwche_nolock(void);
+wint_t __cdecl ref__ungetwch(wint_t);
+wint_t __cdecl ref__ungetwch_nolock(wint_t);
+extern wint_t (__cdecl *const ud__getwch)(void) __asm__(UD_IMP(_getwch));
+extern wint_t (__cdecl *const ud__getwche)(void) __asm__(UD_IMP(_getwche));
+extern wint_t (__cdecl *const ud__getwch_nolock)(void) __asm__(UD_IMP(_getwch_nolock));
+extern wint_t (__cdecl *const ud__getwche_nolock)(void) __asm__(UD_IMP(_getwche_nolock));
+extern wint_t (__cdecl *const ud__ungetwch)(wint_t) __asm__(UD_IMP(_ungetwch));
+extern wint_t (__cdecl *const ud__ungetwch_nolock)(wint_t) __asm__(UD_IMP(_ungetwch_nolock));
+
+static void run_conio__ungetwch(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    /* Drain the one-character wide push-back (WEOF when empty). */
+    ud__getwch(); ref__getwch();
+    /* Only the LOW BYTE is kept; one deep. */
+    grade2("_ungetwch.ret", "0x263A", ud__ungetwch(0x263A), ref__ungetwch(0x263A));
+    grade2("_ungetwch.ret", "second", ud__ungetwch('b'), ref__ungetwch('b'));
+    grade2("_ungetwch.getwch", "first", ud__getwch(), ref__getwch());
+    grade2("_ungetwch.getwch", "empty", ud__getwch(), ref__getwch());
+    grade2("_ungetwch.ret", "WEOF", ud__ungetwch(WEOF), ref__ungetwch(WEOF));
+    grade2("_ungetwch_nolock.ret", "z", ud__ungetwch_nolock('z'), ref__ungetwch_nolock('z'));
+    grade2("_ungetwch_nolock.getwch_nolock", "z", ud__getwch_nolock(), ref__getwch_nolock());
+    grade2("_ungetwch_nolock.getwch_nolock", "empty", ud__getwch_nolock(), ref__getwch_nolock());
+}
+
+static void run_conio__getwche(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    ud__getwch(); ref__getwch();
+    ud__ungetwch('w'); ref__ungetwch('w');
+    grade2("_getwche.pushback", "-", ud__getwche(), ref__getwche());
+    grade2("_getwche.empty", "-", ud__getwche(), ref__getwche());
+    ud__ungetwch('v'); ref__ungetwch('v');
+    grade2("_getwche_nolock.pushback", "-", ud__getwche_nolock(), ref__getwche_nolock());
+    grade2("_getwche_nolock.empty", "-", ud__getwche_nolock(), ref__getwche_nolock());
+}
+
+#define CONIO_GETWCH_HAND { "_ungetwch", run_conio__ungetwch }, { "_getwche", run_conio__getwche },
+#else
+#define CONIO_GETWCH_HAND { "_ungetwch", 0 }, { "_getwche", 0 },
+#endif
+
+/* ==== putch.cpp / putwch.cpp =============================================== */
+#if UCRTDIFF_REF_HAS__putch
+int __cdecl ref__putch(int);
+int __cdecl ref__putch_nolock(int);
+extern int (__cdecl *const ud__putch)(int) __asm__(UD_IMP(_putch));
+extern int (__cdecl *const ud__putch_nolock)(int) __asm__(UD_IMP(_putch_nolock));
+
+static void run_conio__putch(void)
+{
+    install_counting_iph();
+    static const int chars[] = { 'A', 0, 0x7F, 0xE9, -1, 0x1FF };
+    for (unsigned i = 0; i < sizeof(chars) / sizeof(chars[0]); i++) {
+        *_errno() = 0; *ref__errno() = 0;
+        SetLastError(0);
+        int r1 = ud__putch(chars[i]);
+        SetLastError(0);
+        int r2 = ref__putch(chars[i]);
+        grade2("_putch.ret", label_idx(i), r1, r2);
+        grade2("_putch.errno", label_idx(i), *_errno(), *ref__errno());
+        r1 = ud__putch_nolock(chars[i]);
+        r2 = ref__putch_nolock(chars[i]);
+        grade2("_putch_nolock.ret", label_idx(i), r1, r2);
+    }
+}
+
+#define CONIO_PUTCH_HAND { "_putch", run_conio__putch },
+#else
+#define CONIO_PUTCH_HAND { "_putch", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__putwch
+wint_t __cdecl ref__putwch(wchar_t);
+wint_t __cdecl ref__putwch_nolock(wchar_t);
+extern wint_t (__cdecl *const ud__putwch)(wchar_t) __asm__(UD_IMP(_putwch));
+extern wint_t (__cdecl *const ud__putwch_nolock)(wchar_t) __asm__(UD_IMP(_putwch_nolock));
+
+static void run_conio__putwch(void)
+{
+    install_counting_iph();
+    static const wchar_t chars[] = { L'A', 0, 0x263A, 0xFFFF };
+    for (unsigned i = 0; i < 4; i++) {
+        *_errno() = 0; *ref__errno() = 0;
+        wint_t r1 = ud__putwch(chars[i]);
+        wint_t r2 = ref__putwch(chars[i]);
+        grade2("_putwch.ret", label_idx(i), r1, r2);
+        grade2("_putwch.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_putwch_nolock.ret", label_idx(i), ud__putwch_nolock(chars[i]), ref__putwch_nolock(chars[i]));
+    }
+}
+
+#define CONIO_PUTWCH_HAND { "_putwch", run_conio__putwch },
+#else
+#define CONIO_PUTWCH_HAND { "_putwch", 0 },
+#endif
+
+/* ==== cputs.cpp / cputws.cpp =============================================== */
+#if UCRTDIFF_REF_HAS__cputs
+unsigned long *__cdecl ref___doserrno(void);
+int __cdecl ref__cputs(const char *);
+extern int (__cdecl *const ud__cputs)(const char *) __asm__(UD_IMP(_cputs));
+
+static void run_conio__cputs(void)
+{
+    install_counting_iph();
+    /* "" never touches the console; "\xff" stops at a sign-extended EOF. */
+    static const char *const strs[] = { "", "x", "hello", "\xff" "abc" };
+    for (unsigned i = 0; i < 4; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__cputs(strs[i]);
+        int r2 = ref__cputs(strs[i]);
+        grade2("_cputs.ret", label_idx(i), r1, r2);
+        grade2("_cputs.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cputs.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    *__doserrno() = 999; *ref___doserrno() = 999;
+    int r1 = ud__cputs(0);
+    int r2 = ref__cputs(0);
+    grade2("_cputs.null.ret", "-", r1, r2);
+    grade2("_cputs.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_cputs.null.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_cputs.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define CONIO_CPUTS_HAND { "_cputs", run_conio__cputs },
+#else
+#define CONIO_CPUTS_HAND { "_cputs", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__cputws
+unsigned long *__cdecl ref___doserrno(void);
+int __cdecl ref__cputws(const wchar_t *);
+extern int (__cdecl *const ud__cputws)(const wchar_t *) __asm__(UD_IMP(_cputws));
+
+static void run_conio__cputws(void)
+{
+    install_counting_iph();
+    /* Unlike _cputs, L"" still needs a console. */
+    static const wchar_t *const strs[] = { L"", L"x", L"hello \x263A" };
+    for (unsigned i = 0; i < 3; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__cputws(strs[i]);
+        int r2 = ref__cputws(strs[i]);
+        grade2("_cputws.ret", label_idx(i), r1, r2);
+        grade2("_cputws.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cputws.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    *__doserrno() = 999; *ref___doserrno() = 999;
+    int r1 = ud__cputws(0);
+    int r2 = ref__cputws(0);
+    grade2("_cputws.null.ret", "-", r1, r2);
+    grade2("_cputws.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_cputws.null.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    grade2("_cputws.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define CONIO_CPUTWS_HAND { "_cputws", run_conio__cputws },
+#else
+#define CONIO_CPUTWS_HAND { "_cputws", 0 },
+#endif
+
+/* ==== cgetws.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS__cgetws
+unsigned long *__cdecl ref___doserrno(void);
+errno_t __cdecl ref__cgetws_s(wchar_t *, size_t, size_t *);
+wchar_t *__cdecl ref__cgetws(wchar_t *);
+extern errno_t (__cdecl *const ud__cgetws_s)(wchar_t *, size_t, size_t *) __asm__(UD_IMP(_cgetws_s));
+extern wchar_t *(__cdecl *const ud__cgetws)(wchar_t *) __asm__(UD_IMP(_cgetws));
+
+static void run_conio__cgetws_s(void)
+{
+    install_counting_iph();
+    struct { int nullbuf; size_t size; int nullread; int needs_input; } rows[] = {
+        { 1, 5, 0, 0 },  /* NULL buffer: EINVAL, handler, _doserrno 0 */
+        { 0, 0, 0, 0 },  /* size 0: EINVAL, buffer untouched */
+        { 0, 5, 1, 0 },  /* NULL size_read: buffer[0] cleared FIRST */
+        { 0, 1, 0, 0 },  /* room for the terminator only: 0, no read */
+        { 0, 5, 0, 1 },  /* a real read: fails without a console */
+    };
+    int no_console = cn_no_console();
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        if (rows[i].needs_input && !no_console) continue;
+        wchar_t b1[8], b2[8];
+        size_t n1 = 77, n2 = 77;
+        wmemset(b1, 0x5A5A, 8);
+        wmemset(b2, 0x5A5A, 8);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        *__doserrno() = 999; *ref___doserrno() = 999;
+        SetLastError(ERROR_INVALID_HANDLE);
+        errno_t r1 = ud__cgetws_s(rows[i].nullbuf ? 0 : b1, rows[i].size, rows[i].nullread ? 0 : &n1);
+        SetLastError(ERROR_INVALID_HANDLE);
+        errno_t r2 = ref__cgetws_s(rows[i].nullbuf ? 0 : b2, rows[i].size, rows[i].nullread ? 0 : &n2);
+        grade2("_cgetws_s.ret", label_idx(i), r1, r2);
+        grade2("_cgetws_s.read", label_idx(i), (long long)n1, (long long)n2);
+        grade2("_cgetws_s.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_cgetws_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cgetws_s.doserrno", label_idx(i), (long long)*__doserrno(), (long long)*ref___doserrno());
+        grade2("_cgetws_s.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+}
+
+static void run_conio__cgetws(void)
+{
+    install_counting_iph();
+    int no_console = cn_no_console();
+    /* buf[0] = max; 1 means room for the terminator only: success, no read. */
+    static const wchar_t firsts[] = { 0, 1, 5 };
+    for (unsigned i = 0; i < 3; i++) {
+        if (firsts[i] > 1 && !no_console) continue;
+        wchar_t b1[10], b2[10];
+        wmemset(b1, 0x5A5A, 10);
+        wmemset(b2, 0x5A5A, 10);
+        b1[0] = b2[0] = firsts[i];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        SetLastError(ERROR_INVALID_HANDLE);
+        wchar_t *r1 = ud__cgetws(b1);
+        SetLastError(ERROR_INVALID_HANDLE);
+        wchar_t *r2 = ref__cgetws(b2);
+        grade2("_cgetws.ret", label_idx(i), r1 ? (long long)(r1 - b1) : -1, r2 ? (long long)(r2 - b2) : -1);
+        grade2("_cgetws.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_cgetws.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cgetws.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    g_iph_dll = g_iph_ref = 0;
+    wchar_t *r1 = ud__cgetws(0);
+    wchar_t *r2 = ref__cgetws(0);
+    grade2("_cgetws.null.ret", "-", r1 != 0, r2 != 0);
+    grade2("_cgetws.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define CONIO_CGETWS_HAND { "_cgetws_s", run_conio__cgetws_s }, { "_cgetws", run_conio__cgetws },
+#else
+#define CONIO_CGETWS_HAND { "_cgetws_s", 0 }, { "_cgetws", 0 },
+#endif
+
+/* ==== cgets.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS__cgets
+unsigned long *__cdecl ref___doserrno(void);
+errno_t __cdecl ref__cgets_s(char *, size_t, size_t *);
+char *__cdecl ref__cgets(char *);
+extern errno_t (__cdecl *const ud__cgets_s)(char *, size_t, size_t *) __asm__(UD_IMP(_cgets_s));
+extern char *(__cdecl *const ud__cgets)(char *) __asm__(UD_IMP(_cgets));
+
+static void run_conio__cgets_s(void)
+{
+    install_counting_iph();
+    struct { int nullbuf; size_t size; int nullread; int needs_input; } rows[] = {
+        { 1, 5, 0, 0 },  /* NULL buffer */
+        { 0, 0, 0, 0 },  /* size 0 */
+        { 0, 5, 1, 0 },  /* NULL size_read: buffer[0] cleared first */
+        { 0, 5, 0, 1 },  /* a real read: fails without a console */
+        { 0, 1, 0, 1 },  /* size 1 still reads one wide character */
+    };
+    int no_console = cn_no_console();
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        if (rows[i].needs_input && !no_console) continue;
+        char b1[8], b2[8];
+        size_t n1 = 77, n2 = 77;
+        memset(b1, 0x5A, 8);
+        memset(b2, 0x5A, 8);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        *__doserrno() = 999; *ref___doserrno() = 999;
+        SetLastError(ERROR_INVALID_HANDLE);
+        errno_t r1 = ud__cgets_s(rows[i].nullbuf ? 0 : b1, rows[i].size, rows[i].nullread ? 0 : &n1);
+        SetLastError(ERROR_INVALID_HANDLE);
+        errno_t r2 = ref__cgets_s(rows[i].nullbuf ? 0 : b2, rows[i].size, rows[i].nullread ? 0 : &n2);
+        grade2("_cgets_s.ret", label_idx(i), r1, r2);
+        grade2("_cgets_s.read", label_idx(i), (long long)n1, (long long)n2);
+        grade2("_cgets_s.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_cgets_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cgets_s.doserrno", label_idx(i), (long long)*__doserrno(), (long long)*ref___doserrno());
+        grade2("_cgets_s.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+}
+
+static void run_conio__cgets(void)
+{
+    install_counting_iph();
+    int no_console = cn_no_console();
+    /* buf[0] is a SIGNED char: 0 and 0x80 are both refused. */
+    static const char firsts[] = { 0, (char)0x80, 5 };
+    for (unsigned i = 0; i < 3; i++) {
+        if (i == 2 && !no_console) continue;
+        char b1[10], b2[10];
+        memset(b1, 0x5A, 10);
+        memset(b2, 0x5A, 10);
+        b1[0] = b2[0] = firsts[i];
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        SetLastError(ERROR_INVALID_HANDLE);
+        char *r1 = ud__cgets(b1);
+        SetLastError(ERROR_INVALID_HANDLE);
+        char *r2 = ref__cgets(b2);
+        grade2("_cgets.ret", label_idx(i), r1 ? (long long)(r1 - b1) : -1, r2 ? (long long)(r2 - b2) : -1);
+        grade2("_cgets.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_cgets.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cgets.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    g_iph_dll = g_iph_ref = 0;
+    char *r1 = ud__cgets(0);
+    char *r2 = ref__cgets(0);
+    grade2("_cgets.null.ret", "-", r1 != 0, r2 != 0);
+    grade2("_cgets.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define CONIO_CGETS_HAND { "_cgets_s", run_conio__cgets_s }, { "_cgets", run_conio__cgets },
+#else
+#define CONIO_CGETS_HAND { "_cgets_s", 0 }, { "_cgets", 0 },
+#endif
+
+/* ==== cprintf.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS___conio_common_vcprintf
+typedef int (__cdecl *cn_vcp_t)(unsigned __int64, const char *, _locale_t, va_list);
+typedef int (__cdecl *cn_vcwp_t)(unsigned __int64, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcprintf(unsigned __int64, const char *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcprintf_s(unsigned __int64, const char *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcprintf_p(unsigned __int64, const char *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcwprintf(unsigned __int64, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcwprintf_s(unsigned __int64, const wchar_t *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcwprintf_p(unsigned __int64, const wchar_t *, _locale_t, va_list);
+extern int (__cdecl *const ud___conio_common_vcprintf)(unsigned __int64, const char *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcprintf));
+extern int (__cdecl *const ud___conio_common_vcprintf_s)(unsigned __int64, const char *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcprintf_s));
+extern int (__cdecl *const ud___conio_common_vcprintf_p)(unsigned __int64, const char *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcprintf_p));
+extern int (__cdecl *const ud___conio_common_vcwprintf)(unsigned __int64, const wchar_t *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcwprintf));
+extern int (__cdecl *const ud___conio_common_vcwprintf_s)(unsigned __int64, const wchar_t *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcwprintf_s));
+extern int (__cdecl *const ud___conio_common_vcwprintf_p)(unsigned __int64, const wchar_t *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcwprintf_p));
+
+static int cn_vcp(cn_vcp_t f, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int r = f(0, fmt, NULL, ap);
+    va_end(ap);
+    return r;
+}
+
+static int cn_vcwp(cn_vcwp_t f, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int r = f(0, fmt, NULL, ap);
+    va_end(ap);
+    return r;
+}
+
+/* The formats; each call passes "xyz", 42 and 7 (extras are ignored), and
+ * every conversion that dereferences an argument matches its type -- the
+ * output fails without a console, but the formatting before it still runs.
+ * (%n is left out: with _set_printf_count_output on, it would store through
+ * whatever argument it met.) */
+static const char *const cn_fmts[] = { "", "abc", "%d", "%s|%d", "%q", "%2$d %1$s", "%", "%5.2f", 0 };
+static const wchar_t *const cn_wfmts[] = { L"", L"abc", L"%d", L"%S|%d", L"%q", L"%2$d %1$S", L"%", L"%5.2f", 0 };
+#define CN_NFMTS (sizeof(cn_fmts) / sizeof(cn_fmts[0]))
+
+static void cn_grade_vcprintf(const char *name, cn_vcp_t ud, cn_vcp_t ref)
+{
+    for (unsigned i = 0; i < CN_NFMTS; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = cn_vcp(ud, cn_fmts[i], "xyz", 42, 7);
+        int r2 = cn_vcp(ref, cn_fmts[i], "xyz", 42, 7);
+        grade2(name, label_idx(i), r1, r2);
+        grade2("vcprintf.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("vcprintf.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+}
+
+static void cn_grade_vcwprintf(const char *name, cn_vcwp_t ud, cn_vcwp_t ref)
+{
+    for (unsigned i = 0; i < CN_NFMTS; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = cn_vcwp(ud, cn_wfmts[i], "xyz", 42, 7);
+        int r2 = cn_vcwp(ref, cn_wfmts[i], "xyz", 42, 7);
+        grade2(name, label_idx(i), r1, r2);
+        grade2("vcwprintf.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("vcwprintf.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+}
+
+static void run_conio___conio_common_vcprintf(void)
+{
+    install_counting_iph();
+    cn_grade_vcprintf("__conio_common_vcprintf", ud___conio_common_vcprintf, ref___conio_common_vcprintf);
+}
+static void run_conio___conio_common_vcprintf_s(void)
+{
+    install_counting_iph();
+    cn_grade_vcprintf("__conio_common_vcprintf_s", ud___conio_common_vcprintf_s, ref___conio_common_vcprintf_s);
+}
+static void run_conio___conio_common_vcprintf_p(void)
+{
+    install_counting_iph();
+    cn_grade_vcprintf("__conio_common_vcprintf_p", ud___conio_common_vcprintf_p, ref___conio_common_vcprintf_p);
+}
+static void run_conio___conio_common_vcwprintf(void)
+{
+    install_counting_iph();
+    cn_grade_vcwprintf("__conio_common_vcwprintf", ud___conio_common_vcwprintf, ref___conio_common_vcwprintf);
+}
+static void run_conio___conio_common_vcwprintf_s(void)
+{
+    install_counting_iph();
+    cn_grade_vcwprintf("__conio_common_vcwprintf_s", ud___conio_common_vcwprintf_s,
+                       ref___conio_common_vcwprintf_s);
+}
+static void run_conio___conio_common_vcwprintf_p(void)
+{
+    install_counting_iph();
+    cn_grade_vcwprintf("__conio_common_vcwprintf_p", ud___conio_common_vcwprintf_p,
+                       ref___conio_common_vcwprintf_p);
+}
+
+#define CONIO_CPRINTF_HAND                                                      \
+    { "__conio_common_vcprintf", run_conio___conio_common_vcprintf },           \
+    { "__conio_common_vcprintf_s", run_conio___conio_common_vcprintf_s },       \
+    { "__conio_common_vcprintf_p", run_conio___conio_common_vcprintf_p },       \
+    { "__conio_common_vcwprintf", run_conio___conio_common_vcwprintf },         \
+    { "__conio_common_vcwprintf_s", run_conio___conio_common_vcwprintf_s },     \
+    { "__conio_common_vcwprintf_p", run_conio___conio_common_vcwprintf_p },
+#else
+#define CONIO_CPRINTF_HAND                                                      \
+    { "__conio_common_vcprintf", 0 }, { "__conio_common_vcprintf_s", 0 },       \
+    { "__conio_common_vcprintf_p", 0 }, { "__conio_common_vcwprintf", 0 },      \
+    { "__conio_common_vcwprintf_s", 0 }, { "__conio_common_vcwprintf_p", 0 },
+#endif
+
+/* ==== cscanf.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS___conio_common_vcscanf && UCRTDIFF_REF_HAS__getch && UCRTDIFF_REF_HAS__getwch
+int __cdecl ref___conio_common_vcscanf(unsigned __int64, const char *, _locale_t, va_list);
+int __cdecl ref___conio_common_vcwscanf(unsigned __int64, const wchar_t *, _locale_t, va_list);
+extern int (__cdecl *const ud___conio_common_vcscanf)(unsigned __int64, const char *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcscanf));
+extern int (__cdecl *const ud___conio_common_vcwscanf)(unsigned __int64, const wchar_t *, _locale_t, va_list)
+    __asm__(UD_IMP(__conio_common_vcwscanf));
+
+static int cn_vcs(int ref, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int r = ref ? ref___conio_common_vcscanf(0, fmt, NULL, ap) : ud___conio_common_vcscanf(0, fmt, NULL, ap);
+    va_end(ap);
+    return r;
+}
+
+static int cn_vcws(int ref, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int r = ref ? ref___conio_common_vcwscanf(0, fmt, NULL, ap) : ud___conio_common_vcwscanf(0, fmt, NULL, ap);
+    va_end(ap);
+    return r;
+}
+
+/* Push a string into one side's narrow push-back (at most three). */
+static void cn_push(int ref, const char *s)
+{
+    for (; *s; s++) {
+        if (ref) ref__ungetch((unsigned char)*s);
+        else ud__ungetch((unsigned char)*s);
+    }
+}
+
+static void run_conio___conio_common_vcscanf(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return; /* an empty push-back would READ the console */
+    struct { const char *input; const char *fmt; } rows[] = {
+        { "42 ", "%d" },  /* whitespace skip ungets into a FULL buffer */
+        { "7", "%d" },
+        { "Z", "%c" },
+        { "x", "%d" },    /* matching failure */
+        { "", "%d" },     /* nothing: EOF */
+        { "ab", "%s" },
+        { "5", 0 },       /* NULL format: EINVAL through the handler */
+    };
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        cn_drain(0); cn_drain(1);
+        cn_push(0, rows[i].input);
+        cn_push(1, rows[i].input);
+        unsigned int v1[2], v2[2]; /* int-aligned: %d stores an int */
+        memset(v1, 0x5A, sizeof(v1));
+        memset(v2, 0x5A, sizeof(v2));
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = cn_vcs(0, rows[i].fmt, v1);
+        int r2 = cn_vcs(1, rows[i].fmt, v2);
+        grade2("__conio_common_vcscanf.ret", label_idx(i), r1, r2);
+        grade2("__conio_common_vcscanf.out", label_idx(i), fnv(v1, sizeof(v1)), fnv(v2, sizeof(v2)));
+        grade2("__conio_common_vcscanf.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("__conio_common_vcscanf.iph", label_idx(i), g_iph_dll, g_iph_ref);
+        /* What the scan left (or lost) in the push-back is graded too. */
+        grade2("__conio_common_vcscanf.left", label_idx(i), cn_drain(0), cn_drain(1));
+    }
+}
+
+static void run_conio___conio_common_vcwscanf(void)
+{
+    install_counting_iph();
+    if (!cn_no_console()) return;
+    struct { wint_t input; const wchar_t *fmt; } rows[] = {
+        { L'7', L"%d" },
+        { L'Q', L"%c" },
+        { WEOF, L"%d" },   /* nothing pushed: EOF */
+        { L'x', L"%d" },
+    };
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        ud__getwch(); ref__getwch(); /* drain */
+        if (rows[i].input != WEOF) { ud__ungetwch(rows[i].input); ref__ungetwch(rows[i].input); }
+        unsigned int v1[2], v2[2]; /* int-aligned: %d stores an int */
+        memset(v1, 0x5A, sizeof(v1));
+        memset(v2, 0x5A, sizeof(v2));
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = cn_vcws(0, rows[i].fmt, v1);
+        int r2 = cn_vcws(1, rows[i].fmt, v2);
+        grade2("__conio_common_vcwscanf.ret", label_idx(i), r1, r2);
+        grade2("__conio_common_vcwscanf.out", label_idx(i), fnv(v1, sizeof(v1)), fnv(v2, sizeof(v2)));
+        grade2("__conio_common_vcwscanf.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("__conio_common_vcwscanf.left", label_idx(i), ud__getwch(), ref__getwch());
+    }
+}
+
+#define CONIO_CSCANF_HAND                                                       \
+    { "__conio_common_vcscanf", run_conio___conio_common_vcscanf },             \
+    { "__conio_common_vcwscanf", run_conio___conio_common_vcwscanf },
+#else
+#define CONIO_CSCANF_HAND { "__conio_common_vcscanf", 0 }, { "__conio_common_vcwscanf", 0 },
+#endif
+
+/* ==== pipe.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__pipe
+unsigned long *__cdecl ref___doserrno(void);
+int __cdecl ref__pipe(int *, unsigned, int);
+extern int (__cdecl *const ud__pipe)(int *, unsigned, int) __asm__(UD_IMP(_pipe));
+
+/* The deep rows drive the pipe through lowio on each side; they need the
+ * reference side's lowio callable (Microsoft's or, once taken over, the
+ * alias of ours): the generator's REF_DRIVERS must list these. */
+#if UCRTDIFF_REF_CALLABLE__close && UCRTDIFF_REF_CALLABLE__read && UCRTDIFF_REF_CALLABLE__write && \
+    UCRTDIFF_REF_CALLABLE__setmode && UCRTDIFF_REF_CALLABLE__get_osfhandle && \
+    UCRTDIFF_REF_CALLABLE__get_fmode && UCRTDIFF_REF_CALLABLE__set_fmode
+#define CN_PIPE_DEEP 1
+int __cdecl ref__close(int);
+int __cdecl ref__read(int, void *, unsigned);
+int __cdecl ref__write(int, const void *, unsigned);
+int __cdecl ref__setmode(int, int);
+intptr_t __cdecl ref__get_osfhandle(int);
+errno_t __cdecl ref__get_fmode(int *);
+errno_t __cdecl ref__set_fmode(int);
+extern int (__cdecl *const ud__close)(int) __asm__(UD_IMP(_close));
+extern int (__cdecl *const ud__read)(int, void *, unsigned) __asm__(UD_IMP(_read));
+extern int (__cdecl *const ud__write)(int, const void *, unsigned) __asm__(UD_IMP(_write));
+extern int (__cdecl *const ud__setmode)(int, int) __asm__(UD_IMP(_setmode));
+extern intptr_t (__cdecl *const ud__get_osfhandle)(int) __asm__(UD_IMP(_get_osfhandle));
+extern errno_t (__cdecl *const ud__get_fmode)(int *) __asm__(UD_IMP(_get_fmode));
+extern errno_t (__cdecl *const ud__set_fmode)(int) __asm__(UD_IMP(_set_fmode));
+
+/* Everything observable about one side's fresh pipe, then close it. */
+static void cn_pipe_probe(int ref, const int fds[2], const char *payload, unsigned len, long long out[5])
+{
+    char buf[16];
+    memset(buf, 0x5A, sizeof(buf));
+    DWORD flags = 0;
+    HANDLE h = (HANDLE)(ref ? ref__get_osfhandle(fds[0]) : ud__get_osfhandle(fds[0]));
+    out[0] = GetHandleInformation(h, &flags) ? (long long)(flags & HANDLE_FLAG_INHERIT) : -1;
+    out[1] = ref ? ref__write(fds[1], payload, len) : ud__write(fds[1], payload, len);
+    out[2] = ref ? ref__read(fds[0], buf, sizeof(buf)) : ud__read(fds[0], buf, sizeof(buf));
+    out[3] = fnv(buf, sizeof(buf));
+    out[4] = ref ? ref__setmode(fds[0], _O_BINARY) : ud__setmode(fds[0], _O_BINARY); /* the old mode */
+    if (ref) { ref__close(fds[0]); ref__close(fds[1]); }
+    else { ud__close(fds[0]); ud__close(fds[1]); }
+}
+#endif
+
+static void run_conio__pipe(void)
+{
+    install_counting_iph();
+
+    /* Validation: NULL; unknown mode bits; both text AND binary. The handle
+     * slots are set to -1 before the mode checks. */
+    {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        *__doserrno() = 999; *ref___doserrno() = 999;
+        int r1 = ud__pipe(0, 256, 0);
+        int r2 = ref__pipe(0, 256, 0);
+        grade2("_pipe.null.ret", "-", r1, r2);
+        grade2("_pipe.null.errno", "-", *_errno(), *ref__errno());
+        grade2("_pipe.null.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+        grade2("_pipe.null.iph", "-", g_iph_dll, g_iph_ref);
+    }
+    static const int bad_modes[] = { 0x1, _O_TEXT | _O_BINARY, _O_APPEND };
+    for (unsigned i = 0; i < 3; i++) {
+        int f1[2] = { 77, 77 }, f2[2] = { 77, 77 };
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__pipe(f1, 256, bad_modes[i]);
+        int r2 = ref__pipe(f2, 256, bad_modes[i]);
+        grade2("_pipe.badmode.ret", label_idx(i), r1, r2);
+        grade2("_pipe.badmode.fds", label_idx(i), f1[0] * 1000LL + f1[1], f2[0] * 1000LL + f2[1]);
+        grade2("_pipe.badmode.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_pipe.badmode.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+
+    /* Success in each mode. */
+    static const int modes[] = { _O_BINARY, _O_TEXT, _O_NOINHERIT, 0, _O_BINARY | _O_NOINHERIT };
+    for (unsigned i = 0; i < 5; i++) {
+        int f1[2] = { 77, 77 }, f2[2] = { 77, 77 };
+        int r1 = ud__pipe(f1, 256, modes[i]);
+        int r2 = ref__pipe(f2, 256, modes[i]);
+        grade2("_pipe.ret", label_idx(i), r1, r2);
+        grade2("_pipe.fds_valid", label_idx(i), f1[0] >= 0 && f1[1] >= 0 && f1[0] != f1[1],
+               f2[0] >= 0 && f2[1] >= 0 && f2[0] != f2[1]);
+#ifdef CN_PIPE_DEEP
+        if (r1 == 0 && r2 == 0) {
+            long long o1[5], o2[5];
+            cn_pipe_probe(0, f1, "a\nb\r\nc", 6, o1);
+            cn_pipe_probe(1, f2, "a\nb\r\nc", 6, o2);
+            grade2("_pipe.inherit", label_idx(i), o1[0], o2[0]);
+            grade2("_pipe.write", label_idx(i), o1[1], o2[1]);
+            grade2("_pipe.read", label_idx(i), o1[2], o2[2]);
+            grade2("_pipe.data", label_idx(i), o1[3], o2[3]);
+            grade2("_pipe.oldmode", label_idx(i), o1[4], o2[4]);
+        }
+#endif
+    }
+
+#ifdef CN_PIPE_DEEP
+    /* No mode given + global _fmode binary: the pipe is binary. _fmode is
+     * restored on both sides. */
+    {
+        int m1 = 0, m2 = 0;
+        ud__get_fmode(&m1);
+        ref__get_fmode(&m2);
+        ud__set_fmode(_O_BINARY);
+        ref__set_fmode(_O_BINARY);
+        int f1[2] = { 77, 77 }, f2[2] = { 77, 77 };
+        int r1 = ud__pipe(f1, 256, 0);
+        int r2 = ref__pipe(f2, 256, 0);
+        int t1[2] = { 77, 77 }, t2[2] = { 77, 77 };
+        int s1 = ud__pipe(t1, 256, _O_TEXT);
+        int s2 = ref__pipe(t2, 256, _O_TEXT);
+        ud__set_fmode(m1);
+        ref__set_fmode(m2);
+        grade2("_pipe.fmode_binary.ret", "-", r1, r2);
+        grade2("_pipe.fmode_binary_text.ret", "-", s1, s2);
+        if (r1 == 0 && r2 == 0) {
+            long long o1[5], o2[5];
+            cn_pipe_probe(0, f1, "a\nb", 3, o1);
+            cn_pipe_probe(1, f2, "a\nb", 3, o2);
+            grade2("_pipe.fmode_binary.oldmode", "-", o1[4], o2[4]);
+            grade2("_pipe.fmode_binary.data", "-", o1[3], o2[3]);
+        }
+        if (s1 == 0 && s2 == 0) {
+            long long o1[5], o2[5];
+            cn_pipe_probe(0, t1, "a\nb", 3, o1);
+            cn_pipe_probe(1, t2, "a\nb", 3, o2);
+            grade2("_pipe.fmode_binary_text.oldmode", "-", o1[4], o2[4]);
+            grade2("_pipe.fmode_binary_text.data", "-", o1[3], o2[3]);
+        }
+    }
+#endif
+}
+
+#define CONIO_PIPE_HAND { "_pipe", run_conio__pipe },
+#else
+#define CONIO_PIPE_HAND { "_pipe", 0 },
+#endif
+
+/* ==== popen.cpp ============================================================ */
+#if UCRTDIFF_REF_HAS__popen
+FILE *__cdecl ref__popen(const char *, const char *);
+FILE *__cdecl ref__wpopen(const wchar_t *, const wchar_t *);
+int __cdecl ref__pclose(FILE *);
+extern FILE *(__cdecl *const ud__popen)(const char *, const char *) __asm__(UD_IMP(_popen));
+extern FILE *(__cdecl *const ud__wpopen)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(_wpopen));
+extern int (__cdecl *const ud__pclose)(FILE *) __asm__(UD_IMP(_pclose));
+
+static int cn_have_cmd(void)
+{
+    wchar_t found[MAX_PATH];
+    return SearchPathW(NULL, L"cmd.exe", NULL, MAX_PATH, found, NULL) != 0;
+}
+
+static void run_conio__popen(void)
+{
+    install_counting_iph();
+    /* Refused before any pipe or process: NULLs, and modes whose FIRST
+     * letter is not r/w. */
+    struct { const char *cmd; const char *mode; } bad[] = {
+        { 0, "r" }, { "exit 1", 0 }, { "exit 1", "q" }, { "exit 1", "  " }, { "exit 1", "" },
+    };
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        FILE *s1 = ud__popen(bad[i].cmd, bad[i].mode);
+        FILE *s2 = ref__popen(bad[i].cmd, bad[i].mode);
+        grade2("_popen.bad.ret", label_idx(i), s1 != 0, s2 != 0);
+        grade2("_popen.bad.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_popen.bad.iph", label_idx(i), g_iph_dll, g_iph_ref);
+        if (s1) ud__pclose(s1);
+        if (s2) ref__pclose(s2);
+    }
+
+    if (!cn_have_cmd())
+        return;
+
+    /* Real children: the exit code comes back through _pclose. "rz" is the
+     * quirk: the handler fires for the 'z' and the command RUNS anyway. */
+    struct { const char *cmd; const char *mode; } good[] = {
+        { "exit 3", "r" }, { "exit 4", "w" }, { "exit 5", " r t" }, { "exit 6", "wb" }, { "exit 9", "rz" },
+    };
+    for (unsigned i = 0; i < sizeof(good) / sizeof(good[0]); i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        FILE *s1 = ud__popen(good[i].cmd, good[i].mode);
+        FILE *s2 = ref__popen(good[i].cmd, good[i].mode);
+        grade2("_popen.ret", label_idx(i), s1 != 0, s2 != 0);
+        grade2("_popen.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_popen.iph", label_idx(i), g_iph_dll, g_iph_ref);
+        int c1 = s1 ? ud__pclose(s1) : -2;
+        int c2 = s2 ? ref__pclose(s2) : -2;
+        grade2("_popen.pclose", label_idx(i), c1, c2);
+    }
+}
+
+static void run_conio__wpopen(void)
+{
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    FILE *s1 = ud__wpopen(0, L"r");
+    FILE *s2 = ref__wpopen(0, L"r");
+    grade2("_wpopen.null.ret", "-", s1 != 0, s2 != 0);
+    grade2("_wpopen.null.iph", "-", g_iph_dll, g_iph_ref);
+    if (s1) ud__pclose(s1);
+    if (s2) ref__pclose(s2);
+    if (!cn_have_cmd())
+        return;
+    s1 = ud__wpopen(L"exit 7", L"r");
+    s2 = ref__wpopen(L"exit 7", L"r");
+    grade2("_wpopen.ret", "-", s1 != 0, s2 != 0);
+    int c1 = s1 ? ud__pclose(s1) : -2;
+    int c2 = s2 ? ref__pclose(s2) : -2;
+    grade2("_wpopen.pclose", "-", c1, c2);
+}
+
+static void run_conio__pclose(void)
+{
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int r1 = ud__pclose(0);
+    int r2 = ref__pclose(0);
+    grade2("_pclose.null.ret", "-", r1, r2);
+    grade2("_pclose.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_pclose.null.iph", "-", g_iph_dll, g_iph_ref);
+    /* Not a _popen stream: EBADF, no handler, never dereferenced. */
+    int dummy1 = 0, dummy2 = 0;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__pclose((FILE *)&dummy1);
+    r2 = ref__pclose((FILE *)&dummy2);
+    grade2("_pclose.unknown.ret", "-", r1, r2);
+    grade2("_pclose.unknown.errno", "-", *_errno(), *ref__errno());
+    grade2("_pclose.unknown.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define CONIO_POPEN_HAND                                                        \
+    { "_popen", run_conio__popen }, { "_wpopen", run_conio__wpopen }, { "_pclose", run_conio__pclose },
+#else
+#define CONIO_POPEN_HAND { "_popen", 0 }, { "_wpopen", 0 }, { "_pclose", 0 },
+#endif
+
+/* Registry: paste CONIO_HAND_ENTRIES into run_legacy()'s `legacy[]`. */
+#define CONIO_HAND_ENTRIES                                                      \
+    CONIO_GETCH_HAND CONIO_GETWCH_HAND CONIO_PUTCH_HAND CONIO_PUTWCH_HAND       \
+    CONIO_CPUTS_HAND CONIO_CPUTWS_HAND CONIO_CGETWS_HAND CONIO_CGETS_HAND       \
+    CONIO_CPRINTF_HAND CONIO_CSCANF_HAND CONIO_PIPE_HAND CONIO_POPEN_HAND
+
+
+/* ---- env: inlined from staging/env.c ---- */
+/* ==== staging/env.c ========================================================
+ *
+ * Guest grader for the "env" batch: sdk/lib/ucrt/env/ (all of it). One guard per C file
+ * that exports anything:
+ *   UCRTDIFF_REF_HAS___p__environ                        environment_initialization.cpp
+ *   UCRTDIFF_REF_HAS___dcrt_get_wide_environment_from_os get_environment_from_os.cpp
+ *   UCRTDIFF_REF_HAS_getenv                              getenv.cpp
+ *   UCRTDIFF_REF_HAS__putenv                             putenv.cpp
+ *   UCRTDIFF_REF_HAS__searchenv                          searchenv.cpp
+ * setenv.cpp and getpath.cpp export nothing: they are graded THROUGH _putenv
+ * (every add/replace/remove, the OS mirror, the other-width sync) and
+ * _searchenv (quoted and over-long path elements, the retry buffer). Runners
+ * that need two files are guarded by both.
+ *
+ * PROCESS STATE. The two sides have separate CRT tables over ONE OS
+ * environment. Every variable is side-specific ("UCDENV_D_*" for the DLL,
+ * "UCDENV_R_*" for the reference), so neither side's table ever sees the
+ * other's variables, and every variable a row creates is removed before the
+ * row ends (both from the table and, via the CRT's own mirroring, the OS).
+ * Before any variable is created, both sides' wide tables are brought into
+ * existence with a _wgetenv, so a lazily-built wide table can never pick up
+ * the other side's variables from the OS block.
+ */
+
+#if (UCRTDIFF_REF_HAS_getenv && UCRTDIFF_REF_HAS__putenv) || \
+    (UCRTDIFF_REF_HAS__searchenv && UCRTDIFF_REF_HAS__putenv) || \
+    (UCRTDIFF_REF_HAS___p__environ && UCRTDIFF_REF_HAS__putenv)
+int __cdecl ref__putenv(const char *);
+wchar_t *__cdecl ref__wgetenv(const wchar_t *);
+extern int (__cdecl *const ud__putenv)(const char *) __asm__(UD_IMP(_putenv));
+extern wchar_t *(__cdecl *const ud__wgetenv)(const wchar_t *) __asm__(UD_IMP(_wgetenv));
+
+/* "UCDENV_<D|R>_<suffix>[<tail>]" */
+static const char *envg_name(char *buf, int ref, const char *suffix, const char *tail)
+{
+    size_t n = 0;
+    const char *pre = ref ? "UCDENV_R_" : "UCDENV_D_";
+    while (*pre) buf[n++] = *pre++;
+    while (*suffix) buf[n++] = *suffix++;
+    if (tail) while (*tail) buf[n++] = *tail++;
+    buf[n] = 0;
+    return buf;
+}
+
+static const wchar_t *envg_wname(wchar_t *buf, int ref, const char *suffix, const wchar_t *tail)
+{
+    size_t n = 0;
+    const char *pre = ref ? "UCDENV_R_" : "UCDENV_D_";
+    while (*pre) buf[n++] = (wchar_t)*pre++;
+    while (*suffix) buf[n++] = (wchar_t)*suffix++;
+    if (tail) while (*tail) buf[n++] = *tail++;
+    buf[n] = 0;
+    return buf;
+}
+
+/* _putenv on one side. */
+static int envg_put(int ref, const char *option)
+{
+    return ref ? ref__putenv(option) : ud__putenv(option);
+}
+
+/* Remove "UCDENV_<side>_<suffix>" from that side (and so from the OS). */
+static void envg_remove(int ref, const char *suffix)
+{
+    char b[96];
+    envg_name(b, ref, suffix, "=");
+    envg_put(ref, b);
+}
+
+/* Bring both sides' wide tables into existence BEFORE any side-specific
+ * variable exists (see the header). Idempotent. */
+static void envg_prepare(void)
+{
+    (void)ud__wgetenv(L"PATH");
+    (void)ref__wgetenv(L"PATH");
+}
+
+static long long envg_str(const char *s) { return s ? fnv(s, strlen(s) + 1) : -1; }
+static long long envg_wstr(const wchar_t *s) { return s ? fnv(s, (wcslen(s) + 1) * sizeof(wchar_t)) : -1; }
+#endif
+
+/* ==== environment_initialization.cpp ======================================= */
+#if UCRTDIFF_REF_HAS___p__environ
+char ***__cdecl ref___p__environ(void);
+wchar_t ***__cdecl ref___p__wenviron(void);
+int __cdecl ref__initialize_narrow_environment(void);
+int __cdecl ref__initialize_wide_environment(void);
+char **__cdecl ref__get_initial_narrow_environment(void);
+wchar_t **__cdecl ref__get_initial_wide_environment(void);
+extern char ***(__cdecl *const ud___p__environ)(void) __asm__(UD_IMP(__p__environ));
+extern wchar_t ***(__cdecl *const ud___p__wenviron)(void) __asm__(UD_IMP(__p__wenviron));
+extern int (__cdecl *const ud__initialize_narrow_environment)(void) __asm__(UD_IMP(_initialize_narrow_environment));
+extern int (__cdecl *const ud__initialize_wide_environment)(void) __asm__(UD_IMP(_initialize_wide_environment));
+extern char **(__cdecl *const ud__get_initial_narrow_environment)(void) __asm__(UD_IMP(_get_initial_narrow_environment));
+extern wchar_t **(__cdecl *const ud__get_initial_wide_environment)(void) __asm__(UD_IMP(_get_initial_wide_environment));
+
+static long long envg_count(char **e) { long long n = 0; if (!e) return -1; while (*e) { e++; n++; } return n; }
+static long long envg_wcount(wchar_t **e) { long long n = 0; if (!e) return -1; while (*e) { e++; n++; } return n; }
+static long long envg_drive_entries(char **e) { long long n = 0; if (!e) return -1; for (; *e; e++) if (**e == '=') n++; return n; }
+static long long envg_wdrive_entries(wchar_t **e) { long long n = 0; if (!e) return -1; for (; *e; e++) if (**e == L'=') n++; return n; }
+
+static void run_env___p__environ(void)
+{
+    install_counting_iph();
+    char ***p1 = ud___p__environ();
+    char ***p2 = ref___p__environ();
+    grade2("__p__environ.nonnull", "-", p1 != 0, p2 != 0);
+    grade2("__p__environ.table.nonnull", "-", p1 && *p1, p2 && *p2);
+    /* The "=C:" drive strings never enter the CRT table. */
+    if (p1 && p2)
+        grade2("__p__environ.drive_entries", "-", envg_drive_entries(*p1), envg_drive_entries(*p2));
+#if UCRTDIFF_REF_HAS__putenv
+    /* Add then remove one variable: the table grows by one, then shrinks back. */
+    if (p1 && *p1 && p2 && *p2) {
+        char b1[64], b2[64];
+        long long c1 = envg_count(*p1), c2 = envg_count(*p2);
+        int r1 = envg_put(0, envg_name(b1, 0, "PE", "=x"));
+        int r2 = envg_put(1, envg_name(b2, 1, "PE", "=x"));
+        grade2("__p__environ.put.ret", "-", r1, r2);
+        grade2("__p__environ.put.delta", "-", envg_count(*p1) - c1, envg_count(*p2) - c2);
+        /* After a modification the table is no longer the initial one. */
+        grade2("__p__environ.put.not_initial", "-",
+               *p1 != ud__get_initial_narrow_environment(), *p2 != ref__get_initial_narrow_environment());
+        envg_remove(0, "PE");
+        envg_remove(1, "PE");
+        grade2("__p__environ.remove.delta", "-", envg_count(*p1) - c1, envg_count(*p2) - c2);
+    }
+#endif
+}
+
+static void run_env___p__wenviron(void)
+{
+    install_counting_iph();
+    wchar_t ***p1 = ud___p__wenviron();
+    wchar_t ***p2 = ref___p__wenviron();
+    grade2("__p__wenviron.nonnull", "-", p1 != 0, p2 != 0);
+    /* Whether the wide table exists yet is history; both sides share it. */
+    grade2("__p__wenviron.table.nonnull", "-", p1 && *p1, p2 && *p2);
+    if (p1 && *p1 && p2 && *p2)
+        grade2("__p__wenviron.drive_entries", "-", envg_wdrive_entries(*p1), envg_wdrive_entries(*p2));
+}
+
+static void run_env__initialize_narrow_environment(void)
+{
+    install_counting_iph();
+    /* Already initialized at startup on both sides: a no-op returning 0. */
+    int r1 = ud__initialize_narrow_environment();
+    int r2 = ref__initialize_narrow_environment();
+    grade2("_initialize_narrow_environment.ret", "-", r1, r2);
+    char **i1 = ud__get_initial_narrow_environment();
+    char **i2 = ref__get_initial_narrow_environment();
+    grade2("_get_initial_narrow_environment.nonnull", "-", i1 != 0, i2 != 0);
+    if (i1 && i2)
+        grade2("_get_initial_narrow_environment.drive_entries", "-", envg_drive_entries(i1), envg_drive_entries(i2));
+}
+
+static void run_env__initialize_wide_environment(void)
+{
+    install_counting_iph();
+    /* Creates the wide table from the OS if it does not exist yet; 0 either way. */
+    int r1 = ud__initialize_wide_environment();
+    int r2 = ref__initialize_wide_environment();
+    grade2("_initialize_wide_environment.ret", "-", r1, r2);
+    wchar_t **i1 = ud__get_initial_wide_environment();
+    wchar_t **i2 = ref__get_initial_wide_environment();
+    grade2("_get_initial_wide_environment.nonnull", "-", i1 != 0, i2 != 0);
+    if (i1 && i2) {
+        grade2("_get_initial_wide_environment.drive_entries", "-", envg_wdrive_entries(i1), envg_wdrive_entries(i2));
+        grade2("_get_initial_wide_environment.count_positive", "-", envg_wcount(i1) > 0, envg_wcount(i2) > 0);
+    }
+    wchar_t ***p1 = ud___p__wenviron();
+    wchar_t ***p2 = ref___p__wenviron();
+    grade2("_initialize_wide_environment.table", "-", p1 && *p1, p2 && *p2);
+}
+
+#define ENV_INIT_HAND                                                           \
+    { "__p__environ", run_env___p__environ },                                   \
+    { "__p__wenviron", run_env___p__wenviron },                                 \
+    { "_initialize_narrow_environment", run_env__initialize_narrow_environment }, \
+    { "_initialize_wide_environment", run_env__initialize_wide_environment },
+#else
+#define ENV_INIT_HAND                                                           \
+    { "__p__environ", 0 }, { "__p__wenviron", 0 },                              \
+    { "_initialize_narrow_environment", 0 }, { "_initialize_wide_environment", 0 },
+#endif
+
+/* ==== get_environment_from_os.cpp ========================================== */
+#if UCRTDIFF_REF_HAS___dcrt_get_wide_environment_from_os
+wchar_t *__cdecl ref___dcrt_get_wide_environment_from_os(void);
+void __cdecl ref_free(void *);
+extern wchar_t *(__cdecl *const ud___dcrt_get_wide_environment_from_os)(void)
+    __asm__(UD_IMP(__dcrt_get_wide_environment_from_os));
+extern void (__cdecl *const ud_free)(void *) __asm__(UD_IMP(free));
+
+/* Length of a double-NUL-terminated block, both NULs included. */
+static size_t envg_block_len(const wchar_t *b)
+{
+    const wchar_t *p = b;
+    while (*p) p += wcslen(p) + 1;
+    return (size_t)(p - b) + 1;
+}
+
+static void run_env___dcrt_get_wide_environment_from_os(void)
+{
+    install_counting_iph();
+    /* Taken back to back from ONE OS block: identical copies. */
+    wchar_t *b1 = ud___dcrt_get_wide_environment_from_os();
+    wchar_t *b2 = ref___dcrt_get_wide_environment_from_os();
+    grade2("__dcrt_get_wide_environment_from_os.nonnull", "-", b1 != 0, b2 != 0);
+    if (b1 && b2) {
+        size_t n1 = envg_block_len(b1), n2 = envg_block_len(b2);
+        grade2("__dcrt_get_wide_environment_from_os.len", "-", (long long)n1, (long long)n2);
+        if (n1 == n2)
+            grade2("__dcrt_get_wide_environment_from_os.bytes", "-",
+                   fnv(b1, n1 * sizeof(wchar_t)), fnv(b2, n2 * sizeof(wchar_t)));
+    }
+    if (b1) ud_free(b1);
+    if (b2) ref_free(b2);
+}
+
+#define ENV_FROM_OS_HAND { "__dcrt_get_wide_environment_from_os", run_env___dcrt_get_wide_environment_from_os },
+#else
+#define ENV_FROM_OS_HAND { "__dcrt_get_wide_environment_from_os", 0 },
+#endif
+
+/* ==== getenv.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS_getenv && UCRTDIFF_REF_HAS__putenv
+char *__cdecl ref_getenv(const char *);
+errno_t __cdecl ref_getenv_s(size_t *, char *, size_t, const char *);
+errno_t __cdecl ref__wgetenv_s(size_t *, wchar_t *, size_t, const wchar_t *);
+errno_t __cdecl ref__dupenv_s(char **, size_t *, const char *);
+errno_t __cdecl ref__wdupenv_s(wchar_t **, size_t *, const wchar_t *);
+void __cdecl ref_free(void *);
+extern char *(__cdecl *const ud_getenv)(const char *) __asm__(UD_IMP(getenv));
+extern errno_t (__cdecl *const ud_getenv_s)(size_t *, char *, size_t, const char *) __asm__(UD_IMP(getenv_s));
+extern errno_t (__cdecl *const ud__wgetenv_s)(size_t *, wchar_t *, size_t, const wchar_t *) __asm__(UD_IMP(_wgetenv_s));
+extern errno_t (__cdecl *const ud__dupenv_s)(char **, size_t *, const char *) __asm__(UD_IMP(_dupenv_s));
+extern errno_t (__cdecl *const ud__wdupenv_s)(wchar_t **, size_t *, const wchar_t *) __asm__(UD_IMP(_wdupenv_s));
+extern void (__cdecl *const ud_free)(void *) __asm__(UD_IMP(free));
+
+/* Both sides get UCDENV_<s>_G=val1 and UCDENV_<s>_GX=other (a longer name
+ * sharing the prefix). */
+static void envg_getenv_setup(void)
+{
+    char b[64];
+    envg_prepare();
+    envg_put(0, envg_name(b, 0, "G", "=val1"));
+    envg_put(1, envg_name(b, 1, "G", "=val1"));
+    envg_put(0, envg_name(b, 0, "GX", "=other"));
+    envg_put(1, envg_name(b, 1, "GX", "=other"));
+}
+
+static void envg_getenv_teardown(void)
+{
+    envg_remove(0, "G"); envg_remove(1, "G");
+    envg_remove(0, "GX"); envg_remove(1, "GX");
+}
+
+static void run_env_getenv(void)
+{
+    install_counting_iph();
+    envg_getenv_setup();
+    static const char *const suffixes[] = { "G", "GX", "g", "NOPE", "G=val1", "" };
+    for (unsigned i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
+        char n1[64], n2[64];
+        const char *a1 = i == 5 ? "" : envg_name(n1, 0, suffixes[i], 0);
+        const char *a2 = i == 5 ? "" : envg_name(n2, 1, suffixes[i], 0);
+        if (i == 2) { a1 = "ucdenv_d_g"; a2 = "ucdenv_r_g"; } /* case-insensitive */
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        char *v1 = ud_getenv(a1);
+        char *v2 = ref_getenv(a2);
+        grade2("getenv.value", label_idx(i), envg_str(v1), envg_str(v2));
+        grade2("getenv.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("getenv.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    /* NULL, and a name of _MAX_ENV characters: EINVAL through the handler. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    char *v1 = ud_getenv(0);
+    char *v2 = ref_getenv(0);
+    grade2("getenv.null.ret", "-", v1 != 0, v2 != 0);
+    grade2("getenv.null.errno", "-", *_errno(), *ref__errno());
+    grade2("getenv.null.iph", "-", g_iph_dll, g_iph_ref);
+    char *longname = (char *)HeapAlloc(GetProcessHeap(), 0, 32768);
+    if (longname) {
+        memset(longname, 'A', 32767);
+        longname[32767] = 0;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        v1 = ud_getenv(longname);
+        v2 = ref_getenv(longname);
+        grade2("getenv.long.ret", "-", v1 != 0, v2 != 0);
+        grade2("getenv.long.errno", "-", *_errno(), *ref__errno());
+        grade2("getenv.long.iph", "-", g_iph_dll, g_iph_ref);
+        longname[32766] = 0; /* 32766 characters: accepted, just not found */
+        g_iph_dll = g_iph_ref = 0;
+        v1 = ud_getenv(longname);
+        v2 = ref_getenv(longname);
+        grade2("getenv.long-1.ret", "-", v1 != 0, v2 != 0);
+        grade2("getenv.long-1.iph", "-", g_iph_dll, g_iph_ref);
+        HeapFree(GetProcessHeap(), 0, longname);
+    }
+    envg_getenv_teardown();
+}
+
+static void run_env__wgetenv(void)
+{
+    install_counting_iph();
+    envg_getenv_setup();
+    wchar_t n1[64], n2[64];
+    /* Set through the NARROW side: the wide table must have the copy. */
+    const wchar_t *w1 = ud__wgetenv(envg_wname(n1, 0, "G", 0));
+    const wchar_t *w2 = ref__wgetenv(envg_wname(n2, 1, "G", 0));
+    grade2("_wgetenv.synced", "-", envg_wstr(w1), envg_wstr(w2));
+    w1 = ud__wgetenv(envg_wname(n1, 0, "NOPE", 0));
+    w2 = ref__wgetenv(envg_wname(n2, 1, "NOPE", 0));
+    grade2("_wgetenv.missing", "-", envg_wstr(w1), envg_wstr(w2));
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    w1 = ud__wgetenv(0);
+    w2 = ref__wgetenv(0);
+    grade2("_wgetenv.null.ret", "-", w1 != 0, w2 != 0);
+    grade2("_wgetenv.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_wgetenv.null.iph", "-", g_iph_dll, g_iph_ref);
+    envg_getenv_teardown();
+}
+
+static void run_env_getenv_s(void)
+{
+    install_counting_iph();
+    envg_getenv_setup();
+    char n1[64], n2[64];
+    envg_name(n1, 0, "G", 0);
+    envg_name(n2, 1, "G", 0);
+    struct { int nullreq; int nullbuf; size_t count; int missing; } rows[] = {
+        { 1, 0, 16, 0 },  /* NULL required_count: EINVAL, handler */
+        { 0, 1, 5, 0 },   /* NULL buffer with a count: EINVAL, handler */
+        { 0, 0, 0, 0 },   /* buffer with count 0: EINVAL, handler */
+        { 0, 1, 0, 0 },   /* size query: 0, *required = 5 */
+        { 0, 0, 3, 0 },   /* too small: ERANGE, buffer[0] cleared, no handler */
+        { 0, 0, 5, 0 },   /* exact */
+        { 0, 0, 16, 0 },  /* roomy */
+        { 0, 0, 16, 1 },  /* missing: 0, *required 0, buffer[0] cleared */
+    };
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[16], b2[16];
+        size_t q1 = 77, q2 = 77;
+        memset(b1, 0x5A, sizeof(b1));
+        memset(b2, 0x5A, sizeof(b2));
+        char m1[64], m2[64];
+        const char *a1 = rows[i].missing ? envg_name(m1, 0, "NOPE", 0) : n1;
+        const char *a2 = rows[i].missing ? envg_name(m2, 1, "NOPE", 0) : n2;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t r1 = ud_getenv_s(rows[i].nullreq ? 0 : &q1, rows[i].nullbuf ? 0 : b1, rows[i].count, a1);
+        errno_t r2 = ref_getenv_s(rows[i].nullreq ? 0 : &q2, rows[i].nullbuf ? 0 : b2, rows[i].count, a2);
+        grade2("getenv_s.ret", label_idx(i), r1, r2);
+        grade2("getenv_s.required", label_idx(i), (long long)q1, (long long)q2);
+        grade2("getenv_s.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("getenv_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("getenv_s.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    envg_getenv_teardown();
+}
+
+static void run_env__wgetenv_s(void)
+{
+    install_counting_iph();
+    envg_getenv_setup();
+    wchar_t n1[64], n2[64];
+    envg_wname(n1, 0, "G", 0);
+    envg_wname(n2, 1, "G", 0);
+    static const size_t counts[] = { 0, 3, 5, 16 };
+    for (unsigned i = 0; i < 4; i++) {
+        wchar_t b1[16], b2[16];
+        size_t q1 = 77, q2 = 77;
+        wmemset(b1, 0x5A5A, 16);
+        wmemset(b2, 0x5A5A, 16);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t r1 = ud__wgetenv_s(&q1, counts[i] ? b1 : 0, counts[i], n1);
+        errno_t r2 = ref__wgetenv_s(&q2, counts[i] ? b2 : 0, counts[i], n2);
+        grade2("_wgetenv_s.ret", label_idx(i), r1, r2);
+        grade2("_wgetenv_s.required", label_idx(i), (long long)q1, (long long)q2);
+        grade2("_wgetenv_s.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_wgetenv_s.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t r1 = ud__wgetenv_s(0, 0, 0, n1);
+    errno_t r2 = ref__wgetenv_s(0, 0, 0, n2);
+    grade2("_wgetenv_s.nullreq.ret", "-", r1, r2);
+    grade2("_wgetenv_s.nullreq.errno", "-", *_errno(), *ref__errno());
+    grade2("_wgetenv_s.nullreq.iph", "-", g_iph_dll, g_iph_ref);
+    envg_getenv_teardown();
+}
+
+static void run_env__dupenv_s(void)
+{
+    install_counting_iph();
+    envg_getenv_setup();
+    char n1[64], n2[64], m1[64], m2[64];
+    envg_name(n1, 0, "G", 0);
+    envg_name(n2, 1, "G", 0);
+    envg_name(m1, 0, "NOPE", 0);
+    envg_name(m2, 1, "NOPE", 0);
+
+    /* Found: a calloc'd copy and its count (terminator included). */
+    char *p1 = (char *)1, *p2 = (char *)1;
+    size_t c1 = 77, c2 = 77;
+    errno_t r1 = ud__dupenv_s(&p1, &c1, n1);
+    errno_t r2 = ref__dupenv_s(&p2, &c2, n2);
+    grade2("_dupenv_s.found.ret", "-", r1, r2);
+    grade2("_dupenv_s.found.count", "-", (long long)c1, (long long)c2);
+    grade2("_dupenv_s.found.value", "-", envg_str(p1), envg_str(p2));
+    if (p1) ud_free(p1);
+    if (p2) ref_free(p2);
+
+    /* Found, NULL count pointer. */
+    p1 = p2 = (char *)1;
+    r1 = ud__dupenv_s(&p1, 0, n1);
+    r2 = ref__dupenv_s(&p2, 0, n2);
+    grade2("_dupenv_s.nullcount.ret", "-", r1, r2);
+    grade2("_dupenv_s.nullcount.value", "-", envg_str(p1), envg_str(p2));
+    if (p1) ud_free(p1);
+    if (p2) ref_free(p2);
+
+    /* Missing: success, NULL, 0. */
+    p1 = p2 = (char *)1;
+    c1 = c2 = 77;
+    r1 = ud__dupenv_s(&p1, &c1, m1);
+    r2 = ref__dupenv_s(&p2, &c2, m2);
+    grade2("_dupenv_s.missing.ret", "-", r1, r2);
+    grade2("_dupenv_s.missing.isnull", "-", p1 == 0, p2 == 0);
+    grade2("_dupenv_s.missing.count", "-", (long long)c1, (long long)c2);
+
+    /* NULL name: *buffer and *count cleared FIRST, then EINVAL + handler. */
+    p1 = p2 = (char *)1;
+    c1 = c2 = 77;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__dupenv_s(&p1, &c1, 0);
+    r2 = ref__dupenv_s(&p2, &c2, 0);
+    grade2("_dupenv_s.nullname.ret", "-", r1, r2);
+    grade2("_dupenv_s.nullname.isnull", "-", p1 == 0, p2 == 0);
+    grade2("_dupenv_s.nullname.count", "-", (long long)c1, (long long)c2);
+    grade2("_dupenv_s.nullname.errno", "-", *_errno(), *ref__errno());
+    grade2("_dupenv_s.nullname.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* NULL buffer pointer: EINVAL + handler, count untouched. */
+    c1 = c2 = 77;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__dupenv_s(0, &c1, n1);
+    r2 = ref__dupenv_s(0, &c2, n2);
+    grade2("_dupenv_s.nullbuf.ret", "-", r1, r2);
+    grade2("_dupenv_s.nullbuf.count", "-", (long long)c1, (long long)c2);
+    grade2("_dupenv_s.nullbuf.iph", "-", g_iph_dll, g_iph_ref);
+    envg_getenv_teardown();
+}
+
+static void run_env__wdupenv_s(void)
+{
+    install_counting_iph();
+    envg_getenv_setup();
+    wchar_t n1[64], n2[64];
+    envg_wname(n1, 0, "GX", 0);
+    envg_wname(n2, 1, "GX", 0);
+    wchar_t *p1 = (wchar_t *)1, *p2 = (wchar_t *)1;
+    size_t c1 = 77, c2 = 77;
+    errno_t r1 = ud__wdupenv_s(&p1, &c1, n1);
+    errno_t r2 = ref__wdupenv_s(&p2, &c2, n2);
+    grade2("_wdupenv_s.found.ret", "-", r1, r2);
+    grade2("_wdupenv_s.found.count", "-", (long long)c1, (long long)c2);
+    grade2("_wdupenv_s.found.value", "-", envg_wstr(p1), envg_wstr(p2));
+    if (p1) ud_free(p1);
+    if (p2) ref_free(p2);
+    c1 = c2 = 77;
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__wdupenv_s(0, &c1, n1);
+    r2 = ref__wdupenv_s(0, &c2, n2);
+    grade2("_wdupenv_s.nullbuf.ret", "-", r1, r2);
+    grade2("_wdupenv_s.nullbuf.iph", "-", g_iph_dll, g_iph_ref);
+    envg_getenv_teardown();
+}
+
+#define ENV_GETENV_HAND                                                         \
+    { "getenv", run_env_getenv }, { "_wgetenv", run_env__wgetenv },             \
+    { "getenv_s", run_env_getenv_s }, { "_wgetenv_s", run_env__wgetenv_s },     \
+    { "_dupenv_s", run_env__dupenv_s }, { "_wdupenv_s", run_env__wdupenv_s },
+#else
+#define ENV_GETENV_HAND                                                         \
+    { "getenv", 0 }, { "_wgetenv", 0 }, { "getenv_s", 0 }, { "_wgetenv_s", 0 }, \
+    { "_dupenv_s", 0 }, { "_wdupenv_s", 0 },
+#endif
+
+/* ==== putenv.cpp (and setenv.cpp through it) =============================== */
+#if UCRTDIFF_REF_HAS__putenv && UCRTDIFF_REF_HAS_getenv
+char *__cdecl ref_getenv(const char *);
+int __cdecl ref__wputenv(const wchar_t *);
+extern int (__cdecl *const ud__wputenv)(const wchar_t *) __asm__(UD_IMP(_wputenv));
+errno_t __cdecl ref__putenv_s(const char *, const char *);
+errno_t __cdecl ref__wputenv_s(const wchar_t *, const wchar_t *);
+extern char *(__cdecl *const ud_getenv)(const char *) __asm__(UD_IMP(getenv));
+extern errno_t (__cdecl *const ud__putenv_s)(const char *, const char *) __asm__(UD_IMP(_putenv_s));
+extern errno_t (__cdecl *const ud__wputenv_s)(const wchar_t *, const wchar_t *) __asm__(UD_IMP(_wputenv_s));
+
+/* The OS view of a variable: its value's hash, or -1 when absent. */
+static long long envg_os(const char *name)
+{
+    char v[256];
+    DWORD n = GetEnvironmentVariableA(name, v, sizeof(v));
+    if (n == 0 || n >= sizeof(v)) return -1;
+    return fnv(v, n + 1);
+}
+
+/* One _putenv row on both sides: option "UCDENV_<s>_<suffix><tail>", then
+ * getenv/the OS of "UCDENV_<s>_<look>". */
+static void envg_putenv_row(const char *what, const char *suffix, const char *tail, const char *look)
+{
+    char o1[96], o2[96], l1[96], l2[96];
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int r1 = ud__putenv(envg_name(o1, 0, suffix, tail));
+    int r2 = ref__putenv(envg_name(o2, 1, suffix, tail));
+    grade2("_putenv.ret", what, r1, r2);
+    grade2("_putenv.errno", what, *_errno(), *ref__errno());
+    grade2("_putenv.iph", what, g_iph_dll, g_iph_ref);
+    envg_name(l1, 0, look, 0);
+    envg_name(l2, 1, look, 0);
+    grade2("_putenv.getenv", what, envg_str(ud_getenv(l1)), envg_str(ref_getenv(l2)));
+    grade2("_putenv.os", what, envg_os(l1), envg_os(l2));
+}
+
+static void run_env__putenv(void)
+{
+    install_counting_iph();
+    envg_prepare();
+    envg_putenv_row("add", "A", "=1", "A");
+    envg_putenv_row("replace", "A", "=2", "A");
+    envg_putenv_row("add-prefix", "AB", "=x", "A");        /* must not disturb A */
+    envg_putenv_row("remove", "A", "=", "A");               /* table AND OS */
+    envg_putenv_row("remove-again", "A", "=", "A");         /* absent: 0, OS untouched */
+    envg_putenv_row("no-equals", "B", "", "B");             /* EINVAL, no handler */
+    envg_putenv_row("value-with-eq", "C", "=x=y", "C");     /* value is "x=y" */
+    envg_remove(0, "AB"); envg_remove(1, "AB");
+    envg_remove(0, "C"); envg_remove(1, "C");
+
+    /* Case-insensitive replace. */
+    envg_putenv_row("case-add", "K", "=1", "K");
+    {
+        *_errno() = 0; *ref__errno() = 0;
+        int r1 = ud__putenv("ucdenv_d_k=3");
+        int r2 = ref__putenv("ucdenv_r_k=3");
+        grade2("_putenv.case-replace.ret", "-", r1, r2);
+        grade2("_putenv.case-replace.getenv", "-", envg_str(ud_getenv("UCDENV_D_K")), envg_str(ref_getenv("UCDENV_R_K")));
+    }
+    envg_remove(0, "K"); envg_remove(1, "K");
+
+    /* Leading '=' (including a drive string): refused without the handler. */
+    static const char *const bad[] = { "=UCDENV_Z=1", "=C:=C:\\" };
+    for (unsigned i = 0; i < 2; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        int r1 = ud__putenv(bad[i]);
+        int r2 = ref__putenv(bad[i]);
+        grade2("_putenv.leading-eq.ret", label_idx(i), r1, r2);
+        grade2("_putenv.leading-eq.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_putenv.leading-eq.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+
+    /* NULL: EINVAL through the handler (both tables exist). */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int r1 = ud__putenv(0);
+    int r2 = ref__putenv(0);
+    grade2("_putenv.null.ret", "-", r1, r2);
+    grade2("_putenv.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_putenv.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_env__wputenv(void)
+{
+    install_counting_iph();
+    envg_prepare();
+    wchar_t o1[96], o2[96], n1[96], n2[96];
+    char a1[96], a2[96];
+    /* A non-ASCII value: the narrow table gets the CP_ACP conversion. */
+    *_errno() = 0; *ref__errno() = 0;
+    int r1 = ud__wputenv(envg_wname(o1, 0, "W", L"=\x00e9t\x00e9"));
+    int r2 = ref__wputenv(envg_wname(o2, 1, "W", L"=\x00e9t\x00e9"));
+    grade2("_wputenv.ret", "-", r1, r2);
+    grade2("_wputenv.errno", "-", *_errno(), *ref__errno());
+    grade2("_wputenv.wgetenv", "-", envg_wstr(ud__wgetenv(envg_wname(n1, 0, "W", 0))),
+           envg_wstr(ref__wgetenv(envg_wname(n2, 1, "W", 0))));
+    grade2("_wputenv.getenv", "-", envg_str(ud_getenv(envg_name(a1, 0, "W", 0))),
+           envg_str(ref_getenv(envg_name(a2, 1, "W", 0))));
+    /* Remove through the wide side: gone from both tables. */
+    r1 = ud__wputenv(envg_wname(o1, 0, "W", L"="));
+    r2 = ref__wputenv(envg_wname(o2, 1, "W", L"="));
+    grade2("_wputenv.remove.ret", "-", r1, r2);
+    grade2("_wputenv.remove.getenv", "-", envg_str(ud_getenv(a1)), envg_str(ref_getenv(a2)));
+    grade2("_wputenv.remove.os", "-", envg_os(a1), envg_os(a2));
+
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__wputenv(L"=UCDENV");
+    r2 = ref__wputenv(L"=UCDENV");
+    grade2("_wputenv.leading-eq.ret", "-", r1, r2);
+    grade2("_wputenv.leading-eq.errno", "-", *_errno(), *ref__errno());
+    grade2("_wputenv.leading-eq.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_env__putenv_s(void)
+{
+    install_counting_iph();
+    envg_prepare();
+    char n1[96], n2[96];
+    envg_name(n1, 0, "S", 0);
+    envg_name(n2, 1, "S", 0);
+    struct { const char *value; const char *what; } rows[] = {
+        { "v", "set" }, { "w", "replace" }, { "", "remove" }, { "", "remove-absent" },
+    };
+    for (unsigned i = 0; i < 4; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t r1 = ud__putenv_s(n1, rows[i].value);
+        errno_t r2 = ref__putenv_s(n2, rows[i].value);
+        grade2("_putenv_s.ret", rows[i].what, r1, r2);
+        grade2("_putenv_s.iph", rows[i].what, g_iph_dll, g_iph_ref);
+        grade2("_putenv_s.getenv", rows[i].what, envg_str(ud_getenv(n1)), envg_str(ref_getenv(n2)));
+        grade2("_putenv_s.os", rows[i].what, envg_os(n1), envg_os(n2));
+    }
+
+    /* NULL value: EINVAL through the handler, returned. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    errno_t r1 = ud__putenv_s(n1, 0);
+    errno_t r2 = ref__putenv_s(n2, 0);
+    grade2("_putenv_s.nullvalue.ret", "-", r1, r2);
+    grade2("_putenv_s.nullvalue.errno", "-", *_errno(), *ref__errno());
+    grade2("_putenv_s.nullvalue.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* NULL name: EINVAL through the handler, returned as errno. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__putenv_s(0, "v");
+    r2 = ref__putenv_s(0, "v");
+    grade2("_putenv_s.nullname.ret", "-", r1, r2);
+    grade2("_putenv_s.nullname.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* A name holding '=': "D=E" + "f" -> variable D with value "E=f". */
+    {
+        char d1[96], d2[96], l1[96], l2[96];
+        r1 = ud__putenv_s(envg_name(d1, 0, "D", "=E"), "f");
+        r2 = ref__putenv_s(envg_name(d2, 1, "D", "=E"), "f");
+        grade2("_putenv_s.eq-in-name.ret", "-", r1, r2);
+        envg_name(l1, 0, "D", 0);
+        envg_name(l2, 1, "D", 0);
+        grade2("_putenv_s.eq-in-name.getenv", "-", envg_str(ud_getenv(l1)), envg_str(ref_getenv(l2)));
+        envg_remove(0, "D"); envg_remove(1, "D");
+    }
+
+    /* Empty name: "=v" is refused (EINVAL, no handler), errno returned. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__putenv_s("", "v");
+    r2 = ref__putenv_s("", "v");
+    grade2("_putenv_s.empty.ret", "-", r1, r2);
+    grade2("_putenv_s.empty.iph", "-", g_iph_dll, g_iph_ref);
+
+    /* A name of _MAX_ENV characters: EINVAL through the handler. */
+    char *longname = (char *)HeapAlloc(GetProcessHeap(), 0, 32768);
+    if (longname) {
+        memset(longname, 'Q', 32767);
+        longname[32767] = 0;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        r1 = ud__putenv_s(longname, "v");
+        r2 = ref__putenv_s(longname, "v");
+        grade2("_putenv_s.longname.ret", "-", r1, r2);
+        grade2("_putenv_s.longname.iph", "-", g_iph_dll, g_iph_ref);
+        HeapFree(GetProcessHeap(), 0, longname);
+    }
+}
+
+static void run_env__wputenv_s(void)
+{
+    install_counting_iph();
+    envg_prepare();
+    wchar_t n1[96], n2[96];
+    char a1[96], a2[96];
+    envg_wname(n1, 0, "V", 0);
+    envg_wname(n2, 1, "V", 0);
+    envg_name(a1, 0, "V", 0);
+    envg_name(a2, 1, "V", 0);
+    errno_t r1 = ud__wputenv_s(n1, L"x");
+    errno_t r2 = ref__wputenv_s(n2, L"x");
+    grade2("_wputenv_s.set.ret", "-", r1, r2);
+    grade2("_wputenv_s.set.getenv", "-", envg_str(ud_getenv(a1)), envg_str(ref_getenv(a2)));
+    r1 = ud__wputenv_s(n1, L"");
+    r2 = ref__wputenv_s(n2, L"");
+    grade2("_wputenv_s.remove.ret", "-", r1, r2);
+    grade2("_wputenv_s.remove.getenv", "-", envg_str(ud_getenv(a1)), envg_str(ref_getenv(a2)));
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    r1 = ud__wputenv_s(n1, 0);
+    r2 = ref__wputenv_s(n2, 0);
+    grade2("_wputenv_s.nullvalue.ret", "-", r1, r2);
+    grade2("_wputenv_s.nullvalue.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define ENV_PUTENV_HAND                                                         \
+    { "_putenv", run_env__putenv }, { "_wputenv", run_env__wputenv },           \
+    { "_putenv_s", run_env__putenv_s }, { "_wputenv_s", run_env__wputenv_s },
+#else
+#define ENV_PUTENV_HAND                                                         \
+    { "_putenv", 0 }, { "_wputenv", 0 }, { "_putenv_s", 0 }, { "_wputenv_s", 0 },
+#endif
+
+/* ==== searchenv.cpp (and getpath.cpp through it) =========================== */
+#if UCRTDIFF_REF_HAS__searchenv && UCRTDIFF_REF_HAS__putenv
+errno_t __cdecl ref__searchenv_s(const char *, const char *, char *, size_t);
+errno_t __cdecl ref__wsearchenv_s(const wchar_t *, const wchar_t *, wchar_t *, size_t);
+void __cdecl ref__searchenv(const char *, const char *, char *);
+void __cdecl ref__wsearchenv(const wchar_t *, const wchar_t *, wchar_t *);
+extern errno_t (__cdecl *const ud__searchenv_s)(const char *, const char *, char *, size_t) __asm__(UD_IMP(_searchenv_s));
+extern errno_t (__cdecl *const ud__wsearchenv_s)(const wchar_t *, const wchar_t *, wchar_t *, size_t)
+    __asm__(UD_IMP(_wsearchenv_s));
+extern void (__cdecl *const ud__searchenv)(const char *, const char *, char *) __asm__(UD_IMP(_searchenv));
+extern void (__cdecl *const ud__wsearchenv)(const wchar_t *, const wchar_t *, wchar_t *) __asm__(UD_IMP(_wsearchenv));
+
+/* Set UCDENV_<s>_<suffix>=<value> on both sides (value is side-neutral). */
+static void envg_set_both(const char *suffix, const char *value)
+{
+    static char big[1024];
+    for (int side = 0; side < 2; side++) {
+        size_t n = strlen(envg_name(big, side, suffix, "="));
+        size_t v = strlen(value);
+        if (n + v + 1 > sizeof(big)) return;
+        memcpy(big + n, value, v + 1);
+        envg_put(side, big);
+    }
+}
+
+/* The search list variants: plain, quoted with empty elements, and one whose
+ * first element overflows getpath's on-stack buffer (the retry path). */
+static void envg_searchenv_setup(void)
+{
+    char sys[MAX_PATH], v[1024];
+    envg_prepare();
+    UINT n = GetSystemDirectoryA(sys, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) sys[0] = 0;
+    envg_set_both("S", sys);
+    strcpy(v, ";;\"");
+    strcat(v, sys);
+    strcat(v, "\";;");
+    envg_set_both("Q", v);
+    strcpy(v, "C:\\");
+    size_t k = strlen(v);
+    memset(v + k, 'l', 300);
+    v[k + 300] = 0;
+    strcat(v, ";");
+    strcat(v, sys);
+    envg_set_both("L", v);
+}
+
+static void envg_searchenv_teardown(void)
+{
+    static const char *const s[] = { "S", "Q", "L" };
+    for (unsigned i = 0; i < 3; i++) { envg_remove(0, s[i]); envg_remove(1, s[i]); }
+}
+
+static void run_env__searchenv_s(void)
+{
+    install_counting_iph();
+    envg_searchenv_setup();
+    struct { const char *file; const char *var; size_t count; int nullbuf; } rows[] = {
+        { "kernel32.dll", "S", MAX_PATH, 0 },          /* found along the list */
+        { "kernel32.dll", "Q", MAX_PATH, 0 },          /* quoted, empty elements */
+        { "kernel32.dll", "L", MAX_PATH, 0 },          /* retry after ERANGE */
+        { "ucdnosuchfile_zz.dll", "S", MAX_PATH, 0 },  /* not found: ENOENT */
+        { "kernel32.dll", "NOVAR", MAX_PATH, 0 },      /* no variable: ENOENT */
+        { "kernel32.dll", "S", 10, 0 },                /* found, too long: ERANGE */
+        { "", "S", MAX_PATH, 0 },                      /* empty name: ENOENT */
+        { ".", "S", MAX_PATH, 0 },                     /* exists as given: fullpath */
+        { "kernel32.dll", "S", 0, 0 },                 /* count 0: EINVAL, handler */
+        { "kernel32.dll", "S", MAX_PATH, 1 },          /* NULL buffer: EINVAL, handler */
+        { 0, "S", MAX_PATH, 0 },                       /* NULL name: buf[0]=0, handler */
+    };
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        char b1[MAX_PATH + 8], b2[MAX_PATH + 8], v1[64], v2[64];
+        memset(b1, 0x5A, sizeof(b1));
+        memset(b2, 0x5A, sizeof(b2));
+        envg_name(v1, 0, rows[i].var, 0);
+        envg_name(v2, 1, rows[i].var, 0);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t r1 = ud__searchenv_s(rows[i].file, v1, rows[i].nullbuf ? 0 : b1, rows[i].count);
+        errno_t r2 = ref__searchenv_s(rows[i].file, v2, rows[i].nullbuf ? 0 : b2, rows[i].count);
+        grade2("_searchenv_s.ret", label_idx(i), r1, r2);
+        grade2("_searchenv_s.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_searchenv_s.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_searchenv_s.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    envg_searchenv_teardown();
+}
+
+static void run_env__searchenv(void)
+{
+    install_counting_iph();
+    envg_searchenv_setup();
+    static const char *const files[] = { "kernel32.dll", "ucdnosuchfile_zz.dll", "" };
+    for (unsigned i = 0; i < 3; i++) {
+        char b1[MAX_PATH + 8], b2[MAX_PATH + 8], v1[64], v2[64];
+        memset(b1, 0x5A, sizeof(b1));
+        memset(b2, 0x5A, sizeof(b2));
+        *_errno() = 0; *ref__errno() = 0;
+        ud__searchenv(files[i], envg_name(v1, 0, "S", 0), b1);
+        ref__searchenv(files[i], envg_name(v2, 1, "S", 0), b2);
+        grade2("_searchenv.buf", label_idx(i), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+        grade2("_searchenv.errno", label_idx(i), *_errno(), *ref__errno());
+    }
+    envg_searchenv_teardown();
+}
+
+static void run_env__wsearchenv_s(void)
+{
+    install_counting_iph();
+    envg_searchenv_setup();
+    static const wchar_t *const files[] = { L"kernel32.dll", L"ucdnosuchfile_zz.dll", L"" };
+    static const char *const vars[] = { "S", "Q", "L" };
+    for (unsigned i = 0; i < 3; i++) {
+        for (unsigned j = 0; j < 3; j++) {
+            wchar_t b1[MAX_PATH + 8], b2[MAX_PATH + 8], v1[64], v2[64];
+            wmemset(b1, 0x5A5A, MAX_PATH + 8);
+            wmemset(b2, 0x5A5A, MAX_PATH + 8);
+            *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+            errno_t r1 = ud__wsearchenv_s(files[i], envg_wname(v1, 0, vars[j], 0), b1, MAX_PATH);
+            errno_t r2 = ref__wsearchenv_s(files[i], envg_wname(v2, 1, vars[j], 0), b2, MAX_PATH);
+            grade2("_wsearchenv_s.ret", label_idx(i * 10 + j), r1, r2);
+            grade2("_wsearchenv_s.buf", label_idx(i * 10 + j), fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+            grade2("_wsearchenv_s.errno", label_idx(i * 10 + j), *_errno(), *ref__errno());
+        }
+    }
+    envg_searchenv_teardown();
+}
+
+static void run_env__wsearchenv(void)
+{
+    install_counting_iph();
+    envg_searchenv_setup();
+    wchar_t b1[MAX_PATH + 8], b2[MAX_PATH + 8], v1[64], v2[64];
+    wmemset(b1, 0x5A5A, MAX_PATH + 8);
+    wmemset(b2, 0x5A5A, MAX_PATH + 8);
+    ud__wsearchenv(L"kernel32.dll", envg_wname(v1, 0, "S", 0), b1);
+    ref__wsearchenv(L"kernel32.dll", envg_wname(v2, 1, "S", 0), b2);
+    grade2("_wsearchenv.buf", "-", fnv(b1, sizeof(b1)), fnv(b2, sizeof(b2)));
+    envg_searchenv_teardown();
+}
+
+#define ENV_SEARCHENV_HAND                                                      \
+    { "_searchenv_s", run_env__searchenv_s }, { "_searchenv", run_env__searchenv }, \
+    { "_wsearchenv_s", run_env__wsearchenv_s }, { "_wsearchenv", run_env__wsearchenv },
+#else
+#define ENV_SEARCHENV_HAND                                                      \
+    { "_searchenv_s", 0 }, { "_searchenv", 0 }, { "_wsearchenv_s", 0 }, { "_wsearchenv", 0 },
+#endif
+
+/* Registry: paste ENV_HAND_ENTRIES into run_legacy()'s `legacy[]`. */
+#define ENV_HAND_ENTRIES ENV_INIT_HAND ENV_FROM_OS_HAND ENV_GETENV_HAND ENV_PUTENV_HAND ENV_SEARCHENV_HAND
+
+
+/* ---- exec_rest: inlined from staging/exec_rest.c ---- */
+/* ==== staging/exec_rest.c ==================================================
+ *
+ * Guest grader for the "exec-rest" batch: exec/wait.cpp (_cwait),
+ * exec/system.cpp (system/_wsystem), exec/getproc.cpp (_getdllprocaddr),
+ * exec/loaddll.cpp (_loaddll/_unloaddll). One guard per C file:
+ *   UCRTDIFF_REF_HAS__cwait            wait.cpp
+ *   UCRTDIFF_REF_HAS_system            system.cpp
+ *   UCRTDIFF_REF_HAS__getdllprocaddr   getproc.cpp
+ *   UCRTDIFF_REF_HAS__loaddll          loaddll.cpp
+ *
+ * PROCESS STATE. Nothing here runs a shell command through system(): only
+ * system(NULL)/_wsystem(NULL), which spawn nothing. _cwait is driven with
+ * handles this block creates per side (an event, and -- only when cmd.exe is
+ * present -- a `cmd.exe /c exit 7` child created with CreateProcessW), and
+ * _cwait CLOSES what it is given, so nothing leaks and no child outlives its
+ * row (the wait is the row). _loaddll/_unloaddll load kernel32.dll, which is
+ * already mapped: the reference count goes up and back down per side.
+ * Last-error is preset identically before each side's call wherever a row
+ * reads it.
+ */
+
+/* ==== wait.cpp ============================================================= */
+#if UCRTDIFF_REF_HAS__cwait
+unsigned long *__cdecl ref___doserrno(void);
+intptr_t __cdecl ref__cwait(int *, intptr_t, int);
+extern intptr_t (__cdecl *const ud__cwait)(int *, intptr_t, int) __asm__(UD_IMP(_cwait));
+
+/* A child that exits with a known code, or 0 when there is no cmd.exe. */
+static HANDLE exr_spawn_exit7(void)
+{
+    wchar_t found[MAX_PATH];
+    if (!SearchPathW(NULL, L"cmd.exe", NULL, MAX_PATH, found, NULL))
+        return 0;
+    wchar_t cmdline[] = L"cmd.exe /c exit 7";
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    memset(&pi, 0, sizeof(pi));
+    if (!CreateProcessW(found, cmdline, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+        return 0;
+    CloseHandle(pi.hThread);
+    return pi.hProcess;
+}
+
+static void run_exr__cwait(void)
+{
+    install_counting_iph();
+
+    /* -1 (current process) and -2 (current thread): ECHILD, no handler, and
+     * the status preset to -1 stays. */
+    static const intptr_t bad_ids[] = { -1, -2 };
+    for (unsigned i = 0; i < 2; i++) {
+        int st1 = 0x55, st2 = 0x55;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        intptr_t r1 = ud__cwait(&st1, bad_ids[i], _WAIT_CHILD);
+        intptr_t r2 = ref__cwait(&st2, bad_ids[i], _WAIT_CHILD);
+        grade2("_cwait.pseudo.ret", label_idx(i), r1, r2);
+        grade2("_cwait.pseudo.status", label_idx(i), st1, st2);
+        grade2("_cwait.pseudo.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_cwait.pseudo.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+
+    /* NULL status pointer is fine. */
+    {
+        intptr_t r1 = ud__cwait(0, -1, _WAIT_CHILD);
+        intptr_t r2 = ref__cwait(0, -1, _WAIT_CHILD);
+        grade2("_cwait.nullstatus.ret", "-", r1, r2);
+    }
+
+    /* A waitable handle that is not a process: the wait succeeds, then
+     * GetExitCodeProcess fails with ERROR_INVALID_HANDLE -> ECHILD with
+     * _doserrno 6, status -1 -- and the handle is CLOSED either way. */
+    {
+        HANDLE e1 = CreateEventW(NULL, TRUE, TRUE, NULL);
+        HANDLE e2 = CreateEventW(NULL, TRUE, TRUE, NULL);
+        int st1 = 0x55, st2 = 0x55;
+        *_errno() = 0; *ref__errno() = 0; *__doserrno() = 0; *ref___doserrno() = 0;
+        intptr_t r1 = ud__cwait(&st1, (intptr_t)e1, _WAIT_CHILD);
+        intptr_t r2 = ref__cwait(&st2, (intptr_t)e2, _WAIT_CHILD);
+        grade2("_cwait.event.ret", "-", r1, r2);
+        grade2("_cwait.event.status", "-", st1, st2);
+        grade2("_cwait.event.errno", "-", *_errno(), *ref__errno());
+        grade2("_cwait.event.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+        DWORD f1 = 0, f2 = 0;
+        grade2("_cwait.event.closed", "-", !GetHandleInformation(e1, &f1), !GetHandleInformation(e2, &f2));
+    }
+
+    /* A NULL handle: the wait itself fails. */
+    {
+        int st1 = 0x55, st2 = 0x55;
+        *_errno() = 0; *ref__errno() = 0; *__doserrno() = 0; *ref___doserrno() = 0;
+        intptr_t r1 = ud__cwait(&st1, 0, _WAIT_GRANDCHILD);
+        intptr_t r2 = ref__cwait(&st2, 0, _WAIT_GRANDCHILD);
+        grade2("_cwait.null.ret", "-", r1, r2);
+        grade2("_cwait.null.status", "-", st1, st2);
+        grade2("_cwait.null.errno", "-", *_errno(), *ref__errno());
+        grade2("_cwait.null.doserrno", "-", (long long)*__doserrno(), (long long)*ref___doserrno());
+    }
+
+    /* A real child (only with cmd.exe): returns the id given, status = exit
+     * code, handle closed. */
+    {
+        HANDLE p1 = exr_spawn_exit7();
+        HANDLE p2 = p1 ? exr_spawn_exit7() : 0;
+        grade2("_cwait.child.spawned", "-", p1 != 0 && p2 != 0, p1 != 0 && p2 != 0);
+        if (p1 && p2) {
+            int st1 = 0x55, st2 = 0x55;
+            intptr_t r1 = ud__cwait(&st1, (intptr_t)p1, _WAIT_CHILD);
+            intptr_t r2 = ref__cwait(&st2, (intptr_t)p2, _WAIT_CHILD);
+            grade2("_cwait.child.ret_is_id", "-", r1 == (intptr_t)p1, r2 == (intptr_t)p2);
+            grade2("_cwait.child.status", "-", st1, st2);
+            DWORD f1 = 0, f2 = 0;
+            grade2("_cwait.child.closed", "-", !GetHandleInformation(p1, &f1), !GetHandleInformation(p2, &f2));
+        } else {
+            if (p1) { WaitForSingleObject(p1, INFINITE); CloseHandle(p1); }
+            if (p2) { WaitForSingleObject(p2, INFINITE); CloseHandle(p2); }
+        }
+    }
+}
+
+#define EXR_CWAIT_HAND { "_cwait", run_exr__cwait },
+#else
+#define EXR_CWAIT_HAND { "_cwait", 0 },
+#endif
+
+/* ==== system.cpp =========================================================== */
+#if UCRTDIFF_REF_HAS_system
+int __cdecl ref_system(const char *);
+int __cdecl ref__wsystem(const wchar_t *);
+extern int (__cdecl *const ud_system)(const char *) __asm__(UD_IMP(system));
+extern int (__cdecl *const ud__wsystem)(const wchar_t *) __asm__(UD_IMP(_wsystem));
+
+/* NULL only: "is %COMSPEC% set and accessible". No command is ever run. */
+static void run_exr_system(void)
+{
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int r1 = ud_system(0);
+    int r2 = ref_system(0);
+    grade2("system.null.ret", "-", r1, r2);
+    grade2("system.null.errno", "-", *_errno(), *ref__errno());
+    grade2("system.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+static void run_exr__wsystem(void)
+{
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    int r1 = ud__wsystem(0);
+    int r2 = ref__wsystem(0);
+    grade2("_wsystem.null.ret", "-", r1, r2);
+    grade2("_wsystem.null.errno", "-", *_errno(), *ref__errno());
+    grade2("_wsystem.null.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#define EXR_SYSTEM_HAND { "system", run_exr_system }, { "_wsystem", run_exr__wsystem },
+#else
+#define EXR_SYSTEM_HAND { "system", 0 }, { "_wsystem", 0 },
+#endif
+
+/* ==== getproc.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS__getdllprocaddr
+void *__cdecl ref__getdllprocaddr(intptr_t, char *, intptr_t);
+extern void *(__cdecl *const ud__getdllprocaddr)(intptr_t, char *, intptr_t) __asm__(UD_IMP(_getdllprocaddr));
+
+/* Same process, same kernel32: the two sides must return the SAME address. */
+static void run_exr__getdllprocaddr(void)
+{
+    install_counting_iph();
+    intptr_t k32 = (intptr_t)GetModuleHandleW(L"kernel32.dll");
+    static char n_tick[] = "GetTickCount";
+    static char n_none[] = "UcdNoSuchExportXyz";
+    struct { char *name; intptr_t ord; } rows[] = {
+        { n_tick, -1 },      /* by name */
+        { n_tick, 5 },       /* name AND ordinal: NULL */
+        { 0, 1 },            /* by ordinal */
+        { 0, 65535 },        /* the largest ordinal accepted */
+        { 0, 65536 },        /* too big: NULL, no call */
+        { n_none, -1 },      /* no such export */
+    };
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        SetLastError(0xABCD);
+        void *p1 = ud__getdllprocaddr(k32, rows[i].name, rows[i].ord);
+        DWORD le1 = GetLastError();
+        SetLastError(0xABCD);
+        void *p2 = ref__getdllprocaddr(k32, rows[i].name, rows[i].ord);
+        DWORD le2 = GetLastError();
+        grade2("_getdllprocaddr.ptr", label_idx(i), (long long)(intptr_t)p1, (long long)(intptr_t)p2);
+        grade2("_getdllprocaddr.lasterror", label_idx(i), le1, le2);
+    }
+    grade2("_getdllprocaddr.byname_is_real", "-",
+           ud__getdllprocaddr(k32, n_tick, -1) == (void *)GetProcAddress((HMODULE)k32, "GetTickCount"),
+           ref__getdllprocaddr(k32, n_tick, -1) == (void *)GetProcAddress((HMODULE)k32, "GetTickCount"));
+}
+
+#define EXR_GETPROC_HAND { "_getdllprocaddr", run_exr__getdllprocaddr },
+#else
+#define EXR_GETPROC_HAND { "_getdllprocaddr", 0 },
+#endif
+
+/* ==== loaddll.cpp ========================================================== */
+#if UCRTDIFF_REF_HAS__loaddll
+intptr_t __cdecl ref__loaddll(char *);
+int __cdecl ref__unloaddll(intptr_t);
+extern intptr_t (__cdecl *const ud__loaddll)(char *) __asm__(UD_IMP(_loaddll));
+extern int (__cdecl *const ud__unloaddll)(intptr_t) __asm__(UD_IMP(_unloaddll));
+
+static void run_exr__loaddll(void)
+{
+    install_counting_iph();
+    static char k32[] = "kernel32.dll";
+    static char none[] = "ucdnosuchdll_zz.dll";
+    intptr_t real = (intptr_t)GetModuleHandleW(L"kernel32.dll");
+
+    intptr_t h1 = ud__loaddll(k32);
+    intptr_t h2 = ref__loaddll(k32);
+    grade2("_loaddll.k32.is_module", "-", h1 == real, h2 == real);
+    if (h1 && h2) {
+        SetLastError(0xABCD);
+        int u1 = ud__unloaddll(h1);
+        SetLastError(0xABCD);
+        int u2 = ref__unloaddll(h2);
+        grade2("_unloaddll.k32.ret", "-", u1, u2);
+    } else {
+        /* Keep the reference counts balanced even when a side failed. */
+        if (h1) ud__unloaddll(h1);
+        if (h2) ref__unloaddll(h2);
+    }
+
+    *_errno() = 0; *ref__errno() = 0;
+    SetLastError(0);
+    intptr_t n1 = ud__loaddll(none);
+    DWORD le1 = GetLastError();
+    SetLastError(0);
+    intptr_t n2 = ref__loaddll(none);
+    DWORD le2 = GetLastError();
+    grade2("_loaddll.missing.ret", "-", n1, n2);
+    grade2("_loaddll.missing.lasterror", "-", le1, le2);
+    grade2("_loaddll.missing.errno", "-", *_errno(), *ref__errno());
+}
+
+static void run_exr__unloaddll(void)
+{
+    install_counting_iph();
+    /* Failure returns the raw GetLastError(), not an errno. */
+    SetLastError(0);
+    int r1 = ud__unloaddll(0);
+    SetLastError(0);
+    int r2 = ref__unloaddll(0);
+    grade2("_unloaddll.null.ret", "-", r1, r2);
+
+    /* A bogus module handle. */
+    SetLastError(0);
+    r1 = ud__unloaddll((intptr_t)0x1230);
+    SetLastError(0);
+    r2 = ref__unloaddll((intptr_t)0x1230);
+    grade2("_unloaddll.bogus.ret", "-", r1, r2);
+}
+
+#define EXR_LOADDLL_HAND { "_loaddll", run_exr__loaddll }, { "_unloaddll", run_exr__unloaddll },
+#else
+#define EXR_LOADDLL_HAND { "_loaddll", 0 }, { "_unloaddll", 0 },
+#endif
+
+/* Registry: paste EXEC_REST_HAND_ENTRIES into run_legacy()'s `legacy[]`. */
+#define EXEC_REST_HAND_ENTRIES EXR_CWAIT_HAND EXR_SYSTEM_HAND EXR_GETPROC_HAND EXR_LOADDLL_HAND
+
+
 static void run_legacy(void)
 {
     static const struct {
@@ -18235,6 +23557,12 @@ static void run_legacy(void)
         CONVERT_REST_HAND_ENTRIES
         MISC_HAND_ENTRIES
         FILESYSTEM_HAND_ENTRIES
+        HEAP_HAND_ENTRIES
+        STDLIB_HAND_ENTRIES
+        LOWIO_HAND_ENTRIES
+        CONIO_HAND_ENTRIES
+        ENV_HAND_ENTRIES
+        EXEC_REST_HAND_ENTRIES
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
@@ -18260,6 +23588,27 @@ static void run_legacy(void)
 
 static int ucrtdiff_main(void);
 
+/* Startup has no fault guard: a fault or a CRT deadlock (0xC0000194 from a
+ * CRITICAL_SECTION nobody initialized) inside a reference instance's
+ * __acrt_initialize ended the process with nothing but its exit code, three times
+ * in one batch. This reports where, then lets the exception continue unchanged. */
+static LONG CALLBACK ucrtdiff_startup_veh(EXCEPTION_POINTERS *ep)
+{
+    DbgPrint("[UCRTDIFF] startup exception %08lx at %p\n",
+             (unsigned long)ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
+#if defined(__aarch64__) || defined(_M_ARM64)
+    {
+        void **fp = (void **)ep->ContextRecord->Fp;
+        DbgPrint("[UCRTDIFF]   pc=%p lr=%p\n", (void *)ep->ContextRecord->Pc, (void *)ep->ContextRecord->Lr);
+        for (int i = 0; i < 24 && fp && ((ULONG_PTR)fp & 7) == 0; i++) {
+            DbgPrint("[UCRTDIFF]   frame %d ret=%p\n", i, fp[1]);
+            fp = (void **)fp[0];
+        }
+    }
+#endif
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 void ucrtdiff_entry(void);
 void ucrtdiff_entry(void)
 {
@@ -18273,6 +23622,7 @@ void ucrtdiff_entry(void)
      * it pulls in reference objects that register XI initializers of their own, and
      * those allocate -- run first, ref__calloc_base called HeapAlloc on a NULL
      * __acrt_heap and the process died in RtlAllocateHeap. */
+    void *startup_veh = AddVectoredExceptionHandler(1, ucrtdiff_startup_veh);
     if (!init_ref_crt()) {
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         ExitProcess(1);
@@ -18281,6 +23631,8 @@ void ucrtdiff_entry(void)
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         ExitProcess(1);
     }
+    if (startup_veh)
+        RemoveVectoredExceptionHandler(startup_veh);
     rc = ucrtdiff_main();
     ExitProcess((UINT)rc);
 }

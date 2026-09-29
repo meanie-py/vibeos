@@ -327,7 +327,7 @@ const UNUSED_PARAM: Param = Param {
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Base {
+pub(crate) enum Base {
     Standard,
     Validation,
     Positional,
@@ -706,7 +706,7 @@ impl<C: StreamChar> Adapter<C> for StreamAdapter {
 
 // ── the processor ─────────────────────────────────────────────────────────────
 
-struct Processor<'h, C: OutChar, A: Adapter<C>> {
+pub(crate) struct Processor<'h, C: OutChar, A: Adapter<C>> {
     adapter: A,
     options: u64,
     host: &'h mut PtdHost,
@@ -739,7 +739,7 @@ struct Processor<'h, C: OutChar, A: Adapter<C>> {
 }
 
 impl<'h, C: OutChar, A: Adapter<C>> Processor<'h, C, A> {
-    fn new(adapter: A, options: u64, format: *const C, host: &'h mut PtdHost, arglist: *mut u8, base: Base) -> Self {
+    pub(crate) fn new(adapter: A, options: u64, format: *const C, host: &'h mut PtdHost, arglist: *mut u8, base: Base) -> Self {
         Self {
             adapter,
             options,
@@ -1077,7 +1077,7 @@ impl<'h, C: OutChar, A: Adapter<C>> Processor<'h, C, A> {
 
     // ── process ──────────────────────────────────────────────────────────────
 
-    unsafe fn process(&mut self) -> i32 {
+    pub(crate) unsafe fn process(&mut self) -> i32 {
         if !self.adapter.validate(self.host) {
             return -1;
         }

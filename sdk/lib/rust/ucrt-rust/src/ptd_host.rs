@@ -68,6 +68,14 @@ impl<T: Copy + PartialEq> Cached<T> {
     pub fn check(&self, value: T) -> bool {
         self.valid && self.value == value
     }
+    /// `std::optional::value_or`: the cached value, or `alternative` if unset.
+    pub fn value_or(&self, alternative: T) -> T {
+        if self.valid {
+            self.value
+        } else {
+            alternative
+        }
+    }
 }
 
 #[repr(C)]

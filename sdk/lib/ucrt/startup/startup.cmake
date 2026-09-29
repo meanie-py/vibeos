@@ -6,7 +6,6 @@ list(APPEND UCRT_STARTUP_SOURCES
     startup/argv_winmain.cpp
     startup/assert.cpp
     startup/exit.cpp
-    startup/initterm.cpp
     startup/onexit.cpp
     startup/thread.cpp
 )
