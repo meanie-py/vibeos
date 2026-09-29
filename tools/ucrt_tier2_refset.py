@@ -276,28 +276,8 @@ def build_rustset(arch: str, out: Path) -> tuple[int, int]:
     mapfile.write_text("".join(f"{a} {b}\n" for a, b in rules))
     if out.exists():
         out.unlink()
-    # Our `.CRT$XI*`/`.CRT$XP*` initializer entries (src/internal/init.rs) land in
-    # the harness exe whenever their codegen unit is pulled, and whichever
-    # `__acrt_initialize` starts the reference instance walks `__xi_a..__xi_z` over
-    # them. When that is OUR copy (the bootstrap C is gone) they are its own entries
-    # and must run. When it is MICROSOFT's (a takeover check restored the bootstrap
-    # C), they call our renamed `ours_*` copies, whose lock table nothing initialized:
-    # the first `__acrt_lock` waits on a zeroed CRITICAL_SECTION and ntdll raises
-    # STATUS_POSSIBLE_DEADLOCK. So in that case they become plain data.
-    crt_sections: list[str] = []
-    if f"{dec}__acrt_initialize" in ref_defined:
-        crt_sections = sorted(
-            {
-                line.split()[1]
-                for line in subprocess.run(
-                    [_tool("llvm-objdump"), "-h", str(src)], capture_output=True, text=True, timeout=600
-                ).stdout.splitlines()
-                if len(line.split()) > 1 and line.split()[1].startswith(".CRT$X")
-            }
-        )
-    renames = [f"--rename-section={sec}=.rdata$ucrtdiff_ours_{sec[len('.CRT$'):]}" for sec in crt_sections]
     res = subprocess.run(
-        [objcopy, f"--redefine-syms={mapfile}", *renames, str(src), str(out)],
+        [objcopy, f"--redefine-syms={mapfile}", str(src), str(out)],
         capture_output=True,
         text=True,
         timeout=600,
@@ -335,6 +315,49 @@ def undefined_symbols(objs: list[Path]) -> set[str]:
             out.add(parts[-1])
     return out - defined_symbols(objs)
 
+
+
+#: `.CRT$X*` section names as they appear in the Rust archive's COFF members, and the
+#: same-length names that take them out of the linker's `$`-sorted CRT tables. llvm-objcopy
+#: has no --rename-section for COFF, so the bytes are patched: the two 8-byte names sit
+#: inline in their section headers, the 9-byte one in the member's string table. Same
+#: length keeps every offset valid; `.rdata$...` merges into plain read-only data.
+_CRT_SECTION_RENAMES = ((b".CRT$XPXA", b".rdata$ZA"), (b".CRT$XIC", b".rdata$Z"), (b".CRT$XPX", b".rdata$Y"))
+
+
+def _inert_crt_sections(archive: Path) -> None:
+    """Make every CRT initializer/terminator entry in ARCHIVE plain data.
+
+    Checked, not trusted: each name's byte count must be one or two per section
+    `llvm-objdump -h` reports by that name (header, plus the section symbol when the
+    name is inline), or this refuses (a stray match
+    in some other byte string would otherwise corrupt the archive silently).
+    """
+    listing = subprocess.run(
+        [_tool("llvm-objdump"), "-h", str(archive)], capture_output=True, text=True, timeout=600
+    ).stdout
+    names = [ln.split()[1] for ln in listing.splitlines() if len(ln.split()) > 1]
+    data = archive.read_bytes()
+    for old, new in _CRT_SECTION_RENAMES:
+        assert len(old) == len(new)
+        want = names.count(old.decode())
+        if want == 0 and old not in data:
+            continue
+        # `.CRT$XPX` is a prefix of `.CRT$XPXA`, which is patched first.
+        # Each section's name appears in its header AND as the section's own static
+        # symbol; a long name's two uses share one string-table entry.
+        got = data.count(old)
+        if want == 0 or got not in (want, 2 * want):
+            raise RefsetError(
+                f"{archive}: {old.decode()} occurs {got} times in the bytes but names {want} "
+                f"sections; refusing to patch blind"
+            )
+        data = data.replace(old, new)
+    leftover = [n for n in names if n.startswith(".CRT$")]
+    unknown = sorted(set(leftover) - {o.decode() for o, _ in _CRT_SECTION_RENAMES})
+    if unknown:
+        raise RefsetError(f"{archive}: unhandled CRT sections {unknown}; add them to _CRT_SECTION_RENAMES")
+    archive.write_bytes(data)
 
 def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     """Our Rust's copies of the INTERNALS the reference set calls but no longer has.
@@ -434,6 +457,14 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     mapfile.write_text("".join(f"{a} {b}\n" for a, b in rules))
     if out.exists():
         out.unlink()
+    # Our `.CRT$XI*`/`.CRT$XP*` initializer entries (src/internal/init.rs) land in
+    # the harness exe whenever their codegen unit is pulled, and whichever
+    # `__acrt_initialize` starts the reference instance walks `__xi_a..__xi_z` over
+    # them. When that is OUR copy (the bootstrap C is gone) they are its own entries
+    # and must run. When it is MICROSOFT's (a takeover check restored the bootstrap
+    # C), they call our renamed `ours_*` copies, whose lock table nothing initialized:
+    # the first `__acrt_lock` waits on a zeroed CRITICAL_SECTION and ntdll raises
+    # STATUS_POSSIBLE_DEADLOCK. So in that case they become plain data.
     res = subprocess.run(
         [objcopy, f"--redefine-syms={mapfile}", str(src), str(out)],
         capture_output=True,
@@ -442,6 +473,8 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
     )
     if res.returncode != 0:
         raise RefsetError(f"llvm-objcopy failed on {src}: {res.stderr.strip()[:500]}")
+    if f"{dec}__acrt_initialize" in ref_defined:
+        _inert_crt_sections(out)
 
     # Function exports a takeover REMOVED from the reference set. Left alone, Microsoft's
     # plain-name calls to them bind through the import library to the shipping DLL: after
