@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -197,6 +198,53 @@ def run_shard(
     return best
 
 
+UCRT_TREE = "sdk/lib/ucrt"
+
+
+def prebuild_from(arch: str, rev: str) -> None:
+    """Build the tree with `sdk/lib/ucrt` as it was at REV, then put HEAD's back.
+
+    A takeover check grades the shipping Rust against the Microsoft objects the
+    takeover deleted, so those objects must be in the build tree when the first
+    shard's harness is linked. That used to be a hand recipe -- restore the deleted
+    C, re-add its cmake includes, build, re-delete -- repeated for every batch and
+    got wrong twice in one (a restored export set without the bootstrap it needs).
+    Here it is the whole directory, so the reference instance is Microsoft's end to
+    end, with ONE exception: `initializers/`. Those files are only `.CRT$X*` data;
+    restoring them would also link them into the pre-build's DLL beside our Rust
+    entries (ucrt is an OBJECT library), and nothing about grading needs them.
+
+    Refuses to start on a dirty `sdk/lib/ucrt`: restoring HEAD afterwards would
+    otherwise discard the caller's uncommitted work there.
+    """
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--", UCRT_TREE], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    if dirty:
+        raise SystemExit(f"--takeover-from: {UCRT_TREE} has uncommitted changes; commit them first:\n{dirty}")
+    subprocess.run(["git", "restore", f"--source={rev}", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True)
+    try:
+        init = ROOT / UCRT_TREE / "initializers"
+        if init.is_dir():
+            shutil.rmtree(init)
+        cml = ROOT / UCRT_TREE / "CMakeLists.txt"
+        text = cml.read_text()
+        text = text.replace("include(initializers/initializers.cmake)\n", "").replace(
+            "    ${UCRT_INITIALIZERS_SOURCES}\n", ""
+        )
+        cml.write_text(text)
+        print(f"[sweep] pre-build with {UCRT_TREE} from {rev}")
+        proc = subprocess.run(["./vibeos-cli", "build", "--arch", arch], cwd=ROOT, capture_output=True, text=True)
+        print((proc.stdout or "") + (proc.stderr or ""), end="")
+        if proc.returncode != 0:
+            raise SystemExit(f"--takeover-from: pre-build failed (rc={proc.returncode})")
+    finally:
+        # HEAD's tracked files back, and every file the restore created removed. The
+        # tree was clean when we started, so both are exactly our own changes.
+        subprocess.run(["git", "restore", "--source=HEAD", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True)
+        subprocess.run(["git", "clean", "-fdq", "--", UCRT_TREE], cwd=ROOT, check=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -224,6 +272,13 @@ def main(argv: list[str] | None = None) -> int:
         "still has Microsoft's objects for sources a takeover just deleted (see run_shard)",
     )
     ap.add_argument(
+        "--takeover-from",
+        metavar="REV",
+        help="a takeover check against the Microsoft C as of REV (normally the commit "
+        "before the takeover): pre-builds with sdk/lib/ucrt restored from REV, puts HEAD "
+        "back, then runs --takeover-check. The deleted files never need restoring by hand",
+    )
+    ap.add_argument(
         "--reuse-inputs",
         action="store_true",
         help="EVERY shard reuses the reference set, rust set and case list already on "
@@ -238,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
+    if args.takeover_from:
+        args.takeover_check = True
+        if not args.dry_run:
+            prebuild_from(args.arch, args.takeover_from)
     wanted = args.only if args.only else list(range(args.shards))
     merged: dict[str, str] = {}
     incomplete: list[int] = []

@@ -276,8 +276,28 @@ def build_rustset(arch: str, out: Path) -> tuple[int, int]:
     mapfile.write_text("".join(f"{a} {b}\n" for a, b in rules))
     if out.exists():
         out.unlink()
+    # Our `.CRT$XI*`/`.CRT$XP*` initializer entries (src/internal/init.rs) land in
+    # the harness exe whenever their codegen unit is pulled, and whichever
+    # `__acrt_initialize` starts the reference instance walks `__xi_a..__xi_z` over
+    # them. When that is OUR copy (the bootstrap C is gone) they are its own entries
+    # and must run. When it is MICROSOFT's (a takeover check restored the bootstrap
+    # C), they call our renamed `ours_*` copies, whose lock table nothing initialized:
+    # the first `__acrt_lock` waits on a zeroed CRITICAL_SECTION and ntdll raises
+    # STATUS_POSSIBLE_DEADLOCK. So in that case they become plain data.
+    crt_sections: list[str] = []
+    if f"{dec}__acrt_initialize" in ref_defined:
+        crt_sections = sorted(
+            {
+                line.split()[1]
+                for line in subprocess.run(
+                    [_tool("llvm-objdump"), "-h", str(src)], capture_output=True, text=True, timeout=600
+                ).stdout.splitlines()
+                if len(line.split()) > 1 and line.split()[1].startswith(".CRT$X")
+            }
+        )
+    renames = [f"--rename-section={sec}=.rdata$ucrtdiff_ours_{sec[len('.CRT$'):]}" for sec in crt_sections]
     res = subprocess.run(
-        [objcopy, f"--redefine-syms={mapfile}", str(src), str(out)],
+        [objcopy, f"--redefine-syms={mapfile}", *renames, str(src), str(out)],
         capture_output=True,
         text=True,
         timeout=600,
