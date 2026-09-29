@@ -423,6 +423,19 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
  * wrong verdict.
  */
 #define UCRTDIFF_EXPORT_TIMEOUT_MS 8000
+/* _locking's held-lock case is Microsoft's ten one-second retries, per side: ~18 s,
+ * which no export fits inside the timeout above. Skipped (the lock/unlock contract
+ * around it is still graded); the retry loop is owed a longer-budget runner. */
+#ifndef LOWIO_SKIP_SLOW_LOCK
+#define LOWIO_SKIP_SLOW_LOCK 1
+#endif
+/* The guest's fastfat bugchecks (0x23, an access violation at FsRtlCheckOplock+0x2c)
+ * on some file operations: any rename, and _mktemp's create/delete run. The cases
+ * that reach it are skipped while this is 1; see the comment at run_fs_rename and
+ * the roadmap's known-bugs entry. */
+#ifndef UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
+#define UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 1
+#endif
 
 /* ---- sharding and the harness's own deadline --------------------------
  *
@@ -17758,10 +17771,13 @@ extern int (__cdecl *const ud_rename)(const char *, const char *) __asm__(UD_IMP
  * make the identical MoveFileExW(old, new, MOVEFILE_COPY_ALLOWED) call. Until the
  * kernel is fixed, the cases that reach that path are SKIPPED, loudly; the ones that
  * fail in kernel32 before it (missing source, NULL names) are graded. Set to 0 when
- * the known-bugs entry "rename bugchecks fastfat" is closed. */
-#ifndef UCRTDIFF_FAT_RENAME_BUGCHECKS
-#define UCRTDIFF_FAT_RENAME_BUGCHECKS 1
-#endif
+ * the known-bugs entry "fastfat bugchecks in FsRtlCheckOplock" is closed.
+ *
+ * Batch 7 found the same fault (same P4, FsRtlCheckOplock+0x2c in the current
+ * ntkrnlmp.exe) with no rename at all: _mktemp's grader creating and deleting a
+ * run of files bugchecked four shards out of four. So the switch also skips those
+ * cases (lw_mk_occupy). */
+/* (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS is defined at the top of the file.) */
 
 static void run_fs_rename(void)
 {
@@ -17781,7 +17797,7 @@ static void run_fs_rename(void)
     DeleteFileA(nd);
     DeleteFileA(nr);
 
-#if UCRTDIFF_FAT_RENAME_BUGCHECKS
+#if UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
     DbgPrint("[UCRTDIFF]   SKIP rename fresh/overexisting: a real rename bugchecks the guest (fastfat, known bug)\n");
     int rd, rr;
 #else
@@ -17873,7 +17889,7 @@ static void run_fs__wrename(void)
     fs_to_wide(nd, wnd, MAX_PATH * 2); fs_to_wide(nr, wnr, MAX_PATH * 2);
     fs_to_wide(fd.ro, wd_ro, MAX_PATH * 2); fs_to_wide(fr.ro, wr_ro, MAX_PATH * 2);
 
-#if UCRTDIFF_FAT_RENAME_BUGCHECKS
+#if UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
     DbgPrint("[UCRTDIFF]   SKIP _wrename fresh/overexisting: a real rename bugchecks the guest (fastfat, known bug)\n");
     int rd, rr;
 #else
@@ -21203,14 +21219,19 @@ static const char g_lw_az[] = "abcdefghijklmnopqrstuvwxyz";
             grade2(fam, "errno-kept", r1, r2);                                       \
             grade2(fam ".errno", "errno-kept", e1, *ref__errno());                   \
         }                                                                            \
-        /* 'a' taken: the letter moves on to 'b'. */                                 \
-        lw_mk_occupy("mkfXXXXXX", "a", 1);                                           \
-        LW_MK_CASE(fam, KIND, "a-taken", "mkfXXXXXX", 0, -1);                        \
-        lw_mk_occupy("mkfXXXXXX", "a", 0);                                           \
-        /* All 26 taken: EEXIST, no handler, template reset. */                      \
-        lw_mk_occupy("mkgXXXXXX", g_lw_az, 1);                                       \
-        LW_MK_CASE(fam, KIND, "exhausted", "mkgXXXXXX", 0, -1);                      \
-        lw_mk_occupy("mkgXXXXXX", g_lw_az, 0);                                       \
+        /* 'a' taken: the letter moves on to 'b'. All 26 taken: EEXIST, no     \
+         * handler, template reset. Both create and delete real files, which    \
+         * bugchecks the guest today (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS). */   \
+        if (!UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS) {                                    \
+            lw_mk_occupy("mkfXXXXXX", "a", 1);                                       \
+            LW_MK_CASE(fam, KIND, "a-taken", "mkfXXXXXX", 0, -1);                    \
+            lw_mk_occupy("mkfXXXXXX", "a", 0);                                       \
+            lw_mk_occupy("mkgXXXXXX", g_lw_az, 1);                                   \
+            LW_MK_CASE(fam, KIND, "exhausted", "mkgXXXXXX", 0, -1);                  \
+            lw_mk_occupy("mkgXXXXXX", g_lw_az, 0);                                   \
+        } else {                                                                     \
+            DbgPrint("[UCRTDIFF]   SKIP %s occupied-name cases: fastfat bugchecks (known bug)\n", fam); \
+        }                                                                            \
         if ((KIND) >= 2) {                                                           \
             LW_MK_CASE(fam, KIND, "size=len", "mkhXXXXXX", 0, (long)lstrlenA(lw_path("mkhXXXXXX", 0))); \
             LW_MK_CASE(fam, KIND, "size=0", "mkhXXXXXX", 0, 0);                      \
