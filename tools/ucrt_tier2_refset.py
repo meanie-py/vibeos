@@ -439,14 +439,15 @@ def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
         if sym in needed or bookkeeping(sym):
             continue
         rules.append((sym, f"ours_{sym}"))
-        # The mingw indirections to a renamed symbol follow it. `.refptr.X` is a
+        # The mingw indirection to a renamed symbol follows it. `.refptr.X` is a
         # link-once cell holding &X, and Microsoft's objects carry their own
         # `.refptr.X` for their own X: left plain, the linker kept ONE of the two, and
         # our renamed heap read Microsoft's `__acrt_heap` through it (a null heap and an
         # access violation in our `_calloc_base`, under a takeover check).
-        for pre in (".refptr.", "__imp_"):
-            if f"{pre}{sym}" in rust_defined:
-                rules.append((f"{pre}{sym}", f"{pre}ours_{sym}"))
+        # (`__imp_X` stays: lld's mingw auto-import resolves the archive's own
+        # `/include:X` directives through it, and it holds &ours_X either way.)
+        if f".refptr.{sym}" in rust_defined:
+            rules.append((f".refptr.{sym}", f".refptr.ours_{sym}"))
     for sym in sorted(rust_undefined):
         if bookkeeping(sym) or sym not in ref_exports:
             continue
