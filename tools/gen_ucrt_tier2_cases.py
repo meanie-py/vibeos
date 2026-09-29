@@ -996,6 +996,13 @@ def emit_refs(arch: str) -> str:
             aliased.add(ref_name.split("ref_", 1)[1] if "ref_" in ref_name else ref_name)
     for name in REF_DRIVERS:
         lines.append(f"#define UCRTDIFF_REF_CALLABLE_{name} {int(name in have or name in aliased)}")
+    # OURS_BOOTSTRAP: our Rust bootstrap is in the reference-internals set under its
+    # renamed `ours_` name, which happens exactly when the reference set has
+    # Microsoft's own (a takeover check restored it). Our internals then run on OUR
+    # lock table and heap, which only our `__acrt_initialize` sets up -- so the
+    # harness must call it too, or the first `__acrt_lock` they take deadlocks.
+    ours = _renamed_exports(arch, "libucrt_ours.a", ("ours_",))
+    lines.append(f"#define UCRTDIFF_OURS_BOOTSTRAP {int(any(n.endswith('__acrt_initialize') for n in ours))}")
     return "\n".join(lines) + "\n"
 
 
