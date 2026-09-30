@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -287,26 +288,373 @@ def build_rustset(arch: str, out: Path) -> tuple[int, int]:
     return 1, len(rules)
 
 
+#: Our ucrtbase Rust archive, for the reference side's MISSING INTERNALS.
+UCRT_RUST_ARCHIVE = Path("dll/win32/ucrtbase/libcrt_shared_cargo.a")
+
+#: COFF/linker bookkeeping, not code: renaming these breaks the object.
+_BOOKKEEPING = (".refptr.", "@feat.", ".weak.", "__imp_")
+
+# Non-exported internals tools/payloads/ucrtdiff/ucrtdiff.c calls by plain name.
+HARNESS_INTERNALS = ("__acrt_initialize",)
+
+
+def undefined_symbols(objs: list[Path]) -> set[str]:
+    """Every symbol the objects reference but do not themselves define."""
+    nm = _tool("llvm-nm")
+    res = subprocess.run(
+        [nm, "--undefined-only", *(str(o) for o in objs)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-nm --undefined-only failed: {res.stderr.strip()[:1000]}")
+    out = set()
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[-2] in ("U", "w", "v"):
+            out.add(parts[-1])
+    return out - defined_symbols(objs)
+
+
+_IMAGE_SYM_CLASS_EXTERNAL = 2
+_IMAGE_SCN_LNK_NRELOC_OVFL = 0x01000000
+
+
+def _undefine_symbols(archive: Path, names: set[str]) -> None:
+    """Make every EXTERNAL definition of NAMES in ARCHIVE's COFF members answer nothing,
+    so each reference to the name -- in the same object included -- binds to whoever
+    else defines it. Then rebuild the archive index.
+
+    Not by turning the definition into an undefined symbol in place: Rust puts each
+    function in its own COMDAT section whose LEADER is that symbol, and a leaderless
+    COMDAT is a link error ("associative comdat ... has invalid reference"). So the
+    old entry keeps leading its section under a dead name, a NEW undefined symbol
+    takes the real name, and every relocation that named the old entry is pointed at
+    the new one. Refuses anything it does not fully understand (bigobj, a layout with
+    data after the symbol table) rather than writing a half-patched archive.
+    """
+    data = archive.read_bytes()
+    if not data.startswith(b"!<arch>\n"):
+        raise RefsetError(f"{archive}: not an ar archive")
+    out = bytearray(b"!<arch>\n")
+    patched = 0
+    pos = 8
+    while pos + 60 <= len(data):
+        hdr = bytearray(data[pos : pos + 60])
+        size = int(hdr[48:58].decode().strip())
+        name = hdr[0:16].decode(errors="replace").strip()
+        body = data[pos + 60 : pos + 60 + size]
+        if name in ("/", "/SYM64/"):
+            # The old symbol index: its offsets die with the resize. Dropped here and
+            # rebuilt by llvm-ranlib below (which kept a stale one when it was present).
+            pos += 60 + size + (size & 1)
+            continue
+        if name != "//" and size >= 20:
+            body, n = _undefine_in_coff(body, names, archive)
+            patched += n
+            hdr[48:58] = str(len(body)).ljust(10).encode()
+        out += hdr + body + (b"\n" if len(body) & 1 else b"")
+        pos += 60 + size + (size & 1)
+    archive.write_bytes(bytes(out))
+    res = subprocess.run(
+        [_tool("llvm-ranlib"), str(archive)], capture_output=True, text=True, timeout=600
+    )
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-ranlib failed on {archive}: {res.stderr.strip()[:500]}")
+    if patched == 0:
+        raise RefsetError(f"{archive}: none of {len(names)} deferred symbols found to undefine")
+
+
+def _undefine_in_coff(obj: bytes, names: set[str], archive: Path) -> tuple[bytes, int]:
+    machine, nsec = struct.unpack_from("<HH", obj, 0)
+    if machine == 0 and nsec == 0xFFFF:
+        raise RefsetError(f"{archive}: bigobj member; _undefine_symbols does not handle it")
+    symtab, nsyms = struct.unpack_from("<II", obj, 8)
+    (opt_size,) = struct.unpack_from("<H", obj, 16)
+    if symtab == 0 or nsyms == 0:
+        return obj, 0
+    strtab = symtab + nsyms * 18
+    (strtab_size,) = struct.unpack_from("<I", obj, strtab)
+    if strtab + strtab_size != len(obj):
+        raise RefsetError(f"{archive}: a COFF member has data after its string table; refusing")
+
+    def sym_name(rec: int) -> str:
+        raw = obj[rec : rec + 8]
+        if raw[:4] == b"\0\0\0\0":
+            (soff,) = struct.unpack_from("<I", raw, 4)
+            return obj[strtab + soff : obj.index(b"\0", strtab + soff)].decode(errors="replace")
+        return raw.rstrip(b"\0").decode(errors="replace")
+
+    retarget: dict[int, int] = {}
+    new_syms = bytearray()
+    new_strs = bytearray()
+    body = bytearray(obj[:strtab])
+    i = 0
+    while i < nsyms:
+        rec = symtab + i * 18
+        _v, secnum, typ, sclass, naux = struct.unpack_from("<IhHBB", obj, rec + 8)
+        name = sym_name(rec)
+        if name in names and sclass == _IMAGE_SYM_CLASS_EXTERNAL and secnum > 0:
+            # Old entry: renamed dead, still defines (and leads) its section.
+            dead = f"__ucrtdiff_deferred_{name}".encode() + b"\0"
+            body[rec : rec + 8] = struct.pack("<II", 0, strtab_size + len(new_strs))
+            new_strs += dead
+            # New entry: the real name, undefined.
+            real = obj[rec : rec + 8]
+            retarget[i] = nsyms + len(retarget)
+            new_syms += real + struct.pack("<IhHBB", 0, 0, typ, _IMAGE_SYM_CLASS_EXTERNAL, 0)
+        i += 1 + naux
+    if not retarget:
+        return obj, 0
+    for s in range(nsec):
+        sh = 20 + opt_size + s * 40
+        (reloc_ptr,) = struct.unpack_from("<I", obj, sh + 24)
+        (nreloc,) = struct.unpack_from("<H", obj, sh + 32)
+        (chars,) = struct.unpack_from("<I", obj, sh + 36)
+        (raw_ptr,) = struct.unpack_from("<I", obj, sh + 20)
+        if reloc_ptr >= symtab or raw_ptr >= symtab:
+            raise RefsetError(f"{archive}: section data after the symbol table; refusing")
+        first = 0
+        if chars & _IMAGE_SCN_LNK_NRELOC_OVFL:
+            (nreloc,) = struct.unpack_from("<I", obj, reloc_ptr)
+            first = 1
+        for r in range(first, nreloc):
+            at = reloc_ptr + r * 10 + 4
+            (idx,) = struct.unpack_from("<I", obj, at)
+            if idx in retarget:
+                struct.pack_into("<I", body, at, retarget[idx])
+    struct.pack_into("<I", body, 12, nsyms + len(retarget))
+    strtab_new = (
+        struct.pack("<I", strtab_size + len(new_strs)) + obj[strtab + 4 :] + bytes(new_strs)
+    )
+    return bytes(body) + bytes(new_syms) + strtab_new, len(retarget)
+
+
+def build_internals_set(arch: str, out: Path) -> tuple[int, int]:
+    """Our Rust's copies of the INTERNALS the reference set calls but no longer has.
+
+    A takeover deletes a Microsoft file whose non-exported internals other Microsoft
+    files still call: after the locale takeover, `strnicol.cpp` calls
+    `__acrt_CompareStringA`, the `_LocaleUpdate` hooks, the locale statics. In the
+    shipping DLL those calls land on our Rust. On the reference side nothing answered
+    them, and the harness stopped linking.
+
+    So the reference side gets those internals from our Rust archive -- and ONLY those.
+    Every symbol the archive DEFINES is renamed `ours_*` except the ones the reference
+    objects need, so nothing else can collide with, or shadow, Microsoft's code (or the
+    DLL's plain names the harness calls). Every export the archive CALLS is renamed to
+    the reference instance's `ref_*` copy where Microsoft's C defines one, so our
+    internals run inside the reference CRT instance, not across into the DLL's.
+
+    During a takeover check the deleted C is back on the link line, the reference set
+    defines those internals itself, and nothing here is needed: the archive is linked
+    as an archive, so no member is pulled.
+    """
+    build = REPO / f"build-{arch}"
+    src = build / UCRT_RUST_ARCHIVE
+    if not src.is_file():
+        raise RefsetError(f"{src} not found -- fix: ./vibeos-cli build --arch {arch}")
+    ref = out.parent / "libucrt_ref.a"
+    if not ref.is_file():
+        raise RefsetError(f"{ref} not found -- build the ucrt side first")
+
+    ref_defined = defined_symbols([ref])
+    needed_by_ref = undefined_symbols([ref])
+    rust_defined = defined_symbols([src])
+    rust_undefined = undefined_symbols([src])
+
+    # Exports the reference set defines, as `ref_*`: settled per arch exactly as
+    # rename_rules does, by reading the renamed names back out of the reference set.
+    ref_exports = {d[len("ref_") :] for d in ref_defined if d.startswith("ref_")}
+    ref_exports |= {"_" + d[len("_ref_") :] for d in ref_defined if d.startswith("_ref_")}
+
+    def bookkeeping(sym: str) -> bool:
+        return sym.startswith(_BOOKKEEPING) or sym.startswith("$")
+
+    # Function EXPORTS stay out even when the reference set calls them by plain name
+    # (an earlier takeover removed Microsoft's copy): the import library resolves
+    # those to the shipping DLL, as it always has, and a local definition here would
+    # also shadow the harness's own plain-name calls. DATA exports are the exception
+    # -- the import library carries only their `__imp_` slot, so a plain data
+    # reference from Microsoft's C has nothing else to bind to.
+    from export_census import parse_spec
+
+    exports = set(parse_spec(SPEC, arch))
+    data_exports = {
+        line.split()[-1]
+        for line in SPEC.read_text(errors="replace").splitlines()
+        if line.startswith("@") and " extern " in f" {line} "
+    }
+    underscored = sum(1 for e in exports if f"_{e}" in rust_defined) > sum(
+        1 for e in exports if e in rust_defined
+    )
+    dec = "_" if underscored else ""
+    function_exports = {f"{dec}{e}" for e in exports - data_exports}
+
+    needed = {
+        s
+        for s in (needed_by_ref & rust_defined)
+        if not bookkeeping(s) and s not in function_exports
+    }
+    # Internals the HARNESS calls by plain name to drive the reference instance
+    # (`init_ref_crt`'s `__acrt_initialize`). Once their C is deleted no reference
+    # object asks for them, so the rule above would rename them away -- but the
+    # reference instance still has to be started, now by our copy.
+    needed |= {
+        f"{dec}{s}"
+        for s in HARNESS_INTERNALS
+        if f"{dec}{s}" in rust_defined and f"{dec}{s}" not in ref_defined
+    }
+
+    def ref_name(sym: str) -> str | None:
+        """The reference instance's name for export SYM, if it defines one."""
+        # i386 decorates: `_strlen` -> `_ref_strlen`.
+        to = (
+            f"_ref_{sym[1:]}"
+            if sym.startswith("_") and f"_ref_{sym[1:]}" in ref_defined
+            else f"ref_{sym}"
+        )
+        return to if to in ref_defined else None
+
+    # DEFERRED: what the reference set defines ITSELF, our archive defines too, and our
+    # copy must therefore not answer -- the internal state (lock table, per-thread data,
+    # heap handle) and the exports Microsoft's C still has. Under a takeover check that
+    # is the whole bootstrap and the batch being graded. Renaming our copies `ours_*`
+    # made them a SECOND instance: our `_errno` (the reference side's, since the misc
+    # takeover) read our per-thread block while Microsoft's lowio set errno in its own,
+    # so every errno row read 0 on the reference side. Instead our definitions become
+    # undefined references (`_undefine_symbols` below; llvm-objcopy cannot do that for
+    # COFF), and our code calls Microsoft's -- plain internals by name, exports by
+    # their `ref_*` name.
+    deferred_plain = {s for s in rust_defined & ref_defined if not bookkeeping(s)}
+    deferred_exports = {
+        s: to
+        for s in rust_defined
+        if not bookkeeping(s) and s not in deferred_plain and (to := ref_name(s)) is not None
+    }
+
+    rules = []
+    for sym in sorted(rust_defined):
+        if sym in needed or bookkeeping(sym) or sym in deferred_plain:
+            continue
+        if sym in deferred_exports:
+            rules.append((sym, deferred_exports[sym]))
+            continue
+        rules.append((sym, f"ours_{sym}"))
+        # The mingw indirection to a renamed symbol follows it. `.refptr.X` is a
+        # link-once cell holding &X, and Microsoft's objects carry their own
+        # `.refptr.X` for their own X: left plain, the linker kept ONE of the two, and
+        # our renamed heap read Microsoft's `__acrt_heap` through it (a null heap and an
+        # access violation in our `_calloc_base`, under a takeover check).
+        # (`__imp_X` stays: lld's mingw auto-import resolves the archive's own
+        # `/include:X` directives through it, and it holds &ours_X either way.)
+        if f".refptr.{sym}" in rust_defined:
+            rules.append((f".refptr.{sym}", f".refptr.ours_{sym}"))
+    for sym in sorted(rust_undefined):
+        if bookkeeping(sym) or sym not in ref_exports:
+            continue
+        to = ref_name(sym)
+        if to is not None:
+            rules.append((sym, to))
+
+    objcopy = _tool("llvm-objcopy")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    mapfile = out.parent / f".{out.stem}-redefine.txt"
+    mapfile.write_text("".join(f"{a} {b}\n" for a, b in rules))
+    if out.exists():
+        out.unlink()
+    # Our `.CRT$XI*`/`.CRT$XP*` initializer entries (src/internal/init.rs) land in
+    # the harness exe whenever their codegen unit is pulled, and whichever
+    # `__acrt_initialize` starts the reference instance walks `__xi_a..__xi_z` over
+    # them. When that is OUR copy (the bootstrap C is gone) they are its own entries
+    # and must run. When it is MICROSOFT's (a takeover check restored the bootstrap
+    # C), they call our renamed `ours_*` copies, whose lock table nothing initialized:
+    # the first `__acrt_lock` waits on a zeroed CRITICAL_SECTION and ntdll raises
+    # STATUS_POSSIBLE_DEADLOCK. So in that case they become plain data.
+    res = subprocess.run(
+        [objcopy, f"--redefine-syms={mapfile}", str(src), str(out)],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if res.returncode != 0:
+        raise RefsetError(f"llvm-objcopy failed on {src}: {res.stderr.strip()[:500]}")
+    undefine = deferred_plain | set(deferred_exports.values())
+    if undefine:
+        _undefine_symbols(out, undefine)
+
+    # Function exports a takeover REMOVED from the reference set. Left alone, Microsoft's
+    # plain-name calls to them bind through the import library to the shipping DLL: after
+    # the invalid_parameter takeover, all 174 of the reference side's
+    # `_invalid_parameter_noinfo` calls reported to the DLL's handler, so every row's iph
+    # count was charged to the wrong side. And the harness's own `ref_X` calls to one
+    # (`ref__set_invalid_parameter_handler` to install the counter) stopped linking. Both
+    # belong to the reference INSTANCE, which for a taken-over export is now our Rust
+    # copy: rebind the reference objects' calls to `ours_X`, and give the harness
+    # `ref_X` as an alias of it (build.sh reads the alias file). None of these exports is
+    # graded -- the harness's UCRTDIFF_REF_HAS_X guards read the reference archive, which
+    # still lacks them.
+    ours_defined = {b for _, b in rules}
+    reroute = sorted(
+        s
+        for s in needed_by_ref
+        if s in function_exports and s not in ref_defined and f"ours_{s}" in ours_defined
+    )
+    if reroute:
+        ref_map = out.parent / f".{ref.stem}-reroute.txt"
+        ref_map.write_text("".join(f"{s} ours_{s}\n" for s in reroute))
+        tmp = ref.with_suffix(".rerouted.a")
+        res = subprocess.run(
+            [objcopy, f"--redefine-syms={ref_map}", str(ref), str(tmp)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if res.returncode != 0:
+            raise RefsetError(f"llvm-objcopy failed on {ref}: {res.stderr.strip()[:500]}")
+        tmp.replace(ref)
+    aliases = sorted(
+        (f"{dec}ref_{e}", f"ours_{dec}{e}")
+        for e in exports - data_exports
+        if f"{dec}{e}" not in ref_exports and f"ours_{dec}{e}" in ours_defined
+    )
+    (out.parent / f"{out.stem}.refalias").write_text("".join(f"{a}={b}\n" for a, b in aliases))
+    return len(needed), len(rules)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--arch", required=True, choices=["i386", "amd64", "arm64"])
     ap.add_argument(
         "--side",
         default="ucrt",
-        choices=["ucrt", "msvcrt-rust"],
+        choices=["ucrt", "msvcrt-rust", "ucrt-internals"],
         help="ucrt: genuine Microsoft C -> ref_* (default). "
-        "msvcrt-rust: our existing msvcrt Rust bodies -> rust_*",
+        "msvcrt-rust: our existing msvcrt Rust bodies -> rust_*. "
+        "ucrt-internals: our ucrtbase Rust, only for internals the reference set lacks",
     )
     ap.add_argument(
         "--out", type=Path, help="output archive (default: build-<arch>/libucrt_<side>.a)"
     )
     args = ap.parse_args(argv)
 
-    default_name = {"ucrt": "libucrt_ref.a", "msvcrt-rust": "libucrt_rust.a"}[args.side]
+    default_name = {
+        "ucrt": "libucrt_ref.a",
+        "msvcrt-rust": "libucrt_rust.a",
+        "ucrt-internals": "libucrt_ours.a",
+    }[args.side]
     out = args.out or (REPO / f"build-{args.arch}" / default_name)
     try:
         if args.side == "ucrt":
             nobj, nsym = build_refset(args.arch, out)
+        elif args.side == "ucrt-internals":
+            nneed, nsym = build_internals_set(args.arch, out)
+            print(
+                f"ucrt-tier2-refset {args.arch} [ucrt-internals]: {nneed} internal(s) the "
+                f"reference set lacks, {nsym} symbols renamed -> {out}"
+            )
+            return 0
         else:
             nobj, nsym = build_rustset(args.arch, out)
     except RefsetError as exc:

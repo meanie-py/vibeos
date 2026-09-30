@@ -275,6 +275,24 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
   (`SIZE_T`) in any FFI signature the guarded code calls, or the repair pass is forced to bake
   `as u32` on i386 and `as u64` on amd64/arm64 for one expression and correctly withholds both.
 
+## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
+
+Call sealing makes a dropped call fail at translation time; crates translated before it
+existed (fastfat and cdrom were the first DeepSeek lanes) never had that check. `rustconv
+body-audit <module dir> | --all` pairs each flipped-out C function with its same-named Rust
+and lists the C callees the Rust no longer performs, $0, about a minute tree-wide. A callee
+counts as kept through a crate-local helper or live C glue the body delegates to, a known
+lowering (`RtlZeroMemory` -> `write_bytes`, COM `IFoo_Bar` -> `lpVtbl).Bar`, A/W variants,
+intrinsics -> `asm!`), or a macro whose expansion's calls are all kept. Dead `#if` arms,
+DUMMY_PSEH except handlers and `#if DBG` code are optional; `_SEH2_FINALLY` is not, since it
+runs. cfg-split twins of one fn are judged as a union.
+
+It is a LEAD GENERATOR, ranked `stub-silent` > `high` (state-changing callee) > `medium` >
+`low` > `stub-loud`. Read each lead against the C before fixing or re-buying: macro state it
+cannot resolve (`NTDDI_VERSION` arms) and hand-restructured bodies still produce false leads.
+Motivating case: fastfat's `FatCreateNewDirent` lost `RtlSetBits`, so every new dirent stayed
+free in memory. Re-translate only what the audit confirms broken.
+
 ## `--target`: proven from the tree, or refused (2026-07-24)
 
 `--target <name>` for a `dll/win32/*` module not in `TARGETS` builds a Target via

@@ -1403,34 +1403,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     if KeInitSystem() == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 2, 0);
     }
-    #[cfg(target_arch = "x86")]
-    {
-    }
     uart_trace!("[PHASE1] KdInitSystem");
     if KdInitSystem(ExpInitializationPhase, KeLoaderBlock) == 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, 0, 0, 3, 0);
-    }
-    #[cfg(target_arch = "x86")]
-    {
     }
     uart_trace!("[PHASE1] SeInitSystem");
     if SeInitSystem() == 0 {
         KeBugCheck(ntkrnl_sys::bugcodes::SECURITY1_INITIALIZATION_FAILED);
     }
-    #[cfg(target_arch = "x86")]
-    {
-    }
     InbvUpdateProgressBar(10);
-    #[cfg(target_arch = "x86")]
-    {
-    }
     uart_trace!("[PHASE1] ExpCreateSystemRootLink");
     Status = ExpCreateSystemRootLink(LoaderBlock);
     if Status < 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::SYMBOLIC_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
-    }
-    #[cfg(target_arch = "x86")]
-    {
     }
 
     uart_trace!("[PHASE1] MmInitSystem(1)");
@@ -1438,9 +1423,6 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         KeBugCheck(ntkrnl_sys::bugcodes::MEMORY1_INITIALIZATION_FAILED);
     }
     // DBG: after MmInitSystem(1)
-    #[cfg(target_arch = "x86")]
-    {
-    }
 
     #[cfg(target_arch = "aarch64")]
     {
@@ -1739,6 +1721,109 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             caught.err().unwrap_or(0),
             trace,
             normal,
+            if pass { b"PASS\0".as_ptr() } else { b"FAIL\0".as_ptr() }
+        );
+    }
+
+    // The same, for HARDWARE exceptions out of a Rust body: an int3 and an access
+    // violation, each under a finally, caught by an outer except. fastfat's first real-SEH
+    // boot with a disk attached caught a DbgBreakPoint (the pool tracker's PoolHitTag
+    // break) and carried on with interrupts off; see irqs_on below.
+    // Runs after MmFreeLoaderBlock, so on arm64 the loader's low identity map is gone and
+    // VA 0x10 faults like it does on x86.
+    {
+        use ntkrnl_sys::seh::*;
+        extern "system" {
+            fn DbgBreakPoint();
+        }
+        const STATUS_BREAKPOINT: i32 = 0x80000003u32 as i32;
+        const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005u32 as i32;
+        // The catch must resume with the interrupt state the try body had. amd64
+        // dispatched a kernel int3 with IF=0 and the except block inherited it, so
+        // fastfat's next synchronous IRP left its IopCompleteRequest APC pending
+        // until after the caller's stack event was gone.
+        fn irqs_on() -> bool {
+            // Spell the width: Intel-syntax `pushf` assembles to the 16-bit `pushfw` on
+            // i386, and the 32-bit pop then leaves ESP two bytes off.
+            #[cfg(target_arch = "x86")]
+            {
+                let flags: usize;
+                unsafe { core::arch::asm!("pushfd", "pop {}", out(reg) flags) };
+                flags & 0x200 != 0
+            }
+            #[cfg(target_arch = "x86_64")]
+            {
+                let flags: usize;
+                unsafe { core::arch::asm!("pushfq", "pop {}", out(reg) flags) };
+                flags & 0x200 != 0
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                let daif: u64;
+                unsafe { core::arch::asm!("mrs {}, daif", out(reg) daif, options(nomem, nostack)) };
+                daif & (1 << 7) == 0
+            }
+        }
+        let irqs_before = irqs_on();
+        let mut irqs_kept = true;
+        let mut run = |which: u32| -> (Result<(), i32>, u32) {
+            let mut trace: u32 = 0;
+            let r = try_except(
+                &mut trace,
+                |t| {
+                    try_finally(
+                        t,
+                        |t| {
+                            *t |= 1;
+                            if which == 0 {
+                                DbgBreakPoint();
+                            } else {
+                                core::ptr::read_volatile(0x10 as *const u32);
+                            }
+                            *t |= 8; // must not run
+                        },
+                        |t, abnormal| *t |= if abnormal { 2 } else { 4 },
+                    )
+                },
+                |_, _| EXCEPTION_EXECUTE_HANDLER,
+            );
+            irqs_kept &= irqs_on() == irqs_before;
+            (r, trace)
+        };
+        let (bp, bp_trace) = run(0);
+        let (av, av_trace) = run(1);
+        // The exact fastfat path: the int3 comes from deep in the pool tracker
+        // (ExAllocatePoolWithTag -> ExpInsertPoolTracker, key == PoolHitTag).
+        let mut hit = Err(0);
+        {
+            const SEH_TEST_POOL_TAG: u32 = u32::from_le_bytes(*b"SehT");
+            let saved = crate::pool::globals::PoolHitTag;
+            crate::pool::globals::PoolHitTag = SEH_TEST_POOL_TAG;
+            let mut p: PVOID = core::ptr::null_mut();
+            hit = try_except(
+                &mut p,
+                |p| *p = ExAllocatePoolWithTag(NonPagedPool, 32, SEH_TEST_POOL_TAG),
+                |_, _| EXCEPTION_EXECUTE_HANDLER,
+            );
+            irqs_kept &= irqs_on() == irqs_before;
+            crate::pool::globals::PoolHitTag = saved;
+            if !p.is_null() {
+                ExFreePoolWithTag(p, SEH_TEST_POOL_TAG);
+            }
+        }
+        let pass = bp == Err(STATUS_BREAKPOINT) && bp_trace == 3
+            && av == Err(STATUS_ACCESS_VIOLATION) && av_trace == 3
+            && hit == Err(STATUS_BREAKPOINT)
+            && irqs_kept;
+        crate::dbg_print!(
+            b"[SEH-TRY] rust hw faults: int3=0x%x trace=%u av=0x%x trace=%u pooltrack=0x%x irqs=%d/%d (%s)\n\0",
+            bp.err().unwrap_or(0),
+            bp_trace,
+            av.err().unwrap_or(0),
+            av_trace,
+            hit.err().unwrap_or(0),
+            irqs_before as i32,
+            irqs_kept as i32,
             if pass { b"PASS\0".as_ptr() } else { b"FAIL\0".as_ptr() }
         );
     }

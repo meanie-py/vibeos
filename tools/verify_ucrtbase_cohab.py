@@ -763,10 +763,215 @@ def check_burndown() -> tuple[list[str], list[str]]:
     return fails, notes
 
 
+#: Initializers nothing in this tree has ever force-included, so their absence is the
+#: baseline, not a loss: fma3 is Microsoft's x64 FMA3 math switch, and ReactOS's
+#: ucrtbase never linked it (no `_CRT_LINKER_FORCE_INCLUDE` for it exists anywhere).
+UNREFERENCED_INITIALIZERS = frozenset({"__acrt_tran_fma3_initializer"})
+
+_CRTALLOC_SYM = re.compile(r'_CRTALLOC\("\.CRT\$X[^"]*"\)\s*\w+\s+const\s+(\w+)\s*=')
+
+
+def check_force_includes(repo: Path | None = None) -> list[str]:
+    """Every CRT startup/shutdown hook must still be pulled into ucrtbase.
+
+    `sdk/lib/ucrt/initializers/*.cpp` each define a pointer in `.CRT$XIC`/`.CRT$XPX`
+    that nothing calls by name; the C file that needs it carries
+    `_CRT_LINKER_FORCE_INCLUDE(<sym>)`, a `/include:` directive, instead. Delete that
+    file in a takeover and the directive goes with it: the member is never linked and
+    the hook silently stops running, with no build or link error. The locale takeover
+    dropped two this way (the locale terminator and the multibyte initializer) and
+    graded green, because nothing graded runs at process startup or exit.
+
+    So each hook must still be named by a `_CRT_LINKER_FORCE_INCLUDE` in the remaining
+    C, or by `force_include!` in ucrt-rust (src/force_include.rs).
+    """
+    repo = REPO if repo is None else repo
+    init_dir = repo / "sdk" / "lib" / "ucrt" / "initializers"
+    # Once the initializers themselves are Rust (src/internal/init.rs, `#[used]`
+    # statics in the --whole-archive'd crate) there is no member left to fail to
+    # pull: every hook is linked unconditionally. Nothing to check.
+    if not init_dir.is_dir():
+        return []
+    hooks = set()
+    for f in sorted(init_dir.glob("*.cpp")):
+        hooks.update(_CRTALLOC_SYM.findall(f.read_text(errors="replace")))
+    text = []
+    for root, pattern in (
+        (repo / "sdk" / "lib" / "ucrt", "*.cpp"),
+        (repo / "sdk" / "lib" / "rust" / "ucrt-rust" / "src", "*.rs"),
+    ):
+        for f in root.rglob(pattern):
+            if init_dir not in f.parents:
+                text.append(f.read_text(errors="replace"))
+    blob = "\n".join(text)
+    findings = []
+    for sym in sorted(hooks - UNREFERENCED_INITIALIZERS):
+        if not re.search(rf"(_CRT_LINKER_FORCE_INCLUDE|force_include!)\(\s*{sym}\s*\)", blob):
+            findings.append(
+                f"ucrt initializer `{sym}` is force-included by nothing: its archive member "
+                f"will not be linked and the hook will never run. A takeover deleted the C "
+                f"file that carried `_CRT_LINKER_FORCE_INCLUDE({sym})`. fix: add "
+                f"`crate::force_include!({sym});` to the Rust module that replaced it"
+            )
+    return findings
+
+
+_EXTERN_C_BLOCK = re.compile(r'extern\s+"C"\s*\{(.*?)\n\s*\}', re.S)
+_PASCAL_FN = re.compile(r"\bfn\s+([A-Z][A-Za-z0-9]*)\s*\(")
+_ANY_FN = re.compile(r"\bfn\s+(\w+)\s*\(")
+_WINAPI_DECL = re.compile(r"\b(?:WINAPI|APIENTRY|NTAPI|__stdcall)\s+(\w+)\s*\(")
+
+
+def check_win32_abi(repo: Path | None = None) -> list[str]:
+    """No Win32 API may be declared `extern "C"` in ucrt-rust.
+
+    WINAPI is stdcall on i386, so `extern "C" { fn ReadFile(...) }` binds `_ReadFile`
+    where kernel32 exports `_ReadFile@20`. It links on amd64 and arm64 (one calling
+    convention) and fails only on i386 -- after an arm64 grade has already passed, and
+    then only as an undefined symbol that stops the WOW64 closure on amd64 too. Four
+    ports have shipped this. Win32 names are PascalCase and CRT names are not, so a
+    PascalCase function in an `extern "C"` block is one tell; the CRT's own `__acrt_*`
+    Win32 thunks are not PascalCase and are mixed (`__acrt_SetThreadStackGuarantee` is
+    WINAPI, `__acrt_MultiByteToWideChar` is __cdecl), so for those the header's
+    WINAPI is the other.
+    """
+    repo = REPO if repo is None else repo
+    winapi: set[str] = set()
+    for h in sorted((repo / "sdk" / "lib" / "ucrt" / "inc").glob("*.h")):
+        winapi.update(_WINAPI_DECL.findall(h.read_text(errors="replace")))
+    findings = []
+    for f in sorted(source_files(repo / "sdk" / "lib" / "rust" / "ucrt-rust" / "src")):
+        for block in _EXTERN_C_BLOCK.finditer(f.read_text(errors="replace")):
+            names = set(_PASCAL_FN.findall(block.group(1)))
+            names |= {n for n in _ANY_FN.findall(block.group(1)) if n in winapi}
+            for name in sorted(names):
+                findings.append(
+                    f'{f.relative_to(repo)}: `{name}` is declared in an `extern "C"` block; '
+                    f'a Win32 API is stdcall on i386. fix: move it to `extern "system"`'
+                )
+    return findings
+
+
+#: Exports ucrtbase.dll is ALLOWED to answer with an import of the same name. Every
+#: other name it both exports and imports is a body a takeover lost: the string
+#: takeover deleted memcpy_s.cpp and strnlen.cpp, their memmove_s and wcslen were
+#: never ported, and the link quietly resolved both through the msvcrt/ntdll import
+#: libraries -- ucrtbase shipped a forward to msvcrt.dll with no error anywhere.
+EXPORT_IMPORT_ALLOWED = {
+    # The compiler-intrinsic string primitives: this tree has always taken them
+    # from ntdll (add_importlibs(ucrtbase kernel32 ntdll)), which exports the same
+    # contracts. Measured 2026-09-28 on all three arches.
+    **dict.fromkeys(
+        (
+            "memchr",
+            "memcmp",
+            "memcpy",
+            "memmove",
+            "memset",
+            "strchr",
+            "strrchr",
+            "strstr",
+            "wcschr",
+            "wcsrchr",
+            "wcsstr",
+        ),
+        "ntdll.dll",
+    ),
+    # OWED, arm64 only: the x87/SSE control-word family has no arm64 body in this
+    # tree (sdk/lib/crt builds them for i386/amd64 only), so arm64's resolve to
+    # msvcrt.dll's. Tracked in the roadmap's known-bugs registry.
+    **dict.fromkeys(("_clearfp", "_control87", "_controlfp", "_statusfp"), "msvcrt.dll"),
+}
+
+
+def _pe_exports_imports(dll: Path) -> tuple[set[str], dict[str, str]] | None:
+    """(export names, import name -> dll) of a PE, or None if objdump cannot read it."""
+    for objdump in (str(REPO / ".build-tools/llvm-mingw/bin/llvm-objdump"), "llvm-objdump"):
+        try:
+            res = subprocess.run(
+                [objdump, "-p", str(dll)], capture_output=True, text=True, timeout=120
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if res.returncode != 0:
+            continue
+        exports: set[str] = set()
+        imports: dict[str, str] = {}
+        section, dll_name = None, None
+        for line in res.stdout.splitlines():
+            m = re.match(r"\s*DLL Name: (\S+)", line)
+            if m:
+                section, dll_name = "imp", m.group(1)
+                continue
+            if line.startswith("Export Table"):
+                section = "exp"
+                continue
+            if section == "imp" and dll_name:
+                m = re.match(r"\s+\d+\s+(\S+)$", line)
+                if m:
+                    imports.setdefault(m.group(1), dll_name)
+            elif section == "exp":
+                m = re.match(r"\s+\d+\s+0x[0-9a-fA-F]+\s+(\S+)$", line)
+                if m:
+                    exports.add(m.group(1))
+        return exports, imports
+    return None
+
+
+def check_export_imports(repo: Path | None = None) -> tuple[list[str], list[str]]:
+    """No ucrtbase export may be answered by an import of the same name.
+
+    Reads the LINKED dll, not the sources: the failure it exists for is invisible in
+    source (the body is simply gone) and at link time (an import library satisfies
+    the reference). Returns (failures, notes); an arch without a current build is a
+    note, never a pass or a failure.
+    """
+    repo = REPO if repo is None else repo
+    fails: list[str] = []
+    notes: list[str] = []
+    for arch in ("i386", "amd64", "arm64"):
+        dll = repo / f"build-{arch}" / "dll" / "win32" / "ucrtbase" / "ucrtbase.dll"
+        if not dll.is_file():
+            notes.append(
+                f"note: export/import check: {arch} not measured -- no {dll.relative_to(repo)}"
+            )
+            continue
+        stale = burndown_stale(arch) if repo == REPO else None
+        if stale:
+            notes.append(f"note: export/import check: {arch} not measured -- {stale}")
+            continue
+        got = _pe_exports_imports(dll)
+        if got is None:
+            fails.append(f"ucrtbase {arch}: no usable llvm-objdump; cannot read {dll}")
+            continue
+        exports, imports = got
+        for name in sorted(exports & imports.keys()):
+            if EXPORT_IMPORT_ALLOWED.get(name) == imports[name].lower():
+                continue
+            fails.append(
+                f"ucrtbase {arch}: `{name}` is exported but answered by an import from "
+                f"{imports[name]} -- no object on the link line defines it, so the import "
+                f"library did. A takeover deleted its body without porting it. fix: port it "
+                f"into ucrt-rust (or, if the forward is deliberate, add it to "
+                f"EXPORT_IMPORT_ALLOWED with the reason)"
+            )
+    return fails, notes
+
+
 def main() -> int:
-    findings = check_structure() + check_extern_crates() + check_rebuild_lists() + check_archive()
+    findings = (
+        check_structure()
+        + check_extern_crates()
+        + check_rebuild_lists()
+        + check_archive()
+        + check_force_includes()
+        + check_win32_abi()
+    )
     bd_fails, bd_notes = check_burndown()
     findings += bd_fails
+    ei_fails, ei_notes = check_export_imports()
+    findings += ei_fails
+    bd_notes += ei_notes
     for f in findings:
         print(f)
     # Notes last, so a green run ends on the number going down -- which is the

@@ -9,6 +9,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::probe::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+use crate::obhandle::ObpSetHandleAttributes;
 use ntkrnl_sys::ddk::{
     _OBJECT_HEADER, _OBJECT_TYPE, _OBJECT_HEADER_HANDLE_INFO, _OBJECT_HEADER_NAME_INFO,
     _OBJECT_HEADER_CREATOR_INFO, _OBJECT_HEADER_QUOTA_INFO, _OBJECT_CREATE_INFORMATION,
@@ -965,9 +966,7 @@ pub unsafe extern "system" fn ObCreateObjectType(
     }
 
     if (*ObjectTypeInitializer).SecurityProcedure.is_none() {
-        (*LocalObjectType).TypeInfo.SecurityProcedure = Some(core::mem::transmute(
-            SeDefaultObjectMethod as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> NTSTATUS,
-        ));
+        (*LocalObjectType).TypeInfo.SecurityProcedure = Some(SeDefaultObjectMethod);
     }
 
     if (*LocalObjectType).TypeInfo.UseDefaultObject != 0 {
@@ -3142,8 +3141,8 @@ pub unsafe extern "system" fn NtSetInformationObject(
 //             case ObjectHandleFlagInformation:
 //
 //                 /* Validate length */
-//                 InfoLength = sizeof (OBJECT_HANDLE_ATTRIBUTE_INFORMATION);
-//                 if (Length != sizeof (OBJECT_HANDLE_ATTRIBUTE_INFORMATION))
+//                 InfoLength = sizeof (OBJECT_HANDLE_FLAG_INFORMATION);
+//                 if (Length != sizeof (OBJECT_HANDLE_FLAG_INFORMATION))
 //                 {
 //                     Status = STATUS_INFO_LENGTH_MISMATCH;
 //                     break;
@@ -3237,7 +3236,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 //         case ObjectHandleFlagInformation:
 //
 //             /* Validate the length */
-//             if (Length != sizeof(OBJECT_HANDLE_ATTRIBUTE_INFORMATION))
+//             if (Length != sizeof(OBJECT_HANDLE_FLAG_INFORMATION))
 //             {
 //                 /* Invalid length */
 //                 return STATUS_INFO_LENGTH_MISMATCH;
@@ -3254,7 +3253,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
 //                 {
 //                     /* Probe and capture the attribute buffer */
 //                     ProbeForRead(ObjectInformation,
-//                                  sizeof(OBJECT_HANDLE_ATTRIBUTE_INFORMATION),
+//                                  sizeof(OBJECT_HANDLE_FLAG_INFORMATION),
 //                                  sizeof(BOOLEAN));
 //                     Context.Information = *(POBJECT_HANDLE_FLAG_INFORMATION)
 //                                             ObjectInformation;

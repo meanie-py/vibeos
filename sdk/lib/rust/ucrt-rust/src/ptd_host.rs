@@ -68,6 +68,14 @@ impl<T: Copy + PartialEq> Cached<T> {
     pub fn check(&self, value: T) -> bool {
         self.valid && self.value == value
     }
+    /// `std::optional::value_or`: the cached value, or `alternative` if unset.
+    pub fn value_or(&self, alternative: T) -> T {
+        if self.valid {
+            self.value
+        } else {
+            alternative
+        }
+    }
 }
 
 #[repr(C)]
@@ -197,6 +205,11 @@ impl PtdHost {
 
     pub fn errno(&mut self) -> &mut Cached<c_int> {
         &mut self.current_errno
+    }
+
+    /// `get_doserrno()`: the cached `_doserrno`, as `errno()` is for errno.
+    pub fn doserrno(&mut self) -> &mut Cached<c_ulong> {
+        &mut self.current_doserrno
     }
 
     /// `_UCRT_VALIDATE_RETURN`'s failure arm: record `err` in the cache, then

@@ -2295,7 +2295,7 @@ pub const WM_INITMENUPOPUP: DWORD = 279;
 
 pub const WM_KEYFIRST: DWORD = 256;
 
-pub const WM_KEYLAST: DWORD = 264;
+pub const WM_KEYLAST: DWORD = 265; // winuser.h:1753 WM_UNICHAR at shell32's _WIN32_WINNT=0x600 (was 264, the pre-XP value)
 
 pub const WM_KILLFOCUS: DWORD = 8;
 

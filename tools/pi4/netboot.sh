@@ -3,6 +3,8 @@
 #
 #   tools/pi4/netboot.sh [--no-power]                       # sanboot (default, ~100 s to desktop)
 #   tools/pi4/netboot.sh --card [--no-launch] [--ramdisk]   # old path: TFTP onto the SD card
+#   tools/pi4/netboot.sh --shell                            # stop at the UEFI Shell prompt; drive it
+#                                                           # with tools/pi4/serial-send.sh
 #
 # Power-cycles the board through the bench's smart plug (power.sh), catches the
 # firmware splash (a ~5 second window that is easy to miss by hand -
@@ -29,6 +31,7 @@ LAUNCH=1
 POWER=1
 RAMDISK=0
 SANBOOT=1
+SHELL_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --no-launch) LAUNCH=0 ;;
@@ -39,7 +42,10 @@ for arg in "$@"; do
         --ramdisk) RAMDISK=1; SANBOOT=0 ;;
         --card) SANBOOT=0 ;;
         --sanboot) SANBOOT=1 ;;
-        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk]" >&2; exit 2 ;;
+        # Power-cycle into the firmware's UEFI Shell and stop there: for reading
+        # bench media (the card, a USB stick) with a second FAT implementation.
+        --shell) SHELL_ONLY=1 ;;
+        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk] | --shell [--no-power]" >&2; exit 2 ;;
     esac
 done
 
@@ -53,8 +59,10 @@ state = json.loads((bench / 'serial-current.json').read_text())
 if state.get('status') != 'LISTENING':
     sys.exit('capture listener is not LISTENING: ' + str(state.get('status')))
 d = state['directory']
-# The listener records a Windows path; this script reads it from WSL.
-print(pathlib.Path(d.replace('D:\\home', '/mnt/d/home').replace('\\', '/')) / 'serial.bin')
+# Capture-RpiSerial.ps1 records a Windows path; pico_serial.py a WSL one.
+if not d.startswith('/'):
+    d = d.replace('D:\\home', '/mnt/d/home').replace('\\', '/')
+print(pathlib.Path(d) / 'serial.bin')
 PY
 }
 
@@ -98,6 +106,39 @@ if ! wait_for 'Shell>' "$mark" 90; then
     exit 1
 fi
 
+# The SD card's filesystem mapping. Not fs0: a USB stick with a FAT partition
+# (a Ventoy stick's VTOYEFI) maps ahead of the card, and fs0 then wrote the
+# loader onto the stick. The Shell prints its mapping table before the prompt;
+# the card is the one FS whose device path does not go through USB(...).
+card_fs() {
+    tail -c "+$((1 + $1))" "$F" | python3 -c '
+import re, sys
+text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", sys.stdin.buffer.read().decode("latin1"))
+table = text[text.rfind("Mapping table"):]
+fs = {}
+cur = None
+for line in table.splitlines():
+    m = re.match(r"\s*(FS\d+):", line)
+    if m:
+        cur = m.group(1)
+        fs[cur] = ""
+    elif cur and line.startswith(" " * 10):
+        fs[cur] += line.strip()
+    elif not line.strip() or re.match(r"\s*BLK\d+:", line):
+        cur = None
+card = [k for k, path in fs.items() if path and "USB(" not in path]
+if len(card) != 1:
+    sys.exit("card filesystem: want exactly one non-USB FS, found %r" % fs)
+print(card[0].lower())
+'
+}
+CARD=$(card_fs "$mark") || { log "cannot tell which Shell filesystem is the SD card; refusing to write"; exit 1; }
+log "SD card is $CARD: in the Shell mapping table"
+if [ "$SHELL_ONLY" -eq 1 ]; then
+    log "at the Shell prompt (--shell); send commands with tools/pi4/serial-send.sh"
+    exit 0
+fi
+
 log "in the Shell, bringing up DHCP on eth0"
 mark=$(size)
 "$SEND" 'ifconfig -s eth0 dhcp'
@@ -126,11 +167,11 @@ tftp_to_card() {
 
 if [ "$SANBOOT" -eq 1 ]; then
     log "TFTP: ipxe.efi + autoexec.ipxe onto the card"
-    tftp_to_card ipxe.efi 'fs0:\ipxe.efi'
-    tftp_to_card autoexec.ipxe 'fs0:\autoexec.ipxe'
+    tftp_to_card ipxe.efi "$CARD:\\ipxe.efi"
+    tftp_to_card autoexec.ipxe "$CARD:\\autoexec.ipxe"
     log "launching iPXE (sanboot http://$HOST_IP:${PI4_HTTP_PORT:-8069}/boot.img)"
     mark=$(size)
-    "$SEND" 'fs0:\ipxe.efi'
+    "$SEND" "$CARD:\\ipxe.efi"
     if ! wait_for 'Switching stack' "$mark" 300; then
         log "loader never started - see the capture for iPXE's error (HTTP rule? bench.sh http?)"
         exit 1
@@ -143,7 +184,7 @@ fi
 
 log "TFTP: BOOTAA64.EFI from $HOST_IP onto the card"
 mark=$(size)
-"$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI fs0:\\EFI\\BOOT\\BOOTAA64.EFI"
+"$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI $CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Shell>' "$mark" 120; then
     log "TFTP did not finish"
     exit 1
@@ -156,7 +197,7 @@ fi
 if [ "$RAMDISK" -eq 1 ]; then
     log "TFTP: ramdisk.img (140 MB, ~13.5 min - the SD card write is the limit)"
     mark=$(size)
-    "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img fs0:\\ramdisk.img"
+    "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img $CARD:\\ramdisk.img"
     if ! wait_for 'Shell>' "$mark" 900; then
         log "ramdisk TFTP did not finish"
         exit 1
@@ -174,7 +215,7 @@ fi
 
 log "launching the loader"
 mark=$(size)
-"$SEND" 'fs0:\EFI\BOOT\BOOTAA64.EFI'
+"$SEND" "$CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Switching stack' "$mark" 120; then
     log "loader did not reach its menu"
     exit 1

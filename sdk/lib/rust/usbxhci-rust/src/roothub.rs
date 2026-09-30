@@ -1,10 +1,10 @@
 //! The root hub usbport emulates on top of the controller's ports.
 //!
-//! usbport and usbhub speak USB 2.0 hub semantics (wPortStatus / wPortChange), so
-//! the root hub exposes the controller's USB2-protocol ports only: keyboards,
-//! mice and the Pico bridge are low/full/high-speed devices and always attach
-//! there. SuperSpeed ports (and SuperSpeed devices, which attach only to them) are
-//! a later milestone; see docs/engineering/usbxhci-design.md.
+//! usbport and usbhub speak USB 2.0 hub semantics (wPortStatus / wPortChange).
+//! Root hub ports 1..=N are the controller's USB2-protocol ports, and the
+//! USB3-protocol ports follow them. A SuperSpeed device on a USB3 port is
+//! reported as high speed, the fastest speed usbhub knows; the slot itself gets
+//! its real speed from PORTSC (endpoint.rs). SuperSpeed hubs are not supported.
 
 use crate::controller::{ext_of, XhciExtension};
 use crate::hw::*;
@@ -24,19 +24,35 @@ const PC_ENABLE: u32 = 1 << 17;
 const PC_OVER_CURRENT: u32 = 1 << 19;
 const PC_RESET: u32 = 1 << 20;
 
-/// PORTSC offset for usbport's root port `port` (1-based), or None if out of range.
-fn portsc(x: &XhciExtension, port: USHORT) -> Option<usize> {
+/// The xHCI port number behind usbport's root port `port` (1-based), or 0 if
+/// out of range: the USB2 ports first, then the USB3 ports.
+pub fn hw_port(x: &XhciExtension, port: USHORT) -> u32 {
     let port = port as u32;
-    if port == 0 || port > x.usb2_count {
-        return None;
+    if port >= 1 && port <= x.usb2_count {
+        x.usb2_first + port - 1
+    } else if port > x.usb2_count && port <= x.usb2_count + x.usb3_count {
+        x.usb3_first + (port - x.usb2_count) - 1
+    } else {
+        0
     }
-    let hw = x.usb2_first + port - 1;
-    Some(PORTSC_BASE + 0x10 * (hw as usize - 1))
 }
 
-/// The xHCI port number behind usbport's root port `port`.
-pub fn hw_port(x: &XhciExtension, port: USHORT) -> u32 {
-    x.usb2_first + port as u32 - 1
+/// Whether usbport's root port `port` is a USB3-protocol port.
+pub fn is_usb3(x: &XhciExtension, port: USHORT) -> bool {
+    port as u32 > x.usb2_count && port as u32 <= x.usb2_count + x.usb3_count
+}
+
+/// PORTSC offset for usbport's root port `port`, or None if out of range.
+fn portsc(x: &XhciExtension, port: USHORT) -> Option<usize> {
+    match hw_port(x, port) {
+        0 => None,
+        hw => Some(PORTSC_BASE + 0x10 * (hw as usize - 1)),
+    }
+}
+
+/// The PORTSC register of usbport's root port `port`, if it exists.
+pub unsafe fn read_portsc(x: &XhciExtension, port: USHORT) -> Option<u32> {
+    portsc(x, port).map(|off| rd32(x.op, off))
 }
 
 /// Read-modify-write PORTSC: keep the preserved state, add `set`.
@@ -55,7 +71,7 @@ unsafe fn portsc_write(x: &XhciExtension, port: USHORT, set: u32) -> MPSTATUS {
 pub unsafe extern "system" fn XHCI_RH_GetRootHubData(xhciExtension: PVOID, rootHubData: PVOID) {
     let x = ext_of(xhciExtension);
     let d = &mut *(rootHubData as *mut USBPORT_ROOT_HUB_DATA);
-    d.NumberOfPorts = x.usb2_count;
+    d.NumberOfPorts = x.usb2_count + x.usb3_count;
     // wHubCharacteristics: individual port power switching (01b), individual
     // over-current reporting (bit 3 = 1).
     core::ptr::write_unaligned(core::ptr::addr_of_mut!(d.HubCharacteristics) as *mut u16, 0x0009);
@@ -99,7 +115,7 @@ pub unsafe extern "system" fn XHCI_RH_GetPortStatus(
     if v & PORTSC_CCS != 0 {
         match (v & PORTSC_SPEED_MASK) >> PORTSC_SPEED_SHIFT {
             SPEED_LOW => s |= PS_LOW_SPEED,
-            SPEED_HIGH => s |= PS_HIGH_SPEED,
+            SPEED_HIGH | SPEED_SUPER => s |= PS_HIGH_SPEED,
             _ => {}
         }
     }
@@ -112,7 +128,8 @@ pub unsafe extern "system" fn XHCI_RH_GetPortStatus(
     if v & PORTSC_OCC != 0 {
         s |= PC_OVER_CURRENT;
     }
-    if v & PORTSC_PRC != 0 {
+    // A USB3 port's warm reset ends in WRC, not PRC.
+    if v & (PORTSC_PRC | PORTSC_WRC) != 0 {
         s |= PC_RESET;
     }
     core::ptr::write_unaligned(PortStatus as *mut u32, s);
@@ -131,6 +148,15 @@ pub unsafe extern "system" fn XHCI_RH_GetHubStatus(
 #[no_mangle]
 pub unsafe extern "system" fn XHCI_RH_SetFeaturePortReset(xhciExtension: PVOID, Port: USHORT) -> MPSTATUS {
     let x = ext_of(xhciExtension);
+    // A USB3 link stuck in SS.Inactive or Compliance needs a warm reset
+    // (4.19.1.2.4.1); a hot reset (PR) cannot leave those states.
+    if is_usb3(x, Port) {
+        let pls = read_portsc(x, Port).map_or(0, |v| (v & PORTSC_PLS_MASK) >> PORTSC_PLS_SHIFT);
+        if pls == PLS_INACTIVE || pls == PLS_COMPLIANCE {
+            crate::xlog!("port %u (hw %u): warm reset (link %u)", Port as u32, hw_port(x, Port), pls);
+            return portsc_write(x, Port, PORTSC_WPR);
+        }
+    }
     crate::xlog!("port %u (hw %u): reset", Port as u32, hw_port(x, Port));
     portsc_write(x, Port, PORTSC_PR)
 }

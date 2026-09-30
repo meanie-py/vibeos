@@ -20,7 +20,15 @@ extern "system" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn PAGED_CODE();
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
+    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "C" {
+    // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
+    // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
+    // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
+    // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
+    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
+    fn IoSetCompletionRoutine( Irp: PIRP, Routine: PIO_COMPLETION_ROUTINE, Context: *mut core::ffi::c_void, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
+}
+extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn SetFlag(flags: *mut u32, flag: u32);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -36,7 +44,6 @@ extern "system" {
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
-    fn _SEH2_GetExceptionCode() -> NTSTATUS;
     fn FatReservedBytes(bpb: *const core::ffi::c_void) -> u32;
     fn FatBytesPerFat(bpb: *const core::ffi::c_void) -> u32;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, status: i32);
@@ -51,9 +58,7 @@ extern "system" {
     fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
     fn DebugUnwind(name: *const i8);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
-    fn IoSetCompletionRoutine( Irp: PIRP, Routine: PIO_COMPLETION_ROUTINE, Context: *mut core::ffi::c_void, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn IoIsSystemThread(Thread: PETHREAD) -> BOOLEAN;
     fn PsGetCurrentThread() -> PETHREAD;
@@ -64,10 +69,8 @@ extern "system" {
     fn FsRtlIsNtstatusExpected(NtStatus: NTSTATUS) -> BOOLEAN;
     fn CanFsdWait(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
     fn FatCreateIrpContext(Irp: ntkrnl_sys::ddk::PIRP, CanBlock: u32) -> *mut IRP_CONTEXT;
-    fn FatExceptionFilter( IrpContext: *mut IRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS, ) -> i32;
     fn FatProcessException( IrpContext: *mut IRP_CONTEXT, Irp: ntkrnl_sys::ddk::PIRP, ExceptionCode: i32, ) -> i32;
     fn FatIsIrpTopLevel(Irp: ntkrnl_sys::ddk::PIRP) -> u8;
-    fn _SEH2_GetExceptionInformation() -> *mut EXCEPTION_POINTERS;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -98,8 +101,6 @@ const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // TODO  // nolint: const-contradiction
 const FCB_STATE_TRUNCATE_ON_CLOSE: u32 = 0x02; // TODO
 const FAT_NTC_FCB: u32 = 0x0502; // TODO
 const FcbGood: u32 = 1; // TODO
-const EXCEPTION_EXECUTE_HANDLER: u32 = 1;
-const EXCEPTION_CONTINUE_SEARCH: u32 = 0;
 
 // Gateway types (the caller collects the full definitions)
 type PIRP_CONTEXT = *mut IRP_CONTEXT;
@@ -169,11 +170,14 @@ pub unsafe extern "system" fn FatFsdFlushBuffers(
     FsRtlEnterFileSystem();
     TopLevel = FatIsIrpTopLevel(Irp);
 
-    // DUMMY_PSEH: _SEH2_EXCEPT handler is dead code (FatExceptionFilter/FatProcessException
-    // never reached); the try body runs directly. See AGENTS.md "DUMMY_PSEH".
-    {
-        IrpContext = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
-        Status = FatCommonFlushBuffers(IrpContext, Irp);
+    // _SEH2_TRY { .. } _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ..)) { FatProcessException }
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_ic = core::ptr::addr_of_mut!(IrpContext);
+    if let Err(code) = crate::seh::fat_try_except(core::ptr::addr_of!(IrpContext), || {
+        *p_ic = FatCreateIrpContext(Irp, (CanFsdWait(Irp)) as _);
+        *p_status = FatCommonFlushBuffers(*p_ic, Irp);
+    }) {
+        Status = FatProcessException(IrpContext, Irp, code);
     }
 
     if TopLevel != 0 {
@@ -225,17 +229,18 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
 
     Status = STATUS_SUCCESS;
 
-    let DoFlush: BOOLEAN = if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 { 1u8 } else { 0u8 };
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_vcb_acquired = core::ptr::addr_of_mut!(VcbAcquired);
+    let p_fcb_acquired = core::ptr::addr_of_mut!(FcbAcquired);
+    let p_flush_required = core::ptr::addr_of_mut!(FatFlushRequired);
+    let p_irp = core::ptr::addr_of_mut!(Irp);
 
-    // Outer try block simulation
-    let mut completed_normally: BOOLEAN = 0u8;
-
-    // ---- Try block begins ----
-    {
-        // Disk accounting (Win8+)
-        if true { // corresponding to NTDDI_VERSION >= NTDDI_WIN8
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            // Disk accounting (NTDDI_VERSION >= NTDDI_WIN8)
             if FatDiskAccountingEnabled != 0 {
-                let mut OriginatingThread: PETHREAD = core::ptr::null_mut();
+                let OriginatingThread: PETHREAD;
                 if !(*Irp).Tail.Overlay.Thread.is_null() &&
                    IoIsSystemThread((*Irp).Tail.Overlay.Thread) == 0 {
                     OriginatingThread = (*Irp).Tail.Overlay.Thread;
@@ -245,172 +250,150 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
                 // NT_ASSERT ignored
                 PsUpdateDiskCounters(PsGetThreadProcess(OriginatingThread), 0, 0, 0, 0, 1);
             }
-        }
 
-        match TypeOfOpen {
-            VirtualVolumeFile | EaFile | DirectoryFile => {
-                DebugTrace(0, Dbg, b"Flush that does nothing\n\0".as_ptr() as *const i8);
-            }
-            UserFileOpen => {
-                DebugTrace(0, Dbg, b"Flush User File Open\n\0".as_ptr() as *const i8);
+            // UserDirectoryOpen on the root falls through to UserVolumeOpen in the C.
+            let mut FlushVolume = false;
 
-                FatAcquireExclusiveFcb(IrpContext, Fcb);
-                FcbAcquired = 1u8;
-
-                // Simulated SEH: call FatVerifyFcb and skip handler
-                {
-                    FatVerifyFcb(IrpContext, Fcb);
-                    // Exception handler (dead code, kept for structure)
-                    if FsRtlIsNtstatusExpected(0) != 0 {
-                        FatResetExceptionState(IrpContext);
-                    }
+            match TypeOfOpen {
+                VirtualVolumeFile | EaFile | DirectoryFile => {
+                    DebugTrace(0, Dbg, b"Flush that does nothing\n\0".as_ptr() as *const i8);
                 }
+                UserFileOpen => {
+                    DebugTrace(0, Dbg, b"Flush User File Open\n\0".as_ptr() as *const i8);
 
-                Status = FatFlushFile(IrpContext, Fcb, (DoFlush) as u32);
+                    FatAcquireExclusiveFcb(IrpContext, Fcb);
+                    *p_fcb_acquired = 1u8;
 
-                if NT_SUCCESS(Status) {
-                    SetFlag((core::ptr::addr_of_mut!((*FileObject).Flags) as *mut u8).cast(), FO_FILE_SIZE_CHANGED);
-                    FatUpdateDirentFromFcb(IrpContext, FileObject, Fcb, Ccb);
+                    FatVerifyFcb(IrpContext, Fcb);
 
-                    if FlagOn(((*Fcb).FcbState as u8) as u32, FCB_STATE_FLUSH_FAT) != 0 {
-                        FatFlushRequired = 1u8;
-                    }
+                    // If the file is cached then flush its cache
+                    *p_status = FatFlushFile(IrpContext, Fcb, Flush as u32);
 
-                    let mut NextFcb: PFCB = (*Fcb).ParentDcb;
-                    while !NextFcb.is_null() {
-                        // Verify Fcb (simulated SEH)
-                        {
-                            FatVerifyFcb(IrpContext, NextFcb);
-                            if FsRtlIsNtstatusExpected(0) != 0 {
+                    if NT_SUCCESS(*p_status) {
+                        SetFlag((core::ptr::addr_of_mut!((*FileObject).Flags) as *mut u8).cast(), FO_FILE_SIZE_CHANGED);
+                        FatUpdateDirentFromFcb(IrpContext, FileObject, Fcb, Ccb);
+
+                        if ((*Fcb).FcbState & FCB_STATE_FLUSH_FAT) != 0 {
+                            *p_flush_required = 1u8;
+                        }
+
+                        let mut NextFcb: PFCB = (*Fcb).ParentDcb;
+                        while !NextFcb.is_null() {
+                            // Make sure the Fcb is OK.
+                            if crate::seh::try_except(
+                                &mut (),
+                                |_| {
+                                    FatVerifyFcb(IrpContext, NextFcb);
+                                },
+                                |_, pointers| {
+                                    if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers)) != 0 {
+                                        crate::seh::EXCEPTION_EXECUTE_HANDLER
+                                    } else {
+                                        crate::seh::EXCEPTION_CONTINUE_SEARCH
+                                    }
+                                },
+                            ).is_err() {
                                 FatResetExceptionState(IrpContext);
                             }
-                        }
 
-                        if (*NextFcb).FcbCondition == FcbGood {
-                            let LocalStatus: NTSTATUS;
-                            LocalStatus = FatFlushFile(IrpContext, NextFcb, (DoFlush) as u32);
-                            if !NT_SUCCESS(LocalStatus) {
-                                Status = LocalStatus;
+                            if (*NextFcb).FcbCondition == FcbGood {
+                                let LocalStatus: NTSTATUS = FatFlushFile(IrpContext, NextFcb, Flush as u32);
+                                if !NT_SUCCESS(LocalStatus) {
+                                    *p_status = LocalStatus;
+                                }
+                                if ((*NextFcb).FcbState & FCB_STATE_FLUSH_FAT) != 0 {
+                                    *p_flush_required = 1u8;
+                                }
                             }
-                            if FlagOn(((*NextFcb).FcbState as u8) as u32, FCB_STATE_FLUSH_FAT) != 0 {
-                                FatFlushRequired = 1u8;
-                            }
-                        }
-                        NextFcb = (*NextFcb).ParentDcb;
-                    }
-
-                    if FatFlushRequired != 0u8 {
-                        Status = FatFlushFat(IrpContext, Vcb);
-                        ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_FLUSH_FAT);
-                    }
-
-                    SetFlag(core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_WRITE_THROUGH);
-                }
-            }
-            UserDirectoryOpen => {
-                if NodeType(Fcb) != FAT_NTC_ROOT_DCB {
-                    DebugTrace(0, Dbg, b"Flush a directory does nothing\n\0".as_ptr() as *const i8);
-                } else {
-                    // Fall through to UserVolumeOpen handling
-                    DebugTrace(0, Dbg, b"Flush User Volume Open, or root dcb\n\0".as_ptr() as *const i8);
-
-                    {
-                        let Finished: BOOLEAN;
-                        Finished = FatAcquireExclusiveVcb(IrpContext, Vcb) as BOOLEAN;
-                        // NT_ASSERT(Finished) omitted
-                    }
-                    VcbAcquired = 1u8;
-
-                    FatFlushVolume(IrpContext, Vcb, (Flush as u32) as i32);
-
-                    if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_VOLUME_DIRTY) != 0 {
-                        KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer));
-                        KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
-
-                        if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
-                            FatMarkVolume(IrpContext, Vcb, ((VolumeClean as u32) as i32) as _);
-                            ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
+                            NextFcb = (*NextFcb).ParentDcb;
                         }
 
-                        if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 &&
-                           FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) == 0 {
-                            FatToggleMediaEjectDisable(IrpContext, Vcb, 0u8);
+                        if *p_flush_required != 0u8 {
+                            *p_status = FatFlushFat(IrpContext, Vcb);
+                            ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_FLUSH_FAT);
                         }
+
+                        SetFlag(core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_WRITE_THROUGH);
                     }
                 }
+                UserDirectoryOpen => {
+                    if NodeType(Fcb) != FAT_NTC_ROOT_DCB {
+                        DebugTrace(0, Dbg, b"Flush a directory does nothing\n\0".as_ptr() as *const i8);
+                    } else {
+                        FlushVolume = true;
+                    }
+                }
+                UserVolumeOpen => {
+                    FlushVolume = true;
+                }
+                _ => {
+                    FatBugCheck(TypeOfOpen as u32, 0, 0);
+                }
             }
-            UserVolumeOpen => {
+
+            if FlushVolume {
                 DebugTrace(0, Dbg, b"Flush User Volume Open, or root dcb\n\0".as_ptr() as *const i8);
 
                 {
-                    let Finished: BOOLEAN;
-                    Finished = FatAcquireExclusiveVcb(IrpContext, Vcb) as BOOLEAN;
+                    let _Finished: BOOLEAN = FatAcquireExclusiveVcb(IrpContext, Vcb) as BOOLEAN;
                     // NT_ASSERT(Finished) omitted
                 }
-                VcbAcquired = 1u8;
+                *p_vcb_acquired = 1u8;
 
-                FatFlushVolume(IrpContext, Vcb, (Flush as u32) as i32);
+                // Mark the volume clean and then flush the volume file, and then all directories
+                *p_status = FatFlushVolume(IrpContext, Vcb, Flush);
 
-                if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_VOLUME_DIRTY) != 0 {
+                if ((*Vcb).VcbState & VCB_STATE_FLAG_VOLUME_DIRTY) != 0 {
                     KeCancelTimer(core::ptr::addr_of_mut!((*Vcb).CleanVolumeTimer));
                     KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
 
-                    if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
+                    if ((*Vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                         FatMarkVolume(IrpContext, Vcb, ((VolumeClean as u32) as i32) as _);
                         ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
                     }
 
-                    if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 &&
-                       FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) == 0 {
+                    if ((*Vcb).VcbState & VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 &&
+                       ((*Vcb).VcbState & VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) == 0 {
                         FatToggleMediaEjectDisable(IrpContext, Vcb, 0u8);
                     }
                 }
             }
-            _ => {
-                FatBugCheck(TypeOfOpen as u32, 0, 0);
+
+            FatUnpinRepinnedBcbs(IrpContext);
+        },
+        |_, abnormal| {
+            DebugUnwind(b"FatCommonFlushBuffers\0".as_ptr() as *const i8);
+            if *p_vcb_acquired != 0u8 {
+                FatReleaseVcb(IrpContext, Vcb);
             }
-        }
-
-        FatUnpinRepinnedBcbs(IrpContext);
-        completed_normally = 1u8;
-    }
-    // ---- Try block ends ----
-
-    // Outer finally block always runs
-    {
-        DebugUnwind(b"FatCommonFlushBuffers\0".as_ptr() as *const i8);
-        if VcbAcquired != 0u8 {
-            FatReleaseVcb(IrpContext, Vcb);
-        }
-        if FcbAcquired != 0u8 {
-            FatReleaseFcb(IrpContext, Fcb);
-        }
-        if completed_normally != 0u8 {
-            // Normal termination – proceed with completion
-            if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 &&
-               (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_NO_SYNC) as u32 {
-                let DriverStatus: NTSTATUS;
-                IoCopyCurrentIrpStackLocationToNext(Irp);
-                IoSetCompletionRoutine(
-                    Irp,
-                    Some(FatFlushCompletionRoutine),
-                    Status as *mut core::ffi::c_void,
-                    1u8,
-                    1u8,
-                    1u8,
-                );
-                DriverStatus = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
-                if DriverStatus == STATUS_PENDING ||
-                   (!NT_SUCCESS(DriverStatus) && DriverStatus != STATUS_INVALID_DEVICE_REQUEST) {
-                    Status = DriverStatus;
+            if *p_fcb_acquired != 0u8 {
+                FatReleaseFcb(IrpContext, Fcb);
+            }
+            // If this is a normal termination then pass the request on to the target device object.
+            if !abnormal {
+                if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 &&
+                   (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_NO_SYNC) as u32 {
+                    IoCopyCurrentIrpStackLocationToNext(*p_irp);
+                    IoSetCompletionRoutine(
+                        *p_irp,
+                        Some(FatFlushCompletionRoutine),
+                        *p_status as u32 as usize as *mut core::ffi::c_void, // ULongToPtr(Status)
+                        1u8,
+                        1u8,
+                        1u8,
+                    );
+                    let DriverStatus: NTSTATUS = IoCallDriver((*Vcb).TargetDeviceObject, *p_irp);
+                    if DriverStatus == STATUS_PENDING ||
+                       (!NT_SUCCESS(DriverStatus) && DriverStatus != STATUS_INVALID_DEVICE_REQUEST) {
+                        *p_status = DriverStatus;
+                    }
+                    *p_irp = core::ptr::null_mut();
                 }
-                Irp = core::ptr::null_mut();
+                FatCompleteRequest(IrpContext, *p_irp, *p_status);
             }
-            FatCompleteRequest(IrpContext, Irp, Status);
-        }
-        DebugTrace(-1, Dbg, b"FatCommonFlushBuffers -> %08lx\n\0".as_ptr() as *const i8, Status);
-    }
-    // _SEH2_END implied by the end of the finally block
+            DebugTrace(-1, Dbg, b"FatCommonFlushBuffers -> %08lx\n\0".as_ptr() as *const i8, *p_status);
+        },
+    );
 
     return Status;
 }
@@ -433,8 +416,6 @@ pub unsafe extern "system" fn FatFlushDirectory(
 
     let mut ClearWriteThroughOnExit: BOOLEAN = 0;
     let mut ClearWaitOnExit: BOOLEAN = 0;
-
-    let mut CorrectedFileSize: u32 = 0;
 
     PAGED_CODE();
 
@@ -488,55 +469,90 @@ pub unsafe extern "system" fn FatFlushDirectory(
                 VCB_STATE_FLAG_DELETED_FCB,
             );
 
-            // DUMMY_PSEH: EXCEPT handlers are dead code (dropped). The TRY/FINALLY
-            // lowers to a labeled block + always-run finally; try_leave → break 'mid.
-            {
-                FatVerifyFcb(IrpContext, Fcb); // inner TRY/EXCEPT body (except dropped)
+            // Exception handler to catch and commute errors encountered doing the
+            // flush dance: _SEH2_TRY { _SEH2_TRY { .. } _SEH2_FINALLY { .. } }
+            // _SEH2_EXCEPT(FsRtlIsNtstatusExpected(ReturnStatus = code) ? ..).
+            let p_return_status = core::ptr::addr_of_mut!(ReturnStatus);
+            let p_dirent = core::ptr::addr_of_mut!(Dirent);
+            let p_dirent_bcb = core::ptr::addr_of_mut!(DirentBcb);
+            if crate::seh::try_except(
+                &mut (),
+                |_| {
+                    crate::seh::try_finally(
+                        &mut (),
+                        |_| {
+                            // Make sure the Fcb is OK.
+                            if crate::seh::try_except(
+                                &mut (),
+                                |_| {
+                                    FatVerifyFcb(IrpContext, Fcb);
+                                },
+                                |_, pointers| {
+                                    if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers)) != 0 {
+                                        crate::seh::EXCEPTION_EXECUTE_HANDLER
+                                    } else {
+                                        crate::seh::EXCEPTION_CONTINUE_SEARCH
+                                    }
+                                },
+                            ).is_err() {
+                                FatResetExceptionState(IrpContext);
+                            }
 
-                'mid: {
-                    if (*Fcb).FcbCondition != FcbGood {
-                        break 'mid; // was try_leave(NOTHING)
-                    }
+                            // If this Fcb is not good skip it.
+                            if (*Fcb).FcbCondition != FcbGood {
+                                return; // try_leave(NOTHING)
+                            }
 
-                    if FlagOn(
-                        ((*Fcb).FcbState as u8) as u32,
-                        FCB_STATE_TRUNCATE_ON_CLOSE as u32,
-                    ) != 0
-                    {
-                        FatTruncateFileAllocation(
-                            IrpContext,
-                            Fcb,
-                            ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart) as i32,
-                        );
-                    }
+                            if ((*Fcb).FcbState & FCB_STATE_TRUNCATE_ON_CLOSE) != 0 {
+                                FatTruncateFileAllocation(
+                                    IrpContext,
+                                    Fcb,
+                                    ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart) as i32,
+                                );
+                            }
 
-                    FatGetDirentFromFcbOrDcb(
-                        IrpContext,
-                        Fcb,
-                        0,
-                        core::ptr::addr_of_mut!(Dirent),
-                        core::ptr::addr_of_mut!(DirentBcb),
+                            FatGetDirentFromFcbOrDcb(
+                                IrpContext,
+                                Fcb,
+                                0,
+                                p_dirent,
+                                p_dirent_bcb,
+                            );
+
+                            let CorrectedFileSize: u32 = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
+
+                            if (**p_dirent).FileSize != CorrectedFileSize {
+                                (**p_dirent).FileSize = CorrectedFileSize;
+                            }
+
+                            FatUnpinBcb(IrpContext, p_dirent_bcb as *mut *mut core::ffi::c_void);
+
+                            let Status: NTSTATUS = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
+
+                            if !NT_SUCCESS(Status) {
+                                *p_return_status = Status;
+                            }
+                        },
+                        |_, _abnormal| {
+                            FatUnpinBcb(IrpContext, p_dirent_bcb as *mut *mut core::ffi::c_void);
+                            // Since we have the Vcb exclusive, any close that came in was
+                            // the CcPurgeCacheSection making the Fcb go away.
+                            if ((*Vcb).VcbState & VCB_STATE_FLAG_DELETED_FCB) == 0 {
+                                FatReleaseFcb(IrpContext, Fcb);
+                            }
+                        },
                     );
-
-                    CorrectedFileSize = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
-
-                    if (*Dirent).FileSize != CorrectedFileSize {
-                        (*Dirent).FileSize = CorrectedFileSize;
+                },
+                |_, pointers| {
+                    *p_return_status = crate::seh::exception_code(pointers);
+                    if FsRtlIsNtstatusExpected(*p_return_status) != 0 {
+                        crate::seh::EXCEPTION_EXECUTE_HANDLER
+                    } else {
+                        crate::seh::EXCEPTION_CONTINUE_SEARCH
                     }
-
-                    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
-
-                    Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
-
-                    if !NT_SUCCESS(Status) {
-                        ReturnStatus = Status;
-                    }
-                }
-                // _SEH2_FINALLY (always runs):
-                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
-                if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_DELETED_FCB as u32) == 0 {
-                    FatReleaseFcb(IrpContext, Fcb);
-                }
+                },
+            ).is_err() {
+                FatResetExceptionState(IrpContext);
             }
         }
 
@@ -548,8 +564,22 @@ pub unsafe extern "system" fn FatFlushDirectory(
         NextFcb = FatGetNextFcbTopDown(IrpContext, Fcb, Dcb);
 
         if NodeType(Fcb) != FAT_NTC_FCB && (IsFileDeleted(IrpContext, Fcb) as i32) == 0 {
-            // DUMMY_PSEH: EXCEPT dead → keep try body only.
-            FatVerifyFcb(IrpContext, Fcb);
+            // Make sure the Fcb is OK.
+            if crate::seh::try_except(
+                &mut (),
+                |_| {
+                    FatVerifyFcb(IrpContext, Fcb);
+                },
+                |_, pointers| {
+                    if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers)) != 0 {
+                        crate::seh::EXCEPTION_EXECUTE_HANDLER
+                    } else {
+                        crate::seh::EXCEPTION_CONTINUE_SEARCH
+                    }
+                },
+            ).is_err() {
+                FatResetExceptionState(IrpContext);
+            }
 
             if (*Fcb).FcbCondition == FcbGood {
                 Status = FatFlushFile(IrpContext, Fcb, (FlushType) as u32);
@@ -563,9 +593,11 @@ pub unsafe extern "system" fn FatFlushDirectory(
         Fcb = NextFcb;
     }
 
-    // DUMMY_PSEH: bare TRY → body only.
-    {
+    let ic = IrpContext;
+    if crate::seh::fat_try_except(core::ptr::addr_of!(ic), || {
         FatUnpinRepinnedBcbs(IrpContext);
+    }).is_err() {
+        ReturnStatus = (*(IrpContext as *mut _IRP_CONTEXT)).ExceptionStatus;
     }
 
     if ClearWriteThroughOnExit != 0 {
@@ -613,10 +645,21 @@ pub unsafe extern "system" fn FatFlushFat(
         return STATUS_SUCCESS;
     }
 
-    // _SEH2_TRY { FatVerifyVcb } _SEH2_EXCEPT(expected) { FatResetExceptionState }
-    // DUMMY_PSEH: the handler is dead code; an unexpected raise is fatal upstream.
-    {
-        FatVerifyVcb(IrpContext, Vcb);
+    // Make sure the Vcb is OK.
+    if crate::seh::try_except(
+        &mut (),
+        |_| {
+            FatVerifyVcb(IrpContext, Vcb);
+        },
+        |_, pointers| {
+            if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers)) != 0 {
+                crate::seh::EXCEPTION_EXECUTE_HANDLER
+            } else {
+                crate::seh::EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    ).is_err() {
+        FatResetExceptionState(IrpContext);
     }
 
     if (*Vcb).VcbCondition != crate::types::_VCB_CONDITION_VcbGood {
@@ -633,24 +676,35 @@ pub unsafe extern "system" fn FatFlushFat(
 
         Offset.QuadPart = 0;
         let mut page: u32 = 0;
+        let ic = IrpContext;
+        let p_return_status = core::ptr::addr_of_mut!(ReturnStatus);
+        let p_offset = core::ptr::addr_of_mut!(Offset);
+        let p_bcb = core::ptr::addr_of_mut!(Bcb);
+        let p_dont_care = core::ptr::addr_of_mut!(DontCare);
+        let p_iosb = core::ptr::addr_of_mut!(Iosb);
         while page < number_of_pages {
-            if CcPinRead(
-                (*Vcb).VirtualVolumeFile,
-                core::ptr::addr_of_mut!(Offset),
-                PAGE_SIZE_U32,
-                PIN_WAIT | PIN_IF_BCB,
-                core::ptr::addr_of_mut!(Bcb),
-                core::ptr::addr_of_mut!(DontCare),
-            ) != 0
-            {
-                CcSetDirtyPinnedData(Bcb, core::ptr::null_mut());
-                CcRepinBcb(Bcb);
-                CcUnpinData(Bcb);
-                CcUnpinRepinnedBcb(Bcb, 1u8, core::ptr::addr_of_mut!(Iosb));
+            if crate::seh::fat_try_except(core::ptr::addr_of!(ic), || {
+                if CcPinRead(
+                    (*Vcb).VirtualVolumeFile,
+                    p_offset,
+                    PAGE_SIZE_U32,
+                    PIN_WAIT | PIN_IF_BCB,
+                    p_bcb,
+                    p_dont_care,
+                ) != 0
+                {
+                    CcSetDirtyPinnedData(*p_bcb, core::ptr::null_mut());
+                    CcRepinBcb(*p_bcb);
+                    CcUnpinData(*p_bcb);
+                    CcUnpinRepinnedBcb(*p_bcb, 1u8, p_iosb);
 
-                if !NT_SUCCESS(Iosb.__bindgen_anon_1.Status) {
-                    ReturnStatus = Iosb.__bindgen_anon_1.Status;
+                    if !NT_SUCCESS((*p_iosb).__bindgen_anon_1.Status) {
+                        *p_return_status = (*p_iosb).__bindgen_anon_1.Status;
+                    }
                 }
+            }).is_err() {
+                // The handler's `continue` still runs the for-loop increment below.
+                *p_return_status = (*(IrpContext as *mut _IRP_CONTEXT)).ExceptionStatus;
             }
             page += 1;
             Offset.__bindgen_anon_1.LowPart += PAGE_SIZE_U32;
@@ -660,23 +714,33 @@ pub unsafe extern "system" fn FatFlushFat(
         let bpb = core::ptr::addr_of!((*Vcb).Bpb) as *const core::ffi::c_void;
         Offset.QuadPart = FatReservedBytes(bpb) as i64;
 
-        if CcPinRead(
-            (*Vcb).VirtualVolumeFile,
-            core::ptr::addr_of_mut!(Offset),
-            FatBytesPerFat(bpb as *const _),
-            PIN_WAIT | PIN_IF_BCB,
-            core::ptr::addr_of_mut!(Bcb),
-            core::ptr::addr_of_mut!(DontCare),
-        ) != 0
-        {
-            CcSetDirtyPinnedData(Bcb, core::ptr::null_mut());
-            CcRepinBcb(Bcb);
-            CcUnpinData(Bcb);
-            CcUnpinRepinnedBcb(Bcb, 1u8, core::ptr::addr_of_mut!(Iosb));
+        let ic = IrpContext;
+        let p_return_status = core::ptr::addr_of_mut!(ReturnStatus);
+        let p_offset = core::ptr::addr_of_mut!(Offset);
+        let p_bcb = core::ptr::addr_of_mut!(Bcb);
+        let p_dont_care = core::ptr::addr_of_mut!(DontCare);
+        let p_iosb = core::ptr::addr_of_mut!(Iosb);
+        if crate::seh::fat_try_except(core::ptr::addr_of!(ic), || {
+            if CcPinRead(
+                (*Vcb).VirtualVolumeFile,
+                p_offset,
+                FatBytesPerFat(bpb as *const _),
+                PIN_WAIT | PIN_IF_BCB,
+                p_bcb,
+                p_dont_care,
+            ) != 0
+            {
+                CcSetDirtyPinnedData(*p_bcb, core::ptr::null_mut());
+                CcRepinBcb(*p_bcb);
+                CcUnpinData(*p_bcb);
+                CcUnpinRepinnedBcb(*p_bcb, 1u8, p_iosb);
 
-            if !NT_SUCCESS(Iosb.__bindgen_anon_1.Status) {
-                ReturnStatus = Iosb.__bindgen_anon_1.Status;
+                if !NT_SUCCESS((*p_iosb).__bindgen_anon_1.Status) {
+                    *p_return_status = (*p_iosb).__bindgen_anon_1.Status;
+                }
             }
+        }).is_err() {
+            *p_return_status = (*(IrpContext as *mut _IRP_CONTEXT)).ExceptionStatus;
         }
     }
 

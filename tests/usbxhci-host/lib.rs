@@ -294,6 +294,28 @@ mod tests {
     }
 
     #[test]
+    fn closing_a_superseded_pipe_leaves_its_replacement_running() {
+        // SELECT_INTERFACE: usbport opens the new pipe on the same DCI, then
+        // closes the old one. That close must neither unhook the new endpoint
+        // from event dispatch nor issue a Drop that disables it.
+        unsafe {
+            let (mut x, mut old, _td) = event_fixture();
+            let _memory = controller_memory(&mut x);
+            let _ctx = context_memory(&mut x);
+            let mut new = zero::<endpoint::XhciEndpoint>();
+            old.dci = 3;
+            new.slot = old.slot;
+            new.dci = 3;
+            x.eps[1][3] = &mut *new;
+            let enqueue = x.cmd.enqueue;
+            endpoint::XHCI_CloseEndpoint(&mut *x as *mut _ as _, &mut *old as *mut _ as _, 0);
+            assert!(!x.failed.load(Ordering::Acquire));
+            assert_eq!(x.eps[1][3], &mut *new as *mut _);
+            assert_eq!(x.cmd.enqueue, enqueue, "no command for a superseded pipe");
+        }
+    }
+
+    #[test]
     fn split_transaction_error_halts_the_endpoint() {
         unsafe {
             let (mut x, ep, td) = event_fixture();

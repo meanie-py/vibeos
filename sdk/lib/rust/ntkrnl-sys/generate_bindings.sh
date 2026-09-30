@@ -35,16 +35,6 @@ cat > "$WRAPPER" << 'HEADER'
 #ifndef __int64
 #define __int64 long long
 #endif
-/* NO __wfi()/__yield() stubs here. They were "ARM64 intrinsic stubs", but as
-   zero-arg function-like macros they turn intrin.h's `void __yield(void);`
-   prototype into a one-argument macro invocation -> "too many arguments provided
-   to function-like macro invocation" -> bindgen ABORTS on arm64. That made arm64
-   bindings ungeneratable from the day intrin_arm64.h landed (2026-09-20) while
-   this script still exited 0, and the substrate silently drifted from the C.
-   Note also that the two defines below are INERT: intrin.h is `#pragma once`
-   with an unconditional `#define __INTRIN_H_` and no #ifndef, and
-   _INTRIN_X86_H_ matches nothing in the tree. Left in place only because
-   removing them changes nothing. */
 #undef FORCEINLINE
 #define FORCEINLINE
 /* Full ntoskrnl master header (DDK + NDK + internal) */

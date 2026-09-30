@@ -1134,6 +1134,14 @@ pub unsafe extern "system" fn KiDispatchException(
             }
         }
 
+        // An unhandled kernel breakpoint (DbgBreakPoint with no debugger and no
+        // __except that wants it) steps past the brk and continues, as amd64 does
+        // for an int3. PC is still AT the brk (ELR for a synchronous exception).
+        if (*ExceptionRecord).ExceptionCode == STATUS_BREAKPOINT {
+            (*TrapFrame).Pc += 4;
+            return;
+        }
+
         if (*ExceptionRecord).ExceptionCode == STATUS_ACCESS_VIOLATION
             && (*ExceptionRecord).NumberParameters >= 2
             // The probe fixup below is for data accesses only. Skipping an
@@ -1563,10 +1571,33 @@ pub unsafe extern "system" fn KeFlushCurrentTb() {
     core::arch::asm!("isb", options(nomem, nostack));
 }
 
+/// Zero whole pages with `dc zva` (one cache-line block per instruction), the
+/// arm64 page-clear idiom. The C stub (and this port, until now) went through
+/// RtlZeroMemory to the CRT's byte-at-a-time memset: 128 KB per zero-page-
+/// thread batch took ~12 ms under TCG, and since arm64 acts on a timer only at
+/// an IRQL crossing, every short wait that fell while the zero thread ran paid
+/// that batch as extra latency (kmtest KeEvent's 1000-iteration scheduling
+/// test went 12 s -> 45 s once the zero thread became preemptible).
+/// Falls back to RtlZeroMemory only when the CPU prohibits DC ZVA (DCZID.DZP)
+/// or the range is not whole blocks -- callers pass page-aligned pages.
 #[no_mangle]
 pub unsafe extern "system" fn KeZeroPages(Address: PVOID, Size: ULONG) {
     let Address = opaque_ptr(Address);
-    RtlZeroMemory(Address, Size as usize);
+    let dczid: u64;
+    core::arch::asm!("mrs {0}, dczid_el0", out(reg) dczid, options(nomem, nostack, preserves_flags));
+    let block = 4usize << (dczid & 0xF);
+    let (start, size) = (Address as usize, Size as usize);
+    if dczid & (1 << 4) != 0 || start % block != 0 || size % block != 0 {
+        RtlZeroMemory(Address, size);
+        return;
+    }
+    let mut p = start;
+    while p < start + size {
+        core::arch::asm!("dc zva, {0}", in(reg) p, options(nostack, preserves_flags));
+        p += block;
+    }
+    // The zeroed page is about to be handed out, possibly to another CPU.
+    core::arch::asm!("dsb ish", options(nostack, preserves_flags));
 }
 
 // LDT_ENTRY doesn't exist on ARM64 — use ULONG64 placeholder for this stub
@@ -1580,18 +1611,49 @@ pub unsafe extern "system" fn NtSetLdtEntries(
     STATUS_NOT_IMPLEMENTED
 }
 
+/// APC kernel routine for NtGetContextThread / NtSetContextThread, run in the TARGET thread.
+///
+/// This was an empty stub on arm64: it never filled the CONTEXT and never set the event, so
+/// every cross-thread GetThreadContext/SetThreadContext waited forever in PsGetContextThread
+/// (appstorm's hung-app stack dump wedged on the first app it tried). Same shape as the i386
+/// psctx.c port: the trap frame goes through KeTrapFrameToContext / KeContextToTrapFrame.
+/// No exception frame is passed, so X19-X28 are neither read nor written, as on i386, whose
+/// callee-saved registers likewise live only in the kernel frames above the trap frame.
 #[no_mangle]
 pub unsafe extern "system" fn PspGetOrSetContextKernelRoutine(
     Apc: PKAPC,
-    NormalRoutine: *mut PKNORMAL_ROUTINE,
-    NormalContext: *mut PVOID,
-    SystemArgument1: *mut PVOID,
-    SystemArgument2: *mut PVOID,
+    _NormalRoutine: *mut PKNORMAL_ROUTINE,
+    _NormalContext: *mut PVOID,
+    _SystemArgument1: *mut PVOID,
+    _SystemArgument2: *mut PVOID,
 ) {
-    let NormalRoutine = opaque_ptr(NormalRoutine);
-    let NormalContext = opaque_ptr(NormalContext);
-    let SystemArgument1 = opaque_ptr(SystemArgument1);
-    let SystemArgument2 = opaque_ptr(SystemArgument2);
+    extern "system" {
+        fn KeSetEvent(Event: ntkrnl_sys::ddk::PKEVENT, Increment: KPRIORITY, Wait: BOOLEAN) -> LONG;
+    }
+    // GET_SET_CTX_CONTEXT { Apc, Event, Mode, Context }: Apc is the first field, so
+    // CONTAINING_RECORD is a cast.
+    let GetSetContext = Apc as ntkrnl_sys::ddk::PGET_SET_CTX_CONTEXT;
+    let Context: PCONTEXT = core::ptr::addr_of_mut!((*GetSetContext).Context);
+    let Mode = (*GetSetContext).Mode;
+    let Thread = (*Apc).SystemArgument2 as ntkrnl_sys::ddk::PKTHREAD;
+
+    // Kernel-mode requests use the trap frame saved on the KTHREAD; otherwise the user
+    // frame at the top of the kernel stack (arm64 thrdini puts KTRAP_FRAME last).
+    let mut TrapFrame: PKTRAP_FRAME = core::ptr::null_mut();
+    if Mode == KernelMode as KPROCESSOR_MODE {
+        TrapFrame = (*Thread).TrapFrame;
+    }
+    if TrapFrame.is_null() {
+        TrapFrame = ntkrnl_sys::inline::ke::KeGetTrapFrame(Thread);
+    }
+
+    // SystemArgument1 selects: non-NULL = set.
+    if !(*Apc).SystemArgument1.is_null() {
+        KeContextToTrapFrame(Context, core::ptr::null_mut(), TrapFrame, (*Context).ContextFlags, Mode);
+    } else {
+        KeTrapFrameToContext(TrapFrame, core::ptr::null_mut(), Context);
+    }
+    KeSetEvent(core::ptr::addr_of_mut!((*GetSetContext).Event), 0, 0);
 }
 
 #[no_mangle]

@@ -91,7 +91,11 @@ RUN_ID="$(runid_new "$ARCH")"
 RUN_DIR="$RUNS_DIR/$RUN_ID"
 mkdir -p "$RUN_DIR"
 
-KERNEL_IMAGE="$(arch_kernel_image "$ARCH")"
+# Every media boots the MP kernel by default (DefaultOS=LiveCD_SMP / ReactOS_Arm64_MP since
+# 2026-09-12). A best guess only: inspect.sh / run-until.sh re-derive it from the serial
+# log's "[FLDR] load" line once freeldr has printed it (runid_kernel_image).
+KERNEL_IMAGE="$(arch_kernel_image "$ARCH" mp)"
+[ -f "$KERNEL_IMAGE" ] || KERNEL_IMAGE="$(arch_kernel_image "$ARCH")"
 manifest_init "$RUN_ID" "$ARCH" "$KERNEL_IMAGE" "$OWNER_PID"
 
 GDB_PORT=""

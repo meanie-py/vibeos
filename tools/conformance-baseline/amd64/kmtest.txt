@@ -11,6 +11,12 @@
 #   (freezing one boot's face into the floor, the thing `--only` exists to
 #   prevent) and deleted this file's own provenance comments. Prefer a hand edit
 #   with a reason over a wholesale rewrite whenever the change is understood.
+# MmMdl lowered 2026-09-27, 575 -> 569, by HAND. Its count is not a set of
+#   assertions: MmMdl.c maps 32 MB MDLs "until we fail", four oks per mapping
+#   that succeeds, so the total is how much system VA this boot had free. Both
+#   faces are on record for unrelated batches (569 in queue-batch ...944931159437
+#   at 01:34, 575 in most others) with fail=0 every time; a ucrtbase batch that
+#   touched no kernel code was rejected for the 569 face. The floor is the low face.
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -105,7 +111,7 @@ KeIrql OK pass=131 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
-MmMdl OK pass=575 fail=0 skip=0 exit=0
+MmMdl OK pass=569 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003

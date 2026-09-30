@@ -557,6 +557,91 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **fastfat bugchecks in `FsRtlCheckOplock` on arm64** (OPEN, 2026-09-28; was "rename bugchecks
+  fastfat"). An access violation caught by `FatBugCheckExceptionFilter` becomes bugcheck 0x23.
+  P1 is always `0x100c0` because the Rust `FatBugCheck` is one out-of-line function, so it does
+  not identify the site. P4, the faulting PC, is `ntoskrnl.exe+0x11EBD8`, which is
+  `FsRtlCheckOplock+0x2c` in the current `ntkrnlmp.exe` (the default MP kernel). An earlier
+  symbolization against an older build read `RtlCopyUnicodeString` under
+  `FatSetRenameInfo`. Two triggers so far, both found by the ucrtbase Tier-2 grader:
+  - any `MoveFileExW` rename of an existing file in the guest temp dir, a never-seen target
+    name included (so not the tunnel cache);
+  - `_mktemp`'s grader creating and deleting a run of files: four shards out of four, 2026-09-28.
+
+  The grader skips the cases that reach it, behind `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` in
+  `tools/payloads/ucrtdiff/ucrtdiff.c`; set it to 0 when this closes. Still reproduces after
+  d98aba47853 (fastfat top-level IRP fix).
+  Owner: unassigned (fastfat/kernel lane).
+- **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
+  (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
+  control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
+  import library and ucrtbase ships a forward into msvcrt.dll. Found by
+  `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
+  (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
+  Owner: ucrt-rust lane.
+- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
+  the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
+  so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:
+  wordpad/devmgmt/dxdiag/rapps exit 0x6BA (RPC_S_SERVER_UNAVAILABLE: the ramdisk has no
+  spoolsv and no PlugPlay service -- a service needs its registry config staged, not just
+  the binary); charmap and eventvwr open no window; cpl-appwiz and cpl-ncpa open no window.
+  iexplore still faults (0xC0000005) after `failed to register CLSID_InternetExplorer:
+  80004002` even with actxprxy staged -- and ieframe dereferencing the NULL its failed
+  registration left is a bug of its own. That is the Pi's "internet browser died". On i386
+  `cpl-appwiz` opens no window either: control -> rundll32 -> rapps runs, but rapps exits 0
+  at once where amd64's shows "Add/Remove Programs". amd64 is 43/43. Owner: shell32-com lane.
+- **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
+  win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
+  `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a
+  thread mismatch on every window and dropped every posted message it dispatched. No app
+  closed on WM_CLOSE on any arch; every gate stayed green because appstorm scored a close
+  timeout as PASS (it fails now). `scan_bindgen_padding_index` gates the class.
+- **Hand-written constants vs the bindgen islands** (DONE 2026-09-27). All 89
+  `scan_const_vs_island` entries triaged: 28 real bugs fixed (among them winsrv's
+  IsConsoleMode calling NtUserCreateMenu, amd64 MAX_SYSCALL_PARAM_SIZE, smss's RESERVE_1MB
+  setting NX, fastfat/cdfs MDL flags, TOKEN_HAS_ADMIN_GROUP), the legitimate ones (freeldr's
+  ARC codes, driver-local ERROR levels) carry a `nolint` with their reason. The baseline is
+  empty: any new disagreement fails `vibeos-cli check`. Still owed from the sweep: fastfat's
+  `KeExpandKernelStackAndCalloutEx` extern takes `StackSize: u32` where the C has SIZE_T
+  (harmless while the shim ignores it).
+- **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
+  access violation too** (2026-09-27). The per-boot
+  `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation
+  and a pool-tracker breakpoint, each under try_finally inside try_except) runs everywhere.
+  **i386 FIXED:** a kernel-mode int3 is dispatched with interrupts still disabled and the
+  hand-built catch in ntoskrnl/sehtry.c resumed by `__builtin_longjmp`, which restores no
+  flags, so the next page fault bugchecked 0x0A with P2 = -1; `RtlSehTryExcept` now records
+  IF at try entry and restores it on the catch. **arm64 brk FIXED:** every kernel brk was
+  skipped in the trap handler, because DbgBreakPoint and DebugService shared `brk #0xF000`
+  and only x0 told them apart. DebugService now uses `#0xF002` (Windows ARM64's service
+  immediate), a kernel `#0xF000` is dispatched as STATUS_BREAKPOINT, and an unhandled one
+  steps past the brk and continues (the amd64 policy). User-mode brk is still skipped, and
+  `#0xF001` (assertion) is unchanged. **arm64 AV FIXED (2026-09-27):** VA 0x10 read physical page 0 through FreeLDR's
+  never-torn-down identity map. `MmFreeLoaderBlock` now unmaps VA 0-64K
+  (`MiUnmapLowGuardArm64`; serial `[MM] arm64: low guard ... MmIsAddressValid(0x10)=0`,
+  QEMU and Pi 4). The Pi4 spin table was not a reason to keep it: APs start by PSCI CPU_ON
+  with their own identity map, and hal-rust never touches PA 0xd8-0xf0.
+- **amd64: an exception caught in fastfat looped until the stack overflowed (0x7F/8) —
+  FIXED** (2026-09-27). The trigger was `FatPreallocateCloseContext`'s pool tag 0 (the
+  translation's invented constant; C has `TAG_FAT_CLOSE_CONTEXT`), which equals
+  `PoolHitTag`'s default and hit the pool tracker's `DbgBreakPoint`. That tag was fixed on
+  2026-09-26, along with a sweep of every kernel crate for a literal-0 tag. The unwinder was
+  innocent. `KiBreakpointTrap` dispatched a kernel int3 with IF=0, and the except block that
+  caught it resumed with interrupts still off. FatMountVolume's retry then sent
+  `IOCTL_DISK_GET_PARTITION_INFO_EX`: it completed synchronously, but its
+  `IopCompleteRequest` APC (a self-IPI) could not fire, so `FatPerformDevIoCtrl` returned
+  without waiting. The APC ran later and set a KEVENT in a dead frame, overwriting the
+  retry's saved RBP. The next dispatch walked into that value and looped.
+  `KiBreakpointTrap` and `KiGeneralProtectionFault` now dispatch with the trapped frame's IF
+  (as `KiPageFault` already did). The new check found the same bug on arm64 (`irqs=1/0`),
+  where the sync-exception path keeps DAIF masked on purpose. There `RtlSehTryExcept`
+  restores PSTATE.I on the catch, as the i386 catch already restored IF. Native C
+  `__try`/`__except` on arm64 still resumes masked; the trap-level fix is owed to the arm64
+  lanes. With the tag-0 repro restored, the boot survives and the
+  retried mount succeeds. The per-boot `[SEH-TRY] rust hw faults` test now checks IRQs
+  after each catch (`irqs=1/1`), and smoke fails any self-test `(FAIL)` line
+  (`SELFTEST_FAIL`); until then nothing read those verdicts. Found with `gdb probe`, whose
+  hardware watchpoint armed at function entry named `KeSetEvent` as the writer.
 - **i386 with a hard disk attached BUGCHECKs 0x1E after the volume mounts — FIXED**
   (2026-09-26). The volume was not the cause; loading fastfat was. When fs_rec saw the FAT
   volume it demand-loaded fastfat, and on i386 its DriverEntry returned into its caller's
@@ -581,16 +666,75 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
-- **fastfat pre-seal translation audit: other bodies may have lost statements — OPEN**
-  (2026-09-26). fastfat was translated before call sealing, so nothing checks that a Rust
-  body kept its C's calls. A throwaway per-function callee diff over all 356 paired
-  functions reports 441 missing names in 163 functions; most are macro expansions or
-  DUMMY_PSEH-dead finally blocks (e.g. `FatAddToWorkque` is equivalent). Leads worth reading
-  first: `FatQueueClose` (62 Rust lines vs 272 C), `FatCommonCreate`/`FatOpenExistingFile`
-  (no `FatDeleteFcb`/`FatDeleteCcb`/`FatDeleteDirent` failure cleanup),
-  `FatMountVolume` (`CcSetAdditionalCacheAttributesEx`). `FatInvalidateVolumes` and
-  `FatCommonSetEa` are LOUD stubs (bugcheck / `STATUS_INVALID_DEVICE_REQUEST`), not drops.
-  Method in the field manual: "A body can lose its TAIL with nothing to show for it".
+- **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
+  updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
+  early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
+  (about a minute, $0) pairs every flipped-out C function with its Rust: 130 modules, 46
+  clean, **9 silent stubs**, 249 `high` (state-changing callee missing), 988 `medium`, 110
+  `low`. Leads, not verdicts: read each against the C. FIXED from the audit so far:
+  - fastfat `FatCreateNewDirent` never marked new dirents used (entry above).
+  - fastfat `FatFsdPnp` stopped at `return Status` (its source was truncated): every PnP
+    IRP left the thread inside `FsRtlEnterFileSystem`'s critical region, kernel APCs
+    disabled for good, plus a stale top-level IRP. Fixed independently the same day by the
+    fastfat real-SEH lane (`bf8bbd0d86c`), whose version is the one in the tree.
+  - fastfat `FatLockVolumeInternal` dropped `FatCloseEaFile`: a FAT12/16 volume with an
+    `EA DATA. SF` kept an extra Vpb reference, so FSCTL_LOCK_VOLUME failed ACCESS_DENIED.
+  - shell32 `SHUpdateImageW`/`A` and `SHHandleUpdateImage` had taken Wine's `#else` FIXME
+    arm: icon changes were never announced or decoded.
+  - classpnp `ClasspScanForSpecialInRegistry` was empty: registry quirk bits never applied.
+  - kernel32 `BaseComputeProcessSearchPath` ignored `SafeProcessSearchMode` and
+    `SetSearchPathMode()`.
+  Checked and FALSE (each became a rule in the tool): shell32 `ILFindChild` (dead `#else`
+  arm), cdrom `DeviceEvtFileClose` (delegates to live C glue), hal
+  `HalpQueryPciRegistryInfo` (cfg twin), fastfat `FatAddToWorkque` (macro expansion),
+  `FatAllocate/DeallocateDiskSpace` (macros defined in the .c), `FatCommonCreate`'s
+  `if (_SEH2_AbnormalTermination())` unwinds (dead under DUMMY_PSEH), `FatMountVolume`'s
+  `NTDDI_VERSION > NTDDI_WIN8` block. Checked, divergent but benign: fastfat
+  `FatConstructNamesInFcb` stores an extended-character LFN Unicode-only, skipping the
+  C's OEM round-trip attempt (no leak).
+  `FatProcessException` was completed by the real-SEH lane. A crate on real SEH
+  (`ntkrnl_sys::seh`) owes its except handlers and `AbnormalTermination` unwinds, and the
+  audit now detects that per crate instead of assuming DUMMY_PSEH everywhere.
+  **Second pass (2026-09-27): 48 clean, 2 silent stubs, 195 `high`** (was 46 / 9 / 249).
+  The silent stubs split into two classes. First, **upstream work that landed on C already
+  flipped to Rust**, which nothing re-ports:
+  - win32k raw input: upstream #9498 added `rawinput.c` plus a device list in `input.c`
+    after ntuser went Rust-only, so `GetRawInputDeviceList` and `GetRawInputDeviceInfoW`
+    (forwarded straight to the syscalls by user32.spec) always reported no devices. Ported
+    (`win32k-rust/src/rawinput.rs`, the list in `input.rs`, user32's
+    `GetRawInputDeviceInfoA`/`GetRawInputBuffer`). This needed the win32k-sys island
+    regenerated, whose generator had broken four ways (`rust-in-kernel.md`).
+  - gdi32 `GetCharWidth*`/`GetGlyphIndicesA` lacked the DC validation of upstream #8690 and
+    #8747, found by upstream-sync (`upstream-sync-diff-shape-wave2.md`) and never applied:
+    a stale or non-DC handle went straight to the syscall. Ported; the ntgdi (kernel) half
+    of both commits stays with upstream-sync.
+  - netcfgx `ApplyPnpChanges` is one face of upstream's nine-commit `tcpipconf_notify.c`
+    rewrite (adapter list instead of `pCurrentConfig`), tracked by upstream-sync as the
+    "netcfgx cluster". OPEN there.
+  Second, faithful stubs the audit misread, now rules in the tool: wlansvc
+  `_RpcEnumInterfaces` (its body sits under a commented-out `GET_IF_ENTRY2_IMPLEMENTED`);
+  gdi32's `EMFDRV_*` (Wine's old `enhmfdrv/` is on disk but in no CMake list, and the live
+  `emfdrv.c` stubs replacing it are FIXME by design; a name defined by live C is no
+  longer a translation pair). Further rules: `NTDDI_VISTA`-style version aliases (fastfat
+  `FatOpenVolume`), an inline-expanded `IoSetCompletionRoutine` (`FatSingleAsync`), and a
+  nested macro the Rust calls by name (`FatUnpinBcb`, `CdFreePool`,
+  `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
+  `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
+  audit and a reading of the C confirm.
+  **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
+  the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
+  `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
+  `pack(1)` layout — upstream-sync wave-2 finding 19(b), which was INCONCLUSIVE), the
+  arbiter's 64-bit `Length`/`Alignment`, `RTL_BSD_DATA` (three new items, ported into
+  `BsdItemTable`), `EPROCESS`/`ETHREAD`'s `CycleTime` tails, `IO_BUS_TYPE_GUID_LIST`,
+  `KIPCR`. The NT6 OB callbacks (`07217d32458`) no longer need the transmutes ob, iomgr,
+  config and lpc carried past the old typedefs, and bindgen 0.73 now places a union's
+  bitfields (`RTL_BALANCED_NODE`'s `Red`/`Balance`) at bit 0 as C does. Nothing caught
+  the drift because `verify_offsets` was not gated and could not run on arm64 at all;
+  `check_committed_drift` now regenerates the size/offset asserts in every gate (`check --strict`).
+  The regen also let `scan_const_vs_island` see amd64 `MI_NUMBER_SYSTEM_PTES = 22000 * 22`
+  (upstream `4cba65d760a`, #8613) against the Rust's 22000. Baselined, not ported: that MM
+  layout change spans i386/amd64 init and is upstream-sync's (phase-4 review queue).
 - **arm64: CPUs 2 and 3 never schedule a thread at `-smp 4`. FIXED** (landed
   `c141e7f6f8de`, 2026-09-26). Two causes: a hand-written `KNODE` stand-in put
   `ProcessorMask` at offset 0 (the real field is at 32), so every thread's ideal
@@ -2296,6 +2440,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   event, not the loudest one" shape the stock-app NULL cascade below needs. This is a LEAD from
   reading raisers, NOT an observed stack: nothing has yet confirmed the fault goes through
   fastfat at all.
+  **2026-09-26: the BUGCHECK arm should now be a failed request.** fastfat runs on real SEH
+  (dummy-pseh-verdict.md step 3), so a `FatVerifyFcb`/`FatVerifyVcb` raise reaches
+  `FatExceptionFilter` as an expected status and `FatProcessException` fails the Irp instead
+  of the raise finding no handler. The lead above still stands: if sqlite32 now opens and
+  gets `STATUS_FILE_INVALID` back, the first `FcbBad` transition is the bug to chase.
 
   **Ordering consequence, now fixed:** this guest can take the whole boot down, so anything
   winlogon launches after it loses its verdict silently. That is exactly what happened when
@@ -4157,8 +4306,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     round ran `KeStartAllProcessors: 1 processor(s) online` (so not cross-CPU clock skew,
     and not the CPUs-2/3 bug). A ready kernel thread did not run for ~150 s on ONE CPU.
     Evidence: `/tmp/vibeos-cli/20260926-175208-lvwp5qhv-conformance-arm64/` (preserved to
-    `~/vibeos-flake-farm/fails/auto/`). Next: what held the CPU for those 150 s — the
-    flight recorder and census around that line, not more sweeps.
+    `~/vibeos-flake-farm/fails/auto/`).
+    **ROOT-CAUSED 2026-09-26: arm64 had no preemption, and the zero-page thread held the
+    CPU.** Host-stamped serial (conformance now stamps every round) showed the stall in
+    EVERY arm64 round, not only the failing one: ~95 s inside NpfsConnect with the guest
+    clock ticking and nothing scheduled. The 150 s round just had a worker item straddling
+    it. vCPU samples taken during the quiet (`silence-samples.txt`) sat in
+    `MmZeroPageThread` -> byte-wise `memset`. arm64's DISPATCH softint parked readied threads
+    in `Prcb->NextThread` and never switched to them, so the priority-0 thread ran until the
+    free list was empty. Fixed on `conformance-ratchet` (arm64 `KiDispatchPreemptArm64` from
+    `KfLowerIrql`, DAIF restored on resume, `KeZeroPages` via `dc zva`). arm64 conformance
+    rounds went from 175-255 s to 72-107 s, with zero silences, zero kmtest AWAIT timeouts,
+    smoke 3/3 and the ratchet holding. **Owed:** the arm64-only ReadySummary recheck in
+    `ke/wait.rs` and `ke/thrdschd.rs` (×2) existed because there was no preemption.
+    Instrument it for dead, then remove (archive/arm64-interrupts-quest.md). Preemption at
+    IRQ exit (a spinner that never crosses DISPATCH) is still absent (§9.19 hazard).
     **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
     test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
     `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;

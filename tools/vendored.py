@@ -545,6 +545,21 @@ def _is_nested_checkout(d: str) -> bool:
     return os.path.exists(os.path.join(d, ".git"))
 
 
+def _is_unwalked(d: str) -> bool:
+    """A directory no source scan may descend into: another checkout (see
+    `_is_nested_checkout`) or build output -- a cargo target directory, marked by
+    `.rustc_info.json` at its root or the standard `CACHEDIR.TAG` below it.
+    ucrt-difftest's build script extracts Microsoft's UCRT from git history into
+    `sdk/lib/rust/target/...`, and a walk that read it reported 20 "new" licence
+    findings for a tree that is not in the checkout at all.
+    """
+    return (
+        _is_nested_checkout(d)
+        or os.path.exists(os.path.join(d, ".rustc_info.json"))
+        or os.path.exists(os.path.join(d, "CACHEDIR.TAG"))
+    )
+
+
 #: An SPDX tag, or a ReactOS file header's `LICENSE:` line. Both are machine-readable
 #: statements by the FILE about itself, which is the only licence evidence that does not
 #: require reading prose.
@@ -736,7 +751,7 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
         if rel_dir == ".":
             rel_dir = ""
             dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
-        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if not _is_unwalked(os.path.join(dirpath, d))]
         for fn in filenames:
             if os.path.splitext(fn)[1].lower() not in _SUSPECT_SUFFIXES:
                 continue
@@ -805,7 +820,7 @@ def declared_licences(reg: Registry) -> list[tuple[str, str, int, str]]:
             for d in dirnames
             if not d.startswith(".")
             and not d.startswith("build-")
-            and not _is_nested_checkout(os.path.join(dirpath, d))
+            and not _is_unwalked(os.path.join(dirpath, d))
         ]
         rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
         if rel_dir.startswith(registered):
@@ -879,7 +894,7 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
     by_dir: dict[str, set[str]] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
-        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if not _is_unwalked(os.path.join(dirpath, d))]
         rd = os.path.relpath(dirpath, root).replace(os.sep, "/")
         by_dir[("" if rd == "." else rd)] = {f.lower() for f in filenames}
 
@@ -923,7 +938,7 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
         if rel_dir == ".":
             rel_dir = ""
             dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
-        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if not _is_unwalked(os.path.join(dirpath, d))]
         for fn_ in filenames:
             if os.path.splitext(fn_)[1].lower() not in _SUSPECT_SUFFIXES:
                 continue

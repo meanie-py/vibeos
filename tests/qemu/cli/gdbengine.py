@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..vm import PROJECT_DIR, get_arch_config, smp_count, temp_disk_args, tripwire_args
+from ..vm import PROJECT_DIR, get_arch_config, smp_count, temp_disk_args
 from . import archcfg
 
 RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
@@ -70,8 +70,10 @@ HELPER_FILES = [
     "triage-bugcheck.py",
     "walk-waitlist.py",
     "list-threads.py",
+    "who-holds.py",  # after list-threads.py + dump-thread.py: uses their offset tables
     "sample-pc.py",
     "run-until-bp.py",
+    "lm.py",
     # DWARF-free decoders over VIBEOS_DEBUG_BLOCK (sync-instrumentation §5):
     # vibeos-debug-block / vibeos-synctrace / vibeos-threads / vibeos-flightrec.
     "debug_block.py",
@@ -94,9 +96,12 @@ _VERB_MAP = {
     "pool-tag": "pool-tag {rest}",
     "identify-object": "identify-object {rest}",
     "list-threads": "list-threads {rest}",
+    "who-holds": "who-holds {rest}",
+    "stack-scan": "stack-scan {rest}",
     "sample-pc": "sample-pc {rest}",
     "symbolicate-pc": "info symbol {rest}",
     "regs-raw": "info registers {rest}",
+    "lm": "lm {rest}",
 }
 
 
@@ -189,6 +194,17 @@ def _win_alive(uid: str) -> bool:
         return False
 
 
+def _tripwire_fw_cfg() -> list[str]:
+    """VIBEOS_TRIPWIRE for a debug boot, as smoke passes it (vm.QemuVM._tripwire_args).
+    Without it a special-pool fault seen in smoke could not be caught under gdb."""
+    cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
+    if not cfg:
+        return []
+    if "," in cfg:
+        raise ValueError(f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r})")
+    return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
+
+
 def _build_windows_cmd(
     arch: str, config, win_cfg: dict, work_dir: Path, staging: Path, *, gdb_wait: bool
 ) -> tuple[list[str], dict]:
@@ -253,7 +269,7 @@ def _build_windows_cmd(
         *scratch_dev,
         *temp_dev,
         *(["-smp", str(smp)] if smp is not None else []),
-        *tripwire_args(),
+        *_tripwire_fw_cfg(),
         *arch_args,
     ]
     meta = {
@@ -369,7 +385,7 @@ def _helper_source_args() -> list[str]:
     return out
 
 
-def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float) -> str:
+def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float, relocate: bool = True) -> str:
     """Core: one `gdb-multiarch -batch` invocation — connect, source helpers, find
     kbase (relocate symbols), then the caller's verb -ex commands, always detach+quit.
     Returns combined stdout/stderr. The host timeout is a hard safety net."""
@@ -391,10 +407,9 @@ def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float) -> str:
         "interrupt",
         *_helper_source_args(),
     ]
-    if run.kernel_runtime_base:
-        ex += ["-ex", f"find-kbase {run.kernel_runtime_base}"]
-    else:
-        ex += ["-ex", "find-kbase"]
+    if relocate:
+        kbase = run.kernel_runtime_base
+        ex += ["-ex", f"find-kbase {kbase}" if kbase else "find-kbase"]
     ex += verb_ex
     ex += ["-ex", "delete breakpoints", "-ex", "detach", "-ex", "quit"]
 
@@ -426,12 +441,90 @@ def _expand_verb(token: str) -> str:
     return tmpl.format(rest=rest).rstrip()
 
 
+_KRNLBASE = r"\[KRNLBASE\] ntoskrnl runtime base=(?:0x)?([0-9a-fA-F]+)"
+
+
+def _await_kernel_base(run: DebugRun, timeout: float) -> bool:
+    """Cache the kernel's runtime base from its own [KRNLBASE] line, letting the guest
+    boot until it prints one.
+
+    A symbol breakpoint needs the kernel relocated, and find-kbase can only scan for an
+    image that is already mapped. A run fresh from `gdb start` is parked at reset, so the
+    scan found nothing, symbols stayed at the PE link address, and `--break KeBugCheckEx`
+    armed 0x49f942 — an address the guest never executes, so it silently never fired.
+    The guest prints its base (ARM3/sysldr.rs) on every arch before any driver loads.
+    """
+    import re
+
+    if run.kernel_runtime_base:
+        return True
+    rx = re.compile(_KRNLBASE)
+    log = Path(run.serial_log)
+
+    def base() -> str:
+        try:
+            m = rx.findall(log.read_text(errors="replace"))
+        except OSError:
+            return ""
+        return hex(int(m[-1], 16)) if m else ""
+
+    found = base()
+    if not found:
+        # Connecting halts the vCPUs (and a `-S` start never ran them); detaching
+        # resumes both, so the boot proceeds while the serial log is polled.
+        _run_gdb(run, [], timeout=60, relocate=False)
+        if wait_for(run, _KRNLBASE, timeout=timeout):
+            found = base()
+    if not found:
+        return False
+    run.kernel_runtime_base = found
+    run.save()
+    return True
+
+
+def _decorated(run: DebugRun, brk: str) -> str:
+    """The breakpoint spec for `brk`. i386 PE symbols are decorated (`_KeBugCheckEx@20`) and
+    gdb does not load them as minimal symbols, while the Rust DWARF names the function
+    `ntoskrnl_rust::ke::bug::KeBugCheckEx` — so a bare `--break KeBugCheckEx` was "not
+    defined" and never armed. Resolve it from the image's own table instead and break on
+    the relocated address (file VA - PE ImageBase + runtime base)."""
+    import re
+
+    if not run.arch.startswith("i386") or not re.fullmatch(r"[A-Za-z_]\w*", brk):
+        return brk
+    nm = PROJECT_DIR / ".build-tools/llvm-mingw/bin/llvm-nm"
+    try:
+        out = subprocess.run(
+            [str(nm), run.kernel_image], capture_output=True, text=True, timeout=60
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return brk
+    text = {}
+    for ln in out.splitlines():
+        parts = ln.split()
+        if len(parts) == 3 and parts[1] in ("T", "t"):
+            text[parts[2]] = int(parts[0], 16)
+    exact = [f"_{brk}", *sorted(n for n in text if n.startswith(f"_{brk}@"))]
+    hit = next((n for n in exact if n in text), None)
+    if hit is None or not run.kernel_runtime_base:
+        return brk
+    return f"*{text[hit] - _PE_IMAGE_BASE + int(run.kernel_runtime_base, 16):#x}"
+
+
+_PE_IMAGE_BASE = 0x400000
+
+
 def run_until(
     run: DebugRun, brk: str, *, timeout: float = 180.0, then: list[str] | None = None
 ) -> str:
     """Set a breakpoint, bounded-continue until it hits (or the in-gdb budget lapses),
     then run each `then` verb against the stopped target. Mirrors run-until.sh."""
-    verb_ex = ["-ex", f"break {brk}", "-ex", f"bounded-continue {timeout}"]
+    if not _await_kernel_base(run, timeout):
+        return (
+            "=== BREAKPOINT NOT SET: the kernel never printed [KRNLBASE] within "
+            f"{timeout:.0f}s, so a symbol would resolve to its unrelocated link address ==="
+        )
+    verb_ex = ["-ex", f"break {_decorated(run, brk)}", "-ex", f"bounded-continue {timeout}"]
     for t in then or []:
         if not t:
             continue
@@ -603,14 +696,13 @@ def _cfg(repo: Path):
 
 def cmd_start(args, repo: Path) -> int:
     backend, win_cfg = _cfg(repo)
+    if getattr(args, "tripwire", ""):
+        os.environ["VIBEOS_TRIPWIRE"] = args.tripwire
     run = start(args.arch, backend=backend, win_cfg=win_cfg, gdb_wait=args.wait)
     print(f"run-id : {run.run_id}")
     print(f"gdb    : {run.gdb_host}:{run.gdb_port}  (gdb-multiarch target remote)")
     print(f"serial : {run.serial_log}")
     print(f"kernel : {run.kernel_image}")
-    tripwire = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
-    if tripwire:
-        print(f"tripwire: {tripwire}  (fw_cfg opt/org.vibeos.tripwire)")
     print(f"\nnext: vibeos-cli gdb wait-for {run.run_id} --pattern '<marker>'")
     print(f"      vibeos-cli gdb run-until {run.run_id} --break KeBugCheckEx")
     print(f"      vibeos-cli gdb stop {run.run_id}")

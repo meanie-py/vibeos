@@ -759,6 +759,83 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
     }
 }
 
+/// arm64's half of x86's DPC-interrupt tail (amd64 `KiDpcInterruptHandler`,
+/// i386 `KiDispatchInterrupt`): honour a quantum end, or hand the CPU to the
+/// thread timer expiration readied, at the moment the IRQL crosses under
+/// DISPATCH_LEVEL. The HAL's KfLowerIrql calls this at DISPATCH on that
+/// crossing, in thread context, after its softint drain has finished.
+///
+/// Without it arm64 had NO preemption: `KiDispatchSoftwareIntArm64` expires
+/// timers with DpcRoutineActive set, so KiExitDispatcher only parks the woken
+/// thread in `Prcb->NextThread`, and nothing but the idle loop or a voluntary
+/// wait ever switched to it; `KeUpdateRunTime`'s QuantumEnd was never read at
+/// all. So a thread that never blocks kept the CPU: the priority-0 zero-page
+/// thread, zeroing the free list after kmtest MmSection, held one arm64 CPU
+/// for ~95 s of every conformance round -- clock ticking, not one thread
+/// scheduled -- until the list ran dry.
+///
+/// Declines (leaving NextThread for the next crossing, a wait, or the idle
+/// loop) when IRQs are masked -- PSTATE.DAIF is not per-thread, and a switch
+/// from a masked SVC path would hand the next thread a masked CPU -- from the
+/// idle thread, which consumes NextThread itself and must never be queued
+/// ready, and inside a DPC.
+///
+/// For the same reason the preempted thread puts its OWN DAIF back when it is
+/// resumed: whoever switches back to it may do so from a masked context (every
+/// SVC wait does), and a system thread never ERETs to heal that. The first cut
+/// without the restore had the zero-page thread resume masked and zero the
+/// free list with every IRQ off -- 63 s of host time, 0.4 s of guest time.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "system" fn KiDispatchPreemptArm64() {
+    let Prcb = KeGetCurrentPrcb();
+    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() {
+        return;
+    }
+    if (*Prcb).DpcRoutineActive != 0 || (*Prcb).CurrentThread == (*Prcb).IdleThread {
+        return;
+    }
+    let daif: u64;
+    core::arch::asm!("mrs {0}, daif", out(reg) daif, options(nomem, nostack, preserves_flags));
+    if daif & (1 << 7) != 0 {
+        return;
+    }
+
+    if (*Prcb).QuantumEnd != 0 {
+        (*Prcb).QuantumEnd = 0u8;
+        KiQuantumEnd();
+        core::arch::asm!("msr daif, {0}", in(reg) daif, options(nomem, nostack));
+        return;
+    }
+
+    KiAcquirePrcbLock(Prcb);
+    let NewThread: PKTHREAD = (*Prcb).NextThread;
+    if NewThread.is_null() {
+        KiReleasePrcbLock(Prcb);
+        return;
+    }
+    let OldThread: PKTHREAD = (*Prcb).CurrentThread;
+
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::ki_check_promote_not_linked(NewThread, 0x05); // KiDispatchPreemptArm64
+
+    (*Prcb).NextThread = core::ptr::null_mut();
+    (*Prcb).CurrentThread = NewThread;
+    *kt_State(NewThread) = Running;
+    #[cfg(feature = "smp")]
+    ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
+    (*OldThread).WaitReason = ntkrnl_sys::ddk::_KWAIT_REASON_WrDispatchInt as u8;
+
+    // Swap-busy BEFORE the ready insert, as in KiQuantumEnd: another CPU that
+    // picks OldThread up must wait for its context to be saved.
+    KiSetThreadSwapBusy(OldThread);
+    KxQueueReadyThread(OldThread, Prcb);
+    *kt_WaitIrql(OldThread) = APC_LEVEL;
+
+    KiSwapContext(APC_LEVEL, OldThread);
+    core::arch::asm!("msr daif, {0}", in(reg) daif, options(nomem, nostack));
+}
+
 unsafe fn KiInitializeDpc(
     Dpc: PKDPC,
     DeferredRoutine: PKDEFERRED_ROUTINE,

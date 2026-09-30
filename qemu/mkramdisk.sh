@@ -159,6 +159,15 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"
     "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
     "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"
+    # USB mass storage: usbstor -> disk (classpnp) with the partmgr class filter,
+    # and mountmgr for drive letters. The hive already names all of these as boot
+    # drivers; without the files the loader drops them and a stick enumerates
+    # with no driver.
+    "$BUILD_DIR/drivers/usb/usbstor/usbstor.sys"
+    "$BUILD_DIR/drivers/storage/class/classpnp/classpnp.sys"
+    "$BUILD_DIR/drivers/storage/class/disk/disk.sys"
+    "$BUILD_DIR/drivers/storage/partmgr/partmgr.sys"
+    "$BUILD_DIR/drivers/storage/mountmgr/mountmgr.sys"
     "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
     "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
     "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"
@@ -417,6 +426,11 @@ RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/d
 RMC "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"           ::/reactos/system32/drivers/usbxhci.sys
 RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
 RMC "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"           ::/reactos/system32/drivers/usbccgp.sys
+RMC "$BUILD_DIR/drivers/usb/usbstor/usbstor.sys"           ::/reactos/system32/drivers/usbstor.sys
+RMC "$BUILD_DIR/drivers/storage/class/classpnp/classpnp.sys" ::/reactos/system32/drivers/classpnp.sys
+RMC "$BUILD_DIR/drivers/storage/class/disk/disk.sys"       ::/reactos/system32/drivers/disk.sys
+RMC "$BUILD_DIR/drivers/storage/partmgr/partmgr.sys"       ::/reactos/system32/drivers/partmgr.sys
+RMC "$BUILD_DIR/drivers/storage/mountmgr/mountmgr.sys"     ::/reactos/system32/drivers/mountmgr.sys
 RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
 RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys
 RMC "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"             ::/reactos/system32/drivers/hidusb.sys
@@ -583,6 +597,25 @@ RMC "$BUILD_DIR/dll/win32/samsrv/samsrv.dll"                   ::/reactos/system
 # import-table walk — lsass.exe's every STATIC import resolves and it still died
 # with ExitStatus=0xC0000135 (STATUS_DLL_NOT_FOUND) propagated as its exit code.
 RMC "$BUILD_DIR/dll/win32/msv1_0/msv1_0.dll"                   ::/reactos/system32/msv1_0.dll
+
+# The stock apps and control-panel applets (qemu/ramdisk-apps.txt), with their whole
+# import closure, at their livecd destinations. Derived, not hand-listed: before this the
+# ramdisk carried notepad/cmd/explorer only and appstorm found 36 of 43 apps ABSENT on
+# arm64. `vibeos-cli build --arch arm64` builds the closure; ramdisk_apps.py HARD-FAILS on
+# an unbuilt or unresolvable member rather than stage a half-bound module. Modules staged
+# by hand above are left out of its list, so the curated copy stays authoritative.
+echo "[*] Staging stock apps (qemu/ramdisk-apps.txt closure)..."
+APPS_LST="$BUILD_DIR/boot/ramdisk-apps.lst"
+python3 "$PROJECT_DIR/tools/ramdisk_apps.py" --stage --build-dir "$BUILD_DIR" > "$APPS_LST" || {
+    echo "[!] ramdisk app closure is incomplete (see above) -- run ./vibeos-cli build --arch arm64"
+    exit 1
+}
+python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$APPS_LST" --out "$APPS_LST.stripped" \
+    --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY" || exit 1
+while IFS='=' read -r dest src; do
+    [ -n "$dest" ] || continue
+    mcopy -o -i "$RAMDISK_IMG" "$src" "::/$dest"
+done < "$APPS_LST.stripped"
 
 KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
 if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then

@@ -29,7 +29,7 @@
 //!   EINVAL and -1, quietly.
 
 use crate::locale_update::LocaleUpdate;
-use core::ffi::{c_int, c_void};
+use core::ffi::{c_char, c_int, c_void};
 use core::ptr::null_mut;
 
 const EINVAL: c_int = 22;
@@ -116,7 +116,7 @@ extern "C" {
     fn __acrt_MultiByteToWideChar(
         cp: u32,
         flags: u32,
-        src: *const u8,
+        src: *const c_char,
         src_len: c_int,
         dst: *mut u16,
         dst_len: c_int,
@@ -126,9 +126,9 @@ extern "C" {
         flags: u32,
         src: *const u16,
         src_len: c_int,
-        dst: *mut u8,
+        dst: *mut c_char,
         dst_len: c_int,
-        default_char: *const u8,
+        default_char: *const c_char,
         used_default: *mut c_int,
     ) -> c_int;
     fn __loctotime32_t(yr: c_int, mo: c_int, dy: c_int, hr: c_int, mn: c_int, sc: c_int, dst: c_int)
@@ -342,7 +342,7 @@ impl<C> Buf<C> {
 }
 
 /// `__acrt_convert_wcs_mbs_cp`'s failure arm: map the OS error, return errno.
-unsafe fn os_errno() -> c_int {
+pub(crate) unsafe fn os_errno() -> c_int {
     __acrt_errno_map_os_error(GetLastError());
     *_errno()
 }
@@ -359,19 +359,19 @@ pub(crate) unsafe fn mbs_to_wcs(s: *const u8, cp: u32) -> Result<Option<Buf<u16>
         return Ok(Some(b));
     }
     let flags = MB_PRECOMPOSED | MB_ERR_INVALID_CHARS;
-    let need = __acrt_MultiByteToWideChar(cp, flags, s, -1, null_mut(), 0);
+    let need = __acrt_MultiByteToWideChar(cp, flags, s.cast(), -1, null_mut(), 0);
     if need == 0 {
         return Err(os_errno());
     }
     let b = Buf::<u16>::alloc(need as usize)?;
-    if __acrt_MultiByteToWideChar(cp, flags, s, -1, b.0, need) == 0 {
+    if __acrt_MultiByteToWideChar(cp, flags, s.cast(), -1, b.0, need) == 0 {
         return Err(os_errno());
     }
     Ok(Some(b))
 }
 
 /// `__acrt_wcs_to_mbs_cp` over a non-NULL name.
-unsafe fn wcs_to_mbs(s: *const u16, cp: u32) -> Result<Buf<u8>, c_int> {
+pub(crate) unsafe fn wcs_to_mbs(s: *const u16, cp: u32) -> Result<Buf<u8>, c_int> {
     if *s == 0 {
         let b = Buf::<u8>::alloc(1)?;
         *b.0 = 0;
@@ -382,7 +382,7 @@ unsafe fn wcs_to_mbs(s: *const u16, cp: u32) -> Result<Buf<u8>, c_int> {
         return Err(os_errno());
     }
     let b = Buf::<u8>::alloc(need as usize)?;
-    if __acrt_WideCharToMultiByte(cp, 0, s, -1, b.0, need, core::ptr::null(), null_mut()) == 0 {
+    if __acrt_WideCharToMultiByte(cp, 0, s, -1, b.0.cast(), need, core::ptr::null(), null_mut()) == 0 {
         return Err(os_errno());
     }
     Ok(b)

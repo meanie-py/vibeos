@@ -8,12 +8,6 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ps::*;
 use ntkrnl_sys::rtl::*;
-// Crate-local definition, because this crate OWNS the Rust translation of
-// CmpSecurityMethod -- not because the substrate is wrong. The note that used to sit here
-// said the ddk extern was a stale 8-param decl predating cm.h's AccessMode addition and
-// "never regenerated". That was true and is no longer: OB_SECURITY_METHOD now carries the
-// 9th param (KPROCESSOR_MODE AccessMode). Do not cite this site as precedent for
-// transmuting past the substrate; regenerate it instead.
 use crate::cmse::CmpSecurityMethod;
 use ntkrnl_sys::ddk::{
     ACCESS_MASK, ANSI_STRING, CMHIVE, CM_KEY_BODY, CM_KEY_NODE, CM_PARSE_CONTEXT,
@@ -722,11 +716,11 @@ pub unsafe extern "system" fn CmpDeleteKeyObject(DeletedObject: PVOID) {
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpCloseKeyObject(
-    Process: PEPROCESS,
+    Process: ntkrnl_sys::ddk::PEPROCESS,
     Object: PVOID,
     GrantedAccess: ACCESS_MASK,
-    ProcessHandleCount: ULONG_PTR,
-    SystemHandleCount: ULONG_PTR,
+    ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
     let Process = opaque_ptr(Process);
     let Object = opaque_ptr(Object);
@@ -821,32 +815,6 @@ pub unsafe extern "system" fn CmpQueryKeyName(
 
 unsafe extern "system" fn CmpDeleteKeyObjectCallback(Object: PVOID) {
     CmpDeleteKeyObject(Object);
-}
-
-unsafe extern "system" fn CmpCloseKeyObjectCallback(
-    Process: ntkrnl_sys::ddk::PEPROCESS,
-    Object: PVOID,
-    GrantedAccess: ACCESS_MASK,
-    // ddk::ULONG_PTR, not the base one: OB_CLOSE_METHOD is declared with the bindgen
-    // ddk alias (c_ulonglong on 64-bit) while `base::ULONG_PTR` is `usize`. Same size,
-    // DIFFERENT type to rustc, so a fn-pointer coercion to CloseProcedure fails on the
-    // alias alone. Match the callee's declared type name, never its width.
-    ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
-    SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
-) {
-    // Matching OB_CLOSE_METHOD (ndk/obtypes.h:188). This shim used to take
-    // ULONG and widen at the call, with a comment saying the bindgen island was stale
-    // and had never been regenerated. That was true, and working around it here meant
-    // the function REGISTERED as CloseProcedure had 4-byte handle counts where the
-    // caller passes 8 on 64-bit — a live ABI mismatch on every key close, papered over
-    // at the wrong end. The island is regenerated now, so the shim just matches.
-    CmpCloseKeyObject(
-        Process as _,
-        Object,
-        GrantedAccess,
-        ProcessHandleCount as ULONG_PTR,
-        SystemHandleCount as ULONG_PTR,
-    );
 }
 
 unsafe extern "system" fn CmpQueryKeyNameCallback(
@@ -1617,15 +1585,9 @@ pub unsafe extern "system" fn CmpCreateObjectTypes() -> NTSTATUS {
     ObjectTypeInitializer.UseDefaultObject = 1u8;
     ObjectTypeInitializer.DeleteProcedure = Some(CmpDeleteKeyObjectCallback);
     ObjectTypeInitializer.ParseProcedure = Some(CmpParseKey);
-    // CmpSecurityMethod's real (C-header) signature grew a trailing KPROCESSOR_MODE
-    // AccessMode param that the stale bindgen OB_SECURITY_METHOD typedef does not
-    // carry yet; transmute past the field's outdated arity like fltmgr's
-    // CloseProcedure does for the analogous ULONG_PTR drift.
-    ObjectTypeInitializer.SecurityProcedure = Some(core::mem::transmute(
-        CmpSecurityMethod as unsafe extern "system" fn(_, _, _, _, _, _, _, _, _) -> i32,
-    ));
+    ObjectTypeInitializer.SecurityProcedure = Some(CmpSecurityMethod);
     ObjectTypeInitializer.QueryNameProcedure = Some(CmpQueryKeyNameCallback);
-    ObjectTypeInitializer.CloseProcedure = Some(CmpCloseKeyObjectCallback);
+    ObjectTypeInitializer.CloseProcedure = Some(CmpCloseKeyObject);
     ObjectTypeInitializer.SecurityRequired = 1u8;
     ObjectTypeInitializer.InvalidAttributes = OBJ_EXCLUSIVE | OBJ_PERMANENT;
     // Deliberately NO `CaseInsensitive = TRUE` here. Setting it looks like the fix

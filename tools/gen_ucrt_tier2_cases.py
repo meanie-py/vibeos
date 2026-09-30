@@ -525,7 +525,7 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
     # export, or when the harness's own deadline has passed. Emitting the call inside
     # the `if` is what keeps sharding and the deadline in ONE place -- the driver
     # stays a flat list and neither concern leaks into the generated bodies.
-    out += ["static void run_generated(void)", "{", "    int outcome;", ""]
+    out += ["static void run_generated(void)", "{"] + (["    int outcome;", ""] if rows else [])
     for _e, name, _kinds, has_rust in rows:
         out.append(f'    if (export_begin("{name}")) {{')
         out.append(f"        outcome = run_guarded(ucrtdiff_run_{name});")
@@ -544,6 +544,89 @@ def emit(rows: list[tuple[str, str, list[str]]]) -> str:
 #: while the object was right there. So the question "does the reference have it"
 #: is answered HERE, from the archive, as a macro the harness compiles against.
 HAND_GRADED = (
+    # stdlib batch: rand.cpp (rand, srand). Hand-graded; still QUARANTINED from the
+    # generated sweep, where it once took a boot down.
+    "rand",
+    # exec_rest batch (hand-graded in ucrtdiff.c).
+    "_cwait",
+    "_getdllprocaddr",
+    "_loaddll",
+    "system",
+    # env batch (hand-graded in ucrtdiff.c).
+    "__dcrt_get_wide_environment_from_os",
+    "__p__environ",
+    "_putenv",
+    "_searchenv",
+    "getenv",
+    # conio batch (hand-graded in ucrtdiff.c).
+    "__conio_common_vcprintf",
+    "__conio_common_vcscanf",
+    "_cgets",
+    "_cgetws",
+    "_cputs",
+    "_cputws",
+    "_getch",
+    "_getwch",
+    "_pipe",
+    "_popen",
+    "_putch",
+    "_putwch",
+    # lowio batch (hand-graded in ucrtdiff.c).
+    "__p__fmode",
+    "_chsize",
+    "_close",
+    "_commit",
+    "_creat",
+    "_dup",
+    "_dup2",
+    "_eof",
+    "_filelength",
+    "_isatty",
+    "_locking",
+    "_lseek",
+    "_mktemp",
+    "_read",
+    "_setmode",
+    "_tell",
+    "_telli64",
+    "_umask",
+    "_write",
+    # stdlib batch (hand-graded in ucrtdiff.c).
+    "_lfind",
+    "_lfind_s",
+    "_lsearch",
+    "_lsearch_s",
+    "abs",
+    "bsearch",
+    "bsearch_s",
+    "div",
+    "imaxabs",
+    "imaxdiv",
+    "labs",
+    "ldiv",
+    "llabs",
+    "lldiv",
+    "qsort",
+    "qsort_s",
+    "rand_s",
+    # heap batch (hand-graded in ucrtdiff.c).
+    "_calloc_base",
+    "_expand",
+    "_free_base",
+    "_get_heap_handle",
+    "_heapchk",
+    "_heapmin",
+    "_heapwalk",
+    "_malloc_base",
+    "_msize",
+    "_realloc_base",
+    "_recalloc",
+    "_set_new_handler",
+    "_set_new_mode",
+    "calloc",
+    "free",
+    "malloc",
+    "realloc",
     "strcat",
     "strcpy",
     "strncat",
@@ -689,6 +772,216 @@ HAND_GRADED = (
     "_fstat32i64",
     "_fstat64i32",
     "_fstat64",
+    # run_loc_* (locale/*.cpp, mbstring/mbctype.cpp): one family, one guard.
+    "setlocale",
+    # The second fan-out batch: one guard per C file (tools/payloads/ucrtdiff/staging/).
+    "atof",
+    "_ctime32",
+    "_get_daylight",
+    "__p___argc",
+    "_aligned_malloc",
+    "_invalid_parameter",
+    "_sopen_dispatch",
+    "_spawnv",
+    "_spawnvp",
+    "_spawnl",
+    "_spawnlp",
+    # The third fan-out batch: mbstring/*.cpp, one guard per C file.
+    "_mbccpy_s",
+    "_mbclen",
+    "_mbschr",
+    "_mbscmp",
+    "_mbscspn",
+    "_mbsinc",
+    "_mbslen",
+    "_mbslwr",
+    "_mbsnbcat_s",
+    "_mbsnbcmp",
+    "_mbsnbcpy_s",
+    "_mbsnbset_s",
+    "_mbsncat_s",
+    "_mbsncpy",
+    "_mbsncpy_s",
+    "_mbsnset",
+    "_mbsnset_s",
+    "_mbsstr",
+    "_mbstok",
+    "_setmbcp",
+    # The third fan-out batch: string/*.cpp and string/<arch>/*.s, one guard per C file.
+    "__strncnt",
+    "__wcsncnt",
+    "_memccpy",
+    "_memicmp",
+    "_strdup",
+    "_stricmp",
+    "_stricoll",
+    "_strlwr",
+    "_strncoll",
+    "_strnicmp",
+    "_strnicoll",
+    "_strnset",
+    "_strnset_s",
+    "_strrev",
+    "_strset",
+    "_strset_s",
+    "_strupr",
+    "_wcsdup",
+    "_wcsicmp",
+    "_wcsicoll",
+    "_wcslwr",
+    "_wcsncoll",
+    "_wcsnicmp",
+    "_wcsnicoll",
+    "_wcsnset_s",
+    "_wcsset_s",
+    "_wcsupr",
+    "memcpy_s",
+    "strcat_s",
+    "strcmp",
+    "strcoll",
+    "strcpy_s",
+    "strncat_s",
+    "strncmp",
+    "strncpy_s",
+    "strnlen",
+    "strtok",
+    "strtok_s",
+    "strxfrm",
+    "wcscat",
+    "wcscat_s",
+    "wcscoll",
+    "wcscpy_s",
+    "wcsncat_s",
+    "wcsncpy_s",
+    "wcstok",
+    "wcstok_s",
+    "wcsxfrm",
+    "wmemcpy_s",
+    "wmemmove_s",
+    # The third fan-out batch: time/*.cpp, one guard per C file.
+    "_difftime32",
+    "_ftime32",
+    "_gmtime32",
+    "_localtime32",
+    "_mktime32",
+    "_strdate",
+    "_strtime",
+    "_time32",
+    "_tzset",
+    "_utime32",
+    "asctime",
+    "clock",
+    "strftime",
+    "wcsftime",
+    # The stdio batch: one guard per C file.
+    "_getw",
+    "_putw",
+    "_tempnam",
+    "fgetc",
+    "fgets",
+    "fgetwc",
+    "fputc",
+    "fputs",
+    "fputwc",
+    "fputws",
+    "gets_s",
+    "tmpfile",
+    "ungetc",
+    "ungetwc",
+    "__p__commode",
+    "_fcloseall",
+    "_fdopen",
+    "_fileno",
+    "_set_printf_count_output",
+    "_setmaxstdio",
+    "clearerr",
+    "fclose",
+    "feof",
+    "fflush",
+    "fgetpos",
+    "fopen",
+    "fread",
+    "freopen",
+    "fseek",
+    "fsetpos",
+    "ftell",
+    "fwrite",
+    "rewind",
+    "setbuf",
+    "setvbuf",
+    "__stdio_common_vsscanf",
+    # The sixth fan-out batch: convert (rest), misc, filesystem -- one guard per C file.
+    "_atoldbl",
+    "_fcvt",
+    "_gcvt",
+    "_ismbstrail",
+    "_mbstrlen",
+    "_swab",
+    "c16rtomb",
+    "c32rtomb",
+    "mblen",
+    "mbrtoc16",
+    "mbrtoc32",
+    "mbrtowc",
+    "mbstowcs",
+    "mbtowc",
+    "wcrtomb",
+    "wcstombs",
+    "wctomb",
+    "wctrans",
+    "__sys_nerr",
+    "_chdir",
+    "_errno",
+    "_getcwd",
+    "_getdiskfree",
+    "_getdrive",
+    "_getdrives",
+    "_getpid",
+    "_getsystime",
+    "_resetstkoflw",
+    "_seh_filter_exe",
+    "_set_error_mode",
+    "_seterrormode",
+    "_sleep",
+    "_strerror",
+    "_wperror",
+    "is_wctype",
+    "perror",
+    "set_terminate",
+    "signal",
+    "strerror",
+    "_access",
+    "_chmod",
+    "_fullpath",
+    "_makepath",
+    "_mkdir",
+    "_rmdir",
+    "_splitpath",
+    "_waccess",
+    "_wchmod",
+    "_wmkdir",
+    "_wremove",
+    "_wrename",
+    "_wrmdir",
+    "remove",
+    "rename",
+)
+
+
+#: Exports the harness calls on the reference side only to DRIVE state (set a locale, a
+#: multibyte code page) for other rows. See emit_refs.
+REF_DRIVERS = (
+    "setlocale",
+    "_setmbcp",
+    "_getmbcp",
+    # conio's _pipe round trip drives each side's own lowio.
+    "_close",
+    "_read",
+    "_write",
+    "_setmode",
+    "_get_osfhandle",
+    "_get_fmode",
+    "_set_fmode",
 )
 
 
@@ -700,6 +993,17 @@ def emit_refs(arch: str) -> str:
     ]
     for name in HAND_GRADED:
         lines.append(f"#define UCRTDIFF_REF_HAS_{name} {int(name in have)}")
+    # CALLABLE: the harness can call ref_<name> to put the reference instance into a
+    # state, either Microsoft's copy or -- once a takeover removed it -- the alias of
+    # our Rust copy that build_internals_set writes. Never a grade.
+    alias_file = REPO / f"build-{arch}" / "libucrt_ours.refalias"
+    aliased = set()
+    if alias_file.is_file():
+        for line in alias_file.read_text().splitlines():
+            ref_name = line.split("=", 1)[0]
+            aliased.add(ref_name.split("ref_", 1)[1] if "ref_" in ref_name else ref_name)
+    for name in REF_DRIVERS:
+        lines.append(f"#define UCRTDIFF_REF_CALLABLE_{name} {int(name in have or name in aliased)}")
     return "\n".join(lines) + "\n"
 
 
@@ -728,8 +1032,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"gen-ucrt-tier2-cases: FAIL ({args.arch}): {exc}", file=sys.stderr)
         return 1
     if not rows:
-        print(f"gen-ucrt-tier2-cases: FAIL ({args.arch}): selected nothing", file=sys.stderr)
-        return 1
+        # Not an error any more: the burn-down has taken every export this generator
+        # can drive (the abs/div family was the last), so what is left of the Microsoft
+        # side is graded by the hand-written runners alone. The harness still fails a
+        # shard that grades nothing at all ("no cases ran"), so this cannot hide a
+        # broken selection behind an empty but green run.
+        print(
+            f"gen-ucrt-tier2-cases ({args.arch}): no generator-drivable exports left",
+            file=sys.stderr,
+        )
 
     if args.stats:
         hist = collections.Counter("_".join(k) or "VOID" for _e, _n, k, _r in rows)

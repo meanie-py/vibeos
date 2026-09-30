@@ -47,6 +47,7 @@ for A in $ARCHES; do
 
     REF="$B/libucrt_ref.a"
     RUST="$B/libucrt_rust.a"
+    OURS="$B/libucrt_ours.a"
     # UCRTDIFF_REUSE_INPUTS=1 keeps the reference set, the rust set and the case list
     # from the previous run instead of rebuilding them. None of the three depends on
     # the shard (only the -D flags below do), and a TAKEOVER CHECK needs them frozen:
@@ -55,7 +56,7 @@ for A in $ARCHES; do
     # bodies from ref_ AND (the burn-down now calling those exports ours) drop the
     # exports from the case list -- every later shard grading less, with no error.
     if [ "${UCRTDIFF_REUSE_INPUTS:-0}" = "1" ]; then
-        for f in "$REF" "$RUST" "$HERE/generated.inc" "$HERE/generated-refs.h"; do
+        for f in "$REF" "$RUST" "$OURS" "$HERE/generated.inc" "$HERE/generated-refs.h"; do
             [ -s "$f" ] || { echo "[ucrtdiff] FAIL($A): UCRTDIFF_REUSE_INPUTS=1 but $f is missing"; exit 1; }
         done
         echo "[ucrtdiff] $A: REUSING the reference set, rust set and case list (frozen)"
@@ -71,7 +72,20 @@ for A in $ARCHES; do
     echo "[ucrtdiff] building the $A msvcrt-rust set"
     python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side msvcrt-rust
     [ -s "$RUST" ] || { echo "[ucrtdiff] FAIL($A): $RUST missing"; exit 1; }
+
+    # The internals a takeover moved to Rust that the REMAINING Microsoft objects still
+    # call (the locale hooks, __acrt_CompareStringA...). Only those keep their names;
+    # see build_internals_set.
+    echo "[ucrtdiff] building the $A reference-internals set"
+    python3 "$ROOT/tools/ucrt_tier2_refset.py" --arch "$A" --side ucrt-internals
+    [ -s "$OURS" ] || { echo "[ucrtdiff] FAIL($A): $OURS missing"; exit 1; }
     fi
+    # ref_X for a function export a takeover removed from the reference set: an alias of
+    # our Rust copy in the reference instance (see build_internals_set). The file may be
+    # empty, but it must exist -- a missing one means the internals set is stale.
+    [ -f "$B/libucrt_ours.refalias" ] || { echo "[ucrtdiff] FAIL($A): $B/libucrt_ours.refalias missing -- rebuild without UCRTDIFF_REUSE_INPUTS"; exit 1; }
+    REFALIAS=()
+    while IFS= read -r a; do [ -n "$a" ] && REFALIAS+=("-Wl,-Xlink=-alternatename:$a"); done < "$B/libucrt_ours.refalias"
 
     # The ucrtbase IMPORT LIB is what makes the bare side resolve to our shipping
     # DLL. It is a normal build target, but only gets built when something links
@@ -119,9 +133,11 @@ for A in $ARCHES; do
     "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" "$HERE/stubs.c" \
         -DUCRTDIFF_SHARD_K="$SHARD_K" -DUCRTDIFF_SHARD_N="$SHARD_N" \
         -DUCRTDIFF_BUDGET_MS="$BUDGET_MS" \
+        "${REFALIAS[@]}" \
         -Wl,--start-group \
         "$REF" \
         "$RUST" \
+        "$OURS" \
         "$IMPLIB" \
         "$B/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" \
         "$B/dll/ntdll/CMakeFiles/libntdll.dir/libntdll.a" \

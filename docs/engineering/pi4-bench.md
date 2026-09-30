@@ -42,20 +42,34 @@ in VibeOS.
 ## Host services
 
 ```bash
-tools/pi4/bench.sh up       # serial capture listener + TFTP + sanboot HTTP servers
+tools/pi4/bench.sh up       # serial listener (PI4_SERIAL=pico|com) + TFTP + sanboot HTTP servers
 tools/pi4/bench.sh status   # listener, TFTP server, plug state and watts
 tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
 tools/pi4/bench.sh down
 ```
 
-Both services are **Windows** processes, started from WSL:
+- **Serial listener.** It writes every byte to `<bench>/serial-<timestamp>/serial.bin`
+  and records the live capture in `<bench>/serial-current.json`. There are two
+  kinds, selected by `PI4_SERIAL`. Both keep the same files, so `netboot.sh` and
+  `serial-send.sh` work with either.
+  - **`pico`, the default since 2026-09-27.** `tools/pi4/pico_serial.py` runs in
+    WSL under the picousb client venv. It reads the Pi's UART through the Pico 2 W
+    over Wi-Fi, on TCP 8082 with the device token.
+    - Wiring: Pi pin 8 (TXD) → Pico GP1, Pi pin 10 (RXD) ← Pico GP0, GND ↔ GND.
+    - A console that stays silent while the Pi boots usually means the two signal
+      wires are swapped. The Pico's own diagnostic log (UART1, GP4) then shows
+      `console_rx` with `bytes` stuck at 0.
+    - The Pico keeps the newest 128 KiB of output while no listener is attached,
+      and marks any gap with `[picousb: N console bytes lost]`.
+    - It reconnects on its own. Its log is `<bench>/pico-serial.log`.
+    - Protocol and pin handling: picousb `docs/protocol.md`, "Serial console".
+  - **`com`.** `Capture-RpiSerial.ps1` on a Windows USB-serial adapter, port
+    `PI4_COM`, default COM5. It is the **only** program that may open the port. A
+    second reader steals bytes from the first, and Windows refuses the second open,
+    which is what `"Access to the port is denied"` in `serial-current.json` means.
 
-- **Serial listener** (`Capture-RpiSerial.ps1`, port `PI4_COM`, default COM5).
-  Writes every byte to `<bench>/serial-<timestamp>/serial.bin`, and records the
-  live capture in `<bench>/serial-current.json`. It is the **only** program that
-  may open the port. A second reader steals bytes from the first, and Windows
-  refuses the second open, which is what `"Access to the port is denied"` in
-  `serial-current.json` means.
+The TFTP and HTTP services are **Windows** processes, started from WSL:
+
 - **TFTP server** (`serve_tftp.py`, Windows python at `PI4_WINPY`). Read-only,
   serves `<bench>/payload`. It has to run on Windows because WSL2 in NAT mode
   (172.x) is not reachable from the LAN. It needs one inbound firewall rule: UDP
@@ -159,7 +173,16 @@ iPXE notes: use `ipxe.efi`, not `snponly.efi`. snponly only drives the NIC it
 was loaded from, and loaded from the card it sees none. Chaining a UEFI Shell
 from iPXE exposes iPXE's downloaded images as a volume, and in that shell the
 mapping shifts: the iPXE volume becomes `FS0:` and the card `FS1:`. Find the
-card by its `HD(1,MBR,...)` device path, never by number.
+card by its `HD(1,MBR,...)` device path, never by number. A USB stick with a FAT
+partition shifts it too, in the firmware's own Shell: a Ventoy stick's `VTOYEFI`
+mapped as `FS0:` and `netboot.sh`, then hardcoding `fs0:`, wrote the loader onto
+the stick. It now takes the one filesystem whose device path has no `USB(` from
+the Shell's startup mapping table (the card's is `VenHw(100C2CFA-…)`), and
+refuses to write when it cannot find exactly one.
+`netboot.sh --shell` power-cycles into the Shell and stops there, for reading
+bench media with a second FAT implementation (`tools/pi4/serial-send.sh
+'type fs0:\FILE'`); that is how a file VibeOS wrote to a stick was checked
+after a power cycle.
 
 Every staged payload carries a `manifest.json` with the commit it came from and
 whether the tree was dirty. Tie each board result to that, never to "what was on
@@ -180,9 +203,11 @@ tools/pi4/pico.sh pointer click 16384 16384 # absolute, 0..32767 per axis
 ```
 
 The token file is created by the bench owner; agents pass its path and never
-read it. The Pico is powered by the Pi, so it reboots with every power cycle
-and is on Wi-Fi ~12.5 s after power-on: too late for the UEFI F1 window, which
-stays on serial.
+read it. Since 2026-09-27 the Pico is also fed 5 V on VSYS through a rectifier
+diode, besides the Pi's USB. It stays up and on Wi-Fi across a `power.sh cycle`:
+`uptime` keeps counting, `usb` shows the suspend, and UEFI re-enumerates it
+~10 s in. Before that it rebooted with the Pi and joined Wi-Fi too late for the
+UEFI F1 window. Driving F1 from the Pico is untested; serial works.
 
 The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
 - **Configuration:** VibeOS configures it, and `usb` then shows `mounted=True`,

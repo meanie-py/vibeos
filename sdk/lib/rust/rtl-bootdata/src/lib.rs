@@ -66,12 +66,7 @@ pub static BsdItemTable: [RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize] = [
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, ErrorInfo) as UCHAR, Size: PTR_SIZE },
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, PowerButtonPressInfo) as UCHAR, Size: PTR_SIZE },
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, Checksum) as UCHAR, Size: PTR_SIZE },
-    // The last three arrived with upstream's RTL_BSD_ITEM_TYPE growth (RtlBsdItemMax
-    // 16 -> 19) and were MISSING here, because the stale bindgen island still said 16 so
-    // the array length matched and nothing complained. Any RtlGetSetBootStatusData call
-    // with a DataClass of RtlBsdPowerTransitionExtension or later indexed off the end of
-    // this table. Regenerating the island turned it into a compile error, which is the
-    // whole argument for regenerating rather than working around it.
+    // Windows 10/11 items (upstream 8d4705fcea9).
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, PowerTransitionExtension) as UCHAR, Size: PTR_SIZE },
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, ItemFeatureConfigState) as UCHAR, Size: PTR_SIZE },
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, ItemRevocationList) as UCHAR, Size: PTR_SIZE },

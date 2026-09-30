@@ -6,7 +6,8 @@ extern "C" {
     fn debugstr_w(s: PCWSTR) -> *const i8;
 }
 
-unsafe extern "system" {
+// Wine debug helpers are cdecl (FIXME is variadic, which stdcall cannot be).
+unsafe extern "C" {
     fn FIXME(format: *const i8, ...);
     fn debugstr_w(s: *const u16) -> *const i8;
 }

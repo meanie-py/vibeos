@@ -1476,6 +1476,54 @@ def test_the_drain_does_not_wait_forever_for_a_line_that_never_ends():
     assert why == "marker" and out == "[APPSTORM] done VER"
 
 
+def test_a_silence_that_recovers_is_sampled_without_ending_the_drain():
+    # 45 s of silence, then the guest carries on to the marker: samples at 20
+    # and 40, re-armed by the output, and the drain still ends on the marker.
+    from tests.qemu import test_payload as payload_mod
+
+    t = {"now": 0.0}
+    feed = {45.0: "back\n", 50.0: "[KMTEST-SWEEP] done total=1\n"}
+    seen = []
+
+    def read(timeout):
+        t["now"] += 1.0
+        return feed.get(t["now"], "")
+
+    out, why = payload_mod.drain_for_marker(
+        read,
+        "",
+        "[KMTEST-SWEEP] done",
+        "",
+        600,
+        now=lambda: t["now"],
+        on_silence=seen.append,
+        silence_secs=20.0,
+    )
+    assert why == "marker" and "back" in out
+    assert [round(x) for x in seen] == [20, 40]
+
+
+def test_the_silence_sampler_writes_its_capture_and_never_raises(tmp_path):
+    from tests.qemu import test_payload as payload_mod
+
+    class VM:
+        artifact_dir, work_dir = tmp_path, tmp_path
+        calls = 0
+
+        def capture_cpu_state(self):
+            VM.calls += 1
+            if VM.calls == 2:
+                raise RuntimeError("monitor gone")
+            return "=== info registers -a ===\nCPU#0\n PC=ffff800004012345 X00=0\n"
+
+    sampler = payload_mod.SilenceSampler(VM(), limit=2)
+    for silent in (20.0, 40.0, 60.0):
+        sampler(silent)
+    text = (tmp_path / "silence-samples.txt").read_text()
+    assert "silence sample #1: serial silent 20s" in text and "ffff800004012345" in text
+    assert "#2" in text and "capture failed" in text and "#3" not in text
+
+
 def test_a_drained_out_payload_captures_the_hang_before_it_fails():
     # The gap this closes: a sweep that BOOTS and then wedges never enters
     # wait_for_boot's TimeoutError, so it had no capture at all — and by the time
@@ -1608,6 +1656,13 @@ def test_triage_post_boot_check():
     # user-mode panic in the settle window
     r3 = triage.post_boot_check("_tWinMain entered\npanicked at 'oops', tray.rs:7\n")
     assert r3 is not None and r3["classification"] == "RUST_PANIC"
+    # a per-boot self-test that printed FAIL is a failed boot, however far it got
+    r4 = triage.post_boot_check(
+        "[SEH-TRY] rust hw faults: int3=0x80000003 irqs=1/0 (FAIL)\n_tWinMain entered\n"
+    )
+    assert r4 is not None and r4["classification"] == "SELFTEST_FAIL"
+    assert "irqs=1/0" in r4["salient"][0]
+    assert triage.post_boot_check("[SEH-TRY] rust hw faults: irqs=1/1 (PASS)\n") is None
 
 
 # --- artifacts: summary.json is the machine-true verdict -------------------
@@ -2438,6 +2493,51 @@ def test_gdbengine_all_helper_files_exist():
     assert args.count("-ex") == len(ge_mod.HELPER_FILES)
 
 
+def test_gdbengine_run_until_relocates_before_breaking(tmp_path, monkeypatch):
+    """A run parked at reset has no kernel mapped: `run-until --break KeBugCheckEx` used to
+    arm the PE link address (0x49f942) and never fire. The base comes from the guest's own
+    [KRNLBASE] line, and the boot is resumed until it prints one."""
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
+    serial = tmp_path / "serial.log"
+    serial.write_text("")
+    run = ge_mod.DebugRun(
+        run_id="r",
+        arch="amd64",
+        backend="native",
+        gdb_host="h",
+        gdb_port=1,
+        serial_log=str(serial),
+        kernel_image="k",
+    )
+    calls = []
+
+    def fake_gdb(r, verb_ex, *, timeout, relocate=True):
+        calls.append((list(verb_ex), relocate, r.kernel_runtime_base))
+        if not verb_ex:  # the resume-only session: the guest boots and prints its base
+            serial.write_text("[KRNLBASE] ntoskrnl runtime base=FFFFF80042190000\n")
+        return "=== BREAKPOINT HIT ==="
+
+    monkeypatch.setattr(ge_mod, "_run_gdb", fake_gdb)
+    monkeypatch.setattr(ge_mod.time, "sleep", lambda s: None)
+    assert "BREAKPOINT HIT" in ge_mod.run_until(run, "KeBugCheckEx", timeout=5)
+    assert calls[0] == ([], False, "")
+    assert calls[1][2] == "0xfffff80042190000" and calls[1][1] is True
+    assert ge_mod.DebugRun.load("r").kernel_runtime_base == "0xfffff80042190000"
+
+    # Never printed: refuse to arm an unrelocated breakpoint rather than time out silently.
+    run2 = ge_mod.DebugRun(
+        run_id="r2",
+        arch="amd64",
+        backend="native",
+        gdb_host="h",
+        gdb_port=1,
+        serial_log=str(tmp_path / "empty.log"),
+        kernel_image="k",
+    )
+    monkeypatch.setattr(ge_mod, "wait_for", lambda r, p, timeout: False)
+    assert "BREAKPOINT NOT SET" in ge_mod.run_until(run2, "KeBugCheckEx", timeout=5)
+
+
 def test_gdbengine_manifest_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path)
     run = ge_mod.DebugRun(
@@ -2599,6 +2699,8 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
 
     monkeypatch.setattr(ge_mod, "_run_gdb", fake_run_gdb)
     run = ge_mod.DebugRun.__new__(ge_mod.DebugRun)
+    run.kernel_runtime_base = "0xfffff80042190000"  # already relocated: no resume session
+    run.arch = "amd64"  # symbol names are undecorated there
     out = ge_mod.run_until(run, "KeBugCheckEx", timeout=30, then=["bt 10", "triage-bugcheck"])
     ex = captured["ex"]
     assert "break KeBugCheckEx" in ex and "bounded-continue 30" in ex
@@ -7973,6 +8075,18 @@ def test_ninja_did_work_counts_edges_not_just_dirtiness():
     assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
 
 
+def test_build_classifier_reports_a_timeout_as_a_timeout():
+    """Exit 124 is the runner's stage timeout. A slow build's output is mostly warnings,
+    and "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL."""
+    warning = (
+        "warning: `CreateFileW` redeclared with a different signature\n129 |   error: c_int,\n"
+    )
+    cls, _ = build_mod._classify_build_failure(warning + "cargo", "", 124)
+    assert cls == "BUILD_TIMEOUT"
+    cls, _ = build_mod._classify_build_failure("error[E0308]: mismatched types\n", "", 1)
+    assert cls == "CARGO_CHECK_FAIL"
+
+
 def test_link_classifier_does_not_mistake_duplicate_symbol_WARNINGS_for_the_failure():
     """This tree links with --allow-multiple-definition, so ld.lld emits
     `warning: duplicate symbol` on every build. The classifier matched bare
@@ -9897,6 +10011,85 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
     vm.save_snapshot("ready")
     vm.restore_snapshot("ready")  # the autouse fixture, before the first test
     assert "[UCRTDIFF] done" in vm._boot_output
+
+
+def _load_payload_compile():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[3] / "tools" / "payloads" / "compile.py"
+    spec = importlib.util.spec_from_file_location("payload_compile_ut", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
+    """A payload exe older than its .c must be rebuilt by the build's payload stage, not
+    staged as-is (appstorm's fastfat raise check booted as the old binary)."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "build.sh").write_text('echo built > "$(dirname "$0")/demo-$1.exe"\n')
+    exe = d / "demo-arm64.exe"
+    exe.write_text("old")
+    (d / "demo.c").write_text("int main(void){return 0;}")
+    os.utime(exe, (1_000_000, 1_000_000))
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.stale_binaries("demo", "arm64") == [exe.resolve()]
+    assert pc.ensure_built(["demo"], "arm64") == ["demo"]
+    assert exe.read_text().strip() == "built"
+    assert pc.stale_binaries("demo", "arm64") == []
+    assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
+
+
+def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "build.sh").write_text("echo nope >&2; exit 3\n")
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+    with pytest.raises(SystemExit):
+        pc.ensure_built(["demo"], "i386")
+
+
+def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
+    """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
+    writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n"
+        "  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+        "  - src: tools/payloads/demo/list-{arch}.txt\n    dest: list.txt\n"
+    )
+    (d / "build.sh").write_text('echo built > "$(dirname "$0")/demo-$1.exe"\n')
+    lst = d / "list-amd64.txt"
+    lst.write_text("a\n")
+    os.utime(lst, (1_000_000, 1_000_000))  # older than build.sh
+    exe = d / "demo-amd64.exe"
+    exe.write_text("fresh")
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+    assert pc.stale_binaries("demo", "amd64") == []
+    assert pc.ensure_built(["demo"], "amd64") == []
 
 
 def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):

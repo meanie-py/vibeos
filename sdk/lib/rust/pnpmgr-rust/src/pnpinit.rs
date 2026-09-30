@@ -109,7 +109,7 @@ extern "C" {
     static mut IopDeviceActionRequestList: LIST_ENTRY;
     static mut IopRootDriverObject: PDRIVER_OBJECT;
     static mut IopRootDeviceNode: PDEVICE_NODE;
-    static mut PnpBusTypeGuidList: _IO_BUS_TYPE_GUID_LIST;
+    static mut PnpBusTypeGuidList: *mut _IO_BUS_TYPE_GUID_LIST;
 }
 
 extern "system" {
@@ -559,21 +559,25 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         return Status;
     }
 
-    // Upstream a7f658e3221: a global struct plus an 8-slot tagged GUID buffer.
-    let List = core::ptr::addr_of_mut!(PnpBusTypeGuidList);
-    ExInitializeFastMutex(core::ptr::addr_of_mut!((*List).Lock));
-    (*List).AllocatedCount = 8;
-    (*List).GuidCount = 0;
-    (*List).Guids = ExAllocatePoolWithTag(
+    PnpBusTypeGuidList = ExAllocatePool(PagedPool, core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>() as _) as *mut _IO_BUS_TYPE_GUID_LIST;
+    core::ptr::write_bytes(
+        PnpBusTypeGuidList as *mut u8,
+        0,
+        core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>(),
+    );
+    ExInitializeFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    // Upstream a7f658e3221: the GUIDs live in their own array, 8 slots to start.
+    (*PnpBusTypeGuidList).AllocatedCount = 8;
+    (*PnpBusTypeGuidList).GuidCount = 0;
+    (*PnpBusTypeGuidList).Guids = ExAllocatePoolWithTag(
         PagedPool,
-        ((*List).AllocatedCount as usize * core::mem::size_of::<ntkrnl_sys::ddk::GUID>()) as _,
+        8 * core::mem::size_of::<ntkrnl_sys::ddk::GUID>(),
         crate::pnpmgr::TAG_PNP_GUIDS,
     ) as *mut ntkrnl_sys::ddk::GUID;
-    if (*List).Guids.is_null() {
-        ntkrnl_sys::driver_ddk::DbgPrint(b"Failed to allocate PnP GUID buffer!\n\0".as_ptr() as *const i8);
-        KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, STATUS_NO_MEMORY as ULONG_PTR, 0, 0, 0);
+    if (*PnpBusTypeGuidList).Guids.is_null() {
+        KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, STATUS_NO_MEMORY as _, 0, 0, 0);
     }
-    core::ptr::write_bytes((*List).Guids, 0, (*List).AllocatedCount as usize);
+    core::ptr::write_bytes((*PnpBusTypeGuidList).Guids, 0, 8);
 
     PiQueueDeviceAction(Pdo, PiActionEnumRootDevices, core::ptr::null_mut(), core::ptr::null_mut());
 

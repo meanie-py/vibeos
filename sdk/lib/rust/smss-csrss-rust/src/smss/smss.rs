@@ -121,8 +121,10 @@ pub static mut SmpInitialCommandProcessId: HANDLE = core::ptr::null_mut();
 
 const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
 const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
-const RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB: ULONG = 0x00020000;
-const RTL_USER_PROCESS_PARAMETERS_NX: ULONG = 0x00100000;
+// ndk/rtltypes.h:46,55. (These were 0x20000/0x100000: "RESERVE_1MB" was really
+// setting the NX bit and "NX" an undefined bit, so subsystems never got the low 1MB.)
+const RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB: ULONG = 0x00000020;
+const RTL_USER_PROCESS_PARAMETERS_NX: ULONG = 0x00020000;
 const PROCESS_ALL_ACCESS: ULONG = 0x001F0FFF;
 const SE_SHUTDOWN_PRIVILEGE: ULONG = 19;
 const SE_LOAD_DRIVER_PRIVILEGE: ULONG = 10;

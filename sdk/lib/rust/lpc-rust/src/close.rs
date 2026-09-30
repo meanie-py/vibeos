@@ -236,7 +236,6 @@ pub unsafe extern "system" fn LpcpClosePort(
     _Process: PEPROCESS,
     Object: PVOID,
     _GrantedAccess: ACCESS_MASK,
-    // ddk::ULONG_PTR — the alias OB_CLOSE_METHOD declares, not base's usize.
     _ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
     SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {

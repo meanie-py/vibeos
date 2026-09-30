@@ -8,8 +8,13 @@ Python so the build doesn't need `ntoskrnl`, `sdk/include/psdk`, and
 `sdk/include/vcruntime` on `KERNEL_INCLUDES`.
 
 Output is checked in to `sdk/lib/rust/ntoskrnl-cargo/data/ntoskrnl-<arch>.rc.res`.
-Re-run only when the version blocks (`common.ver`, `ntverp.h`) change or
-the bootanim resource set changes. Output is byte-identical to cmake's
+Re-run when the version blocks (`common.ver`, `ntverp.h`), the bootanim
+resource set, or the bugcode message table (`bugcodes.mc`, or how the build
+turns windmc output into resources) change. `scan_res_named_types` in
+`vibeos-cli check` catches the one staleness that broke every lookup: a
+MESSAGETABLE stored under a string type name instead of RT id 11.
+
+Output is byte-identical to cmake's
 `build-<arch>/ntoskrnl/CMakeFiles/ntoskrnl.dir/ntoskrnl.rc.res`.
 
 Usage:

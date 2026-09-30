@@ -77,7 +77,35 @@ wrapper header defines:
 - `#define FORCEINLINE` — prevents inline function body expansion
 - `#define _INTRIN_H_` — skips compiler intrinsics (not available in libclang)
 - `#define __int64 long long` — type alias needed by various headers
-- `#define __wfi()/__yield() ((void)0)` — ARM64 intrinsic stubs
+
+**A generator that last ran before the upstream merge may not run at all.** win32k-sys's
+broke four ways, all silently until someone needed a new type (the raw-input port,
+2026-09-27): its flags came from a `main.c` compile rule that vanished when win32k went
+Rust-only (it now reads the `win32k_residue` TUs); FreeType 2.10.4 deleted the
+`internal/internal.h` its wrapper included; `vcruntime/intrin.h` now declares `__wfi`/`__yield`,
+so the `#define __yield() ((void)0)` stubs break the arm64 parse; and bindgen ≥ 0.72 emits
+`__BindgenOpaqueArray`, which the old postprocessor regex cut in half, leaving
+`bindgen_common.rs` on a dangling attribute. The stubs are now gone from every wrapper and
+verifier, and the regex fix is in all four postprocessors that carry it.
+
+**A stale island compiles, links and boots — the drift is only in what C would see.** Every
+consumer of an ntkrnl-sys struct is Rust reading the same stale island, so it agrees with
+itself; the damage lands at the C boundary and in callback arity. The post-merge regen
+(2026-09-27) moved nine structs and exposed that the NT6 OB callback shapes had been papered
+over with transmutes in four crates, one of which (a close procedure reading a 32-bit handle
+count as 64) left drivers unable to unload. Watch for bindgen's typedef names when you drop
+such a transmute: the island's `ULONG_PTR`/`PEPROCESS` are not `ntkrnl_sys::base`'s
+(`u64` vs `usize`, the island `_EPROCESS` vs the opaque one), so an implementer registered in
+an island fn-pointer slot must spell `ntkrnl_sys::ddk::ULONG_PTR`. `check_committed_drift`'s
+`layout` row now regenerates the size/offset asserts against today's headers in every gate
+(`check --strict`), so the next header change fails it instead of waiting for a regen.
+
+**Cast macros vanish.** bindgen emits no constant for `#define OBJID_CLIENT ((LONG)0xFFFFFFFC)`,
+winuser.h's spelling since the merge, so a regen silently drops every `OBJID_*`.
+`--clang-macro-fallback` fixes it and takes hours on the win32k header set (it reparses per
+macro). win32k-sys instead dumps `clang -dM -E` beside each run, and
+`postprocess_bindgen.recover_cast_macros` emits the integer-literal casts to integer
+typedefs the island already has (38 per arch).
 
 ### Limitations
 

@@ -2026,9 +2026,6 @@ pub unsafe extern "system" fn IopCloseFile(
     Process: PEPROCESS,
     ObjectBody: PVOID,
     GrantedAccess: ACCESS_MASK,
-    // ddk::ULONG_PTR, the alias OB_CLOSE_METHOD is declared with (c_ulonglong on 64-bit).
-    // `base::ULONG_PTR` is usize: same size, distinct type, will not coerce into the
-    // CloseProcedure slot without a transmute -- and the transmute is what hid the drift.
     HandleCount: ntkrnl_sys::ddk::ULONG_PTR,
     SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {

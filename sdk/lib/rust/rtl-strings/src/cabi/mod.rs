@@ -8766,10 +8766,11 @@ mod path_wave {
     const STATUS_NO_SUCH_FILE: i32 = 0xC000_000Fu32 as i32;
     const STATUS_INTERNAL_ERROR: i32 = 0xC000_00E5u32 as i32;
     const RTL_USER_PROCESS_PARAMETERS_NORMALIZED: u32 = 0x00000001;
-    const RTL_CONVERTED_UNC_PATH: u32 = 0x1;
-    const RTL_CONVERTED_NT_PATH: u32 = 0x2;
-    const RTL_UNCHANGED_UNK_PATH: u32 = 0x4;
-    const RTL_UNCHANGED_DOS_PATH: u32 = 0x3;
+    // ndk/rtlfuncs.h:3018-3021 — RtlNtPathNameToDosPathName's *PathType output.
+    const RTL_UNCHANGED_UNK_PATH: u32 = 1;
+    const RTL_CONVERTED_UNC_PATH: u32 = 2;
+    const RTL_CONVERTED_NT_PATH: u32 = 3;
+    const RTL_UNCHANGED_DOS_PATH: u32 = 4;
     const OBJ_NAME_PATH_SEPARATOR: u16 = b'\\' as u16;
     const SYNCHRONIZE: u32 = 0x0010_0000;
     const FILE_TRAVERSE: u32 = 0x0020;

@@ -650,8 +650,37 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
 
         0x3C => {
             let BrkImm = ISS & 0xFFFF;
+            let BrkFromKernel =
+                (*TrapFrame).__bindgen_anon_1.__bindgen_anon_1.PreviousMode != 1;
 
-            if BrkImm == 0xF000 && (*TrapFrame).__bindgen_anon_3.X[0] == 1 {
+            // brk #0xF000 from kernel mode is DbgBreakPoint/DbgBreakPointWithStatus
+            // (DebugService moved to #0xF002, Windows ARM64's service immediate).
+            // Dispatch it as STATUS_BREAKPOINT like x86 does an int3, so a kernel
+            // __except can see it; KiDispatchException steps past an unhandled one
+            // and continues, the amd64 policy. It used to be skipped here outright,
+            // so no kernel handler ever saw a breakpoint on arm64. User-mode brk is
+            // unchanged (still skipped) for now.
+            if BrkImm == 0xF000 && BrkFromKernel {
+                let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
+                ExRec.ExceptionCode = STATUS_BREAKPOINT;
+                ExRec.ExceptionFlags = 0;
+                ExRec.ExceptionRecord = core::ptr::null_mut();
+                ExRec.ExceptionAddress = (*TrapFrame).Pc as PVOID;
+                ExRec.NumberParameters = 1;
+                ExRec.ExceptionInformation[0] = 0; // BREAKPOINT_BREAK
+                KiDispatchException(
+                    &mut ExRec as *mut EXCEPTION_RECORD,
+                    ExceptionFrame,
+                    TrapFrame,
+                    0i8,
+                    1u8,
+                );
+                return;
+            }
+
+            // Debug service: #0xF002 (DebugService), and #0xF000 from user mode for
+            // anything built before the split.
+            if (BrkImm == 0xF002 || BrkImm == 0xF000) && (*TrapFrame).__bindgen_anon_3.X[0] == 1 {
                 let Buf = (*TrapFrame).__bindgen_anon_3.X[1] as *const u8;
                 let mut Len = (*TrapFrame).__bindgen_anon_3.X[2] as ULONG;
 

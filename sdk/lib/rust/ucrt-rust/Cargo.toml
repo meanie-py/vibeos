@@ -119,5 +119,85 @@ strtod = ["strtox"]
 # findfile's path conversion and time helpers. See src/stat.rs.
 stat = ["findfile"]
 
+# The locale takeover (sdk/lib/ucrt/locale/*, mbstring/mbctype.cpp), split into
+# pieces that call each other only through src/locale_abi.rs, so each can land
+# as soon as its own C files can be deleted. See locale_abi.rs for which C file
+# each replaces.
+locale-data = []
+locale-init = []
+mbctype = []
+qualified-locale = []
+setlocale = []
+
+# The second fan-out batch (one module each; see the module docs).
+# exec/spawnl.cpp, spawnlp.cpp, spawnv.cpp, spawnvp.cpp -- the 32 _spawn*/_exec* exports
+exec = []
+# convert/atof.cpp -- atof, _wtof, _atoflt, _atodbl and their _l forms
+atof = ["strtod"]
+# time/ctime.cpp -- _ctime32/64, _wctime32/64 and their _s forms
+ctime = []
+# time/timeset.cpp -- _daylight/_dstbias/_timezone/_tzname and their getters
+timeset = []
+# startup/argv_data.cpp -- __argc/__argv/_acmdln/_pgmptr and their accessors
+argv-data = []
+# heap/align.cpp -- the eight _aligned_* allocators
+align = []
+# misc/invalid_parameter.cpp -- the invalid-parameter handler machinery and _invoke_watson
+invalid-parameter = []
+# lowio/open.cpp -- _open/_sopen/_wopen/_wsopen and their _s/_dispatch forms
+lowio-open = ["findfile"]
+
+# The third fan-out batch (one directory module each; see the module docs).
+# mbstring/*.cpp -- the _mbs*/_mbc* string family, plain, _l and _s
+mbstring = ["ismbc", "mbctype"]
+# string/*.cpp and string/<arch>/*.s -- str*/wcs*/mem* not already in portable-string
+string-ops = []
+# time/*.cpp -- tzset, localtime/gmtime/mktime, strftime/wcsftime, asctime, utime, ftime...
+time = ["timeset"]
+
+# The stdio batch (sdk/lib/ucrt/stdio/*). `stdio` is the stream core --
+# _file.cpp, stream.cpp and the header-inline __crt_stdio_stream -- and the three
+# pieces over it call one another by the C names (see src/stdio/mod.rs).
+stdio = []
+# _getbuf/_freebuf/_sftbuf/_filbuf/_flsbuf, the character I/O (fgetc..putws,
+# ungetc/ungetwc, getw/putw, gets/fgets/puts/fputs), and the temp-name family.
+stdio-bufio = ["stdio"]
+# openfile/fopen/freopen/fdopen/fclose/closeall, fflush, fread/fwrite,
+# fseek/ftell/fgetpos/fsetpos/rewind, setbuf/setvbuf, and the small accessors.
+stdio-files = ["stdio"]
+# input.cpp and corecrt_internal_stdio_input.h: the scanf engine.
+stdio-input = ["stdio", "strtox", "strtod"]
+
+# The sixth fan-out batch (one directory module each; see the module docs).
+# convert/ -- the rest: mbrtowc/wcrtomb/mbstowcs/wcstombs/wctomb/mblen/mbtowc,
+# c16/c32 conversions, fcvt/gcvt, atoldbl, _mbslen family, swab, wctrans
+convert-rest = ["strtod"]
+# misc/ -- errno/strerror/perror, cwd and drives, signal/terminate, beep, pid, systime
+misc = []
+# filesystem/ -- makepath/splitpath, access, fullpath, unlink/rename, mkdir/rmdir, chmod
+filesystem = ["findfile"]
+# lowio/ -- the handle table (ioinit, osfinfo) is the core in src/lowio/mod.rs;
+# the rest of the directory are submodules over it, calling one another by C name.
+lowio = ["stdio"]
+# conio/ -- console I/O, cprintf/cscanf, _pipe/_popen.
+conio = ["lowio", "output", "stdio-input"]
+# env/ -- the environment tables, getenv/putenv/setenv, searchenv.
+env = []
+# exec/{wait,system,getproc,loaddll}.cpp -- the rest of exec (spawn is `exec`).
+exec-rest = ["exec"]
+# internal/{locks,shared_initialization,per_thread_data}.cpp + startup/initterm.cpp:
+# the lock table, the per-thread data block, and the initializer-table loops.
+internal-core = []
+# heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
+heap = []
+# stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
+# string/ stragglers (memcpy_s, strnlen).
+stdlib = []
+
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
+# `VaArgs`: reading C varargs on stable. The `...` entry points themselves are
+# three-line va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c, which
+# also supplies the va_arg pullers this crate's extern block names. varargs-rust has
+# no dependencies of its own, so this edge cannot reach msvcrt-crt-rust.
+varargs-rust = { path = "../varargs-rust" }

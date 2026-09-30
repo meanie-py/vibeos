@@ -36,31 +36,67 @@ class PEError(Exception):
     pass
 
 
-def compiled_in(src: str, off_refs: set[str]) -> str:
-    """`src` without the lines an `#if UCRTDIFF_REF_HAS_<name>` for an OFF name removes.
+def _guard_value(expr: str, off_refs: set[str]) -> bool | None:
+    """An `#if`/`#elif` expression over REF guards alone, evaluated; None for anything else.
 
-    Only those conditions are evaluated; every other `#if` is taken as live, which is the
-    conservative direction -- a declaration is only ever exempted by a guard we can read.
+    `UCRTDIFF_REF_HAS_<off name>` is 0 and every other REF_HAS / REF_CALLABLE is taken
+    as 1 -- the live direction, so a guard can only ever EXEMPT a declaration when the
+    names that switch it off are known to be off. A compound guard (`HAS_a && HAS_b`)
+    used to read as "some other #if", so a block switched off by one takeover was
+    still counted as compiled in and its declarations demanded imports.
+    """
+    py = re.sub(r"UCRTDIFF_REF_HAS_(\w+)", lambda m: "0" if m.group(1) in off_refs else "1", expr)
+    py = re.sub(r"UCRTDIFF_REF_CALLABLE_\w+", "1", py)
+    py = re.sub(r"/\*.*?\*/", " ", py)
+    py = py.replace("&&", " and ").replace("||", " or ")
+    py = re.sub(r"!(?!=)", " not ", py)
+    if not re.fullmatch(r"[\s01()]*(?:(?:and|or|not)[\s01()]*)*", py):
+        return None
+    try:
+        # The fullmatch above admits only 0, 1, and/or/not and parentheses.
+        return bool(eval(py, {"__builtins__": {}}, {}))
+    except SyntaxError:
+        return None
+
+
+def compiled_in(src: str, off_refs: set[str]) -> str:
+    """`src` without the lines an `#if` over `UCRTDIFF_REF_HAS_<name>` guards removes.
+
+    Only guards made entirely of REF_HAS/REF_CALLABLE terms are evaluated; every other
+    `#if` is taken as live, which is the conservative direction -- a declaration is
+    only ever exempted by a guard we can read.
     """
     kept = []
-    stack: list[tuple[bool, bool]] = []  # (this branch live, is a REF_HAS guard)
-    for line in src.splitlines():
+    # (this branch live, is a REF guard, some earlier branch of this chain was live)
+    stack: list[tuple[bool, bool, bool]] = []
+    # A guard continued with `\` is one directive (the spawn block's four-way `||`).
+    for line in re.sub(r"\\\n", " ", src).splitlines():
         d = line.strip()
-        m = re.match(r"#\s*if\s+UCRTDIFF_REF_HAS_(\w+)\s*$", d)
-        if m:
-            stack.append((m.group(1) not in off_refs, True))
+        m = re.match(r"#\s*if\s+(.*)$", d)
+        if m and not re.match(r"#\s*if(n?def)\b", d):
+            v = _guard_value(m.group(1), off_refs)
+            stack.append((True, False, True) if v is None else (v, True, v))
             continue
         if re.match(r"#\s*if(n?def)?\b", d):
-            stack.append((True, False))
+            stack.append((True, False, True))
+            continue
+        m = re.match(r"#\s*elif\s+(.*)$", d)
+        if m and stack:
+            _, guard, taken = stack[-1]
+            v = _guard_value(m.group(1), off_refs) if guard else None
+            if v is None:
+                stack[-1] = (True, False, True)
+            else:
+                stack[-1] = (v and not taken, True, taken or v)
             continue
         if re.match(r"#\s*else\b", d) and stack:
-            live, guard = stack[-1]
-            stack[-1] = (not live if guard else live, guard)
+            live, guard, taken = stack[-1]
+            stack[-1] = (not taken if guard else live, guard, True)
             continue
         if re.match(r"#\s*endif\b", d) and stack:
             stack.pop()
             continue
-        if all(live for live, _ in stack):
+        if all(live for live, _, _ in stack):
             kept.append(line)
     return "\n".join(kept)
 

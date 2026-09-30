@@ -377,7 +377,7 @@ pub unsafe extern "C" fn BusLogic_HardwareResetHostAdapter(
     HostAdapter: *mut BusLogic_HostAdapter_T,
     HardReset: BOOLEAN,
 ) -> BOOLEAN {
-    const ERROR: ULONG = 1;
+    const ERROR: ULONG = 1; // nolint: const-contradiction (BusLogic958.h:55 `#define ERROR 1` debug level, not wingdi ERROR=0)
 
     let mut StatusRegister: BusLogic_StatusRegister_T = core::mem::zeroed();
     let mut TimeoutCounter: ::core::ffi::c_int;
@@ -1157,7 +1157,7 @@ pub unsafe extern "C" fn BusLogic_InitializeHostAdapter(
 pub unsafe extern "C" fn BusLogic_TargetDeviceInquiry(
     HostAdapter: *mut BusLogic_HostAdapter_T,
 ) -> BOOLEAN {
-    const ERROR: ULONG = 1;
+    const ERROR: ULONG = 1; // nolint: const-contradiction (BusLogic958.h:55 `#define ERROR 1` debug level, not wingdi ERROR=0)
     let mut InstalledDevices: BusLogic_InstalledDevices_T = 0;
     let mut SetupInformation: BusLogic_SetupInformation_T = core::mem::zeroed();
     let mut SynchronousPeriod: BusLogic_SynchronousPeriod_T = [0; 16];
@@ -2159,7 +2159,7 @@ pub unsafe extern "system" fn BT958HwResetBus(
 ) -> BOOLEAN {
 
     const TRACE: u32 = 3;
-    const ERROR: u32 = 1;
+    const ERROR: u32 = 1; // nolint: const-contradiction (BusLogic958.h:55 `#define ERROR 1` debug level, not wingdi ERROR=0)
     const SRB_STATUS_BUS_RESET: u32 = 0x0E;
 
     let deviceExtension: PHW_DEVICE_EXTENSION = HwDeviceExtension as PHW_DEVICE_EXTENSION;

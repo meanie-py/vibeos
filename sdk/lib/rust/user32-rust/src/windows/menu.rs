@@ -152,10 +152,15 @@ unsafe fn DesktopPtrToUser(ptr: PVOID) -> PVOID {
     crate::wow64::desktop_ptr_to_user(ptr)
 }
 // ntuser.h `UserHMGetHandle(obj) == ((obj)->head.h)`. The handle lives at offset 0
-// of the (PROC|THR)DESKHEAD, which bindgen flattened into `head.__bindgen_padding_0[0]`.
+// of the (PROC|THR)DESKHEAD: HEAD.h.
+// Read through the typed head, never an index into bindgen's __bindgen_padding_0: its
+// ELEMENT type is the generator's choice. The 2026-09-27 regeneration turned [u64; 3]
+// into [u8; 24], `[2]` became one byte of the handle, and every posted message dispatched
+// through IntCallMessageProc was dropped as ERROR_MESSAGE_SYNC_ONLY (no app closed on
+// WM_CLOSE) with every build still green.
 #[inline]
 unsafe fn UserHMGetHandle(pMenu: PMENU) -> HWND {
-    (*pMenu).head.__bindgen_padding_0[0] as usize as HWND
+    (*(pMenu as *const _HEAD)).h as HWND
 }
 
 // ---- file-scope preamble (translated) ----

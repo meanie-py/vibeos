@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -77,12 +78,8 @@ NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
 
 
 def _ninja_timeout() -> int:
-    """The ninja stage's wall-clock budget in seconds (default one hour).
-
-    An hour covers a warm build with room to spare, but not a regenerated -sys
-    crate on i386, where each kernel cargo cell has its own target dir and rebuilds
-    the whole crate graph at CARGO_BUILD_JOBS=1. Re-running into the same wall is
-    not free: each kill throws away the rustc invocations in flight."""
+    """The ninja stage's wall-clock budget in seconds (default one hour), overridable with
+    VIBEOS_BUILD_TIMEOUT for a deliberately cold rebuild (a regenerated -sys crate)."""
     raw = os.environ.get(NINJA_TIMEOUT_ENV, "").strip()
     if not raw:
         return 3600
@@ -95,27 +92,17 @@ def _ninja_timeout() -> int:
     return value
 
 
-def _classify_build_failure(
-    out: str, err: str, returncode: int | None = None
-) -> tuple[str, list[str]]:
+def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
-    # A TIMEOUT is not a build defect, and it must be decided from the RETURN CODE —
-    # never from the output, which is simply whatever the build had printed when the
-    # clock ran out. `timeout` exits 124. Without this, a cold rebuild that overruns
-    # the ninja budget is handed to the text matchers below and comes back
-    # "LINK_FAIL" with a salient line sliced out of an unrelated doc comment
-    # ("s: undefined"), i.e. as a defect in the diff — the same wrong-cause mistake
-    # the DISK_FULL check above exists to prevent. Regenerating a -sys crate
-    # invalidates nearly the whole workspace, so this is the expected shape there:
-    # re-run and let ninja resume, do not go hunting for a symbol.
-    if returncode == 124:
+    # The runner turns a stage timeout into exit 124 (artifacts.Run.run). Classify it
+    # before scanning the text: a slow build's log is full of warnings, and
+    # "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL
+    # (2026-09-27, a bindgen regen emitting 8,285 warnings per ntkrnl-sys compile).
+    if rc == 124:
         return "BUILD_TIMEOUT", [
-            f"ninja exceeded its {_ninja_timeout()}s time budget (exit 124) — NOT a link error.",
-            "Re-run; ninja resumes incrementally and ccache/sccache keep finished crates.",
-            "A -sys regen can need several hours on i386 (every kernel cargo cell rebuilds "
-            f"serially); raise the budget with {NINJA_TIMEOUT_ENV}=<seconds> rather than "
-            "re-running into the same wall — each kill discards the rustc calls in flight.",
+            f"stage hit its {_ninja_timeout()}s time budget (exit 124): killed, not failed",
+            f"re-run (ninja resumes), or raise the budget with {NINJA_TIMEOUT_ENV}=<seconds>",
         ]
     # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
@@ -359,6 +346,57 @@ def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
     except (OSError, subprocess.SubprocessError):
         return set()
     return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
+
+
+def _build_ramdisk_apps(run: Run, repo: Path, build_dir: Path, wrap, env, args) -> bool:
+    """Build the arm64 ramdisk's stock apps and their import closure (tools/ramdisk_apps.py).
+
+    The closure is read from BUILT binaries' import tables, so each round of newly built
+    modules can name the next round's imports: repeat until the tool asks for nothing.
+    A fresh tree converges in four rounds (apps -> dnsapi & co -> d3dwine -> opengl32); a
+    warm one asks for nothing on the first."""
+    tool = [sys.executable, str(repo / "tools" / "ramdisk_apps.py"), "--build-dir", str(build_dir)]
+    built: list[str] = []
+    for _round in range(8):
+        cp = subprocess.run([*tool, "--targets"], capture_output=True, text=True, cwd=repo)
+        if cp.returncode != 0:
+            run.add(
+                Stage(
+                    "ramdisk-apps",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail="closure unresolvable",
+                    salient=cp.stderr.splitlines()[-4:],
+                )
+            )
+            return False
+        todo = [t for t in cp.stdout.split() if t not in built]
+        if not todo:
+            run.add(Stage("ramdisk-apps", status="ok", detail=f"{len(built)} built"))
+            return True
+        built += todo
+        cp = run.run(
+            wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *todo]),
+            cwd=build_dir,
+            env=env,
+            stage="ramdisk-apps",
+            timeout=3600,
+        )
+        if cp.returncode != 0:
+            cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
+            run.classification = cls
+            run.add(
+                Stage(
+                    "ramdisk-apps",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail=cls,
+                    salient=salient or ["see full log"],
+                )
+            )
+            return False
+    run.add(Stage("ramdisk-apps", status="fail", detail="closure did not converge in 8 rounds"))
+    return False
 
 
 def build(args, repo: Path) -> int:
@@ -945,7 +983,23 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     stamped = _payload_compile.write_stamp(build_dir)
     if stamped:
-        run.add(Stage("payloads", status="ok", detail=",".join(stamped)))
+        # A payload binary older than its source would boot the old test: rebuild it
+        # here, where the media step is about to stage it. compile.py dies loudly on a
+        # failed build; surface that as a classified build failure.
+        import contextlib
+        import io
+
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                rebuilt = _payload_compile.ensure_built(stamped, arch)
+        except SystemExit:
+            why = [ln for ln in err.getvalue().strip().splitlines() if ln.strip()]
+            run.classification = "PAYLOAD_BUILD_FAIL"
+            run.add(Stage("payloads", status="fail", detail=",".join(stamped), salient=why[:6]))
+            return run.finalize(repo)
+        detail = ",".join(stamped) + (f" (rebuilt {','.join(rebuilt)})" if rebuilt else "")
+        run.add(Stage("payloads", status="ok", detail=detail))
 
     if cold:
         _clean(run, repo, arch)
@@ -1093,6 +1147,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
+
+    if cfg.needs_mkramdisk and not _build_ramdisk_apps(run, repo, build_dir, wrap, build_env, args):
+        return run.finalize(repo)
 
     # --- flag→artifact verification (T1.2): requested features must PROVE
     # themselves in the output; unrequested ones must be absent. ---

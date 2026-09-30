@@ -203,7 +203,9 @@ const PAT_WC: u64 = 0x01;
 const PAT_UCM: u64 = 0x07;
 const PAT_UC: u64 = 0x00;
 
-const AMD64_TSS: u8 = 0x89;
+// internal/amd64/ke.h:85: 9 = available 64-bit TSS. It is the 5-bit Bits.Type field;
+// Present is set separately by KiInitGdtEntry (0x89 = P|9 was the raw access byte).
+const AMD64_TSS: u8 = 0x9;
 
 const NX_SUPPORT_POLICY_ALWAYSON: u32 = 0x01;
 const NX_SUPPORT_POLICY_OPTIN: u32 = 0x02;

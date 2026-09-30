@@ -7,8 +7,13 @@
 #   tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
 #   tools/pi4/bench.sh http     # just the sanboot HTTP server (needs the TCP 8069 rule)
 #
-# Both services run as WINDOWS processes: the USB-serial port belongs to Windows,
-# and WSL2 in NAT mode (172.x) is unreachable from the LAN the Pi is on. `up`
+# The serial listener is PI4_SERIAL=pico (default): pico_serial.py in WSL, talking
+# to the Pico 2 W's GPIO UART bridge over Wi-Fi. PI4_SERIAL=com runs the old
+# Capture-RpiSerial.ps1 on a Windows USB-serial port instead. Both write the same
+# serial-current.json / serial.bin / serial-send.bin contract.
+#
+# The TFTP/HTTP services run as WINDOWS processes: WSL2 in NAT mode (172.x) is
+# unreachable from the LAN the Pi is on. `up`
 # first copies the repo's versions of the scripts into the bench directory, so
 # the repo stays the source of truth and Windows never runs a script over a
 # \\wsl.localhost path (execution policy and UNC quirks).
@@ -18,6 +23,9 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
 PORT=${PI4_COM:-COM5}
+SERIAL=${PI4_SERIAL:-pico}
+PICO_PY=${PICO_PY:-$HOME/.venvs/picousb/bin/python}
+PICO_PID="$BENCH/pico-serial.pid"
 PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
 HTTP_PORT=${PI4_HTTP_PORT:-8069}
 HOST_IP=${PI4_HOST_IP:-192.168.1.183}
@@ -35,11 +43,21 @@ pids() {
     ps_run "Get-CimInstance Win32_Process | Where-Object { \$_.CommandLine -like '*$1*' -and \$_.CommandLine -notlike '*Get-CimInstance*' } | ForEach-Object { \$_.ProcessId }"
 }
 
+pico_serial_pid() {
+    local p
+    p=$(cat "$PICO_PID" 2>/dev/null) || return 1
+    grep -q pico_serial.py "/proc/$p/cmdline" 2>/dev/null && echo "$p"
+}
+
+serial_pids() {
+    if [ "$SERIAL" = pico ]; then pico_serial_pid; else pids 'Capture-RpiSerial.ps1'; fi
+}
+
 status() {
     local s t
-    s=$(pids 'Capture-RpiSerial.ps1' | xargs)
+    s=$(serial_pids | xargs)
     t=$(pids 'serve_tftp.py' | xargs)
-    printf 'serial listener : %s\n' "${s:-down}"
+    printf 'serial listener : %s (%s)\n' "${s:-down}" "$SERIAL"
     python3 - "$BENCH" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1]) / 'serial-current.json'
@@ -57,7 +75,14 @@ PY
 up() {
     mkdir -p "$BENCH/payload"
     cp "$HERE/Capture-RpiSerial.ps1" "$HERE/serve_tftp.py" "$BENCH/"
-    if [ -z "$(pids 'Capture-RpiSerial.ps1')" ]; then
+    if [ "$SERIAL" = pico ]; then
+        if [ -z "$(pico_serial_pid)" ]; then
+            setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" \
+                >"$BENCH/pico-serial.log" 2>&1 </dev/null &
+            echo $! > "$PICO_PID"
+            sleep 3
+        fi
+    elif [ -z "$(pids 'Capture-RpiSerial.ps1')" ]; then
         ps_launch "Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$WBENCH\\Capture-RpiSerial.ps1','-PortName','$PORT' -WindowStyle Hidden"
         sleep 3
     fi
@@ -68,7 +93,11 @@ up() {
     status
     # A listener that started and then died leaves FAILED behind; say so loudly.
     grep -q '"LISTENING"' "$BENCH/serial-current.json" 2>/dev/null || {
-        echo "pi4-bench: serial listener is not LISTENING ($PORT held by another program?)" >&2
+        if [ "$SERIAL" = pico ]; then
+            echo "pi4-bench: pico serial listener is not LISTENING - see $BENCH/pico-serial.log" >&2
+        else
+            echo "pi4-bench: serial listener is not LISTENING ($PORT held by another program?)" >&2
+        fi
         return 1
     }
     [ -n "$(pids 'serve_tftp.py')" ] || {
@@ -97,6 +126,10 @@ http() {
 }
 
 down() {
+    local p
+    if p=$(pico_serial_pid); then
+        kill "$p" && echo "stopped pico_serial.py ($p)"
+    fi
     for pat in 'Capture-RpiSerial.ps1' 'serve_tftp.py' 'serve_http.py'; do
         for p in $(pids "$pat"); do
             ps_run "Stop-Process -Id $p -Force" >/dev/null && echo "stopped $pat ($p)"

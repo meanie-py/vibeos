@@ -943,7 +943,7 @@ pub unsafe extern "C" fn DiskCreateFdo(
     const STATUS_OBJECT_NAME_EXISTS: i32 = 0x40000000u32 as i32;
     const STATUS_SUCCESS: i32 = 0;
     const STATUS_UNSUCCESSFUL: i32 = 0xC0000001u32 as i32;
-    const DIRECTORY_ALL_ACCESS: u32 = 0x000F01FF;
+    const DIRECTORY_ALL_ACCESS: u32 = 0x000F000F; // obtypes.h: STANDARD_RIGHTS_REQUIRED | 0xF (was 0xF01FF)
     const APC_LEVEL: u32 = 1;
     const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
@@ -10799,7 +10799,7 @@ pub unsafe extern "C" fn DiskIoctlIsWritable(
             core::arch::asm!("int 0x2C");
             #[cfg(target_arch = "aarch64")]
             core::arch::asm!("brk #0xF001");
-            loop {}
+            // NT_ASSERT resumes after the break; no spin.
         }
     }
     if KeGetCurrentIrql() as i32 >= DISPATCH_LEVEL as i32 {
@@ -10815,7 +10815,7 @@ pub unsafe extern "C" fn DiskIoctlIsWritable(
             core::arch::asm!("int 0x2C");
             #[cfg(target_arch = "aarch64")]
             core::arch::asm!("brk #0xF001");
-            loop {}
+            // NT_ASSERT resumes after the break; no spin.
         }
         return STATUS_INVALID_LEVEL;
     }
@@ -10925,7 +10925,7 @@ pub unsafe extern "C" fn DiskIoctlIsWritable(
                 core::arch::asm!("int 0x2C");
                 #[cfg(target_arch = "aarch64")]
                 core::arch::asm!("brk #0xF001");
-                loop {}
+                // NT_ASSERT resumes after the break; no spin.
             }
             if !srb.is_null() {
                 ExFreePool(srb as *mut core::ffi::c_void);

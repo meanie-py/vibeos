@@ -551,10 +551,24 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
     # reality" once a batch's archive answered 53 more exports, the check truthfully
     # found no regression, and the test read that as the ratchet being broken: it
     # halted the merge train as "master is red" (2026-09-26).
-    from ucrt_burndown import classify
+    import ucrt_burndown
 
-    measured = len(classify(arch)[0]["MICROSOFT"])
+    buckets, byfile = ucrt_burndown.classify(arch)
+    measured = len(buckets["MICROSOFT"])
     recorded_line = f"  {arch}: {recorded}"
+
+    # PIN the measurement for the checks below. check_burndown() measures again, and
+    # the conductor runs this test while its own builds rewrite the integration
+    # worktree's build dirs: the two readings differed by 91 (634, then 725) once a
+    # batch moved the count that far, and the test failed a ratchet whose logic was
+    # fine (halting the train as "master red", 2026-09-27). What is under test is
+    # the RATCHET -- ceiling vs one measurement -- so it gets exactly one.
+    original_classify = ucrt_burndown.classify
+    original_stale = vuc.burndown_stale
+    # Only THIS arch is measured (once); the other arches' ceilings are not what
+    # this test perturbs, so they read as stale and are skipped with a note.
+    ucrt_burndown.classify = lambda a: (buckets, byfile) if a == arch else ({}, {})
+    vuc.burndown_stale = lambda a: None if a == arch else "pinned out by the test"
 
     # Perturb a COPY, never the tracked file. Writing tools/ucrt-takeover.yaml in place and
     # restoring it leaves the content clean but moves the mtime, and `vibeos-cli build`'s
@@ -578,6 +592,8 @@ def test_the_ratchet_fails_on_a_regression_and_only_notes_an_improvement(tmp_pat
         assert any("fewer Microsoft-backed exports" in n for n in notes), notes
     finally:
         vuc.TAKEOVER = original_takeover
+        ucrt_burndown.classify = original_classify
+        vuc.burndown_stale = original_stale
 
 
 def test_archive_source_crates_are_walked_not_listed() -> None:
@@ -631,3 +647,122 @@ def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monk
     assert why and "isalpha" in why and "different tree" in why
     monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "isalpha"})
     assert vuc.burndown_stale("arm64") is None
+
+
+def _initializer_tree(tmp_path: Path, replaced_by_rust: bool) -> Path:
+    init = tmp_path / "sdk" / "lib" / "ucrt" / "initializers"
+    init.mkdir(parents=True)
+    (init / "timeset_initializer.cpp").write_text(
+        'extern "C" _CRTALLOC(".CRT$XIC")  _PIFV const __acrt_timeset_initializer'
+        " = __acrt_initialize_timeset;\n"
+    )
+    src = tmp_path / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "timeset.rs").write_text(
+        "crate::force_include!(__acrt_timeset_initializer);\n"
+        if replaced_by_rust
+        else "// nothing\n"
+    )
+    return tmp_path
+
+
+def test_a_hook_whose_force_include_was_deleted_is_caught(tmp_path: Path):
+    # The positive control is the real loss: timeset.cpp deleted, its
+    # `_CRT_LINKER_FORCE_INCLUDE(__acrt_timeset_initializer)` gone with it.
+    findings = vuc.check_force_includes(_initializer_tree(tmp_path, replaced_by_rust=False))
+    assert len(findings) == 1 and "__acrt_timeset_initializer" in findings[0]
+
+
+def test_a_rust_force_include_satisfies_it(tmp_path: Path):
+    assert vuc.check_force_includes(_initializer_tree(tmp_path, replaced_by_rust=True)) == []
+
+
+def test_the_real_tree_force_includes_every_hook():
+    assert vuc.check_force_includes() == []
+
+
+def _rust_src(tmp_path: Path, body: str) -> Path:
+    src = tmp_path / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "m.rs").write_text(body)
+    return tmp_path
+
+
+def test_a_win32_api_declared_extern_c_is_caught(tmp_path: Path):
+    # The real one: stdio/files/raw_lowio.rs bound `_ReadFile`, kernel32 exports
+    # `_ReadFile@20`, and only the i386 link said so.
+    body = (
+        'extern "C" {\n'
+        "    fn _read_nolock(fh: c_int) -> c_int;\n"
+        "    fn ReadFile(h: isize) -> i32;\n"
+        "}\n"
+    )
+    findings = vuc.check_win32_abi(_rust_src(tmp_path, body))
+    assert len(findings) == 1 and "`ReadFile`" in findings[0]
+
+
+def test_extern_system_and_crt_names_pass(tmp_path: Path):
+    body = (
+        'extern "C" {\n    fn _read_nolock(fh: c_int) -> c_int;\n}\n'
+        'extern "system" {\n    fn ReadFile(h: isize) -> i32;\n}\n'
+    )
+    assert vuc.check_win32_abi(_rust_src(tmp_path, body)) == []
+
+
+def test_the_real_tree_declares_no_win32_api_extern_c():
+    assert vuc.check_win32_abi() == []
+
+
+def test_a_winapi_crt_thunk_declared_extern_c_is_caught(tmp_path: Path):
+    # The real one: misc/small.rs bound `___acrt_SetThreadStackGuarantee`; the header
+    # declares it WINAPI, and only the i386 link said so. A __cdecl thunk passes.
+    inc = tmp_path / "sdk" / "lib" / "ucrt" / "inc"
+    inc.mkdir(parents=True)
+    (inc / "corecrt_internal.h").write_text(
+        "BOOL WINAPI __acrt_SetThreadStackGuarantee(PULONG);\n"
+        "int __cdecl __acrt_MultiByteToWideChar(UINT);\n"
+    )
+    body = (
+        'extern "C" {\n'
+        "    fn __acrt_SetThreadStackGuarantee(size: *mut u32) -> c_int;\n"
+        "    fn __acrt_MultiByteToWideChar(cp: u32) -> c_int;\n"
+        "}\n"
+    )
+    findings = vuc.check_win32_abi(_rust_src(tmp_path, body))
+    assert len(findings) == 1 and "__acrt_SetThreadStackGuarantee" in findings[0]
+
+
+def _fake_dll(tmp_path: Path, arch: str) -> Path:
+    dll = tmp_path / f"build-{arch}" / "dll" / "win32" / "ucrtbase" / "ucrtbase.dll"
+    dll.parent.mkdir(parents=True)
+    dll.write_bytes(b"MZ")
+    return dll
+
+
+def test_an_export_answered_by_an_import_is_caught(tmp_path: Path, monkeypatch):
+    """The real accident: memmove_s's body deleted, the msvcrt import library answering."""
+    _fake_dll(tmp_path, "amd64")
+    monkeypatch.setattr(
+        vuc,
+        "_pe_exports_imports",
+        lambda dll: (
+            {"memmove_s", "memcpy", "malloc"},
+            {"memmove_s": "msvcrt.dll", "memcpy": "ntdll.dll"},
+        ),
+    )
+    fails, _notes = vuc.check_export_imports(tmp_path)
+    assert len(fails) == 1 and "`memmove_s`" in fails[0] and "msvcrt.dll" in fails[0]
+
+
+def test_an_allowlisted_forward_passes_only_from_its_named_dll(tmp_path: Path, monkeypatch):
+    _fake_dll(tmp_path, "arm64")
+    monkeypatch.setattr(
+        vuc, "_pe_exports_imports", lambda dll: ({"memcpy"}, {"memcpy": "msvcrt.dll"})
+    )
+    fails, _notes = vuc.check_export_imports(tmp_path)
+    assert len(fails) == 1, "memcpy is allowed from ntdll, not from msvcrt"
+
+
+def test_a_missing_build_is_a_note_not_a_pass_or_failure(tmp_path: Path):
+    fails, notes = vuc.check_export_imports(tmp_path)
+    assert fails == [] and len(notes) == 3

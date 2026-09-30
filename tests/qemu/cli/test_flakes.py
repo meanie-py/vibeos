@@ -294,3 +294,31 @@ def test_no_build_refuses_media_without_the_sweep(tmp_path):
     assert "not" in (media_payload_gap(tmp_path) or "")
     (tmp_path / "payload-selection.json").write_text(_json.dumps({"payloads": [SUITE]}))
     assert media_payload_gap(tmp_path) is None
+
+
+def test_conformance_strips_every_host_stamp_the_tee_writes(tmp_path):
+    # The real tee, fed awkward chunk boundaries: mid-line, and between a CR and
+    # its LF (the tee stamps after either). Parsing must see the guest's bytes.
+    from ..serial_client import SerialClient
+    from . import conformance
+
+    guest = "".join(
+        f"[KMTEST:BEGIN T{i}]\r\nT{i}.c:{i}: Test failed: x\r\n"
+        f"[KMTEST:END T{i} pass={i} fail=1 skip=0]\n"
+        for i in range(40)
+    )
+    tee = SerialClient.__new__(SerialClient)
+    tee._tee_t0, tee._tee_at_bol = None, True
+    cuts, pos, out = [3, 17, 1, 40, 2, 9], 0, []
+    while pos < len(guest):
+        step = cuts[len(out) % len(cuts)]
+        out.append(tee._stamp_tee_text(guest[pos : pos + step]))
+        pos += step
+    stamped = "".join(out)
+    assert stamped != guest and "\r[+" in stamped  # the CR-LF split did occur
+    plain, log = tmp_path / "plain.log", tmp_path / "arm64_serial.log"
+    plain.write_bytes(guest.encode("latin-1"))
+    log.write_bytes(stamped.encode("latin-1"))
+    # Byte-for-byte what an unstamped round would have parsed.
+    assert conformance.read_serial(log) == plain.read_text(errors="replace")
+    assert conformance.read_serial(plain) == plain.read_text(errors="replace")

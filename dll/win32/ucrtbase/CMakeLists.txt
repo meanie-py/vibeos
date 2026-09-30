@@ -15,6 +15,10 @@ add_compile_definitions(
 
 add_library(ucrtbase SHARED
     printf.c
+    # The `...` entry points of the ucrt-rust takeovers (and the va_arg pullers
+    # varargs-rust needs), as va_start trampolines over Rust `_v` twins. In the
+    # MODULE, not the ucrt archive, so they win first-match over any archive copy.
+    ucrt_varargs_shim.c
     stubs.c
     ucrtbase_stubs.c
     ucrtbase.def
@@ -76,7 +80,7 @@ set(UCRT_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcrt_shared_cargo.a")
 # closure from the manifests and fails if this list and it disagree.
 set(UCRT_SHARED_RUST_CRATES
     crt-shared-cargo cnt-rust crt-portable-rust crt-shared-rust panic-common msvcrt-sys
-    ucrt-rust)
+    ucrt-rust varargs-rust)
 set(UCRT_SHARED_RUST_GLOBS)
 set(UCRT_SHARED_RUST_MANIFESTS)
 foreach(crate ${UCRT_SHARED_RUST_CRATES})

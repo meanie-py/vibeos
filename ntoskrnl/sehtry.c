@@ -42,9 +42,23 @@ unsigned char __cdecl
 RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *FilterContext,
                 long *ExceptionCode)
 {
+#if defined(__aarch64__)
+    /* arm64 dispatches a kernel fault with IRQs masked (the sync-exception path keeps
+     * DAIF as the exception entry left it), and the except block resumes on a CONTEXT
+     * captured during that dispatch, so it would carry on masked: a synchronously
+     * completed IRP's completion APC then cannot run before IoCallDriver returns (the
+     * amd64 fastfat stack-event corruption). Record I at try entry and put it back,
+     * as the i386 path below does with IF. amd64 fixes this at the trap instead. */
+    volatile unsigned long Daif;
+    __asm__ __volatile__("mrs %0, daif" : "=r"(Daif));
+#endif
     __try {
         Body(BodyContext);
     } __except (Filter ? Filter(FilterContext, _exception_info()) : 1) {
+#if defined(__aarch64__)
+        if (!(Daif & 0x80 /* PSTATE.I */))
+            __asm__ __volatile__("msr daifclr, #2" ::: "memory");
+#endif
         if (ExceptionCode)
             *ExceptionCode = _exception_code();
         return 1;
@@ -169,7 +183,14 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
                 long *ExceptionCode)
 {
     volatile SEH_FRAME Frame;
+    volatile unsigned long EFlags;
 
+    /* A kernel-mode int3 is dispatched with interrupts still disabled (KiDebugHandler
+     * only re-enables them for user traps), and __builtin_longjmp restores no flags, so
+     * the catch below would resume with IF=0 and the next page fault bugchecks
+     * IRQL_NOT_LESS_OR_EQUAL with IRQL -1. amd64 gets EFlags back from the unwound
+     * context; here the try records IF and the catch puts it back. */
+    __asm__ __volatile__("pushfl\n\tpopl %0" : "=r"(EFlags));
     Frame.Handler = (void *)SehExceptHandler;
     Frame.Filter = Filter;
     Frame.FilterContext = FilterContext;
@@ -177,6 +198,8 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
     Frame.Next = SehGetList();
     if (__builtin_setjmp((void **)Frame.JmpBuf)) {
         /* The handler already unlinked Frame. */
+        if (EFlags & 0x200 /* EFLAGS_INTERRUPT_MASK */)
+            __asm__ __volatile__("sti" ::: "memory");
         if (ExceptionCode)
             *ExceptionCode = Frame.Code;
         return 1;

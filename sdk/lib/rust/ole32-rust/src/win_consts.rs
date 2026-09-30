@@ -265,7 +265,7 @@ pub const WM_KEYDOWN: DWORD = 0x100;
 /// winuser.h
 pub const WM_KEYFIRST: DWORD = 0x100;
 /// winuser.h
-pub const WM_KEYLAST: DWORD = 0x108;
+pub const WM_KEYLAST: DWORD = 0x109; // winuser.h:1753 WM_UNICHAR at ole32's _WIN32_WINNT=0x600 (was 0x108, the pre-XP value)
 /// winuser.h
 pub const WM_LBUTTONDOWN: DWORD = 0x201;
 /// winuser.h

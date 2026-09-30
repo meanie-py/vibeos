@@ -1157,6 +1157,17 @@ was ntoskrnl-only, so a whole driver fleet carried live bombs. The five shapes:
 `cdrom.sys` carried **100** ud2 sites, all on paths boot never hits — which is exactly why
 master was green.
 
+**A sixth shape does not fold at all: two DECLARATIONS, no definition.** fastfat's
+`fileinfo.rs` declared the cdecl cohab thunk `IoGetCurrentIrpStackLocation` as `"system"` while
+`cachesup`/`create`/`dirctrl` said `"C"`. rustc keeps one declaration per symbol per crate, so
+fileinfo's call bound to `_IoGetCurrentIrpStackLocation` (cdecl, caller pops) but was compiled
+with stdcall's bookkeeping (callee pops): `push; call` and no `add esp`, then locals read at
+offsets that assume the pop. `esp` came back 4 bytes off and the next esp-relative load read a
+garbage pointer: i386 BUGCHECK 0x50, P1 nonsense, in a closure body right after the helper
+call, only when notepad saved a file to FAT. The tell in the disassembly is a cdecl call with
+no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
+definition: two answers to one question are already wrong).
+
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
 
@@ -1513,7 +1524,15 @@ types.
   lost-wakeup wedge, "BAD gate", and BSOD roulette from one root. Fix with a
   `#[repr(C, align(16))]` newtype. **Sweep for any C type carrying an alignment attribute.**
 - **Nested `_HEAD` structs flatten into `__bindgen_padding_0`.** `THRDESKHEAD`/`THROBJHEAD`
-  lose `head.h` (offset 0 → `addr_of!` cast) and `head.pti` (a padding index). Derive the
+  lose `head.h` and `head.pti`. Read them through the typed head —
+  `(*(p as *const _HEAD)).h`, `(*(p as *const _THROBJHEAD)).pti` — **never by indexing the
+  padding array**: its ELEMENT type is bindgen's choice. A win32k-sys regeneration turned
+  `[u64; 3]` into `[u8; 24]`, user32's `head.__bindgen_padding_0[2]` became one byte of the
+  handle, `IntCallMessageProc` saw a thread mismatch on every window, and every posted
+  message it dispatched was dropped as ERROR_MESSAGE_SYNC_ONLY: no app closed on WM_CLOSE,
+  on any arch, and every gate stayed green (appstorm found it; `scan_bindgen_padding_index`
+  gates it now). Taking the padding's *address* is layout-stable. When you must hand-derive
+  an offset instead, derive the
   offset from the real field sequence and the target's alignment — **do not blanket-apply
   `2*usize`**: head-pti is `2 * size_of::<usize>()` (8/16), but `PROCESSINFO.W32PF_flags`
   after `{PEPROCESS; DWORD}` has no tail padding and is `size_of::<usize>() + 4` (8/12). A
@@ -2439,6 +2458,13 @@ A 770-entry baseline is a work queue, not a defect list, and working it alphabet
 the effort on the harmless majority. The severity of a wrong constant is predicted by one
 question: *is there a second site that must produce the same number?* Rank the queue by it.
 
+- **A rendezvous pair can live inside ONE file, as function-local shadows.** fastfat's
+  resrcsup.rs defined `FSRTL_CACHE_TOP_LEVEL_IRP` four times (-2, 2, -1, 1; the C is 0x02),
+  each Acquire/Release pair setting one value and testing another. FatReleaseForCcFlush
+  never recognised the -2 FatAcquireForCcFlush set, the bogus top-level IRP leaked, and the
+  next FatCommonWrite took it for a real IRP and faulted (BUGCHECK 0x23 on arm64, kmtest
+  ZwCreateSection). Pointer-typed flags (`(-2isize) as *mut IRP`) were invisible to
+  `scan_const_contradictions` until its value parser learned the cast forms.
 - **Rendezvous pairs — fix first.** Alloc↔free (`ExAllocatePoolWithTag`/`ExFreePoolWithTag`),
   write↔compare (a signature stamped at init and tested later), set↔test (a flag written by one
   file and masked by another), request↔dispatch (a function code the caller sends and the
@@ -4284,10 +4310,9 @@ already been met the note is describing a bug, not a plan.
   because the missing bit only matters on the NEXT create that reuses deleted slots — which
   could then be handed a live entry and overwrite another file's dirent. The one objection
   was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
-  translation, diff each paired function's C callee set against its Rust body. A
-  lead-generator, not a gate: macro expansion (`KeAcquireSpinLockRaiseToDpc` for
-  `KeAcquireSpinLock`) and DUMMY_PSEH-dead finally blocks produce false positives, so read
-  each lead against the C.
+  translation run `rustconv body-audit <module>` (or `--all`): it diffs each paired
+  function's live C callees against its Rust body and ranks silent stubs and dropped
+  state-changing calls first. A lead generator, not a gate: read each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
@@ -5923,6 +5948,26 @@ captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A
 that keeps its frame pointer in `esi` across the call faults on the next line. Save them
 around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
 
+**amd64 trap: the catch resumed with interrupts OFF.** Symptom: fastfat caught a kernel
+int3 in `FatMountVolume`, retried the mount, and the retry's dispatch walked into garbage
+(saved RBP `0x00000001_xxxxxxxx`) until the stack overflowed (0x7F/8). Nothing was wrong
+with the unwinder. `KiBreakpointTrap` (and `KiGeneralProtectionFault`) dispatched a
+kernel-mode fault with IF=0, and `RtlUnwindEx` resumes the except block on a CONTEXT
+captured during dispatch, so the thread carried on with interrupts disabled. The next
+`FatPerformDevIoCtrl` IRP completed synchronously, but its `IopCompleteRequest` APC is a
+self-IPI that cannot fire with IF=0. So `IoCallDriver` returned without waiting and the APC
+ran seconds later, `KeSetEvent`-ing a stack KEVENT whose frame was gone. Fix: dispatch with
+the trapped frame's IF, as `KiPageFault` already did. arm64 had it too (`irqs=1/0`).
+There the sync-exception path keeps DAIF masked by design, so instead `RtlSehTryExcept`
+records PSTATE.I at try entry and restores it on the catch, as i386's hand-built catch
+already did. `[SEH-TRY] rust hw faults ... irqs=1/1`
+checks it on each boot, and smoke fails any `(FAIL)` self-test line (`SELFTEST_FAIL`). The
+general move for "a stack slot changed and nobody wrote it": `gdb probe` with a hardware
+`watch -l` armed at the owning function's entry names the writer on the first try.
+Aside: in Rust `asm!` (Intel syntax) a bare `pushf` assembles to the 16-bit `pushfw` on
+i386. Paired with a 32-bit `pop`, it left ESP two bytes off, and every local printed as
+garbage. Write `pushfd`/`pushfq`.
+
 **Converting a module (cdfs, 2026-09-26):** the translated `__finally` is usually a
 labeled `loop { ... break; }` followed by inline cleanup. Move the loop verbatim into
 `try_finally`'s body and the cleanup into `fin`; a local the finally reads that the body
@@ -6297,7 +6342,9 @@ sweep.**
   the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
   suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
-  the macro expands to.
+  the macro expands to. `NT_ASSERT` breaks and then *continues*: disk.sys had three
+  `brk #0xF001; loop {}` sites, which the arm64 build's driver sweep reports as unexpected
+  branch-to-self spins, but only once the driver is in the mkramdisk staging list.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
   masquerades as a hang.
 
@@ -10283,6 +10330,11 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **A PTE attribute the MAIR doesn't mean.** `MI_PAGE_DISABLE_CACHE` set x86 PCD bits that
   selected MAIR slot 0 (Normal WB) on arm64, so the UART and GIC were cached. TCG ignores
   memory attributes. Fixed in `mm.rs` to AttrIndx 1 (Device) / 2 (Normal-NC).
+  The flip side: a caller that disables caching on **RAM**, where x86 PCD only means
+  "don't pollute the cache", now gets Device memory. `MiMapPagesInZeroSpace` did, and the
+  first `dc zva` in `KeZeroPages` alignment-faulted in `MmZeroPageThread` on a Raspberry
+  Pi 4 (BUGCHECK 0x1E, 0x80000002, ESR DFSC 0x21) while QEMU booted green. RAM stays
+  Normal WB on arm64; Device-mapping it also aliases the page's WB mappings.
 - **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
   the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
   invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
@@ -10449,6 +10501,24 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **Desktop timer freeze = three stacked bugs** `[§9.21]`: `KeDelayExecutionThread` was still a
   busy-yield bring-up stub, explorer's main thread spun on a stuck `QS_PAINT` wake bit, and
   DISPATCH software-interrupt delivery was unimplemented.
+- **Serial silent for ~95 s with the guest clock still ticking, then everything due fires at
+  once** (a 10 s census missing nine scans, 30 s waits timing out together) — **arm64 had no
+  preemption.** The DISPATCH softint expired timers but parked the woken thread in
+  `Prcb->NextThread`, and only the idle loop or a voluntary wait ever switched to it;
+  `QuantumEnd` was never read. So a thread that never blocks kept the CPU — here the
+  **priority-0 zero-page thread**, clearing the free list after kmtest MmSection, once per
+  arm64 conformance round. Fix: `KfLowerIrql` calls `KiDispatchPreemptArm64` on the crossing
+  under DISPATCH (x86's DPC-interrupt tail). Three traps on the way:
+  - It must decline when IRQs are masked.
+  - The preempted thread must restore its own DAIF on resume. The first cut let the zero
+    thread come back masked from an SVC-wait swap, and it froze the box: 63 s of host time,
+    0.4 s of guest time.
+  - `KeZeroPages` went through the CRT's byte-at-a-time memset, ~12 ms per 32-page batch under
+    TCG, and every timer waited that long for the next crossing. It is `dc zva` now.
+
+  **Tell it from a dead clock** by stamping serial with host time (conformance does this
+  always) and reading `silence-samples.txt`, which the payload drain writes during any 20 s
+  quiet that later recovers.
 - **Desktop never repaints** `[§9.23]`: `gpdeskInputDesktop` stranded on the *Winlogon* desktop,
   and `SystemTime` was never seeded from the RTC (the "query the clock" block was dropped —
   arm64 needs the PL031 at `0x0901_0000`).
@@ -11528,6 +11598,18 @@ introduced at any heap exit — it is an external stray write.**
   kmtest-sweep.exe`. The guest hung inside the taskbar's OnCreate, so explorer never processed
   the StartUp folder that launches the sweep. Zero tests, nothing runnable, `HLT=1` — the whole
   chain, from one absent line.
+- **A user thread stuck in `NtCreateFile` (or any call into a filesystem) is usually queued
+  behind someone else's ERESOURCE: find the OWNER, not the waiter.** `gdb inspect <run>
+  list-threads` → take the `WrResource` thread's ETHREAD → `gdb inspect <run> who-holds
+  <addr>` names the resource, its owner thread, and the code addresses on the owner's kernel
+  stack. The 2026-09-27 amd64 appstorm hang read as "explorer's folder window hangs" and was
+  fsrtl: a wordpad close spun forever in `FsRtlUninitializeFileLock` (a swapped
+  `GenericEqual` constant made every lock undeletable) while fastfat held the volume resource.
+  Two traps the verb now handles: **`WaitReason` and `WaitBlockList` survive the wake**, so a
+  terminated thread still "waits" on its last object (only a wait block still linked on the
+  object's `WaitListHead` is live — an exited hello32 read as a lost wakeup until that check
+  existed); and a DPC-preempted spinner shows `WrDispatchInt`, with its interrupted RIP in the
+  KTRAP_FRAME that `KiDpcInterrupt` left on its stack.
 - **Get a KNOWN-GOOD CONTROL on the same host before believing any number in a hang log.**
   This is what makes the above affordable, and both halves of that same investigation needed it:
   "77% of serial is one error" and "72 threads parked >20s" each read as damning, and a green

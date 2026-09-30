@@ -1717,14 +1717,14 @@ const SCRIPTCONTF_SCRIPT_HIDE: u32 = 2;
 const SCRIPTCONTF_SCRIPT_SYSTEM: u32 = 4;
 const SCRIPTCONTF_FIXED_FONT: DWORD = 1;
 const SCRIPTCONTF_PROPORTIONAL_FONT: DWORD = 2;
-const TCI_SRCCODEPAGE: u32 = 1;
+const TCI_SRCCODEPAGE: u32 = 2; // wingdi.h:962 (was 1 = TCI_SRCCHARSET)
 const TCI_SRCFONTSIG: u32 = 3;
 const DEFAULT_CHARSET: u8 = 1;
 const ERROR_SUCCESS: LSTATUS = 0;
 const REG_SZ: u32 = 1;
 const REG_DWORD: u32 = 4;
 const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as HKEY;
-const OBJ_FONT: u32 = 7;
+const OBJ_FONT: u32 = 6; // wingdi.h:694 (was 7 = OBJ_BITMAP)
 const CPIOD_PEEK: u32 = 0x00000400;
 const WC_NO_BEST_FIT_CHARS: u32 = 0x00000400;
 const STATFLAG_NONAME: u32 = 1;
@@ -4993,7 +4993,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
     extern "system" {
         fn TranslateCharsetInfo(arg1: *const u32, arg2: *mut CHARSETINFO, arg3: u32) -> i32;
     }
-    const TCI_SRCCODEPAGE: u32 = 0x00000001;
+    const TCI_SRCCODEPAGE: u32 = 0x00000002; // wingdi.h:962 (was 1 = TCI_SRCCHARSET)
     const TCI_SRCFONTSIG: u32 = 0x3; // wingdi.h
     const S_OK: i32 = 0;
     const E_FAIL: i32 = 0x80004005u32 as i32;

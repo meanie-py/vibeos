@@ -352,11 +352,6 @@ C_PREAMBLE = [
     "#ifndef __int64",
     "#define __int64 long long",
     "#endif",
-    # No __wfi()/__yield() stubs: as zero-arg function-like macros they turn
-    # intrin.h's `void __yield(void);` prototype into a one-argument macro
-    # invocation, which is a HEADER error, which the per-type retry loop can never
-    # clear -- so arm64 produced no assertions at all while this exited 0. libclang
-    # needed those stubs; a real clang handles the inline asm.
     "#undef FORCEINLINE",
     "#define FORCEINLINE",
     "#include <ntoskrnl.h>",

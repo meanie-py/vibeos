@@ -1069,7 +1069,7 @@ pub unsafe extern "C" fn MiDecrementPageTableReferences(Address: PVOID) -> USHOR
     // On i386: MmWorkingSetList->UsedPageTableEntries[MiGetPdeOffset(Address)]
     // MiGetPdeOffset(Va) = (ULONG_PTR)Va / PDE_MAPPED_VA
     // PDE_MAPPED_VA = 4MB = 0x400000
-    const PDE_MAPPED_VA: ULONG_PTR = 0x400000;
+    const PDE_MAPPED_VA: ULONG_PTR = 0x400000; // nolint: const-contradiction (i386 non-PAE: internal/i386/mm.h:172 PTE_PER_PAGE(1024)*PAGE_SIZE; the 0x200000 island value is amd64's)
     // Offset of UsedPageTableEntries in MMWSL (i386):
     // 4*ULONG + PVOID + 2*ULONG + PVOID + ULONG + ULONG + 2*PVOID + 2*ULONG
     // = 16 + 4 + 8 + 4 + 4 + 4 + 8 + 8 = 56 bytes
