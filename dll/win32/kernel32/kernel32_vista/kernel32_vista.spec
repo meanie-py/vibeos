@@ -60,13 +60,36 @@
 @ stdcall SetThreadPreferredUILanguages(long wstr ptr)
 
 @ stdcall GetNamedPipeClientProcessId(ptr ptr)
-# The threadpool WORK-object subset, in kernel32-vista-rust (threadpool.rs) -- not the NT
-# threadpool upstream's threadpool.c wraps, which is still owed. Wine-10 quartz needs these.
+# The threadpool family, as upstream: the Create* wrappers are kernel32-vista-rust
+# (threadpool.rs, a port of threadpool.c); the rest forward to ntdll_vista's Tp* (rtl-threadpool).
+# CreateThreadpoolIo/StartThreadpoolIo/CancelThreadpoolIo go beyond upstream's spec, which
+# exports Close/WaitFor for an IO object nothing could create.
+@ stdcall CancelThreadpoolIo(ptr) ntdll_vista.TpCancelAsyncIoOperation
+@ stdcall CloseThreadpool(ptr) ntdll_vista.TpReleasePool
+@ stdcall CloseThreadpoolCleanupGroup(ptr) ntdll_vista.TpReleaseCleanupGroup
+@ stdcall CloseThreadpoolCleanupGroupMembers(ptr long ptr) ntdll_vista.TpReleaseCleanupGroupMembers
+@ stdcall CloseThreadpoolIo(ptr) ntdll_vista.TpReleaseIoCompletion
+@ stdcall CloseThreadpoolTimer(ptr) ntdll_vista.TpReleaseTimer
+@ stdcall CloseThreadpoolWait(ptr) ntdll_vista.TpReleaseWait
+@ stdcall CloseThreadpoolWork(ptr) ntdll_vista.TpReleaseWork
+@ stdcall CreateThreadpool(ptr)
+@ stdcall CreateThreadpoolCleanupGroup()
+@ stdcall CreateThreadpoolIo(ptr ptr ptr ptr)
+@ stdcall CreateThreadpoolTimer(ptr ptr ptr)
+@ stdcall CreateThreadpoolWait(ptr ptr ptr)
 @ stdcall CreateThreadpoolWork(ptr ptr ptr)
-@ stdcall SubmitThreadpoolWork(ptr)
-@ stdcall WaitForThreadpoolWorkCallbacks(ptr long)
-@ stdcall CloseThreadpoolWork(ptr)
+@ stdcall FreeLibraryWhenCallbackReturns(ptr ptr) ntdll_vista.TpCallbackUnloadDllOnCompletion
+@ stdcall SetThreadpoolThreadMaximum(ptr long) ntdll_vista.TpSetPoolMaxThreads
+@ stdcall SetThreadpoolThreadMinimum(ptr long) ntdll_vista.TpSetPoolMinThreads
+@ stdcall SetThreadpoolTimer(ptr ptr long long) ntdll_vista.TpSetTimer
+@ stdcall SetThreadpoolWait(ptr long ptr) ntdll_vista.TpSetWait
+@ stdcall StartThreadpoolIo(ptr) ntdll_vista.TpStartAsyncIoOperation
+@ stdcall SubmitThreadpoolWork(ptr) ntdll_vista.TpPostWork
 @ stdcall TrySubmitThreadpoolCallback(ptr ptr ptr)
+@ stdcall WaitForThreadpoolIoCallbacks(ptr long) ntdll_vista.TpWaitForIoCompletion
+@ stdcall WaitForThreadpoolTimerCallbacks(ptr long) ntdll_vista.TpWaitForTimer
+@ stdcall WaitForThreadpoolWaitCallbacks(ptr long) ntdll_vista.TpWaitForWait
+@ stdcall WaitForThreadpoolWorkCallbacks(ptr long) ntdll_vista.TpWaitForWork
 # Added by the 2026-09-20 upstream sync: implemented in kernel32-vista-rust
 # (vista.rs / misc.rs) rather than by building upstream's new C, which would have
 # duplicated symbols the Rust twins already own.

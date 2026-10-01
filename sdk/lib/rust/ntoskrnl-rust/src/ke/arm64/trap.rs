@@ -862,6 +862,42 @@ pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
     }
 }
 
+/// Preemption point for an IRQ that interrupted EL0, run by `KiEL0IrqEntry` after
+/// `KiIrqHandler` and before the user's NEON state is restored.
+///
+/// arm64's only other preemption point is `KfLowerIrql` crossing below DISPATCH in
+/// thread context, which a thread spinning in user mode never reaches: the clock tick
+/// set `QuantumEnd` (or a timer readied a thread into `NextThread`) and nothing ever
+/// acted on it. On one CPU that is a livelock, not just unfairness. ntdll_vista's NT
+/// threadpool worker woke from a timed condvar wait and spun for the condvar's internal
+/// lock, which the thread it had preempted held, and the whole guest stopped
+/// (the `tpprobe` payload, 2026-09-30). x86 switches here via the DPC interrupt that the
+/// IRQ's own lowering delivers.
+///
+/// This is the one IRQ exit where switching is safe. The interrupted context is user
+/// mode, so PASSIVE with no kernel locks held. The handler has EOI'd and dropped its
+/// interrupt-context depth, so the HAL treats the raise/lower as thread context. The
+/// user's ELR/SPSR are in the trap frame, and `KiTrapReturn` re-masks before reloading
+/// them. Unmasking first is what keeps this out of the DAIF-masked switch hazard, which
+/// `KiDispatchPreemptArm64` refuses anyway: the thread is parked unmasked, as an SVC
+/// that blocks is since `UNMASK_IRQ_FROM_SPSR`. The raise/lower then does exactly what
+/// the thread would have done had it lowered IRQL itself: it drains the pending
+/// DISPATCH work and then takes the quantum end or the readied thread.
+#[no_mangle]
+pub unsafe extern "C" fn KiEL0IrqPreempt() {
+    let Prcb = KeGetCurrentPrcb();
+    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() {
+        return;
+    }
+    if KeGetCurrentIrql() != PASSIVE_LEVEL {
+        return;
+    }
+    core::arch::asm!("msr daifclr, #2", options(nomem, nostack));
+    let OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+    KfLowerIrql(OldIrql);
+    core::arch::asm!("msr daifset, #2", options(nomem, nostack));
+}
+
 /// True while KiIrqHandler is retiring DPCs in IRQ exception context. A
 /// context switch in that window is FATAL (the switched-to thread inherits
 /// exception-entry DAIF, masking interrupts forever) — KiSwapContextResume

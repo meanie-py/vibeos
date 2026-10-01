@@ -15,6 +15,15 @@ in any configuration we boot today. pcix.sys appears only as a file copy in
 the leak fix. Item 8 also needed `tcompTYPE_MSZIP` retyped to `TCOMP`: it was `u32`, and the
 code behind the never-set cfg had never been type-checked.
 
+**Threadpool (2026-09-30):** the `kernel32_vista/threadpool.c` rows were parked on "ntdll has
+no Tp*". That was wrong: `rtl-threadpool` has had every Tp* body since the RTL flip, and they
+were only unexported because ntdll.spec gates them at `-version=0x600+`. ntdll_vista now
+links the crate and exports them, as upstream's rtl_vista does, and kernel32_vista ports the
+wrappers. The `tpprobe` payload drives every object type and found two bugs on its first boot:
+`TpReleaseCleanupGroupMembers` walked its list without container_of, so every call faulted,
+and ntdll_vista never initialized its own copy's timer/wait queues. Upstream has the second
+bug too.
+
 **Still owed:**
 - 17, pcix, latent. Port it as one batch before pcix is ever bound.
 
@@ -431,7 +440,7 @@ lists what would settle it:
 |---|---|---|---|
 | 3518663767d | kernel32_vista/vista.c | ALREADY-FIXED | CompareStringOrdinal ported, kernel32-vista-rust/src/vista.rs:674 |
 | 3518663767d | winnls/string/locale.c | NOT-A-FIX | removes a WINVER>=0x600 dead copy (move to vista.c). Our locale.rs:28490 still also exports one |
-| 22ca1e736ad | kernel32_vista/threadpool.c | NO-RUST-TWIN | threadpool.c deliberately unbuilt (ntdll has no Tp*) |
+| 22ca1e736ad | kernel32_vista/threadpool.c | PORTED (2026-09-30) | was "ntdll has no Tp*": wrong, `rtl-threadpool` had them all, just unexported at 0x502. Now kernel32-vista-rust threadpool.rs over ntdll_vista's Tp* |
 | dfaac47afc3 | kernel32_vista/SetThreadDescription.c | NOT-A-FIX | refactor to RtlInitUnicodeStringEx. misc.rs:78 differs only at the 0xFFFE-byte edge |
 | dfaac47afc3 | kernel32_vista/ThreadDescription.c | ALREADY-FIXED | GetThreadDescription retry loop ported, misc.rs:181 |
 | 5e998de2483 | client/file/rw.c | CONFIRMED | #4: byte count lost on warning statuses (rw.rs:131,252) |
@@ -512,7 +521,7 @@ lists what would settle it:
 | 81f04b39ba4 | pcix/intrface/pmeintf.c | NOT-A-FIX | same |
 | 81f04b39ba4 | pcix/pci/config.c | NOT-A-FIX | same |
 | 81f04b39ba4 | pcix/pdo.c | NOT-A-FIX | same |
-| c1827c06312 | kernel32_vista/threadpool.c | NO-RUST-TWIN | unbuilt |
+| c1827c06312 | kernel32_vista/threadpool.c | PORTED (2026-09-30) | see 22ca1e736ad |
 | b54e416408e | csrsrv/init.c | NOT-A-FIX | `%ld`→`%lu` for session IDs < 2^31 |
 | b54e416408e | basesrv/init.c | NOT-A-FIX | same |
 | 748daf70c42 | csrsrv/init.c | NOT-A-FIX | comments |

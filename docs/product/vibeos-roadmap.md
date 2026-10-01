@@ -4326,7 +4326,12 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     smoke 3/3 and the ratchet holding. **Owed:** the arm64-only ReadySummary recheck in
     `ke/wait.rs` and `ke/thrdschd.rs` (×2) existed because there was no preemption.
     Instrument it for dead, then remove (archive/arm64-interrupts-quest.md). Preemption at
-    IRQ exit (a spinner that never crosses DISPATCH) is still absent (§9.19 hazard).
+    IRQ exit for a spinner that never crosses DISPATCH: **FIXED 2026-09-30 for EL0**
+    (`KiEL0IrqPreempt`, run from `KiEL0IrqEntry`: unmask, then raise to DISPATCH and lower
+    back to PASSIVE). Found by the `tpprobe` payload, where an NT threadpool worker spun on
+    one CPU for a condvar lock held by the thread it had preempted, and the guest froze. A
+    spinner at EL1 below DISPATCH is still unpreempted: that IRQ exit runs in exception
+    context, which is the §9.19 hazard.
     **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
     test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
     `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;

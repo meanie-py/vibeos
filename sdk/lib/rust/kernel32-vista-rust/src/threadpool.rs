@@ -1,193 +1,129 @@
-//! The Vista threadpool WORK-object subset: CreateThreadpoolWork, SubmitThreadpoolWork,
-//! WaitForThreadpoolWorkCallbacks, CloseThreadpoolWork and TrySubmitThreadpoolCallback.
+//! kernel32_vista/threadpool.c: the CreateThreadpool* / TrySubmitThreadpoolCallback wrappers
+//! over ntdll_vista's NT threadpool (Tp*, the rtl-threadpool crate). Everything else in the
+//! family (Submit/WaitFor/Close/Set*) is a straight spec forward to ntdll_vista, as upstream.
 //!
-//! Upstream's kernel32_vista/threadpool.c is a thin layer over ntdll's NT threadpool (Tp*),
-//! which upstream implemented after our fork and our Rust ntdll does not have; porting that
-//! is owed (upstream-sync-merge-decisions.md). This is NOT that port. It is the work-object
-//! subset, built on QueueUserWorkItem, because Wine-10 quartz's filter graph needs exactly
-//! these calls and nothing else in the tree does yet.
-//!
-//! Deliberate limits, all LOUD rather than silent:
-//! - A callback environment (custom pool, cleanup group, priority) is refused with
-//!   ERROR_NOT_SUPPORTED and a NULL return. Ignoring it would run the callback somewhere
-//!   the caller did not ask for.
-//! - The callback instance is NULL. The CallbackMayRunLong / *WhenCallbackReturns family
-//!   has no implementation here to hand one to.
-//! - WaitForThreadpoolWorkCallbacks(cancel = TRUE) WAITS for queued callbacks instead of
-//!   cancelling them: QueueUserWorkItem cannot dequeue. That is the conservative direction
-//!   (the callbacks run, as they would have without the cancel), and quartz's callbacks
-//!   re-check their state under the graph lock.
+//! One divergence: the C's CreateThreadpoolIo stores the win32 callback into the TP_IO
+//! before checking TpAllocIoCompletion's status, so a failed allocation writes through an
+//! uninitialised pointer. Here the store happens only on success.
 
-use crate::common::{RtlGetProcessHeap, SetLastError};
-use ntdll_sys::nt::{BOOL, DWORD, NTSTATUS, PRTL_CONDITION_VARIABLE, PRTL_SRWLOCK, PVOID, ULONG};
+use crate::common::SetLastError;
+use ntdll_sys::nt::{BOOL, NTSTATUS, PVOID, ULONG};
 
-const ERROR_NOT_ENOUGH_MEMORY: DWORD = 8;
-const ERROR_NOT_SUPPORTED: DWORD = 50;
-const ERROR_INVALID_PARAMETER: DWORD = 87;
-const HEAP_ZERO_MEMORY: ULONG = 0x8;
-const WT_EXECUTEDEFAULT: ULONG = 0;
+/// PTP_WIN32_IO_CALLBACK: (Instance, Context, Overlapped, IoResult, NumberOfBytesTransferred, Io).
+type Win32IoCallback = Option<unsafe extern "system" fn(PVOID, PVOID, PVOID, ULONG, usize, PVOID)>;
+/// PTP_IO_CALLBACK (ntdll's): (Instance, Context, CompletionValue, IoStatusBlock, Io).
+type NtIoCallback = Option<unsafe extern "system" fn(PVOID, PVOID, PVOID, *mut IoStatusBlock, PVOID)>;
 
-/// PTP_WORK_CALLBACK: (Instance, Context, Work).
-type WorkCallback = Option<unsafe extern "system" fn(PVOID, PVOID, PVOID)>;
-/// PTP_SIMPLE_CALLBACK: (Instance, Context).
-type SimpleCallback = Option<unsafe extern "system" fn(PVOID, PVOID)>;
+#[repr(C)]
+struct IoStatusBlock {
+    Status: NTSTATUS,
+    Information: usize,
+}
 
 extern "system" {
-    fn QueueUserWorkItem(
-        Function: Option<unsafe extern "system" fn(PVOID) -> DWORD>,
-        Context: PVOID,
-        Flags: ULONG,
-    ) -> BOOL;
-    fn RtlAllocateHeap(HeapHandle: PVOID, Flags: ULONG, Size: usize) -> PVOID;
-    fn RtlFreeHeap(HeapHandle: PVOID, Flags: ULONG, BaseAddress: PVOID) -> u8;
-    fn RtlAcquireSRWLockExclusive(SRWLock: PRTL_SRWLOCK);
-    fn RtlReleaseSRWLockExclusive(SRWLock: PRTL_SRWLOCK);
-    fn RtlWakeAllConditionVariable(CondVar: PRTL_CONDITION_VARIABLE);
-    fn RtlSleepConditionVariableSRW(
-        CondVar: PRTL_CONDITION_VARIABLE,
-        SRWLock: PRTL_SRWLOCK,
-        Timeout: *mut ntdll_sys::nt::LARGE_INTEGER,
-        Flags: ULONG,
+    fn RtlNtStatusToDosError(Status: NTSTATUS) -> ULONG;
+    fn TpSimpleTryPost(callback: PVOID, userdata: PVOID, environment: PVOID) -> NTSTATUS;
+    fn TpAllocWork(out: *mut PVOID, callback: PVOID, userdata: PVOID, environment: PVOID) -> NTSTATUS;
+    fn TpAllocCleanupGroup(out: *mut PVOID) -> NTSTATUS;
+    fn TpAllocWait(out: *mut PVOID, callback: PVOID, userdata: PVOID, environment: PVOID) -> NTSTATUS;
+    fn TpAllocTimer(out: *mut PVOID, callback: PVOID, userdata: PVOID, environment: PVOID) -> NTSTATUS;
+    fn TpAllocPool(out: *mut PVOID, reserved: PVOID) -> NTSTATUS;
+    fn TpAllocIoCompletion(
+        out: *mut PVOID,
+        file: PVOID,
+        callback: NtIoCallback,
+        userdata: PVOID,
+        environment: PVOID,
     ) -> NTSTATUS;
 }
 
-/// The TP_WORK behind a PTP_WORK. `Pending` (callbacks submitted but not finished) and
-/// `Closed` are only touched under `Lock`; `Idle` is signalled when Pending reaches 0.
-/// Zeroed memory is a valid initial RTL_SRWLOCK and RTL_CONDITION_VARIABLE.
-#[repr(C)]
-struct Work {
-    Lock: ntdll_sys::nt::RTL_SRWLOCK,
-    Idle: ntdll_sys::nt::RTL_CONDITION_VARIABLE,
-    Callback: WorkCallback,
-    Context: PVOID,
-    Pending: u32,
-    Closed: bool,
+#[inline(always)]
+fn nt_success(status: NTSTATUS) -> bool {
+    status >= 0
 }
 
-#[repr(C)]
-struct Simple {
-    Callback: SimpleCallback,
-    Context: PVOID,
-}
-
-unsafe fn alloc<T>() -> *mut T {
-    RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<T>()) as *mut T
-}
-
-unsafe fn free<T>(p: *mut T) {
-    RtlFreeHeap(RtlGetProcessHeap(), 0, p as PVOID);
-}
-
-unsafe extern "system" fn work_trampoline(Param: PVOID) -> DWORD {
-    let w = Param as *mut Work;
-    if let Some(cb) = (*w).Callback {
-        cb(core::ptr::null_mut(), (*w).Context, w as PVOID);
-    }
-    RtlAcquireSRWLockExclusive(&mut (*w).Lock);
-    (*w).Pending -= 1;
-    let last = (*w).Pending == 0;
-    if last {
-        RtlWakeAllConditionVariable(&mut (*w).Idle);
-    }
-    let free_now = last && (*w).Closed;
-    RtlReleaseSRWLockExclusive(&mut (*w).Lock);
-    if free_now {
-        free(w);
-    }
-    0
-}
-
-unsafe extern "system" fn simple_trampoline(Param: PVOID) -> DWORD {
-    let s = Param as *mut Simple;
-    let (cb, ctx) = ((*s).Callback, (*s).Context);
-    free(s);
-    if let Some(cb) = cb {
-        cb(core::ptr::null_mut(), ctx);
-    }
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn CreateThreadpoolWork(pfnwk: WorkCallback, pv: PVOID, pcbe: PVOID) -> PVOID {
-    if pfnwk.is_none() {
-        SetLastError(ERROR_INVALID_PARAMETER);
+/// The shared tail of every wrapper: a failed NTSTATUS becomes the thread's last error and a
+/// NULL object; a success hands the object back.
+unsafe fn finish(status: NTSTATUS, object: PVOID) -> PVOID {
+    if !nt_success(status) {
+        SetLastError(RtlNtStatusToDosError(status));
         return core::ptr::null_mut();
     }
-    if !pcbe.is_null() {
-        SetLastError(ERROR_NOT_SUPPORTED);
-        return core::ptr::null_mut();
-    }
-    let w = alloc::<Work>();
-    if w.is_null() {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return core::ptr::null_mut();
-    }
-    (*w).Callback = pfnwk;
-    (*w).Context = pv;
-    w as PVOID
+    object
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SubmitThreadpoolWork(pwk: PVOID) {
-    let w = pwk as *mut Work;
-    RtlAcquireSRWLockExclusive(&mut (*w).Lock);
-    (*w).Pending += 1;
-    RtlReleaseSRWLockExclusive(&mut (*w).Lock);
-    if QueueUserWorkItem(Some(work_trampoline), w as PVOID, WT_EXECUTEDEFAULT) == 0 {
-        // SubmitThreadpoolWork has no failure return. Undo the count so a waiter is not
-        // left blocked on a callback that will never run.
-        RtlAcquireSRWLockExclusive(&mut (*w).Lock);
-        (*w).Pending -= 1;
-        if (*w).Pending == 0 {
-            RtlWakeAllConditionVariable(&mut (*w).Idle);
-        }
-        RtlReleaseSRWLockExclusive(&mut (*w).Lock);
+pub unsafe extern "system" fn CreateThreadpoolTimer(callback: PVOID, userdata: PVOID, environment: PVOID) -> PVOID {
+    let mut timer: PVOID = core::ptr::null_mut();
+    let status = TpAllocTimer(&mut timer, callback, userdata, environment);
+    finish(status, timer)
+}
+
+/// ntdll calls this with its NT-shaped arguments; it recovers the caller's win32 callback from
+/// the slot ntdll reserves at the front of TP_IO and converts the status to a win32 error.
+unsafe extern "system" fn tp_io_callback(
+    instance: PVOID,
+    userdata: PVOID,
+    cvalue: PVOID,
+    iosb: *mut IoStatusBlock,
+    io: PVOID,
+) {
+    let callback: Win32IoCallback = core::mem::transmute(*(io as *mut PVOID));
+    if let Some(callback) = callback {
+        callback(instance, userdata, cvalue, RtlNtStatusToDosError((*iosb).Status), (*iosb).Information, io);
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn WaitForThreadpoolWorkCallbacks(pwk: PVOID, _fCancelPendingCallbacks: BOOL) {
-    let w = pwk as *mut Work;
-    RtlAcquireSRWLockExclusive(&mut (*w).Lock);
-    while (*w).Pending != 0 {
-        RtlSleepConditionVariableSRW(&mut (*w).Idle, &mut (*w).Lock, core::ptr::null_mut(), 0);
+pub unsafe extern "system" fn CreateThreadpoolIo(
+    handle: PVOID,
+    callback: Win32IoCallback,
+    userdata: PVOID,
+    environment: PVOID,
+) -> PVOID {
+    let mut io: PVOID = core::ptr::null_mut();
+    let status = TpAllocIoCompletion(&mut io, handle, Some(tp_io_callback), userdata, environment);
+    if nt_success(status) {
+        // ntdll leaves us space to store our callback at the beginning of the TP_IO.
+        *(io as *mut PVOID) = core::mem::transmute::<Win32IoCallback, PVOID>(callback);
     }
-    RtlReleaseSRWLockExclusive(&mut (*w).Lock);
+    finish(status, io)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CloseThreadpoolWork(pwk: PVOID) {
-    let w = pwk as *mut Work;
-    RtlAcquireSRWLockExclusive(&mut (*w).Lock);
-    // Callbacks still outstanding: the last one to finish frees it.
-    let free_now = (*w).Pending == 0;
-    (*w).Closed = true;
-    RtlReleaseSRWLockExclusive(&mut (*w).Lock);
-    if free_now {
-        free(w);
-    }
+pub unsafe extern "system" fn CreateThreadpoolWait(callback: PVOID, userdata: PVOID, environment: PVOID) -> PVOID {
+    let mut wait: PVOID = core::ptr::null_mut();
+    let status = TpAllocWait(&mut wait, callback, userdata, environment);
+    finish(status, wait)
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn TrySubmitThreadpoolCallback(pfns: SimpleCallback, pv: PVOID, pcbe: PVOID) -> BOOL {
-    if pfns.is_none() {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
-    }
-    if !pcbe.is_null() {
-        SetLastError(ERROR_NOT_SUPPORTED);
-        return 0;
-    }
-    let s = alloc::<Simple>();
-    if s.is_null() {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return 0;
-    }
-    (*s).Callback = pfns;
-    (*s).Context = pv;
-    if QueueUserWorkItem(Some(simple_trampoline), s as PVOID, WT_EXECUTEDEFAULT) == 0 {
-        free(s);
+pub unsafe extern "system" fn CreateThreadpoolWork(callback: PVOID, userdata: PVOID, environment: PVOID) -> PVOID {
+    let mut work: PVOID = core::ptr::null_mut();
+    let status = TpAllocWork(&mut work, callback, userdata, environment);
+    finish(status, work)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn TrySubmitThreadpoolCallback(callback: PVOID, userdata: PVOID, environment: PVOID) -> BOOL {
+    let status = TpSimpleTryPost(callback, userdata, environment);
+    if !nt_success(status) {
+        SetLastError(RtlNtStatusToDosError(status));
         return 0;
     }
     1
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CreateThreadpoolCleanupGroup() -> PVOID {
+    let mut group: PVOID = core::ptr::null_mut();
+    let status = TpAllocCleanupGroup(&mut group);
+    finish(status, group)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn CreateThreadpool(reserved: PVOID) -> PVOID {
+    let mut pool: PVOID = core::ptr::null_mut();
+    let status = TpAllocPool(&mut pool, reserved);
+    finish(status, pool)
 }
