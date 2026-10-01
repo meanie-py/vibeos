@@ -451,8 +451,7 @@ dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# LocaleNameToLCID.c SetThrea
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# NT6 console support (client/console/vista.c) is still C and only compiled when NT6
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# built in the parent CMakeLists). DllMain.c stays C (the module entrypoint).
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# firmware.c EnumSystemLocalesEx.c GetLocaleInfoEx.c GetFileInformationByHandleEx.c
-dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c is a NEW upstream TU (post-fork): the Vista CreateThreadpool* /
-dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c — new upstream file (CreateThreadpool*/TrySubmitThreadpoolCallback
+dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c (upstream, post-fork) — replaced by Rust (kernel32-vista-rust threadpool.rs):
 dll/win32/kernelbase/CMakeLists.txt	1	# Import libs for the local C in dllmain.c (SetLastError -> kernel32;
 dll/win32/kernelbase/CMakeLists.txt	1	# dllmain.c + docs/engineering/fex-bringup-plan.md rung 2.
 dll/win32/kernelbase/wine/CMakeLists.txt	1	# path.c

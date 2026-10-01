@@ -525,6 +525,9 @@ KiEL0IrqEntry:
     TRAP_PROLOG_EL0
     NEON_SAVE
     bl KiIrqHandler
+    /* Quantum end / readied thread: switch here, while the user's NEON state is
+     * still saved below the frame (another thread will use the registers). */
+    bl KiEL0IrqPreempt
     NEON_RESTORE
     b KiTrapReturn
 

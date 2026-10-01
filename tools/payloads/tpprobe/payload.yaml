@@ -1,0 +1,21 @@
+# tpprobe — does the Vista threadpool (kernel32_vista Create*/Submit*/WaitFor* over ntdll_vista's
+# Tp*, the rtl-threadpool crate) actually run callbacks?
+#   tools/payloads/tpprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=tpprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload tpprobe
+# Work, simple callback, timer, wait, and a private pool with a cleanup group; a watchdog
+# names the stage that stops making progress.
+name: tpprobe
+description: drive each Vista threadpool object type and check its callbacks ran
+
+build_hint: "tools/payloads/tpprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/tpprobe/tpprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/tpprobe.exe
+
+test:
+  launch_marker: "[TPPROBE] done"
+  pass_marker: "[TPPROBE] done VERDICT=PASS"
+  launch_drain_secs: 600

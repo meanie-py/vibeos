@@ -38,6 +38,9 @@ extern "system" {
     fn RtlpCloseKeyedEvent();
     // Forward-declared in DllMain.c; defined in the locale support code.
     fn RtlpInitializeLocaleTable() -> NTSTATUS;
+    // rtl-threadpool, linked in through rtl-vista-rust: this module's OWN copy of the NT
+    // threadpool (the Tp* exports), distinct from ntdll's, so it needs its own init.
+    fn RtlpInitializeThreadPooling();
 }
 
 #[no_mangle]
@@ -54,6 +57,12 @@ pub unsafe extern "system" fn DllMain(
             RtlpCloseKeyedEvent();
             return FALSE;
         }
+        // Divergence from DllMain.c, which never makes this call: upstream links threadpool.c
+        // into rtl_vista too, but only ntdll's LdrpInitializeProcess runs the init, so this
+        // copy's timer/wait/io queue critical sections and pending-timer list stay zeroed and
+        // the first CreateThreadpoolTimer/Wait would deadlock or fault. Work objects don't
+        // touch those queues, which is why it goes unnoticed.
+        RtlpInitializeThreadPooling();
     } else if dw_reason == DLL_PROCESS_DETACH {
         RtlpCloseKeyedEvent();
     }

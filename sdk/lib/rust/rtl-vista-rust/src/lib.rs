@@ -18,6 +18,12 @@ pub use rtl_sync::runonce::*;
 pub use rtl_sync::srw::*;
 pub use rtl_sync::waitaddr::*;
 
+// The NT threadpool (TpAllocWork, TpPostWork, ...). Upstream compiles threadpool.c into
+// rtl_vista as well as rtl, so ntdll_vista carries its own pool instance, separate from the
+// one behind ntdll's RtlQueueWorkItem; this mirrors that. Only the Tp* names are exported
+// (ntdll_vista.spec); the crate's other #[no_mangle] bodies are just unexported copies.
+pub use rtl_threadpool::threadpool::*;
+
 // Standalone staticlib (no_std) needs its own panic handler; the final
 // ntdll_vista.dll link already tolerates the sibling utf8/ntdll-rust handlers.
 #[cfg(not(test))]

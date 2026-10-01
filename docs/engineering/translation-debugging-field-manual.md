@@ -1109,6 +1109,24 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### `LIST_FOR_EACH_ENTRY` translated without its container_of
+
+**Symptom:** an access violation inside a list walk on the first call, often in a
+`*ReleaseGroup*`/teardown path that boot never reaches. `rtl-threadpool`'s
+`TpReleaseCleanupGroupMembers` faulted on every call, an empty group included.
+
+**Cause:** Wine's `LIST_FOR_EACH_ENTRY(obj, head, T, field)` hides a container_of
+(`LIST_ENTRY(elem, T, field)`) on both the start and the advance. The translation cast
+`head.next as *mut T` directly, which is only right when `field` is at offset 0. Here it was
+`group_entry`, deep in the struct, so the walk read a list node as an object and the head
+check never matched. Two later loops in the same function, from the same response, had the
+subtraction.
+
+**Fix:** use `LIST_ENTRY!` (rtl-threadpool's `wine_list.rs`) or `CONTAINING_RECORD` on both
+cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
+offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
+`entry`) or were casting to a byte or void pointer.
+
 ### A C byte count kept as the element count of a `u16` copy moves twice the bytes
 **Symptom.** A string copy that over-reads its source and over-writes its destination by
 exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
@@ -10487,6 +10505,16 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   **Recognition rule: on a port where IRQL is priority-masked rather than DAIF-masked, DAIF
   belongs to exception entry/exit windows and nothing else. If a trap handler never touches it,
   it is running masked.**
+- **A user-mode spinner was never preempted on arm64.** The only preemption point was
+  `KfLowerIrql` crossing below DISPATCH in thread context, and a thread spinning at EL0
+  never reaches it. The clock IRQ's own lowering runs at interrupt depth > 0 and is
+  declined, so `QuantumEnd` and `NextThread` sat unread. On one CPU, any user spin-wait for
+  a lock held by a preempted thread is a whole-guest livelock: ntdll_vista's threadpool
+  worker spun in condvar `InternalLockCondVar`, and even the probe's own watchdog thread
+  never ran. Fix: `KiEL0IrqPreempt`, called from `KiEL0IrqEntry` while the user's NEON
+  state is still on the stack. It unmasks, raises to DISPATCH and lowers back, so the
+  existing thread-context path does the switch. EL0 is the safe IRQ exit: PASSIVE, no
+  kernel locks, and ELR/SPSR already in the frame.
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
   serial completely silent. A masked-swap tripwire in `KiSwapContextResume` remains in tree.

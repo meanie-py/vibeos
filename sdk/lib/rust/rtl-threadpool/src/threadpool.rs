@@ -1941,18 +1941,19 @@ pub unsafe extern "system" fn TpReleaseCleanupGroupMembers(
     RtlEnterCriticalSection(core::ptr::addr_of_mut!((*this).cs));
 
     /* Unset group, increase references, and mark objects for shutdown */
-    let mut object: *mut threadpool_object =
-        (*core::ptr::addr_of_mut!((*this).members)).next as *mut threadpool_object;
+    // LIST_FOR_EACH_ENTRY_SAFE: both cursors are container_of(entry, group_entry). The first
+    // translation cast the list links straight to *mut threadpool_object, so it read each list
+    // node as an object and its head check never matched: it bumped refcounts in whatever lay
+    // past the node and walked off into it, on every call (an empty group included).
     let list_head_ptr = core::ptr::addr_of_mut!((*this).members);
+    let mut object: *mut threadpool_object =
+        LIST_ENTRY!((*list_head_ptr).next, threadpool_object, group_entry);
     loop {
-        let object_entry = core::ptr::addr_of_mut!((*this).members);
-        let cur_entry = ((object as *mut u8)
-            .offset(core::mem::offset_of!(threadpool_object, group_entry) as isize))
-            as *mut list;
-        if cur_entry == object_entry {
+        if core::ptr::addr_of_mut!((*object).group_entry) == list_head_ptr {
             break;
         }
-        let next = (*core::ptr::addr_of_mut!((*object).group_entry)).next as *mut threadpool_object;
+        let next: *mut threadpool_object =
+            LIST_ENTRY!((*object).group_entry.next, threadpool_object, group_entry);
 
         if InterlockedIncrement(core::ptr::addr_of_mut!((*object).refcount)) == 1 {
             /* Object is basically already destroyed, but group reference
@@ -1969,7 +1970,6 @@ pub unsafe extern "system" fn TpReleaseCleanupGroupMembers(
 
         object = next;
     }
-    let _ = list_head_ptr;
 
     /* Move members to a new temporary list */
     list_init(core::ptr::addr_of_mut!(members));
