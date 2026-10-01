@@ -26,9 +26,11 @@ How I checked liveness:
 the `halacpi.rs` saturating fix that the proposal names. Item 6's device-path walk takes no
 `.unwrap()`; with no `HandleProtocol` it keeps the partition-1 fallback.
 
-**Still owed:**
-- 13, dormant until a BIOS loader exists.
-- The out-of-list IOSB-without-SEH lead (`irp.rs:656/744`).
+**Also ported:** the out-of-list IOSB lead (`irp.rs`). Both writes to the caller's I/O
+status block now go through `IopWriteUserIosb` (`safe_copy_raw`), as the C's `_SEH2_TRY`
+does.
+
+**Still owed:** 13, dormant until a BIOS loader exists.
 
 ## Summary
 

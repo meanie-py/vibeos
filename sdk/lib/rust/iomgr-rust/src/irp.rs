@@ -234,7 +234,7 @@ extern "C" {
     fn KeLowerIrql(NewIrql: KIRQL);
 }
 
-use core::ptr::{null_mut, addr_of_mut};
+use core::ptr::{null_mut, addr_of, addr_of_mut};
 use core::mem::{size_of, zeroed};
 use core::ffi::c_void;
 
@@ -514,6 +514,31 @@ pub unsafe extern "system" fn IopCleanupIrp(Irp: PIRP, FileObject: PFILE_OBJECT)
     IoFreeIrp(Irp);
 }
 
+/// Write the IRP's status to the caller's I/O status block. The C does this inside
+/// _SEH2_TRY with an empty handler ("make sure we don't write somewhere invalid"); under
+/// DUMMY_PSEH that handler is dead, so a process that freed or unmapped its IOSB before an
+/// async completion took the kernel down instead of losing the status. Same fault-tolerant
+/// copy as the buffered copy-back above. wow64-plan M15b: a guest IO_STATUS_BLOCK32 gets
+/// the 8-byte layout.
+unsafe fn IopWriteUserIosb(Irp: PIRP) {
+    if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
+        let mut Iosb32: crate::iofunc::IoStatusBlock32 = core::mem::zeroed();
+        Iosb32.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        Iosb32.Information = (*Irp).IoStatus.Information as u32;
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            (*Irp).UserIosb as *mut core::ffi::c_void,
+            &Iosb32 as *const _ as *const core::ffi::c_void,
+            core::mem::size_of::<crate::iofunc::IoStatusBlock32>(),
+        );
+    } else {
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            (*Irp).UserIosb as *mut core::ffi::c_void,
+            addr_of!((*Irp).IoStatus) as *const core::ffi::c_void,
+            core::mem::size_of_val(&(*Irp).IoStatus),
+        );
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IopCompleteRequest(
     Apc: PKAPC,
@@ -654,14 +679,7 @@ unsafe fn IopCompleteRequestInner(
         }
 
         if !(*Irp).UserIosb.is_null() {
-            if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
-                // wow64-plan M15b: guest IO_STATUS_BLOCK32 — write the 8-byte layout.
-                let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
-                (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                (*P).Information = (*Irp).IoStatus.Information as u32;
-            } else {
-                *(*Irp).UserIosb = (*Irp).IoStatus;
-            }
+            IopWriteUserIosb(Irp);
         }
 
         if !(*Irp).UserEvent.is_null() {
@@ -740,14 +758,7 @@ unsafe fn IopCompleteRequestInner(
     } else {
         if (*Irp).PendingReturned != 0 && !FileObject.is_null() {
             if ((*Irp).Flags & IRP_SYNCHRONOUS_API) != 0 {
-                if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
-                    // wow64-plan M15b: guest IO_STATUS_BLOCK32 — 8-byte layout.
-                    let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
-                    (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                    (*P).Information = (*Irp).IoStatus.Information as u32;
-                } else {
-                    *(*Irp).UserIosb = (*Irp).IoStatus;
-                }
+                IopWriteUserIosb(Irp);
 
                 if !(*Irp).UserEvent.is_null() {
                     KeSetEvent((*Irp).UserEvent as PVOID, 0, 0u8);
