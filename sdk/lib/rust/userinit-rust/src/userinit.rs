@@ -246,7 +246,7 @@ unsafe fn GetShell(
     }
 }
 
-unsafe fn StartProcess(CommandLine: LPCWSTR) -> BOOL {
+unsafe fn StartProcess(CommandLine: LPCWSTR, pEnvironment: LPVOID) -> BOOL {
 
     let mut si: STARTUPINFO = core::mem::zeroed();
     let mut pi: PROCESS_INFORMATION = core::mem::zeroed();
@@ -270,8 +270,8 @@ unsafe fn StartProcess(CommandLine: LPCWSTR) -> BOOL {
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         0,
-        NORMAL_PRIORITY_CLASS,
-        core::ptr::null_mut(),
+        NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT,
+        pEnvironment,
         core::ptr::null_mut(),
         &mut si,
         &mut pi,
@@ -285,7 +285,7 @@ unsafe fn StartProcess(CommandLine: LPCWSTR) -> BOOL {
     1
 }
 
-unsafe fn StartShell() -> BOOL {
+unsafe fn StartShell(pEnvironment: LPVOID) -> BOOL {
 
     let mut Shell: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szMsg: [WCHAR; RC_STRING_MAX_SIZE as usize] = [0; RC_STRING_MAX_SIZE as usize];
@@ -364,7 +364,7 @@ unsafe fn StartShell() -> BOOL {
 
                         if rc == ERROR_SUCCESS as LONG {
                             if Type == REG_SZ || Type == REG_EXPAND_SZ {
-                                if StartProcess(Shell.as_ptr()) != 0 {
+                                if StartProcess(Shell.as_ptr(), pEnvironment) != 0 {
                                     return 1;
                                 }
                             }
@@ -376,13 +376,13 @@ unsafe fn StartShell() -> BOOL {
     }
 
     if GetShell(Shell.as_mut_ptr(), HKEY_CURRENT_USER) != 0
-        && StartProcess(Shell.as_ptr()) != 0
+        && StartProcess(Shell.as_ptr(), pEnvironment) != 0
     {
         return 1;
     }
 
     if GetShell(Shell.as_mut_ptr(), HKEY_LOCAL_MACHINE) != 0
-        && StartProcess(Shell.as_ptr()) != 0
+        && StartProcess(Shell.as_ptr(), pEnvironment) != 0
     {
         return 1;
     }
@@ -401,7 +401,7 @@ unsafe fn StartShell() -> BOOL {
         StringCchCatW(Shell.as_mut_ptr(), Shell.len(), explorer_exe.as_ptr());
     }
 
-    if StartProcess(Shell.as_ptr()) == 0 {
+    if StartProcess(Shell.as_ptr(), pEnvironment) == 0 {
         LoadStringW(
             GetModuleHandleW(core::ptr::null_mut()),
             IDS_SHELL_FAIL as u32,
@@ -657,7 +657,7 @@ unsafe fn StartInstaller(lpInstallerName: LPCWSTR) -> BOOL {
     let mut szMsg: [u16; RC_STRING_MAX_SIZE as usize] = [0; RC_STRING_MAX_SIZE as usize];
 
     if ExpandInstallerPath(lpInstallerName, Installer.as_mut_ptr(), Installer.len()) != 0 {
-        if StartProcess(Installer.as_ptr()) != 0 {
+        if StartProcess(Installer.as_ptr(), core::ptr::null_mut()) != 0 {
             return 1;
         }
     }
@@ -756,7 +756,17 @@ pub unsafe extern "system" fn wWinMain(
 
         match State.Run {
             SHELL => {
-                Success = StartShell();
+                // LiveCD runs us as LocalSystem with no WinLogon-built environment, so the shell
+                // got no COMPUTERNAME / NUMBER_OF_PROCESSORS / PROCESSOR_* (upstream eec8c977083).
+                // Build one; on failure fall back to the inherited block, as upstream does.
+                let mut pEnvironment: LPVOID = core::ptr::null_mut();
+                if bIsLiveCD != 0 && CreateEnvironmentBlock(&mut pEnvironment, core::ptr::null_mut(), 1) == 0 {
+                    pEnvironment = core::ptr::null_mut();
+                }
+                Success = StartShell(pEnvironment);
+                if !pEnvironment.is_null() {
+                    DestroyEnvironmentBlock(pEnvironment);
+                }
                 if Success != 0 {
                     NotifyLogon();
                 }

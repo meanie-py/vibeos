@@ -875,7 +875,11 @@ pub unsafe extern "system" fn HalpAcpiFindRsdtPhase0(
     // alignment-1 and was always fine.
     let node_count = core::ptr::read_unaligned(core::ptr::addr_of!((*NodeData).Count));
     NodeLength = core::mem::size_of::<ACPI_BIOS_MULTI_NODE>()
-        + (node_count as usize - 1) * core::mem::size_of::<ACPI_E820_ENTRY>();
+        // The UEFI loader publishes Count = 0 (no E820 map). In C, `Count - 1` wraps and the
+        // multiply comes out at -24, so it copies 16 bytes; in Rust that is an overflow panic
+        // under debug-assertions. Divergence: saturate, copying the whole 40-byte node, which
+        // is exactly the loader's TableSize, so still in bounds.
+        + (node_count as usize).saturating_sub(1) * core::mem::size_of::<ACPI_E820_ENTRY>();
 
     PageCount = bytes_to_pages(NodeLength as u64);
 

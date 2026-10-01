@@ -278,6 +278,10 @@ unsafe fn IopAttachDeviceToDeviceStackSafe(
     TargetDevice: PDEVICE_OBJECT,
     AttachedToDeviceObject: *mut PDEVICE_OBJECT,
 ) -> PDEVICE_OBJECT {
+    // The whole attach -- and the *AttachedToDeviceObject store, which is the point of the
+    // ...Safe API -- happens under the device database lock (upstream cea19d2e0f6). Without
+    // it a filter can get an IRP before its LowerDevice is set and pass it to NULL.
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
     let mut AttachedDevice = IoGetAttachedDevice(TargetDevice);
     let SourceDeviceExtension = IoGetDevObjExtension(SourceDevice);
 
@@ -305,6 +309,7 @@ unsafe fn IopAttachDeviceToDeviceStackSafe(
     if !AttachedToDeviceObject.is_null() {
         *AttachedToDeviceObject = AttachedDevice;
     }
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
     AttachedDevice
 }
 
@@ -1267,16 +1272,24 @@ pub unsafe extern "system" fn IoGetAttachedDevice(DeviceObject: PDEVICE_OBJECT) 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetAttachedDeviceReference(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
     let DeviceObject = opaque_ptr(DeviceObject);
+    // Walk and reference under the device database lock (upstream b364f702d2f), or a
+    // concurrent detach can hand back a device that is going away.
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
     let DeviceObject = IoGetAttachedDevice(DeviceObject);
     ObReferenceObject(DeviceObject as PVOID);
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
     DeviceObject
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn IoGetDeviceAttachmentBaseRef(DeviceObject: PDEVICE_OBJECT) -> PDEVICE_OBJECT {
     let DeviceObject = opaque_ptr(DeviceObject);
+    // Walk and reference under the device database lock (upstream b364f702d2f), or a
+    // concurrent detach can hand back a device that is going away.
+    let OldIrql = KeAcquireQueuedSpinLock(LockQueueIoDatabaseLock);
     let DeviceObject = IopGetLowestDevice(DeviceObject);
     ObReferenceObject(DeviceObject as PVOID);
+    KeReleaseQueuedSpinLock(LockQueueIoDatabaseLock, OldIrql);
     DeviceObject
 }
 

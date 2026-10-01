@@ -9,6 +9,15 @@ the upstream hunk it disagrees with. "Latent" marks code that is linked but neve
 in any configuration we boot today. pcix.sys appears only as a file copy in
 `txtsetup.sif`: no service or device ID binds it, because `PNP0A03` maps to `pci`.
 
+## Status (2026-09-30)
+
+**Ported:** 1-16. Item 14 is upstream `f69f04bc67c`'s whole `GetLayoutName` rewrite, not just
+the leak fix. Item 8 also needed `tcompTYPE_MSZIP` retyped to `TCOMP`: it was `u32`, and the
+code behind the never-set cfg had never been type-checked.
+
+**Still owed:**
+- 17, pcix, latent. Port it as one batch before pcix is ever bound.
+
 ## Summary
 
 | Verdict | Pairs |

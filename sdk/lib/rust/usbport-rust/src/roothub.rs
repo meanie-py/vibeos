@@ -1047,10 +1047,12 @@ pub unsafe extern "system" fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: 
 
         NumController = 0;
         while NumController < (*CompanionControllersList).Count {
-            CompanionPacket = core::ptr::addr_of_mut!((*(*FdoExtension).MiniPortInterface).Packet);
-
             CompanionFdoExtension =
                 (**Entry).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
+
+            // The COMPANION's miniport, not ours (upstream da13f3ca820): the EHCI packet's
+            // RH_* routines were being handed an OHCI/UHCI MiniPortExt.
+            CompanionPacket = core::ptr::addr_of_mut!((*(*CompanionFdoExtension).MiniPortInterface).Packet);
 
             ((*CompanionPacket).RH_GetRootHubData.unwrap())(
                 (*CompanionFdoExtension).MiniPortExt,

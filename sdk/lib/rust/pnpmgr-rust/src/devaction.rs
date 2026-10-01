@@ -1812,7 +1812,8 @@ unsafe fn PiUpdateDeviceState(
         PiSetDevNodeState(DeviceNode, DeviceNodeAwaitingQueuedRemoval);
     } else if (PnPFlags & PNP_DEVICE_RESOURCE_REQUIREMENTS_CHANGED) != 0 {
         if (PnPFlags & PNP_DEVICE_FAILED) != 0 {
-            (*DeviceNode).Flags &= DNF_NON_STOPPED_REBALANCE;
+            // `&= !`, not `&=` (upstream 1b460291e26): the typo wiped every other devnode flag.
+            (*DeviceNode).Flags &= !DNF_NON_STOPPED_REBALANCE;
         } else {
             (*DeviceNode).Flags |= DNF_NON_STOPPED_REBALANCE;
         }
