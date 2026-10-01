@@ -19,7 +19,10 @@ WRAPPER="${SCRIPT_DIR}/wrapper.h"
 
 # The ninja build statement we lift DEFINES/INCLUDES/FLAGS from. Must be a
 # still-compiled TU (environment.c is now flipped to Rust → no .obj rule).
-NINJA_RULE='winlogon.dir/winlogon.c.obj:'
+# A TU that is still COMPILED as C. The original rule's .c went to Rust when the module
+# was cohab-flipped, the grep below then found nothing, and bindgen ran with no
+# -I/-D at all (host mingw headers) -- so this island could not be regenerated.
+NINJA_RULE='base/system/winlogon/CMakeFiles/winlogon_c.dir/winlogon_rust_stub.c.obj:'
 
 # Type/var allowlist '.+' (struct field types chain everywhere).
 # Function allowlist: broad Win32 + GINA + native families the winlogon
@@ -43,6 +46,10 @@ run_bindgen() {
     DEFINES=$(grep -A8 "$NINJA_RULE" "$NINJA" | grep -m1 -E '^  DEFINES' | sed 's/^  DEFINES = //')
     INCLUDES=$(grep -A8 "$NINJA_RULE" "$NINJA" | grep -m1 -E '^  INCLUDES' | sed 's/^  INCLUDES = //')
     RAWFLAGS=$(grep -A8 "$NINJA_RULE" "$NINJA" | grep -m1 -E '^  FLAGS' | sed 's/^  FLAGS = //')
+    if [ -z "$DEFINES" ] || [ -z "$INCLUDES" ]; then
+        echo "!! ${ARCH}: no DEFINES/INCLUDES for $NINJA_RULE in $NINJA" >&2
+        exit 1
+    fi
     SANITIZED=$(echo "$RAWFLAGS" | tr ' ' '\n' \
         | grep -vE '^-g|^-O|^-Winvalid-pch|^-ffile-prefix-map|^-include-pch|\.pch$|^-fno-omit|^-mstackrealign|^-fno-optimize|^-march|^-mtune' \
         | grep -vE '^-Xclang$|^-include$|cmake_pch' | tr '\n' ' ')

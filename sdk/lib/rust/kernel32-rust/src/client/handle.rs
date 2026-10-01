@@ -40,7 +40,7 @@ pub unsafe extern "system" fn GetHandleInformation(
     hObject: HANDLE,
     lpdwFlags: LPDWORD,
 ) -> BOOL {
-    let mut HandleInfo: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
+    let mut HandleInfo: _OBJECT_HANDLE_FLAG_INFORMATION = core::mem::zeroed();
     let mut BytesWritten: ULONG = 0;
     let mut Status: NTSTATUS = 0;
     let mut Flags: DWORD = 0;
@@ -55,7 +55,7 @@ pub unsafe extern "system" fn GetHandleInformation(
         hObject,
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
         &mut HandleInfo as *mut _ as PVOID,
-        core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+        core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         &mut BytesWritten,
     );
     if !NT_SUCCESS(Status) {
@@ -80,7 +80,7 @@ pub unsafe extern "system" fn SetHandleInformation(
     dwMask: DWORD,
     dwFlags: DWORD,
 ) -> BOOL {
-    let mut HandleInfo: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = _OBJECT_HANDLE_ATTRIBUTE_INFORMATION {
+    let mut HandleInfo: _OBJECT_HANDLE_FLAG_INFORMATION = _OBJECT_HANDLE_FLAG_INFORMATION {
         Inherit: 0,
         ProtectFromClose: 0,
     };
@@ -96,7 +96,7 @@ pub unsafe extern "system" fn SetHandleInformation(
         hObject,
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
         &raw mut HandleInfo as *mut core::ffi::c_void,
-        core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+        core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         &raw mut BytesWritten,
     );
     if !NT_SUCCESS(Status) {
@@ -116,7 +116,7 @@ pub unsafe extern "system" fn SetHandleInformation(
         hObject,
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
         &raw mut HandleInfo as *mut core::ffi::c_void,
-        core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+        core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
     );
     if NT_SUCCESS(Status) {
         return 1;
