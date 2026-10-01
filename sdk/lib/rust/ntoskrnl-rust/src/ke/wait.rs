@@ -449,9 +449,13 @@ unsafe fn KiExitDispatcherImpl(OldIrql: KIRQL) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn KeIsWaitListEmpty(_Object: PVOID) -> BOOLEAN {
-    let _Object = opaque_ptr(_Object);
-    0u8
+pub unsafe extern "system" fn KeIsWaitListEmpty(Object: PVOID) -> BOOLEAN {
+    // Implemented upstream (1477b340bec); the stub answered "has waiters" forever.
+    // KeMemoryBarrier for a consistent snapshot of the head, then IsListEmpty.
+    let Header = opaque_ptr(Object) as *mut ntkrnl_sys::ddk::_DISPATCHER_HEADER;
+    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+    let Head = core::ptr::addr_of_mut!((*Header).WaitListHead) as *mut ntkrnl_sys::ddk::LIST_ENTRY;
+    (core::ptr::read_volatile(core::ptr::addr_of!((*Head).Flink)) == Head) as BOOLEAN
 }
 
 #[no_mangle]
