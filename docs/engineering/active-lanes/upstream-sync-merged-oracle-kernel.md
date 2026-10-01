@@ -20,6 +20,16 @@ How I checked liveness:
   modules (`pcvideo.rs`, `pcdisk.rs`, `hwdisk.rs`, `freeldr.rs` BootMain) are compiled into the
   UEFI archive but are unreachable. Findings in those modules are marked **dormant**.
 
+## Status (2026-09-30)
+
+**Ported:** 1-12, each re-checked against the upstream diff before porting. Item 1 also needed
+the `halacpi.rs` saturating fix that the proposal names. Item 6's device-path walk takes no
+`.unwrap()`; with no `HandleProtocol` it keeps the partition-1 fallback.
+
+**Still owed:**
+- 13, dormant until a BIOS loader exists.
+- The out-of-list IOSB-without-SEH lead (`irp.rs:656/744`).
+
 ## Summary
 
 | Verdict | Pairs |

@@ -434,6 +434,16 @@ pub unsafe extern "C" fn IniExtractSettingName(SettingName: PCHAR, SettingNameLi
     while Idx < LineLength {
         if (*SettingNameLine.offset(Idx as isize) == b'=' as i8) ||
            (*SettingNameLine.offset(Idx as isize) == b'\0' as i8) {
+            // Trim trailing whitespace (upstream f77fcc15ffc): `Key = value` gave the key
+            // "Key ", which no lookup ever matched.
+            while DestIdx > 0 {
+                let c = *SettingName.offset((DestIdx - 1) as isize);
+                if c == b' ' as i8 || c == b'\t' as i8 {
+                    DestIdx -= 1;
+                } else {
+                    break;
+                }
+            }
             break;
         }
 

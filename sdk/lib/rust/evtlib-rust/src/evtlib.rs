@@ -288,6 +288,10 @@ fn round_down_ulong(n: u32, align: u32) -> u32 {
     n & !(align - 1)
 }
 
+// Windows grows event-log FILES in 64 KiB steps; MaxSize is a cap, not the allocation
+// (upstream 24e904e0956).
+const EVENTLOG_FILE_GRANULARITY: u32 = 64 * 1024;
+
 #[inline(always)]
 fn round_up_ulong(n: u32, align: u32) -> u32 {
     round_down_ulong(n.wrapping_add(align - 1), align)
@@ -546,7 +550,7 @@ unsafe fn ElfpDeleteOffsetInformation(
 /// Initialize a new (empty) event log file: writes header + initial EOF record.
 unsafe fn ElfpInitNewFile(
     LogFile: *mut _EVTLOGFILE,
-    _FileSize: u32,
+    FileSize: u32,
     MaxSize: u32,
     Retention: u32,
 ) -> i32 {
@@ -571,10 +575,21 @@ unsafe fn ElfpInitNewFile(
     (*LogFile).Header.CurrentRecordNumber = 1;
     (*LogFile).Header.OldestRecordNumber = 0;
 
-    // Round MaxSize up to sizeof(ULONG)
-    (*LogFile).Header.MaxSize = round_up_ulong(MaxSize, 4);
-    (*LogFile).CurrentSize = (*LogFile).Header.MaxSize;
-    (*LogFile).FileSetSize.unwrap()(LogFile, (*LogFile).CurrentSize, 0);
+    // Start at the header + EOF record rounded to the 64 KiB granularity, not at MaxSize
+    // (upstream 24e904e0956): the old code preallocated every log to its full cap and
+    // ignored a FileSetSize failure.
+    let InitialSize = round_up_ulong(
+        (core::mem::size_of::<EVENTLOGHEADER>() + core::mem::size_of::<EVENTLOGEOF>()) as u32,
+        EVENTLOG_FILE_GRANULARITY,
+    );
+    (*LogFile).CurrentSize = InitialSize;
+    Status = (*LogFile).FileSetSize.unwrap()(LogFile, (*LogFile).CurrentSize, FileSize);
+    if Status < 0 {
+        return Status;
+    }
+
+    // The cap is at least the initial file size.
+    (*LogFile).Header.MaxSize = round_up_ulong(MaxSize.max(InitialSize), EVENTLOG_FILE_GRANULARITY);
 
     (*LogFile).Header.Flags = 0;
     (*LogFile).Header.Retention = Retention;
@@ -1401,14 +1416,26 @@ pub unsafe extern "system" fn ElfWriteRecord(
         }
     }
 
-    // Expand log file if needed
+    // Expand the log file if needed: to fit this record (granularity-rounded), or straight
+    // to MaxSize when wrapping or past the cap (upstream 24e904e0956).
     if (*LogFile).CurrentSize < (*LogFile).Header.MaxSize {
-        (*LogFile).CurrentSize = (*LogFile).Header.MaxSize;
-        (*LogFile).FileSetSize.expect("non-null FileSetSize")(
-            LogFile,
-            (*LogFile).CurrentSize,
-            0,
-        );
+        let mut NewSize = WriteOffset + BufSize as u32 + core::mem::size_of::<EVENTLOGEOF>() as u32;
+        if WriteOffset < (*LogFile).Header.EndOffset || NewSize > (*LogFile).Header.MaxSize {
+            NewSize = (*LogFile).Header.MaxSize;
+        } else {
+            NewSize = round_up_ulong(NewSize, EVENTLOG_FILE_GRANULARITY);
+        }
+        if NewSize > (*LogFile).CurrentSize {
+            let Status = (*LogFile).FileSetSize.expect("non-null FileSetSize")(
+                LogFile,
+                NewSize,
+                (*LogFile).CurrentSize,
+            );
+            if Status < 0 {
+                return Status;
+            }
+            (*LogFile).CurrentSize = NewSize;
+        }
     }
 
     // Clear log-full flag

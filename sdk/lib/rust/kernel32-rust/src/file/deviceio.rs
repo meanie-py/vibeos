@@ -228,10 +228,14 @@ pub unsafe extern "system" fn DeviceIoControl(
             }
         }
 
+        // lpBytesReturned is optional here (upstream e1e3b8aa3de), as the overlapped path
+        // above already assumed.
         if NT_SUCCESS(Status) {
-            *lpBytesReturned = Iosb.Information as DWORD;
+            if !lpBytesReturned.is_null() {
+                *lpBytesReturned = Iosb.Information as DWORD;
+            }
         } else {
-            if !NT_ERROR(Status) {
+            if !NT_ERROR(Status) && !lpBytesReturned.is_null() {
                 *lpBytesReturned = Iosb.Information as DWORD;
             }
             BaseSetLastNTError(Status);

@@ -189,7 +189,9 @@ const _O_BINARY: i32 = 0x8000;
 const _S_IREAD: i32 = 0x0100;
 const _S_IWRITE: i32 = 0x0080;
 const statusCabinet: u32 = 0x0003;
-const tcompTYPE_MSZIP: u32 = 0x00000001;
+// TCOMP (USHORT), like the field it is compared with and stored into. It was u32 and nobody
+// noticed because its only use sat behind a cfg that was never set.
+const tcompTYPE_MSZIP: TCOMP = 0x00000001;
 const tcompTYPE_NONE: u32 = 0x00000000;
 // Unknown externs
 // Compress function pointers (defined elsewhere in the file)
@@ -1750,7 +1752,9 @@ pub unsafe extern "C" fn FCIAddFile(
             return 0;
         }
         match typeCompress {
-            #[cfg(HAVE_ZLIB)]
+            // No cfg gate (upstream 4681b3e473a dropped HAVE_ZLIB): nothing ever set the
+            // `#[cfg(HAVE_ZLIB)]` this arm carried, so every cabinet we built was stored, not
+            // deflated, while the C build had compression on.
             tcompTYPE_MSZIP => {
                 (*p_fci_internal).compression = tcompTYPE_MSZIP;
                 (*p_fci_internal).compress = Some(compress_MSZIP);

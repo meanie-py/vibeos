@@ -334,8 +334,11 @@ pub unsafe extern "system" fn IopDereferenceVpbAndFree(Vpb: PVPB) {
     IoAcquireVpbSpinLock(&mut OldIrql);
     (*Vpb).ReferenceCount -= 1;
 
+    // Free only a DETACHED VPB (upstream 28373a9f842). The pre-fix `== Vpb` freed the one
+    // still installed in RealDevice->Vpb, leaving the device pointing at freed pool, and
+    // kept the detached ones forever.
     if (*Vpb).ReferenceCount == 0
-        && (*(*Vpb).RealDevice).Vpb == Vpb
+        && (*(*Vpb).RealDevice).Vpb != Vpb
         && ((*Vpb).Flags & VPB_PERSISTENT) == 0
     {
         IoReleaseVpbSpinLock(OldIrql);

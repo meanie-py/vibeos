@@ -271,11 +271,20 @@ pub unsafe extern "C" fn BasepCopyFileExW(
                     GENERIC_WRITE,
                     FILE_SHARE_WRITE,
                     core::ptr::null_mut(),
-                    if dwCopyFlags != 0 { CREATE_NEW } else { CREATE_ALWAYS },
+                    // Only COPY_FILE_FAIL_IF_EXISTS means CREATE_NEW (upstream 91146de1cd0). Any
+                    // non-zero flag used to, and MoveFileEx always passes one, so a cross-volume
+                    // move with MOVEFILE_REPLACE_EXISTING failed whenever the target existed.
+                    if (dwCopyFlags & COPY_FILE_FAIL_IF_EXISTS) != 0 { CREATE_NEW } else { CREATE_ALWAYS },
                     FileBasic.FileAttributes,
                     core::ptr::null_mut(),
                 );
                 if INVALID_HANDLE_VALUE != FileHandleDest {
+                    // CREATE_ALWAYS over an existing file leaves ERROR_ALREADY_EXISTS behind.
+                    if (dwCopyFlags & COPY_FILE_FAIL_IF_EXISTS) == 0
+                        && GetLastError() == crate::client::synch::ERROR_ALREADY_EXISTS
+                    {
+                        SetLastError(crate::client::synch::ERROR_SUCCESS);
+                    }
                     errCode = CopyLoop(
                         FileHandleSource,
                         FileHandleDest,
