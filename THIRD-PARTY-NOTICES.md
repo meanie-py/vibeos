@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-38 vendored C/C++ components:
+39 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -39,6 +39,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [TreeList control](#treelist-control) — ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668)) — GPL-3.0-or-later
 - [VirtIO driver library](#virtio-driver-library) — unknown — BSD-3-Clause
 - [VirtIO NetKVM guest driver (NDIS 5)](#virtio-netkvm-guest-driver-ndis-5) — git commit 5e01b36 — BSD-3-Clause
+- [vkd3d](#vkd3d) — 1.14 — LGPL-2.1-or-later
 - [win-iconv](#win-iconv) — unknown — Unlicense OR MIT
 - [Windows Driver Frameworks (KMDF/UMDF)](#windows-driver-frameworks-kmdfumdf) — 1.17.7600 — MIT
 - [zlib](#zlib) — 1.3.2 — Zlib
@@ -5216,6 +5217,33 @@ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
+```
+
+## vkd3d
+
+- Upstream: https://gitlab.winehq.org/wine/vkd3d
+- Version: 1.14
+- In this tree: `sdk/lib/vkd3d`
+- Licence: LGPL-2.1-or-later
+- Grant reproduced from: `sdk/lib/vkd3d/COPYING`
+
+```
+Copyright 2016-2024 the Vkd3d project authors (see the file AUTHORS for a
+complete list)
+
+Vkd3d is free software; you can redistribute it and/or modify it under
+the terms of the GNU Lesser General Public License as published by the
+Free Software Foundation; either version 2.1 of the License, or (at
+your option) any later version.
+
+This library is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA, 02110-1301 USA.
 ```
 
 ## win-iconv

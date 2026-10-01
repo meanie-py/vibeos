@@ -38,6 +38,7 @@ pub mod firmware;
 pub mod locale;
 pub mod misc;
 pub mod sync;
+pub mod threadpool;
 pub mod vista;
 
 // no_std staticlib floor. Duplicates kernel32-rust's handler when both .a link into

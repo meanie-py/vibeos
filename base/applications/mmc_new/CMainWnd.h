@@ -18,6 +18,8 @@
 #define BTN_HELP            5
 #define BTN_ACTIONS_PANE    6
 
+#define MAX_RECENT_FILES    4
+
 class CMainWnd :
     public CWindowImpl<CMainWnd>
 {
@@ -46,7 +48,7 @@ private:
 
     CSnapin *m_RootNode;
 
-    CAtlList<CAtlString> m_RecentFilesList;
+    CAtlList<CRecentFileEntry *> m_RecentFilesList;
 
 public:
     CWindow m_MDIClient;
@@ -60,6 +62,8 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_USER_CLOSE_CHILD, OnCloseChild)
+        MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
+        MESSAGE_HANDLER(WM_MENUSELECT, OnMenuSelect)
 
         COMMAND_ID_HANDLER(IDM_FILE_NEW, OnFileNew)
         COMMAND_ID_HANDLER(IDM_FILE_OPEN, OnFileOpen)
@@ -67,7 +71,14 @@ public:
         COMMAND_ID_HANDLER(IDM_FILE_SAVEAS, OnFileSaveAs)
         COMMAND_ID_HANDLER(IDM_FILE_ADD, OnFileAdd)
         COMMAND_ID_HANDLER(IDM_FILE_OPTIONS, OnFileOptions)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT1, OnFileRecent)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT2, OnFileRecent)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT3, OnFileRecent)
+        COMMAND_ID_HANDLER(IDM_FILE_RECENT4, OnFileRecent)
         COMMAND_ID_HANDLER(IDM_FILE_EXIT, OnFileExit)
+
+        COMMAND_ID_HANDLER(IDM_ACTION_NEW, OnActionNewWindow)
+        COMMAND_ID_HANDLER(IDM_ACTION_RENAME, OnActionRename)
 
         COMMAND_ID_HANDLER(IDM_VIEW_CUSTOMIZE, OnViewCustomize)
 
@@ -175,6 +186,8 @@ public:
     LRESULT OnCloseChild(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnDestroy(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnClose(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnNotify(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnMenuSelect(UINT nMessage, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 
     LRESULT OnFileNew(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileOpen(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
@@ -182,7 +195,10 @@ public:
     LRESULT OnFileSaveAs(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileAdd(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileOptions(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnFileRecent(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnFileExit(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnActionNewWindow(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
+    LRESULT OnActionRename(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnViewCustomize(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnWindowsNew(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
     LRESULT OnWindowsCascade(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL& bHandled);
@@ -200,11 +216,11 @@ private:
 
     VOID UpdateRecentFilesMenu();
     VOID LoadRecentFiles();
-    VOID AddToRecentFiles(CAtlString &FileName);
+    VOID AddToRecentFiles(const CAtlString &FileName);
     DWORD CreateNewFilename(PWSTR pBuffer, DWORD dwSize, DWORD Number);
     LPWSTR ProgramModeToString();
-    LRESULT SaveMscFile(CAtlString &FileName);
-    LRESULT LoadMscFile(CAtlString &FileName);
+    LRESULT SaveMscFile(const CAtlString &FileName);
+    LRESULT LoadMscFile(const CAtlString &FileName);
 
 public:
     CAtlString *GetConsoleTitle();
@@ -218,6 +234,9 @@ public:
     CSnapinCacheEntry *GetSnapinCacheEntry(int nIndex);
     CSnapinCacheEntry *GetSnapinCacheEntryByGuid(PWSTR pszGuid);
     HIMAGELIST SnapinImageList();
+
+    CSnapin *GetRootSnapin();
+
     int RegisterView(CConsoleWnd *pView);
     void UnregisterView(CConsoleWnd *pView);
     DOCUMENT_MODE GetDocumentMode();
