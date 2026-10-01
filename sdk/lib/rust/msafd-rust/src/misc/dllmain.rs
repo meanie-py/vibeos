@@ -3357,7 +3357,14 @@ pub unsafe extern "system" fn WSPGetSockOpt(
                 }
 
                 SO_CONNECT_TIME => {
-                    DwordBuffer = GetCurrentTimeInSeconds() - (*(*Socket).SharedData).ConnectTime;
+                    // Not connected -> 0xFFFFFFFF, Windows' documented answer (upstream
+                    // a68bfa2fb41); subtracting from 0 returned seconds-since-1970.
+                    let ConnectTime = (*(*Socket).SharedData).ConnectTime;
+                    DwordBuffer = if ConnectTime != 0 {
+                        GetCurrentTimeInSeconds().wrapping_sub(ConnectTime)
+                    } else {
+                        0xFFFF_FFFF
+                    };
                     Buffer = core::ptr::addr_of_mut!(DwordBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<DWORD>() as INT;
                 }

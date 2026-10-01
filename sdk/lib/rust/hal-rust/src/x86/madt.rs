@@ -13,10 +13,12 @@
 use ntkrnl_sys::ddk::{UCHAR, ULONG, ULONG_PTR};
 use ntkrnl_sys::hal_ddk::{
     AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC,
-    AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, HalAcpiGetTable, ACPI_MADT_INTERRUPT_OVERRIDE,
-    ACPI_MADT_IO_APIC, ACPI_MADT_LOCAL_APIC, ACPI_SUBTABLE_HEADER, ACPI_TABLE_MADT, APIC_SIGNATURE,
+    AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_X2APIC,
+    HalAcpiGetTable, ACPI_MADT_INTERRUPT_OVERRIDE, ACPI_MADT_IO_APIC, ACPI_MADT_LOCAL_APIC,
+    ACPI_MADT_LOCAL_X2APIC, ACPI_SUBTABLE_HEADER, ACPI_TABLE_MADT, APIC_SIGNATURE,
     MAXIMUM_PROCESSORS, PLOADER_PARAMETER_BLOCK,
 };
+use crate::x86::halacpi::HalpPicVectorRedirect;
 
 // ----------------------------------------------------------------------------
 // HAL-internal types — not in hal_bindgen.  Mirror the C definitions in
@@ -151,101 +153,184 @@ pub static mut HalpProcessorIdentity: PPROCESSOR_IDENTITY =
     (&raw mut HalpStaticProcessorIdentity) as *mut PROCESSOR_IDENTITY;
 
 // ----------------------------------------------------------------------------
-// HalpParseApicTables — walks the MADT, fills HalpApicInfoTable +
-// HalpProcessorIdentity.  Called early; no DPRINTs needed (translated to no-ops).
+// HalpParseApicTables -- upstream cae3c053d47's rewrite of the walk. The previous
+// body was a faithful copy of the OLD madt.c and so carried every bug that commit
+// fixed:
+//  - any entry it did not handle (LAPIC NMI, x2APIC, OEM) or a duplicated I/O APIC
+//    id ENDED the walk, dropping every processor listed after it;
+//  - "online capable but not enabled" slots were counted, so HalStartNextProcessor
+//    INIT/SIPIed an absent LAPIC and KeStartAllProcessors gave up on every real CPU
+//    after it;
+//  - the boot processor was assumed to be entry 0. NT processor numbers follow entry
+//    order and HalStartNextProcessor starts at 1, so a MADT listing it later had the
+//    BSP INIT itself;
+//  - interrupt source overrides were parsed and dropped, so a remapped SCI stayed on
+//    its ISA IRQ.
+// QEMU lists the BSP first and the NMI entry last, which is why SMP smoke never saw any
+// of it. Problems are counted rather than printed: this runs before debug output works.
 // ----------------------------------------------------------------------------
+
+static mut HalpMadtIgnoredEntries: ULONG = 0;
+static mut HalpMadtTruncated: BOOLEAN = 0;
+
+unsafe fn HalpMadtAddProcessor(ApicId: ULONG, ProcessorId: ULONG, Flags: ULONG) {
+    if Flags & LAPIC_FLAG_ENABLED == 0 {
+        return;
+    }
+    // LapicId holds 8 bits and 0xFF is the broadcast id (no x2APIC support yet).
+    if ApicId >= 0xFF {
+        HalpMadtIgnoredEntries += 1;
+        return;
+    }
+    let base = (&raw mut HalpStaticProcessorIdentity).cast::<PROCESSOR_IDENTITY>();
+    let count = HalpApicInfoTable.ProcessorCount as usize;
+    // Firmware can describe one processor with both a LAPIC and an x2APIC entry.
+    for i in 0..count {
+        if (*base.add(i)).LapicId as ULONG == ApicId {
+            return;
+        }
+    }
+    if count >= MAXIMUM_PROCESSORS as usize {
+        HalpMadtIgnoredEntries += 1;
+        return;
+    }
+    (*base.add(count)).ProcessorId = ProcessorId as UCHAR;
+    (*base.add(count)).LapicId = ApicId as UCHAR;
+    HalpApicInfoTable.ProcessorCount += 1;
+}
+
+unsafe fn HalpMadtAddIoApic(IoApic: *const ACPI_MADT_IO_APIC) {
+    let io_id = core::ptr::addr_of!((*IoApic).Id).read_unaligned() as usize;
+    let io_address = core::ptr::addr_of!((*IoApic).Address).read_unaligned();
+    // Keep the first unit when an id is duplicated (seen on Dell PowerEdge).
+    if io_address == 0 || HalpApicInfoTable.IoApicPA[io_id] != 0 {
+        HalpMadtIgnoredEntries += 1;
+        return;
+    }
+    HalpApicInfoTable.IoApicPA[io_id] = io_address;
+    HalpApicInfoTable.IoApicIrqBase[io_id] =
+        core::ptr::addr_of!((*IoApic).GlobalIrqBase).read_unaligned();
+    HalpApicInfoTable.IOAPICCount += 1;
+}
+
+unsafe fn HalpMadtAddInterruptOverride(Override: *const ACPI_MADT_INTERRUPT_OVERRIDE) {
+    let bus = core::ptr::addr_of!((*Override).Bus).read_unaligned();
+    let source = core::ptr::addr_of!((*Override).SourceIrq).read_unaligned() as usize;
+    // Overrides only exist for ISA IRQs.
+    if bus != 0 || source >= 16 {
+        HalpMadtIgnoredEntries += 1;
+        return;
+    }
+    HalpPicVectorRedirect[source] = core::ptr::addr_of!((*Override).GlobalIrq).read_unaligned();
+}
+
+unsafe fn HalpMadtParseEntries(MadtTable: *const ACPI_TABLE_MADT) {
+    let madt_length = core::ptr::addr_of!((*MadtTable).Header.Length).read_unaligned();
+    let TableEnd: ULONG_PTR = MadtTable as ULONG_PTR + madt_length as ULONG_PTR;
+    let mut Entry = (MadtTable as ULONG_PTR + core::mem::size_of::<ACPI_TABLE_MADT>() as ULONG_PTR)
+        as *const ACPI_SUBTABLE_HEADER;
+
+    while (Entry as ULONG_PTR) < TableEnd {
+        if Entry as ULONG_PTR + core::mem::size_of::<ACPI_SUBTABLE_HEADER>() as ULONG_PTR > TableEnd {
+            HalpMadtTruncated = 1;
+            return;
+        }
+        let len = (*Entry).Length as usize;
+        if len < core::mem::size_of::<ACPI_SUBTABLE_HEADER>() || Entry as ULONG_PTR + len as ULONG_PTR > TableEnd {
+            HalpMadtTruncated = 1;
+            return;
+        }
+
+        let ty = (*Entry).Type;
+        if ty == AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC as u8 {
+            if len < core::mem::size_of::<ACPI_MADT_LOCAL_APIC>() {
+                HalpMadtIgnoredEntries += 1;
+            } else {
+                let l = Entry as *const ACPI_MADT_LOCAL_APIC;
+                HalpMadtAddProcessor(
+                    core::ptr::addr_of!((*l).Id).read_unaligned() as ULONG,
+                    core::ptr::addr_of!((*l).ProcessorId).read_unaligned() as ULONG,
+                    core::ptr::addr_of!((*l).LapicFlags).read_unaligned(),
+                );
+            }
+        } else if ty == AcpiMadtType_ACPI_MADT_TYPE_LOCAL_X2APIC as u8 {
+            if len < core::mem::size_of::<ACPI_MADT_LOCAL_X2APIC>() {
+                HalpMadtIgnoredEntries += 1;
+            } else {
+                let x = Entry as *const ACPI_MADT_LOCAL_X2APIC;
+                HalpMadtAddProcessor(
+                    core::ptr::addr_of!((*x).LocalApicId).read_unaligned(),
+                    core::ptr::addr_of!((*x).Uid).read_unaligned(),
+                    core::ptr::addr_of!((*x).LapicFlags).read_unaligned(),
+                );
+            }
+        } else if ty == AcpiMadtType_ACPI_MADT_TYPE_IO_APIC as u8 {
+            if len < core::mem::size_of::<ACPI_MADT_IO_APIC>() {
+                HalpMadtIgnoredEntries += 1;
+            } else {
+                HalpMadtAddIoApic(Entry as *const ACPI_MADT_IO_APIC);
+            }
+        } else if ty == AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE as u8 {
+            if len < core::mem::size_of::<ACPI_MADT_INTERRUPT_OVERRIDE>() {
+                HalpMadtIgnoredEntries += 1;
+            } else {
+                HalpMadtAddInterruptOverride(Entry as *const ACPI_MADT_INTERRUPT_OVERRIDE);
+            }
+        }
+        // Every other type (LAPIC NMI, x2APIC NMI, reserved, OEM) is skipped, not fatal.
+
+        Entry = (Entry as ULONG_PTR + len as ULONG_PTR) as *const ACPI_SUBTABLE_HEADER;
+    }
+}
+
+/// Move the boot processor to entry 0, since NT processor numbers follow entry order.
+/// When the MADT does not describe it, keep only the boot processor so nothing else is
+/// started from a table we cannot trust.
+///
+/// Divergence: the boot APIC id comes from CPUID(1).EBX[31:24] directly, not from
+/// KeGetCurrentPrcb()->InitialApicId. It is the same value (KiGetFeatureBits stores
+/// exactly that), but the HAL's `hal_ddk` view of _KPRCB has disagreed with the kernel's
+/// on field offsets before (see HalInitSystem), and CPUID has no layout to drift.
+unsafe fn HalpMadtPlaceBootProcessor() {
+    #[cfg(target_arch = "x86_64")]
+    let BootApicId = (core::arch::x86_64::__cpuid(1).ebx >> 24) as UCHAR;
+    #[cfg(target_arch = "x86")]
+    let BootApicId = (core::arch::x86::__cpuid(1).ebx >> 24) as UCHAR;
+
+    let base = (&raw mut HalpStaticProcessorIdentity).cast::<PROCESSOR_IDENTITY>();
+    let count = HalpApicInfoTable.ProcessorCount as usize;
+    let mut BootProcessor: PROCESSOR_IDENTITY = core::mem::zeroed();
+    match (0..count).find(|&i| (*base.add(i)).LapicId == BootApicId) {
+        Some(Index) => {
+            // A conforming MADT lists the BSP first, so this only moves entries on
+            // non-conforming ones.
+            BootProcessor = *base.add(Index);
+            core::ptr::copy(base, base.add(1), Index);
+        }
+        None => {
+            BootProcessor.LapicId = BootApicId;
+            HalpApicInfoTable.ProcessorCount = 1;
+        }
+    }
+    BootProcessor.BSPCheck = 1;
+    *base = BootProcessor;
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalpParseApicTables(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     let MadtTable = HalAcpiGetTable(LoaderBlock, APIC_SIGNATURE) as *mut ACPI_TABLE_MADT;
-    if MadtTable.is_null() {
-        return;
-    }
-
-    // ACPI_TABLE_MADT is packed — read Header.Length via unaligned ptr to avoid UB.
-    let madt_length = core::ptr::addr_of!((*MadtTable).Header.Length).read_unaligned();
-    if (madt_length as usize) < core::mem::size_of::<ACPI_TABLE_MADT>() {
-        return;
-    }
-
-    // TODO: We only support legacy APIC for now.
-    HalpApicInfoTable.ApicMode = HALP_APIC_MODE_LEGACY;
-    HalpApicInfoTable.LocalApicPA = core::ptr::addr_of!((*MadtTable).Address).read_unaligned();
-
-    let mut AcpiHeader = (MadtTable as ULONG_PTR
-        + core::mem::size_of::<ACPI_TABLE_MADT>() as ULONG_PTR)
-        as *mut ACPI_SUBTABLE_HEADER;
-    let TableEnd: ULONG_PTR = MadtTable as ULONG_PTR + madt_length as ULONG_PTR;
-
-    while (AcpiHeader as ULONG_PTR + core::mem::size_of::<ACPI_SUBTABLE_HEADER>() as ULONG_PTR)
-        <= TableEnd
+    if !MadtTable.is_null()
+        && core::ptr::addr_of!((*MadtTable).Header.Length).read_unaligned() as usize
+            >= core::mem::size_of::<ACPI_TABLE_MADT>()
     {
-        let header_length = (*AcpiHeader).Length;
-        if (header_length as usize) < core::mem::size_of::<ACPI_SUBTABLE_HEADER>() {
-            return;
-        }
-        if (AcpiHeader as ULONG_PTR + header_length as ULONG_PTR) > TableEnd {
-            return;
-        }
-
-        let header_type = (*AcpiHeader).Type;
-        if header_type == AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC as u8 {
-            if (header_length as usize) != core::mem::size_of::<ACPI_MADT_LOCAL_APIC>() {
-                return;
-            }
-            let LocalApic = AcpiHeader as *mut ACPI_MADT_LOCAL_APIC;
-            let lapic_flags = core::ptr::addr_of!((*LocalApic).LapicFlags).read_unaligned();
-            if (lapic_flags & (LAPIC_FLAG_ONLINE_CAPABLE | LAPIC_FLAG_ENABLED)) == 0 {
-                // Ignored: unusable
-            } else if HalpApicInfoTable.ProcessorCount == MAXIMUM_PROCESSORS {
-                // Skipped: array is full
-            } else {
-                let idx = HalpApicInfoTable.ProcessorCount as usize;
-                let slot = (&raw mut HalpStaticProcessorIdentity)
-                    .cast::<PROCESSOR_IDENTITY>()
-                    .add(idx);
-                (*slot).ProcessorId =
-                    core::ptr::addr_of!((*LocalApic).ProcessorId).read_unaligned();
-                (*slot).LapicId = core::ptr::addr_of!((*LocalApic).Id).read_unaligned();
-                HalpApicInfoTable.ProcessorCount += 1;
-            }
-        } else if header_type == AcpiMadtType_ACPI_MADT_TYPE_IO_APIC as u8 {
-            if (header_length as usize) != core::mem::size_of::<ACPI_MADT_IO_APIC>() {
-                return;
-            }
-            let IoApic = AcpiHeader as *mut ACPI_MADT_IO_APIC;
-            let io_id = core::ptr::addr_of!((*IoApic).Id).read_unaligned();
-            let io_address = core::ptr::addr_of!((*IoApic).Address).read_unaligned();
-            let io_irq_base = core::ptr::addr_of!((*IoApic).GlobalIrqBase).read_unaligned();
-            if HalpApicInfoTable.IoApicPA[io_id as usize] != 0 {
-                return; // Id duplication
-            }
-            HalpApicInfoTable.IoApicPA[io_id as usize] = io_address;
-            HalpApicInfoTable.IoApicIrqBase[io_id as usize] = io_irq_base;
-            HalpApicInfoTable.IOAPICCount += 1;
-        } else if header_type == AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE as u8 {
-            if (header_length as usize) != core::mem::size_of::<ACPI_MADT_INTERRUPT_OVERRIDE>() {
-                return;
-            }
-            let InterruptOverride = AcpiHeader as *mut ACPI_MADT_INTERRUPT_OVERRIDE;
-            let bus = core::ptr::addr_of!((*InterruptOverride).Bus).read_unaligned();
-            if bus != 0 {
-                return; // Invalid Bus (non-ISA)
-            }
-            // TODO: Implement source-IRQ → global-IRQ redirect table population.
-        } else {
-            // Unknown / UNIMPLEMENTED subtable type.
-            return;
-        }
-
-        AcpiHeader =
-            (AcpiHeader as ULONG_PTR + header_length as ULONG_PTR) as *mut ACPI_SUBTABLE_HEADER;
+        // TODO: We only support legacy APIC for now.
+        HalpApicInfoTable.ApicMode = HALP_APIC_MODE_LEGACY;
+        HalpApicInfoTable.LocalApicPA = core::ptr::addr_of!((*MadtTable).Address).read_unaligned();
+        HalpMadtParseEntries(MadtTable);
+    } else {
+        HalpMadtTruncated = 1;
     }
-
-    // If we didn't land exactly on TableEnd, the table was malformed.
-    if AcpiHeader as ULONG_PTR != TableEnd {
-        return;
-    }
+    HalpMadtPlaceBootProcessor();
 }
 
 // ----------------------------------------------------------------------------

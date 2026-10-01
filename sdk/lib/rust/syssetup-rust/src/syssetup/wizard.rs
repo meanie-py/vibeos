@@ -2978,6 +2978,11 @@ unsafe extern "C" fn RegisterDlls(
     RegistrationData.DefaultContext = SetupInitDefaultQueueCallback(RegistrationData.hwndDlg);
     RegistrationData.pNotify = pNotify;
 
+    // A DllRegisterServer may use COM -- quartz, qcap, devenum and qedit register through
+    // IFilterMapper2 -- and this worker thread never initialised it, so each one failed
+    // with CO_E_NOTINITIALIZED (upstream 588c5df465e). regsvr32 brackets the call the same way.
+    let HrCoInit = CoInitialize(core::ptr::null_mut());
+
     if SetupInstallFromInfSectionW(
         GetParent(RegistrationData.hwndDlg),
         hSysSetupInf,
@@ -2993,6 +2998,10 @@ unsafe extern "C" fn RegisterDlls(
     ) == 0
     {
         Error = GetLastError();
+    }
+
+    if HrCoInit >= 0 {
+        CoUninitialize();
     }
 
     SetupTermDefaultQueueCallback(RegistrationData.DefaultContext);
