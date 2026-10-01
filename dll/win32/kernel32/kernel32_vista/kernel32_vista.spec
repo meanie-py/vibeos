@@ -60,6 +60,13 @@
 @ stdcall SetThreadPreferredUILanguages(long wstr ptr)
 
 @ stdcall GetNamedPipeClientProcessId(ptr ptr)
+# The threadpool WORK-object subset, in kernel32-vista-rust (threadpool.rs) -- not the NT
+# threadpool upstream's threadpool.c wraps, which is still owed. Wine-10 quartz needs these.
+@ stdcall CreateThreadpoolWork(ptr ptr ptr)
+@ stdcall SubmitThreadpoolWork(ptr)
+@ stdcall WaitForThreadpoolWorkCallbacks(ptr long)
+@ stdcall CloseThreadpoolWork(ptr)
+@ stdcall TrySubmitThreadpoolCallback(ptr ptr ptr)
 # Added by the 2026-09-20 upstream sync: implemented in kernel32-vista-rust
 # (vista.rs / misc.rs) rather than by building upstream's new C, which would have
 # duplicated symbols the Rust twins already own.
