@@ -23,7 +23,10 @@ OUT_DIR="${SCRIPT_DIR}/src"
 WRAPPER="${SCRIPT_DIR}/wrapper.h"
 
 # The ninja build statement we lift DEFINES/INCLUDES/FLAGS from.
-NINJA_RULE='csrsrv.dir/init.c.obj:'
+# A TU that is still COMPILED as C. The original rule's .c went to Rust when the module
+# was cohab-flipped, the grep below then found nothing, and bindgen ran with no
+# -I/-D at all (host mingw headers) -- so this island could not be regenerated.
+NINJA_RULE='subsystems/csr/csrlib/CMakeFiles/csrlib.dir/csrlib_rust_stub.c.obj:'
 
 # Type/var allowlist '.+' (struct field types chain everywhere).
 # Function allowlist: user-mode Native API families + the SM/CSR/BASE
@@ -49,6 +52,10 @@ run_bindgen() {
     DEFINES=$(grep -A8 "$NINJA_RULE" "$NINJA" | grep -m1 -E '^  DEFINES' | sed 's/^  DEFINES = //')
     INCLUDES=$(grep -A8 "$NINJA_RULE" "$NINJA" | grep -m1 -E '^  INCLUDES' | sed 's/^  INCLUDES = //')
     RAWFLAGS=$(grep -A8 "$NINJA_RULE" "$NINJA" | grep -m1 -E '^  FLAGS' | sed 's/^  FLAGS = //')
+    if [ -z "$DEFINES" ] || [ -z "$INCLUDES" ]; then
+        echo "!! ${ARCH}: no DEFINES/INCLUDES for $NINJA_RULE in $NINJA" >&2
+        exit 1
+    fi
     # Drop codegen/PCH-only flags that break or are irrelevant to bindgen
     # parsing. NEVER add -fms-compatibility.
     SANITIZED=$(echo "$RAWFLAGS" | tr ' ' '\n' \
@@ -62,6 +69,7 @@ run_bindgen() {
         --allowlist-function "$FN_ALLOW" \
         -o "$RAW" \
         -- -ferror-limit=0 -Wno-everything $SANITIZED $DEFINES $INCLUDES \
+        -I"${SRC}/sdk/include/reactos/subsys" \
         -I"${SRC}/subsystems/csr/csrsrv" \
         -I"${SRC}/subsystems/win/basesrv" \
         -I"${SRC}/base/system/smss" \

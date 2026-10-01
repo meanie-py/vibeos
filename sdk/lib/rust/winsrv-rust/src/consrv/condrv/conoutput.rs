@@ -65,7 +65,7 @@ pub unsafe extern "C" fn CONSOLE_SCREEN_BUFFER_Destroy(Buffer: PCONSOLE_SCREEN_B
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ConDrvCreateScreenBuffer(
+pub unsafe extern "C" fn ConDrvCreateScreenBuffer(
     Buffer: *mut PCONSOLE_SCREEN_BUFFER,
     Console: PCONSOLE,
     ProcessHandle: HANDLE,

@@ -781,12 +781,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`verify_signatures`, after fixing its HIGH false positives from comments inside param
   lists); the four arity changes the regen made all match the existing Rust definitions.
 
-  **Three more islands carry the same drift and were NOT regenerated:** `ntdll-sys`,
-  `winlogon-sys` and `winsrv-sys` still say `RTL_BSD_DATA` = 136 and `RtlBsdItemMax` = 16,
-  while `ndk/rtltypes.h` grows both UNCONDITIONALLY (no `#if` around the three new fields or
-  enum values), so this is staleness, not a per-mode difference. Whether their generators
-  share the root cause below is UNCHECKED. Regenerate them with this one, or the kernel and
-  user views of shared NDK structs disagree.
+  **`ntdll-sys`, `winlogon-sys` and `winsrv-sys` were stale too -- REGENERATED 2026-09-30.**
+  A different root cause: each generator lifts flags from one ninja rule, and that rule's `.c`
+  went to Rust when the module was flipped (`csrsrv/init.c`, `winlogon.c`, `consrv/alias.c`).
+  The grep then found nothing and bindgen ran with no `-I`/`-D` at all, so these islands could
+  not have been regenerated since the flip; `verify_sizes.py` did the same and exited 0 having
+  checked nothing. Both now lift from a still-compiled stub TU and hard-fail on empty flags.
+  winsrv-sys's anonymous-member inlining (`CONSOLE_START_INFO` embeds `CONSOLE_PROPERTIES`)
+  silently stopped too -- bindgen 0.73 spells the padding `__BindgenOpaqueArray8<...>` and a
+  miss was a WARN -- now fatal, with a layout assert. The regen surfaced one real ABI bug:
+  `ConDrvCreateScreenBuffer` is cdecl in `conoutput.h` but the Rust was `extern "system"`, and
+  once the island said so LLVM turned the i386 call into `ud2`. Upstream's
+  `OBJECT_HANDLE_ATTRIBUTE_INFORMATION` -> `..._FLAG_INFORMATION` rename followed in three crates.
 
   What was wrong: `EPROCESS` measured 1000 bytes in C and 992 in Rust on arm64 (the Rust
   struct stopped at `Cookie` and omitted `ULONGLONG CycleTime`, which the header adds under
