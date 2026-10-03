@@ -640,6 +640,8 @@ python3 "$PROJECT_DIR/tools/ramdisk_apps.py" --stage --build-dir "$BUILD_DIR" > 
 }
 python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$APPS_LST" --out "$APPS_LST.stripped" \
     --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY" || exit 1
+# A closure member can live below a directory nothing else creates (the spooler's print
+# processor is reactos/system32/spool/prtprocs/arm64/winprint.dll), so make each parent first.
 while IFS='=' read -r dest src; do
     [ -n "$dest" ] || continue
     MMDIR_P "$dest"
