@@ -1961,12 +1961,12 @@ unsafe extern "system" fn LocalePageDlgProc(
 ) -> INT_PTR {
     let mut SetupData: PSETUPDATA;
 
-    SetupData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    SetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             WriteUserLocale();
 
             SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
@@ -2032,12 +2032,12 @@ unsafe extern "system" fn LocalePageDlgProc(
 ) -> INT_PTR {
     let mut SetupData: PSETUPDATA;
 
-    SetupData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    SetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             WriteUserLocale();
 
             SetUserLocaleName(GetDlgItem(hwndDlg, (IDC_LOCALETEXT) as i32));
@@ -2346,12 +2346,12 @@ unsafe extern "system" fn DateTimePageDlgProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    let SetupData: PSETUPDATA = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    let SetupData: PSETUPDATA = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
             let SetupData: PSETUPDATA = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             CreateTimeZoneList(SetupData);
 
@@ -2461,12 +2461,12 @@ unsafe extern "system" fn DateTimePageDlgProc(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> INT_PTR {
-    let SetupData: PSETUPDATA = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    let SetupData: PSETUPDATA = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
             let SetupData: PSETUPDATA = ((*(lParam as LPPROPSHEETPAGE)).lParam) as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             CreateTimeZoneList(SetupData);
 
@@ -2578,7 +2578,7 @@ unsafe extern "system" fn ThemePageDlgProc(
     let mut SetupData: PSETUPDATA;
     let mut pnmv: LPNMLISTVIEW;
 
-    SetupData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    SetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
@@ -2588,7 +2588,7 @@ unsafe extern "system" fn ThemePageDlgProc(
             let mut lvi: LVITEM = core::mem::zeroed();
 
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             hListView = GetDlgItem(hwndDlg, (IDC_THEMEPICKER) as i32);
 
@@ -2693,7 +2693,7 @@ unsafe extern "system" fn ThemePageDlgProc(
     let mut SetupData: PSETUPDATA;
     let mut pnmv: LPNMLISTVIEW;
 
-    SetupData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    SetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
@@ -2703,7 +2703,7 @@ unsafe extern "system" fn ThemePageDlgProc(
             let mut lvi: LVITEM = core::mem::zeroed();
 
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
 
             hListView = GetDlgItem(hwndDlg, (IDC_THEMEPICKER) as i32);
 
@@ -3224,12 +3224,12 @@ unsafe extern "system" fn ProcessPageDlgProc(
     static mut s_hCrossIcon: HICON = core::ptr::null_mut();
     static mut s_hNormalFont: HFONT = core::ptr::null_mut();
 
-    SetupData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    SetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT3) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT4) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_CHECK3) as i32), (SW_HIDE) as i32);
@@ -3331,12 +3331,12 @@ unsafe extern "system" fn ProcessPageDlgProc(
     static mut s_hCrossIcon: HICON = core::ptr::null_mut();
     static mut s_hNormalFont: HFONT = core::ptr::null_mut();
 
-    SetupData = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as PSETUPDATA;
+    SetupData = GetWindowLongPtr(hwndDlg, DWLP_USER) as PSETUPDATA;
 
     match uMsg {
         WM_INITDIALOG => {
             SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
-            SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
+            SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, ((SetupData as DWORD_PTR)) as LONG_PTR);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT3) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_TASKTEXT4) as i32), (SW_HIDE) as i32);
             ShowWindow(GetDlgItem(hwndDlg, (IDC_CHECK3) as i32), (SW_HIDE) as i32);

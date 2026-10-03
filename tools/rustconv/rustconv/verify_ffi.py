@@ -86,6 +86,14 @@ FLEXIBLE_ARRAYS = {
     "_UNICODE_STRING": None,  # Buffer is a pointer, not flexible array
 }
 
+# Fixed-size arrays that share a name with a flexible one above. The flexible-array rule
+# matches by FIELD name alone, so `.u.DevicePrivate.Data[1]` (ULONG[3] in both
+# CM_PARTIAL_RESOURCE_DESCRIPTOR and IO_RESOURCE_DESCRIPTOR) read as KEY_VALUE_*.Data.
+# Each entry is the parent field that makes the path unambiguous.
+FIXED_ARRAY_PARENTS = {
+    "Data": ("DevicePrivate",),
+}
+
 # CDECl allowlist — functions that are legitimately cdecl
 CDECL_ALLOWLIST = {
     "sprintf",
@@ -591,6 +599,11 @@ def flexible_facts(path: str, text: str) -> list[dict]:
             if re.search(pattern, line):
                 # Skip if it's .Objects[0] (that's safe)
                 if re.search(rf"\.{field_name}\s*\[\s*0\s*\]", line):
+                    continue
+                # Skip a same-named FIXED array reached through its known parent field
+                parents = FIXED_ARRAY_PARENTS.get(field_name, ())
+                not_via_parent = "".join(f"(?<!{p})" for p in parents)
+                if parents and not re.search(rf"{not_via_parent}\.{field_name}\s*\[", line):
                     continue
                 # Skip if in a comment
                 stripped = line.lstrip()

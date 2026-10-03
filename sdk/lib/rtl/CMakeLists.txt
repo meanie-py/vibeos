@@ -58,16 +58,10 @@ list(APPEND SOURCE
     # largeint.c — replaced by Rust implementation (sdk/lib/rust/largeint/)
     # locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
     # luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
-    # memres.c is upstream-new (2026, memory/port resource descriptor encode/decode
-    # helpers for the arbiter/pcix drivers): RtlCmDecodeMemIoResource,
-    # RtlIoDecodeMemIoResource, RtlCmEncodeMemIoResource, RtlIoEncodeMemIoResource,
-    # RtlFindClosestEncodableLength. No collision with any Rust twin (grepped) —
-    # taken active below. NOTE: this only reaches consumers that link the cmake
-    # `rtl` target. ntoskrnl does NOT — it dropped librtl.a in 2026-06-20 and gets
-    # the whole sdk/lib/rtl/*.c surface from rtl-rust — so ntoskrnl.spec does not
-    # export the Rtl{Cm,Io}{En,De}codeMemIoResource family. Porting memres.c to
-    # rtl-rust is what would close that; tracked in upstream-sync-merge-decisions.md.
-    memres.c
+    # memres.c (upstream-new, 2026) — replaced by Rust implementation (sdk/lib/rust/rtl-misc/
+    #   memres.rs): the Rtl{Cm,Io}{En,De}codeMemIoResource family + RtlFindClosestEncodableLength,
+    #   which ntoskrnl.spec now exports (ntoskrnl gets its rtl surface from rtl-rust).
+    #memres.c
     # memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
     # message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
     # network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
@@ -77,14 +71,10 @@ list(APPEND SOURCE
     # prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
     # priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
     # process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
-    # processor.c is upstream-new (2026) but declined here: it DEFINES
-    # RtlGetCurrentProcessorNumber, which sdk/lib/rust/rtl-strings/src/cabi/mod.rs
-    # already owns (Rust cohab) — compiling it would duplicate that symbol. Its
-    # other two functions, RtlIsProcessorFeaturePresent and
-    # RtlGetCurrentProcessorNumberEx, are genuinely new ntdll/ntdll_vista exports
-    # with NO implementation anywhere in the tree yet (not even pre-merge) — see
-    # FLAGS in the merge report. Needs a split (or a small Rust port of the two
-    # new functions) before it can be taken.
+    # processor.c (upstream-new, 2026) — replaced by Rust (rtl-strings cabi): it defines
+    #   RtlGetCurrentProcessorNumber, which rtl-strings already owned, plus the two new
+    #   exports RtlIsProcessorFeaturePresent and RtlGetCurrentProcessorNumberEx, now
+    #   ported beside it.
     # propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
     # random.c — replaced by Rust implementation (sdk/lib/rust/random/)
     # rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
@@ -316,6 +306,7 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/rtl-misc/src/res.rs
             ${RUST_WORKSPACE_DIR}/rtl-misc/src/memstream.rs
             ${RUST_WORKSPACE_DIR}/rtl-misc/src/registry.rs
+            ${RUST_WORKSPACE_DIR}/rtl-misc/src/memres.rs
             ${RUST_WORKSPACE_DIR}/rtl-misc/Cargo.toml
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/lib.rs
             ${RUST_WORKSPACE_DIR}/rtl-threadpool/src/types.rs

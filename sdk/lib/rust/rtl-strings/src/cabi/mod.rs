@@ -7788,6 +7788,38 @@ pub unsafe extern "system" fn RtlGetCurrentProcessorNumber() -> u32 {
     NtGetCurrentProcessorNumber()
 }
 
+/// `BOOLEAN NTAPI RtlIsProcessorFeaturePresent(ULONG)` (upstream rtl/processor.c, 2026;
+/// the rest of that file is declined because it redefines the function above).
+#[no_mangle]
+pub unsafe extern "system" fn RtlIsProcessorFeaturePresent(processor_feature: u32) -> u8 {
+    if processor_feature >= prc::PROCESSOR_FEATURE_MAX {
+        return 0;
+    }
+    let features = (prc::kuser_shared_data_va() + prc::KUSER_SHARED_PROCESSOR_FEATURES_OFFSET) as *const u8;
+    (core::ptr::read_volatile(features.add(processor_feature as usize)) != 0) as u8
+}
+
+/// `PROCESSOR_NUMBER`: Group, Number, Reserved.
+#[repr(C)]
+pub struct PROCESSOR_NUMBER {
+    pub Group: u16,
+    pub Number: u8,
+    pub Reserved: u8,
+}
+
+/// `VOID NTAPI RtlGetCurrentProcessorNumberEx(PPROCESSOR_NUMBER)` (upstream rtl/processor.c).
+///
+/// Divergence: the C forwards to `NtGetCurrentProcessorNumberEx`, a 0xA00+ syscall our
+/// kernel does not have (sysfuncs.lst carries only the plain one). We have one processor
+/// group, so group 0 plus the plain syscall's number is the same answer, with no
+/// unresolvable import behind it.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetCurrentProcessorNumberEx(processor_number: *mut PROCESSOR_NUMBER) {
+    (*processor_number).Group = 0;
+    (*processor_number).Number = NtGetCurrentProcessorNumber() as u8;
+    (*processor_number).Reserved = 0;
+}
+
 /// `ULONG NTAPI RtlRosGetAppcompatVersion(VOID)` — ReactOS-specific.
 /// Returns `(PEB.OSMajorVersion << 8) | PEB.OSMinorVersion`, or the
 /// Server 2003 default if no PEB. Decision in

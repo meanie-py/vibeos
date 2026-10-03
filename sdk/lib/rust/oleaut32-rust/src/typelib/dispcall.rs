@@ -245,6 +245,9 @@ call_method:
     .globl call_double_method
 call_double_method:
     jmp call_method
+    .globl call_float_method
+call_float_method:
+    jmp call_method
 "#,
     options(att_syntax)
 );
@@ -255,6 +258,9 @@ extern "C" {
     pub fn call_method(func: *mut c_void, nb_args: i32, args: *const usize) -> usize;
     /// double call_double_method(void *func, int nb_args, const DWORD_PTR *args)
     pub fn call_double_method(func: *mut c_void, nb_args: i32, args: *const usize) -> f64;
+    /// float call_float_method(void *func, int nb_args, const DWORD_PTR *args): the same
+    /// trampoline, typed so the caller reads xmm0 as the float the callee left there.
+    pub fn call_float_method(func: *mut c_void, nb_args: i32, args: *const usize) -> f32;
 }
 
 /*******************************************************************************
@@ -332,7 +338,12 @@ pub unsafe extern "system" fn DispCallFunc(
 
     match vtReturn {
         VT_R4 => {
-            (*pvargResult).n3.fltVal = call_double_method(func, argspos, args) as f32;
+            // Divergence from typelib.c, which reads VT_R4 through call_double_method here too:
+            // a float return occupies only xmm0's low 32 bits, so reading it as a double
+            // reinterprets those bits as a denormal and narrowing gives 0.0. (i386 is immune,
+            // since x87 st(0) holds either type; arm64's C already has call_float_method.)
+            // Found by tools/payloads/dispprobe.
+            (*pvargResult).n3.fltVal = call_float_method(func, argspos, args);
         }
         VT_R8 | VT_DATE => {
             (*pvargResult).n3.dblVal = call_double_method(func, argspos, args);
