@@ -125,6 +125,8 @@ pub mod ucrt_reactos;
 pub mod fpctrl_arm64;
 #[cfg(feature = "fenv")]
 pub mod fenv;
+#[cfg(feature = "c99math")]
+pub mod c99math;
 #[cfg(feature = "heap")]
 pub mod heap;
 #[cfg(feature = "stdlib")]

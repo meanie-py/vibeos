@@ -5319,7 +5319,7 @@ Copyright notice:
 
 ## Rust crates
 
-This product also links 18 third-party Rust crates, out of 58 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
+This product also links 19 third-party Rust crates, out of 59 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
 
 | crate | version | licence |
 | --- | --- | --- |
@@ -5331,6 +5331,7 @@ This product also links 18 third-party Rust crates, out of 58 that enter the bui
 | defmt | 1.1.0 | MIT OR Apache-2.0 |
 | hash32 | 0.3.1 | MIT OR Apache-2.0 |
 | heapless | 0.9.3 | MIT OR Apache-2.0 |
+| libm | 0.2.16 | MIT |
 | libz-rs-sys | 0.6.3 | Zlib |
 | log | 0.4.32 | MIT OR Apache-2.0 |
 | managed | 0.8.0 | 0BSD |

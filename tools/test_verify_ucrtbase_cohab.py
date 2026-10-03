@@ -610,6 +610,19 @@ def test_rebuild_lists_match_the_crate_closure() -> None:
     assert vuc.check_rebuild_lists() == []
 
 
+def test_a_registry_crate_is_not_a_rebuild_input(tmp_path: Path) -> None:
+    """`libm = { version = ... }` is pinned by Cargo.lock and nothing in the tree can
+    edit it, so it is not part of the closure a rebuild list must name; a path crate
+    beside it still is."""
+    _crate(
+        tmp_path,
+        "ucrt-rust",
+        'libm = { version = "0.2.16", optional = true }\n'
+        'varargs-rust = { path = "../varargs-rust" }\n',
+    )
+    assert vuc._deps_of(tmp_path / "ucrt-rust") == {"varargs-rust"}
+
+
 def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
     """Control: a list that drops a closure crate must be reported -- a gate nobody
     has watched fail is a gate nobody knows works."""

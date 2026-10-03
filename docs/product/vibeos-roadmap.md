@@ -583,19 +583,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (valid storage, so no corruption; a behaviour divergence: key checks, `FsRtlOplockBreakH`,
   atomic create-with-oplock in `FatOpenExistingFcb`/`FatOpenExistingFile`/`FatCreateNewFile`/
   `FatSetRenameInfo`); fsctrl.c has 12 more. Owner: fastfat lane.
-- **ucrtbase still exports ~70 C99 math functions as `-stub`** (OPEN, 2026-10-03): `trunc`,
-  `round`/`lround`/`llround`, `rint`/`nearbyint`, `cbrt`, `erf`/`erfc`, `lgamma`/`tgamma`,
-  `fmin`/`fmax`/`fdim`, `copysign`, `nan`, `remainder`/`remquo`, `log1p`, `expm1`,
-  `acosh`/`asinh`/`atanh`, `ilogb`/`logb` and their `f` forms (`grep -- -stub
-  dll/win32/ucrtbase/ucrtbase.spec`). A stub prints "calling stub" and returns garbage, so
-  any modern UCRT app using them gets wrong numbers silently. No body exists in this tree:
-  ReactOS's msvcrt `math.c` is a trimmed Wine that dropped them, and cnt-rust's libm has
-  only the C89 set. Options: (a) the `libm` crate (musl's libm in Rust, MIT, `no_std`;
-  already in the local cargo registry) -- a new external dependency, so it needs the
-  supply-chain call plus a Cargo.lock/notices entry; (b) port upstream Wine's versions
-  (also musl-derived) into ucrt-rust. Either way the UCRT errno/`_matherr` contract goes on
-  top, and Wine's misc `test_math_errors` (misc.c:774/776) is the oracle. The fenv family
-  that sat beside them in the stub list is DONE (fenv.rs, 2026-10-03). Owner: ucrt-rust.
+- **ucrtbase's ~70 C99 math stubs** (FIXED, 2026-10-03): `acosh` ... `trunc`, their `f`
+  forms, `_fpclassf`, `_dpcomp`/`_fdpcomp`, `_Cbuild`/`creal` are `ucrt-rust/src/c99math.rs`
+  -- the algorithms from the `libm` crate (musl's, MIT; the code Wine itself runs), the UCRT
+  errno contract ours. Graded by `tools/payloads/c99math` (value vs glibc within a stated ulp
+  budget, errno vs Wine's tables) on all three arches. Two things it took: i386 ucrtbase moved
+  to the SSE2 baseline (libm cannot compile under `-sse`), which in turn exposed
+  `sdk/lib/crt`'s x87-only i386 `_control87`/`_statusfp`/`_clearfp` -- replaced by Wine's
+  both-unit versions in `fenv.rs`; and `rint`/`nearbyint` on arm64 are `frintx`/`frinti`,
+  because `libm` ignores rounding modes. Still `-stub`: the `_d*`/`_fd*` internal helpers
+  (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
@@ -605,7 +602,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
   (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
   math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
-  already crashed, so they are UNCOMPARED; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
+  already crashed, so they are UNCOMPARED -- as of 2026-10-03 (c99math) every C99 row passes
+  and the failures are exactly the C89 functions ucrtbase takes from cnt-rust/crtmath
+  (`acos`, `asin`, `cos`, `exp`, `exp2`, `log`, `log10`, `_logb`), which set neither errno
+  nor `_matherr` on a domain/range error -- the UCRT `math_error` contract is owed on top of
+  them, as c99math.rs does for the C99 set; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
+  i386 `_control87` in fenv.rs; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
   where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
@@ -2369,7 +2371,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
   (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
-- **55 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
+- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
   (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
   BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
   stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
@@ -2388,7 +2390,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   links `csq arbiter cmlib ntlsalib rtl`, so those land inside the kernel image and must be
   no-SSE however user-ish `sdk/lib/rtl` looks. **Classifying these by directory is the wrong
   oracle**; the question is link-graph reachability into a kernel PE. Only `concfg`, `msvcrt`
-  and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found).
+  and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found);
+  ucrtbase DID drop it (2026-10-03, for the `libm` crate -- see its CMakeLists).
   So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
   split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
   claim, not a test of mine. Whoever bumps
