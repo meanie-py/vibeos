@@ -10148,7 +10148,13 @@ was measured separately: **639 arm64 `-smp 1` kmtest rounds (2026-09-14 → 10-0
 **Silence is only a result once you prove the probe shipped** — a July soak's every
 "under the probes" claim was vacuous because the probes landed four hours after the media was
 frozen. Check the MEDIA, not the build dir: `strings qemu/ramdisk.img | grep -c
-mapping-not-in-list` returned 4 for the run above. **Disproven, don't re-chase:** an `rtl_heap`
+mapping-not-in-list` returned 4 for the run above. **And check the ARCH: a probe can be absent
+by compilation, not by staging.** `mm_guard_trip!` is `#[cfg(target_arch = "aarch64")]` — its
+printer is an arm64 header macro — so all 14 `[MMGUARD]` sites expand to nothing on i386/amd64.
+`strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c MMGUARD`: arm64 **43**, amd64 **0**,
+i386 **0**. Every "x86 is quiet at these sites" reading is therefore vacuous, and the three
+ways a probe's silence lies now have the same one-line test — grep the artifact you actually
+booted, per arch. **Disproven, don't re-chase:** an `rtl_heap`
 translation bug; the free-while-mapped tripwire (negative); `MmInsertRmap`'s two silent returns
 (probed, never fire — still wrong as silent degrades, but not this). This entry exists because
 §9.96 first registered the flake with a plausible-but-unproven label — **a label is not a
