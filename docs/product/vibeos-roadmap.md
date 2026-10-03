@@ -572,7 +572,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   left to the ucrt lane, whose `ucrtdiff.c` is mid-edit (and whose arm64 build currently
   stops at pecheck: `__doserrno`/`_open_osfhandle` graded but not imported from ucrtbase.dll).
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
-  (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
+  (FIXED 2026-10-03: ucrt-rust `fpctrl_arm64.rs`, graded by `tools/payloads/fpctrl` against
+  msvcrt.dll's bodies -- 671 cases, 0 diffs; the allowlist entry is gone. Was OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
   control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
   import library and ucrtbase ships a forward into msvcrt.dll. Found by
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED

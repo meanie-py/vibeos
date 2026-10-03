@@ -201,6 +201,9 @@ winapi-thunks = ["findfile"]
 # sdk/lib/ucrt_reactos/ (ReactOS glue, MIT): the user _matherr hook and the three
 # __acrt_* kernel32 forwarders
 ucrt-reactos = []
+# _statusfp/_clearfp/_control87/_controlfp on arm64 (FPCR/FPSR); i386/amd64 take
+# sdk/lib/crt/float's x87/SSE bodies, so the module is empty there
+fpctrl = []
 # heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
 heap = []
 # stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
