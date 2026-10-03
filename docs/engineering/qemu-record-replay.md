@@ -131,7 +131,7 @@ the config that caused it. So the transform refuses up front:
 | an existing `-icount` | we will not record on top of someone else's counting config |
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
-| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. This is why **x86 cannot be recorded yet** |
+| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. x86 is not recordable yet, but the remaining blocker is freeldr, not this |
 
 x86 is wired end to end — the transform, the media staging and the accelerator
 demotion below are all tested against the real configs — but it **cannot
@@ -577,9 +577,48 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
   Firmware and freeldr start up fine from virtio; the boot then dies where
   freeldr loads the kernel, so vibeos's x86 boot path cannot take its LiveCD
-  over virtio-blk regardless of what rr wants. Making x86 recordable therefore
-  needs blkreplay to handle ATAPI — a QEMU-side fix, or a newer QEMU — not a
-  device-set workaround on our side.
+  over virtio-blk regardless of what rr wants.
+
+  **The blocker is OURS, not QEMU's — corrected 2026-09-13.** This section used
+  to end "making x86 recordable therefore needs blkreplay to handle ATAPI — a
+  QEMU-side fix, or a newer QEMU". That was inferred from one non-ATAPI transport
+  failing. A second one says otherwise.
+
+  `usb-storage` is neither of the two models the transform refuses, and QEMU
+  accepts `blkreplay` over it without complaint — a probe recorded 94MB of
+  `replay.bin` while OVMF booted the ISO from it:
+
+  ```
+  BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:04.0-1"
+  UEFI EntryPoint: Starting freeldr from UEFI
+  [freeldr] MachInit done ... Boot devices initialized
+  [freeldr] Switching stack...          <- and no further
+  ```
+
+  Same wall as virtio-blk, to the line. And the control settles it: **the same
+  usb-storage boot with no `-icount` and no `blkreplay` stops at the identical
+  `[freeldr] Switching stack...`, same 10 lines.** rr is not involved.
+
+  So the summary for x86 is:
+
+  | transport | blkreplay | boots |
+  |---|---|---|
+  | `ide-cd` (ATAPI) | **fatal** | yes (7214 lines) |
+  | `virtio-blk-pci` | fine | no — `Switching stack...` |
+  | `usb-storage` | fine | no — `Switching stack...`, and also without rr |
+
+  Two independent non-ATAPI transports, the same failure point, reproducing
+  without rr. That is a freeldr boot-device limitation, not an rr limitation and
+  not a QEMU one. Waiting on a newer QEMU would not have helped, and the actual
+  fix is in our tree: get freeldr past `Switching stack...` when the boot device
+  is not ATAPI, and x86 record/replay follows for free over `usb-storage` with no
+  rr changes at all.
+
+  Worth noting how the wrong conclusion was reached, since it is cheap to repeat:
+  one transport was tested, it failed, and the cause was attributed to the thing
+  that transport had in common with rr's requirements rather than to the thing it
+  had in common with the other failing transport. The second sample was one
+  command away.
 
   A test still asserts a virtio-backed CD is *allowed* by the transform, so the
   path stays open for whenever the guest can boot that way.

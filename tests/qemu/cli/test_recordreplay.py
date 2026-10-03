@@ -1401,3 +1401,14 @@ def test_report_replay_break_says_whether_it_fired(tmp_path, monkeypatch):
 
     vm.qmp.events.append({"event": "STOP"})
     assert vm.report_replay_break() == "[rr] replay-break FIRED: guest stopped at icount 200"
+
+
+def test_a_vm_with_no_break_armed_reports_nothing(tmp_path, monkeypatch):
+    """smoke's triage calls report_replay_break() on every hang. It must be silent
+    for ordinary boots, which is what lets it sit on the shared path."""
+    from tests.qemu.vm import QemuVM
+
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    assert vm.report_replay_break() == ""

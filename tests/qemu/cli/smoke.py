@@ -511,6 +511,16 @@ def _boot_vm(
             last_line = diag.get("last_line", "")
             tail = f"; last serial: {last_line}" if last_line else ""
             tri["salient"].insert(0, f"timeout: {hint}{tail}")
+        # A replay stopped at an armed `replay-break` presents EXACTLY like a hang:
+        # the guest is paused, so serial goes quiet and the early-hang watchdog
+        # fires long before boot_timeout. Reported here rather than only on the
+        # timeout path in vm.py, because this is the path such a run actually
+        # takes -- the first version of this reported nothing for that reason.
+        # Empty string whenever no break was armed, so ordinary boots are
+        # unchanged.
+        brk = vm.report_replay_break()
+        if brk:
+            tri["salient"].insert(0, brk)
         if shot:
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}

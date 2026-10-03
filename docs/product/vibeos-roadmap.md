@@ -3358,6 +3358,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
   `docs/engineering/qemu-record-replay.md`.
+  **Update 2026-10-03 — half of that is fixed, and #39 closed by another route.** A replay
+  CAN be stopped: `./vibeos-cli rr replay --break-at <icount>` arms a QMP `replay-break`
+  over the harness's own QMP connection and the guest pauses at the requested instruction.
+  The constraint is arithmetic, not a QEMU defect. Each `EVENT_INSTRUCTION` in the log means
+  "run N more instructions, then read the log again", so only the cumulative sums are legal
+  targets; a mid-chunk target aborts with `Playback shouldn't have to iowait (insn total
+  <end>/<remainder> left)`, which is QEMU reporting the remainder it was asked to skip.
+  `rr breaks <trace>` prints the legal set and `--break-at` snaps forward to the next one.
+  So the earlier "even a breakpoint HIT aborts QEMU" reading was a mid-chunk stop, not an
+  inability to stop — verified prospectively, with the prediction written before the run:
+  the boundary target PAUSED and the mid-chunk target aborted with the exact predicted
+  remainder (`insn total 2100388618/624674 left`).
+  The **wedge** is still open and is what still blocks replaying a whole boot. It is
+  structural, not a guest point: two independently recorded traces diverge at guest line
+  1,120 yet stall within ~1% of each other, and each replay passes the other's stall point.
+  Log-position quantities cluster tight (trace bytes 0.85%, lines 1.21%) while guest-work
+  quantities spread (icount 6.69%, exceptions 23.01%). Not block I/O — all 2,277
+  `EVENT_ASYNC` records fall in the first 1.5% of the trace (ramdisk boot).
+  And the motivation has moved: **#43's fix retired #39, so rr did not close it.** rr stands
+  on its own as a deterministic-capture tool, and its next customer is the #19/#23
+  physical-page-reuse cluster rather than this bug.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
   wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
