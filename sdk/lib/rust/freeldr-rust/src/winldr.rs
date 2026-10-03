@@ -102,7 +102,7 @@ extern "C" {
     fn List_PaToVa(ListHead: *mut core::ffi::c_void);
     fn RtlStringCbCopyNA(psz_dest: *mut u8, cb_dest: usize, psz_src: *const u8, cb_to_copy: usize) -> i32;
     fn strstr(haystack: *const u8, needle: *const u8) -> *const u8;
-    static mut WinLdrTerminalConnected: u32;
+    static mut WinLdrTerminalConnected: u8; // headless.c: BOOLEAN -- a u32 read took 3 bytes of whatever follows
     static mut LoaderRedirectionInformation: HEADLESS_LOADER_BLOCK;
     fn RegCloseKey(hKey: HKEY) -> i32;
     fn RegOpenKey(hKey: HKEY, lpSubKey: *const u16, phkResult: *mut HKEY) -> i32;

@@ -101,8 +101,13 @@ def compute(build_dir: Path, roots_file: Path):
     unknown: name -> who wanted it, for names the manifest does not list at all)."""
     mods = load_manifest(build_dir)
     objdump = closure.find_objdump(REPO)
-    # The literal scan's index: only modules that exist, keyed the way string_referenced wants.
-    index = {n: p for n, (_d, p) in mods.items() if p.is_file()}
+    # The literal scan's index is the whole MANIFEST, built or not: a literal naming a module
+    # the livecd ships is a real runtime load either way. Indexing only built files skipped
+    # the unbuilt ones without a word -- riched20 (charmap, eventvwr, wordpad, rapps),
+    # mshtml's jscript/shdoclc and 14 more -- so `--targets` never built them, nothing was
+    # staged, and each app's LoadLibrary quietly returned NULL. admit() now sends them
+    # through the same unbuilt -> build path as an unbuilt import.
+    index = {n: p for n, (_d, p) in mods.items()}
     out: dict[str, tuple[str, Path]] = {}
     unbuilt: set[str] = set()
     unknown: dict[str, set[str]] = {}

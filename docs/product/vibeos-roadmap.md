@@ -561,16 +561,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
   - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every
     name buffer carved from `UnicodeBuffer` had a garbage high half and the first
-    `RtlCopyUnicodeString` faulted. amd64 happened to read a zero. Gated by
-    `scan_extern_static_width`.
+    `RtlCopyUnicodeString` faulted. Not arm64-only: amd64 bugchecks the same way once the
+    rename is on a writable FAT volume (its `%TEMP%` is the read-only CD; run
+    `20261003-125533-far1ln8_`, `tools/payloads/fsprobe`). Gated by `scan_extern_static_width`.
   - creates/deletes: the translation ran fastfat's `NTDDI >= WIN8` blocks on a pre-WIN8 layout,
     so parent-directory oplock checks read the DCB's free-dirent bitmap as an oplock pointer
     (and DCB init/teardown wrote into it). Those blocks sit behind `cfg(ntddi_ge_ntddi_win8)`
     now; the field manual's "version block translated UNGATED" entry has the audit.
+  - a third, found by `tools/payloads/fsprobe` on amd64's scratch FAT16 disk: `UCHAR
+    FatIndexBitSize()` declared `-> u32`; the undefined register bits became the divisor in
+    `ClustersDescribableByFat`, the 64 MB volume mounted with 14 clusters, and the 29th file in
+    a directory failed `ERROR_DISK_FULL`. Gated by `scan_extern_decl_drift`'s return widths.
   `tools/payloads/fatprobe` (rename, 64 create/delete, rename with a second handle open)
-  passes on arm64. The ucrtbase grader's `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` skip can go to 0;
-  left to the ucrt lane, whose `ucrtdiff.c` is mid-edit (and whose arm64 build currently
-  stops at pecheck: `__doserrno`/`_open_osfhandle` graded but not imported from ucrtbase.dll).
+  passes on arm64; `fsprobe` (renames of each kind, 52 live long names) on arm64 and amd64.
+  `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` is now 0: rename/_wrename/_mktemp/_wmktemp/_mktemp_s/
+  _wmktemp_s all grade MATCH. The plain arm64 ucrtdiff build stops at pecheck
+  (`__doserrno`/`_open_osfhandle` graded but not imported); grade through
+  `ucrt_tier2_sweep.py --takeover-from d888eadd919^`, narrowed with `UCRTDIFF_ONLY=`.
+- **fastfat's `NTDDI >= WIN7` blocks are still translated ungated — OPEN (audit owed)**
+  (2026-10-03). The WIN8 audit above does not cover them. Ten are oplock calls on FILE FCBs
+  (valid storage, so no corruption; a behaviour divergence: key checks, `FsRtlOplockBreakH`,
+  atomic create-with-oplock in `FatOpenExistingFcb`/`FatOpenExistingFile`/`FatCreateNewFile`/
+  `FatSetRenameInfo`); fsctrl.c has 12 more. Owner: fastfat lane.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
@@ -600,17 +612,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
   (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
   Owner: ucrt-rust lane.
-- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
-  the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
-  so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:
-  wordpad/devmgmt/dxdiag/rapps exit 0x6BA (RPC_S_SERVER_UNAVAILABLE: the ramdisk has no
-  spoolsv and no PlugPlay service -- a service needs its registry config staged, not just
-  the binary); charmap and eventvwr open no window; cpl-appwiz and cpl-ncpa open no window.
-  iexplore still faults (0xC0000005) after `failed to register CLSID_InternetExplorer:
-  80004002` even with actxprxy staged -- and ieframe dereferencing the NULL its failed
-  registration left is a bug of its own. That is the Pi's "internet browser died". On i386
-  `cpl-appwiz` opens no window either: control -> rundll32 -> rapps runs, but rapps exits 0
-  at once where amd64's shows "Add/Remove Programs". amd64 is 43/43. Owner: shell32-com lane.
+- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28; narrowed 2026-10-03). Fixed
+  on 2026-10-03:
+  - The closure's literal scan only indexed BUILT modules, so 16 unbuilt runtime loads
+    (riched20 for charmap/eventvwr/wordpad/rapps, mshtml's jscript/shdoclc, ...) were dropped
+    silently.
+  - None of the services the hive auto-starts had an image on the ramdisk (the SCM logged
+    `done: 2` for 13 of them); svchost, rpcss, DcomLaunch, PlugPlay (umpnpmgr), EventLog and the
+    spooler with its provider/monitor/processor are staged now, and PlugPlay auto-starts
+    (hivesys_arm64.inf).
+  - Once a svchost could run out of services, its ExitThread spun forever and wedged the guest
+    (ThreadAmILastThread vs NtTerminateThread disagreed; fixed in ps-rust and kernel32).
+
+  Left, all one root cause -- **the arm64 boot never runs first-boot setup.** x86's livecd
+  runs `setup -mini` (syssetup InstallLiveCD) on every boot; arm64's winlogon spawns explorer
+  itself, setup.exe/syssetup.dll/inf are not on the ramdisk, and RunSetup fails silently. So
+  arm64 lacks what setup provides: the COM registrations (ole32 is registered in
+  syssetup.inf's EarlyPhaseSetup; without it CoRegisterClassObject cannot marshal
+  IClassFactory, so iexplore's CLSID_InternetExplorer registration fails 80004002 and the
+  process faults; cpl-appwiz/cpl-ncpa log CLSID_TaskbarList not registered), the network
+  components (Tcpip/Dhcp/Dnscache come from nettcpip.inf; rapps' gethostbyname reaches the
+  resolver RPC with no Dnscache and dies on the unhandled RPC_S_SERVER_UNAVAILABLE), and the
+  device installs. Options: run setup on arm64 like x86 (stage setup/syssetup/inf and
+  reconcile winlogon's direct explorer spawn with setup launching userinit), or pre-register
+  at hive build time from the widl-generated registry scripts (`*_r.res`) and add the
+  nettcpip services to hivesys_arm64.inf. Also owed: the user-mode Rust RPC clients
+  (advapi32 scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's
+  RpcTryExcept dropped ("DUMMY_PSEH -- execute directly"), so any unavailable RPC server
+  kills the calling app instead of returning an error. On i386 `cpl-appwiz` opens no window
+  either (rapps exits 0 where amd64's shows "Add/Remove Programs"). Owner: shell32-com lane.
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a

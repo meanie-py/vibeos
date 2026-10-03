@@ -438,11 +438,21 @@ Same family, three positions, all silent on the arch where the widths happen to 
   (`const ULONG __c_X __asm__("X") = …`) and the Rust declares the import itself.
   fastfat's `static MAX_LFN_CHARACTERS: usize` over a 4-byte ULONG took its high half from the
   next datum; on arm64 that was nonzero, every rename buffer pointer went non-canonical, and
-  every `MoveFileEx` bugchecked 0x23, while amd64 read a zero. Use the crate constant for a
+  every `MoveFileEx` bugchecked 0x23 -- amd64 too, once the rename is on a writable FAT volume
+  rather than its read-only live CD. Use the crate constant for a
   `#define`; gated by `scan_extern_static_width` (Rust wider than the C `__asm__` definition).
-- **Detector:** scan def-vs-decl per symbol for ANY return/param width mismatch, not just
-  narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
-  and pointer typedefs.
+- **A narrow C return read wide, and the damage lands somewhere else entirely.** fastfat declared
+  the cohab helper `UCHAR FatIndexBitSize()` as `-> u32`. The junk above the byte became the
+  divisor in `ClustersDescribableByFat`, a 64 MB FAT16 volume mounted with **14 clusters**, and the
+  symptom was `ERROR_DISK_FULL` on the 29th file in a directory. **rustc does not mask its own
+  narrow returns either**: `extern "C" fn f(x: u32) -> u8 { (x >> 3) as u8 }` returns `x >> 3`
+  unmasked on x64 and arm64, so a Rust definition is no safer an authority than a C one.
+- **Detector:** `scan_extern_decl_drift` reports params, statics and returns wherever a
+  declaration is WIDER than its definition, against the in-crate `#[no_mangle]` definition, the
+  bindgen island, and for C returns, the cohab/stub function definitions;
+  `scan_extern_static_width` covers statics over C `__asm__`-labelled data. A narrower read is
+  not reported: on our little-endian targets it takes the low bytes of the real value. Its first sweep of returns found ten symbols (win32k `RECTL_bIntersectRect`
+  defined `u8` against rect.h's `BOOL`, kd's `CHAR` read as `LONG`, lpc's `USHORT` read as `ULONG`, ...).
 
 **Grinding a post-assembly cargo-check on ONE target bakes that target's pointer width into
 every cast you pick.** Symptom: the lane is clean locally and the merge queue rejects it
@@ -11674,6 +11684,19 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **A wedge whose vCPU keeps stopping at EL0 is a user-mode spin; find its process from EL1.**
+  arm64 appstorm went silent mid-run three times (2026-10-03) and first read as "the guest got
+  slow". Every gdb stop landed at `kernel32!ExitThread+0x5c`: the `loop {}` after
+  `NtTerminateThread(NULL)` RETURNED. Two checks with one answer each: `ThreadAmILastThread`
+  answered from `ThreadListHead`, which keeps exited threads a handle still references, while
+  `NtTerminateThread(NULL)` refuses `STATUS_CANT_TERMINATE_SELF` on `ActiveThreads == 1`. A
+  svchost whose services had all exited was told "not last", refused, and spun at normal
+  priority forever (an upstream ReactOS inconsistency, latent on x86 only because its svchosts
+  never run out of services). Mechanics: a stop at EL0 cannot walk kernel lists (QEMU reads
+  through the user regime), so `debug run-until <run> --break KeUpdateRunTime --then
+  list-threads` gets an EL1 stop on the next tick; the culprit is the `Cur?` thread, and
+  `x/1wx <EPROCESS>+<offset_check ActiveThreads>` against `dump-thread`'s `SignalState`
+  (1 = exited) separates a drifted counter from a list holding dead threads.
 - **Halted vs moving is the first fork, and on x86 the flag is `HLT=1` in the `EFL` line.**
   The arm64 tell is a `wfi`; the x86 one is the `HLT=1` field of the `info registers` dump, and
   it decides which half of the search space to throw away. **Halted means nothing was runnable,

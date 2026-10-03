@@ -88,7 +88,9 @@ extern "system" {
 }
 extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
-    fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: u32, Wait: i32, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
+    // SIZE_T and BOOLEAN, as rust_cohab_fat.c defines it: a u32 Size left the upper half of
+    // the 64-bit argument register undefined on amd64/arm64.
+    fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: SIZE_T, Wait: BOOLEAN, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB) -> u8;
     fn FatCheckFileAccess(IrpContext: *mut IRP_CONTEXT, DirentFatFlags: u8, DesiredAccess: *mut ACCESS_MASK) -> u32;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB);
@@ -334,8 +336,8 @@ pub unsafe extern "system" fn FatCommonCreateOnNewStack(
     status = KeExpandKernelStackAndCalloutEx(
         core::mem::transmute::<unsafe extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), extern "system" fn(*mut FAT_CALLOUT_PARAMETERS)>(FatCommonCreateCallout),
         &mut CalloutParameters as *mut FAT_CALLOUT_PARAMETERS,
-        KERNEL_STACK_SIZE,
-        0i32,
+        KERNEL_STACK_SIZE as SIZE_T,
+        0, // FALSE
         core::ptr::null_mut(),
     );
 

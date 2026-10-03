@@ -64,3 +64,27 @@ def test_root_missing_from_manifest_is_unknown(tmp_path, monkeypatch):
 def test_hand_staged_reads_mkramdisk_system32_dests():
     staged = ra.hand_staged(ra.REPO)
     assert {"notepad.exe", "shell32.dll", "comctl32.dll"} <= staged
+
+
+def test_literal_naming_an_unbuilt_module_is_a_target(tmp_path, monkeypatch):
+    # charmap LoadLibraryW(L"RICHED20.DLL")s: with riched20 unbuilt the literal used to be
+    # dropped silently, so it was never built, never staged, and charmap exited 1.
+    build = _tree(
+        tmp_path,
+        [
+            "reactos/system32/charmap.exe=/tmp/vibeos/build-arm64/base/applications/charmap/charmap.exe",
+            "reactos/system32/riched20.dll=/tmp/vibeos/build-arm64/dll/win32/riched20/riched20.dll",
+        ],
+    )
+    exe = build / "base/applications/charmap/charmap.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"MZ\0\0" + "RICHED20.DLL\0".encode("utf-16-le"))
+    roots = tmp_path / "apps.txt"
+    roots.write_text("reactos/system32/charmap.exe\n")
+    monkeypatch.setattr(ra, "REPO", tmp_path)
+    monkeypatch.setattr(ra.closure, "find_objdump", lambda _repo: "objdump")
+    monkeypatch.setattr(ra.closure, "imports_of", lambda _objdump, _pe: [])
+    monkeypatch.setattr(ra.closure, "delay_imports_of", lambda _pe: [])
+    out, unbuilt, unknown = ra.compute(build, roots)
+    assert list(out) == ["charmap.exe"] and not unknown
+    assert list(unbuilt) == ["riched20.dll"]

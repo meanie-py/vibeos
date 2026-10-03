@@ -1,0 +1,19 @@
+# fsprobe — the fastfat operations that bugchecked the guest in FsRtlCheckOplock (renames,
+# a create/delete run). Each step announces itself first, so a bugcheck names its operation.
+#   tools/payloads/fsprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=fsprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload fsprobe
+name: fsprobe
+description: rename and create/delete on fastfat, one announced step at a time
+
+build_hint: "tools/payloads/fsprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/fsprobe/fsprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/fsprobe.exe
+
+test:
+  launch_marker: "[FSPROBE] done"
+  pass_marker: "[FSPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300

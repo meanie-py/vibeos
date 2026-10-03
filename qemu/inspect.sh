@@ -101,7 +101,7 @@ EX_ARGS=(
 # Auto-resolve kbase + relocate symbols. If we already cached it in the
 # manifest, pass it to find-kbase to skip the scan; otherwise let the helper
 # scan memory and write back to the manifest after.
-CACHED_KBASE="$(manifest_get "$RUN_ID" kernel_runtime_base 2>/dev/null || true)"
+CACHED_KBASE="$(runid_kernel_base "$RUN_ID")"
 if [ -n "$CACHED_KBASE" ] && [ "$CACHED_KBASE" != "null" ]; then
     EX_ARGS+=(-ex "find-kbase $CACHED_KBASE")
 else

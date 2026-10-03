@@ -88,6 +88,10 @@ expand_then() {
         pool-tag)         echo "pool-tag${rest}" ;;
         identify-object)  echo "identify-object${rest}" ;;
         symbolicate-pc)   echo "info symbol${rest}" ;;
+        list-threads)     echo "list-threads" ;;
+        who-holds)        echo "who-holds${rest}" ;;
+        stack-scan)       echo "stack-scan${rest}" ;;
+        lm)               echo "lm${rest}" ;;
         raw)              echo "${raw#raw }" ;;
         *) die "unknown --then command: $cmd" ;;
     esac
@@ -100,7 +104,7 @@ expand_then() {
 #      gdb invocation — gdb itself doesn't timeout-abort `continue`)
 #   3. Once the breakpoint hits, run each --then command
 #   4. Always `delete breakpoints` and detach before quit
-CACHED_KBASE="$(manifest_get "$RUN_ID" kernel_runtime_base 2>/dev/null || true)"
+CACHED_KBASE="$(runid_kernel_base "$RUN_ID")"
 
 EX_ARGS=(
     -ex "set architecture $GDB_ARCH"
@@ -120,6 +124,10 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/identify-object.py"
     -ex "source $GDB_HELPERS_DIR/triage-bugcheck.py"
     -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
+    # The same helpers inspect.sh sources, so every verb it names works as a --then.
+    -ex "source $GDB_HELPERS_DIR/list-threads.py"
+    -ex "source $GDB_HELPERS_DIR/who-holds.py"
+    -ex "source $GDB_HELPERS_DIR/lm.py"
     -ex "source $GDB_HELPERS_DIR/run-until-bp.py"
 )
 

@@ -55,3 +55,18 @@ reactos/system32/iernonce.dll
 reactos/system32/actxprxy.dll
 # sol/spider load their card faces from cards.dll at run time.
 reactos/system32/cards.dll
+# Services the apps above reach over RPC/COM. The SYSTEM hive already registers each one
+# (boot/bootdata/hivesys.inf); without the images the SCM logged "ScmLoadService(X) done: 2"
+# (ERROR_FILE_NOT_FOUND) for every one of them, and wordpad, devmgmt, dxdiag and rapps exited
+# 0x6BA (RPC_S_SERVER_UNAVAILABLE). A svchost service's DLL is a registry edge (ServiceDll),
+# and the spooler loads its provider, port monitor and print processor by registry name, so
+# each is a root of its own.
+reactos/system32/svchost.exe
+reactos/system32/rpcss.exe
+reactos/system32/dcomlaunch.dll
+reactos/system32/umpnpmgr.dll
+reactos/system32/eventlog.exe
+reactos/system32/spoolsv.exe
+reactos/system32/localspl.dll
+reactos/system32/localmon.dll
+reactos/system32/spool/prtprocs/arm64/winprint.dll
