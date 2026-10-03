@@ -40,16 +40,19 @@ unsafe fn decoded() -> UserMathErrorFunctionPointer {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_initialize_user_matherr(encoded_null: *mut c_void) {
     ACRT_GLOBAL_USER_MATHERR.store(encoded_null as usize, Ordering::Relaxed);
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_has_user_matherr() -> bool {
     decoded().is_some()
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_invoke_user_matherr(exp: *mut Exception) -> c_int {
     match decoded() {
         Some(f) => f(exp),
@@ -58,6 +61,7 @@ pub unsafe extern "C" fn __acrt_invoke_user_matherr(exp: *mut Exception) -> c_in
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __setusermatherr(f: UserMathErrorFunctionPointer) {
     let raw = f.map_or(0, |f| f as usize);
     ACRT_GLOBAL_USER_MATHERR.store(raw ^ __security_cookie, Ordering::Relaxed);
@@ -65,6 +69,7 @@ pub unsafe extern "C" fn __setusermatherr(f: UserMathErrorFunctionPointer) {
 
 /// Called by libm on a domain/range error.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _invoke_matherr(type_: c_int, name: *mut c_char, arg1: f64, arg2: f64, retval: f64) -> c_int {
     let mut excpt = Exception { type_, name, arg1, arg2, retval };
     __acrt_invoke_user_matherr(&mut excpt)
@@ -95,6 +100,7 @@ extern "system" {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_MultiByteToWideChar(
     cp: c_uint,
     flags: u32,
@@ -107,6 +113,7 @@ pub unsafe extern "C" fn __acrt_MultiByteToWideChar(
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_WideCharToMultiByte(
     cp: c_uint,
     flags: u32,
@@ -121,6 +128,7 @@ pub unsafe extern "C" fn __acrt_WideCharToMultiByte(
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_GetStringTypeW(info_type: u32, src: *const u16, cch_src: c_int, char_type: *mut u16) -> c_int {
     GetStringTypeW(info_type, src, cch_src, char_type)
 }

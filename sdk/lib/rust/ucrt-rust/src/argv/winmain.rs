@@ -89,12 +89,14 @@ unsafe fn common_wincmdln<C: WinmainChar>() -> *mut C {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _get_narrow_winmain_command_line() -> *mut u8 {
     // unsigned char, so that bytes above 127 compare correctly against ' '.
     common_wincmdln::<u8>()
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _get_wide_winmain_command_line() -> *mut u16 {
     common_wincmdln::<u16>()
 }

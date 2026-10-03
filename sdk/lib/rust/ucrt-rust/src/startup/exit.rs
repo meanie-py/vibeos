@@ -196,6 +196,7 @@ unsafe fn exit_or_terminate_process(return_code: u32) -> ! {
 
 /// `__acrt_initialize_thread_local_exit_callback`: seed with the encoded null.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_initialize_thread_local_exit_callback(encoded_null: *mut c_void) {
     THREAD_LOCAL_EXIT_CALLBACK_FUNC = encoded_null as usize;
 }
@@ -203,6 +204,7 @@ pub unsafe extern "C" fn __acrt_initialize_thread_local_exit_callback(encoded_nu
 /// `_register_thread_local_exe_atexit_callback`: set once, by the EXE's
 /// startup; a second registration is `terminate()`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _register_thread_local_exe_atexit_callback(callback: TlsCallbackType) {
     if THREAD_LOCAL_EXIT_CALLBACK_FUNC != fast_code(0) {
         terminate();
@@ -263,42 +265,49 @@ unsafe fn common_exit_terminate(return_code: c_int, cleanup_mode: CleanupMode) -
 
 /// `_is_c_termination_complete`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _is_c_termination_complete() -> c_int {
     C_TERMINATION_COMPLETE.load(Ordering::SeqCst)
 }
 
 /// `exit`: full cleanup, then end the process.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn exit(return_code: c_int) -> ! {
     common_exit_terminate(return_code, CleanupMode::Full)
 }
 
 /// `_exit`: no cleanup.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _exit(return_code: c_int) -> ! {
     common_exit_terminate(return_code, CleanupMode::NoCleanup)
 }
 
 /// `_Exit`: identical to `_exit`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _Exit(return_code: c_int) -> ! {
     common_exit_terminate(return_code, CleanupMode::NoCleanup)
 }
 
 /// `quick_exit`: the at_quick_exit table only.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn quick_exit(return_code: c_int) -> ! {
     common_exit_terminate(return_code, CleanupMode::Quick)
 }
 
 /// `_cexit`: full cleanup, return to the caller.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _cexit() {
     run_c_termination(CleanupMode::Full, ReturnMode::ReturnToCaller);
 }
 
 /// `_c_exit`: no cleanup, return to the caller.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _c_exit() {
     run_c_termination(CleanupMode::NoCleanup, ReturnMode::ReturnToCaller);
 }

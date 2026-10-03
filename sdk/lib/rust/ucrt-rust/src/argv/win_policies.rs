@@ -90,6 +90,7 @@ unsafe fn get_cached_win_policy(
 
 /// Determines whether ExitProcess() or TerminateProcess() ends the process.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_get_process_end_policy() -> c_int {
     fn to_policy_type(p: c_int) -> c_int {
         if p == APP_POLICY_PROCESS_TERMINATION_METHOD_TERMINATE_PROCESS {
@@ -111,6 +112,7 @@ static WINDOWING_MODEL_STATE_CACHE: AtomicI32 = AtomicI32::new(0);
 
 /// Determines whether RoInitialize() is called when creating a thread.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_get_begin_thread_init_policy() -> c_int {
     fn to_policy_type(p: c_int) -> c_int {
         if p == APP_POLICY_THREAD_INITIALIZATION_TYPE_INITIALIZE_WINRT {
@@ -130,6 +132,7 @@ pub unsafe extern "C" fn __acrt_get_begin_thread_init_policy() -> c_int {
 /// Determines whether an assert dialog may be displayed. Note the DEFAULT is
 /// ShowUI -- a secure process, or a failed query, shows UI.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_get_developer_information_policy() -> c_int {
     fn to_policy_type(p: c_int) -> c_int {
         if p == APP_POLICY_SHOW_DEVELOPER_DIAGNOSTIC_SHOW_UI {
@@ -148,6 +151,7 @@ pub unsafe extern "C" fn __acrt_get_developer_information_policy() -> c_int {
 
 /// Determines which windowing model technology is available.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_get_windowing_model_policy() -> c_int {
     fn to_policy_type(p: c_int) -> c_int {
         match p {

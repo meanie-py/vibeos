@@ -288,6 +288,7 @@ unsafe fn parse_command_line<C: ParseChar>(
 /// pointers followed by `character_count` characters, or NULL on overflow or
 /// allocation failure.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_allocate_buffer_for_argv(
     argument_count: usize,
     character_count: usize,
@@ -405,11 +406,13 @@ unsafe fn common_configure_argv<C: ParseChar>(mode: c_int) -> c_int {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _configure_narrow_argv(mode: c_int) -> c_int {
     common_configure_argv::<u8>(mode)
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _configure_wide_argv(mode: c_int) -> c_int {
     common_configure_argv::<u16>(mode)
 }

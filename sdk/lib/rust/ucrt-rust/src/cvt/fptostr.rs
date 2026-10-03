@@ -74,6 +74,7 @@ unsafe fn should_round_up(
 /// `buffer` must hold `buffer_count` bytes; `pflt`, if non-null, must point at a
 /// STRFLT whose mantissa is NUL-terminated; `ptd` must be a live host.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_fp_strflt_to_string(
     buffer: *mut c_char,
     buffer_count: usize,

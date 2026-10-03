@@ -64,12 +64,14 @@ static mut ACRT_APP_TYPE: c_int = CRT_UNKNOWN_APP;
 
 /// `_set_app_type` -- stores any value, unchecked.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _set_app_type(new_app_type: c_int) {
     ACRT_APP_TYPE = new_app_type;
 }
 
 /// `_query_app_type` -- `_crt_unknown_app` until someone sets it.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _query_app_type() -> c_int {
     ACRT_APP_TYPE
 }
@@ -139,6 +141,7 @@ unsafe fn write_string_to_console(wide_string: *const u16) {
 static mut OUTMSG: [u16; OUTMSG_COUNT] = [0; OUTMSG_COUNT];
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_report_runtime_error(message: *const u16) {
     // Before we report the error via the normal path, report it using the
     // debug notification.

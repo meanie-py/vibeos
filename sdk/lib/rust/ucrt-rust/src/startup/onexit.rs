@@ -79,6 +79,7 @@ extern "C" {
 
 /// `_crt_atexit`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _crt_atexit(function: Pvfv) -> c_int {
     _register_onexit_function(
         core::ptr::addr_of_mut!(__acrt_atexit_table),
@@ -88,6 +89,7 @@ pub unsafe extern "C" fn _crt_atexit(function: Pvfv) -> c_int {
 
 /// `_crt_at_quick_exit`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _crt_at_quick_exit(function: Pvfv) -> c_int {
     _register_onexit_function(
         core::ptr::addr_of_mut!(__acrt_at_quick_exit_table),
@@ -97,6 +99,7 @@ pub unsafe extern "C" fn _crt_at_quick_exit(function: Pvfv) -> c_int {
 
 /// `_initialize_onexit_table`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _initialize_onexit_table(table: *mut OnexitTable) -> c_int {
     if table.is_null() {
         return -1;
@@ -117,6 +120,7 @@ pub unsafe extern "C" fn _initialize_onexit_table(table: *mut OnexitTable) -> c_
 /// `_register_onexit_function`: append `function` to `table`, growing it as
 /// needed. 0 on success, -1 on failure.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _register_onexit_function(table: *mut OnexitTable, function: OnexitT) -> c_int {
     with_exit_lock(|| {
         if table.is_null() {
@@ -184,6 +188,7 @@ pub unsafe extern "C" fn _register_onexit_function(table: *mut OnexitTable, func
 /// `_execute_onexit_table`: run the table LIFO, then free and reset it.
 /// 0 on success (including "table uninitialized"), -1 for a NULL table.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _execute_onexit_table(table: *mut OnexitTable) -> c_int {
     with_exit_lock(|| {
         if table.is_null() {

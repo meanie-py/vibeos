@@ -83,6 +83,7 @@ unsafe fn fastfail(code: u32) -> ! {
 
 /// `abort`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn abort() -> ! {
     // (_DEBUG only: _WRITE_ABORT_MSG -> __acrt_report_runtime_error.)
 
@@ -113,6 +114,7 @@ pub unsafe extern "C" fn abort() -> ! {
 
 /// `_set_abort_behavior`: returns the old flags.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _set_abort_behavior(flags: c_uint, mask: c_uint) -> c_uint {
     let oldflags = core::ptr::addr_of!(__abort_behavior).read();
     core::ptr::addr_of_mut!(__abort_behavior).write(oldflags & !mask | flags & mask);

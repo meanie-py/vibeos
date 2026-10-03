@@ -286,6 +286,7 @@ unsafe fn convert_to_fos_high_precision(
 /// `flt` must be writable; `result` must hold `result_count` (>= 1) bytes.
 #[cfg(target_arch = "x86")]
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_fltout(
     value: u64,
     precision: c_int,
@@ -303,6 +304,7 @@ pub unsafe extern "C" fn __acrt_fltout(
 /// `flt` must be writable; `result` must hold `result_count` (>= 1) bytes.
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_fltout(
     value: f64,
     precision: c_int,

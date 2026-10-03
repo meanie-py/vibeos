@@ -94,6 +94,7 @@ unsafe fn common_show_message_box<C: MessageBoxChar>(text: *const C, caption: *c
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_show_narrow_message_box(
     text: *const c_char,
     caption: *const c_char,
@@ -103,6 +104,7 @@ pub unsafe extern "C" fn __acrt_show_narrow_message_box(
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_show_wide_message_box(text: *const u16, caption: *const u16, kind: u32) -> c_int {
     common_show_message_box(text, caption, kind)
 }

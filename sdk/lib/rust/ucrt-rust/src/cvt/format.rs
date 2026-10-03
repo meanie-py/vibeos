@@ -671,6 +671,7 @@ unsafe fn fp_format_g(
 /// # Safety
 /// Buffers must hold their counts; `ptd` must be a live host.
 #[no_mangle]
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn __acrt_fp_format(
     value: *const u64,

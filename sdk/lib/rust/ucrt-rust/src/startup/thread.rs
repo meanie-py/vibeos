@@ -190,6 +190,7 @@ unsafe fn create_thread_parameter(procedure: *mut c_void, context: *mut c_void) 
 
 /// `_beginthread`: -1 on failure; the new thread owns (and closes) the handle.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _beginthread(procedure: BeginthreadProc, stack_size: c_uint, context: *mut c_void) -> usize {
     let Some(procedure) = procedure else {
         *_errno() = EINVAL;
@@ -234,6 +235,7 @@ pub unsafe extern "C" fn _beginthread(procedure: BeginthreadProc, stack_size: c_
 
 /// `_beginthreadex`: 0 on failure; the caller owns the handle.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _beginthreadex(
     security_descriptor: *mut c_void,
     stack_size: c_uint,
@@ -308,12 +310,14 @@ unsafe fn common_end_thread(return_code: c_uint) -> ! {
 
 /// `_endthread`: end a `_beginthread` thread with exit code 0.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _endthread() {
     common_end_thread(0)
 }
 
 /// `_endthreadex`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn _endthreadex(return_code: c_uint) {
     common_end_thread(return_code)
 }

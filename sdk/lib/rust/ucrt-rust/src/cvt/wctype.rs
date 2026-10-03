@@ -43,6 +43,7 @@ static TAB: [(&[u8], u16); 12] = [
 /// # Safety
 /// `name` must be a NUL-terminated string (NULL faults, as in the C).
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn wctype(name: *const u8) -> u16 {
     for &(s, value) in TAB.iter() {
         if strcmp(s.as_ptr(), name) == 0 {

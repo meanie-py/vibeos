@@ -50,12 +50,14 @@ unsafe fn peb() -> *const u8 {
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_app_verifier_enabled() -> bool {
     let nt_global_flag = *(peb().add(off::PEB_NT_GLOBAL_FLAG) as *const u32);
     (nt_global_flag & FLG_APPLICATION_VERIFIER) != 0
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_is_secure_process() -> bool {
     let parameters = *(peb().add(off::PEB_PROCESS_PARAMETERS) as *const *const u8);
     let flags = *(parameters.add(PARAMETERS_FLAGS) as *const u32);

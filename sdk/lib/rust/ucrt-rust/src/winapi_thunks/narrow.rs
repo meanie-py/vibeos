@@ -97,6 +97,7 @@ extern "C" {
 /// # Safety
 /// As `CreateProcessW`, with narrow NUL-terminated strings.
 #[no_mangle]
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn __acrt_CreateProcessA(
     lp_application_name: *const u8,
@@ -190,6 +191,7 @@ unsafe fn wcs_to_mbs_cp_no_alloc(input: *const u16, buffer: *mut u8, capacity: u
 /// # Safety
 /// `lp_filename` must hold `n_size` bytes.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_GetModuleFileNameA(h_module: *mut c_void, lp_filename: *mut c_char, n_size: u32) -> u32 {
     const WIDE_BUFFER_SIZE: usize = MAX_PATH + 1;
     let mut wide_buffer = [0u16; WIDE_BUFFER_SIZE];
@@ -210,6 +212,7 @@ pub unsafe extern "C" fn __acrt_GetModuleFileNameA(h_module: *mut c_void, lp_fil
 /// # Safety
 /// As `LoadLibraryExW`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_LoadLibraryExA(lp_filename: *const c_char, h_file: *mut c_void, dw_flags: u32) -> *mut c_void {
     let Ok(wide_file_name) = mbs_to_wcs(lp_filename.cast(), file_codepage()) else {
         return null_mut();
@@ -226,6 +229,7 @@ pub unsafe extern "C" fn __acrt_LoadLibraryExA(lp_filename: *const c_char, h_fil
 /// # Safety
 /// `text` is NULL or NUL-terminated.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_OutputDebugStringA(text: *const c_char) {
     if text.is_null() {
         return;
@@ -262,6 +266,7 @@ pub unsafe extern "system" fn __acrt_OutputDebugStringA(text: *const c_char) {
 /// # Safety
 /// `lp_path_name` is NULL or NUL-terminated.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_SetCurrentDirectoryA(lp_path_name: *const c_char) -> c_int {
     let Ok(wide_path_name) = mbs_to_wcs(lp_path_name.cast(), file_codepage()) else {
         return 0;
@@ -274,6 +279,7 @@ pub unsafe extern "C" fn __acrt_SetCurrentDirectoryA(lp_path_name: *const c_char
 /// # Safety
 /// Both are NULL or NUL-terminated.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_SetEnvironmentVariableA(lp_name: *const c_char, lp_value: *const c_char) -> c_int {
     let Ok(wide_name) = mbs_to_wcs(lp_name.cast(), file_codepage()) else {
         return 0;

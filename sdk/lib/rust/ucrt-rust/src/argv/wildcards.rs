@@ -416,11 +416,13 @@ unsafe fn common_expand_argv_wildcards<C: WildChar>(argv: *mut *mut C, result: *
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_expand_narrow_argv_wildcards(argv: *mut *mut u8, result: *mut *mut *mut u8) -> c_int {
     common_expand_argv_wildcards(argv, result)
 }
 
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_expand_wide_argv_wildcards(
     argv: *mut *mut u16,
     result: *mut *mut *mut u16,

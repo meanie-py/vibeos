@@ -14,6 +14,7 @@ pub static mut __fastflag: c_int = 0;
 /// # Safety
 /// Unsynchronised, as the C.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __setfflag(new_flag: c_int) -> c_int {
     let old_flag = core::ptr::addr_of!(__fastflag).read();
     core::ptr::addr_of_mut!(__fastflag).write(new_flag);

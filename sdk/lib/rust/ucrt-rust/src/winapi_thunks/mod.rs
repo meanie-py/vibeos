@@ -28,6 +28,11 @@
 //! * **The cache starts as encoded NULL, set by `__acrt_initialize_winapi_thunks`**
 //!   (the static zero is not "empty": decoded it is the cookie). A thunk called
 //!   before initialization reads a bogus pointer, as the C does.
+//! * **Every export is `#[inline(never)]`** (as in startup/, argv/, cvt/): the
+//!   Tier-2 harness swaps an export for the reference's by retargeting call
+//!   relocations, and an inlined body has none. `__acrt_initialize_locks` with
+//!   this table inlined read OUR never-initialized cache while the reference
+//!   initializer filled ITS own, and branched to the bare cookie.
 //! * **`LOAD_LIBRARY_SEARCH_SYSTEM32` first; the flag-less retry happens only
 //!   for `ERROR_INVALID_PARAMETER` and never for an `api-ms-`/`ext-ms-` name**
 //!   (DLL-hijack guard on pre-Win7 loaders).
@@ -364,6 +369,7 @@ static ENCODED_FUNCTION_POINTERS: [AtomicUsize; FUNCTION_ID_COUNT] =
 /// # Safety
 /// CRT startup, before any thunk runs.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_initialize_winapi_thunks() -> bool {
     let encoded_nullptr = encode(0);
     for p in ENCODED_FUNCTION_POINTERS.iter() {
@@ -378,6 +384,7 @@ pub unsafe extern "C" fn __acrt_initialize_winapi_thunks() -> bool {
 /// # Safety
 /// CRT shutdown.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_uninitialize_winapi_thunks(terminating: bool) -> bool {
     if terminating {
         return true;
@@ -490,6 +497,7 @@ macro_rules! try_get {
 
 /// `__acrt_AreFileApisANSI`: absent means the file APIs are ANSI.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_AreFileApisANSI() -> c_int {
     if let Some(are_file_apis_ansi) = try_get!(ARE_FILE_APIS_ANSI, unsafe extern "system" fn() -> c_int) {
         return are_file_apis_ansi();
@@ -500,6 +508,7 @@ pub unsafe extern "system" fn __acrt_AreFileApisANSI() -> c_int {
 /// `__acrt_CompareStringEx`. (The C's `scoped_global_state_reset` OS-mode guard
 /// is empty without state isolation.)
 #[no_mangle]
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "system" fn __acrt_CompareStringEx(
     locale_name: *const u16,
@@ -552,6 +561,7 @@ unsafe fn enum_system_locales_ex_nolock(enum_proc: LocaleEnumProcEx) -> c_int {
 /// `__acrt_EnumSystemLocalesEx`. The fallback ignores `flags`, `param` and
 /// `reserved`, as the C does, and runs under the locale lock.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_EnumSystemLocalesEx(
     enum_proc: LocaleEnumProcEx,
     flags: u32,
@@ -572,6 +582,7 @@ pub unsafe extern "system" fn __acrt_EnumSystemLocalesEx(
 
 /// `__acrt_FlsAlloc`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_FlsAlloc(callback: Option<unsafe extern "system" fn(*mut c_void)>) -> u32 {
     #[cfg(not(target_arch = "x86"))]
     {
@@ -589,6 +600,7 @@ pub unsafe extern "system" fn __acrt_FlsAlloc(callback: Option<unsafe extern "sy
 
 /// `__acrt_FlsFree`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_FlsFree(fls_index: u32) -> c_int {
     #[cfg(not(target_arch = "x86"))]
     {
@@ -605,6 +617,7 @@ pub unsafe extern "system" fn __acrt_FlsFree(fls_index: u32) -> c_int {
 
 /// `__acrt_FlsGetValue`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_FlsGetValue(fls_index: u32) -> *mut c_void {
     #[cfg(not(target_arch = "x86"))]
     {
@@ -621,6 +634,7 @@ pub unsafe extern "system" fn __acrt_FlsGetValue(fls_index: u32) -> *mut c_void 
 
 /// `__acrt_FlsSetValue`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_FlsSetValue(fls_index: u32, fls_data: *mut c_void) -> c_int {
     #[cfg(not(target_arch = "x86"))]
     {
@@ -637,6 +651,7 @@ pub unsafe extern "system" fn __acrt_FlsSetValue(fls_index: u32, fls_data: *mut 
 
 /// `__acrt_GetDateFormatEx`. The fallback drops `calendar`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetDateFormatEx(
     locale_name: *const u16,
     flags: u32,
@@ -656,6 +671,7 @@ pub unsafe extern "system" fn __acrt_GetDateFormatEx(
 /// `__acrt_GetTempPath2W` -- `int` in the C, `DWORD` from both APIs; `u32`
 /// here to match `stdio/bufio/tmp.rs`'s declaration (same register).
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetTempPath2W(n_buffer_length: u32, lp_buffer: *mut u16) -> u32 {
     if let Some(get_temp_path2w) = try_get!(GET_TEMP_PATH2_W, unsafe extern "system" fn(u32, *mut u16) -> u32) {
         return get_temp_path2w(n_buffer_length, lp_buffer);
@@ -666,6 +682,7 @@ pub unsafe extern "system" fn __acrt_GetTempPath2W(n_buffer_length: u32, lp_buff
 /// `__acrt_GetEnabledXStateFeatures`: no fallback -- callers check
 /// `__acrt_can_use_xstate_apis` first.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetEnabledXStateFeatures() -> u64 {
     if let Some(get_enabled_xstate_features) =
         try_get!(GET_ENABLED_XSTATE_FEATURES, unsafe extern "system" fn() -> u64)
@@ -677,6 +694,7 @@ pub unsafe extern "system" fn __acrt_GetEnabledXStateFeatures() -> u64 {
 
 /// `__acrt_GetLocaleInfoEx`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetLocaleInfoEx(
     locale_name: *const u16,
     lc_type: u32,
@@ -692,6 +710,7 @@ pub unsafe extern "system" fn __acrt_GetLocaleInfoEx(
 
 /// `__acrt_GetSystemTimePreciseAsFileTime`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetSystemTimePreciseAsFileTime(system_time: *mut u64) {
     if let Some(get_system_time_precise_as_file_time) =
         try_get!(GET_SYSTEM_TIME_PRECISE_AS_FILE_TIME, unsafe extern "system" fn(*mut u64))
@@ -703,6 +722,7 @@ pub unsafe extern "system" fn __acrt_GetSystemTimePreciseAsFileTime(system_time:
 
 /// `__acrt_GetTimeFormatEx`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetTimeFormatEx(
     locale_name: *const u16,
     flags: u32,
@@ -720,6 +740,7 @@ pub unsafe extern "system" fn __acrt_GetTimeFormatEx(
 
 /// `__acrt_GetUserDefaultLocaleName`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetUserDefaultLocaleName(locale_name: *mut u16, locale_name_count: c_int) -> c_int {
     type F = unsafe extern "system" fn(*mut u16, c_int) -> c_int;
     if let Some(get_user_default_locale_name) = try_get!(GET_USER_DEFAULT_LOCALE_NAME, F) {
@@ -730,6 +751,7 @@ pub unsafe extern "system" fn __acrt_GetUserDefaultLocaleName(locale_name: *mut 
 
 /// `__acrt_GetXStateFeaturesMask`: no fallback.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_GetXStateFeaturesMask(context: *mut c_void, feature_mask: *mut u64) -> c_int {
     type F = unsafe extern "system" fn(*mut c_void, *mut u64) -> c_int;
     if let Some(get_xstate_features_mask) = try_get!(GET_XSTATE_FEATURES_MASK, F) {
@@ -740,6 +762,7 @@ pub unsafe extern "system" fn __acrt_GetXStateFeaturesMask(context: *mut c_void,
 
 /// `__acrt_InitializeCriticalSectionEx`. The fallback drops `flags`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_InitializeCriticalSectionEx(
     critical_section: *mut CriticalSection,
     spin_count: u32,
@@ -754,6 +777,7 @@ pub unsafe extern "system" fn __acrt_InitializeCriticalSectionEx(
 
 /// `__acrt_IsValidLocaleName`.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_IsValidLocaleName(locale_name: *const u16) -> c_int {
     if let Some(is_valid_locale_name) = try_get!(IS_VALID_LOCALE_NAME, unsafe extern "system" fn(*const u16) -> c_int) {
         return is_valid_locale_name(locale_name);
@@ -763,6 +787,7 @@ pub unsafe extern "system" fn __acrt_IsValidLocaleName(locale_name: *const u16) 
 
 /// `__acrt_LCMapStringEx`. The fallback drops version/reserved/sort handle.
 #[no_mangle]
+#[inline(never)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "system" fn __acrt_LCMapStringEx(
     locale_name: *const u16,
@@ -804,6 +829,7 @@ pub unsafe extern "system" fn __acrt_LCMapStringEx(
 
 /// `__acrt_LCIDToLocaleName`: downlevel table fallback (drops `flags`).
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_LCIDToLocaleName(locale: u32, name: *mut u16, name_count: c_int, flags: u32) -> c_int {
     type F = unsafe extern "system" fn(u32, *mut u16, c_int, u32) -> c_int;
     if let Some(lcid_to_locale_name) = try_get!(LCID_TO_LOCALE_NAME, F) {
@@ -814,6 +840,7 @@ pub unsafe extern "system" fn __acrt_LCIDToLocaleName(locale: u32, name: *mut u1
 
 /// `__acrt_LocaleNameToLCID`: downlevel table fallback (drops `flags`).
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_LocaleNameToLCID(name: *const u16, flags: u32) -> u32 {
     if let Some(locale_name_to_lcid) = try_get!(LOCALE_NAME_TO_LCID, unsafe extern "system" fn(*const u16, u32) -> u32) {
         return locale_name_to_lcid(name, flags);
@@ -823,6 +850,7 @@ pub unsafe extern "system" fn __acrt_LocaleNameToLCID(name: *const u16, flags: u
 
 /// `__acrt_LocateXStateFeature`: no fallback.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_LocateXStateFeature(content: *mut c_void, feature_id: u32, length: *mut u32) -> *mut c_void {
     type F = unsafe extern "system" fn(*mut c_void, u32, *mut u32) -> *mut c_void;
     if let Some(locate_xstate_feature) = try_get!(LOCATE_XSTATE_FEATURE, F) {
@@ -833,6 +861,7 @@ pub unsafe extern "system" fn __acrt_LocateXStateFeature(content: *mut c_void, f
 
 /// `__acrt_MessageBoxA`: no fallback.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_MessageBoxA(hwnd: Handle, text: *const c_char, caption: *const c_char, type_: c_uint) -> c_int {
     type F = unsafe extern "system" fn(Handle, *const c_char, *const c_char, c_uint) -> c_int;
     if let Some(message_box_a) = try_get!(MESSAGE_BOX_A, F) {
@@ -843,6 +872,7 @@ pub unsafe extern "system" fn __acrt_MessageBoxA(hwnd: Handle, text: *const c_ch
 
 /// `__acrt_MessageBoxW`: no fallback.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_MessageBoxW(hwnd: Handle, text: *const u16, caption: *const u16, type_: c_uint) -> c_int {
     type F = unsafe extern "system" fn(Handle, *const u16, *const u16, c_uint) -> c_int;
     if let Some(message_box_w) = try_get!(MESSAGE_BOX_W, F) {
@@ -853,6 +883,7 @@ pub unsafe extern "system" fn __acrt_MessageBoxW(hwnd: Handle, text: *const u16,
 
 /// `__acrt_RtlGenRandom` (`SystemFunction036`): no fallback -- it should exist.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_RtlGenRandom(buffer: *mut c_void, buffer_count: u32) -> u8 {
     if let Some(rtl_gen_random) = try_get!(SYSTEM_FUNCTION_036, unsafe extern "system" fn(*mut c_void, u32) -> u8) {
         return rtl_gen_random(buffer, buffer_count);
@@ -862,6 +893,7 @@ pub unsafe extern "system" fn __acrt_RtlGenRandom(buffer: *mut c_void, buffer_co
 
 /// `__acrt_RoInitialize`: best effort, S_OK when WinRT is absent.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_RoInitialize(init_type: c_int) -> i32 {
     if let Some(ro_initialize) = try_get!(RO_INITIALIZE, unsafe extern "system" fn(c_int) -> i32) {
         return ro_initialize(init_type);
@@ -871,6 +903,7 @@ pub unsafe extern "system" fn __acrt_RoInitialize(init_type: c_int) -> i32 {
 
 /// `__acrt_RoUninitialize`: best effort.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_RoUninitialize() {
     if let Some(ro_uninitialize) = try_get!(RO_UNINITIALIZE, unsafe extern "system" fn()) {
         ro_uninitialize();
@@ -883,6 +916,7 @@ pub unsafe extern "system" fn __acrt_RoUninitialize() {
 macro_rules! app_policy {
     ($name:ident, $id:expr) => {
         #[no_mangle]
+        #[inline(never)]
         pub unsafe extern "system" fn $name(policy: *mut c_int) -> i32 {
             type F = unsafe extern "system" fn(Handle, *mut c_int) -> i32;
             if let Some(app_policy_get) = try_get!($id, F) {
@@ -899,6 +933,7 @@ app_policy!(__acrt_AppPolicyGetWindowingModelInternal, APP_POLICY_GET_WINDOWING_
 
 /// `__acrt_SetThreadStackGuarantee`: FALSE when absent.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "system" fn __acrt_SetThreadStackGuarantee(stack_size_in_bytes: *mut u32) -> c_int {
     if let Some(set_thread_stack_guarantee) =
         try_get!(SET_THREAD_STACK_GUARANTEE, unsafe extern "system" fn(*mut u32) -> c_int)
@@ -913,6 +948,7 @@ pub unsafe extern "system" fn __acrt_SetThreadStackGuarantee(stack_size_in_bytes
 /// `__acrt_can_show_message_box`: an HWND windowing model and both MessageBox
 /// entry points. The policy is asked FIRST (it short-circuits the lookups).
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_can_show_message_box() -> bool {
     __acrt_get_windowing_model_policy() == WINDOWING_MODEL_POLICY_HWND
         && try_get_function(MESSAGE_BOX_A) != 0
@@ -921,6 +957,7 @@ pub unsafe extern "C" fn __acrt_can_show_message_box() -> bool {
 
 /// `__acrt_can_use_vista_locale_apis`: CompareStringEx stands for the set.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_can_use_vista_locale_apis() -> bool {
     try_get_function(COMPARE_STRING_EX) != 0
 }
@@ -928,6 +965,7 @@ pub unsafe extern "C" fn __acrt_can_use_vista_locale_apis() -> bool {
 /// `__acrt_eagerly_load_locale_apis`: resolve every locale API now, so
 /// `_wsetlocale` never calls LoadLibrary under the locale lock.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_eagerly_load_locale_apis() {
     for id in [
         ARE_FILE_APIS_ANSI,
@@ -948,6 +986,7 @@ pub unsafe extern "C" fn __acrt_eagerly_load_locale_apis() {
 
 /// `__acrt_can_use_xstate_apis`: LocateXStateFeature stands for the set.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_can_use_xstate_apis() -> bool {
     try_get_function(LOCATE_XSTATE_FEATURE) != 0
 }
@@ -956,6 +995,7 @@ pub unsafe extern "C" fn __acrt_can_use_xstate_apis() -> bool {
 /// active window itself when GetLastActivePopup is absent); NULL without
 /// GetActiveWindow or an active window.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_get_parent_window() -> Handle {
     let Some(get_active_window) = try_get!(GET_ACTIVE_WINDOW, unsafe extern "system" fn() -> Handle) else {
         return null_mut();
@@ -977,6 +1017,7 @@ pub unsafe extern "C" fn __acrt_get_parent_window() -> Handle {
 /// `__acrt_is_interactive`: true unless the process's window station is known
 /// and NOT visible. Absent APIs count as interactive; a failed query does not.
 #[no_mangle]
+#[inline(never)]
 pub unsafe extern "C" fn __acrt_is_interactive() -> bool {
     let Some(get_process_window_station) =
         try_get!(GET_PROCESS_WINDOW_STATION, unsafe extern "system" fn() -> Handle)
