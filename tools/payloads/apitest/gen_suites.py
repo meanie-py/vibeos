@@ -83,8 +83,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--only",
         action="append",
-        metavar="SUITE.exe",
-        help="restrict the sweep to these suites (repeatable). For reproducing one "
+        metavar="SUITE.exe[:Subtest]",
+        help="restrict the sweep to these suites (repeatable); SUITE.exe:Subtest runs that "
+        "one subtest alone, for a test that sits behind an earlier subtest that stalls. "
+        "For reproducing one "
         "suite's crash without the other 58 running first: a full sweep is ~3 hours "
         "and mixes every suite's residue into one serial, which is no way to ask "
         "whether a wedge is self-contained. Quarantines still apply, and a name that "
@@ -119,8 +121,18 @@ def main(argv: list[str] | None = None) -> int:
     # catch typos, so a filtered run that cries wolf destroys its only job.
     all_found = list(found)
 
+    # SUITE.exe:Subtest -> the sweep's two-field line, which runs just that subtest.
+    only_subtests: dict[str, list[str]] = {}
+    whole_suites: set[str] = set()
+    for entry in args.only or []:
+        suite, sep, subtest = entry.partition(":")
+        if sep and subtest:
+            only_subtests.setdefault(suite, []).append(subtest)
+        else:
+            whole_suites.add(suite)
+
     if args.only:
-        want = set(args.only)
+        want = whole_suites | set(only_subtests)
         missing = sorted(want - set(all_found))
         if missing:
             print(
@@ -192,7 +204,13 @@ def main(argv: list[str] | None = None) -> int:
         ]
     if armed:
         lines.append(f"# {len(armed & set(found))} suite(s) quarantined via {qpath.name}.")
-    lines += [s for s in found if s not in armed]
+    for s in found:
+        if s in armed:
+            continue
+        if s in only_subtests and s not in whole_suites:
+            lines += [f"{s} {t}" for t in only_subtests[s]]
+        else:
+            lines.append(s)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     kept = len([s for s in found if s not in armed])

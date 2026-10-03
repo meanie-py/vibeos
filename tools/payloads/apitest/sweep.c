@@ -348,6 +348,32 @@ static int is_skipped(const char *suite, const char *subtest)
     return 0;
 }
 
+static void run_one_subtest(const char *bindir, const char *suite, const char *subtest,
+                            int *subtests, int *failstart, int *timeouts)
+{
+    struct pump_ctx ctx;
+    int rc;
+
+    ZeroMemory(&ctx, sizeof(ctx));
+    ctx.Suite = suite;
+    ctx.Label = subtest;
+
+    DbgPrint("[APITEST-SWEEP] launch %s %s\n", suite, subtest);
+    rc = run_child(bindir, suite, subtest, &ctx, PER_SUBTEST_TIMEOUT_MS);
+    ++*subtests;
+
+    if (rc == -1)
+        ++*failstart;
+    else if (rc == -2)
+    {
+        ++*timeouts;
+        DbgPrint("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
+                 suite, subtest, PER_SUBTEST_TIMEOUT_MS / 1000u);
+    }
+    else
+        DbgPrint("[APITEST-SWEEP] exit %s %s code=%d\n", suite, subtest, rc);
+}
+
 static void run_suite(const char *bindir, const char *suite,
                       int *subtests, int *launched, int *failstart, int *timeouts)
 {
@@ -511,6 +537,19 @@ int main(void)
         if (!line[0] || line[0] == '#')
             continue;
         ++total;
+
+        /* "<suite.exe> <subtest>": run just that subtest (gen_suites --only suite:subtest).
+         * Reproducing one subtest otherwise meant running every subtest ahead of it, and a
+         * suite that stalls early (user32's AttachThreadInput) hid the rest entirely. */
+        {
+            char *sp = strchr(line, ' ');
+            if (sp)
+            {
+                *sp = 0;
+                run_one_subtest(bindir, line, sp + 1, &subtests, &failstart, &timeouts);
+                continue;
+            }
+        }
 
         run_suite(bindir, line, &subtests, &launched, &failstart, &timeouts);
     }
