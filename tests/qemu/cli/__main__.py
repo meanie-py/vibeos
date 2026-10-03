@@ -20,6 +20,7 @@ from . import (
     host_clock,
     hostlock,
     maintenance,
+    pi4,
     symbolize,
     tooling,
 )
@@ -58,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     checkpoint.add_parser(sub)
     host_clock.add_parser(sub)
+    pi4.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(
