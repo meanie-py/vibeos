@@ -756,6 +756,9 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
        fixes it.
      - Like upstream, nothing enforces the restrictions yet; this is the bookkeeping that
        enforcement reads.
+     - `user32_apitest UserHandleGrantAccess`: **67 run, 0 failures**. It was reached with the
+       sweep's new single-subtest form (`gen_suites --only user32_apitest.exe:UserHandleGrantAccess`),
+       because the full user32 sweep stalls at its first subtest.
 4. ~~kernelbase vs `combase`/`coml2`/`shcore`~~ **Decided: declined by design.** ole32 stays
    monolithic, and the split modules are commented out (row 9 of the build-repair table above),
    so nothing needs the minimal kernelbase shim to host them. Revisit only if the split itself

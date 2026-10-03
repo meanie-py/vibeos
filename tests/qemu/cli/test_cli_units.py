@@ -10263,3 +10263,28 @@ def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatc
     assert order.index(restages[0]) > order.index(("i386", False, False))
     amd64_smoke = [s for s in smoked if s[0] == "amd64"]
     assert amd64_smoke and amd64_smoke[0][1] == restages, "amd64 smoked before its restage"
+
+
+def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
+    """The user-mode END line and kernel prints share the serial port, so a kernel
+    line can land mid-marker (i386, 2026-10-03, verbatim below). Unrepaired, a
+    30/0 test read as NO-END and the ratchet called it a regression. A fragment
+    that cannot be completed into a whole marker must stay unrepaired."""
+    P = _parser()
+    log = (
+        "[KMTEST-SWEEP] launch ExHardError\n"
+        "ExHardError: 30 tests executed (0 marked as todo, 0 failures), 0 skipped.\n"
+        "[KMTEST:END ExHardE[EXIT-THR] image=SERVICES.EXE exit_status=0x0 crit=0\n"
+        "rror pass=30 fail=0 skip=0]\n"
+        "[EXIT-THR] image=KMTEST_.EXE exit_status=0x0 crit=0\n"
+        "[KMTEST-SWEEP] exit ExHardError code=0\n"
+        "[KMTEST-SWEEP] done 1 tests\n"
+    )
+    results, _, _ = P.parse(log)
+    assert [(r["name"], r["status"], r["pass"], r["fail"]) for r in results] == [
+        ("ExHardError", "OK", 30, 0)
+    ]
+    # A tail that does not complete the marker is not invented into one.
+    broken = log.replace("rror pass=30 fail=0 skip=0]", "rror pass=30 fail=0")
+    results, _, _ = P.parse(broken)
+    assert results[0]["status"] == "NO-END"
