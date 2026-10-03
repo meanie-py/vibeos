@@ -5,6 +5,9 @@
  * COPYRIGHT:   Copyright 2023-2024 Timo Kreuzer <timo.kreuzer@reactos.org>
  */
 
+// The module's own __local_stdio_printf_options storage, which nothing in
+// ucrtbase ever sets: 0. (corecrt_stdio_config.h's default is mingw's, not this.)
+#define _CRT_INTERNAL_LOCAL_PRINTF_OPTIONS 0ULL
 #define _NO_CRT_STDIO_INLINE
 #include <stdio.h>
 

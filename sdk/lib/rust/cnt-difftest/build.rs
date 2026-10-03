@@ -29,13 +29,26 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
-    // The `_FPCLASS_*` values, read out of the genuine SDK header. If the
-    // header ever stops carrying them, fail here rather than compile a
+    // The `_FPCLASS_*` values, read out of the genuine SDK header. The tree
+    // no longer carries it (sdk/include/ucrt went with the last of the
+    // Microsoft UCRT), so it comes from git history at a pinned revision. If
+    // the header stops carrying them, fail here rather than compile a
     // reference whose classifier silently returns 0 for everything.
     let fpclass_consts = {
-        let h = repo.join("sdk/include/ucrt/float.h");
-        let text = fs::read_to_string(&h)
-            .unwrap_or_else(|e| panic!("cannot read {}: {e}", h.display()));
+        const SDK_FLOAT_H: &str = "9c9d469c15278e449b2d37d437d0ebdaf62fc7ce:sdk/include/ucrt/float.h";
+        let h = SDK_FLOAT_H;
+        let shown = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["show", SDK_FLOAT_H])
+            .output()
+            .unwrap_or_else(|e| panic!("cannot run git show {SDK_FLOAT_H}: {e}"));
+        assert!(
+            shown.status.success(),
+            "git show {SDK_FLOAT_H} failed: {}",
+            String::from_utf8_lossy(&shown.stderr)
+        );
+        let text = String::from_utf8_lossy(&shown.stdout).into_owned();
         let lines: Vec<&str> = text
             .lines()
             .filter(|l| l.trim_start().starts_with("#define _FPCLASS_"))
@@ -43,7 +56,7 @@ fn main() {
         assert!(
             lines.len() >= 10,
             "expected the 10 _FPCLASS_* defines in {}, found {} -- the header moved",
-            h.display(),
+            h,
             lines.len()
         );
         format!("{}\n", lines.join("\n"))
