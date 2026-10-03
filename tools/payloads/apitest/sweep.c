@@ -154,7 +154,7 @@ static DWORD WINAPI pump(LPVOID param)
  * another. Opt-in, for suites that create files relative to it: the i386 media
  * boots from a CDFS image, so X:\ (bindir and %TEMP% included) refuses every
  * write with ERROR_ACCESS_DENIED, and such a suite reports its own environment
- * as failures. The regular apitest sweep stages no such file -- its suites may
+ * as failures. TEMP/TMP follow it (below). The regular apitest sweep stages no such file -- its suites may
  * read testdata relative to bindir. */
 static char g_child_cwd[MAX_PATH];
 
@@ -177,8 +177,17 @@ static void load_child_cwd(const char *bindir)
     }
     fclose(f);
     if (!g_child_cwd[0])
+    {
         lstrcpynA(g_child_cwd, bindir, sizeof(g_child_cwd));
-    DbgPrint("[APITEST-SWEEP] child cwd=%s\n", g_child_cwd);
+        return;
+    }
+    /* %TEMP% is on the same read-only image (X:\reactos\TEMP), and suites put
+     * their scratch files there (ucrtbase's thread test writes its helper DLL
+     * to GetTempPath()), so the children inherit the writable directory as
+     * TEMP/TMP too. */
+    SetEnvironmentVariableA("TEMP", g_child_cwd);
+    SetEnvironmentVariableA("TMP", g_child_cwd);
+    DbgPrint("[APITEST-SWEEP] child cwd=TEMP=%s\n", g_child_cwd);
 }
 
 static int run_child(const char *bindir, const char *suite, const char *arg,

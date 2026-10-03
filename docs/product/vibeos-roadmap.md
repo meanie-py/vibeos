@@ -583,17 +583,39 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (valid storage, so no corruption; a behaviour divergence: key checks, `FsRtlOplockBreakH`,
   atomic create-with-oplock in `FatOpenExistingFcb`/`FatOpenExistingFile`/`FatCreateNewFile`/
   `FatSetRenameInfo`); fsctrl.c has 12 more. Owner: fastfat lane.
+- **ucrtbase still exports ~70 C99 math functions as `-stub`** (OPEN, 2026-10-03): `trunc`,
+  `round`/`lround`/`llround`, `rint`/`nearbyint`, `cbrt`, `erf`/`erfc`, `lgamma`/`tgamma`,
+  `fmin`/`fmax`/`fdim`, `copysign`, `nan`, `remainder`/`remquo`, `log1p`, `expm1`,
+  `acosh`/`asinh`/`atanh`, `ilogb`/`logb` and their `f` forms (`grep -- -stub
+  dll/win32/ucrtbase/ucrtbase.spec`). A stub prints "calling stub" and returns garbage, so
+  any modern UCRT app using them gets wrong numbers silently. No body exists in this tree:
+  ReactOS's msvcrt `math.c` is a trimmed Wine that dropped them, and cnt-rust's libm has
+  only the C89 set. Options: (a) the `libm` crate (musl's libm in Rust, MIT, `no_std`;
+  already in the local cargo registry) -- a new external dependency, so it needs the
+  supply-chain call plus a Cargo.lock/notices entry; (b) port upstream Wine's versions
+  (also musl-derived) into ucrt-rust. Either way the UCRT errno/`_matherr` contract goes on
+  top, and Wine's misc `test_math_errors` (misc.c:774/776) is the oracle. The fenv family
+  that sat beside them in the stub list is DONE (fenv.rs, 2026-10-03). Owner: ucrt-rust.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
   the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
   staged beside them. The two agree failure for failure, so none of these is a Rust
-  regression, but each is owed: `file` AVs inside the test exe; `misc` dies on an
-  unmasked FP exception (0xC0000090) after calling the `fesetround`/`fegetenv` spec stubs;
-  `thread` AVs at EIP 0; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
-  (string.c:831/835); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
-  `environ`, `printf` (1,950) and `scanf` are clean on both. Only divergence found: the i386
-  `_invoke_watson` report-fault stub wrote CONTEXT out of order (fixed the same day).
+  regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
+  while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
+  (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
+  math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
+  already crashed, so they are UNCOMPARED; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
+  (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
+  `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
+  where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
+  `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
+  an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
+  language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
+  OS failed with 1815, and %TEMP% sat on the read-only boot image. Only ucrtbase
+  divergence found: the i386 `_invoke_watson` report-fault stub wrote CONTEXT out of
+  order (fixed the same day).
   Owner: ucrt-rust lane.
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
   (FIXED 2026-10-03: ucrt-rust `fpctrl_arm64.rs`, graded by `tools/payloads/fpctrl` against

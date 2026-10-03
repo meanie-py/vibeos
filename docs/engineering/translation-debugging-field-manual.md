@@ -2435,6 +2435,14 @@ just a label.
   knew the right answer caught it. Re-name the whole family when you fix one, so the compiler
   and `verify_constants` can see them: a bare literal is checkable only by someone who already
   suspects it.
+- **A literal inside a MACRO argument hides from the constant scanners, and the A/W twin is
+  the oracle.** kernel32's `FindResourceA` passed `MAKELANGID!(4u16, 0u16)` where the C says
+  `MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL)`: 4 is `LANG_CHINESE`, so every ANSI resource
+  lookup in the OS failed with 1815 while `FindResourceW`, translated with the named
+  constants, worked. Found only by a conformance test (Wine's ucrtbase thread test). When an
+  `A` function misbehaves and its `W` twin does not, diff the two Rust bodies against each
+  other before anything else -- the C keeps them parallel, so any non-parallel literal is the
+  suspect.
 - **A constant that lives in only SOME arches' islands cannot simply be imported.**
   `KEY_ALL_ACCESS` is in `hal_bindgen_i386/amd64` and **not** `hal_bindgen_arm64`, so `use`-ing
   it breaks the arm64 build. Declare it locally *and pin it* —

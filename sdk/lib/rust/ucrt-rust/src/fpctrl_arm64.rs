@@ -61,7 +61,7 @@ const FPCR_RMODE: u64 = 0xc0_0000;
 /// Wine's `_setfp` (aarch64): read the control word into `*cw` / the status word into
 /// `*sw`, replacing the bits OUTSIDE each mask with the hardware's, and write back the bits
 /// INSIDE it. A null pointer leaves that register alone.
-unsafe fn setfp(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) {
+pub(crate) unsafe fn setfp(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) {
     let (mut fpsr, mut fpcr): (u64, u64) = (0, 0);
     let (mut old_fpsr, mut old_fpcr): (u64, u64) = (0, 0);
 
