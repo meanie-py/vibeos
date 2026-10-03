@@ -869,6 +869,42 @@ Record it here and keep going; only chase one when it looks load-bearing.
   spread from 2.92% to 23%. The limit is positional in the LOG, not a count of
   anything the guest did.
 
+  **`rr wedge <trace>` makes this a one-command check.** The decode above needed
+  QEMU's own `scripts/replay-dump.py` fetched from the matching stable tag; the
+  in-tree walker now answers the same question. `rr wedge` asks a live stalled
+  replay where it stopped and prints the events either side, or takes
+  `--at <offset>` for a position recorded earlier. It deliberately prints a
+  window and names no culprit, for the reason in the next paragraph.
+
+  **The two offsets quoted above are not the same measurement, and the gap is
+  the point.** `trace_read_position` froze at byte **2,342,912**; the decoded
+  position of the stall is **2,145,086**. The difference is **197,826 bytes
+  (193 KiB)** of kernel read-ahead: QEMU has pulled bytes into its own buffer
+  that it has not acted on. So the fd offset is an UPPER BOUND on where the
+  replay actually is, which is why a tool must not point at "the event at the
+  read position" and call it the culprit — that is the handle's reading, not the
+  thing's. Treat the gap as a bound rather than a measured buffer size: the two
+  numbers were produced by different methods, and nothing here pins QEMU's
+  buffering.
+
+  **The open caveat on "positional in the log": the two tightest measures are
+  nearly collinear.** This trace is dominated by serial output, so trace bytes
+  and serial bytes are not independent — trace-bytes-per-serial-byte is 17.53
+  on clean1 and 17.97 on kmt3, a 2.5% spread. Trace bytes (0.85%) does fit
+  better than serial bytes (1.63%), which is real evidence for position over
+  volume, but it is two samples separated by less than a factor of two in
+  tightness. **The discriminating experiment is a third recording with
+  deliberately different serial density** — the same boot with debug printing
+  turned down, or up. If the wedge is positional in the log, the trace offset
+  stays put and the serial-byte count moves; if it tracks serial volume, the
+  opposite. Until that runs, "positional in the LOG" is the better-fitting of
+  two correlated explanations rather than an established one.
+
+  Worth stating because it is the cheap half: whatever the measure turns out to
+  be, ~2.145MB is not a round number, a power of two, or a multiple of 32 KiB
+  or 64 KiB (65.46 and 32.73 respectively), so no obvious fixed-size buffer
+  explains it yet.
+
   Two caveats worth keeping, because they bound how much the top row is worth.
   The three tight measures are near-proportional to one another in this region —
   the log here is a uniform `EVENT_CHAR_WRITE` / `EVENT_INSTRUCTION +3` pattern,
