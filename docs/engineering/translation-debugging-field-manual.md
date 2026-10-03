@@ -1083,6 +1083,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 
 ---
 
+### A float return read through a double-typed trampoline is 0.0 on x64 and arm64
+
+**Symptom:** a dynamic-call path (DispCallFunc, a varargs thunk) returns 0.0 for every
+`float`-returning callee on amd64 only, while i386 is correct.
+**Cause:** one asm trampoline serves every return type, and the caller's extern declaration
+picks the register it reads. Win64 returns a `float` in xmm0's low 32 bits, so declaring the
+trampoline `-> f64` reads those bits as a denormal double, and `as f32` gives 0.0. i386 hides
+it because x87 `st(0)` holds either width. Wine's own `typelib.c` x86_64 path has this bug.
+**Fix:** alias the trampoline under a second name declared `-> f32` (arm64's C already does:
+`call_float_method`), and read float returns through it.
+
 ### `transmute(f as *const ())` into a callback slot erases the ABI check
 **Symptom.** Works on amd64/arm64; on i386 the callee reads garbage arguments. In consrv this
 killed csrss (BUGCHECK 0xF4) the first time an i386 GUI console was created. A BOOL slot

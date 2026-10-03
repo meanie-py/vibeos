@@ -724,11 +724,9 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
 
 ## Owed, in rough priority order
 
-1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation
-   anywhere in the tree** and are exported by `ntdll.spec`, `ntdll_vista.spec` and
-   `kernelbase.spec`. Upstream's new `processor.c` is the only definition that has ever existed,
-   but it also redefines `RtlGetCurrentProcessorNumber`, which `rtl-strings` owns. Hand-port the
-   two, or split the file.
+1. ~~`RtlIsProcessorFeaturePresent` / `RtlGetCurrentProcessorNumberEx` unimplemented.~~ **Done
+   2026-09-30:** hand-ported into `rtl-strings` beside `RtlGetCurrentProcessorNumber`. The Ex one
+   answers group 0 without the 0xA00+ `NtGetCurrentProcessorNumberEx` syscall we don't have.
 2. **Upstream's AHCI/SATA work.** A new SATL/port atapi driver plus a 16-file chipset quirks
    framework with a full software AHCI implementation in `pciidex/chipset/`. All of it is on
    disk and none of it is built. Probably the largest single translation opportunity this merge
@@ -738,13 +736,20 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
    `PspCloseJob` is absent from `ps-rust`.
 4. **kernelbase.** Decide whether our minimal shim can satisfy `combase`/`coml2`/`shcore` now
    that they exist in the tree.
-5. **oleaut32 `thunks.c`.** Declined on the inference that `dispatch.rs` replaces it. An
-   arbitrary-arity native call trampoline is usually precisely what stable Rust cannot emit —
-   verify `DispCallFunc` actually works without it.
+5. ~~oleaut32 `thunks.c`~~ **Verified 2026-10-03.** `dispcall.rs` carries Wine's per-arch
+   `call_method` trampolines as `global_asm!`. The `dispprobe` payload exercises arg counts past
+   each register window, int/float mixes, I8, R4/R8 returns, cdecl and a vtable call, and
+   passes on all three arches. It found one bug, inherited from Wine: x86_64 read VT_R4 through
+   the double-typed thunk, so every float return came back 0.0. Fixed with a float-typed alias.
 6. **Raw input.** `win32ss/user/ntuser/rawinput.c` is new and has no Rust twin; `user32/misc/stubs.c`
    shows upstream implemented `GetRawInputBuffer` and `GetRawInputDeviceInfoA` too.
 7. **PCIe ECAM.** `drivers/bus/pcix/pci/ecam.c` + `express.c`, new upstream, no Rust twin.
-8. **`drivers/bus/acpi/osl.c` was merged rather than picked** — boot-check that upstream's
-   `AcpiLoaderRsdp` fast path does not skip what the legacy BIOS scan supplied.
-9. **`sdk/cmake/gcc.cmake`** — we kept the llvm-mingw libc++ path over upstream's `libgcc_eh`
-   addition. Unclear whether it matters for a non-llvm-mingw GCC build.
+   (The rest of upstream's pcix fixes and `memres.c` were ported 2026-10-03; see the userdrv
+   review.)
+8. ~~`drivers/bus/acpi/osl.c` fast path~~ **Moot (checked 2026-10-03):** `osl.c` is commented
+   out, and the OSL is `acpi-rust` (`osl.rs` `AcpiOsGetRootPointer`). That runs the legacy BIOS
+   scan FIRST and only then synthesizes an RSDP from the loader-registered "ACPI BIOS"
+   address, so the shipping path cannot skip anything the scan supplies.
+9. ~~`sdk/cmake/gcc.cmake` `libgcc_eh`~~ **Done 2026-10-03:** our build is always llvm-mingw,
+   which takes the libc++/libunwind branch. The GCC branch now links `libgcc_eh.a` into
+   libsupc++ when the toolchain has one, as upstream does.

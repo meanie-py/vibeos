@@ -1,0 +1,21 @@
+# dispprobe — does oleaut32's DispCallFunc (Rust, per-arch global_asm! call_method trampolines
+# transcribed from Wine) marshal every argument and return type correctly?
+#   tools/payloads/dispprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=dispprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload dispprobe
+# Upstream's asm thunks.c was declined on the assumption dispcall.rs replaces it; nothing in
+# the tree had ever called it.
+name: dispprobe
+description: call DispCallFunc across arg counts, int/float mixes, return types and a vtable
+
+build_hint: "tools/payloads/dispprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/dispprobe/dispprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/dispprobe.exe
+
+test:
+  launch_marker: "[DISPPROBE] done"
+  pass_marker: "[DISPPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300

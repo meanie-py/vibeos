@@ -511,8 +511,13 @@ pub unsafe extern "system" fn SmpQueryRegistrySosOption() -> BOOLEAN {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Length: ULONG = 0;
-    let mut ValueBuffer: [u8; VALUE_BUFFER_SIZE] = [0; VALUE_BUFFER_SIZE];
-    let PartialInfo = ValueBuffer.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
+    // The C's `WCHAR ValueBuffer[VALUE_BUFFER_SIZE]`: VALUE_BUFFER_SIZE *WCHARs*, not bytes,
+    // and aligned for the KEY_VALUE_PARTIAL_INFORMATION read out of it (a bare u8 array is
+    // 1-aligned, which makes every field access UB; upstream aa8d624253a's class).
+    #[repr(C, align(8))]
+    struct ValueBufferT([u16; VALUE_BUFFER_SIZE]);
+    let mut ValueBuffer = ValueBufferT([0; VALUE_BUFFER_SIZE]);
+    let PartialInfo = ValueBuffer.0.as_mut_ptr() as PKEY_VALUE_PARTIAL_INFORMATION;
 
     static KEY_PATH: [u16; 65] = [
         b'\\' as u16,
