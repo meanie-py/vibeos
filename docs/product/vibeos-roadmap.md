@@ -578,17 +578,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
   (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
   Owner: ucrt-rust lane.
-- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
-  the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
-  so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:
-  wordpad/devmgmt/dxdiag/rapps exit 0x6BA (RPC_S_SERVER_UNAVAILABLE: the ramdisk has no
-  spoolsv and no PlugPlay service -- a service needs its registry config staged, not just
-  the binary); charmap and eventvwr open no window; cpl-appwiz and cpl-ncpa open no window.
-  iexplore still faults (0xC0000005) after `failed to register CLSID_InternetExplorer:
-  80004002` even with actxprxy staged -- and ieframe dereferencing the NULL its failed
-  registration left is a bug of its own. That is the Pi's "internet browser died". On i386
-  `cpl-appwiz` opens no window either: control -> rundll32 -> rapps runs, but rapps exits 0
-  at once where amd64's shows "Add/Remove Programs". amd64 is 43/43. Owner: shell32-com lane.
+- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28; narrowed 2026-10-03). Fixed
+  on 2026-10-03:
+  - The closure's literal scan only indexed BUILT modules, so 16 unbuilt runtime loads
+    (riched20 for charmap/eventvwr/wordpad/rapps, mshtml's jscript/shdoclc, ...) were dropped
+    silently.
+  - None of the services the hive auto-starts had an image on the ramdisk (the SCM logged
+    `done: 2` for 13 of them); svchost, rpcss, DcomLaunch, PlugPlay (umpnpmgr), EventLog and the
+    spooler with its provider/monitor/processor are staged now, and PlugPlay auto-starts
+    (hivesys_arm64.inf).
+  - Once a svchost could run out of services, its ExitThread spun forever and wedged the guest
+    (ThreadAmILastThread vs NtTerminateThread disagreed; fixed in ps-rust and kernel32).
+
+  Left, all one root cause -- **the arm64 boot never runs first-boot setup.** x86's livecd
+  runs `setup -mini` (syssetup InstallLiveCD) on every boot; arm64's winlogon spawns explorer
+  itself, setup.exe/syssetup.dll/inf are not on the ramdisk, and RunSetup fails silently. So
+  arm64 lacks what setup provides: the COM registrations (ole32 is registered in
+  syssetup.inf's EarlyPhaseSetup; without it CoRegisterClassObject cannot marshal
+  IClassFactory, so iexplore's CLSID_InternetExplorer registration fails 80004002 and the
+  process faults; cpl-appwiz/cpl-ncpa log CLSID_TaskbarList not registered), the network
+  components (Tcpip/Dhcp/Dnscache come from nettcpip.inf; rapps' gethostbyname reaches the
+  resolver RPC with no Dnscache and dies on the unhandled RPC_S_SERVER_UNAVAILABLE), and the
+  device installs. Options: run setup on arm64 like x86 (stage setup/syssetup/inf and
+  reconcile winlogon's direct explorer spawn with setup launching userinit), or pre-register
+  at hive build time from the widl-generated registry scripts (`*_r.res`) and add the
+  nettcpip services to hivesys_arm64.inf. Also owed: the user-mode Rust RPC clients
+  (advapi32 scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's
+  RpcTryExcept dropped ("DUMMY_PSEH -- execute directly"), so any unavailable RPC server
+  kills the calling app instead of returning an error. On i386 `cpl-appwiz` opens no window
+  either (rapps exits 0 where amd64's shows "Add/Remove Programs"). Owner: shell32-com lane.
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a

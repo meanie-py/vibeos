@@ -11631,6 +11631,19 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **A wedge whose vCPU keeps stopping at EL0 is a user-mode spin; find its process from EL1.**
+  arm64 appstorm went silent mid-run three times (2026-10-03) and first read as "the guest got
+  slow". Every gdb stop landed at `kernel32!ExitThread+0x5c`: the `loop {}` after
+  `NtTerminateThread(NULL)` RETURNED. Two checks with one answer each: `ThreadAmILastThread`
+  answered from `ThreadListHead`, which keeps exited threads a handle still references, while
+  `NtTerminateThread(NULL)` refuses `STATUS_CANT_TERMINATE_SELF` on `ActiveThreads == 1`. A
+  svchost whose services had all exited was told "not last", refused, and spun at normal
+  priority forever (an upstream ReactOS inconsistency, latent on x86 only because its svchosts
+  never run out of services). Mechanics: a stop at EL0 cannot walk kernel lists (QEMU reads
+  through the user regime), so `debug run-until <run> --break KeUpdateRunTime --then
+  list-threads` gets an EL1 stop on the next tick; the culprit is the `Cur?` thread, and
+  `x/1wx <EPROCESS>+<offset_check ActiveThreads>` against `dump-thread`'s `SignalState`
+  (1 = exited) separates a drifted counter from a list holding dead threads.
 - **Halted vs moving is the first fork, and on x86 the flag is `HLT=1` in the `EFL` line.**
   The arm64 tell is a `wfi`; the x86 one is the `HLT=1` field of the `info registers` dump, and
   it decides which half of the search space to throw away. **Halted means nothing was runnable,

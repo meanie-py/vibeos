@@ -31,3 +31,10 @@ HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","HardwareID",0x00010000,"*PNP0A03"
 HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","DeviceDesc",0x00000000,"PCI Bus (root-enumerated)"
 HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","ConfigFlags",0x00010001,0x00000000
+
+; PlugPlay (umpnpmgr, in `svchost -k DcomLaunch`) auto-starts. x86 gets there on first boot,
+; when `setup -mini`'s EnableUserModePnpManager flips it to SERVICE_AUTO_START and starts it;
+; the arm64 boot runs no setup (winlogon spawns explorer itself), so the hive says it up
+; front. Without it every cfgmgr32 RPC failed RPC_S_SERVER_UNAVAILABLE and devmgmt, dxdiag
+; and rapps exited 0x6BA.
+HKLM,"SYSTEM\CurrentControlSet\Services\PlugPlay","Start",0x00010001,0x00000002

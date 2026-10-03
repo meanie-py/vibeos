@@ -67,4 +67,19 @@ runid_kernel_image() {
         *) echo "$manifest" ;;
     esac
 }
+# runid_kernel_base <run-id> — the running kernel's image base: the manifest's cached value,
+# else the guest's own "[KRNLBASE] ntoskrnl runtime base=0x..." serial line. find-kbase's
+# memory scan cannot see the kernel when the vCPU is stopped at EL0 (a user-mode spin is
+# exactly when you attach), and answered "not found in expected ranges" while the base sat in
+# the serial log all along.
+runid_kernel_base() {
+    local cached
+    cached="$(manifest_get "$1" kernel_runtime_base 2>/dev/null || true)"
+    if [ -n "$cached" ] && [ "$cached" != "null" ]; then
+        echo "$cached"
+        return
+    fi
+    grep -a -o -m1 -E 'KRNLBASE\] ntoskrnl runtime base=0x[0-9A-Fa-f]+' "$(runid_serial_log "$1")" 2>/dev/null \
+        | grep -o -E '0x[0-9A-Fa-f]+$' | tr 'A-F' 'a-f' | sed 's/^0X/0x/'
+}
 runid_pid_file()      { echo "$RUNS_DIR/$1/pid"; }
