@@ -2155,7 +2155,7 @@ trees:
     upstream: https://gitlab.winehq.org/wine/vkd3d
     license: LGPL-2.1-or-later
     license_file: sdk/lib/vkd3d/COPYING
-    modified: unknown  # not yet diffed against a pristine 1.14 tarball -- owed
+    modified: yes
     version:
       file: sdk/lib/vkd3d/config.h
       pattern: '#define PACKAGE_VERSION "([^"]+)"'
@@ -2174,8 +2174,21 @@ trees:
       opposite case and are filed under `ours:`.
 
       The version probe reads config.h, which in a vendored tree is usually OUR file
-      and can be laundered (see libmpg123). It is used until this tree is compared with
-      the pristine 1.14 tarball, which is also what settles `modified:`.
+      and can be laundered (see libmpg123). The version is settled independently:
+
+      DIFFED 2026-09-30 against the pristine release, dl.winehq.org vkd3d-1.14.tar.xz
+      (sha256 c94015d59ebe8ae72c4d802af5ca1517d9744548842a4e776534612a8d905485). 33 files
+      are byte-identical and 15 differ, all by import adaptation with no functional
+      change:
+      - Wine's own: `list.h`/`rbtree.h` become `wine/...`, `vkd3d_*.h` become the SDK
+        headers, `vulkan/vulkan.h` becomes `wine/vulkan.h`, `VKD3D_DEBUG_ENV_NAME` is
+        dropped, VKD3D_IMPORT/EXPORT are blank, and the Makefile.in is Wine's.
+      - ReactOS MSVC compat (`__REACTOS__`/`_MSC_VER`): noreturn/unreachable macros, a
+        `__MINGW32__` popcount guard, the descriptor-heap alignment, and two
+        `return NULL` -> `return false` in bool functions.
+      Ours-only: CMakeLists.txt, config.h, VENDORED, and the generated or imported
+      headers (vkd3d_version.h, vkd3d_debug.h, vulkan/spirv.h, vulkan/GLSL.std.450.h).
+      So 1.14 is confirmed, and `modified: yes` means these patches only.
 
 ours:
   - paths:

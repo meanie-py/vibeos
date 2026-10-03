@@ -361,7 +361,10 @@ pub unsafe extern "system" fn PPBridge_SaveLimits(Context: PPCI_CONFIGURATOR_CON
 
     i = 0;
     while i < PCI_TYPE1_ADDRESSES {
-        if unsafe { PciCreateIoDescriptorFromBarLimit(limit.offset(i as isize), bar_array.offset(i as isize), 0u8) } != 0 {
+        /* Create a descriptor for their limits, the second BAR has no BAR after it */
+        let next_bar: ULONG = if (i + 1) < PCI_TYPE1_ADDRESSES { *bar_array.offset((i + 1) as isize) } else { 0 };
+
+        if unsafe { PciCreateIoDescriptorFromBarLimit(limit.offset(i as isize), *bar_array.offset(i as isize), next_bar, 0u8) } != 0 {
             ntkrnl_sys::ASSERT!((i + 1) < PCI_TYPE1_ADDRESSES);
             i += 1;
             (*limit.offset(i as isize)).Type = CmResourceTypeNull as u8;
@@ -419,8 +422,7 @@ pub unsafe extern "system" fn PPBridge_SaveLimits(Context: PPCI_CONFIGURATOR_CON
 
     if (*working).u.type1.ROMBaseAddress & PCI_ROMADDRESS_ENABLED != 0 {
         let rom_limit_ptr = limit.offset(i as isize);
-        let rom_bar_ptr = core::ptr::addr_of_mut!((*working).u.type1.ROMBaseAddress);
-        unsafe { PciCreateIoDescriptorFromBarLimit(rom_limit_ptr, rom_bar_ptr, 1u8); };
+        unsafe { PciCreateIoDescriptorFromBarLimit(rom_limit_ptr, (*working).u.type1.ROMBaseAddress, 0, 1u8); };
     }
 }
 #[no_mangle]

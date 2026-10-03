@@ -93,7 +93,7 @@ unsafe extern "C" fn MouseOnDialogInit(
         return (FALSE) as i32;
     }
 
-    SetWindowLongPtr(hwndDlg, (GWLP_USERDATA) as c_int, (pMouseInfo as DWORD_PTR) as LONG_PTR);
+    SetWindowLongPtr(hwndDlg, (DWLP_USER) as c_int, (pMouseInfo as DWORD_PTR) as LONG_PTR);
 
     i = 0;
     while i < ARRAYSIZE!(MouseSampleRates) {
@@ -289,7 +289,7 @@ unsafe extern "C" fn MouseOnApply(hwndDlg: HWND) {
     let mut bFailed: i32 = 0;
     let mut nIndex: i32;
 
-    pMouseInfo = GetWindowLongPtr(hwndDlg, GWLP_USERDATA) as *mut MOUSE_INFO;
+    pMouseInfo = GetWindowLongPtr(hwndDlg, DWLP_USER) as *mut MOUSE_INFO;
 
     nIndex = SendDlgItemMessageW(
         hwndDlg,
