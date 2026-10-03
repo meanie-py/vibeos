@@ -561,16 +561,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
   - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every
     name buffer carved from `UnicodeBuffer` had a garbage high half and the first
-    `RtlCopyUnicodeString` faulted. amd64 happened to read a zero. Gated by
-    `scan_extern_static_width`.
+    `RtlCopyUnicodeString` faulted. Not arm64-only: amd64 bugchecks the same way once the
+    rename is on a writable FAT volume (its `%TEMP%` is the read-only CD; run
+    `20261003-125533-far1ln8_`, `tools/payloads/fsprobe`). Gated by `scan_extern_static_width`.
   - creates/deletes: the translation ran fastfat's `NTDDI >= WIN8` blocks on a pre-WIN8 layout,
     so parent-directory oplock checks read the DCB's free-dirent bitmap as an oplock pointer
     (and DCB init/teardown wrote into it). Those blocks sit behind `cfg(ntddi_ge_ntddi_win8)`
     now; the field manual's "version block translated UNGATED" entry has the audit.
+  - a third, found by `tools/payloads/fsprobe` on amd64's scratch FAT16 disk: `UCHAR
+    FatIndexBitSize()` declared `-> u32`; the undefined register bits became the divisor in
+    `ClustersDescribableByFat`, the 64 MB volume mounted with 14 clusters, and the 29th file in
+    a directory failed `ERROR_DISK_FULL`. Gated by `scan_extern_decl_drift`'s return widths.
   `tools/payloads/fatprobe` (rename, 64 create/delete, rename with a second handle open)
-  passes on arm64. The ucrtbase grader's `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` skip can go to 0;
-  left to the ucrt lane, whose `ucrtdiff.c` is mid-edit (and whose arm64 build currently
-  stops at pecheck: `__doserrno`/`_open_osfhandle` graded but not imported from ucrtbase.dll).
+  passes on arm64; `fsprobe` (renames of each kind, 52 live long names) on arm64 and amd64.
+  `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` is now 0: rename/_wrename/_mktemp/_wmktemp/_mktemp_s/
+  _wmktemp_s all grade MATCH. The plain arm64 ucrtdiff build stops at pecheck
+  (`__doserrno`/`_open_osfhandle` graded but not imported); grade through
+  `ucrt_tier2_sweep.py --takeover-from d888eadd919^`, narrowed with `UCRTDIFF_ONLY=`.
+- **fastfat's `NTDDI >= WIN7` blocks are still translated ungated — OPEN (audit owed)**
+  (2026-10-03). The WIN8 audit above does not cover them. Ten are oplock calls on FILE FCBs
+  (valid storage, so no corruption; a behaviour divergence: key checks, `FsRtlOplockBreakH`,
+  atomic create-with-oplock in `FatOpenExistingFcb`/`FatOpenExistingFile`/`FatCreateNewFile`/
+  `FatSetRenameInfo`); fsctrl.c has 12 more. Owner: fastfat lane.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs

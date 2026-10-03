@@ -349,7 +349,9 @@ ULONGLONG UInt32x32To64(ULONG a, ULONG b)           { return (ULONGLONG)a * b; }
 VOID CopyUchar4(PULONG dst, PULONG src)  { *dst = *src; }
 VOID CopyU4char(PULONG dst, PULONG src)  { *dst = *src; }
 
-CSHORT NodeType(PVOID Node)             { return *((PCSHORT)Node); }
+/* Rust's 15 declarations of this read a u32. As CSHORT the upper 16 bits of the return
+ * register were never written on the 64-bit arches; widened here, once, for all of them. */
+ULONG NodeType(PVOID Node)              { return (ULONG)*((PUSHORT)Node); }
 VOID PAGED_CODE(VOID)                  { }
 VOID paged_code(VOID)                  { }
 VOID PagedCode(VOID)                   { }

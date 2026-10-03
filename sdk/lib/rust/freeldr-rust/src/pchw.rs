@@ -52,11 +52,18 @@ extern "C" {
     fn FldrCreateComponentKey( Parent: PCONFIGURATION_COMPONENT_DATA, Class: u32, Type: u32, Flags: u32, Key: ULONG, Affinity: ULONG, Identifier: PCHAR, Data: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, ComponentKey: *mut PCONFIGURATION_COMPONENT_DATA, ) -> BOOLEAN;
     fn FrLdrHeapAlloc(MemorySize: usize, Tag: ULONG) -> PVOID;
     fn RtlStringCbPrintfA(pszDest: PCHAR, cbDest: usize, pszFormat: PCHAR, ...) -> LONG;
-    fn MachGetFloppyCount() -> ULONG;
+    #[link_name = "MachGetFloppyCount"]
+    fn MachGetFloppyCount__c() -> UCHAR;
     fn TRACE(fmt: *const i8, ...);
     fn FldrSetConfigurationData( ComponentKey: PCONFIGURATION_COMPONENT_DATA, ResourceList: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, );
     fn GetHarddiskIdentifier(DriveNumber: UCHAR) -> PCSTR;
     fn MachDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: *mut GEOMETRY) -> BOOLEAN;
+}
+
+// machpc.rs returns UCHAR; a ULONG decl read 24 bits nobody wrote.
+#[allow(non_snake_case)]
+unsafe fn MachGetFloppyCount() -> ULONG {
+    MachGetFloppyCount__c() as ULONG
 }
 extern "C" {
     fn READ_PORT_UCHAR(Port: *mut u8) -> u8;

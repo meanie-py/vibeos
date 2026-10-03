@@ -74,7 +74,9 @@ extern "system" {
     fn FatRootDirectorySize(Bpb: *const core::ffi::c_void) -> u32;
     fn FatFileAreaLbo(Bpb: *const core::ffi::c_void) -> u32;
     fn FatNumberOfClusters(Bpb: *const core::ffi::c_void) -> u32;
-    fn FatIndexBitSize(Bpb: *const core::ffi::c_void) -> u32;
+    // UCHAR in rust_cohab_fat.c: declared u32, the 64-bit arches read 24 undefined bits above
+    // it, and a 64 MB FAT16 volume set itself up with 14 clusters (DISK_FULL at file 29).
+    fn FatIndexBitSize(Bpb: *const core::ffi::c_void) -> u8;
     fn FatBytesPerCluster(Bpb: *const core::ffi::c_void) -> u32;
     fn FatInitializeCacheMap(FileObject: PFILE_OBJECT, FileSizes: *const CC_FILE_SIZES, Flag: u8, Callbacks: *const core::ffi::c_void, Vcb: *mut VCB);
     fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, dirty: u8);
@@ -1386,7 +1388,11 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
     } else {
         FatUnlockFreeClusterBitMap(Vcb);
         ExReleaseResourceLite(core::ptr::addr_of_mut!((*Vcb).ChangeBitMapResource));
-        DbgPrint(b"Disk Full.  Raise Status.\n\0".as_ptr() as *const i8);
+        DbgPrint(
+            b"Disk Full.  Raise Status. want=%lu clusters (ByteCount %08lx) free=%lu of %lu hint=%lu\n\0".as_ptr() as *const i8,
+            ClusterCount, *ByteCount, (*Vcb).AllocationSupport.NumberOfFreeClusters,
+            (*Vcb).AllocationSupport.NumberOfClusters, AbsoluteClusterHint,
+        );
         FatRaiseStatus(IrpContext, (STATUS_DISK_FULL) as u32);
     }
 
