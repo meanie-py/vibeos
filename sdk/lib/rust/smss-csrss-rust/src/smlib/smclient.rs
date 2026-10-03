@@ -75,18 +75,11 @@ pub unsafe extern "system" fn SmConnectToSm(
         &mut ConnectInfoLength,
     );
 
-    if Status < 0 {
-        Status
-    } else {
-        #[cfg(not(target_pointer_width = "64"))]
-        {
-            0i32 // STATUS_SUCCESS
-        }
-        #[cfg(target_pointer_width = "64")]
-        {
-            Status
-        }
-    }
+    // smclient.c: `#if (NTDDI_VERSION < NTDDI_VISTA)` treats a warning/informational
+    // status as success. That is a Windows-VERSION test — 0x502 on every arch here
+    // (CMakeLists.txt) — mistranslated as pointer width, so amd64/arm64 leaked the raw
+    // informational status to callers that compare against STATUS_SUCCESS.
+    if Status < 0 { Status } else { 0i32 /* STATUS_SUCCESS */ }
 }
 
 #[no_mangle]

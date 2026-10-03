@@ -46,32 +46,68 @@ def _chunks(items: set[str], size: int = 80):
         yield ordered[start : start + size]
 
 
-def _rg_matches(pattern: str, roots: list[Path], glob: str) -> list[tuple[Path, str]]:
-    existing = [root for root in roots if root.exists()]
-    if not existing:
-        return []
-    command = ["rg", "-n", "-o", "--no-heading", "--glob", glob, pattern]
-    command.extend(str(root) for root in existing)
-    process = subprocess.run(command, capture_output=True, text=True)
-    if process.returncode not in (0, 1):
-        return []
+def _searchable_texts(root: Path, glob: str) -> tuple[tuple[Path, str], ...]:
+    """Every file under `root` matching `glob` that ripgrep would have searched: tracked
+    plus untracked-but-not-ignored (a crate's `target/` stays out, as it did under rg).
+
+    Read here, in Python, as latin-1 -- lossless for any byte, so a stray cp1252 byte in a
+    header can never turn a file into 'binary' and silently drop it. That, and rg's exit 2
+    on ANY unreadable file (which discarded every real match of the call), were the two
+    ways the old `rg` shell-out could answer 'no authority' for a symbol that had one."""
+    inside = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"], cwd=root, capture_output=True
+    )
+    if inside.returncode == 0:
+        listing = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", glob],
+            cwd=root,
+            capture_output=True,
+            check=True,
+        )
+        rels = [r for r in listing.stdout.decode("utf-8", "surrogateescape").split("\0") if r]
+        paths = [(root / rel).resolve() for rel in rels]
+    else:
+        # Outside any repository rg applied no ignore rules either: every matching file.
+        paths = sorted(p.resolve() for p in root.rglob(glob))
+    return tuple((p, p.read_bytes().decode("latin-1")) for p in paths if p.is_file())
+
+
+_Texts = dict[tuple[Path, str], tuple[tuple[Path, str], ...]]
+
+
+def _rg_matches(
+    pattern: str, roots: list[Path], glob: str, texts: _Texts | None = None
+) -> list[tuple[Path, str]]:
+    """(file, matched text) for every match of `pattern`, line-scoped like `rg -o`.
+
+    `texts` caches file contents across the chunked calls of ONE authorities pass --
+    never longer, so a crate rewritten later in the same process is read afresh."""
+    texts = {} if texts is None else texts
+    regex = re.compile(pattern)
     matches = []
-    for line in process.stdout.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) == 3:
-            matches.append((Path(parts[0]).resolve(), parts[2]))
+    for root in roots:
+        if not root.exists():
+            continue
+        key = (root.resolve(), glob)
+        if key not in texts:
+            texts[key] = _searchable_texts(*key)
+        for path, text in texts[key]:
+            for m in regex.finditer(text):
+                if "\n" not in m.group(0):  # rg matches within a line, never across
+                    matches.append((path, m.group(0)))
     return matches
 
 
 def _rust_authorities(symbols: set[str], roots: list[Path]) -> dict[str, set[str]]:
     found: dict[str, set[str]] = defaultdict(set)
+    texts: _Texts = {}
     for chunk in _chunks(symbols):
         alternatives = "|".join(re.escape(item) for item in chunk)
         pattern = (
             rf"\b(?:struct|union|enum|type|const|static|fn)\s+(?:r#)?(?:{alternatives})\b"
             rf"|\bmacro_rules!\s+(?:{alternatives})\b"
         )
-        for path, matched in _rg_matches(pattern, roots, "*.rs"):
+        for path, matched in _rg_matches(pattern, roots, "*.rs", texts):
             for symbol in chunk:
                 if re.search(rf"(?<![A-Za-z0-9_])(?:r#)?{re.escape(symbol)}\b", matched):
                     found[symbol].add(str(path))
@@ -80,11 +116,12 @@ def _rust_authorities(symbols: set[str], roots: list[Path]) -> dict[str, set[str
 
 def _sdk_authorities(symbols: set[str], root: Path) -> dict[str, set[str]]:
     found: dict[str, set[str]] = defaultdict(set)
+    texts: _Texts = {}
     for chunk in _chunks(symbols):
         alternatives = "|".join(re.escape(item) for item in chunk)
         pattern = rf"\b(?:{alternatives})\b"
         for glob in ("*.h", "*.idl"):
-            for path, matched in _rg_matches(pattern, [root], glob):
+            for path, matched in _rg_matches(pattern, [root], glob, texts):
                 if matched in symbols:
                     found[matched].add(str(path))
     return found

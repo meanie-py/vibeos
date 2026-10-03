@@ -660,79 +660,67 @@ pub unsafe extern "C" fn IopGetSystemPowerDeviceObject(DeviceObject: *mut PDEVIC
     STATUS_UNSUCCESSFUL
 }
 
+/// tag.h `TAG_PNP_GUIDS` ('GPnP').
+pub(crate) const TAG_PNP_GUIDS: ULONG = u32::from_ne_bytes(*b"PnPG");
+
 /// `IopGetBusTypeGuidIndex` — find or insert a bus-type GUID into the global
 /// `PnpBusTypeGuidList`, returning its index (or 0xFFFF on allocation failure).
 ///
-/// Direct translation of the C body that lived in `io_rust_shims.c` as
-/// `IopGetBusTypeGuidIndex_c`. The list grows by one slot at a time:
-/// initial allocation in `pnpinit.rs` reserves room for one GUID via the
-/// inline `Guids[1]` array; on each grow we allocate `sizeof(IO_BUS_TYPE_GUID_LIST)
-/// + sizeof(GUID) * GuidCount` (room for `GuidCount + 1` GUIDs), copy the
-/// old contents minus the trailing slot, free the old, and append.
-///
-/// Mirrors the original C bug pattern: if `ExAllocatePool` fails on grow we
-/// free the current list AND fall through to `ExReleaseFastMutex` on a
-/// freed pointer. Preserved verbatim for behavior compatibility — the
-/// list is never expected to fail allocation in practice.
+/// Port of upstream `a7f658e3221` ("[NTOS:IO] Fix IopGetBusTypeGuidIndex"): the list is
+/// now a header with a separately allocated `Guids` array that grows 8 at a time. The old
+/// shape (an inline `Guids[1]` tail, regrown one slot at a time by reallocating the whole
+/// header, freeing the list on failure and then releasing its lock) was what upstream
+/// fixed. Once ntkrnl-sys was regenerated against the new header, the old body wrote each
+/// GUID over the `Guids` pointer and past the end of the struct: BAD_POOL_HEADER on i386.
+/// Divergence: the global stays a pointer to a pool header (pnpinit.rs allocates it) where
+/// upstream made it a static struct, because global_barrier.rs publishes it by pointer.
 #[no_mangle]
 pub unsafe extern "system" fn IopGetBusTypeGuidIndex(BusTypeGuid: LPGUID) -> USHORT {
+    let List = PnpBusTypeGuidList;
     let mut FoundIndex: USHORT = 0xFFFF;
 
-    ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
-
-    // Bindgen renders the flexible Guids[] tail as `[GUID; 1]`. Indexing past
-    // [0] panics on bounds-check, so use pointer arithmetic from the array
-    // base for every access (including i==0).
-    let guids_base = core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids) as *mut GUID;
+    ExAcquireFastMutex(core::ptr::addr_of_mut!((*List).Lock));
 
     'quickie: {
-        let mut i: ULONG = 0;
-        while i < (*PnpBusTypeGuidList).GuidCount {
+        for i in 0..(*List).GuidCount {
             if RtlCompareMemory(
                 BusTypeGuid as PVOID,
-                guids_base.add(i as usize) as PVOID,
+                (*List).Guids.add(i as usize) as PVOID,
                 core::mem::size_of::<GUID>() as SIZE_T,
             ) == core::mem::size_of::<GUID>() as SIZE_T
             {
                 FoundIndex = i as USHORT;
                 break 'quickie;
             }
-            i += 1;
         }
 
-        if (*PnpBusTypeGuidList).GuidCount != 0 {
-            let mut NewSize: ULONG = core::mem::size_of::<_IO_BUS_TYPE_GUID_LIST>() as ULONG
-                + (core::mem::size_of::<GUID>() as ULONG) * (*PnpBusTypeGuidList).GuidCount;
-
-            let NewList = ExAllocatePool(PagedPool, NewSize as ULONG_PTR)
-                as *mut _IO_BUS_TYPE_GUID_LIST;
+        if (*List).GuidCount == (*List).AllocatedCount {
+            let NewAllocatedCount = (*List).AllocatedCount + 8;
+            let NewList = ExAllocatePoolWithTag(
+                PagedPool,
+                NewAllocatedCount as usize * core::mem::size_of::<GUID>(),
+                TAG_PNP_GUIDS,
+            ) as *mut GUID;
             if NewList.is_null() {
-                ExFreePool(PnpBusTypeGuidList as PVOID);
                 break 'quickie;
             }
-
-            NewSize -= core::mem::size_of::<GUID>() as ULONG;
-            core::ptr::copy_nonoverlapping(
-                PnpBusTypeGuidList as *const u8,
-                NewList as *mut u8,
-                NewSize as usize,
+            core::ptr::copy_nonoverlapping((*List).Guids, NewList, (*List).GuidCount as usize);
+            core::ptr::write_bytes(
+                NewList.add((*List).GuidCount as usize),
+                0,
+                (NewAllocatedCount - (*List).GuidCount) as usize,
             );
-            ExFreePool(PnpBusTypeGuidList as PVOID);
-            PnpBusTypeGuidList = NewList;
+            ExFreePool((*List).Guids as PVOID);
+            (*List).Guids = NewList;
+            (*List).AllocatedCount = NewAllocatedCount;
         }
 
-        let count = (*PnpBusTypeGuidList).GuidCount;
-        let dst = core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Guids) as *mut GUID;
-        core::ptr::copy_nonoverlapping(
-            BusTypeGuid as *const u8,
-            dst.add(count as usize) as *mut u8,
-            core::mem::size_of::<GUID>(),
-        );
-        FoundIndex = count as USHORT;
-        (*PnpBusTypeGuidList).GuidCount = count + 1;
+        *(*List).Guids.add((*List).GuidCount as usize) = *BusTypeGuid;
+        FoundIndex = (*List).GuidCount as USHORT;
+        (*List).GuidCount += 1;
     }
 
-    ExReleaseFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
+    ExReleaseFastMutex(core::ptr::addr_of_mut!((*List).Lock));
     FoundIndex
 }
 
@@ -1403,14 +1391,7 @@ pub unsafe extern "system" fn PnpBusTypeGuidGet(
     ExAcquireFastMutex(core::ptr::addr_of_mut!((*PnpBusTypeGuidList).Lock));
 
     if (Index as ULONG) < (*PnpBusTypeGuidList).GuidCount {
-        // Bindgen renders the flexible Guids[] tail as `[GUID; 1]`; indexing
-        // past [0] panics on bounds-check, so use pointer arithmetic.
-        let src = core::ptr::addr_of!((*PnpBusTypeGuidList).Guids) as *const GUID;
-        core::ptr::copy_nonoverlapping(
-            src.add(Index as usize) as *const u8,
-            BusTypeGuid as *mut u8,
-            core::mem::size_of::<GUID>(),
-        );
+        *BusTypeGuid = *(*PnpBusTypeGuidList).Guids.add(Index as usize);
     } else {
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
     }

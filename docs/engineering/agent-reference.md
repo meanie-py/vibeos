@@ -49,6 +49,7 @@ fast-forwards `master` to exactly the commit it gated. N ready lanes therefore c
 ```bash
 ./vibeos-cli land                  # submit (and train the batch if nobody else is)
 ./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land --withdraw       # take MY queued submission out of line (not ready / would gate cold)
 ./vibeos-cli land --direct         # opt out: gate and push this lane alone
 ./vibeos-cli land --drain          # train without submitting (orphan recovery)
 ```
@@ -438,6 +439,73 @@ cargo kani -p slist
 cargo test -p slist-loom
 ```
 
+### Differential grading against the genuine C — `rustconv difftest-contract`
+
+For logic-heavy code (parsers, string/codec/crypto routines, anything smoke never calls),
+grade the SHIPPING Rust against the GENUINE C on the host: a reviewed JSON contract
+generates typed wrappers and a corpus, runs both sides twice in isolated processes (C
+under UBSan), and requires every graded function to have a caught sensitivity mutant.
+No API calls; ~5 s per contract. It has found shipping bugs on 4 of its first 10 new
+targets (compress, cryptlib sha1, version.dll ×3; see `git log --grep difftest-contract`).
+
+```bash
+PYTHONPATH=tools/rustconv .venv/bin/python -m rustconv difftest-contract \
+    tools/rustconv/data/difftest/version.json --out ~/vibeos-rust-staging/<fresh-dir>
+```
+
+`report.json` is the verdict (`pass` / `mismatch` + `counterexample.json` / `invalid`).
+Whole Wine/ReactOS TUs compile against the tree's own headers with
+`"c_host_profile": "reactos-amd64"` (needs this worktree's `build-amd64`); what the C calls
+out to goes in a reviewed `c_env` shared by both sides, and every other external becomes a
+named trap. Contract format, examples and limits: `tools/rustconv/data/difftest/README.md`.
+It complements the hand-written `*-difftest` crates (`./vibeos-cli difftest`, which takes
+`--only <crate> --case <name>` for one exact case in crates honouring `--exact`).
+
+Each bug class it finds becomes a gated `check` scanner over every body. The first four, plus
+`scan_bool_width` and `scan_cfg_vs_c` (all with EMPTY baselines, all run by `./vibeos-cli check`):
+
+- `scan_ptr_byte_diff`: `a as isize - b as isize` on WCHAR/ULONG pointers where the C's
+  `a - b` counted ELEMENTS. The fix is `a.offset_from(b)`.
+- `scan_misaligned_cast`: a `[u8; N]` cast to a wider pointer and dereferenced. The fix is
+  `read_unaligned` / `write_unaligned`. `--pointers` also reports byte-POINTER bases, as a
+  246-site review queue.
+- `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
+  it unconditionally.
+- `scan_store_on_failure`: the C writes an out-param only after its last failure `return`
+  (compress.c's `out:` label), and the Rust writes it and then returns a status that can
+  fail. A store dominated by a success test, and a `*pp = NULL` (COM's rule), stay quiet.
+  Its oracle holds on ~670 of the tree's ~8,100 pointer-param stores, so a clean run means
+  something.
+- `scan_bool_width` (older, gated the same day): a u8/BOOLEAN return where the other side
+  reads a BOOL — only AL is defined, so `!= 0` reads garbage (broke fastfat and mountmgr).
+  Two directions: a Rust extern DECL wider than the Rust definition, and an exported Rust
+  DEFINITION narrower than its C twin (every C caller) or than its own per-arch cfg twin.
+  Its 202 findings were 25 wrong definitions, not 202 wrong decls; 56 in all.
+- `scan_cfg_vs_c`: a per-arch `#[cfg]` inside a function whose arch set the C twin's own
+  `#if`s never draw (arch macros, `_WIN64`, `_MI_PAGING_LEVELS` all evaluate to arch sets).
+  `_WIN64` spelled `target_arch = "x86_64"` hands arm64 the 32-bit path; the fix is
+  `target_pointer_width = "64"`. C `CONFIG_SMP` is Rust `feature = "smp"`; that line too is
+  judged only where the C draws it. Where the C never names arm64, only the x86/x86_64 line
+  is judged (upstream's `#else` lumps arm64 with i386). `--stats` shows how the in-body
+  population splits: ~440 agree with the C mechanically, ~650 have no C arch `#if` to
+  compare (Rust-only cfgs — those still need reading). Per-function, not per-block, so a
+  Rust-only block in a function with an unrelated C `#if` is flagged: read, then `nolint`.
+
+`scan_duplicate_symbols` (also EMPTY-baselined) is the link-level one. Every PE links with
+`--allow-multiple-definition`, so two definitions of one symbol resolve by archive order and
+nothing warns. It models what each binary links (`tools/rust_link_model.py`: the crates a
+`*-cargo/build.rs` names, their path-dep closure, Cargo feature resolution, `if arch == …`
+blocks, every definition's full cfg, and `global_asm!` `.globl` labels) and reports a name
+defined twice on one arch. i386 decoration counts: cdecl `_X`, stdcall `_X@N` and fastcall
+`@X@N` are different symbols. C objects are out of its scope. To check a finding against the
+bytes, `llvm-nm --defined-only` the archives under
+`sdk/lib/rust/target/<binary>-<crate>-rustlib/<triple>/release/`.
+
+The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
+of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s
+cold build, then only changed files are re-read. Each scanner honours
+`// nolint: <tag>` on a reviewed line, with the reason written beside it.
+
 ### QEMU Kernel Tests (28 tests via serial dispatch loop)
 
 ```bash
@@ -596,6 +664,10 @@ python -m rustconv crate-repair foo-rust --arches i386 amd64 arm64  # $0 determi
 python -m rustconv.profile_derive dll/win32/foo --emit report       # Derive bindgen island
 python -m rustconv bank-audit [--verbose]               # Paid .responses output NOT in the tree
 python -m rustconv.export_audit --module dll/ntdll dll/ntdll/def/ntdll.spec  # Does the DLL still export what it promised?
+python -m rustconv difftest-contract C.json --out DIR   # Grade shipping Rust vs genuine C (see Test Suite)
+python -m rustconv objdiff a.obj b.obj                  # C vs Rust object ABI differences
+python -m rustconv seh-classify file.c                  # Classify a C file's SEH blocks by pattern
+python -m rustconv seh-inventory                        # win32k SEH triage (sites a–e + sidecars)
 ```
 
 `export_audit` asks whether every implementable `.spec` entry is a `#[no_mangle]` fn with the
@@ -772,6 +844,24 @@ VIBEOS_EMIT_LLVM_IR=1 ./vibeos-cli build --arch amd64   # emit per-CGU .ll
 # VIBEOS_LAYOUT_CANARY=1 (deliberately perturbed kernel link — boot tripwire)
 ```
 
+**Triage scanners that are NOT wired into `check`** — run them by hand; each is a work
+queue, not a gate, and a finding is "look here", not "this is wrong":
+
+```bash
+python3 tools/scan_sibling_drift.py    # paired twins (Acquire/Release, Nt/Zw, X/XEx, per-arch
+                                       # cfg twins) whose bodies differ on one line. 65
+                                       # candidates, all hand-read 2026-09-20, re-checked 09-26
+python3 tools/scan_arch_cfg.py         # ~2.8K per-arch #[cfg] sites that gate LOGIC, out of
+                                       # ~6.7K; the input list for a per-arch drift audit.
+                                       # Diff against the last audited tree, not the whole list
+python3 tools/lint_wide_strings.py     # hand-encoded UTF-16 b"..." literals: C-octal confusion
+                                       # and odd lengths (currently clean)
+python3 tools/find_dead_tus.py         # linked TUs whose symbols nothing references — dead
+                                       # C still counted as untranslated work
+.venv/bin/python -m rustconv.hybrid_closure   # which symbols a half-translated TU still
+                                              # exports to the link (CFSFolder: 2,283 lines, 21 symbols)
+```
+
 `scan_ud2.py` finds `ud2` (0f 0b) in named functions — LLVM proved the body has UB (on LLVM ≥ 21 almost always an ABI mismatch; the captures(none) volatile-blind root is toolchain-fixed, see rust-kernel-patterns.md "RESOLVED AT THE TOOLCHAIN"); it's wired into smoke as `test_no_unexpected_ud2`. `lint_kernel.py` finds `*OutputParam = value` writes in `#[no_mangle]` functions that skip `write_volatile` (a captures(none) target) before compilation. (The smoke harness also nukes `rust-kernel-target/` per session unless `--skip-clean-build`, runs the ud2 scan pre-boot, and auto-symbolicates BSODs — see `tests/qemu/cli/README.md`.)
 
 ### Cost (Sonnet **Batch** API — the cheapest path, NOT what you pay synchronously)
@@ -815,7 +905,7 @@ if (u) { while (*msg) *u = (ULONG)*msg++; }
 
 All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64), or standard PC (i386).
 
-**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — **works since 2026-07-10: both x86 arches boot to desktop in ~52s** (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`; the boot CD rides an ich9-ahci controller under whpx so OVMF DMAs it instead of ~5min of PIO VM-exits — see `docs/engineering/windows-host-qemu-whpx-spike.md` + field manual §9.46 for the six guest-side bugs that bring-up flushed out). Still opt-in (default stays TCG) until whpx accumulates reliability history; same-arch whpx boots serialize (hardware-virt contention, like KVM). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real-hardware boot (e.g., Raspberry Pi for ARM64) is an aspirational target, not a current one.
+**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — **works since 2026-07-10: both x86 arches boot to desktop in ~52s** (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`; the boot CD rides an ich9-ahci controller under whpx so OVMF DMAs it instead of ~5min of PIO VM-exits — see `docs/engineering/windows-host-qemu-whpx-spike.md` + field manual §9.46 for the six guest-side bugs that bring-up flushed out). Still opt-in (default stays TCG) until whpx accumulates reliability history; same-arch whpx boots serialize (hardware-virt contention, like KVM). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real hardware: a **Raspberry Pi 4B** bench boots arm64 VibeOS to the desktop (UP kernel, 2026-09-25). Bench wiring and the hands-free netboot loop: `docs/engineering/pi4-bench.md`; findings: `docs/engineering/active-lanes/pi4-bringup.md`.
 
 ## rustconv — model shortcuts, HAL mode, and pipeline stages
 

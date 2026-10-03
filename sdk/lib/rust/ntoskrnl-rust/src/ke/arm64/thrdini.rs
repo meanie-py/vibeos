@@ -372,7 +372,16 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
                 crate::ke::ke_defs::KeLowerIrql(DISPATCH_LEVEL);
             }
         } else {
-            core::arch::asm!("wfe");
+            // WFI, never WFE: IRQs are masked here (daifset above). A pending
+            // interrupt wakes WFI even while PSTATE.I masks it, and the loop
+            // top then unmasks and takes it. A MASKED IRQ is not a WFE wake-up
+            // event, and nothing in this kernel issues SEV or enables the
+            // timer event stream, so on real hardware WFE here slept forever:
+            // the first time a Raspberry Pi 4 went truly idle (~70 s in, when
+            // the zero-page thread ran out of pages) the tick stopped and the
+            // desktop froze. QEMU's TCG treats WFE as a yield, so no smoke
+            // run could ever see it.
+            core::arch::asm!("wfi");
         }
     }
 }

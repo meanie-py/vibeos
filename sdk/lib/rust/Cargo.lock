@@ -387,6 +387,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "crt-portable-rust"
+version = "0.1.0"
+dependencies = [
+ "cnt-rust",
+]
+
+[[package]]
 name = "crt-shared-cargo"
 version = "0.1.0"
 dependencies = [
@@ -898,6 +905,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jscript-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "kbdclass-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1362,6 +1376,7 @@ name = "msvcrt-crt-rust"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+ "crt-portable-rust",
  "crt-shared-rust",
  "msvcrt-sys",
 ]
@@ -2089,6 +2104,7 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "rtl-sync",
+ "rtl-threadpool",
 ]
 
 [[package]]
@@ -2533,6 +2549,10 @@ dependencies = [
 [[package]]
 name = "ucrt-rust"
 version = "0.1.0"
+dependencies = [
+ "crt-portable-rust",
+ "varargs-rust",
+]
 
 [[package]]
 name = "uefildr-cargo"
@@ -2667,6 +2687,14 @@ name = "usbuhci-rust"
 version = "0.1.0"
 dependencies = [
  "drvtrace-shim",
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
+name = "usbxhci-rust"
+version = "0.1.0"
+dependencies = [
  "ntkrnl-sys",
  "panic-common",
 ]

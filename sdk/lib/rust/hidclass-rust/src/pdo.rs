@@ -36,6 +36,7 @@ use crate::glue::{
     IRP_MN_QUERY_ID, IRP_MN_QUERY_CAPABILITIES, IRP_MN_QUERY_BUS_INFORMATION,
     IRP_MN_QUERY_PNP_DEVICE_STATE, IRP_MN_QUERY_INTERFACE,
     wcscpy, wcscat, wcschr,
+    HidP_GetCaps, guid_eq,
 };
 use crate::guid::{GUID_BUS_TYPE_HID, GUID_DEVINTERFACE_HID};
 use crate::types::{
@@ -551,8 +552,38 @@ pub unsafe extern "system" fn HidClassPDO_PnP(DeviceObject: PDEVICE_OBJECT, Irp:
             return STATUS_SUCCESS;
         }
         x if x == IRP_MN_QUERY_INTERFACE => {
-            // do nothing
+            // return error default
             Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+
+            // check for known interfaces. Upstream 445d0881b82: before this, the PDO
+            // answered every QUERY_INTERFACE with the incoming status, so hidparse-backed
+            // clients (which ask for GUID_HID_INTERFACE_HIDPARSE to get at HidP_GetCaps
+            // without loading hidparse themselves) got nothing.
+            let iface_type = (*IoStack).Parameters.QueryInterface.InterfaceType;
+            if guid_eq(iface_type, &crate::guid::GUID_HID_INTERFACE_NOTIFY) {
+                // The C names a PHID_INTERFACE_NOTIFY_PNP local only to spell
+                // sizeof(*it); size_of::<T>() says the same thing without the binding.
+                if (*IoStack).Parameters.QueryInterface.Size as usize
+                    == core::mem::size_of::<crate::types::HID_INTERFACE_NOTIFY_PNP>()
+                    && (*IoStack).Parameters.QueryInterface.Version == 1
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"[HIDCLASS] PDO IRP_MN_QUERY_INTERFACE/GUID_HID_INTERFACE_NOTIFY not implemented\n\0"
+                            .as_ptr() as *const i8,
+                    );
+                    ntkrnl_sys::ASSERT!(false);
+                }
+            } else if guid_eq(iface_type, &crate::guid::GUID_HID_INTERFACE_HIDPARSE) {
+                let HidInterfaceHidparse = (*IoStack).Parameters.QueryInterface.Interface
+                    as crate::types::PHID_INTERFACE_HIDPARSE;
+                if (*IoStack).Parameters.QueryInterface.Size as usize
+                    == core::mem::size_of::<crate::types::HID_INTERFACE_HIDPARSE>()
+                    && (*IoStack).Parameters.QueryInterface.Version == 1
+                {
+                    (*HidInterfaceHidparse).HidpGetCaps = Some(HidP_GetCaps);
+                    Status = STATUS_SUCCESS;
+                }
+            }
         }
         x if x == IRP_MN_QUERY_REMOVE_DEVICE
             || x == IRP_MN_CANCEL_STOP_DEVICE
@@ -643,8 +674,10 @@ pub unsafe fn HidClassPDO_CreatePDO(
             (*FDODeviceExtension).Common.HidDeviceExtension.MiniDeviceExtension;
         (*PDODeviceExtension).Common.HidDeviceExtension.NextDeviceObject =
             (*FDODeviceExtension).Common.HidDeviceExtension.NextDeviceObject;
-        (*PDODeviceExtension).Common.HidDeviceExtension.PhysicalDeviceObject =
-            (*FDODeviceExtension).Common.HidDeviceExtension.PhysicalDeviceObject;
+        // The PDO's own PhysicalDeviceObject is ITSELF, not the FDO's. Copying the FDO's
+        // registers GUID_DEVINTERFACE_HID against the parent, so every child collection
+        // publishes its interface on the wrong object. Upstream 938c14e3276.
+        (*PDODeviceExtension).Common.HidDeviceExtension.PhysicalDeviceObject = PDODeviceObject;
         (*PDODeviceExtension).Common.IsFDO = FALSE;
         (*PDODeviceExtension).FDODeviceExtension = FDODeviceExtension;
         (*PDODeviceExtension).FDODeviceObject = DeviceObject;

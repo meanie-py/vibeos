@@ -516,6 +516,32 @@ pub unsafe extern "system" fn RasRenameEntryW(
     0
 }
 
+// Upstream's Wine-10 sync turned these two spec entries from `stub` into stdcall exports
+// with FIXME bodies; without a Rust definition rasapi32.dll stops linking.
+#[no_mangle]
+pub unsafe extern "system" fn RasSetCredentialsA(
+    phonebook: *const i8,
+    entry: *const i8,
+    credentials: *mut core::ffi::c_void, // RASCREDENTIALSA*
+    clear: BOOL,
+) -> DWORD {
+    // FIXME!("(%s,%s,%p,0x%x), stub!\n", debugstr_a(phonebook), debugstr_a(entry), credentials, clear);
+    let _ = (phonebook, entry, credentials, clear);
+    ERROR_UNKNOWN
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RasSetCredentialsW(
+    phonebook: *const WCHAR,
+    entry: *const WCHAR,
+    credentials: *mut core::ffi::c_void, // RASCREDENTIALSW*
+    clear: BOOL,
+) -> DWORD {
+    // FIXME!("(%s,%s,%p,0x%x), stub!\n", debugstr_w(phonebook), debugstr_w(entry), credentials, clear);
+    let _ = (phonebook, entry, credentials, clear);
+    ERROR_UNKNOWN
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RasSetCustomAuthDataA(
     phonebook: *const i8,

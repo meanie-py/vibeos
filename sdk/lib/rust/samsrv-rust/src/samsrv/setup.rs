@@ -686,7 +686,7 @@ unsafe fn SampSetupCreateUserAccount(
             break 'done;
         }
 
-        *(LogonHours.as_mut_ptr() as PUSHORT) = 168;
+        (LogonHours.as_mut_ptr() as PUSHORT).write_unaligned(168);
         memset(
             &mut LogonHours[2] as *mut _ as LPVOID,
             0xff,

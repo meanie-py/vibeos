@@ -306,3 +306,72 @@ pub unsafe fn g(p: *const u32) {
 """
     rows = leads_interproc(src)
     assert any("passed to IntSetSysColors()" in r[2] for r in rows), rows
+
+
+def test_repointing_to_a_kernel_local_ends_the_taint() -> None:
+    """`prcl = addr_of_mut!(rclLocal);` is the tree's idiom for the CORRECT fix:
+    capture into a kernel local, then repoint the name at it. The `addr_of!` skip
+    used to run BEFORE the taint-end check and `continue` past this very line, so
+    the scanner kept reporting sites after they were fixed -- 10 of them."""
+    src = """
+pub unsafe fn UserClipCursor(a: *mut RECTL) -> BOOL { let _ = *a; 1 }
+pub unsafe fn NtUserClipCursor(mut prcl: *mut RECTL) -> BOOL {
+    let mut rclLocal: RECTL = core::mem::zeroed();
+    if !prcl.is_null() {
+        let st = SafeProbeForRead(prcl as *mut _, 16, 1);
+        if !NT_SUCCESS(st) { return 0; }
+        if !crate::copy::capture_from_user(
+            core::ptr::addr_of_mut!(rclLocal) as *mut c_void,
+            prcl as *const c_void,
+            16,
+        ) { return 0; }
+        prcl = core::ptr::addr_of_mut!(rclLocal);
+    }
+    UserClipCursor(prcl)
+}
+"""
+    assert leads_interproc(src) == []
+
+
+def test_addr_of_on_a_field_is_still_not_a_load() -> None:
+    """Reordering must not lose the rule it was moved past: taking the address of a
+    probed struct's field computes, it does not load, so it cannot fault."""
+    src = """
+pub unsafe fn f(p: *mut FOO) {
+    SafeProbeForRead(p as _, 8, 1);
+    let q = core::ptr::addr_of!((*p).field);
+}
+"""
+    assert leads_interproc(src) == []
+
+
+def test_an_interlocked_on_a_probed_pointer_IS_a_lead() -> None:
+    """The exception to the rule above, and the reason it is not a contradiction.
+
+    `addr_of_mut!` is skipped because computing an address cannot fault. But here
+    the address never escapes the line: `InterlockedIncrement` dereferences it, so
+    the callee IS the access. Skipping the whole line for containing `addr_of_mut!`
+    hid ime.rs's two live unprotected writes to user memory while the scanner
+    reported the entire class clear.
+    """
+    src = """
+pub unsafe fn f(p: *mut FOO) {
+    SafeProbeForRead(p as _, 8, 1);
+    InterlockedIncrement(core::ptr::addr_of_mut!((*p).nCount));
+}
+"""
+    hits = leads_interproc(src)
+    assert len(hits) == 1, hits
+    assert "InterlockedIncrement" in hits[0][2]
+
+
+def test_an_interlocked_on_an_UNPROBED_pointer_is_not_a_lead() -> None:
+    """The rule is scoped to probed (user) pointers. Interlocked ops on kernel
+    memory are the overwhelming majority in the tree, and flagging those would
+    bury the two real ones in noise."""
+    src = """
+pub unsafe fn f(p: *mut FOO) {
+    InterlockedIncrement(core::ptr::addr_of_mut!((*p).nCount));
+}
+"""
+    assert leads_interproc(src) == []

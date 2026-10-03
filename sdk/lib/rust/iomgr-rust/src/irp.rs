@@ -234,7 +234,7 @@ extern "C" {
     fn KeLowerIrql(NewIrql: KIRQL);
 }
 
-use core::ptr::{null_mut, addr_of_mut};
+use core::ptr::{null_mut, addr_of, addr_of_mut};
 use core::mem::{size_of, zeroed};
 use core::ffi::c_void;
 
@@ -514,6 +514,31 @@ pub unsafe extern "system" fn IopCleanupIrp(Irp: PIRP, FileObject: PFILE_OBJECT)
     IoFreeIrp(Irp);
 }
 
+/// Write the IRP's status to the caller's I/O status block. The C does this inside
+/// _SEH2_TRY with an empty handler ("make sure we don't write somewhere invalid"); under
+/// DUMMY_PSEH that handler is dead, so a process that freed or unmapped its IOSB before an
+/// async completion took the kernel down instead of losing the status. Same fault-tolerant
+/// copy as the buffered copy-back above. wow64-plan M15b: a guest IO_STATUS_BLOCK32 gets
+/// the 8-byte layout.
+unsafe fn IopWriteUserIosb(Irp: PIRP) {
+    if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
+        let mut Iosb32: crate::iofunc::IoStatusBlock32 = core::mem::zeroed();
+        Iosb32.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+        Iosb32.Information = (*Irp).IoStatus.Information as u32;
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            (*Irp).UserIosb as *mut core::ffi::c_void,
+            &Iosb32 as *const _ as *const core::ffi::c_void,
+            core::mem::size_of::<crate::iofunc::IoStatusBlock32>(),
+        );
+    } else {
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            (*Irp).UserIosb as *mut core::ffi::c_void,
+            addr_of!((*Irp).IoStatus) as *const core::ffi::c_void,
+            core::mem::size_of_val(&(*Irp).IoStatus),
+        );
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IopCompleteRequest(
     Apc: PKAPC,
@@ -553,6 +578,59 @@ unsafe fn IopCompleteRequestInner(
     }
 
     if ((*Irp).Flags & IRP_BUFFERED_IO) != 0 {
+        // TEMPORARY INSTRUMENT — remove with the fix (approved 2026-09-13).
+        //
+        // Chasing an intermittent arm64 defect: kmtest `Example`'s IOCTL round-trip
+        // (Example.c:39/:40) came back `{0, ""}` while DeviceIoControl returned
+        // ERROR_SUCCESS. The handler provably RAN — both the failing and the clean
+        // round executed exactly 46 assertions, so its own ok_* calls are in the
+        // total — and it did its RtlCopyMemory. So the bytes were lost between the
+        // driver and the user buffer, on this path.
+        //
+        // Source alone rules out the copy FAILING: the only error exit below sets
+        // STATUS_ACCESS_VIOLATION, and the caller saw success. What is left is a
+        // copy that never happened or copied nothing, which is a question about
+        // FLAGS and Information, not about buffer contents — so the instrument
+        // reads four scalars already in the IRP and never touches the buffers.
+        //
+        // Deliberately silent in the normal case: it fires only on a completion
+        // that is internally inconsistent about whether it has output for the
+        // caller. A quiet boot is the instrument working, not the instrument off.
+        //
+        // The filter was NARROWED by measuring it, not by reasoning about it. The
+        // first version also flagged "produced output but is not flagged to copy it
+        // back" (!IRP_INPUT_OPERATION with Information != 0), which sounded equally
+        // anomalous and fired 58 times on a clean arm64 boot -- it is just an
+        // ordinary buffered WRITE reporting the bytes it consumed, plus
+        // STATUS_BUFFER_OVERFLOW completions legitimately returning partial data.
+        // The condition below fired ZERO times on that same boot. An instrument
+        // whose filter has not been run against a HEALTHY system is an instrument
+        // whose silence means nothing.
+        {
+            let status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+            let info = (*Irp).IoStatus.Information as usize;
+            let is_input = ((*Irp).Flags & IRP_INPUT_OPERATION) != 0;
+            let sysbuf = (*Irp).AssociatedIrp.SystemBuffer;
+            // Promised the caller output, succeeded OUTRIGHT, delivered zero bytes.
+            //
+            // `status == STATUS_SUCCESS`, not `!NT_ERROR(status)`, even though the copy
+            // branch below uses the latter. The reported symptom is DeviceIoControl
+            // returning ERROR_SUCCESS, and the looser test also admits the statuses that
+            // succeed WITHOUT promising delivery -- it left one benign hit per boot,
+            // STATUS_USER_APC (0xC0) on an alertable buffered read torn down by
+            // PspExitThread. One known-benign hit per boot is worse than none: it teaches
+            // the reader to skip the line that matters.
+            if status == STATUS_SUCCESS && is_input && info == 0 && !(*Irp).UserBuffer.is_null() {
+                crate::dbg_print!(
+                    b"[IOBUFCOPY] empty-input flags=%lx status=%lx user=%p sys=%p\n\0",
+                    (*Irp).Flags as u64,
+                    status as u64,
+                    (*Irp).UserBuffer,
+                    sysbuf,
+                );
+            }
+        }
+
         if ((*Irp).Flags & IRP_INPUT_OPERATION) != 0
             && (*Irp).IoStatus.__bindgen_anon_1.Status != STATUS_VERIFY_REQUIRED
             && !NT_ERROR((*Irp).IoStatus.__bindgen_anon_1.Status)
@@ -601,14 +679,7 @@ unsafe fn IopCompleteRequestInner(
         }
 
         if !(*Irp).UserIosb.is_null() {
-            if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
-                // wow64-plan M15b: guest IO_STATUS_BLOCK32 — write the 8-byte layout.
-                let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
-                (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                (*P).Information = (*Irp).IoStatus.Information as u32;
-            } else {
-                *(*Irp).UserIosb = (*Irp).IoStatus;
-            }
+            IopWriteUserIosb(Irp);
         }
 
         if !(*Irp).UserEvent.is_null() {
@@ -687,14 +758,7 @@ unsafe fn IopCompleteRequestInner(
     } else {
         if (*Irp).PendingReturned != 0 && !FileObject.is_null() {
             if ((*Irp).Flags & IRP_SYNCHRONOUS_API) != 0 {
-                if ((*Irp).Flags & crate::iofunc::IRP_WOW64_IOSB32) != 0 {
-                    // wow64-plan M15b: guest IO_STATUS_BLOCK32 — 8-byte layout.
-                    let P = (*Irp).UserIosb as *mut crate::iofunc::IoStatusBlock32;
-                    (*P).Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-                    (*P).Information = (*Irp).IoStatus.Information as u32;
-                } else {
-                    *(*Irp).UserIosb = (*Irp).IoStatus;
-                }
+                IopWriteUserIosb(Irp);
 
                 if !(*Irp).UserEvent.is_null() {
                     KeSetEvent((*Irp).UserEvent as PVOID, 0, 0u8);

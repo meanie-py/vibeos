@@ -1,0 +1,15 @@
+[package]
+name = "usbxhci-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }

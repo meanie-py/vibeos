@@ -324,13 +324,14 @@ def gateway_ip() -> str:
     from WSL via THIS address, NOT `127.0.0.1` — WSL's loopback is the WSL VM's own,
     separate from the Windows host's. Mirror of the inbound rule (where the WSL listener
     must bind `0.0.0.0` for the Windows QEMU to dial it back)."""
-    out = subprocess.run(
-        ["ip", "route", "show", "default"], capture_output=True, text=True, check=True
-    ).stdout
-    m = re.search(r"default via (\d+\.\d+\.\d+\.\d+)", out)
-    if not m:
-        raise RuntimeError(f"could not parse WSL default gateway from {out!r}")
-    return m.group(1)
+    # /proc/net/route, not an `ip route` shell-out (iproute2 is one more host package to be
+    # missing). Columns: Iface Destination Gateway Flags ...; hex, little-endian.
+    table = Path("/proc/net/route").read_text()
+    for line in table.splitlines()[1:]:
+        cols = line.split()
+        if len(cols) > 3 and cols[1] == "00000000" and int(cols[3], 16) & 0x2:  # RTF_GATEWAY
+            return ".".join(str(b) for b in bytes.fromhex(cols[2])[::-1])
+    raise RuntimeError(f"no default gateway in /proc/net/route:\n{table}")
 
 
 def windows_free_tcp_port() -> int:

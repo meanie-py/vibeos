@@ -311,8 +311,9 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
 
                 AbsolutePath = Path.offset(1);
                 AbsolutePathLength = (core::mem::size_of::<WCHAR>() as u16)
-                    * ((TargetDevice.len() as isize
-                        - (AbsolutePath as isize - TargetDevice.as_ptr() as isize) as isize)
+                    // C `AbsolutePath - TargetDevice` counts WCHARs; subtracting addresses
+                    // counted bytes, shrinking the bound and wrapping it past 130 WCHARs.
+                    * ((TargetDevice.len() as isize - AbsolutePath.offset_from(TargetDevice.as_ptr()))
                         as u16);
             } else {
                 return ERROR_BAD_PATHNAME;
@@ -365,7 +366,11 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
         }
     }
 
-    NameLength = (EndOfName as isize - AbsolutePath as isize) as u16;
+    // DELIBERATE divergence from move.c, which has `NameLength = EndOfName - AbsolutePath`
+    // (a WCHAR count) and then uses NameLength as BYTES everywhere after: the byte-length
+    // limits, `RtlCopyMemory(.., NameLength)` and `/ sizeof(WCHAR)` — so the C returns half
+    // the computer name. The byte difference here is what that code means; keep it.
+    NameLength = (EndOfName as isize - AbsolutePath as isize) as u16; // nolint: ptr-byte-diff
     if NameLength >= AbsolutePathLength
         || NameLength >= (MAX_COMPUTERNAME_LENGTH as u16) * core::mem::size_of::<WCHAR>() as u16
     {

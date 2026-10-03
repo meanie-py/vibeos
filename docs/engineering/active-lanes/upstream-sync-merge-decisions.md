@@ -87,7 +87,7 @@ these would have entered as an innocuous new source line or, worse, a new static
 
 `kernel32/client/dep.c` (the spec already exported `Get`/`SetProcessDEPPolicy` and
 `GetSystemDEPPolicy` with **nothing implementing them**), `sdk/lib/rtl/memres.c`,
-`kernel32_vista/threadpool.c`, `explorer/mediabtns.cpp`, `ntdll/compat/amd64/msys2.S`,
+`kernel32_vista/threadpool.c` (ported to Rust 2026-09-30, over ntdll_vista's Tp*), `explorer/mediabtns.cpp`, `ntdll/compat/amd64/msys2.S`,
 `sdk/lib/rtl/rangelist.c`'s new `RtlGetLastRange`, upstream's new `uiautomationcore`, and
 `sdk/lib/libwine/dll_canunload.c` — which our own `libwine/CMakeLists.txt` already referenced
 and which the libwine move commit had left untracked.

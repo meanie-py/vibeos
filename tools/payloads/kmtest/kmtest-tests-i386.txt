@@ -25,6 +25,7 @@ ExPushLock
 # UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
 # d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
 ExResource
+ExResourceBounded
 ExSequencedList
 ExSingleList
 ExUuid

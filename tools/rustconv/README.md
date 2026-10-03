@@ -91,3 +91,100 @@ The PortCls pilot's object is entirely Rust-owned; its C++ bridge remains an unl
 compiler oracle. QueryInterface, factories and platform hooks are explicit Rust
 implementations, not assumed complete by generation alone. Commands and measured
 coverage are in [the pilot report](../../docs/engineering/rustconv-overhaul-pilots.md).
+
+Read historical cost and routing evidence without API calls or bank changes:
+
+```bash
+python -m rustconv.cost_ledger --worktrees . \
+  --output ~/vibeos-rust-staging/rustconv-speedrun/ledger.json
+```
+
+Run from the repository root with `PYTHONPATH` set as above. Explicit bank paths can
+supplement local-worktree discovery. The report reconciles archive/outcome records,
+retains per-call provenance, and marks unavailable retry, timing and billing evidence.
+See the [measurement and scaling proposal](../../docs/engineering/active-lanes/rustconv-speedrun-scale.md)
+for interpretation; recorded estimates are not invoices or semantic acceptance rates.
+
+Host pilots and per-attempt accounting (experimental):
+
+```bash
+# C: compiler-led candidate, no model calls. Use a NEW persistent directory.
+python -m rustconv.pilot_anchor --repo . \
+  --output ~/vibeos-rust-staging/base64-anchor
+python -m rustconv.pilot_base64 ~/vibeos-rust-staging/base64-anchor/libbase64-anchor.so \
+  --repo . --seed 20260922 --random-cases 500 --max-length 4096 --mutation-check
+
+# C++: replay an existing purchase, then compile and grade the saved candidate.
+python -m rustconv.pilot replay tools/rustconv/.responses/host-pilots/txt2nls/nonthinking
+python -m rustconv.pilot_repair --repo . \
+  --output-dir ~/vibeos-rust-staging/txt2nls-replay
+rustc --edition=2021 -O ~/vibeos-rust-staging/txt2nls-replay/txt2nls-faithful.rs \
+  -o ~/vibeos-rust-staging/txt2nls-replay/txt2nls-faithful
+python -m rustconv.pilot_txt2nls --repo . \
+  --candidate ~/vibeos-rust-staging/txt2nls-replay/txt2nls-faithful \
+  --all-codepages --mutations
+```
+
+`pilot generate-txt2nls --budget /persistent/path/budget.json --cap-usd 5` is a
+**paid**, purchase-once experiment. It refuses existing work across registered local
+banks. This checkout already has a purchase: replay/repair it. `retry-empty` permits
+one explicit non-thinking attempt only after a known-charge failure with zero code
+bytes. It cannot regenerate an existing candidate. The pilot is not the production
+COM/OS translation path; a fact-token pass is not behavioral acceptance.
+
+For regular synchronous DeepSeek calls, set both `RUSTCONV_BUDGET_FILE` and
+`RUSTCONV_BUDGET_USD` to activate the persistent shared cap. The guard reserves full
+context plus maximum output at conservative peak prices before API contact, serializes
+reservations across processes, disables hidden SDK retries, and holds unknown charges.
+Other models refuse a capped call until they have a verified reservation bound.
+The separate semdiff review API also refuses to bypass an enabled cap.
+Uncapped existing workflows remain uncapped. Do not change the cap midway through a run.
+
+Each `submit_single` now preserves a unique `.responses/attempts/<id>/` with request,
+raw stream, candidate, result, and separate validation records; DeepSeek reasoning is
+stored separately when supplied. The cost ledger joins these to legacy outcomes by
+attempt ID and counts intermediate retries. Missing/interrupted usage stays unknown;
+recorded charges are estimates, not provider invoices. Historical overwritten attempts
+cannot be reconstructed. See the [pilot results](../../docs/engineering/active-lanes/rustconv-speedrun-pilots.md)
+for measured outcomes and limitations.
+
+### Offline compiler candidates and cohort grading
+
+`python -m rustconv.anchor_candidate FILE --module MODULE --arch amd64 --output BANK_DIR`
+uses that architecture's real compile command and refuses existing output, known prior
+translations, blocking profile findings, or missing compiler support. It never falls back
+to a model. `profile_derive --source FILE` restricts the audit to a proven CMake member and
+records partial scope; it does not certify unselected translation units.
+
+Normalize saved compiler output with `python -m rustconv.anchor_lower RAW_RS --source FILE
+--arch amd64 --output NEW_RS`. This derives C scalar widths from the target compiler rather
+than Linux's Rust aliases. Later, use `--abi-json PREVIOUS_NORMALIZATION.json` instead of
+`--source/--arch` to replay after the C source has been removed from the build. The saved
+record must match the raw candidate's hash. Neither operation certifies semantic equivalence.
+
+The offline C++ cohort lives in `rustconv.cpp_cohort`: banked selected-method graders,
+a compiler-active numeric-macro audit, and bounded `std::stol`/`substr` helpers tested against
+the genuine C++ library. Their reports retain rejected and unsupported methods. See its
+README for individual commands and limits.
+
+`vibeos-cli difftest --only cnt-difftest --case diff_memmove` runs an exact existing
+comparison while retaining all generated-oracle checks. Missing or duplicate cases fail.
+`vibeos-cli build --arch arm64 --extra-target jscript` additionally builds a DLL outside
+ARM64's boot manifest while keeping the normal full boot build and its guards.
+
+Run the frozen 12-source benchmark with `python -m rustconv.cohort_runner`; its
+`prepare`, `verify`, and `run` commands pin and replay existing artifacts. It recompiles
+the candidate sources, keeps development and held-out results separate, and refuses
+measurement failures. Reproduction, outcomes, and remaining coverage gaps are in
+[the cohort report](../../docs/engineering/active-lanes/rustconv-speedrun-cohort.md).
+
+### Generated scalar and buffer difftests
+
+`rustconv difftest-contract CONTRACT.json --out NEW_DIRECTORY` compiles genuine C and
+existing Rust against a reviewed input contract, compares isolated executions, and requires
+sensitivity mutants to fail. Contracts cover scalar/buffer cases, nullable pointers, typed
+`char **` outputs, bounded grammar-generated immutable and mutable ASCII or UTF-16 strings, and
+bounded libc-owned C-string results. It spends no model
+budget. See the
+[contract guide and shipping pilots](data/difftest/README.md) for supported types,
+input generation, source provenance, and explicit host-only limitations.

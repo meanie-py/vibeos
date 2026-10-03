@@ -628,6 +628,28 @@ static NTSTATUS Wow64Manual_NtQuerySystemInformation(ULONG *a)
         if (RetLen32) *RetLen32 = sizeof(*Sbi32);
         return St;
     }
+    if (Class == 50 /* SystemRangeStartInformation: a ULONG_PTR */)
+    {
+        /* The host answers 8 bytes; the guest asks for its own ULONG_PTR, 4.
+         * Passed through, it failed STATUS_INFO_LENGTH_MISMATCH in EVERY guest
+         * (kernel32's heapmem init asks at startup), left kernel32's
+         * SystemRangeStart at 0, and GlobalLock's `hMem >= SystemRangeStart`
+         * then refused every FIXED global in every 32-bit process. user32:dde
+         * is where it surfaced: PackDDElParam's GlobalLock returned NULL, every
+         * packed WM_DDE_DATA/ACK/POKE lParam went out as 0, and the client saw
+         * DMLERR_DATAACKTIMEOUT on its first transaction. The value follows the
+         * clamp above: a guest's user space ends at 0x7FFEFFFF. */
+        if (Len32 < sizeof(ULONG))
+        {
+            if (RetLen32) *RetLen32 = sizeof(ULONG);
+            return (NTSTATUS)0xC0000004L; /* STATUS_INFO_LENGTH_MISMATCH */
+        }
+        if (!Buf32)
+            return (NTSTATUS)0xC0000005L; /* STATUS_ACCESS_VIOLATION */
+        *(ULONG *)Buf32 = 0x80000000u;
+        if (RetLen32) *RetLen32 = sizeof(ULONG);
+        return 0;
+    }
     {
         ULONG Ret = 0;
         NTSTATUS St = NtQuerySystemInformation(Class, Buf32, Len32, &Ret);
@@ -3551,12 +3573,10 @@ static NTSTATUS Wow64Manual_NtUserUnregisterClass(ULONG *a)
  * non-divergent (no pointers, identical 32/64) so the guest buffer passes
  * straight through and the kernel writes the shared layout. Handle returns
  * narrow to the guest's low 32 bits (all user handles are <4GB).
- * NtUserCreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES) and
- * is listed in manual-win32k.txt WITHOUT a dispatch entry, so it falls through
- * to the generated table and comes back WOW64_AUTOMARSHAL_UNIMPL, which the
- * caller reports loudly by name (a clean error, NOT a bugcheck) until a guest
- * that needs it arrives. NtUserGetIconInfo was the other one; a guest reached
- * it (user32:class) and it has a marshaller now, further down. */
+ * NtUserCreateDesktop ALSO carries a divergent struct (OBJECT_ATTRIBUTES), and
+ * NtUserGetIconInfo an ICONINFO. Both sat as loud refusals until a guest
+ * reached them (user32:winstation, user32:class) and both have marshallers
+ * now, further down. */
 static NTSTATUS Wow64Manual_NtUserFindWindowEx(ULONG *a)
 {
     extern HANDLE NtUserFindWindowEx(PVOID, PVOID, PVOID, PVOID, ULONG);
@@ -3816,11 +3836,42 @@ static NTSTATUS Wow64Manual_NtUserCreateWindowStation(ULONG *a)
     return (NTSTATUS)(ULONG)(ULONG_PTR)Ret;
 }
 
+/* CreateDesktop is the fourth of the family, with one more divergent argument:
+ * the device name is a UNICODE_STRING (8 -> 16 bytes) beside the
+ * OBJECT_ATTRIBUTES. DEVMODEW has no pointers and the same layout on both
+ * sides, so it passes straight through. Left unmarshalled until user32
+ * :winstation reached it -- and the loud refusal it got meanwhile returned
+ * WOW64_STATUS_INVALID_SYSTEM_SERVICE as the syscall's value, which a caller
+ * expecting an HDESK reads as a valid, non-NULL handle. The test sailed past
+ * `desk != 0` and died three calls later dereferencing the junk NtQueryObject
+ * left in its buffer. */
+static NTSTATUS Wow64Manual_NtUserCreateDesktop(ULONG *a)
+{
+    extern HANDLE NtUserCreateDesktop(PVOID ObjectAttributes, PVOID lpszDesktopDevice,
+                                      PVOID lpdmw, ULONG dwFlags, ACCESS_MASK Access);
+    WOW64_OBJECT_ATTRIBUTES64_M Oa64;
+    WOW64_UNICODE_STRING64_M Uname64, Device64;
+    PVOID Oa = NULL;
+
+    if (a[0])
+    {
+        Wow64pMarshalOa(&Oa64, &Uname64, a[0]);
+        Oa = &Oa64;
+    }
+    return (NTSTATUS)(ULONG)(ULONG_PTR)NtUserCreateDesktop(
+        Oa, Wow64pUS32to64(a[1], &Device64), (PVOID)(ULONG_PTR)a[2], a[3], a[4]);
+}
+
 /* Shared-icon cache diagnosis: a WOW64 app whose LR_SHARED icons never match re-creates them on
- * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. */
+ * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. Behind the
+ * syscall-trace switch: a line per icon lookup is ~1500 lines a sweep once the cache works. */
+extern ULONG Wow64TraceSyscalls;
+
 static void Wow64pTraceCurIcon(const char *What, ULONG Mod32, ULONG Rsrc32, LONG *Param,
                                ULONG Flags, ULONG Ret)
 {
+    if (!Wow64TraceSyscalls)
+        return;
     WOW64_UNICODE_STRING32_M *M = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Mod32;
     WOW64_UNICODE_STRING32_M *R = (WOW64_UNICODE_STRING32_M *)(ULONG_PTR)Rsrc32;
     DbgPrint("[WOW64-CURICON] %s mod=%.*S rsrc=%s%.*S%s id=%lx len=%u flags=%lx param=%ld,%ld,%ld ret=%lx\n",
@@ -4492,6 +4543,74 @@ static VOID Wow64pIoctlFree(PVOID P)
 {
     if (P)
         RtlFreeHeap(Wow64pProcessHeap(), 0, P);
+}
+
+/* ---- NtQueryObject ------------------------------------------------------- *
+ * Was a FLAT thunk, so every class went to the kernel with the guest's buffer.
+ * Fine for the classes whose layout is the same on both sides, silently wrong
+ * for ObjectNameInformation: OBJECT_NAME_INFORMATION is a UNICODE_STRING (8
+ * bytes in the guest, 16 on the host) followed by the name, so the guest read
+ * Length/MaximumLength/Buffer out of the host's header and got a junk Buffer.
+ * That is not a test-only path -- kernel32 (dosdev, GetFinalPathNameByHandle)
+ * and advapi32's HKCR code all ask for names. user32:winstation found it: the
+ * test lstrcmpW's the returned Name.Buffer and took an access violation.
+ *
+ * Name: query into a host scratch buffer 8 bytes bigger than the guest's (the
+ * header's growth), then rebuild a UNICODE_STRING32 in the guest buffer with
+ * the name right after it. Lengths reported back are the GUEST's, i.e. the
+ * host's minus 8 -- a caller sizing a retry from ReturnLength must get a size
+ * that is right for its own layout.
+ * Basic (0) and HandleFlag (4) are identical on both sides and pass through.
+ * Anything else has a pointer-bearing header no guest has reached yet: refuse
+ * it loudly rather than restore the silent-wrong pass-through. */
+static NTSTATUS Wow64Manual_NtQueryObject(ULONG *a)
+{
+    extern NTSTATUS NtQueryObject(HANDLE, ULONG, PVOID, ULONG, PULONG);
+    HANDLE Obj = (HANDLE)(LONG_PTR)(LONG)a[0];
+    ULONG Class = a[1];
+    UCHAR *Buf32 = (UCHAR *)(ULONG_PTR)a[2];
+    ULONG Len32 = a[3];
+    ULONG *RetLen32 = (ULONG *)(ULONG_PTR)a[4];
+    const ULONG Grow = sizeof(WOW64_UNICODE_STRING64_M) - sizeof(WOW64_UNICODE_STRING32_M);
+
+    if (Class == 0 /* ObjectBasicInformation */ || Class == 4 /* ObjectHandleFlagInformation */)
+        return NtQueryObject(Obj, Class, Buf32, Len32, RetLen32);
+
+    if (Class == 1 /* ObjectNameInformation */)
+    {
+        ULONG HostLen = Len32 + Grow, HostRet = 0, Guest;
+        UCHAR *Host = Wow64pIoctlAlloc(HostLen);
+        WOW64_UNICODE_STRING64_M *N64 = (WOW64_UNICODE_STRING64_M *)Host;
+        WOW64_UNICODE_STRING32_M *N32 = (WOW64_UNICODE_STRING32_M *)Buf32;
+        NTSTATUS St;
+
+        if (!Host)
+            return (NTSTATUS)0xC000009AL; /* STATUS_INSUFFICIENT_RESOURCES */
+        St = NtQueryObject(Obj, Class, Host, HostLen, &HostRet);
+        Guest = HostRet > Grow ? HostRet - Grow : HostRet;
+        if (St >= 0 && Len32 < sizeof(*N32))
+            St = (NTSTATUS)0xC0000004L; /* STATUS_INFO_LENGTH_MISMATCH: no room for the header */
+        if (St >= 0)
+        {
+            /* Copy the name (plus its NUL when present) out of the host
+             * buffer. It fits: the host's name area is exactly the guest's. */
+            ULONG Bytes = N64->Buffer ? (ULONG)N64->MaximumLength : 0;
+            if (Bytes > Len32 - sizeof(*N32))
+                Bytes = Len32 - sizeof(*N32);
+            if (Bytes)
+                RtlCopyMemory(Buf32 + sizeof(*N32), (PVOID)(ULONG_PTR)N64->Buffer, Bytes);
+            N32->Length = N64->Length;
+            N32->MaximumLength = (USHORT)Bytes;
+            N32->Buffer = N64->Buffer ? (ULONG)(ULONG_PTR)(Buf32 + sizeof(*N32)) : 0;
+        }
+        if (RetLen32)
+            *RetLen32 = Guest;
+        Wow64pIoctlFree(Host);
+        return St;
+    }
+
+    DbgPrint("[WOW64]   NtQueryObject class=%lu unhandled\n", Class);
+    return (NTSTATUS)0xC0000003L; /* STATUS_INVALID_INFO_CLASS */
 }
 
 /* ---- M19: LPC — the PORT_MESSAGE header ---------------------------------- *
@@ -7165,6 +7284,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtPrivilegedServiceAuditAlarm(Arguments);
     if (WOW64_IS("NtQuerySymbolicLinkObject"))
         return Wow64Manual_NtQuerySymbolicLinkObject(Arguments);
+    if (WOW64_IS("NtQueryObject"))
+        return Wow64Manual_NtQueryObject(Arguments);
     if (WOW64_IS("NtAllocateVirtualMemory"))
         return Wow64Manual_NtAllocateVirtualMemory(Arguments);
     if (WOW64_IS("NtFreeVirtualMemory"))
@@ -7292,6 +7413,8 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtUserOpenWindowStation(Arguments);
     if (WOW64_IS("NtUserCreateWindowStation"))
         return Wow64Manual_NtUserCreateWindowStation(Arguments);
+    if (WOW64_IS("NtUserCreateDesktop"))
+        return Wow64Manual_NtUserCreateDesktop(Arguments);
     if (WOW64_IS("NtUserBuildHwndList"))
         return Wow64Manual_NtUserBuildHwndList(Arguments);
     if (WOW64_IS("NtUserThunkedMenuItemInfo"))

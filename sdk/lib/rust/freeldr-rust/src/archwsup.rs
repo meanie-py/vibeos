@@ -82,6 +82,9 @@ pub const TAG_HW_NAME: u32 = u32::from_le_bytes(*b"mNwH");
 #[no_mangle]
 pub unsafe extern "C" fn AddReactOSArcDiskInfo(
     ArcName: PSTR,
+    // The disk GUID of a GPT disk, else NULL (upstream 7779fb44597). Without it IsGpt stayed
+    // 0 and the kernel's IopVerifyDiskSignature could never match a GPT boot disk: 0x7B.
+    GptDiskGuid: *const core::ffi::c_void,
     Signature: u32,
     Checksum: u32,
     ValidPartitionTable: u8,
@@ -89,9 +92,19 @@ pub unsafe extern "C" fn AddReactOSArcDiskInfo(
 
     ntkrnl_sys::ASSERT!((reactos_disk_count as usize) < 32);
 
+    core::ptr::write_bytes(
+        core::ptr::addr_of_mut!(reactos_arc_disk_info[reactos_disk_count as usize]),
+        0,
+        1,
+    );
     reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.Signature = Signature;
     reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.CheckSum = Checksum;
     reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.ValidPartitionTable = ValidPartitionTable;
+    reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.IsGpt = (!GptDiskGuid.is_null()) as u8;
+    if !GptDiskGuid.is_null() {
+        let Dst = &mut reactos_arc_disk_info[reactos_disk_count as usize].DiskSignature.GptSignature;
+        core::ptr::copy_nonoverlapping(GptDiskGuid as *const u8, Dst.as_mut_ptr() as *mut u8, Dst.len());
+    }
 
     strcpy(
         reactos_arc_disk_info[reactos_disk_count as usize].ArcName.as_mut_ptr(),

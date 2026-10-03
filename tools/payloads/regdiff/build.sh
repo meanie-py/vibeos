@@ -28,12 +28,8 @@ for A in $ARCHES; do
     # GUI subsystem + classic msvcrt, same recipe and reasons as ../procstorm/build.sh.
     "$TC/${CC[$A]}" -O2 -o "$HERE/regdiff-$A.exe" "$HERE/regdiff.c" \
         -lmsvcrt-os -lntdll -ladvapi32 -lole32 -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-    objd="$TC/${CC[$A]%-gcc}-objdump"
-    "$objd" -p "$HERE/regdiff-$A.exe" | grep -qi "api-ms-win-crt" \
-        && { echo "[regdiff] FAIL($A): links UCRT api-sets (want classic msvcrt.dll)"; exit 1; } \
-        || true
-    "$objd" -p "$HERE/regdiff-$A.exe" | grep -qi "DLL Name: shell32" \
-        && { echo "[regdiff] FAIL($A): imports shell32 (the children must load it themselves)"; exit 1; } \
-        || true
+    # Headers + import table read directly (tools/payloads/pecheck.py): the old
+    # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+    python3 "$(dirname "$HERE")/pecheck.py" "$HERE/regdiff-$A.exe" --tag regdiff --forbid-dll api-ms-win-crt --forbid-dll shell32
 done
 echo "[regdiff] OK"

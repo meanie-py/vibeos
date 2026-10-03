@@ -51,7 +51,8 @@ pub const PROCESS_COOKIE_CLASS: u32 = 36;
 pub const SECTION_IMAGE_INFORMATION_CLASS: u32 = 1;
 
 // --- RTL_USER_PROCESS_PARAMETERS.Flags bit (rtltypes.h).
-pub const RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB: u32 = 0x0000_0040;
+// ndk/rtltypes.h:46 = 0x20 (0x40 is RESERVE_16MB).
+pub const RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB: u32 = 0x0000_0020;
 
 // --- `_WIN32_WINNT_WS03` baseline used by RtlRosGetAppcompatVersion default.
 pub const WIN32_WINNT_WS03: u32 = 0x0502;

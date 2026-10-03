@@ -48,9 +48,15 @@ ExInterlocked OK pass=970 fail=4 skip=0 exit=0
     assert ExInterlocked.c:297
 ExPools OK pass=19 fail=1 skip=0 exit=0
     assert ExPools.c:222
-ExResource OK pass=399 fail=2 skip=0 exit=0
-    assert ExResource.c:409
-    assert ExResource.c:455
+ExResource OK pass=845 fail=2 skip=0 exit=0
+    assert ExResource.c:456
+    assert? ExResource.c:480
+    assert ExResource.c:503
+    assert? ExResource.c:518
+    assert? ExResource.c:620
+ExResourceBounded OK pass=879 fail=2 skip=0 exit=0
+    assert ExResource.c:456
+    assert ExResource.c:503
 ExSequencedList OK pass=232 fail=0 skip=0 exit=0
 ExSingleList OK pass=240 fail=12 skip=0 exit=0
 ExUuid OK pass=3000 fail=0 skip=0 exit=0
@@ -157,6 +163,7 @@ NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
     assert NpfsFileInfo.c:116
     assert NpfsFileInfo.c:48
     assert NpfsFileInfo.c:56
+    assert NpfsFileInfo.c:57
     assert NpfsFileInfo.c:78
     assert NpfsFileInfo.c:84
     assert NpfsFileInfo.c:85

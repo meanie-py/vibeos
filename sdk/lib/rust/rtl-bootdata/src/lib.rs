@@ -66,6 +66,10 @@ pub static BsdItemTable: [RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize] = [
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, ErrorInfo) as UCHAR, Size: PTR_SIZE },
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, PowerButtonPressInfo) as UCHAR, Size: PTR_SIZE },
     RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, Checksum) as UCHAR, Size: PTR_SIZE },
+    // Windows 10/11 items (upstream 8d4705fcea9).
+    RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, PowerTransitionExtension) as UCHAR, Size: PTR_SIZE },
+    RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, ItemFeatureConfigState) as UCHAR, Size: PTR_SIZE },
+    RTL_BSD_ITEM_TABLE_ENTRY { Offset: core::mem::offset_of!(RTL_BSD_DATA, ItemRevocationList) as UCHAR, Size: PTR_SIZE },
 ];
 
 /// @implemented

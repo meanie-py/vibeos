@@ -1,7 +1,7 @@
 
 # our schannel is ported to mbedTLS 3.6.7 and includes its headers directly;
 # upstream dropped this line because they are still on 2.16.11 via the importlib.
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/mbedtls)
+include_directories(${REACTOS_SOURCE_DIR}/vendor/mbedtls/include ${REACTOS_SOURCE_DIR}/vendor/mbedtls/include/mbedtls)
 
 add_definitions(-D_WINE)
 spec2def(schannel.dll schannel.spec)

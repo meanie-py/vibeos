@@ -499,7 +499,11 @@ else()
 endif()
 
 # We have to pass args to windres. one... by... one...
-set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor=\"${CMAKE_C_COMPILER}\" ${RC_PREPROCESSOR_TARGET} --preprocessor-arg=-E --preprocessor-arg=-nostdinc --preprocessor-arg=-xc-header --preprocessor-arg=-MMD --preprocessor-arg=-MF --preprocessor-arg=<DEPFILE> --preprocessor-arg=-MT --preprocessor-arg=<OBJECT>")
+# The placeholder is <DEP_FILE>. It was spelled <DEPFILE>, which CMake leaves as literal text:
+# every resource compile wrote its depfile to one file named DEPFILE in the build root, ninja
+# found none at $DEP_FILE, and no .res ever tracked its includes -- a regenerated message
+# table (errcodes.rc) or an edited dialog header left the old resources linked, warm.
+set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor=\"${CMAKE_C_COMPILER}\" ${RC_PREPROCESSOR_TARGET} --preprocessor-arg=-E --preprocessor-arg=-nostdinc --preprocessor-arg=-xc-header --preprocessor-arg=-MMD --preprocessor-arg=-MF --preprocessor-arg=<DEP_FILE> --preprocessor-arg=-MT --preprocessor-arg=<OBJECT>")
 
 # Optional 3rd parameter: stdcall stack bytes
 function(set_entrypoint MODULE ENTRYPOINT)

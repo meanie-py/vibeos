@@ -11,6 +11,7 @@
 
 import gdb
 import os
+import re
 
 
 I386_RUST_SYMBOL_SHIFT = 0x291000
@@ -52,6 +53,17 @@ def _lt_arch() -> str:
 
 def _lt_read_imagename(eproc_addr: int) -> str:
     """Read EPROCESS.ImageFileName (CHAR[16]) as a Python string."""
+    off = _lt_checked_offsets().get("_EPROCESS.ImageFileName")
+    if off is not None:
+        out = []
+        for i in range(16):
+            b = _lt_read_byte(eproc_addr + off + i)
+            if b is None:
+                return "<unreadable>" if not out else "".join(out)
+            if b == 0:
+                break
+            out.append(chr(b) if 0x20 <= b < 0x7F else "?")
+        return "".join(out) or "<empty>"
     try:
         s = gdb.parse_and_eval(
             f"((struct _EPROCESS *){eproc_addr:#x})->ImageFileName"
@@ -175,13 +187,40 @@ def _lt_current_thread_addr() -> int | None:
     return None
 
 
+_LT_CHECKED_OFFSETS: dict[str, int] | None = None
+
+
+def _lt_checked_offsets() -> dict[str, int]:
+    """`Struct.Field` -> offset, from ntkrnl-sys's compiled layout asserts
+    (`offset_check_<arch>.rs`: `assert!(offset_of!(super::ddk::_EPROCESS, Cid) == 888)`).
+
+    The cargo-linked kernel's DWARF does not name its types `struct _EPROCESS`, so the
+    DWARF lookup below finds nothing there and this command printed only "offsets
+    unavailable". These asserts are COMPILED into ntkrnl-sys, so for a kernel that built
+    they are the layout, not a guess."""
+    global _LT_CHECKED_OFFSETS
+    if _LT_CHECKED_OFFSETS is None:
+        _LT_CHECKED_OFFSETS = {}
+        here = os.path.dirname(os.path.abspath(globals().get("__file__", "qemu/gdb-helpers/x")))
+        path = os.path.join(here, "..", "..", "sdk", "lib", "rust", "ntkrnl-sys", "src",
+                            f"offset_check_{_lt_arch()}.rs")
+        pat = re.compile(r"offset_of!\(super::\w+::(\w+),\s*([\w.]+)\)\s*==\s*(\d+)")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for m in pat.finditer(fh.read()):
+                    _LT_CHECKED_OFFSETS[f"{m.group(1)}.{m.group(2)}"] = int(m.group(3))
+        except OSError:
+            pass
+    return _LT_CHECKED_OFFSETS
+
+
 def _lt_resolve_field_offset(struct_name: str, field: str) -> int | None:
-    """Use DWARF to look up the byte offset of a field within a struct."""
+    """Byte offset of a field: DWARF first, then the compiled layout asserts."""
     try:
         v = gdb.parse_and_eval(f"&((struct {struct_name} *)0)->{field}")
         return int(v)
     except gdb.error:
-        return None
+        return _lt_checked_offsets().get(f"{struct_name}.{field}")
 
 
 def _lt_candidate_process_heads(symbol_head: int) -> list[tuple[str, int]]:

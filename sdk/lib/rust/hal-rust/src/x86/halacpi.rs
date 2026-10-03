@@ -151,7 +151,7 @@ const MACHINE_TYPE_MCA: u32 = 2;
 // simply doesn't exist. Only the SIPI target itself must be <1MB; the SMP
 // identity-map page-table scratch (HalpApPtScratch below) allocates
 // separately with a 4GB cap.
-const HALP_LOW_STUB_SIZE_IN_PAGES: PFN_COUNT = 1;
+const HALP_LOW_STUB_SIZE_IN_PAGES: PFN_COUNT = 1; // nolint: const-contradiction (deliberate UEFI divergence from halp.h:65/67 (5 amd64 / 3 x86), see above)
 
 // SMP (smp-bringup M2): 3 pages of PDPT/PD/PT scratch smp_processor.rs uses
 // to identity-map the low stub (VA==PA) around the SIPI window — the boot
@@ -875,7 +875,11 @@ pub unsafe extern "system" fn HalpAcpiFindRsdtPhase0(
     // alignment-1 and was always fine.
     let node_count = core::ptr::read_unaligned(core::ptr::addr_of!((*NodeData).Count));
     NodeLength = core::mem::size_of::<ACPI_BIOS_MULTI_NODE>()
-        + (node_count as usize - 1) * core::mem::size_of::<ACPI_E820_ENTRY>();
+        // The UEFI loader publishes Count = 0 (no E820 map). In C, `Count - 1` wraps and the
+        // multiply comes out at -24, so it copies 16 bytes; in Rust that is an overflow panic
+        // under debug-assertions. Divergence: saturate, copying the whole 40-byte node, which
+        // is exactly the loader's TableSize, so still in bounds.
+        + (node_count as usize).saturating_sub(1) * core::mem::size_of::<ACPI_E820_ENTRY>();
 
     PageCount = bytes_to_pages(NodeLength as u64);
 

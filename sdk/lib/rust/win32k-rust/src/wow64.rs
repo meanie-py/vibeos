@@ -106,6 +106,17 @@ pub(crate) unsafe fn IsWow64Process() -> bool {
     !p.is_null() && !(*p).Wow64Process.is_null()
 }
 
+/// `true` when `Process` -- not necessarily the current one -- is a WoW64 guest.
+///
+/// The question to ask whenever win32k reads a structure a USER-MODE module
+/// laid out: the layout is the bitness of whoever WROTE it, and that is the
+/// window's owner, which a cross-process query attaches to rather than runs as.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub(crate) unsafe fn IsWow64Eprocess(p: PEPROCESS) -> bool {
+    !p.is_null() && !(*p).Wow64Process.is_null()
+}
+
 /// Project a thread's 64-bit CLIENTINFO into its TEB32 as a 32-bit CLIENTINFO.
 ///
 /// No-op for native processes and for threads with no TEB (system threads).
@@ -180,49 +191,22 @@ pub(crate) unsafe fn Wow64PublishClientInfo(pti: PTHREADINFO) {
     (*ci32).ppi = (*pci).ppi as usize as u32;
 }
 
-/// Reset a WoW64 guest's GDI TEB batch, which nothing else ever resets.
+/// The current thread's TEB32, where a WoW64 guest's gdi32 keeps its GDI batch.
 ///
-/// gdi32 owns the batch and the kernel owns clearing it: when the buffer is
-/// full gdi32 calls `NtGdiFlush()` and then writes at `Buffer + Offset`
-/// WITHOUT re-checking (`win32ss/gdi/gdi32/include/gdi32p.h:498-515`),
-/// because on a native process the kernel has zeroed `Offset` by then. For a
-/// guest it never did: gdi32 increments `TEB32->GdiBatchCount` while the trap
-/// path tested TEB64's, so the flush was never invoked at all and both fields
-/// grew without bound. MEASURED on notepad: count ran past `GDI_BatchLimit`
-/// (20) to 0x2d, and `Offset` climbed monotonically to 0x628 — long past the
-/// 0x4D8 end of `Buffer`, and through 0x508, which is `CLIENTINFO.pDeskInfo`
-/// exactly. user32's `ValidateHandleNoErr` then read a batch record byte as a
-/// pointer and took an AV, whose SEH dispatch re-faulted 56 times.
-///
-/// Field manual §9.41, second occurrence: same bug and the same four
-/// symptoms, reached through the wrong TEB instead of the wrong offset.
+/// The batch has to be flushed from HERE, not from TEB64: gdi32 increments
+/// `TEB32->GdiBatchCount`, and when the buffer is full it calls `NtGdiFlush()`
+/// and then writes at `Buffer + Offset` WITHOUT re-checking, trusting the
+/// kernel to have zeroed `Offset`. Before the trap path learned to read TEB32's
+/// counter, nothing did: `Offset` climbed through `CLIENTINFO.pDeskInfo` at
+/// 0x508 and user32 dereferenced a batch record byte as a pointer (field manual
+/// §9.41, second occurrence).
 #[cfg(not(target_arch = "x86"))]
-pub(crate) unsafe fn Wow64ResetGuestGdiBatch() {
-    use ntkrnl_sys::ddk::_TEB32;
+pub(crate) unsafe fn Wow64CurrentTeb32() -> *mut ntkrnl_sys::ddk::_TEB32 {
     let teb64 = NtCurrentTeb() as *mut u8;
     if teb64.is_null() {
-        return;
+        return core::ptr::null_mut();
     }
-    let teb32 = teb64.add(WOW64_TEB32_OFFSET) as *mut _TEB32;
-    let dropped = (*teb32).GdiBatchCount;
-
-    (*teb32).GdiTebBatch.Offset = 0;
-    (*teb32).GdiBatchCount = 0;
-    (*teb32).GdiTebBatch.HDC = 0;
-
-    /* Loud once: these batched drawing commands are DISCARDED rather than
-     * executed, which is what happens today too (the flush never ran), but
-     * silence would let the owed work be forgotten. Executing them needs the
-     * 32-bit record layouts — see the roadmap entry. */
-    static mut TOLD: bool = false;
-    if !TOLD && dropped != 0 {
-        TOLD = true;
-        ntkrnl_sys::driver_ddk::DbgPrint(
-            b"[GDIBATCH] WoW64 guest batch reset (%lu cmds DISCARDED, not executed) - see roadmap\n\0"
-                .as_ptr() as *const core::ffi::c_char,
-            dropped,
-        );
-    }
+    teb64.add(WOW64_TEB32_OFFSET) as *mut ntkrnl_sys::ddk::_TEB32
 }
 
 /// i386 host has no WoW64 layer.
@@ -230,14 +214,16 @@ pub(crate) unsafe fn Wow64ResetGuestGdiBatch() {
 #[inline]
 pub(crate) unsafe fn Wow64PublishClientInfo(_pti: PTHREADINFO) {}
 
-#[cfg(target_arch = "x86")]
-#[inline]
-pub(crate) unsafe fn Wow64ResetGuestGdiBatch() {}
-
 /// A 32-bit host has no WoW64 layer, so nothing is ever a guest here and the
 /// GDI batch path keeps its original behaviour unchanged.
 #[cfg(target_arch = "x86")]
 #[inline]
 pub(crate) unsafe fn IsWow64Process() -> bool {
+    false
+}
+
+#[cfg(target_arch = "x86")]
+#[inline]
+pub(crate) unsafe fn IsWow64Eprocess(_p: PEPROCESS) -> bool {
     false
 }

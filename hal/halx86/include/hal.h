@@ -67,6 +67,7 @@
 #include "haldma.h"
 #include "halhw.h"
 #include "halp.h"
+#include "legacypc.h"
 #include "mps.h"
 #include "halacpi.h"
 

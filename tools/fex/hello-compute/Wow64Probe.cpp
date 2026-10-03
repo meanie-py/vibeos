@@ -83,7 +83,7 @@ LONG WINAPI ProbeVeh(EXCEPTION_POINTERS* Info)
 
 namespace {
 
-// ---- Contract constants (external/fex/Source/Windows/include/winternl.h +
+// ---- Contract constants (vendor/fex/Source/Windows/include/winternl.h +
 // ---- WOW64/Module.cpp; our ntdll wow64shim.rs must agree) -----------------
 constexpr size_t kTebTlsSlotsOffset = 0x1480;   // TEB64->TlsSlots[]
 constexpr size_t kTlsSlotWow64Info = 10;        // WOW64_TLS_WOW64INFO

@@ -7,7 +7,7 @@ use crate::ffi::{ARC_STATUS, ESUCCESS, ENOEXEC, OpenReadOnly};
 
 // arc.h enum _ARC_CODES — only the few used here.
 const EINVAL: ARC_STATUS = 7;  // nolint: const-contradiction (ARC_STATUS enumerator; arc.h #undefs the C EINVAL)
-const EIO: ARC_STATUS = 8;
+const EIO: ARC_STATUS = 8; // nolint: const-contradiction (ARC_CODES enumerator, arc.h:40 — not errno EIO=5)
 
 extern "C" {
     fn GetArgumentValue(Argc: u32, Argv: *mut PSTR, ArgName: PCSTR) -> PCSTR;

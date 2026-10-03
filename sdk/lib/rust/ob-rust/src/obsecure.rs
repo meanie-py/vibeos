@@ -59,42 +59,12 @@ const MAX_FAST_REFS: ULONG = 7;
 // mode. One place to fix when the typedef catches up.
 use ntkrnl_sys::ddk::{OB_CLOSE_METHOD, OB_OPEN_METHOD, OB_OPEN_REASON, OB_SECURITY_METHOD, PEPROCESS};
 
-pub type ObSecurityMethod9 = unsafe extern "system" fn(
-    PVOID,
-    SECURITY_OPERATION_CODE,
-    PSECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR,
-    *mut ULONG,
-    *mut PSECURITY_DESCRIPTOR,
-    POOL_TYPE,
-    PGENERIC_MAPPING,
-    KPROCESSOR_MODE,
-) -> NTSTATUS;
-
-// ---------------------------------------------------------------------------
-// Calling a type's OpenProcedure — six arguments now, and GrantedAccess by POINTER
-// ---------------------------------------------------------------------------
-// Same shape as ObpCallSecurityProcedure below, same cause: the 2026-09-20 upstream merge
-// moved the object callbacks to NT6 form (sdk/include/ndk/obtypes.h), and OB_OPEN_METHOD
-// gained `_In_ KPROCESSOR_MODE AccessMode` as its SECOND parameter while GrantedAccess
-// went from ACCESS_MASK by value to PACCESS_MASK. The checked-in bindgen still describes
-// the old five-parameter by-value form.
-//
-// This one bites harder than the security method because the mismatch is in BOTH the
-// count and a type: on i386 the callee pops six arguments where five were pushed, and the
-// callee also dereferences what the caller passed as a value. kmtest's ObType — which
-// upstream rewrote in C++ specifically to exercise both the WS03 and Vista callback
-// shapes — bugchecks 0x1E (write AV) partway through the i386 sweep, taking the remaining
-// 39 tests with it. amd64 survives only because extra arguments ride in registers there.
-pub type ObOpenMethod6 = unsafe extern "system" fn(
-    OB_OPEN_REASON,
-    KPROCESSOR_MODE,
-    PEPROCESS,
-    PVOID,
-    *mut ACCESS_MASK,
-    ULONG,
-) -> NTSTATUS;
-
+// Calling a type's callbacks. The 2026-09-20 upstream merge moved them to NT6 form
+// (sdk/include/ndk/obtypes.h, upstream 07217d32458): OB_OPEN_METHOD gained AccessMode as
+// its second parameter and takes GrantedAccess by pointer, and OB_SECURITY_METHOD gained a
+// trailing AccessMode. Until ntkrnl-sys was regenerated these went through transmutes past
+// the stale typedefs; a mismatch there is an arity bug on i386 (stdcall: the callee pops
+// what it thinks it was passed), which bugchecked kmtest's ObType 0x1E.
 pub unsafe fn ObpCallOpenProcedure(
     Procedure: OB_OPEN_METHOD,
     Reason: OB_OPEN_REASON,
@@ -104,8 +74,7 @@ pub unsafe fn ObpCallOpenProcedure(
     GrantedAccess: *mut ACCESS_MASK,
     HandleCount: ULONG,
 ) -> NTSTATUS {
-    let f: ObOpenMethod6 = core::mem::transmute(Procedure.unwrap());
-    f(Reason, AccessMode, Process, ObjectBody, GrantedAccess, HandleCount)
+    (Procedure.unwrap())(Reason, AccessMode, Process, ObjectBody, GrantedAccess, HandleCount)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -120,8 +89,7 @@ pub unsafe fn ObpCallSecurityProcedure(
     PoolType: POOL_TYPE,
     GenericMapping: PGENERIC_MAPPING,
 ) -> NTSTATUS {
-    let f: ObSecurityMethod9 = core::mem::transmute(Procedure.unwrap());
-    f(
+    (Procedure.unwrap())(
         Object,
         OperationType,
         SecurityInformation,
@@ -610,11 +578,7 @@ pub unsafe extern "system" fn ObGetObjectSecurity(
 
     *MemoryAllocated = 0;
 
-    // The OB_SECURITY_METHOD typedef is still the stale 8-param one (see
-    // ObpCallSecurityProcedure above), so the stored pointer has to be compared
-    // through a transmute of the real 9-param function.
-    if (*Type).TypeInfo.SecurityProcedure
-        == Some(core::mem::transmute::<ObSecurityMethod9, _>(SeDefaultObjectMethod))
+    if (*Type).TypeInfo.SecurityProcedure == Some(SeDefaultObjectMethod)
     {
         *SecurityDescriptor = ObpReferenceSecurityDescriptor(Header);
         return STATUS_SUCCESS;
@@ -1927,25 +1891,10 @@ pub unsafe extern "system" fn ObQueryObjectAuditingByHandle(
 // END ORIGINAL C SOURCE
 // ============================================================================
 
-/// NT6 `OB_CLOSE_METHOD`: upstream widened both handle counts from `ULONG` to `ULONG_PTR`
-/// (`sdk/include/ndk/obtypes.h`), and every close procedure in the tree — `IopCloseFile`,
-/// `MmpCloseSection`, `CmpCloseKeyObject`, fltmgr's port closers — is compiled against that.
-/// The checked-in bindgen island still carries the pre-merge `ULONG` typedef, so calling
-/// through `TypeInfo.CloseProcedure` directly passes 32-bit arguments on 64-bit targets and
-/// the callee reads a register whose high half the Win64 ABI leaves undefined. `IopCloseFile`
-/// opens with `if (HandleCount != 1) return;`, so a garbage high half silently skips
-/// IRP_MJ_CLEANUP: the file's cache map is never torn down, the driver cannot unload, and its
-/// service sits in RUNNING forever. i386 is immune because `ULONG_PTR == ULONG` there, which
-/// is exactly what made the failure look arch-specific instead of like an arity bug.
-/// Transmute past the stale field type, same as the security and open callouts above.
-pub type ObCloseMethodPtr = unsafe extern "system" fn(
-    PEPROCESS,
-    PVOID,
-    ACCESS_MASK,
-    ULONG_PTR,
-    ULONG_PTR,
-);
-
+/// NT6 `OB_CLOSE_METHOD`: both handle counts are `ULONG_PTR`. While the bindgen island
+/// still said `ULONG`, a direct call passed 32-bit arguments on 64-bit targets and
+/// `IopCloseFile`'s `if (HandleCount != 1) return;` read an undefined high half, silently
+/// skipping IRP_MJ_CLEANUP (the driver could never unload).
 pub unsafe fn ObpCallCloseProcedure(
     Procedure: OB_CLOSE_METHOD,
     Process: PEPROCESS,
@@ -1954,6 +1903,5 @@ pub unsafe fn ObpCallCloseProcedure(
     ProcessHandleCount: ULONG_PTR,
     SystemHandleCount: ULONG_PTR,
 ) {
-    let f: ObCloseMethodPtr = core::mem::transmute(Procedure.unwrap());
-    f(Process, ObjectBody, GrantedAccess, ProcessHandleCount, SystemHandleCount)
+    (Procedure.unwrap())(Process, ObjectBody, GrantedAccess, ProcessHandleCount as _, SystemHandleCount as _)
 }

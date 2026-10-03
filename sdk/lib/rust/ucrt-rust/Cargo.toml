@@ -63,4 +63,141 @@ bits = []
 # LOCALE-AWARE takeover, so it is also the first consumer of locale_update.
 ismbbyte = []
 
+# string/{i386,amd64,arm64}/ strcat strcpy strcspn strlen strncat strncpy strpbrk
+# strspn -- the first REUSED family: msvcrt's shipping bodies, which graded
+# MATCH against Microsoft's UCRT in the guest and are stateless on both sides.
+# They live in crt-portable-rust precisely so this crate never depends on
+# msvcrt-crt-rust; see that crate's Cargo.toml.
+portable-string = ["dep:crt-portable-rust", "crt-portable-rust/string"]
+
+# convert/{_ctype,_wctype,isctype,iswctype}.cpp -- the 63-export ctype family, a
+# one-for-one port over LocaleUpdate. See src/ctype.rs for why a port and not
+# msvcrt's bodies (the multibyte path differs in contract, not just plumbing).
+ctype = []
+
+# mbstring/{ismb*,mbbtype,mbsbtype,mbclevel,mbtolwr,mbtoupr,mbtohira,mbtokata,
+# tojisjms}.cpp -- the _ismbc* character-classification family and the small
+# conversions over it. A port for the same reason as ctype: msvcrt's bodies are
+# Wine's _MB_CP_SBCS=20127 contract, UCRT's is codepage 0. See src/ismbc.rs.
+ismbc = ["ctype", "ismbbyte"]
+
+# convert/{tolower_toupper,towlower,towupper}.cpp -- single-character case
+# mapping, narrow and wide. A port: msvcrt's _tolower_l/_toupper_l DIFF against
+# UCRT at EOF, the very first case. See src/tocase.rs.
+tocase = []
+
+# convert/strtox.cpp -- strtol and its 31 siblings, narrow and wide: one template,
+# __crt_strtox::parse_integer, ported with the accumulator width as a parameter.
+# A port: msvcrt's bodies are Wine's _MSVCR_VER=0 overflow contract. See src/strtox.rs.
+strtox = ["ctype"]
+
+# convert/atox.cpp -- atoi and its 15 siblings: the strtox template at base 10
+# with no end pointer, so a call into src/strtox.rs.
+atox = ["strtox"]
+
+# convert/xtoa.cpp -- _itoa and its 19 siblings, plain and _s, narrow and wide.
+xtoa = []
+
+# filesystem/findfile.cpp -- _findfirst/_findnext/_findclose, all 17: the wide
+# search, the narrow forms converting through the file-API codepage, eight record
+# layouts pinned against the compiler. See src/findfile.rs.
+findfile = []
+
+# stdio/output.cpp -- the fourteen __stdio_common_v*printf* entry points behind
+# every printf, sprintf and fprintf: Microsoft's table-driven processor with its
+# three bases (standard, _s validation, _p positional), ported. See src/output.rs
+# for why not msvcrt's engine. Needs strtox for the width/position parser.
+output = ["strtox"]
+
+# convert/strtod.cpp -- strtod, strtof, strtold and their wide and _l forms: the
+# parser and the correctly-rounded big-integer conversion from
+# corecrt_internal_strtox.h, ported (src/strtod.rs, src/big_integer.rs). Needs
+# strtox for its character trait.
+strtod = ["strtox"]
+
+# filesystem/stat.cpp -- _stat/_wstat/_fstat, all 12, in four record layouts. Shares
+# findfile's path conversion and time helpers. See src/stat.rs.
+stat = ["findfile"]
+
+# The locale takeover (sdk/lib/ucrt/locale/*, mbstring/mbctype.cpp), split into
+# pieces that call each other only through src/locale_abi.rs, so each can land
+# as soon as its own C files can be deleted. See locale_abi.rs for which C file
+# each replaces.
+locale-data = []
+locale-init = []
+mbctype = []
+qualified-locale = []
+setlocale = []
+
+# The second fan-out batch (one module each; see the module docs).
+# exec/spawnl.cpp, spawnlp.cpp, spawnv.cpp, spawnvp.cpp -- the 32 _spawn*/_exec* exports
+exec = []
+# convert/atof.cpp -- atof, _wtof, _atoflt, _atodbl and their _l forms
+atof = ["strtod"]
+# time/ctime.cpp -- _ctime32/64, _wctime32/64 and their _s forms
+ctime = []
+# time/timeset.cpp -- _daylight/_dstbias/_timezone/_tzname and their getters
+timeset = []
+# startup/argv_data.cpp -- __argc/__argv/_acmdln/_pgmptr and their accessors
+argv-data = []
+# heap/align.cpp -- the eight _aligned_* allocators
+align = []
+# misc/invalid_parameter.cpp -- the invalid-parameter handler machinery and _invoke_watson
+invalid-parameter = []
+# lowio/open.cpp -- _open/_sopen/_wopen/_wsopen and their _s/_dispatch forms
+lowio-open = ["findfile"]
+
+# The third fan-out batch (one directory module each; see the module docs).
+# mbstring/*.cpp -- the _mbs*/_mbc* string family, plain, _l and _s
+mbstring = ["ismbc", "mbctype"]
+# string/*.cpp and string/<arch>/*.s -- str*/wcs*/mem* not already in portable-string
+string-ops = []
+# time/*.cpp -- tzset, localtime/gmtime/mktime, strftime/wcsftime, asctime, utime, ftime...
+time = ["timeset"]
+
+# The stdio batch (sdk/lib/ucrt/stdio/*). `stdio` is the stream core --
+# _file.cpp, stream.cpp and the header-inline __crt_stdio_stream -- and the three
+# pieces over it call one another by the C names (see src/stdio/mod.rs).
+stdio = []
+# _getbuf/_freebuf/_sftbuf/_filbuf/_flsbuf, the character I/O (fgetc..putws,
+# ungetc/ungetwc, getw/putw, gets/fgets/puts/fputs), and the temp-name family.
+stdio-bufio = ["stdio"]
+# openfile/fopen/freopen/fdopen/fclose/closeall, fflush, fread/fwrite,
+# fseek/ftell/fgetpos/fsetpos/rewind, setbuf/setvbuf, and the small accessors.
+stdio-files = ["stdio"]
+# input.cpp and corecrt_internal_stdio_input.h: the scanf engine.
+stdio-input = ["stdio", "strtox", "strtod"]
+
+# The sixth fan-out batch (one directory module each; see the module docs).
+# convert/ -- the rest: mbrtowc/wcrtomb/mbstowcs/wcstombs/wctomb/mblen/mbtowc,
+# c16/c32 conversions, fcvt/gcvt, atoldbl, _mbslen family, swab, wctrans
+convert-rest = ["strtod"]
+# misc/ -- errno/strerror/perror, cwd and drives, signal/terminate, beep, pid, systime
+misc = []
+# filesystem/ -- makepath/splitpath, access, fullpath, unlink/rename, mkdir/rmdir, chmod
+filesystem = ["findfile"]
+# lowio/ -- the handle table (ioinit, osfinfo) is the core in src/lowio/mod.rs;
+# the rest of the directory are submodules over it, calling one another by C name.
+lowio = ["stdio"]
+# conio/ -- console I/O, cprintf/cscanf, _pipe/_popen.
+conio = ["lowio", "output", "stdio-input"]
+# env/ -- the environment tables, getenv/putenv/setenv, searchenv.
+env = []
+# exec/{wait,system,getproc,loaddll}.cpp -- the rest of exec (spawn is `exec`).
+exec-rest = ["exec"]
+# internal/{locks,shared_initialization,per_thread_data}.cpp + startup/initterm.cpp:
+# the lock table, the per-thread data block, and the initializer-table loops.
+internal-core = []
+# heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
+heap = []
+# stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
+# string/ stragglers (memcpy_s, strnlen).
+stdlib = []
+
 [dependencies]
+crt-portable-rust = { path = "../crt-portable-rust", optional = true }
+# `VaArgs`: reading C varargs on stable. The `...` entry points themselves are
+# three-line va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c, which
+# also supplies the va_arg pullers this crate's extern block names. varargs-rust has
+# no dependencies of its own, so this edge cannot reach msvcrt-crt-rust.
+varargs-rust = { path = "../varargs-rust" }

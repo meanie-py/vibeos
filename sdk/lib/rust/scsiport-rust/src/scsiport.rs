@@ -1936,7 +1936,9 @@ pub unsafe extern "system" fn SpiAdapterControl(
             NonPagedPool,
             ((*srb_info).NumberOfMapRegisters as SIZE_T)
                 .wrapping_mul(core::mem::size_of::<SCSI_SG_ADDRESS>() as SIZE_T),
-            0, // TAG_SCSIPORT
+            // scsiport.h TAG_SCSIPORT ('ISCS'); 0 is PoolHitTag's default and breaks into
+            // the pool tracker's DbgBreakPoint.
+            crate::glue::TAG_SCSIPORT,
         ) as *mut SCSI_SG_ADDRESS;
 
         // ASSERT(FALSE) removed because NDEBUG is defined

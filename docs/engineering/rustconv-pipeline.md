@@ -39,6 +39,12 @@ C source → [scanner] tree-sitter parse → [resolver] match vs ntkrnl-sys cata
 → [postprocess] safe mechanical fixes → [assembler] write crate → [checker] cargo check ×3
 ```
 
+After integration, logic that smoke never reaches is graded by `rustconv difftest-contract`:
+shipping Rust vs the genuine C on the host, with generated corpora and required mutants
+(`tools/rustconv/data/difftest/README.md`). Treat each bug it finds as a CLASS: the next
+step is a $0 static check that screens every translated body for it, so the main pass
+stops shipping that class — not just a fix at the one site.
+
 `rustconv translate` accepts HAL paths and is HAL-aware (separate
 `system_prompt_hal.md`, hal_ddk imports, auto-CMake edit). Output quality is
 ~70% useful for HAL — review before integrating (memory
@@ -268,6 +274,24 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
 - Interacts with `crate-repair`: prefer the semantic alias (`usize`) over a bindgen width alias
   (`SIZE_T`) in any FFI signature the guarded code calls, or the repair pass is forced to bake
   `as u32` on i386 and `as u64` on amd64/arm64 for one expression and correctly withholds both.
+
+## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
+
+Call sealing makes a dropped call fail at translation time; crates translated before it
+existed (fastfat and cdrom were the first DeepSeek lanes) never had that check. `rustconv
+body-audit <module dir> | --all` pairs each flipped-out C function with its same-named Rust
+and lists the C callees the Rust no longer performs, $0, about a minute tree-wide. A callee
+counts as kept through a crate-local helper or live C glue the body delegates to, a known
+lowering (`RtlZeroMemory` -> `write_bytes`, COM `IFoo_Bar` -> `lpVtbl).Bar`, A/W variants,
+intrinsics -> `asm!`), or a macro whose expansion's calls are all kept. Dead `#if` arms,
+DUMMY_PSEH except handlers and `#if DBG` code are optional; `_SEH2_FINALLY` is not, since it
+runs. cfg-split twins of one fn are judged as a union.
+
+It is a LEAD GENERATOR, ranked `stub-silent` > `high` (state-changing callee) > `medium` >
+`low` > `stub-loud`. Read each lead against the C before fixing or re-buying: macro state it
+cannot resolve (`NTDDI_VERSION` arms) and hand-restructured bodies still produce false leads.
+Motivating case: fastfat's `FatCreateNewDirent` lost `RtlSetBits`, so every new dirent stayed
+free in memory. Re-translate only what the audit confirms broken.
 
 ## `--target`: proven from the tree, or refused (2026-07-24)
 

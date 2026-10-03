@@ -121,8 +121,10 @@ pub static mut SmpInitialCommandProcessId: HANDLE = core::ptr::null_mut();
 
 const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
 const OBJ_CASE_INSENSITIVE: ULONG = 0x00000040;
-const RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB: ULONG = 0x00020000;
-const RTL_USER_PROCESS_PARAMETERS_NX: ULONG = 0x00100000;
+// ndk/rtltypes.h:46,55. (These were 0x20000/0x100000: "RESERVE_1MB" was really
+// setting the NX bit and "NX" an undefined bit, so subsystems never got the low 1MB.)
+const RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB: ULONG = 0x00000020;
+const RTL_USER_PROCESS_PARAMETERS_NX: ULONG = 0x00020000;
 const PROCESS_ALL_ACCESS: ULONG = 0x001F0FFF;
 const SE_SHUTDOWN_PRIVILEGE: ULONG = 19;
 const SE_LOAD_DRIVER_PRIVILEGE: ULONG = 10;
@@ -473,7 +475,7 @@ pub unsafe extern "system" fn SmpTerminate(
         RtlAdjustPrivilege(SE_SHUTDOWN_PRIVILEGE, 1u8, 0u8, &mut Old);
     }
 
-    let Status = NtRaiseHardError(
+    let mut Status = NtRaiseHardError(
         STATUS_SYSTEM_PROCESS_TERMINATED,
         ParameterCount,
         ParameterMask,
@@ -482,6 +484,11 @@ pub unsafe extern "system" fn SmpTerminate(
         &mut Response,
     );
 
+    // Exit with the real failure code in Parameters[1], not the hard-error call's own
+    // status (upstream f255c9f046e).
+    if ParameterCount >= 2 {
+        Status = *Parameters.add(1) as NTSTATUS;
+    }
     NtTerminateProcess(NtCurrentProcess(), Status)
 }
 
@@ -495,12 +502,33 @@ pub unsafe extern "C" fn SmpUnhandledExceptionFilter(ExceptionInfo: PEXCEPTION_P
         (*(*ExceptionInfo).ExceptionRecord).ExceptionCode,
         (*(*ExceptionInfo).ExceptionRecord).ExceptionAddress,
     );
-    crate::dbg_print!(
-        b"      Memory Address: %x  Read/Write: %x\n\0",
-        (*(*ExceptionInfo).ExceptionRecord).ExceptionInformation[0],
-        (*(*ExceptionInfo).ExceptionRecord).ExceptionInformation[1],
-    );
-    DbgBreakPoint();
+    // Upstream 5178c3913ed: the address is [1] and R/W is [0], printed only for the codes
+    // that carry them, and the break happens only under a debugger -- an unconditional
+    // DbgBreakPoint in the filter is itself unhandled on a debugger-free boot.
+    let Record = (*ExceptionInfo).ExceptionRecord;
+    let Code = (*Record).ExceptionCode as NTSTATUS;
+    if Code == STATUS_IN_PAGE_ERROR && (*Record).NumberParameters >= 3 {
+        crate::dbg_print!(
+            b"      Memory Address: %x  Read/Write: %x  I/O Error: %x\n\0",
+            (*Record).ExceptionInformation[1],
+            (*Record).ExceptionInformation[0],
+            (*Record).ExceptionInformation[2],
+        );
+    } else if (Code == STATUS_ACCESS_VIOLATION
+        || Code == STATUS_GUARD_PAGE_VIOLATION
+        || Code == STATUS_STACK_OVERFLOW
+        || Code == STATUS_IN_PAGE_ERROR)
+        && (*Record).NumberParameters >= 2
+    {
+        crate::dbg_print!(
+            b"      Memory Address: %x  Read/Write: %x\n\0",
+            (*Record).ExceptionInformation[1],
+            (*Record).ExceptionInformation[0],
+        );
+    }
+    if (*NtCurrentPeb()).BeingDebugged != 0 {
+        DbgBreakPoint();
+    }
 
     static ERROR_MSG: [u16; 42] = [
         b'U' as u16,

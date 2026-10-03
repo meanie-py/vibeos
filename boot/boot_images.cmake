@@ -45,7 +45,7 @@ endif()
 
 # Create a mkisofs sort file to specify an explicit ordering for the boot files
 # to place them at the beginning of the image (makes ISO image analysis easier).
-# See mkisofs/schilytools/mkisofs/README.sort for more details.
+# See vendor/schilytools/mkisofs/README.sort for more details.
 # As the default file sort weight is '0', give the boot files sort weights >= 1.
 # Note that it is sad that '-sort' does not work using grafted points, and as a
 # result we need in particular to use the boot catalog file "path" mkisofs that

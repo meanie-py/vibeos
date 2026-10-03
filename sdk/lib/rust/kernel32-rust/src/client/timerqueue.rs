@@ -9,13 +9,29 @@ pub static mut BasepDefaultTimerQueue: HANDLE = NULL;
 
 #[no_mangle]
 pub unsafe extern "system" fn BasepCreateDefaultTimerQueue() -> BOOL {
-    let mut Status: NTSTATUS;
+    if !BasepDefaultTimerQueue.is_null() {
+        return 1;
+    }
 
-    Status = RtlCreateTimerQueue(&raw mut BasepDefaultTimerQueue);
+    // Create into a local and publish once (upstream 73e69a62d39). Creating straight into
+    // the global let two first callers each make a queue; the loser's queue, and its
+    // worker thread, leaked, with timers already on it.
+    let mut TimerQueue: HANDLE = NULL;
+    let Status: NTSTATUS = RtlCreateTimerQueue(&mut TimerQueue);
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);
-        // DPRINT removed
         return 0;
+    }
+
+    if !crate::k32_externs::InterlockedCompareExchangePointer(
+        (&raw mut BasepDefaultTimerQueue).cast(),
+        TimerQueue,
+        NULL,
+    )
+    .is_null()
+    {
+        // Another thread won; ours was never handed out.
+        RtlDeleteTimerQueueEx(TimerQueue, core::ptr::null_mut());
     }
 
     return 1;

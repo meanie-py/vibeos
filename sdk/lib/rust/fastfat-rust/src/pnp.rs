@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ke::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive,  IoAcquireVpbSpinLock, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive,  IoAcquireVpbSpinLock, IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoReleaseVpbSpinLock, IoSetCompletionRoutine, IoSkipCurrentIrpStackLocation, IoSetTopLevelIrp, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP, PKEVENT};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{FAT_BUG_CHECK_PNP, IRP_CONTEXT, PIRP_CONTEXT, PVCB, PVOLUME_DEVICE_OBJECT, VCB, VOLUME_DEVICE_OBJECT, _VCB_CONDITION_VcbBad as VcbBad};
@@ -28,6 +28,7 @@ extern "system" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FsRtlEnterFileSystem();
+    fn FsRtlExitFileSystem();
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn CanFsdWait(Irp: PIRP) -> i32;
     fn FatCreateIrpContext(irp: *mut IRP, wait: i32,) -> *mut IRP_CONTEXT;
@@ -47,10 +48,9 @@ pub unsafe extern "system" fn FatFsdPnp(
     VolumeDeviceObject: *mut VOLUME_DEVICE_OBJECT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
-    let mut TopLevel: i32;
-    let mut Wait: i32;
+    let TopLevel: i32;
 
     // PAGED_CODE(); -- expand not possible, assume no-op
 
@@ -60,23 +60,39 @@ pub unsafe extern "system" fn FatFsdPnp(
 
     TopLevel = FatIsIrpTopLevel(Irp) as i32;
 
-    // _SEH2_TRY begins here
-    {
-        // Determine whether to wait
+    // _SEH2_TRY / _SEH2_EXCEPT(FatExceptionFilter(IrpContext, ...))
+    let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
+    let p_status = core::ptr::addr_of_mut!(Status);
+    if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const PIRP_CONTEXT, || {
+        //  We expect there to never be a fileobject, in which case we will always
+        //  wait.
         let stack_loc = IoGetCurrentIrpStackLocation(Irp);
-        if (*stack_loc).FileObject.is_null() {
-            Wait = 1;
+        let Wait: i32 = if (*stack_loc).FileObject.is_null() {
+            1
         } else {
-            Wait = CanFsdWait(Irp);
-        }
+            CanFsdWait(Irp)
+        };
 
-        IrpContext = FatCreateIrpContext(Irp, Wait);
+        *p_irp_context = FatCreateIrpContext(Irp, Wait);
 
-        Status = FatCommonPnp(IrpContext, Irp);
+        *p_status = FatCommonPnp(*p_irp_context, Irp);
+    }) {
+        //  We had some trouble trying to perform the requested
+        //  operation, so we'll abort the I/O request with
+        //  the error status that we get back from the
+        //  execption code
+        Status = crate::fatdata::FatProcessException(IrpContext, Irp, code);
     }
-    // _SEH2_EXCEPT and _SEH2_FINALLY not present in provided source;
-    // original function would have included cleanup and return after SEH.
-    // Transliterating the visible body as-is.
+
+    if TopLevel != 0 {
+        IoSetTopLevelIrp(core::ptr::null_mut());
+    }
+
+    FsRtlExitFileSystem();
+
+    DebugTrace(-1, Dbg, b"FatFsdPnp -> %08lx\n\0".as_ptr() as *const i8, Status);
+
+    let _ = VolumeDeviceObject;
 
     return Status;
 }
@@ -159,9 +175,14 @@ pub unsafe extern "system" fn FatPnpQueryRemove(
     FatReleaseGlobal(IrpContext);
     GlobalHeld = 0i32;
 
-    // _SEH2_TRY block
-    {
-        Status = FatLockVolumeInternal(IrpContext, Vcb, core::ptr::null_mut());
+    let p_status = core::ptr::addr_of_mut!(Status);
+    let p_event = core::ptr::addr_of_mut!(Event);
+    let p_vcb_deleted = core::ptr::addr_of_mut!(VcbDeleted);
+    let p_global_held = core::ptr::addr_of_mut!(GlobalHeld);
+
+    // _SEH2_TRY / _SEH2_FINALLY
+    crate::seh::try_finally(&mut (), |_| {
+        *p_status = FatLockVolumeInternal(IrpContext, Vcb, core::ptr::null_mut());
 
         // Drop an additional reference on the Vpb so that the volume cannot be
         // torn down when we drop all the locks below.
@@ -173,14 +194,14 @@ pub unsafe extern "system" fn FatPnpQueryRemove(
         NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT));
 
         FatAcquireExclusiveGlobal(IrpContext);
-        GlobalHeld = 1i32;
+        *p_global_held = 1i32;
 
         FatAcquireExclusiveVcb(IrpContext, Vcb);
 
         // Drop the reference we added above.
         FatPnpAdjustVpbRefCount(Vcb, (-1i32) as u32);
 
-        if NT_SUCCESS(Status) {
+        if NT_SUCCESS(*p_status) {
             // With the volume held locked, note that we must finalize as much
             // as possible right now.
             FatFlushAndCleanVolume(IrpContext, Irp, Vcb, 1i32);
@@ -191,48 +212,47 @@ pub unsafe extern "system" fn FatPnpQueryRemove(
             IoCopyCurrentIrpStackLocationToNext(Irp);
 
             // Set up the completion routine
-            KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent as u32, (0i32) as u8); // FALSE
+            KeInitializeEvent(&mut *p_event, _EVENT_TYPE_NotificationEvent as u32, (0i32) as u8); // FALSE
             IoSetCompletionRoutine(
                 Irp,
                 Some(unsafe { core::mem::transmute::<*const (), _>(FatPnpCompletionRoutine as *const ()) }),
-                &mut Event as *mut KEVENT as *mut core::ffi::c_void,
+                &mut *p_event as *mut KEVENT as *mut core::ffi::c_void,
                 1u8, // TRUE
                 1u8, // TRUE
                 1u8, // TRUE
             );
 
             // Send the request and wait.
-            Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+            *p_status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
 
-            if Status == STATUS_PENDING {
+            if *p_status == STATUS_PENDING {
                 KeWaitForSingleObject(
-                    &mut Event as *mut KEVENT as PVOID,
+                    &mut *p_event as *mut KEVENT as PVOID,
                     _KWAIT_REASON_Executive as u32,
                     0i8,
                     0u8, // FALSE
                     core::ptr::null_mut(),
                 );
-                Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+                *p_status = (*Irp).IoStatus.__bindgen_anon_1.Status;
             }
 
             // Now if no one below us failed already, initiate the dismount
-            if NT_SUCCESS(Status) {
-                VcbDeleted = (((FatCheckForDismount(IrpContext, Vcb, ((1i32) as i32) as u8) as i32) as u8)) as i32; // TRUE
-                NT_ASSERT((VcbDeleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32) as i32);
+            if NT_SUCCESS(*p_status) {
+                *p_vcb_deleted = (((FatCheckForDismount(IrpContext, Vcb, ((1i32) as i32) as u8) as i32) as u8)) as i32; // TRUE
+                NT_ASSERT((*p_vcb_deleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32) as i32);
             }
         }
-    }
+    }, |_, _| {
+        //  Release the Vcb if it could still remain.
+        if *p_vcb_deleted == 0 {
+            FatReleaseVcb(IrpContext, Vcb);
+        }
+        if *p_global_held != 0 {
+            FatReleaseGlobal(IrpContext);
+        }
+    });
 
-    // _SEH2_FINALLY (was dropped in translation — same missing-finally class
-    // as the FatQueryDirectory Fcb leak): release the Vcb if it could still
-    // remain, then the global resource, then complete the request.
-    if VcbDeleted == 0 {
-        FatReleaseVcb(IrpContext, Vcb);
-    }
-    if GlobalHeld != 0 {
-        FatReleaseGlobal(IrpContext);
-    }
-
+    //  Cleanup our IrpContext and complete the IRP if neccesary.
     FatCompleteRequest(IrpContext, Irp, Status);
 
     return Status;
@@ -278,17 +298,17 @@ pub unsafe extern "system" fn FatPnpRemove(
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
 
-    // try block
-    {
+    // _SEH2_TRY / _SEH2_FINALLY
+    let p_vcb_deleted = core::ptr::addr_of_mut!(VcbDeleted);
+    crate::seh::try_finally(&mut (), |_| {
         FatFlushAndCleanVolume(IrpContext, Irp, Vcb, 0 /* NoFlush */);
-        VcbDeleted = FatCheckForDismount(IrpContext, Vcb, 1);
-    }
-
-    // finally block
-    if VcbDeleted == 0 {
-        FatReleaseVcb(IrpContext, Vcb);
-    }
-    FatReleaseGlobal(IrpContext);
+        *p_vcb_deleted = FatCheckForDismount(IrpContext, Vcb, 1);
+    }, |_, _| {
+        if *p_vcb_deleted == 0 {
+            FatReleaseVcb(IrpContext, Vcb);
+        }
+        FatReleaseGlobal(IrpContext);
+    });
 
     FatCompleteRequest(IrpContext, Irp, Status);
 
@@ -344,22 +364,23 @@ pub unsafe extern "system" fn FatPnpSurpriseRemove(
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
 
-    // _SEH2_TRY {
-    //  Knock as many files down for this volume as we can.
-    FatFlushAndCleanVolume(IrpContext, Irp, Vcb, 0); // NoFlush = 0
+    // _SEH2_TRY / _SEH2_FINALLY
+    let p_vcb_deleted = core::ptr::addr_of_mut!(VcbDeleted);
+    crate::seh::try_finally(&mut (), |_| {
+        //  Knock as many files down for this volume as we can.
+        FatFlushAndCleanVolume(IrpContext, Irp, Vcb, 0); // NoFlush = 0
 
-    //  Now make our dismount happen.  This may not vaporize the
-    //  Vcb, of course, since there could be any number of handles
-    //  outstanding since this is an out of band notification.
-    VcbDeleted = FatCheckForDismount(IrpContext, Vcb, 1 as BOOLEAN); // TRUE = 1
-
-    // } _SEH2_FINALLY {
-    //  Release the Vcb if it could still remain.
-    if VcbDeleted == 0 {
-        FatReleaseVcb(IrpContext, Vcb);
-    }
-    FatReleaseGlobal(IrpContext);
-    // } _SEH2_END;
+        //  Now make our dismount happen.  This may not vaporize the
+        //  Vcb, of course, since there could be any number of handles
+        //  outstanding since this is an out of band notification.
+        *p_vcb_deleted = FatCheckForDismount(IrpContext, Vcb, 1 as BOOLEAN); // TRUE = 1
+    }, |_, _| {
+        //  Release the Vcb if it could still remain.
+        if *p_vcb_deleted == 0 {
+            FatReleaseVcb(IrpContext, Vcb);
+        }
+        FatReleaseGlobal(IrpContext);
+    });
 
     //  Cleanup our IrpContext and complete the IRP.
     FatCompleteRequest(IrpContext, Irp, Status);
@@ -380,11 +401,17 @@ pub unsafe extern "system" fn FatPnpCancelRemove(
 
     FatUnlockVolumeInternal(IrpContext, Vcb, core::ptr::null_mut());
 
-    let status = {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    // _SEH2_TRY / _SEH2_FINALLY
+    crate::seh::try_finally(&mut (), |_| {
+        //  Send the request.  The underlying driver will complete the
+        //  IRP.  Since we don't need to be in the way, simply ellide
+        //  ourselves out of the IRP stack.
         IoSkipCurrentIrpStackLocation(Irp);
-        IoCallDriver((*Vcb).TargetDeviceObject, Irp)
-    };
-    FatReleaseVcb(IrpContext, Vcb);
+        status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
+    }, |_, _| {
+        FatReleaseVcb(IrpContext, Vcb);
+    });
 
     FatCompleteRequest(IrpContext, core::ptr::null_mut(), STATUS_SUCCESS);
     status

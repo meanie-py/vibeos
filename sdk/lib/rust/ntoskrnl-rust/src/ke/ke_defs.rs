@@ -327,7 +327,9 @@ pub const KMODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_001E;
 // names were declared 0x1E here; the second was invented (§9.113).
 pub const KERNEL_MODE_EXCEPTION_NOT_HANDLED: u32 = 0x0000_008E;
 
-// KF_ feature flags — from ndk/i386/ketypes.h (same on amd64)
+// KF_ feature flags — from ndk/i386/ketypes.h. The low bits agree with
+// ndk/amd64/ketypes.h but the Win 6.x+ bits do NOT (KF_XSTATE, KF_SSSE3/SSE4_x,
+// KF_DTS, KF_RDRAND move), so the arch-dependent ones used here are cfg-split.
 pub const KF_V86_VIS: u32 = 0x0000_0001;
 pub const KF_RDTSC: u32 = 0x0000_0002;
 pub const KF_CR4: u32 = 0x0000_0004;
@@ -347,10 +349,24 @@ pub const KF_AMDK6MTRR: u32 = 0x0000_8000;
 pub const KF_XMMI64: u32 = 0x0001_0000;
 pub const KF_DTS: u32 = 0x0002_0000;
 pub const KF_SSE3: u32 = 0x0008_0000;
-pub const KF_SSSE3: u32 = 0x0020_0000;
-pub const KF_SSE4_1: u32 = 0x0040_0000;
-pub const KF_SSE4_2: u32 = 0x0080_0000;
-pub const KF_XSTATE: u32 = 0x0100_0000;
+// 64-bit feature bits: ndk/i386/ketypes.h:66-68 / ndk/amd64/ketypes.h:72-74.
+#[cfg(target_arch = "x86")]
+pub const KF_SSSE3: u64 = 0x0000_0040_0000_0000;
+#[cfg(target_arch = "x86")]
+pub const KF_SSE4_1: u64 = 0x0000_0080_0000_0000;
+#[cfg(target_arch = "x86")]
+pub const KF_SSE4_2: u64 = 0x0000_0100_0000_0000;
+#[cfg(not(target_arch = "x86"))]
+pub const KF_SSSE3: u64 = 0x0000_8000_0000_0000;
+#[cfg(not(target_arch = "x86"))]
+pub const KF_SSE4_1: u64 = 0x0001_0000_0000_0000;
+#[cfg(not(target_arch = "x86"))]
+pub const KF_SSE4_2: u64 = 0x0002_0000_0000_0000;
+// ndk/i386/ketypes.h:53 = 0x400000; ndk/amd64/ketypes.h:55 = 0x800000.
+#[cfg(target_arch = "x86")]
+pub const KF_XSTATE: u32 = 0x0040_0000;
+#[cfg(not(target_arch = "x86"))]
+pub const KF_XSTATE: u32 = 0x0080_0000;
 pub const KF_RDRAND: u32 = 0x0200_0000;
 pub const KF_NX_BIT: u32 = 0x2000_0000;
 pub const KF_NX_DISABLED: u32 = 0x4000_0000;
@@ -360,14 +376,19 @@ pub const KF_NX_ENABLED: u32 = 0x8000_0000;
 pub const XSTATE_LEGACY_FLOATING_POINT: u32 = 0;
 pub const XSTATE_LEGACY_SSE: u32 = 1;
 pub const MAXIMUM_XSTATE_FEATURES: u32 = 64;
-pub const XSTATE_MASK_ALLOWED: u64 = 0xFFFF_FFFF_FFFF_FFFF;
-pub const XSTATE_MASK_PERSISTENT: u64 = 0;
-pub const XSTATE_MASK_USER_VISIBLE_SUPERVISOR: u64 = 0;
-pub const XSTATE_MASK_LARGE_FEATURES: u64 = 0;
+// xdk/ketypes.h:1296-1338. ALLOWED = LEGACY|AVX|MPX|AVX512|IPT|PASID|CET_U|
+// AMX_TILE_CONFIG|AMX_TILE_DATA|LWP on _AMD64_ (no PASID/AMX on _X86_).
+#[cfg(target_arch = "x86")]
+pub const XSTATE_MASK_ALLOWED: u64 = 0x4000_0000_0000_09FF;
+#[cfg(not(target_arch = "x86"))]
+pub const XSTATE_MASK_ALLOWED: u64 = 0x4000_0000_0006_0DFF;
+pub const XSTATE_MASK_PERSISTENT: u64 = 0x4000_0000_0000_0010; // MPX_BNDCSR | LWP
+pub const XSTATE_MASK_USER_VISIBLE_SUPERVISOR: u64 = 0x0000_0800; // CET_U
+pub const XSTATE_MASK_LARGE_FEATURES: u64 = 0x0004_0000; // AMX_TILE_DATA
 pub const XSTATE_MASK_CET_U: u64 = 0x0000_0800;
 pub const XSTATE_MASK_CET_S: u64 = 0x0000_1000;
-pub const XSTATE_MASK_IPT: u64 = 0;
-pub const XSTATE_MASK_PASID: u64 = 0;
+pub const XSTATE_MASK_IPT: u64 = 0x0000_0100;
+pub const XSTATE_MASK_PASID: u64 = 0x0000_0400;
 
 // Lock queue numbers (from sdk/include/xdk/ketypes.h)
 // NOTE: LockQueueNonPagedPoolLock (6) and LockQueueMmNonPagedPoolLock (15)

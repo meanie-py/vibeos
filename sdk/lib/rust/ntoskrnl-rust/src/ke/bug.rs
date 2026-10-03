@@ -104,8 +104,7 @@ extern "system" {
     fn HalHaltSystem();
     fn HeadlessDispatch(Command: ULONG, InputBuffer: PVOID, InputBufferSize: SIZE_T, OutputBuffer: PVOID, OutputBufferSize: PSIZE_T);
     fn KeGetTrapFramePc(TrapFrame: PKTRAP_FRAME) -> ULONG_PTR;
-    #[cfg(target_arch = "x86")] fn KxFreezeExecution();
-    #[cfg(target_arch = "x86_64")] fn KxFreezeExecution();
+    #[cfg(feature = "smp")] fn KxFreezeExecution();
 }
 extern "C" {
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
@@ -115,7 +114,7 @@ extern "C" {
 const TAG_KNMI: ULONG = 0x494D4E4B;
 
 const RT_MESSAGETABLE: ULONG = 11;
-const RESOURCE_DATA_LEVEL: ULONG = 0;
+const RESOURCE_DATA_LEVEL: ULONG = 3; // ndk/ldrtypes.h:33 (type/name/language -> data entry)
 const LANG_NEUTRAL: USHORT = 0;
 const SUBLANG_NEUTRAL: USHORT = 0;
 
@@ -896,11 +895,11 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
         );
         // i386: symbolicate TrapFrame.Eip + walk the EBP chain — a PC=0 bugcheck
         // is otherwise unattributable (nothing to symbolicate at the fault).
-        #[cfg(target_arch = "x86")]
+        #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (Rust-only diagnostic; not the C's CONFIG_SMP block)
         if !TrapFrame.is_null() {
             i386_trap_frame_backtrace(TrapFrame as ULONG_PTR);
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (Rust-only diagnostic; not the C's CONFIG_SMP block)
         if !TrapFrame.is_null() {
             let rip = (*(TrapFrame as *const ntkrnl_sys::ddk::_KTRAP_FRAME)).Rip as u64;
             if rip > 0xFFFF800000000000 {
@@ -1290,7 +1289,9 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
     KeRaiseIrql(HIGH_LEVEL, &mut OldIrql);
 
     if InterlockedDecrement(&mut KeBugCheckCount as *mut _ as *mut LONG) == 0 {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        // bug.c: `#ifdef CONFIG_SMP` — the SMP kernel on every arch, never the UP one.
+        // This was gated on x86/x86_64, which froze in UP builds and never on arm64 SMP.
+        #[cfg(feature = "smp")]
         {
             KeBugCheckOwner = (*Prcb).Number as ULONG;
             KxFreezeExecution();
@@ -1525,7 +1526,7 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
     crate::dbg_print!(b"***   TrapFrame Eip=%p Ebp=%p Esp=%p\n\0",
         eip as ULONG_PTR as PVOID, ebp as ULONG_PTR as PVOID,
         core::ptr::addr_of!((*tf).HardwareEsp) as PVOID);
-    unsafe fn ksym(pc: u32) {
+    unsafe fn ksym(pc: u32) -> bool {
         let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
         let mut in_kernel: BOOLEAN = 0;
         let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
@@ -1537,11 +1538,38 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
             crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
                 pc as ULONG_PTR as PVOID, ansi.as_ptr(),
                 (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
+            true
         } else {
             crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
+            false
         }
     }
-    ksym(eip);
+    if !ksym(eip) {
+        // EIP outside every module means a call through a bad pointer, and then
+        // EBP is whatever the garbage "function" left -- the chain below walks
+        // nothing. The CALLER's return address is still on the stack, at or near
+        // the trap's ESP (kernel-mode: the address of HardwareEsp). Print every
+        // word there that lands in a module; the first is usually the bad call.
+        crate::dbg_print!(b"***   EIP is in no module; stack words that are code addresses:\n\0");
+        let sp = core::ptr::addr_of!((*tf).HardwareEsp) as u32;
+        let mut i = 0u32;
+        while i < 32 {
+            let at = sp + i * 4;
+            if MmIsAddressValid(at as ULONG_PTR as PVOID) == 0 {
+                break;
+            }
+            let w = core::ptr::read_volatile(at as *const u32);
+            let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+            let mut in_kernel: BOOLEAN = 0;
+            if w > 0x1000
+                && !KiPcToFileHeader(w as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel).is_null()
+            {
+                crate::dbg_print!(b"***   [esp+%02lx]\n\0", (i * 4) as ULONG);
+                ksym(w);
+            }
+            i += 1;
+        }
+    }
     // EBP-chain backtrace (frame-pointer builds; bail on bad links)
     let mut bp = ebp;
     let mut n = 0;
@@ -1552,7 +1580,7 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
         }
         let ret = core::ptr::read_volatile((bp + 4) as *const u32);
         if ret < 0x1000 { break; }
-        ksym(ret);
+        let _ = ksym(ret);
         let next = core::ptr::read_volatile(bp as *const u32);
         if next <= bp { break; }
         bp = next;
@@ -1586,8 +1614,10 @@ pub unsafe extern "system" fn KeBugCheckEx(
         BugCheckParameter4 as PVOID,
     );
     KiBannerDone = 1; // WithTf must not re-print (Ex -> WithTf path)
-    #[cfg(target_arch = "x86")]
-    if BugCheckCode == 0x1E && BugCheckParameter3 > 0x80000000 {
+    // 0x50/0xBE pass MmAccessFault's TrapInformation as P3 too (ARM3/pagfault.rs). Without
+    // this an i386 0x50 printed four bare numbers: P3 is a stack address, in no module.
+    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
+    if matches!(BugCheckCode, 0x1E | 0x50 | 0xBE) && BugCheckParameter3 > 0x80000000 {
         i386_trap_frame_backtrace(BugCheckParameter3);
     }
     // Self-symbolicate: any parameter that lands inside a loaded image prints
@@ -1630,7 +1660,7 @@ pub unsafe extern "system" fn KeBugCheckEx(
         // ATTEMPTED_WRITE_TO_READONLY_MEMORY, 0x1E-family) pass TrapInformation
         // as P3, not a PC — the real faulting PC is inside that KTRAP_FRAME.
         // Extract and symbolicate it too (bindgen field access, not a raw offset).
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
         if (BugCheckCode == 0x50 || BugCheckCode == 0xBE || BugCheckCode == 0x7E || BugCheckCode == 0x1E)
             && BugCheckParameter3 > 0xFFFF800000000000
         {
@@ -1697,74 +1727,74 @@ pub unsafe extern "system" fn KeBugCheckEx(
         let mut s: &[u8] = b"\r\n*** BUGCHECK: code=0x\0";
         let mut i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" LR=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((lr >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P1=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter1 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P2=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter2 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P3=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter3 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" P4=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((BugCheckParameter4 >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b"\r\n\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
     }
@@ -1795,7 +1825,7 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
         lr
     };
     // Debugcon: dump return address so we can identify the caller
-    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
     {
         let retaddr: u32;
         core::arch::asm!(
@@ -1817,30 +1847,30 @@ pub unsafe extern "system" fn KeBugCheck(BugCheckCode: ULONG) -> ! {
         let mut s: &[u8] = b"\r\n*** BUGCHECK: code=0x\0";
         let mut i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         let lr: ULONG_PTR = entry_lr;
         { let mut shift: i32 = 28; while shift >= 0 {
             let d = ((BugCheckCode >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b" LR=0x\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
         { let mut shift: i32 = 60; while shift >= 0 {
             let d = ((lr >> shift) & 0xF) as u8;
-            *u = if d < 10 { b'0' + d } else { b'A' + d - 10 } as ULONG;
+            crate::arm64_dbg::uart_putc_default(if d < 10 { b'0' + d } else { b'A' + d - 10 } as u8);
             shift -= 4;
         } }
         s = b"\r\n\0";
         i = 0;
         while s[i] != 0 {
-            *u = s[i] as ULONG;
+            crate::arm64_dbg::uart_putc_default(s[i] as u8);
             i += 1;
         }
     }

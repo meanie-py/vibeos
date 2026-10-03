@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "random_cases": 64,
+  "seed": 230924,
+  "c_flags": [
+    "-D__cdecl=",
+    "-fsigned-char"
+  ],
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "validity": "Exact shipping cnt-rust memmove shim and raw_move helper against genuine CRT C. All pointers and their count-byte ranges lie within the SAME allocation: this is required for C pointer-order comparisons. Includes exact alias, both overlap directions, adjacent and disjoint ranges, zero counts. Every byte initialized; return must equal destination (comparison with C), with the zero-length endpoint allowed. Host-only function-body grade; extraction excludes unrelated crate context.",
+  "c_source": "../../../../sdk/lib/crt/mem/memmove.c",
+  "rust_items": [
+    "mmemmove::memmove"
+  ],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": [
+        "raw_move"
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "c": "memmove",
+      "rust": "candidate::memmove",
+      "return": {
+        "type": "void_bytes",
+        "within": [
+          "dest"
+        ],
+        "nullable": false,
+        "one_past": true
+      },
+      "args": [
+        {
+          "name": "dest",
+          "type": "void_bytes",
+          "length": "count"
+        },
+        {
+          "name": "src",
+          "type": "const_void_bytes",
+          "length": "count"
+        },
+        {
+          "name": "count",
+          "type": "usize",
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            7,
+            8,
+            15,
+            31,
+            32,
+            63,
+            64
+          ],
+          "random_range": [
+            0,
+            64
+          ]
+        }
+      ],
+      "layouts": [
+        {
+          "name": "same",
+          "allocations": {
+            "arena": {
+              "arg": "count",
+              "add": 1
+            }
+          },
+          "bindings": {
+            "src": {
+              "allocation": "arena",
+              "offset": 0
+            },
+            "dest": {
+              "allocation": "arena",
+              "offset": 0
+            }
+          }
+        },
+        {
+          "name": "backward_overlap",
+          "allocations": {
+            "arena": {
+              "arg": "count",
+              "add": 1
+            }
+          },
+          "bindings": {
+            "src": {
+              "allocation": "arena",
+              "offset": 0
+            },
+            "dest": {
+              "allocation": "arena",
+              "offset": 1
+            }
+          }
+        },
+        {
+          "name": "forward_overlap",
+          "allocations": {
+            "arena": {
+              "arg": "count",
+              "add": 1
+            }
+          },
+          "bindings": {
+            "src": {
+              "allocation": "arena",
+              "offset": 1
+            },
+            "dest": {
+              "allocation": "arena",
+              "offset": 0
+            }
+          }
+        },
+        {
+          "name": "wider_overlap",
+          "allocations": {
+            "arena": {
+              "arg": "count",
+              "add": 7
+            }
+          },
+          "bindings": {
+            "src": {
+              "allocation": "arena",
+              "offset": 0
+            },
+            "dest": {
+              "allocation": "arena",
+              "offset": 7
+            }
+          }
+        },
+        {
+          "name": "adjacent",
+          "allocations": {
+            "arena": {
+              "arg": "count",
+              "add": 64
+            }
+          },
+          "bindings": {
+            "src": {
+              "allocation": "arena",
+              "offset": 0
+            },
+            "dest": {
+              "allocation": "arena",
+              "offset": "count"
+            }
+          }
+        },
+        {
+          "name": "disjoint",
+          "allocations": {
+            "arena": 256
+          },
+          "bindings": {
+            "src": {
+              "allocation": "arena",
+              "offset": 0
+            },
+            "dest": {
+              "allocation": "arena",
+              "offset": 128
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "forward_overlap",
+      "find": "if dst as usize <= src as usize || dst as usize >= src as usize + n {",
+      "replace": "if true {"
+    },
+    {
+      "name": "wrong_return",
+      "find": "        dest\n    }",
+      "replace": "        src as *mut core::ffi::c_void\n    }"
+    }
+  ]
+}

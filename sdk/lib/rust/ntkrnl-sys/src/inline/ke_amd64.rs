@@ -248,12 +248,15 @@ pub unsafe fn KiInitGdtEntry(
     e.__bindgen_anon_1.Bytes.BaseMiddle = (base >> 16) as u8;
     e.__bindgen_anon_1.Bytes.BaseHigh = (base >> 24) as u8;
     e.BaseUpper = (base >> 32) as u32;
-    e.LimitLow = size as u16;
+    // intrin_i.h: KiSetGdtDescriptorLimit(Entry, Size - 1) -- a limit is the last valid
+    // offset, not the size.
+    let limit = size.wrapping_sub(1);
+    e.LimitLow = limit as u16;
     // Set Bits: Type, Dpl, Present, LimitHi, Granularity
     e.__bindgen_anon_1.Bits.set_Type(type_ as u32);
     e.__bindgen_anon_1.Bits.set_Dpl(dpl as u32);
     e.__bindgen_anon_1.Bits.set_Present(1);
-    e.__bindgen_anon_1.Bits.set_LimitHigh(((size >> 16) & 0xF) as u32);
+    e.__bindgen_anon_1.Bits.set_LimitHigh(((limit >> 16) & 0xF) as u32);
     e.__bindgen_anon_1.Bits.set_Granularity(0);
     e.__bindgen_anon_1.Bits.set_System(0);
     e.__bindgen_anon_1.Bits.set_LongMode(0);
@@ -320,7 +323,7 @@ pub unsafe fn KiRestoreXState(buffer: PVOID, component_mask: u64) {
 // ============================================================================
 
 const APIC_BASE: u64 = 0xFFFFFFFFFFFE0000u64;
-const APIC_EOI_REGISTER: u64 = 0xB0;
+const APIC_EOI_REGISTER: u64 = 0xB0; // nolint: const-contradiction (OFFSET from APIC_BASE; APIC_BASE+0xB0 == ke.h:87's absolute 0xFFFFFFFFFFFE00B0)
 
 /// KiSendEOI — write 0 to APIC EOI register.
 #[inline]
@@ -329,17 +332,15 @@ pub unsafe fn KiSendEOI() {
     core::ptr::write_volatile(eoi, 0);
 }
 
-// ============================================================================
-// RtlFillMemoryUlong
-// ============================================================================
-
-/// RtlFillMemoryUlong — fill memory with a ULONG pattern.
+/// RtlFillMemoryUlong — fill memory with a ULONG pattern. An inline helper for
+/// drivers (fastfat), NOT an export: the kernel's `RtlFillMemoryUlong` symbol is the
+/// `mem` crate's.
 #[inline]
 pub unsafe fn RtlFillMemoryUlong(dest: PVOID, length: usize, pattern: ULONG) {
     let count = length / 4;
     asm!(
         "rep stosd",
-        inout("ecx") count => _,
+        inout("rcx") count => _,
         inout("rdi") dest => _,
         in("eax") pattern,
         options(nostack),

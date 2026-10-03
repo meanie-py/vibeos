@@ -1,0 +1,51 @@
+# crt-portable-rust — CRT bodies proven to have ONE contract across msvcrt.dll and
+# ucrtbase.dll, compiled once and linked into both.
+#
+# ── WHY THIS CRATE EXISTS ────────────────────────────────────────────────────
+#
+# 809 of ucrtbase's owed exports already have a body in `msvcrt-crt-rust`, but
+# ucrtbase must never depend on that crate: it carries msvcrt's whole
+# `_MSVCR_VER=0` floor, and `--allow-multiple-definition` would let it replace
+# genuine UCRT bodies silently (see ucrt-rust/Cargo.toml and
+# tools/verify_ucrtbase_cohab.py, whose `check_structure` forbids the edge).
+#
+# So a body moves HERE only when two things are both true:
+#   * it graded MATCH against Microsoft's UCRT in the guest (Tier 2 --
+#     docs/engineering/active-lanes/ucrt-tier2-table.tsv), AND
+#   * it is stateless on BOTH sides: no errno, no locale, no _MSVCR_VER branch.
+# The second condition is not implied by the first. Tier 2 runs in the "C"
+# locale, so `_strlwr` and `atoi` grade MATCH there while Microsoft's versions
+# consult the current locale and ours do not -- a takeover would be correct in
+# exactly the one locale the harness uses. Those need a per-side shim over a
+# shared core (the cnt-rust pattern), not this crate.
+#
+# ── WHY THE #[no_mangle] BODIES LIVE HERE, NOT IN SHIMS ──────────────────────
+#
+# `#![no_builtins]` is what stops LLVM recognising these loops as the very
+# functions they define (a `strlen` loop lowered to a call to `strlen`). It is a
+# per-function attribute that does NOT survive inlining into a crate without
+# it, so thin `#[no_mangle]` shims in each consumer over `#[inline]` bodies here
+# would reopen that trap in ucrt-rust. Defining the symbols here compiles every
+# body under this crate's attribute, and both DLLs link the same object code.
+#
+# msvcrt-difftest links `msvcrt-crt-rust`, which enables these features, so the
+# host grading against the genuine msvcrt C still covers exactly what ships.
+[package]
+name = "crt-portable-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# A plain rlib: both consumers are rlibs under their own staticlib umbrellas,
+# and the host difftests link it into std test binaries.
+path = "src/lib.rs"
+
+[features]
+default = []
+# strcat strcpy strcspn strlen strncat strncpy strpbrk strspn
+string = []
+# strnlen, split out because only msvcrt.dll takes it (see the note in src/lib.rs).
+strnlen = ["string"]
+
+[dependencies]
+cnt-rust = { path = "../cnt-rust", default-features = false }

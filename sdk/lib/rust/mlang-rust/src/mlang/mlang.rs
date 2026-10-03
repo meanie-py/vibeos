@@ -1717,14 +1717,14 @@ const SCRIPTCONTF_SCRIPT_HIDE: u32 = 2;
 const SCRIPTCONTF_SCRIPT_SYSTEM: u32 = 4;
 const SCRIPTCONTF_FIXED_FONT: DWORD = 1;
 const SCRIPTCONTF_PROPORTIONAL_FONT: DWORD = 2;
-const TCI_SRCCODEPAGE: u32 = 1;
+const TCI_SRCCODEPAGE: u32 = 2; // wingdi.h:962 (was 1 = TCI_SRCCHARSET)
 const TCI_SRCFONTSIG: u32 = 3;
 const DEFAULT_CHARSET: u8 = 1;
 const ERROR_SUCCESS: LSTATUS = 0;
 const REG_SZ: u32 = 1;
 const REG_DWORD: u32 = 4;
 const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as HKEY;
-const OBJ_FONT: u32 = 7;
+const OBJ_FONT: u32 = 6; // wingdi.h:694 (was 7 = OBJ_BITMAP)
 const CPIOD_PEEK: u32 = 0x00000400;
 const WC_NO_BEST_FIT_CHARS: u32 = 0x00000400;
 const STATFLAG_NONAME: u32 = 1;
@@ -4943,13 +4943,16 @@ unsafe extern "C" fn fnIMLangFontLink2_GetStrCodePages(
             return E_FAIL;
         }
 
+        // Wine 10 (upstream 15c9005acb6): a character joins the run only while the code-page
+        // set stays non-empty AND it agrees with the run on the priority code page; otherwise
+        // the run ends BEFORE it. The old body narrowed unconditionally, so it ran on past
+        // the point where the set was empty (winetest mlang.c:1278 expects 3, not 4).
         if cps == 0 {
             cps = cp;
-        } else {
+        } else if (cps & cp) != 0 && ((priority_cp & cps) ^ (priority_cp & cp)) == 0 {
             cps &= cp;
-        }
-
-        if (priority_cp & cps) != 0 {
+        } else {
+            i -= 1;
             break;
         }
         i += 1;
@@ -4993,7 +4996,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
     extern "system" {
         fn TranslateCharsetInfo(arg1: *const u32, arg2: *mut CHARSETINFO, arg3: u32) -> i32;
     }
-    const TCI_SRCCODEPAGE: u32 = 0x00000001;
+    const TCI_SRCCODEPAGE: u32 = 0x00000002; // wingdi.h:962 (was 1 = TCI_SRCCHARSET)
     const TCI_SRCFONTSIG: u32 = 0x3; // wingdi.h
     const S_OK: i32 = 0;
     const E_FAIL: i32 = 0x80004005u32 as i32;
@@ -5068,12 +5071,24 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontCodePages(
         codepages as *const core::ffi::c_void,
     );
 
+    // mlang.c zeroes the optional out-param first and fails when the font cannot be
+    // selected; both were dropped. Its final store is unguarded (a NULL crashes the C on
+    // success) — guarded here too.
+    if !codepages.is_null() {
+        *codepages = 0;
+    }
+
     old_font = SelectObject(hdc, hfont as *mut core::ffi::c_void) as HFONT;
+    if old_font.is_null() {
+        return E_FAIL;
+    }
     GetTextCharsetInfo(hdc, fontsig.as_mut_ptr(), 0);
     SelectObject(hdc, old_font as *mut core::ffi::c_void);
 
     let fontsig = fontsig.assume_init();
-    *codepages = fontsig.fsCsb[0];
+    if !codepages.is_null() {
+        *codepages = fontsig.fsCsb[0];
+    }
     TRACE(
         b"ret 0x%x\n\0".as_ptr() as *const i8,
         fontsig.fsCsb[0],

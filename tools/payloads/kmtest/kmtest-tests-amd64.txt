@@ -27,6 +27,7 @@ ExInterlocked
 ExPools
 ExPushLock
 ExResource
+ExResourceBounded
 ExSequencedList
 ExSingleList
 ExUuid

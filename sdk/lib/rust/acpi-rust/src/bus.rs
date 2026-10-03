@@ -40,7 +40,7 @@ use acpica_sys::{
 };
 
 // ---- ACPICA #defines / cast-macros bindgen can't emit. Values verified against
-//      drivers/bus/acpi/acpica/include/actypes.h. ----
+//      vendor/acpica/include/actypes.h. ----
 pub const ACPI_STATE_D0: u32 = 0; // (UINT8) 0   actypes.h:633
 pub const ACPI_STATE_D1: u32 = 1; // (UINT8) 1   actypes.h:634
 pub const ACPI_STATE_D2: u32 = 2; // (UINT8) 2   actypes.h:635

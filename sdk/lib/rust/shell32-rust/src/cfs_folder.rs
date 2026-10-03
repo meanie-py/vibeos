@@ -1767,7 +1767,7 @@ pub unsafe fn CFSFolder_ParseDisplayName_v1_body(this: *mut CFSFolder, hwndOwner
                 ((*(*psfChild).lpVtbl).Release)(psfChild);
                 psfChild = core::ptr::null_mut();
             } else if !pdwAttributes.is_null() && *pdwAttributes != 0 {
-                CFSFolder_GetAttributesOf_body(this, 1, *ppidl as *const _, pdwAttributes);
+                CFSFolder_GetAttributesOf_body(this, 1, ppidl as PCUITEMID_CHILD_ARRAY, pdwAttributes);
             }
         }
     }

@@ -33,15 +33,16 @@
 # and it is regularly caused by ANOTHER lane landing a Rust body that happens to
 # cover a ucrtbase export; failing on "better than recorded" would bounce lanes
 # for improving the tree, which is how a gate gets switched off. A decrease
-# prints a note asking for `tools/vendored.py --write-burndown` instead.
+# prints a note asking for the ceiling below to be lowered by hand, to what
+# `python3 tools/ucrt_burndown.py --arch <a>` reports as MICROSOFT.
 #
 # arm64 sits below the other two because a few exports are `-arch=!arm64` in the
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 999
-  amd64: 999
-  arm64: 996
+  i386: 25
+  amd64: 25
+  arm64: 25
 
 families:
   bits:
@@ -124,3 +125,1687 @@ families:
       - _ismbbpunct_l
       - _ismbbtrail
       - _ismbbtrail_l
+
+  string:
+    replaces:
+      - sdk/lib/ucrt/string/i386/{strcat,strcspn,strlen,strncat,strncpy,strpbrk,strspn}.s
+      - sdk/lib/ucrt/string/amd64/{strcat,strlen,strncat,strncpy}.s
+      - sdk/lib/ucrt/string/amd64/{strcspn,strpbrk,strspn}.c
+      - sdk/lib/ucrt/string/{strcat,strcspn,strncat,strncpy,strpbrk,strspn}.c
+      - sdk/lib/ucrt/string/arm64/strlen.c
+    oracle: >
+      Tier 2, in the arm64 guest, against the genuine Microsoft UCRT objects:
+      all eight MATCH in docs/engineering/active-lanes/ucrt-tier2-table.tsv
+      (strcat/strcpy/strncat/strncpy/strpbrk by hand-written runners in
+      ucrtdiff.c that compare each side's whole destination buffer, since the
+      generator has no driver for writers or pointer returns). Also the host
+      msvcrt-difftest against the genuine msvcrt C, which still grades these
+      exact bodies because msvcrt-crt-rust links them from the same crate.
+    note: >
+      The first REUSED family: msvcrt.dll's shipping Rust, not new code. The
+      bodies moved into crt-portable-rust so ucrtbase links them without ever
+      depending on msvcrt-crt-rust, and both DLLs now carry the same objects.
+
+      Admission needed MORE than a Tier 2 MATCH. The harness runs in the "C"
+      locale, where locale-reading and locale-blind bodies agree; these nine
+      are stateless in both implementations (no errno, no locale, no
+      _MSVCR_VER branch), which is what makes the C-locale evidence general.
+      _strlwr and atoi also MATCH and are NOT here for exactly that reason.
+
+      One deliberate, documented divergence: ours treat a NULL string as ""
+      (msvcrt's shipped, net-suite-proven behaviour -- see `nz` in
+      crt-portable-rust), where Microsoft's fault. That only changes programs
+      that would otherwise have crashed.
+
+      strnlen is NOT here, and that is owed: Tier 2 runs on arm64, where
+      Microsoft's strnlen.cpp defines nothing, so there is no in-guest evidence
+      against Microsoft's body on the arches that have one. The i386 and amd64
+      bodies being replaced are hand-written assembly; the msvcrt perf gate
+      already holds these Rust bodies to single-pass parity with C.
+    exports:
+      - strcat
+      - strcpy
+      - strcspn
+      - strlen
+      - strncat
+      - strncpy
+      - strpbrk
+      - strspn
+
+  ctype:
+    replaces:
+      - sdk/lib/ucrt/convert/_ctype.cpp
+      - sdk/lib/ucrt/convert/_wctype.cpp
+      - sdk/lib/ucrt/convert/isctype.cpp
+      - sdk/lib/ucrt/convert/iswctype.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the shipping ucrtbase (these
+      bodies) against the genuine Microsoft objects for the four deleted files, over
+      the full 0..255 corpus plus edges that every single-argument ctype export gets
+      (docs/engineering/active-lanes/ucrt-tier2-table.tsv). 59 of the 63 were
+      graded that way, dll_fail=0 across all 12,121 cases of the run. The other
+      four were NOT graded directly, and that is recorded rather than implied:
+      iswctype and _iswctype_l (a wctype_t argument the generator had no kind for
+      -- added since) are the single core every one of the 26 graded isw* exports
+      runs through; _isblank_l and _iswblank_l are macros in the headers the
+      generator reads, and share fast_check / iswctype with the graded forms.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: those are Wine's
+      contract, and on the multibyte path it differs from UCRT's in substance --
+      Wine also requires c > 0 and classifies through GetStringTypeExA by LCID,
+      UCRT through __acrt_GetStringTypeA by codepage. Every export is a one-line
+      wrapper, so the port is smaller than an adapter would have been.
+
+      Silent-if-wrong details, each transcribed: isblank/iswblank answer _BLANK for
+      a literal tab first but _isblank_l does not; __iscsym casts to unsigned char
+      and __iscsymf does not; every wide _l form ignores its locale; UCRT's wint_t
+      is 16 bits. _pwctype and the __acrt_GetStringType* internals are still
+      Microsoft's and are called, not replaced.
+    exports:
+      - __isascii
+      - __iscsym
+      - __iscsymf
+      - __iswcsym
+      - __iswcsymf
+      - __toascii
+      - _isalnum_l
+      - _isalpha_l
+      - _isblank_l
+      - _iscntrl_l
+      - _isctype
+      - _isctype_l
+      - _isdigit_l
+      - _isgraph_l
+      - _isleadbyte_l
+      - _islower_l
+      - _isprint_l
+      - _ispunct_l
+      - _isspace_l
+      - _isupper_l
+      - _iswalnum_l
+      - _iswalpha_l
+      - _iswblank_l
+      - _iswcntrl_l
+      - _iswcsym_l
+      - _iswcsymf_l
+      - _iswctype_l
+      - _iswdigit_l
+      - _iswgraph_l
+      - _iswlower_l
+      - _iswprint_l
+      - _iswpunct_l
+      - _iswspace_l
+      - _iswupper_l
+      - _iswxdigit_l
+      - _isxdigit_l
+      - isalnum
+      - isalpha
+      - isblank
+      - iscntrl
+      - isdigit
+      - isgraph
+      - isleadbyte
+      - islower
+      - isprint
+      - ispunct
+      - isspace
+      - isupper
+      - iswalnum
+      - iswalpha
+      - iswascii
+      - iswblank
+      - iswcntrl
+      - iswctype
+      - iswdigit
+      - iswgraph
+      - iswlower
+      - iswprint
+      - iswpunct
+      - iswspace
+      - iswupper
+      - iswxdigit
+      - isxdigit
+  ismbc:
+    replaces:
+      - sdk/lib/ucrt/mbstring/ismbalnm.cpp
+      - sdk/lib/ucrt/mbstring/ismbalph.cpp
+      - sdk/lib/ucrt/mbstring/ismbdgt.cpp
+      - sdk/lib/ucrt/mbstring/ismbgrph.cpp
+      - sdk/lib/ucrt/mbstring/ismbknj.cpp
+      - sdk/lib/ucrt/mbstring/ismblgl.cpp
+      - sdk/lib/ucrt/mbstring/ismblwr.cpp
+      - sdk/lib/ucrt/mbstring/ismbprn.cpp
+      - sdk/lib/ucrt/mbstring/ismbpunc.cpp
+      - sdk/lib/ucrt/mbstring/ismbsle.cpp
+      - sdk/lib/ucrt/mbstring/ismbspc.cpp
+      - sdk/lib/ucrt/mbstring/ismbupr.cpp
+      - sdk/lib/ucrt/mbstring/mbbtype.cpp
+      - sdk/lib/ucrt/mbstring/mbsbtype.cpp
+      - sdk/lib/ucrt/mbstring/mbclevel.cpp
+      - sdk/lib/ucrt/mbstring/mbtolwr.cpp
+      - sdk/lib/ucrt/mbstring/mbtoupr.cpp
+      - sdk/lib/ucrt/mbstring/mbtohira.cpp
+      - sdk/lib/ucrt/mbstring/mbtokata.cpp
+      - sdk/lib/ucrt/mbstring/tojisjms.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the shipping ucrtbase (these
+      bodies) against the genuine Microsoft objects for the 20 deleted files, 8
+      shards on FROZEN inputs (see ucrt_tier2_sweep.run_shard -- without that, shards
+      1-7 silently lost the family). 48 of the 52 graded dll=0 over every case, and
+      dll_fail=0 across the whole run, so nothing else in ucrtbase moved either.
+      The other four are recorded rather than implied. _ismbclegal and
+      _ismbclegal_l FAULT on the ref_ side at c=-1, Microsoft's own out-of-bounds
+      read (see the note), so the loop stops before grading; they are
+      lead(c >> 8) && trail(c & 0xff) over the graded _ismbb* family, the same
+      composition as _ismbcl0/1/2, which graded MATCH. _ismbcblank and
+      _ismbcblank_l were never generated: the case generator parses the
+      TOOLCHAIN's mingw-w64 headers, which do not declare them (owed, recorded in
+      docs/product/vibeos-roadmap.md). They share the ismbc! body with the graded
+      _ismbcpunct over the graded _ismbbblank_l.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies. Those are Wine's
+      contract: Wine maps _MB_CP_SBCS to codepage 20127, where UCRT keeps codepage 0
+      and answers single-byte questions from the C locale -- which is exactly why
+      _ismbcgraph/print/punct/space/symbol graded DIFF on the rust_ side at tab and
+      0xA0-0xFF while the shipping DLL matched.
+
+      Silent-if-wrong details, each transcribed: the c <= 0xFF arm returns the
+      single-byte primitive's value unnormalised (_ismbcdigit gives the raw _DIGIT
+      mask, not 1); _ismbcprint tests _CONTROL with expected=false; the multibyte
+      arm refuses a c that is two single-byte characters; _mbsbtype loops length+1
+      times and raises the invalid-parameter handler for a NUL before the requested
+      position but not at it; the Shift-JIS-only members answer 0 (or return c
+      unchanged) on every other codepage. __acrt_GetStringTypeA and
+      __acrt_LCMapStringA are still Microsoft's and are called, not replaced.
+
+      One deliberate divergence: UCRT's mbstring C gets _ismbblead_l/_ismbbtrail_l
+      as unmasked-index MACROS, so _ismbclegal(c) for c > 0xFFFF reads past the
+      257-byte table (and faults at c=-1). Ours masks to a byte. Identical for
+      every c <= 0xFFFF; undefined behaviour above it is not reproduced.
+    exports:
+      - _ismbcalnum
+      - _ismbcalnum_l
+      - _ismbcalpha
+      - _ismbcalpha_l
+      - _ismbcblank
+      - _ismbcblank_l
+      - _ismbcdigit
+      - _ismbcdigit_l
+      - _ismbcgraph
+      - _ismbcgraph_l
+      - _ismbchira
+      - _ismbchira_l
+      - _ismbckata
+      - _ismbckata_l
+      - _ismbcl0
+      - _ismbcl0_l
+      - _ismbcl1
+      - _ismbcl1_l
+      - _ismbcl2
+      - _ismbcl2_l
+      - _ismbclegal
+      - _ismbclegal_l
+      - _ismbclower
+      - _ismbclower_l
+      - _ismbcprint
+      - _ismbcprint_l
+      - _ismbcpunct
+      - _ismbcpunct_l
+      - _ismbcspace
+      - _ismbcspace_l
+      - _ismbcsymbol
+      - _ismbcsymbol_l
+      - _ismbcupper
+      - _ismbcupper_l
+      - _ismbslead
+      - _ismbslead_l
+      - _mbbtype
+      - _mbbtype_l
+      - _mbcjistojms
+      - _mbcjistojms_l
+      - _mbcjmstojis
+      - _mbcjmstojis_l
+      - _mbctohira
+      - _mbctohira_l
+      - _mbctokata
+      - _mbctokata_l
+      - _mbctolower
+      - _mbctolower_l
+      - _mbctoupper
+      - _mbctoupper_l
+      - _mbsbtype
+      - _mbsbtype_l
+  tocase:
+    replaces:
+      - sdk/lib/ucrt/convert/tolower_toupper.cpp
+      - sdk/lib/ucrt/convert/towlower.cpp
+      - sdk/lib/ucrt/convert/towupper.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft objects for the
+      three deleted files. All 10 exports graded dll=0 over every generated case,
+      plus run_ctype's hand-graded tolower/toupper rows over EOF and 0..255 (MATCH,
+      n=514); dll_fail=0 across all 5,408 cases of the run. The burn-down moves by
+      8, not 10, because it undecorates _tolower/tolower (and _toupper/toupper) to
+      one name.
+    note: >
+      A one-for-one PORT over LocaleUpdate, not msvcrt's bodies: msvcrt's
+      _tolower_l/_toupper_l DIFF against UCRT at the first case, EOF, which UCRT
+      returns before resolving any locale.
+
+      Silent-if-wrong details, each transcribed: only (unsigned)c < 256 takes the
+      narrow table; the codepage lookup sets errno=EILSEQ whenever c is not a
+      lead/trail pair and maps the low byte anyway; tolower/toupper are plain ASCII
+      until a locale has ever been changed; _tolower/_toupper are unconditional
+      arithmetic; _towlower_l/_towupper_l consult _wctype's UTF-16 category before
+      the narrow map, and cover only ASCII in a UTF-8 locale. _wctype and the
+      __acrt_LCMapString* internals are still Microsoft's and are called.
+    exports:
+      - _tolower
+      - _tolower_l
+      - _toupper
+      - _toupper_l
+      - _towlower_l
+      - _towupper_l
+      - tolower
+      - toupper
+      - towlower
+      - towupper
+  strtox:
+    replaces:
+      - sdk/lib/ucrt/convert/strtox.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs: the
+      shipping ucrtbase (these bodies) against the genuine Microsoft object. The
+      harness graded only strtol/strtoul before this change -- the generator has no
+      driver for (string, char**, base) -- so run_strtox_family/run_wcstox_family
+      now grade ALL 32: value, end offset and errno, 39 inputs (the 64-bit limits,
+      "0x"/"0X" with no digit, "-0", letters as digits, every isspace byte) at bases
+      0/8/10/16/36/2, and for the wide forms nine more inputs a narrow parser never
+      sees (fullwidth and Arabic-Indic digits, a fullwidth letter, U+3000 leading
+      space). Narrow MATCH n=9828, wide MATCH n=13824, plus the legacy
+      strtol/strtoul rows at dll=0; dll_fail=0 across all 29,146 cases of the run.
+    note: >
+      A PORT of __crt_strtox::parse_integer (corecrt_internal_strtox.h:222), the one
+      template every export in the file wraps, with the accumulator width (32 for
+      long, 64 for everything else) as a parameter. Not msvcrt's bodies: those are
+      Wine's _MSVCR_VER=0 overflow contract and DIFF against UCRT on 14 of 598 cases.
+
+      Silent-if-wrong details, each transcribed: *end is written to string first
+      and to the final position last, so a no-digit parse leaves it at string with
+      whitespace and sign unconsumed; "0x" with no hex digit is no digits at all;
+      an unsigned result negates with wraparound and only a too-large magnitude
+      sets ERANGE; wide digits include 17 Unicode decimal blocks (fullwidth,
+      Arabic-Indic, ...) and wide whitespace is iswspace, locale-independent.
+    exports:
+      - _strtoi64
+      - _strtoi64_l
+      - _strtoimax_l
+      - _strtol_l
+      - _strtoll_l
+      - _strtoui64
+      - _strtoui64_l
+      - _strtoul_l
+      - _strtoull_l
+      - _strtoumax_l
+      - _wcstoi64
+      - _wcstoi64_l
+      - _wcstoimax_l
+      - _wcstol_l
+      - _wcstoll_l
+      - _wcstoui64
+      - _wcstoui64_l
+      - _wcstoul_l
+      - _wcstoull_l
+      - _wcstoumax_l
+      - strtoimax
+      - strtol
+      - strtoll
+      - strtoul
+      - strtoull
+      - strtoumax
+      - wcstoimax
+      - wcstol
+      - wcstoll
+      - wcstoul
+      - wcstoull
+      - wcstoumax
+  atox:
+    replaces:
+      - sdk/lib/ucrt/convert/atox.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs. The
+      generator graded these on a 7-string corpus (and _wtoll not at all: the
+      toolchain headers lack it), so run_atox_family grades all 16 two-sided on
+      value AND errno over the strtox corpus -- the 32/64-bit limits, whitespace,
+      signs, letters -- plus Unicode digits for the wide forms and NULL through a
+      counting invalid-parameter handler: MATCH n=1398, dll_fail=0 for the run.
+    note: >
+      Every export in atox.cpp is parse_integer_from_string<T>(string, nullptr, 10,
+      locale) -- the strtox template at base 10 with no end pointer -- so each is a
+      call into the strtox port. It inherits UCRT's atoi contract with it: atoi
+      saturates at INT_MIN/INT_MAX with ERANGE (it parses as 32-bit long), and a
+      NULL string raises the invalid-parameter handler and returns 0 with EINVAL.
+    exports:
+      - _atoi64
+      - _atoi64_l
+      - _atoi_l
+      - _atol_l
+      - _atoll_l
+      - _wtoi
+      - _wtoi64
+      - _wtoi64_l
+      - _wtoi_l
+      - _wtol
+      - _wtol_l
+      - _wtoll
+      - _wtoll_l
+      - atoi
+      - atol
+      - atoll
+  xtoa:
+    replaces:
+      - sdk/lib/ucrt/convert/xtoa.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, 8 shards on frozen inputs. The
+      harness graded none of xtoa.cpp before; run_xtoa_family and
+      run_xtoa_s_family grade all 20 two-sided on the WHOLE 80-element buffer
+      (FNV over every byte, so digits left behind a cleared buffer[0] count), the
+      return value, errno and invalid-parameter handler calls: 20 values across
+      both widths at radices 2/3/8/10/16/36 for the plain forms, and for _s also
+      radix 0/1/37, counts 0..66 and a NULL buffer. Plain MATCH n=2400, _s MATCH
+      n=50430; dll_fail=0 across all 59,170 cases of the run.
+    note: >
+      A PORT of common_xtox (the digit loop) and common_xtox_s (the checked front
+      end), with the width a parameter. Silent-if-wrong details, each transcribed:
+      only radix 10 is ever signed (_itoa(-1, b, 16) is "ffffffff"); digits above 9
+      are lowercase; _s clears buffer[0] before its size and radix checks but after
+      its NULL/zero-count checks; a too-small _s buffer is found inside the digit
+      loop, so the digits written stay behind buffer[0]; the plain forms never check
+      the radix (0 divides by zero, 1 never terminates -- in the C and here alike).
+    exports:
+      - _itoa
+      - _itoa_s
+      - _ltoa
+      - _ltoa_s
+      - _ultoa
+      - _ultoa_s
+      - _i64toa
+      - _i64toa_s
+      - _ui64toa
+      - _ui64toa_s
+      - _itow
+      - _itow_s
+      - _ltow
+      - _ltow_s
+      - _ultow
+      - _ultow_s
+      - _i64tow
+      - _i64tow_s
+      - _ui64tow
+      - _ui64tow_s
+  findfile:
+    replaces:
+      - sdk/lib/ucrt/filesystem/findfile.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, against a REAL directory the
+      harness builds: an empty file, a 1234-byte file dated 2001, a read-only
+      file, a hidden one with spaces in its name, a subdirectory, and a file dated
+      2040 (past the 32-bit time_t, so the __time32_t forms must answer -1). All 16
+      first/next forms walk 9 patterns (wildcards, an exact name, no match, a
+      missing directory, "", NULL) on both sides, each record compared byte for
+      byte, plus errno and invalid-parameter counts; the NULL-record and 0/-1
+      handle paths; and each side closes its own handles with its own _findclose.
+      MATCH n=816, dll_fail=0. The DLL side is called through its IMPORT POINTER:
+      the toolchain's io.h inlines _findfirst64i32/_findnext64i32 over
+      _findfirst64, which pecheck caught -- a call by name graded mingw, not us.
+    note: >
+      A PORT. Every search is wide underneath; the narrow forms convert the pattern
+      and the found name through __acrt_get_utf8_acp_compatibility_codepage. The
+      eight record layouts are one generic struct, pinned by compile-time asserts
+      against offsets measured with the target compiler on all three arches.
+
+      Silent-if-wrong details, each transcribed: FILE_ATTRIBUTE_NORMAL reads back
+      as 0; a zero FILETIME (or one the OS cannot convert) is -1, and times are
+      LOCAL; a 32-bit size is the low word only; the narrow forms leak the find
+      handle when the found name does not convert back (returning -1 having opened
+      it); a NULL narrow pattern fails in the wide check, after the conversion;
+      _findclose on a bad handle is a quiet EINVAL, never the invalid-parameter
+      handler. The Win32 calls, __loctotime*_t, the conversion thunks and
+      strcpy_s/wcscpy_s are called, not replaced.
+    exports:
+      - _findclose
+      - _findfirst32
+      - _findfirst32i64
+      - _findfirst64
+      - _findfirst64i32
+      - _findnext32
+      - _findnext32i64
+      - _findnext64
+      - _findnext64i32
+      - _wfindfirst32
+      - _wfindfirst32i64
+      - _wfindfirst64
+      - _wfindfirst64i32
+      - _wfindnext32
+      - _wfindnext32i64
+      - _wfindnext64
+      - _wfindnext64i32
+
+  output:
+    replaces:
+      - sdk/lib/ucrt/stdio/output.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export, each
+      through a pair of variadic trampolines so both sides get a genuine va_list.
+      A 142-format corpus (literals, every flag/width/precision/length, %c/%s/%Z
+      narrow and wide, %p, the float conversions through inf/nan/DBL_MAX and a
+      precision past the inline buffer, and the malformed formats the two
+      transition tables disagree on) plus a 28-format positional corpus, through every
+      function; the buffer functions across option bits and buffer sizes
+      including NULL and too-small, _vsnprintf_s across count/max pairs, %n
+      disabled and enabled at each width; the stream functions into a real file
+      per side in binary, text and UTF-16LE modes. Graded: return, the whole
+      buffer or file, errno from a sentinel, and the invalid-parameter count.
+      All fourteen MATCH, dll_fail=0. Regraded with the strtod takeover (the
+      reference restored for it) after a 28-format positional corpus added the
+      no-whitespace width/position cases: vsprintf/vswprintf n=15196 each,
+      vsnprintf_s/vsnwprintf_s n=7568, the _s and _p buffer forms n=6252, the six
+      stream forms n=1272 each -- 78,168 cases.
+    note: >
+      A PORT of Microsoft's processor, not msvcrt's engine: UCRT's printf is a
+      table-driven state machine with a standard and a validation table (the
+      _s/_p functions), and they disagree on malformed formats that Wine's parser
+      matches neither way. The three base classes are one runtime Base. Errno goes
+      through a layout-identical __crt_cached_ptd_host (ptd_host.rs), because the
+      C's errno semantics are the cache's: the handler sees the OLD errno, and
+      guards restore the cache. __acrt_fp_format, _wctomb_internal,
+      _mbtowc_internal, the _fputc/_fputwc_nolock_internal writes and the
+      temporary-buffering hooks are called, not replaced.
+    exports:
+      - __stdio_common_vfprintf
+      - __stdio_common_vfprintf_p
+      - __stdio_common_vfprintf_s
+      - __stdio_common_vfwprintf
+      - __stdio_common_vfwprintf_p
+      - __stdio_common_vfwprintf_s
+      - __stdio_common_vsnprintf_s
+      - __stdio_common_vsnwprintf_s
+      - __stdio_common_vsprintf
+      - __stdio_common_vsprintf_p
+      - __stdio_common_vsprintf_s
+      - __stdio_common_vswprintf
+      - __stdio_common_vswprintf_p
+      - __stdio_common_vswprintf_s
+
+  strtod:
+    replaces:
+      - sdk/lib/ucrt/convert/strtod.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export over a
+      ~120-string corpus -- boundaries of both types (DBL_MAX and one past it,
+      the smallest normals and denormals, the round-to-even halfway points,
+      float's overflow edge), exact 53-bit ties, a mantissa longer than the
+      768 digits the parser keeps with the deciding digit after them, clamped
+      exponents, every spelling of inf/nan/nan(snan)/nan(ind), hex floats with
+      and without digits, and malformed tails -- plus, for the wide forms,
+      Unicode decimal digits. Graded: the result's BITS, the end offset, errno
+      from a sentinel, the invalid-parameter count, and NULL. All twelve MATCH,
+      dll_fail=0: the narrow forms n=456 each, the wide n=484 -- 5,640 cases.
+      Before the guest: 604,046 random and edge conversions matched Rust's own
+      correctly-rounded parse::<f64>/<f32> bit for bit on the host.
+    note: >
+      A PORT of the parser and the big-integer conversion in
+      corecrt_internal_strtox.h and corecrt_internal_big_integer.h. msvcrt's
+      fpnum.rs is Wine's _MSVCR_VER=0 contract (no hex floats, no inf/nan words,
+      no strtof). Built entirely from bits, so i386's no-SSE rule holds. The
+      powers-of-ten table is computed by a const fn, checked element for element
+      against Microsoft's packed literal. Rounding consults fegetround() exactly
+      where the C does -- today ucrtbase's generated stub, round-to-nearest.
+    exports:
+      - _strtod_l
+      - _strtof_l
+      - _strtold_l
+      - _wcstod_l
+      - _wcstof_l
+      - _wcstold_l
+      - strtod
+      - strtof
+      - strtold
+      - wcstod
+      - wcstof
+      - wcstold
+
+  stat:
+    replaces:
+      - sdk/lib/ucrt/filesystem/stat.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: one runner per export against
+      a REAL fixture directory (read-only, .EXE/.cmd/.com, a 2040 date past the
+      32-bit time_t, a subdirectory) built on the guest's system drive. The path
+      forms take 36 paths each -- the fixture with and without trailing slashes,
+      sub\. and sub\.., missing files, "C:\", "C:/", bare "C:", "C:.", "\",
+      ".", "", a missing drive, NUL, CON, "\\x" -- plus NULL path and record;
+      _stat64 adds a narrow path CP_ACP cannot map. _fstat takes each side's own
+      descriptor for a disk file, NUL, a pipe with and without data, a closed
+      one, the standard handles, -1/-2/-3 and out-of-range values. Graded: the
+      return, errno, _doserrno, the invalid-parameter count and the whole record
+      (prefilled, so padding shows). All twelve MATCH, dll_fail=0: the path
+      forms n=195 (_stat64 n=200), _fstat n=105 -- 2,380 cases. Not reached: a
+      real UNC share (no network in the guest) and a file over 2 GB (the
+      EOVERFLOW arm), both transcribed.
+    note: >
+      A PORT. Every path is wide underneath; the narrow forms convert through
+      findfile's __acrt_get_utf8_acp_compatibility_codepage converter. The four
+      record layouts are one generic struct, pinned against offsets measured with
+      the target compiler on all three arches; _fstat reads osfile/osfhnd from
+      the lowio record at measured offsets (stdio_layout.rs).
+
+      Silent-if-wrong details, each transcribed: a zero FILETIME is the FALLBACK
+      (0 for the write time, the write time for the other two), not -1; a 32-bit
+      st_size refuses a file over LONG_MAX with EOVERFLOW and a zeroed record,
+      where _findfirst32 truncates; a pipe's size is PeekNamedPipe's count through
+      a 32-bit _off_t; unopenable roots (C:\, \\server\share\) are fabricated as
+      directories dated 1980-01-01; a bare "X:" is ENOENT even when it opens; a
+      failed narrow conversion leaves the record untouched; _fstat(-2) is EBADF
+      without the handler. The Win32 calls, _wfullpath, _getdrive,
+      __loctotime*_t and the lowio lock are called, not replaced.
+    exports:
+      - _fstat32
+      - _fstat32i64
+      - _fstat64
+      - _fstat64i32
+      - _stat32
+      - _stat32i64
+      - _stat64
+      - _stat64i32
+      - _wstat32
+      - _wstat32i64
+      - _wstat64
+      - _wstat64i32
+
+  locale:
+    replaces:
+      - sdk/lib/ucrt/locale/CompareStringA.cpp
+      - sdk/lib/ucrt/locale/CompareStringW.cpp
+      - sdk/lib/ucrt/locale/ctype.cpp
+      - sdk/lib/ucrt/locale/GetLocaleInfoA.cpp
+      - sdk/lib/ucrt/locale/getqloc_downlevel.cpp
+      - sdk/lib/ucrt/locale/GetStringTypeA.cpp
+      - sdk/lib/ucrt/locale/get_qualified_locale.cpp
+      - sdk/lib/ucrt/locale/glstatus.cpp
+      - sdk/lib/ucrt/locale/initctype.cpp
+      - sdk/lib/ucrt/locale/initmon.cpp
+      - sdk/lib/ucrt/locale/initnum.cpp
+      - sdk/lib/ucrt/locale/inittime.cpp
+      - sdk/lib/ucrt/locale/lcidtoname_downlevel.cpp
+      - sdk/lib/ucrt/locale/LCMapStringA.cpp
+      - sdk/lib/ucrt/locale/LCMapStringW.cpp
+      - sdk/lib/ucrt/locale/lconv_unsigned_char_initialization.cpp
+      - sdk/lib/ucrt/locale/localeconv.cpp
+      - sdk/lib/ucrt/locale/locale_refcounting.cpp
+      - sdk/lib/ucrt/locale/locale_update.cpp
+      - sdk/lib/ucrt/locale/nlsdata.cpp
+      - sdk/lib/ucrt/locale/setlocale.cpp
+      - sdk/lib/ucrt/locale/wsetlocale.cpp
+      - sdk/lib/ucrt/mbstring/mbctype.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest, graded as ONE family (the
+      pieces call each other's internals, so they are deleted together): 57
+      locale names -- legacy names and abbreviations, BCP-47 tags with and
+      without code pages, bare code pages, compound LC_ strings, junk -- through
+      setlocale on both sides for every category and NULL, then each accessor's
+      view after every LC_ALL setting (lconv narrow+wide, both code pages,
+      mb_cur_max, the six locale names, pctype/pwctype, mbctype/mbcasemap, and
+      strftime/wcsftime/strcoll/_stricoll/_strlwr/_mbsupr, still Microsoft's on
+      both sides but reading each side's locale data). Plus _create_locale and
+      _wcreate_locale per category with the resulting _locale_t read through the
+      pinned layout, _get_current_locale before and after the global locale
+      moves, _configthreadlocale including a per-thread locale, and _setmbcp over
+      24 code-page steps (932 then 65001, 1252 twice) with its tables. All 18 rows
+      MATCH, dll_fail=0: setlocale n=2256, _wsetlocale 1392, _create_locale 1255,
+      _wcreate_locale 928, _get_current_locale 172, _setmbcp+tables 169 -- 6,934
+      cases. Serial prints what each name resolved to; the guest resolves real
+      locales (German/French/Spanish/Swiss names, de-DE, fr-FR, .OCP -> 437).
+      Two guest limits, identical on Microsoft's side: ReactOS's
+      IsValidLocaleName accepts junk ("junk", "xx-XX"), and LC_CTYPE never
+      leaves 1252 -- .utf8, .932, ja-JP and every UTF-8 tag fail that category
+      -- so setlocale's multibyte/UTF-8 ctype paths are not reached in the guest.
+    note: >
+      A PORT, in five pieces that call each other only through locale_abi.rs,
+      which declares every internal the remaining ~160 ucrt objects call by C
+      name: locale_data (tables and statics, byte- and relocation-compared
+      against Microsoft's objects on all three arches by
+      tools/compare_coff_data.py), locale_init (the four category initializers)
+      and nls_wrappers (the ANSI NLS wrappers), mbctype and qualified_locale
+      (their tables compared the same way), and setlocale (setlocale/_wsetlocale,
+      the _locale_t lifecycle, reference counting, the _LocaleUpdate hooks).
+      Every layout is pinned in locale.rs against offsets measured with the
+      build's own flags. Microsoft's quirks are transcribed and commented, among
+      them: "xyz-8" is UTF-8 for a BCP-47 tag (operator precedence), the UTF-8
+      _setmbcp path clears only the first few mbctype entries, "kok"/"kok-IN" are
+      unreachable by name (the table is out of sort order), and
+      __acrt_GetLocaleInfoA writes a pointer-sized NULL before every result.
+    exports:
+      - ___lc_codepage_func
+      - ___lc_collate_cp_func
+      - ___lc_locale_name_func
+      - ___mb_cur_max_func
+      - ___mb_cur_max_l_func
+      - __initialize_lconv_for_unsigned_char
+      - __p__mbcasemap
+      - __p__mbctype
+      - __pctype_func
+      - __pwctype_func
+      - _configthreadlocale
+      - _create_locale
+      - _free_locale
+      - _get_current_locale
+      - _getmbcp
+      - _mbcasemap
+      - _setmbcp
+      - _wcreate_locale
+      - _wctype
+      - _wsetlocale
+      - localeconv
+      - setlocale
+
+  exec:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/exec/spawnl.cpp
+      - sdk/lib/ucrt/exec/spawnlp.cpp
+      - sdk/lib/ucrt/exec/spawnv.cpp
+      - sdk/lib/ucrt/exec/spawnvp.cpp
+      - sdk/lib/ucrt/exec/cenvarg.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: all 32 forms: validation
+      (NULL/empty name and argv, bad mode), a real _P_WAIT spawn of cmd.exe /c exit
+      7 by full path and by PATH search, extension probing, explicit vs inherited
+      environments, 17- and 65-argument lists (the capture's heap growth); the _exec
+      forms on their validation paths only (a real one replaces the grader). The `e`
+      forms first failed as a fault loop: Microsoft's scan for the first "=X:"
+      variable never stops at the block's end, ReactOS may have none; ours stops
+      (exec.rs), and the grader gives the process one, as Windows does. All MATCH,
+      dll_fail=0 -- 736 cases.
+    note: >
+      A PORT (src/exec.rs). The 16 variadic l-forms (_spawnl.._wexeclpe) are
+      va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c over Rust `_v`
+      twins -- C in the ucrtbase module, so not listed here (this list is what the
+      Rust archive defines); the argv capture is Rust over varargs-rust's VaArgs.
+      Kept: the first heap growth in __acrt_capture_*_argv passes element counts to
+      memcpy_s as byte counts, so only 4/8 of the first 64 pointers survive --
+      Microsoft's bug, identical in the reference.
+    exports:
+      - _execv
+      - _execve
+      - _execvp
+      - _execvpe
+      - _spawnv
+      - _spawnve
+      - _spawnvp
+      - _spawnvpe
+      - _wexecv
+      - _wexecve
+      - _wexecvp
+      - _wexecvpe
+      - _wspawnv
+      - _wspawnve
+      - _wspawnvp
+      - _wspawnvpe
+
+  align:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/heap/align.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: sizes, power-of-two and invalid
+      alignments, offsets, realloc/recalloc growth and shrink with contents,
+      _aligned_msize, NULL. All MATCH, dll_fail=0 -- 156 cases.
+    note: >
+      A PORT (src/align.rs); the header word before each aligned block is bit-
+      identical, since memory crosses between sides.
+    exports:
+      - _aligned_free
+      - _aligned_malloc
+      - _aligned_msize
+      - _aligned_offset_malloc
+      - _aligned_offset_realloc
+      - _aligned_offset_recalloc
+      - _aligned_realloc
+      - _aligned_recalloc
+
+  invalid_parameter:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/misc/invalid_parameter.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: set/get round trips, thread-local
+      vs global precedence, NULL resets, and a real CRT caller (_aligned_malloc with
+      a bad alignment) firing exactly the installed handler on each side. All MATCH,
+      dll_fail=0 -- 11 cases.
+    note: >
+      A PORT (src/invalid_parameter.rs). The handler is stored XOR __security_cookie
+      (__crt_fast_encode_pointer in this tree). __acrt_call_reportfault is LIVE on
+      i386 (only amd64's KiInit sets PF_FASTFAIL_AVAILABLE): an i386 global_asm!
+      entry stub snapshots registers/segments/flags and the caller's Eip/Esp/Ebp as
+      the C's inline asm and intrinsics do; amd64 unwinds RtlCaptureContext two
+      frames to the same caller Rip/Rsp. CONTEXT/EXCEPTION_RECORD sizes and offsets
+      measured.
+    exports:
+      - _get_invalid_parameter_handler
+      - _get_thread_local_invalid_parameter_handler
+      - _invalid_parameter
+      - _invalid_parameter_noinfo
+      - _invalid_parameter_noinfo_noreturn
+      - _invoke_watson
+      - _set_invalid_parameter_handler
+      - _set_thread_local_invalid_parameter_handler
+
+  open:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/lowio/open.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: every export incl. the four
+      variadic ones through the shim: BOM writing for
+      _O_U8TEXT/_O_U16TEXT/_O_WTEXT/_O_TEXT/_O_BINARY read back from outside,
+      _O_EXCL, bad share/pmode, NULL path/pfh. (The BOM runner first bugchecked the
+      guest in fastfat -- identically with Microsoft's code on both sides; fixed by
+      master's fastfat SEH, bf8bbd0d86c). All MATCH, dll_fail=0 -- 57 cases.
+    note: >
+      A PORT (src/lowio_open.rs). The four variadic entry points
+      (_open/_wopen/_sopen/_wsopen) are shim trampolines over Rust `_v` twins; they
+      read pmode unconditionally, as the C does.
+    exports:
+      - _sopen_dispatch
+      - _sopen_s
+      - _wsopen_dispatch
+      - _wsopen_s
+
+  atof:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/convert/atof.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the strtod-block corpus through
+      all eight: result bits, errno, handler count, and the _CRT_FLOAT/_CRT_DOUBLE
+      out-structs with their return codes. All MATCH, dll_fail=0 -- 500 cases.
+    note: >
+      A PORT (src/atof.rs) over the graded strtod parser.
+    exports:
+      - _atodbl
+      - _atodbl_l
+      - _atof_l
+      - _atoflt
+      - _atoflt_l
+      - _wtof
+      - _wtof_l
+      - atof
+
+  ctime:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/time/ctime.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: time_t values incl. negative, 0,
+      2^31-1 and past it, out-of-range, and the _s forms with NULL and short
+      buffers. All MATCH, dll_fail=0 -- 187 cases.
+    note: >
+      A PORT (src/ctime.rs); _localtime*_s and asctime_s/_wasctime_s are called, not
+      replaced.
+    exports:
+      - _ctime32
+      - _ctime32_s
+      - _ctime64
+      - _ctime64_s
+      - _wctime32
+      - _wctime32_s
+      - _wctime64
+      - _wctime64_s
+
+  timeset:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/time/timeset.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: each getter's value and errno,
+      NULL arguments, and the tzname buffers. All MATCH, dll_fail=0 -- 47 cases.
+    note: >
+      A PORT (src/timeset.rs). The globals start at 0 and are set by
+      __acrt_initialize_timeset (dual_state_global's constructor), byte- and
+      relocation-compared against Microsoft's object; timeset.cpp's
+      _CRT_LINKER_FORCE_INCLUDE(__acrt_timeset_initializer) is carried by
+      force_include!.
+    exports:
+      - __daylight
+      - __dstbias
+      - __timezone
+      - __tzname
+      - _get_daylight
+      - _get_dstbias
+      - _get_timezone
+      - _get_tzname
+
+  argv_data:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/startup/argv_data.cpp
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: each accessor's pointed-to value
+      on both CRT instances. All MATCH, dll_fail=0 -- 26 cases.
+    note: >
+      A PORT (src/argv_data.rs); the data globals byte- and relocation-compared
+      against Microsoft's object on all three arches.
+    exports:
+      - __p___argc
+      - __p___argv
+      - __p___wargv
+      - __p__acmdln
+      - __p__pgmptr
+      - __p__wcmdln
+      - __p__wpgmptr
+      - _get_pgmptr
+      - _get_wpgmptr
+
+  mbstring:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/mbstring/ (all 62 remaining .cpp and the three .inl templates)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: every file's exports over a byte
+      corpus at the default code page and a Shift-JIS corpus under _setmbcp(932) on
+      both sides (lone trailing lead bytes, truncation splitting a DBCS pair,
+      _TRUNCATE, short buffers), plus the NULL-argument contracts under 932. All
+      MATCH, dll_fail=0 -- 12,135 cases. The grade found two port bugs, both fixed:
+      17 _VALIDATE_RETURN paths that set errno without calling the handler, and
+      _mbsnbcpy_s's missing `p++` after the count-exhausted terminator.
+    note: >
+      A PORT (src/mbstring/). The .inl-templated _s forms are one generic function each over byte- vs char-counted, with a per-branch table against the .inl. Built without _DEBUG, so _FILL_STRING is a no-op and _RESET_STRING writes one NUL.
+    exports:
+      - _mbbtombc
+      - _mbbtombc_l
+      - _mbccpy
+      - _mbccpy_l
+      - _mbccpy_s
+      - _mbccpy_s_l
+      - _mbclen
+      - _mbclen_l
+      - _mbctombb
+      - _mbctombb_l
+      - _mbscat_s
+      - _mbscat_s_l
+      - _mbschr
+      - _mbschr_l
+      - _mbscmp
+      - _mbscmp_l
+      - _mbscoll
+      - _mbscoll_l
+      - _mbscpy_s
+      - _mbscpy_s_l
+      - _mbscspn
+      - _mbscspn_l
+      - _mbsdec
+      - _mbsdec_l
+      - _mbsicmp
+      - _mbsicmp_l
+      - _mbsicoll
+      - _mbsicoll_l
+      - _mbsinc
+      - _mbsinc_l
+      - _mbslen
+      - _mbslen_l
+      - _mbslwr
+      - _mbslwr_l
+      - _mbslwr_s
+      - _mbslwr_s_l
+      - _mbsnbcat
+      - _mbsnbcat_l
+      - _mbsnbcat_s
+      - _mbsnbcat_s_l
+      - _mbsnbcmp
+      - _mbsnbcmp_l
+      - _mbsnbcnt
+      - _mbsnbcnt_l
+      - _mbsnbcoll
+      - _mbsnbcoll_l
+      - _mbsnbcpy
+      - _mbsnbcpy_l
+      - _mbsnbcpy_s
+      - _mbsnbcpy_s_l
+      - _mbsnbicmp
+      - _mbsnbicmp_l
+      - _mbsnbicoll
+      - _mbsnbicoll_l
+      - _mbsnbset
+      - _mbsnbset_l
+      - _mbsnbset_s
+      - _mbsnbset_s_l
+      - _mbsncat
+      - _mbsncat_l
+      - _mbsncat_s
+      - _mbsncat_s_l
+      - _mbsnccnt
+      - _mbsnccnt_l
+      - _mbsncmp
+      - _mbsncmp_l
+      - _mbsncoll
+      - _mbsncoll_l
+      - _mbsncpy
+      - _mbsncpy_l
+      - _mbsncpy_s
+      - _mbsncpy_s_l
+      - _mbsnextc
+      - _mbsnextc_l
+      - _mbsnicmp
+      - _mbsnicmp_l
+      - _mbsnicoll
+      - _mbsnicoll_l
+      - _mbsninc
+      - _mbsninc_l
+      - _mbsnlen
+      - _mbsnlen_l
+      - _mbsnset
+      - _mbsnset_l
+      - _mbsnset_s
+      - _mbsnset_s_l
+      - _mbspbrk
+      - _mbspbrk_l
+      - _mbsrchr
+      - _mbsrchr_l
+      - _mbsrev
+      - _mbsrev_l
+      - _mbsset
+      - _mbsset_l
+      - _mbsset_s
+      - _mbsset_s_l
+      - _mbsspn
+      - _mbsspn_l
+      - _mbsspnp
+      - _mbsspnp_l
+      - _mbsstr
+      - _mbsstr_l
+      - _mbstok
+      - _mbstok_l
+      - _mbstok_s
+      - _mbstok_s_l
+      - _mbsupr
+      - _mbsupr_l
+      - _mbsupr_s
+      - _mbsupr_s_l
+
+  string_ops:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/string/ (all remaining .cpp/.c, and the i386/amd64 .s)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: exact return values (not signs),
+      whole sentinel-filled buffers, errno and handler counts; the locale-dependent
+      forms under "C" and under de-DE set on both sides. All MATCH, dll_fail=0 --
+      2,621 cases. The grade found wcsncpy writing one pad L'\0' too few (fixed).
+    note: >
+      A PORT (src/string_ops/). One body per export on every arch; the per-arch asm differences are kept where observable: strncmp's result is clamped to -1/0/1 on i386/amd64 but the raw difference on arm64, and wcscmp is clamped while wcsncmp is not. The SSE2/AVX2 strnlen variants are the same function, so the scalar path serves all. memmove_s and wcslen were MISSED by this takeover (no body, answered through the msvcrt/ntdll import libraries until 2026-09-28) and added then, UNGRADED in the guest: wcslen's C is not in the reference set on any arch, and memmove_s is the header's three checks in order. verify_ucrtbase_cohab's export/import check now catches the class.
+    exports:
+      - __strncnt
+      - __wcsncnt
+      - _memccpy
+      - _memicmp
+      - _memicmp_l
+      - _strcoll_l
+      - _strdup
+      - _stricmp
+      - _stricmp_l
+      - _stricoll
+      - _stricoll_l
+      - _strlwr
+      - _strlwr_l
+      - _strlwr_s
+      - _strlwr_s_l
+      - _strncoll
+      - _strncoll_l
+      - _strnicmp
+      - _strnicmp_l
+      - _strnicoll
+      - _strnicoll_l
+      - _strnset
+      - _strnset_s
+      - _strrev
+      - _strset
+      - _strset_s
+      - _strupr
+      - _strupr_l
+      - _strupr_s
+      - _strupr_s_l
+      - _strxfrm_l
+      - _wcscoll_l
+      - _wcsdup
+      - _wcsicmp
+      - _wcsicmp_l
+      - _wcsicoll
+      - _wcsicoll_l
+      - _wcslwr
+      - _wcslwr_l
+      - _wcslwr_s
+      - _wcslwr_s_l
+      - _wcsncoll
+      - _wcsncoll_l
+      - _wcsnicmp
+      - _wcsnicmp_l
+      - _wcsnicoll
+      - _wcsnicoll_l
+      - _wcsnset
+      - _wcsnset_s
+      - _wcsrev
+      - _wcsset
+      - _wcsset_s
+      - _wcsupr
+      - _wcsupr_l
+      - _wcsupr_s
+      - _wcsupr_s_l
+      - _wcsxfrm_l
+      - memcpy_s
+      - memmove_s
+      - strcat_s
+      - strcmp
+      - strcoll
+      - strcpy_s
+      - strncat_s
+      - strncmp
+      - strncpy_s
+      - strnlen
+      - strtok
+      - strtok_s
+      - strxfrm
+      - wcscat
+      - wcscat_s
+      - wcscmp
+      - wcscoll
+      - wcscpy
+      - wcscpy_s
+      - wcscspn
+      - wcslen
+      - wcsncat
+      - wcsncat_s
+      - wcsncmp
+      - wcsncpy
+      - wcsncpy_s
+      - wcsnlen
+      - wcspbrk
+      - wcsspn
+      - wcstok
+      - wcstok_s
+      - wcsxfrm
+      - wmemcpy_s
+      - wmemmove_s
+
+  time:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/time/ (all 16 .cpp)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: tzset/localtime/gmtime/mktime over
+      a time_t corpus under an explicit TZ on both sides, every strftime/wcsftime
+      specifier with and without #, the _l/_Strftime/_Wcsftime wrappers, utime and
+      futime read back through _stat64 (post-2038 for the 64-bit forms), and the
+      argument contracts of the wall-clock functions. All MATCH, dll_fail=0 --
+      2,106 cases.
+    note: >
+      A PORT (src/time/), including the strftime/wcsftime engine over the pinned LcTimeData, tzset's TZ and GetTimeZoneInformation paths, and the internal loctotime and _days/_lpdays tables other Rust (stat, findfile) calls by C name.
+    exports:
+      - _Getdays
+      - _Getmonths
+      - _Gettnames
+      - _Strftime
+      - _W_Getdays
+      - _W_Getmonths
+      - _W_Gettnames
+      - _Wcsftime
+      - _difftime32
+      - _difftime64
+      - _ftime32
+      - _ftime32_s
+      - _ftime64
+      - _ftime64_s
+      - _futime32
+      - _futime64
+      - _gmtime32
+      - _gmtime32_s
+      - _gmtime64
+      - _gmtime64_s
+      - _localtime32
+      - _localtime32_s
+      - _localtime64
+      - _localtime64_s
+      - _mkgmtime32
+      - _mkgmtime64
+      - _mktime32
+      - _mktime64
+      - _strdate
+      - _strdate_s
+      - _strftime_l
+      - _strtime
+      - _strtime_s
+      - _time32
+      - _time64
+      - _timespec32_get
+      - _timespec64_get
+      - _tzset
+      - _utime32
+      - _utime64
+      - _wasctime
+      - _wasctime_s
+      - _wcsftime_l
+      - _wstrdate
+      - _wstrdate_s
+      - _wstrtime
+      - _wstrtime_s
+      - _wutime32
+      - _wutime64
+      - asctime
+      - asctime_s
+      - clock
+      - strftime
+      - wcsftime
+
+  stdio:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/stdio/ (all 48 .cpp)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: each side on its own temp files and
+      its own standard streams (freopen'd, since the harness has no console), with
+      file contents read back through Win32 ReadFile; open modes valid and invalid,
+      text/binary round trips across the 4 KiB buffer, seek/tell (past 4 GiB for the
+      64-bit forms), ungetc, the _nolock and wide forms, tmpfile/_tempnam by shape,
+      and a scanf corpus through __stdio_common_vsscanf/vswscanf/vfscanf/vfwscanf.
+      All MATCH, dll_fail=0 -- 9,816 cases over 59 rows.
+    note: >
+      A PORT, in four parts (src/stdio/): the stream core (_file.cpp, stream.cpp,
+      the header-inline __crt_stdio_stream) written first, then buffering and
+      character I/O, open/close/position, and the scanf engine
+      (corecrt_internal_stdio_input.h, which stays: conio/cscanf.cpp still
+      includes it). The whole __crt_stdio_stream_data record is pinned
+      (src/stdio_layout.rs); the stream flags are STREAM_* because msvcrt's _IO*
+      values differ. The pieces call one another by the C names.
+    exports:
+      - __stdio_common_vfscanf
+      - __stdio_common_vfwscanf
+      - __stdio_common_vsscanf
+      - __stdio_common_vswscanf
+      - __acrt_iob_func
+      - __p__commode
+      - _fclose_nolock
+      - _fcloseall
+      - _fdopen
+      - _fflush_nolock
+      - _fgetc_nolock
+      - _fgetchar
+      - _fgetwc_nolock
+      - _fgetwchar
+      - _fileno
+      - _flushall
+      - _fputc_nolock
+      - _fputchar
+      - _fputwc_nolock
+      - _fputwchar
+      - _fread_nolock
+      - _fread_nolock_s
+      - _fseek_nolock
+      - _fseeki64
+      - _fseeki64_nolock
+      - _fsopen
+      - _ftell_nolock
+      - _ftelli64
+      - _ftelli64_nolock
+      - _fwrite_nolock
+      - _get_printf_count_output
+      - _get_stream_buffer_pointers
+      - _getc_nolock
+      - _getmaxstdio
+      - _getw
+      - _getwc_nolock
+      - _getws
+      - _getws_s
+      - _lock_file
+      - _putc_nolock
+      - _putw
+      - _putwc_nolock
+      - _putws
+      - _rmtmp
+      - _set_printf_count_output
+      - _setmaxstdio
+      - _tempnam
+      - _ungetc_nolock
+      - _ungetwc_nolock
+      - _unlock_file
+      - _wfdopen
+      - _wfopen
+      - _wfopen_s
+      - _wfreopen
+      - _wfreopen_s
+      - _wfsopen
+      - _wtempnam
+      - _wtmpnam
+      - _wtmpnam_s
+      - clearerr
+      - clearerr_s
+      - fclose
+      - feof
+      - ferror
+      - fflush
+      - fgetc
+      - fgetpos
+      - fgets
+      - fgetwc
+      - fgetws
+      - fopen
+      - fopen_s
+      - fputc
+      - fputs
+      - fputwc
+      - fputws
+      - fread
+      - fread_s
+      - freopen
+      - freopen_s
+      - fseek
+      - fsetpos
+      - ftell
+      - fwrite
+      - getc
+      - getchar
+      - gets
+      - gets_s
+      - getwc
+      - getwchar
+      - putc
+      - putchar
+      - puts
+      - putwc
+      - putwchar
+      - rewind
+      - setbuf
+      - setvbuf
+      - tmpfile
+      - tmpfile_s
+      - tmpnam
+      - tmpnam_s
+      - ungetc
+      - ungetwc
+
+  convert_rest:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/convert/ -- the rest (19 .cpp: mbrtowc, wcrtomb, mbstowcs, wcstombs, wctomb, mbtowc, mblen, _mbslen, ismbstr, c16/c32rtomb, mbrtoc16/32, fcvt, gcvt, atoldbl, swab, wctrans, common_utf8)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: the multibyte conversions over ASCII,
+      high-byte and invalid corpora (the "C" locale fast paths and the UTF-8 engine of
+      c16/c32 in full), the _s forms' truncate/too-small/EINVAL matrix, fcvt/ecvt/gcvt
+      over a double corpus graded as strings plus decpt and sign, and _atoldbl's 10-byte
+      results over a decimal/hex/inf/nan corpus. All MATCH, dll_fail=0 -- 928 cases.
+      The grade found four port bugs, all fixed: _fcvt's sign read as nonzero (the C
+      stores the CHARACTER '-' or ' '); _RESET_STRING ported as a whole-buffer zero
+      (seven sites -- and _gcvt passes (size_t)-1 >> 1 as its size); and _gcvt passing
+      0x1 for _CRT_INTERNAL_PRINTF_LEGACY_THREE_DIGIT_EXPONENTS (1 << 4).
+    note: >
+      A PORT (src/convert_rest/). _atoldbl assembles its _LDBL12 from strtod.rs's scan
+      (parse_floating_point_string), as the C's type-overloaded assembly does. The
+      float-formatting engine (cvt, cfout, fp_flags, _fptostr) and wctype.cpp stay C.
+      __crt_mbstring::__mbsrtowcs_utf8 keeps its C++ mangled name: lowio/write.cpp
+      calls it.
+    exports:
+      - _atoldbl
+      - _atoldbl_l
+      - _ecvt
+      - _ecvt_s
+      - _fcvt
+      - _fcvt_s
+      - _gcvt
+      - _gcvt_s
+      - _ismbstrail
+      - _ismbstrail_l
+      - _mblen_l
+      - _mbstowcs_l
+      - _mbstowcs_s_l
+      - _mbstrlen
+      - _mbstrlen_l
+      - _mbstrnlen
+      - _mbstrnlen_l
+      - _mbtowc_l
+      - _swab
+      - _wcstombs_l
+      - _wcstombs_s_l
+      - _wctomb_l
+      - _wctomb_s_l
+      - btowc
+      - c16rtomb
+      - c32rtomb
+      - mblen
+      - mbrlen
+      - mbrtoc16
+      - mbrtoc32
+      - mbrtowc
+      - mbsrtowcs
+      - mbsrtowcs_s
+      - mbstowcs
+      - mbstowcs_s
+      - mbtowc
+      - towctrans
+      - wcrtomb
+      - wcrtomb_s
+      - wcsrtombs
+      - wcsrtombs_s
+      - wcstombs
+      - wcstombs_s
+      - wctob
+      - wctomb
+      - wctomb_s
+      - wctrans
+
+  misc:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/misc/ (21 .cpp; crtmbox.cpp and the debug-only dbgrpt files stay)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: errno/doserrno and the OS-error map,
+      the error-message table and strerror/_strerror/perror families (stderr redirected
+      per side through each side's own lowio fd 2), cwd and drives (the OS cwd saved
+      and restored), signal/raise with installed-then-restored handlers, set_terminate,
+      the error-mode and time getters/setters. All MATCH, dll_fail=0 -- 207 cases. The
+      grade found four validation paths missing the invalid-parameter handler call
+      (strerror_s, _wcserror_s, _strerror_s, __wcserror_s, _get_doserrno), fixed.
+    note: >
+      A PORT (src/misc/). terminate()'s __try/__except around the handler compiles to
+      nothing under this build's dummy SEH, so the Rust has none either.
+    exports:
+      - __doserrno
+      - __fpecode
+      - __pxcptinfoptrs
+      - __sys_errlist
+      - __sys_nerr
+      - __wcserror
+      - __wcserror_s
+      - _beep
+      - _chdir
+      - _chdrive
+      - _errno
+      - _get_doserrno
+      - _get_errno
+      - _get_terminate
+      - _getcwd
+      - _getdcwd
+      - _getdiskfree
+      - _getdrive
+      - _getdrives
+      - _getpid
+      - _getsystime
+      - _resetstkoflw
+      - _seh_filter_dll
+      - _seh_filter_exe
+      - _set_doserrno
+      - _set_errno
+      - _set_error_mode
+      - _seterrormode
+      - _setsystime
+      - _sleep
+      - _strerror
+      - _strerror_s
+      - _wchdir
+      - _wcserror
+      - _wcserror_s
+      - _wgetcwd
+      - _wgetdcwd
+      - _wperror
+      - is_wctype
+      - perror
+      - raise
+      - set_terminate
+      - signal
+      - strerror
+      - strerror_s
+      - terminate
+
+  filesystem:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/filesystem/ (all 15 .cpp)
+    oracle: >
+      Tier 2 --takeover-check, in the arm64 guest: makepath/splitpath and their _s forms
+      over a large path corpus, access modes, _fullpath with NULL and short buffers,
+      unlink/remove/mkdir/rmdir/chmod effects checked through Win32, errno and
+      _doserrno. All MATCH, dll_fail=0 -- 999 cases. rename/_wrename are graded only on
+      the paths that fail in kernel32 (missing source, NULL): a real rename bugchecks
+      the arm64 guest in fastfat (known-bugs registry, "rename bugchecks fastfat"), and
+      ours makes Microsoft's identical MoveFileExW call.
+    note: >
+      A PORT (src/filesystem/), over findfile.rs's narrow/wide path conversion.
+    exports:
+      - _access
+      - _access_s
+      - _chmod
+      - _fullpath
+      - _makepath
+      - _makepath_s
+      - _mkdir
+      - _rmdir
+      - _splitpath
+      - _splitpath_s
+      - _unlink
+      - _waccess
+      - _waccess_s
+      - _wchmod
+      - _wfullpath
+      - _wmakepath
+      - _wmakepath_s
+      - _wmkdir
+      - _wremove
+      - _wrename
+      - _wrmdir
+      - _wsplitpath
+      - _wsplitpath_s
+      - _wunlink
+      - remove
+      - rename
+  lowio:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/lowio/ (all 21 .cpp)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. Every export MATCH, graded through each side's own fds on private files: text/binary and the three text modes, CRLF at buffer edges, Ctrl-Z, pipes, invalid fds, seek/size/lock/dup/umask/mktemp. Skipped, loudly: _mktemp's occupied-name cases (they bugcheck fastfat -- known-bugs "fastfat bugchecks in FsRtlCheckOplock") and _locking's held-lock retry (~18 s, beyond the per-export timeout).
+    note: >
+      A PORT (src/lowio/): the handle table (ioinit, osfinfo) is the core in mod.rs, the rest one submodule per file or family over it.
+    exports:
+      - __p__fmode
+      - _chsize
+      - _chsize_s
+      - _close
+      - _commit
+      - _creat
+      - _dup
+      - _dup2
+      - _eof
+      - _filelength
+      - _filelengthi64
+      - _get_fmode
+      - _get_osfhandle
+      - _isatty
+      - _locking
+      - _lseek
+      - _lseeki64
+      - _mktemp
+      - _mktemp_s
+      - _open_osfhandle
+      - _read
+      - _set_fmode
+      - _setmode
+      - _tell
+      - _telli64
+      - _umask
+      - _umask_s
+      - _wcreat
+      - _wmktemp
+      - _wmktemp_s
+      - _write
+  conio:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/conio/ (all 14 .cpp)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. The printf/scanf entry points and the pushback-driven input paths MATCH; the harness has no console, so output rows grade the no-console failure on both sides and input never reads the console. _pipe/_popen/_pclose MATCH with cmd.exe children.
+    note: >
+      A PORT (src/conio/). _cprintf/_cscanf drive the printf and scanf engines already in Rust (output.rs, stdio/input).
+    exports:
+      - __conio_common_vcprintf
+      - __conio_common_vcprintf_p
+      - __conio_common_vcprintf_s
+      - __conio_common_vcscanf
+      - __conio_common_vcwprintf
+      - __conio_common_vcwprintf_p
+      - __conio_common_vcwprintf_s
+      - __conio_common_vcwscanf
+      - _cgets
+      - _cgets_s
+      - _cgetws
+      - _cgetws_s
+      - _cputs
+      - _cputws
+      - _getch
+      - _getch_nolock
+      - _getche
+      - _getche_nolock
+      - _getwch
+      - _getwch_nolock
+      - _getwche
+      - _getwche_nolock
+      - _kbhit
+      - _pclose
+      - _pipe
+      - _popen
+      - _putch
+      - _putch_nolock
+      - _putwch
+      - _putwch_nolock
+      - _ungetch
+      - _ungetch_nolock
+      - _ungetwch
+      - _ungetwch_nolock
+      - _wpopen
+  env:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/env/ (all 7 .cpp)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH on unique per-side variables (created and removed), including the lazily-built other-width table and _putenv deletion.
+    note: >
+      A PORT (src/env/): the four environment tables keep their C names; narrow and wide share one implementation generic over the character width.
+    exports:
+      - __dcrt_get_wide_environment_from_os
+      - __dcrt_initial_narrow_environment
+      - __p__environ
+      - __p__wenviron
+      - _dupenv_s
+      - _get_initial_narrow_environment
+      - _get_initial_wide_environment
+      - _initialize_narrow_environment
+      - _initialize_wide_environment
+      - _putenv
+      - _putenv_s
+      - _searchenv
+      - _searchenv_s
+      - _wdupenv_s
+      - _wgetenv
+      - _wgetenv_s
+      - _wputenv
+      - _wputenv_s
+      - _wsearchenv
+      - _wsearchenv_s
+      - getenv
+      - getenv_s
+  exec_rest:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/exec/{wait,system,getproc,loaddll}.cpp
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH: _cwait on cmd.exe children, system(NULL), _loaddll/_getdllprocaddr/_unloaddll on kernel32.
+    note: >
+      A PORT (src/exec_rest/), over exec.rs's spawn machinery.
+    exports:
+      - _cwait
+      - _getdllprocaddr
+      - _loaddll
+      - _unloaddll
+      - _wsystem
+      - system
+  heap:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/heap/ (all 17 release .cpp; debug_heap*.cpp were never built)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH: NULL/ENOMEM/_HEAP_MAXREQ paths, _msize/_expand/_recalloc contents, the new-handler retry loop (saved and restored).
+    note: >
+      A PORT (src/heap/): the allocator every other part of ucrtbase calls, over __acrt_heap = GetProcessHeap().
+    exports:
+      - _callnewh
+      - _calloc_base
+      - _expand
+      - _free_base
+      - _get_heap_handle
+      - _heapchk
+      - _heapmin
+      - _heapwalk
+      - _malloc_base
+      - _msize
+      - _query_new_handler
+      - _query_new_mode
+      - _realloc_base
+      - _recalloc
+      - _set_new_handler
+      - _set_new_mode
+      - calloc
+      - free
+      - malloc
+      - realloc
+  stdlib:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/stdlib/ (all 18 .cpp)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. MATCH, qsort/bsearch/lfind/lsearch graded on the comparator CALL SEQUENCE; also compared against Microsoft's C on the host (5,952 cases).
+    note: >
+      A PORT (src/stdlib/): Microsoft's qsort one-for-one, comparator call sequence included (graded on the host against the C as well).
+    exports:
+      - _abs64
+      - _lfind
+      - _lfind_s
+      - _lsearch
+      - _lsearch_s
+      - abs
+      - bsearch
+      - bsearch_s
+      - div
+      - imaxabs
+      - imaxdiv
+      - labs
+      - ldiv
+      - llabs
+      - lldiv
+      - qsort
+      - qsort_s
+      - rand
+      - rand_s
+      - srand
+  internal_core:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/internal/{initialization,locks,per_thread_data,shared_initialization}.cpp, startup/initterm.cpp, dll/appcrt_dllmain.cpp, initializers/ (all)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from e586421537f` (Microsoft's C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's 121 graded rows and ~13,700 cases. No export here is gradable in isolation (_initterm*, __threadid, _lock_locales); the bootstrap is what every graded row and every boot runs on, three arches.
+    note: >
+      A PORT (src/internal/): the CRT bootstrap -- DllMain, the initializer table, the lock table, per-thread data and the .CRT$XI*/XP* entries. ucrt is a CMake OBJECT library, so the C initializers had to go in the same change or every entry would have run twice.
+    exports:
+      - __threadhandle
+      - __threadid
+      - _initterm
+      - _initterm_e
+      - _lock_locales
+      - _unlock_locales

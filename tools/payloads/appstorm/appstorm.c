@@ -5,7 +5,10 @@
  * which run in rundll32). Then record title/class/size, probe responsiveness with
  * SendMessageTimeout(WM_NULL), ask the host for a screenshot ("[APPSTORM] shot <name>", see
  * shot_prefix in payload.yaml), and close it: WM_CLOSE, then TerminateProcess if it will not go.
- * An entry FAILS if no window appears, a window hangs, a process crashes, or an error box pops.
+ * An entry FAILS if no window appears, a window hangs, a process crashes, an error box or ANY
+ * message box pops, or the shell's taskbar dies (a folder window runs in explorer's process).
+ * After the launch sweep, SCENARIOS drive an app past its first window the way a user would --
+ * menu commands, dialog text, button clicks -- and check the result on disk (see scenarios[]).
  * Verdict: "[APPSTORM] done VERDICT=PASS|FAIL pass=N fail=M absent=K". */
 #include <windows.h>
 #include <stdio.h>
@@ -15,7 +18,10 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 #define SAY(...) DbgPrint("[APPSTORM] " __VA_ARGS__)
 #include "../stackdump.h"
 
-typedef struct { const char *name; const char *exe; const char *args; } app_t;
+/* expect_box: the text of a message box that is the RIGHT answer in the test machine, not a
+ * bug -- the app telling the truth about the environment. Any other box still fails, so an
+ * allowance cannot hide a regression that changes what the app says. */
+typedef struct { const char *name; const char *exe; const char *args; const char *expect_box; } app_t;
 static const app_t apps[] = {
     { "notepad", "notepad.exe", "" },       { "calc", "calc.exe", "" },
     { "regedit", "regedit.exe", "" },       { "taskmgr", "taskmgr.exe", "" },
@@ -23,13 +29,19 @@ static const app_t apps[] = {
     { "wordpad", "wordpad.exe", "" },       { "charmap", "charmap.exe", "" },
     { "winmine", "winmine.exe", "" },       { "sol", "sol.exe", "" },
     { "spider", "spider.exe", "" },         { "winver", "winver.exe", "" },
-    { "clipbrd", "clipbrd.exe", "" },       { "sndvol32", "sndvol32.exe", "" },
+    { "clipbrd", "clipbrd.exe", "" },
+    { "sndvol32", "sndvol32.exe", "", "no active mixer devices" }, /* QEMU has no audio device */
     { "magnify", "magnify.exe", "" },       { "osk", "osk.exe", "" },
-    { "eventvwr", "eventvwr.exe", "" },     { "devmgmt", "devmgmt.exe", "" },
+    /* The livecd's eventlog service has no log files ("EventLog service reports no log
+     * files!", rpc.c), so opening the Application log fails ERROR_GEN_FAILURE. */
+    { "eventvwr", "eventvwr.exe", "", "attached to the system is not functioning" },
+    { "devmgmt", "devmgmt.exe", "" },
     { "servman", "servman.exe", "" },       { "msconfig", "msconfig.exe", "" },
     { "dxdiag", "dxdiag.exe", "" },         { "rapps", "rapps.exe", "" },
     { "mplay32", "mplay32.exe", "" },       { "sndrec32", "sndrec32.exe", "" },
     { "explorer-folder", "explorer.exe", "%WINDIR%" },
+    { "mycomputer", "explorer.exe", "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}" },
+    { "iexplore", "iexplore.exe", "" },
     { "control", "control.exe", "" },
     { "cpl-desk", "control.exe", "desk.cpl" },        { "cpl-sysdm", "control.exe", "sysdm.cpl" },
     { "cpl-timedate", "control.exe", "timedate.cpl" }, { "cpl-intl", "control.exe", "intl.cpl" },
@@ -56,6 +68,122 @@ static int contains(const wset_t *s, HWND h)
 static void snapshot(wset_t *s) { s->n = 0; EnumWindows(collect, (LPARAM)s); }
 
 /* New visible windows that are not ours and not the shell's. */
+/* Processes alive before the launch. Their new windows are not the app's -- on amd64 the
+ * background WoW64 user32_winetest pops console windows at any moment, and one was scored as
+ * dxdiag's window. explorer.exe is the exception: a folder window opens INSIDE the shell. */
+static DWORD prior_pids[512];
+static int n_prior;
+
+static void snapshot_pids(void)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    n_prior = 0;
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (lstrcmpiW(pe.szExeFile, L"explorer.exe") && n_prior < 512)
+                prior_pids[n_prior++] = pe.th32ProcessID;
+        } while (Process32NextW(snap, &pe));
+    CloseHandle(snap);
+}
+
+/* Single-instance apps (osk) exit at once when a copy is already up, and winlogon's stock-app
+ * check leaves one running. Whether it was still alive decided osk's verdict, so every run was
+ * a coin flip. Give each app a fresh start instead. explorer.exe is the shell: never touch it. */
+static void end_prior_instances(const char *exe)
+{
+    PROCESSENTRY32W pe = { sizeof pe };
+    WCHAR wexe[MAX_PATH];
+    DWORD parent = 0;
+    HANDLE snap;
+    if (!lstrcmpiA(exe, "explorer.exe"))
+        return;
+    MultiByteToWideChar(CP_ACP, 0, exe, -1, wexe, MAX_PATH);
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    /* Never our own launcher: arm64 starts appstorm from a cmd.exe, and cmd is on the list. */
+    if (Process32FirstW(snap, &pe))
+        do {
+            if (pe.th32ProcessID == GetCurrentProcessId())
+                parent = pe.th32ParentProcessID;
+        } while (Process32NextW(snap, &pe));
+    pe.dwSize = sizeof pe;
+    if (Process32FirstW(snap, &pe))
+        do {
+            HANDLE h;
+            if (lstrcmpiW(pe.szExeFile, wexe) || pe.th32ProcessID == parent
+                || pe.th32ProcessID == GetCurrentProcessId())
+                continue;
+            h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pe.th32ProcessID);
+            if (!h)
+                continue;
+            SAY("  ended prior %s pid=%lu\n", exe, pe.th32ProcessID);
+            TerminateProcess(h, 0);
+            WaitForSingleObject(h, 5000);
+            CloseHandle(h);
+        } while (Process32NextW(snap, &pe));
+    CloseHandle(snap);
+}
+
+static int prior_pid(DWORD pid)
+{
+    for (int i = 0; i < n_prior; i++)
+        if (prior_pids[i] == pid)
+            return 1;
+    return 0;
+}
+
+/* The process appstorm launched for the current entry (0 between entries). A new window
+ * counts only if its process is that one, a descendant (control.exe -> rundll32), or the
+ * shell (a folder window lives in explorer). Anything else started concurrently -- the
+ * amd64 image's WoW64 guest ladder opens 32-bit calc and sol mid-run -- was scored as the
+ * app under test, and its close timeouts failed mspaint and wordpad. */
+static DWORD launch_root;
+/* Every process seen descending from launch_root, accumulated across polls: appwiz's
+ * rundll32 starts rapps and exits, and a parent walk from rapps then dead-ends. */
+static DWORD family[64];
+static int nfamily;
+
+static int in_family(DWORD pid)
+{
+    for (int i = 0; i < nfamily; i++)
+        if (family[i] == pid)
+            return 1;
+    return 0;
+}
+
+static void grow_family(void)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    for (int grew = 1; grew && nfamily < 64;) {
+        PROCESSENTRY32W pe = { sizeof pe };
+        grew = 0;
+        for (BOOL k = Process32FirstW(snap, &pe); k && nfamily < 64; k = Process32NextW(snap, &pe))
+            if (in_family(pe.th32ParentProcessID) && !in_family(pe.th32ProcessID)) {
+                family[nfamily++] = pe.th32ProcessID;
+                grew = 1;
+            }
+    }
+    CloseHandle(snap);
+}
+
+static int from_launch(DWORD pid)
+{
+    DWORD shell = 0;
+    if (!launch_root)
+        return 1;
+    GetWindowThreadProcessId(GetShellWindow(), &shell);
+    if (pid == shell)
+        return 1;
+    grow_family();
+    return in_family(pid);
+}
+
 static int new_windows(const wset_t *before, wset_t *out)
 {
     wset_t now;
@@ -64,7 +192,9 @@ static int new_windows(const wset_t *before, wset_t *out)
     for (int i = 0; i < now.n; i++) {
         DWORD pid = 0;
         GetWindowThreadProcessId(now.h[i], &pid);
-        if (!contains(before, now.h[i]) && pid != GetCurrentProcessId()) out->h[out->n++] = now.h[i];
+        if (!contains(before, now.h[i]) && pid != GetCurrentProcessId() && !prior_pid(pid)
+            && from_launch(pid))
+            out->h[out->n++] = now.h[i];
     }
     return out->n;
 }
@@ -97,6 +227,79 @@ static void dump_hung_thread(HWND h)
     dump_thread(pid, tid);
 }
 
+/* A process that ignores WM_CLOSE is stuck somewhere no single window's thread tells us:
+ * the UI thread may be fine while a worker holds up ExitProcess. Dump every thread. */
+static void dump_process(DWORD pid)
+{
+    THREADENTRY32 te = { sizeof te };
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (s == INVALID_HANDLE_VALUE) return;
+    for (BOOL k = Thread32First(s, &te); k; k = Thread32Next(s, &te))
+        if (te.th32OwnerProcessID == pid) dump_thread(pid, te.th32ThreadID);
+    CloseHandle(s);
+}
+
+/* A message box, whatever its title says: user32 gives the text static the id 0xFFFF
+ * (MSGBOX_IDTEXT). Title matching alone missed iexplore's untitled, EMPTY box on the Pi. */
+static int msgbox_text(HWND h, char *out, size_t n)
+{
+    WCHAR cls[16] = L"", t[256] = L"";
+    HWND txt;
+    GetClassNameW(h, cls, 16);
+    if (wcscmp(cls, L"#32770") || !(txt = GetDlgItem(h, 0xFFFF)))
+        return 0;
+    InternalGetWindowText(txt, t, 256);
+    ascii(t, out, n);
+    return 1;
+}
+
+/* The shell must outlive every app: a crash in shell32 code hosted by explorer (a folder
+ * window, My Computer) takes the taskbar with it, and the app's own verdict never sees it. */
+static HWND shell_tray;
+static void shell_note(void) { shell_tray = FindWindowW(L"Shell_TrayWnd", NULL); }
+static int shell_check(const char *after)
+{
+    DWORD t0 = GetTickCount();
+    if (shell_tray && IsWindow(shell_tray))
+        return 1;
+    SAY("  SHELL DIED after %s: taskbar window gone\n", after);
+    /* Re-arm on a respawned shell so one death does not fail every later entry. */
+    while (!(shell_tray = FindWindowW(L"Shell_TrayWnd", NULL)) && GetTickCount() - t0 < 20000)
+        Sleep(500);
+    SAY("  shell %s\n", shell_tray ? "came back" : "did not come back");
+    return 0;
+}
+
+/* The first visible top-level window of `pid` with class `cls`, polling for up to `ms`. */
+typedef struct { DWORD pid; const WCHAR *cls; HWND found; } wfind_t;
+static BOOL CALLBACK wfind_cb(HWND h, LPARAM lp)
+{
+    wfind_t *f = (wfind_t *)lp;
+    DWORD pid = 0;
+    WCHAR c[64] = L"";
+    GetWindowThreadProcessId(h, &pid);
+    GetClassNameW(h, c, 64);
+    if (pid == f->pid && IsWindowVisible(h) && !wcscmp(c, f->cls)) {
+        f->found = h;
+        return FALSE;
+    }
+    return TRUE;
+}
+static HWND wait_window(DWORD pid, const WCHAR *cls, HWND not, DWORD ms, HANDLE proc)
+{
+    DWORD t0 = GetTickCount();
+    do {
+        wfind_t f = { pid, cls, NULL };
+        EnumWindows(wfind_cb, (LPARAM)&f);
+        if (f.found && f.found != not)
+            return f.found;
+        if (proc && WaitForSingleObject(proc, 0) == WAIT_OBJECT_0)
+            return NULL;
+        Sleep(250);
+    } while (GetTickCount() - t0 < ms);
+    return NULL;
+}
+
 /* Boot-time `setup -mini` installs devices and registers components for minutes after the
  * desktop appears, with its own "Please wait" dialog. Apps launched meanwhile compete with it
  * (a window takes past any sane timeout to answer) and its dialog sits among theirs, so wait. */
@@ -116,6 +319,301 @@ static int setup_running(void)
     return found;
 }
 
+/* A cdfs raise, end to end. An empty name part (";1") makes CdInitializeEnumeration raise
+ * STATUS_INVALID_PARAMETER inside CdQueryDirectory, which holds the directory's FCB. With a
+ * real handler (ntkrnl_sys::seh) the query fails ERROR_INVALID_PARAMETER and the finally has
+ * released the FCB; kernel32 then closes the directory, and cdfs cleanup takes that FCB
+ * exclusively, so a leaked lock hangs right here. Under DUMMY_PSEH the raise was a 0x1E.
+ * Only meaningful where the Windows directory is on cdfs (the livecd). */
+/* fastfat: FatNotifyChangeDirectory raises STATUS_DELETE_PENDING (FatRaiseStatus) on a
+ * directory whose disposition is set. With dead PSEH that raise bugchecked 0x1E; with real
+ * SEH, FatFsdDirectoryControl catches it and the request fails with ERROR_ACCESS_DENIED.
+ * The follow-up proves the volume and its locks survived the unwind. */
+static int fat_raise_check(const WCHAR *windir)
+{
+    typedef LONG (WINAPI *set_info_t)(HANDLE, void *, void *, ULONG, int);
+    set_info_t set_info = (set_info_t)GetProcAddress(GetModuleHandleA("ntdll.dll"),
+                                                     "NtSetInformationFile");
+    WCHAR dir[MAX_PATH], pat[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    ULONG_PTR iosb[2];
+    BOOLEAN del = TRUE;
+    char buf[512];
+    OVERLAPPED ov = { 0 };
+    DWORD got = 0, err, wait;
+    HANDLE h, h2;
+    LONG st;
+    int ok;
+
+    wsprintfW(dir, L"%s\\Temp\\fsraise%lu", windir, GetCurrentProcessId());
+    if (!CreateDirectoryW(dir, NULL)) {
+        SAY("fsraise FAIL mkdir gle=%lu\n", GetLastError());
+        return 0;
+    }
+    h = CreateFileW(dir, DELETE | FILE_LIST_DIRECTORY | SYNCHRONIZE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        SAY("fsraise FAIL open gle=%lu\n", GetLastError());
+        RemoveDirectoryW(dir);
+        return 0;
+    }
+    /* FileDispositionInformation (13): sets FCB_STATE_DELETE_ON_CLOSE right away. */
+    st = set_info(h, iosb, &del, sizeof del, 13);
+    ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    SetLastError(0);
+    if (ReadDirectoryChangesW(h, buf, sizeof buf, FALSE, FILE_NOTIFY_CHANGE_FILE_NAME, NULL, &ov,
+                              NULL)) {
+        /* Queued instead of raising: the check failed, but don't leave it pending. */
+        wait = WaitForSingleObject(ov.hEvent, 2000);
+        err = wait == WAIT_OBJECT_0 && !GetOverlappedResult(h, &ov, &got, FALSE) ? GetLastError() : 0;
+        CancelIo(h);
+    } else {
+        err = GetLastError();
+    }
+    CloseHandle(ov.hEvent);
+    CloseHandle(h); /* deletes the directory */
+    wsprintfW(pat, L"%s\\*", windir);
+    h2 = FindFirstFileW(pat, &fd);
+    if (h2 != INVALID_HANDLE_VALUE)
+        FindClose(h2);
+    ok = st == 0 && err == ERROR_ACCESS_DENIED && h2 != INVALID_HANDLE_VALUE &&
+         GetFileAttributesW(dir) == INVALID_FILE_ATTRIBUTES;
+    SAY("fsraise %s fs=FAT disp=0x%lx err=%lu followup=%d\n", ok ? "PASS" : "FAIL",
+        (unsigned long)st, err, h2 != INVALID_HANDLE_VALUE);
+    return ok;
+}
+
+static int fs_raise_check(const WCHAR *windir)
+{
+    WCHAR vol[4] = { windir[0], L':', L'\\', 0 }, fsw[16] = L"", pat[MAX_PATH];
+    char fs[16];
+    WIN32_FIND_DATAW fd;
+    HANDLE h, h2;
+    DWORD err;
+    int ok;
+
+    GetVolumeInformationW(vol, NULL, 0, NULL, NULL, NULL, fsw, 16);
+    ascii(fsw, fs, sizeof fs);
+    if (!lstrcmpiW(fsw, L"FAT") || !lstrcmpiW(fsw, L"FAT32"))
+        return fat_raise_check(windir);
+    if (lstrcmpiW(fsw, L"CDFS")) {
+        SAY("fsraise SKIP fs=%s\n", fs);
+        return 1;
+    }
+    wsprintfW(pat, L"%s\\;1", windir);
+    h = FindFirstFileW(pat, &fd);
+    err = GetLastError();
+    if (h != INVALID_HANDLE_VALUE)
+        FindClose(h);
+    wsprintfW(pat, L"%s\\*", windir);
+    h2 = FindFirstFileW(pat, &fd);
+    if (h2 != INVALID_HANDLE_VALUE)
+        FindClose(h2);
+    ok = h == INVALID_HANDLE_VALUE && err == ERROR_INVALID_PARAMETER && h2 != INVALID_HANDLE_VALUE;
+    SAY("fsraise %s err=%lu followup=%d\n", ok ? "PASS" : "FAIL", err, h2 != INVALID_HANDLE_VALUE);
+    return ok;
+}
+
+/* FormatMessage(FROM_SYSTEM) for a plain Win32 error. Every app's error box goes through it
+ * (notepad's ShowLastError falls back to the bare number when it fails: a box reading "5"),
+ * so check the lookup directly, and RtlFindMessage under it, before blaming an app. */
+NTSTATUS NTAPI RtlFindMessage(PVOID, ULONG, ULONG, ULONG, PVOID *);
+static int fmtmsg_check(void)
+{
+    WCHAR buf[256] = L"", *alloc = NULL;
+    char a[256];
+    PVOID mre = NULL;
+    DWORD n1, e1, n2, e2;
+    NTSTATUS st;
+    n1 = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                        ERROR_ACCESS_DENIED, 0, buf, 256, NULL);
+    e1 = GetLastError();
+    n2 = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER, NULL,
+                        ERROR_ACCESS_DENIED, 0, (LPWSTR)&alloc, 0, NULL);
+    e2 = GetLastError();
+    st = RtlFindMessage(GetModuleHandleW(L"kernel32.dll"), 11 /* RT_MESSAGETABLE */, 0,
+                        ERROR_ACCESS_DENIED, &mre);
+    ascii(buf, a, sizeof a);
+    for (char *c = a; *c; c++)
+        if (*c == '\r' || *c == '\n') *c = ' ';
+    SAY("fmtmsg %s buf=%lu(gle=%lu) alloc=%lu(gle=%lu) rtlfind=0x%lx text=\"%s\"\n",
+        n1 && n2 ? "PASS" : "FAIL", n1, e1, n2, e2, (unsigned long)st, a);
+    LocalFree(alloc);
+    return n1 && n2;
+}
+
+/* APPSTORM_ONLY=a,b build.sh compiles in a subset of apps and scenarios, for iterating on one. */
+static int wanted(const char *name)
+{
+#ifdef APPSTORM_ONLY
+    char want[512], *tok;
+    int hit = 0;
+    snprintf(want, sizeof want, "%s", APPSTORM_ONLY);
+    for (tok = strtok(want, ","); tok; tok = strtok(NULL, ","))
+        hit |= !strcmp(tok, name);
+    return hit;
+#else
+    (void)name;
+    return 1;
+#endif
+}
+
+/* --- Scenarios: drive an app past its first window, the way a user would. ---------------
+ * Each one launches its app, pokes it with the messages its own UI would send (menu commands,
+ * dialog text, button clicks), and checks the outcome on disk and in the process table. A
+ * message box from the app at any step, the app dying, or the shell dying fails it. */
+typedef struct { const char *name; int (*run)(const char *name); } scenario_t;
+
+/* Exit code of a finished process, or -1 while it runs; a crash is scored like main()'s. */
+static int crashed_code(DWORD rc)
+{
+    return ((rc & 0xC0000000u) == 0xC0000000u && rc != 0xC000013Au) || rc == 0x80;
+}
+
+/* Any message box the app has up now: log it and say so. */
+static int app_msgbox(DWORD pid, const char *name, const char *step)
+{
+    HWND dlg = NULL;
+    char mb[256];
+    while ((dlg = FindWindowExW(NULL, dlg, L"#32770", NULL))) {
+        DWORD p = 0;
+        GetWindowThreadProcessId(dlg, &p);
+        if (p == pid && IsWindowVisible(dlg) && msgbox_text(dlg, mb, sizeof mb)) {
+            SAY("  %s: message box at %s: \"%s\"\n", name, step, mb);
+            SAY("shot %s-msgbox\n", name);
+            Sleep(3000);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* notepad: type text, File > Save As, name a file on the scratch volume, OK. The Pi crashed
+ * notepad here, and the dialog is shell32 end to end (DefView lists the folder, the combo
+ * autocompletes against the filesystem), so it reaches code no launch-and-close does. */
+#define NP_CMD_SAVE_AS 0x104 /* base/applications/notepad/notepad_res.h */
+#define DLG_CMB13 0x47c      /* explorer-style file name combo (dlgs.h) */
+#define DLG_EDT1 0x480       /* old-style file name edit */
+static int scn_notepad_save(const char *name)
+{
+    char path[MAX_PATH], tmp[MAX_PATH], cmd[MAX_PATH + 16];
+    WCHAR wfile[MAX_PATH];
+    STARTUPINFOA si = { sizeof si };
+    PROCESS_INFORMATION pi;
+    HWND main, edit, dlg, fn, ok;
+    const char *why = NULL;
+    DWORD rc = 0, t0;
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    int saved = 0;
+
+    if (!SearchPathA(NULL, "notepad.exe", NULL, MAX_PATH, path, NULL)) {
+        SAY("scenario %s ABSENT\n", name);
+        return -1;
+    }
+    /* The scratch FAT volume when the harness attached one (C:\TEMP, what [WT] points the
+     * winetests at), else %TEMP% -- which on the livecd is X:, read-only, and a save there is
+     * refused ERROR_ACCESS_DENIED for reasons that have nothing to do with notepad. */
+    if ((GetFileAttributesA("C:\\TEMP") & (FILE_ATTRIBUTE_DIRECTORY | 0x80000000u)) == FILE_ATTRIBUTE_DIRECTORY)
+        snprintf(tmp, sizeof tmp, "C:\\TEMP\\");
+    else
+        GetTempPathA(MAX_PATH, tmp);
+    char target[MAX_PATH];
+    snprintf(target, sizeof target, "%sstorm%lu.txt", tmp, GetCurrentProcessId());
+    DeleteFileA(target);
+    MultiByteToWideChar(CP_ACP, 0, target, -1, wfile, MAX_PATH);
+    end_prior_instances("notepad.exe");
+    snprintf(cmd, sizeof cmd, "\"%s\"", path);
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        SAY("scenario %s FAIL spawn gle=%lu\n", name, GetLastError());
+        return 0;
+    }
+    WaitForInputIdle(pi.hProcess, 20000);
+    if (!(main = wait_window(pi.dwProcessId, L"Notepad", NULL, 30000, pi.hProcess))) {
+        why = "no notepad window";
+        goto out;
+    }
+    if (!(edit = FindWindowExW(main, NULL, L"EDIT", NULL))) {
+        why = "no edit control";
+        goto out;
+    }
+    SendMessageW(edit, WM_SETTEXT, 0, (LPARAM)L"vibeos appstorm: saved by the notepad-save scenario\r\n");
+    SendMessageW(edit, EM_SETMODIFY, TRUE, 0);
+    SAY("  %s: typed, sending File > Save As\n", name);
+    PostMessageW(main, WM_COMMAND, NP_CMD_SAVE_AS, 0);
+    if (!(dlg = wait_window(pi.dwProcessId, L"#32770", NULL, 30000, pi.hProcess))) {
+        why = WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0 ? "died opening Save As" : "no Save As dialog";
+        goto out;
+    }
+    if (app_msgbox(pi.dwProcessId, name, "Save As")) {
+        why = "message box instead of Save As";
+        goto out;
+    }
+    Sleep(3000); /* let DefView populate the folder */
+    SAY("shot %s-dialog\n", name);
+    Sleep(3000);
+    if (!(fn = GetDlgItem(dlg, DLG_CMB13)) && !(fn = GetDlgItem(dlg, DLG_EDT1))) {
+        why = "Save As has no file name box";
+        goto out;
+    }
+    SendMessageW(fn, WM_SETTEXT, 0, (LPARAM)wfile);
+    ok = GetDlgItem(dlg, IDOK);
+    SAY("  %s: file name %s, pressing OK\n", name, target);
+    PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)ok);
+    t0 = GetTickCount();
+    while (GetTickCount() - t0 < 30000 && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+        if (!IsWindow(dlg) && GetFileAttributesExA(target, GetFileExInfoStandard, &fa)) {
+            saved = 1;
+            break;
+        }
+        if (app_msgbox(pi.dwProcessId, name, "after OK"))
+            break;
+        Sleep(250);
+    }
+    if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0)
+        why = "notepad died saving";
+    else if (!saved)
+        why = IsWindow(dlg) ? "Save As never closed" : "file not on disk";
+    else if (!fa.nFileSizeLow)
+        why = "saved file is empty";
+    else
+        SAY("  %s: saved %lu bytes\n", name, fa.nFileSizeLow);
+out:
+    if (why && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+        SAY("shot %s-fail\n", name);
+        Sleep(3000);
+    }
+    /* Close: after a good save there is no "save changes?" prompt; after a bad one, kill. */
+    if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+        if (!why)
+            PostMessageW(main, WM_CLOSE, 0, 0);
+        if (why || WaitForSingleObject(pi.hProcess, 10000) == WAIT_TIMEOUT) {
+            if (!why) {
+                why = "would not close after saving";
+                dump_process(pi.dwProcessId);
+            }
+            TerminateProcess(pi.hProcess, 1);
+            WaitForSingleObject(pi.hProcess, 5000);
+        }
+    }
+    GetExitCodeProcess(pi.hProcess, &rc);
+    if (!why && crashed_code(rc))
+        why = "crashed on exit";
+    if (why && crashed_code(rc))
+        SAY("  %s: notepad exit=0x%lx (crash)\n", name, rc);
+    if (!shell_check(name) && !why)
+        why = "shell died";
+    SAY("scenario %s %s%s exit=0x%lx\n", name, why ? "FAIL: " : "PASS", why ? why : "", rc);
+    DeleteFileA(target);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return !why;
+}
+
+static const scenario_t scenarios[] = {
+    { "notepad-save", scn_notepad_save },
+};
+
 int main(void)
 {
     int pass = 0, fail = 0, absent = 0;
@@ -128,20 +626,16 @@ int main(void)
     SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
         (GetTickCount() - t0) / 1000);
     SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
+    fs_raise_check(windir) ? pass++ : fail++;
+    fmtmsg_check() ? pass++ : fail++;
+    shell_note();
+    SAY("shell tray=%p\n", (void *)shell_tray);
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
         const app_t *a = &apps[k];
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];
-#ifdef APPSTORM_ONLY
-        {   /* build-time subset, for iterating on one failure: APPSTORM_ONLY=a,b build.sh */
-            char want[512], *tok;
-            int hit = 0;
-            snprintf(want, sizeof want, "%s", APPSTORM_ONLY);
-            for (tok = strtok(want, ","); tok; tok = strtok(NULL, ","))
-                hit |= !strcmp(tok, a->name);
-            if (!hit) continue;
-        }
-#endif
+        if (!wanted(a->name))
+            continue;
         if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL)) {
             SAY("app %s ABSENT (%s)\n", a->name, a->exe);
             absent++;
@@ -165,7 +659,9 @@ int main(void)
         ExpandEnvironmentStringsA(a->args, args, MAX_PATH);
         snprintf(cmd, sizeof cmd, "\"%s\" %s", path, args);
         wset_t before, got;
+        end_prior_instances(a->exe);
         snapshot(&before);
+        snapshot_pids();
         STARTUPINFOA si = { sizeof si };
         PROCESS_INFORMATION pi;
         if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
@@ -173,6 +669,9 @@ int main(void)
             fail++;
             continue;
         }
+        launch_root = pi.dwProcessId;
+        family[0] = launch_root;
+        nfamily = 1;
         WaitForInputIdle(pi.hProcess, 20000);
         /* Wait for a window, then let it finish drawing. */
         DWORD t0 = GetTickCount();
@@ -214,8 +713,15 @@ int main(void)
             ascii(c, ca, sizeof ca);
             int small = (r.right - r.left) < 50 || (r.bottom - r.top) < 30;
             /* An error box is a dialog whose title says so, from any process. */
+            char mb[200];
             if (!strcmp(ca, "#32770") && (strstr(ta, "rror") || strstr(ta, "ailed") || strstr(ta, "xception")))
                 errbox = 1;
+            /* No stock app greets the user with a message box, whatever its title. */
+            if (msgbox_text(got.h[i], mb, sizeof mb)) {
+                int expected = a->expect_box && strstr(mb, a->expect_box);
+                errbox |= !expected;
+                SAY("  win %d is a message box%s: \"%s\"\n", i, expected ? " (expected here)" : "", mb);
+            }
             hung |= !resp;
             if (!small) ok = 1;
             SAY("  win %d title=\"%s\" class=%s rect=%ldx%ld@%ld,%ld resp=%s\n", i, ta, ca,
@@ -244,24 +750,86 @@ int main(void)
             for (int j = 0; j < npids; j++) seen |= pids[j] == pid;
             if (pid && !seen) pids[npids++] = pid;
         }
-        for (int i = 0; i < got.n; i++) PostMessageW(got.h[i], WM_CLOSE, 0, 0);
+        for (int i = 0; i < got.n; i++)
+            if (!PostMessageW(got.h[i], WM_CLOSE, 0, 0))
+                SAY("  PostMessage(WM_CLOSE) to %p failed, error %lu\n", (void *)got.h[i], GetLastError());
         DWORD rc = 0;
         const char *close = "OK";
         for (int j = 0; j < npids; j++) {
             HANDLE h = j ? OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION,
                                        FALSE, pids[j]) : pi.hProcess;
             if (!h) continue;
-            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) { TerminateProcess(h, 1); close = "TIMEOUT"; }
+            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) {
+                SAY("  close timeout pid=%lu, threads:\n", pids[j]);
+                /* Every top-level window the process owns NOW: a modal box the close raised
+                 * (a "save changes?" prompt) was created after the snapshot above. */
+                {
+                    wset_t now;
+                    snapshot(&now);
+                    for (int k = 0; k < now.n; k++) {
+                        DWORD wp = 0;
+                        WCHAR wc[64] = L"", wt[128] = L"";
+                        char ac[64], at[128];
+                        GetWindowThreadProcessId(now.h[k], &wp);
+                        if (wp != pids[j]) continue;
+                        GetClassNameW(now.h[k], wc, 64);
+                        InternalGetWindowText(now.h[k], wt, 128);
+                        ascii(wc, ac, sizeof ac);
+                        ascii(wt, at, sizeof at);
+                        SAY("  owns %p class=%s title=\"%s\" visible=%d\n", (void *)now.h[k], ac, at,
+                            IsWindowVisible(now.h[k]));
+                    }
+                }
+                /* Which half failed: a window still alive whose thread answers a sent message
+                 * never got (or ignored) the posted WM_CLOSE; a destroyed window means the
+                 * app closed and its exit path is what hung. */
+                for (int i = 0; i < got.n; i++) {
+                    DWORD wpid = 0;
+                    DWORD_PTR r = 0;
+                    GetWindowThreadProcessId(got.h[i], &wpid);
+                    if (wpid != pids[j]) continue;
+                    SAY("  window %p alive=%d visible=%d answers=%d\n", (void *)got.h[i],
+                        IsWindow(got.h[i]), IsWindowVisible(got.h[i]),
+                        IsWindow(got.h[i]) && SendMessageTimeoutW(got.h[i], WM_NULL, 0, 0,
+                                                                  SMTO_ABORTIFHUNG, 2000, &r) != 0);
+                    /* A SENT close runs the window procedure synchronously: if that destroys
+                     * the window, the posted one was lost; if not, the close itself fails. */
+                    if (IsWindow(got.h[i])) {
+                        LRESULT sent = SendMessageTimeoutW(got.h[i], WM_CLOSE, 0, 0,
+                                                           SMTO_ABORTIFHUNG, 3000, &r);
+                        SAY("  sent WM_CLOSE: returned=%d window_after=%d\n", sent != 0,
+                            IsWindow(got.h[i]));
+                    }
+                }
+                dump_process(pids[j]);
+                TerminateProcess(h, 1);
+                close = "TIMEOUT";
+            }
             if (!j) GetExitCodeProcess(h, &rc);
             if (j) CloseHandle(h);
         }
-        int crashed = (rc & 0xC0000000u) == 0xC0000000u && rc != 0xC000013Au;
-        int good = ok && !hung && !errbox && !crashed;
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx\n", a->name,
-            good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc);
+        /* 0x80 as well: a user-mode exception reaching second chance is terminated by csrss's
+         * exception port with TerminateProcess(client, 0x80), not with the exception code
+         * (ke/amd64/except.rs). dxdiag died that way and was scored PASS. */
+        int crashed = ((rc & 0xC0000000u) == 0xC0000000u && rc != 0xC000013Au) || rc == 0x80;
+        int shell = shell_check(a->name);
+        /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
+         * timing out on close (a lost PostMessage) scored PASS here until this counted. */
+        int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s\n",
+            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED");
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+        launch_root = 0;
+        Sleep(1500);
+    }
+    for (unsigned k = 0; k < sizeof scenarios / sizeof scenarios[0]; k++) {
+        int r;
+        if (!wanted(scenarios[k].name))
+            continue;
+        r = scenarios[k].run(scenarios[k].name);
+        r < 0 ? absent++ : r ? pass++ : fail++;
         Sleep(1500);
     }
     SAY("done VERDICT=%s pass=%d fail=%d absent=%d\n", fail ? "FAIL" : "PASS", pass, fail, absent);

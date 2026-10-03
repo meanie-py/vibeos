@@ -1,5 +1,8 @@
 
 
+# <libxslt/...> used to resolve through the global sdk/include/reactos/libs root.
+include_directories(${REACTOS_SOURCE_DIR}/vendor/libxslt/include)
+
 add_definitions(
     -D__ROS_LONG64__
     -D_WINE

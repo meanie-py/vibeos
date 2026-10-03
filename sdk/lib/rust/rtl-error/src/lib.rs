@@ -37,9 +37,10 @@ unsafe fn NtCurrentTeb() -> PTEB {
 
 // Fixed ntstatus.h / winnt.h values not surfaced by ntkrnl-sys.
 const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC000_0002_u32 as i32;
-const RTL_SEM_FAILCRITICALERRORS: ULONG = 0x0000_0001;
-const RTL_SEM_NOGPFAULTERRORBOX: ULONG = 0x0000_0002;
-const RTL_SEM_NOALIGNMENTFAULTEXCEPT: ULONG = 0x0000_0004;
+// ndk/rtltypes.h:74-76: the SEM_* bits shifted left by 4 (TEB HardErrorMode form).
+const RTL_SEM_FAILCRITICALERRORS: ULONG = 0x0000_0010;
+const RTL_SEM_NOGPFAULTERRORBOX: ULONG = 0x0000_0020;
+const RTL_SEM_NOALIGNMENTFAULTEXCEPT: ULONG = 0x0000_0040;
 
 #[inline]
 fn HIWORD(l: DWORD) -> DWORD {

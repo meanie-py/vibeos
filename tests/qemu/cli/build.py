@@ -12,10 +12,23 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
-from . import archcfg, cachecfg, canon, diskspace, hostdisk, hostjobs, hostlock, lints, provenance
+from . import (
+    archcfg,
+    cachecfg,
+    canon,
+    diskspace,
+    hostdisk,
+    hostjobs,
+    hostlock,
+    ladder,
+    lints,
+    provenance,
+    warmth,
+)
 from .artifacts import Run, Stage
 
 _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
@@ -61,9 +74,36 @@ def source_date_epoch(repo: Path) -> str | None:
     return ts if cp.returncode == 0 and ts.isdigit() else None
 
 
-def _classify_build_failure(out: str, err: str) -> tuple[str, list[str]]:
+NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
+
+
+def _ninja_timeout() -> int:
+    """The ninja stage's wall-clock budget in seconds (default one hour), overridable with
+    VIBEOS_BUILD_TIMEOUT for a deliberately cold rebuild (a regenerated -sys crate)."""
+    raw = os.environ.get(NINJA_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return 3600
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SystemExit(f"{NINJA_TIMEOUT_ENV}={raw!r}: expected whole seconds") from None
+    if value <= 0:
+        raise SystemExit(f"{NINJA_TIMEOUT_ENV}={raw!r}: must be positive")
+    return value
+
+
+def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
+    # The runner turns a stage timeout into exit 124 (artifacts.Run.run). Classify it
+    # before scanning the text: a slow build's log is full of warnings, and
+    # "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL
+    # (2026-09-27, a bindgen regen emitting 8,285 warnings per ntkrnl-sys compile).
+    if rc == 124:
+        return "BUILD_TIMEOUT", [
+            f"stage hit its {_ninja_timeout()}s time budget (exit 124): killed, not failed",
+            f"re-run (ninja resumes), or raise the budget with {NINJA_TIMEOUT_ENV}=<seconds>",
+        ]
     # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
     # as a defect in the diff, which is exactly the wrong cause. It cost four
@@ -308,6 +348,57 @@ def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
     return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
 
 
+def _build_ramdisk_apps(run: Run, repo: Path, build_dir: Path, wrap, env, args) -> bool:
+    """Build the arm64 ramdisk's stock apps and their import closure (tools/ramdisk_apps.py).
+
+    The closure is read from BUILT binaries' import tables, so each round of newly built
+    modules can name the next round's imports: repeat until the tool asks for nothing.
+    A fresh tree converges in four rounds (apps -> dnsapi & co -> d3dwine -> opengl32); a
+    warm one asks for nothing on the first."""
+    tool = [sys.executable, str(repo / "tools" / "ramdisk_apps.py"), "--build-dir", str(build_dir)]
+    built: list[str] = []
+    for _round in range(8):
+        cp = subprocess.run([*tool, "--targets"], capture_output=True, text=True, cwd=repo)
+        if cp.returncode != 0:
+            run.add(
+                Stage(
+                    "ramdisk-apps",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail="closure unresolvable",
+                    salient=cp.stderr.splitlines()[-4:],
+                )
+            )
+            return False
+        todo = [t for t in cp.stdout.split() if t not in built]
+        if not todo:
+            run.add(Stage("ramdisk-apps", status="ok", detail=f"{len(built)} built"))
+            return True
+        built += todo
+        cp = run.run(
+            wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *todo]),
+            cwd=build_dir,
+            env=env,
+            stage="ramdisk-apps",
+            timeout=3600,
+        )
+        if cp.returncode != 0:
+            cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
+            run.classification = cls
+            run.add(
+                Stage(
+                    "ramdisk-apps",
+                    exit=cp.returncode,
+                    status="fail",
+                    detail=cls,
+                    salient=salient or ["see full log"],
+                )
+            )
+            return False
+    run.add(Stage("ramdisk-apps", status="fail", detail="closure did not converge in 8 rounds"))
+    return False
+
+
 def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
@@ -367,6 +458,21 @@ def _flag_in_cache(build_dir: Path, flag: str) -> bool:
     return False
 
 
+def _value_in_cache(build_dir: Path, var: str) -> str:
+    """The cached STRING value of `var`, or "" when absent. Mirrors
+    _flag_in_cache; separate because an empty string and OFF are different
+    answers and conflating them would make "clear the quarantine" a no-op."""
+    cache = build_dir / "CMakeCache.txt"
+    try:
+        text = cache.read_text(errors="ignore")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        if line.startswith(f"{var}:"):
+            return line.split("=", 1)[1].strip() if "=" in line else ""
+    return ""
+
+
 def _maybe_canonize(
     run,
     repo: Path,
@@ -374,6 +480,7 @@ def _maybe_canonize(
     arch: str,
     instr_flags: dict[str, bool],
     sticky_on: tuple[str, ...] = (),
+    instr_values: dict[str, str] | None = None,
 ) -> bool | None:
     """Ensure the build dir is configured at the CANONICAL path (see canon.py) so
     caches share across worktrees. Returns True → wrap build cmds in canon-run,
@@ -404,9 +511,18 @@ def _maybe_canonize(
         # which is cached and harmless, and that is worth more than teaching this
         # generic mechanism which cmake options imply which others.
         stale.update({f: True for f in sticky_on if not _flag_in_cache(build_dir, f)})
+        # STRING-valued instrumentation reconciles on the same pass, and has to
+        # take part in the "is anything stale" decision or it never applies: the
+        # bools were already at their target, so nothing reconfigured and the
+        # new value sat unused. That is how a quarantine list silently does
+        # nothing while the build reports success.
+        stale_values = {
+            k: v for k, v in (instr_values or {}).items() if v != _value_in_cache(build_dir, k)
+        }
         incomplete = not (build_dir / "build.ninja").is_file()
-        if stale or incomplete:
+        if stale or stale_values or incomplete:
             defs = [f"-D{flag}={'ON' if on else 'OFF'}" for flag, on in stale.items()]
+            defs += [f"-D{k}={v}" for k, v in stale_values.items()]
             cp = run.run(
                 canon.wrap(repo, ["cmake", *defs, "."]),
                 cwd=build_dir,
@@ -465,6 +581,14 @@ def _maybe_canonize(
         return None
     carried = canon.carried_options(build_dir)
     carried = [*carried, *(f"-D{flag}=ON" for flag, on in instr_flags.items() if on)]
+    # STRING-valued instrumentation cannot ride instr_flags (bools only). These
+    # reconcile for free: canon._CARRY does not list them, so a build that omits
+    # the flag reconfigures without it. For the winetest quarantine that is the
+    # safe direction — a stale skip list would silently subtract subtests from a
+    # sweep whose whole job is to run them all.
+    for _k, _v in (instr_values or {}).items():
+        if _v:
+            carried = [*carried, f"-D{_k}={_v}"]
     # A dir that does not exist yet carries nothing, so a sticky opt-in has to be
     # named on the FRESH configure too — otherwise the caller's request is silently
     # dropped exactly once, on the one run that cannot detect it.
@@ -524,17 +648,37 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
     cmake scan prunes them and they get the cargo threshold instead. See
     tools/dedup-build-cache.sh SAFETY for history."""
 
-    def _cargo_roots(root: Path) -> list[Path]:
+    # In-process walks, not `find` shell-outs. Those ran under a 300 s timeout each, their
+    # failures degraded to "skip the check" (a cargo-root scan that failed returned [] and
+    # quietly un-pruned every nested target dir), and a `find` over a large tree outlived
+    # a killed parent as an orphan. os.scandir yields the inode from the dirent for free.
+    def _files(root: Path, prune: frozenset[str] = frozenset()):
+        stack = [str(root)]
+        while stack:
+            d = stack.pop()
+            try:
+                it = os.scandir(d)
+            except OSError:
+                continue  # vanished mid-walk or unreadable: find would warn and go on too
+            with it:
+                for e in it:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            if e.path not in prune:
+                                stack.append(e.path)
+                        elif e.is_file(follow_symlinks=False):
+                            yield e
+                    except OSError:
+                        continue
+
+    def _nlink(e) -> int:
         try:
-            cp = subprocess.run(
-                ["find", str(root), "-name", "CACHEDIR.TAG"],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return []
-        dirs = sorted(Path(ln).parent for ln in cp.stdout.splitlines() if ln.strip())
+            return e.stat(follow_symlinks=False).st_nlink
+        except OSError:
+            return 1
+
+    def _cargo_roots(root: Path) -> list[Path]:
+        dirs = sorted(Path(e.path).parent for e in _files(root) if e.name == "CACHEDIR.TAG")
         # keep only top-most roots (cargo stamps per-triple subdirs too)
         tops: list[Path] = []
         for d in dirs:
@@ -542,47 +686,28 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
                 tops.append(d)
         return tops
 
-    def _probe_cmd(root: Path, links: str, prune: list[Path], *, all_hits: bool) -> list[str]:
-        cmd: list[str] = ["find", str(root)]
-        for p in prune:
-            cmd += ["-path", str(p), "-prune", "-o"]
-        cmd += ["-type", "f", "-links", links, "-print"]
-        if not all_hits:
-            cmd += ["-quit"]
-        return cmd
+    def _multi_linked(root: Path, over: int, prune: list[Path]):
+        """Files under `root` with more than `over` links (find's `-links +N`)."""
+        skip = frozenset(str(p) for p in prune)
+        return (e.path for e in _files(root, skip) if _nlink(e) > over)
 
-    def _probe(root: Path, links: str, prune: list[Path]) -> str | None:
-        try:
-            cp = subprocess.run(
-                _probe_cmd(root, links, prune, all_hits=False),
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except (OSError, subprocess.SubprocessError):
-            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return None
-        return cp.stdout.strip() or None
+    def _probe(root: Path, over: int, prune: list[Path]) -> str | None:
+        return next(_multi_linked(root, over, prune), None)
 
-    def _probe_all(root: Path, links: str, prune: list[Path]) -> list[str]:
-        try:
-            cp = subprocess.run(
-                _probe_cmd(root, links, prune, all_hits=True),
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except (OSError, subprocess.SubprocessError):
-            run.add(Stage("isolation", status="warn", detail=f"probe failed for {root} — skipped"))
-            return []
-        return [ln for ln in cp.stdout.splitlines() if ln.strip()][:200]
+    def _probe_all(root: Path, over: int, prune: list[Path]) -> list[str]:
+        out: list[str] = []
+        for path in _multi_linked(root, over, prune):
+            out.append(path)
+            if len(out) == 200:
+                break
+        return out
 
     def _foreign_links(cands: list[str]) -> list[str]:
         """Filter multi-link cargo files down to the ones whose links are NOT
         all inside this worktree. Cargo's incremental sessions legitimately
         hardlink metadata.rmeta into deps/ (nlink = 1 + N session dirs, all
         in-tree), so nlink>2 alone is NOT the dedup signature — a link path
-        OUTSIDE the worktree is. One find walk accounts every candidate inode."""
+        OUTSIDE the worktree is. One walk accounts every candidate inode."""
         infos: dict[int, list] = {}
         for h in cands:
             try:
@@ -592,35 +717,25 @@ def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
             infos.setdefault(st.st_ino, [st.st_nlink, h])
         if not infos:
             return []
-        cond: list[str] = []
-        for ino in infos:
-            cond += ["-inum", str(ino), "-o"]
-        cmd = ["find", str(repo), "-type", "f", "(", *cond[:-1], ")", "-printf", "%i\n"]
-        try:
-            cp = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        except (OSError, subprocess.SubprocessError):
-            # Accounting failed — fail SAFE (treat as foreign; a spurious
-            # refusal is recoverable, a corrupted sibling build is not).
-            return [h for _, h in infos.values()]
         seen: dict[int, int] = {}
-        for ln in cp.stdout.splitlines():
-            if ln.strip().isdigit():
-                ino = int(ln)
+        for e in _files(repo):
+            ino = e.inode()
+            if ino in infos:
                 seen[ino] = seen.get(ino, 0) + 1
         return [h for ino, (nlink, h) in infos.items() if seen.get(ino, 0) < nlink]
 
     hits: list[str] = []
     if build_dir.is_dir():
         nested_cargo = _cargo_roots(build_dir)
-        hit = _probe(build_dir, "+1", nested_cargo)  # cmake outputs: any sharing is foreign
+        hit = _probe(build_dir, 1, nested_cargo)  # cmake outputs: any sharing is foreign
         if hit:
             hits.append(f"{hit} (links 2+ in a cmake tree)")
         for c in nested_cargo:
-            for f in _foreign_links(_probe_all(c, "+2", [])):
+            for f in _foreign_links(_probe_all(c, 2, [])):
                 hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     ws = repo / "sdk" / "lib" / "rust" / "target"
     if ws.is_dir():
-        for f in _foreign_links(_probe_all(ws, "+2", [])):
+        for f in _foreign_links(_probe_all(ws, 2, [])):
             hits.append(f"{f} (links 3+ in a cargo dir, link escapes this worktree)")
     if not hits:
         return True
@@ -717,6 +832,50 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
     return ok
 
 
+def _refresh_wow64_guests(run, repo: Path) -> bool:
+    """Make the graded WoW64 guests current. False = hard failure (stage added)."""
+    todo = ladder.guests_to_refresh(repo)
+    if not todo:
+        run.add(Stage("wow64-guests", status="ok", detail="current"))
+        return True
+    blocker = ladder.refresh_blocker(repo)
+    if blocker:
+        # Not a failure of THIS build: the amd64 media is complete without them,
+        # and gate_decision reports the ladder it then cannot grade. Said here too,
+        # so the cause is on the stage that could have fixed it.
+        run.add(
+            Stage(
+                "wow64-guests",
+                status="skip",
+                detail=f"{len(todo)} guest(s) need building but {blocker}",
+            )
+        )
+        return True
+    cp = run.run(
+        ["bash", str(repo / ladder.GUEST_BUILDER)],
+        cwd=repo,
+        stage="wow64-guests",
+        timeout=900,
+    )
+    left = ladder.guests_to_refresh(repo)
+    if cp.returncode != 0 or left:
+        run.classification = "GUEST_BUILD_FAIL"
+        run.add(
+            Stage(
+                "wow64-guests",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"{ladder.GUEST_BUILDER} left: "
+                + (", ".join(left) or "nothing (script failed)"),
+                salient=[ln for ln in cp.stdout.splitlines() if ln.startswith("[!]")][-8:]
+                or ["see full log"],
+            )
+        )
+        return False
+    run.add(Stage("wow64-guests", status="ok", detail=f"built: {', '.join(todo)}"))
+    return True
+
+
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
@@ -754,6 +913,15 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build.ninja, so the objects survive and turning it back ON is an
             # up-to-date ninja pass.
             "ENABLE_ROSTESTS": bool(getattr(args, "rostests", False)),
+            # The winetest SWEEP marker (`--winetest-sweep`). Reconciled for
+            # the same reason as ENABLE_ROSTESTS and then some: a sweep is
+            # minutes of boot, and leaving it latched on would quietly turn
+            # every later boot in the worktree into one. It only stages a
+            # marker file, so toggling costs a media rebuild and nothing else.
+            "VIBEOS_WINETEST_SWEEP": bool(getattr(args, "winetest_sweep", False)),
+            # WoW64 staging deferred (`--no-wow64-stage`): reconciled so the
+            # restage pass that follows it -- a plain build -- turns it back on.
+            "VIBEOS_WOW64_NO_STAGE": bool(getattr(args, "no_wow64_stage", False)),
         },
         # Sticky, never reconciled OFF: the kmtest corpus is what `conformance`
         # sweeps, and both cmake options gating it default OFF, so a build dir
@@ -773,6 +941,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             )
             if getattr(args, flag, False)
         ),
+        instr_values={
+            "VIBEOS_WINETEST_SKIP": (getattr(args, "winetest_skip", "") or "").strip(),
+            "VIBEOS_WINETEST_ONLY": (getattr(args, "winetest_only", "") or "").strip(),
+        },
     )
     if wrapped is None:
         return run.finalize(repo)
@@ -811,7 +983,23 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
 
     stamped = _payload_compile.write_stamp(build_dir)
     if stamped:
-        run.add(Stage("payloads", status="ok", detail=",".join(stamped)))
+        # A payload binary older than its source would boot the old test: rebuild it
+        # here, where the media step is about to stage it. compile.py dies loudly on a
+        # failed build; surface that as a classified build failure.
+        import contextlib
+        import io
+
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                rebuilt = _payload_compile.ensure_built(stamped, arch)
+        except SystemExit:
+            why = [ln for ln in err.getvalue().strip().splitlines() if ln.strip()]
+            run.classification = "PAYLOAD_BUILD_FAIL"
+            run.add(Stage("payloads", status="fail", detail=",".join(stamped), salient=why[:6]))
+            return run.finalize(repo)
+        detail = ",".join(stamped) + (f" (rebuilt {','.join(rebuilt)})" if rebuilt else "")
+        run.add(Stage("payloads", status="ok", detail=detail))
 
     if cold:
         _clean(run, repo, arch)
@@ -865,6 +1053,23 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         repo, build_env, canonical=canon.is_canonical(build_dir), run_dir=run.dir
     )
 
+    # --- WoW64 guests (amd64): build what the livecd stages from build-fex-hello/ ---
+    # The guests are not in git and no ninja edge makes them, so a tree that never
+    # ran tools/fex/build-hello-compute.sh by hand staged NOTHING and every gate
+    # there skipped the ladder "not staged" -- the merge queue's integration tree
+    # was exactly that tree, so no batch was ever graded on the guests at all.
+    # Their CREATION re-runs configure (CONFIGURE_DEPENDS in wow64cpu's
+    # CMakeLists), so building them here, before the first ninja, is enough to
+    # stage them. Only when needed: a rebuilt guest re-runs configure.
+    # Deferred staging must not build guests either: they link build-i386's
+    # importlibs, which is the tree a deferring caller is rebuilding right now.
+    if (
+        arch == "amd64"
+        and not getattr(args, "no_wow64_stage", False)
+        and not _refresh_wow64_guests(run, repo)
+    ):
+        return run.finalize(repo)
+
     # --- generated-header barrier ---
     # On a FRESH tree (canonize/provision) some RC + cc-rs compiles race ahead of
     # the psdk/xdk winnt.h generators — dep-edge rot that months of copied build
@@ -878,7 +1083,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=1800,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -902,7 +1107,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # (the curated list assumed a previously-full tree). Deriving from the boot
     # manifest keeps it self-maintaining; ninja dedups anything a phony target
     # already covers. x86 builds the full `livecd` DAG and needs neither.
-    targets = list(cfg.ninja_targets)
+    targets = list(dict.fromkeys([*cfg.ninja_targets, *getattr(args, "extra_target", [])]))
+    if any(not target or target.startswith("-") for target in targets):
+        run.add(Stage("targets", status="fail", detail="invalid extra Ninja target"))
+        return run.finalize(repo)
     if cfg.needs_mkramdisk:
         # Not every staged file is a ninja target (e.g. media/nls/l_intl.nls is
         # copied by an aggregate rule) — intersect with the known target list or
@@ -923,10 +1131,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         cwd=build_dir,
         env=build_env,
         stage="ninja",
-        timeout=3600,
+        timeout=_ninja_timeout(),
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -939,6 +1147,9 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
+
+    if cfg.needs_mkramdisk and not _build_ramdisk_apps(run, repo, build_dir, wrap, build_env, args):
+        return run.finalize(repo)
 
     # --- flag→artifact verification (T1.2): requested features must PROVE
     # themselves in the output; unrequested ones must be absent. ---
@@ -979,7 +1190,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if "unknown target" in blob.lower():
             run.add(Stage(f"opt:{target}", status="skip", detail="absent from ninja graph"))
             continue
-        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "")
+        cls, salient = _classify_build_failure(cp.stdout or "", cp.stderr or "", cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1015,7 +1226,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         timeout=1800,
     )
     if cp.returncode != 0:
-        cls, salient = _classify_build_failure(cp.stdout, cp.stderr)
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
         run.classification = cls
         run.add(
             Stage(
@@ -1112,6 +1323,14 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("artifact-check", status="ok", detail="media present + fresh"))
+
+    # --- warm receipt: `land` asks whether this lane's code has been built, i.e. whether
+    # the merge queue's cold gate will find it in the shared compiler caches (warmth.py).
+    try:
+        tree = warmth.record(repo, arch)
+        run.add(Stage("warm-receipt", status="ok", detail=f"tree {tree[:12]}"))
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        run.add(Stage("warm-receipt", status="warn", detail=f"not recorded: {exc}"))
 
     # NOTE: auto hardlink-dedup of cache trees was RETIRED 2026-07-04 (unsound on
     # live trees — SIGBUS + mtime-poisoned false-green; see tools/dedup-build-cache.sh

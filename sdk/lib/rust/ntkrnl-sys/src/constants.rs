@@ -573,10 +573,11 @@ pub const PORT_CONNECT: ULONG = 0x0001;
 pub const PORT_ALL_ACCESS: ULONG = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0x0001;
 
 // ============================================================================
-// Debug object access rights (from winnt.h)
+// Debug object access rights (from ndk/dbgktypes.h:31-34)
 // ============================================================================
 
-pub const DEBUG_OBJECT_ADD_REMOVE_PROCESS: ULONG = 0x0004;
+// 0x0002, not 0x0004 (that is DEBUG_OBJECT_SET_INFORMATION).
+pub const DEBUG_OBJECT_ADD_REMOVE_PROCESS: ULONG = 0x0002;
 
 // ============================================================================
 // Additional NTSTATUS codes — PS subsystem (from ntstatus.h)

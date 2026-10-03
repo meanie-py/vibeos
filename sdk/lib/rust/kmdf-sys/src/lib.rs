@@ -8,7 +8,7 @@
 //!
 //! NOT a framework reimplementation. The KMDF runtime (`Wdf01000.sys`), the
 //! loader (`wdfldr.sys`), and the `WdfDriverEntry` bind stub all build and boot
-//! in-tree (`sdk/lib/drivers/wdf/`). This crate is only the *client-side* glue
+//! in-tree (`vendor/wdf/`). This crate is only the *client-side* glue
 //! the C compiler synthesizes from `<wdf.h>`:
 //!
 //! Each `Wdf*` API in the WDF headers is a `FORCEINLINE` function whose body

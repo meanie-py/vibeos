@@ -136,6 +136,9 @@ pub unsafe extern "C" fn InitOperatingSystemList(
         SectionId = 0;
         HadSection = IniOpenSection(SettingName.as_ptr(), &mut SectionId);
         if HadSection != 0 {
+            // Reset first (upstream 81752ca2117): a section with no BootType= line leaves the
+            // buffer untouched, and the previous entry's BootType would carry over.
+            *BootType.as_mut_ptr() = 0i8;
             IniReadSettingByName(SectionId, b"BootType\0".as_ptr() as PCSTR, BootType.as_mut_ptr(), core::mem::size_of_val(&BootType) as ULONG);
         } else {
             *BootType.as_mut_ptr() = 0i8;

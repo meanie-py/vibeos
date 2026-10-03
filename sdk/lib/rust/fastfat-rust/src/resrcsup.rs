@@ -17,7 +17,6 @@ extern "system" {
     fn FlagOn(Flags: u32, Flag: u32) -> u8;
     fn ExAcquireResourceSharedLite(Resource: *mut ERESOURCE, Wait: u8) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn _SEH2_AbnormalTermination() -> u8;
     fn NT_ASSERT(condition: i32);
     fn NodeType(fcb: *mut FCB) -> u32;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
@@ -52,7 +51,13 @@ use ntkrnl_sys::ddk::ERESOURCE;
 const IRP_NOCACHE: u32 = 0x01;
 
 const FAT_NTC_FCB: u32 = 0x0502; // TODO: correct value
-const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = (-2isize) as *mut IRP;
+// fsrtltypes.h: #define FSRTL_CACHE_TOP_LEVEL_IRP (0x02), used as (PIRP). ONE definition for
+// the file: it used to carry four (-2, 2, -1, 1), so each Acquire/Release pair set one value
+// and tested for another. FatReleaseForCcFlush never recognised FatAcquireForCcFlush's -2,
+// left it as the thread's top-level IRP, and the next FatCommonWrite on that thread took
+// -2 for a real IRP (it is > FSRTL_MAX_TOP_LEVEL_IRP_FLAG unsigned) and faulted reading its
+// NodeType: BUGCHECK 0x23 in kmtest ZwCreateSection on arm64.
+const FSRTL_CACHE_TOP_LEVEL_IRP: *mut IRP = 0x02 as *mut IRP;
 
 
 
@@ -81,11 +86,14 @@ pub unsafe extern "system" fn FatAcquireExclusiveVcb_Real(
     ) != 0
     {
         if NoOpCheck == 0 {
-            // SEH2_TRY / SEH2_FINALLY expansion (no_std: use _SEH2_AbnormalTermination)
-            FatVerifyOperationIsLegal(IrpContext);
-            if _SEH2_AbnormalTermination() != 0 {
-                FatReleaseVcb(IrpContext, Vcb);
-            }
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
+                FatVerifyOperationIsLegal(IrpContext);
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseVcb(IrpContext, Vcb);
+                }
+            });
         }
         return 1; // TRUE
     }
@@ -99,10 +107,14 @@ pub unsafe extern "system" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb:
         BooleanFlagOn((*( IrpContext as *mut IRP_CONTEXT )).Flags, IRP_CONTEXT_FLAG_WAIT),
     ) != 0
     {
-        FatVerifyOperationIsLegal(IrpContext as *mut IRP_CONTEXT);
-        if _SEH2_AbnormalTermination() != 0 {
-            FatReleaseVcb(IrpContext as *mut IRP_CONTEXT, Vcb);
-        }
+        // _SEH2_TRY / _SEH2_FINALLY
+        crate::seh::try_finally(&mut (), |_| {
+            FatVerifyOperationIsLegal(IrpContext as *mut IRP_CONTEXT);
+        }, |_, abnormal| {
+            if abnormal {
+                FatReleaseVcb(IrpContext as *mut IRP_CONTEXT, Vcb);
+            }
+        });
         return 1;
     }
     0
@@ -143,7 +155,14 @@ pub unsafe extern "system" fn FatAcquireExclusiveFcb(
                 FatReleaseFcb(IrpContext, Fcb);
                 continue;
             }
-            FatVerifyOperationIsLegal(IrpContext);
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
+                FatVerifyOperationIsLegal(IrpContext);
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            });
             return 1;
         } else {
             return 0;
@@ -178,14 +197,14 @@ pub unsafe extern "system" fn FatAcquireSharedFcb(
                 FatReleaseFcb(IrpContext, Fcb);
                 continue;
             }
-            let mut _abnormal = true;
-            {
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
                 FatVerifyOperationIsLegal(IrpContext);
-                _abnormal = false;
-            }
-            if _abnormal {
-                FatReleaseFcb(IrpContext, Fcb);
-            }
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            });
             return 1;
         } else {
             return 0;
@@ -230,10 +249,14 @@ pub unsafe extern "system" fn FatAcquireSharedFcbWaitForEx(
                 continue 'RetryFcbSharedWaitEx;
             }
 
-            FatVerifyOperationIsLegal(IrpContext);
-            if _SEH2_AbnormalTermination() != 0 {
-                FatReleaseFcb(IrpContext, Fcb);
-            }
+            // _SEH2_TRY / _SEH2_FINALLY
+            crate::seh::try_finally(&mut (), |_| {
+                FatVerifyOperationIsLegal(IrpContext);
+            }, |_, abnormal| {
+                if abnormal {
+                    FatReleaseFcb(IrpContext, Fcb);
+                }
+            });
 
             return 1;
         } else {
@@ -251,7 +274,6 @@ pub unsafe extern "system" fn FatAcquireFcbForLazyWrite(
 
     // Local constants that would normally come from headers
     const FAT_NTC_FCB: u32 = 0x0502; // TODO: actual value unknown
-    const FSRTL_CACHE_TOP_LEVEL_IRP: isize = 0x02;
 
     let fcb_ptr = Fcb as *mut FCB;
 
@@ -378,8 +400,6 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
 
 #[no_mangle]
 pub unsafe extern "system" fn FatReleaseFcbFromReadAhead(Fcb: *mut core::ffi::c_void) {
-    // FSRTL_CACHE_TOP_LEVEL_IRP is ((PIRP)LONG_PTR_MAX)
-    const FSRTL_CACHE_TOP_LEVEL_IRP: PIRP = (-1_isize) as PIRP;
 
     // PAGED_CODE() – normally a no-op in non‑checked builds; left as-is.
     let top_irp = IoGetTopLevelIrp();
@@ -410,7 +430,10 @@ pub unsafe extern "system" fn FatAcquireForCcFlush(
     let _ = DeviceObject;
 
     // NT_ASSERT( IoGetTopLevelIrp() != (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP );
-    ntkrnl_sys::ASSERT!(!IoGetTopLevelIrp().is_null() && IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
+    // Only that: a NULL top-level IRP is legal here -- the next line handles it -- and the
+    // `!is_null() &&` this once carried fired BUGCHECK 0x23 on arm64 when kmtest's
+    // ZwCreateSection flushed with no top-level IRP set.
+    ntkrnl_sys::ASSERT!(IoGetTopLevelIrp() != FSRTL_CACHE_TOP_LEVEL_IRP);
 
     if IoGetTopLevelIrp().is_null() {
         IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP);
@@ -448,7 +471,6 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
     file_object: *mut FILE_OBJECT,
     device_object: *mut DEVICE_OBJECT,
 ) -> i32 {
-    const FSRTL_CACHE_TOP_LEVEL_IRP: *mut core::ffi::c_void = 1 as *mut core::ffi::c_void;
 
     let mut vcb: *mut VCB = core::ptr::null_mut();
     let mut fcb: *mut FCB = core::ptr::null_mut();
@@ -460,7 +482,7 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
 
     let _ = device_object;
 
-    if (ntkrnl_sys::ddk::IoGetTopLevelIrp() as *mut core::ffi::c_void) == FSRTL_CACHE_TOP_LEVEL_IRP {
+    if (ntkrnl_sys::ddk::IoGetTopLevelIrp() as *mut core::ffi::c_void) == FSRTL_CACHE_TOP_LEVEL_IRP as *mut core::ffi::c_void {
         ntkrnl_sys::ddk::IoSetTopLevelIrp(core::ptr::null_mut());
     }
 

@@ -34,7 +34,9 @@ BUILD_ROOT = Path(os.environ.get("VIBEOS_BUILD_ROOT", str(SRC)))
 RES = BUILD_ROOT / ".build-tools/llvm-mingw/lib/clang/19/include"
 CLANG = BUILD_ROOT / ".build-tools/llvm-mingw/bin/clang"
 WRAPPER = SCRIPT_DIR / "wrapper.h"
-NINJA_RULE = "csrsrv.dir/init.c.obj:"
+# A TU still COMPILED as C (the module's own .c went to Rust when it was flipped, and a
+# rule that matches nothing used to leave clang with no -I/-D and exit 0 having verified nothing).
+NINJA_RULE = "subsystems/csr/csrlib/CMakeFiles/csrlib.dir/csrlib_rust_stub.c.obj:"
 
 ARCHS = [
     {"name": "i386",  "target": "i686-pc-windows-gnu",    "out": "size_check_i386.rs",  "rs": "bindgen_i386.rs"},
@@ -62,6 +64,8 @@ def lift_ninja_flags(arch_name: str) -> tuple[list[str], bool]:
                     if l.strip().startswith(key + " =") and not grabbed[key]:
                         grabbed[key] = l.split("=", 1)[1].strip()
             break
+    if not grabbed["DEFINES"] or not grabbed["INCLUDES"]:
+        sys.exit(f"!! {arch_name}: no DEFINES/INCLUDES for {NINJA_RULE} in {ninja}")
     flags: list[str] = []
     flags += grabbed["DEFINES"].split()
     flags += grabbed["INCLUDES"].split()
@@ -73,6 +77,7 @@ def lift_ninja_flags(arch_name: str) -> tuple[list[str], bool]:
             continue
         flags.append(f)
     flags += [
+        f"-I{SRC}/sdk/include/reactos/subsys",
         f"-I{SRC}/subsystems/csr/csrsrv",
         f"-I{SRC}/subsystems/win/basesrv",
         f"-I{SRC}/base/system/smss",
@@ -203,6 +208,8 @@ def main() -> None:
     if check and not all_ok:
         print("FAILED — some assertions need regeneration")
         sys.exit(1)
+    if not all_ok:
+        sys.exit("FAILED — an arch produced no assertions (see above)")
     if not check:
         print("Done. Ensure size_check_* modules are in lib.rs; cargo check.")
 

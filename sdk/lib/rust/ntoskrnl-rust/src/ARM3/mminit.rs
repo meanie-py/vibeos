@@ -872,6 +872,57 @@ pub unsafe extern "system" fn MmFreeLoaderBlock(loader_block: PLOADER_PARAMETER_
     KeFlushCurrentTb();
 
     ExFreePoolWithTag(buffer as PVOID, TAG_MM);
+
+    #[cfg(target_arch = "aarch64")]
+    MiUnmapLowGuardArm64();
+}
+
+/// Unmap VA 0-64K, which FreeLDR identity-mapped (VA == PA) and nothing ever
+/// tore down, so a NULL dereference read physical page 0 instead of faulting.
+/// Runs once the loader's memory is released: the kernel no longer needs the
+/// loader's identity mappings then. Only the guard region goes; higher identity
+/// entries (the PL011 at 0x09000000) still have users, and the lazy cleanup in
+/// NtAllocateVirtualMemory handles user allocations that land on the rest.
+/// AP bring-up does not touch PA 0 either: it starts cores with PSCI CPU_ON on
+/// a private identity map (hal mpboot.rs), not through the Pi 4's spin table.
+#[cfg(target_arch = "aarch64")]
+unsafe fn MiUnmapLowGuardArm64() {
+    const GUARD_END: ULONG_PTR = 0x10000;
+    // Descriptor bits[1:0]: 0b11 = table/page, 0b01 = 2 MB block (see virtual.rs).
+    const NOT_LARGE_PAGE: ULONG_PTR = 1 << 1;
+    let mut cleared: u32 = 0;
+    let mut va: ULONG_PTR = 0;
+    while va < GUARD_END {
+        let pxe = MiAddressToPxe(va as PVOID);
+        let ppe = MiAddressToPpe(va as PVOID);
+        let pde = MiAddressToPde(va as PVOID);
+        if !((*pxe).valid() && (*ppe).valid() && (*pde).valid()) {
+            break; // nothing mapped below this PDE
+        }
+        if ((*pde).Long & NOT_LARGE_PAGE) == 0 {
+            // A 2 MB block also covers live mappings above the guard; leave it
+            // and say so rather than drop them.
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[MM] arm64: VA 0 is inside a 2MB block (PDE %p); low guard left mapped\n\0".as_ptr() as *const i8,
+                (*pde).Long as PVOID,
+            );
+            return;
+        }
+        let pte = MiAddressToPte(va as PVOID);
+        if (*pte).valid() {
+            (*pte).Long = 0;
+            cleared += 1;
+        }
+        va += PAGE_SIZE as ULONG_PTR;
+    }
+    if cleared != 0 {
+        KeFlushEntireTb(1, 1);
+    }
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        b"[MM] arm64: low guard VA 0-64K unmapped (%u identity pages cleared); MmIsAddressValid(0x10)=%u\n\0".as_ptr() as *const i8,
+        cleared,
+        MmIsAddressValid(0x10 as PVOID) as u32,
+    );
 }
 
 unsafe fn MiAdjustWorkingSetManagerParameters(client: BOOLEAN) {

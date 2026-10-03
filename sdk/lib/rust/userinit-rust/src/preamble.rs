@@ -140,6 +140,9 @@ extern "C" {
 // explicit-decl-beats-glob rule.
 extern "system" {
     pub fn ExpandEnvironmentStringsW(lpSrc: *const u16, lpDst: *mut u16, nSize: DWORD) -> DWORD;
+    // userenv.dll: the LiveCD shell's environment block (upstream eec8c977083).
+    pub fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID, hToken: HANDLE, bInherit: BOOL) -> BOOL;
+    pub fn DestroyEnvironmentBlock(lpEnvironment: LPVOID) -> BOOL;
     pub fn DialogBoxParamW(
         hInstance: HINSTANCE,
         lpTemplateName: LPCWSTR,

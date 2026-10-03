@@ -32,6 +32,7 @@ macro_rules! w {
 #[cfg(target_arch = "aarch64")]
 extern "C" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -39,7 +40,7 @@ unsafe fn _TOKI_TRACE(msg: &[u8]) {
     let u = Arm64UartKernelBase as *mut ULONG;
     if !u.is_null() {
         for &byte in msg {
-            *u = byte as ULONG;
+            Arm64UartPutChar(byte as u8);
         }
     }
 }
@@ -49,17 +50,17 @@ unsafe fn _TOKI_HEX(prefix: &[u8], val: ULONG_PTR) {
     let u = Arm64UartKernelBase as *mut ULONG;
     if !u.is_null() {
         for &byte in prefix {
-            *u = byte as ULONG;
+            Arm64UartPutChar(byte as u8);
         }
         let hex = b"0123456789ABCDEF";
-        *u = b'0' as ULONG;
-        *u = b'x' as ULONG;
+        Arm64UartPutChar(b'0' as u8);
+        Arm64UartPutChar(b'x' as u8);
         for i in (0..16).rev() {
             let shift = i * 4;
             let nibble = ((val >> shift) & 0xF) as usize;
-            *u = hex[nibble] as ULONG;
+            Arm64UartPutChar(hex[nibble] as u8);
         }
-        *u = b'\n' as ULONG;
+        Arm64UartPutChar(b'\n' as u8);
     }
 }
 
@@ -201,7 +202,8 @@ const REG_DWORD: ULONG = 4;
 const TOKEN_READ: ACCESS_MASK = 0x20008;
 const TOKEN_WRITE: ACCESS_MASK = 0x200e0;
 const TOKEN_EXECUTE: ACCESS_MASK = 0x20000;
-const TOKEN_ALL_ACCESS: ACCESS_MASK = 0xf00ff;
+// xdk/setypes.h:958: _WIN32_WINNT 0x502 > 0x400, so TOKEN_ADJUST_SESSIONID (0x100) is in.
+const TOKEN_ALL_ACCESS: ACCESS_MASK = 0xf01ff;
 const TOKEN_QUERY: ACCESS_MASK = 0x8;
 const TOKEN_IMPERSONATE: ACCESS_MASK = 0x4;
 const THREAD_QUERY_INFORMATION: ACCESS_MASK = 0x40;
@@ -221,7 +223,7 @@ const TOKEN_HAS_IMPERSONATE_PRIVILEGE: ULONG = 0x80;
 const TOKEN_IS_RESTRICTED: ULONG = 0x10;
 const TOKEN_SESSION_NOT_REFERENCED: ULONG = 0x20;
 const TOKEN_SANDBOX_INERT: ULONG = 0x40;
-const TOKEN_HAS_ADMIN_GROUP: ULONG = 0x80;
+const TOKEN_HAS_ADMIN_GROUP: ULONG = 0x08; // xdk/setypes.h:1194 = TOKEN_WRITE_RESTRICTED (0x80 is TOKEN_HAS_IMPERSONATE_PRIVILEGE)
 const SE_BACKUP_PRIVILEGES_CHECKED: ULONG = 0x100;
 
 const SE_GROUP_ENABLED: ULONG = 0x4;

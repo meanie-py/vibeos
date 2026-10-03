@@ -235,8 +235,20 @@ FUNC KiBreakpointTrap
 
     /* Enable interrupts for user-mode */
     sti
+    jmp KiBreakpointTrapDispatch
 
 KiBreakpointTrapKMode:
+    /* Kernel mode: restore the interrupted code's IF, as KiPageFault does. A kernel
+       int3 that SEH catches resumes through RtlUnwindEx's captured context, whose
+       EFlags are the dispatcher's own: dispatching with IF=0 left the except block
+       running with interrupts off, so a synchronously completed IRP's
+       IopCompleteRequest APC (a self-IPI) could not fire before IoCallDriver
+       returned, and fired later onto the caller's dead stack event. */
+    test dword ptr [rbp + KTRAP_FRAME_EFlags], EFLAGS_IF_MASK
+    jz KiBreakpointTrapDispatch
+    sti
+
+KiBreakpointTrapDispatch:
     /* Dispatch the exception */
     DispatchException STATUS_BREAKPOINT, 3, BREAKPOINT_BREAK, 0, 0
 
@@ -407,6 +419,12 @@ FUNC KiGeneralProtectionFault
     test eax, eax
     jge KiGpfExit
 
+    /* Dispatch with the interrupted code's IF, for the reason KiBreakpointTrap gives */
+    test dword ptr [rbp + KTRAP_FRAME_EFlags], EFLAGS_IF_MASK
+    jz KiGpfDispatch
+    sti
+
+KiGpfDispatch:
     /* Check for access violation */
     cmp eax, STATUS_ACCESS_VIOLATION
     je DispatchAccessViolation

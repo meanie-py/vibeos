@@ -1732,6 +1732,12 @@ fn EnumMonikerImpl_Next(
     let This = impl_from_IEnumMoniker(iface);
     let mut i: ULONG = 0;
 
+    // compositemoniker.c: `if (!m) return E_INVALIDARG; *m = NULL;`
+    if rgelt.is_null() {
+        return E_INVALIDARG;
+    }
+    *rgelt = core::ptr::null_mut();
+
     /* retrieve the requested number of monikers from the current position */
     while ((*This).currentPos < (*This).tabSize) && (i < celt) {
         *rgelt.add(i as usize) = *(*This).tabMoniker.add((*This).currentPos as usize);

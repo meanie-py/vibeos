@@ -1,10 +1,10 @@
 # libtirpc 0.2.1 — our delta from pristine upstream.
 #
 # Upstream: https://downloads.sourceforge.net/project/libtirpc/libtirpc/0.2.1/libtirpc-0.2.1.tar.bz2
-# Apply from dll/3rdparty/libtirpc/ with: patch -p1 < vendor-patches/libtirpc.patch
+# Apply from vendor/libtirpc/ with: patch -p1 < vendor-patches/libtirpc.patch
 #
 # THE VERSION IN THE REGISTRY WAS WRONG AND THE VERSION FILE CANNOT FIX IT.
-# dll/3rdparty/libtirpc/VERSION says PKG_REVISION=11, i.e. 0.1.11, and the probe faithfully
+# vendor/libtirpc/VERSION says PKG_REVISION=11, i.e. 0.1.11, and the probe faithfully
 # reported that. But upstream 0.2.1's OWN VERSION file also says 0.1.11 — upstream never
 # bumped it — so ours is byte-identical to 0.2.1's and the probe was laundering upstream's
 # error. The probe is removed rather than "fixed": there is no honest in-tree source for

@@ -59,9 +59,10 @@ pub unsafe extern "system" fn FatCheckFileAccess(
     PAGED_CODE();
 
     let mut result: i32 = 1; // TRUE
+    let p_result = core::ptr::addr_of_mut!(result);
 
-    // Structured exception handling try block simulated with a loop
-    loop {
+    // _SEH2_TRY { ... } _SEH2_FINALLY { ... }
+    crate::seh::try_finally(&mut (), |_| loop {
         DebugTrace(1, Dbg, b"FatCheckFileAccess\n\0".as_ptr() as *const i8, 0);
         DebugTrace(0, Dbg, b"DirentAttributes = %8lx\n\0".as_ptr() as *const i8, DirentAttributes as usize);
         DebugTrace(0, Dbg, b"DesiredAccess    = %8lx\n\0".as_ptr() as *const i8, *DesiredAccess as usize);
@@ -70,7 +71,7 @@ pub unsafe extern "system" fn FatCheckFileAccess(
         if (DirentAttributes & FAT_DIRENT_ATTR_VOLUME_ID) != 0 ||
            (DirentAttributes & FAT_DIRENT_ATTR_DEVICE) != 0 {
             DebugTrace(0, Dbg, b"Cannot access volume id or device\n\0".as_ptr() as *const i8, 0);
-            result = 0;
+            *p_result = 0;
             break;
         }
 
@@ -93,7 +94,7 @@ pub unsafe extern "system" fn FatCheckFileAccess(
             | MAXIMUM_ALLOWED;
         if (*DesiredAccess & !allowed_mask) != 0 {
             DebugTrace(0, Dbg, b"Cannot open object\n\0".as_ptr() as *const i8, 0);
-            result = 0;
+            *p_result = 0;
             break;
         }
 
@@ -121,20 +122,17 @@ pub unsafe extern "system" fn FatCheckFileAccess(
 
             if (*DesiredAccess & !access_mask) != 0 {
                 DebugTrace(0, Dbg, b"Cannot open readonly\n\0".as_ptr() as *const i8, 0);
-                result = 0;
+                *p_result = 0;
                 break;
             }
         }
 
         // Normal exit from try block
         break;
-    }
-
-    // _SEH2_FINALLY block
-    {
+    }, |_, _abnormal| {
         DebugUnwind(FatCheckFileAccess as usize);
-        DebugTrace(-1, Dbg, b"FatCheckFileAccess -> %08lx\n\0".as_ptr() as *const i8, result as usize);
-    }
+        DebugTrace(-1, Dbg, b"FatCheckFileAccess -> %08lx\n\0".as_ptr() as *const i8, *p_result as usize);
+    });
 
     // UNREFERENCED_PARAMETER( IrpContext )
     let _ = IrpContext;

@@ -20,17 +20,21 @@
 extern "C" {
     fn ref_abs(x: i32) -> i32;
     fn ref_imaxabs(x: i64) -> i64;
+    #[cfg(ucrt_ref_strcat)]
     fn ref_strcpy(dst: *mut u8, src: *const u8) -> *mut u8;
+    #[cfg(ucrt_ref_strcat)]
     fn ref_strcat(dst: *mut u8, src: *const u8) -> *mut u8;
 
     // The SUBJECT: msvcrt-crt-rust's shipping bodies, reached by their real
     // names. Declared rather than imported because that is how ucrtbase would
     // reach them — through the linker, not through Rust paths.
+    #[cfg(ucrt_ref_strcat)]
     fn strcpy(dst: *mut u8, src: *const u8) -> *mut u8;
+    #[cfg(ucrt_ref_strcat)]
     fn strcat(dst: *mut u8, src: *const u8) -> *mut u8;
 }
 
-#[cfg(not(no_ucrt_reference))]
+#[cfg(all(not(no_ucrt_reference), ucrt_ref_strcat))]
 fn cmp_str2(
     name: &str,
     reff: unsafe extern "C" fn(*mut u8, *const u8) -> *mut u8,
@@ -92,7 +96,11 @@ fn main() {
         }
 
         // String bodies, where ours and UCRT's are genuinely independent
-        // implementations and a difference is plausible.
+        // implementations and a difference is plausible. Gone once the string
+        // family is taken over: string/strcat.c is deleted and build.rs skips it.
+        // Their evidence then lives in the Tier 2 table (in-guest, against the
+        // Microsoft objects they replaced).
+        #[cfg(ucrt_ref_strcat)]
         for (seed, src) in [
             (&b""[..], &b"hello\0"[..]),
             (&b"abc\0"[..], &b"def\0"[..]),

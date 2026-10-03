@@ -46,6 +46,12 @@ cabi = []
 # ungated `_errno` reference would make the whole math object fail the kernel
 # link. cnt-difftest enables BOTH features so those six are still graded.
 cabi-math = []
+# abs/labs/div/ldiv under cabi-math. msvcrt takes them from here; ucrtbase does
+# NOT, because ucrt-rust's stdlib port answers them with Microsoft's contract
+# (a zero divisor traps on x86 and gives sdiv's 0 on arm64, where this body's `/`
+# would panic) and two #[no_mangle] copies in one staticlib link by luck. The
+# kernel's `cabi` build always has them.
+cabi-intdiv = []
 # The `core_rs` forbid-unsafe float surface: `core_rs::{floatcvt,scanf}`
 # + the matching `cabi/manual.rs` shims (_fcvt/_ecvt/_gcvt/_gcvt_s +
 # cnt_vs*scanf). Default-on so cnt-difftest / standalone are unchanged.

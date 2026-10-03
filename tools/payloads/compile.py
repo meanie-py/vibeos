@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -117,6 +118,61 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
             entries[dest] = src
             owner[dest] = name
     return entries
+
+
+def stale_binaries(name: str, arch: str) -> list[Path]:
+    """The payload's binaries for `arch` that are missing or older than its sources.
+
+    Sources are the payload directory's own files (build.sh, *.c, *.h, ...) plus the
+    headers shared by every payload (tools/payloads/*.h). The binaries are gitignored
+    build outputs, so without this a worktree that built one once kept staging it across
+    every later edit to its source: appstorm's new fastfat raise check (2026-09-26) booted
+    as the OLD binary and printed the old SKIP line. The conformance suite had the same
+    bug in the gate (gate.py `_ensure_suite_binaries`).
+    """
+    spec = load_spec(name)
+    pdir = PAYLOADS_DIR / name
+    srcs = [p for p in pdir.iterdir() if p.is_file() and not p.name.startswith(".")
+            and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")]
+    srcs += list(PAYLOADS_DIR.glob("*.h"))
+    newest = max((p.stat().st_mtime for p in srcs), default=0.0)
+    resolved_srcs = {p.resolve() for p in srcs}
+    out = []
+    for b in spec["binaries"]:
+        src = (REPO / str(b["src"]).format(arch=arch)).resolve()
+        # Only binaries built from this payload's own directory (never a shared artifact
+        # like a build-dir DLL, which ninja owns).
+        # A `binaries` entry that is itself a committed source (kmtest's
+        # kmtest-tests-<arch>.txt) is data, not a build output: build.sh never writes it.
+        if src in resolved_srcs:
+            continue
+        if pdir.resolve() in src.parents and (not src.is_file() or src.stat().st_mtime < newest):
+            out.append(src)
+    return out
+
+
+def ensure_built(names: list[str], arch: str) -> list[str]:
+    """Rebuild every selected payload whose binaries are stale (see stale_binaries) with
+    its own build.sh. Returns the names rebuilt; dies loudly if a build fails or a
+    stale payload has no build.sh to run."""
+    rebuilt = []
+    for name in names:
+        stale = stale_binaries(name, arch)
+        if not stale:
+            continue
+        script = PAYLOADS_DIR / name / "build.sh"
+        if not script.is_file():
+            die(f"payload {name!r}: {stale[0]} is stale or missing and there is no {script}")
+        cp = subprocess.run(["bash", str(script), arch], cwd=str(REPO),
+                            capture_output=True, text=True)
+        if cp.returncode != 0:
+            tail = "\n".join((cp.stderr or cp.stdout or "(no output)").strip().splitlines()[-5:])
+            die(f"payload {name!r}: build.sh {arch} failed:\n{tail}")
+        still = stale_binaries(name, arch)
+        if still:
+            die(f"payload {name!r}: build.sh {arch} succeeded but {still[0]} is still stale")
+        rebuilt.append(name)
+    return rebuilt
 
 
 def resolve_env_payloads(environ=os.environ) -> list[str]:

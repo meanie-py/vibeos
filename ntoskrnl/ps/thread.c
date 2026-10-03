@@ -596,7 +596,7 @@ Quickie:
     ExReleasePushLockExclusive(&Process->ProcessLock);
     KeLeaveCriticalRegion();
 
-    /* Uninitailize it */
+    /* Uninitialize it */
     KeUninitThread(&Thread->Tcb);
 
     /* If we had a TEB, delete it */

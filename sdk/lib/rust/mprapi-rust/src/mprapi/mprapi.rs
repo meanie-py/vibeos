@@ -41,7 +41,10 @@ pub unsafe extern "system" fn MprConfigServerConnect(
     if phmpr_config.is_null() {
         return ERROR_INVALID_PARAMETER;
     }
-    ERROR_SUCCESS
+    // Wine-10 (upstream 38538cdb108): a stub must not report success with no handle, or
+    // the caller passes an uninitialised one on.
+    *phmpr_config = core::ptr::null_mut();
+    50 // ERROR_NOT_SUPPORTED
 }
 
 // ============================================================================

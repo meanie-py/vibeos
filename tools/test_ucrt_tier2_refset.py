@@ -110,3 +110,34 @@ def test_the_reference_set_is_only_microsoft_c(arch):
         rel = o.relative_to(build).as_posix()
         assert refset.UCRT_OBJ_MARKER in rel, f"{rel} is not a ucrt-target object"
         assert "msvcrt" not in rel and "crt_shared" not in rel, f"ours leaked in: {rel}"
+
+
+_MINGW = Path(__file__).resolve().parent.parent / ".build-tools" / "llvm-mingw" / "bin"
+
+
+@pytest.mark.skipif(not (_MINGW / "aarch64-w64-mingw32-clang").is_file(), reason="needs llvm-mingw")
+def test_undefine_turns_a_definition_into_a_reference(tmp_path: Path):
+    """The deferral under a takeover check: our `foo` must stop answering, and our own
+    call to it must bind to whoever else defines `foo` (Microsoft's copy)."""
+    import subprocess
+
+    src = tmp_path / "a.c"
+    src.write_text("int foo(void) { return 1; }\nint bar(void) { return foo() + 1; }\n")
+    obj, lib = tmp_path / "a.o", tmp_path / "liba.a"
+    subprocess.run(
+        [str(_MINGW / "aarch64-w64-mingw32-clang"), "-O0", "-c", str(src), "-o", str(obj)],
+        check=True,
+    )
+    subprocess.run([str(_MINGW / "llvm-ar"), "rcs", str(lib), str(obj)], check=True)
+    refset._undefine_symbols(lib, {"foo"})
+    nm = subprocess.run(
+        [str(_MINGW / "llvm-nm"), str(lib)], capture_output=True, text=True, check=True
+    ).stdout
+    assert " U foo" in nm and " T bar" in nm and " T foo" not in nm
+
+
+def test_undefine_refuses_when_nothing_matched(tmp_path: Path):
+    lib = tmp_path / "empty.a"
+    lib.write_bytes(b"!<arch>\n")
+    with pytest.raises(refset.RefsetError):
+        refset._undefine_symbols(lib, {"foo"})

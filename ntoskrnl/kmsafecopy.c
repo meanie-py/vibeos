@@ -32,17 +32,29 @@
  * first (the fault goes through MmAccessFault before reaching the dispatcher),
  * which a bare MmIsAddressValid pre-check could not.
  *
- * amd64 ONLY — and that is a MEASURED result, not a guess. KmSafeCopySelfTest()
- * below runs on every boot and prints `[KMSAFECOPY] ... (PASS)`; amd64 passes.
+ * ALL THREE ARCHES are protected today, and that is a MEASURED result, not a
+ * guess: KmSafeCopySelfTest() below runs on every boot and prints
+ * `[KMSAFECOPY] ... (PASS)`. amd64 and arm64 pass through this file; i386 passes
+ * through its own primitive (see the i386 paragraph below).
  *
- * arm64: TRIED AND REJECTED (2026-07-12). It looked ready on paper — the arm64
+ * arm64 got here the long way, and the history matters because it is the reason the
+ * self-test exists at all. What follows is the record of WHY the oracle is
+ * load-bearing — it is no longer the current state. The live answer is
+ * `ntoskrnl-cargo/build.rs`, which pushes this file into the arm64 c_shims, plus the
+ * boot oracle; if those two ever disagree with this prose, believe them.
+ *
+ * arm64: TRIED AND REJECTED (2026-07-12), then RECOVERED once task #10 / §9.69 fixed
+ * the xdata save_next / RtlVirtualUnwind decode it actually depended on.
+ *
+ * It looked ready on paper the first time — the arm64
  * kernel does define the personality routine (`llvm-nm build-arm64/ntoskrnl.exe`
  * -> `T __C_specific_handler`, from rtl-except's translated arm64 handler) and
  * dummy-pseh-verdict.md §C says native __try/__except "compiles today" on arm64.
  * It compiles, and it catches a SOFTWARE raise. But it does NOT catch a HARDWARE
  * page fault in kernel mode: with the copy enabled, a probe at a genuinely-unmapped
  * VA (0x0000700000000000) did not reach the __except at all — the boot simply WEDGED
- * (HANG_TIMEOUT, no bugcheck banner, no desktop). So arm64 keeps the plain copy.
+ * (HANG_TIMEOUT, no bugcheck banner, no desktop). arm64 kept the plain copy until
+ * that unwind decode was fixed.
  *
  * That is the whole reason the self-test exists. Shipping the cfg without it would
  * have made safe_copy_from_user *look* protected on arm64 while actually converting a
@@ -55,7 +67,8 @@
  * fault is an INSTRUCTION abort, EC=0x21: it CALLs a bogus handler routine) and blows the
  * kernel stack, ending in an infinite re-entry of KiArm64VectorTable. So the bug is in
  * the arm64 virtual-unwind / __C_specific_handler path for kernel frames, NOT in Mm and
- * NOT in the (never-reached) DUMMY_PSEH silent-skip fixup. Owed = task #10 (field manual §9.69).
+ * NOT in the (never-reached) DUMMY_PSEH silent-skip fixup. That was task #10 (field
+ * manual §9.69), and it is FIXED — which is what let arm64 switch this on.
  *
  * Beware the false negative that nearly sank this: address 0x1 FAULTS on amd64 but is
  * MAPPED on arm64 (the copy silently succeeded and returned garbage). A bad-pointer
@@ -119,6 +132,40 @@ int KmProtectedCopyMemory(void *Dst, const void *Src, KMSIZE Len)
 }
 
 /*
+ * KmProtectedInterlockedAdd — the atomic twin of KmProtectedCopyMemory.
+ *
+ * A read-modify-write on USER memory (win32k's IMEUI.nCntInIMEProc) cannot go
+ * through the copy: capture -> mutate -> publish is three accesses, not one, and
+ * silently trading the atomicity for fault-tolerance is the wrong bargain. So the
+ * RMW itself is the protected access. Same calls-only rule as KmCopyRaw: the
+ * faulting `lock xadd` sits in a noinline callee of the __try body.
+ *
+ * `int` rather than `long`: this file is headerless, and the contract is a
+ * Windows LONG (32-bit) on every arch.
+ *
+ * Returns 1 and stores the NEW value in *Result on success, 0 if the add faulted
+ * (nothing is stored).
+ */
+__attribute__((noinline))
+static int KmXaddRaw(volatile int *Addend, int Value)
+{
+    return __atomic_fetch_add(Addend, Value, __ATOMIC_SEQ_CST);
+}
+
+int KmProtectedInterlockedAdd(volatile int *Addend, int Value, int *Result)
+{
+    __try
+    {
+        *Result = KmXaddRaw(Addend, Value) + Value;
+        return 1;
+    }
+    __except (1 /* EXCEPTION_EXECUTE_HANDLER */)
+    {
+        return 0;
+    }
+}
+
+/*
  * KmSafeCopySelfTest — a per-boot tripwire proving the HARDWARE-fault path works.
  *
  * Why this exists: seh_poc.c only ever proved that a *software* raise
@@ -155,6 +202,28 @@ extern unsigned long DbgPrint(const char *Format, ...);
 #define KMSAFECOPY_BAD_SRC ((const void *)0x1)
 #endif
 
+/*
+ * The same two assertions for the atomic, plus the one a copy does not need: the
+ * add must have landed IN MEMORY, not merely returned the right sum.
+ */
+static int KmSafeAtomicSelfTest(void)
+{
+    volatile int counter = 41;
+    int result = 0, junk = 0;
+    int good, bad, landed, ok;
+
+    good   = KmProtectedInterlockedAdd(&counter, 1, &result);
+    landed = (counter == 42 && result == 42);
+    bad    = KmProtectedInterlockedAdd((volatile int *)KMSAFECOPY_BAD_SRC, 1, &junk);
+
+    ok = (good == 1 && landed && bad == 0);
+
+    DbgPrint("[KMSAFECOPY] fault-tolerant interlocked add: valid=%d landed=%d invalid_caught=%d (%s)\n",
+             good, landed, (bad == 0), ok ? "PASS" : "FAIL");
+
+    return ok;
+}
+
 int KmSafeCopySelfTest(void)
 {
     volatile char dst[8];
@@ -169,5 +238,5 @@ int KmSafeCopySelfTest(void)
     DbgPrint("[KMSAFECOPY] fault-tolerant copy: valid=%d invalid_caught=%d (%s)\n",
              good, (bad == 0), ok ? "PASS" : "FAIL");
 
-    return ok;
+    return ok && KmSafeAtomicSelfTest();
 }

@@ -77,7 +77,13 @@ MODULES = {
     "msvcrt": {
         "spec": "dll/win32/msvcrt/msvcrt.spec",
         "dll": "dll/win32/msvcrt/msvcrt.dll",
-        "obj_dir": "dll/win32/msvcrt/CMakeFiles/msvcrt.dir",
+        # The module's own objects AND the shim object library it links (split out in
+        # 89fe4906dfc). Scanning only msvcrt.dir missed every shim-backed export on a freshly
+        # configured tree and misattributed it to the next provider in link order.
+        "obj_dirs": (
+            "dll/win32/msvcrt/CMakeFiles/msvcrt.dir",
+            "dll/win32/msvcrt/CMakeFiles/msvcrt_rust_shims.dir",
+        ),
         "own_c": "libmsvcrt_static.a",
         "rust": "libmsvcrt_crt_cargo.a",
         # spec2def generates this TU and puts NOTHING but stub bodies in it. An export
@@ -269,11 +275,12 @@ def census(module: str, arch: str) -> dict:
     # Resolution order, most-preferred first. Module objects are not lazy and not an archive,
     # so they precede everything; --whole-archive members precede every lazy archive.
     providers: list[tuple[str, dict[str, str]]] = []
-    obj_dir = build / mod["obj_dir"]
     mod_objs: dict[str, str] = {}
-    for obj in sorted(obj_dir.rglob("*.obj")) if obj_dir.is_dir() else []:
-        for sym, _member in defined_in(nm, obj).items():
-            mod_objs.setdefault(sym, obj.name)
+    for rel in mod["obj_dirs"]:
+        obj_dir = build / rel
+        for obj in sorted(obj_dir.rglob("*.obj")) if obj_dir.is_dir() else []:
+            for sym, _member in defined_in(nm, obj).items():
+                mod_objs.setdefault(sym, obj.name)
     providers.append(("module-obj", mod_objs))
     for a in whole + lazy:
         providers.append((a.name, defined_in(nm, a)))

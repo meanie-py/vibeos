@@ -103,6 +103,10 @@ fn main() {
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
+        // sehtry.c: real __try/__except + __try/__finally trampolines for Rust
+        // kernel code (ntkrnl_sys::seh); native SEH on amd64/arm64, a hand-built
+        // fs:[0] frame on i386. -fms-extensions comes from c_shim_flags below.
+        "ntoskrnl/sehtry.c",
         "sdk/lib/crt/mem/memcpy.c",
         "sdk/lib/crt/mem/memmove.c",
         "sdk/lib/crt/mem/memset.c",
@@ -367,10 +371,10 @@ fn main() {
         );
         linker = linker
             .rust_lib("cnt-rust-lib", cnt_feats, true)
-            .rust_lib("rtl-rust", &[], true);
+            .rust_lib("rtl-rust", &["kernel"], false);
     } else {
         linker = linker
-            .rust_lib("rtl-rust", &[], true)
+            .rust_lib("rtl-rust", &["kernel"], false)
             .rust_lib("cnt-rust-lib", cnt_feats, true);
     }
     linker = linker

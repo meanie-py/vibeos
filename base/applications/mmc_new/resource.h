@@ -22,6 +22,7 @@
 
 #define IDM_CONSOLE_SMALL      1000
 #define IDM_CONSOLE_LARGE      1001
+#define IDM_TREEVIEW_CONTEXT   1002
 
 #define IDM_FILE_NEW           1010
 #define IDM_FILE_OPEN          1011
@@ -64,8 +65,9 @@
 #define IDM_TB_REDO            1501
 #define IDM_TB_UP              1502
 #define IDM_TB_SCOPE_PANE      1503
-#define IDM_TB_HELP            1504
-#define IDM_TB_ACTIONS_PANE    1505
+#define IDM_TB_EXPORT_LIST     1504
+#define IDM_TB_HELP            1505
+#define IDM_TB_ACTIONS_PANE    1506
 
 #define IDD_DIALOG_ADD                3000
 #define IDC_BUTTON_ADD                3001
@@ -73,6 +75,8 @@
 #define IDC_LIST_AVAILABLE            3003
 #define IDC_LIST_SELECTED             3004
 #define IDC_DESCRIPTION               3005
+#define IDC_BUTTON_UP                 3006
+#define IDC_BUTTON_DOWN               3007
 
 #define IDD_CUSTOMIZE                 3100
 #define IDC_CUSTOMIZE_SCOPEPANE       3101

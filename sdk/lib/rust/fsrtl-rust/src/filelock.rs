@@ -50,9 +50,14 @@ const TAG_TABLE: ULONG = 0x4241544C; // 'able'
 const TAG_FLOCK: ULONG = 0x4B434C46; // 'lock'
 const TAG_RANGE: ULONG = 0x41525346; // 'ange'
 
-const _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan: RTL_GENERIC_COMPARE_RESULTS = 0;
-const _RTL_GENERIC_COMPARE_RESULTS_GenericEqual: RTL_GENERIC_COMPARE_RESULTS = 1;
-const _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan: RTL_GENERIC_COMPARE_RESULTS = 2;
+// ndk/rtltypes.h: GenericLessThan, GenericGreaterThan, GenericEqual = 0, 1, 2. A private copy
+// here had Equal and GreaterThan SWAPPED, so every overlapping range compared "greater":
+// conflicts went undetected, RtlDeleteElementGenericTable never found a lock, and
+// FsRtlUninitializeFileLock spun forever inside fastfat's close holding the volume resource.
+use ntkrnl_sys::ddk::{
+    _RTL_GENERIC_COMPARE_RESULTS_GenericEqual, _RTL_GENERIC_COMPARE_RESULTS_GenericGreaterThan,
+    _RTL_GENERIC_COMPARE_RESULTS_GenericLessThan,
+};
 
 const IRP_MJ_LOCK_CONTROL: u8 = 0x11;
 const IRP_MN_LOCK: u8 = 0x01;

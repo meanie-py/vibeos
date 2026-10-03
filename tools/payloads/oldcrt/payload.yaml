@@ -1,0 +1,20 @@
+# oldcrt — do msvcrt20/msvcrt40/crtdll load and answer correctly on their Rust cohab?
+#   tools/payloads/oldcrt/build.sh i386
+#   VIBEOS_PAYLOAD=oldcrt ./vibeos-cli build --arch i386
+#   ./vibeos-cli smoke --arch i386 --payload oldcrt
+# i386 ONLY: the three legacy DLLs are not built on amd64/arm64. msvcrt.dll is probed
+# too, as the control.
+name: oldcrt
+description: legacy CRT DLLs (msvcrt20/msvcrt40/crtdll) load and answer, on their Rust cohab (i386)
+
+build_hint: "tools/payloads/oldcrt/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/oldcrt/oldcrt-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/oldcrt.exe
+
+test:
+  launch_marker: "[OLDCRT] done"
+  pass_marker: "[OLDCRT] done PASS"
+  launch_drain_secs: 300

@@ -239,7 +239,7 @@ pub unsafe extern "system" fn MiLoadImageSection(
         // section views. The stale PTEs prevent page faults from firing, so
         // the section data never gets demand-paged in. Zero them and fix up
         // UsedPageTableEntries on the parent PDE.
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (amd64 stale-PTE workaround, Rust-only)
         {
             let start_pte = MiAddressToPte(base);
             let end_pte = MiAddressToPte(((base as ULONG_PTR) + ((pte_count as ULONG_PTR) << PAGE_SHIFT) - 1) as PVOID);
@@ -1500,6 +1500,17 @@ pub unsafe extern "system" fn MmLoadSystemImage(
     (*ldr_entry).Flags |= LDRP_SYSTEM_MAPPED | LDRP_ENTRY_PROCESSED | LDRP_MM_LOADED;
     (*ldr_entry).Flags &= !LDRP_LOAD_IN_PROGRESS;
     // LoadedImports stash skipped (field not in bindgen).
+
+    // The image was copied into system space, relocated and import-snapped
+    // through the D-cache, and is about to be executed. ARM instruction fetch
+    // does not see dirty D-cache lines, so without this a driver loaded after
+    // boot (win32k.sys, from smss) runs whatever the RAM held before. The same
+    // bug on the paging path killed smss on a Raspberry Pi 4.
+    #[cfg(target_arch = "aarch64")]
+    ntkrnl_sys::inline::ke::KeSweepICache(
+        (*ldr_entry).DllBase,
+        (*ldr_entry).SizeOfImage as ULONG_PTR,
+    );
 
     MiWriteProtectSystemImage((*ldr_entry).DllBase);
     LdrpInitSecurityCookie(ldr_entry);

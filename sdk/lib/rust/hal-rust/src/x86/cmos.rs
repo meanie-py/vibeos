@@ -21,8 +21,8 @@ use ntkrnl_sys::hal_ddk::{
 // ARC return codes (sdk/include/reactos/arc/arc.h enum _ARC_CODES).
 type ArcStatus = ULONG;
 const ESUCCESS: ArcStatus = 0;
-const ENOENT: ArcStatus = 14;
-const ENOMEM: ArcStatus = 16;
+const ENOENT: ArcStatus = 14; // nolint: const-contradiction (ARC_CODES enumerator, arc/arc.h:46; arc.h #undefs the CRT errno ENOENT)
+const ENOMEM: ArcStatus = 16; // nolint: const-contradiction (ARC_CODES enumerator, arc/arc.h:48; arc.h #undefs the CRT errno ENOMEM)
 
 // CMOS / RTC port + register layout (hal/halx86/include/halhw.h).
 const CMOS_CONTROL_PORT: u16 = 0x70;

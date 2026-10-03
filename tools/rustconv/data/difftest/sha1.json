@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 250927,
+  "random_cases": 192,
+  "validity": "Genuine sdk/lib/cryptlib/sha1.c against the shipping cryptlib-rust sha1.rs module (whole module, with its types.rs). Entry points are graded from arbitrary sampled SHA_CTX states; the C indexes Context->Buffer only through Count[1] & 63, so every state is in-bounds. A_SHAFinal's Result is a 20-byte ULONG[5] output declared 4-aligned, as every caller passes. Host little-endian. cryptlib_include/ntdef.h supplies only VOID/NTAPI/INT/UCHAR/ULONG. No i386 stdcall claim. A_SHAFinal is graded only with Count words that are multiples of 4: at any other byte count the genuine C stores a ULONG through the misaligned Buffer + Pad (UBSan: sha1.c:190), which is undefined behavior the reference cannot be graded through. The Rust port stores unaligned there.",
+  "c_source": "../../../../sdk/lib/cryptlib/sha1.c",
+  "c_include_dirs": [
+    "cryptlib_include"
+  ],
+  "rust_source": "../../../../sdk/lib/rust/cryptlib-rust/src/sha1.rs",
+  "rust_support": {
+    "types": "../../../../sdk/lib/rust/cryptlib-rust/src/types.rs"
+  },
+  "functions": [
+    {
+      "c": "A_SHAInit",
+      "rust": "candidate::A_SHAInit",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "ctx",
+          "type": "bytes",
+          "c_type": "SHA_CTX *",
+          "rust_type": "*mut types::SHA_CTX",
+          "record": {
+            "layout": "SHA_CTX",
+            "base_size": 92,
+            "fields": [
+              {
+                "name": "Buffer",
+                "offset": 0,
+                "type": "u8",
+                "count": 64,
+                "values": [
+                  0,
+                  128,
+                  255,
+                  90
+                ]
+              },
+              {
+                "name": "State",
+                "offset": 64,
+                "type": "u32",
+                "count": 5,
+                "values": [
+                  0,
+                  1732584193,
+                  4294967295,
+                  3285377520
+                ]
+              },
+              {
+                "name": "Count",
+                "offset": 84,
+                "type": "u32",
+                "count": 2,
+                "values": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  55,
+                  56,
+                  57,
+                  63,
+                  64,
+                  536870911,
+                  4294967232,
+                  4294967295
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "c": "A_SHAUpdate",
+      "rust": "candidate::A_SHAUpdate",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "ctx",
+          "type": "bytes",
+          "c_type": "SHA_CTX *",
+          "rust_type": "*mut types::SHA_CTX",
+          "record": {
+            "layout": "SHA_CTX",
+            "base_size": 92,
+            "fields": [
+              {
+                "name": "Buffer",
+                "offset": 0,
+                "type": "u8",
+                "count": 64,
+                "values": [
+                  0,
+                  128,
+                  255,
+                  90
+                ]
+              },
+              {
+                "name": "State",
+                "offset": 64,
+                "type": "u32",
+                "count": 5,
+                "values": [
+                  0,
+                  1732584193,
+                  4294967295,
+                  3285377520
+                ]
+              },
+              {
+                "name": "Count",
+                "offset": 84,
+                "type": "u32",
+                "count": 2,
+                "values": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  55,
+                  56,
+                  57,
+                  63,
+                  64,
+                  536870911,
+                  4294967232,
+                  4294967295
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "data",
+          "type": "const_bytes",
+          "c_type": "const unsigned char *",
+          "length": "len"
+        },
+        {
+          "name": "len",
+          "type": "u32",
+          "values": [
+            0,
+            1,
+            7,
+            8,
+            55,
+            56,
+            63,
+            64,
+            65,
+            127,
+            128,
+            200
+          ],
+          "random_range": [
+            0,
+            300
+          ]
+        }
+      ]
+    },
+    {
+      "c": "A_SHAFinal",
+      "rust": "candidate::A_SHAFinal",
+      "rust_abi": "system",
+      "return": "void",
+      "args": [
+        {
+          "name": "ctx",
+          "type": "bytes",
+          "c_type": "SHA_CTX *",
+          "rust_type": "*mut types::SHA_CTX",
+          "record": {
+            "layout": "SHA_CTX",
+            "base_size": 92,
+            "fields": [
+              {
+                "name": "Buffer",
+                "offset": 0,
+                "type": "u8",
+                "count": 64,
+                "values": [
+                  0,
+                  128,
+                  255,
+                  90
+                ]
+              },
+              {
+                "name": "State",
+                "offset": 64,
+                "type": "u32",
+                "count": 5,
+                "values": [
+                  0,
+                  1732584193,
+                  4294967295,
+                  3285377520
+                ]
+              },
+              {
+                "name": "Count",
+                "offset": 84,
+                "type": "u32",
+                "count": 2,
+                "values": [
+                  0,
+                  4,
+                  52,
+                  56,
+                  60,
+                  64,
+                  536870908,
+                  4294967232,
+                  4294967292
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "result",
+          "type": "bytes",
+          "c_type": "ULONG *",
+          "rust_type": "*mut u32",
+          "align": 4,
+          "length": 20
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "init_constant",
+      "find": "(*Context).State[4] = 0xC3D2E1F0u32;",
+      "replace": "(*Context).State[4] = 0xC3D2E1F1u32;"
+    },
+    {
+      "name": "update_carry",
+      "find": "(*Context).Count[0] = (*Context).Count[0].wrapping_add(1);",
+      "replace": "(*Context).Count[0] = (*Context).Count[0].wrapping_add(0);"
+    },
+    {
+      "name": "update_block_boundary",
+      "find": "if BufferContentSize.wrapping_add(BufferSize) < 64 {",
+      "replace": "if BufferContentSize.wrapping_add(BufferSize) <= 64 {"
+    },
+    {
+      "name": "final_wrap_pad",
+      "find": "Pad = (56u32 + 64u32 - BufferContentSize) as i32;",
+      "replace": "Pad = (56u32 + 60u32 - BufferContentSize) as i32;"
+    },
+    {
+      "name": "final_result_swap",
+      "find": "| (*Context).State[Index as usize] << 8 & 0xff0000",
+      "replace": "| (*Context).State[Index as usize] << 8 & 0xff00"
+    }
+  ]
+}

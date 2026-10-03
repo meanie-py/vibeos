@@ -11,6 +11,7 @@ A="${1:-arm64}"
 # GUI subsystem + classic msvcrt, same recipe and reasons as ../regdiff/build.sh.
 "$TC/aarch64-w64-mingw32-gcc" -O2 -o "$HERE/neonctx-arm64.exe" "$HERE/neonctx.c" \
     -lmsvcrt-os -lntdll -lkernel32 -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
-"$TC/aarch64-w64-mingw32-objdump" -p "$HERE/neonctx-arm64.exe" | grep -qi "api-ms-win-crt" \
-    && { echo "[neonctx] FAIL: links UCRT api-sets (want classic msvcrt.dll)"; exit 1; } || true
+# Headers + import table read directly (tools/payloads/pecheck.py): the old
+# `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.
+python3 "$(dirname "$HERE")/pecheck.py" "$HERE/neonctx-arm64.exe" --tag neonctx --forbid-dll api-ms-win-crt
 echo "[neonctx] OK"

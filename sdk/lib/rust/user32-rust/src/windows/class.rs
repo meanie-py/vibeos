@@ -1110,7 +1110,8 @@ pub unsafe extern "system" fn GetClassLongA(hWnd: HWND, nIndex: i32) -> u32 {
     // _SEH2_TRY body — except handler (Ret = 0) is DEAD CODE under USE_DUMMY_PSEH.
     let Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
-        #[cfg(target_arch = "x86_64")]
+        // class.c: `#ifdef _WIN64` — pointer-sized, so arm64 too, not just amd64.
+        #[cfg(target_pointer_width = "64")]
         {
             match nIndex {
                 GCLP_HBRBACKGROUND | GCLP_HCURSOR | GCLP_HICON | GCLP_HICONSM
@@ -1122,7 +1123,7 @@ pub unsafe extern "system" fn GetClassLongA(hWnd: HWND, nIndex: i32) -> u32 {
                 }
             }
         }
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(target_pointer_width = "64"))]
         {
             Ret = IntGetClassLongA(Wnd, Class, nIndex);
         }
@@ -1144,7 +1145,8 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
 
     Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
     if !Class.is_null() {
-        #[cfg(target_arch = "x86_64")]
+        // class.c: `#ifdef _WIN64` — pointer-sized, so arm64 too, not just amd64.
+        #[cfg(target_pointer_width = "64")]
         {
             match nIndex {
                 GCLP_HBRBACKGROUND | GCLP_HCURSOR | GCLP_HICON | GCLP_HICONSM
@@ -1156,7 +1158,7 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
                 }
             }
         }
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(target_pointer_width = "64"))]
         {
             Ret = IntGetClassLongW(Wnd, Class, nIndex);
         }

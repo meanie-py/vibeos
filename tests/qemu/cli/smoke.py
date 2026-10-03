@@ -8,16 +8,14 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import subprocess
 import sys
 import time
-from collections.abc import Callable
 from pathlib import Path
 
-from ..vm import QemuVM, get_arch_config
+from ..vm import QemuVM, get_arch_config, launch_with_retry
 from . import archcfg, hostlock, provenance, triage
 from . import config as cli_config
 from . import ladder as ladder_mod
@@ -276,54 +274,6 @@ def _one_boot(run: Run, repo: Path, arch: str, **kwargs) -> dict:
     return result
 
 
-def _launch_with_retry(
-    make_vm: Callable[[], QemuVM],
-    timings: dict[str, float],
-    log: Callable[[str], None],
-    label: str,
-) -> tuple[QemuVM | None, int, Exception | None]:
-    """Start a VM, retrying a host-side launch failure.
-
-    Returns (vm, attempts, last_exc); `last_exc` is None on success. A fresh VM
-    is built per attempt because the port and serial socket path are chosen in
-    QemuVM.__init__ -- retrying start() on the same instance would retry onto
-    the same bad port and could never recover.
-    """
-    last_exc: Exception | None = None
-    vm: QemuVM | None = None
-    attempts = 0
-    while attempts < _LAUNCH_ATTEMPTS:
-        attempts += 1
-        vm = make_vm()
-        started = time.monotonic()
-        try:
-            vm.start()
-            timings["start_seconds"] = round(time.monotonic() - started, 3)
-            timings.update(vm.launch_timings)
-            if attempts > 1:
-                # Loud on the way through: a retried launch is still an incident.
-                timings["launch_attempts"] = attempts
-                log(f"{label}: launched on attempt {attempts} (host-side flake)")
-            return vm, attempts, None
-        except Exception as e:
-            last_exc = e
-            first = str(e).splitlines()[0][:140]
-            log(f"{label}: start failed (attempt {attempts}/{_LAUNCH_ATTEMPTS}): {first}")
-            with contextlib.suppress(Exception):
-                vm.stop()
-            if attempts < _LAUNCH_ATTEMPTS:
-                time.sleep(_LAUNCH_RETRY_SECONDS)
-    return vm, attempts, last_exc
-
-
-# Host-side launch retries. Small on purpose: the failure mode this exists for
-# resolves on the next attempt (a lost socket / port), so a third attempt buys
-# almost nothing and a large number would turn a genuinely broken launch into a
-# slow one. Overridable for tests.
-_LAUNCH_ATTEMPTS = 3
-_LAUNCH_RETRY_SECONDS = 2.0
-
-
 def _boot_vm(
     run: Run,
     repo: Path,
@@ -368,7 +318,7 @@ def _boot_vm(
     # a flake costing a 50-minute run, not to make it invisible. A genuinely
     # broken launch (missing media, no QEMU) fails all attempts in seconds and
     # reports exactly as before.
-    vm, attempts, last_exc = _launch_with_retry(
+    vm, attempts, last_exc = launch_with_retry(
         lambda: QemuVM(
             config,
             work,
@@ -393,7 +343,7 @@ def _boot_vm(
                 str(last_exc).splitlines()[0][:140],
             ],
         }
-    assert vm is not None  # _launch_with_retry returns a VM whenever last_exc is None
+    assert vm is not None  # launch_with_retry returns a VM whenever last_exc is None
     try:
         watching = time.monotonic()
         outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
@@ -433,7 +383,17 @@ def _boot_vm(
                 header=label,
             )
             _lad_t0 = time.monotonic()
-            ladder_txt = ladder_mod.watch(vm, seen=text)
+            # The drain waits on the same media answer check() grades with --
+            # otherwise it can stop between the last parity verdict and an
+            # optional guest's launch line, and check() fails a guest mid-run.
+            # program_done_expected: the media is this tree's (staleness was
+            # checked before boot), so its winlogon prints PROGRAM_DONE.
+            ladder_txt = ladder_mod.watch(
+                vm,
+                seen=text,
+                optional_staged=ladder_mod.media_optional_staged(repo, arch),
+                program_done_expected=True,
+            )
             # Record what the drain actually COST, not just its ceiling. This is
             # additive wall-clock on every gate that stages guests, and the ceiling
             # (420s) is ~2x the whole gate's modelled warm runtime -- so the real
@@ -650,7 +610,9 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
-def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
+def _payload_stage(
+    run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
+) -> None:
     """Opt-in payload gate (--payload <names> / legacy --doom): run
     tests/qemu/test_payload.py (launch marker + frame-delta render gate +
     input-drive playable gate, per payload YAML) and fold the verdict in.
@@ -701,7 +663,8 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     # tmp dir that pytest prunes, so a payload that reports its result over serial (regdiff's
     # VERDICT line, a sweep's per-test lines) left no record of it anywhere once the run
     # ended — the stage summary only says whether the launch marker appeared.
-    payload_dir = run.dir / "payload"
+    payload_dir = run.dir / ("payload" if idx == 0 else f"payload{idx + 1}")
+    stage = "payload" if total == 1 else f"payload{idx + 1}"
     payload_dir.mkdir(parents=True, exist_ok=True)
     try:
         proc = subprocess.run(
@@ -715,7 +678,7 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
     except subprocess.TimeoutExpired:
         run.add(
             Stage(
-                "payload",
+                stage,
                 status="fail",
                 detail=f"payload suite ({payloads}) timed out",
                 salient=[f"tests/qemu/test_payload.py hung > {outer_timeout}s"],
@@ -729,11 +692,11 @@ def _payload_stage(run: Run, repo: Path, arch: str, payloads: str) -> None:
         tail[-1] if tail else "",
     )
     if proc.returncode == 0:
-        run.add(Stage("payload", status="ok", detail=summary.strip("= ")))
+        run.add(Stage(stage, status="ok", detail=summary.strip("= ")))
     else:
         run.add(
             Stage(
-                "payload",
+                stage,
                 status="fail",
                 detail=f"payload suite ({payloads}) FAILED",
                 salient=[
@@ -918,8 +881,11 @@ def smoke(args, repo: Path) -> int:
     payloads = getattr(args, "payload", "") or ""
     if getattr(args, "doom", False) and "doom" not in payloads.split(","):
         payloads = f"{payloads},doom".strip(",")
+    # --repeat N soaks the payload too: a payload flake (the app sweep's intermittent crash) is
+    # exactly what N runs are for, and one payload boot after N plain boots cannot see it.
     if payloads and npass == total:
-        _payload_stage(run, repo, arch, payloads)
+        for i in range(total):
+            _payload_stage(run, repo, arch, payloads, idx=i, total=total)
 
     if total > 1:
         run.extra["flake_rate"] = f"{npass}/{total}"

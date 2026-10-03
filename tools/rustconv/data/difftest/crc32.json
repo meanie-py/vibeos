@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 250928,
+  "random_cases": 256,
+  "validity": "Genuine sdk/lib/rtl/crc32.c against the shipping crc32 crate's RtlComputeCrc32 FFI shim, its compute_crc32 core and CRC_TABLE, selected as exact bytes. Data is a non-null readable buffer of Length bytes (Length 0 included). C headers come from rtl-difftest's reviewed refstub (ULONG = 32-bit unsigned, NTAPI = host C ABI, DPRINT a no-op). No i386 stdcall claim.",
+  "c_source": "../../../../sdk/lib/rtl/crc32.c",
+  "c_include_dirs": [
+    "../../../../sdk/lib/rust/rtl-difftest/refstub"
+  ],
+  "rust_source": "../../../../sdk/lib/rust/crc32/src/lib.rs",
+  "rust_items": [
+    "ffi::RtlComputeCrc32",
+    "compute_crc32",
+    "CRC_TABLE"
+  ],
+  "functions": [
+    {
+      "c": "RtlComputeCrc32",
+      "rust": "candidate::RtlComputeCrc32",
+      "rust_abi": "system",
+      "return": "u32",
+      "args": [
+        {
+          "name": "initial",
+          "type": "u32",
+          "values": [
+            0,
+            1,
+            3421780262,
+            2147483647,
+            4294967295
+          ],
+          "random_range": [
+            0,
+            4294967295
+          ]
+        },
+        {
+          "name": "data",
+          "type": "const_bytes",
+          "c_type": "const unsigned char *",
+          "length": "length"
+        },
+        {
+          "name": "length",
+          "type": "u32",
+          "values": [
+            0,
+            1,
+            2,
+            7,
+            64,
+            255,
+            1000
+          ],
+          "random_range": [
+            0,
+            2048
+          ]
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "no_initial_invert",
+      "find": "let mut crc = !initial;",
+      "replace": "let mut crc = initial;"
+    },
+    {
+      "name": "wrong_shift",
+      "find": "^ (crc >> 8);",
+      "replace": "^ (crc >> 7);"
+    },
+    {
+      "name": "table_entry",
+      "find": "0x77073096",
+      "replace": "0x77073097"
+    }
+  ]
+}

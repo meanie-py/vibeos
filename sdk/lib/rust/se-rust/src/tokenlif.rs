@@ -115,7 +115,7 @@ extern "C" {
 
 const SE_TOKEN_DYNAMIC_SLIM: ULONG = 500;
 
-const TOKEN_HAS_ADMIN_GROUP: ULONG = 0x00000001;
+const TOKEN_HAS_ADMIN_GROUP: ULONG = 0x00000008; // xdk/setypes.h:1194 (0x1 is TOKEN_HAS_TRAVERSE_PRIVILEGE)
 const TOKEN_SESSION_NOT_REFERENCED: ULONG = 0x20;
 const TOKEN_IS_RESTRICTED: ULONG = 0x10;
 const TOKEN_SANDBOX_INERT: ULONG = 0x40;
@@ -145,6 +145,7 @@ const TOKEN_DUPLICATE: ACCESS_MASK = 0x0002;
 #[cfg(target_arch = "aarch64")]
 extern "system" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[no_mangle]
@@ -233,7 +234,7 @@ pub unsafe extern "system" fn SepCreateToken(
         if !uart.is_null() {
             let msg = b"[TOK] before ObCreateObject\n";
             for &c in msg.iter() {
-                *uart = c as ULONG;
+                Arm64UartPutChar(c as u8);
             }
         }
     }
@@ -256,7 +257,7 @@ pub unsafe extern "system" fn SepCreateToken(
         if !uart.is_null() {
             let msg = b"[TOK] after ObCreateObject\n";
             for &c in msg.iter() {
-                *uart = c as ULONG;
+                Arm64UartPutChar(c as u8);
             }
         }
     }

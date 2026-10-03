@@ -56,7 +56,7 @@ unsafe fn NtCurrentProcess() -> HANDLE {
 // continue to work — the const is the address itself, deref reaches the
 // struct mapped by the kernel at boot.
 #[allow(non_upper_case_globals)]
-const SharedUserData: *mut _KUSER_SHARED_DATA = 0x7FFE0000 as *mut _KUSER_SHARED_DATA;
+pub(crate) const SharedUserData: *mut _KUSER_SHARED_DATA = 0x7FFE0000 as *mut _KUSER_SHARED_DATA;
 
 // Data globals live in sminit.c (still C) — convention-free import.
 extern "C" {

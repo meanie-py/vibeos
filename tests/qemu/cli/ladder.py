@@ -53,6 +53,24 @@ from pathlib import Path
 # paths share nothing below wow64.dll. arm64-only extras (fexprobe,
 # wow64probe) are reported when seen but are not required, so this table stays
 # the definition of parity rather than of "whatever arm64 happens to stage".
+# A verdict BETTER than the one a rung is graded on. gui32's 0x600E means "drew,
+# but GetPixel readback mismatched" -- the soft pass it earned when desktop
+# readback did not work. Once readback started working it exited 0x600D, a full
+# PASS, and an exact-match grade failed the rung for improving: LADDER_FAIL
+# "gui32.exe exit = 0x600d (want 0x600e)" on a tree whose gui32 log said
+# "PASS: 32-bit GDI drew on the host desktop and read it back". Its source never
+# changed; the OS got better. The graded value stays 0x600E so an arch where
+# readback still mismatches stays green; this names the upgrade.
+ALSO_ACCEPTED: dict[str, frozenset[int]] = {
+    "gui32": frozenset({0x600D}),
+}
+
+
+def verdict_ok(guest: str, got: int, want: int) -> bool:
+    """`got` satisfies a rung graded `want`: exactly, or a named upgrade."""
+    return got == want or got in ALSO_ACCEPTED.get(guest, frozenset())
+
+
 LADDER: dict[str, int] = {
     "hello32": 0x600D,
     "gui32": 0x600E,
@@ -318,6 +336,44 @@ def stale_guests(repo: Path) -> list[str]:
             continue
         out.extend(_newer_than(repo, guest, exe, srcs))
     return out
+
+
+# What the guest builder links against. Every graded guest imports kernel32, and
+# the builder skips a guest (it does not fail) when its importlib is missing -- so
+# without this probe a tree with no build-i386 would "refresh" into a partial set,
+# which is the all-or-nothing hole `gate_decision` reports.
+GUEST_PREREQ = "build-i386/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+GUEST_TOOLCHAIN = ".build-tools/llvm-mingw/bin/i686-w64-mingw32-clang"
+
+
+def guests_to_refresh(repo: Path) -> list[str]:
+    """Graded guests the builder must (re)make: absent, or older than a source.
+
+    Only the set the builder owns -- LADDER + DIAGNOSTIC in build-fex-hello/.
+    The OPTIONAL stress guests come from their own fetching build.sh and are
+    deliberately NOT built on anyone's behalf.
+    """
+    out: list[str] = []
+    stale = stale_guests(repo)
+    for guest in [*LADDER, *DIAGNOSTIC]:
+        exe = repo / "build-fex-hello" / f"{guest}.exe"
+        if guest in LADDER and not exe.is_file():
+            out.append(f"{guest} (absent)")
+        else:
+            out.extend(s for s in stale if s.startswith(f"{guest} ("))
+    return out
+
+
+def refresh_blocker(repo: Path) -> str | None:
+    """Why the guests cannot be built in this tree, or None if they can."""
+    if not (repo / GUEST_TOOLCHAIN).is_file():
+        return f"no i386 toolchain at {GUEST_TOOLCHAIN}"
+    if not (repo / GUEST_PREREQ).is_file():
+        return (
+            "no build-i386 importlibs to link the guests against — "
+            "build i386 first: ./vibeos-cli build --arch i386"
+        )
+    return None
 
 
 def _newer_than(repo: Path, guest: str, exe: Path, sources: list[str]) -> list[str]:
@@ -588,13 +644,19 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
             False,
             f"{len(built)}/{len(staged_guests())} ladder guests built — {absent} missing, and "
             f"staging is all-or-nothing, so NOTHING is staged; build the guests with: "
-            f"tools/fex/build-hello-compute.sh",
+            + (
+                f"{GUEST_BUILDER}"
+                if uses_ramdisk(arch)
+                else f"./vibeos-cli build --arch {arch} (it runs {GUEST_BUILDER})"
+            ),
         )
     if built:
         fix = (
             "VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
             if uses_ramdisk(arch)
-            else f"touch dll/win32/wow64cpu/CMakeLists.txt && ./vibeos-cli build --arch {arch}"
+            # The build restages by itself now: the guests are configure
+            # dependencies, so the next build reconfigures on their creation.
+            else f"./vibeos-cli build --arch {arch}"
         )
         return (
             [],
@@ -607,7 +669,8 @@ def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
         [],
         False,
         f"no staged {STAGED_DIR}/ guest in this arch's media manifest — "
-        f"WoW64 guests NOT checked by this gate",
+        f"WoW64 guests NOT checked by this gate"
+        + ("" if uses_ramdisk(arch) else " (the amd64 build's wow64-guests stage says why)"),
     )
 
 
@@ -627,7 +690,18 @@ def _optional_in_flight(buf: str) -> list[str]:
     return [g for g in OPTIONAL if f"{g}.exe (" in buf and f"{g}.exe exit = " not in buf]
 
 
-def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
+# winlogon prints this once, after the last GRADED guest or winetest on its arch
+# and before the ungraded stock-applet phase (winlogon.rs LadderProgramComplete).
+PROGRAM_DONE = "[WINLOGON] graded program complete"
+
+
+def watch(
+    vm,
+    seconds: float = LADDER_TIMEOUT_SECONDS,
+    seen: str = "",
+    optional_staged: list[str] | None = None,
+    program_done_expected: bool = False,
+) -> str:
     """Drain serial until every ladder guest has reported, or `seconds` elapse.
 
     `seen` is the serial the caller has ALREADY consumed. Without it this waits
@@ -638,12 +712,48 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     read, so the verdict was correct and the wait was pure waste. The caller's
     `check()` sees both halves and never noticed.
 
+    `optional_staged` is the SAME media answer `check()` grades with (see
+    media_optional_staged), and the drain must wait on it for the same reason
+    check() enforces it. An optional guest launches right AFTER the last parity
+    guest reports, so with the serial as its only source the drain saw every
+    required verdict, saw no optional guest yet, and stopped in the few lines
+    between -- then check() read the staged, launched, unreported lua32 as a
+    crash. MEASURED: spawn32's verdict at serial line 3214, lua32's launch at
+    3217, a 73s drain against a 420s ceiling, LADDER_FAIL on a guest mid-run.
+    The two halves of the ladder disagreed about what "done" means.
+
+    `program_done_expected` is the real answer to that, and the others are its
+    backstops. Inferring "done" from nothing being in flight is a race at EVERY
+    launch -- after lua32 was fixed, the same gap reopened between sqlite32 and
+    the winetest sweep. winlogon now SAYS when it is done (PROGRAM_DONE), and a
+    caller booting media this tree built -- which smoke guarantees by refusing
+    stale media -- waits for that line. The ceiling still bounds a machine that
+    never gets there.
+
     Returns only the NEWLY drained text; the caller appends it to the boot serial,
     so a BUGCHECK during the ladder still lands in full.log.
     """
     floor = drain_floor()
     need = [m for m in markers() if m not in seen]
-    if not need and not _optional_in_flight(seen) and not winetests_lost(seen) and not floor:
+    staged = list(optional_staged or [])
+
+    def outstanding(text: str) -> list[str]:
+        # Launched-and-unreported, plus staged-and-unreported: a staged guest
+        # is owed a verdict whether or not its launch line has appeared yet.
+        out = _optional_in_flight(text)
+        out += [g for g in staged if f"{g}.exe exit = " not in text and g not in out]
+        return out
+
+    if not floor and (
+        (program_done_expected and PROGRAM_DONE in seen)
+        or (
+            not program_done_expected
+            and not need
+            and not outstanding(seen)
+            and not winetests_lost(seen)
+            and not sweeps_unfinished(seen)
+        )
+    ):
         return ""  # every guest already reported before we were called
     buf = ""
     start = time.monotonic()
@@ -657,15 +767,29 @@ def watch(vm, seconds: float = LADDER_TIMEOUT_SECONDS, seen: str = "") -> str:
     extended: set[str] = set()
     while time.monotonic() < deadline:
         buf += vm.serial.read_available(timeout=0.5) or ""
-        pending = _optional_in_flight(buf)
+        # `seen + buf`, as winetests_lost below: a guest launched during the
+        # settle read is in `seen`, and is still in flight.
+        pending = outstanding(seen + buf)
         running = winetests_lost(seen + buf)
-        if (
-            all(m in buf for m in need)
-            and not pending
-            and not running
-            and time.monotonic() - start >= floor
-        ):
+        sweeping = sweeps_unfinished(seen + buf)
+        # Once winlogon has SAID it is done, nothing graded can still arrive:
+        # a guest missing at that point is final, and check() grades it. So the
+        # line ends the drain by itself -- an i386 native sweep, which has no
+        # WoW64 guests to report, otherwise sat out the whole 420s ceiling
+        # after winlogon had finished.
+        if program_done_expected:
+            finished = PROGRAM_DONE in seen + buf
+        else:
+            finished = all(m in buf for m in need) and not pending and not running and not sweeping
+        if finished and time.monotonic() - start >= floor:
             break
+        # The enumeration run gets one subtest's allowance; each subtest it
+        # then starts earns its own below, so a sweep's budget grows with it.
+        for suite in sweeping:
+            key = f"{suite}:--list"
+            if key not in extended:
+                deadline += WINETEST_EXTRA_SECONDS
+                extended.add(key)
         for g in pending:
             if g not in extended:
                 deadline += OPTIONAL_EXTRA_SECONDS
@@ -734,6 +858,27 @@ def winetests_lost(text: str) -> list[str]:
     return [label for label in _WT_STARTED.findall(text) if label not in done]
 
 
+# `[WT] user32:--list: started` opens a sweep; winlogon closes it with
+# `[WT] user32: sweep complete, ...` or `[WT] user32: --list produced no subtest
+# names - suite NOT swept`. The `--list` label is kept out of _WT_STARTED on
+# purpose (it is bookkeeping, not a subtest), so nothing else sees a sweep run.
+_SWEEP_STARTED = re.compile(r"\[WT\] ([A-Za-z0-9_/]+):--list: started ")
+_SWEEP_DONE = re.compile(r"\[WT\] ([A-Za-z0-9_/]+): (?:sweep complete|--list produced no subtest)")
+
+
+def sweeps_unfinished(text: str) -> list[str]:
+    """Suites whose SWEEP started and has not said it finished.
+
+    Without this a sweep boot did not wait for its own sweep. The drain ends when
+    nothing graded is outstanding, and while `--list` runs -- and in the gap
+    between one subtest's verdict and the next one's start line -- nothing graded
+    is. MEASURED: the serial stopped mid-line during `user32:--list` and the boot
+    reported green having run zero subtests. The workaround was to remember to
+    export VIBEOS_LADDER_DRAIN_FLOOR near 2400, which is a recipe, not a tool."""
+    done = set(_SWEEP_DONE.findall(text))
+    return [s for s in _SWEEP_STARTED.findall(text) if s not in done]
+
+
 def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     """None if every ladder guest reported PASS; else a failure dict with the
     same {classification, salient} shape the smoke triage stages use.
@@ -744,7 +889,11 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     for and must not read as absent."""
     seen = verdicts(text)
     missing = [g for g in LADDER if g not in seen]
-    wrong = [(g, seen[g], want) for g, want in LADDER.items() if g in seen and seen[g] != want]
+    wrong = [
+        (g, seen[g], want)
+        for g, want in LADDER.items()
+        if g in seen and not verdict_ok(g, seen[g], want)
+    ]
     # An optional guest is ignored when absent and enforced when present: the
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
@@ -759,6 +908,9 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     missing += [g for g in _optional_in_flight(text) if g not in missing]
 
     lost = winetests_lost(text)
+    # A sweep that never finished lost every subtest after the point it died,
+    # and only this can say so: those subtests never printed a start line.
+    lost += [f"{suite}:--list" for suite in sweeps_unfinished(text)]
 
     if not missing and not wrong and not lost:
         return None
@@ -789,7 +941,7 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
 def summary(text: str) -> str:
     """One-line roll-up for the stage detail."""
     seen = verdicts(text)
-    ok = sum(1 for g, want in LADDER.items() if seen.get(g) == want)
+    ok = sum(1 for g, want in LADDER.items() if g in seen and verdict_ok(g, seen[g], want))
     extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
     wt = {f"{k}={v}" for k, v in winetests(text).items()}

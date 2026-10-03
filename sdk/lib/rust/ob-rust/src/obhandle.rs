@@ -61,7 +61,7 @@ use ntkrnl_sys::ddk::{
     PGENERIC_MAPPING,
     PISECURITY_DESCRIPTOR,
     POBJECT_CREATE_INFORMATION,
-    POBJECT_HANDLE_ATTRIBUTE_INFORMATION,
+    POBJECT_HANDLE_FLAG_INFORMATION,
     PSECURITY_DESCRIPTOR,
     PsChargeSharedPoolQuota,
     PsGetCurrentThread,
@@ -73,7 +73,7 @@ use ntkrnl_sys::ddk::{
     SeReleaseSecurityDescriptor,
     _GENERIC_MAPPING,
     _OBJECT_CREATE_INFORMATION,
-    _OBJECT_HANDLE_ATTRIBUTE_INFORMATION,
+    _OBJECT_HANDLE_FLAG_INFORMATION,
     _OBJECT_SYMBOLIC_LINK,
     _OBJECT_DIRECTORY,
     _OB_OPEN_REASON_ObCreateHandle,
@@ -2305,7 +2305,7 @@ pub unsafe extern "system" fn ObInsertObject(
 #[no_mangle]
 pub unsafe extern "system" fn ObSetHandleAttributes(
     mut handle: HANDLE,
-    handle_flags: POBJECT_HANDLE_ATTRIBUTE_INFORMATION,
+    handle_flags: POBJECT_HANDLE_FLAG_INFORMATION,
     previous_mode: KPROCESSOR_MODE,
 ) -> NTSTATUS {
     let mut handle = opaque_ptr(handle);
@@ -5765,7 +5765,7 @@ pub unsafe extern "system" fn ObIsKernelHandle(handle: HANDLE) -> BOOLEAN {
 // NTSTATUS
 // NTAPI
 // ObSetHandleAttributes(IN HANDLE Handle,
-//                       IN POBJECT_HANDLE_ATTRIBUTE_INFORMATION HandleFlags,
+//                       IN POBJECT_HANDLE_FLAG_INFORMATION HandleFlags,
 //                       IN KPROCESSOR_MODE PreviousMode)
 // {
 //     OBP_SET_HANDLE_ATTRIBUTES_CONTEXT SetHandleAttributesContext;

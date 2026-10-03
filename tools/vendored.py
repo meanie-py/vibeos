@@ -5,10 +5,10 @@ WHY THIS EXISTS
 ---------------
 The project's goal is Rust, so every progress number is a fraction whose denominator
 is "C that is ours". Nothing computed that denominator: "vendored by policy" was prose
-in `rust-port-status.md`, a good-but-single-tree manifest in `external/README-fex-vendor.md`,
-and a 6-entry hardcoded tuple in `verify_conv_macros.py` that covered 5 of the 19
-directories under `sdk/include/reactos/libs/` and carried one entry (`libs/libxml`)
-matching nothing at all. Three lists, three contents, no source of truth.
+in `rust-port-status.md`, a good-but-single-tree manifest in `external/README-fex-vendor.md`
+(now `vendor-patches/fex.md`), and a 6-entry hardcoded tuple in `verify_conv_macros.py`
+that covered 5 of the 19 directories under `sdk/include/reactos/libs/` and carried one
+entry (`libs/libxml`) matching nothing at all. Three lists, three contents, no source of truth.
 
 The registry itself is `vendor.yaml`; this module is how code asks it questions.
 
@@ -31,10 +31,11 @@ TWO THINGS THIS DELIBERATELY DOES NOT DO
 ----------------------------------------
 **It does not glob.** `sdk/include/reactos/libs/` holds `zlib` and `mbedtls` next to
 `audiosrv`, `samsrv`, `umpnpmgr`, `syssetup`, `fslib`, `fmifs`, `epsapi`, `cportlib`
-and `fast486` — all ReactOS's own. No path convention in this tree separates foreign
-code from ours (ACPICA is under `drivers/`, FreeType under `sdk/lib/3rdparty/`, FEX
-under `external/`, ucrt under `sdk/lib/`), so the list has to be explicit and `--check`
-has to refuse an unregistered vendor directory rather than infer one.
+and `fast486` — all ReactOS's own. No path convention separated foreign code from ours
+when this was written (ACPICA under `drivers/`, FreeType under `sdk/lib/3rdparty/`, FEX
+under `external/`); the 2026-09 relocation gathered all but the CRT-coupled trees into
+`vendor/<lib>`, but the list stays explicit and `--check` refuses an unregistered
+directory under a container rather than inferring one.
 
 **It does not store versions.** An entry says WHERE its version lives and `resolve_version`
 reads it. A copied literal is a second source of truth that goes stale silently at the
@@ -190,6 +191,15 @@ class Tree:
         #: a lint that fails on a train — so it is a dated human finding, and the date
         #: is what tells you whether to re-run the audit.
         self.staleness: str | None = raw.get("staleness")
+        #: Whether we mean to OWN this code eventually: `planned` (translate it, and
+        #: promote it to `ours:` when the work starts), `keep` (stay vendored and bump
+        #: it from upstream), or `undecided`. Not `no`: YAML reads a bare `no` as false.
+        #: The owner's call, per tree. A `planned` tree stays OUT of the translation
+        #: denominator until someone actually starts, so the progress figure never counts
+        #: intent as work. `translate_note` carries
+        #: any precondition ("bump to upstream's newest first").
+        self.translate: str = str(raw.get("translate", "undecided"))
+        self.translate_note: str | None = raw.get("translate_note")
 
     @property
     def prefixes(self) -> list[str]:
@@ -535,6 +545,21 @@ def _is_nested_checkout(d: str) -> bool:
     return os.path.exists(os.path.join(d, ".git"))
 
 
+def _is_unwalked(d: str) -> bool:
+    """A directory no source scan may descend into: another checkout (see
+    `_is_nested_checkout`) or build output -- a cargo target directory, marked by
+    `.rustc_info.json` at its root or the standard `CACHEDIR.TAG` below it.
+    ucrt-difftest's build script extracts Microsoft's UCRT from git history into
+    `sdk/lib/rust/target/...`, and a walk that read it reported 20 "new" licence
+    findings for a tree that is not in the checkout at all.
+    """
+    return (
+        _is_nested_checkout(d)
+        or os.path.exists(os.path.join(d, ".rustc_info.json"))
+        or os.path.exists(os.path.join(d, "CACHEDIR.TAG"))
+    )
+
+
 #: An SPDX tag, or a ReactOS file header's `LICENSE:` line. Both are machine-readable
 #: statements by the FILE about itself, which is the only licence evidence that does not
 #: require reading prose.
@@ -604,8 +629,8 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
 
     The registry's other halves are ratchets — a new vendored dir fails `--check` until
     it is classified. Licences had no such ratchet, and a single `license:` field turns
-    out to be wrong on trees nobody suspected: `sdk/lib/drivers/wdf` is recorded MIT and
-    carries 11 ReactOS-authored `LICENSE: GPL-2.0-or-later` headers; `external/fex` is
+    out to be wrong on trees nobody suspected: `vendor/wdf` is recorded MIT and
+    carries 11 ReactOS-authored `LICENSE: GPL-2.0-or-later` headers; `vendor/fex` is
     recorded MIT and carries LGPL-2.1-or-later and GPL-2.0-only; `sdk/lib/ucrt` is
     recorded as Microsoft's terms and carries 5 files stamped `SPDX MIT`. Generating a
     notices file from the headline licence alone would misstate all three.
@@ -625,7 +650,7 @@ def license_drift(reg: Registry) -> list[tuple[str, str, dict]]:
     legally is a copyleft file inside a permissive tree, which is a family-level fact.
 
     The first run of it found three unrecorded licences that this function had been
-    printing all-clear over: 586 BSL-1.0 files in `external/fex` (it vendors range-v3),
+    printing all-clear over: 586 BSL-1.0 files in `vendor/fex` (it vendors range-v3),
     adns's deliberate GPL/LGPL carve-out on its public header, and — the one that
     matters — sixteen LGPL-2.1-or-later files in `dll/3rdparty/libtirpc`, the University
     of Michigan Windows/SSPI port, inside a tree recorded flat BSD-3-Clause.
@@ -699,11 +724,12 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
     """Directories full of foreign-copyright source that the registry does NOT cover.
 
     This is the discovery half, and it exists because the registry's container ratchet
-    only watches sdk/lib/3rdparty, dll/3rdparty and external/ — a vendored tree that
-    lives anywhere else (ACPICA under drivers/, ucrt under sdk/lib/) can only be found
-    by looking. Building the registry by hand turned up ~400K lines of Microsoft code
-    nobody had catalogued, WDF at 290K lines the largest; a hand-scan that finds that
-    much is a scan worth keeping rather than repeating from memory.
+    only watches its containers (vendor/, sdk/lib/3rdparty, dll/3rdparty) — a vendored tree
+    that lives anywhere else (ucrt under sdk/lib/, a drop an upstream merge files beside
+    its consumer) can only be found by looking. Building the registry by hand turned up
+    ~400K lines of Microsoft code nobody had catalogued, WDF at 290K lines the largest; a
+    hand-scan that finds that much is a scan worth keeping rather than repeating from
+    memory.
 
     A hit is a QUESTION ("is this ours to translate?") and the answer is a judgement call
     — WDF is Microsoft-authored but it is also a driver framework this OS ships, so it is
@@ -725,7 +751,7 @@ def suspects(reg: Registry, min_files: int = 5) -> list[tuple[str, int]]:
         if rel_dir == ".":
             rel_dir = ""
             dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
-        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if not _is_unwalked(os.path.join(dirpath, d))]
         for fn in filenames:
             if os.path.splitext(fn)[1].lower() not in _SUSPECT_SUFFIXES:
                 continue
@@ -794,7 +820,7 @@ def declared_licences(reg: Registry) -> list[tuple[str, str, int, str]]:
             for d in dirnames
             if not d.startswith(".")
             and not d.startswith("build-")
-            and not _is_nested_checkout(os.path.join(dirpath, d))
+            and not _is_unwalked(os.path.join(dirpath, d))
         ]
         rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
         if rel_dir.startswith(registered):
@@ -868,7 +894,7 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
     by_dir: dict[str, set[str]] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
-        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if not _is_unwalked(os.path.join(dirpath, d))]
         rd = os.path.relpath(dirpath, root).replace(os.sep, "/")
         by_dir[("" if rd == "." else rd)] = {f.lower() for f in filenames}
 
@@ -912,7 +938,7 @@ def grant_gaps(reg: Registry, min_files: int = 3) -> tuple[list[tuple[str, int, 
         if rel_dir == ".":
             rel_dir = ""
             dirnames[:] = [d for d in dirnames if d not in _SUSPECT_SKIP]
-        dirnames[:] = [d for d in dirnames if not _is_nested_checkout(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if not _is_unwalked(os.path.join(dirpath, d))]
         for fn_ in filenames:
             if os.path.splitext(fn_)[1].lower() not in _SUSPECT_SUFFIXES:
                 continue
@@ -1181,6 +1207,10 @@ def crates_rows(repo: Path) -> list[tuple[str, str, str, bool]]:
     ]
 
 
+#: The values `translate:` may take; see Tree.translate.
+TRANSLATE_VALUES = ("planned", "keep", "undecided")
+
+
 def check(reg: Registry) -> list[str]:
     """Every way the registry can disagree with the tree. Returns problem strings."""
     problems: list[str] = []
@@ -1189,6 +1219,10 @@ def check(reg: Registry) -> list[str]:
     for t in reg.trees:
         if not (reg.repo / t.path).exists():
             problems.append(f"{t.name}: registered path does not exist: {t.path}")
+        if t.translate not in TRANSLATE_VALUES:
+            problems.append(
+                f"{t.name}: translate: {t.translate!r} is not one of {', '.join(TRANSLATE_VALUES)}"
+            )
         if t.license_file and not (reg.repo / t.license_file).is_file():
             problems.append(f"{t.name}: license_file does not exist: {t.license_file}")
         if t.license_ref and not (reg.repo / t.license_ref).is_file():
@@ -1378,7 +1412,7 @@ def check(reg: Registry) -> list[str]:
 _FIELD_NAMES = (
     "path|paths|name|upstream|license|license_file|license_ref|license_extra|"
     "modified|headers|version|reason|review|unwelcome|origin|tier|license_note|"
-    "staleness"
+    "staleness|translate|translate_note"
 )
 _JOINED_FIELD = re.compile(rf"\S[ \t]{{2,}}((?:{_FIELD_NAMES}):)")
 
@@ -1578,16 +1612,31 @@ def emit(reg: Registry) -> int:
     rows = []
     for t in reg.trees:
         version, err = reg.resolve_version(t)
-        rows.append((t.path, t.name, version if not err else "PROBE FAILED", t.license, reg.loc(t)))
+        rows.append(
+            (
+                t.path,
+                t.name,
+                version if not err else "PROBE FAILED",
+                t.license,
+                reg.loc(t),
+                t.translate,
+            )
+        )
     w = max(len(r[0]) for r in rows)
     print(f"{len(rows)} vendored trees registered in vendor.yaml\n")
-    print(f"  {'path'.ljust(w)}  {'version':<22} {'licence':<22} {'LOC':>9}")
-    print(f"  {'-' * w}  {'-' * 22} {'-' * 22} {'-' * 9}")
+    print(f"  {'path'.ljust(w)}  {'version':<22} {'licence':<22} {'LOC':>9}  translate")
+    print(f"  {'-' * w}  {'-' * 22} {'-' * 22} {'-' * 9}  {'-' * 9}")
     total = 0
-    for path, _name, version, lic, loc in rows:
+    for path, _name, version, lic, loc, translate in rows:
         total += loc
-        print(f"  {path.ljust(w)}  {version[:22]:<22} {lic[:22]:<22} {loc:>9,}")
+        print(f"  {path.ljust(w)}  {version[:22]:<22} {lic[:22]:<22} {loc:>9,}  {translate}")
     print(f"  {' ' * w}  {'':<22} {'TOTAL':<22} {total:>9,}")
+    for value in TRANSLATE_VALUES:
+        picked = [r for r in rows if r[5] == value]
+        print(f"  translate={value}: {len(picked)} tree(s), {sum(r[4] for r in picked):,} lines")
+    for t in reg.trees:
+        if t.translate_note:
+            print(f"  note — {t.name}: {' '.join(t.translate_note.split())}")
 
     unwanted = [t for t in reg.trees if t.unwelcome]
     if unwanted:

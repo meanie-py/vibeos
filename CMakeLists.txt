@@ -327,6 +327,13 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     # are found first and their #include_next chains work correctly.
     # sdk/include/vcruntime stays in -I because msvcrt and other Wine components
     # depend on it being found before their own local headers.
+    # Public headers of vendored libraries, reached as <GL/gl.h> / <d3dkmthk.h> through
+    # a root exactly as when they lived under sdk/include. One list, so the next
+    # vendor/<lib>/include that serves the whole tree is added here and nowhere else.
+    set(VENDOR_INCLUDE_ROOTS
+        vendor/opengl-headers/include
+        vendor/libdxg/include)
+
     if(ARCH STREQUAL "arm64")
         include_directories(
             sdk/include
@@ -345,6 +352,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
             ${REACTOS_BINARY_DIR}/sdk/include/reactos/mc
             sdk/include/dxsdk
             sdk/lib/pseh/include
+            ${VENDOR_INCLUDE_ROOTS}
         )
     else()
         include_directories(
@@ -365,6 +373,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
             ${REACTOS_BINARY_DIR}/sdk/include/reactos/mc
             sdk/include/dxsdk
             sdk/lib/pseh/include
+            ${VENDOR_INCLUDE_ROOTS}
         )
     endif()
 

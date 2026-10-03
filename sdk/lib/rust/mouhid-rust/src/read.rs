@@ -351,6 +351,18 @@ pub unsafe fn MouHid_DispatchInputData(
         InputData.add(1) as PVOID,
         &mut InputDataConsumed as *mut ULONG as *mut PVOID,
     );
+    // One report accepted by mouclass proves the USB mouse input path; useful
+    // on the Pi, where the framebuffer cursor alone cannot prove HID delivery.
+    if InputDataConsumed != 0 {
+        static DELIVERED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+        if !DELIVERED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[MOUHID] report delivered dx=%ld dy=%ld\n\0".as_ptr() as *const i8,
+                (*InputData).LastX,
+                (*InputData).LastY,
+            );
+        }
+    }
 
     // lower irql to previous level
     KeLowerIrql(OldIrql);

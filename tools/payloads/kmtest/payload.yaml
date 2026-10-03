@@ -31,3 +31,8 @@ test:
   # listed test (180s per-test cap). Budget generously: gate + N tests.
   launch_marker: "[KMTEST-SWEEP] done"
   launch_drain_secs: 5400
+  # Sample every vCPU each 20 s of serial silence (silence-samples.txt in the
+  # run dir). Diagnostic only: arm64 NpfsConnect goes quiet ~95 s per round
+  # with the clock ticking and nothing scheduled, then recovers -- no hang
+  # path ever fires, so the only chance to see what holds the CPU is DURING it.
+  silence_sample_secs: 20

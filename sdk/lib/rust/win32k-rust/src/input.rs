@@ -4,6 +4,7 @@ use ntkrnl_sys::ddk::{KeInitializeTimer, KeSetPriorityThread, KeWaitForMultipleO
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_NO_MEMORY};
 use ntkrnl_sys::constants::{STATUS_UNSUCCESSFUL, STATUS_INVALID_PARAMETER, STATUS_ACCESS_DENIED, STATUS_PENDING};
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExDeleteResourceLite, ExInitializeResourceLite, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion};
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::rtl::RtlCopyMemory;
 use ntkrnl_sys::interlocked::{InterlockedIncrement, InterlockedDecrement};
@@ -217,6 +218,24 @@ pub static mut gpai: PATTACHINFO = core::ptr::null_mut();
 pub static mut paiCount: INT = 0;
 #[no_mangle]
 pub static mut ghKeyboardDevice: HANDLE = core::ptr::null_mut();
+// The raw input device list (upstream #9498). Its nodes are the RIT's own stack
+// locals, so the list is only valid while RawInputThreadMain runs; rawinput.rs
+// walks it under gpDeviceInfoListMutex.
+#[no_mangle]
+pub static mut gpInputDeviceInfo: PINPUT_DEVICE_INFO = core::ptr::null_mut();
+#[no_mangle]
+pub static mut gpDeviceInfoListMutex: PERESOURCE = core::ptr::null_mut();
+
+// input.h FORCEINLINE AcquireDeviceInfoListMutex / ReleaseDeviceInfoListMutex.
+pub(crate) unsafe fn AcquireDeviceInfoListMutex() {
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite(gpDeviceInfoListMutex as _, 1);
+}
+
+pub(crate) unsafe fn ReleaseDeviceInfoListMutex() {
+    ExReleaseResourceLite(gpDeviceInfoListMutex as _);
+    KeLeaveCriticalRegion();
+}
 // LastInputTick + ghMouseDevice are `static` (file-local) in C — keep private.
 static mut LastInputTick: DWORD = 0;
 static mut ghMouseDevice: HANDLE = core::ptr::null_mut();
@@ -344,6 +363,15 @@ pub unsafe extern "system" fn RawInputThreadMain() {
     let mut KeyInput: KEYBOARD_INPUT_DATA = core::mem::zeroed();
     let mut ShutdownEvent: PVOID = core::ptr::null_mut();
     let mut hWinSta: HWINSTA = core::ptr::null_mut();
+    let mut Mouse: INPUT_DEVICE_INFO = core::mem::zeroed();
+    let mut Keyboard: INPUT_DEVICE_INFO = core::mem::zeroed();
+
+    Mouse.DeviceType = RIM_TYPEMOUSE as ULONG;
+    RtlInitUnicodeString(&mut Mouse.DeviceName as *mut _ as *mut _, wide_str!("\\Device\\PointerClass0"));
+    Mouse.__bindgen_anon_1.Mouse.Attributes.NumberOfButtons = 2;
+
+    Keyboard.DeviceType = RIM_TYPEKEYBOARD as ULONG;
+    RtlInitUnicodeString(&mut Keyboard.DeviceName as *mut _ as *mut _, wide_str!("\\Device\\KeyboardClass0"));
 
     ByteOffset.QuadPart = 0;
 
@@ -371,32 +399,67 @@ pub unsafe extern "system" fn RawInputThreadMain() {
         // ASSERT(FALSE);
     }
 
+    gpDeviceInfoListMutex = ExAllocatePoolWithTag(
+        NonPagedPool,
+        core::mem::size_of::<ERESOURCE>() as _,
+        USERTAG_SYSTEM,
+    ) as PERESOURCE;
+    ntkrnl_sys::ASSERT!(!gpDeviceInfoListMutex.is_null());
+    Status = ExInitializeResourceLite(gpDeviceInfoListMutex as _);
+    ntkrnl_sys::ASSERT!(NT_SUCCESS(Status));
+
     UserEnterExclusive();
     StartTheTimers();
     UserLeave();
 
     PoRequestShutdownEvent(&mut ShutdownEvent);
 
+    extern "C" {
+        fn DbgPrint(Format: *const u8, ...) -> u32;
+    }
+    // One line per device when it opens (or first fails to): which transport
+    // feeds the desktop is otherwise invisible, and a class device nobody opens
+    // drops every key without a trace.
+    let mut mou_open_logged = false;
+    let mut kbd_open_logged = false;
+    let mut first_kbd_logged = false;
+    let mut first_mou_logged = false;
     loop {
         if ghMouseDevice.is_null() {
             Status = OpenInputDevice(
                 core::ptr::addr_of_mut!(ghMouseDevice),
                 &mut pMouDevice,
-                wide_str!("\\Device\\PointerClass0"),
+                Mouse.DeviceName.Buffer,
             );
             if NT_SUCCESS(Status) {
                 cMaxWaitObjects += 1;
+                Mouse.pNextDeviceInfo = gpInputDeviceInfo;
+                gpInputDeviceInfo = &mut Mouse;
+                DbgPrint(b"[WIN32K] RIT opened \\Device\\PointerClass0 (driver %wZ)\n\0".as_ptr(),
+                    &(*(*(*pMouDevice).DeviceObject).DriverObject).DriverName as *const _);
+            } else if !mou_open_logged {
+                DbgPrint(b"[WIN32K] RIT cannot open \\Device\\PointerClass0 yet: 0x%x\n\0".as_ptr(), Status as u32);
             }
+            mou_open_logged = true;
         }
         if ghKeyboardDevice.is_null() {
             Status = OpenInputDevice(
                 core::ptr::addr_of_mut!(ghKeyboardDevice),
                 &mut pKbdDevice,
-                wide_str!("\\Device\\KeyboardClass0"),
+                Keyboard.DeviceName.Buffer,
             );
+            if !NT_SUCCESS(Status) && !kbd_open_logged {
+                DbgPrint(b"[WIN32K] RIT cannot open \\Device\\KeyboardClass0 yet: 0x%x\n\0".as_ptr(), Status as u32);
+            }
+            kbd_open_logged = true;
             if NT_SUCCESS(Status) {
+                DbgPrint(b"[WIN32K] RIT opened \\Device\\KeyboardClass0 (driver %wZ)\n\0".as_ptr(),
+                    &(*(*(*pKbdDevice).DeviceObject).DriverObject).DriverName as *const _);
                 cMaxWaitObjects += 1;
+                Keyboard.pNextDeviceInfo = gpInputDeviceInfo;
+                gpInputDeviceInfo = &mut Keyboard;
                 UserInitKeyboard(ghKeyboardDevice);
+                Keyboard.__bindgen_anon_1.Keyboard.Attributes = gKeyboardInfo;
                 UserEnterExclusive();
                 UserRegisterHotKey(PWND_BOTTOM, IDHK_WINKEY as i32, MOD_WIN as u32, 0);
                 UserRegisterHotKey(PWND_BOTTOM, IDHK_SNAP_LEFT as i32, MOD_WIN as u32, VK_LEFT as u32);
@@ -491,6 +554,11 @@ pub unsafe extern "system" fn RawInputThreadMain() {
         }
 
         if NT_SUCCESS(MouStatus) && MouStatus != STATUS_PENDING {
+            if !first_mou_logged {
+                first_mou_logged = true;
+                DbgPrint(b"[WIN32K] RIT first mouse input flags=0x%x x=%d y=%d\n\0".as_ptr(),
+                    MouseInput.Flags as u32, MouseInput.LastX, MouseInput.LastY);
+            }
             IntLastInputTick(1);
 
             UserEnterExclusive();
@@ -501,6 +569,11 @@ pub unsafe extern "system" fn RawInputThreadMain() {
         }
 
         if NT_SUCCESS(KbdStatus) && KbdStatus != STATUS_PENDING {
+            if !first_kbd_logged {
+                first_kbd_logged = true;
+                DbgPrint(b"[WIN32K] RIT first keyboard input sc=0x%x flags=0x%x\n\0".as_ptr(),
+                    KeyInput.MakeCode as u32, KeyInput.Flags as u32);
+            }
             IntLastInputTick(1);
 
             UserEnterExclusive();
@@ -512,9 +585,6 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             static mut RIT_KBDERR_TRACE: u32 = 0;
             if RIT_KBDERR_TRACE < 8 {
                 RIT_KBDERR_TRACE += 1;
-                extern "C" {
-                    fn DbgPrint(Format: *const u8, ...) -> u32;
-                }
                 DbgPrint(
                     b"[WIN32K] RIT kbd read FAILED status=0x%x\n\0".as_ptr(),
                     KbdStatus as u32,
@@ -536,6 +606,16 @@ pub unsafe extern "system" fn RawInputThreadMain() {
         ObDereferenceObject(pKbdDevice as PVOID);
         ghKeyboardDevice = core::ptr::null_mut();
     }
+
+    // Divergence from input.c: the list's nodes are this frame's locals, and the C
+    // leaves gpInputDeviceInfo pointing at them after the thread returns, so a later
+    // GetRawInputDeviceList would walk a dead stack. Unlink under the lock first.
+    AcquireDeviceInfoListMutex();
+    gpInputDeviceInfo = core::ptr::null_mut();
+    ReleaseDeviceInfoListMutex();
+
+    ExDeleteResourceLite(gpDeviceInfoListMutex as _);
+    ExFreePoolWithTag(gpDeviceInfoListMutex as _, USERTAG_SYSTEM);
 }
 
 #[no_mangle]

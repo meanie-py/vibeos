@@ -81,12 +81,9 @@ fi
 # Sweep any prior QEMU (this arch or any other, this worktree or any other)
 # whose owning shell/launcher is dead. Live owners — including other agents'
 # active sessions — are NEVER touched. See qemu/reap.sh for the exact rules.
-# reap.sh writes [reap] action lines to stderr (which flows through to the
-# user) and the kill count to stdout (which we capture for the summary log).
-if reaped="$("$SCRIPT_DIR/reap.sh")"; then
-    [ "${reaped:-0}" -gt 0 ] && log_info "reaped $reaped orphan QEMU(s)"
-else
-    log_warn "qemu/reap.sh exited nonzero; continuing"
+# reap.sh writes [reap] action lines to stderr (which flows through to the user).
+if ! "$SCRIPT_DIR/reap.sh" >/dev/null; then
+    log_warn "qemu/reap.sh reported a failed reap (see [reap] lines); continuing"
 fi
 
 # --- allocate run-id, ports, sockets ---------------------------------------
@@ -94,7 +91,11 @@ RUN_ID="$(runid_new "$ARCH")"
 RUN_DIR="$RUNS_DIR/$RUN_ID"
 mkdir -p "$RUN_DIR"
 
-KERNEL_IMAGE="$(arch_kernel_image "$ARCH")"
+# Every media boots the MP kernel by default (DefaultOS=LiveCD_SMP / ReactOS_Arm64_MP since
+# 2026-09-12). A best guess only: inspect.sh / run-until.sh re-derive it from the serial
+# log's "[FLDR] load" line once freeldr has printed it (runid_kernel_image).
+KERNEL_IMAGE="$(arch_kernel_image "$ARCH" mp)"
+[ -f "$KERNEL_IMAGE" ] || KERNEL_IMAGE="$(arch_kernel_image "$ARCH")"
 manifest_init "$RUN_ID" "$ARCH" "$KERNEL_IMAGE" "$OWNER_PID"
 
 GDB_PORT=""
@@ -311,7 +312,9 @@ manifest_set "$RUN_ID" deadline "$DEADLINE_EPOCH" --json
 LOCK_DIR="/tmp/vibeos-qemu-locks"
 mkdir -p "$LOCK_DIR" 2>/dev/null || true
 LOCK_FILE="$LOCK_DIR/${OWNER_PID}-${QEMU_PID}.json"
-jq -n \
+# Atomic (tmp + rename): `jq ... > "$LOCK_FILE"` created the lock EMPTY whenever jq
+# failed, and the reaper later deleted the unparseable file -- an untracked live VM.
+vjson write "$LOCK_FILE" \
     --argjson launcher_pid "$OWNER_PID" \
     --argjson qemu_pid "$QEMU_PID" \
     --argjson deadline "$DEADLINE_EPOCH" \
@@ -321,10 +324,7 @@ jq -n \
     --arg manifest_path "$(manifest_path "$RUN_ID")" \
     --arg live_log "$SERIAL_LOG" \
     --arg source "qemu/start.sh" \
-    '{launcher_pid: $launcher_pid, qemu_pid: $qemu_pid, deadline: $deadline,
-      slot: $slot, arch: $arch, run_id: $run_id, manifest_path: $manifest_path,
-      live_log: $live_log, source: $source}' \
-    > "$LOCK_FILE" 2>/dev/null || log_warn "could not write $LOCK_FILE"
+    || log_warn "could not write $LOCK_FILE"
 
 # Detached hard-cap watchdog. Sleeps until the deadline, then kills the QEMU
 # process group iff it's still alive AND still actually QEMU (guards pid reuse).
@@ -338,8 +338,10 @@ setsid bash -c '
     qpid="$1"; secs="$2"
     sleep "$secs"
     kill -0 "$qpid" 2>/dev/null || exit 0
-    grep -q qemu "/proc/$qpid/comm" 2>/dev/null || exit 0
-    pgid="$(ps -o pgid= -p "$qpid" 2>/dev/null | tr -d " ")"
+    comm=""; { read -r comm < "/proc/$qpid/comm"; } 2>/dev/null
+    case "$comm" in *qemu*) ;; *) exit 0 ;; esac
+    pgid=""
+    { stat="$(< "/proc/$qpid/stat")"; } 2>/dev/null && { set -- ${stat##*) }; pgid="$3"; }
     [ -n "$pgid" ] || exit 0
     kill -TERM -- "-$pgid" 2>/dev/null || true
     sleep 5

@@ -126,6 +126,29 @@ def is_comment(line: str) -> bool:
     return t == "*" or (t.startswith("*") and t[1:2].isspace())
 
 
+def alias_of(idents: set[str]) -> re.Pattern[str]:
+    """`x = <tainted> as T;` -- a second NAME for the same user pointer.
+
+    The scanner keyed on the probed identifier alone, so a probe of `Param`
+    followed by `pdwLayout = Param as PDWORD; *pdwLayout = ...` reported
+    nothing. That is not a corner case: it is how the whole ONEPARAM_ROUTINE
+    family is written, and one of them (GETPROCDEFLAYOUT) was a live BUGCHECK
+    0x1E reachable from `NtUserCallOneParam` -- found by the wine user32:win
+    subtest only AFTER the fault in front of it was fixed, not by this file.
+    """
+    alt = "|".join(re.escape(i) for i in sorted(idents))
+    return re.compile(rf"^\s*(?:let\s+(?:mut\s+)?)?(\w+)\s*=\s*(?:{alt})\b[^=]*;\s*$")
+
+
+# Intrinsics that take a POINTER and access it. Unlike a bulk copy there is no
+# protected counterpart to route these through -- a `KmProtected` atomic would have
+# to be written in kmsafecopy.c on all three arches -- so a hit here is a report,
+# not something the fixer can rewrite.
+ATOMIC_ACCESS = re.compile(
+    r"\bInterlocked(?:Increment|Decrement|Exchange\w*|CompareExchange\w*|And|Or|Xor)\w*\s*\("
+)
+
+
 def derefs_of(ident: str) -> re.Pattern[str]:
     i = re.escape(ident)
     # `*ident`, `*(ident`, `(*ident)`, and `(*ident).field`
@@ -213,6 +236,7 @@ def scan_text(
         if not ident:
             continue
         probe_line = text.count("\n", 0, m.start())
+        idents = {ident}
         pat = derefs_of(ident)
         # Look ahead within this function: stop at a line that starts a new
         # top-level item, which is a good-enough body boundary for this shape.
@@ -228,12 +252,6 @@ def scan_text(
             # lead under the dead source it was translated from.
             if is_comment(ln):
                 continue
-            # `addr_of!((*p).field)` COMPUTES an address; it does not load, so
-            # it cannot fault. It is also the idiom the probes themselves use to
-            # name a subfield, so without this every correct probe reports
-            # itself.
-            if "addr_of!" in ln or "addr_of_mut!" in ln:
-                continue
             # Reassigning the probed identifier to an UNRELATED pointer ends the
             # taint: it now names something else. dibobj's `bmi = pbmiSafe;` swaps a
             # user pointer for a kernel pool copy, so every later `(*bmi).…` is a
@@ -242,6 +260,13 @@ def scan_text(
             # Assigning NULL does NOT end it. Error paths null the pointer and the
             # success path keeps deref'ing the original; treating that as untainted
             # hid the real `dwHookData` leads two lines further down.
+            # Propagate the taint to an alias before testing for a deref, so
+            # the very line that creates the alias does not also have to use it.
+            al = alias_of(idents).match(ln)
+            if al and al.group(1) not in idents:
+                idents.add(al.group(1))
+                pat = re.compile("|".join(derefs_of(i).pattern for i in sorted(idents)))
+                continue
             reassign = re.match(rf"\s*{re.escape(ident)}\s*=\s*([^=].*)$", ln)
             if (
                 reassign
@@ -252,6 +277,29 @@ def scan_text(
                 and "null" not in reassign.group(1).lower()
             ):
                 break
+            # `addr_of!((*p).field)` COMPUTES an address; it does not load, so it
+            # cannot fault. It is also the idiom the probes themselves use to name a
+            # subfield, so without this every correct probe reports itself.
+            #
+            # This MUST come after the taint-end check above, not before it. Repointing
+            # the probed name at a kernel local -- `prcl = addr_of_mut!(rclLocal);` --
+            # is the tree's idiom for the CORRECT fix, and skipping the line for
+            # containing `addr_of_mut!` skipped the reassignment that ends the taint,
+            # so every such site kept reporting after it was fixed. That is the same
+            # false-signal shape as the old break-at-first-hit bug: the tool saying
+            # there is work left where there is none.
+            if "addr_of!" in ln or "addr_of_mut!" in ln:
+                # ...unless the address is handed, on this same line, to an
+                # intrinsic that dereferences it. `InterlockedIncrement(
+                # addr_of_mut!((*pimeui).nCntInIMEProc))` never lets the address
+                # escape: the callee IS the access, and there is no protected
+                # atomic for it to go through, so this is the one shape in the
+                # class with no fix available at the call site. Skipping the whole
+                # line for containing `addr_of_mut!` hid ime.rs's two live sites
+                # completely -- the scanner reported ZERO while they sat there.
+                if ATOMIC_ACCESS.search(ln):
+                    out.append((n + 1, ident, ln.strip()))
+                continue
             # The probed pointer handed to a callee that dereferences THAT
             # parameter -- the NtUserSetSysColors -> IntSetSysColors shape.
             if deref_index:

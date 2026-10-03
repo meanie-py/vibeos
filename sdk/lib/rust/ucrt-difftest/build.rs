@@ -2,13 +2,19 @@
 // public symbols renamed to `ref_<name>`, so a test binary can hold both the
 // real C and our Rust at once and compare them.
 //
-// Nothing is transcribed: each `.cpp` is handed to `cc` exactly as it sits in
-// `sdk/lib/ucrt`. If a file has been deleted because its family was taken
-// over, it is SKIPPED rather than failing the build — the reference legitimately
-// disappears as the quest progresses, and that is the whole reason this harness
-// had to exist before the deletions rather than after.
+// Nothing is transcribed, and nothing depends on the live tree: the reference
+// is Microsoft's C as it sat at REFERENCE_REV, extracted from git history with
+// `git archive`. It used to be read from `sdk/lib/ucrt`, skipping whatever a
+// takeover had deleted -- which meant the oracle shrank with every batch and hit
+// zero the day the last TU went (the stdlib takeover). The history does not go
+// away, so neither does the oracle. If git cannot produce the tree, the build
+// FAILS: a harness that silently graded nothing is what this exists to prevent.
 //
 // See Cargo.toml for the header hacks and for what Tier 1 / Tier 2 mean.
+
+/// The last commit whose `sdk/lib/ucrt` holds every TU in REFS (the one before
+/// the string takeover deleted `string/strcat.c`). An ancestor of master.
+const REFERENCE_REV: &str = "af738a3b14e77b84c536c73f2ea48fa9ba5ce754";
 
 use std::path::PathBuf;
 
@@ -44,32 +50,50 @@ fn main() {
         .join("../../../..")
         .canonicalize()
         .expect("repo root");
-    let ucrt = repo.join("sdk/lib/ucrt");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let stub = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("refstub");
 
     println!("cargo:rerun-if-changed=refstub");
     println!("cargo:rerun-if-changed=build.rs");
+    // Kept for the tests' existing gates; with the reference read from history,
+    // both are now constant (the reference is always there).
     println!("cargo::rustc-check-cfg=cfg(no_ucrt_reference)");
+    println!("cargo::rustc-check-cfg=cfg(ucrt_ref_strcat)");
+    println!("cargo:rustc-cfg=ucrt_ref_strcat");
 
-    let mut present: Vec<&str> = Vec::new();
+    let tree = out.join("ucrt-ref");
+    let _ = std::fs::remove_dir_all(&tree);
+    std::fs::create_dir_all(&tree).expect("create ucrt-ref");
+    let archive = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args(["archive", "--format=tar", REFERENCE_REV, "sdk/lib/ucrt"])
+        .output()
+        .expect("run git archive (the reference UCRT comes from git history)");
+    assert!(
+        archive.status.success(),
+        "git archive {REFERENCE_REV} sdk/lib/ucrt failed: {}",
+        String::from_utf8_lossy(&archive.stderr)
+    );
+    let tar_path = out.join("ucrt-ref.tar");
+    std::fs::write(&tar_path, &archive.stdout).expect("write ucrt-ref.tar");
+    let untar = std::process::Command::new("tar")
+        .arg("-xf")
+        .arg(&tar_path)
+        .arg("-C")
+        .arg(&tree)
+        .status()
+        .expect("run tar");
+    assert!(untar.success(), "extracting the reference UCRT failed");
+    let ucrt = tree.join("sdk/lib/ucrt");
+
     let mut renames: Vec<&str> = Vec::new();
     for (rel, syms) in REFS {
-        if ucrt.join(rel).is_file() {
-            present.push(*rel);
-            renames.extend(syms.iter().copied());
-        } else {
-            // Taken over and deleted. Expected; not an error.
-            println!("cargo:warning=ucrt-difftest: reference gone (family taken over): {rel}");
-        }
-    }
-
-    if present.is_empty() {
-        // Nothing left to grade against. Emit the cfg so the tests can SAY so
-        // rather than silently passing on an empty corpus -- a green suite that
-        // graded nothing is the exact failure this harness exists to prevent.
-        println!("cargo:rustc-cfg=no_ucrt_reference");
-        return;
+        assert!(
+            ucrt.join(rel).is_file(),
+            "{rel} is not in {REFERENCE_REV}; REFS and REFERENCE_REV disagree"
+        );
+        renames.extend(syms.iter().copied());
     }
 
     // ONE rename header for all TUs, not one per TU: a `cc::Build` applies
@@ -99,10 +123,8 @@ fn main() {
         .flag(format!("-idirafter{}", repo.join("sdk/include/vcruntime").display()))
         .flag(format!("-include{}", prelude.display()));
 
-    for rel in &present {
-        let src = ucrt.join(rel);
-        println!("cargo:rerun-if-changed={}", src.display());
-        build.file(&src);
+    for (rel, _) in REFS {
+        build.file(ucrt.join(rel));
     }
     build.compile("ucrt_ref");
 }

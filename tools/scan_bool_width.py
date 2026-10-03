@@ -15,8 +15,18 @@ The bug class (field manual §"BOOLEAN return declared as i32"):
   a decl says NTSTATUS but the definition returns BOOLEAN (semantics bug:
   TRUE(1) and FALSE(0) are both >= 0, so `if !NT_SUCCESS(x)` never fires).
 
+  The OTHER way to get the same mismatch: the Rust DEFINITION is the narrow side. A
+  `#[no_mangle]` fn returning u8/BOOLEAN whose C original (tools/c_twin.py, paired by
+  name within the same module) returns BOOL/INT/…: every C caller, and every island decl
+  generated from the header, reads all of EAX. That is the direction the first 202
+  findings actually were (2026-09-26): 25 definitions — userenv's profile getters,
+  win32k REGION_*/NtGdi*, advapi32 EncryptFile* — declared `BOOL` everywhere else. The
+  decl-side check above cannot see a narrow definition only C calls, so this one reports
+  the DEFINITION.
+
 Usage:
   python3 tools/scan_bool_width.py            # scan sdk/lib/rust
+  python3 tools/scan_bool_width.py --lint     # findings only (CLI baseline gate)
   python3 tools/scan_bool_width.py --json     # machine-readable
 Exit 1 if findings (suitable for a 0-NEW baseline gate).
 Suppress a verified FP with: // nolint: bool-width (reason)
@@ -27,6 +37,10 @@ import json
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.c_twin import CIndex, prefer, same_module
+from tools.source_walk import source_files
 
 ROOT = Path(__file__).resolve().parent.parent
 RUST_ROOT = ROOT / "sdk" / "lib" / "rust"
@@ -46,10 +60,21 @@ EXTERN_OPEN_RE = re.compile(r'extern "(?:system|C|stdcall|win64|fastcall)"\s*\{'
 DECL_RE = re.compile(r"^\s*(?:pub )?fn (\w+)\s*\(.*\)\s*->\s*(\w+)\s*;")
 
 
+ROOTS = [RUST_ROOT]
+
+
 def rust_files():
-    for f in RUST_ROOT.rglob("*.rs"):
-        if SKIP_PARTS.isdisjoint(f.parts):
-            yield f
+    for root in ROOTS:
+        for f in [root] if root.is_file() else source_files(root):
+            if SKIP_PARTS.isdisjoint(f.parts):
+                yield f
+
+
+def _rel(f: Path) -> str:
+    try:
+        return str(f.relative_to(ROOT))
+    except ValueError:
+        return str(f)
 
 
 def collect_u8_defs():
@@ -59,7 +84,7 @@ def collect_u8_defs():
         text = f.read_text(errors="ignore")
         for m in DEF_RE.finditer(text):
             if m.group(2) in ("u8", "BOOLEAN"):
-                defs[m.group(1)] = (str(f.relative_to(ROOT)), m.group(2))
+                defs[m.group(1)] = (_rel(f), m.group(2))
     for base in (ROOT / "drivers", ROOT / "sdk" / "include", ROOT / "boot"):
         if not base.exists():
             continue
@@ -106,7 +131,7 @@ def scan():
             def_file, def_ret = u8_defs[name]
             findings.append(
                 {
-                    "file": str(f.relative_to(ROOT)),
+                    "file": _rel(f),
                     "line": i,
                     "name": name,
                     "declared": m.group(2),
@@ -117,21 +142,96 @@ def scan():
     return findings
 
 
+# A definition that C code can call: exported by symbol name.
+EXPORT_DEF_RE = re.compile(
+    r"#\[no_mangle\][^\n]*\n(?:\s*#\[[^\n]*\n)*\s*pub (?:unsafe )?extern "
+    r'"(?:system|C|stdcall|win64|fastcall)" fn (\w+)\s*\((?:[^;{]*?)\)\s*->\s*(\w+)',
+    re.S,
+)
+C_WIDE = {"BOOL", "INT", "int", "LONG", "ULONG", "DWORD", "UINT", "NTSTATUS", "HRESULT"}
+
+
+def scan_narrow_defs():
+    """Exported Rust definitions returning u8/BOOLEAN whose same-module C twin is wide."""
+    defs = []
+    rets: dict[tuple[Path, str], set[str]] = {}
+    for f in rust_files():
+        text = f.read_text(errors="ignore")
+        for m in EXPORT_DEF_RE.finditer(text):
+            rets.setdefault((f, m.group(1)), set()).add(m.group(2))
+            if m.group(2) not in ("u8", "BOOLEAN"):
+                continue
+            ln = text.count("\n", 0, m.start(1)) + 1
+            if "nolint: bool-width" in text.split("\n")[ln - 1]:
+                continue
+            defs.append((f, ln, m.group(1), m.group(2)))
+    index = CIndex()
+    index.load({d[2] for d in defs})
+    findings = []
+    for f, ln, name, ret in defs:
+        twins = [t for t in prefer(f, index.get(name)) if same_module(f, t)]
+        # Per-arch cfg twins of ONE export (i386 `fastcall` + a `C` body elsewhere) that
+        # disagree on width: whichever is narrow is wrong on its arches, C twin or not.
+        # Widening only the first copy left win32k's REGION_* narrow off-x86 (2026-09-26).
+        wide_sibling = sorted(r for r in rets.get((f, name), ()) if r in WIDE_TYPES)
+        if wide_sibling and not (twins and twins[0].ret in C_WIDE):
+            findings.append(
+                {
+                    "file": _rel(f),
+                    "line": ln,
+                    "name": name,
+                    "defined": ret,
+                    "c_returns": "",
+                    "c_file": "",
+                    "twin_returns": wide_sibling[0],
+                }
+            )
+            continue
+        if not twins or twins[0].ret not in C_WIDE:
+            continue
+        findings.append(
+            {
+                "file": _rel(f),
+                "line": ln,
+                "name": name,
+                "defined": ret,
+                "c_returns": twins[0].ret,
+                "c_file": str(twins[0].path.relative_to(ROOT)),
+            }
+        )
+    return findings
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--lint", action="store_true")
+    ap.add_argument("paths", nargs="*", type=Path, help="scan these instead of sdk/lib/rust")
     args = ap.parse_args()
+    if args.paths:
+        ROOTS[:] = args.paths
     findings = scan()
+    narrow = scan_narrow_defs()
     if args.json:
-        print(json.dumps(findings, indent=2))
+        print(json.dumps({"decls": findings, "narrow_defs": narrow}, indent=2))
     else:
         for x in findings:
             print(
                 f"{x['file']}:{x['line']}: {x['name']} declared -> {x['declared']}, "
                 f"defined -> {x['defined']} ({x['definition']})"
             )
-        print(f"{len(findings)} findings")
-    return 1 if findings else 0
+        for x in narrow:
+            why = (
+                f"its cfg twin returns {x['twin_returns']}"
+                if x.get("twin_returns")
+                else f"C returns {x['c_returns']} ({x['c_file']})"
+            )
+            print(f"{x['file']}:{x['line']}: {x['name']} defined -> {x['defined']}, {why}")
+        if not args.lint:
+            print(f"{len(findings) + len(narrow)} findings")
+            if narrow:
+                print("fix: return the C's type (BOOL is i32) from the definition, not u8.")
+    return 1 if findings or narrow else 0
 
 
 if __name__ == "__main__":
