@@ -434,6 +434,12 @@ Same family, three positions, all silent on the arch where the widths happen to 
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.
+  The cohab-shim variant: a shim exports a header `#define` as data
+  (`const ULONG __c_X __asm__("X") = …`) and the Rust declares the import itself.
+  fastfat's `static MAX_LFN_CHARACTERS: usize` over a 4-byte ULONG took its high half from the
+  next datum; on arm64 that was nonzero, every rename buffer pointer went non-canonical, and
+  every `MoveFileEx` bugchecked 0x23, while amd64 read a zero. Use the crate constant for a
+  `#define`; gated by `scan_extern_static_width` (Rust wider than the C `__asm__` definition).
 - **Detector:** scan def-vs-decl per symbol for ANY return/param width mismatch, not just
   narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
   and pointer typedefs.
@@ -5055,6 +5061,19 @@ Spell it `target_pointer_width = "64"`. Same family: `#if (NTDDI_VERSION < NTDDI
 came back as pointer width in smlib's `SmConnectToSm` (the version is 0x502 on every arch).
 Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg against the arch sets the C
 twin's own `#if`s draw.
+
+**The version block translated UNGATED, as if the newest version were on.** The other way
+round from the cfg mistake: fastfat builds at NTDDI < WIN8, and its 60 `#if (NTDDI_VERSION >=
+NTDDI_WIN8)` blocks came back as plain live code (one file even declared
+`const NTDDI_VERSION = 0x0A000000; // assume Windows 10`). Where a block only adds a feature that
+is harmless, but several used LAYOUT that version changes: pre-WIN8 the FCB's OPLOCK lives in
+`Specific.Fcb` and a directory has none, so `FsRtlCheckOplockEx(FatGetFcbOplock(ParentDcb), …)`
+read a word of the DCB's free-dirent bitmap as an oplock pointer. It bugchecked 0x23 only once
+a directory had enough dirents in use (a run of creates), and the DCB init/teardown versions
+wrote into that bitmap. Fix: the C's `#if` becomes a cfg nothing sets, declared in the crate's
+`[lints.rust] check-cfg` so a misspelling warns (fastfat: `ntddi_ge_ntddi_win8`); an `#else`
+arm becomes `#[cfg(not(...))]`. Audit a module by listing every version `#if` in the C and
+finding its live Rust: the tell is a comment like "Win8+" over code with no gate.
 
 **Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
 `#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's

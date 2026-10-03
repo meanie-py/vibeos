@@ -64,6 +64,7 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_raw_uart_writes.py",
     "pytest:tools/test_scan_res_named_types.py",
     "pytest:tools/test_scan_bindgen_padding_index.py",
+    "pytest:tools/test_scan_extern_static_width.py",
     "pytest:tools/test_ramdisk_apps.py",
     "pytest:tools/test_scan_const_vs_island.py",
     "pytest:tools/test_cohab_census.py",

@@ -1074,6 +1074,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A Rust `extern static` read wider than the C that defines it through __asm__("NAME").
+    # fastfat read the shim's 4-byte MAX_LFN_CHARACTERS as usize; on arm64 the high half was
+    # the next datum, every rename buffer pointer went non-canonical, and every rename
+    # bugchecked 0x23 while amd64 read a zero and passed. Baseline EMPTY.
+    sesw = repo / "tools" / "scan_extern_static_width.py"
+    specs.append(
+        (
+            "scan_extern_static_width",
+            [py, str(sesw)] if sesw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Two definitions of one exported symbol, live on the same arch in the same
     # binary. Every PE links with --allow-multiple-definition (load-bearing: each
     # Rust staticlib graph carries its own panic runtime), so a duplicate resolves

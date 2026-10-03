@@ -557,21 +557,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **fastfat bugchecks in `FsRtlCheckOplock` on arm64** (OPEN, 2026-09-28; was "rename bugchecks
-  fastfat"). An access violation caught by `FatBugCheckExceptionFilter` becomes bugcheck 0x23.
-  P1 is always `0x100c0` because the Rust `FatBugCheck` is one out-of-line function, so it does
-  not identify the site. P4, the faulting PC, is `ntoskrnl.exe+0x11EBD8`, which is
-  `FsRtlCheckOplock+0x2c` in the current `ntkrnlmp.exe` (the default MP kernel). An earlier
-  symbolization against an older build read `RtlCopyUnicodeString` under
-  `FatSetRenameInfo`. Two triggers so far, both found by the ucrtbase Tier-2 grader:
-  - any `MoveFileExW` rename of an existing file in the guest temp dir, a never-seen target
-    name included (so not the tunnel cache);
-  - `_mktemp`'s grader creating and deleting a run of files: four shards out of four, 2026-09-28.
-
-  The grader skips the cases that reach it, behind `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` in
-  `tools/payloads/ucrtdiff/ucrtdiff.c`; set it to 0 when this closes. Still reproduces after
-  d98aba47853 (fastfat top-level IRP fix).
-  Owner: unassigned (fastfat/kernel lane).
+- **fastfat bugchecks on rename and on a run of creates (arm64)** (FIXED 2026-10-03; was
+  "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
+  - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every
+    name buffer carved from `UnicodeBuffer` had a garbage high half and the first
+    `RtlCopyUnicodeString` faulted. amd64 happened to read a zero. Gated by
+    `scan_extern_static_width`.
+  - creates/deletes: the translation ran fastfat's `NTDDI >= WIN8` blocks on a pre-WIN8 layout,
+    so parent-directory oplock checks read the DCB's free-dirent bitmap as an oplock pointer
+    (and DCB init/teardown wrote into it). Those blocks sit behind `cfg(ntddi_ge_ntddi_win8)`
+    now; the field manual's "version block translated UNGATED" entry has the audit.
+  `tools/payloads/fatprobe` (rename, 64 create/delete, rename with a second handle open)
+  passes on arm64. The ucrtbase grader's `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` skip can go to 0;
+  left to the ucrt lane, whose `ucrtdiff.c` is mid-edit (and whose arm64 build currently
+  stops at pecheck: `__doserrno`/`_open_osfhandle` graded but not imported from ucrtbase.dll).
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
   (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
   control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
