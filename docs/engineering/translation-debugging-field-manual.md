@@ -976,6 +976,18 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
   per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
   next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
+- **So a THIRD-PARTY float crate (`libm`) cannot build there at all** — it is all Rust-ABI,
+  and you cannot `extern "C"` someone else's crate. ucrtbase solved it by dropping to the
+  SSE2 baseline (no kernel consumer; Microsoft's x86 ucrtbase is `/arch:SSE2`). That makes
+  the x87-only `sdk/lib/crt` i386 `_control87`/`_statusfp`/`_clearfp` WRONG for that module:
+  `fesetround` moved the x87 while every SSE2 add rounded in MXCSR. They now drive both units
+  (Wine's versions, `ucrt-rust/src/fenv.rs`). Raising another module's baseline needs the same
+  check.
+- **`libm` ignores the FP environment by design** — Rust has no rounding modes. Its aarch64
+  `rint` is `frintn` (always nearest, no inexact), so `rint(1.2)` under `FE_UPWARD` is 1. Any
+  C function DEFINED by the current mode (`rint`, `nearbyint`, `lrint`, `llrint`) must not be
+  a plain `libm` call: use `frintx`/`frinti` on arm64. On x86 libm's `x + 2^52 - 2^52` happens
+  to round in MXCSR's mode.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep

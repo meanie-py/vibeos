@@ -207,6 +207,10 @@ fpctrl = []
 # fenv.h (fegetenv ... fesetround), __fpe_flt_rounds, _fpreset, and i386's
 # __control87_2/_statusfp2 -- ucrtbase spec stubs until now (Wine port)
 fenv = ["fpctrl"]
+# The C99 math functions (acosh ... trunc) that were ucrtbase spec stubs, plus
+# _fpclassf, _dpcomp/_fdpcomp, _Cbuild/creal. The algorithms are the `libm` crate;
+# the UCRT errno contract is ours. See src/c99math.rs.
+c99math = ["dep:libm", "fenv"]
 # heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
 heap = []
 # stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
@@ -220,3 +224,6 @@ crt-portable-rust = { path = "../crt-portable-rust", optional = true }
 # also supplies the va_arg pullers this crate's extern block names. varargs-rust has
 # no dependencies of its own, so this edge cannot reach msvcrt-crt-rust.
 varargs-rust = { path = "../varargs-rust" }
+# musl's libm in Rust (MIT, no_std): the algorithms behind `c99math`. Third-party, so
+# it is listed in THIRD-PARTY-NOTICES.md's Rust-crates table via `tools/vendored.py`.
+libm = { version = "0.2.16", optional = true }
