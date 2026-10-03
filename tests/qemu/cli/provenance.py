@@ -884,13 +884,17 @@ def _src_delta(repo: Path, stamp: Stamp) -> str:
     explaining a failure would be worse than the failure."""
     try:
         now_head = git_head(repo)
-        if stamp.head_sha and now_head != stamp.head_sha:
-            return (
-                f" — HEAD MOVED SINCE THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
-                "(a merge, fetch or local commit — NOT a stale artifact)"
-            )
+        moved = bool(stamp.head_sha) and now_head != stamp.head_sha
+        # Diff against the STAMP'S commit, not HEAD, whenever we have it: the
+        # question is what changed since the build, and after a commit "vs HEAD"
+        # reports nothing while the build is genuinely out of date. This used to
+        # return early on a moved HEAD and never list a path at all, which made
+        # a real in-scope change and a false positive print the SAME line --
+        # measured cost: one run where "HEAD MOVED ... NOT a stale artifact" was
+        # the whole explanation and the actual culprit was an edited .py.
+        base = stamp.head_sha if moved else "HEAD"
         names = _run(
-            ["git", "diff", "--name-only", "HEAD", "--", ".", *NON_BUILD_PATHSPEC], repo
+            ["git", "diff", "--name-only", base, "--", ".", *NON_BUILD_PATHSPEC], repo
         ).split()
         dirty = [
             ln[3:]
@@ -899,14 +903,23 @@ def _src_delta(repo: Path, stamp: Stamp) -> str:
             ).splitlines()
         ]
         changed = sorted(set(names) | set(dirty))
+        head_note = f" (HEAD also moved: {stamp.head_sha[:12]} -> {now_head[:12]})" if moved else ""
         if not changed:
+            if moved:
+                # The case the scoped-fingerprint fix exists for. If this still
+                # fires, the stamp predates that fix and a rebuild re-stamps it.
+                return (
+                    f" — but NO build-relevant path differs from the build's commit"
+                    f"{head_note}. Nothing in scope changed, so this is a STALE STAMP, "
+                    "not stale media: rebuild once to re-stamp."
+                )
             return (
                 " — but NOTHING is currently modified vs HEAD, and HEAD did not move. "
                 "The fingerprint moved without a source change: suspect the oracle, "
                 "not the tree (see ProvenanceError / _run)"
             )
         return (
-            f" — {len(changed)} path(s): "
+            f" — {len(changed)} path(s) vs the build's commit{head_note}: "
             + ", ".join(changed[:6])
             + (" …" if len(changed) > 6 else "")
         )

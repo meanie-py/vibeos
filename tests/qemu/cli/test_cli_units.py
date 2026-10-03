@@ -523,7 +523,11 @@ def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Pa
 def test_src_delta_names_a_head_move(tiny_repo: Path):
     """ "build source changed" fires milliseconds after the same hash was stamped
     and never said WHICH input moved. A merge landing under the build is the
-    interesting case and now says so by name."""
+    interesting case and now says so by name — AND names the paths, which it did
+    not before: it used to return on the head move alone, so a real in-scope
+    change and a false positive printed the same line. The diff is taken against
+    the STAMP'S commit, because after a commit "vs HEAD" is empty while the build
+    is genuinely out of date."""
     old_head = provenance.git_head(tiny_repo)
     stamp = provenance.Stamp(
         arch="amd64",
@@ -539,8 +543,9 @@ def test_src_delta_names_a_head_move(tiny_repo: Path):
     _git(tiny_repo, "add", "-A")
     _git(tiny_repo, "commit", "-qm", "second")
     delta = provenance._src_delta(tiny_repo, stamp)
-    assert "HEAD MOVED SINCE THE BUILD" in delta, delta
+    assert "HEAD also moved" in delta, delta
     assert old_head[:12] in delta, delta
+    assert "b.txt" in delta, f"must name the path that actually changed: {delta}"
 
 
 def test_src_delta_flags_a_phantom_change(tiny_repo: Path):
